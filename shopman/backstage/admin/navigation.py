@@ -14,6 +14,7 @@ from django.urls import NoReverseMatch, reverse
 from django.utils import timezone
 
 from shopman.backstage import permissions
+from shopman.shop.services import pos_links
 
 logger = logging.getLogger(__name__)
 
@@ -88,6 +89,8 @@ def get_sidebar_navigation(request):
                 "factory",
                 production_url,
                 permission=_can_operate_production,
+                badge="shopman.backstage.admin.navigation.badge_started_work_orders",
+                badge_variant="info",
             )
         )
     live_items.append(
