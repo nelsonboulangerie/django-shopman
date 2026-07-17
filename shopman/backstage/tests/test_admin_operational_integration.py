@@ -56,7 +56,7 @@ class AdminNavigationTests(TestCase):
 
         live = [item for item in groups[0]["items"] if item["has_permission"]]
         live_items = [item["title"] for item in live]
-        self.assertEqual(live_items[:4], ["Pedidos", "Fechamento", "POS", "Produção ao vivo"])
+        self.assertEqual(live_items[:4], ["Pedidos", "Fechamento", "PDV", "Produção ao vivo"])
         self.assertNotIn("Produção", live_items)
         closing_item = next(item for item in live if item["title"] == "Fechamento")
         self.assertEqual(closing_item["link"], "https://pos.example.com/session/closing")
