@@ -8,7 +8,6 @@ from django.contrib import admin
 from django.urls import include, path
 from drf_spectacular.views import SpectacularAPIView, SpectacularSwaggerView
 
-from shopman.backstage.admin_console.closing import day_closing_console_view
 from shopman.backstage.admin_console.copy_catalog import copy_catalog_view
 from shopman.backstage.admin_console.production import (
     production_commitments_view,
@@ -74,11 +73,6 @@ urlpatterns = [
         "admin/operacao/producao/<slug:wo_ref>/compromissos/",
         admin.site.admin_view(production_commitments_view),
         name="admin_console_production_work_order_commitments",
-    ),
-    path(
-        "admin/operacao/fechamento/",
-        admin.site.admin_view(day_closing_console_view),
-        name="admin_console_day_closing",
     ),
     path(
         "admin/configuracao/copy/",
