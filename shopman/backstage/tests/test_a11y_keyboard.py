@@ -84,7 +84,7 @@ def test_dialogs_in_templates_contain_focusable_elements():
 def test_modals_use_aria_modal_when_role_dialog(client, superuser):
     """Whenever role=dialog is rendered server-side, aria-modal must be set."""
     client.force_login(superuser)
-    response = client.get(reverse("admin_console_day_closing"))
+    response = client.get(reverse("admin_console_copy_catalog"))
     html = response.content.decode("utf-8")
     for match in re.finditer(r"<[^>]+role=\"dialog\"[^>]*>", html):
         assert 'aria-modal="true"' in match.group(0), f"dialog without aria-modal: {match.group(0)[:120]}"

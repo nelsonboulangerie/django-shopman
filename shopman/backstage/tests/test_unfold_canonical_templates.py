@@ -56,9 +56,14 @@ def test_unfold_surface_contract_requires_pos_runtime_templates_to_be_registered
 
 
 def test_unfold_gate_can_scope_registered_admin_url_to_surface() -> None:
-    surfaces = check_unfold_canonical.surfaces_for_url("/admin/operacao/fechamento/")
+    surfaces = check_unfold_canonical.surfaces_for_url("/admin/configuracao/copy/")
 
-    assert [surface.id for surface in surfaces] == ["admin-console-day-closing"]
+    assert [surface.id for surface in surfaces] == ["admin-console-copy-catalog"]
+
+
+def test_unfold_gate_removed_day_closing_url_scope_is_unknown() -> None:
+    # WP-ADM-3: o fechamento do dia saiu; a superfície é a antesala do PDV.
+    assert check_unfold_canonical.surfaces_for_url("/admin/operacao/fechamento/") == ()
 
 
 def test_unfold_gate_rejects_unknown_admin_url_scope() -> None:

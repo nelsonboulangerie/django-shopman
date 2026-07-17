@@ -48,7 +48,7 @@ def test_backstage_templates_avoid_micro_type_and_loose_dashes():
 def test_backstage_empty_states_and_icons_use_canonical_scale():
     sources = _template_sources()
 
-    assert 'component "unfold/components/table.html"' in sources["admin_console/production/index.html"]
+    assert 'component "unfold/components/table.html"' in sources["admin_console/copy_catalog/index.html"]
 
 
 # A fila de pedidos virou app Nuxt dedicado (Gestor); deixou de ser superfície
