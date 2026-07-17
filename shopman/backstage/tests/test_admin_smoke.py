@@ -144,10 +144,9 @@ def test_core_models_use_unfold_admin(model):
 @pytest.mark.parametrize(
     "url_name",
     [
-        "admin_console_production",
-        "admin_console_production_planning",
-        "admin_console_production_dashboard",
-        "admin_console_production_reports",
+        # O console de produção saiu (WP-ADM-7d, → Fournil) e o fechamento
+        # também (WP-ADM-3, → antesala do PDV); resta o catálogo de copy.
+        "admin_console_copy_catalog",
     ],
 )
 def test_admin_console_pages_render(admin_client, url_name):

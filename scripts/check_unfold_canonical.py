@@ -16,12 +16,6 @@ ROOT = Path(__file__).resolve().parents[1]
 INVENTORY = ROOT / "docs/reference/unfold_canonical_inventory.md"
 BACKSTAGE_TEMPLATES = ROOT / "shopman/backstage/templates"
 BACKSTAGE_PROJECTIONS = ROOT / "shopman/backstage/projections"
-APPROVED_MODAL_TEMPLATE = ROOT / "shopman/backstage/templates/admin_console/unfold/modal.html"
-APPROVED_MODAL_OVERLAY_CLASS = "backdrop-blur-xs bg-base-900/80 flex flex-col fixed inset-0 p-4 lg:p-32 z-[1000]"
-APPROVED_MODAL_PANEL_CLASS = (
-    "bg-white flex flex-col max-w-sm min-h-0 mx-auto overflow-hidden rounded-default shadow-lg "
-    "w-full dark:bg-base-800"
-)
 CLASS_ATTR_RE = re.compile(
     r"\bclass=(?P<quote>[\"'])(?P<classes>.*?)(?P=quote)",
     re.DOTALL,
@@ -144,40 +138,12 @@ CANONICAL_ADMIN_SURFACES: tuple[Surface, ...] = (
             "build_copy_catalog",
         ),
     ),
-    Surface(
-        id="admin-console-production",
-        kind="canonical-admin-unfold-page",
-        templates=(
-            ROOT / "shopman/backstage/templates/admin_console/production",
-            ROOT / "shopman/backstage/templates/admin_console/unfold",
-        ),
-        controllers=(ROOT / "shopman/backstage/admin_console/production.py",),
-        projections=(ROOT / "shopman/backstage/projections/production.py",),
-        url_prefixes=("/admin/operacao/producao/",),
-        requires_model_admin_view_mixin=True,
-        required_extends="admin/base.html",
-        required_template_markers=(
-            'include "unfold/helpers/messages.html"',
-            'include "unfold/helpers/tab_list.html"',
-            'include "unfold/helpers/field.html"',
-            'component "unfold/components/button.html"',
-            'component "unfold/components/card.html"',
-            'component "unfold/components/container.html"',
-            'component "unfold/components/link.html"',
-            'component "unfold/components/separator.html"',
-            'component "unfold/components/table.html"',
-            'component "unfold/components/text.html"',
-            'component "unfold/components/title.html"',
-            'component "unfold/components/tracker.html"',
-        ),
-        required_controller_markers=(
-            "UnfoldAdminSelectWidget",
-            "UnfoldAdminSingleDateWidget",
-            "UnfoldAdminTextInputWidget",
-            "render_production_surface",
-            "build_production_console_context",
-        ),
-    ),
+    # NOTA: a superfície `admin-console-production` foi removida (WP-ADM-7d) —
+    # a produção vive no Fournil (surfaces/production-nuxt) via
+    # api/v1/backstage/production/* após a paridade do WP-ADM-7b (matriz `/`,
+    # plan `/plan`, pesagem `/mise-en-place`, forecast `/board`, relatórios/
+    # gestão/mapa código-cego em `/reports`). Deixou de ser superfície
+    # Admin/Unfold; os wrappers aprovados (modal, row action) saíram junto.
     Surface(
         id="admin-dashboard",
         kind="canonical-admin-unfold-page",
@@ -269,14 +235,16 @@ EXCEPTION_SURFACES: tuple[Surface, ...] = (
             ROOT / "shopman/backstage/projections/showcase.py",
             ROOT / "shopman/backstage/projections/closing.py",
             ROOT / "shopman/backstage/projections/cash_session.py",
+            ROOT / "shopman/backstage/projections/production.py",
         ),
         exception_reason=(
-            "Order queue + KDS + catalog-matrix + expositores + day-closing + cash-session "
-            "projections feed dedicated headless Nuxt operator apps (gestor./kds./pos. via "
-            "api/v1/backstage/*), not Admin/Unfold pages (OPERATOR-APPS-PLAN Fase 2; "
-            "CROSS-CHANNEL-CATALOG-HUB-PLAN Frente 3; ADMIN-ROLE-PLAN WP-ADM-3/WP-ADM-4 — "
-            "config de rule/capability fica no Admin/Unfold, a matriz operacional no Gestor, "
-            "o fechamento do dia e os relatórios X/Z na antesala do PDV)."
+            "Order queue + KDS + catalog-matrix + expositores + day-closing + cash-session + "
+            "production projections feed dedicated headless Nuxt operator apps "
+            "(gestor./kds./pos./fournil. via api/v1/backstage/*), not Admin/Unfold pages "
+            "(OPERATOR-APPS-PLAN Fase 2; CROSS-CHANNEL-CATALOG-HUB-PLAN Frente 3; "
+            "ADMIN-ROLE-PLAN WP-ADM-3/WP-ADM-4/WP-ADM-7d — config de rule/capability fica no "
+            "Admin/Unfold, a matriz operacional no Gestor, o fechamento do dia e os relatórios "
+            "X/Z na antesala do PDV, a produção inteira no Fournil)."
         ),
     ),
 )
@@ -491,21 +459,6 @@ def scan_file(path: Path, *, strict: bool) -> list[Violation]:
             if rule == "raw-visual-shell" and {"raw-modal-overlay", "raw-collapsible"} & line_rules:
                 continue
             if pattern.search(line):
-                if _is_approved_modal_shell(path, line, rule):
-                    line_rules.add(rule)
-                    continue
-                if rule == "raw-modal-overlay" and path.resolve() != APPROVED_MODAL_TEMPLATE:
-                    violations.append(
-                        Violation(
-                            path,
-                            index + 1,
-                            "raw-modal-overlay-location",
-                            "Custom modal overlays must use admin_console/unfold/modal.html.",
-                            line,
-                        )
-                    )
-                    line_rules.add(rule)
-                    continue
                 if _is_allowed(lines, index, rule):
                     line_rules.add(rule)
                     continue
@@ -559,49 +512,8 @@ def scan_structural_unfold_usage(path: Path, lines: list[str]) -> list[Violation
     return violations
 
 
-def _is_approved_modal_shell(path: Path, line: str, rule: str) -> bool:
-    if path.resolve() != APPROVED_MODAL_TEMPLATE:
-        return False
-    if rule == "raw-modal-overlay":
-        return APPROVED_MODAL_OVERLAY_CLASS in line
-    if rule == "raw-visual-shell":
-        return APPROVED_MODAL_PANEL_CLASS in line
-    return False
-
-
-def scan_approved_custom_partials() -> list[Violation]:
-    violations: list[Violation] = []
-    modal = APPROVED_MODAL_TEMPLATE
-    if modal.exists():
-        text = modal.read_text(encoding="utf-8")
-        required = [
-            "unfold-canonical: allow raw-modal-overlay",
-            APPROVED_MODAL_OVERLAY_CLASS,
-            APPROVED_MODAL_PANEL_CLASS,
-            'component "unfold/components/card.html"',
-            'component "unfold/components/button.html"',
-            'include "unfold/helpers/field.html"',
-            'role="dialog"',
-            'aria-modal="true"',
-        ]
-        for marker in required:
-            if marker not in text:
-                violations.append(
-                    Violation(
-                        modal,
-                        1,
-                        "invalid-approved-modal",
-                        f"Approved custom modal wrapper is missing `{marker}`.",
-                        "",
-                    )
-                )
-    return violations
-
-
 def scan_design_token_classes(path: Path, index: int, line: str) -> list[Violation]:
     violations: list[Violation] = []
-    if _is_approved_custom_shell_line(path, line):
-        return violations
     class_groups = [
         *(match.group("classes") for match in CLASS_ATTR_RE.finditer(line)),
         *(match.group("classes") for match in PY_CLASS_ATTR_RE.finditer(line)),
@@ -661,13 +573,6 @@ def scan_design_token_classes(path: Path, index: int, line: str) -> list[Violati
                 )
             )
     return violations
-
-
-def _is_approved_custom_shell_line(path: Path, line: str) -> bool:
-    resolved = path.resolve()
-    if resolved == APPROVED_MODAL_TEMPLATE:
-        return APPROVED_MODAL_OVERLAY_CLASS in line or APPROVED_MODAL_PANEL_CLASS in line
-    return False
 
 
 def _class_exists_in_unfold_css(class_name: str, class_base: str) -> bool:
@@ -1053,7 +958,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--strict", action="store_true", help="also flag visual-shell drift")
     parser.add_argument("--maturity", action="store_true", help="alias for --strict before declaring a page mature")
     parser.add_argument("--surfaces", action="store_true", help="print the registered Admin/backstage surface contract")
-    parser.add_argument("--url", help="scope validation to a registered relative Admin URL, for example /admin/operacao/producao/")
+    parser.add_argument("--url", help="scope validation to a registered relative Admin URL, for example /admin/operacao/fechamento/")
     parser.add_argument(
         "--skip-surface-contract",
         action="store_true",
@@ -1086,7 +991,6 @@ def main(argv: list[str] | None = None) -> int:
                 enforce_global_contract=not scoped_surfaces,
             )
         )
-    violations.extend(scan_approved_custom_partials())
 
     if violations:
         print("Non-canonical Unfold Admin template usage detected:\n")

@@ -1,8 +1,9 @@
 """ProductionBoardProjection — read models for the production board (Fase 4).
 
 Translates Craftsman work orders, queue items, and summary into immutable
-projections for the operator production page. Replaces the inline context
-building from ``shopman.backstage.views.production``.
+projections consumed by the headless production API
+(``api/v1/backstage/production/*``) that feeds the Fournil
+(``surfaces/production-nuxt``).
 
 Never imports from ``shopman.backstage.views.*``.
 """
@@ -238,6 +239,24 @@ class ProductionWeighingProjection:
     selected_position_ref: str
     selected_base_recipe: str
     tickets: tuple[ProductionWeighingTicketProjection, ...]
+
+
+@dataclass(frozen=True)
+class ProductionBlindMapRowProjection:
+    """One blind code ↔ prep row of the manager's correlation map."""
+
+    code: str
+    name: str
+    output_quantity_display: str
+
+
+@dataclass(frozen=True)
+class ProductionBlindMapProjection:
+    """Manager-only map of the day's blind codes to their preps."""
+
+    selected_date: str
+    selected_date_display: str
+    rows: tuple[ProductionBlindMapRowProjection, ...]
 
 
 @dataclass(frozen=True)
@@ -709,6 +728,38 @@ def build_production_weighing(
                 selected_date=selected_date,
             )
             for entry in sorted(tickets.values(), key=lambda item: item["recipe"].name)
+        ),
+    )
+
+
+def build_production_blind_map(
+    *,
+    selected_date: date | None = None,
+    position_ref: str = "",
+    base_recipe: str = "",
+) -> ProductionBlindMapProjection:
+    """Mapa código-cego ↔ preparo do dia — visão de GESTOR.
+
+    Deriva dos mesmos tickets da pesagem (``build_production_weighing``): as
+    etiquetas circulam pela cozinha só com o código; quem correlaciona é esta
+    projection, servida exclusivamente à página de relatórios (nunca às telas
+    de chão, que são cegas por design).
+    """
+    weighing = build_production_weighing(
+        selected_date=selected_date,
+        position_ref=position_ref,
+        base_recipe=base_recipe,
+    )
+    return ProductionBlindMapProjection(
+        selected_date=weighing.selected_date,
+        selected_date_display=weighing.selected_date_display,
+        rows=tuple(
+            ProductionBlindMapRowProjection(
+                code=ticket.blind_code,
+                name=ticket.name,
+                output_quantity_display=ticket.output_quantity_display,
+            )
+            for ticket in weighing.tickets
         ),
     )
 
