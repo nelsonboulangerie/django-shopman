@@ -40,7 +40,7 @@ async function decide(action: "approve" | "discard", body: PostEdits = {}) {
   }
 }
 
-useHead({ title: "Post · Broadcast" });
+useHead({ title: "Post · Marketing" });
 </script>
 
 <template>

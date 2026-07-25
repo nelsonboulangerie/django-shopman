@@ -21,7 +21,7 @@ const TONE_CLASS = {
   pending: "bg-muted text-muted-foreground",
 } as const;
 
-useHead({ title: "Histórico · Broadcast" });
+useHead({ title: "Histórico · Marketing" });
 </script>
 
 <template>

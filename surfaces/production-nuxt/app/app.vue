@@ -37,7 +37,7 @@ useHead({ title: "Produção" });
       >
         <OperatorRail
           app-icon="croissant"
-          app-label="Fournil"
+          app-label="Produção"
           :central-url="hubUrl"
           :operator-name="operator?.name"
           @lock="lock"
