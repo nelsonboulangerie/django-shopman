@@ -141,13 +141,6 @@ export function surfaceDisplayIcon(surface: SurfaceProjection): string {
   return surfaceIcon(surface.ref);
 }
 
-// Rótulo curto do papel da superfície (chip no cabeçalho). Canal não recebe chip
-// (é o caso comum); feed diz de que tipo é — menuboard (TV) ou feed de plataforma.
-export function surfaceKindLabel(surface: SurfaceProjection): string {
-  if (surface.transactional) return "";
-  return surface.kind === "feed" ? "Feed" : "Menuboard";
-}
-
 // ── surface metadata ─────────────────────────────────────────────────────────
 
 // Rótulo CURTO (cabe na coluna estreita da matriz) + `title` com a frase inteira,

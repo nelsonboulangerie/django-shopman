@@ -4,7 +4,7 @@
 // inline reprice per cell; the collection axis (chips) scopes the view; selection +
 // a floating bulk bar act on the active recorte. Desktop-first, horizontal scroll on
 // narrow screens. The backend owns availability rules; this renders intent + reconciles.
-import { cellPrice, cellSyncView, cellView, filterRows, rowStatus, surfaceDisplayIcon, surfaceKindLabel, syncBadge, syncErrorCount } from "~/presentation/catalog";
+import { cellPrice, cellSyncView, cellView, filterRows, rowStatus, surfaceDisplayIcon, syncBadge, syncErrorCount } from "~/presentation/catalog";
 import { catalogDimensions, filterByDimensions } from "~/presentation/catalogFilters";
 import { keepVisible, reconcile } from "../../../operator-kit/app/presentation/columnPicker";
 import type { HiddenColumns } from "../../../operator-kit/app/types/columns";
@@ -393,21 +393,21 @@ useHead({ title: "Catálogo · Gestor" });
                 <span class="flex items-center gap-1 font-medium text-foreground" :title="s.transactional ? s.name : `${s.name} — feed (não vende)`">
                   <Icon :name="surfaceDisplayIcon(s)" class="size-3.5 shrink-0" :class="s.transactional ? 'text-muted-foreground' : 'text-primary/70'" />
                   <span class="truncate text-xs">{{ s.short_name }}</span>
-                </span>
-                <span class="flex items-center gap-1">
-                  <span
-                    v-if="syncBadge(s.sync_status)" class="truncate text-[11px] font-medium leading-tight"
-                    :class="syncBadge(s.sync_status)!.toneClass" :title="syncBadge(s.sync_status)!.title"
-                  >● {{ syncBadge(s.sync_status)!.label }}</span>
-                  <span v-else-if="!s.transactional" class="truncate text-[11px] font-medium leading-tight text-primary/60">
-                    {{ surfaceKindLabel(s) }}{{ s.is_active ? "" : " · pausado" }}
-                  </span>
                   <a
                     v-if="s.output_path"
                     :href="`${djangoBase}${s.output_path}`" target="_blank" rel="noopener"
                     class="ml-auto shrink-0 text-muted-foreground/50 transition hover:text-foreground"
                     :title="`Abrir ${s.name}`" @click.stop
                   ><Icon name="lucide:external-link" class="size-3" /></a>
+                </span>
+                <!-- Linha 2 só quando há estado a dizer: sync da plataforma ou feed pausado.
+                     O papel da superfície (feed/menuboard) já é dito pelo ícone + title. -->
+                <span v-if="syncBadge(s.sync_status) || (!s.transactional && !s.is_active)" class="flex items-center gap-1">
+                  <span
+                    v-if="syncBadge(s.sync_status)" class="truncate text-xs font-medium leading-tight"
+                    :class="syncBadge(s.sync_status)!.toneClass" :title="syncBadge(s.sync_status)!.title"
+                  >● {{ syncBadge(s.sync_status)!.label }}</span>
+                  <span v-else class="truncate text-xs font-medium leading-tight text-primary/60">pausado</span>
                 </span>
               </div>
             </th>
@@ -612,7 +612,7 @@ useHead({ title: "Catálogo · Gestor" });
                             ? 'text-muted-foreground/60'
                             : (cellPrice(row, cell).delta === 'up' ? 'text-amber-600 dark:text-amber-400' : 'text-success dark:text-lime-400')"
                         />
-                        <span class="text-[11px] font-semibold tabular-nums" :class="cell.is_sellable ? 'text-foreground' : 'text-muted-foreground line-through'">{{ cell.price_display.replace("R$ ", "") }}</span>
+                        <span class="text-xs font-semibold tabular-nums" :class="cell.is_sellable ? 'text-foreground' : 'text-muted-foreground line-through'">{{ cell.price_display.replace("R$ ", "") }}</span>
                       </span>
                       <Icon v-else name="lucide:circle-dollar-sign" class="size-3.5 text-muted-foreground/40" />
                     </button>
@@ -641,7 +641,7 @@ useHead({ title: "Catálogo · Gestor" });
                   <button
                     v-if="cellSync(cell).actionable"
                     type="button"
-                    class="grid size-4 shrink-0 place-items-center rounded-full text-[10px] leading-none transition hover:scale-125 disabled:opacity-40"
+                    class="grid size-4 shrink-0 place-items-center rounded-full text-xs leading-none transition hover:scale-125 disabled:opacity-40"
                     :class="cellSync(cell).toneClass"
                     :disabled="isBusy(cellKey(row.sku, cell.surface_ref))"
                     :title="`${cellSync(cell).label}${cell.sync_error ? ' · ' + cell.sync_error : ''} — reenviar agora`"
@@ -650,7 +650,7 @@ useHead({ title: "Catálogo · Gestor" });
                   >{{ cellSync(cell).dot }}</button>
                   <span
                     v-else
-                    class="shrink-0 text-[10px] leading-none"
+                    class="shrink-0 text-xs leading-none"
                     :class="cellSync(cell).toneClass"
                     :title="cellSync(cell).label"
                     :aria-label="`${cellSync(cell).label} em ${surfaceName(cell.surface_ref)}`"
