@@ -1,15 +1,16 @@
 """OperatorHubProjection — a Central de Apps (launcher pós-login).
 
 Read model do "launcher" do operador: uma grade de tiles das superfícies de operador
-(PDV · Cozinha · Gestor · Fournil · Broadcast · Loja), **permission-aware** — o app que o operador
-não pode acessar nem aparece. É só um índice de navegação; não hospeda CRUD. O tile
+(PDV · Cozinha · Gestor · Produção · Marketing · Loja), **permission-aware** — o app que o
+operador não pode acessar nem aparece. É só um índice de navegação; não hospeda CRUD. O tile
 Loja abre a **loja do cliente** (storefront) em nova aba — fora da zona de operador.
 
 Registry declarativo (tipado aqui; caminho claro p/ configurável no Admin depois). Cada
 tile carrega o predicado de permissão canônico de `backstage.permissions` — a mesma regra
-que gateia a superfície dedicada e a sidebar. As URLs vêm de `settings.SHOPMAN_SURFACE_URLS`
-(default de dev abaixo); em prod são os subdomínios (`pdv.`/`kds.`/`gestor.`/`prod.`) e o
-apex da loja.
+que gateia a superfície dedicada e a sidebar. As URLs vêm de `settings.SHOPMAN_SURFACE_URLS`;
+em prod são os subdomínios (`pdv.`/`kds.`/`gestor.`/`prod.`) e o apex da loja. Superfície
+SEM URL configurada não vira tile (mesma regra de `shop.services.operator_links`: nunca
+apontar para link morto) — o fallback 127.0.0.1 abaixo vale só em DEBUG.
 
 Nunca importa de `shopman.backstage.views.*`.
 """
@@ -30,9 +31,10 @@ from shopman.backstage.permissions import (
     is_superuser,
 )
 
-# URLs das superfícies — dev por padrão; sobrepostas por `settings.SHOPMAN_SURFACE_URLS`
-# (env em prod: os subdomínios `.boulangerie` + o apex da loja).
-DEFAULT_SURFACE_URLS: dict[str, str] = {
+# URLs de DEV das superfícies — usadas apenas com DEBUG ligado, quando
+# `settings.SHOPMAN_SURFACE_URLS` não cobre a superfície. Fora de DEBUG não há
+# fallback: superfície sem URL fica fora do launcher.
+DEV_SURFACE_URLS: dict[str, str] = {
     "pos": "http://127.0.0.1:3002/",
     "kds": "http://127.0.0.1:3003/",
     "gestor": "http://127.0.0.1:3004/",
@@ -76,15 +78,16 @@ _REGISTRY: tuple[_AppSpec, ...] = (
     _AppSpec("pos", "PDV", "Vender no balcão", "banknote", "launch", can_operate_pos),
     _AppSpec("kds", "Cozinha", "Preparo e expedição", "chef-hat", "launch", can_operate_kds),
     _AppSpec("gestor", "Gestor de Pedidos", "Fila e acompanhamento", "clipboard-list", "launch", can_manage_orders),
-    _AppSpec("production", "Fournil", "Produção e fornadas", "croissant", "launch", can_access_production),
-    _AppSpec("broadcast", "Broadcast", "Divulgar a fornada", "megaphone", "launch", can_manage_broadcast),
+    _AppSpec("production", "Produção", "Produção e fornadas", "croissant", "launch", can_access_production),
+    _AppSpec("broadcast", "Marketing", "Divulgar a fornada", "megaphone", "launch", can_manage_broadcast),
     _AppSpec("loja", "Loja online", "Abrir a loja do cliente", "store", "external", is_superuser),
 )
 
 
 def _surface_urls() -> dict[str, str]:
+    base = DEV_SURFACE_URLS if settings.DEBUG else {}
     override = getattr(settings, "SHOPMAN_SURFACE_URLS", None) or {}
-    return {**DEFAULT_SURFACE_URLS, **override}
+    return {**base, **override}
 
 
 def _operator_name(user) -> str:
@@ -101,10 +104,10 @@ def build_operator_hub(user) -> OperatorHubProjection:
             label=spec.label,
             description=spec.description,
             icon=spec.icon,
-            url=urls.get(spec.ref, "#"),
+            url=urls[spec.ref],
             kind=spec.kind,
         )
         for spec in _REGISTRY
-        if spec.can_access(user)
+        if spec.can_access(user) and urls.get(spec.ref)
     )
     return OperatorHubProjection(operator_name=_operator_name(user), tiles=tiles)

@@ -1134,9 +1134,9 @@ SHOPMAN_OPERATOR_API_HOST = (os.environ.get("SHOPMAN_OPERATOR_API_HOST") or "").
 # URLs das superfícies para a Central de Apps (surfaces/hub-nuxt). REUSA as base URLs
 # públicas que o nav do Admin já usa — UMA fonte por superfície (DRY): quem já configurou
 # os links de operador do Admin (SHOPMAN_POS_BASE_URL etc.) ganha a Central de graça, sem
-# env vars novas. Vazio ⇒ o launcher usa os defaults de dev (127.0.0.1:PORT) de
-# `projections/hub.py`. O tile Loja abre a loja do cliente (storefront, mesma base dos
-# links de cliente).
+# env vars novas. Vazio ⇒ o tile some do launcher (nunca link morto); só em DEBUG o
+# launcher cai nos defaults de dev (127.0.0.1:PORT) de `projections/hub.py`. O tile Loja
+# abre a loja do cliente (storefront, mesma base dos links de cliente).
 SHOPMAN_SURFACE_URLS = {
     key: url
     for key, url in {
