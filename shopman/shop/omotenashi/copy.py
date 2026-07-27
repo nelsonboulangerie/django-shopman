@@ -475,7 +475,7 @@ OMOTENASHI_DEFAULTS: dict[str, dict[str, dict[str, CopyEntry]]] = {
     # Rótulo enxuto do countdown quando o prazo é a loja conferir disponibilidade
     # (deadline_kind="availability"). Consolidou o antigo par prefix/suffix num rótulo.
     "TRACKING_AUTO_CONFIRM_LABEL": {
-        WILDCARD: {WILDCARD: CopyEntry(message="A loja está conferindo a disponibilidade:")},
+        WILDCARD: {WILDCARD: CopyEntry(message="Confirmamos seu pedido em:")},
     },
     "TRACKING_STATUS_PAYMENT_PENDING": {
         WILDCARD: {WILDCARD: CopyEntry(title="Aguardando pagamento")},
@@ -573,7 +573,7 @@ OMOTENASHI_DEFAULTS: dict[str, dict[str, dict[str, CopyEntry]]] = {
     "TRACKING_PAYMENT_REQUESTED": {
         WILDCARD: {
             WILDCARD: CopyEntry(
-                title="Falta só o pagamento",
+                title="Tudo certo! Agora é só pagar por Pix",
                 message="Confirme o PIX e já começamos a preparar.",
             ),
         },
@@ -643,6 +643,19 @@ OMOTENASHI_DEFAULTS: dict[str, dict[str, dict[str, CopyEntry]]] = {
     },
     "TRACKING_PROMISE_AVAILABILITY_MESSAGE": {
         WILDCARD: {WILDCARD: CopyEntry(message="Estamos conferindo a disponibilidade dos itens.")},
+    },
+    # Espera de confirmação quando o cliente ainda vai pagar por Pix (post_commit):
+    # título e mensagem próprios que deixam claro que o Pix vem a seguir. O estado
+    # genérico ``availability_check`` (cliente já pagou / aguarda só a loja) mantém
+    # o par ``TRACKING_STEP_RECEIVED``/``TRACKING_PROMISE_AVAILABILITY_MESSAGE``.
+    "TRACKING_PROMISE_AVAILABILITY_TITLE": {
+        WILDCARD: {WILDCARD: CopyEntry(title="Confirmando seu pedido")},
+    },
+    "TRACKING_PROMISE_AVAILABILITY_PIX_MESSAGE": {
+        WILDCARD: {WILDCARD: CopyEntry(message="Estamos conferindo a disponibilidade dos itens. Em instantes liberamos o Pix pra você pagar.")},
+    },
+    "TRACKING_PROMISE_AVAILABILITY_ACTIVE_NOTIFICATION": {
+        WILDCARD: {WILDCARD: CopyEntry(message="Pode fechar a tela. A gente te avisa a hora de pagar.")},
     },
     "TRACKING_PROMISE_AVAILABILITY_NEXT": {
         WILDCARD: {WILDCARD: CopyEntry(message="Se a disponibilidade for confirmada, liberamos o pagamento e avisamos você.")},

@@ -679,6 +679,21 @@ def _build_promise(
         return _promise(state="card_authorized", tone="info")
 
     if confirmation_countdown:
+        # Cliente ainda vai pagar (Pix post_commit, sem intent): estado próprio que
+        # antecipa o pagamento e promete o aviso ativo ("a gente te avisa a hora de
+        # pagar"). Se já pagou (fluxo pagar-antes), fica no availability_check
+        # genérico — nada a fazer, não prometer pagamento que já foi feito.
+        if not payment_confirmed:
+            return _promise(
+                state="availability_check_awaiting_payment",
+                tone="info",
+                deadline_at=confirmation_expires_at,
+                deadline_kind="availability",
+                timer_mode="countdown" if confirmation_expires_at else "none",
+                deadline_action="refresh_tracking",
+                requires_active_notification=True,
+                notification_topic="payment_requested",
+            )
         return _promise(
             state="availability_check",
             tone="info",

@@ -782,6 +782,45 @@ class TestStatusColours:
         assert proj.promise.message == "Estamos conferindo a disponibilidade dos itens."
         assert proj.promise.next_event == "Se a disponibilidade for confirmada, liberamos o pagamento e avisamos você."
 
+    def test_unpaid_pix_new_order_awaits_payment_in_confirmation_window(self, order, channel):
+        """Pix post_commit: pedido novo, ainda sem intent, na janela de auto-confirmação.
+
+        Como o cliente ainda vai pagar, a espera usa o estado próprio que antecipa o
+        Pix e promete o aviso ativo (a notificação payment_requested sai na confirmação).
+        """
+        from django.utils import timezone
+        from shopman.orderman.models import Directive
+
+        channel.config = {"confirmation": {"mode": "auto_confirm", "timeout_minutes": 5}}
+        channel.save(update_fields=["config"])
+        order.data = {"payment": {"method": "pix"}}
+        order.save(update_fields=["data"])
+        expires_at = timezone.now() + timezone.timedelta(minutes=5)
+        Directive.objects.create(
+            topic="confirmation.timeout",
+            payload={
+                "order_ref": order.ref,
+                "action": "confirm",
+                "expires_at": expires_at.isoformat(),
+            },
+            available_at=expires_at,
+        )
+
+        proj = build_order_tracking(order)
+
+        assert proj.status_label == "Aguardando confirmação"
+        assert proj.payment_confirmed is False
+        assert proj.confirmation_countdown is True
+        assert proj.promise.state == "availability_check_awaiting_payment"
+        assert proj.promise.title == "Confirmando seu pedido"
+        assert proj.promise.message == (
+            "Estamos conferindo a disponibilidade dos itens. "
+            "Em instantes liberamos o Pix pra você pagar."
+        )
+        assert proj.promise.requires_active_notification is True
+        assert proj.promise.active_notification == "Pode fechar a tela. A gente te avisa a hora de pagar."
+        assert proj.promise_deadline_label == "Confirmamos seu pedido em"
+
     def test_closed_store_new_order_defers_availability_without_countdown(
         self, order, channel, shop_instance,
     ):

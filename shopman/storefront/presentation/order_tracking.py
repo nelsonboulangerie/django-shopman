@@ -463,7 +463,7 @@ def _deadline_label(promise: OrderTrackingPromiseProjection, copy: CopyCatalog) 
     if promise.deadline_kind == "payment":
         return _clean_label(copy.message("TRACKING_PAYMENT_TIME_LEFT", "Tempo para pagamento:"))
     if promise.deadline_kind == "availability":
-        return _clean_label(copy.message("TRACKING_AUTO_CONFIRM_LABEL", "A loja está conferindo a disponibilidade:"))
+        return _clean_label(copy.message("TRACKING_AUTO_CONFIRM_LABEL", "Confirmamos seu pedido em:"))
     return _clean_label(copy.title("TRACKING_PROMISE_LABEL_DEADLINE", "Prazo:"))
 
 
@@ -491,6 +491,10 @@ def _support_url(base: str, order_ref: str, *, copy: CopyCatalog) -> str:
 # em ``_active_notification`` corta antes), então mapeá-los era copy morta.
 _ACTIVE_NOTIFICATION_KEY: dict[str, str] = {
     "payment_requested": "TRACKING_PROMISE_PAYMENT_ACTIVE_NOTIFICATION",
+    # Espera de confirmação com pagamento Pix pendente: tranquiliza que o cliente
+    # será avisado quando for a hora de pagar (a notificação payment_requested sai
+    # na confirmação). Sem isso, a espera não prometia o ping e gerava ansiedade.
+    "availability_check_awaiting_payment": "TRACKING_PROMISE_AVAILABILITY_ACTIVE_NOTIFICATION",
     # dispatched: sem rastreio de courier, NÃO prometemos "avisamos a cada
     # atualização" (default genérico seria overpromise). Prometemos só o que
     # o sistema cumpre: o aviso de entrega (notification_topic order_delivered).
@@ -583,7 +587,7 @@ def _promise_copy(
     if state in {"payment_requested", "payment_pending"}:
         if state == "payment_requested":
             title, message = _pair(copy, "TRACKING_PAYMENT_REQUESTED",
-                                   "Falta só o pagamento",
+                                   "Tudo certo! Agora é só pagar por Pix",
                                    "Confirme o PIX e já começamos a preparar.")
         else:
             title, message = _pair(copy, "TRACKING_PAYMENT_PENDING",
@@ -639,6 +643,15 @@ def _promise_copy(
             message,
             next_event,
             "",
+            "",
+        )
+
+    if state == "availability_check_awaiting_payment":
+        return (
+            copy.title("TRACKING_PROMISE_AVAILABILITY_TITLE", "Confirmando seu pedido"),
+            copy.message("TRACKING_PROMISE_AVAILABILITY_PIX_MESSAGE", "Estamos conferindo a disponibilidade dos itens. Em instantes liberamos o Pix pra você pagar."),
+            copy.message("TRACKING_PROMISE_AVAILABILITY_NEXT", "Se a disponibilidade for confirmada, liberamos o pagamento e avisamos você."),
+            copy.message("TRACKING_PROMISE_AVAILABILITY_RECOVERY", "Se o estabelecimento não confirmar a tempo, atualizaremos o pedido aqui."),
             "",
         )
 
