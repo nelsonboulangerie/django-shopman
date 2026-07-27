@@ -216,6 +216,19 @@ def _payment_status_should_redirect(
     return not promise_has_pending_payment_action(promise)
 
 
+def payment_deadline_passed(order) -> bool:
+    """True quando o prazo do pagamento venceu e nada foi capturado.
+
+    Fonte ÚNICA da expiração. O tracking consome esta função em vez de
+    reimplementar a regra: as duas telas discordavam — o acompanhamento
+    oferecia "Pagar agora" enquanto a tela de pagamento já dizia "o prazo
+    acabou" e devolvia o cliente para o acompanhamento, em looping.
+    """
+    payment = (order.data or {}).get("payment") or {}
+    _, _, is_expired = _payment_flags(order=order, expires_at_str=payment.get("expires_at"))
+    return is_expired
+
+
 def _payment_flags(
     *,
     order,

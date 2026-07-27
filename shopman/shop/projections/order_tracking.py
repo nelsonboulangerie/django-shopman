@@ -371,6 +371,12 @@ def _payment_info(order) -> tuple[bool, bool, str | None, str | None]:
 
     if _is_payment_timeout_cancelled(order):
         return False, False, "payment_expired", payment.get("expires_at") or None
+    # Prazo vencido sem captura: NÃO é pagamento pendente. Sem isto o
+    # acompanhamento mantinha o CTA "Pagar agora" para um PIX morto, e a tela
+    # de pagamento devolvia o cliente para cá — ping-pong sem saída, com as
+    # duas telas dizendo coisas opostas.
+    if payment_status.payment_deadline_passed(order):
+        return False, False, "payment_expired", payment.get("expires_at") or None
 
     status = (payment_status.get_payment_status(order) or "").lower()
     if payment_status.has_sufficient_captured_payment(order):
