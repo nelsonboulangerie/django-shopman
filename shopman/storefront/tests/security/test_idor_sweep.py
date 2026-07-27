@@ -6,7 +6,7 @@ resource that does not exist, so there is no existence oracle to enumerate.
 
 Covered:
 - Every order-scoped endpoint (tracking, cancel, confirm-received, rate,
-  confirmation, conversation, payment ×2, reorder, SSE events).
+  conversation, payment ×2, reorder, SSE events).
 - Saved addresses (PATCH/DELETE/set-default) scoped to the owning customer.
 - Both the anonymous attacker AND the logged-in-but-not-owner attacker.
 - Uniform-404 assertion: non-owner status == nonexistent-ref status.
@@ -33,7 +33,6 @@ ORDER_ENDPOINTS = [
     ("post", "/api/v1/orders/{ref}/cancel/", {}),
     ("post", "/api/v1/orders/{ref}/confirm-received/", {}),
     ("post", "/api/v1/orders/{ref}/rate/", {"rating": 5}),
-    ("get", "/api/v1/orders/{ref}/confirmation/", None),
     ("get", "/api/v1/orders/{ref}/conversation/", None),
     ("get", "/api/v1/payment/{ref}/", None),
     ("get", "/api/v1/payment/{ref}/status/", None),

@@ -39,7 +39,6 @@ def _body(resp) -> dict:
 NOTFOUND_ENDPOINTS = [
     ("get", "/api/v1/catalog/products/NOPE-SKU/"),
     ("get", "/api/v1/storefront/products/NOPE-SKU/"),
-    ("get", "/api/v1/orders/NOPE-REF/confirmation/"),
 ]
 
 

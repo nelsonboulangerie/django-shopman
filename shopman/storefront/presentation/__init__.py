@@ -43,7 +43,6 @@ from .home import (
     ShopStatusProjection,
     build_home,
 )
-from .order_confirmation import OrderConfirmationProjection, build_order_confirmation
 from .order_history import (
     OrderHistoryProjection,
     build_order_history,
@@ -107,7 +106,6 @@ __all__ = [
     "MinimumOrderProgressProjection",
     "OmotenashiProjection",
     "OpeningHoursEntry",
-    "OrderConfirmationProjection",
     "OrderHistoryProjection",
     "OrderTrackingCopyProjection",
     "OrderTrackingProjection",
@@ -134,7 +132,6 @@ __all__ = [
     "get_channel_listing_ref",
     "build_checkout",
     "build_home",
-    "build_order_confirmation",
     "build_order_history",
     "build_order_tracking",
     "build_order_tracking_status",

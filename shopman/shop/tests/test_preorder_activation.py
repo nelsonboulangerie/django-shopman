@@ -7,7 +7,10 @@ comportamento do despertador (``lifecycle.activate_preorder``):
 - antes da data → no-op (não dispara cozinha nem baixa);
 - na data, hold materializado → baixa (fulfill) acontece;
 - na data, hold de demanda ainda sem fornada → espera SEM alerta falso; a
-  materialização (receiver de ``holds_materialized``) completa a baixa.
+  materialização (receiver de ``holds_materialized``) completa a baixa;
+- na data, encomenda DIGITAL NÃO PAGA → nada dispara (regressão: a via
+  ``holds_materialized`` levava o pedido a PREPARING, e depois a fiscal e
+  loyalty, sem um centavo capturado).
 """
 
 from __future__ import annotations
@@ -192,3 +195,93 @@ def test_materialization_completes_the_deferred_fulfill(
         "com pagamento de balcão e data chegada, a baixa completa na materialização"
     )
     assert hold.quant.quantity == Decimal("0"), "a venda saiu do físico"
+
+
+# ══════════════════════════════════════════════════════════════════════
+# Encomenda não paga não vai para a cozinha
+# ══════════════════════════════════════════════════════════════════════
+
+
+@pytest.fixture
+def pix_channel(db):
+    """Canal digital com pagamento depois do commit (igual ao `web` semeado)."""
+    from django.core.cache import cache
+
+    Channel.objects.create(
+        ref="web-pix",
+        name="Loja Online (PIX)",
+        config={
+            "confirmation": {"mode": "auto_confirm", "timeout_minutes": 5},
+            "payment": {"method": ["pix"], "timing": "post_commit", "timeout_minutes": 10},
+        },
+    )
+    cache.clear()
+    yield
+    cache.clear()
+
+
+def _unpaid_pix_preorder(tomorrow: date, hold: Hold) -> Order:
+    return Order.objects.create(
+        ref="WEB-PRE-PIX-1",
+        channel_ref="web-pix",
+        session_key="SESS-PRE-PIX",
+        status=Order.Status.CONFIRMED,
+        snapshot={"items": [{"line_id": "L1", "sku": SKU, "qty": 2, "unit_price_q": 1200}]},
+        data={
+            "delivery_date": tomorrow.isoformat(),
+            "is_preorder": True,
+            "hold_ids": [{"sku": SKU, "hold_id": hold.hold_id, "qty": 2.0}],
+            # Intent criado, nada capturado — o estado real de quem não pagou.
+            "payment": {"method": "pix", "intent_ref": "PIX-INTENT-1", "status": "pending"},
+        },
+        total_q=2400,
+    )
+
+
+@pytest.mark.usefixtures("pix_channel")
+def test_activate_on_the_date_blocks_unpaid_digital_preorder(tomorrow):
+    """Encomenda PIX sem captura não abre ticket de KDS nem vira PREPARING."""
+    from shopman.backstage.models import OperatorAlert
+
+    hold = StockHolds.hold(
+        Decimal("2"), _Product(), tomorrow,
+        allow_demand=True, reference="order:WEB-PRE-PIX-1", priority=0,
+    )
+    hold = Hold.objects.get(pk=int(hold.split(":")[1]))
+    order = _unpaid_pix_preorder(tomorrow, hold)
+
+    with patch("django.utils.timezone.localdate", return_value=tomorrow):
+        with patch("shopman.shop.lifecycle._dispatch_physical_work") as dispatch:
+            activate_preorder(order)
+
+    assert not dispatch.called, "cozinha não pode ser acionada sem pagamento"
+
+    order.refresh_from_db()
+    assert order.status == Order.Status.CONFIRMED, "não pode avançar para PREPARING"
+
+    hold.refresh_from_db()
+    assert hold.status != HoldStatus.FULFILLED, "estoque não baixa sem pagamento"
+
+    assert OperatorAlert.objects.filter(
+        type="preorder_activation_blocked_unpaid"
+    ).exists(), "o operador precisa saber que a encomenda travou por pagamento"
+
+
+@pytest.mark.usefixtures("pix_channel")
+def test_activate_on_the_date_runs_when_digital_preorder_is_paid(tomorrow):
+    """Mesmo caminho, com pagamento capturado: o despertador dispara normalmente."""
+    hold = StockHolds.hold(
+        Decimal("2"), _Product(), tomorrow,
+        allow_demand=True, reference="order:WEB-PRE-PIX-1", priority=0,
+    )
+    hold = Hold.objects.get(pk=int(hold.split(":")[1]))
+    order = _unpaid_pix_preorder(tomorrow, hold)
+
+    with patch("django.utils.timezone.localdate", return_value=tomorrow):
+        with patch(
+            "shopman.shop.lifecycle._payment_is_captured", return_value=True
+        ):
+            with patch("shopman.shop.lifecycle._dispatch_physical_work") as dispatch:
+                activate_preorder(order)
+
+    assert dispatch.called, "encomenda paga segue o fluxo normal"

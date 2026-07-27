@@ -806,10 +806,12 @@ async function submitCheckout () {
     clearCart()
     clearCheckoutDraft()
     attemptKey.value = createCheckoutAttemptKey()
-    // Momento de confirmação/celebração (Balde C resgatado): o pedido passa pela tela
-    // "pedido recebido", que decide o próximo passo (pagar agora se PIX pendente,
-    // ou acompanhar). Ver COPY-BACKLOG-UNBUILT.
-    const confirmedUrl = `/pedido/${encodeURIComponent(response.order_ref)}/confirmado`
+    // O BACKEND decide o próximo passo (views.py, next_url): cartão vai direto
+    // pagar; PIX em canal post_commit e dinheiro vão para o acompanhamento, que
+    // já mostra o momento "pedido recebido" e libera o "Pagar agora" sozinho
+    // quando a loja confirma. Não existe mais tela intermediária.
+    const confirmedUrl = localRouteFromBackend(response.next_url)
+      || `/pedido/${encodeURIComponent(response.order_ref)}`
     // O Core já salvou o endereço de entrega ao confirmar (só em pedido que
     // de fato fechou — fora-de-zona/abandonado nunca poluem o perfil). Se foi
     // um endereço novo, oferecemos a etiqueta nele antes de seguir.
