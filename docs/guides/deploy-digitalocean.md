@@ -46,8 +46,11 @@ usa `.do/app.subdomains.yaml` (trocar `STORE_DOMAIN`). Ambos definem:
 
 O blueprint usa `git.repo_clone_url` público para dispensar autorização manual
 da GitHub App da DigitalOcean no primeiro staging. Enquanto isso estiver assim,
-redeploys devem ser acionados explicitamente com `doctl apps update --spec ...`
-ou pelo painel. Para deploy automático por push, autorize a GitHub App da
+redeploys devem ser acionados explicitamente com
+`doctl --context shopman-staging-deploy apps create-deployment <APP_ID> --wait`
+ou pelo painel. ⚠️ **Nunca** use `doctl apps update --spec` só para subir código:
+esse comando sobrescreve o spec vivo e **apaga toda variável encriptada** que
+exista apenas no painel. `--spec` é exclusivo para mudança de topologia. Para deploy automático por push, autorize a GitHub App da
 DigitalOcean e troque os blocos `git` por `github`.
 
 O `Dockerfile` já compila CSS e agora roda `collectstatic` no build. O runtime
@@ -208,9 +211,20 @@ O usuário `shopman` precisa ter permissão de criação no schema `public` do b
 `shopman`; sem isso o release job passa em `check --deploy`, mas falha em
 `migrate` com `permission denied for schema public`.
 
-Se o app já existir:
+Se o app já existir, **só para subir código novo** (não mexe no spec nem nos
+segredos):
 
 ```bash
+doctl --context shopman-staging-deploy apps create-deployment <app-id> --wait
+```
+
+Aplicar o spec do repo por cima do app vivo é operação **de topologia**, não de
+deploy, e é destrutiva para segredos:
+
+```bash
+# ⚠️ SOBRESCREVE o spec inteiro — apaga variáveis encriptadas que só existem no painel.
+# Salve o spec vivo antes e reponha os SECRET pelo painel depois.
+doctl apps spec get <app-id> --format yaml > /tmp/spec-vivo-$(date +%F).yaml  # apps get --format Spec imprime "<nil>"
 doctl apps update <app-id> --spec .do/app.staging-subdomains.yaml --update-sources --wait
 ```
 
