@@ -224,7 +224,7 @@ deploy, e é destrutiva para segredos:
 ```bash
 # ⚠️ SOBRESCREVE o spec inteiro — apaga variáveis encriptadas que só existem no painel.
 # Salve o spec vivo antes e reponha os SECRET pelo painel depois.
-doctl apps get <app-id> --format Spec --no-header > /tmp/spec-vivo-$(date +%F).yaml
+doctl apps spec get <app-id> --format yaml > /tmp/spec-vivo-$(date +%F).yaml  # apps get --format Spec imprime "<nil>"
 doctl apps update <app-id> --spec .do/app.staging-subdomains.yaml --update-sources --wait
 ```
 

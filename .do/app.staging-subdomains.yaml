@@ -29,8 +29,10 @@
 #           --spec .do/app.staging-subdomains.yaml --context shopman-staging-write
 #       ⚠️ TODA variável ENCRIPTADA que exista só no painel e não esteja neste
 #          arquivo É APAGADA. Antes de rodar (b), sempre:
-#            doctl apps get 40b86e35-bafe-4a1a-a1b0-e124d3d9fd0f \
-#              --format Spec --no-header > /tmp/spec-vivo-$(date +%F).yaml
+#            doctl --context shopman-staging-deploy apps spec get \
+#              40b86e35-bafe-4a1a-a1b0-e124d3d9fd0f --format yaml > /tmp/spec-vivo-$(date +%F).yaml
+#          (`apps get --format Spec` NÃO serve: imprime "<nil>".
+#           Confira o arquivo antes de confiar nele.)
 #          confira quais SECRET existem no spec vivo e reponha pelo painel
 #          logo depois. Ver docs/status.md e docs/runbooks/go-live-cutover.md.
 #       (b) reusa o mesmo Postgres/Valkey; NÃO recria banco; pode levar alguns
