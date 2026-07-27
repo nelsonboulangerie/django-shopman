@@ -97,5 +97,14 @@ export default defineNuxtConfig({
 
   vite: {
     plugins: [tailwindcss()],
+
+    server: {
+      // O Vite recusa Host que não conheça (proteção contra DNS rebinding). Ao expor
+      // o dev server por túnel (ngrok), o Host que chega é o hostname aleatório do
+      // túnel e o servidor responde 403. Libera o sufixo para o dev server aceitar
+      // qualquer túnel ngrok sem reeditar config a cada execução.
+      // Vale SÓ para `nuxt dev` — `vite.server` não entra no build de produção.
+      allowedHosts: [".ngrok-free.app"],
+    },
   }
 })
