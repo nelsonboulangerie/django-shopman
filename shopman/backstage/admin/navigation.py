@@ -49,7 +49,7 @@ def get_sidebar_navigation(request):
 
     Pedidos/POS/KDS são apps Nuxt headless dedicados (sem rota Django): só
     aparecem quando a base URL do deployment está configurada (evita link morto).
-    O histórico/CRUD de pedidos segue no grupo "Pedidos e canais".
+    O histórico/CRUD de pedidos segue no grupo "Pedidos".
     """
     live_items = []
     orders_url = _orders_base_url()
@@ -106,10 +106,10 @@ def get_sidebar_navigation(request):
     )
     return [
         _group("Operação ao vivo", "bolt", live_items, collapsible=False),
-        _group("Pedidos e canais", "hub", [
-            _item("Histórico de pedidos", "assignment", _url("admin:orderman_order_changelist"), permission=_can_manage_orders),
-            _item("Sessões abertas", "shopping_bag", _url("admin:orderman_session_changelist") + "?state__exact=open", permission=_can_manage_orders),
-            _item("Diretivas pendentes", "playlist_add_check", _url("admin:orderman_directive_changelist") + "?status__exact=queued", permission=_can_manage_orders),
+        _group("Pedidos", "hub", [
+            _item("Histórico de pedidos", "receipt_long", _url("admin:orderman_order_changelist"), permission=_can_manage_orders),
+            _item("Comandas abertas", "shopping_bag", _url("admin:orderman_session_changelist") + "?state__exact=open", permission=_can_manage_orders),
+            _item("Ações pendentes", "playlist_add_check", _url("admin:orderman_directive_changelist") + "?status__exact=queued", permission=_can_manage_orders),
         ]),
         # Painel/Planejamento/Produção migraram p/ o Fournil (WP-ADM-7d);
         # aqui fica o CRUD (fichas) e o atalho p/ relatórios na superfície Nuxt.

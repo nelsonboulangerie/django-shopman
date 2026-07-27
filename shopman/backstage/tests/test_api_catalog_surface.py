@@ -457,12 +457,12 @@ def test_reorder_items_manual(client, operator, catalog):
     assert CollectionItem.objects.get(collection=coll, product__sku="PAO").sort_order == 1
 
 
-# ── expositores como colunas (superfície display/feed, não-transacional) ────────
+# ── feeds como colunas (superfície menuboard/plataforma, não-transacional) ─
 
 
 @pytest.fixture
 def catalog_with_showcase(catalog):
-    """Um Expositor menuboard exibindo a coleção Doces (só BOLO é membro)."""
+    """Um Feed menuboard exibindo a coleção Doces (só BOLO é membro)."""
     Showcase.objects.create(
         ref="tv-salao", name="TV do Salão", kind="menuboard", collections=["doces"], is_active=True
     )
@@ -470,7 +470,7 @@ def catalog_with_showcase(catalog):
 
 
 def test_matrix_includes_showcase_column(client, operator, catalog_with_showcase):
-    """O expositor entra como coluna à direita dos canais, marcada não-transacional."""
+    """O feed entra como coluna à direita dos canais, marcada não-transacional."""
     client.force_login(operator)
     matrix = client.get(MATRIX_URL).json()["matrix"]
     surfaces = {s["ref"]: s for s in matrix["surfaces"]}
@@ -482,23 +482,57 @@ def test_matrix_includes_showcase_column(client, operator, catalog_with_showcase
     assert tv["output_path"] == "/menuboard/tv-salao/"
 
 
+def test_surface_short_name_falls_back_to_name(client, operator, catalog_with_showcase):
+    """Sem rótulo curto configurado, `short_name` repete o `name` (nunca vem vazio)."""
+    client.force_login(operator)
+    surfaces = {s["ref"]: s for s in client.get(MATRIX_URL).json()["matrix"]["surfaces"]}
+    assert surfaces["tv-salao"]["short_name"] == "TV do Salão"
+    assert surfaces["web"]["short_name"] == surfaces["web"]["name"]
+
+
+def test_surface_short_name_from_config_and_options(client, operator, catalog_with_showcase):
+    """O rótulo curto vem do backend: ChannelConfig p/ canal, options p/ feed."""
+    channel = Channel.objects.get(ref="web")
+    channel.config = {**(channel.config or {}), "short_name": "Site"}
+    channel.save(update_fields=["config"])
+    showcase = Showcase.objects.get(ref="tv-salao")
+    showcase.options = {**(showcase.options or {}), "short_name": "TV1"}
+    showcase.save(update_fields=["options"])
+
+    client.force_login(operator)
+    surfaces = {s["ref"]: s for s in client.get(MATRIX_URL).json()["matrix"]["surfaces"]}
+    assert surfaces["web"]["short_name"] == "Site"
+    assert surfaces["web"]["name"] != "Site"  # o nome completo segue intacto
+    assert surfaces["tv-salao"]["short_name"] == "TV1"
+    assert surfaces["tv-salao"]["name"] == "TV do Salão"
+
+
+def test_inactive_channel_leaves_the_matrix(client, operator, catalog_with_showcase):
+    """Canal inativo (ex.: WhatsApp, sem implementação) some das colunas."""
+    Channel.objects.filter(ref="web").update(is_active=False)
+    client.force_login(operator)
+    matrix = client.get(MATRIX_URL).json()["matrix"]
+    assert "web" not in [s["ref"] for s in matrix["surfaces"]]
+    assert all(c["surface_ref"] != "web" for r in matrix["rows"] for c in r["cells"])
+
+
 def test_showcase_cell_membership_and_no_price(client, operator, catalog_with_showcase):
-    """Célula de expositor: membro (via coleção) disponível, sem preço; não-membro N/A."""
+    """Célula de feed: membro (via coleção) disponível, sem preço; não-membro N/A."""
     client.force_login(operator)
     matrix = client.get(MATRIX_URL).json()["matrix"]
     rows = {r["sku"]: r for r in matrix["rows"]}
 
     bolo_tv = next(c for c in rows["BOLO"]["cells"] if c["surface_ref"] == "tv-salao")
-    assert bolo_tv["in_listing"] is True  # BOLO está em Doces → no expositor
+    assert bolo_tv["in_listing"] is True  # BOLO está em Doces → no feed
     assert bolo_tv["available"] is True
-    assert bolo_tv["price_q"] is None  # expositor não transaciona
+    assert bolo_tv["price_q"] is None  # feed não transaciona
 
     pao_tv = next(c for c in rows["PAO"]["cells"] if c["surface_ref"] == "tv-salao")
-    assert pao_tv["in_listing"] is False  # PAO não está em Doces → fora deste expositor
+    assert pao_tv["in_listing"] is False  # PAO não está em Doces → fora deste feed
 
 
 def test_showcase_cell_pause_routes_to_showcase(client, operator, catalog_with_showcase):
-    """Pausar a célula do expositor grava em Showcase.options[paused_skus] (sem tocar listings)."""
+    """Pausar a célula do feed grava em Showcase.options[paused_skus] (sem tocar listings)."""
     client.force_login(operator)
     resp = client.post(
         CELL_URL,
@@ -527,7 +561,7 @@ def test_showcase_cell_pause_routes_to_showcase(client, operator, catalog_with_s
 
 
 def test_showcase_cell_price_rejected(client, operator, catalog_with_showcase):
-    """Expositor não aceita preço/publicação — só pausar/reativar."""
+    """Feed não aceita preço/publicação — só pausar/reativar."""
     client.force_login(operator)
     resp = client.post(
         CELL_URL,
@@ -538,18 +572,18 @@ def test_showcase_cell_price_rejected(client, operator, catalog_with_showcase):
 
 
 def test_global_pause_gates_showcase_column(client, operator, catalog_with_showcase):
-    """A pausa global do produto atinge o expositor (cada um é um)."""
+    """A pausa global do produto atinge o feed (cada um é um)."""
     client.force_login(operator)
     client.post(PRODUCT_URL, data={"sku": "BOLO", "is_sellable": False}, content_type="application/json")
     matrix = client.get(MATRIX_URL).json()["matrix"]
     bolo_tv = next(
         c for r in matrix["rows"] if r["sku"] == "BOLO" for c in r["cells"] if c["surface_ref"] == "tv-salao"
     )
-    assert bolo_tv["available"] is False  # global gateia o expositor mesmo sem pausa local
+    assert bolo_tv["available"] is False  # global gateia o feed mesmo sem pausa local
 
 
 def test_showcase_bulk_pause(client, operator, catalog_with_showcase):
-    """Bulk numa coluna de expositor pausa os itens (options[paused_skus])."""
+    """Bulk numa coluna de feed pausa os itens (options[paused_skus])."""
     client.force_login(operator)
     resp = client.post(
         BULK_URL,
@@ -575,3 +609,434 @@ def test_reorder_items_smart_rejected(client, operator, catalog):
         content_type="application/json",
     )
     assert resp.status_code == 400  # coleção por regra não tem ordem manual
+
+
+# ── Arc C: sync-status + resync ───────────────────────────────────────────────
+
+SYNC_STATUS_URL = "/api/v1/backstage/catalog/sync-status/"
+RESYNC_URL = "/api/v1/backstage/catalog/resync/"
+
+
+def test_sync_status_requires_manage_catalog(client, plain_staff, catalog):
+    client.force_login(plain_staff)
+    assert client.get(SYNC_STATUS_URL).status_code == 403
+
+
+def test_sync_status_returns_recorded_states(client, operator, catalog):
+    from shopman.shop.services import catalog_sync
+
+    catalog_sync.record_sync("PAO", "meta", status="synced", external_id="PAO")
+    catalog_sync.record_sync("PAO", "google", status="error", error="boom")
+
+    client.force_login(operator)
+    resp = client.get(SYNC_STATUS_URL)
+    assert resp.status_code == 200
+    data = resp.json()["sync_status"]
+    assert data["PAO"]["meta"]["status"] == "synced"
+    assert data["PAO"]["meta"]["last_synced_at"]
+    assert data["PAO"]["google"]["status"] == "error"
+    assert data["PAO"]["google"]["error"] == "boom"
+
+
+def test_sync_status_filtered_by_platform(client, operator, catalog):
+    from shopman.shop.services import catalog_sync
+
+    catalog_sync.record_sync("PAO", "meta", status="synced")
+    catalog_sync.record_sync("PAO", "google", status="synced")
+
+    client.force_login(operator)
+    data = client.get(SYNC_STATUS_URL, {"platform": "meta"}).json()["sync_status"]
+    assert set(data["PAO"]) == {"meta"}
+
+
+def test_resync_requires_sku(client, operator, catalog):
+    client.force_login(operator)
+    resp = client.post(RESYNC_URL, data={}, content_type="application/json")
+    assert resp.status_code == 400
+
+
+def test_resync_enqueues_directive(client, operator, catalog):
+    from shopman.orderman.models import Directive
+
+    from shopman.shop.directives import CATALOG_PROJECT_SKU
+
+    client.force_login(operator)
+    resp = client.post(
+        RESYNC_URL,
+        data={"sku": "PAO", "platform": "ifood"},
+        content_type="application/json",
+    )
+    assert resp.status_code == 200
+    assert resp.json()["platforms"] == ["ifood"]
+    assert Directive.objects.filter(topic=CATALOG_PROJECT_SKU, payload__sku="PAO").exists()
+
+
+# ── Arc H: sync por célula + PIM na linha + escrita PIM ───────────────────────
+
+SOCIAL_URL = "/api/v1/backstage/catalog/social/"
+
+
+def test_matrix_cell_carries_sync_status(client, operator, catalog):
+    """O estado de sync por (produto × plataforma) entra na célula da matriz."""
+    from shopman.shop.services import catalog_sync
+
+    catalog_sync.record_sync("PAO", "ifood", status="synced", external_id="EXT-1")
+    client.force_login(operator)
+    matrix = client.get(MATRIX_URL).json()["matrix"]
+    rows = {r["sku"]: r for r in matrix["rows"]}
+    cells = {c["surface_ref"]: c for c in rows["PAO"]["cells"]}
+    assert cells["ifood"]["sync_status"] == "synced"
+    assert cells["ifood"]["synced_at"]  # ISO carimbado
+    # sem registro → vazio (nunca sincronizado / superfície que não projeta)
+    assert cells["web"]["sync_status"] == ""
+
+
+def test_matrix_row_carries_social_pim(client, operator, catalog):
+    """Atributos PIM sociais (brand/categoria) chegam na linha + flag de prontidão."""
+    from shopman.offerman.contrib.social.schema import (
+        ProductSocialAttributes,
+        set_social_attributes,
+    )
+
+    pao = catalog["pao"]
+    pao.metadata = set_social_attributes(
+        pao.metadata,
+        ProductSocialAttributes(brand="Nelson", google_product_category="Food"),
+    )
+    pao.save(update_fields=["metadata"])
+
+    client.force_login(operator)
+    matrix = client.get(MATRIX_URL).json()["matrix"]
+    rows = {r["sku"]: r for r in matrix["rows"]}
+    assert rows["PAO"]["social"]["brand"] == "Nelson"
+    assert rows["PAO"]["pim_complete"] is True
+    # BOLO sem PIM → incompleto
+    assert rows["BOLO"]["pim_complete"] is False
+
+
+def test_social_write_requires_manage_catalog(client, plain_staff, catalog):
+    client.force_login(plain_staff)
+    resp = client.post(SOCIAL_URL, data={"sku": "PAO"}, content_type="application/json")
+    assert resp.status_code == 403
+
+
+def test_social_write_persists_and_validates(client, operator, catalog):
+    client.force_login(operator)
+    # grava marca + categoria
+    resp = client.post(
+        SOCIAL_URL,
+        data={"sku": "PAO", "brand": "Nelson", "google_product_category": "Food"},
+        content_type="application/json",
+    )
+    assert resp.status_code == 200
+    assert resp.json()["social"]["brand"] == "Nelson"
+
+    catalog["pao"].refresh_from_db()
+    assert catalog["pao"].metadata["social"]["brand"] == "Nelson"
+
+    # merge parcial: enviar só hashtags mantém a marca
+    resp = client.post(
+        SOCIAL_URL,
+        data={"sku": "PAO", "hashtags": ["pão", "artesanal"]},
+        content_type="application/json",
+    )
+    assert resp.status_code == 200
+    assert resp.json()["social"]["brand"] == "Nelson"
+    assert resp.json()["social"]["hashtags"] == ["pão", "artesanal"]
+
+    # GTIN inválido → 400 com mensagem
+    resp = client.post(
+        SOCIAL_URL,
+        data={"sku": "PAO", "gtin": "123"},
+        content_type="application/json",
+    )
+    assert resp.status_code == 400
+    assert "GTIN" in resp.json()["detail"]
+
+
+def test_social_read_roundtrips(client, operator, catalog):
+    client.force_login(operator)
+    client.post(
+        SOCIAL_URL,
+        data={"sku": "BOLO", "brand": "Nelson", "condition": "new"},
+        content_type="application/json",
+    )
+    resp = client.get(SOCIAL_URL, {"sku": "BOLO"})
+    assert resp.status_code == 200
+    assert resp.json()["social"]["brand"] == "Nelson"
+
+
+def test_matrix_contract_keys_are_pinned(client, operator, catalog):
+    """Contrato de superfície: as chaves da matriz batem com o mirror TS (types/catalog.ts).
+
+    Guardrail — adicionar/remover um campo da projection é mudança consciente: quebra
+    aqui e força atualizar o tipo TS em lockstep. (Arc H acrescentou sync por célula +
+    PIM na linha.)
+    """
+    client.force_login(operator)
+    matrix = client.get(MATRIX_URL).json()["matrix"]
+
+    assert set(matrix) == {"surfaces", "rows", "collections"}
+
+    surface = matrix["surfaces"][0]
+    assert set(surface) == {
+        "ref", "name", "short_name", "is_projection_target", "sync_status", "kind",
+        "transactional", "icon", "is_active", "output_path", "sync_key",
+    }
+
+    row = matrix["rows"][0]
+    assert set(row) == {
+        "sku", "name", "image_url", "primary_collection", "primary_collection_name",
+        "is_published", "is_sellable", "base_price_q", "base_price_display", "edit_url",
+        "stock_tracked", "stock_qty", "sold_out", "low_stock", "replenish_qty",
+        "keywords", "cells", "social", "pim_complete",
+    }
+
+    cell = row["cells"][0]
+    assert set(cell) == {
+        "surface_ref", "in_listing", "is_published", "is_sellable", "available",
+        "price_q", "price_display", "sync_status", "sync_error", "synced_at",
+    }
+
+    assert set(row["social"]) == {
+        "brand", "gtin", "mpn", "condition", "google_product_category",
+        "tiktok_category_id", "hashtags", "social_caption", "has_data",
+    }
+
+
+# ── detalhe do produto (painel de edição do Gestor) ──────────────────────────
+
+DETAIL_URL = "/api/v1/backstage/catalog/product/{sku}/"
+
+
+def test_product_detail_requires_manage_catalog(client, plain_staff, catalog):
+    client.force_login(plain_staff)
+    assert client.get(DETAIL_URL.format(sku="PAO")).status_code == 403
+
+
+def test_product_detail_get_shape(client, operator, catalog):
+    client.force_login(operator)
+    resp = client.get(DETAIL_URL.format(sku="BOLO"))
+    assert resp.status_code == 200
+    product = resp.json()["product"]
+    assert set(product) == {
+        "sku", "name", "short_description", "long_description", "keywords",
+        "base_price_q", "unit", "unit_weight_g", "availability_policy",
+        "shelf_life_days", "storage_tip", "production_cycle_hours",
+        "is_batch_produced", "is_published", "is_sellable", "ingredients_text",
+        "image_url", "primary_collection", "primary_collection_name",
+        # rotulagem de compra remota + blocos de JSONField com dono de schema
+        "allergens", "dietary_info", "serves", "approx_dimensions",
+        "allows_next_day_sale", "nutrition_facts", "social", "fiscal",
+        # somente-leitura: sentinels de derivação + escolhas de perfil fiscal
+        "dietary_auto_filled", "nutrition_auto_filled", "fiscal_profiles",
+    }
+    assert product["sku"] == "BOLO"
+    assert product["base_price_q"] == 4500
+    assert product["primary_collection"] == "doces"
+    assert set(product["fiscal"]) == {"profile", "ncm", "cest", "unit"}
+    assert {p["key"] for p in product["fiscal_profiles"]} == {"own_production", "resale"}
+
+
+def test_product_detail_get_unknown_sku(client, operator, catalog):
+    client.force_login(operator)
+    assert client.get(DETAIL_URL.format(sku="NADA")).status_code == 404
+
+
+def test_product_detail_patch_updates_fields(client, operator, catalog):
+    client.force_login(operator)
+    resp = client.patch(
+        DETAIL_URL.format(sku="PAO"),
+        data={
+            "name": "Pão francês",
+            "short_description": "Crocante por fora",
+            "base_price_q": 700,
+            "unit_weight_g": 150,
+            "shelf_life_days": 1,
+            "ingredients_text": "Farinha de trigo, água, sal.",
+            "keywords": ["padaria", "pão"],
+        },
+        content_type="application/json",
+    )
+    assert resp.status_code == 200
+    product = resp.json()["product"]
+    assert product["name"] == "Pão francês"
+    assert product["base_price_q"] == 700
+    assert product["unit_weight_g"] == 150
+    assert sorted(product["keywords"]) == ["padaria", "pão"]
+
+    catalog["pao"].refresh_from_db()
+    assert catalog["pao"].name == "Pão francês"
+    assert catalog["pao"].ingredients_text == "Farinha de trigo, água, sal."
+
+
+def test_product_detail_patch_is_partial(client, operator, catalog):
+    """Enviar só `name` não zera os demais campos (merge parcial)."""
+    pao = catalog["pao"]
+    pao.short_description = "Descrição atual"
+    pao.storage_tip = "Guarde em saco de pano"
+    pao.save()
+
+    client.force_login(operator)
+    resp = client.patch(
+        DETAIL_URL.format(sku="PAO"), data={"name": "Só o nome"}, content_type="application/json"
+    )
+    assert resp.status_code == 200
+    product = resp.json()["product"]
+    assert product["name"] == "Só o nome"
+    assert product["short_description"] == "Descrição atual"
+    assert product["storage_tip"] == "Guarde em saco de pano"
+    assert product["base_price_q"] == 500
+    assert product["keywords"] == ["padaria"]  # taggit intocado
+
+
+def test_product_detail_patch_rejects_negative_price(client, operator, catalog):
+    client.force_login(operator)
+    resp = client.patch(
+        DETAIL_URL.format(sku="PAO"), data={"base_price_q": -1}, content_type="application/json"
+    )
+    assert resp.status_code == 400
+    catalog["pao"].refresh_from_db()
+    assert catalog["pao"].base_price_q == 500
+
+
+def test_product_detail_patch_rejects_invalid_policy(client, operator, catalog):
+    client.force_login(operator)
+    resp = client.patch(
+        DETAIL_URL.format(sku="PAO"),
+        data={"availability_policy": "inventada"},
+        content_type="application/json",
+    )
+    assert resp.status_code == 400
+
+
+def test_product_detail_patch_toggles_publication(client, operator, catalog):
+    client.force_login(operator)
+    resp = client.patch(
+        DETAIL_URL.format(sku="PAO"),
+        data={"is_published": False, "is_sellable": False},
+        content_type="application/json",
+    )
+    assert resp.status_code == 200
+    catalog["pao"].refresh_from_db()
+    assert catalog["pao"].is_published is False
+    assert catalog["pao"].is_sellable is False
+
+
+# ── rotulagem, nutricional, social e fiscal pelo mesmo PATCH ─────────────────
+# São quatro blocos que moram em JSONField com dono de schema próprio. O painel de
+# produto os edita nas abas; aqui garantimos que o merge é parcial de verdade e que
+# a validação de cada dono continua valendo por este caminho.
+
+
+def _patch(client, sku, payload):
+    return client.patch(
+        DETAIL_URL.format(sku=sku), data=payload, content_type="application/json"
+    )
+
+
+def test_product_detail_patch_labelling(client, operator, catalog):
+    client.force_login(operator)
+    resp = _patch(client, "PAO", {
+        "allergens": ["glúten", "  "],
+        "dietary_info": ["100% vegetal"],
+        "serves": "2 a 4 pessoas",
+        "approx_dimensions": "aprox. 24 x 12 cm",
+        "allows_next_day_sale": True,
+    })
+    assert resp.status_code == 200
+    product = resp.json()["product"]
+    assert product["allergens"] == ["glúten"]  # entrada vazia descartada
+    assert product["dietary_info"] == ["100% vegetal"]
+    assert product["serves"] == "2 a 4 pessoas"
+    assert product["allows_next_day_sale"] is True
+
+    catalog["pao"].refresh_from_db()
+    assert catalog["pao"].metadata["allergens"] == ["glúten"]
+
+
+def test_product_detail_patch_labelling_freezes_recipe_derivation(client, operator, catalog):
+    """Editar a rotulagem à mão desliga a derivação a partir da receita.
+
+    Sem isso o próximo save da Recipe sobrescreveria em silêncio o que o operador
+    acabou de digitar (ver ``dietary_from_recipe``).
+    """
+    client.force_login(operator)
+    assert _patch(client, "PAO", {"allergens": ["leite"]}).status_code == 200
+
+    catalog["pao"].refresh_from_db()
+    assert catalog["pao"].metadata["dietary_auto_filled"] is False
+
+
+def test_product_detail_patch_nutrition(client, operator, catalog):
+    client.force_login(operator)
+    resp = _patch(client, "PAO", {
+        "nutrition_facts": {
+            "serving_size_g": 50, "energy_kcal": 130, "carbohydrates_g": 26,
+            "total_fat_g": 1, "trans_fat_g": 0,
+        },
+    })
+    assert resp.status_code == 200
+    facts = resp.json()["product"]["nutrition_facts"]
+    assert facts["serving_size_g"] == 50
+    assert facts["energy_kcal"] == 130
+
+    catalog["pao"].refresh_from_db()
+    # sentinel: passou a ser manual, então a receita não recalcula por cima
+    assert catalog["pao"].nutrition_facts["auto_filled"] is False
+
+
+def test_product_detail_patch_nutrition_enforces_anvisa(client, operator, catalog):
+    """Gordura trans acima da total é barrada pelo ``Product.clean()``."""
+    client.force_login(operator)
+    resp = _patch(client, "PAO", {
+        "nutrition_facts": {"serving_size_g": 50, "total_fat_g": 1, "trans_fat_g": 5},
+    })
+    assert resp.status_code == 400
+
+
+def test_product_detail_patch_social_is_partial(client, operator, catalog):
+    """Mandar só a legenda não apaga a marca gravada antes."""
+    client.force_login(operator)
+    assert _patch(client, "PAO", {"social": {"brand": "Nelson"}}).status_code == 200
+    resp = _patch(client, "PAO", {"social": {"social_caption": "Fresquinho todo dia"}})
+    assert resp.status_code == 200
+    social = resp.json()["product"]["social"]
+    assert social["brand"] == "Nelson"
+    assert social["social_caption"] == "Fresquinho todo dia"
+
+
+def test_product_detail_patch_social_rejects_bad_gtin(client, operator, catalog):
+    client.force_login(operator)
+    resp = _patch(client, "PAO", {"social": {"gtin": "123"}})
+    assert resp.status_code == 400
+
+
+def test_product_detail_patch_fiscal(client, operator, catalog):
+    client.force_login(operator)
+    resp = _patch(client, "PAO", {"fiscal": {"profile": "own_production", "ncm": "19059090"}})
+    assert resp.status_code == 200
+    assert resp.json()["product"]["fiscal"]["ncm"] == "19059090"
+
+    catalog["pao"].refresh_from_db()
+    assert catalog["pao"].metadata["fiscal"]["ncm"] == "19059090"
+
+
+def test_product_detail_patch_fiscal_rejects_short_ncm(client, operator, catalog):
+    client.force_login(operator)
+    assert _patch(client, "PAO", {"fiscal": {"ncm": "123"}}).status_code == 400
+
+
+def test_product_detail_patch_fiscal_rejects_cest_on_own_production(client, operator, catalog):
+    """CEST não se aplica a fabricação própria — o perfil decide, não o operador."""
+    client.force_login(operator)
+    resp = _patch(client, "PAO", {
+        "fiscal": {"profile": "own_production", "ncm": "19059090", "cest": "1234567"},
+    })
+    assert resp.status_code == 400
+
+
+def test_product_detail_patch_fiscal_requires_cest_on_resale(client, operator, catalog):
+    client.force_login(operator)
+    resp = _patch(client, "PAO", {"fiscal": {"profile": "resale", "ncm": "19059090"}})
+    assert resp.status_code == 400

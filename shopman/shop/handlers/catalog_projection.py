@@ -36,15 +36,29 @@ logger = logging.getLogger(__name__)
 class CatalogProjectHandler:
     topic = CATALOG_PROJECT_SKU
 
-    def __init__(self, backend) -> None:
-        self.backend = backend
+    def __init__(self, backend=None) -> None:
+        # backend kept for backward compat; at runtime we resolve per listing_ref.
+        self._fallback_backend = backend
+
+    def _resolve_backend(self, listing_ref: str):
+        from shopman.offerman.conf import get_projection_backend
+
+        backend = get_projection_backend(listing_ref)
+        if backend is None and self._fallback_backend is not None:
+            return self._fallback_backend
+        return backend
 
     def handle(self, *, message: Directive, ctx: dict) -> None:
         payload = message.payload
         sku = payload["sku"]
         listing_ref = payload.get("listing_ref", "ifood")
 
-        if not _ifood_channel_active(listing_ref):
+        backend = self._resolve_backend(listing_ref)
+        if backend is None:
+            logger.warning("catalog_projection: no backend for listing_ref=%s, skipping", listing_ref)
+            return
+
+        if not _channel_or_showcase_active(listing_ref):
             return
 
         from shopman.shop.adapters.catalog_projection_ifood import IFoodRateLimitError
@@ -53,14 +67,29 @@ class CatalogProjectHandler:
         # published + sellable) or retract it (paused, unpublished, or dropped
         # from the listing). Reading state at handle time makes the directive
         # idempotent to the final state, so rapid pause→resume converges.
+        from shopman.shop.services import catalog_sync, social_publish_rules
+
         item = _get_projected_item(sku, listing_ref)
+        retracting = not (item is not None and item.is_published and item.is_sellable)
+
+        # Publish rules gate an UPSERT (not a retract): don't push an item the
+        # platform would reject (imageless) or that has no stock yet (→ pending,
+        # re-projected when availability_changed fires).
+        if not retracting:
+            gate = social_publish_rules.projection_gate(item, listing_ref)
+            if gate is not None:
+                status, reason = gate
+                catalog_sync.record_sync(sku, listing_ref, status=status, error=reason)
+                return
+
         try:
-            if item is not None and item.is_published and item.is_sellable:
-                result = self.backend.project([item], channel=listing_ref)
+            if not retracting:
+                result = backend.project([item], channel=listing_ref)
             else:
-                result = self.backend.retract([sku], channel=listing_ref)
+                result = backend.retract([sku], channel=listing_ref)
         except IFoodRateLimitError as exc:
-            # Rate limit: defer with Retry-After from API response
+            # Rate limit: defer with Retry-After from API response.
+            catalog_sync.record_sync(sku, listing_ref, status="pending", error="rate limited")
             message.status = "queued"
             message.available_at = timezone.now() + timedelta(seconds=exc.retry_after)
             message.save(update_fields=["status", "available_at", "updated_at"])
@@ -71,17 +100,27 @@ class CatalogProjectHandler:
             return
 
         if result.success:
+            catalog_sync.record_sync(
+                sku, listing_ref, status="retracted" if retracting else "synced",
+            )
             return
 
+        catalog_sync.record_sync(sku, listing_ref, status="error", error="; ".join(result.errors))
         raise DirectiveTransientError("; ".join(result.errors))
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
 
-def _ifood_channel_active(listing_ref: str) -> bool:
-    from shopman.shop.models import Channel
-    return Channel.objects.filter(ref=listing_ref, is_active=True).exists()
+def _channel_or_showcase_active(listing_ref: str) -> bool:
+    from shopman.shop.models import Channel, Showcase
+
+    if Channel.objects.filter(ref=listing_ref, is_active=True).exists():
+        return True
+    # Showcase projection backends are keyed by kind (e.g. "meta"), not ref.
+    if Showcase.objects.filter(kind=listing_ref, is_active=True).exists():
+        return True
+    return False
 
 
 def _get_projected_item(sku: str, listing_ref: str) -> ProjectedItem | None:
@@ -102,7 +141,16 @@ def _projection_listing_refs() -> list[str]:
 
 
 def on_product_created(sender, instance, sku: str, **kwargs) -> None:
+    from shopman.shop.services import catalog_sync, social_publish_rules
+
     for listing_ref in _projection_listing_refs():
+        if not social_publish_rules.should_auto_publish_new(listing_ref):
+            # Publish rule opted out of auto-entry — record it, wait for a manual
+            # publish/resync. (Manual resync bypasses this guard.)
+            catalog_sync.record_sync(
+                sku, listing_ref, status="skipped", error="regra: não publicar ao criar",
+            )
+            continue
         _enqueue_project(sku, listing_ref, trigger="product_created", extra={})
 
 
@@ -136,6 +184,11 @@ def on_availability_changed(sender, instance, listing_ref: str, sku: str, **kwar
     if listing_ref not in _projection_listing_refs():
         return
     _enqueue_project(sku, listing_ref, trigger="availability_changed", extra={})
+
+
+def enqueue_project(sku: str, listing_ref: str, *, trigger: str = "manual_resync") -> None:
+    """Public re-projection enqueue — used by the backstage "sincronizar agora" action."""
+    _enqueue_project(sku, listing_ref, trigger=trigger, extra={})
 
 
 def _enqueue_project(sku: str, listing_ref: str, trigger: str, extra: dict) -> None:

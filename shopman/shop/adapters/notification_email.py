@@ -34,6 +34,8 @@ SUBJECT_TEMPLATES: dict[str, str] = {
     "preorder_reminder": "Lembrete: pedido {order_ref} agendado para amanhã",
     "stock_alert": "Alerta de estoque: {sku}",
     "stock.arrived": "Boa noticia: {product_name} chegou",
+    "production.ready": "Saiu do forno agora: {product_name}",
+    "broadcast.post": "Novidade na padaria",
 }
 
 BODY_TEMPLATES: dict[str, str] = {
@@ -119,6 +121,12 @@ BODY_TEMPLATES: dict[str, str] = {
         "{product_name} chegou.{reserve_note}{deadline_note}\n\n"
         "{cta} {action_url}\n"
     ),
+    "production.ready": (
+        "Saiu do forno agora!\n\n"
+        "{product_name} acabou de ficar pronto.\n\n"
+        "{cta} {action_url}\n"
+    ),
+    "broadcast.post": "{body}\n\n{cta} {action_url}\n",
 }
 
 

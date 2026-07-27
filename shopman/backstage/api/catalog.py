@@ -16,7 +16,11 @@ from rest_framework.views import APIView
 from shopman.backstage.api.permissions import HasBackstagePermission
 from shopman.backstage.api.projections import projection_data
 from shopman.backstage.services import catalog as catalog_service
-from shopman.backstage.services.exceptions import CatalogError
+from shopman.backstage.services.exceptions import (
+    AiAssistError,
+    AiAssistNotConfigured,
+    CatalogError,
+)
 
 
 def _actor(request) -> str:
@@ -112,6 +116,61 @@ class CatalogProductView(_CatalogBase):
                 "is_sellable": product.is_sellable,
             }
         )
+
+
+class CatalogProductDetailView(_CatalogBase):
+    """Lê/edita os campos escalares de UM produto (painel de produto do Gestor).
+
+    GET devolve todos os campos editáveis + contexto somente-leitura (SKU, coleção
+    primária). PATCH faz merge parcial: chave ausente no corpo mantém o valor atual.
+    A escrita passa por ``full_clean`` + ``save`` no facade (preserva a re-projeção).
+    """
+
+    def get(self, request, sku: str):
+        try:
+            return Response({"product": catalog_service.get_product_detail(sku)})
+        except CatalogError as exc:
+            return Response({"detail": str(exc)}, status=404)
+
+    def patch(self, request, sku: str):
+        try:
+            product = catalog_service.update_product_detail(
+                sku, request.data, actor=_actor(request)
+            )
+        except CatalogError as exc:
+            return Response({"detail": str(exc)}, status=400)
+        return Response({"ok": True, "product": product})
+
+
+class CatalogAiAssistView(_CatalogBase):
+    """Sugere o conteúdo de UM campo de texto de um produto (assist de IA).
+
+    Por campo, nunca em lote: o operador pede a sugestão de um campo e aceita ou
+    descarta ela sozinha na superfície. Não grava nada — quem persiste é o PATCH
+    do produto (ou o POST social), depois do "Aceitar".
+
+    503 quando o deployment não tem ``AI_ASSIST_API_KEY``: a superfície mostra um
+    aviso, não um erro. O assist é conveniência, não caminho crítico.
+    """
+
+    def post(self, request):
+        sku = (request.data.get("sku") or "").strip()
+        field = (request.data.get("field") or "").strip()
+        if not sku or not field:
+            return Response({"detail": "sku e field são obrigatórios."}, status=400)
+
+        try:
+            suggestion = catalog_service.ai_assist_field(
+                sku, field, current_value=str(request.data.get("current_value") or "")
+            )
+        except AiAssistNotConfigured as exc:
+            return Response({"detail": str(exc)}, status=503)
+        except AiAssistError as exc:
+            return Response({"detail": str(exc)}, status=502)
+        except CatalogError as exc:
+            return Response({"detail": str(exc)}, status=400)
+
+        return Response({"suggestion": suggestion})
 
 
 class CatalogBulkView(_CatalogBase):
@@ -229,6 +288,118 @@ class CatalogReorderItemsView(_CatalogBase):
         except CatalogError as exc:
             return Response({"detail": str(exc)}, status=400)
         return Response({"ok": True, "count": count})
+
+
+class CatalogSyncStatusView(_CatalogBase):
+    """Estado de sync por produto × plataforma (para o selo de cada célula)."""
+
+    def get(self, request):
+        from shopman.shop.services.catalog_sync import sync_status_map
+
+        platform = (request.query_params.get("platform") or "").strip() or None
+        skus_param = (request.query_params.get("sku") or "").strip()
+        skus = [s for s in (part.strip() for part in skus_param.split(",")) if s] or None
+        return Response({"sync_status": sync_status_map(skus, platform=platform)})
+
+
+class CatalogSocialView(_CatalogBase):
+    """Lê/salva os atributos PIM sociais (Product.metadata['social']) de um SKU.
+
+    O painel PIM da matriz edita marca/GTIN/categoria/hashtags e salva aqui. A
+    escrita valida via ``ProductSocialAttributes.errors()`` e persiste com
+    ``set_social_attributes`` (só chaves não-default) — sem migração (padrão
+    fiscal/nutrition). Salvar re-projeta via o gatilho de ``Product.save``.
+    """
+
+    def get(self, request):
+        from shopman.offerman import get_social_attributes
+        from shopman.offerman.models import Product
+
+        sku = (request.query_params.get("sku") or "").strip()
+        if not sku:
+            return Response({"detail": "sku é obrigatório."}, status=400)
+        product = Product.objects.filter(sku=sku).first()
+        if product is None:
+            return Response({"detail": "Produto não encontrado."}, status=404)
+        return Response({"sku": sku, "social": _social_payload(get_social_attributes(product))})
+
+    def post(self, request):
+        from shopman.offerman import (
+            ProductSocialAttributes,
+            get_social_attributes,
+            set_social_attributes,
+        )
+        from shopman.offerman.models import Product
+
+        sku = (request.data.get("sku") or "").strip()
+        if not sku:
+            return Response({"detail": "sku é obrigatório."}, status=400)
+        product = Product.objects.filter(sku=sku).first()
+        if product is None:
+            return Response({"detail": "Produto não encontrado."}, status=404)
+
+        current = get_social_attributes(product)
+        data = request.data
+        # Merge parcial: campo ausente no corpo mantém o valor atual.
+        attrs = ProductSocialAttributes(
+            brand=_field(data, "brand", current.brand),
+            gtin=_field(data, "gtin", current.gtin),
+            mpn=_field(data, "mpn", current.mpn),
+            condition=_field(data, "condition", current.condition),
+            google_product_category=_field(
+                data, "google_product_category", current.google_product_category
+            ),
+            tiktok_category_id=_field(data, "tiktok_category_id", current.tiktok_category_id),
+            hashtags=data["hashtags"] if "hashtags" in data else list(current.hashtags),
+            social_caption=_field(data, "social_caption", current.social_caption),
+        )
+        problems = attrs.errors()
+        if problems:
+            return Response({"detail": problems[0], "errors": problems}, status=400)
+
+        product.metadata = set_social_attributes(product.metadata, attrs)
+        product.save(update_fields=["metadata"])
+        return Response({"ok": True, "sku": sku, "social": _social_payload(attrs)})
+
+
+class CatalogResyncView(_CatalogBase):
+    """Re-enfileira a projeção de um SKU (uma plataforma ou todas as configuradas)."""
+
+    def post(self, request):
+        sku = (request.data.get("sku") or "").strip()
+        platform = (request.data.get("platform") or "").strip()
+        if not sku:
+            return Response({"detail": "sku é obrigatório."}, status=400)
+
+        from shopman.offerman.conf import get_projection_backend_channels
+
+        from shopman.shop.handlers.catalog_projection import enqueue_project
+
+        targets = [platform] if platform else list(get_projection_backend_channels())
+        for listing_ref in targets:
+            enqueue_project(sku, listing_ref, trigger="manual_resync")
+        return Response({"ok": True, "sku": sku, "platforms": targets})
+
+
+def _field(data, key: str, current: str) -> str:
+    """Valor textual do corpo (aparado) ou o atual quando a chave está ausente."""
+    if key not in data:
+        return current
+    return str(data.get(key) or "").strip()
+
+
+def _social_payload(attrs) -> dict:
+    return {
+        "brand": attrs.brand,
+        "gtin": attrs.gtin,
+        "mpn": attrs.mpn,
+        "condition": attrs.condition,
+        "google_product_category": attrs.google_product_category,
+        "tiktok_category_id": attrs.tiktok_category_id,
+        "hashtags": list(attrs.hashtags),
+        "social_caption": attrs.social_caption,
+        "has_data": attrs.has_data,
+    }
 
 
 def _as_int(value):

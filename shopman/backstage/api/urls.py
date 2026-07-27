@@ -5,14 +5,31 @@ from __future__ import annotations
 from django.urls import path
 
 from .alerts import AlertAckView, AlertListView
+from .broadcast import (
+    BroadcastBoardView,
+    BroadcastHistoryView,
+    BroadcastOptionsView,
+    BroadcastPostApproveView,
+    BroadcastPostDetailView,
+    BroadcastPostDiscardView,
+    BroadcastRuleDetailView,
+    BroadcastRuleListView,
+    PostTemplateDetailView,
+    PostTemplateListView,
+)
 from .catalog import (
+    CatalogAiAssistView,
     CatalogBulkPriceView,
     CatalogBulkView,
     CatalogCellView,
     CatalogMatrixView,
+    CatalogProductDetailView,
     CatalogProductView,
     CatalogReorderCollectionsView,
     CatalogReorderItemsView,
+    CatalogResyncView,
+    CatalogSocialView,
+    CatalogSyncStatusView,
 )
 from .hub import HubView
 from .kds import (
@@ -24,6 +41,11 @@ from .kds import (
     KDSTicketDoneView,
     KDSTicketItemView,
     KDSTicketRecallView,
+)
+from .notifications import (
+    NotificationActionView,
+    NotificationListView,
+    NotificationReadView,
 )
 from .operations import (
     DayClosingView,
@@ -152,11 +174,16 @@ urlpatterns = [
     path("catalog/", CatalogMatrixView.as_view(), name="api-backstage-catalog"),
     path("catalog/cell/", CatalogCellView.as_view(), name="api-backstage-catalog-cell"),
     path("catalog/product/", CatalogProductView.as_view(), name="api-backstage-catalog-product"),
+    path("catalog/product/<str:sku>/", CatalogProductDetailView.as_view(), name="api-backstage-catalog-product-detail"),
     path("catalog/bulk/", CatalogBulkView.as_view(), name="api-backstage-catalog-bulk"),
     path("catalog/bulk-price/", CatalogBulkPriceView.as_view(), name="api-backstage-catalog-bulk-price"),
     path("catalog/reorder-collections/", CatalogReorderCollectionsView.as_view(), name="api-backstage-catalog-reorder-collections"),
     path("catalog/reorder-items/", CatalogReorderItemsView.as_view(), name="api-backstage-catalog-reorder-items"),
-    # Expositores (display: menuboard/feeds)
+    path("catalog/sync-status/", CatalogSyncStatusView.as_view(), name="api-backstage-catalog-sync-status"),
+    path("catalog/resync/", CatalogResyncView.as_view(), name="api-backstage-catalog-resync"),
+    path("catalog/social/", CatalogSocialView.as_view(), name="api-backstage-catalog-social"),
+    path("catalog/ai-assist/", CatalogAiAssistView.as_view(), name="api-backstage-catalog-ai-assist"),
+    # Feeds (menuboard/Google/Meta)
     path("showcases/", ShowcaseBoardView.as_view(), name="api-backstage-showcases"),
     path("showcases/active/", ShowcaseActiveView.as_view(), name="api-backstage-showcases-active"),
     path("showcases/collections/", ShowcaseCollectionsView.as_view(), name="api-backstage-showcases-collections"),
@@ -179,6 +206,31 @@ urlpatterns = [
     # Operator alerts
     path("alerts/", AlertListView.as_view(), name="api-backstage-alerts"),
     path("alerts/<int:pk>/ack/", AlertAckView.as_view(), name="api-backstage-alert-ack"),
+    # Notificações PESSOAIS (vs. alerts, que são da loja): o gestor recebe o
+    # pedido de aprovação onde estiver. Push pelo canal SSE ``user-<id>``.
+    path("notifications/", NotificationListView.as_view(), name="api-backstage-notifications"),
+    path(
+        "notifications/<int:pk>/read/",
+        NotificationReadView.as_view(),
+        name="api-backstage-notification-read",
+    ),
+    path(
+        "notifications/<int:pk>/action/",
+        NotificationActionView.as_view(),
+        name="api-backstage-notification-action",
+    ),
+    # Broadcast — marketing operacional (surfaces/broadcast-nuxt). Gate próprio
+    # (`shop.manage_broadcast`): o gestor de marketing não é o de pedidos.
+    path("broadcast/", BroadcastBoardView.as_view(), name="api-backstage-broadcast"),
+    path("broadcast/history/", BroadcastHistoryView.as_view(), name="api-backstage-broadcast-history"),
+    path("broadcast/options/", BroadcastOptionsView.as_view(), name="api-backstage-broadcast-options"),
+    path("broadcast/rules/", BroadcastRuleListView.as_view(), name="api-backstage-broadcast-rules"),
+    path("broadcast/rules/<int:pk>/", BroadcastRuleDetailView.as_view(), name="api-backstage-broadcast-rule"),
+    path("broadcast/templates/", PostTemplateListView.as_view(), name="api-backstage-broadcast-templates"),
+    path("broadcast/templates/<int:pk>/", PostTemplateDetailView.as_view(), name="api-backstage-broadcast-template"),
+    path("broadcast/posts/<int:pk>/", BroadcastPostDetailView.as_view(), name="api-backstage-broadcast-post"),
+    path("broadcast/posts/<int:pk>/approve/", BroadcastPostApproveView.as_view(), name="api-backstage-broadcast-approve"),
+    path("broadcast/posts/<int:pk>/discard/", BroadcastPostDiscardView.as_view(), name="api-backstage-broadcast-discard"),
     # Production — work order actions
     path("production/plan/", WorkOrderPlanView.as_view(), name="api-backstage-wo-plan"),
     path("production/<int:wo_id>/start/", WorkOrderStartView.as_view(), name="api-backstage-wo-start"),

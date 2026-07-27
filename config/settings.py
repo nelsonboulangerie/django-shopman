@@ -207,6 +207,8 @@ INSTALLED_APPS = [
     "shopman.refs.contrib.admin_unfold",
     "shopman.offerman.contrib.admin_unfold",
     "shopman.fiscalman.contrib.offerman",
+    # Social PIM tab — must run AFTER fiscalman so both tabs stack on ProductAdmin.
+    "shopman.offerman.contrib.social",
     "shopman.stockman.contrib.admin_unfold",
     "shopman.craftsman.contrib.admin_unfold",
     "shopman.payman.contrib.admin_unfold",
@@ -538,6 +540,26 @@ SHOPMAN_IFOOD = {
     ).strip(),
 }
 
+# ── Meta (Instagram + Facebook Commerce Catalog) ───────────────────
+# Push do catálogo p/ o Meta Commerce Catalog (IG Shopping + FB Shop; WhatsApp
+# curado na Arc G) via Graph items_batch. Credencial = System User access token de
+# longa duração do Business Manager (o token JÁ é a credencial; sem troca em runtime).
+# Inerte sem access_token/catalog_id — o adapter roda em dry-run/mock. Ligado só
+# quando META_CATALOG_PROJECTION=1 (registro abaixo), off by default.
+SHOPMAN_META = {
+    "catalog_id": os.environ.get("META_CATALOG_ID", "").strip(),
+    "access_token": os.environ.get("META_ACCESS_TOKEN", "").strip(),
+    "api_version": os.environ.get("META_API_VERSION", "v21.0").strip(),
+    "api_base": os.environ.get("META_API_BASE", "https://graph.facebook.com"),
+    "currency": os.environ.get("META_CURRENCY", "BRL").strip(),
+    # Base pública da loja p/ montar o `link` de cada item (Meta exige link no create).
+    "store_url": os.environ.get("META_STORE_URL", "").strip(),
+    # Marca padrão quando o produto não tem `brand` no PIM.
+    "default_brand": os.environ.get("META_DEFAULT_BRAND", "").strip(),
+    "batch_size": int(os.environ.get("META_BATCH_SIZE", "5000")),
+    "timeout": int(os.environ.get("META_TIMEOUT", "30")),
+}
+
 # ── Machine (courier — despacho de entregadores) ───────────────────
 # API da central de entregas (TaOn roda sobre a Machine/Gaudium). O adapter só
 # liga quando SHOPMAN_COURIER_ADAPTER aponta para courier_machine E o canal
@@ -575,6 +597,12 @@ _CATALOG_PROJECTION_BACKENDS: dict[str, str] = {}
 if os.environ.get("IFOOD_CATALOG_PROJECTION", "").strip().lower() in ("1", "true", "yes"):
     _CATALOG_PROJECTION_BACKENDS["ifood"] = (
         "shopman.shop.adapters.catalog_projection_ifood.IFoodCatalogProjection"
+    )
+# Meta (IG/FB) — projeção do catálogo social, off by default. Keyed pelo listing_ref
+# "meta" (Showcase/Listing Meta). Requer SHOPMAN_META (token + catalog_id) p/ ir live.
+if os.environ.get("META_CATALOG_PROJECTION", "").strip().lower() in ("1", "true", "yes"):
+    _CATALOG_PROJECTION_BACKENDS["meta"] = (
+        "shopman.shop.adapters.catalog_projection_meta.MetaCatalogProjection"
     )
 
 # ── SMS (Comtele — OTP por SMS) ─────────────────────────────────────
@@ -717,8 +745,8 @@ UNFOLD = {
             "models": ["orderman.order", "orderman.session", "orderman.directive"],
             "items": [
                 {"title": "Pedidos", "link": reverse_lazy("admin:orderman_order_changelist")},
-                {"title": "Sessões", "link": reverse_lazy("admin:orderman_session_changelist")},
-                {"title": "Diretivas", "link": reverse_lazy("admin:orderman_directive_changelist")},
+                {"title": "Comandas", "link": reverse_lazy("admin:orderman_session_changelist")},
+                {"title": "Ações", "link": reverse_lazy("admin:orderman_directive_changelist")},
             ],
         },
     ],
@@ -812,6 +840,14 @@ OFFERMAN = {
     # Canonical catalog projection registry (env-gated above).
     "PROJECTION_BACKENDS": _CATALOG_PROJECTION_BACKENDS,
 }
+
+# ── Assist de IA no catálogo ─────────────────────────────────────────
+# Sugestão de texto POR CAMPO no painel de produto do Gestor (descrição, legenda
+# social, hashtags). Sem chave configurada o endpoint responde 503 e a superfície
+# mostra um aviso — nunca um erro: o assist é conveniência, não caminho crítico.
+AI_ASSIST_PROVIDER = os.environ.get("AI_ASSIST_PROVIDER", "anthropic")
+AI_ASSIST_API_KEY = os.environ.get("AI_ASSIST_API_KEY", "")
+AI_ASSIST_MODEL = os.environ.get("AI_ASSIST_MODEL", "claude-opus-4-8")
 
 # ── Craftsman (micro-MRP integration) ──────────────────────────────
 
@@ -1074,6 +1110,13 @@ SHOPMAN_PRODUCTION_BASE_URL = (
     os.environ.get("SHOPMAN_PRODUCTION_BASE_URL") or ""
 ).strip().rstrip("/")
 
+# Base URL pública do Broadcast (gestor de marketing) — app Nuxt dedicado
+# (surfaces/broadcast-nuxt). Vazio ⇒ o tile "Broadcast" some da Central (sem
+# link morto), e o gestor acessa direto pelo subdomínio (broadcast.).
+SHOPMAN_BROADCAST_BASE_URL = (
+    os.environ.get("SHOPMAN_BROADCAST_BASE_URL") or ""
+).strip().rstrip("/")
+
 # Zona de operador (OPERATOR-AUTH-PLAN, Opção A) — login único + sessão Django
 # escopada a um domínio-pai SEPARADO da loja pública. Os apps de operador
 # (gestor./kds./pdv./prod.) moram nesse domínio e proxeiam para o alias de API
@@ -1090,9 +1133,9 @@ SHOPMAN_OPERATOR_API_HOST = (os.environ.get("SHOPMAN_OPERATOR_API_HOST") or "").
 # URLs das superfícies para a Central de Apps (surfaces/hub-nuxt). REUSA as base URLs
 # públicas que o nav do Admin já usa — UMA fonte por superfície (DRY): quem já configurou
 # os links de operador do Admin (SHOPMAN_POS_BASE_URL etc.) ganha a Central de graça, sem
-# env vars novas. Vazio ⇒ o launcher usa os defaults de dev (127.0.0.1:PORT) de
-# `projections/hub.py`. O tile Loja abre a loja do cliente (storefront, mesma base dos
-# links de cliente).
+# env vars novas. Vazio ⇒ o tile some do launcher (nunca link morto); só em DEBUG o
+# launcher cai nos defaults de dev (127.0.0.1:PORT) de `projections/hub.py`. O tile Loja
+# abre a loja do cliente (storefront, mesma base dos links de cliente).
 SHOPMAN_SURFACE_URLS = {
     key: url
     for key, url in {
@@ -1100,6 +1143,7 @@ SHOPMAN_SURFACE_URLS = {
         "kds": SHOPMAN_KDS_BASE_URL,
         "gestor": SHOPMAN_ORDERS_BASE_URL,
         "production": SHOPMAN_PRODUCTION_BASE_URL,
+        "broadcast": SHOPMAN_BROADCAST_BASE_URL,
         "loja": SHOPMAN_STOREFRONT_BASE_URL,
     }.items()
     if url

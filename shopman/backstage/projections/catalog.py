@@ -35,17 +35,22 @@ def _edit_url(product) -> str:
 
 @dataclass(frozen=True)
 class SurfaceProjection:
-    """Uma superfície — coluna da matriz. Canal (transaciona) ou Expositor (só exibe)."""
+    """Uma superfície — coluna da matriz. Canal (transaciona) ou Feed (só exibe)."""
 
     ref: str
     name: str
+    # Rótulo curto do cabeçalho da coluna (a matriz é estreita). Nunca vazio: cai
+    # para `name` quando não há um curto configurado. O `name` completo segue no
+    # tooltip da coluna e em toda lista onde há espaço.
+    short_name: str
     is_projection_target: bool  # tem backend na registry canônica (Frente 1) — ex.: iFood
     sync_status: str  # ok | error | never | na
     kind: str = "channel"  # channel (transacional) | display (menuboard) | feed (Google/Meta)
-    transactional: bool = True  # canal vende (preço/publicação); expositor só exibe (pausa)
-    icon: str = ""  # dica de ícone p/ expositores (tv/rss)
-    is_active: bool = True  # expositor ligado/desligado (canal sempre ativo aqui)
-    output_path: str = ""  # saída pública do expositor (abrir/prever); vazio p/ canal
+    transactional: bool = True  # canal vende (preço/publicação); feed só exibe (pausa)
+    icon: str = ""  # dica de ícone p/ feeds (tv/rss)
+    is_active: bool = True  # feed ligado/desligado (canal sempre ativo aqui)
+    output_path: str = ""  # saída pública do feed (abrir/prever); vazio p/ canal
+    sync_key: str = ""  # chave no CatalogSyncState.platform (ref p/ canais, kind p/ showcases)
 
 
 @dataclass(frozen=True)
@@ -59,6 +64,12 @@ class SurfaceCellProjection:
     available: bool  # produto-level AND listing-level
     price_q: int | None
     price_display: str
+    # Estado de sync por (produto × plataforma) — CatalogSyncState (Arc C). Só faz
+    # sentido em superfície que é alvo de projeção (canal com backend na registry);
+    # vazio quando nunca houve push ou a superfície não projeta (feed de pull).
+    sync_status: str = ""  # synced | pending | error | retracted | skipped | "" (nunca)
+    sync_error: str = ""  # última mensagem de erro (quando status=error)
+    synced_at: str = ""  # ISO do último push OK (synced/retracted)
 
 
 @dataclass(frozen=True)
@@ -84,6 +95,11 @@ class CatalogRowProjection:
     replenish_qty: int  # vindo por produção (planejado + em produção) — "fornada"
     keywords: tuple[str, ...]
     cells: tuple[SurfaceCellProjection, ...]  # alinhado à ordem de ``surfaces``
+    # PIM social (Arc A) — atributos de catálogo social em Product.metadata['social'],
+    # lidos por get_social_attributes. Alimentam o painel PIM e sinalizam prontidão de
+    # feed (Google/Meta/TikTok exigem brand + categoria). Ver ``_social_view``.
+    social: dict
+    pim_complete: bool  # tem o essencial p/ publicar em feed (brand + categoria Google)
 
 
 @dataclass(frozen=True)
@@ -156,6 +172,38 @@ def _stock_for(skus: list[str]) -> tuple[dict[str, dict | None], int, dict[str, 
     return availability, threshold, planned
 
 
+def _social_view(product) -> tuple[dict, bool]:
+    """Atributos PIM sociais da linha + prontidão de feed.
+
+    ``pim_complete`` = tem o mínimo p/ um feed comercial (Google/Meta/TikTok): marca
+    e categoria Google. GTIN/condição são refinamentos, não bloqueiam o sinal verde.
+    """
+    from shopman.offerman import get_social_attributes
+
+    attrs = get_social_attributes(product)
+    view = {
+        "brand": attrs.brand,
+        "gtin": attrs.gtin,
+        "mpn": attrs.mpn,
+        "condition": attrs.condition,
+        "google_product_category": attrs.google_product_category,
+        "tiktok_category_id": attrs.tiktok_category_id,
+        "hashtags": list(attrs.hashtags),
+        "social_caption": attrs.social_caption,
+        "has_data": attrs.has_data,
+    }
+    complete = bool(attrs.brand and attrs.google_product_category)
+    return view, complete
+
+
+def _cell_sync(sync_map: dict, sku: str, surface_ref: str) -> tuple[str, str, str]:
+    """(status, error, synced_at) do CatalogSyncState p/ (sku, surface_ref) — ou vazios."""
+    rec = sync_map.get(sku, {}).get(surface_ref)
+    if not rec:
+        return "", "", ""
+    return rec.get("status") or "", rec.get("error") or "", rec.get("last_synced_at") or ""
+
+
 def _surface_sync_status(listing, is_projection_target: bool) -> str:
     if not is_projection_target:
         return "na"
@@ -191,20 +239,26 @@ def _build_surfaces() -> tuple[list[SurfaceProjection], dict[str, dict]]:
     surfaces: list[SurfaceProjection] = []
     for ch in channels:
         is_target = get_projection_backend(ch.ref) is not None
+        # `short_name` é chave de ChannelConfig, lida direto do override do canal:
+        # é presentação POR canal (não há default de loja que faça sentido), e assim
+        # evitamos um Shop.load() por canal só para resolver a cascata.
+        short = str((ch.config or {}).get("short_name", "")).strip()
         surfaces.append(
             SurfaceProjection(
                 ref=ch.ref,
                 name=ch.name or ch.ref,
+                short_name=short or ch.name or ch.ref,
                 is_projection_target=is_target,
                 sync_status=_surface_sync_status(listings.get(ch.ref), is_target),
                 kind="channel",
                 transactional=True,
+                sync_key=ch.ref,
             )
         )
     return surfaces, cells_index
 
 
-# capability/ícone por tipo de expositor (espelha backstage.projections.showcase)
+# capability/ícone por tipo de feed (espelha backstage.projections.showcase)
 _SHOWCASE_META = {
     "menuboard": {"capability": "display", "icon": "tv", "path": "/menuboard/{ref}/"},
     "google": {"capability": "feed", "icon": "rss", "path": "/feed/{ref}.xml"},
@@ -213,11 +267,12 @@ _SHOWCASE_META = {
 
 
 def _build_showcase_surfaces() -> tuple[list[SurfaceProjection], dict[str, dict]]:
-    """Expositores como colunas + índice {ref: {"members": set, "paused": set}}.
+    """Feeds como colunas + índice {ref: {"members": set, "paused": set}}.
 
-    ``members`` = SKUs presentes no expositor (união dos produtos das suas coleções).
-    ``paused`` = pausa LOCAL do item no expositor (a global é do produto, gate por cima).
+    ``members`` = SKUs presentes no feed (união dos produtos das suas coleções).
+    ``paused`` = pausa LOCAL do item no feed (a global é do produto, gate por cima).
     """
+    from shopman.offerman.conf import get_projection_backend
     from shopman.offerman.models import Collection
 
     from shopman.shop.models import Showcase
@@ -226,7 +281,7 @@ def _build_showcase_surfaces() -> tuple[list[SurfaceProjection], dict[str, dict]
     if not showcases:
         return [], {}
 
-    # resolve os SKUs de cada coleção uma única vez (reuso entre expositores)
+    # resolve os SKUs de cada coleção uma única vez (reuso entre feeds)
     needed_refs = {r for sc in showcases for r in sc.collection_refs()}
     members_by_coll: dict[str, set[str]] = {}
     for coll in Collection.objects.filter(ref__in=needed_refs):
@@ -240,12 +295,17 @@ def _build_showcase_surfaces() -> tuple[list[SurfaceProjection], dict[str, dict]
         for r in sc.collection_refs():
             members |= members_by_coll.get(r, set())
         index[sc.ref] = {"members": members, "paused": sc.paused_skus()}
+        # Showcase projection backends are keyed by kind (e.g. "meta", "google").
+        is_target = get_projection_backend(sc.kind) is not None
+        short = str((sc.options or {}).get("short_name", "")).strip()
         surfaces.append(
             SurfaceProjection(
                 ref=sc.ref,
                 name=sc.name or sc.ref,
-                is_projection_target=False,
-                sync_status="na",
+                short_name=short or sc.name or sc.ref,
+                is_projection_target=is_target,
+                sync_status=_surface_sync_status(None, is_target),
+                sync_key=sc.kind,
                 kind=meta["capability"],
                 transactional=False,
                 icon=meta["icon"],
@@ -279,7 +339,13 @@ def build_catalog_matrix(collection_ref: str = "") -> CatalogMatrixProjection:
         products = products.filter(pk__in=coll.product_queryset().values("pk")) if coll else products.none()
 
     products = list(products)
-    stock_by_sku, low_stock_threshold, planned_by_sku = _stock_for([p.sku for p in products])
+    skus = [p.sku for p in products]
+    stock_by_sku, low_stock_threshold, planned_by_sku = _stock_for(skus)
+
+    # Estado de sync por (produto × plataforma) — uma consulta p/ toda a matriz (Arc C).
+    from shopman.shop.services.catalog_sync import sync_status_map
+
+    sync_map = sync_status_map(skus)
 
     rows: list[CatalogRowProjection] = []
     for product in products:
@@ -292,8 +358,9 @@ def build_catalog_matrix(collection_ref: str = "") -> CatalogMatrixProjection:
 
         cells: list[SurfaceCellProjection] = []
         for surface in surfaces:
-            # Expositor (display/feed): célula = pertence ao expositor (via coleções) e
+            # Feed (menuboard/plataforma): célula = pertence ao feed (via coleções) e
             # pausa local; sem preço/publicação. A pausa global do produto gateia por cima.
+            sync_status, sync_error, synced_at = _cell_sync(sync_map, product.sku, surface.sync_key or surface.ref)
             if surface.ref in showcase_index:
                 sc = showcase_index[surface.ref]
                 in_showcase = product.sku in sc["members"]
@@ -312,6 +379,9 @@ def build_catalog_matrix(collection_ref: str = "") -> CatalogMatrixProjection:
                         ),
                         price_q=None,
                         price_display="",
+                        sync_status=sync_status,
+                        sync_error=sync_error,
+                        synced_at=synced_at,
                     )
                 )
                 continue
@@ -327,6 +397,9 @@ def build_catalog_matrix(collection_ref: str = "") -> CatalogMatrixProjection:
                         available=False,
                         price_q=None,
                         price_display="",
+                        sync_status=sync_status,
+                        sync_error=sync_error,
+                        synced_at=synced_at,
                     )
                 )
                 continue
@@ -342,12 +415,16 @@ def build_catalog_matrix(collection_ref: str = "") -> CatalogMatrixProjection:
                     available=available,
                     price_q=item.price_q,
                     price_display=_money(item.price_q),
+                    sync_status=sync_status,
+                    sync_error=sync_error,
+                    synced_at=synced_at,
                 )
             )
 
         stock = _stock_view(
             stock_by_sku.get(product.sku), low_stock_threshold, planned_by_sku.get(product.sku, 0)
         )
+        social_view, pim_complete = _social_view(product)
         rows.append(
             CatalogRowProjection(
                 sku=product.sku,
@@ -367,6 +444,8 @@ def build_catalog_matrix(collection_ref: str = "") -> CatalogMatrixProjection:
                 replenish_qty=stock["replenish_qty"],
                 keywords=tuple(product.keywords.names()),
                 cells=tuple(cells),
+                social=social_view,
+                pim_complete=pim_complete,
             )
         )
 

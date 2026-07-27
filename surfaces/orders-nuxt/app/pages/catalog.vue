@@ -4,28 +4,73 @@
 // inline reprice per cell; the collection axis (chips) scopes the view; selection +
 // a floating bulk bar act on the active recorte. Desktop-first, horizontal scroll on
 // narrow screens. The backend owns availability rules; this renders intent + reconciles.
-import { cellPrice, cellView, filterRows, rowStatus, surfaceDisplayIcon, surfaceKindLabel, syncBadge } from "~/presentation/catalog";
-import type { CatalogRowProjection, CollectionProjection, SurfaceCellProjection } from "~/types/catalog";
+import { cellPrice, cellSyncView, cellView, filterRows, rowStatus, surfaceDisplayIcon, syncBadge, syncErrorCount } from "~/presentation/catalog";
+import { catalogDimensions, filterByDimensions } from "~/presentation/catalogFilters";
+import { keepVisible, reconcile } from "../../../operator-kit/app/presentation/columnPicker";
+import type { HiddenColumns } from "../../../operator-kit/app/types/columns";
+import type { ActiveFilters } from "../../../operator-kit/app/types/filters";
+import type {
+  AssistableField,
+  CatalogRowProjection,
+  CollectionProjection,
+  ProductDetailPatch,
+  ProductDetailProjection,
+  SurfaceCellProjection,
+} from "~/types/catalog";
 
 const collectionRef = ref("");
 const {
-  matrix, pending, error, refresh, isBusy, cellKey, productKey, setCell, setProduct, bulkSet, bulkPrice,
-  reorderCollections, reorderItems, bulkBusy,
+  matrix, pending, error, refresh, isBusy, cellKey, productKey, detailKey, setCell, setProduct, bulkSet, bulkPrice,
+  resync, fetchProductDetail, saveProductDetail, reorderCollections, reorderItems, bulkBusy,
+  aiAssist, aiAssistKey,
 } = useCatalogMatrix(collectionRef);
 
 const surfaces = computed(() => matrix.value?.surfaces ?? []);
 const collections = computed(() => matrix.value?.collections ?? []);
-// Superfícies = canais (transacionam) + expositores (só exibem). Índice p/ a célula
-// saber o papel da coluna e onde começa a banda de expositores.
+// Superfícies = canais (transacionam) + feeds (só empurram dados). Índice p/ a
+// célula saber o papel da coluna e onde começa a banda de feeds. No backend o model
+// do feed chama-se ``Showcase`` — daí os nomes internos aqui.
 const surfaceByRef = computed(() => new Map(surfaces.value.map((s) => [s.ref, s])));
 const isCellTransactional = (cell: SurfaceCellProjection) => surfaceByRef.value.get(cell.surface_ref)?.transactional ?? true;
-const firstShowcaseRef = computed(() => surfaces.value.find((s) => !s.transactional)?.ref ?? "");
+
+// ── colunas visíveis (ColumnPicker) ────────────────────────────────────────────
+// A escolha é do operador e vale por estação. Cookie (não localStorage) pelo mesmo
+// motivo do rail: a matriz é renderizada no servidor (`server: true` no useFetch),
+// então o servidor já precisa saber quais colunas desenhar — senão a tela nasce com
+// todas e pisca ao hidratar. Guardamos as OCULTAS: canal/feed novo nasce visível.
+const hiddenColumns = useCookie<HiddenColumns>("catalog-hidden-columns", {
+  default: () => [],
+  sameSite: "lax",
+  maxAge: 60 * 60 * 24 * 365,
+  path: "/",
+});
+// Só as superfícies entram no seletor — a coluna do produto não é declarada, e é por
+// isso que ela não tem como ser ocultada.
+const columnOptions = computed(() => surfaces.value.map((s) => ({ id: s.ref, label: s.name })));
+// Higieniza contra superfície que sumiu do servidor (senão o registro vira lixo).
+const hidden = computed<HiddenColumns>(() => reconcile(columnOptions.value, hiddenColumns.value));
+const visibleSurfaces = computed(() => keepVisible(surfaces.value, hidden.value, (s) => s.ref));
+const visibleCells = (row: CatalogRowProjection) => keepVisible(row.cells, hidden.value, (c) => c.surface_ref);
+// A divisória da banda de feeds acompanha o recorte: cai no primeiro feed VISÍVEL.
+const firstShowcaseRef = computed(() => visibleSurfaces.value.find((s) => !s.transactional)?.ref ?? "");
 const channelsCount = computed(() => surfaces.value.filter((s) => s.transactional).length);
 const showcasesCount = computed(() => surfaces.value.filter((s) => !s.transactional).length);
 const query = ref("");
-const rows = computed<CatalogRowProjection[]>(() => filterRows(matrix.value?.rows ?? [], query.value));
+// Recorte por dimensões (envio, canal, publicação, venda, estoque, PIM). A coleção
+// fica FORA: é o eixo primário, mora nas pills (que também reordenam) e recorta no
+// servidor. Aqui é tudo client-side — a matriz já veio inteira.
+const filters = ref<ActiveFilters>({});
+const searched = computed<CatalogRowProjection[]>(() => filterRows(matrix.value?.rows ?? [], query.value));
+// As contagens das opções são lidas sobre o resultado da BUSCA (antes dos filtros),
+// senão marcar uma opção zeraria as contagens das outras.
+const dimensions = computed(() => catalogDimensions(surfaces.value, searched.value));
+const rows = computed<CatalogRowProjection[]>(
+  () => filterByDimensions(searched.value, surfaces.value, filters.value),
+);
 // status por linha (esmaecer/foto P&B/selo) computado uma vez por refresh.
 const rowStatuses = computed(() => Object.fromEntries(rows.value.map((r) => [r.sku, rowStatus(r)])));
+// há alguma superfície que projeta? (iFood/Meta/…) — gateia a UI de sync/PIM.
+const hasProjectionTargets = computed(() => surfaces.value.some((s) => s.is_projection_target));
 const activeCollection = computed(() => collections.value.find((c) => c.ref === collectionRef.value) ?? null);
 const loading = computed(() => pending.value && !matrix.value);
 
@@ -59,8 +104,13 @@ const {
 );
 
 // ── reordenar produtos (handle na linha) — só numa coleção MANUAL, sem busca ────
+// Arrastar só faz sentido sobre a coleção INTEIRA: com busca ou filtro ativo a lista
+// é um recorte, e a ordem gravada sairia errada.
 const canReorderRows = computed(
-  () => collectionRef.value !== "" && !activeCollection.value?.is_smart && query.value.trim() === "",
+  () => collectionRef.value !== ""
+    && !activeCollection.value?.is_smart
+    && query.value.trim() === ""
+    && Object.keys(filters.value).length === 0,
 );
 const rowOverride = ref<string[] | null>(null);
 const orderedRows = computed(
@@ -96,7 +146,7 @@ watch(collectionRef, clearSelection);
 
 const bulkSurface = ref("");
 watchEffect(() => { if (!bulkSurface.value && surfaces.value.length) bulkSurface.value = surfaces.value[0]!.ref; });
-// Expositor só pausa/reativa em lote — sem publicar/reprecificar (não transaciona).
+// Feed só pausa/reativa em lote — sem publicar/reprecificar (não transaciona).
 const bulkSurfaceIsShowcase = computed(() => {
   const s = surfaceByRef.value.get(bulkSurface.value);
   return !!s && !s.transactional;
@@ -154,14 +204,13 @@ function toggleProductPublish(row: CatalogRowProjection) {
 // (des)publicar). Um menu por vez; keyed por sku.
 const menuOpen = ref<string | null>(null);
 
-// deep-link para a edição do produto no Admin (host do Django, não o do Gestor).
+// host do Django (não o do Gestor) — usado nos deep-links de saída dos feeds.
 const djangoBase = useRuntimeConfig().public.djangoPublicBaseUrl as string;
-const editHref = (row: CatalogRowProjection) => (row.edit_url ? `${djangoBase}${row.edit_url}` : "");
 
 // ── cell pause/resume + inline reprice ─────────────────────────────────────────
-// A pausa por célula vale para canal (vende) e expositor (só exibe). No expositor o
-// backend grava em Showcase.options[paused_skus]; aqui é o mesmo gesto.
-const surfaceWord = (cell: SurfaceCellProjection) => (isCellTransactional(cell) ? "canal" : "expositor");
+// A pausa por célula vale para canal (vende) e feed (só exibe). No feed o backend
+// grava em Showcase.options[paused_skus]; aqui é o mesmo gesto.
+const surfaceWord = (cell: SurfaceCellProjection) => (isCellTransactional(cell) ? "canal" : "feed");
 function toggleCell(row: CatalogRowProjection, cell: SurfaceCellProjection) {
   if (!cell.in_listing) return;
   setCell(row.sku, cell.surface_ref, { is_sellable: !cell.is_sellable });
@@ -195,6 +244,59 @@ function priceTitle(row: CatalogRowProjection, cell: SurfaceCellProjection): str
     : cell.price_display;
 }
 
+// ── sync por célula + PIM (Arc H) ──────────────────────────────────────────────
+// Selo de sync por (produto × plataforma): resolve a superfície p/ saber se projeta.
+const cellSync = (cell: SurfaceCellProjection) => cellSyncView(surfaceByRef.value.get(cell.surface_ref), cell);
+const rowSyncErrors = (row: CatalogRowProjection) => syncErrorCount(row, surfaces.value);
+function resyncCell(row: CatalogRowProjection, cell: SurfaceCellProjection) {
+  resync(row.sku, cell.surface_ref);
+}
+function resyncRow(row: CatalogRowProjection) {
+  resync(row.sku);
+  menuOpen.value = null;
+}
+
+// painel de produto (edição completa) — abre pelo menu ⋯ da linha. A matriz não
+// carrega os campos longos: buscamos o detalhe sob demanda ao abrir. Os dados
+// sociais (PIM) são uma ABA daqui: o produto é um só, e antes eram dois painéis
+// que salvavam pedaços diferentes do mesmo registro.
+const detailSku = ref<string | null>(null);
+const detail = ref<ProductDetailProjection | null>(null);
+const detailLoading = ref(false);
+const detailTab = ref("geral");
+async function openDetail(row: CatalogRowProjection, tab = "geral") {
+  menuOpen.value = null;
+  detailTab.value = tab;
+  detailSku.value = row.sku;
+  detail.value = null;
+  detailLoading.value = true;
+  try {
+    detail.value = await fetchProductDetail(row.sku);
+  } finally {
+    detailLoading.value = false;
+  }
+}
+function closeDetail() {
+  detailSku.value = null;
+  detail.value = null;
+}
+async function saveDetail(patch: ProductDetailPatch) {
+  if (!detailSku.value) return;
+  const ok = await saveProductDetail(detailSku.value, patch);
+  if (ok) closeDetail();
+}
+
+// assist de IA — o painel é presentacional, então a página injeta a chamada e o
+// predicado de ocupado.
+function assistFor(sku: Ref<string | null>) {
+  return {
+    assist: (field: AssistableField, currentValue: string) =>
+      sku.value ? aiAssist(sku.value, field, currentValue) : Promise.resolve(""),
+    assistBusy: (field: AssistableField) => (sku.value ? isBusy(aiAssistKey(sku.value, field)) : false),
+  };
+}
+const detailAssist = assistFor(detailSku);
+
 useHead({ title: "Catálogo · Gestor" });
 </script>
 
@@ -203,6 +305,12 @@ useHead({ title: "Catálogo · Gestor" });
     <!-- work toolbar: search · collection chips · counts/refresh -->
     <UiToolbar>
       <UiSearchInput v-model="query" placeholder="Buscar produto ou SKU…" aria-label="Buscar produto ou SKU" />
+      <!-- recorte por dimensões (envio, canal, publicação, venda, estoque, PIM) —
+           ao lado da busca; a coleção continua nas pills, que também reordenam. -->
+      <FilterBar v-model="filters" :dimensions="dimensions" />
+      <!-- quais canais/feeds aparecem como coluna; a do produto nunca some (não é
+           declarada no seletor). A escolha persiste por estação. -->
+      <ColumnPicker v-if="surfaces.length" v-model="hiddenColumns" :columns="columnOptions" />
       <!-- coleções: arraste os chips para reordenar as seções da vitrine (Collection.sort_order) -->
       <TransitionGroup v-if="collections.length" name="chip" tag="div" class="flex flex-wrap items-center gap-1.5">
         <UiFilterChip key="__all" :active="collectionRef === ''" @click="collectionRef = ''">Todas</UiFilterChip>
@@ -231,7 +339,7 @@ useHead({ title: "Catálogo · Gestor" });
           <span class="tabular-nums">{{ channelsCount }}</span> {{ channelsCount === 1 ? "canal" : "canais" }}
           <template v-if="showcasesCount">
             <span class="text-muted-foreground/50">·</span>
-            <span class="tabular-nums">{{ showcasesCount }}</span> expositor{{ showcasesCount === 1 ? "" : "es" }}
+            <span class="tabular-nums">{{ showcasesCount }}</span> feed{{ showcasesCount === 1 ? "" : "s" }}
           </template>
         </p>
         <UiIconButton icon="lucide:refresh-cw" label="Atualizar" :spinning="pending" @click="refresh()" />
@@ -249,43 +357,57 @@ useHead({ title: "Catálogo · Gestor" });
         <div class="size-10 animate-pulse rounded-md bg-muted"></div>
         <div class="h-4 w-40 animate-pulse rounded bg-muted"></div>
         <div class="ml-auto flex gap-2">
-          <div v-for="j in 4" :key="j" class="h-8 w-24 animate-pulse rounded-md bg-muted"></div>
+          <div v-for="j in 6" :key="j" class="h-8 w-[76px] animate-pulse rounded-md bg-muted"></div>
         </div>
       </div>
     </div>
 
     <div v-else-if="rows.length" class="min-h-0 flex-1 overflow-auto rounded-xl border border-border bg-card shadow-xs">
-      <table class="w-full border-separate border-spacing-0 text-sm">
+      <!-- `table-fixed`: sem ele o conteúdo do cabeçalho (nome longo do canal, rótulo
+           do feed) estica a coluna e a matriz fica desalinhada. Fixo, toda superfície
+           tem a MESMA largura e o nome trunca com o title inteiro. O `min-w` faz a
+           tabela rolar em tela estreita em vez de espremer a coluna do produto. -->
+      <table class="w-full min-w-[1024px] table-fixed border-separate border-spacing-0 text-sm">
         <thead>
           <tr>
-            <th class="sticky left-0 top-0 z-30 border-b border-border bg-card px-4 py-3 text-left">
+            <!-- Produto: `w-full` faz esta coluna absorver toda a folga da tabela, então
+                 as colunas de superfície ficam no seu tamanho fixo (uniformes).
+                 `border-r` fecha a coluna fixa: no scroll horizontal é essa linha que
+                 diz onde o painel parado termina e a matriz que corre começa. -->
+            <th class="sticky left-0 top-0 z-30 w-full min-w-[260px] border-b border-r border-border bg-card px-4 py-3 text-left">
               <label class="flex items-center gap-3">
                 <input type="checkbox" :checked="allSelected" class="size-4 rounded border-border accent-foreground" @change="toggleSelectAll" />
                 <span class="text-xs font-medium uppercase tracking-wide text-muted-foreground">Produto</span>
               </label>
             </th>
+            <!-- Superfícies: largura fixa e uniforme (canais + feeds). O que faz caberem
+                 num desktop sem scroll é o NOME CURTO vindo do backend (short_name:
+                 "Site", "Meta", "TV1"); o nome completo fica no title. -->
             <th
-              v-for="s in surfaces"
+              v-for="s in visibleSurfaces"
               :key="s.ref"
-              class="sticky top-0 z-20 w-[104px] border-b border-border bg-card px-3 py-2.5 text-left align-top"
+              class="sticky top-0 z-20 w-[114px] border-b border-border bg-card px-2 py-2 text-left align-top"
               :class="firstShowcaseRef === s.ref ? 'border-l-2 border-l-primary/40' : 'border-l border-l-border'"
             >
-              <div class="flex flex-col gap-1" :class="{ 'opacity-45': !s.transactional && !s.is_active }">
-                <span class="flex items-center gap-1.5 font-medium text-foreground" :title="s.transactional ? s.name : `${s.name} — expositor (não vende)`">
+              <div class="flex flex-col gap-0.5" :class="{ 'opacity-45': !s.transactional && !s.is_active }">
+                <span class="flex items-center gap-1 font-medium text-foreground" :title="s.transactional ? s.name : `${s.name} — feed (não vende)`">
                   <Icon :name="surfaceDisplayIcon(s)" class="size-3.5 shrink-0" :class="s.transactional ? 'text-muted-foreground' : 'text-primary/70'" />
-                  <span class="truncate">{{ s.name }}</span>
+                  <span class="truncate text-xs">{{ s.short_name }}</span>
                   <a
                     v-if="s.output_path"
                     :href="`${djangoBase}${s.output_path}`" target="_blank" rel="noopener"
-                    class="shrink-0 text-muted-foreground/50 transition hover:text-foreground"
+                    class="ml-auto shrink-0 text-muted-foreground/50 transition hover:text-foreground"
                     :title="`Abrir ${s.name}`" @click.stop
                   ><Icon name="lucide:external-link" class="size-3" /></a>
                 </span>
-                <span v-if="syncBadge(s.sync_status)" class="truncate text-xs font-medium" :class="syncBadge(s.sync_status)!.toneClass">
-                  ● {{ syncBadge(s.sync_status)!.label }}
-                </span>
-                <span v-else-if="!s.transactional" class="truncate text-xs font-medium text-primary/60">
-                  {{ surfaceKindLabel(s) }}{{ s.is_active ? "" : " · pausado" }}
+                <!-- Linha 2 só quando há estado a dizer: sync da plataforma ou feed pausado.
+                     O papel da superfície (feed/menuboard) já é dito pelo ícone + title. -->
+                <span v-if="syncBadge(s.sync_status) || (!s.transactional && !s.is_active)" class="flex items-center gap-1">
+                  <span
+                    v-if="syncBadge(s.sync_status)" class="truncate text-xs font-medium leading-tight"
+                    :class="syncBadge(s.sync_status)!.toneClass" :title="syncBadge(s.sync_status)!.title"
+                  >● {{ syncBadge(s.sync_status)!.label }}</span>
+                  <span v-else class="truncate text-xs font-medium leading-tight text-primary/60">pausado</span>
                 </span>
               </div>
             </th>
@@ -303,7 +425,14 @@ useHead({ title: "Catálogo · Gestor" });
             ]"
           >
             <!-- product -->
-            <td class="sticky left-0 z-10 border-b border-border bg-card px-4 py-2.5 group-hover:bg-muted/40" :class="{ 'bg-muted/40': isSelected(row.sku) }">
+            <!-- Fundo OPACO, sempre: a coluna fica parada enquanto as células passam por
+                 baixo, e tinta translúcida (bg-muted/40) deixaria o conteúdo em trânsito
+                 aparecer através dela. Um único utilitário de fundo por estado — dois na
+                 mesma célula competem na folha de estilo, não na ordem do atributo. -->
+            <td
+              class="sticky left-0 z-10 border-b border-r border-border px-4 py-2.5"
+              :class="isSelected(row.sku) ? 'bg-muted' : 'bg-card group-hover:bg-muted'"
+            >
               <div class="flex items-center gap-3">
                 <!-- handle de arrastar (pointer events): aparece só quando a coleção ativa é reordenável -->
                 <span
@@ -343,11 +472,24 @@ useHead({ title: "Catálogo · Gestor" });
                       <span v-if="row.sold_out && row.replenish_qty" class="shrink-0 text-xs font-normal text-muted-foreground">repõe {{ row.replenish_qty }} na fornada</span>
                       <!-- estoque baixo (produto ainda ativo): aviso discreto -->
                       <span v-else-if="!rowStatuses[row.sku]?.off && row.low_stock" class="shrink-0 rounded-full bg-warning/15 px-1.5 py-0.5 text-xs font-medium text-amber-600 dark:text-amber-400">resta {{ row.stock_qty }}</span>
+                      <!-- sync com erro em N plataforma(s): salta à vista + atalho p/ reenviar tudo -->
+                      <button
+                        v-if="rowSyncErrors(row)"
+                        type="button"
+                        class="inline-flex shrink-0 items-center gap-1 rounded-full bg-destructive/10 px-1.5 py-0.5 text-xs font-medium text-destructive transition hover:bg-destructive/20 disabled:opacity-50"
+                        :disabled="isBusy(productKey(row.sku))"
+                        :title="`Erro de sync em ${rowSyncErrors(row)} plataforma(s) — reenviar tudo`"
+                        @click.stop="resyncRow(row)"
+                      >
+                        <Icon name="lucide:triangle-alert" class="size-3" /> {{ rowSyncErrors(row) }}
+                      </button>
                     </span>
-                    <span class="flex items-center gap-1.5 text-xs text-muted-foreground">
-                      <span class="font-mono">{{ row.sku }}</span>
-                      <span class="text-muted-foreground/40">·</span>
-                      <span class="tabular-nums">{{ row.base_price_display }}</span>
+                    <!-- uma linha só: com a coluna em largura fixa, sem `nowrap` o SKU +
+                         preço + coleção quebram e a linha da matriz cresce. -->
+                    <span class="flex items-center gap-1.5 overflow-hidden whitespace-nowrap text-xs text-muted-foreground">
+                      <span class="shrink-0 font-mono">{{ row.sku }}</span>
+                      <span class="shrink-0 text-muted-foreground/40">·</span>
+                      <span class="shrink-0 tabular-nums">{{ row.base_price_display }}</span>
                       <span v-if="row.primary_collection_name" class="truncate rounded bg-muted px-1.5 py-0.5 text-xs text-muted-foreground">{{ row.primary_collection_name }}</span>
                     </span>
                   </div>
@@ -365,14 +507,13 @@ useHead({ title: "Catálogo · Gestor" });
                     </button>
                   </UiPopoverTrigger>
                   <UiPopoverContent align="end" :side-offset="4" class="w-56 p-1">
-                    <a
-                      v-if="editHref(row)" :href="editHref(row)" target="_blank" rel="noopener"
-                      class="flex items-center gap-2 rounded px-3 py-2 text-sm transition hover:bg-accent"
-                      @click="menuOpen = null"
+                    <button
+                      type="button"
+                      class="flex w-full items-center gap-2 rounded px-3 py-2 text-left text-sm transition hover:bg-accent"
+                      @click="openDetail(row)"
                     >
                       <Icon name="lucide:pencil" class="size-4 text-muted-foreground" /> Editar detalhes
-                      <Icon name="lucide:external-link" class="ml-auto size-3.5 text-muted-foreground/60" />
-                    </a>
+                    </button>
                     <button
                       type="button" :disabled="isBusy(productKey(row.sku))"
                       class="flex w-full items-center gap-2 rounded px-3 py-2 text-left text-sm transition hover:bg-accent disabled:opacity-50"
@@ -389,24 +530,51 @@ useHead({ title: "Catálogo · Gestor" });
                       <Icon :name="row.is_published ? 'lucide:eye-off' : 'lucide:eye'" class="size-4 text-muted-foreground" />
                       {{ row.is_published ? "Despublicar do catálogo" : "Publicar no catálogo" }}
                     </button>
+                    <!-- PIM + sync (só quando há plataforma que projeta) -->
+                    <template v-if="hasProjectionTargets">
+                    <div class="my-1 h-px bg-border"></div>
+                    <button
+                      type="button"
+                      class="flex w-full items-center gap-2 rounded px-3 py-2 text-left text-sm transition hover:bg-accent"
+                      @click="openDetail(row, 'social')"
+                    >
+                      <Icon name="lucide:sparkles" class="size-4 text-muted-foreground" />
+                      Dados para redes sociais
+                      <span
+                        v-if="!row.pim_complete"
+                        class="ml-auto rounded-full bg-warning/15 px-1.5 py-0.5 text-xs font-medium text-amber-600 dark:text-amber-400"
+                      >incompleto</span>
+                    </button>
+                    <button
+                      type="button" :disabled="isBusy(productKey(row.sku))"
+                      class="flex w-full items-center gap-2 rounded px-3 py-2 text-left text-sm transition hover:bg-accent disabled:opacity-50"
+                      @click="resyncRow(row)"
+                    >
+                      <Icon name="lucide:refresh-cw" class="size-4 text-muted-foreground" />
+                      Reenviar às plataformas
+                    </button>
+                    </template>
                   </UiPopoverContent>
                 </UiPopover>
               </div>
             </td>
-            <!-- cells (heatmap). Banda de expositores começa com uma divisória mais forte. -->
+            <!-- cells (heatmap). Banda de feeds começa com uma divisória mais forte.
+                 Toggle · preço · selo de sync ficam LADO A LADO numa linha só: são três
+                 coisas que o operador lê de relance, e empilhar não é o jeito de ganhar
+                 largura — quem resolve isso é o nome curto da coluna (surface.short_name). -->
             <td
-              v-for="cell in row.cells"
+              v-for="cell in visibleCells(row)"
               :key="cell.surface_ref"
-              class="border-b border-border px-1.5 py-1.5 group-hover:bg-muted/20"
+              class="border-b border-border px-1 py-1.5 group-hover:bg-muted/20"
               :class="firstShowcaseRef === cell.surface_ref ? 'border-l-2 border-l-primary/40' : 'border-l border-l-border'"
             >
               <div
                 v-if="cell.in_listing"
-                class="flex h-10 items-center justify-center gap-2 px-1"
+                class="flex h-10 items-center justify-center gap-1"
               >
                 <!-- ÁREA 1 — toggle: verde=ligado&disponível · cinza=pausado (posição off) OU
                      linha "fora" (esgotado/etc.: mantém a POSIÇÃO ligada, mas dessatura p/ cinza).
-                     Vale para canal (vende) E expositor (só exibe) — a mesma pausa por item. -->
+                     Vale para canal (vende) E feed (só exibe) — a mesma pausa por item. -->
                 <button
                   type="button" role="switch" :aria-checked="cell.is_sellable"
                   class="relative inline-flex h-4 w-7 shrink-0 items-center rounded-full transition-colors disabled:opacity-40"
@@ -419,37 +587,34 @@ useHead({ title: "Catálogo · Gestor" });
                   <span class="inline-block size-3 rounded-full bg-white shadow-sm transition-transform" :class="cell.is_sellable ? 'translate-x-3.5' : 'translate-x-0.5'"></span>
                 </button>
 
-                <!-- Expositor não vende: sem divisória nem preço — só a pausa por item acima. -->
+                <!-- Feed não vende: sem divisória nem preço — só a pausa por item. -->
                 <template v-if="isCellTransactional(cell)">
                 <!-- divisória: deixa claro que toggle e preço são controles distintos -->
                 <div class="h-5 w-px shrink-0 bg-border"></div>
 
-                <!-- ÁREA 2 — preço: base = ícone $ apagado; ALTERADO = duas linhas alinhadas à esquerda
-                     (linha 1: R$ + seta ↑/↓ colorida · linha 2: valor). title = valor; clique = popover. -->
+                <!-- ÁREA 2 — preço, ao lado do toggle: base = ícone $ apagado; ALTERADO =
+                     seta ↑/↓ colorida + valor. title = valor; clique = popover. -->
                 <UiPopover :open="isEditing(row.sku, cell.surface_ref)" @update:open="(v) => { if (!v) editing = null }">
                   <UiPopoverAnchor as-child>
                     <button
                       type="button"
-                      class="flex items-center rounded px-1 py-0.5 transition hover:bg-muted disabled:opacity-40"
+                      class="flex items-center rounded px-0.5 py-0.5 leading-none transition hover:bg-muted disabled:opacity-40"
                       :disabled="isBusy(cellKey(row.sku, cell.surface_ref))"
                       :title="priceTitle(row, cell)"
                       :aria-label="`Preço em ${surfaceName(cell.surface_ref)}: ${cell.price_display} — editar`"
                       @click="startEdit(row, cell)"
                     >
-                      <span v-if="cellPrice(row, cell).differs" class="flex flex-col items-start gap-0.5 leading-none">
-                        <span class="flex items-center gap-0.5 text-xs font-medium text-muted-foreground">
-                          R$
-                          <Icon
-                            :name="cellPrice(row, cell).delta === 'up' ? 'lucide:arrow-up' : 'lucide:arrow-down'"
-                            class="size-2.5"
-                            :class="rowStatuses[row.sku]?.off
-                              ? 'text-muted-foreground/60'
-                              : (cellPrice(row, cell).delta === 'up' ? 'text-amber-600 dark:text-amber-400' : 'text-success dark:text-lime-400')"
-                          />
-                        </span>
+                      <span v-if="cellPrice(row, cell).differs" class="flex items-center gap-0.5">
+                        <Icon
+                          :name="cellPrice(row, cell).delta === 'up' ? 'lucide:arrow-up' : 'lucide:arrow-down'"
+                          class="size-2.5 shrink-0"
+                          :class="rowStatuses[row.sku]?.off
+                            ? 'text-muted-foreground/60'
+                            : (cellPrice(row, cell).delta === 'up' ? 'text-amber-600 dark:text-amber-400' : 'text-success dark:text-lime-400')"
+                        />
                         <span class="text-xs font-semibold tabular-nums" :class="cell.is_sellable ? 'text-foreground' : 'text-muted-foreground line-through'">{{ cell.price_display.replace("R$ ", "") }}</span>
                       </span>
-                      <Icon v-else name="lucide:circle-dollar-sign" class="size-4 text-muted-foreground/40" />
+                      <Icon v-else name="lucide:circle-dollar-sign" class="size-3.5 text-muted-foreground/40" />
                     </button>
                   </UiPopoverAnchor>
                   <UiPopoverContent align="center" :side-offset="6" class="w-52 p-3">
@@ -467,6 +632,30 @@ useHead({ title: "Catálogo · Gestor" });
                   </UiPopoverContent>
                 </UiPopover>
                 </template>
+
+                <!-- ÁREA 3 — selo de SYNC (produto × plataforma), inline ao lado do preço,
+                     só em superfície que projeta. Acionável (erro/sincronizando/nunca) =
+                     botão "reenviar agora"; senão só informa. Vem por último para não
+                     empurrar o toggle de lugar nas colunas em que não aparece. -->
+                <template v-if="cellSync(cell).show">
+                  <button
+                    v-if="cellSync(cell).actionable"
+                    type="button"
+                    class="grid size-4 shrink-0 place-items-center rounded-full text-xs leading-none transition hover:scale-125 disabled:opacity-40"
+                    :class="cellSync(cell).toneClass"
+                    :disabled="isBusy(cellKey(row.sku, cell.surface_ref))"
+                    :title="`${cellSync(cell).label}${cell.sync_error ? ' · ' + cell.sync_error : ''} — reenviar agora`"
+                    :aria-label="`${cellSync(cell).label} em ${surfaceName(cell.surface_ref)} — reenviar agora`"
+                    @click="resyncCell(row, cell)"
+                  >{{ cellSync(cell).dot }}</button>
+                  <span
+                    v-else
+                    class="shrink-0 text-xs leading-none"
+                    :class="cellSync(cell).toneClass"
+                    :title="cellSync(cell).label"
+                    :aria-label="`${cellSync(cell).label} em ${surfaceName(cell.surface_ref)}`"
+                  >{{ cellSync(cell).dot }}</span>
+                </template>
               </div>
               <div v-else class="grid h-10 place-items-center rounded-md text-xs text-muted-foreground/30">—</div>
             </td>
@@ -477,7 +666,11 @@ useHead({ title: "Catálogo · Gestor" });
 
       <div v-else-if="!pending" class="grid place-items-center rounded-xl border border-dashed border-border py-16 text-center">
         <Icon name="lucide:package-search" class="mb-2 size-8 text-muted-foreground/40" />
-        <p class="text-sm text-muted-foreground">Nenhum produto {{ activeCollection ? `na coleção ${activeCollection.name}` : "no catálogo" }}.</p>
+        <p v-if="Object.keys(filters).length || query.trim()" class="text-sm text-muted-foreground">
+          Nenhum produto com esses filtros.
+          <button v-if="Object.keys(filters).length" class="underline" @click="filters = {}">Limpar filtros</button>
+        </p>
+        <p v-else class="text-sm text-muted-foreground">Nenhum produto {{ activeCollection ? `na coleção ${activeCollection.name}` : "no catálogo" }}.</p>
       </div>
     </section>
 
@@ -500,7 +693,7 @@ useHead({ title: "Catálogo · Gestor" });
             <optgroup v-if="channelSurfaces.length" label="Canais">
               <option v-for="s in channelSurfaces" :key="s.ref" :value="s.ref">{{ s.name }}</option>
             </optgroup>
-            <optgroup v-if="showcaseSurfaces.length" label="Expositores">
+            <optgroup v-if="showcaseSurfaces.length" label="Feeds">
               <option v-for="s in showcaseSurfaces" :key="s.ref" :value="s.ref">{{ s.name }}</option>
             </optgroup>
           </select>
@@ -509,7 +702,7 @@ useHead({ title: "Catálogo · Gestor" });
         <button :disabled="bulkBusy" class="inline-flex h-9 items-center gap-1.5 rounded-md border border-background/25 px-3 text-sm font-medium transition hover:bg-background/10 disabled:opacity-50" @click="bulk({ is_sellable: false })"><Icon name="lucide:pause" class="size-3.5" /> Pausar</button>
         <button :disabled="bulkBusy" class="inline-flex h-9 items-center gap-1.5 rounded-md border border-background/25 px-3 text-sm font-medium transition hover:bg-background/10 disabled:opacity-50" @click="bulk({ is_sellable: true })"><Icon name="lucide:play" class="size-3.5" /> Reativar</button>
 
-        <!-- Preço e publicação só para canais (transacionam). Expositor só pausa/reativa. -->
+        <!-- Preço e publicação só para canais (transacionam). Feed só pausa/reativa. -->
         <template v-if="!bulkSurfaceIsShowcase">
         <!-- reprecificação em lote: popover ancorado (superfície normal, legível sobre a barra invertida) -->
         <UiPopover :open="priceOpen" @update:open="(v) => (priceOpen = v)">
@@ -554,6 +747,21 @@ useHead({ title: "Catálogo · Gestor" });
         <button class="grid size-9 place-items-center rounded-md text-background/70 transition hover:bg-background/10 hover:text-background" title="Limpar seleção" @click="clearSelection"><Icon name="lucide:x" class="size-4" /></button>
       </div>
     </Transition>
+
+    <!-- painel de produto (edição completa, incluindo dados sociais e fiscais) —
+         slide-over à direita -->
+    <CatalogProductPanel
+      :open="detailSku !== null"
+      :sku="detailSku"
+      :detail="detail"
+      :loading="detailLoading"
+      :busy="detailSku !== null && isBusy(detailKey(detailSku))"
+      :assist="detailAssist.assist"
+      :assist-busy="detailAssist.assistBusy"
+      :initial-tab="detailTab"
+      @update:open="(v) => { if (!v) closeDetail(); }"
+      @save="saveDetail"
+    />
 
     <!-- lightbox: foto ampliada (clique em qualquer lugar fecha) -->
     <Transition

@@ -4,13 +4,35 @@ import {
   availableAnywhere,
   cellPrice,
   cellState,
+  cellSyncView,
   cellView,
   filterRows,
+  pimSummary,
   rowStatus,
   surfaceIcon,
   syncBadge,
+  syncErrorCount,
 } from "../app/presentation/catalog";
-import type { CatalogRowProjection, SurfaceCellProjection } from "../app/types/catalog";
+import type {
+  CatalogRowProjection,
+  ProductSocial,
+  SurfaceCellProjection,
+  SurfaceProjection,
+} from "../app/types/catalog";
+
+const surface = (over: Partial<SurfaceProjection> = {}): SurfaceProjection => ({
+  ref: "ifood",
+  name: "iFood",
+  short_name: "iFood",
+  is_projection_target: true,
+  sync_status: "ok",
+  kind: "channel",
+  transactional: true,
+  icon: "",
+  is_active: true,
+  output_path: "",
+  ...over,
+});
 
 const cell = (over: Partial<SurfaceCellProjection> = {}): SurfaceCellProjection => ({
   surface_ref: "web",
@@ -20,6 +42,22 @@ const cell = (over: Partial<SurfaceCellProjection> = {}): SurfaceCellProjection 
   available: true,
   price_q: 600,
   price_display: "R$ 6,00",
+  sync_status: "",
+  sync_error: "",
+  synced_at: "",
+  ...over,
+});
+
+const social = (over: Partial<ProductSocial> = {}): ProductSocial => ({
+  brand: "",
+  gtin: "",
+  mpn: "",
+  condition: "new",
+  google_product_category: "",
+  tiktok_category_id: "",
+  hashtags: [],
+  social_caption: "",
+  has_data: false,
   ...over,
 });
 
@@ -41,6 +79,8 @@ const row = (over: Partial<CatalogRowProjection> = {}): CatalogRowProjection => 
   replenish_qty: 0,
   keywords: ["padaria"],
   cells: [],
+  social: social(),
+  pim_complete: false,
   ...over,
 });
 
@@ -101,7 +141,9 @@ describe("filterRows", () => {
 describe("surface metadata", () => {
   it("no sync badge for non-projection surfaces", () => {
     expect(syncBadge("na")).toBeNull();
-    expect(syncBadge("ok")?.label).toBe("sincronizado");
+    // rótulo curto (cabe na coluna estreita); a frase inteira vai no title.
+    expect(syncBadge("ok")?.label).toBe("em dia");
+    expect(syncBadge("ok")?.title).toBe("Sincronizado");
   });
 });
 
@@ -191,5 +233,86 @@ describe("surfaceIcon", () => {
   });
   it("falls back for unknown refs", () => {
     expect(surfaceIcon("tiktok")).toBe("lucide:radio-tower");
+  });
+});
+
+// ── Arc H: sync por célula + filtro por estado + PIM ───────────────────────────
+
+describe("cellSyncView (selo de sync por célula)", () => {
+  const ifood = surface({ ref: "ifood", is_projection_target: true });
+  const web = surface({ ref: "web", is_projection_target: false });
+
+  it("esconde o selo em superfície que não projeta", () => {
+    const v = cellSyncView(web, cell({ surface_ref: "web", sync_status: "" }));
+    expect(v.show).toBe(false);
+    expect(v.actionable).toBe(false);
+  });
+
+  it("synced = verde, não acionável", () => {
+    const v = cellSyncView(ifood, cell({ surface_ref: "ifood", sync_status: "synced" }));
+    expect(v.show).toBe(true);
+    expect(v.actionable).toBe(false);
+    expect(v.toneClass).toContain("emerald");
+  });
+
+  it("error e pending são acionáveis (oferecem reenvio)", () => {
+    expect(cellSyncView(ifood, cell({ sync_status: "error" })).actionable).toBe(true);
+    expect(cellSyncView(ifood, cell({ sync_status: "pending" })).actionable).toBe(true);
+  });
+
+  it("alvo de projeção sem registro = 'nunca', acionável quando na listing", () => {
+    const inList = cellSyncView(ifood, cell({ sync_status: "", in_listing: true }));
+    expect(inList.show).toBe(true);
+    expect(inList.actionable).toBe(true);
+    expect(inList.label).toBe("Nunca sincronizado");
+    // fora da listing → nada a reenviar
+    expect(cellSyncView(ifood, cell({ sync_status: "", in_listing: false })).actionable).toBe(false);
+  });
+
+  it("superfície ausente (undefined) = sem selo", () => {
+    expect(cellSyncView(undefined, cell()).show).toBe(false);
+  });
+});
+
+describe("syncErrorCount", () => {
+  const surfaces = [
+    surface({ ref: "ifood", is_projection_target: true }),
+    surface({ ref: "meta", is_projection_target: true }),
+    surface({ ref: "web", is_projection_target: false }),
+  ];
+  it("conta só erros em superfície-alvo", () => {
+    const r = row({
+      cells: [
+        cell({ surface_ref: "ifood", sync_status: "error" }),
+        cell({ surface_ref: "meta", sync_status: "error" }),
+        cell({ surface_ref: "web", sync_status: "error" }), // não projeta → não conta
+      ],
+    });
+    expect(syncErrorCount(r, surfaces)).toBe(2);
+  });
+  it("zero quando não há erro", () => {
+    expect(syncErrorCount(row({ cells: [cell({ sync_status: "synced" })] }), surfaces)).toBe(0);
+  });
+});
+
+describe("pimSummary", () => {
+  it("completo quando tem marca e categoria", () => {
+    const r = row({
+      pim_complete: true,
+      social: social({ brand: "Nelson", google_product_category: "Food", gtin: "7891000100103" }),
+    });
+    const s = pimSummary(r);
+    expect(s.complete).toBe(true);
+    expect(s.missing).toEqual([]);
+    expect(s.filled).toBe(3);
+  });
+  it("lista o que falta p/ feed", () => {
+    const s = pimSummary(row({ pim_complete: false, social: social({ brand: "Nelson" }) }));
+    expect(s.complete).toBe(false);
+    expect(s.missing).toEqual(["categoria"]);
+    expect(s.filled).toBe(1);
+  });
+  it("sem PIM → falta marca e categoria", () => {
+    expect(pimSummary(row()).missing).toEqual(["marca", "categoria"]);
   });
 });

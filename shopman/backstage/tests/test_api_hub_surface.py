@@ -2,7 +2,9 @@
 
 O endpoint é staff-gated (IsBackstageOperator); os tiles são filtrados por permissão
 DENTRO da projection — operador sem apps recebe grade vazia (não 403). Ícone forte por
-superfície conforme o design system canônico.
+superfície conforme o design system canônico. Superfície sem URL configurada em
+``SHOPMAN_SURFACE_URLS`` não vira tile (nunca link morto); os defaults de dev
+(127.0.0.1:PORT) só valem com DEBUG ligado.
 """
 
 from __future__ import annotations
@@ -10,9 +12,19 @@ from __future__ import annotations
 import pytest
 from django.contrib.auth.models import Permission, User
 from django.contrib.contenttypes.models import ContentType
+from django.test import override_settings
 from django.urls import reverse
 
 from shopman.shop.models import Shop
+
+SURFACE_URLS = {
+    "pos": "https://pdv.example.test/",
+    "kds": "https://kds.example.test/",
+    "gestor": "https://gestor.example.test/",
+    "production": "https://prod.example.test/",
+    "broadcast": "https://broadcast.example.test/",
+    "loja": "https://loja.example.test/",
+}
 
 
 def _manage_orders_perm() -> Permission:
@@ -44,13 +56,14 @@ def test_hub_empty_for_staff_without_apps(client, db):
 
 
 @pytest.mark.django_db
+@override_settings(SHOPMAN_SURFACE_URLS=SURFACE_URLS)
 def test_hub_superuser_sees_all_tiles(client, db):
     admin = User.objects.create_superuser("hub-admin", "a@b.c", "pw")
     client.force_login(admin)
     hub = client.get(reverse("api-backstage-hub")).json()["hub"]
 
     refs = [tile["ref"] for tile in hub["tiles"]]
-    assert refs == ["pos", "kds", "gestor", "production", "loja"]
+    assert refs == ["pos", "kds", "gestor", "production", "broadcast", "loja"]
 
     by_ref = {tile["ref"]: tile for tile in hub["tiles"]}
     # Ícone forte por app (DS §6).
@@ -58,10 +71,15 @@ def test_hub_superuser_sees_all_tiles(client, db):
     assert by_ref["kds"]["icon"] == "chef-hat"
     assert by_ref["gestor"]["icon"] == "clipboard-list"
     assert by_ref["production"]["icon"] == "croissant"
+    assert by_ref["broadcast"]["icon"] == "megaphone"
+    # Nome público sem jargão interno: a superfície "production" é Produção e a
+    # "broadcast" é Marketing (ref interna estável; label é o que o operador lê).
+    assert by_ref["production"]["label"] == "Produção"
+    assert by_ref["broadcast"]["label"] == "Marketing"
     assert by_ref["loja"]["icon"] == "store"
     # Loja abre a loja do cliente (storefront) em nova aba — fora da zona de operador.
     assert by_ref["loja"]["kind"] == "external"
-    assert by_ref["loja"]["url"] == "http://127.0.0.1:3000/"
+    assert by_ref["loja"]["url"] == "https://loja.example.test/"
     assert by_ref["pos"]["kind"] == "launch"
     # Contrato do tile.
     for tile in hub["tiles"]:
@@ -70,6 +88,7 @@ def test_hub_superuser_sees_all_tiles(client, db):
 
 
 @pytest.mark.django_db
+@override_settings(SHOPMAN_SURFACE_URLS=SURFACE_URLS)
 def test_hub_filters_by_permission(client, db):
     """Operador só de pedidos vê o Gestor, não o PDV/KDS/Loja."""
     operator = User.objects.create_user("hub-gestor", password="pw", is_staff=True)
@@ -81,3 +100,34 @@ def test_hub_filters_by_permission(client, db):
     assert "pos" not in refs
     assert "kds" not in refs
     assert "loja" not in refs  # loja só p/ superuser
+
+
+@pytest.mark.django_db
+@override_settings(
+    SHOPMAN_SURFACE_URLS={k: v for k, v in SURFACE_URLS.items() if k != "broadcast"}
+)
+def test_hub_hides_surface_without_url(client, db):
+    """Superfície sem URL configurada some do launcher — nunca link morto nem
+    fallback 127.0.0.1 fora de DEBUG (foi o bug do tile Marketing no staging)."""
+    admin = User.objects.create_superuser("hub-nourl", "a@b.c", "pw")
+    client.force_login(admin)
+    tiles = client.get(reverse("api-backstage-hub")).json()["hub"]["tiles"]
+
+    refs = [tile["ref"] for tile in tiles]
+    assert "broadcast" not in refs
+    assert refs == ["pos", "kds", "gestor", "production", "loja"]
+    assert all("127.0.0.1" not in tile["url"] for tile in tiles)
+
+
+@pytest.mark.django_db
+@override_settings(DEBUG=True, SHOPMAN_SURFACE_URLS={})
+def test_hub_debug_falls_back_to_dev_urls(client, db):
+    """Em DEBUG (dev local sem env), o launcher usa os defaults 127.0.0.1:PORT."""
+    admin = User.objects.create_superuser("hub-debug", "a@b.c", "pw")
+    client.force_login(admin)
+    by_ref = {
+        tile["ref"]: tile
+        for tile in client.get(reverse("api-backstage-hub")).json()["hub"]["tiles"]
+    }
+    assert by_ref["broadcast"]["url"] == "http://127.0.0.1:3006/"
+    assert by_ref["loja"]["url"] == "http://127.0.0.1:3000/"

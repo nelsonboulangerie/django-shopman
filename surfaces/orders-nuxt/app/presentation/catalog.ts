@@ -4,6 +4,7 @@
 // something: green = available, amber = paused, muted = absent/unpublished).
 import type {
   CatalogRowProjection,
+  CellSyncStatus,
   SurfaceCellProjection,
   SurfaceProjection,
   SurfaceSyncStatus,
@@ -127,7 +128,7 @@ export function surfaceIcon(ref: string): string {
   return SURFACE_ICONS[ref] ?? "lucide:radio-tower";
 }
 
-// Ícone da coluna considerando o tipo: expositor traz a própria dica (tv/rss); canal
+// Ícone da coluna considerando o tipo: feed traz a própria dica (tv/rss); canal
 // resolve por ref. Fonte única do ícone de cabeçalho da matriz.
 const SHOWCASE_ICONS: Record<string, string> = {
   tv: "lucide:tv",
@@ -140,22 +141,107 @@ export function surfaceDisplayIcon(surface: SurfaceProjection): string {
   return surfaceIcon(surface.ref);
 }
 
-// Rótulo curto do papel da superfície (chip no cabeçalho). Canal não recebe chip
-// (é o caso comum); expositor deixa explícito que EXIBE e não vende.
-export function surfaceKindLabel(surface: SurfaceProjection): string {
-  if (surface.transactional) return "";
-  return surface.kind === "feed" ? "Feed" : "Expositor";
-}
-
 // ── surface metadata ─────────────────────────────────────────────────────────
 
-const SYNC: Record<SurfaceSyncStatus, { label: string; toneClass: string } | null> = {
-  ok: { label: "sincronizado", toneClass: "text-emerald-600 dark:text-emerald-400" },
-  error: { label: "erro de sync", toneClass: "text-destructive" },
-  never: { label: "nunca sincronizado", toneClass: "text-amber-600 dark:text-amber-400" },
+// Rótulo CURTO (cabe na coluna estreita da matriz) + `title` com a frase inteira,
+// que é o que o operador lê ao pousar o mouse.
+const SYNC: Record<SurfaceSyncStatus, { label: string; title: string; toneClass: string } | null> = {
+  ok: { label: "em dia", title: "Sincronizado", toneClass: "text-emerald-600 dark:text-emerald-400" },
+  error: { label: "erro", title: "Erro de sincronização", toneClass: "text-destructive" },
+  never: { label: "nunca", title: "Nunca sincronizado", toneClass: "text-amber-600 dark:text-amber-400" },
   na: null, // não é alvo de projeção → sem badge
 };
 
-export function syncBadge(status: SurfaceSyncStatus): { label: string; toneClass: string } | null {
+export function syncBadge(status: SurfaceSyncStatus): { label: string; title: string; toneClass: string } | null {
   return SYNC[status];
+}
+
+// ── sync por célula (produto × plataforma) — Arc H ─────────────────────────────
+// O selo de sync mora na célula: reflete o ÚLTIMO push àquela plataforma, ortogonal
+// à disponibilidade (uma célula pode estar "disponível" mas com push em erro). Só
+// tem sentido em superfície que projeta (canal com adapter); feed de pull não.
+
+export interface CellSyncView {
+  status: CellSyncStatus;
+  show: boolean; // renderiza o selo? (esconde em superfície que não projeta)
+  label: string; // rótulo curto p/ tooltip/leitor de tela
+  dot: string; // glifo do selo (●/○/…)
+  toneClass: string; // cor do selo
+  actionable: boolean; // oferece "sincronizar agora"? (error/pending/nunca em alvo)
+}
+
+const CELL_SYNC: Record<
+  Exclude<CellSyncStatus, "">,
+  { label: string; dot: string; toneClass: string }
+> = {
+  synced: { label: "Sincronizado", dot: "●", toneClass: "text-emerald-600 dark:text-emerald-400" },
+  pending: { label: "Sincronizando", dot: "◐", toneClass: "text-amber-600 dark:text-amber-400" },
+  error: { label: "Erro de sync", dot: "▲", toneClass: "text-destructive" },
+  retracted: { label: "Retirado", dot: "○", toneClass: "text-muted-foreground" },
+  skipped: { label: "Ignorado", dot: "○", toneClass: "text-muted-foreground/70" },
+};
+
+export function cellSyncView(
+  surface: SurfaceProjection | undefined,
+  cell: SurfaceCellProjection,
+): CellSyncView {
+  // Superfície que não projeta (feed de pull) → sem selo de sync.
+  const projects = !!surface?.is_projection_target;
+  if (!projects) {
+    return { status: cell.sync_status, show: false, label: "", dot: "", toneClass: "", actionable: false };
+  }
+  const status = cell.sync_status;
+  if (status === "") {
+    // alvo de projeção que nunca sincronizou → estado "nunca", acionável.
+    return {
+      status,
+      show: cell.in_listing,
+      label: "Nunca sincronizado",
+      dot: "○",
+      toneClass: "text-muted-foreground/60",
+      actionable: cell.in_listing,
+    };
+  }
+  const meta = CELL_SYNC[status];
+  return {
+    status,
+    show: true,
+    label: meta.label,
+    dot: meta.dot,
+    toneClass: meta.toneClass,
+    actionable: status === "error" || status === "pending",
+  };
+}
+
+// Conta as células em erro de uma linha (badge de atenção na coluna do produto).
+export function syncErrorCount(row: CatalogRowProjection, surfaces: SurfaceProjection[]): number {
+  const targets = new Set(surfaces.filter((s) => s.is_projection_target).map((s) => s.ref));
+  return row.cells.filter((c) => targets.has(c.surface_ref) && c.sync_status === "error").length;
+}
+
+// ── PIM social (resumo da linha) — Arc H ───────────────────────────────────────
+// O painel PIM edita os campos; este resumo é o que a linha mostra de relance: os
+// campos essenciais preenchidos e o que falta p/ um feed comercial (Google/Meta).
+
+export interface PimSummary {
+  complete: boolean;
+  brand: string;
+  category: string;
+  filled: number; // campos essenciais preenchidos (0..3: brand, categoria, gtin)
+  missing: string[]; // rótulos do que falta p/ prontidão de feed
+}
+
+export function pimSummary(row: CatalogRowProjection): PimSummary {
+  const s = row.social;
+  const missing: string[] = [];
+  if (!s.brand) missing.push("marca");
+  if (!s.google_product_category) missing.push("categoria");
+  const filled = [s.brand, s.google_product_category, s.gtin].filter(Boolean).length;
+  return {
+    complete: row.pim_complete,
+    brand: s.brand,
+    category: s.google_product_category,
+    filled,
+    missing,
+  };
 }

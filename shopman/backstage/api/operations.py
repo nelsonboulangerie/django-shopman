@@ -335,6 +335,9 @@ _OPERATOR_UNLOCK_PERMS = {
     "backstage.operate_kds",
     "backstage.operate_production",
     "shop.manage_orders",
+    # Broadcast (surfaces/broadcast-nuxt): sem esta entrada a tela de destravar
+    # rejeita a permissão e o app fica trancado para sempre com o gate ligado.
+    "shop.manage_broadcast",
 }
 
 
@@ -1253,6 +1256,9 @@ class WorkOrderFinishView(_ProductionActionBase):
                 quantity=str(request.data.get("quantity") or "").strip(),
                 actor=_production_actor(request),
                 force=bool(request.data.get("force")),
+                # Classificação da fornada (excelente/bom/regular). Opcional: o
+                # operador fecha sem pensar e cai no default.
+                quality=str(request.data.get("quality") or "").strip(),
             )
         except ProductionError as exc:
             shortage = _shortage_response(exc)

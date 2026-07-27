@@ -82,6 +82,14 @@ MESSAGE_TEMPLATES: dict[str, str] = {
         "Boa noticia! {product_name} chegou.{reserve_note}{deadline_note} "
         "{cta} {action_url}"
     ),
+    # Fornada pronta ("Me avise quando sair do forno", F9 do FOMO-BROADCAST):
+    # o valor da mensagem e o frescor, entao ela nasce e envelhece rapido.
+    "production.ready": (
+        "Saiu do forno agora: {product_name}! {cta} {action_url}"
+    ),
+    # Broadcast: o corpo ja vem pronto do PostTemplate (com as variaveis
+    # resolvidas), entao o template daqui e so o envelope.
+    "broadcast.post": "{body}\n\n{cta} {action_url}",
 }
 
 

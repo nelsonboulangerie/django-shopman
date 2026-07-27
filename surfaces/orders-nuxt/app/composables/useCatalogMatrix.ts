@@ -3,13 +3,25 @@
 //   - poll every 60s as a light fallback (catalog changes less often than orders);
 //   - cell + bulk mutations POST through the django proxy (CSRF handled there),
 //     then reconcile via refresh (the backend owns the availability rules).
-import type { CatalogMatrixProjection, CatalogMatrixResponse } from "~/types/catalog";
+import type {
+  AiAssistResponse,
+  AssistableField,
+  CatalogMatrixProjection,
+  CatalogMatrixResponse,
+  ProductDetailPatch,
+  ProductDetailProjection,
+  ProductDetailResponse,
+  ProductSocial,
+} from "~/types/catalog";
 
 export interface CellPatch {
   is_published?: boolean;
   is_sellable?: boolean;
   price_q?: number;
 }
+
+// Escrita PIM: um subconjunto dos campos sociais (merge parcial no backend).
+export type SocialPatch = Partial<Omit<ProductSocial, "has_data">>;
 
 export function useCatalogMatrix(collectionRef?: Ref<string>) {
   const path = "/api/v1/backstage/catalog/";
@@ -148,6 +160,142 @@ export function useCatalogMatrix(collectionRef?: Ref<string>) {
     }
   }
 
+  // ── sync por plataforma (Arc H) ────────────────────────────────────────────
+  // Re-enfileira a projeção de um SKU numa plataforma (ou em todas, sem platform).
+  // Otimista no selo? Não — o push é async (Directive); marca a célula como ocupada
+  // e refaz o fetch canônico, que já traz o estado atualizado quando o worker roda.
+  async function resync(sku: string, platform?: string): Promise<boolean> {
+    const key = platform ? cellKey(sku, platform) : productKey(sku);
+    if (busy.value.has(key)) return false;
+    clearError();
+    busy.value = new Set(busy.value).add(key);
+    try {
+      await $fetch("/api/v1/backstage/catalog/resync/", {
+        method: "POST",
+        body: platform ? { sku, platform } : { sku },
+      });
+      useSonner.success(platform ? "Reenvio agendado." : "Reenvio agendado em todas as plataformas.");
+      await refresh();
+      return true;
+    } catch (error) {
+      errorMsg.value = httpErrorMessage(error, "Falha ao reenviar. Tente de novo.");
+      useSonner.error(errorMsg.value);
+      return false;
+    } finally {
+      const next = new Set(busy.value);
+      next.delete(key);
+      busy.value = next;
+    }
+  }
+
+  // ── PIM social (Arc H) ─────────────────────────────────────────────────────
+  // Salva atributos sociais (merge parcial); o backend valida (GTIN/categoria) e
+  // re-projeta via o gatilho de Product.save. Retorna false com toast na validação.
+  const socialKey = (sku: string) => `social@${sku}`;
+  async function saveSocial(sku: string, patch: SocialPatch): Promise<boolean> {
+    const key = socialKey(sku);
+    if (busy.value.has(key)) return false;
+    clearError();
+    busy.value = new Set(busy.value).add(key);
+    try {
+      await $fetch("/api/v1/backstage/catalog/social/", {
+        method: "POST",
+        body: { sku, ...patch },
+      });
+      useSonner.success("Dados do produto salvos.");
+      await refresh();
+      return true;
+    } catch (error) {
+      errorMsg.value = httpErrorMessage(error, "Falha ao salvar. Confira os campos.");
+      useSonner.error(errorMsg.value);
+      return false;
+    } finally {
+      const next = new Set(busy.value);
+      next.delete(key);
+      busy.value = next;
+    }
+  }
+
+  // ── detalhe do produto (painel de edição) ──────────────────────────────────
+  // Busca sob demanda (só quando o painel abre — a matriz não carrega os campos
+  // longos) e grava por merge parcial. O PATCH re-projeta no backend; refazemos o
+  // fetch canônico da matriz para refletir nome/preço/publicação na linha.
+  const detailKey = (sku: string) => `detail@${sku}`;
+
+  async function fetchProductDetail(sku: string): Promise<ProductDetailProjection | null> {
+    clearError();
+    try {
+      const res = await $fetch<ProductDetailResponse>(`/api/v1/backstage/catalog/product/${encodeURIComponent(sku)}/`);
+      return res?.product ?? null;
+    } catch (error) {
+      errorMsg.value = httpErrorMessage(error, "Falha ao carregar o produto.");
+      useSonner.error(errorMsg.value);
+      return null;
+    }
+  }
+
+  async function saveProductDetail(sku: string, patch: ProductDetailPatch): Promise<boolean> {
+    const key = detailKey(sku);
+    if (busy.value.has(key)) return false;
+    clearError();
+    busy.value = new Set(busy.value).add(key);
+    try {
+      await $fetch(`/api/v1/backstage/catalog/product/${encodeURIComponent(sku)}/`, {
+        method: "PATCH",
+        body: patch,
+      });
+      useSonner.success("Produto salvo.");
+      await refresh();
+      return true;
+    } catch (error) {
+      errorMsg.value = httpErrorMessage(error, "Falha ao salvar. Confira os campos.");
+      useSonner.error(errorMsg.value);
+      return false;
+    } finally {
+      const next = new Set(busy.value);
+      next.delete(key);
+      busy.value = next;
+    }
+  }
+
+  // ── assist de IA (sugestão por campo) ──────────────────────────────────────
+  // Pede uma sugestão para UM campo e devolve o texto — não grava nada: quem
+  // persiste é o salvar do painel, depois de o operador aceitar. Sem chave no
+  // deployment o backend responde 503; aqui isso vira um aviso informativo, não
+  // um erro: o assist é conveniência, e o operador segue escrevendo à mão.
+  const aiAssistKey = (sku: string, field: AssistableField) => `ai-assist-${sku}-${field}`;
+
+  async function aiAssist(
+    sku: string,
+    field: AssistableField,
+    currentValue: string,
+  ): Promise<string> {
+    const key = aiAssistKey(sku, field);
+    if (busy.value.has(key)) return "";
+    clearError();
+    busy.value = new Set(busy.value).add(key);
+    try {
+      const res = await $fetch<AiAssistResponse>("/api/v1/backstage/catalog/ai-assist/", {
+        method: "POST",
+        body: { sku, field, current_value: currentValue, context: {} },
+      });
+      return res?.suggestion ?? "";
+    } catch (error) {
+      const { status } = httpError(error);
+      if (status === 503) {
+        useSonner.info(httpErrorMessage(error, "Sugestão de IA não está configurada nesta loja."));
+      } else {
+        errorMsg.value = httpErrorMessage(error, "Não consegui sugerir agora. Tente de novo.");
+        useSonner.error(errorMsg.value);
+      }
+      return "";
+    } finally {
+      const next = new Set(busy.value);
+      next.delete(key);
+      busy.value = next;
+    }
+  }
+
   // ── reordenação (curadoria) ────────────────────────────────────────────────
   async function reorderCollections(orderedRefs: string[]): Promise<boolean> {
     clearError();
@@ -183,7 +331,8 @@ export function useCatalogMatrix(collectionRef?: Ref<string>) {
   }
 
   return {
-    matrix, pending, error, refresh, isBusy, cellKey, productKey, errorMsg, clearError,
-    setCell, setProduct, bulkSet, bulkPrice, reorderCollections, reorderItems, bulkBusy,
+    matrix, pending, error, refresh, isBusy, cellKey, productKey, socialKey, detailKey, errorMsg, clearError,
+    setCell, setProduct, bulkSet, bulkPrice, resync, saveSocial, fetchProductDetail, saveProductDetail,
+    reorderCollections, reorderItems, bulkBusy, aiAssist, aiAssistKey,
   };
 }

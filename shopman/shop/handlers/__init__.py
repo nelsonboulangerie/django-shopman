@@ -32,6 +32,9 @@ ALL_HANDLERS = [
     "shopman.shop.handlers.payment_timeout.PaymentTimeoutHandler",
     # Production
     "shopman.shop.handlers.production_alerts.ProductionLateCheckHandler",
+    # Broadcast (marketing operacional)
+    "shopman.shop.handlers.broadcast.BroadcastPostHandler",
+    "shopman.shop.handlers.broadcast.BroadcastNotifyHandler",
     # Mock PIX (dev/test only; only fires when payment_mock scheduled a directive)
     "shopman.shop.handlers.mock_pix.MockPixConfirmHandler",
     # Fulfillment
@@ -98,6 +101,7 @@ def register_all() -> None:
     _register_catalog_projection_handler()
     _register_catalog_signals()
     _register_ifood_status_callbacks()
+    _register_broadcast()
 
 
 # ── Individual registrations ──
@@ -305,19 +309,21 @@ def _register_catalog_projection_handler() -> None:
     (OFFERMAN["PROJECTION_BACKENDS"]) via get_projection_backend() — the same
     registry the manual sync command reconciles through.
     """
-    from shopman.offerman.conf import (
-        get_projection_backend,
-        get_projection_backend_channels,
-    )
+    from shopman.offerman.conf import get_projection_backend_channels
 
     from shopman.shop.handlers.catalog_projection import CatalogProjectHandler
 
-    for listing_ref in get_projection_backend_channels():
-        backend = get_projection_backend(listing_ref)
-        if backend is None:
-            continue
-        registry.register_directive_handler(CatalogProjectHandler(backend=backend))
-        logger.info("shopman.handlers: registered CatalogProjectHandler for %s", listing_ref)
+    channels = get_projection_backend_channels()
+    if not channels:
+        return
+    # Single handler dispatches to all backends (topic is unique per registry);
+    # the handler reads listing_ref from the directive payload and resolves the
+    # backend at handle-time via get_projection_backend().
+    registry.register_directive_handler(CatalogProjectHandler(backend=None))
+    logger.info(
+        "shopman.handlers: registered CatalogProjectHandler for %s",
+        ", ".join(channels),
+    )
 
 
 def _register_ifood_status_callbacks() -> None:
@@ -338,6 +344,21 @@ def _register_ifood_status_callbacks() -> None:
     registry.register_directive_handler(IFoodStatusCallbackHandler())
     order_changed.connect(on_order_status_changed, weak=False)
     logger.info("shopman.handlers: registered iFood status callbacks.")
+
+
+def _register_broadcast() -> None:
+    """Wire broadcast receivers (produção, disponibilidade, produto novo).
+
+    Sempre registrados: sem ``BroadcastRule`` ativa o ``evaluate()`` é um
+    SELECT vazio, e gatear por config deixaria a loja muda até alguém
+    lembrar de religar.
+    """
+    from shopman.shop.handlers import broadcast
+
+    broadcast.connect()
+    registry.register_directive_handler(broadcast.BroadcastPostHandler())
+    registry.register_directive_handler(broadcast.BroadcastNotifyHandler())
+    logger.info("shopman.handlers: connected broadcast receivers.")
 
 
 def _register_catalog_signals() -> None:
