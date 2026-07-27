@@ -16,11 +16,25 @@
 #   registros (staging/api.staging/admin.staging/pos.staging) e os certificados TLS
 #   sozinha no deploy. NÃO crie CNAME manualmente (causaria conflito).
 #
-#   Único passo:
-#     doctl apps update 40b86e35-bafe-4a1a-a1b0-e124d3d9fd0f \
-#       --spec .do/app.staging-subdomains.yaml --context shopman-staging-write
-#     (atualiza o app existente — reusa o mesmo Postgres/Valkey; NÃO recria banco;
-#      pode levar alguns minutos p/ provisionar domínios + certs.)
+#   ⚠️ DEPLOY DE CÓDIGO ≠ MUDANÇA DE TOPOLOGIA. São dois comandos diferentes:
+#
+#   (a) SUBIR CÓDIGO NOVO do `main` — o caso de 99% dos dias.
+#       NÃO toca o spec, NÃO toca segredos. É este que você quer:
+#         doctl --context shopman-staging-deploy apps create-deployment \
+#           40b86e35-bafe-4a1a-a1b0-e124d3d9fd0f --wait
+#
+#   (b) MUDAR A TOPOLOGIA (domínios, componentes, rotas) — aplica ESTE arquivo
+#       por cima do app vivo e SOBRESCREVE o spec inteiro:
+#         doctl apps update 40b86e35-bafe-4a1a-a1b0-e124d3d9fd0f \
+#           --spec .do/app.staging-subdomains.yaml --context shopman-staging-write
+#       ⚠️ TODA variável ENCRIPTADA que exista só no painel e não esteja neste
+#          arquivo É APAGADA. Antes de rodar (b), sempre:
+#            doctl apps get 40b86e35-bafe-4a1a-a1b0-e124d3d9fd0f \
+#              --format Spec --no-header > /tmp/spec-vivo-$(date +%F).yaml
+#          confira quais SECRET existem no spec vivo e reponha pelo painel
+#          logo depois. Ver docs/status.md e docs/runbooks/go-live-cutover.md.
+#       (b) reusa o mesmo Postgres/Valkey; NÃO recria banco; pode levar alguns
+#       minutos p/ provisionar domínios + certs.
 #   Secrets (ManyChat etc.) seguem como variáveis ENCRIPTADAS no painel.
 #
 # ⚠️ Esta atualização troca o staging atual (path-routed: loja em /thing) pela
