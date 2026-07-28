@@ -774,6 +774,17 @@ def activate_preorder(order) -> None:
         return
 
     config = ChannelConfig.for_channel(order.channel_ref)
+    # Encomenda NÃO PAGA não vai para a cozinha. O mesmo gate de _on_confirmed:
+    # sem ele, a via `holds_materialized` -> on_holds_materialized ->
+    # activate_preorder levava o pedido a PREPARING (e, ao completar, a fiscal
+    # e loyalty) sem um centavo capturado.
+    if _requires_payment_before_physical_work(order, config) and not _payment_is_captured(order):
+        logger.warning(
+            "lifecycle.activate_preorder: unpaid order=%s — trabalho físico bloqueado", order.ref
+        )
+        _create_alert(order, "preorder_activation_blocked_unpaid")
+        notification.send(order, "payment_requested")
+        return
     physical_work_dispatched = _dispatch_physical_work(order)
     if _stock_fulfill_allowed(order, config):
         stock.fulfill(order, pending_materialization_ok=True)

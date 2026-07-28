@@ -24,7 +24,6 @@ import logging
 from dataclasses import dataclass
 
 from django.utils import timezone
-from django.utils.dateparse import parse_datetime
 
 from shopman.shop.omotenashi import resolve_copy
 from shopman.shop.projections.types import Action
@@ -223,14 +222,9 @@ def _payment_flags(
 ) -> tuple[bool, bool, bool]:
     is_paid = payment_policy.has_sufficient_captured_payment(order)
     is_cancelled = order.status == "cancelled"
-    is_expired = False
-    if expires_at_str and not is_paid and not is_cancelled:
-        try:
-            expires_at = parse_datetime(expires_at_str)
-            if expires_at and timezone.now() > expires_at:
-                is_expired = True
-        except Exception:
-            logger.warning("payment_status_expiry_parse_failed order=%s", order.ref, exc_info=True)
+    # A regra da expiração mora em services.payment_status — mesma função que o
+    # acompanhamento usa. Duas cópias eram o que fazia as telas discordarem.
+    is_expired = payment_policy.deadline_passed(order, expires_at_str)
     return is_paid, is_cancelled, is_expired
 
 

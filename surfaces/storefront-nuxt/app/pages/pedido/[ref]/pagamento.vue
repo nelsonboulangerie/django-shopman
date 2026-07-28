@@ -21,6 +21,19 @@ const { data, pending, error, refresh } = await useFetch<PaymentResponse>(
 )
 
 const payment = computed(() => data.value?.payment || null)
+// As CTAs reais (retry_payment, authorize_card, pay_card) vivem em
+// `promise.actions`; `payment.actions` só carrega o botão mock de DEBUG. A tela
+// iterava apenas o segundo, então estados como `intent_error` e
+// `card_checkout_pending` mostravam o erro e NENHUM botão para sair dele.
+const paymentActions = computed<Action[]>(() => {
+  const vistas = new Set<string>()
+  return [...(payment.value?.promise?.actions || []), ...(payment.value?.actions || [])]
+    .filter((a) => {
+      if (!a?.ref || vistas.has(a.ref)) return false
+      vistas.add(a.ref)
+      return true
+    })
+})
 // Copy estática da tela vem do registro omotenashi (configurável no Admin); o
 // fallback cobre só o intervalo de carregamento. O painel de status é o promise.
 const copy = computed(() => data.value?.copy ?? {
@@ -109,12 +122,14 @@ async function copyPix () {
   useSonner.success(copy.value.pix_copied)
 }
 
-// PIX expirado nunca é beco sem saída: re-busca o pagamento (o backend reemite um
-// intent novo quando o prazo vence) e re-ancora a janela do countdown. Se o poll
-// tinha parado no estado terminal, ele volta sozinho quando o estado deixa de ser
-// terminal.
+// PIX expirado: re-consulta o servidor para descobrir o estado real. NÃO existe
+// reemissão de intent — `customer_orders.ensure_payment_intent` retorna cedo
+// quando já há `intent_ref`, e `payment_service.initiate` é idempotente. O
+// comentário anterior afirmava o contrário e o botão prometia um código novo que
+// nunca vinha. Quando o prazo vence, o pedido segue para cancelamento por
+// timeout; o caminho honesto é ver o estado no acompanhamento.
 const regenerating = ref(false)
-async function regeneratePix () {
+async function recheckPayment () {
   if (regenerating.value) return
   regenerating.value = true
   expiryHandled = false
@@ -123,7 +138,7 @@ async function regeneratePix () {
   try {
     await refresh()
   } catch (e) {
-    if (import.meta.client) useSonner.error(errorDetail(e, 'Não foi possível gerar um novo código agora.'))
+    if (import.meta.client) useSonner.error(errorDetail(e, 'Não foi possível verificar o pagamento agora.'))
   } finally {
     regenerating.value = false
   }
@@ -296,14 +311,21 @@ useSeoMeta({
                     <UiProgress :model-value="pixPct" :class="pixUrgent ? '[&>div]:bg-destructive' : ''" />
                     <p class="shop-meta">Assim que o pagamento cair, atualizamos esta tela automaticamente.</p>
                   </div>
-                  <!-- PIX expirado: estado explícito + caminho de saída (gerar novo
-                       código). Nunca um QR morto sem próximo passo. -->
+                  <!-- PIX expirado: dizer a verdade. Não há reemissão de código;
+                       o pedido segue para cancelamento por timeout. Oferecemos
+                       reconferir (o pagamento pode ter caído no limite) e o
+                       acompanhamento, que mostra o estado real. -->
                   <div v-else-if="pixCountdown?.isExpired" class="shop-stack-tight rounded-lg border border-destructive/30 bg-destructive/5 p-3">
                     <p class="shop-body font-semibold text-destructive">O prazo do Pix expirou.</p>
-                    <p class="shop-muted">Gere um novo código para concluir o pagamento. Seu pedido continua guardado.</p>
-                    <UiButton size="lg" icon="lucide:refresh-cw" :loading="regenerating" class="w-full sm:w-auto" @click="regeneratePix">
-                      Gerar novo código Pix
-                    </UiButton>
+                    <p class="shop-muted">Se você pagou nos últimos instantes, confira de novo — a confirmação pode estar a caminho. Senão, o pedido será liberado e você pode refazê-lo.</p>
+                    <div class="flex flex-col gap-2 sm:flex-row">
+                      <UiButton size="lg" icon="lucide:refresh-cw" :loading="regenerating" class="w-full justify-center sm:w-auto" @click="recheckPayment">
+                        Conferir de novo
+                      </UiButton>
+                      <UiButton :to="localRouteFromBackend(payment.tracking_url)" variant="outline" size="lg" icon="lucide:route" class="w-full justify-center sm:w-auto">
+                        Acompanhar pedido
+                      </UiButton>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -344,7 +366,7 @@ useSeoMeta({
                   Acompanhar pedido
                 </UiButton>
                 <UiButton
-                  v-for="action in payment.actions"
+                  v-for="action in paymentActions"
                   :key="action.ref"
                   :variant="actionVariant(action)"
                   class="w-full"

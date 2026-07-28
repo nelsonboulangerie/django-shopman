@@ -5,7 +5,6 @@ Covers:
   1. access_urls.py — build_access_url / build_tracking_access_url / build_reorder_access_url
   2. notification._build_context — tracking_url/reorder_url injected when UUID present
   3. notification_manychat._build_message — tracking_suffix/reorder_suffix computed
-  4. order_confirmation view — share_text includes shop name
 """
 
 from __future__ import annotations

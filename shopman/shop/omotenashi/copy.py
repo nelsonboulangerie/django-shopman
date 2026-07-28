@@ -513,11 +513,6 @@ OMOTENASHI_DEFAULTS: dict[str, dict[str, dict[str, CopyEntry]]] = {
     "TRACKING_PROMISE_PREORDER_NEXT": {
         WILDCARD: {WILDCARD: CopyEntry(message="No dia, avisamos você quando o preparo começar.")},
     },
-    # Confirmação de encomenda: prefixo do combinado ("Pedido para" + "sábado,
-    # 19/07 · A partir das 09h") no lugar do ETA de preparo.
-    "CONFIRMATION_PREORDER_WHEN_PREFIX": {
-        WILDCARD: {WILDCARD: CopyEntry(message="Pedido para")},
-    },
     "TRACKING_STEP_RECEIVED": {
         WILDCARD: {WILDCARD: CopyEntry(title="Recebemos seu pedido")},
     },
@@ -749,7 +744,7 @@ OMOTENASHI_DEFAULTS: dict[str, dict[str, dict[str, CopyEntry]]] = {
         WILDCARD: {WILDCARD: CopyEntry(title="Voltar")},
     },
 
-    # ── Order confirmation ────────────────────────────────────────
+    # ── Order confirmation (momento yoin, no acompanhamento) ──────
     "CONFIRMATION_HEADING": {
         MOMENT_MANHA: {
             AUDIENCE_VIP: CopyEntry(title="Ótimo começo de dia"),
@@ -757,17 +752,11 @@ OMOTENASHI_DEFAULTS: dict[str, dict[str, dict[str, CopyEntry]]] = {
         },
         WILDCARD: {WILDCARD: CopyEntry(title="Pedido recebido")},
     },
-    "CONFIRMATION_ITEMS_HEADING": {
-        WILDCARD: {WILDCARD: CopyEntry(title="Você encomendou")},
-    },
     "CONFIRMATION_TRACK_CTA": {
         WILDCARD: {WILDCARD: CopyEntry(title="Acompanhar pedido")},
     },
     "CONFIRMATION_SHARE_CTA": {
         WILDCARD: {WILDCARD: CopyEntry(title="Compartilhar")},
-    },
-    "CONFIRMATION_ETA_PREFIX": {
-        WILDCARD: {WILDCARD: CopyEntry(message="Começamos a preparar")},
     },
 
     # ── Payment ───────────────────────────────────────────────────

@@ -2,7 +2,7 @@
 
 Complementa `test_order_access_security.py`: aquele cobre ref-guess anônimo em
 tracking/payment/reorder; aqui fechamos as lacunas que o QA exercitou —
-confirmation/cancel/confirm-received, e o não-dono LOGADO (não só anônimo),
+tracking/cancel/confirm-received, e o não-dono LOGADO (não só anônimo),
 provando que o 404 é idêntico ao de um ref inexistente (sem enumeração).
 """
 
@@ -31,9 +31,9 @@ def _login_as_customer(client: Client, customer: Customer):
     return user
 
 
-def test_confirmation_ref_guess_returns_404(order):
+def test_tracking_ref_guess_returns_404(order):
     attacker = Client()
-    resp = attacker.get(f"/api/v1/orders/{order.ref}/confirmation/")
+    resp = attacker.get(f"/api/v1/tracking/{order.ref}/")
     assert resp.status_code == 404
 
 

@@ -348,6 +348,7 @@ class CheckoutView(APIView):
 
         # Clear cart
         order_service.grant_order_access(request, result.order_ref)
+        order_service.mark_just_placed(request, result.order_ref)
         request.session.pop("cart_session_key", None)
         next_url = f"/tracking/{result.order_ref}"
         if payment_method in {"pix", "card"}:

@@ -70,6 +70,32 @@ def grant_order_access(request, order_ref: str) -> None:
     request.session.modified = True
 
 
+# Momento "acabei de fazer o pedido": marcado no checkout, consumido UMA vez
+# no primeiro carregamento do acompanhamento. Não vive na URL — link
+# compartilhado não mostra a celebração de outra pessoa — e não repete no
+# refresh.
+JUST_PLACED_SESSION_KEY = "just_placed_order_ref"
+
+
+def mark_just_placed(request, order_ref: str) -> None:
+    """Marca, na sessão, que este pedido acabou de ser fechado aqui."""
+    if not order_ref or not hasattr(request, "session"):
+        return
+    request.session[JUST_PLACED_SESSION_KEY] = str(order_ref)
+    request.session.modified = True
+
+
+def consume_just_placed(request, order_ref: str) -> bool:
+    """True uma única vez, no primeiro acesso após o checkout."""
+    if not order_ref or not hasattr(request, "session"):
+        return False
+    if request.session.get(JUST_PLACED_SESSION_KEY) != str(order_ref):
+        return False
+    request.session.pop(JUST_PLACED_SESSION_KEY, None)
+    request.session.modified = True
+    return True
+
+
 def request_can_access_order(request, order) -> bool:
     """Return True for staff, same checkout session, or matching customer identity."""
     user = getattr(request, "user", None)
@@ -494,20 +520,6 @@ def confirm_received(order) -> bool:
     return operator_orders.confirm_received(order, actor="customer.self_confirm")
 
 
-def should_skip_confirmation(order) -> bool:
-    """True when the channel auto-confirms and confirmation page should redirect."""
-    if not order.channel_ref:
-        return False
-
-    try:
-        from shopman.shop.config import ChannelConfig
-
-        cfg = ChannelConfig.for_channel(order.channel_ref).confirmation
-        return cfg.mode == "auto_confirm"
-    except Exception:
-        logger.warning("confirmation_config_lookup_failed order=%s", order.ref, exc_info=True)
-        return False
-
 
 def add_reorder_items(
     request,
@@ -669,7 +681,8 @@ __all__ = [
     "resolve_confirmation_timeout_if_due",
     "resolve_payment_timeout_if_due",
     "requires_payment_gate",
+    "mark_just_placed",
+    "consume_just_placed",
     "request_can_access_order",
-    "should_skip_confirmation",
     "user_can_access_order",
 ]

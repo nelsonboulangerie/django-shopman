@@ -97,6 +97,14 @@ def requires_payment_gate(order) -> bool:
     return customer_orders.requires_payment_gate(order)
 
 
+def mark_just_placed(request, order_ref: str) -> None:
+    customer_orders.mark_just_placed(request, order_ref)
+
+
+def consume_just_placed(request, order_ref: str) -> bool:
+    return customer_orders.consume_just_placed(request, order_ref)
+
+
 def ensure_payment_intent(order) -> bool:
     return customer_orders.ensure_payment_intent(order)
 
@@ -120,9 +128,6 @@ def cancel(order) -> None:
 def confirm_received(order) -> bool:
     return customer_orders.confirm_received(order)
 
-
-def should_skip_confirmation(order) -> bool:
-    return customer_orders.should_skip_confirmation(order)
 
 
 def add_reorder_items(request, order, *, cart_service=None) -> list[str]:
