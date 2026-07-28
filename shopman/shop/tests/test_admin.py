@@ -775,10 +775,11 @@ class TestOperatorAlertAdmin:
         assert "severity_badge" in alert_admin.list_display
         assert "acknowledged_badge" in alert_admin.list_display
 
-    def test_mark_acknowledged_action(self, db):
+    def test_no_acknowledge_actions(self, db):
+        # Ack operacional vive no Gestor (AlertsBell); o Admin é trilha readonly.
         alert_admin = admin.site._registry[OperatorAlert]
-        action_names = [a.__name__ if callable(a) else a for a in alert_admin.actions]
-        assert "mark_acknowledged" in action_names
+        assert not (alert_admin.actions or [])
+        assert not (alert_admin.actions_row or [])
 
 
 # ── Order admin extensions ──────────────────────────────────────────
@@ -847,55 +848,44 @@ class TestBatchAdminExtension:
 
 
 class TestDashboardCallback:
-    def test_returns_context_with_kpis(self, db):
+    def test_returns_config_audit_and_alerts_context(self, db):
         from shopman.backstage.admin.dashboard import dashboard_callback
 
         request = RequestFactory().get("/admin/")
         context = {}
         result = dashboard_callback(request, context)
 
-        assert "order_summary" in result
-        assert "revenue" in result
-        assert "production" in result
+        assert "config_links" in result
+        assert "audit_links" in result
+        assert "omotenashi_health" in result
         assert "kpi_stock_alerts" in result
-        assert "chart_pedidos_status" in result
-        assert "chart_vendas_7dias" in result
-        assert "table_pedidos_pendentes" in result
-        assert "recent_orders" in result
+        assert "kpi_operator_alerts" in result
+        assert "table_estoque_baixo" in result
         assert "operator_alerts" in result
+        assert "day_closing_url" in result
 
-    def test_order_summary_structure(self, db):
+    def test_no_live_operation_widgets(self, db):
+        """Operação ao vivo (pedidos, produção) mora nos apps Nuxt, não aqui."""
         from shopman.backstage.admin.dashboard import dashboard_callback
 
         request = RequestFactory().get("/admin/")
-        context = {}
-        result = dashboard_callback(request, context)
+        result = dashboard_callback(request, {})
 
-        summary = result["order_summary"]
-        assert hasattr(summary, "total")
-        assert hasattr(summary, "new_count")
-        assert hasattr(summary, "cards")
+        for gone in (
+            "order_summary", "revenue", "production", "chart_pedidos_status",
+            "chart_vendas_7dias", "table_pedidos_pendentes", "recent_orders",
+            "table_recentes", "table_producao", "table_sugestao_producao",
+        ):
+            assert gone not in result
 
-    def test_revenue_structure(self, db):
+    def test_config_links_resolve(self, db):
         from shopman.backstage.admin.dashboard import dashboard_callback
 
         request = RequestFactory().get("/admin/")
-        context = {}
-        result = dashboard_callback(request, context)
+        result = dashboard_callback(request, {})
 
-        revenue = result["revenue"]
-        assert hasattr(revenue, "today_q")
-        assert hasattr(revenue, "today_display")
-        assert hasattr(revenue, "yesterday_q")
-        assert hasattr(revenue, "trend_up")
-
-    def test_format_brl(self):
-        from shopman.backstage.projections.dashboard import _format_brl
-
-        assert _format_brl(0) == "R$ 0,00"
-        assert _format_brl(1500) == "R$ 15,00"
-        assert _format_brl(150000) == "R$ 1.500,00"
-        assert _format_brl(None) == "R$ 0,00"
+        for link in result["config_links"] + result["audit_links"]:
+            assert link["url"].startswith("/admin/")
 
 
 class TestProductionBackstageRoutes:
@@ -912,11 +902,22 @@ class TestProductionBackstageRoutes:
             with pytest.raises(NoReverseMatch):
                 reverse(route_name)
 
-    def test_canonical_production_routes_are_admin_unfold(self, db):
-        assert reverse("admin_console_production") == "/admin/operacao/producao/"
-        assert reverse("admin_console_production_dashboard") == "/admin/operacao/producao/painel/"
-        assert reverse("admin_console_production_reports") == "/admin/operacao/producao/relatorios/"
-        # Criação em lote saiu do Admin junto com a execução (split canônico
-        # WP-PE4): planejar é do Fournil via api/v1/backstage/production/plan/.
-        with pytest.raises(NoReverseMatch):
-            reverse("admin_console_production_bulk_create")
+    def test_admin_console_production_routes_removed(self, db):
+        # WP-ADM-7d: o console Admin de produção saiu; a superfície canônica é
+        # o Fournil (surfaces/production-nuxt) sobre api/v1/backstage/production/*.
+        for route_name in (
+            "admin_console_production",
+            "admin_console_production_planning",
+            "admin_console_production_dashboard",
+            "admin_console_production_reports",
+            "admin_console_production_weighing",
+            "admin_console_production_work_order_commitments",
+            "admin_console_production_bulk_create",
+        ):
+            with pytest.raises(NoReverseMatch):
+                reverse(route_name)
+
+    def test_canonical_production_routes_are_headless_api(self, db):
+        assert reverse("api-backstage-production-reports") == "/api/v1/backstage/production/reports/"
+        assert reverse("api-backstage-production-management") == "/api/v1/backstage/production/management/"
+        assert reverse("api-backstage-production-blind-map") == "/api/v1/backstage/production/weighing/blind-map/"

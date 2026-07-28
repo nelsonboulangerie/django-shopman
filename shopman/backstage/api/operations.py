@@ -4,6 +4,9 @@ GET endpoints (read views):
   GET  /api/v1/backstage/pos/                 → POS terminal projection
   GET  /api/v1/backstage/production/          → Production board for today
   GET  /api/v1/backstage/production/kds/      → Production KDS (started WOs)
+  GET  /api/v1/backstage/production/reports/  → Production reports (manager; ?format=csv)
+  GET  /api/v1/backstage/production/management/ → Day KPIs (yield, capacity, late)
+  GET  /api/v1/backstage/production/weighing/blind-map/ → Blind code ↔ prep map (manager)
   GET  /api/v1/backstage/closing/             → Day closing snapshot
   GET  /api/v1/backstage/orders/              → Operator order queue
 
@@ -25,6 +28,7 @@ POST endpoints (operator actions):
   POST /api/v1/backstage/pos/cash/open/              -> open cash shift
   POST /api/v1/backstage/pos/cash/close/             -> close cash shift
   POST /api/v1/backstage/pos/cash/movement/          → register cash movement
+  GET  /api/v1/backstage/pos/cash/report/            → X/Z readings + shift history
   POST /api/v1/backstage/pos/sale/review/            → validate POS checkout without commit
   POST /api/v1/backstage/pos/sale/recent/cancel/     → cancel recent POS sale
 """
@@ -39,11 +43,14 @@ from django.utils.decorators import method_decorator
 from django_ratelimit.decorators import ratelimit
 from drf_spectacular.utils import OpenApiResponse, extend_schema, extend_schema_view
 from rest_framework.permissions import AllowAny
+from rest_framework.renderers import BaseRenderer, JSONRenderer
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from shopman.utils.monetary import format_money
 
+from shopman.backstage.api._production_filters import report_filters
 from shopman.backstage.constants import POS_CHANNEL_REF
+from shopman.backstage.projections.cash_session import build_cash_session_report
 from shopman.backstage.projections.closing import build_day_closing
 from shopman.backstage.projections.order_queue import build_operator_order, build_two_zone_queue
 from shopman.backstage.projections.pos import (
@@ -55,10 +62,13 @@ from shopman.backstage.projections.pos import (
     build_pos_tabs,
 )
 from shopman.backstage.projections.production import (
+    build_production_blind_map,
     build_production_board,
+    build_production_dashboard,
     build_production_forecast,
     build_production_kds,
     build_production_mise_en_place,
+    build_production_reports,
     build_production_weighing,
 )
 from shopman.backstage.services import (
@@ -669,6 +679,98 @@ class ProductionWeighingView(APIView):
             base_recipe=request.query_params.get("base_recipe", ""),
         )
         return Response({"weighing": projection_data(weighing)})
+
+
+class ProductionReportsCSVRenderer(BaseRenderer):
+    """Renderer pass-through do CSV pronto (``export_reports_csv`` já emite BOM UTF-8).
+
+    Registrado na view de relatórios para o ``?format=csv`` canônico do DRF
+    selecionar o download em vez de cair no 404 da negociação de conteúdo.
+    """
+
+    media_type = "text/csv"
+    format = "csv"
+    charset = None
+    render_style = "binary"
+
+    def render(self, data, accepted_media_type=None, renderer_context=None):
+        if isinstance(data, bytes):
+            return data
+        # Erros (403 etc.) chegam como dict do exception handler — vira JSON legível.
+        return json.dumps(data).encode("utf-8")
+
+
+@extend_schema_view(
+    get=extend_schema(
+        tags=["backstage"],
+        summary="Production reports (history, operator productivity, recipe waste)",
+        responses={200: OpenApiResponse(description="Report rows for the requested filters (or CSV with ?format=csv).")},
+    ),
+)
+class ProductionReportsView(APIView):
+    """Relatórios de produção — persona GESTOR (perm fina, não o gate de chão)."""
+
+    permission_classes = [HasBackstagePermission]
+    required_permission = "backstage.view_production_reports"
+    renderer_classes = [JSONRenderer, ProductionReportsCSVRenderer]
+
+    def get(self, request):
+        filters = report_filters(request)
+        if request.accepted_renderer.format == "csv":
+            csv_bytes = production_service.export_reports_csv(filters["report_kind"], filters)
+            filename = f"producao_{filters['report_kind']}_{filters['date_from']}_{filters['date_to']}.csv"
+            return Response(
+                csv_bytes,
+                content_type="text/csv; charset=utf-8",
+                headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+            )
+        reports = build_production_reports(filters)
+        return Response({"reports": projection_data(reports)})
+
+
+@extend_schema_view(
+    get=extend_schema(
+        tags=["backstage"],
+        summary="Production management KPIs (average yield, capacity, late orders)",
+        responses={200: OpenApiResponse(description="Day-level management dashboard for production.")},
+    ),
+)
+class ProductionManagementView(APIView):
+    """KPIs de gestão do dia — persona GESTOR (perm fina, não o gate de chão)."""
+
+    permission_classes = [HasBackstagePermission]
+    required_permission = "backstage.view_production_reports"
+
+    def get(self, request):
+        selected = _parse_date(request.query_params.get("date"))
+        dashboard = build_production_dashboard(
+            selected_date=selected,
+            position_ref=request.query_params.get("position", ""),
+        )
+        return Response({"management": projection_data(dashboard)})
+
+
+@extend_schema_view(
+    get=extend_schema(
+        tags=["backstage"],
+        summary="Blind code ↔ prep map (manager-only correlation of weighing labels)",
+        responses={200: OpenApiResponse(description="The day's blind codes with their preps.")},
+    ),
+)
+class ProductionBlindMapView(APIView):
+    """Mapa código-cego ↔ preparo — persona GESTOR; as telas de chão são cegas."""
+
+    permission_classes = [HasBackstagePermission]
+    required_permission = "backstage.view_production_reports"
+
+    def get(self, request):
+        selected = _parse_date(request.query_params.get("date"))
+        blind_map = build_production_blind_map(
+            selected_date=selected,
+            position_ref=request.query_params.get("position", ""),
+            base_recipe=request.query_params.get("base_recipe", ""),
+        )
+        return Response({"blind_map": projection_data(blind_map)})
 
 
 @extend_schema_view(
@@ -1379,6 +1481,31 @@ class POSCashMovementView(APIView):
             logger.debug("pos_cash_movement_failed user=%s kind=%s", _actor(request), kind, exc_info=True)
             return Response({"detail": str(exc) or "Falha ao registrar movimento."}, status=400)
         return Response({"ok": True, "movement_id": getattr(mov, "pk", None)})
+
+
+@extend_schema_view(
+    get=extend_schema(
+        tags=["backstage"],
+        summary="Cash session report — X/Z readings and today's shift history",
+        responses={200: OpenApiResponse(description="Cash session report.")},
+    ),
+)
+class POSCashReportView(APIView):
+    """Leitura X (turno aberto), leituras Z (turnos fechados) e histórico do dia.
+
+    Gate único `backstage.operate_pos`: a projection nunca expõe o valor
+    ESPERADO da gaveta nem a variância (blind count) — nem no X, nem no Z —
+    então não há nada aqui que exija o gate mais forte do gerente. A
+    conferência (esperado vs contado, `perform_closing`/`audit_cashshift`)
+    permanece exclusiva da retaguarda.
+    """
+
+    permission_classes = [HasBackstagePermission]
+    required_permission = "backstage.operate_pos"
+
+    def get(self, request):
+        report = build_cash_session_report(operator=request.user)
+        return Response({"report": projection_data(report)})
 
 
 # ── POS tab (comanda) endpoints ───────────────────────────────────────

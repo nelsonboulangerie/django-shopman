@@ -10,7 +10,6 @@ To use, add 'shopman.craftsman.contrib.admin_unfold' to INSTALLED_APPS after 'cr
 
 import logging
 from decimal import Decimal
-from importlib import import_module
 from urllib.parse import urlencode
 
 from django import forms
@@ -40,7 +39,6 @@ from shopman.utils.contrib.admin_unfold.base import (
 )
 from unfold.contrib.filters.admin import ChoicesDropdownFilter, ChoicesRadioFilter, RangeDateFilter
 from unfold.decorators import action, display
-from unfold.enums import ActionVariant
 from unfold.sections import TableSection
 from unfold.widgets import (
     UnfoldAdminDecimalFieldWidget,
@@ -481,10 +479,15 @@ class WorkOrderEventSection(TableSection):
 @admin.register(WorkOrder)
 class WorkOrderAdmin(BaseModelAdmin):
     """
-    Admin de Execução (vNext).
+    Admin de consulta e navegação (vNext).
 
     4 estados: planned, started, finished, void.
     Campos editáveis: quantity (via adjust enquanto planned), target_date.
+
+    Na suíte, concluir/anular OP é execução operacional e vive no Fournil
+    (production-nuxt, API production/<id>/*). O fallback standalone
+    (shopman.craftsman.admin) mantém suas actions de finish/void — drift
+    deliberado: fora da suíte não há superfície de operação.
     """
 
     compressed_fields = True
@@ -520,9 +523,11 @@ class WorkOrderAdmin(BaseModelAdmin):
     autocomplete_fields = ["recipe"]
 
     inlines = [WorkOrderItemInline, WorkOrderEventInline]
-    actions_row = ["production_board_row", "commitments_row", "close_wo_row", "void_wo_row"]
-    actions_detail = ["production_board_row", "commitments_row", "close_wo_row", "void_wo_row"]
-    actions = ["finish_selected_work_orders", "void_selected_work_orders"]
+    # A visão de compromissos por OP saiu com o console Admin de produção
+    # (WP-ADM-7d): os pedidos vinculados aparecem no board do Fournil. A
+    # execução (concluir/anular) saiu no WP-ADM-5 — vive no Fournil.
+    actions_row = ["production_board_row"]
+    actions_detail = ["production_board_row"]
     list_sections = [WorkOrderEventSection]
 
     fieldsets = (
@@ -704,120 +709,22 @@ class WorkOrderAdmin(BaseModelAdmin):
 
     @action(description=_("Produção"), url_path="production-map", icon="manufacturing")
     def production_board_row(self, request, object_id):
+        """Abre a produção ao vivo no Fournil (WP-ADM-7d): o console Admin de
+        produção saiu; sem base URL configurada, volta ao changelist do dia."""
+        from django.conf import settings
+
         wo = self.get_object(request, object_id)
         if wo is None:
             messages.error(request, _("Ordem não encontrada."))
             return HttpResponseRedirect(reverse("admin:craftsman_workorder_changelist"))
 
+        base = (getattr(settings, "SHOPMAN_PRODUCTION_BASE_URL", "") or "").rstrip("/")
+        if not base:
+            messages.warning(request, _("Produção ao vivo não configurada neste ambiente."))
+            return HttpResponseRedirect(reverse("admin:craftsman_workorder_changelist"))
         if wo.target_date:
-            return HttpResponseRedirect(
-                f'{reverse("admin_console_production")}?date={wo.target_date.isoformat()}'
-            )
-        return HttpResponseRedirect(reverse("admin_console_production"))
-
-    @action(description=_("Pedidos"), url_path="commitments", icon="receipt_long")
-    def commitments_row(self, request, object_id):
-        wo = self.get_object(request, object_id)
-        if wo is None:
-            messages.error(request, _("Ordem não encontrada."))
-            return HttpResponseRedirect(reverse("admin:craftsman_workorder_changelist"))
-
-        return HttpResponseRedirect(
-            reverse("admin_console_production_work_order_commitments", args=[wo.ref])
-        )
-
-    @action(
-        description=_("Concluir"),
-        url_path="finish-wo",
-        icon="check_circle",
-        variant=ActionVariant.SUCCESS,
-    )
-    def close_wo_row(self, request, object_id):
-        wo = self.get_object(request, object_id)
-        if wo is None:
-            messages.error(request, _("Ordem não encontrada."))
-            return HttpResponseRedirect(reverse("admin:craftsman_workorder_changelist"))
-
-        if wo.status not in (WorkOrder.Status.PLANNED, WorkOrder.Status.STARTED):
-            messages.warning(request, _("Apenas ordens planejadas/iniciadas podem ser concluídas."))
-            return HttpResponseRedirect(reverse("admin:craftsman_workorder_changelist"))
-
-        actor = getattr(request.user, "username", None) or "admin"
-        try:
-            _finish_work_order_from_admin(wo, actor=actor)
-            messages.success(
-                request,
-                _("Ordem %(code)s concluída (resultado: %(qty)s).") % {
-                    "code": wo.ref,
-                    "qty": _format_work_order_units(wo.started_qty or wo.quantity),
-                },
-            )
-        except Exception as exc:
-            messages.error(request, str(exc))
-
-        return HttpResponseRedirect(reverse("admin:craftsman_workorder_changelist"))
-
-    @action(
-        description=_("Cancelar ✕"),
-        url_path="void-wo",
-        icon="block",
-        variant=ActionVariant.DANGER,
-    )
-    def void_wo_row(self, request, object_id):
-        wo = self.get_object(request, object_id)
-        if wo is None:
-            messages.error(request, _("Ordem não encontrada."))
-            return HttpResponseRedirect(reverse("admin:craftsman_workorder_changelist"))
-
-        if wo.status not in (WorkOrder.Status.PLANNED, WorkOrder.Status.STARTED):
-            messages.warning(request, _("Apenas ordens planejadas/iniciadas podem ser canceladas."))
-            return HttpResponseRedirect(reverse("admin:craftsman_workorder_changelist"))
-
-        actor = getattr(request.user, "username", None) or "admin"
-        try:
-            _void_work_order_from_admin(wo, actor=actor)
-            messages.success(
-                request,
-                _("Ordem %(code)s anulada.") % {"code": wo.ref},
-            )
-        except Exception as exc:
-            messages.error(request, str(exc))
-
-        return HttpResponseRedirect(reverse("admin:craftsman_workorder_changelist"))
-
-    @admin.action(description=_("Concluir selecionadas"))
-    def finish_selected_work_orders(self, request, queryset):
-        actor = getattr(request.user, "username", None) or "admin"
-        finished = 0
-        skipped = 0
-        for wo in queryset.filter(status__in=(WorkOrder.Status.PLANNED, WorkOrder.Status.STARTED)):
-            try:
-                _finish_work_order_from_admin(wo, actor=actor)
-                finished += 1
-            except Exception as exc:
-                skipped += 1
-                logger.warning("admin_finish_work_order_failed wo=%s: %s", wo.ref, exc, exc_info=True)
-        if finished:
-            self.message_user(request, _("%(count)d ordem(ns) concluída(s).") % {"count": finished})
-        if skipped:
-            self.message_user(request, _("%(count)d ordem(ns) não puderam ser concluídas.") % {"count": skipped}, level=messages.WARNING)
-
-    @admin.action(description=_("Cancelar selecionadas"))
-    def void_selected_work_orders(self, request, queryset):
-        actor = getattr(request.user, "username", None) or "admin"
-        voided = 0
-        skipped = 0
-        for wo in queryset.filter(status__in=(WorkOrder.Status.PLANNED, WorkOrder.Status.STARTED)):
-            try:
-                _void_work_order_from_admin(wo, actor=actor)
-                voided += 1
-            except Exception as exc:
-                skipped += 1
-                logger.warning("admin_void_work_order_failed wo=%s: %s", wo.ref, exc, exc_info=True)
-        if voided:
-            self.message_user(request, _("%(count)d ordem(ns) cancelada(s).") % {"count": voided})
-        if skipped:
-            self.message_user(request, _("%(count)d ordem(ns) não puderam ser canceladas.") % {"count": skipped}, level=messages.WARNING)
+            return HttpResponseRedirect(f"{base}/?date={wo.target_date.isoformat()}")
+        return HttpResponseRedirect(base)
 
 
 def _work_order_changelist_url(**params) -> str:
@@ -845,36 +752,6 @@ def _work_order_status_label(status: str) -> str:
         WorkOrder.Status.VOID: _("Cancelada"),
     }
     return str(labels.get(status, status))
-
-
-def _finish_work_order_from_admin(wo: WorkOrder, *, actor: str) -> None:
-    """Finish through the operator production facade so Admin matches Backstage."""
-    production_service = import_module("shopman.backstage.services.production")
-
-    quantity = wo.started_qty or wo.quantity
-    if wo.status == WorkOrder.Status.PLANNED:
-        production_service.apply_start(
-            work_order_id=wo.pk,
-            quantity=quantity,
-            position_id="",
-            operator_ref=wo.operator_ref or "",
-            actor=f"admin:{actor}",
-        )
-    production_service.apply_finish(
-        work_order_id=wo.pk,
-        quantity=quantity,
-        actor=f"admin:{actor}",
-    )
-
-
-def _void_work_order_from_admin(wo: WorkOrder, *, actor: str) -> str:
-    production_service = import_module("shopman.backstage.services.production")
-
-    return production_service.apply_void(
-        wo.pk,
-        actor=f"admin:{actor}",
-        reason="Cancelado via Admin",
-    )
 
 
 def _committed_order_refs(wo: WorkOrder) -> tuple[str, ...]:

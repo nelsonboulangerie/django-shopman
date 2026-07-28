@@ -14,6 +14,7 @@ from django.urls import NoReverseMatch, reverse
 from django.utils import timezone
 
 from shopman.backstage import permissions
+from shopman.shop.services import pos_links
 
 logger = logging.getLogger(__name__)
 
@@ -63,26 +64,19 @@ def get_sidebar_navigation(request):
                 badge_variant="warning",
             )
         )
-    live_items.append(
-        _item(
-            "Produção",
-            "manufacturing",
-            _url("admin_console_production"),
-            permission=_can_access_production,
-            badge="shopman.backstage.admin.navigation.badge_started_work_orders",
-            badge_variant="info",
-        )
-    )
-    live_items.append(
-        _item(
-            "Fechamento",
-            "fact_check",
-            _url("admin_console_day_closing"),
-            permission=_can_close_day,
-        )
-    )
     pos_url = _pos_base_url()
     if pos_url:
+        # O fechamento do DIA migrou para a antesala do PDV (pos-nuxt
+        # /session/closing, ADMIN-ROLE-PLAN WP-ADM-3). Sem URL configurada o
+        # item some (sem link morto), como PDV/KDS.
+        live_items.append(
+            _item(
+                "Fechamento",
+                "fact_check",
+                pos_links.pos_url(pos_links.path_day_closing()),
+                permission=_can_close_day,
+            )
+        )
         live_items.append(_item("PDV", "point_of_sale", pos_url, permission=_can_operate_pos))
     kds_url = _kds_base_url()
     if kds_url:
@@ -95,6 +89,8 @@ def get_sidebar_navigation(request):
                 "factory",
                 production_url,
                 permission=_can_operate_production,
+                badge="shopman.backstage.admin.navigation.badge_started_work_orders",
+                badge_variant="info",
             )
         )
     live_items.append(
@@ -115,12 +111,22 @@ def get_sidebar_navigation(request):
             _item("Comandas abertas", "shopping_bag", _url("admin:orderman_session_changelist") + "?state__exact=open", permission=_can_manage_orders),
             _item("Ações pendentes", "playlist_add_check", _url("admin:orderman_directive_changelist") + "?status__exact=queued", permission=_can_manage_orders),
         ]),
+        # Painel/Planejamento/Produção migraram p/ o Fournil (WP-ADM-7d);
+        # aqui fica o CRUD (fichas) e o atalho p/ relatórios na superfície Nuxt.
         _group("Produção", "factory", [
-            _item("Painel", "monitoring", _url("admin_console_production_dashboard"), permission=_can_access_production),
-            _item("Planejamento", "edit_calendar", _url("admin_console_production_planning"), permission=_can_access_production),
-            _item("Produção", "manufacturing", _url("admin_console_production"), permission=_can_access_production),
             _item("Fichas técnicas", "menu_book", _url("admin:craftsman_recipe_changelist"), permission=_can_access_production),
-            _item("Relatórios", "table_chart", _url("admin_console_production_reports"), permission=_can_view_production_reports),
+            *(
+                [
+                    _item(
+                        "Relatórios",
+                        "table_chart",
+                        f"{production_url}/reports",
+                        permission=_can_view_production_reports,
+                    )
+                ]
+                if production_url
+                else []
+            ),
         ]),
         _group("Estoque", "inventory_2", [
             _item("Saldos", "point_scan", _url("admin:stockman_quant_changelist"), permission=_is_staff),
@@ -165,7 +171,7 @@ def get_sidebar_navigation(request):
             _item("Faixas de distância", "straighten", _url("admin:storefront_deliverydistanceband_changelist"), permission=_is_staff),
             _item("Zonas de entrega", "pin_drop", _url("admin:storefront_deliveryzone_changelist"), permission=_is_staff),
             _item("Grupos de clientes", "groups", _url("admin:guestman_customergroup_changelist"), permission=_is_staff),
-            _item("Textos da interface", "format_quote", _url("admin:shop_omotenashicopy_changelist"), permission=_is_staff),
+            _item("Textos da interface", "format_quote", _url("admin_console_copy_catalog"), permission=_is_staff),
             _item("Templates de notificação", "mail", _url("admin:shop_notificationtemplate_changelist"), permission=_is_staff),
             _item("Estações KDS", "settings_input_component", _url("admin:backstage_kdsinstance_changelist"), permission=_can_operate_kds),
             _item("Comandas do PDV", "receipt", _url("admin:backstage_postab_changelist"), permission=_can_operate_pos),

@@ -168,17 +168,19 @@ def test_e2e_stock_receive_appears_on_closing_surface(client, setup):
     StockMovements.receive(quantity=20, sku="POS-LIFE", position=Position.objects.get(ref="loja"), reason="seed")
 
     client.force_login(setup)
-    closing = client.get("/admin/operacao/fechamento/")
+    closing = client.get("/api/v1/backstage/closing/")
     assert closing.status_code == 200
-    body = closing.content.decode("utf-8")
-    assert "POS-LIFE" in body, "closing surface must list SKU with saleable stock"
+    skus = [item["sku"] for item in closing.json()["closing"]["items"]]
+    assert "POS-LIFE" in skus, "closing surface must list SKU with saleable stock"
 
 
-# ── Cenário 6 — production matrix end-to-end ────────────────────────
+# ── Cenário 6 — production management KPIs end-to-end ───────────────
+# O painel Admin de produção saiu (WP-ADM-7d); a gestão do dia é a API
+# headless production/management/ consumida pelo /reports do Fournil.
 
 
 @pytest.mark.django_db
-def test_e2e_production_dashboard_renders_after_lifecycle(client, setup):
+def test_e2e_production_management_reflects_lifecycle(client, setup):
     recipe = Recipe.objects.create(
         ref="recipe-dash",
         name="Dash",
@@ -190,10 +192,11 @@ def test_e2e_production_dashboard_renders_after_lifecycle(client, setup):
     craft.finish(wo, finished=10, actor="test")
 
     client.force_login(setup)
-    response = client.get("/admin/operacao/producao/painel/")
+    response = client.get("/api/v1/backstage/production/management/")
     assert response.status_code == 200
-    body = response.content.decode("utf-8")
-    assert "DASH-SKU" in body or "Dash" in body or "concluído" in body.lower()
+    management = response.json()["management"]
+    assert management["finished_orders"] == 1
+    assert management["finished_qty"] == "10"
 
 
 # ── Cenário 7 — advance step view updates meta ──────────────────────
