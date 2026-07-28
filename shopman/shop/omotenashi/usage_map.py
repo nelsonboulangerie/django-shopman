@@ -103,24 +103,14 @@ USAGE: dict[str, tuple[tuple[str, str, str], ...]] = {
     "CHECKOUT_WHEN_REQUIRED": (
         ("shopman/storefront/presentation/checkout.py", "Loja", "Checkout"),
     ),
-    "CONFIRMATION_ETA_PREFIX": (
-        ("shopman/storefront/api/confirmation.py", "Loja", "Confirmação do pedido"),
-    ),
     "CONFIRMATION_HEADING": (
-        ("shopman/storefront/api/confirmation.py", "Loja", "Confirmação do pedido"),
-    ),
-    "CONFIRMATION_ITEMS_HEADING": (
-        ("shopman/storefront/api/confirmation.py", "Loja", "Confirmação do pedido"),
-    ),
-    "CONFIRMATION_PREORDER_WHEN_PREFIX": (
-        ("shopman/storefront/api/confirmation.py", "Loja", "Confirmação do pedido"),
+        ("shopman/storefront/api/tracking.py", "Loja", "Acompanhamento do pedido"),
     ),
     "CONFIRMATION_SHARE_CTA": (
-        ("shopman/storefront/api/confirmation.py", "Loja", "Confirmação do pedido"),
+        ("shopman/storefront/api/tracking.py", "Loja", "Acompanhamento do pedido"),
     ),
     "CONFIRMATION_TRACK_CTA": (
         ("shopman/shop/projections/payment_status.py", "Loja", "Pagamento"),
-        ("shopman/storefront/api/confirmation.py", "Loja", "Confirmação do pedido"),
     ),
     "DEVICE_LIST_CURRENT": (
         ("shopman/storefront/api/account.py", "Loja", "Conta do cliente"),
