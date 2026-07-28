@@ -100,5 +100,5 @@ def test_sidebar_points_copy_omotenashi_to_catalog(staff_client):
     request.user = get_user_model().objects.get(username="copyadmin")
     groups = dj_admin.site.get_sidebar_list(request)
     config = next(group for group in groups if group["title"] == "Configurações")
-    item = next(i for i in config["items"] if i["title"] == "Copy Omotenashi")
+    item = next(i for i in config["items"] if i["title"] == "Textos da interface")
     assert str(item["link"]).endswith("/admin/configuracao/copy/")

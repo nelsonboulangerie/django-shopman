@@ -51,7 +51,6 @@ CONSUMER_SCREENS: dict[str, tuple[str, str]] = {
     "shopman/storefront/api/auth.py": ("Loja", "Entrar"),
     "shopman/storefront/api/tracking.py": ("Loja", "Acompanhamento do pedido"),
     "shopman/storefront/api/payment.py": ("Loja", "Pagamento"),
-    "shopman/storefront/api/confirmation.py": ("Loja", "Confirmação do pedido"),
     "shopman/storefront/api/surface.py": ("Loja", "Disponibilidade e avisos"),
     "shopman/storefront/api/views.py": ("Loja", "Superfície geral"),
     "shopman/shop/projections/order_tracking.py": ("Loja", "Acompanhamento do pedido"),
