@@ -107,13 +107,7 @@ def build_payment(order, *, is_debug: bool = False) -> PaymentData:
     pix_copy_paste: str | None = None
     pix_expires_at: str | None = None
     if method == "pix":
-        pix_qr_code = _qr_image_src(payment.get("qr_code") or payment.get("pix_qr_code") or None)
-        pix_copy_paste = (
-            payment.get("copy_paste")
-            or payment.get("pix_copy_paste")
-            or payment.get("pix_code")
-            or None
-        )
+        pix_qr_code, pix_copy_paste = _pix_payload(payment)
         pix_expires_at = payment.get("expires_at") or None
 
     checkout_url: str | None = None
@@ -212,6 +206,11 @@ def _payment_status_should_redirect(
 ) -> bool:
     if is_paid or is_cancelled or is_expired:
         return True
+    # Espera pela confirmação da loja NÃO é motivo para tirar o cliente da tela
+    # de pagamento: sem ação pendente a regra abaixo mandaria redirecionar, e o
+    # Pix de `timing=post_commit` nunca chegaria a aparecer. O poll traz o QR.
+    if promise.state == "pix_waiting_confirmation":
+        return False
     return not promise_has_pending_payment_action(promise)
 
 
@@ -240,6 +239,22 @@ def _qr_image_src(value: str | None) -> str | None:
     if qr_image.startswith("data:image/"):
         return qr_image
     return f"data:image/png;base64,{qr_image}"
+
+
+def _pix_payload(payment: dict) -> tuple[str | None, str | None]:
+    """QR e copia-e-cola do Pix, nas chaves que os adapters escrevem.
+
+    Fonte única: o promise decide se há o que pagar pelo mesmo par que a tela
+    renderiza, então botão de copiar e código nunca discordam.
+    """
+    qr_code = _qr_image_src(payment.get("qr_code") or payment.get("pix_qr_code") or None)
+    copy_paste = (
+        payment.get("copy_paste")
+        or payment.get("pix_copy_paste")
+        or payment.get("pix_code")
+        or None
+    )
+    return qr_code, copy_paste
 
 
 def _copy_title(key: str, fallback: str) -> str:
@@ -474,21 +489,41 @@ def _build_payment_promise(
             stale_after_seconds=30,
         )
     if order.status != "confirmed":
-        return PaymentPromiseData(
-            state="pix_payment_before_confirmation",
-            tone="info",
-            actions=(
-                _action(
-                    ref="copy_pix",
-                    kind="copy",
-                    label=_copy_title("PAYMENT_PROMISE_PIX_ACTION", "Copiar código PIX"),
+        # O que separa os dois estados é haver ou não código Pix para pagar.
+        # Com `payment.timing=post_commit` o intent só nasce depois que a loja
+        # confirmar, então até lá não existe QR nem copia-e-cola: oferecer
+        # "Copiar código PIX" seria prometer o que a tela não tem, e o prazo do
+        # Pix não pode correr antes de existir código para pagar.
+        if any(_pix_payload((order.data or {}).get("payment") or {})):
+            # Já há código: falta só a loja conferir a disponibilidade.
+            return PaymentPromiseData(
+                state="pix_payment_before_confirmation",
+                tone="info",
+                actions=(
+                    _action(
+                        ref="copy_pix",
+                        kind="copy",
+                        label=_copy_title("PAYMENT_PROMISE_PIX_ACTION", "Copiar código PIX"),
+                    ),
                 ),
-            ),
-            deadline_at=pix_expires_at,
-            deadline_kind="payment" if pix_expires_at else None,
-            deadline_action="cancel_order_on_timeout" if pix_expires_at else "none",
+                deadline_at=pix_expires_at,
+                deadline_kind="payment" if pix_expires_at else None,
+                deadline_action="cancel_order_on_timeout" if pix_expires_at else "none",
+                requires_active_notification=True,
+                stale_after_seconds=45,
+            )
+        # Sem código ainda: nenhuma ação de pagamento, prazo nenhum para correr
+        # (a janela do Pix começa quando o código nasce). A tela fica em espera
+        # e troca sozinha para o QR no próximo poll.
+        return PaymentPromiseData(
+            state="pix_waiting_confirmation",
+            tone="info",
+            actions=(),
+            deadline_at=None,
+            deadline_kind=None,
+            deadline_action="none",
             requires_active_notification=True,
-            stale_after_seconds=45,
+            stale_after_seconds=8,
         )
     return PaymentPromiseData(
         state="pix_payment_requested",

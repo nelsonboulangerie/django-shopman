@@ -52,6 +52,17 @@ class TestPaymentProjectionShape:
         assert proj.promise.recovery
         assert "disponibilidade foi confirmada" not in proj.promise.message.lower()
 
+    def test_has_payment_promise_contract_waiting_for_pix_code(self, order_with_payment):
+        order_with_payment.data["payment"] = {"method": "pix", "status": "pending", "amount_q": 2500}
+        order_with_payment.save(update_fields=["data"])
+
+        proj = build_payment(order_with_payment)
+
+        assert proj.promise.state == "pix_waiting_confirmation"
+        assert not proj.promise.actions
+        assert proj.promise.next_event
+        assert proj.promise.recovery
+
     def test_has_server_time_anchor_for_pix_countdown(self, order_with_payment):
         from django.utils.dateparse import parse_datetime
 

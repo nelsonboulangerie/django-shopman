@@ -106,12 +106,30 @@ class OrderPaymentView(APIView):
         intent_ready = order_service.ensure_payment_intent(order)
         if order_service.payment_is_sufficient(order):
             return Response({"redirect_url": _tracking_url(ref), "payment": None})
-        if not intent_ready and not (_is_digital_payment(order) and order.status == "confirmed"):
-            return Response({
-                "redirect_url": _tracking_url(ref),
-                "payment": None,
-                "reason": "waiting_store_confirmation",
-            })
+        if not intent_ready:
+            # Pix com `timing=post_commit`: o intent só nasce quando a loja
+            # confirma. Mandar para o acompanhamento aqui era o catch-22 — a tela
+            # que geraria o código nunca abria. Fica na espera; o poll de 8s traz
+            # o QR sozinho assim que a loja confirmar.
+            payment_meta = (order.data or {}).get("payment") or {}
+            method = str(payment_meta.get("method") or "").lower()
+            if method == "pix":
+                payment = projection_data(build_payment(order))
+                payment["status_url"] = f"/api/v1/payment/{ref}/status/"
+                payment["tracking_url"] = _tracking_url(ref)
+                return Response({
+                    "redirect_url": None,
+                    "intent_ready": False,
+                    "payment": payment,
+                    "copy": _payment_copy(),
+                })
+            # Sem intent e sem ser Pix: o acompanhamento é o lugar honesto.
+            if not (_is_digital_payment(order) and order.status == "confirmed"):
+                return Response({
+                    "redirect_url": _tracking_url(ref),
+                    "payment": None,
+                    "reason": "waiting_store_confirmation",
+                })
 
         payment = projection_data(build_payment(order))
         payment["status_url"] = f"/api/v1/payment/{ref}/status/"

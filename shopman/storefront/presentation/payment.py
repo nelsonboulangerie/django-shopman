@@ -104,6 +104,17 @@ _PROMISE_COPY: dict[str, tuple[str, str, str, str, str, str, str, str, str, str]
         "PAYMENT_PROMISE_CARD_PENDING_RECOVERY", "Se demorar, atualize a página ou fale com o estabelecimento.",
         "", "",
     ),
+    "pix_waiting_confirmation": (
+        "PAYMENT_PROMISE_PIX_WAITING_TITLE", "Aguardando confirmação",
+        "PAYMENT_PROMISE_PIX_WAITING_MESSAGE",
+        "A loja está conferindo. O código Pix será gerado automaticamente.",
+        "PAYMENT_PROMISE_PIX_WAITING_NEXT",
+        "Fique nesta tela: o código Pix aparece assim que a loja confirmar.",
+        "PAYMENT_PROMISE_PIX_WAITING_RECOVERY",
+        "Se a loja não confirmar a tempo, cancelamos o pedido e avisamos você.",
+        "PAYMENT_PROMISE_PIX_WAITING_ACTIVE_NOTIFICATION",
+        "Avisamos você pelos canais ativos da sua conta quando o código estiver pronto.",
+    ),
     "pix_payment_before_confirmation": (
         "PAYMENT_PROMISE_PIX_PRECONFIRMATION_TITLE", "Pagamento Pix",
         "PAYMENT_PROMISE_PIX_PRECONFIRMATION_MESSAGE",

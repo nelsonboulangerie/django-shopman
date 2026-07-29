@@ -353,8 +353,6 @@ class CheckoutView(APIView):
         next_url = f"/tracking/{result.order_ref}"
         if payment_method in {"pix", "card"}:
             next_url = f"/pedido/{result.order_ref}/pagamento"
-            if payment_method == "pix" and checkout_service.starts_payment_after_store_confirmation(CHANNEL_REF):
-                next_url = f"/tracking/{result.order_ref}"
 
         data = CheckoutResponseSerializer(
             {
