@@ -68,6 +68,47 @@ class TestEmptyCart:
         assert checkout.reason == "Sacola vazia."
         assert checkout.href == "/checkout"
 
+    def test_empty_cart_carries_omotenashi_copy(self, client):
+        """A sacola vazia fala pelo registro, não por string na tela."""
+        rf = RequestFactory()
+        request = rf.get("/carrinho/")
+        request.session = client.session  # type: ignore[attr-defined]
+
+        proj = build_cart(request=request, channel_ref=STOREFRONT_CHANNEL_REF)
+
+        assert proj.empty_title
+        assert proj.empty_message
+
+    def test_empty_copy_honours_admin_override(self, client):
+        """O operador reescreve o estado vazio pelo Admin, sem deploy."""
+        from shopman.shop.models import OmotenashiCopy
+
+        OmotenashiCopy.objects.create(
+            key="CART_EMPTY",
+            moment="*",
+            audience="*",
+            title="Sacola vazia, dia cheio",
+            message="Escolha um pão e nós cuidamos do resto.",
+        )
+        rf = RequestFactory()
+        request = rf.get("/carrinho/")
+        request.session = client.session  # type: ignore[attr-defined]
+
+        proj = build_cart(request=request, channel_ref=STOREFRONT_CHANNEL_REF)
+
+        assert proj.empty_title == "Sacola vazia, dia cheio"
+        assert proj.empty_message == "Escolha um pão e nós cuidamos do resto."
+
+    def test_populated_cart_skips_empty_copy(self, cart_session):
+        """Sacola com itens não resolve a copy do vazio — o bloco nem renderiza."""
+        request = _request_with_cart_session(cart_session)
+
+        proj = build_cart(request=request, channel_ref=STOREFRONT_CHANNEL_REF)
+
+        assert proj.is_empty is False
+        assert proj.empty_title == ""
+        assert proj.empty_message == ""
+
 
 # ──────────────────────────────────────────────────────────────────────
 # Populated cart

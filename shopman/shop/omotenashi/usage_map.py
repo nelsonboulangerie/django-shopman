@@ -57,7 +57,9 @@ USAGE: dict[str, tuple[tuple[str, str, str], ...]] = {
     "CART_DISCOUNT_LABEL_TIME_WINDOW": (
         ("shopman/shop/modifiers.py", "Loja", "Preços e promoções"),
     ),
-    "CART_EMPTY": (),
+    "CART_EMPTY": (
+        ("shopman/storefront/presentation/cart.py", "Loja", "Sacola"),
+    ),
     "CART_UNAVAILABLE_BANNER": (
         ("shopman/storefront/presentation/cart.py", "Loja", "Sacola"),
     ),

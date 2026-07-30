@@ -131,6 +131,12 @@ class CartProjection:
     items: tuple[CartItemProjection, ...]
     items_count: int              # sum of units across lines
     is_empty: bool
+    # Copy do estado vazio (registro omotenashi, admin-configurável). Sensível a
+    # momento e audiência: a sacola vazia de madrugada não fala como a da manhã,
+    # e quem já pediu antes ouve "quer repetir o de sempre?". Vazio quando a
+    # sacola tem itens — o Vue só renderiza o bloco sob ``is_empty``.
+    empty_title: str
+    empty_message: str
 
     # Totals (dual)
     subtotal_q: int
@@ -215,11 +221,14 @@ def build_cart(
     free_delivery = present_free_delivery(data.free_delivery)
     upsell = present_upsell(data.upsell)
     actions = _cart_actions(data, min_order)
+    empty_title, empty_message = _empty_copy(request, is_empty=data.is_empty)
 
     return CartProjection(
         items=items,
         items_count=data.count,
         is_empty=data.is_empty,
+        empty_title=empty_title,
+        empty_message=empty_message,
         subtotal_q=data.subtotal_q,
         subtotal_display=_money(data.subtotal_q),
         original_subtotal_q=data.original_subtotal_q,
@@ -455,6 +464,22 @@ def _money(value_q: int | None) -> str:
     if not value_q:
         return "R$ 0,00"
     return f"R$ {format_money(int(value_q))}"
+
+
+def _empty_copy(request: HttpRequest, *, is_empty: bool) -> tuple[str, str]:
+    """Título e mensagem do estado vazio, por momento e audiência.
+
+    Só resolve quando a sacola está vazia: montar o contexto omotenashi custa
+    uma leitura do estado do negócio, e a sacola com itens nunca renderiza o
+    bloco.
+    """
+    if not is_empty:
+        return "", ""
+    from shopman.shop.omotenashi import OmotenashiContext
+
+    omo = OmotenashiContext.from_request(request)
+    entry = resolve_copy("CART_EMPTY", moment=omo.moment, audience=omo.audience)
+    return (entry.title or "").strip(), (entry.message or "").strip()
 
 
 def _cart_actions(

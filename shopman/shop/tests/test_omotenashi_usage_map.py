@@ -47,9 +47,9 @@ def test_curated_labels_point_to_real_files():
     assert not stale, f"CONSUMER_SCREENS com paths mortos: {stale}"
 
 
-def test_unmapped_keys_are_the_known_review_bucket():
-    # CART_EMPTY ficou sem consumidor no cutover headless — está no catálogo como
-    # "sem uso mapeado" de propósito (candidata a limpeza ou religação). Se esta
-    # lista crescer, é sinal de copy órfã nova: revise antes de aceitar aqui.
+def test_every_registered_key_has_a_consumer():
+    # Toda chave do catálogo é consumida por alguma tela. Chave órfã nova aqui é
+    # sinal de copy sem dono: religue na projeção ou tire do registro — não
+    # aceite a lista crescendo.
     unused = sorted(key for key, refs in load_usage_map().items() if not refs)
-    assert unused == ["CART_EMPTY"], unused
+    assert unused == [], unused

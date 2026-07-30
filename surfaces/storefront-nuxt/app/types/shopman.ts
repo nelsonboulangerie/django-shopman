@@ -204,6 +204,8 @@ export interface CartProjection {
   items: CartItemProjection[]
   items_count: number
   is_empty: boolean
+  empty_title: string
+  empty_message: string
   summary_pending?: boolean
   subtotal_q: number
   subtotal_display: string

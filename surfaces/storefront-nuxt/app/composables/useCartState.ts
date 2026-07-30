@@ -45,6 +45,8 @@ function emptyCart (): CartProjection {
     items: [],
     items_count: 0,
     is_empty: true,
+    empty_title: '',
+    empty_message: '',
     summary_pending: false,
     subtotal_q: 0,
     subtotal_display: 'R$ 0,00',

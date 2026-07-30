@@ -174,8 +174,8 @@ useSeoMeta({
             <Icon name="lucide:shopping-bag" />
           </UiEmptyMedia>
           <UiEmptyHeader>
-            <UiEmptyTitle>Sacola vazia</UiEmptyTitle>
-            <UiEmptyDescription>Escolha um item no cardápio e volte para finalizar por aqui.</UiEmptyDescription>
+            <UiEmptyTitle>{{ cart.empty_title }}</UiEmptyTitle>
+            <UiEmptyDescription>{{ cart.empty_message }}</UiEmptyDescription>
           </UiEmptyHeader>
           <UiEmptyContent class="flex flex-col items-center gap-2">
             <UiButton :to="localRouteFromBackend(continueAction?.href || '/menu')" icon="lucide:utensils">
