@@ -560,6 +560,20 @@ SHOPMAN_META = {
     "timeout": int(os.environ.get("META_TIMEOUT", "30")),
 }
 
+# ── Meta Broadcast (FOMO — posting IG + FB via Graph API) ────────────
+# Adapter F5 do Broadcast: publica conteúdo no Instagram (IG Content Publishing
+# API) e Facebook Page (feed/photos). Credencial = Page Access Token permanente
+# com scopes instagram_content_publish, pages_manage_posts, pages_read_engagement.
+# Inerte sem page_access_token — adapter roda em dry-run/mock.
+# api_version e api_base reutilizam os valores de SHOPMAN_META (DRY).
+SHOPMAN_BROADCAST_META = {
+    "page_id": os.environ.get("META_PAGE_ID", "").strip(),
+    "ig_user_id": os.environ.get("META_IG_USER_ID", "").strip(),
+    "page_access_token": os.environ.get("META_PAGE_ACCESS_TOKEN", "").strip(),
+    "api_version": SHOPMAN_META["api_version"],
+    "api_base": SHOPMAN_META["api_base"],
+}
+
 # ── Machine (courier — despacho de entregadores) ───────────────────
 # API da central de entregas (TaOn roda sobre a Machine/Gaudium). O adapter só
 # liga quando SHOPMAN_COURIER_ADAPTER aponta para courier_machine E o canal
