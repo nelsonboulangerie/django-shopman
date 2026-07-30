@@ -48,6 +48,7 @@ Legenda: `sandbox` = chave de teste · `LIVE` = chave de produção · `—` = n
 | **Doorman** (magic links) | `DOORMAN_ACCESS_LINK_API_KEY` | staging | **LIVE** |
 | **Email** (fallback OTP) | `EMAIL_HOST/PORT/USER/PASSWORD`, `DEFAULT_FROM_EMAIL` | SMTP staging | **SMTP prod** |
 | **Maps** (UI endereço) | `GOOGLE_MAPS_API_KEY` | opcional | LIVE (restrita por domínio) |
+| **Meta Broadcast** (IG + FB) | `META_PAGE_ID`, `META_IG_USER_ID`, `META_PAGE_ACCESS_TOKEN` | ausente (adapter F5 em dry-run; post fica `pending_manual`) | **LIVE** — Page Access Token permanente com `instagram_content_publish`, `pages_manage_posts`, `pages_read_engagement` |
 | **Machine** (courier/entregas) | `SHOPMAN_COURIER_ADAPTER`, `MACHINE_API_USER/PASSWORD/API_KEY`, `MACHINE_WEBHOOK_TOKEN`, `MACHINE_FORMA_PAGAMENTO` | mock (`courier_mock`) ou desligado | **LIVE** (credenciais da central) + `machine_register_webhook` + `fulfillment.courier="auto"` no canal delivery |
 
 Inventário completo de variáveis comentadas: [`.env.example`](../../.env.example).

@@ -129,6 +129,7 @@ Cada WP abaixo é auto-contido, commitável e validável com `make test` / `make
 | **QA físico Omotenashi**: device/humano gera `manual_qa_status: passed` | `omotenashi.manual` verde | 6 |
 | **Dados reais da Nelson** | catálogo/estoque/preços de verdade | 6 |
 | **Data de go-live** (>30 dias, DB de prod existe) | dispara o **reset final** do WP-GAP-07 | — |
+| Creds **Meta Broadcast** (`META_PAGE_ID`, `META_IG_USER_ID`, `META_PAGE_ACCESS_TOKEN`) | adapter F5 sai do dry-run e publica IG + FB de verdade; sem elas o post fica `pending_manual` de propósito | — |
 
 ---
 
@@ -150,6 +151,17 @@ Cada WP abaixo é auto-contido, commitável e validável com `make test` / `make
 `make release-readiness-strict` **verde** (sem `blocked_external`) **E** os 7 critérios do
 ROADMAP §"Critério Para Produção Real" satisfeitos com evidência **E** WP-GAP-07 executado
 (reset final + tag + rollback testado).
+
+### Faxina obrigatória antes do corte
+
+Estão no `.gitignore` para não vazarem em commit, mas **continuam no disco** e precisam
+sair de vez antes do go-live:
+
+- [ ] `_to_delete/` — quarentena local (`incoming-*`, ~416K de material solto).
+- [ ] `guia-credenciais-*.pdf` — guia de credencial não fica no diretório do projeto;
+      mover para o gerenciador de segredos e apagar o arquivo.
+
+O `.gitignore` só impede o commit acidental. Não confundir ignorado com limpo.
 
 ---
 

@@ -36,3 +36,10 @@ temp/
 surfaces/storefront-nuxt/test-results/
 surfaces/storefront-nuxt/playwright-report/
 surfaces/storefront-nuxt/blob-report/
+
+# Quarentena local e guias de credencial — nunca commitar.
+# ⚠️ LIMPAR ANTES DO GO-LIVE: estes caminhos existem na máquina do Pablo e
+# devem sair de vez (o guia de credencial não pode ficar no disco do projeto).
+# Ver docs/plans/GO-LIVE-READINESS-PLAN.md.
+_to_delete/
+guia-credenciais-*.pdf
