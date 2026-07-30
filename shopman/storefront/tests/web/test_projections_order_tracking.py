@@ -64,7 +64,7 @@ class TestPreorderTracking:
         assert proj.status_label == "Encomenda confirmada"
         assert proj.when_display == "amanhã · A partir das 09h"
         assert "garantido para amanhã · A partir das 09h" in proj.promise.message
-        assert proj.promise.next_event == "No dia, avisamos você quando o preparo começar."
+        assert proj.promise.next_event == ""
 
     def test_future_order_without_slot_shows_date_only(self, order):
         from datetime import date
@@ -143,10 +143,10 @@ class TestOrderTrackingShape:
 
         assert isinstance(proj.promise, OrderTrackingPromiseProjection)
         assert proj.promise.state == "received"
-        assert proj.promise.title == "Recebemos seu pedido"
+        assert proj.promise.title == "Pedido recebido"
         assert proj.promise.timer_mode == "none"
         assert proj.promise.actions == ()
-        assert proj.promise.message == "Estamos conferindo a disponibilidade dos itens."
+        assert proj.promise.message == "Conferindo a disponibilidade dos itens."
 
     def test_has_refresh_freshness_contract(self, order):
         from django.utils.dateparse import parse_datetime
@@ -258,7 +258,7 @@ class TestOrderProgressSteps:
 
         assert all(isinstance(step, OrderProgressStepProjection) for step in proj.progress_steps)
         assert [step.label for step in proj.progress_steps] == [
-            "Recebemos seu pedido",
+            "Pedido recebido",
         ]
         assert [step.state for step in proj.progress_steps] == [
             "current",
@@ -272,7 +272,7 @@ class TestOrderProgressSteps:
 
         states = {step.key: step.state for step in proj.progress_steps}
         assert [step.label for step in proj.progress_steps] == [
-            "Recebemos seu pedido",
+            "Pedido recebido",
             "Disponibilidade confirmada",
         ]
         assert states["received"] == "completed"
@@ -331,11 +331,11 @@ class TestOrderProgressSteps:
         proj = build_order_tracking(order_with_payment)
 
         labels = [step.label for step in proj.progress_steps]
-        assert "Pedido pronto" in labels
+        assert "Pronto" in labels
         assert "Saiu para entrega" in labels
-        assert "Pedido entregue" in labels
+        assert "Entregue" in labels
         assert "Pronto para retirada" not in labels
-        assert proj.progress_steps[-1].label == "Pedido concluído"
+        assert proj.progress_steps[-1].label == "Concluído"
         assert proj.progress_steps[-1].state == "current"
 
     def test_delivery_ready_is_waiting_collection_not_dispatched(self, order):
@@ -350,7 +350,7 @@ class TestOrderProgressSteps:
         labels = [step.label for step in proj.progress_steps]
         states = {step.key: step.state for step in proj.progress_steps}
         assert proj.status_label == "Aguardando entregador"
-        assert "Pedido pronto" in labels
+        assert "Pronto" in labels
         assert "Saiu para entrega" not in labels
         assert states["ready_delivery"] == "current"
         assert "dispatched" not in states
@@ -409,9 +409,9 @@ class TestOrderProgressSteps:
 
         proj = build_order_tracking(order)
 
-        assert proj.progress_steps[-1].label == "Pedido cancelado"
+        assert proj.progress_steps[-1].label == "Cancelado"
         assert proj.progress_steps[-1].state == "cancelled"
-        assert "Pedido concluído" not in [step.label for step in proj.progress_steps]
+        assert "Concluído" not in [step.label for step in proj.progress_steps]
 
 
 class TestReturnedOrderTracking:
@@ -429,10 +429,10 @@ class TestReturnedOrderTracking:
         proj = build_order_tracking(self._make_returned(order))
 
         assert proj.promise.state == "returned"
-        assert proj.promise.title == "Pedido devolvido"
+        assert proj.promise.title == "Devolvido"
         assert "devolvido" in proj.promise.message.lower()
         # O sinal errado do fallback não pode aparecer.
-        assert proj.promise.title != "Recebemos seu pedido"
+        assert proj.promise.title != "Pedido recebido"
 
     def test_returned_promise_tone_is_neutral(self, order):
         proj = build_order_tracking(self._make_returned(order))
@@ -505,9 +505,9 @@ class TestStatusColours:
         assert proj.copy.progress_heading == "Etapas do pedido"
         # O painel mostra a mensagem do estado + a linha "Próximo passo" (a ação
         # segue como botão, "Atualizado agora" segue standalone).
-        assert proj.promise.message == "Pode retirar quando quiser. Estamos esperando você."
-        assert proj.promise.next_event == "Retire no estabelecimento quando puder."
-        assert [row.label for row in proj.promise_rows] == ["Próximo passo"]
+        assert proj.promise.message == "Pode vir retirar quando quiser."
+        assert proj.promise.next_event == ""
+        assert [row.label for row in proj.promise_rows] == []
 
     def test_pickup_info_uses_structured_shop_address_without_fulfillment(self, order):
         from shopman.orderman.models import Order as _Order
@@ -659,8 +659,8 @@ class TestStatusColours:
 
         assert proj.promise.state == "dispatched"
         assert proj.promise.title == "Saiu para entrega"
-        assert "a caminho" in proj.promise.message
-        assert "por volta das" in proj.promise.message  # janela de ETA
+        assert "A caminho" in proj.promise.message
+        assert "Previsão:" in proj.promise.message  # janela de ETA
         # Nunca promete notificar a chegada — não há como saber.
         assert "avisamos" not in proj.promise.message.lower()
         assert "quando chegar" not in proj.promise.message.lower()
@@ -697,7 +697,7 @@ class TestStatusColours:
         assert proj.status_label == "Aguardando pagamento"
         assert proj.payment_pending is True
         assert proj.payment_expired is False
-        assert proj.payment_status_label == "Aguardando confirmação do pagamento"
+        assert proj.payment_status_label == "Aguardando pagamento"
         assert proj.confirmation_countdown is False
         assert proj.promise.state == "payment_pending"
         assert proj.promise.deadline_kind == "payment"
@@ -778,9 +778,9 @@ class TestStatusColours:
         assert proj.confirmation_countdown is True
         assert proj.confirmation_expires_at is not None
         assert proj.promise.state == "availability_check"
-        assert proj.promise.title == "Recebemos seu pedido"
-        assert proj.promise.message == "Estamos conferindo a disponibilidade dos itens."
-        assert proj.promise.next_event == "Se a disponibilidade for confirmada, liberamos o pagamento e avisamos você."
+        assert proj.promise.title == "Pedido recebido"
+        assert proj.promise.message == "Conferindo a disponibilidade dos itens."
+        assert proj.promise.next_event == ""
 
     def test_closed_store_new_order_defers_availability_without_countdown(
         self, order, channel, shop_instance,
@@ -827,9 +827,9 @@ class TestStatusColours:
         assert proj.promise.deadline_at is None
         assert proj.promise.timer_mode == "none"
         assert proj.promise.message == (
-            "Estamos fechados agora. Conferimos a disponibilidade quando abrirmos, amanhã às 9h."
+            "Estamos fechados. Conferimos quando abrirmos, amanhã às 9h."
         )
-        assert proj.promise.next_event == "Próxima abertura: amanhã às 9h"
+        assert proj.promise.next_event == ""
 
     def test_payment_timeout_cancelled_order_shows_payment_expired(self, order_with_payment):
         from shopman.orderman.models import Order as _Order
@@ -851,17 +851,17 @@ class TestStatusColours:
         assert proj.payment_expired is True
         assert proj.payment_confirmed is False
         assert proj.show_payment_confirmed_notice is False
-        assert proj.payment_status_label == "Prazo para pagamento expirado"
+        assert proj.payment_status_label == "Pagamento expirado"
         assert proj.confirmation_countdown is False
         assert proj.promise.requires_active_notification is True
         assert proj.promise.notification_topic == "payment_expired"
         assert proj.promise.actions == ()
-        assert "repetir o pedido" in proj.promise.message
-        assert proj.promise.next_event == "Você pode refazer o pedido quando quiser."
+        assert "pagamento não chegou a tempo" in proj.promise.message
+        assert proj.promise.next_event == ""
         assert proj.promise.recovery == ""
         assert any(action.ref == "reorder" and action.label == "Repetir pedido" for action in proj.actions)
         row_labels = [row.label for row in proj.promise_rows]
-        assert "Próximo passo" in row_labels
+        assert "Próximo passo" not in row_labels
         assert "Se algo mudar" not in row_labels
 
     def test_confirmed_paid_order_keeps_payment_confirmation_visible(self, order_with_payment):
@@ -917,16 +917,16 @@ class TestStatusColours:
         assert proj.status_label == "Aguardando pagamento"
         assert proj.payment_pending is True
         assert proj.payment_confirmed is False
-        assert proj.payment_status_label == "Aguardando confirmação do pagamento"
+        assert proj.payment_status_label == "Aguardando pagamento"
         assert proj.promise.state == "payment_requested"
         assert proj.promise.requires_active_notification is True
         assert proj.promise.notification_topic == "payment_requested"
         assert proj.promise.actions[0].ref == "pay_now"
         assert proj.promise.actions[0].label == "Pagar agora"
         assert proj.promise.actions[0].href == f"/pedido/{order_with_payment.ref}/pagamento"
-        assert proj.promise.message == "Confirme o PIX e já começamos a preparar."
-        assert proj.promise.next_event == "Depois do pagamento, seguimos com o pedido."
-        assert proj.promise.recovery == "Liberamos sua reserva e o pedido é cancelado."
+        assert proj.promise.message == "Confirme o Pix para liberar o preparo."
+        assert proj.promise.next_event == ""
+        assert proj.promise.recovery == "Cancelamos o pedido se expirar."
 
     def test_authorized_card_is_internal_not_surface_payment_action(self, order_with_payment):
         from shopman.orderman.models import Order as _Order
@@ -974,7 +974,7 @@ class TestStatusColours:
 
         expected_eta = (timezone.localtime(preparing_at) + timezone.timedelta(minutes=30)).strftime("%H:%M")
         assert proj.eta_display == expected_eta
-        assert proj.promise.message == f"Fica pronto por volta das {proj.eta_display}. Avisamos você quando puder retirar."
+        assert proj.promise.message == f"Previsão: {proj.eta_display}. Avisamos quando estiver pronto."
 
     def test_eta_is_not_invented_without_preparing_timestamp(self, order):
         from shopman.orderman.models import Order as _Order
@@ -986,7 +986,7 @@ class TestStatusColours:
 
         assert proj.eta_display is None
         assert proj.promise.state == "preparing"
-        assert proj.promise.message == "Já estamos no preparo. Avisamos você quando estiver pronto."
+        assert proj.promise.message == "Avisamos quando estiver pronto para retirada."
 
 
 # ──────────────────────────────────────────────────────────────────────
