@@ -44,11 +44,19 @@ function set (value: number) {
       @click="set(value)"
       @mouseenter="hovered = value"
     >
-      <!-- Não selecionada: só contorno dourado (fill transparente). Selecionada:
-           contorno + preenchimento dourado. -->
+      <!-- Não selecionada: só contorno dourado. Selecionada: contorno +
+           preenchimento dourado.
+           O alvo é o `path`, não o `svg`: o Iconify emite `fill="none"` COMO
+           ATRIBUTO no path, e atributo próprio não herda o fill do pai — então
+           `fill-cta` no svg pintava um elemento que ninguém desenha, e todas as
+           estrelas ficavam iguais. O cliente não via quantas tinha escolhido. -->
       <Icon
         name="lucide:star"
-        :class="[starSize, 'text-cta transition-colors', value <= active ? 'fill-cta' : 'fill-transparent']"
+        :class="[
+          starSize,
+          'text-cta transition-colors',
+          value <= active ? '[&_path]:fill-cta' : '[&_path]:fill-transparent'
+        ]"
       />
     </button>
   </div>

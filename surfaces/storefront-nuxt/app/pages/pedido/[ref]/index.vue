@@ -29,7 +29,7 @@ const supportUrl = computed(() => tracking.value?.support_url
 const rating = ref(0)
 const comment = ref('')
 const actionPending = ref<Record<string, boolean>>({})
-const supportOpen = ref(false)
+const ratingOpen = ref(false)
 const { performAction: performReorderAction, conflict, pending: reorderPending } = useReorder()
 // Forward the session cookie on SSR so order access resolves on first paint
 // (same pattern as the account pages) — otherwise the server fetch lands
@@ -60,11 +60,6 @@ const promiseTone = computed(() => tracking.value?.promise.tone || 'info')
 const statusPanelActions = computed(() => trackingStatusPanelActions(promiseActions.value, reorderAction.value, promiseTone.value))
 const statusPanelClass = computed(() => trackingPanelClass(promiseTone.value))
 const statusPanelIconClass = computed(() => trackingPanelIconClass(promiseTone.value))
-// Pedido em andamento: o próprio ícone do card pulsa (sinal "ao vivo") — sem
-// bolinha extra ao lado do título, que competia com o ícone.
-const statusPanelIconClassLive = computed(() =>
-  tracking.value?.is_active ? `${statusPanelIconClass.value} animate-pulse` : statusPanelIconClass.value
-)
 const statusPanelIcon = computed(() => trackingPanelIcon(promiseTone.value))
 const missingPaymentAction = computed(() => Boolean(
   tracking.value?.requires_payment_gate &&
@@ -242,7 +237,7 @@ async function rateAndClose () {
   const action = rateAction.value
   // Exige uma nota escolhida (>0) antes de enviar — sem seleção, não submete.
   if (!action || rating.value < 1) return
-  supportOpen.value = false
+  ratingOpen.value = false
   await postAction(action, { rating: rating.value, comment: comment.value })
 }
 
@@ -357,10 +352,22 @@ useSeoMeta({
             variant="default"
             :class="statusPanelClass"
             :icon="statusPanelIcon"
-            :icon-class="statusPanelIconClassLive"
+            :icon-class="statusPanelIconClass"
           >
-            <UiAlertTitle class="text-foreground">
-              {{ tracking.promise.title || tracking.status_label }}
+            <UiAlertTitle class="flex w-full flex-wrap items-center gap-x-2 gap-y-1 text-foreground">
+              <span>{{ tracking.promise.title || tracking.status_label }}</span>
+              <!-- Sinal de vida explícito. Antes era `animate-pulse` no ícone de
+                   16px: uma oscilação de opacidade em 2s que ninguém percebe. A
+                   copy "Ao vivo" já existia no registro e chegava aqui sem nunca
+                   ser mostrada. Some quando o dado envelhece — aí quem fala é o
+                   carimbo de frescor, com o botão de recuperar. -->
+              <span
+                v-if="tracking.is_active && !freshness.isStale"
+                class="inline-flex items-center gap-1 shop-meta"
+              >
+                <span class="size-2 rounded-full bg-current motion-safe:animate-pulse" aria-hidden="true" />
+                {{ tracking.copy.live_badge }}
+              </span>
             </UiAlertTitle>
             <UiAlertDescription class="w-full text-muted-foreground">
               <div class="w-full shop-stack-block">
@@ -589,7 +596,7 @@ useSeoMeta({
           </UiCardHeader>
           <UiCardContent class="space-y-2">
             <!-- Avaliar em destaque (primary); as demais ficam secundárias. -->
-            <UiButton v-if="rateAction" class="w-full" icon="lucide:star" @click="supportOpen = true">
+            <UiButton v-if="rateAction" class="w-full" icon="lucide:star" @click="ratingOpen = true">
               Avaliar pedido
             </UiButton>
             <UiButton
@@ -644,7 +651,7 @@ useSeoMeta({
 
         <BottomSheet
           v-if="rateAction"
-          v-model:open="supportOpen"
+          v-model:open="ratingOpen"
           max-width="md"
           title="Avaliar pedido"
           :description="tracking.copy.rating_thanks || 'Sua nota ajuda a loja a melhorar.'"
