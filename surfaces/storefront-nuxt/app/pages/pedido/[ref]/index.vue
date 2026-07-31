@@ -108,7 +108,7 @@ const sideActionsPrimary = computed(() => {
 })
 const showSideActions = computed(() => Boolean(
   tracking.value &&
-  (cancelAction.value || showReorderAction.value || showSupportAction.value)
+  (cancelAction.value || showReorderAction.value || showSupportAction.value || shareHref.value)
 ))
 const showDeliveryTab = computed(() => Boolean(tracking.value?.pickup_info || tracking.value?.fulfillments.length))
 const deliveryTabLabel = computed(() => tracking.value?.is_delivery
@@ -279,16 +279,15 @@ function dismissReorderConflict () {
   conflict.value = null
 }
 
-// Momento yoin — herdado da antiga tela /confirmado, que deixou de existir.
-// O backend marca no checkout e devolve `just_placed` UMA vez; o primeiro
-// carregamento celebra e as voltas seguintes mostram só o acompanhamento.
-// Guardamos em ref própria porque o refresh do polling zera o campo.
-const justPlaced = ref(false)
-watchEffect(() => { if (tracking.value?.just_placed) justPlaced.value = true })
-const yoinHeading = computed(() => {
-  const nome = tracking.value?.yoin_customer_name
-  const base = tracking.value?.yoin_heading || 'Pedido recebido'
-  return nome ? `${base}, ${nome}.` : `${base}.`
+// Momento yoin: o backend devolve `just_placed` UMA vez, no primeiro acesso
+// depois do checkout. A celebração é o confete — efêmera, sem ocupar layout.
+// O banner fixo saiu: repetia notícia velha (no fluxo Pix ele aterrissava
+// DEPOIS do pagamento, dizendo "Pedido recebido") e competia com o painel.
+const yoinCelebrado = ref(false)
+watchEffect(() => {
+  if (!import.meta.client || yoinCelebrado.value || !tracking.value?.just_placed) return
+  yoinCelebrado.value = true
+  nextTick(() => dispararConfetti())
 })
 const shareHref = computed(() => {
   const texto = tracking.value?.share_text
@@ -327,28 +326,6 @@ useSeoMeta({
         </div>
 
         <!-- Yoin: fechamento do pedido. Some assim que o cliente volta. -->
-        <div
-          v-if="justPlaced && !pending && !error"
-          class="rounded-lg border border-primary/20 bg-primary/5 p-4 text-center"
-          data-yoin
-        >
-          <div class="mx-auto flex size-10 items-center justify-center rounded-full bg-primary/10 text-primary">
-            <Icon name="lucide:check" class="size-5" />
-          </div>
-          <p class="mt-3 shop-item-title font-semibold">{{ yoinHeading }}</p>
-          <UiButton
-            v-if="shareHref"
-            :href="shareHref"
-            target="_blank"
-            rel="noopener"
-            variant="outline"
-            icon="lucide:share-2"
-            class="mt-3 w-full justify-center sm:w-auto"
-          >
-            {{ tracking?.share_cta || 'Compartilhar' }}
-          </UiButton>
-        </div>
-
         <!-- Skeleton que espelha o layout real (painel de status + abas), não um
              bloco único que não conta o que está por vir. -->
         <div v-if="pending" class="shop-stack-block">
@@ -621,6 +598,11 @@ useSeoMeta({
             </UiButton>
             <UiButton v-if="showSupportAction" :href="supportUrl" target="_blank" rel="noopener noreferrer" :variant="sideActionsPrimary === 'support' ? 'default' : 'secondary'" icon="lucide:message-circle" class="w-full">
               {{ tracking.copy.support_label }}
+            </UiButton>
+            <!-- Compartilhar é permanente: serve mais com o pedido pronto do que
+                 logo depois do checkout, onde vivia preso ao banner do yoin. -->
+            <UiButton v-if="shareHref" :href="shareHref" target="_blank" rel="noopener" variant="secondary" icon="lucide:share-2" class="w-full">
+              {{ tracking.share_cta }}
             </UiButton>
             <UiAlertDialog v-if="cancelAction">
               <UiAlertDialogTrigger as-child>

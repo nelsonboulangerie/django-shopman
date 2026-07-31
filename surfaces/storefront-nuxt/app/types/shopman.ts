@@ -814,9 +814,7 @@ export interface TrackingResponse {
   support_url: string
   share_text: string
   just_placed?: boolean
-  yoin_heading?: string
-  yoin_customer_name?: string
-  share_cta?: string
+  share_cta: string
   is_debug: boolean
   last_updated_iso: string
   last_updated_display: string

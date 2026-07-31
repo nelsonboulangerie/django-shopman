@@ -272,8 +272,6 @@ class OrderTrackingSerializer(serializers.Serializer):
     share_text = serializers.CharField(allow_blank=True, required=False)
     # Momento yoin — só presentes no primeiro acesso depois do checkout.
     just_placed = serializers.BooleanField(required=False, default=False)
-    yoin_heading = serializers.CharField(allow_blank=True, required=False)
-    yoin_customer_name = serializers.CharField(allow_blank=True, required=False)
     share_cta = serializers.CharField(allow_blank=True, required=False)
     is_debug = serializers.BooleanField()
     last_updated_iso = serializers.CharField()

@@ -713,13 +713,6 @@ OMOTENASHI_DEFAULTS: dict[str, dict[str, dict[str, CopyEntry]]] = {
     },
 
     # ── Order confirmation (momento yoin, no acompanhamento) ──────
-    "CONFIRMATION_HEADING": {
-        MOMENT_MANHA: {
-            AUDIENCE_VIP: CopyEntry(title="Ótimo começo de dia"),
-            WILDCARD: CopyEntry(title="Pedido recebido"),
-        },
-        WILDCARD: {WILDCARD: CopyEntry(title="Pedido recebido")},
-    },
     "CONFIRMATION_TRACK_CTA": {
         WILDCARD: {WILDCARD: CopyEntry(title="Acompanhar pedido")},
     },

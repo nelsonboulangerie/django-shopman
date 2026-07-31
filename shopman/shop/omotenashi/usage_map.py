@@ -105,9 +105,6 @@ USAGE: dict[str, tuple[tuple[str, str, str], ...]] = {
     "CHECKOUT_WHEN_REQUIRED": (
         ("shopman/storefront/presentation/checkout.py", "Loja", "Checkout"),
     ),
-    "CONFIRMATION_HEADING": (
-        ("shopman/storefront/api/tracking.py", "Loja", "Acompanhamento do pedido"),
-    ),
     "CONFIRMATION_SHARE_CTA": (
         ("shopman/storefront/api/tracking.py", "Loja", "Acompanhamento do pedido"),
     ),
