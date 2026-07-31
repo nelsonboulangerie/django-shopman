@@ -276,18 +276,6 @@ useSeoMeta({
                 <p class="shop-muted">Preparando o pagamento seguro com cartão…</p>
               </div>
 
-              <!-- Pix ainda sem código: a loja está conferindo a disponibilidade
-                   (`timing=post_commit`). Espelha a espera do cartão acima. O
-                   painel do promise já diz o que está acontecendo; aqui é só o
-                   sinal de que a tela troca sozinha. -->
-              <div v-if="payment.method === 'pix' && !payment.pix_qr_code && !payment.pix_copy_paste && !payment.error_message" class="flex items-center gap-3 rounded-lg border p-4">
-                <Icon name="lucide:loader-circle" :size="20" class="shrink-0 animate-spin text-muted-foreground" />
-                <div>
-                  <p class="shop-body">Gerando código Pix…</p>
-                  <p class="shop-muted mt-1">A tela atualiza automaticamente.</p>
-                </div>
-              </div>
-
               <p v-if="payment.pix_qr_code || payment.pix_copy_paste" class="shop-muted">{{ copy.pix_instruction }}</p>
 
               <div v-if="payment.pix_qr_code || payment.pix_copy_paste" class="grid grid-cols-1 gap-4 sm:grid-cols-[220px_minmax(0,1fr)]">

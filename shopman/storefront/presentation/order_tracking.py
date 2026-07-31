@@ -68,15 +68,6 @@ FULFILLMENT_STATUS_LABELS: dict[str, str] = {
     "cancelled": "Cancelado",
 }
 
-# Retirada não é envio: o mesmo status ganha rótulo de balcão, sem "Rastrear envio".
-PICKUP_FULFILLMENT_STATUS_LABELS: dict[str, str] = {
-    "pending": "Em preparo",
-    "in_progress": "Em preparo",
-    "dispatched": "Pronto para retirada",
-    "delivered": "Retirado",
-    "cancelled": "Cancelado",
-}
-
 # display_status_key → (copy key, fallback). Keys absent here fall back to the
 # canonical order status labels.
 STATUS_LABEL_COPY: dict[str, tuple[str, str]] = {
@@ -621,7 +612,7 @@ def _promise_copy(
     if state == "card_authorized":
         message = (
             copy.message("TRACKING_CARD_AUTHORIZED_MESSAGE_NEW",
-                         "Agora conferimos se temos tudo.")
+                         "Agora conferimos a disponibilidade.")
             if status == "new"
             else copy.message("TRACKING_CARD_AUTHORIZED_MESSAGE_CONFIRMED",
                               "Estamos finalizando o pagamento.")
@@ -838,7 +829,11 @@ def _present_fulfillments(
     copy: CopyCatalog,
     is_pickup: bool = False,
 ) -> tuple[FulfillmentProjection, ...]:
-    labels = PICKUP_FULFILLMENT_STATUS_LABELS if is_pickup else FULFILLMENT_STATUS_LABELS
+    # Retirada não tem envio a acompanhar: a linha sobrava com um "Em preparo"
+    # solto, sem código, sem link e sem nada que o painel já não dissesse.
+    if is_pickup:
+        return ()
+    labels = FULFILLMENT_STATUS_LABELS
     return tuple(
         FulfillmentProjection(
             status=ful.status,

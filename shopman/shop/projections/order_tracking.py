@@ -717,18 +717,10 @@ def _build_promise(
                 tone="success",
                 requires_active_notification=False,
             )
-        return _promise(
-            state="ready_pickup",
-            tone="success",
-            actions=(
-                _action(
-                    ref="pickup",
-                    kind="instruction",
-                    label=_copy_title("TRACKING_ACTION_READY_PICKUP", "Retirar pedido"),
-                    priority="primary",
-                ),
-            ),
-        )
+        # Sem ação no painel: "Retirar pedido" era rótulo decorativo com cara de
+        # botão, e o cliente tentava clicar. O que resolve de verdade ("Como
+        # chegar") é externo e já vive na aba de retirada, com href e target.
+        return _promise(state="ready_pickup", tone="success")
 
     if order.status == "dispatched":
         # Trecho mais sensível: o produto saiu, com courier terceirizado, sem

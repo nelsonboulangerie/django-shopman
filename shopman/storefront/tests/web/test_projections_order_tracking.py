@@ -489,9 +489,9 @@ class TestStatusColours:
         assert proj.promise.state == "ready_pickup"
         assert proj.promise.requires_active_notification is False
         assert proj.promise.notification_topic is None
-        assert proj.promise.actions[0].label == "Retirar pedido"
-        assert proj.promise.actions[0].kind == "instruction"
-        assert proj.promise.actions[0].href == ""
+        # "Retirar pedido" era rótulo com cara de botão; a CTA real ("Como
+        # chegar") vive na aba de retirada, que é externa e acionável.
+        assert proj.promise.actions == ()
         assert proj.pickup_fulfillments == ()
         assert proj.pickup_info is not None
         assert proj.pickup_info.directions_url is not None
@@ -567,8 +567,12 @@ class TestStatusColours:
         assert "origin=" not in proj.pickup_info.directions_url
         assert "travelmode=" not in proj.pickup_info.directions_url
 
-    def test_pickup_fulfillment_uses_counter_labels_without_shipment_tracking(self, order):
-        # Retirada não é envio: o card não pode dizer "Rastrear envio" (não acionável).
+    def test_pickup_has_no_fulfillment_rows(self, order):
+        """Retirada não é envio: a linha só carregava um rótulo de status solto.
+
+        Sem código, sem link e sem nada que o painel já não diga — na tela virava
+        um "Em preparo" órfão embaixo da aba de retirada.
+        """
         from shopman.orderman.models import Fulfillment
         from shopman.orderman.models import Order as _Order
 
@@ -578,11 +582,7 @@ class TestStatusColours:
 
         proj = build_order_tracking(order)
 
-        assert len(proj.pickup_fulfillments) == 1
-        ful = proj.pickup_fulfillments[0]
-        assert ful.status_label == "Em preparo"
-        assert ful.tracking_label == ""
-        assert ful.tracking_url is None
+        assert proj.pickup_fulfillments == ()
 
     def test_pickup_directions_fall_back_to_coordinates_without_address(self, order):
         from decimal import Decimal

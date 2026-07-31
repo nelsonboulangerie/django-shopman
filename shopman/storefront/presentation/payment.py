@@ -65,12 +65,12 @@ _PROMISE_COPY: dict[str, tuple[str, str, str, str]] = {
     "card_authorization_requested": (
         "PAYMENT_PROMISE_CARD_PRECONFIRMATION_TITLE", "Autorizar cartão",
         "PAYMENT_PROMISE_CARD_PRECONFIRMATION_MESSAGE",
-        "Autorize no ambiente seguro. Depois conferimos se temos tudo.",
+        "Autorize no ambiente seguro. Depois conferimos a disponibilidade.",
     ),
     "card_checkout_requested": (
         "PAYMENT_PROMISE_CARD_TITLE", "Pagamento com cartão",
         "PAYMENT_PROMISE_CARD_MESSAGE",
-        "Temos tudo separado. Finalize no ambiente seguro e começamos a preparar.",
+        "Disponibilidade confirmada. Finalize no ambiente seguro e começamos a preparar.",
     ),
     "card_checkout_pending": (
         "PAYMENT_PROMISE_CARD_PENDING_TITLE", "Preparando pagamento",
@@ -79,19 +79,19 @@ _PROMISE_COPY: dict[str, tuple[str, str, str, str]] = {
     "pix_waiting_confirmation": (
         "PAYMENT_PROMISE_PIX_WAITING_TITLE", "Aguardando a loja",
         "PAYMENT_PROMISE_PIX_WAITING_MESSAGE",
-        "Estamos conferindo se temos tudo. O código Pix aparece aqui em seguida. "
+        "Estamos conferindo a disponibilidade. O código Pix aparece aqui em seguida. "
         "Se não conseguirmos confirmar, cancelamos e avisamos você.",
     ),
     "pix_payment_before_confirmation": (
         "PAYMENT_PROMISE_PIX_PRECONFIRMATION_TITLE", "Pague com Pix",
         "PAYMENT_PROMISE_PIX_PRECONFIRMATION_MESSAGE",
-        "Use o código abaixo. Ainda estamos conferindo se temos tudo, "
+        "Use o código abaixo. Ainda estamos conferindo a disponibilidade, "
         "e cancelamos o pedido se o prazo acabar.",
     ),
     "pix_payment_requested": (
         "PAYMENT_PROMISE_PIX_TITLE", "Pague com Pix",
         "PAYMENT_PROMISE_PIX_MESSAGE",
-        "Temos tudo separado. Use o código abaixo e começamos a preparar. "
+        "Disponibilidade confirmada. Use o código abaixo e começamos a preparar. "
         "Se o prazo acabar, cancelamos o pedido.",
     ),
 }
@@ -273,7 +273,7 @@ def _card_authorized_message(order_status: str, copy: CopyCatalog) -> str:
     if order_status == "new":
         return copy.message(
             "PAYMENT_PROMISE_CARD_AUTHORIZED_MESSAGE_NEW",
-            "Não precisa fazer mais nada. Agora conferimos se temos tudo.",
+            "Não precisa fazer mais nada. Agora conferimos a disponibilidade.",
         )
     return copy.message(
         "PAYMENT_PROMISE_CARD_AUTHORIZED_MESSAGE_CONFIRMED",

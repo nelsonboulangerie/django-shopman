@@ -585,9 +585,6 @@ OMOTENASHI_DEFAULTS: dict[str, dict[str, dict[str, CopyEntry]]] = {
             ),
         },
     },
-    "TRACKING_ACTION_READY_PICKUP": {
-        WILDCARD: {WILDCARD: CopyEntry(title="Retirar pedido")},
-    },
     "TRACKING_CARD_AUTHORIZED": {
         WILDCARD: {
             WILDCARD: CopyEntry(
@@ -655,7 +652,7 @@ OMOTENASHI_DEFAULTS: dict[str, dict[str, dict[str, CopyEntry]]] = {
         WILDCARD: {WILDCARD: CopyEntry(message="Já vamos começar o preparo.")},
     },
     "TRACKING_CARD_AUTHORIZED_MESSAGE_NEW": {
-        WILDCARD: {WILDCARD: CopyEntry(message="Agora conferimos se temos tudo.")},
+        WILDCARD: {WILDCARD: CopyEntry(message="Agora conferimos a disponibilidade.")},
     },
     "TRACKING_CARD_AUTHORIZED_MESSAGE_CONFIRMED": {
         WILDCARD: {WILDCARD: CopyEntry(message="Estamos finalizando o pagamento.")},
@@ -743,7 +740,7 @@ OMOTENASHI_DEFAULTS: dict[str, dict[str, dict[str, CopyEntry]]] = {
         WILDCARD: {WILDCARD: CopyEntry(title="Pague com Pix")},
     },
     "PAYMENT_PROMISE_PIX_MESSAGE": {
-        WILDCARD: {WILDCARD: CopyEntry(message="Temos tudo separado. Use o código abaixo e começamos a preparar. "
+        WILDCARD: {WILDCARD: CopyEntry(message="Disponibilidade confirmada. Use o código abaixo e começamos a preparar. "
                                                "Se o prazo acabar, cancelamos o pedido.")},
     },
     "PAYMENT_PROMISE_PIX_PRECONFIRMATION_TITLE": {
@@ -752,7 +749,7 @@ OMOTENASHI_DEFAULTS: dict[str, dict[str, dict[str, CopyEntry]]] = {
     "PAYMENT_PROMISE_PIX_PRECONFIRMATION_MESSAGE": {
         WILDCARD: {
             WILDCARD: CopyEntry(
-                message="Use o código abaixo. Ainda estamos conferindo se temos tudo, "
+                message="Use o código abaixo. Ainda estamos conferindo a disponibilidade, "
                         "e cancelamos o pedido se o prazo acabar.",
             ),
         },
@@ -769,7 +766,7 @@ OMOTENASHI_DEFAULTS: dict[str, dict[str, dict[str, CopyEntry]]] = {
     "PAYMENT_PROMISE_PIX_WAITING_MESSAGE": {
         WILDCARD: {
             WILDCARD: CopyEntry(
-                message="Estamos conferindo se temos tudo. O código Pix aparece aqui em seguida. "
+                message="Estamos conferindo a disponibilidade. O código Pix aparece aqui em seguida. "
                         "Se não conseguirmos confirmar, cancelamos e avisamos você.",
             ),
         },
@@ -778,7 +775,7 @@ OMOTENASHI_DEFAULTS: dict[str, dict[str, dict[str, CopyEntry]]] = {
         WILDCARD: {WILDCARD: CopyEntry(title="Pagamento com cartão")},
     },
     "PAYMENT_PROMISE_CARD_MESSAGE": {
-        WILDCARD: {WILDCARD: CopyEntry(message="Temos tudo separado. Finalize no ambiente seguro e começamos a preparar.")},
+        WILDCARD: {WILDCARD: CopyEntry(message="Disponibilidade confirmada. Finalize no ambiente seguro e começamos a preparar.")},
     },
     "PAYMENT_PROMISE_CARD_PRECONFIRMATION_TITLE": {
         WILDCARD: {WILDCARD: CopyEntry(title="Autorizar cartão")},
@@ -786,7 +783,7 @@ OMOTENASHI_DEFAULTS: dict[str, dict[str, dict[str, CopyEntry]]] = {
     "PAYMENT_PROMISE_CARD_PRECONFIRMATION_MESSAGE": {
         WILDCARD: {
             WILDCARD: CopyEntry(
-                message="Autorize no ambiente seguro. A loja ainda vai conferir disponibilidade.",
+                message="Autorize no ambiente seguro. Depois conferimos a disponibilidade.",
             ),
         },
     },
@@ -800,7 +797,7 @@ OMOTENASHI_DEFAULTS: dict[str, dict[str, dict[str, CopyEntry]]] = {
         WILDCARD: {WILDCARD: CopyEntry(message="Não precisa fazer mais nada.")},
     },
     "PAYMENT_PROMISE_CARD_AUTHORIZED_MESSAGE_NEW": {
-        WILDCARD: {WILDCARD: CopyEntry(message="Não precisa fazer mais nada. Agora conferimos se temos tudo.")},
+        WILDCARD: {WILDCARD: CopyEntry(message="Não precisa fazer mais nada. Agora conferimos a disponibilidade.")},
     },
     "PAYMENT_PROMISE_CARD_AUTHORIZED_MESSAGE_CONFIRMED": {
         WILDCARD: {WILDCARD: CopyEntry(message="Não precisa fazer mais nada. Estamos finalizando o pagamento.")},
