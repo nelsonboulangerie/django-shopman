@@ -9,6 +9,8 @@ const apiPath = useShopmanApiPath()
 const csrfHeaders = useShopmanCsrfHeaders()
 const orderRef = computed(() => String(route.params.ref || ''))
 const actionPending = ref<Record<string, boolean>>({})
+// Só depois de o cliente tocar no botão faz sentido dizer "não abriu?".
+const tentouAbrirCheckout = ref(false)
 // Forward the session cookie on SSR so order access resolves on first paint
 // (same pattern as the account pages) — otherwise the server fetch lands
 // unauthenticated and the page renders the "not found" fallback for a customer
@@ -29,10 +31,13 @@ const payment = computed(() => data.value?.payment || null)
 // já é o botão fixo do topo do aside — iterar os dois aqui rendia o MESMO botão
 // duas vezes, com rótulos diferentes e um deles sem caber na coluna.
 const ACOES_COM_LUGAR_PROPRIO = new Set(['mock_confirm_payment', 'track_order'])
-// `copy`/`instruction` não são ações de servidor: são orientação sobre o que já
-// está na tela. Renderizadas nesta lista viravam botão-frase que não faz nada
-// ("Use o QR Code ou copia e cola abaixo"), ao lado do "Copiar código" real.
-const KINDS_QUE_NAO_SAO_ACAO = new Set(['copy', 'instruction'])
+// Kinds que não são mutação de servidor e por isso não pertencem a esta lista:
+//  - `copy`/`instruction`: orientação sobre o que já está na tela. Viravam
+//    botão-frase inerte ("Use o QR Code ou copia e cola abaixo").
+//  - `external`: destino fora do app (checkout do Stripe). O card principal já
+//    renderiza essa CTA como link de verdade; aqui a lista disparava POST no
+//    endereço do Stripe — o "Autorizar cartão" duplicado que não funcionava.
+const KINDS_QUE_NAO_SAO_ACAO = new Set(['copy', 'instruction', 'external'])
 // Pix ainda sem código (a loja confere antes, com `timing=post_commit`). Sem
 // isso o card ficava oco: cabeçalho com o total e um vazio embaixo, com cara de
 // conteúdo que falhou ao carregar.
@@ -163,6 +168,12 @@ async function recheckPayment () {
 }
 
 async function postAction (action: Action) {
+  // Rede de segurança: ação externa é destino, não mutação. Se alguma chegar
+  // aqui por outro caminho, navegamos em vez de POSTar no gateway.
+  if (action.kind === 'external' && action.href) {
+    if (import.meta.client) window.location.assign(action.href)
+    return
+  }
   actionPending.value = { ...actionPending.value, [action.ref]: true }
   try {
     const headers = await csrfHeaders()
@@ -292,12 +303,13 @@ useSeoMeta({
                     <p class="shop-meta">{{ copy.card_security_note }}</p>
                   </div>
                 </div>
-                <UiButton :href="payment.checkout_url" target="_blank" rel="noopener noreferrer" class="w-full" :class="simulating ? 'pointer-events-none opacity-50' : ''" size="lg" icon="lucide:credit-card">
+                <UiButton :href="payment.checkout_url" target="_blank" rel="noopener noreferrer" class="w-full" :class="simulating ? 'pointer-events-none opacity-50' : ''" size="lg" icon="lucide:credit-card" @click="tentouAbrirCheckout = true">
                   Pagar com cartão
                 </UiButton>
-                <!-- No celular o popup pode ser bloqueado: deixamos claro que dá
-                     para tocar de novo, sem o cliente achar que travou. -->
-                <p class="shop-meta text-center">Não abriu? Toque no botão novamente.</p>
+                <!-- Só DEPOIS de tocar: antes disso é resposta a um problema que
+                     ainda não existe. No celular o popup pode ser bloqueado, e aí
+                     a dica evita que o cliente ache que travou. -->
+                <p v-if="tentouAbrirCheckout" class="shop-meta text-center">Não abriu? Toque no botão novamente.</p>
               </div>
 
               <div v-else-if="payment.method === 'card'" class="flex items-center gap-3 rounded-lg border p-4">

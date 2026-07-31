@@ -17,6 +17,7 @@ import logging
 from django.conf import settings
 
 from shopman.shop.adapters.payment_types import PaymentIntent, PaymentResult
+from shopman.shop.services import storefront_links
 
 logger = logging.getLogger(__name__)
 
@@ -33,6 +34,26 @@ def _metadata_value(metadata, key: str) -> str:
         except (AttributeError, KeyError, TypeError):
             value = getattr(metadata, key, "")
     return str(value or "")
+
+
+def _storefront_absolute(path: str, stripe_config: dict) -> str:
+    """URL absoluta DA LOJA para onde o Stripe devolve o cliente.
+
+    O Stripe exige URL absoluta, e ela tem que apontar para a loja (Nuxt), não
+    para a API. Montar na mão a partir de um `domain` local rendeu três defeitos
+    ao mesmo tempo: o default era a origem do Django (o cliente voltava para um
+    host que não serve essa rota), a barra final não existe na rota Nuxt, e o
+    destino de sucesso era `/pedido/<ref>/confirmacao/` — tela que deixou de
+    existir quando o yoin migrou para o acompanhamento.
+
+    Fonte da verdade é `storefront_links`; o `domain` do config fica só como
+    reserva para quando a base da loja não estiver configurada.
+    """
+    url = storefront_links.storefront_url(path)
+    if url.startswith("http://") or url.startswith("https://"):
+        return url
+    base = str(stripe_config.get("domain") or "").rstrip("/")
+    return f"{base}{url}" if base else url
 
 
 def _get_config() -> dict:
@@ -73,7 +94,6 @@ def create_intent(
     metadata = metadata or {}
     idempotency_key = config.get("idempotency_key") or metadata.get("idempotency_key", "")
     stripe_config = _get_config()
-    domain = stripe_config.get("domain", "http://localhost:8000").rstrip("/")
     stripe_currency = currency.lower()
 
     db_intent = PaymentService.create_intent(
@@ -100,8 +120,12 @@ def create_intent(
             },
             "quantity": 1,
         }],
-        success_url=f"{domain}/pedido/{order_ref}/confirmacao/",
-        cancel_url=f"{domain}/pedido/{order_ref}/pagamento/",
+        success_url=_storefront_absolute(
+            storefront_links.path_order_tracking(order_ref), stripe_config,
+        ),
+        cancel_url=_storefront_absolute(
+            storefront_links.path_order_payment(order_ref), stripe_config,
+        ),
         metadata={
             "shopman_ref": db_intent.ref,
             "order_ref": order_ref,

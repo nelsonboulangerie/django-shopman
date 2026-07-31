@@ -76,14 +76,14 @@ OMOTENASHI_DEFAULTS: dict[str, dict[str, dict[str, CopyEntry]]] = {
         },
         MOMENT_ALMOCO: {
             WILDCARD: CopyEntry(
-                title="Pausa para o almoço?",
-                message="Sanduíches e saladas prontos.",
+                title="Já almoçou?",
+                message="Fuja do óbvio com nossos sanduíches, tartines e sobremesas.",
             ),
         },
         MOMENT_TARDE: {
             WILDCARD: CopyEntry(
                 title="Um café da tarde?",
-                message="Doces artesanais e cafés especiais.",
+                message="Encontre refúgio nas nossas delícias artesanais e bebidas especiais.",
             ),
         },
         MOMENT_FECHANDO: {
@@ -855,10 +855,11 @@ OMOTENASHI_DEFAULTS: dict[str, dict[str, dict[str, CopyEntry]]] = {
     "PAYMENT_CARD_INTRO": {
         WILDCARD: {
             WILDCARD: CopyEntry(
-                message=(
-                    "Conclua o pagamento no ambiente seguro do Stripe. "
-                    "A confirmação é automática. Volte aqui se quiser acompanhar seu pedido."
-                ),
+                # O painel de status acima já manda finalizar no ambiente seguro;
+                # aqui fica só o que ele NÃO diz: que a confirmação é automática
+                # e como voltar. Repetir "ambiente seguro" era a terceira menção
+                # a segurança no mesmo card.
+                message="A confirmação é automática. Volte a esta página quando quiser acompanhar o pedido.",
             ),
         },
     },

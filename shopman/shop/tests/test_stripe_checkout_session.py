@@ -75,6 +75,9 @@ def _commit_card_order(channel_ref: str = "web") -> Order:
 @override_settings(
     SHOPMAN_STRIPE=STRIPE_SETTINGS,
     SHOPMAN_PAYMENT_ADAPTERS=PAYMENT_ADAPTERS_STRIPE_CARD,
+    # Origem da LOJA (Nuxt) — distinta da API de propósito, para o teste pegar
+    # se alguém voltar a montar a URL de retorno a partir do domínio do Django.
+    SHOPMAN_STOREFRONT_BASE_URL="https://loja.example.com",
 )
 class StripeCreateIntentTests(TestCase):
     def setUp(self) -> None:
@@ -111,8 +114,15 @@ class StripeCreateIntentTests(TestCase):
         kwargs = mock_stripe.checkout.Session.create.call_args.kwargs
         assert kwargs["mode"] == "payment"
         assert kwargs["payment_method_types"] == ["card"]
-        assert kwargs["success_url"] == f"https://shop.example.com/pedido/{order.ref}/confirmacao/"
-        assert kwargs["cancel_url"] == f"https://shop.example.com/pedido/{order.ref}/pagamento/"
+        # O Stripe devolve o cliente para a LOJA, não para a API, e para rotas
+        # que existem. As URLs eram montadas à mão a partir de um `domain` local
+        # e carregavam três defeitos: origem do Django, barra final que a rota
+        # Nuxt não tem, e `/confirmacao/` — tela aposentada quando o yoin migrou
+        # para o acompanhamento. Agora saem de `storefront_links`.
+        assert kwargs["success_url"] == f"https://loja.example.com/tracking/{order.ref}"
+        assert kwargs["cancel_url"] == f"https://loja.example.com/pedido/{order.ref}/pagamento"
+        assert "/confirmacao" not in kwargs["success_url"]
+        assert not kwargs["cancel_url"].endswith("/")
         assert kwargs["metadata"]["order_ref"] == order.ref
         assert kwargs["metadata"]["shopman_ref"] == intent.intent_ref
         line_item = kwargs["line_items"][0]
