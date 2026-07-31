@@ -166,6 +166,11 @@ class OrderPaymentStatusView(APIView):
             return Response({"detail": "Pedido não encontrado."}, status=404)
 
         order_service.resolve_timeouts_if_due(order)
+        # O poll também garante o intent: com `timing=post_commit` o código só
+        # nasce depois da loja confirmar, e quem criava era apenas o GET
+        # principal. Sem isto o cliente via o banner virar "use o código abaixo"
+        # e esperava o ciclo seguinte pelo QR. `initiate` é idempotente.
+        order_service.ensure_payment_intent(order)
         status = projection_data(build_payment_status(order))
         status["redirect_url"] = _tracking_url(ref)
         return Response(status)

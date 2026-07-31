@@ -765,6 +765,14 @@ OMOTENASHI_DEFAULTS: dict[str, dict[str, dict[str, CopyEntry]]] = {
     # Pix com pagamento depois da confirmação: o intent só nasce quando a loja
     # confirma, então até lá não há código. A frase diz o que esperar e o que
     # acontece se a confirmação não vier.
+    # Intervalo curto entre a loja confirmar e o código nascer. Sem isso a tela
+    # dizia "use o código abaixo" com o card do Pix ainda vazio.
+    "PAYMENT_PROMISE_PIX_WAITING_CODE_TITLE": {
+        WILDCARD: {WILDCARD: CopyEntry(title="Preparando seu Pix")},
+    },
+    "PAYMENT_PROMISE_PIX_WAITING_CODE_MESSAGE": {
+        WILDCARD: {WILDCARD: CopyEntry(message="Disponibilidade confirmada. O código aparece aqui em instantes.")},
+    },
     "PAYMENT_PROMISE_PIX_WAITING_FOOTNOTE": {
         WILDCARD: {WILDCARD: CopyEntry(message="Se não conseguirmos confirmar, cancelamos e avisamos você.")},
     },

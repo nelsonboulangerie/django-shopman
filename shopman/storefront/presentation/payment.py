@@ -81,6 +81,11 @@ _PROMISE_COPY: dict[str, tuple[str, str, str, str]] = {
         "PAYMENT_PROMISE_PIX_WAITING_MESSAGE",
         "Estamos conferindo a disponibilidade. O código Pix aparece aqui em seguida.",
     ),
+    "pix_waiting_code": (
+        "PAYMENT_PROMISE_PIX_WAITING_CODE_TITLE", "Preparando seu Pix",
+        "PAYMENT_PROMISE_PIX_WAITING_CODE_MESSAGE",
+        "Disponibilidade confirmada. O código aparece aqui em instantes.",
+    ),
     "pix_payment_before_confirmation": (
         "PAYMENT_PROMISE_PIX_PRECONFIRMATION_TITLE", "Pague com Pix",
         "PAYMENT_PROMISE_PIX_PRECONFIRMATION_MESSAGE",

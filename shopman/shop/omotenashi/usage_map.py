@@ -539,6 +539,12 @@ USAGE: dict[str, tuple[tuple[str, str, str], ...]] = {
     "PAYMENT_PROMISE_PIX_TITLE": (
         ("shopman/storefront/presentation/payment.py", "Loja", "Pagamento"),
     ),
+    "PAYMENT_PROMISE_PIX_WAITING_CODE_MESSAGE": (
+        ("shopman/storefront/presentation/payment.py", "Loja", "Pagamento"),
+    ),
+    "PAYMENT_PROMISE_PIX_WAITING_CODE_TITLE": (
+        ("shopman/storefront/presentation/payment.py", "Loja", "Pagamento"),
+    ),
     "PAYMENT_PROMISE_PIX_WAITING_FOOTNOTE": (
         ("shopman/storefront/presentation/payment.py", "Loja", "Pagamento"),
     ),

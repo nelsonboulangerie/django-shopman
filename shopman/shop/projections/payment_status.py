@@ -209,7 +209,7 @@ def _payment_status_should_redirect(
     # Espera pela confirmação da loja NÃO é motivo para tirar o cliente da tela
     # de pagamento: sem ação pendente a regra abaixo mandaria redirecionar, e o
     # Pix de `timing=post_commit` nunca chegaria a aparecer. O poll traz o QR.
-    if promise.state == "pix_waiting_confirmation":
+    if promise.state in {"pix_waiting_confirmation", "pix_waiting_code"}:
         return False
     return not promise_has_pending_payment_action(promise)
 
@@ -488,35 +488,15 @@ def _build_payment_promise(
             requires_active_notification=False,
             stale_after_seconds=30,
         )
-    if order.status != "confirmed":
-        # O que separa os dois estados é haver ou não código Pix para pagar.
-        # Com `payment.timing=post_commit` o intent só nasce depois que a loja
-        # confirmar, então até lá não existe QR nem copia-e-cola: oferecer
-        # "Copiar código PIX" seria prometer o que a tela não tem, e o prazo do
-        # Pix não pode correr antes de existir código para pagar.
-        if any(_pix_payload((order.data or {}).get("payment") or {})):
-            # Já há código: falta só a loja conferir a disponibilidade.
-            return PaymentPromiseData(
-                state="pix_payment_before_confirmation",
-                tone="info",
-                actions=(
-                    _action(
-                        ref="copy_pix",
-                        kind="copy",
-                        label=_copy_title("PAYMENT_PROMISE_PIX_ACTION", "Copiar código PIX"),
-                    ),
-                ),
-                deadline_at=pix_expires_at,
-                deadline_kind="payment" if pix_expires_at else None,
-                deadline_action="cancel_order_on_timeout" if pix_expires_at else "none",
-                requires_active_notification=True,
-                stale_after_seconds=45,
-            )
-        # Sem código ainda: nenhuma ação de pagamento, prazo nenhum para correr
-        # (a janela do Pix começa quando o código nasce). A tela fica em espera
-        # e troca sozinha para o QR no próximo poll.
+    # Haver ou não CÓDIGO manda em tudo, tenha a loja confirmado ou não. Sem
+    # código não existe o que copiar nem prazo a correr — e prometer "use o
+    # código abaixo" quando a tela não tem código é a falha que fazia o banner
+    # trocar sozinho enquanto o card do Pix seguia vazio até o cliente recarregar.
+    if not any(_pix_payload((order.data or {}).get("payment") or {})):
+        # Dois momentos diferentes, duas frases: antes da loja conferir, e o
+        # intervalo curto entre a confirmação e o código nascer.
         return PaymentPromiseData(
-            state="pix_waiting_confirmation",
+            state="pix_waiting_code" if order.status == "confirmed" else "pix_waiting_confirmation",
             tone="info",
             actions=(),
             deadline_at=None,
@@ -524,6 +504,24 @@ def _build_payment_promise(
             deadline_action="none",
             requires_active_notification=True,
             stale_after_seconds=8,
+        )
+    if order.status != "confirmed":
+        # Já há código, falta a loja conferir a disponibilidade.
+        return PaymentPromiseData(
+            state="pix_payment_before_confirmation",
+            tone="info",
+            actions=(
+                _action(
+                    ref="copy_pix",
+                    kind="copy",
+                    label=_copy_title("PAYMENT_PROMISE_PIX_ACTION", "Copiar código PIX"),
+                ),
+            ),
+            deadline_at=pix_expires_at,
+            deadline_kind="payment" if pix_expires_at else None,
+            deadline_action="cancel_order_on_timeout" if pix_expires_at else "none",
+            requires_active_notification=True,
+            stale_after_seconds=45,
         )
     return PaymentPromiseData(
         state="pix_payment_requested",

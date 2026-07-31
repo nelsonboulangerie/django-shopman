@@ -325,3 +325,52 @@ class TestPaymentStatusProjection:
         proj = build_payment_status(order_with_payment)
         with pytest.raises(FrozenInstanceError):
             proj.is_paid = True  # type: ignore[misc]
+
+
+class TestPixNeverPromisesAMissingCode:
+    """O promise nunca pode dizer "use o código abaixo" sem código na tela.
+
+    Regressão real: ao aceitar o pedido, o banner virava `pix_payment_requested`
+    porque o ramo do pedido confirmado não olhava o payload. O cliente lia
+    "Use o código abaixo" com o card do Pix vazio, e só via o QR ao recarregar.
+    """
+
+    def test_confirmed_without_payload_waits_for_the_code(self, order_with_payment):
+        from shopman.orderman.models import Order as _Order
+
+        order_with_payment.data["payment"] = {"method": "pix", "amount_q": 2500}
+        order_with_payment.save(update_fields=["data"])
+        _Order.objects.filter(pk=order_with_payment.pk).update(status="confirmed")
+        order_with_payment.refresh_from_db()
+
+        proj = build_payment(order_with_payment)
+
+        assert proj.promise.state == "pix_waiting_code"
+        assert not proj.promise.actions
+        assert proj.promise.deadline_at is None
+        assert "código abaixo" not in proj.promise.message
+
+    def test_confirmed_with_payload_asks_for_payment(self, order_with_payment):
+        from shopman.orderman.models import Order as _Order
+
+        _Order.objects.filter(pk=order_with_payment.pk).update(status="confirmed")
+        order_with_payment.refresh_from_db()
+
+        proj = build_payment(order_with_payment)
+
+        assert proj.promise.state == "pix_payment_requested"
+        assert proj.pix_copy_paste
+
+    def test_no_pix_state_offers_copy_without_a_code(self, order_with_payment):
+        """Varre os dois estados de espera: ação de copiar exige código."""
+        from shopman.orderman.models import Order as _Order
+
+        for status in ("new", "confirmed"):
+            order_with_payment.data["payment"] = {"method": "pix", "amount_q": 2500}
+            order_with_payment.save(update_fields=["data"])
+            _Order.objects.filter(pk=order_with_payment.pk).update(status=status)
+            order_with_payment.refresh_from_db()
+
+            proj = build_payment(order_with_payment)
+
+            assert not proj.promise.actions, f"{status} oferece ação sem código"
