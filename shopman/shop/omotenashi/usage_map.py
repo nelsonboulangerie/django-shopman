@@ -467,10 +467,10 @@ USAGE: dict[str, tuple[tuple[str, str, str], ...]] = {
     "PAYMENT_PROMISE_CARD_AUTHORIZED_MESSAGE": (
         ("shopman/storefront/presentation/payment.py", "Loja", "Pagamento"),
     ),
-    "PAYMENT_PROMISE_CARD_AUTHORIZED_NEXT_CONFIRMED": (
+    "PAYMENT_PROMISE_CARD_AUTHORIZED_MESSAGE_CONFIRMED": (
         ("shopman/storefront/presentation/payment.py", "Loja", "Pagamento"),
     ),
-    "PAYMENT_PROMISE_CARD_AUTHORIZED_NEXT_NEW": (
+    "PAYMENT_PROMISE_CARD_AUTHORIZED_MESSAGE_NEW": (
         ("shopman/storefront/presentation/payment.py", "Loja", "Pagamento"),
     ),
     "PAYMENT_PROMISE_CARD_AUTHORIZED_TITLE": (
@@ -500,9 +500,6 @@ USAGE: dict[str, tuple[tuple[str, str, str], ...]] = {
     "PAYMENT_PROMISE_ERROR_MESSAGE": (
         ("shopman/storefront/presentation/payment.py", "Loja", "Pagamento"),
     ),
-    "PAYMENT_PROMISE_ERROR_RECOVERY": (
-        ("shopman/storefront/presentation/payment.py", "Loja", "Pagamento"),
-    ),
     "PAYMENT_PROMISE_ERROR_TITLE": (
         ("shopman/storefront/presentation/payment.py", "Loja", "Pagamento"),
     ),
@@ -527,16 +524,16 @@ USAGE: dict[str, tuple[tuple[str, str, str], ...]] = {
     "PAYMENT_PROMISE_PIX_PRECONFIRMATION_MESSAGE": (
         ("shopman/storefront/presentation/payment.py", "Loja", "Pagamento"),
     ),
-    "PAYMENT_PROMISE_PIX_PRECONFIRMATION_RECOVERY": (
-        ("shopman/storefront/presentation/payment.py", "Loja", "Pagamento"),
-    ),
     "PAYMENT_PROMISE_PIX_PRECONFIRMATION_TITLE": (
         ("shopman/storefront/presentation/payment.py", "Loja", "Pagamento"),
     ),
-    "PAYMENT_PROMISE_PIX_RECOVERY": (
+    "PAYMENT_PROMISE_PIX_TITLE": (
         ("shopman/storefront/presentation/payment.py", "Loja", "Pagamento"),
     ),
-    "PAYMENT_PROMISE_PIX_TITLE": (
+    "PAYMENT_PROMISE_PIX_WAITING_MESSAGE": (
+        ("shopman/storefront/presentation/payment.py", "Loja", "Pagamento"),
+    ),
+    "PAYMENT_PROMISE_PIX_WAITING_TITLE": (
         ("shopman/storefront/presentation/payment.py", "Loja", "Pagamento"),
     ),
     "PAYMENT_RETRY_CTA": (
@@ -701,6 +698,12 @@ USAGE: dict[str, tuple[tuple[str, str, str], ...]] = {
     "TRACKING_CARD_AUTHORIZED": (
         ("shopman/storefront/presentation/order_tracking.py", "Loja", "Acompanhamento do pedido"),
     ),
+    "TRACKING_CARD_AUTHORIZED_MESSAGE_CONFIRMED": (
+        ("shopman/storefront/presentation/order_tracking.py", "Loja", "Acompanhamento do pedido"),
+    ),
+    "TRACKING_CARD_AUTHORIZED_MESSAGE_NEW": (
+        ("shopman/storefront/presentation/order_tracking.py", "Loja", "Acompanhamento do pedido"),
+    ),
     "TRACKING_DELIVERED_YOIN": (
         ("shopman/storefront/presentation/order_tracking.py", "Loja", "Acompanhamento do pedido"),
     ),
@@ -783,9 +786,6 @@ USAGE: dict[str, tuple[tuple[str, str, str], ...]] = {
     "TRACKING_PROGRESS_HEADING": (
         ("shopman/storefront/presentation/order_tracking.py", "Loja", "Acompanhamento do pedido"),
     ),
-    "TRACKING_PROMISE_ACTIVE_UPDATE_NOTIFICATION": (
-        ("shopman/storefront/presentation/order_tracking.py", "Loja", "Acompanhamento do pedido"),
-    ),
     "TRACKING_PROMISE_AVAILABILITY_MESSAGE": (
         ("shopman/storefront/presentation/order_tracking.py", "Loja", "Acompanhamento do pedido"),
     ),
@@ -795,7 +795,7 @@ USAGE: dict[str, tuple[tuple[str, str, str], ...]] = {
     "TRACKING_PROMISE_CLOSED_HOURS_MESSAGE_NEXT": (
         ("shopman/storefront/presentation/order_tracking.py", "Loja", "Acompanhamento do pedido"),
     ),
-    "TRACKING_PROMISE_DISPATCHED_ACTIVE_NOTIFICATION": (
+    "TRACKING_PROMISE_CONFIRMED_WAITING": (
         ("shopman/storefront/presentation/order_tracking.py", "Loja", "Acompanhamento do pedido"),
     ),
     "TRACKING_PROMISE_DISPATCHED_MESSAGE": (
@@ -810,22 +810,13 @@ USAGE: dict[str, tuple[tuple[str, str, str], ...]] = {
     "TRACKING_PROMISE_FALLBACK_TITLE": (
         ("shopman/storefront/presentation/order_tracking.py", "Loja", "Acompanhamento do pedido"),
     ),
-    "TRACKING_PROMISE_LABEL_ACTIVE_NOTIFICATION": (
-        ("shopman/storefront/presentation/order_tracking.py", "Loja", "Acompanhamento do pedido"),
-    ),
     "TRACKING_PROMISE_LABEL_DEADLINE": (
         ("shopman/storefront/presentation/order_tracking.py", "Loja", "Acompanhamento do pedido"),
     ),
-    "TRACKING_PROMISE_LABEL_NEXT": (
+    "TRACKING_PROMISE_PAYMENT_CONFIRMED_MESSAGE_CONFIRMED": (
         ("shopman/storefront/presentation/order_tracking.py", "Loja", "Acompanhamento do pedido"),
     ),
-    "TRACKING_PROMISE_LABEL_RECOVERY": (
-        ("shopman/storefront/presentation/order_tracking.py", "Loja", "Acompanhamento do pedido"),
-    ),
-    "TRACKING_PROMISE_PAYMENT_ACTIVE_NOTIFICATION": (
-        ("shopman/storefront/presentation/order_tracking.py", "Loja", "Acompanhamento do pedido"),
-    ),
-    "TRACKING_PROMISE_PAYMENT_RECOVERY": (
+    "TRACKING_PROMISE_PAYMENT_CONFIRMED_MESSAGE_NEW": (
         ("shopman/storefront/presentation/order_tracking.py", "Loja", "Acompanhamento do pedido"),
     ),
     "TRACKING_PROMISE_PREORDER_MESSAGE": (
@@ -835,6 +826,24 @@ USAGE: dict[str, tuple[tuple[str, str, str], ...]] = {
         ("shopman/storefront/presentation/order_tracking.py", "Loja", "Acompanhamento do pedido"),
     ),
     "TRACKING_PROMISE_PREORDER_TITLE": (
+        ("shopman/storefront/presentation/order_tracking.py", "Loja", "Acompanhamento do pedido"),
+    ),
+    "TRACKING_PROMISE_PREPARING_MESSAGE_DELIVERY": (
+        ("shopman/storefront/presentation/order_tracking.py", "Loja", "Acompanhamento do pedido"),
+    ),
+    "TRACKING_PROMISE_PREPARING_MESSAGE_DELIVERY_ETA": (
+        ("shopman/storefront/presentation/order_tracking.py", "Loja", "Acompanhamento do pedido"),
+    ),
+    "TRACKING_PROMISE_PREPARING_MESSAGE_PICKUP": (
+        ("shopman/storefront/presentation/order_tracking.py", "Loja", "Acompanhamento do pedido"),
+    ),
+    "TRACKING_PROMISE_PREPARING_MESSAGE_PICKUP_ETA": (
+        ("shopman/storefront/presentation/order_tracking.py", "Loja", "Acompanhamento do pedido"),
+    ),
+    "TRACKING_PROMISE_PREPARING_TITLE": (
+        ("shopman/storefront/presentation/order_tracking.py", "Loja", "Acompanhamento do pedido"),
+    ),
+    "TRACKING_PROMISE_READY_PICKUP_MESSAGE": (
         ("shopman/storefront/presentation/order_tracking.py", "Loja", "Acompanhamento do pedido"),
     ),
     "TRACKING_PROMISE_RETURNED_MESSAGE": (

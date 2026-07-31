@@ -8,8 +8,7 @@ import {
   trackingPanelClass,
   trackingPanelIcon,
   trackingPanelIconClass,
-  trackingStatusPanelActions,
-  visibleTrackingPromiseRows
+  trackingStatusPanelActions
 } from '~/presentation/orderTracking'
 import { countdownPct, deadlineCountdown, isCountdownUrgent, serverClockOffsetMs } from '~/presentation/deadline'
 import { orderAccessErrorView } from '~/presentation/orderAccess'
@@ -92,7 +91,6 @@ const hasStatusPanelActions = computed(() => Boolean(
   showPaymentSupportFallback.value ||
   showSupportInStatusPanel.value
 ))
-const visiblePromiseRows = computed(() => visibleTrackingPromiseRows(tracking.value?.promise_rows || []))
 const showReorderAction = computed(() => Boolean(
   reorderAction.value && !statusPanelActions.value.some(action => action.ref === 'reorder')
 ))
@@ -404,14 +402,6 @@ useSeoMeta({
                   {{ tracking.copy.payment_confirmed_notice }}
                 </p>
 
-                <!-- Aviso ativo: "também avisamos você por um canal ativo" (só quando o
-                     sistema realmente notifica). Reduz a ansiedade de olhar a tela. -->
-                <p v-if="tracking.promise.active_notification" class="flex items-center gap-2 shop-meta">
-                  <Icon name="lucide:bell-ring" class="size-3.5 shrink-0" />
-                  <span v-if="tracking.copy.active_notification_label" class="font-semibold">{{ tracking.copy.active_notification_label }}</span>
-                  {{ tracking.promise.active_notification }}
-                </p>
-
                 <!-- role="timer" marca a região para AT; sem aria-live, para o valor
                      que tica a cada 1s não inundar o leitor de tela. -->
                 <div v-if="deadlineCount && !deadlineCount.isExpired" class="space-y-2" role="timer">
@@ -452,14 +442,6 @@ useSeoMeta({
                     icon="lucide:rotate-cw"
                     @click="() => refresh()"
                   >{{ tracking.copy.stale_cta }}</UiButton>
-                </div>
-
-                <div v-if="visiblePromiseRows.length" class="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                  <div v-for="row in visiblePromiseRows" :key="row.label" class="rounded-lg border bg-card p-3 shop-body">
-                    <p class="text-muted-foreground">{{ row.label }}</p>
-                    <a v-if="row.url" :href="row.url" target="_blank" rel="noopener noreferrer" class="font-semibold text-primary">{{ row.value }}</a>
-                    <p v-else class="font-semibold text-foreground">{{ row.value }}</p>
-                  </div>
                 </div>
 
                 <div v-if="hasStatusPanelActions" class="w-full pt-1">

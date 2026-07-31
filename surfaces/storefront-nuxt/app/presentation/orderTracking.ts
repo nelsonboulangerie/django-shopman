@@ -46,15 +46,6 @@ export function trackingStatusPanelActions (
 
 // Linhas da promise visíveis: esconde "última atualização" (já mostrada à parte)
 // e "sua ação" (vira botão), sem depender de caixa/acento.
-const HIDDEN_PROMISE_ROW_LABELS = ['última atualização', 'sua ação'].map(normalizeSearchText)
-
-export function visibleTrackingPromiseRows (rows: TrackingPromiseRowProjection[]): TrackingPromiseRowProjection[] {
-  return rows.filter(row => {
-    const label = normalizeSearchText(row.label)
-    return !HIDDEN_PROMISE_ROW_LABELS.some(hidden => label.includes(hidden))
-  })
-}
-
 // Passo ativo da timeline (1-based) p/ o UiTimeline: o passo atual/cancelado, ou
 // quantos já concluíram (no mínimo 1).
 export function timelineActiveStep (steps: OrderProgressStepProjection[]): number | undefined {

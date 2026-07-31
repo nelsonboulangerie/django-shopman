@@ -33,94 +33,66 @@ from shopman.shop.projections.payment_status import (
 )
 from shopman.shop.projections.types import Action
 
-# state → (title_key, title_fb, message_key, message_fb,
-#          next_key, next_fb, recovery_key, recovery_fb, active_key, active_fb)
-_PROMISE_COPY: dict[str, tuple[str, str, str, str, str, str, str, str, str, str]] = {
+# A tela de pagamento segue a mesma regra do acompanhamento: uma frase por
+# estado, que já diz o que fazer e o que acontece se não for feito. Não há campo
+# separado de "próxima ação" nem alerta de "como resolver" — rótulo em cima de
+# frase curta é o que dava ao pós-checkout cara de formulário.
+#
+# state → (title_key, title_fb, message_key, message_fb)
+_PROMISE_COPY: dict[str, tuple[str, str, str, str]] = {
     "paid": (
         "PAYMENT_PROMISE_PAID_TITLE", "Pagamento confirmado",
-        "PAYMENT_PROMISE_PAID_MESSAGE", "Tudo certo. Redirecionando para o acompanhamento.",
-        "", "",
-        "", "", "", "",
+        "PAYMENT_PROMISE_PAID_MESSAGE", "Tudo certo. Levando você para o acompanhamento.",
     ),
     "cancelled": (
         "PAYMENT_PROMISE_CANCELLED_TITLE", "Pedido cancelado",
         "PAYMENT_PROMISE_CANCELLED_MESSAGE", "Este pedido não aceita mais pagamento.",
-        "", "",
-        "", "",
-        "", "",
     ),
     "expired": (
         "PAYMENT_PROMISE_EXPIRED_TITLE", "Pagamento expirado",
         "PAYMENT_PROMISE_EXPIRED_MESSAGE",
-        "Cancelamos o pedido porque o pagamento não chegou a tempo.",
-        "", "",
-        "", "",
-        "", "",
+        "O prazo acabou e cancelamos o pedido. Você pode pedir de novo quando quiser.",
     ),
     "card_authorized": (
         "PAYMENT_PROMISE_CARD_AUTHORIZED_TITLE", "Pagamento autorizado",
-        "PAYMENT_PROMISE_CARD_AUTHORIZED_MESSAGE", "Nenhuma ação necessária.",
-        "", "",  # next_event resolved per order_status (see _card_authorized_next)
-        "", "", "", "",
+        "PAYMENT_PROMISE_CARD_AUTHORIZED_MESSAGE", "Não precisa fazer mais nada.",
     ),
     "intent_error": (
-        "PAYMENT_PROMISE_ERROR_TITLE", "Erro ao preparar pagamento",
+        "PAYMENT_PROMISE_ERROR_TITLE", "Não conseguimos preparar o pagamento",
         "PAYMENT_PROMISE_ERROR_MESSAGE",
-        "Pedido registrado. Tente gerar o pagamento novamente.",
-        "", "",
-        "PAYMENT_PROMISE_ERROR_RECOVERY",
-        "Se persistir, fale com a loja.",
-        "", "",
+        "Seu pedido está registrado. Tente gerar o pagamento de novo e, se não der, fale conosco.",
     ),
     "card_authorization_requested": (
         "PAYMENT_PROMISE_CARD_PRECONFIRMATION_TITLE", "Autorizar cartão",
         "PAYMENT_PROMISE_CARD_PRECONFIRMATION_MESSAGE",
-        "Autorize no ambiente seguro. A loja ainda vai conferir disponibilidade.",
-        "", "",
-        "", "",
-        "", "",
+        "Autorize no ambiente seguro. Depois conferimos se temos tudo.",
     ),
     "card_checkout_requested": (
         "PAYMENT_PROMISE_CARD_TITLE", "Pagamento com cartão",
         "PAYMENT_PROMISE_CARD_MESSAGE",
-        "Disponibilidade confirmada. Finalize no ambiente seguro.",
-        "", "",
-        "", "",
-        "", "",
+        "Temos tudo separado. Finalize no ambiente seguro e começamos a preparar.",
     ),
     "card_checkout_pending": (
         "PAYMENT_PROMISE_CARD_PENDING_TITLE", "Preparando pagamento",
         "PAYMENT_PROMISE_CARD_PENDING_MESSAGE", "O botão aparece em instantes.",
-        "", "",
-        "", "",
-        "", "",
     ),
     "pix_waiting_confirmation": (
         "PAYMENT_PROMISE_PIX_WAITING_TITLE", "Aguardando a loja",
         "PAYMENT_PROMISE_PIX_WAITING_MESSAGE",
-        "A loja está conferindo. O Pix aparece automaticamente.",
-        "", "",
-        "PAYMENT_PROMISE_PIX_WAITING_RECOVERY",
-        "Cancelamos se a loja não confirmar a tempo.",
-        "", "",
+        "Estamos conferindo se temos tudo. O código Pix aparece aqui em seguida. "
+        "Se não conseguirmos confirmar, cancelamos e avisamos você.",
     ),
     "pix_payment_before_confirmation": (
         "PAYMENT_PROMISE_PIX_PRECONFIRMATION_TITLE", "Pague com Pix",
         "PAYMENT_PROMISE_PIX_PRECONFIRMATION_MESSAGE",
-        "Use o código abaixo. A loja ainda vai confirmar disponibilidade.",
-        "", "",
-        "PAYMENT_PROMISE_PIX_PRECONFIRMATION_RECOVERY",
-        "Cancelamos o pedido se expirar.",
-        "", "",
+        "Use o código abaixo. Ainda estamos conferindo se temos tudo, "
+        "e cancelamos o pedido se o prazo acabar.",
     ),
     "pix_payment_requested": (
         "PAYMENT_PROMISE_PIX_TITLE", "Pague com Pix",
         "PAYMENT_PROMISE_PIX_MESSAGE",
-        "Disponibilidade confirmada. Use o código abaixo para liberar o preparo.",
-        "", "",
-        "PAYMENT_PROMISE_PIX_RECOVERY",
-        "Cancelamos o pedido se expirar.",
-        "", "",
+        "Temos tudo separado. Use o código abaixo e começamos a preparar. "
+        "Se o prazo acabar, cancelamos o pedido.",
     ),
 }
 
@@ -143,9 +115,6 @@ class PaymentPromiseProjection:
     deadline_kind: str | None
     deadline_action: str
     requires_active_notification: bool
-    next_event: str
-    recovery: str
-    active_notification: str
     stale_after_seconds: int | None = None
 
 
@@ -261,7 +230,7 @@ def _present_promise(
     order_status: str,
     copy: CopyCatalog,
 ) -> PaymentPromiseProjection:
-    title, message, next_event, recovery, active_notification = _promise_copy(
+    title, message = _promise_copy(
         data,
         order_status=order_status,
         copy=copy,
@@ -276,9 +245,6 @@ def _present_promise(
         deadline_kind=data.deadline_kind,
         deadline_action=data.deadline_action,
         requires_active_notification=data.requires_active_notification,
-        next_event=next_event,
-        recovery=recovery,
-        active_notification=active_notification,
         stale_after_seconds=data.stale_after_seconds,
     )
 
@@ -288,35 +254,30 @@ def _promise_copy(
     *,
     order_status: str,
     copy: CopyCatalog,
-) -> tuple[str, str, str, str, str]:
-    """Return (title, message, next_event, recovery, active_notification)."""
+) -> tuple[str, str]:
+    """Título e mensagem do estado — uma frase, sem slots."""
     spec = _PROMISE_COPY.get(data.state)
     if spec is None:
-        return "", "", "", "", ""
-    (
-        title_key, title_fb, message_key, message_fb,
-        next_key, next_fb, recovery_key, recovery_fb, active_key, active_fb,
-    ) = spec
+        return "", ""
+    title_key, title_fb, message_key, message_fb = spec
     title = copy.title(title_key, title_fb) if title_key else title_fb
-    message = copy.message(message_key, message_fb) if message_key else message_fb
     if data.state == "card_authorized":
-        next_event = _card_authorized_next(order_status, copy)
+        message = _card_authorized_message(order_status, copy)
     else:
-        next_event = copy.message(next_key, next_fb) if next_key else next_fb
-    recovery = copy.message(recovery_key, recovery_fb) if recovery_key else recovery_fb
-    active_notification = copy.message(active_key, active_fb) if active_key else active_fb
-    return title, message, next_event, recovery, active_notification
+        message = copy.message(message_key, message_fb) if message_key else message_fb
+    return title, message
 
 
-def _card_authorized_next(order_status: str, copy: CopyCatalog) -> str:
+def _card_authorized_message(order_status: str, copy: CopyCatalog) -> str:
+    """O cartão foi autorizado: o que muda é só o que a loja faz em seguida."""
     if order_status == "new":
         return copy.message(
-            "PAYMENT_PROMISE_CARD_AUTHORIZED_NEXT_NEW",
-            "Conferindo disponibilidade.",
+            "PAYMENT_PROMISE_CARD_AUTHORIZED_MESSAGE_NEW",
+            "Não precisa fazer mais nada. Agora conferimos se temos tudo.",
         )
     return copy.message(
-        "PAYMENT_PROMISE_CARD_AUTHORIZED_NEXT_CONFIRMED",
-        "Finalizando a captura.",
+        "PAYMENT_PROMISE_CARD_AUTHORIZED_MESSAGE_CONFIRMED",
+        "Não precisa fazer mais nada. Estamos finalizando o pagamento.",
     )
 
 

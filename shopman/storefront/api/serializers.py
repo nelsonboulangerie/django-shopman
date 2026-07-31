@@ -173,15 +173,6 @@ class OrderTrackingPromiseSerializer(serializers.Serializer):
     requires_active_notification = serializers.BooleanField()
     notification_topic = serializers.CharField(allow_null=True, required=False)
     actions = ActionSerializer(many=True, required=False)
-    next_event = serializers.CharField(allow_blank=True, required=False)
-    recovery = serializers.CharField(allow_blank=True, required=False)
-    active_notification = serializers.CharField(allow_blank=True, required=False)
-
-
-class OrderTrackingPromiseRowSerializer(serializers.Serializer):
-    label = serializers.CharField()
-    value = serializers.CharField()
-    url = serializers.CharField(allow_null=True, required=False)
 
 
 class OrderProgressStepSerializer(serializers.Serializer):
@@ -237,7 +228,6 @@ class OrderTrackingCopySerializer(serializers.Serializer):
     rating_thanks = serializers.CharField()
     page_meta_description = serializers.CharField()
     delivery_heading = serializers.CharField()
-    active_notification_label = serializers.CharField()
     stale_cta = serializers.CharField()
 
 
@@ -250,7 +240,6 @@ class OrderTrackingSerializer(serializers.Serializer):
     when_display = serializers.CharField(allow_null=True, required=False)
     copy = OrderTrackingCopySerializer()
     promise = OrderTrackingPromiseSerializer()
-    promise_rows = OrderTrackingPromiseRowSerializer(many=True)
     promise_deadline_label = serializers.CharField()
     progress_steps = OrderProgressStepSerializer(many=True)
     total_display = serializers.CharField()
@@ -348,8 +337,6 @@ class RemoteConversationSerializer(serializers.Serializer):
     tone = serializers.CharField()
     actions = ActionSerializer(many=True)
     deadline_at = serializers.CharField(allow_null=True, required=False)
-    next_event = serializers.CharField(allow_blank=True, required=False)
-    recovery = serializers.CharField(allow_blank=True, required=False)
     items_summary = serializers.ListField(child=serializers.CharField(), required=False)
     total_display = serializers.CharField()
     tracking_url = serializers.CharField()

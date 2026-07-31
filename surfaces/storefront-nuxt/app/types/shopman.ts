@@ -678,12 +678,6 @@ export interface CheckoutMutationResponse {
   next_url?: string
 }
 
-export interface TrackingPromiseRowProjection {
-  label: string
-  value: string
-  url: string | null
-}
-
 export interface TrackingPromiseProjection {
   state: string
   title: string
@@ -696,9 +690,6 @@ export interface TrackingPromiseProjection {
   requires_active_notification: boolean
   notification_topic: string | null
   actions: Action[]
-  next_event: string
-  recovery: string
-  active_notification: string
 }
 
 export interface OrderProgressStepProjection {
@@ -780,7 +771,6 @@ export interface TrackingCopyProjection {
   rating_thanks: string
   page_meta_description: string
   delivery_heading: string
-  active_notification_label: string
 }
 
 export interface TrackingResponse {
@@ -792,7 +782,6 @@ export interface TrackingResponse {
   when_display: string | null
   copy: TrackingCopyProjection
   promise: TrackingPromiseProjection
-  promise_rows: TrackingPromiseRowProjection[]
   promise_deadline_label: string
   progress_steps: OrderProgressStepProjection[]
   total_display: string
@@ -843,9 +832,6 @@ export interface PaymentPromiseProjection {
   deadline_kind: string | null
   deadline_action: string
   requires_active_notification: boolean
-  next_event: string
-  recovery: string
-  active_notification: string
   stale_after_seconds: number | null
 }
 
@@ -912,8 +898,6 @@ export interface RemoteConversationProjection {
   tone: 'success' | 'warning' | 'danger' | 'info' | string
   actions: Action[]
   deadline_at: string | null
-  next_event: string
-  recovery: string
   items_summary: string[]
   total_display: string
   tracking_url: string

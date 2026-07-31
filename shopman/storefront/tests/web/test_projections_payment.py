@@ -48,8 +48,6 @@ class TestPaymentProjectionShape:
         assert proj.promise.actions
         assert proj.promise.actions[0].ref == "copy_pix"
         assert proj.promise.actions[0].label
-        assert not proj.promise.next_event
-        assert proj.promise.recovery
         assert "disponibilidade confirmada" not in proj.promise.message.lower()
 
     def test_has_payment_promise_contract_waiting_for_pix_code(self, order_with_payment):
@@ -60,8 +58,6 @@ class TestPaymentProjectionShape:
 
         assert proj.promise.state == "pix_waiting_confirmation"
         assert not proj.promise.actions
-        assert not proj.promise.next_event
-        assert proj.promise.recovery
 
     def test_has_server_time_anchor_for_pix_countdown(self, order_with_payment):
         from django.utils.dateparse import parse_datetime
@@ -136,7 +132,7 @@ class TestPaymentProjectionPix:
         proj = build_payment(order_with_payment)
 
         assert proj.promise.state == "pix_payment_requested"
-        assert "disponibilidade confirmada" in proj.promise.message.lower()
+        assert "temos tudo separado" in proj.promise.message.lower()
 
 
 # ──────────────────────────────────────────────────────────────────────
@@ -172,7 +168,6 @@ class TestPaymentProjectionCard:
         assert proj.promise.actions[0].href == "https://checkout.stripe.com/c/pay/cs_test_xyz"
         assert "disponibilidade confirmada" not in proj.promise.message.lower()
         assert proj.promise.actions
-        assert not proj.promise.recovery
 
     def test_confirmed_card_checkout_can_claim_availability_confirmed(self, channel):
         from shopman.orderman.models import Order
@@ -195,7 +190,7 @@ class TestPaymentProjectionCard:
         proj = build_payment(order)
 
         assert proj.promise.state == "card_checkout_requested"
-        assert "disponibilidade confirmada" in proj.promise.message.lower()
+        assert "temos tudo separado" in proj.promise.message.lower()
 
     def test_authorized_card_has_no_surface_payment_action(self, channel):
         from shopman.orderman.models import Order
@@ -290,7 +285,6 @@ class TestPaymentStatusProjection:
         assert proj.is_terminal is True
         assert proj.should_redirect is True
         assert proj.promise.state == "expired"
-        assert not proj.promise.recovery
 
     def test_authorized_card_status_redirects_out_of_payment_gate(self, channel):
         from shopman.orderman.models import Order

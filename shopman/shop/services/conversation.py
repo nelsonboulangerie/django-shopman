@@ -32,8 +32,6 @@ class RemoteConversationProjection:
     tone: str
     actions: tuple[Action, ...]
     deadline_at: str | None
-    next_event: str
-    recovery: str
     items_summary: tuple[str, ...]
     total_display: str
     tracking_url: str
@@ -83,8 +81,6 @@ def build_order_conversation(
             channel_can_rate=bool(getattr(policy, "can_rate", False)),
         ),
         deadline_at=getattr(promise, "deadline_at", None),
-        next_event=str(getattr(promise, "next_event", "") or ""),
-        recovery=str(getattr(promise, "recovery", "") or ""),
         items_summary=_items_summary(getattr(tracking, "items", ())),
         total_display=str(getattr(tracking, "total_display", "")),
         tracking_url=tracking_url,

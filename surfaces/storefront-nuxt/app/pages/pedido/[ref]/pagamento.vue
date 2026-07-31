@@ -360,20 +360,12 @@ useSeoMeta({
                 <UiAlertDescription>{{ payment.error_message }}</UiAlertDescription>
               </UiAlert>
 
-              <UiAlert v-if="payment.promise.recovery" variant="warning">
-                <UiAlertTitle>Como resolver</UiAlertTitle>
-                <UiAlertDescription>{{ payment.promise.recovery }}</UiAlertDescription>
-              </UiAlert>
             </UiCardContent>
           </UiCard>
 
           <aside class="space-y-4">
             <UiCard>
-              <UiCardHeader>
-                <UiCardTitle>Próxima ação</UiCardTitle>
-                <UiCardDescription>{{ payment.promise.next_event }}</UiCardDescription>
-              </UiCardHeader>
-              <UiCardContent class="space-y-2">
+              <UiCardContent class="space-y-2 pt-6">
                 <UiButton :to="localRouteFromBackend(payment.tracking_url)" class="w-full" icon="lucide:route">
                   Acompanhar pedido
                 </UiButton>

@@ -8,9 +8,8 @@ import {
   trackingPanelIcon,
   trackingPanelIconClass,
   trackingStatusPanelActions,
-  visibleTrackingPromiseRows
 } from '~/presentation/orderTracking'
-import type { Action, OrderProgressStepProjection, TrackingPromiseRowProjection } from '~/types/shopman'
+import type { Action, OrderProgressStepProjection } from '~/types/shopman'
 
 function action (overrides: Partial<Action> = {}): Action {
   return {
@@ -59,16 +58,6 @@ describe('order tracking presentation — status panel actions', () => {
     expect(already.map(a => a.ref)).toEqual(['reorder'])
 
     expect(trackingStatusPanelActions([], null, 'danger')).toEqual([])
-  })
-})
-
-describe('order tracking presentation — promise rows', () => {
-  function row (label: string): TrackingPromiseRowProjection {
-    return { label, value: 'x', url: null }
-  }
-  it('hides update/action rows accent-insensitively, keeps the rest', () => {
-    const rows = [row('Última atualização'), row('Sua ação'), row('Previsão'), row('Forma de pagamento')]
-    expect(visibleTrackingPromiseRows(rows).map(r => r.label)).toEqual(['Previsão', 'Forma de pagamento'])
   })
 })
 

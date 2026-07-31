@@ -854,13 +854,10 @@ describe('surface UX guardrails', () => {
     expect(tracking).toContain('const reorderAction = computed')
     expect(tracking).toContain('const statusPanelActions = computed')
     expect(tracking).toContain('const hasStatusPanelActions = computed')
-    expect(tracking).toContain('const visiblePromiseRows = computed')
-    // Ordenação das ações e filtro das rows agora vivem em presentation/orderTracking.ts.
+    // Ordenação das ações vive em presentation/orderTracking.ts.
     const trackingPresentation = read('app/presentation/orderTracking.ts')
     expect(trackingPresentation).toContain("tone === 'danger' && reorderAction")
     expect(trackingPresentation).toContain('actions.unshift(reorderAction)')
-    expect(trackingPresentation).toContain("'última atualização'")
-    expect(trackingPresentation).toContain("'sua ação'")
     // Frescor vivo do dado (WP-S3): "Atualizado há X" que vira aviso ao perder um
     // poll — SÓ em pedido ativo (finalizado não mostra "Atualizado agora" mentiroso).
     expect(tracking).toContain('trackingFreshness(')

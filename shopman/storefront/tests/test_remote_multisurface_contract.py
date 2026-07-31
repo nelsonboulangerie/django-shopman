@@ -214,9 +214,6 @@ def test_core_status_and_projection_contracts_cover_remote_intermediate_states()
         "deadline_action",
         "requires_active_notification",
         "actions",
-        "next_event",
-        "recovery",
-        "active_notification",
     ]:
         assert projection_field in tracking
         assert projection_field in payment_projection
