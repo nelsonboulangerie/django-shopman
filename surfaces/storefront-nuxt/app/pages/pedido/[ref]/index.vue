@@ -108,7 +108,8 @@ const sideActionsPrimary = computed(() => {
 })
 const showSideActions = computed(() => Boolean(
   tracking.value &&
-  (cancelAction.value || showReorderAction.value || showSupportAction.value || shareHref.value)
+  (cancelAction.value || showReorderAction.value || showSupportAction.value ||
+    shareHref.value || tracking.value?.pickup_info?.directions_url)
 ))
 const showDeliveryTab = computed(() => Boolean(tracking.value?.pickup_info || tracking.value?.fulfillments.length))
 const deliveryTabLabel = computed(() => tracking.value?.is_delivery
@@ -450,11 +451,13 @@ useSeoMeta({
                     </UiButton>
                   </div>
                 </div>
-                <!-- Carimbo de frescor é metadado do DADO, não um terceiro recado
-                     da promessa: com o mesmo peso da mensagem, lia como se o
-                     painel tivesse três avisos. Vira rodapé do painel, separado. -->
+                <!-- Frescor só quando envelhece. Enquanto o dado está fresco, o
+                     ícone do painel já pulsa dizendo "ao vivo" — repetir
+                     "Atualizado agora mesmo" a cada ciclo era mobília, e dentro
+                     do alerta parecia um terceiro recado da promessa. Quando um
+                     poll falha, aí sim vira informação, com o botão de recuperar. -->
                 <div
-                  v-if="tracking.is_active"
+                  v-if="tracking.is_active && freshness.isStale"
                   class="flex flex-wrap items-center gap-x-2 gap-y-1 border-t pt-2 shop-meta"
                   :class="freshness.isStale ? 'text-destructive' : ''"
                 >
@@ -601,6 +604,20 @@ useSeoMeta({
             </UiButton>
             <UiButton v-if="showSupportAction" :href="supportUrl" target="_blank" rel="noopener noreferrer" :variant="sideActionsPrimary === 'support' ? 'default' : 'secondary'" icon="lucide:message-circle" class="w-full">
               {{ tracking.copy.support_label }}
+            </UiButton>
+            <!-- "Como chegar" também aqui: na retirada é a ação mais útil, e
+                 ficava escondida só dentro da aba. Externa (mapa), então href +
+                 target, nunca pelo roteador interno. -->
+            <UiButton
+              v-if="tracking.pickup_info?.directions_url"
+              :href="tracking.pickup_info.directions_url"
+              target="_blank"
+              rel="noopener noreferrer"
+              variant="secondary"
+              icon="lucide:map-pin"
+              class="w-full"
+            >
+              {{ tracking.pickup_info.directions_label }}
             </UiButton>
             <!-- Compartilhar é permanente: serve mais com o pedido pronto do que
                  logo depois do checkout, onde vivia preso ao banner do yoin. -->

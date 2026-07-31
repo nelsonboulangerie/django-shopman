@@ -861,7 +861,9 @@ describe('surface UX guardrails', () => {
     // Frescor vivo do dado (WP-S3): "Atualizado há X" que vira aviso ao perder um
     // poll — SÓ em pedido ativo (finalizado não mostra "Atualizado agora" mentiroso).
     expect(tracking).toContain('trackingFreshness(')
-    expect(tracking).toContain('v-if="tracking.is_active"')
+    // Frescor aparece só em pedido ativo E só quando o dado envelhece: fresco,
+    // quem sinaliza vida é o pulso do ícone do painel.
+    expect(tracking).toContain('v-if="tracking.is_active && freshness.isStale"')
     expect(tracking).toContain('Ações disponíveis')
     expect(tracking).toContain('handleStatusPanelAction')
     expect(tracking).toContain('showSupportInStatusPanel')
