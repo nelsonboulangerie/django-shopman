@@ -25,11 +25,20 @@ const payment = computed(() => data.value?.payment || null)
 // `promise.actions`; `payment.actions` só carrega o botão mock de DEBUG. A tela
 // iterava apenas o segundo, então estados como `intent_error` e
 // `card_checkout_pending` mostravam o erro e NENHUM botão para sair dele.
+// `mock_confirm_payment` tem caixa própria (ambiente de teste) e `track_order`
+// já é o botão fixo do topo do aside — iterar os dois aqui rendia o MESMO botão
+// duas vezes, com rótulos diferentes e um deles sem caber na coluna.
+const ACOES_COM_LUGAR_PROPRIO = new Set(['mock_confirm_payment', 'track_order'])
+// `copy`/`instruction` não são ações de servidor: são orientação sobre o que já
+// está na tela. Renderizadas nesta lista viravam botão-frase que não faz nada
+// ("Use o QR Code ou copia e cola abaixo"), ao lado do "Copiar código" real.
+const KINDS_QUE_NAO_SAO_ACAO = new Set(['copy', 'instruction'])
 const paymentActions = computed<Action[]>(() => {
   const vistas = new Set<string>()
   return [...(payment.value?.promise?.actions || []), ...(payment.value?.actions || [])]
     .filter((a) => {
-      if (!a?.ref || vistas.has(a.ref)) return false
+      if (!a?.ref || vistas.has(a.ref) || ACOES_COM_LUGAR_PROPRIO.has(a.ref)) return false
+      if (KINDS_QUE_NAO_SAO_ACAO.has(a.kind)) return false
       vistas.add(a.ref)
       return true
     })
@@ -246,7 +255,7 @@ useSeoMeta({
           <UiAlertDescription>
             {{ payment.promise.message }}
             <!-- Nota de rodapé: complemento opcional, sem rótulo, em tom secundário. -->
-            <span v-if="payment.promise.footnote" class="mt-2 block shop-meta">{{ payment.promise.footnote }}</span>
+            <span v-if="payment.promise.footnote" class="mt-2 block shop-body">{{ payment.promise.footnote }}</span>
           </UiAlertDescription>
         </UiAlert>
 
@@ -258,6 +267,13 @@ useSeoMeta({
               <UiCardDescription>{{ paymentMethodLabel(payment.method) }}</UiCardDescription>
             </UiCardHeader>
             <UiCardContent class="space-y-4">
+              <!-- Erro primeiro: escondido no rodapé do card, o cliente tentava
+                   pagar de novo sem saber por que a primeira vez falhou. -->
+              <UiAlert v-if="payment.error_message" variant="destructive">
+                <UiAlertTitle>Não foi possível concluir o pagamento</UiAlertTitle>
+                <UiAlertDescription>{{ payment.error_message }}</UiAlertDescription>
+              </UiAlert>
+
               <div v-if="payment.method === 'card' && payment.checkout_url" class="shop-stack-block rounded-lg border p-4">
                 <div class="flex items-start gap-3">
                   <Icon name="lucide:shield-check" :size="22" class="mt-0.5 shrink-0 text-emerald-600" />
@@ -280,63 +296,78 @@ useSeoMeta({
                 <p class="shop-muted">Preparando o pagamento seguro com cartão…</p>
               </div>
 
-              <p v-if="payment.pix_qr_code || payment.pix_copy_paste" class="shop-muted">{{ copy.pix_instruction }}</p>
+              <!-- Pix: a ordem segue o que o cliente faz — quanto tempo tem,
+                   como pagar (QR), e o copia-e-cola para quem paga no mesmo
+                   aparelho. O código não é para ler: é para copiar, então fica
+                   numa linha com o botão ao lado, não num bloco rolável. -->
+              <div v-if="payment.pix_qr_code || payment.pix_copy_paste" class="shop-stack-block">
+                <div v-if="pixCountdown && !pixCountdown.isExpired" class="space-y-2" role="timer">
+                  <div class="flex items-center justify-between shop-body">
+                    <span class="text-muted-foreground">{{ copy.pix_expires_label }}</span>
+                    <span class="shop-price-strong" :class="pixUrgent ? 'text-destructive' : 'text-foreground'">{{ pixCountdown.mmss }}</span>
+                  </div>
+                  <UiProgress :model-value="pixPct" :class="pixUrgent ? '[&>div]:bg-destructive' : ''" />
+                </div>
 
-              <div v-if="payment.pix_qr_code || payment.pix_copy_paste" class="grid grid-cols-1 gap-4 sm:grid-cols-[220px_minmax(0,1fr)]">
-                <div class="rounded-lg border bg-white p-4">
-                  <img v-if="payment.pix_qr_code" :src="payment.pix_qr_code" alt="QR Code Pix" class="w-full" />
-                  <div v-else class="flex aspect-square items-center justify-center text-muted-foreground">
-                    <Icon name="lucide:qr-code" class="size-12" />
+                <div v-if="payment.pix_qr_code" class="flex flex-col items-center gap-3">
+                  <div class="rounded-lg border bg-white p-4">
+                    <img :src="payment.pix_qr_code" alt="QR Code Pix" class="size-48 max-w-full" />
+                  </div>
+                  <p class="shop-muted text-center">{{ copy.pix_instruction }}</p>
+                </div>
+
+                <div v-if="payment.pix_copy_paste" class="shop-stack-tight">
+                  <p class="shop-meta">{{ copy.pix_copy_label }}</p>
+                  <div class="flex flex-col gap-2 sm:flex-row sm:items-center">
+                    <!-- Tocar o código copia também: no celular, selecionar 100+
+                         chars à mão é penoso. -->
+                    <p
+                      class="min-w-0 flex-1 cursor-pointer truncate rounded-lg border bg-muted px-3 py-2 font-mono text-xs"
+                      role="button"
+                      tabindex="0"
+                      aria-label="Copiar código Pix"
+                      :title="payment.pix_copy_paste"
+                      @click="copyPix"
+                      @keydown.enter.prevent="copyPix"
+                      @keydown.space.prevent="copyPix"
+                    >{{ payment.pix_copy_paste }}</p>
+                    <UiButton variant="outline" icon="lucide:copy" class="shrink-0" @click="copyPix">{{ copy.pix_copy_btn }}</UiButton>
                   </div>
                 </div>
-                <div class="shop-stack-block">
-                  <p class="shop-muted">{{ copy.pix_copy_label }}</p>
-                  <!-- Tocar o próprio código copia (além do botão): no celular,
-                       selecionar 100+ chars à mão é penoso. -->
-                  <pre
-                    class="max-h-40 cursor-pointer overflow-auto rounded-lg border bg-muted p-3 text-xs whitespace-pre-wrap"
-                    role="button"
-                    tabindex="0"
-                    aria-label="Copiar código Pix"
-                    @click="copyPix"
-                    @keydown.enter.prevent="copyPix"
-                    @keydown.space.prevent="copyPix"
-                  >{{ payment.pix_copy_paste }}</pre>
-                  <UiButton variant="outline" size="lg" icon="lucide:copy" class="w-full sm:w-auto" @click="copyPix">{{ copy.pix_copy_btn }}</UiButton>
 
-                  <p v-if="connectionLost" class="rounded-md border border-amber-500/40 bg-amber-500/10 p-2 text-xs text-amber-800 dark:text-amber-300" role="status">
-                    Sem conexão no momento. Se você já pagou, a confirmação chega assim que a internet voltar.
-                  </p>
-                  <div v-if="pixCountdown && !pixCountdown.isExpired" class="space-y-2" role="timer">
-                    <div class="flex items-center justify-between shop-body">
-                      <span class="text-muted-foreground">{{ copy.pix_expires_label }}</span>
-                      <span class="shop-price" :class="pixUrgent ? 'text-destructive' : 'text-foreground'">{{ pixCountdown.mmss }}</span>
-                    </div>
-                    <UiProgress :model-value="pixPct" :class="pixUrgent ? '[&>div]:bg-destructive' : ''" />
-                    <p class="shop-meta">Assim que o pagamento cair, atualizamos esta tela automaticamente.</p>
-                  </div>
-                  <!-- PIX expirado: dizer a verdade. Não há reemissão de código;
-                       o pedido segue para cancelamento por timeout. Oferecemos
-                       reconferir (o pagamento pode ter caído no limite) e o
-                       acompanhamento, que mostra o estado real. -->
-                  <div v-else-if="pixCountdown?.isExpired" class="shop-stack-tight rounded-lg border border-destructive/30 bg-destructive/5 p-3">
-                    <p class="shop-body font-semibold text-destructive">O prazo do Pix expirou.</p>
-                    <p class="shop-muted">Se você pagou nos últimos instantes, confira de novo — a confirmação pode estar a caminho. Senão, o pedido será liberado e você pode refazê-lo.</p>
-                    <div class="flex flex-col gap-2 sm:flex-row">
-                      <UiButton size="lg" icon="lucide:refresh-cw" :loading="regenerating" class="w-full justify-center sm:w-auto" @click="recheckPayment">
-                        Conferir de novo
-                      </UiButton>
-                      <UiButton :to="localRouteFromBackend(payment.tracking_url)" variant="outline" size="lg" icon="lucide:route" class="w-full justify-center sm:w-auto">
-                        Acompanhar pedido
-                      </UiButton>
-                    </div>
+                <p v-if="pixCountdown && !pixCountdown.isExpired" class="shop-meta">
+                  Assim que o pagamento cair, atualizamos esta tela automaticamente.
+                </p>
+
+                <p v-if="connectionLost" class="rounded-md border border-amber-500/40 bg-amber-500/10 p-2 text-xs text-amber-800 dark:text-amber-300" role="status">
+                  Sem conexão no momento. Se você já pagou, a confirmação chega assim que a internet voltar.
+                </p>
+
+                <!-- Pix expirado: dizer a verdade. Não há reemissão de código; o
+                     pedido segue para cancelamento por timeout. Oferecemos
+                     reconferir (o pagamento pode ter caído no limite) e o
+                     acompanhamento, que mostra o estado real. -->
+                <div v-if="pixCountdown?.isExpired" class="shop-stack-tight rounded-lg border border-destructive/30 bg-destructive/5 p-3">
+                  <p class="shop-body font-semibold text-destructive">O prazo do Pix expirou.</p>
+                  <p class="shop-muted">Se você pagou nos últimos instantes, confira de novo — a confirmação pode estar a caminho. Senão, o pedido será liberado e você pode refazê-lo.</p>
+                  <div class="flex flex-col gap-2 sm:flex-row">
+                    <UiButton icon="lucide:refresh-cw" :loading="regenerating" class="w-full justify-center sm:w-auto" @click="recheckPayment">
+                      Conferir de novo
+                    </UiButton>
+                    <UiButton :to="localRouteFromBackend(payment.tracking_url)" variant="outline" icon="lucide:route" class="w-full justify-center sm:w-auto">
+                      Acompanhar pedido
+                    </UiButton>
                   </div>
                 </div>
               </div>
 
-              <div v-if="payment.mock_enabled" class="space-y-1 rounded-lg border border-dashed bg-muted/40 p-4">
+              <!-- Ambiente de teste: único lugar do "simular". A ação equivalente
+                   vinda da projeção é filtrada do aside, senão o mesmo botão
+                   aparecia duas vezes, com rótulos diferentes. -->
+              <div v-if="payment.mock_enabled" class="shop-stack-tight rounded-lg border border-dashed bg-muted/40 p-4">
+                <p class="shop-meta">Ambiente de teste · captura por gateway simulado</p>
                 <UiButton
-                  variant="default"
+                  variant="outline"
                   class="w-full"
                   icon="lucide:flask-conical"
                   :loading="simulating"
@@ -344,42 +375,28 @@ useSeoMeta({
                 >
                   Simular pagamento
                 </UiButton>
-                <p class="shop-meta text-center">Ambiente de teste · captura por gateway simulado</p>
               </div>
-
-              <UiAlert v-if="payment.error_message" variant="destructive">
-                <UiAlertTitle>Não foi possível concluir o pagamento</UiAlertTitle>
-                <UiAlertDescription>{{ payment.error_message }}</UiAlertDescription>
-              </UiAlert>
 
             </UiCardContent>
           </UiCard>
 
-          <aside class="space-y-4">
-            <UiCard>
-              <UiCardContent class="space-y-2 pt-6">
-                <UiButton :to="localRouteFromBackend(payment.tracking_url)" class="w-full" icon="lucide:route">
-                  Acompanhar pedido
-                </UiButton>
-                <UiButton
-                  v-for="action in paymentActions"
-                  :key="action.ref"
-                  :variant="actionVariant(action)"
-                  class="w-full"
-                  :disabled="!action.enabled"
-                  :loading="!!actionPending[action.ref]"
-                  @click="postAction(action)"
-                >
-                  {{ action.label }}
-                </UiButton>
-
-              </UiCardContent>
-            </UiCard>
-
-            <UiAlert v-if="payment.promise.active_notification" variant="info">
-              <UiAlertTitle>Status</UiAlertTitle>
-              <UiAlertDescription>{{ payment.promise.active_notification }}</UiAlertDescription>
-            </UiAlert>
+          <!-- Sem card em volta: na maioria dos estados sobra um único botão, e
+               a moldura virava uma caixa vazia grande ao lado do conteúdo. -->
+          <aside class="space-y-2 lg:pt-0">
+            <UiButton :to="localRouteFromBackend(payment.tracking_url)" variant="outline" class="w-full" icon="lucide:route">
+              Acompanhar pedido
+            </UiButton>
+            <UiButton
+              v-for="action in paymentActions"
+              :key="action.ref"
+              :variant="actionVariant(action)"
+              class="w-full"
+              :disabled="!action.enabled"
+              :loading="!!actionPending[action.ref]"
+              @click="postAction(action)"
+            >
+              {{ action.label }}
+            </UiButton>
           </aside>
         </div>
       </template>

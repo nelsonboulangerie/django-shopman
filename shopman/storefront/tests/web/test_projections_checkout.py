@@ -237,7 +237,7 @@ class TestPaymentMethods:
         proj = build_checkout(request=request, channel_ref=STOREFRONT_CHANNEL_REF)
         pix = next((m for m in proj.payment_methods if m.ref == "pix"), None)
         assert pix is not None
-        assert pix.label == "PIX"
+        assert pix.label == "Pix"
 
 
 # ──────────────────────────────────────────────────────────────────────

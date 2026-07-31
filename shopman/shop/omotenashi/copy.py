@@ -310,7 +310,7 @@ OMOTENASHI_DEFAULTS: dict[str, dict[str, dict[str, CopyEntry]]] = {
         WILDCARD: {WILDCARD: CopyEntry(message="Navegue pelo cardápio e adicione à sacola. A disponibilidade aparece em tempo real.")},
     },
     "HOW_ONLINE_PAY_MESSAGE": {
-        WILDCARD: {WILDCARD: CopyEntry(message="PIX rápido e seguro, com confirmação automática assim que o pagamento chega.")},
+        WILDCARD: {WILDCARD: CopyEntry(message="Pix rápido e seguro, com confirmação automática assim que o pagamento chega.")},
     },
     "HOW_ONLINE_TRACK_MESSAGE": {
         WILDCARD: {WILDCARD: CopyEntry(message="Acompanhe o preparo em tempo real. Retire na loja ou receba em casa.")},
@@ -868,13 +868,13 @@ OMOTENASHI_DEFAULTS: dict[str, dict[str, dict[str, CopyEntry]]] = {
         WILDCARD: {WILDCARD: CopyEntry(message="Escaneie o QR Code ou copie o código Pix abaixo.")},
     },
     "PAYMENT_PIX_COPY_LABEL": {
-        WILDCARD: {WILDCARD: CopyEntry(title="Copia e cola PIX")},
+        WILDCARD: {WILDCARD: CopyEntry(title="Copia e cola Pix")},
     },
     "PAYMENT_PIX_COPY_BTN": {
         WILDCARD: {WILDCARD: CopyEntry(title="Copiar código")},
     },
     "PAYMENT_PIX_COPIED": {
-        WILDCARD: {WILDCARD: CopyEntry(title="Código PIX copiado.")},
+        WILDCARD: {WILDCARD: CopyEntry(title="Código Pix copiado.")},
     },
     "PAYMENT_PIX_EXPIRES_LABEL": {
         WILDCARD: {WILDCARD: CopyEntry(message="Tempo para pagar")},
@@ -1198,7 +1198,7 @@ OMOTENASHI_DEFAULTS: dict[str, dict[str, dict[str, CopyEntry]]] = {
     "ORDER_STATUS_RETURNED": {WILDCARD: {WILDCARD: CopyEntry(title="Devolvido")}},
 
     # ── Payment method labels (checkout, POS, operator queue) ─────────────
-    "PAYMENT_METHOD_PIX": {WILDCARD: {WILDCARD: CopyEntry(title="PIX")}},
+    "PAYMENT_METHOD_PIX": {WILDCARD: {WILDCARD: CopyEntry(title="Pix")}},
     "PAYMENT_METHOD_CARD": {WILDCARD: {WILDCARD: CopyEntry(title="Cartão")}},
     "PAYMENT_METHOD_CASH": {WILDCARD: {WILDCARD: CopyEntry(title="Dinheiro")}},
     "PAYMENT_METHOD_MIXED": {WILDCARD: {WILDCARD: CopyEntry(title="Pagamento misto")}},

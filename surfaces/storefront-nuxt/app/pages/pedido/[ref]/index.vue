@@ -390,7 +390,7 @@ useSeoMeta({
 
                 <!-- Nota de rodapé: complemento opcional, sem rótulo. Fica em tom
                      secundário para não competir com o aviso principal. -->
-                <p v-if="tracking.promise.footnote" class="shop-meta">{{ tracking.promise.footnote }}</p>
+                <p v-if="tracking.promise.footnote" class="shop-body">{{ tracking.promise.footnote }}</p>
 
                 <!-- Offline imediato: o cliente vê "sem conexão" na hora, sem esperar
                      o dado ficar velho pelo limiar de frescor. -->
