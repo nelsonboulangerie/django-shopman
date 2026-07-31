@@ -747,7 +747,6 @@ export interface TrackingCopyProjection {
   total_label: string
   delivery_fee_label: string
   promise_fallback_message: string
-  payment_confirmed_notice: string
   retry_label: string
   not_found_title: string
   not_found_description: string
@@ -801,7 +800,6 @@ export interface TrackingResponse {
   payment_pending: boolean
   payment_expired: boolean
   payment_confirmed: boolean
-  show_payment_confirmed_notice: boolean
   payment_status_label: string | null
   payment_status: string | null
   payment_expires_at: string | null

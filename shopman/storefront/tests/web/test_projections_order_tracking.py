@@ -766,13 +766,18 @@ class TestStatusColours:
         assert proj.status_label == "Aguardando confirmação"
         assert proj.payment_pending is False
         assert proj.payment_confirmed is True
-        assert proj.show_payment_confirmed_notice is True
+        # O fato do pagamento vive na promessa, não numa linha à parte.
+        assert "pagamento" in (proj.promise.title + proj.promise.message).lower()
         assert proj.payment_status_label == "Pagamento confirmado"
         assert proj.confirmation_countdown is True
         assert proj.confirmation_expires_at is not None
         assert proj.promise.state == "availability_check"
         assert proj.promise.title == "Pedido recebido"
-        assert proj.promise.message == "Estamos conferindo a disponibilidade. Avisamos em seguida."
+        # Pago e conferindo é UMA frase: antes o painel empilhava a mensagem, um
+        # "Pagamento confirmado." solto e o rótulo do contador repetindo tudo.
+        assert proj.promise.message == (
+            "Pagamento recebido. Estamos conferindo a disponibilidade e avisamos em seguida."
+        )
 
     def test_closed_store_new_order_defers_availability_without_countdown(
         self, order, channel, shop_instance,
@@ -841,7 +846,7 @@ class TestStatusColours:
         assert proj.payment_pending is False
         assert proj.payment_expired is True
         assert proj.payment_confirmed is False
-        assert proj.show_payment_confirmed_notice is False
+        assert "pagamento recebido" not in proj.promise.message.lower()
         assert proj.payment_status_label == "Pagamento expirado"
         assert proj.confirmation_countdown is False
         assert proj.promise.requires_active_notification is True
@@ -870,7 +875,8 @@ class TestStatusColours:
         assert proj.status_label == "Confirmado"
         assert proj.payment_pending is False
         assert proj.payment_confirmed is True
-        assert proj.show_payment_confirmed_notice is True
+        # O fato do pagamento vive na promessa, não numa linha à parte.
+        assert "pagamento" in (proj.promise.title + proj.promise.message).lower()
         assert proj.payment_status_label == "Pagamento confirmado"
 
     def test_paid_order_after_preparing_hides_payment_confirmation_notice(self, order_with_payment):
@@ -892,7 +898,7 @@ class TestStatusColours:
         proj = build_order_tracking(order_with_payment)
 
         assert proj.payment_confirmed is True
-        assert proj.show_payment_confirmed_notice is False
+        assert "pagamento recebido" not in proj.promise.message.lower()
 
     def test_confirmed_unpaid_digital_order_shows_payment_pending(self, order_with_payment):
         order_with_payment.transition_status("confirmed", actor="test")

@@ -388,13 +388,6 @@ useSeoMeta({
                   Sem conexão no momento. Reconectamos e atualizamos assim que a internet voltar.
                 </p>
 
-                <!-- Pagamento confirmado: aviso curto e configurável no Admin, só
-                     quando a resposta marca o notice. -->
-                <p v-if="tracking.show_payment_confirmed_notice && tracking.copy.payment_confirmed_notice" class="flex items-center gap-2 shop-meta text-success">
-                  <Icon name="lucide:circle-check" class="size-3.5 shrink-0" />
-                  {{ tracking.copy.payment_confirmed_notice }}
-                </p>
-
                 <!-- role="timer" marca a região para AT; sem aria-live, para o valor
                      que tica a cada 1s não inundar o leitor de tela. -->
                 <div v-if="deadlineCount && !deadlineCount.isExpired" class="space-y-2" role="timer">

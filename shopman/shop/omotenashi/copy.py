@@ -397,9 +397,6 @@ OMOTENASHI_DEFAULTS: dict[str, dict[str, dict[str, CopyEntry]]] = {
     "TRACKING_PROMISE_FALLBACK_MESSAGE": {
         WILDCARD: {WILDCARD: CopyEntry(message="Acompanhando atualizações do pedido.")},
     },
-    "TRACKING_PAYMENT_CONFIRMED_NOTICE": {
-        WILDCARD: {WILDCARD: CopyEntry(message="Pagamento confirmado.")},
-    },
     "TRACKING_RETRY_CTA": {
         WILDCARD: {WILDCARD: CopyEntry(title="Tentar novamente")},
     },
@@ -475,7 +472,7 @@ OMOTENASHI_DEFAULTS: dict[str, dict[str, dict[str, CopyEntry]]] = {
     # Rótulo enxuto do countdown quando o prazo é a loja conferir disponibilidade
     # (deadline_kind="availability"). Consolidou o antigo par prefix/suffix num rótulo.
     "TRACKING_AUTO_CONFIRM_LABEL": {
-        WILDCARD: {WILDCARD: CopyEntry(message="Conferindo disponibilidade:")},
+        WILDCARD: {WILDCARD: CopyEntry(message="Resposta em:")},
     },
     "TRACKING_STATUS_PAYMENT_PENDING": {
         WILDCARD: {WILDCARD: CopyEntry(title="Aguardando pagamento")},
@@ -601,6 +598,11 @@ OMOTENASHI_DEFAULTS: dict[str, dict[str, dict[str, CopyEntry]]] = {
     # tocável ao lado do carimbo de frescor, no lugar do técnico "reconectando…".
     "TRACKING_PROMISE_STALE": {
         WILDCARD: {WILDCARD: CopyEntry(message="Atualizar")},
+    },
+    # Pago e conferindo é UM momento: a frase absorve o fato do pagamento em vez
+    # de empilhar um "Pagamento confirmado." solto (o histórico já registra o passo).
+    "TRACKING_PROMISE_AVAILABILITY_MESSAGE_PAID": {
+        WILDCARD: {WILDCARD: CopyEntry(message="Pagamento recebido. Estamos conferindo a disponibilidade e avisamos em seguida.")},
     },
     "TRACKING_PROMISE_AVAILABILITY_MESSAGE": {
         WILDCARD: {WILDCARD: CopyEntry(message="Estamos conferindo a disponibilidade. Avisamos em seguida.")},

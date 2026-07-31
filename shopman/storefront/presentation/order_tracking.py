@@ -147,7 +147,6 @@ class OrderTrackingCopyProjection:
     total_label: str
     delivery_fee_label: str
     promise_fallback_message: str
-    payment_confirmed_notice: str
     retry_label: str
     not_found_title: str
     not_found_description: str
@@ -229,7 +228,6 @@ class OrderTrackingProjection:
     payment_pending: bool
     payment_expired: bool
     payment_confirmed: bool
-    show_payment_confirmed_notice: bool
     payment_status_label: str | None
     payment_expires_at: str | None
     confirmation_countdown: bool
@@ -284,6 +282,7 @@ def present_tracking(data: TrackingData) -> OrderTrackingProjection:
         is_delivery=data.is_delivery,
         copy=copy,
         when_display=when_display,
+        payment_confirmed=data.payment_confirmed,
     )
     return OrderTrackingProjection(
         order_ref=data.order_ref,
@@ -311,7 +310,6 @@ def present_tracking(data: TrackingData) -> OrderTrackingProjection:
         payment_pending=data.payment_pending,
         payment_expired=data.payment_expired,
         payment_confirmed=data.payment_confirmed,
-        show_payment_confirmed_notice=data.show_payment_confirmed_notice,
         payment_status_label=_payment_status_label(data.payment_status_key),
         payment_expires_at=data.payment_expires_at,
         confirmation_countdown=data.confirmation_countdown,
@@ -444,7 +442,9 @@ def _deadline_label(promise: OrderTrackingPromiseProjection, copy: CopyCatalog) 
     if promise.deadline_kind == "payment":
         return _clean_label(copy.message("TRACKING_PAYMENT_TIME_LEFT", "Prazo para pagar:"))
     if promise.deadline_kind == "availability":
-        return _clean_label(copy.message("TRACKING_AUTO_CONFIRM_LABEL", "Conferindo disponibilidade:"))
+        # A mensagem acima já diz que estamos conferindo; aqui basta dizer o que
+        # o relógio mede.
+        return _clean_label(copy.message("TRACKING_AUTO_CONFIRM_LABEL", "Resposta em:"))
     return _clean_label(copy.title("TRACKING_PROMISE_LABEL_DEADLINE", "Prazo:"))
 
 
@@ -531,6 +531,7 @@ def _present_promise(
     is_delivery: bool,
     copy: CopyCatalog,
     when_display: str | None = None,
+    payment_confirmed: bool = False,
 ) -> OrderTrackingPromiseProjection:
     title, message = _promise_copy(
         data,
@@ -538,6 +539,7 @@ def _present_promise(
         is_delivery=is_delivery,
         copy=copy,
         when_display=when_display,
+        payment_confirmed=payment_confirmed,
     )
     footnote = _promise_footnote(data, copy=copy)
     return OrderTrackingPromiseProjection(
@@ -584,6 +586,7 @@ def _promise_copy(
     is_delivery: bool,
     copy: CopyCatalog,
     when_display: str | None = None,
+    payment_confirmed: bool = False,
 ) -> tuple[str, str]:
     """Título e mensagem do estado — UMA frase que já cobre as obrigações.
 
@@ -647,10 +650,19 @@ def _promise_copy(
         return copy.title("TRACKING_CARD_AUTHORIZED", "Pagamento autorizado"), message
 
     if state == "availability_check":
-        return (
-            copy.title("TRACKING_STEP_RECEIVED", "Pedido recebido"),
-            copy.message("TRACKING_PROMISE_AVAILABILITY_MESSAGE",
-                         "Estamos conferindo a disponibilidade. Avisamos em seguida."),
+        # Pago e conferindo é UM momento, não dois recados. O aviso separado
+        # "Pagamento confirmado." empilhava uma terceira linha dizendo o que a
+        # frase já podia dizer — e o histórico registra o passo de qualquer jeito.
+        # Chaves literais: o scanner do usage_map lê a chamada, não a variável.
+        titulo = copy.title("TRACKING_STEP_RECEIVED", "Pedido recebido")
+        if payment_confirmed:
+            return titulo, copy.message(
+                "TRACKING_PROMISE_AVAILABILITY_MESSAGE_PAID",
+                "Pagamento recebido. Estamos conferindo a disponibilidade e avisamos em seguida.",
+            )
+        return titulo, copy.message(
+            "TRACKING_PROMISE_AVAILABILITY_MESSAGE",
+            "Estamos conferindo a disponibilidade. Avisamos em seguida.",
         )
 
     if state == "received":
@@ -944,10 +956,6 @@ def _tracking_copy(copy: CopyCatalog) -> OrderTrackingCopyProjection:
         promise_fallback_message=copy.message(
             "TRACKING_PROMISE_FALLBACK_MESSAGE",
             "Acompanhando atualizações do pedido.",
-        ),
-        payment_confirmed_notice=copy.message(
-            "TRACKING_PAYMENT_CONFIRMED_NOTICE",
-            "Pagamento confirmado.",
         ),
         retry_label=copy.title("TRACKING_RETRY_CTA", "Tentar novamente"),
         not_found_title=copy.title("TRACKING_NOT_FOUND_TITLE", "Pedido não encontrado"),

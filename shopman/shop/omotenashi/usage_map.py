@@ -768,9 +768,6 @@ USAGE: dict[str, tuple[tuple[str, str, str], ...]] = {
     "TRACKING_PAGE_META_DESCRIPTION": (
         ("shopman/storefront/presentation/order_tracking.py", "Loja", "Acompanhamento do pedido"),
     ),
-    "TRACKING_PAYMENT_CONFIRMED_NOTICE": (
-        ("shopman/storefront/presentation/order_tracking.py", "Loja", "Acompanhamento do pedido"),
-    ),
     "TRACKING_PAYMENT_CTA": (
         ("shopman/shop/projections/order_tracking.py", "Loja", "Acompanhamento do pedido"),
     ),
@@ -799,6 +796,9 @@ USAGE: dict[str, tuple[tuple[str, str, str], ...]] = {
         ("shopman/storefront/presentation/order_tracking.py", "Loja", "Acompanhamento do pedido"),
     ),
     "TRACKING_PROMISE_AVAILABILITY_MESSAGE": (
+        ("shopman/storefront/presentation/order_tracking.py", "Loja", "Acompanhamento do pedido"),
+    ),
+    "TRACKING_PROMISE_AVAILABILITY_MESSAGE_PAID": (
         ("shopman/storefront/presentation/order_tracking.py", "Loja", "Acompanhamento do pedido"),
     ),
     "TRACKING_PROMISE_CLOSED_HOURS_MESSAGE": (
