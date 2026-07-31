@@ -388,6 +388,10 @@ useSeoMeta({
               <div class="w-full shop-stack-block">
                 <p>{{ tracking.promise.message || tracking.copy.promise_fallback_message }}</p>
 
+                <!-- Nota de rodapé: complemento opcional, sem rótulo. Fica em tom
+                     secundário para não competir com o aviso principal. -->
+                <p v-if="tracking.promise.footnote" class="shop-meta">{{ tracking.promise.footnote }}</p>
+
                 <!-- Offline imediato: o cliente vê "sem conexão" na hora, sem esperar
                      o dado ficar velho pelo limiar de frescor. -->
                 <p v-if="showOfflineBanner" class="flex items-center gap-2 rounded-md border border-amber-500/40 bg-amber-500/10 p-2 text-xs text-amber-800 dark:text-amber-300" role="status">

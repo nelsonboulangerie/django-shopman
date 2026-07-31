@@ -114,3 +114,29 @@ class TestCopyCoversObligations:
 
         for state in _TERMINAL_PROMISE_COPY:
             assert state in _PROMISE_COVERS, state
+
+
+class TestFootnoteStaysExceptional:
+    """A nota de rodapé é exceção, não um segundo campo a preencher.
+
+    Ela existe para tirar da frase principal a consequência que o cliente não
+    precisa ler primeiro. Se todo estado ganhar uma, viramos o slot de volta —
+    só que sem rótulo.
+    """
+
+    def test_footnote_only_where_there_is_a_consequence(self):
+        from shopman.storefront.presentation.order_tracking import _PROMISE_FOOTNOTE
+
+        for state in _PROMISE_FOOTNOTE:
+            assert CONSEQUENCE in _PROMISE_COVERS[state], (
+                f"{state} tem nota de rodapé sem declarar consequência — "
+                "a nota não é lugar para informação solta."
+            )
+
+    def test_most_states_have_no_footnote(self):
+        from shopman.storefront.presentation.order_tracking import _PROMISE_FOOTNOTE
+
+        assert len(_PROMISE_FOOTNOTE) * 3 < len(_PROMISE_COVERS), (
+            "nota de rodapé deixou de ser exceção: "
+            f"{len(_PROMISE_FOOTNOTE)} de {len(_PROMISE_COVERS)} estados."
+        )

@@ -190,6 +190,11 @@ class OrderTrackingPromiseProjection:
     requires_active_notification: bool
     notification_topic: str | None
     actions: tuple[Action, ...] = ()
+    # Nota de rodapé: complemento OPCIONAL, sem rótulo, em tom secundário. Não é
+    # slot — a maioria dos estados deixa vazio. Serve para tirar da frase
+    # principal a consequência que o cliente não precisa ler primeiro ("se o
+    # prazo acabar…"), sem escondê-la. Quem tem nota é quem declara CONSEQUENCE.
+    footnote: str = ""
 
 
 @dataclass(frozen=True)
@@ -534,6 +539,7 @@ def _present_promise(
         copy=copy,
         when_display=when_display,
     )
+    footnote = _promise_footnote(data, copy=copy)
     return OrderTrackingPromiseProjection(
         state=data.state,
         title=title,
@@ -546,7 +552,29 @@ def _present_promise(
         requires_active_notification=data.requires_active_notification,
         notification_topic=data.notification_topic,
         actions=data.actions,
+        footnote=footnote,
     )
+
+
+_PROMISE_FOOTNOTE: dict[str, tuple[str, str]] = {
+    "payment_requested": (
+        "TRACKING_PROMISE_PAYMENT_FOOTNOTE",
+        "Se o prazo acabar, o pedido cancela automaticamente e avisamos você.",
+    ),
+    "payment_expired": (
+        "TRACKING_PROMISE_EXPIRED_FOOTNOTE",
+        "Você pode pedir de novo quando quiser.",
+    ),
+}
+
+
+def _promise_footnote(data: TrackingPromiseData, *, copy: CopyCatalog) -> str:
+    """Complemento opcional do estado — vazio na maioria deles, de propósito."""
+    spec = _PROMISE_FOOTNOTE.get(data.state)
+    if not spec:
+        return ""
+    key, fallback = spec
+    return copy.message(key, fallback)
 
 
 def _promise_copy(
@@ -584,14 +612,13 @@ def _promise_copy(
     if state == "payment_expired":
         return _pair(copy, "TRACKING_PAYMENT_EXPIRED",
                      "Pagamento expirado",
-                     "O prazo acabou e cancelamos o pedido. Você pode pedir de novo quando quiser.")
+                     "O prazo acabou e cancelamos o pedido.")
 
     if state in {"payment_requested", "payment_pending"}:
         if state == "payment_requested":
             return _pair(copy, "TRACKING_PAYMENT_REQUESTED",
                          "Falta só o pagamento",
-                         "Pague o Pix e começamos a preparar. "
-                         "(Se o prazo acabar, o pedido cancela automaticamente e avisamos você)")
+                         "Pague o Pix e começamos a preparar.")
         return _pair(copy, "TRACKING_PAYMENT_PENDING",
                      "Aguardando pagamento",
                      "Assim que o banco confirmar, começamos o preparo.")

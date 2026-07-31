@@ -243,7 +243,11 @@ useSeoMeta({
           :icon="paymentAlertIcon(payment.promise.tone)"
         >
           <UiAlertTitle>{{ payment.promise.title }}</UiAlertTitle>
-          <UiAlertDescription>{{ payment.promise.message }}</UiAlertDescription>
+          <UiAlertDescription>
+            {{ payment.promise.message }}
+            <!-- Nota de rodapé: complemento opcional, sem rótulo, em tom secundário. -->
+            <span v-if="payment.promise.footnote" class="mt-2 block shop-meta">{{ payment.promise.footnote }}</span>
+          </UiAlertDescription>
         </UiAlert>
 
         <div class="grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,1fr)_320px]">

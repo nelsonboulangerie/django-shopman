@@ -51,7 +51,7 @@ _PROMISE_COPY: dict[str, tuple[str, str, str, str]] = {
     "expired": (
         "PAYMENT_PROMISE_EXPIRED_TITLE", "Pagamento expirado",
         "PAYMENT_PROMISE_EXPIRED_MESSAGE",
-        "O prazo acabou e cancelamos o pedido. Você pode pedir de novo quando quiser.",
+        "O prazo acabou e cancelamos o pedido.",
     ),
     "card_authorized": (
         "PAYMENT_PROMISE_CARD_AUTHORIZED_TITLE", "Pagamento autorizado",
@@ -79,20 +79,17 @@ _PROMISE_COPY: dict[str, tuple[str, str, str, str]] = {
     "pix_waiting_confirmation": (
         "PAYMENT_PROMISE_PIX_WAITING_TITLE", "Aguardando a loja",
         "PAYMENT_PROMISE_PIX_WAITING_MESSAGE",
-        "Estamos conferindo a disponibilidade. O código Pix aparece aqui em seguida. "
-        "Se não conseguirmos confirmar, cancelamos e avisamos você.",
+        "Estamos conferindo a disponibilidade. O código Pix aparece aqui em seguida.",
     ),
     "pix_payment_before_confirmation": (
         "PAYMENT_PROMISE_PIX_PRECONFIRMATION_TITLE", "Pague com Pix",
         "PAYMENT_PROMISE_PIX_PRECONFIRMATION_MESSAGE",
-        "Use o código abaixo. Ainda estamos conferindo a disponibilidade, "
-        "e cancelamos o pedido se o prazo acabar.",
+        "Use o código abaixo. Ainda estamos conferindo a disponibilidade.",
     ),
     "pix_payment_requested": (
         "PAYMENT_PROMISE_PIX_TITLE", "Pague com Pix",
         "PAYMENT_PROMISE_PIX_MESSAGE",
-        "Disponibilidade confirmada. Use o código abaixo e começamos a preparar. "
-        "Se o prazo acabar, cancelamos o pedido.",
+        "Disponibilidade confirmada. Use o código abaixo e começamos a preparar.",
     ),
 }
 
@@ -116,6 +113,8 @@ class PaymentPromiseProjection:
     deadline_action: str
     requires_active_notification: bool
     stale_after_seconds: int | None = None
+    # Complemento OPCIONAL, sem rótulo (ver order_tracking._promise_footnote).
+    footnote: str = ""
 
 
 @dataclass(frozen=True)
@@ -185,6 +184,11 @@ def build_payment_status(order) -> PaymentStatusProjection:
 
 def present_payment(data: PaymentData, *, mock_enabled: bool = False) -> PaymentProjection:
     copy = build_copy("PAYMENT")
+    # "Simular pagamento" só quando há pagamento a simular. `mock_enabled` sozinho
+    # é capacidade do ambiente (DEBUG/staging), não estado do pedido: sem código
+    # Pix e sem checkout de cartão não existe captura para simular, e o botão
+    # aparecia na espera da confirmação — mostrando um fluxo que não é o real.
+    can_pay_now = bool(data.pix_copy_paste or data.pix_qr_code or data.checkout_url)
     return PaymentProjection(
         order_ref=data.order_ref,
         method=data.method,
@@ -201,7 +205,7 @@ def present_payment(data: PaymentData, *, mock_enabled: bool = False) -> Payment
         actions=data.actions,
         error_message=data.error_message,
         is_debug=data.is_debug,
-        mock_enabled=mock_enabled,
+        mock_enabled=mock_enabled and can_pay_now,
     )
 
 
@@ -235,6 +239,7 @@ def _present_promise(
         order_status=order_status,
         copy=copy,
     )
+    footnote = _promise_footnote(data.state, copy=copy)
     return PaymentPromiseProjection(
         state=data.state,
         title=title,
@@ -246,7 +251,37 @@ def _present_promise(
         deadline_action=data.deadline_action,
         requires_active_notification=data.requires_active_notification,
         stale_after_seconds=data.stale_after_seconds,
+        footnote=footnote,
     )
+
+
+_PROMISE_FOOTNOTE: dict[str, tuple[str, str]] = {
+    "pix_waiting_confirmation": (
+        "PAYMENT_PROMISE_PIX_WAITING_FOOTNOTE",
+        "Se não conseguirmos confirmar, cancelamos e avisamos você.",
+    ),
+    "pix_payment_before_confirmation": (
+        "PAYMENT_PROMISE_PIX_PRECONFIRMATION_FOOTNOTE",
+        "Cancelamos o pedido se o prazo acabar.",
+    ),
+    "pix_payment_requested": (
+        "PAYMENT_PROMISE_PIX_FOOTNOTE",
+        "Se o prazo acabar, cancelamos o pedido.",
+    ),
+    "expired": (
+        "PAYMENT_PROMISE_EXPIRED_FOOTNOTE",
+        "Você pode pedir de novo quando quiser.",
+    ),
+}
+
+
+def _promise_footnote(state: str, *, copy: CopyCatalog) -> str:
+    """Complemento opcional do estado — vazio na maioria deles, de propósito."""
+    spec = _PROMISE_FOOTNOTE.get(state)
+    if not spec:
+        return ""
+    key, fallback = spec
+    return copy.message(key, fallback)
 
 
 def _promise_copy(

@@ -503,6 +503,9 @@ USAGE: dict[str, tuple[tuple[str, str, str], ...]] = {
     "PAYMENT_PROMISE_ERROR_TITLE": (
         ("shopman/storefront/presentation/payment.py", "Loja", "Pagamento"),
     ),
+    "PAYMENT_PROMISE_EXPIRED_FOOTNOTE": (
+        ("shopman/storefront/presentation/payment.py", "Loja", "Pagamento"),
+    ),
     "PAYMENT_PROMISE_EXPIRED_MESSAGE": (
         ("shopman/storefront/presentation/payment.py", "Loja", "Pagamento"),
     ),
@@ -518,7 +521,13 @@ USAGE: dict[str, tuple[tuple[str, str, str], ...]] = {
     "PAYMENT_PROMISE_PIX_ACTION": (
         ("shopman/shop/projections/payment_status.py", "Loja", "Pagamento"),
     ),
+    "PAYMENT_PROMISE_PIX_FOOTNOTE": (
+        ("shopman/storefront/presentation/payment.py", "Loja", "Pagamento"),
+    ),
     "PAYMENT_PROMISE_PIX_MESSAGE": (
+        ("shopman/storefront/presentation/payment.py", "Loja", "Pagamento"),
+    ),
+    "PAYMENT_PROMISE_PIX_PRECONFIRMATION_FOOTNOTE": (
         ("shopman/storefront/presentation/payment.py", "Loja", "Pagamento"),
     ),
     "PAYMENT_PROMISE_PIX_PRECONFIRMATION_MESSAGE": (
@@ -528,6 +537,9 @@ USAGE: dict[str, tuple[tuple[str, str, str], ...]] = {
         ("shopman/storefront/presentation/payment.py", "Loja", "Pagamento"),
     ),
     "PAYMENT_PROMISE_PIX_TITLE": (
+        ("shopman/storefront/presentation/payment.py", "Loja", "Pagamento"),
+    ),
+    "PAYMENT_PROMISE_PIX_WAITING_FOOTNOTE": (
         ("shopman/storefront/presentation/payment.py", "Loja", "Pagamento"),
     ),
     "PAYMENT_PROMISE_PIX_WAITING_MESSAGE": (
@@ -801,6 +813,9 @@ USAGE: dict[str, tuple[tuple[str, str, str], ...]] = {
     "TRACKING_PROMISE_DISPATCHED_MESSAGE_ETA": (
         ("shopman/storefront/presentation/order_tracking.py", "Loja", "Acompanhamento do pedido"),
     ),
+    "TRACKING_PROMISE_EXPIRED_FOOTNOTE": (
+        ("shopman/storefront/presentation/order_tracking.py", "Loja", "Acompanhamento do pedido"),
+    ),
     "TRACKING_PROMISE_FALLBACK_MESSAGE": (
         ("shopman/storefront/presentation/order_tracking.py", "Loja", "Acompanhamento do pedido"),
     ),
@@ -814,6 +829,9 @@ USAGE: dict[str, tuple[tuple[str, str, str], ...]] = {
         ("shopman/storefront/presentation/order_tracking.py", "Loja", "Acompanhamento do pedido"),
     ),
     "TRACKING_PROMISE_PAYMENT_CONFIRMED_MESSAGE_NEW": (
+        ("shopman/storefront/presentation/order_tracking.py", "Loja", "Acompanhamento do pedido"),
+    ),
+    "TRACKING_PROMISE_PAYMENT_FOOTNOTE": (
         ("shopman/storefront/presentation/order_tracking.py", "Loja", "Acompanhamento do pedido"),
     ),
     "TRACKING_PROMISE_PREORDER_MESSAGE": (

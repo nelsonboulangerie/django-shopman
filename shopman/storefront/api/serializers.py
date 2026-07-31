@@ -173,6 +173,7 @@ class OrderTrackingPromiseSerializer(serializers.Serializer):
     requires_active_notification = serializers.BooleanField()
     notification_topic = serializers.CharField(allow_null=True, required=False)
     actions = ActionSerializer(many=True, required=False)
+    footnote = serializers.CharField(allow_blank=True, required=False)
 
 
 class OrderProgressStepSerializer(serializers.Serializer):
@@ -278,6 +279,7 @@ class OrderTrackingSerializer(serializers.Serializer):
     last_updated_iso = serializers.CharField()
     last_updated_display = serializers.CharField()
     stale_after_seconds = serializers.IntegerField()
+    footnote = serializers.CharField(allow_blank=True, required=False)
 
 
 # ── Account ──────────────────────────────────────────────────────────

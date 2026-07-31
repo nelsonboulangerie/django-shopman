@@ -566,8 +566,7 @@ OMOTENASHI_DEFAULTS: dict[str, dict[str, dict[str, CopyEntry]]] = {
         WILDCARD: {
             WILDCARD: CopyEntry(
                 title="Falta só o pagamento",
-                message="Pague o Pix e começamos a preparar. "
-                        "(Se o prazo acabar, o pedido cancela automaticamente e avisamos você)",
+                message="Pague o Pix e começamos a preparar.",
             ),
         },
     },
@@ -581,7 +580,7 @@ OMOTENASHI_DEFAULTS: dict[str, dict[str, dict[str, CopyEntry]]] = {
         WILDCARD: {
             WILDCARD: CopyEntry(
                 title="Pagamento expirado",
-                message="O prazo acabou e cancelamos o pedido. Você pode pedir de novo quando quiser.",
+                message="O prazo acabou e cancelamos o pedido.",
             ),
         },
     },
@@ -638,6 +637,14 @@ OMOTENASHI_DEFAULTS: dict[str, dict[str, dict[str, CopyEntry]]] = {
                 message="Já vamos começar o preparo.",
             ),
         },
+    },
+    # Notas de rodapé: complemento opcional, sem rótulo, em tom secundário.
+    # Só existem onde há consequência que o cliente não precisa ler primeiro.
+    "TRACKING_PROMISE_PAYMENT_FOOTNOTE": {
+        WILDCARD: {WILDCARD: CopyEntry(message="Se o prazo acabar, o pedido cancela automaticamente e avisamos você.")},
+    },
+    "TRACKING_PROMISE_EXPIRED_FOOTNOTE": {
+        WILDCARD: {WILDCARD: CopyEntry(message="Você pode pedir de novo quando quiser.")},
     },
     "TRACKING_PROMISE_PREPARING_TITLE": {
         WILDCARD: {WILDCARD: CopyEntry(title="Preparando…")},
@@ -740,8 +747,7 @@ OMOTENASHI_DEFAULTS: dict[str, dict[str, dict[str, CopyEntry]]] = {
         WILDCARD: {WILDCARD: CopyEntry(title="Pague com Pix")},
     },
     "PAYMENT_PROMISE_PIX_MESSAGE": {
-        WILDCARD: {WILDCARD: CopyEntry(message="Disponibilidade confirmada. Use o código abaixo e começamos a preparar. "
-                                               "Se o prazo acabar, cancelamos o pedido.")},
+        WILDCARD: {WILDCARD: CopyEntry(message="Disponibilidade confirmada. Use o código abaixo e começamos a preparar.")},
     },
     "PAYMENT_PROMISE_PIX_PRECONFIRMATION_TITLE": {
         WILDCARD: {WILDCARD: CopyEntry(title="Pague com Pix")},
@@ -749,8 +755,7 @@ OMOTENASHI_DEFAULTS: dict[str, dict[str, dict[str, CopyEntry]]] = {
     "PAYMENT_PROMISE_PIX_PRECONFIRMATION_MESSAGE": {
         WILDCARD: {
             WILDCARD: CopyEntry(
-                message="Use o código abaixo. Ainda estamos conferindo a disponibilidade, "
-                        "e cancelamos o pedido se o prazo acabar.",
+                message="Use o código abaixo. Ainda estamos conferindo a disponibilidade.",
             ),
         },
     },
@@ -760,14 +765,25 @@ OMOTENASHI_DEFAULTS: dict[str, dict[str, dict[str, CopyEntry]]] = {
     # Pix com pagamento depois da confirmação: o intent só nasce quando a loja
     # confirma, então até lá não há código. A frase diz o que esperar e o que
     # acontece se a confirmação não vier.
+    "PAYMENT_PROMISE_PIX_WAITING_FOOTNOTE": {
+        WILDCARD: {WILDCARD: CopyEntry(message="Se não conseguirmos confirmar, cancelamos e avisamos você.")},
+    },
+    "PAYMENT_PROMISE_PIX_PRECONFIRMATION_FOOTNOTE": {
+        WILDCARD: {WILDCARD: CopyEntry(message="Cancelamos o pedido se o prazo acabar.")},
+    },
+    "PAYMENT_PROMISE_PIX_FOOTNOTE": {
+        WILDCARD: {WILDCARD: CopyEntry(message="Se o prazo acabar, cancelamos o pedido.")},
+    },
+    "PAYMENT_PROMISE_EXPIRED_FOOTNOTE": {
+        WILDCARD: {WILDCARD: CopyEntry(message="Você pode pedir de novo quando quiser.")},
+    },
     "PAYMENT_PROMISE_PIX_WAITING_TITLE": {
         WILDCARD: {WILDCARD: CopyEntry(title="Aguardando a loja")},
     },
     "PAYMENT_PROMISE_PIX_WAITING_MESSAGE": {
         WILDCARD: {
             WILDCARD: CopyEntry(
-                message="Estamos conferindo a disponibilidade. O código Pix aparece aqui em seguida. "
-                        "Se não conseguirmos confirmar, cancelamos e avisamos você.",
+                message="Estamos conferindo a disponibilidade. O código Pix aparece aqui em seguida.",
             ),
         },
     },
@@ -833,7 +849,7 @@ OMOTENASHI_DEFAULTS: dict[str, dict[str, dict[str, CopyEntry]]] = {
         WILDCARD: {WILDCARD: CopyEntry(title="Pagamento expirado")},
     },
     "PAYMENT_PROMISE_EXPIRED_MESSAGE": {
-        WILDCARD: {WILDCARD: CopyEntry(message="O prazo acabou e cancelamos o pedido. Você pode pedir de novo quando quiser.")},
+        WILDCARD: {WILDCARD: CopyEntry(message="O prazo acabou e cancelamos o pedido.")},
     },
     "PAYMENT_CARD_INTRO": {
         WILDCARD: {

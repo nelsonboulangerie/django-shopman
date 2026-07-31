@@ -688,6 +688,7 @@ export interface TrackingPromiseProjection {
   timer_mode: string
   deadline_action: string
   requires_active_notification: boolean
+  footnote: string
   notification_topic: string | null
   actions: Action[]
 }
@@ -832,6 +833,7 @@ export interface PaymentPromiseProjection {
   deadline_kind: string | null
   deadline_action: string
   requires_active_notification: boolean
+  footnote: string
   stale_after_seconds: number | null
 }
 
