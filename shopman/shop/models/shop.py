@@ -288,6 +288,23 @@ class Shop(models.Model):
         ),
     )
 
+    # ── Cadência das telas do cliente (tempo real) ──
+    realtime = models.JSONField(
+        "atualização das telas",
+        default=dict,
+        blank=True,
+        help_text=(
+            "De quanto em quanto tempo as telas do cliente se atualizam sozinhas, "
+            "em segundos. Vale como reserva: quando o cliente está logado, a tela "
+            "recebe as mudanças na hora e nem chega a esperar esse intervalo.\n"
+            "Deixe vazio para usar o padrão.\n\n"
+            "Chaves disponíveis:\n"
+            '  "tracking_poll_seconds" — acompanhamento do pedido (padrão 30)\n'
+            '  "payment_poll_seconds" — tela de pagamento (padrão 8)\n'
+            '  "min_poll_seconds" — intervalo mínimo, protege o servidor (padrão 5)\n'
+        ),
+    )
+
     # ── Defaults de negócio (cascata: canal ← AQUI ← hardcoded) ──
     defaults = models.JSONField(
         "configurações padrão",

@@ -852,6 +852,7 @@ export interface PaymentProjection {
   actions: Action[]
   error_message: string | null
   is_debug: boolean
+  poll_after_seconds: number
   mock_enabled: boolean
 }
 

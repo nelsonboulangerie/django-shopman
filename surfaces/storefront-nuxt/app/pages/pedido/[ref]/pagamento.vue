@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import type { PaymentResponse, PaymentStatusResponse, Action } from '~/types/shopman'
-import { paymentAlertFilled, paymentAlertIcon, paymentAlertVariant, paymentMethodLabel, shouldPollPayment } from '~/presentation/payment'
+import { paymentAlertFilled, paymentAlertIcon, paymentAlertVariant, paymentMethodLabel, pollIntervalMs, shouldPollPayment } from '~/presentation/payment'
 import { countdownPct, deadlineCountdown, isCountdownUrgent, serverClockOffsetMs } from '~/presentation/deadline'
 import { orderAccessErrorView } from '~/presentation/orderAccess'
 
@@ -118,7 +118,7 @@ onMounted(() => {
     } else {
       await refresh()
     }
-  }, 8000)
+  }, pollIntervalMs(payment.value?.poll_after_seconds))
 })
 onBeforeUnmount(() => {
   if (tick) clearInterval(tick)

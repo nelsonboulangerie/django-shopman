@@ -47,3 +47,12 @@ export function paymentMethodLabel (method: string | null | undefined): string {
   if (method === 'card') return 'Cartão de crédito'
   return 'Pagamento'
 }
+
+// Cadência do poll da tela de pagamento, em ms. Vem da projeção
+// (Shop.realtime ← settings ← default) — antes era `8000` cravado no Vue. O piso
+// é guarda de servidor: por mais baixo que se configure, a tela não vira martelo.
+export const PISO_POLL_MS = 3000
+
+export function pollIntervalMs (pollAfterSeconds: number | null | undefined): number {
+  return Math.max((pollAfterSeconds || 8) * 1000, PISO_POLL_MS)
+}

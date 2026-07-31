@@ -52,9 +52,19 @@ def get_or_create_user_for_customer(customer: AuthCustomerInfo) -> tuple:
             user.last_name = parts[1]
         user.save(update_fields=["first_name", "last_name"])
 
-    # Create link — retry on concurrent creation
+    # Create link — retry on concurrent creation.
+    # O telefone vai no `metadata` (JSONField que já existe — sem migração) para
+    # que o vínculo seja RELIGÁVEL: ele guarda o uuid do Customer, e quando os
+    # clientes são recriados (reseed, reset de base, migração) os uuids mudam e o
+    # login fica apontando para o vazio. Sem telefone não há como reencontrar o
+    # cliente atual, e o vínculo só pode ser descartado. Ver
+    # `manage.py cleanup_orphan_customer_links`.
     try:
-        CustomerUser.objects.create(user=user, customer_id=customer.uuid)
+        CustomerUser.objects.create(
+            user=user,
+            customer_id=customer.uuid,
+            metadata={"phone": customer.phone or ""},
+        )
     except IntegrityError:
         # Another request already created the link; use that one
         user.delete()

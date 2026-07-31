@@ -141,6 +141,9 @@ class PaymentProjection:
     actions: tuple[Action, ...]
     error_message: str | None
     is_debug: bool
+    # Cadência do poll desta tela, em segundos (Shop.realtime ← settings ←
+    # default). O Vue usava 8000 cravado; agora o gestor manda.
+    poll_after_seconds: int = 8
     # Habilita o botão "Simular pagamento" (PIX e cartão): DEBUG OU adapters de
     # pagamento mock (staging). Em produção real (gateway de verdade) fica False.
     mock_enabled: bool = False
@@ -188,6 +191,8 @@ def build_payment_status(order) -> PaymentStatusProjection:
 
 
 def present_payment(data: PaymentData, *, mock_enabled: bool = False) -> PaymentProjection:
+    from shopman.shop.realtime import RealtimeConfig
+
     copy = build_copy("PAYMENT")
     # "Simular pagamento" só quando há pagamento a simular. `mock_enabled` sozinho
     # é capacidade do ambiente (DEBUG/staging), não estado do pedido: sem código
@@ -211,6 +216,7 @@ def present_payment(data: PaymentData, *, mock_enabled: bool = False) -> Payment
         error_message=data.error_message,
         is_debug=data.is_debug,
         mock_enabled=mock_enabled and can_pay_now,
+        poll_after_seconds=RealtimeConfig.load().payment_seconds(),
     )
 
 

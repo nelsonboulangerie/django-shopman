@@ -277,7 +277,6 @@ class OrderTrackingSerializer(serializers.Serializer):
     last_updated_iso = serializers.CharField()
     last_updated_display = serializers.CharField()
     stale_after_seconds = serializers.IntegerField()
-    footnote = serializers.CharField(allow_blank=True, required=False)
 
 
 # ── Account ──────────────────────────────────────────────────────────

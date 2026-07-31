@@ -2844,6 +2844,18 @@ class Command(BaseCommand):
             )
             customers[ref] = c
 
+        # Vínculos de login apontam para o uuid do Customer. Se a base perdeu os
+        # clientes e ganhou uuids novos (reset parcial), o login antigo fica
+        # órfão e o cliente perde o canal em tempo real sem nenhum aviso. Aqui o
+        # seed se auto-cura religando por telefone; o que não dá para religar
+        # fica para o comando dedicado decidir (--delete-unrepairable).
+        try:
+            from django.core.management import call_command
+
+            call_command("cleanup_orphan_customer_links", verbosity=0)
+        except Exception:
+            self.stdout.write("  ⚠️  não foi possível revisar vínculos de login")
+
         self.stdout.write(f"  ✅ {len(customers)} clientes, 3 grupos")
         return customers
 

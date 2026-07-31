@@ -22,7 +22,6 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
 
-from django.conf import settings
 from django.utils import timezone
 from django.utils.dateparse import parse_datetime
 from shopman.orderman.models import Directive
@@ -50,7 +49,13 @@ TERMINAL_STATUSES = frozenset({"completed", "cancelled", "returned"})
 # mercado (iFood) e reduz o "esperei e nada" após o operador mudar o status.
 # Configurável por deployment (STOREFRONT_TRACKING_POLL_SECONDS); o push instantâneo
 # por SSE é o próximo passo (follow-up G1) e o campo no Admin/Shop é follow-up.
-STALE_AFTER_SECONDS = int(getattr(settings, "STOREFRONT_TRACKING_POLL_SECONDS", 30) or 30)
+# Cadência vem de `RealtimeConfig` (Shop.realtime ← settings ← default), lida
+# por requisição — mudar no Admin vale na próxima carga, sem restart. A
+# constante antiga era lida no import e congelava até reiniciar o processo.
+def _stale_after_seconds() -> int:
+    from shopman.shop.realtime import RealtimeConfig
+
+    return RealtimeConfig.load().tracking_seconds()
 
 
 # ──────────────────────────────────────────────────────────────────────
@@ -176,7 +181,7 @@ class TrackingData:
     shop_name: str
     is_debug: bool
     last_updated_iso: str
-    stale_after_seconds: int = STALE_AFTER_SECONDS
+    stale_after_seconds: int = 30  # sobrescrito no build com a config viva
 
 
 @dataclass(frozen=True)
@@ -258,6 +263,7 @@ def build_tracking(order, *, is_debug: bool = False) -> TrackingData:
     )
 
     return TrackingData(
+        stale_after_seconds=_stale_after_seconds(),
         order_ref=interaction.order_ref,
         status=order.status,
         display_status_key=_display_status_key(order),
