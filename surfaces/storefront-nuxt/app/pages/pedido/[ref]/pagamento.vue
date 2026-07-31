@@ -33,6 +33,15 @@ const ACOES_COM_LUGAR_PROPRIO = new Set(['mock_confirm_payment', 'track_order'])
 // está na tela. Renderizadas nesta lista viravam botão-frase que não faz nada
 // ("Use o QR Code ou copia e cola abaixo"), ao lado do "Copiar código" real.
 const KINDS_QUE_NAO_SAO_ACAO = new Set(['copy', 'instruction'])
+// Pix ainda sem código (a loja confere antes, com `timing=post_commit`). Sem
+// isso o card ficava oco: cabeçalho com o total e um vazio embaixo, com cara de
+// conteúdo que falhou ao carregar.
+const esperandoCodigoPix = computed(() => Boolean(
+  payment.value?.method === 'pix' &&
+  !payment.value?.pix_qr_code &&
+  !payment.value?.pix_copy_paste &&
+  !payment.value?.error_message
+))
 const paymentActions = computed<Action[]>(() => {
   const vistas = new Set<string>()
   return [...(payment.value?.promise?.actions || []), ...(payment.value?.actions || [])]
@@ -294,6 +303,17 @@ useSeoMeta({
               <div v-else-if="payment.method === 'card'" class="flex items-center gap-3 rounded-lg border p-4">
                 <Icon name="lucide:loader-circle" :size="20" class="shrink-0 animate-spin text-muted-foreground" />
                 <p class="shop-muted">Preparando o pagamento seguro com cartão…</p>
+              </div>
+
+              <!-- Lugar reservado para o código: diz "vai aparecer aqui" sem
+                   afirmar que já está sendo gerado (com post_commit o intent só
+                   nasce quando a loja confirma). `motion-safe` respeita quem
+                   pediu menos movimento. -->
+              <div v-if="esperandoCodigoPix" class="flex flex-col items-center gap-3 py-2">
+                <div class="flex size-48 max-w-full items-center justify-center rounded-lg border border-dashed text-muted-foreground">
+                  <Icon name="lucide:qr-code" class="size-12 motion-safe:animate-pulse" />
+                </div>
+                <p class="shop-meta text-center">{{ copy.pix_expires_label }} começa quando o código aparecer.</p>
               </div>
 
               <!-- Pix: a ordem segue o que o cliente faz — quanto tempo tem,
