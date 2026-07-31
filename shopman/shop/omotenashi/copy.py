@@ -507,26 +507,41 @@ OMOTENASHI_DEFAULTS: dict[str, dict[str, dict[str, CopyEntry]]] = {
     "TRACKING_PROMISE_PREORDER_MESSAGE_NO_DATE": {
         WILDCARD: {WILDCARD: CopyEntry(message="Pedido garantido. Preparamos tudo fresco no dia combinado.")},
     },
-    "TRACKING_STEP_RECEIVED": {
+    # Títulos do PAINEL de status: manchete, com o substantivo. Os marcos da
+    # linha do tempo (TRACKING_STEP_*) são curtos porque a lista inteira já é
+    # sobre o pedido — repetir "Pedido" sete vezes era ruído.
+    "TRACKING_PROMISE_RECEIVED_TITLE": {
         WILDCARD: {WILDCARD: CopyEntry(title="Pedido recebido")},
     },
-    "TRACKING_STEP_AVAILABILITY_CONFIRMED": {
-        WILDCARD: {WILDCARD: CopyEntry(title="Pedido aceito")},
-    },
-    "TRACKING_STEP_PAYMENT_CONFIRMED": {
+    "TRACKING_PROMISE_PAYMENT_TITLE": {
         WILDCARD: {WILDCARD: CopyEntry(title="Pagamento confirmado")},
     },
+    "TRACKING_PROMISE_READY_PICKUP_TITLE": {
+        WILDCARD: {WILDCARD: CopyEntry(title="Pronto para retirada")},
+    },
+    "TRACKING_PROMISE_DISPATCHED_TITLE": {
+        WILDCARD: {WILDCARD: CopyEntry(title="Saiu para entrega")},
+    },
+    "TRACKING_STEP_RECEIVED": {
+        WILDCARD: {WILDCARD: CopyEntry(title="Recebido")},
+    },
+    "TRACKING_STEP_AVAILABILITY_CONFIRMED": {
+        WILDCARD: {WILDCARD: CopyEntry(title="Aceito")},
+    },
+    "TRACKING_STEP_PAYMENT_CONFIRMED": {
+        WILDCARD: {WILDCARD: CopyEntry(title="Pago")},
+    },
     "TRACKING_STEP_PREPARING": {
-        WILDCARD: {WILDCARD: CopyEntry(title="Preparando")},
+        WILDCARD: {WILDCARD: CopyEntry(title="Em preparo")},
     },
     "TRACKING_STEP_READY_PICKUP": {
-        WILDCARD: {WILDCARD: CopyEntry(title="Pronto para retirada")},
+        WILDCARD: {WILDCARD: CopyEntry(title="Pronto")},
     },
     "TRACKING_STEP_READY_DELIVERY": {
         WILDCARD: {WILDCARD: CopyEntry(title="Pronto")},
     },
     "TRACKING_STEP_READY_GENERIC": {
-        WILDCARD: {WILDCARD: CopyEntry(title="Pedido pronto")},
+        WILDCARD: {WILDCARD: CopyEntry(title="Pronto")},
     },
     "TRACKING_DELIVERY_WAITING_COURIER": {
         WILDCARD: {

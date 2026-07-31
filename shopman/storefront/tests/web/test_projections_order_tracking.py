@@ -256,7 +256,7 @@ class TestOrderProgressSteps:
 
         assert all(isinstance(step, OrderProgressStepProjection) for step in proj.progress_steps)
         assert [step.label for step in proj.progress_steps] == [
-            "Pedido recebido",
+            "Recebido",
         ]
         assert [step.state for step in proj.progress_steps] == [
             "current",
@@ -270,8 +270,8 @@ class TestOrderProgressSteps:
 
         states = {step.key: step.state for step in proj.progress_steps}
         assert [step.label for step in proj.progress_steps] == [
-            "Pedido recebido",
-            "Pedido aceito",
+            "Recebido",
+            "Aceito",
         ]
         assert states["received"] == "completed"
         assert states["availability"] == "current"

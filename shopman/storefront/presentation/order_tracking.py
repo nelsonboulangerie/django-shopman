@@ -91,11 +91,16 @@ PAYMENT_STATUS_LABELS: dict[str, str] = {
 # Progress step key → (copy key, fallback). Shared by the timeline AND the
 # status-panel title, so each is a short status name — the panel message carries
 # the detail. Warm "nós" voice; no trailing periods (these are headings).
+# Marcos da jornada do PEDIDO — terceira pessoa, particípio, sem repetir
+# "Pedido" a cada linha (a lista inteira já é sobre ele). O painel de status usa
+# títulos próprios (TRACKING_PROMISE_*_TITLE): manchete e marco são trabalhos
+# diferentes, e compartilhar a mesma chave era o que impedia as duas superfícies
+# de ficarem coerentes cada uma no seu registro.
 STEP_LABEL_COPY: dict[str, tuple[str, str]] = {
-    "received": ("TRACKING_STEP_RECEIVED", "Pedido recebido"),
-    "availability": ("TRACKING_STEP_AVAILABILITY_CONFIRMED", "Pedido aceito"),
-    "payment": ("TRACKING_STEP_PAYMENT_CONFIRMED", "Pagamento confirmado"),
-    "preparing": ("TRACKING_STEP_PREPARING", "Preparando"),
+    "received": ("TRACKING_STEP_RECEIVED", "Recebido"),
+    "availability": ("TRACKING_STEP_AVAILABILITY_CONFIRMED", "Aceito"),
+    "payment": ("TRACKING_STEP_PAYMENT_CONFIRMED", "Pago"),
+    "preparing": ("TRACKING_STEP_PREPARING", "Em preparo"),
     "ready_delivery": ("TRACKING_STEP_READY_DELIVERY", "Pronto"),
     "dispatched": ("TRACKING_STEP_DISPATCHED", "Saiu para entrega"),
     "delivered": ("TRACKING_STEP_DELIVERED", "Entregue"),
@@ -637,7 +642,7 @@ def _promise_copy(
                 "TRACKING_PROMISE_CLOSED_HOURS_MESSAGE",
                 "Estamos fechados agora. Conferimos seu pedido assim que abrirmos.",
             )
-        return copy.title("TRACKING_STEP_RECEIVED", "Pedido recebido"), message
+        return copy.title("TRACKING_PROMISE_RECEIVED_TITLE", "Pedido recebido"), message
 
     if state == "card_authorized":
         message = (
@@ -654,7 +659,7 @@ def _promise_copy(
         # "Pagamento confirmado." empilhava uma terceira linha dizendo o que a
         # frase já podia dizer — e o histórico registra o passo de qualquer jeito.
         # Chaves literais: o scanner do usage_map lê a chamada, não a variável.
-        titulo = copy.title("TRACKING_STEP_RECEIVED", "Pedido recebido")
+        titulo = copy.title("TRACKING_PROMISE_RECEIVED_TITLE", "Pedido recebido")
         if payment_confirmed:
             return titulo, copy.message(
                 "TRACKING_PROMISE_AVAILABILITY_MESSAGE_PAID",
@@ -676,7 +681,7 @@ def _promise_copy(
                          "Pedido aceito",
                          "Já vamos começar o preparo.")
         return (
-            copy.title("TRACKING_STEP_RECEIVED", "Pedido recebido"),
+            copy.title("TRACKING_PROMISE_RECEIVED_TITLE", "Pedido recebido"),
             copy.message("TRACKING_PROMISE_AVAILABILITY_MESSAGE",
                          "Estamos conferindo a disponibilidade. Avisamos em seguida."),
         )
@@ -689,7 +694,7 @@ def _promise_copy(
             else copy.message("TRACKING_PROMISE_PAYMENT_CONFIRMED_MESSAGE_CONFIRMED",
                               "Já vamos começar o preparo.")
         )
-        return copy.title("TRACKING_STEP_PAYMENT_CONFIRMED", "Pagamento confirmado"), message
+        return copy.title("TRACKING_PROMISE_PAYMENT_TITLE", "Pagamento confirmado"), message
 
     if state == "preparing":
         eta_display = _eta_display(data.eta_at)
@@ -720,7 +725,7 @@ def _promise_copy(
 
     if state == "ready_pickup":
         return (
-            copy.title("TRACKING_STEP_READY_PICKUP", "Pronto para retirada"),
+            copy.title("TRACKING_PROMISE_READY_PICKUP_TITLE", "Pronto para retirada"),
             copy.message("TRACKING_PROMISE_READY_PICKUP_MESSAGE",
                          "Está esperando por você no balcão."),
         )
@@ -735,7 +740,7 @@ def _promise_copy(
             else copy.message("TRACKING_PROMISE_DISPATCHED_MESSAGE",
                               "Está a caminho. Confirme aqui quando receber.")
         )
-        return copy.title("TRACKING_STEP_DISPATCHED", "Saiu para entrega"), message
+        return copy.title("TRACKING_PROMISE_DISPATCHED_TITLE", "Saiu para entrega"), message
 
     terminal = _TERMINAL_PROMISE_COPY.get(state)
     if terminal:
@@ -831,8 +836,8 @@ def _present_timeline(data: TrackingData | TrackingStatusData) -> tuple[Timeline
 def _step_label(key: str, *, is_pickup: bool, copy: CopyCatalog) -> str:
     if key == "ready":
         if is_pickup:
-            return copy.title("TRACKING_STEP_READY_PICKUP", "Pronto para retirada")
-        return copy.title("TRACKING_STEP_READY_GENERIC", "Pedido pronto")
+            return copy.title("TRACKING_STEP_READY_PICKUP", "Pronto")
+        return copy.title("TRACKING_STEP_READY_GENERIC", "Pronto")
     spec = STEP_LABEL_COPY.get(key)
     if spec:
         return copy.title(spec[0], spec[1])
