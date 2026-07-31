@@ -819,13 +819,13 @@ describe('surface UX guardrails', () => {
     expect(css).toContain('--destructive-foreground: oklch(0.985 0 0)')
     expect(tracking).toContain('variant="default"')
     expect(tracking).toContain(':class="statusPanelClass"')
-    // Sinal "ao vivo" é explícito: ponto que pulsa + a copy do registro
-    // (TRACKING_LIVE_BADGE), ao lado do título. O pulso de opacidade no ícone de
-    // 16px que existia antes era imperceptível — e a copy do badge viajava no
-    // payload sem ninguém renderizar. `motion-safe` respeita movimento reduzido.
-    expect(tracking).toContain(':icon-class="statusPanelIconClass"')
-    expect(tracking).toContain('tracking.copy.live_badge')
-    expect(tracking).toContain('motion-safe:animate-pulse')
+    // Sinal "ao vivo" vive no ícone, sem texto extra: halo que expande e some
+    // (`animate-ping`) atrás dele. `animate-pulse` sozinho é opacidade 1→0.5 em
+    // 2s — num ícone de 16px, imperceptível. Só enquanto o dado está fresco;
+    // envelhecendo, quem fala é o carimbo. `motion-safe` respeita reduced-motion.
+    expect(tracking).toContain('<template #icon>')
+    expect(tracking).toContain('motion-safe:animate-ping')
+    expect(tracking).toContain('tracking.is_active && !freshness.isStale')
     // Tracking: tom→classe/ícone do painel agora vive em presentation/orderTracking.ts;
     // o acento na borda esquerda (não banner cheio) permanece a regra.
     const trackingPresentation = read('app/presentation/orderTracking.ts')

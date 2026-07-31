@@ -354,20 +354,24 @@ useSeoMeta({
             :icon="statusPanelIcon"
             :icon-class="statusPanelIconClass"
           >
-            <UiAlertTitle class="flex w-full flex-wrap items-center gap-x-2 gap-y-1 text-foreground">
-              <span>{{ tracking.promise.title || tracking.status_label }}</span>
-              <!-- Sinal de vida explícito. Antes era `animate-pulse` no ícone de
-                   16px: uma oscilação de opacidade em 2s que ninguém percebe. A
-                   copy "Ao vivo" já existia no registro e chegava aqui sem nunca
-                   ser mostrada. Some quando o dado envelhece — aí quem fala é o
-                   carimbo de frescor, com o botão de recuperar. -->
-              <span
-                v-if="tracking.is_active && !freshness.isStale"
-                class="inline-flex items-center gap-1 shop-meta"
-              >
-                <span class="size-2 rounded-full bg-current motion-safe:animate-pulse" aria-hidden="true" />
-                {{ tracking.copy.live_badge }}
+            <!-- Sinal de vida no próprio ícone, sem texto extra ao lado do
+                 título. `animate-pulse` sozinho é opacidade 1→0.5 em 2s: num
+                 ícone de 16px ninguém vê. O que se percebe é o halo que expande
+                 e some (`animate-ping`) atrás dele. Só enquanto o dado está
+                 fresco — envelhecendo, quem fala é o carimbo com o botão de
+                 recuperar. `motion-safe` respeita movimento reduzido. -->
+            <template #icon>
+              <span class="relative mt-0.5 flex size-4 shrink-0 items-center justify-center">
+                <span
+                  v-if="tracking.is_active && !freshness.isStale"
+                  class="absolute inline-flex size-full rounded-full bg-current opacity-40 motion-safe:animate-ping"
+                  aria-hidden="true"
+                />
+                <Icon :name="statusPanelIcon" :class="['relative size-4 shrink-0', statusPanelIconClass]" />
               </span>
+            </template>
+            <UiAlertTitle class="text-foreground">
+              {{ tracking.promise.title || tracking.status_label }}
             </UiAlertTitle>
             <UiAlertDescription class="w-full text-muted-foreground">
               <div class="w-full shop-stack-block">
