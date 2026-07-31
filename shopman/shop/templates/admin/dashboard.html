@@ -96,7 +96,52 @@
 
     </div>
 
-    {# ── ROW 3: D-1 Stock ───────────────────────────────────────── #}
+    {# ── ROW 3: Avaliações dos clientes ─────────────────────────── #}
+    {% if rating_count %}
+    <div class="grid grid-cols-1 lg:grid-cols-3 gap-4 lg:gap-8">
+
+        {# Média móvel + contagens #}
+        {% component "unfold/components/card.html" with title="Avaliação dos clientes" icon="star" %}
+            <div class="flex flex-col gap-2">
+                <div class="flex items-center gap-2">
+                    <span class="text-3xl font-bold text-font-important-light dark:text-font-important-dark">
+                        {{ rating_average }}
+                    </span>
+                    <span class="text-sm text-base-500">
+                        média · {{ rating_count }} avaliaç{{ rating_count|pluralize:"ão,ões" }}
+                    </span>
+                </div>
+                {% if rating_low_count %}
+                    {% component "unfold/components/text.html" with class="text-sm font-medium text-red-600 dark:text-red-400" %}
+                        {{ rating_low_count }} nota{{ rating_low_count|pluralize }} baixa{{ rating_low_count|pluralize:",s" }} (≤2) para olhar
+                    {% endcomponent %}
+                {% else %}
+                    {% component "unfold/components/text.html" with class="text-sm text-green-700 dark:text-green-400" %}
+                        Nenhuma nota baixa recente
+                    {% endcomponent %}
+                {% endif %}
+            </div>
+        {% endcomponent %}
+
+        {# Últimos comentários #}
+        <div class="lg:col-span-2">
+        {% component "unfold/components/card.html" with title="Comentários recentes" %}
+            {% if table_ratings.rows %}
+                {% component "unfold/components/table.html" with table=table_ratings card_included=1 striped=1 height=220 %}{% endcomponent %}
+            {% else %}
+                <div class="flex flex-col items-center gap-2 py-8">
+                    {% component "unfold/components/text.html" with class="text-base-500 text-center" %}
+                        Sem comentários ainda
+                    {% endcomponent %}
+                </div>
+            {% endif %}
+        {% endcomponent %}
+        </div>
+
+    </div>
+    {% endif %}
+
+    {# ── ROW 4: D-1 Stock ───────────────────────────────────────── #}
     {% if table_d1 %}
     <div class="grid grid-cols-1 lg:grid-cols-3 gap-4 lg:gap-8">
         {% component "unfold/components/card.html" with title="Estoque D-1" icon="schedule" %}
