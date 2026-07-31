@@ -602,7 +602,7 @@ OMOTENASHI_DEFAULTS: dict[str, dict[str, dict[str, CopyEntry]]] = {
     # Pago e conferindo é UM momento: a frase absorve o fato do pagamento em vez
     # de empilhar um "Pagamento confirmado." solto (o histórico já registra o passo).
     "TRACKING_PROMISE_AVAILABILITY_MESSAGE_PAID": {
-        WILDCARD: {WILDCARD: CopyEntry(message="Pagamento recebido. Estamos conferindo a disponibilidade e avisamos em seguida.")},
+        WILDCARD: {WILDCARD: CopyEntry(message="Pagamento confirmado. Estamos conferindo a disponibilidade.")},
     },
     "TRACKING_PROMISE_AVAILABILITY_MESSAGE": {
         WILDCARD: {WILDCARD: CopyEntry(message="Estamos conferindo a disponibilidade. Avisamos em seguida.")},

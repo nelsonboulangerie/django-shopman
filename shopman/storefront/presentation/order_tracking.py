@@ -658,7 +658,7 @@ def _promise_copy(
         if payment_confirmed:
             return titulo, copy.message(
                 "TRACKING_PROMISE_AVAILABILITY_MESSAGE_PAID",
-                "Pagamento recebido. Estamos conferindo a disponibilidade e avisamos em seguida.",
+                "Pagamento confirmado. Estamos conferindo a disponibilidade.",
             )
         return titulo, copy.message(
             "TRACKING_PROMISE_AVAILABILITY_MESSAGE",

@@ -776,7 +776,7 @@ class TestStatusColours:
         # Pago e conferindo é UMA frase: antes o painel empilhava a mensagem, um
         # "Pagamento confirmado." solto e o rótulo do contador repetindo tudo.
         assert proj.promise.message == (
-            "Pagamento recebido. Estamos conferindo a disponibilidade e avisamos em seguida."
+            "Pagamento confirmado. Estamos conferindo a disponibilidade."
         )
 
     def test_closed_store_new_order_defers_availability_without_countdown(
