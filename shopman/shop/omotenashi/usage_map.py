@@ -509,6 +509,12 @@ USAGE: dict[str, tuple[tuple[str, str, str], ...]] = {
     "PAYMENT_PROMISE_EXPIRED_TITLE": (
         ("shopman/storefront/presentation/payment.py", "Loja", "Pagamento"),
     ),
+    "PAYMENT_PROMISE_NO_ONLINE_MESSAGE": (
+        ("shopman/storefront/presentation/payment.py", "Loja", "Pagamento"),
+    ),
+    "PAYMENT_PROMISE_NO_ONLINE_TITLE": (
+        ("shopman/storefront/presentation/payment.py", "Loja", "Pagamento"),
+    ),
     "PAYMENT_PROMISE_PAID_MESSAGE": (
         ("shopman/storefront/presentation/payment.py", "Loja", "Pagamento"),
     ),

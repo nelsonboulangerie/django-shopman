@@ -780,6 +780,12 @@ OMOTENASHI_DEFAULTS: dict[str, dict[str, dict[str, CopyEntry]]] = {
     "PAYMENT_PROMISE_EXPIRED_FOOTNOTE": {
         WILDCARD: {WILDCARD: CopyEntry(message="Você pode pedir de novo quando quiser.")},
     },
+    "PAYMENT_PROMISE_NO_ONLINE_TITLE": {
+        WILDCARD: {WILDCARD: CopyEntry(title="Nada a pagar por aqui")},
+    },
+    "PAYMENT_PROMISE_NO_ONLINE_MESSAGE": {
+        WILDCARD: {WILDCARD: CopyEntry(message="Este pedido não é pago pelo site. Levando você para o acompanhamento.")},
+    },
     "PAYMENT_PROMISE_PIX_WAITING_TITLE": {
         WILDCARD: {WILDCARD: CopyEntry(title="Aguardando a loja")},
     },

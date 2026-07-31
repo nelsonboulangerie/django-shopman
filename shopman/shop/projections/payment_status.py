@@ -155,7 +155,9 @@ def build_payment_status(order) -> PaymentStatusData:
     redirect_url = storefront_links.order_tracking_url(order.ref)
     promise = _build_payment_promise(
         order=order,
-        method=payment.get("method") or "pix",
+        # Método ausente NÃO é Pix. O default silencioso mandava um pedido sem
+        # método para o fluxo do Pix, driblando o guard logo abaixo.
+        method=str(payment.get("method") or "").lower(),
         payment_state=payment_state,
         pix_expires_at=payment.get("expires_at") or None,
         checkout_url=payment.get("checkout_url") or None,
@@ -488,6 +490,22 @@ def _build_payment_promise(
             requires_active_notification=False,
             stale_after_seconds=30,
         )
+    # Daqui para baixo é Pix. O ramo era o default implícito: qualquer método que
+    # não fosse cartão caía nele, então um pedido em dinheiro (ou com método
+    # ausente) renderizava "Preparando seu Pix". Hoje a view redireciona antes, o
+    # que tornava a falha invisível — e faria um método novo nascer quebrado.
+    if method != "pix":
+        return PaymentPromiseData(
+            state="no_online_payment",
+            tone="info",
+            actions=(),
+            deadline_at=None,
+            deadline_kind=None,
+            deadline_action="none",
+            requires_active_notification=False,
+            stale_after_seconds=None,
+        )
+
     # Haver ou não CÓDIGO manda em tudo, tenha a loja confirmado ou não. Sem
     # código não existe o que copiar nem prazo a correr — e prometer "use o
     # código abaixo" quando a tela não tem código é a falha que fazia o banner

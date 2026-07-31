@@ -157,7 +157,19 @@ class OrderTrackingView(APIView):
         # Momento yoin: comemorar não precisa ocupar layout. `just_placed` é
         # consumido UMA vez, no primeiro acesso depois do checkout, e a tela
         # celebra com confete — sem cartaz fixo competindo com o acompanhamento.
-        data["just_placed"] = order_service.consume_just_placed(request, ref)
+        # O yoin marca o pedido GARANTIDO, não a primeira visita. Enquanto falta
+        # pagar, a flag NÃO é consumida: comemorar ali seria festejar um pedido
+        # que ainda pode expirar — e, como o consumo é de uso único, a
+        # comemoração se perderia justamente no momento em que ela faz sentido
+        # (a volta do cliente depois de pagar).
+        # Também não se comemora pedido morto: se ele foi cancelado antes da
+        # primeira visita (prazo do Pix vencido, recusa da loja), o cliente
+        # chegaria numa tela de cancelamento com confete caindo.
+        pedido_morto = order.status in {"cancelled", "returned"}
+        if order_service.requires_payment_gate(order) or pedido_morto:
+            data["just_placed"] = False
+        else:
+            data["just_placed"] = order_service.consume_just_placed(request, ref)
         # Compartilhar não depende do momento: é mais útil com o pedido pronto
         # do que trinta segundos depois do checkout.
         data["share_cta"] = _copy_title("CONFIRMATION_SHARE_CTA", "Compartilhar")

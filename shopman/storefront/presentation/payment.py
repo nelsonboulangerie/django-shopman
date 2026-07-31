@@ -76,6 +76,13 @@ _PROMISE_COPY: dict[str, tuple[str, str, str, str]] = {
         "PAYMENT_PROMISE_CARD_PENDING_TITLE", "Preparando pagamento",
         "PAYMENT_PROMISE_CARD_PENDING_MESSAGE", "O botão aparece em instantes.",
     ),
+    # Método sem pagamento online (dinheiro, iFood, externo): esta tela não tem o
+    # que fazer. Sem ação pendente, o status manda o cliente ao acompanhamento.
+    "no_online_payment": (
+        "PAYMENT_PROMISE_NO_ONLINE_TITLE", "Nada a pagar por aqui",
+        "PAYMENT_PROMISE_NO_ONLINE_MESSAGE",
+        "Este pedido não é pago pelo site. Levando você para o acompanhamento.",
+    ),
     "pix_waiting_confirmation": (
         "PAYMENT_PROMISE_PIX_WAITING_TITLE", "Aguardando a loja",
         "PAYMENT_PROMISE_PIX_WAITING_MESSAGE",

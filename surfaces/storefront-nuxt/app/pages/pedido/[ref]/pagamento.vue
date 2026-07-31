@@ -8,6 +8,8 @@ const route = useRoute()
 const apiPath = useShopmanApiPath()
 const csrfHeaders = useShopmanCsrfHeaders()
 const orderRef = computed(() => String(route.params.ref || ''))
+// Prefixo esmaecido + cauda em destaque, igual ao acompanhamento.
+const refParts = computed(() => orderRefParts(orderRef.value))
 const actionPending = ref<Record<string, boolean>>({})
 // Só depois de o cliente tocar no botão faz sentido dizer "não abriu?".
 const tentouAbrirCheckout = ref(false)
@@ -239,7 +241,13 @@ useSeoMeta({
     <div class="shop-container max-w-4xl shop-stack-block">
       <div>
         <p class="shop-kicker">Pagamento</p>
-        <h1 class="mt-1 shop-title">{{ copy.order_ref_label }} {{ orderRef }}</h1>
+        <!-- Mesma diagramação do acompanhamento: prefixo do ref esmaecido e
+             cauda em destaque. Duas telas do mesmo pedido não podem
+             apresentar o mesmo dado de jeitos diferentes. -->
+        <h1 class="mt-1 shop-title">
+          {{ copy.order_ref_label }}<br>
+          <span class="text-xl font-normal text-muted-foreground">{{ refParts.prefix }}</span>{{ refParts.tail }}
+        </h1>
       </div>
 
       <!-- Skeleton que espelha o layout real (painel + cartão de pagamento). -->
