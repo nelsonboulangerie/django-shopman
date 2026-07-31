@@ -481,7 +481,7 @@ OMOTENASHI_DEFAULTS: dict[str, dict[str, dict[str, CopyEntry]]] = {
         WILDCARD: {WILDCARD: CopyEntry(title="Pagamento expirado")},
     },
     "TRACKING_STATUS_WAITING_STORE_CONFIRMATION": {
-        WILDCARD: {WILDCARD: CopyEntry(title="Aguardando confirmação")},
+        WILDCARD: {WILDCARD: CopyEntry(title="Aguardando a loja")},
     },
     "TRACKING_STATUS_CARD_AUTHORIZED": {
         WILDCARD: {WILDCARD: CopyEntry(title="Pagamento autorizado")},
@@ -511,7 +511,7 @@ OMOTENASHI_DEFAULTS: dict[str, dict[str, dict[str, CopyEntry]]] = {
         WILDCARD: {WILDCARD: CopyEntry(title="Pedido recebido")},
     },
     "TRACKING_STEP_AVAILABILITY_CONFIRMED": {
-        WILDCARD: {WILDCARD: CopyEntry(title="Disponibilidade confirmada")},
+        WILDCARD: {WILDCARD: CopyEntry(title="Pedido aceito")},
     },
     "TRACKING_STEP_PAYMENT_CONFIRMED": {
         WILDCARD: {WILDCARD: CopyEntry(title="Pagamento confirmado")},
@@ -635,7 +635,7 @@ OMOTENASHI_DEFAULTS: dict[str, dict[str, dict[str, CopyEntry]]] = {
     "TRACKING_PROMISE_CONFIRMED_WAITING": {
         WILDCARD: {
             WILDCARD: CopyEntry(
-                title="Pedido confirmado",
+                title="Pedido aceito",
                 message="Já vamos começar o preparo.",
             ),
         },
@@ -742,7 +742,7 @@ OMOTENASHI_DEFAULTS: dict[str, dict[str, dict[str, CopyEntry]]] = {
         WILDCARD: {WILDCARD: CopyEntry(title="Pague com Pix")},
     },
     "PAYMENT_PROMISE_PIX_MESSAGE": {
-        WILDCARD: {WILDCARD: CopyEntry(message="Disponibilidade confirmada. Use o código abaixo e começamos a preparar.")},
+        WILDCARD: {WILDCARD: CopyEntry(message="Pedido aceito. Use o código abaixo e começamos a preparar.")},
     },
     "PAYMENT_PROMISE_PIX_PRECONFIRMATION_TITLE": {
         WILDCARD: {WILDCARD: CopyEntry(title="Pague com Pix")},
@@ -766,7 +766,7 @@ OMOTENASHI_DEFAULTS: dict[str, dict[str, dict[str, CopyEntry]]] = {
         WILDCARD: {WILDCARD: CopyEntry(title="Preparando seu Pix")},
     },
     "PAYMENT_PROMISE_PIX_WAITING_CODE_MESSAGE": {
-        WILDCARD: {WILDCARD: CopyEntry(message="Disponibilidade confirmada. O código aparece aqui em instantes.")},
+        WILDCARD: {WILDCARD: CopyEntry(message="Pedido aceito. O código aparece aqui em instantes.")},
     },
     "PAYMENT_PROMISE_PIX_WAITING_FOOTNOTE": {
         WILDCARD: {WILDCARD: CopyEntry(message="Se não conseguirmos confirmar, cancelamos e avisamos você.")},
@@ -794,7 +794,7 @@ OMOTENASHI_DEFAULTS: dict[str, dict[str, dict[str, CopyEntry]]] = {
         WILDCARD: {WILDCARD: CopyEntry(title="Pagamento com cartão")},
     },
     "PAYMENT_PROMISE_CARD_MESSAGE": {
-        WILDCARD: {WILDCARD: CopyEntry(message="Disponibilidade confirmada. Finalize no ambiente seguro e começamos a preparar.")},
+        WILDCARD: {WILDCARD: CopyEntry(message="Pedido aceito. Finalize no ambiente seguro e começamos a preparar.")},
     },
     "PAYMENT_PROMISE_CARD_PRECONFIRMATION_TITLE": {
         WILDCARD: {WILDCARD: CopyEntry(title="Autorizar cartão")},

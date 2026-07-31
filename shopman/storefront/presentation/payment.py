@@ -70,7 +70,7 @@ _PROMISE_COPY: dict[str, tuple[str, str, str, str]] = {
     "card_checkout_requested": (
         "PAYMENT_PROMISE_CARD_TITLE", "Pagamento com cartão",
         "PAYMENT_PROMISE_CARD_MESSAGE",
-        "Disponibilidade confirmada. Finalize no ambiente seguro e começamos a preparar.",
+        "Pedido aceito. Finalize no ambiente seguro e começamos a preparar.",
     ),
     "card_checkout_pending": (
         "PAYMENT_PROMISE_CARD_PENDING_TITLE", "Preparando pagamento",
@@ -84,7 +84,7 @@ _PROMISE_COPY: dict[str, tuple[str, str, str, str]] = {
     "pix_waiting_code": (
         "PAYMENT_PROMISE_PIX_WAITING_CODE_TITLE", "Preparando seu Pix",
         "PAYMENT_PROMISE_PIX_WAITING_CODE_MESSAGE",
-        "Disponibilidade confirmada. O código aparece aqui em instantes.",
+        "Pedido aceito. O código aparece aqui em instantes.",
     ),
     "pix_payment_before_confirmation": (
         "PAYMENT_PROMISE_PIX_PRECONFIRMATION_TITLE", "Pague com Pix",
@@ -94,7 +94,7 @@ _PROMISE_COPY: dict[str, tuple[str, str, str, str]] = {
     "pix_payment_requested": (
         "PAYMENT_PROMISE_PIX_TITLE", "Pague com Pix",
         "PAYMENT_PROMISE_PIX_MESSAGE",
-        "Disponibilidade confirmada. Use o código abaixo e começamos a preparar.",
+        "Pedido aceito. Use o código abaixo e começamos a preparar.",
     ),
 }
 

@@ -72,7 +72,7 @@ FULFILLMENT_STATUS_LABELS: dict[str, str] = {
 # canonical order status labels.
 STATUS_LABEL_COPY: dict[str, tuple[str, str]] = {
     "payment_expired": ("TRACKING_STATUS_PAYMENT_EXPIRED", "Pagamento expirado"),
-    "waiting_store_confirmation": ("TRACKING_STATUS_WAITING_STORE_CONFIRMATION", "Aguardando confirmação"),
+    "waiting_store_confirmation": ("TRACKING_STATUS_WAITING_STORE_CONFIRMATION", "Aguardando a loja"),
     "payment_pending": ("TRACKING_STATUS_PAYMENT_PENDING", "Aguardando pagamento"),
     "card_authorized": ("TRACKING_STATUS_CARD_AUTHORIZED", "Pagamento autorizado"),
     "ready_delivery": ("TRACKING_STATUS_READY_DELIVERY", "Aguardando entregador"),
@@ -93,7 +93,7 @@ PAYMENT_STATUS_LABELS: dict[str, str] = {
 # the detail. Warm "nós" voice; no trailing periods (these are headings).
 STEP_LABEL_COPY: dict[str, tuple[str, str]] = {
     "received": ("TRACKING_STEP_RECEIVED", "Pedido recebido"),
-    "availability": ("TRACKING_STEP_AVAILABILITY_CONFIRMED", "Disponibilidade confirmada"),
+    "availability": ("TRACKING_STEP_AVAILABILITY_CONFIRMED", "Pedido aceito"),
     "payment": ("TRACKING_STEP_PAYMENT_CONFIRMED", "Pagamento confirmado"),
     "preparing": ("TRACKING_STEP_PREPARING", "Preparando"),
     "ready_delivery": ("TRACKING_STEP_READY_DELIVERY", "Pronto"),
@@ -673,7 +673,7 @@ def _promise_copy(
         # conferência de fato é o que falta.
         if status == "confirmed":
             return _pair(copy, "TRACKING_PROMISE_CONFIRMED_WAITING",
-                         "Pedido confirmado",
+                         "Pedido aceito",
                          "Já vamos começar o preparo.")
         return (
             copy.title("TRACKING_STEP_RECEIVED", "Pedido recebido"),

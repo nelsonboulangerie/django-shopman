@@ -138,7 +138,7 @@ const fiscalHref = (link: { href?: string; url?: string }) => link.href || link.
           <Icon name="lucide:arrow-right" class="size-4" /> Avançar
         </button>
         <button type="button" :disabled="busy" class="inline-flex items-center gap-1.5 rounded-md border px-3.5 py-2 text-sm font-semibold transition hover:bg-accent disabled:opacity-50" @click="confirm">
-          <Icon name="lucide:check" class="size-4" /> Confirmar
+          <Icon name="lucide:check" class="size-4" /> Aceitar
         </button>
         <button v-if="order.can_settle_delivery_cash" type="button" :disabled="busy" class="inline-flex items-center gap-1.5 rounded-md border px-3.5 py-2 text-sm font-semibold transition hover:bg-accent disabled:opacity-50" @click="openDialog('settle')">
           <Icon name="lucide:banknote" class="size-4" /> Acerto dinheiro

@@ -161,7 +161,7 @@ class TestOrderTrackingShape:
     def test_status_matches(self, order):
         proj = build_order_tracking(order)
         assert proj.status == "new"
-        assert proj.status_label == "Aguardando confirmação"
+        assert proj.status_label == "Aguardando a loja"
 
     def test_total_display_formatted(self, order):
         proj = build_order_tracking(order)
@@ -271,7 +271,7 @@ class TestOrderProgressSteps:
         states = {step.key: step.state for step in proj.progress_steps}
         assert [step.label for step in proj.progress_steps] == [
             "Pedido recebido",
-            "Disponibilidade confirmada",
+            "Pedido aceito",
         ]
         assert states["received"] == "completed"
         assert states["availability"] == "current"
@@ -763,7 +763,7 @@ class TestStatusColours:
 
         proj = build_order_tracking(order_with_payment)
 
-        assert proj.status_label == "Aguardando confirmação"
+        assert proj.status_label == "Aguardando a loja"
         assert proj.payment_pending is False
         assert proj.payment_confirmed is True
         # O fato do pagamento vive na promessa, não numa linha à parte.

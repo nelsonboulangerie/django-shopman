@@ -132,7 +132,7 @@ class TestPaymentProjectionPix:
         proj = build_payment(order_with_payment)
 
         assert proj.promise.state == "pix_payment_requested"
-        assert "disponibilidade confirmada" in proj.promise.message.lower()
+        assert "pedido aceito" in proj.promise.message.lower()
 
 
 # ──────────────────────────────────────────────────────────────────────
@@ -190,7 +190,7 @@ class TestPaymentProjectionCard:
         proj = build_payment(order)
 
         assert proj.promise.state == "card_checkout_requested"
-        assert "disponibilidade confirmada" in proj.promise.message.lower()
+        assert "pedido aceito" in proj.promise.message.lower()
 
     def test_authorized_card_has_no_surface_payment_action(self, channel):
         from shopman.orderman.models import Order

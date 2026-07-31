@@ -342,7 +342,7 @@ function printQueue() {
           class="inline-flex items-center gap-1.5 rounded-md border border-transparent bg-primary px-2.5 py-1.5 text-xs font-semibold text-primary-foreground transition hover:bg-primary/90"
           @click="bulkConfirm"
         >
-          <Icon name="lucide:check" class="size-3.5" /> Confirmar {{ confirmableSel.length }}
+          <Icon name="lucide:check" class="size-3.5" /> Aceitar {{ confirmableSel.length }}
         </button>
         <button
           v-if="advanceableSel.length"
