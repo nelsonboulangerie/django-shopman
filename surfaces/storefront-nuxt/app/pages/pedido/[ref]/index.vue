@@ -402,29 +402,6 @@ useSeoMeta({
                   O prazo terminou. Estamos atualizando seu pedido…
                 </p>
 
-                <div
-                  v-if="tracking.is_active"
-                  class="flex flex-wrap items-center gap-x-2 gap-y-1 shop-muted"
-                  :class="freshness.isStale ? 'text-destructive' : ''"
-                >
-                  <span class="flex items-center gap-2" aria-live="polite">
-                    <Icon
-                      v-if="freshness.isStale"
-                      name="lucide:rotate-cw"
-                      class="size-3.5 shrink-0 animate-spin"
-                    />
-                    {{ freshness.text }}
-                  </span>
-                  <!-- Recuperação de tela velha: botão de tamanho real (alvo de toque
-                       ≥44px), não um link minúsculo. Só quando há copy de CTA. -->
-                  <UiButton
-                    v-if="freshness.isStale && tracking.copy.stale_cta"
-                    variant="outline"
-                    icon="lucide:rotate-cw"
-                    @click="() => refresh()"
-                  >{{ tracking.copy.stale_cta }}</UiButton>
-                </div>
-
                 <div v-if="hasStatusPanelActions" class="w-full pt-1">
                   <span class="sr-only">Ações disponíveis</span>
                   <div class="flex flex-col gap-2 sm:flex-row sm:flex-wrap">
@@ -473,6 +450,32 @@ useSeoMeta({
                     </UiButton>
                   </div>
                 </div>
+                <!-- Carimbo de frescor é metadado do DADO, não um terceiro recado
+                     da promessa: com o mesmo peso da mensagem, lia como se o
+                     painel tivesse três avisos. Vira rodapé do painel, separado. -->
+                <div
+                  v-if="tracking.is_active"
+                  class="flex flex-wrap items-center gap-x-2 gap-y-1 border-t pt-2 shop-meta"
+                  :class="freshness.isStale ? 'text-destructive' : ''"
+                >
+                  <span class="flex items-center gap-2" aria-live="polite">
+                    <Icon
+                      v-if="freshness.isStale"
+                      name="lucide:rotate-cw"
+                      class="size-3.5 shrink-0 animate-spin"
+                    />
+                    {{ freshness.text }}
+                  </span>
+                  <!-- Recuperação de tela velha: botão de tamanho real (alvo de toque
+                       ≥44px), não um link minúsculo. Só quando há copy de CTA. -->
+                  <UiButton
+                    v-if="freshness.isStale && tracking.copy.stale_cta"
+                    variant="outline"
+                    icon="lucide:rotate-cw"
+                    @click="() => refresh()"
+                  >{{ tracking.copy.stale_cta }}</UiButton>
+                </div>
+
               </div>
             </UiAlertDescription>
           </UiAlert>
