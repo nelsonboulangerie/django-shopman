@@ -227,6 +227,17 @@ class OrderQueueSurfaceTests(TestCase):
         # quem não paga a tempo é cancelado e sai do board.
         self.assertEqual(card.payment_tone, "warning")
 
+    def test_external_marketplace_order_reads_as_paid(self) -> None:
+        """iFood/marketplace chega pré-pago: o pill é verde, não neutro — pago é
+        pago, independente do canal/meio. (Dinheiro segue neutro: cobrança no balcão.)"""
+        order = _order("A-IFOOD-PAGO", "accepted")
+        order.data["payment"] = {"method": "external"}
+        order.save(update_fields=["data", "updated_at"])
+
+        card = build_order_card(Order.objects.get(pk=order.pk))
+
+        self.assertEqual(card.payment_tone, "success")
+
     def test_card_timer_is_anchored_to_server_time(self) -> None:
         card = build_order_card(_order("A-TIMER", "new"))
 

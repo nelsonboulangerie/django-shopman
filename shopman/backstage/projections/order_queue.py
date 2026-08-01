@@ -685,11 +685,18 @@ def _payment_tone(order: Order, method: str, payment_status: str) -> str:
     (reason ``payment_timeout``) e sai do board (``cancelled`` ∉ ``ACTIVE_STATUSES``),
     então ``danger`` no card seria alarme para um pedido que, se falhar, some sozinho.
     """
-    if method in _OFFLINE_METHODS or not method:
-        # Cobrança fora do site: nada a comemorar nem a cobrar aqui.
-        return "neutral"
+    # Pago é pago, em qualquer canal ou meio: verde primeiro. Uma captura
+    # registrada (pix/cartão) vale para qualquer canal (web, whatsapp, pdv).
     if payment_status in _PAYMENT_COMPLETE:
         return "success"
+    # Marketplace / "pago online": o pedido chega pré-pago (iFood comita só o que
+    # já foi pago), então o dinheiro está garantido — verde, mesmo sem captura nossa.
+    if method == "external":
+        return "success"
+    if method in _OFFLINE_METHODS or not method:
+        # Dinheiro/balcão: cobrança fora do site, cobrada na entrega ou no caixa —
+        # não temos captura para afirmar "pago", nem é aqui que se cobra. Neutro.
+        return "neutral"
     if _is_payment_pending(order, method, payment_status):
         return "warning"
     return "neutral"
