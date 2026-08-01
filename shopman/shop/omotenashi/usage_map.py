@@ -366,15 +366,15 @@ USAGE: dict[str, tuple[tuple[str, str, str], ...]] = {
     "MIN_ORDER_WARNING_PREFIX": (
         ("shopman/storefront/presentation/cart.py", "Loja", "Sacola"),
     ),
+    "ORDER_STATUS_ACCEPTED": (
+        ("shopman/backstage/presentation/status.py", "Operador", "Rótulos de status"),
+        ("shopman/storefront/presentation/status.py", "Loja", "Rótulos de status"),
+    ),
     "ORDER_STATUS_CANCELLED": (
         ("shopman/backstage/presentation/status.py", "Operador", "Rótulos de status"),
         ("shopman/storefront/presentation/status.py", "Loja", "Rótulos de status"),
     ),
     "ORDER_STATUS_COMPLETED": (
-        ("shopman/backstage/presentation/status.py", "Operador", "Rótulos de status"),
-        ("shopman/storefront/presentation/status.py", "Loja", "Rótulos de status"),
-    ),
-    "ORDER_STATUS_ACCEPTED": (
         ("shopman/backstage/presentation/status.py", "Operador", "Rótulos de status"),
         ("shopman/storefront/presentation/status.py", "Loja", "Rótulos de status"),
     ),
@@ -523,6 +523,18 @@ USAGE: dict[str, tuple[tuple[str, str, str], ...]] = {
     ),
     "PAYMENT_PROMISE_PIX_ACTION": (
         ("shopman/shop/projections/payment_status.py", "Loja", "Pagamento"),
+    ),
+    "PAYMENT_PROMISE_PIX_CLOSED_FOOTNOTE": (
+        ("shopman/storefront/presentation/payment.py", "Loja", "Pagamento"),
+    ),
+    "PAYMENT_PROMISE_PIX_CLOSED_MESSAGE": (
+        ("shopman/storefront/presentation/payment.py", "Loja", "Pagamento"),
+    ),
+    "PAYMENT_PROMISE_PIX_CLOSED_MESSAGE_NEXT": (
+        ("shopman/storefront/presentation/payment.py", "Loja", "Pagamento"),
+    ),
+    "PAYMENT_PROMISE_PIX_CLOSED_TITLE": (
+        ("shopman/storefront/presentation/payment.py", "Loja", "Pagamento"),
     ),
     "PAYMENT_PROMISE_PIX_FOOTNOTE": (
         ("shopman/storefront/presentation/payment.py", "Loja", "Pagamento"),

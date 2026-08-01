@@ -811,6 +811,32 @@ OMOTENASHI_DEFAULTS: dict[str, dict[str, dict[str, CopyEntry]]] = {
             ),
         },
     },
+    "PAYMENT_PROMISE_PIX_CLOSED_TITLE": {
+        WILDCARD: {WILDCARD: CopyEntry(title="Pedido recebido")},
+    },
+    "PAYMENT_PROMISE_PIX_CLOSED_MESSAGE": {
+        WILDCARD: {
+            WILDCARD: CopyEntry(
+                message=(
+                    "Estamos fechados agora. Conferimos seu pedido assim que abrirmos, "
+                    "e o código Pix aparece aqui."
+                ),
+            ),
+        },
+    },
+    "PAYMENT_PROMISE_PIX_CLOSED_MESSAGE_NEXT": {
+        WILDCARD: {
+            WILDCARD: CopyEntry(
+                message=(
+                    "Estamos fechados agora. Conferimos seu pedido quando abrirmos, "
+                    "{next}, e o código Pix aparece aqui."
+                ),
+            ),
+        },
+    },
+    "PAYMENT_PROMISE_PIX_CLOSED_FOOTNOTE": {
+        WILDCARD: {WILDCARD: CopyEntry(message="Se não conseguirmos confirmar, cancelamos e avisamos você.")},
+    },
     "PAYMENT_PROMISE_CARD_TITLE": {
         WILDCARD: {WILDCARD: CopyEntry(title="Pagamento com cartão")},
     },

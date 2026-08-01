@@ -827,6 +827,48 @@ class TestStatusColours:
             "Estamos fechados agora. Conferimos seu pedido quando abrirmos, amanhã às 9h."
         )
 
+    def test_closed_store_says_the_same_on_the_payment_screen(
+        self, order, channel, shop_instance,
+    ):
+        """As duas telas contam a MESMA história sobre a loja fechada.
+
+        O acompanhamento sabia do calendário e a tela de pagamento não. Quem
+        caía no gate do Pix lia "Estamos conferindo a disponibilidade" com a
+        padaria fechada, girando o poll de 8 em 8 segundos, enquanto o aceite
+        automático só venceria na abertura. Duas máquinas de estado respondendo
+        à mesma pergunta — hoje as duas perguntam a
+        ``business_calendar.store_review_deferred_state``.
+        """
+        from datetime import datetime
+        from zoneinfo import ZoneInfo
+
+        from shopman.shop.projections.payment_status import build_payment
+        from shopman.storefront.presentation.payment import present_payment
+
+        tz = ZoneInfo("America/Sao_Paulo")
+        shop_instance.timezone = "America/Sao_Paulo"
+        shop_instance.opening_hours = {
+            dia: {"open": "09:00", "close": "18:00"}
+            for dia in ("monday", "tuesday", "wednesday", "thursday", "friday", "saturday")
+        }
+        shop_instance.save(update_fields=["timezone", "opening_hours"])
+        order.data["payment"] = {"method": "pix"}
+        order.save(update_fields=["data", "updated_at"])
+
+        with patch(
+            "shopman.shop.services.business_calendar.timezone.now",
+            return_value=datetime(2026, 5, 3, 12, 0, tzinfo=tz),
+        ):
+            tracking = build_order_tracking(order)
+            pagamento = present_payment(build_payment(order))
+
+        assert tracking.promise.state == "availability_deferred"
+        assert pagamento.promise.state == "pix_waiting_opening"
+        assert "fechados" in pagamento.promise.message
+        assert "amanhã às 9h" in pagamento.promise.message
+        # Nada de bater de 8 em 8 segundos até a loja abrir.
+        assert pagamento.promise.stale_after_seconds is None
+
     def test_payment_timeout_cancelled_order_shows_payment_expired(self, order_with_payment):
         from shopman.orderman.models import Order as _Order
 

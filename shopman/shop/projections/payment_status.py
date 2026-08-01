@@ -29,6 +29,10 @@ from shopman.shop.omotenashi import resolve_copy
 from shopman.shop.projections.types import Action
 from shopman.shop.services import payment_status as payment_policy
 from shopman.shop.services import storefront_links
+from shopman.shop.services.business_calendar import (
+    format_next_opening,
+    store_review_deferred_state,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -55,6 +59,8 @@ class PaymentPromiseData:
     deadline_action: str
     requires_active_notification: bool
     stale_after_seconds: int | None = None
+    #: "hoje às 9h" — só quando a espera é a loja abrir. Fato aqui, frase na Presentation.
+    next_opening_phrase: str = ""
 
 
 @dataclass(frozen=True)
@@ -511,8 +517,28 @@ def _build_payment_promise(
     # código abaixo" quando a tela não tem código é a falha que fazia o banner
     # trocar sozinho enquanto o card do Pix seguia vazio até o cliente recarregar.
     if not any(_pix_payload((order.data or {}).get("payment") or {})):
-        # Dois momentos diferentes, duas frases: antes da loja conferir, e o
-        # intervalo curto entre a confirmação e o código nascer.
+        # Três momentos, três frases: a loja fechada (o pedido só será olhado na
+        # abertura), a loja aberta conferindo, e o intervalo curto entre o aceite
+        # e o código nascer. O primeiro faltava: com a padaria fechada esta tela
+        # dizia "estamos conferindo a disponibilidade" e ficava girando, enquanto
+        # o aceite automático só venceria horas depois, na abertura.
+        deferred = store_review_deferred_state(order)
+        if deferred is not None:
+            return PaymentPromiseData(
+                state="pix_waiting_opening",
+                tone="info",
+                actions=(),
+                deadline_at=None,
+                deadline_kind=None,
+                deadline_action="none",
+                requires_active_notification=True,
+                # A loja abre daqui a horas: bater de 8 em 8 segundos é ansiedade
+                # sem serventia. O SSE traz a novidade quando ela existir.
+                stale_after_seconds=None,
+                next_opening_phrase=format_next_opening(
+                    deferred.next_open_at, now=deferred.resolved_at
+                ),
+            )
         return PaymentPromiseData(
             state="pix_waiting_code" if order.status == "accepted" else "pix_waiting_confirmation",
             tone="info",

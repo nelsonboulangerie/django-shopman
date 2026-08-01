@@ -139,6 +139,29 @@ def next_operational_deadline(
     return None, state
 
 
+def store_review_deferred_state(
+    order,
+    *,
+    state: BusinessCalendarState | None = None,
+) -> BusinessCalendarState | None:
+    """O calendário quando o pedido aguarda a loja E a loja está fechada.
+
+    Uma pergunta, uma resposta. O acompanhamento e a tela de pagamento precisam
+    dizer a MESMA coisa sobre quando a loja vai olhar o pedido — e decidiam isso
+    cada um por conta. Só o acompanhamento consultava o calendário, então quem
+    ficava na tela de pagamento lia "estamos conferindo a disponibilidade" com a
+    padaria fechada, enquanto o aceite automático só venceria na abertura
+    (``next_operational_deadline``, que conta o prazo em tempo de loja aberta).
+
+    Devolve o estado (para a superfície formar a frase da próxima abertura) ou
+    ``None`` quando a loja já está olhando.
+    """
+    if str(getattr(order, "status", "") or "") != "new":
+        return None
+    state = state or current_business_state()
+    return state if state.is_closed else None
+
+
 def is_open_on(day: date, *, shop=None) -> bool:
     """Whether the shop operates on ``day`` (regular weekday + sem exceção).
 

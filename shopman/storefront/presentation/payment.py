@@ -88,6 +88,11 @@ _PROMISE_COPY: dict[str, tuple[str, str, str, str]] = {
         "PAYMENT_PROMISE_PIX_WAITING_MESSAGE",
         "Estamos conferindo a disponibilidade. O código Pix aparece aqui em seguida.",
     ),
+    "pix_waiting_opening": (
+        "PAYMENT_PROMISE_PIX_CLOSED_TITLE", "Pedido recebido",
+        "PAYMENT_PROMISE_PIX_CLOSED_MESSAGE",
+        "Estamos fechados agora. Conferimos seu pedido assim que abrirmos, e o código Pix aparece aqui.",
+    ),
     "pix_waiting_code": (
         "PAYMENT_PROMISE_PIX_WAITING_CODE_TITLE", "Preparando seu Pix",
         "PAYMENT_PROMISE_PIX_WAITING_CODE_MESSAGE",
@@ -278,6 +283,10 @@ _PROMISE_FOOTNOTE: dict[str, tuple[str, str]] = {
         "PAYMENT_PROMISE_PIX_WAITING_FOOTNOTE",
         "Se não conseguirmos confirmar, cancelamos e avisamos você.",
     ),
+    "pix_waiting_opening": (
+        "PAYMENT_PROMISE_PIX_CLOSED_FOOTNOTE",
+        "Se não conseguirmos confirmar, cancelamos e avisamos você.",
+    ),
     "pix_payment_before_confirmation": (
         "PAYMENT_PROMISE_PIX_PRECONFIRMATION_FOOTNOTE",
         "Cancelamos o pedido se o prazo acabar.",
@@ -316,6 +325,13 @@ def _promise_copy(
     title = copy.title(title_key, title_fb) if title_key else title_fb
     if data.state == "card_authorized":
         message = _card_authorized_message(order_status, copy)
+    elif data.state == "pix_waiting_opening" and data.next_opening_phrase:
+        # Dizer a hora vale mais que dizer "quando abrirmos" — o cliente decide
+        # se espera. Mesma frase do acompanhamento, de propósito.
+        message = copy.message(
+            "PAYMENT_PROMISE_PIX_CLOSED_MESSAGE_NEXT",
+            "Estamos fechados agora. Conferimos seu pedido quando abrirmos, {next}, e o código Pix aparece aqui.",
+        ).replace("{next}", data.next_opening_phrase)
     else:
         message = copy.message(message_key, message_fb) if message_key else message_fb
     return title, message

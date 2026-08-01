@@ -34,6 +34,7 @@ from shopman.shop.services.business_calendar import (
     BusinessCalendarState,
     current_business_state,
     format_next_opening,
+    store_review_deferred_state,
 )
 
 logger = logging.getLogger(__name__)
@@ -1187,11 +1188,10 @@ def _store_confirmation_is_deferred(
     payment_pending: bool,
     business_state: BusinessCalendarState,
 ) -> bool:
-    if order.status != "new":
-        return False
+    """Com pagamento pendente a bola é do cliente; o resto é o calendário quem diz."""
     if payment_pending:
         return False
-    return business_state.is_closed
+    return store_review_deferred_state(order, state=business_state) is not None
 
 
 def _confirmation_deadline(order) -> datetime | None:
