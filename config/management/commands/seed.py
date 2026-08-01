@@ -2892,7 +2892,11 @@ class Command(BaseCommand):
             "allow_untracked": False,
         }
         _remote_config = {
-            "confirmation": {"mode": "auto_confirm", "timeout_minutes": 5, "stale_new_alert_minutes": 10},
+            # Aceite otimista em 1 min (alpha/staging): com estoque fantasma do
+            # autosserviço não dá pra cobrar antes de confirmar disponibilidade,
+            # então mantemos o aceite — mas curto, pra o cliente ver o QR rápido.
+            # Reavaliar no go-live (janela de cancelamento do operador vs. espera).
+            "confirmation": {"mode": "auto_confirm", "timeout_minutes": 1, "stale_new_alert_minutes": 10},
             "payment": {"method": ["pix", "card"], "timing": "post_commit", "timeout_minutes": 10},
             "stock": _remote_stock,
         }

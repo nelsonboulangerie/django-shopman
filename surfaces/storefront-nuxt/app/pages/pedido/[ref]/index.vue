@@ -112,6 +112,11 @@ const progressTimelineStep = computed(() => timelineActiveStep(tracking.value?.p
 
 // Deadline vivo (timeouts transparentes): countdown ancorado em server_now_iso
 // quando a promise pede contagem (ex.: prazo de confirmação/pagamento).
+// Conteúdo dependente do relógio (contador, frescor) só renderiza DEPOIS do
+// mount: no SSR o relógio é o do servidor e no cliente é o do aparelho, e a
+// diferença dava hydration mismatch. Com o gate, SSR e primeira hidratação
+// batem (ambos sem o tempo vivo); o valor entra logo após montar.
+const mounted = ref(false)
 const clientNow = ref(Date.now())
 const serverOffset = computed(() => serverClockOffsetMs(tracking.value?.server_now_iso, Date.now()))
 const nowMs = computed(() => clientNow.value + serverOffset.value)
@@ -178,6 +183,8 @@ const summaryRows = computed(() => {
 let tick: ReturnType<typeof setInterval> | null = null
 let poll: ReturnType<typeof setInterval> | null = null
 onMounted(() => {
+  mounted.value = true
+  clientNow.value = Date.now()
   tick = setInterval(() => { clientNow.value = Date.now() }, 1000)
   poll = setInterval(() => {
     if (tracking.value?.is_active) void refresh()
@@ -389,7 +396,7 @@ useSeoMeta({
             <template #icon>
               <span class="relative mt-0.5 flex size-4 shrink-0 items-center justify-center">
                 <span
-                  v-if="tracking.is_active && !freshness.isStale"
+                  v-if="mounted && tracking.is_active && !freshness.isStale"
                   class="absolute inline-flex size-full rounded-full bg-current opacity-40 motion-safe:animate-ping"
                   aria-hidden="true"
                 />
@@ -416,7 +423,7 @@ useSeoMeta({
 
                 <!-- role="timer" marca a região para AT; sem aria-live, para o valor
                      que tica a cada 1s não inundar o leitor de tela. -->
-                <div v-if="deadlineCount && !deadlineCount.isExpired" class="space-y-2" role="timer">
+                <div v-if="mounted && deadlineCount && !deadlineCount.isExpired" class="space-y-2" role="timer">
                   <div class="flex items-center gap-2 text-sm font-semibold">
                     <Icon name="lucide:timer" :size="18" :class="deadlineUrgent ? 'text-destructive' : statusPanelIconClass" />
                     <span class="text-muted-foreground">{{ tracking.promise_deadline_label || 'Tempo restante' }}</span>
@@ -428,7 +435,7 @@ useSeoMeta({
                 <!-- Ponte de expiração: no instante em que o prazo zera, o timer some
                      e um refresh reconcilia. Enquanto a projeção nova não chega, um
                      estado explícito evita a tela piscar sem explicação. -->
-                <p v-else-if="deadlineCount?.isExpired && tracking.is_active" class="flex items-center gap-2 shop-meta" role="status" aria-live="polite">
+                <p v-else-if="mounted && deadlineCount?.isExpired && tracking.is_active" class="flex items-center gap-2 shop-meta" role="status" aria-live="polite">
                   <Icon name="lucide:rotate-cw" class="size-3.5 shrink-0 animate-spin" />
                   O prazo terminou. Estamos atualizando seu pedido…
                 </p>
@@ -481,7 +488,7 @@ useSeoMeta({
                      do alerta parecia um terceiro recado da promessa. Quando um
                      poll falha, aí sim vira informação, com o botão de recuperar. -->
                 <div
-                  v-if="tracking.is_active && freshness.isStale"
+                  v-if="mounted && tracking.is_active && freshness.isStale"
                   class="flex flex-wrap items-center gap-x-2 gap-y-1 border-t pt-2 shop-meta"
                   :class="freshness.isStale ? 'text-destructive' : ''"
                 >
@@ -657,7 +664,7 @@ useSeoMeta({
             </UiButton>
             <!-- Compartilhar é permanente: serve mais com o pedido pronto do que
                  logo depois do checkout, onde vivia preso ao banner do yoin. -->
-            <UiButton v-if="shareHref" :href="shareHref" target="_blank" rel="noopener" variant="secondary" icon="lucide:share-2" class="w-full" @click="compartilhar">
+            <UiButton v-if="mounted && shareHref" :href="shareHref" target="_blank" rel="noopener" variant="secondary" icon="lucide:share-2" class="w-full" @click="compartilhar">
               {{ tracking.share_cta }}
             </UiButton>
             <UiAlertDialog v-if="cancelAction">
