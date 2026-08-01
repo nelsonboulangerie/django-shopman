@@ -89,7 +89,7 @@ seguinte, e é isso que impede pagamento e entrega de brigarem:
 | 6 | cliente | `payment_pix_ready` | `pix_payment_requested` + `pix_payment_before_confirmation` |
 | 7 | cliente | `payment_card_ready` | `card_checkout_requested` + `card_authorization_requested` |
 | 8 | cliente | `payment_retry` | `intent_error` + `card_checkout_pending` |
-| 9 | gateway | `payment_authorizing` | `card_authorized` ×2 |
+| 9 | gateway | `payment_authorized` | `card_authorized` ×2 |
 | 10 | loja | `payment_confirmed` | `payment_confirmed` + `paid` |
 | 11 | loja | `store_closed` | `availability_deferred` + `pix_waiting_opening` |
 | 12 | loja | `store_checking` | `availability_check` + `pix_waiting_confirmation` |
@@ -105,6 +105,13 @@ seguinte, e é isso que impede pagamento e entrega de brigarem:
 de pagamento errada — sem tela, sem estado) e `payment_pending`/`payment_requested`
 do acompanhamento, que eram a versão grossa e cega do que os estados 6-8 dizem
 direito.
+
+**Por que `payment_authorized` e não `card_authorized`** (decisão do Pablo,
+2026-08-01): o nome antigo amarra o estado a um meio de pagamento sem
+necessidade — se entrar carteira digital ou qualquer método com reserva antes
+da captura, o fato é o mesmo. E é `authorized`, não `authorizing`: a
+autorização já aconteceu; o que está pendente é a **captura**. Nomear o fato
+consumado, não o processo.
 
 **Pares que viram um estado + nota de rodapé, não dois estados:**
 `pix_payment_requested` vs `pix_payment_before_confirmation` diferiam só em "a

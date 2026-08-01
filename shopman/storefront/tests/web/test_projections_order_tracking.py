@@ -222,7 +222,9 @@ class TestOrderTrackingTimeline:
         assert len(proj.timeline) >= 1
         assert all(isinstance(e, TimelineEventProjection) for e in proj.timeline)
         labels = [e.label for e in proj.timeline]
-        assert "Pedido criado" in labels
+        # A linha do tempo é a loja narrando a jornada do cliente: "criado" é o
+        # que o banco fez, "recebido" é o que aconteceu para quem pediu.
+        assert "Pedido recebido" in labels
 
     def test_status_change_appears_in_timeline(self, order):
         order.emit_event(

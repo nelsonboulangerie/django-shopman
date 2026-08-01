@@ -1238,7 +1238,11 @@ OMOTENASHI_DEFAULTS: dict[str, dict[str, dict[str, CopyEntry]]] = {
     # ── Order status labels (shared: storefront tracking + operator queue) ─
     # One key per Order status; tone/colour is carried separately as semantic
     # data (``ORDER_STATUS_TONES``) and mapped to classes by each surface.
-    "ORDER_STATUS_NEW": {WILDCARD: {WILDCARD: CopyEntry(title="Recebido")}},
+    # Vocabulário do SISTEMA (card do operador, linha do tempo do backstage): o
+    # nome do estado. O cliente não lê esta chave — ele lê a situação dele
+    # (`TRACKING_STATUS_*`), e "Recebido" aqui colidia com o "Recebi meu pedido"
+    # que o cliente aperta no fim da entrega.
+    "ORDER_STATUS_NEW": {WILDCARD: {WILDCARD: CopyEntry(title="Novo")}},
     "ORDER_STATUS_ACCEPTED": {WILDCARD: {WILDCARD: CopyEntry(title="Aceito")}},
     "ORDER_STATUS_PREPARING": {WILDCARD: {WILDCARD: CopyEntry(title="Em Preparo")}},
     "ORDER_STATUS_READY": {WILDCARD: {WILDCARD: CopyEntry(title="Pronto")}},

@@ -49,7 +49,9 @@ logger = logging.getLogger(__name__)
 
 # Surface display labels for timeline events that are not status changes.
 EVENT_LABELS: dict[str, str | None] = {
-    "created": "Pedido criado",
+    # "Criado" é o que o nosso banco fez; "recebido" é o que importa para quem
+    # mandou o pedido. A linha do tempo é a loja narrando a jornada do cliente.
+    "created": "Pedido recebido",
     "status_changed": None,
     "payment.captured": "Pagamento confirmado",
     "payment.refunded": "Pagamento estornado",

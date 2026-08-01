@@ -231,3 +231,36 @@ def test_is_birthday_matches_month_and_day():
     assert _is_birthday(date(1990, 4, 17), date(2026, 4, 17)) is True
     assert _is_birthday(date(1990, 4, 18), date(2026, 4, 17)) is False
     assert _is_birthday(None, date(2026, 4, 17)) is False
+
+
+class TestStatusVocabularyPerAudience:
+    """`new` tem dois nomes de propósito — e nenhum dos dois pode vazar.
+
+    `ORDER_STATUS_*` nomeia o ESTADO (vocabulário do sistema: o card do operador
+    diz "Novo"). O cliente lê a SITUAÇÃO ("Aguardando a loja") — ele acabou de
+    fazer o pedido, não precisa que digam que é novo; precisa saber que a loja
+    ainda não olhou. Antes os dois liam a mesma chave, e "Recebido" ainda
+    colidia com o "Recebi meu pedido" que o cliente aperta no fim da entrega.
+    """
+
+    def test_operator_reads_the_state_name(self):
+        from shopman.backstage.presentation.status import order_status_label
+
+        assert order_status_label("new") == "Novo"
+
+    def test_customer_reads_the_situation(self):
+        from shopman.storefront.presentation.status import order_status_label
+
+        assert order_status_label("new") == "Aguardando a loja"
+
+    def test_cash_order_does_not_leak_the_state_name_to_the_customer(self):
+        """Pedido em dinheiro parado em `new` não casa com nenhuma regra de
+        pagamento e caía direto no vocabulário do sistema."""
+        from shopman.storefront.presentation.status import order_status_label
+
+        assert order_status_label("new") != "Novo"
+
+    def test_timeline_opens_with_what_the_customer_did(self):
+        from shopman.storefront.presentation.order_tracking import EVENT_LABELS
+
+        assert EVENT_LABELS["created"] == "Pedido recebido"

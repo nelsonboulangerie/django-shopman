@@ -951,6 +951,7 @@ USAGE: dict[str, tuple[tuple[str, str, str], ...]] = {
     ),
     "TRACKING_STATUS_WAITING_STORE_CONFIRMATION": (
         ("shopman/storefront/presentation/order_tracking.py", "Loja", "Acompanhamento do pedido"),
+        ("shopman/storefront/presentation/status.py", "Loja", "Rótulos de status"),
     ),
     "TRACKING_STEP_AVAILABILITY_CONFIRMED": (
         ("shopman/storefront/presentation/order_tracking.py", "Loja", "Acompanhamento do pedido"),

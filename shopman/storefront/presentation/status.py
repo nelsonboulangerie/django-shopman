@@ -55,8 +55,21 @@ def status_tone(status: str | None) -> str:
     return tone.value if tone else Tone.INFO.value
 
 
+# O cliente não lê o NOME DO ESTADO, lê a situação dele. Onde os dois divergem,
+# a palavra do cliente vence — `ORDER_STATUS_*` é vocabulário do sistema (o card
+# do operador diz "Novo"; o cliente não precisa saber que o pedido é novo, ele
+# acabou de fazer — precisa saber que a loja ainda não olhou).
+#
+# Sem isto o cliente vazava para o vocabulário do sistema em dois caminhos que
+# não passam pelo mapa semântico do acompanhamento: o pedido em DINHEIRO parado
+# em `new` (nenhuma regra de pagamento o mapeia) e a lista "Meus pedidos".
+_CUSTOMER_STATUS_COPY: dict[str, tuple[str, str]] = {
+    "new": ("TRACKING_STATUS_WAITING_STORE_CONFIRMATION", "Aguardando a loja"),
+}
+
+
 def order_status_label(status: str | None, fallback: str | None = None) -> str:
-    """Resolve an order-status key to its display label.
+    """Resolve an order-status key to its customer-facing label.
 
     ``fallback`` defaults to the raw status; pass ``""`` to detect a miss
     (the catalog returns the fallback when no copy is seeded for the key).
@@ -64,6 +77,9 @@ def order_status_label(status: str | None, fallback: str | None = None) -> str:
     fb = (status or "") if fallback is None else fallback
     if not status:
         return fb
+    proprio = _CUSTOMER_STATUS_COPY.get(status)
+    if proprio:
+        return build_copy("TRACKING").title(proprio[0], proprio[1])
     return build_copy("ORDER_STATUS").title(f"ORDER_STATUS_{status.upper()}", fb)
 
 
