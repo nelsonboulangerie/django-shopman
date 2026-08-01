@@ -3339,7 +3339,7 @@ class Command(BaseCommand):
             # iFood order: confirmed (in queue, being handled). Nenhum pedido "new" aqui —
             # a coluna Entrada nasce vazia para testar a chegada de pedidos ao vivo.
             ref_confirmed = self._new_order_ref(ifood_ch.ref, (now - timedelta(minutes=9)).date())
-            order_confirmed = Order.objects.create(
+            order_accepted = Order.objects.create(
                 ref=ref_confirmed,
                 channel_ref=ifood_ch.ref,
                 session_key=generate_session_key(),
@@ -3355,9 +3355,9 @@ class Command(BaseCommand):
                     "availability_decision": {"approved": True, "source": "seed", "decisions": []},
                 },
             )
-            self._stamp_order(order_confirmed, now - timedelta(minutes=9))
+            self._stamp_order(order_accepted, now - timedelta(minutes=9))
             OrderItem.objects.create(
-                order=order_confirmed,
+                order=order_accepted,
                 line_id=f"L-{uuid.uuid4().hex[:8]}",
                 sku=prod_b.sku,
                 name=prod_b.name,
@@ -3366,20 +3366,20 @@ class Command(BaseCommand):
                 line_total_q=prod_b.base_price_q,
             )
             OrderEvent.objects.create(
-                order=order_confirmed,
+                order=order_accepted,
                 type="status_change",
                 seq=0,
                 payload={"new_status": "new"},
                 created_at=now - timedelta(minutes=9),
             )
             OrderEvent.objects.create(
-                order=order_confirmed,
+                order=order_accepted,
                 type="status_change",
                 seq=1,
                 payload={"new_status": "accepted"},
                 created_at=now - timedelta(minutes=7),
             )
-            link_order_to_work_orders(order=order_confirmed, event_type="status_changed", actor="seed")
+            link_order_to_work_orders(order=order_accepted, event_type="status_changed", actor="seed")
 
             order_count += 1
             self.stdout.write("  ✅ 1 pedido iFood operacional adicionado")
@@ -4719,7 +4719,7 @@ class Command(BaseCommand):
             Directive.objects.create(
                 topic=NOTIFICATION_SEND,
                 status=directive_status,
-                payload={"order_ref": order.ref, "template": "order_confirmed"},
+                payload={"order_ref": order.ref, "template": "order_accepted"},
                 available_at=base_time + timedelta(minutes=2),
             )
 
@@ -4892,7 +4892,7 @@ class Command(BaseCommand):
         FALLBACK_TEMPLATES = {
             "order_received": {"subject": "Pedido {order_ref} recebido", "body": "Ola{customer_name_greeting}! Recebemos seu pedido *{order_ref}*. O estabelecimento vai conferir a disponibilidade. Acompanhe por aqui: {tracking_url}"},
             "order_received_outside_hours": {"subject": "Pedido {order_ref} recebido", "body": "Ola{customer_name_greeting}! Recebemos seu pedido *{order_ref}* fora do nosso horario de atendimento. Vamos processar assim que abrirmos. Total: *{total}*."},
-            "order_confirmed": {"subject": "Pedido {order_ref} confirmado", "body": "Ola{customer_name_greeting}! Seu pedido *{order_ref}* foi confirmado. Total: *{total}*.\n\nObrigado pela preferencia!"},
+            "order_accepted": {"subject": "Pedido {order_ref} confirmado", "body": "Ola{customer_name_greeting}! Seu pedido *{order_ref}* foi confirmado. Total: *{total}*.\n\nObrigado pela preferencia!"},
             "order_preparing": {"subject": "Pedido {order_ref} em preparo", "body": "Ola{customer_name_greeting}! Seu pedido *{order_ref}* esta sendo preparado.\n\nAvisaremos quando estiver pronto!"},
             "order_ready_pickup": {"subject": "Pedido {order_ref} pronto para retirada", "body": "Ola{customer_name_greeting}! Seu pedido *{order_ref}* esta pronto para retirada! \U0001f389\n\nVenha buscar. Obrigado!"},
             "order_ready_delivery": {"subject": "Pedido {order_ref} pronto para entrega", "body": "Ola{customer_name_greeting}! Seu pedido *{order_ref}* esta pronto e aguardando entregador. Assim que sair para entrega avisamos. \U0001f4e6"},

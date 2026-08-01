@@ -59,6 +59,9 @@ export interface OrderCardProjection {
   payment_method_label: string;
   payment_status: string;
   payment_pending: boolean;
+  payment_tone: string;
+  advance_block_label: string;
+  advance_block_reason: string;
   can_settle_delivery_cash: boolean;
   fiscal_status_label: string;
   fiscal_status: string;

@@ -1213,7 +1213,7 @@ OMOTENASHI_DEFAULTS: dict[str, dict[str, dict[str, CopyEntry]]] = {
     # One key per Order status; tone/colour is carried separately as semantic
     # data (``ORDER_STATUS_TONES``) and mapped to classes by each surface.
     "ORDER_STATUS_NEW": {WILDCARD: {WILDCARD: CopyEntry(title="Recebido")}},
-    "ORDER_STATUS_ACCEPTED": {WILDCARD: {WILDCARD: CopyEntry(title="Confirmado")}},
+    "ORDER_STATUS_ACCEPTED": {WILDCARD: {WILDCARD: CopyEntry(title="Aceito")}},
     "ORDER_STATUS_PREPARING": {WILDCARD: {WILDCARD: CopyEntry(title="Em Preparo")}},
     "ORDER_STATUS_READY": {WILDCARD: {WILDCARD: CopyEntry(title="Pronto")}},
     "ORDER_STATUS_DISPATCHED": {WILDCARD: {WILDCARD: CopyEntry(title="Saiu para entrega")}},

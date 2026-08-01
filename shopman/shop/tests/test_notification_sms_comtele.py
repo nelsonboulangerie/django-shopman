@@ -36,7 +36,7 @@ def test_is_available_with_comtele_config():
 @override_settings(SHOPMAN_SMS={})
 def test_unavailable_without_config():
     assert notification_sms.is_available() is False
-    assert notification_sms.send("+5543999990001", "order_confirmed", {}) is False
+    assert notification_sms.send("+5543999990001", "order_accepted", {}) is False
 
 
 @override_settings(SHOPMAN_SMS=COMTELE_SETTINGS)
@@ -52,7 +52,7 @@ def test_send_posts_to_comtele_and_trusts_haserror_flag():
     with patch("shopman.shop.adapters.notification_sms.urlopen", side_effect=fake_urlopen):
         ok = notification_sms.send(
             "+55 (43) 99999-0001",
-            "order_confirmed",
+            "order_accepted",
             {"order_ref": "ORD-1", "total": "R$ 56,00"},
         )
 
@@ -70,7 +70,7 @@ def test_send_returns_false_when_comtele_flags_error():
         return _FakeResponse(json.dumps({"hasError": True, "message": "rota inválida"}).encode("utf-8"))
 
     with patch("shopman.shop.adapters.notification_sms.urlopen", side_effect=fake_urlopen):
-        assert notification_sms.send("+5543999990001", "order_confirmed", {}) is False
+        assert notification_sms.send("+5543999990001", "order_accepted", {}) is False
 
 
 @pytest.mark.django_db
@@ -81,12 +81,12 @@ def test_admin_template_wins_over_hardcoded_for_sms():
     from shopman.shop.models import NotificationTemplate
 
     NotificationTemplate.objects.create(
-        event="order_confirmed",
+        event="order_accepted",
         subject="Pedido {order_ref} confirmado",
         body="Oi! Seu pedido {order_ref} está confirmado. Obrigado!",
         is_active=True,
     )
 
     assert notification_sms._build_message(
-        "order_confirmed", {"order_ref": "ORD-9"}
+        "order_accepted", {"order_ref": "ORD-9"}
     ) == "Oi! Seu pedido ORD-9 está confirmado. Obrigado!"

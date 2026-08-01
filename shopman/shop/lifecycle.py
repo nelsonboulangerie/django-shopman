@@ -290,7 +290,7 @@ def _on_commit(order, config: ChannelConfig) -> None:
 
     # Fire "order_received" for non-immediate modes: o cliente fica esperando
     # (auto_confirm 5min, manual indefinido) — sem esse aviso, silêncio total.
-    # Em `immediate`, o _on_accepted dispara `order_confirmed` logo em seguida,
+    # Em `immediate`, o _on_accepted dispara `order_accepted` logo em seguida,
     # então duplicar aqui seria ruído.
     if config.confirmation.mode != "immediate":
         notification.send(order, "order_received")
@@ -406,14 +406,14 @@ def _on_accepted(order, config: ChannelConfig) -> None:
     # despertador. O pedido de sábado não pode ir pra cozinha na terça.
     if _physical_work_deferred(order):
         _schedule_preorder_activation(order)
-        notification.send(order, "order_confirmed")
+        notification.send(order, "order_accepted")
         return
 
     physical_work_dispatched = _dispatch_physical_work(order)
 
     if _stock_fulfill_allowed(order, config):
         stock.fulfill(order)
-    notification.send(order, "order_confirmed")
+    notification.send(order, "order_accepted")
     if physical_work_dispatched:
         _mark_preparing_after_physical_work_dispatch(order)
 

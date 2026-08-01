@@ -19,7 +19,7 @@ from shopman.orderman.models import Directive
 pytestmark = pytest.mark.django_db
 
 TOPIC = "notification.send"
-KEY = "notification.send:ORD-1:order_confirmed"
+KEY = "notification.send:ORD-1:order_accepted"
 
 
 def _directive(status="queued", topic=TOPIC, dedupe_key=KEY):

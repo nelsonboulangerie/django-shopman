@@ -34,14 +34,14 @@ def test_malformed_admin_subject_still_sends_email():
     from shopman.shop.models import NotificationTemplate
 
     NotificationTemplate.objects.create(
-        event="order_confirmed",
+        event="order_accepted",
         subject="Pedido {order_ref pronto",  # chave malformada (sem fechar)
         body="Seu pedido {order_ref} está confirmado.",
         is_active=True,
     )
     mail.outbox = []
 
-    ok = notification_email.send("cliente@example.com", "order_confirmed", {"order_ref": "ORD-9"})
+    ok = notification_email.send("cliente@example.com", "order_accepted", {"order_ref": "ORD-9"})
 
     assert ok is True
     assert len(mail.outbox) == 1

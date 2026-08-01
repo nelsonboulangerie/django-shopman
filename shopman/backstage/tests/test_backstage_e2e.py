@@ -59,7 +59,7 @@ def _confirm_order(*, sku: str, qty: int, ref: str = "E2E-ORDER") -> Order:
 
 
 @pytest.mark.django_db
-def test_e2e_order_confirmed_links_to_planned_work_order(setup):
+def test_e2e_order_accepted_links_to_planned_work_order(setup):
     """When a confirmed order has SKUs produced, it gets linked to existing planned WOs."""
     from shopman.orderman.signals import order_changed
 

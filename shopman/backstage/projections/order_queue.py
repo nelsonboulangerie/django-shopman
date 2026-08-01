@@ -109,6 +109,14 @@ class OrderCardProjection:
     payment_method_label: str
     payment_status: str
     payment_pending: bool
+    # Tom do pill de pagamento. Três estados, não dois: dinheiro/externo não é
+    # "pago" nem "devendo" — é cobrança fora do site, e pintá-lo de verde diria
+    # que entrou dinheiro que não entrou.
+    payment_tone: str  # "danger" | "success" | "neutral"
+    # Por que não dá para avançar agora. O botão sumia quando bloqueado, e o
+    # operador ficava sem saber se faltava algo ou se a tela tinha falhado.
+    advance_block_label: str
+    advance_block_reason: str
     can_settle_delivery_cash: bool
     fiscal_status_label: str
     fiscal_status: str
@@ -559,11 +567,8 @@ def _build_card(order: Order, deadline: tuple[str, str] | None = None) -> OrderC
         or ""
     )
 
-    next_status = (
-        operator_orders.next_status_for(order)
-        if not operator_orders.advance_block_reason(order)
-        else ""
-    )
+    bloqueio = operator_orders.advance_block_reason(order)
+    next_status = operator_orders.next_status_for(order) if not bloqueio else ""
     next_label = _next_label(order)
 
     payment_data = order.data.get("payment", {})
@@ -601,6 +606,9 @@ def _build_card(order: Order, deadline: tuple[str, str] | None = None) -> OrderC
         payment_method_label=payment_method_label,
         payment_status=payment_status,
         payment_pending=_is_payment_pending(order, method, payment_status),
+        payment_tone=_payment_tone(order, method, payment_status),
+        advance_block_label=_advance_block_label(bloqueio),
+        advance_block_reason=bloqueio,
         can_settle_delivery_cash=_can_settle_delivery_cash(order, payment_data),
         fiscal_status_label=fiscal_status_label,
         fiscal_status=fiscal_status,
@@ -667,6 +675,27 @@ def _is_payment_pending(order: Order, method: str, payment_status: str) -> bool:
     if order.status == "new" and not ((order.data or {}).get("payment") or {}).get("intent_ref"):
         return False
     return payment_status not in _PAYMENT_COMPLETE
+
+
+def _payment_tone(order: Order, method: str, payment_status: str) -> str:
+    """Tom do pill de pagamento — explícito, em vez de deduzido na superfície."""
+    if method in _OFFLINE_METHODS or not method:
+        # Cobrança fora do site: nada a comemorar nem a cobrar aqui.
+        return "neutral"
+    if payment_status in _PAYMENT_COMPLETE:
+        return "success"
+    if _is_payment_pending(order, method, payment_status):
+        return "danger"
+    return "neutral"
+
+
+def _advance_block_label(reason: str) -> str:
+    """Rótulo curto para o botão desabilitado (o motivo inteiro vai no title)."""
+    if not reason:
+        return ""
+    if "agamento" in reason:
+        return "Aguardando pagamento…"
+    return "Ainda não dá para avançar"
 
 
 def _payment_status(order: Order) -> str:

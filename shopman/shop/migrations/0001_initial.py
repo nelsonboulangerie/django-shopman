@@ -40,7 +40,7 @@ class Migration(migrations.Migration):
             name='NotificationTemplate',
             fields=[
                 ('id', models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
-                ('event', models.SlugField(help_text='Identificador do evento (ex: order_confirmed, payment_refunded)', unique=True, verbose_name='evento')),
+                ('event', models.SlugField(help_text='Identificador do evento (ex: order_accepted, payment_refunded)', unique=True, verbose_name='evento')),
                 ('subject', models.CharField(help_text='Assunto do email. Suporta {placeholders}.', max_length=200, verbose_name='assunto')),
                 ('body', models.TextField(help_text='Texto principal da notificação (WhatsApp-first). Suporta {placeholders}.', verbose_name='mensagem')),
                 ('is_active', models.BooleanField(default=True, verbose_name='ativo')),

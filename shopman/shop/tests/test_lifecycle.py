@@ -515,7 +515,7 @@ class TestOnConfirmed:
         dispatch(order, "on_accepted")
         mock_payment.initiate.assert_not_called()
         mock_stock.fulfill.assert_called_once_with(order)
-        mock_notification.send.assert_called_once_with(order, "order_confirmed")
+        mock_notification.send.assert_called_once_with(order, "order_accepted")
 
     @patch("shopman.shop.lifecycle.ChannelConfig")
     @patch("shopman.shop.lifecycle.notification")
@@ -533,7 +533,7 @@ class TestOnConfirmed:
         dispatch(order, "on_accepted")
         mock_payment.initiate.assert_not_called()
         mock_stock.fulfill.assert_not_called()
-        mock_notification.send.assert_called_once_with(order, "order_confirmed")
+        mock_notification.send.assert_called_once_with(order, "order_accepted")
 
 
 # ── on_paid ──

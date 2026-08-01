@@ -165,7 +165,7 @@ class TestNotificationContextEnrichment:
             "shopman.doorman.services.access_link.AccessLinkService.create_token",
             return_value=token_result,
         ):
-            ctx = _build_context(order, payload, "order_confirmed")
+            ctx = _build_context(order, payload, "order_accepted")
 
         assert "tracking_url" in ctx
         assert ctx["tracking_url"] == "https://shop.test/a?t=tok_ctx"
@@ -182,7 +182,7 @@ class TestNotificationContextEnrichment:
         order.data = {"customer": {"name": "Bob"}, "fulfillment_type": "pickup"}
         order.snapshot = {"items": []}
 
-        ctx = _build_context(order, {"order_ref": "ORD-002"}, "order_confirmed")
+        ctx = _build_context(order, {"order_ref": "ORD-002"}, "order_accepted")
         assert "tracking_url" not in ctx
         assert "reorder_url" not in ctx
 
@@ -196,7 +196,7 @@ class TestNotificationContextEnrichment:
         order.data = {"fulfillment_type": "pickup"}
         order.snapshot = {"items": []}
 
-        ctx = _build_context(order, {}, "order_confirmed")
+        ctx = _build_context(order, {}, "order_accepted")
         assert "tracking_url" not in ctx
 
 
@@ -215,12 +215,12 @@ class TestManychatMessageSuffixes:
             return _build_message(template, ctx)
 
     def test_tracking_suffix_appended_when_url_present(self):
-        msg = self._build("order_confirmed", tracking_url="https://shop.test/a?t=abc")
+        msg = self._build("order_accepted", tracking_url="https://shop.test/a?t=abc")
         assert "Acompanhe:" in msg
         assert "/a?t=abc" in msg
 
     def test_tracking_suffix_absent_when_url_missing(self):
-        msg = self._build("order_confirmed")
+        msg = self._build("order_accepted")
         assert "Acompanhe:" not in msg
         assert "{tracking_suffix}" not in msg
 
@@ -235,6 +235,6 @@ class TestManychatMessageSuffixes:
         assert "{reorder_suffix}" not in msg
 
     def test_tracking_url_none_renders_cleanly(self):
-        msg = self._build("order_confirmed", tracking_url=None)
+        msg = self._build("order_accepted", tracking_url=None)
         assert "None" not in msg
         assert "{tracking_suffix}" not in msg

@@ -50,7 +50,7 @@ def test_sms_inert_in_debug_makes_no_call_and_reports_delivered():
     with patch("shopman.shop.adapters.notification_sms.urlopen", side_effect=_boom):
         # Configurado (is_available True), mas em DEBUG não deve chamar a rede.
         assert notification_sms.is_available() is True
-        assert notification_sms.send("+5543999990001", "order_confirmed", {}) is True
+        assert notification_sms.send("+5543999990001", "order_accepted", {}) is True
 
 
 @override_settings(DEBUG=True, SHOPMAN_SMS=COMTELE, SHOPMAN_SMS_ALLOW_IN_DEBUG=True)
@@ -62,7 +62,7 @@ def test_sms_opt_in_restores_real_send_in_debug():
         return _FakeResponse(json.dumps({"hasError": False}).encode("utf-8"))
 
     with patch("shopman.shop.adapters.notification_sms.urlopen", side_effect=fake_urlopen):
-        assert notification_sms.send("+5543999990001", "order_confirmed", {}) is True
+        assert notification_sms.send("+5543999990001", "order_accepted", {}) is True
     assert calls == ["https://api.comtele.com.br/messages/sms/send"]
 
 
@@ -75,7 +75,7 @@ def test_global_opt_in_restores_real_send_in_debug():
         return _FakeResponse(json.dumps({"hasError": False}).encode("utf-8"))
 
     with patch("shopman.shop.adapters.notification_sms.urlopen", side_effect=fake_urlopen):
-        assert notification_sms.send("+5543999990001", "order_confirmed", {}) is True
+        assert notification_sms.send("+5543999990001", "order_accepted", {}) is True
     assert len(calls) == 1
 
 
@@ -88,7 +88,7 @@ def test_sms_sends_for_real_outside_debug():
         return _FakeResponse(json.dumps({"hasError": False}).encode("utf-8"))
 
     with patch("shopman.shop.adapters.notification_sms.urlopen", side_effect=fake_urlopen):
-        assert notification_sms.send("+5543999990001", "order_confirmed", {}) is True
+        assert notification_sms.send("+5543999990001", "order_accepted", {}) is True
     assert len(calls) == 1
 
 
@@ -98,13 +98,13 @@ def test_sms_sends_for_real_outside_debug():
 @override_settings(DEBUG=True, SHOPMAN_MANYCHAT=MANYCHAT)
 def test_manychat_inert_in_debug():
     with patch("shopman.shop.adapters.notification_manychat.urlopen", side_effect=_boom):
-        assert notification_manychat.send("5543999990001", "order_confirmed", {}) is True
+        assert notification_manychat.send("5543999990001", "order_accepted", {}) is True
 
 
 @override_settings(DEBUG=True, SHOPMAN_WHATSAPP=WHATSAPP)
 def test_whatsapp_inert_in_debug():
     with patch("shopman.shop.adapters.notification_whatsapp.urlopen", side_effect=_boom):
-        assert notification_whatsapp.send("5543999990001", "order_confirmed", {}) is True
+        assert notification_whatsapp.send("5543999990001", "order_accepted", {}) is True
 
 
 # ── OTP por SMS: inerte cai para o próximo sender (console) ──────────
@@ -141,14 +141,14 @@ def test_suppress_blocks_external_even_outside_debug(monkeypatch):
     e nenhum adapter externo pode disparar — sem opt-out."""
     monkeypatch.setattr(_external, "_suppressed_reason", "seed")
     with patch("shopman.shop.adapters.notification_sms.urlopen", side_effect=_boom):
-        assert notification_sms.send("+5543999990001", "order_confirmed", {}) is True
+        assert notification_sms.send("+5543999990001", "order_accepted", {}) is True
 
 
 @override_settings(DEBUG=False, SHOPMAN_SMS=COMTELE, SHOPMAN_ALLOW_EXTERNAL_IN_DEBUG=True)
 def test_suppress_has_no_opt_out(monkeypatch):
     monkeypatch.setattr(_external, "_suppressed_reason", "seed")
     with patch("shopman.shop.adapters.notification_sms.urlopen", side_effect=_boom):
-        assert notification_sms.send("+5543999990001", "order_confirmed", {}) is True
+        assert notification_sms.send("+5543999990001", "order_accepted", {}) is True
 
 
 # ── Seed não faz nenhuma chamada externa (qualquer ambiente) ────────

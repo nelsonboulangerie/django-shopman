@@ -847,15 +847,15 @@ class TestNotificationService:
 
         order = _make_order()
 
-        send(order, "order_confirmed")
+        send(order, "order_accepted")
 
         directive = Directive.objects.last()
         assert directive is not None
         assert directive.topic == "notification.send"
         assert directive.payload["order_ref"] == "ORD-001"
-        assert directive.payload["template"] == "order_confirmed"
+        assert directive.payload["template"] == "order_accepted"
         assert directive.payload["requires_active_notification"] is False
-        assert directive.dedupe_key == "notification.send:ORD-001:order_confirmed"
+        assert directive.dedupe_key == "notification.send:ORD-001:order_accepted"
 
     @pytest.mark.django_db
     def test_send_includes_origin_channel(self):
@@ -863,7 +863,7 @@ class TestNotificationService:
 
         order = _make_order(data={"origin_channel": "whatsapp"})
 
-        send(order, "order_confirmed")
+        send(order, "order_accepted")
 
         directive = Directive.objects.last()
         assert directive.payload["origin_channel"] == "whatsapp"
@@ -972,7 +972,7 @@ class TestNotificationSendHandler:
             data={"fulfillment_type": "pickup"},
         )
 
-        ctx = _build_context(order, {"order_ref": "ORD-001"}, "order_confirmed")
+        ctx = _build_context(order, {"order_ref": "ORD-001"}, "order_accepted")
 
         assert ctx["items"] == items, "items must be read from order.snapshot, not order.data"
 
@@ -982,7 +982,7 @@ class TestNotificationSendHandler:
 
         order = _make_order(snapshot={}, data={})
 
-        ctx = _build_context(order, {"order_ref": "ORD-001"}, "order_confirmed")
+        ctx = _build_context(order, {"order_ref": "ORD-001"}, "order_accepted")
 
         assert ctx["items"] == []
 

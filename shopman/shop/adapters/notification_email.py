@@ -19,7 +19,7 @@ logger = logging.getLogger(__name__)
 
 SUBJECT_TEMPLATES: dict[str, str] = {
     "order_received": "Recebemos seu pedido {order_ref}",
-    "order_confirmed": "Pedido {order_ref} confirmado",
+    "order_accepted": "Pedido {order_ref} confirmado",
     "order_preparing": "Pedido {order_ref} em preparo",
     "order_ready_pickup": "Pedido {order_ref} pronto para retirada",
     "order_ready_delivery": "Pedido {order_ref} pronto para envio",
@@ -44,7 +44,7 @@ BODY_TEMPLATES: dict[str, str] = {
         "Recebemos seu pedido {order_ref}.\n\n"
         "O estabelecimento vai conferir a disponibilidade e avisaremos a proxima etapa.\n"
     ),
-    "order_confirmed": (
+    "order_accepted": (
         "Ola{customer_name_greeting}!\n\n"
         "Seu pedido {order_ref} foi confirmado.\n\n"
         "Total: {total}\n\nObrigado pela preferencia!\n"
@@ -164,7 +164,7 @@ def send(recipient: str, template: str, context: dict | None = None, **config) -
 
     Args:
         recipient: Email address.
-        template: Event template name (e.g. "order_confirmed").
+        template: Event template name (e.g. "order_accepted").
         context: Template variables.
 
     Returns:

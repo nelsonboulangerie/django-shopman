@@ -80,14 +80,14 @@ def sale_error(detail: str, *, is_stock: bool) -> PosErrorFragment:
 class PosOrderConfirmed:
     """The sale-confirmed banner. The client reads ``data-order-ref`` back."""
 
-    TEMPLATE: ClassVar[str] = f"{_FRAGMENTS}/order_confirmed.html"
+    TEMPLATE: ClassVar[str] = f"{_FRAGMENTS}/order_accepted.html"
     order_ref: str
     total_display: str
     order_url: str
     fiscal_hint: str
 
 
-def order_confirmed(result, *, order_url: str) -> PosOrderConfirmed:
+def order_accepted(result, *, order_url: str) -> PosOrderConfirmed:
     return PosOrderConfirmed(
         order_ref=result.order_ref,
         total_display=f"R$ {format_money(result.total_q)}",

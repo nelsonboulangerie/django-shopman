@@ -457,7 +457,7 @@ MANYCHAT_FLOW_MAP = {
     # Mapeia eventos de notificação → ManyChat flow namespace.
     # Se vazio, ManychatBackend envia mensagem texto direta (sem flow).
     # Para usar flows, configure no ManyChat e mapeie aqui:
-    # "order_confirmed": "content20250401120000_123456",
+    # "order_accepted": "content20250401120000_123456",
     # "payment_confirmed": "content20250401120000_234567",
 }
 try:
@@ -489,7 +489,7 @@ SHOPMAN_WHATSAPP = {
     "timeout": MANYCHAT_API_TIMEOUT,
     # event → Meta template config. Vazio = manda texto (só dentro da janela 24h).
     # Preencher com os templates Utility/Auth aprovados na Meta:
-    #   "order_confirmed": {"name": "pedido_confirmado", "body": ["order_ref", "total"]},
+    #   "order_accepted": {"name": "pedido_confirmado", "body": ["order_ref", "total"]},
     "templates": {},
 }
 

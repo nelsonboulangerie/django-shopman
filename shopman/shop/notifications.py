@@ -47,7 +47,7 @@ def notify(
     """Dispatch a notification through the named adapter.
 
     Args:
-        event: Template/event name (e.g. "order_confirmed").
+        event: Template/event name (e.g. "order_accepted").
         recipient: Recipient identifier (phone, email, subscriber_id).
         context: Template variables passed to the adapter.
         backend: Backend name ("console", "email", "manychat", "sms").

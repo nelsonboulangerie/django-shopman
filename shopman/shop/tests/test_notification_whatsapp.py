@@ -15,7 +15,7 @@ _CFG = {
     "DEFAULT_LANG": "pt_BR",
     "timeout": 5,
     "templates": {
-        "order_confirmed": {"name": "pedido_confirmado", "body": ["order_ref", "total"]},
+        "order_accepted": {"name": "pedido_confirmado", "body": ["order_ref", "total"]},
     },
 }
 
@@ -53,7 +53,7 @@ def test_send_uses_template_payload_when_mapped():
         return _ok_response()
 
     with mock.patch.object(wa, "urlopen", fake_urlopen):
-        ok = wa.send("+55 43 99999-0000", "order_confirmed", {"order_ref": "ORD-1", "total": "R$ 15,00"})
+        ok = wa.send("+55 43 99999-0000", "order_accepted", {"order_ref": "ORD-1", "total": "R$ 15,00"})
 
     assert ok is True
     assert captured["url"] == "https://graph.facebook.com/v21.0/1234567890/messages"
@@ -85,4 +85,4 @@ def test_send_falls_back_to_text_when_event_not_mapped():
 
 @override_settings(SHOPMAN_WHATSAPP=dict(_CFG, PHONE_NUMBER_ID="", ACCESS_TOKEN=""))
 def test_send_returns_false_without_creds():
-    assert wa.send("5543999990000", "order_confirmed", {}) is False
+    assert wa.send("5543999990000", "order_accepted", {}) is False

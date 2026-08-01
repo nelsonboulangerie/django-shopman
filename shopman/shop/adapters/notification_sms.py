@@ -25,7 +25,7 @@ logger = logging.getLogger(__name__)
 
 MESSAGE_TEMPLATES: dict[str, str] = {
     "order_received": "Recebemos o pedido {order_ref}. O estabelecimento vai conferir a disponibilidade.",
-    "order_confirmed": "Pedido {order_ref} confirmado! Total: {total}",
+    "order_accepted": "Pedido {order_ref} confirmado! Total: {total}",
     "order_preparing": "Pedido {order_ref} em preparo! Avisaremos quando estiver pronto.",
     "order_ready_pickup": "Pedido {order_ref} pronto para retirada!",
     "order_ready_delivery": "Pedido {order_ref} pronto! Sera enviado em breve.",
@@ -63,7 +63,7 @@ def send(recipient: str, template: str, context: dict | None = None, **config) -
 
     Args:
         recipient: Phone number (E.164 ou dígitos).
-        template: Event template name (e.g. "order_confirmed").
+        template: Event template name (e.g. "order_accepted").
         context: Template variables.
 
     Returns:

@@ -315,7 +315,7 @@ class TestStockConformance:
 
 class TestNotificationsConformance:
     def test_notifications_sent_on_accepted(self):
-        """notification.send('order_confirmed') called when order is confirmed."""
+        """notification.send('order_accepted') called when order is confirmed."""
         from shopman.shop.lifecycle import dispatch
 
         order = _make_order(status="accepted")
@@ -329,7 +329,7 @@ class TestNotificationsConformance:
                     with patch("shopman.shop.services.kds.dispatch"):
                         dispatch(order, "on_accepted")
 
-        mock_notify.assert_called_with(order, "order_confirmed")
+        mock_notify.assert_called_with(order, "order_accepted")
 
     def test_notifications_sent_on_cancelled(self):
         """notification.send('order_cancelled') called on cancellation."""

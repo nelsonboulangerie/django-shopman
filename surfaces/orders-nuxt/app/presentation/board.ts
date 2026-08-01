@@ -214,6 +214,10 @@ export interface Affordance {
   priority: "primary" | "secondary" | "danger";
   /** Needs a typed reason/amount → the surface opens a small dialog first. */
   needsInput: boolean;
+  /** Afordância informativa: mostra o porquê, não aceita clique. */
+  disabled?: boolean;
+  /** Motivo completo (title/tooltip) quando desabilitada. */
+  reason?: string;
 }
 
 /** The actions a card offers, derived from the projection's pre-resolved flags.
@@ -224,6 +228,19 @@ export function cardAffordances(card: OrderCardProjection): Affordance[] {
     out.push({ ref: "confirm", label: "Aceitar", icon: "lucide:check", priority: "primary", needsInput: false });
   } else if (card.can_advance && card.next_action_label) {
     out.push({ ref: "advance", label: card.next_action_label, icon: "lucide:arrow-right", priority: "primary", needsInput: false });
+  } else if (card.advance_block_label) {
+    // O botão sumia quando bloqueado, e o operador ficava sem saber se faltava
+    // algo ou se a tela tinha falhado. Agora o lugar continua ocupado, dizendo
+    // o que falta — sem virar um clique que não faz nada.
+    out.push({
+      ref: "advance",
+      label: card.advance_block_label,
+      icon: "lucide:clock",
+      priority: "secondary",
+      needsInput: false,
+      disabled: true,
+      reason: card.advance_block_reason
+    });
   }
   if (card.can_settle_delivery_cash) {
     out.push({ ref: "settle_cash", label: "Acerto dinheiro", icon: "lucide:banknote", priority: "secondary", needsInput: true });

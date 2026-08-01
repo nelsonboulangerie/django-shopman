@@ -28,7 +28,7 @@ requires_postgres = pytest.mark.skipif(
     reason="Requires PostgreSQL for real concurrency testing",
 )
 
-KEY = "notification.send:ORD-DD-1:order_confirmed"
+KEY = "notification.send:ORD-DD-1:order_accepted"
 
 
 def test_create_deduped_creates_when_no_live_duplicate():
@@ -56,14 +56,14 @@ def test_create_deduped_does_not_poison_outer_transaction():
 def test_notification_send_treats_race_as_dedupe_hit():
     """Simula a corrida: o pré-check não vê a duplicata, o INSERT vê."""
     order = Order.objects.create(ref="ORD-DD-RACE", channel_ref="web", total_q=100, data={})
-    dedupe_key = f"notification.send:{order.ref}:order_confirmed"
+    dedupe_key = f"notification.send:{order.ref}:order_accepted"
     Directive.objects.create(
         topic=NOTIFICATION_SEND, payload={}, dedupe_key=dedupe_key, status="queued"
     )
 
     fake_qs = Directive.objects.none()
     with patch.object(Directive.objects, "filter", return_value=fake_qs):
-        notification_svc.send(order, "order_confirmed")  # não pode levantar
+        notification_svc.send(order, "order_accepted")  # não pode levantar
 
     assert Directive.objects.filter(dedupe_key=dedupe_key).count() == 1
 
@@ -84,7 +84,7 @@ class TestConcurrentNotificationSend(TransactionTestCase):
                 barrier.wait(timeout=5)
                 # O dispatch pós-commit não interessa aqui — só a criação.
                 with patch("shopman.orderman.dispatch._on_commit_callback"):
-                    notification_svc.send(order, "order_confirmed")
+                    notification_svc.send(order, "order_accepted")
             except Exception as exc:  # noqa: BLE001 — colecionar para assert
                 errors.append(exc)
             finally:
@@ -97,5 +97,5 @@ class TestConcurrentNotificationSend(TransactionTestCase):
             t.join(timeout=10)
 
         assert errors == []
-        dedupe_key = f"notification.send:{order.ref}:order_confirmed"
+        dedupe_key = f"notification.send:{order.ref}:order_accepted"
         assert Directive.objects.filter(dedupe_key=dedupe_key).count() == 1

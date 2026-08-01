@@ -90,7 +90,7 @@ def queue(topic, order, **extra):
 
     Usage:
         from shopman.shop import directives
-        directives.queue("notification.send", order, template="order_confirmed")
+        directives.queue("notification.send", order, template="order_accepted")
     """
     payload = {"order_ref": order.ref}
     if order.channel_ref:

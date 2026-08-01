@@ -232,7 +232,7 @@ class TestOrderTrackingTimeline:
         )
         proj = build_order_tracking(order)
         labels = [e.label for e in proj.timeline]
-        assert "Confirmado" in labels
+        assert "Aceito" in labels
 
     def test_timeline_timestamp_display_formatted(self, order):
         order.emit_event(event_type="created", actor="test", payload={})
@@ -872,7 +872,7 @@ class TestStatusColours:
 
         proj = build_order_tracking(order_with_payment)
 
-        assert proj.status_label == "Confirmado"
+        assert proj.status_label == "Aceito"
         assert proj.payment_pending is False
         assert proj.payment_confirmed is True
         # O fato do pagamento vive na promessa, não numa linha à parte.

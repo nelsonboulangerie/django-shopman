@@ -282,7 +282,7 @@ class TestC05ImmediateConfirmation(TransactionTestCase):
     def tearDown(self):
         _stop(self.patchers)
 
-    def test_order_confirmed_immediately(self):
+    def test_order_accepted_immediately(self):
         session = _session(self.channel)
         result = _commit(session, self.channel)
         order = Order.objects.get(ref=result.order_ref)
@@ -810,7 +810,7 @@ class TestC11StockUnavailableAtCommit(TransactionTestCase):
         finally:
             _stop(patchers)
 
-    def test_order_confirmed_when_all_available(self):
+    def test_order_accepted_when_all_available(self):
         patchers, mocks = _start_patches()
         try:
             session = _session(self.channel)

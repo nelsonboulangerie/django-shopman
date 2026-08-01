@@ -505,7 +505,7 @@ class NotificationTemplate(models.Model):
 
     event = models.SlugField(
         "evento", max_length=50, unique=True,
-        help_text="Identificador do evento (ex: order_confirmed, payment_refunded)",
+        help_text="Identificador do evento (ex: order_accepted, payment_refunded)",
     )
     subject = models.CharField(
         "assunto", max_length=200,

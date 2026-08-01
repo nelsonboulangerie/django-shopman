@@ -467,7 +467,7 @@ class TestE2E8NotificationFailureDirectiveRetry(TestCase):
 
         # Create a directive
         directive = Directive.objects.create(
-            topic="notification.order_confirmed",
+            topic="notification.order_accepted",
             payload={"order_ref": "ORD-TEST-001"},
         )
 
@@ -483,7 +483,7 @@ class TestE2E8NotificationFailureDirectiveRetry(TestCase):
             cmd.style.ERROR = lambda x: x
             cmd.style.WARNING = lambda x: x
             cmd.style.SUCCESS = lambda x: x
-            cmd.handle(topics=["notification.order_confirmed"], limit=10, watch=False, interval=2.0, max_attempts=5, reap_timeout=0)
+            cmd.handle(topics=["notification.order_accepted"], limit=10, watch=False, interval=2.0, max_attempts=5, reap_timeout=0)
 
         directive.refresh_from_db()
         # Transient error: stays queued (not failed), error_code set
@@ -507,7 +507,7 @@ class TestE2E8TerminalErrorDirectiveFails(TestCase):
         from shopman.orderman.management.commands.process_directives import Command
 
         directive = Directive.objects.create(
-            topic="notification.order_confirmed",
+            topic="notification.order_accepted",
             payload={"order_ref": "ORD-TEST-002"},
         )
 
@@ -522,7 +522,7 @@ class TestE2E8TerminalErrorDirectiveFails(TestCase):
             cmd.style.ERROR = lambda x: x
             cmd.style.WARNING = lambda x: x
             cmd.style.SUCCESS = lambda x: x
-            cmd.handle(topics=["notification.order_confirmed"], limit=10, watch=False, interval=2.0, max_attempts=5, reap_timeout=0)
+            cmd.handle(topics=["notification.order_accepted"], limit=10, watch=False, interval=2.0, max_attempts=5, reap_timeout=0)
 
         directive.refresh_from_db()
         # Terminal error: immediately failed, no retry

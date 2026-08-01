@@ -24,6 +24,19 @@ const emit = defineEmits<{
 
 const code = computed(() => splitRef(props.card.ref));
 const affordances = computed(() => cardAffordances(props.card));
+// Tom do pagamento vem da projeção, não de dedução na tela: dinheiro não é
+// "pago" nem "devendo" — é cobrança fora do site, e verde ali diria que entrou
+// dinheiro que não entrou.
+const paymentPillClass = computed(() => ({
+  danger: "border-destructive/50 text-destructive",
+  success: "border-success/50 text-success",
+  neutral: "border-border text-muted-foreground"
+}[props.card.payment_tone] || "border-border text-muted-foreground"));
+const paymentPillIcon = computed(() => ({
+  danger: "lucide:circle-alert",
+  success: "lucide:circle-check",
+  neutral: "lucide:wallet"
+}[props.card.payment_tone] || "lucide:wallet"));
 const tTone = computed(() => timerTone(props.card.timer_class));
 
 // Countdown do prazo da confirmação otimista (só em cards com timer agendado).
@@ -133,10 +146,10 @@ function buttonClass(priority: string): string {
       </span>
       <span
         v-if="card.payment_method_label"
-        class="inline-flex items-center gap-1 rounded-md border px-2 py-0.5 text-muted-foreground"
-        :class="card.payment_pending ? 'border-warning/40 text-amber-700 dark:text-amber-300' : 'border-border'"
+        class="inline-flex items-center gap-1 rounded-md border px-2 py-0.5"
+        :class="paymentPillClass"
       >
-        <Icon :name="card.payment_pending ? 'lucide:hourglass' : 'lucide:wallet'" class="size-3" />
+        <Icon :name="paymentPillIcon" class="size-3" />
         {{ card.payment_method_label }}
       </span>
       <span class="ml-auto text-sm font-bold tabular-nums">{{ card.total_display }}</span>
@@ -174,10 +187,11 @@ function buttonClass(priority: string): string {
         v-for="aff in affordances"
         :key="aff.ref"
         type="button"
-        :disabled="busy"
-        class="inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-sm font-semibold transition active:scale-[0.98] disabled:opacity-50"
-        :class="buttonClass(aff.priority)"
-        @click="emit('action', aff.ref)"
+        :disabled="busy || aff.disabled"
+        :title="aff.reason || undefined"
+        class="inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-sm font-semibold transition disabled:opacity-60"
+        :class="[aff.disabled ? 'cursor-default border-dashed text-muted-foreground' : 'active:scale-[0.98] ' + buttonClass(aff.priority)]"
+        @click="!aff.disabled && emit('action', aff.ref)"
       >
         <Icon :name="aff.icon" class="size-3.5" />
         {{ aff.label }}

@@ -20,7 +20,7 @@ MESSAGE_TEMPLATES: dict[str, str] = {
         "Ola{customer_name_greeting}! Recebemos seu pedido {order_ref}. "
         "O estabelecimento vai conferir a disponibilidade. Acompanhe: {tracking_url}"
     ),
-    "order_confirmed": (
+    "order_accepted": (
         "Ola{customer_name_greeting}! Seu pedido {order_ref} foi confirmado."
         " Total: {total}. Obrigado pela preferencia! \U0001f950{tracking_suffix}"
     ),
@@ -195,7 +195,7 @@ def send(recipient: str, template: str, context: dict | None = None, **config) -
 
     Args:
         recipient: Phone number or ManyChat subscriber ID.
-        template: Event template name (e.g. "order_confirmed").
+        template: Event template name (e.g. "order_accepted").
         context: Template variables (order_ref, customer_name, total, etc.).
 
     Returns:

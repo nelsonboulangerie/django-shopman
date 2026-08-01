@@ -965,10 +965,10 @@ class TestNotificationTemplate:
 
         _shop()
         NotificationTemplate.objects.create(
-            event="order_confirmed", subject="Pedido confirmado", body="Olá {name}"
+            event="order_accepted", subject="Pedido confirmado", body="Olá {name}"
         )
-        # 'event' é unique — não há como ter um template 'order_confirmed' por canal.
+        # 'event' é unique — não há como ter um template 'order_accepted' por canal.
         with pytest.raises(IntegrityError):
             NotificationTemplate.objects.create(
-                event="order_confirmed", subject="Outro", body="x"
+                event="order_accepted", subject="Outro", body="x"
             )

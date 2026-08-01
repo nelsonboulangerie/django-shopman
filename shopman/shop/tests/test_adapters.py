@@ -218,13 +218,13 @@ class TestManychatFlowFromAdmin:
         from shopman.shop.models import NotificationTemplate
 
         NotificationTemplate.objects.create(
-            event="order_confirmed", subject="Pedido confirmado", body="oi",
+            event="order_accepted", subject="Pedido confirmado", body="oi",
             whatsapp_flow_ns="content_admin_999", is_active=True,
         )
         mod = import_module("shopman.shop.adapters.notification_manychat")
 
         with patch.object(mod, "_api_call", return_value={"success": True}) as api_call:
-            ok = mod.send("+5543999998888", "order_confirmed", {"order_ref": "A1"})
+            ok = mod.send("+5543999998888", "order_accepted", {"order_ref": "A1"})
 
         assert ok is True
         endpoint, payload, _cfg = api_call.call_args.args
@@ -240,12 +240,12 @@ class TestManychatFlowFromAdmin:
         from shopman.shop.models import NotificationTemplate
 
         NotificationTemplate.objects.create(
-            event="order_confirmed", subject="x", body="Pedido {order_ref} confirmado", is_active=True,
+            event="order_accepted", subject="x", body="Pedido {order_ref} confirmado", is_active=True,
         )
         mod = import_module("shopman.shop.adapters.notification_manychat")
 
         with patch.object(mod, "_api_call", return_value={"success": True}) as api_call:
-            ok = mod.send("+5543999998888", "order_confirmed", {"order_ref": "A1"})
+            ok = mod.send("+5543999998888", "order_accepted", {"order_ref": "A1"})
 
         assert ok is True
         endpoint, payload, _cfg = api_call.call_args.args
@@ -342,7 +342,7 @@ class TestConsoleAdapterBehavior:
     def test_send_returns_true(self):
         from shopman.shop.adapters.notification_console import send
 
-        result = send("test@example.com", "order_confirmed", {"order_ref": "ORD-001"})
+        result = send("test@example.com", "order_accepted", {"order_ref": "ORD-001"})
         assert result is True
 
     def test_is_available_returns_true(self):
