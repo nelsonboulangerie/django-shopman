@@ -48,12 +48,14 @@ class TestAccessLinkExchangeApi:
         assert response.json()["redirect"] == "/tracking/ORD-NUXT-1"
         assert "ORD-NUXT-1" in client.session.get("shopman_order_access_refs", [])
 
-    def test_payment_action_redirects_to_payment_page(self, client: Client, customer):
+    def test_payment_action_redirects_to_tracking(self, client: Client, customer):
+        # PAYMENT-TRACKING-MERGE: pagamento é um degrau do acompanhamento, então
+        # um magic link de pagamento aterrissa no próprio acompanhamento.
         _link, raw_token = self._token(customer, metadata={"order_ref": "ORD-PAY-1", "action": "payment"})
 
         response = client.post(self.URL, {"token": raw_token})
 
-        assert response.json()["redirect"] == "/pedido/ORD-PAY-1/pagamento"
+        assert response.json()["redirect"] == "/tracking/ORD-PAY-1"
 
     def test_reorder_action_redirects_to_order_history(self, client: Client, customer):
         _link, raw_token = self._token(customer, metadata={"order_ref": "ORD-RE-1", "action": "reorder"})

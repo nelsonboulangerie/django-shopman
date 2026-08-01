@@ -179,6 +179,15 @@ class OrderTrackingCopyProjection:
     page_meta_description: str
     delivery_heading: str
     stale_cta: str
+    # Copy estática do bloco de pagamento inline (Pix/cartão), que antes vivia na
+    # tela de pagamento (PAYMENT-TRACKING-MERGE).
+    pix_instruction: str
+    pix_copy_label: str
+    pix_copy_btn: str
+    pix_copied: str
+    pix_expires_label: str
+    card_intro: str
+    card_security_note: str
 
 
 @dataclass(frozen=True)
@@ -201,6 +210,14 @@ class OrderTrackingPromiseProjection:
     # principal a consequência que o cliente não precisa ler primeiro ("se o
     # prazo acabar…"), sem escondê-la. Quem tem nota é quem declara CONSEQUENCE.
     footnote: str = ""
+    # ── Bloco de pagamento (só nos degraus com o que pagar) ──────────
+    # O acompanhamento renderiza Pix/cartão inline; a antiga tela de pagamento
+    # deixou de existir. Vazio na esmagadora maioria dos estados.
+    payment_method: str = ""
+    pix_qr_code: str | None = None
+    pix_copy_paste: str | None = None
+    pix_expires_at: str | None = None
+    checkout_url: str | None = None
 
 
 @dataclass(frozen=True)
@@ -497,14 +514,20 @@ NOTIFICATION = "notification"  # o sistema avisa, e a copy promete isso
 
 _PROMISE_COVERS: dict[str, frozenset[str]] = {
     "received": frozenset(),
-    "availability_check": frozenset(),
-    "availability_deferred": frozenset(),
+    # Bola da loja: conferindo (com relógio de auto-confirmação ou aguardando o
+    # código Pix nascer) e loja fechada.
+    "store_checking": frozenset({CONSEQUENCE, NOTIFICATION}),
+    "store_closed": frozenset(),
     "preorder_scheduled": frozenset(),
-    "payment_requested": frozenset({NEXT_STEP, CONSEQUENCE, NOTIFICATION}),
-    "payment_pending": frozenset({NEXT_STEP, CONSEQUENCE}),
+    # Bola do cliente: o código/link existe e ele precisa pagar.
+    "payment_pix_ready": frozenset({NEXT_STEP, CONSEQUENCE, NOTIFICATION}),
+    "payment_card_ready": frozenset({NEXT_STEP, NOTIFICATION}),
+    "payment_retry": frozenset({NEXT_STEP}),
+    "payment_preparing": frozenset({NOTIFICATION}),
+    # Bola do gateway: cartão autorizado, capturando.
+    "payment_authorized": frozenset(),
     "payment_confirmed": frozenset(),
     "payment_expired": frozenset({CONSEQUENCE}),
-    "card_authorized": frozenset(),
     "preparing": frozenset({NOTIFICATION}),
     "ready_pickup": frozenset({NEXT_STEP}),
     "ready_delivery": frozenset(),
@@ -562,11 +585,16 @@ def _present_promise(
         notification_topic=data.notification_topic,
         actions=data.actions,
         footnote=footnote,
+        payment_method=data.payment_method,
+        pix_qr_code=data.pix_qr_code,
+        pix_copy_paste=data.pix_copy_paste,
+        pix_expires_at=data.pix_expires_at,
+        checkout_url=data.checkout_url,
     )
 
 
 _PROMISE_FOOTNOTE: dict[str, tuple[str, str]] = {
-    "payment_requested": (
+    "payment_pix_ready": (
         "TRACKING_PROMISE_PAYMENT_FOOTNOTE",
         "Se o prazo acabar, o pedido cancela automaticamente e avisamos você.",
     ),
@@ -624,16 +652,36 @@ def _promise_copy(
                      "Pagamento expirado",
                      "O prazo acabou e cancelamos o pedido.")
 
-    if state in {"payment_requested", "payment_pending"}:
-        if state == "payment_requested":
-            return _pair(copy, "TRACKING_PAYMENT_REQUESTED",
-                         "Falta só o pagamento",
-                         "Pague o Pix e começamos a preparar.")
-        return _pair(copy, "TRACKING_PAYMENT_PENDING",
-                     "Aguardando pagamento",
-                     "Assim que o banco confirmar, começamos o preparo.")
+    if state == "payment_pix_ready":
+        # Um estado, uma frase: o cliente copia o código e paga. Se a loja ainda
+        # não confirmou a disponibilidade, isso vive na nota de rodapé, não em
+        # um segundo estado (plano PAYMENT-TRACKING-MERGE, §Pares).
+        return _pair(copy, "TRACKING_PAYMENT_REQUESTED",
+                     "Pague com Pix",
+                     "Use o código abaixo e começamos a preparar.")
 
-    if state == "availability_deferred":
+    if state == "payment_card_ready":
+        return (
+            copy.title("TRACKING_PROMISE_CARD_TITLE", "Pague com cartão"),
+            copy.message("TRACKING_PROMISE_CARD_MESSAGE",
+                         "Finalize no ambiente seguro e começamos a preparar."),
+        )
+
+    if state == "payment_retry":
+        return (
+            copy.title("TRACKING_PROMISE_RETRY_TITLE", "Não conseguimos preparar o pagamento"),
+            copy.message("TRACKING_PROMISE_RETRY_MESSAGE",
+                         "Seu pedido está registrado. Tente gerar o pagamento de novo e, se não der, fale conosco."),
+        )
+
+    if state == "payment_preparing":
+        return (
+            copy.title("TRACKING_PROMISE_PIX_PREPARING_TITLE", "Preparando seu Pix"),
+            copy.message("TRACKING_PROMISE_PIX_PREPARING_MESSAGE",
+                         "Pedido aceito. O código aparece aqui em instantes."),
+        )
+
+    if state == "store_closed":
         if data.next_opening_phrase:
             message = copy.message(
                 "TRACKING_PROMISE_CLOSED_HOURS_MESSAGE_NEXT",
@@ -646,7 +694,7 @@ def _promise_copy(
             )
         return copy.title("TRACKING_PROMISE_RECEIVED_TITLE", "Pedido recebido"), message
 
-    if state == "card_authorized":
+    if state == "payment_authorized":
         message = (
             copy.message("TRACKING_CARD_AUTHORIZED_MESSAGE_NEW",
                          "Agora conferimos a disponibilidade.")
@@ -656,7 +704,7 @@ def _promise_copy(
         )
         return copy.title("TRACKING_CARD_AUTHORIZED", "Pagamento autorizado"), message
 
-    if state == "availability_check":
+    if state == "store_checking":
         # Pago e conferindo é UM momento, não dois recados. O aviso separado
         # "Pagamento confirmado." empilhava uma terceira linha dizendo o que a
         # frase já podia dizer — e o histórico registra o passo de qualquer jeito.
@@ -1013,6 +1061,13 @@ def _tracking_copy(copy: CopyCatalog) -> OrderTrackingCopyProjection:
         page_meta_description=copy.message("TRACKING_PAGE_META_DESCRIPTION", "Acompanhe seu pedido"),
         delivery_heading=copy.title("TRACKING_DELIVERY_HEADING", "Entrega"),
         stale_cta=copy.message("TRACKING_PROMISE_STALE", "Atualizar"),
+        pix_instruction=copy.message("TRACKING_PAYMENT_PIX_INSTRUCTION", "Escaneie o QR Code ou copie o código Pix abaixo."),
+        pix_copy_label=copy.title("TRACKING_PAYMENT_PIX_COPY_LABEL", "Pix Copia e Cola"),
+        pix_copy_btn=copy.title("TRACKING_PAYMENT_PIX_COPY_BTN", "Copiar código"),
+        pix_copied=copy.title("TRACKING_PAYMENT_PIX_COPIED", "Código Pix copiado."),
+        pix_expires_label=copy.message("TRACKING_PAYMENT_PIX_EXPIRES_LABEL", "Tempo para pagar"),
+        card_intro=copy.message("TRACKING_PAYMENT_CARD_INTRO", "Conclua o pagamento no nosso ambiente seguro. A confirmação é automática."),
+        card_security_note=copy.message("TRACKING_PAYMENT_CARD_SECURITY_NOTE", "Pagamento processado por provedor seguro. Nós não recebemos os dados do seu cartão."),
     )
 
 

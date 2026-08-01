@@ -124,7 +124,9 @@ def create_intent(
             storefront_links.path_order_tracking(order_ref), stripe_config,
         ),
         cancel_url=_storefront_absolute(
-            storefront_links.path_order_payment(order_ref), stripe_config,
+            # PAYMENT-TRACKING-MERGE: cancelar no Stripe volta para o próprio
+            # acompanhamento (onde o cartão é oferecido inline), não para uma tela.
+            storefront_links.path_order_tracking(order_ref), stripe_config,
         ),
         metadata={
             "shopman_ref": db_intent.ref,

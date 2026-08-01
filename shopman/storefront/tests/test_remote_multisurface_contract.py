@@ -183,31 +183,31 @@ def test_core_status_and_projection_contracts_cover_remote_intermediate_states()
         _read(REPO_ROOT / "shopman" / "shop" / "projections" / "order_tracking.py")
         + _read(REPO_ROOT / "shopman" / "storefront" / "presentation" / "order_tracking.py")
     )
-    # Same cut for payment: deadline fields + actions in the data Projection;
-    # next_event/recovery/active_notification in the storefront Presentation.
-    payment_projection = (
-        _read(REPO_ROOT / "shopman" / "shop" / "projections" / "payment_status.py")
-        + _read(REPO_ROOT / "shopman" / "storefront" / "presentation" / "payment.py")
-    )
-
     for status in ORDER_STATUSES:
         assert f'"{status}"' in order_model
 
     for status in PAYMENT_STATUSES:
         assert f'"{status}"' in payment_model
 
+    # A cascata unificada (PAYMENT-TRACKING-MERGE): a antiga tela de pagamento
+    # virou os degraus de pagamento do próprio acompanhamento.
     for derived_state in [
-        "payment_pending",
-        "payment_requested",
+        "payment_pix_ready",
+        "payment_card_ready",
+        "payment_retry",
+        "payment_authorized",
+        "payment_preparing",
         "payment_expired",
-        "availability_deferred",
-        "availability_check",
+        "store_closed",
+        "store_checking",
         "payment_confirmed",
         "ready_delivery",
         "ready_pickup",
     ]:
         assert derived_state in tracking
 
+    # Uma projeção só depois da fusão: os campos de deadline/ações do pagamento
+    # passaram a viver no próprio acompanhamento.
     for projection_field in [
         "deadline_at",
         "deadline_kind",
@@ -216,7 +216,6 @@ def test_core_status_and_projection_contracts_cover_remote_intermediate_states()
         "actions",
     ]:
         assert projection_field in tracking
-        assert projection_field in payment_projection
 
 
 def test_nuxt_tracking_contract_consumes_status_as_backend_string_not_surface_union():
@@ -256,7 +255,10 @@ def test_manychat_conversation_api_is_thin_projection_adapter():
     assert "can_cancel = serializers.BooleanField" not in serializer
 
     assert "OrderTrackingProjection" not in conversation
-    assert "payment_status.build_payment" in conversation
+    # Fusão PAYMENT-TRACKING-MERGE: uma verdade só. A conversa lê o promise do
+    # próprio acompanhamento (que já carrega o pagamento), sem projeção à parte.
+    assert "order_tracking.build_tracking" in conversation
+    assert "payment_status.build_payment" not in conversation
     assert "resolve_channel_policy" in conversation
     assert "cancel_order" in conversation
     assert "rate_order" in conversation

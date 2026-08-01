@@ -117,10 +117,11 @@ def test_full_journey_reorder_redeem_pix(client, django_capture_on_commit_callba
 
     assert LoyaltyService.get_balance(customer.ref) == 1000 - loyalty["applied_discount_q"]
 
-    # Optimistic confirmation → PIX becomes payable → pay → tracking reflects it.
+    # Optimistic confirmation → PIX becomes payable no PRÓPRIO acompanhamento
+    # (PAYMENT-TRACKING-MERGE) → pay → tracking reflects it.
     J.confirm_order(order, django_capture_on_commit_callbacks)
-    status, payment = J.get_payment(client, ref)
-    assert status == 200 and payment["payment"] is not None, payment
+    status, tracking = J.get_tracking(client, ref)
+    assert status == 200 and tracking["promise"]["state"] == "payment_pix_ready", tracking["promise"]
     status, _ = J.mock_confirm_payment(client, ref)
     assert status == 200
     _, tracking = J.get_tracking(client, ref)

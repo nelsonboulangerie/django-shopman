@@ -108,8 +108,8 @@ def _access_link_redirect(metadata: dict | None) -> str:
     order_ref = str(meta.get("order_ref") or "")
     action = str(meta.get("action") or "")
     if order_ref:
-        if action == "payment":
-            return storefront_links.path_order_payment(order_ref)
+        # PAYMENT-TRACKING-MERGE: pagamento é um degrau do acompanhamento, não uma
+        # tela. Um magic link de pagamento aterrissa no próprio acompanhamento.
         if action == "reorder":
             return storefront_links.path_order_history()
         return storefront_links.path_order_tracking(order_ref)

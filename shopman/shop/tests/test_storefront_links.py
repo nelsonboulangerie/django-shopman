@@ -1,4 +1,8 @@
-"""Fonte única de URL da loja Nuxt — caminhos canônicos + cutover por 1 knob."""
+"""Fonte única de URL da loja Nuxt — caminhos canônicos + cutover por 1 knob.
+
+PAYMENT-TRACKING-MERGE: não há mais rota /pagamento — o pagamento é um degrau do
+próprio acompanhamento, então ``path_order_payment``/``order_payment_url`` sumiram.
+"""
 from shopman.shop.services import storefront_links as sl
 
 
@@ -10,13 +14,11 @@ def test_paths_are_nuxt_canonical():
     assert sl.path_cart() == "/cart"
     assert sl.path_checkout() == "/checkout"
     assert sl.path_order_tracking("ORD-001") == "/tracking/ORD-001"
-    assert sl.path_order_payment("ORD-001") == "/pedido/ORD-001/pagamento"
     assert sl.path_account() == "/account"
 
 
 def test_absolute_urls_use_base(settings):
     settings.SHOPMAN_STOREFRONT_BASE_URL = "https://nelson.com"
-    assert sl.order_payment_url("ORD-1") == "https://nelson.com/pedido/ORD-1/pagamento"
     assert sl.order_tracking_url("ORD-1") == "https://nelson.com/tracking/ORD-1"
     assert sl.product_url("BAGUETE") == "https://nelson.com/product/BAGUETE"
     assert sl.home_url() == "https://nelson.com/"
@@ -25,12 +27,12 @@ def test_absolute_urls_use_base(settings):
 def test_base_trailing_slash_is_normalized(settings):
     settings.SHOPMAN_STOREFRONT_BASE_URL = "https://nelson.com/"
     assert sl.storefront_base_url() == "https://nelson.com"
-    assert sl.order_payment_url("X") == "https://nelson.com/pedido/X/pagamento"
+    assert sl.order_tracking_url("X") == "https://nelson.com/tracking/X"
 
 
 def test_empty_base_returns_relative_path(settings):
     settings.SHOPMAN_STOREFRONT_BASE_URL = ""
-    assert sl.order_payment_url("X") == "/pedido/X/pagamento"
+    assert sl.order_tracking_url("X") == "/tracking/X"
     assert sl.home_url() == "/"
 
 

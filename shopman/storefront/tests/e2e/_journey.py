@@ -310,10 +310,6 @@ def mock_confirm_payment(client: Client, ref: str):
     return resp.status_code, (resp.json() if resp.content else None)
 
 
-def get_payment(client: Client, ref: str):
-    return get_json(client, f"/api/v1/payment/{ref}/")
-
-
 def get_tracking(client: Client, ref: str):
     return get_json(client, f"/api/v1/tracking/{ref}/")
 

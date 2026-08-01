@@ -13,7 +13,7 @@ const sourceFiles = [
   'app/pages/sacola.vue',
   'app/pages/finalizar.vue',
   'app/pages/pedido/[ref]/index.vue',
-  'app/pages/pedido/[ref]/pagamento.vue',
+  'app/components/PaymentBlock.vue',
   'app/pages/conta/index.vue',
   'app/pages/conta/pedidos.vue',
   'app/pages/conta/enderecos.vue',

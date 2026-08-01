@@ -105,7 +105,7 @@ class TestPreorderTracking:
         proj = build_order_tracking(order_with_payment)
 
         # Sem pagamento confirmado, a promise continua sendo o pagamento.
-        assert proj.promise.state in {"payment_requested", "payment_pending"}
+        assert proj.promise.state == "payment_pix_ready"
         assert proj.is_preorder is True
 
 
@@ -694,7 +694,7 @@ class TestStatusColours:
         assert proj.payment_expired is False
         assert proj.payment_status_label == "Aguardando pagamento"
         assert proj.confirmation_countdown is False
-        assert proj.promise.state == "payment_pending"
+        assert proj.promise.state == "payment_pix_ready"
         assert proj.promise.deadline_kind == "payment"
         assert proj.promise.deadline_at == proj.payment_expires_at
 
@@ -773,7 +773,7 @@ class TestStatusColours:
         assert proj.payment_status_label == "Pagamento confirmado"
         assert proj.confirmation_countdown is True
         assert proj.confirmation_expires_at is not None
-        assert proj.promise.state == "availability_check"
+        assert proj.promise.state == "store_checking"
         assert proj.promise.title == "Pedido recebido"
         # Pago e conferindo é UMA frase: antes o painel empilhava a mensagem, um
         # "Pagamento confirmado." solto e o rótulo do contador repetindo tudo.
@@ -822,30 +822,22 @@ class TestStatusColours:
 
         assert proj.confirmation_countdown is False
         assert proj.confirmation_expires_at is None
-        assert proj.promise.state == "availability_deferred"
+        assert proj.promise.state == "store_closed"
         assert proj.promise.deadline_at is None
         assert proj.promise.timer_mode == "none"
         assert proj.promise.message == (
             "Estamos fechados agora. Conferimos seu pedido quando abrirmos, amanhã às 9h."
         )
 
-    def test_closed_store_says_the_same_on_the_payment_screen(
-        self, order, channel, shop_instance,
-    ):
-        """As duas telas contam a MESMA história sobre a loja fechada.
+    def test_closed_store_defers_review_on_tracking(self, order, channel, shop_instance):
+        """Loja fechada + Pix: o acompanhamento diz que confere na abertura.
 
-        O acompanhamento sabia do calendário e a tela de pagamento não. Quem
-        caía no gate do Pix lia "Estamos conferindo a disponibilidade" com a
-        padaria fechada, girando o poll de 8 em 8 segundos, enquanto o aceite
-        automático só venceria na abertura. Duas máquinas de estado respondendo
-        à mesma pergunta — hoje as duas perguntam a
-        ``business_calendar.store_review_deferred_state``.
+        Antes havia DUAS telas respondendo à mesma pergunta (o acompanhamento
+        sabia do calendário, a tela de pagamento não). Depois da fusão só existe
+        uma: o próprio acompanhamento carrega o Pix e o calendário juntos.
         """
         from datetime import datetime
         from zoneinfo import ZoneInfo
-
-        from shopman.shop.projections.payment_status import build_payment
-        from shopman.storefront.presentation.payment import present_payment
 
         tz = ZoneInfo("America/Sao_Paulo")
         shop_instance.timezone = "America/Sao_Paulo"
@@ -862,14 +854,10 @@ class TestStatusColours:
             return_value=datetime(2026, 5, 3, 12, 0, tzinfo=tz),
         ):
             tracking = build_order_tracking(order)
-            pagamento = present_payment(build_payment(order))
 
-        assert tracking.promise.state == "availability_deferred"
-        assert pagamento.promise.state == "pix_waiting_opening"
-        assert "fechados" in pagamento.promise.message
-        assert "amanhã às 9h" in pagamento.promise.message
-        # Nada de bater de 8 em 8 segundos até a loja abrir.
-        assert pagamento.promise.stale_after_seconds is None
+        assert tracking.promise.state == "store_closed"
+        assert "fechados" in tracking.promise.message
+        assert "amanhã às 9h" in tracking.promise.message
 
     def test_payment_timeout_cancelled_order_shows_payment_expired(self, order_with_payment):
         from shopman.orderman.models import Order as _Order
@@ -944,7 +932,7 @@ class TestStatusColours:
         assert proj.payment_confirmed is True
         assert "pagamento recebido" not in proj.promise.message.lower()
 
-    def test_confirmed_unpaid_digital_order_shows_payment_pending(self, order_with_payment):
+    def test_confirmed_unpaid_digital_order_shows_pix_ready(self, order_with_payment):
         order_with_payment.transition_status("accepted", actor="test")
         order_with_payment.refresh_from_db()
 
@@ -954,13 +942,17 @@ class TestStatusColours:
         assert proj.payment_pending is True
         assert proj.payment_confirmed is False
         assert proj.payment_status_label == "Aguardando pagamento"
-        assert proj.promise.state == "payment_requested"
+        # O pagamento é um estado do pedido: o Pix é renderizado no próprio
+        # acompanhamento, sem CTA que empurra para outra tela.
+        assert proj.promise.state == "payment_pix_ready"
         assert proj.promise.requires_active_notification is True
         assert proj.promise.notification_topic == "payment_requested"
-        assert proj.promise.actions[0].ref == "pay_now"
-        assert proj.promise.actions[0].label == "Pagar agora"
-        assert proj.promise.actions[0].href == f"/pedido/{order_with_payment.ref}/pagamento"
-        assert "Pague o Pix" in proj.promise.message
+        assert proj.promise.actions[0].ref == "copy_pix"
+        assert proj.promise.actions[0].label == "Copiar código PIX"
+        assert proj.promise.actions[0].href == ""
+        assert proj.promise.payment_method == "pix"
+        assert proj.promise.pix_copy_paste == order_with_payment.data["payment"]["pix_code"]
+        assert "código" in proj.promise.message.lower()
         assert "cancela automaticamente" in proj.promise.footnote.lower()
 
     def test_authorized_card_is_internal_not_surface_payment_action(self, order_with_payment):
@@ -988,7 +980,7 @@ class TestStatusColours:
         assert proj.payment_confirmed is False
         assert proj.payment_status_label == "Pagamento autorizado"
         assert proj.status_label == "Pagamento autorizado"
-        assert proj.promise.state == "card_authorized"
+        assert proj.promise.state == "payment_authorized"
         assert proj.promise.actions == ()
         assert "Aguardando pagamento" not in {proj.status_label, proj.payment_status_label}
 

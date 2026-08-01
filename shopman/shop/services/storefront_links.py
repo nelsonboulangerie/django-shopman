@@ -48,10 +48,6 @@ def path_order_tracking(ref: str) -> str:
     return f"/tracking/{ref}"
 
 
-def path_order_payment(ref: str) -> str:
-    return f"/pedido/{ref}/pagamento"
-
-
 def path_account() -> str:
     return "/account"
 
@@ -89,10 +85,6 @@ def storefront_url(path: str) -> str:
 # ── Atalhos absolutos (o que os geradores de link de cliente consomem) ─
 def order_tracking_url(ref: str) -> str:
     return storefront_url(path_order_tracking(ref))
-
-
-def order_payment_url(ref: str) -> str:
-    return storefront_url(path_order_payment(ref))
 
 
 def product_url(sku: str) -> str:

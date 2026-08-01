@@ -51,7 +51,7 @@ def test_omotenashi_qa_strict_fails_when_seed_evidence_is_missing():
                 viewport="mobile 375x812",
                 persona="cliente distraido",
                 title="PIX expirado",
-                url="/pedido/ORDER_REF/pagamento/",
+                url="/tracking/ORDER_REF",
                 expectation="Tela deve oferecer recuperacao.",
                 evidence="-",
                 status="missing",

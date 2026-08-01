@@ -58,16 +58,6 @@ from .order_tracking import (
     present_tracking,
     present_tracking_status,
 )
-from .payment import (
-    PaymentProjection,
-    PaymentPromiseProjection,
-    PaymentStatusProjection,
-    build_payment,
-    build_payment_status,
-    present_payment,
-    present_payment_status,
-    promise_has_pending_payment_action,
-)
 from .product_detail import (
     AllergenInfoProjection,
     ConservationInfoProjection,
@@ -110,9 +100,6 @@ __all__ = [
     "OrderTrackingProjection",
     "OrderTrackingPromiseProjection",
     "OrderTrackingStatusProjection",
-    "PaymentProjection",
-    "PaymentPromiseProjection",
-    "PaymentStatusProjection",
     "PickupInfoProjection",
     "ProductDetailProjection",
     "ReorderConflictCopyProjection",
@@ -133,16 +120,11 @@ __all__ = [
     "build_order_history",
     "build_order_tracking",
     "build_order_tracking_status",
-    "build_payment",
-    "build_payment_status",
     "build_product_detail",
     "build_reorder_conflict",
     "build_shop_projection",
     "order_history_for_customer",
     "order_history_for_phone",
-    "present_payment",
-    "present_payment_status",
     "present_tracking",
     "present_tracking_status",
-    "promise_has_pending_payment_action",
 ]

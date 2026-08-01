@@ -1,58 +1,12 @@
-import type { PaymentPromiseProjection } from '~/types/shopman'
-
-// Lógica pura da tela de pagamento. O contrato vem das projeções do backend
-// (SAGRADO): a UI só deriva apresentação, nunca inventa estado.
-
-// Estados TERMINAIS do pagamento vivem em `promise.state` — não em
-// `payment_status` (que é pending|authorized|captured|null). Confundir os dois
-// fazia a guarda do poll nunca disparar e a tela pollar para sempre após o pago.
-export const PAYMENT_TERMINAL_STATES = ['paid', 'cancelled', 'expired'] as const
-
-export function isPaymentTerminal (state: string | null | undefined): boolean {
-  return (PAYMENT_TERMINAL_STATES as readonly string[]).includes(String(state))
-}
-
-export function shouldPollPayment (
-  payment: { promise: Pick<PaymentPromiseProjection, 'state'> } | null | undefined
-): boolean {
-  return Boolean(payment) && !isPaymentTerminal(payment!.promise.state)
-}
-
-// tom → variante do UiAlert. `success` agora vira verde (antes caía em info).
-export type PaymentAlertVariant = 'success' | 'destructive' | 'warning' | 'info'
-
-export function paymentAlertVariant (tone: string | null | undefined): PaymentAlertVariant {
-  if (tone === 'success') return 'success'
-  if (tone === 'danger') return 'destructive'
-  if (tone === 'warning') return 'warning'
-  return 'info'
-}
-
-export function paymentAlertIcon (tone: string | null | undefined): string {
-  if (tone === 'success') return 'lucide:circle-check'
-  if (tone === 'danger') return 'lucide:triangle-alert'
-  if (tone === 'warning') return 'lucide:circle-alert'
-  return 'lucide:info'
-}
-
-// Painel preenchido em todos os tons menos danger (que fica como contorno, mais
-// sóbrio para um alerta de erro). Preserva o comportamento visual atual.
-export function paymentAlertFilled (tone: string | null | undefined): boolean {
-  return tone !== 'danger'
-}
+// Lógica pura do bloco de pagamento inline. Depois da fusão
+// PAYMENT-TRACKING-MERGE a tela de pagamento deixou de existir: o Pix/cartão
+// viraram um degrau do próprio acompanhamento, então o estado, o poll e o
+// countdown vivem na página de acompanhamento (o promise carrega tudo). O que
+// sobra aqui é o rótulo acolhedor do método.
 
 // Rótulo acolhedor do método (omotenashi) em vez do enum cru "pix"/"card".
 export function paymentMethodLabel (method: string | null | undefined): string {
   if (method === 'pix') return 'Pix'
   if (method === 'card') return 'Cartão de crédito'
   return 'Pagamento'
-}
-
-// Cadência do poll da tela de pagamento, em ms. Vem da projeção
-// (Shop.realtime ← settings ← default) — antes era `8000` cravado no Vue. O piso
-// é guarda de servidor: por mais baixo que se configure, a tela não vira martelo.
-export const PISO_POLL_MS = 3000
-
-export function pollIntervalMs (pollAfterSeconds: number | null | undefined): number {
-  return Math.max((pollAfterSeconds || 8) * 1000, PISO_POLL_MS)
 }

@@ -14,8 +14,8 @@ from datetime import timedelta
 import pytest
 from django.utils import timezone
 
-from shopman.shop.services import payment_status
 from shopman.shop.projections.order_tracking import _payment_info
+from shopman.shop.services import payment_status
 
 pytestmark = pytest.mark.django_db
 

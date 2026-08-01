@@ -117,6 +117,34 @@ def test_payment_status_expired_pix_is_terminal(order_with_payment):
     assert projection.is_terminal is True
 
 
+def test_payment_is_due_true_for_accepted_unpaid_digital(order_with_payment):
+    order_with_payment.status = "accepted"
+    order_with_payment.save(update_fields=["status"])
+
+    assert customer_orders.payment_is_due(order_with_payment) is True
+
+
+def test_payment_is_due_false_for_non_digital_method(order_with_payment):
+    order_with_payment.status = "accepted"
+    order_with_payment.data["payment"]["method"] = "cash"
+    order_with_payment.save(update_fields=["status", "data"])
+
+    assert customer_orders.payment_is_due(order_with_payment) is False
+
+
+def test_payment_is_due_implies_open_status(order_with_payment):
+    # Invariante: quando o pagamento é devido, o pedido está em new/accepted —
+    # nunca compete com preparo/expedição. Ver test_invariants. Usa .update()
+    # para varrer todos os status sem esbarrar na validação de transição.
+    from shopman.orderman.models import Order
+
+    for status_value in ("new", "accepted", "preparing", "ready", "dispatched", "completed", "cancelled"):
+        Order.objects.filter(pk=order_with_payment.pk).update(status=status_value)
+        order_with_payment.refresh_from_db()
+        if customer_orders.payment_is_due(order_with_payment):
+            assert status_value in {"new", "accepted"}
+
+
 def test_customer_cancel_gate_preserves_payment_specific_refusal(order_with_payment):
     from shopman.payman import PaymentService
 

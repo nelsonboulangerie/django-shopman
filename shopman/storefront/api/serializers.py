@@ -174,6 +174,13 @@ class OrderTrackingPromiseSerializer(serializers.Serializer):
     notification_topic = serializers.CharField(allow_null=True, required=False)
     actions = ActionSerializer(many=True, required=False)
     footnote = serializers.CharField(allow_blank=True, required=False)
+    # Bloco de pagamento inline (só nos degraus com o que pagar): a antiga tela
+    # de pagamento virou dado dentro do próprio acompanhamento.
+    payment_method = serializers.CharField(allow_blank=True, required=False)
+    pix_qr_code = serializers.CharField(allow_null=True, required=False)
+    pix_copy_paste = serializers.CharField(allow_null=True, required=False)
+    pix_expires_at = serializers.CharField(allow_null=True, required=False)
+    checkout_url = serializers.CharField(allow_null=True, required=False)
 
 
 class OrderProgressStepSerializer(serializers.Serializer):
@@ -229,6 +236,13 @@ class OrderTrackingCopySerializer(serializers.Serializer):
     page_meta_description = serializers.CharField()
     delivery_heading = serializers.CharField()
     stale_cta = serializers.CharField()
+    pix_instruction = serializers.CharField()
+    pix_copy_label = serializers.CharField()
+    pix_copy_btn = serializers.CharField()
+    pix_copied = serializers.CharField()
+    pix_expires_label = serializers.CharField()
+    card_intro = serializers.CharField()
+    card_security_note = serializers.CharField()
 
 
 class OrderTrackingSerializer(serializers.Serializer):
@@ -260,8 +274,9 @@ class OrderTrackingSerializer(serializers.Serializer):
     payment_confirmed = serializers.BooleanField()
     payment_status_label = serializers.CharField(allow_null=True, required=False)
     payment_expires_at = serializers.CharField(allow_null=True, required=False)
-    requires_payment_gate = serializers.BooleanField(required=False)
-    payment_gate_url = serializers.CharField(allow_null=True, required=False)
+    # Fusão PAYMENT-TRACKING-MERGE: sem tela de pagamento à parte. O bloco é
+    # inline; a captura simulada (DEBUG/staging) é sinalizada aqui.
+    mock_payment_enabled = serializers.BooleanField(required=False)
     confirmation_countdown = serializers.BooleanField()
     confirmation_expires_at = serializers.CharField(allow_null=True, required=False)
     eta_display = serializers.CharField(allow_null=True, required=False)

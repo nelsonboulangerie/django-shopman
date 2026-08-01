@@ -37,7 +37,7 @@ from .catalog import CollectionListView, ProductDetailView, ProductListView
 from .conversation import OrderConversationView
 from .fomo import FomoBadgesView
 from .geocode import ReverseGeocodeView
-from .payment import OrderPaymentMockConfirmView, OrderPaymentStatusView, OrderPaymentView
+from .payment import OrderPaymentMockConfirmView
 from .surface import (
     CartCouponView,
     CartSkuQtyView,
@@ -116,8 +116,8 @@ urlpatterns = [
     path("orders/<str:ref>/confirm-received/", OrderConfirmReceiptView.as_view(), name="api-order-confirm-received"),
     path("orders/<str:ref>/rate/", OrderRateView.as_view(), name="api-order-rate"),
     path("orders/<str:ref>/conversation/", OrderConversationView.as_view(), name="api-order-conversation"),
-    path("payment/<str:ref>/", OrderPaymentView.as_view(), name="api-payment"),
-    path("payment/<str:ref>/status/", OrderPaymentStatusView.as_view(), name="api-payment-status"),
+    # A tela de pagamento sumiu (PAYMENT-TRACKING-MERGE): o GET/status foram
+    # absorvidos por /tracking/{ref}/ + SSE. Só o gatilho de captura simulada fica.
     path("payment/<str:ref>/mock-confirm/", OrderPaymentMockConfirmView.as_view(), name="api-payment-mock-confirm"),
     path("orders/<str:ref>/reorder/", OrderReorderView.as_view(), name="api-order-reorder"),
     # Account

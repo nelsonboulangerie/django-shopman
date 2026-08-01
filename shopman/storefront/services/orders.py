@@ -93,8 +93,8 @@ def resolve_timeouts_if_due(order) -> bool:
     return confirmation_resolved or payment_resolved or delivery_resolved
 
 
-def requires_payment_gate(order) -> bool:
-    return customer_orders.requires_payment_gate(order)
+def payment_is_due(order) -> bool:
+    return customer_orders.payment_is_due(order)
 
 
 def mark_just_placed(request, order_ref: str) -> None:

@@ -2,8 +2,6 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
-import pytest
-
 from shopman.shop.projections.types import Action
 from shopman.shop.services import conversation
 
@@ -43,7 +41,7 @@ def test_conversation_uses_tracking_promise_without_creating_order_status(monkey
     )
     tracking = SimpleNamespace(
         order_ref=order.ref,
-        promise=_promise(state="availability_check"),
+        promise=_promise(state="store_checking"),
         items=[SimpleNamespace(qty=2, name="Croissant")],
         total_display="R$ 20,00",
         actions=(Action(
@@ -56,21 +54,24 @@ def test_conversation_uses_tracking_promise_without_creating_order_status(monkey
         ),),
     )
     monkeypatch.setattr(conversation.order_tracking, "build_tracking", lambda order, is_debug=False: tracking)
-    monkeypatch.setattr(conversation.payment_status, "build_payment", pytest.fail)
     monkeypatch.setattr(conversation, "resolve_channel_policy", lambda channel_ref: _channel_policy())
 
     projection = conversation.build_order_conversation(order)
 
     assert projection.source_projection == "tracking"
-    assert projection.state == "availability_check"
+    assert projection.state == "store_checking"
     assert projection.order_status == "new"
     assert projection.actions[0].ref == "cancel_order"
     assert projection.actions[0].kind == "mutation"
     assert projection.items_summary == ("2x Croissant",)
     assert projection.tracking_url == "/pedido/ORD-CHAT-1/"
+    assert projection.payment_url is None
 
 
-def test_conversation_prefers_payment_promise_when_customer_payment_action_exists(monkeypatch):
+def test_conversation_marks_payment_when_promise_carries_customer_payment_action(monkeypatch):
+    """A fusão: o pagamento vive na PRÓPRIA promessa do acompanhamento. Quando é
+    a bola do cliente pagar, a fonte se diz "payment" e o link é o do
+    acompanhamento (não há mais rota /pagamento)."""
     order = SimpleNamespace(
         ref="ORD-CHAT-2",
         status="accepted",
@@ -80,14 +81,15 @@ def test_conversation_prefers_payment_promise_when_customer_payment_action_exist
     tracking = SimpleNamespace(
         order_ref=order.ref,
         promise=_promise(
-            state="payment_requested",
+            state="payment_pix_ready",
             actions=(Action(
-                ref="pay_now",
-                kind="link",
-                label="Pagar agora",
-                href="/pedido/ORD-CHAT-2/pagamento/",
+                ref="copy_pix",
+                kind="copy",
+                label="Copiar código PIX",
+                href="",
                 priority="primary",
             ),),
+            deadline_at="2026-05-15T12:15:00-03:00",
         ),
         items=[],
         total_display="R$ 45,00",
@@ -100,22 +102,7 @@ def test_conversation_prefers_payment_promise_when_customer_payment_action_exist
             priority="danger",
         ),),
     )
-    payment = SimpleNamespace(
-        promise=_promise(
-            state="pix_payment_after_confirmation",
-            title="Pagamento Pix",
-            actions=(Action(
-                ref="copy_pix",
-                kind="copy",
-                label="Pagar com Pix",
-                href="/pedido/ORD-CHAT-2/pagamento/",
-                priority="primary",
-            ),),
-            deadline_at="2026-05-15T12:15:00-03:00",
-        )
-    )
     monkeypatch.setattr(conversation.order_tracking, "build_tracking", lambda order, is_debug=False: tracking)
-    monkeypatch.setattr(conversation.payment_status, "build_payment", lambda order: payment)
     monkeypatch.setattr(
         conversation,
         "resolve_channel_policy",
@@ -125,12 +112,12 @@ def test_conversation_prefers_payment_promise_when_customer_payment_action_exist
     projection = conversation.build_order_conversation(order)
 
     assert projection.source_projection == "payment"
-    assert projection.state == "pix_payment_after_confirmation"
+    assert projection.state == "payment_pix_ready"
     assert projection.order_status == "accepted"
     assert projection.actions[0].ref == "copy_pix"
-    assert projection.actions[0].href == "/pedido/ORD-CHAT-2/pagamento/"
     assert projection.actions[1].ref == "cancel_order"
-    assert projection.payment_url == "/pedido/ORD-CHAT-2/pagamento/"
+    # O link do pagamento agora é o do acompanhamento — sem rota /pagamento.
+    assert projection.payment_url == "/pedido/ORD-CHAT-2/"
     assert projection.requires_payment_gate is True
 
 
@@ -151,7 +138,6 @@ def test_conversation_respects_channel_policy_cancel_gate(monkeypatch):
         ),),
     )
     monkeypatch.setattr(conversation.order_tracking, "build_tracking", lambda order, is_debug=False: tracking)
-    monkeypatch.setattr(conversation.payment_status, "build_payment", pytest.fail)
     monkeypatch.setattr(
         conversation,
         "resolve_channel_policy",

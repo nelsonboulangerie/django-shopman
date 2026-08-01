@@ -23,8 +23,10 @@ def staff_client(client, db):
 def test_projection_groups_keys_by_surface_and_screen():
     catalog = build_copy_catalog()
 
-    assert catalog.total_keys >= 300
-    assert catalog.mapped_keys >= 300
+    # A fusão PAYMENT-TRACKING-MERGE apagou a máquina de copy da tela de pagamento
+    # (~60 chaves); o registro segue com centenas de chaves mapeadas.
+    assert catalog.total_keys >= 280
+    assert catalog.mapped_keys >= 280
     labels = {(group.surface, group.screen) for group in catalog.groups}
     assert ("Loja", "Página do produto") in labels
     pdp = next(g for g in catalog.groups if g.screen == "Página do produto")

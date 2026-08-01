@@ -52,45 +52,34 @@ const { data, pending, error, refresh } = await useFetch<TrackingResponse>(
 const tracking = computed(() => data.value || null)
 const errorView = computed(() => orderAccessErrorView((error.value as { statusCode?: number } | null)?.statusCode, 'tracking'))
 const loginHref = computed(() => `/entrar?next=${encodeURIComponent(`/pedido/${orderRef.value}`)}`)
-// Destino real de pagamento: o gate do backend ou o href da ação `pay_now` (o ref
-// verdadeiro — não "payment"). Fica NULO quando não há para onde ir, para o
-// fallback não virar um botão que navega para lugar nenhum.
-const paymentGateHref = computed(() => tracking.value?.payment_gate_url
-  || tracking.value?.promise.actions.find(action => action.ref === 'pay_now')?.href
-  || null)
-const paymentHref = computed(() => paymentGateHref.value ? localRouteFromBackend(paymentGateHref.value) : null)
 const cancelAction = computed(() => tracking.value?.actions.find(action => action.ref === 'cancel_order' && action.enabled) || null)
 const rateAction = computed(() => tracking.value?.actions.find(action => action.ref === 'rate_order' && action.enabled) || null)
 const reorderAction = computed(() => tracking.value?.actions.find(action => action.ref === 'reorder' && action.enabled) || null)
-const promiseActions = computed(() => tracking.value?.promise.actions.filter(action => action.enabled) || [])
+// O bloco de pagamento inline (PAYMENT-TRACKING-MERGE) desenha o botão do cartão
+// e o copia-e-cola do Pix; não os repetimos no painel de status.
+const BLOCK_OWNED_ACTIONS = new Set(['copy_pix', 'pay_card'])
+const promiseActions = computed(() => tracking.value?.promise.actions.filter(action => action.enabled && !BLOCK_OWNED_ACTIONS.has(action.ref)) || [])
 const promiseTone = computed(() => tracking.value?.promise.tone || 'info')
 const statusPanelActions = computed(() => trackingStatusPanelActions(promiseActions.value, reorderAction.value, promiseTone.value))
 const statusPanelClass = computed(() => trackingPanelClass(promiseTone.value))
 const statusPanelIconClass = computed(() => trackingPanelIconClass(promiseTone.value))
 const statusPanelIcon = computed(() => trackingPanelIcon(promiseTone.value))
-const missingPaymentAction = computed(() => Boolean(
-  tracking.value?.requires_payment_gate &&
-  !statusPanelActions.value.some(action => action.ref === 'pay_now' || action.ref.includes('payment'))
-))
-// Fallback de pagamento só quando há PARA ONDE ir (paymentHref). Sem destino, não
-// mostramos um "Pagar" morto — cai no fallback de suporte abaixo.
-const showPaymentStatusFallback = computed(() => Boolean(missingPaymentAction.value && paymentHref.value))
+// Bloco de pagamento inline (PAYMENT-TRACKING-MERGE): aparece quando o degrau é
+// de pagamento — o promise carrega o método e o payload (Pix com/sem código, ou
+// cartão com link). O countdown do Pix é o próprio `promise.deadline_at`.
+const showPaymentBlock = computed(() => {
+  const p = tracking.value?.promise
+  if (!p) return false
+  return p.payment_method === 'pix' || (p.payment_method === 'card' && Boolean(p.checkout_url))
+})
 // "Fale conosco" em destaque quando há risco (danger) e quando o pedido saiu para
 // entrega — o trecho mais sensível, com courier terceirizado e sem rastreio.
 const showSupportInStatusPanel = computed(() => Boolean(
   tracking.value?.whatsapp_url &&
   (promiseTone.value === 'danger' || tracking.value?.promise.state === 'dispatched')
 ))
-// requires_payment_gate mas sem nenhum destino de pagamento: em vez de um beco sem
-// saída, oferecemos falar com a loja (a única coisa que resolve pagar preso). Não
-// duplica quando o suporte já aparece por danger/dispatched.
-const showPaymentSupportFallback = computed(() => Boolean(
-  missingPaymentAction.value && !paymentHref.value && tracking.value?.whatsapp_url && !showSupportInStatusPanel.value
-))
 const hasStatusPanelActions = computed(() => Boolean(
   statusPanelActions.value.length ||
-  showPaymentStatusFallback.value ||
-  showPaymentSupportFallback.value ||
   showSupportInStatusPanel.value
 ))
 const showReorderAction = computed(() => Boolean(
@@ -278,6 +267,27 @@ async function performReorderSafely (action: Action | null | undefined) {
   await performReorderAction(action).catch(() => null)
 }
 
+// "Simular pagamento" (DEBUG/staging): captura por gateway mock, para testar o
+// fluxo Pix/cartão de ponta a ponta sem gateway real. O bloco inline emite; aqui
+// disparamos a mutação e reconciliamos o acompanhamento.
+const mockPending = ref(false)
+async function mockConfirmPayment () {
+  if (mockPending.value) return
+  mockPending.value = true
+  try {
+    const headers = await csrfHeaders()
+    headers['x-idempotency-key'] = newRemoteMutationKey(`mock-confirm:${orderRef.value}`)
+    await $fetch(apiPath(`/api/v1/payment/${encodeURIComponent(orderRef.value)}/mock-confirm/`), {
+      method: 'POST', headers, credentials: 'include'
+    })
+    await refresh()
+  } catch (e) {
+    if (import.meta.client) useSonner.error(errorDetail(e, 'Não foi possível simular o pagamento.'))
+  } finally {
+    mockPending.value = false
+  }
+}
+
 function dismissReorderConflict () {
   conflict.value = null
 }
@@ -460,12 +470,6 @@ useSeoMeta({
                         {{ action.label }}
                       </span>
                     </template>
-                    <UiButton v-if="showPaymentStatusFallback" :to="paymentHref!" icon="lucide:credit-card">
-                      Pagar agora
-                    </UiButton>
-                    <UiButton v-if="showPaymentSupportFallback" :href="supportUrl" target="_blank" rel="noopener noreferrer" icon="lucide:message-circle">
-                      {{ tracking.copy.support_label }}
-                    </UiButton>
                     <UiButton v-if="showSupportInStatusPanel" :href="supportUrl" target="_blank" rel="noopener noreferrer" variant="secondary" icon="lucide:message-circle">
                       {{ tracking.copy.support_label }}
                     </UiButton>
@@ -502,6 +506,18 @@ useSeoMeta({
               </div>
             </UiAlertDescription>
           </UiAlert>
+
+          <!-- Bloco de pagamento INLINE (PAYMENT-TRACKING-MERGE): o Pix/cartão
+               vivem aqui, no próprio acompanhamento, não numa segunda tela. -->
+          <PaymentBlock
+            v-if="showPaymentBlock"
+            :promise="tracking.promise"
+            :copy="tracking.copy"
+            :total-display="tracking.total_display"
+            :mock-enabled="tracking.mock_payment_enabled"
+            :mock-pending="mockPending"
+            @mock-confirm="mockConfirmPayment"
+          />
 
           <UiCard class="py-3">
             <UiCardContent class="px-4 py-0">

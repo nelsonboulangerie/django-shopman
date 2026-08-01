@@ -426,8 +426,14 @@ def _resolve_due_directive_for_order(order, *, topic: str, handler, log_name: st
         return False
 
 
-def requires_payment_gate(order) -> bool:
-    """Return True when the customer must complete payment before tracking."""
+def payment_is_due(order) -> bool:
+    """Return True when the order still owes money the customer must complete.
+
+    The single predicate for "does this order owe money now?" — consumed by the
+    tracking promise cascade, the conversational surface, and the storefront API.
+    Invariant (``test_invariants``): ``payment_is_due(order) ⇒ status ∈ {new,
+    accepted}``, so a due payment never competes with preparing/dispatch.
+    """
     payment = (order.data or {}).get("payment") or {}
     method = str(payment.get("method") or "").lower()
     if method not in {"pix", "card"}:
@@ -678,9 +684,9 @@ __all__ = [
     "last_reorder_context",
     "mock_confirm_payment",
     "order_matches_customer_identity",
+    "payment_is_due",
     "resolve_confirmation_timeout_if_due",
     "resolve_payment_timeout_if_due",
-    "requires_payment_gate",
     "mark_just_placed",
     "consume_just_placed",
     "request_can_access_order",

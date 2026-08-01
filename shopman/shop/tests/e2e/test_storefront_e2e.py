@@ -150,15 +150,19 @@ class TestCustomerEdgeCases:
     def test_08_payment_pending_with_grant(
         self, page, store_base_url, grant_order_access, pix_pending_order_ref
     ):
-        """With a session grant, the PIX payment page renders the real state."""
+        """With a session grant, the tracking page renders the PIX inline.
+
+        PAYMENT-TRACKING-MERGE: não há mais tela /pagamento — o Pix é um degrau do
+        próprio acompanhamento.
+        """
         grant_order_access(page.context, pix_pending_order_ref)
         page.goto(
-            f"{store_base_url}/pedido/{pix_pending_order_ref}/pagamento",
+            f"{store_base_url}/pedido/{pix_pending_order_ref}",
             wait_until="networkidle",
         )
         body = page.locator("body").inner_text()
         assert re.search(r"PIX|pagamento|pagar|expir", body, re.IGNORECASE), (
-            "Granted payment page should render the PIX payment state"
+            "Granted tracking page should render the PIX payment state inline"
         )
 
 

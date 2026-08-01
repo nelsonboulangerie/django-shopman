@@ -813,7 +813,6 @@ describe('surface UX guardrails', () => {
 
   it('keeps destructive promise alerts readable instead of full red banners', () => {
     const tracking = read('app/pages/pedido/[ref]/index.vue')
-    const payment = read('app/pages/pedido/[ref]/pagamento.vue')
     const css = read('app/assets/css/tailwind.css')
 
     expect(css).toContain('--destructive-foreground: oklch(0.985 0 0)')
@@ -831,23 +830,15 @@ describe('surface UX guardrails', () => {
     const trackingPresentation = read('app/presentation/orderTracking.ts')
     expect(trackingPresentation).toContain('border-l-4 border-border border-l-destructive bg-card text-foreground shadow-sm')
     expect(trackingPresentation).toContain("if (tone === 'danger') return 'lucide:triangle-alert'")
-    // Pagamento: tom→variante/preenchimento agora vive em presentation/payment.ts.
-    // O contorno (não preenchido) para danger permanece a regra.
-    expect(payment).toContain(':filled="paymentAlertFilled(payment.promise.tone)"')
-    expect(payment).toContain(':icon="paymentAlertIcon(payment.promise.tone)"')
-    const paymentPresentation = read('app/presentation/payment.ts')
-    expect(paymentPresentation).toContain("return tone !== 'danger'")
-    expect(paymentPresentation).toContain("if (tone === 'danger') return 'lucide:triangle-alert'")
   })
 
   it('does not submit projected sensitive actions without idempotency when declared', () => {
+    // PAYMENT-TRACKING-MERGE: o pagamento é inline no acompanhamento; a única
+    // superfície com mutações projetadas é o próprio acompanhamento.
     const tracking = read('app/pages/pedido/[ref]/index.vue')
-    const payment = read('app/pages/pedido/[ref]/pagamento.vue')
 
-    for (const source of [tracking, payment]) {
-      expect(source).toContain("action.idempotency === 'required' || action.idempotency === 'recommended'")
-      expect(source).toContain("headers['x-idempotency-key'] = newRemoteMutationKey(action.ref)")
-    }
+    expect(tracking).toContain("action.idempotency === 'required' || action.idempotency === 'recommended'")
+    expect(tracking).toContain("headers['x-idempotency-key'] = newRemoteMutationKey(action.ref)")
   })
 
   it('keeps tracking recovery actionable and avoids repeated promise copy', () => {

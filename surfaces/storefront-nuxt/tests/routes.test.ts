@@ -1,12 +1,7 @@
 import { describe, expect, it } from 'vitest'
-import { localRouteFromBackend, orderPaymentRoute, orderTrackingRoute } from '../app/utils/routes'
+import { localRouteFromBackend, orderTrackingRoute } from '../app/utils/routes'
 
 describe('backend route adapter', () => {
-  it('keeps Django payment URLs inside the UI Thing payment route', () => {
-    expect(localRouteFromBackend('/pedido/ORD-123/pagamento')).toBe('/pedido/ORD-123/pagamento')
-    expect(localRouteFromBackend('/pedido/ORD-123/pagamento/?retry=1')).toBe('/pedido/ORD-123/pagamento?retry=1')
-  })
-
   it('maps tracking (Django acompanhar + legado /tracking) para a rota pt-BR /pedido', () => {
     expect(localRouteFromBackend('/pedido/ORD-123/acompanhar/')).toBe('/pedido/ORD-123')
     expect(localRouteFromBackend('/tracking/ORD-123')).toBe('/pedido/ORD-123')
@@ -22,6 +17,5 @@ describe('backend route adapter', () => {
 
   it('builds local routes without touching backend API contracts', () => {
     expect(orderTrackingRoute('ORD 123')).toBe('/pedido/ORD%20123')
-    expect(orderPaymentRoute('ORD 123')).toBe('/pedido/ORD%20123/pagamento')
   })
 })

@@ -1,4 +1,11 @@
-"""Storefront Payment API - Nuxt-facing payment contract."""
+"""Storefront Payment API — só o que sobrou da fusão PAYMENT-TRACKING-MERGE.
+
+A tela de pagamento deixou de existir: o Pix/cartão viraram um degrau do próprio
+acompanhamento (``GET /api/v1/tracking/{ref}/`` + SSE ``order-<ref>``). Os
+antigos ``GET /payment/{ref}/`` e ``/status/`` sumiram com ela. O que fica é o
+gatilho de captura simulada em DEBUG/staging, disparado de dentro do
+acompanhamento.
+"""
 
 from __future__ import annotations
 
@@ -12,11 +19,8 @@ from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from shopman.shop.omotenashi import resolve_copy
 from shopman.shop.services import remote_mutations
 from shopman.storefront.api.actions import retry_after_action
-from shopman.storefront.api.projections import projection_data
-from shopman.storefront.presentation import build_payment, build_payment_status
 from shopman.storefront.services import orders as order_service
 
 
@@ -25,6 +29,13 @@ def _tracking_url(ref: str) -> str:
 
 
 PAYMENT_RATE_LIMIT_RETRY_SECONDS = 30
+
+
+def mock_payment_enabled() -> bool:
+    """"Simular pagamento" liberado em DEBUG ou com adapters mock (staging)."""
+    from django.conf import settings
+
+    return bool(settings.DEBUG or getattr(settings, "SHOPMAN_ALLOW_MOCK_PAYMENT_ADAPTERS", False))
 
 
 def _rate_limited_response() -> Response:
@@ -40,146 +51,10 @@ def _rate_limited_response() -> Response:
     )
 
 
-def _is_digital_payment(order) -> bool:
-    payment = (order.data or {}).get("payment") or {}
-    return str(payment.get("method") or "").lower() in {"pix", "card"}
-
-
-def _payment_copy() -> dict:
-    """Copy estática da tela de pagamento (chrome + UI de PIX/cartão), resolvida do
-    registro omotenashi (configurável no Admin). O painel de status vem do `promise`
-    (fiado à parte); aqui só o que a tela hardcodava. O Vue consome com fallback."""
-    def title(key: str, fb: str) -> str:
-        return resolve_copy(key, moment="*", audience="*").title or fb
-
-    def message(key: str, fb: str) -> str:
-        return resolve_copy(key, moment="*", audience="*").message or fb
-
-    return {
-        "order_ref_label": title("PAYMENT_ORDER_REF_LABEL", "Pedido"),
-        "total_label": title("PAYMENT_TOTAL_LABEL", "Total"),
-        "meta_description": message("PAYMENT_PAGE_META_DESCRIPTION", "Pague seu pedido para seguirmos com o preparo"),
-        "card_intro": message("PAYMENT_CARD_INTRO", "Conclua o pagamento no ambiente seguro do Stripe. A confirmação é automática. Volte aqui se quiser acompanhar seu pedido."),
-        "card_security_note": message("PAYMENT_CARD_SECURITY_NOTE", "Pagamento processado por provedor seguro. Nós não recebemos os dados do seu cartão."),
-        "pix_instruction": message("PAYMENT_PIX_INSTRUCTION", "Escaneie o QR Code ou copie o código Pix abaixo."),
-        "pix_copy_label": title("PAYMENT_PIX_COPY_LABEL", "Copia e cola PIX"),
-        "pix_copy_btn": title("PAYMENT_PIX_COPY_BTN", "Copiar código"),
-        "pix_copied": title("PAYMENT_PIX_COPIED", "Código PIX copiado."),
-        "pix_expires_label": message("PAYMENT_PIX_EXPIRES_LABEL", "Tempo para pagar"),
-    }
-
-
-def _payment_has_pending_payment_action(payment: dict | None) -> bool:
-    if not payment:
-        return False
-    promise = payment.get("promise") or {}
-    actions = promise.get("actions") or []
-    return any(
-        action.get("enabled") is not False
-        and action.get("ref") != "track_order"
-        for action in actions
-        if isinstance(action, dict)
-    )
-
-
-@method_decorator(never_cache, name="dispatch")
-@method_decorator(ratelimit(key="user_or_ip", rate="90/m", method="GET", block=False), name="dispatch")
-class OrderPaymentView(APIView):
-    """GET /api/v1/payment/<ref>/ - payment projection for Nuxt."""
-
-    permission_classes = [AllowAny]
-    authentication_classes = []
-
-    def get(self, request, ref: str):
-        if getattr(request, "limited", False):
-            return _rate_limited_response()
-
-        try:
-            order = order_service.get_accessible_order(request, ref)
-        except Http404:
-            return Response({"detail": "Pedido não encontrado."}, status=404)
-
-        order_service.resolve_timeouts_if_due(order)
-        if order_service.is_cancelled(order) or order_service.payment_is_sufficient(order):
-            return Response({"redirect_url": _tracking_url(ref), "payment": None})
-
-        intent_ready = order_service.ensure_payment_intent(order)
-        if order_service.payment_is_sufficient(order):
-            return Response({"redirect_url": _tracking_url(ref), "payment": None})
-        if not intent_ready:
-            # Pix com `timing=post_commit`: o intent só nasce quando a loja
-            # confirma. Mandar para o acompanhamento aqui era o catch-22 — a tela
-            # que geraria o código nunca abria. Fica na espera; o poll de 8s traz
-            # o QR sozinho assim que a loja confirmar.
-            payment_meta = (order.data or {}).get("payment") or {}
-            method = str(payment_meta.get("method") or "").lower()
-            if method == "pix":
-                payment = projection_data(build_payment(order))
-                payment["status_url"] = f"/api/v1/payment/{ref}/status/"
-                payment["tracking_url"] = _tracking_url(ref)
-                return Response({
-                    "redirect_url": None,
-                    "intent_ready": False,
-                    "payment": payment,
-                    "copy": _payment_copy(),
-                })
-            # Sem intent e sem ser Pix: o acompanhamento é o lugar honesto.
-            if not (_is_digital_payment(order) and order.status == "accepted"):
-                return Response({
-                    "redirect_url": _tracking_url(ref),
-                    "payment": None,
-                    "reason": "waiting_store_confirmation",
-                })
-
-        payment = projection_data(build_payment(order))
-        payment["status_url"] = f"/api/v1/payment/{ref}/status/"
-        payment["tracking_url"] = _tracking_url(ref)
-        if not _payment_has_pending_payment_action(payment):
-            return Response({
-                "redirect_url": _tracking_url(ref),
-                "payment": None,
-                "reason": "no_payment_action",
-            })
-        return Response({
-            "redirect_url": None,
-            "intent_ready": bool(intent_ready),
-            "payment": payment,
-            "copy": _payment_copy(),
-        })
-
-
-@method_decorator(never_cache, name="dispatch")
-@method_decorator(ratelimit(key="user_or_ip", rate="120/m", method="GET", block=False), name="dispatch")
-class OrderPaymentStatusView(APIView):
-    """GET /api/v1/payment/<ref>/status/ - polling payment state."""
-
-    permission_classes = [AllowAny]
-    authentication_classes = []
-
-    def get(self, request, ref: str):
-        if getattr(request, "limited", False):
-            return _rate_limited_response()
-
-        try:
-            order = order_service.get_accessible_order(request, ref)
-        except Http404:
-            return Response({"detail": "Pedido não encontrado."}, status=404)
-
-        order_service.resolve_timeouts_if_due(order)
-        # O poll também garante o intent: com `timing=post_commit` o código só
-        # nasce depois da loja confirmar, e quem criava era apenas o GET
-        # principal. Sem isto o cliente via o banner virar "use o código abaixo"
-        # e esperava o ciclo seguinte pelo QR. `initiate` é idempotente.
-        order_service.ensure_payment_intent(order)
-        status = projection_data(build_payment_status(order))
-        status["redirect_url"] = _tracking_url(ref)
-        return Response(status)
-
-
 @method_decorator(never_cache, name="dispatch")
 @method_decorator(ratelimit(key="user_or_ip", rate="30/m", method="POST", block=False), name="dispatch")
 class OrderPaymentMockConfirmView(APIView):
-    """POST /api/v1/payment/<ref>/mock-confirm/ - DEBUG-only mock payment confirmation."""
+    """POST /api/v1/payment/<ref>/mock-confirm/ — captura simulada (DEBUG/staging)."""
 
     permission_classes = [AllowAny]
     authentication_classes = [SessionAuthentication]
@@ -187,8 +62,6 @@ class OrderPaymentMockConfirmView(APIView):
     def post(self, request, ref: str):
         if getattr(request, "limited", False):
             return _rate_limited_response()
-
-        from shopman.storefront.presentation.payment import mock_payment_enabled
 
         if not mock_payment_enabled():
             raise Http404

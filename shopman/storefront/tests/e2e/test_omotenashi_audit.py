@@ -227,13 +227,17 @@ def test_07b_checkout_closed_day_surfaces_reopening_and_preorder(client):
 
 
 def test_08_payment_failure_offers_retry_copy(client):
-    """✅ A failed/errored payment has retry affordance in the omotenashi copy layer."""
+    """✅ A failed/errored payment has retry affordance in the omotenashi copy layer.
+
+    Depois da fusão PAYMENT-TRACKING-MERGE o estado de retry vive no próprio
+    acompanhamento (``payment_retry``), com copy ``TRACKING_PROMISE_RETRY_*``.
+    """
     from shopman.shop.omotenashi import resolve_copy
 
     _seed()
-    retry = resolve_copy("PAYMENT_RETRY_CTA", moment="*", audience="*")
-    err_title = resolve_copy("PAYMENT_PROMISE_ERROR_TITLE", moment="*", audience="*")
-    err_message = resolve_copy("PAYMENT_PROMISE_ERROR_MESSAGE", moment="*", audience="*")
+    retry = resolve_copy("TRACKING_PROMISE_RETRY_ACTION", moment="*", audience="*")
+    err_title = resolve_copy("TRACKING_PROMISE_RETRY_TITLE", moment="*", audience="*")
+    err_message = resolve_copy("TRACKING_PROMISE_RETRY_MESSAGE", moment="*", audience="*")
     assert retry.title, "no retry CTA copy for payment"
     assert "tentar" in retry.title.lower()  # explicit "Tentar novamente"
     assert err_title.title and err_message.message

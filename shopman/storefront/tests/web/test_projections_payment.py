@@ -1,249 +1,30 @@
-"""Unit tests for the storefront payment Presentation.
+"""Tests for the surviving payment projection — the POS polling flags.
 
-Uses order fixtures from conftest.py. Verifies PaymentProjection and
-PaymentStatusProjection shape, PIX/card field population, expiry logic,
-and terminal state detection.
+PAYMENT-TRACKING-MERGE apagou a tela de pagamento: o Pix/cartão do cliente
+viraram um degrau do próprio acompanhamento (ver ``test_tracking_promise_cascade``
+e ``test_projections_order_tracking``). O que sobra em ``shop.projections.
+payment_status`` é o mínimo que o PDV consome para ver o Pix cair no balcão:
+os flags terminais pago/cancelado/expirado.
 """
 from __future__ import annotations
 
 import pytest
 
-from shopman.storefront.presentation.payment import (
-    PaymentProjection,
-    PaymentPromiseProjection,
-    PaymentStatusProjection,
-    build_payment,
-    build_payment_status,
-)
+from shopman.shop.projections.payment_status import PaymentStatusData, build_payment_status
 
 pytestmark = pytest.mark.django_db
 
 
-# ──────────────────────────────────────────────────────────────────────
-# PaymentProjection — shape
-# ──────────────────────────────────────────────────────────────────────
-
-
-class TestPaymentProjectionShape:
-    def test_returns_payment_projection(self, order_with_payment):
-        proj = build_payment(order_with_payment)
-        assert isinstance(proj, PaymentProjection)
-
-    def test_is_immutable(self, order_with_payment):
-        from dataclasses import FrozenInstanceError
-
-        proj = build_payment(order_with_payment)
-        with pytest.raises(FrozenInstanceError):
-            proj.method = "card"  # type: ignore[misc]
-
-    def test_order_ref_matches(self, order_with_payment):
-        proj = build_payment(order_with_payment)
-        assert proj.order_ref == order_with_payment.ref
-
-    def test_has_payment_promise_contract(self, order_with_payment):
-        proj = build_payment(order_with_payment)
-
-        assert isinstance(proj.promise, PaymentPromiseProjection)
-        assert proj.promise.state == "pix_payment_before_confirmation"
-        assert proj.promise.actions
-        assert proj.promise.actions[0].ref == "copy_pix"
-        assert proj.promise.actions[0].label
-        assert "disponibilidade confirmada" not in proj.promise.message.lower()
-
-    def test_has_payment_promise_contract_waiting_for_pix_code(self, order_with_payment):
-        order_with_payment.data["payment"] = {"method": "pix", "status": "pending", "amount_q": 2500}
-        order_with_payment.save(update_fields=["data"])
-
-        proj = build_payment(order_with_payment)
-
-        assert proj.promise.state == "pix_waiting_confirmation"
-        assert not proj.promise.actions
-
-    def test_has_server_time_anchor_for_pix_countdown(self, order_with_payment):
-        from django.utils.dateparse import parse_datetime
-
-        proj = build_payment(order_with_payment)
-
-        assert parse_datetime(proj.server_now_iso) is not None
-
-    def test_total_display_formatted(self, order_with_payment):
-        proj = build_payment(order_with_payment)
-        assert proj.total_display.startswith("R$ ")
-        assert "25,00" in proj.total_display  # 2500q = R$ 25,00
-
-
-# ──────────────────────────────────────────────────────────────────────
-# PIX fields
-# ──────────────────────────────────────────────────────────────────────
-
-
-class TestPaymentProjectionPix:
-    def test_method_is_pix(self, order_with_payment):
-        proj = build_payment(order_with_payment)
-        assert proj.method == "pix"
-
-    def test_pix_copy_paste_populated(self, order_with_payment):
-        proj = build_payment(order_with_payment)
-        assert proj.pix_copy_paste == "00020126..."
-
-    def test_pix_qr_image_src_is_normalized(self, order_with_payment):
-        order_with_payment.data["payment"]["qr_code"] = "PNGDATA"
-        order_with_payment.save(update_fields=["data"])
-
-        proj = build_payment(order_with_payment)
-
-        assert proj.pix_qr_code == "data:image/png;base64,PNGDATA"
-
-    def test_pix_qr_data_url_is_not_double_prefixed(self, order_with_payment):
-        order_with_payment.data["payment"]["qr_code"] = "data:image/png;base64,PNGDATA"
-        order_with_payment.save(update_fields=["data"])
-
-        proj = build_payment(order_with_payment)
-
-        assert proj.pix_qr_code == "data:image/png;base64,PNGDATA"
-
-    def test_card_fields_are_none_for_pix(self, order_with_payment):
-        proj = build_payment(order_with_payment)
-        assert proj.checkout_url is None
-
-    def test_status_url_is_correct(self, order_with_payment):
-        proj = build_payment(order_with_payment)
-        assert f"/{order_with_payment.ref}/" in proj.status_url
-        assert "pagamento" in proj.status_url or "payment" in proj.status_url.lower()
-
-    def test_pix_deadline_is_exposed_in_promise(self, order_with_payment):
-        from django.utils import timezone
-
-        expires_at = (timezone.now() + timezone.timedelta(minutes=10)).isoformat()
-        order_with_payment.data["payment"]["expires_at"] = expires_at
-        order_with_payment.save(update_fields=["data"])
-
-        proj = build_payment(order_with_payment)
-
-        assert proj.promise.deadline_at == expires_at
-        assert proj.promise.deadline_kind == "payment"
-        assert proj.promise.deadline_action == "cancel_order_on_timeout"
-        assert proj.promise.requires_active_notification is True
-
-    def test_confirmed_pix_can_claim_availability_confirmed(self, order_with_payment):
-        order_with_payment.status = "accepted"
-        order_with_payment.save(update_fields=["status"])
-
-        proj = build_payment(order_with_payment)
-
-        assert proj.promise.state == "pix_payment_requested"
-        assert "pedido aceito" in proj.promise.message.lower()
-
-
-# ──────────────────────────────────────────────────────────────────────
-# Card fields
-# ──────────────────────────────────────────────────────────────────────
-
-
-class TestPaymentProjectionCard:
-    def test_card_method_fields(self, channel):
-        from shopman.orderman.models import Order
-
-        order = Order.objects.create(
-            ref="ORD-CARD-001",
-            channel_ref=channel.ref,
-            status="new",
-            total_q=5000,
-            handle_type="phone",
-            handle_ref="5543000000001",
-            data={
-                "payment": {
-                    "method": "card",
-                    "checkout_url": "https://checkout.stripe.com/c/pay/cs_test_xyz",
-                },
-            },
-        )
-        proj = build_payment(order)
-        assert proj.method == "card"
-        assert proj.checkout_url == "https://checkout.stripe.com/c/pay/cs_test_xyz"
-        assert proj.pix_qr_code is None
-        assert proj.pix_copy_paste is None
-        assert proj.promise.state == "card_authorization_requested"
-        assert proj.promise.actions[0].ref == "authorize_card"
-        assert proj.promise.actions[0].href == "https://checkout.stripe.com/c/pay/cs_test_xyz"
-        assert "disponibilidade confirmada" not in proj.promise.message.lower()
-        assert proj.promise.actions
-
-    def test_confirmed_card_checkout_can_claim_availability_confirmed(self, channel):
-        from shopman.orderman.models import Order
-
-        order = Order.objects.create(
-            ref="ORD-CARD-CONFIRMED",
-            channel_ref=channel.ref,
-            status="accepted",
-            total_q=5000,
-            handle_type="phone",
-            handle_ref="5543000000001",
-            data={
-                "payment": {
-                    "method": "card",
-                    "checkout_url": "https://checkout.stripe.com/c/pay/cs_test_confirmed",
-                },
-            },
-        )
-
-        proj = build_payment(order)
-
-        assert proj.promise.state == "card_checkout_requested"
-        assert "pedido aceito" in proj.promise.message.lower()
-
-    def test_authorized_card_has_no_surface_payment_action(self, channel):
-        from shopman.orderman.models import Order
-        from shopman.payman import PaymentService
-
-        order = Order.objects.create(
-            ref="ORD-CARD-AUTH",
-            channel_ref=channel.ref,
-            status="new",
-            total_q=5000,
-            handle_type="phone",
-            handle_ref="5543000000001",
-            data={"payment": {"method": "card"}},
-        )
-        intent = PaymentService.create_intent(
-            order_ref=order.ref,
-            amount_q=order.total_q,
-            method="card",
-        )
-        order.data["payment"] = {
-            "method": "card",
-            "intent_ref": intent.ref,
-            "checkout_url": "https://checkout.stripe.com/c/pay/cs_test_auth",
-        }
-        order.save(update_fields=["data"])
-        PaymentService.authorize(intent.ref)
-
-        proj = build_payment(order)
-
-        assert proj.payment_status == "authorized"
-        assert proj.promise.state == "card_authorized"
-        assert proj.promise.actions == ()
-        assert "disponibilidade confirmada" not in proj.promise.message.lower()
-
-
-# ──────────────────────────────────────────────────────────────────────
-# PaymentStatusProjection
-# ──────────────────────────────────────────────────────────────────────
-
-
-class TestPaymentStatusProjection:
+class TestPaymentStatusFlags:
     def test_pending_order_not_terminal(self, order_with_payment):
         proj = build_payment_status(order_with_payment)
-        assert isinstance(proj, PaymentStatusProjection)
-        assert isinstance(proj.promise, PaymentPromiseProjection)
+        assert isinstance(proj, PaymentStatusData)
         assert proj.is_paid is False
         assert proj.is_cancelled is False
         assert proj.is_expired is False
         assert proj.is_terminal is False
-        assert proj.should_redirect is False
 
     def test_paid_order_is_terminal(self, order_with_payment):
-        # Create and capture a PaymentIntent so Payman returns "captured".
         from shopman.payman import PaymentService
 
         intent = PaymentService.create_intent(
@@ -259,9 +40,6 @@ class TestPaymentStatusProjection:
         proj = build_payment_status(order_with_payment)
         assert proj.is_paid is True
         assert proj.is_terminal is True
-        assert proj.should_redirect is True
-        assert proj.promise.state == "paid"
-        assert proj.promise.actions[0].ref == "track_order"
 
     def test_cancelled_order_is_terminal(self, order_with_payment):
         order_with_payment.status = "cancelled"
@@ -270,7 +48,6 @@ class TestPaymentStatusProjection:
         proj = build_payment_status(order_with_payment)
         assert proj.is_cancelled is True
         assert proj.is_terminal is True
-        assert proj.should_redirect is True
 
     def test_expired_pix_is_terminal(self, order_with_payment):
         from django.utils import timezone
@@ -283,41 +60,6 @@ class TestPaymentStatusProjection:
         proj = build_payment_status(order_with_payment)
         assert proj.is_expired is True
         assert proj.is_terminal is True
-        assert proj.should_redirect is True
-        assert proj.promise.state == "expired"
-
-    def test_authorized_card_status_redirects_out_of_payment_gate(self, channel):
-        from shopman.orderman.models import Order
-        from shopman.payman import PaymentService
-
-        order = Order.objects.create(
-            ref="ORD-CARD-AUTH-STATUS",
-            channel_ref=channel.ref,
-            status="new",
-            total_q=5000,
-            handle_type="phone",
-            handle_ref="5543000000001",
-            data={"payment": {"method": "card"}},
-        )
-        intent = PaymentService.create_intent(
-            order_ref=order.ref,
-            amount_q=order.total_q,
-            method="card",
-        )
-        order.data["payment"] = {"method": "card", "intent_ref": intent.ref}
-        order.save(update_fields=["data"])
-        PaymentService.authorize(intent.ref)
-
-        proj = build_payment_status(order)
-
-        assert proj.promise.state == "card_authorized"
-        assert proj.is_terminal is False
-        assert proj.should_redirect is True
-
-    def test_redirect_url_points_to_tracking(self, order_with_payment):
-        # Nuxt-canonical tracking path (storefront_links); base-tolerant assertion.
-        proj = build_payment_status(order_with_payment)
-        assert proj.redirect_url.endswith(f"/tracking/{order_with_payment.ref}")
 
     def test_is_immutable(self, order_with_payment):
         from dataclasses import FrozenInstanceError
@@ -325,52 +67,3 @@ class TestPaymentStatusProjection:
         proj = build_payment_status(order_with_payment)
         with pytest.raises(FrozenInstanceError):
             proj.is_paid = True  # type: ignore[misc]
-
-
-class TestPixNeverPromisesAMissingCode:
-    """O promise nunca pode dizer "use o código abaixo" sem código na tela.
-
-    Regressão real: ao aceitar o pedido, o banner virava `pix_payment_requested`
-    porque o ramo do pedido confirmado não olhava o payload. O cliente lia
-    "Use o código abaixo" com o card do Pix vazio, e só via o QR ao recarregar.
-    """
-
-    def test_confirmed_without_payload_waits_for_the_code(self, order_with_payment):
-        from shopman.orderman.models import Order as _Order
-
-        order_with_payment.data["payment"] = {"method": "pix", "amount_q": 2500}
-        order_with_payment.save(update_fields=["data"])
-        _Order.objects.filter(pk=order_with_payment.pk).update(status="accepted")
-        order_with_payment.refresh_from_db()
-
-        proj = build_payment(order_with_payment)
-
-        assert proj.promise.state == "pix_waiting_code"
-        assert not proj.promise.actions
-        assert proj.promise.deadline_at is None
-        assert "código abaixo" not in proj.promise.message
-
-    def test_confirmed_with_payload_asks_for_payment(self, order_with_payment):
-        from shopman.orderman.models import Order as _Order
-
-        _Order.objects.filter(pk=order_with_payment.pk).update(status="accepted")
-        order_with_payment.refresh_from_db()
-
-        proj = build_payment(order_with_payment)
-
-        assert proj.promise.state == "pix_payment_requested"
-        assert proj.pix_copy_paste
-
-    def test_no_pix_state_offers_copy_without_a_code(self, order_with_payment):
-        """Varre os dois estados de espera: ação de copiar exige código."""
-        from shopman.orderman.models import Order as _Order
-
-        for status in ("new", "accepted"):
-            order_with_payment.data["payment"] = {"method": "pix", "amount_q": 2500}
-            order_with_payment.save(update_fields=["data"])
-            _Order.objects.filter(pk=order_with_payment.pk).update(status=status)
-            order_with_payment.refresh_from_db()
-
-            proj = build_payment(order_with_payment)
-
-            assert not proj.promise.actions, f"{status} oferece ação sem código"

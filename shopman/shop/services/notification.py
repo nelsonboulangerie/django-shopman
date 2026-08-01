@@ -313,15 +313,17 @@ def _build_context(order, payload: dict, template: str) -> dict:
 
     from shopman.shop.services import storefront_links
 
+    # PAYMENT-TRACKING-MERGE: o link de pagamento é o do próprio acompanhamento
+    # (o Pix/cartão vivem lá inline). Sem tela /pagamento.
     payment = order.data.get("payment")
     if payment:
         context["payment"] = payment
-        context["payment_url"] = context.get("payment_url") or storefront_links.order_payment_url(order.ref)
+        context["payment_url"] = context.get("payment_url") or storefront_links.order_tracking_url(order.ref)
         copy_paste = payment.get("copy_paste")
         context["copy_paste"] = copy_paste or ""
         context["pix_suffix"] = f" Codigo PIX: {copy_paste}" if copy_paste else ""
     else:
-        context["payment_url"] = context.get("payment_url") or storefront_links.order_payment_url(order.ref)
+        context["payment_url"] = context.get("payment_url") or storefront_links.order_tracking_url(order.ref)
         context["pix_suffix"] = ""
 
     # Corrida externa (Machine): link de rastreio do entregador, quando existe.

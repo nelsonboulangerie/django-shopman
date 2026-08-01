@@ -350,9 +350,9 @@ class CheckoutView(APIView):
         order_service.grant_order_access(request, result.order_ref)
         order_service.mark_just_placed(request, result.order_ref)
         request.session.pop("cart_session_key", None)
+        # PAYMENT-TRACKING-MERGE: pix/card não vão mais para uma tela de pagamento
+        # à parte — o Pix/cartão aparecem inline no próprio acompanhamento.
         next_url = f"/tracking/{result.order_ref}"
-        if payment_method in {"pix", "card"}:
-            next_url = f"/pedido/{result.order_ref}/pagamento"
 
         data = CheckoutResponseSerializer(
             {

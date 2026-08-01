@@ -566,24 +566,44 @@ OMOTENASHI_DEFAULTS: dict[str, dict[str, dict[str, CopyEntry]]] = {
     "TRACKING_STEP_RETURNED": {
         WILDCARD: {WILDCARD: CopyEntry(title="Devolvido")},
     },
-    "TRACKING_PAYMENT_PENDING": {
-        WILDCARD: {
-            WILDCARD: CopyEntry(
-                title="Aguardando pagamento",
-                message="Assim que o banco confirmar, começamos o preparo.",
-            ),
-        },
-    },
     "TRACKING_PAYMENT_REQUESTED": {
         WILDCARD: {
             WILDCARD: CopyEntry(
-                title="Falta só o pagamento",
-                message="Pague o Pix e começamos a preparar.",
+                title="Pague com Pix",
+                message="Use o código abaixo e começamos a preparar.",
             ),
         },
     },
-    "TRACKING_PAYMENT_CTA": {
-        WILDCARD: {WILDCARD: CopyEntry(title="Pagar agora")},
+    "TRACKING_PROMISE_PIX_ACTION": {
+        WILDCARD: {WILDCARD: CopyEntry(title="Copiar código PIX")},
+    },
+    "TRACKING_PROMISE_CARD_TITLE": {
+        WILDCARD: {WILDCARD: CopyEntry(title="Pague com cartão")},
+    },
+    "TRACKING_PROMISE_CARD_MESSAGE": {
+        WILDCARD: {WILDCARD: CopyEntry(message="Finalize no ambiente seguro e começamos a preparar.")},
+    },
+    "TRACKING_PROMISE_CARD_ACTION": {
+        WILDCARD: {WILDCARD: CopyEntry(title="Pagar com cartão")},
+    },
+    "TRACKING_PROMISE_RETRY_TITLE": {
+        WILDCARD: {WILDCARD: CopyEntry(title="Não conseguimos preparar o pagamento")},
+    },
+    "TRACKING_PROMISE_RETRY_MESSAGE": {
+        WILDCARD: {
+            WILDCARD: CopyEntry(
+                message="Seu pedido está registrado. Tente gerar o pagamento de novo e, se não der, fale conosco.",
+            ),
+        },
+    },
+    "TRACKING_PROMISE_RETRY_ACTION": {
+        WILDCARD: {WILDCARD: CopyEntry(title="Tentar novamente")},
+    },
+    "TRACKING_PROMISE_PIX_PREPARING_TITLE": {
+        WILDCARD: {WILDCARD: CopyEntry(title="Preparando seu Pix")},
+    },
+    "TRACKING_PROMISE_PIX_PREPARING_MESSAGE": {
+        WILDCARD: {WILDCARD: CopyEntry(message="Pedido aceito. O código aparece aqui em instantes.")},
     },
     "TRACKING_PAYMENT_TIME_LEFT": {
         WILDCARD: {WILDCARD: CopyEntry(message="Prazo para pagar:")},
@@ -730,208 +750,35 @@ OMOTENASHI_DEFAULTS: dict[str, dict[str, dict[str, CopyEntry]]] = {
     },
 
     # ── Order confirmation (momento yoin, no acompanhamento) ──────
-    "CONFIRMATION_TRACK_CTA": {
-        WILDCARD: {WILDCARD: CopyEntry(title="Acompanhar pedido")},
-    },
     "CONFIRMATION_SHARE_CTA": {
         WILDCARD: {WILDCARD: CopyEntry(title="Compartilhar")},
     },
 
-    # ── Payment ───────────────────────────────────────────────────
-    "PAYMENT_PAGE_META_DESCRIPTION": {
-        WILDCARD: {WILDCARD: CopyEntry(message="Pague seu pedido para seguirmos com o preparo")},
-    },
-    "PAYMENT_ORDER_REF_LABEL": {
-        WILDCARD: {WILDCARD: CopyEntry(title="Pedido")},
-    },
-    "PAYMENT_TOTAL_LABEL": {
-        WILDCARD: {WILDCARD: CopyEntry(title="Total")},
-    },
-    "PAYMENT_DEV_CONFIRM_CTA": {
-        WILDCARD: {WILDCARD: CopyEntry(title="[DEV] Simular pagamento confirmado")},
-    },
-    "PAYMENT_RETRY_CTA": {
-        WILDCARD: {WILDCARD: CopyEntry(title="Tentar novamente")},
-    },
-    "PAYMENT_PROMISE_PIX_TITLE": {
-        WILDCARD: {WILDCARD: CopyEntry(title="Pague com Pix")},
-    },
-    "PAYMENT_PROMISE_PIX_MESSAGE": {
-        WILDCARD: {WILDCARD: CopyEntry(message="Pedido aceito. Use o código abaixo e começamos a preparar.")},
-    },
-    "PAYMENT_PROMISE_PIX_PRECONFIRMATION_TITLE": {
-        WILDCARD: {WILDCARD: CopyEntry(title="Pague com Pix")},
-    },
-    "PAYMENT_PROMISE_PIX_PRECONFIRMATION_MESSAGE": {
-        WILDCARD: {
-            WILDCARD: CopyEntry(
-                message="Use o código abaixo. Ainda estamos conferindo a disponibilidade.",
-            ),
-        },
-    },
-    "PAYMENT_PROMISE_PIX_ACTION": {
-        WILDCARD: {WILDCARD: CopyEntry(title="Use o QR Code ou copia e cola abaixo")},
-    },
-    # Pix com pagamento depois da confirmação: o intent só nasce quando a loja
-    # confirma, então até lá não há código. A frase diz o que esperar e o que
-    # acontece se a confirmação não vier.
-    # Intervalo curto entre a loja confirmar e o código nascer. Sem isso a tela
-    # dizia "use o código abaixo" com o card do Pix ainda vazio.
-    "PAYMENT_PROMISE_PIX_WAITING_CODE_TITLE": {
-        WILDCARD: {WILDCARD: CopyEntry(title="Preparando seu Pix")},
-    },
-    "PAYMENT_PROMISE_PIX_WAITING_CODE_MESSAGE": {
-        WILDCARD: {WILDCARD: CopyEntry(message="Pedido aceito. O código aparece aqui em instantes.")},
-    },
-    "PAYMENT_PROMISE_PIX_WAITING_FOOTNOTE": {
-        WILDCARD: {WILDCARD: CopyEntry(message="Se não conseguirmos confirmar, cancelamos e avisamos você.")},
-    },
-    "PAYMENT_PROMISE_PIX_PRECONFIRMATION_FOOTNOTE": {
-        WILDCARD: {WILDCARD: CopyEntry(message="Cancelamos o pedido se o prazo acabar.")},
-    },
-    "PAYMENT_PROMISE_PIX_FOOTNOTE": {
-        WILDCARD: {WILDCARD: CopyEntry(message="Se o prazo acabar, cancelamos o pedido.")},
-    },
-    "PAYMENT_PROMISE_EXPIRED_FOOTNOTE": {
-        WILDCARD: {WILDCARD: CopyEntry(message="Você pode pedir de novo quando quiser.")},
-    },
-    "PAYMENT_PROMISE_NO_ONLINE_TITLE": {
-        WILDCARD: {WILDCARD: CopyEntry(title="Nada a pagar por aqui")},
-    },
-    "PAYMENT_PROMISE_NO_ONLINE_MESSAGE": {
-        WILDCARD: {WILDCARD: CopyEntry(message="Este pedido não é pago pelo site. Levando você para o acompanhamento.")},
-    },
-    "PAYMENT_PROMISE_PIX_WAITING_TITLE": {
-        WILDCARD: {WILDCARD: CopyEntry(title="Aguardando a loja")},
-    },
-    "PAYMENT_PROMISE_PIX_WAITING_MESSAGE": {
-        WILDCARD: {
-            WILDCARD: CopyEntry(
-                message="Estamos conferindo a disponibilidade. O código Pix aparece aqui em seguida.",
-            ),
-        },
-    },
-    "PAYMENT_PROMISE_PIX_CLOSED_TITLE": {
-        WILDCARD: {WILDCARD: CopyEntry(title="Pedido recebido")},
-    },
-    "PAYMENT_PROMISE_PIX_CLOSED_MESSAGE": {
-        WILDCARD: {
-            WILDCARD: CopyEntry(
-                message=(
-                    "Estamos fechados agora. Conferimos seu pedido assim que abrirmos, "
-                    "e o código Pix aparece aqui."
-                ),
-            ),
-        },
-    },
-    "PAYMENT_PROMISE_PIX_CLOSED_MESSAGE_NEXT": {
-        WILDCARD: {
-            WILDCARD: CopyEntry(
-                message=(
-                    "Estamos fechados agora. Conferimos seu pedido quando abrirmos, "
-                    "{next}, e o código Pix aparece aqui."
-                ),
-            ),
-        },
-    },
-    "PAYMENT_PROMISE_PIX_CLOSED_FOOTNOTE": {
-        WILDCARD: {WILDCARD: CopyEntry(message="Se não conseguirmos confirmar, cancelamos e avisamos você.")},
-    },
-    "PAYMENT_PROMISE_CARD_TITLE": {
-        WILDCARD: {WILDCARD: CopyEntry(title="Pagamento com cartão")},
-    },
-    "PAYMENT_PROMISE_CARD_MESSAGE": {
-        WILDCARD: {WILDCARD: CopyEntry(message="Pedido aceito. Finalize no ambiente seguro e começamos a preparar.")},
-    },
-    "PAYMENT_PROMISE_CARD_PRECONFIRMATION_TITLE": {
-        WILDCARD: {WILDCARD: CopyEntry(title="Autorizar cartão")},
-    },
-    "PAYMENT_PROMISE_CARD_PRECONFIRMATION_MESSAGE": {
-        WILDCARD: {
-            WILDCARD: CopyEntry(
-                message="Autorize no ambiente seguro. Depois conferimos a disponibilidade.",
-            ),
-        },
-    },
-    "PAYMENT_PROMISE_CARD_PRECONFIRMATION_ACTION": {
-        WILDCARD: {WILDCARD: CopyEntry(title="Autorizar cartão")},
-    },
-    "PAYMENT_PROMISE_CARD_AUTHORIZED_TITLE": {
-        WILDCARD: {WILDCARD: CopyEntry(title="Pagamento autorizado")},
-    },
-    "PAYMENT_PROMISE_CARD_AUTHORIZED_MESSAGE": {
-        WILDCARD: {WILDCARD: CopyEntry(message="Não precisa fazer mais nada.")},
-    },
-    "PAYMENT_PROMISE_CARD_AUTHORIZED_MESSAGE_NEW": {
-        WILDCARD: {WILDCARD: CopyEntry(message="Não precisa fazer mais nada. Agora conferimos a disponibilidade.")},
-    },
-    "PAYMENT_PROMISE_CARD_AUTHORIZED_MESSAGE_CONFIRMED": {
-        WILDCARD: {WILDCARD: CopyEntry(message="Não precisa fazer mais nada. Estamos finalizando o pagamento.")},
-    },
-    "PAYMENT_PROMISE_CARD_ACTION": {
-        WILDCARD: {WILDCARD: CopyEntry(title="Pagar com cartão")},
-    },
-    "PAYMENT_PROMISE_CARD_PENDING_TITLE": {
-        WILDCARD: {WILDCARD: CopyEntry(title="Preparando pagamento")},
-    },
-    "PAYMENT_PROMISE_CARD_PENDING_MESSAGE": {
-        WILDCARD: {WILDCARD: CopyEntry(message="O botão aparece em instantes.")},
-    },
-    "PAYMENT_PROMISE_ERROR_TITLE": {
-        WILDCARD: {WILDCARD: CopyEntry(title="Não conseguimos preparar o pagamento")},
-    },
-    "PAYMENT_PROMISE_ERROR_MESSAGE": {
-        WILDCARD: {WILDCARD: CopyEntry(message="Seu pedido está registrado. Tente gerar o pagamento de novo e, se não der, fale conosco.")},
-    },
-    "PAYMENT_PROMISE_PAID_TITLE": {
-        WILDCARD: {WILDCARD: CopyEntry(title="Pagamento confirmado")},
-    },
-    "PAYMENT_PROMISE_PAID_MESSAGE": {
-        WILDCARD: {WILDCARD: CopyEntry(message="Tudo certo. Levando você para o acompanhamento.")},
-    },
-    "PAYMENT_PROMISE_CANCELLED_TITLE": {
-        WILDCARD: {WILDCARD: CopyEntry(title="Pedido cancelado")},
-    },
-    "PAYMENT_PROMISE_CANCELLED_MESSAGE": {
-        WILDCARD: {WILDCARD: CopyEntry(message="Este pedido não aceita mais pagamento.")},
-    },
-    "PAYMENT_PROMISE_EXPIRED_TITLE": {
-        WILDCARD: {WILDCARD: CopyEntry(title="Pagamento expirado")},
-    },
-    "PAYMENT_PROMISE_EXPIRED_MESSAGE": {
-        WILDCARD: {WILDCARD: CopyEntry(message="O prazo acabou e cancelamos o pedido.")},
-    },
-    "PAYMENT_CARD_INTRO": {
-        WILDCARD: {
-            WILDCARD: CopyEntry(
-                # O painel de status acima já manda finalizar no ambiente seguro;
-                # aqui fica só o que ele NÃO diz: que a confirmação é automática
-                # e como voltar. Repetir "ambiente seguro" era a terceira menção
-                # a segurança no mesmo card.
-                message="A confirmação é automática. Volte a esta página quando quiser acompanhar o pedido.",
-            ),
-        },
-    },
-    "PAYMENT_CARD_SECURITY_NOTE": {
-        WILDCARD: {WILDCARD: CopyEntry(message="Pagamento processado por provedor seguro. Nós não recebemos os dados do seu cartão.")},
-    },
-    "PAYMENT_PIX_INSTRUCTION": {
+    # ── Payment (bloco de Pix/cartão inline no acompanhamento) ────
+    # A tela de pagamento sumiu (PAYMENT-TRACKING-MERGE): o Pix/cartão viraram um
+    # degrau do próprio acompanhamento, e a máquina de estados do pagamento com
+    # sua copy morreu junto. Só a copy ESTÁTICA do bloco sobrevive, renomeada
+    # TRACKING_* e servida no payload do acompanhamento.
+    "TRACKING_PAYMENT_PIX_INSTRUCTION": {
         WILDCARD: {WILDCARD: CopyEntry(message="Escaneie o QR Code ou copie o código Pix abaixo.")},
     },
-    "PAYMENT_PIX_COPY_LABEL": {
-        WILDCARD: {WILDCARD: CopyEntry(title="Copia e cola Pix")},
+    "TRACKING_PAYMENT_PIX_COPY_LABEL": {
+        WILDCARD: {WILDCARD: CopyEntry(title="Pix Copia e Cola")},
     },
-    "PAYMENT_PIX_COPY_BTN": {
+    "TRACKING_PAYMENT_PIX_COPY_BTN": {
         WILDCARD: {WILDCARD: CopyEntry(title="Copiar código")},
     },
-    "PAYMENT_PIX_COPIED": {
+    "TRACKING_PAYMENT_PIX_COPIED": {
         WILDCARD: {WILDCARD: CopyEntry(title="Código Pix copiado.")},
     },
-    "PAYMENT_PIX_EXPIRES_LABEL": {
+    "TRACKING_PAYMENT_PIX_EXPIRES_LABEL": {
         WILDCARD: {WILDCARD: CopyEntry(message="Tempo para pagar")},
     },
-    "PAYMENT_VIEW_ORDER_CTA": {
-        WILDCARD: {WILDCARD: CopyEntry(title="Ver pedido")},
+    "TRACKING_PAYMENT_CARD_INTRO": {
+        WILDCARD: {WILDCARD: CopyEntry(message="Conclua o pagamento no nosso ambiente seguro. A confirmação é automática.")},
+    },
+    "TRACKING_PAYMENT_CARD_SECURITY_NOTE": {
+        WILDCARD: {WILDCARD: CopyEntry(message="Pagamento processado por provedor seguro. Nós não recebemos os dados do seu cartão.")},
     },
 
     # ── Tracking / yoin ───────────────────────────────────────────

@@ -50,8 +50,10 @@ def _copy_message(key: str, fallback: str) -> str:
         return fallback
 
 
-def _payment_gate_url(ref: str) -> str:
-    return f"/pedido/{ref}/pagamento"
+def _mock_payment_enabled() -> bool:
+    from shopman.storefront.api.payment import mock_payment_enabled
+
+    return mock_payment_enabled()
 
 
 def _rate_limited_response(detail: str = "Muitas tentativas. Aguarde um instante.") -> Response:
@@ -82,15 +84,16 @@ def _request_is_rate_limited(request, *, group: str, rate: str, method: str) -> 
 def _tracking_payload(order) -> dict:
     proj = build_order_tracking(order)
     data = projection_data(proj)
-    requires_payment_gate = order_service.requires_payment_gate(order)
     fulfillments = (*proj.delivery_fulfillments, *proj.pickup_fulfillments)
     data["ref"] = proj.order_ref
     # ``payment_status_label`` (rótulo humano) já carrega o estado do pagamento
     # no payload. Um segundo campo ``payment_status`` com o MESMO valor era
     # duplicata e colidia semanticamente com o ``payment_status`` (enum cru) que
     # o 409 de cancelamento devolve — o mesmo nome com dois significados. Removido.
-    data["requires_payment_gate"] = requires_payment_gate
-    data["payment_gate_url"] = _payment_gate_url(proj.order_ref) if requires_payment_gate else None
+    # Fusão PAYMENT-TRACKING-MERGE: ``requires_payment_gate``/``payment_gate_url``
+    # sumiram (não há mais para onde rotear); o bloco de Pix/cartão é inline, e a
+    # captura simulada (DEBUG/staging) é sinalizada por ``mock_payment_enabled``.
+    data["mock_payment_enabled"] = _mock_payment_enabled()
     data["fulfillments"] = [
         {
             "status": f.status,
@@ -153,6 +156,11 @@ class OrderTrackingView(APIView):
             )
 
         order_service.resolve_timeouts_if_due(order)
+        # Fusão PAYMENT-TRACKING-MERGE: o acompanhamento é onde o cliente paga,
+        # então é aqui que o intent de pagamento nasce (recovery/idempotente, o
+        # mesmo que a antiga tela de pagamento fazia). Sem isto, o Pix de
+        # `timing=post_commit` nunca ganharia código para mostrar inline.
+        order_service.ensure_payment_intent(order)
         data = _tracking_payload(order)
         # Momento yoin: comemorar não precisa ocupar layout. `just_placed` é
         # consumido UMA vez, no primeiro acesso depois do checkout, e a tela
@@ -166,7 +174,7 @@ class OrderTrackingView(APIView):
         # primeira visita (prazo do Pix vencido, recusa da loja), o cliente
         # chegaria numa tela de cancelamento com confete caindo.
         pedido_morto = order.status in {"cancelled", "returned"}
-        if order_service.requires_payment_gate(order) or pedido_morto:
+        if order_service.payment_is_due(order) or pedido_morto:
             data["just_placed"] = False
         else:
             data["just_placed"] = order_service.consume_just_placed(request, ref)

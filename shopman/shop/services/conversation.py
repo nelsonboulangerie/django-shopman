@@ -10,12 +10,15 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
-from shopman.shop.projections import order_tracking, payment_status
+from shopman.shop.projections import order_tracking
 from shopman.shop.projections.channel_policy import resolve_channel_policy
 from shopman.shop.projections.interaction_context import InteractionContext
 from shopman.shop.projections.types import Action
 
-_PAYMENT_ACTIONS = {"pay_now", "copy_pix", "authorize_card", "pay_card", "retry_payment"}
+# Ações em que a bola é do cliente pagar. Depois da fusão (PAYMENT-TRACKING-MERGE)
+# elas vivem na PRÓPRIA promessa do acompanhamento — não há mais projeção de
+# pagamento à parte.
+_PAYMENT_ACTIONS = {"copy_pix", "pay_card", "retry_payment"}
 
 
 @dataclass(frozen=True)
@@ -56,13 +59,14 @@ def build_order_conversation(
     resolved_channel_ref = interaction.channel_ref or "web"
     policy = resolve_channel_policy(resolved_channel_ref)
     tracking = order_tracking.build_tracking(order, is_debug=is_debug)
-    payment = _build_payment_if_relevant(order)
-    source_projection, promise = _select_conversation_promise(
-        tracking=tracking,
-        payment=payment,
-    )
+    promise = tracking.promise
+    # Uma verdade: o pagamento é um degrau do próprio acompanhamento. Quando a
+    # bola é do cliente pagar, a "fonte" continua a se chamar payment (para a
+    # superfície conversacional saber destacar), mas o link é o do acompanhamento.
+    has_payment_action = _has_payment_action(promise)
+    source_projection = "payment" if has_payment_action else "tracking"
     tracking_url = f"/pedido/{order.ref}/"
-    payment_url = _payment_url(order, payment)
+    payment_url = tracking_url if has_payment_action else None
     tracking_actions = _actions(getattr(tracking, "actions", ()))
 
     return RemoteConversationProjection(
@@ -88,33 +92,6 @@ def build_order_conversation(
         supports_access_link=policy.supports_access_link,
         requires_payment_gate=policy.requires_payment_gate,
     )
-
-
-def _build_payment_if_relevant(order: Any) -> Any | None:
-    payment = (getattr(order, "data", None) or {}).get("payment") or {}
-    method = str(payment.get("method") or "").lower()
-    if method not in {"pix", "card"}:
-        return None
-    return payment_status.build_payment(order)
-
-
-def _select_conversation_promise(*, tracking: Any, payment: Any | None) -> tuple[str, Any]:
-    if payment is not None:
-        payment_promise = getattr(payment, "promise", None)
-        if _has_payment_action(payment_promise):
-            return "payment", payment_promise
-
-    return "tracking", tracking.promise
-
-
-def _payment_url(order: Any, payment: Any | None) -> str | None:
-    if payment is None:
-        return None
-    promise = getattr(payment, "promise", None)
-    for action in _promise_actions(promise):
-        if action.href and action.ref in _PAYMENT_ACTIONS:
-            return action.href
-    return f"/pedido/{order.ref}/pagamento/"
 
 
 def _promise_actions(promise: Any) -> tuple[Action, ...]:

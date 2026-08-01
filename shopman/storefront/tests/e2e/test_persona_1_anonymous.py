@@ -94,13 +94,17 @@ def test_full_journey_browse_cart_otp_pix_track(client, django_capture_on_commit
     assert tracking["ref"] == ref
 
     # 8. Optimistic confirmation (operator does not cancel) → PIX becomes payable.
+    #    Sem tela de pagamento à parte: o Pix aparece no PRÓPRIO acompanhamento
+    #    (PAYMENT-TRACKING-MERGE). O GET de tracking cria o intent e o degrau
+    #    payment_pix_ready carrega o código inline.
     J.confirm_order(order, django_capture_on_commit_callbacks)
     assert order.status == "accepted"
 
-    status, payment = J.get_payment(client, ref)
-    assert status == 200, payment
-    assert payment.get("payment") is not None, payment
-    assert payment["intent_ready"] is True
+    status, tracking = J.get_tracking(client, ref)
+    assert status == 200, tracking
+    assert tracking["promise"]["state"] == "payment_pix_ready", tracking["promise"]
+    assert tracking["promise"]["payment_method"] == "pix"
+    assert tracking["promise"]["pix_copy_paste"], tracking["promise"]
 
     # 9. Pay (mock gateway confirmation) and confirm the order reflects payment.
     status, confirm = J.mock_confirm_payment(client, ref)

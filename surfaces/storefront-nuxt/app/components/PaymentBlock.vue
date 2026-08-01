@@ -1,0 +1,116 @@
+<script setup lang="ts">
+import type { TrackingPromiseProjection, TrackingCopyProjection } from '~/types/shopman'
+import { paymentMethodLabel } from '~/presentation/payment'
+
+// Bloco de pagamento INLINE no acompanhamento (PAYMENT-TRACKING-MERGE). Não é
+// mais uma tela: o promise carrega o método e o payload (QR/copia-e-cola/link do
+// cartão), e o countdown/poll/SSE vivem na própria página de acompanhamento (o
+// prazo do Pix é o `promise.deadline_at`). Aqui só desenhamos o que pagar.
+const props = defineProps<{
+  promise: TrackingPromiseProjection
+  copy: TrackingCopyProjection
+  totalDisplay: string
+  mockEnabled: boolean
+  mockPending: boolean
+}>()
+
+const emit = defineEmits<{ (e: 'mock-confirm'): void }>()
+
+// Só depois de o cliente tocar no botão faz sentido dizer "não abriu?".
+const tentouAbrirCheckout = ref(false)
+
+const method = computed(() => props.promise.payment_method)
+const hasPixCode = computed(() => Boolean(props.promise.pix_qr_code || props.promise.pix_copy_paste))
+const isCard = computed(() => method.value === 'card')
+const isPix = computed(() => method.value === 'pix')
+// Pix ainda sem código (a loja confere antes, com `timing=post_commit`): o card
+// mostra "vai aparecer aqui" sem afirmar que já está sendo gerado.
+const esperandoCodigoPix = computed(() => isPix.value && !hasPixCode.value)
+// Há algo a capturar de verdade (para a caixa de "simular").
+const canPayNow = computed(() => hasPixCode.value || Boolean(props.promise.checkout_url))
+
+async function copyPix () {
+  if (!props.promise.pix_copy_paste || !import.meta.client) return
+  await navigator.clipboard.writeText(props.promise.pix_copy_paste)
+  useSonner.success(props.copy.pix_copied)
+}
+</script>
+
+<template>
+  <UiCard>
+    <UiCardHeader>
+      <p class="shop-muted text-sm">{{ copy.total_label }}</p>
+      <UiCardTitle>{{ totalDisplay }}</UiCardTitle>
+      <UiCardDescription>{{ paymentMethodLabel(method) }}</UiCardDescription>
+    </UiCardHeader>
+    <UiCardContent class="space-y-4">
+      <!-- Cartão: ambiente seguro externo (Stripe). -->
+      <div v-if="isCard && promise.checkout_url" class="shop-stack-block rounded-lg border p-4">
+        <div class="flex items-start gap-3">
+          <Icon name="lucide:shield-check" :size="22" class="mt-0.5 shrink-0 text-emerald-600" />
+          <div class="space-y-1">
+            <p class="shop-item-title font-semibold text-foreground">Pagamento seguro</p>
+            <p class="shop-muted">{{ copy.card_intro }}</p>
+            <p class="shop-meta">{{ copy.card_security_note }}</p>
+          </div>
+        </div>
+        <UiButton :href="promise.checkout_url" target="_blank" rel="noopener noreferrer" class="w-full" size="lg" icon="lucide:credit-card" @click="tentouAbrirCheckout = true">
+          Pagar com cartão
+        </UiButton>
+        <p v-if="tentouAbrirCheckout" class="shop-meta text-center">Não abriu? Toque no botão novamente.</p>
+      </div>
+
+      <!-- Lugar reservado para o código do Pix (ainda nascendo). -->
+      <div v-if="esperandoCodigoPix" class="flex flex-col items-center gap-3 py-2">
+        <div class="flex size-48 max-w-full items-center justify-center rounded-lg border border-dashed text-muted-foreground">
+          <Icon name="lucide:qr-code" class="size-12 motion-safe:animate-pulse" />
+        </div>
+        <p class="shop-meta text-center">{{ copy.pix_expires_label }} começa quando o código aparecer.</p>
+      </div>
+
+      <!-- Pix com código: QR + copia-e-cola. O countdown do prazo já é mostrado
+           no painel de status (promise.deadline_at). -->
+      <div v-if="hasPixCode" class="shop-stack-block">
+        <div v-if="promise.pix_qr_code" class="flex flex-col items-center gap-3">
+          <div class="rounded-lg border bg-white p-4">
+            <img :src="promise.pix_qr_code" alt="QR Code Pix" class="size-48 max-w-full" />
+          </div>
+          <p class="shop-muted text-center">{{ copy.pix_instruction }}</p>
+        </div>
+
+        <div v-if="promise.pix_copy_paste" class="shop-stack-tight">
+          <p class="shop-meta">{{ copy.pix_copy_label }}</p>
+          <div class="flex flex-col gap-2 sm:flex-row sm:items-center">
+            <p
+              class="min-w-0 flex-1 cursor-pointer truncate rounded-lg border bg-muted px-3 py-2 font-mono text-xs"
+              role="button"
+              tabindex="0"
+              aria-label="Copiar código Pix"
+              :title="promise.pix_copy_paste"
+              @click="copyPix"
+              @keydown.enter.prevent="copyPix"
+              @keydown.space.prevent="copyPix"
+            >{{ promise.pix_copy_paste }}</p>
+            <UiButton variant="outline" icon="lucide:copy" class="shrink-0" @click="copyPix">{{ copy.pix_copy_btn }}</UiButton>
+          </div>
+        </div>
+
+        <p class="shop-meta">Assim que o pagamento cair, atualizamos esta tela automaticamente.</p>
+      </div>
+
+      <!-- Ambiente de teste: captura por gateway simulado (DEBUG/staging). -->
+      <div v-if="mockEnabled && canPayNow" class="shop-stack-tight rounded-lg border border-dashed bg-muted/40 p-4">
+        <p class="shop-meta">Ambiente de teste · captura por gateway simulado</p>
+        <UiButton
+          variant="outline"
+          class="w-full"
+          icon="lucide:flask-conical"
+          :loading="mockPending"
+          @click="emit('mock-confirm')"
+        >
+          Simular pagamento
+        </UiButton>
+      </div>
+    </UiCardContent>
+  </UiCard>
+</template>

@@ -691,6 +691,13 @@ export interface TrackingPromiseProjection {
   footnote: string
   notification_topic: string | null
   actions: Action[]
+  // Bloco de pagamento inline (PAYMENT-TRACKING-MERGE): a tela de pagamento
+  // deixou de existir. Preenchido só nos degraus com o que pagar.
+  payment_method: string
+  pix_qr_code: string | null
+  pix_copy_paste: string | null
+  pix_expires_at: string | null
+  checkout_url: string | null
 }
 
 export interface OrderProgressStepProjection {
@@ -771,6 +778,14 @@ export interface TrackingCopyProjection {
   rating_thanks: string
   page_meta_description: string
   delivery_heading: string
+  // Copy estática do bloco de pagamento inline (Pix/cartão).
+  pix_instruction: string
+  pix_copy_label: string
+  pix_copy_btn: string
+  pix_copied: string
+  pix_expires_label: string
+  card_intro: string
+  card_security_note: string
 }
 
 export interface TrackingResponse {
@@ -803,8 +818,9 @@ export interface TrackingResponse {
   payment_status_label: string | null
   payment_status: string | null
   payment_expires_at: string | null
-  requires_payment_gate: boolean
-  payment_gate_url: string | null
+  // Captura simulada (DEBUG/staging) disponível — mostra a caixa "Simular
+  // pagamento" dentro do bloco inline.
+  mock_payment_enabled: boolean
   confirmation_countdown: boolean
   confirmation_expires_at: string | null
   eta_display: string | null
@@ -817,73 +833,6 @@ export interface TrackingResponse {
   last_updated_iso: string
   last_updated_display: string
   stale_after_seconds: number
-}
-
-export interface PaymentPromiseProjection {
-  state: string
-  title: string
-  message: string
-  tone: 'success' | 'warning' | 'danger' | 'info' | string
-  actions: Action[]
-  deadline_at: string | null
-  deadline_kind: string | null
-  deadline_action: string
-  requires_active_notification: boolean
-  footnote: string
-  stale_after_seconds: number | null
-}
-
-export interface PaymentProjection {
-  order_ref: string
-  method: string
-  order_status: string
-  payment_status: string | null
-  total_display: string
-  promise: PaymentPromiseProjection
-  pix_qr_code: string | null
-  pix_copy_paste: string | null
-  pix_expires_at: string | null
-  checkout_url: string | null
-  status_url: string
-  tracking_url: string
-  server_now_iso: string
-  actions: Action[]
-  error_message: string | null
-  is_debug: boolean
-  poll_after_seconds: number
-  mock_enabled: boolean
-}
-
-export interface PaymentPageCopy {
-  order_ref_label: string
-  total_label: string
-  meta_description: string
-  card_intro: string
-  card_security_note: string
-  pix_instruction: string
-  pix_copy_label: string
-  pix_copy_btn: string
-  pix_copied: string
-  pix_expires_label: string
-}
-
-export interface PaymentResponse {
-  redirect_url: string | null
-  intent_ready?: boolean
-  reason?: string
-  payment: PaymentProjection | null
-  copy?: PaymentPageCopy
-}
-
-export interface PaymentStatusResponse {
-  order_ref: string
-  promise: PaymentPromiseProjection
-  is_paid: boolean
-  is_cancelled: boolean
-  is_expired: boolean
-  is_terminal: boolean
-  redirect_url: string
-  should_redirect: boolean
 }
 
 export interface RemoteConversationProjection {

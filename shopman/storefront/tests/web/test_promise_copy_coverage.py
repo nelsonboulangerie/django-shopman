@@ -15,6 +15,7 @@ from __future__ import annotations
 import pytest
 
 from shopman.shop.projections.order_tracking import TrackingPromiseData
+from shopman.shop.projections.types import Action
 from shopman.storefront.presentation.order_tracking import (
     _PROMISE_COVERS,
     CONSEQUENCE,
@@ -22,7 +23,6 @@ from shopman.storefront.presentation.order_tracking import (
     NOTIFICATION,
     promise_obligations,
 )
-from shopman.shop.projections.types import Action
 
 
 def _action(ref: str = "pay_now") -> Action:
@@ -80,20 +80,25 @@ class TestCopyCoversObligations:
         ("state", "kwargs"),
         [
             ("received", {}),
-            ("availability_check", {}),
+            ("store_checking", {"deadline_action": "refresh_tracking", "requires_active_notification": True}),
+            ("store_closed", {}),
             ("payment_confirmed", {}),
+            ("payment_authorized", {}),
+            ("preorder_scheduled", {}),
             ("preparing", {}),
             ("ready_delivery", {}),
             ("ready_pickup", {"actions": (_action("pickup"),)}),
             (
-                "payment_requested",
+                "payment_pix_ready",
                 {
-                    "actions": (_action(),),
-                    "deadline_action": "show_payment_expired",
+                    "actions": (_action("copy_pix"),),
+                    "deadline_action": "cancel_order_on_timeout",
                     "requires_active_notification": True,
                 },
             ),
-            ("payment_pending", {"actions": (_action(),), "deadline_action": "show_payment_expired"}),
+            ("payment_card_ready", {"actions": (_action("pay_card"),), "requires_active_notification": True}),
+            ("payment_retry", {"actions": (_action("retry_payment"),)}),
+            ("payment_preparing", {"requires_active_notification": True}),
             ("dispatched", {"actions": (_action("confirm_received"),), "requires_active_notification": True}),
             ("delivered", {}),
             ("completed", {}),
