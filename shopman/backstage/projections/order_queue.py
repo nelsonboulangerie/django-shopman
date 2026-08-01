@@ -681,6 +681,22 @@ def _is_payment_pending(order: Order, method: str, payment_status: str) -> bool:
     return payment_status not in _PAYMENT_COMPLETE
 
 
+def _has_no_payment_info(payment_data: dict) -> bool:
+    """True quando o pedido não traz nenhum rastro de cobrança: sem meio, sem
+    intent de Pix/cartão e sem tender de balcão/entrega.
+
+    Um pedido assim avançando no board é um vão: sem este sinal o card fica MUDO
+    (o pill some quando não há rótulo de meio) e um pedido pronto sem pagamento
+    registrado se confunde no olho com um pedido pago. O operador precisa VER que
+    não sabemos o status do pagamento.
+    """
+    return (
+        not payment_data.get("method")
+        and not payment_data.get("intent_ref")
+        and not (payment_data.get("tenders") or [])
+    )
+
+
 def _offline_payment_settled(payment_data: dict) -> bool:
     """True quando um tender de balcão/entrega já foi de fato recebido.
 
@@ -712,6 +728,10 @@ def _payment_tone(order: Order, method: str, payment_status: str, payment_data: 
     # já foi pago), então o dinheiro está garantido — verde, mesmo sem captura nossa.
     if method == "external":
         return "success"
+    if _has_no_payment_info(payment_data):
+        # Nenhum rastro de cobrança: âmbar de atenção, não o neutro de "cobra no
+        # balcão". Não afirmamos "pago" nem "esperando" — apenas que não sabemos.
+        return "warning"
     if method in _OFFLINE_METHODS or not method:
         # Dinheiro/cartão no balcão: verde SÓ quando de fato liquidado — tender
         # recebido no PDV, ou COD acertado na entrega. Pedido web para pagar na
@@ -747,6 +767,10 @@ def _payment_status(order: Order) -> str:
 
 
 def _payment_method_label(method: str, payment_data: dict) -> str:
+    if _has_no_payment_info(payment_data):
+        # Pill explícito em vez de rótulo vazio (que sumiria o pill). Ver
+        # _has_no_payment_info: card mudo se confunde com pedido pago.
+        return "Pagamento não informado"
     label = payment_method_label(method)
     if payment_data.get("collection") == "on_delivery":
         if payment_data.get("cod_settled_at"):

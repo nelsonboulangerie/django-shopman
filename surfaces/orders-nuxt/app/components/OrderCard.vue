@@ -33,14 +33,19 @@ const affordances = computed(() => cardAffordances(props.card));
 const paymentPillClass = computed(() => toneBadge(props.card.payment_tone as Tone));
 // Ícones de 12px pedem silhueta, não detalhe: um check dentro de um círculo vira
 // um borrão nesse tamanho. Traço simples, forma reconhecível de longe.
-const paymentPillIcon = computed(() => ({
+const paymentPillIcon = computed(() => {
+  // Sem meio de pagamento = sem info nenhuma: interrogação, não a ampulheta de
+  // "aguardando" (ambos usam o tom warning, o meio vazio é que os separa).
+  if (!props.card.payment_method) return "lucide:circle-help";
   // Esperando pagamento é ampulheta, não alarme: quem não paga a tempo é
   // cancelado e sai do board (ver _payment_tone no backend).
-  warning: "lucide:hourglass",
-  danger: "lucide:alert-triangle",
-  success: "lucide:check",
-  neutral: "lucide:banknote"
-}[props.card.payment_tone] || "lucide:banknote"));
+  return ({
+    warning: "lucide:hourglass",
+    danger: "lucide:alert-triangle",
+    success: "lucide:check",
+    neutral: "lucide:banknote"
+  }[props.card.payment_tone] || "lucide:banknote");
+});
 const tTone = computed(() => timerTone(props.card.timer_class));
 
 // Countdown do prazo da confirmação otimista (só em cards com timer agendado).

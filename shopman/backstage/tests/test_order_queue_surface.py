@@ -276,6 +276,20 @@ class OrderQueueSurfaceTests(TestCase):
 
         self.assertEqual(card.payment_tone, "neutral")
 
+    def test_order_without_any_payment_info_is_flagged_not_silent(self) -> None:
+        """Pedido sem NENHUM rastro de cobrança (sem meio/intent/tender) não pode
+        ficar mudo no board: pill explícito 'Pagamento não informado' em âmbar, para
+        o operador ver que não sabemos o status — e não confundir com pago."""
+        order = _order("A-SEM-PGTO", "ready")
+        order.data["payment"] = {}
+        order.save(update_fields=["data", "updated_at"])
+
+        card = build_order_card(Order.objects.get(pk=order.pk))
+
+        self.assertEqual(card.payment_method, "")
+        self.assertEqual(card.payment_method_label, "Pagamento não informado")
+        self.assertEqual(card.payment_tone, "warning")
+
     def test_card_timer_is_anchored_to_server_time(self) -> None:
         card = build_order_card(_order("A-TIMER", "new"))
 
