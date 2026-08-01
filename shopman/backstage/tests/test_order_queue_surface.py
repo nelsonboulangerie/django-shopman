@@ -229,7 +229,7 @@ class OrderQueueSurfaceTests(TestCase):
 
     def test_external_marketplace_order_reads_as_paid(self) -> None:
         """iFood/marketplace chega pré-pago: o pill é verde, não neutro — pago é
-        pago, independente do canal/meio. (Dinheiro segue neutro: cobrança no balcão.)"""
+        pago, independente do canal/meio."""
         order = _order("A-IFOOD-PAGO", "accepted")
         order.data["payment"] = {"method": "external"}
         order.save(update_fields=["data", "updated_at"])
@@ -237,6 +237,44 @@ class OrderQueueSurfaceTests(TestCase):
         card = build_order_card(Order.objects.get(pk=order.pk))
 
         self.assertEqual(card.payment_tone, "success")
+
+    def test_cash_settled_at_the_counter_reads_as_paid(self) -> None:
+        """Dinheiro liquidado no PDV (tender ``received``) é verde: pago no caixa."""
+        order = _order("A-CASH-BALCAO", "preparing")
+        order.data["payment"] = {
+            "method": "cash",
+            "tenders": [{"method": "cash", "amount_q": order.total_q, "status": "received"}],
+        }
+        order.save(update_fields=["data", "updated_at"])
+
+        card = build_order_card(Order.objects.get(pk=order.pk))
+
+        self.assertEqual(card.payment_tone, "success")
+
+    def test_cash_on_delivery_pending_stays_neutral(self) -> None:
+        """Dinheiro na entrega ainda não acertado (tender ``pending``) fica neutro:
+        não há recebimento a afirmar até o entregador liquidar."""
+        order = _order("A-CASH-COD", "preparing")
+        order.data["payment"] = {
+            "method": "cash",
+            "collection": "on_delivery",
+            "tenders": [{"method": "cash", "amount_q": order.total_q, "status": "pending"}],
+        }
+        order.save(update_fields=["data", "updated_at"])
+
+        card = build_order_card(Order.objects.get(pk=order.pk))
+
+        self.assertEqual(card.payment_tone, "neutral")
+
+    def test_web_pay_on_pickup_cash_stays_neutral(self) -> None:
+        """Pedido web para pagar na retirada não tem tender ainda: neutro, não verde."""
+        order = _order("A-CASH-RETIRA", "preparing")
+        order.data["payment"] = {"method": "cash"}
+        order.save(update_fields=["data", "updated_at"])
+
+        card = build_order_card(Order.objects.get(pk=order.pk))
+
+        self.assertEqual(card.payment_tone, "neutral")
 
     def test_card_timer_is_anchored_to_server_time(self) -> None:
         card = build_order_card(_order("A-TIMER", "new"))

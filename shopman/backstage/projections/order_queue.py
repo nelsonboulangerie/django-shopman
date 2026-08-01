@@ -43,6 +43,10 @@ ACTIVE_STATUSES = ("new", "accepted", "preparing", "ready", "dispatched", "deliv
 
 _PAYMENT_COMPLETE = frozenset({"captured", "paid"})
 _OFFLINE_METHODS = frozenset({"cash", "credit", "debit", "external", ""})
+# Um tender de balcão nasce ``received`` ao ser liquidado no PDV; o dinheiro na
+# entrega (COD) nasce ``pending`` e vira ``received`` quando o entregador acerta.
+# Ver shop/services/pos.py (status do tender) e operator_orders.settle_delivery_cash.
+_SETTLED_TENDER_STATUSES = frozenset({"received", "captured", "paid", ""})
 
 CHANNEL_ICONS: dict[str, str] = {
     "web": "language",
@@ -606,7 +610,7 @@ def _build_card(order: Order, deadline: tuple[str, str] | None = None) -> OrderC
         payment_method_label=payment_method_label,
         payment_status=payment_status,
         payment_pending=_is_payment_pending(order, method, payment_status),
-        payment_tone=_payment_tone(order, method, payment_status),
+        payment_tone=_payment_tone(order, method, payment_status, payment_data),
         advance_block_label=_advance_block_label(bloqueio),
         advance_block_reason=operator_orders.advance_block_message(bloqueio),
         can_settle_delivery_cash=_can_settle_delivery_cash(order, payment_data),
@@ -677,7 +681,22 @@ def _is_payment_pending(order: Order, method: str, payment_status: str) -> bool:
     return payment_status not in _PAYMENT_COMPLETE
 
 
-def _payment_tone(order: Order, method: str, payment_status: str) -> str:
+def _offline_payment_settled(payment_data: dict) -> bool:
+    """True quando um tender de balcão/entrega já foi de fato recebido.
+
+    Venda de balcão liquida no PDV (tender ``received``); dinheiro na entrega
+    (COD) nasce ``pending`` e vira ``received`` quando acertado. Pedido web para
+    pagar na retirada ainda não tem tender — fica de fora, corretamente.
+    """
+    tenders = payment_data.get("tenders") or []
+    return any(
+        int(tender.get("amount_q") or 0) > 0
+        and str(tender.get("status") or "") in _SETTLED_TENDER_STATUSES
+        for tender in tenders
+    )
+
+
+def _payment_tone(order: Order, method: str, payment_status: str, payment_data: dict) -> str:
     """Tom do pill de pagamento — explícito, em vez de deduzido na superfície.
 
     Pagamento só ESPERANDO não é falha: é ampulheta (``warning``), não alarme
@@ -694,8 +713,12 @@ def _payment_tone(order: Order, method: str, payment_status: str) -> str:
     if method == "external":
         return "success"
     if method in _OFFLINE_METHODS or not method:
-        # Dinheiro/balcão: cobrança fora do site, cobrada na entrega ou no caixa —
-        # não temos captura para afirmar "pago", nem é aqui que se cobra. Neutro.
+        # Dinheiro/cartão no balcão: verde SÓ quando de fato liquidado — tender
+        # recebido no PDV, ou COD acertado na entrega. Pedido web para pagar na
+        # retirada e COD ainda pendente ficam neutros: não afirmamos "pago" sem
+        # recebimento. (Decisão do Pablo: "verde ao liquidar no PDV".)
+        if _offline_payment_settled(payment_data):
+            return "success"
         return "neutral"
     if _is_payment_pending(order, method, payment_status):
         return "warning"
