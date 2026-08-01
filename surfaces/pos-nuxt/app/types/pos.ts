@@ -122,7 +122,11 @@ export interface POSCheckoutContractProjection {
   discount_types: POSCheckoutOptionProjection[];
   discount_reasons: POSCheckoutOptionProjection[];
   customer_memory_actions: POSCheckoutOptionProjection[];
-  capabilities: Record<string, unknown>;
+  // O tipo detalhado existia e não estava ligado aqui: `Record<string, unknown>`
+  // fazia cada leitura virar `unknown` e obrigava um cast na chamada. O gate da
+  // antesala ("sem turno aberto não há venda") lia daí — se o contrato mudasse a
+  // chave, ele receberia `undefined` em silêncio e a antesala nunca dispararia.
+  capabilities: POSCheckoutCapabilities;
 }
 
 export interface POSCashRuntimeProjection {

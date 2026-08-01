@@ -439,7 +439,7 @@ onMounted(() => {
 
 // O AddressPicker é o dono do passo de endereço: a seleção dele (salvo ou
 // novo) é a única fonte do que vai no payload do checkout. Flush síncrono:
-// o picker emite a seleção e o "accepted" na mesma chamada — a validação
+// o picker emite a seleção e o "confirmed" na mesma chamada — a validação
 // do avanço lê o state imediatamente.
 watch(addressSelection, selection => {
   state.saved_address_id = selection?.savedAddressId ?? null

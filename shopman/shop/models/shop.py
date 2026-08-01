@@ -275,9 +275,9 @@ class Shop(models.Model):
             "Mensagens exibidas ao cliente na página de acompanhamento do pedido.\n"
             "Deixe vazio para usar os textos padrão. Preencha apenas as que quiser personalizar.\n\n"
             "Chaves disponíveis:\n"
-            '  "new" — pedido recebido, aguardando confirmação\n'
-            '  "new_countdown" — texto acima do timer de confirmação\n'
-            '  "accepted" — pedido confirmado\n'
+            '  "new" — pedido recebido, aguardando o aceite da loja\n'
+            '  "new_countdown" — texto acima do timer de aceite\n'
+            '  "accepted" — pedido aceito\n'
             '  "preparing" — pedido em preparo\n'
             '  "ready" — pedido pronto para retirada/entrega\n'
             '  "dispatched" — pedido saiu para entrega\n'

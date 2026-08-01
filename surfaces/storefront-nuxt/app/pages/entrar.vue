@@ -53,7 +53,7 @@ const lastSentAtMs = ref<number | null>(null)
 const lastDeliveryMethod = ref<AuthDeliveryMethod>('whatsapp')
 const codeExpiresAt = ref('')
 // Momento de feedback antes do redirect: aparelho reconhecido ou código confirmado.
-const moment = ref<'none' | 'recognized' | 'accepted'>('none')
+const moment = ref<'none' | 'recognized' | 'confirmed'>('none')
 const trustSaved = ref(false)
 const nowMs = ref(0)
 let clockTimer: ReturnType<typeof setInterval> | null = null
@@ -136,7 +136,7 @@ const momentMessage = computed(() => moment.value === 'recognized'
   ? copyMessage(authCopy.value?.device_trust_redirecting, 'Dispositivo reconhecido. Entrando automaticamente…')
   : copyMessage(authCopy.value?.auth_confirmed, 'Identidade confirmada')
 )
-const momentSavedNote = computed(() => moment.value === 'accepted' && trustSaved.value
+const momentSavedNote = computed(() => moment.value === 'confirmed' && trustSaved.value
   ? copyMessage(authCopy.value?.device_trust_saved, 'Dispositivo salvo por 30 dias.')
   : ''
 )
@@ -230,7 +230,7 @@ function useDebugOtp () {
   codeDigits.value = debugOtpCode.value.split('').map(Number)
 }
 
-async function celebrateAndGo (kind: 'recognized' | 'accepted') {
+async function celebrateAndGo (kind: 'recognized' | 'confirmed') {
   moment.value = kind
   await new Promise(resolve => setTimeout(resolve, 1400))
   await navigateTo(nextUrl.value)
@@ -339,7 +339,7 @@ async function verifyCode () {
       enterWelcomeGate(response)
       return
     }
-    await celebrateAndGo('accepted')
+    await celebrateAndGo('confirmed')
   } catch (e) {
     error.value = fetchErrorView(e, 'Código inválido ou expirado.', 'code')
   } finally {

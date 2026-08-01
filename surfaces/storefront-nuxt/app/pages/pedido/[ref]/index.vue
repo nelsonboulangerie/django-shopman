@@ -12,6 +12,13 @@ import {
 } from '~/presentation/orderTracking'
 import { countdownPct, deadlineCountdown, isCountdownUrgent, serverClockOffsetMs } from '~/presentation/deadline'
 import { orderAccessErrorView } from '~/presentation/orderAccess'
+import {
+  canShareNatively,
+  orderShareUrl,
+  shareMessage,
+  shareNatively,
+  whatsAppShareHref
+} from '~/utils/share'
 
 const route = useRoute()
 const apiPath = useShopmanApiPath()
@@ -285,12 +292,21 @@ watchEffect(() => {
   yoinCelebrado.value = true
   nextTick(() => dispararConfetti())
 })
-const shareHref = computed(() => {
+// Compartilhar: folha nativa do sistema quando existe (WhatsApp, Mensagens,
+// Instagram — a escolha é do cliente), com o link do WhatsApp como fallback no
+// desktop. As armadilhas que faziam chegar só a URL crua estão em `utils/share`.
+const shareText = computed(() => {
   const texto = tracking.value?.share_text
   if (!texto) return ''
-  const url = import.meta.client ? window.location.href : ''
-  return `https://wa.me/?text=${encodeURIComponent(url ? `${texto} ${url}` : texto)}`
+  const origin = import.meta.client ? window.location.origin : ''
+  return shareMessage(texto, orderShareUrl(origin, orderRef.value))
 })
+const shareHref = computed(() => whatsAppShareHref(shareText.value))
+async function compartilhar (event: MouseEvent) {
+  if (!canShareNatively() || !shareText.value) return
+  event.preventDefault()
+  await shareNatively(shareText.value)
+}
 
 useSeoMeta({
   title: () => tracking.value ? `Pedido ${tracking.value.ref}` : 'Acompanhamento',
@@ -625,7 +641,7 @@ useSeoMeta({
             </UiButton>
             <!-- Compartilhar é permanente: serve mais com o pedido pronto do que
                  logo depois do checkout, onde vivia preso ao banner do yoin. -->
-            <UiButton v-if="shareHref" :href="shareHref" target="_blank" rel="noopener" variant="secondary" icon="lucide:share-2" class="w-full">
+            <UiButton v-if="shareHref" :href="shareHref" target="_blank" rel="noopener" variant="secondary" icon="lucide:share-2" class="w-full" @click="compartilhar">
               {{ tracking.share_cta }}
             </UiButton>
             <UiAlertDialog v-if="cancelAction">

@@ -15,7 +15,7 @@ APP_COMPOSE := $(COMPOSE) --profile app
 RELEASE_COMPOSE := $(COMPOSE) --profile release
 NUXT_DIR := surfaces/storefront-nuxt
 
-.PHONY: help install test test-refs test-utils test-offerman test-stockman test-craftsman test-orderman test-payman test-guestman test-doorman test-buyman test-framework test-migrations test-runtime-preflight test-runtime load-test storefront-e2e test-coverage lint omotenashi-qa omotenashi-browser-qa omotenashi-browser-ci admin admin-update admin-ui admin-ui-ci admin-ui-maturity admin-ui-strict admin-ui-surfaces admin-ui-test admin-ui-update unfold unfold-ci unfold-maturity unfold-strict unfold-surfaces unfold-update lint-unfold lint-unfold-maturity clean migrate run nuxt dev seed coverage fonts up down logs db-shell diagnose-runtime diagnose-worker diagnose-payments diagnose-webhooks diagnose-health release-readiness release-readiness-strict reconcile-financial-day audit-branches smoke-gateways smoke-gateways-sandbox deploy-env-check deploy-check deploy-build deploy-release deploy-up deploy-down deploy-logs deploy-ps collectstatic
+.PHONY: surfaces surfaces-types help install test test-refs test-utils test-offerman test-stockman test-craftsman test-orderman test-payman test-guestman test-doorman test-buyman test-framework test-migrations test-runtime-preflight test-runtime load-test storefront-e2e test-coverage lint omotenashi-qa omotenashi-browser-qa omotenashi-browser-ci admin admin-update admin-ui admin-ui-ci admin-ui-maturity admin-ui-strict admin-ui-surfaces admin-ui-test admin-ui-update unfold unfold-ci unfold-maturity unfold-strict unfold-surfaces unfold-update lint-unfold lint-unfold-maturity clean migrate run nuxt dev seed coverage fonts up down logs db-shell diagnose-runtime diagnose-worker diagnose-payments diagnose-webhooks diagnose-health release-readiness release-readiness-strict reconcile-financial-day audit-branches smoke-gateways smoke-gateways-sandbox deploy-env-check deploy-check deploy-build deploy-release deploy-up deploy-down deploy-logs deploy-ps collectstatic
 
 help: ## Mostra este help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | \
@@ -309,6 +309,32 @@ coverage: ## Roda testes do framework com cobertura
 
 lint: admin ## Ruff + Admin/Unfold
 	ruff check packages/ shopman/shop/ config/
+
+# Superfícies Nuxt: tipos + vitest, app por app.
+#
+# `make test` e `make lint` são Python — ficavam VERDES com a superfície
+# quebrada. Foi assim que um `emit('confirmed')` renomeado sem querer para
+# `emit('accepted')` sobreviveu: o listener continuou `@confirmed`, o passo de
+# endereço do checkout parou de avançar sozinho, e nada acusou.
+#
+# Um app por vez, sem `-` no comando: o primeiro que quebrar para a linha.
+SURFACES := storefront-nuxt hub-nuxt pos-nuxt kds-nuxt orders-nuxt production-nuxt broadcast-nuxt
+
+surfaces: ## Superfícies Nuxt: typecheck + vitest de todos os apps
+	@for app in $(SURFACES); do \
+		echo "── $$app"; \
+		(cd surfaces/$$app && npm run typecheck --silent && npx vitest run --reporter=dot) || exit 1; \
+	done
+	@echo "── operator-kit"
+	@cd surfaces/operator-kit && npx vitest run --reporter=dot
+	@echo "✓ Superfícies"
+
+surfaces-types: ## Só os tipos (rápido) — pega import morto e contrato divergente
+	@for app in $(SURFACES); do \
+		echo "── $$app"; \
+		(cd surfaces/$$app && npm run typecheck --silent) || exit 1; \
+	done
+	@echo "✓ Tipos das superfícies"
 
 admin: ## Admin: valida tudo de Admin/Unfold
 	$(PYTHON) scripts/check_unfold_canonical.py --maturity $(ADMIN_SCOPE_ARGS)

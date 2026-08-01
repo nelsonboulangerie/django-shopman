@@ -1,4 +1,4 @@
-import type { Action, OrderProgressStepProjection, TrackingPromiseProjection, TrackingPromiseRowProjection } from '~/types/shopman'
+import type { Action, OrderProgressStepProjection, TrackingPromiseProjection } from '~/types/shopman'
 import { normalizeSearchText } from '~/utils/display'
 
 // Lógica pura da tela de acompanhamento. Contrato vem das projeções do backend

@@ -24,7 +24,7 @@ export function usePosCashSession({ pos, actions, refresh, action }: CashSession
   const busy = ref(false);
 
   const cashManagement = computed<POSCashManagementCapability | null>(
-    () => (pos.value?.checkout?.capabilities?.cash_management ?? null) as POSCashManagementCapability | null,
+    () => pos.value?.checkout?.capabilities?.cash_management ?? null,
   );
   const movementKinds = computed<string[]>(
     () => cashManagement.value?.movement_kinds || ["sangria", "suprimento", "ajuste"],

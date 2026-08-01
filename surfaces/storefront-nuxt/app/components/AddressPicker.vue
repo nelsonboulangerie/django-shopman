@@ -515,7 +515,7 @@ async function confirmDraft () {
   // nesse momento), para endereços fora de zona/abandonados nunca virarem
   // lixo no perfil do cliente.
   emit('update:selection', selectionFromDraft({ ...(draft as AddressDraft) }, null))
-  emit('accepted')
+  emit('confirmed')
 }
 
 // PATCH de um salvo editado no checkout: persiste, re-seleciona com os dados
