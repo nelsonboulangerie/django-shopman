@@ -14,6 +14,7 @@ import {
   toneBadge,
   elapsedLabel,
   type AffordanceRef,
+  type Tone,
 } from "~/presentation/board";
 
 const props = defineProps<{ card: OrderCardProjection; busy?: boolean; error?: string; selected?: boolean }>();
@@ -26,17 +27,17 @@ const code = computed(() => splitRef(props.card.ref));
 const affordances = computed(() => cardAffordances(props.card));
 // Tom do pagamento vem da projeção, não de dedução na tela: dinheiro não é
 // "pago" nem "devendo" — é cobrança fora do site, e verde ali diria que entrou
-// dinheiro que não entrou.
-const paymentPillClass = computed(() => ({
-  danger: "border-destructive/50 text-destructive",
-  success: "border-success/50 text-success",
-  neutral: "border-border text-muted-foreground"
-}[props.card.payment_tone] || "border-border text-muted-foreground"));
+// dinheiro que não entrou. O fundo esmaecido reusa `toneBadge`, o mesmo do pill
+// de status: dois pills lado a lado com gramáticas visuais diferentes fazem o
+// olho tratá-los como coisas de naturezas distintas.
+const paymentPillClass = computed(() => toneBadge(props.card.payment_tone as Tone));
+// Ícones de 12px pedem silhueta, não detalhe: um check dentro de um círculo vira
+// um borrão nesse tamanho. Traço simples, forma reconhecível de longe.
 const paymentPillIcon = computed(() => ({
-  danger: "lucide:circle-alert",
-  success: "lucide:circle-check",
-  neutral: "lucide:wallet"
-}[props.card.payment_tone] || "lucide:wallet"));
+  danger: "lucide:alert-triangle",
+  success: "lucide:check",
+  neutral: "lucide:banknote"
+}[props.card.payment_tone] || "lucide:banknote"));
 const tTone = computed(() => timerTone(props.card.timer_class));
 
 // Countdown do prazo da confirmação otimista (só em cards com timer agendado).

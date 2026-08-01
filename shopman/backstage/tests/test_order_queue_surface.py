@@ -199,6 +199,32 @@ class OrderQueueSurfaceTests(TestCase):
         self.assertFalse(card.payment_pending)
         self.assertTrue(card.can_confirm)
 
+    def test_finished_order_offers_no_disabled_advance_button(self) -> None:
+        """Bloqueio definitivo não vira botão: não há espera que o resolva.
+
+        A superfície desenha o botão desabilitado sempre que há
+        ``advance_block_label``. Um pedido cancelado também está "bloqueado" —
+        mas por não ter próxima etapa — e ganhava um "Ainda não dá para avançar"
+        que jamais destravaria.
+        """
+        for status in ("cancelled", "completed", "new"):
+            with self.subTest(status=status):
+                card = build_order_card(_order(f"A-FIM-{status}", status))
+
+                self.assertEqual(card.advance_block_label, "")
+
+    def test_accepted_order_awaiting_payment_keeps_the_button_in_place(self) -> None:
+        """Bloqueio temporário ocupa o lugar e diz o que falta."""
+        order = _order("A-ESPERA-PIX", "accepted")
+        order.data["payment"] = {"method": "pix", "amount_q": order.total_q}
+        order.save(update_fields=["data", "updated_at"])
+
+        card = build_order_card(Order.objects.get(pk=order.pk))
+
+        self.assertEqual(card.advance_block_label, "Aguardando pagamento…")
+        self.assertIn("Pagamento", card.advance_block_reason)
+        self.assertEqual(card.payment_tone, "danger")
+
     def test_card_timer_is_anchored_to_server_time(self) -> None:
         card = build_order_card(_order("A-TIMER", "new"))
 

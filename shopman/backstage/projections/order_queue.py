@@ -567,7 +567,7 @@ def _build_card(order: Order, deadline: tuple[str, str] | None = None) -> OrderC
         or ""
     )
 
-    bloqueio = operator_orders.advance_block_reason(order)
+    bloqueio = operator_orders.advance_block(order)
     next_status = operator_orders.next_status_for(order) if not bloqueio else ""
     next_label = _next_label(order)
 
@@ -608,7 +608,7 @@ def _build_card(order: Order, deadline: tuple[str, str] | None = None) -> OrderC
         payment_pending=_is_payment_pending(order, method, payment_status),
         payment_tone=_payment_tone(order, method, payment_status),
         advance_block_label=_advance_block_label(bloqueio),
-        advance_block_reason=bloqueio,
+        advance_block_reason=operator_orders.advance_block_message(bloqueio),
         can_settle_delivery_cash=_can_settle_delivery_cash(order, payment_data),
         fiscal_status_label=fiscal_status_label,
         fiscal_status=fiscal_status,
@@ -689,13 +689,19 @@ def _payment_tone(order: Order, method: str, payment_status: str) -> str:
     return "neutral"
 
 
-def _advance_block_label(reason: str) -> str:
-    """Rótulo curto para o botão desabilitado (o motivo inteiro vai no title)."""
-    if not reason:
-        return ""
-    if "agamento" in reason:
-        return "Aguardando pagamento…"
-    return "Ainda não dá para avançar"
+_ADVANCE_BLOCK_LABELS: dict[operator_orders.AdvanceBlock, str] = {
+    operator_orders.AdvanceBlock.PAYMENT_NOT_CAPTURED: "Aguardando pagamento…",
+}
+
+
+def _advance_block_label(bloqueio: operator_orders.AdvanceBlock) -> str:
+    """Rótulo curto para o botão desabilitado (o motivo inteiro vai no title).
+
+    Só ganha rótulo o bloqueio TEMPORÁRIO — aquele que a espera resolve. Pedido
+    cancelado ou concluído não tem próxima etapa e por isso não ganha botão
+    nenhum: lugar ocupado por algo que nunca vai destravar é ruído.
+    """
+    return _ADVANCE_BLOCK_LABELS.get(bloqueio, "")
 
 
 def _payment_status(order: Order) -> str:

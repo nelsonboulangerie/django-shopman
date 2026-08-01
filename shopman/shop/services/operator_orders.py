@@ -8,6 +8,7 @@ the HTTP layer.
 from __future__ import annotations
 
 import logging
+from enum import StrEnum
 
 from django.db import transaction
 from shopman.orderman.models import Order
@@ -22,11 +23,35 @@ class OrderStateConflict(ValueError):
     """O pedido mudou de status antes de a ação do operador ser aplicada.
 
     Levantada pelo guard reavaliado na linha travada (``select_for_update``):
-    a auto-confirmação (directive ``confirmation.timeout``) corre em paralelo
+    o aceite automático (directive ``confirmation.timeout``) corre em paralelo
     com o operador, então decidir sobre o status em memória permitiria, por
-    exemplo, recusar um pedido que acabou de ser confirmado (CONFIRMED →
+    exemplo, recusar um pedido que acabou de ser aceito (ACCEPTED →
     CANCELLED é transição válida). A camada HTTP mapeia para 409.
     """
+
+
+class AdvanceBlock(StrEnum):
+    """Por que o avanço está barrado — o código, não a frase.
+
+    Duas naturezas diferentes moram aqui, e a superfície precisa distingui-las:
+    ``NO_NEXT_STEP`` é definitivo (pedido morto ou ainda sem aceite, não há o
+    que avançar) e ``PAYMENT_NOT_CAPTURED`` é temporário (há próxima etapa, só
+    falta o dinheiro entrar). Antes isso era deduzido casando pedaço de frase em
+    português no rótulo, e um pedido cancelado ganhava botão "Ainda não dá para
+    avançar".
+    """
+
+    NONE = ""
+    NO_NEXT_STEP = "no_next_step"
+    PAYMENT_NOT_CAPTURED = "payment_not_captured"
+
+
+_ADVANCE_BLOCK_MESSAGES: dict[AdvanceBlock, str] = {
+    AdvanceBlock.NO_NEXT_STEP: "Pedido não possui próxima etapa",
+    AdvanceBlock.PAYMENT_NOT_CAPTURED: (
+        "Pagamento ainda não foi confirmado. Aguarde antes de iniciar o preparo."
+    ),
+}
 
 _NEXT_STATUS_MAP: dict[str, str] = {
     Order.Status.ACCEPTED: Order.Status.PREPARING,
@@ -94,9 +119,9 @@ def reject_order(
     operator picked; it rides ``order.data`` to the status-callback handler.
 
     Guard + cancelamento na MESMA transação com lock (ver ``OrderStateConflict``):
-    CONFIRMED → CANCELLED é transição válida, então sem o guard na linha travada
-    uma recusa atrasada cancelaria um pedido que a auto-confirmação acabou de
-    confirmar.
+    ACCEPTED → CANCELLED é transição válida, então sem o guard na linha travada
+    uma recusa atrasada cancelaria um pedido que o aceite automático acabou de
+    aceitar.
     """
     with transaction.atomic():
         locked = Order.objects.select_for_update().get(pk=order.pk)
@@ -128,18 +153,28 @@ def next_status_for(order: Order) -> str:
     return _NEXT_STATUS_MAP.get(order.status, "")
 
 
-def advance_block_reason(order: Order) -> str:
-    """Why advancing is blocked right now, or '' if ``advance_order`` would run.
+def advance_block(order: Order) -> AdvanceBlock:
+    """Why advancing is blocked right now, as a code.
 
     Single source for the operator-advance gate: ``advance_order`` raises with
-    this reason, and the operator queue reads it to decide whether to offer the
-    advance action — so the prediction always matches the enforcement.
+    the matching message, and a fila do operador lê o código para decidir se
+    oferece a ação — a previsão e a regra nunca divergem.
     """
     if not next_status_for(order):
-        return "Pedido não possui próxima etapa"
+        return AdvanceBlock.NO_NEXT_STEP
     if order.status == Order.Status.ACCEPTED and _requires_captured_payment_for_work(order):
-        return "Pagamento ainda não foi confirmado. Aguarde antes de iniciar o preparo."
-    return ""
+        return AdvanceBlock.PAYMENT_NOT_CAPTURED
+    return AdvanceBlock.NONE
+
+
+def advance_block_message(bloqueio: AdvanceBlock) -> str:
+    """A frase que o operador lê para um código de bloqueio."""
+    return _ADVANCE_BLOCK_MESSAGES.get(bloqueio, "")
+
+
+def advance_block_reason(order: Order) -> str:
+    """A frase que o operador lê, ou '' se ``advance_order`` rodaria agora."""
+    return advance_block_message(advance_block(order))
 
 
 def advance_order(order: Order, *, actor: str) -> str:
