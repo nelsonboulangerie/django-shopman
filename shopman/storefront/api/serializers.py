@@ -233,6 +233,8 @@ class OrderTrackingCopySerializer(serializers.Serializer):
     rating_comment_aria_label = serializers.CharField()
     rating_submit_label = serializers.CharField()
     rating_thanks = serializers.CharField()
+    rating_thanks_title = serializers.CharField()
+    rating_thanks_celebrate = serializers.CharField()
     page_meta_description = serializers.CharField()
     delivery_heading = serializers.CharField()
     stale_cta = serializers.CharField()

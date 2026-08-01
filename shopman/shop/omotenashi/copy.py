@@ -1001,6 +1001,15 @@ OMOTENASHI_DEFAULTS: dict[str, dict[str, dict[str, CopyEntry]]] = {
     "TRACKING_RATE_THANKS": {
         WILDCARD: {WILDCARD: CopyEntry(title="Obrigado!", message="Valorizamos muito seu retorno.")},
     },
+    # Agradecimento caloroso quando a nota é positiva (>= 4). Abaixo disso o
+    # sheet usa o TRACKING_RATE_THANKS acima (sincero, mas sóbrio).
+    "TRACKING_RATING_THANKS_CELEBRATE": {
+        WILDCARD: {
+            WILDCARD: CopyEntry(
+                message="Ficamos muito felizes que você gostou. Esperamos você de novo em breve."
+            )
+        },
+    },
 
     # ── Status banners ────────────────────────────────────────────
     "URGENCY_BANNER_MESSAGE": {

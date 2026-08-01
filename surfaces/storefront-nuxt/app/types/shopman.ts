@@ -776,6 +776,8 @@ export interface TrackingCopyProjection {
   rating_comment_aria_label: string
   rating_submit_label: string
   rating_thanks: string
+  rating_thanks_title: string
+  rating_thanks_celebrate: string
   page_meta_description: string
   delivery_heading: string
   // Copy estática do bloco de pagamento inline (Pix/cartão).

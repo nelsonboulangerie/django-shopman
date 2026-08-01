@@ -1,4 +1,4 @@
-import type { Action, OrderProgressStepProjection, TrackingPromiseProjection } from '~/types/shopman'
+import type { Action, OrderProgressStepProjection, TrackingCopyProjection, TrackingPromiseProjection } from '~/types/shopman'
 import { normalizeSearchText } from '~/utils/display'
 
 // Lógica pura da tela de acompanhamento. Contrato vem das projeções do backend
@@ -94,4 +94,37 @@ export function trackingFreshness (
   else rel = `há ${Math.floor(ageSeconds / 3600)} h`
 
   return { text: `Atualizado ${rel}`, ageSeconds, isStale }
+}
+
+// Avaliação — estado de "obrigado" e micro-celebração.
+//
+// Uma nota positiva (>= 4 de 5) ganha confete; abaixo disso o agradecimento é
+// sincero e sóbrio, porque comemorar uma nota morna soaria falso. O confete em
+// si já respeita `prefers-reduced-motion` (ver useConfetti).
+export const RATING_CELEBRATION_MIN = 4
+
+export function shouldCelebrateRating (rating: number | null | undefined): boolean {
+  return typeof rating === 'number' && rating >= RATING_CELEBRATION_MIN
+}
+
+export interface RatingThanksView {
+  title: string
+  message: string
+  celebrate: boolean
+}
+
+// Monta o estado de agradecimento a partir da copy (omotenashi, configurável no
+// Admin) — a superfície nunca inventa a copy, só escolhe qual linha usar pela
+// nota e sinaliza se cabe confete. Uma nota positiva mostra a linha calorosa;
+// abaixo do limiar, o agradecimento sóbrio.
+export function ratingThanksView (
+  copy: Pick<TrackingCopyProjection, 'rating_thanks_title' | 'rating_thanks_celebrate' | 'rating_thanks'> | null | undefined,
+  rating: number | null | undefined
+): RatingThanksView {
+  const celebrate = shouldCelebrateRating(rating)
+  return {
+    title: copy?.rating_thanks_title || 'Obrigado!',
+    message: (celebrate ? copy?.rating_thanks_celebrate : copy?.rating_thanks) || 'Valorizamos muito seu retorno.',
+    celebrate
+  }
 }

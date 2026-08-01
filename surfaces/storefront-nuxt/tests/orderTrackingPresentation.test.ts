@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest'
 import {
   hasLiveDeadline,
   pollIntervalMs,
+  ratingThanksView,
+  shouldCelebrateRating,
   timelineActiveStep,
   trackingFreshness,
   trackingPanelClass,
@@ -113,5 +115,45 @@ describe('trackingFreshness', () => {
 
   it('never reports a negative age when the client clock runs behind', () => {
     expect(trackingFreshness('2026-07-04T12:00:00Z', base - 5_000, 60).ageSeconds).toBe(0)
+  })
+})
+
+describe('rating thank-you & celebration', () => {
+  const copy = {
+    rating_thanks_title: 'Obrigado!',
+    rating_thanks_celebrate: 'Ficamos muito felizes que você gostou.',
+    rating_thanks: 'Valorizamos muito seu retorno.',
+  }
+
+  it('celebrates only a positive rating (>= 4 of 5)', () => {
+    expect(shouldCelebrateRating(5)).toBe(true)
+    expect(shouldCelebrateRating(4)).toBe(true)
+    expect(shouldCelebrateRating(3)).toBe(false)
+    expect(shouldCelebrateRating(1)).toBe(false)
+    // Sem nota escolhida ainda: nada de confete.
+    expect(shouldCelebrateRating(0)).toBe(false)
+    expect(shouldCelebrateRating(null)).toBe(false)
+    expect(shouldCelebrateRating(undefined)).toBe(false)
+  })
+
+  it('shows the warm line and confetti flag for a positive rating', () => {
+    const view = ratingThanksView(copy, 5)
+    expect(view.title).toBe('Obrigado!')
+    expect(view.message).toBe('Ficamos muito felizes que você gostou.')
+    expect(view.celebrate).toBe(true)
+  })
+
+  it('thanks soberly, without confetti, below the threshold', () => {
+    const view = ratingThanksView(copy, 2)
+    expect(view.title).toBe('Obrigado!')
+    expect(view.message).toBe('Valorizamos muito seu retorno.')
+    expect(view.celebrate).toBe(false)
+  })
+
+  it('falls back to canonical copy when the catalog is missing', () => {
+    const view = ratingThanksView(null, 5)
+    expect(view.title).toBe('Obrigado!')
+    expect(view.message).toBe('Valorizamos muito seu retorno.')
+    expect(view.celebrate).toBe(true)
   })
 })

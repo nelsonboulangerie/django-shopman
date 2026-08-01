@@ -3,6 +3,7 @@ import type { Action, TrackingResponse } from '~/types/shopman'
 import {
   hasLiveDeadline,
   pollIntervalMs,
+  ratingThanksView,
   timelineActiveStep,
   trackingFreshness,
   trackingPanelClass,
@@ -37,6 +38,10 @@ const rating = ref(0)
 const comment = ref('')
 const actionPending = ref<Record<string, boolean>>({})
 const ratingOpen = ref(false)
+// Depois de enviar a avaliação, o próprio sheet vira o estado de "obrigado" — um
+// agradecimento claro, não um toast que some. O rate_order some no refresh, então
+// o sheet segue vivo por `ratingOpen`/`ratingSubmitted`, não pela ação.
+const ratingSubmitted = ref(false)
 const { performAction: performReorderAction, conflict, pending: reorderPending } = useReorder()
 // Forward the session cookie on SSR so order access resolves on first paint
 // (same pattern as the account pages) — otherwise the server fetch lands
@@ -54,6 +59,9 @@ const errorView = computed(() => orderAccessErrorView((error.value as { statusCo
 const loginHref = computed(() => `/entrar?next=${encodeURIComponent(`/pedido/${orderRef.value}`)}`)
 const cancelAction = computed(() => tracking.value?.actions.find(action => action.ref === 'cancel_order' && action.enabled) || null)
 const rateAction = computed(() => tracking.value?.actions.find(action => action.ref === 'rate_order' && action.enabled) || null)
+// Estado de agradecimento (título/mensagem + se cabe confete) montado a partir da
+// copy e da nota escolhida. A copy é omotenashi (configurável), nunca inventada aqui.
+const ratingThanks = computed(() => ratingThanksView(tracking.value?.copy, rating.value))
 const reorderAction = computed(() => tracking.value?.actions.find(action => action.ref === 'reorder' && action.enabled) || null)
 // O bloco de pagamento inline (PAYMENT-TRACKING-MERGE) desenha o botão do cartão
 // e o copia-e-cola do Pix; não os repetimos no painel de status.
@@ -209,7 +217,6 @@ watch(() => deadlineCount.value?.isExpired, async expired => {
 function actionSuccessMessage (action: Action): string {
   if (action.ref === 'cancel_order') return tracking.value?.copy.cancel_success_title || 'Pedido cancelado.'
   if (action.ref === 'confirm_received') return 'Que bom que chegou. Bom apetite!'
-  if (action.ref === 'rate_order') return tracking.value?.copy.rating_success_title || 'Obrigado pela sua avaliação!'
   return 'Tudo certo, atualizamos seu pedido.'
 }
 
@@ -235,14 +242,48 @@ async function postAction (action: Action, body: Record<string, unknown> = {}) {
   }
 }
 
-// Envia a avaliação e fecha o sheet (o rate_order some após avaliar, no refresh).
-async function rateAndClose () {
+// Envia a avaliação. Em vez de fechar e piscar um toast, o próprio sheet vira o
+// estado de "obrigado"; uma nota positiva ganha confete no mesmo instante (o
+// confete já respeita movimento reduzido). Fluxo próprio — não passa pelo toast
+// genérico de postAction.
+async function submitRating () {
   const action = rateAction.value
   // Exige uma nota escolhida (>0) antes de enviar — sem seleção, não submete.
   if (!action || rating.value < 1) return
-  ratingOpen.value = false
-  await postAction(action, { rating: rating.value, comment: comment.value })
+  actionPending.value = { ...actionPending.value, [action.ref]: true }
+  try {
+    const headers = await csrfHeaders()
+    if (action.idempotency === 'required' || action.idempotency === 'recommended') {
+      headers['x-idempotency-key'] = newRemoteMutationKey(action.ref)
+    }
+    await $fetch(apiPath(action.href), {
+      method: remoteMethod(action.method),
+      headers,
+      credentials: 'include',
+      body: { rating: rating.value, comment: comment.value }
+    })
+    ratingSubmitted.value = true
+    if (import.meta.client && ratingThanks.value.celebrate) dispararConfetti()
+    await refresh()
+  } catch (e) {
+    if (import.meta.client) useSonner.error(errorDetail(e, tracking.value?.copy.rating_failed_message || 'Não foi possível concluir. Tente de novo ou fale conosco.'))
+  } finally {
+    actionPending.value = omitKey(actionPending.value, action.ref)
+  }
 }
+
+function closeRatingSheet () {
+  ratingOpen.value = false
+}
+// Zera o estado ao ABRIR (não ao fechar): reabrir começa sempre no formulário
+// limpo, e o "obrigado" não pisca de volta pro form durante a animação de saída.
+watch(ratingOpen, open => {
+  if (open) {
+    ratingSubmitted.value = false
+    rating.value = 0
+    comment.value = ''
+  }
+})
 
 function actionRoute (action: Action) {
   return localRouteFromBackend(action.href || null)
@@ -625,7 +666,7 @@ useSeoMeta({
         </template>
       </section>
 
-      <aside v-if="tracking && (showSideActions || rateAction)" class="space-y-4 lg:sticky lg:top-24 lg:self-start">
+      <aside v-if="tracking && (showSideActions || rateAction || ratingOpen)" class="space-y-4 lg:sticky lg:top-24 lg:self-start">
         <UiCard class="gap-3 py-4">
           <UiCardHeader class="pb-0">
             <UiCardTitle>Ações</UiCardTitle>
@@ -686,13 +727,27 @@ useSeoMeta({
         </UiCard>
 
         <BottomSheet
-          v-if="rateAction"
+          v-if="rateAction || ratingOpen"
           v-model:open="ratingOpen"
           max-width="md"
-          title="Avaliar pedido"
-          :description="tracking.copy.rating_thanks || 'Sua nota ajuda a loja a melhorar.'"
+          :title="ratingSubmitted ? ratingThanks.title : 'Avaliar pedido'"
+          :description="ratingSubmitted ? ratingThanks.message : (tracking.copy.rating_thanks || 'Sua nota ajuda a loja a melhorar.')"
         >
-          <div class="shop-stack-block px-4 py-4">
+          <!-- Estado de obrigado: o envio dá lugar a um agradecimento claro, com um
+               selo de sucesso e a nota que o cliente deixou (só leitura). Quando a
+               nota é positiva, o confete já disparou no envio. -->
+          <div
+            v-if="ratingSubmitted"
+            class="flex flex-col items-center gap-4 px-4 py-8 text-center"
+            role="status"
+            aria-live="polite"
+          >
+            <span class="flex size-16 items-center justify-center rounded-full bg-success/10 text-success">
+              <Icon name="lucide:circle-check" class="size-9" />
+            </span>
+            <UiStarRating :model-value="rating" :max="5" size="lg" readonly class="justify-center" />
+          </div>
+          <div v-else class="shop-stack-block px-4 py-4">
             <UiStarRating v-model="rating" :max="5" size="lg" class="justify-center" />
             <UiTextarea
               v-model="comment"
@@ -702,7 +757,8 @@ useSeoMeta({
             />
           </div>
           <template #footer>
-            <UiButton class="w-full" size="lg" :disabled="rating < 1" @click="rateAndClose">{{ tracking.copy.rating_submit_label }}</UiButton>
+            <UiButton v-if="ratingSubmitted" class="w-full" size="lg" variant="secondary" @click="closeRatingSheet">Fechar</UiButton>
+            <UiButton v-else class="w-full" size="lg" :disabled="rating < 1" :loading="!!actionPending['rate_order']" @click="submitRating">{{ tracking.copy.rating_submit_label }}</UiButton>
           </template>
         </BottomSheet>
       </aside>

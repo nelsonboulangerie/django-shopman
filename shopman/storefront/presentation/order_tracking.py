@@ -176,6 +176,8 @@ class OrderTrackingCopyProjection:
     rating_comment_aria_label: str
     rating_submit_label: str
     rating_thanks: str
+    rating_thanks_title: str
+    rating_thanks_celebrate: str
     page_meta_description: str
     delivery_heading: str
     stale_cta: str
@@ -1058,6 +1060,11 @@ def _tracking_copy(copy: CopyCatalog) -> OrderTrackingCopyProjection:
         rating_comment_aria_label=copy.title("TRACKING_RATING_COMMENT_ARIA_LABEL", "Comentário da avaliação"),
         rating_submit_label=copy.title("TRACKING_RATING_SUBMIT_CTA", "Enviar avaliação"),
         rating_thanks=copy.message("TRACKING_RATE_THANKS", "Valorizamos muito seu retorno."),
+        rating_thanks_title=copy.title("TRACKING_RATE_THANKS", "Obrigado!"),
+        rating_thanks_celebrate=copy.message(
+            "TRACKING_RATING_THANKS_CELEBRATE",
+            "Ficamos muito felizes que você gostou. Esperamos você de novo em breve.",
+        ),
         page_meta_description=copy.message("TRACKING_PAGE_META_DESCRIPTION", "Acompanhe seu pedido"),
         delivery_heading=copy.title("TRACKING_DELIVERY_HEADING", "Entrega"),
         stale_cta=copy.message("TRACKING_PROMISE_STALE", "Atualizar"),
