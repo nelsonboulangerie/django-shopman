@@ -26,8 +26,9 @@ gestor `https://gestor.boulangerie.com.br` (PIN) · admin
 - **prep_start por canal**: web espera o operador dar "Iniciar preparo" (honesto
   com o cliente remoto); iFood/PDV auto-disparam. Encomenda futura não forna antes
   do dia.
-- **Pill do gestor**: pago = verde (qualquer canal), esperando = ampulheta,
-  marketplace pré-pago (iFood) = verde. Dinheiro = neutro (ver §5, decisão aberta).
+- **Pill do gestor**: pago = verde (qualquer canal/meio), esperando = ampulheta,
+  marketplace pré-pago (iFood) = verde. Dinheiro = verde ao liquidar no PDV
+  (tender recebido) ou COD acertado na entrega; neutro enquanto por receber.
 - **Seed rico**: Cardápio 2027 (59 SKUs, coleções, bundles, receitas, fotos),
   personas (cliente novo/fiel/staff), cupons/promoções, loyalty, zonas de entrega
   + bandas de distância, slots de retirada, encomenda com produção planejada,
@@ -79,10 +80,9 @@ funcionar". Marcar ✅/❌ e anotar o pedido.
 
 ## 5. Pendências e decisões abertas
 
-- [ ] **Pill de dinheiro (decisão do Pablo):** hoje neutro. Não temos captura
-      para dinheiro (cobrado no balcão / na entrega). Verde universal exigiria um
-      sinal de "recebido" (settlement do PDV / "recebi na entrega"). Definir:
-      dinheiro fica neutro, ou vira verde quando liquidado?
+- [x] **Pill de dinheiro — DECIDIDO:** verde ao liquidar no PDV (tender
+      recebido) ou COD acertado na entrega; neutro enquanto por receber (COD
+      pendente, web pagar-na-retirada). Lê `Order.data.payment.tenders`.
 - [ ] **Hydration mismatch global** (2 warnings de console em TODA página —
       header/status ao vivo): cosmético, pré-existente ao merge. Baixa prioridade.
 - [ ] **Cartão no staging**: confirmar Stripe test vs mock.
