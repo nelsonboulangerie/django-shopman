@@ -153,7 +153,7 @@ export function zonesView(queue: TwoZoneQueueProjection): ZoneView[] {
     {
       key: "intake",
       title: "Entrada",
-      subtitle: "Novos — confirmar ou recusar",
+      subtitle: "Novos — aceitar ou recusar",
       icon: "lucide:inbox",
       cards: queue.intake,
       count: queue.intake.length,
@@ -221,7 +221,7 @@ export interface Affordance {
 export function cardAffordances(card: OrderCardProjection): Affordance[] {
   const out: Affordance[] = [];
   if (card.can_confirm) {
-    out.push({ ref: "confirm", label: "Confirmar", icon: "lucide:check", priority: "primary", needsInput: false });
+    out.push({ ref: "confirm", label: "Aceitar", icon: "lucide:check", priority: "primary", needsInput: false });
   } else if (card.can_advance && card.next_action_label) {
     out.push({ ref: "advance", label: card.next_action_label, icon: "lucide:arrow-right", priority: "primary", needsInput: false });
   }

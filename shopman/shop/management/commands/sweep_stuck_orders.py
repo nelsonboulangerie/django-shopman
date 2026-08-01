@@ -3,7 +3,7 @@
 O lifecycle não é durável: ``order_changed`` → ``transaction.on_commit(dispatch)``
 roda síncrono no processo. Um crash/deploy entre o COMMIT da transição e o fim
 do handler perde a fase inteira — sem hold (on_commit), sem ticket KDS/baixa de
-estoque (on_confirmed/on_paid), sem devolução de estoque/estorno (on_cancelled).
+estoque (on_accepted/on_paid), sem devolução de estoque/estorno (on_cancelled).
 
 Um dispatch completo grava ``order.data["lifecycle"][fase] = "done"``
 (``DURABLE_PHASES`` em shopman/shop/lifecycle.py). Este sweeper acha pedidos
@@ -13,7 +13,7 @@ machine do Hold, tickets KDS por delta de line_id, notificação via dedupe de
 directive, pagamento via intent/captured_at):
 
   * NEW sem on_commit           → dispatch("on_commit")
-  * CONFIRMED sem on_confirmed  → dispatch("on_confirmed")
+  * ACCEPTED sem on_accepted  → dispatch("on_accepted")
   * NEW/CONFIRMED pagos (captured_at ou Payman suficiente) sem on_paid
                                 → dispatch("on_paid")
   * CANCELLED sem on_cancelled  → dispatch("on_cancelled")
@@ -60,11 +60,11 @@ class Command(BaseCommand):
             phase="on_commit",
         )
 
-        # CONFIRMED sem on_confirmed: updated_at cobre a transição (evita varrer
+        # CONFIRMED sem on_accepted: updated_at cobre a transição (evita varrer
         # pedido recém-confirmado cujo dispatch ainda está rodando).
         self._sweep_phase(
-            Order.objects.filter(status=Order.Status.CONFIRMED, updated_at__lt=cutoff),
-            phase="on_confirmed",
+            Order.objects.filter(status=Order.Status.ACCEPTED, updated_at__lt=cutoff),
+            phase="on_accepted",
         )
 
         # Pagos sem on_paid: o carimbo durável (payment.captured_at, gravado
@@ -74,7 +74,7 @@ class Command(BaseCommand):
         # outra fase.
         self._sweep_phase(
             Order.objects.filter(
-                status__in=(Order.Status.NEW, Order.Status.CONFIRMED),
+                status__in=(Order.Status.NEW, Order.Status.ACCEPTED),
                 updated_at__lt=cutoff,
             ),
             phase="on_paid",

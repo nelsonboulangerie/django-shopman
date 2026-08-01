@@ -208,7 +208,7 @@ def secure_stock(order) -> None:
 # perde a fase inteira (hold, fulfill, ticket KDS, notificação). dispatch()
 # grava o marcador após o handler retornar; sweep_stuck_orders re-despacha,
 # idempotente, as fases sem marcador.
-DURABLE_PHASES = frozenset({"on_commit", "on_confirmed", "on_paid", "on_cancelled"})
+DURABLE_PHASES = frozenset({"on_commit", "on_accepted", "on_paid", "on_cancelled"})
 LIFECYCLE_DATA_KEY = "lifecycle"
 PHASE_DONE = "done"
 
@@ -290,7 +290,7 @@ def _on_commit(order, config: ChannelConfig) -> None:
 
     # Fire "order_received" for non-immediate modes: o cliente fica esperando
     # (auto_confirm 5min, manual indefinido) — sem esse aviso, silêncio total.
-    # Em `immediate`, o _on_confirmed dispara `order_confirmed` logo em seguida,
+    # Em `immediate`, o _on_accepted dispara `order_confirmed` logo em seguida,
     # então duplicar aqui seria ruído.
     if config.confirmation.mode != "immediate":
         notification.send(order, "order_received")
@@ -387,7 +387,7 @@ def _alert_coupon_over_redeemed(order, code: str) -> None:
     )
 
 
-def _on_confirmed(order, config: ChannelConfig) -> None:
+def _on_accepted(order, config: ChannelConfig) -> None:
     """Order confirmed: dispatch KDS tickets, initiate payment (if post_commit),
     fulfill stock (if no digital payment), notify."""
 
@@ -445,7 +445,7 @@ def _on_paid(order, config: ChannelConfig) -> None:
         notification.send(order, "payment_confirmed")
         return
     physical_work_dispatched = False
-    if order.status == Order.Status.CONFIRMED:
+    if order.status == Order.Status.ACCEPTED:
         physical_work_dispatched = _dispatch_physical_work(order)
     stock.fulfill(order)
     notification.send(order, "payment_confirmed")
@@ -540,7 +540,7 @@ def _on_returned(order, config: ChannelConfig) -> None:
 
 _PHASE_HANDLERS = {
     "on_commit": _on_commit,
-    "on_confirmed": _on_confirmed,
+    "on_accepted": _on_accepted,
     "on_paid": _on_paid,
     "on_preparing": _on_preparing,
     "on_ready": _on_ready,
@@ -593,7 +593,7 @@ def _handle_confirmation(order, config: ChannelConfig) -> None:
                 notification.send(order, "order_received")
                 return
             raise
-        order.transition_status(Order.Status.CONFIRMED, actor="auto_confirm")
+        order.transition_status(Order.Status.ACCEPTED, actor="auto_confirm")
         return
 
     if mode in ("auto_confirm", "auto_cancel"):
@@ -758,11 +758,11 @@ def activate_preorder(order) -> None:
 
     Chamado pelo handler da directive ``preorder.activate``: cria os tickets
     de KDS, baixa o estoque (se o pagamento permite) e marca PREPARING —
-    exatamente o que ``_on_confirmed`` teria feito se a data fosse hoje.
+    exatamente o que ``_on_accepted`` teria feito se a data fosse hoje.
     A baixa tolera holds ainda não materializados (fornada da manhã): o
     receiver de ``holds_materialized`` completa quando o pão existir.
     """
-    if order.status not in (Order.Status.CONFIRMED, Order.Status.PREPARING):
+    if order.status not in (Order.Status.ACCEPTED, Order.Status.PREPARING):
         logger.info(
             "lifecycle.activate_preorder: skip order=%s status=%s", order.ref, order.status
         )
@@ -774,7 +774,7 @@ def activate_preorder(order) -> None:
         return
 
     config = ChannelConfig.for_channel(order.channel_ref)
-    # Encomenda NÃO PAGA não vai para a cozinha. O mesmo gate de _on_confirmed:
+    # Encomenda NÃO PAGA não vai para a cozinha. O mesmo gate de _on_accepted:
     # sem ele, a via `holds_materialized` -> on_holds_materialized ->
     # activate_preorder levava o pedido a PREPARING (e, ao completar, a fiscal
     # e loyalty) sem um centavo capturado.
@@ -793,7 +793,7 @@ def activate_preorder(order) -> None:
 
 
 def _mark_preparing_after_physical_work_dispatch(order) -> bool:
-    if order.status != Order.Status.CONFIRMED:
+    if order.status != Order.Status.ACCEPTED:
         return False
     if not order.can_transition_to(Order.Status.PREPARING):
         return False

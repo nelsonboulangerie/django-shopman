@@ -118,7 +118,7 @@ describe("grid helpers", () => {
     expect(matchesRowQuery(row({ planned_orders: [wo()] }), "wo-010")).toBe(true);
   });
   it("rowCommitments dedupes order refs across open WOs", () => {
-    const commitment = (ref: string) => ({ ref, status: "confirmed", status_label: "Confirmado", qty_required: "5" });
+    const commitment = (ref: string) => ({ ref, status: "accepted", status_label: "Confirmado", qty_required: "5" });
     const r = row({
       planned_orders: [wo({ order_commitments: [commitment("O-1"), commitment("O-2")] })],
       started_orders: [wo({ pk: 11, ref: "WO-011", order_commitments: [commitment("O-1")] })],
@@ -134,7 +134,7 @@ describe("grid helpers", () => {
     expect(alertTarget({ type: "stock_low", order_ref: "" })).toBeNull();
   });
   it("rowCommittedUnits sums committed quantities across linked orders", () => {
-    const commitment = (ref: string, qty: string) => ({ ref, status: "confirmed", status_label: "Confirmado", qty_required: qty });
+    const commitment = (ref: string, qty: string) => ({ ref, status: "accepted", status_label: "Confirmado", qty_required: qty });
     const r = row({
       planned_orders: [wo({ order_commitments: [commitment("O-1", "4"), commitment("O-2", "2,5")] })],
       started_orders: [wo({ pk: 11, ref: "WO-011", order_commitments: [commitment("O-1", "4")] })],

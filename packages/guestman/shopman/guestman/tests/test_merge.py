@@ -278,7 +278,7 @@ class TestMergeOrders:
             session_key="sess-merge-001",
             handle_type="phone",
             handle_ref=source.phone,
-            status=Order.Status.CONFIRMED,
+            status=Order.Status.ACCEPTED,
             total_q=3900,
             data={
                 "customer_ref": source.ref,

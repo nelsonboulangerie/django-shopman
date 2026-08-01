@@ -39,7 +39,7 @@ logger = logging.getLogger(__name__)
 
 # ── Constants ──────────────────────────────────────────────────────────
 
-ACTIVE_STATUSES = ("new", "confirmed", "preparing", "ready", "dispatched", "delivered")
+ACTIVE_STATUSES = ("new", "accepted", "preparing", "ready", "dispatched", "delivered")
 
 _PAYMENT_COMPLETE = frozenset({"captured", "paid"})
 _OFFLINE_METHODS = frozenset({"cash", "credit", "debit", "external", ""})
@@ -53,7 +53,7 @@ CHANNEL_ICONS: dict[str, str] = {
 _DEFAULT_CHANNEL_ICON = "shopping_bag"
 
 NEXT_ACTION_LABELS: dict[str, str] = {
-    "confirmed": "Iniciar preparo",
+    "accepted": "Iniciar preparo",
     "preparing": "Marcar pronto",
     "ready": "Marcar como Retirado",
     "dispatched": "Marcar como Entregue",
@@ -445,13 +445,13 @@ def build_two_zone_queue() -> TwoZoneQueueProjection:
         for o in new_orders
         if not _is_future_preorder(o)
     )
-    prep_orders = [o for o in all_orders if o.status in ("confirmed", "preparing")]
+    prep_orders = [o for o in all_orders if o.status in ("accepted", "preparing")]
     prep = tuple(_build_card(o) for o in prep_orders if not _is_future_preorder(o))
     # Só estados pré-fulfillment viram "Agendados"; ready/dispatched/delivered
     # seguem nas colunas de expedição mesmo que a data combinada seja futura.
     future_preorders = [
         o for o in all_orders
-        if o.status in ("new", "confirmed", "preparing") and _is_future_preorder(o)
+        if o.status in ("new", "accepted", "preparing") and _is_future_preorder(o)
     ]
     preorders = tuple(
         _build_card(o, deadline=deadlines.get(o.ref))
@@ -660,7 +660,7 @@ def _awaiting_work_orders(order: Order) -> tuple[AwaitingWorkOrderProjection, ..
 
 def _is_payment_pending(order: Order, method: str, payment_status: str) -> bool:
     """True when the order needs payment capture before physical work can start."""
-    if order.status not in {"new", "confirmed"}:
+    if order.status not in {"new", "accepted"}:
         return False
     if method in _OFFLINE_METHODS:
         return False

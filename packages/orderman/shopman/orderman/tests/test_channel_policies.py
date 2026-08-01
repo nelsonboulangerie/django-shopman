@@ -142,8 +142,8 @@ class IFoodPolicyTests(TestCase):
         )
 
         # Status pode mudar normalmente
-        order.transition_status(Order.STATUS_CONFIRMED, actor="webhook")
-        self.assertEqual(order.status, Order.STATUS_CONFIRMED)
+        order.transition_status(Order.STATUS_ACCEPTED, actor="webhook")
+        self.assertEqual(order.status, Order.STATUS_ACCEPTED)
 
         order.transition_status(Order.STATUS_PREPARING, actor="kitchen")
         self.assertEqual(order.status, Order.STATUS_PREPARING)

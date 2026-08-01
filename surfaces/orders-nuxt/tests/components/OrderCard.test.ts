@@ -14,7 +14,7 @@ vi.stubGlobal("useNowTick", () => nowMs);
 function card(over: Partial<OrderCardProjection> = {}): OrderCardProjection {
   return {
     ref: "WEB-20260625-0007",
-    status: "confirmed",
+    status: "accepted",
     status_label: "Confirmado",
     status_color: "",
     channel_ref: "web",

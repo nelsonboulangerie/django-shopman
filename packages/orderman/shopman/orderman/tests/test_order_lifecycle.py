@@ -31,16 +31,16 @@ class OrderTimestampTests(TestCase):
         """created_at é definido automaticamente na criação."""
         self.assertIsNotNone(self.order.created_at)
 
-    def test_confirmed_at_is_set_on_transition(self) -> None:
-        """confirmed_at é definido ao transicionar para confirmed."""
-        self.assertIsNone(self.order.confirmed_at)
-        self.order.transition_status(Order.STATUS_CONFIRMED, actor="test")
+    def test_accepted_at_is_set_on_transition(self) -> None:
+        """accepted_at é definido ao transicionar para confirmed."""
+        self.assertIsNone(self.order.accepted_at)
+        self.order.transition_status(Order.STATUS_ACCEPTED, actor="test")
         self.order.refresh_from_db()
-        self.assertIsNotNone(self.order.confirmed_at)
+        self.assertIsNotNone(self.order.accepted_at)
 
     def test_preparing_at_is_set_on_transition(self) -> None:
         """preparing_at é definido ao transicionar para preparing."""
-        self.order.transition_status(Order.STATUS_CONFIRMED, actor="test")
+        self.order.transition_status(Order.STATUS_ACCEPTED, actor="test")
         self.assertIsNone(self.order.preparing_at)
         self.order.transition_status(Order.STATUS_PREPARING, actor="test")
         self.order.refresh_from_db()
@@ -48,7 +48,7 @@ class OrderTimestampTests(TestCase):
 
     def test_ready_at_is_set_on_transition(self) -> None:
         """ready_at é definido ao transicionar para ready."""
-        self.order.transition_status(Order.STATUS_CONFIRMED, actor="test")
+        self.order.transition_status(Order.STATUS_ACCEPTED, actor="test")
         self.order.transition_status(Order.STATUS_PREPARING, actor="test")
         self.assertIsNone(self.order.ready_at)
         self.order.transition_status(Order.STATUS_READY, actor="test")
@@ -57,7 +57,7 @@ class OrderTimestampTests(TestCase):
 
     def test_dispatched_at_is_set_on_transition(self) -> None:
         """dispatched_at é definido ao transicionar para dispatched."""
-        self.order.transition_status(Order.STATUS_CONFIRMED, actor="test")
+        self.order.transition_status(Order.STATUS_ACCEPTED, actor="test")
         self.order.transition_status(Order.STATUS_PREPARING, actor="test")
         self.order.transition_status(Order.STATUS_READY, actor="test")
         self.assertIsNone(self.order.dispatched_at)
@@ -67,7 +67,7 @@ class OrderTimestampTests(TestCase):
 
     def test_delivered_at_is_set_on_transition(self) -> None:
         """delivered_at é definido ao transicionar para delivered."""
-        self.order.transition_status(Order.STATUS_CONFIRMED, actor="test")
+        self.order.transition_status(Order.STATUS_ACCEPTED, actor="test")
         self.order.transition_status(Order.STATUS_PREPARING, actor="test")
         self.order.transition_status(Order.STATUS_READY, actor="test")
         self.order.transition_status(Order.STATUS_DISPATCHED, actor="test")
@@ -78,7 +78,7 @@ class OrderTimestampTests(TestCase):
 
     def test_completed_at_is_set_on_transition(self) -> None:
         """completed_at é definido ao transicionar para completed."""
-        self.order.transition_status(Order.STATUS_CONFIRMED, actor="test")
+        self.order.transition_status(Order.STATUS_ACCEPTED, actor="test")
         self.order.transition_status(Order.STATUS_PREPARING, actor="test")
         self.order.transition_status(Order.STATUS_READY, actor="test")
         self.assertIsNone(self.order.completed_at)
@@ -97,21 +97,21 @@ class OrderTimestampTests(TestCase):
         """Timestamp não é sobrescrito se já existe (edge case)."""
         # Força o timestamp
         original_time = timezone.now() - timedelta(hours=1)
-        self.order.confirmed_at = original_time
+        self.order.accepted_at = original_time
         self.order.status = Order.STATUS_NEW
         self.order.save()
 
         # Transiciona novamente
-        self.order.transition_status(Order.STATUS_CONFIRMED, actor="test")
+        self.order.transition_status(Order.STATUS_ACCEPTED, actor="test")
         self.order.refresh_from_db()
 
         # Deve manter o timestamp original
-        self.assertEqual(self.order.confirmed_at, original_time)
+        self.assertEqual(self.order.accepted_at, original_time)
 
     def test_timestamps_allow_duration_calculation(self) -> None:
         """Timestamps permitem calcular duração entre estados."""
         # Transiciona normalmente
-        self.order.transition_status(Order.STATUS_CONFIRMED, actor="test")
+        self.order.transition_status(Order.STATUS_ACCEPTED, actor="test")
         self.order.transition_status(Order.STATUS_PREPARING, actor="test")
         self.order.transition_status(Order.STATUS_READY, actor="test")
 
@@ -143,8 +143,8 @@ class IFoodChannelLifecycleTests(TestCase):
         )
 
         # Pedido chega do iFood → auto-confirm
-        order.transition_status(Order.STATUS_CONFIRMED, actor="ifood-webhook")
-        self.assertEqual(order.status, Order.STATUS_CONFIRMED)
+        order.transition_status(Order.STATUS_ACCEPTED, actor="ifood-webhook")
+        self.assertEqual(order.status, Order.STATUS_ACCEPTED)
 
         # Cozinha aceita
         order.transition_status(Order.STATUS_PREPARING, actor="kitchen")
@@ -168,7 +168,7 @@ class IFoodChannelLifecycleTests(TestCase):
 
         # Verifica todos os timestamps
         order.refresh_from_db()
-        self.assertIsNotNone(order.confirmed_at)
+        self.assertIsNotNone(order.accepted_at)
         self.assertIsNotNone(order.preparing_at)
         self.assertIsNotNone(order.ready_at)
         self.assertIsNotNone(order.dispatched_at)
@@ -197,7 +197,7 @@ class IFoodChannelLifecycleTests(TestCase):
             total_q=4500,
         )
 
-        order.transition_status(Order.STATUS_CONFIRMED, actor="ifood-webhook")
+        order.transition_status(Order.STATUS_ACCEPTED, actor="ifood-webhook")
         order.transition_status(Order.STATUS_PREPARING, actor="kitchen")
         order.transition_status(Order.STATUS_CANCELLED, actor="ifood-webhook")
 
@@ -214,7 +214,7 @@ class IFoodChannelLifecycleTests(TestCase):
         )
 
         # Fluxo até entrega
-        order.transition_status(Order.STATUS_CONFIRMED, actor="ifood-webhook")
+        order.transition_status(Order.STATUS_ACCEPTED, actor="ifood-webhook")
         order.transition_status(Order.STATUS_PREPARING, actor="kitchen")
         order.transition_status(Order.STATUS_READY, actor="kitchen")
         order.transition_status(Order.STATUS_DISPATCHED, actor="motoboy")
@@ -265,7 +265,7 @@ class EcommerceChannelLifecycleTests(TestCase):
         )
 
         # Cliente finaliza compra → pagamento OK → confirmed
-        order.transition_status(Order.STATUS_CONFIRMED, actor="payment-webhook")
+        order.transition_status(Order.STATUS_ACCEPTED, actor="payment-webhook")
         order.transition_status(Order.STATUS_PREPARING, actor="warehouse")
         order.transition_status(Order.STATUS_READY, actor="warehouse")
         order.transition_status(Order.STATUS_DISPATCHED, actor="correios")
@@ -283,7 +283,7 @@ class EcommerceChannelLifecycleTests(TestCase):
             total_q=8000,
         )
 
-        order.transition_status(Order.STATUS_CONFIRMED, actor="payment-webhook")
+        order.transition_status(Order.STATUS_ACCEPTED, actor="payment-webhook")
         order.transition_status(Order.STATUS_PREPARING, actor="store")
         order.transition_status(Order.STATUS_READY, actor="store")
         # Cliente retira → direto para completed (sem dispatched)
@@ -315,8 +315,8 @@ class PDVChannelLifecycleTests(TestCase):
     """
 
     _PDV_TRANSITIONS = {
-        Order.STATUS_NEW: [Order.STATUS_CONFIRMED, Order.STATUS_CANCELLED],
-        Order.STATUS_CONFIRMED: [Order.STATUS_COMPLETED, Order.STATUS_CANCELLED],
+        Order.STATUS_NEW: [Order.STATUS_ACCEPTED, Order.STATUS_CANCELLED],
+        Order.STATUS_ACCEPTED: [Order.STATUS_COMPLETED, Order.STATUS_CANCELLED],
         Order.STATUS_COMPLETED: [],
         Order.STATUS_CANCELLED: [],
     }
@@ -340,11 +340,11 @@ class PDVChannelLifecycleTests(TestCase):
         """Venda rápida no balcão: new → confirmed → completed."""
         order = self._mk_order("PDV-001", 2500)
 
-        order.transition_status(Order.STATUS_CONFIRMED, actor="cashier")
+        order.transition_status(Order.STATUS_ACCEPTED, actor="cashier")
         order.transition_status(Order.STATUS_COMPLETED, actor="cashier")
 
         self.assertEqual(order.status, Order.STATUS_COMPLETED)
-        self.assertIsNotNone(order.confirmed_at)
+        self.assertIsNotNone(order.accepted_at)
         self.assertIsNotNone(order.completed_at)
 
     def test_pdv_cancelled_sale(self) -> None:
@@ -357,7 +357,7 @@ class PDVChannelLifecycleTests(TestCase):
     def test_pdv_cannot_access_delivery_states(self) -> None:
         """PDV não tem acesso a estados de delivery."""
         order = self._mk_order("PDV-003", 3000)
-        order.transition_status(Order.STATUS_CONFIRMED, actor="cashier")
+        order.transition_status(Order.STATUS_ACCEPTED, actor="cashier")
 
         # Não pode ir para preparing — PDV tem fluxo simplificado
         with self.assertRaises(InvalidTransition):
@@ -378,23 +378,23 @@ class OrderEventAuditTests(TestCase):
 
     def test_transition_creates_status_changed_event(self) -> None:
         """Transição cria evento status_changed."""
-        self.order.transition_status(Order.STATUS_CONFIRMED, actor="admin")
+        self.order.transition_status(Order.STATUS_ACCEPTED, actor="admin")
 
         event = OrderEvent.objects.get(order=self.order)
         self.assertEqual(event.type, "status_changed")
         self.assertEqual(event.actor, "admin")
         self.assertEqual(event.payload["old_status"], "new")
-        self.assertEqual(event.payload["new_status"], "confirmed")
+        self.assertEqual(event.payload["new_status"], "accepted")
 
     def test_multiple_transitions_create_multiple_events(self) -> None:
         """Múltiplas transições criam múltiplos eventos."""
-        self.order.transition_status(Order.STATUS_CONFIRMED, actor="admin")
+        self.order.transition_status(Order.STATUS_ACCEPTED, actor="admin")
         self.order.transition_status(Order.STATUS_CANCELLED, actor="customer")
 
         events = OrderEvent.objects.filter(order=self.order).order_by("created_at")
         self.assertEqual(events.count(), 2)
 
-        self.assertEqual(events[0].payload["new_status"], "confirmed")
+        self.assertEqual(events[0].payload["new_status"], "accepted")
         self.assertEqual(events[1].payload["new_status"], "cancelled")
 
     def test_emit_event_creates_custom_event(self) -> None:
@@ -504,8 +504,8 @@ class EdgeCaseTests(TestCase):
             total_q=0,
         )
 
-        order.transition_status(Order.STATUS_CONFIRMED, actor="promo")
-        self.assertEqual(order.status, Order.STATUS_CONFIRMED)
+        order.transition_status(Order.STATUS_ACCEPTED, actor="promo")
+        self.assertEqual(order.status, Order.STATUS_ACCEPTED)
 
     def test_order_with_large_total(self) -> None:
         """Order com valor muito alto."""
@@ -582,7 +582,7 @@ class EdgeCaseTests(TestCase):
         )
 
         # Primeira transição
-        order.transition_status(Order.STATUS_CONFIRMED, actor="user1")
+        order.transition_status(Order.STATUS_ACCEPTED, actor="user1")
 
         # Segunda transição do mesmo status (outro processo)
         order2 = Order.objects.get(pk=order.pk)
@@ -606,7 +606,7 @@ class EdgeCaseTests(TestCase):
         )
 
         # Deve usar DEFAULT_TRANSITIONS
-        self.assertTrue(order.can_transition_to(Order.STATUS_CONFIRMED))
+        self.assertTrue(order.can_transition_to(Order.STATUS_ACCEPTED))
         self.assertTrue(order.can_transition_to(Order.STATUS_CANCELLED))
 
     def test_empty_channel_config_with_get_transitions(self) -> None:
@@ -627,7 +627,7 @@ class EdgeCaseTests(TestCase):
         transitions = order.get_transitions()
         self.assertIsInstance(transitions, dict)
         # Mesmo com config vazio, pode transicionar para confirmed/cancelled
-        self.assertTrue(order.can_transition_to(Order.STATUS_CONFIRMED))
+        self.assertTrue(order.can_transition_to(Order.STATUS_ACCEPTED))
         self.assertTrue(order.can_transition_to(Order.STATUS_CANCELLED))
 
 
@@ -698,22 +698,22 @@ class OrderSaveIntegrityTests(TestCase):
 
     def test_direct_save_status_change_creates_event(self) -> None:
         """Mudança de status via save() direto cria OrderEvent."""
-        self.order.status = Order.STATUS_CONFIRMED
+        self.order.status = Order.STATUS_ACCEPTED
         self.order.save()
 
         event = OrderEvent.objects.get(order=self.order)
         self.assertEqual(event.type, "status_changed")
         self.assertEqual(event.payload["old_status"], "new")
-        self.assertEqual(event.payload["new_status"], "confirmed")
+        self.assertEqual(event.payload["new_status"], "accepted")
 
     def test_direct_save_status_change_sets_timestamp(self) -> None:
         """Mudança de status via save() direto seta timestamp mecânico."""
-        self.assertIsNone(self.order.confirmed_at)
-        self.order.status = Order.STATUS_CONFIRMED
+        self.assertIsNone(self.order.accepted_at)
+        self.order.status = Order.STATUS_ACCEPTED
         self.order.save()
 
         self.order.refresh_from_db()
-        self.assertIsNotNone(self.order.confirmed_at)
+        self.assertIsNotNone(self.order.accepted_at)
 
     def test_direct_save_status_change_sends_signal(self) -> None:
         """Mudança de status via save() direto emite signal order_changed."""
@@ -726,7 +726,7 @@ class OrderSaveIntegrityTests(TestCase):
 
         order_changed.connect(handler)
         try:
-            self.order.status = Order.STATUS_CONFIRMED
+            self.order.status = Order.STATUS_ACCEPTED
             self.order.save()
 
             self.assertEqual(len(received), 1)
@@ -737,7 +737,7 @@ class OrderSaveIntegrityTests(TestCase):
 
     def test_direct_save_status_change_actor_is_direct(self) -> None:
         """Mudança de status via save() direto usa actor 'direct'."""
-        self.order.status = Order.STATUS_CONFIRMED
+        self.order.status = Order.STATUS_ACCEPTED
         self.order.save()
 
         event = OrderEvent.objects.get(order=self.order)
@@ -745,7 +745,7 @@ class OrderSaveIntegrityTests(TestCase):
 
     def test_transition_status_actor_is_preserved(self) -> None:
         """transition_status() preserva o actor informado."""
-        self.order.transition_status(Order.STATUS_CONFIRMED, actor="admin-panel")
+        self.order.transition_status(Order.STATUS_ACCEPTED, actor="admin-panel")
 
         event = OrderEvent.objects.get(order=self.order)
         self.assertEqual(event.actor, "admin-panel")
@@ -791,7 +791,7 @@ class DispatchedDeliveryGuardTests(TestCase):
             total_q=1000,
             data={"fulfillment_type": "pickup"},
         )
-        order.transition_status(Order.STATUS_CONFIRMED, actor="test")
+        order.transition_status(Order.STATUS_ACCEPTED, actor="test")
         order.transition_status(Order.STATUS_PREPARING, actor="test")
         order.transition_status(Order.STATUS_READY, actor="test")
 
@@ -809,7 +809,7 @@ class DispatchedDeliveryGuardTests(TestCase):
             total_q=1000,
             data={"fulfillment_type": "delivery"},
         )
-        order.transition_status(Order.STATUS_CONFIRMED, actor="test")
+        order.transition_status(Order.STATUS_ACCEPTED, actor="test")
         order.transition_status(Order.STATUS_PREPARING, actor="test")
         order.transition_status(Order.STATUS_READY, actor="test")
         order.transition_status(Order.STATUS_DISPATCHED, actor="test")
@@ -825,7 +825,7 @@ class DispatchedDeliveryGuardTests(TestCase):
             total_q=1000,
             data={"fulfillment_type": "delivery"},
         )
-        order.transition_status(Order.STATUS_CONFIRMED, actor="test")
+        order.transition_status(Order.STATUS_ACCEPTED, actor="test")
         order.transition_status(Order.STATUS_PREPARING, actor="test")
         order.transition_status(Order.STATUS_READY, actor="test")
 
@@ -846,7 +846,7 @@ class DispatchedDeliveryGuardTests(TestCase):
             total_q=1000,
             data={},  # sem fulfillment_type
         )
-        order.transition_status(Order.STATUS_CONFIRMED, actor="test")
+        order.transition_status(Order.STATUS_ACCEPTED, actor="test")
         order.transition_status(Order.STATUS_PREPARING, actor="test")
         order.transition_status(Order.STATUS_READY, actor="test")
         order.transition_status(Order.STATUS_DISPATCHED, actor="test")
@@ -862,7 +862,7 @@ class DispatchedDeliveryGuardTests(TestCase):
             total_q=1000,
             data={"delivery_method": "delivery"},
         )
-        order.transition_status(Order.STATUS_CONFIRMED, actor="test")
+        order.transition_status(Order.STATUS_ACCEPTED, actor="test")
         order.transition_status(Order.STATUS_PREPARING, actor="test")
         order.transition_status(Order.STATUS_READY, actor="test")
         order.transition_status(Order.STATUS_DISPATCHED, actor="test")

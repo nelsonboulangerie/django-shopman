@@ -138,7 +138,7 @@ def _make_order_with_customer(uuid=str(CUSTOMER_UUID)):
     order = MagicMock()
     order.ref = "ORD-001"
     order.total_q = 3000
-    order.status = "confirmed"
+    order.status = "accepted"
     order.data = {
         "customer": {
             "uuid": uuid,

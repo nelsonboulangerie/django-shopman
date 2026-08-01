@@ -300,7 +300,7 @@ def _action(
 def _can_mock_confirm_payment(order, *, is_debug: bool) -> bool:
     if not is_debug:
         return False
-    if order.status not in {"new", "confirmed"}:
+    if order.status not in {"new", "accepted"}:
         return False
     payment = (order.data or {}).get("payment") or {}
     method = str(payment.get("method") or "").lower()
@@ -438,7 +438,7 @@ def _build_payment_promise(
         )
     if method == "card":
         if checkout_url:
-            if order.status != "confirmed":
+            if order.status != "accepted":
                 return PaymentPromiseData(
                     state="card_authorization_requested",
                     tone="info",
@@ -514,7 +514,7 @@ def _build_payment_promise(
         # Dois momentos diferentes, duas frases: antes da loja conferir, e o
         # intervalo curto entre a confirmação e o código nascer.
         return PaymentPromiseData(
-            state="pix_waiting_code" if order.status == "confirmed" else "pix_waiting_confirmation",
+            state="pix_waiting_code" if order.status == "accepted" else "pix_waiting_confirmation",
             tone="info",
             actions=(),
             deadline_at=None,
@@ -523,7 +523,7 @@ def _build_payment_promise(
             requires_active_notification=True,
             stale_after_seconds=8,
         )
-    if order.status != "confirmed":
+    if order.status != "accepted":
         # Já há código, falta a loja conferir a disponibilidade.
         return PaymentPromiseData(
             state="pix_payment_before_confirmation",

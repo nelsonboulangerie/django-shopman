@@ -39,7 +39,7 @@ class IFoodCallbackError(Exception):
 
 # Internal status → iFood order-action path segment.
 STATUS_ACTION = {
-    "confirmed": "confirm",
+    "accepted": "confirm",
     "ready": "readyToPickup",
     "dispatched": "dispatch",
     "cancelled": "requestCancellation",

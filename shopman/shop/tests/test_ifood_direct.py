@@ -414,7 +414,7 @@ def test_process_events_failed_ingest_not_acked(db, fake_headers):
 def test_action_for_status_mapping():
     from shopman.shop.services import ifood_callbacks
 
-    assert ifood_callbacks.action_for_status("confirmed") == "confirm"
+    assert ifood_callbacks.action_for_status("accepted") == "confirm"
     assert ifood_callbacks.action_for_status("ready") == "readyToPickup"
     assert ifood_callbacks.action_for_status("dispatched") == "dispatch"
     assert ifood_callbacks.action_for_status("cancelled") == "requestCancellation"
@@ -575,7 +575,7 @@ def test_status_handler_raises_transient_on_callback_error():
     from shopman.shop.services import ifood_callbacks
 
     handler = IFoodStatusCallbackHandler()
-    msg = MagicMock(payload={"ifood_order_id": "o1", "status": "confirmed"})
+    msg = MagicMock(payload={"ifood_order_id": "o1", "status": "accepted"})
     with patch(
         "shopman.shop.services.ifood_callbacks.send_for_status",
         side_effect=ifood_callbacks.IFoodCallbackError("down"),
@@ -591,14 +591,14 @@ def test_signal_receiver_enqueues_directive_for_ifood_order(db):
     from shopman.shop.directives import IFOOD_STATUS_CALLBACK
     from shopman.shop.handlers.ifood_status import on_order_status_changed
 
-    order = MagicMock(channel_ref="ifood", status="confirmed", ref="ORD-1",
+    order = MagicMock(channel_ref="ifood", status="accepted", ref="ORD-1",
                       external_ref="ifd-1", data={})
     on_order_status_changed(sender=None, order=order, event_type="status_changed", actor="auto")
 
     d = Directive.objects.filter(topic=IFOOD_STATUS_CALLBACK).first()
     assert d is not None
     assert d.payload["ifood_order_id"] == "ifd-1"
-    assert d.payload["status"] == "confirmed"
+    assert d.payload["status"] == "accepted"
 
     # Idempotent: same transition twice → still one directive.
     on_order_status_changed(sender=None, order=order, event_type="status_changed", actor="auto")
@@ -612,7 +612,7 @@ def test_signal_receiver_ignores_non_ifood_orders(db):
     from shopman.shop.directives import IFOOD_STATUS_CALLBACK
     from shopman.shop.handlers.ifood_status import on_order_status_changed
 
-    order = MagicMock(channel_ref="web", status="confirmed", ref="ORD-2",
+    order = MagicMock(channel_ref="web", status="accepted", ref="ORD-2",
                       external_ref="", data={})
     on_order_status_changed(sender=None, order=order, event_type="status_changed", actor="auto")
     assert Directive.objects.filter(topic=IFOOD_STATUS_CALLBACK).count() == 0

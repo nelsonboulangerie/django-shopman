@@ -440,13 +440,13 @@ def test_checkout_tomorrow_with_todays_planned_batch_is_accepted_as_preorder(
 
     order.refresh_from_db()
     with django_capture_on_commit_callbacks(execute=True):
-        order.transition_status(OrderModel.Status.CONFIRMED, actor="test:operator")
+        order.transition_status(OrderModel.Status.ACCEPTED, actor="test:operator")
 
     assert not KDSTicket.objects.filter(session_key=order.session_key).exists(), (
         "pedido de amanhã não pode disparar pra cozinha hoje"
     )
     order.refresh_from_db()
-    assert order.status == OrderModel.Status.CONFIRMED, (
+    assert order.status == OrderModel.Status.ACCEPTED, (
         "encomenda não pode virar PREPARING antes da data"
     )
     alarm = Directive.objects.filter(

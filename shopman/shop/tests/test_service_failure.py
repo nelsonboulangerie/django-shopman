@@ -23,7 +23,7 @@ def _make_order(ref="FAIL-001", total_q=1000):
     return Order.objects.create(
         ref=ref,
         channel_ref=channel.ref,
-        status="confirmed",
+        status="accepted",
         total_q=total_q,
         handle_type="phone",
         handle_ref="+5543999001122",

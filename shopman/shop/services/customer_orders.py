@@ -21,7 +21,7 @@ from shopman.shop.services import payment as payment_service
 
 logger = logging.getLogger(__name__)
 
-ACTIVE_STATUSES = frozenset({"new", "confirmed", "preparing", "ready", "dispatched"})
+ACTIVE_STATUSES = frozenset({"new", "accepted", "preparing", "ready", "dispatched"})
 DEFAULT_CHANNEL_REF = "web"
 ORDER_ACCESS_SESSION_KEY = "shopman_order_access_refs"
 MAX_SESSION_ORDER_ACCESS_REFS = 20
@@ -280,7 +280,7 @@ def resolve_payment_timeout_if_due(order) -> bool:
     method = str(payment.get("method") or "").lower()
     if method not in {"pix", "card"}:
         return False
-    if order.status not in {Order.Status.NEW, Order.Status.CONFIRMED}:
+    if order.status not in {Order.Status.NEW, Order.Status.ACCEPTED}:
         return False
 
     expires_at = _parse_payment_deadline(payment.get("expires_at"))
@@ -432,7 +432,7 @@ def requires_payment_gate(order) -> bool:
     method = str(payment.get("method") or "").lower()
     if method not in {"pix", "card"}:
         return False
-    if order.status != "confirmed":
+    if order.status != "accepted":
         return False
     expires_at = _parse_payment_deadline(payment.get("expires_at"))
     if expires_at and timezone.now() >= expires_at:

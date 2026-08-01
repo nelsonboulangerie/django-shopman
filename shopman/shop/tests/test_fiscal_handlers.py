@@ -63,7 +63,7 @@ def order(db):
     return Order.objects.create(
         ref="ORD-FISCAL-1",
         channel_ref="pdv",
-        status=Order.Status.CONFIRMED,
+        status=Order.Status.ACCEPTED,
         total_q=5000,
         data={"fiscal": {"issue_document": True}},
     )

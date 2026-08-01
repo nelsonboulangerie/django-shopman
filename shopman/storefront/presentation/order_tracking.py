@@ -676,7 +676,7 @@ def _promise_copy(
         # iFood). Prometer conferência de disponibilidade ali seria mentira: ela
         # já aconteceu. Com o pedido ainda `new` (canal sem auto-confirmação), a
         # conferência de fato é o que falta.
-        if status == "confirmed":
+        if status == "accepted":
             return _pair(copy, "TRACKING_PROMISE_CONFIRMED_WAITING",
                          "Pedido aceito",
                          "Já vamos começar o preparo.")

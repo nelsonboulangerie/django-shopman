@@ -31,11 +31,11 @@ def test_dispatch_marks_durable_phase_on_success():
     assert lifecycle.phase_complete(order, "on_cancelled")
 
 
-def test_dispatch_marks_on_confirmed():
-    order = _order("ORD-MARK-CONF", status=Order.Status.CONFIRMED)
-    lifecycle.dispatch(order, "on_confirmed")
+def test_dispatch_marks_on_accepted():
+    order = _order("ORD-MARK-CONF", status=Order.Status.ACCEPTED)
+    lifecycle.dispatch(order, "on_accepted")
     order.refresh_from_db()
-    assert order.data["lifecycle"]["on_confirmed"] == "done"
+    assert order.data["lifecycle"]["on_accepted"] == "done"
 
 
 def test_non_durable_phase_is_not_marked():
@@ -59,7 +59,7 @@ def test_handler_crash_leaves_phase_unmarked():
 def test_crash_between_transition_and_phase_is_rescued_by_sweeper(
     django_capture_on_commit_callbacks,
 ):
-    """Crash simulado entre o COMMIT da transição e o fim do _on_confirmed.
+    """Crash simulado entre o COMMIT da transição e o fim do _on_accepted.
 
     A transição para CONFIRMED persiste; o handler morre no meio; o marcador
     não existe. O sweeper detecta e re-despacha a fase — que aí completa e
@@ -83,11 +83,11 @@ def test_crash_between_transition_and_phase_is_rescued_by_sweeper(
         pytest.raises(RuntimeError),
         django_capture_on_commit_callbacks(execute=True),
     ):
-        order.transition_status(Order.Status.CONFIRMED, actor="operator:test")
+        order.transition_status(Order.Status.ACCEPTED, actor="operator:test")
 
     order.refresh_from_db()
-    assert order.status == Order.Status.CONFIRMED  # transição commitou
-    assert not lifecycle.phase_complete(order, "on_confirmed")  # fase perdida
+    assert order.status == Order.Status.ACCEPTED  # transição commitou
+    assert not lifecycle.phase_complete(order, "on_accepted")  # fase perdida
 
     # Envelhece além do limiar e deixa o sweeper resgatar (agora sem crash).
     Order.objects.filter(pk=order.pk).update(
@@ -97,18 +97,18 @@ def test_crash_between_transition_and_phase_is_rescued_by_sweeper(
     call_command("sweep_stuck_orders")
 
     order.refresh_from_db()
-    assert lifecycle.phase_complete(order, "on_confirmed")
+    assert lifecycle.phase_complete(order, "on_accepted")
 
 
 def test_mark_phase_complete_merges_with_fresh_db_data():
     # Instance com data desatualizado não pode apagar marcador gravado por
     # um dispatch aninhado nesse meio-tempo.
-    order = _order("ORD-MERGE", status=Order.Status.CONFIRMED)
+    order = _order("ORD-MERGE", status=Order.Status.ACCEPTED)
     Order.objects.filter(pk=order.pk).update(
-        data={"lifecycle": {"on_confirmed": "done"}, "hold_ids": []}
+        data={"lifecycle": {"on_accepted": "done"}, "hold_ids": []}
     )
     # order (em memória) ainda tem data={} — stale.
     lifecycle._mark_phase_complete(order, "on_paid")
     order.refresh_from_db()
-    assert order.data["lifecycle"] == {"on_confirmed": "done", "on_paid": "done"}
+    assert order.data["lifecycle"] == {"on_accepted": "done", "on_paid": "done"}
     assert order.data["hold_ids"] == []

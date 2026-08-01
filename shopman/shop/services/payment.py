@@ -352,7 +352,7 @@ def cancel(order, *, reason: str = "order_cancelled") -> None:
 
 # ── facades ──
 
-_CANCELLABLE_STATUSES = {"new", "confirmed"}
+_CANCELLABLE_STATUSES = {"new", "accepted"}
 _PAID_STATUSES = {"captured", "paid"}
 _UNCERTAIN_STATUSES = {"unknown"}
 

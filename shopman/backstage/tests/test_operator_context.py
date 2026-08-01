@@ -34,7 +34,7 @@ def test_operator_context_summarizes_alerts_shift_kpis_and_permissions(rf):
     OperatorAlert.objects.create(type="stock_low", severity="warning", message="Estoque baixo")
     OperatorAlert.objects.create(type="production_late", severity="critical", message="Produção atrasada")
     Position.objects.create(ref="balcao", name="Balcão", is_default=True)
-    Order.objects.create(ref="OP-1", channel_ref="pdv", total_q=2500, status=Order.Status.CONFIRMED)
+    Order.objects.create(ref="OP-1", channel_ref="pdv", total_q=2500, status=Order.Status.ACCEPTED)
 
     recipe = Recipe.objects.create(
         ref="ctx-prod-v1",

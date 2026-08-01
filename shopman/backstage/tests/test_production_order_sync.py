@@ -33,7 +33,7 @@ def recipe(db):
     )
 
 
-def _order(ref: str, sku: str = "CROISSANT", qty: int = 2, status: str = "confirmed") -> Order:
+def _order(ref: str, sku: str = "CROISSANT", qty: int = 2, status: str = "accepted") -> Order:
     order = Order.objects.create(ref=ref, channel_ref="web", status=status, total_q=1000, data={"target_date": date.today().isoformat()})
     OrderItem.objects.create(order=order, line_id=f"{ref}-1", sku=sku, name=sku, qty=qty, unit_price_q=500, line_total_q=1000)
     return order

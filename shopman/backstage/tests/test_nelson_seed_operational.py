@@ -240,7 +240,7 @@ def test_nelson_seed_qa_profile_builds_named_scenarios(monkeypatch):
     assert p1.status == Order.Status.NEW
     assert p1.data["is_preorder"] is True
     assert p1.data["delivery_date"] == tomorrow
-    assert Order.objects.get(ref="QA-PREORDER-02").status == Order.Status.CONFIRMED
+    assert Order.objects.get(ref="QA-PREORDER-02").status == Order.Status.ACCEPTED
 
     # Pago em ready/dispatched com intent capturado.
     ready = Order.objects.get(ref="QA-PAID-READY-01")
@@ -258,7 +258,7 @@ def test_nelson_seed_qa_profile_builds_named_scenarios(monkeypatch):
     ).exists()
 
     # PIX pendente (confirmado, não pago).
-    assert Order.objects.get(ref="QA-PIX-PENDING-01").status == Order.Status.CONFIRMED
+    assert Order.objects.get(ref="QA-PIX-PENDING-01").status == Order.Status.ACCEPTED
     assert PaymentIntent.objects.get(order_ref="QA-PIX-PENDING-01").status == PaymentIntent.Status.PENDING
 
     # iFood (canal marketplace + external_ref).

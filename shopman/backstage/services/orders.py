@@ -19,7 +19,7 @@ def confirm_order(order, *, actor: str):
     except OrderStateConflict as exc:
         raise OrderConflict(str(exc)) from exc
     except (ValueError, InvalidTransition) as exc:
-        raise OrderError(str(exc) or "Não foi possível confirmar o pedido.") from exc
+        raise OrderError(str(exc) or "Não foi possível aceitar o pedido.") from exc
 
 
 def reject_order(order, *, reason: str, actor: str, rejected_by: str, cancellation_code: str = ""):

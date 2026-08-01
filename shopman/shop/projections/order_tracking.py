@@ -344,13 +344,13 @@ def _display_status_key(order) -> str:
         if payment_captured or live_payment_status == "authorized" or not has_intent:
             return "waiting_store_confirmation"
         return "payment_pending"
-    if method == "card" and live_payment_status == "authorized" and order.status in {"new", "confirmed"}:
+    if method == "card" and live_payment_status == "authorized" and order.status in {"new", "accepted"}:
         return "card_authorized"
-    if order.status == "confirmed" and method in {"pix", "card"} and not payment_captured and live_payment_status != "authorized":
+    if order.status == "accepted" and method in {"pix", "card"} and not payment_captured and live_payment_status != "authorized":
         return "payment_pending"
     if order.status == "new":
         return "waiting_store_confirmation"
-    if order.status == "confirmed":
+    if order.status == "accepted":
         _, is_preorder = _commitment_info(order)
         if is_preorder:
             return "preorder_scheduled"
@@ -391,7 +391,7 @@ def _payment_info(order) -> tuple[bool, bool, str | None, str | None]:
         return False, False, "card_authorized", payment.get("expires_at") or None
     if not (payment.get("intent_ref") or payment.get("status")) and order.status == "new":
         return False, False, None, None
-    if order.status not in {"new", "confirmed"}:
+    if order.status not in {"new", "accepted"}:
         return False, False, None, None
     return True, False, "payment_pending", payment.get("expires_at") or None
 
@@ -399,7 +399,7 @@ def _payment_info(order) -> tuple[bool, bool, str | None, str | None]:
 def _can_mock_confirm_payment(order, *, is_debug: bool) -> bool:
     if not is_debug:
         return False
-    if order.status not in {"new", "confirmed"}:
+    if order.status not in {"new", "accepted"}:
         return False
     payment = (order.data or {}).get("payment") or {}
     method = str(payment.get("method") or "").lower()
@@ -651,7 +651,7 @@ def _build_promise(
         )
 
     if payment_pending:
-        state = "payment_requested" if order.status == "confirmed" else "payment_pending"
+        state = "payment_requested" if order.status == "accepted" else "payment_pending"
         return _promise(
             state=state,
             tone="warning",
@@ -687,7 +687,7 @@ def _build_promise(
     payment_method = str(((order.data or {}).get("payment") or {}).get("method") or "").lower()
     live_payment_status = (payment_status.get_payment_status(order) or "").lower()
     card_authorized = payment_method == "card" and live_payment_status == "authorized"
-    if card_authorized and order.status in {"new", "confirmed"}:
+    if card_authorized and order.status in {"new", "accepted"}:
         return _promise(state="card_authorized", tone="info")
 
     if confirmation_countdown:
@@ -704,13 +704,13 @@ def _build_promise(
     # pedido não está "em preparo" nem apenas "pago" — está garantido para a
     # data. A presentation compõe "pedido para sábado, a partir das 09h" com
     # ``commitment_date``/``commitment_slot_ref`` do TrackingData.
-    if is_preorder and order.status in {"new", "confirmed"}:
+    if is_preorder and order.status in {"new", "accepted"}:
         return _promise(
             state="preorder_scheduled",
             tone="success" if payment_confirmed else "info",
         )
 
-    if payment_confirmed and order.status in {"new", "confirmed"}:
+    if payment_confirmed and order.status in {"new", "accepted"}:
         return _promise(state="payment_confirmed", tone="success")
 
     if order.status == "preparing":
@@ -845,7 +845,7 @@ def _build_progress_steps(
 
     specs: list[tuple[str, str | None]] = [
         ("received", _iso(order.created_at)),
-        ("availability", _progress_timestamp(order, "confirmed")),
+        ("availability", _progress_timestamp(order, "accepted")),
     ]
     if include_payment:
         specs.append(("payment", _payment_confirmed_timestamp(order)))
@@ -908,7 +908,7 @@ def _active_progress_key(
         return "completed"
     if order.status == "new":
         return "availability" if payment_confirmed else "received"
-    if order.status == "confirmed":
+    if order.status == "accepted":
         if include_payment and payment_confirmed:
             return "payment"
         return "availability"
@@ -936,14 +936,14 @@ def _should_show_payment_step(order) -> bool:
 
 def _show_payment_confirmed_notice(order, *, payment_confirmed: bool) -> bool:
     """Show the standalone payment alert only before operation has moved on."""
-    return payment_confirmed and order.status in {"new", "confirmed"}
+    return payment_confirmed and order.status in {"new", "accepted"}
 
 
 def _step_was_reached(order, key: str, *, payment_confirmed: bool) -> bool:
     if key == "received":
         return True
     if key == "availability":
-        return bool(_progress_timestamp(order, "confirmed"))
+        return bool(_progress_timestamp(order, "accepted"))
     if key == "payment":
         return payment_confirmed
     if key == "preparing":
@@ -966,8 +966,8 @@ def _progress_timestamp(order, status: str) -> str | None:
     value = getattr(order, field_name, None)
     if value:
         return _iso(value)
-    if status == "confirmed":
-        event = _event_for_status(order, "confirmed")
+    if status == "accepted":
+        event = _event_for_status(order, "accepted")
     elif status in {"preparing", "ready", "dispatched", "delivered", "completed", "cancelled"}:
         event = _event_for_status(order, status)
     else:

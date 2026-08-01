@@ -73,7 +73,7 @@ def _preorder(tomorrow: date, hold: Hold | None) -> Order:
         ref="WEB-PRE-001",
         channel_ref="web",
         session_key="SESS-PRE",
-        status=Order.Status.CONFIRMED,
+        status=Order.Status.ACCEPTED,
         snapshot={"items": [{"line_id": "L1", "sku": SKU, "qty": 2, "unit_price_q": 1200}]},
         data={
             "delivery_date": tomorrow.isoformat(),
@@ -107,7 +107,7 @@ def test_activate_before_the_date_is_a_noop(tomorrow):
     hold.refresh_from_db()
     assert hold.status == HoldStatus.PENDING, "antes da data nada baixa"
     order.refresh_from_db()
-    assert order.status == Order.Status.CONFIRMED
+    assert order.status == Order.Status.ACCEPTED
 
 
 def test_activate_on_the_date_with_demand_hold_waits_materialization(tomorrow):
@@ -225,7 +225,7 @@ def _unpaid_pix_preorder(tomorrow: date, hold: Hold) -> Order:
         ref="WEB-PRE-PIX-1",
         channel_ref="web-pix",
         session_key="SESS-PRE-PIX",
-        status=Order.Status.CONFIRMED,
+        status=Order.Status.ACCEPTED,
         snapshot={"items": [{"line_id": "L1", "sku": SKU, "qty": 2, "unit_price_q": 1200}]},
         data={
             "delivery_date": tomorrow.isoformat(),
@@ -257,7 +257,7 @@ def test_activate_on_the_date_blocks_unpaid_digital_preorder(tomorrow):
     assert not dispatch.called, "cozinha não pode ser acionada sem pagamento"
 
     order.refresh_from_db()
-    assert order.status == Order.Status.CONFIRMED, "não pode avançar para PREPARING"
+    assert order.status == Order.Status.ACCEPTED, "não pode avançar para PREPARING"
 
     hold.refresh_from_db()
     assert hold.status != HoldStatus.FULFILLED, "estoque não baixa sem pagamento"

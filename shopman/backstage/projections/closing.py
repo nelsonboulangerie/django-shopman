@@ -309,7 +309,7 @@ def _upcoming_preorders(today: date) -> tuple[UpcomingPreorderRowProjection, ...
         by_date: dict[date, dict] = {}
         orders = (
             Order.objects.filter(
-                status__in=("new", "confirmed"),
+                status__in=("new", "accepted"),
                 data__delivery_date__gt=today.isoformat(),
             )
         )

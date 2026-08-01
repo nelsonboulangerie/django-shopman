@@ -9,8 +9,8 @@ describe("useOrderDetail", () => {
   beforeEach(() => env.reset());
 
   it("deriva order da projection; null quando vazio", () => {
-    env.fetchData.value = { order: { ref: "WEB-1", status: "confirmed" } };
-    expect(useOrderDetail("WEB-1").order.value).toEqual({ ref: "WEB-1", status: "confirmed" });
+    env.fetchData.value = { order: { ref: "WEB-1", status: "accepted" } };
+    expect(useOrderDetail("WEB-1").order.value).toEqual({ ref: "WEB-1", status: "accepted" });
     env.fetchData.value = null;
     expect(useOrderDetail("WEB-1").order.value).toBeNull();
   });

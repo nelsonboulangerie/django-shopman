@@ -13,7 +13,7 @@ The order lifecycle is:
              [adopts session holds; shortfall irrecuperável DESFAZ o commit]
   on_commit → services.stock.hold(order)                       [idempotente: no-op se o
              gate já reservou; external channels reservam aqui, best-effort]
-  on_paid/on_confirmed → services.stock.fulfill(order)          [PENDING→CONFIRMED→FULFILLED]
+  on_paid/on_accepted → services.stock.fulfill(order)          [PENDING→CONFIRMED→FULFILLED]
   cancel   → services.stock.release(order)                     [release adopted holds]
 
 `hold(order)` ADOPTS session holds **by quantity, not by SKU-first**: multiple

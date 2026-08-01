@@ -39,7 +39,7 @@ def kds_setup(db):
         ref="KDS-API-1",
         channel_ref="web",
         session_key="sk-kds-api-1",
-        status=Order.Status.CONFIRMED,
+        status=Order.Status.ACCEPTED,
         total_q=1500,
         data={"customer": {"name": "Ana"}, "fulfillment_type": "pickup"},
     )

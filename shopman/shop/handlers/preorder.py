@@ -2,7 +2,7 @@
 Preorder handler — dispara o trabalho físico da encomenda NA data dela.
 
 O lifecycle adia KDS e baixa de estoque de pedidos com ``delivery_date``
-futura (``_on_confirmed``/``_on_paid`` agendam ``preorder.activate`` com
+futura (``_on_accepted``/``_on_paid`` agendam ``preorder.activate`` com
 ``available_at`` na meia-noite da data). Este handler é o despertador:
 na manhã da data, cria os tickets e baixa o que já materializou —
 ``lifecycle.activate_preorder`` faz exatamente o que a confirmação teria

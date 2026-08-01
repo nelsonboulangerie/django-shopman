@@ -20,7 +20,7 @@ def kds_setup(db):
     Shop.objects.create(name="Loja")
     prep = KDSInstance.objects.create(ref="prep-proj", name="Preparo", type="prep", target_time_minutes=10)
     expedition = KDSInstance.objects.create(ref="exp-proj", name="Expedição", type="expedition")
-    order = Order.objects.create(ref="KDS-PROJ-1", channel_ref="web", session_key="sk-kds-proj-1", status="confirmed", total_q=1500, data={"customer": {"name": "Ana"}})
+    order = Order.objects.create(ref="KDS-PROJ-1", channel_ref="web", session_key="sk-kds-proj-1", status="accepted", total_q=1500, data={"customer": {"name": "Ana"}})
     OrderItem.objects.create(order=order, line_id="1", sku="SKU", name="Produto", qty=1, unit_price_q=1500, line_total_q=1500)
     ticket = KDSTicket.objects.create(
         session_key=order.session_key,
@@ -130,7 +130,7 @@ def test_committed_order_keeps_named_tab_label(kds_setup):
         ref="A42",
         channel_ref="pos",
         session_key="sk-tab-committed",
-        status="confirmed",
+        status="accepted",
         total_q=1500,
         handle_ref="MESA 5",
         data={"tab_ref": "MESA 5", "tab_display": "Mesa 5"},
@@ -254,7 +254,7 @@ def test_customer_board_dedups_session_on_payment(kds_setup):
         ref="POS-DUP",
         channel_ref="pos",
         session_key="sk-dup",
-        status="confirmed",
+        status="accepted",
         total_q=1000,
         data={"fulfillment_type": "pickup"},
     )

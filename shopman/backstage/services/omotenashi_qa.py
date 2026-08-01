@@ -215,7 +215,7 @@ def _tracking_ready_check() -> OmotenashiQACheck:
 
 _ACTIVE_ORDER_STATUSES = (
     Order.Status.NEW,
-    Order.Status.CONFIRMED,
+    Order.Status.ACCEPTED,
     Order.Status.PREPARING,
     Order.Status.READY,
     Order.Status.DISPATCHED,

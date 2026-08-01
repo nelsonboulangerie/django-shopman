@@ -49,7 +49,7 @@ def _phone_order(ref: str, phone: str) -> Order:
 class OrderQueueSurfaceTests(TestCase):
     def test_confirmed_and_preparing_orders_are_visible_in_prep(self) -> None:
         _order("Q-NEW", "new")
-        _order("Q-CONF", "confirmed")
+        _order("Q-CONF", "accepted")
         _order("Q-PREP", "preparing")
         _order("Q-READY", "ready")
         _order("Q-DISP", "dispatched", "delivery")
@@ -77,11 +77,11 @@ class OrderQueueSurfaceTests(TestCase):
         tomorrow = (timezone.localdate() + timedelta(days=1)).isoformat()
         saturday = (timezone.localdate() + timedelta(days=3)).isoformat()
 
-        _order("Q-HOJE", "confirmed")
-        later = _order("Q-SAB", "confirmed")
+        _order("Q-HOJE", "accepted")
+        later = _order("Q-SAB", "accepted")
         later.data["delivery_date"] = saturday
         later.save(update_fields=["data", "updated_at"])
-        sooner = _order("Q-AMANHA", "confirmed")
+        sooner = _order("Q-AMANHA", "accepted")
         sooner.data["delivery_date"] = tomorrow
         sooner.save(update_fields=["data", "updated_at"])
         new_preorder = _order("Q-NOVA-ENC", "new")
@@ -111,7 +111,7 @@ class OrderQueueSurfaceTests(TestCase):
         """No dia (ou depois dela) a encomenda volta ao fluxo normal do board."""
         from django.utils import timezone
 
-        today_order = _order("Q-DIA", "confirmed")
+        today_order = _order("Q-DIA", "accepted")
         today_order.data["delivery_date"] = timezone.localdate().isoformat()
         today_order.save(update_fields=["data", "updated_at"])
 
@@ -144,7 +144,7 @@ class OrderQueueSurfaceTests(TestCase):
 
     def test_all_active_operator_statuses_have_advance_action_after_confirmation(self) -> None:
         expected_labels = {
-            "confirmed": "Iniciar preparo",
+            "accepted": "Iniciar preparo",
             "preparing": "Marcar pronto",
             "dispatched": "Marcar como Entregue",
             "delivered": "Concluir",

@@ -106,7 +106,7 @@ def fire_lines(*, session_key: str, lines: list[dict]) -> list:
         return []
 
     # Serializa fires concorrentes da mesma comanda (double-tap, dois devices,
-    # on_confirmed × on_paid): o dedupe por line_id é check-then-create — sem
+    # on_accepted × on_paid): o dedupe por line_id é check-then-create — sem
     # o lock na Session, dois fires leem o ledger vazio e a cozinha produz 2×.
     with transaction.atomic():
         from shopman.orderman.models import Session
@@ -388,7 +388,7 @@ def on_all_tickets_done(order, *, actor: str = "kds.all_done") -> bool:
 
     if order.status == Order.Status.READY:
         return False
-    if order.status == Order.Status.CONFIRMED:
+    if order.status == Order.Status.ACCEPTED:
         if not _ensure_order_preparing_for_work(order, actor=actor):
             return False
     if not order.can_transition_to(Order.Status.READY):
@@ -447,7 +447,7 @@ def complete_ticket(ticket, *, actor: str) -> bool:
     if ticket.status not in OPEN_TICKET_STATUSES:
         return False
     order = _ticket_order(ticket)
-    if order is not None and order.status in (Order.Status.NEW, Order.Status.CONFIRMED):
+    if order is not None and order.status in (Order.Status.NEW, Order.Status.ACCEPTED):
         # Gate de pagamento: trabalho físico só começa quando o lifecycle deixa.
         blocked = _advance_to_preparing_block_reason(order, actor=actor)
         if blocked:
@@ -563,7 +563,7 @@ def _advance_to_preparing_block_reason(order, *, actor: str) -> str:
     """
     if order.status == Order.Status.PREPARING:
         return ""
-    if order.status != Order.Status.CONFIRMED:
+    if order.status != Order.Status.ACCEPTED:
         return "Pedido ainda não foi confirmado."
     if not order.can_transition_to(Order.Status.PREPARING):
         return "Pedido não pode entrar em preparo agora."

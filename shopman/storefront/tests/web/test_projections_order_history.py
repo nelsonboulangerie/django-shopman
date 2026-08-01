@@ -138,7 +138,7 @@ class TestOrderHistoryOrders:
         assert status_tone("cancelled") == "danger"
         assert status_tone("returned") == "neutral"
         assert status_tone("new") == "info"
-        assert status_tone("confirmed") == "info"
+        assert status_tone("accepted") == "info"
         assert status_tone("dispatched") == "info"
 
     def test_status_tone_unknown_defaults_to_info(self):

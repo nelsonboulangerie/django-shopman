@@ -9,7 +9,7 @@ from shopman.shop.handlers import _sse_emitters
 
 @pytest.fixture
 def kds_ticket(db):
-    order = Order.objects.create(ref="KDS-SSE-ORD", channel_ref="web", session_key="sk-kds-sse-ord", status="confirmed", total_q=1000)
+    order = Order.objects.create(ref="KDS-SSE-ORD", channel_ref="web", session_key="sk-kds-sse-ord", status="accepted", total_q=1000)
     station = KDSInstance.objects.create(ref="prep", name="Preparo", type="prep")
     return KDSTicket.objects.create(
         session_key=order.session_key,
@@ -38,7 +38,7 @@ def test_emit_kds_change_payload(monkeypatch, kds_ticket):
 def test_kds_ticket_created_emits_created_and_update(monkeypatch):
     calls = []
     monkeypatch.setattr(_sse_emitters, "_emit_backstage", lambda kind, event_type, payload, **kwargs: calls.append(event_type))
-    order = Order.objects.create(ref="KDS-SSE-NEW", channel_ref="web", session_key="sk-kds-sse-new", status="confirmed", total_q=1000)
+    order = Order.objects.create(ref="KDS-SSE-NEW", channel_ref="web", session_key="sk-kds-sse-new", status="accepted", total_q=1000)
     station = KDSInstance.objects.create(ref="prep-new", name="Preparo", type="prep")
 
     KDSTicket.objects.create(session_key=order.session_key, kds_instance=station, items=[])
@@ -100,8 +100,8 @@ def test_kds_multi_instance_scopes_events_per_station(monkeypatch):
 
     prep = KDSInstance.objects.create(ref="prep-multi", name="Preparo", type="prep")
     expedicao = KDSInstance.objects.create(ref="expedicao-multi", name="Expedição", type="expedition")
-    order_a = Order.objects.create(ref="MULTI-A", channel_ref="web", session_key="sk-multi-a", status="confirmed", total_q=100)
-    order_b = Order.objects.create(ref="MULTI-B", channel_ref="web", session_key="sk-multi-b", status="confirmed", total_q=100)
+    order_a = Order.objects.create(ref="MULTI-A", channel_ref="web", session_key="sk-multi-a", status="accepted", total_q=100)
+    order_b = Order.objects.create(ref="MULTI-B", channel_ref="web", session_key="sk-multi-b", status="accepted", total_q=100)
 
     KDSTicket.objects.create(session_key=order_a.session_key, kds_instance=prep, items=[])
     KDSTicket.objects.create(session_key=order_b.session_key, kds_instance=expedicao, items=[])

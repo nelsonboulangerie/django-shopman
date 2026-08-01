@@ -64,7 +64,7 @@ class HappyHourProjection:
 
 ORDER_STATUS_TONES: dict[str, Tone] = {
     "new": Tone.INFO,
-    "confirmed": Tone.INFO,
+    "accepted": Tone.INFO,
     "preparing": Tone.WARNING,
     "ready": Tone.SUCCESS,
     "dispatched": Tone.INFO,

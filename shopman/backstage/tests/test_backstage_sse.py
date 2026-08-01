@@ -42,7 +42,7 @@ def test_order_change_publishes_backstage_orders_event(
     order = Order.objects.create(ref="SSE-ORD-1", channel_ref=channel.ref, status=Order.Status.NEW, total_q=1000)
 
     with django_capture_on_commit_callbacks(execute=True):
-        order.transition_status(Order.Status.CONFIRMED, actor="test")
+        order.transition_status(Order.Status.ACCEPTED, actor="test")
 
     assert any(
         call.args[0] == "backstage-orders-main"
@@ -103,7 +103,7 @@ def test_order_change_publishes_shop_scoped_backstage_event(
     )
 
     with django_capture_on_commit_callbacks(execute=True):
-        order.transition_status(Order.Status.CONFIRMED, actor="test")
+        order.transition_status(Order.Status.ACCEPTED, actor="test")
 
     channels = [call.args[0] for call in mock_send.call_args_list]
     assert "backstage-orders-main" in channels

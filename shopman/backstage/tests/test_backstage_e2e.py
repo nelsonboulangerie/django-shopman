@@ -39,7 +39,7 @@ def _confirm_order(*, sku: str, qty: int, ref: str = "E2E-ORDER") -> Order:
     order = Order.objects.create(
         ref=ref,
         channel_ref="web",
-        status="confirmed",
+        status="accepted",
         total_q=1500,
         data={"customer": {"name": "Ana"}},
     )

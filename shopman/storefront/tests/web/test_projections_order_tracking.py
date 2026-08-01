@@ -50,7 +50,7 @@ class TestPreorderTracking:
             "delivery_time_slot": slot,
             "is_preorder": True,
         })
-        _Order.objects.filter(pk=order.pk).update(status="confirmed", data=data)
+        _Order.objects.filter(pk=order.pk).update(status="accepted", data=data)
         order.refresh_from_db()
         return order, target
 
@@ -99,7 +99,7 @@ class TestPreorderTracking:
             "delivery_date": (_tz.localdate() + timedelta(days=1)).isoformat(),
             "delivery_time_slot": "slot-09",
         })
-        _Order.objects.filter(pk=order_with_payment.pk).update(status="confirmed", data=data)
+        _Order.objects.filter(pk=order_with_payment.pk).update(status="accepted", data=data)
         order_with_payment.refresh_from_db()
 
         proj = build_order_tracking(order_with_payment)
@@ -124,7 +124,7 @@ class TestOrderTrackingShape:
 
         proj = build_order_tracking(order)
         with pytest.raises(FrozenInstanceError):
-            proj.status = "confirmed"  # type: ignore[misc]
+            proj.status = "accepted"  # type: ignore[misc]
 
     def test_order_ref_matches(self, order):
         proj = build_order_tracking(order)
@@ -228,7 +228,7 @@ class TestOrderTrackingTimeline:
         order.emit_event(
             event_type="status_changed",
             actor="test",
-            payload={"new_status": "confirmed"},
+            payload={"new_status": "accepted"},
         )
         proj = build_order_tracking(order)
         labels = [e.label for e in proj.timeline]
@@ -263,7 +263,7 @@ class TestOrderProgressSteps:
         ]
 
     def test_confirmed_unpaid_pix_hides_future_payment_step(self, order_with_payment):
-        order_with_payment.transition_status("confirmed", actor="test")
+        order_with_payment.transition_status("accepted", actor="test")
         order_with_payment.refresh_from_db()
 
         proj = build_order_tracking(order_with_payment)
@@ -280,7 +280,7 @@ class TestOrderProgressSteps:
     def test_confirmed_without_canonical_timestamp_hides_availability_step(self, order_with_payment):
         from shopman.orderman.models import Order as _Order
 
-        _Order.objects.filter(pk=order_with_payment.pk).update(status="confirmed")
+        _Order.objects.filter(pk=order_with_payment.pk).update(status="accepted")
         order_with_payment.refresh_from_db()
 
         proj = build_order_tracking(order_with_payment)
@@ -299,7 +299,7 @@ class TestOrderProgressSteps:
         order_with_payment.save(update_fields=["data"])
         PaymentService.authorize(intent.ref)
         PaymentService.capture(intent.ref)
-        order_with_payment.transition_status("confirmed", actor="test")
+        order_with_payment.transition_status("accepted", actor="test")
         order_with_payment.transition_status("preparing", actor="test")
         order_with_payment.refresh_from_db()
 
@@ -322,7 +322,7 @@ class TestOrderProgressSteps:
         order_with_payment.save(update_fields=["data"])
         PaymentService.authorize(intent.ref)
         PaymentService.capture(intent.ref)
-        for status in ("confirmed", "preparing", "ready", "dispatched", "delivered", "completed"):
+        for status in ("accepted", "preparing", "ready", "dispatched", "delivered", "completed"):
             order_with_payment.transition_status(status, actor="test")
         order_with_payment.refresh_from_db()
 
@@ -339,7 +339,7 @@ class TestOrderProgressSteps:
     def test_delivery_ready_is_waiting_collection_not_dispatched(self, order):
         order.data = {"fulfillment_type": "delivery"}
         order.save(update_fields=["data"])
-        for status in ("confirmed", "preparing", "ready"):
+        for status in ("accepted", "preparing", "ready"):
             order.transition_status(status, actor="test")
         order.refresh_from_db()
 
@@ -384,7 +384,7 @@ class TestOrderProgressSteps:
     def test_delivery_dispatched_only_after_dispatch_transition(self, order):
         order.data = {"fulfillment_type": "delivery"}
         order.save(update_fields=["data"])
-        for status in ("confirmed", "preparing", "ready", "dispatched"):
+        for status in ("accepted", "preparing", "ready", "dispatched"):
             order.transition_status(status, actor="test")
         order.refresh_from_db()
 
@@ -459,7 +459,7 @@ class TestReturnedOrderTracking:
 class TestStatusColours:
     @pytest.mark.parametrize("status,expected_fragment", [
         ("new", "info"),
-        ("confirmed", "info"),
+        ("accepted", "info"),
         ("preparing", "warning"),
         ("ready", "success"),
         ("dispatched", "info"),
@@ -664,7 +664,7 @@ class TestStatusColours:
         from shopman.storefront.services import orders as order_service
         order.data = {"fulfillment_type": "delivery"}
         order.save(update_fields=["data"])
-        for next_status in ("confirmed", "preparing", "ready", "dispatched"):
+        for next_status in ("accepted", "preparing", "ready", "dispatched"):
             order.transition_status(next_status, actor="op")
         order.refresh_from_db()
         assert order.status == "dispatched"
@@ -867,7 +867,7 @@ class TestStatusColours:
         order_with_payment.save(update_fields=["data"])
         PaymentService.authorize(intent.ref)
         PaymentService.capture(intent.ref)
-        order_with_payment.transition_status("confirmed", actor="test")
+        order_with_payment.transition_status("accepted", actor="test")
         order_with_payment.refresh_from_db()
 
         proj = build_order_tracking(order_with_payment)
@@ -891,7 +891,7 @@ class TestStatusColours:
         order_with_payment.save(update_fields=["data"])
         PaymentService.authorize(intent.ref)
         PaymentService.capture(intent.ref)
-        order_with_payment.transition_status("confirmed", actor="test")
+        order_with_payment.transition_status("accepted", actor="test")
         order_with_payment.transition_status("preparing", actor="test")
         order_with_payment.refresh_from_db()
 
@@ -901,7 +901,7 @@ class TestStatusColours:
         assert "pagamento recebido" not in proj.promise.message.lower()
 
     def test_confirmed_unpaid_digital_order_shows_payment_pending(self, order_with_payment):
-        order_with_payment.transition_status("confirmed", actor="test")
+        order_with_payment.transition_status("accepted", actor="test")
         order_with_payment.refresh_from_db()
 
         proj = build_order_tracking(order_with_payment)
@@ -935,7 +935,7 @@ class TestStatusColours:
         }
         order_with_payment.save(update_fields=["data"])
         PaymentService.authorize(intent.ref)
-        _Order.objects.filter(pk=order_with_payment.pk).update(status="confirmed")
+        _Order.objects.filter(pk=order_with_payment.pk).update(status="accepted")
         order_with_payment.refresh_from_db()
 
         proj = build_order_tracking(order_with_payment)
@@ -995,7 +995,7 @@ class TestOrderTrackingStatusProjection:
 
         proj = build_order_tracking_status(order)
         with pytest.raises(FrozenInstanceError):
-            proj.status = "confirmed"  # type: ignore[misc]
+            proj.status = "accepted"  # type: ignore[misc]
 
     def test_not_terminal_for_active_order(self, order):
         proj = build_order_tracking_status(order)

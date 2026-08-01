@@ -716,7 +716,7 @@ class POSHeadlessSurfaceContractTests(TestCase):
         order_ref = self._close_sale("pos-headless-cancel-004")
         order = Order.objects.get(ref=order_ref)
         if order.status == Order.Status.NEW:
-            order.transition_status(Order.Status.CONFIRMED, actor="test")
+            order.transition_status(Order.Status.ACCEPTED, actor="test")
         order.transition_status(Order.Status.PREPARING, actor="test")
 
         cancelled = self.client.post(

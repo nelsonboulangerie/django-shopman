@@ -200,7 +200,7 @@ class TestOnCommit:
         order = _make_order()
         dispatch(order, "on_commit")
         order.transition_status.assert_called_once_with(
-            Order.Status.CONFIRMED, actor="auto_confirm",
+            Order.Status.ACCEPTED, actor="auto_confirm",
         )
 
     @patch("shopman.shop.lifecycle.ChannelConfig")
@@ -459,7 +459,7 @@ class TestOnCommitAvailabilityCheck:
 
         mock_stock.hold.assert_called_once_with(order)
         order.transition_status.assert_called_once_with(
-            Order.Status.CONFIRMED, actor="auto_confirm",
+            Order.Status.ACCEPTED, actor="auto_confirm",
         )
 
     @patch("shopman.shop.lifecycle.ChannelConfig")
@@ -481,7 +481,7 @@ class TestOnCommitAvailabilityCheck:
         mock_stock.hold.assert_called_once_with(order)
 
 
-# ── on_confirmed ──
+# ── on_accepted ──
 
 
 class TestOnConfirmed:
@@ -494,7 +494,7 @@ class TestOnConfirmed:
             payment_timing="post_commit", payment_method="pix",
         )
         order = _make_order()
-        dispatch(order, "on_confirmed")
+        dispatch(order, "on_accepted")
         mock_payment.initiate.assert_called_once_with(order)
         mock_kds_dispatch.assert_not_called()
         mock_notification.send.assert_called_once_with(order, "payment_requested")
@@ -512,7 +512,7 @@ class TestOnConfirmed:
             payment_timing="external", payment_method="cash",
         )
         order = _make_order()
-        dispatch(order, "on_confirmed")
+        dispatch(order, "on_accepted")
         mock_payment.initiate.assert_not_called()
         mock_stock.fulfill.assert_called_once_with(order)
         mock_notification.send.assert_called_once_with(order, "order_confirmed")
@@ -530,7 +530,7 @@ class TestOnConfirmed:
             payment_timing="external", payment_method="external",
         )
         order = _make_order()
-        dispatch(order, "on_confirmed")
+        dispatch(order, "on_accepted")
         mock_payment.initiate.assert_not_called()
         mock_stock.fulfill.assert_not_called()
         mock_notification.send.assert_called_once_with(order, "order_confirmed")
@@ -547,7 +547,7 @@ class TestOnPaid:
     def test_fulfills_stock_and_notifies(self, mock_stock, mock_notification, mock_dispatch_work, mock_cc):
         mock_cc.for_channel.return_value = _config()
         mock_dispatch_work.return_value = False
-        order = _make_order(status="confirmed")
+        order = _make_order(status="accepted")
         dispatch(order, "on_paid")
         mock_stock.fulfill.assert_called_once_with(order)
         mock_notification.send.assert_called_once_with(order, "payment_confirmed")
@@ -560,7 +560,7 @@ class TestOnPaid:
         self, mock_stock, mock_notification, mock_dispatch_work, mock_cc,
     ):
         mock_cc.for_channel.return_value = _config()
-        order = _make_order(status=Order.Status.CONFIRMED)
+        order = _make_order(status=Order.Status.ACCEPTED)
         order.can_transition_to.return_value = True
 
         dispatch(order, "on_paid")
@@ -638,7 +638,7 @@ class TestOnPreparing:
     @patch("shopman.shop.lifecycle.ChannelConfig")
     @patch("shopman.shop.lifecycle.notification")
     def test_notifies_preparing(self, mock_notification, mock_cc):
-        """on_preparing now only notifies — KDS dispatch moved to on_confirmed."""
+        """on_preparing now only notifies — KDS dispatch moved to on_accepted."""
         mock_cc.for_channel.return_value = _config()
         order = _make_order()
         dispatch(order, "on_preparing")
@@ -776,7 +776,7 @@ class TestLocalChannelScenario:
         )
         dispatch(order, "on_commit")
         order.transition_status.assert_called_once_with(
-            Order.Status.CONFIRMED, actor="auto_confirm",
+            Order.Status.ACCEPTED, actor="auto_confirm",
         )
 
     @patch("shopman.shop.lifecycle.ChannelConfig")
@@ -790,7 +790,7 @@ class TestLocalChannelScenario:
             payment_timing="external", payment_method="cash",
         )
         order = _make_order()
-        dispatch(order, "on_confirmed")
+        dispatch(order, "on_accepted")
         mock_stock.fulfill.assert_called_once_with(order)
 
 
@@ -806,7 +806,7 @@ class TestRemoteChannelScenario:
             payment_timing="post_commit", payment_method="pix",
         )
         order = _make_order()
-        dispatch(order, "on_confirmed")
+        dispatch(order, "on_accepted")
         mock_payment.initiate.assert_called_once_with(order)
 
     @patch("shopman.shop.lifecycle.ChannelConfig")
@@ -817,7 +817,7 @@ class TestRemoteChannelScenario:
         mock_cc.for_channel.return_value = _config(
             payment_timing="post_commit", payment_method="pix",
         )
-        order = _make_order(status="confirmed")
+        order = _make_order(status="accepted")
         dispatch(order, "on_paid")
         mock_stock.fulfill.assert_called_once_with(order)
 
@@ -860,7 +860,7 @@ class TestMarketplaceChannelScenario:
             payment_timing="external", payment_method="external",
         )
         order = _make_order()
-        dispatch(order, "on_confirmed")
+        dispatch(order, "on_accepted")
         mock_payment.initiate.assert_not_called()
         mock_stock.fulfill.assert_not_called()
 
@@ -872,7 +872,7 @@ class TestMarketplaceChannelScenario:
         mock_cc.for_channel.return_value = _config(
             payment_timing="external", payment_method="external",
         )
-        order = _make_order(status="confirmed")
+        order = _make_order(status="accepted")
         dispatch(order, "on_paid")
         mock_stock.fulfill.assert_called_once_with(order)
 
@@ -906,7 +906,7 @@ class TestChannelConfigIntegration:
 
         dispatch(order, "on_commit")
         order.transition_status.assert_called_once_with(
-            Order.Status.CONFIRMED, actor="auto_confirm",
+            Order.Status.ACCEPTED, actor="auto_confirm",
         )
 
     @patch("shopman.shop.lifecycle.loyalty")
@@ -1053,7 +1053,7 @@ class TestStaleNewAlertHandler:
 
         Channel.objects.get_or_create(ref="ifood", defaults={"name": "iFood"})
         order = Order.objects.create(
-            ref="ORD-STALE-2", channel_ref="ifood", status="confirmed",
+            ref="ORD-STALE-2", channel_ref="ifood", status="accepted",
             total_q=1000, handle_type="ifood", handle_ref="Y",
             data={},
         )

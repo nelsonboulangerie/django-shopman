@@ -53,7 +53,7 @@ class Command(BaseCommand):
             f"supports_access_link={channel_policy.supports_access_link}"
         )
         payment_result = "OK"
-        if method in {"pix", "card"} and not has_captured and order.status in {"confirmed", "new"}:
+        if method in {"pix", "card"} and not has_captured and order.status in {"accepted", "new"}:
             payment_result = "WARN"
         self.stdout.write(
             f"result={payment_result} payment method={method} state={payment_state} "
@@ -131,7 +131,7 @@ def _recommendations(
     hold_summary: dict,
 ) -> list[str]:
     recommendations = []
-    if method in {"pix", "card"} and not has_captured and order.status in {"new", "confirmed"}:
+    if method in {"pix", "card"} and not has_captured and order.status in {"new", "accepted"}:
         recommendations.append("python manage.py reconcile_payments --since=4h --dry-run")
     if failed_directives or queued_directives:
         recommendations.append("python manage.py process_directives --limit=50")

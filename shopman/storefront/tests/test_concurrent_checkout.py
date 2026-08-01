@@ -274,7 +274,7 @@ class ConcurrentPaymentCaptureTests(TransactionTestCase):
         order = Order.objects.create(
             ref="RACE-ORD-001",
             channel_ref=self.channel.ref,
-            status="confirmed",
+            status="accepted",
             total_q=1000,
             handle_type="phone",
             handle_ref="+5543999001122",

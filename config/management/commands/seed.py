@@ -3136,12 +3136,12 @@ class Command(BaseCommand):
                     created_at=order_time,
                 )
 
-                if status in ("confirmed", "preparing", "ready", "completed"):
+                if status in ("accepted", "preparing", "ready", "completed"):
                     OrderEvent.objects.create(
                         order=order,
                         type="status_change",
                         seq=1,
-                        payload={"new_status": "confirmed"},
+                        payload={"new_status": "accepted"},
                         created_at=order_time + timedelta(minutes=2),
                     )
 
@@ -3176,8 +3176,8 @@ class Command(BaseCommand):
         live_specs = [
             ("preparing", random.randint(5, 15)),
             ("preparing", random.randint(5, 15)),
-            ("confirmed",  random.randint(2, 5)),
-            ("confirmed",  random.randint(2, 5)),
+            ("accepted",  random.randint(2, 5)),
+            ("accepted",  random.randint(2, 5)),
             ("ready",      1),
         ]
 
@@ -3241,12 +3241,12 @@ class Command(BaseCommand):
                 created_at=order_time,
             )
 
-            if live_status in ("confirmed", "preparing", "ready"):
+            if live_status in ("accepted", "preparing", "ready"):
                 OrderEvent.objects.create(
                     order=order,
                     type="status_change",
                     seq=1,
-                    payload={"new_status": "confirmed"},
+                    payload={"new_status": "accepted"},
                     created_at=order_time + timedelta(minutes=1),
                 )
 
@@ -3275,7 +3275,7 @@ class Command(BaseCommand):
                         ticket.completed_at = order_time + timedelta(minutes=3)
                         ticket.save(update_fields=["status", "completed_at"])
 
-            if live_status in ("confirmed", "preparing", "ready"):
+            if live_status in ("accepted", "preparing", "ready"):
                 link_order_to_work_orders(order=order, event_type="status_changed", actor="seed")
 
             order_count += 1
@@ -3292,7 +3292,7 @@ class Command(BaseCommand):
                 ref=ref,
                 channel_ref=channel.ref,
                 session_key=generate_session_key(),
-                status=Order.Status.CONFIRMED,
+                status=Order.Status.ACCEPTED,
                 total_q=produced_product.base_price_q * 3,
                 handle_type="phone",
                 handle_ref=customer.contact_points.filter(type="whatsapp").values_list("value_normalized", flat=True).first() or "",
@@ -3325,7 +3325,7 @@ class Command(BaseCommand):
                 order=sync_order,
                 type="status_change",
                 seq=1,
-                payload={"new_status": "confirmed"},
+                payload={"new_status": "accepted"},
                 created_at=order_time + timedelta(minutes=1),
             )
             link_order_to_work_orders(order=sync_order, event_type="status_changed", actor="seed")
@@ -3343,7 +3343,7 @@ class Command(BaseCommand):
                 ref=ref_confirmed,
                 channel_ref=ifood_ch.ref,
                 session_key=generate_session_key(),
-                status="confirmed",
+                status="accepted",
                 total_q=prod_b.base_price_q,
                 handle_type="phone",
                 handle_ref="",
@@ -3376,7 +3376,7 @@ class Command(BaseCommand):
                 order=order_confirmed,
                 type="status_change",
                 seq=1,
-                payload={"new_status": "confirmed"},
+                payload={"new_status": "accepted"},
                 created_at=now - timedelta(minutes=7),
             )
             link_order_to_work_orders(order=order_confirmed, event_type="status_changed", actor="seed")
@@ -3467,7 +3467,7 @@ class Command(BaseCommand):
         pending = self._create_edge_order(
             seed_key="security:payment-pending-near-expiry",
             channel_ref=web.ref,
-            status=Order.Status.CONFIRMED,
+            status=Order.Status.ACCEPTED,
             product=product,
             qty=Decimal("2"),
             customer=low_attention,
@@ -3498,7 +3498,7 @@ class Command(BaseCommand):
         expired = self._create_edge_order(
             seed_key="security:payment-expired-low-attention",
             channel_ref=web.ref,
-            status=Order.Status.CONFIRMED,
+            status=Order.Status.ACCEPTED,
             product=product,
             qty=Decimal("1"),
             customer=low_attention,
@@ -3811,7 +3811,7 @@ class Command(BaseCommand):
     # Caminho linear canônico de status para reconstruir a trilha de eventos.
     _QA_STATUS_PATH = [
         Order.Status.NEW,
-        Order.Status.CONFIRMED,
+        Order.Status.ACCEPTED,
         Order.Status.PREPARING,
         Order.Status.READY,
         Order.Status.DISPATCHED,
@@ -3832,10 +3832,10 @@ class Command(BaseCommand):
         """Reconstrói a trilha de eventos até o status atual (determinística)."""
         status = order.status
         if status == Order.Status.CANCELLED:
-            path = [Order.Status.NEW, Order.Status.CONFIRMED, Order.Status.CANCELLED]
+            path = [Order.Status.NEW, Order.Status.ACCEPTED, Order.Status.CANCELLED]
         elif status == Order.Status.RETURNED:
             path = [
-                Order.Status.NEW, Order.Status.CONFIRMED, Order.Status.PREPARING,
+                Order.Status.NEW, Order.Status.ACCEPTED, Order.Status.PREPARING,
                 Order.Status.READY, Order.Status.DISPATCHED, Order.Status.DELIVERED,
                 Order.Status.RETURNED,
             ]
@@ -3942,7 +3942,7 @@ class Command(BaseCommand):
         self._make_qa_order(
             ref="QA-PREORDER-02",
             channel_ref=web,
-            status=Order.Status.CONFIRMED,
+            status=Order.Status.ACCEPTED,
             items=[self._qa_line(pain, 8)],
             data={**preorder_data, "customer": {"name": "Cliente Encomenda Confirmada QA"}},
             minutes_ago=30,
@@ -4047,7 +4047,7 @@ class Command(BaseCommand):
         pix_pending = self._make_qa_order(
             ref="QA-PIX-PENDING-01",
             channel_ref=web,
-            status=Order.Status.CONFIRMED,
+            status=Order.Status.ACCEPTED,
             items=[self._qa_line(pain, 2), self._qa_line(baguete, 2)],
             data={
                 "fulfillment_type": "pickup",
@@ -4074,7 +4074,7 @@ class Command(BaseCommand):
             self._make_qa_order(
                 ref="QA-IFOOD-01",
                 channel_ref=channels["ifood"].ref,
-                status=Order.Status.CONFIRMED,
+                status=Order.Status.ACCEPTED,
                 items=[self._qa_line(croissant, 2)],
                 data={
                     "fulfillment_type": "delivery",
@@ -4708,7 +4708,7 @@ class Command(BaseCommand):
         FULFILLMENT_CREATE = "fulfillment.create"
 
         count = 0
-        for order in Order.objects.filter(status__in=["completed", "delivered", "preparing", "confirmed"]):
+        for order in Order.objects.filter(status__in=["completed", "delivered", "preparing", "accepted"]):
             if Directive.objects.filter(payload__order_ref=order.ref).exists():
                 continue
 

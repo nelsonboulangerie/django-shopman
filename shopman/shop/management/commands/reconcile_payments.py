@@ -79,7 +79,7 @@ class Command(BaseCommand):
         cutoff = timezone.now() - since_delta
 
         pending = Order.objects.filter(
-            status__in=(Order.Status.NEW, Order.Status.CONFIRMED),
+            status__in=(Order.Status.NEW, Order.Status.ACCEPTED),
             created_at__lt=cutoff,
         )
 

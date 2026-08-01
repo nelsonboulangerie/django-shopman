@@ -196,7 +196,7 @@ class HappyPathWebLifecycleTests(TestCase):
         self.assertEqual(result.total_q, 2000)
 
         # Confirmação otimista (mode=immediate nos defaults) já rodou.
-        self.assertEqual(order.status, Order.Status.CONFIRMED)
+        self.assertEqual(order.status, Order.Status.ACCEPTED)
 
         # O hold da sacola foi ADOTADO (mesmo id), não duplicado.
         hold_entries = (order.data or {}).get("hold_ids", [])
@@ -253,7 +253,7 @@ class HappyPathBalcaoFulfillTests(TestCase):
             result = _commit("STRESS-PDV-SS-001", self.channel.ref, "STRESS-PDV-KEY-001")
 
         order = Order.objects.get(ref=result.order_ref)
-        self.assertEqual(order.status, Order.Status.CONFIRMED)
+        self.assertEqual(order.status, Order.Status.ACCEPTED)
 
         # Venda de balcão baixou o físico na confirmação (hold FULFILLED).
         entries = [h for h in order.data.get("hold_ids", []) if h.get("hold_id")]
@@ -561,7 +561,7 @@ class PreorderPlannedStockTests(TestCase):
 
         order = Order.objects.get(ref=result.order_ref)
         self.assertTrue(order.data.get("is_preorder"))
-        self.assertEqual(order.status, Order.Status.CONFIRMED)
+        self.assertEqual(order.status, Order.Status.ACCEPTED)
         entries = [h for h in order.data.get("hold_ids", []) if h.get("hold_id")]
         self.assertEqual(len(entries), 1)
         hold = Hold.objects.get(pk=int(entries[0]["hold_id"].split(":")[1]))

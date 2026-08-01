@@ -43,7 +43,7 @@ function buttonClass(priority: string): string {
 </script>
 
 <template>
-  <!-- foco: pedidos NOVOS (aguardando confirmar/recusar) ganham um filete âmbar à
+  <!-- foco: pedidos NOVOS (aguardando aceitar/recusar) ganham um filete âmbar à
        esquerda — a decisão pendente do operador salta à vista sem poluir o resto. -->
   <article
     class="flex flex-col gap-2.5 rounded-lg border bg-card p-3.5 transition hover:border-primary/40"

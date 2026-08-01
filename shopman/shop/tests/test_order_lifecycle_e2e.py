@@ -50,8 +50,8 @@ def pickup_order(channel):
 def test_pickup_complete_lifecycle(pickup_order):
     """Pickup: new → confirmed → preparing → ready → completed."""
     o = pickup_order
-    o.transition_status(Order.Status.CONFIRMED, actor="test")
-    assert o.status == Order.Status.CONFIRMED
+    o.transition_status(Order.Status.ACCEPTED, actor="test")
+    assert o.status == Order.Status.ACCEPTED
 
     o.transition_status(Order.Status.PREPARING, actor="test")
     assert o.status == Order.Status.PREPARING
@@ -71,7 +71,7 @@ def test_pickup_complete_lifecycle(pickup_order):
 def test_pickup_cannot_reach_dispatched(pickup_order):
     """Pickup: dispatched is unreachable — Kernel enforces it."""
     o = pickup_order
-    o.transition_status(Order.Status.CONFIRMED, actor="test")
+    o.transition_status(Order.Status.ACCEPTED, actor="test")
     o.transition_status(Order.Status.PREPARING, actor="test")
     o.transition_status(Order.Status.READY, actor="test")
 
@@ -88,7 +88,7 @@ def test_pickup_cannot_reach_dispatched(pickup_order):
 def test_delivery_complete_lifecycle(delivery_order):
     """Delivery: new → confirmed → preparing → ready → dispatched → delivered → completed."""
     o = delivery_order
-    o.transition_status(Order.Status.CONFIRMED, actor="test")
+    o.transition_status(Order.Status.ACCEPTED, actor="test")
     o.transition_status(Order.Status.PREPARING, actor="test")
     o.transition_status(Order.Status.READY, actor="test")
     o.transition_status(Order.Status.DISPATCHED, actor="test")
@@ -109,7 +109,7 @@ def test_delivery_complete_lifecycle(delivery_order):
 def test_delivery_cannot_complete_directly_from_ready(delivery_order):
     """Delivery ready means awaiting collection, not completed/delivered."""
     o = delivery_order
-    o.transition_status(Order.Status.CONFIRMED, actor="test")
+    o.transition_status(Order.Status.ACCEPTED, actor="test")
     o.transition_status(Order.Status.PREPARING, actor="test")
     o.transition_status(Order.Status.READY, actor="test")
 
@@ -134,7 +134,7 @@ def test_cancellation_while_preparing_cleans_kds_tickets(channel):
         ref="E2E-CANCEL-001",
         channel_ref=channel.ref,
         session_key="sess-e2e-cancel-001",
-        status=Order.Status.CONFIRMED,
+        status=Order.Status.ACCEPTED,
         total_q=2000,
     )
     order.transition_status(Order.Status.PREPARING, actor="test")
@@ -162,7 +162,7 @@ def test_cancellation_while_preparing_cleans_kds_tickets(channel):
 def test_returned_is_terminal(delivery_order):
     """returned → completed raises InvalidTransition (returned is terminal)."""
     o = delivery_order
-    o.transition_status(Order.Status.CONFIRMED, actor="test")
+    o.transition_status(Order.Status.ACCEPTED, actor="test")
     o.transition_status(Order.Status.PREPARING, actor="test")
     o.transition_status(Order.Status.READY, actor="test")
     o.transition_status(Order.Status.DISPATCHED, actor="test")
@@ -197,7 +197,7 @@ def test_dispatched_requires_delivery_invariant(channel):
             total_q=1000,
             data={"fulfillment_type": ft},
         )
-        order.transition_status(Order.Status.CONFIRMED, actor="test")
+        order.transition_status(Order.Status.ACCEPTED, actor="test")
         order.transition_status(Order.Status.PREPARING, actor="test")
         order.transition_status(Order.Status.READY, actor="test")
 

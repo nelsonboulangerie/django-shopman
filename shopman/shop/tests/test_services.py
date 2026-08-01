@@ -1054,7 +1054,7 @@ def _dispatched_delivery_order():
     ref = f"TEST-AC-{uuid.uuid4().hex[:6]}"
     order = Order.objects.create(
         ref=ref, channel_ref="web", session_key=f"sk-{ref}",
-        status="confirmed", total_q=2000,
+        status="accepted", total_q=2000,
         data={"fulfillment_type": "delivery", "delivery_distance_km": 3.4},
     )
     for next_status in ("preparing", "ready", "dispatched"):
@@ -1301,7 +1301,7 @@ class TestCancellationService:
     def test_cancel_transitions_status(self):
         from shopman.shop.services.cancellation import cancel
 
-        order = _make_order(status="confirmed")
+        order = _make_order(status="accepted")
 
         result = cancel(order, reason="customer_request", actor="customer")
 
@@ -1337,7 +1337,7 @@ class TestCancellationService:
     def test_cancel_merges_extra_data(self):
         from shopman.shop.services.cancellation import cancel
 
-        order = _make_order(status="confirmed", data={"foo": 1})
+        order = _make_order(status="accepted", data={"foo": 1})
 
         cancel(
             order,
@@ -1411,7 +1411,7 @@ class TestKDSService:
             ref="KDS-CONFIRMED-READY",
             session_key="sess-kds-confirmed-ready",
             channel_ref=channel.ref,
-            status=Order.Status.CONFIRMED,
+            status=Order.Status.ACCEPTED,
             total_q=1000,
             data={"payment": {"method": "pix"}},
         )
@@ -1545,7 +1545,7 @@ class TestKDSService:
         from shopman.shop.models import Channel
         channel = Channel.objects.create(ref="kds-cancel-3", name="KDS Cancel 3")
         order = Order.objects.create(
-            ref="KDS-CANCEL-003", channel_ref=channel.ref, status=Order.Status.CONFIRMED, total_q=1000,
+            ref="KDS-CANCEL-003", channel_ref=channel.ref, status=Order.Status.ACCEPTED, total_q=1000,
         )
 
         from shopman.shop.services.kds import cancel_tickets

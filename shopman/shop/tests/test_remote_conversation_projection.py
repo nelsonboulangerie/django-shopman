@@ -73,7 +73,7 @@ def test_conversation_uses_tracking_promise_without_creating_order_status(monkey
 def test_conversation_prefers_payment_promise_when_customer_payment_action_exists(monkeypatch):
     order = SimpleNamespace(
         ref="ORD-CHAT-2",
-        status="confirmed",
+        status="accepted",
         channel_ref="whatsapp",
         data={"payment": {"method": "pix"}},
     )
@@ -126,7 +126,7 @@ def test_conversation_prefers_payment_promise_when_customer_payment_action_exist
 
     assert projection.source_projection == "payment"
     assert projection.state == "pix_payment_after_confirmation"
-    assert projection.order_status == "confirmed"
+    assert projection.order_status == "accepted"
     assert projection.actions[0].ref == "copy_pix"
     assert projection.actions[0].href == "/pedido/ORD-CHAT-2/pagamento/"
     assert projection.actions[1].ref == "cancel_order"

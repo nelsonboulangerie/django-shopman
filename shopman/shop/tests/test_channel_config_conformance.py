@@ -49,7 +49,7 @@ def _patch_config(cfg: ChannelConfig):
 
 class TestConfirmationConformance:
     def test_immediate_auto_confirms_on_commit(self):
-        """confirmation.mode='immediate' → order.transition_status('confirmed') on commit."""
+        """confirmation.mode='immediate' → order.transition_status('accepted') on commit."""
         from shopman.shop.lifecycle import dispatch
 
         order = _make_order()
@@ -62,7 +62,7 @@ class TestConfirmationConformance:
                     with patch("shopman.shop.lifecycle.loyalty.redeem"):
                         dispatch(order, "on_commit")
 
-        order.transition_status.assert_called_with("confirmed", actor="auto_confirm")
+        order.transition_status.assert_called_with("accepted", actor="auto_confirm")
 
     def test_immediate_waits_for_upfront_payment(self):
         """Digital payment cannot be auto-confirmed before capture."""
@@ -170,11 +170,11 @@ class TestPaymentConformance:
 
         mock_init.assert_called_once_with(order)
 
-    def test_post_commit_initiates_on_confirmed(self):
+    def test_post_commit_initiates_on_accepted(self):
         """payment.timing='post_commit' → payment.initiate on confirmed, not on commit."""
         from shopman.shop.lifecycle import dispatch
 
-        order = _make_order(status="confirmed")
+        order = _make_order(status="accepted")
         cfg = _config()
         cfg.payment.timing = "post_commit"
         cfg.payment.method = "pix"
@@ -184,7 +184,7 @@ class TestPaymentConformance:
                 with patch("shopman.shop.lifecycle.stock.fulfill"):
                     with patch("shopman.shop.lifecycle.notification.send"):
                         with patch("shopman.shop.services.kds.dispatch"):
-                            dispatch(order, "on_confirmed")
+                            dispatch(order, "on_accepted")
 
         mock_init.assert_called_once_with(order)
 
@@ -314,11 +314,11 @@ class TestStockConformance:
 
 
 class TestNotificationsConformance:
-    def test_notifications_sent_on_confirmed(self):
+    def test_notifications_sent_on_accepted(self):
         """notification.send('order_confirmed') called when order is confirmed."""
         from shopman.shop.lifecycle import dispatch
 
-        order = _make_order(status="confirmed")
+        order = _make_order(status="accepted")
         cfg = _config()
         cfg.payment.timing = "external"
         cfg.payment.method = "external"
@@ -327,7 +327,7 @@ class TestNotificationsConformance:
             with patch("shopman.shop.lifecycle.stock.fulfill"):
                 with patch("shopman.shop.lifecycle.notification.send") as mock_notify:
                     with patch("shopman.shop.services.kds.dispatch"):
-                        dispatch(order, "on_confirmed")
+                        dispatch(order, "on_accepted")
 
         mock_notify.assert_called_with(order, "order_confirmed")
 

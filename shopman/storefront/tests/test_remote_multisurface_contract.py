@@ -17,7 +17,7 @@ NUXT_TRACKING_PAGE = REPO_ROOT / "surfaces" / "storefront-nuxt" / "app" / "pages
 
 ORDER_STATUSES = {
     "new",
-    "confirmed",
+    "accepted",
     "preparing",
     "ready",
     "dispatched",

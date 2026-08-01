@@ -29,7 +29,7 @@ class OrderStateConflict(ValueError):
     """
 
 _NEXT_STATUS_MAP: dict[str, str] = {
-    Order.Status.CONFIRMED: Order.Status.PREPARING,
+    Order.Status.ACCEPTED: Order.Status.PREPARING,
     Order.Status.PREPARING: Order.Status.READY,
     Order.Status.READY: Order.Status.COMPLETED,
     Order.Status.DISPATCHED: Order.Status.DELIVERED,
@@ -77,7 +77,7 @@ def confirm_order(order: Order, *, actor: str) -> None:
         ensure_confirmable(locked)
         # transition_status re-lê a mesma linha já travada nesta transação,
         # então o lock cobre do guard até o save.
-        order.transition_status(Order.Status.CONFIRMED, actor=actor)
+        order.transition_status(Order.Status.ACCEPTED, actor=actor)
 
 
 def reject_order(
@@ -137,7 +137,7 @@ def advance_block_reason(order: Order) -> str:
     """
     if not next_status_for(order):
         return "Pedido não possui próxima etapa"
-    if order.status == Order.Status.CONFIRMED and _requires_captured_payment_for_work(order):
+    if order.status == Order.Status.ACCEPTED and _requires_captured_payment_for_work(order):
         return "Pagamento ainda não foi confirmado. Aguarde antes de iniciar o preparo."
     return ""
 

@@ -126,7 +126,7 @@ class TestPaymentProjectionPix:
         assert proj.promise.requires_active_notification is True
 
     def test_confirmed_pix_can_claim_availability_confirmed(self, order_with_payment):
-        order_with_payment.status = "confirmed"
+        order_with_payment.status = "accepted"
         order_with_payment.save(update_fields=["status"])
 
         proj = build_payment(order_with_payment)
@@ -175,7 +175,7 @@ class TestPaymentProjectionCard:
         order = Order.objects.create(
             ref="ORD-CARD-CONFIRMED",
             channel_ref=channel.ref,
-            status="confirmed",
+            status="accepted",
             total_q=5000,
             handle_type="phone",
             handle_ref="5543000000001",
@@ -340,7 +340,7 @@ class TestPixNeverPromisesAMissingCode:
 
         order_with_payment.data["payment"] = {"method": "pix", "amount_q": 2500}
         order_with_payment.save(update_fields=["data"])
-        _Order.objects.filter(pk=order_with_payment.pk).update(status="confirmed")
+        _Order.objects.filter(pk=order_with_payment.pk).update(status="accepted")
         order_with_payment.refresh_from_db()
 
         proj = build_payment(order_with_payment)
@@ -353,7 +353,7 @@ class TestPixNeverPromisesAMissingCode:
     def test_confirmed_with_payload_asks_for_payment(self, order_with_payment):
         from shopman.orderman.models import Order as _Order
 
-        _Order.objects.filter(pk=order_with_payment.pk).update(status="confirmed")
+        _Order.objects.filter(pk=order_with_payment.pk).update(status="accepted")
         order_with_payment.refresh_from_db()
 
         proj = build_payment(order_with_payment)
@@ -365,7 +365,7 @@ class TestPixNeverPromisesAMissingCode:
         """Varre os dois estados de espera: ação de copiar exige código."""
         from shopman.orderman.models import Order as _Order
 
-        for status in ("new", "confirmed"):
+        for status in ("new", "accepted"):
             order_with_payment.data["payment"] = {"method": "pix", "amount_q": 2500}
             order_with_payment.save(update_fields=["data"])
             _Order.objects.filter(pk=order_with_payment.pk).update(status=status)

@@ -215,7 +215,7 @@ class OrderAdminSemanticsTests(TestCase):
             ref="ADM-ORDER",
             channel_ref="web",
             session_key="adm-order-session",
-            status=Order.Status.CONFIRMED,
+            status=Order.Status.ACCEPTED,
             total_q=3000,
             data={"payment": {"method": "cash"}},
         )

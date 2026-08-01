@@ -222,17 +222,17 @@ class TestC03PosCash(TransactionTestCase):
         result = _commit(session, self.channel)
         order = Order.objects.get(ref=result.order_ref)
 
-        self.assertEqual(order.status, Order.Status.CONFIRMED)
+        self.assertEqual(order.status, Order.Status.ACCEPTED)
         # External payment → no initiate
         self.mocks["initiate"].assert_not_called()
 
-    def test_stock_fulfill_called_on_confirmed_for_cash(self):
-        """Cash payment: stock.fulfill runs on on_confirmed (no on_paid)."""
+    def test_stock_fulfill_called_on_accepted_for_cash(self):
+        """Cash payment: stock.fulfill runs on on_accepted (no on_paid)."""
         session = _session(self.channel)
         result = _commit(session, self.channel)
         order = Order.objects.get(ref=result.order_ref)
 
-        # on_confirmed: payment.timing == "external", method != "external" → stock.fulfill
+        # on_accepted: payment.timing == "external", method != "external" → stock.fulfill
         self.mocks["fulfill"].assert_called_once_with(order)
 
 
@@ -286,7 +286,7 @@ class TestC05ImmediateConfirmation(TransactionTestCase):
         session = _session(self.channel)
         result = _commit(session, self.channel)
         order = Order.objects.get(ref=result.order_ref)
-        self.assertEqual(order.status, Order.Status.CONFIRMED)
+        self.assertEqual(order.status, Order.Status.ACCEPTED)
 
     def test_no_confirmation_directive_created(self):
         """Immediate mode creates no confirmation.timeout directive."""
@@ -381,7 +381,7 @@ class TestC06AutoConfirmConfirmation(TransactionTestCase):
         ConfirmationTimeoutHandler().handle(message=directive, ctx={})
 
         order.refresh_from_db()
-        self.assertEqual(order.status, Order.Status.CONFIRMED)
+        self.assertEqual(order.status, Order.Status.ACCEPTED)
 
 
 # ── C-07: Manual confirmation ─────────────────────────────────────────
@@ -423,7 +423,7 @@ class TestC07ManualConfirmation(TransactionTestCase):
         from shopman.shop.services.operator_orders import confirm_order
         confirm_order(order, actor="operator")
         order.refresh_from_db()
-        self.assertEqual(order.status, Order.Status.CONFIRMED)
+        self.assertEqual(order.status, Order.Status.ACCEPTED)
 
     def test_operator_cannot_confirm_before_payment_capture(self):
         from shopman.orderman.exceptions import InvalidTransition
@@ -674,7 +674,7 @@ class TestC07bAutoCancelConfirmation(TransactionTestCase):
         # Operator confirms within the store-decision window.
         confirm_order(order, actor="operator")
         order.refresh_from_db()
-        self.assertEqual(order.status, Order.Status.CONFIRMED)
+        self.assertEqual(order.status, Order.Status.ACCEPTED)
 
         # Now the directive fires.
         from datetime import timedelta
@@ -689,7 +689,7 @@ class TestC07bAutoCancelConfirmation(TransactionTestCase):
         ConfirmationTimeoutHandler().handle(message=directive, ctx={})
 
         order.refresh_from_db()
-        self.assertEqual(order.status, Order.Status.CONFIRMED)  # unchanged
+        self.assertEqual(order.status, Order.Status.ACCEPTED)  # unchanged
 
 
 # ── C-08: Late payment (after cancellation) ──────────────────────────

@@ -31,7 +31,7 @@ import type { OrderCardProjection, TwoZoneQueueProjection } from "../app/types/o
 
 const card = (over: Partial<OrderCardProjection> = {}): OrderCardProjection => ({
   ref: "WEB-20260625-0007",
-  status: "confirmed",
+  status: "accepted",
   status_label: "Confirmado",
   status_color: "",
   channel_ref: "web",

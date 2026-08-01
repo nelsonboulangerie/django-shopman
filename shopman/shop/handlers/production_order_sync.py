@@ -17,7 +17,7 @@ from django.utils import timezone
 
 logger = logging.getLogger(__name__)
 
-ACTIVE_ORDER_STATUSES = ("confirmed", "preparing", "ready")
+ACTIVE_ORDER_STATUSES = ("accepted", "preparing", "ready")
 ORDER_AWAITING_WO_REFS_KEY = "awaiting_wo_refs"
 WORK_ORDER_COMMITTED_ORDER_REFS_KEY = "committed_order_refs"
 

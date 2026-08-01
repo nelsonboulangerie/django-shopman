@@ -66,25 +66,25 @@ def test_dry_run_does_not_dispatch():
     dispatch.assert_not_called()
 
 
-# ── on_confirmed (CONFIRMED) ─────────────────────────────────────────────────
+# ── on_accepted (CONFIRMED) ─────────────────────────────────────────────────
 
 
-def test_redispatches_confirmed_without_marker():
+def test_redispatches_accepted_without_marker():
     _order(
         "ORD-CONF-STUCK",
-        status=Order.Status.CONFIRMED,
+        status=Order.Status.ACCEPTED,
         data={"lifecycle": {"on_commit": "done"}},
     )
     dispatch = _sweep()
     dispatch.assert_called_once()
-    assert dispatch.call_args.args[1] == "on_confirmed"
+    assert dispatch.call_args.args[1] == "on_accepted"
 
 
 def test_skips_confirmed_with_completed_marker():
     _order(
         "ORD-CONF-OK",
-        status=Order.Status.CONFIRMED,
-        data={"lifecycle": {"on_commit": "done", "on_confirmed": "done"}},
+        status=Order.Status.ACCEPTED,
+        data={"lifecycle": {"on_commit": "done", "on_accepted": "done"}},
     )
     dispatch = _sweep()
     dispatch.assert_not_called()
@@ -110,9 +110,9 @@ def test_redispatches_paid_order_without_marker_via_captured_at():
     # presença dele sem o marcador = crash entre o COMMIT e o fim do on_paid.
     _order(
         "ORD-PAID-STUCK",
-        status=Order.Status.CONFIRMED,
+        status=Order.Status.ACCEPTED,
         data={
-            "lifecycle": {"on_commit": "done", "on_confirmed": "done"},
+            "lifecycle": {"on_commit": "done", "on_accepted": "done"},
             "payment": {"intent_ref": "PI-STUCK", "captured_at": "2026-07-11T10:00:00"},
         },
     )
@@ -127,9 +127,9 @@ def test_redispatches_paid_order_via_payman_sufficient_capture():
 
     order = _order(
         "ORD-PAID-PAYMAN",
-        status=Order.Status.CONFIRMED,
+        status=Order.Status.ACCEPTED,
         data={
-            "lifecycle": {"on_commit": "done", "on_confirmed": "done"},
+            "lifecycle": {"on_commit": "done", "on_accepted": "done"},
             "payment": {"intent_ref": "PI-PAYMAN", "method": "card"},
         },
     )
@@ -144,9 +144,9 @@ def test_redispatches_paid_order_via_payman_sufficient_capture():
 def test_skips_paid_order_with_completed_marker():
     _order(
         "ORD-PAID-OK",
-        status=Order.Status.CONFIRMED,
+        status=Order.Status.ACCEPTED,
         data={
-            "lifecycle": {"on_commit": "done", "on_confirmed": "done", "on_paid": "done"},
+            "lifecycle": {"on_commit": "done", "on_accepted": "done", "on_paid": "done"},
             "payment": {"intent_ref": "PI-OK", "captured_at": "2026-07-11T10:00:00"},
         },
     )
@@ -157,9 +157,9 @@ def test_skips_paid_order_with_completed_marker():
 def test_skips_unpaid_order_for_on_paid():
     order = _order(
         "ORD-UNPAID",
-        status=Order.Status.CONFIRMED,
+        status=Order.Status.ACCEPTED,
         data={
-            "lifecycle": {"on_commit": "done", "on_confirmed": "done"},
+            "lifecycle": {"on_commit": "done", "on_accepted": "done"},
             "payment": {"intent_ref": "PI-PENDING-SWEEP", "method": "pix"},
         },
     )

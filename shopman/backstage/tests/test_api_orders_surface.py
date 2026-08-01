@@ -45,7 +45,7 @@ def plain_staff(db, shop):
     return User.objects.create_user("plain-staff", password="pw", is_staff=True)
 
 
-def _order(ref: str, status: str = "confirmed", **data_extra) -> Order:
+def _order(ref: str, status: str = "accepted", **data_extra) -> Order:
     data = {"customer": {"name": "Ana"}, "payment": {"method": "cash"}}
     data.update(data_extra)
     order = Order.objects.create(
@@ -215,7 +215,7 @@ def test_reject_conflicts_when_order_was_auto_confirmed(client, operator, order)
     assert response.status_code == 409
     assert "não está mais aguardando confirmação" in response.json()["detail"]
     order.refresh_from_db()
-    assert order.status == Order.Status.CONFIRMED  # pedido segue intacto
+    assert order.status == Order.Status.ACCEPTED  # pedido segue intacto
 
 
 @pytest.mark.django_db

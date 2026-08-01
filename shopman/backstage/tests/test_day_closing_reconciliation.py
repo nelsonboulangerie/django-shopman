@@ -195,7 +195,7 @@ def test_future_preorder_does_not_create_false_deficit(client, setup_stock, clos
     preorder = Order.objects.create(
         ref="RECON-ENC",
         channel_ref="web",
-        status="confirmed",
+        status="accepted",
         total_q=500,
         data={"delivery_date": (timezone.localdate() + timedelta(days=2)).isoformat()},
     )
@@ -226,7 +226,7 @@ def test_preorder_counts_in_reconciliation_of_the_delivery_day(setup_stock):
     preorder = Order.objects.create(
         ref="RECON-ENC-DIA",
         channel_ref="web",
-        status="confirmed",
+        status="accepted",
         total_q=500,
         data={"delivery_date": delivery_day.isoformat()},
     )
@@ -247,12 +247,12 @@ def test_build_day_closing_lists_upcoming_preorders(setup_stock):
 
     tomorrow = (timezone.localdate() + timedelta(days=1)).isoformat()
     saturday = (timezone.localdate() + timedelta(days=3)).isoformat()
-    Order.objects.create(ref="ENC-1", channel_ref="web", status="confirmed", total_q=1500, data={"delivery_date": tomorrow})
-    Order.objects.create(ref="ENC-2", channel_ref="web", status="confirmed", total_q=2500, data={"delivery_date": tomorrow})
-    Order.objects.create(ref="ENC-3", channel_ref="web", status="confirmed", total_q=1000, data={"delivery_date": saturday})
+    Order.objects.create(ref="ENC-1", channel_ref="web", status="accepted", total_q=1500, data={"delivery_date": tomorrow})
+    Order.objects.create(ref="ENC-2", channel_ref="web", status="accepted", total_q=2500, data={"delivery_date": tomorrow})
+    Order.objects.create(ref="ENC-3", channel_ref="web", status="accepted", total_q=1000, data={"delivery_date": saturday})
     # Cancelada e de hoje ficam de fora.
     Order.objects.create(ref="ENC-4", channel_ref="web", status="cancelled", total_q=999, data={"delivery_date": tomorrow})
-    Order.objects.create(ref="HOJE-1", channel_ref="web", status="confirmed", total_q=999, data={"delivery_date": timezone.localdate().isoformat()})
+    Order.objects.create(ref="HOJE-1", channel_ref="web", status="accepted", total_q=999, data={"delivery_date": timezone.localdate().isoformat()})
 
     closing = build_day_closing()
 

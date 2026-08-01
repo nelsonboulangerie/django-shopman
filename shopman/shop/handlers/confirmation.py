@@ -88,7 +88,7 @@ class ConfirmationTimeoutHandler:
                 return
             ensure_confirmable(order)
             order.transition_status(
-                Order.Status.CONFIRMED, actor="confirmation.timeout",
+                Order.Status.ACCEPTED, actor="confirmation.timeout",
             )
         elif action == "cancel":
             order.transition_status(

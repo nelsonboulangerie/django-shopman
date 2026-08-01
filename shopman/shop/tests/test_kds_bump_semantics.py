@@ -135,7 +135,7 @@ def test_bump_with_payment_gate_raises_with_real_reason(db):
     # nunca ler "Ticket não está aberto" num ticket aberto.
     Channel.objects.create(ref="pdv", name="PDV")
     _order_at(
-        Order.Status.CONFIRMED,
+        Order.Status.ACCEPTED,
         session_key="sk-kds-gate",
         data={"payment": {"method": "pix"}},  # sem captura → gate fecha
     )

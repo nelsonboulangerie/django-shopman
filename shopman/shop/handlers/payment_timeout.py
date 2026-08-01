@@ -36,7 +36,7 @@ class PaymentTimeoutHandler:
         except (KeyError, Order.DoesNotExist):
             return
 
-        if order.status not in {Order.Status.NEW, Order.Status.CONFIRMED}:
+        if order.status not in {Order.Status.NEW, Order.Status.ACCEPTED}:
             return
 
         payment_data = (order.data or {}).get("payment") or {}

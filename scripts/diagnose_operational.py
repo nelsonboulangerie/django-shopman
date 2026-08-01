@@ -550,7 +550,7 @@ def _order_intent_ref(order) -> str:
 
 def _ACTIVE_PAID_ORDER_STATUSES(Order) -> tuple[str, ...]:
     return (
-        Order.Status.CONFIRMED,
+        Order.Status.ACCEPTED,
         Order.Status.PREPARING,
         Order.Status.READY,
         Order.Status.DISPATCHED,

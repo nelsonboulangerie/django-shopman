@@ -406,7 +406,7 @@ class TestVerifyHolds(TestCase):
         order = Order.objects.get(ref=result.order_ref)
 
         # Order confirmed (immediate mode), not cancelled
-        self.assertEqual(order.status, Order.Status.CONFIRMED)
+        self.assertEqual(order.status, Order.Status.ACCEPTED)
 
     def test_verify_holds_qty_scope(self):
         """

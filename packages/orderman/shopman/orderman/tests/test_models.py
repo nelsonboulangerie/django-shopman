@@ -99,9 +99,9 @@ class TestOrder(TestCase):
             ref="ORD-TEST-002",
             channel_ref=self.channel.ref,
         )
-        order.transition_status("confirmed", actor="test")
-        assert order.status == "confirmed"
-        assert order.confirmed_at is not None
+        order.transition_status("accepted", actor="test")
+        assert order.status == "accepted"
+        assert order.accepted_at is not None
 
     def test_invalid_transition_raises(self):
         order = Order.objects.create(
@@ -116,12 +116,12 @@ class TestOrder(TestCase):
             ref="ORD-TEST-004",
             channel_ref=self.channel.ref,
         )
-        order.transition_status("confirmed", actor="test")
+        order.transition_status("accepted", actor="test")
         events = list(order.events.all())
         assert len(events) == 1
         assert events[0].type == "status_changed"
         assert events[0].payload["old_status"] == "new"
-        assert events[0].payload["new_status"] == "confirmed"
+        assert events[0].payload["new_status"] == "accepted"
 
     def test_emit_event(self):
         order = Order.objects.create(
@@ -148,7 +148,7 @@ class TestOrder(TestCase):
             snapshot={"items": [{"sku": "PAO", "qty": Decimal("2.000")}]},
             total_q=1000,
         )
-        order.transition_status("confirmed", actor="test")
+        order.transition_status("accepted", actor="test")
 
         order.data = dict(order.data or {}, lifecycle={"on_commit": "done"})
         order.save(update_fields=["data", "updated_at"])
@@ -177,7 +177,7 @@ class TestOrder(TestCase):
             snapshot={"items": []},
             total_q=1000,
         )
-        order.transition_status("confirmed", actor="test")
+        order.transition_status("accepted", actor="test")
 
         order.snapshot = {"items": [{"sku": "OUTRO"}]}
         with pytest.raises(ImmutabilityError):
@@ -225,7 +225,7 @@ class TestOrder(TestCase):
             snapshot={"items": [{"sku": "PAO", "qty": Decimal("2.000")}]},
             total_q=1000,
         )
-        order.transition_status("confirmed", actor="test")
+        order.transition_status("accepted", actor="test")
         order.refresh_from_db()
 
         order.snapshot["items"].append({"sku": "OUTRO"})

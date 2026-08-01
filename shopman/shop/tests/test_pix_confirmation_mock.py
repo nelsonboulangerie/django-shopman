@@ -20,7 +20,7 @@ class MockPixConfirmationTests(TestCase):
         order = Order.objects.create(
             ref="PIX-MOCK-MANUAL",
             channel_ref="web",
-            status="confirmed",
+            status="accepted",
             total_q=1500,
             data={"payment": {"method": "pix"}},
         )
@@ -67,7 +67,7 @@ class MockPixConfirmationTests(TestCase):
         order = Order.objects.create(
             ref="PIX-MOCK-QR",
             channel_ref="web",
-            status="confirmed",
+            status="accepted",
             total_q=1500,
             data={"payment": {"method": "pix"}},
         )
@@ -162,7 +162,7 @@ class MockPixConfirmationTests(TestCase):
         order = Order.objects.create(
             ref="PIX-MOCK-LEGACY",
             channel_ref="web",
-            status="confirmed",
+            status="accepted",
             total_q=1500,
             data={"payment": {"method": "pix"}},
         )

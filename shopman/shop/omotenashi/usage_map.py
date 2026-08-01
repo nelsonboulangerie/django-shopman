@@ -374,7 +374,7 @@ USAGE: dict[str, tuple[tuple[str, str, str], ...]] = {
         ("shopman/backstage/presentation/status.py", "Operador", "Rótulos de status"),
         ("shopman/storefront/presentation/status.py", "Loja", "Rótulos de status"),
     ),
-    "ORDER_STATUS_CONFIRMED": (
+    "ORDER_STATUS_ACCEPTED": (
         ("shopman/backstage/presentation/status.py", "Operador", "Rótulos de status"),
         ("shopman/storefront/presentation/status.py", "Loja", "Rótulos de status"),
     ),

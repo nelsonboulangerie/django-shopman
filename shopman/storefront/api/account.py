@@ -64,10 +64,10 @@ def _step_up_is_fresh(request) -> bool:
     if not raw:
         return False
     try:
-        confirmed_at = datetime.fromisoformat(raw)
+        accepted_at = datetime.fromisoformat(raw)
     except (TypeError, ValueError):
         return False
-    return (timezone.now() - confirmed_at).total_seconds() <= STEP_UP_MAX_AGE_SECONDS
+    return (timezone.now() - accepted_at).total_seconds() <= STEP_UP_MAX_AGE_SECONDS
 
 
 def _step_up_required_response() -> Response:

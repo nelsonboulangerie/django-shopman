@@ -133,9 +133,9 @@ class EndToEndFlowTests(TestCase):
         self.assertEqual(Order.objects.count(), 1)
 
         # 4. Transições de status
-        order.transition_status(Order.STATUS_CONFIRMED, actor="test_admin")
+        order.transition_status(Order.STATUS_ACCEPTED, actor="test_admin")
         order.refresh_from_db()
-        self.assertEqual(order.status, Order.STATUS_CONFIRMED)
+        self.assertEqual(order.status, Order.STATUS_ACCEPTED)
 
         order.transition_status(Order.STATUS_PREPARING, actor="test_kitchen")
         order.refresh_from_db()
@@ -162,7 +162,7 @@ class EndToEndFlowTests(TestCase):
 
         # Verificar transições específicas
         self.assertEqual(status_events[0].payload["old_status"], Order.STATUS_NEW)
-        self.assertEqual(status_events[0].payload["new_status"], Order.STATUS_CONFIRMED)
+        self.assertEqual(status_events[0].payload["new_status"], Order.STATUS_ACCEPTED)
         self.assertEqual(status_events[0].actor, "test_admin")
 
         self.assertEqual(status_events[-1].payload["old_status"], Order.STATUS_READY)

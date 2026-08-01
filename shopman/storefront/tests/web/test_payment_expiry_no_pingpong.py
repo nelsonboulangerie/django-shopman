@@ -32,7 +32,7 @@ def _com_prazo(order, *, expires_in_minutes: int):
         "status": "pending",
         "expires_at": quando.isoformat(),
     }
-    _Order.objects.filter(pk=order.pk).update(status="confirmed", data=data)
+    _Order.objects.filter(pk=order.pk).update(status="accepted", data=data)
     order.refresh_from_db()
     return order
 

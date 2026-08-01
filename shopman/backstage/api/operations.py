@@ -906,7 +906,7 @@ class OrderConfirmView(_OrderActionBase):
         except OrderConflict as exc:
             return Response({"detail": str(exc)}, status=409)
         except OrderError as exc:
-            return Response({"detail": str(exc) or "Falha ao confirmar."}, status=400)
+            return Response({"detail": str(exc) or "Falha ao aceitar o pedido."}, status=400)
         return Response({"ok": True, "ref": ref})
 
 

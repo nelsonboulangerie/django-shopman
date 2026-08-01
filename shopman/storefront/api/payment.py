@@ -124,7 +124,7 @@ class OrderPaymentView(APIView):
                     "copy": _payment_copy(),
                 })
             # Sem intent e sem ser Pix: o acompanhamento é o lugar honesto.
-            if not (_is_digital_payment(order) and order.status == "confirmed"):
+            if not (_is_digital_payment(order) and order.status == "accepted"):
                 return Response({
                     "redirect_url": _tracking_url(ref),
                     "payment": None,

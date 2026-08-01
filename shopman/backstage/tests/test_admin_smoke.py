@@ -101,7 +101,7 @@ def test_change_form_renders_for_seeded_order(admin_client):
         ref="SMOKE-ORDER",
         channel_ref="web",
         session_key="smoke-session",
-        status=Order.Status.CONFIRMED,
+        status=Order.Status.ACCEPTED,
         total_q=3000,
         currency="BRL",
         data={"payment": {"method": "cash"}},

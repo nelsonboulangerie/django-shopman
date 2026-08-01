@@ -186,7 +186,7 @@ def order_paid(channel, client):
     order = Order.objects.create(
         ref="ORD-PAID-001",
         channel_ref=channel.ref,
-        status="confirmed",
+        status="accepted",
         total_q=2500,
         handle_type="phone",
         handle_ref="5543999990001",

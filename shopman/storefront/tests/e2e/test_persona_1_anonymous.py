@@ -95,7 +95,7 @@ def test_full_journey_browse_cart_otp_pix_track(client, django_capture_on_commit
 
     # 8. Optimistic confirmation (operator does not cancel) → PIX becomes payable.
     J.confirm_order(order, django_capture_on_commit_callbacks)
-    assert order.status == "confirmed"
+    assert order.status == "accepted"
 
     status, payment = J.get_payment(client, ref)
     assert status == 200, payment

@@ -17,7 +17,7 @@ class Order(models.Model):
     Status Canônicos:
     - new: Pedido criado pelo sistema. Em modo immediate: estado de microssegundos antes de confirmar.
            Em modo auto_confirm/auto_cancel: aguarda operador confirmar ou timeout.
-    - confirmed: Confirmado pelo operador ou auto-confirmado. Pagamento iniciado se digital.
+    - accepted: Confirmado pelo operador ou auto-confirmado. Pagamento iniciado se digital.
     - preparing: Pedido em montagem na cozinha. KDS tickets ativos. NÃO é produção em lote
                  (WorkOrder). WorkOrders são produção antecipada; este estado = itens sendo
                  montados para este pedido específico.
@@ -32,7 +32,7 @@ class Order(models.Model):
 
     class Status(models.TextChoices):
         NEW = "new", _("novo")
-        CONFIRMED = "confirmed", _("confirmado")
+        ACCEPTED = "accepted", _("aceito")
         PREPARING = "preparing", _("em preparo")
         READY = "ready", _("pronto")
         DISPATCHED = "dispatched", _("despachado")
@@ -42,7 +42,7 @@ class Order(models.Model):
         RETURNED = "returned", _("devolvido")
 
     STATUS_NEW = Status.NEW
-    STATUS_CONFIRMED = Status.CONFIRMED
+    STATUS_ACCEPTED = Status.ACCEPTED
     STATUS_PREPARING = Status.PREPARING
     STATUS_READY = Status.READY
     STATUS_DISPATCHED = Status.DISPATCHED
@@ -53,8 +53,8 @@ class Order(models.Model):
     STATUS_CHOICES = Status.choices
 
     DEFAULT_TRANSITIONS = {
-        Status.NEW: [Status.CONFIRMED, Status.CANCELLED],
-        Status.CONFIRMED: [Status.PREPARING, Status.READY, Status.CANCELLED],
+        Status.NEW: [Status.ACCEPTED, Status.CANCELLED],
+        Status.ACCEPTED: [Status.PREPARING, Status.READY, Status.CANCELLED],
         Status.PREPARING: [Status.READY, Status.CANCELLED],
         # READY→PREPARING é o recall da cozinha (un-bump do último ticket):
         # o pedido volta ao preparo e some da expedição.
@@ -103,7 +103,7 @@ class Order(models.Model):
 
     created_at = models.DateTimeField(_("criado em"), auto_now_add=True)
     updated_at = models.DateTimeField(_("atualizado em"), auto_now=True)
-    confirmed_at = models.DateTimeField(_("confirmado em"), null=True, blank=True)
+    accepted_at = models.DateTimeField(_("aceito em"), null=True, blank=True)
     preparing_at = models.DateTimeField(_("em preparo em"), null=True, blank=True)
     ready_at = models.DateTimeField(_("pronto em"), null=True, blank=True)
     dispatched_at = models.DateTimeField(_("despachado em"), null=True, blank=True)
@@ -196,7 +196,7 @@ class Order(models.Model):
         return new_status in self.get_allowed_transitions()
 
     STATUS_TIMESTAMP_FIELDS = {
-        STATUS_CONFIRMED: "confirmed_at",
+        STATUS_ACCEPTED: "accepted_at",
         STATUS_PREPARING: "preparing_at",
         STATUS_READY: "ready_at",
         STATUS_DISPATCHED: "dispatched_at",
@@ -390,7 +390,7 @@ class OrderEvent(models.Model):
     actor = models.CharField(_("ator"), max_length=128)
     payload = models.JSONField(
         _("payload"), default=dict,
-        help_text=_('Dados do evento. Ex: {"new_status": "confirmed"} ou {"error": "motivo"}'),
+        help_text=_('Dados do evento. Ex: {"new_status": "accepted"} ou {"error": "motivo"}'),
     )
 
     created_at = models.DateTimeField(_("criado em"), auto_now_add=True)

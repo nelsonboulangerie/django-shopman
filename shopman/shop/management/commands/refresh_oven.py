@@ -82,7 +82,7 @@ class Command(BaseCommand):
 
         offsets = {
             "preparing": (5, 15),
-            "confirmed": (2, 5),
+            "accepted": (2, 5),
             "new": (1, 4),
             "ready": (1, 1),
         }

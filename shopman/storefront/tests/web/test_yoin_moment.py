@@ -32,7 +32,7 @@ class TestPedidoQueAindaDevePagamento:
     def test_nao_comemora_enquanto_falta_pagar(self, client, order_with_payment):
         from shopman.orderman.models import Order as _Order
 
-        _Order.objects.filter(pk=order_with_payment.pk).update(status="confirmed")
+        _Order.objects.filter(pk=order_with_payment.pk).update(status="accepted")
         _armar_momento(client, order_with_payment.ref)
 
         assert _just_placed(client, order_with_payment.ref) is False
@@ -41,7 +41,7 @@ class TestPedidoQueAindaDevePagamento:
         """A flag não pode ser queimada na visita que não comemora."""
         from shopman.orderman.models import Order as _Order
 
-        _Order.objects.filter(pk=order_with_payment.pk).update(status="confirmed")
+        _Order.objects.filter(pk=order_with_payment.pk).update(status="accepted")
         _armar_momento(client, order_with_payment.ref)
 
         _just_placed(client, order_with_payment.ref)  # visita sem pagar

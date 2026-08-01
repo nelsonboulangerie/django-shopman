@@ -150,7 +150,7 @@ class TestProductionChainE2E:
     def test_void_with_linked_order_unlinks_and_releases_plan(self, recipe, vitrine, producao):
         today = date.today()
         order = Order.objects.create(
-            ref="E2E-ORD-1", channel_ref="web", status="confirmed", total_q=400,
+            ref="E2E-ORD-1", channel_ref="web", status="accepted", total_q=400,
             data={"target_date": today.isoformat()},
         )
         OrderItem.objects.create(
@@ -196,7 +196,7 @@ class TestProductionChainE2E:
         """Guardrail V1 do Core, vivo na config real do orquestrador (DEMAND_BACKEND)."""
         today = date.today()
         order = Order.objects.create(
-            ref="E2E-ORD-2", channel_ref="web", status="confirmed", total_q=600,
+            ref="E2E-ORD-2", channel_ref="web", status="accepted", total_q=600,
             data={"target_date": today.isoformat()},
         )
         OrderItem.objects.create(

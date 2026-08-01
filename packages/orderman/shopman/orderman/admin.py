@@ -649,7 +649,7 @@ class OrderAdmin(ModelAdmin):
     def operation_link_display(self, obj: Order) -> str:
         active_statuses = {
             Order.Status.NEW,
-            Order.Status.CONFIRMED,
+            Order.Status.ACCEPTED,
             Order.Status.PREPARING,
             Order.Status.READY,
             Order.Status.DISPATCHED,

@@ -510,12 +510,12 @@ def seed_delivery_zone(shop, *, match_value="860", fee_q=600, zone_type="cep_pre
 
 def confirm_order(order, callbacks_ctx, *, actor="test:operator"):
     """Optimistic confirmation: transition NEW → CONFIRMED, firing on-commit
-    callbacks (the on_confirmed pipeline, e.g. pix.generate). ``callbacks_ctx``
+    callbacks (the on_accepted pipeline, e.g. pix.generate). ``callbacks_ctx``
     is the ``django_capture_on_commit_callbacks`` fixture."""
     from shopman.orderman.models import Order
 
     with callbacks_ctx(execute=True):
-        order.transition_status(Order.Status.CONFIRMED, actor=actor)
+        order.transition_status(Order.Status.ACCEPTED, actor=actor)
     order.refresh_from_db()
     return order
 

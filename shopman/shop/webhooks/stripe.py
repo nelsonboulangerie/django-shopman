@@ -162,7 +162,7 @@ class StripeWebhookView(APIView):
             except Order.DoesNotExist:
                 return
 
-        if order and intent.status == "authorized" and order.status == Order.Status.CONFIRMED:
+        if order and intent.status == "authorized" and order.status == Order.Status.ACCEPTED:
             method = ((order.data or {}).get("payment") or {}).get("method")
             if method == "card":
                 payment_service.capture(order)

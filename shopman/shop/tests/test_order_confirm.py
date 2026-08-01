@@ -61,7 +61,7 @@ class OrderConfirmTests(TestCase):
 
         self.assertEqual(resp.status_code, 200)
         order.refresh_from_db()
-        self.assertEqual(order.status, Order.Status.CONFIRMED)
+        self.assertEqual(order.status, Order.Status.ACCEPTED)
 
     def test_confirm_blocks_pending_digital_payment(self) -> None:
         Channel.objects.create(
@@ -139,7 +139,7 @@ class OrderConfirmTests(TestCase):
             ref="ORD-CONF-BLOCKED-STATUS",
             channel_ref="pdv",
             session_key="sess-confirm-blocked-status",
-            status=Order.Status.CONFIRMED,
+            status=Order.Status.ACCEPTED,
             snapshot={"items": [{"sku": "TEST-SKU", "qty": 1}], "data": {}},
             data={
                 "availability_decision": {
@@ -158,4 +158,4 @@ class OrderConfirmTests(TestCase):
         # auto-confirmação, em vez de fingir request inválido.
         self.assertEqual(resp.status_code, 409)
         order.refresh_from_db()
-        self.assertEqual(order.status, Order.Status.CONFIRMED)
+        self.assertEqual(order.status, Order.Status.ACCEPTED)

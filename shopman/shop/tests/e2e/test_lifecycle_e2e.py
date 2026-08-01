@@ -161,9 +161,9 @@ class TestE2E1LocalCheckout(TransactionTestCase):
 
         order = Order.objects.get(ref=result.order_ref)
 
-        # on_commit → auto_confirm → on_confirmed → stock.fulfill
-        self.assertEqual(order.status, Order.Status.CONFIRMED)
-        # stock.fulfill called once in on_confirmed
+        # on_commit → auto_confirm → on_accepted → stock.fulfill
+        self.assertEqual(order.status, Order.Status.ACCEPTED)
+        # stock.fulfill called once in on_accepted
         self.mocks["fulfill"].assert_called_once()
         # O marcador durável tem que sobreviver à confirmação immediate: o
         # transition_status ressincroniza a instância do banco e o sealed check
@@ -212,7 +212,7 @@ class TestE2E2WebPixHappyPath(TransactionTestCase):
 
         confirm_order(order, actor="operator")
         order.refresh_from_db()
-        self.assertEqual(order.status, Order.Status.CONFIRMED)
+        self.assertEqual(order.status, Order.Status.ACCEPTED)
         self.mocks["initiate"].assert_called_once_with(order)
         self.mocks["send"].assert_any_call(order, "payment_requested")
         self.mocks["dispatch"].assert_not_called()

@@ -791,7 +791,7 @@ class PixCaptureSufficiencyTests(WebhookTestBase):
         order = Order.objects.create(
             ref="PIX-LEGACY-PARTIAL",
             channel_ref="web",
-            status="confirmed",
+            status="accepted",
             total_q=1000,
             data={"payment": {"method": "pix", "intent_ref": "legacy-txid_legacy_1"}},
         )
@@ -814,7 +814,7 @@ class PixCaptureSufficiencyTests(WebhookTestBase):
         order = Order.objects.create(
             ref="PIX-LEGACY-FULL",
             channel_ref="web",
-            status="confirmed",
+            status="accepted",
             total_q=1000,
             data={"payment": {"method": "pix", "intent_ref": "legacy-txid_legacy_2"}},
         )

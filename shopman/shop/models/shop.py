@@ -277,7 +277,7 @@ class Shop(models.Model):
             "Chaves disponíveis:\n"
             '  "new" — pedido recebido, aguardando confirmação\n'
             '  "new_countdown" — texto acima do timer de confirmação\n'
-            '  "confirmed" — pedido confirmado\n'
+            '  "accepted" — pedido confirmado\n'
             '  "preparing" — pedido em preparo\n'
             '  "ready" — pedido pronto para retirada/entrega\n'
             '  "dispatched" — pedido saiu para entrega\n'

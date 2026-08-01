@@ -46,7 +46,7 @@ class OperatorOrderContractTests(TestCase):
         self.assertEqual(directive.dedupe_key, f"notification.send:{order.ref}:order_rejected")
 
     def test_reject_is_not_a_late_stage_cancel_shortcut(self) -> None:
-        order = _order("CONTRACT-REJECT-CONF", Order.Status.CONFIRMED)
+        order = _order("CONTRACT-REJECT-CONF", Order.Status.ACCEPTED)
 
         with self.assertRaises(ValueError):
             reject_order(
@@ -57,7 +57,7 @@ class OperatorOrderContractTests(TestCase):
             )
 
         order.refresh_from_db()
-        self.assertEqual(order.status, Order.Status.CONFIRMED)
+        self.assertEqual(order.status, Order.Status.ACCEPTED)
         self.assertNotIn("cancellation_reason", order.data)
         self.assertNotIn("rejected_by", order.data)
 

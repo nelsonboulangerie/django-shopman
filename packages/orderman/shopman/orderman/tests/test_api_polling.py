@@ -77,7 +77,7 @@ class OrderStreamViewTests(TestCase):
         order1 = self._create_order("ORD-SSE-010")
         order2 = self._create_order(
             "ORD-SSE-011",
-            status="confirmed",
+            status="accepted",
             total_q=2500,
             handle_ref="TABLE-5",
         )
@@ -88,7 +88,7 @@ class OrderStreamViewTests(TestCase):
         data = json.loads(response.content)
         self.assertEqual(len(data["orders"]), 1)
         self.assertEqual(data["orders"][0]["ref"], "ORD-SSE-011")
-        self.assertEqual(data["orders"][0]["status"], "confirmed")
+        self.assertEqual(data["orders"][0]["status"], "accepted")
         self.assertEqual(data["orders"][0]["channel"], "sse-test")
         self.assertEqual(data["orders"][0]["total"], "25.0")
         self.assertEqual(data["orders"][0]["handle_ref"], "TABLE-5")

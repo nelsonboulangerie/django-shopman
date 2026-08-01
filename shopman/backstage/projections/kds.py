@@ -260,7 +260,7 @@ def build_kds_customer_status(*, limit: int = 24) -> KDSCustomerStatusProjection
     orders_qs = (
         Order.objects.filter(
             status__in=[
-                Order.Status.CONFIRMED,
+                Order.Status.ACCEPTED,
                 Order.Status.PREPARING,
                 Order.Status.READY,
             ]
