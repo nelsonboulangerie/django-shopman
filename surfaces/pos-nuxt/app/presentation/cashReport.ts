@@ -8,13 +8,22 @@
 import type { CashMovementRow, ShiftReading } from "~/types/cashReport";
 import { formatBRL } from "~/utils/posIntent";
 
+// Fuso da loja fixado: a leitura X/Z é sempre lida no horário do balcão, não no
+// do servidor. Sem isto, o mesmo instante vira "08:02" no dev (BRT) e "11:02" na
+// CI (UTC) — o teste de fuso quebrava por isso. Espírito de localdate_not_now_date.
+const STORE_TIME_ZONE = "America/Sao_Paulo";
+
 /** Hora curta (pt-BR) de um ISO datetime; "" quando ausente ou inválido. */
 export function timeDisplay(raw: string | null | undefined): string {
   if (!raw) return "";
   const date = new Date(raw);
   return Number.isNaN(date.getTime())
     ? ""
-    : date.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
+    : date.toLocaleTimeString("pt-BR", {
+        hour: "2-digit",
+        minute: "2-digit",
+        timeZone: STORE_TIME_ZONE,
+      });
 }
 
 /** Período do turno: "08:02 às 12:30" fechado, "desde 08:02" aberto. */
