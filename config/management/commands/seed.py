@@ -2923,7 +2923,15 @@ class Command(BaseCommand):
             # `short_name` (ChannelConfig) = rótulo da coluna estreita no Catálogo; só
             # quando o nome completo não cabe — "PDV"/"iFood" já são curtos.
             ("pdv", "PDV", 1, True, _pos_config),
-            ("web", "Loja online", 2, True, {**_remote_config, "short_name": "Site"}),
+            # Loja online: cliente acompanha de longe, então o preparo NÃO começa
+            # sozinho ao pagar — o operador dá "Iniciar preparo" no gestor (a tela
+            # do cliente só diz "Em preparo" quando alguém de fato encosta). PDV e
+            # iFood ficam no default "auto" (operador presente / marketplace).
+            ("web", "Loja online", 2, True, {
+                **_remote_config,
+                "short_name": "Site",
+                "fulfillment": {"prep_start": "operator"},
+            }),
             ("ifood", "iFood", 3, True, {
                 **_marketplace_config,
                 "pricing": {"policy": "external"},

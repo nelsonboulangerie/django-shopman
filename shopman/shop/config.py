@@ -84,6 +84,13 @@ class ChannelConfig:
         # "post_commit" — create fulfillment when order is ready (default)
         # "external"    — handled externally (marketplace)
         auto_sync: bool = True
+        prep_start: str = "auto"
+        # QUANDO o trabalho físico (tickets do KDS + status "preparando") começa:
+        # "auto"     — dispara sozinho quando o pedido é aceito e pago. Bom para
+        #              iFood/PDV/balcão (operador presente ou marketplace).
+        # "operator" — pago fica em "Aceito"; a cozinha só é acionada quando o
+        #              operador dá "Iniciar preparo" no gestor. Honesto com o
+        #              cliente remoto (web): "Em preparo" só quando alguém encosta.
         courier: str = "none"
         # "none" — sem despacho automático de entregador (marketplace tem
         #          logística própria; retirada não entrega)
@@ -285,6 +292,8 @@ class ChannelConfig:
             raise ValueError(f"fulfillment.timing inválido: {self.fulfillment.timing}")
         if self.fulfillment.courier not in ("none", "auto"):
             raise ValueError(f"fulfillment.courier inválido: {self.fulfillment.courier}")
+        if self.fulfillment.prep_start not in ("auto", "operator"):
+            raise ValueError(f"fulfillment.prep_start inválido: {self.fulfillment.prep_start}")
         if self.stock.hold_ttl_minutes is not None and self.stock.hold_ttl_minutes <= 0:
             raise ValueError("stock.hold_ttl_minutes deve ser > 0 ou null")
         if self.stock.safety_margin < 0:

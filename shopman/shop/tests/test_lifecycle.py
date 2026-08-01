@@ -47,9 +47,10 @@ def _config(**overrides):
             method=overrides.get("payment_method", "cash"),
             timing=overrides.get("payment_timing", "post_commit"),
         )
-    if "fulfillment_timing" in overrides:
+    if "fulfillment_timing" in overrides or "prep_start" in overrides:
         kwargs["fulfillment"] = ChannelConfig.Fulfillment(
-            timing=overrides["fulfillment_timing"],
+            timing=overrides.get("fulfillment_timing", "post_commit"),
+            prep_start=overrides.get("prep_start", "auto"),
         )
     if "check_on_commit" in overrides:
         kwargs["stock"] = ChannelConfig.Stock(
@@ -572,6 +573,45 @@ class TestOnPaid:
         )
 
     @patch("shopman.shop.lifecycle.ChannelConfig")
+    @patch("shopman.shop.lifecycle._dispatch_physical_work", return_value=True)
+    @patch("shopman.shop.lifecycle.notification")
+    @patch("shopman.shop.lifecycle.stock")
+    def test_operator_mode_paid_order_stays_accepted_until_operator_starts(
+        self, mock_stock, mock_notification, mock_dispatch_work, mock_cc,
+    ):
+        """prep_start="operator": pagar NÃO manda pra cozinha nem vira "preparando".
+
+        O pedido fica em "Aceito"; o cliente lê "Pagamento confirmado". A cozinha
+        só é acionada quando o operador dá "Iniciar preparo" no gestor.
+        """
+        mock_cc.for_channel.return_value = _config(prep_start="operator")
+        order = _make_order(status=Order.Status.ACCEPTED)
+        order.can_transition_to.return_value = True
+
+        dispatch(order, "on_paid")
+
+        mock_dispatch_work.assert_not_called()
+        order.transition_status.assert_not_called()
+        mock_stock.fulfill.assert_called_once_with(order)
+        mock_notification.send.assert_called_once_with(order, "payment_confirmed")
+
+    @patch("shopman.shop.lifecycle.ChannelConfig")
+    @patch("shopman.shop.lifecycle._dispatch_physical_work", return_value=True)
+    @patch("shopman.shop.lifecycle.notification")
+    def test_on_preparing_dispatches_the_kitchen(
+        self, mock_notification, mock_dispatch_work, mock_cc,
+    ):
+        """A transição para "preparando" (o "Iniciar preparo" do operador) é o
+        momento em que os tickets do KDS nascem."""
+        mock_cc.for_channel.return_value = _config(prep_start="operator")
+        order = _make_order(status=Order.Status.PREPARING)
+
+        dispatch(order, "on_preparing")
+
+        mock_dispatch_work.assert_called_once_with(order)
+        mock_notification.send.assert_called_once_with(order, "order_preparing")
+
+    @patch("shopman.shop.lifecycle.ChannelConfig")
     @patch("shopman.shop.lifecycle._create_alert")
     @patch("shopman.shop.lifecycle.notification")
     @patch("shopman.shop.lifecycle.stock")
@@ -636,12 +676,16 @@ class TestOnPaid:
 
 class TestOnPreparing:
     @patch("shopman.shop.lifecycle.ChannelConfig")
+    @patch("shopman.shop.lifecycle._dispatch_physical_work", return_value=True)
     @patch("shopman.shop.lifecycle.notification")
-    def test_notifies_preparing(self, mock_notification, mock_cc):
-        """on_preparing now only notifies — KDS dispatch moved to on_accepted."""
+    def test_dispatches_kitchen_and_notifies(self, mock_notification, mock_dispatch_work, mock_cc):
+        """on_preparing dispara a cozinha (KDS) + notifica. É o momento em que o
+        trabalho físico nasce — sob prep_start="operator" via "Iniciar preparo";
+        sob "auto" é idempotente (os tickets já foram criados no on_paid)."""
         mock_cc.for_channel.return_value = _config()
         order = _make_order()
         dispatch(order, "on_preparing")
+        mock_dispatch_work.assert_called_once_with(order)
         mock_notification.send.assert_called_once_with(order, "order_preparing")
 
 

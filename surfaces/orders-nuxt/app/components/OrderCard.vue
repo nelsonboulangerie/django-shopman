@@ -34,6 +34,9 @@ const paymentPillClass = computed(() => toneBadge(props.card.payment_tone as Ton
 // Ícones de 12px pedem silhueta, não detalhe: um check dentro de um círculo vira
 // um borrão nesse tamanho. Traço simples, forma reconhecível de longe.
 const paymentPillIcon = computed(() => ({
+  // Esperando pagamento é ampulheta, não alarme: quem não paga a tempo é
+  // cancelado e sai do board (ver _payment_tone no backend).
+  warning: "lucide:hourglass",
   danger: "lucide:alert-triangle",
   success: "lucide:check",
   neutral: "lucide:banknote"

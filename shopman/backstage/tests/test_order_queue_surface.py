@@ -223,7 +223,9 @@ class OrderQueueSurfaceTests(TestCase):
 
         self.assertEqual(card.advance_block_label, "Aguardando pagamento…")
         self.assertIn("Pagamento", card.advance_block_reason)
-        self.assertEqual(card.payment_tone, "danger")
+        # Só esperando pagamento é ampulheta (warning), não alarme (danger):
+        # quem não paga a tempo é cancelado e sai do board.
+        self.assertEqual(card.payment_tone, "warning")
 
     def test_card_timer_is_anchored_to_server_time(self) -> None:
         card = build_order_card(_order("A-TIMER", "new"))

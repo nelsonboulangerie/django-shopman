@@ -112,7 +112,7 @@ class OrderCardProjection:
     # Tom do pill de pagamento. Três estados, não dois: dinheiro/externo não é
     # "pago" nem "devendo" — é cobrança fora do site, e pintá-lo de verde diria
     # que entrou dinheiro que não entrou.
-    payment_tone: str  # "danger" | "success" | "neutral"
+    payment_tone: str  # "warning" (esperando) | "success" (pago) | "neutral" (offline)
     # Por que não dá para avançar agora. O botão sumia quando bloqueado, e o
     # operador ficava sem saber se faltava algo ou se a tela tinha falhado.
     advance_block_label: str
@@ -678,19 +678,26 @@ def _is_payment_pending(order: Order, method: str, payment_status: str) -> bool:
 
 
 def _payment_tone(order: Order, method: str, payment_status: str) -> str:
-    """Tom do pill de pagamento — explícito, em vez de deduzido na superfície."""
+    """Tom do pill de pagamento — explícito, em vez de deduzido na superfície.
+
+    Pagamento só ESPERANDO não é falha: é ampulheta (``warning``), não alarme
+    (``danger``). Quem não paga a tempo é cancelado por ``PaymentTimeoutHandler``
+    (reason ``payment_timeout``) e sai do board (``cancelled`` ∉ ``ACTIVE_STATUSES``),
+    então ``danger`` no card seria alarme para um pedido que, se falhar, some sozinho.
+    """
     if method in _OFFLINE_METHODS or not method:
         # Cobrança fora do site: nada a comemorar nem a cobrar aqui.
         return "neutral"
     if payment_status in _PAYMENT_COMPLETE:
         return "success"
     if _is_payment_pending(order, method, payment_status):
-        return "danger"
+        return "warning"
     return "neutral"
 
 
 _ADVANCE_BLOCK_LABELS: dict[operator_orders.AdvanceBlock, str] = {
     operator_orders.AdvanceBlock.PAYMENT_NOT_CAPTURED: "Aguardando pagamento…",
+    operator_orders.AdvanceBlock.PREORDER_NOT_DUE: "Encomenda do dia…",
 }
 
 

@@ -409,7 +409,12 @@ def _on_accepted(order, config: ChannelConfig) -> None:
         notification.send(order, "order_accepted")
         return
 
-    physical_work_dispatched = _dispatch_physical_work(order)
+    # prep_start="operator": pago/aceito NÃO vai sozinho pra cozinha — espera o
+    # operador dar "Iniciar preparo" no gestor (a transição para PREPARING é que
+    # dispara o KDS, via _on_preparing). Honesto com o cliente remoto.
+    physical_work_dispatched = (
+        _dispatch_physical_work(order) if _prep_starts_automatically(config) else False
+    )
 
     if _stock_fulfill_allowed(order, config):
         stock.fulfill(order)
@@ -445,7 +450,7 @@ def _on_paid(order, config: ChannelConfig) -> None:
         notification.send(order, "payment_confirmed")
         return
     physical_work_dispatched = False
-    if order.status == Order.Status.ACCEPTED:
+    if order.status == Order.Status.ACCEPTED and _prep_starts_automatically(config):
         physical_work_dispatched = _dispatch_physical_work(order)
     stock.fulfill(order)
     notification.send(order, "payment_confirmed")
@@ -454,7 +459,15 @@ def _on_paid(order, config: ChannelConfig) -> None:
 
 
 def _on_preparing(order, config: ChannelConfig) -> None:
-    """Order in preparation: notify."""
+    """Order entered preparation: dispatch the physical work (KDS) + notify.
+
+    Este é o momento em que a cozinha é acionada. Com ``prep_start="operator"``
+    o pedido chega aqui pela ação "Iniciar preparo" do gestor (``advance_order``),
+    e é AQUI que os tickets nascem. Com ``prep_start="auto"`` os tickets já foram
+    criados no ``on_paid``/``on_accepted``; a chamada aqui é idempotente
+    (``kds.dispatch`` só fira linhas ainda não firadas), então não duplica.
+    """
+    _dispatch_physical_work(order)
     notification.send(order, "order_preparing")
 
 
@@ -706,6 +719,15 @@ def _dispatch_physical_work(order) -> bool:
         return False
 
 
+def _prep_starts_automatically(config: ChannelConfig) -> bool:
+    """True quando a cozinha é acionada sozinha ao aceitar/pagar (iFood/PDV/balcão).
+
+    ``prep_start="operator"`` (web/loja) inverte: o pago fica em "Aceito" e a
+    cozinha só é acionada quando o operador dá "Iniciar preparo" no gestor.
+    """
+    return config.fulfillment.prep_start != "operator"
+
+
 def _stock_fulfill_allowed(order, config: ChannelConfig) -> bool:
     """Baixa de estoque liberada: pagamento no balcão ou já capturado."""
     if config.payment.timing == "external" and config.payment.method != "external":
@@ -785,7 +807,11 @@ def activate_preorder(order) -> None:
         _create_alert(order, "preorder_activation_blocked_unpaid")
         notification.send(order, "payment_requested")
         return
-    physical_work_dispatched = _dispatch_physical_work(order)
+    # Mesmo knob do mesmo-dia: canal "operator" não forna sozinho nem na data da
+    # encomenda — no dia ela fica "pronta pra fornar" (Aceito) e o operador dispara.
+    physical_work_dispatched = (
+        _dispatch_physical_work(order) if _prep_starts_automatically(config) else False
+    )
     if _stock_fulfill_allowed(order, config):
         stock.fulfill(order, pending_materialization_ok=True)
     if physical_work_dispatched:

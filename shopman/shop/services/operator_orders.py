@@ -44,12 +44,18 @@ class AdvanceBlock(StrEnum):
     NONE = ""
     NO_NEXT_STEP = "no_next_step"
     PAYMENT_NOT_CAPTURED = "payment_not_captured"
+    # Encomenda para data futura: não dá pra iniciar o preparo antes do dia
+    # (o pedido de sábado não vai pra cozinha na terça). Some sozinho na data.
+    PREORDER_NOT_DUE = "preorder_not_due"
 
 
 _ADVANCE_BLOCK_MESSAGES: dict[AdvanceBlock, str] = {
     AdvanceBlock.NO_NEXT_STEP: "Pedido não possui próxima etapa",
     AdvanceBlock.PAYMENT_NOT_CAPTURED: (
         "Pagamento ainda não foi confirmado. Aguarde antes de iniciar o preparo."
+    ),
+    AdvanceBlock.PREORDER_NOT_DUE: (
+        "Encomenda para uma data futura. O preparo abre no dia combinado."
     ),
 }
 
@@ -164,6 +170,8 @@ def advance_block(order: Order) -> AdvanceBlock:
         return AdvanceBlock.NO_NEXT_STEP
     if order.status == Order.Status.ACCEPTED and _requires_captured_payment_for_work(order):
         return AdvanceBlock.PAYMENT_NOT_CAPTURED
+    if order.status == Order.Status.ACCEPTED and _preorder_not_due(order):
+        return AdvanceBlock.PREORDER_NOT_DUE
     return AdvanceBlock.NONE
 
 
@@ -415,6 +423,16 @@ def _requires_captured_payment_for_work(order: Order) -> bool:
     from shopman.shop.services import payment as payment_service
 
     return payment_service.has_sufficient_captured_payment(order) is not True
+
+
+def _preorder_not_due(order: Order) -> bool:
+    """True quando a encomenda é para uma data FUTURA — preparo abre só no dia."""
+    from django.utils import timezone
+
+    from shopman.shop.services.order_helpers import get_commitment_date
+
+    target = get_commitment_date(order)
+    return target is not None and target > timezone.localdate()
 
 
 def timezone_now_iso() -> str:
