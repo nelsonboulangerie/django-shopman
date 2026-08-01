@@ -39,7 +39,7 @@ useSeoMeta({ title: 'Favoritos', robots: 'noindex, follow' })
         <UiAlertTitle>Não conseguimos abrir seus favoritos agora</UiAlertTitle>
         <UiAlertDescription>
           <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-            <span>Foi só um tropeço. Tente de novo em instantes.</span>
+            <span>Foi uma falha nossa. Tente de novo em instantes.</span>
             <UiButton size="sm" variant="outline" @click="refresh">Tentar de novo</UiButton>
           </div>
         </UiAlertDescription>

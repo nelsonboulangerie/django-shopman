@@ -124,7 +124,7 @@ useCanonical()
       </div>
 
       <UiAlert v-else-if="error" variant="destructive">
-        <UiAlertTitle>A busca tropeçou agora</UiAlertTitle>
+        <UiAlertTitle>Não conseguimos buscar agora</UiAlertTitle>
         <UiAlertDescription>
           <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <span>Tente de novo em instantes ou volte ao cardápio.</span>
