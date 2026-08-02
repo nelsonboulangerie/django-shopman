@@ -74,6 +74,32 @@ class MaterialSkuValidator:
             metadata=material.metadata or None,
         )
 
+    def get_sku_infos(self, skus: list[str]) -> dict:
+        from shopman.buyman.models import Material
+        from shopman.stockman.protocols.sku import SkuInfo
+
+        found = {m.sku: m for m in Material.objects.filter(sku__in=skus)}
+        result: dict = {}
+        for sku in skus:
+            material = found.get(sku)
+            if material is None:
+                result[sku] = None
+            else:
+                result[sku] = SkuInfo(
+                    sku=material.sku,
+                    name=material.name,
+                    description=None,
+                    is_published=material.is_active,
+                    is_sellable=False,
+                    unit=material.unit,
+                    category="insumo",
+                    base_price_q=None,
+                    availability_policy="planned_ok",
+                    shelflife_days=material.shelf_life_days,
+                    metadata=material.metadata or None,
+                )
+        return result
+
     def search_skus(self, query: str, limit: int = 20, include_inactive: bool = False) -> list:
         from django.db.models import Q
         from shopman.buyman.models import Material

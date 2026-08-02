@@ -70,7 +70,10 @@ def get_sellable_published_product(sku: str):
 
 
 def products_by_sku(skus: list[str], *, only_published: bool = True) -> dict[str, Any]:
-    qs = products_queryset().filter(sku__in=skus)
+    # Prefetch the relations the catalog card reads (tags via ``product_tags``,
+    # components via ``is_bundle``) so ad-hoc SKU lists (PDP substitutes,
+    # cross-sell, home rails) don't N+1 like the menu did.
+    qs = products_queryset().filter(sku__in=skus).prefetch_related("keywords", "components")
     if only_published:
         qs = qs.filter(is_published=True)
     return {product.sku: product for product in qs}
@@ -216,7 +219,11 @@ def published_products_by_collection(
     active_collection: Any | None = None,
 ) -> list[tuple[str | None, list[Any]]]:
     """Return ordered (collection_ref | None, products) groups for a listing."""
-    base = published_products(listing_ref)
+    # Prefetch the per-product relations the catalog builder reads in its loop so
+    # they don't N+1: ``keywords`` (django-taggit, read by ``product_tags``) and
+    # ``components`` (read by ``is_bundle`` → ``components.exists()``, which uses
+    # the prefetch cache instead of a query per product).
+    base = published_products(listing_ref).prefetch_related("keywords", "components")
 
     if active_collection is not None:
         products = list(
@@ -605,8 +612,12 @@ def promisable_int(raw_avail: dict | None) -> int | None:
 
 
 def product_tags(product) -> tuple[str, ...]:
+    # Sorted for a deterministic order: tags are a search-only index (never a
+    # price or badge), and taggit's default ``.all()`` order is the through-table
+    # PK — which flips depending on whether ``keywords`` was prefetched and on the
+    # order tags were first created. Sorting pins the output regardless.
     try:
-        return tuple(tag.name for tag in product.keywords.all())
+        return tuple(sorted(tag.name for tag in product.keywords.all()))
     except Exception:
         logger.debug("catalog_context.product_tags degraded; using fallback", exc_info=True)
         return ()

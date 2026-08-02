@@ -108,6 +108,46 @@ class SkuValidator:
         except Product.DoesNotExist:
             return None
 
+    def get_sku_infos(self, skus: list[str]) -> dict:
+        """Get SKU information for multiple SKUs at once.
+
+        Batch counterpart of ``get_sku_info``: one product query plus a prefetch
+        of ``collection_items__collection``, then the primary collection is found
+        by scanning the prefetched rows in Python — ``.filter(is_primary=True)``
+        would re-query and defeat the prefetch.
+        """
+        from shopman.offerman.models import Product
+        from shopman.stockman.protocols.sku import SkuInfo
+
+        products = Product.objects.filter(sku__in=skus).prefetch_related(
+            "collection_items__collection"
+        )
+        found = {p.sku: p for p in products}
+
+        result: dict = {}
+        for sku in skus:
+            product = found.get(sku)
+            if product is None:
+                result[sku] = None
+                continue
+            primary_item = next(
+                (ci for ci in product.collection_items.all() if ci.is_primary), None
+            )
+            category = primary_item.collection.name if primary_item else None
+            result[sku] = SkuInfo(
+                sku=product.sku,
+                name=product.name,
+                description=product.long_description,
+                is_published=product.is_published,
+                is_sellable=product.is_sellable,
+                unit=product.unit,
+                category=category,
+                base_price_q=product.base_price_q,
+                availability_policy=product.availability_policy,
+                shelflife_days=product.shelf_life_days,
+            )
+        return result
+
     def search_skus(
         self,
         query: str,

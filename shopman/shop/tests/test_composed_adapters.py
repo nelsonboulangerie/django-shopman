@@ -80,6 +80,21 @@ class TestComposedSkuValidator:
         assert results["FARINHA-T65"].valid is True
         assert results["NOPE"].valid is False
 
+    def test_get_sku_infos_mixed_matches_singular(self, croissant, farinha):
+        from shopman.shop.adapters.sku_validator import ComposedSkuValidator
+
+        v = ComposedSkuValidator()
+        skus = ["CROISSANT", "FARINHA-T65", "NOPE"]
+        batch = v.get_sku_infos(skus)
+        # Same resolution as calling get_sku_info per SKU (product → material → None).
+        assert set(batch) == set(skus)
+        assert batch["CROISSANT"].is_sellable is True
+        assert batch["FARINHA-T65"].is_sellable is False
+        assert batch["FARINHA-T65"].shelflife_days == 180
+        assert batch["NOPE"] is None
+        for sku in skus:
+            assert batch[sku] == v.get_sku_info(sku)
+
     def test_search_merges_and_dedups(self, croissant, farinha):
         from shopman.shop.adapters.sku_validator import ComposedSkuValidator
 

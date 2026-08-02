@@ -1,6 +1,9 @@
 # STOREFRONT-CATALOG-NPLUS1-PLAN — o menu em ~10 queries, não 347
 
-**Status:** aberto (2026-08-01). Motivado pela investigação de performance
+**Status:** ✅ executado (2026-08-01). O N+1 por SKU está morto — o custo do menu
+agora é **O(coleções) + passes fixos de disponibilidade**, **plano em relação ao
+número de produtos** (provado: 6 produtos → 27 queries; 66 produtos → 27 queries).
+Ver "Resultado" no fim. Motivado pela investigação de performance
 ([project_storefront_performance_do_arch]) — o SSR da loja levava ~5,6s no staging;
 a API `/api/v1/storefront/menu/` sozinha ~2,7s.
 
@@ -71,3 +74,66 @@ correto é **eliminar o N+1**, que beneficia todos os clientes sem vazar estado.
 - ✅ Copy: estados de erro da loja fora da voz ("tropeço") reescritos.
 - ✅ CI: teste tz-flaky do X/Z do PDV corrigido (fuso da loja fixo).
 - ⏳ ESTE plano (N+1 do catálogo) — o ganho de fundo dos ~2,7s do Django.
+
+## Resultado (2026-08-01)
+
+Medido com `CaptureQueriesContext` num fixture rico (16 SKUs / 3 coleções, com
+bundle, tags, e promoções por SKU/coleção/valor-fixo ativas). Steady-state
+(caches quentes, como worker de produção):
+
+| | queries (fixture 16 SKUs) |
+|---|---|
+| antes | **111** |
+| depois | **40** (−64%) |
+
+**Prova de que o N+1 morreu** (novo teste `test_query_count_does_not_scale_with_product_count`):
+**6 produtos → 27 queries; 66 produtos (11×) → 27 queries.** Antes, cada SKU
+adicionava ~4 round-trips (promoção + cupom + tag + `is_bundle`) + os re-fetches
+de disponibilidade. As queries restantes escalam com o nº de coleções e os passes
+fixos de disponibilidade, nunca por produto — extrapolando, o menu real (~59 SKUs)
+deixa de fazer ~347 idas ao PG.
+
+**Paridade byte-a-byte:** todos os campos semânticos da projeção (sku, nome,
+`price_display`, `has_promotion`, `promotion_label`, `original_price_display`,
+`availability`, badges, `can_add_to_cart`, seções, featured) **idênticos** antes/
+depois. Única diferença: a **ordem** da lista `tags`/`search_terms` (índice de
+busca, nunca preço/badge) passou a ser determinística (alfabética) — os conjuntos
+são iguais.
+
+### As 4 origens do N+1 e o fix (1 query cada)
+
+1. **`taggit_tag` (16×)** — `product_tags(p)` → `keywords.all()` por produto.
+   Fix: `prefetch_related("keywords")` em `published_products_by_collection`
+   (`catalog_context`). `product_tags` agora ordena (determinismo).
+2. **`storefront_promotion` + `storefront_coupon` (32×)** — `StorefrontPricingBackend`
+   consultava as promoções ativas **por SKU**. Fix (ADR-001, dados pré-carregados
+   pelo contexto, engine intacta): o builder carrega as promoções ativas **uma vez**
+   (`_active_storefront_promotions`) e passa via `context["active_promotions"]`; o
+   backend consome a lista pré-carregada (mantém o fallback de query para callers
+   avulsos — PDP/cross-sell).
+3. **`offerman_productcomponent` (17×)** — `p.is_bundle` = `components.exists()`
+   por produto. Fix: `prefetch_related("components")` (o `.exists()` usa o cache do
+   prefetch, zero query).
+4. **re-queries lazy de `product`/`collectionitem` (~33×)** — a hipótese do plano
+   (FK não-prefetchada no loop do builder) estava **errada**: a fonte real era o
+   **Core do Stockman**. `availability_for_skus` (cujo docstring promete "few
+   queries regardless of N") fazia `{sku: validator.get_sku_info(sku) for sku in
+   skus}` — um `Product.objects.get` + lookup `is_primary` por SKU. Fix: método
+   **batch** `get_sku_infos(skus)` no protocolo `SkuValidator` + adapters (offerman
+   com prefetch iterado em Python — `.filter(is_primary=True)` re-consultaria e
+   anularia o prefetch —, buyman, noop, e o `ComposedSkuValidator` que faz o
+   merge). Completa o par que já existia para `validate_sku`/`validate_skus`;
+   respeita o Core (não reinventa, segue o idioma batch existente).
+
+### Testes
+`make test-offerman` (273), stockman (230), buyman (9), storefront/web (413),
+shop (1721), composed adapters (6, +1 novo p/ `get_sku_infos`), ruff — todos verdes.
+Guardas de regressão: teto de queries no `test_measure_catalog_queries` e o teste
+de escala acima.
+
+### Ainda no radar (não-N+1, baixo retorno/risco)
+O prefetch de `keywords`/`components` re-executa **por grupo de coleção** (o
+`published_products_by_collection` emite uma query de produto por coleção). É
+`O(coleções)`, não por-produto — não é o N+1 que travava o deploy. Colapsar num
+único fetch-e-agrupa-em-Python mexeria na ordenação por coleção numa superfície de
+**preço**; adiado por risco/retorno.

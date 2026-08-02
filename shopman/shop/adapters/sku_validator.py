@@ -44,6 +44,15 @@ class ComposedSkuValidator:
     def get_sku_info(self, sku: str):
         return self._offerman.get_sku_info(sku) or self._buyman.get_sku_info(sku)
 
+    def get_sku_infos(self, skus: list[str]) -> dict:
+        merged = self._offerman.get_sku_infos(skus)
+        missing = [sku for sku, info in merged.items() if info is None]
+        if missing:
+            for sku, info in self._buyman.get_sku_infos(missing).items():
+                if info is not None:
+                    merged[sku] = info
+        return merged
+
     def search_skus(self, query: str, limit: int = 20, include_inactive: bool = False) -> list:
         results = list(self._offerman.search_skus(query, limit=limit, include_inactive=include_inactive))
         seen = {info.sku for info in results}
