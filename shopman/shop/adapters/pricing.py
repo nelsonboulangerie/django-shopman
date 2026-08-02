@@ -40,14 +40,19 @@ class StorefrontPricingBackend:
 
         from shopman.storefront.models import Promotion
 
-        now = timezone.now()
-        promotions = list(
-            Promotion.objects.filter(
-                is_active=True,
-                valid_from__lte=now,
-                valid_until__gte=now,
-            ).exclude(coupons__isnull=False)
-        )
+        # Preloaded by the catalog builder (one query for the whole menu) and
+        # passed through the context, or resolved here for one-off callers (PDP
+        # card, cross-sell) that price a single SKU.
+        promotions = context.get("active_promotions")
+        if promotions is None:
+            now = timezone.now()
+            promotions = list(
+                Promotion.objects.filter(
+                    is_active=True,
+                    valid_from__lte=now,
+                    valid_until__gte=now,
+                ).exclude(coupons__isnull=False)
+            )
 
         match_ctx = {
             "fulfillment_type": fulfillment_type,

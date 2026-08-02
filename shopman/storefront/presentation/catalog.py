@@ -420,6 +420,11 @@ def _build_items(
     # Batch: availability for the storefront scope.
     avail_map = _batch_availability(skus, channel_ref)
 
+    # Batch: active automatic promotions once, evaluated per SKU in memory by the
+    # pricing backend (via the ``active_promotions`` context key) instead of one
+    # Promotion query per SKU.
+    active_promotions = _active_storefront_promotions()
+
     # Bundles nao tem quant proprio: sua disponibilidade e o min() dos
     # componentes (o mais escasso limita), senao o card mostraria "Disponivel"
     # com um componente esgotado. Sobrescreve o raw do bundle antes de resolver.
@@ -444,6 +449,7 @@ def _build_items(
                 "fulfillment_type": fulfillment_type,
                 "customer_group": customer_group,
                 "customer_segment": customer_segment,
+                "active_promotions": active_promotions,
             },
             list_unit_price_q=base_q,
         )
@@ -538,6 +544,29 @@ def _build_items(
             ),
         )
     return result
+
+
+def _active_storefront_promotions() -> list[Any]:
+    """Load the channel's active automatic promotions once, for the whole batch.
+
+    Same set the pricing backend resolves per SKU (active, in validity window,
+    coupon-less) — loading it once here and passing it through the pricing
+    context collapses one ``Promotion`` (+ coupon) query per SKU into a single
+    query for the whole menu. The evaluation per SKU still runs in the backend,
+    in memory, over these preloaded rows.
+    """
+    from django.utils import timezone
+
+    from shopman.storefront.models import Promotion
+
+    now = timezone.now()
+    return list(
+        Promotion.objects.filter(
+            is_active=True,
+            valid_from__lte=now,
+            valid_until__gte=now,
+        ).exclude(coupons__isnull=False)
+    )
 
 
 def _batch_availability(skus: list[str], channel_ref: str) -> dict[str, dict | None]:

@@ -378,7 +378,7 @@ def availability_for_skus(
     # ── Query 1: orderable SKUs from the offering contract ───────────────────
     validator = get_sku_validator()
     validations = validator.validate_skus(skus)
-    sku_infos = {sku: validator.get_sku_info(sku) for sku in skus}
+    sku_infos = validator.get_sku_infos(skus)
     orderable_skus: set[str] = {
         sku
         for sku, validation in validations.items()

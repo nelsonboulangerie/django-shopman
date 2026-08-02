@@ -112,6 +112,23 @@ class SkuValidator(Protocol):
         """
         ...
 
+    def get_sku_infos(self, skus: list[str]) -> dict[str, SkuInfo | None]:
+        """
+        Get SKU information for multiple SKUs at once.
+
+        Batch counterpart of ``get_sku_info`` — implementations must resolve the
+        whole set in a bounded number of queries (not one per SKU) so callers
+        like ``availability_for_skus`` keep their "few queries regardless of N"
+        contract.
+
+        Args:
+            skus: List of product codes
+
+        Returns:
+            Dict[sku, SkuInfo | None] with an entry for every requested SKU
+        """
+        ...
+
     def search_skus(
         self,
         query: str,

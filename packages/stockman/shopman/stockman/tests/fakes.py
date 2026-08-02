@@ -14,6 +14,11 @@ class OrderableSkuValidator:
     def validate_skus(self, skus: list[str]) -> dict[str, SkuValidationResult]:
         return {sku: self.validate_sku(sku) for sku in skus}
 
+    def get_sku_infos(self, skus: list[str]) -> dict[str, SkuInfo | None]:
+        # Delegates to get_sku_info so subclasses that override it (paused,
+        # perishable, demand-ok, …) drive the batch result too.
+        return {sku: self.get_sku_info(sku) for sku in skus}
+
     def get_sku_info(self, sku: str) -> SkuInfo | None:
         return SkuInfo(
             sku=sku,

@@ -86,6 +86,18 @@ class NoopSkuValidator:
             metadata=None,
         )
 
+    def get_sku_infos(self, skus: list[str]) -> dict[str, SkuInfo | None]:
+        """
+        Get SKU information for multiple SKUs. Returns minimal defaults for each.
+
+        Args:
+            skus: List of product codes.
+
+        Returns:
+            Dict mapping each SKU to a placeholder SkuInfo.
+        """
+        return {sku: self.get_sku_info(sku) for sku in skus}
+
     def search_skus(
         self,
         query: str,
