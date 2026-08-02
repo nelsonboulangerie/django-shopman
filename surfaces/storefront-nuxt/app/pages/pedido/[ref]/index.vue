@@ -13,6 +13,7 @@ import {
 } from '~/presentation/orderTracking'
 import { countdownPct, deadlineCountdown, isCountdownUrgent, serverClockOffsetMs } from '~/presentation/deadline'
 import { orderAccessErrorView } from '~/presentation/orderAccess'
+import { showsPaymentBlock } from '~/presentation/payment'
 import {
   canShareNatively,
   orderShareUrl,
@@ -76,9 +77,15 @@ const statusPanelIcon = computed(() => trackingPanelIcon(promiseTone.value))
 // de pagamento — o promise carrega o método e o payload (Pix com/sem código, ou
 // cartão com link). O countdown do Pix é o próprio `promise.deadline_at`.
 const showPaymentBlock = computed(() => {
-  const p = tracking.value?.promise
-  if (!p) return false
-  return p.payment_method === 'pix' || (p.payment_method === 'card' && Boolean(p.checkout_url))
+  const t = tracking.value
+  if (!t?.promise) return false
+  return showsPaymentBlock({
+    payment_method: t.promise.payment_method,
+    pix_qr_code: t.promise.pix_qr_code,
+    pix_copy_paste: t.promise.pix_copy_paste,
+    checkout_url: t.promise.checkout_url,
+    mock_payment_enabled: t.mock_payment_enabled,
+  })
 })
 // "Fale conosco" em destaque quando há risco (danger) e quando o pedido saiu para
 // entrega — o trecho mais sensível, com courier terceirizado e sem rastreio.

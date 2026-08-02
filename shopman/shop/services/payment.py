@@ -521,6 +521,23 @@ def verify_gateway_before_timeout_cancel(order) -> str:
     return "paid"
 
 
+def mock_capture_allowed() -> bool:
+    """A captura simulada está liberada NESTE ambiente?
+
+    Dono ÚNICO da pergunta. Ela era respondida em dois lugares com fórmulas
+    diferentes: o endpoint aceitava ``DEBUG or SHOPMAN_ALLOW_MOCK_PAYMENT_ADAPTERS``
+    e a projection do acompanhamento olhava só ``DEBUG``. Em staging
+    (DEBUG=False + adapters mock) isso deixava o botão "Simular pagamento"
+    invisível enquanto o endpoint por trás dele funcionava — o testador não
+    tinha como capturar nada, em Pix ou cartão.
+    """
+    from django.conf import settings
+
+    return bool(
+        settings.DEBUG or getattr(settings, "SHOPMAN_ALLOW_MOCK_PAYMENT_ADAPTERS", False)
+    )
+
+
 def mock_confirm(order) -> bool:
     """DEV helper: simulate capture for local payment testing.
 

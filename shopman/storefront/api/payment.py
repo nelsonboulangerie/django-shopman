@@ -32,10 +32,15 @@ PAYMENT_RATE_LIMIT_RETRY_SECONDS = 30
 
 
 def mock_payment_enabled() -> bool:
-    """"Simular pagamento" liberado em DEBUG ou com adapters mock (staging)."""
-    from django.conf import settings
+    """"Simular pagamento" liberado em DEBUG ou com adapters mock (staging).
 
-    return bool(settings.DEBUG or getattr(settings, "SHOPMAN_ALLOW_MOCK_PAYMENT_ADAPTERS", False))
+    Delega ao dono da pergunta em ``shop.services.payment`` — o mesmo que a
+    projection do acompanhamento consulta para decidir se mostra o botão. Antes
+    cada lado tinha a sua fórmula e elas divergiam em staging.
+    """
+    from shopman.shop.services import payment as payment_service
+
+    return payment_service.mock_capture_allowed()
 
 
 def _rate_limited_response() -> Response:

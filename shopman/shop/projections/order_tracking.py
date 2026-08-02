@@ -29,6 +29,7 @@ from shopman.orderman.models import Directive
 from shopman.shop.omotenashi import resolve_copy
 from shopman.shop.projections.interaction_context import InteractionContext
 from shopman.shop.projections.types import Action
+from shopman.shop.services import payment as payment_service
 from shopman.shop.services import payment_status
 from shopman.shop.services.business_calendar import (
     BusinessCalendarState,
@@ -267,7 +268,7 @@ def build_tracking(order, *, is_debug: bool = False) -> TrackingData:
     )
 
     can_cancel = payment_status.can_cancel(order)
-    can_mock_confirm_payment = _can_mock_confirm_payment(order, is_debug=is_debug)
+    can_mock_confirm_payment = _can_mock_confirm_payment(order)
     actions = _build_order_actions(
         order,
         can_cancel=can_cancel,
@@ -409,8 +410,16 @@ def _payment_info(order) -> tuple[bool, bool, str | None, str | None]:
     return True, False, "payment_pending", payment.get("expires_at") or None
 
 
-def _can_mock_confirm_payment(order, *, is_debug: bool) -> bool:
-    if not is_debug:
+def _can_mock_confirm_payment(order) -> bool:
+    """Este pedido pode receber uma captura simulada AGORA?
+
+    Pergunta o ambiente ao dono dela (``payment_service.mock_capture_allowed``),
+    não a ``is_debug`` — os dois divergiam em staging. O resto é estado do
+    pedido: precisa de intent vivo e de um status ainda capturável (o cartão
+    autorizado do ``payment_mock`` entra aqui, e é o caso em que o testador
+    mais precisa do botão, já que o mock não abre página de gateway).
+    """
+    if not payment_service.mock_capture_allowed():
         return False
     if order.status not in {"new", "accepted"}:
         return False

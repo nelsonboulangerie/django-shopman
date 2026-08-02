@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import type { TrackingPromiseProjection, TrackingCopyProjection } from '~/types/shopman'
-import { paymentMethodLabel } from '~/presentation/payment'
+import { canSimulatePayment, paymentMethodLabel } from '~/presentation/payment'
 
 // Bloco de pagamento INLINE no acompanhamento (PAYMENT-TRACKING-MERGE). Não é
 // mais uma tela: o promise carrega o método e o payload (QR/copia-e-cola/link do
@@ -26,8 +26,12 @@ const isPix = computed(() => method.value === 'pix')
 // Pix ainda sem código (a loja confere antes, com `timing=post_commit`): o card
 // mostra "vai aparecer aqui" sem afirmar que já está sendo gerado.
 const esperandoCodigoPix = computed(() => isPix.value && !hasPixCode.value)
-// Há algo a capturar de verdade (para a caixa de "simular").
-const canPayNow = computed(() => hasPixCode.value || Boolean(props.promise.checkout_url))
+// A caixa de captura simulada. A regra mora em presentation/payment.ts, junto
+// com a que a página usa para mostrar o bloco — uma pergunta, um dono.
+const podeSimular = computed(() => canSimulatePayment({
+  payment_method: method.value,
+  mock_payment_enabled: props.mockEnabled,
+}))
 
 async function copyPix () {
   if (!props.promise.pix_copy_paste || !import.meta.client) return
@@ -98,8 +102,17 @@ async function copyPix () {
         <p class="shop-meta">Assim que o pagamento cair, atualizamos esta tela automaticamente.</p>
       </div>
 
+      <!-- Cartão sem página do gateway (payment_mock): sem isto o bloco ficaria
+           só com o total, e o testador não saberia o que fazer. -->
+      <div v-if="isCard && !promise.checkout_url && podeSimular" class="shop-stack-tight rounded-lg border p-4">
+        <div class="flex items-start gap-3">
+          <Icon name="lucide:credit-card" :size="22" class="mt-0.5 shrink-0 text-muted-foreground" />
+          <p class="shop-muted">Neste ambiente o cartão não abre a página do gateway. Use a captura simulada abaixo.</p>
+        </div>
+      </div>
+
       <!-- Ambiente de teste: captura por gateway simulado (DEBUG/staging). -->
-      <div v-if="mockEnabled && canPayNow" class="shop-stack-tight rounded-lg border border-dashed bg-muted/40 p-4">
+      <div v-if="podeSimular" class="shop-stack-tight rounded-lg border border-dashed bg-muted/40 p-4">
         <p class="shop-meta">Ambiente de teste · captura por gateway simulado</p>
         <UiButton
           variant="outline"
