@@ -243,6 +243,39 @@ class Command(BaseCommand):
         self._seed_directives()
         self._seed_fiscal_example()
 
+    def _shop_operates_on(self, day: date) -> bool:
+        """A loja abre neste dia? Pergunta ao calendário, nunca a um literal.
+
+        O seed datava produção, encomenda e histórico com ``weekday() == 6``
+        (domingo) copiado à mão do horário da Nelson. Copiar a resposta faz as
+        duas fontes divergirem no instante em que o horário muda — no staging
+        24/7 a loja abre domingo, e os literais deixariam o dia sem fornada
+        planejada e sem histórico. ``Shop.opening_hours`` (+ feriados) é o dono
+        único da pergunta.
+        """
+        from shopman.shop.services.business_calendar import is_open_on
+
+        # Shop carregado uma vez: o histórico pergunta por 35 dias e a encomenda
+        # por produto × 7 dias — sem cache seria uma query por pergunta.
+        shop = getattr(self, "_calendar_shop", None)
+        if shop is None:
+            from shopman.shop.models import Shop
+
+            shop = self._calendar_shop = Shop.load()
+        return is_open_on(day, shop=shop)
+
+    def _staging_autopilot_enabled(self) -> bool:
+        """True quando este deployment roda o piloto automático de staging.
+
+        Uma chave só para "staging se opera sozinho": o mesmo interruptor que
+        liga o operador de mentira também abre a loja 24/7. Duas perguntas
+        separadas divergiriam — loja fechada com piloto ligado é pedido que
+        nunca sai do lugar.
+        """
+        from shopman.shop.services import staging_autopilot
+
+        return staging_autopilot.is_enabled()
+
     # ────────────────────────────────────────────────────────────────
     # Shop
     # ────────────────────────────────────────────────────────────────
@@ -263,6 +296,34 @@ class Command(BaseCommand):
             {"date": _next_occurrence(12, 31), "label": "Réveillon"},
             {"date": _next_occurrence(1, 1), "label": "Confraternização Universal"},
         ]
+
+        opening_hours = {
+            "monday":    {"open": "09:00", "close": "18:00"},
+            "tuesday":   {"open": "09:00", "close": "18:00"},
+            "wednesday": {"open": "09:00", "close": "18:00"},
+            "thursday":  {"open": "09:00", "close": "18:00"},
+            "friday":    {"open": "09:00", "close": "18:00"},
+            "saturday":  {"open": "09:00", "close": "18:00"},
+            # sunday: fechado
+        }
+
+        # Staging com piloto automático: a loja abre a semana inteira, o dia
+        # inteiro. Um testador que só tem a noite livre (ou o domingo) precisa
+        # conseguir pedir — com o horário real da Nelson ele bate em "fechado"
+        # e o aceite do pedido é adiado para a próxima abertura, que pode ser
+        # no dia seguinte. Mesmo motivo para zerar os feriados.
+        if self._staging_autopilot_enabled():
+            opening_hours = {
+                day: {"open": "00:00", "close": "23:59"}
+                for day in (
+                    "monday", "tuesday", "wednesday", "thursday",
+                    "friday", "saturday", "sunday",
+                )
+            }
+            closed_dates = []
+            self.stdout.write(
+                "  🤖 Piloto automático de staging: loja aberta 24/7, sem feriados."
+            )
 
         _, created = Shop.objects.update_or_create(
             pk=1,
@@ -321,15 +382,7 @@ class Command(BaseCommand):
                     "Embalar para presente",
                     "Cortar ao meio",
                 ],
-                "opening_hours": {
-                    "monday":    {"open": "09:00", "close": "18:00"},
-                    "tuesday":   {"open": "09:00", "close": "18:00"},
-                    "wednesday": {"open": "09:00", "close": "18:00"},
-                    "thursday":  {"open": "09:00", "close": "18:00"},
-                    "friday":    {"open": "09:00", "close": "18:00"},
-                    "saturday":  {"open": "09:00", "close": "18:00"},
-                    # sunday: fechado
-                },
+                "opening_hours": opening_hours,
                 "defaults": {
                     "menu": {
                         "dynamic_collections": ["featured", "fresh_from_oven", "new_arrivals"],
@@ -2574,7 +2627,7 @@ class Command(BaseCommand):
 
         for offset in range(1, 8):
             target = today + timedelta(days=offset)
-            if target.weekday() == 6:  # domingo fechado (seg–sáb, 9h–18h)
+            if not self._shop_operates_on(target):
                 continue
             day_multiplier = Decimal("1.25") if target.weekday() in (4, 5) else Decimal("1")
             for index, (ref, qty, _start_hm, _finish_hm) in enumerate(production_plan):
@@ -2629,7 +2682,7 @@ class Command(BaseCommand):
                 continue  # sem prateleira física hoje = não estocado para venda direta
             for offset in range(1, 8):
                 target = today + timedelta(days=offset)
-                if target.weekday() == 6:  # domingo fechado (seg–sáb, 9h–18h)
+                if not self._shop_operates_on(target):
                     continue
                 day_multiplier = Decimal("1.25") if target.weekday() in (4, 5) else Decimal("1")
                 stock.receive(
@@ -2646,7 +2699,7 @@ class Command(BaseCommand):
         # pickup slots and waste patterns.
         for days_ago in range(1, 36):
             target = today - timedelta(days=days_ago)
-            if target.weekday() == 6:  # domingo fechado (seg–sáb, 9h–18h)
+            if not self._shop_operates_on(target):
                 continue
             weekday_multiplier = Decimal("1.20") if target.weekday() in (4, 5) else Decimal("1")
             for index, (ref, qty, start_hm, finish_hm) in enumerate(production_plan):
@@ -3048,9 +3101,11 @@ class Command(BaseCommand):
             day = now - timedelta(days=days_ago)
             weekday = day.weekday()  # 0=Mon, 4=Fri, 5=Sat, 6=Sun
 
-            # Fechado aos domingos — Nelson opera seg–sáb, 9h–18h
-            # (espelha Shop.opening_hours; confirmado por Pablo em 2026-07-24).
-            if weekday == 6:
+            # Dia sem expediente não gera pedido. Quem responde "a loja abre
+            # nesse dia?" é o calendário (Shop.opening_hours + feriados), nunca
+            # um literal aqui — no staging 24/7 a resposta muda, e um literal
+            # deixaria buracos de domingo num histórico de loja que abre todo dia.
+            if not self._shop_operates_on(day.date()):
                 continue
 
             # Base order count

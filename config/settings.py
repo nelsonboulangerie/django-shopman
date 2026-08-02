@@ -954,6 +954,28 @@ SHOPMAN_MOCK_PIX_CONFIRM_DELAY_SECONDS = int(
     os.environ.get("SHOPMAN_MOCK_PIX_CONFIRM_DELAY_SECONDS", "10")
 )
 
+# ── Piloto automático de staging ─────────────────────────────────────
+# Um testador sozinho no staging não tem cozinha nem gestor do outro lado: sem
+# ninguém no backstage, o pedido dele para em "Aceito" e a cascata de estados
+# nunca é vista até o fim. Com isto ligado, cada mudança de status agenda uma
+# Directive `staging.autopilot` que dá o PRÓXIMO passo do operador — pelos
+# MESMOS services do gestor (confirm_order/advance_order), com os mesmos
+# guardas. Não existe caminho de lifecycle paralelo: só um operador de mentira
+# apertando os botões de verdade.
+#
+# ⚠️ NUNCA em produção — o check SHOPMAN_E012 recusa o boot se
+# SHOPMAN_ENVIRONMENT=production, e o próprio agendador se cala por garantia.
+SHOPMAN_STAGING_AUTOPILOT = _env_bool("SHOPMAN_STAGING_AUTOPILOT", False)
+# Espera entre um passo e o outro. Curta o bastante para o testador ver o
+# pedido inteiro em poucos minutos, longa o bastante para ele LER cada estado.
+SHOPMAN_STAGING_AUTOPILOT_DELAY_SECONDS = _env_int(
+    "SHOPMAN_STAGING_AUTOPILOT_DELAY_SECONDS", 30
+)
+# Canais cobertos. Vazio (default) = todos. Preencher para deixar um canal de
+# fora quando alguém estiver testando o backstage de verdade nele (ex.: "web"
+# roda sozinho enquanto o PDV fica na mão do operador).
+SHOPMAN_STAGING_AUTOPILOT_CHANNELS = _csv_env_list("SHOPMAN_STAGING_AUTOPILOT_CHANNELS")
+
 # Observabilidade da fila de directives (ADR-003) — thresholds do
 # check_directive_health, que roda no ciclo do maintenance_worker.
 # Defaults seguem a ADR ("failed > 5 em 1h", "queued com available_at

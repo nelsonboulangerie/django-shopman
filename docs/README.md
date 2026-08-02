@@ -86,6 +86,7 @@ Guias de domínio seguem a estrutura: Conceitos → Modelos → Serviços → Pr
 | [Demo personas](guides/demo-personas.md) | demo | Personas do seed Nelson |
 | [Omotenashi QA](guides/omotenashi-qa.md) | QA | Matriz de QA omotenashi (mobile/tablet/desktop) |
 | [Catalog exports](guides/catalog_exports.md) | catálogo | Exportação de catálogo (feeds/sync externo) |
+| [Piloto automático de staging](guides/staging-autopilot.md) | staging | Pedido anda sozinho até "concluído", loja 24/7, sem operador |
 | [Deploy](guides/deploy.md) | infra | Imagem app, compose profiles e `make deploy-*` |
 | [Deploy DigitalOcean](guides/deploy-digitalocean.md) | infra | App Platform, staging e gotchas de spec/secrets |
 | [Production upgrades](guides/production-upgrades.md) | infra | Upgrades pós-go-live (expand-contract, ADR-015) |

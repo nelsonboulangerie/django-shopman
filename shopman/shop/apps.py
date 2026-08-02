@@ -208,6 +208,30 @@ class ShopmanConfig(AppConfig):
         )
         logger.info("ShopmanConfig: lifecycle signal connected.")
 
+        self._connect_staging_autopilot_signal(order_changed)
+
+    def _connect_staging_autopilot_signal(self, order_changed):
+        """Liga o operador de mentira do staging — só onde ele pode agir.
+
+        Fora de staging/dev (ou com a flag desligada) o receiver nem é
+        conectado: em produção nenhum pedido de cliente real anda sozinho.
+        """
+        from shopman.shop.services import staging_autopilot
+
+        if not staging_autopilot.is_enabled():
+            return
+
+        order_changed.connect(
+            staging_autopilot.on_order_changed,
+            dispatch_uid="shopman.shop.staging_autopilot.on_order_changed",
+            weak=False,
+        )
+        logger.warning(
+            "ShopmanConfig: piloto automático de STAGING ligado — pedidos avançam "
+            "sozinhos a cada %ds, sem operador.",
+            staging_autopilot.delay_seconds(),
+        )
+
     def _connect_production_lifecycle_signal(self):
         """Connect Core signal production_changed → production_lifecycle.dispatch_production()."""
         from shopman.craftsman.signals import production_changed

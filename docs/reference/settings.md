@@ -272,6 +272,24 @@ enfileirada quando o pedido carrega `data.fiscal.issue_document=true`.
 
 **Guia:** [lifecycle.md](../guides/lifecycle.md)
 
+### Piloto automático de staging
+
+O staging se opera sozinho para quem testa de fora — sem cozinha e sem gestor do
+outro lado, o pedido percorre `novo → aceito → em preparo → pronto → concluído`
+por conta própria, pelos mesmos services do gestor.
+
+| Setting | Tipo | Default | Descrição |
+|---------|------|---------|-----------|
+| `SHOPMAN_STAGING_AUTOPILOT` | env bool | `false` | Liga o piloto **e** faz o `seed` abrir a loja 24/7, sem feriados |
+| `SHOPMAN_STAGING_AUTOPILOT_DELAY_SECONDS` | env int | `30` | Espera entre um passo e o outro |
+| `SHOPMAN_STAGING_AUTOPILOT_CHANNELS` | env CSV | vazio (= todos) | `channel_ref`s cobertos; preencher deixa os demais na mão do operador |
+
+⚠️ **Nunca em produção.** `SHOPMAN_E012` recusa o boot com
+`SHOPMAN_ENVIRONMENT=production`; em staging o boot emite `SHOPMAN_W011`.
+Mudou a flag? Rode o `seed` de novo — o horário 24/7 é dado, não código.
+
+**Guia:** [staging-autopilot.md](../guides/staging-autopilot.md)
+
 ### Webhook
 
 **Dict:** `SHOPMAN_WEBHOOK = {}`

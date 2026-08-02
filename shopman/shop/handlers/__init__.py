@@ -37,6 +37,8 @@ ALL_HANDLERS = [
     "shopman.shop.handlers.broadcast.BroadcastNotifyHandler",
     # Mock PIX (dev/test only; only fires when payment_mock scheduled a directive)
     "shopman.shop.handlers.mock_pix.MockPixConfirmHandler",
+    # Piloto automático de staging (nunca em produção — o handler se recusa a agir)
+    "shopman.shop.handlers.staging_autopilot.StagingAutopilotHandler",
     # Fulfillment
     "shopman.shop.handlers.fulfillment.FulfillmentCreateHandler",
     "shopman.shop.handlers.fulfillment.FulfillmentUpdateHandler",
@@ -83,6 +85,7 @@ def register_all() -> None:
     _register_payment_timeout_handler()
     _register_payment_refund_handler()
     _register_mock_pix_handler()
+    _register_staging_autopilot_handler()
     _register_customer_strategies()
     _register_fiscal_handlers()
     _register_accounting_handler()
@@ -164,6 +167,21 @@ def _register_mock_pix_handler() -> None:
         return
     from shopman.shop.handlers.mock_pix import MockPixConfirmHandler
     registry.register_directive_handler(MockPixConfirmHandler())
+
+
+def _register_staging_autopilot_handler() -> None:
+    """Registra o piloto automático só onde ele pode agir (staging/dev).
+
+    Mesma lógica do mock PIX: nada publica esse tópico em produção, então o
+    handler nem precisa existir lá. Se uma directive órfã sobrar de um staging
+    antigo, o próprio handler recusa como falha terminal.
+    """
+    from shopman.shop.services import staging_autopilot
+
+    if not staging_autopilot.is_enabled():
+        return
+    from shopman.shop.handlers.staging_autopilot import StagingAutopilotHandler
+    registry.register_directive_handler(StagingAutopilotHandler())
 
 
 def _register_customer_strategies() -> None:

@@ -259,6 +259,29 @@ envs:
     value: "8"
     scope: RUN_TIME
     type: GENERAL
+  # Piloto automático: o testador do staging não tem cozinha nem gestor do outro
+  # lado. Com isto ligado, cada mudança de status agenda uma Directive
+  # `staging.autopilot` que dá o próximo passo do operador (pelos MESMOS services
+  # do gestor), e o pedido percorre novo → aceito → em preparo → pronto →
+  # concluído sozinho. O seed também abre a loja 24/7 sob esta flag — sem isso,
+  # quem testa às 22h ou no domingo bate em "fechado".
+  # ⚠️ NUNCA replicar em produção: o check SHOPMAN_E012 recusa o boot lá.
+  - key: SHOPMAN_STAGING_AUTOPILOT
+    value: "true"
+    scope: RUN_TIME
+    type: GENERAL
+  # Espera entre um passo e o outro. 30s dá ~2 min do pedido ao "concluído" —
+  # rápido para o teste, lento o bastante para LER cada estado na tela.
+  - key: SHOPMAN_STAGING_AUTOPILOT_DELAY_SECONDS
+    value: "30"
+    scope: RUN_TIME
+    type: GENERAL
+  # Vazio = todos os canais. Preencher (ex.: "web") deixa o PDV/iFood na mão do
+  # operador quando alguém estiver testando o backstage de verdade.
+  - key: SHOPMAN_STAGING_AUTOPILOT_CHANNELS
+    value: ""
+    scope: RUN_TIME
+    type: GENERAL
   - key: EFI_SANDBOX
     value: "true"
     scope: RUN_TIME

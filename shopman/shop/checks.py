@@ -15,6 +15,7 @@ Errors (block runserver/migrate --deploy in production):
   SHOPMAN_E009  Real payment adapter is missing required credentials/files
   SHOPMAN_E010  Debug OTP exposure enabled outside non-production
   SHOPMAN_E011  Machine courier adapter enabled without API credentials
+  SHOPMAN_E012  Piloto automático de staging habilitado em produção
 
 Warnings (non-blocking, logged at startup):
   SHOPMAN_W001  Database backend is SQLite in local/debug mode
@@ -25,6 +26,7 @@ Warnings (non-blocking, logged at startup):
   SHOPMAN_W006  Mock payment adapter explicitly allowed outside DEBUG
   SHOPMAN_W007  Debug OTP exposure explicitly allowed in staging
   SHOPMAN_W010  Machine courier enabled without webhook token (status via polling only)
+  SHOPMAN_W011  Piloto automático de staging ligado (pedidos andam sozinhos)
 """
 
 from __future__ import annotations
@@ -406,6 +408,44 @@ def check_debug_otp_exposure(app_configs, **kwargs):
                     "SHOPMAN_EXPOSE_DEBUG_OTP antes de go-live."
                 ),
                 id="SHOPMAN_W007",
+            )
+        )
+    return messages
+
+
+@register(deploy=True)
+def check_staging_autopilot(app_configs, **kwargs):
+    """O piloto automático move pedidos sozinho — só fora de produção.
+
+    Em produção isto avançaria pedido de cliente de verdade sem ninguém ter
+    encostado (cobrando, baixando estoque, emitindo nota). É erro de boot, não
+    aviso.
+    """
+    messages = []
+    if not getattr(settings, "SHOPMAN_STAGING_AUTOPILOT", False):
+        return messages
+
+    environment = str(getattr(settings, "SHOPMAN_ENVIRONMENT", "production")).strip().lower()
+    if environment not in {"development", "dev", "local", "staging"}:
+        messages.append(
+            Error(
+                "SHOPMAN_STAGING_AUTOPILOT está habilitado fora de ambiente não produtivo.",
+                hint=(
+                    "Desabilite SHOPMAN_STAGING_AUTOPILOT. Em produção ele avançaria pedidos "
+                    "de clientes reais sem operador — cobrando, baixando estoque e emitindo nota."
+                ),
+                id="SHOPMAN_E012",
+            )
+        )
+    else:
+        messages.append(
+            Warning(
+                "Piloto automático de staging ligado: pedidos avançam sozinhos até 'concluído'.",
+                hint=(
+                    "Só para staging/dev, onde o testador não tem cozinha nem gestor do outro "
+                    "lado. Remova SHOPMAN_STAGING_AUTOPILOT antes do go-live."
+                ),
+                id="SHOPMAN_W011",
             )
         )
     return messages

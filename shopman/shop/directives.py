@@ -35,6 +35,11 @@ COURIER_SYNC = "courier.sync"
 CONFIRMATION_TIMEOUT = "confirmation.timeout"
 ORDER_STALE_NEW_ALERT = "order.stale_new_alert"
 
+# Piloto automático de staging (nunca em produção — ver SHOPMAN_E012)
+# Dá o próximo passo do operador num pedido de staging, para o testador ver a
+# cascata inteira sem ninguém no backstage.
+STAGING_AUTOPILOT = "staging.autopilot"
+
 # Payment
 PAYMENT_TIMEOUT = "payment.timeout"
 PAYMENT_REFUND = "payment.refund"  # retry assíncrono de estorno com backoff
