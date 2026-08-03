@@ -832,6 +832,15 @@ async function submitCheckout () {
     const data = httpError(e).data || {}
     const field = typeof data.field === 'string' ? data.field : ''
     serverError.value = errorDetail(e, 'Não foi possível confirmar o pedido.')
+    // Preço/cupom mudou entre a revisão e o confirm: o servidor já reprecificou a
+    // sessão (o guardião barrou a cobrança surpresa). Reprecificamos a TELA para o
+    // sheet mostrar o novo total em vez de deixar o valor velho ao lado do aviso —
+    // o cliente reconfirma sobre o número certo (o próximo envio casa a baseline).
+    if (data.error_code === 'total_changed') {
+      await refresh()
+      if (import.meta.client) useSonner.error(serverError.value)
+      return
+    }
     // Dia fechado: o backend sugere a encomenda (preorder_hint) e a próxima data.
     // Mostramos a dica junto ao campo de data, sem interferir no fieldError.
     if (typeof data.preorder_hint === 'string' && data.preorder_hint) {

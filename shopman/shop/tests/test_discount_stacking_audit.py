@@ -181,3 +181,56 @@ class DiscountStackingAuditTests(TestCase):
         self.assertEqual(applied, reported,
                          f"charged dropped {applied} but reported {reported} discounted")
         self.assertEqual(applied, 999, f"manual discount under-applied: {applied} of 999")
+
+    # ── HOLE 3: guard exposes the fresh total (structured) so the modal can
+    # show old→new instead of a stale number beside the warning. ───────────────
+    def test_total_changed_guard_carries_new_total(self) -> None:
+        from shopman.orderman.exceptions import ValidationError as OrderingValidationError
+
+        from shopman.shop.services import checkout as checkout_service
+        from shopman.storefront.models import Promotion
+
+        key = self._open_session()
+        # Line persisted at R$10 with NO promo active → the customer sees R$10.
+        ModifyService.modify_session(
+            session_key=key, channel_ref="web",
+            ops=[{"op": "add_line", "sku": self.product.sku, "qty": 1, "unit_price_q": 1000}],
+        )
+        # A 50%-off promo appears AFTER review; the confirm reprice picks it up (→R$5).
+        now = timezone.now()
+        Promotion.objects.create(
+            name="Mudou", type=Promotion.PERCENT, value=50, is_active=True,
+            valid_from=now - timedelta(days=1), valid_until=now + timedelta(days=1),
+        )
+        cache.clear()
+
+        # Client sends what it displayed (R$10). Guard must block the surprise AND
+        # carry the fresh total (R$5) + the old one, so the UI can show old→new.
+        with self.assertRaises(OrderingValidationError) as caught:
+            checkout_service.process_ops(
+                session_key=key, channel_ref="web",
+                ops=[{"op": "set_data", "path": "note", "value": "x"}],
+                idempotency_key="audit-h3",
+                expected_total_q=1000,
+            )
+        self.assertEqual(caught.exception.code, "total_changed")
+        self.assertEqual(caught.exception.context.get("new_total_q"), 500)
+        self.assertEqual(caught.exception.context.get("old_total_q"), 1000)
+
+    def test_total_changed_maps_to_structured_api_error(self) -> None:
+        # Contrato que o modal do checkout consome: total_changed NÃO vira erro de
+        # form-field (que descartaria o contexto), e sim erro estruturado com
+        # error_code + context (novo/antigo total).
+        from shopman.orderman.exceptions import ValidationError as OrderingValidationError
+
+        from shopman.shop.services import checkout as checkout_service
+
+        exc = OrderingValidationError(
+            code="total_changed", message="mudou",
+            context={"new_total_q": 500, "old_total_q": 1000},
+        )
+        self.assertIsNone(checkout_service.map_checkout_error(exc))
+        dom = checkout_service.map_order_error(exc)
+        self.assertEqual(dom.error_code, "total_changed")
+        self.assertEqual(dom.context.get("new_total_q"), 500)
+        self.assertEqual(dom.http_status, 400)
