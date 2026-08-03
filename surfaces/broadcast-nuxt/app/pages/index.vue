@@ -37,7 +37,7 @@ async function confirmDiscard() {
   busyPk.value = null;
 }
 
-useHead({ title: "Painel · Broadcast" });
+useHead({ title: "Painel · Marketing" });
 </script>
 
 <template>

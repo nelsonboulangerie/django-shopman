@@ -24,7 +24,7 @@ const tabs = [
          isso ela empurra o header e a página inteira ganha scroll horizontal. -->
     <nav
       class="flex min-w-0 flex-1 items-center gap-0.5 overflow-x-auto rounded-md bg-muted p-1"
-      aria-label="Seções do Broadcast"
+      aria-label="Seções do Marketing"
     >
       <NuxtLink
         v-for="t in tabs"

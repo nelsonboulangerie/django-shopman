@@ -43,7 +43,7 @@ function isActive(to: string): boolean {
       <p
         class="text-xs font-medium uppercase tracking-wider text-muted-foreground"
       >
-        Fournil
+        Produção
       </p>
       <h1 class="truncate text-lg font-bold leading-tight">{{ title }}</h1>
     </div>

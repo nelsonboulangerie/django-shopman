@@ -38,7 +38,7 @@ async function onSubmit(payload: Record<string, unknown>) {
   if (ok) close();
 }
 
-useHead({ title: "Regras · Broadcast" });
+useHead({ title: "Regras · Marketing" });
 </script>
 
 <template>

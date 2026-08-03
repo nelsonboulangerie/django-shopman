@@ -41,7 +41,7 @@ const appIconName = computed(() => (props.appIcon.startsWith("lucide:") ? props.
     v-if="!isCollapsed"
     class="flex shrink-0 flex-col bg-rail py-2 text-rail-foreground print:hidden"
     :class="isExtended ? 'w-52 px-2' : 'w-14 items-center px-2'"
-    :aria-label="`Barra do ${appLabel}`"
+    :aria-label="`Barra do app ${appLabel}`"
     :data-rail-state="state"
   >
     <!-- Identidade + voltar à Central (padrão Odoo): o ícone forte do app é também o
@@ -80,7 +80,7 @@ const appIconName = computed(() => (props.appIcon.startsWith("lucide:") ? props.
     </component>
 
     <!-- Funções específicas do app (RailItem no slot). -->
-    <nav class="flex w-full flex-col gap-0.5" :aria-label="`Funções do ${appLabel}`">
+    <nav class="flex w-full flex-col gap-0.5" :aria-label="`Funções do app ${appLabel}`">
       <slot name="nav" />
     </nav>
 

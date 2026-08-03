@@ -3,7 +3,7 @@ import { test, expect } from "@playwright/test";
 // Banner de conexão (kit) — global no shell, aparece em qualquer estado do Fournil.
 const authed = { name: "e2e_session", value: "authed", domain: "127.0.0.1", path: "/" };
 
-test.describe("Fournil — banner de conexão", () => {
+test.describe("Produção — banner de conexão", () => {
   test("aparece ao cair a rede e some ao voltar", async ({ page, context }) => {
     await context.addCookies([authed]);
     await page.goto("/");
