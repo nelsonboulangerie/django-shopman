@@ -1024,16 +1024,25 @@ class ManualDiscountModifier:
         if discount_q <= 0:
             return
 
+        # O resíduo do rateio (dust do arredondamento) vai na ÚLTIMA linha
+        # ELEGÍVEL — nunca no último ÍNDICE, que pode ser a linha
+        # __DELIVERY_FEE__ (pulada). Senão o resíduo some e o total cobrado
+        # cai por MENOS (ou mais) que o discount_q registrado. Mesmo fix do
+        # LoyaltyRedeemModifier.
+        eligible = [
+            i for i, item in enumerate(items)
+            if not _is_non_merchandise_line(item)
+            and not _price_is_frozen(item)
+            and item.get("line_total_q", 0) > 0
+        ]
+        last_eligible = eligible[-1] if eligible else None
+
         remaining = discount_q
         modified = False
-        for i, item in enumerate(items):
-            if _is_non_merchandise_line(item) or _price_is_frozen(item):
-                continue
+        for i in eligible:
+            item = items[i]
             line_total = item.get("line_total_q", 0)
-            if line_total <= 0:
-                continue
-            is_last = i == len(items) - 1
-            if is_last:
+            if i == last_eligible:
                 item_share = remaining
             else:
                 item_share = monetary_div(discount_q * line_total, subtotal_q)
@@ -1049,8 +1058,11 @@ class ManualDiscountModifier:
         if modified:
             session.update_items(items)
 
+        # O desconto REALMENTE aplicado (discount_q menos o que sobrou) — invariante:
+        # total cobrado cai exatamente pelo valor registrado em pricing.
+        applied_q = discount_q - remaining
         pricing["manual_discount"] = {
-            "total_discount_q": discount_q,
+            "total_discount_q": applied_q,
             "label": f"Desconto ({reason})" if reason else "Desconto manual",
         }
         session.pricing = pricing
