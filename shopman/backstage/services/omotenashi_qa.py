@@ -107,7 +107,7 @@ def build_omotenashi_qa_report() -> OmotenashiQAReport:
         _pix_pending_check(),
         _pix_expired_check(),
         _tracking_ready_check(),
-        # Superfícies de operador = apps Nuxt dedicados (gestor./kds./fournil./pos.),
+        # Superfícies de operador = apps Nuxt dedicados (gestor./kds./prod./pdv.),
         # apontados por base URL configurável. O gate browser-QA da loja não as serve
         # → o harness as pula com "surface-not-served" (como o POS), mas a matriz fica
         # completa e documenta a expectativa omotenashi de cada superfície.

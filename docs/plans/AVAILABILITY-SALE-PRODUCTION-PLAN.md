@@ -218,7 +218,7 @@ Mecânica proposta, em 4 movimentos:
 3. **Produção enxerga a demanda**: `craftsman.suggest` ganha um piso de
    demanda REGISTRADA — holds de demanda com `target_date=D` entram na
    sugestão do dia D (além do histórico). Encomendas aparecem no plano do dia
-   (Fournil) na data certa; verificar que KDS/expedição não disparam o pedido
+   (Produção) na data certa; verificar que KDS/expedição não disparam o pedido
    de amanhã hoje (gate por `delivery_date` na fila).
 4. **Prioridade na materialização** (`planning.realize` → transferência de
    holds): pedidos ENVIADOS (`reference=order:*`) materializam antes de
@@ -237,7 +237,7 @@ só quando NÃO há caminho de encomenda no canal; a mensagem oferece a data
 - Política por canal (`ChannelConfig.stock`): o que é encomendável, horizonte
   (`max_preorder_days` já existe no checkout), corte por dia.
 - Produção enxerga a demanda: `suggest_production` considera holds de demanda por
-  data; encomendas aparecem no plano do dia (Fournil) e no KDS na data certa —
+  data; encomendas aparecem no plano do dia (Produção) e no KDS na data certa —
   hoje o pedido de amanhã não pode disparar pra cozinha hoje.
 - Prioridade da fila: pedido ENVIADO ganha prioridade sobre lista de espera de
   sacola (decisão Pablo). Materialização (`planning.realize`) atende primeiro

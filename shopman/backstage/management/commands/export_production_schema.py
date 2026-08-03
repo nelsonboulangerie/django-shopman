@@ -1,7 +1,7 @@
 """Generate the production contract mirror consumed by the production-nuxt surface.
 
 The contract's single source of truth is the projection dataclasses in
-``shopman.backstage.projections.production``. The fournil app used to
+``shopman.backstage.projections.production``. The Produção app used to
 hand-sync those shapes in TypeScript — a fragile manual mirror. This command
 renders them into a generated TypeScript module, so the surface imports (and
 narrows) them instead of re-declaring them.

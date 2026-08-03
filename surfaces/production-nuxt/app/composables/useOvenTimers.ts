@@ -14,7 +14,10 @@ interface OvenTimer {
   minutes: number;
 }
 
-const STORAGE_KEY = "fournil.oven-timers";
+const STORAGE_KEY = "producao.oven-timers";
+// Chave anterior à renomeação Fournil→Produção. Lida como fallback: um turno
+// em andamento não pode perder os timers de forno por causa de um deploy.
+const LEGACY_STORAGE_KEY = "fournil.oven-timers";
 const RECHIME_MS = 45_000;
 const MAX_CHIMES = 4;
 
@@ -30,7 +33,8 @@ function load() {
   loaded = true;
   nowMs.value = Date.now();
   try {
-    const raw = window.localStorage.getItem(STORAGE_KEY);
+    const raw =
+      window.localStorage.getItem(STORAGE_KEY) ?? window.localStorage.getItem(LEGACY_STORAGE_KEY);
     const parsed = raw ? (JSON.parse(raw) as Record<string, OvenTimer>) : {};
     // Timers estourados há mais de 2h são lixo de um turno anterior.
     const cutoff = Date.now() - 2 * 60 * 60 * 1000;

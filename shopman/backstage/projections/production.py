@@ -2,7 +2,7 @@
 
 Translates Craftsman work orders, queue items, and summary into immutable
 projections consumed by the headless production API
-(``api/v1/backstage/production/*``) that feeds the Fournil
+(``api/v1/backstage/production/*``) that feeds the Produção
 (``surfaces/production-nuxt``).
 
 Never imports from ``shopman.backstage.views.*``.

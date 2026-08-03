@@ -86,7 +86,7 @@ export default defineNuxtConfig({
   css: ["~/assets/css/tailwind.css"],
 
   app: {
-    // Served at the subdomain root (fournil.…) → baseURL "/". Internal operator
+    // Served at the subdomain root (prod.…) → baseURL "/". Internal operator
     // surface; the public host lives only in the deploy spec, never hardcoded here.
     baseURL: process.env.NUXT_APP_BASE_URL || "/",
     head: {

@@ -2,7 +2,10 @@
 // uma por giro de célula (com throttle: muitas células girando juntas viram
 // um clatter natural, não uma metralhadora). Liga/desliga persistido; o
 // browser exige gesto antes do áudio, então unlock() é chamado nos controles.
-const STORAGE_KEY = "fournil.painel-som";
+const STORAGE_KEY = "producao.painel-som";
+// Chave anterior à renomeação Fournil→Produção. Lida como fallback para que
+// ninguém perca a preferência de som ao atualizar o app.
+const LEGACY_STORAGE_KEY = "fournil.painel-som";
 
 const enabled = ref(true);
 let audio: AudioContext | null = null;
@@ -14,7 +17,9 @@ function load() {
   if (loaded || !import.meta.client) return;
   loaded = true;
   try {
-    enabled.value = window.localStorage.getItem(STORAGE_KEY) !== "off";
+    const stored =
+      window.localStorage.getItem(STORAGE_KEY) ?? window.localStorage.getItem(LEGACY_STORAGE_KEY);
+    enabled.value = stored !== "off";
   } catch {
     enabled.value = true;
   }

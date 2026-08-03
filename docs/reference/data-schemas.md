@@ -842,7 +842,7 @@ mecânica do `LoyaltyConfig`): defaults sensatos, `deep_merge` com
 
 > Editáveis no ShopAdmin (estações, multiplicador e margem no fieldset de
 > produção). CLI (`suggest_production`), projections do backstage e matriz do
-> fournil resolvem a sugestão pelo MESMO caminho (`suggest_for`) — nunca chame
+> Produção resolvem a sugestão pelo MESMO caminho (`suggest_for`) — nunca chame
 > `craft.suggest()`/`formula suggest()` direto de uma superfície.
 
 ---

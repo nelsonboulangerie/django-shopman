@@ -1,6 +1,6 @@
 import { defineConfig, devices } from "@playwright/test";
 
-// E2E do Fournil (backend-independente). O mock backend serve uma sessão autenticada + um
+// E2E do Produção (backend-independente). O mock backend serve uma sessão autenticada + um
 // board de produção → as telas de operador renderizam; + o painel público (menuboard, sem
 // auth) e os estados vazio/erro. Build com baseURL '/' (produção usa '/'). Login efetivo,
 // lock (Opção C) e ações reais rodam contra o Django real (reviewer local) — ver

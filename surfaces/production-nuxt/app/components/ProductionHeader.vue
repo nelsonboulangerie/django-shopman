@@ -1,5 +1,5 @@
 <script setup lang="ts">
-// Cabeçalho de seção do Fournil — mora no topo do CONTEÚDO (não é o rail). Segura o
+// Cabeçalho de seção do Produção — mora no topo do CONTEÚDO (não é o rail). Segura o
 // controle do rail (kit) + a nav das visões de produção (Planejamento/Preparação/
 // Produção/Expedição/Painel) + busca, alertas e atualizar. As funções COMUNS (Central,
 // operador/travar, tema) vivem no OperatorRail à esquerda — o rail as concentra e economiza

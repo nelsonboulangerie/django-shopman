@@ -21,12 +21,12 @@ evidência e auditoria, sem confirmar pedido automaticamente.
 | `shop.manage_orders` | `Shop` | Confirmar, rejeitar, avançar, cancelar pedidos; adicionar notas internas | Gestor (orders-nuxt, `gestor.`) via `api/v1/backstage/orders/*` |
 | `backstage.operate_kds` | `KDSTicket` | Check item, marcar ticket done, ações de expedição | KDS (kds-nuxt, `kds.`) via `api/v1/backstage/kds/*` |
 | `backstage.operate_pos` | `CashRegisterSession` | Abrir/fechar caixa, sangria, lookup de cliente, fechar venda | PDV (pos-nuxt, `pos.`) — antesala `/session` + venda |
-| `shop.manage_production` | `Shop` | Criar WorkOrders, planejar e avançar produção | Fournil (production-nuxt, `fournil.`) via `api/v1/backstage/production/*` |
+| `shop.manage_production` | `Shop` | Criar WorkOrders, planejar e avançar produção | Produção (production-nuxt, `prod.`) via `api/v1/backstage/production/*` |
 | `backstage.perform_closing` | `DayClosing` | Executar fechamento do dia, registrar perdas, mover sobras p/ "Ontem" | PDV `/session/closing` (antesala) via `api/v1/backstage/closing/` |
 | `shop.manage_catalog` | `Shop` | Criar/editar Product, Listing, Collection | Admin |
 | `shop.manage_customers` | `Shop` | Criar/editar Customer, grupos, loyalty | Admin |
 | `shop.manage_rules` | `RuleConfig` | Criar/editar regras de pricing e validação | Admin |
-| `backstage.view_production_reports` | `DayClosing` | Relatórios de produção | Fournil `/reports` via `api/v1/backstage/production/reports|management|weighing/blind-map/` |
+| `backstage.view_production_reports` | `DayClosing` | Relatórios de produção | Produção `/reports` via `api/v1/backstage/production/reports|management|weighing/blind-map/` |
 
 ---
 

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-// Relatórios — a lente de GESTOR do Fournil (perm fina
+// Relatórios — a lente de GESTOR do Produção (perm fina
 // backstage.view_production_reports; o gate grosso de chão NÃO abre esta tela).
 // Três blocos, todos servidos pela API de relatórios:
 //   · Gestão do dia: rendimento médio, capacidade % e a tabela de atrasos;

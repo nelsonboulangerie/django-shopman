@@ -84,7 +84,7 @@ class APIVersionHeaderMiddleware:
 class OperatorSessionDomainMiddleware:
     """Scope the session/CSRF cookies to the operator zone's parent domain.
 
-    The operator apps (gestor./kds./pos./fournil.) live on a registrable domain
+    The operator apps (gestor./kds./pdv./prod.) live on a registrable domain
     SEPARATE from the customer store, so one login works across all of them while
     the cookie stays physically isolated from the public store (OPERATOR-AUTH-PLAN,
     Opção A). One Django serves both audiences, so ``SESSION_COOKIE_DOMAIN`` cannot

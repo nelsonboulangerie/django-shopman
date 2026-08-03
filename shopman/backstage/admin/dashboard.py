@@ -1,7 +1,7 @@
 """Unfold admin dashboard callback — landing de configuração e auditoria.
 
 O Admin é CRUD mínimo + configurações: a operação ao vivo mora nos apps Nuxt
-(Gestor/PDV/KDS/Fournil). O dashboard reúne atalhos de configuração, trilhas
+(Gestor/PDV/KDS/Produção). O dashboard reúne atalhos de configuração, trilhas
 de auditoria, saúde da copy omotenashi e os dados de atenção (alertas de
 estoque, alertas do operador, estoque D-1 pendente de fechamento).
 

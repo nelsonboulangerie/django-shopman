@@ -54,5 +54,5 @@ def test_backstage_empty_states_and_icons_use_canonical_scale():
 # A fila de pedidos virou app Nuxt dedicado (Gestor); deixou de ser superfície
 # Admin/Unfold, então o guardrail Unfold do console de pedidos foi removido (Fase 2).
 # O console de produção seguiu o mesmo caminho no WP-ADM-7d: matriz, planejamento,
-# painel, pesagem e relatórios vivem no Fournil (surfaces/production-nuxt), então
+# painel, pesagem e relatórios vivem no Produção (surfaces/production-nuxt), então
 # o guardrail da matriz Admin foi removido junto com os templates.

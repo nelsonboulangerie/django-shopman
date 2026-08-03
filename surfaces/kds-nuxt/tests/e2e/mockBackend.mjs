@@ -3,7 +3,7 @@
 //   · com `e2e_session=authed` → sessão de operador AUTENTICADA + estações + board vazio;
 //   · sem o cookie → 403 nos endpoints de operador (device não autenticado → gate de login).
 // O board público do cliente (/kds/cliente/) responde 200 SEMPRE (o `/pickup` é público,
-// como o menuboard do Fournil). Login/lock/ações reais rodam contra o Django (reviewer local).
+// como o menuboard do Produção). Login/lock/ações reais rodam contra o Django (reviewer local).
 import { createServer } from "node:http";
 
 const port = Number(process.env.MOCK_PORT || 8798);

@@ -57,7 +57,7 @@ Nota geral (média das dimensões auditadas). ⬛ = dimensão que puxa para baix
 | App | UX/Omotenashi | A11y | Robustez | Consist. | Util | Geral |
 |---|---|---|---|---|---|---|
 | **storefront (cliente)** | 4.5 | 4.5 | 4 | 4 | 5 | **4.4** ⭐ |
-| production (fournil) | 4 | 3.5 | 3⬛ | 4 | 4 | 3.7 |
+| production (Produção) | 4 | 3.5 | 3⬛ | 4 | 4 | 3.7 |
 | kds | 4 | 3 | 3⬛ | 4 | 4 | 3.6 |
 | pos | 3 | 3.5 | 3.5⬛ | 4 | 4 | 3.6 |
 | orders (gestor) | 3 | 3 | 3⬛ | 4 | 4 | 3.4 |

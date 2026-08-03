@@ -62,7 +62,7 @@ def can_operate_kds(user) -> bool:
 
 
 def can_operate_production(user) -> bool:
-    """Coarse operator gate for the dedicated production app (``fournil.``).
+    """Coarse operator gate for the dedicated production app (``prod.``).
 
     Sibling of ``operate_pos``/``operate_kds``: a single surface-entry grant for
     the floor + planning app, granted to the Cozinha/Gerente groups. The

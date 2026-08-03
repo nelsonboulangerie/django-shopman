@@ -1,5 +1,5 @@
 <script setup lang="ts">
-// Production surface shell (fournil.). Thin shell com roteamento MISTO, três classes de
+// Production surface shell (prod.). Thin shell com roteamento MISTO, três classes de
 // tela (verificadas endpoint a endpoint):
 //   · telas de OPERADOR (planejamento/preparação/produção/expedição) → rail canônico
 //     (kit) + conteúdo, atrás do gate de operador;

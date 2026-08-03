@@ -1,4 +1,4 @@
-// Flat config do Fournil: preset do Nuxt (@nuxt/eslint gera .nuxt/eslint.config.mjs no
+// Flat config do Produção: preset do Nuxt (@nuxt/eslint gera .nuxt/eslint.config.mjs no
 // `nuxt prepare`) + base compartilhada do operator-kit + Prettier por último.
 import withNuxt from "./.nuxt/eslint.config.mjs";
 import operatorKit from "../operator-kit/eslint.config.base.mjs";

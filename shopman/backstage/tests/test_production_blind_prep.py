@@ -218,7 +218,7 @@ class TestWeighingAPI:
 class TestManagerBlindMap:
     def test_gestor_correlates_blind_codes_via_api(self, client):
         """A visão de gestor (mapa código-cego ↔ preparo) saiu do Admin
-        (WP-ADM-7d) e vive no /reports do Fournil sobre a API headless."""
+        (WP-ADM-7d) e vive no /reports do Produção sobre a API headless."""
         from django.contrib.auth import get_user_model
 
         from shopman.shop.models import Shop

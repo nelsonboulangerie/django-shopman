@@ -71,7 +71,7 @@ def test_unfold_gate_rejects_unknown_admin_url_scope() -> None:
 
 
 def test_unfold_gate_removed_production_console_url_scope_is_unknown() -> None:
-    # WP-ADM-7d: o console Admin de produção saiu; a superfície é o Fournil.
+    # WP-ADM-7d: o console Admin de produção saiu; a superfície é o Produção.
     assert check_unfold_canonical.surfaces_for_url("/admin/operacao/producao/") == ()
 
 

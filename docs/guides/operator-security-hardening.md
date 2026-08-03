@@ -70,7 +70,7 @@ limpa. O caminho correto é colocar **Cloudflare** na frente dos subdomínios de
 operador e restringir lá:
 
 - **Cloudflare Access** (Zero Trust) nas zonas `admin.`, `pos.`, `kds.`,
-  `gestor.`, `fournil.`: política que só libera as faixas de IP da padaria/equipe
+  `gestor.`, `prod.`: política que só libera as faixas de IP da padaria/equipe
   (e, opcionalmente, identidade Google Workspace — já em uso no domínio).
 - Ou, mais simples, **WAF / IP Access Rules** do Cloudflare bloqueando tudo que
   não está na allowlist para esses hostnames.
@@ -98,7 +98,7 @@ fallback, não o alvo.
 - [ ] `SHOPMAN_ADMIN_REQUIRE_2FA=true` no ambiente real.
 - [ ] Superusers triviais de staging (`admin/admin`) **removidos** em prod
       (prod usa `bootstrap_admin` env-driven — ver [OPERATOR-AUTH-PLAN](../plans/completed/OPERATOR-AUTH-PLAN.md)).
-- [ ] Cloudflare Access/WAF restringindo `admin.`/`pos.`/`kds.`/`gestor.`/`fournil.`.
+- [ ] Cloudflare Access/WAF restringindo `admin.`/`pos.`/`kds.`/`gestor.`/`prod.`.
 - [ ] `SESSION_COOKIE_DOMAIN` de produção configurado (auth cross-subdomínio).
 
 ---

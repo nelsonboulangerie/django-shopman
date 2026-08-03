@@ -1,7 +1,7 @@
 """Grant the new ``backstage.operate_production`` permission to the operator groups.
 
 Sibling of ``operate_pos``/``operate_kds``: the coarse surface gate for the
-dedicated production app (``fournil.``). Granted to Cozinha (floor) and Gerente
+dedicated production app (``prod.``). Granted to Cozinha (floor) and Gerente
 (oversight), matching ``setup_groups``. Additive + idempotent + reversible.
 """
 

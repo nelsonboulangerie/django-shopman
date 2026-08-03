@@ -484,7 +484,7 @@ class WorkOrderAdmin(BaseModelAdmin):
     4 estados: planned, started, finished, void.
     Campos editáveis: quantity (via adjust enquanto planned), target_date.
 
-    Na suíte, concluir/anular OP é execução operacional e vive no Fournil
+    Na suíte, concluir/anular OP é execução operacional e vive no Produção
     (production-nuxt, API production/<id>/*). O fallback standalone
     (shopman.craftsman.admin) mantém suas actions de finish/void — drift
     deliberado: fora da suíte não há superfície de operação.
@@ -524,8 +524,8 @@ class WorkOrderAdmin(BaseModelAdmin):
 
     inlines = [WorkOrderItemInline, WorkOrderEventInline]
     # A visão de compromissos por OP saiu com o console Admin de produção
-    # (WP-ADM-7d): os pedidos vinculados aparecem no board do Fournil. A
-    # execução (concluir/anular) saiu no WP-ADM-5 — vive no Fournil.
+    # (WP-ADM-7d): os pedidos vinculados aparecem no board do Produção. A
+    # execução (concluir/anular) saiu no WP-ADM-5 — vive no Produção.
     actions_row = ["production_board_row"]
     actions_detail = ["production_board_row"]
     list_sections = [WorkOrderEventSection]
@@ -709,7 +709,7 @@ class WorkOrderAdmin(BaseModelAdmin):
 
     @action(description=_("Produção"), url_path="production-map", icon="manufacturing")
     def production_board_row(self, request, object_id):
-        """Abre a produção ao vivo no Fournil (WP-ADM-7d): o console Admin de
+        """Abre a produção ao vivo no Produção (WP-ADM-7d): o console Admin de
         produção saiu; sem base URL configurada, volta ao changelist do dia."""
         from django.conf import settings
 

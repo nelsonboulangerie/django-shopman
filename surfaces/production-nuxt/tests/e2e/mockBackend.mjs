@@ -1,4 +1,4 @@
-// Mock backend mínimo p/ os e2e do Fournil, backend-independente. Ramifica pelo COOKIE que
+// Mock backend mínimo p/ os e2e do Produção, backend-independente. Ramifica pelo COOKIE que
 // o BFF encaminha (djangoProxy repassa o header cookie ao Django):
 //   · com `e2e_session=authed` → sessão de operador AUTENTICADA + boards vazios (o shell
 //     passa dos gates e as telas de operador renderizam o estado vazio acolhedor);
@@ -91,5 +91,5 @@ const server = createServer((req, res) => {
 
 server.listen(port, "127.0.0.1", () => {
   // eslint-disable-next-line no-console
-  console.log(`[fournil-mock] listening on http://127.0.0.1:${port}`);
+  console.log(`[producao-mock] listening on http://127.0.0.1:${port}`);
 });

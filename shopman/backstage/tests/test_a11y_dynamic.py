@@ -81,7 +81,7 @@ def _has_main_landmark(html: str, surface: str) -> None:
 # ── Surfaces ───────────────────────────────────────────────────────────
 
 
-# A produção inteira (chão, matriz, dashboard e relatórios) é do Fournil
+# A produção inteira (chão, matriz, dashboard e relatórios) é do Produção
 # (surfaces/production-nuxt): a11y testada na suite do app Nuxt. As telas
 # Django (HTMX na Fase 4, console Admin/Unfold no WP-ADM-7d) foram removidas.
 

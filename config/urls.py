@@ -36,7 +36,7 @@ urlpatterns = [
     # Pedidos migraram p/ o app Nuxt dedicado (Gestor — surfaces/orders-nuxt)
     # via api/v1/backstage/orders/*; o console Admin de pedidos foi removido
     # (OPERATOR-APPS-PLAN Fase 2). O console Admin de produção saiu no
-    # WP-ADM-7d: a superfície canônica é o Fournil (surfaces/production-nuxt)
+    # WP-ADM-7d: a superfície canônica é o Produção (surfaces/production-nuxt)
     # via api/v1/backstage/production/* (paridade fechada no WP-ADM-7b).
     path(
         "admin/configuracao/copy/",
