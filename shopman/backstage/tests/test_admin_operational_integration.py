@@ -60,14 +60,14 @@ class AdminNavigationTests(TestCase):
         self.assertNotIn("Produção", live_items)
         closing_item = next(item for item in live if item["title"] == "Fechamento")
         self.assertEqual(closing_item["link"], "https://pos.example.com/session/closing")
-        fournil_item = next(item for item in live if item["title"] == "Produção ao vivo")
-        self.assertEqual(fournil_item["link"], "https://prod.example.com")
+        producao_item = next(item for item in live if item["title"] == "Produção ao vivo")
+        self.assertEqual(producao_item["link"], "https://prod.example.com")
 
         with override_settings(SHOPMAN_PRODUCTION_BASE_URL="https://prod.example.com"):
             raw_live = navigation.get_sidebar_navigation(request)[0]["items"]
-        raw_fournil = next(item for item in raw_live if item["title"] == "Produção ao vivo")
+        raw_producao = next(item for item in raw_live if item["title"] == "Produção ao vivo")
         self.assertEqual(
-            raw_fournil["badge"],
+            raw_producao["badge"],
             "shopman.backstage.admin.navigation.badge_started_work_orders",
         )
 
@@ -103,7 +103,7 @@ class AdminNavigationTests(TestCase):
         audit_items = [item["title"] for item in audit_group["items"] if item["has_permission"]]
         self.assertIn("Pagamentos", audit_items)
 
-    def test_production_reports_nav_item_is_env_gated_to_fournil(self) -> None:
+    def test_production_reports_nav_item_is_env_gated_to_producao(self) -> None:
         """WP-ADM-7d: "Relatórios" do grupo Produção aponta p/ o Produção
         (/reports) e some sem SHOPMAN_PRODUCTION_BASE_URL (sem link morto)."""
         from django.test import override_settings
