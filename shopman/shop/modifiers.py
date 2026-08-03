@@ -357,20 +357,20 @@ class DiscountModifier:
             return
 
         items = session.items or []
-        # Coleções por SKU — necessário para promoções por coleção (mesma regra no vitrine)
+        # Coleções por SKU — necessário para promoções por coleção. Usa o MESMO
+        # helper canônico do menu (catalog_context) para os dois motores lerem a
+        # mesma fonte (D4: evita o menu ver a coleção e o carrinho não).
         if items and not ctx.get("sku_collections"):
+            line_skus = [i.get("sku") for i in items if i.get("sku") and not _is_non_merchandise_line(i)]
             try:
-                from shopman.offerman.models import CollectionItem
+                from shopman.shop.projections import catalog_context
 
-                line_skus = [i.get("sku") for i in items if i.get("sku") and not _is_non_merchandise_line(i)]
-                col_map: dict[str, list[str]] = {}
-                for ci in CollectionItem.objects.filter(product__sku__in=line_skus).select_related(
-                    "collection",
-                ):
-                    col_map.setdefault(ci.product.sku, []).append(ci.collection.ref)
-                ctx["sku_collections"] = col_map
+                ctx["sku_collections"] = catalog_context.collection_refs_by_sku(line_skus)
             except Exception:
-                logger.debug(
+                # Fail-closed: sem coleções, promo por coleção NÃO aplica (nunca
+                # cobra a mais). WARNING (não debug) para a divergência ficar visível.
+                ctx["sku_collections"] = {}
+                logger.warning(
                     "discount_modifier: collection lookup failed for skus=%s",
                     line_skus,
                     exc_info=True,

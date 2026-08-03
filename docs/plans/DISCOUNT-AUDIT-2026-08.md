@@ -49,8 +49,15 @@ guardião pegou. Mas o guardião é **opcional** (ver H3).
 | **Modal** reprecifica no `total_changed` (mostra o novo total) | Cliente | ✅ CORRIGIDO (finalizar.vue) |
 | **D0** menu não mostra promo fixa por card (= sacola) | Cliente | ✅ CORRIGIDO + teste |
 | **H1/H2** empilhamento composto → "maior desconto ganha" | PDV | ✅ CORRIGIDO + testes (árbitro por-linha via `meta`) |
-| **C1** revalidar cupom no commit | Cliente | 🔜 pendente |
-| **D1–D4, R1, S1/S2** robustez/divergência residual | Vários | 🔜 pendente |
+| **C1** cupom expirado/esgotado no commit | Cliente | ✅ JÁ CONFORME — re-validado no reprice do confirm (`get_coupon_promotion`) + guardião; teste de regressão trava |
+| **R1** `unit×qty ≠ line_total` na NFC-e (fiscal) | Fiscal | ✅ CORRIGIDO — vUnCom derivado de vProd/qCom (alta precisão) quando há resto; teste |
+| **S2** `pricing["total_q"]` defasado | — | ✅ CORRIGIDO — recalcula no fim da cadeia (order 90); teste |
+| **D1** base do `min_order` menu×sacola | Cliente | ✅ CORRIGIDO — `session_pricing_hints` exclui taxa de entrega (base = mercadoria, como o carrinho) |
+| **D4** gate de coleção frágil (try/except mudo) | Cliente | ✅ CORRIGIDO — carrinho usa o helper canônico `collection_refs_by_sku` (mesma fonte do menu); fail-closed + WARNING |
+| **D2** birthday só na sacola | Cliente | ✅ ACEITO — surpresa de aniversário intencional (menu SUBestima; cliente só ganha no checkout). Sem overcharge. |
+| **D3** segmento menu(request)×sacola(session) | Cliente | ✅ ACEITO/COBERTO — dormente no seed (promo de segmento é CUPOM, excluído do menu). Para uma promo AUTO por segmento, o guardião pega o overcharge no confirm. Fix pleno = vincular cliente à sessão (registrado). |
+| **S1** `meta.is_d1` congelado no add | — | ✅ ACEITO — a favor do cliente (honra o preço "de ontem" cotado ao adicionar); re-derivar subiria preço no meio do carrinho (pior UX). |
+| **edge** promo fixa order-level + staff | PDV | ✅ ACEITO — cobrança correta; só a transparência pode superestimar. Raro (fixo é cupom no seed, excluído). |
 
 O **bloco cliente** (o incidente 28→36) está fechado e verde. O **bloco PDV**
 (H1/H2) e a robustez residual seguem no próximo passo — H1/H2 exige um árbitro
