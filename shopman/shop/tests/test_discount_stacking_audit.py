@@ -15,6 +15,7 @@ Invariants under test:
 from __future__ import annotations
 
 from datetime import timedelta
+from decimal import Decimal
 
 import pytest
 from django.core.cache import cache
@@ -216,6 +217,37 @@ class DiscountStackingAuditTests(TestCase):
         self.assertEqual(caught.exception.code, "total_changed")
         self.assertEqual(caught.exception.context.get("new_total_q"), 500)
         self.assertEqual(caught.exception.context.get("old_total_q"), 1000)
+
+    # ── HOLE D0: fixed promo must NOT become a per-card menu discount ────────
+    def test_menu_backend_ignores_fixed_promo_percent_still_applies(self) -> None:
+        from shopman.shop.adapters.pricing import StorefrontPricingBackend
+        from shopman.storefront.models import Promotion
+
+        now = timezone.now()
+        Promotion.objects.create(
+            name="R$5 no pedido", type=Promotion.FIXED, value=500, is_active=True,
+            valid_from=now - timedelta(days=1), valid_until=now + timedelta(days=1),
+        )
+        backend = StorefrontPricingBackend()
+        priced = backend.get_price(
+            sku="AUDIT-SKU", qty=Decimal("1"), listing="web",
+            list_unit_price_q=1000, list_total_price_q=1000, context={},
+        )
+        # Fixed promo is order-level → NO per-card discount (menu == list price).
+        self.assertEqual(priced.final_unit_price_q, 1000)
+        self.assertEqual(list(priced.adjustments), [])
+
+        # Control: a percent promo still discounts the card.
+        Promotion.objects.create(
+            name="20%", type=Promotion.PERCENT, value=20, is_active=True,
+            valid_from=now - timedelta(days=1), valid_until=now + timedelta(days=1),
+        )
+        cache.clear()
+        priced2 = backend.get_price(
+            sku="AUDIT-SKU", qty=Decimal("1"), listing="web",
+            list_unit_price_q=1000, list_total_price_q=1000, context={},
+        )
+        self.assertEqual(priced2.final_unit_price_q, 800)
 
     def test_total_changed_maps_to_structured_api_error(self) -> None:
         # Contrato que o modal do checkout consome: total_changed NÃO vira erro de
