@@ -40,6 +40,25 @@ guardião pegou. Mas o guardião é **opcional** (ver H3).
 
 ---
 
+## Progresso das correções (branch `fix/discount-safety`)
+
+| Fix | Bloco | Status |
+|---|---|---|
+| **H5** resíduo do desconto manual (cobrado = registrado) | PDV | ✅ CORRIGIDO + teste |
+| **H3** guardião estruturado (new/old total) + mapeamento p/ o modal | Cliente | ✅ CORRIGIDO + teste |
+| **Modal** reprecifica no `total_changed` (mostra o novo total) | Cliente | ✅ CORRIGIDO (finalizar.vue) |
+| **D0** menu não mostra promo fixa por card (= sacola) | Cliente | ✅ CORRIGIDO + teste |
+| **H1/H2** empilhamento composto → "maior desconto ganha" | PDV | 🔜 PRÓXIMO (árbitro único + migração de testes) |
+| **C1** revalidar cupom no commit | Cliente | 🔜 pendente |
+| **D1–D4, R1, S1/S2** robustez/divergência residual | Vários | 🔜 pendente |
+
+O **bloco cliente** (o incidente 28→36) está fechado e verde. O **bloco PDV**
+(H1/H2) e a robustez residual seguem no próximo passo — H1/H2 exige um árbitro
+único de desconto (funde D-1/promo/funcionário/happy hour sob "maior ganha") com
+transparência reconstruída a partir de `modifiers_applied`, e migração dos testes
+que hoje codificam o empilhamento. É refatoração de preço com raio grande; merece
+PR próprio e bateria de invariância, não fim de sessão longa.
+
 ## Quadro de furos
 
 > **Correção (2026-08-02):** o empilhamento H1/H2 é **do POS/balcão, não da loja**.
