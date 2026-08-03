@@ -82,3 +82,26 @@ estado remoto atual. Requer o `gh` autenticado para o cross-reference de PRs
 
 As linhas ⚠️ vêm primeiro. O script sai com código 0 mesmo havendo branches não
 mergeados — é um relatório, não um gate de CI.
+
+## Arquivo de branches (2026-08-03)
+
+Branches com delta real mas sem PR mergeado foram **arquivadas como tags
+anotadas** em vez de mescladas ou apagadas. A tag preserva a árvore inteira para
+sempre; a branch some da listagem. Restaurar qualquer uma:
+
+```
+git switch -c <nome> arquivo/<nome>
+```
+
+| Tag | Situação |
+|---|---|
+| `arquivo/chore/dev-tunnel-hosts` | Alvo morto — as surfaces `orders-uithing-nuxt` e `storefront-uithing-nuxt` não existem mais. |
+| `arquivo/claude/agitated-rhodes-9b5389` | Válido e pendente: renomeia `Fournil→Produção` e `Broadcast→Marketing`. Só labels + testes. Candidato a PR. |
+| `arquivo/claude/reverent-northcutt-2eab47` | Snapshot WIP do debug-gate de adapters externos. Nunca revisado. |
+| `arquivo/claude/shopman-order-flow-dzn4zr` | Pix pré-confirmação. **Não mesclar direto**: o diff reverte copy omotenashi que o main já tem. |
+| `arquivo/claude/wizardly-newton-f2ab69` | Snapshot WIP do storefront-nuxt (2026-07-04). Nunca revisado. |
+| `arquivo/design-system-sync` | PR #44 foi **fechado sem merge** — decisão deliberada. |
+| `arquivo/worktree-storefront-ux-polish` | Metade toca surface que não existe mais. |
+
+Regra: uma branch só é apagada depois de arquivada em `arquivo/<nome>` e
+registrada aqui.
