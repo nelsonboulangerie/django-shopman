@@ -99,6 +99,35 @@ orderman/.../session.py:200). Consequências:
 testes). PR próprio, test-driven, com bateria de invariância — não emendar no fim de
 sessão longa.
 
+## `modifiers_applied` — diagnóstico e MORTE (2026-08-03)
+
+Pergunta do Pablo: se `modifiers_applied` é código morto, **ressuscitar ou matar?**
+
+**Diagnóstico:** era uma **lista por linha** de todos os descontos aplicados —
+abstração do modelo de **EMPILHAMENTO**. O projeto adotou "maior desconto ganha"
+(UM desconto por linha), então a forma certa é o **vencedor único** (`meta["_disc"]`),
+não uma lista. Além disso ele não persistia (`_normalize_items` só mantém
+`meta`/`unit_price_q`/…), e alguns guards cross-modifier o liam → ficavam CEGOS.
+
+**Achado grave (P1) que a cegueira escondia:** o guard `is_d1_line` do
+`DiscountModifier` lia `modifiers_applied` (sempre `[]`) → **D-1 nunca era pulado →
+promoção/cupom automáticos COMPUNHAM sobre o preço de D-1** (1000→500→350 com promo
+30%; →300 com cupom 40%). Customer-facing (um pão "de ontem" também em "Semana do
+Pão"). O próprio repo já documentara isto (`test_d1_stacking_bug_actual_numbers`,
+xfail "BUG P1").
+
+**Veredito: MATAR** (não ressuscitar). Ressuscitar reviveria a semântica SKIP (≠
+best-wins) e criaria uma 3ª fonte de verdade. Feito:
+- Guard `is_d1_line` passa a ler a fonte durável (`meta.is_d1` via `_line_is_d1`) →
+  P1 corrigido (D-1 + promo/cupom = só o D-1, best-wins).
+- Removidos TODOS os `modifiers_applied` (appends + reads): o total do D-1 acumula
+  em variável local; a elegibilidade do fixo order-level usa `meta["_disc"]` (que
+  também exclui corretamente linhas D-1 de um fixo de pedido).
+- Duas fontes de verdade limpas: **`meta["_disc"]`** (vencedor por linha, decisões) +
+  **`session.pricing`** (agregado por tipo, exibição — o que build_cart/PDV já usam).
+- Testes migrados: os 3 D-1 que o repo deixou como xfail/bug viraram asserções
+  normais; marcadores checam `meta["_disc"]`.
+
 ## Quadro de furos
 
 > **Correção (2026-08-02):** o empilhamento H1/H2 é **do POS/balcão, não da loja**.

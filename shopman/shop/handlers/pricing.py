@@ -54,8 +54,10 @@ class ItemPricingModifier:
     Modifier que aplica preços e calcula totais de linha. Ordem: 10.
 
     Para internal pricing: sempre re-resolve o preço do backend a cada run,
-    garantindo que discount modifiers partam do preço base correto.
-    Limpa modifiers_applied para que discounts sejam recalculados do zero.
+    garantindo que discount modifiers partam do preço base correto. O estado de
+    desconto por-linha (``meta["_disc"]``) é zerado abaixo para os descontos
+    recalcularem do zero (o vestígio ``modifiers_applied``, que não persistia, foi
+    removido — ver DISCOUNT-AUDIT-2026-08).
     """
 
     code = "pricing.item"
@@ -72,10 +74,6 @@ class ItemPricingModifier:
         customer = ctx.get("customer")
         for item in items:
             sku = item["sku"]
-
-            # Always clear discount state — modifiers recalculate each run
-            if item.pop("modifiers_applied", None):
-                modified = True
 
             # Operator price override (numpad "Preço", manager-approved): honor the
             # quoted unit_price_q verbatim — skip backend re-pricing, the same way

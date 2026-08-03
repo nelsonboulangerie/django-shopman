@@ -219,32 +219,21 @@ class TestD1Discount:
         assert _unit_price(s, "PAO-D1") == 500
         assert s.pricing.get("d1_discount", {}).get("total_discount_q") == 500
 
-    def test_modifiers_applied_marker_is_lost_after_persist(self):
-        """CAUSA RAIZ do bug de empilhamento: Session.update_items() normaliza a
-        linha e DESCARTA `modifiers_applied` (só sobrevivem line_id/sku/name/qty/
-        unit_price_q/line_total_q/meta). Como os guards anti-stacking da
-        DiscountModifier/TimeWindowDiscountModifier leem esse marcador, eles ficam
-        cegos entre um modifier e o próximo dentro da MESMA passagem de repricing.
+    def test_durable_discount_marker_lives_in_meta(self):
+        """O desconto vencedor da linha vive em ``meta["_disc"]`` (fonte DURÁVEL —
+        sobrevive ao ``_normalize_items``). O vestígio ``modifiers_applied`` (que
+        não persistia e cegava os guards anti-stacking) foi REMOVIDO — ver
+        DISCOUNT-AUDIT-2026-08. Transparência agregada segue em ``session.pricing``.
         """
         s = self._session_with_d1("PAO-D1", 1000, d1_percent=50)
         line = next(i for i in s.items if i.get("sku") == "PAO-D1")
-        # O desconto foi aplicado (pricing registra), mas o marcador na linha sumiu.
         assert "d1_discount" in s.pricing
-        assert "modifiers_applied" not in line
+        assert "modifiers_applied" not in line  # removido de vez
+        assert (line.get("meta") or {}).get("_disc", {}).get("type") == "d1_discount"
 
-    @pytest.mark.xfail(
-        strict=True,
-        reason=(
-            "BUG P1 — auto-promoção EMPILHA sobre D-1. O guard da DiscountModifier "
-            "(`is_d1_line = any(m['type']=='d1_discount' ...)`) depende de "
-            "`modifiers_applied`, que Session.update_items() (_normalize_items) "
-            "descarta entre um modifier e o próximo. Resultado observado: 350 "
-            "(500 do D-1, depois −30% da promo sobre o preço JÁ descontado), "
-            "violando 'D-1 tem prioridade absoluta' (modifiers.py)."
-        ),
-    )
     def test_d1_does_not_stack_with_auto_promotion(self):
-        """D-1 tem prioridade absoluta: promoção automática NÃO deve acumular."""
+        """D-1 tem prioridade absoluta: promoção automática NÃO acumula (best-wins:
+        50% do D-1 > 30% da promo). Corrigido ao usar ``meta.is_d1`` durável."""
         from shopman.shop.services import sessions
 
         _shop()
@@ -261,44 +250,12 @@ class TestD1Discount:
                 {"op": "set_data", "path": "availability", "value": {"PAO-D1": {"is_d1": True}}},
             ],
         )
-        # Invariante desejada: só o D-1 (50%). (Hoje o pipeline entrega 350.)
+        # Só o D-1 (50%) — a promo de 30% não empilha nem vence (best-wins).
         assert _unit_price(s, "PAO-D1") == 500
+        # Transparência: só o D-1 no pricing (sem dupla contagem).
+        assert "d1_discount" in s.pricing
+        assert "discount" not in s.pricing or not s.pricing["discount"].get("items")
 
-    def test_d1_stacking_bug_actual_numbers(self):
-        """Fixa os números REAIS do bug acima (guarda de regressão até o fix).
-
-        Enquanto o guard não for corrigido, a promo empilha: 1000 → 500 (D-1) →
-        350 (−30% sobre 500). Este teste passa HOJE e vai FALHAR quando o bug for
-        corrigido — sinal para trocar o xfail acima por asserção normal.
-        """
-        from shopman.shop.services import sessions
-
-        _shop()
-        _channel("web")
-        _product("PAO-D1", 1000)
-        _rule("d1_discount", D1_RULE, {"discount_percent": 50})
-        _promotion("Promo Pão", ptype=PERCENT, value=30, skus=["PAO-D1"])
-        s = sessions.create_session("web")
-        s = _reprice(
-            s,
-            [
-                _line("PAO-D1", qty=1),
-                {"op": "set_data", "path": "availability", "value": {"PAO-D1": {"is_d1": True}}},
-            ],
-        )
-        assert _unit_price(s, "PAO-D1") == 350  # comportamento atual (bug)
-        # Ambos os descontos ficam registrados no pricing — dupla contagem.
-        assert "d1_discount" in s.pricing and "discount" in s.pricing
-
-    @pytest.mark.xfail(
-        strict=True,
-        reason=(
-            "BUG P1 (mesma causa raiz) — cupom EMPILHA sobre D-1. modifiers_applied "
-            "some no update_items, então o guard de D-1 na DiscountModifier não vê a "
-            "linha como D-1 e aplica o cupom. Observado: 300 (500 do D-1, −40% do "
-            "cupom sobre 500)."
-        ),
-    )
     def test_d1_does_not_stack_with_manual_coupon(self):
         """Cupom (percentual) NÃO deve aplicar em linha D-1 (sem aprovação)."""
         from shopman.shop.services import sessions

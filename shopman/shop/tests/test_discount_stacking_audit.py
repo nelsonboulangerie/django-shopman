@@ -131,6 +131,33 @@ class DiscountStackingAuditTests(TestCase):
         # 1000→700 (promo)→560 (−20% employee on the reduced price).
         self.assertEqual(unit, 700, f"employee compounded on promo: got {unit}, expected 700")
 
+    # ── HOLE (achado tardio): D-1 + promoção automática NÃO compõem ──────────
+    def test_d1_does_not_compound_with_auto_promotion(self) -> None:
+        # O guard "pula linha D-1" do DiscountModifier lia modifiers_applied (que
+        # não persiste) → sempre [] → D-1 nunca era pulado → a promo compunha sobre
+        # o preço de D-1 (1000→500→350). Agora usa a fonte durável (meta.is_d1).
+        RuleConfig.objects.create(
+            ref="d1_discount", rule_path="shopman.shop.rules.pricing.D1Rule",
+            label="D-1", params={"discount_percent": 50}, enabled=True,
+        )
+        from shopman.storefront.models import Promotion
+
+        now = timezone.now()
+        Promotion.objects.create(
+            name="Promo 30", type=Promotion.PERCENT, value=30, is_active=True,
+            valid_from=now - timedelta(days=1), valid_until=now + timedelta(days=1),
+        )
+        cache.clear()
+
+        key = self._open_session()
+        session = ModifyService.modify_session(
+            session_key=key, channel_ref="web",
+            ops=[{"op": "add_line", "sku": self.product.sku, "qty": 1,
+                  "unit_price_q": 1000, "is_d1": True}],
+        )
+        unit = self._line(session)["unit_price_q"]
+        self.assertEqual(unit, 500, f"D-1 compounded with promo: got {unit}, expected 500")
+
     # ── Invariante: cadeia inteira (D-1 + funcionário + happy hour) = 1 melhor ─
     def test_full_chain_takes_single_best_discount(self) -> None:
         RuleConfig.objects.create(

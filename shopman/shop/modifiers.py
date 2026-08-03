@@ -219,6 +219,7 @@ class AvailabilityDiscountModifier:
         percent = params.get("discount_percent", DEFAULT_AVAILABILITY_DISCOUNT_PERCENT)
 
         modified = False
+        total_discount_q = 0
         for item in items:
             if _is_non_merchandise_line(item) or _price_is_frozen(item):
                 continue
@@ -232,21 +233,13 @@ class AvailabilityDiscountModifier:
             discount_q = monetary_div(original_q * percent, 100)
             item["unit_price_q"] = original_q - discount_q
             item["line_total_q"] = item["unit_price_q"] * int(item.get("qty", 1))
-            item.setdefault("modifiers_applied", []).append(
-                {"type": "d1_discount", "discount_percent": percent, "original_price_q": original_q}
-            )
             _stamp_disc(item, "d1_discount", discount_q,
                         _discount_label("CART_DISCOUNT_LABEL_AVAILABILITY", "Liquidação"))
+            total_discount_q += discount_q * int(item.get("qty", 1))
             modified = True
 
         if modified:
             session.update_items(items)
-            total_discount_q = sum(
-                (m["original_price_q"] - item.get("unit_price_q", 0)) * int(item.get("qty", 1))
-                for item in items
-                for m in item.get("modifiers_applied", [])
-                if m.get("type") == "d1_discount"
-            )
             pricing = session.pricing or {}
             if total_discount_q > 0:
                 pricing["d1_discount"] = {
@@ -377,6 +370,7 @@ class DiscountModifier:
                 )
 
         session_total = sum(item.get("line_total_q", 0) for item in items if not _is_non_merchandise_line(item))
+        availability = (session.data or {}).get("availability", {})
         modified = False
         total_coupon_discount_q = 0
         discounts_applied = []  # Persisted in session.pricing
@@ -392,8 +386,11 @@ class DiscountModifier:
             # D-1 items skip auto promos. A manager-approved manual discount may
             # still apply to a D-1 line (audited exception); a plain operator
             # manual discount on a non-D-1 line competes under "best wins".
-            applied = item.get("modifiers_applied", [])
-            is_d1_line = any(m.get("type") == "d1_discount" for m in applied)
+            # Fonte DURÁVEL (``meta.is_d1`` via ``_line_is_d1``) — NÃO
+            # ``modifiers_applied``, que não sobrevive ao ``_normalize_items``:
+            # lê-lo aqui daria sempre [] → D-1 nunca seria pulado → promo compunha
+            # sobre o preço já reduzido de D-1.
+            is_d1_line = _line_is_d1(item, availability)
             manual = (item.get("meta") or {}).get("manual_discount") or {}
             manual_allowed = bool(
                 manual.get("value")
@@ -446,17 +443,10 @@ class DiscountModifier:
                 item["line_total_q"] = item["unit_price_q"] * int(item.get("qty", 1))
 
                 source_type, source_name, source_id = best_source
-                modifier_info = {
-                    "type": source_type,
-                    "name": source_name,
-                    "original_price_q": price_q,
-                    "discount_q": best_discount_q,
-                }
-                if source_id:
-                    modifier_info["promotion_id"] = source_id
-                item.setdefault("modifiers_applied", []).append(modifier_info)
-                # Fonte durável p/ o árbitro flat (funcionário/happy hour) reconciliar
-                # a transparência caso substitua este desconto ("maior ganha").
+                # Fonte durável do desconto vencedor da linha: ``meta._disc`` (para o
+                # árbitro flat reconciliar em "maior ganha") + ``discounts_applied``
+                # (abaixo) que vira ``pricing["discount"]``. ``modifiers_applied`` foi
+                # removido — não persistia e criava guards cegos (ver DISCOUNT-AUDIT).
                 _stamp_disc(item, source_type, best_discount_q, source_name or source_type)
                 modified = True
 
@@ -485,7 +475,9 @@ class DiscountModifier:
                 for item in items
                 if not _is_non_merchandise_line(item)
                 and not _price_is_frozen(item)
-                and not item.get("modifiers_applied")
+                # Linha sem desconto por-linha (durável em ``meta._disc``): um fixo
+                # de pedido não empilha sobre D-1/promo/cupom/manual já aplicados.
+                and not (item.get("meta") or {}).get("_disc")
                 and int(item.get("line_total_q", 0)) > 0
                 and self._matches(fixed_promo, item.get("sku", ""), ctx)
             ]
