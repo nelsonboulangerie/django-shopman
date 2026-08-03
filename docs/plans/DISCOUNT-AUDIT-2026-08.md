@@ -42,10 +42,20 @@ guardião pegou. Mas o guardião é **opcional** (ver H3).
 
 ## Quadro de furos
 
+> **Correção (2026-08-02):** o empilhamento H1/H2 é **do POS/balcão, não da loja**.
+> Verificado contra a boundary do e2e `test_persona_3_employee.py`: a loja **não
+> escreve `session.data.customer.group="staff"`** (staff paga cheio na loja) e o
+> happy hour é escopado p/ fora da `web` no seed. Na loja, cada linha já tem **no
+> máximo um** desconto automático (D-1 XOR promo/cupom — o `DiscountModifier` pula
+> linhas D-1). Exceção estreita: se um cliente staff tiver o grupo vinculado à
+> sessão (via cupom por segmento), o desconto de funcionário passa a compor — mas o
+> caminho comum da loja não vincula. **O bug do cliente (28→36) NÃO é H1/H2** — é a
+> divergência (D0/D1) + expiração de promo no reprice + guardião opcional (H3).
+
 | # | Furo | Onde dispara | Severidade | Status |
 |---|------|--------------|-----------|--------|
-| **H1** | Happy hour **empilha** sobre D-1/promoção (só pula linha de funcionário) | POS/balcão (happy hour é escopada p/ fora da `web`) | 🔴 ALTA | ✅ REPRO |
-| **H2** | Desconto de **funcionário empilha** sobre promoção/D-1 (sem guarda) | **Loja** (staff) + POS — employee roda em todo canal | 🔴 ALTA | ✅ REPRO |
+| **H1** | Happy hour **empilha** sobre D-1/promoção (só pula linha de funcionário) | **POS/balcão** (happy hour escopada p/ fora da `web`) | 🔴 ALTA (POS) | ✅ REPRO |
+| **H2** | Desconto de **funcionário empilha** sobre promoção/D-1 (sem guarda) | **POS/balcão** (loja não seta staff, salvo edge de cupom+grupo) | 🔴 ALTA (POS) | ✅ REPRO |
 | **H3** | Guardião anti-surpresa é **opcional** (`expected_total_q` nullable) → total surpresa comete em silêncio | Loja | 🔴 ALTA | ✅ CÓDIGO |
 | **D0** | Promoção de **VALOR FIXO**: menu mostra "−R$X por card" (por unidade), sacola aplica **uma vez** no pedido | Loja (qualquer promo fixa ativa) | 🔴 ALTA | ✅ CÓDIGO |
 | **H5** | Resíduo do **desconto manual** cai no índice errado (última posição, não última linha elegível) → cobrado ≠ registrado | POS | 🟠 MÉDIA | ✅ REPRO |
