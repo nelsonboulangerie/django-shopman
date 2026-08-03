@@ -127,7 +127,15 @@ def session_pricing_hints(request) -> tuple[str, int]:
         if not sess:
             return "", 0
         ft = (sess.data or {}).get("fulfillment_type") or ""
-        total = sum(int(line.get("line_total_q", 0) or 0) for line in (sess.items or []))
+        # Base do ``min_order_q`` igual à do carrinho (DiscountModifier): só linhas
+        # de MERCADORIA — exclui a taxa de entrega. Senão uma promo com mínimo
+        # apareceria no menu com base diferente da que o carrinho aplica (D1).
+        total = sum(
+            int(line.get("line_total_q", 0) or 0)
+            for line in (sess.items or [])
+            if line.get("sku") != "__DELIVERY_FEE__"
+            and (line.get("meta") or {}).get("type") != "delivery_fee"
+        )
         return ft, total
     except Exception as e:
         logger.warning("session_pricing_hints_failed: %s", e, exc_info=True)
