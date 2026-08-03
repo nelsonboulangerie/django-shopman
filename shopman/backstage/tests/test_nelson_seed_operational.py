@@ -298,3 +298,32 @@ def test_nelson_seed_qa_profile_builds_named_scenarios(monkeypatch):
     assert Session.objects.filter(
         state="open", handle_type="pos_tab", handle_ref="00001007"
     ).exists()
+
+    # Vitrine da LOJA cobre todos os estados de disponibilidade (QA cliente).
+    from config.management.commands.seed import Command
+    from shopman.shop.projections.types import Availability
+    from shopman.storefront.presentation import build_catalog
+
+    states = Command.QA_STOREFRONT_STATES
+    by_sku = {i.sku: i for i in build_catalog(channel_ref="web").items}
+
+    sold = by_sku[states["sold_out"]]
+    assert sold.availability == Availability.UNAVAILABLE
+    assert sold.is_notifiable is True and sold.can_add_to_cart is False
+
+    low = by_sku[states["low_stock"]]
+    assert low.availability == Availability.LOW_STOCK
+    assert low.can_add_to_cart is True
+
+    # "planned": sem pronto HOJE (no menu aparece indisponível), MAS tem produção
+    # planejada — base da "lista de espera / previsto" no fluxo de encomenda.
+    from shopman.shop.projections import catalog_context
+    planned = by_sku[states["planned"]]
+    assert planned.availability == Availability.UNAVAILABLE
+    assert catalog_context.planned_supply_for_skus(
+        [states["planned"]], horizon_days=2
+    ).get(states["planned"], 0) > 0
+
+    paused = by_sku[states["paused"]]
+    assert paused.is_paused is True
+    assert paused.can_add_to_cart is False and paused.is_notifiable is False
