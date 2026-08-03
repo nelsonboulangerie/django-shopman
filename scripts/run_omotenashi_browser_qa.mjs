@@ -217,10 +217,19 @@ function findChrome(explicitPath) {
   throw new Error("Chrome/Chromium nao encontrado. Defina SHOPMAN_CHROME_PATH ou --chrome-path.");
 }
 
-async function waitFetch(url, options = {}, timeoutMs = 12000) {
+// Retry a fetch until it responds ok, with capped backoff + jitter. The happy
+// path returns on the first success, so a generous timeout costs nothing when the
+// server is already up — it only buys headroom for a loaded CI runner where a
+// port/handshake can lag by a second or two. On timeout we throw an error that
+// NAMES what we were waiting for (label) and carries the underlying cause, so the
+// gate never dies with an opaque bare "fetch failed" again.
+async function waitFetch(url, options = {}, timeoutMs = 20000, label = "") {
   const started = Date.now();
   let lastErr;
+  let attempts = 0;
+  let delay = 150;
   while (Date.now() - started < timeoutMs) {
+    attempts += 1;
     try {
       const response = await fetch(url, options);
       if (response.ok) return response;
@@ -228,15 +237,20 @@ async function waitFetch(url, options = {}, timeoutMs = 12000) {
     } catch (err) {
       lastErr = err;
     }
-    await sleep(200);
+    // Backoff 150ms → cap 1s, plus jitter, so retries don't hammer a recovering
+    // server in lockstep.
+    await sleep(Math.min(delay, 1000) + Math.floor(Math.random() * 100));
+    delay = Math.min(Math.floor(delay * 1.6), 1000);
   }
-  throw lastErr ?? new Error(`Timeout aguardando ${url}`);
+  const what = label ? `${label} (${url})` : url;
+  const cause = lastErr ? `: ${lastErr.message}` : "";
+  throw new Error(`Timeout de ${timeoutMs}ms aguardando ${what} apos ${attempts} tentativa(s)${cause}`);
 }
 
 async function assertServerReachable(baseUrl) {
   const healthUrl = new URL("/health/", baseUrl).toString();
   try {
-    await waitFetch(healthUrl, {}, 5000);
+    await waitFetch(healthUrl, {}, 15000, "servidor Shopman (/health/)");
   } catch (err) {
     throw new Error(`Servidor Shopman indisponivel em ${healthUrl}: ${err.message}`);
   }
@@ -351,7 +365,7 @@ function createCdpClient(wsUrl) {
   };
 }
 
-async function waitForDocument(client, timeoutMs = 9000) {
+async function waitForDocument(client, timeoutMs = 20000) {
   const started = Date.now();
   while (Date.now() - started < timeoutMs) {
     const evaluated = await client.send("Runtime.evaluate", {
@@ -362,6 +376,74 @@ async function waitForDocument(client, timeoutMs = 9000) {
     await sleep(150);
   }
   throw new Error("Timeout aguardando document.readyState.");
+}
+
+// Launch headless Chrome and complete the CDP handshake, RELAUNCHING on failure.
+// Chrome's remote-debugging port coming up late — or the process dying at start —
+// under a loaded CI runner is the classic source of the opaque "fetch failed" that
+// used to sink the whole strict gate. A blip on one launch should cost a relaunch,
+// not the run: we try a few times, each with a fresh port + profile, and only
+// surface the failure when Chrome genuinely refuses to expose the endpoint. The
+// returned client already has the Runtime/Page/Network domains enabled.
+async function launchChromeWithCdp(chromePath, options, attempts = 3) {
+  let lastErr;
+  for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    const userDataDir = `/tmp/shopman-chrome-profile-${Date.now()}-${attempt}`;
+    const port = 9222 + Math.floor(Math.random() * 1000);
+    const chromeArgs = [
+      `--remote-debugging-port=${port}`,
+      `--user-data-dir=${userDataDir}`,
+      "--headless=new",
+      "--disable-gpu",
+      "--no-first-run",
+      "--no-default-browser-check",
+      "--hide-scrollbars",
+    ];
+    if (process.env.CI) chromeArgs.push("--no-sandbox");
+    if (options.ignoreCertificateErrors) chromeArgs.push("--ignore-certificate-errors");
+
+    const chrome = spawn(chromePath, chromeArgs, { stdio: ["ignore", "ignore", "pipe"] });
+    let stderr = "";
+    chrome.stderr.on("data", (chunk) => {
+      stderr += chunk.toString();
+    });
+    let exited = null;
+    chrome.once("exit", (code, signal) => {
+      exited = { code, signal };
+    });
+
+    try {
+      await waitFetch(`http://127.0.0.1:${port}/json/version`, {}, 30000, "Chrome CDP /json/version");
+      const targetResponse = await waitFetch(
+        `http://127.0.0.1:${port}/json/new?about:blank`,
+        { method: "PUT" },
+        30000,
+        "Chrome CDP /json/new",
+      );
+      const target = await targetResponse.json();
+      const client = createCdpClient(target.webSocketDebuggerUrl);
+      await client.open();
+      await client.send("Runtime.enable");
+      await client.send("Page.enable");
+      await client.send("Network.enable");
+      return { chrome, client, userDataDir, getStderr: () => stderr };
+    } catch (err) {
+      lastErr = err;
+      const detail = exited ? ` (chrome saiu: code=${exited.code} signal=${exited.signal})` : "";
+      console.warn(`chrome/CDP indisponivel na tentativa ${attempt}/${attempts}${detail}: ${err.message}`);
+      chrome.kill("SIGKILL");
+      await sleep(300);
+      await fs.rm(userDataDir, { recursive: true, force: true });
+      if (stderr.trim()) {
+        await fs
+          .writeFile(`/tmp/shopman-omotenashi-qa-chrome.stderr.attempt-${attempt}.log`, stderr)
+          .catch(() => {});
+      }
+    }
+  }
+  throw new Error(
+    `Chrome nao expos o endpoint CDP apos ${attempts} tentativa(s): ${lastErr?.message ?? "desconhecido"}`,
+  );
 }
 
 async function runBrowserQa(matrix, options) {
@@ -379,37 +461,10 @@ async function runBrowserQa(matrix, options) {
   await fs.mkdir(options.screenshotsDir, { recursive: true });
   await fs.mkdir(path.dirname(options.reportPath), { recursive: true });
 
-  const userDataDir = `/tmp/shopman-chrome-profile-${Date.now()}`;
-  const port = 9222 + Math.floor(Math.random() * 1000);
-  const chromeArgs = [
-    `--remote-debugging-port=${port}`,
-    `--user-data-dir=${userDataDir}`,
-    "--headless=new",
-    "--disable-gpu",
-    "--no-first-run",
-    "--no-default-browser-check",
-    "--hide-scrollbars",
-  ];
-  if (process.env.CI) chromeArgs.push("--no-sandbox");
-  if (options.ignoreCertificateErrors) chromeArgs.push("--ignore-certificate-errors");
-
-  const chrome = spawn(chromePath, chromeArgs, { stdio: ["ignore", "ignore", "pipe"] });
-  let stderr = "";
-  chrome.stderr.on("data", (chunk) => {
-    stderr += chunk.toString();
-  });
-
-  let client;
+  // Bring up Chrome + CDP with relaunch-on-blip; the returned client already has
+  // the Runtime/Page/Network domains enabled.
+  const { chrome, client, userDataDir, getStderr } = await launchChromeWithCdp(chromePath, options);
   try {
-    await waitFetch(`http://127.0.0.1:${port}/json/version`);
-    const targetResponse = await waitFetch(`http://127.0.0.1:${port}/json/new?about:blank`, { method: "PUT" });
-    const target = await targetResponse.json();
-    client = createCdpClient(target.webSocketDebuggerUrl);
-    await client.open();
-    await client.send("Runtime.enable");
-    await client.send("Page.enable");
-    await client.send("Network.enable");
-
     // Headless split: the matrix mixes Django operator URLs (relative → resolved
     // against baseUrl) with absolute Nuxt-store URLs (different host). Bind the QA
     // session cookie to EVERY origin the matrix navigates, so order-scoped store
@@ -521,10 +576,11 @@ async function runBrowserQa(matrix, options) {
     await fs.writeFile(options.reportPath, JSON.stringify(report, null, 2));
     return report;
   } finally {
-    if (client) client.close();
+    client.close();
     chrome.kill("SIGTERM");
     await sleep(300);
     await fs.rm(userDataDir, { recursive: true, force: true });
+    const stderr = getStderr();
     if (stderr.trim()) {
       await fs.writeFile("/tmp/shopman-omotenashi-qa-chrome.stderr.log", stderr);
     }
