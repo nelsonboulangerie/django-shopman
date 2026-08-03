@@ -144,10 +144,14 @@ class ItemPricingModifier:
 
 
 class SessionTotalModifier:
-    """Modifier que calcula total da sessão. Ordem: 50"""
+    """Recalcula o total da sessão. Ordem 90 — DEPOIS de todos os descontos
+    (funcionário 60, happy hour 65, taxa 70, loyalty 80, manual 85), senão
+    ``pricing["total_q"]`` fica defasado (S2 da DISCOUNT-AUDIT). O total cobrado
+    canônico segue sendo ``sum(line_total_q)``/``order.total_q``; esta chave é
+    conveniência de leitura e agora reflete o valor final."""
 
     code = "pricing.session_total"
-    order = 50
+    order = 90
 
     def apply(self, *, channel: Any, session: Any, ctx: dict) -> None:
         total = sum(item.get("line_total_q", 0) for item in session.items)

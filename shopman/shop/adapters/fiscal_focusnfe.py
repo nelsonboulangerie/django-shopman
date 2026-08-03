@@ -398,8 +398,17 @@ def _map_item(number: int, item: dict, config: dict) -> dict:
     total_q = item.get("total_q")
     if total_q in (None, ""):
         total_q = int((Decimal(unit_price_q) * raw_qty).quantize(Decimal("1"), rounding=ROUND_HALF_UP))
-    unit_price = _money_q(unit_price_q)
+    total_q = int(total_q)
     total = _money_q(total_q)
+    # vProd é a fonte da verdade (o total cobrado da linha). Se um desconto rateado
+    # (loyalty/manual/valor-fixo do pedido) deixou ``unit_price_q × qty ≠ line_total_q``,
+    # emitir vUnCom com 2 casas faria ``vUnCom × qCom ≠ vProd`` → rejeição SEFAZ.
+    # Nesse caso derivamos vUnCom de ``vProd/qCom`` com alta precisão (NFC-e aceita
+    # até 10 casas em vUnCom); no caminho comum mantém-se as 2 casas.
+    if raw_qty > 0 and unit_price_q * raw_qty != total_q:
+        unit_price = _decimal((Decimal(total_q) / Decimal("100")) / raw_qty, places="0.0000000001")
+    else:
+        unit_price = _money_q(unit_price_q)
     unit = str(_first(fiscal, "unidade_comercial", "unit", default=item.get("unit") or "UN")).upper()
 
     mapped = {

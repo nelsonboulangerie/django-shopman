@@ -336,3 +336,37 @@ def test_focus_nfe_home_delivery_freight_with_identified_recipient():
     assert payload["cnpj_transportador"] == "12345678000199"
     assert payload["cep_destinatario"] == "86010000"
     assert payload["formas_pagamento"] == [{"forma_pagamento": "17", "valor_pagamento": "16.00"}]
+
+
+def test_map_item_vuncom_times_qty_equals_vprod_after_distributed_discount():
+    """R1 (DISCOUNT-AUDIT): um desconto rateado deixa unit_price_q × qty ≠
+    line_total_q. A NFC-e deve derivar vUnCom de vProd/qCom (alta precisão) para
+    que vUnCom × qCom == vProd — senão a SEFAZ rejeita."""
+    from decimal import ROUND_HALF_UP, Decimal
+
+    from shopman.shop.adapters.fiscal_focusnfe import _map_item
+
+    # qty=2, total cobrado 999 (após desconto), unit_price_q floor = 499 → 499×2=998≠999.
+    item = {
+        "sku": "PAO", "name": "Pão", "qty": 2, "unit_price_q": 499, "total_q": 999,
+        "fiscal": {"ncm": "19059090", "cfop": "5102"},
+    }
+    mapped = _map_item(1, item, {})
+    vuncom = Decimal(mapped["valor_unitario_comercial"])
+    qcom = Decimal(mapped["quantidade_comercial"])
+    vprod = Decimal(mapped["valor_bruto"])
+    assert vprod == Decimal("9.99")
+    assert (vuncom * qcom).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP) == vprod
+
+
+def test_map_item_keeps_two_decimals_when_evenly_divisible():
+    """Caminho comum (sem resto): vUnCom mantém 2 casas."""
+    from shopman.shop.adapters.fiscal_focusnfe import _map_item
+
+    item = {
+        "sku": "PAO", "name": "Pão", "qty": 2, "unit_price_q": 500, "total_q": 1000,
+        "fiscal": {"ncm": "19059090", "cfop": "5102"},
+    }
+    mapped = _map_item(1, item, {})
+    assert mapped["valor_unitario_comercial"] == "5.00"
+    assert mapped["valor_bruto"] == "10.00"

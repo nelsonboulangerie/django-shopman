@@ -234,6 +234,50 @@ class DiscountStackingAuditTests(TestCase):
                          f"charged dropped {applied} but reported {reported} discounted")
         self.assertEqual(applied, 999, f"manual discount under-applied: {applied} of 999")
 
+    # ── HOLE C1: cupom expirado NÃO desconta após reprice (confirm reprecifica) ─
+    def test_expired_coupon_not_applied_on_reprice(self) -> None:
+        from shopman.storefront.models import Coupon, Promotion
+
+        now = timezone.now()
+        promo = Promotion.objects.create(
+            name="Cupom expirado", type=Promotion.PERCENT, value=20, is_active=True,
+            valid_from=now - timedelta(days=10), valid_until=now - timedelta(days=1),  # já venceu
+        )
+        Coupon.objects.create(code="EXPIRED20", promotion=promo, is_active=True, max_uses=0)
+        cache.clear()
+
+        key = self._open_session()
+        ModifyService.modify_session(
+            session_key=key, channel_ref="web",
+            ops=[{"op": "set_data", "path": "coupon_code", "value": "EXPIRED20"}],
+        )
+        session = ModifyService.modify_session(
+            session_key=key, channel_ref="web",
+            ops=[{"op": "add_line", "sku": self.product.sku, "qty": 1, "unit_price_q": 1000}],
+        )
+        # Cupom vencido é re-validado no reprice (get_coupon_promotion → None) →
+        # sem desconto. O confirm sempre reprecifica (ops não-vazio), então a
+        # expiração é pega ali + o guardião cobre qualquer divergência.
+        self.assertEqual(self._line(session)["unit_price_q"], 1000)
+        self.assertNotIn("coupon", session.pricing or {})
+
+    # ── HOLE S2: pricing["total_q"] reflete o total PÓS-desconto ─────────────
+    def test_session_total_reflects_post_discount(self) -> None:
+        key = self._open_session()
+        ModifyService.modify_session(
+            session_key=key, channel_ref="web",
+            ops=[{"op": "add_line", "sku": self.product.sku, "qty": 1, "unit_price_q": 1000}],
+        )
+        session = ModifyService.modify_session(
+            session_key=key, channel_ref="web",
+            ops=[{"op": "set_data", "path": "manual_discount",
+                  "value": {"discount_q": 300, "reason": "audit"}}],
+        )
+        charged = sum(int(i.get("line_total_q") or 0) for i in session.items)
+        # total_q é recalculado no fim da cadeia (order 90) → bate com as linhas.
+        self.assertEqual((session.pricing or {}).get("total_q"), charged)
+        self.assertEqual(charged, 700)
+
     # ── HOLE 3: guard exposes the fresh total (structured) so the modal can
     # show old→new instead of a stale number beside the warning. ───────────────
     def test_total_changed_guard_carries_new_total(self) -> None:
