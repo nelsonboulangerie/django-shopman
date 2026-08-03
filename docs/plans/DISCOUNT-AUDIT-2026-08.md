@@ -59,6 +59,39 @@ transparência reconstruída a partir de `modifiers_applied`, e migração dos t
 que hoje codificam o empilhamento. É refatoração de preço com raio grande; merece
 PR próprio e bateria de invariância, não fim de sessão longa.
 
+## Nota de implementação para H1/H2 (descoberta ao começar o fix)
+
+Verificado empiricamente: **`modifiers_applied` NÃO sobrevive a `update_items`** —
+`Session._normalize_items` só mantém `meta`/`unit_price_q`/`line_total_q` (packages/
+orderman/.../session.py:200). Consequências:
+
+- O guard do happy hour "pula linha de funcionário" (`any(... employee_discount ...
+  in item.modifiers_applied)`) lê uma lista **sempre vazia** → é **código morto**;
+  happy hour compõe sobre funcionário também.
+- Entre modifiers, o único estado durável é `unit_price_q` (reduzido) + `meta` +
+  as chaves de `session.pricing`. `modifiers_applied` é rascunho LOCAL de um
+  modifier, perdido no `update_items`.
+
+**Design do fix (árbitro "maior desconto ganha"):**
+1. `ItemPricingModifier` (10) carimba `meta["_list_q"]` (preço de lista pré-desconto)
+   e zera `meta["_disc"]` a cada run.
+2. Cada desconto por-linha (D-1, promo/cupom, funcionário, happy hour) aplica sobre
+   `_list_q` e só vence se seu valor > `meta["_disc"].amount_q` atual; ao vencer,
+   grava `meta["_disc"] = {type, amount_q, label}` e `unit_price = _list_q - amount`.
+   Isso mata a composição (sempre sobre a lista, nunca sobre preço já reduzido) e
+   deixa UM desconto por linha.
+3. Um passo de reconciliação reconstrói as chaves de transparência
+   (`pricing["d1_discount"/"discount"/"employee_discount"/"happy_hour"]`) a partir de
+   `meta["_disc"]` — fonte única, elimina a duplicação. Corrige de brinde o S2
+   (`pricing["total_q"]` calculado cedo demais).
+4. Migrar os testes que hoje afirmam o empilhamento/chaves por-modifier
+   (`test_persona_3_employee`, `test_discount_transparency`, `test_pos_line_discount`,
+   `test_d1_persisted_pipeline`, e os xfail de `test_discount_stacking_audit`).
+
+É refatoração de preço com raio grande (4 modifiers + reconcile + migração de
+testes). PR próprio, test-driven, com bateria de invariância — não emendar no fim de
+sessão longa.
+
 ## Quadro de furos
 
 > **Correção (2026-08-02):** o empilhamento H1/H2 é **do POS/balcão, não da loja**.
