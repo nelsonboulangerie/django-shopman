@@ -201,16 +201,18 @@ class TestTimeWindowDiscountModifier:
             modifier.apply(channel=channel, session=session, ctx={})
         assert session.items[0]["unit_price_q"] == 750  # 1000 - 25% (module default)
 
-    def test_skips_employee_discount_items(self, modifier):
+    def test_does_not_compound_on_a_bigger_existing_discount(self, modifier):
+        # "Maior desconto ganha": a line already at D-1 (50% off → 500) must NOT
+        # get happy hour (20%) stacked on top. 20% < 50% → happy hour skips it.
         session = _make_session(items=[{
-            "sku": "P001", "unit_price_q": 1000, "qty": 1,
-            "modifiers_applied": [{"type": "employee_discount"}],
+            "sku": "P001", "unit_price_q": 500, "qty": 1,
+            "meta": {"_list_q": 1000, "_disc": {"type": "d1_discount", "amount_q": 500}},
         }])
         channel = _make_channel()
         rc = {"discount_percent": 20, "start": "00:00", "end": "23:59"}
         with self._gate(rc), patch("django.utils.timezone.localtime", self._at(12)):
             modifier.apply(channel=channel, session=session, ctx={})
-        assert session.items[0]["unit_price_q"] == 1000  # not touched
+        assert session.items[0]["unit_price_q"] == 500  # kept D-1, no compounding
 
     def test_skips_when_rule_not_enabled_for_channel(self, modifier):
         # No enabled rule for this channel → None → no discount.
@@ -261,13 +263,15 @@ class TestEmployeeModifierRuleConfig:
             modifier.apply(channel=channel, session=session, ctx={})
         assert session.items[0]["unit_price_q"] == 1000  # not staff, not touched
 
-    def test_modifier_records_type_in_applied(self, modifier):
+    def test_modifier_records_discount_in_meta_and_pricing(self, modifier):
+        # A transparência durável vive em ``meta["_disc"]`` (modifiers_applied não
+        # sobrevive ao normalize) e em ``session.pricing["employee_discount"]``.
         session = self._staff_session()
         channel = _make_channel()
         with patch("shopman.shop.rules.engine.get_rule_params", return_value={"discount_percent": 20}):
             modifier.apply(channel=channel, session=session, ctx={})
-        types = [m["type"] for m in session.items[0].get("modifiers_applied", [])]
-        assert "employee_discount" in types
+        assert session.items[0]["meta"]["_disc"]["type"] == "employee_discount"
+        assert session.pricing["employee_discount"]["total_discount_q"] == 200
 
 
 # ─── ItemPricingModifier: operator price override (frozen price) ──────────────

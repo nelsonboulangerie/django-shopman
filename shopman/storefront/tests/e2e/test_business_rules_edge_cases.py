@@ -360,18 +360,18 @@ class TestHappyHour:
         # No minuto exato do fim NÃO vale mais.
         assert self._apply_at(18, 0, start="17:30", end="18:00") == 1000
 
-    def test_happy_hour_skips_employee_line_in_isolation(self):
-        """No modifier isolado, happy hour PULA linha com desconto de funcionário
-        (guard `modifiers_applied`)."""
+    def test_happy_hour_does_not_compound_on_employee_line(self):
+        """Maior desconto ganha: uma linha já com desconto de funcionário (20% →
+        800) NÃO recebe happy hour de 20% por cima (empate → não substitui)."""
         from shopman.shop.modifiers import TimeWindowDiscountModifier
 
         session = SimpleNamespace(
             items=[{
-                "sku": "P", "unit_price_q": 1000, "qty": 1,
-                "modifiers_applied": [{"type": "employee_discount"}],
+                "sku": "P", "unit_price_q": 800, "qty": 1,
+                "meta": {"_list_q": 1000, "_disc": {"type": "employee_discount", "amount_q": 200}},
             }],
             data={},
-            pricing={},
+            pricing={"employee_discount": {"total_discount_q": 200, "label": "Desconto funcionário"}},
         )
         session.update_items = lambda items: None
         session.save = lambda **kw: None
@@ -384,7 +384,7 @@ class TestHappyHour:
             patch("django.utils.timezone.localtime", return_value=fake),
         ):
             TimeWindowDiscountModifier().apply(channel=SimpleNamespace(ref="web"), session=session, ctx={})
-        assert session.items[0]["unit_price_q"] == 1000  # não empilha
+        assert session.items[0]["unit_price_q"] == 800  # sem composição
 
 
 class TestEmployeeDiscount:
@@ -416,15 +416,12 @@ class TestEmployeeDiscount:
         s = self._staff_session(group="regular", percent=20)
         assert _unit_price(s, "PAO") == 1000
 
-    def test_staff_plus_d1_stacks(self):
-        """ACHADO (revisar intenção de produto): staff + D-1 ACUMULAM.
+    def test_staff_plus_d1_best_wins_no_stack(self):
+        """DECISÃO DE PRODUTO (maior desconto ganha): staff + D-1 NÃO acumulam.
 
-        O D-1 (order 15) desconta 50% e marca a linha; o desconto de funcionário
-        (order 60) aplica sobre TODAS as linhas não-congeladas, sem pular linha
-        D-1 — logo 1000 → 500 (D-1) → 400 (−20% funcionário). O docstring do
-        módulo diz "apenas UM desconto por item (o melhor)", mas o funcionário é
-        pós-precificação e empilha. Pode ser perk intencional (funcionário sempre
-        leva sua fatia) ou double-dip. Registrado para decisão de produto.
+        O D-1 desconta 50% (1000 → 500); o funcionário (20%) calcula sobre a LISTA
+        e só substituiria se batesse os 50% — como 20% < 50%, o D-1 vence e o preço
+        fica 500 (antes empilhava para 400). Ver docs/plans/DISCOUNT-AUDIT-2026-08.md.
         """
         from shopman.shop.services import sessions
 
@@ -442,7 +439,7 @@ class TestEmployeeDiscount:
                 {"op": "set_data", "path": "customer", "value": {"group": "staff"}},
             ],
         )
-        assert _unit_price(s, "PAO-D1") == 400  # 50% D-1 e depois 20% funcionário
+        assert _unit_price(s, "PAO-D1") == 500  # D-1 vence; funcionário não empilha
 
 
 class TestQuantityPromotion:
