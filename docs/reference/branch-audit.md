@@ -96,7 +96,7 @@ git switch -c <nome> arquivo/<nome>
 | Tag | Situação |
 |---|---|
 | `arquivo/chore/dev-tunnel-hosts` | Alvo morto — as surfaces `orders-uithing-nuxt` e `storefront-uithing-nuxt` não existem mais. |
-| `arquivo/claude/agitated-rhodes-9b5389` | Válido e pendente: renomeia `Fournil→Produção` e `Broadcast→Marketing`. Só labels + testes. Candidato a PR. |
+| ~~`arquivo/claude/agitated-rhodes-9b5389`~~ | **Resolvido.** Restaurado da tag, rebaseado e mesclado no `main` (PR #124). Tag removida — o conteúdo vive no histórico do main. |
 | `arquivo/claude/reverent-northcutt-2eab47` | Snapshot WIP do debug-gate de adapters externos. Nunca revisado. |
 | `arquivo/claude/shopman-order-flow-dzn4zr` | Pix pré-confirmação. **Não mesclar direto**: o diff reverte copy omotenashi que o main já tem. |
 | `arquivo/claude/wizardly-newton-f2ab69` | Snapshot WIP do storefront-nuxt (2026-07-04). Nunca revisado. |
