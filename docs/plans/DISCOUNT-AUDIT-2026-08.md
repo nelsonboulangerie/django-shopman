@@ -48,7 +48,7 @@ guardião pegou. Mas o guardião é **opcional** (ver H3).
 | **H3** guardião estruturado (new/old total) + mapeamento p/ o modal | Cliente | ✅ CORRIGIDO + teste |
 | **Modal** reprecifica no `total_changed` (mostra o novo total) | Cliente | ✅ CORRIGIDO (finalizar.vue) |
 | **D0** menu não mostra promo fixa por card (= sacola) | Cliente | ✅ CORRIGIDO + teste |
-| **H1/H2** empilhamento composto → "maior desconto ganha" | PDV | 🔜 PRÓXIMO (árbitro único + migração de testes) |
+| **H1/H2** empilhamento composto → "maior desconto ganha" | PDV | ✅ CORRIGIDO + testes (árbitro por-linha via `meta`) |
 | **C1** revalidar cupom no commit | Cliente | 🔜 pendente |
 | **D1–D4, R1, S1/S2** robustez/divergência residual | Vários | 🔜 pendente |
 

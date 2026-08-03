@@ -97,6 +97,101 @@ def _parse_time(raw: str | None, fallback: str) -> time:
         return time(h, m)
 
 
+# ── "Maior desconto ganha" — árbitro por-linha ─────────────────────────────
+# ``modifiers_applied`` NÃO sobrevive ao ``Session._normalize_items`` (só ``meta``
+# e ``unit_price_q`` persistem). Então o desconto vencedor da linha é registrado em
+# ``meta["_disc"]`` (fonte durável entre modifiers), e o preço de lista pré-desconto
+# em ``meta["_list_q"]`` (carimbado pelo ItemPricingModifier). Descontos flat
+# (funcionário, happy hour) calculam sobre a LISTA e só substituem quando batem o
+# desconto atual — nunca compõem sobre um preço já reduzido.
+
+
+def _stamp_disc(item: dict, disc_type: str, amount_q: int, label: str) -> None:
+    """Registra o desconto vencedor da linha em ``meta`` (``amount_q`` por unidade)."""
+    meta = item.get("meta")
+    if not isinstance(meta, dict):
+        meta = {}
+        item["meta"] = meta
+    meta["_disc"] = {"type": disc_type, "amount_q": int(amount_q), "label": label}
+
+
+def _list_price_q(item: dict) -> int:
+    """Preço de lista (pré-desconto) carimbado; cai no preço atual se ausente."""
+    meta = item.get("meta") or {}
+    listed = meta.get("_list_q")
+    return int(listed if listed is not None else (item.get("unit_price_q", 0) or 0))
+
+
+def _current_disc_q(item: dict) -> int:
+    """Desconto por unidade já na linha (lista − preço corrente)."""
+    return max(0, _list_price_q(item) - int(item.get("unit_price_q", 0) or 0))
+
+
+def _reverse_prior_pricing(pricing: dict, item: dict) -> None:
+    """Remove da transparência (``session.pricing``) a contribuição do desconto que
+    a linha carrega hoje, antes do vencedor 'maior ganha' substituí-lo. O tipo vem
+    de ``meta["_disc"]`` (``modifiers_applied`` não persiste)."""
+    prior = (item.get("meta") or {}).get("_disc")
+    if not prior:
+        return
+    t = prior.get("type")
+    sku = item.get("sku", "")
+    qty = int(item.get("qty", 1)) or 1
+    if t in ("promotion", "coupon", "manual"):
+        disc = pricing.get("discount") or {}
+        kept = [d for d in (disc.get("items") or []) if not (d.get("sku") == sku and d.get("type") == t)]
+        disc["items"] = kept
+        disc["total_discount_q"] = sum(int(d.get("discount_q", 0)) * int(d.get("qty", 1)) for d in kept)
+        pricing["discount"] = disc
+        if t == "coupon" and pricing.get("coupon"):
+            pricing["coupon"]["discount_q"] = sum(
+                int(d.get("discount_q", 0)) * int(d.get("qty", 1)) for d in kept if d.get("type") == "coupon"
+            )
+    elif t in ("d1_discount", "employee_discount", "happy_hour"):
+        entry = pricing.get(t)
+        if entry:
+            new_total = int(entry.get("total_discount_q", 0)) - int(prior.get("amount_q", 0)) * qty
+            if new_total > 0:
+                entry["total_discount_q"] = new_total
+            else:
+                pricing.pop(t, None)
+
+
+def _apply_flat_best_wins(session, *, percent, disc_type, label, pricing_key) -> bool:
+    """Aplica um % flat sobre o preço de LISTA sob 'maior desconto ganha': vence a
+    linha só quando bate o desconto atual (sem composição) e reconcilia a
+    transparência do desconto substituído."""
+    items = session.items or []
+    pricing = session.pricing or {}
+    won_total_q = 0
+    modified = False
+    for item in items:
+        if _is_non_merchandise_line(item) or _price_is_frozen(item):
+            continue
+        list_q = _list_price_q(item)
+        if list_q <= 0:
+            continue
+        my_disc = monetary_div(list_q * percent, 100)
+        if my_disc <= _current_disc_q(item):
+            continue  # o desconto já na linha vence ou empata — sem composição
+        _reverse_prior_pricing(pricing, item)
+        qty = int(item.get("qty", 1)) or 1
+        item["unit_price_q"] = list_q - my_disc
+        item["line_total_q"] = item["unit_price_q"] * qty
+        _stamp_disc(item, disc_type, my_disc, label)
+        won_total_q += my_disc * qty
+        modified = True
+    if modified:
+        session.update_items(items)
+    if won_total_q > 0:
+        pricing[pricing_key] = {"total_discount_q": won_total_q, "label": label}
+    else:
+        pricing.pop(pricing_key, None)
+    session.pricing = pricing
+    session.save(update_fields=["pricing"])
+    return modified
+
+
 class AvailabilityDiscountModifier:
     """Discount applied to lines flagged as limited-availability stock.
 
@@ -140,6 +235,8 @@ class AvailabilityDiscountModifier:
             item.setdefault("modifiers_applied", []).append(
                 {"type": "d1_discount", "discount_percent": percent, "original_price_q": original_q}
             )
+            _stamp_disc(item, "d1_discount", discount_q,
+                        _discount_label("CART_DISCOUNT_LABEL_AVAILABILITY", "Liquidação"))
             modified = True
 
         if modified:
@@ -171,7 +268,8 @@ class TimeWindowDiscountModifier:
     to specific channels is how a deployment keeps the discount off a surface
     (e.g. the online storefront, where listed prices would otherwise diverge).
 
-    Does not stack on lines that already carry an employee discount.
+    "Maior desconto ganha": aplica sobre o preço de LISTA e só vence a linha quando
+    bate o desconto já aplicado (D-1, promo, funcionário) — nunca compõe.
     """
 
     code = "shop.happy_hour"
@@ -190,44 +288,20 @@ class TimeWindowDiscountModifier:
 
         now = timezone.localtime().time()
         if not (start <= now < end):
+            # Fora da janela: limpa transparência residual de uma passagem anterior.
+            pricing = session.pricing or {}
+            if pricing.pop("happy_hour", None) is not None:
+                session.pricing = pricing
+                session.save(update_fields=["pricing"])
             return
 
-        items = session.items or []
-        modified = False
-        for item in items:
-            if _is_non_merchandise_line(item) or _price_is_frozen(item):
-                continue
-            applied = item.get("modifiers_applied", [])
-            if any(m.get("type") == "employee_discount" for m in applied):
-                continue
-
-            original_q = item.get("unit_price_q", 0)
-            discount_q = monetary_div(original_q * discount_percent, 100)
-            item["unit_price_q"] = original_q - discount_q
-            item["line_total_q"] = item["unit_price_q"] * int(item.get("qty", 1))
-            item.setdefault("modifiers_applied", []).append(
-                {"type": "happy_hour", "discount_percent": discount_percent}
-            )
-            modified = True
-
-        if modified:
-            session.update_items(items)
-            total_discount_q = sum(
-                monetary_div(item.get("unit_price_q", 0) * discount_percent, 100 - discount_percent)
-                * int(item.get("qty", 1))
-                for item in items
-                if any(m.get("type") == "happy_hour" for m in item.get("modifiers_applied", []))
-            )
-            pricing = session.pricing or {}
-            if total_discount_q > 0:
-                pricing["happy_hour"] = {
-                    "total_discount_q": total_discount_q,
-                    "label": _discount_label("CART_DISCOUNT_LABEL_TIME_WINDOW", "Happy Hour"),
-                }
-            else:
-                pricing.pop("happy_hour", None)
-            session.pricing = pricing
-            session.save(update_fields=["pricing"])
+        _apply_flat_best_wins(
+            session,
+            percent=discount_percent,
+            disc_type="happy_hour",
+            label=_discount_label("CART_DISCOUNT_LABEL_TIME_WINDOW", "Happy Hour"),
+            pricing_key="happy_hour",
+        )
 
 
 class DiscountModifier:
@@ -381,6 +455,9 @@ class DiscountModifier:
                 if source_id:
                     modifier_info["promotion_id"] = source_id
                 item.setdefault("modifiers_applied", []).append(modifier_info)
+                # Fonte durável p/ o árbitro flat (funcionário/happy hour) reconciliar
+                # a transparência caso substitua este desconto ("maior ganha").
+                _stamp_disc(item, source_type, best_discount_q, source_name or source_type)
                 modified = True
 
                 qty = int(item.get("qty", 1))
@@ -621,7 +698,8 @@ class EmployeeDiscountModifier:
     Percentage is configurable via channel config rules.employee_discount_percent
     or SHOPMAN_EMPLOYEE_DISCOUNT_PERCENT setting (default 20).
 
-    Applied per-item. Adjusts unit_price_q and line_total_q on session.items.
+    "Maior desconto ganha": aplica sobre o preço de LISTA e só vence a linha quando
+    bate o desconto já aplicado (D-1, promo) — nunca compõe.
     """
 
     code = "shop.employee_discount"
@@ -633,6 +711,11 @@ class EmployeeDiscountModifier:
     def apply(self, *, channel: Any, session: Any, ctx: dict) -> None:
         customer_group = (session.data or {}).get("customer", {}).get("group", "")
         if customer_group != "staff":
+            # Deixou de ser staff: limpa transparência residual de uma passagem anterior.
+            pricing = session.pricing or {}
+            if pricing.pop("employee_discount", None) is not None:
+                session.pricing = pricing
+                session.save(update_fields=["pricing"])
             return
 
         config = getattr(channel, "config", None) or {}
@@ -643,35 +726,13 @@ class EmployeeDiscountModifier:
             from shopman.shop.rules.engine import get_rule_params
             percent = get_rule_params("employee_discount").get("discount_percent", self.discount_percent)
 
-        items = session.items or []
-        modified = False
-        for item in items:
-            if _is_non_merchandise_line(item) or _price_is_frozen(item):
-                continue
-            original_q = item.get("unit_price_q", 0)
-            discount_q = monetary_div(original_q * percent, 100)
-            item["unit_price_q"] = original_q - discount_q
-            item["line_total_q"] = item["unit_price_q"] * int(item.get("qty", 1))
-            item.setdefault("modifiers_applied", []).append(
-                {"type": "employee_discount", "discount_percent": percent}
-            )
-            modified = True
-
-        if modified:
-            session.update_items(items)
-            total_discount_q = sum(
-                monetary_div(item.get("unit_price_q", 0) * percent, 100 - percent)
-                * int(item.get("qty", 1))
-                for item in items
-                if any(m.get("type") == "employee_discount" for m in item.get("modifiers_applied", []))
-            )
-            pricing = session.pricing or {}
-            if total_discount_q > 0:
-                pricing["employee_discount"] = {"total_discount_q": total_discount_q, "label": "Desconto funcionário"}
-            else:
-                pricing.pop("employee_discount", None)
-            session.pricing = pricing
-            session.save(update_fields=["pricing"])
+        _apply_flat_best_wins(
+            session,
+            percent=percent,
+            disc_type="employee_discount",
+            label="Desconto funcionário",
+            pricing_key="employee_discount",
+        )
 
 
 _ZONE_MODE_EXCLUDE = "exclude"
