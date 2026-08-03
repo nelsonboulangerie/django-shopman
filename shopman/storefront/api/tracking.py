@@ -56,6 +56,30 @@ def _mock_payment_enabled() -> bool:
     return mock_payment_enabled()
 
 
+def _alert_low_rating(order, rating: int, comment: str) -> None:
+    """Raise a debounced OperatorAlert for a low customer rating (≤2).
+
+    Best-effort: uma avaliação nunca deve falhar por causa do alerta. O helper
+    de observabilidade já loga e engole exceções, mas o try aqui blinda o import.
+    """
+    try:
+        from shopman.shop.services.observability import create_operator_alert
+
+        trimmed = (comment or "").strip()
+        message = f"Pedido {order.ref} recebeu nota {rating}/5."
+        if trimmed:
+            message += f" Comentário: {trimmed[:200]}"
+        create_operator_alert(
+            type="low_rating",
+            severity="warning",
+            message=message,
+            order_ref=order.ref,
+            dedupe_key=f"low_rating:{order.ref}",
+        )
+    except Exception:
+        logger.warning("tracking.low_rating_alert_failed order=%s", order.ref, exc_info=True)
+
+
 def _rate_limited_response(detail: str = "Muitas tentativas. Aguarde um instante.") -> Response:
     return Response(
         {
@@ -457,6 +481,11 @@ class OrderRateView(APIView):
             }
             order.data = data
             order.save(update_fields=["data"])
+            # Nota baixa (≤2) vira alerta do operador: o gestor age enquanto o
+            # cliente ainda lembra, e a nota deixa de morrer no JSONField. Não pode
+            # derrubar a resposta da avaliação — best-effort, debounced no helper.
+            if rating <= 2:
+                _alert_low_rating(order, rating, comment)
             # Mesmo contrato de resposta das demais mutações (cancel/confirm):
             # o payload volta pelo serializer canônico, não como dict cru.
             serializer = OrderTrackingSerializer(_tracking_payload(order))

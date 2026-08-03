@@ -127,6 +127,11 @@ def dashboard_callback(request, context):
         "table_operator_alerts": _build_operator_alerts_table(proj.operator_alerts),
         "d1_stock": proj.d1_stock,
         "table_d1": _build_d1_table(proj.d1_stock) if proj.d1_stock else None,
+        # Avaliações do cliente (fecha o loop): média móvel + últimos comentários.
+        "rating_average": proj.rating_average,
+        "rating_count": proj.rating_count,
+        "rating_low_count": proj.rating_low_count,
+        "table_ratings": _build_ratings_table(proj.recent_ratings),
         # Fechamento do DIA vive na antesala do PDV (env-gated como o item da sidebar).
         "day_closing_url": _day_closing_url(),
     })
@@ -172,6 +177,34 @@ def _build_d1_table(d1_rows):
     return {
         "headers": ["SKU", "Produto", "Qtd", "Entrada"],
         "rows": rows,
+    }
+
+
+def _build_ratings_table(rows):
+    """Recent customer ratings table for the dashboard.
+
+    Estrelas + comentário + pedido + quando. Notas baixas (≤2) em vermelho para
+    pular aos olhos do gestor.
+    """
+    table_rows = []
+    for r in rows:
+        # Nota baixa (≤2) em vermelho canônico para pular aos olhos; as demais em
+        # texto padrão (a coluna já se lê pelas estrelas).
+        if r.is_low:
+            stars_cell = format_html(
+                '<span class="font-semibold text-red-600 dark:text-red-400">{}</span>', r.stars,
+            )
+        else:
+            stars_cell = r.stars
+        table_rows.append([
+            stars_cell,
+            r.comment or "—",
+            r.order_ref or "—",
+            r.submitted_at_display,
+        ])
+    return {
+        "headers": ["Nota", "Comentário", "Pedido", "Quando"],
+        "rows": table_rows,
     }
 
 

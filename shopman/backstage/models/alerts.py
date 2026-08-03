@@ -29,6 +29,7 @@ class OperatorAlert(models.Model):
         ("directive_backlog", "Fila de tarefas de fundo acumulada"),
         ("directive_worker_stale", "Worker de tarefas de fundo parado"),
         ("lifecycle_phase_stuck", "Fase do pedido travada"),
+        ("low_rating", "Avaliação baixa recebida"),
     ]
     SEVERITY_CHOICES = [
         ("warning", "Aviso"),

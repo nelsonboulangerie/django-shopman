@@ -1,6 +1,7 @@
 # RATING-LOOP-PLAN — a avaliação do cliente não chega em ninguém
 
-**Status:** achado de auditoria (2026-07-31), não executado.
+**Status:** ✅ EXECUTADO (2026-07-31). Loop fechado: a loja lê a nota e é avisada
+em nota baixa. Ver "O que foi feito" no fim.
 **Origem:** revisão do acompanhamento; Pablo pediu para verificar se o sistema de
 avaliação funciona de fato.
 
@@ -70,3 +71,32 @@ mente para quem lê. Renomear para `ratingOpen`.
 - `shopman/storefront/api/tracking.py` — `OrderRateView`
 - `surfaces/storefront-nuxt/app/pages/pedido/[ref]/index.vue` — sheet e ação
 - consumidor novo: `shopman/backstage/` (Admin/Unfold) e/ou dashboard do gestor
+
+## O que foi feito (2026-07-31)
+
+Executado nesta ordem (valor por esforço), tudo em Admin/Unfold para manter o loop
+num lugar só:
+
+1. **Nota visível no pedido** — `OrderAdmin` (`packages/orderman/.../admin.py`)
+   ganhou coluna `rating_display` (estrelas; ≤2 em vermelho; comentário no
+   tooltip) e um detalhe formatado `customer_rating_detail` na aba "Avaliação"
+   (lê de `Order.data["customer_rating"]`).
+2. **Alerta de nota baixa (≤2)** — `OrderRateView.execute_rate` chama
+   `_alert_low_rating`, que cria um `OperatorAlert(type="low_rating")` debounced
+   (helper `create_operator_alert`). Novo tipo registrado em
+   `OperatorAlert.TYPE_CHOICES` (migração `0022`); best-effort (nunca derruba a
+   avaliação). O alerta já aparece no board de alertas do operador (dashboard).
+3. **Agregado no dashboard do Admin** — `build_dashboard()` agrega média móvel
+   (janela das últimas 200 avaliações), contagem, nº de notas baixas e os últimos
+   8 comentários (`_customer_ratings`). Renderizado em nova row do
+   `templates/admin/dashboard.html` com componentes canônicos Unfold (passa no
+   gate). Sem trabalho no Nuxt.
+4. **Copy** — o item 4 do plano (corrigir a copy do sheet se (1) demorasse) ficou
+   dispensado: (1) foi feito, então "Sua nota ajuda a loja a melhorar" agora se
+   cumpre.
+
+**Resíduo de nomenclatura:** `supportOpen` → `ratingOpen` no `index.vue`. ✅
+
+**Testes:** `shopman/backstage/tests/test_rating_loop.py` (agregado, alerta
+registrado + debounce, displays do Admin) + extensão de
+`test_dashboard_admin_tables.py`. `make admin` verde (gate canônico).

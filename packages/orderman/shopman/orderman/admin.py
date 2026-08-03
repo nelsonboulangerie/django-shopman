@@ -509,6 +509,7 @@ class OrderAdmin(ModelAdmin):
         "units_count_display",
         "production_wait_display",
         "total_display",
+        "rating_display",
         "operation_link_display",
         "created_at",
     )
@@ -550,6 +551,7 @@ class OrderAdmin(ModelAdmin):
             {"fields": ("session_key", "handle_type", "handle_ref"), "classes": ("tab",)},
         ),
         (_("Valores"), {"fields": ("currency", "total_q"), "classes": ("tab",)}),
+        (_("Avaliação"), {"fields": ("customer_rating_detail",), "classes": ("tab",)}),
         (_("Dados"), {"fields": ("data",), "classes": ("tab",)}),
         (_("Snapshot"), {"fields": ("snapshot",), "classes": ("tab",)}),
         (_("Auditoria"), {"fields": ("created_at", "updated_at"), "classes": ("tab",)}),
@@ -568,6 +570,7 @@ class OrderAdmin(ModelAdmin):
         "snapshot",
         "currency",
         "total_q",
+        "customer_rating_detail",
         "created_at",
         "updated_at",
     )
@@ -644,6 +647,47 @@ class OrderAdmin(ModelAdmin):
         if obj.total_q:
             return f"{obj.currency} {obj.total_q / 100:.2f}"
         return "-"
+
+    @display(description=_("avaliação"))
+    def rating_display(self, obj: Order) -> str:
+        # A nota do cliente mora em data["customer_rating"] (escrita pelo
+        # storefront). Aqui ela finalmente aparece para a loja: estrelas no
+        # changelist, nota baixa (≤2) em vermelho para pular aos olhos, e o
+        # comentário no title para leitura rápida sem abrir o pedido.
+        rating_data = (obj.data or {}).get("customer_rating") or {}
+        score = rating_data.get("rating")
+        if not score:
+            return "-"
+        score = int(score)
+        stars = "★" * score + "☆" * (5 - score)
+        comment = rating_data.get("comment") or ""
+        if score <= 2:
+            return format_html(
+                '<span class="font-semibold text-red-700 dark:text-red-400" title="{}">{}</span>',
+                comment,
+                stars,
+            )
+        return format_html('<span title="{}">{}</span>', comment, stars)
+
+    @display(description=_("avaliação do cliente"))
+    def customer_rating_detail(self, obj: Order) -> str:
+        # Leitura formatada da nota no detalhe do pedido (a "Dados" mostra o JSON
+        # cru; aqui é a versão legível: estrelas + comentário + quando foi).
+        rating_data = (obj.data or {}).get("customer_rating") or {}
+        score = rating_data.get("rating")
+        if not score:
+            return format_html('<span class="text-base-500">{}</span>', "Sem avaliação ainda.")
+        score = int(score)
+        stars = "★" * score + "☆" * (5 - score)
+        comment = rating_data.get("comment") or ""
+        submitted_at = rating_data.get("submitted_at") or ""
+        tone = "text-red-700 dark:text-red-400" if score <= 2 else "text-amber-600 dark:text-amber-400"
+        html = format_html('<div class="font-semibold text-lg {}">{} ({}/5)</div>', tone, stars, score)
+        if comment:
+            html += format_html('<div class="mt-1">{}</div>', comment)
+        if submitted_at:
+            html += format_html('<div class="mt-1 text-sm text-base-500">{}</div>', submitted_at)
+        return html
 
     @display(description=_("ação"))
     def operation_link_display(self, obj: Order) -> str:
