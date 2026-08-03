@@ -148,7 +148,7 @@ function refreshAll() {
           <p class="text-xs font-medium uppercase tracking-wider text-muted-foreground">
             Rendimento médio
           </p>
-          <p class="mt-1 text-2xl font-bold tabular-nums">
+          <p class="mt-1 text-xl font-bold tabular-nums">
             {{ management?.average_yield_rate || "—" }}
           </p>
           <p class="text-xs text-muted-foreground">
@@ -159,7 +159,7 @@ function refreshAll() {
           <p class="text-xs font-medium uppercase tracking-wider text-muted-foreground">
             Capacidade
           </p>
-          <p class="mt-1 text-2xl font-bold tabular-nums">
+          <p class="mt-1 text-xl font-bold tabular-nums">
             <template v-if="management?.capacity_percent != null"
               >{{ management.capacity_percent }}%</template
             >
@@ -177,7 +177,7 @@ function refreshAll() {
           <p class="text-xs font-medium uppercase tracking-wider text-muted-foreground">
             Planejado
           </p>
-          <p class="mt-1 text-2xl font-bold tabular-nums">
+          <p class="mt-1 text-xl font-bold tabular-nums">
             {{ management?.planned_qty || "0" }}
           </p>
           <p class="text-xs text-muted-foreground">
@@ -188,7 +188,7 @@ function refreshAll() {
           <p class="text-xs font-medium uppercase tracking-wider text-muted-foreground">
             Perda
           </p>
-          <p class="mt-1 text-2xl font-bold tabular-nums">
+          <p class="mt-1 text-xl font-bold tabular-nums">
             {{ management?.loss_qty || "0" }}
           </p>
           <p class="text-xs text-muted-foreground">
