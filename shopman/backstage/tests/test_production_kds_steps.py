@@ -149,7 +149,7 @@ def test_apply_advance_step_rejects_recipe_without_steps(superuser):
 
 
 # The advance-step HTTP path moved to the headless API
-# (POST /api/v1/backstage/production/<pk>/advance-step/) consumed by the fournil.
+# (POST /api/v1/backstage/production/<pk>/advance-step/) consumed by the prod.
 # Nuxt app; that contract is covered by test_api_production_surface and the
 # repointed test_backstage_e2e. The pure-service behaviour stays tested above
 # (test_apply_advance_step_*).

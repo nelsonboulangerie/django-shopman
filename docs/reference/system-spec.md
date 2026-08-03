@@ -523,7 +523,7 @@ Staff login → abrir caixa → POS board (grid + carrinho) → lookup phone →
 
 ### 4.5 POV: Dono / gestor
 
-Admin Unfold é CRUD + configuração: dashboard como landing de config/auditoria (atalhos de configuração, trilhas de auditoria, saúde da copy omotenashi, alertas de estoque/operador, estoque D-1). Operação ao vivo mora nos apps Nuxt (Gestor/PDV/KDS/Fournil). Configura promoção no admin → aplicada automaticamente pelo modifier pipeline. Closing na antesala do PDV (`surfaces/pos-nuxt`, rota `/session/closing`): qty_unsold por SKU → D-1 movido para "ontem"; perecível vira perda; DayClosing audit record (readonly no Admin).
+Admin Unfold é CRUD + configuração: dashboard como landing de config/auditoria (atalhos de configuração, trilhas de auditoria, saúde da copy omotenashi, alertas de estoque/operador, estoque D-1). Operação ao vivo mora nos apps Nuxt (Gestor/PDV/KDS/Produção). Configura promoção no admin → aplicada automaticamente pelo modifier pipeline. Closing na antesala do PDV (`surfaces/pos-nuxt`, rota `/session/closing`): qty_unsold por SKU → D-1 movido para "ontem"; perecível vira perda; DayClosing audit record (readonly no Admin).
 
 ### 4.6 POV: Desenvolvedor / integrador
 

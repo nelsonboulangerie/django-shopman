@@ -123,4 +123,4 @@ A canonical Admin custom page must consume a registered `shopman.backstage.proje
 
 Canonical custom Admin pages must follow the official custom page shape: `UnfoldModelAdminViewMixin`, `TemplateView`, `title`, `permission_required`, and `.as_view(model_admin=...)`. Their entry template must extend `admin/base.html`, matching the current official demo.
 
-For projection-backed operational consoles, the surface registry can also declare required Unfold primitives and controller features (see the Day Closing console entry). Removing a declared primitive is treated as a capability regression. The Production console was removed in WP-ADM-7d: production management lives in the Fournil (`surfaces/production-nuxt`) over `api/v1/backstage/production/*`.
+For projection-backed operational consoles, the surface registry can also declare required Unfold primitives and controller features (see the Day Closing console entry). Removing a declared primitive is treated as a capability regression. The Production console was removed in WP-ADM-7d: production management lives in the Produção (`surfaces/production-nuxt`) over `api/v1/backstage/production/*`.

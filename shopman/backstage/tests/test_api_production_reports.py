@@ -1,7 +1,7 @@
 """Headless production reports API (api/v1/backstage/production/reports|management|weighing/blind-map).
 
 Covers the manager-persona REST surface that the ``/reports`` page of the
-production-nuxt app (``fournil.``) consumes: report rows (history, operator
+production-nuxt app (``prod.``) consumes: report rows (history, operator
 productivity, recipe waste) with CSV export, the day-level management KPIs
 (average yield, capacity, late orders) and the blind-code ↔ prep map. Gated by
 the fine-grained ``backstage.view_production_reports`` permission — the coarse

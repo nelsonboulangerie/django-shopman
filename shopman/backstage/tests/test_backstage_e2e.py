@@ -176,7 +176,7 @@ def test_e2e_stock_receive_appears_on_closing_surface(client, setup):
 
 # ── Cenário 6 — production management KPIs end-to-end ───────────────
 # O painel Admin de produção saiu (WP-ADM-7d); a gestão do dia é a API
-# headless production/management/ consumida pelo /reports do Fournil.
+# headless production/management/ consumida pelo /reports do Produção.
 
 
 @pytest.mark.django_db
@@ -218,7 +218,7 @@ def test_e2e_advance_step_via_view_updates_meta(client, setup):
     craft.start(wo, quantity=10, expected_rev=0)
     client.force_login(setup)
 
-    # The production floor moved to the fournil. Nuxt app over the headless API;
+    # The production floor moved to the prod. Nuxt app over the headless API;
     # advancing a step is now POST /api/v1/backstage/production/<pk>/advance-step/.
     response = client.post(f"/api/v1/backstage/production/{wo.pk}/advance-step/")
     assert response.status_code == 200

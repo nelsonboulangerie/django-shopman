@@ -46,7 +46,7 @@ def _no_positive_tabindex(html: str, surface: str) -> None:
 
 @pytest.mark.django_db
 def test_no_positive_tabindex_anywhere(client, superuser):
-    # As telas de produção são do Fournil (surfaces/production-nuxt) desde o
+    # As telas de produção são do Produção (surfaces/production-nuxt) desde o
     # WP-ADM-7d; o tab order delas é testado na suite do app Nuxt.
     # Fechamento também saiu (antesala do PDV, WP-ADM-3); resta a página Admin
     # canônica de catálogo de copy.

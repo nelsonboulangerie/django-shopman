@@ -15,7 +15,7 @@ O destino do trabalho de uma encomenda depende do **tempo** relativo ao lead tim
 realização do estoque. Três faixas:
 
 1. **Encomenda antecipada** — ainda há lead time para produzir para a `delivery_date`.
-   → **Planejamento de Produção (Fournil).** Vira **sinal de demanda firme**: soma-se à sugestão e
+   → **Planejamento de Produção (Produção).** Vira **sinal de demanda firme**: soma-se à sugestão e
    aparece como "comprometida" no `/plan` da data. NÃO cria ticket KDS, NÃO ocupa o Gestor como
    pendência ativa.
 

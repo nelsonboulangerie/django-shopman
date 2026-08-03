@@ -35,7 +35,7 @@ class DayClosingAdmin(ModelAdmin):
 
     @display(description="operação")
     def operation_link_display(self, obj):
-        # Relatórios vivem no /reports do Fournil (WP-ADM-7d); sem base URL
+        # Relatórios vivem no /reports do Produção (WP-ADM-7d); sem base URL
         # configurada não há link morto.
         base = (getattr(settings, "SHOPMAN_PRODUCTION_BASE_URL", "") or "").rstrip("/")
         if not base:

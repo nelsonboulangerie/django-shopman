@@ -4,7 +4,7 @@
 // caixa. Mesma projection e mesmo service da retaguarda (GET/POST
 // /api/v1/backstage/closing/), gate `backstage.perform_closing` (Gerente).
 // Paridade com a tela Admin: produção pendente (com atrasadas + link p/ o
-// Fournil), produção do dia, encomendas dos próximos dias, discrepâncias e a
+// Produção), produção do dia, encomendas dos próximos dias, discrepâncias e a
 // contagem cega por SKU. Rótulo visível de sobra aproveitável = "Ontem".
 import {
   allQuantitiesFilled,

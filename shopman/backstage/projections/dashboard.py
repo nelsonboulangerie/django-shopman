@@ -1,7 +1,7 @@
 """DashboardProjection — read models for the admin dashboard.
 
 O dashboard do Admin é uma landing de configuração e auditoria: a operação ao
-vivo (pedidos, produção) mora nos apps Nuxt (Gestor/PDV/KDS/Fournil). Aqui
+vivo (pedidos, produção) mora nos apps Nuxt (Gestor/PDV/KDS/Produção). Aqui
 ficam apenas os dados de atenção/auditoria: alertas de estoque, alertas do
 operador e o estoque D-1 pendente de fechamento.
 

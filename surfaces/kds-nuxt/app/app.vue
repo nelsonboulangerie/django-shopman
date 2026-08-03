@@ -20,7 +20,7 @@ useHead({ title: "Shopman KDS" });
 <template>
   <div class="min-h-screen bg-background text-foreground">
     <NuxtRouteAnnouncer />
-    <!-- Aviso calmo e global de conexão (kit) — só aparece offline (paridade POS/Gestor/Fournil). -->
+    <!-- Aviso calmo e global de conexão (kit) — só aparece offline (paridade POS/Gestor/Produção). -->
     <OfflineBanner />
     <!-- Painel público de retirada: tela cheia, sem rail e sem auth. -->
     <NuxtPage v-if="isCustomerBoard" />

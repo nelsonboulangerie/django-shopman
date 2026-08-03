@@ -139,7 +139,7 @@ CANONICAL_ADMIN_SURFACES: tuple[Surface, ...] = (
         ),
     ),
     # NOTA: a superfície `admin-console-production` foi removida (WP-ADM-7d) —
-    # a produção vive no Fournil (surfaces/production-nuxt) via
+    # a produção vive no Produção (surfaces/production-nuxt) via
     # api/v1/backstage/production/* após a paridade do WP-ADM-7b (matriz `/`,
     # plan `/plan`, pesagem `/mise-en-place`, forecast `/board`, relatórios/
     # gestão/mapa código-cego em `/reports`). Deixou de ser superfície
@@ -183,9 +183,9 @@ CANONICAL_ADMIN_SURFACES: tuple[Surface, ...] = (
 )
 
 # NOTA: a superfície `runtime-production-shortage-modals` foi removida — os
-# modais de escassez migraram para o Fournil junto com a EXECUÇÃO de produção
+# modais de escassez migraram para o Produção junto com a EXECUÇÃO de produção
 # (split canônico WP-PE4): as páginas de produção do Admin são leitura e o
-# Fournil trata escassez/força pelo envelope estruturado da API headless.
+# Produção trata escassez/força pelo envelope estruturado da API headless.
 RUNTIME_BACKSTAGE_SURFACES: tuple[Surface, ...] = (
     Surface(
         id="runtime-pos",
@@ -203,7 +203,7 @@ RUNTIME_BACKSTAGE_SURFACES: tuple[Surface, ...] = (
         replacement=(
             "A Central de Apps (surfaces/hub-nuxt) é o launcher runtime do operador — "
             "projection `build_operator_hub` + API `GET /api/v1/backstage/hub/`, no MESMO "
-            "contrato projection+Action das superfícies dedicadas (pos/kds/gestor/fournil). "
+            "contrato projection+Action das superfícies dedicadas (pos/kds/gestor/Produção). "
             "NÃO hospeda CRUD de Admin; o tile Loja deep-linka pro Unfold canônico (plan §5)."
         ),
     ),
@@ -241,11 +241,11 @@ EXCEPTION_SURFACES: tuple[Surface, ...] = (
         exception_reason=(
             "Order queue + KDS + catalog-matrix + expositores + day-closing + cash-session + "
             "production + broadcast projections feed dedicated headless Nuxt operator apps "
-            "(gestor./kds./pos./fournil./broadcast. via api/v1/backstage/*), not Admin/Unfold "
+            "(gestor./kds./pdv./prod./broadcast. via api/v1/backstage/*), not Admin/Unfold "
             "pages (OPERATOR-APPS-PLAN Fase 2; CROSS-CHANNEL-CATALOG-HUB-PLAN Frente 3; "
             "ADMIN-ROLE-PLAN WP-ADM-3/WP-ADM-4/WP-ADM-7d — config de rule/capability fica no "
             "Admin/Unfold, a matriz operacional no Gestor, o fechamento do dia e os relatórios "
-            "X/Z na antesala do PDV, a produção inteira no Fournil). "
+            "X/Z na antesala do PDV, a produção inteira no Produção). "
             "Broadcast (FOMO-BROADCAST-SPECS §6.1): a REVISÃO do post é decisão operacional "
             "no app dedicado; o CRUD de regra/modelo segue disponível no Admin/Unfold."
         ),

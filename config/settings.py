@@ -142,7 +142,7 @@ if DEBUG:
         "https://*.ngrok.app",
         "https://*.trycloudflare.com",
         # Nuxt dev surfaces (contíguo): storefront :3000 · central :3001 · pos :3002
-        # · kds :3003 · gestor :3004 · fournil :3005.
+        # · kds :3003 · gestor :3004 · Produção :3005.
         "http://localhost:3000",
         "http://127.0.0.1:3000",
         "http://localhost:3001",
@@ -746,7 +746,7 @@ UNFOLD = {
                 {"title": "Lotes", "link": reverse_lazy("admin:stockman_batch_changelist")},
             ],
         },
-        # Operação de produção (painel/planejamento/relatórios) vive no Fournil
+        # Operação de produção (painel/planejamento/relatórios) vive no Produção
         # (surfaces/production-nuxt) desde o WP-ADM-7d; o Admin mantém o CRUD.
         {
             "models": ["craftsman.recipe", "craftsman.workorder"],
@@ -1146,9 +1146,10 @@ SHOPMAN_PRODUCTION_BASE_URL = (
     os.environ.get("SHOPMAN_PRODUCTION_BASE_URL") or ""
 ).strip().rstrip("/")
 
-# Base URL pública do Broadcast (gestor de marketing) — app Nuxt dedicado
-# (surfaces/broadcast-nuxt). Vazio ⇒ o tile "Broadcast" some da Central (sem
-# link morto), e o gestor acessa direto pelo subdomínio (broadcast.).
+# Base URL pública do Marketing (surfaces/broadcast-nuxt) — app Nuxt dedicado.
+# NÃO há subdomínio publicado no spec de deploy (.do/): o acesso depende
+# inteiramente desta variável. Vazio ⇒ o tile "Marketing" some da Central,
+# sem link morto.
 SHOPMAN_BROADCAST_BASE_URL = (
     os.environ.get("SHOPMAN_BROADCAST_BASE_URL") or ""
 ).strip().rstrip("/")

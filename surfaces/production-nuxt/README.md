@@ -1,13 +1,13 @@
 # Produção — production-nuxt
 
 Headless operator surface for the bakery floor (**Produção**, served on the
-`fournil.` subdomain). Replaces the HTMX "KDS de produção" with a dedicated
+`prod.` subdomain). Replaces the HTMX "KDS de produção" with a dedicated
 Nuxt/UI-Thing app, consuming the canonical projection/action contract at
 `api/v1/backstage/production/*` — no business rule is copied; the orchestrator
 (Craftsman) decides.
 
 - **Stable name:** `production-nuxt` (by function, like `pos-`/`kds-`/
-  `orders-nuxt`). `fournil.` is only the public host; never hardcode it
+  `orders-nuxt`). `prod.` is only the public host; never hardcode it
   (it lives in the deploy spec).
 - **Gate:** `backstage.operate_production` (staff operator, granted to Cozinha/
   Gerente). Log into the Django admin first to get the session cookie, then open

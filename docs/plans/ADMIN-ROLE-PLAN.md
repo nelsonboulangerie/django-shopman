@@ -29,15 +29,15 @@
 
 Já saíram do Admin (registrado em `scripts/check_unfold_canonical.py`): fila de
 pedidos (→ orders-nuxt/Gestor), KDS (→ kds-nuxt), POS (→ pos-nuxt), execução de
-produção e modais de escassez (→ production-nuxt/Fournil).
+produção e modais de escassez (→ production-nuxt/Produção).
 
 Execução que ainda vive no Admin:
 
 | # | Superfície | Cobertura Nuxt existente |
 |---|---|---|
 | 1 | Fechamento do dia (`admin_console/closing.py`, única página custom que muta estado) | API pronta: `GET/POST /api/v1/backstage/closing/` (mesma projection `build_day_closing` + mesmo service `perform_day_closing`, mesma perm `backstage.perform_closing`) — sem UI |
-| 2 | Console de produção, 6 views GET-only (`admin_console/production.py`: painel, planejamento, produção, relatórios+CSV, pesagem, compromissos) | Fournil já tem `/plan`, `/board`, `/mise-en-place`, `/expedite` e **pesagem** (`useWeighing`, `WeighingLabels`, API `production/weighing/`) |
-| 3 | Admin actions que duplicam apps Nuxt: Order avançar/cancelar; Session commit/resolve/run-check; WorkOrder concluir/anular | Gestor (fila + ações), POS (venda/comanda), Fournil (start/finish/void via API `production/<id>/*`) |
+| 2 | Console de produção, 6 views GET-only (`admin_console/production.py`: painel, planejamento, produção, relatórios+CSV, pesagem, compromissos) | Produção já tem `/plan`, `/board`, `/mise-en-place`, `/expedite` e **pesagem** (`useWeighing`, `WeighingLabels`, API `production/weighing/`) |
+| 3 | Admin actions que duplicam apps Nuxt: Order avançar/cancelar; Session commit/resolve/run-check; WorkOrder concluir/anular | Gestor (fila + ações), POS (venda/comanda), Produção (start/finish/void via API `production/<id>/*`) |
 | 4 | `CashMovementAdmin` add-only (sangria/suprimento/ajuste) | PDV já cobre: `PosCashPanel` (open/close/sangria/suprimento) sobre `pos/cash/*` |
 | 5 | `OperatorAlertAdmin` ack (bulk + row) | Gestor já cobre: `AlertsBell`/`useAlerts` sobre `alerts/` + `alerts/<pk>/ack/` |
 | 6 | Dashboard `/admin/` com widgets de operação ao vivo (deep-links p/ pedidos e WOs) | Gestor é o painel operacional |
@@ -71,7 +71,7 @@ Pré-requisito: WP-ADM-1.
   /api/v1/backstage/closing/`, visível só com `backstage.perform_closing`
   (Gerente) — a antesala mostra a entrada; o gate é da API.
 - Paridade com a tela Admin: produção pendente (com atrasadas + link p/
-  Fournil), produção do dia (planejado/feito/perda), encomendas dos próximos
+  Produção), produção do dia (planejado/feito/perda), encomendas dos próximos
   dias, discrepâncias (vendido/disponível/déficit), contagem cega por SKU,
   estado `already_closed` ("Fechado por X às HH:MM"), aviso de D-1 velho.
   ⚠️ "D-1" é jargão interno — label visível é "Ontem".
@@ -146,19 +146,19 @@ Independente; caixa idealmente após WP-ADM-1 (antesala é a casa nova).
 ### WP-ADM-7 — Console de produção sai do Admin (fatiado)
 
 - **7a — auditoria de paridade** (curta, sem código): matriz view-a-view do
-  que `admin_console/production.py` mostra vs Fournil/Gestor. Hipótese:
+  que `admin_console/production.py` mostra vs Produção/Gestor. Hipótese:
   gaps = relatórios+CSV, KPIs do painel, compromissos por WO; pesagem já
-  existe no Fournil. Saída: escopo fechado de 7b/7c aprovado por Pablo.
-- **7b — relatórios no Fournil**: rota `/reports` (inglês), endpoint headless
+  existe no Produção. Saída: escopo fechado de 7b/7c aprovado por Pablo.
+- **7b — relatórios no Produção**: rota `/reports` (inglês), endpoint headless
   `production/reports/` serializando `build_production_reports` (chaves em
   inglês), CSV pelo mesmo endpoint, presentation pura + vitest. KPIs do
   painel entram se 7a confirmar que o board não os cobre.
-- **7c — compromissos por WO no Fournil** (se 7a confirmar gap): visão
+- **7c — compromissos por WO no Produção** (se 7a confirmar gap): visão
   read-only consumindo `order_commitments_for_work_order`.
 - **7d — remoção**: apagar as 6 views + templates `admin_console/production/`,
   rotas `admin/operacao/producao/*`, superfície `admin-console-production` do
   registry, links das `TABS` do craftsman e itens da sidebar (grupo
-  "Produção" passa a linkar Fournil + Fichas técnicas). `projections/
+  "Produção" passa a linkar Produção + Fichas técnicas). `projections/
   production.py` migra à superfície headless. Helpers compartilhados órfãos
   (`views/production.py`, partials de escassez) morrem junto — zero
   residuals. Docs e exemplo `make admin url=` no CLAUDE.md atualizados.

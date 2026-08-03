@@ -1,6 +1,6 @@
 """Drift guard for the generated production contract mirror.
 
-The fournil surface (production-nuxt) imports the projection shapes from a
+The Produção surface (production-nuxt) imports the projection shapes from a
 generated TypeScript module whose single source of truth is
 ``shopman.backstage.projections.production``. If a dataclass changes without
 regenerating, this test fails with the fix command — so the hand-sync the

@@ -1,6 +1,6 @@
 """Query-param parsing for the production reports API (manager persona).
 
-The ``/reports`` page of the production-nuxt app (``fournil.``) drives the
+The ``/reports`` page of the production-nuxt app (``prod.``) drives the
 ``api/v1/backstage/production/reports/`` endpoint with a free-form query
 string; this module normalizes it into the filter dict consumed by
 ``build_production_reports``/``export_reports_csv`` (invalid kinds fall back

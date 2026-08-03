@@ -173,7 +173,7 @@ def test_csv_export_recipe_waste_header(report_data):
 
 
 # O console Admin de relatórios saiu (WP-ADM-7d): a superfície é o /reports do
-# Fournil sobre api/v1/backstage/production/reports/ (permission gate e CSV
+# Produção sobre api/v1/backstage/production/reports/ (permission gate e CSV
 # cobertos em test_api_production_reports.py). Ficam aqui os fallbacks de
 # parsing de filtro, agora exercidos pela API headless.
 

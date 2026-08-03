@@ -1,4 +1,4 @@
-# E2E do Fournil (production-nuxt)
+# E2E do Produção (production-nuxt)
 
 Playwright **backend-independente**: um mock backend (`mockBackend.mjs`) serve uma sessão
 de operador autenticada + boards de produção vazios + o cardápio público do menuboard. O

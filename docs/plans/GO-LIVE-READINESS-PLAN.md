@@ -110,7 +110,7 @@ Cada WP abaixo é auto-contido, commitável e validável com `make test` / `make
   flag documentado em
   [`docs/guides/operator-security-hardening.md`](../guides/operator-security-hardening.md).
 - **WP-C2 ✅ · IP allowlist desenhada como ingress** — decisão: Cloudflare Access/WAF na frente
-  de `admin.`/`pos.`/`kds.`/`gestor.`/`fournil.` (não middleware app-level, por causa do
+  de `admin.`/`pos.`/`kds.`/`gestor.`/`prod.` (não middleware app-level, por causa do
   `X-Forwarded-For` forjável). Documentado no mesmo guia; fecha o TODO de
   [`config/settings.py`](../../config/settings.py). **Faixas de IP = pendente do Pablo.**
 

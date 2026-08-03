@@ -26,4 +26,4 @@ de novo ticket e o SSE ao vivo exigem a stack completa + gateway (SSE é same-or
 ## Portas
 
 - App (build de produção do e2e): `127.0.0.1:3103` (distinta do dev server em `:3003`)
-- Mock backend: `127.0.0.1:8798` (evita colidir com os mocks do Gestor `:8796`/Fournil `:8797`)
+- Mock backend: `127.0.0.1:8798` (evita colidir com os mocks do Gestor `:8796`/Produção `:8797`)

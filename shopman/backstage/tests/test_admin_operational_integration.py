@@ -38,12 +38,12 @@ class AdminNavigationTests(TestCase):
 
         # Pedidos, PDV e Produção são apps Nuxt headless (env-gated). O
         # Fechamento (antesala do PDV, WP-ADM-3) entra com deep-link;
-        # "Produção ao vivo" (Fournil, WP-ADM-7d) é o único item de produção
+        # "Produção ao vivo" (Produção, WP-ADM-7d) é o único item de produção
         # e carrega o badge de OPs iniciadas.
         with override_settings(
             SHOPMAN_ORDERS_BASE_URL="https://gestor.example.com",
             SHOPMAN_POS_BASE_URL="https://pos.example.com",
-            SHOPMAN_PRODUCTION_BASE_URL="https://fournil.example.com",
+            SHOPMAN_PRODUCTION_BASE_URL="https://prod.example.com",
         ):
             groups = admin.site.get_sidebar_list(request)
         titles = [group["title"] for group in groups]
@@ -61,9 +61,9 @@ class AdminNavigationTests(TestCase):
         closing_item = next(item for item in live if item["title"] == "Fechamento")
         self.assertEqual(closing_item["link"], "https://pos.example.com/session/closing")
         fournil_item = next(item for item in live if item["title"] == "Produção ao vivo")
-        self.assertEqual(fournil_item["link"], "https://fournil.example.com")
+        self.assertEqual(fournil_item["link"], "https://prod.example.com")
 
-        with override_settings(SHOPMAN_PRODUCTION_BASE_URL="https://fournil.example.com"):
+        with override_settings(SHOPMAN_PRODUCTION_BASE_URL="https://prod.example.com"):
             raw_live = navigation.get_sidebar_navigation(request)[0]["items"]
         raw_fournil = next(item for item in raw_live if item["title"] == "Produção ao vivo")
         self.assertEqual(
@@ -93,7 +93,7 @@ class AdminNavigationTests(TestCase):
             self.assertIn("PDV", live)
             self.assertEqual(live["PDV"]["link"], "https://pos.example.com")
 
-        # WP-ADM-7d: sem base URL do Fournil o grupo Produção fica só com o CRUD
+        # WP-ADM-7d: sem base URL do Produção o grupo Produção fica só com o CRUD
         # de fichas; "Relatórios" (superfície Nuxt) é env-gated e some.
         production_group = next(group for group in groups if group["title"] == "Produção")
         production_items = [item["title"] for item in production_group["items"] if item["has_permission"]]
@@ -104,20 +104,20 @@ class AdminNavigationTests(TestCase):
         self.assertIn("Pagamentos", audit_items)
 
     def test_production_reports_nav_item_is_env_gated_to_fournil(self) -> None:
-        """WP-ADM-7d: "Relatórios" do grupo Produção aponta p/ o Fournil
+        """WP-ADM-7d: "Relatórios" do grupo Produção aponta p/ o Produção
         (/reports) e some sem SHOPMAN_PRODUCTION_BASE_URL (sem link morto)."""
         from django.test import override_settings
 
         request = RequestFactory().get("/admin/")
         request.user = User.objects.create_superuser("prodnav", "prodnav@example.com", "pw")
 
-        with override_settings(SHOPMAN_PRODUCTION_BASE_URL="https://fournil.example.com"):
+        with override_settings(SHOPMAN_PRODUCTION_BASE_URL="https://prod.example.com"):
             groups = admin.site.get_sidebar_list(request)
         production_group = next(group for group in groups if group["title"] == "Produção")
         items = {item["title"]: item for item in production_group["items"] if item["has_permission"]}
 
         self.assertEqual(list(items), ["Fichas técnicas", "Relatórios"])
-        self.assertEqual(items["Relatórios"]["link"], "https://fournil.example.com/reports")
+        self.assertEqual(items["Relatórios"]["link"], "https://prod.example.com/reports")
 
     def test_orders_and_kds_nav_items_are_env_gated(self) -> None:
         """Pedidos e KDS são apps Nuxt headless: sem base URL somem (sem link morto);
@@ -189,7 +189,7 @@ class AdminNavigationTests(TestCase):
 
     def test_production_tabs_keep_crud_only_after_console_removal(self) -> None:
         """WP-ADM-7d: as tabs do craftsman só linkam CRUD (fichas + ordens);
-        painel/planejamento/relatórios vivem no Fournil."""
+        painel/planejamento/relatórios vivem no Produção."""
         production_tabs = next(
             tab for tab in settings.UNFOLD["TABS"] if "craftsman.workorder" in tab["models"]
         )
@@ -203,7 +203,7 @@ class AdminNavigationTests(TestCase):
 
 # O console Admin/Unfold de produção (matriz, planejamento, painel, pesagem,
 # compromissos e relatórios) foi removido no WP-ADM-7d: a superfície canônica
-# é o Fournil (surfaces/production-nuxt) via api/v1/backstage/production/*
+# é o Produção (surfaces/production-nuxt) via api/v1/backstage/production/*
 # (paridade fechada no WP-ADM-7b). A cobertura vive em
 # test_api_production_reports.py e nos testes da API de produção. O KPI de
 # produção do dashboard saiu no WP-ADM-8 (landing de config/auditoria).
@@ -281,9 +281,9 @@ class WorkOrderAdminSemanticsTests(TestCase):
         self.assertNotIn("operation_link_display", model_admin.list_display)
         self.assertIn("production_board_row", model_admin.actions_row)
         # WP-ADM-7d: a visão de compromissos saiu com o console de produção;
-        # os pedidos vinculados aparecem no board do Fournil.
+        # os pedidos vinculados aparecem no board do Produção.
         self.assertNotIn("commitments_row", model_admin.actions_row)
-        # Execução (concluir/anular) saiu do Admin: vive no Fournil (WP-ADM-5).
+        # Execução (concluir/anular) saiu do Admin: vive no Produção (WP-ADM-5).
         self.assertNotIn("close_wo_row", model_admin.actions_row)
         self.assertNotIn("void_wo_row", model_admin.actions_row)
         self.assertFalse(model_admin.actions)

@@ -91,7 +91,7 @@ distância no KDS/produção favorece `lg`.
 | PDV (`pos-nuxt`) | `banknote` | balcão / venda |
 | KDS (`kds-nuxt`) | `chef-hat` | cozinha / preparo |
 | Gestor (`orders-nuxt`) | `clipboard-list` | fila de pedidos |
-| Fournil (`production-nuxt`) | `croissant` | produção / fornada |
+| Produção (`production-nuxt`) | `croissant` | produção / fornada |
 | Loja (config no Central) | `store` | loja online |
 | Central de Apps (`hub-nuxt`) | `layout-grid` | central / launcher |
 

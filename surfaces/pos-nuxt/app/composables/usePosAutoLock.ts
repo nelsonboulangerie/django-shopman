@@ -5,7 +5,7 @@ import { isIdleBeyond } from "~/utils/operatorLock";
 /**
  * Auto-lock por ociosidade — específico do PDV (kiosk de balcão compartilhado): se
  * ninguém toca a tela por `autoLockSeconds`, o operador ativo é derrubado e a tela
- * de identificação sobe. Os demais apps de operador (KDS/Gestor/Fournil) são estações
+ * de identificação sobe. Os demais apps de operador (KDS/Gestor/Produção) são estações
  * de um operador só e não auto-travam, por isso isto vive no PDV e não no kit.
  *
  * Fica separado do lock compartilhado (`useOperatorLock`): a identificação em si

@@ -904,7 +904,7 @@ class TestProductionBackstageRoutes:
 
     def test_admin_console_production_routes_removed(self, db):
         # WP-ADM-7d: o console Admin de produção saiu; a superfície canônica é
-        # o Fournil (surfaces/production-nuxt) sobre api/v1/backstage/production/*.
+        # o Produção (surfaces/production-nuxt) sobre api/v1/backstage/production/*.
         for route_name in (
             "admin_console_production",
             "admin_console_production_planning",

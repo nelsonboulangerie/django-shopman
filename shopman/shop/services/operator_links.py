@@ -5,7 +5,7 @@ subdomínio, conversando com o Django via ``api/v1/backstage/*``:
 
   · Gestor de Pedidos → ``surfaces/orders-nuxt``      (``gestor.``)
   · KDS               → ``surfaces/kds-nuxt``          (``kds.``)
-  · Produção          → ``surfaces/production-nuxt``    (``fournil.``)
+  · Produção          → ``surfaces/production-nuxt``    (``prod.``)
 
 Como a loja do cliente e o POS, o Django só APONTA para esses apps, atrás de uma
 única base configurável por deployment (``settings.SHOPMAN_*_BASE_URL``). Quando a

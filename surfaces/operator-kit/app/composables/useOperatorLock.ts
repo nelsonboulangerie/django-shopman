@@ -64,7 +64,7 @@ export function useOperatorLock(perm: string) {
       });
       await refresh();
       // Os fetches que rodaram TRANCADOS falharam (403) e ficariam com o erro grudado na
-      // tela até o próximo poll (≤15s) — destravou, recarrega tudo já (paridade POS/Fournil).
+      // tela até o próximo poll (≤15s) — destravou, recarrega tudo já (paridade POS/Produção).
       await refreshNuxtData();
       return true;
     } catch (err) {

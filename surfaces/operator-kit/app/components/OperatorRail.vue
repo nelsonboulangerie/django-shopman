@@ -1,13 +1,13 @@
 <script setup lang="ts">
 // Rail de operador CANÔNICO — a espinha vertical em `bg-rail` (token próprio do chrome,
 // de marca: disciplina de ERP) que TODAS as superfícies de operador adotam. É o portador
-// nº1 da familiaridade: mesma peça em POS/Gestor/KDS/Fournil/Central. Segura o que é
+// nº1 da familiaridade: mesma peça em POS/Gestor/KDS/Produção/Central. Segura o que é
 // COMUM (voltar à Central, operador/travar, tema, e o que o app puser em #status); o
 // específico de cada app entra pelos slots (#nav = funções; #status = saúde/conexão).
 //
 // Três estados que o operador escolhe conforme precisa (persistidos por dispositivo via
 // `useRailState`): colapsado (só um puxador) · compacto (só ícone) · estendido (ícone +
-// rótulo). A nav de SEÇÃO de cada app (abas do Gestor, visões do Fournil) NÃO vive aqui —
+// rótulo). A nav de SEÇÃO de cada app (abas do Gestor, visões do Produção) NÃO vive aqui —
 // fica no topo do conteúdo; o rail concentra só o comum e economiza a horizontal.
 import { computed } from "vue";
 

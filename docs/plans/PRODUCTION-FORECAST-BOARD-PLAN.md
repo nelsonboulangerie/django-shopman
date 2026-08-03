@@ -25,7 +25,7 @@ momento); **o STATUS é a escada de confiança**:
 Knobs em `ProductionConfig.panel` (Shop.defaults["production"]["panel"]).
 `history_days` expõe a amostra da estimativa. API
 `GET /api/v1/backstage/production/forecast/?date=` (permissão do board).
-Fournil `/board` (aba "Painel", tower-control): chrome de display (relógio
+Produção `/board` (aba "Painel", tower-control): chrome de display (relógio
 vivo, sem ferramentas de operador), chips Hoje·Amanhã·dia da semana, poll
 30s, legenda. Testes: `shopman/backstage/tests/test_production_forecast.py`
 (escada, medianas, fallbacks, TTL, ordenação).
