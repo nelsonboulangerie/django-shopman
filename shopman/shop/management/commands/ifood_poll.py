@@ -18,6 +18,7 @@ import signal
 import time
 
 from django.core.management.base import BaseCommand
+from django.db import close_old_connections
 
 from shopman.shop.services import ifood_events
 
@@ -60,6 +61,11 @@ class Command(BaseCommand):
 
         self.stdout.write(f"ifood_poll: watching (every {interval}s). Ctrl-C to stop.")
         while not self._stop:
+            # Higiene de conexão: após o idle o Postgres persistente pode ter sido
+            # derrubado pelo pooler; sem fronteira de request o Django não recicla
+            # sozinho. Reconecta limpo antes do tick (senão o tick falharia calado
+            # até um restart).
+            close_old_connections()
             # Um tick que falha (rede, iFood fora do ar) loga e NUNCA derruba o
             # loop — senão o worker crash-loopa e dispara o alerta de restart.
             try:
