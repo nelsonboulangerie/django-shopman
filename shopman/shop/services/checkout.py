@@ -89,7 +89,10 @@ def process_ops(
 
     # O total que o cliente VIU é o total cobrado. A repricing final (preço de
     # catálogo, cupom expirado) pode ter mudado o valor — commitar um total
-    # diferente do exibido, sem confirmação, é cobrança surpresa.
+    # diferente do exibido, sem confirmação, é cobrança surpresa. Quando o cliente
+    # NÃO manda ``expected_total_q``, cobrar o preço recalculado (catálogo atual) é
+    # deliberado (defesa contra total obsoleto/adulterado); a garantia de que a
+    # baseline sempre chega é da superfície (o app manda o total exibido).
     if expected_total_q is not None:
         _ensure_total_matches(session_key, channel_ref, int(expected_total_q))
 
@@ -110,16 +113,22 @@ def process_ops(
     )
 
 
-def _ensure_total_matches(session_key: str, channel_ref: str, expected_total_q: int) -> None:
-    from shopman.orderman.exceptions import ValidationError as OrderingValidationError
+def _session_total_q(session_key: str, channel_ref: str) -> int | None:
+    """Soma das linhas da sessão (o total cobrado), ou ``None`` se a sessão sumiu."""
     from shopman.orderman.models import Session
-    from shopman.utils.monetary import format_money
 
     session = Session.objects.filter(session_key=session_key, channel_ref=channel_ref).first()
     if session is None:
-        return
-    current_total_q = sum(int(item.get("line_total_q") or 0) for item in (session.items or []))
-    if current_total_q == expected_total_q:
+        return None
+    return sum(int(item.get("line_total_q") or 0) for item in (session.items or []))
+
+
+def _ensure_total_matches(session_key: str, channel_ref: str, expected_total_q: int) -> None:
+    from shopman.orderman.exceptions import ValidationError as OrderingValidationError
+    from shopman.utils.monetary import format_money
+
+    current_total_q = _session_total_q(session_key, channel_ref)
+    if current_total_q is None or current_total_q == expected_total_q:
         return
     raise OrderingValidationError(
         code="total_changed",
@@ -127,6 +136,8 @@ def _ensure_total_matches(session_key: str, channel_ref: str, expected_total_q: 
             f"O total do pedido mudou para R$ {format_money(current_total_q)} "
             "(preço ou cupom atualizado). Confira e confirme novamente."
         ),
+        # Estruturado para a tela reexibir o novo total (não só o texto).
+        context={"new_total_q": current_total_q, "old_total_q": int(expected_total_q)},
     )
 
 
@@ -136,6 +147,11 @@ def map_checkout_error(exc: Exception) -> dict[str, str] | None:
     from shopman.orderman.exceptions import ValidationError as OrderingValidationError
 
     if isinstance(exc, OrderingValidationError):
+        # ``total_changed`` carrega contexto estruturado (novo/antigo total) para a
+        # tela reexibir old→new. Deixa passar para ``map_order_error``, que preserva
+        # ``error_code`` + ``context`` — o mapeamento de form-field os descartaria.
+        if exc.code == "total_changed":
+            return None
         address_codes = {"delivery_zone_not_covered", "delivery_zone_unverified"}
         field = "delivery_address" if exc.code in address_codes else "checkout"
         return {field: exc.message}

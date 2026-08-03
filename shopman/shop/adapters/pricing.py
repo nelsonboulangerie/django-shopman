@@ -62,6 +62,13 @@ class StorefrontPricingBackend:
         }
 
         for promo in promotions:
+            # Só PERCENT compete no preço por-card. Um desconto de VALOR FIXO é
+            # do PEDIDO (aplicado uma vez no checkout, distribuído) — mostrá-lo
+            # por unidade no card ("−R$5 em cada") prometeria N×R$5 e o carrinho
+            # entregaria R$5. Espelha o DiscountModifier, que pula fixo no loop
+            # por-linha e o trata no nível do pedido.
+            if promo.type != Promotion.PERCENT:
+                continue
             if promo.min_order_q and session_total_q < promo.min_order_q:
                 continue
             if not DiscountModifier._matches(promo, sku, match_ctx):
