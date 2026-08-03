@@ -30,6 +30,7 @@ import time
 
 from django.core.management import call_command
 from django.core.management.base import BaseCommand
+from django.db import close_old_connections
 
 logger = logging.getLogger(__name__)
 
@@ -63,15 +64,30 @@ class Command(BaseCommand):
 
     def handle(self, *args, **options):
         interval = max(30, int(options["interval"]))
+        once = bool(options["once"])
         while True:
-            self._run_cycle()
-            if options["once"]:
+            # Um ciclo NUNCA derruba o worker. Durante o sleep ocioso (default 5
+            # min) a conexão de banco/cache é reciclada pelo pooler; se a primeira
+            # chamada do ciclo seguinte reaparecer como erro (ex.: o heartbeat no
+            # Redis), logamos e seguimos — o próximo ciclo reconecta. Sem isto o
+            # processo saía, a DO reiniciava, e o alerta RESTART_COUNT disparava.
+            try:
+                self._run_cycle()
+            except Exception:
+                logger.exception("maintenance_worker: ciclo falhou (worker continua)")
+            if once:
                 return
             time.sleep(interval)
 
     def _run_cycle(self) -> None:
         from shopman.orderman import worker_heartbeat
 
+        # Higiene de conexão: um management command em loop não tem fronteira de
+        # request, então o Django nunca recicla sozinho a conexão persistente do
+        # Postgres. Após o sleep ela já passou do CONN_MAX_AGE e/ou foi derrubada
+        # pelo pooler (PgBouncer). Sem este close, TODA query do ciclo falharia
+        # até um restart — a manutenção viraria no-op silencioso.
+        close_old_connections()
         worker_heartbeat.beat(MAINTENANCE_WORKER)
         for command in MAINTENANCE_COMMANDS:
             try:

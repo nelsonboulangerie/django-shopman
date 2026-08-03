@@ -6,7 +6,7 @@ from collections.abc import Sequence
 from datetime import timedelta
 
 from django.core.management import BaseCommand
-from django.db import transaction
+from django.db import close_old_connections, transaction
 from django.utils import timezone
 from shopman.orderman import registry, worker_heartbeat
 from shopman.orderman.exceptions import DirectiveTerminalError, DirectiveTransientError
@@ -249,14 +249,26 @@ class Command(BaseCommand):
 
         # Watch mode
         self.stdout.write(self.style.WARNING("Worker iniciado: Ctrl+C para sair."))
-        try:
-            cycle_count = 0
-            while True:
+        cycle_count = 0
+        while True:
+            try:
+                # Higiene de conexão: sem fronteira de request num loop, o Django
+                # não recicla sozinho a conexão persistente do Postgres derrubada
+                # pelo pooler (PgBouncer) ou obsoleta por CONN_MAX_AGE. O loop é
+                # apertado (default 2s), mas um failover do banco reproduz o
+                # mesmo problema aqui — este close reconecta limpo no ciclo seguinte.
+                close_old_connections()
                 # Reap stuck directives every 5 cycles to avoid overhead
                 if cycle_count % 5 == 0:
                     _reap()
-                had_work = _cycle()
-                cycle_count += 1
-                time.sleep(interval if had_work else interval)
-        except KeyboardInterrupt:
-            self.stdout.write(self.style.WARNING("Worker encerrado."))
+                _cycle()
+            except KeyboardInterrupt:
+                self.stdout.write(self.style.WARNING("Worker encerrado."))
+                break
+            except Exception:
+                # Um ciclo NUNCA derruba o worker: loga e segue (o próximo
+                # reconecta). Sem isto o processo saía e a DO reiniciava (alerta
+                # RESTART_COUNT).
+                logger.exception("process_directives: ciclo falhou (worker continua)")
+            cycle_count += 1
+            time.sleep(interval)
