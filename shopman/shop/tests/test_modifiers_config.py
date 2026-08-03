@@ -87,7 +87,9 @@ class TestAvailabilityDiscountModifier:
         assert session.items[0]["unit_price_q"] == 1000  # not d1, not touched
         mock_params.assert_not_called()  # short-circuits before the rule lookup
 
-    def test_modifier_records_type_in_applied(self, modifier):
+    def test_modifier_records_discount_in_meta_and_pricing(self, modifier):
+        # Fonte durável: meta["_disc"] (o vestígio modifiers_applied foi removido)
+        # + session.pricing["d1_discount"].
         session = _make_session(items=[self._d1_item()])
         channel = _make_channel()
         with patch(
@@ -95,8 +97,8 @@ class TestAvailabilityDiscountModifier:
             return_value={"discount_percent": 50},
         ):
             modifier.apply(channel=channel, session=session, ctx={})
-        types = [m["type"] for m in session.items[0].get("modifiers_applied", [])]
-        assert "d1_discount" in types
+        assert session.items[0]["meta"]["_disc"]["type"] == "d1_discount"
+        assert "d1_discount" in (session.pricing or {})
 
 
 class TestPricingNoopModifiers:
@@ -322,6 +324,6 @@ class TestDiscountModifiersSkipFrozenLine:
         channel = _make_channel({"availability_discount": {"enabled": True, "discount_percent": 50}})
         with patch("shopman.shop.rules.engine.get_channel_rule_params", return_value={"discount_percent": 50}):
             modifier.apply(channel=channel, session=session, ctx={})
-        # Frozen line keeps R$5,00 — no clearance discount applied.
+        # Frozen line keeps R$5,00 — no clearance discount applied (nem em meta._disc).
         assert session.items[0]["unit_price_q"] == 500
-        assert not session.items[0].get("modifiers_applied")
+        assert not (session.items[0].get("meta") or {}).get("_disc")
