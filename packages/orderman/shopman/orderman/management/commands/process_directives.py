@@ -107,6 +107,14 @@ class Command(BaseCommand):
         )
 
     def handle(self, *args, **opts):
+        # Heartbeat de arranque (ADR-003 — observabilidade mínima): registrar que
+        # este worker rodou nesta invocação, independente de haver handlers ou
+        # diretivas na fila. O batimento significa "o worker está vivo e executou",
+        # não "havia trabalho"; sem isto, um worker rodando com registry vazio
+        # pareceria "stale" para quem monitora. Em --watch o _cycle refresca a cada
+        # ciclo; aqui garantimos o batimento mesmo no early-return de "sem handlers".
+        worker_heartbeat.beat(worker_heartbeat.PROCESS_DIRECTIVES_WORKER)
+
         topics: Sequence[str] | None = opts.get("topics")
         if topics:
             topics = [t for t in topics if t]
