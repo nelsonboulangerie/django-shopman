@@ -243,6 +243,52 @@ class Command(BaseCommand):
         self._seed_directives()
         self._seed_fiscal_example()
 
+        # Cenários de DISPONIBILIDADE da vitrine (cliente): roda por último, depois
+        # de todo estoque/produção, para dirigir SKUs reais a cada estado da loja.
+        self._seed_qa_storefront_availability(positions)
+
+    # SKUs canônicos de cada estado de vitrine no perfil qa (datas relativas).
+    QA_STOREFRONT_STATES = {
+        "sold_out": "KURO-PAN",      # esgotado + "me avise" (vendável, sem plano)
+        "low_stock": "MELON-PAN",    # últimas unidades (≤ limiar)
+        "planned": "PURIN",          # lista de espera / previsto (sem pronto, com plano)
+        "paused": "TEA-JELLY",       # pausado pelo operador (is_sellable=False)
+    }
+
+    def _seed_qa_storefront_availability(self, positions):
+        """Deixa 4 SKUs reais em cada estado de disponibilidade da LOJA, para QA/
+        testes da vitrine do cliente (o resto continua ``available``). Determinístico.
+        """
+        from shopman.offerman.models import Product
+        from shopman.stockman.models import Quant
+
+        vitrine = positions["vitrine"]
+        today = timezone.localdate()
+
+        def _zero_all(sku: str) -> None:
+            # Zera TODO estoque de vitrine do SKU (pronto e planejado) — para o
+            # estado nascer limpo, sem quant residual da produção de hoje/futura.
+            for q in Quant.objects.filter(sku=sku, position=vitrine):
+                if (q._quantity or 0) > 0:
+                    stock.adjust(q, Decimal("0"), reason=f"QA vitrine {sku}")
+
+        s = self.QA_STOREFRONT_STATES
+        # 1) Esgotado → "me avise": sem pronto, sem plano.
+        _zero_all(s["sold_out"])
+        # 2) Últimas unidades: pronto = 2 (limiar padrão = 5).
+        _zero_all(s["low_stock"])
+        stock.receive(Decimal("2"), sku=s["low_stock"], position=vitrine,
+                      reason=f"QA vitrine {s['low_stock']}: últimas unidades")
+        # 3) Lista de espera / previsto: sem pronto, mas produção planejada amanhã.
+        _zero_all(s["planned"])
+        stock.receive(Decimal("10"), sku=s["planned"], position=vitrine,
+                      target_date=today + timedelta(days=1),
+                      reason=f"QA vitrine {s['planned']}: planejado")
+        # 4) Pausado pelo operador: publicado, aparece, mas não vendável.
+        Product.objects.filter(sku=s["paused"]).update(is_sellable=False)
+
+        self.stdout.write("  ✅ Vitrine QA: esgotado/últimas/lista-de-espera/pausado")
+
     def _shop_operates_on(self, day: date) -> bool:
         """A loja abre neste dia? Pergunta ao calendário, nunca a um literal.
 

@@ -61,6 +61,23 @@ filtragem. `QADH-*` carrega `snapshot.source="production_demand_history"`.
 O estoque planejado (`Quant` com `target_date` de hoje a +6 dias úteis) é
 produzido deterministicamente via o signal `production_changed(action="planned")`.
 
+## Cenários — Vitrine (disponibilidade da LOJA / cliente)
+
+Para exercitar os estados de disponibilidade da vitrine do cliente, o perfil `qa`
+dirige 4 SKUs reais (o resto fica `available`). Datas relativas; determinístico.
+
+| SKU | Estado na loja | Como | Âncora do QA |
+|-----|----------------|------|--------------|
+| `KURO-PAN` | **esgotado + "me avise"** | sem estoque pronto, sem plano | `availability=unavailable`, `is_notifiable=true`, não adiciona |
+| `MELON-PAN` | **últimas unidades** | pronto = 2 (≤ limiar 5) | `availability=low_stock`, adiciona |
+| `PURIN` | **lista de espera / previsto** | sem pronto hoje, produção planejada amanhã | indisponível no menu de hoje, mas com suprimento planejado → orderável ao escolher data futura (encomenda) |
+| `TEA-JELLY` | **pausado pelo operador** | `is_sellable=False` | publicado (aparece), `is_paused=true`, não adiciona, não notificável |
+
+Âncora do teste: `test_nelson_seed_qa_profile_builds_named_scenarios`
+(`shopman/backstage/tests/test_nelson_seed_operational.py`) afirma cada estado via
+`build_catalog(channel_ref="web")`. Refs canônicos em
+`Command.QA_STOREFRONT_STATES`.
+
 ## Cenários — Caixa e comandas
 
 | Artefato | Estado | Detalhe | Âncora do QA |
