@@ -235,8 +235,10 @@ com unique `(sku, channel_ref)` (hoje `:42-44`), no formato de ponteiro textual 
 a convencao `Listing.ref == Channel.ref`. A ambiguidade "ora canal, ora kind" morre porque as duas
 coisas viraram uma — nao por convencao nova.
 
-**A palavra `platform` deixa de existir em `shopman/shop` fora do broadcast**, cujo caso e resolvido
-na ADR-020 (`destinations`).
+**Depois disto, `platform` tem exatamente um sentido em `shopman/shop`**: a lista de alvos de
+publicacao da campanha (`instagram`, `facebook`, `google_business`, `whatsapp`). Esse uso e o mais
+limpo dos tres — nenhuma daquelas strings e `Channel.ref` — e por isso a ADR-020 **nao** o renomeia.
+Matar os outros dois sentidos aqui e o que torna o nome correto la, sem tocar nele.
 
 ### 8. Enumeracao de canal passa a ser explicita, nunca por exclusao
 

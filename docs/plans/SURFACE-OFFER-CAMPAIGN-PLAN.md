@@ -185,14 +185,31 @@ a consumir o adapter.
 
 *Valor sozinho:* o gestor deixa de escrever do zero, e o catalogo herda voz de marca editavel.
 
-*Bloqueio externo:* precisa de `AI_ASSIST_API_KEY` configurada.
+*Bloqueio externo: **nenhum, no codigo**.* Verificado em 2026-08-08: `anthropic>=0.117` esta declarado
+(`pyproject.toml:30`) e instalado, `AI_ASSIST_MODEL=claude-opus-4-8` e um ID valido, a chamada em
+`backstage/services/catalog.py:784-789` nao passa nenhum parametro que Opus 4.8 rejeite
+(`temperature`/`top_p`/`budget_tokens`), e `ai_assist_field()` **funciona de ponta a ponta local**.
+O que falta e operacional: `AI_ASSIST_API_KEY` esta no `.env` local mas **ausente da spec LIVE do
+staging na DO** — por isso o endpoint responde 503 no ar. Config de deploy se edita na spec LIVE, nunca
+na do repo (que apaga segredos).
 
 ### F13 — Posting externo · ADR-020 passo 8
 
 Registrar `"posting"` no mapa de adapters e implementar `posting_meta`/`posting_google`. Escopo ja
 definido em [FOMO-BROADCAST-SPECS](FOMO-BROADCAST-SPECS.md) §5 e §7.
 
-*Bloqueio externo:* credenciais Meta e Google Business.
+*Bloqueio externo, estado verificado em 2026-08-08 na spec LIVE do staging:*
+
+| Credencial | Estado |
+|---|---|
+| `META_PAGE_ID` | **presente** |
+| `META_IG_USER_ID` | **presente** |
+| `META_PAGE_ACCESS_TOKEN` | **ausente** — e a unica que autentica (`config/settings.py:572`) |
+| Google Business | **ausente** por completo (nem o codigo espera env ainda) |
+
+Ou seja: Meta esta a um token de estar completa do lado da config, mas nada publica enquanto a costura
+`posting` nao for registrada — hoje `get_adapter("posting", ...)` devolve `None` e todo post externo
+fica `pending_manual`.
 
 ---
 
