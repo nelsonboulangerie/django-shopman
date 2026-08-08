@@ -82,7 +82,7 @@ MESSAGE_TEMPLATES: dict[str, str] = {
         "Boa noticia! {product_name} chegou.{reserve_note}{deadline_note} "
         "{cta} {action_url}"
     ),
-    # Fornada pronta ("Me avise quando sair do forno", F9 do FOMO-BROADCAST):
+    # Fornada pronta ("Me avise quando sair do forno", F9 do FOMO-MARKETING):
     # o valor da mensagem e o frescor, entao ela nasce e envelhece rapido.
     "production.ready": (
         "Saiu do forno agora: {product_name}! {cta} {action_url}"

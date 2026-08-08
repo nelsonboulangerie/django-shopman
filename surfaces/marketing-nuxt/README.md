@@ -9,7 +9,7 @@ audiência, despacho e expiração é o orquestrador
 
 > **Não é um Hootsuite.** Sem inbox, sem DMs, sem analytics de engajamento. É
 > marketing operacional unidirecional: evento da padaria → conteúdo → plataformas.
-> Ver [FOMO-BROADCAST-SPECS §6.1](../../docs/plans/FOMO-BROADCAST-SPECS.md).
+> Ver [FOMO-MARKETING-SPECS §6.1](../../docs/plans/FOMO-MARKETING-SPECS.md).
 
 - **Nome estável:** `marketing-nuxt` (por função, como `pos-`/`kds-`/`orders-`/
   `production-nuxt`). `mkt.` é só o host público; nunca hardcodar (vive na

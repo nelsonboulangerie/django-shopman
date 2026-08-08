@@ -10,7 +10,7 @@ evento operacional em conteúdo.
 
 O operador de produção não posta: ele marca a qualidade da fornada
 (``WorkOrder.meta["quality"]``) e o gestor decide. Separação de papéis
-deliberada (FOMO-BROADCAST-SPECS §8).
+deliberada (FOMO-MARKETING-SPECS §8).
 """
 
 from __future__ import annotations

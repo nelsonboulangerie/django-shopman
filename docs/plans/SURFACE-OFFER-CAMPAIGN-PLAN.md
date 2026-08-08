@@ -2,7 +2,8 @@
 
 **Status:** Ativo
 **Data:** 2026-08-08
-**Supersede:** [BROADCAST-EVOLUTION-PLAN.md](BROADCAST-EVOLUTION-PLAN.md) (levantamento original)
+**Supersede:** o levantamento original (`BROADCAST-EVOLUTION-PLAN.md`, apagado em 2026-08-08 —
+parte dele era factualmente errada e o resto vive nas ADRs; o texto fica no historico do git)
 **Decide por:** [ADR-018](../decisions/adr-018-surface-is-channel-with-commerce-policy.md),
 [ADR-019](../decisions/adr-019-promotion-belongs-to-the-orchestrator.md),
 [ADR-020](../decisions/adr-020-campaign-announces-it-does-not-sell.md)
@@ -211,7 +212,7 @@ na do repo (que apaga segredos).
 ### F13 — Posting externo · ADR-020 passo 8
 
 Registrar `"posting"` no mapa de adapters e implementar `posting_meta`/`posting_google`. Escopo ja
-definido em [FOMO-BROADCAST-SPECS](FOMO-BROADCAST-SPECS.md) §5 e §7.
+definido em [FOMO-MARKETING-SPECS](FOMO-MARKETING-SPECS.md) §5 e §7.
 
 *Bloqueio externo, estado verificado em 2026-08-08 na spec LIVE do staging:*
 
@@ -246,7 +247,7 @@ fica `pending_manual`.
 
 - **Sem B.I.**: nenhuma tabela de agregacao, snapshot, warehouse ou grafico. As contagens do painel sao
   quatro. UTM continua permitido como parametro; relatorio sobre ele, nao.
-- **Sem inbox, DM, analytics de engajamento ou gestao de comunidade** (`FOMO-BROADCAST-SPECS.md:37-38`).
+- **Sem inbox, DM, analytics de engajamento ou gestao de comunidade** (`FOMO-MARKETING-SPECS.md:37-38`).
 - **Sem A/B test** e sem otimizacao de horario alem do `preferred_hour` que ja existe.
 - **Sem sintese de imagem por IA**: so selecao e recorte de foto real.
 - **Sem `intent`** como politica comercial enquanto nao houver implementacao.
@@ -287,5 +288,4 @@ Tomadas na sessao de 2026-08-07/08:
 - [ADR-019 — A promocao tem um dono](../decisions/adr-019-promotion-belongs-to-the-orchestrator.md)
 - [ADR-020 — Campanha anuncia, nao vende](../decisions/adr-020-campaign-announces-it-does-not-sell.md)
 - [Constituicao Semantica](../constitution.md)
-- [FOMO-BROADCAST-SPECS](FOMO-BROADCAST-SPECS.md)
-- [BROADCAST-EVOLUTION-PLAN](BROADCAST-EVOLUTION-PLAN.md) — levantamento original, superado
+- [FOMO-MARKETING-SPECS](FOMO-MARKETING-SPECS.md) — registro das mecanicas F1..F9

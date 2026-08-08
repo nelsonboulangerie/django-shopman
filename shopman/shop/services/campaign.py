@@ -1,6 +1,6 @@
 """CampaignService — evento operacional vira conteúdo, conteúdo vira post.
 
-O fluxo inteiro (FOMO-BROADCAST-SPECS §2.2):
+O fluxo inteiro (FOMO-MARKETING-SPECS §2.2):
 
     fornada concluída → evaluate() → casa Campaigns → resolve conteúdo
     → resolve audiência → cria Announcement → notifica o gestor
@@ -198,7 +198,7 @@ def render(body: str, variables: dict) -> str:
 
 
 def resolve_variables(context: dict) -> dict:
-    """As variáveis disponíveis para um template (FOMO-BROADCAST-SPECS §3.2)."""
+    """As variáveis disponíveis para um template (FOMO-MARKETING-SPECS §3.2)."""
     sku = context.get("sku", "")
     product = _product(sku)
     hashtags = _hashtags(product)

@@ -4,7 +4,7 @@ Backstage Campaign API — o painel de revisão do marketing operacional.
 Contrato consumido por `surfaces/marketing-nuxt` (:3006). Read = projections de
 `backstage.projections.campaign`; write = aprovar/descartar/editar post e CRUD
 de regras e modelos. Gate: ``shop.manage_campaigns`` — o gestor de marketing não
-é o gestor de pedidos (FOMO-BROADCAST-SPECS §8).
+é o gestor de pedidos (FOMO-MARKETING-SPECS §8).
 
     GET    campaign/                    → painel (pendentes, recentes, placar)
     GET    campaign/history/            → tudo que já saiu

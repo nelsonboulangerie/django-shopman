@@ -1,13 +1,23 @@
-# FOMO-BROADCAST-SPECS — Broadcast operacional + FOMO orgânico
+# FOMO-MARKETING-SPECS — marketing operacional + FOMO orgânico
 
-> **Status:** 📋 Specs (análise completa, sem implementação).
-> **Data:** 2026-07-18
+> **Status:** 📋 Registro das mecânicas. **Parcialmente implementado.**
+> **Data:** 2026-07-18 · **Revisto:** 2026-08-08
 > **Escopo:** subsistema de marketing por eventos operacionais — fornadas, estoque, timing — que
 > gera urgência genuína de compra (FOMO orgânico) e dispara conteúdo nas redes sociais e canais
-> diretos. Inclui badges de urgência no storefront, audiência inteligente e app Broadcast no
+> diretos. Inclui badges de urgência no storefront, audiência inteligente e o app de Marketing no
 > backstage.
 > **Princípio central:** a operação real da padaria É o marketing. Cada fornada, cada estoque
 > baixo, cada último lote é uma oportunidade de conversão que hoje se perde.
+>
+> ⚠️ **O que este documento é, e o que não é.** O valor durável dele é o **§1, o inventário das
+> 19 mecânicas FOMO**, que o código cita por número (F1, F3, F9…). O desenho de modelos e serviços
+> foi decidido depois, e diferente, na
+> [ADR-020](../decisions/adr-020-campaign-announces-it-does-not-sell.md), que renomeou a regra para
+> `Campaign`, o post para `Announcement` e o template para `AnnouncementTemplate`, e trocou o opt-in
+> por `CommunicationConsent` com um dono só. Os nomes abaixo já são os de hoje; os trechos de código
+> são **esboços do desenho original**, mantidos como registro — a verdade corrente está no código e
+> na ADR-020. A execução vive em
+> [SURFACE-OFFER-CAMPAIGN-PLAN](SURFACE-OFFER-CAMPAIGN-PLAN.md).
 
 **Cross-refs:** [SOCIAL-PIM-SPECS](SOCIAL-PIM-SPECS.md) ·
 [SOCIAL-PIM-IMPLEMENTATION-PLAN](SOCIAL-PIM-IMPLEMENTATION-PLAN.md) ·
@@ -29,13 +39,13 @@ Três camadas, um objetivo: **fornadas se esgotam antes de entrarem na loja**.
    já existem (`CustomerFavorite`, `StockAlertSubscription`, `CustomerInsight`); falta o serviço
    de resolução de audiência.
 
-3. **Broadcast app** — app Nuxt separado (`broadcast-nuxt`, :3006) onde o gestor configura
-   regras, revisa posts gerados automaticamente, e dispara para plataformas externas (IG, Google
-   Business, WhatsApp). O operador de produção não posta — ele marca qualidade, o gestor recebe
-   notificação acionável.
+3. **App de Marketing** — app Nuxt separado (`marketing-nuxt`, :3006) onde o gestor configura
+   campanhas, revisa anúncios gerados automaticamente, e dispara para plataformas externas (IG,
+   Google Business, WhatsApp). O operador de produção não publica — ele marca qualidade, o gestor
+   recebe notificação acionável.
 
 > **Não é um Hootsuite.** Sem inbox, sem DMs, sem analytics de engajamento, sem gestão de
-> comunidade. É broadcast operacional unidirecional: evento da padaria → conteúdo → plataformas.
+> comunidade. A comunicação é unidirecional: evento da padaria → conteúdo → plataformas.
 
 ---
 
@@ -101,17 +111,17 @@ Auditoria completa do sistema. Cada mecânica é classificada por maturidade dos
 ```
 ┌─ Orquestrador (shopman/shop/) ─────────────────────────────────────────┐
 │                                                                         │
-│  models/broadcast.py ─── BroadcastRule, BroadcastPost, PostTemplate    │  ← NOVO
-│  models/user_notification.py ─── UserNotification                      │  ← NOVO
-│  services/broadcast.py ─── BroadcastService (avalia rules, resolve     │  ← NOVO
+│  models/campaign.py ──── Campaign, Announcement, AnnouncementTemplate  │  ✔ existe
+│  models/user_notification.py ─── UserNotification                      │  ✔ existe
+│  services/campaign.py ── CampaignService (avalia campanhas, resolve    │  ✔ existe
 │                             audiência, despacha Directives)             │
-│  services/audience.py ──── AudienceResolver (favoritos, recompra,      │  ← NOVO
-│                             alertas, VIP, opt-in check)                 │
-│  handlers/broadcast.py ─── on_production_changed, on_availability_     │  ← NOVO
-│                             changed → avalia BroadcastRules             │
-│  adapters/posting_meta.py ─ Meta Graph API (IG posts + FB Page posts)  │  ← NOVO
-│  adapters/posting_google.py  Google Business Profile (local posts)     │  ← NOVO
-│  directives.py ────────── + BROADCAST_POST, BROADCAST_NOTIFY           │  ← ESTENDER
+│  services/audience.py ──── resolve audiência (favoritos, quem já       │  ✔ existe
+│                             comprou, alertas, VIP, consentimento)       │
+│  handlers/campaign.py ── on_production_changed, on_availability_       │  ✔ existe
+│                             changed → avalia Campaigns                  │
+│  adapters/posting_meta.py ─ Meta Graph API (IG posts + FB Page posts)  │  ← F13
+│  adapters/posting_google.py  Google Business Profile (local posts)     │  ← F13
+│  directives.py ────────── ANNOUNCEMENT_PUBLISH, ANNOUNCEMENT_NOTIFY    │  ✔ existe
 │                                                                         │
 │  ┄ Já existem (reuso) ┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄ │
 │  adapters/notification_whatsapp.py ── WhatsApp Cloud API               │
@@ -138,7 +148,7 @@ Auditoria completa do sistema. Cada mecânica é classificada por maturidade dos
                   │
                   ▼
 ┌─ Surfaces ─────────────────────────────────────────────────────────────┐
-│  broadcast-nuxt/ (:3006) ── app Broadcast do gestor (NOVO)             │
+│  marketing-nuxt/ (:3006) ── app de Marketing do gestor (NOVO)             │
 │  storefront-nuxt/ ────────── badges FOMO nos cards de produto          │
 │  production-nuxt/ ────────── flag de qualidade no finish de fornada    │
 │  operator-kit/ ───────────── componentes compartilhados                │
@@ -148,7 +158,7 @@ Auditoria completa do sistema. Cada mecânica é classificada por maturidade dos
 ### 2.2 Fluxo principal: Fornada → Gestor → Post
 
 ```
-Operador (Produção)                  Sistema                           Gestor (Broadcast)
+Operador (Produção)                  Sistema                           Gestor (Marketing)
        │                                │                                    │
        │  finish(WorkOrder,             │                                    │
        │    quality="excelente")        │                                    │
@@ -156,12 +166,12 @@ Operador (Produção)                  Sistema                           Gestor 
        │                                │                                    │
        │                    production_changed(FINISHED)                     │
        │                                │                                    │
-       │                    BroadcastService.evaluate()                      │
-       │                    ├─ match BroadcastRules                          │
+       │                    CampaignService.evaluate()                      │
+       │                    ├─ match Campaigns                          │
        │                    ├─ AI gera texto + seleciona foto                │
        │                    ├─ resolve audiência (favoritos,                 │
        │                    │  recompra, alertas por SKU)                    │
-       │                    ├─ cria BroadcastPost(status=pending_review)     │
+       │                    ├─ cria Announcement(status=pending_review)     │
        │                    └─ cria UserNotification(actionable=True)        │
        │                                │                                    │
        │                                │  ── push (SSE/WhatsApp) ────────> │
@@ -175,7 +185,7 @@ Operador (Produção)                  Sistema                           Gestor 
        │                                │                     │              │
        │                                │  <── approve(post) ──┘             │
        │                                │                                    │
-       │                    Directive BROADCAST_POST                         │
+       │                    Directive ANNOUNCEMENT_PUBLISH                         │
        │                    ├─ posting_meta.py → IG post                     │
        │                    ├─ posting_google.py → local post                │
        │                    ├─ notification_whatsapp → audiência             │
@@ -183,12 +193,12 @@ Operador (Produção)                  Sistema                           Gestor 
        │                                │                                    │
        │                    Storefront:                                      │
        │                    badge "Saiu do forno há 8 min"                   │
-       │                    + deep link no post → carrinho                   │
+       │                    + deep link no anúncio → página do produto      │
 ```
 
 ### 2.3 Notificações por usuário (fundação)
 
-Hoje as notificações são por surface (SSE por app). Para o broadcast funcionar, o gestor precisa
+Hoje as notificações são por surface (SSE por app). Para a campanha funcionar, o gestor precisa
 receber a notificação **onde ele estiver**. Modelo proposto:
 
 ```python
@@ -201,7 +211,7 @@ class UserNotification(models.Model):
     title = models.CharField(max_length=200)
     message = models.TextField(blank=True)
     action_url = models.CharField(max_length=500, blank=True)  # deep link relativo
-    action_data = models.JSONField(default=dict)   # payload p/ ação (ex: broadcast_post_id)
+    action_data = models.JSONField(default=dict)   # payload p/ ação (ex: announcement_id)
     is_actionable = models.BooleanField(default=False)
     is_read = models.BooleanField(default=False)
     created_at = models.DateTimeField(auto_now_add=True)
@@ -213,25 +223,25 @@ logada (Gestor, Hub, Produção) escuta o canal do usuário autenticado. Fallbac
 notificações `is_actionable=True` não lidas após N minutos (configurable via
 `Shop.defaults["notifications"]["actionable_fallback_minutes"]`).
 
-Permissão: `shop.manage_broadcast` determina quem recebe notificações de broadcast. O handler
+Permissão: `shop.manage_campaigns` determina quem recebe notificações de campanha. O handler
 verifica antes de criar a `UserNotification`.
 
 ---
 
 ## 3. Modelos de dados
 
-### 3.1 BroadcastRule
+### 3.1 Campaign
 
 ```python
-# shopman/shop/models/broadcast.py
-class BroadcastRule(models.Model):
+# shopman/shop/models/campaign.py
+class Campaign(models.Model):
     """Regra que conecta um evento operacional a uma ação de broadcast."""
     name = models.CharField(max_length=100)               # "Fornada de pães → IG + Google"
     trigger = models.CharField(max_length=64)              # production_finished, low_stock,
                                                            # scheduled, availability_back
     trigger_filter = models.JSONField(default=dict)        # ex: {"collections": ["paes"],
                                                            #      "quality_min": "bom"}
-    template = models.ForeignKey("PostTemplate", on_delete=models.PROTECT)
+    template = models.ForeignKey("AnnouncementTemplate", on_delete=models.PROTECT)
     platforms = models.JSONField(default=list)              # ["instagram", "google_business",
                                                            #  "facebook", "whatsapp", "tv"]
     audience_rules = models.JSONField(default=dict)        # {"favorites": true,
@@ -270,10 +280,10 @@ class BroadcastRule(models.Model):
 {}
 ```
 
-### 3.2 PostTemplate
+### 3.2 AnnouncementTemplate
 
 ```python
-class PostTemplate(models.Model):
+class AnnouncementTemplate(models.Model):
     """Template de conteúdo para broadcast, com variáveis resolvidas em runtime."""
     name = models.CharField(max_length=100)
     body = models.TextField()                     # "{{produto}} acabou de sair do forno!
@@ -305,13 +315,13 @@ class PostTemplate(models.Model):
 | `{{loja}}` | `Shop.brand_name` | "Nelson Boulangerie" |
 | `{{qualidade}}` | `WorkOrder.meta["quality"]` | "excelente" |
 
-### 3.3 BroadcastPost
+### 3.3 Announcement
 
 ```python
-class BroadcastPost(models.Model):
+class Announcement(models.Model):
     """Registro de um post gerado (pendente, aprovado ou publicado)."""
-    rule = models.ForeignKey(BroadcastRule, on_delete=models.SET_NULL, null=True)
-    template = models.ForeignKey(PostTemplate, on_delete=models.SET_NULL, null=True)
+    rule = models.ForeignKey(Campaign, on_delete=models.SET_NULL, null=True)
+    template = models.ForeignKey(AnnouncementTemplate, on_delete=models.SET_NULL, null=True)
 
     status = models.CharField(max_length=16)       # draft, pending_review, approved,
                                                     # publishing, published, failed, expired
@@ -341,26 +351,22 @@ Sem modelo novo. Usa `WorkOrder.meta["quality"]` (JSONField já existe). Valores
 `"bom"`, `"regular"`. O app de Produção mostra 3 botões no momento do finish. Default: `"bom"`
 (não bloqueia o finish se o operador não escolher).
 
-O `BroadcastRule.trigger_filter` pode exigir `"quality_min": "bom"` — só gera post se qualidade
+O `Campaign.trigger_filter` pode exigir `"quality_min": "bom"` — só gera post se qualidade
 ≥ threshold. Hierarquia: excelente > bom > regular.
 
-### 3.5 Opt-in de marketing (cliente)
+### 3.5 Consentimento de marketing (cliente)
 
-```python
-# Estender Customer.metadata ou criar preferência via CustomerPreference
-# Guestman contrib/preferences já existe com type=explicit/inferred/restriction
+> ⚠️ **Superado.** Este esboço propunha `CustomerPreference(category="marketing",
+> key="broadcast_optin")`. A [ADR-020 §3](../decisions/adr-020-campaign-announces-it-does-not-sell.md)
+> descartou isso: o guestman **já tem** `CommunicationConsent` por canal, com data, origem e
+> revogação — e ter os dois seria duas respostas para a mesma pergunta. Pior, a chave proposta
+> **nunca teve escritor**: nenhum caminho de produção a gravava, então a checagem passava vazia e o
+> consentimento era decorativo. A F1 corrigiu isso; a fonte única é
+> `ConsentService.get_marketable_customers(channel)`, lida em
+> `shopman/shop/services/audience.py`.
 
-# Opt-in: CustomerPreference(
-#   customer=...,
-#   type="explicit",
-#   category="marketing",
-#   key="broadcast_optin",       # aceita receber broadcasts
-#   value={"channels": ["whatsapp"], "skus": ["croissant-trad"], "all_products": false}
-# )
-```
-
-Sem opt-in explícito, o cliente **não recebe** broadcasts WhatsApp. Sem exceção. As mecânicas
-de audiência (favoritos, recompra) só resolvem destinatários que têm opt-in ativo.
+Sem consentimento explícito, o cliente **não recebe** disparo de WhatsApp. Sem exceção. As mecânicas
+de audiência (favoritos, quem já comprou) só resolvem destinatários com consentimento ativo.
 
 O storefront oferece opt-in em três lugares: página do produto ("Quero saber quando sair do
 forno"), página de conta ("Receber novidades por WhatsApp"), e checkout (checkbox não-marcado
@@ -370,21 +376,21 @@ por padrão).
 
 ## 4. Serviços
 
-### 4.1 BroadcastService
+### 4.1 CampaignService
 
 ```python
-# shopman/shop/services/broadcast.py
+# shopman/shop/services/campaign.py
 
-def evaluate(trigger: str, context: dict) -> list[BroadcastPost]:
-    """Avalia BroadcastRules ativas para o trigger. Cria BroadcastPosts."""
-    rules = BroadcastRule.objects.filter(trigger=trigger, is_active=True)
+def evaluate(trigger: str, context: dict) -> list[Announcement]:
+    """Avalia Campaigns ativas para o trigger. Cria Announcements."""
+    rules = Campaign.objects.filter(trigger=trigger, is_active=True)
     posts = []
     for rule in rules:
         if not _matches_filter(rule, context):
             continue
         content = _resolve_content(rule.template, context)
         audience = AudienceResolver.resolve(context["sku"], rule.audience_rules)
-        post = BroadcastPost.objects.create(
+        post = Announcement.objects.create(
             rule=rule, template=rule.template, status=_initial_status(rule),
             content=content, platforms=rule.platforms, audience=audience.summary(),
             trigger_context=context,
@@ -397,9 +403,9 @@ def evaluate(trigger: str, context: dict) -> list[BroadcastPost]:
         posts.append(post)
     return posts
 
-def approve(post_id: int, user) -> BroadcastPost:
+def approve(post_id: int, user) -> Announcement:
     """Gestor aprova e dispara o post."""
-    post = BroadcastPost.objects.get(id=post_id)
+    post = Announcement.objects.get(id=post_id)
     post.status = "approved"
     post.approved_by = user
     post.approved_at = timezone.now()
@@ -407,15 +413,15 @@ def approve(post_id: int, user) -> BroadcastPost:
     _dispatch_post(post)
     return post
 
-def _dispatch_post(post: BroadcastPost):
+def _dispatch_post(post: Announcement):
     """Cria Directives por plataforma (retry/idempotência grátis)."""
     for platform in post.platforms:
         if platform in ("instagram", "facebook"):
-            create_deduped(BROADCAST_POST, payload={...}, dedupe_key=f"post:{post.id}:{platform}")
+            create_deduped(ANNOUNCEMENT_PUBLISH, payload={...}, dedupe_key=f"post:{post.id}:{platform}")
         elif platform == "google_business":
-            create_deduped(BROADCAST_POST, payload={...}, dedupe_key=f"post:{post.id}:google")
+            create_deduped(ANNOUNCEMENT_PUBLISH, payload={...}, dedupe_key=f"post:{post.id}:google")
         elif platform == "whatsapp":
-            create_deduped(BROADCAST_NOTIFY, payload={...}, dedupe_key=f"post:{post.id}:wa")
+            create_deduped(ANNOUNCEMENT_NOTIFY, payload={...}, dedupe_key=f"post:{post.id}:wa")
         elif platform == "tv":
             _push_sse("broadcast:tv", post.content)
 ```
@@ -580,9 +586,9 @@ Push via SSE existente. Canal `broadcast:tv`. O app `production-nuxt` (ou futura
 
 ## 6. Superfícies
 
-### 6.1 broadcast-nuxt (:3006) — app Broadcast do gestor
+### 6.1 marketing-nuxt (:3006) — app de Marketing do gestor
 
-**Propósito:** gestão completa de broadcast operacional.
+**Propósito:** gestão completa do marketing operacional.
 
 **Telas:**
 
@@ -600,10 +606,10 @@ posts publicados hoje, métricas simples (posts/dia, audiência alcançada).
 **Histórico** — posts publicados com resultado por plataforma (IG: link do post; Google:
 impressões; WhatsApp: enviados/entregues/lidos).
 
-**Rules** — CRUD de BroadcastRules (alternativamente, config via Admin/Unfold para o gestor
-mais técnico; o broadcast-nuxt mostra uma versão simplificada).
+**Rules** — CRUD de Campaigns (alternativamente, config via Admin/Unfold para o gestor
+mais técnico; o marketing-nuxt mostra uma versão simplificada).
 
-**Templates** — CRUD de PostTemplates com preview de variáveis.
+**Templates** — CRUD de AnnouncementTemplates com preview de variáveis.
 
 ### 6.2 Storefront (badges FOMO)
 
@@ -617,7 +623,13 @@ Regras de exibição:
 - Badge "Happy Hour" aparece no horário configurado
 - Atualização em real-time via SSE (canal `storefront:fomo:{sku}`)
 
-Deep links em todas as CTAs de posts externos: `https://{domain}/produto/{slug}?utm_source={platform}&utm_medium=broadcast&utm_campaign={post_id}`. O storefront resolve o slug para SKU e abre a página do produto com o carrinho pronto.
+Deep links em todas as CTAs de anúncios externos: `https://{domain}/produto/{slug}?utm_source={platform}&utm_medium=broadcast&utm_campaign={announcement_id}`. O storefront resolve o slug para SKU e abre a **página do produto**.
+
+> ⚠️ O esboço original dizia "com o carrinho pronto". A
+> [ADR-020 §9](../decisions/adr-020-campaign-announces-it-does-not-sell.md) proibiu: campanha
+> **anuncia**, não vende. Montar carrinho a partir de um link seria escrever no estado de compra de
+> alguém que só clicou — a oferta vira `Action` com deep link não autenticado, e quem decide o que
+> entra na sacola é o cliente.
 
 ### 6.3 production-nuxt (quality flag)
 
@@ -638,9 +650,9 @@ Grava em `WorkOrder.meta["quality"]`. Sem modelo novo, sem migração.
 |---|---|---|---|
 | **F0 — Badges FOMO no storefront** | `presentation/fomo.py` + endpoint + badges visuais (F1, F3, F5, F13, F14). Sem credencial. | Nada. | 🔴 Imediato — 5 mecânicas visíveis |
 | **F1 — Audiência + opt-in** | `AudienceResolver` + opt-in storefront + estender `StockAlertSubscription` para production_changed. | F0 (para saber o que mostrar). | 🔴 Alto — F8, F9, F10 |
-| **F2 — BroadcastService + modelos** | `BroadcastRule`, `PostTemplate`, `BroadcastPost`. Quality flag na produção. Handler `on_production_changed` → `evaluate()`. | F1 (audiência). | 🔴 Alto — engine completo |
+| **F2 — CampaignService + modelos** | `Campaign`, `AnnouncementTemplate`, `Announcement`. Quality flag na produção. Handler `on_production_changed` → `evaluate()`. | F1 (audiência). | 🔴 Alto — engine completo |
 | **F3 — UserNotification + notif. acionável** | `UserNotification` model + SSE por usuário + card acionável + fallback WhatsApp. | F2. | 🟡 Médio — gestor no loop |
-| **F4 — broadcast-nuxt** | App Nuxt completo (dashboard, review, histórico, rules, templates). | F2, F3. | 🟡 Médio — gestão visual |
+| **F4 — marketing-nuxt** | App Nuxt completo (dashboard, review, histórico, rules, templates). | F2, F3. | 🟡 Médio — gestão visual |
 | **F5 — Adapter Meta (posting)** | `posting_meta.py` (IG + FB). Compartilha creds com catálogo (PIM Arc E). | F2. ⚠️ Creds Meta. | 🔴 Alto — plataforma #1 |
 | **F6 — Adapter Google Business** | `posting_google.py` (local posts). | F2. ⚠️ Creds Google. | 🔴 Alto — SEO local |
 | **F7 — WhatsApp broadcast** | Templates aprovados + integração com audiência via WhatsApp Cloud API. | F1, F2. ⚠️ Templates Meta. | 🔴 Alto — canal direto |
@@ -658,21 +670,21 @@ Instagram/Google. Quando as credenciais entrarem (F5-F7), o fluxo vira automáti
 
 | Decisão | Valor | Razão |
 |---|---|---|
-| **App separado (broadcast-nuxt)** | Sim, :3006 no Hub | Gestor de marketing ≠ gestor de pedidos. Foco e permissões separados. |
+| **App separado (marketing-nuxt)** | Sim, :3006 no Hub | Gestor de marketing ≠ gestor de pedidos. Foco e permissões separados. |
 | **Operador de produção NÃO posta** | Correto. Marca qualidade, gestor decide. | Separação de responsabilidades. Operador foca na cozinha. |
 | **Notificação por usuário, não por app** | `UserNotification` vinculada ao User (Doorman). | Gestor recebe onde estiver. |
 | **Quality flag em WorkOrder.meta** | Sem modelo novo. `meta["quality"]` com 3 níveis. | JSONField já existe. Zero migração no Core. |
-| **Opt-in obrigatório para WhatsApp** | Sem exceção. `CustomerPreference` com `broadcast_optin`. | Legal (LGPD) + boa prática + confiança do cliente. |
+| **Opt-in obrigatório para WhatsApp** | Sem exceção. `CommunicationConsent` por canal (ADR-020 §3; o esboço original propunha `CustomerPreference`, descartado). | Legal (LGPD) + boa prática + confiança do cliente. |
 | **Deep link com carrinho** | Toda CTA de post externo leva ao storefront com UTM. | Conversão direta. O produto está a um toque. |
 | **Badges expiram** | "Saiu do forno" = 60 min. "D-1" = até fechar. | FOMO falso destrói confiança. Urgência real ou nada. |
-| **AI generation opcional** | `PostTemplate.use_ai_generation`. Default false. | Gestor controla quando quer AI e quando quer template fixo. |
+| **AI generation opcional** | `AnnouncementTemplate.use_ai_generation`. Default false. | Gestor controla quando quer AI e quando quer template fixo. |
 | **Reuso de credenciais PIM** | Adapters de posting usam mesmas creds Meta/Google do catálogo. | Uma integração, dois usos. |
 
 ---
 
 ## 9. Decisões abertas (para o Pablo)
 
-1. **Expiração de post pendente:** quanto tempo um `BroadcastPost(status=pending_review)` espera
+1. **Expiração de post pendente:** quanto tempo um `Announcement(status=pending_review)` espera
    antes de expirar automaticamente? Sugestão: 30 min para `production_finished` (frescor é
    efêmero), 4h para `low_stock`, sem expiração para `scheduled`.
 

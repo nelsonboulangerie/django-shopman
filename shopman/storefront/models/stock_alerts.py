@@ -4,7 +4,7 @@ Customer-facing: a shopper (logged-in OR anonymous with just a phone) asks to be
 notified about a SKU. Dois gatilhos, um modelo:
 
 - ``stock_back``      — o SKU esgotado voltou ao estoque
-- ``production_ready`` — saiu uma fornada nova (F9 do FOMO-BROADCAST-SPECS)
+- ``production_ready`` — saiu uma fornada nova (F9 do FOMO-MARKETING-SPECS)
 
 O segundo não exige que o produto esteja esgotado: quem quer pão quente quer
 saber da fornada, não da reposição. Ambos são idempotentes via ``notified_at``.

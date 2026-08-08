@@ -6,9 +6,9 @@
 `shopman/backstage` (API + projections), `surfaces/broadcast-nuxt`, `guestman` (nenhuma mudanca de
 model)
 **Depende de:** ADR-018 (canal `display`), ADR-019 (`Promotion.ref` e `Promotion.channels`)
-**Refina:** `docs/plans/FOMO-BROADCAST-SPECS.md` §2, §3, §4, §7 e §9
+**Refina:** `docs/plans/FOMO-MARKETING-SPECS.md` §2, §3, §4, §7 e §9
 **Nao reabre:** o veto a B.I. (ADR-017 §8) nem o "nao e um Hootsuite"
-(`docs/plans/FOMO-BROADCAST-SPECS.md:37-38`)
+(`docs/plans/FOMO-MARKETING-SPECS.md:37-38`)
 
 ---
 
@@ -402,7 +402,7 @@ mao. Se algum dia houver auto-post com IA, o caminho e uma Directive, nao chamad
 
 **Arte gerada por IA fica fora.** Foto de produto e ativo real; imagem sintetica de um pao que nao e
 aquele pao e o sistema mentindo sobre o mundo (§2.3) e contradiz o que a spec ja decidiu
-(`FOMO-BROADCAST-SPECS.md:667`: *"FOMO falso destroi confianca"*). Cabe **selecao** e **recorte** de
+(`FOMO-MARKETING-SPECS.md:667`: *"FOMO falso destroi confianca"*). Cabe **selecao** e **recorte** de
 foto existente, nunca sintese.
 
 ### 12. Nenhum numero vira B.I.
@@ -513,7 +513,7 @@ Ordem obrigatoria; cada passo entrega valor sozinho e passa `make test`.
    adapter.
 8. **Posting externo.** Registrar `"posting"` no mapa de adapters e implementar
    `posting_meta`/`posting_google`, gated por credencial. Escopo ja definido em
-   `FOMO-BROADCAST-SPECS.md` §5 e §7.
+   `FOMO-MARKETING-SPECS.md` §5 e §7.
 
 ---
 
@@ -522,7 +522,7 @@ Ordem obrigatoria; cada passo entrega valor sozinho e passa `make test`.
 - `make test` e `make admin` verdes; `make test-migrations` verde do zero.
 - `grep -ri "broadcast" shopman/ surfaces/ config/` retorna vazio, com duas ressalvas legítimas: as
   **migrations do próprio rename**, que precisam citar o nome antigo para renomeá-lo, e o nome do
-  documento histórico `FOMO-BROADCAST-SPECS.md`, que não muda (é registro, não código).
+  documento histórico `FOMO-MARKETING-SPECS.md`, que não muda (é registro, não código).
 - `grep -rn "broadcast_optin\|Trigger.SCHEDULED\|POSTING_PLATFORMS\|_push_tv\|broadcast-tv"` retorna
   vazio.
 - Cliente que revoga WhatsApp na tela de conta deixa de receber campanha no disparo seguinte.
@@ -552,7 +552,7 @@ o retorno — o oposto da `Action` da ADR-012. E o custo cresce monotonicamente 
 
 **`marketing` como identificador.** E departamento, nao compromisso: inbox, DM, comunidade e analytics
 cabem todos em "Marketing", e e essa deriva que a spec proibe
-(`FOMO-BROADCAST-SPECS.md:37-38`). Serve como rotulo da secao, jamais como nome de entidade.
+(`FOMO-MARKETING-SPECS.md:37-38`). Serve como rotulo da secao, jamais como nome de entidade.
 
 **`announcement` como nome do app.** Nomeia o artefato, nao a intencao — e a intencao e o que o gestor
 cria. Como rotulo PT, "anuncio" colide com midia paga na cabeca do operador. Fica como o nome do
@@ -605,4 +605,4 @@ da fornada, penalizando o operador que esta com o pao na mao.
 - [ADR-017 - Qualidade e o resultado da producao](adr-017-quality-as-production-outcome.md)
 - [ADR-018 - Superficie e canal, com politica comercial](adr-018-surface-is-channel-with-commerce-policy.md)
 - [ADR-019 - A promocao tem um dono](adr-019-promotion-belongs-to-the-orchestrator.md)
-- [FOMO-BROADCAST-SPECS](../plans/FOMO-BROADCAST-SPECS.md)
+- [FOMO-MARKETING-SPECS](../plans/FOMO-MARKETING-SPECS.md)

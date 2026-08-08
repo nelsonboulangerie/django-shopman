@@ -8,7 +8,7 @@ Puro e testável: recebe dicts já resolvidos pelo chamador (``api/fomo.py``),
 não toca banco, não tem side effect. O relógio entra por ``now`` para o teste
 não depender do horário da máquina.
 
-Mecânicas cobertas (FOMO-BROADCAST-SPECS §1): F1 (últimas unidades), F3 (D-1),
+Mecânicas cobertas (FOMO-MARKETING-SPECS §1): F1 (últimas unidades), F3 (D-1),
 F5 (saiu do forno), F13 (promoção expirando), F14 (happy hour), F16 (quanta
 gente quer) e F17 (quantos saíram hoje).
 """

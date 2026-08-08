@@ -78,7 +78,7 @@ def can_manage_campaigns(user) -> bool:
 
     Deliberadamente separado de ``can_manage_orders``: quem cuida da fila de
     pedidos não é necessariamente quem decide o que a padaria publica
-    (FOMO-BROADCAST-SPECS §8).
+    (FOMO-MARKETING-SPECS §8).
     """
     return is_superuser(user) or user.has_perm("shop.manage_campaigns")
 

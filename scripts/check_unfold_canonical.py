@@ -246,7 +246,7 @@ EXCEPTION_SURFACES: tuple[Surface, ...] = (
             "ADMIN-ROLE-PLAN WP-ADM-3/WP-ADM-4/WP-ADM-7d — config de rule/capability fica no "
             "Admin/Unfold, a matriz operacional no Gestor, o fechamento do dia e os relatórios "
             "X/Z na antesala do PDV, a produção inteira no Produção). "
-            "Campanha (FOMO-BROADCAST-SPECS §6.1): a REVISÃO do anúncio é decisão operacional "
+            "Campanha (FOMO-MARKETING-SPECS §6.1): a REVISÃO do anúncio é decisão operacional "
             "no app dedicado; o CRUD de regra/modelo segue disponível no Admin/Unfold."
         ),
     ),
