@@ -6,10 +6,15 @@ para ser avisado, quem compra sempre. Nunca a lista toda.
 
 Três invariantes:
 
-1. **Opt-in é lei.** Sem ``CustomerPreference(category="marketing",
-   key="broadcast_optin")`` explícito, ninguém recebe broadcast. Sem exceção
-   (LGPD e, antes disso, confiança). A única porta lateral é a assinatura de
-   alerta por SKU, que já É um opt-in explícito daquele produto.
+1. **Consentimento é lei, e tem um dono só.** Sem ``CommunicationConsent`` com
+   status ``opted_in`` no canal de entrega, ninguém recebe. Sem exceção (LGPD e,
+   antes disso, confiança). A única porta lateral é a assinatura de alerta por
+   SKU, que já É um consentimento explícito daquele produto.
+
+   O dono é o ``CommunicationConsent`` do guestman — o mesmo registro que o
+   cliente escreve ao mexer nos canais na tela da conta, e que carrega base
+   legal, IP e data de revogação. Consultado pela API pública
+   (``ConsentService``), nunca por model interno de contrib.
 2. **Um destinatário por telefone.** As três regras se sobrepõem muito; o
    telefone normalizado é a chave de dedupe, então ninguém recebe em dobro.
 3. **VIP primeiro é vantagem, não exclusão.** O atraso do grupo geral é uma
@@ -31,8 +36,11 @@ from django.utils import timezone
 
 logger = logging.getLogger(__name__)
 
-OPTIN_CATEGORY = "marketing"
-OPTIN_KEY = "broadcast_optin"
+#: Canal de entrega cujo consentimento é exigido. A audiência existe para ser
+#: alcançada, e hoje o alcance é a onda de WhatsApp (``handlers.broadcast._send_to``).
+#: Consentir WhatsApp não é consentir SMS: quando outro canal de entrega entrar,
+#: ele passa a exigir o consentimento do próprio canal, não deste.
+DELIVERY_CONSENT_CHANNEL = "whatsapp"
 
 #: RFM + tier que valem tratamento VIP (mesma régua do ``CustomerInsight.is_vip``).
 VIP_RFM_SEGMENTS = ("champion", "loyal_customer")
@@ -337,11 +345,11 @@ def _bought_recently(insight, *, sku: str, cutoff) -> bool:
 # ── Opt-in ───────────────────────────────────────────────────────────
 
 
-def _filter_opted_in(recipients) -> list[Recipient]:
-    """Manter só quem consentiu — direto (opt-in) ou por assinatura de SKU."""
+def _filter_opted_in(recipients, *, channel: str = DELIVERY_CONSENT_CHANNEL) -> list[Recipient]:
+    """Manter só quem consentiu — no canal de entrega ou por assinatura de SKU."""
     recipients = list(recipients)
     refs = {r.customer_ref for r in recipients if r.customer_ref}
-    opted_in = _opted_in_refs(refs)
+    opted_in = _opted_in_refs(refs, channel=channel)
 
     kept = []
     for recipient in recipients:
@@ -353,34 +361,24 @@ def _filter_opted_in(recipients) -> list[Recipient]:
     return kept
 
 
-def _opted_in_refs(customer_refs: set[str]) -> set[str]:
-    """Refs com opt-in de marketing ativo. Valor falsy = opt-out explícito."""
+def _opted_in_refs(customer_refs: set[str], *, channel: str) -> set[str]:
+    """Refs com consentimento ativo no canal. Ausência e revogação valem opt-out.
+
+    Uma consulta, pela API pública do guestman. Falha de leitura devolve conjunto
+    vazio de propósito: na dúvida ninguém recebe, porque o erro seguro aqui é não
+    enviar.
+    """
     if not customer_refs:
         return set()
     try:
-        from shopman.guestman.contrib.preferences.models import CustomerPreference
+        from shopman.guestman import ConsentService
 
-        rows = CustomerPreference.objects.filter(
-            customer__ref__in=customer_refs,
-            category=OPTIN_CATEGORY,
-            key=OPTIN_KEY,
-        ).values_list("customer__ref", "value")
+        marketable = set(ConsentService.get_marketable_customers(channel))
     except Exception:
-        logger.warning("audience.optin_lookup_failed", exc_info=True)
+        logger.warning("audience.consent_lookup_failed channel=%s", channel, exc_info=True)
         return set()
 
-    return {ref for ref, value in rows if _optin_is_on(value)}
-
-
-def _optin_is_on(value) -> bool:
-    """``True``, ``{"enabled": true}`` ou ``{"channels": [...]}`` valem opt-in."""
-    if value is True:
-        return True
-    if not isinstance(value, dict):
-        return False
-    if "enabled" in value:
-        return bool(value["enabled"])
-    return bool(value.get("channels"))
+    return {ref for ref in customer_refs if ref in marketable}
 
 
 # ── Helpers ──────────────────────────────────────────────────────────

@@ -1,7 +1,7 @@
-"""AudienceResolver — favoritos, alertas, recompra, opt-in e VIP-first.
+"""AudienceResolver — favoritos, alertas, recompra, consentimento e VIP-first.
 
-O teste mais importante deste arquivo é o do opt-in: sem consentimento
-explícito, ninguém entra na audiência. Todo o resto é otimização.
+O teste mais importante deste arquivo é o do consentimento: sem ``opted_in`` no
+canal de entrega, ninguém entra na audiência. Todo o resto é otimização.
 """
 
 from __future__ import annotations
@@ -10,8 +10,9 @@ from datetime import timedelta
 
 import pytest
 from django.utils import timezone
+from shopman.guestman import ConsentService
+from shopman.guestman.contrib.consent.models import CommunicationConsent
 from shopman.guestman.contrib.insights.models import CustomerInsight
-from shopman.guestman.contrib.preferences.models import CustomerPreference
 from shopman.guestman.models import Customer
 
 from shopman.shop.services import audience
@@ -25,16 +26,20 @@ SKU = "croissant-trad"
 def _customer(
     phone: str, *, first_name: str = "Ana", opted_in: bool | None = True, ref: str = ""
 ) -> Customer:
+    """Cliente com consentimento no canal de entrega.
+
+    ``opted_in=True`` concede, ``False`` revoga, ``None`` não cria registro
+    nenhum — e ausência de registro é opt-out, igual a revogação.
+    """
     customer = Customer.objects.create(
         ref=ref or f"CLI-{phone[-4:]}", first_name=first_name, phone=phone
     )
-    if opted_in is not None:
-        CustomerPreference.objects.create(
-            customer=customer,
-            category=audience.OPTIN_CATEGORY,
-            key=audience.OPTIN_KEY,
-            value={"enabled": opted_in},
+    if opted_in is True:
+        ConsentService.grant_consent(
+            customer.ref, audience.DELIVERY_CONSENT_CHANNEL, source="test"
         )
+    elif opted_in is False:
+        ConsentService.revoke_consent(customer.ref, audience.DELIVERY_CONSENT_CHANNEL)
     return customer
 
 
@@ -63,11 +68,11 @@ class TestFavorites:
         assert audience.resolve(SKU, {}).total == 0
 
 
-# ── Opt-in (invariante) ──────────────────────────────────────────────
+# ── Consentimento (invariante) ───────────────────────────────────────
 
 
-class TestOptIn:
-    def test_without_optin_nobody_is_reached(self):
+class TestConsent:
+    def test_without_consent_nobody_is_reached(self):
         customer = _customer("+5543999990001", opted_in=None)
         CustomerFavorite.objects.create(customer_ref=customer.ref, sku=SKU)
 
@@ -79,30 +84,29 @@ class TestOptIn:
 
         assert audience.resolve(SKU, {"favorites": True}).total == 0
 
-    def test_channels_list_counts_as_optin(self):
-        customer = Customer.objects.create(
-            ref="CLI-0001", first_name="Ana", phone="+5543999990001"
-        )
-        CustomerPreference.objects.create(
-            customer=customer,
-            category=audience.OPTIN_CATEGORY,
-            key=audience.OPTIN_KEY,
-            value={"channels": ["whatsapp"]},
+    def test_revoking_after_granting_removes_from_audience(self):
+        """O caso que estava quebrado no ar: revogar na tela da conta e continuar recebendo."""
+        customer = _customer("+5543999990001")
+        CustomerFavorite.objects.create(customer_ref=customer.ref, sku=SKU)
+        assert audience.resolve(SKU, {"favorites": True}).total == 1
+
+        ConsentService.revoke_consent(customer.ref, audience.DELIVERY_CONSENT_CHANNEL)
+
+        assert audience.resolve(SKU, {"favorites": True}).total == 0
+
+    def test_pending_consent_is_not_consent(self):
+        customer = _customer("+5543999990001", opted_in=None)
+        CommunicationConsent.objects.create(
+            customer=customer, channel=audience.DELIVERY_CONSENT_CHANNEL, status="pending"
         )
         CustomerFavorite.objects.create(customer_ref=customer.ref, sku=SKU)
 
-        assert audience.resolve(SKU, {"favorites": True}).total == 1
+        assert audience.resolve(SKU, {"favorites": True}).total == 0
 
-    def test_empty_channels_list_is_not_optin(self):
-        customer = Customer.objects.create(
-            ref="CLI-0001", first_name="Ana", phone="+5543999990001"
-        )
-        CustomerPreference.objects.create(
-            customer=customer,
-            category=audience.OPTIN_CATEGORY,
-            key=audience.OPTIN_KEY,
-            value={"channels": []},
-        )
+    def test_consent_on_another_channel_does_not_count(self):
+        """Consentir e-mail não é consentir WhatsApp — o canal é parte do consentimento."""
+        customer = _customer("+5543999990001", opted_in=None)
+        ConsentService.grant_consent(customer.ref, "email", source="test")
         CustomerFavorite.objects.create(customer_ref=customer.ref, sku=SKU)
 
         assert audience.resolve(SKU, {"favorites": True}).total == 0
