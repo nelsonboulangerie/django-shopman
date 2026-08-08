@@ -251,6 +251,40 @@ todos devolvendo `Recipient` (`:43-52`) e passando pelo mesmo `_merge` (`:454-47
 de consentimento (`:340-353`). **`CustomerInsight` ja e o motor de segmentacao**; construir um segundo
 seria criar o terceiro dono de um fato que ja tem dois.
 
+#### 7.1. O vocabulario `bought_*` mata o portugues que sobrou no codigo
+
+A regra do projeto e clara: identificador, chave de JSON e valor de TextChoices em ingles; rotulo e
+mensagem em portugues. Cinco pontos violam isso hoje, e um deles e **valor de string que viaja em
+dado**:
+
+| Hoje | Passa a ser |
+|---|---|
+| `_recompra()` (`services/audience.py:289`) | absorvido pelo resolvedor `bought_*` |
+| chave `recompra_days` (`:177`, `models/broadcast.py:120`, migration `0023:45`) | `bought_within_days` |
+| chave `recompra_count` (`:180`) | `bought_count` |
+| `reason="recompra"` (`:181`), que entra em `Recipient.reasons` (`:48`) | `"bought"` |
+| log `audience.recompra_failed` (`:303`) | `audience.bought_failed` |
+
+**Nao e traducao, e a generalizacao que a §7 ja decidiu** — `recompra_days` estava preso ao SKU do
+evento, e `bought_within_days` acompanha `bought_skus`/`bought_collections`. O predicado em ingles ja
+existe no arquivo: `_bought_recently` (`:326`).
+
+**E ha uma camada em Core.** `CustomerInsight.favorite_products` e documentado como
+`{sku, nome, qtd, ultimo_pedido}`
+(`packages/guestman/shopman/guestman/contrib/insights/models.py:66`), e o orquestrador le
+`entry.get("ultimo_pedido")` (`services/audience.py:330`): **chaves JSON em portugues dentro de um
+pacote core**. Viram `name`, `quantity` e `last_ordered_at`.
+
+Essa e a **unica** mudanca em Core de todo este plano, e ela e barata por um motivo verificavel:
+`favorite_products` e **derivado**, recomputado de pedidos por `_calculate_favorite_products`
+(`contrib/insights/service.py:128`). Logo **nao ha data migration** — troca-se o escritor, o unico
+leitor no orquestrador, e recomputa-se. A consulta existente `favorite_products__contains=[{"sku":
+sku}]` (`service.py:195`) sobrevive intacta, porque `sku` ja estava em ingles. Depois do go-live a
+ADR-015 transformaria isso em expand-contract com janela de alias.
+
+Copy voltada ao cliente **nao muda**: `shopman/storefront/api/surface.py:207` e `:369` dizem
+"recompra" em portugues para o cliente ler, e e isso que a regra manda.
+
 **`audience_rules` e vocabulario fechado e plano.** Sem AND/OR aninhado, sem construtor de segmento
 arbitrario. No dia em que alguem precisar de arvore booleana, o que esta sendo construido e um CDP, e a
 resposta e nao.
@@ -397,9 +431,12 @@ recalculada no despacho (`handlers/broadcast.py:229-248`).
   precisa de migracao para `CommunicationConsent`, senao sai da audiencia.
 - `audience.resolve()` muda de assinatura; todo chamador e teste acompanha.
 - Extrair o adapter de copy mexe numa tela de catalogo que funciona.
-- `_recompra` continua carregando todos os `CustomerInsight` e filtrando em Python
-  (`services/audience.py:298-309`); com `bought_collections` fica pior. A correcao certa e consulta no
-  banco, **nao** tabela desnormalizada de cliente x sku — isso seria warehouse, vetado.
+- O resolvedor de recompra carrega todos os `CustomerInsight` e filtra em Python
+  (`services/audience.py:298-309`), e com `bought_collections` a conta cresce. **Medido em 2026-08-08:
+  13 clientes, 6 insights.** Nesta escala — e em qualquer escala plausivel para uma padaria — a
+  varredura em Python custa milissegundos, algumas vezes por dia. **Nao se cria indice para isso**
+  (ver Alternativas descartadas), e jamais uma tabela desnormalizada de cliente x sku, que seria
+  warehouse.
 
 ### Mitigacoes
 

@@ -409,6 +409,15 @@ improvavel.
 canal `display`; coluna que e nula na maioria das linhas e coluna sem criterio (regra 1 do "Core e
 Sagrado").
 
+**Renomear `menuboard` para `display` (rota e demais referencias).** Tentador, porque unificaria o
+vocabulario num termo generico. Recusado por escopo: **o feed do Google e `commerce_policy=display` e
+nao e um menuboard**. `display` e a politica — o genero, que cobre Google, Meta e as telas —, enquanto
+`menuboard` e um renderizador dela, uma especie. Usar a mesma palavra para o genero e para uma especie
+recria exatamente a patologia que este ADR e a ADR-020 estao eliminando em `platform`, `channel` e
+`broadcast`. A regra fica: `commerce_policy` responde *o que este canal pode fazer*; a rota responde
+*como ele e renderizado*; `format` responde *em qual dialeto o XML sai*. E "menuboard" e o termo padrao
+da industria para quadro digital de menu — preciso, nao jargao. Sao 121 ocorrencias, todas mantidas.
+
 **Nomear as rotas por acesso (`/feed/public/`, `/feed/local/`).** Tentador porque a diferenca de
 acesso e real. Recusado por dois motivos. Poe a politica em dois lugares — o gate na view e a palavra
 na URL — e quando divergirem a URL mente; acesso se aplica, nao se anuncia (nao chamamos `/admin/` de

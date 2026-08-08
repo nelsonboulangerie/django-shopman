@@ -154,6 +154,19 @@ As quatro portas de validacao saem de `shopman/storefront/cart.py:322-378` para
 `groups`, `rfm_segments`, `churn_risk_min`, `bought_skus`/`bought_collections` e `birthday_today`;
 Action "Criar campanha" na superficie.
 
+**Inclui a limpeza do portugues que sobrou no codigo** (ADR-020 §7.1): `recompra_days` →
+`bought_within_days`, `recompra_count` → `bought_count`, `_recompra()` absorvido pelo resolvedor
+`bought_*`, e o valor de string `reason="recompra"` → `"bought"`. **Nao e traducao** — e a
+generalizacao que a §7 ja decidiu, e o predicado em ingles ja existe (`_bought_recently`,
+`services/audience.py:326`). Copy voltada ao cliente continua em portugues, como manda a regra.
+
+**E o unico toque em Core de todo o plano:** as chaves em portugues de
+`CustomerInsight.favorite_products` (`nome`/`qtd`/`ultimo_pedido` →
+`name`/`quantity`/`last_ordered_at`, `packages/guestman/.../insights/models.py:66`, lidas em
+`services/audience.py:330`). **Sem data migration**, porque o campo e derivado e recomputado de pedidos
+(`contrib/insights/service.py:128`) — troca-se escritor e leitor e recomputa-se. Depois do go-live a
+ADR-015 exigiria expand-contract; agora e quase gratis.
+
 *Valor sozinho:* o gestor dispara hoje, para quem escolher, por WhatsApp (ja ligado).
 
 ### F9 — Agendamento: a vassoura arma, a fila dispara · ADR-020 passo 4
@@ -240,6 +253,12 @@ fica `pending_manual`.
 - **Sem preco por grupo de cliente**: `CustomerGroup.listing_ref` fica declarado e inerte.
 - **Sem arvore booleana em `audience_rules`**: vocabulario fechado e plano.
 - **Sem granularidade sub-minuto**: F9 entrega segundos; abaixo disso e o gatilho T6 da ADR-003.
+- **Sem indice em `CustomerInsight.favorite_products`.** Medido em 2026-08-08: **13 clientes, 6
+  insights**. Nesta escala — e em qualquer escala plausivel para uma padaria — a varredura em Python
+  custa milissegundos, algumas vezes por dia. Indice GIN aqui seria otimizacao prematura com migracao
+  em pacote core, contra §8.3. Recusado explicitamente para ninguem reabrir como "melhoria".
+- **`menuboard` nao vira `display`.** O feed do Google e `display` e nao e um menuboard: politica e
+  genero, rota e especie. Ver Alternativas descartadas da ADR-018.
 
 ---
 
