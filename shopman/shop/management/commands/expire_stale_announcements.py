@@ -20,8 +20,8 @@ class Command(BaseCommand):
     def handle(self, *args, **options):
         from shopman.shop.services import campaign
 
-        expired = campaign.expire_stale_posts()
+        expired = campaign.expire_stale_announcements()
         if expired:
-            logger.info("expire_stale_announcements: %d post(s) expirado(s)", expired)
+            logger.info("expire_stale_announcements: %d announcement(s) expirado(s)", expired)
             self.stdout.write(f"{expired} anúncio(s) expirado(s).")
         return None

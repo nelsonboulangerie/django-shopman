@@ -77,7 +77,7 @@ useHead({ title: "Regras · Marketing" });
       <Icon name="lucide:sliders-horizontal" class="mx-auto size-8 text-muted-foreground" />
       <p class="mt-2 font-semibold">Nenhuma regra ainda</p>
       <p class="mt-1 text-sm text-muted-foreground">
-        Uma regra liga um evento da padaria a um post. Comece pela fornada.
+        Uma regra liga um evento da padaria a um announcement. Comece pela fornada.
       </p>
       <button
         type="button"
@@ -142,7 +142,7 @@ useHead({ title: "Regras · Marketing" });
         <UiSheetHeader>
           <UiSheetTitle>{{ editing ? "Editar regra" : "Nova regra" }}</UiSheetTitle>
           <UiSheetDescription>
-            Um evento da padaria vira um post, para as pessoas certas.
+            Um evento da padaria vira um announcement, para as pessoas certas.
           </UiSheetDescription>
         </UiSheetHeader>
         <div class="mt-4">

@@ -1,7 +1,7 @@
 """Handlers de campanha — receivers de evento e handlers de directive.
 
 Dois contratos: (1) marketing nunca derruba a operação que o disparou; (2) a
-audiência é resolvida no despacho, não na criação do post.
+audiência é resolvida no despacho, não na criação do announcement.
 """
 
 from __future__ import annotations
@@ -139,66 +139,69 @@ class TestAvailabilityReceiver:
 
 
 class TestPostHandler:
-    def _post(self, rule) -> Announcement:
+    def _announcement(self, rule) -> Announcement:
         return Announcement.objects.create(
             rule=rule, template=rule.template, status=AnnouncementStatus.PUBLISHING,
             content={"body": "Croissant saiu do forno"}, platforms=["instagram"],
         )
 
-    def _handle(self, post, platform="instagram"):
-        message = SimpleNamespace(pk=1, payload={"post_id": post.pk, "platform": platform})
+    def _handle(self, announcement, platform="instagram"):
+        message = SimpleNamespace(pk=1, payload={"announcement_id": announcement.pk, "platform": platform})
         handlers.AnnouncementHandler().handle(message=message, ctx={})
 
     def test_without_an_adapter_the_post_waits_for_manual_publishing(self, rule):
         """Sem credencial (F5/F6), o conteúdo fica pronto e o gestor copia."""
-        post = self._post(rule)
-        self._handle(post)
-        post.refresh_from_db()
-        assert post.platform_results["instagram"]["status"] == "pending_manual"
+        announcement = self._announcement(rule)
+        self._handle(announcement)
+        announcement.refresh_from_db()
+        assert announcement.platform_results["instagram"]["status"] == "pending_manual"
 
     def test_manual_publishing_still_closes_the_post(self, rule):
-        post = self._post(rule)
-        self._handle(post)
-        post.refresh_from_db()
-        assert post.status == AnnouncementStatus.PUBLISHED
-        assert post.published_at is not None
+        announcement = self._announcement(rule)
+        self._handle(announcement)
+        announcement.refresh_from_db()
+        assert announcement.status == AnnouncementStatus.PUBLISHED
+        assert announcement.published_at is not None
 
     def test_a_working_adapter_publishes(self, rule):
-        post = self._post(rule)
+        announcement = self._announcement(rule)
         adapter = MagicMock()
         adapter.publish.return_value = {"post_id": "ig_123", "url": "https://ig/p/123"}
         with patch.object(handlers, "_posting_adapter", return_value=adapter):
-            self._handle(post)
-        post.refresh_from_db()
-        assert post.platform_results["instagram"]["post_id"] == "ig_123"
-        assert post.status == AnnouncementStatus.PUBLISHED
+            self._handle(announcement)
+        announcement.refresh_from_db()
+        # A chave `post_id` aqui é do INSTAGRAM, não nossa: o adapter devolve o dicionário
+        # dele e o handler o repassa opaco. Renomear seria inventar vocabulário na
+        # plataforma alheia.
+        assert announcement.platform_results["instagram"]["post_id"] == "ig_123"
+        assert announcement.status == AnnouncementStatus.PUBLISHED
 
     def test_adapter_failure_marks_the_post_and_reraises_for_retry(self, rule):
-        post = self._post(rule)
+        announcement = self._announcement(rule)
         adapter = MagicMock()
         adapter.publish.side_effect = RuntimeError("meta fora do ar")
         with (
             patch.object(handlers, "_posting_adapter", return_value=adapter),
             pytest.raises(RuntimeError),
         ):
-            self._handle(post)
-        post.refresh_from_db()
-        assert post.status == AnnouncementStatus.FAILED
+            self._handle(announcement)
+        announcement.refresh_from_db()
+        assert announcement.status == AnnouncementStatus.FAILED
 
     def test_a_post_is_only_settled_once_every_platform_answered(self, rule):
-        post = self._post(rule)
-        post.platforms = ["instagram", "google_business"]
-        post.save()
-        self._handle(post)
-        post.refresh_from_db()
-        assert post.status == AnnouncementStatus.PUBLISHING
+        announcement = self._announcement(rule)
+        announcement.platforms = ["instagram", "google_business"]
+        announcement.save()
+        self._handle(announcement)
+        announcement.refresh_from_db()
+        assert announcement.status == AnnouncementStatus.PUBLISHING
 
-        self._handle(post, platform="google_business")
-        post.refresh_from_db()
-        assert post.status == AnnouncementStatus.PUBLISHED
+        self._handle(announcement, platform="google_business")
+        announcement.refresh_from_db()
+        assert announcement.status == AnnouncementStatus.PUBLISHED
 
     def test_missing_post_is_a_no_op(self):
-        message = SimpleNamespace(pk=1, payload={"post_id": 9999, "platform": "instagram"})
+        message = SimpleNamespace(pk=1, payload={"announcement_id": 9999, "platform": "instagram"})
         handlers.AnnouncementHandler().handle(message=message, ctx={})
 
 
@@ -206,7 +209,7 @@ class TestPostHandler:
 
 
 class TestNotifyHandler:
-    def _post(self) -> Announcement:
+    def _announcement(self) -> Announcement:
         template = AnnouncementTemplate.objects.create(name="T", body="{{produto}}")
         rule = Campaign.objects.create(
             name="Audiência", trigger="production_finished", template=template,
@@ -218,21 +221,21 @@ class TestNotifyHandler:
             platforms=["whatsapp"], trigger_context={"sku": SKU},
         )
 
-    def _handle(self, post, wave="all"):
-        message = SimpleNamespace(pk=1, payload={"post_id": post.pk, "wave": wave})
+    def _handle(self, announcement, wave="all"):
+        message = SimpleNamespace(pk=1, payload={"announcement_id": announcement.pk, "wave": wave})
         handlers.AnnouncementNotifyHandler().handle(message=message, ctx={})
 
     def test_audience_is_resolved_at_dispatch_not_at_creation(self):
         """Entre a fornada e a aprovação, favoritos e alertas mudam."""
-        post = self._post()
+        announcement = self._announcement()
         with patch("shopman.shop.services.audience.resolve") as resolve:
             resolve.return_value.all_recipients.return_value = ()
-            self._handle(post)
+            self._handle(announcement)
         resolve.assert_called_once()
         assert resolve.call_args.args[0] == SKU
 
     def test_each_recipient_gets_the_message(self):
-        post = self._post()
+        announcement = self._announcement()
         recipients = (
             SimpleNamespace(phone="+5543999990001"),
             SimpleNamespace(phone="+5543999990002"),
@@ -243,13 +246,13 @@ class TestNotifyHandler:
         ):
             resolve.return_value.all_recipients.return_value = recipients
             notify.return_value = SimpleNamespace(success=True)
-            self._handle(post)
+            self._handle(announcement)
         assert notify.call_count == 2
-        post.refresh_from_db()
-        assert post.platform_results["whatsapp"]["sent"] == 2
+        announcement.refresh_from_db()
+        assert announcement.platform_results["whatsapp"]["sent"] == 2
 
     def test_a_failed_send_is_counted_not_swallowed(self):
-        post = self._post()
+        announcement = self._announcement()
         with (
             patch("shopman.shop.services.audience.resolve") as resolve,
             patch("shopman.shop.notifications.notify", side_effect=RuntimeError("wa off")),
@@ -257,12 +260,12 @@ class TestNotifyHandler:
             resolve.return_value.all_recipients.return_value = (
                 SimpleNamespace(phone="+5543999990001"),
             )
-            self._handle(post)
-        post.refresh_from_db()
-        assert post.platform_results["whatsapp"]["failed"] == 1
+            self._handle(announcement)
+        announcement.refresh_from_db()
+        assert announcement.platform_results["whatsapp"]["failed"] == 1
 
     def test_the_vip_wave_only_reaches_vips(self):
-        post = self._post()
+        announcement = self._announcement()
         with (
             patch("shopman.shop.services.audience.resolve") as resolve,
             patch("shopman.shop.notifications.notify") as notify,
@@ -273,13 +276,13 @@ class TestNotifyHandler:
                 SimpleNamespace(phone="+5543999990012"),
             )
             notify.return_value = SimpleNamespace(success=True)
-            self._handle(post, wave="vip")
+            self._handle(announcement, wave="vip")
         assert notify.call_count == 1
 
     def test_empty_audience_still_closes_the_post(self):
-        post = self._post()
+        announcement = self._announcement()
         with patch("shopman.shop.services.audience.resolve") as resolve:
             resolve.return_value.all_recipients.return_value = ()
-            self._handle(post)
-        post.refresh_from_db()
-        assert post.status == AnnouncementStatus.PUBLISHED
+            self._handle(announcement)
+        announcement.refresh_from_db()
+        assert announcement.status == AnnouncementStatus.PUBLISHED

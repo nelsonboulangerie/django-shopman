@@ -3,7 +3,7 @@
 //
 // Ordem deliberada: primeiro o que PEDE decisão (pendentes), depois o que já
 // saiu. Números do dia por último: contexto, não protagonista.
-import { audienceSummary, postOutcome, shortDateTime } from "~/presentation/campaign";
+import { audienceSummary, announcementOutcome, shortDateTime } from "~/presentation/campaign";
 import type { PostEdits } from "~/types/campaign";
 
 // Mesma leitura do histórico: sucesso PARCIAL não se disfarça de pendente.
@@ -108,7 +108,7 @@ useHead({ title: "Painel · Marketing" });
         <Icon name="lucide:coffee" class="mx-auto size-8 text-muted-foreground" />
         <p class="mt-2 font-semibold">Nada esperando por você</p>
         <p class="mt-1 text-sm text-muted-foreground">
-          Quando uma fornada terminar, o post aparece aqui para revisão.
+          Quando uma fornada terminar, o anúncio aparece aqui para revisão.
         </p>
         <NuxtLink
           to="/rules"
@@ -121,11 +121,11 @@ useHead({ title: "Painel · Marketing" });
 
       <div v-else class="space-y-4">
         <AnnouncementCard
-          v-for="post in pendingPosts"
-          :key="post.pk"
-          :post="post"
+          v-for="announcement in pendingPosts"
+          :key="announcement.pk"
+          :announcement="announcement"
           :platform-options="platforms"
-          :busy="busyPk === post.pk"
+          :busy="busyPk === announcement.pk"
           @approve="onApprove"
           @discard="(pk) => (discarding = pk)"
         />
@@ -138,17 +138,17 @@ useHead({ title: "Painel · Marketing" });
         Últimas 24 horas
       </h2>
       <ul class="divide-y divide-border overflow-hidden rounded-xl border border-border bg-card">
-        <li v-for="post in recentPosts" :key="post.pk" class="flex items-start gap-3 px-4 py-3">
+        <li v-for="announcement in recentPosts" :key="announcement.pk" class="flex items-start gap-3 px-4 py-3">
           <Icon
-            :name="OUTCOME_META[postOutcome(post.platform_results)].icon"
+            :name="OUTCOME_META[announcementOutcome(announcement.platform_results)].icon"
             class="mt-0.5 size-4 shrink-0"
-            :class="OUTCOME_META[postOutcome(post.platform_results)].class"
+            :class="OUTCOME_META[announcementOutcome(announcement.platform_results)].class"
           />
           <div class="min-w-0 flex-1">
-            <p class="truncate text-sm">{{ post.body }}</p>
+            <p class="truncate text-sm">{{ announcement.body }}</p>
             <p class="mt-0.5 text-xs text-muted-foreground">
-              {{ shortDateTime(post.published_at || post.created_at) }} ·
-              {{ audienceSummary(post.audience) }}
+              {{ shortDateTime(announcement.published_at || announcement.created_at) }} ·
+              {{ audienceSummary(announcement.audience) }}
             </p>
           </div>
         </li>
@@ -166,7 +166,7 @@ useHead({ title: "Painel · Marketing" });
     <UiDialog :open="discarding !== null" @update:open="(v) => { if (!v) discarding = null }">
       <UiDialogContent class="sm:max-w-md">
         <UiDialogHeader>
-          <UiDialogTitle>Descartar este post?</UiDialogTitle>
+          <UiDialogTitle>Descartar este announcement?</UiDialogTitle>
           <UiDialogDescription>
             Ele não vai para nenhuma plataforma e não volta para a fila. A fornada segue
             normalmente.

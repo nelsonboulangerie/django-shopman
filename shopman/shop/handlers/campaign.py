@@ -124,14 +124,14 @@ def _evaluate(trigger: str, context: dict) -> None:
     from shopman.shop.services import campaign
 
     try:
-        posts = campaign.evaluate(trigger, context)
+        announcements = campaign.evaluate(trigger, context)
     except Exception:
         logger.warning("campaign.evaluate_failed trigger=%s", trigger, exc_info=True)
         return
-    if posts:
+    if announcements:
         logger.info(
-            "campaign.evaluated trigger=%s sku=%s posts=%d",
-            trigger, context.get("sku", ""), len(posts),
+            "campaign.evaluated trigger=%s sku=%s announcements=%d",
+            trigger, context.get("sku", ""), len(announcements),
         )
 
 
@@ -176,7 +176,7 @@ def _iso(value) -> str:
 
 
 class AnnouncementHandler:
-    """Publica o post numa plataforma externa. Topic: announcement.publish
+    """Publica o announcement numa plataforma externa. Topic: announcement.publish
 
     Enquanto não houver adapter de posting configurado (F5/F6 das specs), o
     handler registra o conteúdo como **pendente de publicação manual** em vez
@@ -191,35 +191,35 @@ class AnnouncementHandler:
 
         payload = message.payload or {}
         platform = payload.get("platform", "")
-        post = Announcement.objects.filter(pk=payload.get("post_id")).first()
-        if post is None:
-            logger.warning("campaign.post_missing directive=%s", message.pk)
+        announcement = Announcement.objects.filter(pk=payload.get("announcement_id")).first()
+        if announcement is None:
+            logger.warning("campaign.announcement_missing directive=%s", message.pk)
             return
 
         adapter = _posting_adapter(platform)
         if adapter is None:
             _record_result(
-                post, platform,
+                announcement, platform,
                 {"status": "pending_manual", "reason": "sem adapter de posting configurado"},
             )
-            _settle(post)
+            _settle(announcement)
             return
 
         try:
-            result = adapter.publish(post, platform=platform)
+            result = adapter.publish(announcement, platform=platform)
         except Exception as exc:
-            _record_result(post, platform, {"status": "failed", "error": str(exc)})
-            _settle(post)
+            _record_result(announcement, platform, {"status": "failed", "error": str(exc)})
+            _settle(announcement)
             raise  # retry/backoff do worker cuida do resto
 
-        _record_result(post, platform, {"status": "published", **(result or {})})
-        _settle(post)
+        _record_result(announcement, platform, {"status": "published", **(result or {})})
+        _settle(announcement)
 
 
 class AnnouncementNotifyHandler:
     """Dispara a audiência direta (WhatsApp). Topic: announcement.notify
 
-    A audiência é resolvida AQUI, não na criação do post: entre a fornada e a
+    A audiência é resolvida AQUI, não na criação do announcement: entre a fornada e a
     aprovação do gestor, favoritos e alertas mudam. Cada onda (vip/general)
     chega numa directive própria.
     """
@@ -232,13 +232,13 @@ class AnnouncementNotifyHandler:
 
         payload = message.payload or {}
         wave = payload.get("wave", "all")
-        post = Announcement.objects.filter(pk=payload.get("post_id")).first()
-        if post is None:
-            logger.warning("campaign.notify_post_missing directive=%s", message.pk)
+        announcement = Announcement.objects.filter(pk=payload.get("announcement_id")).first()
+        if announcement is None:
+            logger.warning("campaign.notify_announcement_missing directive=%s", message.pk)
             return
 
-        sku = (post.trigger_context or {}).get("sku", "")
-        rules = (post.rule.audience_rules or {}) if post.rule_id else {}
+        sku = (announcement.trigger_context or {}).get("sku", "")
+        rules = (announcement.rule.audience_rules or {}) if announcement.rule_id else {}
         resolved = audience_service.resolve(sku, rules)
 
         recipients = {
@@ -247,20 +247,20 @@ class AnnouncementNotifyHandler:
             "all": resolved.all_recipients(),
         }.get(wave, ())
 
-        sent, failed = _send_to(recipients, post=post)
-        _record_wave(post, wave, sent=sent, failed=failed,
+        sent, failed = _send_to(recipients, announcement=announcement)
+        _record_wave(announcement, wave, sent=sent, failed=failed,
                      expected=int(payload.get("waves_expected") or 1))
-        _settle(post)
+        _settle(announcement)
         logger.info(
-            "campaign.notified post=%s wave=%s sent=%d failed=%d", post.pk, wave, sent, failed
+            "campaign.notified announcement=%s wave=%s sent=%d failed=%d", announcement.pk, wave, sent, failed
         )
 
 
-def _send_to(recipients, *, post) -> tuple[int, int]:
+def _send_to(recipients, *, announcement) -> tuple[int, int]:
     from shopman.shop.notifications import notify
 
-    body = post.body
-    link = (post.content or {}).get("link", "")
+    body = announcement.body
+    link = (announcement.content or {}).get("link", "")
     sent = failed = 0
     for recipient in recipients:
         try:
@@ -273,7 +273,7 @@ def _send_to(recipients, *, post) -> tuple[int, int]:
             failed += 0 if getattr(result, "success", False) else 1
         except Exception:
             failed += 1
-            logger.warning("campaign.send_failed post=%s", post.pk, exc_info=True)
+            logger.warning("campaign.send_failed announcement=%s", announcement.pk, exc_info=True)
     return sent, failed
 
 
@@ -288,20 +288,20 @@ def _posting_adapter(platform: str):
         return None
 
 
-def _record_result(post, platform: str, result: dict, *, merge: bool = False) -> None:
-    results = dict(post.platform_results or {})
+def _record_result(announcement, platform: str, result: dict, *, merge: bool = False) -> None:
+    results = dict(announcement.platform_results or {})
     if merge and isinstance(results.get(platform), dict):
         results[platform] = {**results[platform], **result}
     else:
         results[platform] = result
-    post.platform_results = results
-    post.save(update_fields=["platform_results"])
+    announcement.platform_results = results
+    announcement.save(update_fields=["platform_results"])
 
 
 def _platform_settled(platform: str, entry) -> bool:
     """Esta plataforma já respondeu por inteiro?
 
-    O WhatsApp é o único que responde em partes: com VIP-first, dar o post por
+    O WhatsApp é o único que responde em partes: com VIP-first, dar o announcement por
     publicado na primeira onda marcaria como concluído um disparo que ainda tem
     a metade geral por sair.
     """
@@ -313,19 +313,19 @@ def _platform_settled(platform: str, entry) -> bool:
     return bool(entry.get("status"))
 
 
-def _record_wave(post, wave: str, *, sent: int, failed: int, expected: int) -> None:
+def _record_wave(announcement, wave: str, *, sent: int, failed: int, expected: int) -> None:
     """Acumular o resultado de uma onda de WhatsApp no mesmo registro.
 
     Ondas são disparos independentes (o geral sai 15 min depois do VIP), então
     os totais somam e as ondas concluídas ficam listadas: é o que permite ao
     ``_settle`` saber que o WhatsApp ainda tem gente para receber.
     """
-    entry = dict((post.platform_results or {}).get("whatsapp") or {})
+    entry = dict((announcement.platform_results or {}).get("whatsapp") or {})
     waves = list(entry.get("waves") or [])
     if wave not in waves:
         waves.append(wave)
 
-    _record_result(post, "whatsapp", {
+    _record_result(announcement, "whatsapp", {
         "status": "sent",
         "waves": waves,
         "waves_expected": expected,
@@ -334,22 +334,22 @@ def _record_wave(post, wave: str, *, sent: int, failed: int, expected: int) -> N
     })
 
 
-def _settle(post) -> None:
-    """Fechar o post quando toda plataforma já respondeu.
+def _settle(announcement) -> None:
+    """Fechar o announcement quando toda plataforma já respondeu.
 
     ``pending_manual`` conta como resposta: o sistema fez a parte dele e
-    entregou o conteúdo pronto. Qualquer falha marca o post inteiro como
+    entregou o conteúdo pronto. Qualquer falha marca o announcement inteiro como
     falho, para o gestor ver que algo não saiu.
     """
     from django.utils import timezone
 
     from shopman.shop.models import AnnouncementStatus
 
-    results = post.platform_results or {}
-    if not all(_platform_settled(name, results.get(name)) for name in post.platforms or []):
+    results = announcement.platform_results or {}
+    if not all(_platform_settled(name, results.get(name)) for name in announcement.platforms or []):
         return
 
     statuses = {entry.get("status") for entry in results.values() if isinstance(entry, dict)}
-    post.status = AnnouncementStatus.FAILED if "failed" in statuses else AnnouncementStatus.PUBLISHED
-    post.published_at = post.published_at or timezone.now()
-    post.save(update_fields=["status", "published_at"])
+    announcement.status = AnnouncementStatus.FAILED if "failed" in statuses else AnnouncementStatus.PUBLISHED
+    announcement.published_at = announcement.published_at or timezone.now()
+    announcement.save(update_fields=["status", "published_at"])

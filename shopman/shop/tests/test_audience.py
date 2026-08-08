@@ -1,4 +1,4 @@
-"""AudienceResolver — favoritos, alertas, recompra, consentimento e VIP-first.
+"""AudienceResolver — favoritos, alertas, quem comprou, consentimento e VIP-first.
 
 O teste mais importante deste arquivo é o do consentimento: sem ``opted_in`` no
 canal de entrega, ninguém entra na audiência. Todo o resto é otimização.
@@ -6,6 +6,7 @@ canal de entrega, ninguém entra na audiência. Todo o resto é otimização.
 
 from __future__ import annotations
 
+import types
 from datetime import timedelta
 
 import pytest
@@ -134,37 +135,81 @@ class TestAlerts:
         assert audience.resolve(SKU, {"alerts": True}).total == 0
 
 
-# ── Recompra (F10) ───────────────────────────────────────────────────
+# ── Quem já comprou, dentro da janela (F10) ──────────────────────────
+#
+# ⚠️ Esta classe testava a janela com uma entrada FABRICADA (`qtd`,
+# `ultimo_pedido`) — chaves que nenhum escritor grava. O Guestman monta a entrada
+# com `sku`/`name`/`qty`/`last_order_at`. O teste espelhava a suposição do leitor
+# em vez da saída do escritor, então passava enquanto a produção estava quebrada: o
+# leitor lia `ultimo_pedido`, achava `None`, e o fallback contava `None` como
+# recente — a janela nunca filtrou ninguém.
+#
+# Agora a fixture usa a forma REAL, e `test_writer_shape_is_what_the_reader_reads`
+# amarra as duas pontas para o desencontro não voltar em silêncio.
 
 
-class TestRecompra:
-    def _insight(self, customer, *, last_order_days_ago: int):
+class TestBoughtWithinDays:
+    def _insight(self, customer, *, last_order_days_ago: int, sku: str = SKU):
+        """Entrada no formato que ``insights/service.py`` realmente grava."""
         last = timezone.localdate() - timedelta(days=last_order_days_ago)
         return CustomerInsight.objects.create(
             customer=customer,
-            favorite_products=[{"sku": SKU, "qtd": 4, "ultimo_pedido": last.isoformat()}],
+            favorite_products=[
+                {"sku": sku, "name": "Croissant", "qty": "4", "last_order_at": last.isoformat()}
+            ],
         )
 
     def test_recent_buyer_is_reached(self):
         customer = _customer("+5543999990003")
         self._insight(customer, last_order_days_ago=10)
 
-        result = audience.resolve(SKU, {"recompra_days": 90})
+        result = audience.resolve(SKU, {"bought_within_days": 90})
         assert [r.phone for r in result.general] == [customer.phone]
 
     def test_cold_buyer_is_outside_the_window(self):
+        """O caso que o defeito deixava passar: comprou há 200 dias, janela de 90."""
         customer = _customer("+5543999990003")
         self._insight(customer, last_order_days_ago=200)
 
-        assert audience.resolve(SKU, {"recompra_days": 90}).total == 0
+        assert audience.resolve(SKU, {"bought_within_days": 90}).total == 0
 
-    def test_buyer_of_another_sku_is_not_reached(self):
+    def test_entry_without_a_date_is_outside_the_window(self):
+        """Sem data, fica FORA: o pedido do operador foi uma janela de tempo."""
         customer = _customer("+5543999990003")
         CustomerInsight.objects.create(
             customer=customer,
-            favorite_products=[{"sku": "pao-frances", "ultimo_pedido": "2026-07-01"}],
+            favorite_products=[{"sku": SKU, "name": "Croissant", "qty": "4"}],
         )
-        assert audience.resolve(SKU, {"recompra_days": 90}).total == 0
+        assert audience.resolve(SKU, {"bought_within_days": 90}).total == 0
+
+    def test_buyer_of_another_sku_is_not_reached(self):
+        customer = _customer("+5543999990003")
+        self._insight(customer, last_order_days_ago=1, sku="pao-frances")
+        assert audience.resolve(SKU, {"bought_within_days": 90}).total == 0
+
+    def test_writer_shape_is_what_the_reader_reads(self):
+        """A chave que o Guestman grava é a chave que a audiência lê.
+
+        Este é o teste que faltava. Sem ele, renomear a chave num lado deixa o
+        outro lendo `None` — e `None` não levanta erro, só some com a audiência
+        (ou, como no defeito original, deixa passar todo mundo).
+        """
+        from shopman.guestman.contrib.insights.service import InsightService
+
+        written = InsightService._calculate_favorite_products(
+            [
+                types.SimpleNamespace(
+                    items=[{"sku": SKU, "name": "Croissant", "qty": 2}],
+                    ordered_at=timezone.now(),
+                )
+            ],
+        )
+        assert written, "o escritor precisa produzir ao menos uma entrada"
+        assert "last_order_at" in written[0], (
+            "o escritor mudou a chave de data; `_bought_recently` lê `last_order_at` "
+            "e passaria a filtrar ninguém em silêncio"
+        )
+        assert "sku" in written[0]
 
 
 # ── Dedupe ───────────────────────────────────────────────────────────

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-// Um post, sozinho na tela — destino do link da notificação acionável
+// Um announcement, sozinho na tela — destino do link da notificação acionável
 // (``UserNotification.action_url`` = /campaign/announcements/<pk>/).
 //
 // O gestor recebe o aviso no celular, toca e cai direto na decisão. Mesmo card
@@ -15,7 +15,7 @@ const { data, refresh, pending, error } = await useFetch<{ post: Announcement }>
 );
 const { platforms } = useCampaigns();
 
-const post = computed(() => data.value?.post);
+const announcement = computed(() => data.value?.announcement);
 const busy = ref(false);
 const confirmingDiscard = ref(false);
 
@@ -27,9 +27,9 @@ async function decide(action: "approve" | "discard", body: PostEdits = {}) {
       body,
     });
     useSonner.success(
-      action === "discard" ? "Post descartado."
-      : body.publish_at ? "Post agendado."
-      : "Post publicado.",
+      action === "discard" ? "Anúncio descartado."
+      : body.publish_at ? "Anúncio agendado."
+      : "Anúncio publicado.",
     );
     await navigateTo("/");
   } catch (err) {
@@ -40,7 +40,7 @@ async function decide(action: "approve" | "discard", body: PostEdits = {}) {
   }
 }
 
-useHead({ title: "Post · Marketing" });
+useHead({ title: "Anúncio · Marketing" });
 </script>
 
 <template>
@@ -53,14 +53,14 @@ useHead({ title: "Post · Marketing" });
       Voltar ao painel
     </NuxtLink>
 
-    <div v-if="pending && !post" class="h-64 animate-pulse rounded-xl bg-muted" aria-busy="true"></div>
+    <div v-if="pending && !announcement" class="h-64 animate-pulse rounded-xl bg-muted" aria-busy="true"></div>
 
     <div
-      v-else-if="error || !post"
+      v-else-if="error || !announcement"
       class="rounded-xl border border-dashed border-border bg-card/50 px-6 py-10 text-center"
     >
       <Icon name="lucide:search-x" class="mx-auto size-8 text-muted-foreground" />
-      <p class="mt-2 font-semibold">Não encontramos este post</p>
+      <p class="mt-2 font-semibold">Não encontramos este announcement</p>
       <p class="mt-1 text-sm text-muted-foreground">
         Ele pode ter expirado ou já ter sido decidido por outra pessoa.
       </p>
@@ -75,19 +75,19 @@ useHead({ title: "Post · Marketing" });
     <template v-else>
       <!-- Já decidido: mostra o estado em vez de oferecer botões que não valem mais -->
       <div
-        v-if="post.status !== 'pending_review'"
+        v-if="announcement.status !== 'pending_review'"
         class="mb-4 rounded-lg border border-border bg-muted/40 px-4 py-3 text-sm"
       >
-        <p class="font-semibold">Este post já foi decidido.</p>
+        <p class="font-semibold">Este announcement já foi decidido.</p>
         <p class="mt-0.5 text-muted-foreground">
-          Situação: {{ post.status_label }}<template v-if="post.approved_by">
-            · por {{ post.approved_by }}</template>
+          Situação: {{ announcement.status_label }}<template v-if="announcement.approved_by">
+            · por {{ announcement.approved_by }}</template>
         </p>
       </div>
 
       <AnnouncementCard
-        v-if="post.status === 'pending_review'"
-        :post="post"
+        v-if="announcement.status === 'pending_review'"
+        :announcement="announcement"
         :platform-options="platforms"
         :busy="busy"
         @approve="(_, edits) => decide('approve', edits)"
@@ -95,14 +95,14 @@ useHead({ title: "Post · Marketing" });
       />
 
       <article v-else class="rounded-xl border border-border bg-card p-4">
-        <p class="whitespace-pre-line text-sm">{{ post.body }}</p>
+        <p class="whitespace-pre-line text-sm">{{ announcement.body }}</p>
       </article>
     </template>
 
     <UiDialog :open="confirmingDiscard" @update:open="(v) => (confirmingDiscard = v)">
       <UiDialogContent class="sm:max-w-md">
         <UiDialogHeader>
-          <UiDialogTitle>Descartar este post?</UiDialogTitle>
+          <UiDialogTitle>Descartar este announcement?</UiDialogTitle>
           <UiDialogDescription>
             Ele não vai para nenhuma plataforma e não volta para a fila.
           </UiDialogDescription>

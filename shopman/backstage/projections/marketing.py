@@ -1,8 +1,8 @@
 """
 Projeção da Campanha para o gestor — o lado REVISÃO do marketing operacional.
 
-A operação gera o post; o gestor decide se ele sai. Esta projeção é o que a
-superfície `surfaces/marketing-nuxt` lê: os posts que pedem decisão agora, os
+A operação gera o announcement; o gestor decide se ele sai. Esta projeção é o que a
+superfície `surfaces/marketing-nuxt` lê: os announcements que pedem decisão agora, os
 que já saíram, e as regras/modelos que governam tudo isso.
 
 Read-only. Frozen dataclasses convertidos por ``backstage.api.projections``.
@@ -149,11 +149,11 @@ def _platform_label(platform: str) -> str:
     return dict(PLATFORM_CHOICES).get(platform, platform)
 
 
-def _expires_in_minutes(post: Announcement, *, now) -> int:
+def _expires_in_minutes(announcement: Announcement, *, now) -> int:
     """Minutos até caducar. -1 = não expira; 0 = já passou da hora."""
-    if not post.expires_at:
+    if not announcement.expires_at:
         return -1
-    remaining = (post.expires_at - now).total_seconds() / 60
+    remaining = (announcement.expires_at - now).total_seconds() / 60
     return max(0, int(remaining))
 
 
@@ -181,13 +181,13 @@ def _result_detail(result: dict) -> str:
     return ""
 
 
-def _platform_results(post: Announcement) -> tuple[PlatformResultProjection, ...]:
+def _platform_results(announcement: Announcement) -> tuple[PlatformResultProjection, ...]:
     """Resultado por plataforma, com as ainda sem resposta marcadas como `queued`.
 
     Plataforma alvejada e sem resultado não some da lista: silêncio no painel
     esconde exatamente o caso que o gestor precisa ver.
     """
-    results = post.platform_results or {}
+    results = announcement.platform_results or {}
     return tuple(
         PlatformResultProjection(
             platform=platform,
@@ -196,7 +196,7 @@ def _platform_results(post: Announcement) -> tuple[PlatformResultProjection, ...
             detail=_result_detail(results.get(platform) or {}),
             url=str((results.get(platform) or {}).get("url") or ""),
         )
-        for platform in (post.platforms or [])
+        for platform in (announcement.platforms or [])
     )
 
 
@@ -204,39 +204,39 @@ def _iso(value) -> str:
     return value.isoformat() if value else ""
 
 
-def build_post(post: Announcement, *, now=None) -> AnnouncementProjection:
+def build_announcement(announcement: Announcement, *, now=None) -> AnnouncementProjection:
     now = now or timezone.now()
-    content = post.content or {}
-    context = post.trigger_context or {}
-    audience = post.audience or {}
-    approver = post.approved_by
+    content = announcement.content or {}
+    context = announcement.trigger_context or {}
+    audience = announcement.audience or {}
+    approver = announcement.approved_by
 
     return AnnouncementProjection(
-        pk=post.pk,
-        status=post.status,
-        status_label=post.get_status_display(),
+        pk=announcement.pk,
+        status=announcement.status,
+        status_label=announcement.get_status_display(),
         body=str(content.get("body") or ""),
         image_url=str(content.get("image_url") or ""),
         hashtags=tuple(content.get("hashtags") or ()),
         link=str(content.get("link") or ""),
-        platforms=tuple(post.platforms or ()),
+        platforms=tuple(announcement.platforms or ()),
         audience=dict(audience),
         audience_total=int(audience.get("total") or 0),
-        platform_results=_platform_results(post),
-        trigger=post.rule.trigger if post.rule_id else "",
-        trigger_label=post.rule.get_trigger_display() if post.rule_id else "",
-        rule_name=post.rule.name if post.rule_id else "",
-        template_name=post.template.name if post.template_id else "",
+        platform_results=_platform_results(announcement),
+        trigger=announcement.rule.trigger if announcement.rule_id else "",
+        trigger_label=announcement.rule.get_trigger_display() if announcement.rule_id else "",
+        rule_name=announcement.rule.name if announcement.rule_id else "",
+        template_name=announcement.template.name if announcement.template_id else "",
         sku=str(context.get("sku") or ""),
-        created_at=_iso(post.created_at),
-        expires_at=_iso(post.expires_at),
-        expires_in_minutes=_expires_in_minutes(post, now=now),
-        published_at=_iso(post.published_at),
+        created_at=_iso(announcement.created_at),
+        expires_at=_iso(announcement.expires_at),
+        expires_in_minutes=_expires_in_minutes(announcement, now=now),
+        published_at=_iso(announcement.published_at),
         approved_by=(approver.get_full_name() or approver.username) if approver else "",
     )
 
 
-def _posts_queryset():
+def _announcements_queryset():
     return Announcement.objects.select_related("rule", "template", "approved_by")
 
 
@@ -246,31 +246,31 @@ def build_board(*, now=None) -> CampaignBoardProjection:
     today = timezone.localdate()
 
     pending = [
-        post
-        for post in _posts_queryset().filter(status=AnnouncementStatus.PENDING_REVIEW)
-        if not post.is_expired(now=now)
+        announcement
+        for announcement in _announcements_queryset().filter(status=AnnouncementStatus.PENDING_REVIEW)
+        if not announcement.is_expired(now=now)
     ]
     recent = list(
-        _posts_queryset().filter(
+        _announcements_queryset().filter(
             status__in=(AnnouncementStatus.PUBLISHED, AnnouncementStatus.PUBLISHING, AnnouncementStatus.FAILED),
             created_at__gte=now - RECENT_WINDOW,
         )[:50]
     )
 
     published_today = [
-        post for post in recent
-        if post.published_at and timezone.localtime(post.published_at).date() == today
+        announcement for announcement in recent
+        if announcement.published_at and timezone.localtime(announcement.published_at).date() == today
     ]
-    reached = sum(int((post.audience or {}).get("total") or 0) for post in published_today)
+    reached = sum(int((announcement.audience or {}).get("total") or 0) for announcement in published_today)
 
     return CampaignBoardProjection(
-        pending=tuple(build_post(post, now=now) for post in pending),
-        recent=tuple(build_post(post, now=now) for post in recent),
+        pending=tuple(build_announcement(announcement, now=now) for announcement in pending),
+        recent=tuple(build_announcement(announcement, now=now) for announcement in recent),
         stats=CampaignStatsProjection(
             pending_count=len(pending),
             published_today=len(published_today),
             audience_reached_today=reached,
-            failed_today=sum(1 for post in recent if post.status == AnnouncementStatus.FAILED),
+            failed_today=sum(1 for announcement in recent if announcement.status == AnnouncementStatus.FAILED),
         ),
     )
 
@@ -278,10 +278,10 @@ def build_board(*, now=None) -> CampaignBoardProjection:
 def build_history(*, limit: int = 100, now=None) -> tuple[AnnouncementProjection, ...]:
     """Tudo que já saiu (ou tentou sair), do mais recente para o mais antigo."""
     now = now or timezone.now()
-    posts = _posts_queryset().filter(
+    announcements = _announcements_queryset().filter(
         status__in=(AnnouncementStatus.PUBLISHED, AnnouncementStatus.PUBLISHING, AnnouncementStatus.FAILED)
     )[:limit]
-    return tuple(build_post(post, now=now) for post in posts)
+    return tuple(build_announcement(announcement, now=now) for announcement in announcements)
 
 
 # ── Regras e modelos ─────────────────────────────────────────────────

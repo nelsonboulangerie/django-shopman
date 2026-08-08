@@ -10,7 +10,7 @@ import type { AudienceRules, Announcement, PlatformResult } from "~/types/campai
 /** Rótulos das origens de audiência, na ordem em que a frase os lê. */
 const AUDIENCE_LABELS: ReadonlyArray<readonly [string, string]> = [
   ["favorites_count", "favoritos"],
-  ["recompra_count", "recompra"],
+  ["bought_count", "recompra"],
   ["alerts_count", "alertas"],
 ];
 
@@ -97,12 +97,12 @@ export function resultTone(status: string): "ok" | "pending" | "fail" {
 }
 
 /**
- * Um post "deu certo"? Só quando TODAS as plataformas alvejadas publicaram.
+ * Um announcement "deu certo"? Só quando TODAS as plataformas alvejadas publicaram.
  *
  * Parcial não é sucesso: se o Google saiu e o Instagram falhou, o gestor
  * precisa ver isso como pendência, não como pronto.
  */
-export function postOutcome(results: PlatformResult[]): "published" | "partial" | "failed" | "pending" {
+export function announcementOutcome(results: PlatformResult[]): "published" | "partial" | "failed" | "pending" {
   if (results.length === 0) return "pending";
   // `sent` conta como saída: é o "publicado" do WhatsApp.
   const published = results.filter((r) => r.status === "published" || r.status === "sent").length;
@@ -133,7 +133,7 @@ export function audienceRulesSummary(rules: AudienceRules | undefined): string {
   const parts: string[] = [];
   if (rules?.favorites) parts.push("favoritos");
   if (rules?.alerts) parts.push("alertas");
-  if (rules?.recompra_days) parts.push(`recompra em ${rules.recompra_days} dias`);
+  if (rules?.bought_within_days) parts.push(`recompra em ${rules.bought_within_days} dias`);
   if (parts.length === 0) return "Sem audiência direta";
 
   const vip = rules?.vip_first_minutes;
@@ -161,11 +161,11 @@ export function shortDateTime(iso: string): string {
 }
 
 /**
- * Um post pendente ainda vale a revisão?
+ * Um announcement pendente ainda vale a revisão?
  *
  * O sweeper do backend expira em ciclos de minutos; a tela não pode oferecer
  * "Publicar" num card que já venceu entre um fetch e outro.
  */
-export function isStillReviewable(post: Announcement): boolean {
-  return post.status === "pending_review" && post.expires_in_minutes !== 0;
+export function isStillReviewable(announcement: Announcement): boolean {
+  return announcement.status === "pending_review" && announcement.expires_in_minutes !== 0;
 }

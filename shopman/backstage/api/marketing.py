@@ -2,14 +2,14 @@
 Backstage Campaign API — o painel de revisão do marketing operacional.
 
 Contrato consumido por `surfaces/marketing-nuxt` (:3006). Read = projections de
-`backstage.projections.campaign`; write = aprovar/descartar/editar post e CRUD
+`backstage.projections.campaign`; write = aprovar/descartar/editar announcement e CRUD
 de regras e modelos. Gate: ``shop.manage_campaigns`` — o gestor de marketing não
 é o gestor de pedidos (FOMO-MARKETING-SPECS §8).
 
     GET    campaign/                    → painel (pendentes, recentes, placar)
     GET    campaign/history/            → tudo que já saiu
     GET    campaign/options/            → vocabulário do formulário de regra
-    GET    campaign/announcements/<pk>/         → um post
+    GET    campaign/announcements/<pk>/         → um announcement
     PATCH  campaign/announcements/<pk>/         → editar antes de aprovar
     POST   campaign/announcements/<pk>/approve/ → publicar
     POST   campaign/announcements/<pk>/discard/ → descartar
@@ -57,7 +57,7 @@ class _CampaignBase(APIView):
 @extend_schema_view(
     get=extend_schema(
         tags=["backstage"],
-        summary="Campaign board — pending posts, recent posts, day stats",
+        summary="Campaign board — pending announcements, recent announcements, day stats",
         responses={200: OpenApiResponse(description="Painel do gestor de campanhas.")},
     ),
 )
@@ -77,8 +77,8 @@ class CampaignBoardView(_CampaignBase):
 )
 class CampaignHistoryView(_CampaignBase):
     def get(self, request):
-        posts = marketing_projection.build_history(limit=_limit(request))
-        return Response({"posts": projection_data(posts)})
+        announcements = marketing_projection.build_history(limit=_limit(request))
+        return Response({"announcements": projection_data(announcements)})
 
 
 @extend_schema_view(
@@ -97,30 +97,30 @@ class CampaignOptionsView(_CampaignBase):
 
 
 class AnnouncementDetailView(_CampaignBase):
-    """Ler um post, ou editá-lo antes de aprovar.
+    """Ler um announcement, ou editá-lo antes de aprovar.
 
     A edição é a razão de a revisão existir: a IA (ou o template) escreveu, o
-    gestor ajusta o tom e só então publica. Post já despachado não se edita —
+    gestor ajusta o tom e só então publica. Anúncio já despachado não se edita —
     reescrever o que o cliente já leu seria mentira retroativa.
     """
 
     def get(self, request, pk: int):
-        post = _post_or_none(pk)
-        if post is None:
-            return Response({"detail": "Post não encontrado."}, status=404)
-        return Response({"post": projection_data(marketing_projection.build_post(post))})
+        announcement = _announcement_or_none(pk)
+        if announcement is None:
+            return Response({"detail": "Anúncio não encontrado."}, status=404)
+        return Response({"announcement": projection_data(marketing_projection.build_announcement(announcement))})
 
     def patch(self, request, pk: int):
-        post = _post_or_none(pk)
-        if post is None:
-            return Response({"detail": "Post não encontrado."}, status=404)
-        if post.status not in (AnnouncementStatus.DRAFT, AnnouncementStatus.PENDING_REVIEW):
+        announcement = _announcement_or_none(pk)
+        if announcement is None:
+            return Response({"detail": "Anúncio não encontrado."}, status=404)
+        if announcement.status not in (AnnouncementStatus.DRAFT, AnnouncementStatus.PENDING_REVIEW):
             return Response(
-                {"detail": "Este post já saiu. Não dá para reescrever o que já foi lido."},
+                {"detail": "Este announcement já saiu. Não dá para reescrever o que já foi lido."},
                 status=400,
             )
 
-        edits, error = _post_edits(request.data)
+        edits, error = _announcement_edits(request.data)
         if error:
             return Response(error, status=400)
         if not edits:
@@ -130,10 +130,10 @@ class AnnouncementDetailView(_CampaignBase):
         # a partir do corpo editado. Salvar só ``content`` deixaria a variação
         # por plataforma com o texto velho — o gestor editaria no vazio.
         try:
-            post = campaign_service.update_content(pk, **edits)
+            announcement = campaign_service.update_content(pk, **edits)
         except campaign_service.CampaignError as exc:
             return Response({"detail": str(exc)}, status=400)
-        return Response({"ok": True, "post": projection_data(marketing_projection.build_post(post))})
+        return Response({"ok": True, "announcement": projection_data(marketing_projection.build_announcement(announcement))})
 
 
 class AnnouncementApproveView(_CampaignBase):
@@ -149,14 +149,14 @@ class AnnouncementApproveView(_CampaignBase):
         if error:
             return Response(error, status=400)
 
-        edits, error = _post_edits(request.data)
+        edits, error = _announcement_edits(request.data)
         if error:
             return Response(error, status=400)
 
         try:
             if edits:
                 campaign_service.update_content(pk, **edits)
-            post = campaign_service.approve(
+            announcement = campaign_service.approve(
                 pk, request.user,
                 publish_at=publish_at,
                 # "Publicar agora" vence a janela preferida da regra; sem ele,
@@ -167,27 +167,27 @@ class AnnouncementApproveView(_CampaignBase):
             return Response({"detail": str(exc)}, status=400)
 
         logger.info(
-            "campaign.approved user=%s post=%s publish_at=%s",
+            "campaign.approved user=%s announcement=%s publish_at=%s",
             request.user.pk, pk, publish_at or "now",
         )
         return Response({
             "ok": True,
-            "scheduled": bool(post.publish_at),
-            "post": projection_data(marketing_projection.build_post(post)),
+            "scheduled": bool(announcement.publish_at),
+            "announcement": projection_data(marketing_projection.build_announcement(announcement)),
         })
 
 
 class AnnouncementDiscardView(_CampaignBase):
-    """Descartar sem publicar. O momento passou, ou o post não presta."""
+    """Descartar sem publicar. O momento passou, ou o announcement não presta."""
 
     def post(self, request, pk: int):
         try:
-            post = campaign_service.discard(pk)
+            announcement = campaign_service.discard(pk)
         except campaign_service.CampaignError as exc:
             return Response({"detail": str(exc)}, status=400)
 
-        logger.info("campaign.discarded user=%s post=%s", request.user.pk, pk)
-        return Response({"ok": True, "post": projection_data(marketing_projection.build_post(post))})
+        logger.info("campaign.discarded user=%s announcement=%s", request.user.pk, pk)
+        return Response({"ok": True, "announcement": projection_data(marketing_projection.build_announcement(announcement))})
 
 
 # ── Regras ───────────────────────────────────────────────────────────
@@ -236,7 +236,7 @@ class CampaignDetailView(_CampaignBase):
         return Response({"ok": True, "pk": pk})
 
 
-# ── Modelos de post ──────────────────────────────────────────────────
+# ── Modelos de announcement ──────────────────────────────────────────────────
 
 
 class AnnouncementTemplateListView(_CampaignBase):
@@ -314,7 +314,7 @@ def _rule_fields(data, *, partial: bool) -> tuple[dict, dict | None]:
     if not partial or "template_id" in data:
         template = AnnouncementTemplate.objects.filter(pk=_as_int(data.get("template_id"))).first()
         if template is None:
-            return {}, {"detail": "Modelo de post não encontrado.", "field": "template_id"}
+            return {}, {"detail": "Modelo de announcement não encontrado.", "field": "template_id"}
         fields["template"] = template
 
     if not partial or "platforms" in data:
@@ -395,14 +395,14 @@ def _template_fields(data, *, partial: bool) -> tuple[dict, dict | None]:
     return fields, None
 
 
-def _post_edits(data) -> tuple[dict, dict | None]:
+def _announcement_edits(data) -> tuple[dict, dict | None]:
     """Edições do card. Chave ausente ≠ campo apagado — só muda o que veio."""
     edits: dict = {}
 
     if "body" in data:
         body = str(data.get("body") or "").strip()
         if not body:
-            return {}, {"detail": "O texto do post não pode ficar vazio.", "field": "body"}
+            return {}, {"detail": "O texto do announcement não pode ficar vazio.", "field": "body"}
         edits["body"] = body
     if "hashtags" in data:
         edits["hashtags"] = _string_list(data.get("hashtags"))
@@ -459,7 +459,7 @@ def _string_list(raw) -> list[str]:
     return [str(item).strip().lstrip("#") for item in raw if str(item).strip()]
 
 
-def _post_or_none(pk: int) -> Announcement | None:
+def _announcement_or_none(pk: int) -> Announcement | None:
     return Announcement.objects.select_related("rule", "template", "approved_by").filter(pk=pk).first()
 
 

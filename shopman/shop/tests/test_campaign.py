@@ -1,6 +1,6 @@
 """CampaignService — filtros, conteúdo, aprovação, despacho e notificação.
 
-O contrato central: um evento operacional vira post revisável, a revisão vira
+O contrato central: um evento operacional vira announcement revisável, a revisão vira
 Directives por plataforma, e nada disso pode derrubar a operação que disparou.
 """
 
@@ -65,9 +65,9 @@ def _context(**overrides) -> dict:
 
 class TestEvaluate:
     def test_matching_rule_creates_a_pending_post(self, product, rule):
-        posts = campaign.evaluate("production_finished", _context())
-        assert len(posts) == 1
-        assert posts[0].status == AnnouncementStatus.PENDING_REVIEW
+        announcements = campaign.evaluate("production_finished", _context())
+        assert len(announcements) == 1
+        assert announcements[0].status == AnnouncementStatus.PENDING_REVIEW
 
     def test_inactive_rule_is_ignored(self, product, rule):
         rule.is_active = False
@@ -83,8 +83,8 @@ class TestEvaluate:
     def test_auto_post_rule_skips_review(self, product, rule):
         rule.requires_approval = False
         rule.save()
-        post = campaign.evaluate("production_finished", _context())[0]
-        assert post.status == AnnouncementStatus.PUBLISHING
+        announcement = campaign.evaluate("production_finished", _context())[0]
+        assert announcement.status == AnnouncementStatus.PUBLISHING
         assert Directive.objects.filter(topic=ANNOUNCEMENT_PUBLISH).count() == 2
 
     def test_a_broken_rule_does_not_silence_the_others(self, product, template, rule):
@@ -95,12 +95,12 @@ class TestEvaluate:
         with patch.object(
             campaign, "resolve_content", side_effect=[RuntimeError("boom"), {"body": "ok"}]
         ):
-            posts = campaign.evaluate("production_finished", _context())
-        assert len(posts) == 1
+            announcements = campaign.evaluate("production_finished", _context())
+        assert len(announcements) == 1
 
     def test_trigger_context_is_snapshotted(self, product, rule):
-        post = campaign.evaluate("production_finished", _context(work_order_ref="WO-1"))[0]
-        assert post.trigger_context["work_order_ref"] == "WO-1"
+        announcement = campaign.evaluate("production_finished", _context(work_order_ref="WO-1"))[0]
+        assert announcement.trigger_context["work_order_ref"] == "WO-1"
 
 
 # ── trigger_filter ───────────────────────────────────────────────────
@@ -157,15 +157,15 @@ class TestTriggerFilter:
 
 class TestContent:
     def test_variables_are_substituted(self, product, rule):
-        post = campaign.evaluate("production_finished", _context())[0]
-        assert post.body.startswith("Croissant Tradicional acabou de sair do forno!")
+        announcement = campaign.evaluate("production_finished", _context())[0]
+        assert announcement.body.startswith("Croissant Tradicional acabou de sair do forno!")
 
     def test_unknown_variable_becomes_empty(self):
         assert campaign.render("Olá {{inexistente}}!", {}) == "Olá !"
 
     def test_render_never_leaks_raw_placeholders(self, product, rule):
-        post = campaign.evaluate("production_finished", _context())[0]
-        assert "{{" not in post.body
+        announcement = campaign.evaluate("production_finished", _context())[0]
+        assert "{{" not in announcement.body
 
     def test_price_is_formatted_in_reais(self, product):
         variables = campaign.resolve_variables({"sku": SKU})
@@ -184,8 +184,8 @@ class TestContent:
     def test_quality_reaches_the_template(self, product, template, rule):
         template.body = "Fornada {{qualidade}} de {{produto}}"
         template.save()
-        post = campaign.evaluate("production_finished", _context(quality="excelente"))[0]
-        assert post.body == "Fornada excelente de Croissant Tradicional"
+        announcement = campaign.evaluate("production_finished", _context(quality="excelente"))[0]
+        assert announcement.body == "Fornada excelente de Croissant Tradicional"
 
 
 # ── Aprovação ────────────────────────────────────────────────────────
@@ -197,20 +197,20 @@ class TestApprove:
         return User.objects.create_user(username="gestor", password="x", is_staff=True)
 
     def test_approval_stamps_who_and_when(self, product, rule, gestor):
-        post = campaign.evaluate("production_finished", _context())[0]
-        approved = campaign.approve(post.pk, gestor)
+        announcement = campaign.evaluate("production_finished", _context())[0]
+        approved = campaign.approve(announcement.pk, gestor)
         assert approved.approved_by == gestor
         assert approved.approved_at is not None
 
     def test_approval_dispatches_one_directive_per_platform(self, product, rule, gestor):
-        post = campaign.evaluate("production_finished", _context())[0]
-        campaign.approve(post.pk, gestor)
+        announcement = campaign.evaluate("production_finished", _context())[0]
+        campaign.approve(announcement.pk, gestor)
         assert Directive.objects.filter(topic=ANNOUNCEMENT_PUBLISH).count() == 2
 
     def test_double_click_does_not_double_post(self, product, rule, gestor):
-        post = campaign.evaluate("production_finished", _context())[0]
-        campaign.approve(post.pk, gestor)
-        campaign.approve(post.pk, gestor)
+        announcement = campaign.evaluate("production_finished", _context())[0]
+        campaign.approve(announcement.pk, gestor)
+        campaign.approve(announcement.pk, gestor)
         assert Directive.objects.filter(topic=ANNOUNCEMENT_PUBLISH).count() == 2
 
     def test_unknown_post_raises(self, gestor):
@@ -219,15 +219,15 @@ class TestApprove:
 
     def test_expired_post_cannot_be_approved(self, product, rule, gestor):
         """Frescor vencido não vira propaganda: o momento passou."""
-        post = campaign.evaluate("production_finished", _context())[0]
-        post.expires_at = timezone.now() - timedelta(minutes=1)
-        post.save()
+        announcement = campaign.evaluate("production_finished", _context())[0]
+        announcement.expires_at = timezone.now() - timedelta(minutes=1)
+        announcement.save()
         with pytest.raises(campaign.CampaignError):
-            campaign.approve(post.pk, gestor)
+            campaign.approve(announcement.pk, gestor)
 
     def test_discard_closes_the_post_without_publishing(self, product, rule):
-        post = campaign.evaluate("production_finished", _context())[0]
-        assert campaign.discard(post.pk).status == AnnouncementStatus.EXPIRED
+        announcement = campaign.evaluate("production_finished", _context())[0]
+        assert campaign.discard(announcement.pk).status == AnnouncementStatus.EXPIRED
         assert Directive.objects.filter(topic=ANNOUNCEMENT_PUBLISH).count() == 0
 
 
@@ -238,8 +238,8 @@ class TestExpiry:
     def test_rule_sets_the_deadline(self, product, rule):
         rule.expires_after_minutes = 30
         rule.save()
-        post = campaign.evaluate("production_finished", _context())[0]
-        assert post.expires_at is not None
+        announcement = campaign.evaluate("production_finished", _context())[0]
+        assert announcement.expires_at is not None
 
     def test_zero_means_no_deadline(self, product, rule):
         assert campaign.evaluate("production_finished", _context())[0].expires_at is None
@@ -247,19 +247,19 @@ class TestExpiry:
     def test_sweep_expires_overdue_pending_posts(self, product, rule):
         rule.expires_after_minutes = 30
         rule.save()
-        post = campaign.evaluate("production_finished", _context())[0]
-        Announcement.objects.filter(pk=post.pk).update(
+        announcement = campaign.evaluate("production_finished", _context())[0]
+        Announcement.objects.filter(pk=announcement.pk).update(
             expires_at=timezone.now() - timedelta(minutes=1)
         )
-        assert campaign.expire_stale_posts() == 1
-        post.refresh_from_db()
-        assert post.status == AnnouncementStatus.EXPIRED
+        assert campaign.expire_stale_announcements() == 1
+        announcement.refresh_from_db()
+        assert announcement.status == AnnouncementStatus.EXPIRED
 
     def test_sweep_leaves_fresh_posts_alone(self, product, rule):
         rule.expires_after_minutes = 30
         rule.save()
         campaign.evaluate("production_finished", _context())
-        assert campaign.expire_stale_posts() == 0
+        assert campaign.expire_stale_announcements() == 0
 
 
 # ── Despacho ─────────────────────────────────────────────────────────
@@ -299,10 +299,10 @@ class TestDispatch:
         assert general.available_at > vip.available_at
 
     def test_dedupe_key_is_per_platform(self, product, rule):
-        post = campaign.evaluate("production_finished", _context())[0]
-        campaign.dispatch(post)
+        announcement = campaign.evaluate("production_finished", _context())[0]
+        campaign.dispatch(announcement)
         keys = set(Directive.objects.values_list("dedupe_key", flat=True))
-        assert keys == {f"announcement:{post.pk}:instagram", f"announcement:{post.pk}:google_business"}
+        assert keys == {f"announcement:{announcement.pk}:instagram", f"announcement:{announcement.pk}:google_business"}
 
     def test_unknown_platform_is_logged_not_dispatched(self, product, template):
         Campaign.objects.create(
@@ -324,11 +324,11 @@ class TestNotifyReviewers:
         gestor.user_permissions.add(
             Permission.objects.get(codename="manage_campaigns")
         )
-        post = campaign.evaluate("production_finished", _context())[0]
+        announcement = campaign.evaluate("production_finished", _context())[0]
 
         notification = UserNotification.objects.get(user=gestor)
         assert notification.is_actionable
-        assert notification.action_data["announcement_id"] == post.pk
+        assert notification.action_data["announcement_id"] == announcement.pk
 
     def test_user_without_permission_is_not_notified(self, product, rule):
         User.objects.create_user(username="cozinha", password="x")
@@ -365,51 +365,51 @@ class TestNotifyReviewers:
 
 
 class TestScheduledApproval:
-    """Aprovar com hora marcada: o gestor decide agora, o post sai depois."""
+    """Aprovar com hora marcada: o gestor decide agora, o announcement sai depois."""
 
     def test_future_publish_at_holds_the_dispatch(self, product, rule):
-        post = campaign.evaluate("production_finished", _context())[0]
+        announcement = campaign.evaluate("production_finished", _context())[0]
         approved = campaign.approve(
-            post.pk, _user(), publish_at=timezone.now() + timedelta(hours=2)
+            announcement.pk, _user(), publish_at=timezone.now() + timedelta(hours=2)
         )
         assert approved.status == AnnouncementStatus.APPROVED
         assert approved.publish_at is not None
         assert Directive.objects.filter(topic=ANNOUNCEMENT_PUBLISH).count() == 0
 
     def test_past_publish_at_goes_out_now(self, product, rule):
-        post = campaign.evaluate("production_finished", _context())[0]
+        announcement = campaign.evaluate("production_finished", _context())[0]
         approved = campaign.approve(
-            post.pk, _user(), publish_at=timezone.now() - timedelta(minutes=1)
+            announcement.pk, _user(), publish_at=timezone.now() - timedelta(minutes=1)
         )
         assert approved.publish_at is None
         assert Directive.objects.filter(topic=ANNOUNCEMENT_PUBLISH).count() == 2
 
     def test_sweep_dispatches_when_the_hour_arrives(self, product, rule):
-        post = campaign.evaluate("production_finished", _context())[0]
-        campaign.approve(post.pk, _user(), publish_at=timezone.now() + timedelta(hours=2))
+        announcement = campaign.evaluate("production_finished", _context())[0]
+        campaign.approve(announcement.pk, _user(), publish_at=timezone.now() + timedelta(hours=2))
 
         assert campaign.dispatch_due() == 0  # ainda não é hora
-        Announcement.objects.filter(pk=post.pk).update(
+        Announcement.objects.filter(pk=announcement.pk).update(
             publish_at=timezone.now() - timedelta(minutes=1)
         )
         assert campaign.dispatch_due() == 1
 
-        post.refresh_from_db()
-        assert post.publish_at is None  # não despacha duas vezes
+        announcement.refresh_from_db()
+        assert announcement.publish_at is None  # não despacha duas vezes
         assert campaign.dispatch_due() == 0
         assert Directive.objects.filter(topic=ANNOUNCEMENT_PUBLISH).count() == 2
 
     def test_rescheduling_a_post_that_has_not_gone_out_is_allowed(self, product, rule):
-        post = campaign.evaluate("production_finished", _context())[0]
-        campaign.approve(post.pk, _user(), publish_at=timezone.now() + timedelta(hours=2))
+        announcement = campaign.evaluate("production_finished", _context())[0]
+        campaign.approve(announcement.pk, _user(), publish_at=timezone.now() + timedelta(hours=2))
         later = timezone.now() + timedelta(hours=5)
-        assert campaign.approve(post.pk, _user(), publish_at=later).publish_at == later
+        assert campaign.approve(announcement.pk, _user(), publish_at=later).publish_at == later
 
     def test_already_dispatched_post_is_not_redispatched(self, product, rule):
-        post = campaign.evaluate("production_finished", _context())[0]
-        campaign.approve(post.pk, _user())
+        announcement = campaign.evaluate("production_finished", _context())[0]
+        campaign.approve(announcement.pk, _user())
         before = Directive.objects.filter(topic=ANNOUNCEMENT_PUBLISH).count()
-        campaign.approve(post.pk, _user())
+        campaign.approve(announcement.pk, _user())
         assert Directive.objects.filter(topic=ANNOUNCEMENT_PUBLISH).count() == before
 
 
@@ -417,29 +417,29 @@ class TestContentEditing:
     def test_editing_the_body_reprojects_the_platform_variants(self, product, template, rule):
         template.platform_variants = {"instagram": {"body": "{{produto}} no forno!"}}
         template.save()
-        post = campaign.evaluate("production_finished", _context())[0]
+        announcement = campaign.evaluate("production_finished", _context())[0]
 
-        edited = campaign.update_content(post.pk, body="Texto do gestor")
+        edited = campaign.update_content(announcement.pk, body="Texto do gestor")
         assert edited.content["body"] == "Texto do gestor"
         # A variação por plataforma acompanha a edição — senão o Instagram
         # publicaria o texto antigo.
         assert edited.platform_content
 
     def test_hashtags_are_trimmed_and_emptied_out(self, product, rule):
-        post = campaign.evaluate("production_finished", _context())[0]
-        edited = campaign.update_content(post.pk, hashtags=[" pao ", "", "fornada"])
+        announcement = campaign.evaluate("production_finished", _context())[0]
+        edited = campaign.update_content(announcement.pk, hashtags=[" pao ", "", "fornada"])
         assert edited.content["hashtags"] == ["pao", "fornada"]
 
     def test_omitted_keys_are_left_alone(self, product, rule):
-        post = campaign.evaluate("production_finished", _context())[0]
-        original = post.content["body"]
-        assert campaign.update_content(post.pk, platforms=["tv"]).content["body"] == original
+        announcement = campaign.evaluate("production_finished", _context())[0]
+        original = announcement.content["body"]
+        assert campaign.update_content(announcement.pk, platforms=["tv"]).content["body"] == original
 
     def test_published_post_cannot_be_rewritten(self, product, rule):
-        post = campaign.evaluate("production_finished", _context())[0]
-        campaign.approve(post.pk, _user())
+        announcement = campaign.evaluate("production_finished", _context())[0]
+        campaign.approve(announcement.pk, _user())
         with pytest.raises(campaign.CampaignError):
-            campaign.update_content(post.pk, body="tarde demais")
+            campaign.update_content(announcement.pk, body="tarde demais")
 
 
 def _user():

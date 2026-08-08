@@ -11,7 +11,7 @@ export function useCampaignHistory() {
   );
 
   return {
-    posts: computed(() => data.value?.posts ?? []),
+    announcements: computed(() => data.value?.announcements ?? []),
     loading: pending,
     error,
     refresh,

@@ -4,9 +4,9 @@
 // Sucesso parcial não vira "publicado": se o Google saiu e o Instagram falhou,
 // a linha diz "parcial" e mostra as duas. Esconder a falha aqui seria esconder
 // justamente a informação que o gestor precisa para agir.
-import { postOutcome, resultLabel, resultTone, shortDateTime, audienceSummary } from "~/presentation/campaign";
+import { announcementOutcome, resultLabel, resultTone, shortDateTime, audienceSummary } from "~/presentation/campaign";
 
-const { posts, loading, error, refresh } = useCampaignHistory();
+const { announcements, loading, error, refresh } = useCampaignHistory();
 
 const OUTCOME_META = {
   published: { label: "publicado", icon: "lucide:check-circle-2", class: "text-emerald-600" },
@@ -49,66 +49,66 @@ useHead({ title: "Histórico · Marketing" });
       </button>
     </div>
 
-    <div v-else-if="loading && posts.length === 0" class="space-y-3" aria-busy="true">
+    <div v-else-if="loading && announcements.length === 0" class="space-y-3" aria-busy="true">
       <div v-for="n in 3" :key="n" class="h-24 animate-pulse rounded-xl bg-muted"></div>
     </div>
 
     <div
-      v-else-if="posts.length === 0"
+      v-else-if="announcements.length === 0"
       class="rounded-xl border border-dashed border-border bg-card/50 px-6 py-10 text-center"
     >
       <Icon name="lucide:megaphone-off" class="mx-auto size-8 text-muted-foreground" />
       <p class="mt-2 font-semibold">Nada publicado ainda</p>
       <p class="mt-1 text-sm text-muted-foreground">
-        Os posts aprovados aparecem aqui com o resultado de cada plataforma.
+        Os announcements aprovados aparecem aqui com o resultado de cada plataforma.
       </p>
     </div>
 
     <ul v-else class="space-y-3">
       <li
-        v-for="post in posts"
-        :key="post.pk"
+        v-for="announcement in announcements"
+        :key="announcement.pk"
         class="rounded-xl border border-border bg-card p-4"
       >
         <div class="flex items-start gap-3">
           <img
-            v-if="post.image_url"
-            :src="post.image_url"
+            v-if="announcement.image_url"
+            :src="announcement.image_url"
             alt=""
             class="size-14 shrink-0 rounded-md border border-border object-cover"
           >
           <div class="min-w-0 flex-1">
             <div class="flex flex-wrap items-center gap-2">
               <Icon
-                :name="OUTCOME_META[postOutcome(post.platform_results)].icon"
+                :name="OUTCOME_META[announcementOutcome(announcement.platform_results)].icon"
                 class="size-4"
-                :class="OUTCOME_META[postOutcome(post.platform_results)].class"
+                :class="OUTCOME_META[announcementOutcome(announcement.platform_results)].class"
               />
               <span
                 class="text-sm font-semibold"
-                :class="OUTCOME_META[postOutcome(post.platform_results)].class"
+                :class="OUTCOME_META[announcementOutcome(announcement.platform_results)].class"
               >
-                {{ OUTCOME_META[postOutcome(post.platform_results)].label }}
+                {{ OUTCOME_META[announcementOutcome(announcement.platform_results)].label }}
               </span>
               <span class="text-xs text-muted-foreground">
-                {{ shortDateTime(post.published_at || post.created_at) }}
+                {{ shortDateTime(announcement.published_at || announcement.created_at) }}
               </span>
-              <span v-if="post.rule_name" class="text-xs text-muted-foreground">
-                · {{ post.rule_name }}
+              <span v-if="announcement.rule_name" class="text-xs text-muted-foreground">
+                · {{ announcement.rule_name }}
               </span>
             </div>
 
-            <p class="mt-1.5 whitespace-pre-line text-sm">{{ post.body }}</p>
+            <p class="mt-1.5 whitespace-pre-line text-sm">{{ announcement.body }}</p>
 
             <p class="mt-1 text-xs text-muted-foreground">
-              {{ audienceSummary(post.audience) }}
-              <template v-if="post.approved_by"> · aprovado por {{ post.approved_by }}</template>
+              {{ audienceSummary(announcement.audience) }}
+              <template v-if="announcement.approved_by"> · aprovado por {{ announcement.approved_by }}</template>
             </p>
 
             <!-- Resultado por plataforma -->
             <ul class="mt-2 flex flex-wrap gap-1.5">
               <li
-                v-for="result in post.platform_results"
+                v-for="result in announcement.platform_results"
                 :key="result.platform"
                 class="inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs"
                 :class="TONE_CLASS[resultTone(result.status)]"
@@ -131,7 +131,7 @@ useHead({ title: "Histórico · Marketing" });
                  traz o motivo (ex.: sem credencial configurada) e o WhatsApp traz
                  quantos saíram de fato. -->
             <p
-              v-for="result in post.platform_results.filter((r) => r.detail)"
+              v-for="result in announcement.platform_results.filter((r) => r.detail)"
               :key="`detail-${result.platform}`"
               class="mt-1 text-xs"
               :class="resultTone(result.status) === 'fail' ? 'text-destructive' : 'text-muted-foreground'"

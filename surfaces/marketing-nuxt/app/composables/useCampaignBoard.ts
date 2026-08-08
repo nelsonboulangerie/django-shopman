@@ -26,15 +26,15 @@ export function useCampaignBoard() {
     if (pollTimer) clearInterval(pollTimer);
   });
 
-  // Push pessoal: post novo pedindo revisão chega aqui antes do poll.
+  // Push pessoal: announcement novo pedindo revisão chega aqui antes do poll.
   useUserNotifications(() => refresh());
 
   async function approve(pk: number, edits: PostEdits = {}): Promise<boolean> {
-    return decide(pk, "approve", edits, edits.publish_at ? "Post agendado." : "Post publicado.");
+    return decide(pk, "approve", edits, edits.publish_at ? "Anúncio agendado." : "Anúncio publicado.");
   }
 
   async function discard(pk: number): Promise<boolean> {
-    return decide(pk, "discard", {}, "Post descartado.");
+    return decide(pk, "discard", {}, "Anúncio descartado.");
   }
 
   async function decide(

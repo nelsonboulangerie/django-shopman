@@ -1,7 +1,7 @@
-"""Admin de campanha — CRUD de regras e modelos, leitura dos posts.
+"""Admin de campanha — CRUD de regras e modelos, leitura dos announcements.
 
 Divisão de papéis (feedback_admin_crud_config_only): o Admin configura
-(regras, modelos de post); a revisão e a publicação são operação e vivem nas
+(regras, modelos de announcement); a revisão e a publicação são operação e vivem nas
 superfícies de operador. Por isso ``Announcement`` entra aqui só para
 auditoria, sem criação nem edição.
 """
@@ -64,7 +64,7 @@ class AnnouncementAdmin(ModelAdmin):
     date_hierarchy = "created_at"
 
     def has_add_permission(self, request):
-        return False  # posts nascem de eventos, nunca da mão do gestor no Admin
+        return False  # announcements nascem de eventos, nunca da mão do gestor no Admin
 
     def has_change_permission(self, request, obj=None):
         return False

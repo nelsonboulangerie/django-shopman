@@ -133,10 +133,10 @@ class NotificationActionView(APIView):
                 {"detail": "Ação desconhecida.", "field": "action"}, status=400
             )
 
-        post_id = (notification.action_data or {}).get("announcement_id")
-        if not post_id:
+        announcement_id = (notification.action_data or {}).get("announcement_id")
+        if not announcement_id:
             return Response(
-                {"detail": "Esta notificação não aponta para nenhum post."}, status=400
+                {"detail": "Esta notificação não aponta para nenhum announcement."}, status=400
             )
 
         if not request.user.has_perm("shop.manage_campaigns"):
@@ -147,10 +147,10 @@ class NotificationActionView(APIView):
         from shopman.shop.services import campaign
 
         try:
-            post = (
-                campaign.approve(post_id, request.user)
+            announcement = (
+                campaign.approve(announcement_id, request.user)
                 if action == ACTION_APPROVE
-                else campaign.discard(post_id)
+                else campaign.discard(announcement_id)
             )
         except campaign.CampaignError as exc:
             # Expirado ou inexistente: a notificação perdeu o sentido, então
@@ -160,13 +160,13 @@ class NotificationActionView(APIView):
 
         notification.mark_read()
         logger.info(
-            "notification.action user=%s action=%s post=%s", request.user.pk, action, post_id
+            "notification.action user=%s action=%s announcement=%s", request.user.pk, action, announcement_id
         )
         return Response({
             "ok": True,
             "action": action,
-            "post_id": post.pk,
-            "status": post.status,
+            "announcement_id": announcement.pk,
+            "status": announcement.status,
             "unread_count": _unread(request),
         })
 

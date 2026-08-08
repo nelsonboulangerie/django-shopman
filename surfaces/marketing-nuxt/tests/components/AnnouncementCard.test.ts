@@ -42,9 +42,9 @@ function makePost(over: Partial<Announcement> = {}): Announcement {
   };
 }
 
-function mountCard(post: Announcement) {
+function mountCard(announcement: Announcement) {
   return mount(AnnouncementCard, {
-    props: { post, platformOptions: PLATFORMS },
+    props: { announcement, platformOptions: PLATFORMS },
     global: { stubs: { Icon: true } },
   });
 }
@@ -81,7 +81,7 @@ describe("AnnouncementCard", () => {
     expect(edits.platforms).toEqual(["instagram"]);
   });
 
-  it("refuses to publish an empty post", async () => {
+  it("refuses to publish an empty announcement", async () => {
     const wrapper = mountCard(makePost());
     await wrapper.find("textarea").setValue("   ");
     const publish = wrapper.findAll("button")[0]!;
@@ -125,25 +125,25 @@ describe("AnnouncementCard", () => {
     expect(wrapper.emitted("discard")![0]).toEqual([7]);
   });
 
-  it("keeps the in-progress edit when the same post is refetched", async () => {
+  it("keeps the in-progress edit when the same announcement is refetched", async () => {
     // Poll/SSE não pode apagar o que o gestor está escrevendo.
     const wrapper = mountCard(makePost());
     await wrapper.find("textarea").setValue("rascunho do gestor");
 
-    await wrapper.setProps({ post: makePost({ body: "texto do servidor" }) });
+    await wrapper.setProps({ announcement: makePost({ body: "texto do servidor" }) });
 
     expect((wrapper.find("textarea").element as HTMLTextAreaElement).value).toBe(
       "rascunho do gestor",
     );
   });
 
-  it("resets the draft when a different post takes its place", async () => {
+  it("resets the draft when a different announcement takes its place", async () => {
     const wrapper = mountCard(makePost());
-    await wrapper.find("textarea").setValue("rascunho do post 7");
+    await wrapper.find("textarea").setValue("rascunho do announcement 7");
 
-    await wrapper.setProps({ post: makePost({ pk: 9, body: "outro post" }) });
+    await wrapper.setProps({ announcement: makePost({ pk: 9, body: "outro announcement" }) });
 
-    expect((wrapper.find("textarea").element as HTMLTextAreaElement).value).toBe("outro post");
+    expect((wrapper.find("textarea").element as HTMLTextAreaElement).value).toBe("outro announcement");
   });
 
   it("offers a placeholder when the product has no photo", () => {

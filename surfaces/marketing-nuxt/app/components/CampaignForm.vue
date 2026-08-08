@@ -30,8 +30,8 @@ const isActive = ref(true);
 // Audiência: toggles simples em cima do JSON que o serviço lê.
 const favorites = ref(false);
 const alerts = ref(false);
-const recompraOn = ref(false);
-const recompraDays = ref(90);
+const boughtOn = ref(false);
+const boughtDays = ref(90);
 const vipFirstMinutes = ref(0);
 
 // Estado novo a cada regra aberta — senão o formulário herdaria a anterior.
@@ -51,8 +51,8 @@ watch(
 
     favorites.value = Boolean(audience.favorites);
     alerts.value = Boolean(audience.alerts);
-    recompraOn.value = Boolean(audience.recompra_days);
-    recompraDays.value = audience.recompra_days || 90;
+    boughtOn.value = Boolean(audience.bought_within_days);
+    boughtDays.value = audience.bought_within_days || 90;
     vipFirstMinutes.value = audience.vip_first_minutes || 0;
   },
   { immediate: true },
@@ -87,7 +87,7 @@ function submit() {
       favorites: favorites.value,
       alerts: alerts.value,
       // Chave ausente quando desligado: o serviço lê "0 dias" como "não usa".
-      ...(recompraOn.value ? { recompra_days: recompraDays.value } : {}),
+      ...(boughtOn.value ? { bought_within_days: boughtDays.value } : {}),
       ...(vipFirstMinutes.value > 0 ? { vip_first_minutes: vipFirstMinutes.value } : {}),
     },
   });
@@ -174,19 +174,19 @@ function submit() {
         </label>
         <div class="flex flex-wrap items-center gap-2 text-sm">
           <label class="flex items-center gap-2">
-            <input v-model="recompraOn" type="checkbox" class="size-4 rounded border-border">
+            <input v-model="boughtOn" type="checkbox" class="size-4 rounded border-border">
             Quem comprou nos últimos
           </label>
           <input
-            v-model.number="recompraDays"
+            v-model.number="boughtDays"
             type="number"
             min="1"
             max="365"
-            :disabled="!recompraOn"
+            :disabled="!boughtOn"
             aria-label="Dias de recompra"
             class="h-8 w-20 rounded-md border border-border bg-background px-2 text-sm disabled:opacity-50"
           >
-          <span :class="recompraOn ? '' : 'text-muted-foreground'">dias</span>
+          <span :class="boughtOn ? '' : 'text-muted-foreground'">dias</span>
         </div>
         <div class="flex flex-wrap items-center gap-2 text-sm">
           <label for="rule-vip">VIPs recebem</label>
@@ -214,10 +214,10 @@ function submit() {
         Revisar antes de publicar
       </label>
       <p v-if="!requiresApproval" class="pl-6 text-xs text-amber-700 dark:text-amber-400">
-        Sem revisão, o post sai sozinho assim que o evento acontecer.
+        Sem revisão, o announcement sai sozinho assim que o evento acontecer.
       </p>
       <div class="flex flex-wrap items-center gap-2 text-sm">
-        <label for="rule-expiry">O post aguarda revisão por</label>
+        <label for="rule-expiry">O announcement aguarda revisão por</label>
         <input
           id="rule-expiry"
           v-model.number="expiresAfterMinutes"

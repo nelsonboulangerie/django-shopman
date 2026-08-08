@@ -16,7 +16,7 @@ import {
 } from "~/presentation/campaign";
 
 const props = defineProps<{
-  post: Announcement;
+  announcement: Announcement;
   platformOptions: { value: string; label: string }[];
   busy?: boolean;
 }>();
@@ -27,27 +27,27 @@ const emit = defineEmits<{
 }>();
 
 // Rascunho local. O card é um formulário: até decidir, nada vai pro servidor.
-const body = ref(props.post.body);
-const hashtagsText = ref(props.post.hashtags.map(displayHashtag).join(" "));
-const platforms = ref<string[]>([...props.post.platforms]);
+const body = ref(props.announcement.body);
+const hashtagsText = ref(props.announcement.hashtags.map(displayHashtag).join(" "));
+const platforms = ref<string[]>([...props.announcement.platforms]);
 const scheduling = ref(false);
 const publishAt = ref("");
 
-// Post substituído por um refetch (SSE/poll) enquanto a tela estava aberta:
-// re-sincroniza o rascunho SÓ quando é outro post, para não apagar a edição em
+// Anúncio substituído por um refetch (SSE/poll) enquanto a tela estava aberta:
+// re-sincroniza o rascunho SÓ quando é outro announcement, para não apagar a edição em
 // curso a cada ciclo de poll.
 watch(
-  () => props.post.pk,
+  () => props.announcement.pk,
   () => {
-    body.value = props.post.body;
-    hashtagsText.value = props.post.hashtags.map(displayHashtag).join(" ");
-    platforms.value = [...props.post.platforms];
+    body.value = props.announcement.body;
+    hashtagsText.value = props.announcement.hashtags.map(displayHashtag).join(" ");
+    platforms.value = [...props.announcement.platforms];
     scheduling.value = false;
     publishAt.value = "";
   },
 );
 
-const expiry = computed(() => expiryLabel(props.post.expires_in_minutes));
+const expiry = computed(() => expiryLabel(props.announcement.expires_in_minutes));
 const expiryClass = computed(
   () =>
     ({
@@ -55,11 +55,11 @@ const expiryClass = computed(
       warning: "bg-amber-500/10 text-amber-700 dark:text-amber-400",
       calm: "bg-muted text-muted-foreground",
       none: "",
-    })[expiryTone(props.post.expires_in_minutes)],
+    })[expiryTone(props.announcement.expires_in_minutes)],
 );
 
-const audience = computed(() => audienceSummary(props.post.audience));
-const vip = computed(() => vipSummary(props.post.audience));
+const audience = computed(() => audienceSummary(props.announcement.audience));
+const vip = computed(() => vipSummary(props.announcement.audience));
 
 const canPublish = computed(
   () => !props.busy && body.value.trim().length > 0 && platforms.value.length > 0,
@@ -81,12 +81,12 @@ function edits(): PostEdits {
 
 function publishNow() {
   if (!canPublish.value) return;
-  emit("approve", props.post.pk, edits());
+  emit("approve", props.announcement.pk, edits());
 }
 
 function schedule() {
   if (!canPublish.value || !publishAt.value) return;
-  emit("approve", props.post.pk, { ...edits(), publish_at: publishAt.value });
+  emit("approve", props.announcement.pk, { ...edits(), publish_at: publishAt.value });
 }
 </script>
 
@@ -95,12 +95,12 @@ function schedule() {
     <!-- Cabeçalho: de onde veio e quanto tempo ainda vale -->
     <header class="flex flex-wrap items-center gap-2 border-b border-border px-4 py-2.5">
       <Icon name="lucide:zap" class="size-4 text-muted-foreground" />
-      <span class="text-sm font-semibold">{{ post.rule_name || "Post avulso" }}</span>
-      <span v-if="post.trigger_label" class="text-xs text-muted-foreground">
-        {{ post.trigger_label }}
+      <span class="text-sm font-semibold">{{ announcement.rule_name || "Anúncio avulso" }}</span>
+      <span v-if="announcement.trigger_label" class="text-xs text-muted-foreground">
+        {{ announcement.trigger_label }}
       </span>
-      <span v-if="post.sku" class="rounded bg-muted px-1.5 py-0.5 font-mono text-xs text-muted-foreground">
-        {{ post.sku }}
+      <span v-if="announcement.sku" class="rounded bg-muted px-1.5 py-0.5 font-mono text-xs text-muted-foreground">
+        {{ announcement.sku }}
       </span>
       <span
         v-if="expiry"
@@ -112,12 +112,12 @@ function schedule() {
     </header>
 
     <div class="flex flex-col gap-4 p-4 sm:flex-row">
-      <!-- Foto do produto: o post é visual antes de ser texto -->
+      <!-- Foto do produto: o announcement é visual antes de ser texto -->
       <div class="shrink-0">
         <img
-          v-if="post.image_url"
-          :src="post.image_url"
-          :alt="`Foto de ${post.sku || 'produto'}`"
+          v-if="announcement.image_url"
+          :src="announcement.image_url"
+          :alt="`Foto de ${announcement.sku || 'produto'}`"
           class="size-32 rounded-lg border border-border object-cover"
         >
         <div
@@ -131,27 +131,27 @@ function schedule() {
       <div class="min-w-0 flex-1 space-y-3">
         <!-- Texto editável: o template escreveu o rascunho, o gestor dá o tom -->
         <div>
-          <label :for="`body-${post.pk}`" class="mb-1 block text-xs font-semibold text-muted-foreground">
-            Texto do post
+          <label :for="`body-${announcement.pk}`" class="mb-1 block text-xs font-semibold text-muted-foreground">
+            Texto do anúncio
           </label>
           <textarea
-            :id="`body-${post.pk}`"
+            :id="`body-${announcement.pk}`"
             v-model="body"
             rows="4"
             class="w-full resize-y rounded-md border border-border bg-background px-3 py-2 text-sm outline-none focus:ring-1 focus:ring-ring"
           ></textarea>
           <p v-if="!body.trim()" class="mt-1 text-xs text-destructive" role="alert">
-            O post precisa de um texto.
+            O anúncio precisa de um texto.
           </p>
         </div>
 
         <!-- Hashtags: guardadas limpas, lidas com "#" -->
         <div>
-          <label :for="`tags-${post.pk}`" class="mb-1 block text-xs font-semibold text-muted-foreground">
+          <label :for="`tags-${announcement.pk}`" class="mb-1 block text-xs font-semibold text-muted-foreground">
             Hashtags
           </label>
           <input
-            :id="`tags-${post.pk}`"
+            :id="`tags-${announcement.pk}`"
             v-model="hashtagsText"
             type="text"
             placeholder="#padaria #fornada"
@@ -227,7 +227,7 @@ function schedule() {
         type="button"
         :disabled="busy"
         class="ml-auto inline-flex items-center gap-2 rounded-md border border-border px-3 py-2 text-sm font-medium text-muted-foreground transition hover:bg-destructive/10 hover:text-destructive disabled:opacity-50"
-        @click="emit('discard', post.pk)"
+        @click="emit('discard', announcement.pk)"
       >
         <Icon name="lucide:trash-2" class="size-4" />
         Descartar
@@ -235,9 +235,9 @@ function schedule() {
 
       <!-- Agendamento: aparece só quando pedido, para não pesar o caminho comum -->
       <div v-if="scheduling" class="flex w-full flex-wrap items-center gap-2 pt-2">
-        <label :for="`when-${post.pk}`" class="text-sm text-muted-foreground">Publicar em</label>
+        <label :for="`when-${announcement.pk}`" class="text-sm text-muted-foreground">Publicar em</label>
         <input
-          :id="`when-${post.pk}`"
+          :id="`when-${announcement.pk}`"
           v-model="publishAt"
           type="datetime-local"
           class="h-9 rounded-md border border-border bg-background px-3 text-sm outline-none focus:ring-1 focus:ring-ring"

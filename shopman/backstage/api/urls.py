@@ -228,7 +228,7 @@ urlpatterns = [
     path("marketing/rules/<int:pk>/", CampaignDetailView.as_view(), name="api-backstage-marketing-rule"),
     path("marketing/templates/", AnnouncementTemplateListView.as_view(), name="api-backstage-marketing-templates"),
     path("marketing/templates/<int:pk>/", AnnouncementTemplateDetailView.as_view(), name="api-backstage-marketing-template"),
-    path("marketing/announcements/<int:pk>/", AnnouncementDetailView.as_view(), name="api-backstage-marketing-post"),
+    path("marketing/announcements/<int:pk>/", AnnouncementDetailView.as_view(), name="api-backstage-marketing-announcement"),
     path("marketing/announcements/<int:pk>/approve/", AnnouncementApproveView.as_view(), name="api-backstage-marketing-approve"),
     path("marketing/announcements/<int:pk>/discard/", AnnouncementDiscardView.as_view(), name="api-backstage-marketing-discard"),
     # Production — work order actions

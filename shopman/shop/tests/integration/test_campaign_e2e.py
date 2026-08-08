@@ -1,4 +1,4 @@
-"""E2E da campanha: fornada real → post → notificação → aprovação → directive.
+"""E2E da campanha: fornada real → announcement → notificação → aprovação → directive.
 
 Os testes unitários mockam o work order; aqui a fornada é de verdade (Recipe →
 WorkOrder → finish do Craftsman), então o caminho signal → handler → service
@@ -93,17 +93,17 @@ def test_excellent_bake_reaches_the_manager_as_an_approvable_post(
     with django_capture_on_commit_callbacks(execute=True):
         work_order = _bake(recipe, quality="excelente")
 
-    post = Announcement.objects.get()
-    assert post.status == AnnouncementStatus.PENDING_REVIEW
-    assert post.body == (
+    announcement = Announcement.objects.get()
+    assert announcement.status == AnnouncementStatus.PENDING_REVIEW
+    assert announcement.body == (
         "Croissant acabou de sair do forno! #croissant #fresquinho "
-        "Peça: " + post.content["link"]
+        "Peça: " + announcement.content["link"]
     )
-    assert post.trigger_context["work_order_ref"] == work_order.ref
+    assert announcement.trigger_context["work_order_ref"] == work_order.ref
 
     notification = UserNotification.objects.get(user=gestor)
     assert notification.is_actionable
-    assert notification.action_data["announcement_id"] == post.pk
+    assert notification.action_data["announcement_id"] == announcement.pk
 
 
 def test_a_regular_bake_never_becomes_a_post(
@@ -123,12 +123,12 @@ def test_approval_turns_the_post_into_a_platform_directive(
     with django_capture_on_commit_callbacks(execute=True):
         _bake(recipe, quality="excelente")
 
-    post = Announcement.objects.get()
-    campaign.approve(post.pk, gestor)
+    announcement = Announcement.objects.get()
+    campaign.approve(announcement.pk, gestor)
 
     directive = Directive.objects.get(topic=ANNOUNCEMENT_PUBLISH)
-    assert directive.payload == {"post_id": post.pk, "platform": "instagram"}
-    assert directive.dedupe_key == f"announcement:{post.pk}:instagram"
+    assert directive.payload == {"announcement_id": announcement.pk, "platform": "instagram"}
+    assert directive.dedupe_key == f"announcement:{announcement.pk}:instagram"
 
 
 def test_the_bake_survives_a_broken_campaign(

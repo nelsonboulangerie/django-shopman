@@ -66,7 +66,7 @@ export interface Campaign {
 export interface AudienceRules {
   favorites?: boolean;
   alerts?: boolean;
-  recompra_days?: number;
+  bought_within_days?: number;
   vip_first_minutes?: number;
 }
 
@@ -105,7 +105,7 @@ export interface OptionsResponse {
 }
 
 export interface HistoryResponse {
-  posts: Announcement[];
+  announcements: Announcement[];
 }
 
 /** Edições do card enviadas junto com a aprovação. */

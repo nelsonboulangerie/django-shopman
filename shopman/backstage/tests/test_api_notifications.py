@@ -49,13 +49,13 @@ def _post() -> Announcement:
     )
 
 
-def _notification(user, *, post=None, actionable=True) -> UserNotification:
+def _notification(user, *, announcement=None, actionable=True) -> UserNotification:
     return UserNotification.objects.create(
         user=user,
         category="campaign",
-        title="Post pronto para revisão",
+        title="Anúncio pronto para revisão",
         message="Croissant saiu do forno",
-        action_data={"announcement_id": post.pk} if post else {},
+        action_data={"announcement_id": announcement.pk} if announcement else {},
         is_actionable=actionable,
     )
 
@@ -141,28 +141,28 @@ class TestRead:
 
 class TestAction:
     def test_approving_publishes_the_post(self, client, gestor):
-        post = _post()
-        notification = _notification(gestor, post=post)
+        announcement = _post()
+        notification = _notification(gestor, announcement=announcement)
         client.force_login(gestor)
 
         response = client.post(
             f"{LIST_URL}{notification.pk}/action/", {"action": "approve"}
         )
         assert response.status_code == 200
-        post.refresh_from_db()
-        assert post.approved_by == gestor
+        announcement.refresh_from_db()
+        assert announcement.approved_by == gestor
 
     def test_approve_is_the_default_action(self, client, gestor):
-        post = _post()
-        notification = _notification(gestor, post=post)
+        announcement = _post()
+        notification = _notification(gestor, announcement=announcement)
         client.force_login(gestor)
 
         client.post(f"{LIST_URL}{notification.pk}/action/")
-        post.refresh_from_db()
-        assert post.approved_at is not None
+        announcement.refresh_from_db()
+        assert announcement.approved_at is not None
 
     def test_acting_marks_the_notification_read(self, client, gestor):
-        notification = _notification(gestor, post=_post())
+        notification = _notification(gestor, announcement=_post())
         client.force_login(gestor)
 
         client.post(f"{LIST_URL}{notification.pk}/action/")
@@ -170,23 +170,23 @@ class TestAction:
         assert notification.is_read
 
     def test_discard_closes_without_publishing(self, client, gestor):
-        post = _post()
-        notification = _notification(gestor, post=post)
+        announcement = _post()
+        notification = _notification(gestor, announcement=announcement)
         client.force_login(gestor)
 
         client.post(f"{LIST_URL}{notification.pk}/action/", {"action": "discard"})
-        post.refresh_from_db()
-        assert post.status == AnnouncementStatus.EXPIRED
+        announcement.refresh_from_db()
+        assert announcement.status == AnnouncementStatus.EXPIRED
 
     def test_operator_without_the_permission_cannot_publish(self, client, colega):
         """Staff não basta: publicar exige shop.manage_campaigns."""
-        notification = _notification(colega, post=_post())
+        notification = _notification(colega, announcement=_post())
         client.force_login(colega)
 
         assert client.post(f"{LIST_URL}{notification.pk}/action/").status_code == 403
 
     def test_unknown_action_is_rejected(self, client, gestor):
-        notification = _notification(gestor, post=_post())
+        notification = _notification(gestor, announcement=_post())
         client.force_login(gestor)
 
         response = client.post(
@@ -202,7 +202,7 @@ class TestAction:
         assert client.post(f"{LIST_URL}{notification.pk}/action/").status_code == 400
 
     def test_cannot_act_on_someone_elses(self, client, gestor, colega):
-        notification = _notification(colega, post=_post())
+        notification = _notification(colega, announcement=_post())
         client.force_login(gestor)
 
         assert client.post(f"{LIST_URL}{notification.pk}/action/").status_code == 404
@@ -210,10 +210,10 @@ class TestAction:
     def test_expired_post_answers_clearly_and_clears_the_card(self, client, gestor):
         from django.utils import timezone
 
-        post = _post()
-        post.expires_at = timezone.now() - timezone.timedelta(minutes=1)
-        post.save()
-        notification = _notification(gestor, post=post)
+        announcement = _post()
+        announcement.expires_at = timezone.now() - timezone.timedelta(minutes=1)
+        announcement.save()
+        notification = _notification(gestor, announcement=announcement)
         client.force_login(gestor)
 
         assert client.post(f"{LIST_URL}{notification.pk}/action/").status_code == 400

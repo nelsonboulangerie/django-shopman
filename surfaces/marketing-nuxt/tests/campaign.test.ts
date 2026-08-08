@@ -8,7 +8,7 @@ import {
   isStillReviewable,
   parseHashtags,
   platformsSummary,
-  postOutcome,
+  announcementOutcome,
   resultLabel,
   resultTone,
   shortDateTime,
@@ -22,13 +22,13 @@ function result(platform: string, status: string): PlatformResult {
 
 describe("audienceSummary", () => {
   it("lists each source and closes with the deduplicated total", () => {
-    expect(audienceSummary({ favorites_count: 12, recompra_count: 28, alerts_count: 3, total: 43 }))
+    expect(audienceSummary({ favorites_count: 12, bought_count: 28, alerts_count: 3, total: 43 }))
       .toBe("12 favoritos, 28 recompra, 3 alertas = 43 clientes");
   });
 
   it("uses the backend total instead of summing the parts", () => {
     // Quem favoritou E recompra é uma pessoa só: somar (12+28) mentiria pra cima.
-    expect(audienceSummary({ favorites_count: 12, recompra_count: 28, total: 30 }))
+    expect(audienceSummary({ favorites_count: 12, bought_count: 28, total: 30 }))
       .toBe("12 favoritos, 28 recompra = 30 clientes");
   });
 
@@ -74,7 +74,7 @@ describe("expiryLabel", () => {
     expect(expiryLabel(0)).toBe("expirou");
   });
 
-  it("stays silent for posts with no deadline", () => {
+  it("stays silent for announcements with no deadline", () => {
     expect(expiryLabel(-1)).toBe("");
   });
 });
@@ -91,38 +91,38 @@ describe("expiryTone", () => {
   });
 });
 
-describe("postOutcome", () => {
+describe("announcementOutcome", () => {
   it("only calls it published when every platform published", () => {
-    expect(postOutcome([result("instagram", "published"), result("tv", "published")]))
+    expect(announcementOutcome([result("instagram", "published"), result("tv", "published")]))
       .toBe("published");
   });
 
   it("treats a mixed result as partial, not as success", () => {
-    expect(postOutcome([result("instagram", "failed"), result("tv", "published")]))
+    expect(announcementOutcome([result("instagram", "failed"), result("tv", "published")]))
       .toBe("partial");
   });
 
   it("reports a total failure as failed", () => {
-    expect(postOutcome([result("instagram", "failed")])).toBe("failed");
+    expect(announcementOutcome([result("instagram", "failed")])).toBe("failed");
   });
 
   it("counts a WhatsApp-only wave as published once it was sent", () => {
-    expect(postOutcome([result("whatsapp", "sent")])).toBe("published");
+    expect(announcementOutcome([result("whatsapp", "sent")])).toBe("published");
   });
 
   it("counts a still-queued platform as pending", () => {
-    expect(postOutcome([result("instagram", "queued"), result("tv", "pending_manual")]))
+    expect(announcementOutcome([result("instagram", "queued"), result("tv", "pending_manual")]))
       .toBe("pending");
   });
 
-  it("treats a post with no targeted platform as pending", () => {
-    expect(postOutcome([])).toBe("pending");
+  it("treats a announcement with no targeted platform as pending", () => {
+    expect(announcementOutcome([])).toBe("pending");
   });
 });
 
 describe("resultTone", () => {
   it("maps a manual pending to pending, never to failure", () => {
-    // Sem credencial, o post fica pending_manual DE PROPÓSITO — não é erro.
+    // Sem credencial, o announcement fica pending_manual DE PROPÓSITO — não é erro.
     expect(resultTone("pending_manual")).toBe("pending");
     expect(resultTone("published")).toBe("ok");
     expect(resultTone("failed")).toBe("fail");
@@ -130,7 +130,7 @@ describe("resultTone", () => {
 
   it("treats the WhatsApp `sent` as a success, not as an unknown", () => {
     // O handler grava `sent` para a onda de WhatsApp; ler isso como pendente
-    // deixaria um post inteiramente entregue parecendo travado.
+    // deixaria um announcement inteiramente entregue parecendo travado.
     expect(resultTone("sent")).toBe("ok");
     expect(resultLabel("sent")).toBe("enviado");
   });
@@ -157,7 +157,7 @@ describe("hashtags", () => {
 
 describe("audienceRulesSummary", () => {
   it("spells out the sources in order", () => {
-    expect(audienceRulesSummary({ favorites: true, alerts: true, recompra_days: 90 }))
+    expect(audienceRulesSummary({ favorites: true, alerts: true, bought_within_days: 90 }))
       .toBe("favoritos, alertas, recompra em 90 dias");
   });
 
@@ -201,24 +201,24 @@ describe("shortDateTime", () => {
 });
 
 describe("isStillReviewable", () => {
-  const post = (over: Partial<Announcement>) =>
+  const announcement = (over: Partial<Announcement>) =>
     ({ status: "pending_review", expires_in_minutes: 30, ...over }) as Announcement;
 
-  it("accepts a pending post inside its window", () => {
-    expect(isStillReviewable(post({}))).toBe(true);
+  it("accepts a pending announcement inside its window", () => {
+    expect(isStillReviewable(announcement({}))).toBe(true);
   });
 
-  it("accepts a pending post with no deadline", () => {
-    expect(isStillReviewable(post({ expires_in_minutes: -1 }))).toBe(true);
+  it("accepts a pending announcement with no deadline", () => {
+    expect(isStillReviewable(announcement({ expires_in_minutes: -1 }))).toBe(true);
   });
 
   it("refuses one whose deadline already passed", () => {
     // O sweeper roda em ciclos de minutos: a tela não pode oferecer "Publicar"
     // num card que venceu entre um fetch e outro.
-    expect(isStillReviewable(post({ expires_in_minutes: 0 }))).toBe(false);
+    expect(isStillReviewable(announcement({ expires_in_minutes: 0 }))).toBe(false);
   });
 
   it("refuses one that was already decided", () => {
-    expect(isStillReviewable(post({ status: "published" }))).toBe(false);
+    expect(isStillReviewable(announcement({ status: "published" }))).toBe(false);
   });
 });

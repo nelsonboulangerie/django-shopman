@@ -1,4 +1,4 @@
-"""CampaignService — evento operacional vira conteúdo, conteúdo vira post.
+"""CampaignService — evento operacional vira conteúdo, conteúdo vira announcement.
 
 O fluxo inteiro (FOMO-MARKETING-SPECS §2.2):
 
@@ -14,7 +14,7 @@ Duas escolhas estruturais:
   derruba o Google Business.
 - **A audiência é resolvida na criação, mas os destinatários não são
   persistidos.** ``Announcement.audience`` guarda só contagens; a lista real
-  é recalculada no despacho. Post que dorme 20 min esperando aprovação não
+  é recalculada no despacho. Anúncio que dorme 20 min esperando aprovação não
   pode disparar para uma audiência congelada e vencida.
 """
 
@@ -43,14 +43,14 @@ POSTING_PLATFORMS = ("instagram", "facebook", "google_business")
 
 
 class CampaignError(Exception):
-    """Erro de negócio da campanha (post inexistente, estado inválido)."""
+    """Erro de negócio da campanha (announcement inexistente, estado inválido)."""
 
 
 # ── Avaliação ────────────────────────────────────────────────────────
 
 
 def evaluate(trigger: str, context: dict | None = None) -> list[Announcement]:
-    """Avaliar as regras ativas de um trigger e criar os posts que couberem.
+    """Avaliar as regras ativas de um trigger e criar os announcements que couberem.
 
     Args:
         trigger: valor de ``Trigger`` (ex.: ``production_finished``).
@@ -58,40 +58,40 @@ def evaluate(trigger: str, context: dict | None = None) -> list[Announcement]:
             ``work_order_ref``, ``available_qty``…
 
     Returns:
-        Os posts criados. Lista vazia é resposta normal (nenhuma regra casou).
+        Os announcements criados. Lista vazia é resposta normal (nenhuma regra casou).
     """
     context = dict(context or {})
     rules = Campaign.objects.filter(trigger=trigger, is_active=True).select_related(
         "template"
     )
 
-    posts = []
+    announcements = []
     for rule in rules:
         try:
             if not matches_filter(rule, context):
                 continue
-            posts.append(_create_post(rule, context))
+            announcements.append(_create_announcement(rule, context))
         except Exception:
             # Uma regra quebrada não pode calar as outras nem derrubar a
             # transação da fornada que a disparou.
             logger.warning(
                 "campaign.rule_failed rule=%s trigger=%s", rule.pk, trigger, exc_info=True
             )
-    return posts
+    return announcements
 
 
-def _create_post(rule: Campaign, context: dict) -> Announcement:
+def _create_announcement(rule: Campaign, context: dict) -> Announcement:
     sku = context.get("sku", "")
     content = resolve_content(rule.template, context)
     resolved = audience_service.resolve(sku, rule.audience_rules)
 
-    # Fora da janela preferida, o post nasce com hora marcada. Vale para os dois
+    # Fora da janela preferida, o announcement nasce com hora marcada. Vale para os dois
     # caminhos: no automático o ``dispatch_due`` abre a porta na hora; no que
     # exige revisão a hora fica como sugestão da regra, e o gestor confirma ou
     # atropela.
     publish_at = campaign_schedule.next_publish_at(rule.schedule)
 
-    post = Announcement.objects.create(
+    announcement = Announcement.objects.create(
         rule=rule,
         template=rule.template,
         status=AnnouncementStatus.PENDING_REVIEW if rule.requires_approval else AnnouncementStatus.APPROVED,
@@ -105,10 +105,10 @@ def _create_post(rule: Campaign, context: dict) -> Announcement:
     )
 
     if rule.requires_approval:
-        notify_reviewers(rule, post)
+        notify_reviewers(rule, announcement)
     elif publish_at is None:
-        dispatch(post)
-    return post
+        dispatch(announcement)
+    return announcement
 
 
 def matches_filter(rule: Campaign, context: dict) -> bool:
@@ -304,64 +304,64 @@ def _image_url(template, context: dict) -> str:
 # ── Aprovação e despacho ─────────────────────────────────────────────
 
 
-def approve(post_id: int, user, *, publish_at=None, respect_schedule: bool = True) -> Announcement:
-    """Gestor aprova e o post sai. Idempotente para quem clica duas vezes.
+def approve(announcement_id: int, user, *, publish_at=None, respect_schedule: bool = True) -> Announcement:
+    """Gestor aprova e o announcement sai. Idempotente para quem clica duas vezes.
 
-    Com ``publish_at`` no futuro, o post fica APROVADO e agendado: quem
-    despacha é ``dispatch_due`` no ciclo de manutenção. Reagendar um post que
+    Com ``publish_at`` no futuro, o announcement fica APROVADO e agendado: quem
+    despacha é ``dispatch_due`` no ciclo de manutenção. Reagendar um announcement que
     ainda não saiu é permitido (só muda a hora); um já despachado, não.
 
     Sem ``publish_at``, a hora sugerida pela regra na criação (janela preferida)
-    é honrada — aprovar às 5h um post cuja regra pede 7h agenda para as 7h.
+    é honrada — aprovar às 5h um announcement cuja regra pede 7h agenda para as 7h.
     ``respect_schedule=False`` é o "Publicar agora" do gestor, que vence a
     janela.
     """
     try:
-        post = Announcement.objects.get(pk=post_id)
+        announcement = Announcement.objects.get(pk=announcement_id)
     except Announcement.DoesNotExist as exc:
-        raise CampaignError("Post não encontrado.") from exc
+        raise CampaignError("Anúncio não encontrado.") from exc
 
     now = timezone.now()
     if publish_at is None and respect_schedule:
-        publish_at = post.publish_at
+        publish_at = announcement.publish_at
     scheduled = publish_at is not None and publish_at > now
 
-    if post.status in (AnnouncementStatus.PUBLISHED, AnnouncementStatus.PUBLISHING):
-        return post
-    if post.status == AnnouncementStatus.APPROVED and not post.publish_at:
+    if announcement.status in (AnnouncementStatus.PUBLISHED, AnnouncementStatus.PUBLISHING):
+        return announcement
+    if announcement.status == AnnouncementStatus.APPROVED and not announcement.publish_at:
         # Já despachado (aprovação imediata anterior) — nada a refazer.
-        return post
-    if post.status == AnnouncementStatus.EXPIRED or post.is_expired(now=now):
-        raise CampaignError("Este post expirou. O momento dele já passou.")
+        return announcement
+    if announcement.status == AnnouncementStatus.EXPIRED or announcement.is_expired(now=now):
+        raise CampaignError("Este announcement expirou. O momento dele já passou.")
 
-    post.status = AnnouncementStatus.APPROVED
-    post.approved_by = user if getattr(user, "pk", None) else None
-    post.approved_at = now
-    post.publish_at = publish_at if scheduled else None
-    post.save(update_fields=["status", "approved_by", "approved_at", "publish_at"])
+    announcement.status = AnnouncementStatus.APPROVED
+    announcement.approved_by = user if getattr(user, "pk", None) else None
+    announcement.approved_at = now
+    announcement.publish_at = publish_at if scheduled else None
+    announcement.save(update_fields=["status", "approved_by", "approved_at", "publish_at"])
 
     if not scheduled:
-        dispatch(post)
-    return post
+        dispatch(announcement)
+    return announcement
 
 
 def update_content(
-    post_id: int, *, body=None, hashtags=None, platforms=None, image_url=None
+    announcement_id: int, *, body=None, hashtags=None, platforms=None, image_url=None
 ) -> Announcement:
-    """Editar o post antes de aprovar. Só o que o gestor de fato mexeu.
+    """Editar o announcement antes de aprovar. Só o que o gestor de fato mexeu.
 
     Texto gerado por regra é rascunho, não sentença: o gestor ajusta o tom e as
     plataformas no próprio card. Depois de sair, não se reescreve o passado.
     """
     try:
-        post = Announcement.objects.get(pk=post_id)
+        announcement = Announcement.objects.get(pk=announcement_id)
     except Announcement.DoesNotExist as exc:
-        raise CampaignError("Post não encontrado.") from exc
+        raise CampaignError("Anúncio não encontrado.") from exc
 
-    if post.status not in (AnnouncementStatus.DRAFT, AnnouncementStatus.PENDING_REVIEW):
-        raise CampaignError("Este post não está mais em revisão.")
+    if announcement.status not in (AnnouncementStatus.DRAFT, AnnouncementStatus.PENDING_REVIEW):
+        raise CampaignError("Este announcement não está mais em revisão.")
 
-    content = dict(post.content or {})
+    content = dict(announcement.content or {})
     if body is not None:
         content["body"] = str(body)
     if hashtags is not None:
@@ -369,62 +369,62 @@ def update_content(
     if image_url is not None:
         content["image_url"] = str(image_url)
 
-    post.content = content
-    post.platform_content = _platform_content(post.template, content) if post.template_id else {}
+    announcement.content = content
+    announcement.platform_content = _platform_content(announcement.template, content) if announcement.template_id else {}
     if platforms is not None:
-        post.platforms = [str(platform) for platform in platforms]
-    post.save(update_fields=["content", "platform_content", "platforms"])
-    return post
+        announcement.platforms = [str(platform) for platform in platforms]
+    announcement.save(update_fields=["content", "platform_content", "platforms"])
+    return announcement
 
 
-def discard(post_id: int) -> Announcement:
-    """Descartar um post pendente sem publicar."""
+def discard(announcement_id: int) -> Announcement:
+    """Descartar um announcement pendente sem publicar."""
     try:
-        post = Announcement.objects.get(pk=post_id)
+        announcement = Announcement.objects.get(pk=announcement_id)
     except Announcement.DoesNotExist as exc:
-        raise CampaignError("Post não encontrado.") from exc
+        raise CampaignError("Anúncio não encontrado.") from exc
 
-    post.status = AnnouncementStatus.EXPIRED
-    post.save(update_fields=["status"])
-    return post
+    announcement.status = AnnouncementStatus.EXPIRED
+    announcement.save(update_fields=["status"])
+    return announcement
 
 
-def dispatch(post: Announcement) -> int:
+def dispatch(announcement: Announcement) -> int:
     """Enfileirar uma Directive por plataforma. Retorna quantas foram criadas."""
-    post.status = AnnouncementStatus.PUBLISHING
-    post.save(update_fields=["status"])
+    announcement.status = AnnouncementStatus.PUBLISHING
+    announcement.save(update_fields=["status"])
 
     created = 0
-    for platform in post.platforms or []:
+    for platform in announcement.platforms or []:
         if platform in POSTING_PLATFORMS:
-            created += _queue_post(post, platform)
+            created += _queue_announcement(announcement, platform)
         elif platform == "whatsapp":
-            created += _queue_notify(post)
+            created += _queue_notify(announcement)
         elif platform == "tv":
-            _push_tv(post)
+            _push_tv(announcement)
             created += 1
         else:
-            logger.warning("campaign.unknown_platform post=%s platform=%s", post.pk, platform)
+            logger.warning("campaign.unknown_platform announcement=%s platform=%s", announcement.pk, platform)
 
     if not created:
-        logger.info("campaign.nothing_dispatched post=%s", post.pk)
+        logger.info("campaign.nothing_dispatched announcement=%s", announcement.pk)
     return created
 
 
-def _queue_post(post: Announcement, platform: str) -> int:
+def _queue_announcement(announcement: Announcement, platform: str) -> int:
     directive = create_deduped(
         ANNOUNCEMENT_PUBLISH,
-        payload={"post_id": post.pk, "platform": platform},
-        dedupe_key=f"announcement:{post.pk}:{platform}",
+        payload={"announcement_id": announcement.pk, "platform": platform},
+        dedupe_key=f"announcement:{announcement.pk}:{platform}",
     )
     return 1 if directive else 0
 
 
-def _queue_notify(post: Announcement) -> int:
+def _queue_notify(announcement: Announcement) -> int:
     """WhatsApp: uma onda por directive. VIP-first vira duas, com atraso.
 
     A audiência é resolvida de novo no handler, não aqui: entre a criação do
-    post e a aprovação, favoritos e alertas mudam.
+    announcement e a aprovação, favoritos e alertas mudam.
 
     O plano sai de ``AudienceResult.waves()``: o VIP abre, o geral espera
     ``vip_first_minutes``, e quem tem hora habitual conhecida ganha onda própria
@@ -437,8 +437,8 @@ def _queue_notify(post: Announcement) -> int:
     mesmo com audiência vazia agora: quem entrar na fila do "me avise" no
     intervalo ainda é alcançado, e o envio no-op se ela seguir vazia.
     """
-    rules = (post.rule.audience_rules or {}) if post.rule_id else {}
-    sku = (post.trigger_context or {}).get("sku", "")
+    rules = (announcement.rule.audience_rules or {}) if announcement.rule_id else {}
+    sku = (announcement.trigger_context or {}).get("sku", "")
 
     waves = audience_service.resolve(sku, rules).waves()
 
@@ -447,12 +447,12 @@ def _queue_notify(post: Announcement) -> int:
         directive = create_deduped(
             ANNOUNCEMENT_NOTIFY,
             payload={
-                "post_id": post.pk,
+                "announcement_id": announcement.pk,
                 "wave": wave.key,
                 "sku": sku,
                 "waves_expected": len(waves),
             },
-            dedupe_key=f"announcement:{post.pk}:wa:{wave.key}",
+            dedupe_key=f"announcement:{announcement.pk}:wa:{wave.key}",
             available_at=(
                 timezone.now() + timedelta(minutes=wave.delay_minutes)
                 if wave.delay_minutes
@@ -463,16 +463,16 @@ def _queue_notify(post: Announcement) -> int:
     return created
 
 
-def _push_tv(post: Announcement) -> None:
+def _push_tv(announcement: Announcement) -> None:
     """TVs/menuboards: push direto, sem API externa nem credencial.
 
     Registra o resultado na hora (não há Directive nem handler para a TV), para
-    que ``_settle`` consiga fechar um post que mistura TV e plataformas.
+    que ``_settle`` consiga fechar um announcement que mistura TV e plataformas.
     """
-    results = dict(post.platform_results or {})
+    results = dict(announcement.platform_results or {})
     results["tv"] = {"status": "published"}
-    post.platform_results = results
-    post.save(update_fields=["platform_results"])
+    announcement.platform_results = results
+    announcement.save(update_fields=["platform_results"])
 
     def _send():
         try:
@@ -481,12 +481,12 @@ def _push_tv(post: Announcement) -> None:
             send_event(
                 "campaign-tv",
                 "campaign-announcement",
-                {"post_id": post.pk, "body": post.body, "image_url": post.content.get("image_url", "")},
+                {"announcement_id": announcement.pk, "body": announcement.body, "image_url": announcement.content.get("image_url", "")},
             )
         except ImportError:
             logger.warning("django_eventstream ausente; push de TV ignorado")
         except Exception:
-            logger.warning("campaign.tv_push_failed post=%s", post.pk, exc_info=True)
+            logger.warning("campaign.tv_push_failed announcement=%s", announcement.pk, exc_info=True)
 
     transaction.on_commit(_send)
 
@@ -494,7 +494,7 @@ def _push_tv(post: Announcement) -> None:
 # ── Notificação do gestor ────────────────────────────────────────────
 
 
-def notify_reviewers(rule: Campaign, post: Announcement) -> int:
+def notify_reviewers(rule: Campaign, announcement: Announcement) -> int:
     """Criar ``UserNotification`` acionável para quem pode aprovar.
 
     Destinatários: ``rule.notify_users`` quando declarado, senão todo mundo
@@ -504,11 +504,11 @@ def notify_reviewers(rule: Campaign, post: Announcement) -> int:
 
     users = _reviewers(rule)
     if not users:
-        logger.warning("campaign.no_reviewers post=%s rule=%s", post.pk, rule.pk)
+        logger.warning("campaign.no_reviewers announcement=%s rule=%s", announcement.pk, rule.pk)
         return 0
 
-    total = post.audience.get("total", 0)
-    message = post.body
+    total = announcement.audience.get("total", 0)
+    message = announcement.body
     if total:
         message = f"{message}\n\nAudiência: {total} cliente(s)."
 
@@ -517,10 +517,10 @@ def notify_reviewers(rule: Campaign, post: Announcement) -> int:
         notification = UserNotification.objects.create(
             user=user,
             category=NotificationCategory.CAMPAIGN,
-            title=f"Post pronto para revisão: {rule.name}",
+            title=f"Anúncio pronto para revisão: {rule.name}",
             message=message,
-            action_url=f"/campaign/announcements/{post.pk}/",
-            action_data={"announcement_id": post.pk},
+            action_url=f"/campaign/announcements/{announcement.pk}/",
+            action_data={"announcement_id": announcement.pk},
             is_actionable=True,
         )
         push_user_notification(notification)
@@ -570,10 +570,10 @@ def push_user_notification(notification) -> None:
 
 
 def dispatch_due(*, now=None) -> int:
-    """Despachar os posts agendados cuja hora chegou. Retorna quantos saíram.
+    """Despachar os announcements agendados cuja hora chegou. Retorna quantos saíram.
 
     ``publish_at`` volta a NULL no despacho: é a marca de "ainda não saiu", e
-    zerá-la impede que um ciclo seguinte despache o mesmo post de novo.
+    zerá-la impede que um ciclo seguinte despache o mesmo announcement de novo.
     """
     now = now or timezone.now()
     due = Announcement.objects.filter(
@@ -581,19 +581,19 @@ def dispatch_due(*, now=None) -> int:
     )
 
     dispatched = 0
-    for post in due:
+    for announcement in due:
         try:
-            post.publish_at = None
-            post.save(update_fields=["publish_at"])
-            dispatch(post)
+            announcement.publish_at = None
+            announcement.save(update_fields=["publish_at"])
+            dispatch(announcement)
             dispatched += 1
         except Exception:
-            logger.warning("campaign.scheduled_dispatch_failed post=%s", post.pk, exc_info=True)
+            logger.warning("campaign.scheduled_dispatch_failed announcement=%s", announcement.pk, exc_info=True)
     return dispatched
 
 
-def expire_stale_posts(*, now=None) -> int:
-    """Caducar posts pendentes que passaram do prazo. Retorna quantos."""
+def expire_stale_announcements(*, now=None) -> int:
+    """Caducar announcements pendentes que passaram do prazo. Retorna quantos."""
     now = now or timezone.now()
     return Announcement.objects.filter(
         status=AnnouncementStatus.PENDING_REVIEW,

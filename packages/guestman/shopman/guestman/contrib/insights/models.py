@@ -59,11 +59,18 @@ class CustomerInsight(models.Model):
         help_text=_("Hora preferida (0-23)"),
     )
 
-    # Favorite products (top 5 SKUs)
+    # Favorite products (top 5 SKUs).
+    #
+    # As chaves são as que `_calculate_favorite_products` grava, e o help_text
+    # documentava outras (`nome`, `qtd`, `ultimo_pedido`) — chaves que nenhum
+    # escritor produz. Um consumidor real seguiu a documentação em vez do código e
+    # passou a ler `ultimo_pedido`, achando `None` para sempre; a janela de "comprou
+    # nos últimos N dias" da audiência de campanha nunca filtrou ninguém por causa
+    # disso. help_text de JSONField é contrato, não comentário.
     favorite_products = models.JSONField(
         _("produtos favoritos"),
         default=list,
-        help_text=_("Lista de {sku, nome, qtd, ultimo_pedido}"),
+        help_text=_("Lista de {sku, name, qty, last_order_at}"),
     )
 
     # Channels

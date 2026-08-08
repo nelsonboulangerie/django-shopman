@@ -6,9 +6,9 @@ evento operacional em conteúdo.
 
 - ``Campaign``  — que evento vira o quê, para quem, em quais plataformas
 - ``AnnouncementTemplate``   — o conteúdo, com variáveis resolvidas em runtime
-- ``Announcement``  — o registro de um post gerado (pendente → publicado)
+- ``Announcement``  — o registro de um announcement gerado (pendente → publicado)
 
-O operador de produção não posta: ele marca a qualidade da fornada
+O operador de produção não anúncioa: ele marca a qualidade da fornada
 (``WorkOrder.meta["quality"]``) e o gestor decide. Separação de papéis
 deliberada (FOMO-MARKETING-SPECS §8).
 """
@@ -30,7 +30,7 @@ class Trigger(models.TextChoices):
 
 
 class AnnouncementStatus(models.TextChoices):
-    """Ciclo de vida de um post."""
+    """Ciclo de vida de um announcement."""
 
     DRAFT = "draft", "rascunho"
     PENDING_REVIEW = "pending_review", "aguardando aprovação"
@@ -117,7 +117,7 @@ class Campaign(models.Model):
     )
     audience_rules = models.JSONField(
         "regras de audiência", default=dict, blank=True,
-        help_text='{"favorites": true, "alerts": true, "recompra_days": 90, '
+        help_text='{"favorites": true, "alerts": true, "bought_within_days": 90, '
                   '"vip_first_minutes": 15}',
     )
     schedule = models.JSONField(
@@ -130,7 +130,7 @@ class Campaign(models.Model):
     )
     expires_after_minutes = models.PositiveIntegerField(
         "expira em (min)", default=0,
-        help_text="Post não aprovado caduca depois disso. 0 = não expira. "
+        help_text="Anúncio não aprovado caduca depois disso. 0 = não expira. "
                   "Frescor é efêmero: fornada merece prazo curto.",
     )
     notify_users = models.JSONField(
@@ -157,15 +157,15 @@ class Campaign(models.Model):
 
 
 class Announcement(models.Model):
-    """Um post gerado: pendente, aprovado, publicado ou caduco."""
+    """Um announcement gerado: pendente, aprovado, publicado ou caduco."""
 
     rule = models.ForeignKey(
         Campaign, on_delete=models.SET_NULL, null=True, blank=True,
-        related_name="posts", verbose_name="regra",
+        related_name="announcements", verbose_name="regra",
     )
     template = models.ForeignKey(
         AnnouncementTemplate, on_delete=models.SET_NULL, null=True, blank=True,
-        related_name="posts", verbose_name="modelo",
+        related_name="announcements", verbose_name="modelo",
     )
     status = models.CharField(
         "situação", max_length=16,
@@ -220,7 +220,7 @@ class Announcement(models.Model):
         return self.status == AnnouncementStatus.PENDING_REVIEW
 
     def is_expired(self, *, now=None) -> bool:
-        """Caducou sem ninguém aprovar. Post vencido não vira propaganda velha."""
+        """Caducou sem ninguém aprovar. Anúncio vencido não vira propaganda velha."""
         if self.expires_at is None or self.status != AnnouncementStatus.PENDING_REVIEW:
             return False
         from django.utils import timezone

@@ -22,6 +22,6 @@ class Command(BaseCommand):
 
         dispatched = campaign.dispatch_due()
         if dispatched:
-            logger.info("dispatch_due_announcements: %d post(s) despachado(s)", dispatched)
+            logger.info("dispatch_due_announcements: %d announcement(s) despachado(s)", dispatched)
             self.stdout.write(f"{dispatched} anúncio(s) despachado(s).")
         return None

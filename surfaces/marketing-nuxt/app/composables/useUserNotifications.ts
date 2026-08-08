@@ -1,7 +1,7 @@
 // Canal PESSOAL do gestor (`user-<id>` no Django, `/sse/notifications` no BFF).
 //
-// É por aqui que o post recém-gerado aparece no painel sem ninguém apertar F5:
-// a fornada termina, o engine cria o post, o backend empurra o aviso e a tela
+// É por aqui que o announcement recém-gerado aparece no painel sem ninguém apertar F5:
+// a fornada termina, o engine cria o announcement, o backend empurra o aviso e a tela
 // refaz o fetch canônico. O push só diz "chegou algo" (ADR-016) — quem manda é
 // o refetch, então uma mensagem perdida custa no máximo um ciclo de poll.
 export function useUserNotifications(onPush: () => void) {

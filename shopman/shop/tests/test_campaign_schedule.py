@@ -2,7 +2,7 @@
 
 O teste mais importante deste arquivo é o da config torta: janela quebrada
 devolve ``None`` (publica agora). Marketing não pode virar gargalo da operação,
-então na dúvida o post sai — nunca fica preso esperando uma janela que não
+então na dúvida o announcement sai — nunca fica preso esperando uma janela que não
 existe.
 """
 
@@ -69,7 +69,7 @@ class TestPublicaAgora:
 
 class TestProximaAbertura:
     def test_antes_da_janela_espera_a_abertura_de_hoje(self):
-        """Fornada das 5h30 não vira post às 5h30: espera as 7h."""
+        """Fornada das 5h30 não vira announcement às 5h30: espera as 7h."""
         agendado = campaign_schedule.next_publish_at(MANHA, now=_at(hour=5, minute=30))
         assert (agendado.hour, agendado.minute) == (7, 0)
         assert agendado.date() == _at(hour=5).date()
@@ -120,7 +120,7 @@ class TestDiasDaSemana:
         "weekdays", [None, [], ["nao-numero"], [99]], ids=["none", "vazio", "texto", "fora-range"]
     )
     def test_weekdays_invalido_libera_a_semana_toda(self, weekdays):
-        """Config torta não pode prender o post: cai na semana inteira."""
+        """Config torta não pode prender o announcement: cai na semana inteira."""
         schedule = {**MANHA, "weekdays": weekdays}
         assert campaign_schedule.next_publish_at(schedule, now=_at(hour=9)) is None
 

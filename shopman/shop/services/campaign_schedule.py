@@ -1,9 +1,9 @@
 """Janela de publicação — a hora certa de falar com o cliente.
 
-Uma fornada que sai às 5h30 não vira post às 5h30: ninguém está olhando, e o
+Uma fornada que sai às 5h30 não vira announcement às 5h30: ninguém está olhando, e o
 conteúdo chega frio justamente quando a pessoa acorda. A
 ``Campaign.schedule`` declara as janelas em que a padaria quer aparecer;
-um evento fora delas não perde o post, só espera a próxima abertura.
+um evento fora delas não perde o announcement, só espera a próxima abertura.
 
 Formato de ``Campaign.schedule``::
 
@@ -13,7 +13,7 @@ Formato de ``Campaign.schedule``::
      "weekdays": [0, 1, 2, 3, 4, 5]}             # 0 = segunda; ausente = todos
 
 Puro e testável: só relógio e config, sem banco. Config quebrada nunca segura
-um post — na dúvida publica agora, porque marketing não pode virar gargalo da
+um announcement — na dúvida publica agora, porque marketing não pode virar gargalo da
 operação.
 """
 
@@ -32,7 +32,7 @@ ALL_WEEKDAYS = frozenset(range(7))
 
 
 def next_publish_at(schedule: dict | None, *, now: datetime | None = None):
-    """Quando este post deve sair, ou ``None`` para "agora".
+    """Quando este announcement deve sair, ou ``None`` para "agora".
 
     Args:
         schedule: ``Campaign.schedule``.

@@ -4,7 +4,7 @@ O que este arquivo protege, em ordem de importância:
 
 1. **O gate.** ``shop.manage_campaigns`` é o portão. Staff comum não publica —
    quem cuida da fila de pedidos não decide o que a padaria diz ao mundo.
-2. **Post que já saiu não se reescreve.** Editar o corpo depois de publicado
+2. **Anúncio que já saiu não se reescreve.** Editar o corpo depois de publicado
    seria mentira retroativa sobre o que o cliente leu.
 3. **As chaves que o Nuxt lê.** Se a projection mudar de forma, o app quebra em
    silêncio; aqui quebra em vermelho.
@@ -84,13 +84,13 @@ class TestGate:
         assert client.get(BOARD_URL).status_code == 200
 
     def test_staff_without_permission_cannot_approve(self, client, rule, template):
-        post = _post(rule, template)
+        announcement = _post(rule, template)
         User.objects.create_user(username="caixa", password="x", is_staff=True)
         client.login(username="caixa", password="x")
-        response = client.post(f"/api/v1/backstage/marketing/announcements/{post.pk}/approve/")
+        response = client.post(f"/api/v1/backstage/marketing/announcements/{announcement.pk}/approve/")
         assert response.status_code == 403
-        post.refresh_from_db()
-        assert post.status == AnnouncementStatus.PENDING_REVIEW
+        announcement.refresh_from_db()
+        assert announcement.status == AnnouncementStatus.PENDING_REVIEW
 
 
 # ── Painel ───────────────────────────────────────────────────────────
@@ -115,7 +115,7 @@ class TestBoard:
         ]
 
     def test_expired_pending_post_leaves_the_board(self, client, gestor, rule, template):
-        """Post vencido não pede decisão: propaganda velha destrói confiança."""
+        """Anúncio vencido não pede decisão: propaganda velha destrói confiança."""
         _post(rule, template, expires_at=timezone.now() - timezone.timedelta(minutes=1))
         client.force_login(gestor)
 
@@ -128,70 +128,70 @@ class TestBoard:
         _post(rule, template)  # pendente não é histórico
         client.force_login(gestor)
 
-        posts = client.get(HISTORY_URL).json()["posts"]
-        assert len(posts) == 1
-        assert posts[0]["status"] == AnnouncementStatus.PUBLISHED
+        announcements = client.get(HISTORY_URL).json()["announcements"]
+        assert len(announcements) == 1
+        assert announcements[0]["status"] == AnnouncementStatus.PUBLISHED
 
 
-# ── Decisão sobre o post ─────────────────────────────────────────────
+# ── Decisão sobre o announcement ─────────────────────────────────────────────
 
 
 class TestPostDecision:
     def test_approve_dispatches_the_post(self, client, gestor, rule, template):
-        post = _post(rule, template)
+        announcement = _post(rule, template)
         client.force_login(gestor)
 
-        response = client.post(f"/api/v1/backstage/marketing/announcements/{post.pk}/approve/")
+        response = client.post(f"/api/v1/backstage/marketing/announcements/{announcement.pk}/approve/")
 
         assert response.status_code == 200
-        post.refresh_from_db()
-        assert post.status in (AnnouncementStatus.APPROVED, AnnouncementStatus.PUBLISHING, AnnouncementStatus.PUBLISHED)
-        assert post.approved_by_id == gestor.pk
+        announcement.refresh_from_db()
+        assert announcement.status in (AnnouncementStatus.APPROVED, AnnouncementStatus.PUBLISHING, AnnouncementStatus.PUBLISHED)
+        assert announcement.approved_by_id == gestor.pk
 
     def test_discard_keeps_it_off_the_air(self, client, gestor, rule, template):
-        post = _post(rule, template)
+        announcement = _post(rule, template)
         client.force_login(gestor)
 
-        assert client.post(f"/api/v1/backstage/marketing/announcements/{post.pk}/discard/").status_code == 200
-        post.refresh_from_db()
-        assert post.status == AnnouncementStatus.EXPIRED
+        assert client.post(f"/api/v1/backstage/marketing/announcements/{announcement.pk}/discard/").status_code == 200
+        announcement.refresh_from_db()
+        assert announcement.status == AnnouncementStatus.EXPIRED
 
     def test_edit_before_approving(self, client, gestor, rule, template):
-        post = _post(rule, template)
+        announcement = _post(rule, template)
         client.force_login(gestor)
 
         response = client.patch(
-            f"/api/v1/backstage/marketing/announcements/{post.pk}/",
+            f"/api/v1/backstage/marketing/announcements/{announcement.pk}/",
             data={"body": "Fornada quentinha agora", "hashtags": ["#paes", "artesanal"]},
             content_type="application/json",
         )
 
         assert response.status_code == 200
-        post.refresh_from_db()
-        assert post.content["body"] == "Fornada quentinha agora"
+        announcement.refresh_from_db()
+        assert announcement.content["body"] == "Fornada quentinha agora"
         # O "#" é do texto, não do dado: guardar a tag limpa evita "##paes".
-        assert post.content["hashtags"] == ["paes", "artesanal"]
+        assert announcement.content["hashtags"] == ["paes", "artesanal"]
 
     def test_published_post_cannot_be_rewritten(self, client, gestor, rule, template):
-        post = _post(rule, template, status=AnnouncementStatus.PUBLISHED)
+        announcement = _post(rule, template, status=AnnouncementStatus.PUBLISHED)
         client.force_login(gestor)
 
         response = client.patch(
-            f"/api/v1/backstage/marketing/announcements/{post.pk}/",
+            f"/api/v1/backstage/marketing/announcements/{announcement.pk}/",
             data={"body": "outra coisa"},
             content_type="application/json",
         )
 
         assert response.status_code == 400
-        post.refresh_from_db()
-        assert post.content["body"] == "Croissant saiu do forno"
+        announcement.refresh_from_db()
+        assert announcement.content["body"] == "Croissant saiu do forno"
 
     def test_empty_body_is_refused(self, client, gestor, rule, template):
-        post = _post(rule, template)
+        announcement = _post(rule, template)
         client.force_login(gestor)
 
         response = client.patch(
-            f"/api/v1/backstage/marketing/announcements/{post.pk}/",
+            f"/api/v1/backstage/marketing/announcements/{announcement.pk}/",
             data={"body": "   "},
             content_type="application/json",
         )
@@ -281,7 +281,7 @@ class TestRules:
         assert rule.is_active is False
 
 
-# ── Modelos de post ──────────────────────────────────────────────────
+# ── Modelos de announcement ──────────────────────────────────────────────────
 
 
 class TestTemplates:
@@ -335,62 +335,62 @@ class TestScheduledPublishing:
     def test_future_publish_at_schedules_instead_of_dispatching(
         self, client, gestor, rule, template
     ):
-        post = _post(rule, template)
+        announcement = _post(rule, template)
         client.force_login(gestor)
         when = timezone.now() + timedelta(hours=3)
 
         response = client.post(
-            f"/api/v1/backstage/marketing/announcements/{post.pk}/approve/",
+            f"/api/v1/backstage/marketing/announcements/{announcement.pk}/approve/",
             data={"publish_at": when.isoformat()},
             content_type="application/json",
         )
 
         assert response.status_code == 200
         assert response.json()["scheduled"] is True
-        post.refresh_from_db()
-        assert post.status == AnnouncementStatus.APPROVED
-        assert post.publish_at is not None
+        announcement.refresh_from_db()
+        assert announcement.status == AnnouncementStatus.APPROVED
+        assert announcement.publish_at is not None
 
     def test_approve_applies_the_card_edits_in_the_same_request(
         self, client, gestor, rule, template
     ):
-        post = _post(rule, template)
+        announcement = _post(rule, template)
         client.force_login(gestor)
 
         response = client.post(
-            f"/api/v1/backstage/marketing/announcements/{post.pk}/approve/",
+            f"/api/v1/backstage/marketing/announcements/{announcement.pk}/approve/",
             data={"body": "Texto revisado pelo gestor", "platforms": ["instagram"]},
             content_type="application/json",
         )
 
         assert response.status_code == 200
-        post.refresh_from_db()
-        assert post.content["body"] == "Texto revisado pelo gestor"
-        assert post.platforms == ["instagram"]
+        announcement.refresh_from_db()
+        assert announcement.content["body"] == "Texto revisado pelo gestor"
+        assert announcement.platforms == ["instagram"]
 
     def test_garbage_date_is_refused_before_anything_is_published(
         self, client, gestor, rule, template
     ):
-        post = _post(rule, template)
+        announcement = _post(rule, template)
         client.force_login(gestor)
 
         response = client.post(
-            f"/api/v1/backstage/marketing/announcements/{post.pk}/approve/",
+            f"/api/v1/backstage/marketing/announcements/{announcement.pk}/approve/",
             data={"publish_at": "amanhã cedo"},
             content_type="application/json",
         )
 
         assert response.status_code == 400
         assert response.json()["field"] == "publish_at"
-        post.refresh_from_db()
-        assert post.status == AnnouncementStatus.PENDING_REVIEW
+        announcement.refresh_from_db()
+        assert announcement.status == AnnouncementStatus.PENDING_REVIEW
 
     def test_empty_body_is_refused(self, client, gestor, rule, template):
-        post = _post(rule, template)
+        announcement = _post(rule, template)
         client.force_login(gestor)
 
         response = client.post(
-            f"/api/v1/backstage/marketing/announcements/{post.pk}/approve/",
+            f"/api/v1/backstage/marketing/announcements/{announcement.pk}/approve/",
             data={"body": "   "},
             content_type="application/json",
         )
@@ -403,11 +403,11 @@ class TestPlatformResultDetail:
     """O painel precisa do PORQUÊ, e o handler não grava numa chave só."""
 
     def _results(self, client, gestor, rule, template, results):
-        post = _post(rule, template, status=AnnouncementStatus.PUBLISHED, platform_results=results)
+        announcement = _post(rule, template, status=AnnouncementStatus.PUBLISHED, platform_results=results)
         client.force_login(gestor)
         response = client.get(HISTORY_URL)
         assert response.status_code == 200
-        found = next(p for p in response.json()["posts"] if p["pk"] == post.pk)
+        found = next(p for p in response.json()["announcements"] if p["pk"] == announcement.pk)
         return {r["platform"]: r for r in found["platform_results"]}
 
     def test_failure_reason_reaches_the_screen(self, client, gestor, rule, template):
@@ -428,26 +428,26 @@ class TestPlatformResultDetail:
         assert results["instagram"]["detail"] == "sem adapter configurado"
 
     def test_whatsapp_reports_how_many_actually_went_out(self, client, gestor, rule, template):
-        post = _post(
+        announcement = _post(
             rule, template, status=AnnouncementStatus.PUBLISHED, platforms=["whatsapp"],
             platform_results={"whatsapp": {"status": "sent", "sent": 38, "failed": 2}},
         )
         client.force_login(gestor)
         found = next(
-            p for p in client.get(HISTORY_URL).json()["posts"] if p["pk"] == post.pk
+            p for p in client.get(HISTORY_URL).json()["announcements"] if p["pk"] == announcement.pk
         )
         assert found["platform_results"][0]["detail"] == "38 enviados, 2 falharam"
 
     def test_a_clean_whatsapp_wave_does_not_invent_a_failure_count(
         self, client, gestor, rule, template
     ):
-        post = _post(
+        announcement = _post(
             rule, template, status=AnnouncementStatus.PUBLISHED, platforms=["whatsapp"],
             platform_results={"whatsapp": {"status": "sent", "sent": 40, "failed": 0}},
         )
         client.force_login(gestor)
         found = next(
-            p for p in client.get(HISTORY_URL).json()["posts"] if p["pk"] == post.pk
+            p for p in client.get(HISTORY_URL).json()["announcements"] if p["pk"] == announcement.pk
         )
         assert found["platform_results"][0]["detail"] == "40 enviados"
 

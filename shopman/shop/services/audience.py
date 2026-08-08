@@ -53,7 +53,7 @@ class Recipient:
 
     phone: str
     customer_ref: str = ""
-    reasons: frozenset = frozenset()  # favorites | alerts | recompra
+    reasons: frozenset = frozenset()  # favorites | alerts | bought
     is_vip: bool = False
     #: Hora habitual de compra (0-23), de ``CustomerInsight.preferred_hour``.
     #: ``None`` para quem ainda não tem padrão — esse recebe na hora.
@@ -162,7 +162,7 @@ def resolve(sku: str, rules: dict | None = None) -> AudienceResult:
     Args:
         sku: SKU do evento.
         rules: ``Campaign.audience_rules`` — ``favorites`` (bool),
-            ``alerts`` (bool), ``recompra_days`` (int), ``vip_first_minutes`` (int).
+            ``alerts`` (bool), ``bought_within_days`` (int), ``vip_first_minutes`` (int).
 
     Returns:
         ``AudienceResult`` vazio quando nenhuma regra está ligada ou ninguém
@@ -182,11 +182,11 @@ def resolve(sku: str, rules: dict | None = None) -> AudienceResult:
         counts["alerts_count"] = len(found)
         _merge(by_phone, found, reason="alerts")
 
-    days = int(rules.get("recompra_days") or 0)
+    days = int(rules.get("bought_within_days") or 0)
     if days > 0:
-        found = _recompra(sku, days)
-        counts["recompra_count"] = len(found)
-        _merge(by_phone, found, reason="recompra")
+        found = _bought_within_days(sku, days)
+        counts["bought_count"] = len(found)
+        _merge(by_phone, found, reason="bought")
 
     recipients = _filter_opted_in(by_phone.values())
     window = max(int(rules.get("preferred_hour_window_hours") or 0), 0)
@@ -294,8 +294,8 @@ def _pending_alerts(sku: str) -> list[Recipient]:
     return out
 
 
-def _recompra(sku: str, days: int) -> list[Recipient]:
-    """F10 — quem comprou este SKU e voltaria a comprar dentro da janela.
+def _bought_within_days(sku: str, days: int) -> list[Recipient]:
+    """F10 — quem comprou este SKU dentro da janela de ``days``.
 
     Lê ``CustomerInsight.favorite_products`` (já agregado pelo Guestman) em vez
     de varrer o histórico de pedidos: o insight é o índice desse cruzamento.
@@ -308,7 +308,7 @@ def _recompra(sku: str, days: int) -> list[Recipient]:
             .select_related("customer")
         )
     except Exception:
-        logger.warning("audience.recompra_failed sku=%s", sku, exc_info=True)
+        logger.warning("audience.bought_lookup_failed sku=%s", sku, exc_info=True)
         return []
 
     cutoff = timezone.localdate() - timedelta(days=days)
@@ -332,13 +332,30 @@ def _recompra(sku: str, days: int) -> list[Recipient]:
 
 
 def _bought_recently(insight, *, sku: str, cutoff) -> bool:
+    """A entrada do insight é recente o bastante para entrar na janela?
+
+    ⚠️ Aqui vivia um defeito de produção. Esta função lia ``ultimo_pedido``, uma
+    chave que **nenhum escritor grava**: o Guestman monta a entrada com
+    ``last_order_at`` (ver ``insights/service.py::_calculate_favorite_products``).
+    O ``.get()`` devolvia ``None`` sempre, e o fallback tratava ``None`` como
+    "conta" — então a janela **nunca filtrou ninguém**. Uma campanha configurada
+    para "quem comprou nos últimos 7 dias" alcançava todo mundo que já comprou
+    algum dia, com custo por mensagem de WhatsApp e desgaste de audiência.
+
+    O teste não pegava porque fabricava ``ultimo_pedido`` à mão — espelhava a
+    suposição do LEITOR em vez da saída do ESCRITOR. Mesma família do
+    ``broadcast_optin`` sem escritor que a F1 consertou: chave sem dono.
+
+    E o fallback mudou de sinal. Entrada sem data agora fica **fora** da janela:
+    o sentido de "comprou nos últimos N dias" é uma janela, e contar o que não
+    tem data como dentro dela desmancha justamente o que o operador pediu. O
+    escritor sempre grava a data, então isto só alcança lixo.
+    """
     for entry in insight.favorite_products or []:
         if not isinstance(entry, dict) or entry.get("sku") != sku:
             continue
-        last = _as_date(entry.get("ultimo_pedido"))
-        # Sem data registrada, o insight ainda conta: ele só existe porque
-        # houve compra. A janela filtra quem já esfriou, não quem não datou.
-        return last is None or last >= cutoff
+        last = _as_date(entry.get("last_order_at"))
+        return last is not None and last >= cutoff
     return False
 
 
