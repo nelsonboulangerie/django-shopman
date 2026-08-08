@@ -107,6 +107,6 @@ def forget_customer(customer_uuid) -> None:
         user.save(update_fields=["first_name", "last_name", "email", "is_active"])
 
     try:
-        TrustedDevice.revoke_all_for_customer(customer_uuid)
+        TrustedDevice.revoke_all_for("customer", customer_uuid)
     except Exception:
         logger.warning("forget_customer: revogação de devices falhou", exc_info=True)

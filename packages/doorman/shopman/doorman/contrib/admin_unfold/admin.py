@@ -263,17 +263,18 @@ class VerificationCodeAdmin(BaseModelAdmin):
 class TrustedDeviceAdmin(BaseModelAdmin):
     list_display = [
         "token_hash_short",
-        "customer_id_short",
+        "subject_display",
         "label",
         "status_badge",
         "last_used_at",
         "created_at",
     ]
-    list_filter = ["is_active", ExpiredFilter]
-    search_fields = ["customer_id", "label"]
+    list_filter = ["subject_type", "is_active", ExpiredFilter]
+    search_fields = ["subject_id", "label"]
     readonly_fields = [
         "id",
-        "customer_id",
+        "subject_type",
+        "subject_id",
         "token_hash",
         "user_agent",
         "ip_address",
@@ -287,20 +288,23 @@ class TrustedDeviceAdmin(BaseModelAdmin):
     date_hierarchy = "created_at"
 
     fieldsets = [
-        (None, {"fields": ["id", "customer_id", "token_hash"]}),
+        (None, {"fields": ["id", "subject_type", "subject_id", "token_hash"]}),
         ("Dispositivo", {"fields": ["label", "user_agent", "ip_address"]}),
         ("Ciclo de vida", {"fields": ["created_at", "expires_at", "last_used_at", "is_active"]}),
     ]
 
-    actions = ["revoke_selected", "revoke_all_for_customer"]
+    actions = ["revoke_selected", "revoke_all_for_subject"]
 
     @display(description="Hash do token")
     def token_hash_short(self, obj):
         return obj.token_hash[:12] + "…"
 
-    @display(description="Cliente")
-    def customer_id_short(self, obj):
-        return str(obj.customer_id)[:8] + "…"
+    @display(description="Sujeito")
+    def subject_display(self, obj):
+        """Cliente aparece abreviado (UUID); display aparece inteiro (a ref é curta)."""
+        if obj.subject_type == "display":
+            return f"📺 {obj.subject_id}"
+        return f"👤 {str(obj.subject_id)[:8]}…"
 
     @display(description="Situação")
     def status_badge(self, obj):
@@ -316,16 +320,15 @@ class TrustedDeviceAdmin(BaseModelAdmin):
         count = queryset.filter(is_active=True).update(is_active=False)
         self.message_user(request, f"{count} dispositivo(s) revogado(s).")
 
-    @admin.action(description="Revogar TODOS os dispositivos dos clientes selecionados")
-    def revoke_all_for_customer(self, request, queryset):
-        customer_ids = set(queryset.values_list("customer_id", flat=True))
-        count = TrustedDevice.objects.filter(
-            customer_id__in=customer_ids,
-            is_active=True,
-        ).update(is_active=False)
+    @admin.action(description="Revogar TODOS os dispositivos dos sujeitos selecionados")
+    def revoke_all_for_subject(self, request, queryset):
+        pairs = set(queryset.values_list("subject_type", "subject_id"))
+        count = 0
+        for subject_type, subject_id in pairs:
+            count += TrustedDevice.revoke_all_for(subject_type, subject_id)
         self.message_user(
             request,
-            f"{count} dispositivo(s) revogado(s) em {len(customer_ids)} cliente(s).",
+            f"{count} dispositivo(s) revogado(s) em {len(pairs)} sujeito(s).",
         )
 
     def has_add_permission(self, request):

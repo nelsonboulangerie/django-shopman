@@ -41,21 +41,52 @@ def _default_expires_at():
     return timezone.now() + timedelta(days=doorman_settings.DEVICE_TRUST_TTL_DAYS)
 
 
+class SubjectType(models.TextChoices):
+    """De quem — ou de quê — este dispositivo é confiável.
+
+    Confiança de dispositivo é "este navegador já foi verificado para X, então não
+    verifique de novo". O X não precisa ser uma pessoa: um quadro de menu na parede
+    é um navegador autorizado a ler um quadro, e a forma é a mesma.
+
+    Segue ``handle_type`` + ``handle_ref`` da constituição §3.1 — chave de vínculo
+    com ator/canal/contexto — e por isso o sujeito é textual, não UUID: cliente é
+    identificado por UUID, display por ``ref`` de canal.
+
+    ``operator`` NÃO existe aqui. Lembrar o terminal do PDV para não pedir PIN toda
+    hora é feature legítima e sem pedido — §8.3: se a resposta é "não sei", ainda não
+    entra. A forma admite o terceiro valor sem quebra.
+    """
+
+    CUSTOMER = "customer", _("cliente")
+    DISPLAY = "display", _("display")
+
+
 class TrustedDevice(models.Model):
     """
-    A trusted device for a customer.
+    Um dispositivo confiável para um sujeito (cliente ou display).
 
-    After OTP verification, a secure cookie is set on the device.
-    On next login from this device, the customer can skip OTP.
+    Cliente: depois da verificação por OTP, um cookie seguro fica no dispositivo, e
+    no acesso seguinte daquele navegador o cliente pula o OTP.
+
+    Display: um quadro de menu autorizado uma vez por operador continua abrindo, sem
+    login e sem credencial na URL — revogável por dispositivo no Admin.
     """
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
 
-    # Link to customer (UUID, not FK — same decoupling pattern)
-    customer_id = models.UUIDField(
-        _("ID do cliente"),
+    # Sujeito tipado (sem FK — mesmo padrão de desacoplamento de sempre)
+    subject_type = models.CharField(
+        _("tipo de sujeito"),
+        max_length=16,
+        choices=SubjectType.choices,
+        default=SubjectType.CUSTOMER,
         db_index=True,
-        help_text=_("UUID do cliente no Guestman"),
+    )
+    subject_id = models.CharField(
+        _("ID do sujeito"),
+        max_length=64,
+        db_index=True,
+        help_text=_("UUID do cliente no Guestman, ou ref do canal de exibição."),
     )
 
     # Device identification (HMAC of the cookie token)
@@ -94,13 +125,13 @@ class TrustedDevice(models.Model):
         verbose_name_plural = _("dispositivos confiáveis")
         ordering = ["-created_at"]
         indexes = [
-            models.Index(fields=["customer_id", "is_active"]),
+            models.Index(fields=["subject_type", "subject_id", "is_active"]),
             models.Index(fields=["expires_at"]),
         ]
 
     def __str__(self):
         status = "active" if self.is_valid else "expired"
-        return f"Device {self.token_hash[:8]}… for customer {self.customer_id} ({status})"
+        return f"Device {self.token_hash[:8]}… for {self.subject_type} {self.subject_id} ({status})"
 
     @property
     def is_expired(self) -> bool:
@@ -125,9 +156,10 @@ class TrustedDevice(models.Model):
     # ===========================================
 
     @classmethod
-    def create_for_customer(
+    def create_for(
         cls,
-        customer_id: uuid.UUID,
+        subject_type: str,
+        subject_id: str,
         user_agent: str = "",
         ip_address: str | None = None,
         label: str = "",
@@ -140,7 +172,8 @@ class TrustedDevice(models.Model):
         """
         raw_token = secrets.token_urlsafe(32)
         device = cls.objects.create(
-            customer_id=customer_id,
+            subject_type=subject_type,
+            subject_id=str(subject_id),
             token_hash=_hash_token(raw_token),
             user_agent=user_agent[:512],
             ip_address=ip_address,
@@ -169,10 +202,10 @@ class TrustedDevice(models.Model):
         return device
 
     @classmethod
-    def revoke_all_for_customer(cls, customer_id: uuid.UUID) -> int:
-        """Revoke all trusted devices for a customer."""
+    def revoke_all_for(cls, subject_type: str, subject_id: str) -> int:
+        """Revoke every trusted device of one subject."""
         return cls.objects.filter(
-            customer_id=customer_id, is_active=True
+            subject_type=subject_type, subject_id=str(subject_id), is_active=True
         ).update(is_active=False)
 
     @classmethod

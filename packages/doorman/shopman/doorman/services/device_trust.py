@@ -19,7 +19,7 @@ import uuid
 from typing import TYPE_CHECKING
 
 from ..conf import doorman_settings
-from ..models.device_trust import TrustedDevice
+from ..models.device_trust import SubjectType, TrustedDevice
 from ..signals import device_trusted
 
 if TYPE_CHECKING:
@@ -35,20 +35,23 @@ class DeviceTrustService:
     """Service for device trust operations."""
 
     @classmethod
-    def check_device_trust(
-        cls, request: HttpRequest, customer_id: uuid.UUID
-    ) -> bool:
-        """
-        Check if the current request comes from a trusted device
-        for the given customer.
+    def cookie_name_for(cls, subject_type: str) -> str:
+        """Cookie de cada tipo de sujeito. Um cookie guarda um token só."""
+        if subject_type == SubjectType.DISPLAY:
+            return doorman_settings.DEVICE_TRUST_DISPLAY_COOKIE_NAME
+        return doorman_settings.DEVICE_TRUST_COOKIE_NAME
 
-        Returns True if the device is trusted and the customer matches.
+    @classmethod
+    def check(cls, request: HttpRequest, subject_type: str, subject_id) -> bool:
+        """O request vem de um dispositivo confiável DESTE sujeito?
+
+        Token válido de outro sujeito não serve: a checagem confere o par
+        (tipo, id), então cookie de um quadro não abre outro.
         """
         if not doorman_settings.DEVICE_TRUST_ENABLED:
             return False
 
-        cookie_name = doorman_settings.DEVICE_TRUST_COOKIE_NAME
-        raw_token = request.COOKIES.get(cookie_name)
+        raw_token = request.COOKIES.get(cls.cookie_name_for(subject_type))
         if not raw_token:
             return False
 
@@ -56,24 +59,25 @@ class DeviceTrustService:
         if device is None:
             return False
 
-        # Ensure the device belongs to this customer
-        if device.customer_id != customer_id:
+        if device.subject_type != subject_type or device.subject_id != str(subject_id):
             return False
 
         logger.info(
             "Device trust verified",
             extra={
-                "customer_id": str(customer_id),
+                "subject_type": subject_type,
+                "subject_id": str(subject_id),
                 "device_id": str(device.id),
             },
         )
         return True
 
     @classmethod
-    def trust_device(
+    def trust(
         cls,
         response: HttpResponse,
-        customer_id: uuid.UUID,
+        subject_type: str,
+        subject_id,
         request: HttpRequest,
     ) -> TrustedDevice | None:
         """
@@ -91,14 +95,15 @@ class DeviceTrustService:
 
         ip = get_client_ip(request, doorman_settings.TRUSTED_PROXY_DEPTH)
 
-        device, raw_token = TrustedDevice.create_for_customer(
-            customer_id=customer_id,
+        device, raw_token = TrustedDevice.create_for(
+            subject_type=subject_type,
+            subject_id=subject_id,
             user_agent=user_agent,
             ip_address=ip,
         )
 
         # Set cookie
-        cookie_name = doorman_settings.DEVICE_TRUST_COOKIE_NAME
+        cookie_name = cls.cookie_name_for(subject_type)
         max_age = doorman_settings.DEVICE_TRUST_TTL_DAYS * 86400
         response.set_cookie(
             cookie_name,
@@ -113,14 +118,16 @@ class DeviceTrustService:
         device_trusted.send(
             sender=cls,
             device=device,
-            customer_id=customer_id,
+            subject_type=subject_type,
+            subject_id=str(subject_id),
             request=request,
         )
 
         logger.info(
             "Device trusted",
             extra={
-                "customer_id": str(customer_id),
+                "subject_type": subject_type,
+                "subject_id": str(subject_id),
                 "device_id": str(device.id),
                 "label": device.label,
             },
@@ -146,7 +153,7 @@ class DeviceTrustService:
     @classmethod
     def revoke_all(cls, customer_id: uuid.UUID) -> int:
         """Revoke all trusted devices for a customer."""
-        count = TrustedDevice.revoke_all_for_customer(customer_id)
+        count = TrustedDevice.revoke_all_for(SubjectType.CUSTOMER, customer_id)
         if count:
             logger.info(
                 "All devices revoked",

@@ -336,7 +336,7 @@ def test_trusted_device_login_preserves_cart_when_session_flushes(client, monkey
     session.save()
 
     monkeypatch.setattr(
-        DeviceTrustService, "check_device_trust", classmethod(lambda cls, request, cid: True)
+        DeviceTrustService, "check", classmethod(lambda cls, request, st, sid: True)
     )
     resp = client.post(
         "/api/v1/auth/device-check/",

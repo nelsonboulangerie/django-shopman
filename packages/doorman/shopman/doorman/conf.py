@@ -102,6 +102,10 @@ class DoormanSettings:
     DEVICE_TRUST_ENABLED: bool = True
     DEVICE_TRUST_TTL_DAYS: int = 30
     DEVICE_TRUST_COOKIE_NAME: str = "doorman_dt"
+    # Cookie SEPARADO para display: o navegador do gestor pode confiar num quadro
+    # sem atropelar a confiança de cliente do mesmo navegador (um cookie guarda um
+    # token só).
+    DEVICE_TRUST_DISPLAY_COOKIE_NAME: str = "doorman_dt_display"
 
     # Access Link email login (one-click login via email)
     ACCESS_LINK_ENABLED: bool = True

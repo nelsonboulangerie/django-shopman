@@ -263,17 +263,18 @@ class TrustedDeviceExpiredFilter(admin.SimpleListFilter):
 class TrustedDeviceAdmin(admin.ModelAdmin):
     list_display = [
         "token_hash_short",
-        "customer_id_short",
+        "subject_display",
         "label",
         "status_badge",
         "last_used_at",
         "created_at",
     ]
-    list_filter = ["is_active", TrustedDeviceExpiredFilter]
-    search_fields = ["customer_id", "label"]
+    list_filter = ["subject_type", "is_active", TrustedDeviceExpiredFilter]
+    search_fields = ["subject_id", "label"]
     readonly_fields = [
         "id",
-        "customer_id",
+        "subject_type",
+        "subject_id",
         "token_hash",
         "user_agent",
         "ip_address",
@@ -287,22 +288,24 @@ class TrustedDeviceAdmin(admin.ModelAdmin):
     date_hierarchy = "created_at"
 
     fieldsets = [
-        (None, {"fields": ["id", "customer_id", "token_hash"]}),
+        (None, {"fields": ["id", "subject_type", "subject_id", "token_hash"]}),
         ("Device", {"fields": ["label", "user_agent", "ip_address"]}),
         ("Lifecycle", {"fields": ["created_at", "expires_at", "last_used_at", "is_active"]}),
     ]
 
-    actions = ["revoke_selected", "revoke_all_for_customer"]
+    actions = ["revoke_selected", "revoke_all_for_subject"]
 
     def token_hash_short(self, obj):
         return obj.token_hash[:12] + "..."
 
     token_hash_short.short_description = "Token Hash"
 
-    def customer_id_short(self, obj):
-        return str(obj.customer_id)[:8] + "..."
+    def subject_display(self, obj):
+        if obj.subject_type == "display":
+            return f"display {obj.subject_id}"
+        return f"customer {str(obj.subject_id)[:8]}..."
 
-    customer_id_short.short_description = "Customer"
+    subject_display.short_description = "Subject"
 
     def status_badge(self, obj):
         if not obj.is_active:
@@ -319,16 +322,15 @@ class TrustedDeviceAdmin(admin.ModelAdmin):
         count = queryset.filter(is_active=True).update(is_active=False)
         self.message_user(request, f"{count} device(s) revoked.")
 
-    @admin.action(description="Revoke ALL devices for selected customers")
-    def revoke_all_for_customer(self, request, queryset):
-        customer_ids = set(queryset.values_list("customer_id", flat=True))
-        count = TrustedDevice.objects.filter(
-            customer_id__in=customer_ids,
-            is_active=True,
-        ).update(is_active=False)
+    @admin.action(description="Revoke ALL devices for selected subjects")
+    def revoke_all_for_subject(self, request, queryset):
+        pairs = set(queryset.values_list("subject_type", "subject_id"))
+        count = 0
+        for subject_type, subject_id in pairs:
+            count += TrustedDevice.revoke_all_for(subject_type, subject_id)
         self.message_user(
             request,
-            f"{count} device(s) revoked across {len(customer_ids)} customer(s).",
+            f"{count} device(s) revoked across {len(pairs)} subject(s).",
         )
 
     def has_add_permission(self, request):
