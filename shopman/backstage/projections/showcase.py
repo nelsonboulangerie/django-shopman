@@ -1,5 +1,5 @@
 """
-Projeção dos Feeds (Showcase) para o Gestor — o lado DISPLAY do cardápio.
+Projeção dos canais de EXIBIÇÃO para o Gestor — o lado display do cardápio.
 
 Um Feed exibe um recorte de coleções para fora (📺 menuboard / 🛰 Google/Meta) sem
 transacionar. Esta projeção lista os feeds + a saída (URL para abrir/prever) +
@@ -13,22 +13,24 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-_KIND_META = {
-    "menuboard": {"label": "Menuboard (TV)", "icon": "tv", "capability": "display"},
-    "google": {"label": "Feed Google", "icon": "rss", "capability": "feed"},
-    "meta": {"label": "Feed Meta", "icon": "rss", "capability": "feed"},
+# O `kind` da tela deriva de `display.format`: formato VAZIO é quadro (rota nossa),
+# formato preenchido é feed de plataforma (dialeto de terceiro).
+_FORMAT_META = {
+    "": {"kind": "menuboard", "label": "Menuboard (TV)", "icon": "tv", "capability": "display"},
+    "google_merchant": {"kind": "google", "label": "Feed Google", "icon": "rss", "capability": "feed"},
+    "meta_catalog": {"kind": "meta", "label": "Feed Meta", "icon": "rss", "capability": "feed"},
 }
 
 
-def _output_path(showcase) -> str:
-    """Caminho público da saída do feed (abrir/prever)."""
-    if showcase.kind == "menuboard":
-        return f"/menuboard/{showcase.ref}/"
-    if showcase.kind == "meta":
-        return f"/feed/{showcase.ref}.xml?platform=meta"
-    if showcase.kind == "google":
-        return f"/feed/{showcase.ref}.xml"
-    return ""
+def _output_path(ref: str, fmt: str) -> str:
+    """Caminho da saída (abrir/prever).
+
+    O `?platform=` saiu: o formato é propriedade do CANAL, não parâmetro de query —
+    dois jeitos de dizer a mesma coisa é um jeito a mais de discordarem.
+    """
+    if not fmt:
+        return f"/menuboard/{ref}/"
+    return f"/feed/{ref}.xml"
 
 
 @dataclass(frozen=True)
@@ -67,17 +69,22 @@ class ShowcaseBoardProjection:
 def build_showcase_board() -> ShowcaseBoardProjection:
     from shopman.offerman.models import Collection
 
-    from shopman.shop.models import Showcase
+    from shopman.shop.models import Channel
 
     collections = list(Collection.objects.filter(is_active=True).order_by("sort_order", "name"))
     coll_by_ref = {c.ref: c for c in collections}
     order_index = {c.ref: i for i, c in enumerate(collections)}
 
     showcases: list[ShowcaseProjection] = []
-    for sc in Showcase.objects.all().order_by("name"):
-        meta = _KIND_META.get(sc.kind, {"label": sc.kind, "icon": "monitor", "capability": "display"})
-        # resolve + ordena as coleções do feed pela ordem global (sort_order)
-        refs = sc.collection_refs()
+    channels = Channel.objects.filter(
+        commerce_policy=Channel.CommercePolicy.DISPLAY
+    ).order_by("name")
+    for sc in channels:
+        display = (sc.config or {}).get("display") or {}
+        fmt = display.get("format") or ""
+        meta = _FORMAT_META.get(fmt, {"kind": fmt, "label": fmt, "icon": "monitor", "capability": "display"})
+        # resolve + ordena as coleções do canal pela ordem global (sort_order)
+        refs = list(display.get("collections") or [])
         resolved = [
             ShowcaseCollectionRef(
                 ref=r,
@@ -91,12 +98,12 @@ def build_showcase_board() -> ShowcaseBoardProjection:
             ShowcaseProjection(
                 ref=sc.ref,
                 name=sc.name or sc.ref,
-                kind=sc.kind,
+                kind=meta["kind"],
                 kind_label=meta["label"],
                 kind_icon=meta["icon"],
                 capability=meta["capability"],
                 is_active=sc.is_active,
-                output_path=_output_path(sc),
+                output_path=_output_path(sc.ref, fmt),
                 collections=tuple(resolved),
             )
         )

@@ -63,11 +63,19 @@ def _all_channel_refs() -> list[str]:
     )
 
 
-def _is_showcase(surface_ref: str) -> bool:
-    """A superfície é um Feed (menuboard/plataforma) e não um Canal transacional?"""
-    from shopman.shop.models import Showcase
+def _is_display_surface(surface_ref: str) -> bool:
+    """A superfície EXIBE sem transacionar (TV, feed) e não vende?
 
-    return Showcase.objects.filter(ref=surface_ref).exists()
+    A pergunta é sobre POLÍTICA COMERCIAL, não sobre qual tabela guarda a linha —
+    é o que a ADR-018 conseguiu ao absorver o `Showcase`: a mesma tabela, e o que
+    distingue é `commerce_policy`. Uma célula de exibição não tem preço para
+    escrever, então pausar ali grava em `display.paused_skus`, não num ListingItem.
+    """
+    from shopman.shop.models import Channel
+
+    return Channel.objects.filter(
+        ref=surface_ref, commerce_policy=Channel.CommercePolicy.DISPLAY
+    ).exists()
 
 
 def set_cell(
@@ -84,14 +92,14 @@ def set_cell(
     Superfície de FEED (menuboard/plataforma) só aceita pausar/reativar: ``is_sellable``
     vira a pausa local do item (não há preço nem publicação — feed não transaciona).
     """
-    if _is_showcase(surface_ref):
+    if _is_display_surface(surface_ref):
         from types import SimpleNamespace
 
-        from shopman.backstage.services import showcase as showcase_service
+        from shopman.backstage.services import showcase as display_service
 
         if is_sellable is None:
             raise CatalogError("Feed aceita apenas pausar/reativar (is_sellable).")
-        showcase_service.set_item_paused(surface_ref, sku, paused=not is_sellable)
+        display_service.set_item_paused(surface_ref, sku, paused=not is_sellable)
         # Duck-type com o que a API lê: feed está sempre "publicado", sem preço.
         return SimpleNamespace(is_published=True, is_sellable=bool(is_sellable), price_q=None)
 
@@ -171,13 +179,13 @@ def bulk_set(
             bulk_set(skus, ref, is_published=is_published, is_sellable=is_sellable, actor=actor)
             for ref in _all_channel_refs()
         )
-    if _is_showcase(surface_ref):
+    if _is_display_surface(surface_ref):
         # Feed: bulk só pausa/reativa (is_sellable). Sem preço/publicação.
         if is_sellable is None:
             raise CatalogError("Feed aceita apenas pausar/reativar (is_sellable).")
-        from shopman.backstage.services import showcase as showcase_service
+        from shopman.backstage.services import showcase as display_service
 
-        return showcase_service.set_items_paused(surface_ref, skus, paused=not is_sellable)
+        return display_service.set_items_paused(surface_ref, skus, paused=not is_sellable)
     updates: dict[str, bool] = {}
     if is_published is not None:
         updates["is_published"] = is_published

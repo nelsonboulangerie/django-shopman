@@ -19,7 +19,8 @@ from shopman.offerman.models import (
     Product,
 )
 
-from shopman.shop.models import Channel, Shop, Showcase
+from shopman.shop.models import Channel, Shop
+from shopman.shop.tests._display import display_channel
 
 
 def _manage_catalog_perm() -> Permission:
@@ -460,12 +461,17 @@ def test_reorder_items_manual(client, operator, catalog):
 # ── feeds como colunas (superfície menuboard/plataforma, não-transacional) ─
 
 
+
+def _paused_skus(ref: str) -> set[str]:
+    """A pausa local do canal de exibição — antes vivia em ``Showcase.options``."""
+    channel = Channel.objects.get(ref=ref)
+    return {str(x) for x in ((channel.config or {}).get("display") or {}).get("paused_skus") or []}
+
+
 @pytest.fixture
 def catalog_with_showcase(catalog):
-    """Um Feed menuboard exibindo a coleção Doces (só BOLO é membro)."""
-    Showcase.objects.create(
-        ref="tv-salao", name="TV do Salão", kind="menuboard", collections=["doces"], is_active=True
-    )
+    """Um canal de exibição (quadro) mostrando a coleção Doces (só BOLO é membro)."""
+    display_channel("tv-salao", "TV do Salão", collections=["doces"], prices_from="pdv")
     return catalog
 
 
@@ -490,14 +496,16 @@ def test_surface_short_name_falls_back_to_name(client, operator, catalog_with_sh
     assert surfaces["web"]["short_name"] == surfaces["web"]["name"]
 
 
-def test_surface_short_name_from_config_and_options(client, operator, catalog_with_showcase):
-    """O rótulo curto vem do backend: ChannelConfig p/ canal, options p/ feed."""
-    channel = Channel.objects.get(ref="web")
-    channel.config = {**(channel.config or {}), "short_name": "Site"}
-    channel.save(update_fields=["config"])
-    showcase = Showcase.objects.get(ref="tv-salao")
-    showcase.options = {**(showcase.options or {}), "short_name": "TV1"}
-    showcase.save(update_fields=["options"])
+def test_surface_short_name_comes_from_one_place(client, operator, catalog_with_showcase):
+    """O rótulo curto vem de `config.short_name` — transacional E exibição.
+
+    Antes o canal lia de `ChannelConfig` e o feed de `Showcase.options`: mesma
+    pergunta, dois lugares. Absorvido o Showcase, sobra um.
+    """
+    for ref, short in (("web", "Site"), ("tv-salao", "TV1")):
+        channel = Channel.objects.get(ref=ref)
+        channel.config = {**(channel.config or {}), "short_name": short}
+        channel.save(update_fields=["config"])
 
     client.force_login(operator)
     surfaces = {s["ref"]: s for s in client.get(MATRIX_URL).json()["matrix"]["surfaces"]}
@@ -532,7 +540,7 @@ def test_showcase_cell_membership_and_no_price(client, operator, catalog_with_sh
 
 
 def test_showcase_cell_pause_routes_to_showcase(client, operator, catalog_with_showcase):
-    """Pausar a célula do feed grava em Showcase.options[paused_skus] (sem tocar listings)."""
+    """Pausar a célula grava em config.display.paused_skus (sem tocar listings)."""
     client.force_login(operator)
     resp = client.post(
         CELL_URL,
@@ -541,7 +549,7 @@ def test_showcase_cell_pause_routes_to_showcase(client, operator, catalog_with_s
     )
     assert resp.status_code == 200
     assert resp.json()["is_sellable"] is False
-    assert Showcase.objects.get(ref="tv-salao").paused_skus() == {"BOLO"}
+    assert _paused_skus("tv-salao") == {"BOLO"}
 
     # e a matriz reflete indisponível só nesta coluna
     matrix = client.get(MATRIX_URL).json()["matrix"]
@@ -557,7 +565,7 @@ def test_showcase_cell_pause_routes_to_showcase(client, operator, catalog_with_s
         content_type="application/json",
     )
     assert resp.status_code == 200
-    assert Showcase.objects.get(ref="tv-salao").paused_skus() == set()
+    assert _paused_skus("tv-salao") == set()
 
 
 def test_showcase_cell_price_rejected(client, operator, catalog_with_showcase):
@@ -592,7 +600,7 @@ def test_showcase_bulk_pause(client, operator, catalog_with_showcase):
     )
     assert resp.status_code == 200
     assert resp.json()["count"] == 1
-    assert Showcase.objects.get(ref="tv-salao").paused_skus() == {"BOLO"}
+    assert _paused_skus("tv-salao") == {"BOLO"}
 
 
 def test_reorder_items_smart_rejected(client, operator, catalog):
@@ -638,14 +646,14 @@ def test_sync_status_returns_recorded_states(client, operator, catalog):
     assert data["PAO"]["google"]["error"] == "boom"
 
 
-def test_sync_status_filtered_by_platform(client, operator, catalog):
+def test_sync_status_filtered_by_channel(client, operator, catalog):
     from shopman.shop.services import catalog_sync
 
     catalog_sync.record_sync("PAO", "meta", status="synced")
     catalog_sync.record_sync("PAO", "google", status="synced")
 
     client.force_login(operator)
-    data = client.get(SYNC_STATUS_URL, {"platform": "meta"}).json()["sync_status"]
+    data = client.get(SYNC_STATUS_URL, {"channel_ref": "meta"}).json()["sync_status"]
     assert set(data["PAO"]) == {"meta"}
 
 
@@ -663,11 +671,11 @@ def test_resync_enqueues_directive(client, operator, catalog):
     client.force_login(operator)
     resp = client.post(
         RESYNC_URL,
-        data={"sku": "PAO", "platform": "ifood"},
+        data={"sku": "PAO", "channel_ref": "ifood"},
         content_type="application/json",
     )
     assert resp.status_code == 200
-    assert resp.json()["platforms"] == ["ifood"]
+    assert resp.json()["channels"] == ["ifood"]
     assert Directive.objects.filter(topic=CATALOG_PROJECT_SKU, payload__sku="PAO").exists()
 
 

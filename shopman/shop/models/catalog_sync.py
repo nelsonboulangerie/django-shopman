@@ -1,6 +1,6 @@
-"""Per-(product, platform) catalog sync state.
+"""Per-(product, channel) catalog sync state.
 
-Records the outcome of the last projection of a SKU to each external platform
+Records the outcome of the last projection of a SKU to each external channel
 (iFood, Meta, Google, WhatsApp, TikTok): status, when, external id, error. Fine
 and queryable — the source of truth the operator matrix reads for a per-cell
 badge, replacing the bare ``Listing.projection_metadata['last_projected_skus']``.
@@ -25,8 +25,12 @@ class SyncStatus(models.TextChoices):
 class CatalogSyncState(models.Model):
     sku = models.CharField(max_length=100, db_index=True)
     # Platform / projection channel ref (== listing_ref): ifood, meta, google, whatsapp, tiktok.
-    platform = models.CharField(max_length=32, db_index=True)
-    # Id of the item on the external platform (e.g. Meta retailer_id, iFood item uuid).
+    # Ref do canal — transacional (`ifood`) ou de exibição (`meta-catalog`). Era
+    # `platform`, e o valor para exibição era o `kind` do antigo `Showcase` ("meta"),
+    # enquanto canal usava ref: duas chaves para a mesma pergunta. Absorvido o
+    # Showcase (ADR-018), sobra o ref.
+    channel_ref = models.CharField(max_length=32, db_index=True)
+    # Id of the item on the external channel (e.g. Meta retailer_id, iFood item uuid).
     external_id = models.CharField(max_length=200, blank=True)
     status = models.CharField(max_length=16, choices=SyncStatus.choices, default=SyncStatus.PENDING)
     last_synced_at = models.DateTimeField(null=True, blank=True)
@@ -40,9 +44,9 @@ class CatalogSyncState(models.Model):
         verbose_name = "estado de sync do catálogo"
         verbose_name_plural = "estados de sync do catálogo"
         constraints = [
-            models.UniqueConstraint(fields=["sku", "platform"], name="uniq_catalog_sync_sku_platform"),
+            models.UniqueConstraint(fields=["sku", "channel_ref"], name="uniq_catalog_sync_sku_channel"),
         ]
-        indexes = [models.Index(fields=["platform", "status"])]
+        indexes = [models.Index(fields=["channel_ref", "status"])]
 
     def __str__(self) -> str:
-        return f"{self.sku}@{self.platform}: {self.status}"
+        return f"{self.sku}@{self.channel_ref}: {self.status}"

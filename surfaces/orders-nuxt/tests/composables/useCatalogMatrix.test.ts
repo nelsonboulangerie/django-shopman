@@ -100,22 +100,22 @@ describe("useCatalogMatrix — lote + reordenação", () => {
 describe("useCatalogMatrix — sync + PIM (Arc H)", () => {
   beforeEach(() => env.reset());
 
-  it("resync(sku, platform) posta {sku, platform} e reconcilia", async () => {
+  it("resync(sku, channelRef) posta {sku, channel_ref} e reconcilia", async () => {
     const m = useCatalogMatrix();
     expect(await m.resync("PAO", "ifood")).toBe(true);
     const [url, opts] = env.fetchMock.mock.calls[0]!;
     expect(String(url)).toBe("/api/v1/backstage/catalog/resync/");
-    expect(opts.body).toEqual({ sku: "PAO", platform: "ifood" });
+    expect(opts.body).toEqual({ sku: "PAO", channel_ref: "ifood" });
     expect(env.refresh).toHaveBeenCalledTimes(1);
     expect(env.sonner.success).toHaveBeenCalledWith("Reenvio agendado.");
   });
 
-  it("resync(sku) sem plataforma reenvia a todas", async () => {
+  it("resync(sku) sem canal reenvia a todos", async () => {
     const m = useCatalogMatrix();
     await m.resync("PAO");
     const [, opts] = env.fetchMock.mock.calls[0]!;
     expect(opts.body).toEqual({ sku: "PAO" });
-    expect(env.sonner.success).toHaveBeenCalledWith("Reenvio agendado em todas as plataformas.");
+    expect(env.sonner.success).toHaveBeenCalledWith("Reenvio agendado em todos os canais.");
   });
 
   it("resync em voo bloqueia a 2ª chamada (mesma célula)", async () => {

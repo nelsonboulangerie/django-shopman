@@ -23,13 +23,11 @@ from .settings_proxies import (
     ShopProduction,
 )
 from .shop import NotificationTemplate, Shop
-from .showcase import Showcase
 from .user_notification import NotificationCategory, UserNotification
 
 __all__ = [
     "Shop",
     "Channel",
-    "Showcase",
     "CatalogSyncState",
     "SyncStatus",
     "NotificationTemplate",

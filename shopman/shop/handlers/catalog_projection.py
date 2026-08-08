@@ -73,7 +73,7 @@ class CatalogProjectHandler:
         retracting = not (item is not None and item.is_published and item.is_sellable)
 
         # Publish rules gate an UPSERT (not a retract): don't push an item the
-        # platform would reject (imageless) or that has no stock yet (→ pending,
+        # channel_ref would reject (imageless) or that has no stock yet (→ pending,
         # re-projected when availability_changed fires).
         if not retracting:
             gate = social_publish_rules.projection_gate(item, listing_ref)
@@ -113,12 +113,15 @@ class CatalogProjectHandler:
 
 
 def _channel_or_showcase_active(listing_ref: str) -> bool:
-    from shopman.shop.models import Channel, Showcase
+    from shopman.shop.models import Channel
 
     if Channel.objects.filter(ref=listing_ref, is_active=True).exists():
         return True
-    # Showcase projection backends are keyed by kind (e.g. "meta"), not ref.
-    if Showcase.objects.filter(kind=listing_ref, is_active=True).exists():
+    # Canal de exibição também é alvo de projeção (o catálogo Meta é um deles), e
+    # agora chaveia por ref igual ao transacional — era por `kind`, duas chaves.
+    if Channel.objects.filter(
+        ref=listing_ref, is_active=True, commerce_policy=Channel.CommercePolicy.DISPLAY
+    ).exists():
         return True
     return False
 

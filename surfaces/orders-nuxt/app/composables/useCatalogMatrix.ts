@@ -161,20 +161,20 @@ export function useCatalogMatrix(collectionRef?: Ref<string>) {
   }
 
   // ── sync por plataforma (Arc H) ────────────────────────────────────────────
-  // Re-enfileira a projeção de um SKU numa plataforma (ou em todas, sem platform).
+  // Re-enfileira a projeção de um SKU num canal (ou em todos, sem channelRef).
   // Otimista no selo? Não — o push é async (Directive); marca a célula como ocupada
   // e refaz o fetch canônico, que já traz o estado atualizado quando o worker roda.
-  async function resync(sku: string, platform?: string): Promise<boolean> {
-    const key = platform ? cellKey(sku, platform) : productKey(sku);
+  async function resync(sku: string, channelRef?: string): Promise<boolean> {
+    const key = channelRef ? cellKey(sku, channelRef) : productKey(sku);
     if (busy.value.has(key)) return false;
     clearError();
     busy.value = new Set(busy.value).add(key);
     try {
       await $fetch("/api/v1/backstage/catalog/resync/", {
         method: "POST",
-        body: platform ? { sku, platform } : { sku },
+        body: channelRef ? { sku, channel_ref: channelRef } : { sku },
       });
-      useSonner.success(platform ? "Reenvio agendado." : "Reenvio agendado em todas as plataformas.");
+      useSonner.success(channelRef ? "Reenvio agendado." : "Reenvio agendado em todos os canais.");
       await refresh();
       return true;
     } catch (error) {

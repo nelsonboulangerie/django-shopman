@@ -1,4 +1,4 @@
-"""URLs públicas dos Feeds (shop.Showcase) — menuboard (TV) e plataforma (Google/Meta).
+"""URLs dos canais de EXIBIÇÃO — quadro na TV (interno) e feed de plataforma (público).
 
 Um Feed exibe um conjunto de coleções para fora, sem transacionar: menuboard
 (quadro numa TV, tempo real via SSE) e feed (RSS 2.0 que Google/Meta buscam agendado).

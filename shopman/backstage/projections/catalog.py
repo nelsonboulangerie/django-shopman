@@ -50,7 +50,7 @@ class SurfaceProjection:
     icon: str = ""  # dica de ícone p/ feeds (tv/rss)
     is_active: bool = True  # feed ligado/desligado (canal sempre ativo aqui)
     output_path: str = ""  # saída pública do feed (abrir/prever); vazio p/ canal
-    sync_key: str = ""  # chave no CatalogSyncState.platform (ref p/ canais, kind p/ showcases)
+    sync_key: str = ""  # ref do canal — a MESMA chave para transacional e exibição
 
 
 @dataclass(frozen=True)
@@ -272,59 +272,82 @@ def _build_surfaces() -> tuple[list[SurfaceProjection], dict[str, dict]]:
     return surfaces, cells_index
 
 
-# capability/ícone por tipo de feed (espelha backstage.projections.showcase)
-_SHOWCASE_META = {
-    "menuboard": {"capability": "display", "icon": "tv", "path": "/menuboard/{ref}/"},
-    "google": {"capability": "feed", "icon": "rss", "path": "/feed/{ref}.xml"},
-    "meta": {"capability": "feed", "icon": "rss", "path": "/feed/{ref}.xml?platform=meta"},
+# capability/ícone por formato de exibição. Formato VAZIO é quadro (rota nossa);
+# formato preenchido é feed de plataforma (dialeto de terceiro).
+_DISPLAY_META = {
+    "": {"capability": "display", "icon": "tv", "path": "/menuboard/{ref}/"},
+    "google_merchant": {"capability": "feed", "icon": "rss", "path": "/feed/{ref}.xml"},
+    "meta_catalog": {"capability": "feed", "icon": "rss", "path": "/feed/{ref}.xml"},
 }
 
 
-def _build_showcase_surfaces() -> tuple[list[SurfaceProjection], dict[str, dict]]:
-    """Feeds como colunas + índice {ref: {"members": set, "paused": set}}.
+def _build_display_surfaces() -> tuple[list[SurfaceProjection], dict[str, dict]]:
+    """Canais de EXIBIÇÃO como colunas + índice {ref: {"members", "paused"}}.
 
-    ``members`` = SKUs presentes no feed (união dos produtos das suas coleções).
-    ``paused`` = pausa LOCAL do item no feed (a global é do produto, gate por cima).
+    ``members`` = SKUs que o canal exibe (união dos produtos das suas coleções).
+    ``paused`` = pausa LOCAL do item neste canal (a global é do produto, gate por cima).
+
+    Eram um model próprio (``Showcase``) até a ADR-018. Duas consequências aparecem
+    aqui: o ``sync_key`` passa a ser o **ref** (era o ``kind``, então canal chaveava
+    por ref e feed por kind — duas chaves para a mesma pergunta), e o ``?channel_ref=``
+    saiu do ``output_path``, porque o formato é propriedade do canal e não parâmetro
+    de query.
+
+    ⚠️ Este enumerador e o ``_build_surfaces`` **se excluem por política**:
+    ``ORDER`` lá, ``DISPLAY`` aqui. Sem isso a matriz duplica cada TV/feed — uma vez
+    como canal, outra como exibição. Foi o erro que a linha de base pegou (11
+    superfícies, 4 duplicadas) quando a absorção entrou sem o filtro.
     """
     from shopman.offerman.conf import get_projection_backend
     from shopman.offerman.models import Collection
 
-    from shopman.shop.models import Showcase
+    from shopman.shop.models import Channel
 
-    showcases = list(Showcase.objects.all().order_by("name"))
-    if not showcases:
+    channels = list(
+        Channel.objects.filter(
+            commerce_policy=Channel.CommercePolicy.DISPLAY
+        ).order_by("name")
+    )
+    if not channels:
         return [], {}
 
-    # resolve os SKUs de cada coleção uma única vez (reuso entre feeds)
-    needed_refs = {r for sc in showcases for r in sc.collection_refs()}
+    def _display(ch) -> dict:
+        return (ch.config or {}).get("display") or {}
+
+    # resolve os SKUs de cada coleção uma única vez (reuso entre canais)
+    needed_refs = {r for ch in channels for r in (_display(ch).get("collections") or [])}
     members_by_coll: dict[str, set[str]] = {}
     for coll in Collection.objects.filter(ref__in=needed_refs):
         members_by_coll[coll.ref] = set(coll.product_queryset().values_list("sku", flat=True))
 
     surfaces: list[SurfaceProjection] = []
     index: dict[str, dict] = {}
-    for sc in showcases:
-        meta = _SHOWCASE_META.get(sc.kind, {"capability": "display", "icon": "monitor", "path": ""})
+    for ch in channels:
+        display = _display(ch)
+        fmt = display.get("format") or ""
+        meta = _DISPLAY_META.get(fmt, {"capability": "display", "icon": "monitor", "path": ""})
         members: set[str] = set()
-        for r in sc.collection_refs():
+        for r in display.get("collections") or []:
             members |= members_by_coll.get(r, set())
-        index[sc.ref] = {"members": members, "paused": sc.paused_skus()}
-        # Showcase projection backends are keyed by kind (e.g. "meta", "google").
-        is_target = get_projection_backend(sc.kind) is not None
-        short = str((sc.options or {}).get("short_name", "")).strip()
+        index[ch.ref] = {
+            "members": members,
+            "paused": {str(s) for s in (display.get("paused_skus") or [])},
+        }
+        is_target = get_projection_backend(ch.ref) is not None
+        short = str((ch.config or {}).get("short_name", "")).strip()
         surfaces.append(
             SurfaceProjection(
-                ref=sc.ref,
-                name=sc.name or sc.ref,
-                short_name=short or sc.name or sc.ref,
+                ref=ch.ref,
+                name=ch.name or ch.ref,
+                short_name=short or ch.name or ch.ref,
                 is_projection_target=is_target,
                 sync_status=_surface_sync_status(None, is_target),
-                sync_key=sc.kind,
+                sync_key=ch.ref,
                 kind=meta["capability"],
                 transactional=False,
                 icon=meta["icon"],
-                is_active=sc.is_active,
-                output_path=meta["path"].format(ref=sc.ref),
+                is_active=ch.is_active,
+                output_path=meta["path"].format(ref=ch.ref),
             )
         )
     return surfaces, index
@@ -340,8 +363,8 @@ def build_catalog_matrix(collection_ref: str = "") -> CatalogMatrixProjection:
     from shopman.offerman.models import Collection, Product
 
     surfaces, cells_index = _build_surfaces()
-    showcase_surfaces, showcase_index = _build_showcase_surfaces()
-    surfaces = surfaces + showcase_surfaces
+    display_surfaces, showcase_index = _build_display_surfaces()
+    surfaces = surfaces + display_surfaces
 
     products = (
         Product.objects.all()

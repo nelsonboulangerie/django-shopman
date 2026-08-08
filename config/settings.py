@@ -612,10 +612,13 @@ if os.environ.get("IFOOD_CATALOG_PROJECTION", "").strip().lower() in ("1", "true
     _CATALOG_PROJECTION_BACKENDS["ifood"] = (
         "shopman.shop.adapters.catalog_projection_ifood.IFoodCatalogProjection"
     )
-# Meta (IG/FB) — projeção do catálogo social, off by default. Keyed pelo listing_ref
-# "meta" (Showcase/Listing Meta). Requer SHOPMAN_META (token + catalog_id) p/ ir live.
+# Meta (IG/FB) — projeção do catálogo social, off by default. Keyed pelo **ref do
+# canal** (`meta-catalog`), igual a todo o resto do registry. Era `"meta"`, o `kind` do
+# antigo `Showcase`: canal chaveava por ref e feed por kind, duas chaves para a mesma
+# pergunta. Com a ADR-018 o feed É um canal, então sobra uma. Requer SHOPMAN_META
+# (token + catalog_id) p/ ir live.
 if os.environ.get("META_CATALOG_PROJECTION", "").strip().lower() in ("1", "true", "yes"):
-    _CATALOG_PROJECTION_BACKENDS["meta"] = (
+    _CATALOG_PROJECTION_BACKENDS["meta-catalog"] = (
         "shopman.shop.adapters.catalog_projection_meta.MetaCatalogProjection"
     )
 

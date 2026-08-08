@@ -296,10 +296,10 @@ class CatalogSyncStatusView(_CatalogBase):
     def get(self, request):
         from shopman.shop.services.catalog_sync import sync_status_map
 
-        platform = (request.query_params.get("platform") or "").strip() or None
+        channel_ref = (request.query_params.get("channel_ref") or "").strip() or None
         skus_param = (request.query_params.get("sku") or "").strip()
         skus = [s for s in (part.strip() for part in skus_param.split(",")) if s] or None
-        return Response({"sync_status": sync_status_map(skus, platform=platform)})
+        return Response({"sync_status": sync_status_map(skus, channel_ref=channel_ref)})
 
 
 class CatalogSocialView(_CatalogBase):
@@ -367,7 +367,7 @@ class CatalogResyncView(_CatalogBase):
 
     def post(self, request):
         sku = (request.data.get("sku") or "").strip()
-        platform = (request.data.get("platform") or "").strip()
+        channel_ref = (request.data.get("channel_ref") or "").strip()
         if not sku:
             return Response({"detail": "sku é obrigatório."}, status=400)
 
@@ -375,10 +375,10 @@ class CatalogResyncView(_CatalogBase):
 
         from shopman.shop.handlers.catalog_projection import enqueue_project
 
-        targets = [platform] if platform else list(get_projection_backend_channels())
+        targets = [channel_ref] if channel_ref else list(get_projection_backend_channels())
         for listing_ref in targets:
             enqueue_project(sku, listing_ref, trigger="manual_resync")
-        return Response({"ok": True, "sku": sku, "platforms": targets})
+        return Response({"ok": True, "sku": sku, "channels": targets})
 
 
 def _field(data, key: str, current: str) -> str:

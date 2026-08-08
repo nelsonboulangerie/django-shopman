@@ -1,4 +1,4 @@
-"""Backstage Showcase (Feeds) API — board + ligar/pausar + coleções."""
+"""Backstage: API dos canais de EXIBIÇÃO — board + ligar/pausar + coleções."""
 
 from __future__ import annotations
 
@@ -7,7 +7,8 @@ from django.contrib.auth.models import Permission, User
 from django.contrib.contenttypes.models import ContentType
 from shopman.offerman.models import Collection
 
-from shopman.shop.models import Shop, Showcase
+from shopman.shop.models import Channel, Shop
+from shopman.shop.tests._display import display_channel
 
 
 def _perm() -> Permission:
@@ -38,8 +39,10 @@ def plain_staff(db, shop):
 def board(db):
     Collection.objects.create(ref="paes", name="Pães", is_active=True, sort_order=1)
     Collection.objects.create(ref="doces", name="Doces", is_active=True, sort_order=2)
-    Showcase.objects.create(ref="tv", name="TV Café", kind="menuboard", collections=["paes"], is_active=True)
-    Showcase.objects.create(ref="google", name="Google", kind="google", collections=[], is_active=False)
+    display_channel("tv", "TV Café", collections=["paes"], prices_from="pdv")
+    google = display_channel("google", "Google", collections=[], fmt="google_merchant", prices_from="web")
+    google.is_active = False
+    google.save(update_fields=["is_active"])
 
 
 BOARD_URL = "/api/v1/backstage/showcases/"
@@ -72,7 +75,7 @@ def test_toggle_active(client, operator, board):
         ACTIVE_URL, data={"ref": "google", "is_active": True}, content_type="application/json"
     )
     assert resp.status_code == 200
-    assert Showcase.objects.get(ref="google").is_active is True
+    assert Channel.objects.get(ref="google").is_active is True
 
 
 def test_set_collections(client, operator, board):
@@ -83,7 +86,7 @@ def test_set_collections(client, operator, board):
         content_type="application/json",
     )
     assert resp.status_code == 200
-    assert Showcase.objects.get(ref="tv").collections == ["doces", "paes"]
+    assert Channel.objects.get(ref="tv").config["display"]["collections"] == ["doces", "paes"]
 
 
 def test_set_collections_unknown_rejected(client, operator, board):

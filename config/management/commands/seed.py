@@ -76,7 +76,7 @@ from shopman.backstage.services.operations import (
     start_checklist_run,
     supervise_task_run,
 )
-from shopman.shop.models import Channel, OmotenashiCopy, RuleConfig, Shop, Showcase
+from shopman.shop.models import Channel, OmotenashiCopy, RuleConfig, Shop
 from shopman.shop.services.dietary_from_recipe import aggregate_dietary_from_recipe
 from shopman.shop.services.nutrition_from_recipe import fill_nutrition_from_recipe
 from shopman.storefront.models import Coupon, Promotion
@@ -164,7 +164,7 @@ class Command(BaseCommand):
         customers = self._seed_customers()
         self._seed_addresses(customers)
         channels = self._seed_channels()
-        self._seed_showcases()
+        self._seed_display_channels()
         self._assert_storefront_products_orderable()
         self._seed_kds()
 
@@ -743,7 +743,6 @@ class Command(BaseCommand):
         # Shop
         Coupon.objects.all().delete()
         Promotion.objects.all().delete()
-        Showcase.objects.all().delete()
         Shop.objects.all().delete()
 
         self.stdout.write("  ✅ Dados limpos")
@@ -3061,65 +3060,74 @@ class Command(BaseCommand):
         self.stdout.write(f"  ✅ {len(channels)} canais")
         return channels
 
-    def _seed_showcases(self):
-        """Feeds (Showcase): superfícies que EXIBEM o catálogo sem transacionar.
+    def _seed_display_channels(self):
+        """Canais de EXIBIÇÃO: mostram o catálogo sem transacionar.
 
         📺 Menuboards (TVs no salão) + 🛰 feeds (Google/Meta). Cada um compõe coleções
-        reais (viram as seções/segmentos). São colunas não-transacionais no Gestor de
-        Catálogo: a pausa global do produto cascateia sobre eles e o operador pode pausar
-        um item em UM feed (options[paused_skus]). Acoplamento frouxo por ref de
-        coleção — não exige coleção-guarda-chuva.
+        reais (viram as seções/segmentos). Acoplamento frouxo por ref de coleção — não
+        exige coleção-guarda-chuva. A pausa global do produto cascateia sobre eles, e o
+        operador pode pausar um item em UM canal (`display.paused_skus`).
+
+        Eram um model próprio (`Showcase`) até a ADR-018: superfície é canal, e o que
+        distinguia as duas coisas era só *poder vender*. Isso virou
+        `commerce_policy`, e o resto do que o Showcase guardava virou o aspecto
+        `display` do `ChannelConfig`.
+
+        **`prices_from` é o ponto todo.** Canal de exibição não vende, logo não tem
+        preço próprio — mas mostra preço, e mostrar o errado vincula o fornecedor. Então
+        ele aponta para quem transaciona:
+
+        · TV do balcão → **PDV**. Está fisicamente na loja; tem de concordar com o caixa.
+        · Google/Meta → **loja online**. É lá que quem clicou vai comprar.
+
+        Enquanto todos os canais cobram igual, isto não muda um centavo na tela. É de
+        propósito: a mudança é de FONTE, e existe para o dia em que o PDV tiver preço
+        próprio — aí a TV acompanha o caixa em vez de anunciar tabela.
         """
-        self.stdout.write("  📺 Feeds...")
+        self.stdout.write("  📺 Canais de exibição...")
+
+        pos_ref = getattr(settings, "SHOPMAN_POS_CHANNEL_REF", "pdv")
+        web_ref = "web"
 
         # `short_name` = rótulo da coluna estreita na matriz do Catálogo. O nome
-        # completo continua valendo na página de Feeds e no Admin, onde ele diz QUAL
-        # TV é ("TV do Café" vs "TV do Salão") — informação que "TV1"/"TV2" perdem.
-        showcases_data = [
-            # (ref, name, short_name, kind, [collection_refs])
-            (
-                "tv-salao",
-                "TV do Salão",
-                "TV2",
-                Showcase.KIND_MENUBOARD,
-                ["rusticos", "finos", "salgados"],
-            ),
-            (
-                "tv-cafe",
-                "TV do Café",
-                "TV1",
-                Showcase.KIND_MENUBOARD,
-                ["bebidas-quentes", "bebidas-geladas", "torneira", "doces"],
-            ),
-            (
-                "google-shopping",
-                "Google Shopping",
-                "Google",
-                Showcase.KIND_GOOGLE,
-                ["rusticos", "finos", "salgados", "doces"],
-            ),
-            (
-                "meta-catalog",
-                "Catálogo Meta",
-                "Meta",
-                Showcase.KIND_META,
-                ["rusticos", "finos", "salgados", "doces"],
-            ),
+        # completo continua valendo no Admin, onde ele diz QUAL TV é ("TV do Café" vs
+        # "TV do Salão") — informação que "TV1"/"TV2" perdem.
+        #
+        # `format` vazio = menuboard: ele é uma ROTA nossa, não um dialeto de terceiro.
+        # Google e Meta têm dialeto (nome do campo, separador de label), e é isso que o
+        # formato nomeia.
+        channels_data = [
+            # (ref, name, short_name, format, prices_from, [collection_refs])
+            ("tv-salao", "TV do Salão", "TV2", "", pos_ref,
+             ["rusticos", "finos", "salgados"]),
+            ("tv-cafe", "TV do Café", "TV1", "", pos_ref,
+             ["bebidas-quentes", "bebidas-geladas", "torneira", "doces"]),
+            ("google-shopping", "Google Shopping", "Google", "google_merchant", web_ref,
+             ["rusticos", "finos", "salgados", "doces"]),
+            ("meta-catalog", "Catálogo Meta", "Meta", "meta_catalog", web_ref,
+             ["rusticos", "finos", "salgados", "doces"]),
         ]
 
-        for ref, name, short_name, kind, collections in showcases_data:
-            Showcase.objects.update_or_create(
+        for ref, name, short_name, fmt, prices_from, collections in channels_data:
+            Channel.objects.update_or_create(
                 ref=ref,
                 defaults={
                     "name": name,
-                    "kind": kind,
-                    "collections": collections,
+                    "commerce_policy": Channel.CommercePolicy.DISPLAY,
                     "is_active": True,
-                    "options": {"short_name": short_name},
+                    "config": {
+                        "short_name": short_name,
+                        "display": {
+                            "format": fmt,
+                            "collections": collections,
+                            "prices_from": prices_from,
+                            "paused_skus": [],
+                        },
+                    },
                 },
             )
 
-        self.stdout.write(f"  ✅ {len(showcases_data)} feeds")
+        self.stdout.write(f"  ✅ {len(channels_data)} canais de exibição")
 
     # ────────────────────────────────────────────────────────────────
     # Pedidos (Orderman)

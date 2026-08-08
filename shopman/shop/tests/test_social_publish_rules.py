@@ -1,4 +1,4 @@
-"""Arc D: per-platform social publish rules + handler guards."""
+"""Arc D: per-channel_ref social publish rules + handler guards."""
 
 from __future__ import annotations
 
@@ -102,7 +102,7 @@ class TestHandlerGuards:
         ):
             on_product_created(sender=None, instance=None, sku="PAO")
 
-        assert CatalogSyncState.objects.get(sku="PAO", platform="ifood").status == "skipped"
+        assert CatalogSyncState.objects.get(sku="PAO", channel_ref="ifood").status == "skipped"
         assert not Directive.objects.filter(payload__sku="PAO").exists()
 
     def test_publish_on_create_true_enqueues(self):
@@ -141,4 +141,4 @@ class TestHandlerGuards:
             handler.handle(message=directive, ctx={})
 
         backend.project.assert_not_called()
-        assert CatalogSyncState.objects.get(sku="PAO", platform="ifood").status == "skipped"
+        assert CatalogSyncState.objects.get(sku="PAO", channel_ref="ifood").status == "skipped"

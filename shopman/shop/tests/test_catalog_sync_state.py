@@ -22,7 +22,7 @@ class TestRecordSync:
 
     def test_synced_stamps_timestamp_error_does_not(self):
         catalog_sync.record_sync("PAO", "meta", status="error", error="boom")
-        state = CatalogSyncState.objects.get(sku="PAO", platform="meta")
+        state = CatalogSyncState.objects.get(sku="PAO", channel_ref="meta")
         assert state.status == "error"
         assert state.last_error == "boom"
         assert state.last_synced_at is None
@@ -30,20 +30,20 @@ class TestRecordSync:
     def test_upsert_updates_in_place(self):
         catalog_sync.record_sync("PAO", "meta", status="error", error="x")
         catalog_sync.record_sync("PAO", "meta", status="synced")
-        assert CatalogSyncState.objects.filter(sku="PAO", platform="meta").count() == 1
-        state = CatalogSyncState.objects.get(sku="PAO", platform="meta")
+        assert CatalogSyncState.objects.filter(sku="PAO", channel_ref="meta").count() == 1
+        state = CatalogSyncState.objects.get(sku="PAO", channel_ref="meta")
         assert state.status == "synced"
         assert state.last_error == ""  # cleared on success
 
     def test_pending_clears_error(self):
         catalog_sync.record_sync("PAO", "meta", status="error", error="x")
         catalog_sync.record_sync("PAO", "meta", status="pending")
-        assert CatalogSyncState.objects.get(sku="PAO", platform="meta").last_error == ""
+        assert CatalogSyncState.objects.get(sku="PAO", channel_ref="meta").last_error == ""
 
     def test_external_id_only_overwritten_when_provided(self):
         catalog_sync.record_sync("PAO", "meta", status="synced", external_id="EXT-1")
         catalog_sync.record_sync("PAO", "meta", status="synced")  # no external_id
-        assert CatalogSyncState.objects.get(sku="PAO", platform="meta").external_id == "EXT-1"
+        assert CatalogSyncState.objects.get(sku="PAO", channel_ref="meta").external_id == "EXT-1"
 
     def test_retracted_stamps_timestamp(self):
         state = catalog_sync.record_sync("PAO", "meta", status="retracted")
@@ -61,7 +61,7 @@ class TestSyncStatusMap:
         assert full["PAO"]["google"]["status"] == "error"
         assert full["BOLO"]["meta"]["status"] == "synced"
 
-        by_platform = catalog_sync.sync_status_map(platform="meta")
+        by_platform = catalog_sync.sync_status_map(channel_ref="meta")
         assert "google" not in by_platform["PAO"]
 
         by_sku = catalog_sync.sync_status_map(["PAO"])
@@ -101,7 +101,7 @@ class TestHandlerRecordsState:
         ):
             handler.handle(message=directive, ctx={})
 
-        assert CatalogSyncState.objects.get(sku="PAO", platform="ifood").status == "synced"
+        assert CatalogSyncState.objects.get(sku="PAO", channel_ref="ifood").status == "synced"
 
     def test_retract_records_retracted(self, ifood_channel, directive):
         from shopman.shop.handlers.catalog_projection import CatalogProjectHandler
@@ -115,7 +115,7 @@ class TestHandlerRecordsState:
         ):
             handler.handle(message=directive, ctx={})
 
-        assert CatalogSyncState.objects.get(sku="PAO", platform="ifood").status == "retracted"
+        assert CatalogSyncState.objects.get(sku="PAO", channel_ref="ifood").status == "retracted"
 
     def test_failure_records_error(self, ifood_channel, directive):
         from shopman.orderman.exceptions import DirectiveTransientError
@@ -132,6 +132,6 @@ class TestHandlerRecordsState:
             with pytest.raises(DirectiveTransientError):
                 handler.handle(message=directive, ctx={})
 
-        state = CatalogSyncState.objects.get(sku="PAO", platform="ifood")
+        state = CatalogSyncState.objects.get(sku="PAO", channel_ref="ifood")
         assert state.status == "error"
         assert "boom" in state.last_error
