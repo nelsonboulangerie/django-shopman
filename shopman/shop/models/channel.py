@@ -24,8 +24,33 @@ class Channel(models.Model):
     Cascata: canal.config ← shop.defaults ← defaults hardcoded.
     """
 
+    class CommercePolicy(models.TextChoices):
+        """Até onde a interação comercial vai neste canal.
+
+        Enum e não booleano de propósito: existem superfícies com compra parcial
+        (catálogo de WhatsApp que gera intenção de compra por mensagem), e um
+        booleano mentiria no meio. ``intent`` **não** existe enquanto não houver
+        implementação — mas a forma admite o terceiro valor sem quebra semântica
+        (ADR-018 §3).
+        """
+
+        DISPLAY = "display", _("somente exibição")
+        ORDER = "order", _("venda completa")
+
     ref = RefField(ref_type="CHANNEL", verbose_name=_("código"), max_length=64, unique=True, db_index=False)
     name = models.CharField(_("nome"), max_length=128, blank=True, default="")
+    commerce_policy = models.CharField(
+        _("política comercial"),
+        max_length=16,
+        choices=CommercePolicy.choices,
+        default=CommercePolicy.ORDER,
+        db_index=True,
+        help_text=_(
+            "'Venda completa': recebe pedido. 'Somente exibição': mostra catálogo com "
+            "preço e nunca transaciona (menuboard, catálogo do Google/Meta) — o preço "
+            "vem do canal apontado em configuração."
+        ),
+    )
     shop = models.ForeignKey(
         "shop.Shop",
         on_delete=models.SET_NULL,
