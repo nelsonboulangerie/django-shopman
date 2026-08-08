@@ -37,7 +37,7 @@ from django.utils import timezone
 logger = logging.getLogger(__name__)
 
 #: Canal de entrega cujo consentimento é exigido. A audiência existe para ser
-#: alcançada, e hoje o alcance é a onda de WhatsApp (``handlers.broadcast._send_to``).
+#: alcançada, e hoje o alcance é a onda de WhatsApp (``handlers.campaign._send_to``).
 #: Consentir WhatsApp não é consentir SMS: quando outro canal de entrega entrar,
 #: ele passa a exigir o consentimento do próprio canal, não deste.
 DELIVERY_CONSENT_CHANNEL = "whatsapp"
@@ -145,7 +145,7 @@ class AudienceResult:
         return tuple(waves)
 
     def summary(self) -> dict:
-        """Resumo persistível em ``BroadcastPost.audience`` (só números, sem PII)."""
+        """Resumo persistível em ``Announcement.audience`` (só números, sem PII)."""
         return {
             **self.counts,
             "vip_count": len(self.vip),
@@ -157,11 +157,11 @@ class AudienceResult:
 
 
 def resolve(sku: str, rules: dict | None = None) -> AudienceResult:
-    """Resolver a audiência de um SKU segundo as regras da BroadcastRule.
+    """Resolver a audiência de um SKU segundo as regras da Campaign.
 
     Args:
         sku: SKU do evento.
-        rules: ``BroadcastRule.audience_rules`` — ``favorites`` (bool),
+        rules: ``Campaign.audience_rules`` — ``favorites`` (bool),
             ``alerts`` (bool), ``recompra_days`` (int), ``vip_first_minutes`` (int).
 
     Returns:

@@ -1,11 +1,11 @@
-"""Shopman models — Shop, Channel, RuleConfig, NotificationTemplate, OmotenashiCopy, Broadcast."""
+"""Shopman models — Shop, Channel, RuleConfig, NotificationTemplate, OmotenashiCopy, Campaign."""
 
-from .broadcast import (
+from .campaign import (
     QUALITY_LEVELS,
-    BroadcastPost,
-    BroadcastRule,
-    PostStatus,
-    PostTemplate,
+    Announcement,
+    AnnouncementStatus,
+    AnnouncementTemplate,
+    Campaign,
     Trigger,
 )
 from .catalog_sync import CatalogSyncState, SyncStatus
@@ -43,10 +43,10 @@ __all__ = [
     "ShopPos",
     "ShopProduction",
     "ShopIntegrations",
-    "BroadcastRule",
-    "BroadcastPost",
-    "PostTemplate",
-    "PostStatus",
+    "Campaign",
+    "Announcement",
+    "AnnouncementTemplate",
+    "AnnouncementStatus",
     "Trigger",
     "QUALITY_LEVELS",
     "UserNotification",

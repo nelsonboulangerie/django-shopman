@@ -11,10 +11,10 @@ from django.contrib.auth import get_user_model
 from django.contrib.auth.models import Permission
 
 from shopman.shop.models import (
-    BroadcastPost,
-    BroadcastRule,
-    PostStatus,
-    PostTemplate,
+    Announcement,
+    AnnouncementStatus,
+    AnnouncementTemplate,
+    Campaign,
     UserNotification,
 )
 
@@ -28,7 +28,7 @@ LIST_URL = "/api/v1/backstage/notifications/"
 @pytest.fixture
 def gestor():
     user = User.objects.create_user(username="gestor", password="x", is_staff=True)
-    user.user_permissions.add(Permission.objects.get(codename="manage_broadcast"))
+    user.user_permissions.add(Permission.objects.get(codename="manage_campaigns"))
     return user
 
 
@@ -37,14 +37,14 @@ def colega():
     return User.objects.create_user(username="colega", password="x", is_staff=True)
 
 
-def _post() -> BroadcastPost:
-    template = PostTemplate.objects.create(name="T", body="{{produto}}")
-    rule = BroadcastRule.objects.create(
+def _post() -> Announcement:
+    template = AnnouncementTemplate.objects.create(name="T", body="{{produto}}")
+    rule = Campaign.objects.create(
         name="Fornada", trigger="production_finished",
         template=template, platforms=["instagram"],
     )
-    return BroadcastPost.objects.create(
-        rule=rule, template=template, status=PostStatus.PENDING_REVIEW,
+    return Announcement.objects.create(
+        rule=rule, template=template, status=AnnouncementStatus.PENDING_REVIEW,
         content={"body": "Saiu do forno"}, platforms=["instagram"],
     )
 
@@ -52,10 +52,10 @@ def _post() -> BroadcastPost:
 def _notification(user, *, post=None, actionable=True) -> UserNotification:
     return UserNotification.objects.create(
         user=user,
-        category="broadcast",
+        category="campaign",
         title="Post pronto para revisão",
         message="Croissant saiu do forno",
-        action_data={"broadcast_post_id": post.pk} if post else {},
+        action_data={"announcement_id": post.pk} if post else {},
         is_actionable=actionable,
     )
 
@@ -176,10 +176,10 @@ class TestAction:
 
         client.post(f"{LIST_URL}{notification.pk}/action/", {"action": "discard"})
         post.refresh_from_db()
-        assert post.status == PostStatus.EXPIRED
+        assert post.status == AnnouncementStatus.EXPIRED
 
     def test_operator_without_the_permission_cannot_publish(self, client, colega):
-        """Staff não basta: publicar exige shop.manage_broadcast."""
+        """Staff não basta: publicar exige shop.manage_campaigns."""
         notification = _notification(colega, post=_post())
         client.force_login(colega)
 

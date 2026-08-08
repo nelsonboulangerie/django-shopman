@@ -136,7 +136,7 @@ def test_emit_waits_for_transaction_commit(
 def test_emit_falls_back_to_all_active_channels_when_sku_has_no_listing(
     mock_send, baguete, web_channel, pdv_channel, django_capture_on_commit_callbacks,
 ):
-    """SKUs without Listing membership broadcast to every active channel."""
+    """SKUs without Listing membership fan out to every active channel."""
     from shopman.shop.handlers._sse_emitters import _emit_for_sku
 
     with django_capture_on_commit_callbacks(execute=True):

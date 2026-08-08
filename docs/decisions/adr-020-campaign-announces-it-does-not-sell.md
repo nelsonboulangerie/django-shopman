@@ -504,7 +504,9 @@ Ordem obrigatoria; cada passo entrega valor sozinho e passa `make test`.
 ## Criterios de aceite
 
 - `make test` e `make admin` verdes; `make test-migrations` verde do zero.
-- `grep -ri "broadcast" shopman/ surfaces/ config/` retorna vazio.
+- `grep -ri "broadcast" shopman/ surfaces/ config/` retorna vazio, com duas ressalvas legítimas: as
+  **migrations do próprio rename**, que precisam citar o nome antigo para renomeá-lo, e o nome do
+  documento histórico `FOMO-BROADCAST-SPECS.md`, que não muda (é registro, não código).
 - `grep -rn "broadcast_optin\|Trigger.SCHEDULED\|POSTING_PLATFORMS\|_push_tv\|broadcast-tv"` retorna
   vazio.
 - Cliente que revoga WhatsApp na tela de conta deixa de receber campanha no disparo seguinte.

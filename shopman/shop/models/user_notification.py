@@ -1,7 +1,7 @@
 """UserNotification — notificação interna por usuário, agnóstica de surface.
 
 Hoje as notificações operacionais são por superfície (SSE por app): quem não
-está com a tela aberta não fica sabendo. O broadcast quebra esse modelo — o
+está com a tela aberta não fica sabendo. A campanha quebra esse modelo — o
 gestor precisa receber o pedido de aprovação onde ele estiver, seja no Gestor,
 no Hub ou na Produção.
 
@@ -17,7 +17,7 @@ from django.utils import timezone
 
 
 class NotificationCategory(models.TextChoices):
-    BROADCAST = "broadcast", "broadcast"
+    CAMPAIGN = "campaign", "campanha"
     PRODUCTION = "production", "produção"
     ORDER = "order", "pedidos"
     SYSTEM = "system", "sistema"
@@ -42,7 +42,7 @@ class UserNotification(models.Model):
     )
     action_data = models.JSONField(
         "dados da ação", default=dict, blank=True,
-        help_text='Payload da ação, ex: {"broadcast_post_id": 12}',
+        help_text='Payload da ação, ex: {"announcement_id": 12}',
     )
     is_actionable = models.BooleanField(
         "acionável", default=False,

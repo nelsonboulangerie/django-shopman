@@ -204,7 +204,7 @@ describe("ProductionStageGrid — multi-lote finish target (guards the 200% yiel
 
     // Confirma → conclui a WO escolhida (pk 2) com a qty do lote, não o agregado.
     // O 4º argumento é a classificação da fornada (default "bom"), que entrou no
-    // contrato do finish com o broadcast (f3c8e8f8) e o gestor usa para decidir
+    // contrato do finish com a campanha (f3c8e8f8) e o gestor usa para decidir
     // o que vira post. Afirmado aqui inteiro: o contrato mudar de novo em
     // silêncio foi o que deixou este teste vermelho por duas semanas.
     await byText(w, "button", "Confirmar conclusão")!.trigger("click");

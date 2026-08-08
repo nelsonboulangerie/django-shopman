@@ -152,7 +152,7 @@ def set_quality(work_order, quality: str) -> str:
     """Gravar a qualidade da fornada em ``WorkOrder.meta`` (sem migração).
 
     Precisa acontecer ANTES do finish: é o ``production_changed`` do finish que
-    alimenta o broadcast, e a regra pode exigir ``quality_min``. Gravar depois
+    alimenta a campanha, e a regra pode exigir ``quality_min``. Gravar depois
     faria a regra ler a qualidade da fornada anterior.
     """
     quality = (quality or "").strip().lower() or DEFAULT_QUALITY

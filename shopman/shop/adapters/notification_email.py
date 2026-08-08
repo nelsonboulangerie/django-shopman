@@ -35,7 +35,7 @@ SUBJECT_TEMPLATES: dict[str, str] = {
     "stock_alert": "Alerta de estoque: {sku}",
     "stock.arrived": "Boa noticia: {product_name} chegou",
     "production.ready": "Saiu do forno agora: {product_name}",
-    "broadcast.post": "Novidade na padaria",
+    "announcement.published": "Novidade na padaria",
 }
 
 BODY_TEMPLATES: dict[str, str] = {
@@ -126,7 +126,7 @@ BODY_TEMPLATES: dict[str, str] = {
         "{product_name} acabou de ficar pronto.\n\n"
         "{cta} {action_url}\n"
     ),
-    "broadcast.post": "{body}\n\n{cta} {action_url}\n",
+    "announcement.published": "{body}\n\n{cta} {action_url}\n",
 }
 
 
