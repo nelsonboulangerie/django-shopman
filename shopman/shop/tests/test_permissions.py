@@ -235,7 +235,17 @@ class TestManagerGroup(TestCase):
 
 
 class TestDefaultGroupsExist(TestCase):
-    """All 4 default groups must exist with correct permissions."""
+    """Os 5 grupos do deployment, como ``setup_groups`` os constrói.
+
+    Exercita o COMANDO, que é o dono único dos grupos e roda no release job. Antes
+    estes testes dependiam de data migrations terem rodado no banco de teste — o que
+    passaria a falhar (silenciosamente certo, por motivo errado) num reset de migrações.
+    """
+
+    @classmethod
+    def setUpTestData(cls):
+        from django.core.management import call_command
+        call_command("setup_groups", verbosity=0)
 
     def _has_perm(self, group, codename):
         return group.permissions.filter(codename=codename).exists()
@@ -265,8 +275,9 @@ class TestDefaultGroupsExist(TestCase):
         self.assertTrue(self._has_perm(g, "manage_catalog"))
         self.assertTrue(self._has_perm(g, "manage_rules"))
 
-    def test_rules_managers_group_still_exists(self):
-        self.assertTrue(Group.objects.filter(name="Rules Managers").exists())
+    def test_rules_managers_group_exists(self):
+        g = Group.objects.get(name="Rules Managers")
+        self.assertTrue(self._has_perm(g, "manage_rules"))
 
 
 class TestSetupGroupsIdempotent(TestCase):

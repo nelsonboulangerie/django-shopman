@@ -183,7 +183,17 @@ class TestRuleConfigHistory(TestCase):
 
 
 class TestRulesManagersGroup(TestCase):
-    """Data migration creates 'Rules Managers' group with manage_rules perm."""
+    """``setup_groups`` cria 'Rules Managers' com manage_rules e sem membros.
+
+    O grupo nascia numa data migration e passou a nascer no comando — que é o dono
+    único dos grupos e é chamado pelo release job. Estes testes exercem o comando,
+    não o histórico de migrações: é o comando que precisa continuar certo.
+    """
+
+    @classmethod
+    def setUpTestData(cls):
+        from django.core.management import call_command
+        call_command("setup_groups", verbosity=0)
 
     def test_rules_managers_group_exists(self):
         from django.contrib.auth.models import Group
