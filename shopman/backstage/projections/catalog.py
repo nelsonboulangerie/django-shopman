@@ -160,7 +160,14 @@ def _stock_for(skus: list[str]) -> tuple[dict[str, dict | None], int, dict[str, 
     from shopman.shop.config import ChannelConfig
     from shopman.shop.models import Channel
 
-    rep = Channel.objects.filter(is_active=True).order_by("display_order", "id").first()
+    # Canal `display` não vende, logo não representa escopo de estoque.
+    rep = (
+        Channel.objects.filter(
+            is_active=True, commerce_policy=Channel.CommercePolicy.ORDER
+        )
+        .order_by("display_order", "id")
+        .first()
+    )
     if rep is None or not skus:
         return {}, 0, {}
     threshold = int(getattr(ChannelConfig.for_channel(rep).stock, "low_stock_threshold", 0) or 0)
@@ -222,7 +229,14 @@ def _build_surfaces() -> tuple[list[SurfaceProjection], dict[str, dict]]:
 
     from shopman.shop.models import Channel
 
-    channels = list(Channel.objects.filter(is_active=True).order_by("display_order", "id"))
+    # Canal `display` não é coluna de canal: ele é superfície de exibição, montada
+    # pelo caminho de feed. Sem este filtro a matriz duplicaria cada feed/TV — uma
+    # vez como canal, outra como feed (ADR-018 §8: seleção por política, nunca por ref).
+    channels = list(
+        Channel.objects.filter(
+            is_active=True, commerce_policy=Channel.CommercePolicy.ORDER
+        ).order_by("display_order", "id")
+    )
     listings = {lst.ref: lst for lst in Listing.objects.all()}
 
     # índice de células: surface_ref → sku → ListingItem (tier base = menor min_qty)

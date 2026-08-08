@@ -551,3 +551,81 @@ def check_listing_channel_parity(app_configs, **kwargs):
         pass  # tables not ready or offerman not installed
 
     return warnings
+
+
+@register()
+def check_display_channel_price_source(app_configs, **kwargs):
+    """Canal `display` precisa de `prices_from` válido — e público, se for rastreado.
+
+    Duas coisas diferentes, e a segunda é a que protege:
+
+    W008 — ``prices_from`` vazio ou apontando para canal inexistente. Sem ponteiro
+    válido o renderizador cai em ``Product.base_price_q``, que é justamente o
+    comportamento antigo em que o feed anunciava preço que a loja não cobra.
+
+    W009 — canal **rastreado publicamente** (tem ``display.format``, logo é XML que
+    Google/Meta buscam) tirando preço de canal cujo preço não é público. Sem isto,
+    configurar ``prices_from="pdv"`` num canal Google publicaria o preço do balcão
+    para o mundo — e preço alcançável publicamente é preço a honrar (ADR-018 §5.1).
+    """
+    warnings = []
+
+    from django.db.utils import OperationalError, ProgrammingError
+
+    from shopman.shop.models import Channel
+
+    try:
+        channels = list(Channel.objects.filter(is_active=True))
+    except (OperationalError, ProgrammingError):
+        return warnings  # tabelas ainda não existem (migração inicial)
+
+    by_ref = {c.ref: c for c in channels}
+    public_price_refs = {
+        c.ref
+        for c in channels
+        if c.commerce_policy == Channel.CommercePolicy.ORDER and c.ref != POS_CHANNEL_REF()
+    }
+
+    for channel in channels:
+        if channel.commerce_policy != Channel.CommercePolicy.DISPLAY:
+            continue
+        display = (channel.config or {}).get("display") or {}
+        target = (display.get("prices_from") or "").strip()
+
+        if not target or target not in by_ref:
+            warnings.append(
+                Warning(
+                    f"Canal de exibição '{channel.ref}' não aponta preço de canal válido "
+                    f"(display.prices_from={target!r}).",
+                    hint=(
+                        "Sem ponteiro válido o feed/menuboard cai em Product.base_price_q e "
+                        "pode anunciar preço que a loja não cobra. Defina "
+                        "config.display.prices_from com a ref de um canal de venda."
+                    ),
+                    id="SHOPMAN_W008",
+                )
+            )
+            continue
+
+        if display.get("format") and target not in public_price_refs:
+            warnings.append(
+                Warning(
+                    f"Canal '{channel.ref}' é rastreado publicamente e tira preço de "
+                    f"'{target}', cujo preço não é público.",
+                    hint=(
+                        "Feed XML é buscado por Google/Meta: publicar o preço do balcão "
+                        "obrigaria a honrá-lo para qualquer um. Aponte prices_from para o "
+                        "canal da loja."
+                    ),
+                    id="SHOPMAN_W009",
+                )
+            )
+
+    return warnings
+
+
+def POS_CHANNEL_REF() -> str:
+    """Ref do canal de balcão — cujo preço NÃO é público (ADR-018 §5.1)."""
+    from django.conf import settings
+
+    return getattr(settings, "SHOPMAN_POS_CHANNEL_REF", "pdv")

@@ -52,7 +52,15 @@ ALL_SURFACES = "*"
 def _all_channel_refs() -> list[str]:
     from shopman.shop.models import Channel
 
-    return list(Channel.objects.filter(is_active=True).order_by("display_order", "id").values_list("ref", flat=True))
+    # O fan-out de "todos os canais" escreve preço e publicação — coisas que canal
+    # `display` não tem. Seleção por política (ADR-018 §8).
+    return list(
+        Channel.objects.filter(
+            is_active=True, commerce_policy=Channel.CommercePolicy.ORDER
+        )
+        .order_by("display_order", "id")
+        .values_list("ref", flat=True)
+    )
 
 
 def _is_showcase(surface_ref: str) -> bool:

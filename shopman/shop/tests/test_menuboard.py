@@ -80,18 +80,36 @@ def test_rejects_missing(db):
         build_menuboard("fantasma")
 
 
-# ── views públicas ──────────────────────────────────────────────────────────────
+# ── views: superfície INTERNA ───────────────────────────────────────────────────
+#
+# O menuboard deixou de ser público (ADR-018 §5.1): o preço dele vem do PDV, e
+# preço alcançável publicamente é preço a honrar. Duas credenciais valem — sessão
+# de staff (gente) e token de quiosque na URL (TV na parede).
 
 
-def test_page_public_200(client, menuboard):
-    resp = client.get("/menuboard/tv-balcao/")
+def _kiosk_url(ref: str, suffix: str = "") -> str:
+    from shopman.shop.menuboard_access import KIOSK_PARAM, make_kiosk_token
+
+    return f"/menuboard/{ref}/{suffix}?{KIOSK_PARAM}={make_kiosk_token(ref)}"
+
+
+def test_page_denies_anonymous(client, menuboard):
+    assert client.get("/menuboard/tv-balcao/").status_code == 403
+
+
+def test_data_denies_anonymous(client, menuboard):
+    assert client.get("/menuboard/tv-balcao/data/").status_code == 403
+
+
+def test_page_with_kiosk_token(client, menuboard):
+    resp = client.get(_kiosk_url("tv-balcao"))
     assert resp.status_code == 200
     assert "Quadro do Balcão".encode() in resp.content
     assert b"menuboard()" in resp.content
 
 
-def test_data_public_json(client, menuboard):
-    resp = client.get("/menuboard/tv-balcao/data/")
+def test_data_with_kiosk_token(client, menuboard):
+    resp = client.get(_kiosk_url("tv-balcao", "data/"))
     assert resp.status_code == 200
     body = resp.json()
     assert body["ref"] == "tv-balcao"
@@ -99,6 +117,46 @@ def test_data_public_json(client, menuboard):
     assert [g["title"] for g in body["groups"]] == ["Pães", "Doces"]
 
 
-def test_page_404_for_unknown(client, db):
+def test_token_of_another_board_is_refused(client, menuboard):
+    """Token carrega a ref: o do quadro do balcão não abre outro quadro."""
+    from shopman.shop.menuboard_access import KIOSK_PARAM, make_kiosk_token
+
+    other = make_kiosk_token("tv-balcao")
+    assert client.get(f"/menuboard/outro/?{KIOSK_PARAM}={other}").status_code == 403
+
+
+def test_tampered_token_is_refused(client, menuboard):
+    from shopman.shop.menuboard_access import KIOSK_PARAM, make_kiosk_token
+
+    bad = make_kiosk_token("tv-balcao") + "x"
+    assert client.get(f"/menuboard/tv-balcao/?{KIOSK_PARAM}={bad}").status_code == 403
+
+
+def test_staff_session_opens_without_token(client, menuboard, django_user_model):
+    staff = django_user_model.objects.create_user("gestor", password="x", is_staff=True)
+    client.force_login(staff)
+    assert client.get("/menuboard/tv-balcao/").status_code == 200
+
+
+def test_non_staff_user_is_refused(client, menuboard, django_user_model):
+    user = django_user_model.objects.create_user("cliente", password="x")
+    client.force_login(user)
+    assert client.get("/menuboard/tv-balcao/").status_code == 403
+
+
+def test_public_escape_hatch_reopens(client, menuboard, settings):
+    settings.SHOPMAN_MENUBOARD_PUBLIC = True
+    assert client.get("/menuboard/tv-balcao/").status_code == 200
+
+
+def test_unknown_ref_denies_before_revealing_existence(client, db):
+    """A trava roda ANTES da checagem de existência: anônimo não descobre o que existe."""
+    assert client.get("/menuboard/fantasma/").status_code == 403
+    assert client.get("/menuboard/fantasma/data/").status_code == 403
+
+
+def test_unknown_ref_is_404_once_authorized(client, db, django_user_model):
+    staff = django_user_model.objects.create_user("gestor", password="x", is_staff=True)
+    client.force_login(staff)
     assert client.get("/menuboard/fantasma/").status_code == 404
     assert client.get("/menuboard/fantasma/data/").status_code == 404
