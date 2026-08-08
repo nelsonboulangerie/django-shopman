@@ -341,7 +341,7 @@ def test_handler_skips_when_channel_inactive(db, ifood_directive):
     handler = CatalogProjectHandler(backend=backend)
 
     with patch(
-        "shopman.shop.handlers.catalog_projection._channel_or_showcase_active",
+        "shopman.shop.handlers.catalog_projection._channel_or_feed_active",
         return_value=False,
     ):
         handler.handle(message=ifood_directive, ctx={})

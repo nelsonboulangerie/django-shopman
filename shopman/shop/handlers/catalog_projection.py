@@ -58,7 +58,7 @@ class CatalogProjectHandler:
             logger.warning("catalog_projection: no backend for listing_ref=%s, skipping", listing_ref)
             return
 
-        if not _channel_or_showcase_active(listing_ref):
+        if not _channel_or_feed_active(listing_ref):
             return
 
         from shopman.shop.adapters.catalog_projection_ifood import IFoodRateLimitError
@@ -112,7 +112,7 @@ class CatalogProjectHandler:
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
 
-def _channel_or_showcase_active(listing_ref: str) -> bool:
+def _channel_or_feed_active(listing_ref: str) -> bool:
     from shopman.shop.models import Channel
 
     if Channel.objects.filter(ref=listing_ref, is_active=True).exists():

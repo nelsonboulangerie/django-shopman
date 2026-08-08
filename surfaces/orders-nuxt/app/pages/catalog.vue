@@ -29,7 +29,7 @@ const surfaces = computed(() => matrix.value?.surfaces ?? []);
 const collections = computed(() => matrix.value?.collections ?? []);
 // Superfícies = canais (transacionam) + feeds (só empurram dados). Índice p/ a
 // célula saber o papel da coluna e onde começa a banda de feeds. No backend o model
-// do feed chama-se ``Showcase`` — daí os nomes internos aqui.
+// do feed chama-se ``Feed`` — daí os nomes internos aqui.
 const surfaceByRef = computed(() => new Map(surfaces.value.map((s) => [s.ref, s])));
 const isCellTransactional = (cell: SurfaceCellProjection) => surfaceByRef.value.get(cell.surface_ref)?.transactional ?? true;
 
@@ -52,9 +52,9 @@ const hidden = computed<HiddenColumns>(() => reconcile(columnOptions.value, hidd
 const visibleSurfaces = computed(() => keepVisible(surfaces.value, hidden.value, (s) => s.ref));
 const visibleCells = (row: CatalogRowProjection) => keepVisible(row.cells, hidden.value, (c) => c.surface_ref);
 // A divisória da banda de feeds acompanha o recorte: cai no primeiro feed VISÍVEL.
-const firstShowcaseRef = computed(() => visibleSurfaces.value.find((s) => !s.transactional)?.ref ?? "");
+const firstFeedRef = computed(() => visibleSurfaces.value.find((s) => !s.transactional)?.ref ?? "");
 const channelsCount = computed(() => surfaces.value.filter((s) => s.transactional).length);
-const showcasesCount = computed(() => surfaces.value.filter((s) => !s.transactional).length);
+const feedsCount = computed(() => surfaces.value.filter((s) => !s.transactional).length);
 const query = ref("");
 // Recorte por dimensões (envio, canal, publicação, venda, estoque, PIM). A coleção
 // fica FORA: é o eixo primário, mora nas pills (que também reordenam) e recorta no
@@ -147,12 +147,12 @@ watch(collectionRef, clearSelection);
 const bulkSurface = ref("");
 watchEffect(() => { if (!bulkSurface.value && surfaces.value.length) bulkSurface.value = surfaces.value[0]!.ref; });
 // Feed só pausa/reativa em lote — sem publicar/reprecificar (não transaciona).
-const bulkSurfaceIsShowcase = computed(() => {
+const bulkSurfaceIsFeed = computed(() => {
   const s = surfaceByRef.value.get(bulkSurface.value);
   return !!s && !s.transactional;
 });
 const channelSurfaces = computed(() => surfaces.value.filter((s) => s.transactional));
-const showcaseSurfaces = computed(() => surfaces.value.filter((s) => !s.transactional));
+const feedSurfaces = computed(() => surfaces.value.filter((s) => !s.transactional));
 async function bulk(patch: { is_sellable?: boolean; is_published?: boolean }) {
   if (!bulkSurface.value || selected.value.size === 0) return;
   await bulkSet(bulkSurface.value, { skus: [...selected.value] }, patch);
@@ -209,7 +209,7 @@ const djangoBase = useRuntimeConfig().public.djangoPublicBaseUrl as string;
 
 // ── cell pause/resume + inline reprice ─────────────────────────────────────────
 // A pausa por célula vale para canal (vende) e feed (só exibe). No feed o backend
-// grava em Showcase.options[paused_skus]; aqui é o mesmo gesto.
+// grava em Feed.options[paused_skus]; aqui é o mesmo gesto.
 const surfaceWord = (cell: SurfaceCellProjection) => (isCellTransactional(cell) ? "canal" : "feed");
 function toggleCell(row: CatalogRowProjection, cell: SurfaceCellProjection) {
   if (!cell.in_listing) return;
@@ -337,9 +337,9 @@ useHead({ title: "Catálogo · Gestor" });
           <span class="tabular-nums">{{ rows.length }}</span> produto{{ rows.length === 1 ? "" : "s" }}
           <span class="text-muted-foreground/50">·</span>
           <span class="tabular-nums">{{ channelsCount }}</span> {{ channelsCount === 1 ? "canal" : "canais" }}
-          <template v-if="showcasesCount">
+          <template v-if="feedsCount">
             <span class="text-muted-foreground/50">·</span>
-            <span class="tabular-nums">{{ showcasesCount }}</span> feed{{ showcasesCount === 1 ? "" : "s" }}
+            <span class="tabular-nums">{{ feedsCount }}</span> feed{{ feedsCount === 1 ? "" : "s" }}
           </template>
         </p>
         <UiIconButton icon="lucide:refresh-cw" label="Atualizar" :spinning="pending" @click="refresh()" />
@@ -387,7 +387,7 @@ useHead({ title: "Catálogo · Gestor" });
               v-for="s in visibleSurfaces"
               :key="s.ref"
               class="sticky top-0 z-20 w-[114px] border-b border-border bg-card px-2 py-2 text-left align-top"
-              :class="firstShowcaseRef === s.ref ? 'border-l-2 border-l-primary/40' : 'border-l border-l-border'"
+              :class="firstFeedRef === s.ref ? 'border-l-2 border-l-primary/40' : 'border-l border-l-border'"
             >
               <div class="flex flex-col gap-0.5" :class="{ 'opacity-45': !s.transactional && !s.is_active }">
                 <span class="flex items-center gap-1 font-medium text-foreground" :title="s.transactional ? s.name : `${s.name} — feed (não vende)`">
@@ -566,7 +566,7 @@ useHead({ title: "Catálogo · Gestor" });
               v-for="cell in visibleCells(row)"
               :key="cell.surface_ref"
               class="border-b border-border px-1 py-1.5 group-hover:bg-muted/20"
-              :class="firstShowcaseRef === cell.surface_ref ? 'border-l-2 border-l-primary/40' : 'border-l border-l-border'"
+              :class="firstFeedRef === cell.surface_ref ? 'border-l-2 border-l-primary/40' : 'border-l border-l-border'"
             >
               <div
                 v-if="cell.in_listing"
@@ -693,8 +693,8 @@ useHead({ title: "Catálogo · Gestor" });
             <optgroup v-if="channelSurfaces.length" label="Canais">
               <option v-for="s in channelSurfaces" :key="s.ref" :value="s.ref">{{ s.name }}</option>
             </optgroup>
-            <optgroup v-if="showcaseSurfaces.length" label="Feeds">
-              <option v-for="s in showcaseSurfaces" :key="s.ref" :value="s.ref">{{ s.name }}</option>
+            <optgroup v-if="feedSurfaces.length" label="Feeds">
+              <option v-for="s in feedSurfaces" :key="s.ref" :value="s.ref">{{ s.name }}</option>
             </optgroup>
           </select>
         </div>
@@ -703,7 +703,7 @@ useHead({ title: "Catálogo · Gestor" });
         <button :disabled="bulkBusy" class="inline-flex h-9 items-center gap-1.5 rounded-md border border-background/25 px-3 text-sm font-medium transition hover:bg-background/10 disabled:opacity-50" @click="bulk({ is_sellable: true })"><Icon name="lucide:play" class="size-3.5" /> Reativar</button>
 
         <!-- Preço e publicação só para canais (transacionam). Feed só pausa/reativa. -->
-        <template v-if="!bulkSurfaceIsShowcase">
+        <template v-if="!bulkSurfaceIsFeed">
         <!-- reprecificação em lote: popover ancorado (superfície normal, legível sobre a barra invertida) -->
         <UiPopover :open="priceOpen" @update:open="(v) => (priceOpen = v)">
           <UiPopoverTrigger as-child>

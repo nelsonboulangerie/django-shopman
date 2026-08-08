@@ -1,35 +1,35 @@
 import { beforeEach, describe, expect, it } from "vitest";
 
 import { installNuxtGlobals } from "../../../operator-kit/tests/support/composableEnv";
-import { useShowcaseBoard } from "../../app/composables/useShowcaseBoard";
+import { useFeedBoard } from "../../app/composables/useFeedBoard";
 
 const env = installNuxtGlobals();
 
-describe("useShowcaseBoard", () => {
+describe("useFeedBoard", () => {
   beforeEach(() => env.reset());
 
   it("deriva board da projection", () => {
-    env.fetchData.value = { board: { showcases: [{ ref: "menu" }] } };
-    expect(useShowcaseBoard().board.value).toEqual({ showcases: [{ ref: "menu" }] });
+    env.fetchData.value = { board: { feeds: [{ ref: "menu" }] } };
+    expect(useFeedBoard().board.value).toEqual({ feeds: [{ ref: "menu" }] });
   });
 
   it("setActive/setCollections postam url + body corretos", async () => {
-    const s = useShowcaseBoard();
+    const s = useFeedBoard();
     await s.setActive("menu-1", true);
     let [url, opts] = env.fetchMock.mock.calls[0]!;
-    expect(String(url)).toBe("/api/v1/backstage/showcases/active/");
+    expect(String(url)).toBe("/api/v1/backstage/feeds/active/");
     expect(opts.body).toEqual({ ref: "menu-1", is_active: true });
 
     await s.setCollections("menu-1", ["c1", "c2"]);
     [url, opts] = env.fetchMock.mock.calls[1]!;
-    expect(String(url)).toBe("/api/v1/backstage/showcases/collections/");
+    expect(String(url)).toBe("/api/v1/backstage/feeds/collections/");
     expect(opts.body).toEqual({ ref: "menu-1", collections: ["c1", "c2"] });
   });
 
   it("guarda de reentrância por-ref", async () => {
     let release!: () => void;
     env.fetchMock.mockReturnValueOnce(new Promise<void>((r) => { release = r; }));
-    const s = useShowcaseBoard();
+    const s = useFeedBoard();
     const first = s.setActive("m", true);
     expect(s.isBusy("m")).toBe(true);
     expect(await s.setActive("m", false)).toBe(false);
@@ -41,7 +41,7 @@ describe("useShowcaseBoard", () => {
 
   it("falha acende errorMsg + toast e devolve false", async () => {
     env.fetchMock.mockRejectedValueOnce({ data: { detail: "Feed bloqueado" } });
-    const s = useShowcaseBoard();
+    const s = useFeedBoard();
     expect(await s.setActive("m", true)).toBe(false);
     expect(s.errorMsg.value).toBe("Feed bloqueado");
     expect(env.sonner.error).toHaveBeenCalledWith("Feed bloqueado");

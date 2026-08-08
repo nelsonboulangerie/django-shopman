@@ -26,7 +26,7 @@ def menuboard(db):
     return {"pao": pao, "bolo": bolo}
 
 
-def test_sections_are_showcase_collections(menuboard):
+def test_sections_are_feed_collections(menuboard):
     board = build_menuboard("tv-balcao")
     assert board.title == "Quadro do Balcão"
     assert [g.title for g in board.groups] == ["Pães", "Doces"]  # ordem do feed

@@ -25,10 +25,8 @@ class SyncStatus(models.TextChoices):
 class CatalogSyncState(models.Model):
     sku = models.CharField(max_length=100, db_index=True)
     # Platform / projection channel ref (== listing_ref): ifood, meta, google, whatsapp, tiktok.
-    # Ref do canal — transacional (`ifood`) ou de exibição (`meta-catalog`). Era
-    # `platform`, e o valor para exibição era o `kind` do antigo `Showcase` ("meta"),
-    # enquanto canal usava ref: duas chaves para a mesma pergunta. Absorvido o
-    # Showcase (ADR-018), sobra o ref.
+    # Ref do canal — a mesma chave para transacional (`ifood`) e exibição
+    # (`meta-catalog`). Uma pergunta, uma chave (ADR-018).
     channel_ref = models.CharField(max_length=32, db_index=True)
     # Id of the item on the external channel (e.g. Meta retailer_id, iFood item uuid).
     external_id = models.CharField(max_length=200, blank=True)

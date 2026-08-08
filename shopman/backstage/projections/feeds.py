@@ -34,14 +34,14 @@ def _output_path(ref: str, fmt: str) -> str:
 
 
 @dataclass(frozen=True)
-class ShowcaseCollectionRef:
+class FeedCollectionRef:
     ref: str
     name: str
     exists: bool  # a coleção ainda existe?
 
 
 @dataclass(frozen=True)
-class ShowcaseProjection:
+class FeedProjection:
     ref: str
     name: str
     kind: str
@@ -50,7 +50,7 @@ class ShowcaseProjection:
     capability: str  # display | feed
     is_active: bool
     output_path: str
-    collections: tuple[ShowcaseCollectionRef, ...]  # coleções que ele exibe (em ordem global)
+    collections: tuple[FeedCollectionRef, ...]  # coleções que ele exibe (em ordem global)
 
 
 @dataclass(frozen=True)
@@ -61,12 +61,12 @@ class CollectionOptionProjection:
 
 
 @dataclass(frozen=True)
-class ShowcaseBoardProjection:
-    showcases: tuple[ShowcaseProjection, ...]
+class FeedBoardProjection:
+    feeds: tuple[FeedProjection, ...]
     all_collections: tuple[CollectionOptionProjection, ...]  # opções p/ o picker (ordem global)
 
 
-def build_showcase_board() -> ShowcaseBoardProjection:
+def build_feed_board() -> FeedBoardProjection:
     from shopman.offerman.models import Collection
 
     from shopman.shop.models import Channel
@@ -75,7 +75,7 @@ def build_showcase_board() -> ShowcaseBoardProjection:
     coll_by_ref = {c.ref: c for c in collections}
     order_index = {c.ref: i for i, c in enumerate(collections)}
 
-    showcases: list[ShowcaseProjection] = []
+    feeds: list[FeedProjection] = []
     channels = Channel.objects.filter(
         commerce_policy=Channel.CommercePolicy.DISPLAY
     ).order_by("name")
@@ -86,7 +86,7 @@ def build_showcase_board() -> ShowcaseBoardProjection:
         # resolve + ordena as coleções do canal pela ordem global (sort_order)
         refs = list(display.get("collections") or [])
         resolved = [
-            ShowcaseCollectionRef(
+            FeedCollectionRef(
                 ref=r,
                 name=coll_by_ref[r].name if r in coll_by_ref else r,
                 exists=r in coll_by_ref,
@@ -94,8 +94,8 @@ def build_showcase_board() -> ShowcaseBoardProjection:
             for r in refs
         ]
         resolved.sort(key=lambda c: order_index.get(c.ref, 10_000))
-        showcases.append(
-            ShowcaseProjection(
+        feeds.append(
+            FeedProjection(
                 ref=sc.ref,
                 name=sc.name or sc.ref,
                 kind=meta["kind"],
@@ -112,4 +112,4 @@ def build_showcase_board() -> ShowcaseBoardProjection:
         CollectionOptionProjection(ref=c.ref, name=c.name, product_count=c.product_queryset().count())
         for c in collections
     )
-    return ShowcaseBoardProjection(showcases=tuple(showcases), all_collections=options)
+    return FeedBoardProjection(feeds=tuple(feeds), all_collections=options)

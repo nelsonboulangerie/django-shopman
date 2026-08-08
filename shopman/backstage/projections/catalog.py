@@ -287,7 +287,7 @@ def _build_display_surfaces() -> tuple[list[SurfaceProjection], dict[str, dict]]
     ``members`` = SKUs que o canal exibe (união dos produtos das suas coleções).
     ``paused`` = pausa LOCAL do item neste canal (a global é do produto, gate por cima).
 
-    Eram um model próprio (``Showcase``) até a ADR-018. Duas consequências aparecem
+    Eram um model próprio (``Feed``) até a ADR-018. Duas consequências aparecem
     aqui: o ``sync_key`` passa a ser o **ref** (era o ``kind``, então canal chaveava
     por ref e feed por kind — duas chaves para a mesma pergunta), e o ``?channel_ref=``
     saiu do ``output_path``, porque o formato é propriedade do canal e não parâmetro
@@ -363,7 +363,7 @@ def build_catalog_matrix(collection_ref: str = "") -> CatalogMatrixProjection:
     from shopman.offerman.models import Collection, Product
 
     surfaces, cells_index = _build_surfaces()
-    display_surfaces, showcase_index = _build_display_surfaces()
+    display_surfaces, display_index = _build_display_surfaces()
     surfaces = surfaces + display_surfaces
 
     products = (
@@ -398,18 +398,18 @@ def build_catalog_matrix(collection_ref: str = "") -> CatalogMatrixProjection:
             # Feed (menuboard/plataforma): célula = pertence ao feed (via coleções) e
             # pausa local; sem preço/publicação. A pausa global do produto gateia por cima.
             sync_status, sync_error, synced_at = _cell_sync(sync_map, product.sku, surface.sync_key or surface.ref)
-            if surface.ref in showcase_index:
-                sc = showcase_index[surface.ref]
-                in_showcase = product.sku in sc["members"]
+            if surface.ref in display_index:
+                sc = display_index[surface.ref]
+                in_feed = product.sku in sc["members"]
                 paused_here = product.sku in sc["paused"]
                 cells.append(
                     SurfaceCellProjection(
                         surface_ref=surface.ref,
-                        in_listing=in_showcase,
-                        is_published=in_showcase,
-                        is_sellable=in_showcase and not paused_here,
+                        in_listing=in_feed,
+                        is_published=in_feed,
+                        is_sellable=in_feed and not paused_here,
                         available=(
-                            in_showcase
+                            in_feed
                             and not paused_here
                             and product.is_published
                             and product.is_sellable

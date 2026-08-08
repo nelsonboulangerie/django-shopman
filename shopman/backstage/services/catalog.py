@@ -67,7 +67,7 @@ def _is_display_surface(surface_ref: str) -> bool:
     """A superfície EXIBE sem transacionar (TV, feed) e não vende?
 
     A pergunta é sobre POLÍTICA COMERCIAL, não sobre qual tabela guarda a linha —
-    é o que a ADR-018 conseguiu ao absorver o `Showcase`: a mesma tabela, e o que
+    é o que a ADR-018 conseguiu ao absorver o `Feed`: a mesma tabela, e o que
     distingue é `commerce_policy`. Uma célula de exibição não tem preço para
     escrever, então pausar ali grava em `display.paused_skus`, não num ListingItem.
     """
@@ -95,7 +95,7 @@ def set_cell(
     if _is_display_surface(surface_ref):
         from types import SimpleNamespace
 
-        from shopman.backstage.services import showcase as display_service
+        from shopman.backstage.services import feeds as display_service
 
         if is_sellable is None:
             raise CatalogError("Feed aceita apenas pausar/reativar (is_sellable).")
@@ -183,7 +183,7 @@ def bulk_set(
         # Feed: bulk só pausa/reativa (is_sellable). Sem preço/publicação.
         if is_sellable is None:
             raise CatalogError("Feed aceita apenas pausar/reativar (is_sellable).")
-        from shopman.backstage.services import showcase as display_service
+        from shopman.backstage.services import feeds as display_service
 
         return display_service.set_items_paused(surface_ref, skus, paused=not is_sellable)
     updates: dict[str, bool] = {}

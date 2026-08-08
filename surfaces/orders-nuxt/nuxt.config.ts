@@ -16,10 +16,9 @@ export default defineNuxtConfig({
     },
   },
 
-  // 301 da rota pt-br antiga → inglês (vocabulário do domínio: Showcase).
+  // 301 da rota pt-br antiga → inglês (vocabulário do domínio: Feed).
   // Tablets do gestor têm bookmark da antiga.
   routeRules: {
-    "/expositores": { redirect: { to: "/showcases", statusCode: 301 } },
   },
 
   modules: [

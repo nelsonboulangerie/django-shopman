@@ -4,7 +4,7 @@ from __future__ import annotations
 
 
 def display_channel(ref, name, *, collections, fmt="", prices_from="", paused=None):
-    """Canal de exibição — o que era um ``Showcase`` antes da ADR-018.
+    """Canal de exibição para os testes.
 
     ``fmt`` vazio = menuboard (rota nossa); ``google_merchant``/``meta_catalog`` =
     feed de plataforma (dialeto de terceiro). ``prices_from`` é o canal transacional

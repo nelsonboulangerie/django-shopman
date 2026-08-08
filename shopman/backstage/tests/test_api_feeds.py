@@ -45,9 +45,9 @@ def board(db):
     google.save(update_fields=["is_active"])
 
 
-BOARD_URL = "/api/v1/backstage/showcases/"
-ACTIVE_URL = "/api/v1/backstage/showcases/active/"
-COLLS_URL = "/api/v1/backstage/showcases/collections/"
+BOARD_URL = "/api/v1/backstage/feeds/"
+ACTIVE_URL = "/api/v1/backstage/feeds/active/"
+COLLS_URL = "/api/v1/backstage/feeds/collections/"
 
 
 def test_board_shape(client, operator, board):
@@ -55,7 +55,7 @@ def test_board_shape(client, operator, board):
     resp = client.get(BOARD_URL)
     assert resp.status_code == 200
     data = resp.json()["board"]
-    by_ref = {s["ref"]: s for s in data["showcases"]}
+    by_ref = {s["ref"]: s for s in data["feeds"]}
     assert by_ref["tv"]["kind"] == "menuboard"
     assert by_ref["tv"]["output_path"] == "/menuboard/tv/"
     assert [c["ref"] for c in by_ref["tv"]["collections"]] == ["paes"]
@@ -99,7 +99,7 @@ def test_set_collections_unknown_rejected(client, operator, board):
     assert resp.status_code == 400
 
 
-def test_toggle_unknown_showcase(client, operator, board):
+def test_toggle_unknown_feed(client, operator, board):
     client.force_login(operator)
     resp = client.post(
         ACTIVE_URL, data={"ref": "ghost", "is_active": True}, content_type="application/json"

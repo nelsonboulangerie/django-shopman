@@ -1,12 +1,12 @@
-// TS mirror da projeção de Feeds (model Showcase) (shopman/backstage/projections/showcase.py).
+// TS mirror da projeção de Feeds (model Feed) (shopman/backstage/projections/feeds.py).
 
-export interface ShowcaseCollectionRef {
+export interface FeedCollectionRef {
   ref: string;
   name: string;
   exists: boolean;
 }
 
-export interface ShowcaseProjection {
+export interface FeedProjection {
   ref: string;
   name: string;
   kind: "menuboard" | "google" | "meta";
@@ -15,7 +15,7 @@ export interface ShowcaseProjection {
   capability: "display" | "feed";
   is_active: boolean;
   output_path: string;
-  collections: ShowcaseCollectionRef[];
+  collections: FeedCollectionRef[];
 }
 
 export interface CollectionOptionProjection {
@@ -24,11 +24,11 @@ export interface CollectionOptionProjection {
   product_count: number;
 }
 
-export interface ShowcaseBoardProjection {
-  showcases: ShowcaseProjection[];
+export interface FeedBoardProjection {
+  feeds: FeedProjection[];
   all_collections: CollectionOptionProjection[];
 }
 
-export interface ShowcaseBoardResponse {
-  board: ShowcaseBoardProjection;
+export interface FeedBoardResponse {
+  board: FeedBoardProjection;
 }

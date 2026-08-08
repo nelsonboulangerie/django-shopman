@@ -19,6 +19,11 @@ from .catalog import (
     CatalogSocialView,
     CatalogSyncStatusView,
 )
+from .feeds import (
+    FeedActiveView,
+    FeedBoardView,
+    FeedCollectionsView,
+)
 from .hub import HubView
 from .kds import (
     KDSBoardView,
@@ -108,11 +113,6 @@ from .operations import (
     WorkOrderStartView,
     WorkOrderVoidView,
 )
-from .showcase import (
-    ShowcaseActiveView,
-    ShowcaseBoardView,
-    ShowcaseCollectionsView,
-)
 from .telemetry import ClientErrorView
 
 urlpatterns = [
@@ -184,9 +184,9 @@ urlpatterns = [
     path("catalog/social/", CatalogSocialView.as_view(), name="api-backstage-catalog-social"),
     path("catalog/ai-assist/", CatalogAiAssistView.as_view(), name="api-backstage-catalog-ai-assist"),
     # Feeds (menuboard/Google/Meta)
-    path("showcases/", ShowcaseBoardView.as_view(), name="api-backstage-showcases"),
-    path("showcases/active/", ShowcaseActiveView.as_view(), name="api-backstage-showcases-active"),
-    path("showcases/collections/", ShowcaseCollectionsView.as_view(), name="api-backstage-showcases-collections"),
+    path("feeds/", FeedBoardView.as_view(), name="api-backstage-feeds"),
+    path("feeds/active/", FeedActiveView.as_view(), name="api-backstage-feeds-active"),
+    path("feeds/collections/", FeedCollectionsView.as_view(), name="api-backstage-feeds-collections"),
     # Orders — operator actions
     path("orders/<str:ref>/", OrderDetailView.as_view(), name="api-backstage-order-detail"),
     path("orders/<str:ref>/advance/", OrderAdvanceView.as_view(), name="api-backstage-order-advance"),

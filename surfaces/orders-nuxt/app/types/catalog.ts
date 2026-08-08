@@ -25,7 +25,7 @@ export interface ProductSocial {
 // Uma coluna da matriz é uma SUPERFÍCIE: um Canal de venda (transacional) OU um
 // Feed, que só EMPURRA dados para fora (📺 menuboard / 🛰 Google/Meta). Feed não
 // vende: a célula só pausa/reativa o item, sem preço nem publicação. A pausa global
-// do produto gateia canais E feeds. No backend o model chama-se ``Showcase``.
+// do produto gateia canais E feeds. No backend o model chama-se ``Feed``.
 export interface SurfaceProjection {
   ref: string;
   name: string;
@@ -37,7 +37,7 @@ export interface SurfaceProjection {
   icon: string; // dica de ícone p/ feeds (tv/rss); vazio p/ canal
   is_active: boolean; // feed ligado/desligado (canal sempre ativo aqui)
   output_path: string; // saída pública do feed (abrir/prever); vazio p/ canal
-  sync_key: string; // chave no CatalogSyncState.platform (ref p/ canais, kind p/ showcases)
+  sync_key: string; // chave no CatalogSyncState.platform (ref p/ canais, kind p/ feeds)
 }
 
 export interface SurfaceCellProjection {

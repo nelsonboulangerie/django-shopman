@@ -232,14 +232,14 @@ EXCEPTION_SURFACES: tuple[Surface, ...] = (
             ROOT / "shopman/backstage/projections/order_queue.py",
             ROOT / "shopman/backstage/projections/kds.py",
             ROOT / "shopman/backstage/projections/catalog.py",
-            ROOT / "shopman/backstage/projections/showcase.py",
+            ROOT / "shopman/backstage/projections/feeds.py",
             ROOT / "shopman/backstage/projections/closing.py",
             ROOT / "shopman/backstage/projections/cash_session.py",
             ROOT / "shopman/backstage/projections/production.py",
             ROOT / "shopman/backstage/projections/marketing.py",
         ),
         exception_reason=(
-            "Order queue + KDS + catalog-matrix + expositores + day-closing + cash-session + "
+            "Order queue + KDS + catalog-matrix + feeds + day-closing + cash-session + "
             "production + campaign projections feed dedicated headless Nuxt operator apps "
             "(gestor./kds./pdv./prod./mkt. via api/v1/backstage/*), not Admin/Unfold "
             "pages (OPERATOR-APPS-PLAN Fase 2; CROSS-CHANNEL-CATALOG-HUB-PLAN Frente 3; "

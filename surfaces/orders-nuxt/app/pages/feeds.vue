@@ -1,28 +1,28 @@
 <script setup lang="ts">
 // Feeds — o lado DISPLAY do cardápio. Um feed empurra um recorte de coleções
 // PARA FORA (📺 menuboard na TV, 🛰 Google/Meta) sem transacionar. No backend o
-// model chama-se ``Showcase`` — daí os nomes internos aqui.
+// model chama-se ``Feed`` — daí os nomes internos aqui.
 // Aqui o operador liga/pausa, escolhe quais coleções cada um exibe e abre/prevê a
 // saída. A ORDEM das coleções é global (reordenável no Catálogo).
-import type { CollectionOptionProjection, ShowcaseProjection } from "~/types/showcase";
+import type { CollectionOptionProjection, FeedProjection } from "~/types/feeds";
 
-const { board, pending, refresh, isBusy, setActive, setCollections } = useShowcaseBoard();
-const showcases = computed<ShowcaseProjection[]>(() => board.value?.showcases ?? []);
+const { board, pending, refresh, isBusy, setActive, setCollections } = useFeedBoard();
+const feeds = computed<FeedProjection[]>(() => board.value?.feeds ?? []);
 const allCollections = computed<CollectionOptionProjection[]>(() => board.value?.all_collections ?? []);
 const loading = computed(() => pending.value && !board.value);
 
 // saída servida pelo Django (menuboard/feed), não pelo host do Gestor.
 const djangoBase = useRuntimeConfig().public.djangoPublicBaseUrl as string;
-const outputHref = (sc: ShowcaseProjection) => `${djangoBase}${sc.output_path}`;
+const outputHref = (sc: FeedProjection) => `${djangoBase}${sc.output_path}`;
 
-function toggleActive(sc: ShowcaseProjection) {
+function toggleActive(sc: FeedProjection) {
   setActive(sc.ref, !sc.is_active);
 }
 
 // editor de coleções (popover): rascunho local, aplica de uma vez.
 const editRef = ref<string | null>(null);
 const draft = ref<Set<string>>(new Set());
-function openEdit(sc: ShowcaseProjection) {
+function openEdit(sc: FeedProjection) {
   editRef.value = sc.ref;
   draft.value = new Set(sc.collections.map((c) => c.ref));
 }
@@ -32,7 +32,7 @@ function toggleDraft(ref_: string) {
   else next.add(ref_);
   draft.value = next;
 }
-async function applyEdit(sc: ShowcaseProjection) {
+async function applyEdit(sc: FeedProjection) {
   await setCollections(sc.ref, [...draft.value]);
   editRef.value = null;
 }
@@ -50,11 +50,11 @@ useHead({ title: "Feeds · Gestor" });
       </div>
       <template #end>
         <p class="hidden text-xs text-muted-foreground sm:block">
-          <span class="tabular-nums">{{ showcases.length }}</span> feed{{ showcases.length === 1 ? "" : "s" }}
+          <span class="tabular-nums">{{ feeds.length }}</span> feed{{ feeds.length === 1 ? "" : "s" }}
         </p>
         <!-- criar/configurar a fundo (novo feed, opções) é no Admin -->
         <a
-          :href="`${djangoBase}/admin/shop/showcase/`" target="_blank" rel="noopener"
+          :href="`${djangoBase}/admin/shop/feed/`" target="_blank" rel="noopener"
           class="inline-flex h-9 items-center gap-1.5 rounded-md border px-3 text-sm font-medium text-muted-foreground transition hover:bg-accent hover:text-foreground"
           title="Criar / configurar feeds no Admin"
         >
@@ -72,9 +72,9 @@ useHead({ title: "Feeds · Gestor" });
         <div v-for="i in 3" :key="i" class="h-40 animate-pulse rounded-xl border border-border bg-muted/40"></div>
       </div>
 
-      <div v-else-if="showcases.length" class="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+      <div v-else-if="feeds.length" class="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
         <article
-          v-for="sc in showcases" :key="sc.ref"
+          v-for="sc in feeds" :key="sc.ref"
           class="flex flex-col gap-3 rounded-xl border border-border bg-card p-4 transition"
           :class="sc.is_active ? '' : 'opacity-70'"
         >

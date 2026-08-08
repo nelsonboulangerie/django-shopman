@@ -130,14 +130,14 @@ export function surfaceIcon(ref: string): string {
 
 // Ícone da coluna considerando o tipo: feed traz a própria dica (tv/rss); canal
 // resolve por ref. Fonte única do ícone de cabeçalho da matriz.
-const SHOWCASE_ICONS: Record<string, string> = {
+const DISPLAY_ICONS: Record<string, string> = {
   tv: "lucide:tv",
   rss: "lucide:rss",
   monitor: "lucide:monitor",
 };
 
 export function surfaceDisplayIcon(surface: SurfaceProjection): string {
-  if (!surface.transactional) return SHOWCASE_ICONS[surface.icon] ?? "lucide:tv";
+  if (!surface.transactional) return DISPLAY_ICONS[surface.icon] ?? "lucide:tv";
   return surfaceIcon(surface.ref);
 }
 

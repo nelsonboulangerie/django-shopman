@@ -463,19 +463,19 @@ def test_reorder_items_manual(client, operator, catalog):
 
 
 def _paused_skus(ref: str) -> set[str]:
-    """A pausa local do canal de exibição — antes vivia em ``Showcase.options``."""
+    """A pausa local do canal de exibição — antes vivia em ``Feed.options``."""
     channel = Channel.objects.get(ref=ref)
     return {str(x) for x in ((channel.config or {}).get("display") or {}).get("paused_skus") or []}
 
 
 @pytest.fixture
-def catalog_with_showcase(catalog):
+def catalog_with_display(catalog):
     """Um canal de exibição (quadro) mostrando a coleção Doces (só BOLO é membro)."""
     display_channel("tv-salao", "TV do Salão", collections=["doces"], prices_from="pdv")
     return catalog
 
 
-def test_matrix_includes_showcase_column(client, operator, catalog_with_showcase):
+def test_matrix_includes_feed_column(client, operator, catalog_with_display):
     """O feed entra como coluna à direita dos canais, marcada não-transacional."""
     client.force_login(operator)
     matrix = client.get(MATRIX_URL).json()["matrix"]
@@ -488,7 +488,7 @@ def test_matrix_includes_showcase_column(client, operator, catalog_with_showcase
     assert tv["output_path"] == "/menuboard/tv-salao/"
 
 
-def test_surface_short_name_falls_back_to_name(client, operator, catalog_with_showcase):
+def test_surface_short_name_falls_back_to_name(client, operator, catalog_with_display):
     """Sem rótulo curto configurado, `short_name` repete o `name` (nunca vem vazio)."""
     client.force_login(operator)
     surfaces = {s["ref"]: s for s in client.get(MATRIX_URL).json()["matrix"]["surfaces"]}
@@ -496,11 +496,11 @@ def test_surface_short_name_falls_back_to_name(client, operator, catalog_with_sh
     assert surfaces["web"]["short_name"] == surfaces["web"]["name"]
 
 
-def test_surface_short_name_comes_from_one_place(client, operator, catalog_with_showcase):
+def test_surface_short_name_comes_from_one_place(client, operator, catalog_with_display):
     """O rótulo curto vem de `config.short_name` — transacional E exibição.
 
-    Antes o canal lia de `ChannelConfig` e o feed de `Showcase.options`: mesma
-    pergunta, dois lugares. Absorvido o Showcase, sobra um.
+    Antes o canal lia de `ChannelConfig` e o feed de `Feed.options`: mesma
+    pergunta, dois lugares. Absorvido o Feed, sobra um.
     """
     for ref, short in (("web", "Site"), ("tv-salao", "TV1")):
         channel = Channel.objects.get(ref=ref)
@@ -515,7 +515,7 @@ def test_surface_short_name_comes_from_one_place(client, operator, catalog_with_
     assert surfaces["tv-salao"]["name"] == "TV do Salão"
 
 
-def test_inactive_channel_leaves_the_matrix(client, operator, catalog_with_showcase):
+def test_inactive_channel_leaves_the_matrix(client, operator, catalog_with_display):
     """Canal inativo (ex.: WhatsApp, sem implementação) some das colunas."""
     Channel.objects.filter(ref="web").update(is_active=False)
     client.force_login(operator)
@@ -524,7 +524,7 @@ def test_inactive_channel_leaves_the_matrix(client, operator, catalog_with_showc
     assert all(c["surface_ref"] != "web" for r in matrix["rows"] for c in r["cells"])
 
 
-def test_showcase_cell_membership_and_no_price(client, operator, catalog_with_showcase):
+def test_feed_cell_membership_and_no_price(client, operator, catalog_with_display):
     """Célula de feed: membro (via coleção) disponível, sem preço; não-membro N/A."""
     client.force_login(operator)
     matrix = client.get(MATRIX_URL).json()["matrix"]
@@ -539,7 +539,7 @@ def test_showcase_cell_membership_and_no_price(client, operator, catalog_with_sh
     assert pao_tv["in_listing"] is False  # PAO não está em Doces → fora deste feed
 
 
-def test_showcase_cell_pause_routes_to_showcase(client, operator, catalog_with_showcase):
+def test_feed_cell_pause_routes_to_feed(client, operator, catalog_with_display):
     """Pausar a célula grava em config.display.paused_skus (sem tocar listings)."""
     client.force_login(operator)
     resp = client.post(
@@ -568,7 +568,7 @@ def test_showcase_cell_pause_routes_to_showcase(client, operator, catalog_with_s
     assert _paused_skus("tv-salao") == set()
 
 
-def test_showcase_cell_price_rejected(client, operator, catalog_with_showcase):
+def test_feed_cell_price_rejected(client, operator, catalog_with_display):
     """Feed não aceita preço/publicação — só pausar/reativar."""
     client.force_login(operator)
     resp = client.post(
@@ -579,7 +579,7 @@ def test_showcase_cell_price_rejected(client, operator, catalog_with_showcase):
     assert resp.status_code == 400
 
 
-def test_global_pause_gates_showcase_column(client, operator, catalog_with_showcase):
+def test_global_pause_gates_feed_column(client, operator, catalog_with_display):
     """A pausa global do produto atinge o feed (cada um é um)."""
     client.force_login(operator)
     client.post(PRODUCT_URL, data={"sku": "BOLO", "is_sellable": False}, content_type="application/json")
@@ -590,7 +590,7 @@ def test_global_pause_gates_showcase_column(client, operator, catalog_with_showc
     assert bolo_tv["available"] is False  # global gateia o feed mesmo sem pausa local
 
 
-def test_showcase_bulk_pause(client, operator, catalog_with_showcase):
+def test_feed_bulk_pause(client, operator, catalog_with_display):
     """Bulk numa coluna de feed pausa os itens (options[paused_skus])."""
     client.force_login(operator)
     resp = client.post(

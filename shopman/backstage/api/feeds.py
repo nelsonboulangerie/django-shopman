@@ -1,5 +1,5 @@
 """
-Backstage Showcase API — Feeds (menuboard/Google/Meta) no Gestor.
+Backstage Feed API — Feeds (menuboard/Google/Meta) no Gestor.
 
 Read = board dos feeds + coleções disponíveis; write = ligar/pausar e escolher
 as coleções que cada feed exibe. Gate: ``shop.manage_catalog``.
@@ -12,43 +12,43 @@ from rest_framework.views import APIView
 
 from shopman.backstage.api.permissions import HasBackstagePermission
 from shopman.backstage.api.projections import projection_data
-from shopman.backstage.services import showcase as showcase_service
+from shopman.backstage.services import feeds as feed_service
 from shopman.backstage.services.exceptions import CatalogError
 
 
-class _ShowcaseBase(APIView):
+class _FeedBase(APIView):
     permission_classes = [HasBackstagePermission]
     required_permission = "shop.manage_catalog"
 
 
-class ShowcaseBoardView(_ShowcaseBase):
+class FeedBoardView(_FeedBase):
     def get(self, request):
-        from shopman.backstage.projections.showcase import build_showcase_board
+        from shopman.backstage.projections.feeds import build_feed_board
 
-        return Response({"board": projection_data(build_showcase_board())})
+        return Response({"board": projection_data(build_feed_board())})
 
 
-class ShowcaseActiveView(_ShowcaseBase):
+class FeedActiveView(_FeedBase):
     def post(self, request):
         ref = (request.data.get("ref") or "").strip()
         is_active = request.data.get("is_active")
         if not ref or not isinstance(is_active, bool):
             return Response({"detail": "ref e is_active (bool) são obrigatórios."}, status=400)
         try:
-            showcase_service.set_active(ref, is_active)
+            feed_service.set_active(ref, is_active)
         except CatalogError as exc:
             return Response({"detail": str(exc)}, status=400)
         return Response({"ok": True, "ref": ref, "is_active": is_active})
 
 
-class ShowcaseCollectionsView(_ShowcaseBase):
+class FeedCollectionsView(_FeedBase):
     def post(self, request):
         ref = (request.data.get("ref") or "").strip()
         collections = request.data.get("collections")
         if not ref or not isinstance(collections, list):
             return Response({"detail": "ref e collections (lista) são obrigatórios."}, status=400)
         try:
-            showcase_service.set_collections(ref, collections)
+            feed_service.set_collections(ref, collections)
         except CatalogError as exc:
             return Response({"detail": str(exc)}, status=400)
         return Response({"ok": True, "ref": ref})

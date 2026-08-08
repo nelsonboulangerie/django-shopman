@@ -38,7 +38,7 @@ def _display(channel) -> dict:
 
 def _save_display(channel, display: dict) -> None:
     channel.config = {**(channel.config or {}), "display": display}
-    # `Channel` não tem timestamps (o `Showcase` tinha) — só o campo que muda.
+    # `Channel` não tem timestamps (o `Feed` tinha) — só o campo que muda.
     channel.save(update_fields=["config"])
 
 

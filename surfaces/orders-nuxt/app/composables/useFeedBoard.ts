@@ -1,13 +1,13 @@
 // Feeds (menuboard/Google/Meta) — lê o board + liga/pausa + escolhe coleções.
-import type { ShowcaseBoardProjection, ShowcaseBoardResponse } from "~/types/showcase";
+import type { FeedBoardProjection, FeedBoardResponse } from "~/types/feeds";
 
-export function useShowcaseBoard() {
-  const path = "/api/v1/backstage/showcases/";
-  const { data, pending, error, refresh } = useFetch<ShowcaseBoardResponse>(path, {
-    key: "showcase-board",
+export function useFeedBoard() {
+  const path = "/api/v1/backstage/feeds/";
+  const { data, pending, error, refresh } = useFetch<FeedBoardResponse>(path, {
+    key: "feed-board",
     server: true,
   });
-  const board = computed<ShowcaseBoardProjection | null>(() => data.value?.board ?? null);
+  const board = computed<FeedBoardProjection | null>(() => data.value?.board ?? null);
 
   const busy = ref<Set<string>>(new Set());
   const isBusy = (ref_: string) => busy.value.has(ref_);
@@ -33,9 +33,9 @@ export function useShowcaseBoard() {
   }
 
   const setActive = (ref_: string, isActive: boolean) =>
-    run(ref_, { ref: ref_, is_active: isActive }, "/api/v1/backstage/showcases/active/");
+    run(ref_, { ref: ref_, is_active: isActive }, "/api/v1/backstage/feeds/active/");
   const setCollections = (ref_: string, collections: string[]) =>
-    run(ref_, { ref: ref_, collections }, "/api/v1/backstage/showcases/collections/");
+    run(ref_, { ref: ref_, collections }, "/api/v1/backstage/feeds/collections/");
 
   return { board, pending, error, refresh, isBusy, errorMsg, setActive, setCollections };
 }
