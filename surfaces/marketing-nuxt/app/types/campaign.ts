@@ -1,4 +1,4 @@
-// Contrato do Marketing — espelha `shopman/backstage/projections/campaign.py`.
+// Contrato do Marketing — espelha `shopman/backstage/projections/marketing.py`.
 // Chaves em inglês (convenção de projection); rótulos ficam na apresentação.
 
 export interface PlatformResult {

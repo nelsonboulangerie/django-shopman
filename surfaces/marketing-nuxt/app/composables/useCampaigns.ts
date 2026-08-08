@@ -7,12 +7,12 @@ import type { Campaign, OptionsResponse, RulesResponse } from "~/types/campaign"
 
 export function useCampaigns() {
   const { data, refresh, pending, error } = useFetch<RulesResponse>(
-    "/api/v1/backstage/campaign/rules/",
-    { key: "campaign-list", server: true },
+    "/api/v1/backstage/marketing/rules/",
+    { key: "marketing-list", server: true },
   );
   const { data: optionsData } = useFetch<OptionsResponse>(
-    "/api/v1/backstage/campaign/options/",
-    { key: "campaign-options", server: true },
+    "/api/v1/backstage/marketing/options/",
+    { key: "marketing-options", server: true },
   );
 
   const rules = computed<Campaign[]>(() => data.value?.rules ?? []);
@@ -33,7 +33,7 @@ export function useCampaigns() {
 
   async function patch(pk: number, body: Partial<Campaign> & Record<string, unknown>) {
     try {
-      await $fetch(`/api/v1/backstage/campaign/rules/${pk}/`, { method: "PATCH", body });
+      await $fetch(`/api/v1/backstage/marketing/rules/${pk}/`, { method: "PATCH", body });
       useSonner.success("Regra salva.");
       await refresh();
       return true;
@@ -45,7 +45,7 @@ export function useCampaigns() {
 
   async function create(body: Record<string, unknown>) {
     try {
-      await $fetch("/api/v1/backstage/campaign/rules/", { method: "POST", body });
+      await $fetch("/api/v1/backstage/marketing/rules/", { method: "POST", body });
       useSonner.success("Regra criada.");
       await refresh();
       return true;

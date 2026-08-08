@@ -335,7 +335,7 @@ _OPERATOR_UNLOCK_PERMS = {
     "backstage.operate_kds",
     "backstage.operate_production",
     "shop.manage_orders",
-    # Campanha (surfaces/campaign-nuxt): sem esta entrada a tela de destravar
+    # Campanha (surfaces/marketing-nuxt): sem esta entrada a tela de destravar
     # rejeita a permissão e o app fica trancado para sempre com o gate ligado.
     "shop.manage_campaigns",
 }

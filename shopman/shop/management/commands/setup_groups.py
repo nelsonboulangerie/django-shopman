@@ -48,7 +48,7 @@ class Command(BaseCommand):
             ],
             "Gerente": [
                 shop_shop("manage_orders"),
-                # Campanha (surfaces/campaign-nuxt): publicar em nome da marca é
+                # Campanha (surfaces/marketing-nuxt): publicar em nome da marca é
                 # decisão de gestão. Sem esta linha a permissão existe mas ninguém
                 # a tem, e o app fica inalcançável.
                 shop_shop("manage_campaigns"),

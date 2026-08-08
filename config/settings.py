@@ -566,7 +566,7 @@ SHOPMAN_META = {
 # com scopes instagram_content_publish, pages_manage_posts, pages_read_engagement.
 # Inerte sem page_access_token — adapter roda em dry-run/mock.
 # api_version e api_base reutilizam os valores de SHOPMAN_META (DRY).
-SHOPMAN_CAMPAIGN_META = {
+SHOPMAN_MARKETING_META = {
     "page_id": os.environ.get("META_PAGE_ID", "").strip(),
     "ig_user_id": os.environ.get("META_IG_USER_ID", "").strip(),
     "page_access_token": os.environ.get("META_PAGE_ACCESS_TOKEN", "").strip(),
@@ -1146,12 +1146,12 @@ SHOPMAN_PRODUCTION_BASE_URL = (
     os.environ.get("SHOPMAN_PRODUCTION_BASE_URL") or ""
 ).strip().rstrip("/")
 
-# Base URL pública do Marketing (surfaces/campaign-nuxt) — app Nuxt dedicado.
+# Base URL pública do Marketing (surfaces/marketing-nuxt) — app Nuxt dedicado.
 # NÃO há subdomínio publicado no spec de deploy (.do/): o acesso depende
 # inteiramente desta variável. Vazio ⇒ o tile "Marketing" some da Central,
 # sem link morto.
-SHOPMAN_CAMPAIGN_BASE_URL = (
-    os.environ.get("SHOPMAN_CAMPAIGN_BASE_URL") or ""
+SHOPMAN_MARKETING_BASE_URL = (
+    os.environ.get("SHOPMAN_MARKETING_BASE_URL") or ""
 ).strip().rstrip("/")
 
 # Zona de operador (OPERATOR-AUTH-PLAN, Opção A) — login único + sessão Django
@@ -1180,7 +1180,7 @@ SHOPMAN_SURFACE_URLS = {
         "kds": SHOPMAN_KDS_BASE_URL,
         "gestor": SHOPMAN_ORDERS_BASE_URL,
         "production": SHOPMAN_PRODUCTION_BASE_URL,
-        "campaign": SHOPMAN_CAMPAIGN_BASE_URL,
+        "marketing": SHOPMAN_MARKETING_BASE_URL,
         "loja": SHOPMAN_STOREFRONT_BASE_URL,
     }.items()
     if url

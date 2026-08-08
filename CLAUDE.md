@@ -71,7 +71,7 @@ surfaces/               7 apps Nuxt 4 (SSR) + 1 layer compartilhada — as super
 ├── kds-nuxt/          cozinha (KDS, :3003)                                 → api./backstage
 ├── orders-nuxt/       gestor de pedidos (:3004)                            → api./backstage
 ├── production-nuxt/   produção/fornadas (kiosk Solari, :3005)              → api./backstage
-├── campaign-nuxt/     marketing do gestor — campanhas e anúncios (:3006)  → api./backstage
+├── marketing-nuxt/    marketing do gestor — campanhas e anúncios (:3006)  → api./backstage
 └── operator-kit/      Nuxt layer compartilhada dos apps de operador (extends): httpError,
                        retryWithBackoff, useConnectivity, OperatorLock/PIN, telemetria de erro,
                        BFF canônico (server/utils: djangoProxy, eventStream, apiVersion),

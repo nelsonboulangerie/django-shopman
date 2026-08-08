@@ -115,7 +115,7 @@ django-shopman/
 │   ├── kds-nuxt/               # cozinha (:3003)
 │   ├── orders-nuxt/            # gestor de pedidos (:3004)
 │   ├── production-nuxt/        # produção/fornadas (:3005)
-│   ├── campaign-nuxt/          # marketing do gestor — campanhas e anúncios (:3006)
+│   ├── marketing-nuxt/         # marketing do gestor — campanhas e anúncios (:3006)
 │   └── operator-kit/           # Nuxt layer compartilhada dos apps de operador
 │
 ├── config/                     # Django project wrapper + seed do deployment (Nelson)

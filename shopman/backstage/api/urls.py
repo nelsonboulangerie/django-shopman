@@ -5,18 +5,6 @@ from __future__ import annotations
 from django.urls import path
 
 from .alerts import AlertAckView, AlertListView
-from .campaign import (
-    AnnouncementApproveView,
-    AnnouncementDetailView,
-    AnnouncementDiscardView,
-    AnnouncementTemplateDetailView,
-    AnnouncementTemplateListView,
-    CampaignBoardView,
-    CampaignDetailView,
-    CampaignHistoryView,
-    CampaignListView,
-    CampaignOptionsView,
-)
 from .catalog import (
     CatalogAiAssistView,
     CatalogBulkPriceView,
@@ -41,6 +29,18 @@ from .kds import (
     KDSTicketDoneView,
     KDSTicketItemView,
     KDSTicketRecallView,
+)
+from .marketing import (
+    AnnouncementApproveView,
+    AnnouncementDetailView,
+    AnnouncementDiscardView,
+    AnnouncementTemplateDetailView,
+    AnnouncementTemplateListView,
+    CampaignBoardView,
+    CampaignDetailView,
+    CampaignHistoryView,
+    CampaignListView,
+    CampaignOptionsView,
 )
 from .notifications import (
     NotificationActionView,
@@ -219,18 +219,18 @@ urlpatterns = [
         NotificationActionView.as_view(),
         name="api-backstage-notification-action",
     ),
-    # Campanha — marketing operacional (surfaces/campaign-nuxt). Gate próprio
+    # Campanha — marketing operacional (surfaces/marketing-nuxt). Gate próprio
     # (`shop.manage_campaigns`): o gestor de marketing não é o de pedidos.
-    path("campaign/", CampaignBoardView.as_view(), name="api-backstage-campaign"),
-    path("campaign/history/", CampaignHistoryView.as_view(), name="api-backstage-campaign-history"),
-    path("campaign/options/", CampaignOptionsView.as_view(), name="api-backstage-campaign-options"),
-    path("campaign/rules/", CampaignListView.as_view(), name="api-backstage-campaign-rules"),
-    path("campaign/rules/<int:pk>/", CampaignDetailView.as_view(), name="api-backstage-campaign-rule"),
-    path("campaign/templates/", AnnouncementTemplateListView.as_view(), name="api-backstage-campaign-templates"),
-    path("campaign/templates/<int:pk>/", AnnouncementTemplateDetailView.as_view(), name="api-backstage-campaign-template"),
-    path("campaign/announcements/<int:pk>/", AnnouncementDetailView.as_view(), name="api-backstage-campaign-post"),
-    path("campaign/announcements/<int:pk>/approve/", AnnouncementApproveView.as_view(), name="api-backstage-campaign-approve"),
-    path("campaign/announcements/<int:pk>/discard/", AnnouncementDiscardView.as_view(), name="api-backstage-campaign-discard"),
+    path("marketing/", CampaignBoardView.as_view(), name="api-backstage-marketing"),
+    path("marketing/history/", CampaignHistoryView.as_view(), name="api-backstage-marketing-history"),
+    path("marketing/options/", CampaignOptionsView.as_view(), name="api-backstage-marketing-options"),
+    path("marketing/rules/", CampaignListView.as_view(), name="api-backstage-marketing-rules"),
+    path("marketing/rules/<int:pk>/", CampaignDetailView.as_view(), name="api-backstage-marketing-rule"),
+    path("marketing/templates/", AnnouncementTemplateListView.as_view(), name="api-backstage-marketing-templates"),
+    path("marketing/templates/<int:pk>/", AnnouncementTemplateDetailView.as_view(), name="api-backstage-marketing-template"),
+    path("marketing/announcements/<int:pk>/", AnnouncementDetailView.as_view(), name="api-backstage-marketing-post"),
+    path("marketing/announcements/<int:pk>/approve/", AnnouncementApproveView.as_view(), name="api-backstage-marketing-approve"),
+    path("marketing/announcements/<int:pk>/discard/", AnnouncementDiscardView.as_view(), name="api-backstage-marketing-discard"),
     # Production — work order actions
     path("production/plan/", WorkOrderPlanView.as_view(), name="api-backstage-wo-plan"),
     path("production/<int:wo_id>/start/", WorkOrderStartView.as_view(), name="api-backstage-wo-start"),
