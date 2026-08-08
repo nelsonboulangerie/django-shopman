@@ -24,7 +24,7 @@ from django.conf import settings
 
 from shopman.backstage.permissions import (
     can_access_production,
-    can_manage_broadcast,
+    can_manage_campaigns,
     can_manage_orders,
     can_operate_kds,
     can_operate_pos,
@@ -39,7 +39,7 @@ DEV_SURFACE_URLS: dict[str, str] = {
     "kds": "http://127.0.0.1:3003/",
     "gestor": "http://127.0.0.1:3004/",
     "production": "http://127.0.0.1:3005/",
-    "broadcast": "http://127.0.0.1:3006/",
+    "campaign": "http://127.0.0.1:3006/",
     "loja": "http://127.0.0.1:3000/",
 }
 
@@ -79,7 +79,7 @@ _REGISTRY: tuple[_AppSpec, ...] = (
     _AppSpec("kds", "Cozinha", "Preparo e expedição", "chef-hat", "launch", can_operate_kds),
     _AppSpec("gestor", "Gestor de Pedidos", "Fila e acompanhamento", "clipboard-list", "launch", can_manage_orders),
     _AppSpec("production", "Produção", "Produção e fornadas", "croissant", "launch", can_access_production),
-    _AppSpec("broadcast", "Marketing", "Divulgar a fornada", "megaphone", "launch", can_manage_broadcast),
+    _AppSpec("campaign", "Marketing", "Divulgar a fornada", "megaphone", "launch", can_manage_campaigns),
     _AppSpec("loja", "Loja online", "Abrir a loja do cliente", "store", "external", is_superuser),
 )
 

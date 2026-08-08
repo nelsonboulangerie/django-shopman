@@ -5,17 +5,17 @@ from __future__ import annotations
 from django.urls import path
 
 from .alerts import AlertAckView, AlertListView
-from .broadcast import (
-    BroadcastBoardView,
-    BroadcastHistoryView,
-    BroadcastOptionsView,
-    BroadcastPostApproveView,
-    BroadcastPostDetailView,
-    BroadcastPostDiscardView,
-    BroadcastRuleDetailView,
-    BroadcastRuleListView,
-    PostTemplateDetailView,
-    PostTemplateListView,
+from .campaign import (
+    AnnouncementApproveView,
+    AnnouncementDetailView,
+    AnnouncementDiscardView,
+    AnnouncementTemplateDetailView,
+    AnnouncementTemplateListView,
+    CampaignBoardView,
+    CampaignDetailView,
+    CampaignHistoryView,
+    CampaignListView,
+    CampaignOptionsView,
 )
 from .catalog import (
     CatalogAiAssistView,
@@ -219,18 +219,18 @@ urlpatterns = [
         NotificationActionView.as_view(),
         name="api-backstage-notification-action",
     ),
-    # Broadcast — marketing operacional (surfaces/broadcast-nuxt). Gate próprio
-    # (`shop.manage_broadcast`): o gestor de marketing não é o de pedidos.
-    path("broadcast/", BroadcastBoardView.as_view(), name="api-backstage-broadcast"),
-    path("broadcast/history/", BroadcastHistoryView.as_view(), name="api-backstage-broadcast-history"),
-    path("broadcast/options/", BroadcastOptionsView.as_view(), name="api-backstage-broadcast-options"),
-    path("broadcast/rules/", BroadcastRuleListView.as_view(), name="api-backstage-broadcast-rules"),
-    path("broadcast/rules/<int:pk>/", BroadcastRuleDetailView.as_view(), name="api-backstage-broadcast-rule"),
-    path("broadcast/templates/", PostTemplateListView.as_view(), name="api-backstage-broadcast-templates"),
-    path("broadcast/templates/<int:pk>/", PostTemplateDetailView.as_view(), name="api-backstage-broadcast-template"),
-    path("broadcast/posts/<int:pk>/", BroadcastPostDetailView.as_view(), name="api-backstage-broadcast-post"),
-    path("broadcast/posts/<int:pk>/approve/", BroadcastPostApproveView.as_view(), name="api-backstage-broadcast-approve"),
-    path("broadcast/posts/<int:pk>/discard/", BroadcastPostDiscardView.as_view(), name="api-backstage-broadcast-discard"),
+    # Campanha — marketing operacional (surfaces/campaign-nuxt). Gate próprio
+    # (`shop.manage_campaigns`): o gestor de marketing não é o de pedidos.
+    path("campaign/", CampaignBoardView.as_view(), name="api-backstage-campaign"),
+    path("campaign/history/", CampaignHistoryView.as_view(), name="api-backstage-campaign-history"),
+    path("campaign/options/", CampaignOptionsView.as_view(), name="api-backstage-campaign-options"),
+    path("campaign/rules/", CampaignListView.as_view(), name="api-backstage-campaign-rules"),
+    path("campaign/rules/<int:pk>/", CampaignDetailView.as_view(), name="api-backstage-campaign-rule"),
+    path("campaign/templates/", AnnouncementTemplateListView.as_view(), name="api-backstage-campaign-templates"),
+    path("campaign/templates/<int:pk>/", AnnouncementTemplateDetailView.as_view(), name="api-backstage-campaign-template"),
+    path("campaign/announcements/<int:pk>/", AnnouncementDetailView.as_view(), name="api-backstage-campaign-post"),
+    path("campaign/announcements/<int:pk>/approve/", AnnouncementApproveView.as_view(), name="api-backstage-campaign-approve"),
+    path("campaign/announcements/<int:pk>/discard/", AnnouncementDiscardView.as_view(), name="api-backstage-campaign-discard"),
     # Production — work order actions
     path("production/plan/", WorkOrderPlanView.as_view(), name="api-backstage-wo-plan"),
     path("production/<int:wo_id>/start/", WorkOrderStartView.as_view(), name="api-backstage-wo-start"),

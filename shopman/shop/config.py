@@ -23,6 +23,7 @@ class ChannelConfig:
     pricing       — como o preço é definido? (internal/external)
     editing       — itens podem ser editados? (open/locked)
     rules         — quais validators/modifiers ativar?
+    display       — como um canal `display` exibe, e de quem anuncia o preço
 
     Lead time de encomenda: ``stock.default_lead_time_hours`` é a antecedência
     mínima (em horas) exigida para REGISTRAR DEMANDA (encomenda para data sem
@@ -32,8 +33,10 @@ class ChannelConfig:
     já está planejada — o compromisso existe), e venda imediata de estoque
     físico de hoje nunca é bloqueada por lead time.
 
-    Um Channel é um canal de VENDA (transacional). Exibição/feed (menuboard, Google,
-    Meta) NÃO são canais — vivem em ``shop.Showcase`` (Feed).
+    Superfície é canal, e a ``commerce_policy`` diz até onde a interação comercial
+    vai nela: ``order`` transaciona, ``display`` apenas exibe (menuboard, catálogo
+    do Google, catálogo da Meta). Canal ``display`` não tem preço próprio — ele
+    anuncia o preço do canal apontado por ``display.prices_from`` (ADR-018).
     """
 
     # ── 1. Confirmação ──
@@ -150,6 +153,43 @@ class ChannelConfig:
         # "open"   — itens podem ser editados após adição (padrão)
         # "locked" — itens não podem ser editados (marketplace)
 
+    # ── 9. Exibição ──
+
+    @dataclass
+    class Display:
+        """Como um canal ``display`` exibe — e de quem ele anuncia o preço.
+
+        Só faz sentido em canal com ``commerce_policy=display``. É *comportamento*
+        de exibição, não natureza do canal: por isso mora em config e não em
+        coluna (a natureza é a ``commerce_policy``, que precisa ser indexada e
+        não pode ser herdada pela cascata).
+
+        ``format`` seleciona **dialeto de XML**, e por isso ``menuboard`` não é um
+        valor dele: menuboard é *rota*. ``/menuboard/<ref>/`` renderiza HTML com
+        SSE e ``/feed/<ref>.xml`` renderiza XML — a rota já escolhe o
+        renderizador; ao ``format`` resta dizer se o XML segue a especificação do
+        Google ou a da Meta.
+
+        ``prices_from`` é a ref do canal transacional cujo preço este canal
+        anuncia. Um feed manda o cliente para a loja, então o preço correto não é
+        um preço dele: é o preço de onde a pessoa vai transacionar. Com o ponteiro,
+        divergência entre feed e landing page deixa de ser possível, em vez de
+        virar dever de curadoria. Vazio cai em ``Product.base_price_q``, que é o
+        comportamento antigo — e por isso o system check reclama.
+        """
+
+        format: str = ""
+        # ""                — sem dialeto de XML (ex.: menuboard, servido por rota própria)
+        # "google_merchant" — XML na especificação do Google Merchant
+        # "meta_catalog"    — XML na especificação do catálogo da Meta
+        collections: list[str] = field(default_factory=list)
+        # Refs de Collection que compõem a curadoria. Ordem de exibição =
+        # ``Collection.sort_order``. Vazio = nada a mostrar.
+        prices_from: str = ""
+        # Ref do canal transacional cujo preço é anunciado.
+        paused_skus: list[str] = field(default_factory=list)
+        # Exceções por SKU: tirado deste canal sem sair da coleção.
+
     # ── 8. Regras ──
 
     @dataclass
@@ -180,6 +220,7 @@ class ChannelConfig:
     pricing: Pricing = field(default_factory=Pricing)
     editing: Editing = field(default_factory=Editing)
     rules: Rules = field(default_factory=Rules)
+    display: Display = field(default_factory=Display)
 
     # ── Lifecycle ──
 
@@ -217,6 +258,7 @@ class ChannelConfig:
             pricing=_safe_init(cls.Pricing, data.get("pricing", {})),
             editing=_safe_init(cls.Editing, data.get("editing", {})),
             rules=_safe_init(cls.Rules, data.get("rules", {})),
+            display=_safe_init(cls.Display, data.get("display", {})),
             lifecycle=data.get("lifecycle", {}),
             handle_label=data.get("handle_label", cls.handle_label),
             handle_placeholder=data.get("handle_placeholder", cls.handle_placeholder),

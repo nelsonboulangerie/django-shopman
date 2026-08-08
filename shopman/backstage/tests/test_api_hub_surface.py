@@ -22,7 +22,7 @@ SURFACE_URLS = {
     "kds": "https://kds.example.test/",
     "gestor": "https://gestor.example.test/",
     "production": "https://prod.example.test/",
-    "broadcast": "https://broadcast.example.test/",
+    "campaign": "https://mkt.example.test/",
     "loja": "https://loja.example.test/",
 }
 
@@ -63,7 +63,7 @@ def test_hub_superuser_sees_all_tiles(client, db):
     hub = client.get(reverse("api-backstage-hub")).json()["hub"]
 
     refs = [tile["ref"] for tile in hub["tiles"]]
-    assert refs == ["pos", "kds", "gestor", "production", "broadcast", "loja"]
+    assert refs == ["pos", "kds", "gestor", "production", "campaign", "loja"]
 
     by_ref = {tile["ref"]: tile for tile in hub["tiles"]}
     # Ícone forte por app (DS §6).
@@ -71,11 +71,11 @@ def test_hub_superuser_sees_all_tiles(client, db):
     assert by_ref["kds"]["icon"] == "chef-hat"
     assert by_ref["gestor"]["icon"] == "clipboard-list"
     assert by_ref["production"]["icon"] == "croissant"
-    assert by_ref["broadcast"]["icon"] == "megaphone"
+    assert by_ref["campaign"]["icon"] == "megaphone"
     # Nome público sem jargão interno: a superfície "production" é Produção e a
-    # "broadcast" é Marketing (ref interna estável; label é o que o operador lê).
+    # "campaign" é Marketing (ref interna estável; label é o que o operador lê).
     assert by_ref["production"]["label"] == "Produção"
-    assert by_ref["broadcast"]["label"] == "Marketing"
+    assert by_ref["campaign"]["label"] == "Marketing"
     assert by_ref["loja"]["icon"] == "store"
     # Loja abre a loja do cliente (storefront) em nova aba — fora da zona de operador.
     assert by_ref["loja"]["kind"] == "external"
@@ -104,7 +104,7 @@ def test_hub_filters_by_permission(client, db):
 
 @pytest.mark.django_db
 @override_settings(
-    SHOPMAN_SURFACE_URLS={k: v for k, v in SURFACE_URLS.items() if k != "broadcast"}
+    SHOPMAN_SURFACE_URLS={k: v for k, v in SURFACE_URLS.items() if k != "campaign"}
 )
 def test_hub_hides_surface_without_url(client, db):
     """Superfície sem URL configurada some do launcher — nunca link morto nem
@@ -114,7 +114,7 @@ def test_hub_hides_surface_without_url(client, db):
     tiles = client.get(reverse("api-backstage-hub")).json()["hub"]["tiles"]
 
     refs = [tile["ref"] for tile in tiles]
-    assert "broadcast" not in refs
+    assert "campaign" not in refs
     assert refs == ["pos", "kds", "gestor", "production", "loja"]
     assert all("127.0.0.1" not in tile["url"] for tile in tiles)
 
@@ -129,5 +129,5 @@ def test_hub_debug_falls_back_to_dev_urls(client, db):
         tile["ref"]: tile
         for tile in client.get(reverse("api-backstage-hub")).json()["hub"]["tiles"]
     }
-    assert by_ref["broadcast"]["url"] == "http://127.0.0.1:3006/"
+    assert by_ref["campaign"]["url"] == "http://127.0.0.1:3006/"
     assert by_ref["loja"]["url"] == "http://127.0.0.1:3000/"

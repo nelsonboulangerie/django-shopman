@@ -32,9 +32,9 @@ ALL_HANDLERS = [
     "shopman.shop.handlers.payment_timeout.PaymentTimeoutHandler",
     # Production
     "shopman.shop.handlers.production_alerts.ProductionLateCheckHandler",
-    # Broadcast (marketing operacional)
-    "shopman.shop.handlers.broadcast.BroadcastPostHandler",
-    "shopman.shop.handlers.broadcast.BroadcastNotifyHandler",
+    # Campanha (marketing operacional)
+    "shopman.shop.handlers.campaign.AnnouncementHandler",
+    "shopman.shop.handlers.campaign.AnnouncementNotifyHandler",
     # Mock PIX (dev/test only; only fires when payment_mock scheduled a directive)
     "shopman.shop.handlers.mock_pix.MockPixConfirmHandler",
     # Piloto automático de staging (nunca em produção — o handler se recusa a agir)
@@ -104,7 +104,7 @@ def register_all() -> None:
     _register_catalog_projection_handler()
     _register_catalog_signals()
     _register_ifood_status_callbacks()
-    _register_broadcast()
+    _register_campaign()
 
 
 # ── Individual registrations ──
@@ -364,19 +364,19 @@ def _register_ifood_status_callbacks() -> None:
     logger.info("shopman.handlers: registered iFood status callbacks.")
 
 
-def _register_broadcast() -> None:
-    """Wire broadcast receivers (produção, disponibilidade, produto novo).
+def _register_campaign() -> None:
+    """Wire campaign receivers (produção, disponibilidade, produto novo).
 
-    Sempre registrados: sem ``BroadcastRule`` ativa o ``evaluate()`` é um
+    Sempre registrados: sem ``Campaign`` ativa o ``evaluate()`` é um
     SELECT vazio, e gatear por config deixaria a loja muda até alguém
     lembrar de religar.
     """
-    from shopman.shop.handlers import broadcast
+    from shopman.shop.handlers import campaign
 
-    broadcast.connect()
-    registry.register_directive_handler(broadcast.BroadcastPostHandler())
-    registry.register_directive_handler(broadcast.BroadcastNotifyHandler())
-    logger.info("shopman.handlers: connected broadcast receivers.")
+    campaign.connect()
+    registry.register_directive_handler(campaign.AnnouncementHandler())
+    registry.register_directive_handler(campaign.AnnouncementNotifyHandler())
+    logger.info("shopman.handlers: connected campaign receivers.")
 
 
 def _register_catalog_signals() -> None:

@@ -105,14 +105,14 @@ class NotificationReadView(APIView):
 @extend_schema_view(
     post=extend_schema(
         tags=["backstage"],
-        summary="Execute a notification's action (e.g. approve a broadcast post)",
+        summary="Execute a notification's action (e.g. approve an announcement)",
         responses={200: OpenApiResponse(description="Action executed.")},
     ),
 )
 class NotificationActionView(APIView):
     """Executar a decisão pedida pela notificação, sem sair de onde se está.
 
-    Hoje só broadcast (aprovar/descartar um post). A ação marca a notificação
+    Hoje só campanha (aprovar/descartar um anúncio). A ação marca a notificação
     como lida no sucesso — a decisão já foi tomada, o card sai da caixa.
     """
 
@@ -133,26 +133,26 @@ class NotificationActionView(APIView):
                 {"detail": "Ação desconhecida.", "field": "action"}, status=400
             )
 
-        post_id = (notification.action_data or {}).get("broadcast_post_id")
+        post_id = (notification.action_data or {}).get("announcement_id")
         if not post_id:
             return Response(
                 {"detail": "Esta notificação não aponta para nenhum post."}, status=400
             )
 
-        if not request.user.has_perm("shop.manage_broadcast"):
+        if not request.user.has_perm("shop.manage_campaigns"):
             return Response(
                 {"detail": "Você não tem permissão para publicar."}, status=403
             )
 
-        from shopman.shop.services import broadcast
+        from shopman.shop.services import campaign
 
         try:
             post = (
-                broadcast.approve(post_id, request.user)
+                campaign.approve(post_id, request.user)
                 if action == ACTION_APPROVE
-                else broadcast.discard(post_id)
+                else campaign.discard(post_id)
             )
-        except broadcast.BroadcastError as exc:
+        except campaign.CampaignError as exc:
             # Expirado ou inexistente: a notificação perdeu o sentido, então
             # some da caixa junto com o erro.
             notification.mark_read()

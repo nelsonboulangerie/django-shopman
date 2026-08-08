@@ -218,7 +218,7 @@ def test_finish_records_the_quality_flag(recipe):
 
 @pytest.mark.django_db
 def test_quality_is_written_before_the_finish_signal(recipe):
-    """O broadcast lê a qualidade no production_changed do finish.
+    """A campanha lê a qualidade no production_changed do finish.
 
     Gravar depois faria a regra ``quality_min`` avaliar a fornada anterior.
     """

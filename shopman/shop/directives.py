@@ -75,12 +75,12 @@ CATALOG_PROJECT_SKU = "catalog.project_sku"
 # iFood status callback (push internal lifecycle → iFood order actions)
 IFOOD_STATUS_CALLBACK = "ifood.status_callback"
 
-# Broadcast (marketing operacional)
-# BROADCAST_POST   — publica em plataforma externa (IG, Facebook, Google Business).
-# BROADCAST_NOTIFY — dispara a audiência direta (WhatsApp), uma onda por directive
+# Campanha (marketing operacional)
+# ANNOUNCEMENT_PUBLISH   — publica em plataforma externa (IG, Facebook, Google Business).
+# ANNOUNCEMENT_NOTIFY — dispara a audiência direta (WhatsApp), uma onda por directive
 #                    (o VIP-first vira duas, com available_at diferente).
-BROADCAST_POST = "broadcast.post"
-BROADCAST_NOTIFY = "broadcast.notify"
+ANNOUNCEMENT_PUBLISH = "announcement.publish"
+ANNOUNCEMENT_NOTIFY = "announcement.notify"
 
 
 # ── Queue helper ──
