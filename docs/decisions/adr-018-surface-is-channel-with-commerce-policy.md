@@ -32,14 +32,22 @@ enumeracao. A diferenca de conteudo entre uma celula de feed e uma de canal e **
 nao tem preco (`projections/catalog.py:366-386` versus `:389-422`) — mas ela nao exige duas
 entidades: exige um discriminador.
 
-**Segundo: o feed mente sobre preco.** Os dois renderizadores usam `Product.base_price_q` direto —
-o XML de Google/Meta em `shopman/shop/views/product_feed.py:83` e o menuboard em
+**Segundo: o feed le a fonte de preco errada — hoje sem consequencia, e essa e a janela.** Os dois
+renderizadores usam `Product.base_price_q` direto — o XML de Google/Meta em
+`shopman/shop/views/product_feed.py:83` e o menuboard em
 `shopman/shop/projections/menuboard.py:79` — enquanto o canal vende pelo `ListingItem.price_q`
-(`packages/offerman/shopman/offerman/models/listing.py:98-102`). Se a web vende a R$ 8,00 e o
-`base_price_q` e R$ 7,00, o feed anuncia R$ 7,00 e o cliente chega a R$ 8,00. A constituicao §2.3 e
-direta: nenhum pacote pode mentir sobre o mundo. Na pratica comercial, divergencia entre feed e
-landing page reprova item em Merchant Center. E a mesma divergencia preco-vitrine x preco-carrinho
-que a ADR-014 nomeou como sintoma do frankenstein.
+(`packages/offerman/shopman/offerman/models/listing.py:98-102`).
+
+**Verificado em 2026-08-08 contra o banco de desenvolvimento: dos 153 `ListingItem`, zero tem preco
+diferente do `base_price_q` do produto.** Ou seja, o defeito e **latente**, nao ativo: as duas fontes
+coincidem porque ninguem ainda precificou por canal. Ele se torna real no primeiro dia em que alguem
+usar a capacidade que o `ListingItem` sempre teve — e nesse dia o feed do Google passa a anunciar um
+preco que a loja nao cobra, o que a constituicao §2.3 proibe (nenhum pacote mente sobre o mundo), o
+que reprova item em Merchant Center por divergencia com a landing page, e o que a ADR-014 ja nomeou
+como o sintoma preco-vitrine x preco-carrinho.
+
+Consertar agora custa um passo de migracao e muda zero preco exibido. Consertar depois de alguem
+precificar por canal significa corrigir precos publicos ja anunciados.
 
 **Terceiro: a maquina de preco ja e generica por canal.** `CatalogService.unit_price` resolve
 `effective_listing = listing or channel` (`packages/offerman/shopman/offerman/service.py:104`) e

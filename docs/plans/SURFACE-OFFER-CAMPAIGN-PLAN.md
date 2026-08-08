@@ -35,9 +35,11 @@ recopiados.
    (`shopman/shop/services/account.py:199-219`), que a audiencia nunca le. Cliente que revoga WhatsApp
    continua recebendo.
 3. **`Promotion` nao tem escopo de canal.** Relampago da web aplica no PDV e no iFood hoje.
-4. **O feed mente sobre preco.** Renderizadores leem `base_price_q`
+4. **O feed le a fonte de preco errada — latente, nao ativo.** Renderizadores leem `base_price_q`
    (`shopman/shop/views/product_feed.py:83`, `shopman/shop/projections/menuboard.py:79`) enquanto o
-   canal vende por `ListingItem.price_q`.
+   canal vende por `ListingItem.price_q`. Verificado em 2026-08-08: dos 153 `ListingItem`, **zero**
+   divergem do `base_price_q`, entao nenhum preco esta errado hoje. O defeito ativa no primeiro
+   preco por canal — e e por isso que a F4 vale agora, quando corrigir muda zero preco exibido.
 5. **As quatro rotas de exibicao sao publicas**, incluindo o SSE `stock-catalog`
    (`shopman/shop/menuboard_urls.py:22-28`).
 6. **`RuleConfig` `promotion_discount` e decorativo.** `DiscountModifier` nunca chama
