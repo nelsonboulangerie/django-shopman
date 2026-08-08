@@ -61,6 +61,18 @@ def _kds_board_url():
     return f"/api/v1/backstage/kds/{inst.ref}/"
 
 
+
+def _ensure_groups():
+    """Os grupos vêm do dono único deles: o comando ``setup_groups``.
+
+    Antes vinham de data migrations, e o banco de teste os herdava sem ninguém
+    pedir — dependência invisível que o reset de migrações expôs.
+    """
+    from django.core.management import call_command
+
+    call_command("setup_groups", verbosity=0)
+
+
 class TestManageOrdersPerm(TestCase):
     def setUp(self):
         self.client = Client()
@@ -147,6 +159,7 @@ class TestCashierGroup(TestCase):
 
     def setUp(self):
         self.client = Client()
+        _ensure_groups()
         self.group = Group.objects.get(name="Caixa")
         u = User.objects.create_user("caixa_user", password="test", is_staff=True)
         u.groups.add(self.group)
@@ -178,6 +191,7 @@ class TestKitchenGroup(TestCase):
 
     def setUp(self):
         self.client = Client()
+        _ensure_groups()
         self.group = Group.objects.get(name="Cozinha")
         u = User.objects.create_user("cozinha_user", password="test", is_staff=True)
         u.groups.add(self.group)
@@ -208,6 +222,7 @@ class TestManagerGroup(TestCase):
 
     def setUp(self):
         self.client = Client()
+        _ensure_groups()
         self.group = Group.objects.get(name="Gerente")
         u = User.objects.create_user("gerente_user", password="test", is_staff=True)
         u.groups.add(self.group)
@@ -244,8 +259,7 @@ class TestDefaultGroupsExist(TestCase):
 
     @classmethod
     def setUpTestData(cls):
-        from django.core.management import call_command
-        call_command("setup_groups", verbosity=0)
+        _ensure_groups()
 
     def _has_perm(self, group, codename):
         return group.permissions.filter(codename=codename).exists()
