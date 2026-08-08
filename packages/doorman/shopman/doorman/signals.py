@@ -94,15 +94,16 @@ Dispatched when a device is marked as trusted after OTP verification.
 
 Kwargs:
     device (TrustedDevice): The created TrustedDevice instance.
-    customer_id (uuid.UUID): The customer's UUID.
+    subject_type (str): 'customer' or 'display'.
+    subject_id (str): customer UUID, or display channel ref.
     request (HttpRequest): The Django request.
 
 When emitted:
-    After DeviceTrustService.trust_device() creates a trusted device.
+    After DeviceTrustService.trust() creates a trusted device.
 
 Example::
 
     @receiver(device_trusted)
-    def on_device_trusted(sender, device, customer_id, request, **kwargs):
-        logger.info(f"Device trusted for customer {customer_id}: {device.label}")
+    def on_device_trusted(sender, device, subject_type, subject_id, request, **kwargs):
+        logger.info(f"Device trusted for {subject_type} {subject_id}: {device.label}")
 """

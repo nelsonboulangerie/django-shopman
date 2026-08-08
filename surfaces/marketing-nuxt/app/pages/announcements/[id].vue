@@ -10,7 +10,7 @@ const route = useRoute();
 const pk = computed(() => Number(route.params.id));
 
 const { data, refresh, pending, error } = await useFetch<{ post: Announcement }>(
-  () => `/api/v1/backstage/campaign/announcements/${pk.value}/`,
+  () => `/api/v1/backstage/marketing/announcements/${pk.value}/`,
   { key: () => `announcement-${pk.value}` },
 );
 const { platforms } = useCampaigns();
@@ -22,7 +22,7 @@ const confirmingDiscard = ref(false);
 async function decide(action: "approve" | "discard", body: PostEdits = {}) {
   busy.value = true;
   try {
-    await $fetch(`/api/v1/backstage/campaign/announcements/${pk.value}/${action}/`, {
+    await $fetch(`/api/v1/backstage/marketing/announcements/${pk.value}/${action}/`, {
       method: "POST",
       body,
     });

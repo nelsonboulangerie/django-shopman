@@ -56,8 +56,12 @@ def _channels_for_sku(sku: str) -> list[str]:
     refs = [ref for ref in refs if ref]
     if refs:
         return refs
+    # Fallback: todo canal de VENDA. Canal `display` tem stream próprio
+    # (`stock-catalog`), não entra no fan-out por canal.
     return list(
-        Channel.objects.filter(is_active=True).values_list("ref", flat=True)
+        Channel.objects.filter(
+            is_active=True, commerce_policy=Channel.CommercePolicy.ORDER
+        ).values_list("ref", flat=True)
     )
 
 

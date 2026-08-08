@@ -1,5 +1,5 @@
 {
-  "name": "campaign-nuxt",
+  "name": "marketing-nuxt",
   "type": "module",
   "private": true,
   "engines": { "node": "22.x" },

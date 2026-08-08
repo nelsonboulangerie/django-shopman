@@ -9,8 +9,8 @@ const POLL_MS = 60_000;
 
 export function useCampaignBoard() {
   const { data, refresh, pending, error } = useFetch<BoardResponse>(
-    "/api/v1/backstage/campaign/",
-    { key: "campaign-board", server: true },
+    "/api/v1/backstage/marketing/",
+    { key: "marketing-board", server: true },
   );
 
   const board = computed(() => data.value?.board);
@@ -44,7 +44,7 @@ export function useCampaignBoard() {
     okMessage: string,
   ): Promise<boolean> {
     try {
-      await $fetch(`/api/v1/backstage/campaign/announcements/${pk}/${action}/`, {
+      await $fetch(`/api/v1/backstage/marketing/announcements/${pk}/${action}/`, {
         method: "POST",
         body,
       });
@@ -61,7 +61,7 @@ export function useCampaignBoard() {
 
   async function saveDraft(pk: number, edits: PostEdits): Promise<boolean> {
     try {
-      await $fetch(`/api/v1/backstage/campaign/announcements/${pk}/`, { method: "PATCH", body: edits });
+      await $fetch(`/api/v1/backstage/marketing/announcements/${pk}/`, { method: "PATCH", body: edits });
       useSonner.success("Rascunho salvo.");
       await refresh();
       return true;

@@ -80,25 +80,112 @@ def test_rejects_missing(db):
         build_menuboard("fantasma")
 
 
-# ── views públicas ──────────────────────────────────────────────────────────────
+# ── views: superfície INTERNA ───────────────────────────────────────────────────
+#
+# O menuboard deixou de ser público (ADR-018 §5.1): o preço dele vem do PDV, e preço
+# alcançável publicamente é preço a honrar. Duas credenciais valem — sessão de staff
+# (gente) e dispositivo confiável (a TV). E abrir logado É o provisionamento da TV.
 
 
-def test_page_public_200(client, menuboard):
+def _staff(django_user_model, username="gestor"):
+    return django_user_model.objects.create_user(username, password="x", is_staff=True)
+
+
+def _drop_session(client):
+    """Encerra a sessão SEM descartar os outros cookies.
+
+    ``client.logout()`` do Django zera o jar inteiro, o que jogaria fora justamente
+    o cookie de dispositivo confiável — uma TV real não perde o dela.
+    """
+    from django.conf import settings
+
+    client.cookies.pop(settings.SESSION_COOKIE_NAME, None)
+
+
+def test_page_denies_anonymous(client, menuboard):
+    assert client.get("/menuboard/tv-balcao/").status_code == 403
+
+
+def test_data_denies_anonymous(client, menuboard):
+    assert client.get("/menuboard/tv-balcao/data/").status_code == 403
+
+
+def test_staff_session_opens(client, menuboard, django_user_model):
+    client.force_login(_staff(django_user_model))
     resp = client.get("/menuboard/tv-balcao/")
     assert resp.status_code == 200
     assert "Quadro do Balcão".encode() in resp.content
     assert b"menuboard()" in resp.content
 
 
-def test_data_public_json(client, menuboard):
-    resp = client.get("/menuboard/tv-balcao/data/")
+def test_non_staff_user_is_refused(client, menuboard, django_user_model):
+    user = django_user_model.objects.create_user("cliente", password="x")
+    client.force_login(user)
+    assert client.get("/menuboard/tv-balcao/").status_code == 403
+
+
+def test_staff_visit_provisions_the_device(client, menuboard, django_user_model):
+    """O provisionamento inteiro da TV: abrir logado deixa o dispositivo confiável."""
+    from shopman.doorman.models import TrustedDevice
+
+    client.force_login(_staff(django_user_model))
+    client.get("/menuboard/tv-balcao/")
+
+    device = TrustedDevice.objects.get(subject_type="display", subject_id="tv-balcao")
+    assert device.is_valid
+
+    # A TV continua abrindo depois, sem sessão nenhuma.
+    _drop_session(client)
+    resp = client.get("/menuboard/tv-balcao/")
     assert resp.status_code == 200
-    body = resp.json()
-    assert body["ref"] == "tv-balcao"
-    assert body["available_count"] == 2
-    assert [g["title"] for g in body["groups"]] == ["Pães", "Doces"]
 
 
-def test_page_404_for_unknown(client, db):
+def test_provisioning_is_idempotent(client, menuboard, django_user_model):
+    """Visita repetida não cria uma linha de TrustedDevice por acesso."""
+    from shopman.doorman.models import TrustedDevice
+
+    client.force_login(_staff(django_user_model))
+    for _ in range(3):
+        client.get("/menuboard/tv-balcao/")
+    assert TrustedDevice.objects.filter(subject_type="display").count() == 1
+
+
+def test_trust_of_another_board_does_not_open_this_one(client, menuboard, django_user_model):
+    """A confiança carrega a ref: dispositivo de um quadro não abre outro."""
+    Showcase.objects.create(ref="tv-outro", name="Outro", kind="menuboard", collections=["paes"])
+    client.force_login(_staff(django_user_model))
+    client.get("/menuboard/tv-outro/")  # provisiona só o OUTRO quadro
+    _drop_session(client)
+
+    assert client.get("/menuboard/tv-outro/").status_code == 200
+    assert client.get("/menuboard/tv-balcao/").status_code == 403
+
+
+def test_revoking_the_device_closes_the_board(client, menuboard, django_user_model):
+    """A vantagem sobre token em URL: revogação existe, e é por dispositivo."""
+    from shopman.doorman.models import TrustedDevice
+
+    client.force_login(_staff(django_user_model))
+    client.get("/menuboard/tv-balcao/")
+    _drop_session(client)
+    assert client.get("/menuboard/tv-balcao/").status_code == 200
+
+    TrustedDevice.objects.filter(subject_type="display").update(is_active=False)
+    assert client.get("/menuboard/tv-balcao/").status_code == 403
+
+
+def test_public_escape_hatch_reopens(client, menuboard, settings):
+    settings.SHOPMAN_MENUBOARD_PUBLIC = True
+    assert client.get("/menuboard/tv-balcao/").status_code == 200
+
+
+def test_unknown_ref_denies_before_revealing_existence(client, db):
+    """A trava roda ANTES da checagem de existência: anônimo não descobre o que existe."""
+    assert client.get("/menuboard/fantasma/").status_code == 403
+    assert client.get("/menuboard/fantasma/data/").status_code == 403
+
+
+def test_unknown_ref_is_404_once_authorized(client, db, django_user_model):
+    client.force_login(_staff(django_user_model))
     assert client.get("/menuboard/fantasma/").status_code == 404
     assert client.get("/menuboard/fantasma/data/").status_code == 404

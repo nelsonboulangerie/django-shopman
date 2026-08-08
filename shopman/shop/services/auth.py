@@ -184,7 +184,7 @@ def trusted_device_login(request, *, phone: str):
     from shopman.doorman.services._user_bridge import get_or_create_user_for_customer
     from shopman.doorman.services.device_trust import DeviceTrustService
 
-    if not DeviceTrustService.check_device_trust(request, customer.uuid):
+    if not DeviceTrustService.check(request, "customer", customer.uuid):
         return None
 
     customer_info = AuthCustomerInfo(
@@ -207,9 +207,10 @@ def trusted_device_login(request, *, phone: str):
 def trust_device(*, response, customer_id, request) -> None:
     from shopman.doorman.services.device_trust import DeviceTrustService
 
-    DeviceTrustService.trust_device(
+    DeviceTrustService.trust(
         response=response,
-        customer_id=customer_id,
+        subject_type="customer",
+        subject_id=customer_id,
         request=request,
     )
 

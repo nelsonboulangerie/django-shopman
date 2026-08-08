@@ -2,7 +2,7 @@
 Projeção da Campanha para o gestor — o lado REVISÃO do marketing operacional.
 
 A operação gera o post; o gestor decide se ele sai. Esta projeção é o que a
-superfície `surfaces/campaign-nuxt` lê: os posts que pedem decisão agora, os
+superfície `surfaces/marketing-nuxt` lê: os posts que pedem decisão agora, os
 que já saíram, e as regras/modelos que governam tudo isso.
 
 Read-only. Frozen dataclasses convertidos por ``backstage.api.projections``.

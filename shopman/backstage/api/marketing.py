@@ -1,7 +1,7 @@
 """
 Backstage Campaign API — o painel de revisão do marketing operacional.
 
-Contrato consumido por `surfaces/campaign-nuxt` (:3006). Read = projections de
+Contrato consumido por `surfaces/marketing-nuxt` (:3006). Read = projections de
 `backstage.projections.campaign`; write = aprovar/descartar/editar post e CRUD
 de regras e modelos. Gate: ``shop.manage_campaigns`` — o gestor de marketing não
 é o gestor de pedidos (FOMO-BROADCAST-SPECS §8).
@@ -33,7 +33,7 @@ from rest_framework.views import APIView
 
 from shopman.backstage.api.permissions import HasBackstagePermission
 from shopman.backstage.api.projections import projection_data
-from shopman.backstage.projections import campaign as campaign_projection
+from shopman.backstage.projections import marketing as marketing_projection
 from shopman.shop.models import Announcement, AnnouncementStatus, AnnouncementTemplate, Campaign, Trigger
 from shopman.shop.services import campaign as campaign_service
 
@@ -43,7 +43,7 @@ _HISTORY_DEFAULT_LIMIT = 100
 _HISTORY_MAX_LIMIT = 300
 
 #: Plataformas aceitas numa regra — mesma lista que a tela oferece.
-_VALID_PLATFORMS = {ref for ref, _ in campaign_projection.PLATFORM_CHOICES}
+_VALID_PLATFORMS = {ref for ref, _ in marketing_projection.PLATFORM_CHOICES}
 
 
 class _CampaignBase(APIView):
@@ -63,7 +63,7 @@ class _CampaignBase(APIView):
 )
 class CampaignBoardView(_CampaignBase):
     def get(self, request):
-        board = campaign_projection.build_board()
+        board = marketing_projection.build_board()
         return Response({"board": projection_data(board)})
 
 
@@ -77,7 +77,7 @@ class CampaignBoardView(_CampaignBase):
 )
 class CampaignHistoryView(_CampaignBase):
     def get(self, request):
-        posts = campaign_projection.build_history(limit=_limit(request))
+        posts = marketing_projection.build_history(limit=_limit(request))
         return Response({"posts": projection_data(posts)})
 
 
@@ -90,7 +90,7 @@ class CampaignHistoryView(_CampaignBase):
 )
 class CampaignOptionsView(_CampaignBase):
     def get(self, request):
-        return Response({"options": projection_data(campaign_projection.build_options())})
+        return Response({"options": projection_data(marketing_projection.build_options())})
 
 
 # ── Posts ────────────────────────────────────────────────────────────
@@ -108,7 +108,7 @@ class AnnouncementDetailView(_CampaignBase):
         post = _post_or_none(pk)
         if post is None:
             return Response({"detail": "Post não encontrado."}, status=404)
-        return Response({"post": projection_data(campaign_projection.build_post(post))})
+        return Response({"post": projection_data(marketing_projection.build_post(post))})
 
     def patch(self, request, pk: int):
         post = _post_or_none(pk)
@@ -133,7 +133,7 @@ class AnnouncementDetailView(_CampaignBase):
             post = campaign_service.update_content(pk, **edits)
         except campaign_service.CampaignError as exc:
             return Response({"detail": str(exc)}, status=400)
-        return Response({"ok": True, "post": projection_data(campaign_projection.build_post(post))})
+        return Response({"ok": True, "post": projection_data(marketing_projection.build_post(post))})
 
 
 class AnnouncementApproveView(_CampaignBase):
@@ -173,7 +173,7 @@ class AnnouncementApproveView(_CampaignBase):
         return Response({
             "ok": True,
             "scheduled": bool(post.publish_at),
-            "post": projection_data(campaign_projection.build_post(post)),
+            "post": projection_data(marketing_projection.build_post(post)),
         })
 
 
@@ -187,7 +187,7 @@ class AnnouncementDiscardView(_CampaignBase):
             return Response({"detail": str(exc)}, status=400)
 
         logger.info("campaign.discarded user=%s post=%s", request.user.pk, pk)
-        return Response({"ok": True, "post": projection_data(campaign_projection.build_post(post))})
+        return Response({"ok": True, "post": projection_data(marketing_projection.build_post(post))})
 
 
 # ── Regras ───────────────────────────────────────────────────────────
@@ -195,7 +195,7 @@ class AnnouncementDiscardView(_CampaignBase):
 
 class CampaignListView(_CampaignBase):
     def get(self, request):
-        return Response({"rules": projection_data(campaign_projection.build_rules())})
+        return Response({"rules": projection_data(marketing_projection.build_rules())})
 
     def post(self, request):
         fields, error = _rule_fields(request.data, partial=False)
@@ -203,7 +203,7 @@ class CampaignListView(_CampaignBase):
             return Response(error, status=400)
         rule = Campaign.objects.create(**fields)
         return Response(
-            {"ok": True, "rule": projection_data(campaign_projection.build_rule(rule))},
+            {"ok": True, "rule": projection_data(marketing_projection.build_rule(rule))},
             status=201,
         )
 
@@ -213,7 +213,7 @@ class CampaignDetailView(_CampaignBase):
         rule = _rule_or_none(pk)
         if rule is None:
             return Response({"detail": "Regra não encontrada."}, status=404)
-        return Response({"rule": projection_data(campaign_projection.build_rule(rule))})
+        return Response({"rule": projection_data(marketing_projection.build_rule(rule))})
 
     def patch(self, request, pk: int):
         rule = _rule_or_none(pk)
@@ -226,7 +226,7 @@ class CampaignDetailView(_CampaignBase):
         for name, value in fields.items():
             setattr(rule, name, value)
         rule.save()
-        return Response({"ok": True, "rule": projection_data(campaign_projection.build_rule(rule))})
+        return Response({"ok": True, "rule": projection_data(marketing_projection.build_rule(rule))})
 
     def delete(self, request, pk: int):
         rule = _rule_or_none(pk)
@@ -241,7 +241,7 @@ class CampaignDetailView(_CampaignBase):
 
 class AnnouncementTemplateListView(_CampaignBase):
     def get(self, request):
-        return Response({"templates": projection_data(campaign_projection.build_templates())})
+        return Response({"templates": projection_data(marketing_projection.build_templates())})
 
     def post(self, request):
         fields, error = _template_fields(request.data, partial=False)
@@ -249,7 +249,7 @@ class AnnouncementTemplateListView(_CampaignBase):
             return Response(error, status=400)
         template = AnnouncementTemplate.objects.create(**fields)
         return Response(
-            {"ok": True, "template": projection_data(campaign_projection.build_template(template))},
+            {"ok": True, "template": projection_data(marketing_projection.build_template(template))},
             status=201,
         )
 
@@ -259,7 +259,7 @@ class AnnouncementTemplateDetailView(_CampaignBase):
         template = AnnouncementTemplate.objects.filter(pk=pk).first()
         if template is None:
             return Response({"detail": "Modelo não encontrado."}, status=404)
-        return Response({"template": projection_data(campaign_projection.build_template(template))})
+        return Response({"template": projection_data(marketing_projection.build_template(template))})
 
     def patch(self, request, pk: int):
         template = AnnouncementTemplate.objects.filter(pk=pk).first()
@@ -273,7 +273,7 @@ class AnnouncementTemplateDetailView(_CampaignBase):
             setattr(template, name, value)
         template.save()
         return Response(
-            {"ok": True, "template": projection_data(campaign_projection.build_template(template))}
+            {"ok": True, "template": projection_data(marketing_projection.build_template(template))}
         )
 
     def delete(self, request, pk: int):

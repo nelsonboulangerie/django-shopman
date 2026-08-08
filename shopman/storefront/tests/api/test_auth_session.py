@@ -336,8 +336,7 @@ def test_auth_device_check_trusted_cookie_creates_json_session(client: Client):
         first_name="Dora",
         phone="+5543999990012",
     )
-    _, raw_token = TrustedDevice.create_for_customer(
-        customer_id=customer.uuid,
+    _, raw_token = TrustedDevice.create_for("customer", customer.uuid,
         user_agent="Mozilla/5.0 Test",
         ip_address="127.0.0.1",
     )
@@ -397,8 +396,7 @@ def test_auth_device_check_wrong_customer_does_not_skip_otp(client: Client):
         first_name="Fê",
         phone="+5543999990014",
     )
-    _, raw_token = TrustedDevice.create_for_customer(
-        customer_id=trusted.uuid,
+    _, raw_token = TrustedDevice.create_for("customer", trusted.uuid,
         user_agent="Mozilla/5.0 Test",
         ip_address="127.0.0.1",
     )

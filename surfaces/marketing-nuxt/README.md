@@ -1,9 +1,9 @@
-# Marketing — campaign-nuxt
+# Marketing — marketing-nuxt
 
 Superfície headless do gestor de marketing (**Marketing**, servida no subdomínio
 `mkt.`). É onde o anúncio gerado pela operação vira decisão: revisar, ajustar
 o texto e publicar (ou agendar, ou descartar). Consome o contrato canônico em
-`api/v1/backstage/campaign/*` — nenhuma regra de negócio é copiada; quem decide
+`api/v1/backstage/marketing/*` — nenhuma regra de negócio é copiada; quem decide
 audiência, despacho e expiração é o orquestrador
 (`shopman/shop/services/campaign.py`).
 
@@ -11,7 +11,7 @@ audiência, despacho e expiração é o orquestrador
 > marketing operacional unidirecional: evento da padaria → conteúdo → plataformas.
 > Ver [FOMO-BROADCAST-SPECS §6.1](../../docs/plans/FOMO-BROADCAST-SPECS.md).
 
-- **Nome estável:** `campaign-nuxt` (por função, como `pos-`/`kds-`/`orders-`/
+- **Nome estável:** `marketing-nuxt` (por função, como `pos-`/`kds-`/`orders-`/
   `production-nuxt`). `mkt.` é só o host público; nunca hardcodar (vive na
   spec de deploy).
 - **Gate:** `shop.manage_campaigns` — publicar em nome da marca é decisão de

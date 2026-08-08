@@ -42,7 +42,7 @@ jobs:
           - orders-nuxt
           - production-nuxt
           - hub-nuxt
-          - campaign-nuxt
+          - marketing-nuxt
 
     defaults:
       run:

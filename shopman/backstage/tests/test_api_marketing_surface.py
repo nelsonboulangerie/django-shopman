@@ -1,4 +1,4 @@
-"""Contrato da superfície Campanha (surfaces/campaign-nuxt).
+"""Contrato da superfície Campanha (surfaces/marketing-nuxt).
 
 O que este arquivo protege, em ordem de importância:
 
@@ -25,11 +25,11 @@ pytestmark = pytest.mark.django_db
 
 User = get_user_model()
 
-BOARD_URL = "/api/v1/backstage/campaign/"
-RULES_URL = "/api/v1/backstage/campaign/rules/"
-TEMPLATES_URL = "/api/v1/backstage/campaign/templates/"
-OPTIONS_URL = "/api/v1/backstage/campaign/options/"
-HISTORY_URL = "/api/v1/backstage/campaign/history/"
+BOARD_URL = "/api/v1/backstage/marketing/"
+RULES_URL = "/api/v1/backstage/marketing/rules/"
+TEMPLATES_URL = "/api/v1/backstage/marketing/templates/"
+OPTIONS_URL = "/api/v1/backstage/marketing/options/"
+HISTORY_URL = "/api/v1/backstage/marketing/history/"
 
 
 @pytest.fixture
@@ -87,7 +87,7 @@ class TestGate:
         post = _post(rule, template)
         User.objects.create_user(username="caixa", password="x", is_staff=True)
         client.login(username="caixa", password="x")
-        response = client.post(f"/api/v1/backstage/campaign/announcements/{post.pk}/approve/")
+        response = client.post(f"/api/v1/backstage/marketing/announcements/{post.pk}/approve/")
         assert response.status_code == 403
         post.refresh_from_db()
         assert post.status == AnnouncementStatus.PENDING_REVIEW
@@ -141,7 +141,7 @@ class TestPostDecision:
         post = _post(rule, template)
         client.force_login(gestor)
 
-        response = client.post(f"/api/v1/backstage/campaign/announcements/{post.pk}/approve/")
+        response = client.post(f"/api/v1/backstage/marketing/announcements/{post.pk}/approve/")
 
         assert response.status_code == 200
         post.refresh_from_db()
@@ -152,7 +152,7 @@ class TestPostDecision:
         post = _post(rule, template)
         client.force_login(gestor)
 
-        assert client.post(f"/api/v1/backstage/campaign/announcements/{post.pk}/discard/").status_code == 200
+        assert client.post(f"/api/v1/backstage/marketing/announcements/{post.pk}/discard/").status_code == 200
         post.refresh_from_db()
         assert post.status == AnnouncementStatus.EXPIRED
 
@@ -161,7 +161,7 @@ class TestPostDecision:
         client.force_login(gestor)
 
         response = client.patch(
-            f"/api/v1/backstage/campaign/announcements/{post.pk}/",
+            f"/api/v1/backstage/marketing/announcements/{post.pk}/",
             data={"body": "Fornada quentinha agora", "hashtags": ["#paes", "artesanal"]},
             content_type="application/json",
         )
@@ -177,7 +177,7 @@ class TestPostDecision:
         client.force_login(gestor)
 
         response = client.patch(
-            f"/api/v1/backstage/campaign/announcements/{post.pk}/",
+            f"/api/v1/backstage/marketing/announcements/{post.pk}/",
             data={"body": "outra coisa"},
             content_type="application/json",
         )
@@ -191,7 +191,7 @@ class TestPostDecision:
         client.force_login(gestor)
 
         response = client.patch(
-            f"/api/v1/backstage/campaign/announcements/{post.pk}/",
+            f"/api/v1/backstage/marketing/announcements/{post.pk}/",
             data={"body": "   "},
             content_type="application/json",
         )
@@ -340,7 +340,7 @@ class TestScheduledPublishing:
         when = timezone.now() + timedelta(hours=3)
 
         response = client.post(
-            f"/api/v1/backstage/campaign/announcements/{post.pk}/approve/",
+            f"/api/v1/backstage/marketing/announcements/{post.pk}/approve/",
             data={"publish_at": when.isoformat()},
             content_type="application/json",
         )
@@ -358,7 +358,7 @@ class TestScheduledPublishing:
         client.force_login(gestor)
 
         response = client.post(
-            f"/api/v1/backstage/campaign/announcements/{post.pk}/approve/",
+            f"/api/v1/backstage/marketing/announcements/{post.pk}/approve/",
             data={"body": "Texto revisado pelo gestor", "platforms": ["instagram"]},
             content_type="application/json",
         )
@@ -375,7 +375,7 @@ class TestScheduledPublishing:
         client.force_login(gestor)
 
         response = client.post(
-            f"/api/v1/backstage/campaign/announcements/{post.pk}/approve/",
+            f"/api/v1/backstage/marketing/announcements/{post.pk}/approve/",
             data={"publish_at": "amanhã cedo"},
             content_type="application/json",
         )
@@ -390,7 +390,7 @@ class TestScheduledPublishing:
         client.force_login(gestor)
 
         response = client.post(
-            f"/api/v1/backstage/campaign/announcements/{post.pk}/approve/",
+            f"/api/v1/backstage/marketing/announcements/{post.pk}/approve/",
             data={"body": "   "},
             content_type="application/json",
         )

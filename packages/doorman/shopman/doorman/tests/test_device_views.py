@@ -48,8 +48,7 @@ class TestDeviceListViewJSON:
         assert resp.status_code == 401
 
     def test_list_returns_devices(self):
-        device, _ = TrustedDevice.create_for_customer(
-            customer_id=CUSTOMER_ID,
+        device, _ = TrustedDevice.create_for("customer", CUSTOMER_ID,
             user_agent="Chrome / Mac",
         )
         request = _make_request(customer_id=CUSTOMER_ID)
@@ -62,8 +61,7 @@ class TestDeviceListViewJSON:
         assert data["devices"][0]["id"] == str(device.id)
 
     def test_list_excludes_revoked(self):
-        device, _ = TrustedDevice.create_for_customer(
-            customer_id=CUSTOMER_ID,
+        device, _ = TrustedDevice.create_for("customer", CUSTOMER_ID,
             user_agent="Chrome / Mac",
         )
         device.revoke()
@@ -75,8 +73,8 @@ class TestDeviceListViewJSON:
         assert len(data["devices"]) == 0
 
     def test_delete_all(self):
-        TrustedDevice.create_for_customer(customer_id=CUSTOMER_ID, user_agent="A")
-        TrustedDevice.create_for_customer(customer_id=CUSTOMER_ID, user_agent="B")
+        TrustedDevice.create_for("customer", CUSTOMER_ID, user_agent="A")
+        TrustedDevice.create_for("customer", CUSTOMER_ID, user_agent="B")
         request = _make_request("delete", customer_id=CUSTOMER_ID)
         resp = DeviceListView.as_view()(request)
         assert resp.status_code == 200
@@ -84,23 +82,20 @@ class TestDeviceListViewJSON:
 
         data = json.loads(resp.content)
         assert data["revoked"] == 2
-        assert TrustedDevice.objects.filter(
-            customer_id=CUSTOMER_ID, is_active=True
+        assert TrustedDevice.objects.filter(subject_type="customer", subject_id=str(CUSTOMER_ID), is_active=True
         ).count() == 0
 
 
 class TestDeviceRevokeViewJSON:
     def test_unauthenticated_returns_401(self):
-        device, _ = TrustedDevice.create_for_customer(
-            customer_id=CUSTOMER_ID, user_agent="X"
+        device, _ = TrustedDevice.create_for("customer", CUSTOMER_ID, user_agent="X"
         )
         request = _make_request("delete")
         resp = DeviceRevokeView.as_view()(request, device_id=device.id)
         assert resp.status_code == 401
 
     def test_revoke_own_device(self):
-        device, _ = TrustedDevice.create_for_customer(
-            customer_id=CUSTOMER_ID, user_agent="X"
+        device, _ = TrustedDevice.create_for("customer", CUSTOMER_ID, user_agent="X"
         )
         request = _make_request("delete", customer_id=CUSTOMER_ID)
         resp = DeviceRevokeView.as_view()(request, device_id=device.id)
@@ -109,8 +104,7 @@ class TestDeviceRevokeViewJSON:
         assert device.is_active is False
 
     def test_revoke_other_customer_device_returns_404(self):
-        device, _ = TrustedDevice.create_for_customer(
-            customer_id=OTHER_CUSTOMER_ID, user_agent="X"
+        device, _ = TrustedDevice.create_for("customer", OTHER_CUSTOMER_ID, user_agent="X"
         )
         request = _make_request("delete", customer_id=CUSTOMER_ID)
         resp = DeviceRevokeView.as_view()(request, device_id=device.id)

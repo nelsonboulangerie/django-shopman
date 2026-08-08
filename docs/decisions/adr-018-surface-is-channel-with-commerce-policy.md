@@ -189,9 +189,25 @@ o fornecedor, entao preco alcancavel publicamente e preco a honrar. O agravante 
 (`menuboard_urls.py:22-28`), entregando o ritmo operacional da loja — o que esta esgotando e quando a
 fornada entra.
 
-Portanto: **as rotas de menuboard passam a exigir dispositivo confiavel**, pelo mecanismo de device
-trust que o `doorman` ja tem e que o quiosque de producao ja usa. Provisiona-se a TV uma vez e o
-cookie duravel resolve o resto — tela na parede nao faz login interativo. O XML permanece publico.
+Portanto: **as rotas de menuboard passam a exigir credencial**, e o XML permanece publico.
+
+> **Correcao (implementacao, 2026-08-08).** Este paragrafo dizia "device trust do `doorman`, que o
+> quiosque de producao ja usa". **Estava errado nas duas metades.** `DeviceTrustService` e
+> **atrelado a cliente** (`device.customer_id != customer_id`, `services/device_trust.py:59-61`), e e
+> usado so nos fluxos de cliente do storefront — reusa-lo numa TV exigiria inventar um cliente falso.
+> E o quiosque de producao usa `OperatorLock` (sessao de operador por PIN,
+> `surfaces/production-nuxt/app/app.vue:12`), que e coisa de app Nuxt sobre a API do backstage, nao de
+> pagina renderizada pelo Django.
+>
+> O mecanismo implementado aceita **duas** credenciais, porque TV na parede e gente sao coisas
+> diferentes: **sessao de staff** (para quem confere no computador) ou **token de quiosque** na URL
+> (`?k=`), assinado com salt dedicado, carregando a ref do proprio quadro — token de um quadro nao abre
+> outro — e sem expiracao, porque `SESSION_COOKIE_AGE` e 14 dias e display na parede nao faz login a
+> cada duas semanas. Gerado por `manage.py menuboard_token <ref>`. Revogar exige rotacionar
+> `SECRET_KEY`: limitacao assumida, aceitavel para um quadro de precos interno.
+>
+> `SHOPMAN_MENUBOARD_PUBLIC` reabre tudo — escotilha explicita, **default fechado**, para o estado
+> seguro ser o default.
 
 E um system check amarra as duas pontas: **canal rastreado publicamente so pode tirar preco de canal
 cujo preco e publico.** Sem ele, alguem configura `prices_from="pos"` num canal Google e o preco do
@@ -343,6 +359,13 @@ Ordem obrigatoria; cada passo entrega valor sozinho e passa `make test`.
    consome ainda; comportamento identico.
 2. **Aspecto `Display` no `ChannelConfig`.** Novo dataclass em `config.py` com os quatro campos,
    defaults vazios. Nada consome ainda.
+> **Correcao de ordem (implementacao, 2026-08-08).** O passo 7 (enumeracao por politica) estava tarde
+> demais: aplicar so a absorcao faz a matriz enxergar **11 superficies com 4 duplicadas**, porque os
+> canais `display` novos entram nas enumeracoes de canal como se fossem transacionais. O gate de
+> enumeracao **tem de vir no mesmo passo que a absorcao**, nao depois. Pego pelo dump de linha de base
+> antes de qualquer commit; os tres sites que importam sao `backstage/projections/catalog.py` (lista da
+> matriz e canal representativo de estoque) e `backstage/services/catalog.py` (fan-out do bulk).
+
 3. **Absorcao.** Data migration: cada `Showcase` vira `Channel(commerce_policy=display)` com
    `config.display` recebendo `collections`, `paused_skus`, `format` (vazio para menuboard,
    `google_merchant`/`meta_catalog` para os demais) e `prices_from` — **o canal da loja para os feeds,

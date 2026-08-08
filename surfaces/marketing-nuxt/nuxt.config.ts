@@ -62,7 +62,7 @@ export default defineNuxtConfig({
     // foto, em ambiente claro), como o Gestor e o PDV; o escuro segue no toggle.
     preference: 'light',
     fallback: 'light',
-    storageKey: 'campaign-nuxt-color-mode',
+    storageKey: 'marketing-nuxt-color-mode',
     classSuffix: ''
   },
 

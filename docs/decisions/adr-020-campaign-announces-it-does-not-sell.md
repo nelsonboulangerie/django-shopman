@@ -91,8 +91,24 @@ real, em outro app: `ai_assist_field` (`shopman/backstage/services/catalog.py:75
 | `PostStatus` | `AnnouncementStatus` | — |
 | `shop.manage_broadcast` | `shop.manage_campaigns` | "Pode revisar e publicar campanhas" |
 | `NotificationCategory.BROADCAST` | `CAMPAIGN` | "campanha" |
-| `surfaces/broadcast-nuxt` | `surfaces/campaign-nuxt` | — |
-| `SHOPMAN_BROADCAST_*` | `SHOPMAN_CAMPAIGN_*` | — |
+| `surfaces/broadcast-nuxt` | `surfaces/marketing-nuxt` | — |
+| `SHOPMAN_BROADCAST_*` | `SHOPMAN_MARKETING_*` | — |
+
+> **Correcao (implementacao, 2026-08-08).** Estas duas linhas diziam `campaign-nuxt` e
+> `SHOPMAN_CAMPAIGN_*`, e estavam **erradas** — nomeavam a superficie pela entidade. O repo tem uma
+> regra clara em tres camadas, e `production-nuxt` e a prova: a secao e "Producao", a entidade e
+> `WorkOrder`; se a convencao fosse por entidade o diretorio seria `workorder-nuxt`.
+>
+> | Camada | Nomeia pela | Exemplos |
+> |---|---|---|
+> | `surfaces/*-nuxt` | **secao** | `production-nuxt`, `pos-nuxt`, `kds-nuxt`, `hub-nuxt` |
+> | `backstage/api` e `backstage/projections` | **secao** | `production.py`, `pos.py`, `kds.py`, `hub.py` |
+> | prefixo de rota | **secao** | `production/`, `pos/`, `kds/`, `orders/` |
+> | `shop/models`, `shop/services`, `shop/handlers` | **entidade** | `campaign.py`, `audience.py`, `cart.py` |
+>
+> Logo: superficie, modulos de backstage, prefixo de rota, env e chave do Hub sao **marketing** (a
+> secao); models, services e handlers em `shop/` seguem **campaign** (a entidade). A regra de dois
+> niveis desta ADR estava certa; a aplicacao dela na superficie estava errada.
 
 `Campaign` nomeia o compromisso — *a loja se compromete a levar esta oferta a este publico nesta
 janela* — e cobre igualmente o disparo unico, a recorrente e a regra permanente. `Announcement` nomeia

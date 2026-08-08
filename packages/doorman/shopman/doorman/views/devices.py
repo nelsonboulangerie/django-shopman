@@ -15,7 +15,7 @@ from django.http import JsonResponse
 from django.views import View
 
 from ..conf import doorman_settings
-from ..models.device_trust import TrustedDevice
+from ..models.device_trust import SubjectType, TrustedDevice
 from ..services.device_trust import DeviceTrustService
 
 logger = logging.getLogger("shopman.doorman.views.devices")
@@ -38,7 +38,8 @@ class DeviceListView(View):
             return JsonResponse({"error": "Authentication required."}, status=401)
 
         devices = TrustedDevice.objects.filter(
-            customer_id=customer_id,
+            subject_type=SubjectType.CUSTOMER,
+            subject_id=str(customer_id),
             is_active=True,
         ).order_by("-last_used_at", "-created_at")
 
@@ -93,7 +94,8 @@ class DeviceRevokeView(View):
         try:
             device = TrustedDevice.objects.get(
                 id=device_uuid,
-                customer_id=customer_id,
+                subject_type=SubjectType.CUSTOMER,
+                subject_id=str(customer_id),
                 is_active=True,
             )
         except TrustedDevice.DoesNotExist:

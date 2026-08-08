@@ -24,8 +24,8 @@ def test_forget_customer_scrubs_user_and_revokes_devices():
     user.email = "ana@example.com"
     user.save()
     CustomerUser.objects.create(user=user, customer_id=cid)
-    TrustedDevice.create_for_customer(customer_id=cid, user_agent="A")
-    TrustedDevice.create_for_customer(customer_id=cid, user_agent="B")
+    TrustedDevice.create_for("customer", cid, user_agent="A")
+    TrustedDevice.create_for("customer", cid, user_agent="B")
 
     forget_customer(cid)
 
@@ -34,7 +34,7 @@ def test_forget_customer_scrubs_user_and_revokes_devices():
     assert user.last_name == ""
     assert user.email == ""
     assert user.is_active is False
-    assert TrustedDevice.objects.filter(customer_id=cid, is_active=True).count() == 0
+    assert TrustedDevice.objects.filter(subject_type="customer", subject_id=str(cid), is_active=True).count() == 0
 
 
 def test_forget_customer_without_link_is_safe():
