@@ -1146,10 +1146,9 @@ SHOPMAN_PRODUCTION_BASE_URL = (
     os.environ.get("SHOPMAN_PRODUCTION_BASE_URL") or ""
 ).strip().rstrip("/")
 
-# Base URL pública do Marketing (surfaces/marketing-nuxt) — app Nuxt dedicado.
-# NÃO há subdomínio publicado no spec de deploy (.do/): o acesso depende
-# inteiramente desta variável. Vazio ⇒ o tile "Marketing" some da Central,
-# sem link morto.
+# Base URL pública do Marketing (surfaces/marketing-nuxt) — app Nuxt dedicado,
+# publicado em `mkt.` (staging: mkt.boulangerie.com.br). Vazio ⇒ o tile
+# "Marketing" some da Central, sem link morto.
 SHOPMAN_MARKETING_BASE_URL = (
     os.environ.get("SHOPMAN_MARKETING_BASE_URL") or ""
 ).strip().rstrip("/")
