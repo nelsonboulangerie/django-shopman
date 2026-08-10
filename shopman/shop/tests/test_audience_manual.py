@@ -228,3 +228,68 @@ def test_manual_audience_still_splits_into_waves(db):
         {"customer_refs": ["CLI-U", "CLI-V"], "vip_first_minutes": 15}
     )
     assert {w.key: w.delay_minutes for w in result.waves()} == {"vip": 0, "general": 15}
+
+
+# ── O público escolhido tem de sobreviver até o ENVIO ────────────────
+#
+# ⚠️ Aqui vivia um defeito da F8. O handler de envio re-resolve a audiência na hora de
+# despachar — de propósito, porque entre criar e aprovar os favoritos e alertas mudam.
+# Só que ele relia `announcement.rule.audience_rules`, a campanha SALVA. Num disparo
+# manual com público escolhido, o anúncio prometia N pessoas na tela e enviava para as
+# da campanha (em geral zero).
+#
+# O resumo mentia sozinho: `audience.total` dizia 3 e o envio alcançava 0, sem erro
+# nenhum. Estes testes amarram as duas pontas.
+
+
+def test_the_chosen_audience_survives_to_dispatch(db):
+    from shopman.shop.models import Announcement, AnnouncementTemplate, Campaign, Trigger
+    from shopman.shop.services import campaign as campaign_service
+
+    group = CustomerGroup.objects.create(ref="corporativo", name="Corporativo")
+    _customer("+5543999990031", ref="CLI-W1", group=group)
+    _customer("+5543999990032", ref="CLI-W2", group=group)
+
+    template = AnnouncementTemplate.objects.create(name="Recado", body="Um recado.")
+    rule = Campaign.objects.create(
+        name="Recado", trigger=Trigger.MANUAL, template=template,
+        platforms=["whatsapp"], audience_rules={},  # a campanha NÃO tem público
+    )
+
+    announcement = campaign_service.fire_now(
+        rule.pk, audience_rules={"groups": ["corporativo"]}
+    )
+
+    # O que a tela promete.
+    assert announcement.audience["total"] == 2
+
+    # O que o handler vai usar — lendo do banco, como ele lê.
+    fresh = Announcement.objects.get(pk=announcement.pk)
+    chosen = (fresh.trigger_context or {}).get("audience_rules")
+    assert chosen == {"groups": ["corporativo"]}, "a escolha tem de viajar com o anúncio"
+    assert audience.resolve(chosen).total == 2, "o envio tem de alcançar o que foi prometido"
+
+    # E a campanha salva continua sem público.
+    rule.refresh_from_db()
+    assert rule.audience_rules == {}
+
+
+def test_without_a_choice_the_campaign_audience_still_rules(db):
+    """Disparo manual sem escolha usa o público da campanha — nada muda para ele."""
+    from shopman.shop.models import Announcement, AnnouncementTemplate, Campaign, Trigger
+    from shopman.shop.services import campaign as campaign_service
+
+    group = CustomerGroup.objects.create(ref="corporativo", name="Corporativo")
+    _customer("+5543999990033", ref="CLI-W3", group=group)
+
+    template = AnnouncementTemplate.objects.create(name="Recado", body="Um recado.")
+    rule = Campaign.objects.create(
+        name="Recado", trigger=Trigger.MANUAL, template=template,
+        platforms=["whatsapp"], audience_rules={"groups": ["corporativo"]},
+    )
+
+    announcement = campaign_service.fire_now(rule.pk)
+
+    fresh = Announcement.objects.get(pk=announcement.pk)
+    assert "audience_rules" not in (fresh.trigger_context or {})
+    assert announcement.audience["total"] == 1

@@ -104,13 +104,18 @@ def fire_now(campaign_id: int, *, context: dict | None = None, audience_rules: d
     if rule is None:
         raise CampaignError("Campanha não encontrada ou inativa.")
 
-    if audience_rules:
-        # Não persiste: é escolha DESTE disparo. A campanha salva continua com o
-        # público dela, e o histórico do anúncio guarda o que foi usado.
-        rule.audience_rules = dict(audience_rules)
-
     payload = dict(context or {})
     payload.setdefault("trigger", Trigger.MANUAL)
+
+    if audience_rules:
+        # A campanha salva NÃO muda — é escolha deste disparo. Mas a escolha tem de
+        # VIAJAR COM O ANÚNCIO: o handler de envio re-resolve a audiência na hora de
+        # despachar (de propósito, porque entre a criação e a aprovação favoritos e
+        # alertas mudam), e sem isto ele releria as regras da campanha e alcançaria
+        # ninguém — o anúncio prometeria 3 pessoas na tela e enviaria para 0.
+        rule.audience_rules = dict(audience_rules)
+        payload["audience_rules"] = dict(audience_rules)
+
     return _create_announcement(rule, payload)
 
 

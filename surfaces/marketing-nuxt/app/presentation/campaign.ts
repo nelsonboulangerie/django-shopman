@@ -80,6 +80,9 @@ export function platformIcon(platform: string): string {
 const RESULT_LABELS: Record<string, string> = {
   published: "publicado",
   sent: "enviado",
+  // Onda de WhatsApp entrega por pessoa: parte chegar e parte falhar é resultado
+  // comum, e chamar isso de "enviado" esconderia quem não recebeu.
+  partial: "enviado em parte",
   queued: "na fila",
   pending_manual: "aguardando envio manual",
   failed: "falhou",
@@ -92,7 +95,9 @@ export function resultLabel(status: string): string {
 export function resultTone(status: string): "ok" | "pending" | "fail" {
   // `sent` é o "publicado" do WhatsApp: a onda saiu para a audiência.
   if (status === "published" || status === "sent") return "ok";
-  if (status === "failed") return "fail";
+  // Parcial pende para FALHA, não para ok: alguém não recebeu, e o gestor tem de
+  // decidir o que fazer com essas pessoas.
+  if (status === "failed" || status === "partial") return "fail";
   return "pending";
 }
 
@@ -106,7 +111,7 @@ export function announcementOutcome(results: PlatformResult[]): "published" | "p
   if (results.length === 0) return "pending";
   // `sent` conta como saída: é o "publicado" do WhatsApp.
   const published = results.filter((r) => r.status === "published" || r.status === "sent").length;
-  const failed = results.filter((r) => r.status === "failed").length;
+  const failed = results.filter((r) => r.status === "failed" || r.status === "partial").length;
 
   if (published === results.length) return "published";
   if (failed === results.length) return "failed";

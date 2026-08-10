@@ -237,8 +237,17 @@ class AnnouncementNotifyHandler:
             logger.warning("campaign.notify_announcement_missing directive=%s", message.pk)
             return
 
-        sku = (announcement.trigger_context or {}).get("sku", "")
-        rules = (announcement.rule.audience_rules or {}) if announcement.rule_id else {}
+        context = announcement.trigger_context or {}
+        sku = context.get("sku", "")
+        # O público ESCOLHIDO no disparo manual vence o da campanha: ele viaja no
+        # contexto do anúncio justamente porque este handler re-resolve na hora de
+        # enviar. Sem esta linha, um disparo manual com público escolhido prometeria
+        # N pessoas na tela e enviaria para as da campanha salva (muitas vezes zero).
+        chosen = context.get("audience_rules")
+        if isinstance(chosen, dict) and chosen:
+            rules = chosen
+        else:
+            rules = (announcement.rule.audience_rules or {}) if announcement.rule_id else {}
         resolved = audience_service.resolve(rules, sku=sku)
 
         recipients = {
@@ -256,18 +265,68 @@ class AnnouncementNotifyHandler:
         )
 
 
+def _whatsapp_backend() -> str | None:
+    """O backend que entrega a onda de WhatsApp, ou ``None`` se nenhum está pronto.
+
+    ⚠️ Este handler chamava ``notify()`` **sem nomear backend**, e o default é
+    ``"console"`` — registrado só em DEBUG. Em staging e produção isso significava
+    ``Backend not found: default`` para CADA destinatário: a onda registrava
+    ``sent=0, failed=N`` e ninguém recebia nada. O caminho de pedido
+    (``services/notification.py``) já resolvia backend por config e checava
+    ``is_available()``; a campanha ignorava tudo isso e reimplementava mal a mesma
+    pergunta.
+
+    ⚠️ **`sms` NÃO entra na lista, e isso é consentimento, não preferência.** A
+    audiência exige consentimento do canal ``whatsapp``
+    (``audience.DELIVERY_CONSENT_CHANNEL``); entregar por SMS seria alcançar a pessoa
+    num canal que ela não autorizou. Minha primeira versão desta função incluía `sms`
+    como fallback e, sem token de ManyChat, ela escolhia SMS — uma campanha inteira
+    sairia pelo canal errado. Quando o WhatsApp Meta-direto entrar, ele entra AQUI; um
+    canal novo passa a exigir o consentimento dele próprio.
+
+    A ordem é deliberada: o transporte real primeiro, console por último — console é
+    ferramenta de desenvolvimento e nunca deve ganhar de um canal configurado.
+    """
+    from shopman.shop.notifications import get_backend
+
+    for name in ("manychat", "whatsapp", "console"):
+        adapter = get_backend(name)
+        if adapter is None:
+            continue
+        probe = getattr(adapter, "is_available", None)
+        if probe is not None and not probe():
+            continue
+        return name
+    return None
+
+
 def _send_to(recipients, *, announcement) -> tuple[int, int]:
     from shopman.shop.notifications import notify
+
+    # Materializa UMA vez: `recipients` pode ser gerador, e contá-lo duas vezes
+    # devolveria zero na segunda.
+    targets = tuple(recipients)
+
+    backend = _whatsapp_backend()
+    if backend is None:
+        # Nenhum transporte pronto: contar como falha é honesto (ninguém recebeu) e o
+        # painel mostra "0 enviados, N falharam" em vez de fingir entrega.
+        logger.warning(
+            "campaign.no_whatsapp_backend announcement=%s recipients=%d",
+            announcement.pk, len(targets),
+        )
+        return 0, len(targets)
 
     body = announcement.body
     link = (announcement.content or {}).get("link", "")
     sent = failed = 0
-    for recipient in recipients:
+    for recipient in targets:
         try:
             result = notify(
                 event="announcement.published",
                 recipient=recipient.phone,
                 context={"body": body, "action_url": link, "cta": "Garanta o seu:"},
+                backend=backend,
             )
             sent += 1 if getattr(result, "success", False) else 0
             failed += 0 if getattr(result, "success", False) else 1
@@ -325,12 +384,27 @@ def _record_wave(announcement, wave: str, *, sent: int, failed: int, expected: i
     if wave not in waves:
         waves.append(wave)
 
+    total_sent = int(entry.get("sent") or 0) + sent
+    total_failed = int(entry.get("failed") or 0) + failed
+
+    # ⚠️ O status dizia sempre "sent", inclusive com `sent=0, failed=3` — o painel
+    # mostrava "enviado" para uma onda que não entregou a ninguém. Status é a primeira
+    # coisa que o gestor lê; ele não pode contradizer os números logo ao lado.
+    if total_sent and total_failed:
+        status = "partial"
+    elif total_sent:
+        status = "sent"
+    elif total_failed:
+        status = "failed"
+    else:
+        status = "sent"  # onda vazia: ninguém a alcançar não é falha
+
     _record_result(announcement, "whatsapp", {
-        "status": "sent",
+        "status": status,
         "waves": waves,
         "waves_expected": expected,
-        "sent": int(entry.get("sent") or 0) + sent,
-        "failed": int(entry.get("failed") or 0) + failed,
+        "sent": total_sent,
+        "failed": total_failed,
     })
 
 
