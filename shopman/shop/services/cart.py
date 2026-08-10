@@ -1,17 +1,22 @@
 """Cart mutation facade.
 
-Storefront owns HTTP/session concerns and cart presentation. This module owns
-the writes against Orderman sessions and Stockman holds for cart mutations.
+A superfície cuida de HTTP, sessão e apresentação; este módulo cuida das escritas
+contra as sessions do Orderman e os holds do Stockman — e, desde a ADR-019, também
+das **portas de validação do cupom**, que moravam na superfície da loja e por isso
+deixavam o PDV sem cupom.
 """
 
 from __future__ import annotations
 
+import logging
 from decimal import Decimal
 
 from shopman.orderman.models import Session
 
 from shopman.shop.services import availability
 from shopman.shop.services import sessions as session_service
+
+logger = logging.getLogger(__name__)
 
 
 class CartUnavailableError(Exception):
@@ -213,6 +218,137 @@ def get_line(*, session_key: str, channel_ref: str, line_id: str) -> dict | None
         if item.get("line_id") == line_id:
             return item
     return None
+
+
+class CouponRejected(Exception):
+    """Cupom recusado numa das portas. ``code`` é a razão, em vocabulário estável.
+
+    A superfície traduz ``code`` para mensagem no idioma do público e devolve no
+    dialeto ``{detail, field, errors}``. O motivo vem daqui porque quem decide é o
+    orquestrador; a superfície só interpreta request e formata resposta.
+    """
+
+    def __init__(self, code: str):
+        super().__init__(code)
+        self.code = code
+
+
+def customer_eligible_for_promotion(customer, promotion) -> bool:
+    """``customer`` satisfaz o alvo POR CLIENTE da promoção?
+
+    Só valida o que depende de QUEM é o cliente — ``customer_segments`` (grupo/RFM) e
+    ``birthday_only`` —, porque se não batem o desconto seria sempre 0. Restrição por
+    item ou contexto (``skus``, ``collections``, ``fulfillment_types``) NÃO entra: ela
+    decide QUAIS itens recebem desconto, não se o cliente pode usar o cupom. Espelha
+    ``DiscountModifier._matches`` nesses dois eixos.
+
+    ``customer`` é o cliente já resolvido (ou ``None`` para visitante anônimo).
+    """
+    from django.core.exceptions import ObjectDoesNotExist
+    from django.utils import timezone as tz
+
+    segments = list(getattr(promotion, "customer_segments", None) or [])
+    birthday_only = bool(getattr(promotion, "birthday_only", False))
+    if not segments and not birthday_only:
+        return True  # cupom aberto a todos
+
+    if customer is None:
+        return False  # alvo exige identidade; visitante anônimo não qualifica
+
+    if segments:
+        group_ref = customer.group.ref if getattr(customer, "group_id", None) else ""
+        try:
+            rfm_segment = customer.insight.rfm_segment or ""
+        except ObjectDoesNotExist:
+            # Sem insight calculado (OneToOne ausente) o cliente só casa por grupo;
+            # segmento RFM fica vazio. Degrada sem bloquear o cupom.
+            logger.debug("coupon_eligibility_insight_missing")
+            rfm_segment = ""
+        if group_ref not in segments and rfm_segment not in segments:
+            return False
+
+    if birthday_only:
+        birthday = getattr(customer, "birthday", None)
+        if not birthday:
+            return False
+        today = tz.localdate()
+        if not (birthday.month == today.month and birthday.day == today.day):
+            return False
+
+    return True
+
+
+def validate_and_apply_coupon(
+    *,
+    session_key: str,
+    channel_ref: str,
+    code: str,
+    customer=None,
+) -> tuple[Session, str]:
+    """As portas do cupom + a aplicação. Devolve ``(session, nome da promoção)``.
+
+    Estas validações moravam em ``storefront/cart.py``, e por isso **o PDV não tinha
+    cupom**: para ganhá-lo teria de reimplementar as mesmas cinco portas, e duas
+    implementações da mesma pergunta divergem por construção. Agora a superfície só
+    interpreta request e formata erro; quem decide é o orquestrador (ADR-019).
+
+    Levanta ``CouponRejected`` com um destes códigos:
+
+    · ``invalid_coupon`` — não existe, ou está inativo
+    · ``coupon_exhausted`` — passou de ``max_uses``
+    · ``coupon_expired`` — promoção inativa ou fora da janela
+    · ``coupon_wrong_channel`` — a promoção não vale neste canal (ADR-019 §4).
+      Porta nova: antes ``Promotion.channels`` não existia, então um cupom da web
+      era aceito no balcão e descontava mesmo assim.
+    · ``coupon_not_eligible`` — o alvo por cliente não bate. Recusar aqui em vez de
+      gravar um cupom MUDO (desconto 0) sem avisar — ex.: FUNCIONARIO
+      (``customer_segments=["staff"]``) na mão de quem não é staff.
+    """
+    from django.utils import timezone as tz
+
+    from shopman.shop.models import Coupon
+
+    code = (code or "").strip().upper()
+
+    try:
+        coupon = (
+            Coupon.objects.select_related("promotion")
+            .prefetch_related("promotion__channels")
+            .get(code=code, is_active=True)
+        )
+    except Coupon.DoesNotExist:
+        raise CouponRejected("invalid_coupon") from None
+
+    if not coupon.is_available:
+        raise CouponRejected("coupon_exhausted")
+
+    promotion = coupon.promotion
+    now = tz.now()
+    if not promotion.is_active or now < promotion.valid_from or now > promotion.valid_until:
+        raise CouponRejected("coupon_expired")
+
+    if not promotion.applies_to_channel(channel_ref):
+        raise CouponRejected("coupon_wrong_channel")
+
+    if not customer_eligible_for_promotion(customer, promotion):
+        raise CouponRejected("coupon_not_eligible")
+
+    # A identidade (ref + grupo) vai para a sessão junto do cupom: um cupom segmentado
+    # só desconta se o modifier souber grupo/segmento, e ele resolve isso da sessão a
+    # cada reprice. Sem isto o cupom é aceito e desconta zero.
+    payload = None
+    if customer is not None:
+        payload = {
+            "ref": getattr(customer, "ref", "") or "",
+            "group": customer.group.ref if getattr(customer, "group_id", None) else "",
+        }
+
+    session = apply_coupon_code(
+        session_key=session_key, channel_ref=channel_ref, code=code, customer=payload
+    )
+    if session is None:
+        raise CouponRejected("no_cart")
+    return session, promotion.name
 
 
 def apply_coupon_code(

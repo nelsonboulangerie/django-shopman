@@ -448,6 +448,7 @@ class CartCouponView(APIView):
         "invalid_coupon": "Cupom não encontrado.",
         "coupon_exhausted": "Este cupom já foi utilizado.",
         "coupon_expired": "Cupom expirado.",
+        "coupon_wrong_channel": "Este cupom não vale nesta loja.",
         "coupon_not_eligible": "Este cupom não está disponível para a sua conta.",
     }
 
