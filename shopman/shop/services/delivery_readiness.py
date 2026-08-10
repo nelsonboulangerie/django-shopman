@@ -4,7 +4,10 @@ Nasceu de uma correção do dono: a primeira versão disto só sabia falar de Wh
 porque foi escrita durante um teste de WhatsApp. Anúncio não é mensagem de um canal — é
 conteúdo que sai por vários, e **cada um tem exigência própria**.
 
-## Três tipos de entrega, não um
+## Dois tipos de entrega, não um
+
+A TV **não** está aqui, e não é esquecimento: ela mostra a promoção porque a promoção vale
+naquele canal, não porque um anúncio a escolheu como destino (ADR-020 §10).
 
 O erro de projetar em volta de um canal é achar que "enviar" quer dizer a mesma coisa em
 todos. Não quer:
@@ -14,8 +17,6 @@ todos. Não quer:
   de credencial e de um adapter que fale a API deles.
 · **mensagem direta** (`whatsapp`) — UMA mensagem POR PESSOA. Tem consentimento, tem
   janela de 24h, e exige template aprovado para sair dela.
-· **exibição local** (`tv`) — push por SSE para uma tela nossa. Não depende de terceiro,
-  então está sempre pronta.
 
 O formato do relato é **genérico** (pronta? por quê não? o que fazer?) e a **razão** é
 específica de cada plataforma. Era isso que faltava: genérico onde dá, específico onde
@@ -36,15 +37,12 @@ from dataclasses import dataclass
 PUBLICATION = "publication"
 #: Mensagem direta: uma mensagem por pessoa, com consentimento e janela.
 DIRECT_MESSAGE = "direct_message"
-#: Tela nossa: push por SSE, sem terceiro no caminho.
-LOCAL_DISPLAY = "local_display"
 
 PLATFORM_KIND: dict[str, str] = {
     "instagram": PUBLICATION,
     "facebook": PUBLICATION,
     "google_business": PUBLICATION,
     "whatsapp": DIRECT_MESSAGE,
-    "tv": LOCAL_DISPLAY,
 }
 
 

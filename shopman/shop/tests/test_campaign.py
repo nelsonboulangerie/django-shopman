@@ -521,7 +521,7 @@ class TestContentEditing:
     def test_omitted_keys_are_left_alone(self, product, rule):
         announcement = campaign.evaluate("production_finished", _context())[0]
         original = announcement.content["body"]
-        assert campaign.update_content(announcement.pk, platforms=["tv"]).content["body"] == original
+        assert campaign.update_content(announcement.pk, platforms=["facebook"]).content["body"] == original
 
     def test_published_post_cannot_be_rewritten(self, product, rule):
         announcement = campaign.evaluate("production_finished", _context())[0]

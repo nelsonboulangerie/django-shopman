@@ -93,12 +93,12 @@ describe("expiryTone", () => {
 
 describe("announcementOutcome", () => {
   it("only calls it published when every platform published", () => {
-    expect(announcementOutcome([result("instagram", "published"), result("tv", "published")]))
+    expect(announcementOutcome([result("instagram", "published"), result("facebook", "published")]))
       .toBe("published");
   });
 
   it("treats a mixed result as partial, not as success", () => {
-    expect(announcementOutcome([result("instagram", "failed"), result("tv", "published")]))
+    expect(announcementOutcome([result("instagram", "failed"), result("facebook", "published")]))
       .toBe("partial");
   });
 
@@ -111,7 +111,7 @@ describe("announcementOutcome", () => {
   });
 
   it("counts a still-queued platform as pending", () => {
-    expect(announcementOutcome([result("instagram", "queued"), result("tv", "pending_manual")]))
+    expect(announcementOutcome([result("instagram", "queued"), result("facebook", "pending_manual")]))
       .toBe("pending");
   });
 

@@ -68,7 +68,6 @@ const PLATFORM_ICONS: Record<string, string> = {
   facebook: "lucide:facebook",
   google_business: "lucide:map-pin",
   whatsapp: "lucide:message-circle",
-  tv: "lucide:tv",
 };
 
 export function platformIcon(platform: string): string {

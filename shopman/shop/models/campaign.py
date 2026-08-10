@@ -129,7 +129,12 @@ class Campaign(models.Model):
     )
     platforms = models.JSONField(
         "plataformas", default=list,
-        help_text='["instagram", "google_business", "facebook", "whatsapp", "tv"]',
+        #: ⚠️ `tv` NÃO entra aqui, e a razão é de modelo: a TV mostra a promoção porque a
+        #: promoção **vale naquele canal** (`Promotion.channels` incluindo o menuboard),
+        #: não porque um anúncio a escolheu como destino. Enquanto ela era plataforma, o
+        #: anúncio gravava `published` e empurrava num canal SSE com ZERO consumidores —
+        #: o painel dizia "publicado" e nenhuma TV mostrava nada. Ver ADR-020 §10.
+        help_text='["instagram", "google_business", "facebook", "whatsapp"]',
     )
     #: Vocabulário FECHADO e PLANO. Sem AND/OR aninhado, sem construtor de segmento
     #: arbitrário: no dia em que alguém precisar de árvore booleana, o que está sendo

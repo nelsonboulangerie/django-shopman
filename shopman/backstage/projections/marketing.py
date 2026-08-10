@@ -41,7 +41,6 @@ PLATFORM_CHOICES: tuple[tuple[str, str], ...] = (
     ("facebook", "Facebook"),
     ("google_business", "Google Meu Negócio"),
     ("whatsapp", "WhatsApp"),
-    ("tv", "TV da loja"),
 )
 
 #: Janela do "publicados recentemente" no painel.

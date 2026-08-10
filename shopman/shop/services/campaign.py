@@ -588,9 +588,6 @@ def dispatch(announcement: Announcement) -> int:
             created += _queue_announcement(announcement, platform)
         elif platform == "whatsapp":
             created += _queue_notify(announcement)
-        elif platform == "tv":
-            _push_tv(announcement)
-            created += 1
         else:
             logger.warning("campaign.unknown_platform announcement=%s platform=%s", announcement.pk, platform)
 
@@ -650,33 +647,6 @@ def _queue_notify(announcement: Announcement) -> int:
         created += 1 if directive else 0
     return created
 
-
-def _push_tv(announcement: Announcement) -> None:
-    """TVs/menuboards: push direto, sem API externa nem credencial.
-
-    Registra o resultado na hora (não há Directive nem handler para a TV), para
-    que ``_settle`` consiga fechar um announcement que mistura TV e plataformas.
-    """
-    results = dict(announcement.platform_results or {})
-    results["tv"] = {"status": "published"}
-    announcement.platform_results = results
-    announcement.save(update_fields=["platform_results"])
-
-    def _send():
-        try:
-            from django_eventstream import send_event
-
-            send_event(
-                "campaign-tv",
-                "campaign-announcement",
-                {"announcement_id": announcement.pk, "body": announcement.body, "image_url": announcement.content.get("image_url", "")},
-            )
-        except ImportError:
-            logger.warning("django_eventstream ausente; push de TV ignorado")
-        except Exception:
-            logger.warning("campaign.tv_push_failed announcement=%s", announcement.pk, exc_info=True)
-
-    transaction.on_commit(_send)
 
 
 # ── Notificação do gestor ────────────────────────────────────────────

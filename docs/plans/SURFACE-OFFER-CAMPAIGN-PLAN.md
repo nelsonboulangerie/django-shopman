@@ -65,6 +65,14 @@ recopiados.
 
 ## 1. Ordem de execucao
 
+> **Estado (2026-08-10): F1 a F12 e F13a estao no `main`.** Falta so **F13b** (posting externo
+> Meta/Google), bloqueado em credenciais que nao existem — escrever adapter que nao da para exercitar
+> ponta a ponta e exatamente o padrao que esta sessao corrigiu tres vezes. Cada secao feita comeca com
+> "✅ FEITO" e conta o que foi encontrado no caminho.
+>
+> **Uma decisao do dono esta aberta**, na F10: "campanha criada pelo gestor pula aprovacao" publicaria
+> campanha **sem conteudo** — ver a secao para o argumento.
+
 Cada fase entrega valor sozinha e passa `make test`. As dependencias reais sao poucas:
 
 ```
@@ -313,7 +321,26 @@ O que falta e operacional: `AI_ASSIST_API_KEY` esta no `.env` local mas **ausent
 staging na DO** — por isso o endpoint responde 503 no ar. Config de deploy se edita na spec LIVE, nunca
 na do repo (que apaga segredos).
 
-### F13 — Posting externo · ADR-020 passo 8
+### F13a — `tv` sai de `platforms` · ADR-020 §10 — ✅ FEITO
+
+A metade do passo 8 que **nao** depende de credencial nenhuma, e a que corrigia um defeito:
+`campaign-tv` tinha **um** reference em todo o repo — o remetente. Zero consumidores, nada assinava. Logo
+toda TV escolhida num anuncio gravava `status: published` e empurrava para o vazio: o painel dizia
+"publicado" e nenhuma TV mostrava nada. Isso e pior que codigo morto, e **sucesso falso**.
+
+A causa era de modelo, e a ADR-020 §10 ja a nomeava: a TV mostra a promocao porque a promocao **vale
+naquele canal** (`Promotion.channels` incluindo o menuboard — F5/F7/F11), nao porque um anuncio a escolheu
+como destino. Saem: `tv` de `PLATFORM_CHOICES`, `_push_tv`, o ramo do dispatch, `LOCAL_DISPLAY` de
+`delivery_readiness` e o icone no front. A lista fica homogenea: so envio externo.
+
+Migration `0008` **limpa a coluna**, nao so o help_text: linha que ainda listasse `tv` faria o painel
+avisar "plataforma desconhecida" para algo que nos removemos, e o gestor levaria a culpa por uma decisao
+nossa. Sem volta no `reverse`: recriar `tv` seria recriar o bug.
+
+⚠️ `Channel` com `ref="tv"` **continua existindo** e nao tem nada a ver com isto — e canal de display
+(ADR-018), que e justamente o mecanismo certo.
+
+### F13b — Posting externo · ADR-020 passo 8 — ⛔ BLOQUEADO (credenciais)
 
 Registrar `"posting"` no mapa de adapters e implementar `posting_meta`/`posting_google`. Escopo ja
 definido em [FOMO-MARKETING-SPECS](FOMO-MARKETING-SPECS.md) §5 e §7.
