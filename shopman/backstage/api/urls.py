@@ -47,6 +47,7 @@ from .marketing import (
     CampaignHistoryView,
     CampaignListView,
     CampaignOptionsView,
+    WhatsAppTemplateView,
 )
 from .notifications import (
     NotificationActionView,
@@ -228,6 +229,7 @@ urlpatterns = [
     path("marketing/rules/", CampaignListView.as_view(), name="api-backstage-marketing-rules"),
     path("marketing/rules/<int:pk>/", CampaignDetailView.as_view(), name="api-backstage-marketing-rule"),
     path("marketing/rules/<int:pk>/fire/", CampaignFireView.as_view(), name="api-backstage-marketing-fire"),
+    path("marketing/whatsapp-template/", WhatsAppTemplateView.as_view(), name="api-backstage-marketing-wa-template"),
     path("marketing/templates/", AnnouncementTemplateListView.as_view(), name="api-backstage-marketing-templates"),
     path("marketing/templates/<int:pk>/", AnnouncementTemplateDetailView.as_view(), name="api-backstage-marketing-template"),
     path("marketing/announcements/<int:pk>/", AnnouncementDetailView.as_view(), name="api-backstage-marketing-announcement"),

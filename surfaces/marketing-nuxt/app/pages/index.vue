@@ -19,6 +19,27 @@ const { reachLimits, pendingPosts, recentPosts, stats, loading, error, refresh, 
   useCampaignBoard();
 const { platforms } = useCampaigns();
 
+// Escolher o template do WhatsApp AQUI: é config, mas é config da operação, e mandar o
+// gestor para outro aplicativo para desbloquear o próprio anúncio é atrito sem motivo.
+const waTemplate = useWhatsAppTemplate();
+const choosingTemplate = ref(false);
+const savingTemplate = ref(false);
+
+async function openTemplatePicker() {
+  choosingTemplate.value = true;
+  await waTemplate.load();
+}
+
+async function onChooseTemplate(flowNs: string) {
+  savingTemplate.value = true;
+  const ok = await waTemplate.choose(flowNs);
+  savingTemplate.value = false;
+  if (ok) {
+    choosingTemplate.value = false;
+    await refresh();
+  }
+}
+
 const busyPk = ref<number | null>(null);
 const discarding = ref<number | null>(null);
 
@@ -54,30 +75,114 @@ useHead({ title: "Painel · Marketing" });
       </button>
     </div>
 
-    <!-- Limites de ALCANCE primeiro: saber que a campanha não chega a quem você
-         imagina é mais urgente que qualquer número do dia. Antes disto o aviso
-         existia só no `check --deploy`, que o gestor nunca lê. -->
+    <!-- Entrega por plataforma, ANTES de publicar. Bloqueio e limitação não podem
+         parecer iguais: um diz "nada sai por aqui", o outro diz "sai, mas não para
+         todo mundo". Antes disto o aviso existia só no `check --deploy`, que o gestor
+         nunca lê — e só sabia falar de WhatsApp. -->
     <section
       v-if="reachLimits.length"
       class="mb-5 space-y-2"
-      aria-label="Limites de alcance"
+      aria-label="Situação de entrega por plataforma"
     >
       <div
         v-for="limit in reachLimits"
         :key="limit.code"
-        class="flex items-start gap-2.5 rounded-lg border border-amber-500/40 bg-amber-500/5 px-3 py-2.5"
+        class="flex items-start gap-2.5 rounded-lg border px-3 py-2.5"
+        :class="limit.blocking
+          ? 'border-destructive/40 bg-destructive/5'
+          : 'border-amber-500/40 bg-amber-500/5'"
         role="status"
       >
-        <Icon name="lucide:triangle-alert" class="mt-0.5 size-4 shrink-0 text-amber-600" />
+        <Icon
+          :name="limit.blocking ? 'lucide:circle-slash' : 'lucide:triangle-alert'"
+          class="mt-0.5 size-4 shrink-0"
+          :class="limit.blocking ? 'text-destructive' : 'text-amber-600'"
+        />
         <div class="min-w-0">
           <p class="text-sm font-semibold">{{ limit.title }}</p>
           <p class="mt-0.5 text-sm text-muted-foreground">{{ limit.detail }}</p>
-          <p v-if="limit.action" class="mt-1 text-xs font-medium text-muted-foreground">
+          <!-- Ação acionável quando é DAQUI que se resolve; texto quando o conserto
+               está fora do alcance do gestor (credencial de plataforma, p.ex.). -->
+          <button
+            v-if="limit.platform === 'whatsapp' && !limit.blocking"
+            type="button"
+            class="mt-1.5 inline-flex items-center gap-1 rounded-md border border-border bg-background px-2 py-1 text-xs font-semibold transition hover:bg-muted"
+            @click="openTemplatePicker()"
+          >
+            <Icon name="lucide:settings-2" class="size-3.5" />
+            Escolher o template aprovado
+          </button>
+          <p v-else-if="limit.action" class="mt-1 text-xs font-medium text-muted-foreground">
             {{ limit.action }}
           </p>
         </div>
       </div>
     </section>
+
+    <!-- Escolha do template: painel próprio, aberto pelo aviso que ele resolve -->
+    <UiSheet :open="choosingTemplate" @update:open="(v) => { if (!v) choosingTemplate = false }">
+      <UiSheetContent side="right" class="w-full overflow-y-auto sm:max-w-lg">
+        <UiSheetHeader>
+          <UiSheetTitle>Template aprovado do WhatsApp</UiSheetTitle>
+          <UiSheetDescription>
+            Com um template aprovado, o anúncio alcança quem não conversou nas últimas
+            24 horas. Sem ele, só a janela.
+          </UiSheetDescription>
+        </UiSheetHeader>
+
+        <div v-if="waTemplate.loading.value" class="mt-4 space-y-2" aria-busy="true">
+          <div v-for="n in 3" :key="n" class="h-10 animate-pulse rounded-md bg-muted"></div>
+        </div>
+
+        <!-- Não conseguir perguntar à plataforma NÃO é "não há template": dizer o que
+             é verdade em vez de sugerir uma conclusão errada. -->
+        <div
+          v-else-if="!waTemplate.canList.value"
+          class="mt-4 rounded-lg border border-border bg-muted/40 px-3 py-2.5 text-sm"
+        >
+          <p class="font-semibold">Não foi possível consultar os templates agora</p>
+          <p class="mt-1 text-muted-foreground">
+            A plataforma não respondeu. Tente de novo em instantes; nada foi alterado.
+          </p>
+        </div>
+
+        <div v-else class="mt-4 space-y-1.5">
+          <button
+            type="button"
+            class="flex w-full items-start gap-2 rounded-lg border px-3 py-2.5 text-left transition hover:bg-muted"
+            :class="waTemplate.current.value === '' ? 'border-primary' : 'border-border'"
+            :disabled="savingTemplate"
+            @click="onChooseTemplate('')"
+          >
+            <Icon name="lucide:circle-slash" class="mt-0.5 size-4 shrink-0 text-muted-foreground" />
+            <span>
+              <span class="block text-sm font-medium">Sem template</span>
+              <span class="block text-xs text-muted-foreground">
+                Texto livre — alcança só quem conversou nas últimas 24 horas.
+              </span>
+            </span>
+          </button>
+
+          <button
+            v-for="option in waTemplate.available.value"
+            :key="option.ns"
+            type="button"
+            class="flex w-full items-start gap-2 rounded-lg border px-3 py-2.5 text-left transition hover:bg-muted"
+            :class="waTemplate.current.value === option.ns ? 'border-primary' : 'border-border'"
+            :disabled="savingTemplate"
+            @click="onChooseTemplate(option.ns)"
+          >
+            <Icon name="lucide:file-check-2" class="mt-0.5 size-4 shrink-0 text-muted-foreground" />
+            <span class="min-w-0">
+              <span class="block truncate text-sm font-medium">{{ option.name }}</span>
+              <span class="block truncate font-mono text-xs text-muted-foreground">
+                {{ option.ns }}
+              </span>
+            </span>
+          </button>
+        </div>
+      </UiSheetContent>
+    </UiSheet>
 
     <!-- Números do dia -->
     <section v-if="stats" class="mb-6 grid grid-cols-2 gap-3 sm:grid-cols-4" aria-label="Números de hoje">

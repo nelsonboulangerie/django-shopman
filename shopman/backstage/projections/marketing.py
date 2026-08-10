@@ -96,17 +96,25 @@ class CampaignStatsProjection:
 
 @dataclass(frozen=True)
 class ReachLimitProjection:
-    """Um limite de ALCANCE que o gestor precisa ver antes de disparar, não depois.
+    """O que impede (ou limita) a entrega de UMA plataforma, visto antes de publicar.
 
-    Nasceu de um teste real: o disparo foi recusado pela Meta com `code 3011` porque o
-    destinatário não interagia há dois anos, e nada no sistema tinha avisado. O aviso
-    existia só no `check --deploy`, que o gestor nunca lê.
+    A primeira versão disto só falava de WhatsApp, porque nasceu num teste de WhatsApp —
+    e o dono apontou o erro: anúncio sai por várias plataformas, e cada uma tem exigência
+    própria. Agora o formato é genérico (plataforma, bloqueio ou limitação, o que fazer) e
+    a razão vem de `services/delivery_readiness.py`, que sabe a diferença entre publicar
+    (IG/Facebook/Google) e mandar mensagem (WhatsApp).
+
+    ``blocking=True`` significa que nada sai por ali. ``blocking=False`` é o meio-termo
+    honesto: sai, mas não para todo mundo.
     """
 
     code: str
+    platform: str
+    platform_label: str
     title: str
     detail: str
     action: str = ""
+    blocking: bool = True
 
 
 @dataclass(frozen=True)
@@ -303,56 +311,52 @@ def build_board(*, now=None) -> CampaignBoardProjection:
 
 
 def _reach_limits() -> tuple[ReachLimitProjection, ...]:
-    """O que hoje impede a campanha de alcançar quem ela promete alcançar.
+    """O que hoje impede ou limita a entrega, POR PLATAFORMA que as campanhas usam.
 
-    Duas perguntas, ambas respondidas por configuração e nenhuma visível ao gestor até
-    agora: existe template aprovado de WhatsApp? existe transporte configurado?
+    Só reporta plataforma que alguma campanha ativa realmente pede: avisar sobre
+    Instagram numa loja que só usa WhatsApp é ruído, e ruído treina o gestor a ignorar
+    avisos.
     """
-    from shopman.shop.models import Campaign, NotificationTemplate
+    from shopman.shop.models import Campaign
+    from shopman.shop.services import delivery_readiness
 
-    limits: list[ReachLimitProjection] = []
-
-    uses_whatsapp = any(
-        "whatsapp" in (campaign.platforms or [])
-        for campaign in Campaign.objects.filter(is_active=True)
-    )
-    if not uses_whatsapp:
+    wanted: list[str] = []
+    for campaign in Campaign.objects.filter(is_active=True):
+        for platform in campaign.platforms or []:
+            if platform not in wanted:
+                wanted.append(platform)
+    if not wanted:
         return ()
 
-    has_flow = (
-        NotificationTemplate.objects.filter(event="announcement_published")
-        .exclude(whatsapp_flow_ns="")
-        .exists()
-    )
-    if not has_flow:
-        limits.append(
-            ReachLimitProjection(
-                code="whatsapp_no_template",
-                title="Sem template aprovado do WhatsApp",
-                detail=(
-                    "Hoje a campanha só chega a quem conversou com a loja nas últimas "
-                    "24 horas. Quem não conversou não recebe — é regra da Meta, não "
-                    "falha do envio."
-                ),
-                action="Configurar em Templates de notificação → announcement_published",
+    limits: list[ReachLimitProjection] = []
+    for state in delivery_readiness.readiness_for(wanted):
+        if state.ready and not state.limitation:
+            continue
+        label = _platform_label(state.platform)
+        if not state.ready:
+            limits.append(
+                ReachLimitProjection(
+                    code=f"{state.platform}_blocked",
+                    platform=state.platform,
+                    platform_label=label,
+                    title=f"{label}: não vai publicar",
+                    detail=state.reason,
+                    action=state.action,
+                    blocking=True,
+                )
             )
-        )
-
-    from shopman.shop.handlers.campaign import _whatsapp_backend
-
-    if _whatsapp_backend() is None:
-        limits.append(
-            ReachLimitProjection(
-                code="whatsapp_no_backend",
-                title="Nenhum transporte de WhatsApp configurado",
-                detail=(
-                    "O disparo vai registrar falha para todos os destinatários: não há "
-                    "canal pronto para entregar."
-                ),
-                action="Verificar a credencial do ManyChat neste ambiente",
+        else:
+            limits.append(
+                ReachLimitProjection(
+                    code=f"{state.platform}_limited",
+                    platform=state.platform,
+                    platform_label=label,
+                    title=f"{label}: alcance limitado",
+                    detail=state.limitation,
+                    action=state.action,
+                    blocking=False,
+                )
             )
-        )
-
     return tuple(limits)
 
 

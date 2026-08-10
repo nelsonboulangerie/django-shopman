@@ -14,6 +14,8 @@ de regras e modelos. Gate: ``shop.manage_campaigns`` — o gestor de marketing n
     POST   campaign/announcements/<pk>/approve/ → publicar
     POST   campaign/announcements/<pk>/discard/ → descartar
     POST   campaign/rules/<pk>/fire/    → disparar AGORA (público opcional)
+    GET    campaign/whatsapp-template/  → templates aprovados + o escolhido
+    POST   campaign/whatsapp-template/  → escolher o template
     GET    campaign/rules/              → listar         POST → criar
     PATCH  campaign/rules/<pk>/         → editar         DELETE → apagar
     GET    campaign/templates/          → listar         POST → criar
@@ -207,6 +209,66 @@ class CampaignListView(_CampaignBase):
             {"ok": True, "rule": projection_data(marketing_projection.build_rule(rule))},
             status=201,
         )
+
+
+class WhatsAppTemplateView(_CampaignBase):
+    """Escolher o template aprovado do WhatsApp, aqui — onde o anúncio é operado.
+
+    O dono corrigiu um erro meu de leitura: "Admin = só config" existe para **limitar o
+    Admin**, não para exilar configuração dos apps de operador. Escolher o template com
+    que o anúncio sai é inseparável de operar o anúncio — quem decide publicar é quem
+    precisa saber e mudar isso, sem trocar de aplicativo.
+
+    O Admin continua podendo (é CRUD legítimo do `NotificationTemplate`); a diferença é
+    que agora não é o ÚNICO lugar.
+
+        GET  → templates disponíveis na plataforma + o escolhido agora
+        POST → escolher (ou limpar, com string vazia)
+    """
+
+    EVENT = "announcement_published"
+
+    def get(self, request):
+        from shopman.shop.models import NotificationTemplate
+        from shopman.shop.services import manychat_flows
+
+        template = NotificationTemplate.objects.filter(event=self.EVENT).first()
+        current = (template.whatsapp_flow_ns or "") if template else ""
+        flows = manychat_flows.list_flows()
+
+        return Response({
+            "current": current,
+            # Lista vazia não é "não existe template": é "não consegui perguntar".
+            # A tela precisa distinguir para não afirmar o que não sabe.
+            "available": [{"ns": ns, "name": name} for ns, name in flows],
+            "can_list": bool(flows),
+            "configured": bool(current),
+        })
+
+    def post(self, request):
+        from shopman.shop.models import NotificationTemplate
+        from shopman.shop.services import manychat_flows
+
+        payload = request.data if isinstance(request.data, dict) else {}
+        ns = str(payload.get("flow_ns") or "").strip()
+
+        # Só valida contra a lista quando ela existe: com a API do provedor fora,
+        # recusar seria travar o operador por indisponibilidade de terceiro.
+        known = {candidate for candidate, _name in manychat_flows.list_flows()}
+        if ns and known and ns not in known:
+            return Response(
+                {"detail": "Este template não existe mais na plataforma.", "field": "flow_ns"},
+                status=400,
+            )
+
+        template, _created = NotificationTemplate.objects.get_or_create(
+            event=self.EVENT,
+            defaults={"subject": "Novidade na padaria", "body": "{body}"},
+        )
+        template.whatsapp_flow_ns = ns
+        template.save(update_fields=["whatsapp_flow_ns"])
+
+        return Response({"ok": True, "current": ns, "configured": bool(ns)})
 
 
 class CampaignFireView(_CampaignBase):

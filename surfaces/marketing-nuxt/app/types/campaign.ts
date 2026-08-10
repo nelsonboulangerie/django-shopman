@@ -41,12 +41,19 @@ export interface CampaignStats {
   failed_today: number;
 }
 
-/** Um limite de ALCANCE — o gestor precisa ver antes de disparar, não depois. */
+/** O que impede ou limita a entrega de UMA plataforma, visto antes de publicar.
+ *
+ *  `blocking` separa dois estados que não podem parecer iguais: bloqueio (nada sai por
+ *  ali) e limitação (sai, mas não para todo mundo).
+ */
 export interface ReachLimit {
   code: string;
+  platform: string;
+  platform_label: string;
   title: string;
   detail: string;
   action: string;
+  blocking: boolean;
 }
 
 export interface CampaignBoard {
@@ -115,6 +122,15 @@ export interface ChosenAudience {
   bought_collections?: string[];
   bought_within_days?: number;
   vip_first_minutes?: number;
+}
+
+/** Templates aprovados da plataforma + o escolhido agora. */
+export interface WhatsAppTemplateResponse {
+  current: string;
+  available: { ns: string; name: string }[];
+  /** `false` = não foi possível consultar a plataforma (≠ "não há template"). */
+  can_list: boolean;
+  configured: boolean;
 }
 
 export interface BoardResponse {

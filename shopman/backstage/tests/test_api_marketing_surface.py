@@ -526,3 +526,97 @@ class TestManualFire:
         client.force_login(outsider)
         resp = client.post(_fire_url(rule), data={}, content_type="application/json")
         assert resp.status_code == 403
+
+
+# ── Escolher o template do WhatsApp DAQUI, não no Admin ──────────────
+#
+# "Admin = só config" limita o Admin; não exila configuração do app de operador. Escolher
+# o template com que o anúncio sai é inseparável de operar o anúncio.
+
+WA_TEMPLATE_URL = "/api/v1/backstage/marketing/whatsapp-template/"
+
+FAKE_FLOWS = (
+    ("content20240614222050_512341", "Fresh batch announcement"),
+    ("content20210201131015_377918", "Product available alert"),
+)
+
+
+@pytest.fixture
+def flows(monkeypatch):
+    from shopman.shop.services import manychat_flows
+
+    monkeypatch.setattr(manychat_flows, "list_flows", lambda **kw: FAKE_FLOWS)
+
+
+@pytest.fixture
+def no_flows(monkeypatch):
+    """A plataforma não respondeu — diferente de "não há template"."""
+    from shopman.shop.services import manychat_flows
+
+    monkeypatch.setattr(manychat_flows, "list_flows", lambda **kw: ())
+
+
+class TestWhatsAppTemplateFromTheSurface:
+    def test_it_lists_the_approved_templates(self, client, gestor, flows):
+        client.force_login(gestor)
+        body = client.get(WA_TEMPLATE_URL).json()
+
+        assert body["can_list"] is True
+        assert {t["ns"] for t in body["available"]} == {ns for ns, _ in FAKE_FLOWS}
+        assert body["current"] == ""
+        assert body["configured"] is False
+
+    def test_choosing_one_configures_the_event(self, client, gestor, flows):
+        from shopman.shop.models import NotificationTemplate
+
+        client.force_login(gestor)
+        resp = client.post(
+            WA_TEMPLATE_URL,
+            data={"flow_ns": FAKE_FLOWS[0][0]},
+            content_type="application/json",
+        )
+
+        assert resp.status_code == 200
+        assert resp.json()["configured"] is True
+        saved = NotificationTemplate.objects.get(event="announcement_published")
+        assert saved.whatsapp_flow_ns == FAKE_FLOWS[0][0]
+
+    def test_clearing_is_allowed_and_says_what_it_costs(self, client, gestor, flows):
+        from shopman.shop.models import NotificationTemplate
+
+        client.force_login(gestor)
+        client.post(WA_TEMPLATE_URL, data={"flow_ns": FAKE_FLOWS[0][0]},
+                    content_type="application/json")
+        resp = client.post(WA_TEMPLATE_URL, data={"flow_ns": ""},
+                           content_type="application/json")
+
+        assert resp.status_code == 200
+        assert resp.json()["configured"] is False
+        assert NotificationTemplate.objects.get(event="announcement_published").whatsapp_flow_ns == ""
+
+    def test_a_template_that_no_longer_exists_is_refused(self, client, gestor, flows):
+        client.force_login(gestor)
+        resp = client.post(WA_TEMPLATE_URL, data={"flow_ns": "content20200101000000_000000"},
+                           content_type="application/json")
+
+        assert resp.status_code == 400
+        assert resp.json()["field"] == "flow_ns"
+
+    def test_with_the_platform_down_the_choice_is_not_blocked(self, client, gestor, no_flows):
+        """Indisponibilidade de terceiro não pode travar o operador."""
+        client.force_login(gestor)
+        resp = client.post(WA_TEMPLATE_URL, data={"flow_ns": "content20991231235959_999999"},
+                           content_type="application/json")
+
+        assert resp.status_code == 200, "sem lista para validar, aceita e confia"
+
+    def test_the_surface_distinguishes_cannot_list_from_empty(self, client, gestor, no_flows):
+        client.force_login(gestor)
+        body = client.get(WA_TEMPLATE_URL).json()
+
+        assert body["can_list"] is False, "a tela precisa saber que não foi possível perguntar"
+
+    def test_it_requires_the_campaign_permission(self, client, flows):
+        outsider = User.objects.create_user(username="curioso2", password="x", is_staff=True)
+        client.force_login(outsider)
+        assert client.get(WA_TEMPLATE_URL).status_code == 403
