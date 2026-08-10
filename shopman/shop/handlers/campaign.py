@@ -318,14 +318,35 @@ def _send_to(recipients, *, announcement) -> tuple[int, int]:
         return 0, len(targets)
 
     body = announcement.body
-    link = (announcement.content or {}).get("link", "")
+    content = announcement.content or {}
+    link = content.get("link", "")
+
+    # Campos DISCRETOS, e não só o corpo renderizado. Um template aprovado da Meta
+    # preenche `{{1}}..{{n}}` com pedaços — produto, preço, hora —, e um template cujo
+    # corpo é uma variável só é recusado por genérico. Enquanto não há template, o
+    # `body` continua sendo usado (texto livre dentro da janela de 24h); com template, o
+    # flow do ManyChat mapeia estes campos.
+    # `resolve_content` já guardou as variáveis resolvidas em `content["variables"]`
+    # (produto, preco, loja, horario, sku…). Lê-las de lá em vez de reinventar chaves:
+    # uma pergunta, um dono.
+    variables = content.get("variables") or {}
+    shared = {
+        "body": body,
+        "action_url": link,
+        "cta": "Garanta o seu:",
+        **{k: str(v) for k, v in variables.items() if isinstance(v, (str, int, float))},
+    }
+
     sent = failed = 0
     for recipient in targets:
         try:
             result = notify(
                 event="announcement.published",
                 recipient=recipient.phone,
-                context={"body": body, "action_url": link, "cta": "Garanta o seu:"},
+                # `nome` é por destinatário; o resto é do anúncio. `getattr` porque o
+                # handler não deve exigir a forma exata do destinatário — quem chama
+                # pode passar qualquer objeto com `phone`.
+                context={**shared, "nome": getattr(recipient, "first_name", "") or ""},
                 backend=backend,
             )
             sent += 1 if getattr(result, "success", False) else 0

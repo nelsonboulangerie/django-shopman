@@ -629,3 +629,70 @@ def POS_CHANNEL_REF() -> str:
     from django.conf import settings
 
     return getattr(settings, "SHOPMAN_POS_CHANNEL_REF", "pdv")
+
+
+@register(deploy=True)
+def check_whatsapp_flow_coverage(app_configs, **kwargs):
+    """W010 — campanha ativa com WhatsApp e sem flow aprovado só alcança 24h.
+
+    A Meta não deixa texto livre sair para quem não interagiu nas últimas 24 horas
+    (`code 3011`). O escape é um **template aprovado**, que no ManyChat vira um *flow* e
+    aqui é o `NotificationTemplate.whatsapp_flow_ns`. Sem ele, o adapter cai em
+    `sendContent` e a campanha falha **destinatário por destinatário**, com erro do
+    provedor — o gestor vê "0 enviados, N falharam" e nenhuma pista do motivo.
+
+    Este check existe porque descobrimos isso do jeito caro: um disparo real para um
+    número frio, e um erro opaco. É o tipo de configuração faltando que só aparece no
+    dia em que importa, então ela passa a aparecer na subida.
+
+    Aviso, não erro: campanha que alcança só a janela de 24h ainda é campanha válida
+    (quem conversou hoje recebe). O que não pode é a surpresa.
+    """
+    warnings = []
+
+    try:
+        from shopman.shop.models import Campaign, NotificationTemplate
+    except ImportError:  # pragma: no cover - app registry ainda subindo
+        return warnings
+
+    from django.db import DatabaseError
+
+    try:
+        targets_whatsapp = [
+            campaign
+            for campaign in Campaign.objects.filter(is_active=True)
+            if "whatsapp" in (campaign.platforms or [])
+        ]
+    except DatabaseError:
+        # Check roda antes do migrate (deploy novo, banco vazio): sem tabela não há
+        # campanha para avisar sobre, e o check não é o lugar de reclamar de schema.
+        return warnings
+
+    if not targets_whatsapp:
+        return warnings
+
+    event = "announcement.published"
+    has_flow = (
+        NotificationTemplate.objects.filter(event=event)
+        .exclude(whatsapp_flow_ns="")
+        .exists()
+    )
+    if has_flow:
+        return warnings
+
+    names = ", ".join(sorted(campaign.name for campaign in targets_whatsapp)[:5])
+    warnings.append(
+        Warning(
+            f"{len(targets_whatsapp)} campanha(s) ativa(s) enviam por WhatsApp sem "
+            f"template aprovado: {names}.",
+            hint=(
+                "Sem flow em NotificationTemplate('announcement.published'), a Meta "
+                "recusa texto livre para quem não interagiu nas últimas 24h (code 3011): "
+                "a onda registra falha por destinatário. Crie o template no ManyChat, "
+                "aprove na Meta e cole o ns no Admin — `manage.py manychat_flows` lista "
+                "os ns disponíveis."
+            ),
+            id="SHOPMAN_W010",
+        )
+    )
+    return warnings

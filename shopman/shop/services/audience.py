@@ -54,6 +54,11 @@ class Recipient:
 
     phone: str
     customer_ref: str = ""
+    #: Primeiro nome, para o template poder cumprimentar. Vazio quando o
+    #: destinatário veio de assinatura anônima (só telefone) — é por isso que o
+    #: template de alerta NÃO tem variável de nome: a Meta exige toda variável
+    #: preenchida, e "Olá, !" seria pior do que não cumprimentar.
+    first_name: str = ""
     reasons: frozenset = frozenset()  # favorites | alerts | bought
     is_vip: bool = False
     #: Hora habitual de compra (0-23), de ``CustomerInsight.preferred_hour``.
@@ -371,6 +376,7 @@ def _bought_within_days(sku: str, days: int) -> list[Recipient]:
             Recipient(
                 phone=phone,
                 customer_ref=getattr(customer, "ref", "") or "",
+                first_name=(getattr(customer, "first_name", "") or "").strip(),
                 is_vip=bool(getattr(insight, "is_vip", False)),
                 preferred_hour=getattr(insight, "preferred_hour", None),
             )
@@ -600,6 +606,7 @@ def _recipients_for_refs(customer_refs: list[str]) -> list[Recipient]:
             Recipient(
                 phone=customer.phone,
                 customer_ref=customer.ref,
+                first_name=(getattr(customer, "first_name", "") or "").strip(),
                 is_vip=is_vip,
                 preferred_hour=preferred_hour,
             )
