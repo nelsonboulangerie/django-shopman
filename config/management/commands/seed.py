@@ -394,6 +394,17 @@ class Command(BaseCommand):
                 "short_name": "Nelson",
                 "tagline": "Padaria Artesanal",
                 "description": "Segue rigorosamente as normas da panificação artesanal francesa.",
+                # A voz que a IA usa ao escrever para a Nelson — catálogo E anúncio, uma
+                # fonte só. Antes vivia como literal no código do backstage, invisível
+                # para quem opera, e a campanha não tinha voz nenhuma.
+                "brand_voice": (
+                    "Você escreve para a Nelson Boulangerie, uma padaria artesanal "
+                    "brasileira que segue as normas da panificação francesa. Escreva em "
+                    "português do Brasil, na primeira pessoa do plural (\"nós\", "
+                    "\"conosco\"), nunca \"a gente\". Tom acolhedor e concreto, sem "
+                    "superlativo vazio, sem emoji e sem travessão (—). Responda APENAS "
+                    "com o texto pedido, sem aspas, sem rótulo e sem comentário."
+                ),
                 "food_safety_notice": (
                     "Produzido em cozinha compartilhada. Pode conter traços de leite, ovos, "
                     "castanha-do-brasil, castanha de caju, gergelim e pimenta-do-reino."

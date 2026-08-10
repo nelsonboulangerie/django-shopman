@@ -144,6 +144,18 @@ class Shop(models.Model):
             "sobrescrever individualmente."
         ),
     )
+    #: A voz que a IA usa ao escrever para esta loja. Vivia como literal em
+    #: `backstage/services/catalog.py`, invisível e não editável — e a campanha não tinha
+    #: voz nenhuma, então catálogo e anúncio soavam como duas lojas diferentes. Agora a
+    #: pergunta "como esta padaria fala?" tem UM dono, e ele é editável no Admin.
+    brand_voice = models.TextField(
+        "voz da marca (IA)", blank=True,
+        help_text=(
+            "Instrução de estilo entregue à IA quando ela escreve para a loja: pessoa, "
+            "tom, o que evitar. Vale para o catálogo e para os anúncios. Vazio = a IA "
+            "usa a voz padrão do sistema."
+        ),
+    )
     food_safety_notice = models.TextField(
         "aviso de produção compartilhada",
         blank=True,

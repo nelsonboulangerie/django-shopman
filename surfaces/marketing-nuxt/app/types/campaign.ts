@@ -64,6 +64,8 @@ export interface CampaignBoard {
   recent: Announcement[];
   stats: CampaignStats;
   reach_limits: ReachLimit[];
+  /** Credencial de IA presente neste ambiente. */
+  ai_assist_available: boolean;
 }
 
 export interface Campaign {

@@ -39,6 +39,7 @@ from .marketing import (
     AnnouncementApproveView,
     AnnouncementDetailView,
     AnnouncementRejectView,
+    AnnouncementRewriteView,
     AnnouncementTemplateDetailView,
     AnnouncementTemplateListView,
     CampaignBoardView,
@@ -235,6 +236,7 @@ urlpatterns = [
     path("marketing/announcements/<int:pk>/", AnnouncementDetailView.as_view(), name="api-backstage-marketing-announcement"),
     path("marketing/announcements/<int:pk>/approve/", AnnouncementApproveView.as_view(), name="api-backstage-marketing-approve"),
     path("marketing/announcements/<int:pk>/reject/", AnnouncementRejectView.as_view(), name="api-backstage-marketing-reject"),
+    path("marketing/announcements/<int:pk>/rewrite/", AnnouncementRewriteView.as_view(), name="api-backstage-marketing-rewrite"),
     # Production — work order actions
     path("production/plan/", WorkOrderPlanView.as_view(), name="api-backstage-wo-plan"),
     path("production/<int:wo_id>/start/", WorkOrderStartView.as_view(), name="api-backstage-wo-start"),

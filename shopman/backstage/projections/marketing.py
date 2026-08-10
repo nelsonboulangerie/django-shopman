@@ -127,6 +127,9 @@ class CampaignBoardProjection:
     recent: tuple[AnnouncementProjection, ...]
     stats: CampaignStatsProjection
     reach_limits: tuple[ReachLimitProjection, ...] = ()
+    #: Há credencial de IA neste ambiente? A tela pergunta ANTES de oferecer o botão de
+    #: reescrever: oferecer e falhar depois ensina o gestor a não confiar no recurso.
+    ai_assist_available: bool = False
 
 
 @dataclass(frozen=True)
@@ -328,7 +331,14 @@ def build_board(*, now=None) -> CampaignBoardProjection:
             failed_today=sum(1 for announcement in recent if announcement.status == AnnouncementStatus.FAILED),
         ),
         reach_limits=_reach_limits(),
+        ai_assist_available=_ai_assist_available(),
     )
+
+
+def _ai_assist_available() -> bool:
+    from shopman.shop.services import copy_assist
+
+    return copy_assist.is_configured()
 
 
 def _reach_limits() -> tuple[ReachLimitProjection, ...]:

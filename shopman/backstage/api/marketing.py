@@ -13,6 +13,7 @@ de regras e modelos. Gate: ``shop.manage_campaigns`` — o gestor de marketing n
     PATCH  campaign/announcements/<pk>/         → editar antes de aprovar
     POST   campaign/announcements/<pk>/approve/ → publicar
     POST   campaign/announcements/<pk>/reject/ → recusar (com motivo)
+    POST   campaign/announcements/<pk>/rewrite/ → sugestão de corpo pela IA
     POST   campaign/rules/<pk>/fire/    → disparar AGORA (público opcional)
     GET    campaign/whatsapp-template/  → templates aprovados + o escolhido
     POST   campaign/whatsapp-template/  → escolher o template
@@ -179,6 +180,34 @@ class AnnouncementApproveView(_CampaignBase):
             "scheduled": bool(announcement.publish_at),
             "announcement": projection_data(marketing_projection.build_announcement(announcement)),
         })
+
+
+class AnnouncementRewriteView(_CampaignBase):
+    """POST campaign/announcements/<pk>/rewrite/ → sugestão de corpo pela IA.
+
+    Não grava: devolve a sugestão para o gestor aceitar ou descartar no card, e quem
+    persiste é o PATCH. Mesmo desenho do assist do catálogo, por campo e nunca em lote.
+
+    503 quando o ambiente não tem credencial: a tela mostra aviso, não erro. Assist é
+    conveniência, não caminho crítico — se ele falhar, o anúncio do template continua lá.
+    """
+
+    def post(self, request, pk: int):
+        from shopman.shop.services import copy_assist
+
+        payload = request.data if isinstance(request.data, dict) else {}
+        try:
+            suggestion = campaign_service.rewrite_body(
+                pk, current_body=str(payload.get("body") or "")
+            )
+        except copy_assist.CopyAssistNotConfigured as exc:
+            return Response({"detail": str(exc)}, status=503)
+        except copy_assist.CopyAssistError as exc:
+            return Response({"detail": str(exc)}, status=502)
+        except campaign_service.CampaignError as exc:
+            return Response({"detail": str(exc)}, status=400)
+
+        return Response({"suggestion": suggestion})
 
 
 class AnnouncementRejectView(_CampaignBase):

@@ -207,7 +207,7 @@ def resolve_content(template, context: dict, *, promotion_ref: str = "") -> dict
     A `Action` vai junto, para a superfície montar a sacola (ADR-012 + ADR-020 §9).
     """
     variables = resolve_variables(context, promotion_ref=promotion_ref)
-    body = render(template.body, variables)
+    body = _ai_body(template, variables) or render(template.body, variables)
     content = {
         "body": body,
         "hashtags": variables["hashtags_list"],
@@ -220,6 +220,107 @@ def resolve_content(template, context: dict, *, promotion_ref: str = "") -> dict
 
         content["actions"] = [offer_action(promotion_ref)]
     return content
+
+
+def _ai_body(template, variables: dict) -> str:
+    """Corpo escrito pela IA, quando o modelo pede. Vazio = usar o template.
+
+    ⚠️ Falha da IA **nunca** trava a operação: a fornada saiu, e o anúncio dela precisa
+    existir com ou sem assistente. Toda saída ruim (sem credencial, provedor mudo,
+    resposta vazia) devolve vazio e o template renderizado vale — mesma assimetria do
+    agendamento que adia, e pelo mesmo motivo.
+
+    Este é o leitor que faltava: `use_ai_generation` e `ai_prompt` eram configuráveis no
+    Admin, na API e na projection, e **ninguém os lia** — um interruptor ligado em nada.
+    """
+    if not getattr(template, "use_ai_generation", False):
+        return ""
+
+    from shopman.shop.services import copy_assist
+
+    if not copy_assist.is_configured():
+        logger.info("campaign.ai_body_skipped template=%s reason=not_configured", template.pk)
+        return ""
+
+    try:
+        return copy_assist.suggest(_ai_prompt(template, variables), max_tokens=600)
+    except Exception:
+        logger.warning("campaign.ai_body_failed template=%s", template.pk, exc_info=True)
+        return ""
+
+
+def rewrite_body(announcement_id: int, *, current_body: str = "") -> str:
+    """Uma sugestão de corpo para um anúncio em revisão. Não grava nada.
+
+    Existe porque o `use_ai_generation` do modelo decide no NASCIMENTO do anúncio, e o
+    gestor às vezes quer a IA justamente no anúncio que nasceu do template. Aqui ele pede,
+    lê e aceita ou descarta — quem persiste é o PATCH do anúncio, depois do "Aceitar".
+
+    Levanta as exceções do `copy_assist` para a camada HTTP mapear (503 sem credencial).
+    """
+    from shopman.shop.services import copy_assist
+
+    try:
+        announcement = Announcement.objects.select_related("template", "rule").get(pk=announcement_id)
+    except Announcement.DoesNotExist as exc:
+        raise CampaignError("Anúncio não encontrado.") from exc
+
+    if announcement.status not in (AnnouncementStatus.DRAFT, AnnouncementStatus.PENDING_REVIEW):
+        raise CampaignError("Este anúncio já saiu. Não dá para reescrever o que já foi lido.")
+
+    variables = resolve_variables(
+        announcement.trigger_context or {},
+        promotion_ref=announcement.rule.promotion_ref if announcement.rule_id else "",
+    )
+    template = announcement.template
+    prompt = _ai_prompt(template, variables) if template else _ai_prompt(_BareTemplate(), variables)
+
+    body = (current_body or (announcement.content or {}).get("body") or "").strip()
+    if body:
+        prompt += (
+            "\n\nO anúncio está escrito assim agora. Proponha uma versão melhor, "
+            f"mantendo os fatos:\n{body}"
+        )
+    return copy_assist.suggest(prompt, max_tokens=600)
+
+
+class _BareTemplate:
+    """Modelo ausente: anúncio órfão de template ainda merece sugestão."""
+
+    pk = None
+    body = ""
+    ai_prompt = ""
+    use_ai_generation = False
+
+
+def _ai_prompt(template, variables: dict) -> str:
+    """A instrução do modelo + o que aconteceu de fato.
+
+    O contexto do evento vai junto porque sem ele a IA escreve propaganda genérica: o
+    valor do anúncio é dizer que ESTE pão saiu do forno AGORA, e é isso que as variáveis
+    carregam. O template renderizado entra como referência de formato, não para ser
+    repetido.
+    """
+    facts = "\n".join(
+        f"{key}: {value}"
+        for key, value in variables.items()
+        if value and not key.endswith("_list")
+    )
+    parts = [
+        "O que acabou de acontecer na padaria:",
+        facts,
+        "",
+        "Tarefa: escreva a mensagem do anúncio, 1 a 3 frases curtas, pronta para sair no "
+        "WhatsApp e nas redes. Use só os fatos acima — não invente preço, prazo, sabor "
+        "nem quantidade que não estejam aí.",
+    ]
+    instruction = (getattr(template, "ai_prompt", "") or "").strip()
+    if instruction:
+        parts += ["", "Instrução desta campanha:", instruction]
+    reference = render(template.body, variables).strip()
+    if reference:
+        parts += ["", "Versão do modelo, como referência de formato (não repita):", reference]
+    return "\n".join(parts)
 
 
 def _platform_content(template, content: dict) -> dict:

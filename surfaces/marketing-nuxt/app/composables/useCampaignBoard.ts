@@ -19,6 +19,7 @@ export function useCampaignBoard() {
   const stats = computed(() => board.value?.stats);
   /** Limites de alcance: aparecem no topo do painel, antes de qualquer disparo. */
   const reachLimits = computed<ReachLimit[]>(() => board.value?.reach_limits ?? []);
+  const aiAssistAvailable = computed(() => board.value?.ai_assist_available ?? false);
 
   let pollTimer: ReturnType<typeof setInterval> | null = null;
   onMounted(() => {
@@ -79,6 +80,7 @@ export function useCampaignBoard() {
   return {
     board,
     reachLimits,
+    aiAssistAvailable,
     pendingPosts,
     recentPosts,
     stats,

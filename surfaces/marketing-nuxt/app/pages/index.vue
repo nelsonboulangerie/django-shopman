@@ -15,7 +15,7 @@ const OUTCOME_META = {
   pending: { icon: "lucide:clock", class: "text-muted-foreground" },
 } as const;
 
-const { reachLimits, pendingPosts, recentPosts, stats, loading, error, refresh, approve, reject } =
+const { reachLimits, pendingPosts, recentPosts, stats, loading, error, refresh, approve, reject, aiAssistAvailable } =
   useCampaignBoard();
 const { platforms } = useCampaigns();
 
@@ -259,6 +259,7 @@ useHead({ title: "Painel · Marketing" });
           :announcement="announcement"
           :platform-options="platforms"
           :busy="busyPk === announcement.pk"
+          :ai-assist-available="aiAssistAvailable"
           @approve="onApprove"
           @reject="(pk) => { rejecting = pk; rejectReason = '' }"
         />

@@ -657,13 +657,10 @@ def _first_validation_message(exc) -> str:
 # palavras-chave, campos já preenchidos) vai junto para a sugestão nascer coerente
 # com o que já existe, em vez de genérica.
 
-_AI_ASSIST_VOICE = (
-    "Você escreve para a Nelson Boulangerie, uma padaria artesanal brasileira. "
-    "Escreva em português do Brasil, na primeira pessoa do plural (\"nós\", \"conosco\"), "
-    "nunca \"a gente\". Tom acolhedor e concreto, sem superlativo vazio, sem emoji e "
-    "sem travessão (—). Responda APENAS com o texto do campo, sem aspas, sem rótulo "
-    "e sem comentário."
-)
+# A VOZ não vive mais aqui: era literal, invisível para quem opera e não editável — e a
+# campanha não tinha voz nenhuma, então catálogo e anúncio soavam como duas lojas. Agora ela
+# é `Shop.brand_voice`, lida por `shop/services/copy_assist.py`. Este módulo segue dono do
+# que é DELE: o que pedir por campo.
 
 # Um spec por campo assistível: o que pedir e quanto texto cabe na resposta.
 _AI_ASSIST_FIELDS: dict[str, dict] = {
@@ -773,45 +770,26 @@ def ai_assist_field(sku: str, field: str, current_value: str = "") -> str:
     ``AiAssistError`` (falha do provedor). ``hashtags`` volta como string separada
     por espaço — a superfície já normaliza texto livre em lista.
     """
-    from django.conf import settings
-
     from shopman.backstage.services.exceptions import AiAssistError, AiAssistNotConfigured
+    from shopman.shop.services import copy_assist
 
     if field not in _AI_ASSIST_FIELDS:
         raise CatalogError(
             f"Campo '{field}' não aceita sugestão de IA. Assistíveis: {', '.join(ASSISTABLE_FIELDS)}."
         )
 
-    api_key = (getattr(settings, "AI_ASSIST_API_KEY", "") or "").strip()
-    if not api_key:
-        raise AiAssistNotConfigured("AI assist não configurado. Defina AI_ASSIST_API_KEY.")
-
-    provider = getattr(settings, "AI_ASSIST_PROVIDER", "anthropic")
-    if provider != "anthropic":
-        raise AiAssistError(f"Provedor de IA '{provider}' não suportado.")
-
     product = _get_product(sku)
     prompt = _ai_assist_prompt(product, field, current_value or "")
 
-    import anthropic
-
-    client = anthropic.Anthropic(api_key=api_key)
+    # O transporte e a voz são do `copy_assist`; o que pedir por campo é daqui. As
+    # exceções são traduzidas para as do backstage porque a camada HTTP já mapeia estas
+    # (503 para "não configurado"), e um segundo dialeto de erro não ajudaria ninguém.
     try:
-        message = client.messages.create(
-            model=getattr(settings, "AI_ASSIST_MODEL", "claude-opus-4-8"),
-            max_tokens=_AI_ASSIST_FIELDS[field]["max_tokens"],
-            system=_AI_ASSIST_VOICE,
-            messages=[{"role": "user", "content": prompt}],
-        )
-    except anthropic.APIError as exc:
-        raise AiAssistError(f"O assistente não respondeu: {exc}") from exc
-
-    suggestion = "\n".join(
-        block.text for block in message.content if getattr(block, "type", "") == "text"
-    ).strip()
-    if not suggestion:
-        raise AiAssistError("O assistente devolveu uma sugestão vazia.")
-    return suggestion
+        return copy_assist.suggest(prompt, max_tokens=_AI_ASSIST_FIELDS[field]["max_tokens"])
+    except copy_assist.CopyAssistNotConfigured as exc:
+        raise AiAssistNotConfigured(str(exc)) from exc
+    except copy_assist.CopyAssistError as exc:
+        raise AiAssistError(str(exc)) from exc
 
 
 # ── reordenação (curadoria da vitrine) ─────────────────────────────────────────

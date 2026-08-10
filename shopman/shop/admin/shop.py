@@ -1155,6 +1155,14 @@ _APPEARANCE_FIELDSETS = (
     ("Marca", {
         "fields": ("brand_name", "short_name", "tagline", "description", "logo"),
     }),
+    ("Voz da marca (IA)", {
+        "fields": ("brand_voice",),
+        "description": (
+            "Como a IA escreve quando o gestor pede uma sugestão — no catálogo e nos "
+            "anúncios, com a mesma voz. Antes isto era um texto fixo no código, "
+            "invisível para quem opera. Vazio = a IA usa a voz padrão do sistema."
+        ),
+    }),
     ("Conteúdo padrão do PDP", {
         "fields": ("conservation_tips_default", "food_safety_notice"),
         "description": (

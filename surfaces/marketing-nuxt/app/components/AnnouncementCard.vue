@@ -18,6 +18,9 @@ import {
 const props = defineProps<{
   announcement: Announcement;
   platformOptions: { value: string; label: string }[];
+  /** Há credencial de IA no ambiente? Sem ela o botão não aparece: oferecer e falhar
+   *  depois ensina o gestor a não confiar no recurso. */
+  aiAssistAvailable?: boolean;
   busy?: boolean;
 }>();
 
@@ -32,6 +35,24 @@ const hashtagsText = ref(props.announcement.hashtags.map(displayHashtag).join(" 
 const platforms = ref<string[]>([...props.announcement.platforms]);
 const scheduling = ref(false);
 const publishAt = ref("");
+const rewriting = ref(false);
+
+// Reescrever com IA: pede, mostra no MESMO campo e o gestor aceita editando ou apaga.
+// Não grava nada — quem persiste é a aprovação, como todo o resto do card.
+async function rewrite () {
+  rewriting.value = true;
+  try {
+    const response = await $fetch<{ suggestion: string }>(
+      `/api/v1/backstage/marketing/announcements/${props.announcement.pk}/rewrite/`,
+      { method: "POST", body: { body: body.value } },
+    );
+    if (response.suggestion) body.value = response.suggestion;
+  } catch (err) {
+    useSonner.error(httpErrorMessage(err, "O assistente não respondeu. Seu texto segue aqui."));
+  } finally {
+    rewriting.value = false;
+  }
+}
 
 // Anúncio substituído por um refetch (SSE/poll) enquanto a tela estava aberta:
 // re-sincroniza o rascunho SÓ quando é outro announcement, para não apagar a edição em
@@ -131,9 +152,25 @@ function schedule() {
       <div class="min-w-0 flex-1 space-y-3">
         <!-- Texto editável: o template escreveu o rascunho, o gestor dá o tom -->
         <div>
-          <label :for="`body-${announcement.pk}`" class="mb-1 block text-xs font-semibold text-muted-foreground">
-            Texto do anúncio
-          </label>
+          <div class="mb-1 flex items-center justify-between gap-2">
+            <label :for="`body-${announcement.pk}`" class="block text-xs font-semibold text-muted-foreground">
+              Texto do anúncio
+            </label>
+            <button
+              v-if="aiAssistAvailable"
+              type="button"
+              :disabled="rewriting || busy"
+              class="inline-flex items-center gap-1 rounded-md border border-border px-2 py-0.5 text-xs font-medium transition hover:bg-muted disabled:opacity-40"
+              @click="rewrite"
+            >
+              <Icon
+                :name="rewriting ? 'lucide:loader-circle' : 'lucide:sparkles'"
+                class="size-3.5"
+                :class="rewriting ? 'animate-spin' : ''"
+              />
+              {{ rewriting ? "Escrevendo…" : "Reescrever" }}
+            </button>
+          </div>
           <textarea
             :id="`body-${announcement.pk}`"
             v-model="body"

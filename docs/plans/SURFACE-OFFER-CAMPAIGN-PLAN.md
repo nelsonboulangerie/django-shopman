@@ -269,13 +269,41 @@ apontar para o vazio.
 
 *Valor sozinho:* o disparo termina em carrinho montado com um clique, com preco resolvido no clique.
 
-### F12 — Copy com IA · ADR-020 passo 7
+### F12 — Copy com IA · ADR-020 passo 7 — ✅ FEITO
 
-`shopman/shop/adapters/copy_assist.py` extraido de `backstage/services/catalog.py:636-798`;
-`Shop.brand_voice`; `use_ai_generation`/`ai_prompt` ganham leitor no momento da revisao; catalogo passa
-a consumir o adapter.
+`shopman/shop/services/copy_assist.py` extraido de `backstage/services/catalog.py`; `Shop.brand_voice`
+(migration `0007`, editavel no Admin, semeada com a voz da Nelson); `use_ai_generation`/`ai_prompt` ganham
+leitor; catalogo passa a consumir o service.
+
+⚠️ **Desvio deliberado do plano: `services/`, nao `adapters/`.** Adapter existe para 2+ implementacoes
+reais ([ADR-001](../decisions/adr-001-protocol-adapter.md)), nunca "para o futuro", e ha um provedor so.
+Criar registry aqui repetiria exatamente a divida que a **F5 desfez** ao matar `adapters/promotion.py`
+— que tinha uma impl e existia para contornar uma fronteira. Se um segundo provedor real aparecer, a
+troca e mecanica.
+
+**A voz tinha zero donos e passou a ter um.** Era literal em `backstage/services/catalog.py`, invisivel
+para quem opera, nao editavel, e **inexistente do lado da campanha**: catalogo e anuncio soavam como duas
+lojas na mesma padaria. Agora `Shop.brand_voice` responde "como esta loja fala?" e os dois consomem, com
+teste travando que leem a MESMA voz.
+
+**`use_ai_generation` era interruptor ligado em nada:** configuravel no Admin, na API e na projection, e
+**lido em nenhum lugar**. Agora o corpo do anuncio nasce escrito pela IA quando o modelo pede, com os
+fatos do evento no prompt (sem eles a IA escreve propaganda generica, e o valor do anuncio e dizer que
+ESTE pao saiu do forno AGORA).
+
+**Falha da IA nunca trava a operacao:** a fornada saiu, e o anuncio dela precisa existir com ou sem
+assistente — toda saida ruim cai no template renderizado. Mesma assimetria do agendamento que adia.
+
+`POST campaign/announcements/<pk>/rewrite/` deixa o gestor pedir uma reescrita na revisao, e **nao grava
+nada** — quem persiste e a aprovacao, como todo o resto do card. O botao so aparece quando ha credencial
+(`ai_assist_available` na projection do painel): oferecer e falhar depois ensina o gestor a nao confiar
+no recurso.
 
 *Valor sozinho:* o gestor deixa de escrever do zero, e o catalogo herda voz de marca editavel.
+
+*Pendencia operacional (lado do dono):* `AI_ASSIST_API_KEY` esta no `.env` local mas **ausente da spec
+LIVE do staging na DO** — por isso o endpoint responde 503 no ar. Config de deploy se edita na spec LIVE,
+nunca na do repo (que apaga segredos).
 
 *Bloqueio externo: **nenhum, no codigo**.* Verificado em 2026-08-08: `anthropic>=0.117` esta declarado
 (`pyproject.toml:30`) e instalado, `AI_ASSIST_MODEL=claude-opus-4-8` e um ID valido, a chamada em
