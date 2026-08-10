@@ -76,7 +76,17 @@ from shopman.backstage.services.operations import (
     start_checklist_run,
     supervise_task_run,
 )
-from shopman.shop.models import Channel, Coupon, OmotenashiCopy, Promotion, RuleConfig, Shop
+from shopman.shop.models import (
+    Announcement,
+    AnnouncementTemplate,
+    Campaign,
+    Channel,
+    Coupon,
+    OmotenashiCopy,
+    Promotion,
+    RuleConfig,
+    Shop,
+)
 from shopman.shop.services.dietary_from_recipe import aggregate_dietary_from_recipe
 from shopman.shop.services.nutrition_from_recipe import fill_nutrition_from_recipe
 
@@ -195,6 +205,7 @@ class Command(BaseCommand):
         self._seed_fulfillments()
         self._seed_directives()
         self._seed_loyalty(customers)
+        self._seed_campaigns()
         self._seed_notification_templates()
         self._seed_rule_configs()
         self._seed_omotenashi_copy()
@@ -214,6 +225,7 @@ class Command(BaseCommand):
         # chamada, mesmo resultado — só não é "dinâmica" no sentido de aleatória.
         self._seed_stock_alerts(products, positions)
         self._seed_promotions()
+        self._seed_campaigns()
         self._seed_notification_templates()
         self._seed_rule_configs()
         self._seed_omotenashi_copy()
@@ -740,6 +752,9 @@ class Command(BaseCommand):
         DayClosing.objects.all().delete()
 
         # Shop
+        Announcement.objects.all().delete()
+        Campaign.objects.all().delete()
+        AnnouncementTemplate.objects.all().delete()
         Coupon.objects.all().delete()
         Promotion.objects.all().delete()
         Shop.objects.all().delete()
@@ -2953,8 +2968,40 @@ class Command(BaseCommand):
         except Exception:
             self.stdout.write("  ⚠️  não foi possível revisar vínculos de login")
 
-        self.stdout.write(f"  ✅ {len(customers)} clientes, 3 grupos")
+        consented = self._seed_marketing_consent(customers)
+
+        self.stdout.write(
+            f"  ✅ {len(customers)} clientes, 3 grupos, {consented} com consentimento de marketing"
+        )
         return customers
+
+    def _seed_marketing_consent(self, customers: dict) -> int:
+        """Consentimento de WhatsApp — sem isto a audiência de campanha alcança NINGUÉM.
+
+        A F1 deu um dono ao consentimento (`CommunicationConsent`) e a audiência passou a
+        exigi-lo, corretamente. Só que o seed não criava nenhum: qualquer disparo resolvia
+        zero destinatários, e o gestor não tinha como distinguir "regra errada" de "base
+        sem consentimento". Feature que não se pode experimentar não existe para quem usa.
+
+        **Nem todos consentem, de propósito.** Dois clientes ficam de fora para que o
+        filtro seja visível na tela: o resumo do anúncio mostra "3 no grupo, 1 alcançado",
+        e essa diferença é a LGPD funcionando, não um bug.
+        """
+        from shopman.guestman import ConsentService
+
+        # Quem NÃO consente: fica de fora do disparo, e é isso que prova o filtro.
+        without = {"CLI-004", "CLI-006"}
+
+        granted = 0
+        for ref, customer in customers.items():
+            if ref in without or not (customer.phone or "").strip():
+                continue
+            try:
+                ConsentService.grant_consent(customer.ref, "whatsapp", source="seed")
+                granted += 1
+            except Exception:
+                self.stdout.write(f"  ⚠️  consentimento não gravado para {ref}")
+        return granted
 
     # ────────────────────────────────────────────────────────────────
     # Canais (Orderman)
@@ -5008,6 +5055,83 @@ class Command(BaseCommand):
     # ────────────────────────────────────────────────────────────────
     # Notification Templates
     # ────────────────────────────────────────────────────────────────
+
+    def _seed_campaigns(self):
+        """Campanhas de marketing — o engine que vira evento em anúncio.
+
+        Sem isto o app de Marketing nasce VAZIO: a tela existe, o disparo existe, e não
+        há sobre o que agir. Feature que não se pode experimentar é feature que não
+        existe para quem usa.
+
+        Duas campanhas, porque são os dois caminhos do domínio:
+
+        · **por evento** — a fornada termina e o anúncio nasce sozinho, para revisão;
+        · **manual** — o gestor decide agora, e escolhe o público na hora.
+        """
+        self.stdout.write("  📣 Campanhas de marketing...")
+
+        from shopman.shop.models import AnnouncementTemplate, Campaign, Trigger
+
+        fornada, _ = AnnouncementTemplate.objects.update_or_create(
+            name="Saiu do forno",
+            defaults={
+                "body": "{{produto}} acabou de sair do forno! {{preco}} 🥖\n{{link}}",
+                "variables": ["produto", "preco", "link"],
+                "image_source": AnnouncementTemplate.ImageSource.PRODUCT,
+                "is_active": True,
+            },
+        )
+        # ⚠️ Sem `{{produto}}`: disparo manual não tem evento, logo não tem SKU, e a
+        # variável resolveria vazia — o gestor veria "Novidade na Padaria: ." e teria de
+        # consertar a copy toda vez. Modelo de recado se sustenta sozinho, e o gestor
+        # completa no card de revisão.
+        novidade, _ = AnnouncementTemplate.objects.update_or_create(
+            name="Recado da casa",
+            defaults={
+                # `{{link}}` também sai: sem SKU não há produto para linkar, e a
+                # variável vazia deixaria pontuação órfã. O gestor escreve o recado no
+                # card de revisão, que é onde ele já revisa tudo.
+                "body": "Um recado da {{loja}}.",
+                "variables": ["loja"],
+                "image_source": AnnouncementTemplate.ImageSource.NONE,
+                "is_active": True,
+            },
+        )
+
+        Campaign.objects.update_or_create(
+            name="Fornada pronta",
+            defaults={
+                "trigger": Trigger.PRODUCTION_FINISHED,
+                "trigger_filter": {"quality_min": "bom"},
+                "template": fornada,
+                "platforms": ["instagram", "whatsapp"],
+                # Quem favoritou e quem pediu para ser avisado: a audiência mais quente
+                # que existe, e as duas já têm consentimento explícito do produto.
+                "audience_rules": {"favorites": True, "alerts": True, "vip_first_minutes": 15},
+                "requires_approval": True,
+                # Frescor é efêmero: anúncio de fornada não aprovado em 90 min caduca,
+                # porque publicar "acabou de sair" três horas depois é mentira.
+                "expires_after_minutes": 90,
+                "is_active": True,
+            },
+        )
+
+        Campaign.objects.update_or_create(
+            name="Recado para os clientes",
+            defaults={
+                "trigger": Trigger.MANUAL,
+                "template": novidade,
+                "platforms": ["whatsapp"],
+                # Público vazio DE PROPÓSITO: esta campanha existe para o gestor escolher
+                # na hora do disparo ("Disparar" → "Escolher agora").
+                "audience_rules": {},
+                "requires_approval": True,
+                "expires_after_minutes": 0,
+                "is_active": True,
+            },
+        )
+
+        self.stdout.write("  ✅ 2 modelos e 2 campanhas")
 
     def _seed_notification_templates(self):
         self.stdout.write("  📨 Templates de notificação...")

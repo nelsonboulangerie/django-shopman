@@ -4,7 +4,7 @@
 //
 // O gestor recebe o aviso no celular, toca e cai direto na decisão. Mesmo card
 // do painel: uma única forma de decidir, um único lugar para acertar.
-import type { Announcement, PostEdits } from "~/types/campaign";
+import type { Announcement, AnnouncementEdits } from "~/types/campaign";
 
 const route = useRoute();
 const pk = computed(() => Number(route.params.id));
@@ -19,7 +19,7 @@ const announcement = computed(() => data.value?.announcement);
 const busy = ref(false);
 const confirmingDiscard = ref(false);
 
-async function decide(action: "approve" | "discard", body: PostEdits = {}) {
+async function decide(action: "approve" | "discard", body: AnnouncementEdits = {}) {
   busy.value = true;
   try {
     await $fetch(`/api/v1/backstage/marketing/announcements/${pk.value}/${action}/`, {

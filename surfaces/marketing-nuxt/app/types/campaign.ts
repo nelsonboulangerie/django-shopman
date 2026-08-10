@@ -70,7 +70,7 @@ export interface AudienceRules {
   vip_first_minutes?: number;
 }
 
-export interface PostTemplate {
+export interface AnnouncementTemplate {
   pk: number;
   name: string;
   body: string;
@@ -88,8 +88,24 @@ export interface Choice {
 export interface CampaignOptions {
   triggers: Choice[];
   platforms: Choice[];
-  templates: PostTemplate[];
+  templates: AnnouncementTemplate[];
   variables: string[];
+  /** Vocabulário de público — vem do backend para a tela nunca oferecer o que o
+   *  resolvedor não conhece. */
+  customer_groups: Choice[];
+  rfm_segments: Choice[];
+}
+
+/** Público escolhido para UM disparo. Não altera a campanha salva. */
+export interface ChosenAudience {
+  groups?: string[];
+  rfm_segments?: string[];
+  churn_risk_min?: number;
+  birthday_today?: boolean;
+  bought_skus?: string[];
+  bought_collections?: string[];
+  bought_within_days?: number;
+  vip_first_minutes?: number;
 }
 
 export interface BoardResponse {
@@ -109,7 +125,7 @@ export interface HistoryResponse {
 }
 
 /** Edições do card enviadas junto com a aprovação. */
-export interface PostEdits {
+export interface AnnouncementEdits {
   body?: string;
   hashtags?: string[];
   platforms?: string[];

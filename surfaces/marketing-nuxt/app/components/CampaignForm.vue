@@ -4,13 +4,13 @@
 // Apresentacional: o pai é dono do fetch e da escrita; aqui mora só o estado do
 // formulário. O vocabulário (gatilhos, plataformas, modelos) vem do backend,
 // nunca hardcoded — gatilho novo no domínio aparece aqui sem deploy de front.
-import type { AudienceRules, Campaign, Choice, PostTemplate } from "~/types/campaign";
+import type { AudienceRules, Campaign, Choice, AnnouncementTemplate } from "~/types/campaign";
 
 const props = defineProps<{
   rule: Campaign | null; // null = criando
   triggers: Choice[];
   platformOptions: Choice[];
-  templates: PostTemplate[];
+  templates: AnnouncementTemplate[];
   busy?: boolean;
 }>();
 

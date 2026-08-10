@@ -19,10 +19,13 @@ Duas escolhas deliberadas:
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 from datetime import timedelta
 
 from django.utils import timezone
+
+logger = logging.getLogger(__name__)
 
 from shopman.shop.models import (
     Announcement,
@@ -134,12 +137,19 @@ class ChoiceProjection:
 
 @dataclass(frozen=True)
 class CampaignOptionsProjection:
-    """O que o formulário de regra precisa saber sem hardcodar o domínio."""
+    """O que o formulário de regra precisa saber sem hardcodar o domínio.
+
+    O vocabulário de PÚBLICO vem daqui pelo mesmo motivo dos gatilhos: grupo novo no
+    guestman aparece no seletor sem deploy de front, e a tela nunca oferece um segmento
+    que o resolvedor não conhece.
+    """
 
     triggers: tuple[ChoiceProjection, ...]
     platforms: tuple[ChoiceProjection, ...]
     templates: tuple[AnnouncementTemplateProjection, ...]
     variables: tuple[str, ...]
+    customer_groups: tuple[ChoiceProjection, ...] = ()
+    rfm_segments: tuple[ChoiceProjection, ...] = ()
 
 
 # ── Posts ────────────────────────────────────────────────────────────
@@ -338,4 +348,33 @@ def build_options() -> CampaignOptionsProjection:
         ),
         templates=build_templates(),
         variables=available_variables(),
+        customer_groups=_customer_group_choices(),
+        rfm_segments=_rfm_segment_choices(),
     )
+
+
+def _customer_group_choices() -> tuple[ChoiceProjection, ...]:
+    """Grupos de cliente do guestman, para o seletor de público."""
+    try:
+        from shopman.guestman.models import CustomerGroup
+
+        return tuple(
+            ChoiceProjection(value=group.ref, label=group.name)
+            for group in CustomerGroup.objects.all().order_by("name")
+        )
+    except Exception:
+        logger.warning("marketing.customer_groups_failed", exc_info=True)
+        return ()
+
+
+def _rfm_segment_choices() -> tuple[ChoiceProjection, ...]:
+    """Segmentos RFM — vocabulário fechado, com dono no guestman."""
+    try:
+        from shopman.guestman.contrib.insights.models import RFM_SEGMENTS
+
+        return tuple(
+            ChoiceProjection(value=value, label=label) for value, label in RFM_SEGMENTS
+        )
+    except Exception:
+        logger.warning("marketing.rfm_segments_failed", exc_info=True)
+        return ()

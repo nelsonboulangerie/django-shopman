@@ -3,7 +3,7 @@
 // ADR-016 (SSE-first): o push do canal pessoal (`/sse/notifications`) só avisa
 // que chegou coisa nova; a VERDADE é sempre o refetch do board. O poll fica
 // como rede de segurança em cadência calma.
-import type { BoardResponse, Announcement, PostEdits } from "~/types/campaign";
+import type { BoardResponse, Announcement, AnnouncementEdits } from "~/types/campaign";
 
 const POLL_MS = 60_000;
 
@@ -29,7 +29,7 @@ export function useCampaignBoard() {
   // Push pessoal: announcement novo pedindo revisão chega aqui antes do poll.
   useUserNotifications(() => refresh());
 
-  async function approve(pk: number, edits: PostEdits = {}): Promise<boolean> {
+  async function approve(pk: number, edits: AnnouncementEdits = {}): Promise<boolean> {
     return decide(pk, "approve", edits, edits.publish_at ? "Anúncio agendado." : "Anúncio publicado.");
   }
 
@@ -40,7 +40,7 @@ export function useCampaignBoard() {
   async function decide(
     pk: number,
     action: "approve" | "discard",
-    body: PostEdits,
+    body: AnnouncementEdits,
     okMessage: string,
   ): Promise<boolean> {
     try {
@@ -59,7 +59,7 @@ export function useCampaignBoard() {
     }
   }
 
-  async function saveDraft(pk: number, edits: PostEdits): Promise<boolean> {
+  async function saveDraft(pk: number, edits: AnnouncementEdits): Promise<boolean> {
     try {
       await $fetch(`/api/v1/backstage/marketing/announcements/${pk}/`, { method: "PATCH", body: edits });
       useSonner.success("Rascunho salvo.");

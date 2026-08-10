@@ -284,7 +284,7 @@ class InsightService:
 
     @classmethod
     def _calculate_rfm_segment(cls, r: int, f: int, m: int) -> str:
-        """Determine RFM segment."""
+        """Determine RFM segment. Values come from ``RFM_SEGMENTS`` (models.py)."""
         score = r + f + m
 
         if score >= 13:

@@ -7,11 +7,14 @@
 import { audienceRulesSummary, platformsSummary } from "~/presentation/campaign";
 import type { Campaign } from "~/types/campaign";
 
-const { rules, templates, triggers, platforms, platformLabels, loading, error, refresh, toggle, patch, create } =
-  useCampaigns();
+const {
+  rules, templates, triggers, platforms, platformLabels, customerGroups, rfmSegments,
+  loading, error, refresh, toggle, patch, create, fire,
+} = useCampaigns();
 
 const editing = ref<Campaign | null>(null);
 const creating = ref(false);
+const firing = ref<Campaign | null>(null);
 const busy = ref(false);
 
 const panelOpen = computed(() => creating.value || editing.value !== null);
@@ -29,6 +32,19 @@ function openEdit(rule: Campaign) {
 function close() {
   creating.value = false;
   editing.value = null;
+}
+
+/** Disparar agora: a campanha manual, sem esperar evento da padaria. */
+function openFire(rule: Campaign) {
+  firing.value = rule;
+}
+
+async function onFire(audience: Record<string, unknown>) {
+  if (!firing.value) return;
+  busy.value = true;
+  const ok = await fire(firing.value.pk, audience);
+  busy.value = false;
+  if (ok) firing.value = null;
 }
 
 async function onSubmit(payload: Record<string, unknown>) {
@@ -131,6 +147,18 @@ useHead({ title: "Regras · Marketing" });
           >
             automática
           </span>
+          <!-- Disparar não espera o evento: fica ao lado da regra, mas só ativo
+               quando ela está ligada — disparar campanha desligada é engano. -->
+          <button
+            type="button"
+            :disabled="!rule.is_active"
+            :aria-label="`Disparar a campanha ${rule.name} agora`"
+            class="inline-flex items-center gap-1 rounded-md border border-border px-2 py-1 text-xs font-semibold transition hover:bg-muted disabled:opacity-40"
+            @click="openFire(rule)"
+          >
+            <Icon name="lucide:send" class="size-3.5" />
+            Disparar
+          </button>
           <Icon name="lucide:chevron-right" class="size-4 text-muted-foreground" />
         </div>
       </li>
@@ -154,6 +182,28 @@ useHead({ title: "Regras · Marketing" });
             :busy="busy"
             @submit="onSubmit"
             @cancel="close"
+          />
+        </div>
+      </UiSheetContent>
+    </UiSheet>
+
+    <!-- Disparo manual: painel próprio, para não se confundir com editar a regra -->
+    <UiSheet :open="firing !== null" @update:open="(v) => { if (!v) firing = null }">
+      <UiSheetContent side="right" class="w-full overflow-y-auto sm:max-w-lg">
+        <UiSheetHeader>
+          <UiSheetTitle>Disparar agora</UiSheetTitle>
+          <UiSheetDescription>
+            {{ firing?.name }} — o anúncio nasce para revisão, como o automático.
+          </UiSheetDescription>
+        </UiSheetHeader>
+        <div class="mt-4">
+          <FireCampaignPanel
+            :rule="firing"
+            :customer-groups="customerGroups"
+            :rfm-segments="rfmSegments"
+            :busy="busy"
+            @submit="onFire"
+            @cancel="firing = null"
           />
         </div>
       </UiSheetContent>

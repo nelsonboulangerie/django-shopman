@@ -4,7 +4,7 @@
 // O gestor lê, ajusta o texto, confere a audiência e decide. Tudo num gesto:
 // as edições viajam JUNTO com a aprovação (um request), porque salvar e depois
 // publicar abriria a janela de publicar a versão anterior.
-import type { Announcement, PostEdits } from "~/types/campaign";
+import type { Announcement, AnnouncementEdits } from "~/types/campaign";
 import {
   audienceSummary,
   displayHashtag,
@@ -22,7 +22,7 @@ const props = defineProps<{
 }>();
 
 const emit = defineEmits<{
-  approve: [pk: number, edits: PostEdits];
+  approve: [pk: number, edits: AnnouncementEdits];
   discard: [pk: number];
 }>();
 
@@ -71,7 +71,7 @@ function togglePlatform(value: string) {
   else platforms.value.push(value);
 }
 
-function edits(): PostEdits {
+function edits(): AnnouncementEdits {
   return {
     body: body.value.trim(),
     hashtags: parseHashtags(hashtagsText.value),

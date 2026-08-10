@@ -15,7 +15,7 @@ const PLATFORMS = [
   { value: "whatsapp", label: "WhatsApp" },
 ];
 
-function makePost(over: Partial<Announcement> = {}): Announcement {
+function makeAnnouncement(over: Partial<Announcement> = {}): Announcement {
   return {
     pk: 7,
     status: "pending_review",
@@ -51,14 +51,14 @@ function mountCard(announcement: Announcement) {
 
 describe("AnnouncementCard", () => {
   it("shows the generated text, the audience and the deadline", () => {
-    const text = mountCard(makePost()).text();
+    const text = mountCard(makeAnnouncement()).text();
     expect(text).toContain("Fornada de pães");
     expect(text).toContain("12 favoritos, 3 alertas = 15 clientes");
     expect(text).toContain("expira em 20 min");
   });
 
   it("pre-selects exactly the platforms the rule chose", () => {
-    const wrapper = mountCard(makePost({ platforms: ["instagram", "whatsapp"] }));
+    const wrapper = mountCard(makeAnnouncement({ platforms: ["instagram", "whatsapp"] }));
     const checked = wrapper
       .findAll("input[type=checkbox]")
       .filter((input) => (input.element as HTMLInputElement).checked);
@@ -68,7 +68,7 @@ describe("AnnouncementCard", () => {
   it("sends the edited text and platforms together with the approval", async () => {
     // Um request só: salvar e publicar em duas chamadas abriria a janela de
     // publicar a versão anterior.
-    const wrapper = mountCard(makePost());
+    const wrapper = mountCard(makeAnnouncement());
     await wrapper.find("textarea").setValue("Texto revisado");
     await wrapper.find("input[type=text]").setValue("#paes #fornada");
     await wrapper.findAll("button")[0]!.trigger("click");
@@ -82,7 +82,7 @@ describe("AnnouncementCard", () => {
   });
 
   it("refuses to publish an empty announcement", async () => {
-    const wrapper = mountCard(makePost());
+    const wrapper = mountCard(makeAnnouncement());
     await wrapper.find("textarea").setValue("   ");
     const publish = wrapper.findAll("button")[0]!;
 
@@ -92,13 +92,13 @@ describe("AnnouncementCard", () => {
   });
 
   it("refuses to publish with no platform selected", async () => {
-    const wrapper = mountCard(makePost({ platforms: [] }));
+    const wrapper = mountCard(makeAnnouncement({ platforms: [] }));
     expect((wrapper.findAll("button")[0]!.element as HTMLButtonElement).disabled).toBe(true);
     expect(wrapper.text()).toContain("Escolha ao menos uma plataforma");
   });
 
   it("only asks for a date after the gestor chooses to schedule", async () => {
-    const wrapper = mountCard(makePost());
+    const wrapper = mountCard(makeAnnouncement());
     expect(wrapper.find("input[type=datetime-local]").exists()).toBe(false);
 
     await wrapper.findAll("button")[1]!.trigger("click");
@@ -106,7 +106,7 @@ describe("AnnouncementCard", () => {
   });
 
   it("carries publish_at when scheduling", async () => {
-    const wrapper = mountCard(makePost());
+    const wrapper = mountCard(makeAnnouncement());
     await wrapper.findAll("button")[1]!.trigger("click");
     await wrapper.find("input[type=datetime-local]").setValue("2026-07-19T07:00");
     await wrapper.find("input[type=datetime-local]").trigger("change");
@@ -119,7 +119,7 @@ describe("AnnouncementCard", () => {
   });
 
   it("asks the parent to confirm the discard instead of discarding itself", async () => {
-    const wrapper = mountCard(makePost());
+    const wrapper = mountCard(makeAnnouncement());
     const discard = wrapper.findAll("button").find((b) => b.text().includes("Descartar"))!;
     await discard.trigger("click");
     expect(wrapper.emitted("discard")![0]).toEqual([7]);
@@ -127,10 +127,10 @@ describe("AnnouncementCard", () => {
 
   it("keeps the in-progress edit when the same announcement is refetched", async () => {
     // Poll/SSE não pode apagar o que o gestor está escrevendo.
-    const wrapper = mountCard(makePost());
+    const wrapper = mountCard(makeAnnouncement());
     await wrapper.find("textarea").setValue("rascunho do gestor");
 
-    await wrapper.setProps({ announcement: makePost({ body: "texto do servidor" }) });
+    await wrapper.setProps({ announcement: makeAnnouncement({ body: "texto do servidor" }) });
 
     expect((wrapper.find("textarea").element as HTMLTextAreaElement).value).toBe(
       "rascunho do gestor",
@@ -138,15 +138,15 @@ describe("AnnouncementCard", () => {
   });
 
   it("resets the draft when a different announcement takes its place", async () => {
-    const wrapper = mountCard(makePost());
+    const wrapper = mountCard(makeAnnouncement());
     await wrapper.find("textarea").setValue("rascunho do announcement 7");
 
-    await wrapper.setProps({ announcement: makePost({ pk: 9, body: "outro announcement" }) });
+    await wrapper.setProps({ announcement: makeAnnouncement({ pk: 9, body: "outro announcement" }) });
 
     expect((wrapper.find("textarea").element as HTMLTextAreaElement).value).toBe("outro announcement");
   });
 
   it("offers a placeholder when the product has no photo", () => {
-    expect(mountCard(makePost({ image_url: "" })).find("img").exists()).toBe(false);
+    expect(mountCard(makeAnnouncement({ image_url: "" })).find("img").exists()).toBe(false);
   });
 });

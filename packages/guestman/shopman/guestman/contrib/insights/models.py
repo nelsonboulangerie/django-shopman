@@ -5,6 +5,21 @@ from decimal import Decimal
 from django.db import models
 from django.utils.translation import gettext_lazy as _
 
+#: O vocabulário fechado de segmento RFM, com rótulo em português.
+#:
+#: Existe como constante porque o valor é escrito por `InsightService` e LIDO por
+#: consumidores fora do pacote (a audiência de campanha do orquestrador oferece esses
+#: segmentos ao gestor). Vocabulário sem nome é vocabulário que divergiu — e este já
+#: havia divergido: o `help_text` deste campo dizia `'campeão', 'em_risco', 'novo'`,
+#: valores que nenhum escritor produz.
+RFM_SEGMENTS: tuple[tuple[str, str], ...] = (
+    ("champion", "campeão"),
+    ("loyal_customer", "cliente fiel"),
+    ("recent_customer", "cliente recente"),
+    ("regular", "regular"),
+    ("at_risk", "em risco"),
+    ("lost", "perdido"),
+)
 
 class CustomerInsight(models.Model):
     """Calculated customer insights."""
@@ -108,7 +123,8 @@ class CustomerInsight(models.Model):
         _("segmento RFM"),
         max_length=50,
         blank=True,
-        help_text=_("Segmento RFM (ex: 'campeão', 'em_risco', 'novo')"),
+        choices=RFM_SEGMENTS,
+        help_text=_("Segmento RFM calculado a partir dos scores R/F/M."),
     )
 
     # Churn risk
