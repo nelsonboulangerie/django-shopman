@@ -10,6 +10,7 @@ manutenção num loop (default: a cada 5 minutos):
   cleanup_d1                — D-1 vencido vira perda
   expire_stale_announcements    — announcement pendente sem aprovação a tempo caduca
   dispatch_due_announcements — announcement aprovado com hora marcada sai quando chega a hora
+  arm_scheduled_campaigns    — ARMA (não dispara) as ocasiões agendadas do próximo horizonte
   reconcile_payments        — PIX pago com webhook perdido é resgatado
   sweep_stuck_orders        — fase de lifecycle perdida (crash pós-commit) é re-despachada
   check_directive_health    — failed/backlog/heartbeat da fila viram OperatorAlert (ADR-003)
@@ -46,6 +47,7 @@ MAINTENANCE_COMMANDS = (
     "expire_stale_announcements",
     # Aprovado com hora marcada sai sozinho quando o relógio chega.
     "dispatch_due_announcements",
+    "arm_scheduled_campaigns",
     "reconcile_payments",
     "sweep_stuck_orders",
     # Por último: as checagens veem o estado PÓS-remediação do ciclo (menos flap).
@@ -71,13 +73,29 @@ class Command(BaseCommand):
             # chamada do ciclo seguinte reaparecer como erro (ex.: o heartbeat no
             # Redis), logamos e seguimos — o próximo ciclo reconecta. Sem isto o
             # processo saía, a DO reiniciava, e o alerta RESTART_COUNT disparava.
+            started = time.monotonic()
             try:
                 self._run_cycle()
             except Exception:
                 logger.exception("maintenance_worker: ciclo falhou (worker continua)")
             if once:
                 return
-            time.sleep(interval)
+
+            # Dormir o que RESTA do intervalo, não o intervalo inteiro. Antes, "a cada
+            # 5 minutos" era falso para todos os crons daqui: o período real era
+            # `interval + duração do ciclo`, e a duração cresce com a base. Um ciclo de
+            # 90s virava um período de 6min30 sem ninguém notar — e a deriva se acumula.
+            elapsed = time.monotonic() - started
+            remaining = interval - elapsed
+            if remaining > 0:
+                time.sleep(remaining)
+            else:
+                # Ciclo mais lento que o intervalo: não dormir nada, e dizer. Silêncio
+                # aqui esconderia que a manutenção não está dando conta.
+                logger.warning(
+                    "maintenance_worker: ciclo levou %.1fs, mais que o intervalo de %ds",
+                    elapsed, interval,
+                )
 
     def _run_cycle(self) -> None:
         from shopman.orderman import worker_heartbeat

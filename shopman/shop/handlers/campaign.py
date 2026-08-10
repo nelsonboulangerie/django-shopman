@@ -216,6 +216,39 @@ class AnnouncementHandler:
         _settle(announcement)
 
 
+class CampaignOccurrenceHandler:
+    """A ocasião agendada chegou: cria o anúncio. Topic: campaign.occur
+
+    Este handler é a metade "dispara" do par armar/disparar. Ele roda dentro do
+    ``process_directives --watch`` (~2s de cadência), e a Directive foi armada com
+    ``available_at`` no instante exato — é isso que faz uma relâmpago das 17h30 sair às
+    17h30, em vez de esperar o próximo ciclo de manutenção.
+
+    Ocasião repetida é silenciosa, não erro: retry da fila e dois workers concorrendo são
+    operação normal, e a segunda tentativa não pode mandar a mensagem de novo.
+    """
+
+    topic = "campaign.occur"
+
+    def handle(self, *, message, ctx: dict) -> None:
+        from shopman.shop.services import campaign as campaign_service
+
+        payload = message.payload or {}
+        campaign_id = payload.get("campaign_id")
+        key = str(payload.get("occurrence_key") or "")
+        if not campaign_id or not key:
+            logger.warning("campaign.occurrence_payload_invalid directive=%s", message.pk)
+            return
+
+        announcement = campaign_service.create_for_occurrence(campaign_id, key=key)
+        if announcement is None:
+            logger.info("campaign.occurrence_skipped key=%s", key)
+            return
+        logger.info(
+            "campaign.occurrence_created announcement=%s key=%s", announcement.pk, key
+        )
+
+
 class AnnouncementNotifyHandler:
     """Dispara a audiência direta (WhatsApp). Topic: announcement.notify
 

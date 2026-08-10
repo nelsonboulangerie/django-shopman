@@ -137,6 +137,19 @@ useHead({ title: "Regras · Marketing" });
           <p class="mt-0.5 text-xs text-muted-foreground">
             {{ audienceRulesSummary(rule.audience_rules) }}
           </p>
+          <!-- Uma campanha agendada que nunca mais dispara é indistinguível de uma
+               que ainda não disparou. A frase vem do servidor pronta. -->
+          <p
+            v-if="rule.fires_on_its_own"
+            class="mt-1 inline-flex items-center gap-1 text-xs"
+            :class="rule.exhausted ? 'text-destructive' : 'text-muted-foreground'"
+          >
+            <Icon
+              :name="rule.exhausted ? 'lucide:calendar-x' : 'lucide:calendar-clock'"
+              class="size-3.5"
+            />
+            {{ rule.exhausted ? 'não dispara mais' : rule.schedule_label }}
+          </p>
         </button>
 
         <div class="flex shrink-0 items-center gap-2">

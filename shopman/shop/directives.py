@@ -81,6 +81,13 @@ IFOOD_STATUS_CALLBACK = "ifood.status_callback"
 #                    (o VIP-first vira duas, com available_at diferente).
 ANNOUNCEMENT_PUBLISH = "announcement.publish"
 ANNOUNCEMENT_NOTIFY = "announcement.notify"
+# CAMPAIGN_OCCUR — a OCASIÃO agendada chegou; crie o anúncio agora.
+#
+# A vassoura de manutenção não dispara: ela ARMA esta directive com `available_at` no
+# instante exato do início da janela. Quem dispara é `process_directives --watch`, que
+# roda a cada ~2 segundos — então a latência de armar (até 5 min, na hora anterior) é
+# irrelevante e a de disparar é de segundos. Uma relâmpago das 17h30 sai às 17h30.
+CAMPAIGN_OCCUR = "campaign.occur"
 
 
 # ── Queue helper ──

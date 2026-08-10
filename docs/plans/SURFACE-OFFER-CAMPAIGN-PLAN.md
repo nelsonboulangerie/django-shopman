@@ -170,11 +170,27 @@ ADR-015 exigiria expand-contract; agora e quase gratis.
 
 *Valor sozinho:* o gestor dispara hoje, para quem escolher, por WhatsApp (ja ligado).
 
-### F9 — Agendamento: a vassoura arma, a fila dispara · ADR-020 passo 4
+### F9 — Agendamento: a vassoura arma, a fila dispara · ADR-020 passo 4 — ✅ FEITO
 
-`once`/`recurring` em `schedule`; `Announcement.occurrence_key` com unique parcial; o comando de
-varredura passa a **armar** `Directive` com `available_at`; `dispatch_scheduled_broadcasts` sai do
-`maintenance_worker`; `handle()` passa a `sleep(interval - elapsed)`.
+`once`/`recurring` em `schedule` (`services/campaign_schedule.py:40-49`); `Trigger.SCHEDULE`, que o F8
+deixou pela metade; `Announcement.occurrence_key` com unique **parcial**
+(`models/campaign.py`, migration `0003`); `arm_scheduled_campaigns` entra no ciclo de manutencao e
+**arma** `Directive` com `available_at`; `CampaignOccurrenceHandler` no topic `campaign.occur`;
+`handle()` passa a `sleep(interval - elapsed)`.
+
+Assimetria deliberada, documentada em `campaign_schedule.py`: config torta nos tipos que **adiam**
+publica agora (marketing nao pode travar a operacao); nos que **disparam**, nao dispara — disparo
+surpresa alcanca cliente de verdade e nao tem desfazer.
+
+**Tres defeitos que so apareceram quando a UI foi aberta** (a regra do dono: feature sem UI nao vale):
+
+1. o `help_text` de `schedule` documentava `{"type": "cron", "expr": ...}`, tipo que nunca existiu —
+   quem seguisse o texto escrevia agendamento que nunca dispara;
+2. nada validava o par gatilho×agendamento, e as duas combinacoes impossiveis **salvavam limpas**, com
+   a campanha aparecendo ativa na lista sem nunca produzir anuncio. Agora `Campaign.clean()` recusa, e
+   a API do gestor chama a mesma regra via `_pairing_error()` — Django so chama `clean()` em
+   formulario, entao o Admin validava e a API nao;
+3. o formulario do app nunca tocava em `schedule`, e "agendado" era escolhivel e **insatisfazivel**.
 
 *Valor sozinho:* relampago das 17h30 sai em segundos, e `publish_at` para de mentir para todo mundo.
 

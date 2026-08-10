@@ -29,6 +29,7 @@ from __future__ import annotations
 
 import logging
 
+from django.core.exceptions import ValidationError as DjangoValidationError
 from django.db.models import ProtectedError
 from drf_spectacular.utils import OpenApiParameter, OpenApiResponse, extend_schema, extend_schema_view
 from rest_framework.response import Response
@@ -204,7 +205,11 @@ class CampaignListView(_CampaignBase):
         fields, error = _rule_fields(request.data, partial=False)
         if error:
             return Response(error, status=400)
-        rule = Campaign.objects.create(**fields)
+        rule = Campaign(**fields)
+        error = _pairing_error(rule)
+        if error:
+            return Response(error, status=400)
+        rule.save()
         return Response(
             {"ok": True, "rule": projection_data(marketing_projection.build_rule(rule))},
             status=201,
@@ -340,6 +345,9 @@ class CampaignDetailView(_CampaignBase):
             return Response(error, status=400)
         for name, value in fields.items():
             setattr(rule, name, value)
+        error = _pairing_error(rule)
+        if error:
+            return Response(error, status=400)
         rule.save()
         return Response({"ok": True, "rule": projection_data(marketing_projection.build_rule(rule))})
 
@@ -408,6 +416,22 @@ class AnnouncementTemplateDetailView(_CampaignBase):
 
 
 # ── Validação e leitura de payload ───────────────────────────────────
+
+
+def _pairing_error(rule: Campaign) -> dict | None:
+    """A validação de gatilho×agendamento do model, no dialeto de erro da API.
+
+    O `clean()` do model é o dono da regra, mas Django só o chama em formulário — o
+    Admin chamava, esta API não. Sem esta ponte, o app do gestor salvaria a campanha
+    agendada que nunca dispara, e a mesma pergunta teria duas respostas.
+    """
+    try:
+        rule.clean()
+    except DjangoValidationError as exc:
+        errors = exc.message_dict
+        field = next(iter(errors), "schedule")
+        return {"detail": errors[field][0], "field": field}
+    return None
 
 
 def _rule_fields(data, *, partial: bool) -> tuple[dict, dict | None]:

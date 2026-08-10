@@ -119,7 +119,7 @@ def fire_now(campaign_id: int, *, context: dict | None = None, audience_rules: d
     return _create_announcement(rule, payload)
 
 
-def _create_announcement(rule: Campaign, context: dict) -> Announcement:
+def _create_announcement(rule: Campaign, context: dict, *, occurrence_key: str = "") -> Announcement:
     sku = context.get("sku", "")
     content = resolve_content(rule.template, context)
     resolved = audience_service.resolve(rule.audience_rules, sku=sku)
@@ -139,6 +139,7 @@ def _create_announcement(rule: Campaign, context: dict) -> Announcement:
         platforms=list(rule.platforms or []),
         audience=resolved.summary(),
         trigger_context=context,
+        occurrence_key=occurrence_key,
         publish_at=publish_at,
         expires_at=_expiry(rule),
     )
@@ -606,6 +607,96 @@ def push_user_notification(notification) -> None:
 
 
 # ── Manutenção ───────────────────────────────────────────────────────
+
+
+def arm_scheduled(*, now=None, horizon_minutes: int = 60) -> int:
+    """Armar as ocasiões que vão acontecer no próximo horizonte. Retorna quantas.
+
+    **A vassoura arma; a fila dispara.** Este é o ponto todo da F9: em vez de esperar o
+    ciclo de manutenção coincidir com as 17h30 (o que dá até 5 minutos de atraso numa
+    relâmpago cuja graça é o minuto), o ciclo cria uma Directive com ``available_at`` no
+    instante exato. Quem executa é ``process_directives --watch``, que roda a cada ~2
+    segundos.
+
+    Nenhum threshold da ADR-003 muda, e não entra broker: é o mesmo padrão que o atraso
+    da onda VIP já usa e que o ``PREORDER_ACTIVATE`` estabeleceu.
+
+    O ``dedupe_key`` é a ocasião. Rodar duas vezes, ou dois workers ao mesmo tempo, não
+    arma em dobro — e se a Directive já foi consumida, o unique parcial de
+    ``Announcement.occurrence_key`` fecha a segunda porta.
+    """
+    from shopman.shop.directives import CAMPAIGN_OCCUR, create_deduped
+    from shopman.shop.services import campaign_schedule
+
+    now = now or timezone.now()
+    horizon = now + timedelta(minutes=max(1, horizon_minutes))
+
+    armed = 0
+    campaigns = Campaign.objects.filter(is_active=True, trigger=Trigger.SCHEDULE)
+    for rule in campaigns:
+        try:
+            moment = campaign_schedule.next_occurrence(rule.schedule, now=now)
+        except Exception:
+            logger.warning("campaign.occurrence_failed rule=%s", rule.pk, exc_info=True)
+            continue
+        if moment is None or moment > horizon:
+            continue
+
+        key = occurrence_key(rule, moment)
+        directive = create_deduped(
+            CAMPAIGN_OCCUR,
+            payload={"campaign_id": rule.pk, "occurrence_key": key, "at": moment.isoformat()},
+            dedupe_key=key,
+            available_at=moment,
+        )
+        if directive:
+            armed += 1
+    return armed
+
+
+def occurrence_key(rule, moment) -> str:
+    """Identidade de UMA ocasião: campanha + instante, ao minuto.
+
+    Ao minuto, e não ao segundo, porque o instante vem de config em ``HH:MM`` — arredondar
+    para baixo garante que dois cálculos da mesma janela produzam a mesma chave, que é o
+    que faz o dedupe funcionar.
+    """
+    stamp = timezone.localtime(moment).strftime("%Y%m%dT%H%M")
+    return f"campaign:{rule.pk}:{stamp}"
+
+
+def create_for_occurrence(campaign_id: int, *, key: str, context: dict | None = None):
+    """Criar o anúncio de uma ocasião agendada. Devolve ``None`` se já existia.
+
+    ``None`` não é erro: é o dedupe funcionando. Duas tentativas para a mesma ocasião
+    acontecem em operação normal (retry da fila, dois workers), e a segunda tem de ser
+    silenciosa em vez de mandar a mensagem de novo.
+    """
+    from django.db import IntegrityError, transaction
+
+    rule = (
+        Campaign.objects.filter(pk=campaign_id, is_active=True)
+        .select_related("template")
+        .first()
+    )
+    if rule is None:
+        logger.info("campaign.occurrence_rule_gone campaign=%s", campaign_id)
+        return None
+
+    if Announcement.objects.filter(occurrence_key=key).exists():
+        return None
+
+    payload = dict(context or {})
+    payload.setdefault("trigger", Trigger.SCHEDULE)
+    payload.setdefault("occurrence_key", key)
+
+    try:
+        with transaction.atomic():
+            return _create_announcement(rule, payload, occurrence_key=key)
+    except IntegrityError:
+        # O unique parcial ganhou a corrida: outro worker criou a mesma ocasião.
+        logger.info("campaign.occurrence_deduped key=%s", key)
+        return None
 
 
 def dispatch_due(*, now=None) -> int:

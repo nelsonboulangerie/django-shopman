@@ -16,6 +16,7 @@ deliberada (FOMO-MARKETING-SPECS §8).
 from __future__ import annotations
 
 from django.conf import settings
+from django.core.exceptions import ValidationError
 from django.db import models
 
 
@@ -31,6 +32,12 @@ class Trigger(models.TextChoices):
     #: nunca produziu uma campanha `scheduled`. Este tem produtor real: uma Action na
     #: superfície de Marketing.
     MANUAL = "manual", "disparo manual"
+    #: O RELÓGIO é o evento: não há fornada por trás. Produtor real é a vassoura, que
+    #: **arma** uma Directive no instante exato — quem dispara é a fila
+    #: (`process_directives --watch`), com latência de segundos em vez dos até 5 minutos
+    #: do ciclo de manutenção. Só este gatilho aceita `schedule` do tipo
+    #: `once`/`recurring`.
+    SCHEDULE = "schedule", "agendado"
 
 
 class AnnouncementStatus(models.TextChoices):
@@ -134,9 +141,20 @@ class Campaign(models.Model):
             'Entrega: {"vip_first_minutes": 15, "preferred_hour_window_hours": 4}.'
         ),
     )
+    #: Dois papéis diferentes no mesmo campo, e a diferença importa: `immediate` e
+    #: `preferred_hours` **adiam** um anúncio que um evento já criou; `once` e
+    #: `recurring` **criam** a ocasião sozinhos, e só valem com `trigger=schedule`.
+    #: Ver `services/campaign_schedule.py`.
     schedule = models.JSONField(
         "agendamento", default=dict, blank=True,
-        help_text='{"type": "immediate"} ou {"type": "cron", "expr": "0 7 * * *"}',
+        help_text=(
+            'Adiar o que o evento criou: {"type": "immediate"} ou '
+            '{"type": "preferred_hours", "windows": [["07:00", "11:00"]]}. '
+            'Disparar sozinho (exige gatilho "agendado"): '
+            '{"type": "once", "at": "2026-08-15T17:30:00-03:00"} ou '
+            '{"type": "recurring", "windows": [["17:30", "18:30"]], '
+            '"weekdays": [4, 5], "starts_on": "2026-08-15", "ends_on": "2026-12-31"}.'
+        ),
     )
     requires_approval = models.BooleanField(
         "exige aprovação", default=True,
@@ -165,6 +183,40 @@ class Campaign(models.Model):
             ("manage_campaigns", "Pode revisar e publicar campanhas"),
         ]
 
+    def clean(self) -> None:
+        """Recusa o par impossível entre gatilho e agendamento.
+
+        Sem isto, os dois erros abaixo salvam limpos e a campanha aparece **ativa** na
+        lista sem nunca produzir anúncio. Silêncio é o pior resultado possível aqui: o
+        gestor não tem como distinguir "não disparou ainda" de "não vai disparar nunca".
+        """
+        from shopman.shop.services import campaign_schedule as sched
+
+        fires = sched.fires_on_its_own(self.schedule)
+        if self.trigger == Trigger.SCHEDULE and not fires:
+            raise ValidationError({
+                "schedule": (
+                    "O gatilho é 'agendado', então o agendamento precisa ser do tipo "
+                    "'once' ou 'recurring' — os outros só adiam um anúncio que um "
+                    "evento já criou, e aqui não há evento."
+                ),
+            })
+        if fires and self.trigger != Trigger.SCHEDULE:
+            raise ValidationError({
+                "trigger": (
+                    "Este agendamento dispara sozinho, então o gatilho tem de ser "
+                    "'agendado'. Com um gatilho de evento, o agendamento seria "
+                    "ignorado e o anúncio sairia na hora do evento."
+                ),
+            })
+        if fires and sched.next_occurrence(self.schedule) is None:
+            raise ValidationError({
+                "schedule": (
+                    "Este agendamento não tem nenhuma próxima ocasião — a data já "
+                    "passou, o período terminou, ou a configuração está incompleta."
+                ),
+            })
+
     def __str__(self) -> str:  # pragma: no cover - admin/debug only
         status = "✓" if self.is_active else "✗"
         return f"[{status}] {self.name}"
@@ -180,6 +232,16 @@ class Announcement(models.Model):
     template = models.ForeignKey(
         AnnouncementTemplate, on_delete=models.SET_NULL, null=True, blank=True,
         related_name="announcements", verbose_name="modelo",
+    )
+    #: A ocasião que gerou este anúncio, quando ele nasceu do relógio. Existe para o
+    #: unique parcial abaixo: sem ela, a vassoura rodando duas vezes (ou dois workers)
+    #: criaria dois anúncios para a mesma janela, e o cliente receberia em dobro.
+    #:
+    #: Vazio para anúncio de evento — fornada não tem "ocasião agendada", e é por isso
+    #: que o unique é PARCIAL.
+    occurrence_key = models.CharField(
+        "ocasião", max_length=120, blank=True, default="", db_index=True,
+        help_text="Identidade da ocasião agendada (campanha + instante). Vazio = nasceu de evento.",
     )
     status = models.CharField(
         "situação", max_length=16,
@@ -220,6 +282,18 @@ class Announcement(models.Model):
             models.Index(fields=["status", "-created_at"]),
             models.Index(fields=["expires_at"]),
             models.Index(fields=["publish_at"]),
+        ]
+        constraints = [
+            # Parcial: vale só onde há ocasião. Anúncio de evento (fornada) tem
+            # `occurrence_key` vazio e pode repetir à vontade — duas fornadas do mesmo
+            # pão no mesmo dia são dois anúncios legítimos. Já a mesma OCASIÃO agendada
+            # não pode gerar dois, senão a vassoura rodando duas vezes (ou dois workers
+            # concorrendo) manda a mensagem em dobro. O banco decide, não o código.
+            models.UniqueConstraint(
+                fields=["occurrence_key"],
+                condition=models.Q(occurrence_key__gt=""),
+                name="shop_announcement_occurrence_uq",
+            ),
         ]
 
     def __str__(self) -> str:  # pragma: no cover - admin/debug only

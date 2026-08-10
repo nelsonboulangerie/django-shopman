@@ -30,7 +30,10 @@ class AnnouncementTemplateAdmin(ModelAdmin):
 
 @admin.register(Campaign)
 class CampaignAdmin(ModelAdmin):
-    list_display = ("name", "trigger_display", "template", "requires_approval", "is_active")
+    list_display = (
+        "name", "trigger_display", "next_occurrence_display", "template",
+        "requires_approval", "is_active",
+    )
     list_filter = ("is_active", "trigger", "requires_approval")
     search_fields = ("name",)
     list_editable = ("is_active",)
@@ -49,6 +52,21 @@ class CampaignAdmin(ModelAdmin):
     @display(description="gatilho")
     def trigger_display(self, obj):
         return obj.get_trigger_display()
+
+    @display(description="próxima ocasião")
+    def next_occurrence_display(self, obj):
+        """Quando esta campanha dispara sozinha — em português, na lista.
+
+        Uma campanha agendada que nunca dispara é indistinguível de uma que ainda não
+        disparou. Mostrar a data resolve isso sem o gestor abrir o JSON.
+        """
+        from shopman.shop.services import campaign_schedule as sched
+
+        if not sched.fires_on_its_own(obj.schedule):
+            return "—"
+        if sched.next_occurrence(obj.schedule) is None:
+            return "não dispara mais"
+        return sched.describe_occurrence(obj.schedule)
 
 
 @admin.register(Announcement)

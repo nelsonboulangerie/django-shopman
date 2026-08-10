@@ -28,6 +28,19 @@ const expiresAfterMinutes = ref(0);
 const isActive = ref(true);
 
 // Audiência: toggles simples em cima do JSON que o serviço lê.
+// Agendamento que DISPARA — só existe com o gatilho "agendado", porque nos outros a
+// causa é o evento e este bloco não teria o que responder. O JSON montado aqui é o
+// mesmo que `services/campaign_schedule.py` lê; o servidor recusa o par impossível.
+const scheduleKind = ref<"once" | "recurring">("recurring");
+const onceAt = ref("");
+const fireAt = ref("07:00");
+const weekdays = ref<number[]>([]);
+const endsOn = ref("");
+
+const WEEKDAY_LABELS = ["seg", "ter", "qua", "qui", "sex", "sáb", "dom"]; // 0 = segunda
+
+const schedules = computed(() => trigger.value === "schedule");
+
 const favorites = ref(false);
 const alerts = ref(false);
 const boughtOn = ref(false);
@@ -49,6 +62,14 @@ watch(
     expiresAfterMinutes.value = rule?.expires_after_minutes ?? 0;
     isActive.value = rule?.is_active ?? true;
 
+    const schedule = (rule?.schedule ?? {}) as Record<string, unknown>;
+    scheduleKind.value = schedule.type === "once" ? "once" : "recurring";
+    onceAt.value = typeof schedule.at === "string" ? schedule.at.slice(0, 16) : "";
+    const firstWindow = Array.isArray(schedule.windows) ? schedule.windows[0] : null;
+    fireAt.value = Array.isArray(firstWindow) ? String(firstWindow[0]) : "07:00";
+    weekdays.value = Array.isArray(schedule.weekdays) ? schedule.weekdays.map(Number) : [];
+    endsOn.value = typeof schedule.ends_on === "string" ? schedule.ends_on : "";
+
     favorites.value = Boolean(audience.favorites);
     alerts.value = Boolean(audience.alerts);
     boughtOn.value = Boolean(audience.bought_within_days);
@@ -64,8 +85,34 @@ const canSubmit = computed(
     name.value.trim().length > 0 &&
     trigger.value !== "" &&
     templateId.value !== null &&
-    platforms.value.length > 0,
+    platforms.value.length > 0 &&
+    (!schedules.value || scheduleReady.value),
 );
+
+const scheduleReady = computed(() =>
+  scheduleKind.value === "once" ? onceAt.value !== "" : fireAt.value !== "",
+);
+
+function toggleWeekday(day: number) {
+  const index = weekdays.value.indexOf(day);
+  if (index >= 0) weekdays.value.splice(index, 1);
+  else weekdays.value.push(day);
+}
+
+function buildSchedule(): Record<string, unknown> {
+  if (scheduleKind.value === "once") return { type: "once", at: onceAt.value };
+  // O fim da janela é inerte para quem dispara (só o início vira ocasião), mas o
+  // formato exige o par — daí uma hora depois, sem inventar significado nenhum.
+  const [hour, minute] = fireAt.value.split(":").map(Number);
+  const end = `${String((hour + 1) % 24).padStart(2, "0")}:${String(minute).padStart(2, "0")}`;
+  return {
+    type: "recurring",
+    windows: [[fireAt.value, end]],
+    // Vazio = a semana toda, igual ao servidor. Não mandamos os 7 dias à mão.
+    ...(weekdays.value.length > 0 ? { weekdays: [...weekdays.value].sort() } : {}),
+    ...(endsOn.value ? { ends_on: endsOn.value } : {}),
+  };
+}
 
 function togglePlatform(value: string) {
   const index = platforms.value.indexOf(value);
@@ -83,6 +130,9 @@ function submit() {
     requires_approval: requiresApproval.value,
     expires_after_minutes: expiresAfterMinutes.value,
     is_active: isActive.value,
+    // Só mandamos `schedule` quando ele é a causa. Nos gatilhos de evento a chave fica
+    // de fora para não apagar um `preferred_hours` configurado no Admin.
+    ...(schedules.value ? { schedule: buildSchedule() } : {}),
     audience_rules: {
       favorites: favorites.value,
       alerts: alerts.value,
@@ -137,6 +187,94 @@ function submit() {
         </p>
       </div>
     </div>
+
+    <!-- Sem este bloco, "agendado" era escolhível e insatisfazível: o gestor salvava e
+         a campanha nunca disparava. -->
+    <fieldset v-if="schedules" class="rounded-lg border border-border bg-card p-4">
+      <legend class="px-1 text-sm font-medium">Quando disparar</legend>
+
+      <div class="flex gap-2">
+        <button
+          v-for="option in [
+            { value: 'recurring', label: 'Toda semana' },
+            { value: 'once', label: 'Uma vez' },
+          ]"
+          :key="option.value"
+          type="button"
+          :aria-pressed="scheduleKind === option.value"
+          class="rounded-md border px-3 py-1.5 text-sm font-medium transition"
+          :class="
+            scheduleKind === option.value
+              ? 'border-primary bg-primary/10 text-primary'
+              : 'border-border hover:bg-muted'
+          "
+          @click="scheduleKind = option.value as 'once' | 'recurring'"
+        >
+          {{ option.label }}
+        </button>
+      </div>
+
+      <div v-if="scheduleKind === 'once'" class="mt-3">
+        <label for="rule-once-at" class="mb-1 block text-sm font-medium">Dia e hora</label>
+        <input
+          id="rule-once-at"
+          v-model="onceAt"
+          type="datetime-local"
+          class="h-9 w-full rounded-md border border-border bg-background px-3 text-sm outline-none focus:ring-1 focus:ring-ring sm:w-64"
+        >
+        <p class="mt-1 text-xs text-muted-foreground">
+          Dispara uma única vez. Depois disso a campanha não volta sozinha.
+        </p>
+      </div>
+
+      <div v-else class="mt-3 space-y-3">
+        <div>
+          <label for="rule-fire-at" class="mb-1 block text-sm font-medium">Hora</label>
+          <input
+            id="rule-fire-at"
+            v-model="fireAt"
+            type="time"
+            class="h-9 w-28 rounded-md border border-border bg-background px-3 text-sm outline-none focus:ring-1 focus:ring-ring"
+          >
+        </div>
+
+        <div>
+          <p class="mb-1 text-sm font-medium">Nos dias</p>
+          <div class="flex flex-wrap gap-1.5">
+            <button
+              v-for="(label, day) in WEEKDAY_LABELS"
+              :key="label"
+              type="button"
+              :aria-pressed="weekdays.includes(day)"
+              class="rounded-md border px-2.5 py-1 text-xs font-medium capitalize transition"
+              :class="
+                weekdays.includes(day)
+                  ? 'border-primary bg-primary/10 text-primary'
+                  : 'border-border hover:bg-muted'
+              "
+              @click="toggleWeekday(day)"
+            >
+              {{ label }}
+            </button>
+          </div>
+          <p class="mt-1 text-xs text-muted-foreground">
+            Nenhum dia marcado quer dizer todos os dias.
+          </p>
+        </div>
+
+        <div>
+          <label for="rule-ends-on" class="mb-1 block text-sm font-medium">
+            Parar depois de (opcional)
+          </label>
+          <input
+            id="rule-ends-on"
+            v-model="endsOn"
+            type="date"
+            class="h-9 w-full rounded-md border border-border bg-background px-3 text-sm outline-none focus:ring-1 focus:ring-ring sm:w-48"
+          >
+        </div>
+      </div>
+    </fieldset>
 
     <fieldset>
       <legend class="mb-1 text-sm font-medium">Publicar em</legend>

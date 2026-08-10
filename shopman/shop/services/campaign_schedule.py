@@ -5,16 +5,27 @@ conteúdo chega frio justamente quando a pessoa acorda. A
 ``Campaign.schedule`` declara as janelas em que a padaria quer aparecer;
 um evento fora delas não perde o announcement, só espera a próxima abertura.
 
-Formato de ``Campaign.schedule``::
+O vocabulário distingue **adiar** de **disparar**, sem overload — dois verbos diferentes
+não podem morar na mesma chave:
 
+    ADIAM (um evento aconteceu; a janela decide quando ele sai)
     {"type": "immediate"}                        # padrão — sai na hora
     {"type": "preferred_hours",
      "windows": [["07:00", "11:00"], ["15:00", "18:00"]],
      "weekdays": [0, 1, 2, 3, 4, 5]}             # 0 = segunda; ausente = todos
 
+    DISPARAM (não há evento; o relógio É o evento)
+    {"type": "once", "at": "2026-08-15T07:00:00-03:00"}
+    {"type": "recurring",
+     "windows": [["17:30", "18:30"]], "weekdays": [4, 5],
+     "starts_on": "2026-08-10", "ends_on": "2026-09-30"}
+
+``starts_on``/``ends_on`` cobrem "só neste período" sem inventar um terceiro tipo.
+
 Puro e testável: só relógio e config, sem banco. Config quebrada nunca segura
 um announcement — na dúvida publica agora, porque marketing não pode virar gargalo da
-operação.
+operação. A recíproca vale para os que DISPARAM, e com sinal oposto: config quebrada
+não dispara nada, porque disparo surpresa alcança cliente de verdade.
 """
 
 from __future__ import annotations
@@ -24,9 +35,18 @@ from datetime import datetime, time, timedelta
 from django.utils import timezone
 
 PREFERRED_HOURS = "preferred_hours"
+IMMEDIATE = "immediate"
+#: Tipos que DISPARAM sozinhos: o relógio é o evento, não há fornada por trás.
+ONCE = "once"
+RECURRING = "recurring"
+FIRING_TYPES = frozenset({ONCE, RECURRING})
 
 #: Hoje + uma semana cheia: cobre qualquer combinação de ``weekdays``.
 MAX_LOOKAHEAD_DAYS = 8
+
+#: Para recorrente, olhar mais longe: `weekdays` pode ser um único dia e `starts_on`
+#: pode estar semanas à frente. Um ano e pouco é teto generoso e ainda finito.
+MAX_RECURRING_LOOKAHEAD_DAYS = 400
 
 ALL_WEEKDAYS = frozenset(range(7))
 
@@ -146,5 +166,119 @@ def _parse_time(value) -> time | None:
     try:
         hour, _, minute = str(value).partition(":")
         return time(int(hour), int(minute or 0))
+    except (TypeError, ValueError):
+        return None
+
+
+# ── Agendamento que DISPARA ──────────────────────────────────────────
+#
+# Os tipos acima adiam um announcement que já existe. Os de baixo criam a ocasião: sem
+# fornada, sem estoque, só relógio. Por isso são válidos apenas com `Trigger.SCHEDULE` —
+# um gatilho de evento com `type: once` seria duas causas para o mesmo anúncio.
+
+
+def fires_on_its_own(schedule: dict | None) -> bool:
+    """Este agendamento cria a ocasião, em vez de só adiar uma que já existe?"""
+    return isinstance(schedule, dict) and schedule.get("type") in FIRING_TYPES
+
+
+def next_occurrence(schedule: dict | None, *, now: datetime | None = None, after=None):
+    """O próximo instante em que este agendamento deve disparar, ou ``None``.
+
+    ``after`` permite pedir "a próxima depois desta", que é como a vassoura evita rearmar
+    a mesma ocasião. ``None`` significa "nunca mais" — config inválida, período encerrado,
+    ou ``once`` que já passou.
+
+    Config torta devolve ``None`` de propósito: no caminho que ADIA, a dúvida publica
+    agora; aqui a dúvida **não dispara**, porque disparo surpresa alcança cliente de
+    verdade e não tem desfazer.
+    """
+    if not isinstance(schedule, dict):
+        return None
+
+    kind = schedule.get("type")
+    now = timezone.localtime(now or timezone.now())
+    floor = _aware(after) if after else now
+
+    if kind == ONCE:
+        moment = _parse_datetime(schedule.get("at"))
+        if moment is None or moment <= floor:
+            return None
+        return moment
+
+    if kind != RECURRING:
+        return None
+
+    windows = _windows(schedule.get("windows"))
+    weekdays = _weekdays(schedule.get("weekdays"))
+    if not windows:
+        return None
+
+    starts_on = _parse_date(schedule.get("starts_on"))
+    ends_on = _parse_date(schedule.get("ends_on"))
+
+    for offset in range(MAX_RECURRING_LOOKAHEAD_DAYS):
+        day = (floor + timedelta(days=offset)).date()
+        if day.weekday() not in weekdays:
+            continue
+        if starts_on and day < starts_on:
+            continue
+        if ends_on and day > ends_on:
+            return None
+        for start, _end in windows:
+            candidate = _aware(datetime.combine(day, start))
+            if candidate > floor:
+                return candidate
+    return None
+
+
+def describe_occurrence(schedule: dict | None) -> str:
+    """Resumo legível de um agendamento que dispara, para o card do gestor."""
+    if not isinstance(schedule, dict):
+        return ""
+    kind = schedule.get("type")
+    if kind == ONCE:
+        moment = _parse_datetime(schedule.get("at"))
+        if moment is None:
+            return "data inválida"
+        return f"uma vez, em {timezone.localtime(moment).strftime('%d/%m às %H:%M')}"
+    if kind != RECURRING:
+        return ""
+
+    windows = _windows(schedule.get("windows"))
+    if not windows:
+        return "horário inválido"
+    faixas = ", ".join(start.strftime("%H:%M") for start, _end in windows)
+    weekdays = _weekdays(schedule.get("weekdays"))
+    dias = (
+        "todo dia" if weekdays == ALL_WEEKDAYS
+        else ", ".join(_WEEKDAY_NAMES[day] for day in sorted(weekdays))
+    )
+    texto = f"{dias}, às {faixas}"
+    ends_on = _parse_date(schedule.get("ends_on"))
+    if ends_on:
+        texto += f" (até {ends_on.strftime('%d/%m')})"
+    return texto
+
+
+def _parse_datetime(value):
+    if isinstance(value, datetime):
+        return _aware(value)
+    try:
+        from django.utils.dateparse import parse_datetime
+
+        parsed = parse_datetime(str(value))
+    except (TypeError, ValueError):
+        return None
+    return _aware(parsed) if parsed else None
+
+
+def _parse_date(value):
+    if value is None:
+        return None
+    try:
+        from django.utils.dateparse import parse_date
+
+        return parse_date(str(value))
     except (TypeError, ValueError):
         return None

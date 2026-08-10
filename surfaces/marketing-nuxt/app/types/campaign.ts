@@ -74,6 +74,12 @@ export interface Campaign {
   platforms: string[];
   audience_rules: AudienceRules;
   schedule: Record<string, unknown>;
+  /** Frase pronta do agendamento — decidida no servidor, nunca reinterpretada aqui. */
+  schedule_label: string;
+  /** Cria a ocasião sozinho (`once`/`recurring`), em vez de só adiar um evento. */
+  fires_on_its_own: boolean;
+  /** Dispara sozinho, mas já não tem próxima ocasião: data passada ou período findo. */
+  exhausted: boolean;
   requires_approval: boolean;
   expires_after_minutes: number;
   is_active: boolean;

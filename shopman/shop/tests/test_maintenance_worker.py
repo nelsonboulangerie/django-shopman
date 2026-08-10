@@ -296,16 +296,38 @@ def test_once_runs_one_cycle_in_order_and_never_sleeps():
         call("cleanup_d1"),
         call("expire_stale_announcements"),
         call("dispatch_due_announcements"),
+        call("arm_scheduled_campaigns"),
         call("reconcile_payments"),
         call("sweep_stuck_orders"),
         call("check_directive_health"),
     ]
 
 
-def test_loop_sleeps_interval_between_cycles():
-    # 1º ciclo → sleep(300) → 2º ciclo → sleep levanta _StopLoop (fim do teste).
+def test_loop_sleeps_the_remainder_of_the_interval():
+    """Dorme `intervalo - duração do ciclo`, não o intervalo inteiro.
+
+    ⚠️ Este teste ANTES exigia `sleep(300)` cheio — ele codificava o defeito. O período
+    real era `intervalo + duração do ciclo`, então "a cada 5 minutos" era falso para todos
+    os crons da vassoura, e a deriva se acumulava. Doeu quando o agendamento de campanha
+    passou a depender do relógio.
+
+    O relógio é injetado para o teste ser exato: com ciclo de 90s e intervalo de 300s, o
+    sono é 210s — e não "aproximadamente 300".
+    """
+    clock = {"t": 0.0}
+
+    def _cycle_costs_90s(*args, **kwargs):
+        clock["t"] += 90.0 / len(MAINTENANCE_COMMANDS)
+
     with (
-        patch("shopman.shop.management.commands.maintenance_worker.call_command") as cc,
+        patch(
+            "shopman.shop.management.commands.maintenance_worker.call_command",
+            side_effect=_cycle_costs_90s,
+        ) as cc,
+        patch(
+            "shopman.shop.management.commands.maintenance_worker.time.monotonic",
+            side_effect=lambda: clock["t"],
+        ),
         patch(
             "shopman.shop.management.commands.maintenance_worker.time.sleep",
             side_effect=[None, _StopLoop()],
@@ -315,13 +337,65 @@ def test_loop_sleeps_interval_between_cycles():
         call_command("maintenance_worker", stdout=StringIO())
 
     assert cc.call_count == 2 * len(MAINTENANCE_COMMANDS)
-    assert sleep.call_args_list == [call(300), call(300)]
+    # Tolerância porque a soma de N frações de 90s acumula erro de ponto flutuante; o
+    # que importa é que o sono seja o RESTANTE (210), não o intervalo (300).
+    napped = [args[0] for args, _kwargs in sleep.call_args_list]
+    assert len(napped) == 2
+    assert all(abs(seconds - 210.0) < 0.01 for seconds in napped), napped
+
+
+def test_a_cycle_slower_than_the_interval_does_not_sleep():
+    """Ciclo que não cabe no intervalo é sinal de manutenção não dando conta.
+
+    Não dormir nada é o comportamento certo (o próximo ciclo começa já), e o warning
+    existe para o silêncio não esconder a saturação.
+    """
+    clock = {"t": 0.0}
+
+    def _cycle_costs_400s(*args, **kwargs):
+        clock["t"] += 400.0 / len(MAINTENANCE_COMMANDS)
+
+    # ⚠️ `_StopLoop` deriva de `Exception`, e `_run_cycle` engole `Exception` de propósito
+    # (um cron quebrado não pode derrubar o worker). Para escapar de um loop que NÃO
+    # dorme, o sinal tem de vir de `BaseException` — daí o KeyboardInterrupt.
+    cycles = {"n": 0}
+
+    def _cycle_then_stop(*args, **kwargs):
+        _cycle_costs_400s()
+        cycles["n"] += 1
+        if cycles["n"] > len(MAINTENANCE_COMMANDS):
+            raise KeyboardInterrupt
+
+    with (
+        patch(
+            "shopman.shop.management.commands.maintenance_worker.call_command",
+            side_effect=_cycle_then_stop,
+        ),
+        patch(
+            "shopman.shop.management.commands.maintenance_worker.time.monotonic",
+            side_effect=lambda: clock["t"],
+        ),
+        patch(
+            "shopman.shop.management.commands.maintenance_worker.time.sleep",
+        ) as sleep,
+        pytest.raises(KeyboardInterrupt),
+    ):
+        call_command("maintenance_worker", stdout=StringIO())
+
+    sleep.assert_not_called()
 
 
 @pytest.mark.parametrize(("requested", "effective"), [(5, 30), (60, 60)])
 def test_interval_respects_floor_of_30_seconds(requested, effective):
+    # Relógio parado: com o sono virando `intervalo - duração`, um relógio real
+    # devolveria 59,9998 e o teste passaria a falhar por ruído de medição em vez de
+    # por comportamento.
     with (
         patch("shopman.shop.management.commands.maintenance_worker.call_command"),
+        patch(
+            "shopman.shop.management.commands.maintenance_worker.time.monotonic",
+            return_value=0.0,
+        ),
         patch(
             "shopman.shop.management.commands.maintenance_worker.time.sleep",
             side_effect=_StopLoop(),

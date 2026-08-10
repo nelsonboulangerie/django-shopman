@@ -5131,7 +5131,32 @@ class Command(BaseCommand):
             },
         )
 
-        self.stdout.write("  ✅ 2 modelos e 2 campanhas")
+        # Agendada: o RELÓGIO é o evento. Existe no seed porque feature sem exemplo é
+        # feature invisível — staging nasceria sem nenhuma campanha que dispara sozinha,
+        # e ninguém descobre o recurso lendo o model. Sexta e sábado às 17h30, quando
+        # sobra fornada e o movimento cai.
+        Campaign.objects.update_or_create(
+            name="Relâmpago de fim de tarde",
+            defaults={
+                "trigger": Trigger.SCHEDULE,
+                "template": novidade,
+                "platforms": ["whatsapp"],
+                # Público vazio: quem dispara é o relógio, mas para QUEM continua sendo
+                # escolha do gestor no card de revisão.
+                "audience_rules": {},
+                "schedule": {
+                    "type": "recurring",
+                    "windows": [["17:30", "18:30"]],
+                    "weekdays": [4, 5],  # 0 = segunda
+                },
+                "requires_approval": True,
+                # Relâmpago que ninguém revisou até as 19h não é mais relâmpago.
+                "expires_after_minutes": 90,
+                "is_active": True,
+            },
+        )
+
+        self.stdout.write("  ✅ 2 modelos e 3 campanhas")
 
     def _seed_notification_templates(self):
         self.stdout.write("  📨 Templates de notificação...")

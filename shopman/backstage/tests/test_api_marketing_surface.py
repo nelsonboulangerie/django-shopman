@@ -267,6 +267,62 @@ class TestRules:
         assert response.status_code == 400
         assert response.json()["field"] == "platforms"
 
+    def test_a_scheduled_rule_without_a_firing_schedule_is_refused(self, client, gestor, template):
+        """⚠️ A regra vive no `clean()` do model, mas quem salva aqui é a API.
+
+        Django só chama `clean()` em formulário — o Admin chamava, esta API não. Sem a
+        ponte, o app do gestor criava a campanha agendada que nunca dispara.
+        """
+        client.force_login(gestor)
+
+        response = client.post(
+            RULES_URL,
+            data={
+                "name": "Relâmpago torta", "trigger": "schedule",
+                "template_id": template.pk, "platforms": ["whatsapp"],
+                "schedule": {"type": "immediate"},
+            },
+            content_type="application/json",
+        )
+
+        assert response.status_code == 400
+        assert response.json()["field"] == "schedule"
+        assert not Campaign.objects.filter(name="Relâmpago torta").exists()
+
+    def test_a_scheduled_rule_with_a_real_occasion_is_created(self, client, gestor, template):
+        client.force_login(gestor)
+
+        response = client.post(
+            RULES_URL,
+            data={
+                "name": "Relâmpago das 17h30", "trigger": "schedule",
+                "template_id": template.pk, "platforms": ["whatsapp"],
+                "schedule": {"type": "recurring", "windows": [["17:30", "18:30"]]},
+            },
+            content_type="application/json",
+        )
+
+        assert response.status_code == 201
+        body = response.json()["rule"]
+        assert body["fires_on_its_own"] is True
+        assert body["exhausted"] is False
+        assert "17:30" in body["schedule_label"], body["schedule_label"]
+
+    def test_patching_into_the_impossible_pairing_is_refused(self, client, gestor, rule):
+        """Editar também precisa do guarda — senão a regra entra pela porta de trás."""
+        client.force_login(gestor)
+
+        response = client.patch(
+            f"{RULES_URL}{rule.pk}/",
+            data={"trigger": "schedule"},
+            content_type="application/json",
+        )
+
+        assert response.status_code == 400
+        assert response.json()["field"] == "schedule"
+        rule.refresh_from_db()
+        assert rule.trigger != "schedule"
+
     def test_toggle_rule_off(self, client, gestor, rule):
         client.force_login(gestor)
 

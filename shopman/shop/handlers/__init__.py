@@ -35,6 +35,7 @@ ALL_HANDLERS = [
     # Campanha (marketing operacional)
     "shopman.shop.handlers.campaign.AnnouncementHandler",
     "shopman.shop.handlers.campaign.AnnouncementNotifyHandler",
+    "shopman.shop.handlers.campaign.CampaignOccurrenceHandler",
     # Mock PIX (dev/test only; only fires when payment_mock scheduled a directive)
     "shopman.shop.handlers.mock_pix.MockPixConfirmHandler",
     # Piloto automático de staging (nunca em produção — o handler se recusa a agir)
@@ -376,6 +377,7 @@ def _register_campaign() -> None:
     campaign.connect()
     registry.register_directive_handler(campaign.AnnouncementHandler())
     registry.register_directive_handler(campaign.AnnouncementNotifyHandler())
+    registry.register_directive_handler(campaign.CampaignOccurrenceHandler())
     logger.info("shopman.handlers: connected campaign receivers.")
 
 

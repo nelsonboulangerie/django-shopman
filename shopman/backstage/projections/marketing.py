@@ -137,6 +137,14 @@ class CampaignProjection:
     platforms: tuple[str, ...]
     audience_rules: dict
     schedule: dict
+    #: Frase pronta do agendamento, decidida no servidor. O Admin e o app do gestor
+    #: mostram a MESMA leitura porque nenhum dos dois reinterpreta o JSON.
+    schedule_label: str
+    #: Este agendamento cria a ocasião sozinho (`once`/`recurring`)?
+    fires_on_its_own: bool
+    #: Dispara sozinho mas já não tem próxima ocasião — data passada ou período findo.
+    #: Sem isto, uma campanha esgotada é indistinguível de uma que ainda não disparou.
+    exhausted: bool
     requires_approval: bool
     expires_after_minutes: int
     is_active: bool
@@ -373,6 +381,9 @@ def build_history(*, limit: int = 100, now=None) -> tuple[AnnouncementProjection
 
 
 def build_rule(rule: Campaign) -> CampaignProjection:
+    from shopman.shop.services import campaign_schedule as sched
+
+    fires = sched.fires_on_its_own(rule.schedule)
     return CampaignProjection(
         pk=rule.pk,
         name=rule.name,
@@ -384,6 +395,9 @@ def build_rule(rule: Campaign) -> CampaignProjection:
         platforms=tuple(rule.platforms or ()),
         audience_rules=dict(rule.audience_rules or {}),
         schedule=dict(rule.schedule or {}),
+        schedule_label=sched.describe_occurrence(rule.schedule) if fires else sched.describe(rule.schedule),
+        fires_on_its_own=fires,
+        exhausted=fires and sched.next_occurrence(rule.schedule) is None,
         requires_approval=rule.requires_approval,
         expires_after_minutes=rule.expires_after_minutes,
         is_active=rule.is_active,

@@ -610,6 +610,26 @@ Auto-reagendável a cada `Shop.defaults.delivery.courier_poll_seconds` (default
 
 Write-back: `entry_id` (string)
 
+#### `campaign.occur`
+
+A ocasião de uma campanha agendada. A vassoura (`arm_scheduled_campaigns`, no ciclo de
+manutenção) **arma** a directive com `available_at` no minuto exato; quem **dispara** é o
+`process_directives --watch` (~2s). É por isso que uma relâmpago das 17h30 sai às 17h30 e
+não às 17h34, sem broker nenhum e sem mexer em threshold da [ADR-003](../decisions/adr-003-directives-sem-celery.md).
+
+Dedupe: `campaign:{campaign_id}:{YYYYMMDDTHHMM}` — a chave é da **ocasião**, não da
+campanha, então a relâmpago de amanhã também sai.
+
+| Chave | Tipo | Escrito por | Lido por |
+|-------|------|-------------|----------|
+| `campaign_id` | `int` | campaign_service.arm_scheduled | CampaignOccurrenceHandler |
+| `occurrence_key` | `string` | campaign_service.arm_scheduled | CampaignOccurrenceHandler |
+
+⚠️ O `occurrence_key` também vai para `Announcement.occurrence_key`, que tem UNIQUE
+**parcial** (só quando não vazio). São dois pares de olhos contra a mesma falha: mensagem
+em dobro chega ao cliente e não tem desfazer. Anúncio de evento fica com a chave vazia de
+propósito — duas fornadas do mesmo pão são dois anúncios legítimos.
+
 ---
 
 ## Channel.config
