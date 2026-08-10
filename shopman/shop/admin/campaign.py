@@ -46,7 +46,7 @@ class CampaignAdmin(ModelAdmin):
     fieldsets = (
         (None, {"fields": ("name", "is_active")}),
         ("gatilho", {"fields": ("trigger", "trigger_filter")}),
-        ("conteúdo", {"fields": ("template", "platforms")}),
+        ("conteúdo", {"fields": ("template", "platforms", "promotion_ref")}),
         ("audiência", {"fields": ("audience_rules",)}),
         (
             "publicação",

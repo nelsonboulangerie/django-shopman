@@ -8,7 +8,7 @@ import { audienceRulesSummary, platformsSummary } from "~/presentation/campaign"
 import type { Campaign } from "~/types/campaign";
 
 const {
-  rules, templates, triggers, platforms, platformLabels, customerGroups, rfmSegments,
+  rules, templates, triggers, platforms, platformLabels, customerGroups, rfmSegments, offers,
   loading, error, refresh, toggle, patch, create, fire,
 } = useCampaigns();
 
@@ -214,6 +214,7 @@ useHead({ title: "Regras · Marketing" });
             :rule="firing"
             :customer-groups="customerGroups"
             :rfm-segments="rfmSegments"
+            :offers="offers"
             :busy="busy"
             @submit="onFire"
             @cancel="firing = null"

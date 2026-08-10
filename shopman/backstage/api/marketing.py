@@ -428,6 +428,21 @@ class AnnouncementTemplateDetailView(_CampaignBase):
 # ── Validação e leitura de payload ───────────────────────────────────
 
 
+def _offer_exists(ref: str) -> bool:
+    """A oferta existe e ainda vale? Perguntado na hora de SALVAR a campanha.
+
+    Salvar uma campanha apontando para oferta morta produziria anúncio com link que
+    responde 404 — e o gestor só descobriria pelo cliente reclamando.
+    """
+    from shopman.shop.services import offers as offer_service
+
+    try:
+        offer_service.get_offer(ref, channel_ref="")
+    except offer_service.OfferUnavailable:
+        return False
+    return True
+
+
 def _pairing_error(rule: Campaign) -> dict | None:
     """A validação de gatilho×agendamento do model, no dialeto de erro da API.
 
@@ -483,6 +498,15 @@ def _rule_fields(data, *, partial: bool) -> tuple[dict, dict | None]:
             if not isinstance(value, dict):
                 return {}, {"detail": "Configuração inválida.", "field": name}
             fields[name] = value
+
+    if not partial or "promotion_ref" in data:
+        offer_ref = str(data.get("promotion_ref") or "").strip()
+        if offer_ref and not _offer_exists(offer_ref):
+            return {}, {
+                "detail": "Esta oferta não existe ou não vale mais.",
+                "field": "promotion_ref",
+            }
+        fields["promotion_ref"] = offer_ref
 
     if "notify_users" in data:
         fields["notify_users"] = [

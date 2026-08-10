@@ -28,6 +28,9 @@ def seeded():
 
     command = Command()
     command.stdout = StringIO()
+    # Promoções primeiro: a campanha agendada anuncia uma oferta, e sem elas a
+    # verificação de `promotion_ref` não teria como ser feita.
+    command._seed_promotions()
     command._seed_campaigns()
     return Campaign.objects.all()
 
@@ -53,3 +56,28 @@ def test_the_scheduled_campaign_still_asks_for_review(seeded):
         if campaign.trigger == Trigger.SCHEDULE:
             assert campaign.requires_approval is True
             assert campaign.expires_after_minutes > 0, "relâmpago não revisado caduca"
+
+
+def test_the_announced_offer_exists_and_assembles_a_bag(seeded):
+    """⚠️ `promotion_ref` é SlugField solto — nada no banco impede apontar para o vazio.
+
+    Uma campanha que anuncia oferta inexistente produz mensagem com link que responde
+    404, e o gestor só descobre pelo cliente reclamando. E oferta que não nomeia item
+    nenhum daria um "quero esta oferta" que não monta sacola nenhuma.
+    """
+    from config.management.commands.seed import Command
+    from shopman.shop.services import offers as offer_service
+
+    announced = [c for c in seeded if c.promotion_ref]
+    assert announced, "o seed precisa exercitar a oferta acionável em staging"
+
+    # O catálogo entra aqui e não no fixture: a pergunta deste teste é justamente se a
+    # oferta anunciada encontra produto NO catálogo que o seed monta. Sem ele, o teste
+    # passaria a medir a própria fixture.
+    catalog = Command()
+    catalog.stdout = StringIO()
+    catalog._seed_catalog()
+
+    for campaign in announced:
+        promotion = offer_service.get_offer(campaign.promotion_ref, channel_ref="")
+        assert offer_service.offer_skus(promotion), campaign.promotion_ref

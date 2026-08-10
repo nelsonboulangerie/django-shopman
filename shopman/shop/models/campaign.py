@@ -161,6 +161,21 @@ class Campaign(models.Model):
             '"weekdays": [4, 5], "starts_on": "2026-08-15", "ends_on": "2026-12-31"}.'
         ),
     )
+    #: A oferta que esta campanha anuncia (`Promotion.ref`, ADR-020 §9). Vazio = a
+    #: campanha só conta uma novidade, sem desconto atrás.
+    #:
+    #: ⚠️ Aponta para `Promotion.ref`, **nunca** para `Coupon.code`: cupom é o ATIVADOR
+    #: de uma promoção, não a promoção. Relâmpago automática não tem código nenhum, e
+    #: amarrar a campanha ao cupom obrigaria a inventar um só para poder anunciar.
+    #:
+    #: É `SlugField` solto, e não FK, de propósito: apagar uma promoção antiga não pode
+    #: derrubar o histórico de anúncios que a mencionaram, e a resolução acontece no
+    #: CLIQUE — quem clica amanhã precisa da promoção de amanhã, não do que ela era
+    #: quando a mensagem saiu.
+    promotion_ref = models.SlugField(
+        "oferta", max_length=64, blank=True,
+        help_text="`ref` da promoção anunciada. Vazio = anúncio sem desconto atrás.",
+    )
     requires_approval = models.BooleanField(
         "exige aprovação", default=True,
         help_text="Desligado = publica sozinho, sem o gestor revisar",

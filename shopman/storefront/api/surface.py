@@ -189,6 +189,20 @@ def _rate_limited_response(*, detail: str, retry_after_seconds: int) -> Response
     )
 
 
+def _session_scope(request) -> str:
+    """Identidade da sessão para escopar idempotência de oferta.
+
+    A sessão é criada se ainda não existir: sem chave, todos os visitantes anônimos
+    dividiriam o mesmo escopo — que é exatamente o vazamento que este escopo evita.
+    """
+    session = getattr(request, "session", None)
+    if session is None:
+        return "anon"
+    if not session.session_key:
+        session.save()
+    return session.session_key or "anon"
+
+
 def _request_is_rate_limited(request, *, group: str, rate: str, method: str) -> bool:
     return bool(is_ratelimited(
         request=request,
@@ -419,6 +433,125 @@ class OrderReorderView(APIView):
                 status=status.HTTP_409_CONFLICT,
             )
         return Response(result.response_body, status=result.response_code)
+
+
+@extend_schema_view(
+    post=extend_schema(
+        tags=["cart"],
+        summary="Claim an announced offer — assembles the bag, resolving price now",
+        responses={
+            200: OpenApiResponse(description="Cart projection after the offer was claimed."),
+            404: DetailSerializer,
+            409: DetailSerializer,
+        },
+    ),
+)
+class OfferClaimView(APIView):
+    """POST /api/v1/offers/<ref>/claim/
+
+    O fim do anúncio: um toque e a sacola está montada, com o preço resolvido AGORA.
+
+    **Não exige login de propósito.** O link que chega no WhatsApp dorme horas, então não
+    pode ser `AccessLink` (5 min, single-use), e esticar esse TTL espalharia links de
+    concessão de sessão em conversas que são encaminhadas e printadas. O link carrega a
+    oferta; a autenticação acontece no checkout, onde já acontecia. Ninguém precisa estar
+    logado para encher uma sacola.
+
+    Mesmo contrato do `reorder`: 409 quando a sacola já tem itens e o cliente não disse
+    se quer somar ou trocar — decidir por ele apagaria uma sacola que ele montou.
+    """
+
+    permission_classes = [AllowAny]
+    authentication_classes = [SessionAuthentication]
+    throttle_classes = []
+
+    def post(self, request, ref: str):
+        from shopman.shop.services import offers as offer_service
+        from shopman.storefront.cart import CartService
+
+        if _request_is_rate_limited(
+            request,
+            group="storefront-api-offer-claim",
+            rate="20/m",
+            method="POST",
+        ):
+            return _rate_limited_response(
+                detail="Muitas tentativas. Aguarde um instante.",
+                retry_after_seconds=REORDER_RATE_LIMIT_RETRY_SECONDS,
+            )
+
+        try:
+            promotion = offer_service.get_offer(ref, channel_ref=STOREFRONT_CHANNEL_REF)
+        except offer_service.OfferUnavailable as exc:
+            # 404 e não 400: para quem clicou, "não existe mais" é a informação, e o
+            # texto vem do serviço porque é ele que sabe se venceu, encerrou ou nunca foi.
+            return Response({"detail": str(exc)}, status=status.HTTP_404_NOT_FOUND)
+
+        # Oferta sem SKU nomeado vale para tudo, e não existe sacola de "tudo". Dizer
+        # isso é melhor que montar uma sacola errada ou devolver sucesso vazio.
+        if not offer_service.offer_skus(promotion):
+            return Response(
+                {
+                    "detail": "Esta oferta vale para o cardápio todo — escolha o que quiser.",
+                    "error_code": "offer_has_no_items",
+                },
+                status=status.HTTP_409_CONFLICT,
+            )
+
+        mode = str((request.data.get("mode") if hasattr(request, "data") else "") or "").strip().lower()
+
+        key = remote_mutations.idempotency_key_from_request(
+            request,
+            fallback=f"offer-claim:{ref}:{mode or 'default'}",
+        )
+
+        def execute_claim() -> tuple[dict, int]:
+            # ⚠️ A pergunta "sua sacola já tem itens" mora AQUI, dentro da execução, e não
+            # antes dela. Fora, o segundo toque no mesmo link cairia neste 409 em vez de
+            # repetir a resposta guardada — e aí a idempotência que a Action promete não
+            # existiria justamente no caso que ela existe para cobrir.
+            if CartService.has_items(request) and mode not in {"replace", "append"}:
+                return (
+                    {
+                        "detail": "Você já tem itens na sacola. Somar a oferta ou trocar?",
+                        "error_code": "cart_not_empty",
+                    },
+                    status.HTTP_409_CONFLICT,
+                )
+            if mode == "replace":
+                CartService.clear(request)
+            result = offer_service.add_offer_items(
+                request, promotion,
+                cart_service=CartService,
+                channel_ref=STOREFRONT_CHANNEL_REF,
+            )
+            return (
+                {
+                    "ok": result.assembled,
+                    "offer": {"ref": promotion.ref, "name": promotion.name},
+                    "added": list(result.added),
+                    "skipped": list(result.skipped),
+                    "cart": _cart_payload(request),
+                },
+                status.HTTP_200_OK,
+            )
+
+        try:
+            outcome = remote_mutations.run_idempotent_mutation(
+                # ⚠️ O escopo carrega a SESSÃO, não só a oferta. No `reorder` o `ref` é de
+                # um pedido, privado por natureza; aqui o `ref` é o mesmo para todo mundo
+                # que recebeu a mensagem — um escopo só com ele faria o segundo visitante
+                # receber a resposta guardada do primeiro, sacola dele inclusa.
+                scope=f"offer-claim:{_session_scope(request)}:{ref}",
+                key=key,
+                execute=execute_claim,
+            )
+        except remote_mutations.RemoteMutationInProgress:
+            return Response(
+                {"detail": "A oferta já está sendo aplicada.", "error_code": "mutation_in_progress"},
+                status=status.HTTP_409_CONFLICT,
+            )
+        return Response(outcome.response_body, status=outcome.response_code)
 
 
 @extend_schema_view(

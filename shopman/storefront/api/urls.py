@@ -43,6 +43,7 @@ from .surface import (
     CartSkuQtyView,
     CheckoutDraftView,
     CheckoutLoyaltyView,
+    OfferClaimView,
     OrderReorderView,
     StorefrontCartView,
     StorefrontCheckoutView,
@@ -120,6 +121,8 @@ urlpatterns = [
     # absorvidos por /tracking/{ref}/ + SSE. Só o gatilho de captura simulada fica.
     path("payment/<str:ref>/mock-confirm/", OrderPaymentMockConfirmView.as_view(), name="api-payment-mock-confirm"),
     path("orders/<str:ref>/reorder/", OrderReorderView.as_view(), name="api-order-reorder"),
+    # Oferta anunciada → sacola montada. Sem login: o link do WhatsApp dorme horas.
+    path("offers/<slug:ref>/claim/", OfferClaimView.as_view(), name="api-offer-claim"),
     # Account
     path("account/summary/", AccountSummaryView.as_view(), name="api-account-summary"),
     path("account/profile/", ProfileView.as_view(), name="api-account-profile"),

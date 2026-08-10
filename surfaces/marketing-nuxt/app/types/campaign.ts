@@ -76,6 +76,8 @@ export interface Campaign {
   template_name: string;
   platforms: string[];
   audience_rules: AudienceRules;
+  /** `ref` da oferta anunciada. Vazio = campanha sem desconto atrás. */
+  promotion_ref: string;
   schedule: Record<string, unknown>;
   /** Frase pronta do agendamento — decidida no servidor, nunca reinterpretada aqui. */
   schedule_label: string;
@@ -119,6 +121,9 @@ export interface CampaignOptions {
    *  resolvedor não conhece. */
   customer_groups: Choice[];
   rfm_segments: Choice[];
+  /** Ofertas vivas que MONTAM sacola. O servidor já tirou as que valem para tudo:
+   *  oferecê-las daria ao gestor um botão que promete o que não cumpre. */
+  offers: Choice[];
 }
 
 /** Público escolhido para UM disparo. Não altera a campanha salva. */

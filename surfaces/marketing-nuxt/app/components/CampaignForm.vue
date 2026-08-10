@@ -11,6 +11,7 @@ const props = defineProps<{
   triggers: Choice[];
   platformOptions: Choice[];
   templates: AnnouncementTemplate[];
+  offers: Choice[];
   busy?: boolean;
 }>();
 
@@ -25,6 +26,8 @@ const templateId = ref<number | null>(null);
 const platforms = ref<string[]>([]);
 const requiresApproval = ref(true);
 const expiresAfterMinutes = ref(0);
+// A oferta que a campanha anuncia. Vazio = a campanha só conta uma novidade.
+const promotionRef = ref("");
 const isActive = ref(true);
 
 // Audiência: toggles simples em cima do JSON que o serviço lê.
@@ -60,6 +63,7 @@ watch(
     platforms.value = [...(rule?.platforms ?? [])];
     requiresApproval.value = rule?.requires_approval ?? true;
     expiresAfterMinutes.value = rule?.expires_after_minutes ?? 0;
+    promotionRef.value = rule?.promotion_ref ?? "";
     isActive.value = rule?.is_active ?? true;
 
     const schedule = (rule?.schedule ?? {}) as Record<string, unknown>;
@@ -129,6 +133,7 @@ function submit() {
     platforms: [...platforms.value],
     requires_approval: requiresApproval.value,
     expires_after_minutes: expiresAfterMinutes.value,
+    promotion_ref: promotionRef.value,
     is_active: isActive.value,
     // Só mandamos `schedule` quando ele é a causa. Nos gatilhos de evento a chave fica
     // de fora para não apagar um `preferred_hours` configurado no Admin.
@@ -186,6 +191,26 @@ function submit() {
           Nenhum modelo cadastrado ainda. Crie um no Admin antes de criar a regra.
         </p>
       </div>
+    </div>
+
+    <!-- A oferta que o anúncio leva. Quando escolhida, o {{link}} da mensagem aponta
+         para a oferta e o clique monta a sacola com o preço resolvido NA HORA — não no
+         envio, que é quando o preço envelheceria. -->
+    <div v-if="offers.length">
+      <label for="rule-offer" class="mb-1 block text-sm font-medium">Anunciar a oferta</label>
+      <select
+        id="rule-offer"
+        v-model="promotionRef"
+        class="h-9 w-full rounded-md border border-border bg-background px-2 text-sm outline-none focus:ring-1 focus:ring-ring"
+      >
+        <option value="">Nenhuma — só contar a novidade</option>
+        <option v-for="offer in offers" :key="offer.value" :value="offer.value">
+          {{ offer.label }}
+        </option>
+      </select>
+      <p class="mt-1 text-xs text-muted-foreground">
+        Com oferta, quem toca no link já recebe a sacola montada.
+      </p>
     </div>
 
     <!-- Sem este bloco, "agendado" era escolhível e insatisfazível: o gestor salvava e

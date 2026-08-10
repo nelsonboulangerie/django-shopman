@@ -40,6 +40,16 @@ def path_cart() -> str:
     return "/cart"
 
 
+def path_offer(promotion_ref: str) -> str:
+    """A oferta anunciada. Não autenticado de propósito — ver `services/offers.py`.
+
+    Rota em pt-br porque a loja é superfície de CLIENTE (as rotas em inglês são as dos
+    apps de operador, PR #68). Nasce já no caminho certo, sem o 301 que os caminhos
+    ingleses antigos precisam em `nuxt.config.ts`.
+    """
+    return f"/oferta/{promotion_ref}"
+
+
 def path_checkout() -> str:
     return "/checkout"
 
@@ -89,6 +99,10 @@ def order_tracking_url(ref: str) -> str:
 
 def product_url(sku: str) -> str:
     return storefront_url(path_product(sku))
+
+
+def offer_url(promotion_ref: str) -> str:
+    return storefront_url(path_offer(promotion_ref))
 
 
 def home_url() -> str:

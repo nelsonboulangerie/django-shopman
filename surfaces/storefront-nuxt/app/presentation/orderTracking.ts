@@ -1,5 +1,4 @@
 import type { Action, OrderProgressStepProjection, TrackingCopyProjection, TrackingPromiseProjection } from '~/types/shopman'
-import { normalizeSearchText } from '~/utils/display'
 
 // Lógica pura da tela de acompanhamento. Contrato vem das projeções do backend
 // (SAGRADO): a UI deriva apresentação, nunca inventa estado.

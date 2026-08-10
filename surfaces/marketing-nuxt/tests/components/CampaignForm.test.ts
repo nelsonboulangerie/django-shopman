@@ -20,6 +20,9 @@ const PLATFORMS = [
 const TEMPLATES = [
   { pk: 1, name: "Relâmpago", body: "oi", variables: [], use_ai_generation: false, image_source: "" },
 ];
+const OFFERS = [
+  { value: "relampago-17h30", label: "Relâmpago das 17h30" },
+];
 
 function form(rule: Campaign | null = null) {
   return mount(CampaignForm, {
@@ -28,6 +31,7 @@ function form(rule: Campaign | null = null) {
       triggers: TRIGGERS,
       platformOptions: PLATFORMS,
       templates: TEMPLATES as never,
+      offers: OFFERS,
     },
     global: { stubs: { Icon: true } },
   });
@@ -47,6 +51,44 @@ function makeRule(over: Partial<Campaign> = {}): Campaign {
     ...over,
   } as Campaign;
 }
+
+describe("CampaignForm — a oferta anunciada", () => {
+  it("deixa a campanha sem oferta por padrão", async () => {
+    const wrapper = form(makeRule({ trigger: "production_finished" }));
+
+    await wrapper.find("form").trigger("submit");
+
+    const [payload] = wrapper.emitted("submit")![0] as [Record<string, unknown>];
+    expect(payload.promotion_ref).toBe("");
+  });
+
+  it("manda a oferta escolhida", async () => {
+    const wrapper = form(makeRule({ trigger: "production_finished" }));
+
+    await wrapper.find("#rule-offer").setValue("relampago-17h30");
+    await wrapper.find("form").trigger("submit");
+
+    const [payload] = wrapper.emitted("submit")![0] as [Record<string, unknown>];
+    expect(payload.promotion_ref).toBe("relampago-17h30");
+  });
+
+  it("relê a oferta da regra aberta", () => {
+    const wrapper = form(makeRule({ promotion_ref: "relampago-17h30" }));
+    expect((wrapper.find("#rule-offer").element as HTMLSelectElement).value)
+      .toBe("relampago-17h30");
+  });
+
+  it("some quando não há oferta viva — seletor vazio não ajuda ninguém", () => {
+    const wrapper = mount(CampaignForm, {
+      props: {
+        rule: null, triggers: TRIGGERS, platformOptions: PLATFORMS,
+        templates: TEMPLATES as never, offers: [],
+      },
+      global: { stubs: { Icon: true } },
+    });
+    expect(wrapper.find("#rule-offer").exists()).toBe(false);
+  });
+});
 
 describe("CampaignForm — quando disparar", () => {
   it("esconde o agendamento nos gatilhos de evento", () => {

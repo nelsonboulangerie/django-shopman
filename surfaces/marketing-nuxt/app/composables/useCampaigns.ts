@@ -23,6 +23,8 @@ export function useCampaigns() {
   const variables = computed(() => options.value?.variables ?? []);
   const customerGroups = computed(() => options.value?.customer_groups ?? []);
   const rfmSegments = computed(() => options.value?.rfm_segments ?? []);
+  // Só ofertas que montam sacola chegam aqui — o servidor já filtrou.
+  const offers = computed(() => options.value?.offers ?? []);
 
   /** Rótulo por ref de plataforma — o que `platformsSummary` espera. */
   const platformLabels = computed<Record<string, string>>(() =>
@@ -103,6 +105,7 @@ export function useCampaigns() {
     variables,
     customerGroups,
     rfmSegments,
+    offers,
     loading: pending,
     error,
     refresh,

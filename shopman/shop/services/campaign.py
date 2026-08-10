@@ -121,7 +121,7 @@ def fire_now(campaign_id: int, *, context: dict | None = None, audience_rules: d
 
 def _create_announcement(rule: Campaign, context: dict, *, occurrence_key: str = "") -> Announcement:
     sku = context.get("sku", "")
-    content = resolve_content(rule.template, context)
+    content = resolve_content(rule.template, context, promotion_ref=rule.promotion_ref)
     resolved = audience_service.resolve(rule.audience_rules, sku=sku)
 
     # Fora da janela preferida, o announcement nasce com hora marcada. Vale para os dois
@@ -198,17 +198,28 @@ def _expiry(rule: Campaign):
 # ── Conteúdo ─────────────────────────────────────────────────────────
 
 
-def resolve_content(template, context: dict) -> dict:
-    """Renderizar o template com as variáveis do evento."""
-    variables = resolve_variables(context)
+def resolve_content(template, context: dict, *, promotion_ref: str = "") -> dict:
+    """Renderizar o template com as variáveis do evento.
+
+    Quando a campanha anuncia uma oferta, o `{{link}}` deixa de apontar para o produto e
+    passa a apontar para a **oferta** — é o link que vai na mensagem, e mandar o cliente
+    para a página do produto quando existe uma promoção atrás desperdiçaria o clique.
+    A `Action` vai junto, para a superfície montar a sacola (ADR-012 + ADR-020 §9).
+    """
+    variables = resolve_variables(context, promotion_ref=promotion_ref)
     body = render(template.body, variables)
-    return {
+    content = {
         "body": body,
         "hashtags": variables["hashtags_list"],
         "link": variables["link"],
         "image_url": _image_url(template, context),
         "variables": {k: v for k, v in variables.items() if not k.endswith("_list")},
     }
+    if promotion_ref:
+        from shopman.shop.services.offers import offer_action
+
+        content["actions"] = [offer_action(promotion_ref)]
+    return content
 
 
 def _platform_content(template, content: dict) -> dict:
@@ -237,7 +248,7 @@ def render(body: str, variables: dict) -> str:
     return re.sub(r"[ \t]{2,}", " ", rendered).strip()
 
 
-def resolve_variables(context: dict) -> dict:
+def resolve_variables(context: dict, *, promotion_ref: str = "") -> dict:
     """As variáveis disponíveis para um template (FOMO-MARKETING-SPECS §3.2)."""
     sku = context.get("sku", "")
     product = _product(sku)
@@ -249,7 +260,7 @@ def resolve_variables(context: dict) -> dict:
         "price": _price(product),
         "hashtags": " ".join(f"#{tag}" for tag in hashtags),
         "hashtags_list": hashtags,
-        "link": _product_link(sku),
+        "link": _offer_link(promotion_ref) if promotion_ref else _product_link(sku),
         "stock": str(context.get("available_qty", "") or ""),
         "quantity": str(context.get("quantity", "") or ""),
         "time": timezone.localtime().strftime("%Hh%M"),
@@ -306,6 +317,17 @@ def _hashtags(product) -> list[str]:
         return []
     tags = social.get("hashtags") or []
     return [str(tag) for tag in tags if str(tag).strip()]
+
+
+def _offer_link(promotion_ref: str) -> str:
+    """Link NÃO autenticado da oferta. Ver `services/offers.py` para o porquê."""
+    try:
+        from shopman.shop.services import storefront_links
+
+        return storefront_links.offer_url(promotion_ref)
+    except Exception:
+        logger.debug("campaign.offer_link_failed ref=%s", promotion_ref, exc_info=True)
+        return ""
 
 
 def _product_link(sku: str) -> str:

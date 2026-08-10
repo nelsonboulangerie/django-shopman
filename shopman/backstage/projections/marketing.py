@@ -140,6 +140,8 @@ class CampaignProjection:
     template_name: str
     platforms: tuple[str, ...]
     audience_rules: dict
+    #: `Promotion.ref` da oferta anunciada. Vazio = campanha sem desconto atrás.
+    promotion_ref: str
     schedule: dict
     #: Frase pronta do agendamento, decidida no servidor. O Admin e o app do gestor
     #: mostram a MESMA leitura porque nenhum dos dois reinterpreta o JSON.
@@ -186,6 +188,10 @@ class CampaignOptionsProjection:
     variables: tuple[str, ...]
     customer_groups: tuple[ChoiceProjection, ...] = ()
     rfm_segments: tuple[ChoiceProjection, ...] = ()
+    #: Ofertas vivas que a campanha pode anunciar. Só as que MONTAM sacola: uma promoção
+    #: que vale para o cardápio todo não tem itens para montar, e oferecê-la aqui daria
+    #: ao gestor um botão que promete o que não cumpre.
+    offers: tuple[ChoiceProjection, ...] = ()
 
 
 # ── Posts ────────────────────────────────────────────────────────────
@@ -401,6 +407,7 @@ def build_rule(rule: Campaign) -> CampaignProjection:
         template_name=rule.template.name if rule.template_id else "",
         platforms=tuple(rule.platforms or ()),
         audience_rules=dict(rule.audience_rules or {}),
+        promotion_ref=rule.promotion_ref,
         schedule=dict(rule.schedule or {}),
         schedule_label=sched.describe_occurrence(rule.schedule) if fires else sched.describe(rule.schedule),
         fires_on_its_own=fires,
@@ -446,6 +453,25 @@ def build_options() -> CampaignOptionsProjection:
         variables=available_variables(),
         customer_groups=_customer_group_choices(),
         rfm_segments=_rfm_segment_choices(),
+        offers=_offer_choices(),
+    )
+
+
+def _offer_choices() -> tuple[ChoiceProjection, ...]:
+    """Promoções vivas que nomeiam itens, para o seletor de oferta da campanha."""
+    from shopman.shop.services import offers as offer_service
+    from shopman.shop.services import promotions as promotion_service
+
+    try:
+        live = promotion_service.get_active_promotions(timezone.now())
+    except Exception:
+        logger.warning("marketing.offers_failed", exc_info=True)
+        return ()
+
+    return tuple(
+        ChoiceProjection(value=promotion.ref, label=promotion.name)
+        for promotion in live
+        if offer_service.offer_skus(promotion)
     )
 
 

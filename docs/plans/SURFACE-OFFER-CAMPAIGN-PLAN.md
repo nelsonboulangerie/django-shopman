@@ -233,11 +233,39 @@ corpo e so entao pular a revisao.
 
 *Valor sozinho:* o Admin passa a poder responder quantos anuncios foram recusados, e por que.
 
-### F11 — A oferta acionavel · ADR-020 passo 6 · depende de F5 e F7
+### F11 — A oferta acionavel · ADR-020 passo 6 · depende de F5 e F7 — ✅ FEITO
 
-`Campaign.promotion_ref`; `Action` no contrato da ADR-012 em `Announcement.content["actions"]`; endpoint
-no idioma do `reorder`; **deep link nao autenticado** (nunca `build_access_url`, que expira em 5
-minutos).
+`Campaign.promotion_ref` (migration `0006`, `SlugField` solto e nao FK: apagar promocao antiga nao pode
+derrubar historico de anuncio, e a resolucao acontece no CLIQUE). `services/offers.py` com a `Action` da
+ADR-012 em `Announcement.content["actions"]`, `POST /api/v1/offers/<ref>/claim/` no idioma do `reorder`,
+e a pagina `/oferta/<ref>` na loja.
+
+**Tudo se resolve no clique, nada no envio** — e essa e a fase inteira. Mensagem dorme horas no
+WhatsApp; montar a sacola no envio envelheceria o **preco**, seguraria **estoque** para quem nunca
+clicou (`cart.add_item` toma hold no Stockman) e criaria uma `Session` orfa por destinatario.
+
+**O link e NAO autenticado**, nunca `build_access_url` (5 min, single-use — morreria antes do clique).
+Rota em pt-br (`/oferta/`), que e o idioma da superficie de cliente, entao nasce sem o 301 que os
+caminhos ingleses antigos precisam.
+
+**Oferta com SKU e oferta sem SKU nao sao a mesma coisa:** `skus` vazio quer dizer "vale para tudo", e
+nao existe sacola de "tudo". Quem nomeia itens monta sacola; quem nao nomeia so aponta o caminho. O
+seletor do gestor **so oferece as que montam** — oferecer as outras daria um botao que promete o que nao
+cumpre.
+
+**Dois defeitos encontrados escrevendo isto:**
+
+1. o escopo de idempotencia era `offer-claim:{ref}`, **compartilhado entre visitantes**. No `reorder` o
+   `ref` e de um pedido, privado por natureza; numa oferta ele e o mesmo para todos que receberam a
+   mensagem, entao o segundo visitante receberia a resposta guardada do primeiro — **com a sacola dele
+   dentro**. O escopo agora carrega a sessao;
+2. a guarda "sua sacola ja tem itens" rodava ANTES da idempotencia, entao o segundo toque no mesmo link
+   caia em 409 em vez de repetir a resposta guardada — a idempotencia que a `Action` promete faltava
+   exatamente no caso que ela existe para cobrir. A guarda mudou para dentro da execucao.
+
+Seed liga a relampago agendada a `semana-do-pao` (coleção `rusticos`), com teste conferindo que a oferta
+anunciada existe **e encontra produto no catalogo** — `promotion_ref` e slug solto, nada no banco impede
+apontar para o vazio.
 
 *Valor sozinho:* o disparo termina em carrinho montado com um clique, com preco resolvido no clique.
 

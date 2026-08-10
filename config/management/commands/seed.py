@@ -5144,6 +5144,10 @@ class Command(BaseCommand):
                 # Público vazio: quem dispara é o relógio, mas para QUEM continua sendo
                 # escolha do gestor no card de revisão.
                 "audience_rules": {},
+                # Anuncia uma oferta de verdade: `semana-do-pao` nomeia a coleção
+                # `rusticos`, então o clique no link monta a sacola com preço resolvido
+                # na hora. Sem isto, o recurso existiria e nada em staging o exercitaria.
+                "promotion_ref": "semana-do-pao",
                 "schedule": {
                     "type": "recurring",
                     "windows": [["17:30", "18:30"]],
