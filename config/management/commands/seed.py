@@ -76,10 +76,9 @@ from shopman.backstage.services.operations import (
     start_checklist_run,
     supervise_task_run,
 )
-from shopman.shop.models import Channel, OmotenashiCopy, RuleConfig, Shop
+from shopman.shop.models import Channel, Coupon, OmotenashiCopy, Promotion, RuleConfig, Shop
 from shopman.shop.services.dietary_from_recipe import aggregate_dietary_from_recipe
 from shopman.shop.services.nutrition_from_recipe import fill_nutrition_from_recipe
-from shopman.storefront.models import Coupon, Promotion
 
 
 class Command(BaseCommand):
@@ -495,7 +494,7 @@ class Command(BaseCommand):
 
     def _seed_delivery_distance_bands(self):
         """Motor de precificação: taxa por faixa de distância (loja→endereço)."""
-        from shopman.storefront.models import DeliveryDistanceBand
+        from shopman.shop.models import DeliveryDistanceBand
 
         shop = Shop.objects.get(pk=1)
         bands = [
@@ -519,7 +518,7 @@ class Command(BaseCommand):
 
     def _seed_delivery_zones(self):
         """Exceções à distância: override (taxa fixa) e exclude (não entregar)."""
-        from shopman.storefront.models import DeliveryZone
+        from shopman.shop.models import DeliveryZone
 
         shop = Shop.objects.get(pk=1)
         # A taxa primária vem das faixas de distância; estas zonas são exceções.
@@ -4612,8 +4611,9 @@ class Command(BaseCommand):
 
         # Promotion 1: Semana do Pão — 15% off pães rústicos (auto, sem cupom)
         Promotion.objects.update_or_create(
-            name="Semana do Pão",
+            ref="semana-do-pao",
             defaults={
+                "name": "Semana do Pão",
                 "type": Promotion.PERCENT,
                 "value": 15,
                 "valid_from": now,
@@ -4625,8 +4625,9 @@ class Command(BaseCommand):
 
         # Promotion for NELSON10 coupon (10% off geral)
         promo_nelson10, _ = Promotion.objects.update_or_create(
-            name="Desconto Nelson 10%",
+            ref="nelson10",
             defaults={
+                "name": "Desconto Nelson 10%",
                 "type": Promotion.PERCENT,
                 "value": 10,
                 "valid_from": now,
@@ -4637,8 +4638,9 @@ class Command(BaseCommand):
 
         # Promotion for PRIMEIRACOMPRA coupon (R$5 off, min R$30)
         promo_primeira, _ = Promotion.objects.update_or_create(
-            name="Primeira Compra",
+            ref="primeira-compra",
             defaults={
+                "name": "Primeira Compra",
                 "type": Promotion.FIXED,
                 "value": 500,
                 "valid_from": now,
@@ -4650,8 +4652,9 @@ class Command(BaseCommand):
 
         # Promotion for FUNCIONARIO coupon (20% off, restricted to staff group)
         promo_funcionario, _ = Promotion.objects.update_or_create(
-            name="Desconto Funcionario",
+            ref="funcionario",
             defaults={
+                "name": "Desconto Funcionario",
                 "type": Promotion.PERCENT,
                 "value": 20,
                 "valid_from": now,
@@ -4663,8 +4666,9 @@ class Command(BaseCommand):
 
         # Promotion: Parabéns! — 10% off no dia do aniversário
         Promotion.objects.update_or_create(
-            name="Parabéns! Desconto de aniversário",
+            ref="aniversario",
             defaults={
+                "name": "Parabéns! Desconto de aniversário",
                 "type": Promotion.PERCENT,
                 "value": 10,
                 "valid_from": now,

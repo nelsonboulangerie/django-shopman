@@ -482,7 +482,7 @@ def check_pricing_backend(app_configs, **kwargs):
             warnings.append(
                 Warning(
                     "OFFERMAN['PRICING_BACKEND'] não está configurado.",
-                    hint="Defina OFFERMAN['PRICING_BACKEND'] com o backend de precificação contextual (ex: shopman.shop.adapters.pricing.StorefrontPricingBackend).",
+                    hint="Defina OFFERMAN['PRICING_BACKEND'] com o backend de precificação contextual (ex: shopman.shop.adapters.pricing.PromotionPricingBackend).",
                     id="SHOPMAN_W005",
                 )
             )

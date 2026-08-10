@@ -315,7 +315,6 @@ class DiscountModifier:
     order = 20
 
     def apply(self, *, channel: Any, session: Any, ctx: dict) -> None:
-        from shopman.shop.adapters import get_adapter
 
         # Inject fulfillment_type from session data into ctx for matching
         fulfillment_type = (session.data or {}).get("fulfillment_type", "")
@@ -334,13 +333,20 @@ class DiscountModifier:
 
         now = timezone.now()
 
-        adapter = get_adapter("promotion")
-        promotions = adapter.get_active_promotions(now) if adapter else []
+        from shopman.shop.services import promotions as promotion_service
+
+        # A promoção é escopada por canal (`Promotion.channels`, vazio = todos), e o
+        # modifier sabe o canal — então o escopo é honrado aqui, no único lugar que
+        # decide desconto. Campo de escopo sem leitor é escopo decorativo.
+        channel_ref = getattr(channel, "ref", "") or ""
+        promotions = promotion_service.get_active_promotions(now, channel_ref=channel_ref)
 
         coupon_code = (session.data or {}).get("coupon_code")
         coupon_promo = None
-        if coupon_code and adapter:
-            coupon_promo = adapter.get_coupon_promotion(coupon_code, now)
+        if coupon_code:
+            coupon_promo = promotion_service.get_coupon_promotion(
+                coupon_code, now, channel_ref=channel_ref
+            )
 
         if not promotions and not coupon_promo:
             if not session.pricing:
@@ -883,18 +889,14 @@ class DeliveryFeeModifier:
         Se mesmo o geocode não resolver (raro), NÃO rejeita um endereço válido: cobra a
         taxa-padrão (``default_delivery_fee_q``) — fallback de último recurso, não regra.
         """
-        from shopman.shop.adapters import get_adapter
         from shopman.shop.projections.cart import shop_rule_q
         from shopman.shop.services import delivery_distance
-
-        adapter = get_adapter("promotion")
-        if adapter is None:
-            return (shop_rule_q("default_delivery_fee_q"), None, False)
+        from shopman.shop.services import promotions as promotion_service
 
         distance_km = delivery_distance.store_distance_km(lat, lng)
 
         # Zona (exceção) primeiro: é lookup barato e curto-circuita o geocode.
-        zone = adapter.match_delivery_zone(postal_code, neighborhood)
+        zone = promotion_service.match_delivery_zone(postal_code, neighborhood)
         if zone is not None:
             if getattr(zone, "mode", "") == _ZONE_MODE_EXCLUDE:
                 return (0, distance_km, True)  # zona de exclusão: não entregamos aqui
@@ -910,7 +912,7 @@ class DeliveryFeeModifier:
                 distance_km = delivery_distance.store_distance_km(coords[0], coords[1])
 
         if distance_km is not None:
-            band = adapter.match_distance_band(distance_km)
+            band = promotion_service.match_distance_band(distance_km)
             if band is not None:
                 return (band.fee_q, distance_km, False)
             # Distância conhecida e além de toda faixa → genuinamente fora de área.

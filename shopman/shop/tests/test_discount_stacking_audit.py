@@ -103,10 +103,11 @@ class DiscountStackingAuditTests(TestCase):
 
     # ── HOLE 2: employee discount must NOT compound on a promo line (best-wins) ─
     def test_employee_does_not_compound_on_promotion(self) -> None:
-        from shopman.storefront.models import Promotion
+        from shopman.shop.models import Promotion
 
         now = timezone.now()
         Promotion.objects.create(
+            ref="promo-30",
             name="Promo 30",
             type=Promotion.PERCENT,
             value=30,
@@ -140,10 +141,11 @@ class DiscountStackingAuditTests(TestCase):
             ref="d1_discount", rule_path="shopman.shop.rules.pricing.D1Rule",
             label="D-1", params={"discount_percent": 50}, enabled=True,
         )
-        from shopman.storefront.models import Promotion
+        from shopman.shop.models import Promotion
 
         now = timezone.now()
         Promotion.objects.create(
+            ref="promo-30-2",
             name="Promo 30", type=Promotion.PERCENT, value=30, is_active=True,
             valid_from=now - timedelta(days=1), valid_until=now + timedelta(days=1),
         )
@@ -188,10 +190,11 @@ class DiscountStackingAuditTests(TestCase):
 
     def test_flat_discount_wins_when_bigger_than_existing(self) -> None:
         # Happy hour (40%) É maior que uma promo de 10% → substitui (maior ganha).
-        from shopman.storefront.models import Promotion
+        from shopman.shop.models import Promotion
 
         now = timezone.now()
         Promotion.objects.create(
+            ref="promo-10",
             name="Promo 10", type=Promotion.PERCENT, value=10, is_active=True,
             valid_from=now - timedelta(days=1), valid_until=now + timedelta(days=1),
         )
@@ -263,10 +266,11 @@ class DiscountStackingAuditTests(TestCase):
 
     # ── HOLE C1: cupom expirado NÃO desconta após reprice (confirm reprecifica) ─
     def test_expired_coupon_not_applied_on_reprice(self) -> None:
-        from shopman.storefront.models import Coupon, Promotion
+        from shopman.shop.models import Coupon, Promotion
 
         now = timezone.now()
         promo = Promotion.objects.create(
+            ref="cupom-expirado",
             name="Cupom expirado", type=Promotion.PERCENT, value=20, is_active=True,
             valid_from=now - timedelta(days=10), valid_until=now - timedelta(days=1),  # já venceu
         )
@@ -310,8 +314,8 @@ class DiscountStackingAuditTests(TestCase):
     def test_total_changed_guard_carries_new_total(self) -> None:
         from shopman.orderman.exceptions import ValidationError as OrderingValidationError
 
+        from shopman.shop.models import Promotion
         from shopman.shop.services import checkout as checkout_service
-        from shopman.storefront.models import Promotion
 
         key = self._open_session()
         # Line persisted at R$10 with NO promo active → the customer sees R$10.
@@ -322,6 +326,7 @@ class DiscountStackingAuditTests(TestCase):
         # A 50%-off promo appears AFTER review; the confirm reprice picks it up (→R$5).
         now = timezone.now()
         Promotion.objects.create(
+            ref="mudou",
             name="Mudou", type=Promotion.PERCENT, value=50, is_active=True,
             valid_from=now - timedelta(days=1), valid_until=now + timedelta(days=1),
         )
@@ -342,15 +347,16 @@ class DiscountStackingAuditTests(TestCase):
 
     # ── HOLE D0: fixed promo must NOT become a per-card menu discount ────────
     def test_menu_backend_ignores_fixed_promo_percent_still_applies(self) -> None:
-        from shopman.shop.adapters.pricing import StorefrontPricingBackend
-        from shopman.storefront.models import Promotion
+        from shopman.shop.adapters.pricing import PromotionPricingBackend
+        from shopman.shop.models import Promotion
 
         now = timezone.now()
         Promotion.objects.create(
+            ref="r-5-no-pedido",
             name="R$5 no pedido", type=Promotion.FIXED, value=500, is_active=True,
             valid_from=now - timedelta(days=1), valid_until=now + timedelta(days=1),
         )
-        backend = StorefrontPricingBackend()
+        backend = PromotionPricingBackend()
         priced = backend.get_price(
             sku="AUDIT-SKU", qty=Decimal("1"), listing="web",
             list_unit_price_q=1000, list_total_price_q=1000, context={},
@@ -361,6 +367,7 @@ class DiscountStackingAuditTests(TestCase):
 
         # Control: a percent promo still discounts the card.
         Promotion.objects.create(
+            ref="20",
             name="20%", type=Promotion.PERCENT, value=20, is_active=True,
             valid_from=now - timedelta(days=1), valid_until=now + timedelta(days=1),
         )

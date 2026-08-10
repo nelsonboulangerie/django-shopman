@@ -1,4 +1,4 @@
-"""Shopman models — Shop, Channel, RuleConfig, NotificationTemplate, OmotenashiCopy, Campaign."""
+"""Shopman models — Shop, Channel, RuleConfig, Promotion, Coupon, entrega, Campaign."""
 
 from .campaign import (
     QUALITY_LEVELS,
@@ -10,7 +10,9 @@ from .campaign import (
 )
 from .catalog_sync import CatalogSyncState, SyncStatus
 from .channel import Channel
+from .delivery import DeliveryDistanceBand, DeliveryZone
 from .omotenashi_copy import OmotenashiCopy
+from .promotion import Coupon, Promotion
 from .rules import RuleConfig
 from .settings_proxies import (
     ShopAppearance,
@@ -28,6 +30,10 @@ from .user_notification import NotificationCategory, UserNotification
 __all__ = [
     "Shop",
     "Channel",
+    "Promotion",
+    "Coupon",
+    "DeliveryZone",
+    "DeliveryDistanceBand",
     "CatalogSyncState",
     "SyncStatus",
     "NotificationTemplate",

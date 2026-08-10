@@ -31,7 +31,7 @@ from shopman.shop.directives import CATALOG_PROJECT_SKU
 _IFOOD_BACKEND = "shopman.shop.adapters.catalog_projection_ifood.IFoodCatalogProjection"
 _OFFERMAN_BASE = {
     "COST_BACKEND": None,
-    "PRICING_BACKEND": "shopman.shop.adapters.pricing.StorefrontPricingBackend",
+    "PRICING_BACKEND": "shopman.shop.adapters.pricing.PromotionPricingBackend",
 }
 _OFFERMAN_IFOOD = {**_OFFERMAN_BASE, "PROJECTION_BACKENDS": {"ifood": _IFOOD_BACKEND}}
 _OFFERMAN_NONE = {**_OFFERMAN_BASE, "PROJECTION_BACKENDS": {}}

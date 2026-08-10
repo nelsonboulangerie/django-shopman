@@ -227,10 +227,9 @@ def _coordinates_match_claimed_address(session_data: dict) -> bool:
 
     # Zona por CEP/bairro decidiu a taxa? Coordenada não influenciou — skip.
     try:
-        from shopman.shop.adapters import get_adapter
+        from shopman.shop.services import promotions as promotion_service
 
-        adapter = get_adapter("promotion")
-        if adapter is not None and adapter.match_delivery_zone(
+        if promotion_service.match_delivery_zone(
             str(addr.get("postal_code") or ""), str(addr.get("neighborhood") or "")
         ) is not None:
             return True

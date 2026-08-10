@@ -15,9 +15,8 @@ import pytest
 from django.utils import timezone
 from shopman.offerman.models import Product
 
-from shopman.shop.models import Channel, Shop
+from shopman.shop.models import Channel, Coupon, Promotion, Shop
 from shopman.shop.services import sessions
-from shopman.storefront.models import Coupon, Promotion
 
 pytestmark = pytest.mark.django_db
 
@@ -31,6 +30,9 @@ def _seed(*, promo_type: str, value: int, min_order_q: int = 0, code: str = "CUP
     )
     now = timezone.now()
     promo = Promotion.objects.create(
+        # O `ref` deriva do `code` porque é o que varia entre chamadas do helper —
+        # `ref` é unique, então derivar do nome fixo colidiria na segunda promoção.
+        ref=f"cupom-teste-{code.lower()}",
         name="Cupom Teste",
         type=promo_type,
         value=value,
@@ -105,6 +107,7 @@ def _seed_auto_promo(*, value: int) -> None:
     """Promoção automática percentual para TODOS os SKUs (sem cupom)."""
     now = timezone.now()
     Promotion.objects.create(
+        ref="promo-automatica",
         name="Promo Automática",
         type=Promotion.PERCENT,
         value=value,

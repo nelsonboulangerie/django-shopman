@@ -251,16 +251,18 @@ def test_09_coupon_errors_are_specific_not_generic(client):
 
     from django.utils import timezone
 
-    from shopman.storefront.models import Coupon, Promotion
+    from shopman.shop.models import Coupon, Promotion
 
     _seed(stock_qty=50)
     now = timezone.now()
     expired = Promotion.objects.create(
+        ref="exp",
         name="Exp", type=Promotion.PERCENT, value=10,
         valid_from=now - timedelta(days=5), valid_until=now - timedelta(days=1),
     )
     Coupon.objects.create(code="EXPIRADO", promotion=expired, max_uses=0)
     exhausted_promo = Promotion.objects.create(
+        ref="exh",
         name="Exh", type=Promotion.PERCENT, value=10,
         valid_from=now - timedelta(days=1), valid_until=now + timedelta(days=1),
     )

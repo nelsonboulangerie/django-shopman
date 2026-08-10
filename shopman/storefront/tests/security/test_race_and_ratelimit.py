@@ -103,10 +103,11 @@ def test_commit_idempotency_key_returns_cached_order(channel, product):
 
 
 def _coupon(code: str, *, max_uses: int, value: int = 500):
-    from shopman.storefront.models import Coupon, Promotion
+    from shopman.shop.models import Coupon, Promotion
 
     now = timezone.now()
     promo = Promotion.objects.create(
+        ref="promo",
         name=f"Promo {code}",
         type=Promotion.FIXED,
         value=value,

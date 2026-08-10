@@ -853,7 +853,7 @@ OFFERMAN = {
     # Seam de leitura do Offerman (Product.reference_cost_q/margin_percent); None
     # até existir um provedor real de custo (ex.: adapter no Craftsman via receita).
     "COST_BACKEND": None,
-    "PRICING_BACKEND": "shopman.shop.adapters.pricing.StorefrontPricingBackend",
+    "PRICING_BACKEND": "shopman.shop.adapters.pricing.PromotionPricingBackend",
     # Canonical catalog projection registry (env-gated above).
     "PROJECTION_BACKENDS": _CATALOG_PROJECTION_BACKENDS,
 }

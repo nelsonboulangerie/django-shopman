@@ -1,8 +1,23 @@
-"""Promotion and Coupon models."""
+"""Promoção e cupom — regra de preço do orquestrador, escopada por canal.
+
+Estes dois models moram aqui, e não na superfície da loja nem no offerman, porque
+promoção é **cross-domain por natureza**: `skus`/`collections` são offerman,
+`customer_segments`/`birthday_only` são guestman, `fulfillment_types` é orderman. Levar
+para um pacote kernel importaria três vocabulários alheios e o teste de fronteira
+barraria na hora; a ADR-005 §3 diz que o orquestrador é o único lugar onde domínios se
+encontram.
+
+A §4.1 da constituição fica satisfeita sem contradição: offerman é dono do preço de
+tabela e **declara o buraco** para preço contextual (`OFFERMAN["PRICING_BACKEND"]`), que
+este deployment preenche. A deriva nunca foi "não está no offerman" — foi "está numa
+superfície", de onde o orquestrador precisava de um adapter para alcançar a própria
+regra de preço. Ver ADR-019.
+"""
 
 from __future__ import annotations
 
 from django.db import models
+from django.utils.translation import gettext_lazy as _
 
 
 class Promotion(models.Model):
@@ -12,6 +27,12 @@ class Promotion(models.Model):
     FIXED = "fixed"
     TYPE_CHOICES = [(PERCENT, "Percentual"), (FIXED, "Valor fixo")]
 
+    #: Identificador canônico exposto a operação, log e integração (constituição
+    #: §3.1). É o que a `Campaign` aponta em `promotion_ref` (ADR-020): apontar para
+    #: `Coupon.code` seria mais barato e estaria errado — cupom é o ATIVADOR de uma
+    #: promoção, não a promoção. Relâmpago automática não tem código nenhum, e
+    #: amarrar a campanha ao cupom obrigaria a inventar um só para poder anunciar.
+    ref = models.SlugField(_("código"), max_length=64, unique=True, db_index=True)
     name = models.CharField("nome", max_length=200)
     type = models.CharField("tipo", max_length=10, choices=TYPE_CHOICES)
     value = models.IntegerField(
@@ -54,6 +75,19 @@ class Promotion(models.Model):
         default=False,
         help_text="Se marcado, desconto aplicável somente no dia do aniversário do cliente.",
     )
+    #: Canais onde a promoção vale. **Vazio = todos** — cópia exata da semântica de
+    #: `RuleConfig.channels`, que é o precedente. Preserva o comportamento de toda
+    #: promoção existente (nenhuma migração de dados) e permite a relâmpago valer só
+    #: na web. Com a ADR-018 isto alcança canal `display`, então a promoção fica
+    #: descobrível no Google, na Meta e no menuboard — impossível antes, porque o
+    #: feed só conhecia preço de tabela.
+    #:
+    #: O nome é `channels`, nunca `platforms`: "platform" é a palavra que a ADR-018
+    #: eliminou.
+    channels = models.ManyToManyField(
+        "shop.Channel", blank=True, verbose_name=_("canais"),
+        help_text=_("Vazio = vale em todos os canais."),
+    )
     is_active = models.BooleanField("ativa", default=True)
 
     class Meta:
@@ -63,6 +97,11 @@ class Promotion(models.Model):
 
     def __str__(self):
         return self.name
+
+    def applies_to_channel(self, channel_ref: str) -> bool:
+        """A promoção vale neste canal? Vazio = todos (mesma régua do RuleConfig)."""
+        refs = list(self.channels.values_list("ref", flat=True))
+        return not refs or channel_ref in refs
 
 
 class Coupon(models.Model):

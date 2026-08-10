@@ -24,8 +24,7 @@ from shopman.orderman.models import Order
 
 from shopman.backstage.models import OperatorAlert
 from shopman.shop.lifecycle import _record_coupon_use
-from shopman.shop.models import Channel, Shop
-from shopman.storefront.models import Coupon, Promotion
+from shopman.shop.models import Channel, Coupon, Promotion, Shop
 
 pytestmark = pytest.mark.django_db
 
@@ -39,6 +38,7 @@ def _shop_channel(db):
 def _exhausted_coupon(code: str) -> Coupon:
     now = timezone.now()
     promo = Promotion.objects.create(
+        ref="promo",
         name=f"Promo {code}",
         type=Promotion.FIXED,
         value=500,
@@ -101,6 +101,7 @@ def test_within_cap_records_use_and_no_alert(_shop_channel):
     NO over-redemption alert fires."""
     now = timezone.now()
     promo = Promotion.objects.create(
+        ref="ok",
         name="Ok", type=Promotion.FIXED, value=500,
         valid_from=now - timedelta(days=1), valid_until=now + timedelta(days=1),
     )

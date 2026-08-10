@@ -872,11 +872,12 @@ class RepricingAndCouponTests(TestCase):
         from django.utils import timezone
         from shopman.orderman.models import Order, Session
 
+        from shopman.shop.models import Coupon, Promotion
         from shopman.shop.services import cancellation
-        from shopman.storefront.models import Coupon, Promotion
 
         now = timezone.now()
         promo = Promotion.objects.create(
+            ref="stress-fixed",
             name="Stress Fixed",
             type=Promotion.FIXED,
             value=500,

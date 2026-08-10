@@ -9,9 +9,9 @@ from shopman.utils.monetary import format_money
 from shopman.shop.modifiers import DiscountModifier
 
 
-class StorefrontPricingBackend:
+class PromotionPricingBackend:
     """
-    Contextual pricing backend for the framework storefront.
+    Preenche a costura de preco contextual do offerman com promocao.
 
     Offerman remains the source of list prices and channel tiers. This backend
     only projects the framework's automatic promotion logic into the canonical
@@ -38,7 +38,7 @@ class StorefrontPricingBackend:
         best_discount_q = 0
         best_promo = None
 
-        from shopman.storefront.models import Promotion
+        from shopman.shop.models import Promotion
 
         # Preloaded by the catalog builder (one query for the whole menu) and
         # passed through the context, or resolved here for one-off callers (PDP
@@ -88,7 +88,7 @@ class StorefrontPricingBackend:
                 final_unit_price_q=list_unit_price_q,
                 final_total_price_q=list_total_price_q,
                 adjustments=[],
-                metadata={"source": "framework.storefront_pricing"},
+                metadata={"source": "framework.promotion_pricing"},
             )
 
         total_discount_q = int(best_discount_q * qty)
@@ -121,5 +121,5 @@ class StorefrontPricingBackend:
                     },
                 )
             ],
-            metadata={"source": "framework.storefront_pricing"},
+            metadata={"source": "framework.promotion_pricing"},
         )

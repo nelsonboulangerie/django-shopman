@@ -6,13 +6,14 @@ import pytest
 from django.contrib import admin
 from django.utils import timezone
 
-from shopman.storefront.models import Coupon, Promotion
+from shopman.shop.models import Coupon, Promotion
 
 
 @pytest.mark.django_db
 def test_reset_usage_zeroes_counter():
     now = timezone.now()
     promo = Promotion.objects.create(
+        ref="p",
         name="P",
         type=Promotion.PERCENT,
         value=10,

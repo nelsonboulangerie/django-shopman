@@ -6,7 +6,7 @@ mas descontava ZERO na loja.
 
 Causa raiz: duas fontes distintas do grupo do cliente. O gate de elegibilidade
 lia ``customer.group.ref`` do request e passava; já o ``DiscountModifier`` (e o
-``StorefrontPricingBackend`` do cardápio) liam o grupo/segmento do CONTEXTO de
+``PromotionPricingBackend`` do cardápio) liam o grupo/segmento do CONTEXTO de
 pricing, que a loja nunca populava — só o PDV escrevia ``customer.group`` na
 sessão.
 
@@ -26,12 +26,11 @@ from django.utils import timezone
 from shopman.guestman.models import Customer, CustomerGroup
 from shopman.offerman.models import Listing, ListingItem, Product
 
-from shopman.shop.models import Channel, Shop
+from shopman.shop.models import Channel, Coupon, Promotion, Shop
 from shopman.shop.services import cart as cart_mutations
 from shopman.shop.services import sessions
 from shopman.storefront.cart import CartService
 from shopman.storefront.constants import STOREFRONT_CHANNEL_REF
-from shopman.storefront.models import Coupon, Promotion
 
 pytestmark = pytest.mark.django_db
 
@@ -102,6 +101,7 @@ def loyal_setup(db):
 def segmented_coupon(loyal_setup):
     now = timezone.now()
     promo = Promotion.objects.create(
+        ref="fieis-10",
         name="Fiéis 10%",
         type=Promotion.PERCENT,
         value=10,
@@ -118,6 +118,7 @@ def segmented_auto_promo(loyal_setup):
     """Promoção AUTOMÁTICA (sem cupom) restrita ao grupo 'fieis'."""
     now = timezone.now()
     Promotion.objects.create(
+        ref="clube-dos-fieis",
         name="Clube dos Fiéis",
         type=Promotion.PERCENT,
         value=10,

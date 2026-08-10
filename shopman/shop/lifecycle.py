@@ -334,12 +334,9 @@ def _record_coupon_use(order) -> None:
     if not code or int(coupon.get("discount_q") or 0) <= 0:
         return
     try:
-        from shopman.shop.adapters import get_adapter
+        from shopman.shop.services import promotions as promotion_service
 
-        adapter = get_adapter("promotion")
-        if adapter is None:
-            return
-        if adapter.record_coupon_use(code):
+        if promotion_service.record_coupon_use(code):
             data = dict(order.data or {})
             data["coupon_use_recorded"] = code
             order.data = data
@@ -359,11 +356,9 @@ def _release_coupon_use(order) -> None:
     if not code:
         return
     try:
-        from shopman.shop.adapters import get_adapter
+        from shopman.shop.services import promotions as promotion_service
 
-        adapter = get_adapter("promotion")
-        if adapter is not None:
-            adapter.release_coupon_use(code)
+        promotion_service.release_coupon_use(code)
         data = dict(order.data or {})
         data.pop("coupon_use_recorded", None)
         order.data = data

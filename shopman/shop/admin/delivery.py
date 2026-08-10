@@ -6,7 +6,7 @@ from django.contrib import admin
 from unfold.admin import ModelAdmin
 from unfold.decorators import display
 
-from shopman.storefront.models import DeliveryDistanceBand, DeliveryZone
+from shopman.shop.models import DeliveryDistanceBand, DeliveryZone
 
 
 @admin.register(DeliveryDistanceBand)

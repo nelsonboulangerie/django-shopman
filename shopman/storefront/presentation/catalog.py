@@ -557,7 +557,7 @@ def _active_storefront_promotions() -> list[Any]:
     """
     from django.utils import timezone
 
-    from shopman.storefront.models import Promotion
+    from shopman.shop.models import Promotion
 
     now = timezone.now()
     return list(

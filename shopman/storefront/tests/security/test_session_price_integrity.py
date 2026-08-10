@@ -96,7 +96,7 @@ def test_expected_total_guard_blocks_stale_undercharge(cart_session, product):
 def test_fixed_discount_cannot_exceed_merchandise_value(channel, product):
     """A fixed coupon worth far more than the cart cannot drive the order total
     negative — it floors at zero (no free money / no negative charge)."""
-    from shopman.storefront.models import Coupon, Promotion
+    from shopman.shop.models import Coupon, Promotion
 
     # Cheap cart: 1 unit @ R$0,80.
     session = session_service.create_session("web")
@@ -111,6 +111,7 @@ def test_fixed_discount_cannot_exceed_merchandise_value(channel, product):
     )
     now = timezone.now()
     promo = Promotion.objects.create(
+        ref="vale-gigante",
         name="Vale gigante",
         type=Promotion.FIXED,
         value=100000,  # R$1.000,00 fixed — dwarfs the R$0,80 cart

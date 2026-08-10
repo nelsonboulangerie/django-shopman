@@ -7,7 +7,7 @@ from django.utils import timezone
 from unfold.admin import ModelAdmin
 from unfold.decorators import display
 
-from shopman.storefront.models import Coupon, Promotion
+from shopman.shop.models import Coupon, Promotion
 
 
 class CouponInline(admin.TabularInline):

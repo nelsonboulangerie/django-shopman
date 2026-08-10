@@ -13,8 +13,8 @@ import pytest
 from django.utils import timezone
 from shopman.offerman.models import ListingItem, Product
 
+from shopman.shop.models import Promotion
 from shopman.shop.projections.types import Availability
-from shopman.storefront.models import Promotion
 from shopman.storefront.presentation import build_product_detail
 from shopman.storefront.presentation.product_detail import (
     AllergenInfoProjection,
@@ -163,6 +163,7 @@ class TestPromotions:
         _publish_on_listing(listing, product)
         now = timezone.now()
         Promotion.objects.create(
+            ref="testao-20-off",
             name="Testão 20% OFF",
             type="percent",
             value=20,

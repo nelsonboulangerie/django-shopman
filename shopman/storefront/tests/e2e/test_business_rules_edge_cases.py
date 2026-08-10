@@ -102,11 +102,15 @@ def _receive(sku, qty, *, target_date=None, position=None):
 def _promotion(name, *, ptype, value, skus=None, min_order_q=0, coupon_code=None, **kwargs):
     """Cria uma Promotion. Se ``coupon_code`` for dado, cria o Coupon atrelado
     (e a promo deixa de ser 'automática' — só aplica via cupom)."""
-    from shopman.storefront.models import Coupon, Promotion
+    from shopman.shop.models import Coupon, Promotion
 
     max_uses = kwargs.pop("max_uses", 0)
     now = timezone.now()
+    # `ref` é unique e estas provas criam DUAS promoções (a automática e a do cupom)
+    # para ver qual vence — ref fixo quebrava no segundo create.
+    ref = f"promo-{Promotion.objects.count() + 1}"
     promo = Promotion.objects.create(
+        ref=ref,
         name=name,
         type=ptype,
         value=value,

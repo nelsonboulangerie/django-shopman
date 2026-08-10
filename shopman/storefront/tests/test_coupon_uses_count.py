@@ -14,9 +14,8 @@ import pytest
 from django.utils import timezone
 from shopman.offerman.models import Product
 
-from shopman.shop.models import Channel, Shop
+from shopman.shop.models import Channel, Coupon, Promotion, Shop
 from shopman.shop.services import sessions
-from shopman.storefront.models import Coupon, Promotion
 
 pytestmark = pytest.mark.django_db
 
@@ -28,6 +27,7 @@ def coupon(db):
     Channel.objects.create(ref="web", name="Web")
     now = timezone.now()
     promo = Promotion.objects.create(
+        ref="boas-vindas",
         name="Boas-vindas",
         type=Promotion.FIXED,
         value=500,
@@ -98,7 +98,7 @@ def test_coupon_use_released_on_cancel(coupon, django_capture_on_commit_callback
 
 def test_coupon_record_respects_cap_atomically(coupon):
     """record_coupon_use nunca passa do max_uses (UPDATE condicional)."""
-    from shopman.shop.adapters import promotion
+    from shopman.shop.services import promotions as promotion
 
     coupon.max_uses = 1
     coupon.uses_count = 0

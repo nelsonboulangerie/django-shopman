@@ -15,8 +15,8 @@ import pytest
 from django.utils import timezone
 from shopman.offerman.models import CollectionItem, ListingItem, Product
 
+from shopman.shop.models import Promotion
 from shopman.shop.projections.types import Availability
-from shopman.storefront.models import Promotion
 from shopman.storefront.presentation import build_catalog
 from shopman.storefront.presentation.catalog import (
     CatalogItemProjection,
@@ -279,6 +279,7 @@ class TestPromotions:
         _publish_on_listing(listing, product)
         now = timezone.now()
         Promotion.objects.create(
+            ref="testao-20-off",
             name="Testão 20% OFF",
             type="percent",
             value=20,
@@ -314,6 +315,7 @@ class TestVitrineCartPriceParity:
         _publish_on_listing(listing, product)
         now = timezone.now()
         Promotion.objects.create(
+            ref="parity-25-off",
             name="Parity 25% OFF",
             type="percent",
             value=25,

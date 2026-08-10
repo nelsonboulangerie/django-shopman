@@ -13,10 +13,9 @@ import pytest
 from shopman.offerman.models import Product
 from shopman.orderman.models import Order
 
-from shopman.shop.models import Channel, Shop
+from shopman.shop.models import Channel, DeliveryZone, Shop
 from shopman.shop.projections.cart import build_cart
 from shopman.shop.services import sessions
-from shopman.storefront.models import DeliveryZone
 
 pytestmark = pytest.mark.django_db
 

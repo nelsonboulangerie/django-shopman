@@ -17,8 +17,7 @@ from django.utils import timezone
 from shopman.guestman.models import Customer, CustomerGroup
 from shopman.offerman.models import Listing, ListingItem, Product
 
-from shopman.shop.models import Channel, Shop
-from shopman.storefront.models import Coupon, Promotion
+from shopman.shop.models import Channel, Coupon, Promotion, Shop
 
 pytestmark = pytest.mark.django_db
 
@@ -37,6 +36,7 @@ def funcionario_coupon(db):
     _seed_stock(product.sku)
     now = timezone.now()
     promo = Promotion.objects.create(
+        ref="desconto-funcionario",
         name="Desconto Funcionário",
         type=Promotion.PERCENT,
         value=20,

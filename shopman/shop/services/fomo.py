@@ -212,10 +212,10 @@ def _promotions_for_sku(sku: str) -> list[dict]:
     Promo condicional continua valendo no carrinho, só não vira contagem
     regressiva no card.
     """
-    from shopman.shop.adapters import promotion as promotion_adapter
+    from shopman.shop.services import promotions as promotion_service
 
     try:
-        promos = promotion_adapter.get_active_promotions(timezone.now())
+        promos = promotion_service.get_active_promotions(timezone.now())
     except Exception:
         logger.debug("fomo.promotions_failed sku=%s", sku, exc_info=True)
         return []

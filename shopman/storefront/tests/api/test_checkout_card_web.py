@@ -22,7 +22,7 @@ from decimal import Decimal
 import pytest
 from shopman.orderman.models import Order
 
-from shopman.storefront.models import DeliveryZone
+from shopman.shop.models import DeliveryZone
 from shopman.storefront.tests.api.test_storefront_surface import _seed_surface
 
 ADDRESS = {

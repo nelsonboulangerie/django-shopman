@@ -37,7 +37,7 @@ from shopman.offerman.models import (
     ProductComponent,
 )
 
-from shopman.storefront.models import Promotion
+from shopman.shop.models import Promotion
 from shopman.storefront.presentation import build_catalog
 
 pytestmark = pytest.mark.django_db
@@ -142,6 +142,7 @@ def _seed_catalog() -> None:
     now = timezone.now()
     # Global percent promo (all SKUs).
     Promotion.objects.create(
+        ref="semana-do-pao",
         name="Semana do Pão",
         type=Promotion.PERCENT,
         value=10,
@@ -151,6 +152,7 @@ def _seed_catalog() -> None:
     )
     # Collection-targeted percent promo (doces).
     Promotion.objects.create(
+        ref="doces-em-oferta",
         name="Doces em Oferta",
         type=Promotion.PERCENT,
         value=20,
@@ -161,6 +163,7 @@ def _seed_catalog() -> None:
     )
     # SKU-targeted fixed promo.
     Promotion.objects.create(
+        ref="cafe-barato",
         name="Café Barato",
         type=Promotion.FIXED,
         value=100,

@@ -18,11 +18,10 @@ from unittest.mock import MagicMock, patch
 from django.core.cache import cache
 from django.test import TestCase
 
-from shopman.shop.models import Shop
+from shopman.shop.models import DeliveryDistanceBand, DeliveryZone, Shop
 from shopman.shop.models.shop import SHOP_CACHE_KEY
 from shopman.shop.modifiers import DeliveryFeeModifier
 from shopman.shop.services import delivery_distance
-from shopman.storefront.models import DeliveryDistanceBand, DeliveryZone
 
 # Loja de referência (Londrina) — mesma origem do seed.
 ORIGIN_LAT = -23.3045

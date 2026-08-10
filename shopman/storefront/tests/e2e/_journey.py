@@ -370,11 +370,18 @@ def seed_promotion(
     min_order_q: int = 0,
     fulfillment_types: list[str] | None = None,
 ):
-    """Create a Promotion. With no Coupon attached it applies automatically."""
-    from shopman.storefront.models import Promotion
+    """Create a Promotion. With no Coupon attached it applies automatically.
+
+    O ``ref`` é gerado por chamada porque ele é unique e uma prova só costuma criar
+    duas promoções (a automática e a do cupom) para ver qual vence. Ref fixo aqui
+    quebrava o segundo `create` com IntegrityError, não com a asserção do teste.
+    """
+    from shopman.shop.models import Promotion
 
     now = timezone.now()
+    ref = f"promo-{Promotion.objects.count() + 1}"
     return Promotion.objects.create(
+        ref=ref,
         name=name,
         type=Promotion.PERCENT if kind == "percent" else Promotion.FIXED,
         value=value,
@@ -390,7 +397,7 @@ def seed_promotion(
 
 def seed_coupon(code: str, *, max_uses: int = 0, **promotion_kwargs):
     """Create a Promotion + Coupon. ``code`` is stored/looked-up uppercase."""
-    from shopman.storefront.models import Coupon
+    from shopman.shop.models import Coupon
 
     promo = seed_promotion(**promotion_kwargs)
     coupon = Coupon.objects.create(code=code.upper(), promotion=promo, max_uses=max_uses)
@@ -489,7 +496,7 @@ def seed_bundle(sku, name, price_q, components, *, listing=None, collection=None
 
 
 def seed_delivery_zone(shop, *, match_value="860", fee_q=600, zone_type="cep_prefix", mode="override", name="Zona"):
-    from shopman.storefront.models import DeliveryZone
+    from shopman.shop.models import DeliveryZone
 
     return DeliveryZone.objects.create(
         shop=shop,
