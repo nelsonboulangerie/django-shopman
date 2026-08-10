@@ -13,6 +13,7 @@ de regras e modelos. Gate: ``shop.manage_campaigns`` — o gestor de marketing n
     PATCH  campaign/announcements/<pk>/         → editar antes de aprovar
     POST   campaign/announcements/<pk>/approve/ → publicar
     POST   campaign/announcements/<pk>/discard/ → descartar
+    POST   campaign/rules/<pk>/fire/    → disparar AGORA (público opcional)
     GET    campaign/rules/              → listar         POST → criar
     PATCH  campaign/rules/<pk>/         → editar         DELETE → apagar
     GET    campaign/templates/          → listar         POST → criar
@@ -204,6 +205,58 @@ class CampaignListView(_CampaignBase):
         rule = Campaign.objects.create(**fields)
         return Response(
             {"ok": True, "rule": projection_data(marketing_projection.build_rule(rule))},
+            status=201,
+        )
+
+
+class CampaignFireView(_CampaignBase):
+    """Disparar uma campanha AGORA, opcionalmente escolhendo o público.
+
+    A Action que faltava: até aqui um anúncio só nascia de evento operacional, então
+    "quero avisar meus clientes hoje" não tinha caminho nenhum. `Trigger.MANUAL` tem
+    produtor real, e é este endpoint.
+
+    `audience_rules` no corpo vale só PARA ESTE DISPARO — a campanha salva mantém o
+    público dela. Assim a mesma campanha serve a públicos diferentes em semanas
+    diferentes sem o gestor editar e desfazer a configuração.
+
+    O anúncio nasce pelo mesmo caminho do automático (`_create_announcement`), então
+    respeita `requires_approval`, expiração e janela de agendamento — disparar manual
+    não é atalho para publicar sem revisão.
+    """
+
+    def post(self, request, pk: int):
+        from shopman.shop.services import campaign as campaign_service
+
+        payload = request.data if isinstance(request.data, dict) else {}
+
+        audience_rules = payload.get("audience_rules")
+        if audience_rules is not None and not isinstance(audience_rules, dict):
+            return Response(
+                {"detail": "audience_rules deve ser um objeto.", "field": "audience_rules"},
+                status=400,
+            )
+
+        context = payload.get("context")
+        if context is not None and not isinstance(context, dict):
+            return Response(
+                {"detail": "context deve ser um objeto.", "field": "context"}, status=400
+            )
+
+        try:
+            announcement = campaign_service.fire_now(
+                pk, context=context, audience_rules=audience_rules
+            )
+        except campaign_service.CampaignError as exc:
+            return Response({"detail": str(exc)}, status=400)
+
+        return Response(
+            {
+                "ok": True,
+                "announcement": projection_data(
+                    marketing_projection.build_announcement(announcement)
+                ),
+            },
             status=201,
         )
 

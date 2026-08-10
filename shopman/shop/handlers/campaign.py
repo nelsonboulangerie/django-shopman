@@ -239,7 +239,7 @@ class AnnouncementNotifyHandler:
 
         sku = (announcement.trigger_context or {}).get("sku", "")
         rules = (announcement.rule.audience_rules or {}) if announcement.rule_id else {}
-        resolved = audience_service.resolve(sku, rules)
+        resolved = audience_service.resolve(rules, sku=sku)
 
         recipients = {
             "vip": resolved.vip,

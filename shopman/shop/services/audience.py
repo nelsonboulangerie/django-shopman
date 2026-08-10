@@ -31,6 +31,7 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass, field
 from datetime import timedelta
+from decimal import Decimal, InvalidOperation
 
 from django.utils import timezone
 
@@ -156,37 +157,83 @@ class AudienceResult:
         }
 
 
-def resolve(sku: str, rules: dict | None = None) -> AudienceResult:
-    """Resolver a audiência de um SKU segundo as regras da Campaign.
+def resolve(rules: dict | None = None, *, sku: str = "") -> AudienceResult:
+    """Resolver a audiência segundo as regras da Campaign.
+
+    ``sku`` é OPCIONAL porque campanha manual não tem evento nem SKU: o gestor decide
+    agora e escolhe para quem. As regras que dependem do evento (``favorites``,
+    ``alerts``, ``bought_within_days`` sem SKU escolhido) simplesmente não resolvem
+    ninguém sem ele, e isso é resposta normal — não erro.
 
     Args:
-        sku: SKU do evento.
-        rules: ``Campaign.audience_rules`` — ``favorites`` (bool),
-            ``alerts`` (bool), ``bought_within_days`` (int), ``vip_first_minutes`` (int).
+        rules: ``Campaign.audience_rules``. Vocabulário FECHADO e PLANO:
+
+            Por evento (exigem ``sku``): ``favorites`` (bool), ``alerts`` (bool),
+            ``bought_within_days`` (int).
+
+            Escolhidos pelo gestor: ``customer_refs``, ``groups``, ``rfm_segments``,
+            ``churn_risk_min``, ``bought_skus``/``bought_collections`` (com
+            ``bought_within_days``), ``birthday_today``.
+
+            Entrega: ``vip_first_minutes``, ``preferred_hour_window_hours``.
+        sku: SKU do evento, quando houver.
 
     Returns:
-        ``AudienceResult`` vazio quando nenhuma regra está ligada ou ninguém
-        passa no opt-in. Audiência vazia é resposta normal, não erro.
+        ``AudienceResult`` vazio quando nenhuma regra está ligada ou ninguém passa no
+        consentimento. Audiência vazia é resposta normal, não erro.
     """
     rules = rules or {}
     by_phone: dict[str, Recipient] = {}
     counts: dict[str, int] = {}
 
-    if rules.get("favorites"):
+    if sku and rules.get("favorites"):
         found = _favorites(sku)
         counts["favorites_count"] = len(found)
         _merge(by_phone, found, reason="favorites")
 
-    if rules.get("alerts"):
+    if sku and rules.get("alerts"):
         found = _pending_alerts(sku)
         counts["alerts_count"] = len(found)
         _merge(by_phone, found, reason="alerts")
 
     days = int(rules.get("bought_within_days") or 0)
-    if days > 0:
+    if sku and days > 0:
         found = _bought_within_days(sku, days)
         counts["bought_count"] = len(found)
         _merge(by_phone, found, reason="bought")
+
+    # ── Públicos escolhidos pelo gestor ──────────────────────────────
+    if rules.get("customer_refs"):
+        found = _chosen_customers(rules.get("customer_refs"))
+        counts["chosen_count"] = len(found)
+        _merge(by_phone, found, reason="chosen")
+
+    if rules.get("groups"):
+        found = _by_groups(rules.get("groups"))
+        counts["groups_count"] = len(found)
+        _merge(by_phone, found, reason="groups")
+
+    if rules.get("rfm_segments"):
+        found = _by_rfm_segments(rules.get("rfm_segments"))
+        counts["rfm_count"] = len(found)
+        _merge(by_phone, found, reason="rfm")
+
+    if rules.get("churn_risk_min"):
+        found = _by_churn_risk(rules.get("churn_risk_min"))
+        counts["churn_risk_count"] = len(found)
+        _merge(by_phone, found, reason="churn_risk")
+
+    chosen_skus = rules.get("bought_skus") or []
+    chosen_collections = rules.get("bought_collections") or []
+    if (chosen_skus or chosen_collections) and days > 0:
+        found = _bought(skus=chosen_skus, collections=chosen_collections, days=days)
+        counts["bought_chosen_count"] = len(found)
+        _merge(by_phone, found, reason="bought")
+
+    if rules.get("birthday_today"):
+        found = _birthday_today()
+        counts["birthday_count"] = len(found)
+        _merge(by_phone, found, reason="birthday")
 
     recipients = _filter_opted_in(by_phone.values())
     window = max(int(rules.get("preferred_hour_window_hours") or 0), 0)
@@ -208,14 +255,14 @@ def resolve(sku: str, rules: dict | None = None) -> AudienceResult:
     )
 
 
-def select_wave(sku: str, rules: dict | None, wave_key: str, *, now=None) -> tuple[Recipient, ...]:
+def select_wave(rules: dict | None, wave_key: str, *, sku: str = "", now=None) -> tuple[Recipient, ...]:
     """Os destinatários de uma onda, resolvidos agora.
 
     Contrato de despacho: a Directive carrega só ``wave_key``, e quem envia
     volta aqui. Onda que sumiu (ninguém mais se encaixa) devolve tupla vazia,
     que é resposta normal, não erro.
     """
-    result = resolve(sku, rules)
+    result = resolve(rules, sku=sku)
     for wave in result.waves(now=now):
         if wave.key == wave_key:
             return wave.recipients
@@ -329,6 +376,135 @@ def _bought_within_days(sku: str, days: int) -> list[Recipient]:
             )
         )
     return out
+
+
+# ── Públicos escolhidos pelo gestor (disparo manual) ─────────────────
+#
+# Estes resolvedores são IRMÃOS dos de evento acima: devolvem `Recipient`, passam pelo
+# mesmo `_merge` e pelo mesmo filtro de consentimento. Nenhum model novo — o
+# `CustomerInsight` já é o motor de segmentação, e construir um segundo seria criar o
+# terceiro dono de um fato que já tem dois.
+#
+# `audience_rules` é vocabulário FECHADO e PLANO: sem AND/OR aninhado, sem construtor
+# de segmento arbitrário. No dia em que alguém precisar de árvore booleana, o que está
+# sendo construído é um CDP, e a resposta é não.
+
+
+def _chosen_customers(refs) -> list[Recipient]:
+    """"Estes clientes" — o gestor escolheu um por um na tela."""
+    cleaned = [str(r).strip() for r in (refs or []) if str(r).strip()]
+    return _recipients_for_refs(cleaned)
+
+
+def _by_groups(group_refs) -> list[Recipient]:
+    """"Só o grupo corporativo" — por ``CustomerGroup.ref``."""
+    cleaned = [str(r).strip() for r in (group_refs or []) if str(r).strip()]
+    if not cleaned:
+        return []
+    try:
+        from shopman.guestman.models import Customer
+
+        refs = list(
+            Customer.objects.filter(group__ref__in=cleaned, is_active=True)
+            .exclude(phone="")
+            .values_list("ref", flat=True)
+        )
+    except Exception:
+        logger.warning("audience.groups_failed", exc_info=True)
+        return []
+    return _recipients_for_refs(refs)
+
+
+def _by_rfm_segments(segments) -> list[Recipient]:
+    """"Champions e loyal" — por ``CustomerInsight.rfm_segment``."""
+    cleaned = [str(s).strip() for s in (segments or []) if str(s).strip()]
+    if not cleaned:
+        return []
+    try:
+        from shopman.guestman.contrib.insights.models import CustomerInsight
+
+        refs = list(
+            CustomerInsight.objects.filter(rfm_segment__in=cleaned)
+            .select_related("customer")
+            .values_list("customer__ref", flat=True)
+        )
+    except Exception:
+        logger.warning("audience.rfm_failed", exc_info=True)
+        return []
+    return _recipients_for_refs([r for r in refs if r])
+
+
+def _by_churn_risk(minimum) -> list[Recipient]:
+    """Win-back: quem está com risco de evasão acima do piso (0..1)."""
+    try:
+        floor = Decimal(str(minimum))
+    except (InvalidOperation, TypeError, ValueError):
+        logger.warning("audience.churn_risk_invalid value=%r", minimum)
+        return []
+    if floor <= 0:
+        return []
+    try:
+        from shopman.guestman.contrib.insights.models import CustomerInsight
+
+        refs = list(
+            CustomerInsight.objects.filter(churn_risk__gte=floor)
+            .select_related("customer")
+            .values_list("customer__ref", flat=True)
+        )
+    except Exception:
+        logger.warning("audience.churn_risk_failed", exc_info=True)
+        return []
+    return _recipients_for_refs([r for r in refs if r])
+
+
+def _birthday_today() -> list[Recipient]:
+    """Aniversariantes de hoje — espelha ``Promotion.birthday_only``.
+
+    Compara dia e mês, nunca o ano: 29 de fevereiro em ano comum simplesmente não cai
+    hoje, e é isso que se espera.
+    """
+    today = timezone.localdate()
+    try:
+        from shopman.guestman.models import Customer
+
+        refs = list(
+            Customer.objects.filter(
+                birthday__month=today.month, birthday__day=today.day, is_active=True
+            )
+            .exclude(phone="")
+            .values_list("ref", flat=True)
+        )
+    except Exception:
+        logger.warning("audience.birthday_failed", exc_info=True)
+        return []
+    return _recipients_for_refs(refs)
+
+
+def _bought(*, skus, collections, days: int) -> list[Recipient]:
+    """"Interesse genuíno de consumo específico": quem comprou X na janela.
+
+    Generaliza o ``_bought_within_days`` do disparo por evento, que estava preso ao SKU
+    do evento. Aqui o gestor escolhe os SKUs, ou coleções — que resolvem para SKUs pelo
+    offerman, porque coleção inteligente é regra e não lista.
+    """
+    wanted = {str(s).strip() for s in (skus or []) if str(s).strip()}
+    coll_refs = [str(c).strip() for c in (collections or []) if str(c).strip()]
+    if coll_refs:
+        try:
+            from shopman.offerman.models import Collection
+
+            for coll in Collection.objects.filter(ref__in=coll_refs):
+                wanted.update(coll.product_queryset().values_list("sku", flat=True))
+        except Exception:
+            logger.warning("audience.bought_collections_failed", exc_info=True)
+    if not wanted:
+        return []
+
+    seen: dict[str, Recipient] = {}
+    for sku in sorted(wanted):
+        for recipient in _bought_within_days(sku, days):
+            seen.setdefault(recipient.phone, recipient)
+    return list(seen.values())
 
 
 def _bought_recently(insight, *, sku: str, cutoff) -> bool:

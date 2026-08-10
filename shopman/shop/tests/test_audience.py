@@ -52,7 +52,7 @@ class TestFavorites:
         customer = _customer("+5543999990001")
         CustomerFavorite.objects.create(customer_ref=customer.ref, sku=SKU)
 
-        result = audience.resolve(SKU, {"favorites": True})
+        result = audience.resolve({"favorites": True}, sku=SKU)
         assert [r.phone for r in result.general] == [customer.phone]
         assert result.total == 1
 
@@ -60,13 +60,13 @@ class TestFavorites:
         customer = _customer("+5543999990001")
         CustomerFavorite.objects.create(customer_ref=customer.ref, sku="pao-frances")
 
-        assert audience.resolve(SKU, {"favorites": True}).total == 0
+        assert audience.resolve({"favorites": True}, sku=SKU).total == 0
 
     def test_rule_off_means_no_lookup(self):
         customer = _customer("+5543999990001")
         CustomerFavorite.objects.create(customer_ref=customer.ref, sku=SKU)
 
-        assert audience.resolve(SKU, {}).total == 0
+        assert audience.resolve({}, sku=SKU).total == 0
 
 
 # ── Consentimento (invariante) ───────────────────────────────────────
@@ -77,23 +77,23 @@ class TestConsent:
         customer = _customer("+5543999990001", opted_in=None)
         CustomerFavorite.objects.create(customer_ref=customer.ref, sku=SKU)
 
-        assert audience.resolve(SKU, {"favorites": True}).total == 0
+        assert audience.resolve({"favorites": True}, sku=SKU).total == 0
 
     def test_explicit_opt_out_is_respected(self):
         customer = _customer("+5543999990001", opted_in=False)
         CustomerFavorite.objects.create(customer_ref=customer.ref, sku=SKU)
 
-        assert audience.resolve(SKU, {"favorites": True}).total == 0
+        assert audience.resolve({"favorites": True}, sku=SKU).total == 0
 
     def test_revoking_after_granting_removes_from_audience(self):
         """O caso que estava quebrado no ar: revogar na tela da conta e continuar recebendo."""
         customer = _customer("+5543999990001")
         CustomerFavorite.objects.create(customer_ref=customer.ref, sku=SKU)
-        assert audience.resolve(SKU, {"favorites": True}).total == 1
+        assert audience.resolve({"favorites": True}, sku=SKU).total == 1
 
         ConsentService.revoke_consent(customer.ref, audience.DELIVERY_CONSENT_CHANNEL)
 
-        assert audience.resolve(SKU, {"favorites": True}).total == 0
+        assert audience.resolve({"favorites": True}, sku=SKU).total == 0
 
     def test_pending_consent_is_not_consent(self):
         customer = _customer("+5543999990001", opted_in=None)
@@ -102,7 +102,7 @@ class TestConsent:
         )
         CustomerFavorite.objects.create(customer_ref=customer.ref, sku=SKU)
 
-        assert audience.resolve(SKU, {"favorites": True}).total == 0
+        assert audience.resolve({"favorites": True}, sku=SKU).total == 0
 
     def test_consent_on_another_channel_does_not_count(self):
         """Consentir e-mail não é consentir WhatsApp — o canal é parte do consentimento."""
@@ -110,7 +110,7 @@ class TestConsent:
         ConsentService.grant_consent(customer.ref, "email", source="test")
         CustomerFavorite.objects.create(customer_ref=customer.ref, sku=SKU)
 
-        assert audience.resolve(SKU, {"favorites": True}).total == 0
+        assert audience.resolve({"favorites": True}, sku=SKU).total == 0
 
 
 # ── Alertas por SKU (F9) ─────────────────────────────────────────────
@@ -121,18 +121,18 @@ class TestAlerts:
         """Quem pediu para ser avisado daquele SKU já consentiu naquele SKU."""
         StockAlertSubscription.objects.create(sku=SKU, contact_phone="+5543999990002")
 
-        result = audience.resolve(SKU, {"alerts": True})
+        result = audience.resolve({"alerts": True}, sku=SKU)
         assert [r.phone for r in result.general] == ["+5543999990002"]
 
     def test_already_notified_subscription_is_skipped(self):
         StockAlertSubscription.objects.create(
             sku=SKU, contact_phone="+5543999990002", notified_at=timezone.now()
         )
-        assert audience.resolve(SKU, {"alerts": True}).total == 0
+        assert audience.resolve({"alerts": True}, sku=SKU).total == 0
 
     def test_subscription_without_phone_is_unreachable(self):
         StockAlertSubscription.objects.create(sku=SKU, customer_ref="CUST-1")
-        assert audience.resolve(SKU, {"alerts": True}).total == 0
+        assert audience.resolve({"alerts": True}, sku=SKU).total == 0
 
 
 # ── Quem já comprou, dentro da janela (F10) ──────────────────────────
@@ -163,7 +163,7 @@ class TestBoughtWithinDays:
         customer = _customer("+5543999990003")
         self._insight(customer, last_order_days_ago=10)
 
-        result = audience.resolve(SKU, {"bought_within_days": 90})
+        result = audience.resolve({"bought_within_days": 90}, sku=SKU)
         assert [r.phone for r in result.general] == [customer.phone]
 
     def test_cold_buyer_is_outside_the_window(self):
@@ -171,7 +171,7 @@ class TestBoughtWithinDays:
         customer = _customer("+5543999990003")
         self._insight(customer, last_order_days_ago=200)
 
-        assert audience.resolve(SKU, {"bought_within_days": 90}).total == 0
+        assert audience.resolve({"bought_within_days": 90}, sku=SKU).total == 0
 
     def test_entry_without_a_date_is_outside_the_window(self):
         """Sem data, fica FORA: o pedido do operador foi uma janela de tempo."""
@@ -180,12 +180,12 @@ class TestBoughtWithinDays:
             customer=customer,
             favorite_products=[{"sku": SKU, "name": "Croissant", "qty": "4"}],
         )
-        assert audience.resolve(SKU, {"bought_within_days": 90}).total == 0
+        assert audience.resolve({"bought_within_days": 90}, sku=SKU).total == 0
 
     def test_buyer_of_another_sku_is_not_reached(self):
         customer = _customer("+5543999990003")
         self._insight(customer, last_order_days_ago=1, sku="pao-frances")
-        assert audience.resolve(SKU, {"bought_within_days": 90}).total == 0
+        assert audience.resolve({"bought_within_days": 90}, sku=SKU).total == 0
 
     def test_writer_shape_is_what_the_reader_reads(self):
         """A chave que o Guestman grava é a chave que a audiência lê.
@@ -221,7 +221,7 @@ class TestDedupe:
         CustomerFavorite.objects.create(customer_ref=customer.ref, sku=SKU)
         StockAlertSubscription.objects.create(sku=SKU, contact_phone=customer.phone)
 
-        result = audience.resolve(SKU, {"favorites": True, "alerts": True})
+        result = audience.resolve({"favorites": True, "alerts": True}, sku=SKU)
         assert result.total == 1
 
     def test_reasons_accumulate(self):
@@ -229,7 +229,7 @@ class TestDedupe:
         CustomerFavorite.objects.create(customer_ref=customer.ref, sku=SKU)
         StockAlertSubscription.objects.create(sku=SKU, contact_phone=customer.phone)
 
-        recipient = audience.resolve(SKU, {"favorites": True, "alerts": True}).general[0]
+        recipient = audience.resolve({"favorites": True, "alerts": True}, sku=SKU).general[0]
         assert recipient.reasons == frozenset({"favorites", "alerts"})
 
     def test_counts_report_each_rule_before_dedupe(self):
@@ -237,7 +237,7 @@ class TestDedupe:
         CustomerFavorite.objects.create(customer_ref=customer.ref, sku=SKU)
         StockAlertSubscription.objects.create(sku=SKU, contact_phone=customer.phone)
 
-        summary = audience.resolve(SKU, {"favorites": True, "alerts": True}).summary()
+        summary = audience.resolve({"favorites": True, "alerts": True}, sku=SKU).summary()
         assert summary["favorites_count"] == 1
         assert summary["alerts_count"] == 1
         assert summary["total"] == 1
@@ -258,7 +258,7 @@ class TestVipFirst:
         for customer in (vip, plain):
             CustomerFavorite.objects.create(customer_ref=customer.ref, sku=SKU)
 
-        result = audience.resolve(SKU, {"favorites": True, "vip_first_minutes": 15})
+        result = audience.resolve({"favorites": True, "vip_first_minutes": 15}, sku=SKU)
         assert [r.phone for r in result.vip] == [vip.phone]
         assert [r.phone for r in result.general] == [plain.phone]
         assert result.vip_delay_minutes == 15
@@ -269,7 +269,7 @@ class TestVipFirst:
         for customer in (vip, plain):
             CustomerFavorite.objects.create(customer_ref=customer.ref, sku=SKU)
 
-        result = audience.resolve(SKU, {"favorites": True, "vip_first_minutes": 15})
+        result = audience.resolve({"favorites": True, "vip_first_minutes": 15}, sku=SKU)
         assert result.total == 2
         assert result.all_recipients()[0].phone == vip.phone  # VIP na frente
 
@@ -278,7 +278,7 @@ class TestVipFirst:
         CustomerFavorite.objects.create(
             customer_ref=Customer.objects.get(phone="+5543999990010").ref, sku=SKU
         )
-        result = audience.resolve(SKU, {"favorites": True})
+        result = audience.resolve({"favorites": True}, sku=SKU)
         assert result.vip == ()
         assert len(result.general) == 1
 
@@ -289,7 +289,7 @@ class TestVipFirst:
         LoyaltyAccount.objects.create(customer=customer, tier="gold")
         CustomerFavorite.objects.create(customer_ref=customer.ref, sku=SKU)
 
-        result = audience.resolve(SKU, {"favorites": True, "vip_first_minutes": 10})
+        result = audience.resolve({"favorites": True, "vip_first_minutes": 10}, sku=SKU)
         assert [r.phone for r in result.vip] == [customer.phone]
 
 
@@ -315,7 +315,7 @@ class TestWaves:
 
     def test_single_wave_without_vip_delay(self):
         self._favorite("+5543999990020")
-        waves = audience.resolve(SKU, {"favorites": True}).waves(now=self._at(9))
+        waves = audience.resolve({"favorites": True}, sku=SKU).waves(now=self._at(9))
         assert [w.key for w in waves] == ["all"]
         assert waves[0].delay_minutes == 0
 
@@ -324,14 +324,14 @@ class TestWaves:
         self._favorite("+5543999990022")
 
         waves = audience.resolve(
-            SKU, {"favorites": True, "vip_first_minutes": 15}
+            {"favorites": True, "vip_first_minutes": 15}, sku=SKU
         ).waves(now=self._at(9))
 
         assert {w.key: w.delay_minutes for w in waves} == {"vip": 0, "general": 15}
 
     def test_base_wave_survives_an_empty_audience(self):
         """Ninguém agora não quer dizer ninguém no disparo: a fila ainda cresce."""
-        waves = audience.resolve(SKU, {"favorites": True}).waves(now=self._at(9))
+        waves = audience.resolve({"favorites": True}, sku=SKU).waves(now=self._at(9))
         assert [w.key for w in waves] == ["all"]
         assert waves[0].recipients == ()
 
@@ -339,7 +339,7 @@ class TestWaves:
         """Sem VIP na lista agora, a onda VIP continua de pé para quem chegar."""
         self._favorite("+5543999990023")
         waves = audience.resolve(
-            SKU, {"favorites": True, "vip_first_minutes": 15}
+            {"favorites": True, "vip_first_minutes": 15}, sku=SKU
         ).waves(now=self._at(9))
         assert [w.key for w in waves] == ["vip", "general"]
 
@@ -348,7 +348,7 @@ class TestWaves:
         self._favorite("+5543999990025")
 
         waves = audience.resolve(
-            SKU, {"favorites": True, "preferred_hour_window_hours": 4}
+            {"favorites": True, "preferred_hour_window_hours": 4}, sku=SKU
         ).waves(now=self._at(9))
 
         assert {w.key: w.delay_minutes for w in waves} == {"all": 0, "all@11": 120}
@@ -356,21 +356,21 @@ class TestWaves:
     def test_preferred_hour_is_ignored_without_the_window(self):
         """Sem janela declarada, a otimização fica desligada."""
         self._favorite("+5543999990026", preferred_hour=11)
-        waves = audience.resolve(SKU, {"favorites": True}).waves(now=self._at(9))
+        waves = audience.resolve({"favorites": True}, sku=SKU).waves(now=self._at(9))
         assert [w.key for w in waves] == ["all"]
 
     def test_hour_already_past_sends_now(self):
         """Adiar para amanhã envelheceria a novidade; melhor sair agora."""
         self._favorite("+5543999990027", preferred_hour=7)
         waves = audience.resolve(
-            SKU, {"favorites": True, "preferred_hour_window_hours": 4}
+            {"favorites": True, "preferred_hour_window_hours": 4}, sku=SKU
         ).waves(now=self._at(9))
         assert [w.key for w in waves] == ["all"]
 
     def test_hour_beyond_the_window_sends_now(self):
         self._favorite("+5543999990028", preferred_hour=20)
         waves = audience.resolve(
-            SKU, {"favorites": True, "preferred_hour_window_hours": 4}
+            {"favorites": True, "preferred_hour_window_hours": 4}, sku=SKU
         ).waves(now=self._at(9))
         assert [w.key for w in waves] == ["all"]
 
@@ -379,8 +379,8 @@ class TestWaves:
         self._favorite("+5543999990029", preferred_hour=9)  # hora corrente
 
         waves = audience.resolve(
-            SKU,
             {"favorites": True, "vip_first_minutes": 30, "preferred_hour_window_hours": 4},
+            sku=SKU,
         ).waves(now=self._at(9))
 
         general = next(w for w in waves if w.key == "general")
@@ -388,12 +388,12 @@ class TestWaves:
 
     def test_select_wave_resolves_membership_fresh(self):
         customer = self._favorite("+5543999990030")
-        recipients = audience.select_wave(SKU, {"favorites": True}, "all", now=self._at(9))
+        recipients = audience.select_wave({"favorites": True}, "all", sku=SKU, now=self._at(9))
         assert [r.phone for r in recipients] == [customer.phone]
 
     def test_select_wave_of_an_unknown_key_is_empty(self):
         self._favorite("+5543999990031")
-        assert audience.select_wave(SKU, {"favorites": True}, "nao-existe") == ()
+        assert audience.select_wave({"favorites": True}, "nao-existe", sku=SKU) == ()
 
 
 # ── Resumo ───────────────────────────────────────────────────────────
@@ -404,11 +404,11 @@ class TestSummary:
         customer = _customer("+5543999990001")
         CustomerFavorite.objects.create(customer_ref=customer.ref, sku=SKU)
 
-        summary = audience.resolve(SKU, {"favorites": True}).summary()
+        summary = audience.resolve({"favorites": True}, sku=SKU).summary()
         assert customer.phone not in str(summary)
         assert summary["total"] == 1
 
     def test_empty_audience_is_a_normal_answer(self):
-        result = audience.resolve(SKU, {"favorites": True, "alerts": True})
+        result = audience.resolve({"favorites": True, "alerts": True}, sku=SKU)
         assert result.total == 0
         assert result.summary()["total"] == 0

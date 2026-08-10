@@ -8,7 +8,7 @@ evento operacional em conteúdo.
 - ``AnnouncementTemplate``   — o conteúdo, com variáveis resolvidas em runtime
 - ``Announcement``  — o registro de um announcement gerado (pendente → publicado)
 
-O operador de produção não anúncioa: ele marca a qualidade da fornada
+O operador de produção não publica: ele marca a qualidade da fornada
 (``WorkOrder.meta["quality"]``) e o gestor decide. Separação de papéis
 deliberada (FOMO-MARKETING-SPECS §8).
 """
@@ -26,7 +26,11 @@ class Trigger(models.TextChoices):
     LOW_STOCK = "low_stock", "estoque baixo"
     STOCK_BACK = "stock_back", "voltou ao estoque"
     PRODUCT_CREATED = "product_created", "produto novo"
-    SCHEDULED = "scheduled", "agendado"
+    #: O gestor decide agora, para quem ele escolher. Substitui o `scheduled`, que era
+    #: escolha morta — `evaluate()` só era chamado por handler de evento, então nada
+    #: nunca produziu uma campanha `scheduled`. Este tem produtor real: uma Action na
+    #: superfície de Marketing.
+    MANUAL = "manual", "disparo manual"
 
 
 class AnnouncementStatus(models.TextChoices):
@@ -115,10 +119,20 @@ class Campaign(models.Model):
         "plataformas", default=list,
         help_text='["instagram", "google_business", "facebook", "whatsapp", "tv"]',
     )
+    #: Vocabulário FECHADO e PLANO. Sem AND/OR aninhado, sem construtor de segmento
+    #: arbitrário: no dia em que alguém precisar de árvore booleana, o que está sendo
+    #: construído é um CDP, e a resposta é não. As chaves são lidas em
+    #: `services/audience.py::resolve`.
     audience_rules = models.JSONField(
         "regras de audiência", default=dict, blank=True,
-        help_text='{"favorites": true, "alerts": true, "bought_within_days": 90, '
-                  '"vip_first_minutes": 15}',
+        help_text=(
+            'Por evento (exigem SKU): {"favorites": true, "alerts": true, '
+            '"bought_within_days": 90}. '
+            'Escolhidos pelo gestor: {"customer_refs": [], "groups": [], '
+            '"rfm_segments": ["champion"], "churn_risk_min": 0.7, '
+            '"bought_skus": [], "bought_collections": [], "birthday_today": true}. '
+            'Entrega: {"vip_first_minutes": 15, "preferred_hour_window_hours": 4}.'
+        ),
     )
     schedule = models.JSONField(
         "agendamento", default=dict, blank=True,

@@ -32,6 +32,7 @@ from shopman.shop.models import (
     Announcement,
     AnnouncementStatus,
     Campaign,
+    Trigger,
 )
 from shopman.shop.services import audience as audience_service
 from shopman.shop.services import campaign_schedule
@@ -80,10 +81,43 @@ def evaluate(trigger: str, context: dict | None = None) -> list[Announcement]:
     return announcements
 
 
+def fire_now(campaign_id: int, *, context: dict | None = None, audience_rules: dict | None = None) -> Announcement:
+    """Disparar UMA campanha agora, sem esperar evento. É a Action do gestor.
+
+    Existe porque campanha manual não tem evento que a acorde: quem decide é a pessoa,
+    e ela decide agora. Reusa `_create_announcement` inteiro em vez de duplicar a
+    montagem de conteúdo, audiência, expiração e notificação — duplicar isso seria
+    criar um segundo caminho de criação que divergiria do primeiro no primeiro ajuste.
+
+    ``audience_rules`` permite escolher o público neste disparo sem alterar a campanha
+    salva: a mesma campanha "novidade da semana" serve a públicos diferentes em semanas
+    diferentes. Vazio usa o público da campanha.
+
+    Levanta ``CampaignError`` se a campanha não existe ou está inativa — disparar uma
+    campanha desligada é quase sempre engano, e o silêncio esconderia o engano.
+    """
+    rule = (
+        Campaign.objects.filter(pk=campaign_id, is_active=True)
+        .select_related("template")
+        .first()
+    )
+    if rule is None:
+        raise CampaignError("Campanha não encontrada ou inativa.")
+
+    if audience_rules:
+        # Não persiste: é escolha DESTE disparo. A campanha salva continua com o
+        # público dela, e o histórico do anúncio guarda o que foi usado.
+        rule.audience_rules = dict(audience_rules)
+
+    payload = dict(context or {})
+    payload.setdefault("trigger", Trigger.MANUAL)
+    return _create_announcement(rule, payload)
+
+
 def _create_announcement(rule: Campaign, context: dict) -> Announcement:
     sku = context.get("sku", "")
     content = resolve_content(rule.template, context)
-    resolved = audience_service.resolve(sku, rule.audience_rules)
+    resolved = audience_service.resolve(rule.audience_rules, sku=sku)
 
     # Fora da janela preferida, o announcement nasce com hora marcada. Vale para os dois
     # caminhos: no automático o ``dispatch_due`` abre a porta na hora; no que
@@ -432,7 +466,7 @@ def _queue_notify(announcement: Announcement) -> int:
     privilégio é abandonada lá dentro, para ninguém esperar à toa.
 
     A resolução aqui serve só para *planejar* as ondas; quem envia resolve de
-    novo com ``audience.select_wave(sku, rules, wave_key)``, porque entre a
+    novo com ``audience.select_wave(rules, wave_key, sku=sku)``, porque entre a
     aprovação e o disparo favoritos e alertas mudam. Por isso a onda-base sai
     mesmo com audiência vazia agora: quem entrar na fila do "me avise" no
     intervalo ainda é alcançado, e o envio no-op se ela seguir vazia.
@@ -440,7 +474,7 @@ def _queue_notify(announcement: Announcement) -> int:
     rules = (announcement.rule.audience_rules or {}) if announcement.rule_id else {}
     sku = (announcement.trigger_context or {}).get("sku", "")
 
-    waves = audience_service.resolve(sku, rules).waves()
+    waves = audience_service.resolve(rules, sku=sku).waves()
 
     created = 0
     for wave in waves:

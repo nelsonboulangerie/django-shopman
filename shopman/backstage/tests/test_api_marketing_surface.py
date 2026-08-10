@@ -457,3 +457,72 @@ class TestPlatformResultDetail:
         # Silêncio no painel esconderia justamente o caso que precisa de ação.
         results = self._results(client, gestor, rule, template, {})
         assert results["instagram"]["status"] == "queued"
+
+
+# ── Disparo manual (F8) ──────────────────────────────────────────────
+#
+# Até aqui um anúncio só nascia de evento operacional, então "quero avisar meus clientes
+# hoje" não tinha caminho nenhum. Esta é a Action que dá produtor real ao
+# `Trigger.MANUAL`.
+
+
+def _fire_url(rule) -> str:
+    return f"{RULES_URL}{rule.pk}/fire/"
+
+
+class TestManualFire:
+    def test_firing_creates_an_announcement_now(self, client, gestor, rule):
+        client.force_login(gestor)
+        resp = client.post(_fire_url(rule), data={}, content_type="application/json")
+
+        assert resp.status_code == 201
+        body = resp.json()
+        assert body["ok"] is True
+        assert Announcement.objects.filter(rule=rule).count() == 1
+
+    def test_the_manual_announcement_still_needs_approval(self, client, gestor, rule):
+        """Disparo manual não é atalho para publicar sem revisão."""
+        client.force_login(gestor)
+        client.post(_fire_url(rule), data={}, content_type="application/json")
+
+        announcement = Announcement.objects.get(rule=rule)
+        assert announcement.status == AnnouncementStatus.PENDING_REVIEW
+
+    def test_a_chosen_audience_applies_to_this_shot_only(self, client, gestor, rule):
+        """A campanha salva mantém o público dela; a escolha vale para este disparo."""
+        client.force_login(gestor)
+        resp = client.post(
+            _fire_url(rule),
+            data={"audience_rules": {"birthday_today": True}},
+            content_type="application/json",
+        )
+        assert resp.status_code == 201
+
+        rule.refresh_from_db()
+        assert rule.audience_rules == {"favorites": True}, "a campanha não devia ter mudado"
+
+    def test_an_inactive_campaign_refuses_instead_of_going_quiet(self, client, gestor, rule):
+        """Disparar campanha desligada é quase sempre engano; silêncio esconderia."""
+        rule.is_active = False
+        rule.save(update_fields=["is_active"])
+        client.force_login(gestor)
+
+        resp = client.post(_fire_url(rule), data={}, content_type="application/json")
+        assert resp.status_code == 400
+        assert Announcement.objects.filter(rule=rule).count() == 0
+
+    def test_a_malformed_audience_is_a_400_not_a_500(self, client, gestor, rule):
+        client.force_login(gestor)
+        resp = client.post(
+            _fire_url(rule),
+            data={"audience_rules": ["nao", "e", "objeto"]},
+            content_type="application/json",
+        )
+        assert resp.status_code == 400
+        assert resp.json()["field"] == "audience_rules"
+
+    def test_firing_requires_the_permission(self, client, rule):
+        outsider = User.objects.create_user(username="curioso", password="x", is_staff=True)
+        client.force_login(outsider)
+        resp = client.post(_fire_url(rule), data={}, content_type="application/json")
+        assert resp.status_code == 403

@@ -232,7 +232,9 @@ class TestNotifyHandler:
             resolve.return_value.all_recipients.return_value = ()
             self._handle(announcement)
         resolve.assert_called_once()
-        assert resolve.call_args.args[0] == SKU
+        # `sku` é keyword desde a F8: campanha manual não tem evento nem SKU, então a
+        # assinatura virou `resolve(rules, *, sku="")`.
+        assert resolve.call_args.kwargs["sku"] == SKU
 
     def test_each_recipient_gets_the_message(self):
         announcement = self._announcement()
