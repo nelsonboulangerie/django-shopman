@@ -2,7 +2,7 @@
 Backstage Campaign API — o painel de revisão do marketing operacional.
 
 Contrato consumido por `surfaces/marketing-nuxt` (:3006). Read = projections de
-`backstage.projections.campaign`; write = aprovar/descartar/editar announcement e CRUD
+`backstage.projections.campaign`; write = aprovar/recusar/editar announcement e CRUD
 de regras e modelos. Gate: ``shop.manage_campaigns`` — o gestor de marketing não
 é o gestor de pedidos (FOMO-MARKETING-SPECS §8).
 
@@ -12,7 +12,7 @@ de regras e modelos. Gate: ``shop.manage_campaigns`` — o gestor de marketing n
     GET    campaign/announcements/<pk>/         → um announcement
     PATCH  campaign/announcements/<pk>/         → editar antes de aprovar
     POST   campaign/announcements/<pk>/approve/ → publicar
-    POST   campaign/announcements/<pk>/discard/ → descartar
+    POST   campaign/announcements/<pk>/reject/ → recusar (com motivo)
     POST   campaign/rules/<pk>/fire/    → disparar AGORA (público opcional)
     GET    campaign/whatsapp-template/  → templates aprovados + o escolhido
     POST   campaign/whatsapp-template/  → escolher o template
@@ -181,16 +181,26 @@ class AnnouncementApproveView(_CampaignBase):
         })
 
 
-class AnnouncementDiscardView(_CampaignBase):
-    """Descartar sem publicar. O momento passou, ou o announcement não presta."""
+class AnnouncementRejectView(_CampaignBase):
+    """Recusar sem publicar: o gestor viu e disse não.
+
+    O motivo vem do corpo e é opcional. Quem recusou fica registrado — recusa anônima
+    num balcão com quatro pessoas no turno não é auditável.
+    """
 
     def post(self, request, pk: int):
+        payload = request.data if isinstance(request.data, dict) else {}
+        reason = str(payload.get("reason") or "").strip()
+
         try:
-            announcement = campaign_service.discard(pk)
+            announcement = campaign_service.reject(pk, request.user, reason=reason)
         except campaign_service.CampaignError as exc:
             return Response({"detail": str(exc)}, status=400)
 
-        logger.info("campaign.discarded user=%s announcement=%s", request.user.pk, pk)
+        logger.info(
+            "campaign.rejected user=%s announcement=%s reason=%r",
+            request.user.pk, pk, reason,
+        )
         return Response({"ok": True, "announcement": projection_data(marketing_projection.build_announcement(announcement))})
 
 

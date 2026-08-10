@@ -118,11 +118,11 @@ describe("AnnouncementCard", () => {
     expect(edits.publish_at).toBe("2026-07-19T07:00");
   });
 
-  it("asks the parent to confirm the discard instead of discarding itself", async () => {
+  it("asks the parent to confirm the rejection instead of rejecting itself", async () => {
     const wrapper = mountCard(makeAnnouncement());
-    const discard = wrapper.findAll("button").find((b) => b.text().includes("Descartar"))!;
-    await discard.trigger("click");
-    expect(wrapper.emitted("discard")![0]).toEqual([7]);
+    const rejectButton = wrapper.findAll("button").find((b) => b.text().includes("Recusar"))!;
+    await rejectButton.trigger("click");
+    expect(wrapper.emitted("reject")![0]).toEqual([7]);
   });
 
   it("keeps the in-progress edit when the same announcement is refetched", async () => {

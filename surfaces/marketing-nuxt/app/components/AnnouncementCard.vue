@@ -23,7 +23,7 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   approve: [pk: number, edits: AnnouncementEdits];
-  discard: [pk: number];
+  reject: [pk: number];
 }>();
 
 // Rascunho local. O card é um formulário: até decidir, nada vai pro servidor.
@@ -227,10 +227,10 @@ function schedule() {
         type="button"
         :disabled="busy"
         class="ml-auto inline-flex items-center gap-2 rounded-md border border-border px-3 py-2 text-sm font-medium text-muted-foreground transition hover:bg-destructive/10 hover:text-destructive disabled:opacity-50"
-        @click="emit('discard', announcement.pk)"
+        @click="emit('reject', announcement.pk)"
       >
         <Icon name="lucide:trash-2" class="size-4" />
-        Descartar
+        Recusar
       </button>
 
       <!-- Agendamento: aparece só quando pedido, para não pesar o caminho comum -->

@@ -373,6 +373,11 @@ def approve(announcement_id: int, user, *, publish_at=None, respect_schedule: bo
         return announcement
     if announcement.status == AnnouncementStatus.EXPIRED or announcement.is_expired(now=now):
         raise CampaignError("Este announcement expirou. O momento dele já passou.")
+    # ⚠️ Recusado não é publicável. Antes de a recusa existir como estado, ela virava
+    # `expired` e caía na guarda acima por acidente; agora precisa da sua própria, ou
+    # um anúncio recusado com prazo em aberto voltaria ao ar por uma segunda aprovação.
+    if announcement.status == AnnouncementStatus.REJECTED:
+        raise CampaignError("Este anúncio foi recusado. Crie outro em vez de reaproveitar.")
 
     announcement.status = AnnouncementStatus.APPROVED
     announcement.approved_by = user if getattr(user, "pk", None) else None
@@ -417,15 +422,35 @@ def update_content(
     return announcement
 
 
-def discard(announcement_id: int) -> Announcement:
-    """Descartar um announcement pendente sem publicar."""
+def reject(announcement_id: int, by=None, *, reason: str = "") -> Announcement:
+    """Recusar um anúncio: o gestor viu e disse não.
+
+    ⚠️ Antes isto marcava `expired`, colapsando duas coisas diferentes. Vencimento é o
+    relógio ganhando de todo mundo; recusa é decisão de alguém — e só a segunda diz algo
+    sobre o modelo de campanha. Uma campanha cujos anúncios são recusados toda semana
+    está configurada errado, e essa pergunta era literalmente impossível de responder.
+
+    O motivo é opcional de propósito: exigir justificativa só ensina o gestor a digitar
+    "não" para se livrar do campo.
+    """
     try:
         announcement = Announcement.objects.get(pk=announcement_id)
     except Announcement.DoesNotExist as exc:
         raise CampaignError("Anúncio não encontrado.") from exc
 
-    announcement.status = AnnouncementStatus.EXPIRED
-    announcement.save(update_fields=["status"])
+    # `publishing` entra junto: as Directives já estão na fila, então "recusar" daria
+    # ao gestor a impressão de ter parado algo que sai de qualquer jeito. Aprovado COM
+    # hora marcada segue recusável de propósito — esse ainda está na mão dele.
+    if announcement.status in (AnnouncementStatus.PUBLISHED, AnnouncementStatus.PUBLISHING):
+        raise CampaignError("Este anúncio já saiu. Não dá para recusar o que foi publicado.")
+
+    announcement.status = AnnouncementStatus.REJECTED
+    announcement.rejected_by = by if by is not None and getattr(by, "pk", None) else None
+    announcement.rejected_at = timezone.now()
+    announcement.rejected_reason = (reason or "").strip()[:200]
+    announcement.save(
+        update_fields=["status", "rejected_by", "rejected_at", "rejected_reason"]
+    )
     return announcement
 
 

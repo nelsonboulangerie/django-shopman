@@ -12,7 +12,12 @@ from django.contrib import admin
 from unfold.admin import ModelAdmin
 from unfold.decorators import display
 
-from shopman.shop.models import Announcement, AnnouncementTemplate, Campaign
+from shopman.shop.models import (
+    Announcement,
+    AnnouncementStatus,
+    AnnouncementTemplate,
+    Campaign,
+)
 
 
 @admin.register(AnnouncementTemplate)
@@ -71,13 +76,19 @@ class CampaignAdmin(ModelAdmin):
 
 @admin.register(Announcement)
 class AnnouncementAdmin(ModelAdmin):
-    list_display = ("created_at", "status_display", "rule", "audience_total", "published_at")
+    list_display = (
+        "created_at", "status_display", "rule", "audience_total",
+        "rejection_display", "published_at",
+    )
     list_filter = ("status", "rule")
-    search_fields = ("content",)
+    # O motivo entra na busca porque a pergunta útil raramente é "quantos" — é "por quê",
+    # e ela se responde procurando "foto" ou "acabou" e vendo o padrão aparecer.
+    search_fields = ("content", "rejected_reason")
     readonly_fields = (
         "rule", "template", "status", "content", "platform_content", "platforms",
         "audience", "platform_results", "trigger_context", "approved_by",
-        "approved_at", "published_at", "expires_at", "created_at",
+        "approved_at", "rejected_by", "rejected_at", "rejected_reason",
+        "published_at", "expires_at", "created_at",
     )
     date_hierarchy = "created_at"
 
@@ -93,6 +104,9 @@ class AnnouncementAdmin(ModelAdmin):
             "aguardando aprovação": "warning",
             "publicado": "success",
             "falhou": "danger",
+            # Recusa é decisão, não falha: cinza, não vermelho. Pintar de vermelho o
+            # gesto correto do gestor treina ele a evitar o botão.
+            "recusado": "info",
             "expirado": "danger",
         },
     )
@@ -102,3 +116,17 @@ class AnnouncementAdmin(ModelAdmin):
     @display(description="audiência")
     def audience_total(self, obj):
         return (obj.audience or {}).get("total", 0)
+
+    @display(description="recusa")
+    def rejection_display(self, obj):
+        """Quem recusou e por quê, numa coluna — sem tabela de agregação nenhuma.
+
+        É assim que o Admin responde "quantos anúncios o gestor recusou, e por quê":
+        filtro por situação + esta coluna. A [ADR-020] fecha a porta para um quinto
+        contador no painel, e ela está certa: contagem sem motivo não muda decisão.
+        """
+        if obj.status != AnnouncementStatus.REJECTED:
+            return "—"
+        who = obj.rejected_by
+        name = (who.get_full_name() or who.username) if who else "sem autor"
+        return f"{name}: {obj.rejected_reason}" if obj.rejected_reason else name

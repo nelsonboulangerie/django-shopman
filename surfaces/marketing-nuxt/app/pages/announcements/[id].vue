@@ -17,9 +17,13 @@ const { platforms } = useCampaigns();
 
 const announcement = computed(() => data.value?.announcement);
 const busy = ref(false);
-const confirmingDiscard = ref(false);
+const confirmingReject = ref(false);
+const rejectReason = ref("");
 
-async function decide(action: "approve" | "discard", body: AnnouncementEdits = {}) {
+async function decide(
+  action: "approve" | "reject",
+  body: AnnouncementEdits | { reason: string } = {},
+) {
   busy.value = true;
   try {
     await $fetch(`/api/v1/backstage/marketing/announcements/${pk.value}/${action}/`, {
@@ -27,8 +31,8 @@ async function decide(action: "approve" | "discard", body: AnnouncementEdits = {
       body,
     });
     useSonner.success(
-      action === "discard" ? "Anúncio descartado."
-      : body.publish_at ? "Anúncio agendado."
+      action === "reject" ? "Anúncio recusado."
+      : "publish_at" in body && body.publish_at ? "Anúncio agendado."
       : "Anúncio publicado.",
     );
     await navigateTo("/");
@@ -91,36 +95,62 @@ useHead({ title: "Anúncio · Marketing" });
         :platform-options="platforms"
         :busy="busy"
         @approve="(_, edits) => decide('approve', edits)"
-        @discard="confirmingDiscard = true"
+        @reject="confirmingReject = true; rejectReason = ''"
       />
 
       <article v-else class="rounded-xl border border-border bg-card p-4">
         <p class="whitespace-pre-line text-sm">{{ announcement.body }}</p>
+        <!-- Recusa é decisão de alguém, e a decisão precisa ser legível depois. Sem
+             isto, o motivo ficaria só no banco. -->
+        <p
+          v-if="announcement.status === 'rejected'"
+          class="mt-3 flex items-start gap-1.5 border-t border-border pt-3 text-xs text-muted-foreground"
+        >
+          <Icon name="lucide:circle-slash" class="mt-0.5 size-3.5 shrink-0" />
+          <span>
+            Recusado{{ announcement.rejected_by ? ` por ${announcement.rejected_by}` : "" }}<template
+              v-if="announcement.rejected_reason"
+            >: {{ announcement.rejected_reason }}</template>
+          </span>
+        </p>
       </article>
     </template>
 
-    <UiDialog :open="confirmingDiscard" @update:open="(v) => (confirmingDiscard = v)">
+    <UiDialog :open="confirmingReject" @update:open="(v) => (confirmingReject = v)">
       <UiDialogContent class="sm:max-w-md">
         <UiDialogHeader>
-          <UiDialogTitle>Descartar este announcement?</UiDialogTitle>
+          <UiDialogTitle>Recusar este anúncio?</UiDialogTitle>
           <UiDialogDescription>
             Ele não vai para nenhuma plataforma e não volta para a fila.
           </UiDialogDescription>
         </UiDialogHeader>
+        <div>
+          <label for="reject-reason" class="mb-1 block text-sm font-medium">
+            Motivo (opcional)
+          </label>
+          <input
+            id="reject-reason"
+            v-model="rejectReason"
+            type="text"
+            maxlength="200"
+            placeholder="Foto ruim, texto errado, produto acabou…"
+            class="h-9 w-full rounded-md border border-border bg-background px-3 text-sm outline-none focus:ring-1 focus:ring-ring"
+          >
+        </div>
         <UiDialogFooter>
           <button
             type="button"
             class="rounded-md border border-border px-3 py-2 text-sm font-medium transition hover:bg-muted"
-            @click="confirmingDiscard = false"
+            @click="confirmingReject = false"
           >
             Manter na fila
           </button>
           <button
             type="button"
             class="rounded-md bg-destructive px-3 py-2 text-sm font-semibold text-destructive-foreground transition hover:bg-destructive/90"
-            @click="confirmingDiscard = false; decide('discard')"
+            @click="confirmingReject = false; decide('reject', { reason: rejectReason.trim() })"
           >
-            Descartar
+            Recusar
           </button>
         </UiDialogFooter>
       </UiDialogContent>

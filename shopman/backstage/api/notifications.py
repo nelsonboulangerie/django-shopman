@@ -29,7 +29,7 @@ _MAX_LIMIT = 100
 
 #: Ações que uma notificação acionável pode disparar.
 ACTION_APPROVE = "approve"
-ACTION_DISCARD = "discard"
+ACTION_REJECT = "reject"
 
 
 def _notification_dict(notification: UserNotification) -> dict:
@@ -128,7 +128,7 @@ class NotificationActionView(APIView):
             )
 
         action = str(request.data.get("action") or ACTION_APPROVE).strip()
-        if action not in (ACTION_APPROVE, ACTION_DISCARD):
+        if action not in (ACTION_APPROVE, ACTION_REJECT):
             return Response(
                 {"detail": "Ação desconhecida.", "field": "action"}, status=400
             )
@@ -150,11 +150,12 @@ class NotificationActionView(APIView):
             announcement = (
                 campaign.approve(announcement_id, request.user)
                 if action == ACTION_APPROVE
-                else campaign.discard(announcement_id)
+                else campaign.reject(announcement_id, request.user)
             )
         except campaign.CampaignError as exc:
-            # Expirado ou inexistente: a notificação perdeu o sentido, então
-            # some da caixa junto com o erro.
+            # Vencido, recusado, já publicado ou inexistente: em todos, a notificação
+            # perdeu o sentido, então some da caixa junto com o erro. A mensagem do
+            # serviço diz qual dos casos foi.
             notification.mark_read()
             return Response({"detail": str(exc)}, status=400)
 

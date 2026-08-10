@@ -169,14 +169,16 @@ class TestAction:
         notification.refresh_from_db()
         assert notification.is_read
 
-    def test_discard_closes_without_publishing(self, client, gestor):
+    def test_rejecting_from_the_alert_closes_without_publishing(self, client, gestor):
+        """A recusa pela caixa de avisos também registra o autor — é a mesma decisão."""
         announcement = _post()
         notification = _notification(gestor, announcement=announcement)
         client.force_login(gestor)
 
-        client.post(f"{LIST_URL}{notification.pk}/action/", {"action": "discard"})
+        client.post(f"{LIST_URL}{notification.pk}/action/", {"action": "reject"})
         announcement.refresh_from_db()
-        assert announcement.status == AnnouncementStatus.EXPIRED
+        assert announcement.status == AnnouncementStatus.REJECTED
+        assert announcement.rejected_by_id == gestor.pk
 
     def test_operator_without_the_permission_cannot_publish(self, client, colega):
         """Staff não basta: publicar exige shop.manage_campaigns."""

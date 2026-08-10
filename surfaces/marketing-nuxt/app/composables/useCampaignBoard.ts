@@ -35,14 +35,17 @@ export function useCampaignBoard() {
     return decide(pk, "approve", edits, edits.publish_at ? "Anúncio agendado." : "Anúncio publicado.");
   }
 
-  async function discard(pk: number): Promise<boolean> {
-    return decide(pk, "discard", {}, "Anúncio descartado.");
+  // O motivo é opcional: exigir justificativa só ensina o gestor a digitar "não".
+  async function reject(pk: number, reason = ""): Promise<boolean> {
+    return decide(pk, "reject", { reason }, "Anúncio recusado.");
   }
 
   async function decide(
     pk: number,
-    action: "approve" | "discard",
-    body: AnnouncementEdits,
+    action: "approve" | "reject",
+    // Aprovar manda edições; recusar manda o motivo. Não é o mesmo corpo, e fingir
+    // que é obrigaria um cast que esconde exatamente essa diferença.
+    body: AnnouncementEdits | { reason: string },
     okMessage: string,
   ): Promise<boolean> {
     try {
@@ -83,7 +86,7 @@ export function useCampaignBoard() {
     error,
     refresh,
     approve,
-    discard,
+    reject,
     saveDraft,
   };
 }

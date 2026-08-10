@@ -82,6 +82,10 @@ class AnnouncementProjection:
     expires_in_minutes: int  # -1 = não expira
     published_at: str
     approved_by: str
+    #: Quem recusou e por quê. Vazio em tudo que não foi recusado — mostrar "recusado
+    #: por —" num anúncio publicado seria ruído.
+    rejected_by: str
+    rejected_reason: str
 
 
 @dataclass(frozen=True)
@@ -252,6 +256,7 @@ def build_announcement(announcement: Announcement, *, now=None) -> AnnouncementP
     context = announcement.trigger_context or {}
     audience = announcement.audience or {}
     approver = announcement.approved_by
+    rejecter = announcement.rejected_by
 
     return AnnouncementProjection(
         pk=announcement.pk,
@@ -275,11 +280,13 @@ def build_announcement(announcement: Announcement, *, now=None) -> AnnouncementP
         expires_in_minutes=_expires_in_minutes(announcement, now=now),
         published_at=_iso(announcement.published_at),
         approved_by=(approver.get_full_name() or approver.username) if approver else "",
+        rejected_by=(rejecter.get_full_name() or rejecter.username) if rejecter else "",
+        rejected_reason=announcement.rejected_reason,
     )
 
 
 def _announcements_queryset():
-    return Announcement.objects.select_related("rule", "template", "approved_by")
+    return Announcement.objects.select_related("rule", "template", "approved_by", "rejected_by")
 
 
 def build_board(*, now=None) -> CampaignBoardProjection:

@@ -32,6 +32,9 @@ export interface Announcement {
   expires_in_minutes: number;
   published_at: string;
   approved_by: string;
+  /** Quem recusou, e por quê. Vazios em tudo que não foi recusado. */
+  rejected_by: string;
+  rejected_reason: string;
 }
 
 export interface CampaignStats {

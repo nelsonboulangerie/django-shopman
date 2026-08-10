@@ -148,13 +148,50 @@ class TestPostDecision:
         assert announcement.status in (AnnouncementStatus.APPROVED, AnnouncementStatus.PUBLISHING, AnnouncementStatus.PUBLISHED)
         assert announcement.approved_by_id == gestor.pk
 
-    def test_discard_keeps_it_off_the_air(self, client, gestor, rule, template):
+    def test_rejecting_keeps_it_off_the_air_and_records_who(self, client, gestor, rule, template):
         announcement = _post(rule, template)
         client.force_login(gestor)
 
-        assert client.post(f"/api/v1/backstage/marketing/announcements/{announcement.pk}/discard/").status_code == 200
+        response = client.post(
+            f"/api/v1/backstage/marketing/announcements/{announcement.pk}/reject/",
+            data={"reason": "Foto ruim"},
+            content_type="application/json",
+        )
+
+        assert response.status_code == 200
         announcement.refresh_from_db()
-        assert announcement.status == AnnouncementStatus.EXPIRED
+        assert announcement.status == AnnouncementStatus.REJECTED
+        # ⚠️ Recusa anônima num balcão com quatro pessoas no turno não é auditável.
+        assert announcement.rejected_by_id == gestor.pk
+        assert announcement.rejected_reason == "Foto ruim"
+
+    def test_rejecting_without_a_reason_still_works(self, client, gestor, rule, template):
+        announcement = _post(rule, template)
+        client.force_login(gestor)
+
+        assert client.post(
+            f"/api/v1/backstage/marketing/announcements/{announcement.pk}/reject/"
+        ).status_code == 200
+        announcement.refresh_from_db()
+        assert announcement.status == AnnouncementStatus.REJECTED
+        assert announcement.rejected_reason == ""
+
+    def test_the_projection_tells_the_screen_who_rejected_and_why(self, client, gestor, rule, template):
+        """Registrar o motivo sem mostrá-lo em lugar nenhum não serviria para nada."""
+        announcement = _post(rule, template)
+        client.force_login(gestor)
+
+        response = client.post(
+            f"/api/v1/backstage/marketing/announcements/{announcement.pk}/reject/",
+            data={"reason": "Produto acabou"},
+            content_type="application/json",
+        )
+
+        body = response.json()["announcement"]
+        assert body["status"] == "rejected"
+        assert body["status_label"] == "recusado"
+        assert body["rejected_reason"] == "Produto acabou"
+        assert body["rejected_by"] != ""
 
     def test_edit_before_approving(self, client, gestor, rule, template):
         announcement = _post(rule, template)

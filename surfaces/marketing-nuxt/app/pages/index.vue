@@ -15,7 +15,7 @@ const OUTCOME_META = {
   pending: { icon: "lucide:clock", class: "text-muted-foreground" },
 } as const;
 
-const { reachLimits, pendingPosts, recentPosts, stats, loading, error, refresh, approve, discard } =
+const { reachLimits, pendingPosts, recentPosts, stats, loading, error, refresh, approve, reject } =
   useCampaignBoard();
 const { platforms } = useCampaigns();
 
@@ -41,7 +41,8 @@ async function onChooseTemplate(flowNs: string) {
 }
 
 const busyPk = ref<number | null>(null);
-const discarding = ref<number | null>(null);
+const rejecting = ref<number | null>(null);
+const rejectReason = ref("");
 
 async function onApprove(pk: number, edits: AnnouncementEdits) {
   busyPk.value = pk;
@@ -49,12 +50,14 @@ async function onApprove(pk: number, edits: AnnouncementEdits) {
   busyPk.value = null;
 }
 
-async function confirmDiscard() {
-  const pk = discarding.value;
+async function confirmReject() {
+  const pk = rejecting.value;
   if (pk === null) return;
+  const reason = rejectReason.value.trim();
   busyPk.value = pk;
-  discarding.value = null;
-  await discard(pk);
+  rejecting.value = null;
+  rejectReason.value = "";
+  await reject(pk, reason);
   busyPk.value = null;
 }
 
@@ -257,7 +260,7 @@ useHead({ title: "Painel · Marketing" });
           :platform-options="platforms"
           :busy="busyPk === announcement.pk"
           @approve="onApprove"
-          @discard="(pk) => (discarding = pk)"
+          @reject="(pk) => { rejecting = pk; rejectReason = '' }"
         />
       </div>
     </section>
@@ -292,30 +295,46 @@ useHead({ title: "Painel · Marketing" });
       </NuxtLink>
     </section>
 
-    <!-- Descartar é irreversível: confirma antes -->
-    <UiDialog :open="discarding !== null" @update:open="(v) => { if (!v) discarding = null }">
+    <!-- Recusar é irreversível: confirma antes -->
+    <UiDialog :open="rejecting !== null" @update:open="(v) => { if (!v) rejecting = null }">
       <UiDialogContent class="sm:max-w-md">
         <UiDialogHeader>
-          <UiDialogTitle>Descartar este announcement?</UiDialogTitle>
+          <UiDialogTitle>Recusar este anúncio?</UiDialogTitle>
           <UiDialogDescription>
             Ele não vai para nenhuma plataforma e não volta para a fila. A fornada segue
             normalmente.
           </UiDialogDescription>
         </UiDialogHeader>
+        <!-- Opcional de propósito: campo obrigatório aqui só produziria "não" digitado
+             com pressa. Quando o gestor escreve, a recusa passa a explicar a campanha. -->
+        <div>
+          <label for="reject-reason" class="mb-1 block text-sm font-medium">
+            Motivo (opcional)
+          </label>
+          <input
+            id="reject-reason"
+            v-model="rejectReason"
+            type="text"
+            maxlength="200"
+            placeholder="Foto ruim, texto errado, produto acabou…"
+            class="h-9 w-full rounded-md border border-border bg-background px-3 text-sm outline-none focus:ring-1 focus:ring-ring"
+            @keyup.enter="confirmReject"
+          >
+        </div>
         <UiDialogFooter>
           <button
             type="button"
             class="rounded-md border border-border px-3 py-2 text-sm font-medium transition hover:bg-muted"
-            @click="discarding = null"
+            @click="rejecting = null"
           >
             Manter na fila
           </button>
           <button
             type="button"
             class="rounded-md bg-destructive px-3 py-2 text-sm font-semibold text-destructive-foreground transition hover:bg-destructive/90"
-            @click="confirmDiscard"
+            @click="confirmReject"
           >
-            Descartar
+            Recusar
           </button>
         </UiDialogFooter>
       </UiDialogContent>

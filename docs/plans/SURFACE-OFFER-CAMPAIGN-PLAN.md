@@ -194,10 +194,42 @@ surpresa alcanca cliente de verdade e nao tem desfazer.
 
 *Valor sozinho:* relampago das 17h30 sai em segundos, e `publish_at` para de mentir para todo mundo.
 
-### F10 — Recusa como estado · ADR-020 passo 5
+### F10 — Recusa como estado · ADR-020 passo 5 — ✅ FEITO (metade 2 em aberto)
 
-`AnnouncementStatus.REJECTED` com `rejected_by` e `rejected_reason`; campanha criada pelo gestor pula
-aprovacao.
+`AnnouncementStatus.REJECTED` com `rejected_by`, `rejected_at` e `rejected_reason` (migration `0005`).
+`discard()` **deixa de existir** — o nome descrevia o gesto, e o que importa e o fato: `reject()`.
+Rename atomico BE+FE, sem residuo: rota `announcements/<pk>/reject/`, `ACTION_REJECT` na central de
+alertas, `reject()` no composable, "Recusar" na tela.
+
+O motivo e **opcional de proposito**: campo obrigatorio aqui so ensina o gestor a digitar "nao" para se
+livrar dele. Quem recusou e registrado porque num balcao com quatro pessoas no turno recusa anonima nao
+e auditavel.
+
+**Dois buracos que a recusa como estado abriu, e que so ela podia fechar** — enquanto recusar marcava
+`expired`, a guarda de expiracao barrava a segunda aprovacao por acidente:
+
+1. `approve()` nao conhecia recusa, entao um anuncio recusado com prazo **ainda aberto** voltaria ao ar
+   numa segunda aprovacao (`services/campaign.py:376-380`);
+2. `reject()` precisou barrar `publishing`, nao so `published`: as Directives ja estao na fila, e um
+   botao que promete parar o que sai de qualquer jeito e pior que botao nenhum. Aprovado **com hora
+   marcada** segue recusavel — esse ainda esta na mao do gestor.
+
+A varredura de expiracao ja filtrava `PENDING_REVIEW`, entao nao apaga recusa; ha teste travando isso,
+porque se um dia ela abrir o filtro, apagaria autor e motivo depois do fato.
+
+**Sem quinto contador no painel** (ADR-020 §11): quem responde "quantos foram recusados, e por que" e o
+Admin — filtro por situacao + coluna `rejection_display` + `rejected_reason` na busca. Contagem sem
+motivo nao muda decisao.
+
+⚠️ **A segunda metade do passo 5 nao foi implementada, e a razao e concreta:** "campanha criada pelo
+gestor pula aprovacao" publicaria uma campanha **sem conteudo**. O modelo do disparo manual e
+`"Um recado da {{store_name}}."` — sem produto e sem link de proposito, porque disparo manual nao tem
+SKU (`config/management/commands/seed.py`, bloco `_seed_campaigns`) — e o painel de disparo escolhe
+**publico**, nao escreve copy (`FireCampaignPanel.vue`). Quem escreve o recado e o card de revisao, que
+e exatamente o passo que "pular aprovacao" removeria. E o efeito desejado **ja e configuravel por
+campanha**: `requires_approval=False` (visivel na tela como "Revisar antes de publicar", com selo
+"automatica" na lista). Decisao do dono: manter configuravel, ou dar ao painel de disparo um campo de
+corpo e so entao pular a revisao.
 
 *Valor sozinho:* o Admin passa a poder responder quantos anuncios foram recusados, e por que.
 

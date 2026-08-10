@@ -49,6 +49,11 @@ class AnnouncementStatus(models.TextChoices):
     PUBLISHING = "publishing", "publicando"
     PUBLISHED = "published", "publicado"
     FAILED = "failed", "falhou"
+    #: ⚠️ Recusa e vencimento são fatos DIFERENTES, e antes os dois colapsavam em
+    #: `expired`. Quem recusou tomou uma decisão; quem venceu só perdeu a hora. Sem a
+    #: distinção, ninguém consegue responder "quantos anúncios o gestor recusou, e por
+    #: quê" — e é essa a pergunta que revela modelo de campanha errado.
+    REJECTED = "rejected", "recusado"
     EXPIRED = "expired", "expirado"
 
 
@@ -265,6 +270,20 @@ class Announcement(models.Model):
         verbose_name="aprovado por",
     )
     approved_at = models.DateTimeField("aprovado em", null=True, blank=True)
+    #: Quem recusou e por quê. Guardar o autor é o que separa "a casa decidiu" de
+    #: "alguém decidiu": num balcão com quatro pessoas no mesmo turno, recusa anônima
+    #: não é auditável.
+    rejected_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL,
+        null=True, blank=True, related_name="rejected_announcements",
+        verbose_name="recusado por",
+    )
+    rejected_at = models.DateTimeField("recusado em", null=True, blank=True)
+    rejected_reason = models.CharField(
+        "motivo da recusa", max_length=200, blank=True,
+        help_text="O que estava errado. Vazio é permitido: exigir justificativa "
+                  "empurra o gestor a digitar qualquer coisa para se livrar do campo.",
+    )
     publish_at = models.DateTimeField(
         "publicar em", null=True, blank=True,
         help_text="Aprovado com hora marcada. Preenchido = ainda não saiu; "

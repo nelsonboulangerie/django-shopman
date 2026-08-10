@@ -225,10 +225,98 @@ class TestApprove:
         with pytest.raises(campaign.CampaignError):
             campaign.approve(announcement.pk, gestor)
 
-    def test_discard_closes_the_post_without_publishing(self, product, rule):
+    def test_rejecting_closes_the_post_without_publishing(self, product, rule, gestor):
         announcement = campaign.evaluate("production_finished", _context())[0]
-        assert campaign.discard(announcement.pk).status == AnnouncementStatus.EXPIRED
+
+        rejected = campaign.reject(announcement.pk, gestor, reason="Foto ruim")
+
+        assert rejected.status == AnnouncementStatus.REJECTED
+        assert rejected.rejected_by == gestor
+        assert rejected.rejected_reason == "Foto ruim"
+        assert rejected.rejected_at is not None
         assert Directive.objects.filter(topic=ANNOUNCEMENT_PUBLISH).count() == 0
+
+    def test_rejection_is_not_expiration(self, product, rule, gestor):
+        """⚠️ O ponto todo da fase: dois fatos diferentes param de colapsar em um.
+
+        Vencimento é o relógio ganhando de todo mundo; recusa é decisão de alguém. Só a
+        segunda diz algo sobre o modelo de campanha, e enquanto as duas eram `expired`
+        essa pergunta não tinha como ser respondida.
+        """
+        announcement = campaign.evaluate("production_finished", _context())[0]
+
+        assert campaign.reject(announcement.pk, gestor).status != AnnouncementStatus.EXPIRED
+
+    def test_the_reason_is_optional(self, product, rule, gestor):
+        """Campo obrigatório aqui só produziria "não" digitado com pressa."""
+        announcement = campaign.evaluate("production_finished", _context())[0]
+
+        rejected = campaign.reject(announcement.pk, gestor)
+
+        assert rejected.status == AnnouncementStatus.REJECTED
+        assert rejected.rejected_reason == ""
+
+    def test_a_rejected_post_cannot_be_approved_afterwards(self, product, rule, gestor):
+        """⚠️ Buraco que a recusa como estado abriu, e que só ela pode fechar.
+
+        Antes, recusar marcava `expired` e a guarda de expiração barrava a segunda
+        aprovação por acidente. Com estado próprio e prazo ainda aberto, sem esta guarda
+        um anúncio recusado voltaria ao ar.
+        """
+        announcement = campaign.evaluate("production_finished", _context())[0]
+        campaign.reject(announcement.pk, gestor, reason="Texto errado")
+
+        with pytest.raises(campaign.CampaignError):
+            campaign.approve(announcement.pk, gestor)
+
+        assert Directive.objects.filter(topic=ANNOUNCEMENT_PUBLISH).count() == 0
+
+    def test_a_post_already_on_its_way_cannot_be_rejected(self, product, rule, gestor):
+        """Recusar o que o cliente já leu seria desfazer o que não se desfaz.
+
+        Vale para `publishing` também: as Directives já estão na fila, e um botão que
+        promete parar o que sai de qualquer jeito é pior que botão nenhum.
+        """
+        announcement = campaign.evaluate("production_finished", _context())[0]
+        campaign.approve(announcement.pk, gestor)
+
+        with pytest.raises(campaign.CampaignError):
+            campaign.reject(announcement.pk, gestor)
+
+    def test_a_scheduled_post_can_still_be_rejected(self, product, rule, gestor):
+        """Aprovado com hora marcada ainda está na mão do gestor: ele pode mudar de ideia."""
+        announcement = campaign.evaluate("production_finished", _context())[0]
+        campaign.approve(
+            announcement.pk, gestor, publish_at=timezone.now() + timedelta(hours=3)
+        )
+
+        rejected = campaign.reject(announcement.pk, gestor, reason="Mudei de ideia")
+
+        assert rejected.status == AnnouncementStatus.REJECTED
+        # E a vassoura de agendados não o encontra mais.
+        assert campaign.dispatch_due(now=timezone.now() + timedelta(hours=4)) == 0
+
+    def test_the_expiry_sweep_leaves_rejections_alone(self, product, rule, gestor):
+        """⚠️ Se a vassoura pegasse recusados, apagaria o autor e o motivo depois."""
+        announcement = campaign.evaluate("production_finished", _context())[0]
+        campaign.reject(announcement.pk, gestor, reason="Produto acabou")
+        Announcement.objects.filter(pk=announcement.pk).update(
+            expires_at=timezone.now() - timedelta(minutes=5)
+        )
+
+        campaign.expire_stale_announcements()
+
+        announcement.refresh_from_db()
+        assert announcement.status == AnnouncementStatus.REJECTED
+        assert announcement.rejected_reason == "Produto acabou"
+
+    def test_a_very_long_reason_is_cut_instead_of_exploding(self, product, rule, gestor):
+        """O campo tem 200; um paste de 500 não pode virar erro 500 na cara do gestor."""
+        announcement = campaign.evaluate("production_finished", _context())[0]
+
+        rejected = campaign.reject(announcement.pk, gestor, reason="x" * 500)
+
+        assert len(rejected.rejected_reason) == 200
 
 
 # ── Expiração ────────────────────────────────────────────────────────

@@ -38,7 +38,7 @@ from .kds import (
 from .marketing import (
     AnnouncementApproveView,
     AnnouncementDetailView,
-    AnnouncementDiscardView,
+    AnnouncementRejectView,
     AnnouncementTemplateDetailView,
     AnnouncementTemplateListView,
     CampaignBoardView,
@@ -234,7 +234,7 @@ urlpatterns = [
     path("marketing/templates/<int:pk>/", AnnouncementTemplateDetailView.as_view(), name="api-backstage-marketing-template"),
     path("marketing/announcements/<int:pk>/", AnnouncementDetailView.as_view(), name="api-backstage-marketing-announcement"),
     path("marketing/announcements/<int:pk>/approve/", AnnouncementApproveView.as_view(), name="api-backstage-marketing-approve"),
-    path("marketing/announcements/<int:pk>/discard/", AnnouncementDiscardView.as_view(), name="api-backstage-marketing-discard"),
+    path("marketing/announcements/<int:pk>/reject/", AnnouncementRejectView.as_view(), name="api-backstage-marketing-reject"),
     # Production — work order actions
     path("production/plan/", WorkOrderPlanView.as_view(), name="api-backstage-wo-plan"),
     path("production/<int:wo_id>/start/", WorkOrderStartView.as_view(), name="api-backstage-wo-start"),
