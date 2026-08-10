@@ -196,7 +196,7 @@ def _extend_order_hold_backstop(hold_id: str) -> None:
 
 
 def _notify_stock_arrived(session, *, sku: str, target_date, hold_ids: list[str] | None = None) -> None:
-    """Dispatch a ``stock.arrived`` notification for the session's shopper.
+    """Dispatch a ``stock_arrived`` notification for the session's shopper.
 
     Resolves the customer from the session, looks up the product name, and
     calls the canonical ``notify()`` registry which routes via the
@@ -208,7 +208,7 @@ def _notify_stock_arrived(session, *, sku: str, target_date, hold_ids: list[str]
     customer = _resolve_session_customer(session)
     if customer is None:
         logger.debug(
-            "stock.arrived not dispatched (session %s has no customer)",
+            "stock_arrived not dispatched (session %s has no customer)",
             session.session_key,
         )
         return
@@ -227,7 +227,7 @@ def _notify_stock_arrived(session, *, sku: str, target_date, hold_ids: list[str]
         backend = _notification_backend(customer)
         deadline_at = _deadline_at_for_holds(hold_ids or [])
         notify(
-            event="stock.arrived",
+            event="stock_arrived",
             recipient=_notification_recipient(customer, backend=backend),
             context={
                 "sku": sku,
@@ -236,7 +236,7 @@ def _notify_stock_arrived(session, *, sku: str, target_date, hold_ids: list[str]
                 "deadline_at": deadline_at,
                 "cart_url": _cart_url(),
                 "session_key": session.session_key,
-                # Pedaços prontos p/ o template compartilhado do stock.arrived
+                # Pedaços prontos p/ o template compartilhado do stock_arrived
                 # (o caminho "Me avise" preenche os mesmos placeholders).
                 "reserve_note": " Sua reserva esta garantida.",
                 "deadline_note": _deadline_note(deadline_at),
@@ -247,7 +247,7 @@ def _notify_stock_arrived(session, *, sku: str, target_date, hold_ids: list[str]
         )
     except Exception:
         logger.warning(
-            "stock.arrived dispatch failed sku=%s customer=%s",
+            "stock_arrived dispatch failed sku=%s customer=%s",
             sku, getattr(customer, "pk", None), exc_info=True,
         )
 

@@ -33,8 +33,8 @@ SUBJECT_TEMPLATES: dict[str, str] = {
     "payment_failed": "Falha ao preparar pagamento do pedido {order_ref}",
     "preorder_reminder": "Lembrete: pedido {order_ref} agendado para amanhã",
     "stock_alert": "Alerta de estoque: {sku}",
-    "stock.arrived": "Boa noticia: {product_name} chegou",
-    "production.ready": "Saiu do forno agora: {product_name}",
+    "stock_arrived": "Boa noticia: {product_name} chegou",
+    "production_ready": "Saiu do forno agora: {product_name}",
     "announcement_published": "Novidade na padaria",
 }
 
@@ -116,12 +116,12 @@ BODY_TEMPLATES: dict[str, str] = {
         "Lembrete: seu pedido {order_ref} esta agendado para amanha.\n"
         "Ja estamos preparando tudo!"
     ),
-    "stock.arrived": (
+    "stock_arrived": (
         "Boa noticia!\n\n"
         "{product_name} chegou.{reserve_note}{deadline_note}\n\n"
         "{cta} {action_url}\n"
     ),
-    "production.ready": (
+    "production_ready": (
         "Saiu do forno agora!\n\n"
         "{product_name} acabou de ficar pronto.\n\n"
         "{cta} {action_url}\n"

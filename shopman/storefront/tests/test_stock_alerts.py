@@ -60,7 +60,7 @@ def test_notify_sends_and_marks_when_available():
 
     assert notified == 1
     nf.assert_called_once()
-    assert nf.call_args.kwargs["event"] == "stock.arrived"
+    assert nf.call_args.kwargs["event"] == "stock_arrived"
     assert nf.call_args.kwargs["recipient"] == PHONE
     sub.refresh_from_db()
     assert sub.notified_at is not None

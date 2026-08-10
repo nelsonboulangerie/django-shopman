@@ -119,8 +119,8 @@ def notify_bake_ready(sku: str) -> int:
 
 #: Cada gatilho tem sua copy: "chegou" e "saiu do forno" prometem coisas diferentes.
 _EVENT_BY_ALERT_TYPE = {
-    "stock_back": "stock.arrived",
-    "production_ready": "production.ready",
+    "stock_back": "stock_arrived",
+    "production_ready": "production_ready",
 }
 
 
@@ -137,7 +137,7 @@ def _notify(sku: str, *, alert_type: str) -> int:
         return 0
 
     product_name = _product_name(sku)
-    event = _EVENT_BY_ALERT_TYPE.get(alert_type, "stock.arrived")
+    event = _EVENT_BY_ALERT_TYPE.get(alert_type, "stock_arrived")
     notified = 0
     for sub in pending:
         try:
@@ -170,7 +170,7 @@ def _product_name(sku: str) -> str:
     return product.name if product is not None else sku
 
 
-def _deliver(sub, *, product_name: str, event: str = "stock.arrived") -> bool:
+def _deliver(sub, *, product_name: str, event: str = "stock_arrived") -> bool:
     """Send the subscription's notification via the channel's backend. True on success."""
     from shopman.shop.config import ChannelConfig
     from shopman.shop.notifications import notify
@@ -197,7 +197,7 @@ def _deliver(sub, *, product_name: str, event: str = "stock.arrived") -> bool:
                 "sku": sub.sku,
                 "product_name": product_name,
                 "product_url": storefront_links.product_url(sub.sku),
-                # Placeholders do template compartilhado de stock.arrived: aqui
+                # Placeholders do template compartilhado de stock_arrived: aqui
                 # não há reserva nem prazo — cliente sem hold ("Me avise").
                 "reserve_note": "",
                 "deadline_note": "",

@@ -78,13 +78,13 @@ MESSAGE_TEMPLATES: dict[str, str] = {
     # reserve_note/deadline_note/cta/action_url vem prontos do emissor —
     # reserva de sacola materializada traz prazo + link do carrinho; o
     # "Me avise" (sem reserva) traz o link do produto.
-    "stock.arrived": (
+    "stock_arrived": (
         "Boa noticia! {product_name} chegou.{reserve_note}{deadline_note} "
         "{cta} {action_url}"
     ),
     # Fornada pronta ("Me avise quando sair do forno", F9 do FOMO-MARKETING):
     # o valor da mensagem e o frescor, entao ela nasce e envelhece rapido.
-    "production.ready": (
+    "production_ready": (
         "Saiu do forno agora: {product_name}! {cta} {action_url}"
     ),
     # Campanha: o corpo ja vem pronto do AnnouncementTemplate (com as variaveis
