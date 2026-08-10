@@ -17,7 +17,7 @@ from shopman.shop.checks import check_whatsapp_flow_coverage
 
 pytestmark = pytest.mark.django_db
 
-EVENT = "announcement.published"
+EVENT = "announcement_published"
 
 
 def _campaign(name: str, *, platforms, active: bool = True):

@@ -671,7 +671,7 @@ def check_whatsapp_flow_coverage(app_configs, **kwargs):
     if not targets_whatsapp:
         return warnings
 
-    event = "announcement.published"
+    event = "announcement_published"
     has_flow = (
         NotificationTemplate.objects.filter(event=event)
         .exclude(whatsapp_flow_ns="")
@@ -686,7 +686,7 @@ def check_whatsapp_flow_coverage(app_configs, **kwargs):
             f"{len(targets_whatsapp)} campanha(s) ativa(s) enviam por WhatsApp sem "
             f"template aprovado: {names}.",
             hint=(
-                "Sem flow em NotificationTemplate('announcement.published'), a Meta "
+                "Sem flow em NotificationTemplate('announcement_published'), a Meta "
                 "recusa texto livre para quem não interagiu nas últimas 24h (code 3011): "
                 "a onda registra falha por destinatário. Crie o template no ManyChat, "
                 "aprove na Meta e cole o ns no Admin — `manage.py manychat_flows` lista "

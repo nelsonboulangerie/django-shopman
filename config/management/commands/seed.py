@@ -5139,6 +5139,10 @@ class Command(BaseCommand):
         from shopman.shop.models import NotificationTemplate
 
         FALLBACK_TEMPLATES = {
+            # Campanha de marketing. A linha existe no seed porque é AQUI que o
+            # operador cola o `ns` do flow aprovado — o check W010 manda configurar, e
+            # mandar configurar numa linha que não existe é mandar para o vazio.
+            "announcement_published": {"subject": "Novidade na padaria", "body": "{body}\n\n{cta} {action_url}"},
             "order_received": {"subject": "Pedido {order_ref} recebido", "body": "Ola{customer_name_greeting}! Recebemos seu pedido *{order_ref}*. O estabelecimento vai conferir a disponibilidade. Acompanhe por aqui: {tracking_url}"},
             "order_received_outside_hours": {"subject": "Pedido {order_ref} recebido", "body": "Ola{customer_name_greeting}! Recebemos seu pedido *{order_ref}* fora do nosso horario de atendimento. Vamos processar assim que abrirmos. Total: *{total}*."},
             "order_accepted": {"subject": "Pedido {order_ref} confirmado", "body": "Ola{customer_name_greeting}! Seu pedido *{order_ref}* foi confirmado. Total: *{total}*.\n\nObrigado pela preferencia!"},

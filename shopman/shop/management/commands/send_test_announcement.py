@@ -159,7 +159,7 @@ class Command(BaseCommand):
 
         self.stdout.write("")
         result = notify(
-            event="announcement.published",
+            event="announcement_published",
             recipient=phone,
             context={"body": body, "action_url": link, "cta": "Garanta o seu:"},
             backend=channel,

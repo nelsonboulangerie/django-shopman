@@ -20,6 +20,7 @@ from unfold.widgets import (
     UnfoldAdminDecimalFieldWidget,
     UnfoldAdminIntegerFieldWidget,
     UnfoldAdminSelect2MultipleWidget,
+    UnfoldAdminSelect2Widget,
     UnfoldAdminSelectWidget,
     UnfoldAdminTextInputWidget,
     UnfoldAdminTimeWidget,
@@ -1582,8 +1583,62 @@ class ShopIntegrationsAdmin(_ShopSingletonAdmin):
         return format_html('<dl class="flex flex-col">{}</dl>', body)
 
 
+class NotificationTemplateForm(forms.ModelForm):
+    """O flow do WhatsApp escolhido por NOME, não por id colado.
+
+    `whatsapp_flow_ns` é opaco (`content20240614222050_512341`: a palavra `content`, a
+    data de criação e um sufixo). Pedir para alguém digitar isso é convidar erro num campo
+    cuja falha é **silenciosa** — ns errado não estoura, só faz a onda falhar destinatário
+    por destinatário com erro do provedor.
+
+    Quando o ManyChat não responde (ou não há token, como em dev), o campo volta a ser
+    texto livre em vez de travar o formulário: operador digitando é melhor que operador
+    impedido. A lista é cacheada, senão o Admin faria uma chamada de rede por render.
+    """
+
+    class Meta:
+        model = NotificationTemplate
+        fields = "__all__"
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        from shopman.shop.services import manychat_flows
+
+        flows = manychat_flows.list_flows()
+        if not flows:
+            self.fields["whatsapp_flow_ns"].help_text = (
+                "Não foi possível consultar os flows do ManyChat agora (sem token neste "
+                "ambiente, ou API fora). Cole o ns do flow — "
+                "<code>manage.py manychat_flows</code> lista os disponíveis."
+            )
+            return
+
+        current = (self.instance.whatsapp_flow_ns or "") if self.instance else ""
+        choices = [("", "— sem flow: envia texto direto (só alcança a janela de 24h) —")]
+        choices += [(ns, f"{name}  ·  {ns}") for ns, name in flows]
+
+        # Flow configurado que não existe mais na conta: manter na lista para o operador
+        # VER o que está gravado, marcado como ausente. Sumir com ele esconderia
+        # justamente a causa da campanha que falha calada.
+        if current and current not in {ns for ns, _ in flows}:
+            choices.append((current, f"⚠️ apagado no ManyChat  ·  {current}"))
+
+        self.fields["whatsapp_flow_ns"] = forms.ChoiceField(
+            label="flow do WhatsApp (ManyChat)",
+            choices=choices,
+            required=False,
+            initial=current,
+            widget=UnfoldAdminSelect2Widget,
+            help_text=(
+                "Sem flow, a Meta recusa texto livre para quem não interagiu nas últimas "
+                "24h. O flow carrega o template aprovado."
+            ),
+        )
+
+
 @admin.register(NotificationTemplate)
 class NotificationTemplateAdmin(ModelAdmin):
+    form = NotificationTemplateForm
     # whatsapp_flow_ns é namespace técnico (fica no fieldset "WhatsApp", com ajuda);
     # não polui a lista, que fala evento → assunto → ativo.
     list_display = ("event", "subject", "is_active")

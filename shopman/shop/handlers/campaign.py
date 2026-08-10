@@ -341,7 +341,7 @@ def _send_to(recipients, *, announcement) -> tuple[int, int]:
     for recipient in targets:
         try:
             result = notify(
-                event="announcement.published",
+                event="announcement_published",
                 recipient=recipient.phone,
                 # `nome` é por destinatário; o resto é do anúncio. `getattr` porque o
                 # handler não deve exigir a forma exata do destinatário — quem chama

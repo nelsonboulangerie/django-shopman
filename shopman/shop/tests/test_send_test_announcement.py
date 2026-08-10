@@ -64,7 +64,7 @@ def test_send_actually_calls_the_adapter(adapter):
 
     assert len(adapter.calls) == 1
     assert adapter.calls[0]["recipient"] == PHONE
-    assert adapter.calls[0]["template"] == "announcement.published"
+    assert adapter.calls[0]["template"] == "announcement_published"
     assert "aceitou o envio" in output
 
 

@@ -89,7 +89,7 @@ MESSAGE_TEMPLATES: dict[str, str] = {
     ),
     # Campanha: o corpo ja vem pronto do AnnouncementTemplate (com as variaveis
     # resolvidas), entao o template daqui e so o envelope.
-    "announcement.published": "{body}\n\n{cta} {action_url}",
+    "announcement_published": "{body}\n\n{cta} {action_url}",
 }
 
 
