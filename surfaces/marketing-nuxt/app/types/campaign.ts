@@ -41,10 +41,19 @@ export interface CampaignStats {
   failed_today: number;
 }
 
+/** Um limite de ALCANCE — o gestor precisa ver antes de disparar, não depois. */
+export interface ReachLimit {
+  code: string;
+  title: string;
+  detail: string;
+  action: string;
+}
+
 export interface CampaignBoard {
   pending: Announcement[];
   recent: Announcement[];
   stats: CampaignStats;
+  reach_limits: ReachLimit[];
 }
 
 export interface Campaign {

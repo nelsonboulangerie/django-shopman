@@ -41,7 +41,7 @@ def gestor():
 
 @pytest.fixture
 def template():
-    return AnnouncementTemplate.objects.create(name="Fornada", body="{{produto}} saiu do forno!")
+    return AnnouncementTemplate.objects.create(name="Fornada", body="{{product_name}} saiu do forno!")
 
 
 @pytest.fixture
@@ -290,7 +290,7 @@ class TestTemplates:
 
         response = client.post(
             TEMPLATES_URL,
-            data={"name": "Simples", "body": "{{produto}} por {{preco}}"},
+            data={"name": "Simples", "body": "{{product_name}} por {{price}}"},
             content_type="application/json",
         )
 
@@ -326,7 +326,7 @@ class TestOptions:
         assert {t["value"] for t in options["triggers"]} >= {"production_finished", "low_stock"}
         assert {p["value"] for p in options["platforms"]} >= {"instagram", "google_business"}
         assert template.pk in {t["pk"] for t in options["templates"]}
-        assert "produto" in options["variables"]
+        assert "product_name" in options["variables"]
 
 
 class TestScheduledPublishing:

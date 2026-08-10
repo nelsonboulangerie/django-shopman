@@ -52,7 +52,7 @@ def recipe(product):
 def rule():
     template = AnnouncementTemplate.objects.create(
         name="Fornada pronta",
-        body="{{produto}} acabou de sair do forno! {{hashtags}} Peça: {{link}}",
+        body="{{product_name}} acabou de sair do forno! {{hashtags}} Peça: {{link}}",
     )
     return Campaign.objects.create(
         name="Fornada excelente → redes",

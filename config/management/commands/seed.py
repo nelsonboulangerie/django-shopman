@@ -5075,13 +5075,13 @@ class Command(BaseCommand):
         fornada, _ = AnnouncementTemplate.objects.update_or_create(
             name="Saiu do forno",
             defaults={
-                "body": "{{produto}} acabou de sair do forno! {{preco}} 🥖\n{{link}}",
+                "body": "{{product_name}} acabou de sair do forno! {{price}} 🥖\n{{link}}",
                 "variables": ["produto", "preco", "link"],
                 "image_source": AnnouncementTemplate.ImageSource.PRODUCT,
                 "is_active": True,
             },
         )
-        # ⚠️ Sem `{{produto}}`: disparo manual não tem evento, logo não tem SKU, e a
+        # ⚠️ Sem `{{product_name}}`: disparo manual não tem evento, logo não tem SKU, e a
         # variável resolveria vazia — o gestor veria "Novidade na Padaria: ." e teria de
         # consertar a copy toda vez. Modelo de recado se sustenta sozinho, e o gestor
         # completa no card de revisão.
@@ -5091,8 +5091,8 @@ class Command(BaseCommand):
                 # `{{link}}` também sai: sem SKU não há produto para linkar, e a
                 # variável vazia deixaria pontuação órfã. O gestor escreve o recado no
                 # card de revisão, que é onde ele já revisa tudo.
-                "body": "Um recado da {{loja}}.",
-                "variables": ["loja"],
+                "body": "Um recado da {{store_name}}.",
+                "variables": ["store_name"],
                 "image_source": AnnouncementTemplate.ImageSource.NONE,
                 "is_active": True,
             },

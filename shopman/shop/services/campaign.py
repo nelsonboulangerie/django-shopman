@@ -232,7 +232,7 @@ def render(body: str, variables: dict) -> str:
         return str(variables.get(match.group(1).strip(), ""))
 
     rendered = re.sub(r"\{\{\s*([\w_]+)\s*\}\}", _replace, body or "")
-    # Um {{preco}} vazio no meio da frase deixa espaço duplo.
+    # Um {{price}} vazio no meio da frase deixa espaço duplo.
     return re.sub(r"[ \t]{2,}", " ", rendered).strip()
 
 
@@ -243,25 +243,25 @@ def resolve_variables(context: dict) -> dict:
     hashtags = _hashtags(product)
 
     return {
-        "produto": getattr(product, "name", "") or sku,
+        "product_name": getattr(product, "name", "") or sku,
         "sku": sku,
-        "preco": _price(product),
+        "price": _price(product),
         "hashtags": " ".join(f"#{tag}" for tag in hashtags),
         "hashtags_list": hashtags,
         "link": _product_link(sku),
-        "estoque": str(context.get("available_qty", "") or ""),
-        "quantidade": str(context.get("quantity", "") or ""),
-        "horario": timezone.localtime().strftime("%Hh%M"),
-        "loja": _brand_name(),
-        "qualidade": str(context.get("quality", "") or ""),
+        "stock": str(context.get("available_qty", "") or ""),
+        "quantity": str(context.get("quantity", "") or ""),
+        "time": timezone.localtime().strftime("%Hh%M"),
+        "store_name": _brand_name(),
+        "quality": str(context.get("quality", "") or ""),
     }
 
 
 def available_variables() -> tuple[str, ...]:
     """Nomes válidos num template — documentação viva para o Admin."""
     return (
-        "produto", "sku", "preco", "hashtags", "link",
-        "estoque", "quantidade", "horario", "loja", "qualidade",
+        "product_name", "sku", "price", "hashtags", "link",
+        "stock", "quantity", "time", "store_name", "quality",
     )
 
 

@@ -286,7 +286,7 @@ class Campaign(models.Model):
 class AnnouncementTemplate(models.Model):
     """Template de conteúdo para broadcast, com variáveis resolvidas em runtime."""
     name = models.CharField(max_length=100)
-    body = models.TextField()                     # "{{produto}} acabou de sair do forno!
+    body = models.TextField()                     # "{{product_name}} acabou de sair do forno!
                                                   #  {{hashtags}} — Garanta o seu: {{link}}"
     platform_variants = models.JSONField(         # override por plataforma
         default=dict)                             # {"google_business": {"body": "...",
@@ -306,14 +306,14 @@ class AnnouncementTemplate(models.Model):
 
 | Variável | Fonte | Exemplo |
 |---|---|---|
-| `{{produto}}` | `Product.name` | "Croissant Tradicional" |
-| `{{preco}}` | `ListingItem.price_q` formatado | "R$ 8,50" |
+| `{{product_name}}` | `Product.name` | "Croissant Tradicional" |
+| `{{price}}` | `ListingItem.price_q` formatado | "R$ 8,50" |
 | `{{hashtags}}` | `metadata["social"]["hashtags"]` | "#croissant #fresquinho" |
 | `{{link}}` | Deep link storefront | `https://nelson.boulangerie/produto/croissant-tradicional` |
-| `{{estoque}}` | `Quant.available` | "5" |
-| `{{horario}}` | `now()` formatado | "10h15" |
-| `{{loja}}` | `Shop.brand_name` | "Nelson Boulangerie" |
-| `{{qualidade}}` | `WorkOrder.meta["quality"]` | "excelente" |
+| `{{stock}}` | `Quant.available` | "5" |
+| `{{time}}` | `now()` formatado | "10h15" |
+| `{{store_name}}` | `Shop.brand_name` | "Nelson Boulangerie" |
+| `{{quality}}` | `WorkOrder.meta["quality"]` | "excelente" |
 
 ### 3.3 Announcement
 

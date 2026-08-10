@@ -38,7 +38,7 @@ def colega():
 
 
 def _post() -> Announcement:
-    template = AnnouncementTemplate.objects.create(name="T", body="{{produto}}")
+    template = AnnouncementTemplate.objects.create(name="T", body="{{product_name}}")
     rule = Campaign.objects.create(
         name="Fornada", trigger="production_finished",
         template=template, platforms=["instagram"],

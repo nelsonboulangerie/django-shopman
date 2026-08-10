@@ -15,7 +15,7 @@ const OUTCOME_META = {
   pending: { icon: "lucide:clock", class: "text-muted-foreground" },
 } as const;
 
-const { pendingPosts, recentPosts, stats, loading, error, refresh, approve, discard } =
+const { reachLimits, pendingPosts, recentPosts, stats, loading, error, refresh, approve, discard } =
   useCampaignBoard();
 const { platforms } = useCampaigns();
 
@@ -53,6 +53,31 @@ useHead({ title: "Painel · Marketing" });
         Atualizar
       </button>
     </div>
+
+    <!-- Limites de ALCANCE primeiro: saber que a campanha não chega a quem você
+         imagina é mais urgente que qualquer número do dia. Antes disto o aviso
+         existia só no `check --deploy`, que o gestor nunca lê. -->
+    <section
+      v-if="reachLimits.length"
+      class="mb-5 space-y-2"
+      aria-label="Limites de alcance"
+    >
+      <div
+        v-for="limit in reachLimits"
+        :key="limit.code"
+        class="flex items-start gap-2.5 rounded-lg border border-amber-500/40 bg-amber-500/5 px-3 py-2.5"
+        role="status"
+      >
+        <Icon name="lucide:triangle-alert" class="mt-0.5 size-4 shrink-0 text-amber-600" />
+        <div class="min-w-0">
+          <p class="text-sm font-semibold">{{ limit.title }}</p>
+          <p class="mt-0.5 text-sm text-muted-foreground">{{ limit.detail }}</p>
+          <p v-if="limit.action" class="mt-1 text-xs font-medium text-muted-foreground">
+            {{ limit.action }}
+          </p>
+        </div>
+      </div>
+    </section>
 
     <!-- Números do dia -->
     <section v-if="stats" class="mb-6 grid grid-cols-2 gap-3 sm:grid-cols-4" aria-label="Números de hoje">

@@ -3,7 +3,7 @@
 // ADR-016 (SSE-first): o push do canal pessoal (`/sse/notifications`) só avisa
 // que chegou coisa nova; a VERDADE é sempre o refetch do board. O poll fica
 // como rede de segurança em cadência calma.
-import type { BoardResponse, Announcement, AnnouncementEdits } from "~/types/campaign";
+import type { BoardResponse, Announcement, AnnouncementEdits, ReachLimit } from "~/types/campaign";
 
 const POLL_MS = 60_000;
 
@@ -17,6 +17,8 @@ export function useCampaignBoard() {
   const pendingPosts = computed<Announcement[]>(() => board.value?.pending ?? []);
   const recentPosts = computed<Announcement[]>(() => board.value?.recent ?? []);
   const stats = computed(() => board.value?.stats);
+  /** Limites de alcance: aparecem no topo do painel, antes de qualquer disparo. */
+  const reachLimits = computed<ReachLimit[]>(() => board.value?.reach_limits ?? []);
 
   let pollTimer: ReturnType<typeof setInterval> | null = null;
   onMounted(() => {
@@ -73,6 +75,7 @@ export function useCampaignBoard() {
 
   return {
     board,
+    reachLimits,
     pendingPosts,
     recentPosts,
     stats,

@@ -95,10 +95,26 @@ class CampaignStatsProjection:
 
 
 @dataclass(frozen=True)
+class ReachLimitProjection:
+    """Um limite de ALCANCE que o gestor precisa ver antes de disparar, não depois.
+
+    Nasceu de um teste real: o disparo foi recusado pela Meta com `code 3011` porque o
+    destinatário não interagia há dois anos, e nada no sistema tinha avisado. O aviso
+    existia só no `check --deploy`, que o gestor nunca lê.
+    """
+
+    code: str
+    title: str
+    detail: str
+    action: str = ""
+
+
+@dataclass(frozen=True)
 class CampaignBoardProjection:
     pending: tuple[AnnouncementProjection, ...]
     recent: tuple[AnnouncementProjection, ...]
     stats: CampaignStatsProjection
+    reach_limits: tuple[ReachLimitProjection, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -282,7 +298,62 @@ def build_board(*, now=None) -> CampaignBoardProjection:
             audience_reached_today=reached,
             failed_today=sum(1 for announcement in recent if announcement.status == AnnouncementStatus.FAILED),
         ),
+        reach_limits=_reach_limits(),
     )
+
+
+def _reach_limits() -> tuple[ReachLimitProjection, ...]:
+    """O que hoje impede a campanha de alcançar quem ela promete alcançar.
+
+    Duas perguntas, ambas respondidas por configuração e nenhuma visível ao gestor até
+    agora: existe template aprovado de WhatsApp? existe transporte configurado?
+    """
+    from shopman.shop.models import Campaign, NotificationTemplate
+
+    limits: list[ReachLimitProjection] = []
+
+    uses_whatsapp = any(
+        "whatsapp" in (campaign.platforms or [])
+        for campaign in Campaign.objects.filter(is_active=True)
+    )
+    if not uses_whatsapp:
+        return ()
+
+    has_flow = (
+        NotificationTemplate.objects.filter(event="announcement_published")
+        .exclude(whatsapp_flow_ns="")
+        .exists()
+    )
+    if not has_flow:
+        limits.append(
+            ReachLimitProjection(
+                code="whatsapp_no_template",
+                title="Sem template aprovado do WhatsApp",
+                detail=(
+                    "Hoje a campanha só chega a quem conversou com a loja nas últimas "
+                    "24 horas. Quem não conversou não recebe — é regra da Meta, não "
+                    "falha do envio."
+                ),
+                action="Configurar em Templates de notificação → announcement_published",
+            )
+        )
+
+    from shopman.shop.handlers.campaign import _whatsapp_backend
+
+    if _whatsapp_backend() is None:
+        limits.append(
+            ReachLimitProjection(
+                code="whatsapp_no_backend",
+                title="Nenhum transporte de WhatsApp configurado",
+                detail=(
+                    "O disparo vai registrar falha para todos os destinatários: não há "
+                    "canal pronto para entregar."
+                ),
+                action="Verificar a credencial do ManyChat neste ambiente",
+            )
+        )
+
+    return tuple(limits)
 
 
 def build_history(*, limit: int = 100, now=None) -> tuple[AnnouncementProjection, ...]:

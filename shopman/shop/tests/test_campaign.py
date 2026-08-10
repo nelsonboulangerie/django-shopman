@@ -42,7 +42,7 @@ def product():
 def template():
     return AnnouncementTemplate.objects.create(
         name="Fornada pronta",
-        body="{{produto}} acabou de sair do forno! {{hashtags}} Garanta o seu: {{link}}",
+        body="{{product_name}} acabou de sair do forno! {{hashtags}} Garanta o seu: {{link}}",
     )
 
 
@@ -169,7 +169,7 @@ class TestContent:
 
     def test_price_is_formatted_in_reais(self, product):
         variables = campaign.resolve_variables({"sku": SKU})
-        assert variables["preco"] == "R$ 8,50"
+        assert variables["price"] == "R$ 8,50"
 
     def test_hashtags_get_the_hash_prefix(self, product):
         product.metadata = {"social": {"hashtags": ["croissant", "fresquinho"]}}
@@ -179,10 +179,10 @@ class TestContent:
 
     def test_missing_product_degrades_to_the_sku(self):
         variables = campaign.resolve_variables({"sku": "fantasma"})
-        assert variables["produto"] == "fantasma"
+        assert variables["product_name"] == "fantasma"
 
     def test_quality_reaches_the_template(self, product, template, rule):
-        template.body = "Fornada {{qualidade}} de {{produto}}"
+        template.body = "Fornada {{quality}} de {{product_name}}"
         template.save()
         announcement = campaign.evaluate("production_finished", _context(quality="excelente"))[0]
         assert announcement.body == "Fornada excelente de Croissant Tradicional"
@@ -415,7 +415,7 @@ class TestScheduledApproval:
 
 class TestContentEditing:
     def test_editing_the_body_reprojects_the_platform_variants(self, product, template, rule):
-        template.platform_variants = {"instagram": {"body": "{{produto}} no forno!"}}
+        template.platform_variants = {"instagram": {"body": "{{product_name}} no forno!"}}
         template.save()
         announcement = campaign.evaluate("production_finished", _context())[0]
 

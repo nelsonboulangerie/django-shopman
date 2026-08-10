@@ -65,7 +65,7 @@ class AnnouncementTemplate(models.Model):
     name = models.CharField("nome", max_length=100)
     body = models.TextField(
         "corpo",
-        help_text="Use {{produto}}, {{preco}}, {{hashtags}}, {{link}}, {{loja}}…",
+        help_text="Use {{product_name}}, {{price}}, {{hashtags}}, {{link}}, {{store_name}}…",
     )
     platform_variants = models.JSONField(
         "variações por plataforma", default=dict, blank=True,

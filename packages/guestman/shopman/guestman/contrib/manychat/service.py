@@ -1,8 +1,12 @@
 """Manychat sync service."""
 
+import logging
+
 from django.db import transaction
 from shopman.guestman.contrib.identifiers.models import CustomerIdentifier, IdentifierType
 from shopman.guestman.models import Customer
+
+logger = logging.getLogger("guestman.manychat")
 
 
 class ManychatService:
@@ -51,6 +55,7 @@ class ManychatService:
                     raise ValueError("ManyChat subscriber requires a valid whatsapp_id.")
                 # Update existing customer
                 cls._update_customer(customer, subscriber_data)
+                cls.sync_consent(customer, subscriber_data)
                 return customer, False
 
             # Try to find by other identifiers
@@ -62,6 +67,7 @@ class ManychatService:
                 # Link Manychat ID to existing customer
                 cls._add_manychat_identifiers(customer, subscriber_data, source_system)
                 cls._update_customer(customer, subscriber_data)
+                cls.sync_consent(customer, subscriber_data)
                 return customer, False
 
             if not incoming_phone:
@@ -70,7 +76,57 @@ class ManychatService:
             # Create new customer
             customer = cls._create_customer(subscriber_data, source_system)
             cls._add_manychat_identifiers(customer, subscriber_data, source_system)
+            cls.sync_consent(customer, subscriber_data)
             return customer, True
+
+    #: Campo de opt-in do ManyChat → canal de ``CommunicationConsent``.
+    #:
+    #: O ManyChat manda o ESTADO do opt-in no payload, não um evento de "saiu". Isso é
+    #: melhor do que parecer: sincronizar estado é idempotente e cobre os dois sentidos
+    #: — a pessoa que responde SAIR e a que volta depois. Um handler de evento só cobriria
+    #: a saída, e a volta ficaria presa.
+    OPTIN_FIELD_TO_CHANNEL = {
+        "optin_whatsapp": "whatsapp",
+        "optin_email": "email",
+        "optin_phone": "sms",
+    }
+
+    @classmethod
+    def sync_consent(cls, customer: Customer, subscriber_data: dict) -> dict[str, bool]:
+        """Refletir o opt-in do ManyChat no ``CommunicationConsent`` do guestman.
+
+        Existe porque o rodapé das mensagens promete "responda SAIR para parar", e o
+        flow nativo do ManyChat cumpre isso **lá** — sem isto, a pessoa saía no ManyChat
+        e continuava consentida aqui, e a próxima campanha a alcançaria de novo. Promessa
+        que o sistema não cumpre é pior do que promessa que ele não faz.
+
+        Devolve ``{canal: consentido}`` só para o que veio no payload. Campo ausente NÃO
+        é tratado como revogação: webhook parcial é comum, e assumir "ausente = não
+        consente" apagaria consentimento por silêncio.
+        """
+        from shopman.guestman.contrib.consent.service import ConsentService
+
+        applied: dict[str, bool] = {}
+        for field, channel in cls.OPTIN_FIELD_TO_CHANNEL.items():
+            if field not in subscriber_data:
+                continue
+            value = subscriber_data.get(field)
+            if value is None:
+                continue
+            opted_in = bool(value)
+            try:
+                if opted_in:
+                    ConsentService.grant_consent(customer.ref, channel, source="manychat")
+                else:
+                    ConsentService.revoke_consent(customer.ref, channel)
+            except Exception:
+                logger.warning(
+                    "manychat.consent_sync_failed customer=%s channel=%s",
+                    customer.ref, channel, exc_info=True,
+                )
+                continue
+            applied[channel] = opted_in
+        return applied
 
     @classmethod
     def sync_customer(

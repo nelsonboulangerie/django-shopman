@@ -27,7 +27,7 @@ def product():
 
 @pytest.fixture
 def rule():
-    template = AnnouncementTemplate.objects.create(name="T", body="{{produto}} saiu do forno")
+    template = AnnouncementTemplate.objects.create(name="T", body="{{product_name}} saiu do forno")
     return Campaign.objects.create(
         name="Fornada", trigger="production_finished",
         template=template, platforms=["instagram"],
@@ -103,7 +103,7 @@ class TestAvailabilityReceiver:
             handlers.on_availability_changed(sender=None, sku=SKU, was_out_of_stock=was_out)
 
     def _rule(self, trigger: str):
-        template = AnnouncementTemplate.objects.create(name=trigger, body="{{produto}}")
+        template = AnnouncementTemplate.objects.create(name=trigger, body="{{product_name}}")
         return Campaign.objects.create(
             name=trigger, trigger=trigger, template=template, platforms=["instagram"]
         )
@@ -210,7 +210,7 @@ class TestPostHandler:
 
 class TestNotifyHandler:
     def _announcement(self) -> Announcement:
-        template = AnnouncementTemplate.objects.create(name="T", body="{{produto}}")
+        template = AnnouncementTemplate.objects.create(name="T", body="{{product_name}}")
         rule = Campaign.objects.create(
             name="Audiência", trigger="production_finished", template=template,
             platforms=["whatsapp"], audience_rules={"favorites": True},
