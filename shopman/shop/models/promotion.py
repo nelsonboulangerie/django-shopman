@@ -25,7 +25,16 @@ class Promotion(models.Model):
 
     PERCENT = "percent"
     FIXED = "fixed"
-    TYPE_CHOICES = [(PERCENT, "Percentual"), (FIXED, "Valor fixo")]
+    #: Entrega grátis é **renúncia da taxa por quem a calcula**, nunca linha de
+    #: desconto. A distinção não é estilística: `_is_non_merchandise_line` blinda a
+    #: linha `__DELIVERY_FEE__` contra desconto em dez pontos do `modifiers.py`, e é
+    #: essa invariante que mantém a taxa com UM dono. Ver `_effective_fee_q`.
+    FREE_DELIVERY = "free_delivery"
+    TYPE_CHOICES = [
+        (PERCENT, "Percentual"),
+        (FIXED, "Valor fixo"),
+        (FREE_DELIVERY, "Entrega grátis"),
+    ]
 
     #: Identificador canônico exposto a operação, log e integração (constituição
     #: §3.1). É o que a `Campaign` aponta em `promotion_ref` (ADR-020): apontar para
@@ -34,10 +43,17 @@ class Promotion(models.Model):
     #: amarrar a campanha ao cupom obrigaria a inventar um só para poder anunciar.
     ref = models.SlugField(_("código"), max_length=64, unique=True, db_index=True)
     name = models.CharField("nome", max_length=200)
-    type = models.CharField("tipo", max_length=10, choices=TYPE_CHOICES)
+    type = models.CharField("tipo", max_length=16, choices=TYPE_CHOICES)
+    #: Para `free_delivery` a coluna ganha semântica em vez de virar campo morto:
+    #: `0` é renúncia total, `> 0` é o TETO da renúncia em centavos — "entrega grátis
+    #: até R$ 8,00". Cobre a padaria que quer subsidiar frete curto sem bancar o longo,
+    #: reusando a coluna que já existia.
     value = models.IntegerField(
         "valor",
-        help_text="Percentual (0-100) ou valor fixo em centavos",
+        help_text=(
+            "Percentual (0-100), valor fixo em centavos, ou — para entrega grátis — "
+            "o teto da renúncia em centavos (0 = frete todo)."
+        ),
     )
     valid_from = models.DateTimeField("válido de")
     valid_until = models.DateTimeField("válido até")
@@ -97,6 +113,27 @@ class Promotion(models.Model):
 
     def __str__(self):
         return self.name
+
+    def clean(self):
+        """Barrar configuração que não quer dizer nada.
+
+        Entrega grátis restrita a `pickup` é mentira configurável: não existe taxa de
+        entrega em retirada, então a promoção nunca faria efeito e ninguém saberia por
+        quê. Validar na borda é mais barato que investigar depois.
+        """
+        from django.core.exceptions import ValidationError
+
+        super().clean()
+        if self.type != self.FREE_DELIVERY:
+            return
+        types = [str(t).strip() for t in (self.fulfillment_types or []) if str(t).strip()]
+        if types and "delivery" not in types:
+            raise ValidationError({
+                "fulfillment_types": (
+                    "Entrega grátis precisa valer para entrega. Deixe vazio (todos) ou "
+                    "inclua 'delivery'."
+                )
+            })
 
     def applies_to_channel(self, channel_ref: str) -> bool:
         """A promoção vale neste canal? Vazio = todos (mesma régua do RuleConfig)."""

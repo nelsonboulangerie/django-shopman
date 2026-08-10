@@ -30,18 +30,6 @@ class D1Rule(BaseRule):
         self.discount_percent = discount_percent
 
 
-class PromotionRule(BaseRule):
-    """Promoções automáticas + cupons."""
-
-    code = "shop.discount"
-    label = "Promoções e Cupons"
-    rule_type = "modifier"
-    default_params = {}
-
-    def __init__(self, **kwargs):
-        pass
-
-
 class EmployeeRule(BaseRule):
     """Desconto para funcionários (customer_group == staff)."""
 

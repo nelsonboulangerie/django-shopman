@@ -20,7 +20,7 @@ from shopman.shop.rules.engine import (
     load_rule,
     register_active_rules,
 )
-from shopman.shop.rules.pricing import D1Rule, EmployeeRule, HappyHourRule, PromotionRule
+from shopman.shop.rules.pricing import D1Rule, EmployeeRule, HappyHourRule
 from shopman.shop.rules.validation import BusinessHoursRule, DeliveryZoneRule
 
 # ── Pricing rules: class attributes ──────────────────────────────────
@@ -39,17 +39,6 @@ class TestD1Rule:
     def test_custom_params(self):
         rule = D1Rule(discount_percent=30)
         assert rule.discount_percent == 30
-
-
-class TestPromotionRule:
-    def test_code_and_label(self):
-        rule = PromotionRule()
-        assert rule.code == "shop.discount"
-        assert rule.label == "Promoções e Cupons"
-        assert rule.rule_type == "modifier"
-
-    def test_default_params(self):
-        assert PromotionRule.default_params == {}
 
 
 class TestEmployeeRule:

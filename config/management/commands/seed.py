@@ -5066,13 +5066,6 @@ class Command(BaseCommand):
                 "priority": 15,
             },
             {
-                "ref": "promotion_discount",
-                "rule_path": "shopman.shop.rules.pricing.PromotionRule",
-                "label": "Promoções e Cupons",
-                "params": {},
-                "priority": 20,
-            },
-            {
                 "ref": "employee_discount",
                 "rule_path": "shopman.shop.rules.pricing.EmployeeRule",
                 "label": "Desconto Funcionário",
