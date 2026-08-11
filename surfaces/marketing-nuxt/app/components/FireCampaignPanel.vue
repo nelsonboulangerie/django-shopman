@@ -22,6 +22,8 @@ import type { AudienceMatch, Campaign, Choice, ChosenAudience } from "~/types/ca
 const props = defineProps<{
   rule: Campaign | null;
   priceTiers: Choice[];
+  /** Etiquetas existentes, com a contagem de gente no rótulo. */
+  tags: Choice[];
   rfmSegments: Choice[];
   busy?: boolean;
 }>();
@@ -34,6 +36,7 @@ type FireRequest = { body: string; audience: ChosenAudience };
 const body = ref("");
 const useSaved = ref(true);
 const tiers = ref<string[]>([]);
+const chosenTags = ref<string[]>([]);
 const segments = ref<string[]>([]);
 const winBack = ref(false);
 const birthday = ref(false);
@@ -45,6 +48,7 @@ const { count, pending: counting, failed: countFailed, measure, clear } = useAud
 /** Rótulos do servidor: o resumo do público da campanha não traduz ref por conta. */
 const audienceLabels = computed(() => ({
   priceTiers: choiceLabels(props.priceTiers),
+  tags: choiceLabels(props.tags),
   segments: choiceLabels(props.rfmSegments),
 }));
 
@@ -56,6 +60,7 @@ watch(
     body.value = "";
     useSaved.value = true;
     tiers.value = [];
+    chosenTags.value = [];
     segments.value = [];
     winBack.value = false;
     birthday.value = false;
@@ -73,6 +78,12 @@ function toggleTier(value: string) {
     : [...tiers.value, value];
 }
 
+function toggleTag(value: string) {
+  chosenTags.value = chosenTags.value.includes(value)
+    ? chosenTags.value.filter((v) => v !== value)
+    : [...chosenTags.value, value];
+}
+
 function toggleSegment(value: string) {
   segments.value = segments.value.includes(value)
     ? segments.value.filter((v) => v !== value)
@@ -83,6 +94,7 @@ const chosen = computed<ChosenAudience>(() => {
   if (useSaved.value) return {};
   const audience: ChosenAudience = {};
   if (tiers.value.length) audience.price_tiers = [...tiers.value];
+  if (chosenTags.value.length) audience.tags = [...chosenTags.value];
   if (segments.value.length) audience.rfm_segments = [...segments.value];
   if (winBack.value) audience.churn_risk_min = 0.7;
   if (birthday.value) audience.birthday_today = true;
@@ -97,6 +109,7 @@ const nothingChosen = computed(
   () =>
     !useSaved.value &&
     !tiers.value.length &&
+    !chosenTags.value.length &&
     !segments.value.length &&
     !winBack.value &&
     !birthday.value,
@@ -106,6 +119,7 @@ const nothingChosen = computed(
 const rulesChosen = computed(
   () =>
     (tiers.value.length ? 1 : 0) +
+    (chosenTags.value.length ? 1 : 0) +
     (segments.value.length ? 1 : 0) +
     (winBack.value ? 1 : 0) +
     (birthday.value ? 1 : 0),
@@ -170,6 +184,32 @@ watch(
     </fieldset>
 
     <div v-if="!useSaved" class="space-y-4 rounded-lg bg-muted/40 p-3">
+      <!-- Etiquetas primeiro: é o único público que o operador monta sozinho. RFM e
+           churn são calculados, faixa é comercial, aniversário é cadastral. -->
+      <fieldset v-if="tags.length">
+        <legend class="mb-1.5 text-xs font-semibold uppercase text-muted-foreground">
+          Etiquetas
+        </legend>
+        <div class="flex flex-wrap gap-1.5">
+          <button
+            v-for="tag in tags"
+            :key="tag.value"
+            type="button"
+            class="rounded-full border px-2.5 py-1 text-xs transition"
+            :class="chosenTags.includes(tag.value)
+              ? 'border-primary bg-primary text-primary-foreground'
+              : 'border-border hover:bg-muted'"
+            :aria-pressed="chosenTags.includes(tag.value)"
+            @click="toggleTag(tag.value)"
+          >
+            {{ tag.label }}
+          </button>
+        </div>
+        <p class="mt-1.5 text-xs text-muted-foreground">
+          Quem etiqueta é quem atende, na ficha do cliente.
+        </p>
+      </fieldset>
+
       <fieldset v-if="priceTiers.length">
         <legend class="mb-1.5 text-xs font-semibold uppercase text-muted-foreground">
           Faixa de preço

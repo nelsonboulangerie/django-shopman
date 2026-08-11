@@ -43,3 +43,7 @@ DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
 USE_TZ = True
 TIME_ZONE = "America/Sao_Paulo"
+
+# Mesma régua do deployment (`config/settings.py`): slug de tag em ASCII, porque é o slug
+# que viaja em JSON de regra. Divergir por ambiente faria o teste passar e a produção não.
+TAGGIT_STRIP_UNICODE_WHEN_SLUGIFYING = True

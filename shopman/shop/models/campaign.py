@@ -149,8 +149,8 @@ class Campaign(models.Model):
         help_text=(
             'Por evento (exigem SKU): {"favorites": true, "alerts": true, '
             '"bought_within_days": 90}. '
-            'Escolhidos pelo gestor: {"customer_refs": [], "groups": [], '
-            '"rfm_segments": ["champion"], "churn_risk_min": 0.7, '
+            'Escolhidos pelo gestor: {"customer_refs": [], "price_tiers": [], '
+            '"tags": ["corredores"], "rfm_segments": ["champion"], "churn_risk_min": 0.7, '
             '"bought_skus": [], "bought_collections": [], "birthday_today": true}. '
             'Combinação: {"match": "any"} soma as regras, {"match": "all"} cruza. '
             'Entrega: {"vip_first_minutes": 15, "preferred_hour_window_hours": 4}.'

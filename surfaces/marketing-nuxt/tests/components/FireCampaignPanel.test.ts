@@ -52,6 +52,10 @@ const TIERS = [
   { value: "varejo", label: "Varejo" },
   { value: "atacado", label: "Atacado" },
 ];
+const TAGS = [
+  { value: "corredores", label: "corredores (3)" },
+  { value: "sem-gluten", label: "sem glúten (1)" },
+];
 const SEGMENTS = [
   { value: "champion", label: "campeão" },
   { value: "at_risk", label: "em risco" },
@@ -73,7 +77,7 @@ function makeRule(over: Partial<Campaign> = {}): Campaign {
 
 function panel(rule: Campaign | null = makeRule()) {
   return mount(FireCampaignPanel, {
-    props: { rule, priceTiers: TIERS, rfmSegments: SEGMENTS },
+    props: { rule, priceTiers: TIERS, tags: TAGS, rfmSegments: SEGMENTS },
     global: { stubs: { Icon: true } },
     globalProperties: {},
   });
@@ -312,5 +316,57 @@ describe("FireCampaignPanel — somar ou cruzar as regras", () => {
     await wrapper.find("form").trigger("submit");
 
     expect(wrapper.emitted("submit")?.at(-1)).toEqual([{ body: "", audience: {} }]);
+  });
+});
+
+
+// ── Etiquetas: o público que o operador monta sozinho ────────────────
+
+describe("FireCampaignPanel — etiquetas", () => {
+  /** As opções só existem em "Escolher agora" — no modo salvo, quem manda é a campanha. */
+  async function chooseNow() {
+    const wrapper = panel();
+    await wrapper.findAll('input[name="audience-mode"]')[1]!.setValue();
+    return wrapper;
+  }
+
+  it("oferece as etiquetas que existem, com quantas pessoas cada uma tem", async () => {
+    // A contagem no rótulo evita o erro mais comum: etiqueta criada e nunca usada.
+    expect((await chooseNow()).text()).toContain("corredores (3)");
+  });
+
+  it("manda os slugs escolhidos no vocabulário do backend", async () => {
+    const wrapper = panel();
+    await wrapper.findAll('input[name="audience-mode"]')[1]!.setValue();
+    const chips = wrapper.findAll("button[aria-pressed]");
+    await chips.find((c) => c.text() === "corredores (3)")!.trigger("click");
+    await wrapper.find("form").trigger("submit");
+
+    const [payload] = wrapper.emitted("submit")!.at(-1) as [{ audience: { tags?: string[] } }];
+    expect(payload.audience.tags).toEqual(["corredores"]);
+  });
+
+  it("diz de quem é o trabalho de etiquetar, para o gestor não procurar aqui", async () => {
+    expect((await chooseNow()).text()).toContain("Quem etiqueta é quem atende");
+  });
+
+  it("etiqueta sozinha já habilita o disparo", async () => {
+    const wrapper = panel();
+    await wrapper.findAll('input[name="audience-mode"]')[1]!.setValue();
+    const chips = wrapper.findAll("button[aria-pressed]");
+    await chips.find((c) => c.text() === "corredores (3)")!.trigger("click");
+
+    expect(wrapper.find('button[type="submit"]').attributes("disabled")).toBeUndefined();
+  });
+
+  it("etiqueta conta como regra na hora de somar ou cruzar", async () => {
+    const wrapper = panel();
+    await wrapper.findAll('input[name="audience-mode"]')[1]!.setValue();
+    const chips = wrapper.findAll("button[aria-pressed]");
+    await chips.find((c) => c.text() === "corredores (3)")!.trigger("click");
+    expect(wrapper.text()).not.toContain("Qualquer uma");
+
+    await chips.find((c) => c.text() === "Atacado")!.trigger("click");
+    expect(wrapper.text()).toContain("Qualquer uma");
   });
 });

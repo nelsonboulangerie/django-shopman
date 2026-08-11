@@ -22,6 +22,7 @@ export function useCampaigns() {
   const platforms = computed(() => options.value?.platforms ?? []);
   const variables = computed(() => options.value?.variables ?? []);
   const priceTiers = computed(() => options.value?.price_tiers ?? []);
+  const tags = computed(() => options.value?.tags ?? []);
   const rfmSegments = computed(() => options.value?.rfm_segments ?? []);
   // Só ofertas que montam sacola chegam aqui — o servidor já filtrou.
   const offers = computed(() => options.value?.offers ?? []);
@@ -116,6 +117,7 @@ export function useCampaigns() {
     platformLabels,
     variables,
     priceTiers,
+    tags,
     rfmSegments,
     offers,
     loading: pending,

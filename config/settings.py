@@ -686,6 +686,15 @@ LOCALE_PATHS = [os.path.join(BASE_DIR, "locale")]
 
 from django.urls import reverse_lazy  # noqa: E402
 
+# ── taggit ───────────────────────────────────────────────────────────
+#
+# Slug de tag em ASCII. Sem isto, "Sem glúten" gera o slug `sem-glúten`, e é o SLUG que
+# viaja dentro de `Campaign.audience_rules` (`{"tags": ["sem-gluten"]}`): acento em chave
+# de JSON é armadilha de encoding e de copiar-e-colar. Vale para as etiquetas de cliente
+# (`CustomerTag`) e para as palavras-chave de produto — ninguém consulta tag por slug hoje
+# (as buscas usam `name`), então a troca não muda comportamento nenhum.
+TAGGIT_STRIP_UNICODE_WHEN_SLUGIFYING = True
+
 
 def _unfold_site_title(request=None):
     try:

@@ -226,6 +226,9 @@ class CampaignOptionsProjection:
     variables: tuple[str, ...]
     #: As faixas de preço (`PriceTier`) — varejo, atacado, staff.
     price_tiers: tuple[ChoiceProjection, ...] = ()
+    #: As etiquetas que o operador criou (`CustomerTag`). É o único público que ele monta
+    #: sozinho: RFM e churn são calculados, faixa é comercial, aniversário é cadastral.
+    tags: tuple[ChoiceProjection, ...] = ()
     rfm_segments: tuple[ChoiceProjection, ...] = ()
     #: Ofertas vivas que a campanha pode anunciar. Só as que MONTAM sacola: uma promoção
     #: que vale para o cardápio todo não tem itens para montar, e oferecê-la aqui daria
@@ -246,6 +249,7 @@ class CampaignOptionsProjection:
 _AUDIENCE_PART_LABELS: tuple[tuple[str, str], ...] = (
     ("chosen_count", "Escolhidos um a um"),
     ("price_tiers_count", "Faixa de preço"),
+    ("tags_count", "Etiquetas"),
     ("rfm_count", "Comportamento de compra"),
     ("churn_risk_count", "Estão sumindo"),
     ("birthday_count", "Aniversariantes de hoje"),
@@ -662,6 +666,7 @@ def build_options() -> CampaignOptionsProjection:
         templates=build_templates(),
         variables=available_variables(),
         price_tiers=_price_tier_choices(),
+        tags=_tag_choices(),
         rfm_segments=_rfm_segment_choices(),
         offers=_offer_choices(),
     )
@@ -696,6 +701,28 @@ def _price_tier_choices() -> tuple[ChoiceProjection, ...]:
         )
     except Exception:
         logger.warning("marketing.price_tiers_failed", exc_info=True)
+        return ()
+
+
+def _tag_choices() -> tuple[ChoiceProjection, ...]:
+    """Etiquetas existentes, com quantos clientes cada uma tem.
+
+    A contagem vai no rótulo porque etiqueta sem gente é o erro mais comum aqui: alguém
+    cria "corredores", nunca etiqueta ninguém, e a campanha alcança zero sem dizer por quê.
+    """
+    try:
+        from django.db.models import Count
+        from shopman.guestman.models import CustomerTag
+
+        return tuple(
+            ChoiceProjection(
+                value=tag.slug,
+                label=f"{tag.name} ({tag.people})" if tag.people else f"{tag.name} (ninguém)",
+            )
+            for tag in CustomerTag.objects.annotate(people=Count("tagged_items")).order_by("name")
+        )
+    except Exception:
+        logger.warning("marketing.tags_failed", exc_info=True)
         return ()
 
 

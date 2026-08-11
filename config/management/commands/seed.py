@@ -2973,6 +2973,8 @@ class Command(BaseCommand):
             )
             customers[ref] = c
 
+        self._seed_customer_tags(customers)
+
         # Vínculos de login apontam para o uuid do Customer. Se a base perdeu os
         # clientes e ganhou uuids novos (reset parcial), o login antigo fica
         # órfão e o cliente perde o canal em tempo real sem nenhum aviso. Aqui o
@@ -5092,6 +5094,34 @@ class Command(BaseCommand):
         KDSInstance.objects.filter(ref__in=["padaria"]).delete()
 
         self.stdout.write("  ✅ 4 estações KDS (Cafés, Lanches, Encomendas, Expedição)")
+
+    # ────────────────────────────────────────────────────────────────
+    # Etiquetas de cliente
+    # ────────────────────────────────────────────────────────────────
+
+    def _seed_customer_tags(self, customers):
+        """Etiquetas de exemplo — o único público que o operador monta sozinho.
+
+        Existem no seed porque o seletor de público do Marketing nasce VAZIO sem elas, e
+        tela vazia não ensina para que serve o recurso. São exemplos plausíveis de padaria,
+        não dado real: quem etiqueta de verdade é quem atende.
+        """
+        self.stdout.write("  🏷️  Etiquetas de cliente...")
+
+        etiquetas = {
+            "CLI-001": ["corredores", "vizinho"],
+            "CLI-003": ["corredores"],
+            "CLI-005": ["sem gluten"],
+            "CLI-002": ["entrega na segunda"],
+            "CLI-004": ["entrega na segunda"],
+        }
+        for ref, tags in etiquetas.items():
+            customer = customers.get(ref)
+            if customer is None:
+                continue
+            customer.tags.set(tags)
+
+        self.stdout.write(f"  ✅ {len(etiquetas)} clientes etiquetados")
 
     # ────────────────────────────────────────────────────────────────
     # Insights de cliente

@@ -126,6 +126,7 @@ class CustomerAdmin(BaseModelAdmin):
         "customer_header",
         "customer_type_badge",
         "price_tier",
+        "tag_list",
         "orders_count",
         "rfm_segment_badge",
         "churn_risk_badge",
@@ -135,6 +136,7 @@ class CustomerAdmin(BaseModelAdmin):
     list_filter = [
         "customer_type",
         ("price_tier", ChoicesDropdownFilter),
+        "tags",
         "is_active",
         RFMSegmentFilter,
     ]
@@ -159,7 +161,7 @@ class CustomerAdmin(BaseModelAdmin):
             },
         ),
         ("Contato", {"fields": ["email", "phone"]}),
-        ("Segmentação", {"fields": ["price_tier", "notes"]}),
+        ("Segmentação", {"fields": ["price_tier", "tags", "notes"]}),
         (
             "Sistema",
             {
@@ -198,6 +200,12 @@ class CustomerAdmin(BaseModelAdmin):
     def is_active_badge(self, obj):
         return obj.is_active
 
+    @display(description=_("Etiquetas"))
+    def tag_list(self, obj):
+        """As etiquetas do cliente, em texto. Sem etiqueta é "—", não vazio."""
+        names = [tag.name for tag in obj.tags.all()]
+        return ", ".join(names) if names else "—"
+
     @display(description="Pedidos")
     def orders_count(self, obj):
         """Show order count using Orderman's public customer-history contract."""
@@ -212,7 +220,9 @@ class CustomerAdmin(BaseModelAdmin):
             return "—"
 
     def get_queryset(self, request):
-        qs = super().get_queryset(request)
+        # ⚠️ `prefetch_related("tags")` não é enfeite: a coluna de etiquetas faria uma
+        # query POR LINHA da lista (N+1) — 50 clientes, 50 idas ao banco.
+        qs = super().get_queryset(request).prefetch_related("tags")
         try:
             from django.db.models import OuterRef, Subquery
             from shopman.guestman.contrib.insights.models import CustomerInsight

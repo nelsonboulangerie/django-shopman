@@ -36,6 +36,7 @@ Tabela de lookup para deduplicação multi-canal: phone, email, CPF, manychat_id
 | `email` | EmailField | Cache do email principal |
 | `phone` | CharField(20) | Cache do telefone principal (E.164) |
 | `price_tier` | FK(PriceTier, null) | Faixa comercial: qual tabela de preço o cliente vê |
+| `tags` | M2M(CustomerTag) | Etiquetas livres do operador. Muitas por cliente, sem efeito em preço |
 | `is_active` | BooleanField | Soft-delete |
 | `notes` | TextField | Notas internas |
 | `metadata` | JSONField | Dados customizados |

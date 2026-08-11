@@ -154,7 +154,7 @@ class CustomerAdmin(MergeAdminMixin, admin.ModelAdmin):
             },
         ),
         ("Contact", {"fields": ["email", "phone"]}),
-        ("Segmentation", {"fields": ["price_tier", "notes"]}),
+        ("Segmentation", {"fields": ["price_tier", "tags", "notes"]}),
         (
             "System",
             {

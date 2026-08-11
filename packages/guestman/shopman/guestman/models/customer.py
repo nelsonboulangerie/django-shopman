@@ -22,6 +22,7 @@ import uuid as uuid_lib
 from django.db import models
 from django.utils.translation import gettext_lazy as _
 from shopman.utils.refs import RefField
+from taggit.managers import TaggableManager
 
 
 class CustomerType(models.TextChoices):
@@ -87,6 +88,18 @@ class Customer(models.Model):
         null=True,
         blank=True,
         verbose_name=_("faixa de preço"),
+    )
+
+    #: Etiquetas livres, criadas por quem atende: "corredores", "sem glúten", "vizinho".
+    #: MUITAS por cliente e sem efeito em preço — é o que as separa da `price_tier`.
+    #: Namespace próprio (`CustomerTag`), nunca o `taggit.Tag` global, que já é do
+    #: `Product.keywords`: sem isso, palavra-chave de SEO apareceria como etiqueta de
+    #: gente. Ver `models/tag.py`.
+    tags = TaggableManager(
+        _("etiquetas"),
+        through="guestman.TaggedCustomer",
+        blank=True,
+        help_text=_("Separe por vírgula. Ex: corredores, sem glúten, vizinho"),
     )
 
     # Status (is_active is appropriate - see spec 000 section 12.3)

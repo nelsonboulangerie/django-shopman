@@ -148,6 +148,7 @@ export function audienceRulesSummary(
   if (rules?.alerts) parts.push("alertas");
   if (rules?.bought_within_days) parts.push(`recompra em ${rules.bought_within_days} dias`);
   if (rules?.price_tiers?.length) parts.push(named(rules.price_tiers, labels.priceTiers));
+  if (rules?.tags?.length) parts.push(named(rules.tags, labels.tags));
   if (rules?.rfm_segments?.length) parts.push(named(rules.rfm_segments, labels.segments));
   if (rules?.churn_risk_min) parts.push("quem está sumindo");
   if (rules?.birthday_today) parts.push("aniversariantes de hoje");
@@ -172,6 +173,7 @@ export function audienceRulesSummary(
  */
 export type AudienceLabels = {
   priceTiers?: Record<string, string>;
+  tags?: Record<string, string>;
   segments?: Record<string, string>;
 };
 

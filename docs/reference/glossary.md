@@ -51,6 +51,7 @@ Termos de domínio usados no código e na documentação.
 |-------|-----------|
 | **Customer** | Cliente com `ref`, nome, tipo (`individual`/`business`), grupo, telefone. |
 | **PriceTier** | A faixa comercial do cliente (varejo, atacado, staff): escolhe a tabela de preço (`listing_ref`) e serve de segmento para promoção. UMA por cliente, e ela precifica. Chamava-se `CustomerGroup`, nome que escondia o efeito no preço. Não confundir com o tier de FIDELIDADE (`LoyaltyAccount.tier`, bronze/ouro). |
+| **CustomerTag** (etiqueta) | Rótulo livre que o operador cria na ficha do cliente ("corredores", "sem glúten"). MUITAS por cliente, sem efeito em preço, e o único público que quem atende monta sozinho. Namespace PRÓPRIO, nunca o `taggit.Tag` global de `Product.keywords`. |
 | **ContactPoint** | Ponto de contato do cliente (WhatsApp, email, etc.). `type` + `value_normalized`. |
 | **CustomerAddress** | Endereço de entrega com label, componentes estruturados, flag `is_default`. |
 

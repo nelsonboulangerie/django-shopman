@@ -201,7 +201,8 @@ def resolve(rules: dict | None = None, *, sku: str = "") -> AudienceResult:
             Por evento (exigem ``sku``): ``favorites`` (bool), ``alerts`` (bool),
             ``bought_within_days`` (int).
 
-            Escolhidos pelo gestor: ``customer_refs``, ``price_tiers``, ``rfm_segments``,
+            Escolhidos pelo gestor: ``customer_refs``, ``price_tiers``, ``tags``,
+            ``rfm_segments``,
             ``churn_risk_min``, ``bought_skus``/``bought_collections`` (com
             ``bought_within_days``), ``birthday_today``.
 
@@ -249,6 +250,9 @@ def resolve(rules: dict | None = None, *, sku: str = "") -> AudienceResult:
             _by_price_tiers(rules.get("price_tiers")),
             reason="price_tiers", count_key="price_tiers_count",
         )
+
+    if rules.get("tags"):
+        apply(_by_tags(rules.get("tags")), reason="tags", count_key="tags_count")
 
     if rules.get("rfm_segments"):
         apply(_by_rfm_segments(rules.get("rfm_segments")), reason="rfm", count_key="rfm_count")
@@ -484,6 +488,38 @@ def _by_price_tiers(tier_refs) -> list[Recipient]:
         )
     except Exception:
         logger.warning("audience.price_tiers_failed", exc_info=True)
+        return []
+    return _recipients_for_refs(refs)
+
+
+def _by_tags(tag_slugs) -> list[Recipient]:
+    """"Os corredores" — por ``CustomerTag.slug``.
+
+    A etiqueta é o único público que o operador cria SOZINHO, sem esperar cálculo nem
+    deploy: RFM e churn são derivados, faixa de preço é comercial, aniversário é dado
+    cadastral. Etiqueta é o que ele sabe da pessoa e o sistema não tem como saber.
+
+    Casa por ``slug`` (que é como a etiqueta viaja na regra) ou por ``name``, porque o
+    operador digita "Sem glúten" e o slug é "sem-gluten": exigir o slug faria a regra
+    salvar limpa e alcançar ninguém.
+    """
+    cleaned = [str(t).strip() for t in (tag_slugs or []) if str(t).strip()]
+    if not cleaned:
+        return []
+    try:
+        from django.db.models import Q
+        from shopman.guestman.models import Customer
+
+        refs = list(
+            Customer.objects.filter(
+                Q(tags__slug__in=cleaned) | Q(tags__name__in=cleaned), is_active=True
+            )
+            .exclude(phone="")
+            .values_list("ref", flat=True)
+            .distinct()
+        )
+    except Exception:
+        logger.warning("audience.tags_failed", exc_info=True)
         return []
     return _recipients_for_refs(refs)
 

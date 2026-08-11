@@ -443,3 +443,91 @@ def test_the_campaign_refuses_an_unknown_match_mode(db):
     with pytest.raises(ValidationError) as err:
         campaign.clean()
     assert "audience_rules" in err.value.message_dict
+
+
+# ── Etiquetas: o público que o operador monta sozinho ────────────────
+#
+# RFM e churn são CALCULADOS, faixa de preço é comercial, aniversário é cadastral. A
+# etiqueta é a única coisa que quem atende sabe da pessoa e o sistema não tem como saber —
+# "corredores", "sem glúten", "vizinho".
+
+
+def test_tag_audience(db):
+    marked = _customer("+5543999994001", ref="CLI-T1")
+    marked.tags.add("corredores")
+    _customer("+5543999994002", ref="CLI-T2")
+
+    result = audience.resolve({"tags": ["corredores"]})
+    assert [r.phone for r in result.general] == [marked.phone]
+
+
+def test_a_tag_matches_by_slug_or_by_what_the_operator_typed(db):
+    """⚠️ O operador digita "Sem glúten"; o slug é "sem-gluten".
+
+    Exigir o slug faria a regra salvar limpa e alcançar ninguém — o pior resultado
+    possível aqui, porque nada na tela indicaria o erro.
+    """
+    marked = _customer("+5543999994003", ref="CLI-T3")
+    marked.tags.add("Sem glúten")
+
+    by_slug = audience.resolve({"tags": ["sem-gluten"]})
+    by_name = audience.resolve({"tags": ["Sem glúten"]})
+
+    assert [r.phone for r in by_slug.general] == [marked.phone]
+    assert [r.phone for r in by_name.general] == [marked.phone]
+
+
+def test_two_tags_on_the_same_person_is_one_recipient(db):
+    """Dedupe por telefone vale para etiqueta também: ninguém recebe em dobro."""
+    marked = _customer("+5543999994004", ref="CLI-T4")
+    marked.tags.add("corredores", "vizinho")
+
+    result = audience.resolve({"tags": ["corredores", "vizinho"]})
+    assert len(result.general) == 1
+
+
+def test_tags_cross_with_the_other_rules(db):
+    """"os corredores QUE são atacado" — etiqueta entra na interseção como as outras."""
+    atacado = PriceTier.objects.create(ref="atacado", name="Atacado")
+    both = _customer("+5543999994005", ref="CLI-T5", price_tier=atacado)
+    both.tags.add("corredores")
+    only_tag = _customer("+5543999994006", ref="CLI-T6")
+    only_tag.tags.add("corredores")
+
+    result = audience.resolve({
+        "tags": ["corredores"], "price_tiers": ["atacado"], "match": audience.MATCH_ALL,
+    })
+
+    assert [r.phone for r in result.general] == [both.phone]
+
+
+def test_an_unknown_tag_reaches_nobody_instead_of_everybody(db):
+    """Etiqueta que não existe é público VAZIO — nunca "sem filtro"."""
+    marked = _customer("+5543999994007", ref="CLI-T7")
+    marked.tags.add("corredores")
+
+    assert audience.resolve({"tags": ["ciclistas"]}).total == 0
+
+
+def test_a_customer_tag_is_not_a_product_keyword(db):
+    """⚠️ A razão do modelo de tag PRÓPRIO.
+
+    O projeto já usa taggit em `Product.keywords` (SEO), e o `taggit.Tag` padrão é um
+    namespace GLOBAL. Com ele, "integral" do catálogo apareceria no seletor de etiquetas de
+    cliente, e uma etiqueta de gente poluiria a busca da loja.
+    """
+    from shopman.guestman.models import CustomerTag
+    from taggit.models import Tag
+
+    marked = _customer("+5543999994008", ref="CLI-T8")
+    marked.tags.add("integral")
+
+    product = Product.objects.create(
+        sku="PAO-INT", name="Pão integral", base_price_q=1200, is_published=True
+    )
+    product.keywords.add("integral")
+
+    assert CustomerTag.objects.filter(name="integral").count() == 1
+    assert Tag.objects.filter(name="integral").count() == 1  # o do produto, separado
+    # E o cruzamento não vaza: a etiqueta do cliente não conhece o produto.
+    assert list(CustomerTag.objects.values_list("name", flat=True)) == ["integral"]

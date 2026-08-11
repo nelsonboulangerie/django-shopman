@@ -109,6 +109,8 @@ export interface AudienceRules {
   /** Ausente = soma, o padrão de sempre. */
   match?: AudienceMatch;
   price_tiers?: string[];
+  /** `CustomerTag.slug` — o público que o operador monta sozinho. */
+  tags?: string[];
   rfm_segments?: string[];
   churn_risk_min?: number;
   birthday_today?: boolean;
@@ -139,6 +141,8 @@ export interface CampaignOptions {
   /** Vocabulário de público — vem do backend para a tela nunca oferecer o que o
    *  resolvedor não conhece. */
   price_tiers: Choice[];
+  /** Etiquetas existentes, com a contagem de gente no rótulo. */
+  tags: Choice[];
   rfm_segments: Choice[];
   /** Ofertas vivas que MONTAM sacola. O servidor já tirou as que valem para tudo:
    *  oferecê-las daria ao gestor um botão que promete o que não cumpre. */
@@ -150,6 +154,8 @@ export interface ChosenAudience {
   /** Ausente = soma as regras (padrão). `all` cruza: só quem se encaixa em todas. */
   match?: AudienceMatch;
   price_tiers?: string[];
+  /** `CustomerTag.slug` — o público que o operador monta sozinho. */
+  tags?: string[];
   rfm_segments?: string[];
   churn_risk_min?: number;
   birthday_today?: boolean;

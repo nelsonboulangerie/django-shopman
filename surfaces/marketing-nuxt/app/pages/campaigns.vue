@@ -8,7 +8,7 @@ import { audienceRulesSummary, choiceLabels, platformsSummary } from "~/presenta
 import type { Campaign, ChosenAudience } from "~/types/campaign";
 
 const {
-  rules, templates, triggers, platforms, platformLabels, priceTiers, rfmSegments, offers,
+  rules, templates, triggers, platforms, platformLabels, priceTiers, tags, rfmSegments, offers,
   loading, error, refresh, toggle, patch, create, fire,
 } = useCampaigns();
 // A prévia precisa saber se há template aprovado: com ele, o texto que sai no WhatsApp é o
@@ -20,6 +20,7 @@ onMounted(() => { waTemplate.load(); });
 // `RFM_SEGMENTS`); a tela só consulta o mapa que a projection entrega.
 const audienceLabels = computed(() => ({
   priceTiers: choiceLabels(priceTiers.value),
+  tags: choiceLabels(tags.value),
   segments: choiceLabels(rfmSegments.value),
 }));
 
@@ -255,6 +256,7 @@ useHead({ title: "Campanhas · Marketing" });
           <FireCampaignPanel
             :rule="firing"
             :price-tiers="priceTiers"
+            :tags="tags"
             :rfm-segments="rfmSegments"
             :busy="busy"
             @submit="onFire"

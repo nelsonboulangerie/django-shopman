@@ -10,6 +10,8 @@ requires-python = ">=3.12"
 dependencies = [
     "Django>=6.0,<6.1",
     "shopman-utils>=0.3.0",
+    # Etiquetas de cliente (`CustomerTag`), com modelo de tag próprio.
+    "django-taggit>=6.1,<7.0",
 ]
 
 [project.optional-dependencies]
