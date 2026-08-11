@@ -1,9 +1,9 @@
 <script setup lang="ts">
-// Regras — o que a operação dispara sozinha.
+// Campanhas — o que a operação dispara sozinha.
 //
 // O gesto mais comum é ligar/desligar, então ele fica a um toque na própria
 // linha. Editar abre um painel lateral: a lista continua visível, e o gestor
-// não perde o contexto de quais outras regras já existem.
+// não perde o contexto de quais outras campanhas já existem.
 import { audienceRulesSummary, platformsSummary } from "~/presentation/campaign";
 import type { Campaign, ChosenAudience } from "~/types/campaign";
 
@@ -54,20 +54,30 @@ async function onSubmit(payload: Record<string, unknown>) {
   if (ok) close();
 }
 
-useHead({ title: "Regras · Marketing" });
+useHead({ title: "Campanhas · Marketing" });
 </script>
 
 <template>
   <main class="mx-auto w-full max-w-4xl flex-1 px-4 py-6">
     <div class="mb-5 flex items-center gap-3">
-      <h1 class="text-xl font-bold">Regras</h1>
+      <h1 class="text-xl font-bold">Campanhas</h1>
+      <!-- A biblioteca de modelos é vista SECUNDÁRIA daqui, não seção irmã: o gestor pensa
+           "o que a padaria diz quando X acontece", e separar o texto da intenção o obrigava
+           a montar isso em duas telas. -->
+      <NuxtLink
+        to="/templates"
+        class="ml-auto inline-flex items-center gap-1.5 rounded-md border border-border px-2.5 py-1.5 text-sm text-muted-foreground transition hover:bg-muted"
+      >
+        <Icon name="lucide:file-text" class="size-3.5" />
+        Modelos
+      </NuxtLink>
       <button
         type="button"
-        class="ml-auto inline-flex items-center gap-1.5 rounded-md bg-primary px-3 py-1.5 text-sm font-semibold text-primary-foreground transition hover:bg-primary/90"
+        class="inline-flex items-center gap-1.5 rounded-md bg-primary px-3 py-1.5 text-sm font-semibold text-primary-foreground transition hover:bg-primary/90"
         @click="openNew"
       >
         <Icon name="lucide:plus" class="size-4" />
-        Nova regra
+        Nova campanha
       </button>
     </div>
 
@@ -76,7 +86,7 @@ useHead({ title: "Regras · Marketing" });
       class="rounded-lg border border-destructive/40 bg-destructive/5 px-4 py-3 text-sm"
       role="alert"
     >
-      <p class="font-semibold text-destructive">Não conseguimos carregar as regras.</p>
+      <p class="font-semibold text-destructive">Não conseguimos carregar as campanhas.</p>
       <button type="button" class="mt-1 underline underline-offset-2" @click="refresh()">
         Tentar de novo
       </button>
@@ -91,9 +101,9 @@ useHead({ title: "Regras · Marketing" });
       class="rounded-xl border border-dashed border-border bg-card/50 px-6 py-10 text-center"
     >
       <Icon name="lucide:sliders-horizontal" class="mx-auto size-8 text-muted-foreground" />
-      <p class="mt-2 font-semibold">Nenhuma regra ainda</p>
+      <p class="mt-2 font-semibold">Nenhuma campanha ainda</p>
       <p class="mt-1 text-sm text-muted-foreground">
-        Uma regra liga um evento da padaria a um announcement. Comece pela fornada.
+        Uma campanha liga um evento da padaria a um anúncio. Comece pela fornada.
       </p>
       <button
         type="button"
@@ -112,7 +122,7 @@ useHead({ title: "Regras · Marketing" });
           type="button"
           role="switch"
           :aria-checked="rule.is_active"
-          :aria-label="`${rule.is_active ? 'Desligar' : 'Ligar'} a regra ${rule.name}`"
+          :aria-label="`${rule.is_active ? 'Desligar' : 'Ligar'} a campanha ${rule.name}`"
           class="mt-0.5 inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors"
           :class="rule.is_active ? 'bg-primary' : 'bg-muted-foreground/30'"
           @click="toggle(rule)"
@@ -160,7 +170,7 @@ useHead({ title: "Regras · Marketing" });
           >
             automática
           </span>
-          <!-- Disparar não espera o evento: fica ao lado da regra, mas só ativo
+          <!-- Disparar não espera o evento: fica ao lado da campanha, mas só ativo
                quando ela está ligada — disparar campanha desligada é engano. -->
           <button
             type="button"
@@ -183,7 +193,7 @@ useHead({ title: "Regras · Marketing" });
            rola. Mesmo desenho do slide-over de produto do gestor de pedidos. -->
       <UiSheetContent side="right" class="w-full gap-0 p-0 sm:max-w-lg">
         <UiSheetHeader class="border-b border-border">
-          <UiSheetTitle>{{ editing ? "Editar regra" : "Nova regra" }}</UiSheetTitle>
+          <UiSheetTitle>{{ editing ? "Editar campanha" : "Nova campanha" }}</UiSheetTitle>
           <UiSheetDescription>
             Um evento da padaria vira um announcement, para as pessoas certas.
           </UiSheetDescription>
@@ -203,7 +213,7 @@ useHead({ title: "Regras · Marketing" });
       </UiSheetContent>
     </UiSheet>
 
-    <!-- Disparo manual: painel próprio, para não se confundir com editar a regra -->
+    <!-- Disparo manual: painel próprio, para não se confundir com editar a campanha -->
     <UiSheet :open="firing !== null" @update:open="(v) => { if (!v) firing = null }">
       <UiSheetContent side="right" class="w-full gap-0 p-0 sm:max-w-lg">
         <UiSheetHeader class="border-b border-border">

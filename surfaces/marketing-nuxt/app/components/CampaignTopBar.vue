@@ -4,23 +4,21 @@
 // As funções comuns (Central, operador, tema) vivem no OperatorRail à esquerda.
 const route = useRoute();
 const section = computed(() =>
-  route.path.startsWith("/rules") ? "rules"
-  : route.path.startsWith("/modelos") ? "templates"
-  : route.path.startsWith("/plataformas") ? "platforms"
+  // `/templates` conta como Campanhas: a biblioteca de modelos é vista secundária dela,
+  // não seção irmã — o gestor pensa "o que a padaria diz", não "modelos e regras".
+  route.path.startsWith("/campaigns") || route.path.startsWith("/templates") ? "campaigns"
+  : route.path.startsWith("/platforms") ? "platforms"
   : route.path.startsWith("/history") ? "history"
   : "board",
 );
 
 const tabs = [
   { to: "/", key: "board", label: "Painel", icon: "lucide:megaphone" },
-  { to: "/rules", key: "rules", label: "Regras", icon: "lucide:sliders-horizontal" },
-  // Modelos entram na nav porque escrever o texto que vai ao cliente é operação, não
-  // configuração de bastidor. Antes só existiam no Admin, e sem nenhum modelo era
-  // impossível criar campanha por aqui.
-  { to: "/modelos", key: "templates", label: "Modelos", icon: "lucide:file-text" },
+  // "Campanhas", não "Regras": a entidade é `Campaign`, e a tela tinha um terceiro nome.
+  { to: "/campaigns", key: "campaigns", label: "Campanhas", icon: "lucide:sliders-horizontal" },
   // Plataformas: por onde o anúncio SAI. Não confundir com canal, que é por onde se vende
   // (ADR-020 §10). Era a casa que faltava — sem ela, a config vazava para o painel.
-  { to: "/plataformas", key: "platforms", label: "Plataformas", icon: "lucide:share-2" },
+  { to: "/platforms", key: "platforms", label: "Plataformas", icon: "lucide:share-2" },
   { to: "/history", key: "history", label: "Histórico", icon: "lucide:history" },
 ] as const;
 </script>

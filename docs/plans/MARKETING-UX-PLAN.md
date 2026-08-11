@@ -214,7 +214,26 @@ a lista já era estranha; com as quatro expandindo, viraria depósito.
 
 ---
 
-## 10. Ordem sugerida
+## 10. Feito em 2026-08-11
+
+**Plataformas** (passo 1) e **Campanhas absorve Modelos** (passo 3) estão no `main`.
+
+A nav virou **Painel · Campanhas · Plataformas · Histórico**, e três nomes para `Campaign`
+viraram um: a aba dizia "Regras", a entidade é `Campaign`, e agora tudo diz **Campanhas**. A
+biblioteca de modelos saiu do primeiro nível e virou botão secundário no cabeçalho de
+Campanhas — o gestor pensa "o que a padaria diz quando X acontece", e separar o texto da
+intenção o obrigava a montar isso em duas telas.
+
+⚠️ **E uma regra do projeto que eu havia violado:** o CLAUDE.md manda **rotas de operador em
+inglês** (PR #68), e eu criei `/modelos` e `/plataformas` em pt-br. Corrigido junto:
+`/campaigns`, `/templates`, `/platforms`. Sem 301 — nada além do staging conhecia as antigas,
+e o dono já foi claro sobre não devermos legado a nada.
+
+Falta a **prévia** (passo 2), que agora nasce dentro da tela de campanha, onde ela mais serve.
+
+---
+
+## 11. Ordem sugerida
 
 Cada passo entrega valor sozinho.
 

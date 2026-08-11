@@ -1,5 +1,5 @@
 <script setup lang="ts">
-// Formulário de regra — "que evento vira o quê, para quem, onde".
+// Formulário de campanha — "que evento vira o quê, para quem, onde".
 //
 // Apresentacional: o pai é dono do fetch e da escrita; aqui mora só o estado do
 // formulário. O vocabulário (gatilhos, plataformas, modelos) vem do backend,
@@ -50,7 +50,7 @@ const boughtOn = ref(false);
 const boughtDays = ref(90);
 const vipFirstMinutes = ref(0);
 
-// Estado novo a cada regra aberta — senão o formulário herdaria a anterior.
+// Estado novo a cada campanha aberta — senão o formulário herdaria a anterior.
 watch(
   () => props.rule?.pk ?? null,
   () => {
@@ -156,7 +156,7 @@ function submit() {
 <template>
   <form class="space-y-5" @submit.prevent="submit">
     <div>
-      <label for="rule-name" class="mb-1 block text-sm font-medium">Nome da regra</label>
+      <label for="rule-name" class="mb-1 block text-sm font-medium">Nome da campanha</label>
       <input
         id="rule-name"
         v-model="name"
@@ -193,8 +193,8 @@ function submit() {
         </select>
         <p v-if="templates.length === 0" class="mt-1 text-xs text-muted-foreground">
           Nenhum modelo cadastrado ainda.
-          <NuxtLink to="/modelos" class="font-medium underline">Crie o primeiro aqui</NuxtLink>
-          antes de criar a regra.
+          <NuxtLink to="/templates" class="font-medium underline">Crie o primeiro aqui</NuxtLink>
+          antes de criar a campanha.
         </p>
       </div>
     </div>
@@ -411,7 +411,7 @@ function submit() {
         class="inline-flex items-center gap-2 rounded-md bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground transition hover:bg-primary/90 disabled:opacity-50"
       >
         <Icon :name="busy ? 'line-md:loading-loop' : 'lucide:check'" class="size-4" />
-        {{ rule ? "Salvar" : "Criar regra" }}
+        {{ rule ? "Salvar" : "Criar campanha" }}
       </button>
       <button
         type="button"
