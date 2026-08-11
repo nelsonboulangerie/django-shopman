@@ -205,6 +205,12 @@ class Command(BaseCommand):
         self._seed_fulfillments()
         self._seed_directives()
         self._seed_loyalty(customers)
+        # ⚠️ DEPOIS dos pedidos, de propósito: o insight é DERIVADO do histórico. Sem esta
+        # chamada, o seed criava 1.169 pedidos e nenhum `CustomerInsight` — RFM dizia "lost"
+        # para todo mundo, churn ficava no default e TODO público comportamental do Marketing
+        # (campeões, em risco, recompra, favoritos) resolvia zero. A campanha alcançaria
+        # ninguém e ninguém saberia por quê.
+        self._seed_customer_insights()
         self._seed_campaigns()
         self._seed_notification_templates()
         self._seed_rule_configs()
@@ -3290,7 +3296,25 @@ class Command(BaseCommand):
                     handle_type="phone",
                     handle_ref=handle_ref,
                     created_at=order_time,
-                    data={"availability_decision": {"approved": True, "source": "seed", "decisions": []}},
+                    # ⚠️ `customer_ref` é o ELO que o histórico do cliente usa
+                    # (`CustomerOrderHistoryService` filtra por `data__customer_ref`). Sem
+                    # ele, 1.169 pedidos existiam e NENHUM era atribuível: todo
+                    # `CustomerInsight` nascia vazio, RFM dizia "lost" para todo mundo e
+                    # todo público comportamental do Marketing resolvia zero.
+                    data={
+                        "customer_ref": customer.ref,
+                        "availability_decision": {"approved": True, "source": "seed", "decisions": []},
+                    },
+                    # ⚠️ `snapshot["items"]` é o que o HISTÓRICO do cliente lê
+                    # (`CustomerOrderHistoryService` → `OrderSummary.items` → favoritos e
+                    # recompra). Em produção quem grava é o `CommitService`, a partir da
+                    # sessão; o seed cria o Order direto e pulava — então
+                    # `favorite_products` nascia vazio e "comprou nos últimos N dias"
+                    # resolvia ZERO, calado.
+                    #
+                    # Vai na CRIAÇÃO porque `snapshot` é campo SELADO: o orderman levanta
+                    # `ImmutabilityError` em qualquer escrita posterior, e está certo.
+                    snapshot={"items": items_data},
                 )
                 self._stamp_order(order, order_time)
 
@@ -3395,7 +3419,13 @@ class Command(BaseCommand):
                 handle_type="phone",
                 handle_ref=handle_ref,
                 created_at=order_time,
-                data={"availability_decision": {"approved": True, "source": "seed", "decisions": []}},
+                # `customer_ref`: o elo que o histórico do cliente usa. Ver o gêmeo acima.
+                data={
+                    "customer_ref": customer.ref,
+                    "availability_decision": {"approved": True, "source": "seed", "decisions": []},
+                },
+                # `snapshot["items"]`: o que o histórico do cliente lê. Ver o gêmeo acima.
+                snapshot={"items": items_data},
             )
             self._stamp_order(order, order_time)
 
@@ -5064,7 +5094,20 @@ class Command(BaseCommand):
         self.stdout.write("  ✅ 4 estações KDS (Cafés, Lanches, Encomendas, Expedição)")
 
     # ────────────────────────────────────────────────────────────────
-    # Notification Templates
+    # Insights de cliente
+    # ────────────────────────────────────────────────────────────────
+
+    def _seed_customer_insights(self):
+        """Derivar RFM, churn e favoritos do histórico que acabamos de criar."""
+        self.stdout.write("  📈 Insights de cliente (RFM, churn, favoritos)...")
+
+        from shopman.guestman.contrib.insights import InsightService
+
+        count = InsightService.recalculate_all()
+        self.stdout.write(f"  ✅ {count} insights calculados")
+
+    # ────────────────────────────────────────────────────────────────
+    # Campanhas e templates de notificação
     # ────────────────────────────────────────────────────────────────
 
     def _seed_campaigns(self):
