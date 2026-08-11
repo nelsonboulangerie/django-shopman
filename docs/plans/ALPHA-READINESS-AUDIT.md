@@ -89,8 +89,9 @@ funcionar". Marcar ✅/❌ e anotar o pedido.
 - [x] **Pill de dinheiro — DECIDIDO:** verde ao liquidar no PDV (tender
       recebido) ou COD acertado na entrega; neutro enquanto por receber (COD
       pendente, web pagar-na-retirada). Lê `Order.data.payment.tenders`.
-- [ ] **Hydration mismatch global** (2 warnings de console em TODA página —
-      header/status ao vivo): cosmético, pré-existente ao merge. Baixa prioridade.
+- [x] **Hydration mismatch global — NÃO REPRODUZ (11/08):** home e `/menu`
+      recarregadas com o console aberto, zero warning (canal de console validado
+      com um probe, para não confundir "sem warning" com "sem captura").
 - [x] **Cartão no staging — RESPONDIDO (11/08):** é **mock**, não Stripe test
       (`SHOPMAN_CARD_ADAPTER = payment_mock`). O mesmo vale para o Pix.
 - [ ] **Decisão de alpha: sair do mock?** Três envs resolvem, e as credenciais já
@@ -105,6 +106,74 @@ funcionar". Marcar ✅/❌ e anotar o pedido.
 - [ ] **NFC-e**: pré-requisito legal de go-live, não de alpha.
 - [ ] **Pix real (sair do sandbox Efí)**: para um alpha com pagamento de verdade.
 - [ ] **iFood**: homologação de produção (staging já testa direto).
+- [ ] **Fotos superdimensionadas** (§7, furo #1) — decidir entre redimensionar os
+      assets no `nb-catalog` ou parar de hotlinkar o `raw.githubusercontent.com`.
+
+---
+
+## 7. Smoke do roteiro §2 — 1ª rodada (2026-08-11, automatizada)
+
+Primeira execução do item de gate "rodar o roteiro §2 uma vez e anotar furos".
+Feita dirigindo o staging pelo navegador. **Cobre só o que é alcançável sem
+autenticar** — ver "não coberto" no fim.
+
+### ✅ Passou
+
+- **Home e `/menu`**: renderizam, saudação por horário ("Boa noite"), barra de
+  status "Aberto até 23h59" (loja 24/7 do piloto automático), navegação por
+  coleções, busca no cardápio.
+- **Console limpo**: zero warning no load das duas páginas — o hydration mismatch
+  do §5 não reproduz mais.
+- **Preço e promoção na listagem**: preço riscado + preço promocional aparecem
+  (Ciabatta R$ 18,00 → R$ 15,30; Baguette R$ 16,00 → R$ 13,60).
+- **Sacola**: adicionar pelo card vira stepper com quantidade, badge do header
+  atualiza, `/sacola` mostra item, subtotal e total corretos.
+- **Muro de entrada**: "Finalizar pedido" leva para `/entrar` guardando a sacola
+  ("Sua sacola está guardada.").
+
+### ⚠️ Furo #1 — fotos superdimensionadas (não bloqueia, mas o testador vê)
+
+**35 de 35** imagens do cardápio chegam com mais de **3× a resolução** da caixa em
+que são desenhadas. A maior tem **10,3 megapixels** (3208×3208) para um quadro de
+**112px**. Só o que está visível são **1,35 MB**. `loading="lazy"` e
+`decoding="async"` já estão corretos em `ProductListItem.vue:57` — o problema é a
+**fonte**, não o markup.
+
+Hospedagem: **`raw.githubusercontent.com` (10 imagens)** e `images.unsplash.com`
+(25, essas já pedem `w=900`). As URLs nascem no seed
+(`config/management/commands/seed.py:790-791`).
+
+Sintoma observado: as fotos entram **aos poucos** — em capturas sucessivas da
+mesma tela, cada vez mais quadros preenchidos. Num 4G de testador isso é um
+cardápio que se monta na frente da pessoa.
+
+⚠️ Risco extra: o `raw.githubusercontent.com` **não é CDN** e o GitHub limita
+hotlink. Se estrangular durante o alpha, 10 produtos ficam sem foto.
+
+### 🔑 Entrada: existe caminho sem WhatsApp — o alpha NÃO está bloqueado
+
+O caminho **primário** de `/entrar` é o WhatsApp reverso: a pessoa manda um código
+(`NB-XXXXXX`) para o WhatsApp da loja e recebe um link de volta. Isso depende da
+automação ManyChat (**F3**, `ACCESS-LINK-UNIFICATION-PLAN`) estar no ar — se não
+estiver, a pessoa manda o código e **nada volta**.
+
+Mas o link **"Usar outro número"** revela um formulário de telefone que chama
+`request-code` com método **`sms`** (`entrar.vue:452`), e o alerta de
+`entrar.vue:510` **mostra o código na própria tela** enquanto
+`SHOPMAN_EXPOSE_DEBUG_OTP=true`. Confirmado no ar: o formulário aparece.
+
+**Conclusão:** dá para chamar testadores hoje, orientando-os a usar "Usar outro
+número". Para tornar o login real basta trocar `DOORMAN_MESSAGE_SENDER_CLASS`
+para a Comtele (chave e rota 17 já no spec) — ⚠️ testar antes, a Comtele estava
+em HTTP 500 em 10/08.
+
+### Não coberto nesta rodada
+
+Tudo que vive atrás do login, porque autenticar em nome de alguém não é papel do
+agente: checkout completo, pagamento (Pix/cartão/dinheiro), cascata de
+acompanhamento e SSE, cupom/happy hour/loyalty/D-1, encomenda e datas, endereço e
+zona de entrega, e o lado do operador (aceitar/recusar, iniciar preparo, KDS).
+**Essas dimensões continuam precisando do smoke humano.**
 
 ## 6. Gate "pode chamar os testadores?"
 
@@ -112,8 +181,11 @@ Mínimo para um alpha honesto (staging, sem dinheiro real):
 - [x] Fusão pagamento→acompanhamento no ar e verificada.
 - [x] Seed rico aplicado (dados de teste para todas as dimensões).
 - [x] Aceite 1 min + prep_start operador no staging.
-- [ ] Rodar o roteiro §2 uma vez (smoke humano) e anotar furos.
-- [ ] Decidir o pill de dinheiro (§5).
+- [~] Rodar o roteiro §2 uma vez e anotar furos — **1ª rodada feita (§7)**, mas só
+      a parte pública; o que fica atrás do login ainda precisa de humano.
+- [x] Decidir o pill de dinheiro (§5) — decidido, ver §5.
+- [ ] **Orientar o testador a entrar por "Usar outro número"** enquanto o F3
+      (ManyChat) não estiver no ar — senão ele manda o código e nada volta (§7).
 - [ ] Alinhar com testadores o que é "simulado" (§3) — combinar que Pix é
       "Simular pagamento" enquanto o Efí estiver em sandbox.
 
