@@ -132,17 +132,57 @@ export function parseHashtags(raw: string): string[] {
     .filter(Boolean);
 }
 
-/** Frase do resumo de regra: "favoritos, alertas, quem comprou nos últimos 90 dias". */
-export function audienceRulesSummary(rules: AudienceRules | undefined): string {
+/** Frase do resumo de público: "favoritos, alertas, recompra em 90 dias".
+ *
+ *  ⚠️ Conhecia só três das nove regras. Uma campanha para "leais" ou para o grupo
+ *  atacado — configurada, funcionando, alcançando gente — aparecia na lista como "Sem
+ *  audiência direta". O resumo mentia justamente sobre a decisão mais importante da
+ *  campanha, e o gestor não tinha por que desconfiar dele.
+ */
+export function audienceRulesSummary(
+  rules: AudienceRules | undefined,
+  labels: AudienceLabels = {},
+): string {
   const parts: string[] = [];
   if (rules?.favorites) parts.push("favoritos");
   if (rules?.alerts) parts.push("alertas");
   if (rules?.bought_within_days) parts.push(`recompra em ${rules.bought_within_days} dias`);
-  if (parts.length === 0) return "Sem audiência direta";
+  if (rules?.groups?.length) parts.push(named(rules.groups, labels.groups));
+  if (rules?.rfm_segments?.length) parts.push(named(rules.rfm_segments, labels.segments));
+  if (rules?.churn_risk_min) parts.push("quem está sumindo");
+  if (rules?.birthday_today) parts.push("aniversariantes de hoje");
+  if (parts.length === 0) return "Sem público definido";
 
+  // "Cruzando" primeiro, porque muda o SENTIDO do que vem depois: a mesma lista de
+  // regras alcança gente diferente somada e cruzada.
+  const prefix = rules?.match === "all" && parts.length > 1 ? "cruzando " : "";
   const vip = rules?.vip_first_minutes;
-  const suffix = vip ? `, VIP ${vip} min antes` : "";
-  return parts.join(", ") + suffix;
+  const suffix = vip ? `, melhores clientes ${vip} min antes` : "";
+  return prefix + parts.join(", ") + suffix;
+}
+
+/** Rótulos vindos do servidor. Grupo e segmento têm dono no guestman
+ *  (`CustomerGroup.name`, `RFM_SEGMENTS`), e a projection já os entrega em
+ *  `options.customer_groups` / `options.rfm_segments`.
+ *
+ *  ⚠️ Traduzi esses refs à mão aqui por um instante, e o mapa saiu com quatro segmentos
+ *  que este sistema não tem (`potential_loyalist`, `new_customer`, `cant_lose`,
+ *  `hibernating` — o vocabulário real tem seis e está em `insights/models.py:15`). É a
+ *  demonstração do risco: cópia de vocabulário não avisa quando divergir.
+ */
+export type AudienceLabels = {
+  groups?: Record<string, string>;
+  segments?: Record<string, string>;
+};
+
+/** Refs em rótulos, na ordem escolhida. Ref sem rótulo conhecido volta como veio. */
+function named(refs: string[], labels: Record<string, string> | undefined): string {
+  return refs.map((ref) => labels?.[ref] ?? ref).join(", ");
+}
+
+/** `Choice[]` (como a projection entrega) em mapa ref → rótulo. */
+export function choiceLabels(choices: { value: string; label: string }[] | undefined) {
+  return Object.fromEntries((choices ?? []).map((c) => [c.value, c.label]));
 }
 
 /** "Instagram, Google Meu Negócio" a partir dos refs, na ordem escolhida. */

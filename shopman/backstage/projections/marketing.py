@@ -232,6 +232,89 @@ class CampaignOptionsProjection:
     offers: tuple[ChoiceProjection, ...] = ()
 
 
+# ── Quantas pessoas isto alcança ─────────────────────────────────────
+#
+# ⚠️ Nasceu de uma pergunta do dono que não tinha como ser respondida pela tela: "nem sei
+# quais ou quantas combinações temos". Escolher público era escolher no escuro e descobrir
+# o tamanho depois do envio — quando já não tem desfazer.
+#
+# Só NÚMEROS, nunca destinatário: a mesma lei do `Announcement.audience`.
+
+#: Rótulo de cada contagem que o resolvedor devolve. A ordem é a da leitura, não a do
+#: dicionário: primeiro quem foi escolhido, depois quem se qualificou.
+_AUDIENCE_PART_LABELS: tuple[tuple[str, str], ...] = (
+    ("chosen_count", "Escolhidos um a um"),
+    ("groups_count", "Grupos"),
+    ("rfm_count", "Comportamento de compra"),
+    ("churn_risk_count", "Estão sumindo"),
+    ("birthday_count", "Aniversariantes de hoje"),
+    ("bought_chosen_count", "Compraram o que você escolheu"),
+    ("favorites_count", "Favoritaram o produto"),
+    ("alerts_count", "Pediram para ser avisados"),
+    ("bought_count", "Compraram o produto"),
+)
+
+
+@dataclass(frozen=True)
+class AudiencePartProjection:
+    """Quanta gente UMA regra achou, por si só."""
+
+    label: str
+    count: int
+
+
+@dataclass(frozen=True)
+class AudienceCountProjection:
+    """O tamanho do público antes de enviar, e de onde ele vem.
+
+    ``parts`` são contagens de ANTES da combinação. É a leitura das duas juntas que ensina
+    o gestor o que somar e cruzar fazem: "leais 5, atacado 2, total 5" contra "leais 5,
+    atacado 2, total 2" diz tudo sem uma linha de explicação.
+    """
+
+    total: int
+    #: ``any`` soma as regras, ``all`` cruza.
+    match: str
+    match_label: str
+    parts: tuple[AudiencePartProjection, ...]
+    #: Quantos recebem primeiro quando a vantagem VIP está ligada. 0 = ninguém espera.
+    vip_count: int
+    #: Ninguém escolhido ainda — separa "não pedi nada" de "pedi e não achei ninguém",
+    #: que na tela precisam dizer coisas diferentes.
+    empty_selection: bool
+
+
+def build_audience_count(rules: dict | None, *, sku: str = "") -> AudienceCountProjection:
+    """Resolver o público SÓ para contar, pelo mesmo caminho do envio.
+
+    Pelo mesmo caminho de propósito (``services/audience.resolve``): uma contagem com
+    lógica própria concordaria hoje e divergiria no primeiro ajuste, e contagem que mente
+    é pior que nenhuma, porque é acreditada.
+    """
+    from shopman.shop.services import audience as audience_service
+
+    rules = dict(rules or {})
+    result = audience_service.resolve(rules, sku=sku)
+    counts = result.counts or {}
+
+    parts = tuple(
+        AudiencePartProjection(label=label, count=int(counts.get(key) or 0))
+        for key, label in _AUDIENCE_PART_LABELS
+        if key in counts
+    )
+    return AudienceCountProjection(
+        total=result.total,
+        match=result.match,
+        match_label=(
+            "cruzando as regras" if result.match == audience_service.MATCH_ALL
+            else "somando as regras"
+        ),
+        parts=parts,
+        vip_count=len(result.vip),
+        empty_selection=not parts,
+    )
+
+
 # ── Posts ────────────────────────────────────────────────────────────
 
 

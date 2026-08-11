@@ -851,3 +851,127 @@ class TestWhatsAppTestSend:
 
         assert body["ok"] is False
         assert body["detail"]
+
+
+# ── Quantas pessoas isto alcança ─────────────────────────────────────
+
+
+COUNT_URL = "/api/v1/backstage/marketing/audience/count/"
+
+
+class TestAudienceCount:
+    """⚠️ A tela deixava escolher público às cegas: o tamanho só aparecia depois do envio.
+
+    E sem contagem, a diferença entre somar e cruzar as regras era invisível — "leais +
+    atacado" alargava para 5 quando o gestor queria os 2 que são as duas coisas.
+    """
+
+    def _audience(self):
+        """Três pessoas: uma fiel-e-atacado, uma só fiel, uma só atacado."""
+        from shopman.guestman import ConsentService
+        from shopman.guestman.contrib.insights.models import CustomerInsight
+        from shopman.guestman.models import Customer, CustomerGroup
+
+        atacado = CustomerGroup.objects.create(ref="atacado", name="Atacado")
+        rows = [
+            ("CLI-BOTH", "+5543999993001", atacado, "loyal_customer"),
+            ("CLI-LOYAL", "+5543999993002", None, "loyal_customer"),
+            ("CLI-WHOLE", "+5543999993003", atacado, "at_risk"),
+        ]
+        for ref, phone, group, segment in rows:
+            customer = Customer.objects.create(ref=ref, first_name="Ana", phone=phone, group=group)
+            CustomerInsight.objects.create(customer=customer, rfm_segment=segment)
+            ConsentService.grant_consent(ref, "whatsapp", source="test")
+
+    def test_the_gate_holds(self, client, django_user_model):
+        """Público é informação de cliente: quem não gerencia campanha não conta ninguém."""
+        django_user_model.objects.create_user(username="caixa", password="x", is_staff=True)
+        client.login(username="caixa", password="x")
+        assert client.post(COUNT_URL, {}, content_type="application/json").status_code == 403
+
+    def test_adding_rules_widens_the_reach(self, client, gestor):
+        self._audience()
+        client.force_login(gestor)
+
+        response = client.post(
+            COUNT_URL,
+            {"audience_rules": {"groups": ["atacado"], "rfm_segments": ["loyal_customer"]}},
+            content_type="application/json",
+        )
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["total"] == 3
+        assert data["match"] == "any"
+        assert data["match_label"] == "somando as regras"
+
+    def test_crossing_rules_narrows_it(self, client, gestor):
+        """"fiéis QUE são atacado" — o recorte que a união não sabe fazer."""
+        self._audience()
+        client.force_login(gestor)
+
+        response = client.post(
+            COUNT_URL,
+            {"audience_rules": {
+                "groups": ["atacado"], "rfm_segments": ["loyal_customer"], "match": "all",
+            }},
+            content_type="application/json",
+        )
+
+        data = response.json()
+        assert data["total"] == 1
+        assert data["match_label"] == "cruzando as regras"
+
+    def test_the_parts_explain_the_total(self, client, gestor):
+        """"Grupos 2, comportamento 2, total 1": é a leitura junta que ensina o recorte."""
+        self._audience()
+        client.force_login(gestor)
+
+        data = client.post(
+            COUNT_URL,
+            {"audience_rules": {
+                "groups": ["atacado"], "rfm_segments": ["loyal_customer"], "match": "all",
+            }},
+            content_type="application/json",
+        ).json()
+
+        parts = {part["label"]: part["count"] for part in data["parts"]}
+        assert parts == {"Grupos": 2, "Comportamento de compra": 2}
+        assert data["total"] == 1
+
+    def test_nothing_chosen_is_not_the_same_as_nobody_found(self, client, gestor):
+        """A tela precisa dizer coisas diferentes nos dois casos."""
+        client.force_login(gestor)
+
+        empty = client.post(COUNT_URL, {}, content_type="application/json").json()
+        assert empty["empty_selection"] is True
+        assert empty["total"] == 0
+        assert empty["parts"] == []
+
+        chosen = client.post(
+            COUNT_URL, {"audience_rules": {"birthday_today": True}},
+            content_type="application/json",
+        ).json()
+        assert chosen["empty_selection"] is False
+        assert chosen["total"] == 0
+
+    def test_it_never_returns_a_recipient(self, client, gestor):
+        """Só números. A lista de destinatários não sai da resolução — nem para contar."""
+        self._audience()
+        client.force_login(gestor)
+
+        raw = client.post(
+            COUNT_URL, {"audience_rules": {"groups": ["atacado"]}},
+            content_type="application/json",
+        ).content.decode()
+
+        assert "5543999993001" not in raw
+        assert "CLI-BOTH" not in raw
+
+    def test_a_broken_payload_counts_nobody_instead_of_exploding(self, client, gestor):
+        client.force_login(gestor)
+        response = client.post(
+            COUNT_URL, {"audience_rules": "atacado"}, content_type="application/json",
+        )
+        assert response.status_code == 200
+        assert response.json()["total"] == 0

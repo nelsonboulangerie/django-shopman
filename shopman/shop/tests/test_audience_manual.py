@@ -293,3 +293,153 @@ def test_without_a_choice_the_campaign_audience_still_rules(db):
     fresh = Announcement.objects.get(pk=announcement.pk)
     assert "audience_rules" not in (fresh.trigger_context or {})
     assert announcement.audience["total"] == 1
+
+
+# ── Combinação: somar (união) vs cruzar (interseção) ─────────────────
+#
+# ⚠️ A união era o ÚNICO comportamento, e ela não sabe dizer "leais QUE são atacado":
+# pedir as duas coisas devolvia a soma das duas. Recorte é o que faz a campanha valer a
+# pena — sem interseção, toda regra somada só engordava a lista e o custo.
+
+
+def _loyal_wholesaler_and_friends():
+    """Três pessoas: uma leal-e-atacado, uma só leal, uma só atacado."""
+    atacado = CustomerGroup.objects.create(ref="atacado", name="Atacado")
+    both = _customer("+5543999991001", ref="CLI-BOTH", group=atacado)
+    only_loyal = _customer("+5543999991002", ref="CLI-LOYAL")
+    only_wholesale = _customer("+5543999991003", ref="CLI-WHOLE", group=atacado)
+    _insight(both, rfm_segment="loyal_customer")
+    _insight(only_loyal, rfm_segment="loyal_customer")
+    _insight(only_wholesale, rfm_segment="at_risk")
+    return both, only_loyal, only_wholesale
+
+
+def test_by_default_rules_add_up(db):
+    """O padrão continua sendo a união — nada muda para quem já configurou campanha."""
+    both, only_loyal, only_wholesale = _loyal_wholesaler_and_friends()
+
+    result = audience.resolve({"rfm_segments": ["loyal_customer"], "groups": ["atacado"]})
+
+    assert {r.phone for r in result.general} == {
+        both.phone, only_loyal.phone, only_wholesale.phone
+    }
+    assert result.match == audience.MATCH_ANY
+
+
+def test_match_all_intersects_instead_of_adding(db):
+    """"leais QUE são atacado" — o recorte que não existia."""
+    both, only_loyal, only_wholesale = _loyal_wholesaler_and_friends()
+
+    result = audience.resolve({
+        "rfm_segments": ["loyal_customer"],
+        "groups": ["atacado"],
+        "match": audience.MATCH_ALL,
+    })
+
+    assert [r.phone for r in result.general] == [both.phone]
+    assert only_loyal.phone not in {r.phone for r in result.general}
+    assert only_wholesale.phone not in {r.phone for r in result.general}
+
+
+def test_the_summary_tells_the_whole_story(db):
+    """"leais 2, atacado 2, total 1" — sem o `match`, um "1" é indecifrável depois."""
+    _loyal_wholesaler_and_friends()
+
+    summary = audience.resolve({
+        "rfm_segments": ["loyal_customer"],
+        "groups": ["atacado"],
+        "match": audience.MATCH_ALL,
+    }).summary()
+
+    assert summary["match"] == audience.MATCH_ALL
+    # As contagens por regra são de ANTES do cruzamento, de propósito.
+    assert summary["rfm_count"] == 2
+    assert summary["groups_count"] == 2
+    assert summary["total"] == 1
+
+
+def test_a_single_rule_intersects_with_nothing(db):
+    """Uma regra só: cruzar e somar dão o mesmo, e nenhum dos dois pode zerar."""
+    both, only_loyal, _ = _loyal_wholesaler_and_friends()
+
+    result = audience.resolve({
+        "rfm_segments": ["loyal_customer"], "match": audience.MATCH_ALL,
+    })
+
+    assert {r.phone for r in result.general} == {both.phone, only_loyal.phone}
+
+
+def test_a_rule_that_could_not_run_is_not_a_requirement(db):
+    """⚠️ Regra de evento sem SKU não vira exigência — senão o manual zerava calado.
+
+    `favorites` e `alerts` precisam do SKU do evento. No disparo manual não há SKU, então
+    elas não rodam. Se "pedida" contasse como "exigida", cruzar num disparo manual
+    devolveria zero sempre, e o gestor leria isso como "não tem ninguém".
+    """
+    both, _, _ = _loyal_wholesaler_and_friends()
+
+    result = audience.resolve({
+        "rfm_segments": ["loyal_customer"],
+        "groups": ["atacado"],
+        "favorites": True,   # não roda: sem SKU
+        "alerts": True,      # idem
+        "match": audience.MATCH_ALL,
+    })
+
+    assert [r.phone for r in result.general] == [both.phone]
+
+
+def test_intersecting_disjoint_rules_reaches_nobody(db):
+    """Cruzar coisas que não se cruzam devolve zero — e isso é a resposta certa."""
+    _loyal_wholesaler_and_friends()
+
+    result = audience.resolve({
+        "rfm_segments": ["champion"],  # ninguém é champion aqui
+        "groups": ["atacado"],
+        "match": audience.MATCH_ALL,
+    })
+
+    assert result.total == 0
+
+
+def test_consent_still_rules_when_intersecting(db):
+    """A interseção estreita ANTES do consentimento, e o consentimento continua lei."""
+    atacado = CustomerGroup.objects.create(ref="atacado", name="Atacado")
+    silent = _customer("+5543999992001", ref="CLI-MUDO", group=atacado, opted_in=False)
+    _insight(silent, rfm_segment="loyal_customer")
+
+    result = audience.resolve({
+        "rfm_segments": ["loyal_customer"],
+        "groups": ["atacado"],
+        "match": audience.MATCH_ALL,
+    })
+
+    assert result.total == 0
+
+
+def test_an_unknown_match_mode_falls_back_to_adding(db):
+    """Valor errado alarga (visível na contagem), nunca estreita (viraria "0" calado)."""
+    both, only_loyal, only_wholesale = _loyal_wholesaler_and_friends()
+
+    result = audience.resolve({
+        "rfm_segments": ["loyal_customer"],
+        "groups": ["atacado"],
+        "match": "todos",  # não existe
+    })
+
+    assert result.total == 3
+    assert result.match == audience.MATCH_ANY
+
+
+def test_the_campaign_refuses_an_unknown_match_mode(db):
+    """E o model recusa na entrada, para o erro não chegar calado até o disparo."""
+    from django.core.exceptions import ValidationError
+
+    from shopman.shop.models.campaign import Campaign
+
+    # `clean()` direto, e não `full_clean()`: o alvo aqui é a regra de combinação, não o
+    # `template` obrigatório — e é `clean()` que o admin e o serializer acabam chamando.
+    campaign = Campaign(name="Cruza errado", audience_rules={"groups": ["atacado"], "match": "E"})
+    with pytest.raises(ValidationError) as err:
+        campaign.clean()
+    assert "audience_rules" in err.value.message_dict

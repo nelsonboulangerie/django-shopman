@@ -97,8 +97,9 @@ def test_the_seeded_history_is_attributable_to_customers(db):
     """
     from io import StringIO
 
-    from config.management.commands.seed import Command
     from shopman.orderman.models import Order
+
+    from config.management.commands.seed import Command
 
     command = Command()
     command.stdout = StringIO()
@@ -125,9 +126,10 @@ def test_the_seeded_history_produces_favorites(db):
     """Favorito e recompra saem de `snapshot["items"]` — sem eles, zero calado."""
     from io import StringIO
 
-    from config.management.commands.seed import Command
     from shopman.guestman.contrib.insights import InsightService
     from shopman.guestman.contrib.insights.models import CustomerInsight
+
+    from config.management.commands.seed import Command
 
     command = Command()
     command.stdout = StringIO()

@@ -140,6 +140,10 @@ class Campaign(models.Model):
     #: arbitrário: no dia em que alguém precisar de árvore booleana, o que está sendo
     #: construído é um CDP, e a resposta é não. As chaves são lidas em
     #: `services/audience.py::resolve`.
+    #:
+    #: `match` é o único combinador, e é um interruptor: `any` soma (união, padrão) e
+    #: `all` cruza (interseção). Sem ele só existia a união, e a união não sabe dizer
+    #: "leais QUE são atacado" — pedir as duas coisas devolvia a SOMA das duas.
     audience_rules = models.JSONField(
         "regras de audiência", default=dict, blank=True,
         help_text=(
@@ -148,6 +152,7 @@ class Campaign(models.Model):
             'Escolhidos pelo gestor: {"customer_refs": [], "groups": [], '
             '"rfm_segments": ["champion"], "churn_risk_min": 0.7, '
             '"bought_skus": [], "bought_collections": [], "birthday_today": true}. '
+            'Combinação: {"match": "any"} soma as regras, {"match": "all"} cruza. '
             'Entrega: {"vip_first_minutes": 15, "preferred_hour_window_hours": 4}.'
         ),
     )
@@ -215,7 +220,18 @@ class Campaign(models.Model):
         lista sem nunca produzir anúncio. Silêncio é o pior resultado possível aqui: o
         gestor não tem como distinguir "não disparou ainda" de "não vai disparar nunca".
         """
+        from shopman.shop.services import audience as aud
         from shopman.shop.services import campaign_schedule as sched
+
+        match = (self.audience_rules or {}).get("match")
+        if match is not None and str(match).strip().lower() not in aud.MATCH_MODES:
+            raise ValidationError({
+                "audience_rules": (
+                    f'A combinação "{match}" não existe. Use "any" para somar as regras '
+                    f'(quem se encaixa em qualquer uma) ou "all" para cruzá-las (quem se '
+                    f"encaixa em todas)."
+                ),
+            })
 
         fires = sched.fires_on_its_own(self.schedule)
         if self.trigger == Trigger.SCHEDULE and not fires:

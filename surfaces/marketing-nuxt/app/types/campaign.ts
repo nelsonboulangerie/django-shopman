@@ -98,11 +98,20 @@ export interface Campaign {
   is_active: boolean;
 }
 
+/** Como as regras se combinam: `any` soma (união), `all` cruza (interseção). */
+export type AudienceMatch = "any" | "all";
+
 export interface AudienceRules {
   favorites?: boolean;
   alerts?: boolean;
   bought_within_days?: number;
   vip_first_minutes?: number;
+  /** Ausente = soma, o padrão de sempre. */
+  match?: AudienceMatch;
+  groups?: string[];
+  rfm_segments?: string[];
+  churn_risk_min?: number;
+  birthday_today?: boolean;
 }
 
 export interface AnnouncementTemplate {
@@ -138,6 +147,8 @@ export interface CampaignOptions {
 
 /** Público escolhido para UM disparo. Não altera a campanha salva. */
 export interface ChosenAudience {
+  /** Ausente = soma as regras (padrão). `all` cruza: só quem se encaixa em todas. */
+  match?: AudienceMatch;
   groups?: string[];
   rfm_segments?: string[];
   churn_risk_min?: number;
@@ -146,6 +157,28 @@ export interface ChosenAudience {
   bought_collections?: string[];
   bought_within_days?: number;
   vip_first_minutes?: number;
+}
+
+/** Quanta gente UMA regra achou, por si só (antes da combinação). */
+export interface AudiencePart {
+  label: string;
+  count: number;
+}
+
+/** O tamanho do público antes de enviar — espelha `AudienceCountProjection`.
+ *
+ *  ⚠️ `parts` são contagens de ANTES de somar ou cruzar. Ler as duas coisas juntas é o
+ *  que ensina o que a combinação faz: "leais 5, atacado 2, total 5" contra
+ *  "leais 5, atacado 2, total 2".
+ */
+export interface AudienceCount {
+  total: number;
+  match: AudienceMatch;
+  match_label: string;
+  parts: AudiencePart[];
+  vip_count: number;
+  /** Nada escolhido ainda — diferente de "escolhi e não achei ninguém". */
+  empty_selection: boolean;
 }
 
 /** Templates aprovados da plataforma + o escolhido agora. */

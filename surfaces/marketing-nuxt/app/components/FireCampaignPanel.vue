@@ -11,8 +11,13 @@
 //
 // O público vale só para ESTE disparo; a campanha salva mantém o dela. Isso está dito
 // na tela, porque o gestor precisa saber que não vai desconfigurar nada.
-import { audienceRulesSummary } from "~/presentation/campaign";
-import type { Campaign, Choice, ChosenAudience } from "~/types/campaign";
+//
+// ⚠️ E o número aparece ENQUANTO se escolhe. Antes, o tamanho do público só se conhecia
+// depois do envio — quando já não tem desfazer. Era também a única forma de ver que somar
+// regras ALARGA: "leais + atacado" dava 5 quando o gestor queria os 2 que são as duas
+// coisas, e a tela não contava isso em lugar nenhum.
+import { audienceRulesSummary, choiceLabels } from "~/presentation/campaign";
+import type { AudienceMatch, Campaign, Choice, ChosenAudience } from "~/types/campaign";
 
 const props = defineProps<{
   rule: Campaign | null;
@@ -33,6 +38,15 @@ const segments = ref<string[]>([]);
 const winBack = ref(false);
 const birthday = ref(false);
 const vipFirst = ref(false);
+const match = ref<AudienceMatch>("any");
+
+const { count, pending: counting, failed: countFailed, measure, clear } = useAudienceCount();
+
+/** Rótulos do servidor: o resumo do público da campanha não traduz ref por conta. */
+const audienceLabels = computed(() => ({
+  groups: choiceLabels(props.customerGroups),
+  segments: choiceLabels(props.rfmSegments),
+}));
 
 // Reabrir o painel para outra campanha não pode herdar a escolha da anterior: mandar
 // mensagem para o público errado não tem desfazer.
@@ -46,6 +60,8 @@ watch(
     winBack.value = false;
     birthday.value = false;
     vipFirst.value = false;
+    match.value = "any";
+    clear();
   },
 );
 
@@ -71,6 +87,8 @@ const chosen = computed<ChosenAudience>(() => {
   if (winBack.value) audience.churn_risk_min = 0.7;
   if (birthday.value) audience.birthday_today = true;
   if (vipFirst.value) audience.vip_first_minutes = 15;
+  // Só viaja quando cruza: gravar `match: "any"` seria escrever o padrão à mão.
+  if (match.value === "all") audience.match = "all";
   return audience;
 });
 
@@ -82,6 +100,28 @@ const nothingChosen = computed(
     !segments.value.length &&
     !winBack.value &&
     !birthday.value,
+);
+
+/** Cruzar com uma regra só é o mesmo que somar — o interruptor não teria sentido. */
+const rulesChosen = computed(
+  () =>
+    (groups.value.length ? 1 : 0) +
+    (segments.value.length ? 1 : 0) +
+    (winBack.value ? 1 : 0) +
+    (birthday.value ? 1 : 0),
+);
+
+// O número acompanha a escolha. "O público da campanha" mede as regras salvas, porque a
+// pergunta "quantos isto alcança?" é a mesma nos dois modos.
+watch(
+  [chosen, useSaved, () => props.rule?.pk],
+  () => {
+    const rules = useSaved.value
+      ? ((props.rule?.audience_rules ?? {}) as ChosenAudience)
+      : chosen.value;
+    measure(rules);
+  },
+  { immediate: true, deep: true },
 );
 </script>
 
@@ -113,7 +153,7 @@ const nothingChosen = computed(
         <span>
           <span class="block text-sm font-medium">O público da campanha</span>
           <span class="block text-xs text-muted-foreground">
-            {{ rule ? audienceRulesSummary(rule.audience_rules) : "" }}
+            {{ rule ? audienceRulesSummary(rule.audience_rules, audienceLabels) : "" }}
           </span>
         </span>
       </label>
@@ -197,6 +237,85 @@ const nothingChosen = computed(
           </span>
         </span>
       </label>
+
+      <!-- ⚠️ Só com duas ou mais regras escolhidas: cruzar uma regra com nada dá ela
+           mesma, e oferecer o interruptor ali ensinaria uma diferença que não existe. -->
+      <fieldset v-if="rulesChosen > 1" class="border-t border-border pt-3">
+        <legend class="sr-only">Como combinar as regras</legend>
+        <div class="flex gap-2">
+          <button
+            v-for="mode in ([
+              { value: 'any', title: 'Qualquer uma', hint: 'Quem se encaixa em pelo menos uma regra' },
+              { value: 'all', title: 'Todas', hint: 'Só quem se encaixa em todas as regras' },
+            ] as const)"
+            :key="mode.value"
+            type="button"
+            class="flex-1 rounded-lg border p-2.5 text-left transition"
+            :class="match === mode.value
+              ? 'border-primary bg-primary/5'
+              : 'border-border hover:bg-muted'"
+            :aria-pressed="match === mode.value"
+            @click="match = mode.value"
+          >
+            <span class="block text-sm font-medium">{{ mode.title }}</span>
+            <span class="block text-xs text-muted-foreground">{{ mode.hint }}</span>
+          </button>
+        </div>
+      </fieldset>
+    </div>
+
+    <!-- O número, enquanto se escolhe. Sem ele, o tamanho do público só se conhecia
+         depois do envio — e "somar alarga" era invisível. -->
+    <div
+      v-if="count || counting || countFailed"
+      class="rounded-lg border border-border p-3"
+      aria-live="polite"
+    >
+      <div class="flex items-baseline gap-2">
+        <template v-if="count && !count.empty_selection">
+          <span class="text-2xl font-semibold tabular-nums">{{ count.total }}</span>
+          <span class="text-sm text-muted-foreground">
+            {{ count.total === 1 ? "pessoa recebe" : "pessoas recebem" }}
+          </span>
+        </template>
+        <span v-else-if="counting" class="text-sm text-muted-foreground">Contando…</span>
+        <span v-else-if="countFailed" class="text-sm text-muted-foreground">
+          Não foi possível contar agora. O disparo continua valendo.
+        </span>
+        <Icon
+          v-if="counting && count"
+          name="lucide:loader-circle"
+          class="size-3 animate-spin text-muted-foreground"
+        />
+      </div>
+
+      <!-- As parcelas contam a história que o total sozinho esconde: com "todas", o total
+           fica MENOR que qualquer parcela, e é aí que o recorte se explica sozinho. -->
+      <ul v-if="count && count.parts.length > 1" class="mt-2 space-y-0.5">
+        <li
+          v-for="part in count.parts"
+          :key="part.label"
+          class="flex items-baseline justify-between gap-3 text-xs text-muted-foreground"
+        >
+          <span class="truncate">{{ part.label }}</span>
+          <span class="tabular-nums">{{ part.count }}</span>
+        </li>
+        <li class="flex items-baseline justify-between gap-3 border-t border-border pt-1 text-xs">
+          <span class="text-muted-foreground">{{ count.match_label }}</span>
+          <span class="font-medium tabular-nums">{{ count.total }}</span>
+        </li>
+      </ul>
+
+      <p v-if="count && count.vip_count > 0" class="mt-2 text-xs text-muted-foreground">
+        {{ count.vip_count }} recebem primeiro; o resto, 15 min depois.
+      </p>
+
+      <p
+        v-if="count && !count.empty_selection && count.total === 0"
+        class="mt-2 text-xs text-amber-700 dark:text-amber-400"
+      >
+        Ninguém se encaixa neste público hoje. Nada será enviado.
+      </p>
     </div>
 
     <p class="rounded-lg bg-muted/40 px-3 py-2 text-xs text-muted-foreground">

@@ -42,6 +42,7 @@ from .marketing import (
     AnnouncementRewriteView,
     AnnouncementTemplateDetailView,
     AnnouncementTemplateListView,
+    AudienceCountView,
     CampaignBoardView,
     CampaignDetailView,
     CampaignFireView,
@@ -228,6 +229,7 @@ urlpatterns = [
     # Campanha — marketing operacional (surfaces/marketing-nuxt). Gate próprio
     # (`shop.manage_campaigns`): o gestor de marketing não é o de pedidos.
     path("marketing/", CampaignBoardView.as_view(), name="api-backstage-marketing"),
+    path("marketing/audience/count/", AudienceCountView.as_view(), name="api-backstage-marketing-audience-count"),
     path("marketing/history/", CampaignHistoryView.as_view(), name="api-backstage-marketing-history"),
     path("marketing/options/", CampaignOptionsView.as_view(), name="api-backstage-marketing-options"),
     path("marketing/platforms/", PlatformsView.as_view(), name="api-backstage-marketing-platforms"),

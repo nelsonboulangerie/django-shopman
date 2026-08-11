@@ -318,6 +318,28 @@ class PreviewView(_CampaignBase):
         ))
 
 
+class AudienceCountView(_CampaignBase):
+    """POST marketing/audience/count/ → quantas pessoas este público alcança.
+
+    ⚠️ A tela deixava escolher público às cegas: o tamanho só aparecia depois do envio,
+    quando já não tem desfazer. E sem esta contagem a diferença entre somar e cruzar as
+    regras era invisível — "leais + atacado" alargava para 5 quando o gestor queria os 2
+    que são as duas coisas, e nada na tela contava isso.
+
+    Só números, nunca destinatário: a mesma lei do `Announcement.audience`. E resolve pelo
+    caminho do envio, então o que a tela promete é o que sai.
+    """
+
+    def post(self, request):
+        payload = request.data if isinstance(request.data, dict) else {}
+        rules = payload.get("audience_rules")
+        if not isinstance(rules, dict):
+            rules = {}
+        return Response(projection_data(marketing_projection.build_audience_count(
+            rules, sku=str(payload.get("sku") or ""),
+        )))
+
+
 class PlatformsView(_CampaignBase):
     """GET campaign/platforms/ → por onde a padaria consegue falar, e o que falta.
 

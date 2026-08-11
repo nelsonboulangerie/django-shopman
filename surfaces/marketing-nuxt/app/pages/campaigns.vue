@@ -4,7 +4,7 @@
 // O gesto mais comum é ligar/desligar, então ele fica a um toque na própria
 // linha. Editar abre um painel lateral: a lista continua visível, e o gestor
 // não perde o contexto de quais outras campanhas já existem.
-import { audienceRulesSummary, platformsSummary } from "~/presentation/campaign";
+import { audienceRulesSummary, choiceLabels, platformsSummary } from "~/presentation/campaign";
 import type { Campaign, ChosenAudience } from "~/types/campaign";
 
 const {
@@ -15,6 +15,13 @@ const {
 // da Meta, e prometer o do modelo seria mentira.
 const waTemplate = useWhatsAppTemplate();
 onMounted(() => { waTemplate.load(); });
+
+// Rótulo de grupo e de segmento tem dono no servidor (`CustomerGroup.name`,
+// `RFM_SEGMENTS`); a tela só consulta o mapa que a projection entrega.
+const audienceLabels = computed(() => ({
+  groups: choiceLabels(customerGroups.value),
+  segments: choiceLabels(rfmSegments.value),
+}));
 
 const editing = ref<Campaign | null>(null);
 const creating = ref(false);
@@ -149,7 +156,7 @@ useHead({ title: "Campanhas · Marketing" });
             {{ rule.trigger_label }} → {{ platformsSummary(rule.platforms, platformLabels) }}
           </p>
           <p class="mt-0.5 text-xs text-muted-foreground">
-            {{ audienceRulesSummary(rule.audience_rules) }}
+            {{ audienceRulesSummary(rule.audience_rules, audienceLabels) }}
           </p>
           <!-- Desempenho onde dá para agir: a causa da falha ao lado da campanha que falhou,
                não numa lista cronológica onde ela é só lamento. -->

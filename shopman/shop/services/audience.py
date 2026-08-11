@@ -47,6 +47,20 @@ DELIVERY_CONSENT_CHANNEL = "whatsapp"
 VIP_RFM_SEGMENTS = ("champion", "loyal_customer")
 VIP_LOYALTY_TIERS = ("gold", "platinum")
 
+#: Como as regras se combinam. ``any`` = união (somar regra ALARGA o alcance);
+#: ``all`` = interseção (somar regra ESTREITA).
+#:
+#: A união era o único comportamento, e ela não consegue dizer "leais QUE são atacado":
+#: pedir as duas coisas devolvia a soma das duas, 5 pessoas em vez de 2. Recorte é
+#: exatamente o que faz uma campanha valer a pena, então faltava o essencial.
+#:
+#: É um interruptor, não uma árvore booleana: continua sem AND/OR aninhado e sem
+#: construtor de expressão (ADR-020 §7). Quem precisar de árvore está construindo um CDP,
+#: e a resposta continua sendo não.
+MATCH_ANY = "any"
+MATCH_ALL = "all"
+MATCH_MODES = (MATCH_ANY, MATCH_ALL)
+
 
 @dataclass(frozen=True)
 class Recipient:
@@ -89,6 +103,10 @@ class AudienceResult:
     vip_delay_minutes: int = 0
     preferred_hour_window_hours: int = 0
     counts: dict = field(default_factory=dict)
+    #: Como as regras foram combinadas (``any`` união, ``all`` interseção). Viaja no
+    #: resumo porque um "2 destinatários" sem isto é indecifrável depois: o gestor não
+    #: tem como saber se a lista era pequena ou se ele mesmo a estreitou.
+    match: str = MATCH_ANY
 
     @property
     def total(self) -> int:
@@ -151,9 +169,16 @@ class AudienceResult:
         return tuple(waves)
 
     def summary(self) -> dict:
-        """Resumo persistível em ``Announcement.audience`` (só números, sem PII)."""
+        """Resumo persistível em ``Announcement.audience`` (só números, sem PII).
+
+        ⚠️ As contagens por regra são de ANTES da combinação: elas dizem quanta gente
+        cada regra achou por si. Com ``match="all"``, o ``total`` é menor que qualquer
+        uma delas, e é assim que se lê o recorte — "leais 5, atacado 2, total 2" conta a
+        história inteira num relance.
+        """
         return {
             **self.counts,
+            "match": self.match,
             "vip_count": len(self.vip),
             "general_count": len(self.general),
             "vip_delay_minutes": self.vip_delay_minutes,
@@ -180,6 +205,8 @@ def resolve(rules: dict | None = None, *, sku: str = "") -> AudienceResult:
             ``churn_risk_min``, ``bought_skus``/``bought_collections`` (com
             ``bought_within_days``), ``birthday_today``.
 
+            Combinação: ``match`` — ``any`` (união, padrão) ou ``all`` (interseção).
+
             Entrega: ``vip_first_minutes``, ``preferred_hour_window_hours``.
         sku: SKU do evento, quando houver.
 
@@ -190,55 +217,62 @@ def resolve(rules: dict | None = None, *, sku: str = "") -> AudienceResult:
     rules = rules or {}
     by_phone: dict[str, Recipient] = {}
     counts: dict[str, int] = {}
+    #: Os motivos que REALMENTE rodaram. É por eles que a interseção se define, não pelas
+    #: chaves pedidas: regra ligada que não pôde rodar (``favorites`` sem SKU) não vira
+    #: exigência, senão o disparo manual de uma campanha de evento zeraria calado.
+    applied: list[str] = []
+
+    def apply(found: list, *, reason: str, count_key: str) -> None:
+        counts[count_key] = len(found)
+        applied.append(reason)
+        _merge(by_phone, found, reason=reason)
 
     if sku and rules.get("favorites"):
-        found = _favorites(sku)
-        counts["favorites_count"] = len(found)
-        _merge(by_phone, found, reason="favorites")
+        apply(_favorites(sku), reason="favorites", count_key="favorites_count")
 
     if sku and rules.get("alerts"):
-        found = _pending_alerts(sku)
-        counts["alerts_count"] = len(found)
-        _merge(by_phone, found, reason="alerts")
+        apply(_pending_alerts(sku), reason="alerts", count_key="alerts_count")
 
     days = int(rules.get("bought_within_days") or 0)
     if sku and days > 0:
-        found = _bought_within_days(sku, days)
-        counts["bought_count"] = len(found)
-        _merge(by_phone, found, reason="bought")
+        apply(_bought_within_days(sku, days), reason="bought", count_key="bought_count")
 
     # ── Públicos escolhidos pelo gestor ──────────────────────────────
     if rules.get("customer_refs"):
-        found = _chosen_customers(rules.get("customer_refs"))
-        counts["chosen_count"] = len(found)
-        _merge(by_phone, found, reason="chosen")
+        apply(
+            _chosen_customers(rules.get("customer_refs")),
+            reason="chosen", count_key="chosen_count",
+        )
 
     if rules.get("groups"):
-        found = _by_groups(rules.get("groups"))
-        counts["groups_count"] = len(found)
-        _merge(by_phone, found, reason="groups")
+        apply(_by_groups(rules.get("groups")), reason="groups", count_key="groups_count")
 
     if rules.get("rfm_segments"):
-        found = _by_rfm_segments(rules.get("rfm_segments"))
-        counts["rfm_count"] = len(found)
-        _merge(by_phone, found, reason="rfm")
+        apply(_by_rfm_segments(rules.get("rfm_segments")), reason="rfm", count_key="rfm_count")
 
     if rules.get("churn_risk_min"):
-        found = _by_churn_risk(rules.get("churn_risk_min"))
-        counts["churn_risk_count"] = len(found)
-        _merge(by_phone, found, reason="churn_risk")
+        apply(
+            _by_churn_risk(rules.get("churn_risk_min")),
+            reason="churn_risk", count_key="churn_risk_count",
+        )
 
     chosen_skus = rules.get("bought_skus") or []
     chosen_collections = rules.get("bought_collections") or []
     if (chosen_skus or chosen_collections) and days > 0:
-        found = _bought(skus=chosen_skus, collections=chosen_collections, days=days)
-        counts["bought_chosen_count"] = len(found)
-        _merge(by_phone, found, reason="bought")
+        # ⚠️ Motivo PRÓPRIO, distinto do ``bought`` do evento. Compartilhar o motivo
+        # faria a interseção aceitar "comprou o SKU da fornada" como se fosse "comprou o
+        # SKU que o gestor escolheu" — duas perguntas satisfeitas por uma resposta.
+        apply(
+            _bought(skus=chosen_skus, collections=chosen_collections, days=days),
+            reason="bought_chosen", count_key="bought_chosen_count",
+        )
 
     if rules.get("birthday_today"):
-        found = _birthday_today()
-        counts["birthday_count"] = len(found)
-        _merge(by_phone, found, reason="birthday")
+        apply(_birthday_today(), reason="birthday", count_key="birthday_count")
+
+    mode = _match_mode(rules)
+    if mode == MATCH_ALL:
+        by_phone = _narrow_to_all(by_phone, applied)
 
     recipients = _filter_opted_in(by_phone.values())
     window = max(int(rules.get("preferred_hour_window_hours") or 0), 0)
@@ -246,7 +280,10 @@ def resolve(rules: dict | None = None, *, sku: str = "") -> AudienceResult:
     vip_delay = int(rules.get("vip_first_minutes") or 0)
     if vip_delay <= 0:
         return AudienceResult(
-            general=tuple(recipients), preferred_hour_window_hours=window, counts=counts
+            general=tuple(recipients),
+            preferred_hour_window_hours=window,
+            counts=counts,
+            match=mode,
         )
 
     vips = tuple(r for r in recipients if r.is_vip)
@@ -257,7 +294,34 @@ def resolve(rules: dict | None = None, *, sku: str = "") -> AudienceResult:
         vip_delay_minutes=vip_delay,
         preferred_hour_window_hours=window,
         counts=counts,
+        match=mode,
     )
+
+
+def _match_mode(rules: dict) -> str:
+    """Modo de combinação, com o padrão de sempre quando a chave não está lá.
+
+    Valor desconhecido cai na UNIÃO e registra o aviso: alargar demais é visível na
+    contagem antes de enviar; estreitar por engano viraria "0 destinatários", que o
+    gestor leria como "não tem ninguém" em vez de "escrevi errado".
+    """
+    mode = str(rules.get("match") or MATCH_ANY).strip().lower()
+    if mode not in MATCH_MODES:
+        logger.warning("audience.match_mode_unknown value=%r", rules.get("match"))
+        return MATCH_ANY
+    return mode
+
+
+def _narrow_to_all(by_phone: dict[str, Recipient], applied: list[str]) -> dict[str, Recipient]:
+    """Interseção: manter só quem satisfaz TODAS as regras que rodaram.
+
+    Uma regra só (ou nenhuma) torna a interseção idêntica à união, e devolver o mesmo
+    dicionário evita fingir que houve recorte.
+    """
+    required = set(applied)
+    if len(required) <= 1:
+        return by_phone
+    return {phone: r for phone, r in by_phone.items() if required <= r.reasons}
 
 
 def select_wave(rules: dict | None, wave_key: str, *, sku: str = "", now=None) -> tuple[Recipient, ...]:

@@ -1,13 +1,52 @@
 import { mount } from "@vue/test-utils";
-import { computed, ref, watch } from "vue";
-import { beforeAll, describe, expect, it } from "vitest";
+import { computed, onBeforeUnmount, ref, watch } from "vue";
+import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { useAudienceCount } from "~/composables/useAudienceCount";
 import FireCampaignPanel from "~/components/FireCampaignPanel.vue";
-import type { Campaign } from "~/types/campaign";
+import type { AudienceCount, Campaign } from "~/types/campaign";
+
+/** O que a contagem do servidor devolveu por último — o teste inspeciona e controla. */
+let counted: AudienceCount;
+/** As regras que o painel MANDOU contar. É por aqui que se prova o `match`. */
+let lastCountedRules: Record<string, unknown> | null = null;
+
+function fakeCount(over: Partial<AudienceCount> = {}): AudienceCount {
+  return {
+    total: 2,
+    match: "any",
+    match_label: "somando as regras",
+    parts: [{ label: "Grupos", count: 2 }],
+    vip_count: 0,
+    empty_selection: false,
+    ...over,
+  };
+}
 
 // Sem runtime Nuxt: os auto-imports viram globais e o Icon vira stub.
+//
+// A contagem entra com o composable REAL — só o `$fetch` é falso. Ele carrega o debounce e
+// o descarte de resposta velha, e um stub aqui deixaria justamente essa parte sem teste.
 beforeAll(() => {
-  Object.assign(globalThis, { computed, ref, watch });
+  Object.assign(globalThis, {
+    computed, ref, watch, onBeforeUnmount, useAudienceCount,
+    $fetch: vi.fn(async (_url: string, opts: { body?: Record<string, unknown> }) => {
+      lastCountedRules = (opts?.body?.audience_rules ?? null) as Record<string, unknown> | null;
+      return counted;
+    }),
+  });
 });
+
+beforeEach(() => {
+  counted = fakeCount();
+  lastCountedRules = null;
+  vi.useFakeTimers();
+});
+
+/** Passa o debounce da contagem e deixa o Vue redesenhar. */
+async function settleCount(wrapper: { vm: { $nextTick: () => Promise<void> } }) {
+  await vi.advanceTimersByTimeAsync(400);
+  await wrapper.vm.$nextTick();
+}
 
 const GROUPS = [
   { value: "varejo", label: "Varejo" },
@@ -160,5 +199,118 @@ describe("FireCampaignPanel — o texto escrito na hora", () => {
 
     const [payload] = wrapper.emitted("submit")!.at(-1) as [{ body: string }];
     expect(payload.body).toBe("");
+  });
+});
+
+
+// ── O número, antes de enviar ────────────────────────────────────────
+//
+// ⚠️ Escolher público era escolher no escuro: o tamanho só aparecia depois do disparo,
+// quando já não tem desfazer.
+
+describe("FireCampaignPanel — quantas pessoas isto alcança", () => {
+  it("mostra o tamanho do público enquanto se escolhe", async () => {
+    const wrapper = panel();
+    await wrapper.findAll('input[name="audience-mode"]')[1]!.setValue();
+    const chips = wrapper.findAll("button[aria-pressed]");
+    await chips.find((c) => c.text() === "Corporativo")!.trigger("click");
+    await settleCount(wrapper);
+
+    expect(wrapper.text()).toContain("2");
+    expect(wrapper.text()).toContain("pessoas recebem");
+  });
+
+  it("conta também o público salvo da campanha, que é o modo em que ela abre", async () => {
+    const wrapper = panel();
+    await settleCount(wrapper);
+
+    expect(lastCountedRules).toEqual({ favorites: true });
+  });
+
+  it("diz que ninguém se encaixa, em vez de deixar um zero sem explicação", async () => {
+    counted = fakeCount({ total: 0 });
+    const wrapper = panel();
+    await wrapper.findAll('input[name="audience-mode"]')[1]!.setValue();
+    await wrapper.findAll("button[aria-pressed]")[0]!.trigger("click");
+    await settleCount(wrapper);
+
+    expect(wrapper.text()).toContain("Ninguém se encaixa neste público hoje");
+  });
+
+  it("cala o número quando a contagem falha, em vez de mostrar um zero que mentiria", async () => {
+    const failing = vi.fn(async () => { throw new Error("offline"); });
+    Object.assign(globalThis, { $fetch: failing });
+    const wrapper = panel();
+    await settleCount(wrapper);
+
+    expect(wrapper.text()).toContain("Não foi possível contar agora");
+    expect(wrapper.text()).toContain("O disparo continua valendo");
+
+    Object.assign(globalThis, {
+      $fetch: vi.fn(async (_url: string, opts: { body?: Record<string, unknown> }) => {
+        lastCountedRules = (opts?.body?.audience_rules ?? null) as Record<string, unknown> | null;
+        return counted;
+      }),
+    });
+  });
+});
+
+describe("FireCampaignPanel — somar ou cruzar as regras", () => {
+  /** Duas regras escolhidas: é o mínimo para a combinação querer dizer algo. */
+  async function twoRulesChosen() {
+    const wrapper = panel();
+    await wrapper.findAll('input[name="audience-mode"]')[1]!.setValue();
+    const chips = wrapper.findAll("button[aria-pressed]");
+    await chips.find((c) => c.text() === "Corporativo")!.trigger("click");
+    await chips.find((c) => c.text() === "em risco")!.trigger("click");
+    return wrapper;
+  }
+
+  it("não oferece a escolha com uma regra só, onde ela não significaria nada", async () => {
+    const wrapper = panel();
+    await wrapper.findAll('input[name="audience-mode"]')[1]!.setValue();
+    await wrapper.findAll("button[aria-pressed]")[0]!.trigger("click");
+
+    expect(wrapper.text()).not.toContain("Qualquer uma");
+  });
+
+  it("oferece somar ou cruzar quando há mais de uma regra", async () => {
+    const wrapper = await twoRulesChosen();
+
+    expect(wrapper.text()).toContain("Qualquer uma");
+    expect(wrapper.text()).toContain("Todas");
+  });
+
+  it("soma por padrão — o comportamento de sempre", async () => {
+    const wrapper = await twoRulesChosen();
+    await wrapper.find("form").trigger("submit");
+
+    const [payload] = wrapper.emitted("submit")!.at(-1) as [{ audience: AudienceCount }];
+    expect(payload.audience).not.toHaveProperty("match");
+  });
+
+  it("manda `match: all` ao escolher 'Todas' — o recorte que a união não sabe fazer", async () => {
+    const wrapper = await twoRulesChosen();
+    const modes = wrapper.findAll("button[aria-pressed]");
+    await modes.find((m) => m.text().includes("Todas"))!.trigger("click");
+    await wrapper.find("form").trigger("submit");
+
+    const [payload] = wrapper.emitted("submit")!.at(-1) as [
+      { audience: { match?: string; groups?: string[]; rfm_segments?: string[] } },
+    ];
+    expect(payload.audience.match).toBe("all");
+    expect(payload.audience.groups).toEqual(["corporativo"]);
+    expect(payload.audience.rfm_segments).toEqual(["at_risk"]);
+  });
+
+  it("trocar de campanha volta a somar, sem herdar o cruzamento anterior", async () => {
+    const wrapper = await twoRulesChosen();
+    const modes = wrapper.findAll("button[aria-pressed]");
+    await modes.find((m) => m.text().includes("Todas"))!.trigger("click");
+
+    await wrapper.setProps({ rule: makeRule({ pk: 77, name: "Outra" }) });
+    await wrapper.find("form").trigger("submit");
+
+    expect(wrapper.emitted("submit")?.at(-1)).toEqual([{ body: "", audience: {} }]);
   });
 });
