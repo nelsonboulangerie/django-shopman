@@ -347,7 +347,39 @@ nossa. Sem volta no `reverse`: recriar `tv` seria recriar o bug.
 ⚠️ `Channel` com `ref="tv"` **continua existindo** e nao tem nada a ver com isto — e canal de display
 (ADR-018), que e justamente o mecanismo certo.
 
-### F13b — Posting externo · ADR-020 passo 8 — ⛔ BLOQUEADO (credenciais)
+### F13b — Posting externo · ADR-020 passo 8 — 🟡 DESTRAVADO (Meta), Google ausente
+
+`META_PAGE_ACCESS_TOKEN` entrou na spec LIVE em 2026-08-11, com o system user `shopman-api`
+recebendo o app "App Nelson" como ativo (`Desenvolver app`) e a Página + Instagram já
+atribuídos. Google Business segue ausente por completo.
+
+#### Como testar sem comprometer nada
+
+O dono foi explícito: **staging não divulga a loja**, e link, se houver, vai para o WhatsApp
+(`wa.me`). Os dois canais têm um estado "não publicado" nativo, então o teste é real sem ser
+público:
+
+· **Facebook** — publicar com `published=false`. O post nasce **não publicado**, visível só
+  nas ferramentas de publicação da Página. Valida token, permissão, upload da foto e legenda.
+· **Instagram** — a API de publicação é de dois passos: `POST /{ig-user-id}/media` cria o
+  **container**, e só `POST /{ig-user-id}/media_publish` publica. O teste **para no
+  container**. Valida token, permissão, legenda e — o mais importante — que a **Meta
+  consegue buscar a imagem** pela URL (é ela quem baixa, não o navegador do cliente).
+
+Isso vira desenho, não gambiarra de teste: `SHOPMAN_MARKETING_META["publish"]`, **falso por
+default em staging** e verdadeiro em produção. Staging nunca publica em público por
+construção, e o mesmo caminho de código é exercido nos dois ambientes.
+
+⚠️ **O link.** Legenda de Instagram não clica link, e no Facebook a URL vira preview. Enquanto
+a loja não for divulgada, o CTA aponta para `wa.me/55XXXXXXXXXXX` com texto pronto
+(`?text=`), que é o canal que já queremos. `storefront_links` ganha o gerador desse link, com
+o número vindo de `Shop.phone` — sem literal espalhado.
+
+⚠️ **A imagem.** A Meta busca a URL do lado dela, então ela precisa ser pública e absoluta —
+é por isso que `product_image_url` absolutiza e devolve vazio quando não dá. As imagens boas
+do dono servem; o que não serve é caminho relativo ou host privado.
+
+*O que fica de fora:* Google Business, por falta de credencial.
 
 Registrar `"posting"` no mapa de adapters e implementar `posting_meta`/`posting_google`. Escopo ja
 definido em [FOMO-MARKETING-SPECS](FOMO-MARKETING-SPECS.md) §5 e §7.
