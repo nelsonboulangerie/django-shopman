@@ -208,3 +208,81 @@ class TestRulesManagersGroup(TestCase):
         from django.contrib.auth.models import Group
         group = Group.objects.get(name="Rules Managers")
         assert group.user_set.count() == 0
+
+
+class TestEmployeeRuleParamRename:
+    """⚠️ Um parâmetro obsoleto na `RuleConfig` DESLIGA a regra em silêncio.
+
+    O engine instancia com `cls(**rule_config.params)` (`engine.py:143`) e o `_safe_load`
+    engole o `TypeError` como WARNING (`engine.py:227`). Quando `group` virou `price_tier`,
+    o desconto de funcionário parou de carregar num banco existente — sem erro na tela, sem
+    ninguém sabendo. A migração `shop.0010` renomeia a chave nos dados.
+    """
+
+    @pytest.mark.django_db
+    def test_the_rule_still_loads_with_the_current_param(self):
+        from shopman.shop.models import RuleConfig
+        from shopman.shop.rules.engine import load_rule
+
+        config = RuleConfig.objects.create(
+            ref="employee_discount_atual",
+            rule_path="shopman.shop.rules.pricing.EmployeeRule",
+            label="Desconto Funcionário",
+            params={"discount_percent": 20, "price_tier": "staff"},
+        )
+
+        rule = load_rule(config)
+        assert rule.price_tier == "staff"
+        assert rule.discount_percent == 20
+
+    @pytest.mark.django_db
+    def test_the_obsolete_param_kills_the_rule_quietly(self):
+        """O comportamento que a migração existe para evitar, fixado como aviso.
+
+        Não é para "consertar" aceitando `group` — alias de compatibilidade é proibido aqui
+        (pré-go-live). É para deixar registrado que dado velho DESLIGA regra sem gritar, e
+        que por isso rename de parâmetro exige migração de dados.
+        """
+        from shopman.shop.models import RuleConfig
+        from shopman.shop.rules.engine import _safe_load
+
+        config = RuleConfig.objects.create(
+            ref="employee_discount_velho",
+            rule_path="shopman.shop.rules.pricing.EmployeeRule",
+            label="Desconto Funcionário",
+            params={"discount_percent": 20, "group": "staff"},
+        )
+
+        assert _safe_load(config) is None  # silêncio: só um WARNING no log
+
+    @pytest.mark.django_db
+    def test_the_migration_renames_the_key_in_stored_params(self):
+        """E a migração conserta o dado velho, nos dois sentidos."""
+        import importlib
+
+        from django.apps import apps as real_apps
+
+        from shopman.shop.models import RuleConfig
+        from shopman.shop.rules.engine import _safe_load
+
+        migration = importlib.import_module(
+            "shopman.shop.migrations.0010_employee_rule_price_tier_param"
+        )
+
+        config = RuleConfig.objects.create(
+            ref="employee_discount_migrado",
+            rule_path="shopman.shop.rules.pricing.EmployeeRule",
+            label="Desconto Funcionário",
+            params={"discount_percent": 15, "group": "staff"},
+        )
+
+        migration.forwards(real_apps, None)
+        config.refresh_from_db()
+        assert config.params == {"discount_percent": 15, "price_tier": "staff"}
+        assert _safe_load(config) is not None  # a regra volta a carregar
+
+        # O reverso existe porque migração de dados que não volta transforma rollback
+        # em perda.
+        migration.backwards(real_apps, None)
+        config.refresh_from_db()
+        assert config.params == {"discount_percent": 15, "group": "staff"}
