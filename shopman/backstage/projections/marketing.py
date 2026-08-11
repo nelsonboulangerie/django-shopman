@@ -165,6 +165,10 @@ class AnnouncementTemplateProjection:
     body: str
     variables: tuple[str, ...]
     use_ai_generation: bool
+    #: ⚠️ A API aceitava GRAVAR `ai_prompt` e a projection não o devolvia: o gestor
+    #: escrevia a instrução da IA e nunca mais a via. Config que só se escreve é config
+    #: que ninguém confere.
+    ai_prompt: str
     image_source: str
     is_active: bool
 
@@ -439,6 +443,7 @@ def build_template(template: AnnouncementTemplate) -> AnnouncementTemplateProjec
         body=template.body,
         variables=tuple(template.variables or ()),
         use_ai_generation=template.use_ai_generation,
+        ai_prompt=template.ai_prompt,
         image_source=template.image_source,
         is_active=template.is_active,
     )

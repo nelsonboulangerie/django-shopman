@@ -5,6 +5,7 @@
 const route = useRoute();
 const section = computed(() =>
   route.path.startsWith("/rules") ? "rules"
+  : route.path.startsWith("/modelos") ? "templates"
   : route.path.startsWith("/history") ? "history"
   : "board",
 );
@@ -12,6 +13,10 @@ const section = computed(() =>
 const tabs = [
   { to: "/", key: "board", label: "Painel", icon: "lucide:megaphone" },
   { to: "/rules", key: "rules", label: "Regras", icon: "lucide:sliders-horizontal" },
+  // Modelos entram na nav porque escrever o texto que vai ao cliente é operação, não
+  // configuração de bastidor. Antes só existiam no Admin, e sem nenhum modelo era
+  // impossível criar campanha por aqui.
+  { to: "/modelos", key: "templates", label: "Modelos", icon: "lucide:file-text" },
   { to: "/history", key: "history", label: "Histórico", icon: "lucide:history" },
 ] as const;
 </script>

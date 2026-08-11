@@ -192,7 +192,9 @@ function submit() {
           </option>
         </select>
         <p v-if="templates.length === 0" class="mt-1 text-xs text-muted-foreground">
-          Nenhum modelo cadastrado ainda. Crie um no Admin antes de criar a regra.
+          Nenhum modelo cadastrado ainda.
+          <NuxtLink to="/modelos" class="font-medium underline">Crie o primeiro aqui</NuxtLink>
+          antes de criar a regra.
         </p>
       </div>
     </div>
