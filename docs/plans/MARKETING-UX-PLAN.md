@@ -72,7 +72,9 @@ responde três, ela é um depósito.
 | **Hoje** | "o que pede a minha decisão agora?" | fica aberta o dia todo |
 | **Campanhas** | "o que a padaria diz, e quando?" | ao mudar a estratégia |
 | **Plataformas** | "por onde eu consigo falar, e o que falta?" | ao ligar algo, ou quando falha |
-| **Histórico** | "o que saiu, para quantos, com que resultado?" | ao conferir |
+
+⚠️ A primeira versão tinha uma quarta, **Histórico**. Ela caiu na §8: a pergunta "o que saiu?"
+é fraca, e a forte — "esta campanha está funcionando?" — se responde dentro da campanha.
 
 O botão "WhatsApp" morre. O aviso de alcance para de carregar configuração e passa a ser
 **um resumo do que Plataformas sabe**, com um caminho para lá.
@@ -143,13 +145,12 @@ Três coisas ficam bem aqui e em nenhum outro lugar:
 
 ---
 
-## 6. Histórico
+## 6. Histórico — superado pela §8
 
-O que já existe, mais o que hoje falta: **por que uma entrega falhou**, por plataforma, e
-**quanto alcançou**. O `platform_results` já guarda isso; a tela mostra pouco.
-
-Sem gráfico. A pergunta do gestor de padaria é "saiu? para quantos? deu problema?", e três
-respostas em texto valem mais que uma curva.
+A primeira versão desta proposta mantinha o Histórico como seção própria, ganhando o porquê da
+falha. O dono desconfiou ("poderia ser absorvido") e tinha razão: ver §8. Sem gráfico segue
+valendo — a pergunta é "saiu? para quantos? deu problema?", e três respostas em texto valem
+mais que uma curva.
 
 ---
 
@@ -170,7 +171,104 @@ E ela é barata: o backend já resolve tudo (`resolve_content`, `test_fields`,
 
 ---
 
-## 8. O que eu NÃO faria
+## 8. O Histórico se dissolve, e a nav cai para três
+
+O dono teve a impressão de que o Histórico "poderia ser absorvido", e a impressão está certa.
+Ele responde uma pergunta **fraca**: "o que saiu?", em geral, em ordem cronológica. A pergunta
+forte é **por campanha** — *"isto está funcionando?"* — e essa se faz olhando a campanha, não
+uma lista global.
+
+Então ele se dissolve em dois lugares, e cada pedaço fica mais útil do que era:
+
+· **dentro de cada campanha**, uma faixa de desempenho: "saiu 12 vezes · 340 pessoas · 2
+  falhas — a última por credencial do Instagram". É aqui que a **causa da falha** merece
+  aparecer, porque é aqui que dá para agir sobre ela: desmarcar a plataforma, arrumar a
+  credencial, mudar o texto. Numa lista cronológica, a mesma informação é só um lamento;
+· **no Painel**, o "o que saiu hoje" ganha um "ver tudo" que abre a linha do tempo completa
+  para quem quer varrer. Deixa de ser aba e passa a ser aprofundamento.
+
+Resultado: **Painel · Campanhas · Plataformas**. Três perguntas, três telas.
+
+O dado já existe: `Announcement.platform_results` guarda status e razão por plataforma, e
+`_result_detail` já sabe extrair o porquê. Falta agregação por campanha na projection — e
+**agregação por campanha não é dashboard**: são três números atrelados a uma decisão que o
+gestor pode tomar naquela tela, o que a ADR-020 §11 nunca proibiu.
+
+---
+
+## 9. Público salvo — e por que NÃO tags
+
+O dono perguntou se "avisar quem" deveria ser mais dinâmico, com grupos ou tags. A resposta
+curta: **grupos já existem** (`CustomerGroup`, do guestman, já no seletor), **tags seriam um
+segundo mecanismo para o mesmo trabalho**, e o que falta de verdade é **reuso**.
+
+Hoje o gestor monta o público na hora — "grupos + em risco + aniversariantes" — e essa
+composição **morre no disparo**. Ele remonta na semana seguinte, de memória, e erra.
+
+### O que é
+
+Um público salvo é **um nome dado a uma combinação das regras que já existem**.
+
+> "Sábado de manhã" = comprou nos últimos 30 dias + favoritou pão
+> "Sumidos" = risco de churn alto
+
+Três razões para isso ser melhor que tags:
+
+1. **Não inventa vocabulário.** Usa as chaves que o resolvedor já entende, então é impossível
+   salvar um público que o sistema não saiba executar. Tag cria um segundo jeito de dizer "esse
+   conjunto de gente", e dois jeitos divergem no primeiro mês — a mesma armadilha do
+   `sku`/`product_sku`, em escala maior.
+2. **É dinâmico de graça.** O público é recalculado no disparo, não uma lista congelada. Tag
+   exige alguém etiquetando, e etiqueta apodrece: ninguém remove a de quem deixou de comprar.
+3. **Não é CDP.** Continua sem árvore booleana (ADR-020 §7): é uma combinação plana com nome,
+   não um construtor de expressão.
+
+### ⚠️ O que NÃO pode ser salvo, e por quê
+
+O vocabulário de público já é dividido em duas famílias (`services/audience.py::resolve`):
+
+| família | chaves | vale sozinha? |
+|---|---|---|
+| **por evento** | `favorites`, `alerts`, `bought_within_days` sem SKU | **não** — precisam do SKU do evento |
+| **escolhida pelo gestor** | `groups`, `rfm_segments`, `churn_risk_min`, `birthday_today`, `customer_refs`, `bought_skus`/`bought_collections` | sim |
+
+Só a segunda família pode ser salva. Um público salvo com `favorites: true` não quer dizer
+nada fora de um evento — resolveria para ninguém, e o gestor culparia a ferramenta. "Quem
+favoritou" é propriedade do **gatilho**, não de um público reutilizável, e continua marcável na
+campanha.
+
+### Nada "duro" para o operador
+
+Foi a exigência explícita do dono, e é ela que decide a implementação:
+
+· **cria-se salvando o que já foi feito.** No painel de disparo, depois de escolher o público
+  em frases, um "salvar este público" com um campo de nome. A criação é subproduto de operar,
+  não uma tarefa separada numa tela separada;
+· **JSON nunca aparece.** Editar é abrir e clicar nas mesmas frases do seletor. O `audience_rules`
+  continua sendo o formato guardado, e continua invisível;
+· **conta gente antes de salvar.** "Sumidos — 34 pessoas" ao lado do nome, resolvido de
+  verdade (`resolve().summary()`), com o filtro de consentimento já aplicado. É o que separa
+  confiança de fé;
+· **renomear é livre; apagar é guardado.** Público em uso por campanha avisa quantas usam,
+  como o modelo já faz;
+· **quem edita, muda o alcance das campanhas que o usam** — e a tela diz isso ("2 campanhas
+  usam este público"), porque é o efeito desejado e não pode ser surpresa.
+
+### A entidade (pequena, e justificada)
+
+Os quatro critérios de "vale criar entidade?" batem: cardinalidade > 1 (vários públicos), nome
+próprio para reuso, edição ao longo do tempo, e referência de campanha. Então:
+
+`Audience`: `ref` (slug), `name`, `rules` (JSON, o mesmo `audience_rules`), `is_active`.
+
+E **um campo** na campanha (`audience_ref`), com a regra de precedência dita em voz alta:
+público salvo escolhido **substitui** as chaves escolhidas-pelo-gestor; as por evento
+(`favorites`/`alerts`) continuam da campanha, porque são do gatilho. Sem merge silencioso —
+merge de duas fontes de público é exatamente como se manda mensagem para quem não devia.
+
+---
+
+## 10. O que eu NÃO faria
 
 · **Dashboard de engajamento.** ADR-020 §11, e a razão é boa: número sem decisão atrelada
   treina o gestor a olhar em vez de agir.
@@ -183,7 +281,7 @@ E ela é barata: o backend já resolve tudo (`resolve_content`, `test_fields`,
 
 ---
 
-## 9. Perguntas do dono, respondidas na revisão de 2026-08-11
+## 11. Perguntas do dono, respondidas na revisão de 2026-08-11
 
 **A sequência da nav está adequada?** Não, e é transitória. "Regras, Modelos, Plataformas" é
 uma lista de OBJETOS, não um percurso. Quando Campanhas absorver Modelos (§4), fica
@@ -214,7 +312,7 @@ a lista já era estranha; com as quatro expandindo, viraria depósito.
 
 ---
 
-## 10. Feito em 2026-08-11
+## 12. Feito em 2026-08-11
 
 **Plataformas** (passo 1) e **Campanhas absorve Modelos** (passo 3) estão no `main`.
 
@@ -243,15 +341,17 @@ Falta o passo 4 (Histórico com o porquê da falha).
 
 ---
 
-## 11. Ordem sugerida
+## 13. Ordem sugerida
 
 Cada passo entrega valor sozinho.
 
-1. **Plataformas** — cria a casa e esvazia o Painel dos remendos (o botão "WhatsApp" e o teste
-   migram para lá). É o passo que o dono pediu.
-2. **Prévia** — o maior ganho por linha de código, e o que evita a próxima variável vazia.
-3. **Campanhas absorve Modelos** — some o beco sem saída e o pensamento volta a ser um só.
-4. **Histórico ganha o porquê** — `platform_results` já tem o dado.
+1. ✅ **Plataformas** — a casa que faltava; o Painel volta a ser só decisão.
+2. ✅ **Prévia** — variável vazia aparece antes do cliente ver.
+3. ✅ **Campanhas absorve Modelos** — o pensamento volta a ser um só.
+4. **Desempenho por campanha, e o Histórico se dissolve** (§8) — a causa da falha aparece onde
+   dá para agir, e a nav cai para três.
+5. **Público salvo** (§9) — reuso do que hoje morre no disparo. Criado salvando o que já foi
+   feito, editável em frases, com contagem de gente antes de salvar.
 
 ---
 
