@@ -85,6 +85,12 @@ export interface Campaign {
   schedule_label: string;
   /** Cria a ocasião sozinho (`once`/`recurring`), em vez de só adiar um evento. */
   fires_on_its_own: boolean;
+  /** Desempenho: as três perguntas que dizem se a campanha funciona. */
+  sent_count: number;
+  reached_total: number;
+  failed_count: number;
+  /** A razão da última falha, por extenso. */
+  last_failure: string;
   /** Dispara sozinho, mas já não tem próxima ocasião: data passada ou período findo. */
   exhausted: boolean;
   requires_approval: boolean;

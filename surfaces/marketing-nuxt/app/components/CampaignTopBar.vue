@@ -1,6 +1,10 @@
 <script setup lang="ts">
 // Cabeçalho de seção do Marketing — mora no topo do CONTEÚDO (não é o rail).
-// Segura o controle do rail (kit) + a navegação própria (Painel/Regras/Histórico).
+// Segura o controle do rail (kit) + a navegação própria (Painel/Campanhas/Plataformas).
+//
+// ⚠️ O Histórico saiu daqui: ele respondia uma pergunta fraca ("o que saiu?", cronológico). A
+// forte — "esta campanha está funcionando?" — mora na campanha, e a linha do tempo completa
+// ficou como "ver tudo" no Painel. Ver `docs/plans/MARKETING-UX-PLAN.md` §8.
 // As funções comuns (Central, operador, tema) vivem no OperatorRail à esquerda.
 const route = useRoute();
 const section = computed(() =>
@@ -8,7 +12,6 @@ const section = computed(() =>
   // não seção irmã — o gestor pensa "o que a padaria diz", não "modelos e regras".
   route.path.startsWith("/campaigns") || route.path.startsWith("/templates") ? "campaigns"
   : route.path.startsWith("/platforms") ? "platforms"
-  : route.path.startsWith("/history") ? "history"
   : "board",
 );
 
@@ -19,7 +22,6 @@ const tabs = [
   // Plataformas: por onde o anúncio SAI. Não confundir com canal, que é por onde se vende
   // (ADR-020 §10). Era a casa que faltava — sem ela, a config vazava para o painel.
   { to: "/platforms", key: "platforms", label: "Plataformas", icon: "lucide:share-2" },
-  { to: "/history", key: "history", label: "Histórico", icon: "lucide:history" },
 ] as const;
 </script>
 

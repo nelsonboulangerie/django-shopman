@@ -240,3 +240,58 @@ def test_in_use_marks_only_what_an_active_campaign_targets(no_transport):
 
     assert by_ref["whatsapp"].in_use is True
     assert by_ref["instagram"].in_use is False, "campanha desligada não conta como uso"
+
+
+# ── Desempenho por campanha (o Histórico dissolvido) ─────────────────
+
+
+def test_a_campaign_reports_how_it_is_doing(db):
+    """As três perguntas que dizem se a campanha funciona, ao lado dela."""
+    from shopman.backstage.projections import marketing as mp
+    from shopman.shop.models import (
+        Announcement,
+        AnnouncementStatus,
+        AnnouncementTemplate,
+        Campaign,
+        Trigger,
+    )
+
+    template = AnnouncementTemplate.objects.create(name="T", body="oi")
+    rule = Campaign.objects.create(
+        name="Fornada", trigger=Trigger.PRODUCTION_FINISHED, template=template,
+        platforms=["whatsapp"], is_active=True,
+    )
+    Announcement.objects.create(
+        rule=rule, template=template, status=AnnouncementStatus.PUBLISHED,
+        audience={"total": 12}, platform_results={"whatsapp": {"status": "published"}},
+    )
+    Announcement.objects.create(
+        rule=rule, template=template, status=AnnouncementStatus.FAILED,
+        audience={"total": 9},
+        platform_results={"instagram": {"status": "failed", "error": "sem credencial"}},
+    )
+
+    projection = mp.build_rule(rule)
+
+    assert projection.sent_count == 1
+    assert projection.reached_total == 12
+    assert projection.failed_count == 1
+    # ⚠️ "Falhou" mudo é a informação que não ajuda: a razão vem por extenso.
+    assert projection.last_failure == "sem credencial"
+
+
+def test_the_list_does_not_query_per_campaign(db, django_assert_num_queries):
+    """⚠️ Uma consulta por campanha seria N+1 — a mesma dívida que o PR #114 pagou."""
+    from shopman.backstage.projections import marketing as mp
+    from shopman.shop.models import AnnouncementTemplate, Campaign, Trigger
+
+    template = AnnouncementTemplate.objects.create(name="T", body="oi")
+    for index in range(5):
+        Campaign.objects.create(
+            name=f"C{index}", trigger=Trigger.MANUAL, template=template,
+            platforms=["whatsapp"], is_active=True,
+        )
+
+    # 1 campanhas + 1 anúncios. Sem o agrupamento seriam 1 + 5.
+    with django_assert_num_queries(2):
+        mp.build_rules()

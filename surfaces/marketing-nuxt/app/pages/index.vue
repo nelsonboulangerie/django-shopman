@@ -184,9 +184,20 @@ useHead({ title: "Painel · Marketing" });
 
     <!-- Publicados nas últimas 24h -->
     <section v-if="recentPosts.length > 0">
-      <h2 class="mb-3 text-sm font-semibold uppercase tracking-wide text-muted-foreground">
-        Últimas 24 horas
-      </h2>
+      <div class="mb-3 flex items-center gap-2">
+        <h2 class="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
+          Últimas 24 horas
+        </h2>
+        <!-- A linha do tempo completa deixou de ser aba e virou aprofundamento: a pergunta
+             "o que saiu?" é fraca, e quem quer varrer clica aqui (plano §8). -->
+        <NuxtLink
+          to="/history"
+          class="ml-auto inline-flex items-center gap-1 text-xs font-semibold text-muted-foreground underline transition hover:text-foreground"
+        >
+          Ver tudo
+          <Icon name="lucide:arrow-right" class="size-3" />
+        </NuxtLink>
+      </div>
       <ul class="divide-y divide-border overflow-hidden rounded-xl border border-border bg-card">
         <li v-for="announcement in recentPosts" :key="announcement.pk" class="flex items-start gap-3 px-4 py-3">
           <Icon

@@ -151,6 +151,21 @@ useHead({ title: "Campanhas · Marketing" });
           <p class="mt-0.5 text-xs text-muted-foreground">
             {{ audienceRulesSummary(rule.audience_rules) }}
           </p>
+          <!-- Desempenho onde dá para agir: a causa da falha ao lado da campanha que falhou,
+               não numa lista cronológica onde ela é só lamento. -->
+          <p
+            v-if="rule.sent_count || rule.failed_count"
+            class="mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs"
+          >
+            <span class="text-muted-foreground">
+              saiu {{ rule.sent_count }}× · {{ rule.reached_total }}
+              {{ rule.reached_total === 1 ? "pessoa" : "pessoas" }}
+            </span>
+            <span v-if="rule.failed_count" class="text-destructive">
+              {{ rule.failed_count }}
+              {{ rule.failed_count === 1 ? "falha" : "falhas" }}<template v-if="rule.last_failure">, a última por {{ rule.last_failure }}</template>
+            </span>
+          </p>
           <!-- Uma campanha agendada que nunca mais dispara é indistinguível de uma
                que ainda não disparou. A frase vem do servidor pronta. -->
           <p

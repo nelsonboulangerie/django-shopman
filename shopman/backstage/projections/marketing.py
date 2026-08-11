@@ -174,6 +174,14 @@ class CampaignProjection:
     schedule_label: str
     #: Este agendamento cria a ocasião sozinho (`once`/`recurring`)?
     fires_on_its_own: bool
+    #: Desempenho: as três perguntas que dizem se a campanha funciona, atreladas a uma
+    #: decisão tomável na própria tela (desmarcar plataforma, arrumar credencial, mudar o
+    #: texto). Não é dashboard — é o Histórico dissolvido onde ele serve.
+    sent_count: int
+    reached_total: int
+    failed_count: int
+    #: A razão da ÚLTIMA falha, por extenso. "Falhou" mudo é a informação que não ajuda.
+    last_failure: str
     #: Dispara sozinho mas já não tem próxima ocasião — data passada ou período findo.
     #: Sem isto, uma campanha esgotada é indistinguível de uma que ainda não disparou.
     exhausted: bool
@@ -460,7 +468,8 @@ def build_history(*, limit: int = 100, now=None) -> tuple[AnnouncementProjection
 # ── Regras e modelos ─────────────────────────────────────────────────
 
 
-def build_rule(rule: Campaign) -> CampaignProjection:
+def build_rule(rule: Campaign, *, performance: dict | None = None) -> CampaignProjection:
+    """Uma campanha. ``performance`` pronto evita N+1 quando a lista inteira é montada."""
     from shopman.shop.services import campaign_schedule as sched
 
     fires = sched.fires_on_its_own(rule.schedule)
@@ -476,6 +485,7 @@ def build_rule(rule: Campaign) -> CampaignProjection:
         audience_rules=dict(rule.audience_rules or {}),
         promotion_ref=rule.promotion_ref,
         schedule=dict(rule.schedule or {}),
+        **(performance if performance is not None else _performance_by_rule([rule.pk])[rule.pk]),
         schedule_label=sched.describe_occurrence(rule.schedule) if fires else sched.describe(rule.schedule),
         fires_on_its_own=fires,
         exhausted=fires and sched.next_occurrence(rule.schedule) is None,
@@ -485,9 +495,57 @@ def build_rule(rule: Campaign) -> CampaignProjection:
     )
 
 
+def _stated_reason(result: dict) -> str:
+    """A razão escrita da falha, ou vazio. Sem cair no resumo de contagem."""
+    for key in ("detail", "reason", "error"):
+        value = result.get(key)
+        if value:
+            return str(value)
+    return ""
+
+
+def _performance_by_rule(rule_ids: list[int]) -> dict[int, dict]:
+    """Desempenho de VÁRIAS campanhas em UMA consulta.
+
+    ⚠️ Uma consulta por campanha seria N+1 na tela que lista todas — a mesma dívida que o
+    PR #114 pagou. O dado já existe em `platform_results`; agregar aqui evita inventar
+    tabela de agregação, que a ADR-020 §11 proíbe com razão.
+    """
+    blank = {"sent_count": 0, "reached_total": 0, "failed_count": 0, "last_failure": ""}
+    out = {rule_id: dict(blank) for rule_id in rule_ids}
+    if not rule_ids:
+        return out
+
+    announcements = (
+        Announcement.objects.filter(rule_id__in=rule_ids)
+        .only("rule_id", "audience", "platform_results", "created_at")
+        .order_by("-created_at")
+    )
+    for announcement in announcements:
+        bucket = out.get(announcement.rule_id)
+        if bucket is None:
+            continue
+        entries = [
+            entry for entry in (announcement.platform_results or {}).values()
+            if isinstance(entry, dict)
+        ]
+        if any(entry.get("status") == "published" for entry in entries):
+            bucket["sent_count"] += 1
+            bucket["reached_total"] += int((announcement.audience or {}).get("total") or 0)
+        broken = [entry for entry in entries if entry.get("status") == "failed"]
+        if broken:
+            bucket["failed_count"] += 1
+            # ⚠️ Só razão EXPLÍCITA. `_result_detail` cai num resumo de contagem
+            # ("0 enviados, 3 falharam") quando não há motivo escrito, e contagem prefixada
+            # por "1 falha:" lê como causa sem ser — confunde mais que o silêncio.
+            bucket["last_failure"] = bucket["last_failure"] or _stated_reason(broken[0])
+    return out
+
+
 def build_rules() -> tuple[CampaignProjection, ...]:
-    rules = Campaign.objects.select_related("template").all()
-    return tuple(build_rule(rule) for rule in rules)
+    rules = list(Campaign.objects.select_related("template").all())
+    performance = _performance_by_rule([rule.pk for rule in rules])
+    return tuple(build_rule(rule, performance=performance[rule.pk]) for rule in rules)
 
 
 def build_template(template: AnnouncementTemplate) -> AnnouncementTemplateProjection:
