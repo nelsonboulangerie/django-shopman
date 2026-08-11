@@ -2990,7 +2990,7 @@ class Command(BaseCommand):
         consented = self._seed_marketing_consent(customers)
 
         self.stdout.write(
-            f"  ✅ {len(customers)} clientes, 3 grupos, {consented} com consentimento de marketing"
+            f"  ✅ {len(customers)} clientes, 3 faixas de preço, {consented} com consentimento de marketing"
         )
         return customers
 
@@ -3003,7 +3003,7 @@ class Command(BaseCommand):
         sem consentimento". Feature que não se pode experimentar não existe para quem usa.
 
         **Nem todos consentem, de propósito.** Dois clientes ficam de fora para que o
-        filtro seja visível na tela: o resumo do anúncio mostra "3 no grupo, 1 alcançado",
+        filtro seja visível na tela: o resumo do anúncio mostra "3 na faixa, 1 alcançado",
         e essa diferença é a LGPD funcionando, não um bug.
         """
         from shopman.guestman import ConsentService
