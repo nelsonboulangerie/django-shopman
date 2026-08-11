@@ -6,6 +6,7 @@ const route = useRoute();
 const section = computed(() =>
   route.path.startsWith("/rules") ? "rules"
   : route.path.startsWith("/modelos") ? "templates"
+  : route.path.startsWith("/plataformas") ? "platforms"
   : route.path.startsWith("/history") ? "history"
   : "board",
 );
@@ -17,6 +18,9 @@ const tabs = [
   // configuração de bastidor. Antes só existiam no Admin, e sem nenhum modelo era
   // impossível criar campanha por aqui.
   { to: "/modelos", key: "templates", label: "Modelos", icon: "lucide:file-text" },
+  // Plataformas: por onde o anúncio SAI. Não confundir com canal, que é por onde se vende
+  // (ADR-020 §10). Era a casa que faltava — sem ela, a config vazava para o painel.
+  { to: "/plataformas", key: "platforms", label: "Plataformas", icon: "lucide:share-2" },
   { to: "/history", key: "history", label: "Histórico", icon: "lucide:history" },
 ] as const;
 </script>

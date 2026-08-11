@@ -48,6 +48,7 @@ from .marketing import (
     CampaignHistoryView,
     CampaignListView,
     CampaignOptionsView,
+    PlatformsView,
     WhatsAppTemplateView,
     WhatsAppTestSendView,
 )
@@ -228,6 +229,7 @@ urlpatterns = [
     path("marketing/", CampaignBoardView.as_view(), name="api-backstage-marketing"),
     path("marketing/history/", CampaignHistoryView.as_view(), name="api-backstage-marketing-history"),
     path("marketing/options/", CampaignOptionsView.as_view(), name="api-backstage-marketing-options"),
+    path("marketing/platforms/", PlatformsView.as_view(), name="api-backstage-marketing-platforms"),
     path("marketing/rules/", CampaignListView.as_view(), name="api-backstage-marketing-rules"),
     path("marketing/rules/<int:pk>/", CampaignDetailView.as_view(), name="api-backstage-marketing-rule"),
     path("marketing/rules/<int:pk>/fire/", CampaignFireView.as_view(), name="api-backstage-marketing-fire"),

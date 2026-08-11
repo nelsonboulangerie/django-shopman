@@ -18,42 +18,6 @@ const OUTCOME_META = {
 const { reachLimits, pendingPosts, recentPosts, stats, loading, error, refresh, approve, reject, aiAssistAvailable } =
   useCampaignBoard();
 const { platforms } = useCampaigns();
-
-// Escolher o template do WhatsApp AQUI: é config, mas é config da operação, e mandar o
-// gestor para outro aplicativo para desbloquear o próprio anúncio é atrito sem motivo.
-const waTemplate = useWhatsAppTemplate();
-const choosingTemplate = ref(false);
-const savingTemplate = ref(false);
-
-async function openTemplatePicker() {
-  choosingTemplate.value = true;
-  await waTemplate.load();
-}
-
-async function onChooseTemplate(flowNs: string) {
-  savingTemplate.value = true;
-  const ok = await waTemplate.choose(flowNs);
-  savingTemplate.value = false;
-  if (ok) {
-    choosingTemplate.value = false;
-    await refresh();
-  }
-}
-
-// Teste no próprio WhatsApp: o destinatário é digitado de propósito. Sem lista de
-// clientes aqui, o gestor não erra o alvo por um clique.
-const testRecipient = ref("");
-const testSku = ref("");
-const testName = ref("");
-
-async function onSendTest() {
-  if (!testRecipient.value.trim()) return;
-  await waTemplate.sendTest(testRecipient.value.trim(), {
-    sku: testSku.value.trim(),
-    name: testName.value.trim(),
-  });
-}
-
 const busyPk = ref<number | null>(null);
 const rejecting = ref<number | null>(null);
 const rejectReason = ref("");
@@ -82,21 +46,9 @@ useHead({ title: "Painel · Marketing" });
   <main class="mx-auto w-full max-w-4xl flex-1 px-4 py-6">
     <div class="mb-5 flex items-center gap-3">
       <h1 class="text-xl font-bold">Painel</h1>
-      <!-- ⚠️ Isto vivia SÓ dentro do aviso de alcance, e o aviso só aparece quando alguma
-           campanha ativa usa WhatsApp e falta template. Ou seja: config escondida atrás de
-           um alerta, invisível justo depois de configurada — o gestor não tinha como
-           trocar nem conferir. Config que existe tem de ter porta fixa. -->
       <button
         type="button"
         class="ml-auto inline-flex items-center gap-1.5 rounded-md border border-border px-2.5 py-1.5 text-sm text-muted-foreground transition hover:bg-muted"
-        @click="openTemplatePicker()"
-      >
-        <Icon name="lucide:message-square-dot" class="size-3.5" />
-        WhatsApp
-      </button>
-      <button
-        type="button"
-        class="inline-flex items-center gap-1.5 rounded-md border border-border px-2.5 py-1.5 text-sm text-muted-foreground transition hover:bg-muted"
         @click="refresh()"
       >
         <Icon name="lucide:refresh-cw" class="size-3.5" />
@@ -130,168 +82,23 @@ useHead({ title: "Painel · Marketing" });
         <div class="min-w-0">
           <p class="text-sm font-semibold">{{ limit.title }}</p>
           <p class="mt-0.5 text-sm text-muted-foreground">{{ limit.detail }}</p>
-          <!-- Ação acionável quando é DAQUI que se resolve; texto quando o conserto
-               está fora do alcance do gestor (credencial de plataforma, p.ex.). -->
-          <button
-            v-if="limit.platform === 'whatsapp' && !limit.blocking"
-            type="button"
-            class="mt-1.5 inline-flex items-center gap-1 rounded-md border border-border bg-background px-2 py-1 text-xs font-semibold transition hover:bg-muted"
-            @click="openTemplatePicker()"
-          >
-            <Icon name="lucide:settings-2" class="size-3.5" />
-            Escolher o template aprovado
-          </button>
-          <p v-else-if="limit.action" class="mt-1 text-xs font-medium text-muted-foreground">
+          <!-- ⚠️ O aviso NÃO configura mais nada. Ele conta o fato e aponta a casa: a
+               configuração vive em Plataformas, e alerta não é lugar de morar config —
+               ela desaparecia junto com o alerta. -->
+          <p v-if="limit.action" class="mt-1 text-xs font-medium text-muted-foreground">
             {{ limit.action }}
           </p>
+          <NuxtLink
+            to="/plataformas"
+            class="mt-1.5 inline-flex items-center gap-1 text-xs font-semibold underline"
+          >
+            Ver em Plataformas
+            <Icon name="lucide:arrow-right" class="size-3" />
+          </NuxtLink>
         </div>
       </div>
     </section>
 
-    <!-- Escolha do template: painel próprio, aberto pelo aviso que ele resolve -->
-    <UiSheet :open="choosingTemplate" @update:open="(v) => { if (!v) choosingTemplate = false }">
-      <UiSheetContent side="right" class="w-full gap-0 p-0 sm:max-w-lg">
-        <UiSheetHeader class="border-b border-border">
-          <UiSheetTitle>Template aprovado do WhatsApp</UiSheetTitle>
-          <UiSheetDescription>
-            Com um template aprovado, o anúncio alcança quem não conversou nas últimas
-            24 horas. Sem ele, só a janela.
-          </UiSheetDescription>
-        </UiSheetHeader>
-
-        <div class="flex-1 overflow-y-auto p-4">
-          <div v-if="waTemplate.loading.value" class="space-y-2" aria-busy="true">
-            <div v-for="n in 3" :key="n" class="h-10 animate-pulse rounded-md bg-muted"></div>
-          </div>
-
-          <!-- Não conseguir perguntar à plataforma NÃO é "não há template": dizer o que
-               é verdade em vez de sugerir uma conclusão errada. -->
-          <div
-            v-else-if="!waTemplate.canList.value"
-            class="rounded-lg border border-border bg-muted/40 px-3 py-2.5 text-sm"
-          >
-            <p class="font-semibold">Não foi possível consultar os templates agora</p>
-            <p class="mt-1 text-muted-foreground">
-              A plataforma não respondeu. Tente de novo em instantes; nada foi alterado.
-            </p>
-          </div>
-
-          <div v-else class="space-y-1.5">
-            <button
-              type="button"
-              class="flex w-full items-start gap-2 rounded-lg border px-3 py-2.5 text-left transition hover:bg-muted"
-              :class="waTemplate.current.value === '' ? 'border-primary' : 'border-border'"
-              :disabled="savingTemplate"
-              @click="onChooseTemplate('')"
-            >
-              <Icon name="lucide:circle-slash" class="mt-0.5 size-4 shrink-0 text-muted-foreground" />
-              <span>
-                <span class="block text-sm font-medium">Sem template</span>
-                <span class="block text-xs text-muted-foreground">
-                  Texto livre — alcança só quem conversou nas últimas 24 horas.
-                </span>
-              </span>
-            </button>
-
-            <button
-              v-for="option in waTemplate.available.value"
-              :key="option.ns"
-              type="button"
-              class="flex w-full items-start gap-2 rounded-lg border px-3 py-2.5 text-left transition hover:bg-muted"
-              :class="waTemplate.current.value === option.ns ? 'border-primary' : 'border-border'"
-              :disabled="savingTemplate"
-              @click="onChooseTemplate(option.ns)"
-            >
-              <Icon name="lucide:file-check-2" class="mt-0.5 size-4 shrink-0 text-muted-foreground" />
-              <span class="min-w-0">
-                <span class="block truncate text-sm font-medium">{{ option.name }}</span>
-                <span class="block truncate font-mono text-xs text-muted-foreground">
-                  {{ option.ns }}
-                </span>
-              </span>
-            </button>
-          </div>
-
-          <!-- Conferir vale mais que supor: aceito pelo provedor não é o mesmo que
-               vibrou no aparelho. Um número por vez, digitado, e sem lista de clientes
-               por perto — não é caminho para alcançar ninguém além de você. -->
-          <section class="mt-4 border-t border-border pt-4">
-            <h3 class="text-sm font-semibold">Testar no meu WhatsApp</h3>
-            <p class="mt-1 text-xs text-muted-foreground">
-              Manda uma mensagem só para você, com as variáveis preenchidas de verdade.
-            </p>
-
-            <div class="mt-3 space-y-2">
-              <div>
-                <label for="test-recipient" class="mb-1 block text-xs font-medium">
-                  WhatsApp ou subscriber
-                </label>
-                <input
-                  id="test-recipient"
-                  v-model="testRecipient"
-                  type="text"
-                  placeholder="4605528796186498"
-                  class="h-9 w-full rounded-md border border-border bg-background px-3 text-sm outline-none focus:ring-1 focus:ring-ring"
-                >
-              </div>
-              <div class="grid grid-cols-2 gap-2">
-                <div>
-                  <label for="test-sku" class="mb-1 block text-xs font-medium">SKU (opcional)</label>
-                  <input
-                    id="test-sku"
-                    v-model="testSku"
-                    type="text"
-                    placeholder="BAGUETE"
-                    class="h-9 w-full rounded-md border border-border bg-background px-3 text-sm outline-none focus:ring-1 focus:ring-ring"
-                  >
-                </div>
-                <div>
-                  <label for="test-name" class="mb-1 block text-xs font-medium">Nome (opcional)</label>
-                  <input
-                    id="test-name"
-                    v-model="testName"
-                    type="text"
-                    placeholder="Pablo"
-                    class="h-9 w-full rounded-md border border-border bg-background px-3 text-sm outline-none focus:ring-1 focus:ring-ring"
-                  >
-                </div>
-              </div>
-              <button
-                type="button"
-                :disabled="!testRecipient.trim() || waTemplate.testing.value"
-                class="inline-flex h-9 w-full items-center justify-center gap-1.5 rounded-md bg-primary px-3 text-sm font-semibold text-primary-foreground transition disabled:opacity-40"
-                @click="onSendTest"
-              >
-                <Icon
-                  :name="waTemplate.testing.value ? 'lucide:loader-circle' : 'lucide:send'"
-                  class="size-4"
-                  :class="waTemplate.testing.value ? 'animate-spin' : ''"
-                />
-                {{ waTemplate.testing.value ? "Enviando…" : "Enviar teste" }}
-              </button>
-            </div>
-
-            <!-- O que o template REALMENTE recebeu. Campo vazio aqui explica variável
-                 vazia no aparelho, sem o gestor ter que adivinhar. -->
-            <dl
-              v-if="Object.keys(waTemplate.testFields.value).length"
-              class="mt-3 space-y-1 rounded-lg bg-muted/40 p-3 text-xs"
-            >
-              <div
-                v-for="(value, key) in waTemplate.testFields.value"
-                :key="key"
-                class="flex gap-2"
-              >
-                <dt class="shrink-0 font-mono text-muted-foreground">{{ key }}</dt>
-                <dd class="min-w-0 flex-1 truncate">
-                  {{ value || "— vazio, o template renderiza sem" }}
-                </dd>
-              </div>
-            </dl>
-          </section>
-        </div>
-      </UiSheetContent>
-    </UiSheet>
 
     <!-- Números do dia -->
     <section v-if="stats" class="mb-6 grid grid-cols-2 gap-3 sm:grid-cols-4" aria-label="Números de hoje">

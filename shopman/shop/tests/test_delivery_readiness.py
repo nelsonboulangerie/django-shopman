@@ -182,3 +182,61 @@ def test_a_fully_ready_platform_produces_no_noise(with_transport):
     )
 
     assert mp.build_board().reach_limits == ()
+
+
+# ── A tela de Plataformas ────────────────────────────────────────────
+
+
+def test_every_platform_appears_ready_or_not(no_transport):
+    """⚠️ A pergunta da tela é "por onde eu consigo falar?".
+
+    Uma lista que só mostra problema obriga o gestor a deduzir ausência de aviso como boa
+    notícia — e ele não tem como saber se a plataforma está bem ou se nós esquecemos dela.
+    """
+    from shopman.backstage.projections import marketing as mp
+
+    platforms = {p.platform for p in mp.build_platforms()}
+
+    assert platforms == {"instagram", "facebook", "google_business", "whatsapp"}
+
+
+def test_the_store_tv_is_not_a_platform_here_either(no_transport):
+    from shopman.backstage.projections import marketing as mp
+
+    assert "tv" not in {p.platform for p in mp.build_platforms()}
+
+
+def test_a_healthy_platform_says_it_is_ready(with_transport, monkeypatch):
+    from shopman.backstage.projections import marketing as mp
+    from shopman.shop.models import NotificationTemplate
+
+    NotificationTemplate.objects.create(
+        event="announcement_published", subject="x", body="y",
+        whatsapp_flow_ns="content20260101120000_1",
+    )
+    by_ref = {p.platform: p for p in mp.build_platforms()}
+
+    assert by_ref["whatsapp"].ready is True
+    assert by_ref["whatsapp"].limitation == ""
+    assert by_ref["whatsapp"].kind == "direct_message"
+
+
+def test_in_use_marks_only_what_an_active_campaign_targets(no_transport):
+    """Credencial de plataforma que ninguém usa é trabalho jogado fora."""
+    from shopman.backstage.projections import marketing as mp
+    from shopman.shop.models import AnnouncementTemplate, Campaign, Trigger
+
+    template = AnnouncementTemplate.objects.create(name="T", body="oi")
+    Campaign.objects.create(
+        name="Só WhatsApp", trigger=Trigger.MANUAL, template=template,
+        platforms=["whatsapp"], is_active=True,
+    )
+    Campaign.objects.create(
+        name="Desligada no Instagram", trigger=Trigger.MANUAL, template=template,
+        platforms=["instagram"], is_active=False,
+    )
+
+    by_ref = {p.platform: p for p in mp.build_platforms()}
+
+    assert by_ref["whatsapp"].in_use is True
+    assert by_ref["instagram"].in_use is False, "campanha desligada não conta como uso"

@@ -9,6 +9,7 @@ de regras e modelos. Gate: ``shop.manage_campaigns`` — o gestor de marketing n
     GET    campaign/                    → painel (pendentes, recentes, placar)
     GET    campaign/history/            → tudo que já saiu
     GET    campaign/options/            → vocabulário do formulário de regra
+    GET    campaign/platforms/          → estado de entrega de cada plataforma
     GET    campaign/announcements/<pk>/         → um announcement
     PATCH  campaign/announcements/<pk>/         → editar antes de aprovar
     POST   campaign/announcements/<pk>/approve/ → publicar
@@ -291,6 +292,21 @@ class CampaignListView(_CampaignBase):
             {"ok": True, "rule": projection_data(marketing_projection.build_rule(rule))},
             status=201,
         )
+
+
+class PlatformsView(_CampaignBase):
+    """GET campaign/platforms/ → por onde a padaria consegue falar, e o que falta.
+
+    A tela que faltava, e cuja ausência explicava os remendos: o estado das plataformas
+    vazava para o painel de revisão, primeiro como ação dentro de um alerta, depois como
+    botão no cabeçalho. Ver `docs/plans/MARKETING-UX-PLAN.md`.
+
+    Devolve TODA plataforma, pronta ou não — esconder as saudáveis obrigaria o gestor a
+    deduzir ausência de aviso como boa notícia.
+    """
+
+    def get(self, request):
+        return Response({"platforms": projection_data(marketing_projection.build_platforms())})
 
 
 class WhatsAppTemplateView(_CampaignBase):

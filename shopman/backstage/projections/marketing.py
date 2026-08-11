@@ -121,6 +121,30 @@ class ReachLimitProjection:
 
 
 @dataclass(frozen=True)
+class PlatformProjection:
+    """Uma plataforma e tudo o que o gestor precisa saber para confiar nela.
+
+    Diferente de `ReachLimitProjection`, que só reporta PROBLEMA das plataformas em uso:
+    aqui vem TODA plataforma, pronta ou não. A tela de Plataformas responde "por onde eu
+    consigo falar?", e uma lista que esconde as saudáveis não responde isso — ela força o
+    gestor a deduzir ausência de aviso como boa notícia.
+    """
+
+    platform: str
+    label: str
+    #: `publication` (uma peça na plataforma) ou `direct_message` (uma mensagem por pessoa).
+    #: A exigência de cada um é diferente, e é isso que o cartão explica.
+    kind: str
+    ready: bool
+    reason: str = ""
+    action: str = ""
+    limitation: str = ""
+    #: Alguma campanha ATIVA aponta para esta plataforma? Ligar credencial de algo que
+    #: ninguém usa é trabalho jogado fora, e desligado-e-sem-uso não é problema.
+    in_use: bool = False
+
+
+@dataclass(frozen=True)
 class CampaignBoardProjection:
     pending: tuple[AnnouncementProjection, ...]
     recent: tuple[AnnouncementProjection, ...]
@@ -392,6 +416,36 @@ def _reach_limits() -> tuple[ReachLimitProjection, ...]:
                 )
             )
     return tuple(limits)
+
+
+def build_platforms() -> tuple[PlatformProjection, ...]:
+    """O estado de entrega de TODAS as plataformas, na ordem do vocabulário.
+
+    O cálculo é do `delivery_readiness` — ele foi escrito exatamente para isto, e nasceu de
+    uma correção do dono: a primeira versão só sabia falar de WhatsApp.
+    """
+    from shopman.shop.models import Campaign
+    from shopman.shop.services import delivery_readiness
+
+    used: set[str] = set()
+    for campaign in Campaign.objects.filter(is_active=True).only("platforms"):
+        used.update(campaign.platforms or [])
+
+    labels = dict(PLATFORM_CHOICES)
+    states = delivery_readiness.readiness_for([ref for ref, _label in PLATFORM_CHOICES])
+    return tuple(
+        PlatformProjection(
+            platform=state.platform,
+            label=labels.get(state.platform, state.platform),
+            kind=state.kind,
+            ready=state.ready,
+            reason=state.reason,
+            action=state.action,
+            limitation=state.limitation,
+            in_use=state.platform in used,
+        )
+        for state in states
+    )
 
 
 def build_history(*, limit: int = 100, now=None) -> tuple[AnnouncementProjection, ...]:
