@@ -322,13 +322,17 @@ class CampaignFireView(_CampaignBase):
     "quero avisar meus clientes hoje" não tinha caminho nenhum. `Trigger.MANUAL` tem
     produtor real, e é este endpoint.
 
+    `body` é o texto escrito na hora. Com ele, o anúncio **publica direto**: não há segundo
+    par de olhos quando o autor e o revisor são a mesma pessoa. Sem ele, o texto vem do
+    modelo e a revisão segue valendo, porque aí quem escreveu foi o sistema.
+
     `audience_rules` no corpo vale só PARA ESTE DISPARO — a campanha salva mantém o
     público dela. Assim a mesma campanha serve a públicos diferentes em semanas
     diferentes sem o gestor editar e desfazer a configuração.
 
     O anúncio nasce pelo mesmo caminho do automático (`_create_announcement`), então
-    respeita `requires_approval`, expiração e janela de agendamento — disparar manual
-    não é atalho para publicar sem revisão.
+    respeita expiração e janela de agendamento — disparar manual não inventa um segundo
+    caminho de criação.
     """
 
     def post(self, request, pk: int):
@@ -349,9 +353,16 @@ class CampaignFireView(_CampaignBase):
                 {"detail": "context deve ser um objeto.", "field": "context"}, status=400
             )
 
+        body = str(payload.get("body") or "").strip()
+
         try:
             announcement = campaign_service.fire_now(
-                pk, context=context, audience_rules=audience_rules
+                pk,
+                context=context,
+                audience_rules=audience_rules,
+                # Texto escrito na hora publica direto, com o nome de quem escreveu.
+                body=body,
+                author=request.user,
             )
         except campaign_service.CampaignError as exc:
             return Response({"detail": str(exc)}, status=400)

@@ -858,13 +858,19 @@ OFFERMAN = {
     "PROJECTION_BACKENDS": _CATALOG_PROJECTION_BACKENDS,
 }
 
-# ── Assist de IA no catálogo ─────────────────────────────────────────
+# ── Assist de IA (catálogo e anúncios) ───────────────────────────────
 # Sugestão de texto POR CAMPO no painel de produto do Gestor (descrição, legenda
-# social, hashtags). Sem chave configurada o endpoint responde 503 e a superfície
-# mostra um aviso — nunca um erro: o assist é conveniência, não caminho crítico.
+# social, hashtags) e no card de revisão de anúncio. Sem chave configurada o endpoint
+# responde 503 e a superfície mostra um aviso — nunca um erro: o assist é
+# conveniência, não caminho crítico.
+#
+# O default do MODELO é a resposta canônica: ambiente que não define
+# `AI_ASSIST_MODEL` roda no modelo atual, sem precisar de env var em lugar nenhum. A
+# variável existe só para pinar ou testar outro. A voz de marca NÃO está aqui — é
+# `Shop.brand_voice`, editável no Admin.
 AI_ASSIST_PROVIDER = os.environ.get("AI_ASSIST_PROVIDER", "anthropic")
 AI_ASSIST_API_KEY = os.environ.get("AI_ASSIST_API_KEY", "")
-AI_ASSIST_MODEL = os.environ.get("AI_ASSIST_MODEL", "claude-opus-4-8")
+AI_ASSIST_MODEL = os.environ.get("AI_ASSIST_MODEL", "claude-opus-5")
 
 # ── Craftsman (micro-MRP integration) ──────────────────────────────
 

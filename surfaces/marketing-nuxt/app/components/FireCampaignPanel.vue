@@ -1,7 +1,12 @@
 <script setup lang="ts">
 // Disparar agora — a campanha manual, com o público escolhido na hora.
 //
-// A pergunta que a tela faz é "para quem?", não "quais regras de audiência?": o gestor
+// Duas perguntas, nesta ordem: "o que dizer" e "para quem". O texto vem primeiro porque
+// é a decisão de verdade — e porque escrever AQUI é o que dispensa a revisão depois: não
+// há segundo par de olhos quando o autor e o revisor são a mesma pessoa. Deixar em branco
+// usa o modelo da campanha, e então o anúncio nasce para revisão, como o automático.
+//
+// A pergunta do público é "para quem?", não "quais regras de audiência?": o gestor
 // pensa em pessoas, não em chaves de JSON. Cada opção é uma frase.
 //
 // O público vale só para ESTE disparo; a campanha salva mantém o dela. Isso está dito
@@ -16,8 +21,12 @@ const props = defineProps<{
   busy?: boolean;
 }>();
 
-const emit = defineEmits<{ submit: [ChosenAudience]; cancel: [] }>();
+const emit = defineEmits<{ submit: [FireRequest]; cancel: [] }>();
 
+/** O que o painel devolve: o texto (opcional) e o público deste disparo. */
+type FireRequest = { body: string; audience: ChosenAudience };
+
+const body = ref("");
 const useSaved = ref(true);
 const groups = ref<string[]>([]);
 const segments = ref<string[]>([]);
@@ -30,6 +39,7 @@ const vipFirst = ref(false);
 watch(
   () => props.rule?.pk,
   () => {
+    body.value = "";
     useSaved.value = true;
     groups.value = [];
     segments.value = [];
@@ -76,7 +86,25 @@ const nothingChosen = computed(
 </script>
 
 <template>
-  <form class="space-y-5" @submit.prevent="emit('submit', chosen)">
+  <form class="space-y-5" @submit.prevent="emit('submit', { body: body.trim(), audience: chosen })">
+    <div>
+      <label for="fire-body" class="mb-1 block text-sm font-semibold">O que dizer</label>
+      <textarea
+        id="fire-body"
+        v-model="body"
+        rows="4"
+        placeholder="Hoje tem fornada extra de pão de fermentação natural, a partir das 16h."
+        class="w-full resize-y rounded-md border border-border bg-background px-3 py-2 text-sm outline-none focus:ring-1 focus:ring-ring"
+      ></textarea>
+      <p class="mt-1 text-xs text-muted-foreground">
+        {{
+          body.trim()
+            ? "Publica direto: quem escreve não precisa se aprovar depois."
+            : "Em branco usa o texto do modelo, e o anúncio nasce para você revisar."
+        }}
+      </p>
+    </div>
+
     <fieldset class="space-y-2">
       <legend class="text-sm font-semibold">Para quem</legend>
 

@@ -573,13 +573,67 @@ class TestManualFire:
         assert body["ok"] is True
         assert Announcement.objects.filter(rule=rule).count() == 1
 
-    def test_the_manual_announcement_still_needs_approval(self, client, gestor, rule):
-        """Disparo manual não é atalho para publicar sem revisão."""
+    def test_firing_without_a_text_still_goes_to_review(self, client, gestor, rule):
+        """Sem texto escrito, quem escreveu foi o modelo — e aí a revisão tem função."""
         client.force_login(gestor)
         client.post(_fire_url(rule), data={}, content_type="application/json")
 
         announcement = Announcement.objects.get(rule=rule)
         assert announcement.status == AnnouncementStatus.PENDING_REVIEW
+
+    def test_a_text_written_now_publishes_straight_away(self, client, gestor, rule):
+        """⚠️ "Quem cria publica" (ADR-020 §8).
+
+        Não existe segundo par de olhos quando o autor e o revisor são a mesma pessoa. A
+        revisão continua valendo para o que a OPERAÇÃO gerou — fornada, estoque baixo —,
+        que é o caso em que existe outra pessoa para conferir.
+        """
+        client.force_login(gestor)
+
+        resp = client.post(
+            _fire_url(rule),
+            data={"body": "Fornada extra hoje, a partir das 16h."},
+            content_type="application/json",
+        )
+
+        assert resp.status_code == 201
+        announcement = Announcement.objects.get(rule=rule)
+        assert announcement.status != AnnouncementStatus.PENDING_REVIEW
+        assert announcement.content["body"] == "Fornada extra hoje, a partir das 16h."
+
+    def test_publishing_without_review_still_records_who_decided(self, client, gestor, rule):
+        """Anúncio que saiu sem revisão não pode ficar sem nome atrás."""
+        client.force_login(gestor)
+
+        client.post(
+            _fire_url(rule),
+            data={"body": "Fornada extra hoje."},
+            content_type="application/json",
+        )
+
+        announcement = Announcement.objects.get(rule=rule)
+        assert announcement.approved_by_id == gestor.pk
+        assert announcement.approved_at is not None
+
+    def test_a_blank_text_is_not_a_text(self, client, gestor, rule):
+        """⚠️ Só espaços publicaria uma mensagem em branco, sem ninguém revisar."""
+        client.force_login(gestor)
+
+        client.post(_fire_url(rule), data={"body": "   "}, content_type="application/json")
+
+        announcement = Announcement.objects.get(rule=rule)
+        assert announcement.status == AnnouncementStatus.PENDING_REVIEW
+
+    def test_writing_the_text_does_not_change_the_saved_campaign(self, client, gestor, rule):
+        """`requires_approval` da campanha não é atropelado em silêncio."""
+        client.force_login(gestor)
+
+        client.post(
+            _fire_url(rule), data={"body": "Fornada extra."}, content_type="application/json"
+        )
+
+        rule.refresh_from_db()
+        assert rule.requires_approval is True
 
     def test_a_chosen_audience_applies_to_this_shot_only(self, client, gestor, rule):
         """A campanha salva mantém o público dela; a escolha vale para este disparo."""

@@ -93,7 +93,7 @@ def suggest(prompt: str, *, max_tokens: int = 400, voice: str = "") -> str:
     client = anthropic.Anthropic(api_key=api_key)
     try:
         message = client.messages.create(
-            model=getattr(settings, "AI_ASSIST_MODEL", "claude-opus-4-8"),
+            model=getattr(settings, "AI_ASSIST_MODEL", "claude-opus-5"),
             max_tokens=max_tokens,
             system=voice or brand_voice(),
             messages=[{"role": "user", "content": prompt}],

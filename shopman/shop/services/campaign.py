@@ -81,7 +81,14 @@ def evaluate(trigger: str, context: dict | None = None) -> list[Announcement]:
     return announcements
 
 
-def fire_now(campaign_id: int, *, context: dict | None = None, audience_rules: dict | None = None) -> Announcement:
+def fire_now(
+    campaign_id: int,
+    *,
+    context: dict | None = None,
+    audience_rules: dict | None = None,
+    body: str = "",
+    author=None,
+) -> Announcement:
     """Disparar UMA campanha agora, sem esperar evento. É a Action do gestor.
 
     Existe porque campanha manual não tem evento que a acorde: quem decide é a pessoa,
@@ -92,6 +99,11 @@ def fire_now(campaign_id: int, *, context: dict | None = None, audience_rules: d
     ``audience_rules`` permite escolher o público neste disparo sem alterar a campanha
     salva: a mesma campanha "novidade da semana" serve a públicos diferentes em semanas
     diferentes. Vazio usa o público da campanha.
+
+    ``body`` é o texto que o gestor escreveu na hora. Quando ele vem, **o anúncio publica
+    direto**, com o autor registrado como aprovador: não existe segundo par de olhos quando
+    o autor e o revisor são a mesma pessoa (ADR-020 §8). Vazio mantém o caminho de sempre —
+    o texto vem do modelo, então quem escreveu foi o sistema, e aí a revisão tem função.
 
     Levanta ``CampaignError`` se a campanha não existe ou está inativa — disparar uma
     campanha desligada é quase sempre engano, e o silêncio esconderia o engano.
@@ -116,12 +128,31 @@ def fire_now(campaign_id: int, *, context: dict | None = None, audience_rules: d
         rule.audience_rules = dict(audience_rules)
         payload["audience_rules"] = dict(audience_rules)
 
-    return _create_announcement(rule, payload)
+    written = (body or "").strip()
+    if written:
+        # Escrito pelo gestor: não passa por revisão, e o `requires_approval` da campanha
+        # não é atropelado em silêncio — ele vale para o que a OPERAÇÃO gerou (fornada,
+        # estoque baixo), que é o caso em que existe alguém diferente para conferir.
+        rule.requires_approval = False
+    announcement = _create_announcement(rule, payload, body=written)
+
+    if written and author is not None and getattr(author, "pk", None):
+        # O autor fica gravado como aprovador porque foi ele quem decidiu publicar. Sem
+        # isso, um anúncio publicado sem revisão não teria nenhum nome atrás.
+        Announcement.objects.filter(pk=announcement.pk).update(
+            approved_by=author, approved_at=timezone.now()
+        )
+        announcement.refresh_from_db(fields=["approved_by", "approved_at"])
+    return announcement
 
 
-def _create_announcement(rule: Campaign, context: dict, *, occurrence_key: str = "") -> Announcement:
+def _create_announcement(
+    rule: Campaign, context: dict, *, occurrence_key: str = "", body: str = ""
+) -> Announcement:
     sku = context.get("sku", "")
-    content = resolve_content(rule.template, context, promotion_ref=rule.promotion_ref)
+    content = resolve_content(
+        rule.template, context, promotion_ref=rule.promotion_ref, override_body=body
+    )
     resolved = audience_service.resolve(rule.audience_rules, sku=sku)
 
     # Fora da janela preferida, o announcement nasce com hora marcada. Vale para os dois
@@ -198,8 +229,12 @@ def _expiry(rule: Campaign):
 # ── Conteúdo ─────────────────────────────────────────────────────────
 
 
-def resolve_content(template, context: dict, *, promotion_ref: str = "") -> dict:
+def resolve_content(
+    template, context: dict, *, promotion_ref: str = "", override_body: str = ""
+) -> dict:
     """Renderizar o template com as variáveis do evento.
+
+    ``override_body`` vazio é o caminho normal; preenchido, é o gestor escrevendo na hora.
 
     Quando a campanha anuncia uma oferta, o `{{link}}` deixa de apontar para o produto e
     passa a apontar para a **oferta** — é o link que vai na mensagem, e mandar o cliente
@@ -207,7 +242,11 @@ def resolve_content(template, context: dict, *, promotion_ref: str = "") -> dict
     A `Action` vai junto, para a superfície montar a sacola (ADR-012 + ADR-020 §9).
     """
     variables = resolve_variables(context, promotion_ref=promotion_ref)
-    body = _ai_body(template, variables) or render(template.body, variables)
+    # `override_body` é o texto que o gestor escreveu, e ele vence tudo — inclusive a IA,
+    # que **nem é chamada**: pedir sugestão para substituir por um texto que já existe
+    # gastaria uma chamada para jogar fora. As outras chaves seguem vindo do modelo:
+    # hashtags, imagem e link da oferta não são o que ele digitou.
+    body = override_body or _ai_body(template, variables) or render(template.body, variables)
     content = {
         "body": body,
         "hashtags": variables["hashtags_list"],

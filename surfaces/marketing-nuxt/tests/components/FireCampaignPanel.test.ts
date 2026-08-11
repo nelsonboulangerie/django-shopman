@@ -46,7 +46,7 @@ describe("FireCampaignPanel — disparar agora", () => {
     await wrapper.find("form").trigger("submit");
 
     // Objeto vazio = usa o público salvo. A campanha não é alterada.
-    expect(wrapper.emitted("submit")?.[0]).toEqual([{}]);
+    expect(wrapper.emitted("submit")?.[0]).toEqual([{ body: "", audience: {} }]);
   });
 
   it("não deixa disparar sem escolher ninguém", async () => {
@@ -69,7 +69,7 @@ describe("FireCampaignPanel — disparar agora", () => {
     await wrapper.find("form").trigger("submit");
 
     expect(wrapper.emitted("submit")?.[0]).toEqual([
-      { groups: ["corporativo"], rfm_segments: ["at_risk"] },
+      { body: "", audience: { groups: ["corporativo"], rfm_segments: ["at_risk"] } },
     ]);
   });
 
@@ -79,7 +79,9 @@ describe("FireCampaignPanel — disparar agora", () => {
     await wrapper.findAll('input[type="checkbox"]')[0]!.setValue(true);
     await wrapper.find("form").trigger("submit");
 
-    expect(wrapper.emitted("submit")?.[0]).toEqual([{ churn_risk_min: 0.7 }]);
+    expect(wrapper.emitted("submit")?.[0]).toEqual([
+      { body: "", audience: { churn_risk_min: 0.7 } },
+    ]);
   });
 
   it("aniversariantes e VIP-primeiro convivem no mesmo disparo", async () => {
@@ -91,7 +93,7 @@ describe("FireCampaignPanel — disparar agora", () => {
     await wrapper.find("form").trigger("submit");
 
     expect(wrapper.emitted("submit")?.[0]).toEqual([
-      { birthday_today: true, vip_first_minutes: 15 },
+      { body: "", audience: { birthday_today: true, vip_first_minutes: 15 } },
     ]);
   });
 
@@ -105,7 +107,7 @@ describe("FireCampaignPanel — disparar agora", () => {
     await wrapper.setProps({ rule: makeRule({ pk: 99, name: "Outra" }) });
     await wrapper.find("form").trigger("submit");
 
-    expect(wrapper.emitted("submit")?.at(-1)).toEqual([{}]);
+    expect(wrapper.emitted("submit")?.at(-1)).toEqual([{ body: "", audience: {} }]);
   });
 
   it("diz que o consentimento manda, mesmo com público escolhido", () => {
@@ -114,5 +116,49 @@ describe("FireCampaignPanel — disparar agora", () => {
 
   it("avisa que a escolha não altera a campanha salva", () => {
     expect(panel().text()).toContain("A campanha continua como está");
+  });
+});
+
+describe("FireCampaignPanel — o texto escrito na hora", () => {
+  it("manda o texto que o gestor escreveu", async () => {
+    const wrapper = panel();
+
+    await wrapper.find("#fire-body").setValue("Fornada extra às 16h.");
+    await wrapper.find("form").trigger("submit");
+
+    const [payload] = wrapper.emitted("submit")![0] as [{ body: string }];
+    expect(payload.body).toBe("Fornada extra às 16h.");
+  });
+
+  it("texto só de espaços conta como vazio", async () => {
+    // ⚠️ Senão " " publicaria direto uma mensagem em branco, sem ninguém revisar.
+    const wrapper = panel();
+
+    await wrapper.find("#fire-body").setValue("   ");
+    await wrapper.find("form").trigger("submit");
+
+    const [payload] = wrapper.emitted("submit")![0] as [{ body: string }];
+    expect(payload.body).toBe("");
+  });
+
+  it("diz que escrever publica direto, e que em branco vai para revisão", async () => {
+    const wrapper = panel();
+    expect(wrapper.text()).toContain("nasce para você revisar");
+
+    await wrapper.find("#fire-body").setValue("Fornada extra às 16h.");
+
+    expect(wrapper.text()).toContain("Publica direto");
+  });
+
+  it("trocar de campanha zera o texto anterior", async () => {
+    // Mandar o texto de uma campanha no disparo de outra não tem desfazer.
+    const wrapper = panel();
+    await wrapper.find("#fire-body").setValue("Texto da campanha antiga");
+
+    await wrapper.setProps({ rule: makeRule({ pk: 99, name: "Outra" }) });
+    await wrapper.find("form").trigger("submit");
+
+    const [payload] = wrapper.emitted("submit")!.at(-1) as [{ body: string }];
+    expect(payload.body).toBe("");
   });
 });

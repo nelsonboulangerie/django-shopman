@@ -52,27 +52,39 @@ export function useCampaigns() {
    * O público vale só para ESTE disparo — a campanha salva mantém o dela. Por isso a
    * tela não precisa avisar "isto vai alterar a regra": não vai.
    */
-  async function fire(pk: number, audience?: ChosenAudience) {
+  async function fire(pk: number, request: { body?: string; audience?: ChosenAudience } = {}) {
     try {
-      const body = audience && Object.keys(audience).length ? { audience_rules: audience } : {};
-      const res = await $fetch<{ announcement?: { audience_total?: number } }>(
+      const audience = request.audience;
+      const payload: Record<string, unknown> = {};
+      if (audience && Object.keys(audience).length) payload.audience_rules = audience;
+      if (request.body) payload.body = request.body;
+      const res = await $fetch<{ announcement?: { audience_total?: number; status?: string } }>(
         `/api/v1/backstage/marketing/rules/${pk}/fire/`,
-        { method: "POST", body },
+        { method: "POST", body: payload },
       );
 
       // Alcance ZERO não pode passar em silêncio. Quem escolheu um grupo e não
       // alcançou ninguém precisa saber que a razão é consentimento, senão vai
       // concluir que a ferramenta está quebrada e mexer na regra errada.
       const reached = res?.announcement?.audience_total ?? 0;
+      // Quem escreveu o texto publica direto, então a frase não pode mandar "conferir no
+      // painel" — o anúncio já saiu. Quem decide qual caso é foi o servidor.
+      const wentOut = ["published", "publishing", "approved"].includes(
+        res?.announcement?.status ?? "",
+      );
       if (reached > 0) {
+        const people = `${reached} ${reached === 1 ? "pessoa" : "pessoas"}`;
         useSonner.success(
-          `Anúncio criado para ${reached} ${reached === 1 ? "pessoa" : "pessoas"}. ` +
-            "Confira no painel antes de publicar.",
+          wentOut
+            ? `Anúncio publicado para ${people}.`
+            : `Anúncio criado para ${people}. Confira no painel antes de publicar.`,
         );
       } else {
+        // O verbo segue o mesmo critério do caso com alcance: dizer "criado" quando o
+        // anúncio já saiu seria a mesma imprecisão, só num aviso em vez de num sucesso.
         useSonner.warning(
-          "Anúncio criado, mas ninguém no público escolhido deu consentimento para " +
-            "receber no WhatsApp. Ele não vai alcançar pessoas.",
+          `Anúncio ${wentOut ? "publicado" : "criado"}, mas ninguém no público escolhido ` +
+            "deu consentimento para receber no WhatsApp. Ele não vai alcançar pessoas.",
         );
       }
       await refresh();

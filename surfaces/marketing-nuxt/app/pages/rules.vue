@@ -39,10 +39,10 @@ function openFire(rule: Campaign) {
   firing.value = rule;
 }
 
-async function onFire(audience: ChosenAudience) {
+async function onFire(request: { body: string; audience: ChosenAudience }) {
   if (!firing.value) return;
   busy.value = true;
-  const ok = await fire(firing.value.pk, audience);
+  const ok = await fire(firing.value.pk, request);
   busy.value = false;
   if (ok) firing.value = null;
 }
@@ -209,7 +209,8 @@ useHead({ title: "Regras · Marketing" });
         <UiSheetHeader class="border-b border-border">
           <UiSheetTitle>Disparar agora</UiSheetTitle>
           <UiSheetDescription>
-            {{ firing?.name }} — o anúncio nasce para revisão, como o automático.
+            {{ firing?.name }} — escreva o texto e ele publica direto; em branco, nasce
+            para você revisar.
           </UiSheetDescription>
         </UiSheetHeader>
         <div class="flex-1 overflow-y-auto p-4">

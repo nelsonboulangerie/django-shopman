@@ -70,8 +70,8 @@ recopiados.
 > ponta a ponta e exatamente o padrao que esta sessao corrigiu tres vezes. Cada secao feita comeca com
 > "✅ FEITO" e conta o que foi encontrado no caminho.
 >
-> **Uma decisao do dono esta aberta**, na F10: "campanha criada pelo gestor pula aprovacao" publicaria
-> campanha **sem conteudo** — ver a secao para o argumento.
+> **Nenhuma decisao do dono em aberto.** A ultima ("quem cria publica") foi resolvida em 2026-08-11
+> dando ao painel de disparo o campo de texto — ver a F10.
 
 Cada fase entrega valor sozinha e passa `make test`. As dependencias reais sao poucas:
 
@@ -229,15 +229,22 @@ porque se um dia ela abrir o filtro, apagaria autor e motivo depois do fato.
 Admin — filtro por situacao + coluna `rejection_display` + `rejected_reason` na busca. Contagem sem
 motivo nao muda decisao.
 
-⚠️ **A segunda metade do passo 5 nao foi implementada, e a razao e concreta:** "campanha criada pelo
-gestor pula aprovacao" publicaria uma campanha **sem conteudo**. O modelo do disparo manual e
-`"Um recado da {{store_name}}."` — sem produto e sem link de proposito, porque disparo manual nao tem
-SKU (`config/management/commands/seed.py`, bloco `_seed_campaigns`) — e o painel de disparo escolhe
-**publico**, nao escreve copy (`FireCampaignPanel.vue`). Quem escreve o recado e o card de revisao, que
-e exatamente o passo que "pular aprovacao" removeria. E o efeito desejado **ja e configuravel por
-campanha**: `requires_approval=False` (visivel na tela como "Revisar antes de publicar", com selo
-"automatica" na lista). Decisao do dono: manter configuravel, ou dar ao painel de disparo um campo de
-corpo e so entao pular a revisao.
+✅ **A segunda metade do passo 5 saiu depois, e o dono escolheu o caminho certo:** o painel de disparo
+ganhou o campo **"O que dizer"**, e e ele que dispensa a revisao. A razao de nao dar para pular antes:
+o modelo do disparo manual e `"Um recado da {{store_name}}."` — sem produto e sem link de proposito,
+porque disparo manual nao tem SKU — e o painel escolhia **publico**, nao escrevia copy. Pular a revisao
+naquele estado publicaria "Um recado da Nelson Boulangerie." e nada mais.
+
+A regra final e honesta e tem duas metades:
+
+· **texto escrito na hora → publica direto**, com `approved_by` = quem escreveu (anuncio que saiu sem
+  revisao nao pode ficar sem nome atras);
+· **campo em branco → nasce para revisao**, porque quem escreveu foi o modelo, e ai existe alguem
+  diferente para conferir.
+
+`requires_approval` da campanha **nao e atropelado em silencio**: ele segue valendo para o que a
+OPERACAO gerou (fornada, estoque baixo), que e o caso em que o autor e o revisor sao pessoas diferentes.
+Texto so de espacos conta como vazio — senao " " publicaria mensagem em branco sem ninguem ver.
 
 *Valor sozinho:* o Admin passa a poder responder quantos anuncios foram recusados, e por que.
 
