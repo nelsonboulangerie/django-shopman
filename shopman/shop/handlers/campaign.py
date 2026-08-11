@@ -379,7 +379,13 @@ def _send_to(recipients, *, announcement) -> tuple[int, int]:
                 # `nome` é por destinatário; o resto é do anúncio. `getattr` porque o
                 # handler não deve exigir a forma exata do destinatário — quem chama
                 # pode passar qualquer objeto com `phone`.
-                context={**shared, "nome": getattr(recipient, "first_name", "") or ""},
+                # `customer_name` e não `nome`: é o mesmo nome que o alerta de estoque
+                # usa, e é o que o gestor cria no ManyChat. Um template genérico atende
+                # os dois caminhos só se os dois falarem igual.
+                context={
+                    **shared,
+                    "customer_name": getattr(recipient, "first_name", "") or "",
+                },
                 backend=backend,
             )
             sent += 1 if getattr(result, "success", False) else 0

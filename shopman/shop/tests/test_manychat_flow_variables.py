@@ -151,3 +151,56 @@ def test_an_unknown_quantity_says_nothing(calls, with_flow):
     mc.send("+5543984049009", "stock_arrived", {"product_name": "Baguete", "available_qty": ""})
 
     assert "available_qty" not in _field_payloads(calls)
+
+
+# ── Um template, dois caminhos ───────────────────────────────────────
+
+
+#: O que a mensagem de "produto disponível" precisa saber, venha de onde vier. São os
+#: campos que o gestor cria no ManyChat — se um caminho parar de mandar um deles, o
+#: template renderiza vazio para metade das pessoas.
+SHARED_FIELDS = {"customer_name", "product_name", "product_ref", "available_qty"}
+
+
+def test_both_paths_speak_the_same_vocabulary():
+    """⚠️ O gatilho é UM (fornada excelente) e o público é misto: quem favoritou e quem
+    pediu para avisar recebem o MESMO anúncio.
+
+    Por isso o template é genérico — e um template genérico só funciona se os dois
+    caminhos que o alimentam falarem igual. Já falaram diferente: campanha mandava
+    `nome`/`stock`/`sku`, alerta mandava `customer_name`/`available_qty`/`product_ref`.
+    """
+    from shopman.shop.services.campaign import available_variables
+
+    campaign_vocabulary = set(available_variables())
+    assert SHARED_FIELDS <= campaign_vocabulary, SHARED_FIELDS - campaign_vocabulary
+
+
+def test_the_campaign_path_sends_the_shared_fields(db, monkeypatch):
+    """O handler de campanha manda os campos com os nomes compartilhados."""
+    from shopman.shop.handlers import campaign as handler
+
+    seen: list[dict] = []
+    monkeypatch.setattr(handler, "_whatsapp_backend", lambda: "manychat")
+    monkeypatch.setattr(
+        "shopman.shop.notifications.notify",
+        lambda **kw: seen.append(kw.get("context") or {}) or type("R", (), {"success": True})(),
+    )
+
+    recipient = type("R", (), {"phone": "+5543984049009", "first_name": "Pablo"})()
+    content = {
+        "body": "Saiu do forno",
+        "variables": {
+            "product_name": "Baguete", "product_ref": "BAGUETE", "available_qty": "12",
+        },
+    }
+    announcement = type(
+        "A", (), {"pk": 1, "body": "Saiu do forno", "content": content, "platform_results": {}}
+    )()
+
+    handler._send_to([recipient], announcement=announcement)
+
+    assert seen, "nada foi enviado"
+    assert SHARED_FIELDS <= set(seen[0]), SHARED_FIELDS - set(seen[0])
+    assert seen[0]["customer_name"] == "Pablo"
+    assert seen[0]["available_qty"] == "12"

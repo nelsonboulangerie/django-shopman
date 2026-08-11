@@ -310,7 +310,10 @@ class AnnouncementTemplate(models.Model):
 | `{{price}}` | `ListingItem.price_q` formatado | "R$ 8,50" |
 | `{{hashtags}}` | `metadata["social"]["hashtags"]` | "#croissant #fresquinho" |
 | `{{link}}` | Deep link storefront | `https://nelson.boulangerie/produto/croissant-tradicional` |
-| `{{stock}}` | `Quant.available` | "5" |
+| `{{available_qty}}` | `Quant.available` — quantas há AGORA | "5" |
+| `{{quantity}}` | quantas saíram na fornada | "20" |
+| `{{customer_name}}` | primeiro nome de quem recebe | "Pablo" |
+| `{{product_ref}}` | `sku`, como sufixo do link do botão | "BAGUETE" |
 | `{{time}}` | `now()` formatado | "10h15" |
 | `{{store_name}}` | `Shop.brand_name` | "Nelson Boulangerie" |
 | `{{quality}}` | `WorkOrder.meta["quality"]` | "excelente" |

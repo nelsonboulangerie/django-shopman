@@ -397,11 +397,19 @@ def resolve_variables(context: dict, *, promotion_ref: str = "") -> dict:
     return {
         "product_name": getattr(product, "name", "") or sku,
         "sku": sku,
+        #: Mesmo valor do `sku`, com o nome que a MENSAGEM usa: é o sufixo do link do
+        #: botão no template aprovado. `sku` é o nome interno e não vira campo no
+        #: ManyChat; este vira.
+        "product_ref": sku,
         "price": _price(product),
         "hashtags": " ".join(f"#{tag}" for tag in hashtags),
         "hashtags_list": hashtags,
         "link": _offer_link(promotion_ref) if promotion_ref else _product_link(sku),
-        "stock": str(context.get("available_qty", "") or ""),
+        #: Quantas há AGORA. O nome é o mesmo do caminho de alerta de estoque, de
+        #: propósito: um template genérico serve os dois, e dois nomes para a mesma
+        #: pergunta garantiriam que um deles renderizasse vazio.
+        "available_qty": str(context.get("available_qty", "") or ""),
+        #: Quantas saíram na fornada — outra coisa, e por isso outro nome.
         "quantity": str(context.get("quantity", "") or ""),
         "time": timezone.localtime().strftime("%Hh%M"),
         "store_name": _brand_name(),
@@ -412,8 +420,9 @@ def resolve_variables(context: dict, *, promotion_ref: str = "") -> dict:
 def available_variables() -> tuple[str, ...]:
     """Nomes válidos num template — documentação viva para o Admin."""
     return (
-        "product_name", "sku", "price", "hashtags", "link",
-        "stock", "quantity", "time", "store_name", "quality",
+        "product_name", "product_ref", "sku", "price", "hashtags", "link",
+        "available_qty", "quantity", "time", "store_name", "quality",
+        "customer_name",
     )
 
 
