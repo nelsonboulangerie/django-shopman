@@ -365,10 +365,45 @@ Cada passo entrega valor sozinho.
 3. ✅ **Campanhas absorve Modelos** — o pensamento volta a ser um só.
 4. **Desempenho por campanha, e o Histórico se dissolve** (§8) — a causa da falha aparece onde
    dá para agir, e a nav cai para três.
-5. **Tags de cliente** (§9) — `Customer.tags` com taggit (já na pilha) + seleção no Marketing.
-   É o mecanismo que faltava: grupo é UM por cliente e mexe em preço.
-6. **Público salvo** (§9) — reuso do que hoje morre no disparo. Criado salvando o que já foi
-   feito, editável em frases, com contagem de gente antes de salvar.
+5. ✅ **Etiquetas de cliente** (§9) — `Customer.tags` com **modelo de tag próprio**
+   (`CustomerTag`), porque o `taggit.Tag` padrão é global e já é do `Product.keywords`.
+   Seleção no Marketing, com a contagem de gente no rótulo.
+6. ✅ **Cruzar as regras** (§11) — o que faltava de verdade. Entrou no lugar do público salvo.
+7. ⛔ **Público salvo** (§11) — **NÃO construído, de propósito.** Ver a decisão em §11.
+
+---
+
+## 11. Cruzar as regras entrou; público salvo NÃO (decisão de 2026-08-11)
+
+O dono pediu para "sentir" se público salvo compensa: *"nem sei direito quais ou quantas
+opções de combinações temos atualmente… gostaria de ver, exemplos, simulação"*. Medir foi o
+que respondeu, e a resposta não foi a que este plano previa.
+
+**Primeiro, o que a medição achou:** de 9 opções de público, só as de faixa comercial
+alcançavam alguém. As outras devolviam ZERO **em silêncio**, por três elos partidos no seed
+(pedido sem `data.customer_ref`, nenhum `CustomerInsight` derivado, `snapshot` vazio).
+Consertado antes de qualquer discussão de recurso — discutir reuso de público enquanto o
+público resolve zero seria mobiliar casa sem parede.
+
+**Depois, o achado que mudou o plano:** as regras eram **UNIÃO**. Somar regra ALARGAVA o
+alcance. "Fiéis" (5) mais "atacado" (2) davam **5**, e não existia como pedir os **2** que são
+as duas coisas. O recorte — que é justamente o que faz uma campanha valer a pena — era
+impossível de expressar.
+
+Com isso na mesa, público salvo perde a razão de ser **agora**:
+
+· salvar uma combinação só vale quando a combinação é difícil de reconstruir. Somar duas
+  regras que apenas empilham gente se refaz em dois cliques;
+· o que faltava era **semântica**, não armazenamento. Um objeto salvo por cima de uma união
+  seria mobília: dá nome a algo que ninguém tem trabalho de montar.
+
+Então entrou `match: "any" | "all"` — um **interruptor**, não árvore booleana (ADR-020 §7
+segue de pé). E entrou a **contagem ao vivo**, que é o que torna a diferença visível: a tela
+mostra "Faixa de preço 2, Etiquetas 2, cruzando: 1", e o gestor aprende o que somar e cruzar
+fazem sem uma linha de explicação.
+
+**Quando reabrir:** se aparecer combinação de 3+ regras usada toda semana. Aí o custo de
+remontar passa a existir, e salvar deixa de ser mobília.
 
 ---
 
