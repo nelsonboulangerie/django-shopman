@@ -9,7 +9,7 @@ import type { Announcement, AnnouncementEdits } from "~/types/campaign";
 const route = useRoute();
 const pk = computed(() => Number(route.params.id));
 
-const { data, refresh, pending, error } = await useFetch<{ post: Announcement }>(
+const { data, refresh, pending, error } = await useFetch<{ announcement: Announcement }>(
   () => `/api/v1/backstage/marketing/announcements/${pk.value}/`,
   { key: () => `announcement-${pk.value}` },
 );

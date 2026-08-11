@@ -5,7 +5,7 @@
 // linha. Editar abre um painel lateral: a lista continua visível, e o gestor
 // não perde o contexto de quais outras regras já existem.
 import { audienceRulesSummary, platformsSummary } from "~/presentation/campaign";
-import type { Campaign } from "~/types/campaign";
+import type { Campaign, ChosenAudience } from "~/types/campaign";
 
 const {
   rules, templates, triggers, platforms, platformLabels, customerGroups, rfmSegments, offers,
@@ -39,7 +39,7 @@ function openFire(rule: Campaign) {
   firing.value = rule;
 }
 
-async function onFire(audience: Record<string, unknown>) {
+async function onFire(audience: ChosenAudience) {
   if (!firing.value) return;
   busy.value = true;
   const ok = await fire(firing.value.pk, audience);
@@ -179,19 +179,22 @@ useHead({ title: "Regras · Marketing" });
 
     <!-- Painel lateral: edita sem tirar a lista da vista -->
     <UiSheet :open="panelOpen" @update:open="(v) => { if (!v) close() }">
-      <UiSheetContent side="right" class="w-full overflow-y-auto sm:max-w-lg">
-        <UiSheetHeader>
+      <!-- Casca sem padding + regiões com o seu: o cabeçalho fica parado e só o corpo
+           rola. Mesmo desenho do slide-over de produto do gestor de pedidos. -->
+      <UiSheetContent side="right" class="w-full gap-0 p-0 sm:max-w-lg">
+        <UiSheetHeader class="border-b border-border">
           <UiSheetTitle>{{ editing ? "Editar regra" : "Nova regra" }}</UiSheetTitle>
           <UiSheetDescription>
             Um evento da padaria vira um announcement, para as pessoas certas.
           </UiSheetDescription>
         </UiSheetHeader>
-        <div class="mt-4">
+        <div class="flex-1 overflow-y-auto p-4">
           <CampaignForm
             :rule="editing"
             :triggers="triggers"
             :platform-options="platforms"
             :templates="templates"
+            :offers="offers"
             :busy="busy"
             @submit="onSubmit"
             @cancel="close"
@@ -202,19 +205,18 @@ useHead({ title: "Regras · Marketing" });
 
     <!-- Disparo manual: painel próprio, para não se confundir com editar a regra -->
     <UiSheet :open="firing !== null" @update:open="(v) => { if (!v) firing = null }">
-      <UiSheetContent side="right" class="w-full overflow-y-auto sm:max-w-lg">
-        <UiSheetHeader>
+      <UiSheetContent side="right" class="w-full gap-0 p-0 sm:max-w-lg">
+        <UiSheetHeader class="border-b border-border">
           <UiSheetTitle>Disparar agora</UiSheetTitle>
           <UiSheetDescription>
             {{ firing?.name }} — o anúncio nasce para revisão, como o automático.
           </UiSheetDescription>
         </UiSheetHeader>
-        <div class="mt-4">
+        <div class="flex-1 overflow-y-auto p-4">
           <FireCampaignPanel
             :rule="firing"
             :customer-groups="customerGroups"
             :rfm-segments="rfmSegments"
-            :offers="offers"
             :busy="busy"
             @submit="onFire"
             @cancel="firing = null"

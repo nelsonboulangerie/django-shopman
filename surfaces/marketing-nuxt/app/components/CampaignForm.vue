@@ -107,7 +107,11 @@ function buildSchedule(): Record<string, unknown> {
   if (scheduleKind.value === "once") return { type: "once", at: onceAt.value };
   // O fim da janela é inerte para quem dispara (só o início vira ocasião), mas o
   // formato exige o par — daí uma hora depois, sem inventar significado nenhum.
-  const [hour, minute] = fireAt.value.split(":").map(Number);
+  // `?? 0` porque um `<input type="time">` pode chegar vazio: sem isso o fim virava
+  // "NaN:NaN", o servidor descartava a janela e a campanha nunca disparava — em silêncio.
+  const [rawHour, rawMinute] = fireAt.value.split(":");
+  const hour = Number(rawHour) || 0;
+  const minute = Number(rawMinute) || 0;
   const end = `${String((hour + 1) % 24).padStart(2, "0")}:${String(minute).padStart(2, "0")}`;
   return {
     type: "recurring",

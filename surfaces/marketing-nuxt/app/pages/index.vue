@@ -124,8 +124,8 @@ useHead({ title: "Painel · Marketing" });
 
     <!-- Escolha do template: painel próprio, aberto pelo aviso que ele resolve -->
     <UiSheet :open="choosingTemplate" @update:open="(v) => { if (!v) choosingTemplate = false }">
-      <UiSheetContent side="right" class="w-full overflow-y-auto sm:max-w-lg">
-        <UiSheetHeader>
+      <UiSheetContent side="right" class="w-full gap-0 p-0 sm:max-w-lg">
+        <UiSheetHeader class="border-b border-border">
           <UiSheetTitle>Template aprovado do WhatsApp</UiSheetTitle>
           <UiSheetDescription>
             Com um template aprovado, o anúncio alcança quem não conversou nas últimas
@@ -133,56 +133,58 @@ useHead({ title: "Painel · Marketing" });
           </UiSheetDescription>
         </UiSheetHeader>
 
-        <div v-if="waTemplate.loading.value" class="mt-4 space-y-2" aria-busy="true">
-          <div v-for="n in 3" :key="n" class="h-10 animate-pulse rounded-md bg-muted"></div>
-        </div>
+        <div class="flex-1 overflow-y-auto p-4">
+          <div v-if="waTemplate.loading.value" class="space-y-2" aria-busy="true">
+            <div v-for="n in 3" :key="n" class="h-10 animate-pulse rounded-md bg-muted"></div>
+          </div>
 
-        <!-- Não conseguir perguntar à plataforma NÃO é "não há template": dizer o que
-             é verdade em vez de sugerir uma conclusão errada. -->
-        <div
-          v-else-if="!waTemplate.canList.value"
-          class="mt-4 rounded-lg border border-border bg-muted/40 px-3 py-2.5 text-sm"
-        >
-          <p class="font-semibold">Não foi possível consultar os templates agora</p>
-          <p class="mt-1 text-muted-foreground">
-            A plataforma não respondeu. Tente de novo em instantes; nada foi alterado.
-          </p>
-        </div>
-
-        <div v-else class="mt-4 space-y-1.5">
-          <button
-            type="button"
-            class="flex w-full items-start gap-2 rounded-lg border px-3 py-2.5 text-left transition hover:bg-muted"
-            :class="waTemplate.current.value === '' ? 'border-primary' : 'border-border'"
-            :disabled="savingTemplate"
-            @click="onChooseTemplate('')"
+          <!-- Não conseguir perguntar à plataforma NÃO é "não há template": dizer o que
+               é verdade em vez de sugerir uma conclusão errada. -->
+          <div
+            v-else-if="!waTemplate.canList.value"
+            class="rounded-lg border border-border bg-muted/40 px-3 py-2.5 text-sm"
           >
-            <Icon name="lucide:circle-slash" class="mt-0.5 size-4 shrink-0 text-muted-foreground" />
-            <span>
-              <span class="block text-sm font-medium">Sem template</span>
-              <span class="block text-xs text-muted-foreground">
-                Texto livre — alcança só quem conversou nas últimas 24 horas.
-              </span>
-            </span>
-          </button>
+            <p class="font-semibold">Não foi possível consultar os templates agora</p>
+            <p class="mt-1 text-muted-foreground">
+              A plataforma não respondeu. Tente de novo em instantes; nada foi alterado.
+            </p>
+          </div>
 
-          <button
-            v-for="option in waTemplate.available.value"
-            :key="option.ns"
-            type="button"
-            class="flex w-full items-start gap-2 rounded-lg border px-3 py-2.5 text-left transition hover:bg-muted"
-            :class="waTemplate.current.value === option.ns ? 'border-primary' : 'border-border'"
-            :disabled="savingTemplate"
-            @click="onChooseTemplate(option.ns)"
-          >
-            <Icon name="lucide:file-check-2" class="mt-0.5 size-4 shrink-0 text-muted-foreground" />
-            <span class="min-w-0">
-              <span class="block truncate text-sm font-medium">{{ option.name }}</span>
-              <span class="block truncate font-mono text-xs text-muted-foreground">
-                {{ option.ns }}
+          <div v-else class="space-y-1.5">
+            <button
+              type="button"
+              class="flex w-full items-start gap-2 rounded-lg border px-3 py-2.5 text-left transition hover:bg-muted"
+              :class="waTemplate.current.value === '' ? 'border-primary' : 'border-border'"
+              :disabled="savingTemplate"
+              @click="onChooseTemplate('')"
+            >
+              <Icon name="lucide:circle-slash" class="mt-0.5 size-4 shrink-0 text-muted-foreground" />
+              <span>
+                <span class="block text-sm font-medium">Sem template</span>
+                <span class="block text-xs text-muted-foreground">
+                  Texto livre — alcança só quem conversou nas últimas 24 horas.
+                </span>
               </span>
-            </span>
-          </button>
+            </button>
+
+            <button
+              v-for="option in waTemplate.available.value"
+              :key="option.ns"
+              type="button"
+              class="flex w-full items-start gap-2 rounded-lg border px-3 py-2.5 text-left transition hover:bg-muted"
+              :class="waTemplate.current.value === option.ns ? 'border-primary' : 'border-border'"
+              :disabled="savingTemplate"
+              @click="onChooseTemplate(option.ns)"
+            >
+              <Icon name="lucide:file-check-2" class="mt-0.5 size-4 shrink-0 text-muted-foreground" />
+              <span class="min-w-0">
+                <span class="block truncate text-sm font-medium">{{ option.name }}</span>
+                <span class="block truncate font-mono text-xs text-muted-foreground">
+                  {{ option.ns }}
+                </span>
+              </span>
+            </button>
+          </div>
         </div>
       </UiSheetContent>
     </UiSheet>
