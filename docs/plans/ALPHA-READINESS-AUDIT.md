@@ -58,12 +58,18 @@ funcionar". Marcar ✅/❌ e anotar o pedido.
 
 ## 3. O que está simulado/degradado no staging (e o que significa)
 
+> **Conferido no spec LIVE do DigitalOcean em 2026-08-11.** A tabela anterior
+> descrevia a intenção, não o que está no ar — e um roteiro de teste com premissa
+> errada produz falso furo em massa ("não recebi o SMS", "o QR não é real"), que
+> queima a rodada de testadores. Os valores abaixo saem de
+> `doctl apps spec get 40b86e35-...`.
+
 | Área | Estado no staging | Impacto no teste |
 |---|---|---|
-| **Pix (Efí)** | Sandbox (QR real do sandbox, ~2,3s) | QR aparece e o fluxo roda; captura real exige "Simular pagamento" ou sair do sandbox |
-| **Cartão (Stripe)** | A confirmar (adapter mock por padrão) | Validar se o staging usa Stripe test ou mock |
-| **SMS (Comtele)** | ✅ configurado | OTP por SMS deve chegar de verdade |
-| **WhatsApp (Meta)** | ⏳ credencial pendente | OTP/notificação por WhatsApp podem cair no fallback |
+| **Pix** | ❗**MOCK**, não Efí sandbox (`SHOPMAN_PIX_ADAPTER = shopman.shop.adapters.payment_mock`, `SHOPMAN_ALLOW_MOCK_PAYMENT_ADAPTERS=true`) | O QR **não** é de gateway nenhum. O fluxo roda inteiro, mas a captura é sempre "Simular pagamento". As credenciais Efí existem no spec e `EFI_SANDBOX=true` — só o adapter não aponta para lá. `SHOPMAN_MOCK_PIX_AUTO_CONFIRM=false` (o pagamento não se confirma sozinho) |
+| **Cartão** | ❗**MOCK** (`SHOPMAN_CARD_ADAPTER = shopman.shop.adapters.payment_mock`) — pergunta de §5 **respondida** | Não é Stripe test. A chave `pk_test_…` e `STRIPE_CAPTURE_METHOD=manual` estão no spec, mas o adapter não é o da Stripe |
+| **SMS / OTP** | ❗**Nada é enviado** (`DOORMAN_MESSAGE_SENDER_CLASS = shopman.doorman.senders.LogSender`) | O código de acesso só vai para o log. O login só funciona porque `SHOPMAN_EXPOSE_DEBUG_OTP=true` devolve o código na resposta. **A chave da Comtele e a rota 17 estão configuradas** — trocar o sender é uma linha de env; ⚠️ mas a Comtele estava em HTTP 500 em 10/08, então testar antes de prometer |
+| **WhatsApp (Meta)** | Credenciais **presentes** no spec (`META_PAGE_ACCESS_TOKEN`, `META_PAGE_ID`, `META_IG_USER_ID`, `MANYCHAT_API_TOKEN`) — validade/escopo **não testados** | O "⏳ credencial pendente" ficou desatualizado. Mas com `LogSender` ativo nada sai por canal nenhum, então o efeito prático hoje é o mesmo |
 | **NFC-e (Focus NFe)** | ⏳ pendente | Sem emissão/impressão fiscal (obrigação legal — bloqueia go-live, não o alpha) |
 | **iFood** | Direto ✅ staging; homologação prod pendente | Entrada de pedido iFood testável em staging |
 | **Estoque** | ⚠️ "fantasma" (autosserviço) | Por isso o aceite (disponibilidade) existe antes de cobrar — não confiar 100% no número |
@@ -85,8 +91,17 @@ funcionar". Marcar ✅/❌ e anotar o pedido.
       pendente, web pagar-na-retirada). Lê `Order.data.payment.tenders`.
 - [ ] **Hydration mismatch global** (2 warnings de console em TODA página —
       header/status ao vivo): cosmético, pré-existente ao merge. Baixa prioridade.
-- [ ] **Cartão no staging**: confirmar Stripe test vs mock.
-- [ ] **WhatsApp Meta**: credencial (Pablo) — ver GO-LIVE-SMS-WHATSAPP-STATUS.
+- [x] **Cartão no staging — RESPONDIDO (11/08):** é **mock**, não Stripe test
+      (`SHOPMAN_CARD_ADAPTER = payment_mock`). O mesmo vale para o Pix.
+- [ ] **Decisão de alpha: sair do mock?** Três envs resolvem, e as credenciais já
+      estão no spec: `SHOPMAN_PIX_ADAPTER` → Efí (sandbox), `SHOPMAN_CARD_ADAPTER`
+      → Stripe (test), `DOORMAN_MESSAGE_SENDER_CLASS` → Comtele. Cada uma torna
+      uma dimensão do §2 real em vez de simulada. Custo: nenhum código.
+- [ ] **OTP de verdade**: hoje o código só vai para o log e é devolvido na
+      resposta (`SHOPMAN_EXPOSE_DEBUG_OTP=true`). Para testador real isso é
+      aceitável se combinado, mas é o item que mais parece "quebrado" sem aviso.
+- [ ] **WhatsApp Meta**: credenciais já presentes no spec; falta **testar**
+      validade/escopo — ver GO-LIVE-SMS-WHATSAPP-STATUS.
 - [ ] **NFC-e**: pré-requisito legal de go-live, não de alpha.
 - [ ] **Pix real (sair do sandbox Efí)**: para um alpha com pagamento de verdade.
 - [ ] **iFood**: homologação de produção (staging já testa direto).
