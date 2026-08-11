@@ -391,10 +391,10 @@ class TestGuestmanLoyaltyAdminUnfold:
             LoyaltyAccount,
             LoyaltyTransaction,
         )
-        from shopman.guestman.models import CustomerGroup
+        from shopman.guestman.models import PriceTier
         from unfold.admin import ModelAdmin as UnfoldModelAdmin
 
-        for model in (LoyaltyAccount, LoyaltyTransaction, CustomerGroup):
+        for model in (LoyaltyAccount, LoyaltyTransaction, PriceTier):
             registered = admin.site._registry.get(model)
             assert registered is not None, f"{model.__name__} não registrado"
             assert isinstance(registered, UnfoldModelAdmin), (
@@ -596,7 +596,7 @@ class TestRuleConfigTypedParams:
             ref="employee_discount",
             rule_path="shopman.shop.rules.pricing.EmployeeRule",
             label="Desconto Funcionário",
-            params={"discount_percent": 20, "group": "staff"},
+            params={"discount_percent": 20, "price_tier": "staff"},
             priority=60,
         )
         data = {
@@ -610,7 +610,7 @@ class TestRuleConfigTypedParams:
         form = RuleConfigForm(data=data, instance=rule)
         assert form.is_valid(), form.errors
         saved = form.save()
-        assert saved.params == {"discount_percent": 15, "group": "staff"}
+        assert saved.params == {"discount_percent": 15, "price_tier": "staff"}
 
     def test_happy_hour_rejects_inverted_window(self, happy_hour_rule):
         from shopman.shop.admin.rules import RuleConfigForm

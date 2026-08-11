@@ -23,7 +23,7 @@ from shopman.guestman.contrib.loyalty.service import LoyaltyService
 from shopman.guestman.contrib.timeline.models import TimelineEvent
 from shopman.guestman.contrib.timeline.service import TimelineService
 from shopman.guestman.exceptions import CustomerError
-from shopman.guestman.models import ContactPoint, Customer, CustomerAddress, CustomerGroup
+from shopman.guestman.models import ContactPoint, Customer, CustomerAddress, PriceTier
 
 pytestmark = pytest.mark.django_db
 
@@ -34,8 +34,8 @@ pytestmark = pytest.mark.django_db
 
 
 @pytest.fixture
-def group(db):
-    return CustomerGroup.objects.create(
+def tier(db):
+    return PriceTier.objects.create(
         ref="regular",
         name="Regular",
         is_default=True,
@@ -43,24 +43,24 @@ def group(db):
 
 
 @pytest.fixture
-def customer(group):
+def customer(tier):
     return Customer.objects.create(
         ref="CRM-001",
         first_name="Maria",
         last_name="Santos",
         phone="5541999990001",
         email="maria@example.com",
-        group=group,
+        price_tier=tier,
     )
 
 
 @pytest.fixture
-def customer_b(group):
+def customer_b(tier):
     return Customer.objects.create(
         ref="CRM-002",
         first_name="João",
         last_name="Silva",
-        group=group,
+        price_tier=tier,
     )
 
 
@@ -130,12 +130,12 @@ class TestCustomerContactPointSync:
         ).count()
         assert phone_count == 1
 
-    def test_customer_without_phone_no_cp(self, group):
+    def test_customer_without_phone_no_cp(self, tier):
         """Customer without phone doesn't create phone ContactPoint."""
         cust = Customer.objects.create(
             ref="NO-PHONE",
             first_name="Test",
-            group=group,
+            price_tier=tier,
         )
         assert not ContactPoint.objects.filter(
             customer=cust,
@@ -274,7 +274,7 @@ class TestTimelineService:
         events = TimelineService.get_timeline("CRM-001", limit=3)
         assert len(events) == 3
 
-    def test_log_event_nonexistent_customer(self, group):
+    def test_log_event_nonexistent_customer(self, tier):
         """Log event for nonexistent customer raises."""
         with pytest.raises(Customer.DoesNotExist):
             TimelineService.log_event("NONEXISTENT", "note", "Test")

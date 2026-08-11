@@ -235,7 +235,7 @@ class TestEmployeeModifierRuleConfig:
         return EmployeeDiscountModifier()
 
     def _staff_session(self):
-        return _make_session(data={"customer": {"group": "staff"}})
+        return _make_session(data={"customer": {"price_tier": "staff"}})
 
     def test_reads_percent_from_ruleconfig(self, modifier):
         session = self._staff_session()
@@ -259,7 +259,7 @@ class TestEmployeeModifierRuleConfig:
         assert session.items[0]["unit_price_q"] == 800  # 1000 - 20% (default)
 
     def test_non_staff_not_affected(self, modifier):
-        session = _make_session(data={"customer": {"group": "regular"}})
+        session = _make_session(data={"customer": {"price_tier": "regular"}})
         channel = _make_channel()
         with patch("shopman.shop.rules.engine.get_rule_params", return_value={"discount_percent": 30}):
             modifier.apply(channel=channel, session=session, ctx={})

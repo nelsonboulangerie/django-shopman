@@ -108,7 +108,7 @@ export interface AudienceRules {
   vip_first_minutes?: number;
   /** Ausente = soma, o padrão de sempre. */
   match?: AudienceMatch;
-  groups?: string[];
+  price_tiers?: string[];
   rfm_segments?: string[];
   churn_risk_min?: number;
   birthday_today?: boolean;
@@ -138,7 +138,7 @@ export interface CampaignOptions {
   variables: string[];
   /** Vocabulário de público — vem do backend para a tela nunca oferecer o que o
    *  resolvedor não conhece. */
-  customer_groups: Choice[];
+  price_tiers: Choice[];
   rfm_segments: Choice[];
   /** Ofertas vivas que MONTAM sacola. O servidor já tirou as que valem para tudo:
    *  oferecê-las daria ao gestor um botão que promete o que não cumpre. */
@@ -149,7 +149,7 @@ export interface CampaignOptions {
 export interface ChosenAudience {
   /** Ausente = soma as regras (padrão). `all` cruza: só quem se encaixa em todas. */
   match?: AudienceMatch;
-  groups?: string[];
+  price_tiers?: string[];
   rfm_segments?: string[];
   churn_risk_min?: number;
   birthday_today?: boolean;

@@ -7,7 +7,7 @@ effect that saves a new delivery address to the customer's account.
 from __future__ import annotations
 
 from django.test import TestCase
-from shopman.guestman.models import Customer, CustomerAddress, CustomerGroup
+from shopman.guestman.models import Customer, CustomerAddress, PriceTier
 
 from shopman.shop.services import checkout as checkout_service
 from shopman.storefront.intents.types import CheckoutIntent
@@ -61,7 +61,7 @@ def _make_intent(
 
 
 def _make_customer(phone: str = PHONE) -> Customer:
-    group, _ = CustomerGroup.objects.get_or_create(
+    tier, _ = PriceTier.objects.get_or_create(
         ref="regular", defaults={"name": "Regular", "is_default": True, "priority": 0}
     )
     return Customer.objects.create(
@@ -69,7 +69,7 @@ def _make_customer(phone: str = PHONE) -> Customer:
         first_name="João",
         last_name="Silva",
         phone=phone,
-        group=group,
+        price_tier=tier,
     )
 
 

@@ -33,7 +33,7 @@ class PromotionPricingBackend:
         fulfillment_type = context.get("fulfillment_type") or ""
         session_total_q = int(context.get("session_total_q") or 0)
         customer_segment = context.get("customer_segment") or ""
-        customer_group = context.get("customer_group") or ""
+        price_tier = context.get("price_tier") or ""
 
         best_discount_q = 0
         best_promo = None
@@ -58,7 +58,7 @@ class PromotionPricingBackend:
             "fulfillment_type": fulfillment_type,
             "sku_collections": {sku: sku_collections},
             "customer_segment": customer_segment,
-            "customer_group": customer_group,
+            "price_tier": price_tier,
         }
 
         for promo in promotions:

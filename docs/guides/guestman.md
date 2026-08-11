@@ -15,7 +15,7 @@ Fonte de verdade para contatos (WhatsApp, phone, email, Instagram). Suporta veri
 ### Identidade Externa (`ExternalIdentity`)
 Link para provedores externos (Manychat, WhatsApp Business, iFood). Permite resolução multi-canal.
 
-### Grupo (`CustomerGroup`)
+### Faixa de preço (`PriceTier`)
 Segmentação com link para Listing de preços do Offering. Ex: "atacado" → preços diferenciados.
 
 ### Identificador (`CustomerIdentifier`)
@@ -35,7 +35,7 @@ Tabela de lookup para deduplicação multi-canal: phone, email, CPF, manychat_id
 | `document` | CharField(20) | CPF/CNPJ (só dígitos) |
 | `email` | EmailField | Cache do email principal |
 | `phone` | CharField(20) | Cache do telefone principal (E.164) |
-| `group` | FK(CustomerGroup, null) | Grupo de segmentação |
+| `price_tier` | FK(PriceTier, null) | Faixa comercial: qual tabela de preço o cliente vê |
 | `is_active` | BooleanField | Soft-delete |
 | `notes` | TextField | Notas internas |
 | `metadata` | JSONField | Dados customizados |
@@ -71,7 +71,7 @@ Tabela de lookup para deduplicação multi-canal: phone, email, CPF, manychat_id
 | `delivery_instructions` | TextField | Instruções de entrega |
 | `is_default` | BooleanField | Endereço padrão (máx. 1 por cliente) |
 
-### CustomerGroup
+### PriceTier
 
 | Campo | Tipo | Descrição |
 |-------|------|-----------|

@@ -6,7 +6,7 @@ login obrigatório) e o flag is_favorite nas projeções.
 from __future__ import annotations
 
 import pytest
-from shopman.guestman.models import Customer, CustomerGroup
+from shopman.guestman.models import Customer, PriceTier
 
 from shopman.storefront.models import CustomerFavorite
 from shopman.storefront.services import favorites
@@ -48,10 +48,10 @@ def test_remove_is_idempotent():
 
 
 def _make_customer(phone="+5543999990001") -> Customer:
-    group, _ = CustomerGroup.objects.get_or_create(
+    tier, _ = PriceTier.objects.get_or_create(
         ref="regular", defaults={"name": "Regular", "is_default": True, "priority": 0}
     )
-    return Customer.objects.create(ref="CUST-FAV-API", first_name="Ana", phone=phone, group=group)
+    return Customer.objects.create(ref="CUST-FAV-API", first_name="Ana", phone=phone, price_tier=tier)
 
 
 def _login(client, customer):

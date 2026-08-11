@@ -870,16 +870,16 @@ class TestAudienceCount:
         """Três pessoas: uma fiel-e-atacado, uma só fiel, uma só atacado."""
         from shopman.guestman import ConsentService
         from shopman.guestman.contrib.insights.models import CustomerInsight
-        from shopman.guestman.models import Customer, CustomerGroup
+        from shopman.guestman.models import Customer, PriceTier
 
-        atacado = CustomerGroup.objects.create(ref="atacado", name="Atacado")
+        atacado = PriceTier.objects.create(ref="atacado", name="Atacado")
         rows = [
             ("CLI-BOTH", "+5543999993001", atacado, "loyal_customer"),
             ("CLI-LOYAL", "+5543999993002", None, "loyal_customer"),
             ("CLI-WHOLE", "+5543999993003", atacado, "at_risk"),
         ]
-        for ref, phone, group, segment in rows:
-            customer = Customer.objects.create(ref=ref, first_name="Ana", phone=phone, group=group)
+        for ref, phone, tier, segment in rows:
+            customer = Customer.objects.create(ref=ref, first_name="Ana", phone=phone, price_tier=tier)
             CustomerInsight.objects.create(customer=customer, rfm_segment=segment)
             ConsentService.grant_consent(ref, "whatsapp", source="test")
 
@@ -895,7 +895,7 @@ class TestAudienceCount:
 
         response = client.post(
             COUNT_URL,
-            {"audience_rules": {"groups": ["atacado"], "rfm_segments": ["loyal_customer"]}},
+            {"audience_rules": {"price_tiers": ["atacado"], "rfm_segments": ["loyal_customer"]}},
             content_type="application/json",
         )
 
@@ -913,7 +913,7 @@ class TestAudienceCount:
         response = client.post(
             COUNT_URL,
             {"audience_rules": {
-                "groups": ["atacado"], "rfm_segments": ["loyal_customer"], "match": "all",
+                "price_tiers": ["atacado"], "rfm_segments": ["loyal_customer"], "match": "all",
             }},
             content_type="application/json",
         )
@@ -923,20 +923,20 @@ class TestAudienceCount:
         assert data["match_label"] == "cruzando as regras"
 
     def test_the_parts_explain_the_total(self, client, gestor):
-        """"Grupos 2, comportamento 2, total 1": é a leitura junta que ensina o recorte."""
+        """""Faixa de preço 2, comportamento 2, total 1": a leitura junta ensina o recorte."""
         self._audience()
         client.force_login(gestor)
 
         data = client.post(
             COUNT_URL,
             {"audience_rules": {
-                "groups": ["atacado"], "rfm_segments": ["loyal_customer"], "match": "all",
+                "price_tiers": ["atacado"], "rfm_segments": ["loyal_customer"], "match": "all",
             }},
             content_type="application/json",
         ).json()
 
         parts = {part["label"]: part["count"] for part in data["parts"]}
-        assert parts == {"Grupos": 2, "Comportamento de compra": 2}
+        assert parts == {"Faixa de preço": 2, "Comportamento de compra": 2}
         assert data["total"] == 1
 
     def test_nothing_chosen_is_not_the_same_as_nobody_found(self, client, gestor):
@@ -961,7 +961,7 @@ class TestAudienceCount:
         client.force_login(gestor)
 
         raw = client.post(
-            COUNT_URL, {"audience_rules": {"groups": ["atacado"]}},
+            COUNT_URL, {"audience_rules": {"price_tiers": ["atacado"]}},
             content_type="application/json",
         ).content.decode()
 

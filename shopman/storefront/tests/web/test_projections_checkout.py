@@ -114,13 +114,13 @@ class TestCheckoutProjectionShape:
 
     def test_preselected_address_uses_default(self, cart_session):
         """Authenticated customer with a default address gets it pre-selected."""
-        from shopman.guestman.models import Customer, CustomerAddress, CustomerGroup
+        from shopman.guestman.models import Customer, CustomerAddress, PriceTier
 
-        grp, _ = CustomerGroup.objects.get_or_create(
+        grp, _ = PriceTier.objects.get_or_create(
             ref="regular", defaults={"name": "Regular", "is_default": True}
         )
         cust = Customer.objects.create(
-            ref="CUST-CHK", first_name="C", phone="11999999999", group=grp,
+            ref="CUST-CHK", first_name="C", phone="11999999999", price_tier=grp,
         )
         non_default = CustomerAddress.objects.create(
             customer=cust, label="work", formatted_address="Work",

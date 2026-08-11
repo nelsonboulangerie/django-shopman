@@ -19,7 +19,7 @@ import pytest
 from django.utils import timezone
 from shopman.guestman import ConsentService
 from shopman.guestman.contrib.insights.models import CustomerInsight
-from shopman.guestman.models import Customer, CustomerGroup
+from shopman.guestman.models import Customer, PriceTier
 from shopman.offerman.models import Collection, CollectionItem, Product
 
 from shopman.shop.services import audience
@@ -27,12 +27,12 @@ from shopman.shop.services import audience
 pytestmark = pytest.mark.django_db
 
 
-def _customer(phone: str, *, ref: str = "", group=None, birthday=None, opted_in: bool = True):
+def _customer(phone: str, *, ref: str = "", price_tier=None, birthday=None, opted_in: bool = True):
     customer = Customer.objects.create(
         ref=ref or f"CLI-{phone[-4:]}",
         first_name="Ana",
         phone=phone,
-        group=group,
+        price_tier=price_tier,
         birthday=birthday,
     )
     if opted_in:
@@ -62,16 +62,16 @@ def test_choosing_a_customer_without_a_phone_reaches_nobody(db):
     assert audience.resolve({"customer_refs": ["CLI-SEM"]}).total == 0
 
 
-# ── grupo ────────────────────────────────────────────────────────────
+# ── faixa de preço ────────────────────────────────────────────────────────────
 
 
-def test_group_audience(db):
-    corp = CustomerGroup.objects.create(ref="corporativo", name="Corporativo")
-    varejo = CustomerGroup.objects.create(ref="varejo", name="Varejo")
-    inside = _customer("+5543999990003", ref="CLI-C", group=corp)
-    _customer("+5543999990004", ref="CLI-D", group=varejo)
+def test_price_tier_audience(db):
+    corp = PriceTier.objects.create(ref="corporativo", name="Corporativo")
+    varejo = PriceTier.objects.create(ref="varejo", name="Varejo")
+    inside = _customer("+5543999990003", ref="CLI-C", price_tier=corp)
+    _customer("+5543999990004", ref="CLI-D", price_tier=varejo)
 
-    result = audience.resolve({"groups": ["corporativo"]})
+    result = audience.resolve({"price_tiers": ["corporativo"]})
     assert [r.phone for r in result.general] == [inside.phone]
 
 
@@ -195,15 +195,15 @@ def test_consent_still_rules_every_manual_audience(db):
 
 def test_the_same_person_in_two_audiences_is_one_recipient(db):
     """Dedupe por telefone: o gestor combina públicos sem disparar em dobro."""
-    corp = CustomerGroup.objects.create(ref="corporativo", name="Corporativo")
-    person = _customer("+5543999990018", ref="CLI-R", group=corp)
+    corp = PriceTier.objects.create(ref="corporativo", name="Corporativo")
+    person = _customer("+5543999990018", ref="CLI-R", price_tier=corp)
     _insight(person, rfm_segment="champion")
 
     result = audience.resolve(
-        {"customer_refs": ["CLI-R"], "groups": ["corporativo"], "rfm_segments": ["champion"]}
+        {"customer_refs": ["CLI-R"], "price_tiers": ["corporativo"], "rfm_segments": ["champion"]}
     )
     assert result.total == 1
-    assert {"chosen", "groups", "rfm"} <= result.general[0].reasons
+    assert {"chosen", "price_tiers", "rfm"} <= result.general[0].reasons
 
 
 def test_no_rules_reaches_nobody(db):
@@ -246,9 +246,9 @@ def test_the_chosen_audience_survives_to_dispatch(db):
     from shopman.shop.models import Announcement, AnnouncementTemplate, Campaign, Trigger
     from shopman.shop.services import campaign as campaign_service
 
-    group = CustomerGroup.objects.create(ref="corporativo", name="Corporativo")
-    _customer("+5543999990031", ref="CLI-W1", group=group)
-    _customer("+5543999990032", ref="CLI-W2", group=group)
+    tier = PriceTier.objects.create(ref="corporativo", name="Corporativo")
+    _customer("+5543999990031", ref="CLI-W1", price_tier=tier)
+    _customer("+5543999990032", ref="CLI-W2", price_tier=tier)
 
     template = AnnouncementTemplate.objects.create(name="Recado", body="Um recado.")
     rule = Campaign.objects.create(
@@ -257,7 +257,7 @@ def test_the_chosen_audience_survives_to_dispatch(db):
     )
 
     announcement = campaign_service.fire_now(
-        rule.pk, audience_rules={"groups": ["corporativo"]}
+        rule.pk, audience_rules={"price_tiers": ["corporativo"]}
     )
 
     # O que a tela promete.
@@ -266,7 +266,7 @@ def test_the_chosen_audience_survives_to_dispatch(db):
     # O que o handler vai usar — lendo do banco, como ele lê.
     fresh = Announcement.objects.get(pk=announcement.pk)
     chosen = (fresh.trigger_context or {}).get("audience_rules")
-    assert chosen == {"groups": ["corporativo"]}, "a escolha tem de viajar com o anúncio"
+    assert chosen == {"price_tiers": ["corporativo"]}, "a escolha tem de viajar com o anúncio"
     assert audience.resolve(chosen).total == 2, "o envio tem de alcançar o que foi prometido"
 
     # E a campanha salva continua sem público.
@@ -279,13 +279,13 @@ def test_without_a_choice_the_campaign_audience_still_rules(db):
     from shopman.shop.models import Announcement, AnnouncementTemplate, Campaign, Trigger
     from shopman.shop.services import campaign as campaign_service
 
-    group = CustomerGroup.objects.create(ref="corporativo", name="Corporativo")
-    _customer("+5543999990033", ref="CLI-W3", group=group)
+    tier = PriceTier.objects.create(ref="corporativo", name="Corporativo")
+    _customer("+5543999990033", ref="CLI-W3", price_tier=tier)
 
     template = AnnouncementTemplate.objects.create(name="Recado", body="Um recado.")
     rule = Campaign.objects.create(
         name="Recado", trigger=Trigger.MANUAL, template=template,
-        platforms=["whatsapp"], audience_rules={"groups": ["corporativo"]},
+        platforms=["whatsapp"], audience_rules={"price_tiers": ["corporativo"]},
     )
 
     announcement = campaign_service.fire_now(rule.pk)
@@ -303,11 +303,11 @@ def test_without_a_choice_the_campaign_audience_still_rules(db):
 
 
 def _loyal_wholesaler_and_friends():
-    """Três pessoas: uma leal-e-atacado, uma só leal, uma só atacado."""
-    atacado = CustomerGroup.objects.create(ref="atacado", name="Atacado")
-    both = _customer("+5543999991001", ref="CLI-BOTH", group=atacado)
+    """Três pessoas: uma fiel-e-atacado, uma só fiel, uma só atacado."""
+    atacado = PriceTier.objects.create(ref="atacado", name="Atacado")
+    both = _customer("+5543999991001", ref="CLI-BOTH", price_tier=atacado)
     only_loyal = _customer("+5543999991002", ref="CLI-LOYAL")
-    only_wholesale = _customer("+5543999991003", ref="CLI-WHOLE", group=atacado)
+    only_wholesale = _customer("+5543999991003", ref="CLI-WHOLE", price_tier=atacado)
     _insight(both, rfm_segment="loyal_customer")
     _insight(only_loyal, rfm_segment="loyal_customer")
     _insight(only_wholesale, rfm_segment="at_risk")
@@ -318,7 +318,7 @@ def test_by_default_rules_add_up(db):
     """O padrão continua sendo a união — nada muda para quem já configurou campanha."""
     both, only_loyal, only_wholesale = _loyal_wholesaler_and_friends()
 
-    result = audience.resolve({"rfm_segments": ["loyal_customer"], "groups": ["atacado"]})
+    result = audience.resolve({"rfm_segments": ["loyal_customer"], "price_tiers": ["atacado"]})
 
     assert {r.phone for r in result.general} == {
         both.phone, only_loyal.phone, only_wholesale.phone
@@ -332,7 +332,7 @@ def test_match_all_intersects_instead_of_adding(db):
 
     result = audience.resolve({
         "rfm_segments": ["loyal_customer"],
-        "groups": ["atacado"],
+        "price_tiers": ["atacado"],
         "match": audience.MATCH_ALL,
     })
 
@@ -347,14 +347,14 @@ def test_the_summary_tells_the_whole_story(db):
 
     summary = audience.resolve({
         "rfm_segments": ["loyal_customer"],
-        "groups": ["atacado"],
+        "price_tiers": ["atacado"],
         "match": audience.MATCH_ALL,
     }).summary()
 
     assert summary["match"] == audience.MATCH_ALL
     # As contagens por regra são de ANTES do cruzamento, de propósito.
     assert summary["rfm_count"] == 2
-    assert summary["groups_count"] == 2
+    assert summary["price_tiers_count"] == 2
     assert summary["total"] == 1
 
 
@@ -380,7 +380,7 @@ def test_a_rule_that_could_not_run_is_not_a_requirement(db):
 
     result = audience.resolve({
         "rfm_segments": ["loyal_customer"],
-        "groups": ["atacado"],
+        "price_tiers": ["atacado"],
         "favorites": True,   # não roda: sem SKU
         "alerts": True,      # idem
         "match": audience.MATCH_ALL,
@@ -395,7 +395,7 @@ def test_intersecting_disjoint_rules_reaches_nobody(db):
 
     result = audience.resolve({
         "rfm_segments": ["champion"],  # ninguém é champion aqui
-        "groups": ["atacado"],
+        "price_tiers": ["atacado"],
         "match": audience.MATCH_ALL,
     })
 
@@ -404,13 +404,13 @@ def test_intersecting_disjoint_rules_reaches_nobody(db):
 
 def test_consent_still_rules_when_intersecting(db):
     """A interseção estreita ANTES do consentimento, e o consentimento continua lei."""
-    atacado = CustomerGroup.objects.create(ref="atacado", name="Atacado")
-    silent = _customer("+5543999992001", ref="CLI-MUDO", group=atacado, opted_in=False)
+    atacado = PriceTier.objects.create(ref="atacado", name="Atacado")
+    silent = _customer("+5543999992001", ref="CLI-MUDO", price_tier=atacado, opted_in=False)
     _insight(silent, rfm_segment="loyal_customer")
 
     result = audience.resolve({
         "rfm_segments": ["loyal_customer"],
-        "groups": ["atacado"],
+        "price_tiers": ["atacado"],
         "match": audience.MATCH_ALL,
     })
 
@@ -423,7 +423,7 @@ def test_an_unknown_match_mode_falls_back_to_adding(db):
 
     result = audience.resolve({
         "rfm_segments": ["loyal_customer"],
-        "groups": ["atacado"],
+        "price_tiers": ["atacado"],
         "match": "todos",  # não existe
     })
 
@@ -439,7 +439,7 @@ def test_the_campaign_refuses_an_unknown_match_mode(db):
 
     # `clean()` direto, e não `full_clean()`: o alvo aqui é a regra de combinação, não o
     # `template` obrigatório — e é `clean()` que o admin e o serializer acabam chamando.
-    campaign = Campaign(name="Cruza errado", audience_rules={"groups": ["atacado"], "match": "E"})
+    campaign = Campaign(name="Cruza errado", audience_rules={"price_tiers": ["atacado"], "match": "E"})
     with pytest.raises(ValidationError) as err:
         campaign.clean()
     assert "audience_rules" in err.value.message_dict

@@ -22,35 +22,35 @@ from shopman.guestman.contrib.loyalty.models import (
 )
 from shopman.guestman.contrib.loyalty.service import LoyaltyService
 from shopman.guestman.exceptions import CustomerError
-from shopman.guestman.models import Customer, CustomerGroup
+from shopman.guestman.models import Customer, PriceTier
 
 
 @pytest.fixture
-def group(db):
-    return CustomerGroup.objects.create(ref="regular", name="Regular", is_default=True, priority=0)
+def tier(db):
+    return PriceTier.objects.create(ref="regular", name="Regular", is_default=True, priority=0)
 
 
 @pytest.fixture
-def customer(db, group):
+def customer(db, tier):
     return Customer.objects.create(
         ref="CUST-LOY-001",
         first_name="Maria",
         last_name="Silva",
         email="maria@example.com",
         phone="+5543999990001",
-        group=group,
+        price_tier=tier,
     )
 
 
 @pytest.fixture
-def customer2(db, group):
+def customer2(db, tier):
     return Customer.objects.create(
         ref="CUST-LOY-002",
         first_name="João",
         last_name="Santos",
         email="joao@example.com",
         phone="+5543999990002",
-        group=group,
+        price_tier=tier,
     )
 
 

@@ -224,7 +224,8 @@ class CampaignOptionsProjection:
     platforms: tuple[ChoiceProjection, ...]
     templates: tuple[AnnouncementTemplateProjection, ...]
     variables: tuple[str, ...]
-    customer_groups: tuple[ChoiceProjection, ...] = ()
+    #: As faixas de preço (`PriceTier`) — varejo, atacado, staff.
+    price_tiers: tuple[ChoiceProjection, ...] = ()
     rfm_segments: tuple[ChoiceProjection, ...] = ()
     #: Ofertas vivas que a campanha pode anunciar. Só as que MONTAM sacola: uma promoção
     #: que vale para o cardápio todo não tem itens para montar, e oferecê-la aqui daria
@@ -244,7 +245,7 @@ class CampaignOptionsProjection:
 #: dicionário: primeiro quem foi escolhido, depois quem se qualificou.
 _AUDIENCE_PART_LABELS: tuple[tuple[str, str], ...] = (
     ("chosen_count", "Escolhidos um a um"),
-    ("groups_count", "Grupos"),
+    ("price_tiers_count", "Faixa de preço"),
     ("rfm_count", "Comportamento de compra"),
     ("churn_risk_count", "Estão sumindo"),
     ("birthday_count", "Aniversariantes de hoje"),
@@ -660,7 +661,7 @@ def build_options() -> CampaignOptionsProjection:
         ),
         templates=build_templates(),
         variables=available_variables(),
-        customer_groups=_customer_group_choices(),
+        price_tiers=_price_tier_choices(),
         rfm_segments=_rfm_segment_choices(),
         offers=_offer_choices(),
     )
@@ -684,17 +685,17 @@ def _offer_choices() -> tuple[ChoiceProjection, ...]:
     )
 
 
-def _customer_group_choices() -> tuple[ChoiceProjection, ...]:
+def _price_tier_choices() -> tuple[ChoiceProjection, ...]:
     """Grupos de cliente do guestman, para o seletor de público."""
     try:
-        from shopman.guestman.models import CustomerGroup
+        from shopman.guestman.models import PriceTier
 
         return tuple(
-            ChoiceProjection(value=group.ref, label=group.name)
-            for group in CustomerGroup.objects.all().order_by("name")
+            ChoiceProjection(value=tier.ref, label=tier.name)
+            for tier in PriceTier.objects.all().order_by("name")
         )
     except Exception:
-        logger.warning("marketing.customer_groups_failed", exc_info=True)
+        logger.warning("marketing.price_tiers_failed", exc_info=True)
         return ()
 
 

@@ -157,7 +157,7 @@ describe("hashtags", () => {
 
 describe("audienceRulesSummary", () => {
   const labels = {
-    groups: { atacado: "Atacado" },
+    priceTiers: { atacado: "Atacado" },
     segments: { loyal_customer: "cliente fiel" },
   };
 
@@ -175,7 +175,7 @@ describe("audienceRulesSummary", () => {
   // para o grupo atacado — configurada, funcionando, alcançando gente — aparecia na lista
   // como "sem audiência". Mentia sobre a decisão mais importante da campanha.
   it("spells out the audiences the manager chooses, not only the event ones", () => {
-    expect(audienceRulesSummary({ groups: ["atacado"] }, labels)).toBe("Atacado");
+    expect(audienceRulesSummary({ price_tiers: ["atacado"] }, labels)).toBe("Atacado");
     expect(audienceRulesSummary({ rfm_segments: ["loyal_customer"] }, labels))
       .toBe("cliente fiel");
     expect(audienceRulesSummary({ churn_risk_min: 0.7 })).toBe("quem está sumindo");
@@ -185,21 +185,21 @@ describe("audienceRulesSummary", () => {
   // Somar e cruzar as MESMAS regras alcançam gente diferente, então o resumo não pode
   // desenhar as duas coisas igual.
   it("says when the rules are crossed instead of added", () => {
-    const rules = { groups: ["atacado"], rfm_segments: ["loyal_customer"] };
+    const rules = { price_tiers: ["atacado"], rfm_segments: ["loyal_customer"] };
     expect(audienceRulesSummary(rules, labels)).toBe("Atacado, cliente fiel");
     expect(audienceRulesSummary({ ...rules, match: "all" as const }, labels))
       .toBe("cruzando Atacado, cliente fiel");
   });
 
   it("does not say 'crossed' with a single rule, where it would mean nothing", () => {
-    expect(audienceRulesSummary({ groups: ["atacado"], match: "all" }, labels))
+    expect(audienceRulesSummary({ price_tiers: ["atacado"], match: "all" }, labels))
       .toBe("Atacado");
   });
 
   // Rótulo tem dono no servidor (`CustomerGroup.name`, `RFM_SEGMENTS`). Sem mapa, o ref
   // cru é honesto; inventar tradução aqui é o que cria o segundo dono.
   it("falls back to the raw ref instead of inventing a label", () => {
-    expect(audienceRulesSummary({ groups: ["atacado"] })).toBe("atacado");
+    expect(audienceRulesSummary({ price_tiers: ["atacado"] })).toBe("atacado");
   });
 
   it("is explicit when the rule notifies nobody directly", () => {

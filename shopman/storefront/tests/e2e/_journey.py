@@ -167,7 +167,7 @@ def make_customer(
     last_name: str = "Silva",
     phone: str = DEFAULT_PHONE,
     email: str = "ana@example.com",
-    group=None,
+    price_tier=None,
 ):
     from shopman.guestman.models import Customer
 
@@ -178,8 +178,8 @@ def make_customer(
         "phone": phone,
         "email": email,
     }
-    if group is not None:
-        fields["group"] = group
+    if price_tier is not None:
+        fields["price_tier"] = price_tier
     return Customer.objects.create(**fields)
 
 

@@ -1085,15 +1085,21 @@ def build_session_ops(payload: dict, operator_username: str) -> list[dict]:
     if persisted_customer:
         ops.append({"op": "set_data", "path": "customer.ref", "value": persisted_customer["ref"]})
         ops.append({"op": "set_data", "path": "customer_ref", "value": persisted_customer["ref"]})
-        if persisted_customer.get("group"):
-            ops.append({"op": "set_data", "path": "customer.group", "value": persisted_customer["group"]})
+        if persisted_customer.get("price_tier"):
+            ops.append({
+                "op": "set_data", "path": "customer.price_tier",
+                "value": persisted_customer["price_tier"],
+            })
     else:
         customer = resolve_customer(customer_phone)
         if customer:
             ops.append({"op": "set_data", "path": "customer.ref", "value": customer.ref})
             ops.append({"op": "set_data", "path": "customer_ref", "value": customer.ref})
-            if customer.group_id:
-                ops.append({"op": "set_data", "path": "customer.group", "value": customer.group.ref})
+            if customer.price_tier_id:
+                ops.append({
+                    "op": "set_data", "path": "customer.price_tier",
+                    "value": customer.price_tier.ref,
+                })
 
     fulfillment_type = _payload_fulfillment_type(payload)
     ops.append({"op": "set_data", "path": "fulfillment_type", "value": fulfillment_type})
@@ -1408,7 +1414,7 @@ def _canonical_pos_unit_price_q(sku: str, channel: Channel, qty: int) -> int | N
     """Resolve the catalog price the POS channel would charge for a line.
 
     Mirrors the ``pricing.item`` modifier that reprices every non-frozen line on
-    commit: the same customer-agnostic, qty-aware cascade (customer group is not
+    commit: the same customer-agnostic, qty-aware cascade (customer tier is not
     resolved at commit — POS ``ctx`` carries no customer — so employee pricing
     stays a post-pricing modifier). This is the price a *legitimate* line already
     carries in the payload, because D-1, happy-hour and employee discounts are
@@ -1988,7 +1994,7 @@ def resolve_or_create_customer(
     """Get-or-create a POS customer JUST-IN-TIME — when the operator defines them
     on the counter, not deferred to order commit. Resolves by phone/CPF/email or
     creates a fresh record, and returns the customer dict (ref/name/phone/tax_id/
-    email/group). Idempotent (same identifiers → same customer). Reuses the exact
+    email/tier). Idempotent (same identifiers → same customer). Reuses the exact
     commit-time logic so the just-in-time customer is identical to the final one."""
     return _persist_customer_from_payload(
         {
@@ -2077,7 +2083,7 @@ def _persist_customer_from_payload(payload: dict, *, operator_username: str) -> 
             "phone": customer.phone,
             "tax_id": customer.document,
             "email": customer.email,
-            "group": customer.group.ref if customer.group_id else "",
+            "price_tier": customer.price_tier.ref if customer.price_tier_id else "",
         }
 
 

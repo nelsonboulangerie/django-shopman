@@ -107,7 +107,8 @@ class PosCustomerChip:
     state: str  # "anon" | "found" | "missing"
     name: str = ""
     ref: str = ""
-    group: str = ""
+    #: A faixa de preço do cliente (`PriceTier.ref`), que é o que decide o preço dele.
+    price_tier: str = ""
     email: str = ""
     default_address: str = ""
     favorite_item: str = "{}"
@@ -126,7 +127,7 @@ def customer_missing() -> PosCustomerChip:
 
 def customer_found(customer, *, summary: dict, default_address) -> PosCustomerChip:
     name = f"{customer.first_name} {customer.last_name}".strip()
-    group_ref = customer.group.ref if customer.group_id else ""
+    tier_ref = customer.price_tier.ref if customer.price_tier_id else ""
 
     bits: list[str] = []
     if summary.get("total_orders"):
@@ -141,12 +142,12 @@ def customer_found(customer, *, summary: dict, default_address) -> PosCustomerCh
         state="found",
         name=name,
         ref=customer.ref,
-        group=group_ref,
+        price_tier=tier_ref,
         email=customer.email or "",
         default_address=default_address.formatted_address if default_address else "",
         favorite_item=json.dumps(summary.get("favorite_item") or {}, ensure_ascii=False),
         last_order_items=json.dumps(summary.get("last_order_items") or [], ensure_ascii=False),
-        staff_badge=" (staff)" if group_ref == "staff" else "",
+        staff_badge=" (staff)" if tier_ref == "staff" else "",
         memory=memory,
     )
 

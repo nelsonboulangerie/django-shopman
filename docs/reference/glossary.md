@@ -50,7 +50,7 @@ Termos de domínio usados no código e na documentação.
 | Termo | Definição |
 |-------|-----------|
 | **Customer** | Cliente com `ref`, nome, tipo (`individual`/`business`), grupo, telefone. |
-| **CustomerGroup** | Agrupamento de clientes (ex: varejo, atacado, staff). |
+| **PriceTier** | A faixa comercial do cliente (varejo, atacado, staff): escolhe a tabela de preço (`listing_ref`) e serve de segmento para promoção. UMA por cliente, e ela precifica. Chamava-se `CustomerGroup`, nome que escondia o efeito no preço. Não confundir com o tier de FIDELIDADE (`LoyaltyAccount.tier`, bronze/ouro). |
 | **ContactPoint** | Ponto de contato do cliente (WhatsApp, email, etc.). `type` + `value_normalized`. |
 | **CustomerAddress** | Endereço de entrega com label, componentes estruturados, flag `is_default`. |
 

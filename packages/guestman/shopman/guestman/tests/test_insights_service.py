@@ -20,36 +20,36 @@ from decimal import Decimal
 import pytest
 from shopman.guestman.contrib.insights.models import CustomerInsight
 from shopman.guestman.contrib.insights.service import InsightService
-from shopman.guestman.models import Customer, CustomerGroup
+from shopman.guestman.models import Customer, PriceTier
 from shopman.guestman.protocols.orders import OrderStats, OrderSummary
 
 
 @pytest.fixture
-def group(db):
-    return CustomerGroup.objects.create(ref="regular", name="Regular", is_default=True, priority=0)
+def tier(db):
+    return PriceTier.objects.create(ref="regular", name="Regular", is_default=True, priority=0)
 
 
 @pytest.fixture
-def customer(db, group):
+def customer(db, tier):
     return Customer.objects.create(
         ref="CUST-INS-001",
         first_name="Ana",
         last_name="Pereira",
         email="ana@example.com",
         phone="+5543999880001",
-        group=group,
+        price_tier=tier,
     )
 
 
 @pytest.fixture
-def customer2(db, group):
+def customer2(db, tier):
     return Customer.objects.create(
         ref="CUST-INS-002",
         first_name="Bruno",
         last_name="Costa",
         email="bruno@example.com",
         phone="+5543999880002",
-        group=group,
+        price_tier=tier,
     )
 
 

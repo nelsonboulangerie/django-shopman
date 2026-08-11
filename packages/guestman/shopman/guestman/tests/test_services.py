@@ -33,7 +33,7 @@ class TestCustomerService:
         result = customer_service.get("NONEXISTENT")
         assert result is None
 
-    def test_get_by_document(self, db, group_regular):
+    def test_get_by_document(self, db, tier_regular):
         """Test getting customer by document."""
         from shopman.guestman.models import Customer
 
@@ -41,7 +41,7 @@ class TestCustomerService:
             ref="DOC-TEST",
             first_name="Doc",
             document="12345678901",
-            group=group_regular,
+            price_tier=tier_regular,
         )
 
         result = customer_service.get_by_document("123.456.789-01")
@@ -69,7 +69,7 @@ class TestCustomerService:
         result = customer_service.get_listing_ref("CUST-VIP")
         assert result == "vip"
 
-    def test_get_by_email_multiple_returns_most_recent(self, db, group_regular):
+    def test_get_by_email_multiple_returns_most_recent(self, db, tier_regular):
         """get_by_email with duplicates returns most recently updated."""
         from shopman.guestman.models import Customer
 
@@ -78,12 +78,12 @@ class TestCustomerService:
         c1 = Customer.objects.create(
             ref="DUP-EMAIL-1",
             first_name="First",
-            group=group_regular,
+            price_tier=tier_regular,
         )
         c2 = Customer.objects.create(
             ref="DUP-EMAIL-2",
             first_name="Second",
-            group=group_regular,
+            price_tier=tier_regular,
         )
         # Set duplicate email directly (bypassing _sync_contact_points)
         Customer.objects.filter(pk=c1.pk).update(email="dup@example.com")
@@ -96,14 +96,14 @@ class TestCustomerService:
         assert result is not None
         assert result.ref == "DUP-EMAIL-2"
 
-    def test_get_by_phone_prefers_contact_point_source_of_truth(self, db, group_regular):
+    def test_get_by_phone_prefers_contact_point_source_of_truth(self, db, tier_regular):
         """Phone lookup must work even when the cache field is stale."""
         from shopman.guestman.models import ContactPoint, Customer
 
         customer = Customer.objects.create(
             ref="CONTACT-PHONE-1",
             first_name="Phone",
-            group=group_regular,
+            price_tier=tier_regular,
         )
         ContactPoint.objects.create(
             customer=customer,
@@ -117,14 +117,14 @@ class TestCustomerService:
         assert result is not None
         assert result.ref == "CONTACT-PHONE-1"
 
-    def test_get_by_email_prefers_contact_point_source_of_truth(self, db, group_regular):
+    def test_get_by_email_prefers_contact_point_source_of_truth(self, db, tier_regular):
         """Email lookup must work even when the cache field is stale."""
         from shopman.guestman.models import ContactPoint, Customer
 
         customer = Customer.objects.create(
             ref="CONTACT-EMAIL-1",
             first_name="Email",
-            group=group_regular,
+            price_tier=tier_regular,
         )
         ContactPoint.objects.create(
             customer=customer,
@@ -153,7 +153,7 @@ class TestCustomerService:
         assert len(page2) == 1
         assert page1[0].ref != page2[0].ref
 
-    def test_create_customer(self, group_regular):
+    def test_create_customer(self, tier_regular):
         """Test creating customer."""
         cust = customer_service.create(
             ref="NEW-001",
@@ -163,7 +163,7 @@ class TestCustomerService:
             phone="11111111111",
         )
         assert cust.ref == "NEW-001"
-        assert cust.group == group_regular
+        assert cust.price_tier == tier_regular
 
 
 class TestAddressService:
@@ -368,7 +368,7 @@ class TestIdentifierService:
         result = IdentifierService.find_by_identifier(IdentifierType.EMAIL, "john@example.com")
         assert result == customer
 
-    def test_find_or_create_new(self, group_regular):
+    def test_find_or_create_new(self, tier_regular):
         """Test find_or_create creates new customer."""
         cust, created = IdentifierService.find_or_create_customer(
             identifier_type=IdentifierType.EMAIL,

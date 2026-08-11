@@ -55,7 +55,7 @@ instance.
 Pinned by `test_persona_2_loyal.py::test_group_coupon_should_discount_for_member`
 (xfail, strict).
 
-A coupon whose promotion is scoped to a `customer_segment` / group (e.g. a
+A coupon whose promotion is scoped to a `customer_segment` / tier (e.g. a
 "fiéis" loyalty coupon) is **accepted** at apply-time (`POST /cart/coupon/` →
 200, `coupon_code` stored) for an eligible member, but strikes **zero** discount:
 
@@ -64,12 +64,12 @@ FIEL10 (10% off, customer_segments=["fieis"]), member of "fieis":
   apply → 200, cart.coupon_code == "FIEL10", cart.coupon_discount_q == 0
 ```
 
-Cause: two different sources of the customer's group. The eligibility gate
-(`storefront/cart.py::_customer_eligible_for_promo`) reads `customer.group.ref`
+Cause: two different sources of the customer's tier. The eligibility gate
+(`storefront/cart.py::_customer_eligible_for_promo`) reads `customer.price_tier.ref`
 directly, so it passes. But the discount modifier
-(`DiscountModifier._matches`) reads the group from the pricing **context**, and
-the storefront never populates `customer_group` in the cart pricing context
-(only the POS writes `customer.group` into the session). So the segment match
+(`DiscountModifier._matches`) reads the tier from the pricing **context**, and
+the storefront never populates `price_tier` in the cart pricing context
+(only the POS writes `customer.price_tier` into the session). So the segment match
 fails and the discount is 0. There is also a noisy
 `Customer has no insight` traceback logged from the same path.
 
@@ -84,12 +84,12 @@ An **open** (non-segmented) coupon works correctly
 ### Employee discount is POS-only — unreachable from the storefront
 
 `test_persona_3_employee.py`. The employee discount fires only when
-`session.data["customer"]["group"] == "staff"`, which **only the POS**
+`session.data["customer"]["tier"] == "staff"`, which **only the POS**
 attach-customer path writes. The storefront hardcodes the `web` channel and
 writes only `{name, phone}`, so a staff member ordering on the public store pays
 full price (correct — the public store must not leak staff pricing). The
 mechanism itself is verified at the modifier level (20% off when the session
-carries the staff group). Persona 3 as literally specified ("counter, channel=
+carries the staff tier). Persona 3 as literally specified ("counter, channel=
 counter, PIN") is a backstage/POS concern, not a storefront journey.
 
 ---

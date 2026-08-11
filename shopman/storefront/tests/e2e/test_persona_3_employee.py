@@ -2,7 +2,7 @@
 
 BOUNDARY FINDING: the employee discount is a POS/counter concept and is NOT
 reachable through the storefront. The discount modifier fires only when
-``session.data["customer"]["group"] == "staff"``, and that key is written
+``session.data["customer"]["tier"] == "staff"``, and that key is written
 exclusively by the POS attach-customer path (``shop/services/pos.py``). The
 storefront hardcodes the ``web`` channel and writes only ``{name, phone}`` into
 the session, so a staff member ordering on the public store is charged full price.
@@ -11,13 +11,13 @@ These tests pin that boundary from both sides:
   * through the storefront API a staff customer gets NO discount (correct — the
     public store must not leak staff pricing);
   * the discount mechanism itself works when driven the way the POS drives it
-    (session data carrying ``customer.group == "staff"``).
+    (session data carrying ``customer.price_tier == "staff"``).
 """
 
 from __future__ import annotations
 
 import pytest
-from shopman.guestman.models import Customer, CustomerGroup
+from shopman.guestman.models import Customer, PriceTier
 from shopman.orderman.models import Order, Session
 
 from . import _journey as J
@@ -35,10 +35,10 @@ def _seed():
 
 
 def _staff_customer():
-    group = CustomerGroup.objects.create(ref="staff", name="Funcionários")
+    tier = PriceTier.objects.create(ref="staff", name="Funcionários")
     return Customer.objects.create(
         ref="CUST-STAFF-1", first_name="Carlos", last_name="Silva",
-        phone=J.DEFAULT_PHONE, group=group,
+        phone=J.DEFAULT_PHONE, price_tier=tier,
     )
 
 
@@ -47,7 +47,7 @@ def _staff_customer():
 
 def test_staff_customer_gets_no_discount_on_storefront(client):
     """A staff member ordering on the public store pays full price — the
-    storefront never writes ``customer.group`` into the session."""
+    storefront never writes ``customer.price_tier`` into the session."""
     _seed()
     staff = _staff_customer()
     J.authenticate(client, staff)
@@ -60,7 +60,7 @@ def test_staff_customer_gets_no_discount_on_storefront(client):
     # Full price: R$10,00, no 20% employee discount.
     assert order.total_q == 1000
     # The order's customer sub-dict carries no group — the modifier could never fire.
-    assert "group" not in (order.data.get("customer") or {})
+    assert "tier" not in (order.data.get("customer") or {})
 
 
 # ── the mechanism, driven the way the POS drives it ──────────────────────────
@@ -80,7 +80,7 @@ def test_employee_discount_applies_when_session_carries_staff_group(client):
         state="open",
         rev=1,
         items=[{"line_id": "L1", "sku": SKU, "qty": 1, "unit_price_q": 1000, "line_total_q": 1000}],
-        data={"customer": {"name": "Carlos", "group": "staff"}},
+        data={"customer": {"name": "Carlos", "price_tier": "staff"}},
         pricing={},
     )
 
@@ -93,7 +93,7 @@ def test_employee_discount_applies_when_session_carries_staff_group(client):
 
 
 def test_non_staff_group_gets_no_employee_discount(client):
-    """A non-staff group leaves prices untouched."""
+    """A non-staff tier leaves prices untouched."""
     from shopman.shop.models import Channel
     from shopman.shop.modifiers import EmployeeDiscountModifier
 
@@ -105,7 +105,7 @@ def test_non_staff_group_gets_no_employee_discount(client):
         state="open",
         rev=1,
         items=[{"line_id": "L1", "sku": SKU, "qty": 1, "unit_price_q": 1000, "line_total_q": 1000}],
-        data={"customer": {"name": "Ana", "group": "regular"}},
+        data={"customer": {"name": "Ana", "price_tier": "regular"}},
         pricing={},
     )
 

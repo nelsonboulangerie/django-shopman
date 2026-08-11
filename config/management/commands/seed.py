@@ -27,7 +27,7 @@ from django.core.management.base import BaseCommand, CommandError
 from django.utils import timezone
 from shopman.craftsman.models import Recipe, RecipeItem, WorkOrder, WorkOrderItem
 from shopman.doorman.models import PinCredential
-from shopman.guestman.models import ContactPoint, Customer, CustomerAddress, CustomerGroup
+from shopman.guestman.models import ContactPoint, Customer, CustomerAddress, PriceTier
 from shopman.offerman.models import (
     AvailabilityPolicy,
     Collection,
@@ -744,7 +744,7 @@ class Command(BaseCommand):
             model.objects.all().delete()
 
         # Customers
-        for model in [CustomerAddress, ContactPoint, Customer, CustomerGroup]:
+        for model in [CustomerAddress, ContactPoint, Customer, PriceTier]:
             model.objects.all().delete()
 
         # KDS
@@ -2922,16 +2922,16 @@ class Command(BaseCommand):
     def _seed_customers(self):
         self.stdout.write("  👥 Clientes...")
 
-        # Groups
-        varejo, _ = CustomerGroup.objects.update_or_create(
+        # Faixas de preço: qual tabela cada cliente enxerga (`PriceTier.listing_ref`).
+        varejo, _ = PriceTier.objects.update_or_create(
             ref="varejo",
             defaults={"name": "Varejo"},
         )
-        atacado, _ = CustomerGroup.objects.update_or_create(
+        atacado, _ = PriceTier.objects.update_or_create(
             ref="atacado",
             defaults={"name": "Atacado"},
         )
-        staff_group, _ = CustomerGroup.objects.update_or_create(
+        staff_tier, _ = PriceTier.objects.update_or_create(
             ref="staff",
             defaults={"name": "Funcionarios"},
         )
@@ -2942,12 +2942,12 @@ class Command(BaseCommand):
             ("CLI-003", "Joao", "Oliveira", "individual", varejo, "+5543993333333"),
             ("CLI-004", "Café", "Parisiense", "business", atacado, "+5543994444444"),
             ("CLI-005", "Ana", "Ferreira", "individual", varejo, "+5543995555555"),
-            ("CLI-006", "Carlos", "Silva", "individual", staff_group, "+5543996666666"),
+            ("CLI-006", "Carlos", "Silva", "individual", staff_tier, "+5543996666666"),
             ("CLI-007", "Padaria", "do Bairro", "business", atacado, "+5543997777777"),
         ]
 
         customers = {}
-        for ref, first, last, ctype, group, phone in customers_data:
+        for ref, first, last, ctype, price_tier, phone in customers_data:
             extras = {}
             if ref == "CLI-001":
                 extras["birthday"] = timezone.localdate()
@@ -2957,7 +2957,7 @@ class Command(BaseCommand):
                     "first_name": first,
                     "last_name": last,
                     "customer_type": ctype,
-                    "group": group,
+                    "price_tier": price_tier,
                     "phone": phone,
                     **extras,
                 },
@@ -5285,7 +5285,7 @@ class Command(BaseCommand):
                 "ref": "employee_discount",
                 "rule_path": "shopman.shop.rules.pricing.EmployeeRule",
                 "label": "Desconto Funcionário",
-                "params": {"discount_percent": 20, "group": "staff"},
+                "params": {"discount_percent": 20, "price_tier": "staff"},
                 "priority": 60,
             },
             {

@@ -43,7 +43,9 @@ class CreateAddressSerializer(serializers.Serializer):
 
 
 class CustomerSerializer(serializers.ModelSerializer):
-    group_name = serializers.CharField(source="group.name", read_only=True, default=None)
+    price_tier_name = serializers.CharField(
+        source="price_tier.name", read_only=True, default=None
+    )
     listing_ref = serializers.CharField(read_only=True)
     phone_display = serializers.SerializerMethodField()
 
@@ -58,7 +60,7 @@ class CustomerSerializer(serializers.ModelSerializer):
             "phone",
             "phone_display",
             "email",
-            "group_name",
+            "price_tier_name",
             "listing_ref",
             "is_active",
         ]
@@ -95,14 +97,14 @@ class CreateCustomerSerializer(serializers.Serializer):
     phone = serializers.CharField(max_length=20)
     email = serializers.EmailField(required=False, default="")
     customer_type = serializers.ChoiceField(choices=["individual", "business"], required=False, default="individual")
-    group_ref = serializers.CharField(max_length=50, required=False, allow_blank=True, default="")
+    price_tier_ref = serializers.CharField(max_length=50, required=False, allow_blank=True, default="")
 
 
 class UpdateCustomerSerializer(serializers.Serializer):
     first_name = serializers.CharField(max_length=100, required=False)
     last_name = serializers.CharField(max_length=100, required=False)
     notes = serializers.CharField(required=False, allow_blank=True)
-    group_ref = serializers.CharField(max_length=50, required=False, allow_blank=True)
+    price_tier_ref = serializers.CharField(max_length=50, required=False, allow_blank=True)
 
 
 class CustomerInsightSerializer(serializers.Serializer):

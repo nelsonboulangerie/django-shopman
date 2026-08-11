@@ -15,7 +15,7 @@ from unittest.mock import patch
 
 from django.test import RequestFactory, TestCase
 from django.utils import timezone
-from shopman.guestman.models import Customer, CustomerGroup
+from shopman.guestman.models import Customer, PriceTier
 from shopman.orderman.models import Order, OrderItem
 
 from shopman.storefront.presentation.home import _reorder_context
@@ -49,7 +49,7 @@ def _make_request(customer_uuid=None, customer_name=None):
 
 class ReorderContextTests(TestCase):
     def setUp(self):
-        group = CustomerGroup.objects.create(
+        tier = PriceTier.objects.create(
             ref="regular", name="Regular", is_default=True, priority=0
         )
         self.customer = Customer.objects.create(
@@ -57,7 +57,7 @@ class ReorderContextTests(TestCase):
             first_name="João",
             last_name="Silva",
             phone="+5543999990001",
-            group=group,
+            price_tier=tier,
         )
 
     def _create_order(self, days_ago: int, items=None) -> Order:

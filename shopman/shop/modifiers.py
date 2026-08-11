@@ -321,12 +321,12 @@ class DiscountModifier:
         if fulfillment_type:
             ctx.setdefault("fulfillment_type", fulfillment_type)
 
-        # Customer-derived pricing context (group, RFM segment, birthday) needed
+        # Customer-derived pricing context (tier, RFM segment, birthday) needed
         # for ``customer_segments``-gated and ``birthday_only`` promotions/coupons.
         # Resolved from the session's linked customer so it survives EVERY reprice
         # (each cart mutation re-runs this modifier); a value the caller already
-        # put in ``ctx`` still wins. The POS writes ``customer.group`` straight to
-        # the session; the storefront links the customer (ref + group) when a
+        # put in ``ctx`` still wins. The POS writes ``customer.price_tier`` straight to
+        # the session; the storefront links the customer (ref + tier) when a
         # segment-gated coupon is applied, and the RFM segment resolves from the
         # customer's ``insight``.
         self._resolve_customer_ctx(session, ctx)
@@ -526,12 +526,12 @@ class DiscountModifier:
 
     @staticmethod
     def _resolve_customer_ctx(session: Any, ctx: dict) -> None:
-        """Populate ``customer_group``, ``customer_segment`` and ``is_birthday``
+        """Populate ``price_tier``, ``customer_segment`` and ``is_birthday``
         in ``ctx`` from the session's linked customer, without overriding values
         the caller already supplied.
 
-        ``customer.group`` persisted on the session (POS) is authoritative for the
-        group. Everything else (segment, birthday, and the group when only the ref
+        ``customer.price_tier`` persisted on the session (POS) is authoritative for the
+        tier. Everything else (segment, birthday, and the tier when only the ref
         is on the session) resolves from the ``Customer`` row, so the discount is
         recomputed correctly on every reprice, not just the moment the coupon is
         applied.
@@ -540,15 +540,15 @@ class DiscountModifier:
 
         customer_data = (session.data or {}).get("customer") or {}
 
-        needs_group = not ctx.get("customer_group")
-        if needs_group and customer_data.get("group"):
-            ctx["customer_group"] = customer_data["group"]
-            needs_group = False
+        needs_tier = not ctx.get("price_tier")
+        if needs_tier and customer_data.get("price_tier"):
+            ctx["price_tier"] = customer_data["price_tier"]
+            needs_tier = False
 
         needs_segment = not ctx.get("customer_segment")
         needs_birthday = "is_birthday" not in ctx
         customer_ref = customer_data.get("ref")
-        if not customer_ref or not (needs_group or needs_segment or needs_birthday):
+        if not customer_ref or not (needs_tier or needs_segment or needs_birthday):
             return
 
         try:
@@ -556,7 +556,7 @@ class DiscountModifier:
 
             customer = (
                 Customer.objects.filter(ref=customer_ref)
-                .select_related("group", "insight")
+                .select_related("price_tier", "insight")
                 .first()
             )
         except Exception:
@@ -569,15 +569,15 @@ class DiscountModifier:
         if customer is None:
             return
 
-        if needs_group and customer.group_id:
-            ctx["customer_group"] = customer.group.ref
+        if needs_tier and customer.price_tier_id:
+            ctx["price_tier"] = customer.price_tier.ref
 
         if needs_segment:
             try:
                 ctx["customer_segment"] = customer.insight.rfm_segment or ""
             except ObjectDoesNotExist:
                 # Insight (OneToOne) not computed yet — the customer still matches
-                # by group; the segment stays empty. Degrade quietly, no traceback.
+                # by tier; the segment stays empty. Degrade quietly, no traceback.
                 logger.debug(
                     "discount_modifier: no insight for customer=%s", customer_ref
                 )
@@ -607,8 +607,8 @@ class DiscountModifier:
                 return False
         if promo.customer_segments:
             customer_segment = ctx.get("customer_segment", "")
-            customer_group = ctx.get("customer_group", "")
-            if customer_segment not in promo.customer_segments and customer_group not in promo.customer_segments:
+            price_tier = ctx.get("price_tier", "")
+            if customer_segment not in promo.customer_segments and price_tier not in promo.customer_segments:
                 return False
         if getattr(promo, "birthday_only", False):
             if not ctx.get("is_birthday"):
@@ -691,7 +691,7 @@ class DiscountModifier:
 
 class EmployeeDiscountModifier:
     """
-    Discount for employees (customer_group == "staff").
+    Discount for employees (the customer's price tier is "staff").
 
     Percentage is configurable via channel config rules.employee_discount_percent
     or SHOPMAN_EMPLOYEE_DISCOUNT_PERCENT setting (default 20).
@@ -707,8 +707,8 @@ class EmployeeDiscountModifier:
         self.discount_percent = discount_percent
 
     def apply(self, *, channel: Any, session: Any, ctx: dict) -> None:
-        customer_group = (session.data or {}).get("customer", {}).get("group", "")
-        if customer_group != "staff":
+        price_tier = (session.data or {}).get("customer", {}).get("price_tier", "")
+        if price_tier != "staff":
             # Deixou de ser staff: limpa transparência residual de uma passagem anterior.
             pricing = session.pricing or {}
             if pricing.pop("employee_discount", None) is not None:

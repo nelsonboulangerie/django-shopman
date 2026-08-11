@@ -57,7 +57,7 @@ def reprice(*, session_key: str, channel_ref: str) -> Session | None:
     """Re-run session modifiers without mutating lines.
 
     Used after a non-line change to ``session.data`` (e.g. linking the customer)
-    so the pricing reflects it — the discount modifier reads customer group/segment
+    so the pricing reflects it — the discount modifier reads customer tier/segment
     from the session. Returns ``None`` if the session is gone.
     """
     session = get_open_session(session_key=session_key, channel_ref=channel_ref)
@@ -256,15 +256,15 @@ def customer_eligible_for_promotion(customer, promotion) -> bool:
         return False  # alvo exige identidade; visitante anônimo não qualifica
 
     if segments:
-        group_ref = customer.group.ref if getattr(customer, "group_id", None) else ""
+        tier_ref = customer.price_tier.ref if getattr(customer, "price_tier_id", None) else ""
         try:
             rfm_segment = customer.insight.rfm_segment or ""
         except ObjectDoesNotExist:
-            # Sem insight calculado (OneToOne ausente) o cliente só casa por grupo;
+            # Sem insight calculado (OneToOne ausente) o cliente só casa por faixa;
             # segmento RFM fica vazio. Degrada sem bloquear o cupom.
             logger.debug("coupon_eligibility_insight_missing")
             rfm_segment = ""
-        if group_ref not in segments and rfm_segment not in segments:
+        if tier_ref not in segments and rfm_segment not in segments:
             return False
 
     if birthday_only:
@@ -340,7 +340,9 @@ def validate_and_apply_coupon(
     if customer is not None:
         payload = {
             "ref": getattr(customer, "ref", "") or "",
-            "group": customer.group.ref if getattr(customer, "group_id", None) else "",
+            "price_tier": (
+                customer.price_tier.ref if getattr(customer, "price_tier_id", None) else ""
+            ),
         }
 
     session = apply_coupon_code(
@@ -360,9 +362,9 @@ def apply_coupon_code(
 ) -> Session | None:
     """Attach a validated coupon code and re-run session modifiers.
 
-    When ``customer`` (``{"ref", "group"}``) is given, its identity is merged into
-    ``session.data["customer"]`` so a coupon gated by customer group/segment
-    computes its discount — the discount modifier resolves the customer's group
+    When ``customer`` (``{"ref", "price_tier"}``) is given, its identity is merged into
+    ``session.data["customer"]`` so a coupon gated by customer tier/segment
+    computes its discount — the discount modifier resolves the customer's tier
     and RFM segment from the session, and does so on every later reprice too.
     Open (non-segmented) coupons pass ``None``.
     """
@@ -376,8 +378,8 @@ def apply_coupon_code(
         merged = dict(data.get("customer") or {})
         if customer.get("ref"):
             merged["ref"] = customer["ref"]
-        if customer.get("group"):
-            merged["group"] = customer["group"]
+        if customer.get("price_tier"):
+            merged["price_tier"] = customer["price_tier"]
         if merged:
             data["customer"] = merged
     session.data = data

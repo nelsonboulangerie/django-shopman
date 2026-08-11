@@ -349,9 +349,9 @@ class TestHappyHour:
 
 
 class TestEmployeeDiscount:
-    """3. Desconto de funcionário (customer_group == staff)."""
+    """3. Desconto de funcionário (faixa de preço == staff)."""
 
-    def _staff_session(self, group="staff", price_q=1000, percent=20):
+    def _staff_session(self, price_tier="staff", price_q=1000, percent=20):
         from shopman.shop.services import sessions
 
         _shop()
@@ -363,18 +363,18 @@ class TestEmployeeDiscount:
             s,
             [
                 _line("PAO", qty=1),
-                {"op": "set_data", "path": "customer", "value": {"group": group}},
+                {"op": "set_data", "path": "customer", "value": {"price_tier": price_tier}},
             ],
         )
 
     def test_staff_gets_discount(self):
-        s = self._staff_session(group="staff", percent=20)
+        s = self._staff_session(price_tier="staff", percent=20)
         assert _unit_price(s, "PAO") == 800
 
     def test_non_staff_no_discount(self):
         """Cliente comum não recebe o desconto de funcionário (é gated por grupo,
         não por cupom 'FUNCIONARIO' — não existe cupom de funcionário no modelo)."""
-        s = self._staff_session(group="regular", percent=20)
+        s = self._staff_session(price_tier="regular", percent=20)
         assert _unit_price(s, "PAO") == 1000
 
     def test_staff_plus_d1_best_wins_no_stack(self):
@@ -397,7 +397,7 @@ class TestEmployeeDiscount:
             [
                 _line("PAO-D1", qty=1),
                 {"op": "set_data", "path": "availability", "value": {"PAO-D1": {"is_d1": True}}},
-                {"op": "set_data", "path": "customer", "value": {"group": "staff"}},
+                {"op": "set_data", "path": "customer", "value": {"price_tier": "staff"}},
             ],
         )
         assert _unit_price(s, "PAO-D1") == 500  # D-1 vence; funcionário não empilha

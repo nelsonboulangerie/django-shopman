@@ -5,15 +5,15 @@ Cobre o furo em que uma promoção restrita a um grupo/segmento
 mas descontava ZERO na loja.
 
 Causa raiz: duas fontes distintas do grupo do cliente. O gate de elegibilidade
-lia ``customer.group.ref`` do request e passava; já o ``DiscountModifier`` (e o
+lia ``customer.price_tier.ref`` do request e passava; já o ``DiscountModifier`` (e o
 ``PromotionPricingBackend`` do cardápio) liam o grupo/segmento do CONTEXTO de
-pricing, que a loja nunca populava — só o PDV escrevia ``customer.group`` na
+pricing, que a loja nunca populava — só o PDV escrevia ``customer.price_tier`` na
 sessão.
 
 Correção (ver ``PERSONA_FINDINGS.md``):
 - a loja vincula o cliente (ref + grupo) à sessão do carrinho a cada escrita;
 - o ``DiscountModifier`` resolve grupo/segmento da própria sessão, a cada reprice;
-- cardápio/PDP passam ``customer_group``/``customer_segment`` no contexto de preço.
+- cardápio/PDP passam ``price_tier``/``customer_segment`` no contexto de preço.
 """
 
 from __future__ import annotations
@@ -23,7 +23,7 @@ from decimal import Decimal
 
 import pytest
 from django.utils import timezone
-from shopman.guestman.models import Customer, CustomerGroup
+from shopman.guestman.models import Customer, PriceTier
 from shopman.offerman.models import Listing, ListingItem, Product
 
 from shopman.shop.models import Channel, Coupon, Promotion, Shop
@@ -90,9 +90,9 @@ def loyal_setup(db):
     _seed_stock(SKU)
     _seed_listing(channel, product, PRICE_Q)
 
-    group = CustomerGroup.objects.create(ref="fieis", name="Fiéis")
+    tier = PriceTier.objects.create(ref="fieis", name="Fiéis")
     member = Customer.objects.create(
-        ref="CUST-FIEL01", first_name="Ana", last_name="Fiel", group=group
+        ref="CUST-FIEL01", first_name="Ana", last_name="Fiel", price_tier=tier
     )
     return member
 
@@ -188,9 +188,9 @@ def test_group_coupon_discount_survives_reprice(segmented_coupon):
 
 def test_group_coupon_rejected_for_non_member(segmented_coupon):
     """Cliente fora do grupo é recusado no gate (não grava cupom mudo)."""
-    other = CustomerGroup.objects.create(ref="novatos", name="Novatos")
+    other = PriceTier.objects.create(ref="novatos", name="Novatos")
     outsider = Customer.objects.create(
-        ref="CUST-NOV01", first_name="Beto", last_name="Novato", group=other
+        ref="CUST-NOV01", first_name="Beto", last_name="Novato", price_tier=other
     )
     session_key = _cart_session_with_item()
     request = _FakeRequest(session_key=session_key, customer_uuid=outsider.uuid)
@@ -241,7 +241,7 @@ def test_add_item_links_customer_to_session(segmented_auto_promo):
 
     customer = (_open(session_key).data or {}).get("customer") or {}
     assert customer.get("ref") == "CUST-FIEL01"
-    assert customer.get("group") == "fieis"
+    assert customer.get("price_tier") == "fieis"
 
 
 # ── Vitrine (cardápio) ──────────────────────────────────────────────

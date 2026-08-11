@@ -19,8 +19,8 @@ from shopman.guestman.models import (
     ContactPoint,
     Customer,
     CustomerAddress,
-    CustomerGroup,
     ExternalIdentity,
+    PriceTier,
 )
 from shopman.utils.contrib.admin_unfold.badges import unfold_badge, unfold_badge_numeric
 from shopman.utils.contrib.admin_unfold.base import BaseModelAdmin, BaseTabularInline
@@ -28,7 +28,7 @@ from unfold.contrib.filters.admin.dropdown_filters import ChoicesDropdownFilter
 from unfold.decorators import display
 
 # Unregister basic admins
-for model in [Customer, CustomerGroup, CustomerAddress, ContactPoint, ExternalIdentity]:
+for model in [Customer, PriceTier, CustomerAddress, ContactPoint, ExternalIdentity]:
     try:
         admin.site.unregister(model)
     except admin.sites.NotRegistered:
@@ -79,8 +79,8 @@ class RFMSegmentFilter(admin.SimpleListFilter):
 # =============================================================================
 
 
-@admin.register(CustomerGroup)
-class CustomerGroupAdmin(BaseModelAdmin):
+@admin.register(PriceTier)
+class PriceTierAdmin(BaseModelAdmin):
     list_display = [
         "ref",
         "name",
@@ -125,7 +125,7 @@ class CustomerAdmin(BaseModelAdmin):
     list_display = [
         "customer_header",
         "customer_type_badge",
-        "group",
+        "price_tier",
         "orders_count",
         "rfm_segment_badge",
         "churn_risk_badge",
@@ -134,7 +134,7 @@ class CustomerAdmin(BaseModelAdmin):
     list_display_links = ["customer_header"]
     list_filter = [
         "customer_type",
-        ("group", ChoicesDropdownFilter),
+        ("price_tier", ChoicesDropdownFilter),
         "is_active",
         RFMSegmentFilter,
     ]
@@ -159,7 +159,7 @@ class CustomerAdmin(BaseModelAdmin):
             },
         ),
         ("Contato", {"fields": ["email", "phone"]}),
-        ("Segmentação", {"fields": ["group", "notes"]}),
+        ("Segmentação", {"fields": ["price_tier", "notes"]}),
         (
             "Sistema",
             {
@@ -267,9 +267,9 @@ class CustomerAdmin(BaseModelAdmin):
         writer = csv.writer(response)
         writer.writerow([
             "ref", "first_name", "last_name", "customer_type",
-            "email", "phone", "group", "is_active",
+            "email", "phone", "price_tier", "is_active",
         ])
-        for customer in queryset.select_related("group"):
+        for customer in queryset.select_related("price_tier"):
             writer.writerow([
                 customer.ref,
                 customer.first_name,
@@ -277,7 +277,7 @@ class CustomerAdmin(BaseModelAdmin):
                 customer.customer_type,
                 customer.email or "",
                 customer.phone or "",
-                customer.group.ref if customer.group else "",
+                customer.price_tier.ref if customer.price_tier else "",
                 customer.is_active,
             ])
         return response

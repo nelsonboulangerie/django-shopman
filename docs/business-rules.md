@@ -637,7 +637,7 @@ customer:
   document:       string          # CPF ou CNPJ (apenas dígitos)
   phone:          string          # Cache E.164 (fonte de verdade: ContactPoint)
   email:          string          # Cache (fonte de verdade: ContactPoint)
-  group:          → CustomerGroup
+  price_tier:      → PriceTier
   is_active:      bool
 ```
 
@@ -653,10 +653,10 @@ contact_point:
   verification_method: "unverified" | "otp_whatsapp" | "otp_sms" | "email_link" | "manual"
 ```
 
-### 10.3 Grupos de Clientes
+### 10.3 Faixas de Preço
 
 ```yaml
-customer_group:
+price_tier:
   ref:         slug(unique)
   name:        string
   listing_ref: string      # Qual Listing aplica (convenção: == Channel.ref)

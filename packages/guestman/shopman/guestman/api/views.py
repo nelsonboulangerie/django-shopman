@@ -67,7 +67,7 @@ class CustomerViewSet(
         return CustomerSerializer
 
     def get_queryset(self):
-        return Customer.objects.filter(is_active=True).select_related("group")
+        return Customer.objects.filter(is_active=True).select_related("price_tier")
 
     def create(self, request, *args, **kwargs):
         serializer = CreateCustomerSerializer(data=request.data)
@@ -84,7 +84,7 @@ class CustomerViewSet(
                 phone=data["phone"],
                 email=data.get("email", ""),
                 customer_type=data.get("customer_type", "individual"),
-                group_ref=data.get("group_ref", "") or None,
+                price_tier_ref=data.get("price_tier_ref", "") or None,
             )
         except Exception as e:
             return Response({"detail": str(e)}, status=status.HTTP_400_BAD_REQUEST)
@@ -104,11 +104,11 @@ class CustomerViewSet(
             update_fields["last_name"] = data["last_name"]
         if "notes" in data:
             update_fields["notes"] = data["notes"]
-        if "group_ref" in data:
-            from shopman.guestman.models import CustomerGroup
-            group = CustomerGroup.objects.filter(ref=data["group_ref"]).first()
-            if group:
-                update_fields["group"] = group
+        if "price_tier_ref" in data:
+            from shopman.guestman.models import PriceTier
+            tier = PriceTier.objects.filter(ref=data["price_tier_ref"]).first()
+            if tier:
+                update_fields["price_tier"] = tier
 
         cust = customer_service.update(customer.ref, **update_fields)
         if not cust:

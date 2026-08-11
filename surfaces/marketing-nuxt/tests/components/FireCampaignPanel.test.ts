@@ -15,7 +15,7 @@ function fakeCount(over: Partial<AudienceCount> = {}): AudienceCount {
     total: 2,
     match: "any",
     match_label: "somando as regras",
-    parts: [{ label: "Grupos", count: 2 }],
+    parts: [{ label: "Faixa de preço", count: 2 }],
     vip_count: 0,
     empty_selection: false,
     ...over,
@@ -48,9 +48,9 @@ async function settleCount(wrapper: { vm: { $nextTick: () => Promise<void> } }) 
   await wrapper.vm.$nextTick();
 }
 
-const GROUPS = [
+const TIERS = [
   { value: "varejo", label: "Varejo" },
-  { value: "corporativo", label: "Corporativo" },
+  { value: "atacado", label: "Atacado" },
 ];
 const SEGMENTS = [
   { value: "champion", label: "campeão" },
@@ -73,7 +73,7 @@ function makeRule(over: Partial<Campaign> = {}): Campaign {
 
 function panel(rule: Campaign | null = makeRule()) {
   return mount(FireCampaignPanel, {
-    props: { rule, customerGroups: GROUPS, rfmSegments: SEGMENTS },
+    props: { rule, priceTiers: TIERS, rfmSegments: SEGMENTS },
     global: { stubs: { Icon: true } },
     globalProperties: {},
   });
@@ -101,14 +101,14 @@ describe("FireCampaignPanel — disparar agora", () => {
     const wrapper = panel();
     await wrapper.findAll('input[name="audience-mode"]')[1]!.setValue();
 
-    // "Corporativo" e "em risco" — o gestor clica em frases, não em chaves.
+    // "Atacado" e "em risco" — o gestor clica em frases, não em chaves.
     const chips = wrapper.findAll("button[aria-pressed]");
-    await chips.find((c) => c.text() === "Corporativo")!.trigger("click");
+    await chips.find((c) => c.text() === "Atacado")!.trigger("click");
     await chips.find((c) => c.text() === "em risco")!.trigger("click");
     await wrapper.find("form").trigger("submit");
 
     expect(wrapper.emitted("submit")?.[0]).toEqual([
-      { body: "", audience: { groups: ["corporativo"], rfm_segments: ["at_risk"] } },
+      { body: "", audience: { price_tiers: ["atacado"], rfm_segments: ["at_risk"] } },
     ]);
   });
 
@@ -140,7 +140,7 @@ describe("FireCampaignPanel — disparar agora", () => {
     const wrapper = panel();
     await wrapper.findAll('input[name="audience-mode"]')[1]!.setValue();
     const chips = wrapper.findAll("button[aria-pressed]");
-    await chips.find((c) => c.text() === "Corporativo")!.trigger("click");
+    await chips.find((c) => c.text() === "Atacado")!.trigger("click");
 
     // Mandar mensagem para o público errado não tem desfazer.
     await wrapper.setProps({ rule: makeRule({ pk: 99, name: "Outra" }) });
@@ -213,7 +213,7 @@ describe("FireCampaignPanel — quantas pessoas isto alcança", () => {
     const wrapper = panel();
     await wrapper.findAll('input[name="audience-mode"]')[1]!.setValue();
     const chips = wrapper.findAll("button[aria-pressed]");
-    await chips.find((c) => c.text() === "Corporativo")!.trigger("click");
+    await chips.find((c) => c.text() === "Atacado")!.trigger("click");
     await settleCount(wrapper);
 
     expect(wrapper.text()).toContain("2");
@@ -261,7 +261,7 @@ describe("FireCampaignPanel — somar ou cruzar as regras", () => {
     const wrapper = panel();
     await wrapper.findAll('input[name="audience-mode"]')[1]!.setValue();
     const chips = wrapper.findAll("button[aria-pressed]");
-    await chips.find((c) => c.text() === "Corporativo")!.trigger("click");
+    await chips.find((c) => c.text() === "Atacado")!.trigger("click");
     await chips.find((c) => c.text() === "em risco")!.trigger("click");
     return wrapper;
   }
@@ -299,7 +299,7 @@ describe("FireCampaignPanel — somar ou cruzar as regras", () => {
       { audience: { match?: string; groups?: string[]; rfm_segments?: string[] } },
     ];
     expect(payload.audience.match).toBe("all");
-    expect(payload.audience.groups).toEqual(["corporativo"]);
+    expect(payload.audience.price_tiers).toEqual(["atacado"]);
     expect(payload.audience.rfm_segments).toEqual(["at_risk"]);
   });
 

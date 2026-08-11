@@ -37,7 +37,7 @@ Cada app é um pacote pip independente. Os cores nunca se importam entre si — 
 | **Stockman** | `shopman-stockman` | `shopman.stockman` | Estoque físico | Quant, Move, Hold, Position, Batch |
 | **Craftsman** | `shopman-craftsman` | `shopman.craftsman` | Produção e receitas | Recipe, WorkOrder, WorkOrderItem |
 | **Orderman** | `shopman-orderman` | `shopman.orderman` | Pedidos omnichannel | Session, Order, Directive, Channel |
-| **Guestman** | `shopman-guestman` | `shopman.guestman` | CRM e clientes | Customer, ContactPoint, CustomerGroup |
+| **Guestman** | `shopman-guestman` | `shopman.guestman` | CRM e clientes | Customer, ContactPoint, PriceTier |
 | **Doorman** | `shopman-doorman` | `shopman.doorman` | Auth e acesso | VerificationCode, TrustedDevice, AccessLink |
 | **Payman** | `shopman-payman` | `shopman.payman` | Pagamentos | PaymentIntent, PaymentTransaction |
 | **Buyman** | `shopman-buyman` | `shopman.buyman` | Compras (procurement) | Material, Supplier |

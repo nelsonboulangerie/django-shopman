@@ -15,7 +15,7 @@ O Core não impõe schema — a governança é por convenção documentada aqui.
 
 | Chave | Tipo | Escrito por | Lido por | Descrição |
 |-------|------|-------------|----------|-----------|
-| `customer` | `dict` | CheckoutView, POS, API (`set_data`), iFood webhook | CommitService, handlers | Dados do cliente: `{name, phone, notes, ref, group, cpf, address}` |
+| `customer` | `dict` | CheckoutView, POS, API (`set_data`), iFood webhook | CommitService, handlers | Dados do cliente: `{name, phone, notes, ref, price_tier, cpf, address}` |
 | `fulfillment_type` | `string` | CheckoutView, POS, API, iFood webhook | CommitService, MinimumOrderValidator | `"pickup"` ou `"delivery"` |
 | `delivery_address` | `string` | CheckoutView, API, iFood webhook | CommitService, CustomerIdentificationHandler | Endereço formatado (texto livre) |
 | `delivery_date` | `string` | CheckoutView | CommitService | ISO date (`YYYY-MM-DD`). Se futuro, indica encomenda |

@@ -198,7 +198,7 @@ reimplementar nada.
 
 ### 8. Nao existe preco por grupo de cliente
 
-`CustomerGroup.listing_ref` esta declarado (`packages/guestman/shopman/guestman/models/group.py:16-21`)
+`PriceTier.listing_ref` esta declarado (`packages/guestman/shopman/guestman/models/price_tier.py:24-29`)
 e **consumido por ninguem** em `shopman/`; `metadata` ate documenta
 `{"discount_percent": 10}` como exemplo (`:38-41`). Este ADR **nao** liga essa costura e **nao** a
 apaga: promocao por segmento ja e resolvida por `customer_segments` (`promotions.py:46`), que tem
@@ -353,7 +353,7 @@ global por canal ja tem dono em `ChannelConfig.Rules.modifiers`.
 **Mover tambem `CustomerFavorite` e `StockAlertSubscription`.** Sao dados de superficie de cliente, nao
 regra de preco; `adapters/audience_sources.py` e adapter legitimo e continua.
 
-**Ligar `CustomerGroup.listing_ref` para preco por grupo.** Terceiro caminho de preco por publico, sem
+**Ligar `PriceTier.listing_ref` para preco por faixa.** Terceiro caminho de preco por publico, sem
 consumidor que o peca. Fica declarado e inerte, como esta.
 
 ---

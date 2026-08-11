@@ -14,37 +14,37 @@ from shopman.guestman.models import (
     AddressLabel,
     Customer,
     CustomerAddress,
-    CustomerGroup,
+    PriceTier,
 )
 
 pytestmark = pytest.mark.django_db
 
 
-class TestCustomerGroup:
-    """Tests for CustomerGroup model."""
+class TestPriceTier:
+    """Tests for PriceTier model."""
 
     def test_create_group(self, db):
-        """Test group creation."""
-        group = CustomerGroup.objects.create(
+        """Test tier creation."""
+        tier = PriceTier.objects.create(
             ref="atacado",
             name="Atacado",
             listing_ref="atacado",
             priority=5,
         )
-        assert group.ref == "atacado"
-        assert group.listing_ref == "atacado"
+        assert tier.ref == "atacado"
+        assert tier.listing_ref == "atacado"
 
-    def test_only_one_default(self, group_regular, db):
-        """Test only one default group allowed."""
-        new_default = CustomerGroup.objects.create(
+    def test_only_one_default(self, tier_regular, db):
+        """Test only one default tier allowed."""
+        new_default = PriceTier.objects.create(
             ref="new-default",
             name="New Default",
             is_default=True,
         )
-        group_regular.refresh_from_db()
+        tier_regular.refresh_from_db()
 
         assert new_default.is_default is True
-        assert group_regular.is_default is False
+        assert tier_regular.is_default is False
 
 
 class TestCustomer:
@@ -56,34 +56,34 @@ class TestCustomer:
         assert customer.name == "John Doe"
         assert customer.is_active is True
 
-    def test_name_property(self, db, group_regular):
+    def test_name_property(self, db, tier_regular):
         """Test name property concatenation."""
         cust = Customer.objects.create(
             ref="TEST",
             first_name="First",
             last_name="Last",
-            group=group_regular,
+            price_tier=tier_regular,
         )
         assert cust.name == "First Last"
 
         cust_no_last = Customer.objects.create(
             ref="TEST2",
             first_name="OnlyFirst",
-            group=group_regular,
+            price_tier=tier_regular,
         )
         assert cust_no_last.name == "OnlyFirst"
 
-    def test_listing_ref_from_group(self, customer_vip, group_vip):
-        """Test listing_ref comes from group."""
+    def test_listing_ref_from_group(self, customer_vip, tier_vip):
+        """Test listing_ref comes from tier."""
         assert customer_vip.listing_ref == "vip"
 
-    def test_default_group_assigned(self, db, group_regular):
-        """Test default group assigned on save."""
+    def test_default_group_assigned(self, db, tier_regular):
+        """Test default tier assigned on save."""
         cust = Customer.objects.create(
             ref="NEW-CUST",
             first_name="New",
         )
-        assert cust.group == group_regular
+        assert cust.price_tier == tier_regular
 
     def test_default_address_property(self, customer, customer_address):
         """Test default_address property."""

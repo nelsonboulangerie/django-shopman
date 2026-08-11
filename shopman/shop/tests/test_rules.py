@@ -48,12 +48,12 @@ class TestEmployeeRule:
         assert rule.rule_type == "modifier"
 
     def test_default_params(self):
-        assert EmployeeRule.default_params == {"discount_percent": 20, "group": "staff"}
+        assert EmployeeRule.default_params == {"discount_percent": 20, "price_tier": "staff"}
 
     def test_custom_params(self):
-        rule = EmployeeRule(discount_percent=15, group="team")
+        rule = EmployeeRule(discount_percent=15, price_tier="team")
         assert rule.discount_percent == 15
-        assert rule.group == "team"
+        assert rule.price_tier == "team"
 
 
 class TestHappyHourRule:

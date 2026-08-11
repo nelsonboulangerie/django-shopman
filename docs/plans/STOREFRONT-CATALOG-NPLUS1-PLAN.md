@@ -32,7 +32,7 @@ a cada SKU.
 ## Por que NÃO é cache
 
 `build_catalog` é **profundamente personalizado**: preço varia por
-`customer_group`/`customer_segment`, `fulfillment_type` e `session_total_q`
+`price_tier`/`customer_segment`, `fulfillment_type` e `session_total_q`
 (happy hour / D-1 / sessão), além de favoritos, quantidades no carrinho,
 inscrições "me avise" e preferências alimentares. Cachear a projeção (Valkey) ou o
 HTML SSR (routeRules `swr`) **vazaria preço/favoritos/carrinho de um cliente para

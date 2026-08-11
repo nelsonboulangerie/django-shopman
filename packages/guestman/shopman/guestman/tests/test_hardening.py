@@ -503,14 +503,14 @@ class TestGuestmanHardeningRegressions:
 
     def test_customer_group_save_keeps_single_default(self, db):
         """Saving a new default demotes previous defaults."""
-        from shopman.guestman.models import CustomerGroup
+        from shopman.guestman.models import PriceTier
 
-        first = CustomerGroup.objects.create(
+        first = PriceTier.objects.create(
             ref="grp-default-1",
             name="Default 1",
             is_default=True,
         )
-        second = CustomerGroup.objects.create(
+        second = PriceTier.objects.create(
             ref="grp-default-2",
             name="Default 2",
             is_default=True,
@@ -521,4 +521,4 @@ class TestGuestmanHardeningRegressions:
 
         assert not first.is_default
         assert second.is_default
-        assert CustomerGroup.objects.filter(is_default=True).count() == 1
+        assert PriceTier.objects.filter(is_default=True).count() == 1

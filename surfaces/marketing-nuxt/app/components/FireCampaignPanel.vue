@@ -21,7 +21,7 @@ import type { AudienceMatch, Campaign, Choice, ChosenAudience } from "~/types/ca
 
 const props = defineProps<{
   rule: Campaign | null;
-  customerGroups: Choice[];
+  priceTiers: Choice[];
   rfmSegments: Choice[];
   busy?: boolean;
 }>();
@@ -33,7 +33,7 @@ type FireRequest = { body: string; audience: ChosenAudience };
 
 const body = ref("");
 const useSaved = ref(true);
-const groups = ref<string[]>([]);
+const tiers = ref<string[]>([]);
 const segments = ref<string[]>([]);
 const winBack = ref(false);
 const birthday = ref(false);
@@ -44,7 +44,7 @@ const { count, pending: counting, failed: countFailed, measure, clear } = useAud
 
 /** Rótulos do servidor: o resumo do público da campanha não traduz ref por conta. */
 const audienceLabels = computed(() => ({
-  groups: choiceLabels(props.customerGroups),
+  priceTiers: choiceLabels(props.priceTiers),
   segments: choiceLabels(props.rfmSegments),
 }));
 
@@ -55,7 +55,7 @@ watch(
   () => {
     body.value = "";
     useSaved.value = true;
-    groups.value = [];
+    tiers.value = [];
     segments.value = [];
     winBack.value = false;
     birthday.value = false;
@@ -66,11 +66,11 @@ watch(
 );
 
 // Duas funções em vez de uma que recebe o ref: o template DESEMBRULHA refs, então
-// `toggleIn(groups, …)` chegava com o array puro e `list.value` era `undefined`.
-function toggleGroup(value: string) {
-  groups.value = groups.value.includes(value)
-    ? groups.value.filter((v) => v !== value)
-    : [...groups.value, value];
+// `toggleIn(tiers, …)` chegava com o array puro e `list.value` era `undefined`.
+function toggleTier(value: string) {
+  tiers.value = tiers.value.includes(value)
+    ? tiers.value.filter((v) => v !== value)
+    : [...tiers.value, value];
 }
 
 function toggleSegment(value: string) {
@@ -82,7 +82,7 @@ function toggleSegment(value: string) {
 const chosen = computed<ChosenAudience>(() => {
   if (useSaved.value) return {};
   const audience: ChosenAudience = {};
-  if (groups.value.length) audience.groups = [...groups.value];
+  if (tiers.value.length) audience.price_tiers = [...tiers.value];
   if (segments.value.length) audience.rfm_segments = [...segments.value];
   if (winBack.value) audience.churn_risk_min = 0.7;
   if (birthday.value) audience.birthday_today = true;
@@ -96,7 +96,7 @@ const chosen = computed<ChosenAudience>(() => {
 const nothingChosen = computed(
   () =>
     !useSaved.value &&
-    !groups.value.length &&
+    !tiers.value.length &&
     !segments.value.length &&
     !winBack.value &&
     !birthday.value,
@@ -105,7 +105,7 @@ const nothingChosen = computed(
 /** Cruzar com uma regra só é o mesmo que somar — o interruptor não teria sentido. */
 const rulesChosen = computed(
   () =>
-    (groups.value.length ? 1 : 0) +
+    (tiers.value.length ? 1 : 0) +
     (segments.value.length ? 1 : 0) +
     (winBack.value ? 1 : 0) +
     (birthday.value ? 1 : 0),
@@ -170,21 +170,23 @@ watch(
     </fieldset>
 
     <div v-if="!useSaved" class="space-y-4 rounded-lg bg-muted/40 p-3">
-      <fieldset v-if="customerGroups.length">
-        <legend class="mb-1.5 text-xs font-semibold uppercase text-muted-foreground">Grupos</legend>
+      <fieldset v-if="priceTiers.length">
+        <legend class="mb-1.5 text-xs font-semibold uppercase text-muted-foreground">
+          Faixa de preço
+        </legend>
         <div class="flex flex-wrap gap-1.5">
           <button
-            v-for="group in customerGroups"
-            :key="group.value"
+            v-for="tier in priceTiers"
+            :key="tier.value"
             type="button"
             class="rounded-full border px-2.5 py-1 text-xs transition"
-            :class="groups.includes(group.value)
+            :class="tiers.includes(tier.value)
               ? 'border-primary bg-primary text-primary-foreground'
               : 'border-border hover:bg-muted'"
-            :aria-pressed="groups.includes(group.value)"
-            @click="toggleGroup(group.value)"
+            :aria-pressed="tiers.includes(tier.value)"
+            @click="toggleTier(tier.value)"
           >
-            {{ group.label }}
+            {{ tier.label }}
           </button>
         </div>
       </fieldset>

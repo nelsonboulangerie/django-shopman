@@ -224,7 +224,7 @@ def build_product_detail(
     sku_collections = catalog_context.collection_refs_by_sku([product.sku]).get(product.sku, [])
 
     ft_hint, sub_hint = session_pricing_hints(request)
-    group_hint, segment_hint = customer_pricing_hints(request)
+    tier_hint, segment_hint = customer_pricing_hints(request)
     price = catalog_context.contextual_price(
         product.sku,
         qty=1,
@@ -233,7 +233,7 @@ def build_product_detail(
             "sku_collections": sku_collections,
             "session_total_q": sub_hint,
             "fulfillment_type": ft_hint,
-            "customer_group": group_hint,
+            "price_tier": tier_hint,
             "customer_segment": segment_hint,
         },
         list_unit_price_q=base_q,

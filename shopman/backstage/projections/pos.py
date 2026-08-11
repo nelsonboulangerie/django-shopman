@@ -193,7 +193,10 @@ class POSCustomerLookupProjection:
     name: str
     phone: str
     email: str
-    loyalty_group: str
+    #: A faixa de preço do cliente (`PriceTier.ref`). Chamava-se `loyalty_group`, e era o
+    #: TERCEIRO nome errado da mesma coisa: fidelidade é o `LoyaltyAccount` (bronze/ouro),
+    #: e nada disto tem a ver com ela.
+    price_tier: str
     is_staff: bool
     default_address: SavedAddressProjection | None
     saved_addresses: tuple[SavedAddressProjection, ...]
@@ -479,7 +482,7 @@ def build_pos_customer_lookup(phone: str) -> POSCustomerLookupProjection | None:
         return None
 
     name = getattr(customer, "name", "") or f"{getattr(customer, 'first_name', '')} {getattr(customer, 'last_name', '')}".strip()
-    group_ref = customer.group.ref if getattr(customer, "group_id", None) else ""
+    tier_ref = customer.price_tier.ref if getattr(customer, "price_tier_id", None) else ""
     summary = customer_history_summary(customer.ref)
     addresses = customer_context.saved_addresses(customer.ref)
     default_address = next((addr for addr in addresses if addr.is_default), addresses[0] if addresses else None)
@@ -490,8 +493,8 @@ def build_pos_customer_lookup(phone: str) -> POSCustomerLookupProjection | None:
         name=name,
         phone=getattr(customer, "phone", "") or phone,
         email=getattr(customer, "email", "") or "",
-        loyalty_group=group_ref,
-        is_staff=group_ref == "staff",
+        price_tier=tier_ref,
+        is_staff=tier_ref == "staff",
         default_address=_saved_address_projection(default_address) if default_address else None,
         saved_addresses=saved_addresses,
         memory=POSCustomerMemoryProjection(
@@ -1653,7 +1656,7 @@ def build_open_tab(session: Session) -> dict:
         "customer_phone": customer.get("phone", ""),
         "customer_name": customer.get("name", ""),
         "customer_ref": customer.get("ref", data.get("customer_ref", "")),
-        "customer_group": customer.get("group", ""),
+        "price_tier": customer.get("price_tier", ""),
         "customer_tax_id": customer.get("tax_id", ""),
         "customer_email": customer.get("email", ""),
         "fulfillment_type": data.get("fulfillment_type", "pickup") or "pickup",

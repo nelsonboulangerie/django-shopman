@@ -24,7 +24,7 @@ class CustomerInfo:
     ref: str
     name: str
     customer_type: str  # "individual" | "business"
-    group_ref: str | None
+    price_tier_ref: str | None
     listing_ref: str | None
     phone: str | None
     email: str | None

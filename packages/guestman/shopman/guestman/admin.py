@@ -14,17 +14,17 @@ from shopman.guestman.models import (
     ContactPoint,
     Customer,
     CustomerAddress,
-    CustomerGroup,
     ExternalIdentity,
+    PriceTier,
 )
 
 # ===========================================
-# CustomerGroup Admin
+# PriceTier Admin
 # ===========================================
 
 
-@admin.register(CustomerGroup)
-class CustomerGroupAdmin(admin.ModelAdmin):
+@admin.register(PriceTier)
+class PriceTierAdmin(admin.ModelAdmin):
     list_display = [
         "ref",
         "name",
@@ -124,11 +124,11 @@ class CustomerAdmin(MergeAdminMixin, admin.ModelAdmin):
         "ref",
         "name",
         "customer_type",
-        "group",
+        "price_tier",
         "phone",
         "is_active",
     ]
-    list_filter = ["customer_type", "group", "is_active"]
+    list_filter = ["customer_type", "price_tier", "is_active"]
     search_fields = ["ref", "first_name", "last_name", "document", "phone", "email"]
     list_editable = ["is_active"]
     actions = ["merge_customers_action"]
@@ -154,7 +154,7 @@ class CustomerAdmin(MergeAdminMixin, admin.ModelAdmin):
             },
         ),
         ("Contact", {"fields": ["email", "phone"]}),
-        ("Segmentation", {"fields": ["group", "notes"]}),
+        ("Segmentation", {"fields": ["price_tier", "notes"]}),
         (
             "System",
             {

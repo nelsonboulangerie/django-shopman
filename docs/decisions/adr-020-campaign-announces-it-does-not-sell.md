@@ -256,7 +256,7 @@ E `audience_rules` ganha chaves (identificadores em ingles, `help_text` em portu
 | Chave | Fonte | Pergunta |
 |---|---|---|
 | `customer_refs` | `Customer.ref` | "estes clientes" — o gestor escolhe na tela |
-| `groups` | `CustomerGroup.ref` | "so o grupo corporativo" |
+| `price_tiers` | `PriceTier.ref` | "so o atacado" |
 | `rfm_segments` | `CustomerInsight.rfm_segment` | "champions e loyal" |
 | `churn_risk_min` | `CustomerInsight.churn_risk` | win-back |
 | `bought_skus` / `bought_collections` + `bought_within_days` | `CustomerInsight.favorite_products` | **"interesse genuino de consumo especifico"** |

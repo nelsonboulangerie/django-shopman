@@ -203,7 +203,8 @@ export interface POSCustomerLookupProjection {
   name: string;
   phone: string;
   email: string;
-  loyalty_group: string;
+  /** A faixa de preço do cliente (`PriceTier.ref`) — é ela que decide o preço. */
+  price_tier: string;
   is_staff: boolean;
   default_address: SavedAddressProjection | null;
   saved_addresses: SavedAddressProjection[];
@@ -336,7 +337,7 @@ export interface POSTabPayload {
   customer_phone: string;
   customer_name: string;
   customer_ref: string;
-  customer_group?: string;
+  price_tier?: string;
   customer_tax_id: string;
   customer_email: string;
   fulfillment_type: "pickup" | "delivery";

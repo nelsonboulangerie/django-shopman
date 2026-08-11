@@ -6,7 +6,7 @@ from decimal import Decimal
 import pytest
 from django.contrib.auth.models import User
 from rest_framework.test import APIClient
-from shopman.guestman.models import Customer, CustomerAddress, CustomerGroup
+from shopman.guestman.models import Customer, CustomerAddress, PriceTier
 
 
 @pytest.fixture
@@ -30,47 +30,47 @@ def anon_client():
 
 
 @pytest.fixture
-def group_regular(db):
-    return CustomerGroup.objects.create(ref="regular", name="Regular", is_default=True, priority=0)
+def tier_regular(db):
+    return PriceTier.objects.create(ref="regular", name="Regular", is_default=True, priority=0)
 
 
 @pytest.fixture
-def group_vip(db):
-    return CustomerGroup.objects.create(ref="vip", name="VIP", listing_ref="vip", priority=10)
+def tier_vip(db):
+    return PriceTier.objects.create(ref="vip", name="VIP", listing_ref="vip", priority=10)
 
 
 @pytest.fixture
-def customer(db, group_regular):
+def customer(db, tier_regular):
     return Customer.objects.create(
         ref="CUST-001",
         first_name="John",
         last_name="Doe",
         email="john@example.com",
         phone="+5543999999999",
-        group=group_regular,
+        price_tier=tier_regular,
     )
 
 
 @pytest.fixture
-def customer_vip(db, group_vip):
+def customer_vip(db, tier_vip):
     return Customer.objects.create(
         ref="CUST-VIP",
         first_name="Jane",
         last_name="VIP",
         email="jane@example.com",
         phone="+5543888888888",
-        group=group_vip,
+        price_tier=tier_vip,
     )
 
 
 @pytest.fixture
-def customer_inactive(db, group_regular):
+def customer_inactive(db, tier_regular):
     return Customer.objects.create(
         ref="CUST-GONE",
         first_name="Gone",
         last_name="User",
         phone="+5543777777777",
-        group=group_regular,
+        price_tier=tier_regular,
         is_active=False,
     )
 
@@ -148,7 +148,7 @@ class TestCustomerList:
         assert "CUST-GONE" not in codes
 
     def test_filter_by_group(self, api_client, customer, customer_vip):
-        resp = api_client.get("/api/customers/customers/", {"group": "vip"})
+        resp = api_client.get("/api/customers/customers/", {"price_tier": "vip"})
         codes = {c["ref"] for c in resp.data["results"]}
         assert "CUST-VIP" in codes
         assert "CUST-001" not in codes
@@ -189,7 +189,7 @@ class TestCustomerList:
         cust = resp.data["results"][0]
         expected = {
             "ref", "uuid", "first_name", "last_name", "customer_type",
-            "phone", "phone_display", "email", "group_name", "listing_ref", "is_active",
+            "phone", "phone_display", "email", "price_tier_name", "listing_ref", "is_active",
         }
         assert set(cust.keys()) == expected
 
@@ -232,7 +232,7 @@ class TestCustomerDetail:
 class TestCustomerCreate:
     """POST /api/customers/customers/"""
 
-    def test_create_customer(self, api_client, group_regular):
+    def test_create_customer(self, api_client, tier_regular):
         resp = api_client.post(
             "/api/customers/customers/",
             {"first_name": "Maria", "phone": "+5543911111111"},
@@ -242,7 +242,7 @@ class TestCustomerCreate:
         assert resp.data["first_name"] == "Maria"
         assert resp.data["ref"].startswith("CUST-")
 
-    def test_create_with_all_fields(self, api_client, group_regular):
+    def test_create_with_all_fields(self, api_client, tier_regular):
         resp = api_client.post(
             "/api/customers/customers/",
             {
@@ -251,7 +251,7 @@ class TestCustomerCreate:
                 "phone": "+5543922222222",
                 "email": "carlos@example.com",
                 "customer_type": "individual",
-                "group_ref": "regular",
+                "price_tier_ref": "regular",
             },
             format="json",
         )
@@ -259,7 +259,7 @@ class TestCustomerCreate:
         assert resp.data["last_name"] == "Silva"
         assert resp.data["email"] == "carlos@example.com"
 
-    def test_create_generates_contact_point(self, api_client, group_regular):
+    def test_create_generates_contact_point(self, api_client, tier_regular):
         resp = api_client.post(
             "/api/customers/customers/",
             {"first_name": "Ana", "phone": "+5543933333333"},
@@ -271,7 +271,7 @@ class TestCustomerCreate:
         detail = api_client.get(f"/api/customers/customers/{ref}/")
         assert len(detail.data["contacts"]) >= 1
 
-    def test_create_requires_phone(self, api_client, group_regular):
+    def test_create_requires_phone(self, api_client, tier_regular):
         resp = api_client.post(
             "/api/customers/customers/",
             {"first_name": "NoPhone"},
@@ -279,7 +279,7 @@ class TestCustomerCreate:
         )
         assert resp.status_code == 400
 
-    def test_create_requires_first_name(self, api_client, group_regular):
+    def test_create_requires_first_name(self, api_client, tier_regular):
         resp = api_client.post(
             "/api/customers/customers/",
             {"phone": "+5543944444444"},
@@ -399,7 +399,7 @@ class TestLookup:
         resp = api_client.get("/api/customers/lookup/", {"phone": "+5543999999999"})
         expected = {
             "ref", "uuid", "first_name", "last_name", "customer_type",
-            "phone", "phone_display", "email", "group_name", "listing_ref", "is_active",
+            "phone", "phone_display", "email", "price_tier_name", "listing_ref", "is_active",
         }
         assert set(resp.data.keys()) == expected
 

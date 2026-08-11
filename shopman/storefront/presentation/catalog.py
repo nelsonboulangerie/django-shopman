@@ -245,7 +245,7 @@ def build_catalog(
 
     popular = popular_skus(limit=5)
     ft_hint, sub_hint = session_pricing_hints(request)
-    group_hint, segment_hint = customer_pricing_hints(request)
+    tier_hint, segment_hint = customer_pricing_hints(request)
     qty_in_cart_by_sku = _cart_qty_by_sku(request)
 
     # Flatten once for batching; remember grouping for sections.
@@ -275,7 +275,7 @@ def build_catalog(
         popular=popular,
         session_total_q=sub_hint,
         fulfillment_type=ft_hint,
-        customer_group=group_hint,
+        price_tier=tier_hint,
         customer_segment=segment_hint,
         low_stock_threshold=low_stock_threshold,
         qty_in_cart_by_sku=qty_in_cart_by_sku,
@@ -370,7 +370,7 @@ def build_catalog_items_for_skus(
     low_stock_threshold = Decimal(str(config.stock.low_stock_threshold))
     popular = popular_skus(limit=5)
     ft_hint, sub_hint = session_pricing_hints(request)
-    group_hint, segment_hint = customer_pricing_hints(request)
+    tier_hint, segment_hint = customer_pricing_hints(request)
     qty_in_cart_by_sku = _cart_qty_by_sku(request)
 
     return tuple(
@@ -380,7 +380,7 @@ def build_catalog_items_for_skus(
             popular=popular,
             session_total_q=sub_hint,
             fulfillment_type=ft_hint,
-            customer_group=group_hint,
+            price_tier=tier_hint,
             customer_segment=segment_hint,
             low_stock_threshold=low_stock_threshold,
             qty_in_cart_by_sku=qty_in_cart_by_sku,
@@ -398,7 +398,7 @@ def _build_items(
     popular: set[str],
     session_total_q: int,
     fulfillment_type: str,
-    customer_group: str = "",
+    price_tier: str = "",
     customer_segment: str = "",
     low_stock_threshold: Decimal,
     qty_in_cart_by_sku: dict[str, int] | None = None,
@@ -447,7 +447,7 @@ def _build_items(
                 "sku_collections": cols,
                 "session_total_q": session_total_q,
                 "fulfillment_type": fulfillment_type,
-                "customer_group": customer_group,
+                "price_tier": price_tier,
                 "customer_segment": customer_segment,
                 "active_promotions": active_promotions,
             },

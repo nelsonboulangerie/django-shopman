@@ -78,13 +78,15 @@ class Customer(models.Model):
     phone = models.CharField(_("telefone"), max_length=20, blank=True, db_index=True)
 
     # Segmentation
-    group = models.ForeignKey(
-        "guestman.CustomerGroup",
+    #: A faixa comercial: qual tabela de preço este cliente enxerga. UMA por cliente, e
+    #: ela precifica — não confundir com `tags`, que são muitas e não mexem em preço.
+    price_tier = models.ForeignKey(
+        "guestman.PriceTier",
         on_delete=models.PROTECT,
         related_name="customers",
         null=True,
         blank=True,
-        verbose_name=_("grupo"),
+        verbose_name=_("faixa de preço"),
     )
 
     # Status (is_active is appropriate - see spec 000 section 12.3)
@@ -144,9 +146,9 @@ class Customer(models.Model):
 
     @property
     def listing_ref(self) -> str | None:
-        """Applicable listing code (from customer group)."""
-        if self.group and self.group.listing_ref:
-            return self.group.listing_ref
+        """Applicable listing code (from the customer's price tier)."""
+        if self.price_tier and self.price_tier.listing_ref:
+            return self.price_tier.listing_ref
         return None
 
     @property
@@ -165,19 +167,19 @@ class Customer(models.Model):
         if self.email:
             self.email = self.email.lower().strip()
 
-        # Set default group (select_for_update prevents race between concurrent creates)
-        if not self.group_id:
+        # Set default price tier (select_for_update prevents race between concurrent creates)
+        if not self.price_tier_id:
             from django.db import transaction
-            from shopman.guestman.models import CustomerGroup
+            from shopman.guestman.models import PriceTier
 
             with transaction.atomic():
-                default_group = (
-                    CustomerGroup.objects.select_for_update()
+                default_tier = (
+                    PriceTier.objects.select_for_update()
                     .filter(is_default=True)
                     .first()
                 )
-                if default_group:
-                    self.group = default_group
+                if default_tier:
+                    self.price_tier = default_tier
 
         super().save(*args, **kwargs)
 

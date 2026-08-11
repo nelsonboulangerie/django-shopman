@@ -29,8 +29,8 @@ from shopman.guestman.models import (
     ContactPoint,
     Customer,
     CustomerAddress,
-    CustomerGroup,
     ExternalIdentity,
+    PriceTier,
 )
 
 pytestmark = pytest.mark.django_db
@@ -42,8 +42,8 @@ pytestmark = pytest.mark.django_db
 
 
 @pytest.fixture
-def group(db):
-    return CustomerGroup.objects.create(
+def tier(db):
+    return PriceTier.objects.create(
         ref="regular",
         name="Regular",
         is_default=True,
@@ -52,26 +52,26 @@ def group(db):
 
 
 @pytest.fixture
-def source(group):
+def source(tier):
     return Customer.objects.create(
         ref="SRC-001",
         first_name="Maria",
         last_name="Souza",
         phone="+5543911111111",
         email="maria@example.com",
-        group=group,
+        price_tier=tier,
     )
 
 
 @pytest.fixture
-def target(group):
+def target(tier):
     return Customer.objects.create(
         ref="TGT-001",
         first_name="Maria",
         last_name="Silva",
         phone="+5543922222222",
         email="maria.silva@example.com",
-        group=group,
+        price_tier=tier,
     )
 
 

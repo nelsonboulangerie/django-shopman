@@ -421,7 +421,7 @@ fica `pending_manual`.
 - **Sem A/B test** e sem otimizacao de horario alem do `preferred_hour` que ja existe.
 - **Sem sintese de imagem por IA**: so selecao e recorte de foto real.
 - **Sem `intent`** como politica comercial enquanto nao houver implementacao.
-- **Sem preco por grupo de cliente**: `CustomerGroup.listing_ref` fica declarado e inerte.
+- **Sem preco por faixa de cliente**: `PriceTier.listing_ref` fica declarado e inerte.
 - **Sem arvore booleana em `audience_rules`**: vocabulario fechado e plano.
 - **Sem granularidade sub-minuto**: F9 entrega segundos; abaixo disso e o gatilho T6 da ADR-003.
 - **Sem indice em `CustomerInsight.favorite_products`.** Medido em 2026-08-08: **13 clientes, 6

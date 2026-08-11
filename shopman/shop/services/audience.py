@@ -201,7 +201,7 @@ def resolve(rules: dict | None = None, *, sku: str = "") -> AudienceResult:
             Por evento (exigem ``sku``): ``favorites`` (bool), ``alerts`` (bool),
             ``bought_within_days`` (int).
 
-            Escolhidos pelo gestor: ``customer_refs``, ``groups``, ``rfm_segments``,
+            Escolhidos pelo gestor: ``customer_refs``, ``price_tiers``, ``rfm_segments``,
             ``churn_risk_min``, ``bought_skus``/``bought_collections`` (com
             ``bought_within_days``), ``birthday_today``.
 
@@ -244,8 +244,11 @@ def resolve(rules: dict | None = None, *, sku: str = "") -> AudienceResult:
             reason="chosen", count_key="chosen_count",
         )
 
-    if rules.get("groups"):
-        apply(_by_groups(rules.get("groups")), reason="groups", count_key="groups_count")
+    if rules.get("price_tiers"):
+        apply(
+            _by_price_tiers(rules.get("price_tiers")),
+            reason="price_tiers", count_key="price_tiers_count",
+        )
 
     if rules.get("rfm_segments"):
         apply(_by_rfm_segments(rules.get("rfm_segments")), reason="rfm", count_key="rfm_count")
@@ -466,21 +469,21 @@ def _chosen_customers(refs) -> list[Recipient]:
     return _recipients_for_refs(cleaned)
 
 
-def _by_groups(group_refs) -> list[Recipient]:
-    """"Só o grupo corporativo" — por ``CustomerGroup.ref``."""
-    cleaned = [str(r).strip() for r in (group_refs or []) if str(r).strip()]
+def _by_price_tiers(tier_refs) -> list[Recipient]:
+    """"Só o atacado" — por ``PriceTier.ref``."""
+    cleaned = [str(r).strip() for r in (tier_refs or []) if str(r).strip()]
     if not cleaned:
         return []
     try:
         from shopman.guestman.models import Customer
 
         refs = list(
-            Customer.objects.filter(group__ref__in=cleaned, is_active=True)
+            Customer.objects.filter(price_tier__ref__in=cleaned, is_active=True)
             .exclude(phone="")
             .values_list("ref", flat=True)
         )
     except Exception:
-        logger.warning("audience.groups_failed", exc_info=True)
+        logger.warning("audience.price_tiers_failed", exc_info=True)
         return []
     return _recipients_for_refs(refs)
 

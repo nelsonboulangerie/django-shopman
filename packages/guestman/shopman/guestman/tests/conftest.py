@@ -6,7 +6,7 @@ import pytest
 from shopman.guestman.models import (
     Customer,
     CustomerAddress,
-    CustomerGroup,
+    PriceTier,
 )
 
 # Import contrib models only if available
@@ -22,9 +22,9 @@ except ImportError:
 
 
 @pytest.fixture
-def group_regular(db):
-    """Create regular customer group."""
-    return CustomerGroup.objects.create(
+def tier_regular(db):
+    """Create regular customer tier."""
+    return PriceTier.objects.create(
         ref="regular",
         name="Regular",
         is_default=True,
@@ -33,9 +33,9 @@ def group_regular(db):
 
 
 @pytest.fixture
-def group_vip(db):
-    """Create VIP customer group."""
-    return CustomerGroup.objects.create(
+def tier_vip(db):
+    """Create VIP customer tier."""
+    return PriceTier.objects.create(
         ref="vip",
         name="VIP",
         listing_ref="vip",
@@ -44,7 +44,7 @@ def group_vip(db):
 
 
 @pytest.fixture
-def customer(db, group_regular):
+def customer(db, tier_regular):
     """Create a test customer."""
     return Customer.objects.create(
         ref="CUST-001",
@@ -52,12 +52,12 @@ def customer(db, group_regular):
         last_name="Doe",
         email="john@example.com",
         phone="11999999999",
-        group=group_regular,
+        price_tier=tier_regular,
     )
 
 
 @pytest.fixture
-def customer_vip(db, group_vip):
+def customer_vip(db, tier_vip):
     """Create a VIP customer."""
     return Customer.objects.create(
         ref="CUST-VIP",
@@ -65,7 +65,7 @@ def customer_vip(db, group_vip):
         last_name="VIP",
         email="jane@example.com",
         phone="11888888888",
-        group=group_vip,
+        price_tier=tier_vip,
     )
 
 

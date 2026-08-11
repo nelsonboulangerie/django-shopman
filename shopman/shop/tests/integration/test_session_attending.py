@@ -12,12 +12,12 @@ class TestOrderingCustomersIntegration(TestCase):
     """Integration between Ordering (orders) and Customers."""
 
     def setUp(self):
-        from shopman.guestman.models import Customer, CustomerGroup
+        from shopman.guestman.models import Customer, PriceTier
 
         from shopman.shop.models import Channel
 
-        # Create customer group
-        self.group = CustomerGroup.objects.create(
+        # Create customer tier
+        self.tier = PriceTier.objects.create(
             ref="regular",
             name="Regular",
             is_default=True,
@@ -28,7 +28,7 @@ class TestOrderingCustomersIntegration(TestCase):
             ref="INT-CUST-001",
             first_name="Integration",
             last_name="Test",
-            group=self.group,
+            price_tier=self.tier,
         )
 
         # Create channel
@@ -51,12 +51,12 @@ class TestOrderingCustomersIntegration(TestCase):
 
         assert session.data["customer_ref"] == "INT-CUST-001"
 
-    def test_customer_group_provides_listing_ref(self):
-        """Customer group can provide listing_ref for pricing."""
-        self.group.listing_ref = "atacado"
-        self.group.save()
+    def test_the_price_tier_provides_the_listing_ref(self):
+        """Customer tier can provide listing_ref for pricing."""
+        self.tier.listing_ref = "atacado"
+        self.tier.save()
 
-        assert self.customer.group.listing_ref == "atacado"
+        assert self.customer.price_tier.listing_ref == "atacado"
 
     def test_customer_lookup_by_ref(self):
         """Customer can be retrieved by ref for session association."""

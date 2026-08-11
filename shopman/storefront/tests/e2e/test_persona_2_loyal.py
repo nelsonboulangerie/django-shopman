@@ -8,8 +8,8 @@ Two customer-facing defects surfaced by this persona are now FIXED and kept here
 as regressions:
 
   * Group-scoped (loyalty/staff) coupons were accepted at apply-time but struck a
-    zero discount — the discount modifier read the customer's group from a pricing
-    context the storefront never populated. Fixed by binding the customer's group
+    zero discount — the discount modifier read the customer's tier from a pricing
+    context the storefront never populated. Fixed by binding the customer's tier
     to the cart session. See ``test_group_coupon_should_discount_for_member``.
   * A card checkout on the ``web`` channel raised HTTP 400 ``sealed_field_modified``
     (post_commit + card initiating payment on the sealed order instance). Fixed in
@@ -23,7 +23,7 @@ import json
 import pytest
 from django.test import override_settings
 from django.utils import timezone
-from shopman.guestman.models import Customer, CustomerGroup
+from shopman.guestman.models import Customer, PriceTier
 from shopman.orderman.models import Order
 
 from . import _journey as J
@@ -44,15 +44,15 @@ def _seed_catalog():
     J.seed_product(PAO, "Pão", 500, collection=collection, sort_order=2, stock_qty=20)
 
 
-def _loyal_customer(group_ref="fieis"):
-    group = CustomerGroup.objects.create(ref=group_ref, name="Fiéis", priority=5)
+def _loyal_customer(price_tier_ref="fieis"):
+    tier = PriceTier.objects.create(ref=price_tier_ref, name="Fiéis", priority=5)
     return Customer.objects.create(
         ref="CUST-LOYAL-1",
         first_name="Maria",
         last_name="Fiel",
         phone=J.DEFAULT_PHONE,
         email="maria@example.com",
-        group=group,
+        price_tier=tier,
     )
 
 
@@ -146,9 +146,9 @@ def test_open_loyalty_coupon_applies_discount(client):
 
 
 def test_group_gated_coupon_is_accepted_for_member(client):
-    """A coupon scoped to the loyalty group passes the eligibility gate."""
+    """A coupon scoped to the loyalty tier passes the eligibility gate."""
     _seed_catalog()
-    customer = _loyal_customer(group_ref="fieis")
+    customer = _loyal_customer(price_tier_ref="fieis")
     J.authenticate(client, customer)
     J.seed_coupon("FIEL10", kind="percent", value=10, customer_segments=["fieis"], name="Fidelidade")
 
@@ -163,7 +163,7 @@ def test_group_gated_coupon_is_accepted_for_member(client):
 
 def test_group_coupon_should_discount_for_member(client):
     _seed_catalog()
-    customer = _loyal_customer(group_ref="fieis")
+    customer = _loyal_customer(price_tier_ref="fieis")
     J.authenticate(client, customer)
     J.seed_coupon("FIEL10", kind="percent", value=10, customer_segments=["fieis"], name="Fidelidade")
 
@@ -199,7 +199,7 @@ def test_card_checkout_on_web_succeeds(client):
 
 
 def test_group_gated_coupon_rejected_for_anonymous(client):
-    """A group-scoped coupon is refused when there is no eligible customer."""
+    """A tier-scoped coupon is refused when there is no eligible customer."""
     _seed_catalog()
     J.seed_coupon("FIEL10", kind="percent", value=10, customer_segments=["fieis"], name="Fidelidade")
 

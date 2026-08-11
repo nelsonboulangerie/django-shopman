@@ -121,7 +121,7 @@ class DiscountStackingAuditTests(TestCase):
         # Link a staff customer so the employee discount (20%) fires.
         ModifyService.modify_session(
             session_key=key, channel_ref="web",
-            ops=[{"op": "set_data", "path": "customer", "value": {"group": "staff"}}],
+            ops=[{"op": "set_data", "path": "customer", "value": {"price_tier": "staff"}}],
         )
         session = ModifyService.modify_session(
             session_key=key, channel_ref="web",
@@ -176,7 +176,7 @@ class DiscountStackingAuditTests(TestCase):
         # Staff customer + D-1 line + happy hour window open — all three "apply".
         ModifyService.modify_session(
             session_key=key, channel_ref="web",
-            ops=[{"op": "set_data", "path": "customer", "value": {"group": "staff"}}],
+            ops=[{"op": "set_data", "path": "customer", "value": {"price_tier": "staff"}}],
         )
         session = ModifyService.modify_session(
             session_key=key, channel_ref="web",

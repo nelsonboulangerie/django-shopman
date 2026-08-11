@@ -7,7 +7,7 @@ import logging
 from dataclasses import dataclass
 
 from django.db import transaction
-from shopman.guestman.models import Customer, CustomerGroup
+from shopman.guestman.models import Customer, PriceTier
 from shopman.guestman.signals import customer_created, customer_updated
 
 logger = logging.getLogger(__name__)
@@ -21,7 +21,7 @@ class CustomerValidation:
     ref: str
     customer_id: int | None = None
     name: str | None = None
-    group_ref: str | None = None
+    price_tier_ref: str | None = None
     listing_ref: str | None = None
     default_address: dict | None = None
     error_code: str | None = None
@@ -31,7 +31,7 @@ class CustomerValidation:
 def get(ref: str) -> Customer | None:
     """Get customer by unique ref."""
     try:
-        return Customer.objects.select_related("group").get(ref=ref, is_active=True)
+        return Customer.objects.select_related("price_tier").get(ref=ref, is_active=True)
     except Customer.DoesNotExist:
         return None
 
@@ -39,7 +39,7 @@ def get(ref: str) -> Customer | None:
 def get_by_uuid(uuid: str) -> Customer | None:
     """Get customer by UUID."""
     try:
-        return Customer.objects.select_related("group").get(uuid=uuid, is_active=True)
+        return Customer.objects.select_related("price_tier").get(uuid=uuid, is_active=True)
     except Customer.DoesNotExist:
         return None
 
@@ -48,7 +48,7 @@ def get_by_document(document: str) -> Customer | None:
     """Get customer by document (CPF/CNPJ)."""
     doc_normalized = "".join(filter(str.isdigit, document))
     try:
-        return Customer.objects.select_related("group").get(
+        return Customer.objects.select_related("price_tier").get(
             document=doc_normalized, is_active=True
         )
     except Customer.DoesNotExist:
@@ -65,7 +65,7 @@ def get_by_phone(phone: str) -> Customer | None:
         return None
 
     contact_point = (
-        ContactPoint.objects.select_related("customer", "customer__group")
+        ContactPoint.objects.select_related("customer", "customer__price_tier")
         .filter(
             value_normalized=phone_normalized,
             type__in=[ContactPoint.Type.PHONE, ContactPoint.Type.WHATSAPP],
@@ -78,7 +78,7 @@ def get_by_phone(phone: str) -> Customer | None:
         return contact_point.customer
 
     try:
-        return Customer.objects.select_related("group").get(
+        return Customer.objects.select_related("price_tier").get(
             phone=phone_normalized, is_active=True
         )
     except Customer.DoesNotExist:
@@ -98,7 +98,7 @@ def get_by_email(email: str) -> Customer | None:
         return None
 
     contact_point = (
-        ContactPoint.objects.select_related("customer", "customer__group")
+        ContactPoint.objects.select_related("customer", "customer__price_tier")
         .filter(
             type=ContactPoint.Type.EMAIL,
             value_normalized=email_normalized,
@@ -111,7 +111,7 @@ def get_by_email(email: str) -> Customer | None:
         return contact_point.customer
 
     try:
-        return Customer.objects.select_related("group").get(
+        return Customer.objects.select_related("price_tier").get(
             email__iexact=email_normalized, is_active=True
         )
     except Customer.DoesNotExist:
@@ -119,7 +119,7 @@ def get_by_email(email: str) -> Customer | None:
     except Customer.MultipleObjectsReturned:
         return Customer.objects.filter(
             email__iexact=email_normalized, is_active=True
-        ).select_related("group").order_by("-updated_at").first()
+        ).select_related("price_tier").order_by("-updated_at").first()
 
 
 def validate(ref: str) -> CustomerValidation:
@@ -153,7 +153,7 @@ def validate(ref: str) -> CustomerValidation:
         ref=ref,
         customer_id=cust.id,
         name=cust.name,
-        group_ref=cust.group.ref if cust.group else None,
+        price_tier_ref=cust.price_tier.ref if cust.price_tier else None,
         listing_ref=cust.listing_ref,
         default_address=addr_dict,
     )
@@ -183,12 +183,12 @@ def search(query: str, limit: int = 20, offset: int = 0) -> list[Customer]:
             | Q(email__icontains=query)
         )
 
-    return list(qs.select_related("group").order_by("ref")[offset:offset + limit])
+    return list(qs.select_related("price_tier").order_by("ref")[offset:offset + limit])
 
 
-def groups() -> list[CustomerGroup]:
-    """List all customer groups."""
-    return list(CustomerGroup.objects.all())
+def price_tiers() -> list[PriceTier]:
+    """List all price tiers."""
+    return list(PriceTier.objects.all())
 
 
 def create(
@@ -199,15 +199,15 @@ def create(
     document: str = "",
     email: str = "",
     phone: str = "",
-    group_ref: str | None = None,
+    price_tier_ref: str | None = None,
     **kwargs,
 ) -> Customer:
     """Create a new customer."""
-    group = None
-    if group_ref:
+    price_tier = None
+    if price_tier_ref:
         try:
-            group = CustomerGroup.objects.get(ref=group_ref)
-        except CustomerGroup.DoesNotExist:
+            price_tier = PriceTier.objects.get(ref=price_tier_ref)
+        except PriceTier.DoesNotExist:
             pass
 
     with transaction.atomic():
@@ -219,7 +219,7 @@ def create(
             document="".join(filter(str.isdigit, document)),
             email=email,
             phone=phone,
-            group=group,
+            price_tier=price_tier,
             **kwargs,
         )
 
@@ -235,7 +235,7 @@ UPDATABLE_FIELDS = {
     "birthday",
     "email",
     "phone",
-    "group",
+    "price_tier",
     "notes",
     "metadata",
     "is_active",

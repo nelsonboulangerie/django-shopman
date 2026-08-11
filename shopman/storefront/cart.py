@@ -54,11 +54,11 @@ class CartService:
 
     @staticmethod
     def _customer_link(request: HttpRequest) -> dict | None:
-        """Return ``{"ref", "group"}`` for the authenticated viewer, or ``None``.
+        """Return ``{"ref", "price_tier"}`` for the authenticated viewer, or ``None``.
 
         Used to persist the customer's identity onto the cart session so a
-        promotion/coupon gated by customer group/segment discounts on every
-        reprice — the discount modifier resolves the group/segment from the
+        promotion/coupon gated by customer tier/segment discounts on every
+        reprice — the discount modifier resolves the tier/segment from the
         session, not from the request.
         """
         from shopman.storefront.identity import get_authenticated_customer
@@ -74,7 +74,9 @@ class CartService:
             return None
         return {
             "ref": getattr(customer, "ref", "") or "",
-            "group": customer.group.ref if getattr(customer, "group_id", None) else "",
+            "price_tier": (
+                customer.price_tier.ref if getattr(customer, "price_tier_id", None) else ""
+            ),
         }
 
     @staticmethod
@@ -97,8 +99,8 @@ class CartService:
         merged = dict(existing)
         if payload["ref"]:
             merged["ref"] = payload["ref"]
-        if payload["group"]:
-            merged["group"] = payload["group"]
+        if payload["price_tier"]:
+            merged["price_tier"] = payload["price_tier"]
         if merged == existing:
             return False
         data = dict(session.data or {})
@@ -141,7 +143,7 @@ class CartService:
         and adopts an additional hold tagged with the same session_key.
         """
         # Link the customer to an EXISTING cart before the add reprices, so a
-        # segment/group-gated promo already discounts this line. For a brand-new
+        # segment/tier-gated promo already discounts this line. For a brand-new
         # cart (no key yet) the session doesn't exist to write to; we link right
         # after and reprice once below.
         existing_key = CartService._get_session_key(request)

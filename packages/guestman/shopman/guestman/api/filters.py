@@ -5,7 +5,7 @@ from shopman.guestman.models import Customer
 
 
 class CustomerFilter(filters.FilterSet):
-    group = filters.CharFilter(field_name="group__ref")
+    price_tier = filters.CharFilter(field_name="price_tier__ref")
 
     class Meta:
         model = Customer

@@ -2,20 +2,20 @@ from __future__ import annotations
 
 from django.test import TestCase
 from shopman.guestman.adapters.orderman import OrdermanOrderHistoryBackend
-from shopman.guestman.models import Customer, CustomerGroup
+from shopman.guestman.models import Customer, PriceTier
 from shopman.orderman.models import Order
 
 
 class GuestmanOrderHistoryTests(TestCase):
     def setUp(self) -> None:
         super().setUp()
-        group = CustomerGroup.objects.create(ref="regular", name="Regular", is_default=True, priority=0)
+        tier = PriceTier.objects.create(ref="regular", name="Regular", is_default=True, priority=0)
         self.customer = Customer.objects.create(
             ref="CUST-HIST-001",
             first_name="Ana",
             last_name="Silva",
             phone="+5543999990001",
-            group=group,
+            price_tier=tier,
         )
         self.backend = OrdermanOrderHistoryBackend()
 

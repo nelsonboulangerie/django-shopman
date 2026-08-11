@@ -147,7 +147,7 @@ export function audienceRulesSummary(
   if (rules?.favorites) parts.push("favoritos");
   if (rules?.alerts) parts.push("alertas");
   if (rules?.bought_within_days) parts.push(`recompra em ${rules.bought_within_days} dias`);
-  if (rules?.groups?.length) parts.push(named(rules.groups, labels.groups));
+  if (rules?.price_tiers?.length) parts.push(named(rules.price_tiers, labels.priceTiers));
   if (rules?.rfm_segments?.length) parts.push(named(rules.rfm_segments, labels.segments));
   if (rules?.churn_risk_min) parts.push("quem está sumindo");
   if (rules?.birthday_today) parts.push("aniversariantes de hoje");
@@ -161,9 +161,9 @@ export function audienceRulesSummary(
   return prefix + parts.join(", ") + suffix;
 }
 
-/** Rótulos vindos do servidor. Grupo e segmento têm dono no guestman
- *  (`CustomerGroup.name`, `RFM_SEGMENTS`), e a projection já os entrega em
- *  `options.customer_groups` / `options.rfm_segments`.
+/** Rótulos vindos do servidor. Faixa de preço e segmento têm dono no guestman
+ *  (`PriceTier.name`, `RFM_SEGMENTS`), e a projection já os entrega em
+ *  `options.price_tiers` / `options.rfm_segments`.
  *
  *  ⚠️ Traduzi esses refs à mão aqui por um instante, e o mapa saiu com quatro segmentos
  *  que este sistema não tem (`potential_loyalist`, `new_customer`, `cant_lose`,
@@ -171,7 +171,7 @@ export function audienceRulesSummary(
  *  demonstração do risco: cópia de vocabulário não avisa quando divergir.
  */
 export type AudienceLabels = {
-  groups?: Record<string, string>;
+  priceTiers?: Record<string, string>;
   segments?: Record<string, string>;
 };
 

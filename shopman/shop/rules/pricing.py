@@ -31,16 +31,16 @@ class D1Rule(BaseRule):
 
 
 class EmployeeRule(BaseRule):
-    """Desconto para funcionários (customer_group == staff)."""
+    """Desconto para funcionários (faixa de preço == staff)."""
 
     code = "shop.employee_discount"
     label = "Desconto Funcionário"
     rule_type = "modifier"
-    default_params = {"discount_percent": 20, "group": "staff"}
+    default_params = {"discount_percent": 20, "price_tier": "staff"}
 
-    def __init__(self, *, discount_percent: int = 20, group: str = "staff"):
+    def __init__(self, *, discount_percent: int = 20, price_tier: str = "staff"):
         self.discount_percent = discount_percent
-        self.group = group
+        self.price_tier = price_tier
 
 
 class HappyHourRule(BaseRule):

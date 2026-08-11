@@ -24,10 +24,10 @@ def get_authenticated_customer(request):
 
 
 def customer_pricing_hints(request) -> tuple[str, str]:
-    """Return ``(customer_group, customer_segment)`` for the authenticated viewer.
+    """Return ``(price_tier, customer_segment)`` for the authenticated viewer.
 
     Feeds the pricing context so a promotion gated by ``customer_segments``
-    (loyalty group or RFM segment) shows on the menu/PDP for an eligible member —
+    (price tier or RFM segment) shows on the menu/PDP for an eligible member —
     the same two axes ``DiscountModifier._matches`` checks in the cart. Returns
     ``("", "")`` for an anonymous viewer or on any lookup failure (open to all).
     """
@@ -42,12 +42,12 @@ def customer_pricing_hints(request) -> tuple[str, str]:
         customer = get_authenticated_customer(request)
         if customer is None:
             return "", ""
-        group = customer.group.ref if getattr(customer, "group_id", None) else ""
+        tier = customer.price_tier.ref if getattr(customer, "price_tier_id", None) else ""
         try:
             segment = customer.insight.rfm_segment or ""
         except ObjectDoesNotExist:
-            segment = ""  # insight (OneToOne) not computed yet — match by group only
-        return group, segment
+            segment = ""  # insight (OneToOne) not computed yet — match by tier only
+        return tier, segment
     except Exception:
         logger.warning("customer_pricing_hints failed", exc_info=True)
         return "", ""

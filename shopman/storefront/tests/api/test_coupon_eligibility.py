@@ -14,7 +14,7 @@ from decimal import Decimal
 import pytest
 from django.test import Client
 from django.utils import timezone
-from shopman.guestman.models import Customer, CustomerGroup
+from shopman.guestman.models import Customer, PriceTier
 from shopman.offerman.models import Listing, ListingItem, Product
 
 from shopman.shop.models import Channel, Coupon, Promotion, Shop
@@ -96,9 +96,9 @@ def test_anonymous_customer_cannot_apply_staff_coupon(client: Client, funcionari
 
 
 def test_non_staff_customer_cannot_apply_staff_coupon(client: Client, funcionario_coupon):
-    varejo = CustomerGroup.objects.create(ref="varejo", name="Varejo")
+    varejo = PriceTier.objects.create(ref="varejo", name="Varejo")
     customer = Customer.objects.create(
-        ref="CUS-VAREJO-01", first_name="Cliente", phone="+5543988887777", group=varejo
+        ref="CUS-VAREJO-01", first_name="Cliente", phone="+5543988887777", price_tier=varejo
     )
     _login_as_customer(client, customer)
     _fill_cart(client)
@@ -108,9 +108,9 @@ def test_non_staff_customer_cannot_apply_staff_coupon(client: Client, funcionari
 
 
 def test_staff_customer_can_apply_staff_coupon(client: Client, funcionario_coupon):
-    staff = CustomerGroup.objects.create(ref="staff", name="Equipe")
+    staff = PriceTier.objects.create(ref="staff", name="Equipe")
     customer = Customer.objects.create(
-        ref="CUS-STAFF-01", first_name="Funcionário", phone="+5543988886666", group=staff
+        ref="CUS-STAFF-01", first_name="Funcionário", phone="+5543988886666", price_tier=staff
     )
     _login_as_customer(client, customer)
     _fill_cart(client)
