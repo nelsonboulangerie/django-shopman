@@ -226,9 +226,17 @@ def send(recipient: str, template: str, context: dict | None = None, **config) -
     flow_ns = _load_db_flow_ns(template) or mc_config.get("flow_map", {}).get(template)
 
     if flow_ns:
+        # ⚠️ O flow do ManyChat NÃO lê o `flow_token`: o texto vive lá dentro, e as
+        # variáveis dele saem dos CAMPOS PERSONALIZADOS do assinante. Sem este passo, um
+        # template aprovado que diga "O {{product_name}} que você pediu chegou" sai com o
+        # nome do produto em branco — e é exatamente o que acontecia, em silêncio, nos
+        # dois caminhos que usam flow (alerta de estoque e anúncio de campanha).
+        _push_custom_fields(subscriber_id, ctx, mc_config)
         payload = {
             "subscriber_id": subscriber_id,
             "flow_ns": flow_ns,
+            # Mantido por rastreabilidade do lado do ManyChat; NÃO é a fonte das
+            # variáveis do flow (ver acima).
             "flow_token": ctx,
         }
         result = _api_call("/sending/sendFlow", payload, mc_config)
@@ -246,6 +254,50 @@ def send(recipient: str, template: str, context: dict | None = None, **config) -
     if not result["success"]:
         logger.warning("ManyChat send failed: %s", result.get("error"))
     return result["success"]
+
+
+#: Chaves que NÃO viram campo personalizado: identificadores internos e coisas que a
+#: mensagem nunca deve exibir. Lista explícita porque empurrar contexto inteiro para o
+#: perfil do cliente no ManyChat seria vazar estado interno para uma ferramenta de
+#: marketing.
+_FIELD_DENYLIST = frozenset({
+    "session_key", "sku", "subscriber_id", "recipient", "phone",
+    "customer_ref", "customer_uuid", "hold_ids",
+})
+
+
+def _push_custom_fields(subscriber_id: str, ctx: dict, config: dict) -> int:
+    """Gravar os valores do contexto como campos personalizados do assinante.
+
+    É o que faz a variável do template aprovado resolver. Falha de um campo **não**
+    interrompe o envio: um alerta de fornada é tempo-sensível, e mensagem com um pedaço
+    faltando ainda avisa o cliente — mensagem nenhuma não avisa. Mas cada falha vai para
+    o log, porque campo que não existe no ManyChat é configuração pendente, não ruído.
+
+    O campo tem de existir no ManyChat com o MESMO nome. Nomes em inglês, como o resto
+    do vocabulário de integração.
+    """
+    pushed = 0
+    for name, value in (ctx or {}).items():
+        if name in _FIELD_DENYLIST or not isinstance(value, (str, int, float)):
+            continue
+        text = str(value).strip()
+        if not text:
+            continue
+        result = _api_call(
+            "/subscriber/setCustomFieldByName",
+            {"subscriber_id": subscriber_id, "field_name": name, "field_value": text},
+            config,
+        )
+        if result.get("success"):
+            pushed += 1
+        else:
+            logger.warning(
+                "ManyChat custom field não gravado: %s (%s). O template vai renderizar "
+                "sem ele — crie o campo com este nome no ManyChat.",
+                name, result.get("error"),
+            )
+    return pushed
 
 
 def is_available(recipient: str | None = None, **config) -> bool:
