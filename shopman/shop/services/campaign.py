@@ -567,10 +567,11 @@ def resolve_variables(context: dict, *, promotion_ref: str = "") -> dict:
 
     return {
         "product_name": getattr(product, "name", "") or sku,
-        "sku": sku,
-        #: Mesmo valor do `sku`, com o nome que a MENSAGEM usa: é o sufixo que o
-        #: template aprovado gruda no fim do link do botão. `sku` é o nome interno e não
-        #: vira campo no ManyChat; este vira.
+        #: ⚠️ Havia `sku` E `product_sku` aqui, com o MESMO valor e as duas anunciadas ao
+        #: gestor — duas formas de escrever a mesma coisa num vocabulário que existe para
+        #: ser pequeno. `sku` saiu: `product_sku` é o nome que a mensagem usa (o sufixo que
+        #: o template gruda no fim do link do botão) e o único que vira campo no ManyChat.
+        #: O `sku` interno continua vivo onde é interno, no `trigger_context`.
         "product_sku": sku,
         "price": _price(product),
         "hashtags": " ".join(f"#{tag}" for tag in hashtags),
@@ -600,7 +601,7 @@ def resolve_variables(context: dict, *, promotion_ref: str = "") -> dict:
 def available_variables() -> tuple[str, ...]:
     """Nomes válidos num template — documentação viva para o Admin."""
     return (
-        "product_name", "product_sku", "sku", "price", "hashtags", "link",
+        "product_name", "product_sku", "price", "hashtags", "link",
         "available_qty", "product_image_url", "time", "store_name", "quality",
         "customer_name",
     )

@@ -272,3 +272,28 @@ def test_without_a_store_base_a_relative_photo_is_dropped(db, settings):
     )
 
     assert product_image_url("REL-2") == ""
+
+
+def test_no_two_variables_carry_the_same_value(db):
+    """⚠️ Havia `sku` E `product_sku`, mesmo valor, as duas anunciadas ao gestor.
+
+    O vocabulário existe para ser pequeno: duas formas de escrever a mesma coisa garantem
+    que metade dos modelos use uma e metade a outra, e que um dia alguém "conserte" só uma.
+    """
+    from shopman.offerman.models import Product
+
+    from shopman.shop.services.campaign import available_variables, resolve_variables
+
+    Product.objects.create(
+        sku="DUP-1", name="Pão", base_price_q=500, is_published=True, is_sellable=True
+    )
+    resolved = resolve_variables({"sku": "DUP-1"})
+
+    by_value: dict[str, list[str]] = {}
+    for name in available_variables():
+        value = str(resolved.get(name) or "")
+        if value:
+            by_value.setdefault(value, []).append(name)
+
+    repeated = {value: names for value, names in by_value.items() if len(names) > 1}
+    assert not repeated, f"variáveis diferentes com o mesmo valor: {repeated}"
