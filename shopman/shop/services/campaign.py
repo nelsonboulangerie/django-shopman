@@ -397,20 +397,22 @@ def resolve_variables(context: dict, *, promotion_ref: str = "") -> dict:
     return {
         "product_name": getattr(product, "name", "") or sku,
         "sku": sku,
-        #: Mesmo valor do `sku`, com o nome que a MENSAGEM usa: é o sufixo do link do
-        #: botão no template aprovado. `sku` é o nome interno e não vira campo no
-        #: ManyChat; este vira.
-        "product_ref": sku,
+        #: Mesmo valor do `sku`, com o nome que a MENSAGEM usa: é o sufixo que o
+        #: template aprovado gruda no fim do link do botão. `sku` é o nome interno e não
+        #: vira campo no ManyChat; este vira.
+        "product_sku": sku,
         "price": _price(product),
         "hashtags": " ".join(f"#{tag}" for tag in hashtags),
         "hashtags_list": hashtags,
         "link": _offer_link(promotion_ref) if promotion_ref else _product_link(sku),
-        #: Quantas há AGORA. O nome é o mesmo do caminho de alerta de estoque, de
-        #: propósito: um template genérico serve os dois, e dois nomes para a mesma
-        #: pergunta garantiriam que um deles renderizasse vazio.
+        #: Quantas há AGORA — a única contagem que a mensagem conhece. O nome é o mesmo
+        #: do caminho de alerta de estoque, de propósito: um template genérico serve os
+        #: dois, e dois nomes para a mesma pergunta garantiriam que um renderizasse vazio.
+        #:
+        #: ⚠️ Não existe variável de "quantas saíram na fornada", e é decisão do dono:
+        #: essa contagem não interessa a quem recebe, e oferecê-la só criaria a chance de
+        #: anunciar um número que já não é verdade.
         "available_qty": str(context.get("available_qty", "") or ""),
-        #: Quantas saíram na fornada — outra coisa, e por isso outro nome.
-        "quantity": str(context.get("quantity", "") or ""),
         "time": timezone.localtime().strftime("%Hh%M"),
         "store_name": _brand_name(),
         "quality": str(context.get("quality", "") or ""),
@@ -420,9 +422,8 @@ def resolve_variables(context: dict, *, promotion_ref: str = "") -> dict:
 def available_variables() -> tuple[str, ...]:
     """Nomes válidos num template — documentação viva para o Admin."""
     return (
-        "product_name", "product_ref", "sku", "price", "hashtags", "link",
-        "available_qty", "quantity", "time", "store_name", "quality",
-        "customer_name",
+        "product_name", "product_sku", "sku", "price", "hashtags", "link",
+        "available_qty", "time", "store_name", "quality", "customer_name",
     )
 
 

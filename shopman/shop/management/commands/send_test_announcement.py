@@ -48,10 +48,15 @@ diz na cara quando ela está fechada.
 
 from __future__ import annotations
 
+import logging
+
 from django.core.management.base import BaseCommand, CommandError
 
 #: Corpo padrão quando não se aponta um anúncio real.
 DEFAULT_BODY = "Teste do Shopman: se você recebeu isto, o transporte está de pé."
+
+
+logger = logging.getLogger(__name__)
 
 
 class Command(BaseCommand):
@@ -86,10 +91,65 @@ class Command(BaseCommand):
             help="Texto avulso, quando você quer escolher a mensagem na mão.",
         )
         parser.add_argument(
+            "--sku",
+            default="",
+            help="SKU real para preencher as variáveis do template (nome, quantidade, "
+                 "link do botão). Sem ele o teste não prova nada sobre um template "
+                 "aprovado, porque as variáveis chegariam vazias.",
+        )
+        parser.add_argument(
+            "--name",
+            default="",
+            help="Primeiro nome de quem recebe, para o {{customer_name}} do template.",
+        )
+        parser.add_argument(
             "--send",
             action="store_true",
             help="Envia DE VERDADE. Sem esta flag o comando só mostra o que sairia.",
         )
+
+    def _template_fields(self, options) -> dict:
+        """As variáveis que o template aprovado espera, com valores REAIS quando dá.
+
+        `available_qty` sai da disponibilidade de verdade: um teste com número inventado
+        validaria a fiação e mentiria sobre o conteúdo.
+        """
+        sku = str(options.get("sku") or "").strip()
+        fields = {
+            "customer_name": str(options.get("name") or "").strip(),
+            "product_name": "",
+            "product_sku": sku,
+            "available_qty": "",
+        }
+        if not sku:
+            return fields
+
+        try:
+            from shopman.shop.projections import catalog_context
+
+            product = catalog_context.get_product(sku)
+            fields["product_name"] = getattr(product, "name", "") or sku
+        except Exception:
+            logger.warning("send_test: nome do produto não resolveu sku=%s", sku, exc_info=True)
+            fields["product_name"] = sku
+
+        try:
+            from shopman.shop.handlers.campaign import _available_qty
+
+            qty = _available_qty(sku)
+            fields["available_qty"] = str(qty) if qty else ""
+        except Exception:
+            # Fica vazio: o teste mostra "(vazio)" e o gestor vê que a mensagem sairia
+            # sem número, em vez de sair com um número inventado.
+            logger.warning("send_test: quantidade não resolveu sku=%s", sku, exc_info=True)
+
+        try:
+            from shopman.shop.services import storefront_links
+
+            fields["link"] = storefront_links.product_url(sku)
+        except Exception:
+            logger.warning("send_test: link do produto não resolveu sku=%s", sku, exc_info=True)
+        return fields
 
     def handle(self, *args, **options):
         from shopman.shop.adapters import _external
@@ -106,6 +166,9 @@ class Command(BaseCommand):
         channel = options["channel"]
         body, source = self._resolve_body(options)
         link = ""
+        # As MESMAS chaves que o caminho real manda. Um teste que mande menos prova só
+        # que o transporte responde — não que o template aprovado renderiza.
+        fields = self._template_fields(options)
 
         announcement_pk = options["announcement"]
         if announcement_pk:
@@ -134,6 +197,10 @@ class Command(BaseCommand):
         self.stdout.write(f"  texto ({source}): {body}")
         if link:
             self.stdout.write(f"  link       : {link}")
+        self.stdout.write("  variáveis do template (viram campos no ManyChat):")
+        for key, value in fields.items():
+            shown = value if value else "(vazio — o template renderiza sem)"
+            self.stdout.write(f"    {key} = {shown}")
 
         # A trava de DEBUG é o motivo mais comum de "mandei e não chegou". Dizer antes.
         if _external.inert(f"SHOPMAN_{channel.upper()}_ALLOW_IN_DEBUG"):
@@ -161,7 +228,12 @@ class Command(BaseCommand):
         result = notify(
             event="announcement_published",
             recipient=phone,
-            context={"body": body, "action_url": link, "cta": "Garanta o seu:"},
+            context={
+                "body": body,
+                "action_url": link or fields.get("link", ""),
+                "cta": "Garanta o seu:",
+                **fields,
+            },
             backend=channel,
         )
 

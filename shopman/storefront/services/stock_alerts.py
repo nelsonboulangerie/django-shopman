@@ -220,9 +220,9 @@ def _deliver(
             recipient=recipient,
             context={
                 "sku": sub.sku,
-                # Nome que a mensagem usa (sufixo do link do botão). Ver o gêmeo em
-                # `handlers/_stock_receivers.py`.
-                "product_ref": sub.sku,
+                # Nome que a mensagem usa: o sufixo que o template gruda no fim do link
+                # do botão. Ver o gêmeo em `handlers/_stock_receivers.py`.
+                "product_sku": sub.sku,
                 "product_name": product_name,
                 "customer_name": _first_name(sub),
                 "product_url": storefront_links.product_url(sub.sku),

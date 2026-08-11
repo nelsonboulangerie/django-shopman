@@ -159,7 +159,7 @@ def test_an_unknown_quantity_says_nothing(calls, with_flow):
 #: O que a mensagem de "produto disponível" precisa saber, venha de onde vier. São os
 #: campos que o gestor cria no ManyChat — se um caminho parar de mandar um deles, o
 #: template renderiza vazio para metade das pessoas.
-SHARED_FIELDS = {"customer_name", "product_name", "product_ref", "available_qty"}
+SHARED_FIELDS = {"customer_name", "product_name", "product_sku", "available_qty"}
 
 
 def test_both_paths_speak_the_same_vocabulary():
@@ -168,7 +168,7 @@ def test_both_paths_speak_the_same_vocabulary():
 
     Por isso o template é genérico — e um template genérico só funciona se os dois
     caminhos que o alimentam falarem igual. Já falaram diferente: campanha mandava
-    `nome`/`stock`/`sku`, alerta mandava `customer_name`/`available_qty`/`product_ref`.
+    `nome`/`stock`/`sku`, alerta mandava `customer_name`/`available_qty`/`product_sku`.
     """
     from shopman.shop.services.campaign import available_variables
 
@@ -191,7 +191,7 @@ def test_the_campaign_path_sends_the_shared_fields(db, monkeypatch):
     content = {
         "body": "Saiu do forno",
         "variables": {
-            "product_name": "Baguete", "product_ref": "BAGUETE", "available_qty": "12",
+            "product_name": "Baguete", "product_sku": "BAGUETE", "available_qty": "12",
         },
     }
     announcement = type(

@@ -311,9 +311,11 @@ class AnnouncementTemplate(models.Model):
 | `{{hashtags}}` | `metadata["social"]["hashtags"]` | "#croissant #fresquinho" |
 | `{{link}}` | Deep link storefront | `https://nelson.boulangerie/produto/croissant-tradicional` |
 | `{{available_qty}}` | `Quant.available` — quantas há AGORA | "5" |
-| `{{quantity}}` | quantas saíram na fornada | "20" |
 | `{{customer_name}}` | primeiro nome de quem recebe | "Pablo" |
-| `{{product_ref}}` | `sku`, como sufixo do link do botão | "BAGUETE" |
+| `{{product_sku}}` | `sku`, sufixo que o botão gruda no fim do link | "BAGUETE" |
+
+⚠️ Não existe variável de "quantas saíram na fornada": essa contagem não interessa a quem
+recebe, e oferecê-la só criaria a chance de anunciar um número que já não é verdade.
 | `{{time}}` | `now()` formatado | "10h15" |
 | `{{store_name}}` | `Shop.brand_name` | "Nelson Boulangerie" |
 | `{{quality}}` | `WorkOrder.meta["quality"]` | "excelente" |
