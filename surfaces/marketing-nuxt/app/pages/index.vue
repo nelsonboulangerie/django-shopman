@@ -82,9 +82,21 @@ useHead({ title: "Painel · Marketing" });
   <main class="mx-auto w-full max-w-4xl flex-1 px-4 py-6">
     <div class="mb-5 flex items-center gap-3">
       <h1 class="text-xl font-bold">Painel</h1>
+      <!-- ⚠️ Isto vivia SÓ dentro do aviso de alcance, e o aviso só aparece quando alguma
+           campanha ativa usa WhatsApp e falta template. Ou seja: config escondida atrás de
+           um alerta, invisível justo depois de configurada — o gestor não tinha como
+           trocar nem conferir. Config que existe tem de ter porta fixa. -->
       <button
         type="button"
         class="ml-auto inline-flex items-center gap-1.5 rounded-md border border-border px-2.5 py-1.5 text-sm text-muted-foreground transition hover:bg-muted"
+        @click="openTemplatePicker()"
+      >
+        <Icon name="lucide:message-square-dot" class="size-3.5" />
+        WhatsApp
+      </button>
+      <button
+        type="button"
+        class="inline-flex items-center gap-1.5 rounded-md border border-border px-2.5 py-1.5 text-sm text-muted-foreground transition hover:bg-muted"
         @click="refresh()"
       >
         <Icon name="lucide:refresh-cw" class="size-3.5" />
