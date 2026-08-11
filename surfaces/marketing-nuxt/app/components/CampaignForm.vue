@@ -12,6 +12,10 @@ const props = defineProps<{
   platformOptions: Choice[];
   templates: AnnouncementTemplate[];
   offers: Choice[];
+  /** Rótulos de plataforma e template do WhatsApp: a prévia precisa dos dois para não
+   *  prometer o que o envio não faz. */
+  platformLabels: Record<string, string>;
+  whatsappTemplate?: string;
   busy?: boolean;
 }>();
 
@@ -122,6 +126,16 @@ function buildSchedule(): Record<string, unknown> {
   };
 }
 
+/** O texto do modelo escolhido — é ele que a prévia resolve. */
+const chosenBody = computed(
+  () => props.templates.find((t) => t.pk === templateId.value)?.body ?? "",
+);
+
+/** O modelo escolhido delega o texto à IA? A prévia não finge saber o resultado. */
+const chosenUsesAi = computed(
+  () => props.templates.find((t) => t.pk === templateId.value)?.use_ai_generation ?? false,
+);
+
 function togglePlatform(value: string) {
   const index = platforms.value.indexOf(value);
   if (index >= 0) platforms.value.splice(index, 1);
@@ -198,6 +212,18 @@ function submit() {
         </p>
       </div>
     </div>
+
+    <!-- A prévia mora ao lado da escolha do texto: é aqui que o gestor decide a frase, e é
+         aqui que ele precisa ver a frase resolvida. -->
+    <AnnouncementPreview
+      v-if="templateId"
+      :body="chosenBody"
+      :platforms="platforms"
+      :platform-labels="platformLabels"
+      :promotion-ref="promotionRef"
+      :use-ai="chosenUsesAi"
+      :whatsapp-template="whatsappTemplate"
+    />
 
     <!-- A oferta que o anúncio leva. Quando escolhida, o {{link}} da mensagem aponta
          para a oferta e o clique monta a sacola com o preço resolvido NA HORA — não no

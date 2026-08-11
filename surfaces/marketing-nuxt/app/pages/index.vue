@@ -154,14 +154,17 @@ useHead({ title: "Painel · Marketing" });
         <Icon name="lucide:coffee" class="mx-auto size-8 text-muted-foreground" />
         <p class="mt-2 font-semibold">Nada esperando por você</p>
         <p class="mt-1 text-sm text-muted-foreground">
-          Quando uma fornada terminar, o anúncio aparece aqui para revisão.
+          <!-- ⚠️ Dizia "quando uma fornada terminar", e fornada é UM dos gatilhos: há
+               estoque baixo, produto novo, hora marcada e o disparo na mão. Copy que nomeia
+               um caso ensina o gestor a esperar só aquele. -->
+          Quando uma campanha disparar, o anúncio aparece aqui para você revisar.
         </p>
         <NuxtLink
           to="/campaigns"
           class="mt-3 inline-flex items-center gap-1.5 rounded-md border border-border px-3 py-1.5 text-sm font-medium transition hover:bg-muted"
         >
           <Icon name="lucide:sliders-horizontal" class="size-4" />
-          Ver as regras
+          Ver as campanhas
         </NuxtLink>
       </div>
 

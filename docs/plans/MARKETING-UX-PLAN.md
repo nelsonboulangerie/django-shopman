@@ -229,7 +229,17 @@ inglês** (PR #68), e eu criei `/modelos` e `/plataformas` em pt-br. Corrigido j
 `/campaigns`, `/templates`, `/platforms`. Sem 301 — nada além do staging conhecia as antigas,
 e o dono já foi claro sobre não devermos legado a nada.
 
-Falta a **prévia** (passo 2), que agora nasce dentro da tela de campanha, onde ela mais serve.
+**Prévia** (passo 2) também entrou, dentro da tela de campanha — ao lado da escolha do texto,
+que é onde o gestor decide a frase. Resolve pelo MESMO `resolve_variables` do envio: prévia
+com montagem própria concordaria hoje e divergiria no primeiro ajuste, e prévia que mente é
+pior que nenhuma porque é acreditada. A IA **não** é chamada (gerar texto a cada tecla
+gastaria chamada para jogar fora); ela só é anunciada quando o modelo delega o corpo a ela.
+
+E ela já pagou o preço dela em dois achados no primeiro uso: o aviso **"sem valor agora:
+available_qty"**, e um defeito meu — o link aparecia duas vezes, porque o modelo termina em
+`{{link}}` e o componente ainda desenhava a linha do link embaixo.
+
+Falta o passo 4 (Histórico com o porquê da falha).
 
 ---
 

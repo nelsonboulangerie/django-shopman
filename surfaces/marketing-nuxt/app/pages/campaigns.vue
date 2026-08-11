@@ -11,6 +11,10 @@ const {
   rules, templates, triggers, platforms, platformLabels, customerGroups, rfmSegments, offers,
   loading, error, refresh, toggle, patch, create, fire,
 } = useCampaigns();
+// A prévia precisa saber se há template aprovado: com ele, o texto que sai no WhatsApp é o
+// da Meta, e prometer o do modelo seria mentira.
+const waTemplate = useWhatsAppTemplate();
+onMounted(() => { waTemplate.load(); });
 
 const editing = ref<Campaign | null>(null);
 const creating = ref(false);
@@ -205,6 +209,8 @@ useHead({ title: "Campanhas · Marketing" });
             :platform-options="platforms"
             :templates="templates"
             :offers="offers"
+            :platform-labels="platformLabels"
+            :whatsapp-template="waTemplate.current.value"
             :busy="busy"
             @submit="onSubmit"
             @cancel="close"

@@ -10,6 +10,7 @@ de regras e modelos. Gate: ``shop.manage_campaigns`` — o gestor de marketing n
     GET    campaign/history/            → tudo que já saiu
     GET    campaign/options/            → vocabulário do formulário de regra
     GET    campaign/platforms/          → estado de entrega de cada plataforma
+    POST   campaign/preview/            → como a mensagem vai ficar (mesmo resolvedor do envio)
     GET    campaign/announcements/<pk>/         → um announcement
     PATCH  campaign/announcements/<pk>/         → editar antes de aprovar
     POST   campaign/announcements/<pk>/approve/ → publicar
@@ -292,6 +293,29 @@ class CampaignListView(_CampaignBase):
             {"ok": True, "rule": projection_data(marketing_projection.build_rule(rule))},
             status=201,
         )
+
+
+class PreviewView(_CampaignBase):
+    """POST campaign/preview/ → como a mensagem vai ficar, antes de existir cliente.
+
+    Até agora o gestor escrevia `{{product_name}}` e só via o resultado quando a mensagem
+    chegava no celular de alguém. Variável com nome errado renderiza vazio em SILÊNCIO — foi
+    assim que passaram um `customer_name` que ninguém mandava e uma foto relativa que a Meta
+    não carrega.
+
+    Resolve pelo MESMO caminho do envio (`campaign.preview` → `resolve_variables`). Prévia com
+    montagem própria concordaria hoje e divergiria no primeiro ajuste, e prévia que mente é
+    pior que nenhuma, porque é acreditada.
+    """
+
+    def post(self, request):
+        payload = request.data if isinstance(request.data, dict) else {}
+        return Response(campaign_service.preview(
+            str(payload.get("body") or ""),
+            sku=str(payload.get("sku") or ""),
+            promotion_ref=str(payload.get("promotion_ref") or ""),
+            use_ai=bool(payload.get("use_ai")),
+        ))
 
 
 class PlatformsView(_CampaignBase):

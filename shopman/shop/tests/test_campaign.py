@@ -532,3 +532,75 @@ class TestContentEditing:
 
 def _user():
     return User.objects.create_user(f"gestor-{User.objects.count()}", is_staff=True)
+
+
+# ── Prévia ───────────────────────────────────────────────────────────
+
+
+class TestPreview:
+    """A prévia resolve pelo MESMO caminho do envio, e é isso que a torna confiável.
+
+    Ela existe porque o gestor escrevia `{{product_name}}` e só descobria o resultado quando
+    a mensagem chegava no celular de um cliente. Variável com nome errado renderiza vazio em
+    silêncio — foi assim que passaram um `customer_name` que ninguém mandava e uma foto em
+    caminho relativo que a Meta não baixa.
+    """
+
+    def test_it_resolves_the_variables(self, product):
+        result = campaign.preview("{{product_name}} saiu do forno!", sku=product.sku)
+
+        assert result["body"] == f"{product.name} saiu do forno!"
+        assert result["product_name"] == product.name
+
+    def test_an_unknown_variable_shows_up_empty(self, product):
+        """⚠️ O achado que a prévia entrega: nome errado NÃO estoura, renderiza vazio."""
+        result = campaign.preview("Oi {{nome_errado}}, chegou!", sku=product.sku)
+
+        assert result["body"] == "Oi , chegou!"
+
+    def test_without_a_sku_it_picks_a_real_product(self, product):
+        """Prévia que exige SKU de cabeça não é usada. E ela diz qual escolheu."""
+        result = campaign.preview("{{product_name}}")
+
+        assert result["sku"] == product.sku
+        assert result["body"] == product.name
+
+    def test_the_ai_is_never_called(self, product, monkeypatch):
+        """⚠️ Gerar texto a cada tecla gastaria chamada para jogar fora.
+
+        `use_ai` só INFORMA a tela; quem pede sugestão é o botão de reescrever.
+        """
+        from shopman.shop.services import copy_assist
+
+        def _boom(*a, **k):
+            raise AssertionError("a prévia não pode chamar a IA")
+
+        monkeypatch.setattr(copy_assist, "suggest", _boom)
+
+        result = campaign.preview("{{product_name}}", sku=product.sku, use_ai=True)
+
+        assert result["ai_writes"] is True
+
+    def test_it_reports_the_fields_the_template_receives(self, product):
+        result = campaign.preview("oi", sku=product.sku)
+
+        assert result["fields"]["product_sku"] == product.sku
+        # `customer_name` é por destinatário: no momento da prévia ninguém sabe quem é.
+        assert "available_qty" in result["fields"]
+
+    def test_an_offer_changes_the_link(self, product):
+        """Com oferta, o link deixa de apontar o produto e passa a montar a sacola."""
+        from datetime import timedelta
+
+        from shopman.shop.models import Promotion
+
+        now = timezone.now()
+        Promotion.objects.create(
+            ref="semana", name="Semana", type=Promotion.PERCENT, value=10,
+            valid_from=now - timedelta(hours=1), valid_until=now + timedelta(hours=1),
+            skus=[product.sku],
+        )
+
+        result = campaign.preview("{{link}}", sku=product.sku, promotion_ref="semana")
+
+        assert "/oferta/semana" in result["body"]

@@ -399,6 +399,66 @@ def test_fields(*, sku: str = "", name: str = "") -> dict:
     return fields
 
 
+def preview(
+    body: str, *, sku: str = "", promotion_ref: str = "", use_ai: bool = False,
+) -> dict:
+    """Como a mensagem VAI FICAR, resolvida pelo mesmo caminho do envio.
+
+    Existe porque até agora o gestor escrevia `{{product_name}}` e só descobria o resultado
+    quando a mensagem chegava no celular de um cliente. Variável com nome errado renderiza
+    vazio em silêncio, e foi assim que passaram despercebidos um `customer_name` que ninguém
+    mandava e uma foto em caminho relativo que a Meta não carrega.
+
+    ⚠️ **Mesmo resolvedor do envio, de propósito.** Se a prévia tivesse a própria montagem,
+    ela concordaria com o envio hoje e divergiria no primeiro ajuste — e uma prévia que mente
+    é pior que prévia nenhuma, porque ela é acreditada.
+
+    ⚠️ **A IA não é chamada aqui.** `use_ai` só informa a tela de que o corpo final será
+    escrito por ela; gerar texto a cada tecla digitada gastaria chamada para jogar fora. Quem
+    pede sugestão é o botão de reescrever, explicitamente.
+
+    ``sku`` vazio escolhe um produto real da loja, para a prévia funcionar sem o gestor ter de
+    saber um SKU de cabeça — e devolve qual usou, porque prévia com produto anônimo não
+    explica o que está vendo.
+    """
+    sample = (sku or "").strip() or _sample_sku()
+    variables = resolve_variables({"sku": sample}, promotion_ref=promotion_ref)
+
+    return {
+        "sku": sample,
+        "body": render(body or "", variables),
+        "product_name": variables["product_name"],
+        "product_image_url": variables["product_image_url"],
+        "link": variables["link"],
+        "hashtags": variables["hashtags_list"],
+        # Os campos discretos que o template aprovado recebe. É o que explica variável vazia
+        # no aparelho antes de o aparelho existir.
+        "fields": {
+            key: variables[key]
+            for key in ("customer_name", "product_name", "product_sku", "available_qty")
+            if key in variables
+        },
+        "ai_writes": bool(use_ai),
+    }
+
+
+def _sample_sku() -> str:
+    """Um produto real para a prévia, ou vazio numa loja sem catálogo."""
+    try:
+        from shopman.offerman.models import Product
+
+        product = (
+            Product.objects.filter(is_published=True, is_sellable=True)
+            .order_by("name")
+            .only("sku")
+            .first()
+        )
+        return product.sku if product else ""
+    except Exception:
+        logger.warning("campaign.preview_sample_failed", exc_info=True)
+        return ""
+
+
 def rewrite_body(announcement_id: int, *, current_body: str = "") -> str:
     """Uma sugestão de corpo para um anúncio em revisão. Não grava nada.
 
