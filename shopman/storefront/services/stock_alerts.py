@@ -234,8 +234,9 @@ def _deliver(
                 # Nome que a mensagem usa: o sufixo que o template gruda no fim do link
                 # do botão. Ver o gêmeo em `handlers/_stock_receivers.py`.
                 "product_sku": sub.sku,
-                # Foto do produto: é o cabeçalho de mídia do template aprovado.
-                "image_url": _image_url(sub.sku),
+                # Foto do produto. Prefixo `product_` por namespacing: o campo vive no
+                # perfil do assinante no ManyChat.
+                "product_image_url": _image_url(sub.sku),
                 "product_name": product_name,
                 "customer_name": _first_name(sub),
                 "product_url": storefront_links.product_url(sub.sku),

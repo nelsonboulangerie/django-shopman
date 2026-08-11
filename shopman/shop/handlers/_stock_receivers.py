@@ -235,7 +235,7 @@ def _notify_stock_arrived(session, *, sku: str, target_date, hold_ids: list[str]
                 # negação do ManyChat); `product_sku` é o mesmo valor com o nome que a
                 # mensagem usa — o sufixo que o template gruda no fim do link do botão.
                 "product_sku": sku,
-                "image_url": _product_image(sku),
+                "product_image_url": _product_image(sku),
                 "product_name": product_name,
                 "customer_name": (getattr(customer, "first_name", "") or "").strip(),
                 "target_date": str(target_date) if target_date else None,

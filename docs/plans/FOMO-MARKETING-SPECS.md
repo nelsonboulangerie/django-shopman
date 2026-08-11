@@ -313,6 +313,7 @@ class AnnouncementTemplate(models.Model):
 | `{{available_qty}}` | `Quant.available` — quantas há AGORA | "5" |
 | `{{customer_name}}` | primeiro nome de quem recebe | "Pablo" |
 | `{{product_sku}}` | `sku`, sufixo que o botão gruda no fim do link | "BAGUETE" |
+| `{{product_image_url}}` | foto do produto, **absoluta** (a Meta busca do lado dela) | `https://…/bf.jpg` |
 
 ⚠️ Não existe variável de "quantas saíram na fornada": essa contagem não interessa a quem
 recebe, e oferecê-la só criaria a chance de anunciar um número que já não é verdade.

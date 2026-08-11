@@ -377,7 +377,7 @@ def test_fields(*, sku: str = "", name: str = "") -> dict:
         "product_name": "",
         "product_sku": sku,
         "available_qty": "",
-        "image_url": "",
+        "product_image_url": "",
         "link": "",
     }
     if not sku:
@@ -385,7 +385,7 @@ def test_fields(*, sku: str = "", name: str = "") -> dict:
 
     product = _product(sku)
     fields["product_name"] = getattr(product, "name", "") or sku
-    fields["image_url"] = product_image_url(sku)
+    fields["product_image_url"] = product_image_url(sku)
 
     try:
         from shopman.shop.handlers.campaign import _available_qty
@@ -524,9 +524,13 @@ def resolve_variables(context: dict, *, promotion_ref: str = "") -> dict:
         #: essa contagem não interessa a quem recebe, e oferecê-la só criaria a chance de
         #: anunciar um número que já não é verdade.
         "available_qty": str(context.get("available_qty", "") or ""),
-        #: Foto do produto, absoluta. É o cabeçalho de mídia do template aprovado, e a
-        #: Meta a busca do lado dela — daí a exigência de URL pública.
-        "image_url": product_image_url(sku),
+        #: Foto do produto, absoluta. O prefixo `product_` é namespacing: o campo vive no
+        #: perfil do assinante no ManyChat, ao lado de tudo o que já existe lá, e
+        #: `image_url` solto colidiria com qualquer outra imagem que a conta use.
+        #:
+        #: ⚠️ Não confundir com `content["image_url"]`, que é a imagem DO ANÚNCIO (card
+        #: do gestor e post externo). Consumidores diferentes, nomes diferentes.
+        "product_image_url": product_image_url(sku),
         "time": timezone.localtime().strftime("%Hh%M"),
         "store_name": _brand_name(),
         "quality": str(context.get("quality", "") or ""),
@@ -537,7 +541,8 @@ def available_variables() -> tuple[str, ...]:
     """Nomes válidos num template — documentação viva para o Admin."""
     return (
         "product_name", "product_sku", "sku", "price", "hashtags", "link",
-        "available_qty", "image_url", "time", "store_name", "quality", "customer_name",
+        "available_qty", "product_image_url", "time", "store_name", "quality",
+        "customer_name",
     )
 
 

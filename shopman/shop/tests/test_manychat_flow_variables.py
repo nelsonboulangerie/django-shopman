@@ -160,7 +160,8 @@ def test_an_unknown_quantity_says_nothing(calls, with_flow):
 #: campos que o gestor cria no ManyChat — se um caminho parar de mandar um deles, o
 #: template renderiza vazio para metade das pessoas.
 SHARED_FIELDS = {
-    "customer_name", "product_name", "product_sku", "available_qty", "image_url",
+    "customer_name", "product_name", "product_sku", "available_qty",
+    "product_image_url",
 }
 
 
@@ -194,7 +195,7 @@ def test_the_campaign_path_sends_the_shared_fields(db, monkeypatch):
         "body": "Saiu do forno",
         "variables": {
             "product_name": "Baguete", "product_sku": "BAGUETE", "available_qty": "12",
-            "image_url": "https://cdn.example/baguete.jpg",
+            "product_image_url": "https://cdn.example/baguete.jpg",
         },
     }
     announcement = type(
