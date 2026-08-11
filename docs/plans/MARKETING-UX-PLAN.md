@@ -196,75 +196,90 @@ gestor pode tomar naquela tela, o que a ADR-020 §11 nunca proibiu.
 
 ---
 
-## 9. Público salvo — e por que NÃO tags
+## 9. Público: tags E público salvo (correção de 2026-08-11)
 
-O dono perguntou se "avisar quem" deveria ser mais dinâmico, com grupos ou tags. A resposta
-curta: **grupos já existem** (`CustomerGroup`, do guestman, já no seletor), **tags seriam um
-segundo mecanismo para o mesmo trabalho**, e o que falta de verdade é **reuso**.
+A primeira versão desta seção dizia "público salvo, e NÃO tags", com o argumento de que tag
+duplicaria `groups`. **O dono contestou e estava certo. Eu não havia checado o modelo.**
 
-Hoje o gestor monta o público na hora — "grupos + em risco + aniversariantes" — e essa
-composição **morre no disparo**. Ele remonta na semana seguinte, de memória, e erra.
+`Customer.group` é **ForeignKey** — **um** grupo por cliente — e o grupo define **preço**:
+aponta um `Listing` (`listing_ref`) e carrega `discount_percent`/`min_order_q` no metadata
+(`packages/guestman/.../models/group.py`). Ele é camada COMERCIAL: varejo, corporativo,
+funcionário.
 
-### O que é
+Logo tag não duplica grupo:
 
-Um público salvo é **um nome dado a uma combinação das regras que já existem**.
+| | grupo | tag |
+|---|---|---|
+| quantos por cliente | **um** | vários |
+| efeito colateral | **preço** (Listing, desconto) | nenhum |
+| natureza | faixa comercial | rótulo de intenção |
 
-> "Sábado de manhã" = comprou nos últimos 30 dias + favoritou pão
+Usar `groups` para mirar campanha é **abusar de uma faixa de preço**, e como é um só por
+cliente, é impossível expressar "gosta de pão **e** vem de manhã". O que eu chamei de
+duplicação era, na verdade, a ausência do mecanismo certo.
+
+⚠️ E `taggit` **já está no projeto** (produtos usam `keywords`), então o mecanismo existe na
+pilha: `Customer` ganha um `TaggableManager`, e o Marketing só **seleciona quais tags atingir**
+— exatamente como o dono descreveu.
+
+### As duas coisas são complementares, não concorrentes
+
+· **tag** responde "quem é esta pessoa?" e mora no cadastro (guestman). Vários rótulos por
+  cliente, sem efeito comercial. O Marketing lê e seleciona;
+· **público salvo** responde "que combinação eu uso toda semana?" e mora no Marketing. Dá nome
+  a uma combinação das regras — inclusive de tags.
+
 > "Sumidos" = risco de churn alto
+> "Fãs de pão de manhã" = tag `pao` + comprou nos últimos 30 dias
 
-Três razões para isso ser melhor que tags:
+Sem uma, o gestor remonta o público de memória toda semana. Sem a outra, ele não tem como
+dizer nada que o comportamento não revele.
 
-1. **Não inventa vocabulário.** Usa as chaves que o resolvedor já entende, então é impossível
-   salvar um público que o sistema não saiba executar. Tag cria um segundo jeito de dizer "esse
-   conjunto de gente", e dois jeitos divergem no primeiro mês — a mesma armadilha do
-   `sku`/`product_sku`, em escala maior.
-2. **É dinâmico de graça.** O público é recalculado no disparo, não uma lista congelada. Tag
-   exige alguém etiquetando, e etiqueta apodrece: ninguém remove a de quem deixou de comprar.
-3. **Não é CDP.** Continua sem árvore booleana (ADR-020 §7): é uma combinação plana com nome,
-   não um construtor de expressão.
+**O que continua fora:** árvore booleana com AND/OR (ADR-020 §7 — isso é CDP, e a resposta é
+não) e lista congelada de destinatários (apodrece; ninguém remove quem parou de comprar).
 
-### ⚠️ O que NÃO pode ser salvo, e por quê
+⚠️ **O risco real da tag, que precisa de desenho:** etiqueta manual envelhece. Mitigação: a
+tela mostra **quantas pessoas** cada tag alcança e **quando foi aplicada pela última vez** —
+tag que não cresce há meses é tag abandonada, e isso tem de ser visível em vez de silencioso.
+
+### O que NÃO pode ser salvo, e por quê
 
 O vocabulário de público já é dividido em duas famílias (`services/audience.py::resolve`):
 
 | família | chaves | vale sozinha? |
 |---|---|---|
 | **por evento** | `favorites`, `alerts`, `bought_within_days` sem SKU | **não** — precisam do SKU do evento |
-| **escolhida pelo gestor** | `groups`, `rfm_segments`, `churn_risk_min`, `birthday_today`, `customer_refs`, `bought_skus`/`bought_collections` | sim |
+| **escolhida pelo gestor** | `groups`, `rfm_segments`, `churn_risk_min`, `birthday_today`, `customer_refs`, `bought_skus`/`bought_collections`, (futuro) `tags` | sim |
 
-Só a segunda família pode ser salva. Um público salvo com `favorites: true` não quer dizer
-nada fora de um evento — resolveria para ninguém, e o gestor culparia a ferramenta. "Quem
-favoritou" é propriedade do **gatilho**, não de um público reutilizável, e continua marcável na
-campanha.
+Só a segunda pode ser salva. Público salvo com `favorites: true` não quer dizer nada fora de um
+evento — resolveria para ninguém, e o gestor culparia a ferramenta. "Quem favoritou" é
+propriedade do **gatilho**.
 
 ### Nada "duro" para o operador
 
-Foi a exigência explícita do dono, e é ela que decide a implementação:
+Exigência explícita do dono, e é ela que decide a implementação:
 
-· **cria-se salvando o que já foi feito.** No painel de disparo, depois de escolher o público
-  em frases, um "salvar este público" com um campo de nome. A criação é subproduto de operar,
-  não uma tarefa separada numa tela separada;
-· **JSON nunca aparece.** Editar é abrir e clicar nas mesmas frases do seletor. O `audience_rules`
-  continua sendo o formato guardado, e continua invisível;
-· **conta gente antes de salvar.** "Sumidos — 34 pessoas" ao lado do nome, resolvido de
-  verdade (`resolve().summary()`), com o filtro de consentimento já aplicado. É o que separa
-  confiança de fé;
-· **renomear é livre; apagar é guardado.** Público em uso por campanha avisa quantas usam,
-  como o modelo já faz;
-· **quem edita, muda o alcance das campanhas que o usam** — e a tela diz isso ("2 campanhas
-  usam este público"), porque é o efeito desejado e não pode ser surpresa.
+· **cria-se salvando o que já foi feito.** No painel de disparo, depois de escolher o público em
+  frases, um "salvar este público" com um campo de nome. Criar é subproduto de operar, não
+  tarefa separada numa tela separada;
+· **JSON nunca aparece.** Editar é abrir e clicar nas mesmas frases;
+· **tag se cria digitando.** Campo com autocomplete das existentes; nome novo cria a tag. Nada
+  de ir a outra tela cadastrar taxonomia antes de poder usá-la;
+· **conta gente antes de salvar.** "Sumidos — 34 pessoas", resolvido de verdade
+  (`resolve().summary()`), com consentimento já aplicado. É o que separa confiança de fé;
+· **renomear é livre; apagar é guardado.** Público em uso avisa quantas campanhas o usam;
+· **quem edita muda o alcance de quem o usa**, e a tela diz isso — é o efeito desejado, mas não
+  pode ser surpresa.
 
-### A entidade (pequena, e justificada)
+### As entidades (pequenas, e justificadas)
 
-Os quatro critérios de "vale criar entidade?" batem: cardinalidade > 1 (vários públicos), nome
-próprio para reuso, edição ao longo do tempo, e referência de campanha. Então:
+`Audience`: `ref` (slug), `name`, `rules` (o mesmo `audience_rules`), `is_active`.
+`Customer.tags`: `TaggableManager` do taggit, já na pilha.
 
-`Audience`: `ref` (slug), `name`, `rules` (JSON, o mesmo `audience_rules`), `is_active`.
-
-E **um campo** na campanha (`audience_ref`), com a regra de precedência dita em voz alta:
-público salvo escolhido **substitui** as chaves escolhidas-pelo-gestor; as por evento
-(`favorites`/`alerts`) continuam da campanha, porque são do gatilho. Sem merge silencioso —
-merge de duas fontes de público é exatamente como se manda mensagem para quem não devia.
+E **um campo** na campanha (`audience_ref`), com precedência dita em voz alta: público salvo
+**substitui** as chaves escolhidas-pelo-gestor; as por evento continuam da campanha. Sem merge
+silencioso — merge de duas fontes de público é exatamente como se manda mensagem para quem não
+devia.
 
 ---
 
@@ -350,7 +365,9 @@ Cada passo entrega valor sozinho.
 3. ✅ **Campanhas absorve Modelos** — o pensamento volta a ser um só.
 4. **Desempenho por campanha, e o Histórico se dissolve** (§8) — a causa da falha aparece onde
    dá para agir, e a nav cai para três.
-5. **Público salvo** (§9) — reuso do que hoje morre no disparo. Criado salvando o que já foi
+5. **Tags de cliente** (§9) — `Customer.tags` com taggit (já na pilha) + seleção no Marketing.
+   É o mecanismo que faltava: grupo é UM por cliente e mexe em preço.
+6. **Público salvo** (§9) — reuso do que hoje morre no disparo. Criado salvando o que já foi
    feito, editável em frases, com contagem de gente antes de salvar.
 
 ---
