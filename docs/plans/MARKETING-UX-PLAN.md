@@ -183,7 +183,38 @@ E ela é barata: o backend já resolve tudo (`resolve_content`, `test_fields`,
 
 ---
 
-## 9. Ordem sugerida
+## 9. Perguntas do dono, respondidas na revisão de 2026-08-11
+
+**A sequência da nav está adequada?** Não, e é transitória. "Regras, Modelos, Plataformas" é
+uma lista de OBJETOS, não um percurso. Quando Campanhas absorver Modelos (§4), fica
+**Painel · Campanhas · Plataformas · Histórico** — decidir → o que dizemos → por onde sai →
+o que aconteceu. E há uma divergência de nome a resolver junto: a entidade é `Campaign`, este
+plano diz "Campanhas", e a aba diz "Regras".
+
+**Histórico continua existindo**, como última aba. Cinco abas é o próprio sintoma acima.
+
+**Aprovação em Modelos: não existe, e a tela precisa dizer.** São dois objetos distintos, e a
+confusão entre eles é previsível:
+
+| | Modelo (nosso) | Template aprovado (Meta) |
+|---|---|---|
+| onde vive | `/modelos` | `/plataformas` (escolhido) |
+| quem aprova | ninguém | a Meta |
+| texto | livre, com `{{variáveis}}` | fixo na aprovação |
+
+⚠️ **E o que morde:** com template escolhido, `notification_manychat` manda `sendFlow` — o
+`body` do Modelo **não é enviado**, só os campos discretos. O texto que o cliente lê é o da
+Meta. O Modelo continua valendo para a legenda de Instagram/Facebook e para o card de
+revisão. Isso agora está dito no painel do WhatsApp, ao lado da escolha; a tela de Modelos
+merece a mesma frase.
+
+**Detalhe de plataforma em overlay.** Feito: a lista virou quatro linhas escaneáveis (nome,
+estado, "sem uso", resumo) e o detalhe abre em painel. Com o WhatsApp expandido o tempo todo
+a lista já era estranha; com as quatro expandindo, viraria depósito.
+
+---
+
+## 10. Ordem sugerida
 
 Cada passo entrega valor sozinho.
 
