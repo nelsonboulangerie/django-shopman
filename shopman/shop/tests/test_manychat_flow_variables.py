@@ -159,7 +159,9 @@ def test_an_unknown_quantity_says_nothing(calls, with_flow):
 #: O que a mensagem de "produto disponível" precisa saber, venha de onde vier. São os
 #: campos que o gestor cria no ManyChat — se um caminho parar de mandar um deles, o
 #: template renderiza vazio para metade das pessoas.
-SHARED_FIELDS = {"customer_name", "product_name", "product_sku", "available_qty"}
+SHARED_FIELDS = {
+    "customer_name", "product_name", "product_sku", "available_qty", "image_url",
+}
 
 
 def test_both_paths_speak_the_same_vocabulary():
@@ -192,6 +194,7 @@ def test_the_campaign_path_sends_the_shared_fields(db, monkeypatch):
         "body": "Saiu do forno",
         "variables": {
             "product_name": "Baguete", "product_sku": "BAGUETE", "available_qty": "12",
+            "image_url": "https://cdn.example/baguete.jpg",
         },
     }
     announcement = type(
@@ -204,3 +207,67 @@ def test_the_campaign_path_sends_the_shared_fields(db, monkeypatch):
     assert SHARED_FIELDS <= set(seen[0]), SHARED_FIELDS - set(seen[0])
     assert seen[0]["customer_name"] == "Pablo"
     assert seen[0]["available_qty"] == "12"
+
+
+def test_the_photo_url_must_be_absolute(db, settings):
+    """⚠️ O cabeçalho de mídia é buscado pelos servidores da META, não pelo navegador.
+
+    Caminho relativo não carrega lá, e o template chega sem imagem — pior, chega quebrado
+    depois de aprovado. Então relativo é resolvido contra a base da loja.
+    """
+    from shopman.offerman.models import Product
+
+    from shopman.shop.services.campaign import product_image_url
+
+    settings.SHOPMAN_STOREFRONT_BASE_URL = "https://loja.example"
+    Product.objects.create(
+        sku="REL-1", name="Relativo", base_price_q=100,
+        image_url="/media/products/x.jpg", is_published=True, is_sellable=True,
+    )
+
+    url = product_image_url("REL-1")
+
+    assert url.startswith("http"), url
+    assert url.endswith("/media/products/x.jpg")
+
+
+def test_an_absolute_photo_is_left_alone(db):
+    from shopman.offerman.models import Product
+
+    from shopman.shop.services.campaign import product_image_url
+
+    Product.objects.create(
+        sku="ABS-1", name="Absoluto", base_price_q=100,
+        image_url="https://cdn.example/x.jpg", is_published=True, is_sellable=True,
+    )
+
+    assert product_image_url("ABS-1") == "https://cdn.example/x.jpg"
+
+
+def test_a_product_without_a_photo_sends_nothing(db):
+    """Vazio é melhor que foto quebrada: o template renderiza sem o cabeçalho."""
+    from shopman.offerman.models import Product
+
+    from shopman.shop.services.campaign import product_image_url
+
+    Product.objects.create(
+        sku="NOPIC-1", name="Sem foto", base_price_q=100,
+        is_published=True, is_sellable=True,
+    )
+
+    assert product_image_url("NOPIC-1") == ""
+
+
+def test_without_a_store_base_a_relative_photo_is_dropped(db, settings):
+    """⚠️ Sem base não há como absolutizar — e meia URL na Meta é imagem quebrada."""
+    from shopman.offerman.models import Product
+
+    from shopman.shop.services.campaign import product_image_url
+
+    settings.SHOPMAN_STOREFRONT_BASE_URL = ""
+    Product.objects.create(
+        sku="REL-2", name="Relativo", base_price_q=100,
+        image_url="/media/products/y.jpg", is_published=True, is_sellable=True,
+    )
+
+    assert product_image_url("REL-2") == ""

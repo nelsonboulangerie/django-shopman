@@ -21,6 +21,7 @@ Duas escolhas estruturais:
 from __future__ import annotations
 
 import logging
+from dataclasses import dataclass
 from datetime import timedelta
 
 from django.db import transaction
@@ -288,6 +289,116 @@ def _ai_body(template, variables: dict) -> str:
         return ""
 
 
+@dataclass(frozen=True)
+class TestSend:
+    """O que saiu num envio de teste, e o que o transporte respondeu."""
+
+    accepted: bool
+    backend: str
+    recipient: str
+    fields: dict
+    detail: str = ""
+
+
+def send_test(
+    recipient: str, *, sku: str = "", name: str = "", body: str = "", backend: str = "",
+) -> TestSend:
+    """Mandar UM anúncio de teste para UM destinatário. Sem audiência, sem consentimento.
+
+    Existe porque "o painel diz enviado" e "o celular vibrou" são fatos diferentes, e só o
+    segundo prova que o template aprovado renderiza. Manda as MESMAS chaves do caminho de
+    produção, com valores REAIS do catálogo e da disponibilidade — um teste que mande
+    menos prova só que o transporte responde.
+
+    **Não é porta dos fundos do consentimento:** um destinatário por chamada, escolhido
+    por quem tem a permissão de campanha, e nenhuma resolução de audiência. Serve para o
+    gestor testar o próprio número, e é assim que a tela o oferece.
+    """
+    from shopman.shop.handlers.campaign import _whatsapp_backend
+    from shopman.shop.notifications import notify
+
+    target = (recipient or "").strip()
+    if not target:
+        raise CampaignError("Informe o WhatsApp (ou o subscriber) que vai receber o teste.")
+    if "," in target or " " in target:
+        # Um por chamada, de propósito: aceitar lista transformaria isto em disparo.
+        raise CampaignError("Um destinatário por teste. Isto não faz lote.")
+
+    transport = backend or _whatsapp_backend()
+    if transport is None:
+        raise CampaignError(
+            "Nenhum transporte de WhatsApp configurado neste ambiente. Sem credencial, "
+            "o teste não prova nada."
+        )
+
+    fields = test_fields(sku=sku, name=name)
+    message = (body or "").strip() or (
+        "Teste do Shopman: se você recebeu isto, o template está de pé."
+    )
+    try:
+        result = notify(
+            event="announcement_published",
+            recipient=target,
+            context={
+                "body": message,
+                "cta": "Garanta o seu:",
+                "action_url": fields.get("link", ""),
+                **fields,
+            },
+            backend=transport,
+        )
+    except Exception as exc:
+        logger.warning("campaign.test_send_failed recipient=%s", target, exc_info=True)
+        return TestSend(
+            accepted=False, backend=transport, recipient=target,
+            fields=fields, detail=str(exc),
+        )
+
+    accepted = bool(getattr(result, "success", False))
+    return TestSend(
+        accepted=accepted,
+        backend=transport,
+        recipient=target,
+        fields=fields,
+        detail="" if accepted else str(getattr(result, "error", "") or "o transporte recusou"),
+    )
+
+
+def test_fields(*, sku: str = "", name: str = "") -> dict:
+    """As variáveis que o template aprovado espera, com valores reais quando houver.
+
+    `available_qty` sai da disponibilidade de VERDADE: número inventado validaria a
+    fiação e mentiria sobre o conteúdo. Vazio quando não dá para saber — a mensagem então
+    sai sem número, que é honesto.
+    """
+    sku = (sku or "").strip()
+    fields = {
+        "customer_name": (name or "").strip(),
+        "product_name": "",
+        "product_sku": sku,
+        "available_qty": "",
+        "image_url": "",
+        "link": "",
+    }
+    if not sku:
+        return fields
+
+    product = _product(sku)
+    fields["product_name"] = getattr(product, "name", "") or sku
+    fields["image_url"] = product_image_url(sku)
+
+    try:
+        from shopman.shop.handlers.campaign import _available_qty
+
+        qty = _available_qty(sku)
+        fields["available_qty"] = str(qty) if qty else ""
+    except Exception:
+        logger.warning("campaign.test_qty_failed sku=%s", sku, exc_info=True)
+
+    fields["link"] = _product_link(sku)
+    return fields
+
+
 def rewrite_body(announcement_id: int, *, current_body: str = "") -> str:
     """Uma sugestão de corpo para um anúncio em revisão. Não grava nada.
 
@@ -413,6 +524,9 @@ def resolve_variables(context: dict, *, promotion_ref: str = "") -> dict:
         #: essa contagem não interessa a quem recebe, e oferecê-la só criaria a chance de
         #: anunciar um número que já não é verdade.
         "available_qty": str(context.get("available_qty", "") or ""),
+        #: Foto do produto, absoluta. É o cabeçalho de mídia do template aprovado, e a
+        #: Meta a busca do lado dela — daí a exigência de URL pública.
+        "image_url": product_image_url(sku),
         "time": timezone.localtime().strftime("%Hh%M"),
         "store_name": _brand_name(),
         "quality": str(context.get("quality", "") or ""),
@@ -423,7 +537,7 @@ def available_variables() -> tuple[str, ...]:
     """Nomes válidos num template — documentação viva para o Admin."""
     return (
         "product_name", "product_sku", "sku", "price", "hashtags", "link",
-        "available_qty", "time", "store_name", "quality", "customer_name",
+        "available_qty", "image_url", "time", "store_name", "quality", "customer_name",
     )
 
 
@@ -501,6 +615,29 @@ def _brand_name() -> str:
     except Exception:
         logger.debug("campaign.brand_failed", exc_info=True)
         return ""
+
+
+def product_image_url(sku: str) -> str:
+    """Foto do produto, sempre ABSOLUTA — ou vazia.
+
+    O cabeçalho de mídia de um template aprovado é buscado pelos servidores da Meta, não
+    pelo navegador do cliente: caminho relativo simplesmente não carrega, e o template
+    chega sem imagem. Então relativo é resolvido contra a base da loja, e o que não der
+    para absolutizar volta vazio — melhor sem foto que com foto quebrada.
+    """
+    raw = str(getattr(_product(sku), "image_url", "") or "").strip()
+    if not raw or raw.startswith(("http://", "https://")):
+        return raw
+    try:
+        from shopman.shop.services import storefront_links
+
+        base = storefront_links.storefront_base_url()
+    except Exception:
+        logger.warning("campaign.image_base_failed sku=%s", sku, exc_info=True)
+        return ""
+    if not base:
+        return ""
+    return f"{base}/{raw.lstrip('/')}"
 
 
 def _image_url(template, context: dict) -> str:

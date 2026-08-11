@@ -40,6 +40,20 @@ async function onChooseTemplate(flowNs: string) {
   }
 }
 
+// Teste no próprio WhatsApp: o destinatário é digitado de propósito. Sem lista de
+// clientes aqui, o gestor não erra o alvo por um clique.
+const testRecipient = ref("");
+const testSku = ref("");
+const testName = ref("");
+
+async function onSendTest() {
+  if (!testRecipient.value.trim()) return;
+  await waTemplate.sendTest(testRecipient.value.trim(), {
+    sku: testSku.value.trim(),
+    name: testName.value.trim(),
+  });
+}
+
 const busyPk = ref<number | null>(null);
 const rejecting = ref<number | null>(null);
 const rejectReason = ref("");
@@ -185,6 +199,84 @@ useHead({ title: "Painel · Marketing" });
               </span>
             </button>
           </div>
+
+          <!-- Conferir vale mais que supor: aceito pelo provedor não é o mesmo que
+               vibrou no aparelho. Um número por vez, digitado, e sem lista de clientes
+               por perto — não é caminho para alcançar ninguém além de você. -->
+          <section class="mt-4 border-t border-border pt-4">
+            <h3 class="text-sm font-semibold">Testar no meu WhatsApp</h3>
+            <p class="mt-1 text-xs text-muted-foreground">
+              Manda uma mensagem só para você, com as variáveis preenchidas de verdade.
+            </p>
+
+            <div class="mt-3 space-y-2">
+              <div>
+                <label for="test-recipient" class="mb-1 block text-xs font-medium">
+                  WhatsApp ou subscriber
+                </label>
+                <input
+                  id="test-recipient"
+                  v-model="testRecipient"
+                  type="text"
+                  placeholder="4605528796186498"
+                  class="h-9 w-full rounded-md border border-border bg-background px-3 text-sm outline-none focus:ring-1 focus:ring-ring"
+                >
+              </div>
+              <div class="grid grid-cols-2 gap-2">
+                <div>
+                  <label for="test-sku" class="mb-1 block text-xs font-medium">SKU (opcional)</label>
+                  <input
+                    id="test-sku"
+                    v-model="testSku"
+                    type="text"
+                    placeholder="BAGUETE"
+                    class="h-9 w-full rounded-md border border-border bg-background px-3 text-sm outline-none focus:ring-1 focus:ring-ring"
+                  >
+                </div>
+                <div>
+                  <label for="test-name" class="mb-1 block text-xs font-medium">Nome (opcional)</label>
+                  <input
+                    id="test-name"
+                    v-model="testName"
+                    type="text"
+                    placeholder="Pablo"
+                    class="h-9 w-full rounded-md border border-border bg-background px-3 text-sm outline-none focus:ring-1 focus:ring-ring"
+                  >
+                </div>
+              </div>
+              <button
+                type="button"
+                :disabled="!testRecipient.trim() || waTemplate.testing.value"
+                class="inline-flex h-9 w-full items-center justify-center gap-1.5 rounded-md bg-primary px-3 text-sm font-semibold text-primary-foreground transition disabled:opacity-40"
+                @click="onSendTest"
+              >
+                <Icon
+                  :name="waTemplate.testing.value ? 'lucide:loader-circle' : 'lucide:send'"
+                  class="size-4"
+                  :class="waTemplate.testing.value ? 'animate-spin' : ''"
+                />
+                {{ waTemplate.testing.value ? "Enviando…" : "Enviar teste" }}
+              </button>
+            </div>
+
+            <!-- O que o template REALMENTE recebeu. Campo vazio aqui explica variável
+                 vazia no aparelho, sem o gestor ter que adivinhar. -->
+            <dl
+              v-if="Object.keys(waTemplate.testFields.value).length"
+              class="mt-3 space-y-1 rounded-lg bg-muted/40 p-3 text-xs"
+            >
+              <div
+                v-for="(value, key) in waTemplate.testFields.value"
+                :key="key"
+                class="flex gap-2"
+              >
+                <dt class="shrink-0 font-mono text-muted-foreground">{{ key }}</dt>
+                <dd class="min-w-0 flex-1 truncate">
+                  {{ value || "— vazio, o template renderiza sem" }}
+                </dd>
+              </div>
+            </dl>
+          </section>
         </div>
       </UiSheetContent>
     </UiSheet>

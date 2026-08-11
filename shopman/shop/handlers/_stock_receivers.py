@@ -235,6 +235,7 @@ def _notify_stock_arrived(session, *, sku: str, target_date, hold_ids: list[str]
                 # negação do ManyChat); `product_sku` é o mesmo valor com o nome que a
                 # mensagem usa — o sufixo que o template gruda no fim do link do botão.
                 "product_sku": sku,
+                "image_url": _product_image(sku),
                 "product_name": product_name,
                 "customer_name": (getattr(customer, "first_name", "") or "").strip(),
                 "target_date": str(target_date) if target_date else None,
@@ -339,6 +340,17 @@ def _notification_recipient(customer, *, backend: str | None = None) -> str:
         or getattr(customer, "ref", "")
         or str(getattr(customer, "pk", ""))
     )
+
+
+def _product_image(sku: str) -> str:
+    """Foto do produto para o cabeçalho de mídia do template aprovado."""
+    try:
+        from shopman.shop.services.campaign import product_image_url
+
+        return product_image_url(sku)
+    except Exception:
+        logger.debug("stock_arrived: foto não resolveu sku=%s", sku, exc_info=True)
+        return ""
 
 
 def _deadline_at_for_holds(hold_ids: list[str]) -> str | None:

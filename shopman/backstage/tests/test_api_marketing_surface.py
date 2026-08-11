@@ -767,3 +767,87 @@ class TestWhatsAppTemplateFromTheSurface:
         outsider = User.objects.create_user(username="curioso2", password="x", is_staff=True)
         client.force_login(outsider)
         assert client.get(WA_TEMPLATE_URL).status_code == 403
+
+
+class TestWhatsAppTestSend:
+    """Testar o template é conferência de dez segundos, e mora na tela.
+
+    Existia só como comando de terminal, e o dono foi direto ao ponto: por que ele abriria
+    um terminal para isso? Este endpoint é o mesmo serviço, alcançável pelo painel.
+    """
+
+    URL = "/api/v1/backstage/marketing/whatsapp-template/test/"
+
+    def test_staff_without_permission_cannot_send(self, client):
+        User.objects.create_user(username="caixa2", password="x", is_staff=True)
+        client.login(username="caixa2", password="x")
+        assert client.post(self.URL).status_code == 403
+
+    def test_a_recipient_is_required(self, client, gestor):
+        client.force_login(gestor)
+        response = client.post(self.URL, data={}, content_type="application/json")
+        assert response.status_code == 400
+
+    def test_it_refuses_a_list(self, client, gestor):
+        """⚠️ Um destinatário por chamada: aceitar lista transformaria isto em disparo."""
+        client.force_login(gestor)
+        response = client.post(
+            self.URL,
+            data={"recipient": "4605528796186498,4605528796186499"},
+            content_type="application/json",
+        )
+        assert response.status_code == 400
+
+    def test_without_transport_it_says_so_instead_of_pretending(self, client, gestor, monkeypatch):
+        client.force_login(gestor)
+        monkeypatch.setattr("shopman.shop.handlers.campaign._whatsapp_backend", lambda: None)
+
+        response = client.post(
+            self.URL, data={"recipient": "4605528796186498"}, content_type="application/json"
+        )
+
+        assert response.status_code == 400
+        assert "transporte" in response.json()["detail"]
+
+    def test_it_sends_the_real_variables_and_reports_them(self, client, gestor, monkeypatch):
+        """A tela mostra o que o template recebeu — campo vazio explica variável vazia."""
+        from shopman.offerman.models import Product
+
+        Product.objects.create(
+            sku="BAGUETE-TEST", name="Baguete", base_price_q=1600,
+            is_published=True, is_sellable=True,
+        )
+        client.force_login(gestor)
+        monkeypatch.setattr("shopman.shop.handlers.campaign._whatsapp_backend", lambda: "manychat")
+        monkeypatch.setattr(
+            "shopman.shop.notifications.notify",
+            lambda **kw: type("R", (), {"success": True, "message_id": "m1"})(),
+        )
+
+        response = client.post(
+            self.URL,
+            data={"recipient": "4605528796186498", "sku": "BAGUETE-TEST", "name": "Pablo"},
+            content_type="application/json",
+        )
+
+        assert response.status_code == 200
+        body = response.json()
+        assert body["ok"] is True
+        assert body["fields"]["customer_name"] == "Pablo"
+        assert body["fields"]["product_name"] == "Baguete"
+        assert body["fields"]["product_sku"] == "BAGUETE-TEST"
+
+    def test_a_refused_send_is_reported_as_refused(self, client, gestor, monkeypatch):
+        client.force_login(gestor)
+        monkeypatch.setattr("shopman.shop.handlers.campaign._whatsapp_backend", lambda: "manychat")
+        monkeypatch.setattr(
+            "shopman.shop.notifications.notify",
+            lambda **kw: type("R", (), {"success": False, "error": "sem janela"})(),
+        )
+
+        body = client.post(
+            self.URL, data={"recipient": "4605528796186498"}, content_type="application/json"
+        ).json()
+
+        assert body["ok"] is False
+        assert body["detail"]

@@ -35,5 +35,42 @@ export function useWhatsAppTemplate() {
     }
   }
 
-  return { current, available, canList, loading: pending, load: refresh, choose };
+  /** Campos que o teste enviou, para a tela mostrar o que o template recebeu. */
+  const testFields = ref<Record<string, string>>({});
+  const testing = ref(false);
+
+  /**
+   * Manda UM teste para UM número. Não resolve audiência nem consentimento: é o gestor
+   * conferindo o próprio WhatsApp, e é por isso que o destinatário é digitado.
+   */
+  async function sendTest(recipient: string, options: { sku?: string; name?: string } = {}) {
+    testing.value = true;
+    try {
+      const response = await $fetch<{
+        ok: boolean; backend: string; fields: Record<string, string>; detail: string;
+      }>("/api/v1/backstage/marketing/whatsapp-template/test/", {
+        method: "POST",
+        body: { recipient, sku: options.sku || "", name: options.name || "" },
+      });
+      testFields.value = response.fields || {};
+      if (response.ok) {
+        // Aceito pelo provedor ≠ entregue no aparelho. Dizer isso evita o gestor
+        // concluir que está tudo bem quando o celular não vibrou.
+        useSonner.success(`Enviado por ${response.backend}. Confira o aparelho.`);
+      } else {
+        useSonner.error(response.detail || "O transporte não aceitou o envio.");
+      }
+      return response.ok;
+    } catch (err) {
+      useSonner.error(httpErrorMessage(err, "Não foi possível enviar o teste."));
+      return false;
+    } finally {
+      testing.value = false;
+    }
+  }
+
+  return {
+    current, available, canList, loading: pending, load: refresh, choose,
+    sendTest, testing, testFields,
+  };
 }

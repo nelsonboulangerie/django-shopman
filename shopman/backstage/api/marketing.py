@@ -17,6 +17,7 @@ de regras e modelos. Gate: ``shop.manage_campaigns`` — o gestor de marketing n
     POST   campaign/rules/<pk>/fire/    → disparar AGORA (público opcional)
     GET    campaign/whatsapp-template/  → templates aprovados + o escolhido
     POST   campaign/whatsapp-template/  → escolher o template
+    POST   campaign/whatsapp-template/test/ → mandar UM teste para UM número
     GET    campaign/rules/              → listar         POST → criar
     PATCH  campaign/rules/<pk>/         → editar         DELETE → apagar
     GET    campaign/templates/          → listar         POST → criar
@@ -179,6 +180,43 @@ class AnnouncementApproveView(_CampaignBase):
             "ok": True,
             "scheduled": bool(announcement.publish_at),
             "announcement": projection_data(marketing_projection.build_announcement(announcement)),
+        })
+
+
+class WhatsAppTestSendView(_CampaignBase):
+    """POST campaign/whatsapp-template/test/ → manda UM teste, para UM número.
+
+    Fica ao lado da escolha do template porque é a mesma pergunta: "isto renderiza como eu
+    escrevi?". Mandar o gestor abrir um terminal para descobrir seria transformar uma
+    conferência de dez segundos em tarefa de infraestrutura.
+
+    Um destinatário por chamada, sem resolução de audiência e sem consentimento — não é
+    caminho para alcançar cliente, é o gestor testando o próprio WhatsApp. A resposta
+    devolve os CAMPOS que saíram, para a tela mostrar o que o template recebeu.
+    """
+
+    def post(self, request):
+        payload = request.data if isinstance(request.data, dict) else {}
+        try:
+            outcome = campaign_service.send_test(
+                str(payload.get("recipient") or ""),
+                sku=str(payload.get("sku") or ""),
+                name=str(payload.get("name") or ""),
+                body=str(payload.get("body") or ""),
+            )
+        except campaign_service.CampaignError as exc:
+            return Response({"detail": str(exc)}, status=400)
+
+        logger.info(
+            "campaign.test_send user=%s recipient=%s accepted=%s",
+            request.user.pk, outcome.recipient, outcome.accepted,
+        )
+        return Response({
+            "ok": outcome.accepted,
+            "backend": outcome.backend,
+            "fields": outcome.fields,
+            # Aceito pelo provedor ≠ entregue no aparelho. A tela diz isso.
+            "detail": outcome.detail,
         })
 
 

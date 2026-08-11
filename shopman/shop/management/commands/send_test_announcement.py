@@ -108,49 +108,6 @@ class Command(BaseCommand):
             help="Envia DE VERDADE. Sem esta flag o comando só mostra o que sairia.",
         )
 
-    def _template_fields(self, options) -> dict:
-        """As variáveis que o template aprovado espera, com valores REAIS quando dá.
-
-        `available_qty` sai da disponibilidade de verdade: um teste com número inventado
-        validaria a fiação e mentiria sobre o conteúdo.
-        """
-        sku = str(options.get("sku") or "").strip()
-        fields = {
-            "customer_name": str(options.get("name") or "").strip(),
-            "product_name": "",
-            "product_sku": sku,
-            "available_qty": "",
-        }
-        if not sku:
-            return fields
-
-        try:
-            from shopman.shop.projections import catalog_context
-
-            product = catalog_context.get_product(sku)
-            fields["product_name"] = getattr(product, "name", "") or sku
-        except Exception:
-            logger.warning("send_test: nome do produto não resolveu sku=%s", sku, exc_info=True)
-            fields["product_name"] = sku
-
-        try:
-            from shopman.shop.handlers.campaign import _available_qty
-
-            qty = _available_qty(sku)
-            fields["available_qty"] = str(qty) if qty else ""
-        except Exception:
-            # Fica vazio: o teste mostra "(vazio)" e o gestor vê que a mensagem sairia
-            # sem número, em vez de sair com um número inventado.
-            logger.warning("send_test: quantidade não resolveu sku=%s", sku, exc_info=True)
-
-        try:
-            from shopman.shop.services import storefront_links
-
-            fields["link"] = storefront_links.product_url(sku)
-        except Exception:
-            logger.warning("send_test: link do produto não resolveu sku=%s", sku, exc_info=True)
-        return fields
-
     def handle(self, *args, **options):
         from shopman.shop.adapters import _external
         from shopman.shop.notifications import get_backend, notify
@@ -168,7 +125,11 @@ class Command(BaseCommand):
         link = ""
         # As MESMAS chaves que o caminho real manda. Um teste que mande menos prova só
         # que o transporte responde — não que o template aprovado renderiza.
-        fields = self._template_fields(options)
+        from shopman.shop.services import campaign as campaign_service
+
+        fields = campaign_service.test_fields(
+            sku=str(options.get("sku") or ""), name=str(options.get("name") or "")
+        )
 
         announcement_pk = options["announcement"]
         if announcement_pk:

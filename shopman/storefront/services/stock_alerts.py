@@ -173,6 +173,17 @@ def _product_name(sku: str) -> str:
     return product.name if product is not None else sku
 
 
+def _image_url(sku: str) -> str:
+    """Foto do produto pelo orquestrador — superfície não fala com o kernel."""
+    try:
+        from shopman.shop.services import campaign as campaign_service
+
+        return campaign_service.product_image_url(sku)
+    except Exception:
+        logger.debug("stock_alerts: foto não resolveu sku=%s", sku, exc_info=True)
+        return ""
+
+
 def _first_name(sub) -> str:
     """Primeiro nome de quem assinou, ou vazio.
 
@@ -223,6 +234,8 @@ def _deliver(
                 # Nome que a mensagem usa: o sufixo que o template gruda no fim do link
                 # do botão. Ver o gêmeo em `handlers/_stock_receivers.py`.
                 "product_sku": sub.sku,
+                # Foto do produto: é o cabeçalho de mídia do template aprovado.
+                "image_url": _image_url(sub.sku),
                 "product_name": product_name,
                 "customer_name": _first_name(sub),
                 "product_url": storefront_links.product_url(sub.sku),
