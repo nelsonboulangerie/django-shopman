@@ -66,7 +66,7 @@ class TestEmptyCart:
         assert checkout.kind == "link"
         assert checkout.enabled is False
         assert checkout.reason == "Sacola vazia."
-        assert checkout.href == "/checkout"
+        assert checkout.href == "/finalizar"
 
     def test_empty_cart_carries_omotenashi_copy(self, client):
         """A sacola vazia fala pelo registro, não por string na tela."""
@@ -140,7 +140,7 @@ class TestPopulatedCart:
         assert proj.grand_total_q == item.total_price_q
         checkout = next(action for action in proj.actions if action.ref == "checkout")
         assert checkout.label == "Finalizar pedido"
-        assert checkout.href == "/checkout"
+        assert checkout.href == "/finalizar"
         if proj.minimum_order_progress is not None:
             assert checkout.enabled is False
             assert checkout.reason == f"Faltam {proj.minimum_order_progress.remaining_display} para o pedido mínimo."

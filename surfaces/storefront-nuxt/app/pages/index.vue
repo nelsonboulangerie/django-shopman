@@ -218,7 +218,7 @@ useHead({
                     :key="action.ref"
                     size="sm"
                     :variant="action.priority === 'primary' ? 'default' : 'outline'"
-                    :to="action.kind === 'link' ? localRouteFromBackend(action.href) : undefined"
+                    :to="action.kind === 'link' ? action.href : undefined"
                     :href="action.kind === 'external' ? action.href : undefined"
                     :target="action.kind === 'external' ? '_blank' : undefined"
                     rel="noopener"

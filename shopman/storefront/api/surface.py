@@ -20,7 +20,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from shopman.shop.omotenashi import resolve_copy
-from shopman.shop.services import remote_mutations
+from shopman.shop.services import remote_mutations, storefront_links
 from shopman.storefront.api import clean_text
 from shopman.storefront.constants import STOREFRONT_CHANNEL_REF
 from shopman.storefront.presentation import (
@@ -78,7 +78,7 @@ def _stock_error_payload(exc, *, product=None) -> dict:
             ref="review_cart",
             kind="link",
             label="Revisar sacola",
-            href="/cart",
+            href=storefront_links.path_cart(),
             priority="secondary",
         ),
         action_payload(

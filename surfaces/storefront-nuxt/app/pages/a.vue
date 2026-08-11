@@ -41,7 +41,7 @@ onMounted(async () => {
     // Sacola não veio (handoff expirou): aviso gentil que sobrevive à navegação (Sonner
     // vive no layout). O login segue normal; só comunicamos a sacola ausente.
     if (response.handoff_expired && response.notice) useSonner(response.notice)
-    await navigateTo(localRouteFromBackend(response.redirect || '/conta'))
+    await navigateTo(response.redirect || '/conta')
   } catch {
     failed.value = true
   }

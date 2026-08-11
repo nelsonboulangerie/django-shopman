@@ -293,7 +293,7 @@ watch(ratingOpen, open => {
 })
 
 function actionRoute (action: Action) {
-  return localRouteFromBackend(action.href || null)
+  return action.href || '/'
 }
 
 function actionIcon (action: Action) {

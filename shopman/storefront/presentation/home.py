@@ -331,7 +331,7 @@ def _home_notices(
                     ref="continue_checkout",
                     kind="link",
                     label="Continuar pedido",
-                    href="/checkout",
+                    href="/finalizar",
                     priority="primary",
                 ),
             ),

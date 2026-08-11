@@ -53,4 +53,4 @@ def test_home_projection_promotes_whatsapp_origin_as_contract_notice(rf):
 
     assert notices["origin_whatsapp"]["priority"] == "contextual"
     assert notices["origin_whatsapp"]["tone"] == "info"
-    assert notices["origin_whatsapp"]["actions"][0]["href"] == "/checkout"
+    assert notices["origin_whatsapp"]["actions"][0]["href"] == "/finalizar"

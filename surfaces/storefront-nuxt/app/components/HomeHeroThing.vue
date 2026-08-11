@@ -39,7 +39,7 @@ const HERO_IMAGE_URLS = {
   handmade: 'https://images.unsplash.com/photo-1608198093002-ad4e005484ec?auto=format&fit=crop&w=1600&q=80'
 } as const
 
-const menuTo = computed(() => localRouteFromBackend(props.primaryAction?.href || '/menu'))
+const menuTo = computed(() => props.primaryAction?.href || '/menu')
 const activeIndex = ref(0)
 const paused = ref(false)
 const touchStartX = ref(0)

@@ -49,3 +49,27 @@ def test_domain_cutover_is_a_single_knob(settings):
     assert sl.order_tracking_url("R") == "https://staging.example/thing/pedido/R"
     settings.SHOPMAN_STOREFRONT_BASE_URL = "https://nelson.com"
     assert sl.order_tracking_url("R") == "https://nelson.com/pedido/R"
+
+
+def test_presentation_literals_match_the_links_module():
+    """⚠️ Uma pergunta, um dono — com guarda, porque a camada não pode importar o dono.
+
+    `presentation` só enxerga `shop.projections` (regra testada em
+    `test_import_boundaries`), então os hrefs de Action ficam como literal. O literal é
+    legítimo; divergir não é. Se alguém mudar a rota num lado só, este teste quebra antes
+    do cliente cair num 404 — que é o que aconteceria hoje, já que os 301 morreram.
+    """
+    import re
+    from pathlib import Path
+
+    root = Path(__file__).resolve().parents[3]
+    hrefs = set()
+    for name in ("cart.py", "home.py"):
+        source = (root / "shopman" / "storefront" / "presentation" / name).read_text()
+        hrefs.update(re.findall(r'href="(/[a-z-]+)"', source))
+
+    known = {
+        sl.path_menu(), sl.path_cart(), sl.path_checkout(),
+        sl.path_account(), sl.path_login(), sl.path_home(),
+    }
+    assert hrefs <= known, f"href fora do vocabulário de rotas da loja: {hrefs - known}"

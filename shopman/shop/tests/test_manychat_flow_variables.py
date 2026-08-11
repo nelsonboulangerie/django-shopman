@@ -130,3 +130,24 @@ def test_without_a_flow_nothing_is_pushed(calls, db):
 
     endpoints = _endpoints(calls)
     assert endpoints == ["/sending/sendContent"]
+
+
+# ── A quantidade que a mensagem promete ──────────────────────────────
+
+
+def test_the_quantity_is_the_real_one(calls, with_flow):
+    """⚠️ FOMO com número só vale se o número for verdade.
+
+    A quantidade sai da MESMA checagem de disponibilidade que libera o alerta, então o
+    "ainda tenho X unidades" é o que a loja pode honrar naquele instante.
+    """
+    mc.send("+5543984049009", "stock_arrived", {"product_name": "Baguete", "available_qty": "12"})
+
+    assert _field_payloads(calls)["available_qty"] == "12"
+
+
+def test_an_unknown_quantity_says_nothing(calls, with_flow):
+    """Canal que não sabe contar não inventa número: o campo não é gravado."""
+    mc.send("+5543984049009", "stock_arrived", {"product_name": "Baguete", "available_qty": ""})
+
+    assert "available_qty" not in _field_payloads(calls)

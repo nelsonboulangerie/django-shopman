@@ -521,7 +521,7 @@ def _cart_actions(
             priority="primary",
             enabled=checkout_enabled,
             reason=checkout_reason,
-            href="/checkout",
+            href="/finalizar",
         ),
         Action(
             ref="continue_shopping",

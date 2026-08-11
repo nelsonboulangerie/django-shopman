@@ -230,7 +230,7 @@ const submitDisabled = computed(() => !action.value?.enabled || !!cart.value?.is
 // leva ao cardápio) em vez de "Revisar pedido" morto + "Sacola vazia.".
 const bagIsEmpty = computed(() => !!cart.value?.is_empty)
 const authAction = computed(() => checkout.value?.auth_action || null)
-const authRoute = computed(() => localRouteFromBackend(authAction.value?.href || '/entrar?next=/finalizar'))
+const authRoute = computed(() => authAction.value?.href || '/entrar?next=/finalizar')
 const availableFulfillment = computed(() => availableFulfillmentOptions(checkout.value))
 // Upsell de frete grátis: só faz sentido em entrega e enquanto a taxa não zerou.
 const freeDeliveryUpsell = computed(() =>
@@ -810,7 +810,7 @@ async function submitCheckout () {
     // pagar; PIX em canal post_commit e dinheiro vão para o acompanhamento, que
     // já mostra o momento "pedido recebido" e libera o "Pagar agora" sozinho
     // quando a loja confirma. Não existe mais tela intermediária.
-    const confirmedUrl = localRouteFromBackend(response.next_url)
+    const confirmedUrl = response.next_url
       || `/pedido/${encodeURIComponent(response.order_ref)}`
     // O Core já salvou o endereço de entrega ao confirmar (só em pedido que
     // de fato fechou — fora-de-zona/abandonado nunca poluem o perfil). Se foi

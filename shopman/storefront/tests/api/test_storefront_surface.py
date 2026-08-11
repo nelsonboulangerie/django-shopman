@@ -163,7 +163,7 @@ def test_api_cart_sku_qty_sets_absolute_qty_and_returns_cart_projection(client):
     assert add_data["cart"]["items"][0]["sku"] == product.sku
     cart_checkout = next(action for action in add_data["cart"]["actions"] if action["ref"] == "checkout")
     assert cart_checkout["label"] == "Finalizar pedido"
-    assert cart_checkout["href"] == "/checkout"
+    assert cart_checkout["href"] == "/finalizar"
     if add_data["cart"]["minimum_order_progress"]:
         assert cart_checkout["enabled"] is False
         assert cart_checkout["reason"].startswith("Faltam ")

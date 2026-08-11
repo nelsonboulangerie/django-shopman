@@ -21,7 +21,7 @@ watch(() => data.value?.cart, cart => {
 
 const checkoutAction = computed(() => cart.value.actions.find(action => action.ref === 'checkout') || null)
 const continueAction = computed(() => cart.value.actions.find(action => action.ref === 'continue_shopping') || null)
-const checkoutTarget = computed(() => localRouteFromBackend(checkoutAction.value?.href || '/finalizar'))
+const checkoutTarget = computed(() => checkoutAction.value?.href || '/finalizar')
 const checkoutDisabled = computed(() => !checkoutAction.value?.enabled)
 const checkoutReason = computed(() => checkoutAction.value?.reason || '')
 
@@ -178,7 +178,7 @@ useSeoMeta({
             <UiEmptyDescription>{{ cart.empty_message }}</UiEmptyDescription>
           </UiEmptyHeader>
           <UiEmptyContent class="flex flex-col items-center gap-2">
-            <UiButton :to="localRouteFromBackend(continueAction?.href || '/menu')" icon="lucide:utensils">
+            <UiButton :to="continueAction?.href || '/menu'" icon="lucide:utensils">
               {{ continueAction?.label || 'Ver cardápio' }}
             </UiButton>
           </UiEmptyContent>
@@ -343,7 +343,7 @@ useSeoMeta({
               </p>
               <UiButton
                 v-if="continueAction"
-                :to="localRouteFromBackend(continueAction.href)"
+                :to="continueAction.href"
                 variant="outline"
                 class="w-full"
               >

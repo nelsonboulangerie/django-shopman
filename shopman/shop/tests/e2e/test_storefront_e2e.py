@@ -49,12 +49,12 @@ ADD_TO_CART = re.compile(r"Adicionar", re.IGNORECASE)
 
 
 def _seeded_sku(page, store_base_url) -> str | None:
-    """First product SKU off the live menu, from a /product/<sku> card link."""
+    """First product SKU off the live menu, from a /produto/<sku> card link."""
     page.goto(f"{store_base_url}/menu", wait_until="networkidle")
-    href = page.locator("a[href*='/product/']").first.get_attribute("href")
+    href = page.locator("a[href*='/produto/']").first.get_attribute("href")
     if not href:
         return None
-    match = re.search(r"/product/([^/?#]+)", href)
+    match = re.search(r"/produto/([^/?#]+)", href)
     return match.group(1) if match else None
 
 
@@ -70,7 +70,7 @@ class TestCustomerStore:
         """Menu renders product cards that link to the PDP — no dead end."""
         page.goto(f"{store_base_url}/menu", wait_until="networkidle")
         assert page.title(), "Menu should have a title"
-        product_links = page.locator("a[href*='/product/']")
+        product_links = page.locator("a[href*='/produto/']")
         expect(product_links.first).to_be_visible()
         assert product_links.count() > 0, "Seeded menu should list products"
 
@@ -78,8 +78,8 @@ class TestCustomerStore:
         """Navigate menu → PDP; the PDP shows price + an Adicionar action."""
         sku = _seeded_sku(page, store_base_url)
         assert sku, "Seeded menu should expose at least one product SKU"
-        page.goto(f"{store_base_url}/product/{sku}", wait_until="networkidle")
-        assert f"/product/{sku}" in page.url
+        page.goto(f"{store_base_url}/produto/{sku}", wait_until="networkidle")
+        assert f"/produto/{sku}" in page.url
         # Price is rendered as R$ … and an add-to-cart control is offered.
         expect(page.get_by_text(re.compile(r"R\$")).first).to_be_visible()
         expect(page.get_by_role("button", name=ADD_TO_CART).first).to_be_visible()
@@ -88,7 +88,7 @@ class TestCustomerStore:
         """Add from the PDP, then the cart leaves the empty state."""
         sku = _seeded_sku(page, store_base_url)
         assert sku, "Seeded menu should expose at least one product SKU"
-        page.goto(f"{store_base_url}/product/{sku}", wait_until="networkidle")
+        page.goto(f"{store_base_url}/produto/{sku}", wait_until="networkidle")
         page.get_by_role("button", name=ADD_TO_CART).first.click()
         # Optimistic cart state settles, then the cart page reflects the item.
         page.wait_for_timeout(600)
@@ -222,7 +222,7 @@ class TestOperator:
 class TestNavigation:
     """Core pages return 200 and render."""
 
-    @pytest.mark.parametrize("path", ["/", "/menu", "/cart", "/checkout", "/busca"])
+    @pytest.mark.parametrize("path", ["/", "/menu", "/sacola", "/finalizar", "/busca"])
     def test_store_pages_load(self, page, store_base_url, path):
         """Public store pages return 200/redirect and render."""
         response = page.goto(f"{store_base_url}{path}")

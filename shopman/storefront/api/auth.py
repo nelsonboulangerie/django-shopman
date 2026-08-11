@@ -15,6 +15,7 @@ from rest_framework.views import APIView
 
 from shopman.shop.services import access as access_service
 from shopman.shop.services import auth as auth_service
+from shopman.shop.services import storefront_links
 from shopman.storefront.constants import HAS_AUTH
 from shopman.storefront.identity import get_authenticated_customer
 from shopman.storefront.intents._phone import normalize_phone_input
@@ -148,7 +149,7 @@ class AccessLinkExchangeView(APIView):
             return Response({"detail": "Link inválido."}, status=status.HTTP_400_BAD_REQUEST)
 
         if not HAS_AUTH:
-            return Response({"ok": True, "redirect": "/account", **_session_payload(None)})
+            return Response({"ok": True, "redirect": storefront_links.path_account(), **_session_payload(None)})
 
         metadata = access_service.token_metadata(token)
         result = access_service.exchange_token(token, request)

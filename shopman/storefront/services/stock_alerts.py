@@ -147,7 +147,10 @@ def _notify(sku: str, *, alert_type: str) -> int:
             continue
         if not state.can_add_to_cart:
             continue  # still unavailable for this channel — keep pending
-        if _deliver(sub, product_name=product_name, event=event):
+        if _deliver(
+            sub, product_name=product_name, event=event,
+            available_qty=state.available_qty,
+        ):
             sub.notified_at = timezone.now()
             sub.save(update_fields=["notified_at"])
             notified += 1
@@ -190,7 +193,9 @@ def _first_name(sub) -> str:
         return ""
 
 
-def _deliver(sub, *, product_name: str, event: str = "stock_arrived") -> bool:
+def _deliver(
+    sub, *, product_name: str, event: str = "stock_arrived", available_qty: int | None = None,
+) -> bool:
     """Send the subscription's notification via the channel's backend. True on success."""
     from shopman.shop.config import ChannelConfig
     from shopman.shop.notifications import notify
@@ -225,6 +230,10 @@ def _deliver(sub, *, product_name: str, event: str = "stock_arrived") -> bool:
                 # não há reserva nem prazo — cliente sem hold ("Me avise").
                 "reserve_note": "",
                 "deadline_note": "",
+                # Quantidade REAL, já resolvida na checagem de disponibilidade acima.
+                # Vazio quando o canal não sabe contar (`available_qty=None`): a
+                # mensagem então não fala em número, em vez de inventar um.
+                "available_qty": "" if available_qty is None else str(available_qty),
                 "cta": "Garanta o seu:",
                 "action_url": storefront_links.product_url(sub.sku),
             },
