@@ -121,8 +121,8 @@ class StripeCreateIntentTests(TestCase):
         # para o acompanhamento. Agora saem de `storefront_links`.
         # PAYMENT-TRACKING-MERGE: cancelar no Stripe volta ao acompanhamento
         # (onde o cartão é oferecido inline), não a uma tela de pagamento.
-        assert kwargs["success_url"] == f"https://loja.example.com/tracking/{order.ref}"
-        assert kwargs["cancel_url"] == f"https://loja.example.com/tracking/{order.ref}"
+        assert kwargs["success_url"] == f"https://loja.example.com/pedido/{order.ref}"
+        assert kwargs["cancel_url"] == f"https://loja.example.com/pedido/{order.ref}"
         assert "/confirmacao" not in kwargs["success_url"]
         assert not kwargs["cancel_url"].endswith("/")
         assert kwargs["metadata"]["order_ref"] == order.ref

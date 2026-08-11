@@ -231,7 +231,12 @@ def _notify_stock_arrived(session, *, sku: str, target_date, hold_ids: list[str]
             recipient=_notification_recipient(customer, backend=backend),
             context={
                 "sku": sku,
+                # ⚠️ `sku` é o nome INTERNO e não vai para o cliente (fica na lista de
+                # negação do ManyChat); `product_ref` é o mesmo valor com o nome que a
+                # mensagem usa — ele é o sufixo do link do botão do template aprovado.
+                "product_ref": sku,
                 "product_name": product_name,
+                "customer_name": (getattr(customer, "first_name", "") or "").strip(),
                 "target_date": str(target_date) if target_date else None,
                 "deadline_at": deadline_at,
                 "cart_url": _cart_url(),

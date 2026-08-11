@@ -275,6 +275,17 @@ def _normalize_phone_safe(phone_raw: str) -> str:
         return phone_raw
 
 
+def first_name_for(customer_ref: str) -> str:
+    """Primeiro nome de um cliente pelo `ref`, ou vazio.
+
+    Público de propósito: superfícies não falam com o guestman direto (a fronteira é
+    testada em `test_import_boundaries`), e "como chamo esta pessoa?" é pergunta de
+    domínio. Vazio é resultado legítimo — assinante anônimo tem só telefone.
+    """
+    data = _customer_by_ref(customer_ref) or {}
+    return (data.get("first_name") or "").strip()
+
+
 def _customer_by_ref(customer_ref: str) -> dict | None:
     if not customer_ref:
         return None

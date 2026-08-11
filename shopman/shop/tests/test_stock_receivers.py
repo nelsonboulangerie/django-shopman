@@ -62,7 +62,7 @@ def test_holds_materialized_notifies_customer_with_deadline_and_cart_url():
     assert kwargs["context"]["sku"] == product.sku
     assert kwargs["context"]["product_name"] == product.name
     assert kwargs["context"]["deadline_at"] == deadline.isoformat()
-    assert kwargs["context"]["cart_url"] == "https://shop.example/cart"
+    assert kwargs["context"]["cart_url"] == "https://shop.example/sacola"
     assert kwargs["context"]["session_key"] == session.session_key
 
 
@@ -194,7 +194,7 @@ def test_stock_arrived_renders_a_real_message_in_every_channel():
         body = render_message("stock_arrived", context, templates)
         assert product.name in body
         assert f"Confirme ate as {local_deadline}" in body
-        assert "https://shop.example/cart" in body
+        assert "https://shop.example/sacola" in body
         assert "{" not in body, f"placeholder sem valor no corpo: {body}"
         assert "Notificacao:" not in body
 

@@ -99,6 +99,6 @@ def test_access_link_metadata_grants_session_order_access(client, channel, custo
     entry = client.post("/api/v1/auth/access/", {"token": raw_token})
 
     assert entry.status_code == 200
-    assert entry.json()["redirect"] == f"/tracking/{order.ref}"
+    assert entry.json()["redirect"] == f"/pedido/{order.ref}"
     # The magic link binds order access to the session (store host).
     assert order.ref in client.session.get("shopman_order_access_refs", [])

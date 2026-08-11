@@ -170,6 +170,26 @@ def _product_name(sku: str) -> str:
     return product.name if product is not None else sku
 
 
+def _first_name(sub) -> str:
+    """Primeiro nome de quem assinou, ou vazio.
+
+    Vazio é resultado legítimo: assinante anônimo tem só telefone. O template trata a
+    ausência (a saudação some), então nunca sai "Oi ," na cara do cliente.
+    """
+    ref = (getattr(sub, "customer_ref", "") or "").strip()
+    if not ref:
+        return ""
+    # Pelo orquestrador, nunca pelo guestman direto: superfície é adaptador de HTTP e
+    # read-model, e a fronteira tem teste (`test_import_boundaries`).
+    try:
+        from shopman.shop.services import customer as customer_service
+
+        return customer_service.first_name_for(ref)
+    except Exception:
+        logger.debug("stock_alerts: first name lookup failed for %s", ref, exc_info=True)
+        return ""
+
+
 def _deliver(sub, *, product_name: str, event: str = "stock_arrived") -> bool:
     """Send the subscription's notification via the channel's backend. True on success."""
     from shopman.shop.config import ChannelConfig
@@ -195,7 +215,11 @@ def _deliver(sub, *, product_name: str, event: str = "stock_arrived") -> bool:
             recipient=recipient,
             context={
                 "sku": sub.sku,
+                # Nome que a mensagem usa (sufixo do link do botão). Ver o gêmeo em
+                # `handlers/_stock_receivers.py`.
+                "product_ref": sub.sku,
                 "product_name": product_name,
+                "customer_name": _first_name(sub),
                 "product_url": storefront_links.product_url(sub.sku),
                 # Placeholders do template compartilhado de stock_arrived: aqui
                 # não há reserva nem prazo — cliente sem hold ("Me avise").

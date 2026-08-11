@@ -10,8 +10,15 @@ Cutover de domínio é um único knob: em produção, aponte
 `SHOPMAN_STOREFRONT_BASE_URL=https://nelson.com` e todos os links de cliente
 passam a apontar para o apex — sem caçar caminho por caminho.
 
-Os caminhos abaixo são os caminhos CANÔNICOS da loja Nuxt (não os antigos do
-Django legado). Mantenha-os em sincronia com `surfaces/storefront-nuxt`.
+Os caminhos abaixo são os caminhos CANÔNICOS da loja Nuxt. Mantenha-os em sincronia
+com `surfaces/storefront-nuxt/app/pages/`.
+
+⚠️ Eles eram os caminhos em INGLÊS (`/product/`, `/cart`, `/tracking/`…), e só chegavam
+ao cliente por causa dos 301 declarados em `nuxt.config.ts`. Ou seja, **todo** link que o
+Django manda — acompanhamento, pagamento, magic link — dava um salto extra. Num botão de
+template aprovado do WhatsApp isso é pior que feio: alguns clientes de mensagem
+pré-visualizam o destino, e o redirect atrapalha. Os 301 continuam existindo, para os
+links que já saíram.
 """
 from __future__ import annotations
 
@@ -33,11 +40,19 @@ def path_menu() -> str:
 
 
 def path_product(sku: str) -> str:
-    return f"/product/{sku}"
+    """Rota canônica do produto, em pt-br.
+
+    ⚠️ Devolvia `/product/{sku}`, que só chega ao cliente depois de um 301 declarado em
+    `nuxt.config.ts`. Num link de notificação — e principalmente no botão de um template
+    aprovado do WhatsApp — o salto extra é gratuito e frágil: alguns clientes de mensagem
+    pré-visualizam o destino, e o redirect atrapalha. O 301 continua existindo para
+    links antigos que já saíram.
+    """
+    return f"/produto/{sku}"
 
 
 def path_cart() -> str:
-    return "/cart"
+    return "/sacola"
 
 
 def path_offer(promotion_ref: str) -> str:
@@ -51,23 +66,23 @@ def path_offer(promotion_ref: str) -> str:
 
 
 def path_checkout() -> str:
-    return "/checkout"
+    return "/finalizar"
 
 
 def path_order_tracking(ref: str) -> str:
-    return f"/tracking/{ref}"
+    return f"/pedido/{ref}"
 
 
 def path_account() -> str:
-    return "/account"
+    return "/conta"
 
 
 def path_order_history() -> str:
-    return "/account/pedidos"
+    return "/conta/pedidos"
 
 
 def path_login() -> str:
-    return "/login"
+    return "/entrar"
 
 
 def path_access() -> str:
