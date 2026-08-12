@@ -531,3 +531,22 @@ def test_a_customer_tag_is_not_a_product_keyword(db):
     assert Tag.objects.filter(name="integral").count() == 1  # o do produto, separado
     # E o cruzamento não vaza: a etiqueta do cliente não conhece o produto.
     assert list(CustomerTag.objects.values_list("name", flat=True)) == ["integral"]
+
+
+def test_one_tag_written_two_ways_still_reaches_everyone(db):
+    """⚠️ O defeito que a tela revelou, guardado do lado da AUDIÊNCIA.
+
+    "sem gluten" e "sem glúten" viravam duas etiquetas (slug com sufixo), e o público por
+    uma delas alcançava metade das pessoas sem dizer nada. `CustomerTag.resolve` faz as duas
+    grafias convergirem; este teste prova o efeito onde ele importa: no alcance.
+    """
+    from shopman.guestman.models import CustomerTag
+
+    ana = _customer("+5543999995001", ref="CLI-AC1")
+    joao = _customer("+5543999995002", ref="CLI-AC2")
+    ana.tags.set(CustomerTag.resolve(["sem gluten"]))
+    joao.tags.set(CustomerTag.resolve(["sem glúten"]))
+
+    result = audience.resolve({"tags": ["sem-gluten"]})
+
+    assert {r.phone for r in result.general} == {ana.phone, joao.phone}

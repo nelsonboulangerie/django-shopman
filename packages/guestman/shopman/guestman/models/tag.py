@@ -28,6 +28,39 @@ class CustomerTag(TagBase):
         verbose_name_plural = _("etiquetas")
         ordering = ["name"]
 
+    @classmethod
+    def resolve(cls, names) -> list["CustomerTag"]:
+        """Nomes → etiquetas, **reusando** a que já existe com o mesmo slug.
+
+        ⚠️ Sem isto, "sem glúten" e "sem gluten" viram DUAS etiquetas. O taggit não recusa o
+        segundo: o `slug` é unique, então ele resolve o conflito acrescentando sufixo
+        (`sem-gluten` e `sem-gluten_1`), e ficam dois rótulos para a mesma coisa. Visto na
+        tela, com uma cliente real do seed carregando os dois.
+
+        O dano é o de sempre neste projeto — silencioso: o público por `sem-gluten` alcança
+        metade das pessoas, e nada indica que a outra metade existe. Casar por slug é o que
+        faz acento, maiúscula e espaço a mais convergirem para uma etiqueta só.
+
+        Não resolve SINÔNIMO ("corredores" vs "corrida"): isso é escolha de vocabulário, e é
+        por isso que a tela mostra as etiquetas que já existem antes de criar outra.
+        """
+        resolved: list[CustomerTag] = []
+        seen: set[str] = set()
+        for raw in names:
+            name = str(raw).strip()
+            if not name:
+                continue
+            slug = cls().slugify(name)
+            if slug in seen:
+                continue
+            seen.add(slug)
+
+            tag = cls.objects.filter(slug=slug).first()
+            if tag is None:
+                tag = cls.objects.create(name=name, slug=slug)
+            resolved.append(tag)
+        return resolved
+
 
 class TaggedCustomer(GenericTaggedItemBase):
     """A ligação cliente ↔ etiqueta. Existe para dar namespace próprio ao `CustomerTag`."""

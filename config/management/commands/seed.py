@@ -27,7 +27,13 @@ from django.core.management.base import BaseCommand, CommandError
 from django.utils import timezone
 from shopman.craftsman.models import Recipe, RecipeItem, WorkOrder, WorkOrderItem
 from shopman.doorman.models import PinCredential
-from shopman.guestman.models import ContactPoint, Customer, CustomerAddress, PriceTier
+from shopman.guestman.models import (
+    ContactPoint,
+    Customer,
+    CustomerAddress,
+    CustomerTag,
+    PriceTier,
+)
 from shopman.offerman.models import (
     AvailabilityPolicy,
     Collection,
@@ -5116,7 +5122,7 @@ class Command(BaseCommand):
         etiquetas = {
             "CLI-001": ["corredores", "vizinho"],
             "CLI-003": ["corredores"],
-            "CLI-005": ["sem gluten"],
+            "CLI-005": ["sem glúten"],
             "CLI-002": ["entrega na segunda"],
             "CLI-004": ["entrega na segunda"],
         }
@@ -5124,7 +5130,9 @@ class Command(BaseCommand):
             customer = customers.get(ref)
             if customer is None:
                 continue
-            customer.tags.set(tags)
+            # `resolve` em vez de `set(nomes)`: casar por slug é o que impede "sem glúten"
+            # e "sem gluten" de virarem duas etiquetas (ver `guestman/models/tag.py`).
+            customer.tags.set(CustomerTag.resolve(tags))
 
         self.stdout.write(f"  ✅ {len(etiquetas)} clientes etiquetados")
 

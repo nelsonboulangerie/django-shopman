@@ -11,8 +11,10 @@ from __future__ import annotations
 
 import csv
 
+from django import forms
 from django.contrib import admin, messages
 from django.http import HttpResponse
+from django.template.response import TemplateResponse
 from django.utils.html import format_html
 from django.utils.translation import gettext_lazy as _
 from shopman.guestman.models import (
@@ -26,6 +28,7 @@ from shopman.utils.contrib.admin_unfold.badges import unfold_badge, unfold_badge
 from shopman.utils.contrib.admin_unfold.base import BaseModelAdmin, BaseTabularInline
 from unfold.contrib.filters.admin.dropdown_filters import ChoicesDropdownFilter
 from unfold.decorators import display
+from unfold.widgets import UnfoldAdminRadioSelectWidget, UnfoldAdminTextInputWidget
 
 # Unregister basic admins
 for model in [Customer, PriceTier, CustomerAddress, ContactPoint, ExternalIdentity]:
@@ -33,6 +36,58 @@ for model in [Customer, PriceTier, CustomerAddress, ContactPoint, ExternalIdenti
         admin.site.unregister(model)
     except admin.sites.NotRegistered:
         pass
+
+
+# =============================================================================
+# ETIQUETAS EM MASSA
+# =============================================================================
+
+
+def _existing_tag_names() -> list[str]:
+    """As etiquetas que já existem, para o operador reusar em vez de reinventar.
+
+    ⚠️ Sem esta lista nascem "corredores", "Corredores" e "corredor" como três etiquetas
+    diferentes — e aí o público por etiqueta alcança um terço de quem devia. O taggit
+    deduplica por slug, o que resolve maiúscula e acento, mas não resolve sinônimo.
+    """
+    from shopman.guestman.models import CustomerTag
+
+    return list(CustomerTag.objects.order_by("name").values_list("name", flat=True))
+
+
+class TagCustomersForm(forms.Form):
+    """Etiquetas a pôr ou tirar. Texto livre, separado por vírgula."""
+
+    tags = forms.CharField(
+        label=_("Etiquetas"),
+        widget=UnfoldAdminTextInputWidget(
+            attrs={"placeholder": _("corredores, sem glúten, vizinho")}
+        ),
+        help_text=_("Separe por vírgula. Etiqueta nova é criada na hora."),
+    )
+    mode = forms.ChoiceField(
+        label=_("O que fazer"),
+        choices=[("add", _("Pôr estas etiquetas")), ("remove", _("Tirar estas etiquetas"))],
+        initial="add",
+        widget=UnfoldAdminRadioSelectWidget,
+    )
+
+    def clean_tags(self) -> list[str]:
+        """"a, b" → ["a", "b"], sem vazios e sem repetição.
+
+        Não uso o `parse_tags` do taggit aqui de propósito: ele quebra em ESPAÇO quando não
+        há vírgula, e "sem glúten" viraria duas etiquetas ("sem" e "glúten"). O separador
+        desta tela é a vírgula, e é isso que o placeholder mostra.
+        """
+        raw = self.cleaned_data["tags"]
+        names: list[str] = []
+        for piece in raw.split(","):
+            name = piece.strip()
+            if name and name not in names:
+                names.append(name)
+        if not names:
+            raise forms.ValidationError(_("Escreva ao menos uma etiqueta."))
+        return names
 
 
 # =============================================================================
@@ -178,7 +233,7 @@ class CustomerAdmin(BaseModelAdmin):
         ),
     ]
 
-    actions = ["export_selected_csv", "recalculate_insights"]
+    actions = ["tag_selected", "export_selected_csv", "recalculate_insights"]
 
     @display(description="Cliente", header=True)
     def customer_header(self, obj):
@@ -268,6 +323,65 @@ class CustomerAdmin(BaseModelAdmin):
             return unfold_badge(pct, "yellow")
         else:
             return unfold_badge(pct, "green")
+
+    @admin.action(description=_("Etiquetar selecionados…"))
+    def tag_selected(self, request, queryset):
+        """Página intermediária para pôr ou tirar etiquetas de vários clientes.
+
+        ⚠️ Existe porque etiquetar um por um não escala: o público por etiqueta só vale a
+        pena quando dá para marcar trinta corredores de uma vez. Sem isto, o recurso nasce
+        com um custo de uso que ninguém paga, e a etiqueta fica vazia — que é justamente o
+        estado que a contagem no seletor do Marketing denuncia.
+
+        Segue o padrão da casa (`refs`: `rename_value_action`): ação → `TemplateResponse`
+        com form Unfold → confirmação. Sem overlay novo, que o gate proíbe.
+        """
+        # ⚠️ Vincular ao POST da SELEÇÃO faria o form abrir já em vermelho ("este campo é
+        # obrigatório"), porque o POST que traz os checkboxes não traz as etiquetas. Ralhar
+        # com quem ainda não digitou nada ensina a ignorar o vermelho.
+        confirming = bool(request.POST.get("_tag_confirm"))
+        form = TagCustomersForm(request.POST if confirming else None)
+        if confirming:
+            if form.is_valid():
+                from shopman.guestman.models import CustomerTag
+
+                # `resolve` casa por SLUG: "sem glúten" reusa a etiqueta "sem gluten" em vez
+                # de criar uma segunda com o mesmo sentido (ver `models/tag.py`).
+                tags = CustomerTag.resolve(form.cleaned_data["tags"])
+                removing = form.cleaned_data["mode"] == "remove"
+                for customer in queryset:
+                    if removing:
+                        customer.tags.remove(*tags)
+                    else:
+                        customer.tags.add(*tags)
+
+                names = ", ".join(tag.name for tag in tags)
+                self.message_user(
+                    request,
+                    (
+                        _("Etiquetas retiradas de {count} cliente(s): {tags}.")
+                        if removing
+                        else _("{count} cliente(s) etiquetado(s) com: {tags}.")
+                    ).format(count=queryset.count(), tags=names),
+                )
+                return None
+            self.message_user(
+                request, _("Escreva ao menos uma etiqueta."), messages.ERROR
+            )
+
+        return TemplateResponse(
+            request,
+            "admin/guestman/customer/tag_confirm.html",
+            {
+                "form": form,
+                "queryset": queryset,
+                "existing_tags": _existing_tag_names(),
+                "action_checkbox_name": admin.helpers.ACTION_CHECKBOX_NAME,
+                "opts": self.model._meta,
+                "app_label": self.model._meta.app_label,
+                "title": _("Etiquetar clientes"),
+            },
+        )
 
     @admin.action(description=_("Exportar selecionados (CSV)"))
     def export_selected_csv(self, request, queryset):

@@ -231,3 +231,66 @@ class TestCustomerInsight:
 
 # Note: OrderSnapshot not yet implemented.
 # See spec 005-customers.md for planned model.
+
+
+class TestCustomerTagResolve:
+    """⚠️ Duas etiquetas para a mesma coisa alcançam metade da gente, em silêncio.
+
+    Visto na tela: o seed criou "sem gluten" e o operador digitou "sem glúten". O taggit não
+    recusa o segundo — o `slug` é unique, então ele resolve o conflito com sufixo
+    (`sem-gluten` e `sem-gluten_1`). Ficam dois rótulos idênticos aos olhos e diferentes ao
+    filtro, e o público por `sem-gluten` deixa metade das pessoas de fora sem dizer nada.
+    """
+
+    @pytest.mark.django_db
+    def test_the_accent_does_not_create_a_second_tag(self):
+        from shopman.guestman.models import CustomerTag
+
+        first = CustomerTag.resolve(["sem gluten"])
+        second = CustomerTag.resolve(["sem glúten"])
+
+        assert first[0].pk == second[0].pk
+        assert CustomerTag.objects.count() == 1
+        # O nome guardado é o de quem chegou primeiro; o slug é o que casa.
+        assert CustomerTag.objects.get().slug == "sem-gluten"
+
+    @pytest.mark.django_db
+    def test_case_and_spacing_converge_too(self):
+        from shopman.guestman.models import CustomerTag
+
+        CustomerTag.resolve(["Corredores"])
+        again = CustomerTag.resolve(["  corredores  "])
+
+        assert CustomerTag.objects.count() == 1
+        assert again[0].name == "Corredores"
+
+    @pytest.mark.django_db
+    def test_the_same_name_twice_in_one_call_is_one_tag(self):
+        from shopman.guestman.models import CustomerTag
+
+        resolved = CustomerTag.resolve(["vizinho", "Vizinho", ""])
+
+        assert len(resolved) == 1
+        assert CustomerTag.objects.count() == 1
+
+    @pytest.mark.django_db
+    def test_different_words_stay_different(self):
+        """Não é para colapsar tudo: sinônimo é escolha de vocabulário, não de slug."""
+        from shopman.guestman.models import CustomerTag
+
+        CustomerTag.resolve(["corredores", "corrida"])
+
+        assert CustomerTag.objects.count() == 2
+
+    @pytest.mark.django_db
+    def test_a_customer_tagged_by_either_spelling_is_reachable_by_the_slug(self):
+        """O que o defeito custava: alcance pela metade."""
+        from shopman.guestman.models import Customer, CustomerTag
+
+        ana = Customer.objects.create(ref="CLI-ANA", first_name="Ana", phone="+554399900001")
+        joao = Customer.objects.create(ref="CLI-JOAO", first_name="Joao", phone="+554399900002")
+        ana.tags.set(CustomerTag.resolve(["sem gluten"]))
+        joao.tags.set(CustomerTag.resolve(["sem glúten"]))
+
+        reached = Customer.objects.filter(tags__slug="sem-gluten").distinct()
+        assert set(reached.values_list("ref", flat=True)) == {"CLI-ANA", "CLI-JOAO"}

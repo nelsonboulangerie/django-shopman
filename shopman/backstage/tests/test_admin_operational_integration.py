@@ -435,3 +435,125 @@ def _flatten_fieldsets(fieldsets) -> list[str]:
             else:
                 result.append(field)
     return result
+
+
+class CustomerBulkTaggingTests(TestCase):
+    """Etiquetar em massa na changelist de clientes.
+
+    ⚠️ Sem isto, etiquetar é um cliente por vez — e o público por etiqueta só vale a pena
+    quando dá para marcar trinta corredores de uma vez. Recurso com custo de uso que ninguém
+    paga fica com etiqueta vazia, que é o estado que a contagem no seletor do Marketing
+    denuncia ("corredores (ninguém)").
+    """
+
+    def setUp(self) -> None:
+        # A `Shop` é exigência do OnboardingMiddleware: sem ela o Admin desvia e o teste
+        # vê 404 em vez da tela.
+        Shop.objects.create(name="Loja")
+        self._phone_seq = 0
+        self.user = User.objects.create_superuser("chefe", "chefe@example.com", "pw")
+        self.client.force_login(self.user)
+        self.url = reverse("admin:guestman_customer_changelist")
+
+    def _customers(self, *refs):
+        """⚠️ Telefone único por chamada: é ele a identidade, e dois iguais dão UNIQUE.
+
+        Contador de instância, não `hash(ref)`: o hash de str é randomizado por processo
+        (PYTHONHASHSEED), então um teste que passa hoje colidiria num run futuro — falha
+        intermitente é pior que falha.
+        """
+        from shopman.guestman.models import Customer
+
+        made = []
+        for ref in refs:
+            self._phone_seq += 1
+            made.append(Customer.objects.create(
+                ref=ref, first_name=ref, phone=f"+554398{self._phone_seq:07d}",
+            ))
+        return made
+
+    def _act(self, customers, **extra):
+        payload = {
+            "action": "tag_selected",
+            admin.helpers.ACTION_CHECKBOX_NAME: [str(c.pk) for c in customers],
+            **extra,
+        }
+        return self.client.post(self.url, payload, follow=True)
+
+    def test_the_action_asks_before_it_writes(self) -> None:
+        """Primeiro POST abre a página de confirmação; nada é etiquetado ainda.
+
+        ⚠️ E abre LIMPA. A primeira versão vinculava o form ao POST da seleção — que traz os
+        checkboxes e nenhuma etiqueta — então a tela nascia em vermelho, "este campo é
+        obrigatório", antes de a pessoa digitar. Ralhar com quem não fez nada ensina a
+        ignorar o vermelho, e aí o vermelho que importa também passa batido. Este teste só
+        verificava que a página renderizava, e por isso não pegou.
+        """
+        customers = self._customers("CLI-A1", "CLI-A2")
+
+        response = self._act(customers)
+
+        self.assertContains(response, "Etiquetar clientes")
+        self.assertNotContains(response, "obrigatório")
+        self.assertEqual(list(customers[0].tags.all()), [])
+
+    def test_it_tags_every_selected_customer(self) -> None:
+        customers = self._customers("CLI-B1", "CLI-B2")
+
+        self._act(customers, _tag_confirm="1", tags="corredores, vizinho", mode="add")
+
+        for customer in customers:
+            self.assertEqual(
+                sorted(customer.tags.values_list("name", flat=True)),
+                ["corredores", "vizinho"],
+            )
+
+    def test_it_also_removes(self) -> None:
+        """Tirar etiqueta errada de trinta pessoas tem de ser tão fácil quanto pôr."""
+        (customer,) = self._customers("CLI-C1")
+        customer.tags.add("corredores", "vizinho")
+
+        self._act([customer], _tag_confirm="1", tags="corredores", mode="remove")
+
+        self.assertEqual(list(customer.tags.values_list("name", flat=True)), ["vizinho"])
+
+    def test_the_comma_is_the_separator_not_the_space(self) -> None:
+        """⚠️ "sem glúten" é UMA etiqueta.
+
+        O `parse_tags` do taggit quebra em espaço quando não há vírgula, e viraria "sem" e
+        "glúten" — duas etiquetas que não significam nada. O separador desta tela é a
+        vírgula, e é isso que o placeholder mostra.
+        """
+        (customer,) = self._customers("CLI-D1")
+
+        self._act([customer], _tag_confirm="1", tags="sem glúten", mode="add")
+
+        self.assertEqual(list(customer.tags.values_list("name", flat=True)), ["sem glúten"])
+
+    def test_an_empty_tag_list_writes_nothing_and_says_so(self) -> None:
+        (customer,) = self._customers("CLI-E1")
+
+        response = self._act([customer], _tag_confirm="1", tags="  ,  ", mode="add")
+
+        self.assertEqual(list(customer.tags.all()), [])
+        self.assertContains(response, "ao menos uma etiqueta")
+
+    def test_it_shows_which_tags_already_exist(self) -> None:
+        """Reusar em vez de reinventar: sem a lista nascem "corredores" e "corredor"."""
+        (other,) = self._customers("CLI-F0")
+        other.tags.add("corredores")
+        (customer,) = self._customers("CLI-F1")
+
+        response = self._act([customer])
+
+        self.assertContains(response, "corredores")
+
+    def test_a_customer_tag_never_reaches_the_product_keywords(self) -> None:
+        """A fronteira do namespace, exercitada pela tela e não só pelo model."""
+        from taggit.models import Tag
+
+        (customer,) = self._customers("CLI-G1")
+
+        self._act([customer], _tag_confirm="1", tags="integral", mode="add")
+
+        self.assertEqual(Tag.objects.filter(name="integral").count(), 0)

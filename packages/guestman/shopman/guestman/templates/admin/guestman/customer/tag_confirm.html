@@ -1,0 +1,62 @@
+{% extends "admin/base_site.html" %}
+{% load i18n unfold %}
+
+{% comment %}
+Etiquetar vários clientes de uma vez.
+
+Mesmo padrão do `refs/rename_confirm.html`: ação da changelist devolve esta página, o form
+volta com os pks selecionados nos hidden. Sem overlay novo — o gate canônico proíbe, e a
+página intermediária resolve igual.
+
+A lista de etiquetas existentes fica visível de propósito: sem ela nascem "corredores",
+"Corredores" e "corredor" como três etiquetas diferentes, e o público alcança um terço de
+quem devia.
+{% endcomment %}
+
+{% block title %}{{ title }}{% endblock %}
+
+{% block content %}
+{% component "unfold/components/container.html" %}
+  <div class="flex flex-col gap-4">
+    {% component "unfold/components/title.html" %}{{ title }}{% endcomponent %}
+
+    {% component "unfold/components/text.html" with class="text-sm text-base-500" %}
+      {% blocktrans with count=queryset.count %}{{ count }} cliente(s) selecionado(s).{% endblocktrans %}
+    {% endcomponent %}
+
+    <form method="post">
+      {% csrf_token %}
+      {% for obj in queryset %}
+        <input type="hidden" name="{{ action_checkbox_name }}" value="{{ obj.pk }}">
+      {% endfor %}
+      <input type="hidden" name="action" value="tag_selected">
+      <input type="hidden" name="_tag_confirm" value="1">
+
+      {% component "unfold/components/card.html" with title="Etiquetas" %}
+        {% include "unfold/helpers/field.html" with field=form.tags %}
+        {% include "unfold/helpers/field.html" with field=form.mode %}
+
+        {% if existing_tags %}
+          {% component "unfold/components/text.html" with class="mt-3 text-sm text-base-500" %}
+            {% trans "Já existem:" %} {{ existing_tags|join:", " }}
+          {% endcomponent %}
+        {% else %}
+          {% component "unfold/components/text.html" with class="mt-3 text-sm text-base-500" %}
+            {% trans "Nenhuma etiqueta ainda. As primeiras nascem aqui." %}
+          {% endcomponent %}
+        {% endif %}
+      {% endcomponent %}
+
+      <div class="mt-4 flex flex-wrap justify-end gap-2">
+        {% url 'admin:guestman_customer_changelist' as customer_changelist_url %}
+        {% component "unfold/components/button.html" with href=customer_changelist_url variant="default" %}
+          {% trans "Cancelar" %}
+        {% endcomponent %}
+        {% component "unfold/components/button.html" with submit=1 %}
+          {% trans "Aplicar" %}
+        {% endcomponent %}
+      </div>
+    </form>
+  </div>
+{% endcomponent %}
+{% endblock %}
