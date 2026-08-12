@@ -24,6 +24,7 @@ import pytest
 from django.utils import timezone
 from shopman.orderman.models import Session
 
+from shopman.storefront.tests._checkout_baseline import with_baseline
 from shopman.storefront.tests.api.test_storefront_surface import _seed_surface
 
 pytestmark = pytest.mark.django_db
@@ -65,7 +66,7 @@ def _seed_delivery_zone() -> None:
 def _checkout(client):
     return client.post(
         "/api/v1/checkout/",
-        data={
+        data=with_baseline(client, {
             "name": "Maria Santos",
             "phone": "+5543991111111",
             "fulfillment_type": "delivery",
@@ -80,7 +81,7 @@ def _checkout(client):
                 "neighborhood": "Centro",
             },
             "delivery_date": timezone.localdate().isoformat(),
-        },
+        }),
         content_type="application/json",
     )
 

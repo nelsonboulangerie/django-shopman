@@ -16,6 +16,7 @@ import pytest
 from django.utils import timezone
 
 from shopman.shop.services.business_calendar import BusinessCalendarState
+from shopman.storefront.tests._checkout_baseline import with_baseline
 from shopman.storefront.tests.api.test_storefront_surface import _seed_surface
 
 pytestmark = pytest.mark.django_db
@@ -33,13 +34,13 @@ def _add_item(client) -> None:
 def _checkout(client, delivery_date: str):
     return client.post(
         "/api/v1/checkout/",
-        data={
+        data=with_baseline(client, {
             "name": "Ana",
             "phone": "+5543999990001",
             "fulfillment_type": "pickup",
             "delivery_date": delivery_date,
             "delivery_time_slot": "08:00",
-        },
+        }),
         content_type="application/json",
     )
 

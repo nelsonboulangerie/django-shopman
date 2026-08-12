@@ -274,6 +274,10 @@ def checkout(client: Client, *, name="Ana Silva", phone=DEFAULT_PHONE, **overrid
     Defaults to a today pickup paid in cash; override any serializer field
     (``fulfillment_type``, ``payment_method``, ``delivery_date``,
     ``delivery_time_slot``, ``delivery_address``, ``use_loyalty``, …).
+
+    ``expected_total_q`` entra sozinho, lido da projeção, porque ele é
+    OBRIGATÓRIO na superfície do cliente. Passe explicitamente para simular
+    divergência de preço (o servidor recusa com ``total_changed``).
     """
     payload = {
         "name": name,
@@ -282,6 +286,9 @@ def checkout(client: Client, *, name="Ana Silva", phone=DEFAULT_PHONE, **overrid
         "payment_method": "cash",
     }
     payload.update(overrides)
+    from shopman.storefront.tests._checkout_baseline import with_baseline
+
+    payload = with_baseline(client, payload)  # baseline como o app calcula
     if payload.get("fulfillment_type") == "pickup" and "delivery_time_slot" not in payload:
         payload["delivery_time_slot"] = last_pickup_slot()
         payload.setdefault("delivery_date", timezone.localdate().isoformat())

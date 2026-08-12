@@ -15,6 +15,8 @@ import json
 
 import pytest
 
+from shopman.storefront.tests._checkout_baseline import with_baseline
+
 pytestmark = pytest.mark.django_db
 
 CANONICAL_KEYS = {"detail", "field", "errors"}
@@ -101,11 +103,11 @@ def test_business_400_has_field_and_errors(cart_session):
     router and the errors map for inline rendering."""
     resp = cart_session.post(
         "/api/v1/checkout/",
-        data=json.dumps({
+        data=json.dumps(with_baseline(cart_session, {
             "name": "Ana", "phone": "+5543999990001",
             "fulfillment_type": "delivery", "delivery_address": "Rua X 1",
             # no delivery_date → triggers "Escolha a data."
-        }),
+        })),
         content_type="application/json",
     )
     assert resp.status_code == 400

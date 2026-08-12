@@ -32,6 +32,7 @@ from shopman.stockman.models.enums import HoldStatus
 from shopman.stockman.services.planning import StockPlanning
 
 from shopman.shop.models import Channel, Shop
+from shopman.storefront.tests._checkout_baseline import with_baseline
 
 pytestmark = pytest.mark.django_db
 
@@ -145,14 +146,14 @@ def _checkout_today(client: Client, *, phone: str = "+5543999990001"):
     return client.post(
         "/api/v1/checkout/",
         data=json.dumps(
-            {
+            with_baseline(client, {
                 "name": "Pablo QA",
                 "phone": phone,
                 "fulfillment_type": "pickup",
                 "delivery_date": timezone.localdate().isoformat(),
                 "delivery_time_slot": slots[-1]["ref"],
                 "payment_method": "cash",
-            }
+            })
         ),
         content_type="application/json",
     )
@@ -391,14 +392,14 @@ def test_checkout_tomorrow_with_todays_planned_batch_is_accepted_as_preorder(
     resp = client.post(
         "/api/v1/checkout/",
         data=json.dumps(
-            {
+            with_baseline(client, {
                 "name": "Pablo QA",
                 "phone": "+5543999990001",
                 "fulfillment_type": "pickup",
                 "delivery_date": tomorrow,
                 "delivery_time_slot": get_slots()[0]["ref"],
                 "payment_method": "cash",
-            }
+            })
         ),
         content_type="application/json",
     )

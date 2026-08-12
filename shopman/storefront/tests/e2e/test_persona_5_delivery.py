@@ -13,6 +13,8 @@ import pytest
 from django.utils import timezone
 from shopman.orderman.models import Order
 
+from shopman.storefront.tests._checkout_baseline import with_baseline
+
 from . import _journey as J
 
 pytestmark = pytest.mark.django_db
@@ -46,7 +48,7 @@ def _checkout_delivery(client, structured, **overrides):
         "delivery_address_structured": structured,
     }
     payload.update(overrides)
-    resp = client.post("/api/v1/checkout/", data=json.dumps(payload), content_type="application/json")
+    resp = client.post("/api/v1/checkout/", data=json.dumps(with_baseline(client, payload)), content_type="application/json")
     return resp.status_code, (resp.json() if resp.content else None)
 
 
@@ -102,10 +104,10 @@ def test_delivery_without_address_is_rejected(client):
 
     resp = client.post(
         "/api/v1/checkout/",
-        data=json.dumps({
+        data=json.dumps(with_baseline(client, {
             "name": "Ana", "phone": J.DEFAULT_PHONE, "fulfillment_type": "delivery",
             "payment_method": "cash", "delivery_date": timezone.localdate().isoformat(),
-        }),
+        })),
         content_type="application/json",
     )
     assert resp.status_code == 400, resp.content
@@ -119,11 +121,11 @@ def test_delivery_without_date_is_rejected(client):
 
     resp = client.post(
         "/api/v1/checkout/",
-        data=json.dumps({
+        data=json.dumps(with_baseline(client, {
             "name": "Ana", "phone": J.DEFAULT_PHONE, "fulfillment_type": "delivery",
             "payment_method": "cash", "delivery_address": "Rua X, 1",
             "delivery_address_structured": COVERED,
-        }),
+        })),
         content_type="application/json",
     )
     assert resp.status_code == 400, resp.content

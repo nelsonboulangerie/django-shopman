@@ -11,6 +11,7 @@ import pytest
 from shopman.orderman.models import Order
 
 from shopman.shop.models import DeliveryZone
+from shopman.storefront.tests._checkout_baseline import with_baseline
 from shopman.storefront.tests.api.test_storefront_surface import _seed_surface
 
 pytestmark = pytest.mark.django_db
@@ -60,7 +61,7 @@ def test_cash_checkout_records_method_and_change(client):
 
     resp = client.post(
         "/api/v1/checkout/",
-        data=_checkout_payload(),
+        data=with_baseline(client, _checkout_payload()),
         content_type="application/json",
     )
     assert resp.status_code == 201, resp.content

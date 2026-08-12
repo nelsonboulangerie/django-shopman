@@ -31,7 +31,19 @@ class CheckoutSerializer(serializers.Serializer):
     use_loyalty = serializers.BooleanField(required=False, default=False)
     # Total (centavos) que o cliente VIU ao confirmar — o servidor rejeita o
     # commit se a repricing final divergir (cupom expirou, preço mudou).
-    expected_total_q = serializers.IntegerField(required=False, allow_null=True, min_value=0)
+    #
+    # OBRIGATÓRIO nesta superfície. "Nunca cobrar mais do que foi exibido" é
+    # invariante do produto, e invariante não pode depender do chamador lembrar
+    # de um campo: enquanto era opcional, quem enviasse o pedido sem ele levava
+    # o preço recalculado calado. Medido no staging: a tela mostrava R$ 12,80, o
+    # commit sem baseline fechou em R$ 13,60, com 201 e nenhum aviso.
+    #
+    # Exigir é seguro porque o valor é só COMPARADO (`_ensure_total_matches`),
+    # nunca usado como preço — cliente não consegue ditar quanto paga; divergiu,
+    # o servidor recusa com `total_changed` e a pessoa reconfirma sobre o número
+    # certo. Superfícies com operador presente (PDV) commitam por outro caminho
+    # (`shop/services/pos.py`) e não passam por aqui.
+    expected_total_q = serializers.IntegerField(required=True, min_value=0)
     # Omotenashi: lembrar endereço/escolhas é o default; o cliente desmarca o toggle
     # "Salvar para a próxima vez" → save_as_default=false. (O endereço novo salva sempre.)
     save_as_default = serializers.BooleanField(required=False, default=True)

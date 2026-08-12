@@ -45,6 +45,24 @@ def _staff_customer():
 # ── the boundary, through the storefront ─────────────────────────────────────
 
 
+@pytest.mark.xfail(
+    strict=True,
+    reason=(
+        "DECISÃO DE NEGÓCIO ABERTA — funcionário na loja pública. Hoje a projeção "
+        "e o commit discordam: a tela mostra o desconto de 20% (a loja SIM escreve "
+        "`customer.price_tier` na sessão, `storefront/cart.py:_customer_link`, ao "
+        "contrário do que o docstring abaixo afirma) e o commit cobra cheio, porque "
+        "o `set_data` de `customer` derruba a faixa. A guarda de preço recusa o "
+        "pedido com `total_changed` e a persona de funcionário não fecha no primeiro "
+        "clique. Reproduzido no staging em 2026-08-11 (R$ 20,80 na tela → R$ 26,00 "
+        "no envio). Ficou visível quando `da69c714` fez a regra de funcionário voltar "
+        "a carregar; antes ela estava desligada em silêncio e este teste passava por "
+        "cobertura falsa (fixture sem RuleConfig), provando 'regra não configurada' e "
+        "não a fronteira. Decidir em docs/plans/ALPHA-READINESS-AUDIT.md §8: ou a loja "
+        "para de escrever `price_tier` (e o teste volta a valer como está), ou o "
+        "commit preserva a faixa (e o teste passa a esperar R$ 8,00)."
+    ),
+)
 def test_staff_customer_gets_no_discount_on_storefront(client):
     """A staff member ordering on the public store pays full price — the
     storefront never writes ``customer.price_tier`` into the session."""

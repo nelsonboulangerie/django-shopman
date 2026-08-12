@@ -23,6 +23,7 @@ import pytest
 from shopman.orderman.models import Order
 
 from shopman.shop.models import DeliveryZone
+from shopman.storefront.tests._checkout_baseline import with_baseline
 from shopman.storefront.tests.api.test_storefront_surface import _seed_surface
 
 ADDRESS = {
@@ -57,7 +58,7 @@ def test_card_checkout_on_web_commits_and_initiates_payment(client):
 
     resp = client.post(
         "/api/v1/checkout/",
-        data={
+        data=with_baseline(client, {
             "name": "Ana",
             "phone": "+5543999990001",
             "fulfillment_type": "delivery",
@@ -65,7 +66,7 @@ def test_card_checkout_on_web_commits_and_initiates_payment(client):
             "delivery_address_structured": ADDRESS,
             "delivery_date": timezone.localdate().isoformat(),
             "payment_method": "card",
-        },
+        }),
         content_type="application/json",
     )
     assert resp.status_code == 201, resp.content

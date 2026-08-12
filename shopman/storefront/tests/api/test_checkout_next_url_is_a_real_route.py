@@ -22,6 +22,7 @@ from pathlib import Path
 import pytest
 from django.utils import timezone
 
+from shopman.storefront.tests._checkout_baseline import with_baseline
 from shopman.storefront.tests.api.test_storefront_surface import _seed_surface
 
 pytestmark = pytest.mark.django_db
@@ -36,7 +37,7 @@ _TRACKING_PAGE = (
 def _checkout(client):
     return client.post(
         "/api/v1/checkout/",
-        data={
+        data=with_baseline(client, {
             "name": "Ana",
             "phone": "+5543999990001",
             "fulfillment_type": "delivery",
@@ -51,7 +52,7 @@ def _checkout(client):
                 "neighborhood": "Centro",
             },
             "delivery_date": timezone.localdate().isoformat(),
-        },
+        }),
         content_type="application/json",
     )
 

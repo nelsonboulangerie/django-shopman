@@ -26,6 +26,8 @@ from django.utils import timezone
 from shopman.guestman.models import Customer, PriceTier
 from shopman.orderman.models import Order
 
+from shopman.storefront.tests._checkout_baseline import with_baseline
+
 from . import _journey as J
 
 pytestmark = pytest.mark.django_db
@@ -185,11 +187,11 @@ def test_card_checkout_on_web_succeeds(client):
 
     resp = client.post(
         "/api/v1/checkout/",
-        data=json.dumps({
+        data=json.dumps(with_baseline(client, {
             "name": "Maria", "phone": J.DEFAULT_PHONE, "fulfillment_type": "pickup",
             "payment_method": "card", "delivery_time_slot": J.last_pickup_slot(),
             "delivery_date": timezone.localdate().isoformat(),
-        }),
+        })),
         content_type="application/json",
     )
     assert resp.status_code == 201, resp.json()
