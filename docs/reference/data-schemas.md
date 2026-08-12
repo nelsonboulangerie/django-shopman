@@ -1001,3 +1001,40 @@ Registros antigos podem ser uma lista simples de snapshots. Registros novos usam
 | `pending_production` | `list[dict]` | `services/closing.py::_pending_production_snapshot` | auditoria | WOs ainda abertas (planned/started, `target_date <= data do fechamento`) no momento do fechamento: `{ref, output_sku, recipe_ref, status, quantity, target_date}`. O fechamento acusa, não bloqueia. |
 | `cash_shift_summary` | `dict` | `services/closing.py::_cash_shift_summary` | template fechamento, projection | Turnos de caixa do dia (fechados/abertos/totais). |
 | `reconciliation_errors` | `list[dict]` | `services/closing.py::_reconciliation_errors` | projection (`ReconciliationError.from_dict`) | Discrepâncias detectadas: SKUs vendidos além do que estoque + produção poderiam suprir. Schema: `{sku, sold, available, deficit}` (a projection converte para `ReconciliationError(sku, sold_qty, available_qty, deficit_qty)` na leitura). |
+
+---
+
+## POSTerminal.metadata
+
+Configuração por terminal do PDV. Lida por `shopman/backstage/services/pos_terminal.py::runtime_profile`,
+que devolve o `TerminalRuntimeProfile` consumido pela projection do POS e pelo badge de saúde no Admin.
+
+| Chave | Tipo | Escrito por | Lido por | Descrição |
+|-------|------|-------------|----------|-----------|
+| `default_fulfillment_type` | `str` | Admin | projection POS | `pickup` (default) ou `delivery`. Qualquer outro valor cai em `pickup`. |
+| `favorite_collection_refs` | `list[str]` | Admin | projection POS | Até 9 coleções fixadas na tela de venda. Aceita o alias legado `favorite_collections`. |
+| `auto_lock_seconds` | `int` | Admin | projection POS | Inatividade até o cadeado do operador. Default 60. |
+| `hardware` | `dict` | Admin, `seed` | `runtime_profile` | Periféricos declarados. Ver abaixo. |
+
+### hardware — periféricos declarados
+
+Um dict por periférico: `printer`, `cash_drawer`, `scanner`, `payment_terminal`, `customer_display`.
+
+**Ausência não é defeito.** Periférico não declarado vale `absent` ("não instalado"), não `warning` —
+um balcão sem display do cliente está completo do jeito que a loja montou. Alerta que nunca apaga é
+alerta que ninguém lê.
+
+| Chave | Tipo | Aplica a | Descrição |
+|-------|------|----------|-----------|
+| `enabled` | `bool` | todos | `false` → `absent` ("desligado"). Ausente = ligado. |
+| `adapter` | `str` | todos | Nome do adapter. Presente → `ready`; declarado sem adapter → `warning`. |
+| `model` | `str` | todos | Informativo (ex.: `epson-tm-t20`). Não afeta saúde. |
+| `roll_width_mm` | `int` | `printer` | Largura do rolo em mm (40–120). É o que a loja sabe: o papel que ela compra. Vira `--pos-roll-width` no print CSS do PDV via projection. Ausente → o default do CSS (80mm) manda. |
+| `print_width_mm` | `int` | `printer` | Largura que o cabeçote alcança, em mm. **Só é necessária para rolo fora dos dois padrões** (80mm→72mm, 58mm→48mm), porque a área imprimível não é proporcional à largura do papel e chutar imprime fora do alcance. |
+
+⚠️ **Declaração inválida não cai calada para o default.** Rolo fora da faixa, rolo não padrão sem
+`print_width_mm`, ou `print_width_mm >= roll_width_mm` viram `warning` na saúde do terminal com o
+motivo. Config ignorada em silêncio é pior que config ausente: a loja acha que configurou.
+
+A margem é derivada, nunca declarada: `ceil((roll_width_mm - print_width_mm) / 2)`. Um rolo de 80mm
+dá 4mm por lado; um de 58mm dá **5mm**, não 4 — daí ela não ser um segundo botão para alguém errar.

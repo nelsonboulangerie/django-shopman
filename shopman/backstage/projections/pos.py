@@ -280,6 +280,12 @@ class POSProjection:
     fiscal_message: str
     operators: tuple[dict, ...] = ()
     auto_lock_seconds: int = 60
+    # Geometria do rolo declarada pelo terminal (0 = não declarou, e aí o
+    # default do CSS do PDV manda). A superfície escreve estes dois valores nas
+    # custom properties que o `@page` do recibo lê — ver o print CSS em
+    # surfaces/pos-nuxt/app/assets/css/tailwind.css.
+    terminal_roll_width_mm: int = 0
+    terminal_roll_margin_mm: int = 0
 
 
 # ── Constants ──────────────────────────────────────────────────────────
@@ -368,6 +374,8 @@ def build_pos(*, terminal=None, operator=None) -> POSProjection:
         fiscal_message=fiscal_message,
         operators=_eligible_operator_cards(),
         auto_lock_seconds=int((getattr(terminal, "metadata", None) or {}).get("auto_lock_seconds", 60)),
+        terminal_roll_width_mm=runtime.printer.roll_width_mm,
+        terminal_roll_margin_mm=runtime.printer.margin_mm,
     )
 
 

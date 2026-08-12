@@ -16,6 +16,8 @@ import { fileURLToPath } from "node:url";
 
 import { describe, expect, it } from "vitest";
 
+import { rollStyle } from "../app/presentation/printGeometry";
+
 const read = (rel: string) => readFileSync(fileURLToPath(new URL(rel, import.meta.url)), "utf8");
 
 // Os comentários do print CSS citam as regras erradas que este teste proíbe
@@ -122,6 +124,51 @@ describe("o recibo obedece à largura do rolo", () => {
     expect(root).toContain("pos-receipt");
     expect(root).not.toMatch(/\b(max-)?w-\[/);
     expect(root).not.toMatch(/\b(max-)?w-(?:full|screen|\d)/);
+  });
+});
+
+describe("o terminal declara a largura do rolo", () => {
+  const source = (roll: number, margin: number) => ({
+    terminal_roll_width_mm: roll,
+    terminal_roll_margin_mm: margin,
+  });
+
+  it("escreve as vars quando o terminal declara", () => {
+    expect(rollStyle(source(58, 5))).toBe("--pos-roll-width:58mm;--pos-roll-margin-x:5mm");
+  });
+
+  it("não escreve nada quando o terminal cala", () => {
+    // String vazia = "não encoste no documentElement". O default de 80mm tem um
+    // dono só, o CSS — repeti-lo aqui criaria a segunda fonte da verdade que
+    // este arquivo inteiro existe para evitar.
+    expect(rollStyle(source(0, 0))).toBe("");
+    expect(rollStyle(null)).toBe("");
+    expect(rollStyle(undefined)).toBe("");
+  });
+
+  it("ignora geometria que não fecha", () => {
+    // O servidor já valida (services/pos_terminal.printer_geometry); isto é a
+    // rede da superfície contra payload torto — cair no default é melhor que
+    // imprimir num rolo imaginário.
+    expect(rollStyle(source(58, 0)), "sem margem").toBe("");
+    expect(rollStyle(source(58, 29)), "margem consome o rolo inteiro").toBe("");
+    expect(rollStyle(source(5, 1)), "rolo pequeno demais").toBe("");
+    expect(rollStyle(source(500, 4)), "rolo grande demais").toBe("");
+    expect(rollStyle(source(Number.NaN, 4))).toBe("");
+  });
+
+  it("escreve as mesmas vars que o print CSS lê", () => {
+    // Um rename de `--pos-roll-width` no CSS sem mexer aqui deixaria o terminal
+    // declarando para o vazio, e o recibo voltaria calado ao default.
+    const written = rollStyle(source(58, 5)).split(";").map((decl) => decl.split(":")[0]!);
+    for (const property of written) {
+      expect(css, `${property} precisa existir no print CSS`).toContain(`${property}:`);
+      expect(pageRule + css, `${property} precisa ser lida`).toContain(`var(${property}`);
+    }
+  });
+
+  it("a tela que imprime aplica a geometria no <html>", () => {
+    expect(indexVue).toMatch(/useHead\(\{\s*htmlAttrs:\s*\{\s*style:\s*computed\(\(\) => rollStyle\(pos\.value\)\)/);
   });
 });
 

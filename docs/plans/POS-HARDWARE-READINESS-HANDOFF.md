@@ -152,19 +152,38 @@ com recibo de **51,9mm** e margens de 2,9/3,0mm — contra **80,1mm** e recibo d
 `--pos-receipt-width` deriva da mesma var. Um terminal de 58mm **não exige
 recompilar CSS**.
 
-**O que falta para virar configuração de verdade** — a origem do valor, que é uma
-fatia própria (não fiz agora para não inventar leitura de campo que não existe):
+### ✅ O terminal declara a largura (2026-08-12)
 
-1. `POSTerminal.metadata["hardware"]["printer"]` passa a declarar largura de rolo
-   (hoje o `_component_health` em `shopman/backstage/services/pos_terminal.py` só
-   lê `enabled`/`adapter`, não dimensão nenhuma).
-2. A projection do POS (`shopman/backstage/projections/pos.py`) expõe o valor —
-   hoje ela manda só `terminal_health_status` para a tela.
-3. A superfície escreve a var no `documentElement` quando o terminal declarar
-   largura diferente do default. Uma linha, e o CSS já obedece.
+A origem do valor foi ligada — as três pontas:
 
-Enquanto (1) e (2) não existirem, o default de 80mm vale para todo terminal — que
-é o caso da Nelson hoje, com a TM-T20.
+1. **`POSTerminal.metadata["hardware"]["printer"].roll_width_mm`** — a loja declara
+   o que ela sabe: o rolo que compra. Lido por `printer_geometry()` em
+   `shopman/backstage/services/pos_terminal.py`. Sem migração: o `metadata` já era
+   o seam. Schema em [data-schemas.md](../reference/data-schemas.md#posterminalmetadata).
+2. **A projection expõe** `terminal_roll_width_mm` e `terminal_roll_margin_mm`
+   (`shopman/backstage/projections/pos.py`). Zero = terminal calado.
+3. **A superfície escreve as vars no `<html>`** — `presentation/printGeometry.ts`
+   (função pura) aplicada por `useHead({ htmlAttrs })` na tela que imprime.
+
+**A margem é derivada, nunca declarada.** `ceil((rolo − imprimível) / 2)`, com a
+largura imprimível vindo de tabela: 80mm→72mm, 58mm→48mm. Isso importa porque a
+área imprimível **não é proporcional** — a 203dpi são 576 dots contra 384. Um rolo
+de 58mm reserva **5mm** por lado, não 4. Quem fizer regra de três aqui corta a
+coluna do preço. Rolo fora desses dois padrões precisa declarar `print_width_mm`;
+não chutamos.
+
+**Declaração inválida não cai calada para o default** — vira `warning` na saúde do
+terminal, com o motivo. Config ignorada em silêncio é pior que config ausente: a
+loja acha que configurou e o papel sai errado sem explicação.
+
+**Quem manda no default continua sendo o CSS.** Terminal que não declara devolve
+zero, a superfície não encosta no `documentElement` e o `@page` fica com o literal
+de 80mm. O default tem um dono só — repetir "80mm" no Python criaria a segunda
+fonte da verdade que todo este trabalho existe para evitar.
+
+O seed passa a declarar o aparelho real da Nelson (`epson-tm-t20`, 80mm). Como
+80mm já era o default, a declaração não muda o desenho: torna explícito o que era
+sorte, e é o gancho para um balcão com rolo diferente.
 
 **O que ainda quer aparelho:** densidade/contraste, alinhamento lateral do rolo
 (o texto agora encosta no limite da área imprimível) e o comportamento de avanço
