@@ -228,6 +228,7 @@ def test_endpoint_registra_e_devolve_ok(client, operator):
     _grant_pos_perm(operator)
     client.force_login(operator)
 
+
     response = client.post(
         reverse("api-backstage-pos-cash-drawer-open"),
         data={"reason": "Troco"},

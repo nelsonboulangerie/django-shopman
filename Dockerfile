@@ -21,6 +21,10 @@ COPY pyproject.toml README.md manage.py ./
 COPY config ./config
 COPY packages ./packages
 COPY shopman ./shopman
+# O agente da gaveta é BAIXADO pelo Admin (o dono já está lá colando a config do
+# terminal). Sem esta linha o download quebra só em produção, que é o pior lugar
+# para descobrir. Ver shopman/backstage/admin_console/pos_drawer_agent.py.
+COPY tools ./tools
 
 RUN python -m pip install --upgrade pip \
     && python -m pip install \

@@ -389,20 +389,31 @@ def _cups_queues() -> list[str]:
     return [line.split()[0] for line in text.splitlines() if line.strip()]
 
 
-def write_config(path: Path, *, queue: str, origin: str) -> tuple[dict, bool]:
+def write_config(path: Path, *, queue: str, origin: str, token: str = "") -> tuple[dict, bool]:
     """Escreve a config, ou preserva a que já existe.
 
-    Reinstalar NÃO pode trocar o token: o PDV ficaria batendo com o token velho
-    e levando 401 até alguém colar o novo no Admin — e ninguém quer descobrir
-    isso no meio de um sábado.
+    ``token`` vem do Admin, que é quem tem o par. Sem ele o agente gera um e
+    imprime na tela — caminho de emergência, para quem estiver no balcão sem
+    acesso ao Admin.
+
+    Reinstalar NÃO troca o token guardado, a não ser que venha um explícito: o
+    PDV ficaria batendo com o velho e levando 401 até alguém acertar os dois
+    lados — e ninguém quer descobrir isso no meio de um sábado.
     """
     if path.exists():
-        return json.loads(path.read_text(encoding="utf-8")), False
+        config = json.loads(path.read_text(encoding="utf-8"))
+        if token and token != config.get("token"):
+            # Token novo veio do Admin (rotação): é a única razão para mexer.
+            config["token"] = token
+            path.write_text(json.dumps(config, indent=2) + "\n", encoding="utf-8")
+            path.chmod(0o600)
+            return config, True
+        return config, False
     import secrets
 
     config = {
         "queue": queue,
-        "token": secrets.token_urlsafe(32),
+        "token": token or secrets.token_urlsafe(32),
         "port": 47811,
         "host": "127.0.0.1",
         "allowed_origins": [origin.rstrip("/")],
@@ -443,8 +454,12 @@ def install(argv: list[str]) -> int:
         shutil.copyfile(source, target)
     target.chmod(0o755)
 
-    config, created = write_config(
-        DEFAULT_CONFIG_PATH, queue=queue, origin=_arg_value(argv, "--origin") or DEFAULT_ORIGIN
+    token = _arg_value(argv, "--token")
+    config, written = write_config(
+        DEFAULT_CONFIG_PATH,
+        queue=queue,
+        origin=_arg_value(argv, "--origin") or DEFAULT_ORIGIN,
+        token=token,
     )
 
     if shutil.which("systemctl"):
@@ -463,7 +478,10 @@ def install(argv: list[str]) -> int:
         print(f"aviso: sem systemctl. Suba na mão: python3 {target}")
 
     print(f"\nAgente instalado em {target}")
-    if created:
+    if token:
+        # Veio do Admin: o par já existe dos dois lados, nada a transcrever.
+        print("Token recebido do Admin — nada a copiar de volta.")
+    elif written:
         print("\n  ┌─ COLE ESTE TOKEN no Admin ─────────────────────────────────")
         print("  │  Admin → Terminais do PDV → gaveta → token")
         print("  │")
