@@ -12,13 +12,13 @@ from django.contrib.auth import get_user_model
 from django.contrib.auth.models import Permission
 from django.contrib.contenttypes.models import ContentType
 from django.test import TestCase, override_settings
+from shopman.doorman.models import PinCredential
+from shopman.offerman.models import Listing, ListingItem, Product
 
 from shopman.backstage.models import CashMovement, CashShift, POSTerminal
 from shopman.backstage.projections.pos import build_pos
 from shopman.backstage.services.exceptions import POSError
 from shopman.backstage.services.pos import register_cash_movement
-from shopman.doorman.models import PinCredential
-from shopman.offerman.models import Listing, ListingItem, Product
 from shopman.shop.models import Channel, Shop
 from shopman.shop.services import pos as pos_service
 from shopman.shop.services.pos_intent import POS_SALE_INTENT_VERSION, PosIntentError
