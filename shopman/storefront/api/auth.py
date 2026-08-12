@@ -24,6 +24,7 @@ from shopman.storefront.identity import (
     IDENTITY_SESSION_KEY,
     get_authenticated_customer,
     identity_strength,
+    knows_only_the_number,
 )
 from shopman.storefront.intents._phone import normalize_phone_input
 from shopman.storefront.intents.auth import clean_display_name, needs_confirmation
@@ -568,3 +569,130 @@ class BrowserHandoffView(APIView):
                 status=status.HTTP_503_SERVICE_UNAVAILABLE,
             )
         return Response({"url": url, "expires_in_minutes": self.HANDOFF_TTL_MINUTES})
+
+# ── Passkey: entrar com o rosto, sem código nenhum ───────────────────
+#
+# ⚠️ A regra de segurança que decide o desenho: **cadastrar passkey exige identidade FORTE**.
+# Uma sessão que só conhece o número (chegou por link de campanha, e mensagem se encaminha)
+# não pode gravar uma credencial na conta de alguém — seria alguém cadastrando o PRÓPRIO rosto
+# no acesso de outra pessoa, e para sempre. Então cadastro pede confirmação antes; entrar, não.
+
+
+def _passkey_credential(request) -> dict:
+    payload = request.data if hasattr(request, "data") else {}
+    credential = (payload or {}).get("credential")
+    return credential if isinstance(credential, dict) else {}
+
+
+class PasskeyRegisterOptionsView(APIView):
+    """POST /api/v1/auth/passkey/register/options/ — o desafio para criar a credencial."""
+
+    permission_classes = [AllowAny]
+    authentication_classes = [SessionAuthentication]
+
+    @extend_schema(tags=["auth"], summary="Options to enroll a passkey")
+    def post(self, request):
+        customer = get_authenticated_customer(request)
+        if not customer:
+            return Response({"detail": "Entre na sua conta para continuar."}, status=401)
+        if not auth_service.passkey_enabled():
+            return Response({"detail": "Recurso indisponível."}, status=503)
+        if knows_only_the_number(request):
+            # Cadastrar credencial é o ato mais consequente da conta: vale para sempre. Quem
+            # só provou o número confirma antes — e a tela já sabe oferecer esse toque.
+            return Response(
+                {
+                    "detail": "Confirme que é você para ativar o acesso rápido.",
+                    "error_code": "identity_confirmation_required",
+                },
+                status=403,
+            )
+        try:
+            return Response(auth_service.passkey_registration_options(request, customer=customer))
+        except Exception:
+            logger.warning("passkey_register_options_failed", exc_info=True)
+            return Response({"detail": "Não foi possível preparar agora."}, status=503)
+
+
+class PasskeyRegisterView(APIView):
+    """POST /api/v1/auth/passkey/register/ — guarda a chave pública que o aparelho criou."""
+
+    permission_classes = [AllowAny]
+    authentication_classes = [SessionAuthentication]
+
+    @extend_schema(tags=["auth"], summary="Finish enrolling a passkey")
+    def post(self, request):
+        customer = get_authenticated_customer(request)
+        if not customer:
+            return Response({"detail": "Entre na sua conta para continuar."}, status=401)
+        if knows_only_the_number(request):
+            return Response(
+                {
+                    "detail": "Confirme que é você para ativar o acesso rápido.",
+                    "error_code": "identity_confirmation_required",
+                },
+                status=403,
+            )
+
+        credential = _passkey_credential(request)
+        if not credential:
+            return Response({"detail": "Pedido incompleto.", "field": "credential"}, status=400)
+
+        label = str((request.data or {}).get("label") or "").strip()
+        try:
+            result = auth_service.passkey_register(
+                request, customer=customer, credential=credential, label=label,
+            )
+        except auth_service.passkey_error() as err:
+            return Response({"detail": str(err)}, status=400)
+        return Response({"ok": True, "credential_id": result.credential_id, "label": result.label})
+
+
+class PasskeyLoginOptionsView(APIView):
+    """POST /api/v1/auth/passkey/login/options/ — desafio de login, sem pedir telefone.
+
+    Sem `allowCredentials`: o navegador oferece as credenciais que ELE tem para o nosso
+    domínio. É isso que faz "entrar com o rosto" não precisar de identificação antes.
+    """
+
+    permission_classes = [AllowAny]
+    authentication_classes = []
+
+    @extend_schema(tags=["auth"], summary="Options to sign in with a passkey")
+    def post(self, request):
+        if not auth_service.passkey_enabled():
+            return Response({"detail": "Recurso indisponível."}, status=503)
+        try:
+            return Response(auth_service.passkey_login_options(request))
+        except Exception:
+            logger.warning("passkey_login_options_failed", exc_info=True)
+            return Response({"detail": "Não foi possível preparar agora."}, status=503)
+
+
+class PasskeyLoginView(APIView):
+    """POST /api/v1/auth/passkey/login/ — verifica a assinatura e abre a sessão.
+
+    A sessão nasce com identidade FORTE: a credencial só assina para o nosso domínio (imune a
+    phishing) e exigimos rosto/digital/PIN. Não há nada a reduzir nem a confirmar depois.
+    """
+
+    permission_classes = [AllowAny]
+    authentication_classes = []
+
+    @extend_schema(tags=["auth"], summary="Sign in with a passkey")
+    def post(self, request):
+        if getattr(request, "limited", False):
+            return Response(
+                {"detail": "Muitas tentativas. Aguarde alguns minutos."}, status=429,
+            )
+        credential = _passkey_credential(request)
+        if not credential:
+            return Response({"detail": "Pedido incompleto.", "field": "credential"}, status=400)
+
+        try:
+            customer = auth_service.passkey_login(request, credential=credential)
+        except auth_service.passkey_error() as err:
+            return Response({"detail": str(err)}, status=400)
+
+        request.session[IDENTITY_SESSION_KEY] = IDENTITY_DEVICE
+        return Response({"ok": True, **_session_payload(customer)})

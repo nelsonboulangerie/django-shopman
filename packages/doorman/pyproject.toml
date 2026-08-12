@@ -9,6 +9,10 @@ description = "Shopman Doorman — Phone-First Authentication"
 requires-python = ">=3.12"
 dependencies = [
     "Django>=6.0,<6.1",
+    # Passkey (WebAuthn). A verificação de assertion é criptografia com formato binário
+    # (CBOR + COSE + contadores anti-replay): escrever isso na unha é como escrever o próprio
+    # TLS — a biblioteca de referência do ecossistema Python é a resposta certa.
+    "webauthn>=2.8,<3",
 ]
 
 [project.optional-dependencies]

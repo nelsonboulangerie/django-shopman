@@ -47,6 +47,9 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = [
+    # Autenticador WebAuthn de software: é o único jeito de exercitar passkey sem aparelho.
+    # Sem ele, o fluxo mais sensível do login ficaria com teste de fachada.
+    "soft-webauthn>=0.1.4,<0.2",
     "pytest",
     "pytest-django",
     "pytest-timeout>=2.3,<3.0",

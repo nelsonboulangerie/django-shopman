@@ -204,6 +204,108 @@ def trusted_device_login(request, *, phone: str):
     return customer
 
 
+# ── Passkey ──────────────────────────────────────────────────────────
+#
+# A ponte, pelo mesmo motivo de `device_is_trusted`: a superfície não fala com o kernel direto
+# (`test_import_boundaries`). Aqui só passamos recado e, no login, criamos a sessão — a
+# criptografia é toda do doorman.
+
+
+def passkey_error():
+    """A classe de exceção do passkey, para a superfície capturar sem importar o kernel.
+
+    ⚠️ Parece cerimônia, mas é a mesma fronteira que o `test_import_boundaries` guarda: a loja
+    fala com `shop.services`, não com o doorman. Deixar só a exceção passar por cima seria
+    abrir um furo por conveniência — e furo de fronteira nunca fica sozinho.
+    """
+    from shopman.doorman.services.passkey import PasskeyError
+
+    return PasskeyError
+
+
+def passkey_enabled() -> bool:
+    from shopman.doorman.services import passkey as passkey_service
+
+    return passkey_service.is_enabled()
+
+
+def passkey_registration_options(request, *, customer) -> dict:
+    from shopman.doorman.services import passkey as passkey_service
+
+    return passkey_service.registration_options(
+        request,
+        customer_id=customer.uuid,
+        display_name=(getattr(customer, "name", "") or "").strip() or "Cliente",
+        # O `user_name` aparece no seletor do sistema operacional ("Passkey para …"), então
+        # telefone é melhor que ref interna: é o que a pessoa reconhece como sendo ela.
+        user_name=(getattr(customer, "phone", "") or getattr(customer, "ref", "")),
+    )
+
+
+def passkey_register(request, *, customer, credential: dict, label: str = ""):
+    from shopman.doorman.services import passkey as passkey_service
+
+    return passkey_service.verify_registration(
+        request, customer_id=customer.uuid, credential=credential, label=label,
+    )
+
+
+def passkey_login_options(request) -> dict:
+    from shopman.doorman.services import passkey as passkey_service
+
+    return passkey_service.login_options(request)
+
+
+def passkey_login(request, *, credential: dict):
+    """Verificar a assinatura e ABRIR a sessão. Devolve o cliente, ou levanta `PasskeyError`.
+
+    Login por passkey é pelo menos tão forte quanto o OTP: a credencial só assina para o nosso
+    domínio (imune a phishing) e exigimos verificação de usuário (rosto/digital/PIN). Então a
+    sessão nasce com identidade FORTE — nada reduzido, nada a confirmar.
+    """
+    from django.contrib.auth import login
+    from shopman.doorman.protocols.customer import AuthCustomerInfo
+    from shopman.doorman.services import passkey as passkey_service
+    from shopman.doorman.services._user_bridge import get_or_create_user_for_customer
+
+    result = passkey_service.verify_login(request, credential=credential)
+    customer = customer_by_uuid(result.customer_id)
+    if customer is None:
+        from shopman.doorman.services.passkey import PasskeyError
+
+        # Credencial órfã: o cliente foi apagado/anonimizado e a chave sobrou. Recusar com a
+        # mesma mensagem de sempre (não contar o que existe na base) e deixar rastro no log.
+        logger.warning("passkey_login_orphan_credential customer=%s", result.customer_id)
+        raise PasskeyError("Não reconhecemos esta chave. Entre pelo WhatsApp.")
+
+    customer_info = AuthCustomerInfo(
+        uuid=customer.uuid,
+        name=customer.name,
+        phone=customer.phone,
+        email=getattr(customer, "email", None) or None,
+        is_active=True,
+    )
+    user, _ = get_or_create_user_for_customer(customer_info)
+    # A sacola anônima sobrevive à troca de sessão, como em todo login daqui.
+    preserved = preserved_session_values(request.session) if hasattr(request, "session") else {}
+    login(request, user, backend="shopman.doorman.backends.PhoneOTPBackend")
+    for key, value in preserved.items():
+        request.session[key] = value
+    return customer
+
+
+def passkey_list(customer) -> list:
+    from shopman.doorman.services import passkey as passkey_service
+
+    return passkey_service.list_for_customer(customer.uuid)
+
+
+def passkey_revoke(customer, credential_id: str) -> bool:
+    from shopman.doorman.services import passkey as passkey_service
+
+    return passkey_service.revoke(customer.uuid, credential_id)
+
+
 def device_is_trusted(request, *, customer_uuid) -> bool:
     """Este navegador já provou identidade por OTP algum dia e ganhou o cookie?
 
