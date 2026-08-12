@@ -44,8 +44,7 @@ def _geolocate_ip(ip: str) -> str:
 
 
 def list_devices(*, customer_id, raw_token: str | None) -> list[dict]:
-    from shopman.doorman import TrustedDevice, hash_device_token
-    from shopman.doorman.models.device_trust import SubjectType
+    from shopman.doorman import SubjectType, TrustedDevice, hash_device_token
 
     # ⚠️ Era `filter(customer_id=...)`, e esse campo não existe mais: o model passou a usar
     # sujeito tipado (cliente ou display). O resultado era 500 em toda visita à tela de
@@ -79,14 +78,12 @@ def revoke_device(*, customer_id, device_id: str) -> str | None:
     Returns ``None`` when the device was revoked or already gone, otherwise an
     operator-facing validation message for the view.
     """
-    from shopman.doorman import TrustedDevice
+    from shopman.doorman import SubjectType, TrustedDevice
 
     try:
         device_uuid = uuid.UUID(str(device_id))
     except ValueError:
         return "ID inválido."
-
-    from shopman.doorman.models.device_trust import SubjectType
 
     device = TrustedDevice.active_for(SubjectType.CUSTOMER, customer_id).filter(
         id=device_uuid,
