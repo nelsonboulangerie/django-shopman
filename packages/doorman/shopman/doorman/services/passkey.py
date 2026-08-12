@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import base64
 import logging
+import re
 from dataclasses import dataclass
 from datetime import timedelta
 
@@ -80,6 +81,17 @@ def _rp_id(request) -> str:
     if configured:
         return configured
     host = (request.get_host() or "").split(":")[0]
+
+    # ⚠️ WebAuthn exige DOMÍNIO REGISTRÁVEL: `localhost` é caso especial e passa, endereço IP
+    # não (o Chrome recusa com `SecurityError: This is an invalid domain`). O dev deste projeto
+    # roda em `127.0.0.1` por convenção, então passkey simplesmente não funciona local — e o
+    # aviso no log é para ninguém perder uma hora procurando bug onde não tem.
+    if re.fullmatch(r"\d{1,3}(\.\d{1,3}){3}", host):
+        logger.warning(
+            "passkey.rp_id_is_an_ip host=%s — WebAuthn recusa endereço IP; use localhost ou "
+            "configure PASSKEY_RP_ID com o domínio da loja.",
+            host,
+        )
     return host
 
 

@@ -342,3 +342,77 @@ def test_an_orphan_credential_never_opens_a_session(client, person):
 
     assert response.status_code == 400
     assert response.json()["detail"] == "Não reconhecemos esta chave. Entre pelo WhatsApp."
+
+
+# ── A lista que a pessoa vê e revoga ─────────────────────────────────
+
+
+LIST_URL = "/api/v1/account/passkeys/"
+
+
+def test_the_list_shows_the_nickname_and_never_the_key(client, person):
+    """Sem apelido, revogar seria escolher entre dois identificadores base64 — não é escolha.
+
+    E a chave pública não desce: ela não tem uso na tela, e o que não é preciso mandar não se
+    manda.
+    """
+    _sign_in(client, person)
+    _enroll(client, person)
+
+    response = client.get(LIST_URL)
+
+    assert response.status_code == 200, response.content
+    rows = response.json()["passkeys"]
+    assert len(rows) == 1
+    assert rows[0]["label"] == "iPhone da Ana"
+    body = json.dumps(response.json())
+    assert "public_key" not in body
+
+
+def test_revoking_removes_the_credential(client, person):
+    from shopman.doorman.models import Passkey
+
+    _sign_in(client, person)
+    _enroll(client, person)
+    credential_id = Passkey.objects.get().credential_id
+
+    response = client.delete(f"{LIST_URL}{credential_id}/")
+
+    assert response.status_code == 200, response.content
+    assert not Passkey.objects.exists()
+
+
+def test_nobody_revokes_a_credential_of_someone_else(client, person, db):
+    """⚠️ Escopado ao cliente, e o id de terceiro responde igual ao inexistente.
+
+    Distinguir 404 de 403 aqui contaria a quem tenta quais credenciais existem na base.
+    """
+    from shopman.doorman.models import Passkey
+    from shopman.guestman.models import Customer
+
+    outra = Customer.objects.create(ref="CLI-OUTRA", first_name="Bia", phone="+5543999995555")
+    alheia = Passkey.objects.create(
+        customer_id=outra.uuid, credential_id="credencial-da-bia", public_key="x",
+    )
+
+    _sign_in(client, person)
+    response = client.delete(f"{LIST_URL}{alheia.credential_id}/")
+
+    assert response.status_code == 404
+    assert Passkey.objects.filter(credential_id=alheia.credential_id).exists()
+
+    inexistente = client.delete(f"{LIST_URL}nao-existe/")
+    assert inexistente.status_code == 404
+
+
+def test_a_weak_session_can_neither_see_nor_revoke(client, person):
+    """Quem chegou por link não mexe no acesso rápido: seria empurrar a dona de volta para o
+    caminho lento sem ela ter pedido."""
+    _sign_in(client, person, strength=IDENTITY_NUMBER)
+
+    listed = client.get(LIST_URL)
+    assert listed.status_code == 403
+    assert listed.json()["error_code"] == "identity_confirmation_required"
+
+    revoked = client.delete(f"{LIST_URL}qualquer/")
+    assert revoked.status_code == 403

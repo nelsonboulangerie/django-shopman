@@ -39,6 +39,63 @@ const { data: devicesResponse, pending: devicesPending, refresh: refreshDevices 
 })
 
 const accountDevices = computed(() => devicesResponse.value?.devices || [])
+
+// ── Acesso rápido (passkey) ─────────────────────────────────────────
+//
+// Fica ACIMA dos dispositivos confiáveis porque é a credencial mais forte que a pessoa tem: o
+// aparelho confiável dispensa o código, a passkey dispensa a espera. E é a única lista aqui em
+// que "remover" tem consequência boa e imediata — o aparelho perdido para de entrar.
+type PasskeyRow = {
+  credential_id: string
+  label: string
+  created_at: string
+  last_used_at: string
+}
+
+const { enroll: enrollPasskey, busy: passkeyBusy, error: passkeyError, needsConfirmation } = usePasskey()
+const { confirm: confirmByWhatsApp, starting: confirmingIdentity } = useWhatsAppConfirm()
+const passkeyReady = ref(false)
+const passkeys = ref<PasskeyRow[]>([])
+const passkeysPending = ref(true)
+
+async function loadPasskeys () {
+  try {
+    const data = await $fetch<{ passkeys: PasskeyRow[] }>(apiPath('/api/v1/account/passkeys/'), {
+      credentials: 'include'
+    })
+    passkeys.value = data.passkeys || []
+  } catch {
+    // 403 aqui significa identidade fraca (chegou por link): a seção some, e o convite de
+    // confirmar aparece no lugar do erro — vermelho para quem não fez nada errado ensina a
+    // ignorar vermelho.
+    passkeys.value = []
+  } finally {
+    passkeysPending.value = false
+  }
+}
+
+onMounted(async () => {
+  const { passkeyIsQuick } = usePasskey()
+  passkeyReady.value = await passkeyIsQuick()
+  await loadPasskeys()
+})
+
+async function addPasskey () {
+  if (await enrollPasskey()) await loadPasskeys()
+}
+
+async function removePasskey (row: PasskeyRow) {
+  try {
+    await $fetch(apiPath(`/api/v1/account/passkeys/${encodeURIComponent(row.credential_id)}/`), {
+      method: 'DELETE',
+      headers: await csrfHeaders(),
+      credentials: 'include'
+    })
+    await loadPasskeys()
+  } catch (e) {
+    deviceIssue.value = errorDetail(e, 'Não foi possível remover agora.')
+  }
+}
 // Copy da tela vem do registro omotenashi (configurável no Admin). Fallback só cobre
 // o intervalo de carregamento.
 const devicesCopy = computed(() => devicesResponse.value?.copy || {
@@ -217,6 +274,84 @@ useSeoMeta({ title: 'Segurança e dados' })
         <h1 class="shop-title">Segurança e dados</h1>
         <p class="shop-muted">{{ devicesCopy.page_message }}</p>
       </div>
+
+      <!-- Acesso rápido: a credencial mais forte que ela tem -->
+      <section v-if="passkeyReady" class="space-y-4" data-passkey-section>
+        <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <h2 class="shop-heading">Acesso rápido</h2>
+            <p class="shop-muted">
+              Entrar com o rosto ou a digital deste aparelho, sem código e sem esperar mensagem.
+            </p>
+          </div>
+          <UiButton
+            v-if="!passkeysPending"
+            variant="outline"
+            size="sm"
+            icon="lucide:scan-face"
+            :loading="passkeyBusy"
+            @click="addPasskey"
+          >
+            Ativar neste aparelho
+          </UiButton>
+        </div>
+
+        <!-- Identidade fraca (chegou por link de campanha): cadastrar credencial vale para
+             sempre, então pedimos uma confirmação antes. Um toque, sem código. -->
+        <UiAlert v-if="needsConfirmation" variant="info" icon="lucide:message-circle">
+          <UiAlertTitle>Confirme que é você para ativar</UiAlertTitle>
+          <UiAlertDescription>
+            <p>O acesso rápido vale para sempre neste aparelho, então pedimos uma confirmação.</p>
+            <UiButton
+              size="sm"
+              class="mt-2"
+              icon="lucide:message-circle"
+              :disabled="confirmingIdentity"
+              @click="confirmByWhatsApp('/conta/seguranca')"
+            >
+              {{ confirmingIdentity ? 'Abrindo o WhatsApp…' : 'Confirmar pelo WhatsApp' }}
+            </UiButton>
+          </UiAlertDescription>
+        </UiAlert>
+
+        <p v-if="passkeyError" class="shop-muted">{{ passkeyError }}</p>
+
+        <UiSkeleton v-if="passkeysPending" class="h-20 rounded-lg" />
+
+        <UiEmpty v-else-if="!passkeys.length" class="border">
+          <UiEmptyMedia variant="icon">
+            <Icon name="lucide:scan-face" />
+          </UiEmptyMedia>
+          <UiEmptyHeader>
+            <UiEmptyTitle>Você ainda não ativou</UiEmptyTitle>
+            <UiEmptyDescription>
+              Ativando, na próxima visita você entra num toque — e continua podendo entrar pelo
+              WhatsApp quando quiser.
+            </UiEmptyDescription>
+          </UiEmptyHeader>
+        </UiEmpty>
+
+        <UiItemGroup v-else class="gap-3">
+          <UiItem v-for="row in passkeys" :key="row.credential_id" variant="outline" class="bg-card">
+            <UiItemMedia variant="icon" class="size-10 rounded-md">
+              <Icon name="lucide:scan-face" />
+            </UiItemMedia>
+            <UiItemContent>
+              <UiItemTitle>{{ row.label }}</UiItemTitle>
+              <UiItemDescription>
+                <span v-if="row.last_used_at">Usado em {{ row.last_used_at }}</span>
+                <span v-else>Ainda não usado</span>
+                <span> · Ativado em {{ row.created_at }}</span>
+              </UiItemDescription>
+            </UiItemContent>
+            <UiItemActions>
+              <UiButton variant="ghost" size="sm" icon="lucide:trash-2" @click="removePasskey(row)">
+                Remover
+              </UiButton>
+            </UiItemActions>
+          </UiItem>
+        </UiItemGroup>
+      </section>
 
       <!-- Aparelhos confiáveis -->
       <section class="space-y-4">

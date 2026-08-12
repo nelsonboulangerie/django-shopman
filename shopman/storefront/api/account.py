@@ -972,3 +972,77 @@ class FavoriteDetailView(APIView):
         else:
             favorites.remove(customer.ref, sku)
         return Response({"ok": True, "is_favorite": value})
+
+# ── Passkey: a lista que a pessoa vê e revoga ────────────────────────
+
+
+def _serialize_passkey(passkey, *, is_current: bool = False) -> dict:
+    """A credencial para a tela. **Sem a chave pública** — ela não tem uso na interface.
+
+    O `label` existe para isto: sem apelido, revogar seria escolher entre dois identificadores
+    base64, o que não é escolha.
+    """
+    return {
+        "credential_id": passkey.credential_id,
+        "label": passkey.label or "Este aparelho",
+        "created_at": _fmt_dt(passkey.created_at),
+        "last_used_at": _fmt_dt(passkey.last_used_at),
+        "is_current": is_current,
+    }
+
+
+class AccountPasskeyListView(APIView):
+    """GET/DELETE /api/v1/account/passkeys/ — as passkeys da pessoa.
+
+    ⚠️ Exige identidade FORTE, como o cadastro. Uma sessão que só conhece o número não pode
+    revogar o acesso rápido de alguém: seria empurrar a dona de volta para o caminho lento sem
+    ela ter pedido. Quem é dona chega a `device` com um toque no WhatsApp.
+    """
+
+    permission_classes = [AllowAny]
+    authentication_classes = [SessionAuthentication]
+
+    def get(self, request):
+        customer = get_authenticated_customer(request)
+        if not customer:
+            return Response({"detail": "Entre na sua conta para continuar."}, status=401)
+        if knows_only_the_number(request):
+            return Response(
+                {
+                    "detail": "Confirme que é você para ver o acesso rápido.",
+                    "error_code": "identity_confirmation_required",
+                },
+                status=403,
+            )
+        keys = auth_service.passkey_list(customer)
+        return Response({
+            "passkeys": [_serialize_passkey(key) for key in keys],
+            "supported_hint": (
+                "Ativando aqui, na próxima vez você entra com o rosto ou a digital, sem código."
+            ),
+        })
+
+
+class AccountPasskeyDetailView(APIView):
+    """DELETE /api/v1/account/passkeys/<credential_id>/ — revogar uma credencial."""
+
+    permission_classes = [AllowAny]
+    authentication_classes = [SessionAuthentication]
+
+    def delete(self, request, credential_id: str):
+        customer = get_authenticated_customer(request)
+        if not customer:
+            return Response({"detail": "Entre na sua conta para continuar."}, status=401)
+        if knows_only_the_number(request):
+            return Response(
+                {
+                    "detail": "Confirme que é você para mexer no acesso rápido.",
+                    "error_code": "identity_confirmation_required",
+                },
+                status=403,
+            )
+        # Escopado ao cliente no service: ninguém revoga a credencial de outro, e um id
+        # inexistente responde igual a um id de terceiro (sem oráculo de enumeração).
+        if not auth_service.passkey_revoke(customer, credential_id):
+            return Response({"detail": "Acesso rápido não encontrado."}, status=404)
+        return Response({"ok": True})
