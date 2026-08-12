@@ -139,7 +139,7 @@ class POSTerminalForm(forms.ModelForm):
             (ADAPTER_MANUAL, "Com a chave (o PDV não abre)"),
             (ADAPTER_AGENT, "Pelo agente local (kick na impressora)"),
         ),
-        help_text="O agente é um processo na máquina do balcão. Instale com <code>tools/pos-drawer-agent/install.sh</code>.",
+        help_text="O agente é um processo na máquina do balcão. Instale com <code>python3 drawer_agent.py --install</code>.",
     )
     drawer_agent_url = forms.URLField(
         label="Endereço do agente",

@@ -261,3 +261,60 @@ def test_health_devolve_a_sonda_da_fila(agent):
     assert body["ok"] is True
     assert body["queue"] == "TM-T20"
     assert body["version"] == drawer_agent.VERSION
+
+
+# ── Instalação ────────────────────────────────────────────────────────────
+
+
+def test_instalar_gera_config_utilizavel(tmp_path):
+    path = tmp_path / "agent.json"
+    config, created = drawer_agent.write_config(path, queue="TM-T20", origin="https://pos.exemplo/")
+
+    assert created is True
+    assert config["queue"] == "TM-T20"
+    # A allowlist guarda a origem sem barra final, senão o `allows()` erra por
+    # um caractere e a gaveta para de abrir sem ninguém entender por quê.
+    assert config["allowed_origins"] == ["https://pos.exemplo"]
+    # O token nasce forte o bastante para o próprio agente aceitar.
+    assert AgentConfig.from_dict(config).token == config["token"]
+
+
+def test_reinstalar_PRESERVA_o_token(tmp_path):
+    """Trocar o token numa reinstalação deixaria o PDV levando 401 até alguém
+    colar o novo no Admin — descoberto no meio do sábado."""
+    path = tmp_path / "agent.json"
+    first, _ = drawer_agent.write_config(path, queue="TM-T20", origin="https://pos.exemplo")
+    second, created = drawer_agent.write_config(path, queue="OUTRA", origin="https://outra.exemplo")
+
+    assert created is False
+    assert second["token"] == first["token"]
+    assert second["queue"] == "TM-T20"
+
+
+def test_config_nasce_ilegivel_para_outros_usuarios(tmp_path):
+    path = tmp_path / "agent.json"
+    drawer_agent.write_config(path, queue="TM-T20", origin="https://pos.exemplo")
+    assert oct(path.stat().st_mode)[-3:] == "600"
+
+
+def test_a_unit_aponta_para_o_arquivo_instalado_e_reergue_sozinha():
+    unit = drawer_agent._unit_text(Path("/home/pdv/.local/share/nelson-pos-drawer/drawer_agent.py"))
+    assert "ExecStart=/usr/bin/env python3 /home/pdv/.local/share/nelson-pos-drawer/drawer_agent.py" in unit
+    assert "Restart=always" in unit
+    # O balcão abre antes do CUPS estar de pé se a ordem não for dita.
+    assert "After=cups.service" in unit
+
+
+def test_instalar_com_fila_inexistente_para_antes_de_mexer_em_nada(monkeypatch, capsys):
+    monkeypatch.setattr(drawer_agent.shutil, "which", lambda name: f"/usr/bin/{name}")
+    monkeypatch.setattr(drawer_agent, "_cups_queues", lambda: ["OUTRA"])
+
+    assert drawer_agent.install(["--install", "--queue", "TM-T20"]) == 1
+    assert "não existe no CUPS" in capsys.readouterr().err
+
+
+def test_instalar_sem_cups_diz_o_que_falta(monkeypatch, capsys):
+    monkeypatch.setattr(drawer_agent.shutil, "which", lambda name: None)
+
+    assert drawer_agent.install(["--install"]) == 1
+    assert "CUPS" in capsys.readouterr().err

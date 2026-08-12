@@ -14,15 +14,26 @@ Desenho e alternativas descartadas: [POS-CASH-DRAWER-PLAN](../../docs/plans/POS-
 
 ## Instalar (Linux, systemd --user)
 
+É **um arquivo só** — `drawer_agent.py`. Leve até o balcão por qualquer meio
+(pendrive, `scp`, ou colando num editor) e rode:
+
 ```bash
-./install.sh
+python3 drawer_agent.py --install
 ```
 
-Ele descobre as filas CUPS, gera um token e imprime o token na tela. **Cole esse
-token no Admin** (Terminais do PDV → gaveta), senão o PDV bate na porta e leva
-401.
+Ele lista as filas CUPS e pergunta qual é a da térmica (a fila já existe: é por
+ela que o recibo imprime hoje), gera um token e imprime o token na tela. **Cole
+esse token no Admin** (Terminais do PDV → gaveta), senão o PDV bate na porta e
+leva 401.
 
-Rodar de novo atualiza o código sem trocar token nem fila.
+Sem perguntas, para reinstalar por script:
+
+```bash
+python3 drawer_agent.py --install --queue TM-T20 --origin https://pos.staging.nelsonboulangerie.com.br
+```
+
+Rodar de novo atualiza o código sem trocar token nem fila — reinstalar não pode
+deixar o PDV levando 401 com o token velho.
 
 ## Config
 

@@ -160,8 +160,12 @@ que a gaveta abriu.
 2. ~~`CashDrawerConfig` + Admin + health honesto~~ ✅
 3. ~~Endpoint auditado de abrir sem venda~~ ✅
 4. ~~Os quatro momentos na superfície + teste de gaveta na antesala~~ ✅
-5. **No balcão:** rodar `install.sh`, colar o token no Admin, apertar "Testar
-   gaveta". É o único passo que sobra, e ele precisa do aparelho.
+5. **No balcão:** `python3 drawer_agent.py --install`, colar o token no Admin,
+   apertar "Testar gaveta". É o único passo que sobra, e ele precisa do aparelho.
+
+> O agente é **um arquivo só**, de propósito: é o que uma pessoa consegue levar
+> até o balcão por qualquer meio — pendrive, `scp`, ou colando num editor. Dois
+> arquivos que precisam chegar juntos são uma chance a mais de chegar só um.
 
 ### Se o operador reclamar da distância
 

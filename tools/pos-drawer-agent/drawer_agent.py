@@ -106,7 +106,7 @@ class AgentConfig:
         except FileNotFoundError as exc:
             raise SystemExit(
                 f"config não encontrada em {path}.\n"
-                "Rode ./install.sh ou aponte DRAWER_AGENT_CONFIG para o arquivo."
+                "Rode 'python3 drawer_agent.py --install' ou aponte DRAWER_AGENT_CONFIG para o arquivo."
             ) from exc
         except json.JSONDecodeError as exc:
             raise SystemExit(f"config inválida em {path}: {exc}") from exc
@@ -347,12 +347,142 @@ def serve(config: AgentConfig) -> None:
         httpd.server_close()
 
 
+# ── Instalação ────────────────────────────────────────────────────────────
+#
+# Mora AQUI, e não num script ao lado, porque um arquivo é o que uma pessoa
+# consegue levar até o balcão por qualquer meio — pendrive, scp, ou colando num
+# editor. Dois arquivos que precisam chegar juntos são uma chance a mais de
+# chegar só um.
+
+INSTALL_DIR = Path.home() / ".local" / "share" / "nelson-pos-drawer"
+UNIT_PATH = Path.home() / ".config" / "systemd" / "user" / "nelson-pos-drawer.service"
+SERVICE_NAME = "nelson-pos-drawer.service"
+DEFAULT_ORIGIN = "https://pos.staging.nelsonboulangerie.com.br"
+
+
+def _unit_text(exec_path: Path) -> str:
+    return f"""[Unit]
+Description=Agente da gaveta de dinheiro do PDV (Nelson)
+After=cups.service
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/env python3 {exec_path}
+Restart=always
+RestartSec=3
+# O balcão abre cedo e ninguém vai olhar journal: se cair, sobe de novo.
+
+[Install]
+WantedBy=default.target
+"""
+
+
+def _cups_queues() -> list[str]:
+    lpstat = shutil.which("lpstat")
+    if not lpstat:
+        return []
+    try:
+        completed = subprocess.run([lpstat, "-a"], capture_output=True, timeout=10)
+    except subprocess.TimeoutExpired:
+        return []
+    text = (completed.stdout or b"").decode("utf-8", "replace")
+    return [line.split()[0] for line in text.splitlines() if line.strip()]
+
+
+def write_config(path: Path, *, queue: str, origin: str) -> tuple[dict, bool]:
+    """Escreve a config, ou preserva a que já existe.
+
+    Reinstalar NÃO pode trocar o token: o PDV ficaria batendo com o token velho
+    e levando 401 até alguém colar o novo no Admin — e ninguém quer descobrir
+    isso no meio de um sábado.
+    """
+    if path.exists():
+        return json.loads(path.read_text(encoding="utf-8")), False
+    import secrets
+
+    config = {
+        "queue": queue,
+        "token": secrets.token_urlsafe(32),
+        "port": 47811,
+        "host": "127.0.0.1",
+        "allowed_origins": [origin.rstrip("/")],
+    }
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(config, indent=2) + "\n", encoding="utf-8")
+    path.chmod(0o600)
+    return config, True
+
+
+def _arg_value(argv: list[str], flag: str) -> str:
+    return argv[argv.index(flag) + 1] if flag in argv and len(argv) > argv.index(flag) + 1 else ""
+
+
+def install(argv: list[str]) -> int:
+    if not shutil.which("lp"):
+        print("erro: comando 'lp' não encontrado — instale o CUPS.", file=sys.stderr)
+        return 1
+
+    queue = _arg_value(argv, "--queue")
+    if not queue:
+        queues = _cups_queues()
+        if not queues:
+            print("erro: nenhuma fila CUPS encontrada. A impressora está instalada?", file=sys.stderr)
+            return 1
+        print("Filas CUPS disponíveis:")
+        for name in queues:
+            print(f"  - {name}")
+        queue = input("Nome da fila da impressora térmica: ").strip()
+    if queue not in _cups_queues():
+        print(f"erro: fila '{queue}' não existe no CUPS.", file=sys.stderr)
+        return 1
+
+    INSTALL_DIR.mkdir(parents=True, exist_ok=True)
+    target = INSTALL_DIR / "drawer_agent.py"
+    source = Path(__file__).resolve()
+    if source != target.resolve():
+        shutil.copyfile(source, target)
+    target.chmod(0o755)
+
+    config, created = write_config(
+        DEFAULT_CONFIG_PATH, queue=queue, origin=_arg_value(argv, "--origin") or DEFAULT_ORIGIN
+    )
+
+    if shutil.which("systemctl"):
+        UNIT_PATH.parent.mkdir(parents=True, exist_ok=True)
+        UNIT_PATH.write_text(_unit_text(target), encoding="utf-8")
+        subprocess.run(["systemctl", "--user", "daemon-reload"], check=False)
+        subprocess.run(["systemctl", "--user", "enable", "--now", SERVICE_NAME], check=False)
+        # Sem linger o agente só existe enquanto alguém estiver logado na sessão
+        # gráfica — e morre no logout, que é exatamente quando ninguém percebe.
+        linger = subprocess.run(
+            ["loginctl", "enable-linger", os.environ.get("USER", "")], capture_output=True, check=False
+        )
+        if linger.returncode != 0:
+            print(f"aviso: rode 'sudo loginctl enable-linger {os.environ.get('USER', '')}'.")
+    else:
+        print(f"aviso: sem systemctl. Suba na mão: python3 {target}")
+
+    print(f"\nAgente instalado em {target}")
+    if created:
+        print("\n  ┌─ COLE ESTE TOKEN no Admin ─────────────────────────────────")
+        print("  │  Admin → Terminais do PDV → gaveta → token")
+        print("  │")
+        print(f"  │  {config['token']}")
+        print("  └─────────────────────────────────────────────────────────────")
+    else:
+        print(f"Config já existia em {DEFAULT_CONFIG_PATH} — token e fila preservados.")
+    print(f"\nTeste sem navegador:\n  python3 {target} --kick")
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     argv = list(sys.argv[1:] if argv is None else argv)
     logging.basicConfig(
         level=logging.DEBUG if "--verbose" in argv else logging.INFO,
         format="%(asctime)s %(levelname)s %(message)s",
     )
+    if "--install" in argv:
+        return install(argv)
     config = AgentConfig.load(DEFAULT_CONFIG_PATH)
     if "--kick" in argv:
         # Teste de bancada sem navegador: prova o caminho até o spooler.
