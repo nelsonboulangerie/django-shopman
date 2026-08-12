@@ -786,8 +786,13 @@ class Command(BaseCommand):
         self.stdout.write("  📦 Catálogo...")
 
         # Catálogo real Nelson Boulangerie
-        # Fonte: https://github.com/pablondrina/nb-catalog
-        IMG = "https://raw.githubusercontent.com/pablondrina/nb-catalog/main/img/products"
+        # Fonte: https://github.com/pablondrina/nb-catalog — os MESMOS arquivos,
+        # servidos pelo static site `nb-catalog-app` da DO (deploy_on_push) atrás
+        # da Cloudflare, em vez do `raw.githubusercontent.com`. O raw não é CDN: o
+        # GitHub limita hotlink, e se estrangular a loja fica sem foto nenhuma.
+        # Ver docs/plans/CATALOG-IMAGES-OFF-GITHUB-PLAN.md (o peso dos arquivos —
+        # 12,38 MB em 19 fotos — é o outro problema, resolvido na origem).
+        IMG = "https://menu.nelsonboulangerie.com.br/img/products"
         UNSPLASH = "https://images.unsplash.com"
 
         def unsplash(photo_id: str) -> str:
