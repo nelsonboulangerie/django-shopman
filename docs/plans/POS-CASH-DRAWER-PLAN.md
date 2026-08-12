@@ -160,12 +160,32 @@ que a gaveta abriu.
 2. ~~`CashDrawerConfig` + Admin + health honesto~~ ✅
 3. ~~Endpoint auditado de abrir sem venda~~ ✅
 4. ~~Os quatro momentos na superfície + teste de gaveta na antesala~~ ✅
-5. **No balcão:** `python3 drawer_agent.py --install`, colar o token no Admin,
+5. **No balcão:** baixar o agente pelo Admin, rodar o comando que a tela mostra,
    apertar "Testar gaveta". É o único passo que sobra, e ele precisa do aparelho.
 
 > O agente é **um arquivo só**, de propósito: é o que uma pessoa consegue levar
 > até o balcão por qualquer meio — pendrive, `scp`, ou colando num editor. Dois
 > arquivos que precisam chegar juntos são uma chance a mais de chegar só um.
+
+## 10. O Admin entrega o agente (2026-08-12)
+
+O dono já está no Admin configurando o terminal. Mandá-lo caçar um arquivo no
+repositório para completar a tarefa é atrito bobo, então a tela
+`/admin/pdv/terminal/<ref>/gaveta/` entrega o arquivo e as instruções.
+
+**O token inverteu de dono.** Antes nascia no instalador e alguém transcrevia 43
+caracteres de um terminal Linux para o formulário — erro que só aparecia como
+401 na hora de dar troco. Agora o **Admin gera** e o comando sai pronto com ele
+dentro; o instalador aceita `--token`. Rotação é explícita (uma caixa "Gerar um
+token novo"), porque trocar sozinho derrubaria a gaveta do balcão sem aviso.
+
+⚠️ **`tools/` não ia na imagem do deploy** — o Dockerfile copiava só `config`,
+`packages` e `shopman`. Sem o `COPY tools`, o download funcionaria local e daria
+404 no staging. Se um dia voltar a quebrar só em produção, é a primeira linha a
+conferir; a tela também diz isso em vez de estourar 500.
+
+O token viaja no comando e aparece na tela do Admin. É deliberado: ele não abre
+nada além da gaveta daquele balcão, e o custo de errar a transcrição era maior.
 
 ### Se o operador reclamar da distância
 

@@ -291,6 +291,37 @@ def test_reinstalar_PRESERVA_o_token(tmp_path):
     assert second["queue"] == "TM-T20"
 
 
+def test_token_do_admin_manda_na_primeira_instalacao(tmp_path):
+    """O Admin é o dono do par — o agente não inventa um por cima."""
+    path = tmp_path / "agent.json"
+    config, _ = drawer_agent.write_config(
+        path, queue="TM-T20", origin="https://pos.exemplo", token=TOKEN
+    )
+    assert config["token"] == TOKEN
+
+
+def test_token_novo_do_admin_ROTACIONA_a_config_existente(tmp_path):
+    """Rotação é a única razão para mexer num token já instalado."""
+    path = tmp_path / "agent.json"
+    drawer_agent.write_config(path, queue="TM-T20", origin="https://pos.exemplo", token=TOKEN)
+    config, written = drawer_agent.write_config(
+        path, queue="TM-T20", origin="https://pos.exemplo", token="token-rotacionado-pelo-admin"
+    )
+
+    assert written is True
+    assert config["token"] == "token-rotacionado-pelo-admin"
+    assert json.loads(path.read_text())["token"] == "token-rotacionado-pelo-admin"
+
+
+def test_reinstalar_com_o_MESMO_token_nao_reescreve(tmp_path):
+    path = tmp_path / "agent.json"
+    drawer_agent.write_config(path, queue="TM-T20", origin="https://pos.exemplo", token=TOKEN)
+    _, written = drawer_agent.write_config(
+        path, queue="TM-T20", origin="https://pos.exemplo", token=TOKEN
+    )
+    assert written is False
+
+
 def test_config_nasce_ilegivel_para_outros_usuarios(tmp_path):
     path = tmp_path / "agent.json"
     drawer_agent.write_config(path, queue="TM-T20", origin="https://pos.exemplo")

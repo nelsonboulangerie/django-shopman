@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from django import forms
 from django.contrib import admin
+from django.utils.html import format_html
 from shopman.utils import unfold_badge, unfold_badge_numeric
 from shopman.utils.monetary import format_money
 from unfold.admin import ModelAdmin
@@ -148,11 +149,10 @@ class POSTerminalForm(forms.ModelForm):
         initial=DEFAULT_AGENT_URL,
         help_text="Sempre loopback do próprio balcão. O servidor nunca alcança este endereço — quem chama é o navegador.",
     )
-    drawer_token = forms.CharField(
-        label="Token do agente",
+    drawer_rotate_token = forms.BooleanField(
+        label="Gerar um token novo",
         required=False,
-        widget=forms.TextInput(attrs={"autocomplete": "off"}),
-        help_text="O instalador imprime este token na tela. Sem ele o agente responde 401.",
+        help_text="Só marque se o token vazou ou se você vai reinstalar do zero. O agente do balcão para de abrir até receber o novo.",
     )
     drawer_pulse_pin = forms.ChoiceField(
         label="Pino do conector",
@@ -183,11 +183,6 @@ class POSTerminalForm(forms.ModelForm):
         help_text="Desligue se o balcão prefere abrir só no botão.",
     )
 
-    _DRAWER_FIELDS = (
-        "drawer_adapter", "drawer_agent_url", "drawer_token", "drawer_pulse_pin",
-        "drawer_pulse_on_ms", "drawer_pulse_off_ms", "drawer_open_on_cash_sale",
-    )
-
     class Meta:
         model = POSTerminal
         fields = ("ref", "label", "channel_ref", "location_ref", "is_active")
@@ -199,7 +194,6 @@ class POSTerminalForm(forms.ModelForm):
         config = CashDrawerConfig.from_terminal(self.instance)
         self.fields["drawer_adapter"].initial = config.adapter if config.declared else ""
         self.fields["drawer_agent_url"].initial = config.agent_url
-        self.fields["drawer_token"].initial = config.token
         self.fields["drawer_pulse_pin"].initial = str(config.pulse_pin)
         self.fields["drawer_pulse_on_ms"].initial = config.pulse_on_ms
         self.fields["drawer_pulse_off_ms"].initial = config.pulse_off_ms
@@ -207,14 +201,25 @@ class POSTerminalForm(forms.ModelForm):
 
     def clean(self):
         cleaned = super().clean()
-        # Um adapter `agent` sem token é uma gaveta que nunca vai abrir, e o
-        # operador só descobriria no balcão, com fila. Recusa aqui.
         if cleaned.get("drawer_adapter") == ADAPTER_AGENT:
-            if not (cleaned.get("drawer_token") or "").strip():
-                self.add_error("drawer_token", "O agente exige token. Rode o instalador e cole o que ele imprimir.")
             if not (cleaned.get("drawer_agent_url") or "").strip():
                 self.add_error("drawer_agent_url", "Informe o endereço do agente.")
         return cleaned
+
+    def _resolved_token(self) -> str:
+        """O token do agente, gerado AQUI.
+
+        Antes ele nascia no instalador e alguém transcrevia 43 caracteres de um
+        terminal Linux para este formulário — e um erro de digitação só aparecia
+        como 401 na hora de dar troco. Agora o Admin é o dono do par, e o comando
+        de instalação já sai com o token dentro.
+        """
+        import secrets
+
+        current = CashDrawerConfig.from_terminal(self.instance).token
+        if current and not self.cleaned_data.get("drawer_rotate_token"):
+            return current
+        return secrets.token_urlsafe(32)
 
     def save(self, commit=True):
         instance = super().save(commit=False)
@@ -226,7 +231,7 @@ class POSTerminalForm(forms.ModelForm):
                 "enabled": True,
                 "adapter": adapter,
                 "agent_url": (self.cleaned_data.get("drawer_agent_url") or "").strip(),
-                "token": (self.cleaned_data.get("drawer_token") or "").strip(),
+                "token": self._resolved_token(),
                 "pulse_pin": int(self.cleaned_data.get("drawer_pulse_pin") or 0),
                 "pulse_on_ms": self.cleaned_data.get("drawer_pulse_on_ms") or DEFAULT_PULSE_ON_MS,
                 "pulse_off_ms": self.cleaned_data.get("drawer_pulse_off_ms") or DEFAULT_PULSE_OFF_MS,
@@ -252,15 +257,16 @@ class POSTerminalAdmin(ModelAdmin):
     list_filter = ("is_active", "channel_ref")
     search_fields = ("ref", "label", "channel_ref")
     ordering = ("ref",)
-    readonly_fields = ("health_display",)
+    readonly_fields = ("health_display", "drawer_install_display")
     fieldsets = (
         (None, {"fields": ("ref", "label", "channel_ref", "location_ref", "is_active", "health_display")}),
         (
             "Gaveta de dinheiro",
             {
                 "fields": (
-                    "drawer_adapter", "drawer_agent_url", "drawer_token", "drawer_pulse_pin",
+                    "drawer_adapter", "drawer_agent_url", "drawer_pulse_pin",
                     "drawer_pulse_on_ms", "drawer_pulse_off_ms", "drawer_open_on_cash_sale",
+                    "drawer_install_display",
                 ),
                 # Quem testa é a estação: só o navegador do balcão alcança a
                 # loopback do agente. Este Admin não tem como chutar a gaveta.
@@ -269,6 +275,23 @@ class POSTerminalAdmin(ModelAdmin):
         ),
     )
     compressed_fields = True
+
+    def drawer_install_display(self, obj):
+        """Ponte para a tela que entrega o agente e o comando pronto.
+
+        Salvar a config e não ter como levá-la ao balcão é meio caminho: o
+        arquivo e as instruções ficam a um clique de onde o dono já está.
+        """
+        if obj is None or not obj.pk:
+            return "Salve o terminal primeiro."
+        from django.urls import reverse
+
+        url = reverse("admin_console_pos_drawer_agent", args=[obj.ref])
+        return format_html(
+            '<a href="{}" class="font-medium underline underline-offset-4">Baixar o agente e ver como instalar</a>',
+            url,
+        )
+    drawer_install_display.short_description = "Instalação no balcão"
 
     _HEALTH = {
         "ready": ("pronto", "green"),

@@ -14,26 +14,26 @@ Desenho e alternativas descartadas: [POS-CASH-DRAWER-PLAN](../../docs/plans/POS-
 
 ## Instalar (Linux, systemd --user)
 
+**Comece pelo Admin**, não por aqui: Terminais do PDV → o balcão → *Baixar o
+agente e ver como instalar*. Aquela tela entrega o arquivo e o comando **já
+preenchido** com o token, a fila e a origem daquele terminal. Nada a transcrever.
+
 É **um arquivo só** — `drawer_agent.py`. Leve até o balcão por qualquer meio
-(pendrive, `scp`, ou colando num editor) e rode:
+(pendrive, `scp`, ou colando num editor) e rode o comando que a tela mostrou:
 
 ```bash
-python3 drawer_agent.py --install
+python3 drawer_agent.py --install --token TOKEN-DO-ADMIN --origin https://pos.staging.nelsonboulangerie.com.br
 ```
 
 Ele lista as filas CUPS e pergunta qual é a da térmica (a fila já existe: é por
-ela que o recibo imprime hoje), gera um token e imprime o token na tela. **Cole
-esse token no Admin** (Terminais do PDV → gaveta), senão o PDV bate na porta e
-leva 401.
+ela que o recibo imprime hoje). Passe `--queue` para não ser perguntado.
 
-Sem perguntas, para reinstalar por script:
+**Sem `--token`** ele gera um e imprime na tela para você colar no Admin. É o
+caminho de emergência, para quem estiver no balcão sem acesso ao Admin — o
+normal é o Admin ser o dono do par.
 
-```bash
-python3 drawer_agent.py --install --queue TM-T20 --origin https://pos.staging.nelsonboulangerie.com.br
-```
-
-Rodar de novo atualiza o código sem trocar token nem fila — reinstalar não pode
-deixar o PDV levando 401 com o token velho.
+Reinstalar preserva o token guardado; só um `--token` diferente rotaciona. O PDV
+levaria 401 até os dois lados baterem, e ninguém quer descobrir isso no sábado.
 
 ## Config
 
