@@ -1,12 +1,14 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  BADGE_MAX_GAP_MS,
   appendPinDigit,
   buildUnlockPayload,
   canSubmitPin,
   isLikelyBadge,
   isLocked,
   operatorName,
+  pushBadgeKey,
 } from "../app/presentation/operatorLock";
 import type { OperatorSession } from "../app/types/operator";
 
@@ -56,6 +58,52 @@ describe("isLikelyBadge", () => {
     expect(isLikelyBadge("1234")).toBe(false);
     expect(isLikelyBadge("not-hex-zzzz")).toBe(false);
     expect(isLikelyBadge("a1b2c3")).toBe(false); // too short
+  });
+});
+
+describe("pushBadgeKey — a janela de tempo que separa leitor de dedo", () => {
+  const fast = 10; // um HID emite ~10-30ms por caractere
+  const human = 400;
+
+  it("acumula teclas rápidas na mesma passada", () => {
+    let buffer = "";
+    for (const char of "a1b2") buffer = pushBadgeKey(buffer, char, fast);
+    expect(buffer).toBe("a1b2");
+  });
+
+  it("recomeça quando o intervalo passa da janela", () => {
+    // Teclas soltas ao longo do turno não podem se somar num token falso.
+    let buffer = pushBadgeKey("", "a", 0);
+    buffer = pushBadgeKey(buffer, "1", human);
+    expect(buffer).toBe("1");
+  });
+
+  it("uma digitação humana inteira nunca fecha um crachá", () => {
+    let buffer = "";
+    for (const char of "a1b2c3d4e5f6a1b2c3d4e5f6") {
+      buffer = pushBadgeKey(buffer, char, human);
+    }
+    expect(buffer).toBe("6"); // sempre reiniciando: sobra só a última tecla
+    expect(isLikelyBadge(buffer)).toBe(false);
+  });
+
+  it("a mesma sequência, na velocidade do leitor, fecha um crachá", () => {
+    let buffer = "";
+    for (const char of "a1b2c3d4e5f6a1b2c3d4e5f6") {
+      buffer = pushBadgeKey(buffer, char, fast);
+    }
+    expect(isLikelyBadge(buffer)).toBe(true);
+  });
+
+  it("ignora teclas que não são conteúdo", () => {
+    expect(pushBadgeKey("a1", "Shift", 0)).toBe("a1");
+    expect(pushBadgeKey("a1", "ArrowLeft", 0)).toBe("a1");
+    expect(pushBadgeKey("a1", "Enter", 0)).toBe("a1");
+  });
+
+  it("a borda da janela ainda conta como a mesma passada", () => {
+    expect(pushBadgeKey("a", "1", BADGE_MAX_GAP_MS)).toBe("a1");
+    expect(pushBadgeKey("a", "1", BADGE_MAX_GAP_MS + 1)).toBe("1");
   });
 });
 
