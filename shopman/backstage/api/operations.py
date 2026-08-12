@@ -1490,6 +1490,37 @@ class POSCashMovementView(APIView):
 
 
 @extend_schema_view(
+    post=extend_schema(
+        tags=["backstage"],
+        summary="Register a no-sale cash drawer opening",
+        responses={200: OpenApiResponse(description="Opening recorded.")},
+    ),
+)
+class POSCashDrawerOpenView(APIView):
+    """Abertura de gaveta sem venda — o único momento que não deixa rastro só.
+
+    O chute físico é do navegador (o agente vive na loopback do balcão, fora do
+    alcance do servidor). O papel deste endpoint é o registro: quem abriu,
+    quando e por quê. A tela só chuta depois do ``ok`` daqui, para não existir
+    gaveta aberta sem linha na trilha.
+    """
+
+    permission_classes = [HasBackstagePermission]
+    required_permission = "backstage.operate_pos"
+
+    def post(self, request):
+        reason = (request.data.get("reason") or "").strip()
+        try:
+            pos_service.register_drawer_opening(operator=request.user, reason=reason)
+        except PosIntentError as exc:
+            return Response({"detail": exc.message, "error": exc.as_dict()}, status=exc.status)
+        except Exception as exc:
+            logger.debug("pos_drawer_open_failed user=%s", _actor(request), exc_info=True)
+            return Response({"detail": str(exc) or "Falha ao registrar abertura."}, status=400)
+        return Response({"ok": True})
+
+
+@extend_schema_view(
     get=extend_schema(
         tags=["backstage"],
         summary="Cash session report — X/Z readings and today's shift history",

@@ -298,3 +298,91 @@ describe("usePosSale — PIX polling pós-venda", () => {
     h.handles.dispose();
   });
 });
+
+// ── Gaveta na venda em dinheiro ──────────────────────────────────────────
+
+const AGENT_DRAWER = {
+  adapter: "agent",
+  can_kick: true,
+  open_on_cash_sale: true,
+  agent_url: "http://127.0.0.1:47811",
+  token: "token-do-balcao",
+  pulse: { pin: 0, on_ms: 50, off_ms: 500 },
+};
+
+/** Carrinho pronto para checkout num balcão com agente de gaveta. */
+function saleWithDrawer(actionCall: ReturnType<typeof vi.fn>, drawer = AGENT_DRAWER) {
+  const projection = makeProjection({
+    checkout: {
+      intent_version: 1,
+      capabilities: { tab_lifecycle: { requires_open_tab_for_cart: false, requires_tab_before_save: false } },
+    } as ReturnType<typeof makeProjection>["checkout"],
+    cash_drawer: drawer as ReturnType<typeof makeProjection>["cash_drawer"],
+  });
+  const h = makeSale({ projection, actionCall });
+  const pao = h.handles.posValue.value!.products[0]!;
+  h.sale.addProduct(pao);
+  return h;
+}
+
+describe("usePosSale — a gaveta na venda em dinheiro", () => {
+  let kicks: string[];
+
+  beforeEach(() => {
+    kicks = [];
+    vi.stubGlobal("fetch", vi.fn((_url: string, init?: RequestInit) => {
+      kicks.push(JSON.parse(init!.body as string).reason);
+      return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve({ ok: true }) });
+    }));
+  });
+  afterEach(() => vi.unstubAllGlobals());
+
+  it("venda em dinheiro abre a gaveta — o momento mais comum de dar troco", async () => {
+    const h = saleWithDrawer(saleRouter());
+    h.sale.cart.paymentMethod = "cash";
+    h.sale.tenderAdd(1000);
+
+    await h.sale.submitSale(); // prepara
+    await h.sale.submitSale(); // fecha
+
+    expect(kicks).toEqual(["cash_sale"]);
+    h.handles.dispose();
+  });
+
+  it("venda sem dinheiro NÃO abre a gaveta", async () => {
+    const h = saleWithDrawer(saleRouter());
+    h.sale.cart.paymentMethod = "pix";
+
+    await h.sale.submitSale();
+    await h.sale.submitSale();
+
+    expect(kicks).toEqual([]);
+    h.handles.dispose();
+  });
+
+  it("o dono pode desligar a abertura automática sem perder o botão manual", async () => {
+    const h = saleWithDrawer(saleRouter(), { ...AGENT_DRAWER, open_on_cash_sale: false });
+    h.sale.cart.paymentMethod = "cash";
+    h.sale.tenderAdd(1000);
+
+    await h.sale.submitSale();
+    await h.sale.submitSale();
+
+    expect(kicks).toEqual([]);
+    h.handles.dispose();
+  });
+
+  it("balcão de gaveta com chave não bate no agente", async () => {
+    const h = saleWithDrawer(saleRouter(), {
+      adapter: "manual", can_kick: false, open_on_cash_sale: false,
+    } as typeof AGENT_DRAWER);
+    h.sale.cart.paymentMethod = "cash";
+    h.sale.tenderAdd(1000);
+
+    await h.sale.submitSale();
+    await h.sale.submitSale();
+
+    expect(kicks).toEqual([]);
+    h.handles.dispose();
+  });
+});

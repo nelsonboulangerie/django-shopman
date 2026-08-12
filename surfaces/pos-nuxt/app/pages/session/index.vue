@@ -25,6 +25,10 @@ const {
   closeCashShift,
   closeBlockingShift,
   registerCashMovement,
+  canOpenDrawer,
+  drawerProbing,
+  openDrawerWithoutSale,
+  probeDrawer,
 } = usePosCashSession({ pos, actions, refresh, action });
 
 // Entrada do FECHAMENTO DO DIA (contagem cega de sobras): o gate é da API
@@ -82,6 +86,27 @@ async function submitMovement(managerApproval: { username: string; pin: string }
 function onMovementAuthorize(username: string, pin: string) {
   managerAuthOpen.value = false;
   submitMovement({ username, pin });
+}
+
+// Abrir a gaveta sem venda. Um motivo é obrigatório porque este é o único dos
+// quatro momentos que não deixa rastro sozinho — sem venda e sem movimento, a
+// linha na trilha é tudo o que sobra. Os motivos comuns viram um toque; o
+// digitado cobre o resto sem virar campo obrigatório no meio da fila.
+const DRAWER_REASONS = ["Troco", "Conferência"] as const;
+const drawerReason = ref("");
+async function openDrawer(reason: string) {
+  const chosen = reason.trim();
+  if (!chosen) return;
+  const ok = await openDrawerWithoutSale(chosen);
+  if (ok) drawerReason.value = "";
+}
+
+// Teste de gaveta: a sonda só alcança a FILA do sistema. Se a gaveta está
+// plugada na impressora, ou se abriu, quem confirma é o olho do operador.
+const drawerProbeResult = ref<{ ok: boolean; message: string } | null>(null);
+async function testDrawer() {
+  drawerProbeResult.value = await probeDrawer();
+  if (drawerProbeResult.value.ok) await openDrawerWithoutSale("Teste de gaveta");
 }
 
 // Fechar caixa (contagem cega) — destrutivo, exige confirmação explícita.
@@ -256,6 +281,49 @@ async function confirmCloseBlocking() {
               >
                 Registrar movimento
               </UiButton>
+            </section>
+
+            <!-- Gaveta: só aparece onde existe caminho de software. Num balcão
+                 de gaveta com chave, um botão que não abre nada seria pior que
+                 botão nenhum. -->
+            <section v-if="canOpenDrawer" class="grid gap-2 rounded-lg border bg-card p-4">
+              <div class="flex items-center gap-2">
+                <Icon name="lucide:archive" class="size-4 text-muted-foreground" />
+                <h2 class="text-base font-semibold">Abrir gaveta</h2>
+              </div>
+              <p class="text-sm text-muted-foreground">
+                Abrir sem venda fica registrado no turno: quem abriu, quando e por quê.
+              </p>
+              <div class="grid grid-cols-2 gap-2">
+                <UiButton
+                  v-for="reason in DRAWER_REASONS"
+                  :key="reason"
+                  variant="outline"
+                  size="sm"
+                  :disabled="busy"
+                  @click="openDrawer(reason)"
+                >
+                  {{ reason }}
+                </UiButton>
+              </div>
+              <div class="grid grid-cols-[1fr_auto] gap-2">
+                <UiInput v-model="drawerReason" placeholder="Outro motivo" @keydown.enter="openDrawer(drawerReason)" />
+                <UiButton variant="outline" size="sm" :disabled="busy || !drawerReason.trim()" @click="openDrawer(drawerReason)">
+                  Abrir
+                </UiButton>
+              </div>
+              <div class="mt-1 grid gap-2 border-t pt-3">
+                <UiButton variant="ghost" size="sm" :disabled="busy || drawerProbing" :loading="drawerProbing" @click="testDrawer">
+                  <Icon name="lucide:stethoscope" class="size-4" />
+                  Testar gaveta
+                </UiButton>
+                <p v-if="drawerProbeResult" class="text-xs" :class="drawerProbeResult.ok ? 'text-muted-foreground' : 'text-destructive'">
+                  <template v-if="drawerProbeResult.ok">
+                    {{ drawerProbeResult.message }} A gaveta abriu? Se não abriu, confira o cabo dela na impressora.
+                  </template>
+                  <template v-else>{{ drawerProbeResult.message }}</template>
+                </p>
+              </div>
             </section>
 
             <section class="grid gap-2 rounded-lg border bg-card p-4">

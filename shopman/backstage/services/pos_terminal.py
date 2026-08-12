@@ -46,6 +46,8 @@ class TerminalRuntimeProfile:
             return "error"
         if any(component.status == "warning" for component in self.components):
             return "warning"
+        # `deferred` não acende o badge geral: um periférico que só a estação
+        # consegue sondar não é defeito, é uma resposta que este lado não tem.
         return "ready"
 
 
@@ -63,7 +65,9 @@ def runtime_profile(terminal) -> TerminalRuntimeProfile:
     hardware = dict(metadata.get("hardware") or {})
     printer = printer_geometry(dict(hardware.get("printer") or {}))
     components = tuple(
-        _component_health(
+        _cash_drawer_health(terminal)
+        if key == "cash_drawer"
+        else _component_health(
             key,
             dict(hardware.get(key) or {}),
             problem=printer.problem if key == "printer" else "",
@@ -166,6 +170,40 @@ def _component_health(key: str, config: dict, *, problem: str = "") -> TerminalC
     if adapter:
         return TerminalComponentHealth(key=key, label=label, status="ready", message=adapter)
     return TerminalComponentHealth(key=key, label=label, status="warning", message="sem adapter")
+
+
+def _cash_drawer_health(terminal) -> TerminalComponentHealth:
+    """Saúde da gaveta — e a honestidade de dizer que este lado não sabe.
+
+    O agente que chuta a gaveta vive na **loopback do balcão**; o Django vive na
+    DO. Não existe requisição que saia daqui e chegue lá. Então, com adapter
+    ``agent``, qualquer status conclusivo deste lado seria invenção — inclusive
+    ``ready``, que é o que o código antigo devolvia para ``simulated`` sem
+    nunca ter tocado em aparelho nenhum.
+
+    ``deferred`` diz a verdade: a resposta existe, só que quem tem como buscá-la
+    é a estação. A superfície sonda o ``/health`` do agente e preenche.
+
+    O que este lado AINDA decide: erro de preenchimento (adapter ``agent`` sem
+    token não vai funcionar em balcão nenhum, e dá para dizer isso agora).
+    """
+    from shopman.backstage.services.pos_hardware import CashDrawerConfig
+
+    label = _COMPONENT_LABELS["cash_drawer"]
+    config = CashDrawerConfig.from_terminal(terminal)
+    if not config.declared:
+        return TerminalComponentHealth(key="cash_drawer", label=label, status="absent", message="não instalado")
+    if not config.enabled:
+        return TerminalComponentHealth(key="cash_drawer", label=label, status="absent", message="desligado")
+    if config.adapter != "agent":
+        # Gaveta de chave é uma configuração COMPLETA, não uma pendência.
+        return TerminalComponentHealth(key="cash_drawer", label=label, status="ready", message="abre com a chave")
+    reason = config.misconfigured_reason
+    if reason:
+        return TerminalComponentHealth(key="cash_drawer", label=label, status="warning", message=reason)
+    return TerminalComponentHealth(
+        key="cash_drawer", label=label, status="deferred", message="verificado na estação",
+    )
 
 
 def _default_fulfillment_type(metadata: dict) -> str:

@@ -286,6 +286,9 @@ class POSProjection:
     # surfaces/pos-nuxt/app/assets/css/tailwind.css.
     terminal_roll_width_mm: int = 0
     terminal_roll_margin_mm: int = 0
+    # Como ESTE balcão abre a gaveta. Vai para a superfície porque quem alcança
+    # o agente na loopback é o navegador do balcão, não o servidor.
+    cash_drawer: dict = field(default_factory=dict)
 
 
 # ── Constants ──────────────────────────────────────────────────────────
@@ -333,6 +336,7 @@ def build_pos(*, terminal=None, operator=None) -> POSProjection:
 
         terminal = POSTerminal.default()
     terminal_cash_shift = _active_cash_shift_for_terminal(terminal)
+    from shopman.backstage.services.pos_hardware import CashDrawerConfig
     from shopman.backstage.services.pos_terminal import runtime_profile
 
     runtime = runtime_profile(terminal)
@@ -376,6 +380,7 @@ def build_pos(*, terminal=None, operator=None) -> POSProjection:
         auto_lock_seconds=int((getattr(terminal, "metadata", None) or {}).get("auto_lock_seconds", 60)),
         terminal_roll_width_mm=runtime.printer.roll_width_mm,
         terminal_roll_margin_mm=runtime.printer.margin_mm,
+        cash_drawer=CashDrawerConfig.from_terminal(terminal).surface_payload(),
     )
 
 
@@ -727,6 +732,16 @@ def _pos_actions() -> tuple[Action, ...]:
             method="POST",
             href="/api/v1/backstage/pos/cash/movement/",
             payload_schema={"required": ["kind", "amount", "reason"]},
+            idempotency="none",
+        ),
+        Action(
+            ref="drawer_open",
+            kind="mutation",
+            label="Abrir gaveta",
+            priority="quiet",
+            method="POST",
+            href="/api/v1/backstage/pos/cash/drawer-open/",
+            payload_schema={"required": ["reason"]},
             idempotency="none",
         ),
         Action(

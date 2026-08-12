@@ -113,6 +113,62 @@ def register_cash_movement(
     )
 
 
+#: Teto da trilha de aberturas guardada no turno. Um turno normal abre a gaveta
+#: dezenas de vezes; 500 cobre o pior sábado com folga e impede que um clique
+#: preso engorde o JSONField sem limite.
+_DRAWER_OPENING_LOG_CAP = 500
+
+
+def register_drawer_opening(*, operator, reason: str = ""):
+    """Registra uma abertura de gaveta SEM venda e sem movimento.
+
+    Os outros três momentos que abrem a gaveta já deixam rastro sozinhos: a
+    venda em dinheiro tem o pedido, a sangria e o suprimento têm o
+    ``CashMovement``. Este não tem nada — é o operador abrindo para conferir,
+    trocar nota, ou por qualquer motivo que só ele sabe. Sem registro, é
+    exatamente o buraco que a chave física deixava.
+
+    ⚠️ Isto NÃO decide quem pode abrir. A política de autorização de gaveta é da
+    frente de estresse do PDV (retirada exige PIN em qualquer valor); aqui é o
+    caminho físico. O motivo é substância da auditoria, não portaria.
+
+    Mora em ``CashShift.metadata`` porque é dado contextual de um turno — o
+    idioma do projeto para isso é JSONField, não migração.
+    """
+    from django.db import transaction
+    from django.utils import timezone
+
+    from shopman.backstage.models import CashShift
+
+    reason = str(reason or "").strip()[:120]
+    if not reason:
+        raise POSError("Informe o motivo da abertura.")
+
+    with transaction.atomic():
+        # Sem o lock, duas aberturas quase simultâneas leem a mesma lista e a
+        # segunda sobrescreve a primeira — uma abertura sumiria da trilha.
+        shift = (
+            CashShift.objects.select_for_update()
+            .filter(operator=operator, status=CashShift.Status.OPEN)
+            .first()
+        )
+        if not shift:
+            raise POSError("Caixa não aberto.")
+        metadata = dict(shift.metadata or {})
+        openings = list(metadata.get("drawer_openings") or [])
+        openings.append(
+            {
+                "at": timezone.now().isoformat(),
+                "by": operator.username,
+                "reason": reason,
+            }
+        )
+        metadata["drawer_openings"] = openings[-_DRAWER_OPENING_LOG_CAP:]
+        shift.metadata = metadata
+        shift.save(update_fields=["metadata"])
+    return shift
+
+
 def close_cash_shift(*, operator, closing_amount_raw="0", notes: str = ""):
     from shopman.backstage.models import CashShift
 

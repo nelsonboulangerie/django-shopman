@@ -230,8 +230,23 @@ export interface POSCustomerSearchResponse {
 export interface POSTerminalComponentProjection {
   key: string;
   label: string;
-  status: "ready" | "warning" | "error" | string;
+  /**
+   * `deferred` = a resposta existe, mas só a estação alcança quem a tem (o
+   * agente da gaveta vive na loopback do balcão). O servidor dizer `ready` aí
+   * seria repetir a mentira antiga do adapter "simulated".
+   */
+  status: "ready" | "warning" | "error" | "absent" | "deferred" | string;
   message: string;
+}
+
+/** Como ESTE balcão abre a gaveta. `can_kick: false` = abre com a chave. */
+export interface POSCashDrawerProjection {
+  adapter: "manual" | "agent" | string;
+  can_kick: boolean;
+  open_on_cash_sale: boolean;
+  agent_url?: string;
+  token?: string;
+  pulse?: { pin: number; on_ms: number; off_ms: number };
 }
 
 export interface POSOperatorProjection {
@@ -255,6 +270,7 @@ export interface POSProjection {
   terminal_default_fulfillment_type: "pickup" | "delivery" | string;
   terminal_health_status: "ready" | "warning" | "error" | string;
   terminal_components: POSTerminalComponentProjection[];
+  cash_drawer?: POSCashDrawerProjection;
   favorite_collection_refs: string[];
   delivery_minimum_q: number;
   delivery_minimum_display: string;

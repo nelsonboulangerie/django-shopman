@@ -1,9 +1,10 @@
 # POS-HARDWARE-READINESS-HANDOFF — impressora, gaveta, leitor
 
 **Status:** 🔖 aberto (2026-08-12). Repassado pela frente de alpha (worktree
-`shopman-storefront-perf`) para a frente do PDV absorver. **Seções 1 (impressora)
-e 3 (crachá) fechadas em 2026-08-12** — seguem abertas a 2 (gaveta) e a 4 (rótulo
-honesto do health).
+`shopman-storefront-perf`) para a frente do PDV absorver. **As quatro seções
+fechadas em 2026-08-12** — impressora, gaveta, crachá e o rótulo honesto do
+health. O que resta é humano: instalar o agente no balcão, ver a gaveta abrir, e
+as três pontas soltas do fim da seção 3.
 
 O ponto de partida importa: **isto não é QA à espera de aparelho.** Fui olhar o
 código para responder "o que dá para testar já", e o parágrafo original errava em
@@ -191,7 +192,19 @@ sorte, e é o gancho para um balcão com rolo diferente.
 (o texto agora encosta no limite da área imprimível) e o comportamento de avanço
 e corte no fim do recibo, que é configuração do driver, não do CSS.
 
-## 2. Gaveta — não existe código
+## 2. Gaveta — ✅ caminho construído (2026-08-12)
+
+> **Fechado em software.** O agente local existe
+> (`tools/pos-drawer-agent/`), a config é por terminal no Admin, e os quatro
+> momentos chamam um caminho só. Falta o balcão: instalar o agente, colar o
+> token, e o olho do operador confirmando que abriu.
+> Ver [POS-CASH-DRAWER-PLAN](POS-CASH-DRAWER-PLAN.md) — inclusive a medição que
+> destravou o desenho (HTTPS → `127.0.0.1` **passa** no Chrome 148) e a correção
+> do pulso (**50/500ms**, não 25/250 — aqueles são as unidades de 2ms).
+
+O diagnóstico abaixo permanece porque é ele que explica por que o caminho é este.
+
+### O diagnóstico original
 
 Nenhuma linha abre gaveta. As ocorrências de "gaveta" no `pos-nuxt` são **copy**
 do relatório de caixa (movimentos, blind count), não comando de aparelho.
@@ -328,10 +341,15 @@ adapter é simulado.
    WP-AUTH-2a; o que faltava era o defeito de foco, agora corrigido. Restam as três
    pontas soltas do fim da seção 3 (emitir crachá pela tela, trocar operador com a
    tela destravada, token por CLI).
-3. **Gaveta** — precisa de agente local com kick ESC/POS; o gancho do driver não
-   cobre sangria nem venda (ver a correção na seção 2). Comprovante impresso de
-   sangria é item separado, de controle.
-4. **Rótulo honesto** no health quando o adapter é `simulated`/`manual`.
+3. ~~**Gaveta**~~ — ✅ feito em 2026-08-12 (agente local + config por terminal +
+   os quatro momentos). Sobra instalar no balcão e confirmar com o aparelho.
+4. ~~**Rótulo honesto** no health~~ — ✅ **para a gaveta**: com adapter `agent` o
+   servidor responde `deferred` ("verificado na estação"), porque ele não alcança
+   a loopback do balcão. A impressora ganhou o mesmo espírito por outro caminho na
+   seção 1 (declaração inválida vira `warning` com o motivo, em vez de cair calada
+   no default). Os demais periféricos seguem por declaração.
+5. **Comprovante impresso de sangria** — item de controle, separado de propósito:
+   se ele virar o jeito de abrir a gaveta, volta o acoplamento descartado acima.
 
 ## Anexo — fotos do catálogo (outra tarefa, mesmo repasse)
 
