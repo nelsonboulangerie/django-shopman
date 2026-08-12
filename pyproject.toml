@@ -57,6 +57,11 @@ dev = [
     # Autenticador WebAuthn de software: é o único jeito de exercitar passkey sem aparelho.
     # Sem ele, o fluxo mais sensível do login ficaria com teste de fachada.
     "soft-webauthn>=0.1.4,<0.2",
+    # ⚠️ O `fido2` é pinado de propósito. Ele vem do `soft-webauthn`, e o doorman já pede
+    # `webauthn>=2.8,<3` — os dois disputam `cryptography` e `cbor2`. Sem faixa estreita o
+    # pip explora o produto cartesiano e desiste com `resolution-too-deep`, derrubando a
+    # instalação inteira. 1.2.x é o que a suíte roda de verdade.
+    "fido2>=1.2,<1.3",
     "pytest",
     "pytest-django",
     "pytest-timeout>=2.3,<3.0",
