@@ -523,13 +523,19 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onGlobalKeydown));
       @submit="submitMove"
     />
 
-    <!-- D3 print surface: hidden on screen, the only thing visible in @media print. -->
-    <div v-if="result" id="pos-print-area">
-      <PosReceipt
-        :receipt="result.receipt"
-        :terminal-label="pos?.terminal_label || 'Ponto de venda'"
-        :payment-methods="pos?.payment_methods || []"
-      />
-    </div>
+    <!-- D3 print surface: hidden on screen, the only thing printed in @media print.
+         Vai para o `body` por Teleport de propósito — como irmão do app, o print
+         CSS esconde o resto com `display: none` e a impressão pagina pelo recibo.
+         Aninhado aqui dentro, só dava para escondê-lo com `visibility`, que mantém
+         os boxes e fazia sair papel em branco depois do recibo. -->
+    <Teleport to="body">
+      <div v-if="result" id="pos-print-area">
+        <PosReceipt
+          :receipt="result.receipt"
+          :terminal-label="pos?.terminal_label || 'Ponto de venda'"
+          :payment-methods="pos?.payment_methods || []"
+        />
+      </div>
+    </Teleport>
   </main>
 </template>

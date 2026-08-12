@@ -228,26 +228,66 @@
   }
 }
 
-/* POS receipt print (spec §D3 — kiosk window.print). On screen the print area is
-   hidden; in @media print everything else is hidden and only the receipt shows.
-   `visibility` (not display) so the nested receipt inherits visibility back on. */
+/* ───────────────────────────────────────────────────────────────────────────
+   POS receipt print (spec §D3 — kiosk window.print)
+
+   GEOMETRIA DO ROLO — dono único da largura impressa. A Nelson usa rolo de 80mm
+   (confirmado com o Pablo em 2026-08-12). A margem horizontal não é gosto: uma
+   térmica de 80mm imprime ~72mm (576 dots a 203dpi), ou seja 4mm de cada lado
+   são papel que o cabeçote não alcança. Pedir mais largura que isso não ganha
+   espaço — só joga a coluna da direita, a do preço, para fora do alcance.
+   Trocar de rolo (58mm, por exemplo) é mexer AQUI e no `@page` lá embaixo —
+   os dois números ficam amarrados por tests/receiptPrint.test.ts.
+
+   ⚠️ `size: 80mm auto` NÃO funciona: o descritor `size` não aceita `<length>`
+   misturado com `auto`, então o navegador descarta a regra inteira e a largura
+   volta a ser decidida pelo driver (verificado no Chrome via CDP printToPDF —
+   saía Letter). A altura precisa ser um comprimento; 297mm é a página de rolo
+   que os drivers térmicos expõem por padrão. Corte e avanço do papel no fim do
+   recibo são configuração do driver, a confirmar no aparelho.
+   ─────────────────────────────────────────────────────────────────────────── */
+:root {
+  --pos-roll-width: 80mm;
+  --pos-roll-height: 297mm;
+  --pos-roll-margin-x: 4mm;
+  --pos-roll-margin-y: 3mm;
+  /* Largura útil = rolo menos as duas margens da página. */
+  --pos-receipt-width: calc(var(--pos-roll-width) - 2 * var(--pos-roll-margin-x));
+}
+
 #pos-print-area {
   display: none;
 }
 
+/* O recibo ocupa a largura útil do rolo e nunca passa dela — sem essa trava, um
+   refactor solta a largura e cada terminal imprime um recibo diferente. */
+.pos-receipt {
+  width: 100%;
+  max-width: var(--pos-receipt-width);
+  margin-inline: auto;
+}
+
 @media print {
-  body {
-    visibility: hidden;
+  /* O recibo é irmão do app no `body` (Teleport em pages/index.vue), então dá
+     para esconder o app com `display: none` de verdade. Com o antigo truque de
+     `visibility: hidden` os boxes continuavam ocupando espaço e toda impressão
+     saía com páginas em branco depois do recibo (3 páginas para um recibo de 6
+     itens), além de não paginar junto com o conteúdo. */
+  body > *:not(#pos-print-area) {
+    display: none;
   }
   #pos-print-area {
     display: block;
-    visibility: visible;
-    position: fixed;
-    inset: 0;
     margin: 0;
     background: white;
   }
+  .pos-receipt {
+    /* A respiração lateral vem da margem do `@page`; padding aqui só comeria
+       mais da largura útil, que já é curta no rolo. */
+    padding-inline: 0;
+  }
   @page {
-    margin: 6mm;
+    size: 80mm 297mm;
+    margin: 3mm 4mm;
   }
 }

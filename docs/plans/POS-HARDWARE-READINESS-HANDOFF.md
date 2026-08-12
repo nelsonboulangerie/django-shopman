@@ -1,7 +1,8 @@
 # POS-HARDWARE-READINESS-HANDOFF — impressora, gaveta, leitor
 
 **Status:** 🔖 aberto (2026-08-12). Repassado pela frente de alpha (worktree
-`shopman-storefront-perf`) para a frente do PDV absorver.
+`shopman-storefront-perf`) para a frente do PDV absorver. **Item 1 (impressora)
+fechado em 2026-08-12** — os itens 2, 3 e 4 seguem abertos.
 
 O ponto de partida importa: **isto não é QA à espera de aparelho.** Fui olhar o
 código para responder "o que dá para testar já" e os três periféricos estão em
@@ -14,40 +15,60 @@ a política manda.
 
 ---
 
-## 1. Impressora térmica — funciona, mas o `@page` está errado
+## 1. Impressora térmica — ✅ `@page` corrigido (2026-08-12)
 
 **Como imprime hoje:** `window.print()` do navegador
-(`surfaces/pos-nuxt/app/pages/index.vue:143`) com o recibo já no DOM
+(`surfaces/pos-nuxt/app/pages/index.vue:142`) com o recibo já no DOM
 (`#pos-print-area`, `components/PosReceipt.vue`) e CSS `@media print`
-(`app/assets/css/tailwind.css:238`). O driver do sistema faz o resto — qualquer
+(`app/assets/css/tailwind.css:232`). O driver do sistema faz o resto — qualquer
 impressora serve, inclusive térmica, **sem código novo e sem ESC/POS**.
 
-**O defeito** (`tailwind.css:250`):
+**O defeito** era `@page { margin: 6mm; }` — só margem, nenhum `size`: `12mm` dos
+`80mm` viravam margem (15% da largura útil) e, sem `size`, quem decidia a largura
+do layout era o driver, então o mesmo recibo saía diferente em cada terminal.
+
+**Rolo confirmado com o Pablo (2026-08-12): 80mm.**
+
+**A correção que este documento sugeria não funcionaria.** `size: 80mm auto` é
+sintaxe inválida — o descritor `size` não aceita `<length>` misturado com `auto`,
+então o navegador descarta a regra inteira e a largura continua com o driver.
+Medido no Chrome (`Page.printToPDF` com `preferCSSPageSize`): com `80mm auto` a
+página saía **Letter**, igual ao bug original. `size: 80mm` sozinho também não
+serve — vira página **quadrada de 80×80mm**. A altura precisa ser um comprimento.
+
+Junto apareceu um segundo defeito que ninguém tinha visto: o `#pos-print-area`
+era escondido com `visibility: hidden` no `body`, que **mantém os boxes ocupando
+espaço**. Toda impressão saía com **páginas em branco** depois do recibo (3
+páginas para um recibo de 6 itens) e a paginação não seguia o conteúdo — recibo
+longo era truncado.
+
+**O que ficou** (`tailwind.css`, `pages/index.vue`, `components/PosReceipt.vue`):
 
 ```css
-@page {
-  margin: 6mm;
-}
+@page { size: 80mm 297mm; margin: 3mm 4mm; }
 ```
 
-Só margem, **nenhum `size`**. Duas consequências num rolo de 80mm:
+- `4mm` de margem lateral não é gosto: uma térmica de 80mm imprime ~72mm (576
+  dots a 203dpi), então 4mm de cada lado são papel fora do alcance do cabeçote.
+  Pedir mais largura não ganha espaço, só joga a coluna do preço para fora.
+- A geometria virou variáveis CSS (`--pos-roll-*`) com **um dono só**; o recibo
+  lê `.pos-receipt` e não fixa largura própria. Trocar para 58mm é mexer em um
+  lugar (mais o `@page`, que repete os números porque descritores de página não
+  leem custom properties — os dois lados ficam amarrados pelo teste).
+- O `#pos-print-area` foi para o `body` por `Teleport`, o que permite esconder o
+  app com `display: none` de verdade. Fim das páginas em branco.
+- `tests/receiptPrint.test.ts` trava o contrato: largura declarada, `@page` em
+  sintaxe válida (proíbe `auto`), margens iguais às vars, recibo sem largura
+  própria e app escondido com `display`, não `visibility`.
 
-- `6mm` de cada lado come **12mm de 80mm — 15% da largura útil**. A área
-  imprimível típica de uma térmica de 80mm já é ~72mm; sobra pouco.
-- Sem `size`, o layout não está preso à largura do rolo: quem decide é o driver,
-  então o mesmo recibo sai diferente em cada terminal.
+**Verificado sem impressora**, renderizando o recibo com as regras reais do
+`tailwind.css` via CDP `printToPDF`: página **80,1 × 297mm** (antes: Letter),
+**1 página** para recibo curto (antes: 3, duas em branco) e **3 páginas** para
+recibo de 60 itens — ou seja, pagina pelo conteúdo. Nada cortado na largura.
 
-**Correção provável:** `@page { size: 80mm auto; margin: 2mm 3mm; }` e uma
-largura máxima no container do recibo. ⚠️ **Não aplicar às cegas** — o rolo da
-Nelson pode ser 58mm; confirmar antes.
-
-**Como testar SEM impressora:** emular mídia de impressão no navegador e
-inspecionar/screenshotar o `#pos-print-area` na largura do rolo. Imprimir em PDF
-também revela o corte. Não precisa de aparelho para achar layout quebrado —
-precisa de aparelho só para confirmar a densidade e o corte do papel.
-
-**É o item de maior valor imediato dos três:** defeito real, correção pequena,
-verificável hoje.
+**O que ainda quer aparelho:** densidade/contraste, alinhamento lateral do rolo
+(o texto agora encosta no limite da área imprimível) e o comportamento de avanço
+e corte no fim do recibo, que é configuração do driver, não do CSS.
 
 ## 2. Gaveta — não existe código
 
@@ -129,8 +150,8 @@ adapter é simulado.
 
 ## Ordem sugerida
 
-1. **`@page` do recibo** — defeito real, correção pequena, verificável sem hardware.
-   Confirmar a largura do rolo com o Pablo antes.
+1. ~~**`@page` do recibo**~~ — ✅ feito em 2026-08-12 (rolo de 80mm confirmado
+   com o Pablo). Sobra só a confirmação de densidade e corte no aparelho.
 2. **Leitor de crachá** — implementável e testável sem o aparelho (emulação de teclado).
 3. **Gaveta** — precisa de agente local com kick ESC/POS; o gancho do driver não
    cobre sangria nem venda (ver a correção na seção 2). Comprovante impresso de

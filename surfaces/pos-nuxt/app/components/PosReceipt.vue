@@ -1,10 +1,12 @@
 <script setup lang="ts">
-// Receipt (spec §D3 · web/CSS print) — a thermal-style (80mm) layout printed via
-// the browser's print path (kiosk window.print). It renders a frozen finalize
+// Receipt (spec §D3 · web/CSS print) — a thermal-roll layout printed via the
+// browser's print path (kiosk window.print). It renders a frozen finalize
 // snapshot through `presentation/receipt` (pure shaping). On screen it is hidden;
 // it only becomes visible inside @media print (see the print rules in
-// assets/css/tailwind.css). Real-hardware transport (ESC-POS / network ePOS) is
-// validated on a device — this is the web prototype.
+// assets/css/tailwind.css). The printed width belongs to `.pos-receipt` there —
+// the roll geometry has one owner, so never pin a width on this element.
+// Real-hardware transport (ESC-POS / network ePOS) is validated on a device —
+// this is the web prototype.
 import type { POSPaymentMethodProjection } from "~/types/pos";
 import type { PosReceiptSnapshot } from "~/presentation/receipt";
 import { receiptLines, receiptPayments } from "~/presentation/receipt";
@@ -21,7 +23,7 @@ const printedAt = computed(() => new Date(props.receipt.printedAtMs).toLocaleStr
 </script>
 
 <template>
-  <div class="mx-auto w-[80mm] max-w-full bg-white px-3 py-4 font-mono text-[12px] leading-snug text-black">
+  <div class="pos-receipt bg-white px-3 py-4 font-mono text-[12px] leading-snug text-black">
     <div class="text-center">
       <p class="text-sm font-bold uppercase tracking-wide">{{ terminalLabel }}</p>
       <p class="text-[11px]">Recibo não fiscal</p>
