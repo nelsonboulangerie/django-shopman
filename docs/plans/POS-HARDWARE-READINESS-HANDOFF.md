@@ -303,17 +303,41 @@ Verificado em 2026-08-12 no navegador, contra Django de verdade: crachá sozinho
 estabeleceu `active_operator = ana`, **sem PIN nenhum**, inclusive **depois de
 clicar num botão** (foco no `BODY`) — o caso que a implementação antiga perdia.
 
+### ✅ Emitir crachá pela tela (2026-08-12)
+
+O `issue_badge` deixou de ser código sem chamador. Em **Gestão do Acesso →
+Credenciais PIN** (`/admin/doorman/pincredential/`) o gerente seleciona um operador
+e usa **Emitir crachá**: o sistema sorteia o token, mostra **uma vez** e abre a folha
+de impressão (`/admin/operadores/cracha/`) com o código de barras pronto. **Revogar
+crachá** é a outra ação, para crachá perdido. A coluna "Crachá" diz quem já tem.
+
+Decisões que valem registro:
+
+- **Code-128, não QR.** O leitor da Nelson é laser 1D (confirmado pelo Pablo) e não
+  enxerga QR, por mais que o `qrcode` já seja dependência do projeto.
+- **Sem dependência nova.** O codificador é nosso
+  (`shopman/backstage/presentation/barcode.py`, ~60 linhas). A tabela do padrão foi
+  **conferida contra o `zint`** (implementação independente) símbolo a símbolo em 84
+  casos, e o vetor de ouro está travado no teste. Tabela errada = crachá que não bipa
+  e ninguém descobre por quê.
+- **Impressão fora do PDV.** O crachá é adesivo em impressora comum, não no rolo do
+  balcão. Por isso o token de 24 caracteres do `issue_badge` ficou como está (Core
+  intacto): a 0,25mm por módulo dá **79,8mm**, que cabe em crachá tamanho cartão.
+  Trocar para etiqueta menor exige encurtar o token, e aí mexe no doorman.
+- **O token some.** Existe só na resposta da emissão (viaja por sessão, nunca por
+  URL). Perdeu, emite outro — e emitir outro invalida o anterior.
+
 ### O que continua em aberto
 
-- **Ninguém consegue emitir um crachá pela tela.** `issue_badge` (que sorteia o
-  token para virar código de barras) **não tem chamador fora dos testes**; o Admin
-  só mostra `badge_hash` como readonly. Na prática o gerente depende da CLI com um
-  token que ele mesmo inventa. Falta o fluxo "emitir + imprimir + revogar".
 - **O crachá só vale na tela de bloqueio.** Com o PDV destravado, passar o crachá
   de outra pessoa não troca o operador — é preciso travar antes (o auto-lock do
   PDV é de 60s ocioso). Pode ser a decisão certa; não está escrito em lugar nenhum.
-- **O token vai por CLI** (`--badge`), então fica no histórico do shell. O
-  `issue_badge` não tem esse problema, e é mais um motivo para expor o fluxo.
+- **A CLI (`set_operator_pin --badge`) continua aceitando token à mão**, e ele fica
+  no histórico do shell. Agora existe caminho melhor; a CLI segue para bootstrap.
+- **Registrar crachá que a pessoa já tem** (carteirinha com código de terceiro) não
+  é possível: o front só aceita 24 hex (`isLikelyBadge`) enquanto o servidor aceita
+  qualquer string. Se um dia isso for desejado, os dois lados mudam juntos — hoje
+  gravaria no banco e falharia calado na tela.
 
 ## 4. ⚠️ O health de terminal é declaração, não sonda
 

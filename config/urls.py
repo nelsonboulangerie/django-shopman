@@ -9,6 +9,7 @@ from django.urls import include, path
 from drf_spectacular.views import SpectacularAPIView, SpectacularSwaggerView
 
 from shopman.backstage.admin_console.copy_catalog import copy_catalog_view
+from shopman.backstage.admin_console.operator_badge import operator_badge_view
 from shopman.backstage.admin_console.pos_drawer_agent import (
     pos_drawer_agent_download,
     pos_drawer_agent_view,
@@ -56,6 +57,11 @@ urlpatterns = [
         "admin/pdv/terminal/<slug:ref>/gaveta/agente.py",
         admin.site.admin_view(pos_drawer_agent_download),
         name="admin_console_pos_drawer_agent_download",
+    ),
+    path(
+        "admin/operadores/cracha/",
+        admin.site.admin_view(operator_badge_view),
+        name="admin_console_operator_badge",
     ),
     path("admin/2fa/verify/", admin_2fa_verify, name="admin_2fa_verify"),
     path("admin/", admin.site.urls),
