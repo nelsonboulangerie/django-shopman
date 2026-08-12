@@ -58,11 +58,43 @@ A gaveta abre por um comando ESC/POS que a **impressora** dispara
 (`ESC p m t1 t2`). Impressão pelo navegador não emite ESC/POS — então, pelo
 caminho atual, não há como o PDV abrir a gaveta por software.
 
-**Antes de escrever qualquer linha, testar o driver:** quase todo driver de
-impressora térmica tem a opção "abrir gaveta ao imprimir" / "open cash drawer".
-Se a impressora da Nelson tiver, **o custo é zero código** — é configuração de
-terminal, e o recibo que já imprime passa a abrir a gaveta. Só se não tiver é que
-entra ponte nativa (agente local falando com a porta, ou app empacotado).
+### ❌ CORREÇÃO (2026-08-12) — o truque do driver NÃO resolve
+
+A primeira versão deste documento sugeria: "quase todo driver de térmica tem
+'abrir gaveta ao imprimir'; se tiver, custo zero". **Está errado**, e o Pablo
+pegou perguntando pela sangria. Dois motivos, o segundo pior que o primeiro:
+
+1. **Sangria e suprimento não imprimem nada.** Conferido: não há nenhuma
+   impressão no fluxo de movimento de gaveta (`usePosCashSession.ts`,
+   `presentation/cash.ts`, `pages/session/index.vue`). Sem impressão, o gancho do
+   driver nunca dispara — e sangria é exatamente um momento em que a gaveta
+   precisa abrir.
+
+2. **O recibo da venda também não é automático.** `printReceipt()`
+   (`pages/index.vue:142`) está ligado a um **botão** (`@click="printReceipt"`,
+   linha 299), não ao fim da venda. Ou seja: a gaveta só abriria quando o operador
+   lembrasse de clicar "imprimir" — e o momento mais comum de abrir a gaveta é a
+   venda em dinheiro, para dar troco.
+
+**Conclusão:** o gancho do driver é incidental, não mecanismo. Amarrar "a gaveta
+abre" a "alguém clicou imprimir" é dependência de disciplina humana num ponto
+onde a falha é silenciosa — o mesmo padrão que já nos mordeu no
+[[feedback_contract_is_surface_independent]].
+
+**O caminho real:** um agente local que envia o comando ESC/POS de kick
+(`ESC p m t1 t2`) para a impressora (TCP 9100 ou USB). Um só caminho serve os
+quatro momentos: venda em dinheiro, sangria, suprimento e "abrir sem venda".
+
+**Independente disso, vale imprimir comprovante de sangria** — mas como
+*controle*, não como mecanismo de abrir gaveta. A frente do PDV acabou de decidir
+que retirada exige PIN em qualquer valor justamente por "sangria sem testemunha";
+um comprovante impresso (valor, motivo, operador, hora) é a testemunha física. As
+duas coisas são boas, mas são independentes: se o comprovante virar o jeito de
+abrir a gaveta, volta o acoplamento de cima.
+
+⚠️ **Pré-requisito para qualquer impressão no PDV:** modo kiosk com impressão
+silenciosa (Chrome `--kiosk-printing`). Sem isso, todo `window.print()` abre
+diálogo — inaceitável num balcão, e absurdo se for só para chutar a gaveta.
 
 ## 3. Leitor de crachá — não existe código, mas é testável sem o leitor
 
@@ -100,7 +132,9 @@ adapter é simulado.
 1. **`@page` do recibo** — defeito real, correção pequena, verificável sem hardware.
    Confirmar a largura do rolo com o Pablo antes.
 2. **Leitor de crachá** — implementável e testável sem o aparelho (emulação de teclado).
-3. **Gaveta** — começar testando a opção do driver; só escrever código se ela não existir.
+3. **Gaveta** — precisa de agente local com kick ESC/POS; o gancho do driver não
+   cobre sangria nem venda (ver a correção na seção 2). Comprovante impresso de
+   sangria é item separado, de controle.
 4. **Rótulo honesto** no health quando o adapter é `simulated`/`manual`.
 
 ## Anexo — fotos do catálogo (outra tarefa, mesmo repasse)
@@ -113,7 +147,12 @@ removido. O zip foi entregue ao Pablo.
 **Bloqueado no Pablo:** os arquivos vivem em `pablondrina/nb-catalog` (outro
 repositório) e ninguém empurra lá sem a palavra dele.
 
-**Quando entrarem**, falta só trocar a extensão no seed —
+**Sem sobrescrever nada:** os arquivos novos são `.webp` e os atuais são `.jpg`,
+então nem colidem por nome (conferido: `ct.webp` devolve 404 hoje). Ainda assim o
+recomendado é uma subpasta por propósito — `img/products/loja/` — porque deixa
+óbvio o que serve à loja e torna a limpeza pós-go-live um `rm -rf` só.
+
+**Quando entrarem**, falta só trocar a extensão (e a pasta, se for subpasta) no seed —
 `config/management/commands/seed.py:790` já aponta para
 `menu.nelsonboulangerie.com.br/img/products` (o CDN da DO, não mais o
 `raw.githubusercontent.com`), então é `.jpg` → `.webp` nas 19 entradas de
