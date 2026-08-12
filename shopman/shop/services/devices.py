@@ -45,11 +45,13 @@ def _geolocate_ip(ip: str) -> str:
 
 def list_devices(*, customer_id, raw_token: str | None) -> list[dict]:
     from shopman.doorman import TrustedDevice, hash_device_token
+    from shopman.doorman.models.device_trust import SubjectType
 
-    devices = TrustedDevice.objects.filter(
-        customer_id=customer_id,
-        is_active=True,
-    ).order_by("-last_used_at", "-created_at")
+    # ⚠️ Era `filter(customer_id=...)`, e esse campo não existe mais: o model passou a usar
+    # sujeito tipado (cliente ou display). O resultado era 500 em toda visita à tela de
+    # segurança — e como o SSR aguarda este fetch, a página inteira virava "Tivemos um
+    # problema por aqui". A consulta agora tem dono no model.
+    devices = TrustedDevice.active_for(SubjectType.CUSTOMER, customer_id)
 
     current_hash = hash_device_token(raw_token) if raw_token else None
 
@@ -84,13 +86,14 @@ def revoke_device(*, customer_id, device_id: str) -> str | None:
     except ValueError:
         return "ID inválido."
 
-    try:
-        device = TrustedDevice.objects.get(
-            id=device_uuid,
-            customer_id=customer_id,
-            is_active=True,
-        )
-    except TrustedDevice.DoesNotExist:
+    from shopman.doorman.models.device_trust import SubjectType
+
+    device = TrustedDevice.active_for(SubjectType.CUSTOMER, customer_id).filter(
+        id=device_uuid,
+    ).first()
+    if device is None:
+        # Já revogado, inexistente, ou de OUTRA pessoa: a mesma resposta para os três, porque
+        # distinguir contaria a quem tenta quais ids existem.
         return None
 
     device.revoke()

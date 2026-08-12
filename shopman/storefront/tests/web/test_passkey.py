@@ -416,3 +416,66 @@ def test_a_weak_session_can_neither_see_nor_revoke(client, person):
 
     revoked = client.delete(f"{LIST_URL}qualquer/")
     assert revoked.status_code == 403
+
+
+# ── A tela de segurança tem de CARREGAR ──────────────────────────────
+
+
+def test_the_security_page_data_loads(client, person):
+    """⚠️ O 500 que virava "Tivemos um problema por aqui" na tela inteira.
+
+    `TrustedDevice` passou a usar sujeito tipado (`subject_type`/`subject_id`) e
+    `shop/services/devices.py` continuou filtrando por `customer_id`, campo que deixou de
+    existir: `FieldError: Cannot resolve keyword 'customer_id'`. Toda visita à tela de
+    segurança devolvia 500 — e como o SSR AGUARDA esse fetch, a página não degradava, ela
+    morria.
+
+    Nenhum teste cobria a rota, então o refactor passou verde. Este cobre as duas listas que a
+    tela busca, porque é isso que a tela faz.
+    """
+    _sign_in(client, person)
+
+    devices = client.get("/api/v1/account/devices/")
+    passkeys = client.get(LIST_URL)
+
+    assert devices.status_code == 200, devices.content
+    assert passkeys.status_code == 200, passkeys.content
+    assert "devices" in devices.json()
+
+
+def test_the_device_list_survives_a_trusted_device(client, person):
+    """Com dispositivo de verdade na tabela — o caso que o filtro errado quebrava."""
+    from shopman.doorman.models import TrustedDevice
+    from shopman.doorman.models.device_trust import SubjectType
+
+    TrustedDevice.objects.create(
+        subject_type=SubjectType.CUSTOMER,
+        subject_id=str(person.uuid),
+        token_hash="a" * 64,
+        label="iPhone da Ana",
+    )
+    _sign_in(client, person)
+
+    response = client.get("/api/v1/account/devices/")
+
+    assert response.status_code == 200, response.content
+    rows = response.json()["devices"]
+    assert [row["label"] for row in rows] == ["iPhone da Ana"]
+
+
+def test_a_device_of_someone_else_never_appears(client, person, db):
+    """O filtro por sujeito é o que separa as listas — e era ele que estava quebrado."""
+    from shopman.doorman.models import TrustedDevice
+    from shopman.doorman.models.device_trust import SubjectType
+    from shopman.guestman.models import Customer
+
+    outra = Customer.objects.create(ref="CLI-DEV2", first_name="Bia", phone="+5543999994444")
+    TrustedDevice.objects.create(
+        subject_type=SubjectType.CUSTOMER, subject_id=str(outra.uuid),
+        token_hash="b" * 64, label="Celular da Bia",
+    )
+    _sign_in(client, person)
+
+    response = client.get("/api/v1/account/devices/")
+
+    assert response.json()["devices"] == []
