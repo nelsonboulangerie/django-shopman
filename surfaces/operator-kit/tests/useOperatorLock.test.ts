@@ -38,6 +38,60 @@ describe("useOperatorLock — session derivations", () => {
   });
 });
 
+// O cadeado do SERVIDOR tem a palavra final. A sessão do cliente só é relida em
+// poll ou ação, então entre o instante em que o servidor tranca e o instante em que
+// o cliente descobre, a tela seguia montada com todas as leituras negando 403 — no
+// PDV isso desenhava um quadro de comandas VAZIO, lido no balcão como perda de dados.
+describe("useOperatorLock — cadeado vindo do servidor", () => {
+  beforeEach(() => env.reset());
+
+  const lockedError = {
+    status: 403,
+    data: { detail: "Estação travada.", error: { code: "station_locked" } },
+  };
+
+  it("um 403 station_locked tranca a tela mesmo com a sessão dizendo destravado", () => {
+    env.fetchData.value = { device_user: "admin", operator: { name: "Nelson" }, locked: false };
+    const { locked, flagIfStationLocked } = useOperatorLock(PERM);
+    expect(locked.value).toBe(false);
+
+    expect(flagIfStationLocked(lockedError)).toBe(true);
+
+    expect(locked.value).toBe(true);
+    expect(env.refresh).toHaveBeenCalled(); // relê a sessão para reconciliar
+  });
+
+  it("403 por falta de permissão NÃO tranca (não se resolve com PIN)", () => {
+    env.fetchData.value = { device_user: "admin", operator: { name: "Nelson" }, locked: false };
+    const { locked, flagIfStationLocked } = useOperatorLock(PERM);
+
+    expect(flagIfStationLocked({ status: 403, data: { detail: "Operador sem permissão." } })).toBe(false);
+
+    expect(locked.value).toBe(false);
+  });
+
+  it("o desbloqueio abaixa a bandeira do servidor", async () => {
+    env.fetchData.value = { device_user: "admin", operator: { name: "Nelson" }, locked: false };
+    const { locked, flagIfStationLocked, unlock } = useOperatorLock(PERM);
+    flagIfStationLocked(lockedError);
+    expect(locked.value).toBe(true);
+
+    await unlock({ operatorId: 3, pin: "1234" });
+
+    expect(locked.value).toBe(false);
+  });
+
+  it("a bandeira é compartilhada entre composables do mesmo app", () => {
+    env.fetchData.value = { device_user: "admin", operator: { name: "Nelson" }, locked: false };
+    const leitura = useOperatorLock(PERM);
+    const comandos = useOperatorLock(PERM);
+
+    leitura.flagIfStationLocked(lockedError);
+
+    expect(comandos.locked.value).toBe(true);
+  });
+});
+
 describe("useOperatorLock — unlock", () => {
   beforeEach(() => env.reset());
 

@@ -407,8 +407,12 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onGlobalKeydown));
 
       <div v-else class="h-full min-h-0">
         <!-- TABS VIEW — a tela de Comandas/Tabs é a PRIMEIRA (benchmark Odoo: tabs/mesas antes do pedido) -->
+        <!-- `pos` nulo = ainda não sabemos o que existe (carregando, ou leitura
+             negada). Mostrar o quadro nesse estado afirmaria "nenhuma comanda"
+             sobre uma pergunta que nem foi respondida — e um balcão com comandas
+             abertas leria isso como perda de dados. -->
         <PosTabBoard
-          v-if="!inSaleView"
+          v-if="!inSaleView && pos"
           ref="tabBoardRef"
           v-model="tabInput"
           :tabs="tabs"
@@ -421,6 +425,15 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onGlobalKeydown));
           @open="openTab"
           @request-association="requestTabAssociation('start')"
         />
+        <!-- Leitura ainda sem resposta: um aviso calmo, nunca um quadro vazio que
+             finge saber. Se for a estação travada, a identificação já está subindo
+             por cima disto. -->
+        <div v-else-if="!inSaleView" class="grid place-items-center p-8">
+          <p class="flex items-center gap-2 rounded-md border border-dashed px-4 py-6 text-sm text-muted-foreground">
+            <Icon :name="pending ? 'line-md:loading-loop' : 'lucide:wifi-off'" class="size-4 shrink-0" />
+            {{ pending ? "Carregando as comandas…" : "Não foi possível ler as comandas agora." }}
+          </p>
+        </div>
 
         <!-- SALE VIEW · product grid (the ticket/comanda is a full-height sibling
              of the work column, so it reaches the top edge like the rail) -->

@@ -56,7 +56,28 @@ def exception_handler(exc, context):
         return None
     if isinstance(exc, exceptions.ValidationError):
         response.data = validation_error_payload(exc.detail)
+    elif isinstance(exc, exceptions.PermissionDenied):
+        _attach_permission_code(response, exc)
     return response
+
+
+def _attach_permission_code(response, exc) -> None:
+    """Publica o código da recusa em ``error.code`` quando a permissão nomeia um.
+
+    Um 403 sem código obriga a tela a adivinhar pela mensagem em português qual
+    recusa aconteceu. A estação travada precisa ser distinguível de falta de
+    permissão: a primeira se resolve com o PIN na hora, a segunda não. Só o
+    superset ``error`` é adicionado — ``detail`` continua onde estava.
+    """
+    code = getattr(getattr(exc, "detail", None), "code", "")
+    if not code or code == "permission_denied":
+        return
+    if not isinstance(response.data, dict):
+        return
+    response.data = {
+        **response.data,
+        "error": {"code": code, "message": str(exc.detail)},
+    }
 
 
 def validation_error_payload(detail) -> dict:

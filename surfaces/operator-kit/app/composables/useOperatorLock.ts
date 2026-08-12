@@ -13,6 +13,7 @@ import {
   type UnlockInput,
 } from "../presentation/operatorLock";
 import { httpErrorMessage } from "../utils/httpError";
+import { useStationLock } from "./useStationLock";
 
 export function useOperatorLock(perm: string) {
   const { data, refresh } = useFetch<OperatorSession>(
@@ -23,11 +24,23 @@ export function useOperatorLock(perm: string) {
     },
   );
 
+  // O cadeado visto pelo servidor (403 `station_locked`) entra no `locked` junto
+  // com a sessão: a sessão pode estar velha, e enquanto ela mente a tela segue
+  // montada com toda leitura negada. Estado puro no kit; aqui ele é composto.
+  const station = useStationLock();
+
   const session = computed<OperatorSession | null>(() => data.value ?? null);
   // The device session exists when operator/session returned a device_user; when
   // unauthenticated the endpoint 403s (data null) → not authenticated → login prompt.
   const authenticated = computed(() => Boolean(session.value?.device_user));
-  const locked = computed(() => isLocked(session.value));
+  const locked = computed(() => isLocked(session.value) || station.denied.value);
+
+  /** Ergue a bandeira do servidor e relê a sessão para reconciliar. */
+  function flagIfStationLocked(error: unknown): boolean {
+    if (!station.flagIfStationLocked(error)) return false;
+    refresh();
+    return true;
+  }
   const operator = computed<OperatorCard | null>(
     () => session.value?.operator ?? null,
   );
@@ -62,6 +75,7 @@ export function useOperatorLock(perm: string) {
         method: "POST",
         body: buildUnlockPayload({ ...input, perm }),
       });
+      station.clear();
       await refresh();
       // Os fetches que rodaram TRANCADOS falharam (403) e ficariam com o erro grudado na
       // tela até o próximo poll (≤15s) — destravou, recarrega tudo já (paridade POS/Produção).
@@ -121,6 +135,7 @@ export function useOperatorLock(perm: string) {
     session,
     authenticated,
     locked,
+    flagIfStationLocked,
     operator,
     requireOperator,
     mustChange,

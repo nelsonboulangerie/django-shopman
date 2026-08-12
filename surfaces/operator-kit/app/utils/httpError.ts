@@ -71,3 +71,13 @@ export function httpErrorCode(error: unknown): string {
   const code = asRecord(asRecord(httpError(error).data)?.error)?.code;
   return typeof code === "string" ? code : "";
 }
+
+/**
+ * A estação está TRAVADA do lado do servidor (403 `station_locked`): o operador
+ * ativo saiu e nenhuma leitura ou gravação passa mais. Distinto de 403 por falta
+ * de permissão — este se resolve com o PIN ali mesmo, e a tela precisa subir a
+ * identificação em vez de seguir desenhando uma superfície vazia.
+ */
+export function isStationLockedError(error: unknown): boolean {
+  return httpError(error).status === 403 && httpErrorCode(error) === "station_locked";
+}
