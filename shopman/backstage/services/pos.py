@@ -46,13 +46,36 @@ def open_cash_shift(*, operator, opening_amount_raw="0", terminal_ref: str = "")
     )
 
 
+def movement_removes_cash(movement_type: str, amount_q: int) -> bool:
+    """O movimento TIRA dinheiro da gaveta?
+
+    Sangria (qualquer valor) e ajuste negativo reduzem o esperado do fechamento.
+    São os dois caminhos pelos quais dinheiro sai e a contagem cega ainda bate:
+    o próprio lançamento justifica a falta. Suprimento e ajuste positivo só criam
+    sobra, que aparece na conferência — esses seguem sem gerente.
+    """
+    return movement_type == "sangria" or (movement_type == "ajuste" and amount_q < 0)
+
+
 def register_cash_movement(
     *,
     operator,
     movement_type: str = "sangria",
     amount_raw="0",
     reason: str = "",
+    manager_approval: dict | None = None,
 ):
+    """Registra um movimento de gaveta.
+
+    Retirada exige PIN de gerente — SEM limiar, em qualquer valor. Antes um
+    operador sozinho lançava sangria à vontade: como o fechamento calcula
+    ``esperado = abertura + vendas + suprimentos + ajustes − sangrias``, uma
+    sangria inventada abaixava o esperado e a contagem cega fechava redonda.
+    O dinheiro saía e o caixa batia. Agora a retirada tem duas assinaturas: quem
+    lança e quem autoriza, ambas gravadas.
+    """
+    from shopman.shop.services.pos import validate_manager_override
+
     from shopman.backstage.models import CashMovement, CashShift
 
     shift = CashShift.get_open_for_operator(operator)
@@ -71,12 +94,23 @@ def register_cash_movement(
     elif amount_q <= 0:
         raise POSError("Valor inválido.")
 
+    approved_by = ""
+    if movement_removes_cash(normalized_type, amount_q):
+        approval = manager_approval or {}
+        validate_manager_override(
+            approval,
+            operator_username=operator.username,
+            action=f"cash_{normalized_type}",
+        )
+        approved_by = str(approval.get("username") or "").strip()
+
     return CashMovement.objects.create(
         shift=shift,
         movement_type=normalized_type,
         amount_q=amount_q,
         reason=reason.strip(),
         created_by=operator.username,
+        approved_by=approved_by,
     )
 
 

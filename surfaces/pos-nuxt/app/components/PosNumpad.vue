@@ -2,7 +2,15 @@
 const props = defineProps<{
   disabled?: boolean;
   compact?: boolean;
+  /**
+   * O que este teclado edita agora ("quantidade", "desconto", "preço"). O mesmo
+   * pad serve os três modos, e os rótulos de leitor de tela diziam "quantidade"
+   * mesmo quando o operador estava digitando um desconto.
+   */
+  subject?: string;
 }>();
+
+const subject = computed(() => props.subject || "quantidade");
 
 const emit = defineEmits<{
   digit: [string];
@@ -17,7 +25,7 @@ const cellSm = computed(() => (props.compact ? "rounded-md border bg-card py-1.5
 </script>
 
 <template>
-  <div :class="compact ? 'grid grid-cols-3 gap-1' : 'grid grid-cols-3 gap-1.5'" role="group" aria-label="Teclado numérico de quantidade">
+  <div :class="compact ? 'grid grid-cols-3 gap-1' : 'grid grid-cols-3 gap-1.5'" role="group" :aria-label="`Teclado numérico de ${subject}`">
     <button
       v-for="key in keys"
       :key="key"
@@ -33,7 +41,7 @@ const cellSm = computed(() => (props.compact ? "rounded-md border bg-card py-1.5
       type="button"
       :class="cellSm"
       :disabled="disabled"
-      aria-label="Limpar quantidade"
+      :aria-label="`Limpar ${subject}`"
       @click="emit('clear')"
     >
       C

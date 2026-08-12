@@ -24,7 +24,11 @@ export function usePosAutoLock(opts: {
   }
 
   onMounted(() => {
-    const events: Array<keyof WindowEventMap> = ["pointerdown", "keydown"];
+    // O PDV é desktop-first: rolar a grade de produtos com a rodinha do mouse é
+    // trabalho, não ociosidade. Com só `pointerdown`/`keydown`, o operador que
+    // procurava um item rolando a lista via a tela travar na cara dele no meio
+    // da venda. `wheel` e `pointermove` fecham esse buraco.
+    const events: Array<keyof WindowEventMap> = ["pointerdown", "keydown", "wheel", "pointermove"];
     events.forEach((e) => window.addEventListener(e, markActivity, { passive: true }));
     const id = window.setInterval(() => {
       if (!opts.locked.value && isIdleBeyond(lastActivity, Date.now(), opts.autoLockSeconds() ?? 60)) {

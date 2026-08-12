@@ -244,6 +244,7 @@ def _pos_sale_review_payload(review) -> dict:
         "change_display": f"R$ {format_money(review.change_q)}",
         "requires_manager_approval": review.requires_manager_approval,
         "manager_approval_threshold_q": review.manager_approval_threshold_q,
+        "approval_reasons": list(review.approval_reasons),
         "receipt_mode": review.receipt_mode,
         "issue_fiscal_document": review.issue_fiscal_document,
         "warnings": list(review.warnings),
@@ -1476,7 +1477,12 @@ class POSCashMovementView(APIView):
                 movement_type=kind,
                 amount_raw=str(amount),
                 reason=reason,
+                manager_approval=request.data.get("manager_approval"),
             )
+        # O desafio de PIN da retirada precisa chegar à tela COM o código, para o
+        # PDV abrir o diálogo do gerente em vez de mostrar um toast sem saída.
+        except PosIntentError as exc:
+            return Response({"detail": exc.message, "error": exc.as_dict()}, status=exc.status)
         except Exception as exc:
             logger.debug("pos_cash_movement_failed user=%s kind=%s", _actor(request), kind, exc_info=True)
             return Response({"detail": str(exc) or "Falha ao registrar movimento."}, status=400)

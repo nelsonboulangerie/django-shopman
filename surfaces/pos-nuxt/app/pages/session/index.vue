@@ -20,6 +20,7 @@ const { operator: activeOperator, lock } = useOperatorLock(OPERATOR_PERM);
 const {
   busy,
   movementKinds,
+  managerChallenge,
   openCashShift,
   closeCashShift,
   closeBlockingShift,
@@ -56,17 +57,31 @@ const movementReason = ref("");
 const canSubmitMovement = computed(
   () => Boolean(movementKind.value && movementAmount.value.trim() && movementReason.value.trim()),
 );
-async function submitMovement() {
+// Retirada de gaveta precisa da segunda assinatura: o servidor recusa com
+// `manager_approval_required`, o diálogo sobe e o mesmo movimento é reenviado
+// com o PIN. O `managerChallenge` reabre o diálogo quando o PIN vem errado.
+const managerAuthOpen = ref(false);
+watch(managerChallenge, (challenge) => { if (challenge) managerAuthOpen.value = true; });
+
+async function submitMovement(managerApproval: { username: string; pin: string } | null = null) {
   if (!canSubmitMovement.value) return;
   const ok = await registerCashMovement({
     kind: movementKind.value,
     amount: movementAmount.value,
     reason: movementReason.value,
+    managerApproval,
   });
   if (ok) {
+    managerChallenge.value = null;
+    managerAuthOpen.value = false;
     movementAmount.value = "";
     movementReason.value = "";
   }
+}
+
+function onMovementAuthorize(username: string, pin: string) {
+  managerAuthOpen.value = false;
+  submitMovement({ username, pin });
 }
 
 // Fechar caixa (contagem cega) — destrutivo, exige confirmação explícita.
@@ -229,11 +244,15 @@ async function confirmCloseBlocking() {
                 <UiInput v-model="movementAmount" inputmode="decimal" placeholder="Valor" />
                 <UiInput v-model="movementReason" placeholder="Motivo" />
               </div>
+              <p v-if="movementKind === 'sangria'" class="flex items-start gap-2 text-xs text-muted-foreground">
+                <Icon name="lucide:shield-check" class="mt-0.5 size-4 shrink-0" />
+                <span>Tirar dinheiro da gaveta precisa da autorização de um gerente.</span>
+              </p>
               <UiButton
                 variant="outline"
                 size="sm"
                 :disabled="busy || !canSubmitMovement"
-                @click="submitMovement"
+                @click="submitMovement()"
               >
                 Registrar movimento
               </UiButton>
@@ -301,5 +320,13 @@ async function confirmCloseBlocking() {
         </div>
       </div>
     </div>
+
+    <PosManagerAuthDialog
+      v-model:open="managerAuthOpen"
+      reason-text="Retirar dinheiro da gaveta é exceção auditada: um gerente precisa autorizar."
+      :busy="busy"
+      :error="managerChallenge?.code === 'manager_approval_invalid' ? managerChallenge.message : ''"
+      @authorize="onMovementAuthorize"
+    />
   </main>
 </template>

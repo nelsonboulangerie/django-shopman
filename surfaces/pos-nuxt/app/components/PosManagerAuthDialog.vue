@@ -7,7 +7,11 @@ import { formatBRL } from "~/utils/posIntent";
 
 const props = defineProps<{
   open: boolean;
-  thresholdQ: number;
+  thresholdQ?: number;
+  /** Códigos vindos da review (`approval_reasons`) — dizem POR QUE o gerente foi chamado. */
+  reasons?: string[];
+  /** Texto pronto, para quem não vem de uma venda (retirada de gaveta). */
+  reasonText?: string;
   busy?: boolean;
   error?: string;
 }>();
@@ -19,14 +23,32 @@ const emit = defineEmits<{
 
 const username = ref("");
 const pin = ref("");
-const reason = computed(() =>
-  props.thresholdQ > 0
-    ? `Necessária para descontos acima de ${formatBRL(props.thresholdQ)}.`
-    : "Esta venda precisa da autorização de um gerente para ser finalizada.",
-);
+// O motivo sai do servidor, não de um chute da tela: o mesmo diálogo cobre
+// desconto acima do teto, exceção de D-1, preço alterado à mão e retirada de
+// gaveta. Antes ele afirmava "descontos acima de R$ X" em todos os casos, e o
+// gerente autorizava sem saber o que estava assinando.
+const REASON_COPY: Record<string, (thresholdQ: number) => string> = {
+  discount_over_threshold: (q) => `Desconto acima de ${formatBRL(q)}.`,
+  d1_line_discount: () => "Desconto em item de véspera.",
+  price_override: () => "Preço alterado à mão.",
+};
+const reason = computed(() => {
+  if (props.reasonText) return props.reasonText;
+  const listed = (props.reasons ?? [])
+    .map((code) => REASON_COPY[code]?.(props.thresholdQ ?? 0))
+    .filter(Boolean);
+  if (listed.length) return listed.join(" ");
+  return "Esta operação precisa da autorização de um gerente.";
+});
 
-// Fresh fields each time it opens; clear the PIN when the server rejects it.
-watch(() => props.open, (open) => { if (open) { username.value = ""; pin.value = ""; } });
+// Campos limpos a cada abertura. Quando o servidor recusa, some só o PIN: o nome
+// do gerente continua na tela, senão ele redigita o próprio nome a cada tentativa.
+watch(() => props.open, (open) => {
+  if (!open) return;
+  pin.value = "";
+  // Reabertura por recusa preserva o nome; abertura nova começa em branco.
+  if (!props.error) username.value = "";
+});
 watch(() => props.error, (e) => { if (e) pin.value = ""; });
 
 function confirm() {

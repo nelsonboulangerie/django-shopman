@@ -60,3 +60,14 @@ export function httpErrorMessage(error: unknown, fallback: string): string {
   if (typeof nested === "string" && nested) return nested;
   return fallback;
 }
+
+/**
+ * Código de domínio do erro (`data.error.code` do dialeto canônico), ou "" quando o
+ * servidor não mandou um. É o que permite a tela REAGIR a uma recusa específica —
+ * abrir o desafio de PIN num `manager_approval_required`, por exemplo — em vez de
+ * cair no toast genérico e deixar o operador sem saída.
+ */
+export function httpErrorCode(error: unknown): string {
+  const code = asRecord(asRecord(httpError(error).data)?.error)?.code;
+  return typeof code === "string" ? code : "";
+}

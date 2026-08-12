@@ -10,6 +10,11 @@ from dataclasses import dataclass
 
 POS_SALE_INTENT_VERSION = "pos.sale-intent.v1"
 
+# Teto de sanidade por linha. Uma padaria não vende 10.000 unidades do mesmo item
+# numa comanda de balcão; o que chega acima disso é erro de digitação ou entrada
+# malformada, e sem teto o número viajava até estourar a Decimal no fechamento.
+MAX_LINE_QTY = 9999
+
 _ALLOWED_TOP_LEVEL_KEYS = {
     "intent_version",
     "schema_version",
@@ -423,6 +428,16 @@ def _positive_int(value, field: str) -> int:
         raise PosIntentError("invalid_number", "Número inválido no POS.", field=field, focus="search") from exc
     if parsed <= 0:
         raise PosIntentError("invalid_quantity", "Quantidade precisa ser maior que zero.", field=field, focus="search")
+    if parsed > MAX_LINE_QTY:
+        # Sem teto, uma quantidade absurda (dedo preso no 9, leitor despejando
+        # dígitos) estourava a Decimal lá adiante, no meio do fechamento, e virava
+        # HTTP 500 sem mensagem. Recusa aqui, com o dialeto de erro do PDV.
+        raise PosIntentError(
+            "quantity_too_large",
+            f"Quantidade acima do máximo de {MAX_LINE_QTY} por item.",
+            field=field,
+            focus="search",
+        )
     return parsed
 
 

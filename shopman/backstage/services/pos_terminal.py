@@ -56,14 +56,27 @@ def runtime_profile(terminal) -> TerminalRuntimeProfile:
 
 
 def _component_health(key: str, config: dict) -> TerminalComponentHealth:
+    """Saúde de um periférico do terminal.
+
+    Ausência não é defeito. Um balcão sem display do cliente ou sem leitor está
+    COMPLETO do jeito que a loja montou — antes ele contava como ``warning``, e
+    como nenhum terminal declara ``metadata.hardware``, o badge nascia em
+    "Atenção" e ficava aceso para sempre. Alerta que nunca apaga é alerta que
+    ninguém lê: quando a impressora caísse de verdade, teria a mesma cara.
+
+    Agora só é ``warning`` o periférico que a loja DECLAROU e que não está
+    pronto para uso. Declarado com adapter — inclusive um adapter real, que
+    antes era tratado como suspeito e o simulado como saudável, exatamente ao
+    contrário — vale ``ready``.
+    """
     label = _COMPONENT_LABELS[key]
-    if not config or config.get("enabled") is False:
-        return TerminalComponentHealth(key=key, label=label, status="warning", message="não configurado")
+    if not config:
+        return TerminalComponentHealth(key=key, label=label, status="absent", message="não instalado")
+    if config.get("enabled") is False:
+        return TerminalComponentHealth(key=key, label=label, status="absent", message="desligado")
     adapter = str(config.get("adapter") or "").strip()
-    if adapter in {"simulated", "manual"}:
-        return TerminalComponentHealth(key=key, label=label, status="ready", message=adapter)
     if adapter:
-        return TerminalComponentHealth(key=key, label=label, status="warning", message=f"adapter {adapter}")
+        return TerminalComponentHealth(key=key, label=label, status="ready", message=adapter)
     return TerminalComponentHealth(key=key, label=label, status="warning", message="sem adapter")
 
 

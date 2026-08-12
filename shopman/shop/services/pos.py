@@ -68,6 +68,11 @@ class PosSaleReview:
     manager_approval_threshold_q: int
     receipt_mode: str
     issue_fiscal_document: bool
+    # POR QUE o gerente foi chamado. O servidor conhece os três gatilhos
+    # (teto de desconto, desconto em linha D-1, preço alterado); sem publicá-los
+    # a tela chutava "descontos acima de R$ X" mesmo quando o gatilho tinha sido
+    # outro, e o gerente autorizava sem saber o que estava autorizando.
+    approval_reasons: tuple[str, ...] = ()
     warnings: tuple[dict, ...] = ()
 
 
@@ -342,9 +347,26 @@ def review_sale(
     )
     payment_method = _legacy_payment_method(payload, tenders)
     tender_total_q = sum(_int_q(tender.get("amount_q")) for tender in tenders)
+    cash_tender_total_q = sum(
+        _int_q(tender.get("amount_q")) for tender in tenders if _is_cash_tender(tender)
+    )
     tendered_amount_q = _int_q(payload.get("tendered_amount_q"))
-    threshold_q = _discount_approval_threshold_q()
+    threshold_q = discount_approval_threshold_q()
     warnings: list[dict] = []
+    # Excesso que NÃO é dinheiro não vira troco (ver `change_q`); avisa para o
+    # operador corrigir a linha antes de finalizar, em vez de descobrir depois.
+    non_cash_excess_q = max(0, tender_total_q - total_q) - min(
+        max(0, tender_total_q - total_q), cash_tender_total_q
+    )
+    if non_cash_excess_q > 0:
+        warnings.append({
+            "code": "tender_overpaid_non_cash",
+            "field": "payment_tenders",
+            "message": (
+                f"Pagamento sem dinheiro acima do total em R$ {format_money(non_cash_excess_q)}. "
+                "Não há troco para cartão ou Pix; ajuste o valor da linha."
+            ),
+        })
     if payment_method == "cash" and payment_collection == "terminal" and tendered_amount_q <= 0:
         warnings.append({
             "code": "cash_tendered_amount_blank",
@@ -369,6 +391,8 @@ def review_sale(
             "field": "payment_tenders",
             "message": "Os pagamentos informados não cobrem o total da venda.",
         })
+
+    approval_reasons = _approval_reasons(payload, discount_q=discount_q, threshold_q=threshold_q)
 
     # Aviso não-bloqueante de disponibilidade (Q1): no balcão a venda vale mesmo
     # sem estoque (a mercadoria já saiu da vitrine e o canal não auto-rejeita),
@@ -411,21 +435,21 @@ def review_sale(
         tender_total_q=tender_total_q,
         tender_count=len(tenders),
         tendered_amount_q=tendered_amount_q,
-        # Troco: no pagamento misto, o excedente das linhas é o troco (uma linha de
-        # dinheiro pode ser recebida a mais); no dinheiro simples, vem do valor recebido.
+        # Troco só sai da gaveta, então só o DINHEIRO recebido a mais vira troco.
+        # No misto, o excedente é limitado à parcela em espécie: um cartão digitado
+        # a mais não é troco (a maquininha cobra o que foi passado), e tratá-lo como
+        # troco mandava o operador devolver dinheiro de verdade por um erro de
+        # digitação. No dinheiro simples, o troco vem do valor recebido.
         change_q=(
-            max(0, tender_total_q - total_q)
+            min(max(0, tender_total_q - total_q), cash_tender_total_q)
             if payment_method == "mixed"
             else (max(0, tendered_amount_q - total_q) if tendered_amount_q else 0)
         ),
-        requires_manager_approval=(
-            (threshold_q > 0 and discount_q > threshold_q)
-            or _payload_has_d1_line_discount(payload)
-            or _payload_has_price_override(payload)
-        ),
+        requires_manager_approval=bool(approval_reasons),
         manager_approval_threshold_q=threshold_q,
         receipt_mode=str(payload.get("receipt_mode") or "none").strip() or "none",
         issue_fiscal_document=bool(payload.get("issue_fiscal_document")),
+        approval_reasons=tuple(approval_reasons),
         warnings=tuple(warnings),
     )
 
@@ -1206,18 +1230,33 @@ def _verify_manager_pin(username: str, pin: str):
     return user if credential.verify(pin) else None
 
 
+def _approval_reasons(payload: dict, *, discount_q: int, threshold_q: int) -> list[str]:
+    """Os gatilhos que chamaram o gerente, na ordem em que a tela deve contá-los.
+
+    Publicado na review para o diálogo de autorização dizer o que está sendo
+    autorizado. Sem isto a tela só sabia QUE precisava de gerente, e a copy
+    falava de desconto mesmo quando o gatilho era preço alterado.
+    """
+    reasons: list[str] = []
+    if threshold_q > 0 and discount_q > threshold_q:
+        reasons.append("discount_over_threshold")
+    if _payload_has_d1_line_discount(payload):
+        reasons.append("d1_line_discount")
+    if _payload_has_price_override(payload):
+        reasons.append("price_override")
+    return reasons
+
+
 def validate_manager_approval(payload: dict, *, operator_username: str) -> None:
     """Require a manager PIN challenge for configured POS discount thresholds.
 
     A manual discount on a D-1 line always requires manager approval (audited
     exception), independent of the configured monetary threshold.
     """
-    threshold_q = _discount_approval_threshold_q()
+    threshold_q = discount_approval_threshold_q()
     discount_q = _payload_discount_q(payload)
-    d1_forces_approval = _payload_has_d1_line_discount(payload)
-    price_override = _payload_has_price_override(payload)
-    over_threshold = threshold_q > 0 and discount_q > threshold_q
-    if not d1_forces_approval and not over_threshold and not price_override:
+    reasons = _approval_reasons(payload, discount_q=discount_q, threshold_q=threshold_q)
+    if not reasons:
         return
 
     approval = payload.get("manager_approval") or {}
@@ -1241,11 +1280,11 @@ def validate_manager_approval(payload: dict, *, operator_username: str) -> None:
             recovery="Revise o gerente e o PIN, ou reduza o desconto / ajuste o preço.",
         )
     logger.info(
-        "pos_manager_approval operator=%s approved_by=%s discount_q=%s price_override=%s",
+        "pos_manager_approval operator=%s approved_by=%s discount_q=%s reasons=%s",
         operator_username,
         username,
         discount_q,
-        price_override,
+        ",".join(reasons),
     )
 
 
@@ -1554,7 +1593,32 @@ def _validate_payment_completion(payload: dict) -> None:
         )
 
 
-def _discount_approval_threshold_q() -> int:
+def discount_approval_threshold_q() -> int:
+    """Teto (centavos) acima do qual um desconto do PDV exige PIN do gerente.
+
+    DONO ÚNICO da política. Quem cobra o PIN mora aqui (``validate_manager_approval``),
+    então a política mora aqui também: a projection do backstage lê desta função em
+    vez de reimplementá-la. Antes eram duas leituras — a projection consultava
+    ``Shop.defaults`` (editável no Admin) e o gate lia só o env, então mudar o teto
+    no Admin não mudava quem precisava de gerente: a loja via um número e o balcão
+    obedecia outro.
+
+    Política da loja em ``Shop.defaults["pos"]["discount_approval_threshold_q"]``
+    (editada em Reais no Admin). Ausente = herda o padrão do deploy
+    (``SHOPMAN_POS_DISCOUNT_APPROVAL_THRESHOLD_Q``). ``0`` DESLIGA o teto — nenhum
+    desconto passa a exigir aprovação por valor (as exceções auditadas de D-1 e de
+    preço alterado seguem exigindo, independentemente deste número).
+    """
+    try:
+        from shopman.shop.models import Shop
+
+        shop = Shop.load()
+        pos_cfg = (shop.defaults.get("pos") or {}) if shop and shop.defaults else {}
+        raw = pos_cfg.get("discount_approval_threshold_q")
+        if raw is not None:
+            return max(0, int(raw))
+    except Exception:
+        logger.debug("pos_discount_threshold_lookup_failed", exc_info=True)
     return max(0, int(getattr(settings, "SHOPMAN_POS_DISCOUNT_APPROVAL_THRESHOLD_Q", 0) or 0))
 
 
@@ -1662,6 +1726,11 @@ def _normalize_payment_method(value) -> str:
     if method in {"cash", "pix", "card", "external", "mixed"}:
         return method
     return "external"
+
+
+def _is_cash_tender(tender: dict) -> bool:
+    """A linha é dinheiro em espécie (a única que pode gerar troco)."""
+    return str(tender.get("method") or "").lower() == "cash"
 
 
 def _cash_received_q(tenders: list[dict]) -> int:
@@ -1787,11 +1856,8 @@ def _reconcile_tenders_to_total(tenders: list[dict], final_total_q: int) -> None
     # o excedente é o troco da nota de 50 — a maquininha capturou os 20
     # inteiros. Descontar da tender eletrônica erraria o caixa (falta falsa
     # no turno) e os totais do fechamento. Eletrônicas só em último caso.
-    def _is_cash(tender: dict) -> bool:
-        return str(tender.get("method") or "").lower() == "cash"
-
-    ordered = [t for t in reversed(tenders) if _is_cash(t)] + [
-        t for t in reversed(tenders) if not _is_cash(t)
+    ordered = [t for t in reversed(tenders) if _is_cash_tender(t)] + [
+        t for t in reversed(tenders) if not _is_cash_tender(t)
     ]
     for tender in ordered:
         if remaining_delta_q == 0:

@@ -32,6 +32,7 @@ import { cartTotalQ, formatBRL } from "~/utils/posIntent";
 import {
   collectionsForFulfillment,
   injectableMethods as toInjectableMethods,
+  nonCashExcessQ,
   paymentIcon,
   tenderLineView,
 } from "~/presentation/payment";
@@ -156,11 +157,24 @@ const managerThresholdQ = computed(() => props.review?.manager_approval_threshol
 // escolhido, então na 1ª abertura do checkout ele disparava prematuramente (antes
 // de qualquer ação). Suprimido enquanto não há tender de dinheiro em jogo.
 const hasCashTender = computed(() => props.paymentTenders.some((t) => t.method === "cash"));
-const reviewWarnings = computed(() =>
-  (props.review?.warnings ?? []).filter((w) =>
+// Excedente em cartão/Pix é erro de digitação, e o operador precisa vê-lo NA HORA
+// em que digita — a review só é refeita quando o carrinho muda, então o aviso do
+// servidor chegaria tarde. Mesma conta dos dois lados (`nonCashExcessQ`).
+const nonCashExcess = computed(() => nonCashExcessQ(props.paymentTenders, props.review?.total_q ?? 0));
+const reviewWarnings = computed(() => {
+  const fromServer = (props.review?.warnings ?? []).filter((w) =>
     w.code === "cash_tendered_amount_blank" ? hasCashTender.value : true,
-  ),
-);
+  ).filter((w) => w.code !== "tender_overpaid_non_cash");
+  if (nonCashExcess.value <= 0) return fromServer;
+  return [
+    {
+      code: "tender_overpaid_non_cash",
+      field: "payment_tenders",
+      message: `Pagamento sem dinheiro acima do total em ${formatBRL(nonCashExcess.value)}. Não há troco para cartão ou Pix; ajuste o valor da linha.`,
+    },
+    ...fromServer,
+  ];
+});
 
 // On-demand sale-data drawers (Odoo-style: customer/fulfillment/discount are
 // actions that open a sheet, not a wall of fields next to the payment).
@@ -245,6 +259,14 @@ const ctaDisabled = computed(() => {
   if (!props.items.length || props.loading || needsReview.value) return true;
   if (!props.paymentCovered) return true; // só habilita quando uma forma cobre o total
   return false;
+});
+// O motivo, em palavras, do botão travado — na ordem em que o operador resolve.
+const ctaBlockReason = computed(() => {
+  if (!props.items.length) return "Adicione itens à comanda para cobrar.";
+  if (props.loading || needsReview.value) return "";
+  if (!props.paymentTenders.length) return "Escolha a forma de pagamento.";
+  if (!props.paymentCovered) return `Faltam ${formatBRL(Math.max(0, props.paymentRemainingQ))} para cobrir o total.`;
+  return "";
 });
 function onCta() {
   if (needsAuth.value) { managerAuthOpen.value = true; return; }
@@ -380,9 +402,17 @@ function onAddressSelected(address: StructuredAddressProjection) {
           </div>
         </div>
 
+        <!-- Por que o botão está travado. O aviso do gerente sozinho enganava: com
+             o botão desabilitado por falta de forma de pagamento, o único texto na
+             tela falava de autorização, e o operador procurava um gerente para um
+             problema que era escolher "Dinheiro". Diz-se primeiro o que bloqueia. -->
+        <p v-if="ctaBlockReason" class="flex items-center gap-1.5 px-1 text-xs text-muted-foreground">
+          <Icon name="lucide:info" class="size-3.5 shrink-0" />
+          {{ ctaBlockReason }}
+        </p>
         <!-- manager approval: when the review demands it, "Autorizar e validar"
              opens a dedicated PIN authorization screen (PosManagerAuthDialog) -->
-        <p v-if="needsAuth" class="flex items-center gap-1.5 px-1 text-xs text-muted-foreground">
+        <p v-else-if="needsAuth" class="flex items-center gap-1.5 px-1 text-xs text-muted-foreground">
           <Icon name="lucide:shield-check" class="size-3.5 shrink-0 text-amber-600" />
           Requer autorização do gerente para finalizar.
         </p>
@@ -454,15 +484,19 @@ function onAddressSelected(address: StructuredAddressProjection) {
               </button>
             </li>
           </ul>
+          <!-- Uma linha, três estados. O rótulo e o número precisam concordar: com
+               o total coberto era "Pago R$ 0,00", que se lê como "não pagou nada"
+               justo quando o cliente acabou de entregar o dinheiro. O que zera ali
+               é o que FALTA, então o rótulo é "Restante". -->
           <div class="mt-2 flex items-center justify-between gap-2 px-1">
             <span class="text-sm font-medium uppercase tracking-wide" :class="payState === 'change' ? 'text-primary' : 'text-muted-foreground'">
-              {{ payState === "change" ? "Troco" : payState === "ready" ? "Pago" : "Restante" }}
+              {{ payState === "change" ? "Troco" : "Restante" }}
             </span>
             <strong
               class="text-3xl font-bold tabular-nums"
               :class="payState === 'change' ? 'text-primary' : payState === 'ready' ? 'text-muted-foreground' : ''"
             >
-              {{ payState === "change" ? formatBRL(paymentChangeQ) : payState === "ready" ? formatBRL(0) : formatBRL(paymentRemainingQ) }}
+              {{ payState === "change" ? formatBRL(paymentChangeQ) : formatBRL(Math.max(0, paymentRemainingQ)) }}
             </strong>
           </div>
         </div>
@@ -642,6 +676,7 @@ function onAddressSelected(address: StructuredAddressProjection) {
   <PosManagerAuthDialog
     v-model:open="managerAuthOpen"
     :threshold-q="managerThresholdQ"
+    :reasons="review?.approval_reasons"
     :busy="loading"
     :error="managerApprovalError"
     @authorize="onManagerAuthorize"

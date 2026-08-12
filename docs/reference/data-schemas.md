@@ -832,7 +832,7 @@ Políticas do balcão, fora do schema do `ChannelConfig`.
 
 | Chave | Tipo | Lido por | Descrição |
 |-------|------|----------|-----------|
-| `pos.discount_approval_threshold_q` | `int` (centavos) | `_discount_approval_threshold_q` (`backstage/projections/pos.py`) | Descontos manuais acima deste valor exigem PIN do gerente. `0` = todo desconto exige aprovação. **Ausente = herda `SHOPMAN_POS_DISCOUNT_APPROVAL_THRESHOLD_Q`** (deploy) — zero regressão. Editado em Reais no ShopAdmin. |
+| `pos.discount_approval_threshold_q` | `int` (centavos) | `discount_approval_threshold_q` (`shop/services/pos.py`) | Descontos manuais **acima** deste valor exigem PIN do gerente. `0` **desliga** o teto — nenhum desconto passa a exigir aprovação por valor (as exceções de D-1 e de preço alterado seguem exigindo, sempre). **Ausente = herda `SHOPMAN_POS_DISCOUNT_APPROVAL_THRESHOLD_Q`** (deploy). Editado em Reais no ShopAdmin. Dono único: o gate do orquestrador; a projection do backstage lê dele. |
 
 ### Alertas de estoque — `Shop.defaults["stock_alerts"]`
 

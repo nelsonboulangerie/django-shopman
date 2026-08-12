@@ -195,6 +195,10 @@ function commitDiscount() {
 
 // In multi-select the numpad is discount-only (batch quantity is meaningless).
 const numpadCanType = computed(() => (numpadMode.value === "disc" ? discountTargets.value.length > 0 : !!activeSku.value));
+// O que o pad está editando, para os rótulos de leitor de tela acompanharem o modo.
+const numpadSubject = computed(() =>
+  numpadMode.value === "disc" ? "desconto" : numpadMode.value === "price" ? "preço" : "quantidade",
+);
 
 // Price mode = decimal money entry (reais first, comma → centavos, ≤2 places).
 function priceEntryToQ(entry: string): number {
@@ -488,6 +492,7 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onWindowKeydown));
       <PosNumpad
         compact
         :disabled="!items.length"
+        :subject="numpadSubject"
         @digit="onDigit"
         @backspace="onBackspace"
         @clear="onClear"
