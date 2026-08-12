@@ -283,6 +283,12 @@ class CashMovement(models.Model):
     amount_q = models.IntegerField(help_text="Valor em centavos (sempre positivo).")
     reason = models.CharField(max_length=200, blank=True, default="")
     created_by = models.CharField(max_length=150, blank=True, default="")
+    approved_by = models.CharField(
+        max_length=150,
+        blank=True,
+        default="",
+        help_text="Gerente que autorizou a retirada (sangria e ajuste negativo).",
+    )
     created_at = models.DateTimeField(default=timezone.now)
 
     class Meta:

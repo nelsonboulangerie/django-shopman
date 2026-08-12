@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { httpError, httpErrorMessage, isTransientError, isUnauthenticatedError } from "../app/utils/httpError";
+import { httpError, httpErrorCode, httpErrorMessage, isStationLockedError, isTransientError, isUnauthenticatedError } from "../app/utils/httpError";
 
 describe("httpError", () => {
   it("extracts status/data/message from an ofetch-style error", () => {
@@ -94,5 +94,28 @@ describe("isUnauthenticatedError", () => {
       expect(isUnauthenticatedError({ status })).toBe(false);
     }
     expect(isUnauthenticatedError(new Error("offline"))).toBe(false);
+  });
+});
+
+describe("httpErrorCode / isStationLockedError", () => {
+  const locked = { status: 403, data: { detail: "Estação travada.", error: { code: "station_locked" } } };
+
+  it("lê o código de domínio quando o servidor manda um", () => {
+    expect(httpErrorCode(locked)).toBe("station_locked");
+    expect(httpErrorCode({ status: 422, data: { error: { code: "manager_approval_required" } } }))
+      .toBe("manager_approval_required");
+  });
+
+  it("devolve string vazia quando não há código", () => {
+    expect(httpErrorCode({ status: 403, data: { detail: "Proibido." } })).toBe("");
+    expect(httpErrorCode(new Error("offline"))).toBe("");
+  });
+
+  // Estação travada se resolve com PIN; 403 por falta de permissão, não. Confundir
+  // os dois faria a tela pedir identificação para um operador que já se identificou.
+  it("distingue estação travada de 403 por falta de permissão", () => {
+    expect(isStationLockedError(locked)).toBe(true);
+    expect(isStationLockedError({ status: 403, data: { detail: "Operador sem permissão." } })).toBe(false);
+    expect(isStationLockedError({ status: 401, data: { error: { code: "station_locked" } } })).toBe(false);
   });
 });

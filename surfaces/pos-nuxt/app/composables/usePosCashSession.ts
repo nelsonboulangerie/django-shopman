@@ -33,6 +33,10 @@ export function usePosCashSession({ pos, actions, refresh, action }: CashSession
   // o gate de redirect da antesala lê daqui em vez de assumir.
   const shiftRequiredForSale = computed(() => requiresOpenShiftForSale(cashManagement.value));
 
+  // Desafio de gerente pendente numa retirada: a página abre o diálogo de PIN e
+  // reenvia o mesmo movimento com a autorização. Vazio = nada pendente.
+  const managerChallenge = ref<{ code: string; message: string } | null>(null);
+
   async function run(path: string, body: Record<string, unknown>, failMessage: string): Promise<boolean> {
     if (busy.value) return false;
     busy.value = true;
@@ -41,6 +45,11 @@ export function usePosCashSession({ pos, actions, refresh, action }: CashSession
       await refresh();
       return true;
     } catch (error) {
+      const code = httpErrorCode(error);
+      if (code === "manager_approval_required" || code === "manager_approval_invalid") {
+        managerChallenge.value = { code, message: httpErrorMessage(error, failMessage) };
+        return false;
+      }
       toast.error(httpErrorMessage(error, failMessage));
       return false;
     } finally {
@@ -74,10 +83,25 @@ export function usePosCashSession({ pos, actions, refresh, action }: CashSession
     );
   }
 
-  function registerCashMovement(payload: { kind: string; amount: string; reason: string }): Promise<boolean> {
+  // Retirada de gaveta (sangria, ajuste negativo) exige PIN do gerente. Quem
+  // decide é o servidor: a tela envia, e só abre o desafio quando ele recusa com
+  // `manager_approval_required`. Assim a regra do que precisa de autorização tem
+  // um dono só, e o PDV não precisa adivinhar antes de perguntar.
+  function registerCashMovement(payload: {
+    kind: string;
+    amount: string;
+    reason: string;
+    managerApproval?: { username: string; pin: string } | null;
+  }): Promise<boolean> {
+    const body: Record<string, unknown> = {
+      kind: payload.kind,
+      amount: payload.amount || "0",
+      reason: payload.reason,
+    };
+    if (payload.managerApproval) body.manager_approval = payload.managerApproval;
     return run(
       actionHref(actions.value, "cash_movement", "/api/v1/backstage/pos/cash/movement/"),
-      { kind: payload.kind, amount: payload.amount || "0", reason: payload.reason },
+      body,
       "Falha ao registrar movimento.",
     );
   }
@@ -86,6 +110,7 @@ export function usePosCashSession({ pos, actions, refresh, action }: CashSession
     busy,
     movementKinds,
     shiftRequiredForSale,
+    managerChallenge,
     openCashShift,
     closeCashShift,
     closeBlockingShift,

@@ -14,11 +14,19 @@ import type { Action, POSOperatorProjection, POSProjection, POSResponse, POSShif
 export async function usePosTerminal() {
   const apiPath = usePosApiPath();
   const requestHeaders = import.meta.server ? useRequestHeaders(["cookie"]) : undefined;
+  // A leitura é o primeiro lugar onde a estação travada aparece — antes de o
+  // operador tentar qualquer comando. Sem isto o 403 ficava só no `error`, a
+  // Projection ficava nula e a tela desenhava um PDV sem barra e sem comandas,
+  // como se a loja não tivesse nada aberto. Agora o servidor decide o cadeado.
+  // Resolvido ANTES do await: depois dele o contexto do Nuxt já não existe.
+  const { flagIfStationLocked } = useStationLock();
 
   const { data, pending, error, refresh } = await useFetch<POSResponse>(
     () => apiPath("/api/v1/backstage/pos/"),
     { credentials: "include", headers: requestHeaders },
   );
+
+  watch(error, (value) => { if (value) flagIfStationLocked(value); }, { immediate: true });
 
   const pos = computed<POSProjection | null>(() => data.value?.pos ?? null);
   const shift = computed<POSShiftSummaryProjection | null>(() => data.value?.shift ?? null);

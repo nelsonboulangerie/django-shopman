@@ -21,6 +21,13 @@ class IsBackstageOperator(BasePermission):
         return bool(user and user.is_authenticated and user.is_staff)
 
 
+#: Código estável da recusa por estação travada. A superfície REAGE a ele (sobe a
+#: tela de identificação) em vez de casar a mensagem em português, que muda com a
+#: copy. Sem um código, a tela só sabia "403" — indistinguível de falta de
+#: permissão — e seguia desenhando um PDV vazio enquanto toda leitura era negada.
+STATION_LOCKED_CODE = "station_locked"
+
+
 class HasBackstagePermission(BasePermission):
     """Check a specific Django permission code declared on the view.
 
@@ -36,8 +43,10 @@ class HasBackstagePermission(BasePermission):
     """
 
     message = "Acesso restrito a operadores."
+    code = None
 
     def has_permission(self, request, view) -> bool:
+        self.code = None
         user = getattr(request, "user", None)
         if not (user and user.is_authenticated and user.is_staff):
             return False
@@ -53,6 +62,7 @@ class HasBackstagePermission(BasePermission):
         operator = resolve_active_operator_user(request)
         if operator is None:
             self.message = "Estação travada. Identifique-se com PIN ou crachá."
+            self.code = STATION_LOCKED_CODE
             return False
         request.active_operator_user = operator
         if perm is not None and not operator.has_perm(perm):

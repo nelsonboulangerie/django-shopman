@@ -4,6 +4,11 @@ export function usePosAction() {
   // dispositivo expirada é detectada num único ponto e sobe a tela de login
   // (em vez de o operador seguir batendo numa sessão morta).
   const session = useOperatorSession();
+  // Re-gate irmão em 403 `station_locked`: o cadeado do servidor tem a palavra
+  // final sobre o cadeado da tela, senão o operador insiste num comando que
+  // nunca vai passar e só vê um toast genérico. Estado puro — o transporte de
+  // comandos não carrega o fetch da sessão junto.
+  const { flagIfStationLocked } = useStationLock();
 
   function csrfHeader(): Record<string, string> {
     const token = useCookie("csrftoken").value || "";
@@ -25,6 +30,7 @@ export function usePosAction() {
       // 401 → marca a sessão expirada; re-lança para o tratamento de erro do
       // chamador (serverError/toast) seguir funcionando como sinal secundário.
       session.flagIfUnauthenticated(error);
+      flagIfStationLocked(error);
       throw error;
     }
   }

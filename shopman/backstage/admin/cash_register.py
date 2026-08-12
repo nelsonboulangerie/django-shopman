@@ -13,8 +13,10 @@ from shopman.backstage.models import CashMovement, CashShift, POSTerminal
 class CashMovementInline(admin.TabularInline):
     model = CashMovement
     extra = 0
-    readonly_fields = ("movement_type", "amount_display", "reason", "created_by", "created_at")
-    fields = ("movement_type", "amount_display", "reason", "created_by", "created_at")
+    # `approved_by` fica ao lado de `created_by`: a retirada tem duas assinaturas,
+    # e a conferência da retaguarda precisa ver as duas juntas.
+    readonly_fields = ("movement_type", "amount_display", "reason", "created_by", "approved_by", "created_at")
+    fields = ("movement_type", "amount_display", "reason", "created_by", "approved_by", "created_at")
 
     def amount_display(self, obj):
         return f"R$ {format_money(obj.amount_q)}"
@@ -86,10 +88,10 @@ class CashMovementAdmin(ModelAdmin):
     inspeciona a trilha de auditoria.
     """
 
-    list_display = ("shift", "movement_type", "amount_display", "reason", "created_by", "created_at")
+    list_display = ("shift", "movement_type", "amount_display", "reason", "created_by", "approved_by", "created_at")
     list_filter = ("movement_type", "created_at")
-    search_fields = ("shift__operator", "reason", "created_by")
-    readonly_fields = ("created_by", "created_at")
+    search_fields = ("shift__operator", "reason", "created_by", "approved_by")
+    readonly_fields = ("created_by", "approved_by", "created_at")
     ordering = ["-created_at"]
     compressed_fields = True
 

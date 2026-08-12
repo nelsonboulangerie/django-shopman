@@ -433,6 +433,8 @@ export interface POSSaleReviewProjection {
   change_display: string;
   requires_manager_approval: boolean;
   manager_approval_threshold_q: number;
+  /** Por que o gerente foi chamado — o diálogo de autorização diz o que assinar. */
+  approval_reasons: string[];
   receipt_mode: string;
   issue_fiscal_document: boolean;
   warnings: Array<{ code: string; field: string; message: string }>;

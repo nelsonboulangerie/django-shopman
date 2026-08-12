@@ -26,6 +26,18 @@ def _grant_operate_pos(user):
     user.user_permissions.add(perm)
 
 
+def _manager_approval():
+    """Gerente que assina as retiradas de gaveta usadas como cenário do relatório."""
+    from shopman.doorman.models import PinCredential
+
+    User = get_user_model()
+    user = User.objects.create_user(username="gerente-relatorio", password="x", is_staff=True)
+    ct = ContentType.objects.get_for_model(CashShift)
+    user.user_permissions.add(Permission.objects.get(content_type=ct, codename="adjust_cashshift"))
+    PinCredential.set_for(user, "4321")
+    return {"username": user.username, "pin": "4321"}
+
+
 class POSCashReportTests(TestCase):
     """Relatório X/Z da antesala do PDV (ADMIN-ROLE-PLAN WP-ADM-4).
 
@@ -43,6 +55,7 @@ class POSCashReportTests(TestCase):
         _grant_operate_pos(self.operator)
         self.client.force_login(self.operator)
         self.terminal = POSTerminal.default()
+        self.manager_approval = _manager_approval()
 
     # ── helpers ────────────────────────────────────────────────────────
 
@@ -82,6 +95,7 @@ class POSCashReportTests(TestCase):
         shift = self._open_shift(opening="50,00")
         pos_service.register_cash_movement(
             operator=self.operator, movement_type="sangria", amount_raw="20,00", reason="troco banco",
+            manager_approval=self.manager_approval,
         )
         pos_service.register_cash_movement(
             operator=self.operator, movement_type="suprimento", amount_raw="10,00", reason="reforço",
@@ -171,6 +185,7 @@ class POSCashReportTests(TestCase):
         shift = self._open_shift(opening="50,00")
         pos_service.register_cash_movement(
             operator=self.operator, movement_type="sangria", amount_raw="15,00", reason="banco",
+            manager_approval=self.manager_approval,
         )
         self._sale(
             "POS-Z-CASH", shift=shift, total_q=3000,

@@ -54,8 +54,28 @@ export function paymentRemainingQ(tenders: POSPaymentTenderDraft[], totalQ: numb
   return totalQ - tenderSumQ(tenders);
 }
 
+/** Soma das linhas em espécie — a única origem possível de troco. */
+export function cashTenderSumQ(tenders: POSPaymentTenderDraft[]): number {
+  return tenders.reduce((sum, tender) => sum + (tender.method === "cash" ? tender.amount_q || 0 : 0), 0);
+}
+
+/**
+ * Troco = o excedente que veio EM DINHEIRO. Somar todas as linhas fazia o PDV
+ * anunciar troco por um cartão digitado a mais — numa venda de R$ 42,00 com
+ * R$ 5.000,00 na linha do cartão ele mandava devolver R$ 4.958,00 da gaveta.
+ * Cartão e Pix cobram o que foi passado na maquininha; não há troco neles.
+ */
 export function paymentChangeQ(tenders: POSPaymentTenderDraft[], totalQ: number): number {
-  return Math.max(0, tenderSumQ(tenders) - totalQ);
+  return Math.min(Math.max(0, tenderSumQ(tenders) - totalQ), cashTenderSumQ(tenders));
+}
+
+/**
+ * Excedente em linhas que NÃO são dinheiro: erro de digitação a corrigir, nunca
+ * troco. Alimenta o aviso da tela (o servidor manda o mesmo em `warnings`).
+ */
+export function nonCashExcessQ(tenders: POSPaymentTenderDraft[], totalQ: number): number {
+  const excess = Math.max(0, tenderSumQ(tenders) - totalQ);
+  return excess - Math.min(excess, cashTenderSumQ(tenders));
 }
 
 /** UX gate: at least one tender and the total fully covered. */

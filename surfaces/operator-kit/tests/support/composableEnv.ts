@@ -46,6 +46,8 @@ export interface ComposableEnv {
   adaptivePoll: ReturnType<typeof vi.fn>;
   /** `useRuntimeConfig()`. */
   runtimeConfig: Record<string, unknown>;
+  /** Estado compartilhado do `useState` (por chave), para inspeção e limpeza. */
+  states: Map<string, ReturnType<typeof ref>>;
   /** Zera histórico dos mocks e o payload (chamar no `beforeEach`). */
   reset(): void;
 }
@@ -59,6 +61,7 @@ export function installNuxtGlobals(): ComposableEnv {
     refreshNuxtData: vi.fn(),
     adaptivePoll: vi.fn(),
     runtimeConfig: { app: { baseURL: "/" }, public: { djangoPublicBaseUrl: "" } },
+    states: new Map(),
     reset() {
       env.fetchData.value = null;
       env.refresh.mockReset();
@@ -67,6 +70,9 @@ export function installNuxtGlobals(): ComposableEnv {
       env.sonner.success.mockReset();
       env.refreshNuxtData.mockReset();
       env.adaptivePoll.mockReset();
+      // Estado compartilhado é por-app em runtime; entre testes ele tem que morrer,
+      // senão uma estação travada num teste vaza travada para o seguinte.
+      env.states.clear();
     },
   };
 
@@ -85,6 +91,12 @@ export function installNuxtGlobals(): ComposableEnv {
   vi.stubGlobal("onScopeDispose", () => {});
   // Fronteira de dados/framework — mockada.
   vi.stubGlobal("useRuntimeConfig", () => env.runtimeConfig);
+  // `useState`: um ref REAL por chave, compartilhado entre chamadas — é o que o Nuxt
+  // dá, e é o que faz dois composables enxergarem o mesmo cadeado.
+  vi.stubGlobal("useState", (key: string, init?: () => unknown) => {
+    if (!env.states.has(key)) env.states.set(key, ref(init ? init() : undefined));
+    return env.states.get(key)!;
+  });
   vi.stubGlobal("useSonner", env.sonner);
   vi.stubGlobal("refreshNuxtData", env.refreshNuxtData);
   vi.stubGlobal("operatorSessionOnError", () => {});

@@ -26,10 +26,12 @@ import { clampPercent, clampQty, popDigit, pushDigit } from "../app/presentation
 import {
   cashDeltaPresets,
   cashNotesQ,
+  cashTenderSumQ,
   collectionsForFulfillment,
   injectableMethods,
   isPaymentCovered,
   methodLabel,
+  nonCashExcessQ,
   paymentChangeQ,
   paymentIcon,
   paymentProofView,
@@ -316,6 +318,25 @@ describe("presentation/payment — tender math & method affordance", () => {
     expect(isPaymentCovered(tenders, 4000)).toBe(true);
     expect(isPaymentCovered(tenders, 5000)).toBe(false);
     expect(isPaymentCovered([], 0)).toBe(false);
+  });
+
+  // Troco sai da gaveta: só dinheiro em espécie recebido a mais é troco. Antes,
+  // R$ 5.000,00 digitados na linha do cartão numa venda de R$ 42,00 faziam o PDV
+  // mandar devolver R$ 4.958,00 de verdade.
+  it("never turns a non-cash overpay into change", () => {
+    const card = [tender("card", 500000)];
+    expect(paymentChangeQ(card, 4200)).toBe(0);
+    expect(nonCashExcessQ(card, 4200)).toBe(495800);
+
+    const pix = [tender("pix", 10000)];
+    expect(paymentChangeQ(pix, 4200)).toBe(0);
+  });
+
+  it("limits change to the cash share of a mixed payment", () => {
+    const tenders = [tender("card", 4200), tender("cash", 1000)];
+    expect(paymentChangeQ(tenders, 4200)).toBe(1000);
+    expect(nonCashExcessQ(tenders, 4200)).toBe(0);
+    expect(cashTenderSumQ(tenders)).toBe(1000);
   });
 
   it("shapes a tender line view", () => {

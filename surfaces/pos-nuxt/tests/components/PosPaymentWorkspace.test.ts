@@ -3,6 +3,7 @@ import { mountSuspended } from "@nuxt/test-utils/runtime";
 
 import PosPaymentWorkspace from "~/components/PosPaymentWorkspace.vue";
 import type { POSCartItem, POSSaleReviewProjection } from "~/types/pos";
+import { formatBRL } from "~/utils/posIntent";
 
 function item(overrides: Partial<POSCartItem> & { sku: string; name: string }): POSCartItem {
   return { price_q: 1000, qty: 1, notes: "", is_d1: false, ...overrides };
@@ -100,7 +101,7 @@ describe("PosPaymentWorkspace — instrumento de pagamento", () => {
   });
 });
 
-describe("PosPaymentWorkspace — leitura viva (Restante/Troco/Pago)", () => {
+describe("PosPaymentWorkspace — leitura viva (Restante/Troco)", () => {
   it("mostra 'Restante' enquanto não cobre", async () => {
     const wrapper = await mountSuspended(PosPaymentWorkspace, {
       props: props({ paymentTenders: [{ ...tender, amount_q: 500 }], selectedTenderIndex: 0, paymentCovered: false, paymentRemainingQ: 500 }),
@@ -108,11 +109,17 @@ describe("PosPaymentWorkspace — leitura viva (Restante/Troco/Pago)", () => {
     expect(wrapper.text()).toContain("Restante");
   });
 
-  it("mostra 'Pago' quando coberto exatamente", async () => {
+  // Coberto exatamente = "Restante R$ 0,00". O rótulo "Pago" sobre um zero lia-se
+  // como "não pagou nada" bem na hora em que o cliente entregou o dinheiro.
+  it("mostra 'Restante R$ 0,00' quando coberto exatamente, nunca 'Pago'", async () => {
     const wrapper = await mountSuspended(PosPaymentWorkspace, {
       props: props({ paymentTenders: [tender], selectedTenderIndex: 0, paymentCovered: true, paymentRemainingQ: 0 }),
     });
-    expect(wrapper.text()).toContain("Pago");
+    const text = wrapper.text();
+    expect(text).toContain("Restante");
+    // formatBRL usa espaço não-quebrável; comparar com o próprio formatador.
+    expect(text).toContain(formatBRL(0));
+    expect(text).not.toContain("Pago");
   });
 
   it("mostra 'Troco' quando há troco", async () => {

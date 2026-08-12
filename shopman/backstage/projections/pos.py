@@ -1489,24 +1489,17 @@ def _delivery_minimum_q() -> int:
 
 
 def _discount_approval_threshold_q() -> int:
-    """POS discount approval threshold (cents): descontos acima dele exigem
-    aprovação do gerente.
+    """Teto de aprovação do desconto, lido de quem o aplica.
 
-    Política da loja em ``Shop.defaults["pos"]["discount_approval_threshold_q"]``
-    (editável no admin). Ausente = herda o padrão do deploy
-    (``SHOPMAN_POS_DISCOUNT_APPROVAL_THRESHOLD_Q``) — zero regressão.
+    A projection ANUNCIA a política; quem a aplica é o gate do orquestrador
+    (``shop.services.pos.discount_approval_threshold_q``). Ler de lá é o que
+    garante que o número mostrado na tela é o mesmo que decide o PIN — quando
+    esta função tinha leitura própria, o Admin mudava um e o balcão obedecia o
+    outro.
     """
-    try:
-        from shopman.shop.models import Shop
+    from shopman.shop.services.pos import discount_approval_threshold_q
 
-        shop = Shop.load()
-        pos_cfg = (shop.defaults.get("pos") or {}) if shop and shop.defaults else {}
-        raw = pos_cfg.get("discount_approval_threshold_q")
-        if raw is not None:
-            return max(0, int(raw))
-    except Exception:
-        logger.debug("pos_discount_threshold_lookup_failed", exc_info=True)
-    return max(0, int(getattr(settings, "SHOPMAN_POS_DISCOUNT_APPROVAL_THRESHOLD_Q", 0) or 0))
+    return discount_approval_threshold_q()
 
 
 def _pos_fiscal_toggle_enabled() -> bool:
