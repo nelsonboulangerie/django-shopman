@@ -40,6 +40,45 @@ def token_metadata(token_str: str) -> dict:
         return {}
 
 
+def mint_handoff_link(
+    *, customer_uuid, next_path: str, identity_strength: str,
+    cart_session_key: str = "", ttl_minutes: int = 3,
+) -> str:
+    """Link de uso único para a MESMA pessoa abrir no navegador do sistema.
+
+    A travessia existe porque pote de cookie de webview não é pote de navegador — ver
+    `storefront/api/auth.py::BrowserHandoffView`. A força da identidade viaja no metadata e é
+    **reposta** do outro lado: a travessia carrega, nunca promove.
+
+    A sacola viaja junto pelo mesmo motivo de sempre: sessão nova sem sacola é a pior surpresa
+    possível para quem estava no meio de um pedido.
+    """
+    from datetime import timedelta
+
+    from django.utils import timezone
+    from shopman.doorman.models import AccessLink
+
+    from shopman.shop.services import storefront_links
+
+    metadata = {
+        "next": next_path,
+        "login_source": "handoff",
+        "identity_strength": identity_strength,
+    }
+    if cart_session_key:
+        metadata["cart_session_key"] = cart_session_key
+
+    _link, raw_token = AccessLink.create_with_token(
+        customer_id=customer_uuid,
+        audience=AccessLink.Audience.WEB_GENERAL,
+        source=AccessLink.Source.INTERNAL,
+        expires_at=timezone.now() + timedelta(minutes=max(1, int(ttl_minutes))),
+        metadata=metadata,
+    )
+    base = storefront_links.storefront_url(storefront_links.path_access())
+    return f"{base}?t={raw_token}"
+
+
 def token_source(token_str: str) -> str:
     """A ORIGEM do token (`manychat` | `internal` | `api`), lida antes do resgate.
 

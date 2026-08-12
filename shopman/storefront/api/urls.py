@@ -25,6 +25,7 @@ from .account import (
 )
 from .auth import (
     AccessLinkExchangeView,
+    BrowserHandoffView,
     DeviceCheckView,
     LogoutView,
     RequestCodeView,
@@ -77,6 +78,7 @@ urlpatterns = [
     path("auth/request-code/", RequestCodeView.as_view(), name="api-auth-request-code"),
     path("auth/verify-code/", VerifyCodeView.as_view(), name="api-auth-verify-code"),
     path("auth/trust-device/", TrustDeviceView.as_view(), name="api-auth-trust-device"),
+    path("auth/handoff/", BrowserHandoffView.as_view(), name="api-auth-handoff"),
     path("auth/whatsapp/start/", WhatsAppVerifyStartView.as_view(), name="api-auth-whatsapp-start"),
     path("auth/logout/", LogoutView.as_view(), name="api-auth-logout"),
     # Cart

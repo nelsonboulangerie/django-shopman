@@ -221,11 +221,13 @@ def test_points_at_the_counter_are_never_blocked(cart_session_delivery, person):
     client = cart_session_delivery
     _sign_in(client, person, strength=IDENTITY_NUMBER)
 
-    # A retirada exige horário: a projeção do checkout diz quais existem hoje, e pegar o
-    # primeiro é o que a tela faz.
-    slots = _checkout(client).get("pickup_slots") or []
+    # ⚠️ Horário HABILITADO, não o primeiro da lista. A projeção devolve todos os
+    # configurados e marca `enabled=False` no que já passou (`reason` diz por quê) — pegar
+    # `slots[0]` fazia o teste passar de manhã e falhar à tarde, que é o pior tipo de teste:
+    # o que mente sobre o motivo da falha.
+    slots = [s for s in (_checkout(client).get("pickup_slots") or []) if s.get("enabled")]
     if not slots:
-        pytest.skip("sem horário de retirada disponível neste ambiente")
+        pytest.skip("nenhum horário de retirada habilitado agora (loja fechada ou dia vencido)")
     payload = {
         "name": "Ana",
         "phone": person.phone,

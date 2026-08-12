@@ -9,6 +9,7 @@ from django.utils.decorators import method_decorator
 from django_ratelimit.decorators import ratelimit
 from drf_spectacular.utils import extend_schema, inline_serializer
 from rest_framework import serializers, status
+from rest_framework.authentication import SessionAuthentication
 from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -103,6 +104,23 @@ class LogoutView(APIView):
         return response
 
 
+def _carried_strength(metadata) -> str:
+    """A força que o token CARREGA, quando ele é uma travessia de navegador.
+
+    ⚠️ Carrega, nunca promove. A travessia existe para levar a sessão de dentro do
+    navegador embutido do WhatsApp para o navegador de verdade da pessoa (potes de cookie
+    são separados — o do WKWebView não é o do Safari). Se ela chegou sabendo só o número, do
+    outro lado continua sabendo só o número.
+
+    Promover aqui seria transformar "trocar de navegador" em prova de identidade, o que é
+    absurdo: é a mesma pessoa no mesmo aparelho, com a mesma dúvida.
+    """
+    if not isinstance(metadata, dict) or metadata.get("login_source") != "handoff":
+        return ""
+    carried = str(metadata.get("identity_strength") or "")
+    return carried if carried in (IDENTITY_DEVICE, IDENTITY_NUMBER) else IDENTITY_NUMBER
+
+
 def _record_identity_strength(request, metadata, *, customer) -> None:
     """Marcar a sessão quando ela nasceu de um link de campanha.
 
@@ -111,6 +129,11 @@ def _record_identity_strength(request, metadata, *, customer) -> None:
     o link foi só conveniência, e não há nada a reduzir. É o celular dela, que é o caso da
     esmagadora maioria de quem volta.
     """
+    carried = _carried_strength(metadata)
+    if carried:
+        request.session[IDENTITY_SESSION_KEY] = carried
+        return
+
     if not isinstance(metadata, dict) or metadata.get("login_source") != "campaign":
         return
 
@@ -487,3 +510,61 @@ class TrustDeviceView(APIView):
             )
             response.data["trusted"] = True
         return response
+
+class BrowserHandoffView(APIView):
+    """POST /api/v1/auth/handoff/ → um link de uso único para o navegador DE VERDADE dela.
+
+    ⚠️ Existe por um fato de plataforma, não por capricho: o navegador embutido do WhatsApp é
+    um WKWebView com **pote de cookie próprio**. Tudo o que ela conquistar ali — sessão,
+    aparelho confiado — não existe no Safari que ela usa no resto do dia. "Confirmado para
+    sempre neste aparelho" era, na prática, "neste webview".
+
+    Em vez de sofrer isso, atravessamos de propósito: no momento em que já sabemos quem ela
+    é, oferecemos o pulo, e a identidade nasce no pote que ela vai usar de verdade. O link é
+    curto, de uso único, e **carrega a força que a sessão já tinha** — nunca mais que isso,
+    porque trocar de navegador não é prova de identidade.
+
+    É também a porta de entrada da passkey: cadastrar credencial dentro do webview do
+    WhatsApp é irregular; no navegador de verdade, não é.
+    """
+
+    permission_classes = [AllowAny]
+    authentication_classes = [SessionAuthentication]
+
+    #: Curto porque o pulo é imediato — ela toca e o navegador abre. Não é link para guardar,
+    #: é um trilho entre dois navegadores do mesmo aparelho.
+    HANDOFF_TTL_MINUTES = 3
+
+    @extend_schema(tags=["auth"], summary="Mint a one-time link to the system browser")
+    def post(self, request):
+        customer = get_authenticated_customer(request)
+        if not customer:
+            return Response(
+                {"detail": "Entre na sua conta para continuar."},
+                status=status.HTTP_401_UNAUTHORIZED,
+            )
+
+        payload = request.data if hasattr(request, "data") else {}
+        raw_next = str((payload or {}).get("next") or "").strip()
+        # Só caminho interno: o destino é a tela onde ela está, e aceitar URL de fora aqui
+        # seria abrir redirect com sessão na mão.
+        next_path = raw_next if raw_next.startswith("/") and not raw_next.startswith("//") else "/"
+
+        try:
+            url = access_service.mint_handoff_link(
+                customer_uuid=customer.uuid,
+                next_path=next_path,
+                identity_strength=identity_strength(request),
+                cart_session_key=str(request.session.get("cart_session_key") or ""),
+                ttl_minutes=self.HANDOFF_TTL_MINUTES,
+            )
+        except Exception:
+            logger.warning("browser_handoff_mint_failed", exc_info=True)
+            url = ""
+
+        if not url:
+            return Response(
+                {"detail": "Não foi possível abrir seu navegador agora."},
+                status=status.HTTP_503_SERVICE_UNAVAILABLE,
+            )
+        return Response({"url": url, "expires_in_minutes": self.HANDOFF_TTL_MINUTES})

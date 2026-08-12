@@ -985,6 +985,11 @@ useSeoMeta({
             <UiAlertDescription>{{ serverError }}</UiAlertDescription>
           </UiAlert>
 
+          <!-- ⚠️ FORA da cadeia de `v-else-if` acima: `v-else-if` exige irmão imediato, e pôr
+               este cartão no meio quebraria o encadeamento em silêncio (o typecheck passa).
+               Ele tem condição própria — navegador embutido + já identificada. -->
+          <BrowserHandoffCard :identified="checkout.is_authenticated" />
+
           <div data-checkout-progress-stack>
             <CheckoutProgressSection
               title="Contato"
