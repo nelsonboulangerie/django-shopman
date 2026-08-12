@@ -144,8 +144,13 @@ class RefUnfoldAdmin(BaseModelAdmin):
     @admin.action(description=_("Renomear valor…"))
     def rename_value_action(self, request, queryset):
         """Intermediate page to rename ref values for the selected refs."""
-        form = RenameValueForm(request.POST or None)
-        if request.POST.get("_rename_confirm"):
+        # ⚠️ Vincular ao POST da SELEÇÃO faria o form abrir já em vermelho ("este campo é
+        # obrigatório"), porque o POST que traz os checkboxes não traz o novo valor. Ralhar
+        # com quem ainda não digitou nada ensina a ignorar o vermelho, e aí o vermelho que
+        # importa também passa batido.
+        confirming = bool(request.POST.get("_rename_confirm"))
+        form = RenameValueForm(request.POST if confirming else None)
+        if confirming:
             if form.is_valid():
                 new_value = form.cleaned_data["new_value"].strip()
                 actor = str(request.user)

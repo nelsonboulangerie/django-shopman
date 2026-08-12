@@ -24,6 +24,7 @@ from shopman.craftsman.models import Recipe, RecipeItem, WorkOrder
 from shopman.offerman.models import Product
 from shopman.orderman.admin import OrderAdmin
 from shopman.orderman.models import Order, OrderItem
+from shopman.refs.models import Ref
 
 from shopman.backstage.admin import navigation
 from shopman.shop.models import Shop
@@ -557,3 +558,76 @@ class CustomerBulkTaggingTests(TestCase):
         self._act([customer], _tag_confirm="1", tags="integral", mode="add")
 
         self.assertEqual(Tag.objects.filter(name="integral").count(), 0)
+
+
+class RefBulkRenameTests(TestCase):
+    """Renomear valores de referências em massa pela changelist de refs.
+
+    A ação já existia sem teste de tela: só o `RefBulk.rename` era exercitado, e a página
+    intermediária — que é onde a pessoa lê e decide — não era vista por ninguém.
+    """
+
+    def setUp(self) -> None:
+        # A `Shop` é exigência do OnboardingMiddleware: sem ela o Admin desvia e o teste
+        # vê 404 em vez da tela.
+        Shop.objects.create(name="Loja")
+        self.user = User.objects.create_superuser("chefe-refs", "refs@example.com", "pw")
+        self.client.force_login(self.user)
+        self.url = reverse("admin:refs_ref_changelist")
+
+    def _refs(self, value, *target_ids):
+        return [
+            Ref.objects.create(
+                ref_type="SKU",
+                value=value,
+                target_type="offerman.Product",
+                target_id=target_id,
+            )
+            for target_id in target_ids
+        ]
+
+    def _act(self, refs, **extra):
+        payload = {
+            "action": "rename_value_action",
+            admin.helpers.ACTION_CHECKBOX_NAME: [str(ref.pk) for ref in refs],
+            **extra,
+        }
+        return self.client.post(self.url, payload, follow=True)
+
+    def test_the_action_asks_before_it_writes(self) -> None:
+        """Primeiro POST abre a página de confirmação — e abre LIMPA.
+
+        ⚠️ O form era vinculado ao POST da SELEÇÃO, que traz os checkboxes e nenhum valor
+        novo, então a tela nascia em vermelho ("este campo é obrigatório") antes de a pessoa
+        digitar. Ralhar com quem não fez nada ensina o operador a ignorar o vermelho, e aí o
+        vermelho que importa também passa batido. Sem a asserção de tela limpa, o teste
+        passa com a tela em vermelho — foi exatamente o que aconteceu.
+        """
+        refs = self._refs("CROISSANT", "1", "2")
+
+        response = self._act(refs)
+
+        self.assertContains(response, "Renomear o valor de")
+        self.assertNotContains(response, "obrigatório")
+        # O título da tela é o mesmo que a aba mostra — um dono só, e em português.
+        self.assertNotContains(response, "Rename ref values")
+        # Independente de locale: o form da primeira renderização nem sequer é vinculado.
+        self.assertFalse(response.context["form"].is_bound)
+        self.assertEqual(Ref.objects.filter(value="CROISSANT").count(), 2)
+
+    def test_it_renames_every_selected_ref(self) -> None:
+        refs = self._refs("CROISSANT", "1", "2")
+
+        self._act(refs, _rename_confirm="1", new_value="CROISSANT-FR")
+
+        self.assertEqual(Ref.objects.filter(value="CROISSANT-FR").count(), 2)
+        self.assertEqual(Ref.objects.filter(value="CROISSANT").count(), 0)
+
+    def test_confirming_without_a_value_writes_nothing_and_says_so(self) -> None:
+        """O vermelho continua existindo — só que agora quando é merecido."""
+        refs = self._refs("BAGUETE", "3")
+
+        response = self._act(refs, _rename_confirm="1", new_value="   ")
+
+        self.assertEqual(Ref.objects.filter(value="BAGUETE").count(), 1)
+        self.assertContains(response, "não pode ser vazio")

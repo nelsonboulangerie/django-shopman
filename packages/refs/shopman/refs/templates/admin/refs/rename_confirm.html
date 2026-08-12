@@ -4,7 +4,7 @@
 {% block content %}
 {% component "unfold/components/container.html" %}
 <div class="flex flex-col gap-4">
-  {% component "unfold/components/title.html" %}{% trans "Rename ref values" %}{% endcomponent %}
+  {% component "unfold/components/title.html" %}{{ title }}{% endcomponent %}
   {% component "unfold/components/text.html" with class="text-sm text-base-500" %}
     {% blocktrans with count=queryset.count %}Renomear o valor de {{ count }} referência(s) selecionada(s).{% endblocktrans %}
   {% endcomponent %}
