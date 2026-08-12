@@ -39,6 +39,36 @@ def _cart_data(request):
     return build_cart(request.session.get("cart_session_key"), CHANNEL_REF)
 
 
+# Chaves de IDENTIDADE do cliente que o commit precisa preservar. Só o ``ref`` —
+# é ele que dá elegibilidade a promoção por pessoa (aniversário, segmento RFM).
+#
+# ⚠️ ``price_tier`` fica DE FORA de propósito: a loja pública nunca propaga faixa
+# de preço, senão o desconto de funcionário (20%, mecanismo do PDV) passa a valer
+# no site. Esse limite é testado em
+# ``storefront/tests/e2e/test_persona_3_employee.py`` e foi ele que pegou a
+# primeira versão deste fix, que preservava a faixa junto.
+#
+# Nome e telefone também não entram: o cliente os reescreve no formulário a cada
+# envio, então vêm do payload.
+_CUSTOMER_IDENTITY_KEYS = ("ref",)
+
+
+def _session_customer_identity(session_key: str) -> dict:
+    """Devolve a identidade do cliente já gravada na sessão, para o commit não apagá-la.
+
+    Ver o comentário no ``checkout_data`` do ``CheckoutView``: o ``set_data`` de
+    ``customer`` substitui o bloco inteiro, então quem envia precisa recarregar o
+    que já estava lá.
+    """
+    from shopman.shop.services.cart import get_open_session
+
+    session = get_open_session(session_key=session_key, channel_ref=CHANNEL_REF)
+    if session is None:
+        return {}
+    existing = (session.data or {}).get("customer") or {}
+    return {k: existing[k] for k in _CUSTOMER_IDENTITY_KEYS if existing.get(k)}
+
+
 # Rate-limit MANUAL (is_ratelimited): só a tentativa que chega ao commit
 # incrementa o contador — cliente corrigindo erro de formulário não pode
 # tomar 429 no momento mais crítico do pedido.
@@ -237,8 +267,17 @@ class CheckoutView(APIView):
 
         phone = normalize_phone(phone_raw) or phone_raw
 
+        # A identidade (``ref``/``price_tier``) que já está na sessão PRECISA
+        # sobreviver ao envio. ``_build_ops_from_data`` vira um ``set_data`` em
+        # ``customer``, que SUBSTITUI o bloco inteiro — mandar só nome+telefone
+        # apagava o ``ref``, e sem ``ref`` o ``_resolve_customer_ctx`` do
+        # discount modifier retorna cedo e nunca avalia ``is_birthday``. Efeito
+        # observado no staging: o desconto de aniversário aparecia no checkout e
+        # sumia no "Enviar pedido", o total subia e a guarda de integridade
+        # recusava o pedido. O ``price_tier`` caía junto (atacado virava varejo).
+        # Mesmo idioma de merge de `shop/services/cart.py` e `storefront/cart.py`.
         checkout_data = {
-            "customer": {"name": name, "phone": phone},
+            "customer": {**_session_customer_identity(session_key), "name": name, "phone": phone},
             "fulfillment_type": fulfillment_type,
             # Omotenashi: lembrar escolhas é o default; toggle desmarcado → False.
             # (Endereço novo é salvo sempre, independente disto.)
