@@ -82,6 +82,12 @@ interface PosSaleDeps {
 export function usePosSale(deps: PosSaleDeps) {
   const { pos, tabs, actions, refresh, action, apiPath, requestHeaders, ordersUrl } = deps;
 
+  // O momento mais comum de abrir a gaveta é dar troco. Antes o único jeito era
+  // a chave física — ou o gancho "abrir ao imprimir" do driver, que só dispara
+  // se o operador lembrar de clicar imprimir. Falha silenciosa exatamente no
+  // momento em que a mão já está esperando.
+  const drawer = useCashDrawer(pos);
+
   const tabInput = ref("");
   const busy = ref(false);
   const saving = ref(false);
@@ -1087,6 +1093,12 @@ export function usePosSale(deps: PosSaleDeps) {
         // PIX pendente → polla até confirmar; outros métodos já saem resolvidos.
         if (proof?.isPix && proof?.hasProof) startPixPolling(orderRef);
         else pixStatus.value = "idle";
+        // Entrou dinheiro na gaveta → ela precisa abrir para sair troco. Lido
+        // do snapshot congelado, não do cart, que a linha abaixo já zerou.
+        // Sem await: a venda terminou, e a tela não espera o spooler.
+        if (receipt.payments.some((tender) => tender.method === "cash") && drawer.opensOnCashSale.value) {
+          void drawer.kick("cash_sale");
+        }
         resetCart();
         await refresh();
       }

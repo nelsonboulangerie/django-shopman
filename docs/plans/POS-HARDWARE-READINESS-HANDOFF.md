@@ -1,8 +1,9 @@
 # POS-HARDWARE-READINESS-HANDOFF — impressora, gaveta, leitor
 
 **Status:** 🔖 aberto (2026-08-12). Repassado pela frente de alpha (worktree
-`shopman-storefront-perf`) para a frente do PDV absorver. **Item 1 (impressora)
-fechado em 2026-08-12** — os itens 2, 3 e 4 seguem abertos.
+`shopman-storefront-perf`) para a frente do PDV absorver. **Itens 1
+(impressora), 2 (gaveta) e 4 (health honesto da gaveta) fechados em
+2026-08-12** — resta o item 3 (leitor de crachá) e o QA físico no balcão.
 
 O ponto de partida importa: **isto não é QA à espera de aparelho.** Fui olhar o
 código para responder "o que dá para testar já" e os três periféricos estão em
@@ -115,7 +116,19 @@ recibo de 60 itens — ou seja, pagina pelo conteúdo. Nada cortado na largura.
 (o texto agora encosta no limite da área imprimível) e o comportamento de avanço
 e corte no fim do recibo, que é configuração do driver, não do CSS.
 
-## 2. Gaveta — não existe código
+## 2. Gaveta — ✅ caminho construído (2026-08-12)
+
+> **Fechado em software.** O agente local existe
+> (`tools/pos-drawer-agent/`), a config é por terminal no Admin, e os quatro
+> momentos chamam um caminho só. Falta o balcão: instalar o agente, colar o
+> token, e o olho do operador confirmando que abriu.
+> Ver [POS-CASH-DRAWER-PLAN](POS-CASH-DRAWER-PLAN.md) — inclusive a medição que
+> destravou o desenho (HTTPS → `127.0.0.1` **passa** no Chrome 148) e a correção
+> do pulso (**50/500ms**, não 25/250 — aqueles são as unidades de 2ms).
+
+O diagnóstico abaixo permanece porque é ele que explica por que o caminho é este.
+
+### O diagnóstico original
 
 Nenhuma linha abre gaveta. As ocorrências de "gaveta" no `pos-nuxt` são **copy**
 do relatório de caixa (movimentos, blind count), não comando de aparelho.
@@ -199,11 +212,14 @@ adapter é simulado.
 
 1. ~~**`@page` do recibo**~~ — ✅ feito em 2026-08-12 (rolo de 80mm confirmado
    com o Pablo). Sobra só a confirmação de densidade e corte no aparelho.
-2. **Leitor de crachá** — implementável e testável sem o aparelho (emulação de teclado).
-3. **Gaveta** — precisa de agente local com kick ESC/POS; o gancho do driver não
-   cobre sangria nem venda (ver a correção na seção 2). Comprovante impresso de
-   sangria é item separado, de controle.
-4. **Rótulo honesto** no health quando o adapter é `simulated`/`manual`.
+2. ~~**Gaveta**~~ — ✅ feito em 2026-08-12 (agente local + config por terminal +
+   os quatro momentos). Sobra instalar no balcão e confirmar com o aparelho.
+3. ~~**Rótulo honesto** no health~~ — ✅ para a gaveta: com adapter `agent` o
+   servidor responde `deferred` ("verificado na estação"), porque ele não
+   alcança a loopback do balcão. Os outros periféricos seguem por declaração.
+4. **Leitor de crachá** — implementável e testável sem o aparelho (emulação de teclado).
+5. **Comprovante impresso de sangria** — item de controle, separado de propósito:
+   se ele virar o jeito de abrir a gaveta, volta o acoplamento descartado acima.
 
 ## Anexo — fotos do catálogo (outra tarefa, mesmo repasse)
 

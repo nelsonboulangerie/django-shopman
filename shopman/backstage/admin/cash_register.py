@@ -2,12 +2,21 @@
 
 from __future__ import annotations
 
+from django import forms
 from django.contrib import admin
 from shopman.utils import unfold_badge, unfold_badge_numeric
 from shopman.utils.monetary import format_money
 from unfold.admin import ModelAdmin
 
 from shopman.backstage.models import CashMovement, CashShift, POSTerminal
+from shopman.backstage.services.pos_hardware import (
+    ADAPTER_AGENT,
+    ADAPTER_MANUAL,
+    DEFAULT_AGENT_URL,
+    DEFAULT_PULSE_OFF_MS,
+    DEFAULT_PULSE_ON_MS,
+    CashDrawerConfig,
+)
 
 
 class CashMovementInline(admin.TabularInline):
@@ -115,20 +124,157 @@ class CashMovementAdmin(ModelAdmin):
         return request.user.has_perm("backstage.operate_pos")
 
 
+class POSTerminalForm(forms.ModelForm):
+    """Config da gaveta em campos de verdade, não num JSON para o dono decorar.
+
+    O schema mora na dataclass (`CashDrawerConfig`); este form é só a tela dela.
+    Escreve de volta em `metadata["hardware"]["cash_drawer"]` preservando o
+    resto do metadata — que guarda coisas de outros donos (favoritos, auto-lock).
+    """
+
+    drawer_adapter = forms.ChoiceField(
+        label="Como a gaveta abre",
+        required=False,
+        choices=(
+            (ADAPTER_MANUAL, "Com a chave (o PDV não abre)"),
+            (ADAPTER_AGENT, "Pelo agente local (kick na impressora)"),
+        ),
+        help_text="O agente é um processo na máquina do balcão. Instale com <code>tools/pos-drawer-agent/install.sh</code>.",
+    )
+    drawer_agent_url = forms.URLField(
+        label="Endereço do agente",
+        required=False,
+        assume_scheme="http",
+        initial=DEFAULT_AGENT_URL,
+        help_text="Sempre loopback do próprio balcão. O servidor nunca alcança este endereço — quem chama é o navegador.",
+    )
+    drawer_token = forms.CharField(
+        label="Token do agente",
+        required=False,
+        widget=forms.TextInput(attrs={"autocomplete": "off"}),
+        help_text="O instalador imprime este token na tela. Sem ele o agente responde 401.",
+    )
+    drawer_pulse_pin = forms.ChoiceField(
+        label="Pino do conector",
+        required=False,
+        choices=(("0", "Pino 2 (padrão)"), ("1", "Pino 5")),
+        help_text="Só mexa se a gaveta não abrir com o padrão.",
+    )
+    drawer_pulse_on_ms = forms.IntegerField(
+        label="Pulso ligado (ms)",
+        required=False,
+        min_value=2,
+        max_value=510,
+        initial=DEFAULT_PULSE_ON_MS,
+        help_text="Padrão da TM-T20: 50ms. O teto é 510ms — o solenoide é feito para pulso, não para carga contínua.",
+    )
+    drawer_pulse_off_ms = forms.IntegerField(
+        label="Pulso desligado (ms)",
+        required=False,
+        min_value=2,
+        max_value=510,
+        initial=DEFAULT_PULSE_OFF_MS,
+        help_text="Padrão da TM-T20: 500ms.",
+    )
+    drawer_open_on_cash_sale = forms.BooleanField(
+        label="Abrir sozinha na venda em dinheiro",
+        required=False,
+        initial=True,
+        help_text="Desligue se o balcão prefere abrir só no botão.",
+    )
+
+    _DRAWER_FIELDS = (
+        "drawer_adapter", "drawer_agent_url", "drawer_token", "drawer_pulse_pin",
+        "drawer_pulse_on_ms", "drawer_pulse_off_ms", "drawer_open_on_cash_sale",
+    )
+
+    class Meta:
+        model = POSTerminal
+        fields = ("ref", "label", "channel_ref", "location_ref", "is_active")
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        if not (self.instance and self.instance.pk):
+            return
+        config = CashDrawerConfig.from_terminal(self.instance)
+        self.fields["drawer_adapter"].initial = config.adapter if config.declared else ""
+        self.fields["drawer_agent_url"].initial = config.agent_url
+        self.fields["drawer_token"].initial = config.token
+        self.fields["drawer_pulse_pin"].initial = str(config.pulse_pin)
+        self.fields["drawer_pulse_on_ms"].initial = config.pulse_on_ms
+        self.fields["drawer_pulse_off_ms"].initial = config.pulse_off_ms
+        self.fields["drawer_open_on_cash_sale"].initial = config.open_on_cash_sale
+
+    def clean(self):
+        cleaned = super().clean()
+        # Um adapter `agent` sem token é uma gaveta que nunca vai abrir, e o
+        # operador só descobriria no balcão, com fila. Recusa aqui.
+        if cleaned.get("drawer_adapter") == ADAPTER_AGENT:
+            if not (cleaned.get("drawer_token") or "").strip():
+                self.add_error("drawer_token", "O agente exige token. Rode o instalador e cole o que ele imprimir.")
+            if not (cleaned.get("drawer_agent_url") or "").strip():
+                self.add_error("drawer_agent_url", "Informe o endereço do agente.")
+        return cleaned
+
+    def save(self, commit=True):
+        instance = super().save(commit=False)
+        metadata = dict(instance.metadata or {})
+        hardware = dict(metadata.get("hardware") or {})
+        adapter = self.cleaned_data.get("drawer_adapter") or ""
+        if adapter:
+            hardware["cash_drawer"] = {
+                "enabled": True,
+                "adapter": adapter,
+                "agent_url": (self.cleaned_data.get("drawer_agent_url") or "").strip(),
+                "token": (self.cleaned_data.get("drawer_token") or "").strip(),
+                "pulse_pin": int(self.cleaned_data.get("drawer_pulse_pin") or 0),
+                "pulse_on_ms": self.cleaned_data.get("drawer_pulse_on_ms") or DEFAULT_PULSE_ON_MS,
+                "pulse_off_ms": self.cleaned_data.get("drawer_pulse_off_ms") or DEFAULT_PULSE_OFF_MS,
+                "open_on_cash_sale": bool(self.cleaned_data.get("drawer_open_on_cash_sale")),
+            }
+        else:
+            # Sem adapter escolhido = a loja não declarou gaveta neste balcão.
+            hardware.pop("cash_drawer", None)
+        if hardware:
+            metadata["hardware"] = hardware
+        else:
+            metadata.pop("hardware", None)
+        instance.metadata = metadata
+        if commit:
+            instance.save()
+        return instance
+
+
 @admin.register(POSTerminal)
 class POSTerminalAdmin(ModelAdmin):
+    form = POSTerminalForm
     list_display = ("ref", "label", "channel_ref", "health_display", "is_active")
     list_filter = ("is_active", "channel_ref")
     search_fields = ("ref", "label", "channel_ref")
     ordering = ("ref",)
     readonly_fields = ("health_display",)
-    fields = ("ref", "label", "channel_ref", "location_ref", "is_active", "metadata", "health_display")
+    fieldsets = (
+        (None, {"fields": ("ref", "label", "channel_ref", "location_ref", "is_active", "health_display")}),
+        (
+            "Gaveta de dinheiro",
+            {
+                "fields": (
+                    "drawer_adapter", "drawer_agent_url", "drawer_token", "drawer_pulse_pin",
+                    "drawer_pulse_on_ms", "drawer_pulse_off_ms", "drawer_open_on_cash_sale",
+                ),
+                # Quem testa é a estação: só o navegador do balcão alcança a
+                # loopback do agente. Este Admin não tem como chutar a gaveta.
+                "description": "O teste da gaveta fica no próprio PDV (antesala do caixa) — só o navegador do balcão alcança o agente.",
+            },
+        ),
+    )
     compressed_fields = True
 
     _HEALTH = {
         "ready": ("pronto", "green"),
         "warning": ("atenção", "yellow"),
         "error": ("erro", "red"),
+        "deferred": ("na estação", "base"),
     }
 
     def health_display(self, obj):

@@ -23,6 +23,11 @@ interface CashSessionDeps {
 export function usePosCashSession({ pos, actions, refresh, action }: CashSessionDeps) {
   const busy = ref(false);
 
+  // Sangria e suprimento mexem no dinheiro da gaveta e não imprimem nada — por
+  // isso o gancho "abrir ao imprimir" do driver nunca serviria aqui. Mesmo
+  // caminho da venda em dinheiro: um só, para os quatro momentos.
+  const drawer = useCashDrawer(pos);
+
   const cashManagement = computed<POSCashManagementCapability | null>(
     () => pos.value?.checkout?.capabilities?.cash_management ?? null,
   );
@@ -103,7 +108,32 @@ export function usePosCashSession({ pos, actions, refresh, action }: CashSession
       actionHref(actions.value, "cash_movement", "/api/v1/backstage/pos/cash/movement/"),
       body,
       "Falha ao registrar movimento.",
+    ).then((ok) => {
+      // Só abre depois do servidor aceitar: gaveta aberta por um movimento que
+      // foi recusado (PIN errado, caixa fechado) é dinheiro exposto sem lastro.
+      if (ok) void drawer.kick(payload.kind);
+      return ok;
+    });
+  }
+
+  /**
+   * Abrir a gaveta sem venda e sem movimento — conferência, troco, o que for.
+   *
+   * É o único dos quatro momentos que não deixa rastro sozinho: não há pedido
+   * nem `CashMovement` contando a história depois. Por isso passa pelo servidor
+   * ANTES de chutar: primeiro a linha na trilha, depois a gaveta. Se o registro
+   * falhar, a gaveta não abre — senão sobraria justamente o buraco que a chave
+   * física já deixava.
+   */
+  async function openDrawerWithoutSale(reason: string): Promise<boolean> {
+    if (busy.value) return false;
+    const registered = await run(
+      actionHref(actions.value, "drawer_open", "/api/v1/backstage/pos/cash/drawer-open/"),
+      { reason },
+      "Falha ao registrar a abertura.",
     );
+    if (!registered) return false;
+    return drawer.kick("no_sale");
   }
 
   return {
@@ -115,5 +145,10 @@ export function usePosCashSession({ pos, actions, refresh, action }: CashSession
     closeCashShift,
     closeBlockingShift,
     registerCashMovement,
+    // Gaveta: a antesala mostra o botão só onde existe caminho de software.
+    canOpenDrawer: drawer.canKick,
+    drawerProbing: drawer.probing,
+    openDrawerWithoutSale,
+    probeDrawer: drawer.probe,
   };
 }
