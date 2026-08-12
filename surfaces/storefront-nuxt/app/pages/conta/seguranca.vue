@@ -55,6 +55,8 @@ type PasskeyRow = {
 const { enroll: enrollPasskey, busy: passkeyBusy, error: passkeyError, needsConfirmation } = usePasskey()
 const { confirm: confirmByWhatsApp, starting: confirmingIdentity } = useWhatsAppConfirm()
 const passkeyReady = ref(false)
+// ⚠️ O motivo de não dar, para a seção DIZER em vez de sumir. Some só a oferta; a seção fica.
+const passkeyBlocked = ref('')
 const passkeys = ref<PasskeyRow[]>([])
 const passkeysPending = ref(true)
 
@@ -75,8 +77,14 @@ async function loadPasskeys () {
 }
 
 onMounted(async () => {
-  const { passkeyIsQuick } = usePasskey()
+  const { passkeyIsQuick, passkeyBlockedReason } = usePasskey()
+  passkeyBlocked.value = passkeyBlockedReason()
   passkeyReady.value = await passkeyIsQuick()
+  if (!passkeyBlocked.value && !passkeyReady.value) {
+    // Navegador e endereço servem, mas o aparelho não tem leitor (desktop sem biometria).
+    // Dizer isso é melhor que sumir: a pessoa entende que o recurso existe e não é para ali.
+    passkeyBlocked.value = 'Este aparelho não tem leitor de rosto ou digital.'
+  }
   await loadPasskeys()
 })
 
@@ -276,7 +284,7 @@ useSeoMeta({ title: 'Segurança e dados' })
       </div>
 
       <!-- Acesso rápido: a credencial mais forte que ela tem -->
-      <section v-if="passkeyReady" class="space-y-4" data-passkey-section>
+      <section class="space-y-4" data-passkey-section>
         <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div>
             <h2 class="shop-heading">Acesso rápido</h2>
@@ -285,7 +293,7 @@ useSeoMeta({ title: 'Segurança e dados' })
             </p>
           </div>
           <UiButton
-            v-if="!passkeysPending"
+            v-if="!passkeysPending && passkeyReady"
             variant="outline"
             size="sm"
             icon="lucide:scan-face"
@@ -311,6 +319,19 @@ useSeoMeta({ title: 'Segurança e dados' })
             >
               {{ confirmingIdentity ? 'Abrindo o WhatsApp…' : 'Confirmar pelo WhatsApp' }}
             </UiButton>
+          </UiAlertDescription>
+        </UiAlert>
+
+        <!-- Não dá neste aparelho/endereço: dizer o motivo, em vez de sumir. Some a OFERTA,
+             não a seção — quem vem ver o recurso precisa saber que ele existe e por que não
+             está disponível aqui. -->
+        <UiAlert v-if="passkeyBlocked" variant="info" icon="lucide:info">
+          <UiAlertTitle>Não disponível neste aparelho</UiAlertTitle>
+          <UiAlertDescription>
+            <p>{{ passkeyBlocked }}</p>
+            <p class="shop-caption mt-1 text-muted-foreground">
+              Você continua entrando pelo WhatsApp, num toque.
+            </p>
           </UiAlertDescription>
         </UiAlert>
 

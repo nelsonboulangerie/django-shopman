@@ -48,6 +48,27 @@ function domainAllowsPasskey(): boolean {
   return !isIPv4 && !isIPv6
 }
 
+/** POR QUE não dá, quando não dá. Vazio = dá.
+ *
+ *  ⚠️ Existe porque a primeira versão apenas ESCONDIA a seção em quatro condições diferentes
+ *  (sem autenticador, endereço inválido, já ativado, recusado antes). Cada uma certa sozinha,
+ *  e juntas produziram o pior resultado possível: o dono foi ver o recurso e não havia nada na
+ *  tela — sem como saber se era bug, se não tinha deploy, ou se era o aparelho dele.
+ *
+ *  Silêncio não é neutro: é a única resposta que não dá para depurar.
+ */
+export function passkeyBlockedReason(): string {
+  if (typeof window === 'undefined') return ''
+  if (typeof window.PublicKeyCredential !== 'function'
+    || typeof navigator?.credentials?.create !== 'function') {
+    return 'Este navegador não sabe fazer acesso rápido.'
+  }
+  if (!domainAllowsPasskey()) {
+    return 'Este endereço não permite acesso rápido (funciona no site da loja, não em IP).'
+  }
+  return ''
+}
+
 /** O aparelho sabe fazer passkey? Sem isto, oferecemos um botão que não faz nada. */
 export function passkeySupported(): boolean {
   return (
@@ -221,5 +242,8 @@ export function usePasskey() {
     }
   }
 
-  return { enroll, signIn, busy, error, needsConfirmation, passkeySupported, passkeyIsQuick }
+  return {
+    enroll, signIn, busy, error, needsConfirmation,
+    passkeySupported, passkeyIsQuick, passkeyBlockedReason,
+  }
 }

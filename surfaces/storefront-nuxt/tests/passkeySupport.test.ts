@@ -83,3 +83,39 @@ describe('onde passkey pode ser oferecido', () => {
     expect(passkeySupported()).toBe(false)
   })
 })
+
+describe('quando não dá, a tela DIZ — não some', () => {
+  beforeEach(() => {
+    delete (globalThis as { window?: unknown }).window
+  })
+
+  it('⚠️ o motivo existe, porque silêncio é a única resposta que não dá para depurar', async () => {
+    // Nasceu de um relato de uma palavra: "não vi nada aqui". A seção se escondia em quatro
+    // condições diferentes, cada uma certa sozinha, e juntas produziam uma tela vazia sem
+    // explicação — impossível distinguir bug, falta de deploy e limitação do aparelho.
+    pretendHost('127.0.0.1')
+    const { passkeyBlockedReason } = await import('../app/composables/usePasskey')
+
+    expect(passkeyBlockedReason()).toContain('endereço não permite')
+  })
+
+  it('navegador sem a API tem motivo próprio', async () => {
+    pretendHost('nelsonboulangerie.com.br', { withApi: false })
+    const { passkeyBlockedReason } = await import('../app/composables/usePasskey')
+
+    expect(passkeyBlockedReason()).toContain('navegador')
+  })
+
+  it('quando dá, não há motivo nenhum a mostrar', async () => {
+    pretendHost('nelsonboulangerie.com.br')
+    const { passkeyBlockedReason } = await import('../app/composables/usePasskey')
+
+    expect(passkeyBlockedReason()).toBe('')
+  })
+
+  it('no servidor não inventa motivo — a decisão espera o cliente', async () => {
+    const { passkeyBlockedReason } = await import('../app/composables/usePasskey')
+
+    expect(passkeyBlockedReason()).toBe('')
+  })
+})
