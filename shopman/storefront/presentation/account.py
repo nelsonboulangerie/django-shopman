@@ -22,6 +22,7 @@ from django.utils import timezone
 from shopman.shop.projections import customer as customer_projection
 from shopman.shop.projections import customer_context
 from shopman.shop.projections.types import SavedAddressProjection
+from shopman.storefront.presentation.address_privacy import address_projection
 from shopman.storefront.presentation.order_history import present_summary
 from shopman.storefront.presentation.status import status_tone
 from shopman.storefront.presentation.types import (
@@ -204,11 +205,16 @@ def build_account(
     customer: AccountCustomer,
     *,
     channel_ref: str = _DEFAULT_CHANNEL_REF,
+    reduced_addresses: bool = False,
 ) -> CustomerProfileProjection:
     """Build a ``CustomerProfileProjection`` for the given customer.
 
     Always returns a projection. Missing services (loyalty down, etc.)
     degrade gracefully to empty/None values.
+
+    ``reduced_addresses`` esconde rua e número dos endereços salvos — para sessão que conhece
+    o número e não as mãos (ver `storefront/identity.py`). O padrão é o inteiro: quem chamar
+    sem saber a força da identidade não deve esconder nada de quem já provou ser ela.
     """
     birthday_display: str | None = None
     if customer.birthday:
@@ -222,7 +228,7 @@ def build_account(
             )
 
     loyalty = _build_loyalty(customer)
-    saved_addresses = _build_addresses(customer)
+    saved_addresses = _build_addresses(customer, reduced=reduced_addresses)
     recent_orders = _build_recent_orders(customer)
     notification_prefs = _build_notification_prefs(customer)
     food_pref_options = _build_food_prefs(customer)
@@ -283,28 +289,18 @@ def _build_loyalty(customer: AccountCustomer) -> LoyaltyProjection | None:
         return None
 
 
-def _build_addresses(customer: AccountCustomer) -> tuple[SavedAddressProjection, ...]:
+def _build_addresses(
+    customer: AccountCustomer, *, reduced: bool = False,
+) -> tuple[SavedAddressProjection, ...]:
+    """Endereços salvos da pessoa, inteiros ou reduzidos.
+
+    ⚠️ `reduced` chegou aqui depois, e a ausência dele era um furo real: a redução existia só
+    no checkout, então bastava abrir `/conta` para ler a rua que a outra tela escondia. Cerca
+    que vale num caminho e não no outro é decoração.
+    """
     try:
         return tuple(
-            SavedAddressProjection(
-                id=addr.id,
-                formatted_address=addr.formatted_address,
-                complement=addr.complement,
-                label=addr.label,
-                is_default=addr.is_default,
-                label_key=addr.label_key,
-                label_custom=addr.label_custom,
-                route=addr.route,
-                street_number=addr.street_number,
-                neighborhood=addr.neighborhood,
-                city=addr.city,
-                state_code=addr.state_code,
-                postal_code=addr.postal_code,
-                latitude=addr.latitude,
-                longitude=addr.longitude,
-                place_id=addr.place_id,
-                delivery_instructions=addr.delivery_instructions,
-            )
+            address_projection(addr, reduced=reduced)
             for addr in customer_context.saved_addresses(customer.ref)
         )
     except Exception:

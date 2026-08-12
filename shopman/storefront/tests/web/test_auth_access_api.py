@@ -278,3 +278,71 @@ class TestSpentTokenWithLiveSession:
         response = client.post("/api/v1/auth/access/", {"token": "nao-existe"})
 
         assert response.status_code == 400
+
+
+class TestReplyProvesPossession:
+    """⚠️ A distinção que faz a confirmação valer para sempre — e não virar pedágio.
+
+    `source=manychat` significa que o link nasceu porque a pessoa MANDOU mensagem no
+    WhatsApp. Enviar de um número prova posse dele: é a mesma prova que o OTP dá, e o OTP já
+    confia no aparelho. `source=internal` é link que NÓS empurramos (campanha): prova que
+    sabemos o número, não que quem tocou é a dona.
+
+    Sem essa distinção, ou nenhuma confirmação seria durável, ou toda campanha confiaria no
+    aparelho de quem tocasse primeiro — que é exactamente o que não se quer.
+    """
+
+    def _token(self, customer, *, source):
+        from datetime import timedelta
+
+        from django.utils import timezone
+
+        return AccessLink.create_with_token(
+            customer_id=customer.uuid,
+            audience=AccessLink.Audience.WEB_ACCOUNT,
+            source=source,
+            expires_at=timezone.now() + timedelta(minutes=10),
+            metadata={"next": "/finalizar"},
+        )
+
+    @pytest.mark.django_db
+    def test_a_link_born_from_her_message_trusts_the_device(self, client, customer):
+        from shopman.doorman.models import TrustedDevice
+
+        _link, raw = self._token(customer, source=AccessLink.Source.MANYCHAT)
+
+        response = client.post("/api/v1/auth/access/", {"token": raw})
+
+        assert response.status_code == 200, response.content
+        assert response.json()["device_trusted"] is True
+        assert response.json()["identity_strength"] == "device"
+        assert TrustedDevice.objects.filter(subject_id=str(customer.uuid)).exists()
+
+    @pytest.mark.django_db
+    def test_a_link_we_pushed_does_not_trust_the_device(self, client, customer):
+        """Campanha identifica para comprar; não promete que é ela."""
+        from shopman.doorman.models import TrustedDevice
+
+        _link, raw = self._token(customer, source=AccessLink.Source.INTERNAL)
+
+        response = client.post("/api/v1/auth/access/", {"token": raw})
+
+        assert response.status_code == 200
+        assert "device_trusted" not in response.json()
+        assert not TrustedDevice.objects.filter(subject_id=str(customer.uuid)).exists()
+
+    @pytest.mark.django_db
+    def test_a_failure_to_remember_still_lets_her_in(self, client, customer, monkeypatch):
+        """O cookie é atalho, não a entrada: se não gravar, ela entra igual."""
+        from shopman.shop.services import auth as auth_service
+
+        def explode(**kwargs):
+            raise RuntimeError("cookie não gravou")
+
+        monkeypatch.setattr(auth_service, "trust_device", explode)
+        _link, raw = self._token(customer, source=AccessLink.Source.MANYCHAT)
+
+        response = client.post("/api/v1/auth/access/", {"token": raw})
+
+        assert response.status_code == 200
+        assert response.json()["is_authenticated"] is True

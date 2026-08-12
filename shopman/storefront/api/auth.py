@@ -183,6 +183,8 @@ class AccessLinkExchangeView(APIView):
             return Response({"ok": True, "redirect": storefront_links.path_account(), **_session_payload(None)})
 
         metadata = access_service.token_metadata(token)
+        # Antes do resgate: depois dele o token está gasto e a origem já não se lê.
+        source = access_service.token_source(token)
         result = access_service.exchange_token(token, request)
         if not result.success:
             # ⚠️ Token gasto NÃO significa porta fechada. É o segundo toque na mesma
@@ -240,6 +242,22 @@ class AccessLinkExchangeView(APIView):
             "identity_strength": identity_strength(request),
             **_session_payload(customer),
         }
+        response = Response(payload)
+
+        # ⚠️ Link nascido de uma MENSAGEM que a pessoa enviou (`source=manychat`) prova posse
+        # do número — a mesma prova do OTP, que já confia no aparelho. Então este caminho
+        # também confia: é o que faz a confirmação valer para sempre naquele celular, em vez
+        # de virar pedágio semanal. Link que NÓS empurramos (`internal`, campanha) não
+        # confia: mensagem se encaminha.
+        if source == "manychat" and result.customer is not None:
+            request.session[IDENTITY_SESSION_KEY] = IDENTITY_DEVICE
+            try:
+                auth_service.trust_device(
+                    response=response, customer_id=result.customer.uuid, request=request,
+                )
+                payload["device_trusted"] = True
+            except Exception:
+                logger.warning("access_link_trust_failed", exc_info=True)
         # Handoff do site que expirou: entrou logado, mas a sacola não veio. Avisamos com
         # gentileza (copy configurável), sem bloquear a entrada. Ver ACCESS-LINK-UNIFICATION.
         if isinstance(metadata, dict) and metadata.get("handoff_expired"):
@@ -247,7 +265,8 @@ class AccessLinkExchangeView(APIView):
 
             payload["handoff_expired"] = True
             payload["notice"] = resolve_copy("LOGIN_HANDOFF_EXPIRED", moment="*").message
-        return Response(payload)
+        response.data = payload
+        return response
 
 
 def _normalize_payload_phone(payload: dict) -> str:

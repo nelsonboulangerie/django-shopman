@@ -40,6 +40,32 @@ def token_metadata(token_str: str) -> dict:
         return {}
 
 
+def token_source(token_str: str) -> str:
+    """A ORIGEM do token (`manychat` | `internal` | `api`), lida antes do resgate.
+
+    ⚠️ É esta a distinção que autoriza confiar no aparelho, e ela é semântica, não técnica:
+
+    - `manychat` — o link nasceu porque a pessoa MANDOU mensagem no WhatsApp. Enviar de um
+      número prova posse dele, e é a mesma prova que o OTP dá (o código também chega naquele
+      número). Então confiar no aparelho aqui é coerente com o que já fazemos no login.
+    - `internal` — nós empurramos o link (campanha). Prova que sabemos o número, não que
+      quem tocou é a dona: mensagem se encaminha.
+
+    Sem isto, ou nenhuma confirmação valeria para sempre (pedágio semanal), ou toda campanha
+    passaria a confiar no aparelho de quem tocasse primeiro.
+    """
+    if not token_str:
+        return ""
+    try:
+        from shopman.doorman.models import AccessLink
+
+        token = AccessLink.get_by_token(token_str)
+        return getattr(token, "source", "") or "" if token else ""
+    except Exception:
+        logger.exception("access_link_token_source_failed")
+        return ""
+
+
 def resolve_origin(result) -> str:
     """Determine origin_channel from exchange result metadata."""
     source = "web"

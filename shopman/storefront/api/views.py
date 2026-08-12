@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+from decimal import Decimal
 
 from django.utils import timezone
 from drf_spectacular.utils import extend_schema
@@ -294,7 +295,11 @@ class CheckoutView(APIView):
                     {
                         "detail": message,
                         "field": "use_loyalty",
-                        "code": "identity_confirmation_required",
+                        # `error_code`, não `code`: é o nome que o dialeto de erro da casa
+                        # usa para o código que ROTEIA a UI (docs/reference/errors.md), e o
+                        # que a tela de checkout já lê. Dois nomes para a mesma pergunta e a
+                        # tela reage a um só.
+                        "error_code": "identity_confirmation_required",
                         "errors": {"use_loyalty": message},
                     },
                     status=status.HTTP_403_FORBIDDEN,
@@ -540,6 +545,23 @@ _STRUCTURED_ADDRESS_FIELDS = (
 
 
 def _clean_structured_address(value: dict | None) -> dict:
+    """Os campos conhecidos do endereço, sem vazios e em tipo que o JSON aceita.
+
+    ⚠️ O `Decimal` era o furo. Este dicionário vai para `Session.data`, que é JSONField, e
+    `json.dumps` não serializa `Decimal` — então um endereço SALVO com coordenada (as do
+    seed têm) derrubava o checkout com 500:
+
+        TypeError: Object of type Decimal is not JSON serializable
+        (modifiers.py:844 → session.save)
+
+    Ficava escondido porque o app sempre manda o `delivery_address_structured` junto, com
+    lat/lng em float, e o merge deixava o float por cima. Bastava um cliente escolher endereço
+    salvo sem mandar os componentes para cair — e foi o que apareceu quando a precedência
+    passou a ser "o salvo manda".
+
+    Normalizar aqui, e não em quem chama, é o que garante que as DUAS fontes (o que a tela
+    manda e o que o endereço salvo tem) saiam do mesmo jeito.
+    """
     if not isinstance(value, dict):
         return {}
     cleaned: dict = {}
@@ -547,7 +569,7 @@ def _clean_structured_address(value: dict | None) -> dict:
         raw = value.get(field)
         if raw is None or raw == "":
             continue
-        cleaned[field] = raw
+        cleaned[field] = float(raw) if isinstance(raw, Decimal) else raw
     return cleaned
 
 

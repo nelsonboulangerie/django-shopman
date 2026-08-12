@@ -27,6 +27,7 @@ from shopman.storefront.identity import (
     IDENTITY_DEVICE,
     IDENTITY_SESSION_KEY,
     get_authenticated_customer,
+    knows_only_the_number,
 )
 from shopman.storefront.intents.types import AddressIntent
 from shopman.storefront.presentation.account import (
@@ -104,7 +105,39 @@ def _serialize_device(device: dict) -> dict:
     }
 
 
-def _serialize_address(addr) -> dict:
+def _serialize_address(addr, *, reduced: bool = False) -> dict:
+    """O endereço para a tela. ``reduced`` esconde rua, número e coordenada.
+
+    ⚠️ O padrão é o INTEIRO porque as rotas de escrita (criar/editar) devolvem o que
+    acabaram de gravar — e quem gravou o endereço acabou de digitá-lo, então esconder ali
+    não protegeria nada e só quebraria o formulário. A LEITURA da lista é que respeita a
+    força da identidade.
+    """
+    if reduced:
+        place = " · ".join(
+            part for part in (
+                getattr(addr, "neighborhood", "") or "", getattr(addr, "city", "") or "",
+            ) if part
+        )
+        return {
+            "id": addr.pk,
+            "label": getattr(addr, "display_label", addr.label),
+            "label_key": getattr(addr, "label", "home") or "home",
+            "label_custom": getattr(addr, "label_custom", "") or "",
+            "formatted_address": place or "endereço salvo",
+            "complement": "",
+            "delivery_instructions": "",
+            "is_default": addr.is_default,
+            "route": "",
+            "street_number": "",
+            "neighborhood": getattr(addr, "neighborhood", "") or "",
+            "city": getattr(addr, "city", "") or "",
+            "state_code": "",
+            "postal_code": "",
+            "latitude": None,
+            "longitude": None,
+            "place_id": "",
+        }
     return {
         "id": addr.pk,
         "label": getattr(addr, "display_label", addr.label),
@@ -381,7 +414,7 @@ class AccountSummaryView(APIView):
         if not customer:
             return Response({"detail": "Entre na sua conta para continuar."}, status=401)
 
-        account = build_account(customer)
+        account = build_account(customer, reduced_addresses=knows_only_the_number(request))
         last_order = account.recent_orders[0] if account.recent_orders else None
         loyalty = None
         if account.loyalty:
@@ -470,7 +503,10 @@ class AddressListView(APIView):
             return Response({"detail": "Entre na sua conta para continuar."}, status=401)
 
         addresses = customer.addresses.order_by("-is_default", "label")
-        data = [_serialize_address(addr) for addr in addresses]
+        data = [
+            _serialize_address(addr, reduced=knows_only_the_number(request))
+            for addr in addresses
+        ]
         serializer = AddressSerializer(data, many=True)
         # Envelope opt-in: a tela de Endereços pede ?include=copy para receber a
         # copy do vazio (registro omotenashi). O default segue array puro — o

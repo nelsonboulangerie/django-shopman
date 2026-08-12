@@ -114,6 +114,11 @@ const deliveryDateHint = ref('')
 const attemptKey = ref(createCheckoutAttemptKey())
 const addressSelection = ref<AddressSelection | null>(null)
 const pickupSwapOffer = ref(false)
+// ⚠️ Aparece numa combinação só: pontos + entrega em endereço NOVO, em sessão que conhece o
+// número e não as mãos (chegou por link de campanha). É a única rota que converteria o saldo
+// de alguém em pão entregue em outro lugar. Endereço salvo e balcão nunca passam por aqui.
+const identityConfirmOffer = ref(false)
+const { confirm: confirmByWhatsApp, starting: confirming } = useWhatsAppConfirm()
 const quotingZone = ref(false)
 const changePhoneOpen = ref(false)
 const addressLabelOpen = ref(false)
@@ -456,6 +461,7 @@ watch(addressSelection, selection => {
   // grava o rascunho na sessão (o Core calcula a taxa) e refaz o total. A
   // oferta de retirada some até a checagem responder.
   pickupSwapOffer.value = false
+  identityConfirmOffer.value = false
   if (state.fulfillment_type === 'delivery' && selection?.structured?.route) {
     void applyDeliveryDraft()
   }
@@ -836,6 +842,14 @@ async function submitCheckout () {
     // sessão (o guardião barrou a cobrança surpresa). Reprecificamos a TELA para o
     // sheet mostrar o novo total em vez de deixar o valor velho ao lado do aviso —
     // o cliente reconfirma sobre o número certo (o próximo envio casa a baseline).
+    // Confirmação de identidade: não é erro de dado, é um degrau — e ele se paga UMA vez
+    // naquele aparelho. O aviso diz o que dá para fazer agora (salvo/balcão) e oferece o
+    // toque que resolve, em vez de deixar a pessoa adivinhando.
+    if (data.error_code === 'identity_confirmation_required') {
+      identityConfirmOffer.value = true
+      submitting.value = false
+      return
+    }
     if (data.error_code === 'total_changed') {
       await refresh()
       if (import.meta.client) useSonner.error(serverError.value)
@@ -941,6 +955,28 @@ useSeoMeta({
               <UiButton size="sm" icon="lucide:store" class="mt-2" @click="switchToPickup">
                 Mudar para retirada
               </UiButton>
+            </UiAlertDescription>
+          </UiAlert>
+
+          <UiAlert v-else-if="identityConfirmOffer" variant="warning" data-checkout-identity-confirm>
+            <UiAlertTitle>Confirme que é você para usar seus pontos aqui</UiAlertTitle>
+            <UiAlertDescription>
+              <p>
+                Num endereço novo, os pontos pedem uma confirmação. Em endereço já salvo ou
+                retirando no balcão, pode usar agora mesmo.
+              </p>
+              <UiButton
+                size="sm"
+                icon="lucide:message-circle"
+                class="mt-2"
+                :disabled="confirming"
+                @click="confirmByWhatsApp('/finalizar')"
+              >
+                {{ confirming ? 'Abrindo o WhatsApp…' : 'Confirmar pelo WhatsApp' }}
+              </UiButton>
+              <p class="shop-caption mt-2 text-muted-foreground">
+                É só enviar a mensagem que já vai pronta. Sua sacola fica guardada.
+              </p>
             </UiAlertDescription>
           </UiAlert>
 

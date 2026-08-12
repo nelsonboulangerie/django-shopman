@@ -24,6 +24,7 @@ que é o caso da esmagadora maioria de quem volta: o celular dela já provou ide
 from __future__ import annotations
 
 import json
+from decimal import Decimal
 
 import pytest
 from django.utils import timezone
@@ -52,6 +53,11 @@ def person(db):
         neighborhood="Centro",
         city="Londrina",
         state_code="PR",
+        # ⚠️ Coordenada NÃO é detalhe de fixture: ela é `Decimal` no model, e foi a ausência
+        # dela aqui que deixou passar um 500 em produção-de-mentira — o teste passava com
+        # endereço sem lat/lng enquanto o endereço real do seed derrubava o checkout.
+        latitude=Decimal("-23.3103"),
+        longitude=Decimal("-51.1628"),
     )
     return customer
 
@@ -188,7 +194,7 @@ def test_points_on_a_new_address_ask_for_confirmation(cart_session_delivery, per
 
     assert response.status_code == 403, response.content
     body = response.json()
-    assert body["code"] == "identity_confirmation_required"
+    assert body["error_code"] == "identity_confirmation_required"
     assert body["field"] == "use_loyalty"
     # A copy diz o que dá para fazer AGORA, não só o que está barrado.
     assert "salvo" in body["detail"] and "balcão" in body["detail"]
@@ -349,3 +355,99 @@ def test_a_failure_to_remember_the_device_still_confirms(client, person, monkeyp
 
     assert response.status_code == 200
     assert client.session[IDENTITY_SESSION_KEY] == IDENTITY_DEVICE
+
+
+# ── A cerca vale em TODO caminho, não só no checkout ─────────────────
+
+
+def test_the_account_projection_reduces_the_saved_addresses(person):
+    """⚠️ O furo que a descrição do fluxo revelou ANTES de eu implementar.
+
+    A redução nasceu só no checkout — então bastava abrir a conta para ler a rua que a outra
+    tela escondia. Cerca que vale num caminho e não no outro é decoração.
+
+    Exercitado na projeção porque é ela que as duas telas da conta consomem; o endpoint de
+    lista tem teste próprio abaixo. (O `/account/summary/` não devolve endereço: quem os
+    busca é `/account/addresses/`.)
+    """
+    from shopman.storefront.presentation.account import build_account
+
+    reduced = build_account(person, reduced_addresses=True).saved_addresses[0]
+    full = build_account(person, reduced_addresses=False).saved_addresses[0]
+
+    assert reduced.formatted_address == "Centro · Londrina"
+    assert reduced.route == "" and reduced.street_number == ""
+    assert reduced.id == full.id, "o id continua descendo: é ele que faz a escolha funcionar"
+    assert "Rua das Flores" in full.formatted_address
+
+
+def test_the_address_list_endpoint_reduces_as_well(client, person):
+    """`/account/addresses/` é o outro caminho para a mesma informação."""
+    _sign_in(client, person, strength=IDENTITY_NUMBER)
+
+    response = client.get("/api/v1/account/addresses/")
+
+    assert response.status_code == 200, response.content
+    body = response.json()
+    rows = body if isinstance(body, list) else body.get("addresses", body.get("results", []))
+    assert rows, body
+    assert rows[0]["formatted_address"] == "Centro · Londrina"
+    assert rows[0]["route"] == ""
+    assert rows[0]["latitude"] is None
+    # E o `id` continua descendo: é ele que faz a escolha funcionar.
+    assert rows[0]["id"] == person.addresses.get().id
+
+
+def test_writing_an_address_still_answers_with_what_was_written(client, person):
+    """Quem acabou de digitar o endereço não precisa que a resposta o esconda — e esconder
+    ali quebraria o formulário sem proteger nada."""
+    _sign_in(client, person, strength=IDENTITY_NUMBER)
+
+    response = client.post(
+        "/api/v1/account/addresses/",
+        data=json.dumps({
+            "formatted_address": "Rua Nova, 42 - Centro, Londrina - PR",
+            "label": "work",
+        }),
+        content_type="application/json",
+    )
+
+    assert response.status_code == 201, response.content
+    assert "Rua Nova" in response.json()["formatted_address"]
+
+
+def test_a_saved_address_with_coordinates_does_not_break_the_checkout(
+    cart_session_delivery, person,
+):
+    """⚠️ O 500 que só a tela achou.
+
+    `Session.data` é JSONField, e `json.dumps` não serializa `Decimal`:
+
+        TypeError: Object of type Decimal is not JSON serializable
+        (modifiers.py:844 → session.save)
+
+    Ficava escondido porque o app sempre manda `delivery_address_structured` com lat/lng em
+    float, e o merge deixava o float por cima. Bastou a precedência virar "o salvo manda"
+    para o `Decimal` do banco chegar ao JSON — e o endereço do seed TEM coordenada, o da
+    fixture não tinha. Daí o teste verde e a tela vermelha.
+
+    A normalização agora é de quem monta o dicionário (`_clean_structured_address`), então
+    vale para as DUAS fontes.
+    """
+    client = cart_session_delivery
+    _sign_in(client, person, strength=IDENTITY_NUMBER)
+    saved = person.addresses.get()
+    assert saved.latitude is not None, "a fixture precisa ter coordenada — é o ponto do teste"
+
+    payload = _delivery_payload(person, saved_address_id=saved.id)
+    payload["expected_total_q"] = displayed_total_q(client, payload)
+
+    response = client.post(
+        "/api/v1/checkout/", data=json.dumps(payload), content_type="application/json",
+    )
+
+    assert response.status_code == 201, response.content
+    order = Order.objects.latest("id")
+    structured = order.data.get("delivery_address_structured") or {}
+    assert isinstance(structured.get("latitude"), float)
+    assert order.data["delivery_address"] == saved.formatted_address
