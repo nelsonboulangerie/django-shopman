@@ -25,7 +25,6 @@ def manager_approval(db):
     """
     from django.contrib.auth.models import Permission
     from django.contrib.contenttypes.models import ContentType
-
     from shopman.doorman.models import PinCredential
 
     user = User.objects.create_user(username="cash-manager", password="x", is_staff=True)

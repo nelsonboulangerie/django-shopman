@@ -74,9 +74,8 @@ def register_cash_movement(
     O dinheiro saía e o caixa batia. Agora a retirada tem duas assinaturas: quem
     lança e quem autoriza, ambas gravadas.
     """
-    from shopman.shop.services.pos import validate_manager_override
-
     from shopman.backstage.models import CashMovement, CashShift
+    from shopman.shop.services.pos import validate_manager_override
 
     shift = CashShift.get_open_for_operator(operator)
     if not shift:

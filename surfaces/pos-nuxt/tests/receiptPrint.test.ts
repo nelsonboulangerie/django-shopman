@@ -1,17 +1,22 @@
-// Contrato de impressão do recibo (spec §D3 — rolo térmico de 80mm).
+// Contrato de impressão do recibo (spec §D3 — rolo térmico, default 80mm).
 //
 // Isto não testa formatação (isso é `presentation/receipt`, coberto em
 // presentation.test.ts) — testa a GEOMETRIA, que mora em CSS e some num refactor
-// sem ninguém perceber até sair papel torto no balcão. Os três invariantes:
+// sem ninguém perceber até sair papel torto no balcão. Os invariantes:
 //
 //   1. a largura impressa é declarada por nós, não pelo driver da impressora;
 //   2. a largura tem um dono só (as vars do rolo) e o `@page` não diverge delas;
-//   3. o recibo é irmão do app no `body`, para o print CSS poder escondê-lo com
+//   3. a largura é configurável em runtime pela var, com o literal como rede;
+//   4. toda `var()` no `@page` carrega fallback — uma que não resolve derruba o
+//      `size` inteiro e a página volta ao driver, calada;
+//   5. o recibo é irmão do app no `body`, para o print CSS poder escondê-lo com
 //      `display: none` (senão volta a sair página em branco).
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
 import { describe, expect, it } from "vitest";
+
+import { rollStyle } from "../app/presentation/printGeometry";
 
 const read = (rel: string) => readFileSync(fileURLToPath(new URL(rel, import.meta.url)), "utf8");
 
@@ -35,32 +40,52 @@ const pageRule = (() => {
   return match![1]!;
 })();
 
-const pageDescriptor = (name: string): string => {
-  const match = pageRule.match(new RegExp(`\\b${name}:\\s*([^;]+);`));
-  expect(match, `@page deve declarar \`${name}\``).not.toBeNull();
-  return match![1]!.trim();
+/** Todas as declarações de um descritor no `@page`, na ordem em que aparecem. */
+const pageDescriptors = (name: string): string[] => {
+  const found = [...pageRule.matchAll(new RegExp(`\\b${name}:\\s*([^;]+);`, "g"))]
+    .map((match) => match[1]!.trim());
+  expect(found.length, `@page deve declarar \`${name}\``).toBeGreaterThan(0);
+  return found;
 };
 
 describe("geometria do rolo", () => {
-  it("declara largura e altura da página em vez de deixar o driver decidir", () => {
-    const [width, height] = pageDescriptor("size").split(/\s+/);
-    expect(width).toBe(cssVar("pos-roll-width"));
-    expect(height).toBe(cssVar("pos-roll-height"));
+  it("declara tamanho e margem em vez de deixar o driver decidir", () => {
+    // Duas declarações de propósito: o literal é a rede para uma engine que não
+    // aceite `var()` em `@page` (descarta a linha seguinte no parse e fica com
+    // esta); a versão com var é o ponto de configuração. Ordem importa.
+    const [sizeLiteral, sizeConfigurable, ...sizeExtra] = pageDescriptors("size");
+    expect(sizeLiteral).toBe(`${cssVar("pos-roll-width")} ${cssVar("pos-roll-height")}`);
+    expect(sizeConfigurable).toBe(
+      `var(--pos-roll-width, ${cssVar("pos-roll-width")}) `
+      + `var(--pos-roll-height, ${cssVar("pos-roll-height")})`,
+    );
+    expect(sizeExtra, "só literal + configurável").toEqual([]);
+
+    const [marginLiteral, marginConfigurable, ...marginExtra] = pageDescriptors("margin");
+    expect(marginLiteral).toBe(`${cssVar("pos-roll-margin-y")} ${cssVar("pos-roll-margin-x")}`);
+    expect(marginConfigurable).toBe(
+      `var(--pos-roll-margin-y, ${cssVar("pos-roll-margin-y")}) `
+      + `var(--pos-roll-margin-x, ${cssVar("pos-roll-margin-x")})`,
+    );
+    expect(marginExtra, "só literal + configurável").toEqual([]);
   });
 
   it("não usa `auto` no descritor `size`", () => {
     // `size: 80mm auto` é inválido (não se mistura <length> com auto): o
     // navegador descarta a regra inteira e a página volta ao padrão do driver
     // (verificado no Chrome — saía Letter). Um `auto` aqui reabre o bug original.
-    expect(pageDescriptor("size")).not.toMatch(/\bauto\b/);
+    expect(pageRule).not.toMatch(/\bauto\b/);
   });
 
-  it("usa as mesmas margens que as vars do rolo", () => {
-    // O `@page` repete os números porque descritores de página não leem custom
-    // properties. Esta asserção é o que impede os dois lados de divergirem.
-    const [marginY, marginX] = pageDescriptor("margin").split(/\s+/);
-    expect(marginY).toBe(cssVar("pos-roll-margin-y"));
-    expect(marginX).toBe(cssVar("pos-roll-margin-x"));
+  it("dá fallback a toda `var()` do @page", () => {
+    // Medido no Chrome: `size: 80mm 297mm; size: var(--x)` com `--x` ausente NÃO
+    // cai para o literal anterior — derruba o `size` inteiro e a página volta ao
+    // Letter, sem aviso. O fallback inline é o que impede esse buraco.
+    const substitutions = [...pageRule.matchAll(/var\(([^)]*)\)/g)].map((match) => match[1]!);
+    expect(substitutions.length, "o @page deve ser configurável por var").toBeGreaterThan(0);
+    for (const substitution of substitutions) {
+      expect(substitution, `var(${substitution}) precisa de fallback`).toMatch(/,\s*\S/);
+    }
   });
 
   it("deriva a largura útil do rolo menos as duas margens", () => {
@@ -99,6 +124,51 @@ describe("o recibo obedece à largura do rolo", () => {
     expect(root).toContain("pos-receipt");
     expect(root).not.toMatch(/\b(max-)?w-\[/);
     expect(root).not.toMatch(/\b(max-)?w-(?:full|screen|\d)/);
+  });
+});
+
+describe("o terminal declara a largura do rolo", () => {
+  const source = (roll: number, margin: number) => ({
+    terminal_roll_width_mm: roll,
+    terminal_roll_margin_mm: margin,
+  });
+
+  it("escreve as vars quando o terminal declara", () => {
+    expect(rollStyle(source(58, 5))).toBe("--pos-roll-width:58mm;--pos-roll-margin-x:5mm");
+  });
+
+  it("não escreve nada quando o terminal cala", () => {
+    // String vazia = "não encoste no documentElement". O default de 80mm tem um
+    // dono só, o CSS — repeti-lo aqui criaria a segunda fonte da verdade que
+    // este arquivo inteiro existe para evitar.
+    expect(rollStyle(source(0, 0))).toBe("");
+    expect(rollStyle(null)).toBe("");
+    expect(rollStyle(undefined)).toBe("");
+  });
+
+  it("ignora geometria que não fecha", () => {
+    // O servidor já valida (services/pos_terminal.printer_geometry); isto é a
+    // rede da superfície contra payload torto — cair no default é melhor que
+    // imprimir num rolo imaginário.
+    expect(rollStyle(source(58, 0)), "sem margem").toBe("");
+    expect(rollStyle(source(58, 29)), "margem consome o rolo inteiro").toBe("");
+    expect(rollStyle(source(5, 1)), "rolo pequeno demais").toBe("");
+    expect(rollStyle(source(500, 4)), "rolo grande demais").toBe("");
+    expect(rollStyle(source(Number.NaN, 4))).toBe("");
+  });
+
+  it("escreve as mesmas vars que o print CSS lê", () => {
+    // Um rename de `--pos-roll-width` no CSS sem mexer aqui deixaria o terminal
+    // declarando para o vazio, e o recibo voltaria calado ao default.
+    const written = rollStyle(source(58, 5)).split(";").map((decl) => decl.split(":")[0]!);
+    for (const property of written) {
+      expect(css, `${property} precisa existir no print CSS`).toContain(`${property}:`);
+      expect(pageRule + css, `${property} precisa ser lida`).toContain(`var(${property}`);
+    }
+  });
+
+  it("a tela que imprime aplica a geometria no <html>", () => {
+    expect(indexVue).toMatch(/useHead\(\{\s*htmlAttrs:\s*\{\s*style:\s*computed\(\(\) => rollStyle\(pos\.value\)\)/);
   });
 });
 

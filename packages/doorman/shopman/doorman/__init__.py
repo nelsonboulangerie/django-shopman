@@ -29,6 +29,13 @@ def __getattr__(name):
     if name == 'TrustedDevice':
         from shopman.doorman.models.device_trust import TrustedDevice
         return TrustedDevice
+    elif name == 'SubjectType':
+        # Sai na superfície pública porque quem consulta dispositivos precisa NOMEAR o
+        # sujeito ("customer" ou "display"). Sem isto, o chamador importava o módulo interno
+        # — que o `test_import_boundaries` proíbe, e com razão: import profundo é como o
+        # `customer_id` de `shop/services/devices.py` sobreviveu a um refactor do model.
+        from shopman.doorman.models.device_trust import SubjectType
+        return SubjectType
     elif name == 'hash_device_token':
         from shopman.doorman.models.device_trust import _hash_token
         return _hash_token
@@ -39,5 +46,6 @@ __all__ = [
     "get_access_link_service",
     "get_auth_service",
     "TrustedDevice",
+    "SubjectType",
     "hash_device_token",
 ]

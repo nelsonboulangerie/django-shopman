@@ -1,18 +1,20 @@
 # POS-HARDWARE-READINESS-HANDOFF — impressora, gaveta, leitor
 
 **Status:** 🔖 aberto (2026-08-12). Repassado pela frente de alpha (worktree
-`shopman-storefront-perf`) para a frente do PDV absorver. **Itens 1
-(impressora), 2 (gaveta) e 4 (health honesto da gaveta) fechados em
-2026-08-12** — resta o item 3 (leitor de crachá) e o QA físico no balcão.
+`shopman-storefront-perf`) para a frente do PDV absorver. **As quatro seções
+fechadas em 2026-08-12** — impressora, gaveta, crachá e o rótulo honesto do
+health. O que resta é humano: instalar o agente no balcão, ver a gaveta abrir, e
+as três pontas soltas do fim da seção 3.
 
 O ponto de partida importa: **isto não é QA à espera de aparelho.** Fui olhar o
-código para responder "o que dá para testar já" e os três periféricos estão em
-estágios muito diferentes — um funciona e tem defeito, dois não existem.
+código para responder "o que dá para testar já", e o parágrafo original errava em
+dois dos três: a impressora tinha defeito real (corrigido), o **leitor de crachá
+já existia inteiro** e só precisava de conserto (a seção 3 conta), e a gaveta é a
+única que de fato não tem código nenhum.
 
-⚠️ **Colisão:** a frente do PDV está em `fix/pdv-stress-findings` mexendo em
-política de gaveta e PIN (retirada exige PIN em qualquer valor). Este documento é
-sobre o **caminho físico**, não sobre autorização. Se as duas coisas se cruzarem,
-a política manda.
+⚠️ **Colisão:** a política de gaveta e PIN da frente do PDV (retirada exige PIN em
+qualquer valor) entrou no `main` em `cd4b41c1`. Este documento é sobre o **caminho
+físico**, não sobre autorização. Se as duas coisas se cruzarem, a política manda.
 
 ## 0. O aparelho (respondido pelo Pablo, 2026-08-12)
 
@@ -49,10 +51,14 @@ guarda o nome de um adapter. O que ele precisa passar a guardar, por terminal:
 - **leitor**: prefixo/sufixo do código, se o crachá identifica ou autoriza.
 
 ⚠️ Consequência prática para quem faz a seção 1: **largura de rolo é config, não
-constante de CSS.** `@page { size: var(--pos-roll-width, 80mm) auto }` com o valor
-vindo do perfil do terminal evita recompilar CSS por causa de um balcão com rolo
-diferente. Cravar 80mm agora é aceitável; cravar sem deixar o ponto de extensão
-óbvio é retrabalho garantido.
+constante de CSS.** ✅ **Já feito** — o `@page` lê `--pos-roll-*` e um terminal de
+58mm não exige recompilar CSS; falta só a origem do valor (o terminal declarar a
+largura). Detalhe e medições na seção 1.
+
+Uma ressalva de mecanismo: a forma sugerida aqui, `size: var(--pos-roll-width,
+80mm) auto`, **não funciona** — `auto` não pode se misturar a `<length>` no
+descritor `size`, e o navegador descarta a regra inteira. `var()` em si funciona;
+o `auto` é que mata. Ver a tabela de medições na seção 1.
 
 O "wizard" que ele menciona é a leitura natural disto: uma tela que configura o
 terminal e **testa cada peça** (imprime página de teste, chuta a gaveta, lê um
@@ -73,7 +79,9 @@ impressora serve, inclusive térmica, **sem código novo e sem ESC/POS**.
 `80mm` viravam margem (15% da largura útil) e, sem `size`, quem decidia a largura
 do layout era o driver, então o mesmo recibo saía diferente em cada terminal.
 
-**Rolo confirmado com o Pablo (2026-08-12): 80mm.**
+**Aparelho confirmado com o Pablo (2026-08-12): Epson TM-T20, USB, rolo de 80mm.**
+Isso fecha a conta da margem: a TM-T20 imprime 576 dots a 203dpi = 72,07mm, então
+os 4mm de cada lado são exatamente o papel fora do alcance do cabeçote.
 
 **A correção que este documento sugeria não funcionaria.** `size: 80mm auto` é
 sintaxe inválida — o descritor `size` não aceita `<length>` misturado com `auto`,
@@ -91,26 +99,94 @@ longo era truncado.
 **O que ficou** (`tailwind.css`, `pages/index.vue`, `components/PosReceipt.vue`):
 
 ```css
-@page { size: 80mm 297mm; margin: 3mm 4mm; }
+@page {
+  size: 80mm 297mm; /* literal: rede para engine que rejeite var() no parse */
+  size: var(--pos-roll-width, 80mm) var(--pos-roll-height, 297mm);
+  margin: 3mm 4mm;
+  margin: var(--pos-roll-margin-y, 3mm) var(--pos-roll-margin-x, 4mm);
+}
 ```
 
 - `4mm` de margem lateral não é gosto: uma térmica de 80mm imprime ~72mm (576
   dots a 203dpi), então 4mm de cada lado são papel fora do alcance do cabeçote.
   Pedir mais largura não ganha espaço, só joga a coluna do preço para fora.
 - A geometria virou variáveis CSS (`--pos-roll-*`) com **um dono só**; o recibo
-  lê `.pos-receipt` e não fixa largura própria. Trocar para 58mm é mexer em um
-  lugar (mais o `@page`, que repete os números porque descritores de página não
-  leem custom properties — os dois lados ficam amarrados pelo teste).
+  lê `.pos-receipt` e não fixa largura própria.
 - O `#pos-print-area` foi para o `body` por `Teleport`, o que permite esconder o
   app com `display: none` de verdade. Fim das páginas em branco.
 - `tests/receiptPrint.test.ts` trava o contrato: largura declarada, `@page` em
-  sintaxe válida (proíbe `auto`), margens iguais às vars, recibo sem largura
+  sintaxe válida (proíbe `auto`), literal antes da versão configurável, fallback
+  obrigatório em toda `var()`, números iguais aos do `:root`, recibo sem largura
   própria e app escondido com `display`, não `visibility`.
 
 **Verificado sem impressora**, renderizando o recibo com as regras reais do
 `tailwind.css` via CDP `printToPDF`: página **80,1 × 297mm** (antes: Letter),
 **1 página** para recibo curto (antes: 3, duas em branco) e **3 páginas** para
 recibo de 60 itens — ou seja, pagina pelo conteúdo. Nada cortado na largura.
+
+### ⚙️ Largura de rolo é configuração, não constante (2026-08-12)
+
+O Pablo pediu que isso seja configurável, "mesmo que depois". A primeira versão
+desta seção afirmava que **descritores de `@page` não leem custom properties** —
+**está errado**, e a correção muda o desenho para melhor.
+
+Medido no Chrome (CDP `printToPDF` + `preferCSSPageSize`), com `--w: 63mm`:
+
+| declaração | resultado |
+| --- | --- |
+| `size: 63mm 211mm` (literal) | ✅ 63,2 × 211mm |
+| `size: var(--w) var(--h)` | ✅ 63,2 × 211mm — **var funciona** |
+| `size: var(--nao-existe, 63mm) …` | ✅ 63,2 × 211mm — fallback funciona |
+| `margin: var(--my) var(--mx)` | ✅ margem por var funciona |
+| `size: var(--w) auto` | ❌ Letter — o problema é o `auto`, não o `var` |
+| `size: 80mm 297mm; size: var(--sem-fallback)` | ❌ **Letter** |
+
+A última linha é a armadilha: uma `var()` que não resolve **não cai para a
+declaração literal anterior** — derruba o `size` inteiro e a página volta ao
+driver, silenciosamente. Por isso o `@page` ficou com o literal primeiro (rede
+para engine que rejeite `var()` no parse) e a versão configurável depois, com
+fallback inline em cada `var()`. O teste trava essa forma, e as quatro asserções
+foram checadas por mutação (cada mutação faz o teste falhar).
+
+**O seam está funcionando hoje.** Sobrescrevendo `--pos-roll-width: 58mm` e
+`--pos-roll-margin-x: 3mm` no `:root` em runtime, medido no PDF: página **57,8mm**
+com recibo de **51,9mm** e margens de 2,9/3,0mm — contra **80,1mm** e recibo de
+**71,9mm** no default. Página e recibo se movem juntos, porque
+`--pos-receipt-width` deriva da mesma var. Um terminal de 58mm **não exige
+recompilar CSS**.
+
+### ✅ O terminal declara a largura (2026-08-12)
+
+A origem do valor foi ligada — as três pontas:
+
+1. **`POSTerminal.metadata["hardware"]["printer"].roll_width_mm`** — a loja declara
+   o que ela sabe: o rolo que compra. Lido por `printer_geometry()` em
+   `shopman/backstage/services/pos_terminal.py`. Sem migração: o `metadata` já era
+   o seam. Schema em [data-schemas.md](../reference/data-schemas.md#posterminalmetadata).
+2. **A projection expõe** `terminal_roll_width_mm` e `terminal_roll_margin_mm`
+   (`shopman/backstage/projections/pos.py`). Zero = terminal calado.
+3. **A superfície escreve as vars no `<html>`** — `presentation/printGeometry.ts`
+   (função pura) aplicada por `useHead({ htmlAttrs })` na tela que imprime.
+
+**A margem é derivada, nunca declarada.** `ceil((rolo − imprimível) / 2)`, com a
+largura imprimível vindo de tabela: 80mm→72mm, 58mm→48mm. Isso importa porque a
+área imprimível **não é proporcional** — a 203dpi são 576 dots contra 384. Um rolo
+de 58mm reserva **5mm** por lado, não 4. Quem fizer regra de três aqui corta a
+coluna do preço. Rolo fora desses dois padrões precisa declarar `print_width_mm`;
+não chutamos.
+
+**Declaração inválida não cai calada para o default** — vira `warning` na saúde do
+terminal, com o motivo. Config ignorada em silêncio é pior que config ausente: a
+loja acha que configurou e o papel sai errado sem explicação.
+
+**Quem manda no default continua sendo o CSS.** Terminal que não declara devolve
+zero, a superfície não encosta no `documentElement` e o `@page` fica com o literal
+de 80mm. O default tem um dono só — repetir "80mm" no Python criaria a segunda
+fonte da verdade que todo este trabalho existe para evitar.
+
+O seed passa a declarar o aparelho real da Nelson (`epson-tm-t20`, 80mm). Como
+80mm já era o default, a declaração não muda o desenho: torna explícito o que era
+sorte, e é o gancho para um balcão com rolo diferente.
 
 **O que ainda quer aparelho:** densidade/contraste, alinhamento lateral do rolo
 (o texto agora encosta no limite da área imprimível) e o comportamento de avanço
@@ -177,18 +253,67 @@ abrir a gaveta, volta o acoplamento de cima.
 silenciosa (Chrome `--kiosk-printing`). Sem isso, todo `window.print()` abre
 diálogo — inaceitável num balcão, e absurdo se for só para chutar a gaveta.
 
-## 3. Leitor de crachá — não existe código, mas é testável sem o leitor
+## 3. Leitor de crachá — ✅ existe e está verificado (a busca por "badge" enganou)
 
-Nada de crachá no repo (as ocorrências de "badge" são componentes de UI).
+⚠️ **Correção de premissa (2026-08-12).** A frase original deste item — "nada de
+crachá no repo" — era falsa. A busca por "badge" devolve tantos componentes de UI
+que o recurso de verdade ficou escondido no meio. O crachá está implementado
+**ponta a ponta desde o WP-AUTH-2a** (commit `04f94d29`):
 
-**O que torna isso barato:** leitor USB de crachá é, quase sempre, **emulação de
-teclado** — ele "digita" o código e dá Enter. Ou seja: basta um campo focado que
-aceite a sequência. Dá para **implementar e testar sem o aparelho**, simulando as
-teclas; o leitor real só confirma o formato do código e a velocidade da digitação.
+| Camada | Onde |
+| --- | --- |
+| Credencial | `PinCredential.badge_hash` — HMAC-SHA256, nunca plaintext (`hash_badge`, `set_badge`, `clear_badge`, `issue_badge`, `resolve_by_badge`) |
+| Política | `backstage/services/operator.py::resolve_operator_by_badge` (aplica ativo/staff/`perm`) |
+| API | `POST /api/v1/backstage/operator/unlock/` aceita `badge` **ou** `operator_id`+`pin` |
+| Superfície | `operator-kit` → `OperatorLock.vue` (os 5 apps de operador, PDV incluído) |
+| Provisionamento | `manage.py set_operator_pin <user> --pin ... --badge <token>` |
 
-O PIN já existe (`set_operator_pin`; 1234 em dev — ver a memória
-`backstage_operator_pin_gate`). Crachá é uma segunda via de identificação, não um
-substituto: a política de quem pode o quê continua no PIN.
+**O crachá diz QUEM; o PIN diz que AUTORIZA — e isso está certo no código.**
+`resolve_operator_by_badge` só é chamado no `unlock` (identidade). Todo override
+— aprovação de gerente (`validate_manager_approval`) e retirada de gaveta — passa
+por `verify_manager_pin` com usuário + PIN. **Não existe caminho de crachá para
+dentro da autorização**, e é assim que deve continuar.
+
+### O defeito que estava lá (corrigido)
+
+A captura era um `<input>` escondido com `autofocus` lendo o `v-model`. Isso
+funciona **exatamente uma vez**: no primeiro toque do operador (escolher o nome,
+tocar no pad, qualquer botão) o foco sai do campo e o crachá **para de ser lido,
+sem nada na tela dizer isso**. Num kiosk de balcão, "recarregue a página" não é
+resposta. Pior: o Enter final do leitor ia parar no botão focado e o ativava.
+
+Agora a leitura mora em `operator-kit/app/composables/useBadgeScanner.ts` —
+captura no **documento** (fase de capture), então o foco fica onde o operador
+deixou. Duas regras que valem lembrar:
+
+- **Janela de tempo** (`BADGE_MAX_GAP_MS`, 120ms): teclas mais lentas que isso
+  recomeçam o buffer, então dedo humano e teclas soltas do turno não se somam num
+  token falso. A regra é pura (`pushBadgeKey`) e testada sem relógio falso.
+- **O Enter é consumido** (`preventDefault`) só quando o buffer é mesmo um crachá;
+  fora disso o Enter segue normal e o teclado de gente continua inteiro.
+
+### Como testar sem o aparelho (e a armadilha)
+
+⚠️ **`computer.type` do browser MCP não serve**: ele usa `insertText` e gera
+**zero** eventos `keydown` — um leitor HID não é isso. Emular de verdade é
+despachar `KeyboardEvent("keydown")` por caractere e o Enter no fim
+(`tests/components/OperatorLock.test.ts` faz exatamente isso, no `activeElement`).
+
+Verificado em 2026-08-12 no navegador, contra Django de verdade: crachá sozinho
+estabeleceu `active_operator = ana`, **sem PIN nenhum**, inclusive **depois de
+clicar num botão** (foco no `BODY`) — o caso que a implementação antiga perdia.
+
+### O que continua em aberto
+
+- **Ninguém consegue emitir um crachá pela tela.** `issue_badge` (que sorteia o
+  token para virar código de barras) **não tem chamador fora dos testes**; o Admin
+  só mostra `badge_hash` como readonly. Na prática o gerente depende da CLI com um
+  token que ele mesmo inventa. Falta o fluxo "emitir + imprimir + revogar".
+- **O crachá só vale na tela de bloqueio.** Com o PDV destravado, passar o crachá
+  de outra pessoa não troca o operador — é preciso travar antes (o auto-lock do
+  PDV é de 60s ocioso). Pode ser a decisão certa; não está escrito em lugar nenhum.
+- **O token vai por CLI** (`--badge`), então fica no histórico do shell. O
+  `issue_badge` não tem esse problema, e é mais um motivo para expor o fluxo.
 
 ## 4. ⚠️ O health de terminal é declaração, não sonda
 
@@ -212,12 +337,17 @@ adapter é simulado.
 
 1. ~~**`@page` do recibo**~~ — ✅ feito em 2026-08-12 (rolo de 80mm confirmado
    com o Pablo). Sobra só a confirmação de densidade e corte no aparelho.
-2. ~~**Gaveta**~~ — ✅ feito em 2026-08-12 (agente local + config por terminal +
+2. ~~**Leitor de crachá**~~ — ✅ feito e verificado (2026-08-12). Já existia desde o
+   WP-AUTH-2a; o que faltava era o defeito de foco, agora corrigido. Restam as três
+   pontas soltas do fim da seção 3 (emitir crachá pela tela, trocar operador com a
+   tela destravada, token por CLI).
+3. ~~**Gaveta**~~ — ✅ feito em 2026-08-12 (agente local + config por terminal +
    os quatro momentos). Sobra instalar no balcão e confirmar com o aparelho.
-3. ~~**Rótulo honesto** no health~~ — ✅ para a gaveta: com adapter `agent` o
-   servidor responde `deferred` ("verificado na estação"), porque ele não
-   alcança a loopback do balcão. Os outros periféricos seguem por declaração.
-4. **Leitor de crachá** — implementável e testável sem o aparelho (emulação de teclado).
+4. ~~**Rótulo honesto** no health~~ — ✅ **para a gaveta**: com adapter `agent` o
+   servidor responde `deferred` ("verificado na estação"), porque ele não alcança
+   a loopback do balcão. A impressora ganhou o mesmo espírito por outro caminho na
+   seção 1 (declaração inválida vira `warning` com o motivo, em vez de cair calada
+   no default). Os demais periféricos seguem por declaração.
 5. **Comprovante impresso de sangria** — item de controle, separado de propósito:
    se ele virar o jeito de abrir a gaveta, volta o acoplamento descartado acima.
 

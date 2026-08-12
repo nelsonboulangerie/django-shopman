@@ -202,6 +202,23 @@ class TrustedDevice(models.Model):
         return device
 
     @classmethod
+    def active_for(cls, subject_type: str, subject_id: str):
+        """Os dispositivos ATIVOS de um sujeito, do mais recente ao mais antigo.
+
+        ⚠️ Existe porque quem quis essa lista escrevia o filtro na unha, e o filtro mudou: o
+        model passou a ter `subject_type`/`subject_id` (sujeito tipado: cliente ou display) e
+        `customer_id` deixou de existir. `shop/services/devices.py` continuou filtrando pelo
+        campo antigo, e a tela "Segurança e dados" passou a devolver 500 — a página inteira
+        virava "Tivemos um problema por aqui", porque o SSR aguarda esse fetch.
+
+        Um dono para a consulta é o que evita a próxima vez: refatorar o model volta a ser
+        seguro quando não há cópia do filtro espalhada.
+        """
+        return cls.objects.filter(
+            subject_type=subject_type, subject_id=str(subject_id), is_active=True,
+        ).order_by("-last_used_at", "-created_at")
+
+    @classmethod
     def revoke_all_for(cls, subject_type: str, subject_id: str) -> int:
         """Revoke every trusted device of one subject."""
         return cls.objects.filter(

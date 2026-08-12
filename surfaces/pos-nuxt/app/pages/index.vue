@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { resolveAffordance } from "~/presentation/actions";
 import { requiresOpenShiftForSale } from "~/presentation/cash";
+import { rollStyle } from "~/presentation/printGeometry";
 // Tela de VENDA — wires the read-side (usePosTerminal) and write-side (usePosSale)
 // composables to the three core screens (PosTabBoard / PosProductGrid /
 // PosPaymentWorkspace). O chrome comum (login, lock, offline) vive no shell
@@ -142,6 +143,13 @@ const screenTitle = computed(() => {
 function printReceipt() {
   if (import.meta.client) window.print();
 }
+
+// Geometria do rolo: o terminal declara, o `@page` obedece. Vai no `<html>`
+// porque as custom properties do print CSS moram no `:root` — e fica aqui, na
+// tela que imprime, e não no shell, para a var existir exatamente onde o recibo
+// existe. Terminal que não declara devolve "", e aí o default de 80mm do CSS
+// manda (o default tem um dono só, que é o CSS).
+useHead({ htmlAttrs: { style: computed(() => rollStyle(pos.value)) } });
 
 // Keyboard and scanner (spec: F2 tab board, F3 product search, F4 checkout/review,
 // Escape backs out of checkout, "/" focuses product search when not editing).

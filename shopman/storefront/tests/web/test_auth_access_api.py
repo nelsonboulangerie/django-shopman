@@ -346,3 +346,140 @@ class TestReplyProvesPossession:
 
         assert response.status_code == 200
         assert response.json()["is_authenticated"] is True
+
+
+class TestBrowserHandoff:
+    """A travessia do webview para o navegador de verdade dela.
+
+    ⚠️ Existe por um fato de plataforma: o navegador embutido do WhatsApp tem **pote de cookie
+    próprio**. Sessão e aparelho confiado conquistados ali não existem no Safari que ela usa no
+    resto do dia — "confirmado para sempre neste aparelho" era, na prática, "neste webview".
+
+    A regra que estes testes guardam: a travessia **carrega** a identidade, nunca a promove.
+    Trocar de navegador não é prova de nada — é a mesma pessoa, no mesmo aparelho, com a mesma
+    dúvida.
+    """
+
+    URL = "/api/v1/auth/handoff/"
+
+    def _sign_in(self, client, customer, *, strength=None):
+        from datetime import timedelta
+
+        from django.utils import timezone
+
+        _link, raw = AccessLink.create_with_token(
+            customer_id=customer.uuid,
+            audience=AccessLink.Audience.WEB_CHECKOUT,
+            source=AccessLink.Source.INTERNAL,
+            expires_at=timezone.now() + timedelta(hours=1),
+            metadata={"login_source": "campaign", "next": "/finalizar"} if strength else {},
+        )
+        assert client.post("/api/v1/auth/access/", {"token": raw}).status_code == 200
+
+    @pytest.mark.django_db
+    def test_a_visitor_gets_no_handoff(self, client):
+        """Travessia leva identidade. Sem identidade não há o que levar."""
+        response = client.post(self.URL, {"next": "/finalizar"})
+
+        assert response.status_code == 401
+
+    @pytest.mark.django_db
+    def test_it_mints_a_one_time_link_to_the_same_screen(self, client, customer):
+        from shopman.doorman.models import AccessLink as Link
+
+        self._sign_in(client, customer)
+        before = Link.objects.count()
+
+        response = client.post(self.URL, {"next": "/finalizar"})
+
+        assert response.status_code == 200, response.content
+        assert "/a?t=" in response.json()["url"]
+        assert Link.objects.count() == before + 1
+        fresh = Link.objects.order_by("-created_at").first()
+        assert fresh.metadata["next"] == "/finalizar"
+        assert fresh.metadata["login_source"] == "handoff"
+
+    @pytest.mark.django_db
+    def test_the_handoff_link_is_short_lived(self, client, customer):
+        """Não é link para guardar: é um trilho entre dois navegadores do mesmo aparelho."""
+        from datetime import timedelta
+
+        from django.utils import timezone
+        from shopman.doorman.models import AccessLink as Link
+
+        self._sign_in(client, customer)
+        client.post(self.URL, {"next": "/conta"})
+
+        fresh = Link.objects.order_by("-created_at").first()
+        assert fresh.expires_at <= timezone.now() + timedelta(minutes=5)
+
+    @pytest.mark.django_db
+    def test_it_carries_the_weak_identity_without_promoting_it(self, client, customer):
+        """⚠️ O invariante. Se ela chegou sabendo só o número, do outro lado continua igual."""
+        from shopman.doorman.models import AccessLink as Link
+
+        self._sign_in(client, customer, strength=True)
+        assert client.session["identity_strength"] == "number"
+
+        response = client.post(self.URL, {"next": "/finalizar"})
+        url = response.json()["url"]
+        raw = url.split("?t=")[1]
+        assert Link.objects.order_by("-created_at").first().metadata["identity_strength"] == "number"
+
+        # Do outro lado (navegador novo = cliente novo, pote novo):
+        from django.test import Client
+
+        other = Client()
+        landed = other.post("/api/v1/auth/access/", {"token": raw})
+
+        assert landed.status_code == 200, landed.content
+        assert landed.json()["identity_strength"] == "number"
+        assert landed.json()["redirect"] == "/finalizar"
+
+    @pytest.mark.django_db
+    def test_a_strong_identity_arrives_strong(self, client, customer):
+        """E o contrário também vale: quem já era reconhecida não é rebaixada pela travessia."""
+        from django.test import Client
+
+        self._sign_in(client, customer)  # sem marca ⇒ força `device`
+
+        raw = client.post(self.URL, {"next": "/conta"}).json()["url"].split("?t=")[1]
+        landed = Client().post("/api/v1/auth/access/", {"token": raw})
+
+        assert landed.json()["identity_strength"] == "device"
+
+    @pytest.mark.django_db
+    def test_the_cart_crosses_over_too(self, client, customer):
+        """Sessão nova sem sacola é a pior surpresa para quem estava no meio de um pedido."""
+        from django.test import Client
+
+        self._sign_in(client, customer)
+        session = client.session
+        session["cart_session_key"] = "sacola-abc"
+        session.save()
+
+        raw = client.post(self.URL, {"next": "/sacola"}).json()["url"].split("?t=")[1]
+        other = Client()
+        other.post("/api/v1/auth/access/", {"token": raw})
+
+        assert other.session["cart_session_key"] == "sacola-abc"
+
+    @pytest.mark.django_db
+    def test_a_foreign_destination_is_refused(self, client, customer):
+        """Destino é caminho interno. Aceitar URL de fora aqui seria redirect com sessão na mão."""
+        from shopman.doorman.models import AccessLink as Link
+
+        self._sign_in(client, customer)
+        client.post(self.URL, {"next": "https://outro.site/roubo"})
+
+        assert Link.objects.order_by("-created_at").first().metadata["next"] == "/"
+
+    @pytest.mark.django_db
+    def test_a_protocol_relative_destination_is_refused_too(self, client, customer):
+        """`//evil.com` é URL absoluta disfarçada de caminho."""
+        from shopman.doorman.models import AccessLink as Link
+
+        self._sign_in(client, customer)
+        client.post(self.URL, {"next": "//evil.com/x"})
+
+        assert Link.objects.order_by("-created_at").first().metadata["next"] == "/"

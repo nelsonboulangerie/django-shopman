@@ -5477,6 +5477,17 @@ class Command(BaseCommand):
 
         terminal = POSTerminal.default()
 
+        # O aparelho do balcão da Nelson: Epson TM-T20, USB, rolo de 80mm
+        # (confirmado com o Pablo em 2026-08-12). Declarar a largura aqui é o que
+        # faz o `@page` do recibo parar de depender do driver — a superfície
+        # escreve `--pos-roll-width` a partir disto. 80mm é também o default do
+        # print CSS, então a declaração não muda o desenho: ela torna explícito
+        # o que hoje é sorte, e é o gancho para um balcão com rolo diferente.
+        hardware = dict(terminal.metadata.get("hardware") or {})
+        hardware["printer"] = {"adapter": "driver", "model": "epson-tm-t20", "roll_width_mm": 80}
+        terminal.metadata = {**terminal.metadata, "hardware": hardware}
+        terminal.save(update_fields=["metadata"])
+
         # Yesterday's closed shift
         session_yesterday, _ = CashShift.objects.update_or_create(
             operator=admin,

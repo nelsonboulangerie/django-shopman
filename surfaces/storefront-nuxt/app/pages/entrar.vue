@@ -51,6 +51,23 @@ const welcomeNeeded = ref(false)
 const welcomeName = ref('')
 const lastSentAtMs = ref<number | null>(null)
 const lastDeliveryMethod = ref<AuthDeliveryMethod>('whatsapp')
+
+// Passkey: para quem já ativou, é o caminho mais curto que existe — um toque, sem esperar
+// mensagem. Aparece ANTES do WhatsApp por isso, e só quando o aparelho tem autenticador
+// próprio: oferecer "entre com o rosto" onde não há leitor seria prometer o que a tela não
+// entrega.
+const { signIn: passkeySignIn, busy: passkeyBusy, error: passkeyError } = usePasskey()
+const passkeyReady = ref(false)
+onMounted(async () => {
+  const { passkeyIsQuick } = usePasskey()
+  passkeyReady.value = await passkeyIsQuick()
+})
+
+async function enterWithPasskey () {
+  if (await passkeySignIn()) {
+    await navigateTo(nextUrl.value || '/conta')
+  }
+}
 const codeExpiresAt = ref('')
 // Momento de feedback antes do redirect: aparelho reconhecido ou código confirmado.
 const moment = ref<'none' | 'recognized' | 'confirmed'>('none')
@@ -422,6 +439,23 @@ useSeoMeta({
         <div v-if="step === 'phone'" class="shop-stack-block">
           <!-- Zero-telefone, uma tela: a identidade é quem ENVIA a mensagem no WhatsApp.
                Bloco 1 abre o app com a mensagem pronta; "OU"; bloco 2 é o envio manual. -->
+          <!-- Quem já ativou entra aqui, num toque. Quem não ativou não vê nada: o botão só
+               existe se o aparelho tiver autenticador próprio. -->
+          <div v-if="passkeyReady" class="shop-stack-block">
+            <UiButton
+              type="button"
+              size="lg"
+              icon="lucide:scan-face"
+              class="w-full justify-center"
+              :loading="passkeyBusy"
+              @click="enterWithPasskey"
+            >
+              Entrar com o rosto ou a digital
+            </UiButton>
+            <p v-if="passkeyError" class="shop-caption text-muted-foreground">{{ passkeyError }}</p>
+            <p class="shop-caption text-center text-muted-foreground">ou</p>
+          </div>
+
           <WhatsappVerifyPanel
             :deep-link="waDeepLink"
             :code="waCode"

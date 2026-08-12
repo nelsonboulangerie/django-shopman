@@ -279,6 +279,10 @@ export interface POSProjection {
   fiscal_message: string;
   operators: POSOperatorProjection[];
   auto_lock_seconds: number;
+  // Geometria do rolo declarada pelo terminal; 0 = não declarou e vale o default
+  // do print CSS (80mm). Ver presentation/printGeometry.
+  terminal_roll_width_mm: number;
+  terminal_roll_margin_mm: number;
 }
 
 export interface POSShiftSummaryProjection {
