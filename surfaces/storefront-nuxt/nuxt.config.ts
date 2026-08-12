@@ -1,4 +1,5 @@
 import tailwindcss from "@tailwindcss/vite";
+
 // https://nuxt.com/docs/api/configuration/nuxt-config
 export default defineNuxtConfig({
   compatibilityDate: '2026-05-16',
@@ -52,16 +53,46 @@ export default defineNuxtConfig({
     }
   },
 
-  // Tipografia canônica self-hospedada via @nuxt/fonts (baixa, self-hospeda e injeta
-  // @font-face + métrica de fallback size-adjust = zero CLS):
-  //  · Instrument Sans → corpo (--font-sans canônica; 500 incluso p/ o chrome das
-  //    primitivas Ui). É a fonte oficial do tema, não mais um <link> de runtime da marca.
-  //  · Fraunces (serif, eixo opsz) → títulos (.shop-display/.shop-title), com
-  //    font-optical-sizing: auto dando o corte display nos títulos grandes.
+  // Tipografia canônica, servida do NOSSO repo (`public/fonts/`):
+  //  · Instrument Sans → corpo (--font-sans canônica; o eixo wght cobre o 500 que as
+  //    primitivas Ui usam). É a fonte oficial do tema, não um <link> de runtime da marca.
+  //  · Fraunces (serif) → títulos (.shop-display/.shop-title). O arquivo é o VARIÁVEL com
+  //    eixo opsz, que é o que faz `font-optical-sizing: auto` cortar diferente nos títulos
+  //    grandes — uma instância estática perderia isso.
+  //
+  // ⚠️ Eram `provider: 'google'`, e o @nuxt/fonts baixava os woff2 DURANTE o build. Em
+  // 2026-08-11 o deploy do staging morreu inteiro assim, sem uma linha de código mudada:
+  //
+  //     FetchError: [GET] "https://fonts.gstatic.com/s/fraunces/v38/…woff2": 404 Not Found
+  //     ERROR: failed to build: exit status 1
+  //
+  // O Google rotacionou a URL de um arquivo e levou o build com ela. Fonte no repo tira
+  // um terceiro do caminho do deploy — e o `src` explícito continua dando ao módulo o
+  // arquivo para calcular a métrica de fallback (`fallbacks`), que é o que garante o zero
+  // CLS (o CSS gerado sai com `size-adjust`/`ascent-override`, conferido no build).
+  //
+  // Os arquivos são o subset `latin` do Google: cobre ã/ç/é/õ, travessão, aspas curvas,
+  // setas, € e ™. `latin-ext` custaria +70 KB em caracteres que uma loja pt-br não usa, e
+  // caractere fora do subset cai no próximo da pilha por glifo (comportamento normal do
+  // CSS), não em retângulo.
   fonts: {
     families: [
-      { name: 'Instrument Sans', provider: 'google', weights: [400, 500, 600], styles: ['normal'] },
-      { name: 'Fraunces', provider: 'google', weights: [400, 600], styles: ['normal'] }
+      {
+        name: 'Instrument Sans',
+        src: '/fonts/instrument-sans-latin.woff2',
+        weight: [400, 700],  // arquivo variável: um só cobre 400/500/600
+        style: 'normal',
+        display: 'swap',
+        fallbacks: ['Helvetica Neue', 'Arial']
+      },
+      {
+        name: 'Fraunces',
+        src: '/fonts/fraunces-latin.woff2',
+        weight: [400, 700],
+        style: 'normal',
+        display: 'swap',
+        fallbacks: ['Georgia', 'Times New Roman']
+      }
     ]
   },
 
