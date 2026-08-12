@@ -4,18 +4,18 @@
 // and ends with Enter, captured anywhere on the overlay), or pick yourself and
 // type your PIN. The surface permission scopes who appears + who may unlock.
 //
+// A leitura do crachá é do `useBadgeScanner` (captura no documento). O foco fica
+// onde o operador deixou: tocar num nome ou no pad não cega mais o leitor.
+//
 // Two PIN-change flows share this overlay: a FORCED change after a manager reset
 // (must_change — the operator can't operate until they rotate the temp PIN), and
 // a VOLUNTARY "Trocar PIN" from the pad. Both prove the current PIN (the backend
 // authorizes on that), so no manager is needed for a routine change.
-import {
-  appendPinDigit,
-  canSubmitPin,
-  isLikelyBadge,
-} from "../presentation/operatorLock";
+import { appendPinDigit, canSubmitPin } from "../presentation/operatorLock";
 // Import explícito (não auto-import): o POS mantém um lock próprio (usePosOperatorLock)
 // e este overlay é construído SOBRE o composable do kit, independente do app hospedeiro.
 import { useOperatorLock } from "../composables/useOperatorLock";
+import { useBadgeScanner } from "../composables/useBadgeScanner";
 import type { OperatorCard } from "../types/operator";
 
 const props = defineProps<{ perm: string }>();
@@ -33,7 +33,6 @@ const {
 
 const picked = ref<OperatorCard | null>(null);
 const pin = ref("");
-const badgeBuffer = ref("");
 const changing = ref(false); // voluntary "Trocar PIN" mode (an operator is picked)
 
 onMounted(loadEligible);
@@ -61,14 +60,12 @@ async function submitPin() {
   if (!ok) pin.value = "";
 }
 
-// Badge scanner: a hidden, always-focused field collects the fast keystrokes; on
-// Enter, if it looks like a badge token we unlock by badge. Keeps hands-free flow.
-async function onBadgeEnter() {
-  const value = badgeBuffer.value.trim();
-  badgeBuffer.value = "";
-  if (!isLikelyBadge(value)) return;
-  await unlock({ badge: value });
-}
+// Crachá: vale em qualquer momento da tela de bloqueio, sem depender de onde está o
+// foco. Fica desligado durante a troca de PIN — lá há campos de texto de verdade, e o
+// Enter pertence ao formulário.
+useBadgeScanner((token) => unlock({ badge: token }), {
+  enabled: () => !changing.value && !mustChange.value,
+});
 
 // ── Voluntary change (an operator picked themselves and taps "Trocar PIN") ──
 async function submitVoluntaryChange(payload: {
@@ -100,16 +97,6 @@ async function submitForcedChange(payload: {
   <div
     class="fixed inset-0 z-[100] grid place-items-center bg-background/95 p-4 backdrop-blur-sm"
   >
-    <!-- hidden capture for the barcode scanner (types + Enter) -->
-    <input
-      v-if="!changing && !mustChange"
-      v-model="badgeBuffer"
-      class="sr-only"
-      aria-hidden="true"
-      autofocus
-      @keyup.enter="onBadgeEnter"
-    />
-
     <div class="w-full max-w-md rounded-xl border bg-card p-5 shadow-lg">
       <!-- Forced change: manager reset the operator's PIN; rotate before operating. -->
       <OperatorPinChange

@@ -1,17 +1,19 @@
 # POS-HARDWARE-READINESS-HANDOFF — impressora, gaveta, leitor
 
 **Status:** 🔖 aberto (2026-08-12). Repassado pela frente de alpha (worktree
-`shopman-storefront-perf`) para a frente do PDV absorver. **Item 1 (impressora)
-fechado em 2026-08-12** — os itens 2, 3 e 4 seguem abertos.
+`shopman-storefront-perf`) para a frente do PDV absorver. **Seções 1 (impressora)
+e 3 (crachá) fechadas em 2026-08-12** — seguem abertas a 2 (gaveta) e a 4 (rótulo
+honesto do health).
 
 O ponto de partida importa: **isto não é QA à espera de aparelho.** Fui olhar o
-código para responder "o que dá para testar já" e os três periféricos estão em
-estágios muito diferentes — um funciona e tem defeito, dois não existem.
+código para responder "o que dá para testar já", e o parágrafo original errava em
+dois dos três: a impressora tinha defeito real (corrigido), o **leitor de crachá
+já existia inteiro** e só precisava de conserto (a seção 3 conta), e a gaveta é a
+única que de fato não tem código nenhum.
 
-⚠️ **Colisão:** a frente do PDV está em `fix/pdv-stress-findings` mexendo em
-política de gaveta e PIN (retirada exige PIN em qualquer valor). Este documento é
-sobre o **caminho físico**, não sobre autorização. Se as duas coisas se cruzarem,
-a política manda.
+⚠️ **Colisão:** a política de gaveta e PIN da frente do PDV (retirada exige PIN em
+qualquer valor) entrou no `main` em `cd4b41c1`. Este documento é sobre o **caminho
+físico**, não sobre autorização. Se as duas coisas se cruzarem, a política manda.
 
 ## 0. O aparelho (respondido pelo Pablo, 2026-08-12)
 
@@ -238,18 +240,67 @@ abrir a gaveta, volta o acoplamento de cima.
 silenciosa (Chrome `--kiosk-printing`). Sem isso, todo `window.print()` abre
 diálogo — inaceitável num balcão, e absurdo se for só para chutar a gaveta.
 
-## 3. Leitor de crachá — não existe código, mas é testável sem o leitor
+## 3. Leitor de crachá — ✅ existe e está verificado (a busca por "badge" enganou)
 
-Nada de crachá no repo (as ocorrências de "badge" são componentes de UI).
+⚠️ **Correção de premissa (2026-08-12).** A frase original deste item — "nada de
+crachá no repo" — era falsa. A busca por "badge" devolve tantos componentes de UI
+que o recurso de verdade ficou escondido no meio. O crachá está implementado
+**ponta a ponta desde o WP-AUTH-2a** (commit `04f94d29`):
 
-**O que torna isso barato:** leitor USB de crachá é, quase sempre, **emulação de
-teclado** — ele "digita" o código e dá Enter. Ou seja: basta um campo focado que
-aceite a sequência. Dá para **implementar e testar sem o aparelho**, simulando as
-teclas; o leitor real só confirma o formato do código e a velocidade da digitação.
+| Camada | Onde |
+| --- | --- |
+| Credencial | `PinCredential.badge_hash` — HMAC-SHA256, nunca plaintext (`hash_badge`, `set_badge`, `clear_badge`, `issue_badge`, `resolve_by_badge`) |
+| Política | `backstage/services/operator.py::resolve_operator_by_badge` (aplica ativo/staff/`perm`) |
+| API | `POST /api/v1/backstage/operator/unlock/` aceita `badge` **ou** `operator_id`+`pin` |
+| Superfície | `operator-kit` → `OperatorLock.vue` (os 5 apps de operador, PDV incluído) |
+| Provisionamento | `manage.py set_operator_pin <user> --pin ... --badge <token>` |
 
-O PIN já existe (`set_operator_pin`; 1234 em dev — ver a memória
-`backstage_operator_pin_gate`). Crachá é uma segunda via de identificação, não um
-substituto: a política de quem pode o quê continua no PIN.
+**O crachá diz QUEM; o PIN diz que AUTORIZA — e isso está certo no código.**
+`resolve_operator_by_badge` só é chamado no `unlock` (identidade). Todo override
+— aprovação de gerente (`validate_manager_approval`) e retirada de gaveta — passa
+por `verify_manager_pin` com usuário + PIN. **Não existe caminho de crachá para
+dentro da autorização**, e é assim que deve continuar.
+
+### O defeito que estava lá (corrigido)
+
+A captura era um `<input>` escondido com `autofocus` lendo o `v-model`. Isso
+funciona **exatamente uma vez**: no primeiro toque do operador (escolher o nome,
+tocar no pad, qualquer botão) o foco sai do campo e o crachá **para de ser lido,
+sem nada na tela dizer isso**. Num kiosk de balcão, "recarregue a página" não é
+resposta. Pior: o Enter final do leitor ia parar no botão focado e o ativava.
+
+Agora a leitura mora em `operator-kit/app/composables/useBadgeScanner.ts` —
+captura no **documento** (fase de capture), então o foco fica onde o operador
+deixou. Duas regras que valem lembrar:
+
+- **Janela de tempo** (`BADGE_MAX_GAP_MS`, 120ms): teclas mais lentas que isso
+  recomeçam o buffer, então dedo humano e teclas soltas do turno não se somam num
+  token falso. A regra é pura (`pushBadgeKey`) e testada sem relógio falso.
+- **O Enter é consumido** (`preventDefault`) só quando o buffer é mesmo um crachá;
+  fora disso o Enter segue normal e o teclado de gente continua inteiro.
+
+### Como testar sem o aparelho (e a armadilha)
+
+⚠️ **`computer.type` do browser MCP não serve**: ele usa `insertText` e gera
+**zero** eventos `keydown` — um leitor HID não é isso. Emular de verdade é
+despachar `KeyboardEvent("keydown")` por caractere e o Enter no fim
+(`tests/components/OperatorLock.test.ts` faz exatamente isso, no `activeElement`).
+
+Verificado em 2026-08-12 no navegador, contra Django de verdade: crachá sozinho
+estabeleceu `active_operator = ana`, **sem PIN nenhum**, inclusive **depois de
+clicar num botão** (foco no `BODY`) — o caso que a implementação antiga perdia.
+
+### O que continua em aberto
+
+- **Ninguém consegue emitir um crachá pela tela.** `issue_badge` (que sorteia o
+  token para virar código de barras) **não tem chamador fora dos testes**; o Admin
+  só mostra `badge_hash` como readonly. Na prática o gerente depende da CLI com um
+  token que ele mesmo inventa. Falta o fluxo "emitir + imprimir + revogar".
+- **O crachá só vale na tela de bloqueio.** Com o PDV destravado, passar o crachá
+  de outra pessoa não troca o operador — é preciso travar antes (o auto-lock do
+  PDV é de 60s ocioso). Pode ser a decisão certa; não está escrito em lugar nenhum.
+- **O token vai por CLI** (`--badge`), então fica no histórico do shell. O
+  `issue_badge` não tem esse problema, e é mais um motivo para expor o fluxo.
 
 ## 4. ⚠️ O health de terminal é declaração, não sonda
 
@@ -273,7 +324,10 @@ adapter é simulado.
 
 1. ~~**`@page` do recibo**~~ — ✅ feito em 2026-08-12 (rolo de 80mm confirmado
    com o Pablo). Sobra só a confirmação de densidade e corte no aparelho.
-2. **Leitor de crachá** — implementável e testável sem o aparelho (emulação de teclado).
+2. ~~**Leitor de crachá**~~ — ✅ feito e verificado (2026-08-12). Já existia desde o
+   WP-AUTH-2a; o que faltava era o defeito de foco, agora corrigido. Restam as três
+   pontas soltas do fim da seção 3 (emitir crachá pela tela, trocar operador com a
+   tela destravada, token por CLI).
 3. **Gaveta** — precisa de agente local com kick ESC/POS; o gancho do driver não
    cobre sangria nem venda (ver a correção na seção 2). Comprovante impresso de
    sangria é item separado, de controle.

@@ -20,6 +20,29 @@ export function isLikelyBadge(value: string): boolean {
   return /^[0-9a-f]{24}$/i.test(value.trim());
 }
 
+/** Maior intervalo (ms) entre duas teclas que ainda conta como a MESMA passada de
+ *  crachá. Um leitor HID emite o token inteiro em ~10-30ms por caractere; dedo
+ *  humano no balcão não chega perto disso. Acima da janela, a leitura recomeça —
+ *  é o que impede que teclas soltas ao longo do turno se somem num token falso. */
+export const BADGE_MAX_GAP_MS = 120;
+
+/** Acumula uma tecla no buffer do leitor, respeitando a janela de tempo.
+ *
+ * Puro de propósito: o intervalo entra como número (``gapMs``), então a regra de
+ * tempo é testável sem timer nem relógio falso — quem mede o intervalo é o
+ * chamador. Teclas não-imprimíveis (Shift, Tab, setas) não entram no buffer;
+ * um intervalo acima da janela DESCARTA o que veio antes e recomeça nesta tecla.
+ */
+export function pushBadgeKey(
+  buffer: string,
+  key: string,
+  gapMs: number,
+  maxGapMs: number = BADGE_MAX_GAP_MS,
+): string {
+  if (key.length !== 1) return buffer; // "Shift", "Enter", "ArrowLeft"… não são conteúdo
+  return gapMs > maxGapMs ? key : buffer + key;
+}
+
 export interface UnlockInput {
   operatorId?: number | string | null;
   pin?: string;
