@@ -48,10 +48,14 @@ guarda o nome de um adapter. O que ele precisa passar a guardar, por terminal:
 - **leitor**: prefixo/sufixo do código, se o crachá identifica ou autoriza.
 
 ⚠️ Consequência prática para quem faz a seção 1: **largura de rolo é config, não
-constante de CSS.** `@page { size: var(--pos-roll-width, 80mm) auto }` com o valor
-vindo do perfil do terminal evita recompilar CSS por causa de um balcão com rolo
-diferente. Cravar 80mm agora é aceitável; cravar sem deixar o ponto de extensão
-óbvio é retrabalho garantido.
+constante de CSS.** ✅ **Já feito** — o `@page` lê `--pos-roll-*` e um terminal de
+58mm não exige recompilar CSS; falta só a origem do valor (o terminal declarar a
+largura). Detalhe e medições na seção 1.
+
+Uma ressalva de mecanismo: a forma sugerida aqui, `size: var(--pos-roll-width,
+80mm) auto`, **não funciona** — `auto` não pode se misturar a `<length>` no
+descritor `size`, e o navegador descarta a regra inteira. `var()` em si funciona;
+o `auto` é que mata. Ver a tabela de medições na seção 1.
 
 O "wizard" que ele menciona é a leitura natural disto: uma tela que configura o
 terminal e **testa cada peça** (imprime página de teste, chuta a gaveta, lê um
@@ -72,7 +76,9 @@ impressora serve, inclusive térmica, **sem código novo e sem ESC/POS**.
 `80mm` viravam margem (15% da largura útil) e, sem `size`, quem decidia a largura
 do layout era o driver, então o mesmo recibo saía diferente em cada terminal.
 
-**Rolo confirmado com o Pablo (2026-08-12): 80mm.**
+**Aparelho confirmado com o Pablo (2026-08-12): Epson TM-T20, USB, rolo de 80mm.**
+Isso fecha a conta da margem: a TM-T20 imprime 576 dots a 203dpi = 72,07mm, então
+os 4mm de cada lado são exatamente o papel fora do alcance do cabeçote.
 
 **A correção que este documento sugeria não funcionaria.** `size: 80mm auto` é
 sintaxe inválida — o descritor `size` não aceita `<length>` misturado com `auto`,
@@ -90,26 +96,75 @@ longo era truncado.
 **O que ficou** (`tailwind.css`, `pages/index.vue`, `components/PosReceipt.vue`):
 
 ```css
-@page { size: 80mm 297mm; margin: 3mm 4mm; }
+@page {
+  size: 80mm 297mm; /* literal: rede para engine que rejeite var() no parse */
+  size: var(--pos-roll-width, 80mm) var(--pos-roll-height, 297mm);
+  margin: 3mm 4mm;
+  margin: var(--pos-roll-margin-y, 3mm) var(--pos-roll-margin-x, 4mm);
+}
 ```
 
 - `4mm` de margem lateral não é gosto: uma térmica de 80mm imprime ~72mm (576
   dots a 203dpi), então 4mm de cada lado são papel fora do alcance do cabeçote.
   Pedir mais largura não ganha espaço, só joga a coluna do preço para fora.
 - A geometria virou variáveis CSS (`--pos-roll-*`) com **um dono só**; o recibo
-  lê `.pos-receipt` e não fixa largura própria. Trocar para 58mm é mexer em um
-  lugar (mais o `@page`, que repete os números porque descritores de página não
-  leem custom properties — os dois lados ficam amarrados pelo teste).
+  lê `.pos-receipt` e não fixa largura própria.
 - O `#pos-print-area` foi para o `body` por `Teleport`, o que permite esconder o
   app com `display: none` de verdade. Fim das páginas em branco.
 - `tests/receiptPrint.test.ts` trava o contrato: largura declarada, `@page` em
-  sintaxe válida (proíbe `auto`), margens iguais às vars, recibo sem largura
+  sintaxe válida (proíbe `auto`), literal antes da versão configurável, fallback
+  obrigatório em toda `var()`, números iguais aos do `:root`, recibo sem largura
   própria e app escondido com `display`, não `visibility`.
 
 **Verificado sem impressora**, renderizando o recibo com as regras reais do
 `tailwind.css` via CDP `printToPDF`: página **80,1 × 297mm** (antes: Letter),
 **1 página** para recibo curto (antes: 3, duas em branco) e **3 páginas** para
 recibo de 60 itens — ou seja, pagina pelo conteúdo. Nada cortado na largura.
+
+### ⚙️ Largura de rolo é configuração, não constante (2026-08-12)
+
+O Pablo pediu que isso seja configurável, "mesmo que depois". A primeira versão
+desta seção afirmava que **descritores de `@page` não leem custom properties** —
+**está errado**, e a correção muda o desenho para melhor.
+
+Medido no Chrome (CDP `printToPDF` + `preferCSSPageSize`), com `--w: 63mm`:
+
+| declaração | resultado |
+| --- | --- |
+| `size: 63mm 211mm` (literal) | ✅ 63,2 × 211mm |
+| `size: var(--w) var(--h)` | ✅ 63,2 × 211mm — **var funciona** |
+| `size: var(--nao-existe, 63mm) …` | ✅ 63,2 × 211mm — fallback funciona |
+| `margin: var(--my) var(--mx)` | ✅ margem por var funciona |
+| `size: var(--w) auto` | ❌ Letter — o problema é o `auto`, não o `var` |
+| `size: 80mm 297mm; size: var(--sem-fallback)` | ❌ **Letter** |
+
+A última linha é a armadilha: uma `var()` que não resolve **não cai para a
+declaração literal anterior** — derruba o `size` inteiro e a página volta ao
+driver, silenciosamente. Por isso o `@page` ficou com o literal primeiro (rede
+para engine que rejeite `var()` no parse) e a versão configurável depois, com
+fallback inline em cada `var()`. O teste trava essa forma, e as quatro asserções
+foram checadas por mutação (cada mutação faz o teste falhar).
+
+**O seam está funcionando hoje.** Sobrescrevendo `--pos-roll-width: 58mm` e
+`--pos-roll-margin-x: 3mm` no `:root` em runtime, medido no PDF: página **57,8mm**
+com recibo de **51,9mm** e margens de 2,9/3,0mm — contra **80,1mm** e recibo de
+**71,9mm** no default. Página e recibo se movem juntos, porque
+`--pos-receipt-width` deriva da mesma var. Um terminal de 58mm **não exige
+recompilar CSS**.
+
+**O que falta para virar configuração de verdade** — a origem do valor, que é uma
+fatia própria (não fiz agora para não inventar leitura de campo que não existe):
+
+1. `POSTerminal.metadata["hardware"]["printer"]` passa a declarar largura de rolo
+   (hoje o `_component_health` em `shopman/backstage/services/pos_terminal.py` só
+   lê `enabled`/`adapter`, não dimensão nenhuma).
+2. A projection do POS (`shopman/backstage/projections/pos.py`) expõe o valor —
+   hoje ela manda só `terminal_health_status` para a tela.
+3. A superfície escreve a var no `documentElement` quando o terminal declarar
+   largura diferente do default. Uma linha, e o CSS já obedece.
+
+Enquanto (1) e (2) não existirem, o default de 80mm vale para todo terminal — que
+é o caso da Nelson hoje, com a TM-T20.
 
 **O que ainda quer aparelho:** densidade/contraste, alinhamento lateral do rolo
 (o texto agora encosta no limite da área imprimível) e o comportamento de avanço

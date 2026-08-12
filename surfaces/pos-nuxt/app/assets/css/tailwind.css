@@ -231,20 +231,34 @@
 /* ───────────────────────────────────────────────────────────────────────────
    POS receipt print (spec §D3 — kiosk window.print)
 
-   GEOMETRIA DO ROLO — dono único da largura impressa. A Nelson usa rolo de 80mm
-   (confirmado com o Pablo em 2026-08-12). A margem horizontal não é gosto: uma
-   térmica de 80mm imprime ~72mm (576 dots a 203dpi), ou seja 4mm de cada lado
-   são papel que o cabeçote não alcança. Pedir mais largura que isso não ganha
-   espaço — só joga a coluna da direita, a do preço, para fora do alcance.
-   Trocar de rolo (58mm, por exemplo) é mexer AQUI e no `@page` lá embaixo —
-   os dois números ficam amarrados por tests/receiptPrint.test.ts.
+   GEOMETRIA DO ROLO — dono único da largura impressa, e o ponto de configuração.
+   O default é o aparelho da Nelson: Epson TM-T20, rolo de 80mm (confirmado com o
+   Pablo em 2026-08-12). A margem horizontal não é gosto: a TM-T20 imprime 576
+   dots a 203dpi = ~72mm, ou seja 4mm de cada lado são papel que o cabeçote não
+   alcança. Pedir mais largura que isso não ganha espaço — só joga a coluna da
+   direita, a do preço, para fora do alcance.
 
-   ⚠️ `size: 80mm auto` NÃO funciona: o descritor `size` não aceita `<length>`
-   misturado com `auto`, então o navegador descarta a regra inteira e a largura
-   volta a ser decidida pelo driver (verificado no Chrome via CDP printToPDF —
-   saía Letter). A altura precisa ser um comprimento; 297mm é a página de rolo
-   que os drivers térmicos expõem por padrão. Corte e avanço do papel no fim do
-   recibo são configuração do driver, a confirmar no aparelho.
+   ⚙️ **Configurável em runtime.** O `@page` lá embaixo lê estas variáveis, então
+   um terminal com rolo diferente é `--pos-roll-width` reescrita no `:root` (por
+   exemplo `document.documentElement.style`) — sem recompilar CSS. Como o recibo
+   também deriva daqui, page e container mudam juntos. Falta só a origem do valor:
+   o terminal ainda não declara largura de rolo (ver o handoff, seção 1).
+
+   ⚠️ Duas armadilhas medidas no Chrome (CDP printToPDF + preferCSSPageSize):
+
+   1. `size: 80mm auto` é INVÁLIDO — o descritor `size` não aceita `<length>`
+      misturado com `auto`, e o navegador descarta a regra inteira: a largura
+      volta ao driver (saía Letter). A altura precisa ser comprimento; 297mm é a
+      página de rolo que os drivers térmicos expõem por padrão.
+   2. Uma `var()` que não resolve **não cai para a declaração literal anterior** —
+      derruba o `size` inteiro e volta ao Letter, silenciosamente. Por isso cada
+      `var()` aqui carrega fallback inline, e o literal vem primeiro (engine que
+      não aceite `var()` em `@page` descarta a linha seguinte no parse e fica com
+      o literal). Os números repetidos ficam amarrados por
+      tests/receiptPrint.test.ts.
+
+   Corte e avanço do papel no fim do recibo são configuração do driver, a
+   confirmar no aparelho.
    ─────────────────────────────────────────────────────────────────────────── */
 :root {
   --pos-roll-width: 80mm;
@@ -288,6 +302,8 @@
   }
   @page {
     size: 80mm 297mm;
+    size: var(--pos-roll-width, 80mm) var(--pos-roll-height, 297mm);
     margin: 3mm 4mm;
+    margin: var(--pos-roll-margin-y, 3mm) var(--pos-roll-margin-x, 4mm);
   }
 }
