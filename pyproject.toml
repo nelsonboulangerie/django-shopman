@@ -16,6 +16,13 @@ dependencies = [
     "djangorestframework>=3.17,<4.0",
     "django-filter>=25.2,<26.0",
     "drf-spectacular>=0.29,<1.0",
+    # ⚠️ Piso, não capricho: o `drf-spectacular` só pede `PyYAML>=5.1`, então quando o
+    # resolvedor precisa voltar atrás (o `soft-webauthn` puxa `webauthn` e o pip sai
+    # procurando versão compatível) ele desce até o sdist do PyYAML 6.0 — que não compila
+    # com Cython 3 e derruba a instalação inteira com
+    # "'build_ext' object has no attribute 'cython_sources'". Da 6.0.1 em diante há wheel
+    # para 3.12, e o caminho quebrado deixa de existir.
+    "PyYAML>=6.0.1,<7.0",
     "shopman-utils>=0.3.0",
     "shopman-refs>=0.1.0",
     "shopman-orderman>=0.1.0",
@@ -54,7 +61,16 @@ dev = [
     "pytest-django",
     "pytest-timeout>=2.3,<3.0",
     "pytest-cov",
+    "pytest-playwright>=0.5,<0.8",
     "ruff>=0.15,<1.0",
+]
+
+# Teste de carga (`make load`) — fora do `dev` de propósito, e não é organização:
+# o locust arrasta gevent/geventhttpclient, e resolver isso junto com o resto fazia
+# o pip voltar atrás até um PyYAML antigo que não compila mais com Cython 3
+# ("'build_ext' object has no attribute 'cython_sources'"). O CI não roda carga —
+# só o alvo manual roda. Para usá-lo: pip install -e ".[load]".
+load = [
     "locust>=2.24,<3.0",
 ]
 

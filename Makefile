@@ -24,6 +24,11 @@ help: ## Mostra este help
 # ── Setup ─────────────────────────────────────────────────────────────
 
 install: ## Instala deps + apps da suite em modo editável
+	# ⚠️ As deps de TESTE não moram aqui: vêm do extra `dev` do pyproject, instalado
+	# pelo `-e ".[dev]"` lá embaixo. Já foram duas listas, e elas divergiram em
+	# silêncio — o `soft-webauthn` do passkey entrou no pyproject, não entrou aqui, e
+	# o main ficou vermelho com ModuleNotFoundError num teste que passava local (a
+	# máquina de quem escreveu já tinha o pacote). Dep de teste nova → pyproject.
 	$(PYTHON) -m pip install --upgrade pip
 	$(PYTHON) -m pip install "Django>=6.0,<6.1" "djangorestframework>=3.17,<4.0" "django-filter>=25.2,<26.0" \
 		"drf-spectacular>=0.29,<1.0" \
@@ -37,11 +42,7 @@ install: ## Instala deps + apps da suite em modo editável
 		"psycopg[binary]>=3.2,<4.0" \
 		"python-dotenv>=1.0,<2.0" \
 		"qrcode[pil]>=7.4,<8.0" \
-		"locust>=2.24,<3.0" \
-		"pytest-timeout>=2.3,<3.0" \
-		"pytest-playwright>=0.5,<0.8" \
-		"ruff>=0.15,<1.0" \
-		phonenumbers pytest pytest-django pytest-cov
+		phonenumbers
 	# Instala cada app em modo editável
 	$(PYTHON) -m pip install -e packages/refs
 	$(PYTHON) -m pip install -e packages/utils
@@ -54,7 +55,9 @@ install: ## Instala deps + apps da suite em modo editável
 	$(PYTHON) -m pip install -e packages/payman
 	$(PYTHON) -m pip install -e packages/buyman
 	$(PYTHON) -m pip install -e packages/fiscalman
-	$(PYTHON) -m pip install -e .
+	# `[dev]` traz pytest/ruff/playwright e o soft-webauthn do passkey. O locust vive
+	# no extra `load` (só o `make load` precisa dele) — ver a nota no pyproject.
+	$(PYTHON) -m pip install -e ".[dev]"
 	@echo "✓ Dependências instaladas"
 
 # ── Testes ────────────────────────────────────────────────────────────
@@ -123,7 +126,10 @@ test-runtime: test-runtime-preflight ## Stress de segurança/confiabilidade em P
 	$(PYTHON) scripts/run_runtime_tests.py
 	@echo "✓ Runtime security/reliability gate passou"
 
-load-test: ## Locust headless contra a API Django rodando (HOST=http://127.0.0.1:8001 USERS=100 RATE=10 TIME=60s)
+load-test: ## Locust headless contra a API Django rodando (exige `pip install -e ".[load]"`; HOST=http://127.0.0.1:8001 USERS=100 RATE=10 TIME=60s)
+	@$(PYTHON) -c "import locust" 2>/dev/null || { \
+		echo "locust não instalado — ele vive no extra 'load' (fora do 'dev' porque arrasta gevent)."; \
+		echo "Instale com: $(PYTHON) -m pip install -e \".[load]\""; exit 1; }
 	$(PYTHON) -m locust -f shopman/shop/tests/load/locustfile.py --host=$(or $(HOST),http://127.0.0.1:8001) --headless -u $(or $(USERS),100) -r $(or $(RATE),10) --run-time $(or $(TIME),60s)
 
 storefront-e2e: $(NUXT_DIR)/node_modules/.package-lock.json ## E2E Playwright: seed + Django:8001 + loja Nuxt:3100 + fluxos cliente/operador (port/nuxt_port; args extras via args=)
