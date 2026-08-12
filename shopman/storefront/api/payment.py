@@ -25,7 +25,12 @@ from shopman.storefront.services import orders as order_service
 
 
 def _tracking_url(ref: str) -> str:
-    return f"/tracking/{ref}"
+    """URL de NAVEGAÇÃO do cliente — `pages/pedido/[ref]` no app Nuxt.
+
+    Não confundir com o endpoint `/api/v1/tracking/{ref}/`: como rota de tela,
+    `/tracking/{ref}` dá 404. Ver o mesmo cuidado no `next_url` do `views.py`.
+    """
+    return f"/pedido/{ref}"
 
 
 PAYMENT_RATE_LIMIT_RETRY_SECONDS = 30

@@ -391,7 +391,13 @@ class CheckoutView(APIView):
         request.session.pop("cart_session_key", None)
         # PAYMENT-TRACKING-MERGE: pix/card não vão mais para uma tela de pagamento
         # à parte — o Pix/cartão aparecem inline no próprio acompanhamento.
-        next_url = f"/tracking/{result.order_ref}"
+        #
+        # ⚠️ Rota do CLIENTE (Nuxt: `pages/pedido/[ref]/index.vue`), não a da API.
+        # `/tracking/{ref}` é o endpoint (`/api/v1/tracking/{ref}/`); como URL de
+        # navegação ela dá 404 — e o `finalizar.vue` faz `navigateTo(next_url)`
+        # com fallback que nunca dispara, porque este campo vem sempre preenchido.
+        # Resultado observado no staging: pedido criado e cliente na tela de 404.
+        next_url = f"/pedido/{result.order_ref}"
 
         data = CheckoutResponseSerializer(
             {
