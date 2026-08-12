@@ -23,7 +23,11 @@ from shopman.shop.services import account as account_service
 from shopman.shop.services import auth as auth_service
 from shopman.shop.services import devices as device_service
 from shopman.storefront.api import clean_name, clean_text
-from shopman.storefront.identity import get_authenticated_customer
+from shopman.storefront.identity import (
+    IDENTITY_DEVICE,
+    IDENTITY_SESSION_KEY,
+    get_authenticated_customer,
+)
 from shopman.storefront.intents.types import AddressIntent
 from shopman.storefront.presentation.account import (
     FOOD_PREFERENCE_OPTIONS,
@@ -828,7 +832,26 @@ class AccountStepUpView(APIView):
         if not getattr(result, "success", False):
             return Response({"detail": "Código inválido ou expirado."}, status=400)
         _mark_step_up(request)
-        return Response({"ok": True})
+
+        # ⚠️ E o aparelho passa a ser CONHECIDO. É o que dissolve a cerca em vez de
+        # empilhá-la: quem chegou por um link de campanha (`identity_strength = number`)
+        # confirma UMA vez neste navegador e nunca mais — endereço completo volta a
+        # aparecer, pontos valem em qualquer entrega, a conta abre.
+        #
+        # Sem isto, a confirmação valeria 10 minutos e a pessoa seria interrogada de novo na
+        # semana seguinte, no mesmo celular. Provar identidade tem de COMPRAR algo durável:
+        # é a diferença entre uma porta e um pedágio.
+        response = Response({"ok": True, "device_trusted": True})
+        request.session[IDENTITY_SESSION_KEY] = IDENTITY_DEVICE
+        try:
+            auth_service.trust_device(
+                response=response, customer_id=customer.uuid, request=request,
+            )
+        except Exception:
+            # A confirmação vale de qualquer forma (a marca de step-up já está na sessão);
+            # só o atalho durável não pôde ser gravado.
+            logger.warning("account.step_up_trust_failed", exc_info=True)
+        return response
 
 
 class AccountDeleteView(APIView):

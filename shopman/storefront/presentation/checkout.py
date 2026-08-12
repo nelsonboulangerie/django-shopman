@@ -30,6 +30,7 @@ from shopman.shop.projections.types import (
     SavedAddressProjection,
 )
 from shopman.storefront.constants import get_default_ddd
+from shopman.storefront.identity import knows_only_the_number
 from shopman.storefront.presentation.status import payment_method_label
 from shopman.storefront.presentation.types import PaymentMethodOptionProjection
 
@@ -173,7 +174,9 @@ def build_checkout(
             preselected_address_id,
             loyalty_balance_q,
             loyalty_value_display,
-        ) = _load_customer_context(customer_info)
+        ) = _load_customer_context(
+            customer_info, reduced=knows_only_the_number(request),
+        )
 
     interaction = InteractionContext.from_request(
         request,
@@ -282,9 +285,12 @@ def _card_provider() -> str:
 
 
 def _load_customer_context(
-    customer_info,
+    customer_info, *, reduced: bool = False,
 ) -> tuple[tuple[SavedAddressProjection, ...], int | None, int, str | None]:
-    """Return (saved_addresses, preselected_address_id, loyalty_balance_q, loyalty_value_display)."""
+    """Return (saved_addresses, preselected_address_id, loyalty_balance_q, loyalty_value_display).
+
+    ``reduced=True`` esconde a rua dos endereços salvos — ver ``_reduced_address``.
+    """
     try:
         context = customer_context.checkout_customer_context(customer_info.uuid)
     except Exception:
@@ -292,7 +298,7 @@ def _load_customer_context(
         return (), None, 0, None
 
     saved_addresses = tuple(
-        SavedAddressProjection(
+        _reduced_address(addr) if reduced else SavedAddressProjection(
             id=addr.id,
             formatted_address=addr.formatted_address,
             complement=addr.complement,
@@ -413,6 +419,37 @@ def _checkout_copy() -> CheckoutCopyProjection:
         switch_account_confirm=title("CHECKOUT_SWITCH_ACCOUNT_CONFIRM_CTA"),
         switch_account_keep=title("CHECKOUT_SWITCH_ACCOUNT_KEEP_CTA"),
         loyalty_savings_prefix=message("CHECKOUT_LOYALTY_SAVINGS_PREFIX"),
+    )
+
+
+def _reduced_address(addr) -> SavedAddressProjection:
+    """O endereço salvo com rótulo e bairro, sem rua nem número.
+
+    ⚠️ Isto é a cerca no lugar CERTO. A primeira versão do desenho pedia confirmação por
+    OTP para ver endereço — e o dono derrubou com o argumento que faltava: entrega PRECISA
+    de endereço, então proteger o dado atrapalhando o fluxo principal é o pior dos dois
+    mundos.
+
+    A saída é que **escolher não exige ler**. A seleção sempre foi por `id`
+    (`saved_address_id` no checkout), e o pedido é montado no servidor a partir dele. Então
+    numa sessão que conhece só o número, desce o suficiente para ESCOLHER — "Casa · Centro"
+    — e a rua fica no servidor. Entrega funciona idêntica; quem tocou num link encaminhado
+    descobre que existe um endereço chamado "Casa", não onde a pessoa mora.
+
+    Os componentes estruturados (rua, número, lat/lng, place_id) também não descem: eles
+    existem para reidratar o formulário de edição, que não é o que se faz aqui.
+    """
+    place = " · ".join(part for part in (addr.neighborhood, addr.city) if part)
+    return SavedAddressProjection(
+        id=addr.id,
+        formatted_address=place or "endereço salvo",
+        complement="",
+        label=addr.label,
+        is_default=addr.is_default,
+        label_key=addr.label_key,
+        label_custom=addr.label_custom,
+        neighborhood=addr.neighborhood,
+        city=addr.city,
     )
 
 

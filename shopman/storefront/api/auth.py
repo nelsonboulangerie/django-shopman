@@ -17,7 +17,13 @@ from shopman.shop.services import access as access_service
 from shopman.shop.services import auth as auth_service
 from shopman.shop.services import storefront_links
 from shopman.storefront.constants import HAS_AUTH
-from shopman.storefront.identity import get_authenticated_customer
+from shopman.storefront.identity import (
+    IDENTITY_DEVICE,
+    IDENTITY_NUMBER,
+    IDENTITY_SESSION_KEY,
+    get_authenticated_customer,
+    identity_strength,
+)
 from shopman.storefront.intents._phone import normalize_phone_input
 from shopman.storefront.intents.auth import clean_display_name, needs_confirmation
 
@@ -95,33 +101,6 @@ class LogoutView(APIView):
         response = Response(_session_payload(None))
         auth_service.revoke_current_device(request=request, response=response)
         return response
-
-
-#: Quanto sabemos sobre quem está do outro lado. A sessão carrega isto para que as telas
-#: decidam o que mostrar — e é a ÚNICA cerca do desenho: `audience` existe no model e
-#: ninguém a aplica (ver `services/campaign_identity.py`).
-#:
-#: `device`: este navegador já provou identidade por OTP algum dia e ganhou o cookie de
-#:   confiança (`DeviceTrustService`). Sabemos que é a pessoa. Nada é escondido.
-#: `number`: veio de um link que nós mandamos para um número que conhecemos — sabemos o
-#:   NÚMERO, não as MÃOS, porque mensagem se encaminha. Compra à vontade; dado pessoal
-#:   aparece reduzido até um toque de confirmação promover a sessão para `device`.
-IDENTITY_DEVICE = "device"
-IDENTITY_NUMBER = "number"
-IDENTITY_SESSION_KEY = "identity_strength"
-
-
-def identity_strength(request) -> str:
-    """A força da identidade desta sessão. Ausente ⇒ `device`.
-
-    O padrão é o forte de propósito: quem entrou pelo login normal (OTP) ou já era confiado
-    não passa por aqui, e tratar "sem marca" como fraco esconderia dado de quem provou
-    identidade — quebrando a loja para consertar nada.
-    """
-    session = getattr(request, "session", None)
-    if session is None:
-        return IDENTITY_DEVICE
-    return session.get(IDENTITY_SESSION_KEY) or IDENTITY_DEVICE
 
 
 def _record_identity_strength(request, metadata, *, customer) -> None:

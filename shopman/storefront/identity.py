@@ -51,3 +51,38 @@ def customer_pricing_hints(request) -> tuple[str, str]:
     except Exception:
         logger.warning("customer_pricing_hints failed", exc_info=True)
         return "", ""
+
+
+# ── Quanto sabemos de quem está do outro lado ────────────────────────
+#
+# Uma pergunta só, e ela decide tudo o que as telas mostram: **este aparelho é conhecido?**
+#
+# ⚠️ Não é a `audience` do `AccessLink`. Ela existe no model e ninguém a aplica
+# (`exchange_token` nunca passa `required_audience`), então usá-la como cerca seria confiar
+# num campo que ninguém lê.
+
+#: O cookie de confiança deste navegador já provou identidade por OTP algum dia
+#: (`DeviceTrustService`). Sabemos que é a pessoa: nada é reduzido.
+IDENTITY_DEVICE = "device"
+#: Veio de um link que mandamos a um número conhecido. Sabemos o NÚMERO, não as MÃOS —
+#: mensagem se encaminha. Compra à vontade; dado pessoal aparece reduzido.
+IDENTITY_NUMBER = "number"
+IDENTITY_SESSION_KEY = "identity_strength"
+
+
+def identity_strength(request) -> str:
+    """A força da identidade desta sessão. Ausente ⇒ ``device``.
+
+    O padrão é o FORTE de propósito: quem entrou pelo login normal (OTP) ou já era confiado
+    não passa por aqui, e tratar "sem marca" como fraco esconderia dado de quem provou
+    identidade — quebrando a loja para consertar nada.
+    """
+    session = getattr(request, "session", None)
+    if session is None:
+        return IDENTITY_DEVICE
+    return session.get(IDENTITY_SESSION_KEY) or IDENTITY_DEVICE
+
+
+def knows_only_the_number(request) -> bool:
+    """Atalho de leitura: esta sessão conhece o número, mas não provou as mãos."""
+    return identity_strength(request) == IDENTITY_NUMBER

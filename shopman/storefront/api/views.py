@@ -15,6 +15,7 @@ from shopman.shop.services import checkout as checkout_service
 from shopman.shop.services import sessions as session_service
 from shopman.storefront.api import clean_name
 from shopman.storefront.cart import CHANNEL_REF
+from shopman.storefront.identity import knows_only_the_number
 from shopman.storefront.services import orders as order_service
 
 from .serializers import (
@@ -250,10 +251,19 @@ class CheckoutView(APIView):
             if saved_error:
                 return Response(saved_error, status=status.HTTP_400_BAD_REQUEST)
             if saved_payload:
-                delivery_address = delivery_address or saved_payload["formatted_address"]
+                # ⚠️ O endereço SALVO manda, não o texto que veio do cliente. A precedência
+                # era a inversa (`delivery_address or salvo`), e isso é errado por dois
+                # motivos: (1) escolher um endereço por `id` e mandar outro texto junto
+                # entregaria em lugar diferente do escolhido; (2) com o endereço reduzido em
+                # sessão que só conhece o número, o texto que a tela tem é "Centro ·
+                # Londrina" — e o entregador receberia isso como endereço.
+                #
+                # O `id` é a escolha; o texto é só desenho. Quem escolhe salvo, entrega no
+                # salvo.
+                delivery_address = saved_payload["formatted_address"]
                 delivery_address_structured = {
-                    **saved_payload["structured"],
                     **_clean_structured_address(delivery_address_structured),
+                    **saved_payload["structured"],
                 }
 
         if fulfillment_type == "delivery":
@@ -269,6 +279,26 @@ class CheckoutView(APIView):
                     status=status.HTTP_400_BAD_REQUEST,
                 )
             delivery_address_structured = structured
+
+        # ⚠️ A única rota de perda MATERIAL que uma sessão de link abria: gastar os pontos
+        # da pessoa num pedido entregue num endereço digitado na hora. Pontos valem onde ela
+        # já vai — endereço salvo ou balcão. Custo para quem é dona de verdade: nenhum, e o
+        # aparelho dela é conhecido de qualquer forma. Ver `storefront/identity.py`.
+        if use_loyalty and knows_only_the_number(request):
+            if fulfillment_type == "delivery" and not saved_address_id:
+                message = (
+                    "Para usar seus pontos numa entrega em endereço novo, confirme que é "
+                    "você. Em endereço já salvo ou retirando no balcão, pode usar agora."
+                )
+                return Response(
+                    {
+                        "detail": message,
+                        "field": "use_loyalty",
+                        "code": "identity_confirmation_required",
+                        "errors": {"use_loyalty": message},
+                    },
+                    status=status.HTTP_403_FORBIDDEN,
+                )
 
         phone = normalize_phone(phone_raw) or phone_raw
 
