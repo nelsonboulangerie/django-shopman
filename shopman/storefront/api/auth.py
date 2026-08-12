@@ -97,6 +97,58 @@ class LogoutView(APIView):
         return response
 
 
+#: Quanto sabemos sobre quem está do outro lado. A sessão carrega isto para que as telas
+#: decidam o que mostrar — e é a ÚNICA cerca do desenho: `audience` existe no model e
+#: ninguém a aplica (ver `services/campaign_identity.py`).
+#:
+#: `device`: este navegador já provou identidade por OTP algum dia e ganhou o cookie de
+#:   confiança (`DeviceTrustService`). Sabemos que é a pessoa. Nada é escondido.
+#: `number`: veio de um link que nós mandamos para um número que conhecemos — sabemos o
+#:   NÚMERO, não as MÃOS, porque mensagem se encaminha. Compra à vontade; dado pessoal
+#:   aparece reduzido até um toque de confirmação promover a sessão para `device`.
+IDENTITY_DEVICE = "device"
+IDENTITY_NUMBER = "number"
+IDENTITY_SESSION_KEY = "identity_strength"
+
+
+def identity_strength(request) -> str:
+    """A força da identidade desta sessão. Ausente ⇒ `device`.
+
+    O padrão é o forte de propósito: quem entrou pelo login normal (OTP) ou já era confiado
+    não passa por aqui, e tratar "sem marca" como fraco esconderia dado de quem provou
+    identidade — quebrando a loja para consertar nada.
+    """
+    session = getattr(request, "session", None)
+    if session is None:
+        return IDENTITY_DEVICE
+    return session.get(IDENTITY_SESSION_KEY) or IDENTITY_DEVICE
+
+
+def _record_identity_strength(request, metadata, *, customer) -> None:
+    """Marcar a sessão quando ela nasceu de um link de campanha.
+
+    ⚠️ E consultar o APARELHO antes de marcar como fraca: se este navegador já carrega o
+    cookie de confiança da pessoa (`DeviceTrustService.check`), nós sabemos que é ela —
+    o link foi só conveniência, e não há nada a reduzir. É o celular dela, que é o caso da
+    esmagadora maioria de quem volta.
+    """
+    if not isinstance(metadata, dict) or metadata.get("login_source") != "campaign":
+        return
+
+    trusted = False
+    try:
+        if customer is not None:
+            trusted = auth_service.device_is_trusted(request, customer_uuid=customer.uuid)
+    except Exception:
+        # Na dúvida, a identidade é a FRACA: reduzir o que aparece é degradação segura;
+        # assumir confiança que não se verificou não é.
+        logger.debug("access_link: device trust check degraded", exc_info=True)
+
+    request.session[IDENTITY_SESSION_KEY] = (
+        IDENTITY_DEVICE if trusted else IDENTITY_NUMBER
+    )
+
+
 def _access_link_redirect(metadata: dict | None) -> str:
     """Derive the Nuxt store destination from AccessLink metadata.
 
@@ -154,6 +206,25 @@ class AccessLinkExchangeView(APIView):
         metadata = access_service.token_metadata(token)
         result = access_service.exchange_token(token, request)
         if not result.success:
+            # ⚠️ Token gasto NÃO significa porta fechada. É o segundo toque na mesma
+            # mensagem — e o uso único é justamente o que o torna comum: a pessoa clica,
+            # compra, volta na conversa e clica outra vez. Se ela JÁ tem sessão, dizer
+            # "este link expirou" é uma parede falsa, a informação mais desanimadora
+            # possível para quem já está dentro.
+            #
+            # Quem sabe as duas coisas (token inválido E sessão existente) é o servidor. A
+            # página não tem como responder isso numa carga nova: o estado do cliente
+            # nasce vazio, e só o cookie sabe.
+            already = get_authenticated_customer(request)
+            if already is not None:
+                logger.info("access_link_exchange_spent_but_session_alive")
+                return Response({
+                    "ok": True,
+                    "already_authenticated": True,
+                    "redirect": _access_link_redirect(metadata),
+                    "identity_strength": identity_strength(request),
+                    **_session_payload(already),
+                })
             logger.warning("access_link_exchange_failed error=%s", getattr(result, "error", "?"))
             return Response(
                 {"detail": "Este link expirou ou já foi usado."},
@@ -162,6 +233,7 @@ class AccessLinkExchangeView(APIView):
 
         if hasattr(request, "session"):
             request.session["origin_channel"] = access_service.resolve_origin(result)
+            _record_identity_strength(request, metadata, customer=result.customer)
 
         # Access link vindo do site: o código NB carregou a sacola anônima na metadata.
         # A in-app browser que abre o link é sessão nova (sem sacola), então adotamos a
@@ -186,6 +258,7 @@ class AccessLinkExchangeView(APIView):
         payload = {
             "ok": True,
             "redirect": _access_link_redirect(metadata),
+            "identity_strength": identity_strength(request),
             **_session_payload(customer),
         }
         # Handoff do site que expirou: entrou logado, mas a sacola não veio. Avisamos com

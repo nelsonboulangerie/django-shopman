@@ -204,6 +204,22 @@ def trusted_device_login(request, *, phone: str):
     return customer
 
 
+def device_is_trusted(request, *, customer_uuid) -> bool:
+    """Este navegador já provou identidade por OTP algum dia e ganhou o cookie?
+
+    É a pergunta que decide o quanto sabemos de quem está do outro lado: com o cookie,
+    sabemos que é a PESSOA; sem ele, um link de campanha só nos diz o NÚMERO. Vive aqui, e
+    não na API da loja, porque a superfície não fala com o kernel direto
+    (`test_import_boundaries`) — e porque `trusted_device_login`/`trust_device`, os dois
+    outros usos da mesma confiança, já moram neste módulo.
+    """
+    from shopman.doorman.services.device_trust import DeviceTrustService
+
+    if not customer_uuid:
+        return False
+    return DeviceTrustService.check(request, "customer", customer_uuid)
+
+
 def trust_device(*, response, customer_id, request) -> None:
     from shopman.doorman.services.device_trust import DeviceTrustService
 

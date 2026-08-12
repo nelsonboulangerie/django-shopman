@@ -335,6 +335,7 @@ def _whatsapp_backend() -> str | None:
 
 def _send_to(recipients, *, announcement) -> tuple[int, int]:
     from shopman.shop.notifications import notify
+    from shopman.shop.services import campaign_identity
 
     # Materializa UMA vez: `recipients` pode ser gerador, e contá-lo duas vezes
     # devolveria zero na segunda.
@@ -370,9 +371,23 @@ def _send_to(recipients, *, announcement) -> tuple[int, int]:
         **{k: str(v) for k, v in variables.items() if isinstance(v, (str, int, float))},
     }
 
+    # O destino do clique, em caminho relativo: é ele que vai dentro do token de cada
+    # destinatário. Vem do MESMO `link` que o anúncio já resolveu, para não haver duas
+    # opiniões sobre onde a mensagem leva.
+    destination = _relative_destination(link)
+
     sent = failed = 0
     for recipient in targets:
         try:
+            # ⚠️ Link PESSOAL por destinatário. O link comum fazia a pessoa chegar anônima
+            # e o checkout pedir login — num canal onde escolhemos o número justamente
+            # porque sabemos de quem é. Sem UUID (assinante anônimo de alerta), cai no
+            # link comum, que é a resposta certa: não há identidade a pôr nele.
+            personal = campaign_identity.personal_link(
+                customer_uuid=getattr(recipient, "customer_uuid", "") or "",
+                destination=destination,
+                announcement=announcement,
+            )
             result = notify(
                 event="announcement_published",
                 recipient=recipient.phone,
@@ -384,6 +399,7 @@ def _send_to(recipients, *, announcement) -> tuple[int, int]:
                 # os dois caminhos só se os dois falarem igual.
                 context={
                     **shared,
+                    "action_url": personal or link,
                     "customer_name": getattr(recipient, "first_name", "") or "",
                 },
                 backend=backend,
@@ -394,6 +410,28 @@ def _send_to(recipients, *, announcement) -> tuple[int, int]:
             failed += 1
             logger.warning("campaign.send_failed announcement=%s", announcement.pk, exc_info=True)
     return sent, failed
+
+
+def _relative_destination(link: str) -> str:
+    """O caminho relativo de um link da loja ("https://loja/oferta/x" → "/oferta/x").
+
+    O token guarda CAMINHO, não URL: o destino é resolvido pelo backend no resgate
+    (`_access_link_redirect`), e aceitar URL absoluta ali seria abrir redirect.
+
+    Link de outro host (ou vazio) devolve a sacola: é o destino honesto de uma mensagem que
+    convida a comprar, e nunca um caminho que não controlamos.
+    """
+    from shopman.shop.services import storefront_links
+
+    if not link:
+        return storefront_links.path_cart()
+
+    base = storefront_links.storefront_base_url()
+    if base and link.startswith(base):
+        return link[len(base):] or "/"
+    if link.startswith("/") and not link.startswith("//"):
+        return link
+    return storefront_links.path_cart()
 
 
 def _posting_adapter(platform: str):

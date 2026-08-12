@@ -30,6 +30,13 @@ onMounted(async () => {
     failed.value = true
     return
   }
+
+  // ⚠️ Tira o token da barra de endereço antes de qualquer coisa. Ele é um crachá: deixá-lo
+  // ali o deixa no histórico do navegador, na barra do navegador embutido do WhatsApp e em
+  // qualquer print tirado depois. A troca já foi lida da rota; a URL não precisa mais dele.
+  const clean = window.location.pathname
+  window.history.replaceState(window.history.state, '', clean)
+
   try {
     const response = await $fetch<AccessResponse>(apiPath('/api/auth/access/'), {
       method: 'POST',
@@ -43,6 +50,9 @@ onMounted(async () => {
     if (response.handoff_expired && response.notice) useSonner(response.notice)
     await navigateTo(response.redirect || '/conta')
   } catch {
+    // O reclique é respondido pelo SERVIDOR (200 com `already_authenticated`), porque só
+    // ele sabe se existe sessão no cookie — numa carga nova o estado daqui nasce vazio.
+    // Cair aqui é falha de verdade: token inválido e ninguém identificado.
     failed.value = true
   }
 })

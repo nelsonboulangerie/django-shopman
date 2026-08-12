@@ -68,6 +68,11 @@ class Recipient:
 
     phone: str
     customer_ref: str = ""
+    #: UUID do cliente, quando conhecido. É o que o `AccessLink` exige para cunhar um link
+    #: pessoal (`customer_id`), e vem de graça: quem resolve o destinatário já carregou o
+    #: `Customer`. Vazio para assinante ANÔNIMO de alerta (só telefone) — e esse é o caso
+    #: que legitimamente recebe link sem identidade, porque não há identidade a pôr nele.
+    customer_uuid: str = ""
     #: Primeiro nome, para o template poder cumprimentar. Vazio quando o
     #: destinatário veio de assinatura anônima (só telefone) — é por isso que o
     #: template de alerta NÃO tem variável de nome: a Meta exige toda variável
@@ -447,6 +452,7 @@ def _bought_within_days(sku: str, days: int) -> list[Recipient]:
             Recipient(
                 phone=phone,
                 customer_ref=getattr(customer, "ref", "") or "",
+                customer_uuid=str(getattr(customer, "uuid", "") or ""),
                 first_name=(getattr(customer, "first_name", "") or "").strip(),
                 is_vip=bool(getattr(insight, "is_vip", False)),
                 preferred_hour=getattr(insight, "preferred_hour", None),
@@ -709,6 +715,7 @@ def _recipients_for_refs(customer_refs: list[str]) -> list[Recipient]:
             Recipient(
                 phone=customer.phone,
                 customer_ref=customer.ref,
+                customer_uuid=str(getattr(customer, "uuid", "") or ""),
                 first_name=(getattr(customer, "first_name", "") or "").strip(),
                 is_vip=is_vip,
                 preferred_hour=preferred_hour,
@@ -760,6 +767,8 @@ def _merge(by_phone: dict, found: list, *, reason: str) -> None:
             by_phone[recipient.phone] = Recipient(
                 phone=recipient.phone,
                 customer_ref=recipient.customer_ref,
+                customer_uuid=recipient.customer_uuid,
+                first_name=recipient.first_name,
                 reasons=frozenset({reason}),
                 is_vip=recipient.is_vip,
                 preferred_hour=recipient.preferred_hour,
@@ -769,6 +778,8 @@ def _merge(by_phone: dict, found: list, *, reason: str) -> None:
             phone=existing.phone,
             # Um match anônimo (só telefone) não apaga o vínculo já conhecido.
             customer_ref=existing.customer_ref or recipient.customer_ref,
+            customer_uuid=existing.customer_uuid or recipient.customer_uuid,
+            first_name=existing.first_name or recipient.first_name,
             reasons=existing.reasons | {reason},
             is_vip=existing.is_vip or recipient.is_vip,
             # Idem para a hora habitual: a primeira conhecida vale.

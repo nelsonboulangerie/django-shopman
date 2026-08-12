@@ -550,3 +550,43 @@ def test_one_tag_written_two_ways_still_reaches_everyone(db):
     result = audience.resolve({"tags": ["sem-gluten"]})
 
     assert {r.phone for r in result.general} == {ana.phone, joao.phone}
+
+
+# ── O que o destinatário tem de carregar até o envio ──────────────────
+
+
+def test_the_recipient_keeps_the_first_name_through_the_merge(db):
+    """⚠️ O `_merge` reconstruía o destinatário SEM o `first_name`.
+
+    Todo destinatário passa pelo `_merge` (é ele quem deduplica por telefone), então o nome
+    chegava vazio no envio para TODO MUNDO: `handlers/campaign.py` monta
+    `{"customer_name": recipient.first_name}` e o template diz "Oi {{customer_name}}".
+    Resultado: mensagem sem nome, ou pior — cumprimento com um buraco.
+
+    Passou muito tempo escondido porque o ManyChat também tem um campo de nome no perfil do
+    assinante, então a mensagem de teste parecia certa. Duas fontes para a mesma pergunta,
+    uma delas vazia e calada.
+    """
+    person = _customer("+5543999996001", ref="CLI-N1")
+
+    result = audience.resolve({"customer_refs": ["CLI-N1"]})
+
+    assert [r.first_name for r in result.general] == [person.first_name]
+
+
+def test_the_recipient_carries_the_uuid_for_a_personal_link(db):
+    """O `AccessLink` exige `customer_id` (UUID). Ele vem de graça: quem resolveu o
+    destinatário já carregou o `Customer`."""
+    person = _customer("+5543999996002", ref="CLI-N2")
+
+    result = audience.resolve({"customer_refs": ["CLI-N2"]})
+
+    assert [r.customer_uuid for r in result.general] == [str(person.uuid)]
+
+
+def test_an_anonymous_alert_subscriber_has_no_uuid_to_put_in_a_link(db):
+    """Assinante anônimo de alerta é o caso que legitimamente recebe link sem identidade:
+    não há identidade a pôr nele. Precisa ser distinguível, e não um erro."""
+    anonymous = audience.Recipient(phone="+5543999996003")
+
+    assert anonymous.customer_uuid == ""
