@@ -167,6 +167,69 @@ número". Para tornar o login real basta trocar `DOORMAN_MESSAGE_SENDER_CLASS`
 para a Comtele (chave e rota 17 já no spec) — ⚠️ testar antes, a Comtele estava
 em HTTP 500 em 10/08.
 
+---
+
+## 8. Smoke — 2ª rodada, atrás do login (2026-08-11)
+
+Feita com as personas do seed, entrando pelo fluxo de SMS + código de teste.
+
+### ✅ Maria Santos (CLI-001, aniversariante) — passou
+
+Pedido `WEB-260811-Q84` enviado com `expected_total_q: 2530`, **exatamente o
+total exibido**, e aceito (201). O desconto de aniversário sobrevive ao commit
+desde o fix da identidade do cliente. Passaram junto: contato reconhecido,
+retirada × entrega, escolha de data/hora, Pix × cartão, loyalty ("Economize até
+R$ 2,50"), promoção por SKU e o modal de revisão.
+
+### 🔴 P0 — o pedido dava certo e o cliente caía num 404 (CORRIGIDO)
+
+O checkout devolvia `next_url = /tracking/{ref}`; `finalizar.vue` faz
+`navigateTo(next_url)` e o fallback `/pedido/{ref}` ao lado **nunca dispara**,
+porque o campo vem sempre preenchido. `/tracking/{ref}` é o **endpoint**; a rota
+de tela é `pages/pedido/[ref]`.
+
+Reproduzido pela interface: pedido `WEB-260811-N78` criado (R$ 26,00) e o cliente
+na tela "Não encontramos esta página" — no pior momento possível, logo após
+comprar. Corrigido nos dois produtores, com teste que amarra o prefixo da API à
+existência da página no repo do Nuxt.
+
+### 🟠 Carlos Silva (CLI-006, funcionário) — INCOERÊNCIA ABERTA, decisão do dono
+
+Na loja pública o Carlos **vê** "Desconto funcionário − R$ 5,20" (R$ 26,00 →
+R$ 20,80). Ao enviar, o commit recalcula **sem** o desconto e a guarda recusa com
+`total_changed`. Reconfirmando, o pedido fecha em R$ 26,00.
+
+O mecanismo: `storefront/cart.py:77` **escreve `price_tier` na sessão** a cada
+mexida na sacola, então a projeção aplica a regra de funcionário; o commit
+substitui o bloco do cliente e o `price_tier` cai, então o total sobe.
+
+⚠️ Isso ficou visível agora porque a regra de funcionário **voltou a carregar**
+(commit `da69c714` — o parâmetro renomeado a desligava em silêncio). Antes, staff
+não ganhava desconto em lugar nenhum e a incoerência não aparecia.
+
+⚠️ O `test_persona_3_employee` afirma no docstring que "a loja nunca escreve
+`customer.price_tier` na sessão" — **isso é falso no código atual**. O teste passa
+porque o fixture não tem `RuleConfig` da regra de funcionário, ou seja, ele prova
+"regra não configurada", não a fronteira. É cobertura falsa.
+
+**Decisão necessária (não é bug de código, é regra de negócio):**
+- **Funcionário NÃO tem desconto na loja pública** (o que o teste diz hoje) → parar
+  de escrever `price_tier` em `cart.py:_customer_link`, ou escopar a regra ao canal
+  do PDV. Projeção e commit passam a concordar em R$ 26,00.
+- **Funcionário TEM desconto na loja** → preservar `price_tier` no commit (junto com
+  o `ref`) e reescrever o teste. Projeção e commit concordam em R$ 20,80.
+
+Enquanto não se decide, **a persona de funcionário não fecha pedido no primeiro
+clique** — o que um testador leria como produto quebrado.
+
+### 🟡 A confirmar — rascunho do checkout entre contas
+
+Depois de sair da conta da Maria e entrar como Carlos, o contato apareceu como
+**"Maria Santos" com o telefone do Carlos**. ⚠️ O fluxo usado foi por API (pedido e
+logout), que não passa pelo `clearCheckoutDraft()` da interface — precisa de
+repro só-pela-UI antes de virar bug. Se confirmar, é vazamento de nome entre
+contas no mesmo aparelho.
+
 ### Não coberto nesta rodada
 
 Tudo que vive atrás do login, porque autenticar em nome de alguém não é papel do
