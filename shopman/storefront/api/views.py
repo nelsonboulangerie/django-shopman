@@ -39,18 +39,23 @@ def _cart_data(request):
     return build_cart(request.session.get("cart_session_key"), CHANNEL_REF)
 
 
-# Chaves de IDENTIDADE do cliente que o commit precisa preservar. Só o ``ref`` —
-# é ele que dá elegibilidade a promoção por pessoa (aniversário, segmento RFM).
+# Chaves de IDENTIDADE do cliente que o commit precisa preservar:
+# - ``ref``: elegibilidade de promoção por pessoa (aniversário, segmento RFM);
+# - ``price_tier``: a faixa que decide o preço (staff, atacado).
 #
-# ⚠️ ``price_tier`` fica DE FORA de propósito: a loja pública nunca propaga faixa
-# de preço, senão o desconto de funcionário (20%, mecanismo do PDV) passa a valer
-# no site. Esse limite é testado em
-# ``storefront/tests/e2e/test_persona_3_employee.py`` e foi ele que pegou a
-# primeira versão deste fix, que preservava a faixa junto.
+# As duas já estavam na sessão (a loja as grava a cada mexida na sacola, em
+# ``storefront/cart.py:_customer_link``) e o ``set_data`` de ``customer`` no
+# commit substituía o bloco inteiro, derrubando ambas. Era isso que fazia a
+# projeção e o commit discordarem: a tela mostrava o desconto e o envio cobrava
+# cheio, com a guarda de preço recusando o pedido.
 #
-# Nome e telefone também não entram: o cliente os reescreve no formulário a cada
-# envio, então vêm do payload.
-_CUSTOMER_IDENTITY_KEYS = ("ref",)
+# O guarda do benefício de funcionário NÃO mora aqui — mora na regra
+# (``EmployeeRule.pickup_only``), que é onde a política pertence e onde o dono
+# pode mexer sem código.
+#
+# Nome e telefone não entram: o cliente os reescreve no formulário a cada envio,
+# então vêm do payload.
+_CUSTOMER_IDENTITY_KEYS = ("ref", "price_tier")
 
 
 def _session_customer_identity(session_key: str) -> dict:

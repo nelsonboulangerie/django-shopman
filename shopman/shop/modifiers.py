@@ -703,13 +703,31 @@ class EmployeeDiscountModifier:
     code = "shop.employee_discount"
     order = 60  # After canonical pricing (10, 50), before session total recalc
 
-    def __init__(self, *, discount_percent: int = DEFAULT_EMPLOYEE_DISCOUNT_PERCENT):
+    def __init__(
+        self,
+        *,
+        discount_percent: int = DEFAULT_EMPLOYEE_DISCOUNT_PERCENT,
+        pickup_only: bool = True,
+    ):
         self.discount_percent = discount_percent
+        # Fallback quando não há RuleConfig; a regra no admin é a fonte real.
+        self.pickup_only = pickup_only
 
     def apply(self, *, channel: Any, session: Any, ctx: dict) -> None:
-        price_tier = (session.data or {}).get("customer", {}).get("price_tier", "")
-        if price_tier != "staff":
-            # Deixou de ser staff: limpa transparência residual de uma passagem anterior.
+        from shopman.shop.rules.engine import get_rule_params
+
+        rule_params = get_rule_params("employee_discount")
+
+        data = session.data or {}
+        price_tier = data.get("customer", {}).get("price_tier", "")
+        # Benefício, não canal: com entrega o preço de funcionário viajaria para
+        # qualquer endereço, sem ninguém ver. Retirando, alguém entrega na mão.
+        pickup_only = rule_params.get("pickup_only", self.pickup_only)
+        delivering = pickup_only and data.get("fulfillment_type") == "delivery"
+
+        if price_tier != "staff" or delivering:
+            # Deixou de ser staff (ou trocou para entrega): limpa transparência
+            # residual de uma passagem anterior.
             pricing = session.pricing or {}
             if pricing.pop("employee_discount", None) is not None:
                 session.pricing = pricing
@@ -721,8 +739,7 @@ class EmployeeDiscountModifier:
         if "employee_discount_percent" in channel_rules:
             percent = channel_rules["employee_discount_percent"]
         else:
-            from shopman.shop.rules.engine import get_rule_params
-            percent = get_rule_params("employee_discount").get("discount_percent", self.discount_percent)
+            percent = rule_params.get("discount_percent", self.discount_percent)
 
         _apply_flat_best_wins(
             session,

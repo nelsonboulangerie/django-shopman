@@ -48,7 +48,13 @@ class TestEmployeeRule:
         assert rule.rule_type == "modifier"
 
     def test_default_params(self):
-        assert EmployeeRule.default_params == {"discount_percent": 20, "price_tier": "staff"}
+        assert EmployeeRule.default_params == {
+            "discount_percent": 20,
+            "price_tier": "staff",
+            # Benefício do funcionário, não canal de preço: com entrega ele
+            # viajaria para qualquer endereço. Ver test_persona_3_employee.
+            "pickup_only": True,
+        }
 
     def test_custom_params(self):
         rule = EmployeeRule(discount_percent=15, price_tier="team")

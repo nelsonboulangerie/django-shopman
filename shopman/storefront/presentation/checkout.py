@@ -225,10 +225,39 @@ def build_checkout(
         is_debug=settings.DEBUG,
         support_whatsapp_url=support_whatsapp_url,
         pickup_hint="Gratuita",
-        delivery_hint="",
+        delivery_hint=_delivery_hint(cart),
         card_provider=_card_provider(),
         default_ddd=get_default_ddd(),
     )
+
+
+_EMPLOYEE_DISCOUNT_LABEL = "Desconto funcionário"
+
+
+def _delivery_hint(cart) -> str:
+    """Aviso ao lado de "Entrega" quando escolhê-la custa o desconto de funcionário.
+
+    Sem isto o funcionário troca de retirada para entrega, vê o total subir e lê
+    como defeito. O aviso aparece no momento da ESCOLHA, ao lado da própria
+    opção — validar cedo e no lugar onde a decisão acontece.
+
+    Lê o lado de leitura (o próprio ``CartProjection``): a presença da linha de
+    desconto já identifica o funcionário, sem a presentation tocar em
+    ``shop.services`` (regra R-A de ``test_import_boundaries``).
+
+    ⚠️ Limite conhecido: com a entrega JÁ escolhida o desconto não está aplicado,
+    a linha some e o aviso também. Ele cobre a decisão, não o arrependimento.
+    """
+    from shopman.shop.rules.engine import get_rule_params
+
+    tem_desconto = any(
+        line.label == _EMPLOYEE_DISCOUNT_LABEL for line in (cart.discount_lines or ())
+    )
+    if not tem_desconto:
+        return ""
+    if not get_rule_params("employee_discount").get("pickup_only", True):
+        return ""
+    return "Sem o desconto de funcionário"
 
 
 def _card_provider() -> str:

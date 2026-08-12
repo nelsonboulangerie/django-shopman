@@ -1,22 +1,24 @@
-"""Persona 3 — Nelson employee (staff discount at the counter).
+"""Persona 3 — funcionário da Nelson (desconto de staff).
 
-BOUNDARY FINDING: the employee discount is a POS/counter concept and is NOT
-reachable through the storefront. The discount modifier fires only when
-``session.data["customer"]["tier"] == "staff"``, and that key is written
-exclusively by the POS attach-customer path (``shop/services/pos.py``). The
-storefront hardcodes the ``web`` channel and writes only ``{name, phone}`` into
-the session, so a staff member ordering on the public store is charged full price.
+DECISÃO (2026-08-11, Pablo): o funcionário **tem** o desconto na loja pública,
+mas **só na retirada**. O benefício é dele; com entrega, o preço de funcionário
+viajaria para qualquer endereço e viraria canal de preço para terceiros, sem
+ninguém ver — no balcão isso não acontece porque alguém entrega na mão.
 
-These tests pin that boundary from both sides:
-  * through the storefront API a staff customer gets NO discount (correct — the
-    public store must not leak staff pricing);
-  * the discount mechanism itself works when driven the way the POS drives it
-    (session data carrying ``customer.price_tier == "staff"``).
+A política mora na regra (``EmployeeRule.pickup_only``, default ``True``), não em
+código de superfície, então o dono muda pelo admin.
+
+⚠️ A versão anterior deste arquivo afirmava o contrário ("a loja nunca escreve
+``customer.price_tier``") e **passava por cobertura falsa**: o fixture não criava
+``RuleConfig`` da regra, então o teste provava "regra não configurada", não a
+fronteira. Quando `da69c714` fez a regra voltar a carregar, a fronteira caiu e
+ninguém foi avisado. Por isso agora o fixture cria a regra de verdade.
 """
 
 from __future__ import annotations
 
 import pytest
+from django.utils import timezone
 from shopman.guestman.models import Customer, PriceTier
 from shopman.orderman.models import Order, Session
 
@@ -42,30 +44,41 @@ def _staff_customer():
     )
 
 
+@pytest.fixture
+def employee_rule():
+    """A regra LIGADA de verdade — sem isto o teste prova "regra não configurada"."""
+    from shopman.shop.models import RuleConfig
+    from shopman.shop.rules import engine
+
+    RuleConfig.objects.create(
+        ref="employee_discount",
+        rule_path="shopman.shop.rules.pricing.EmployeeRule",
+        label="Desconto Funcionário",
+        params={"discount_percent": 20, "price_tier": "staff", "pickup_only": True},
+        enabled=True,
+        priority=60,
+    )
+    try:
+        engine.get_active_rules.cache_clear()  # type: ignore[attr-defined]
+    except AttributeError:
+        pass
+    yield
+    try:
+        engine.get_active_rules.cache_clear()  # type: ignore[attr-defined]
+    except AttributeError:
+        pass
+
+
 # ── the boundary, through the storefront ─────────────────────────────────────
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason=(
-        "DECISÃO DE NEGÓCIO ABERTA — funcionário na loja pública. Hoje a projeção "
-        "e o commit discordam: a tela mostra o desconto de 20% (a loja SIM escreve "
-        "`customer.price_tier` na sessão, `storefront/cart.py:_customer_link`, ao "
-        "contrário do que o docstring abaixo afirma) e o commit cobra cheio, porque "
-        "o `set_data` de `customer` derruba a faixa. A guarda de preço recusa o "
-        "pedido com `total_changed` e a persona de funcionário não fecha no primeiro "
-        "clique. Reproduzido no staging em 2026-08-11 (R$ 20,80 na tela → R$ 26,00 "
-        "no envio). Ficou visível quando `da69c714` fez a regra de funcionário voltar "
-        "a carregar; antes ela estava desligada em silêncio e este teste passava por "
-        "cobertura falsa (fixture sem RuleConfig), provando 'regra não configurada' e "
-        "não a fronteira. Decidir em docs/plans/ALPHA-READINESS-AUDIT.md §8: ou a loja "
-        "para de escrever `price_tier` (e o teste volta a valer como está), ou o "
-        "commit preserva a faixa (e o teste passa a esperar R$ 8,00)."
-    ),
-)
-def test_staff_customer_gets_no_discount_on_storefront(client):
-    """A staff member ordering on the public store pays full price — the
-    storefront never writes ``customer.price_tier`` into the session."""
+def test_staff_customer_gets_the_discount_on_pickup(client, employee_rule):
+    """Retirada: o funcionário paga R$ 8,00 (20% off) e o pedido FECHA.
+
+    O que a tela mostra é o que o commit cobra — a `expected_total_q` do helper
+    vem da projeção, então se os dois discordassem o pedido seria recusado com
+    `total_changed`. Foi exatamente essa discordância que quebrava a persona.
+    """
     _seed()
     staff = _staff_customer()
     J.authenticate(client, staff)
@@ -75,10 +88,73 @@ def test_staff_customer_gets_no_discount_on_storefront(client):
     assert status == 201, order_resp
 
     order = Order.objects.get(ref=order_resp["order_ref"])
-    # Full price: R$10,00, no 20% employee discount.
-    assert order.total_q == 1000
-    # The order's customer sub-dict carries no group — the modifier could never fire.
-    assert "tier" not in (order.data.get("customer") or {})
+    assert order.total_q == 800
+    # A faixa sobrevive ao commit — é ela que autoriza o preço cobrado.
+    assert (order.data.get("customer") or {}).get("price_tier") == "staff"
+
+
+def test_staff_customer_loses_the_discount_on_delivery(client, employee_rule):
+    """Entrega: paga cheio. O benefício é do funcionário, não um canal de preço.
+
+    Com entrega o preço de staff viajaria para qualquer endereço, sem ninguém
+    ver. Retirando, alguém entrega o pacote na mão — é essa a testemunha que o
+    balcão sempre teve.
+    """
+    from shopman.shop.models import DeliveryZone, Shop
+
+    _seed()
+    DeliveryZone.objects.create(
+        shop=Shop.objects.first(),
+        name="Centro",
+        zone_type=DeliveryZone.ZONE_TYPE_CEP_PREFIX,
+        match_value="860",
+        fee_q=0,
+    )
+    staff = _staff_customer()
+    J.authenticate(client, staff)
+    J.set_cart_qty(client, SKU, 1)
+
+    status, order_resp = J.checkout(
+        client,
+        name="Carlos Silva",
+        payment_method="cash",
+        fulfillment_type="delivery",
+        delivery_date=timezone.localdate().isoformat(),
+        delivery_address="Rua das Flores, 1",
+        delivery_address_structured={
+            "formatted_address": "Rua das Flores, 1 - Centro, Londrina - PR",
+            "route": "Rua das Flores",
+            "street_number": "1",
+            "city": "Londrina",
+            "state_code": "PR",
+            "postal_code": "86050-270",
+            "neighborhood": "Centro",
+        },
+    )
+    assert status == 201, order_resp
+
+    order = Order.objects.get(ref=order_resp["order_ref"])
+    assert order.total_q == 1000, "entrega não pode carregar preço de funcionário"
+
+
+def test_the_store_warns_before_the_price_changes(client, employee_rule):
+    """A dica aparece ANTES da escolha, senão o preço "muda sozinho".
+
+    Sem isto o funcionário troca para entrega, vê o total subir e lê como
+    defeito. O aviso mora no ``delivery_hint``, ao lado da própria opção.
+    """
+    _seed()
+    staff = _staff_customer()
+    J.authenticate(client, staff)
+    J.set_cart_qty(client, SKU, 1)
+
+    resp = client.get("/api/v1/storefront/checkout/")
+    checkout = resp.json()["checkout"]
+    assert checkout["delivery_hint"] == "Sem o desconto de funcionário"
+
+    # Cliente comum não vê aviso nenhum — a dica é sobre o benefício dele.
+    other = client.__class__()
+    assert other.get("/api/v1/storefront/checkout/").json()["checkout"]["delivery_hint"] == ""
 
 
 # ── the mechanism, driven the way the POS drives it ──────────────────────────

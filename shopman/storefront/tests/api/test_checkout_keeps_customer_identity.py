@@ -12,10 +12,10 @@ nome+telefone, e ``_build_ops_from_data`` transforma isso num ``set_data`` em
 o ``_resolve_customer_ctx`` do discount modifier retorna cedo e nunca avalia
 ``is_birthday``.
 
-⚠️ O fix preserva **só o ``ref``**. A primeira versão preservava ``price_tier``
-junto e ligou o desconto de funcionário (20%) na loja pública — quem pegou foi
-``storefront/tests/e2e/test_persona_3_employee.py``. Faixa de preço é mecanismo
-do PDV; a loja não propaga.
+O fix preserva ``ref`` e ``price_tier``: as duas decidem preço. O guarda do
+benefício de funcionário (só na retirada) mora na REGRA
+``EmployeeRule.pickup_only``, que é onde a política pertence — não em derrubar a
+faixa no commit, que só produzia a discordância entre a tela e a cobrança.
 """
 
 from __future__ import annotations
@@ -100,10 +100,10 @@ def test_checkout_preserves_customer_ref(client):
     customer = (session.data or {}).get("customer") or {}
     # A identidade sobrevive — é ela que decide preço e elegibilidade de promoção.
     assert customer.get("ref") == "CLI-001"
-    # ⚠️ `price_tier` NÃO é preservado de propósito: propagar faixa de preço pela
-    # loja pública liga o desconto de funcionário no site. Ver
-    # `storefront/tests/e2e/test_persona_3_employee.py`.
-    assert "price_tier" not in customer
+    # A faixa também sobrevive — é ela que decide o preço (staff, atacado). O
+    # guarda do benefício de funcionário mora na REGRA (`EmployeeRule.pickup_only`),
+    # não em derrubar a faixa no commit. Ver `test_persona_3_employee.py`.
+    assert customer.get("price_tier") == "atacado"
     # E o que o formulário mandou continua chegando.
     assert customer.get("name") == "Maria Santos"
     assert customer.get("phone") == "+5543991111111"

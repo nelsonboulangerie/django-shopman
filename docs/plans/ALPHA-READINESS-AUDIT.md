@@ -212,15 +212,27 @@ não ganhava desconto em lugar nenhum e a incoerência não aparecia.
 porque o fixture não tem `RuleConfig` da regra de funcionário, ou seja, ele prova
 "regra não configurada", não a fronteira. É cobertura falsa.
 
-**Decisão necessária (não é bug de código, é regra de negócio):**
-- **Funcionário NÃO tem desconto na loja pública** (o que o teste diz hoje) → parar
-  de escrever `price_tier` em `cart.py:_customer_link`, ou escopar a regra ao canal
-  do PDV. Projeção e commit passam a concordar em R$ 26,00.
-- **Funcionário TEM desconto na loja** → preservar `price_tier` no commit (junto com
-  o `ref`) e reescrever o teste. Projeção e commit concordam em R$ 20,80.
+**✅ DECIDIDO (Pablo, 2026-08-11): o funcionário TEM o desconto na loja pública,
+mas SÓ NA RETIRADA.**
 
-Enquanto não se decide, **a persona de funcionário não fecha pedido no primeiro
-clique** — o que um testador leria como produto quebrado.
+O benefício é dele. Com entrega, o preço de funcionário viajaria para qualquer
+endereço e viraria canal de preço para terceiros, sem ninguém ver — no balcão isso
+não acontece porque alguém entrega o pacote na mão. Retirando, a testemunha volta.
+
+O que mudou:
+- O commit passou a preservar `ref` **e** `price_tier` (as duas decidem preço), o
+  que acaba com a discordância entre a tela e a cobrança.
+- O guarda mora na **regra**, não em código de superfície: `EmployeeRule.pickup_only`
+  (default `True`), configurável pelo admin. Parâmetro novo entra com default, então
+  `RuleConfig` antigo continua carregando — o caminho que quebra é o contrário
+  (parâmetro nos dados que a classe não conhece), que foi o incidente de `da69c714`.
+- A loja **avisa antes da escolha**: com o desconto ativo, a opção "Entrega" mostra
+  "Sem o desconto de funcionário". Sem isso o preço "muda sozinho" e parece defeito.
+  ⚠️ Limite conhecido: com a entrega já escolhida o desconto não está aplicado e o
+  aviso some — ele cobre a decisão, não o arrependimento.
+
+Não empilha: medido, o desconto de funcionário **substitui** a promoção (best-wins).
+A Baguette de R$ 16,00 sai a R$ 12,80 (20% cheios), não a R$ 13,60 + 20%.
 
 ### 🟡 A confirmar — rascunho do checkout entre contas
 

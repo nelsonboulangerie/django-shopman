@@ -31,16 +31,35 @@ class D1Rule(BaseRule):
 
 
 class EmployeeRule(BaseRule):
-    """Desconto para funcionários (faixa de preço == staff)."""
+    """Desconto para funcionários (faixa de preço == staff).
+
+    ``pickup_only`` é o guarda que separa benefício de canal: o funcionário
+    compra pelo site com o desconto, mas precisa **retirar**. Com entrega, o
+    preço de funcionário viajaria para qualquer endereço — e aí o benefício
+    deixa de ser "o pão dele" e vira um canal de preço para terceiros, sem
+    ninguém ver. No balcão isso não acontece porque alguém entrega na mão.
+
+    Novo parâmetro entra com default: ``RuleConfig`` antigo (sem a chave no JSON)
+    continua instanciando. O caminho contrário é que quebra — parâmetro nos DADOS
+    que a classe não conhece levanta ``TypeError`` e o ``_safe_load`` engole como
+    WARNING, desligando a regra em silêncio (foi o que aconteceu em `da69c714`).
+    """
 
     code = "shop.employee_discount"
     label = "Desconto Funcionário"
     rule_type = "modifier"
-    default_params = {"discount_percent": 20, "price_tier": "staff"}
+    default_params = {"discount_percent": 20, "price_tier": "staff", "pickup_only": True}
 
-    def __init__(self, *, discount_percent: int = 20, price_tier: str = "staff"):
+    def __init__(
+        self,
+        *,
+        discount_percent: int = 20,
+        price_tier: str = "staff",
+        pickup_only: bool = True,
+    ):
         self.discount_percent = discount_percent
         self.price_tier = price_tier
+        self.pickup_only = pickup_only
 
 
 class HappyHourRule(BaseRule):
