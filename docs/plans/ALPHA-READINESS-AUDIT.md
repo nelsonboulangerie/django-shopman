@@ -242,13 +242,42 @@ logout), que não passa pelo `clearCheckoutDraft()` da interface — precisa de
 repro só-pela-UI antes de virar bug. Se confirmar, é vazamento de nome entre
 contas no mesmo aparelho.
 
+### ✅ Pagamento, cascata e SSE — cobertos (12/08)
+
+**Cascata completa**, pedido `WEB-260811-Q02` (retirada, Pix, funcionário):
+Recebido 22:46 → Aceito 22:46 → **Pago** 22:56 → Em preparo 22:56 → Pronto 22:57
+→ **Concluído** 22:58. Cobrado **R$ 12,80** — exatamente o total exibido. As ações
+da tela viram "Avaliar pedido" / "Repetir pedido" no fim.
+
+**SSE ao vivo confirmado** no pedido `WEB-260812-D14`: `EventSource` aberto em
+0,5s e, aos 31s, dois eventos empurrados sem nenhum refresh —
+
+```
+order-update  {"ref":"WEB-260812-D14","status":"accepted","kind":"status_changed"}
+order-update  {"ref":"WEB-260812-D14","payment_status":"authorized","kind":"payment_changed"}
+```
+
+⚠️ **Armadilha ao testar SSE aqui:** o servidor emite evento **nomeado**
+(`order-update`), então `es.onmessage` NUNCA dispara — é preciso
+`es.addEventListener('order-update', …)`. Numa primeira tentativa isto quase virou
+um "P0: SSE não empurra" falso; o canal estava certo o tempo todo.
+
+**Virada do dia:** o pedido seguinte nasceu como `WEB-260812-…` e a data/slot de
+retirada resolveram sozinhos para o novo dia. A dimensão "vira o dia" do §2 passou
+sem intervenção.
+
 ### Não coberto nesta rodada
 
-Tudo que vive atrás do login, porque autenticar em nome de alguém não é papel do
-agente: checkout completo, pagamento (Pix/cartão/dinheiro), cascata de
-acompanhamento e SSE, cupom/happy hour/loyalty/D-1, encomenda e datas, endereço e
-zona de entrega, e o lado do operador (aceitar/recusar, iniciar preparo, KDS).
-**Essas dimensões continuam precisando do smoke humano.**
+Depois das rodadas 2 e 3 sobra pouco, e o que sobra é justamente o que exige
+gente ou aparelho:
+
+- **Cartão (Stripe)** e **Pix real** — hoje ambos em `payment_mock`; o que foi
+  exercitado é a cascata, não o gateway.
+- **Dinheiro na entrega** (troco) e **endereço fora de zona**.
+- **Cupom, happy hour e D-1** — o loyalty e as promoções por SKU já apareceram.
+- **Lado do operador**: aceitar/recusar de verdade no gestor, "Iniciar preparo",
+  bump no KDS. Tudo o que se viu foi o piloto automático avançando sozinho.
+- **QA físico**: impressão térmica, som do KDS, PDV no balcão.
 
 ## 6. Gate "pode chamar os testadores?"
 
