@@ -13,6 +13,51 @@ política de gaveta e PIN (retirada exige PIN em qualquer valor). Este documento
 sobre o **caminho físico**, não sobre autorização. Se as duas coisas se cruzarem,
 a política manda.
 
+## 0. O aparelho (respondido pelo Pablo, 2026-08-12)
+
+**Epson TM-T20, conexão USB, rolo de 80mm.**
+
+O que isso decide:
+
+- **ESC/POS nativo.** A TM-T20 fala ESC/POS; o kick de gaveta é
+  `ESC p m t1 t2` → `1B 70 00 19 FA` (m=0, pulso 25/250ms na saída 2).
+- **USB, e o driver do SO já é dono da interface** — é assim que o
+  `window.print()` de hoje funciona. Isso **elimina WebUSB**: o Chrome não
+  consegue reivindicar uma interface que o driver de impressão já detém, e
+  brigar por ela quebraria a impressão do recibo.
+- **Portanto o kick vai por trabalho RAW no spooler do sistema**, não por socket
+  TCP 9100 (que seria o caminho se ela fosse de rede). Um agente local mínimo
+  manda os 5 bytes como um job raw para a fila da impressora. É pequeno — dezenas
+  de linhas —, mas é um processo que precisa existir na máquina do balcão.
+- **80mm** confirma o `size` do `@page` da seção 1.
+
+### ⭐ Direção do dono: isso tem que ser configurável
+
+Pablo, no mesmo fôlego: *"idealmente, mesmo que depois, tudo isso deveria ser
+configurável, ou ter pelo menos um wizard, ou algo que o valha."*
+
+O seam **já existe** e está subaproveitado: `POSTerminal.metadata["hardware"]`
+com `printer` / `cash_drawer` / `scanner` / `payment_terminal` /
+`customer_display`, lido por `pos_terminal.runtime_profile` (seção 4). Hoje só
+guarda o nome de um adapter. O que ele precisa passar a guardar, por terminal:
+
+- **impressora**: fila/nome no SO, largura do rolo (80mm aqui, mas 58mm existe no
+  mundo), se imprime automático ao fechar venda;
+- **gaveta**: adapter (`manual` = abre com a chave, `agent` = kick pelo agente),
+  endereço do agente, pulso;
+- **leitor**: prefixo/sufixo do código, se o crachá identifica ou autoriza.
+
+⚠️ Consequência prática para quem faz a seção 1: **largura de rolo é config, não
+constante de CSS.** `@page { size: var(--pos-roll-width, 80mm) auto }` com o valor
+vindo do perfil do terminal evita recompilar CSS por causa de um balcão com rolo
+diferente. Cravar 80mm agora é aceitável; cravar sem deixar o ponto de extensão
+óbvio é retrabalho garantido.
+
+O "wizard" que ele menciona é a leitura natural disto: uma tela que configura o
+terminal e **testa cada peça** (imprime página de teste, chuta a gaveta, lê um
+crachá) — o que também conserta a desonestidade da seção 4, porque aí o health
+passa a ser sonda de verdade, não declaração.
+
 ---
 
 ## 1. Impressora térmica — ✅ `@page` corrigido (2026-08-12)
@@ -102,8 +147,10 @@ abre" a "alguém clicou imprimir" é dependência de disciplina humana num ponto
 onde a falha é silenciosa — o mesmo padrão que já nos mordeu no
 [[feedback_contract_is_surface_independent]].
 
-**O caminho real:** um agente local que envia o comando ESC/POS de kick
-(`ESC p m t1 t2`) para a impressora (TCP 9100 ou USB). Um só caminho serve os
+**O caminho real (agora concreto, ver seção 0):** como a TM-T20 é **USB** e o
+driver do SO já é dono da interface, o kick vai por **trabalho RAW no spooler** —
+não por socket TCP nem por WebUSB. Um agente local mínimo manda
+`1B 70 00 19 FA` como job raw para a fila da impressora. Um só caminho serve os
 quatro momentos: venda em dinheiro, sangria, suprimento e "abrir sem venda".
 
 **Independente disso, vale imprimir comprovante de sangria** — mas como
