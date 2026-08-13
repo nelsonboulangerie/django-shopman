@@ -57,7 +57,7 @@ def rule(template):
 
 
 def _context(**overrides) -> dict:
-    return {"sku": SKU, "quality": "bom", "quantity": "40", **overrides}
+    return {"sku": SKU, "quality": "standard", "quantity": "40", **overrides}
 
 
 # ── evaluate ─────────────────────────────────────────────────────────
@@ -108,23 +108,23 @@ class TestEvaluate:
 
 class TestTriggerFilter:
     def test_quality_below_minimum_blocks_the_post(self, product, rule):
-        rule.trigger_filter = {"quality_min": "excelente"}
+        rule.trigger_filter = {"quality_min": "excellent"}
         rule.save()
-        assert campaign.evaluate("production_finished", _context(quality="bom")) == []
+        assert campaign.evaluate("production_finished", _context(quality="standard")) == []
 
     def test_quality_at_minimum_passes(self, product, rule):
-        rule.trigger_filter = {"quality_min": "bom"}
+        rule.trigger_filter = {"quality_min": "standard"}
         rule.save()
-        assert len(campaign.evaluate("production_finished", _context(quality="bom"))) == 1
+        assert len(campaign.evaluate("production_finished", _context(quality="standard"))) == 1
 
     def test_quality_above_minimum_passes(self, product, rule):
-        rule.trigger_filter = {"quality_min": "bom"}
+        rule.trigger_filter = {"quality_min": "standard"}
         rule.save()
-        assert len(campaign.evaluate("production_finished", _context(quality="excelente"))) == 1
+        assert len(campaign.evaluate("production_finished", _context(quality="excellent"))) == 1
 
     def test_missing_quality_is_treated_as_bom(self, product, rule):
         """O operador pode finalizar sem escolher; o default não pode travar tudo."""
-        rule.trigger_filter = {"quality_min": "bom"}
+        rule.trigger_filter = {"quality_min": "standard"}
         rule.save()
         context = _context()
         context.pop("quality")
@@ -184,8 +184,8 @@ class TestContent:
     def test_quality_reaches_the_template(self, product, template, rule):
         template.body = "Fornada {{quality}} de {{product_name}}"
         template.save()
-        announcement = campaign.evaluate("production_finished", _context(quality="excelente"))[0]
-        assert announcement.body == "Fornada excelente de Croissant Tradicional"
+        announcement = campaign.evaluate("production_finished", _context(quality="excellent"))[0]
+        assert announcement.body == "Fornada ótima de Croissant Tradicional"
 
 
 # ── Aprovação ────────────────────────────────────────────────────────

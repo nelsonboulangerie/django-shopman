@@ -9,7 +9,7 @@ evento operacional em conteúdo.
 - ``Announcement``  — o registro de um announcement gerado (pendente → publicado)
 
 O operador de produção não publica: ele marca a qualidade da fornada
-(``WorkOrder.meta["quality"]``) e o gestor decide. Separação de papéis
+(derivada das linhas de OUTPUT — ADR-017) e o gestor decide. Separação de papéis
 deliberada (FOMO-MARKETING-SPECS §8).
 """
 
@@ -57,8 +57,9 @@ class AnnouncementStatus(models.TextChoices):
     EXPIRED = "expired", "expirado"
 
 
-#: Hierarquia da flag de qualidade da fornada. Índice maior = melhor.
-QUALITY_LEVELS = ("regular", "bom", "excelente")
+# A hierarquia de qualidade não vive mais aqui: era o literal QUALITY_LEVELS,
+# triplicado entre este módulo, production.QUALITY_CHOICES e a superfície. A
+# fonte única é QualityGrade.rank (catálogo editável — ADR-017).
 
 
 class AnnouncementTemplate(models.Model):
@@ -121,7 +122,7 @@ class Campaign(models.Model):
     trigger = models.CharField("gatilho", max_length=64, choices=Trigger.choices)
     trigger_filter = models.JSONField(
         "filtro do gatilho", default=dict, blank=True,
-        help_text='Condições extras, ex: {"collections": ["paes"], "quality_min": "bom"}',
+        help_text='Condições extras, ex: {"collections": ["paes"], "quality_min": "standard"}',
     )
     template = models.ForeignKey(
         AnnouncementTemplate, on_delete=models.PROTECT,

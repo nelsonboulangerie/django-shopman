@@ -210,14 +210,15 @@ const finishRow = ref<ProductionMatrixRowProjection | null>(null);
 const finishQty = ref("");
 
 // Classificação da fornada, gravada em WorkOrder.meta["quality"]. O gestor usa
-// isso para decidir o que vira post ("só publica fornada excelente"); o
-// operador não posta nada, só diz como ficou.
+// isso para decidir o que vira post ("só publica fornada ótima"); o operador
+// não posta nada, só diz como ficou. Os values são as refs do catálogo
+// QualityGrade (ADR-017) — o rótulo edita no Admin, o código não.
 const QUALITY_OPTIONS = [
-  { value: "excelente", label: "★★★ Excelente" },
-  { value: "bom", label: "★★ Boa" },
-  { value: "regular", label: "★ Regular" },
+  { value: "excellent", label: "★★★ Ótima" },
+  { value: "standard", label: "★★ Normal" },
+  { value: "fair", label: "★ Razoável" },
 ] as const;
-const DEFAULT_QUALITY = "bom";
+const DEFAULT_QUALITY = "standard";
 const finishQuality = ref<string>(DEFAULT_QUALITY);
 const voidReason = ref("");
 const voidConfirming = ref(false);

@@ -492,6 +492,24 @@ class RecipeWasteRow:
 
 
 @dataclass(frozen=True)
+class QualityReportRow:
+    """Partição de qualidade agregada por receita × grau × defeito (ADR-017).
+
+    É este relatório que diz se o forno 2 está queimando: o defeito nomeia a
+    causa, o grau diz o quanto desviou, a receita diz onde.
+    """
+
+    recipe_ref: str
+    recipe_name: str
+    grade_ref: str
+    grade_label: str
+    defect_ref: str
+    defect_label: str
+    quantity: str
+    share: str  # % sobre o total de OUTPUT da receita no filtro
+
+
+@dataclass(frozen=True)
 class ProductionReportsProjection:
     """Top-level read model for production reports."""
 
@@ -499,6 +517,7 @@ class ProductionReportsProjection:
     history_rows: tuple[WorkOrderReportRow, ...]
     operator_rows: tuple[OperatorProductivityRow, ...]
     waste_rows: tuple[RecipeWasteRow, ...]
+    quality_rows: tuple[QualityReportRow, ...]
     available_recipes: tuple[RecipeOptionProjection, ...]
     available_positions: tuple[PositionOptionProjection, ...]
 
@@ -1118,6 +1137,7 @@ def build_production_reports(filters: dict | ProductionReportFilters | None = No
         history_rows=history_rows,
         operator_rows=_operator_productivity_rows(work_orders),
         waste_rows=_recipe_waste_rows(work_orders),
+        quality_rows=_quality_report_rows(work_orders),
         available_recipes=recipes,
         available_positions=positions,
     )
@@ -1388,7 +1408,7 @@ def _normalize_report_filters(filters: dict | ProductionReportFilters | None) ->
     if date_from > date_to:
         date_from, date_to = date_to, date_from
     report_kind = str(raw.get("report_kind") or raw.get("kind") or "history").strip()
-    if report_kind not in {"history", "operator_productivity", "recipe_waste"}:
+    if report_kind not in {"history", "operator_productivity", "recipe_waste", "quality"}:
         report_kind = "history"
     status = str(raw.get("status") or "").strip()
     if status not in {"", *WorkOrder.Status.values}:
@@ -1484,6 +1504,69 @@ def _operator_productivity_rows(work_orders: list[WorkOrder]) -> tuple[OperatorP
         )
         for operator, data in sorted(grouped.items(), key=lambda item: item[0])
     )
+
+
+def _quality_report_rows(work_orders: list[WorkOrder]) -> tuple[QualityReportRow, ...]:
+    """GROUP BY receita × grau × defeito sobre as linhas de OUTPUT/WASTE.
+
+    Linha sem grau (finish escalar antigo) conta no grau padrão; WASTE com
+    defeito entra com grau vazio — perda vetada é qualidade também, e é o que
+    o relatório precisa para dizer "o forno 2 está queimando".
+    """
+    from shopman.craftsman.models import WorkOrderItem
+
+    from shopman.shop.models import QualityDefect, QualityGrade
+    from shopman.shop.services import quality as quality_service
+
+    finished = {
+        wo.pk: wo for wo in work_orders if wo.status == WorkOrder.Status.FINISHED
+    }
+    if not finished:
+        return ()
+
+    grade_labels = dict(QualityGrade.objects.values_list("ref", "label"))
+    defect_labels = dict(QualityDefect.objects.values_list("ref", "label"))
+    default_ref = quality_service.default_grade_ref()
+
+    lines = WorkOrderItem.objects.filter(
+        work_order_id__in=finished,
+        kind__in=(WorkOrderItem.Kind.OUTPUT, WorkOrderItem.Kind.WASTE),
+    ).values_list("work_order_id", "kind", "quality_grade_ref", "quality_defect_ref", "quantity")
+
+    grouped: dict[tuple[str, str, str], dict[str, object]] = {}
+    recipe_totals: dict[str, Decimal] = {}
+    for wo_id, kind, grade_ref, defect_ref, quantity in lines:
+        wo = finished[wo_id]
+        if kind == WorkOrderItem.Kind.OUTPUT:
+            grade = grade_ref or default_ref
+        else:
+            if not defect_ref:
+                continue  # perda sem defeito é rendimento, não qualidade
+            grade = ""
+        key = (wo.recipe.ref, grade, defect_ref)
+        bucket = grouped.setdefault(
+            key, {"name": wo.recipe.name or wo.recipe.ref, "qty": Decimal("0")}
+        )
+        bucket["qty"] = bucket["qty"] + quantity
+        recipe_totals[wo.recipe.ref] = recipe_totals.get(wo.recipe.ref, Decimal("0")) + quantity
+
+    rows = []
+    for (recipe_ref, grade_ref, defect_ref), data in sorted(grouped.items()):
+        total = recipe_totals.get(recipe_ref) or Decimal("0")
+        share = int(Decimal(data["qty"]) * 100 / total) if total else 0
+        rows.append(
+            QualityReportRow(
+                recipe_ref=recipe_ref,
+                recipe_name=str(data["name"]),
+                grade_ref=grade_ref,
+                grade_label=grade_labels.get(grade_ref, grade_ref) if grade_ref else "Descarte",
+                defect_ref=defect_ref,
+                defect_label=defect_labels.get(defect_ref, defect_ref),
+                quantity=_qty(Decimal(data["qty"])),
+                share=f"{share}%",
+            )
+        )
+    return tuple(rows)
 
 
 def _recipe_waste_rows(work_orders: list[WorkOrder]) -> tuple[RecipeWasteRow, ...]:

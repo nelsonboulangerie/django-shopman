@@ -37,7 +37,7 @@ def rule():
 def _work_order(**overrides):
     fields = {
         "ref": "WO-2026-00001",
-        "meta": {"quality": "excelente"},
+        "meta": {"quality": "excellent"},
         "finished": 40,
         "finished_at": None,
         "output_sku": SKU,
@@ -65,13 +65,25 @@ class TestProductionReceiver:
             self._fire(action=action)
         assert Announcement.objects.count() == 0
 
-    def test_quality_flows_from_work_order_meta(self, product, rule):
-        self._fire()
-        assert Announcement.objects.get().trigger_context["quality"] == "excelente"
+    def test_quality_derives_from_output_lines(self, product, rule):
+        """meta["quality"] morreu (ADR-017): o receiver deriva das linhas de
+        OUTPUT e leva a partição inteira no contexto."""
+        partition = [{"grade_ref": "excellent", "quantity": "40"}]
+        with (
+            patch("shopman.shop.services.quality.derived_quality", return_value="excellent"),
+            patch("shopman.shop.services.quality.output_partition", return_value=partition),
+        ):
+            self._fire()
+        context = Announcement.objects.get().trigger_context
+        assert context["quality"] == "excellent"
+        assert context["output_partition"] == partition
+        assert context["planned_qty"] == ""  # o dublê não tem quantity
 
-    def test_missing_quality_defaults_to_bom(self, product, rule):
+    def test_missing_partition_defaults_to_catalog_default(self, product, rule):
+        """Dublê sem pk = partição vazia = grau padrão (marketing nunca
+        derruba a operação, e sender estranho não pode explodir)."""
         self._fire(work_order=_work_order(meta={}))
-        assert Announcement.objects.get().trigger_context["quality"] == "bom"
+        assert Announcement.objects.get().trigger_context["quality"] == "standard"
 
     def test_evaluation_failure_never_breaks_the_bake(self, product, rule):
         """Marketing quebrado não pode impedir o operador de fechar a fornada."""

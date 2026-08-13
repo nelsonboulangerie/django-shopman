@@ -73,6 +73,33 @@ class WorkOrderItem(models.Model):
         verbose_name=_("Metadados"),
         help_text=_("lot, expires, reason, step, etc."),
     )
+    # Partição de resultado (ADR-017): a fornada de 40 não produz "38" — produz
+    # 32 a preço cheio, 8 com desconto, 3 de perda. Cada linha de OUTPUT/WASTE
+    # pode carregar a natureza do seu grupo. O core NUNCA interpreta os valores:
+    # são ponteiros string (ADR-004), validados na borda pelo framework — não
+    # sabe que "minimal" vale menos que "standard" nem que um defeito veta.
+    #
+    # `quality_*` é um par de propósito (o quanto desviou e por quê); `grep
+    # quality_` acha a feature inteira. `batch_ref` NÃO leva o prefixo porque
+    # não é qualidade — é rastreabilidade, e existe mesmo em fornada perfeita.
+    quality_grade_ref = models.CharField(
+        max_length=32,
+        blank=True,
+        db_index=True,
+        verbose_name=_("Grau de qualidade"),
+    )
+    quality_defect_ref = models.CharField(
+        max_length=32,
+        blank=True,
+        db_index=True,
+        verbose_name=_("Defeito"),
+    )
+    batch_ref = models.CharField(
+        max_length=100,
+        blank=True,
+        db_index=True,
+        verbose_name=_("Lote"),
+    )
 
     class Meta:
         db_table = "crafting_work_order_item"

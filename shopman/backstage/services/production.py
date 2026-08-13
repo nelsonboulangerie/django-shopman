@@ -18,6 +18,7 @@ from django.utils import timezone
 
 from shopman.backstage.services.exceptions import ProductionError
 from shopman.shop.services import production as production_core
+from shopman.shop.services import quality as quality_service
 
 logger = logging.getLogger(__name__)
 
@@ -143,33 +144,83 @@ def apply_start(
     )
 
 
-#: Como o operador classifica a fornada ao fechar. Sem isso, "bom".
-QUALITY_CHOICES = ("regular", "bom", "excelente")
-DEFAULT_QUALITY = "bom"
+def resolve_partition(work_order, *, quantity, quality: str = "", partition=None):
+    """Normaliza a entrada do operador na partição da fornada (ADR-017 §4).
 
+    Três formas de entrada, uma saída — ``(finished_items, wasted_items)``:
 
-def set_quality(work_order, quality: str) -> str:
-    """Gravar a qualidade da fornada em ``WorkOrder.meta`` (sem migração).
+    - ``partition`` explícita (``[{quantity, quality_grade_ref,
+      quality_defect_ref}]``): cada grupo vira linha de OUTPUT; grupo cujo
+      defeito tem ``forces_discard`` vira WASTE (o veto é resolvido AQUI, antes
+      do craft.finish — o core nunca interpreta o defeito).
+    - ``quality`` sozinho (a superfície de hoje): partição de um grupo só.
+    - nada: um grupo no grau padrão do catálogo.
 
-    Precisa acontecer ANTES do finish: é o ``production_changed`` do finish que
-    alimenta a campanha, e a regra pode exigir ``quality_min``. Gravar depois
-    faria a regra ler a qualidade da fornada anterior.
+    Grau desconhecido cai no padrão; defeito desconhecido é descartado com
+    aviso (o catálogo é a fronteira de validação — ADR-004).
     """
-    quality = (quality or "").strip().lower() or DEFAULT_QUALITY
-    if quality not in QUALITY_CHOICES:
-        quality = DEFAULT_QUALITY
-    try:
-        meta = dict(getattr(work_order, "meta", None) or {})
-        if meta.get("quality") == quality:
-            return quality
-        meta["quality"] = quality
-        work_order.meta = meta
-        work_order.save(update_fields=["meta", "updated_at"])
-    except Exception:
-        # Classificação é metadado de marketing: nunca pode impedir o operador
-        # de fechar a fornada.
-        logger.warning("production.set_quality_failed wo=%s", getattr(work_order, "pk", None), exc_info=True)
-    return quality
+    from shopman.shop.models import QualityDefect, QualityGrade
+
+    grades = dict(QualityGrade.objects.values_list("ref", "markdown_percent"))
+    default_ref = quality_service.default_grade_ref()
+    vetoes = set(
+        QualityDefect.objects.filter(forces_discard=True).values_list("ref", flat=True)
+    )
+    known_defects = set(QualityDefect.objects.values_list("ref", flat=True))
+
+    if not partition:
+        grade = (quality or "").strip().lower() or default_ref
+        if grade not in grades:
+            grade = default_ref
+        partition = [{"quantity": quantity, "quality_grade_ref": grade}]
+
+    production_date = work_order.target_date or timezone.localdate()
+    base_batch_ref = f"{work_order.output_sku}-{production_date:%Y%m%d}-{work_order.pk}"
+
+    finished_items: list[dict] = []
+    wasted_items: list[dict] = []
+    for group in partition:
+        grade = str(group.get("quality_grade_ref") or "").strip().lower() or default_ref
+        if grade not in grades:
+            logger.warning(
+                "production.partition: grau desconhecido %r vira o padrão (wo=%s)",
+                grade, work_order.ref,
+            )
+            grade = default_ref
+        defect = str(group.get("quality_defect_ref") or "").strip().lower()
+        if defect and defect not in known_defects:
+            logger.warning(
+                "production.partition: defeito desconhecido %r descartado (wo=%s)",
+                defect, work_order.ref,
+            )
+            defect = ""
+
+        if defect in vetoes:
+            # Veto é segurança alimentar: as unidades nunca viram lote com
+            # desconto — viram perda, carregando o motivo.
+            wasted_items.append({
+                "item_ref": work_order.output_sku,
+                "quantity": group.get("quantity"),
+                "quality_defect_ref": defect,
+            })
+            continue
+
+        finished_items.append({
+            "item_ref": work_order.output_sku,
+            "quantity": group.get("quantity"),
+            "quality_grade_ref": grade,
+            "quality_defect_ref": defect,
+            # N grupos = N lotes: o ref base preserva a fórmula histórica; os
+            # grupos seguintes ganham sufixo ordinal.
+            "batch_ref": base_batch_ref if not finished_items else f"{base_batch_ref}-{len(finished_items) + 1}",
+        })
+
+    if not finished_items:
+        raise ProductionError(
+            "Todos os grupos da fornada foram vetados — registre como perda (void/waste), "
+            "não como conclusão."
+        )
+    return finished_items, wasted_items
 
 
 def apply_finish(
@@ -179,10 +230,19 @@ def apply_finish(
     actor: str,
     force: bool = False,
     quality: str = "",
+    partition=None,
 ):
-    """Finish a work order from the operator surface."""
+    """Finish a work order from the operator surface — escalar ou particionado.
+
+    ``set_quality``/``meta["quality"]`` morreram (ADR-017 §3): a qualidade
+    agora viaja nas LINHAS de OUTPUT e é derivada de lá por quem precisa
+    (broadcast, fomo, relatório). O grau único da superfície de hoje é só uma
+    partição de um grupo.
+    """
     work_order = _get_work_order(work_order_id)
-    set_quality(work_order, quality)
+    finished_items, wasted_items = resolve_partition(
+        work_order, quantity=quantity, quality=quality, partition=partition
+    )
     missing = check_finish_materials(work_order)
     if missing and not force:
         raise ProductionStockShortError(work_order_ref=work_order.ref, missing=missing)
@@ -197,12 +257,14 @@ def apply_finish(
             work_order_id=work_order_id,
             quantity=quantity,
             actor=actor,
+            finished_items=finished_items,
+            wasted_items=wasted_items,
         )
     except Exception as exc:
         if _looks_like_stock_error(exc):
             _create_stock_short_alert(work_order_id=work_order_id, error=str(exc))
         raise
-    _record_batch_traceability(work_order_id=work_order_id, quantity=quantity)
+    _record_batch_traceability(work_order_id=work_order_id)
     return result
 
 
@@ -460,40 +522,80 @@ def _material_needs_for_work_order(work_order):
     ]
 
 
-def _record_batch_traceability(*, work_order_id, quantity) -> None:
+def _record_batch_traceability(*, work_order_id) -> None:
+    """Um ``Batch`` por linha de OUTPUT — N grupos viram N lotes (ADR-017 §5).
+
+    O ``batch_ref`` sai da LINHA (gravado pelo ``resolve_partition``), não de
+    fórmula derivada em ``WorkOrder.meta`` — fórmula só admitia um lote por
+    ordem, e era por isso que a partição parecia impossível. Grupo com grau de
+    desconto grava ``nonconformity_percent`` (o percentual RESOLVIDO do
+    catálogo, congelado no lote: mudar a tabela amanhã não reescreve os lotes
+    de ontem) e ``nonconformity_reason`` (o label do defeito, ou do grau).
+
+    Falha aqui vira OperatorAlert, não só log: lote não gravado é preço cheio
+    indevido e rastreabilidade perdida.
+    """
     work_order = _get_work_order(work_order_id)
-    meta = work_order.recipe.meta or {}
-    if not meta.get("requires_batch_tracking"):
+    recipe_meta = work_order.recipe.meta or {}
+    if not recipe_meta.get("requires_batch_tracking"):
         return
 
     try:
+        from shopman.craftsman.models import WorkOrderItem
         from shopman.stockman.models import Batch
 
+        from shopman.shop.models import QualityDefect, QualityGrade
+
         production_date = work_order.target_date or timezone.localdate()
-        shelf_life_days = meta.get("shelf_life_days")
+        shelf_life_days = recipe_meta.get("shelf_life_days")
         expiry_date = None
         if shelf_life_days not in (None, ""):
             expiry_date = production_date + timedelta(days=int(shelf_life_days))
 
-        batch_ref = f"{work_order.output_sku}-{production_date:%Y%m%d}-{work_order.pk}"
-        Batch.objects.get_or_create(
-            ref=batch_ref,
-            defaults={
-                "sku": work_order.output_sku,
+        grades = {
+            ref: (label, markdown)
+            for ref, label, markdown in QualityGrade.objects.values_list(
+                "ref", "label", "markdown_percent"
+            )
+        }
+        defect_labels = dict(QualityDefect.objects.values_list("ref", "label"))
+
+        outputs = WorkOrderItem.objects.filter(
+            work_order=work_order, kind=WorkOrderItem.Kind.OUTPUT
+        ).exclude(batch_ref="")
+        for line in outputs:
+            grade_label, markdown = grades.get(line.quality_grade_ref, ("", 0))
+            defaults = {
+                "sku": line.item_ref,
                 "production_date": production_date,
                 "expiry_date": expiry_date,
                 "notes": f"Produção {work_order.ref}",
-            },
+            }
+            if markdown:
+                # O grau é o input; o percentual é o FATO, e congela aqui.
+                defaults["nonconformity_percent"] = markdown
+                defaults["nonconformity_reason"] = (
+                    defect_labels.get(line.quality_defect_ref) or grade_label
+                )
+            Batch.objects.get_or_create(ref=line.batch_ref, defaults=defaults)
+    except Exception as exc:
+        logger.warning(
+            "production_batch_traceability_failed work_order_id=%s", work_order_id, exc_info=True
         )
-        work_order.meta = {
-            **(work_order.meta or {}),
-            "batch_ref": batch_ref,
-            "batch_quantity": str(quantity),
-            "expiry_date": expiry_date.isoformat() if expiry_date else "",
-        }
-        work_order.save(update_fields=["meta", "updated_at"])
-    except Exception:
-        logger.warning("production_batch_traceability_failed work_order_id=%s", work_order_id, exc_info=True)
+        try:
+            from shopman.shop.handlers.production_alerts import create_batch_traceability_alert
+
+            create_batch_traceability_alert(
+                work_order_ref=work_order.ref,
+                output_sku=work_order.output_sku,
+                error=str(exc) or type(exc).__name__,
+            )
+        except Exception:
+            logger.warning(
+                "production_batch_traceability_alert_failed work_order_id=%s",
+                work_order_id,
+                exc_info=True,
+            )
 
 
 def _get_work_order(work_order_id):

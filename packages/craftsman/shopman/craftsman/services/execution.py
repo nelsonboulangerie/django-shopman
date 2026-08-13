@@ -209,6 +209,9 @@ class CraftExecution:
                     p = _mapping_item(p, field="finished")
                     output_ref = _required_ref(p.get("item_ref"), field="finished.item_ref")
                     output_quantity = _positive_decimal(p.get("quantity"), field="finished.quantity")
+                    # `meta` também aqui (era só no ramo de wasted) — a assimetria
+                    # impedia a partição de carregar informação (ADR-017). As refs
+                    # de partição são opacas para o core: repassa, não interpreta.
                     all_items.append(WorkOrderItem(
                         work_order=order,
                         kind=WorkOrderItem.Kind.OUTPUT,
@@ -217,6 +220,10 @@ class CraftExecution:
                         unit=p.get("unit", ""),
                         recorded_at=now,
                         recorded_by=actor or "",
+                        meta=p.get("meta", {}),
+                        quality_grade_ref=p.get("quality_grade_ref", ""),
+                        quality_defect_ref=p.get("quality_defect_ref", ""),
+                        batch_ref=p.get("batch_ref", ""),
                     ))
 
             if wasted is None:
@@ -247,6 +254,8 @@ class CraftExecution:
                     w = _mapping_item(w, field="wasted")
                     waste_ref = _required_ref(w.get("item_ref"), field="wasted.item_ref")
                     waste_quantity = _positive_decimal(w.get("quantity"), field="wasted.quantity")
+                    # Perda também carrega o defeito (unidades vetadas chegam aqui
+                    # com o motivo); `batch_ref` não — perda não vira lote.
                     all_items.append(WorkOrderItem(
                         work_order=order,
                         kind=WorkOrderItem.Kind.WASTE,
@@ -256,6 +265,8 @@ class CraftExecution:
                         recorded_at=now,
                         recorded_by=actor or "",
                         meta=w.get("meta", {}),
+                        quality_grade_ref=w.get("quality_grade_ref", ""),
+                        quality_defect_ref=w.get("quality_defect_ref", ""),
                     ))
 
             waste_total = sum(
@@ -269,6 +280,22 @@ class CraftExecution:
             order.save(update_fields=[
                 "finished", "status", "finished_at", "started_at", "updated_at",
             ])
+
+            # O ledger imutável carrega a partição (ADR-017 §7): o fato de que a
+            # fornada saiu em grupos não pode viver só em linhas mutáveis por
+            # admin — o evento é a testemunha. O core grava o que recebeu, opaco.
+            partition_payload = [
+                {
+                    "item_ref": item.item_ref,
+                    "quantity": str(item.quantity),
+                    "quality_grade_ref": item.quality_grade_ref,
+                    "quality_defect_ref": item.quality_defect_ref,
+                    "batch_ref": item.batch_ref,
+                }
+                for item in all_items
+                if item.kind in (WorkOrderItem.Kind.OUTPUT, WorkOrderItem.Kind.WASTE)
+                and (item.quality_grade_ref or item.quality_defect_ref or item.batch_ref)
+            ]
 
             next_seq = _next_seq(order)
             WorkOrderEvent.objects.create(
@@ -285,6 +312,7 @@ class CraftExecution:
                     "source_ref": order.source_ref,
                     "position_ref": order.position_ref,
                     "operator_ref": order.operator_ref,
+                    **({"partition": partition_payload} if partition_payload else {}),
                 },
                 actor=actor or "",
                 idempotency_key=idempotency_key,

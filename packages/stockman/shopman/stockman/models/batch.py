@@ -95,6 +95,23 @@ class Batch(models.Model):
         verbose_name=_('Observações'),
     )
 
+    # Não conformidade (ADR-017): o LOTE é o dono do fato. O percentual chega
+    # RESOLVIDO por quem inspecionou/fechou a fornada e congela aqui — não há
+    # constante de percentual em lugar nenhum, e mudar a tabela de graus amanhã
+    # não reescreve os lotes de ontem. Motivo vazio significa lote conforme:
+    # ter motivo É ser não conforme. O core não interpreta o motivo — é rótulo.
+    nonconformity_reason = models.CharField(
+        max_length=100,
+        blank=True,
+        default='',
+        verbose_name=_('Motivo de não conformidade'),
+    )
+    nonconformity_percent = models.PositiveSmallIntegerField(
+        default=0,
+        verbose_name=_('Desconto do lote (%)'),
+        help_text=_('Percentual resolvido na inspeção; 0 = preço cheio.'),
+    )
+
     # Tracking
     created_at = models.DateTimeField(auto_now_add=True, verbose_name=_('Criado em'))
 

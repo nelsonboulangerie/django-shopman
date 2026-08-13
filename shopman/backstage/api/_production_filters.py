@@ -13,7 +13,7 @@ from datetime import date, timedelta
 
 from django.utils import timezone
 
-VALID_REPORT_KINDS = ("history", "operator_productivity", "recipe_waste")
+VALID_REPORT_KINDS = ("history", "operator_productivity", "recipe_waste", "quality")
 
 
 def report_filters(request) -> dict:

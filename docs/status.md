@@ -66,7 +66,8 @@ bloco do framework, não o total — o total é a SOMA dos blocos.
 | **Services** | Estável | Orquestração: availability, cancellation, stock, payment, customer, etc. |
 | **Adapters** | Estável | EFI/PIX, Stripe, ManyChat, email, SMS, console, stock, inventory, Machine (courier) |
 | **Handlers** | Estável | Directive handlers com dedupe garantido e observabilidade (ADR-003, PR #62) |
-| **Rules engine** | Estável | `RuleConfig` no DB; pricing (D-1/Happy Hour) genérico e config-driven. ⚠️ **D-1 é mecanismo INTERINO**: conceitualmente superado pelo modelo de lote/validade (ADR-017 + QC-FORNADA); migração pendente — não construir features novas sobre D-1 |
+| **Rules engine** | Estável | `RuleConfig` no DB; pricing (D-1/Happy Hour) genérico e config-driven. ⚠️ **D-1 é mecanismo INTERINO** — ver Qualidade de fornada abaixo |
+| **Qualidade de fornada** (ADR-017) | Fundação pronta | Partição no `finish` (grupos por grau/defeito), catálogos `QualityGrade`/`QualityDefect` editáveis, N lotes por fornada com `Batch.nonconformity_percent` **congelado**, veto de segurança → perda, `quality_min_share` no broadcast, relatório receita×grau×defeito. **Falta** para aposentar o D-1: preço por lote na venda, write-off no fechamento, gate por canal, quiosque de QC |
 | **Storefront (API)** | Estável | `api/` + `presentation/` + `intents/`; rate-limiting, delivery zones, favoritos, stock alerts |
 | **Backstage (API)** | Estável | POS, KDS, produção, orders, closing, operator; guards e idempotência endurecidos (PR #58) |
 | **Admin (Unfold)** | Estável | Unfold Canonical Gate (`make admin`); telas de produção e fechamento |

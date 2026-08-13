@@ -1252,14 +1252,18 @@ class WorkOrderStartView(_ProductionActionBase):
 class WorkOrderFinishView(_ProductionActionBase):
     def post(self, request, wo_id: int):
         try:
+            partition = request.data.get("partition")
             wo_ref, quantity = production_service.apply_finish(
                 work_order_id=wo_id,
                 quantity=str(request.data.get("quantity") or "").strip(),
                 actor=_production_actor(request),
                 force=bool(request.data.get("force")),
-                # Classificação da fornada (excelente/bom/regular). Opcional: o
-                # operador fecha sem pensar e cai no default.
+                # Classificação da fornada (refs de QualityGrade). Opcional: o
+                # operador fecha sem pensar e cai no grau padrão do catálogo.
                 quality=str(request.data.get("quality") or "").strip(),
+                # Partição explícita (ADR-017): [{quantity, quality_grade_ref,
+                # quality_defect_ref}]. Quando presente, `quality` é ignorado.
+                partition=partition if isinstance(partition, list) else None,
             )
         except ProductionError as exc:
             shortage = _shortage_response(exc)

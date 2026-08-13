@@ -158,12 +158,14 @@ def _pending_production_snapshot(closing_date: date) -> list[dict]:
 
 
 def _production_summary(closing_date: date) -> dict:
-    from shopman.craftsman.models import WorkOrder
+    from shopman.craftsman.models import WorkOrder, WorkOrderItem
 
-    summary: dict[str, dict[str, int | str]] = {}
+    summary: dict[str, dict[str, int | str | dict]] = {}
     work_orders = WorkOrder.objects.filter(target_date=closing_date).select_related("recipe")
+    by_pk: dict[int, str] = {}
     for wo in work_orders:
         recipe_ref = wo.recipe.ref
+        by_pk[wo.pk] = recipe_ref
         row = summary.setdefault(
             recipe_ref,
             {
@@ -179,6 +181,22 @@ def _production_summary(closing_date: date) -> dict:
             row["finished"] = int(row["finished"]) + int(wo.finished or 0)
             started = wo.started_qty or wo.quantity
             row["loss"] = int(row["loss"]) + max(0, int(started - wo.finished))
+
+    # Consolidação de qualidade do dia (ADR-017 §8): quantas unidades saíram em
+    # cada grau, por receita. Linha sem grau (finish escalar) fica de fora — o
+    # denominador dela já está em `finished`; grau só aparece quando declarado.
+    if by_pk:
+        quality_lines = (
+            WorkOrderItem.objects.filter(
+                work_order_id__in=by_pk, kind=WorkOrderItem.Kind.OUTPUT
+            )
+            .exclude(quality_grade_ref="")
+            .values_list("work_order_id", "quality_grade_ref", "quantity")
+        )
+        for wo_id, grade_ref, quantity in quality_lines:
+            row = summary[by_pk[wo_id]]
+            grades = row.setdefault("quality", {})
+            grades[grade_ref] = int(grades.get(grade_ref, 0)) + int(quantity)
     return summary
 
 
