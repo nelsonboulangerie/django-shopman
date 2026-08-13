@@ -12,6 +12,8 @@ import { countdownLabel } from "~/presentation/production";
 interface OvenTimer {
   endsAt: number;
   minutes: number;
+  /** Pausado: restante congelado em ms; ``endsAt`` é recalculado no retomar. */
+  pausedMs?: number;
 }
 
 const STORAGE_KEY = "producao.oven-timers";
@@ -62,7 +64,7 @@ function ensureTicker() {
     nowMs.value = Date.now();
     for (const key of Object.keys(timers.value)) {
       const t = timers.value[key];
-      if (!t || t.endsAt > nowMs.value) continue;
+      if (!t || t.pausedMs != null || t.endsAt > nowMs.value) continue;
       const state = chimes.get(key) ?? { count: 0, lastAt: 0 };
       if (state.count < MAX_CHIMES && nowMs.value - state.lastAt >= RECHIME_MS) {
         chime();
@@ -128,20 +130,60 @@ export function useOvenTimers() {
     persist();
   }
 
+  /** Congela o restante (a fornada saiu para descansar, o forno abriu). */
+  function pause(key: string) {
+    const t = timers.value[key];
+    if (!t || t.pausedMs != null || t.endsAt <= Date.now()) return;
+    timers.value = {
+      ...timers.value,
+      [key]: { ...t, pausedMs: t.endsAt - Date.now() },
+    };
+    persist();
+  }
+
+  function resume(key: string) {
+    const t = timers.value[key];
+    if (!t || t.pausedMs == null) return;
+    const { pausedMs, ...rest } = t;
+    timers.value = { ...timers.value, [key]: { ...rest, endsAt: Date.now() + pausedMs } };
+    persist();
+    ensureTicker();
+  }
+
+  /** "+N min": estende o que corre, engorda o pausado, rearma o que alarmou. */
+  function extend(key: string, minutes: number) {
+    const t = timers.value[key];
+    const extra = Math.max(1, Math.round(minutes)) * 60_000;
+    if (!t) return;
+    chimes.delete(key);
+    const next: OvenTimer =
+      t.pausedMs != null
+        ? { ...t, pausedMs: t.pausedMs + extra }
+        : { ...t, endsAt: Math.max(t.endsAt, Date.now()) + extra };
+    timers.value = { ...timers.value, [key]: next };
+    persist();
+    ensureTicker();
+  }
+
   function get(key: string): OvenTimer | null {
     return timers.value[key] ?? null;
   }
 
+  function isPaused(key: string): boolean {
+    return timers.value[key]?.pausedMs != null;
+  }
+
   function isRinging(key: string): boolean {
     const t = timers.value[key];
-    return !!t && t.endsAt <= nowMs.value;
+    return !!t && t.pausedMs == null && t.endsAt <= nowMs.value;
   }
 
   function remainingLabel(key: string): string {
     const t = timers.value[key];
     if (!t) return "";
+    if (t.pausedMs != null) return countdownLabel(t.pausedMs / 1000);
     return countdownLabel((t.endsAt - nowMs.value) / 1000);
   }
 
-  return { arm, clear, get, isRinging, remainingLabel };
+  return { arm, clear, pause, resume, extend, get, isPaused, isRinging, remainingLabel };
 }

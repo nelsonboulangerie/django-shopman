@@ -207,14 +207,14 @@ const fieldCard =
         @click="emit('back')"
       >
         <Icon name="lucide:chevron-left" class="size-4" />
-        trocar
+        voltar
       </button>
       <div class="min-w-0 text-center">
         <p class="truncate text-base font-semibold">{{ title }}</p>
         <p class="truncate text-xs text-muted-foreground">{{ subtitle }}</p>
       </div>
       <div class="rounded-md border bg-muted/40 px-3 py-2 text-sm tabular-nums">
-        <template v-if="planned !== null">previsto {{ planned }}</template>
+        <template v-if="planned !== null">{{ planned }} previstos</template>
         <template v-else>sem previsto</template>
       </div>
     </header>

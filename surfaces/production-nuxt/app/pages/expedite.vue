@@ -53,6 +53,8 @@ const nextPk = computed(() => openOrders.value[0]?.pk ?? null);
 
 function openOrder(order: QCOrderCardProjection) {
   if (!order.can_close) return;
+  // Fechar com o alarme tocando: o lembrete cumpriu o papel — para o timer.
+  if (oven.isRinging(ovenKey(order))) oven.clear(ovenKey(order));
   selectedOrder.value = order;
   selectedRecipe.value = null;
 }
@@ -111,36 +113,84 @@ const screenPlanned = computed(() => {
 });
 
 // ── Timer do forno: lembrete armado por fornada, com som ────────────────────
-// A ferramenta ATIVA do forneiro para conferir/retirar. Não confundir com o
-// relógio de idade do lote (guardrail de esquecimento, que vive nos alertas).
+// A ferramenta ATIVA do forneiro para conferir/retirar — a ação de toda hora
+// no rush: arma na enfornada, estende, pausa, e o Concluir emenda direto no
+// fechamento. Não confundir com o relógio de idade do lote (alertas).
 const oven = useOvenTimers();
 const ovenOrder = ref<QCOrderCardProjection | null>(null);
 const ovenMinutes = ref("15");
+const ovenFresh = ref(true);
 const ovenKey = (order: QCOrderCardProjection) => String(order.pk);
-function openOven(order: QCOrderCardProjection) {
+
+// Timers vivem no localStorage — o servidor não os conhece. O primeiro render
+// do cliente precisa BATER com o SSR (idle) e só então ligar: senão a classe
+// do alarme fica presa no HTML do servidor (mismatch de hidratação não é
+// re-aplicado pelo Vue).
+const hydrated = ref(false);
+onMounted(() => {
+  hydrated.value = true;
+});
+
+type OvenMode = "idle" | "running" | "paused" | "ringing";
+function ovenMode(order: QCOrderCardProjection): OvenMode {
+  if (!hydrated.value) return "idle";
   const key = ovenKey(order);
-  if (oven.isRinging(key)) {
-    oven.clear(key);
+  if (oven.isRinging(key)) return "ringing";
+  if (oven.isPaused(key)) return "paused";
+  return oven.get(key) ? "running" : "idle";
+}
+const dialogMode = computed<OvenMode>(() =>
+  ovenOrder.value ? ovenMode(ovenOrder.value) : "idle",
+);
+
+function openOven(order: QCOrderCardProjection) {
+  ovenOrder.value = order;
+  ovenMinutes.value = String(oven.get(ovenKey(order))?.minutes ?? 15);
+  ovenFresh.value = true;
+}
+function ovenDigit(digit: string) {
+  const next = ovenFresh.value ? digit : `${ovenMinutes.value}${digit}`;
+  ovenMinutes.value = String(Math.min(999, Number(next) || 0));
+  ovenFresh.value = false;
+}
+function ovenBackspace() {
+  ovenMinutes.value = ovenMinutes.value.length <= 1 ? "0" : ovenMinutes.value.slice(0, -1);
+}
+function ovenPreset(minutes: number) {
+  ovenMinutes.value = String(minutes);
+  ovenFresh.value = true;
+}
+function ovenAdd(minutes: number) {
+  const order = ovenOrder.value;
+  if (!order) return;
+  if (dialogMode.value === "idle") {
+    ovenMinutes.value = String((parseInt(ovenMinutes.value, 10) || 0) + minutes);
+    ovenFresh.value = true;
     return;
   }
-  ovenOrder.value = order;
-  ovenMinutes.value = String(oven.get(key)?.minutes ?? 15);
+  // Correndo, pausado ou alarmando: soma ao vivo (alarmando = rearma).
+  oven.extend(ovenKey(order), minutes);
 }
-function bumpOven(delta: number) {
-  const current = parseFloat(ovenMinutes.value.replace(",", ".")) || 0;
-  ovenMinutes.value = String(Math.max(0, Math.round(current + delta)));
-}
-function confirmOven() {
+function startOven() {
   const order = ovenOrder.value;
-  const minutes = parseFloat(ovenMinutes.value.replace(",", "."));
-  if (!order || Number.isNaN(minutes) || minutes < 1) return;
+  const minutes = parseInt(ovenMinutes.value, 10);
+  if (!order || !(minutes >= 1)) return;
   oven.arm(ovenKey(order), minutes);
   ovenOrder.value = null;
 }
-function cancelOven() {
+function pauseOven() {
+  if (ovenOrder.value) oven.pause(ovenKey(ovenOrder.value));
+}
+function resumeOven() {
+  if (ovenOrder.value) oven.resume(ovenKey(ovenOrder.value));
+}
+/** Concluir = a fornada saiu do forno: para o timer e emenda no fechamento. */
+function concludeOven() {
   const order = ovenOrder.value;
-  if (order) oven.clear(ovenKey(order));
   ovenOrder.value = null;
+  if (!order) return;
+  oven.clear(ovenKey(order));
+  openOrder(order);
 }
 </script>
 
@@ -150,7 +200,7 @@ function cancelOven() {
       v-model:query="query"
       title="Expedição"
       :count="kiosk?.closed_count"
-      :count-label="`de ${kiosk?.total_count ?? 0} fechadas`"
+      :count-label="`de ${kiosk?.total_count ?? 0} concluídas`"
       :pending="pending"
       @refresh="refresh"
     />
@@ -200,6 +250,28 @@ function cancelOven() {
           </button>
         </div>
 
+        <!-- Progresso do dia: a linha visual do quanto já concluiu. -->
+        <div
+          v-if="kiosk && kiosk.total_count > 0"
+          class="ml-auto inline-flex items-center gap-2"
+          role="progressbar"
+          :aria-valuenow="Math.round((kiosk.closed_count / kiosk.total_count) * 100)"
+          aria-valuemin="0"
+          aria-valuemax="100"
+          aria-label="Fornadas concluídas no dia"
+          :title="`${kiosk.closed_count} de ${kiosk.total_count} fornadas concluídas`"
+        >
+          <div class="h-1.5 w-24 overflow-hidden rounded-full bg-muted">
+            <div
+              class="h-full rounded-full bg-primary transition-all"
+              :style="{ width: `${Math.round((kiosk.closed_count / kiosk.total_count) * 100)}%` }"
+            />
+          </div>
+          <span class="text-xs font-medium tabular-nums text-muted-foreground"
+            >{{ Math.round((kiosk.closed_count / kiosk.total_count) * 100) }}%</span
+          >
+        </div>
+
         <UiPopover :open="menuOpen" @update:open="(v: boolean) => (menuOpen = v)">
           <UiPopoverTrigger as-child>
             <button
@@ -230,14 +302,19 @@ function cancelOven() {
 
       <div class="grid gap-2">
         <!-- O toque no CARD abre o timer (a ação de toda hora); fechar a
-             fornada é o botão quadrado do previsto, à direita. -->
+             fornada é o botão quadrado do previsto, à direita. Alarmando, o
+             card inteiro oscila em danger — visível do outro lado do fournil. -->
         <div
           v-for="order in openOrders"
           :key="order.pk"
           role="button"
           tabindex="0"
           class="flex cursor-pointer items-stretch justify-between gap-3 rounded-lg border bg-card p-4 text-left transition hover:bg-accent"
-          :class="{ 'border-primary ring-2 ring-primary/30': order.pk === nextPk }"
+          :class="
+            ovenMode(order) === 'ringing'
+              ? 'qc-ringing border-destructive/60'
+              : { 'border-primary ring-2 ring-primary/30': order.pk === nextPk }
+          "
           :aria-label="`Timer do forno de ${order.recipe_name}`"
           @click="openOven(order)"
           @keydown.enter="openOven(order)"
@@ -257,29 +334,32 @@ function cancelOven() {
             <p
               class="mt-2 flex items-center gap-2 text-lg font-semibold tabular-nums"
               :class="
-                oven.isRinging(ovenKey(order))
-                  ? 'animate-pulse text-destructive dark:text-orange-300'
-                  : oven.get(ovenKey(order))
-                    ? 'text-foreground'
-                    : 'text-muted-foreground'
+                ovenMode(order) === 'ringing'
+                  ? 'text-destructive dark:text-orange-300'
+                  : ovenMode(order) === 'idle'
+                    ? 'text-muted-foreground'
+                    : 'text-foreground'
               "
             >
               <Icon name="lucide:alarm-clock" class="size-5" />
-              <template v-if="oven.isRinging(ovenKey(order))">Conferir o forno!</template>
-              <template v-else-if="oven.get(ovenKey(order))">{{
+              <template v-if="ovenMode(order) === 'ringing'">Conferir Forno!</template>
+              <template v-else-if="ovenMode(order) === 'paused'"
+                >Pausado · {{ oven.remainingLabel(ovenKey(order)) }}</template
+              >
+              <template v-else-if="ovenMode(order) === 'running'">{{
                 oven.remainingLabel(ovenKey(order))
               }}</template>
-              <template v-else>Armar timer</template>
+              <template v-else>Iniciar</template>
             </p>
           </div>
           <button
             type="button"
-            class="grid size-20 shrink-0 place-items-center self-center rounded-xl border bg-background transition hover:border-primary hover:bg-accent"
+            class="flex size-20 shrink-0 flex-col items-center justify-center self-center rounded-xl border bg-background pt-1 transition hover:bg-accent active:translate-y-px"
             :aria-label="`Fechar a fornada de ${order.recipe_name}`"
             @click.stop="openOrder(order)"
           >
             <span class="text-2xl font-semibold leading-none tabular-nums">{{ order.planned_qty }}</span>
-            <span class="mt-1 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">previsto</span>
+            <span class="mt-1.5 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">previstos</span>
           </button>
         </div>
 
@@ -334,51 +414,99 @@ function cancelOven() {
     >
       <UiDialogContent class="sm:max-w-sm">
         <UiDialogHeader>
-          <UiDialogTitle>Timer do forno · {{ ovenOrder?.output_sku }}</UiDialogTitle>
-          <UiDialogDescription
-            >Minutos até o lembrete de conferir/retirar. Toca neste
-            aparelho.</UiDialogDescription
-          >
+          <UiDialogTitle>Timer do forno · {{ ovenOrder?.recipe_name }}</UiDialogTitle>
+          <UiDialogDescription>Toca neste aparelho.</UiDialogDescription>
         </UiDialogHeader>
-        <div class="flex items-center gap-2">
-          <button
-            type="button"
-            class="grid size-12 shrink-0 place-items-center rounded-md border text-xl font-bold transition hover:bg-accent"
-            aria-label="Diminuir"
-            @click="bumpOven(-1)"
+
+        <!-- O mostrador: minutos a armar, restante ao vivo, ou o alarme. -->
+        <div
+          class="grid h-20 place-items-center rounded-lg border text-center"
+          :class="dialogMode === 'ringing' ? 'border-destructive/50 bg-destructive/10' : 'bg-background'"
+        >
+          <p
+            v-if="dialogMode === 'ringing'"
+            class="animate-pulse text-2xl font-bold text-destructive dark:text-orange-300"
           >
-            −
-          </button>
-          <div class="relative w-full">
-            <input
-              v-model="ovenMinutes"
-              type="text"
-              inputmode="numeric"
-              class="h-12 w-full rounded-md border bg-background text-center text-3xl font-bold tabular-nums outline-none focus:ring-1 focus:ring-ring"
-              aria-label="Minutos do timer"
-            />
-            <span
-              class="pointer-events-none absolute inset-y-0 right-3 grid place-items-center text-sm text-muted-foreground"
-              >min</span
+            Conferir Forno!
+          </p>
+          <p v-else-if="dialogMode !== 'idle'" class="text-4xl font-bold tabular-nums">
+            {{ ovenOrder ? oven.remainingLabel(ovenKey(ovenOrder)) : "" }}
+            <span v-if="dialogMode === 'paused'" class="block text-xs font-medium uppercase tracking-wide text-muted-foreground">pausado</span>
+          </p>
+          <p v-else class="text-4xl font-bold tabular-nums">
+            {{ ovenMinutes }}<span class="ml-1 text-base font-medium text-muted-foreground">min</span>
+          </p>
+        </div>
+
+        <!-- Armando: tempos de forno prontos num toque. Depois: +N ao vivo. -->
+        <div class="grid grid-cols-4 gap-1.5">
+          <template v-if="dialogMode === 'idle'">
+            <button
+              v-for="preset in [5, 10, 15, 20]"
+              :key="preset"
+              type="button"
+              class="rounded-md border bg-card py-2.5 text-base font-semibold tabular-nums transition hover:bg-accent active:translate-y-px"
+              @click="ovenPreset(preset)"
             >
-          </div>
+              {{ preset }}
+            </button>
+          </template>
           <button
+            v-for="extra in [1, 5, 10]"
+            :key="`add-${extra}`"
             type="button"
-            class="grid size-12 shrink-0 place-items-center rounded-md border text-xl font-bold transition hover:bg-accent"
-            aria-label="Aumentar"
-            @click="bumpOven(1)"
+            class="rounded-md border bg-card py-2.5 text-base font-semibold tabular-nums transition hover:bg-accent active:translate-y-px"
+            :class="dialogMode !== 'idle' ? 'col-span-1' : ''"
+            @click="ovenAdd(extra)"
           >
-            +
+            +{{ extra }}
+          </button>
+          <button
+            v-if="dialogMode === 'idle'"
+            type="button"
+            class="rounded-md border bg-card py-2.5 text-sm font-medium transition hover:bg-accent active:translate-y-px"
+            aria-label="Apagar último dígito"
+            @click="ovenBackspace()"
+          >
+            <Icon name="lucide:delete" class="mx-auto size-4" />
+          </button>
+          <!-- Alarmou/correndo: o 4º slot fecha o ciclo — Concluir emenda no QC. -->
+          <button
+            v-else
+            type="button"
+            class="rounded-md border border-transparent bg-primary py-2.5 text-sm font-semibold text-primary-foreground transition hover:bg-primary/90 active:translate-y-px"
+            @click="concludeOven()"
+          >
+            Concluir
           </button>
         </div>
-        <UiDialogFooter>
+
+        <!-- Dígitos: fornada com tempo fora do padrão digita direto. -->
+        <OperatorNumpad
+          v-if="dialogMode === 'idle'"
+          compact
+          subject="minutos do timer"
+          @digit="ovenDigit"
+          @backspace="ovenBackspace"
+          @clear="ovenMinutes = '0'; ovenFresh = true"
+        />
+
+        <UiDialogFooter class="gap-2">
           <button
-            v-if="ovenOrder && oven.get(ovenKey(ovenOrder))"
+            v-if="dialogMode === 'running'"
             type="button"
-            class="mr-auto rounded-md border px-3 py-2 text-sm font-medium text-destructive transition hover:bg-destructive/10 dark:text-orange-300"
-            @click="cancelOven()"
+            class="mr-auto rounded-md border px-3 py-2 text-sm font-medium transition hover:bg-accent"
+            @click="pauseOven()"
           >
-            Cancelar timer
+            Pausar
+          </button>
+          <button
+            v-else-if="dialogMode === 'paused'"
+            type="button"
+            class="mr-auto rounded-md border px-3 py-2 text-sm font-medium transition hover:bg-accent"
+            @click="resumeOven()"
+          >
+            Retomar
           </button>
           <button
             type="button"
@@ -388,15 +516,33 @@ function cancelOven() {
             Fechar
           </button>
           <button
+            v-if="dialogMode === 'idle'"
             type="button"
-            :disabled="!(parseFloat(ovenMinutes.replace(',', '.')) >= 1)"
+            :disabled="!(parseInt(ovenMinutes, 10) >= 1)"
             class="rounded-md border border-transparent bg-primary px-3 py-2 text-sm font-semibold text-primary-foreground transition hover:bg-primary/90 disabled:opacity-50"
-            @click="confirmOven()"
+            @click="startOven()"
           >
-            Iniciar timer
+            Iniciar
           </button>
         </UiDialogFooter>
       </UiDialogContent>
     </UiDialog>
   </main>
 </template>
+
+<style scoped>
+/* O card inteiro oscila em danger quando o alarme toca: visível do outro
+   lado do fournil, sem depender de ler o texto. */
+@keyframes qc-ring {
+  0%,
+  100% {
+    background-color: var(--card);
+  }
+  50% {
+    background-color: color-mix(in oklab, var(--destructive) 16%, var(--card));
+  }
+}
+.qc-ringing {
+  animation: qc-ring 1.1s ease-in-out infinite;
+}
+</style>
