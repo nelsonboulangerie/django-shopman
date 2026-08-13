@@ -420,5 +420,6 @@ O **split de lote deixou de ser o buraco**: ele não é mecanismo novo, é conse
 - [x] Fornada Ótima com unidades fora **dispara**, com piso `quality_min_share` (§8).
 - [x] Fora de tamanho por peso/divisão cai em `misshapen`; sem código próprio.
 - [x] Piso inicial de `quality_min_share`: **90**.
-- [ ] Fornada **Ótima com unidades fora** dispara broadcast ou exige fornada limpa?
-      (Hoje o protótipo não dispara e trata como config do Admin.)
+- [x] Fornada **Ótima com unidades fora** dispara broadcast ou exige fornada limpa?
+      Decidido: dispara, com piso `quality_min_share` (ver §8 e ADR-017 §6);
+      ausente = 100% (fornada limpa), seed em 90.

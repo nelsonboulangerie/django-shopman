@@ -1,6 +1,6 @@
 # ADR-017 - Qualidade e o resultado da producao: nao e dominio novo
 
-**Status:** Aceito — implementado (passos 1–8) em 2026-08-13
+**Status:** Aceito — implementado (passos 1–8 em 2026-08-13, PR #143; passo 9 — o quiosque — em 2026-08-13, `feat/qc-kiosk`)
 **Data:** 2026-08-07
 **Escopo:** `craftsman` core, `craftsman.contrib.stockman`, `shopman/shop` (politica), `stockman` (duas colunas em `Batch` — ver correção abaixo)
 **Supersede parcialmente:** o §6.2 e o §9 de `docs/plans/QC-FORNADA.md`, que recomendavam uma FK `WorkOrder -> Batch`
