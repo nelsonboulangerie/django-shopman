@@ -88,7 +88,7 @@ pyproject.toml          Build + test config (repo root)
 ```
 
 > **Cutover headless:** os apps Django `storefront`/`backstage` NÃO renderizam mais
-> HTML — servem API JSON + projections. As superfícies são os 6 apps Nuxt em
+> HTML — servem API JSON + projections. As superfícies são os 7 apps Nuxt em
 > `surfaces/`, que falam com o Django via BFF (cookie de sessão cross-subdomínio
 > `.boulangerie`). A seção "Frontend: HTMX ↔ Alpine" abaixo vale só para as telas
 > Admin/Unfold que ainda são Django-rendered.
@@ -194,7 +194,7 @@ Esse escopo e para desenvolvimento local. Antes de PR, rode `make admin` sem `ur
 ## Como Rodar
 
 ```bash
-make test              # Todos os testes (~5.000: ~2.150 cores + ~2.870 framework)
+make test              # Todos os testes (~6.500: ~2.200 cores + ~4.250 framework + tools)
 make test-offerman     # Apenas offerman
 make test-stockman     # Apenas stockman
 make test-framework    # Orquestrador + integration + e2e

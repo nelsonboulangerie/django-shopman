@@ -1,6 +1,9 @@
 # PAYMENT-TRACKING-MERGE-PLAN — o pagamento volta para o acompanhamento
 
-**Status:** proposto, aguardando OK do Pablo (2026-08-01).
+**Status:** ✅ EXECUTADO e NO AR (2026-08-01, `7cfff91e`; verificado ao vivo no
+staging — ALPHA-READINESS-AUDIT §1: sem rota `/pagamento`, Pix e cartão inline
+no acompanhamento). Header corrigido na faxina de 2026-08-13; dizia "aguardando
+OK" com a fusão já deployada.
 **Tese do Pablo:** *"pagamento é algo que deveria ser consultado/gerido pelo
 acompanhamento, que é justamente onde o cliente de fato está."* Concordo, e o
 levantamento abaixo mostra que a separação atual não paga o próprio custo.

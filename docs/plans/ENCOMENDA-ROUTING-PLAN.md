@@ -110,4 +110,4 @@ Os blocos de construção **já existem** — corrige a versão anterior deste p
   `packages/craftsman/shopman/craftsman/services/scheduling.py`
 - Vínculo pedido↔WO: `order.data["awaiting_wo_refs"]`, `order_queue._awaiting_work_orders`
 - Holds preorder-aware: `shopman/shop/services/stock.py` (`get_commitment_date`, planned holds)
-- Cenários de teste: perfil `qa` do [SEED-DATA-QUALITY-PLAN.md](./SEED-DATA-QUALITY-PLAN.md)
+- Cenários de teste: perfil `qa` do [SEED-DATA-QUALITY-PLAN.md](./completed/SEED-DATA-QUALITY-PLAN.md)

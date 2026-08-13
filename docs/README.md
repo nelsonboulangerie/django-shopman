@@ -131,7 +131,7 @@ packages/                            shopman/
 ├── payman       (pagamentos)        ├── storefront/       (API headless do cliente)
 ├── buyman       (compras)           └── backstage/        (API headless operador + Admin)
 └── fiscalman    (fiscal NFC-e)
-                                     surfaces/  6 apps Nuxt 4 + operator-kit (layer)
+                                     surfaces/  7 apps Nuxt 4 + operator-kit (layer)
                                      config/    settings, urls, seed do deployment
 ```
 

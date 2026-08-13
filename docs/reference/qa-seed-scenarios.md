@@ -1,6 +1,6 @@
 # QA seed scenarios — perfil `qa` do `seed`
 
-> Origem: [SEED-DATA-QUALITY-PLAN](../plans/SEED-DATA-QUALITY-PLAN.md) (Fases 1, 2, 3, 5).
+> Origem: [SEED-DATA-QUALITY-PLAN](../plans/completed/SEED-DATA-QUALITY-PLAN.md) (Fases 1, 2, 3, 5).
 > Este doc é o contrato que testes e QA ancoram. Refs previsíveis, datas relativas.
 
 ## Como rodar

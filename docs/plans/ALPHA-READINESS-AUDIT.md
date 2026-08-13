@@ -303,5 +303,5 @@ Alpha com **pagamento real** adiciona: sair do sandbox Efí + Stripe test→live
 - [GO-LIVE-READINESS-PLAN](GO-LIVE-READINESS-PLAN.md) — prontidão de produção.
 - [GO-LIVE-CREDENTIALS-MATRIX](GO-LIVE-CREDENTIALS-MATRIX.md) — credenciais externas.
 - [GO-LIVE-SMS-WHATSAPP-STATUS](GO-LIVE-SMS-WHATSAPP-STATUS.md) — SMS/WhatsApp.
-- [PAYMENT-TRACKING-MERGE-PLAN](PAYMENT-TRACKING-MERGE-PLAN.md) — a fusão que
+- [PAYMENT-TRACKING-MERGE-PLAN](completed/PAYMENT-TRACKING-MERGE-PLAN.md) — a fusão que
   habilitou este alpha.

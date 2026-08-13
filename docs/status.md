@@ -50,8 +50,10 @@ Testes coletados em 2026-07-11 (`pytest --collect-only`):
 | shopman-buyman | `shopman-buyman` | 9 | Fase 1 | Compras: Material, Supplier, custo, shelf-life; Fases 2–4 pós-go-live |
 | shopman-fiscalman | `shopman-fiscalman` | 22 | S0–S4 | Classificação NFC-e em Product.metadata; resta S5 (NF-e mod. 55) + validação do contador |
 
-**Total cores:** ~2.150 testes. **Framework** (`make test-framework`): ~2.870 testes
-(shop + storefront + backstage). **Suite completa (`make test`): ~5.000 testes.**
+**Total cores:** ~2.200 testes. **Framework** (`make test-framework`): ~4.250 testes
+(shop + storefront + backstage). **Suite completa (`make test`): ~6.500 testes**
+(inclui `test-drawer-agent`, 31). Medido em 2026-08-13; a última linha do log é o
+bloco do framework, não o total — o total é a SOMA dos blocos.
 
 ---
 

@@ -10,7 +10,7 @@
   Nuxt 4 SSR + layer `operator-kit` (ver [`status.md`](status.md)).
 - **11 core apps** pip-instaláveis, incluindo Buyman (compras, Fase 1) e Fiscalman
   (NFC-e, S0–S4).
-- **Suite ~5.000 testes** (~2.150 cores + ~2.870 framework), CI com Runtime Gate
+- **Suite ~6.500 testes** (~2.200 cores + ~4.250 framework + tools; medido 2026-08-13), CI com Runtime Gate
   (PostgreSQL + Redis), Surfaces Gate (typecheck Nuxt) e gates de docs/copy/admin.
 - **Auth WhatsApp-first por access link** (`NB-XxXx`) mergeada; reverse-OTP aposentado.
 - **iFood direto** (polling + sync de catálogo) em staging; **Machine** (logística
