@@ -10,7 +10,7 @@ parameter. The token is verified with :func:`hmac.compare_digest`.
 The **same code path runs in dev and prod** — there is no "skip
 signature" flag. A developer must set ``IFOOD_WEBHOOK_TOKEN`` in the
 environment (including local ``.env``) to any non-empty value. If the
-token is not configured, all requests are rejected with 403 — in any
+token is not configured, all requests are rejected with 401 — in any
 environment. That is deliberate: the "correct" integration is the one
 that runs, full stop.
 
@@ -67,7 +67,10 @@ class IFoodWebhookView(APIView):
                     "detail": "Invalid or missing iFood webhook token.",
                     "error_code": "invalid_token",
                 },
-                status=status.HTTP_403_FORBIDDEN,
+                # 401, não 403: token ausente/errado é falha de AUTENTICAÇÃO.
+                # Mesmo código nos três webhooks (efi, ifood, ifood_events) —
+                # a mesma pergunta ("quem é você?") tem uma resposta só.
+                status=status.HTTP_401_UNAUTHORIZED,
             )
 
         payload = request.data
@@ -204,7 +207,7 @@ class IFoodWebhookView(APIView):
 
         Returns ``True`` iff the configured token is non-empty and matches
         the token presented by the caller (header or query). Every other
-        case returns ``False`` and the caller gets 403.
+        case returns ``False`` and the caller gets 401.
         """
         expected = _get_ifood_setting("webhook_token") or ""
         if not expected:
