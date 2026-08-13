@@ -73,6 +73,15 @@ jobs:
         timeout-minutes: 15
         run: make test
 
+      # Modo NÃO estrito de propósito: falha só em falha real (gateways.local),
+      # e tolera os bloqueios que dependem de credencial externa. Está aqui
+      # porque a versão "roda quando alguém lembra" apagou em silêncio: o
+      # gateways.local ficou ~3 semanas vermelho depois que o gate de SKU
+      # untracked entrou (2026-07-24), e a última leitura verde era de 2026-06-26.
+      - name: Release readiness (non-strict)
+        timeout-minutes: 5
+        run: make release-readiness
+
   docker-image:
     name: Docker deploy image
     runs-on: ubuntu-latest

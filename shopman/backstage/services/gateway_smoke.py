@@ -27,6 +27,17 @@ from shopman.shop.services import sessions as session_service
 SmokeStatus = Literal["passed", "failed", "ready", "blocked_by_credentials", "blocked_by_implementation"]
 SmokeScope = Literal["local_fixture", "sandbox_readiness"]
 
+#: SKU das fixtures. Precisa existir no CATÁLOGO: o gate de commit
+#: (``stock.allow_untracked=False``, canal web) recusa SKU desconhecido com
+#: ``unknown_sku`` — typo não pode virar pedido sem reserva. O produto é criado
+#: pela própria fixture (``_ensure_catalog``), dentro da transação que sofre
+#: rollback, para o smoke não depender do seed e rodar em banco limpo.
+_SMOKE_SKU = "GATEWAY-SMOKE-SKU"
+
+#: Preço de canal do SKU de smoke, em centavos. O total do pedido sai daqui —
+#: não do ``unit_price_q`` das fixtures.
+_SMOKE_PRICE_Q = 1000
+
 _LOCAL_EFI_WEBHOOK = {"webhook_token": "gateway-smoke-efi-token"}
 _LOCAL_IFOOD = {"webhook_token": "gateway-smoke-ifood-token", "merchant_id": "gateway-smoke-merchant"}
 _LOCAL_STRIPE = {
@@ -160,6 +171,7 @@ def _run_local_fixtures(*, rollback: bool) -> tuple[GatewaySmokeCheck, ...]:
     ):
         with transaction.atomic():
             _ensure_channels()
+            _ensure_catalog()
             for provider, name, func in (
                 ("efi", "pix_duplicate_webhook", _smoke_efi_pix_duplicate_webhook),
                 ("efi", "pix_late_after_cancel_refund", _smoke_efi_late_after_cancel_refund),
@@ -208,6 +220,38 @@ def _execute_local_check(provider: str, name: str, func) -> GatewaySmokeCheck:
 def _ensure_channels() -> None:
     Channel.objects.get_or_create(ref="web", defaults={"name": "Web", "is_active": True})
     Channel.objects.get_or_create(ref="ifood", defaults={"name": "iFood", "is_active": True})
+
+
+def _ensure_catalog() -> None:
+    """Produto + preço de canal das fixtures.
+
+    Só o contrato de catálogo (Offerman) — nenhum Quant no Stockman. É de
+    propósito: item conhecido pelo catálogo e não rastreado pelo Stockman passa
+    o gate como ``untracked``, sem exigir reserva. Assim as fixtures exercitam a
+    MESMA política do canal web de produção (``allow_untracked=False``) em vez
+    de afrouxá-la para si mesmas.
+
+    O ``Listing`` é obrigatório, não enfeite: o preço do pedido sai do CATÁLOGO,
+    nunca do ``unit_price_q`` que o chamador manda (a promessa de preço não pode
+    depender de quem chama). Sem preço de canal o pedido fecharia em zero e o
+    gateway recusaria com ``invalid_amount``. ``Listing.ref`` casa com
+    ``Channel.ref`` por convenção.
+    """
+    from shopman.offerman.models import Listing, ListingItem, Product
+
+    product, _ = Product.objects.get_or_create(
+        sku=_SMOKE_SKU,
+        defaults={"name": "Gateway Smoke", "unit": "un"},
+    )
+    listing, _ = Listing.objects.get_or_create(
+        ref="web",
+        defaults={"name": "Web", "is_active": True},
+    )
+    ListingItem.objects.get_or_create(
+        listing=listing,
+        product=product,
+        defaults={"price_q": _SMOKE_PRICE_Q},
+    )
 
 
 def _smoke_efi_pix_duplicate_webhook() -> dict:
@@ -394,7 +438,10 @@ def _create_order_with_payment(*, payment_method: str) -> Order:
         session_key=session.session_key,
         channel_ref="web",
         ops=[
-            {"op": "add_line", "sku": "GATEWAY-SMOKE-SKU", "qty": 1, "unit_price_q": 1000},
+            # Sem ``unit_price_q``: quem precifica é o catálogo (``_SMOKE_PRICE_Q``
+            # no Listing do canal), não o chamador. Medido: com o Listing a
+            # 1234, o pedido fecha em 1234 mesmo que a linha peça outro valor.
+            {"op": "add_line", "sku": _SMOKE_SKU, "qty": 1},
             {"op": "set_data", "path": "payment.method", "value": payment_method},
             {"op": "set_data", "path": "fulfillment_type", "value": "pickup"},
         ],
@@ -523,7 +570,7 @@ def _ifood_payload(order_id: str) -> dict:
         "customer": {"name": "Cliente Smoke", "phone": "+5543999999999"},
         "delivery": {"type": "DELIVERY", "address": "Rua Smoke, 123"},
         "items": [
-            {"sku": "GATEWAY-SMOKE-SKU", "name": "Smoke", "qty": 1, "unit_price_q": 1500},
+            {"sku": _SMOKE_SKU, "name": "Smoke", "qty": 1, "unit_price_q": 1500},
         ],
         "notes": "gateway smoke",
     }
