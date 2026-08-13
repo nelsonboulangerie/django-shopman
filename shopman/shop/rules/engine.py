@@ -119,11 +119,23 @@ def get_channel_rule_params(ref: str, channel_ref: str | None) -> dict | None:
 def load_rule(rule_config):
     """Import and instantiate a rule class from rule_config.rule_path.
 
-    Passes rule_config.params as kwargs to the constructor.
+    Passes rule_config.params as kwargs to the constructor, IGNORANDO (com
+    WARNING nomeado) as chaves que a classe não conhece.
+
+    O descarte é deliberado, não conveniência: estas são regras de DINHEIRO.
+    Uma chave órfã nos dados (parâmetro renomeado no código sem migrar o JSON —
+    o incidente `da69c714`) levantava ``TypeError``, o ``_safe_load`` engolia
+    como WARNING e a regra inteira apagava em silêncio: o desconto de
+    funcionário sumiu da loja e ninguém foi avisado. Chave desconhecida não
+    pode custar a regra — ela é ignorada em voz alta e a regra segue viva com
+    os parâmetros que conhece. O caminho inverso (parâmetro novo no código,
+    dados antigos sem a chave) já entra por default de dataclass.
 
     Defense-in-depth: re-checks the whitelist even if the row bypassed clean()
     (e.g. raw SQL insert or fixture load). The primary gate is RuleConfig.clean().
     """
+    import inspect
+
     from django.conf import settings
 
     allowed_prefixes = getattr(
@@ -140,7 +152,25 @@ def load_rule(rule_config):
     cls = _import_rule_class(rule_config.rule_path)
     if cls is None:
         raise ImportError(f"Cannot import rule: {rule_config.rule_path}")
-    return cls(**(rule_config.params or {}))
+
+    params = dict(rule_config.params or {})
+    signature = inspect.signature(cls.__init__)
+    accepts_kwargs = any(
+        p.kind is inspect.Parameter.VAR_KEYWORD for p in signature.parameters.values()
+    )
+    if params and not accepts_kwargs:
+        known = set(signature.parameters) - {"self"}
+        unknown = sorted(set(params) - known)
+        if unknown:
+            logger.warning(
+                "rules.engine: rule %s ignorando parâmetro(s) desconhecido(s) %s — "
+                "a regra segue ativa com os parâmetros conhecidos. Provável rename "
+                "de parâmetro sem migrar RuleConfig.params.",
+                rule_config.ref,
+                unknown,
+            )
+            params = {k: v for k, v in params.items() if k in known}
+    return cls(**params)
 
 
 def register_active_rules():

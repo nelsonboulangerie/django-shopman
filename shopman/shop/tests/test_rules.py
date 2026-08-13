@@ -355,6 +355,38 @@ class TestEngine:
         assert rule.start == time(8, 0)
         assert rule.end == time(22, 0)
 
+    def test_load_rule_ignores_unknown_param_and_stays_alive(self, caplog):
+        """Chave órfã em params NÃO pode desligar a regra (incidente da69c714).
+
+        Parâmetro renomeado no código sem migrar o JSON deixava a instanciação
+        levantar TypeError, o _safe_load engolia e a regra de DINHEIRO apagava
+        em silêncio. O contrato agora: a chave desconhecida é ignorada com
+        WARNING nomeado e a regra carrega com o que conhece.
+        """
+        import logging
+
+        rc = self._create_rule(
+            ref="employee_orphan_param",
+            rule_path="shopman.shop.rules.pricing.EmployeeRule",
+            params={"staff_discount_pct": 20, "discount_percent": 15},
+        )
+
+        # O logger `shopman` tem propagate=False (config/settings.py), então o
+        # handler-raiz do caplog nunca vê o record — anexar direto, como em
+        # test_maintenance_worker._capture_worker_logs.
+        engine_logger = logging.getLogger("shopman.shop.rules.engine")
+        engine_logger.addHandler(caplog.handler)
+        try:
+            with caplog.at_level("WARNING", logger="shopman.shop.rules.engine"):
+                rule = load_rule(rc)
+        finally:
+            engine_logger.removeHandler(caplog.handler)
+
+        assert isinstance(rule, EmployeeRule)
+        # O parâmetro conhecido entrou; o órfão foi ignorado, não fatal.
+        assert rule.discount_percent == 15
+        assert any("staff_discount_pct" in m for m in caplog.messages)
+
     def test_load_rule_bad_path_raises(self):
         rc = self._create_rule(ref="bad_path")
         # Bypass full_clean to inject an unresolvable path directly
