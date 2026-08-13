@@ -435,6 +435,67 @@ class ProductionKDSProjection:
 
 
 @dataclass(frozen=True)
+class QCGradeProjection:
+    """Um grau da escala de QC (ADR-017 §6).
+
+    ``ref``/``rank``/``markdown_percent`` são semântica; ``label`` vem junto
+    porque é dado editável no Admin, não copy de tela (ADR-012/014).
+    """
+
+    ref: str
+    label: str
+    rank: int
+    markdown_percent: int
+    is_default: bool
+
+
+@dataclass(frozen=True)
+class QCDefectProjection:
+    """Um defeito do catálogo de QC — o ``hint`` é a segunda linha do botão."""
+
+    ref: str
+    label: str
+    hint: str
+    forces_discard: bool
+
+
+@dataclass(frozen=True)
+class QCOrderCardProjection:
+    """Uma fornada do dia no painel do quiosque de QC."""
+
+    pk: int
+    ref: str
+    recipe_name: str
+    output_sku: str
+    position_ref: str
+    status: str
+    planned_qty: str
+    started_at_display: str
+    elapsed_minutes: int
+    can_close: bool
+    closed: bool
+    # Partição da fornada fechada (a preço cheio / com desconto / perda) —
+    # vazio enquanto aberta. É o que o cartão esmaecido mostra.
+    full_price_qty: str
+    discounted_qty: str
+    loss_qty: str
+
+
+@dataclass(frozen=True)
+class QCKioskProjection:
+    """O quiosque do fournil (ADR-017 §9): ordens do dia + catálogos de QC."""
+
+    selected_date: str
+    selected_date_display: str
+    orders: tuple[QCOrderCardProjection, ...]
+    closed_count: int
+    total_count: int
+    grades: tuple[QCGradeProjection, ...]
+    defects: tuple[QCDefectProjection, ...]
+    recipes: tuple[RecipeOptionProjection, ...]
+
+
+@dataclass(frozen=True)
 class ProductionReportFilters:
     """Normalized filters for production reports."""
 
@@ -1116,6 +1177,131 @@ def build_production_kds(
     )
 
 
+def build_qc_kiosk(*, selected_date: date | None = None) -> QCKioskProjection:
+    """O quiosque do fournil (ADR-017 §9): fornadas do dia + catálogos de QC.
+
+    Painel de ORDENS, não de SKU: a ordem já traz forno, previsto e horário, e
+    é o previsto que faz a fornada normal fechar em poucos toques (QC-FORNADA
+    §5). Abertas primeiro (started pela ordem de início, depois planned);
+    fechadas ao fim, esmaecidas, carregando a partição que declararam.
+    """
+    from shopman.shop.models import QualityDefect, QualityGrade
+
+    selected_date = selected_date or timezone.localdate()
+
+    grades = tuple(
+        QCGradeProjection(
+            ref=g.ref,
+            label=g.label,
+            rank=g.rank,
+            markdown_percent=g.markdown_percent,
+            is_default=g.is_default,
+        )
+        for g in QualityGrade.objects.order_by("-rank")
+    )
+    defects = tuple(
+        QCDefectProjection(ref=d.ref, label=d.label, hint=d.hint, forces_discard=d.forces_discard)
+        for d in QualityDefect.objects.filter(is_active=True).order_by("position", "ref")
+    )
+    markdown_by_ref = {g.ref: g.markdown_percent for g in grades}
+    default_markdown = next((g.markdown_percent for g in grades if g.is_default), 0)
+
+    work_orders = list(
+        WorkOrder.objects.filter(target_date=selected_date)
+        .exclude(status=WorkOrder.Status.VOID)
+        .select_related("recipe")
+        .order_by("started_at", "created_at")
+    )
+
+    partitions = _qc_closed_partitions(
+        [wo.pk for wo in work_orders if wo.status == WorkOrder.Status.FINISHED],
+        markdown_by_ref=markdown_by_ref,
+        default_markdown=default_markdown,
+    )
+
+    now = timezone.now()
+    open_cards: list[QCOrderCardProjection] = []
+    closed_cards: list[QCOrderCardProjection] = []
+    for wo in work_orders:
+        closed = wo.status == WorkOrder.Status.FINISHED
+        full_qty, discounted_qty, loss_qty = partitions.get(wo.pk, (None, None, None))
+        elapsed = 0
+        if wo.started_at and not closed:
+            elapsed = max(0, int((now - wo.started_at).total_seconds() // 60))
+        card = QCOrderCardProjection(
+            pk=wo.pk,
+            ref=wo.ref,
+            recipe_name=wo.recipe.name or wo.recipe.ref,
+            output_sku=wo.output_sku,
+            position_ref=wo.position_ref,
+            status=str(wo.status),
+            planned_qty=_qty(wo.quantity),
+            started_at_display=(
+                timezone.localtime(wo.started_at).strftime("%H:%M") if wo.started_at else ""
+            ),
+            elapsed_minutes=elapsed,
+            can_close=wo.status in (WorkOrder.Status.PLANNED, WorkOrder.Status.STARTED),
+            closed=closed,
+            full_price_qty=_qty(full_qty) if full_qty is not None else "",
+            discounted_qty=_qty(discounted_qty) if discounted_qty is not None else "",
+            loss_qty=_qty(loss_qty) if loss_qty is not None else "",
+        )
+        (closed_cards if closed else open_cards).append(card)
+
+    # Abertas por urgência: started antes de planned (started_at ordena as
+    # started; planned não têm horário). Fechadas ao fim, mais recente primeiro.
+    open_cards.sort(key=lambda c: (c.status != str(WorkOrder.Status.STARTED),))
+    closed_cards.reverse()
+    cards = tuple(open_cards + closed_cards)
+
+    return QCKioskProjection(
+        selected_date=selected_date.isoformat(),
+        selected_date_display=selected_date.strftime("%d/%m/%Y"),
+        orders=cards,
+        closed_count=len(closed_cards),
+        total_count=len(cards),
+        grades=grades,
+        defects=defects,
+        recipes=tuple(
+            RecipeOptionProjection(pk=r.pk, ref=r.ref, name=r.name or r.output_sku or r.ref)
+            for r in Recipe.objects.filter(is_active=True).order_by("name", "ref")
+        ),
+    )
+
+
+def _qc_closed_partitions(
+    finished_pks: list[int],
+    *,
+    markdown_by_ref: dict[str, int],
+    default_markdown: int,
+) -> dict[int, tuple[Decimal, Decimal, Decimal]]:
+    """Partição (a preço cheio, com desconto, perda) por fornada fechada.
+
+    Linha OUTPUT sem grau (finish escalar) conta no grupo do grau padrão —
+    mesma regra da derivação em ``shop.services.quality``.
+    """
+    if not finished_pks:
+        return {}
+    from shopman.craftsman.models import WorkOrderItem
+
+    result: dict[int, tuple[Decimal, Decimal, Decimal]] = {}
+    lines = WorkOrderItem.objects.filter(
+        work_order_id__in=finished_pks,
+        kind__in=(WorkOrderItem.Kind.OUTPUT, WorkOrderItem.Kind.WASTE),
+    ).values_list("work_order_id", "kind", "quality_grade_ref", "quantity")
+    for wo_id, kind, grade_ref, quantity in lines:
+        full, discounted, loss = result.get(wo_id, (Decimal("0"), Decimal("0"), Decimal("0")))
+        qty = quantity or Decimal("0")
+        if kind == WorkOrderItem.Kind.WASTE:
+            loss += qty
+        elif (markdown_by_ref.get(grade_ref, default_markdown) if grade_ref else default_markdown) > 0:
+            discounted += qty
+        else:
+            full += qty
+        result[wo_id] = (full, discounted, loss)
+    return result
+
+
 def build_production_reports(filters: dict | ProductionReportFilters | None = None) -> ProductionReportsProjection:
     """Build production report rows for the requested filter set."""
     normalized = _normalize_report_filters(filters)
@@ -1576,13 +1762,24 @@ def _recipe_waste_rows(work_orders: list[WorkOrder]) -> tuple[RecipeWasteRow, ..
             continue
         bucket = grouped.setdefault(
             wo.recipe.ref,
-            {"name": wo.recipe.name or wo.recipe.ref, "count": 0, "loss": Decimal("0"), "yield": [], "planned": Decimal("0")},
+            {
+                "name": wo.recipe.name or wo.recipe.ref,
+                "count": 0,
+                "loss": Decimal("0"),
+                "yield": [],
+                "planned": Decimal("0"),
+                "capacity": Decimal("0"),
+                "dates": set(),
+            },
         )
         bucket["count"] = int(bucket["count"]) + 1
         started = _wo_started_qty(wo) or wo.quantity
         finished = wo.finished or Decimal("0")
         bucket["planned"] = bucket["planned"] + wo.quantity
         bucket["loss"] = bucket["loss"] + max(started - finished, Decimal("0"))
+        bucket["capacity"] = _decimal_meta(wo.recipe.meta, "capacity_per_day")
+        if wo.target_date:
+            bucket["dates"].add(wo.target_date)
         if started:
             bucket["yield"].append(finished / started)
     rows = [
@@ -1592,11 +1789,26 @@ def _recipe_waste_rows(work_orders: list[WorkOrder]) -> tuple[RecipeWasteRow, ..
             wo_count=int(data["count"]),
             loss_total=_qty(data["loss"]),
             yield_avg=_percent_avg(data["yield"]),
-            capacity_utilization="",
+            capacity_utilization=_capacity_utilization(data),
         )
         for recipe_ref, data in grouped.items()
     ]
     return tuple(sorted(rows, key=lambda row: Decimal(row.loss_total or "0"), reverse=True)[:10])
+
+
+def _capacity_utilization(data: dict) -> str:
+    """Planejado ÷ (capacidade/dia × dias produzidos no período), como "NN%".
+
+    O denominador conta só os dias em que a receita rodou: a pergunta do
+    relatório é "quando roda, quão cheio fica o dia" — dia sem fornada não é
+    subutilização da receita, é decisão de plano. Sem ``capacity_per_day`` no
+    Admin da receita, a coluna fica vazia (não inventa denominador).
+    """
+    capacity = data["capacity"]
+    days = len(data["dates"])
+    if not capacity or not days:
+        return ""
+    return f"{int(Decimal(data['planned']) * 100 / (capacity * days))}%"
 
 
 def _duration_minutes(started_at, finished_at) -> int | None:

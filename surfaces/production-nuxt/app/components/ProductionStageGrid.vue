@@ -209,10 +209,12 @@ const startedRow = ref<ProductionMatrixRowProjection | null>(null);
 const finishRow = ref<ProductionMatrixRowProjection | null>(null);
 const finishQty = ref("");
 
-// Classificação da fornada, gravada em WorkOrder.meta["quality"]. O gestor usa
-// isso para decidir o que vira post ("só publica fornada ótima"); o operador
-// não posta nada, só diz como ficou. Os values são as refs do catálogo
-// QualityGrade (ADR-017) — o rótulo edita no Admin, o código não.
+// Classificação da fornada — vira quality_grade_ref na linha de OUTPUT
+// (meta["quality"] morreu; ADR-017 §3). O gestor usa isso para decidir o que
+// vira post ("só publica fornada ótima"); o operador não posta nada, só diz
+// como ficou. Os values são as refs do catálogo QualityGrade — o rótulo edita
+// no Admin, o código não. A partição completa (grupos + perda) é do quiosque
+// de QC; aqui é o atalho de um grupo só.
 const QUALITY_OPTIONS = [
   { value: "excellent", label: "★★★ Ótima" },
   { value: "standard", label: "★★ Normal" },

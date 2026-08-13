@@ -100,6 +100,33 @@ def void_work_order(
     return work_order.ref
 
 
+def quick_plan(
+    *,
+    recipe_id,
+    quantity,
+    position_id,
+):
+    """Plan a same-day ad-hoc work order (fornada fora do plano).
+
+    Nasce sem previsto herdado de plano nenhum — o previsto É o que o operador
+    declarou. Quem fecha decide o caminho: escalar (``quick_finish``) ou
+    particionado (``apply_finish`` do quiosque de QC).
+    """
+    from shopman.craftsman.services.scheduling import CraftPlanning
+
+    recipe = _get_active_recipe(recipe_id)
+    qty = _positive_decimal(quantity, error="Quantidade inválida.")
+    position_ref = _position_ref(position_id)
+
+    return CraftPlanning.plan(
+        recipe,
+        qty,
+        date=timezone.localdate(),
+        position_ref=position_ref,
+        source_ref="quick_production",
+    )
+
+
 def quick_finish(
     *,
     recipe_id,
@@ -109,21 +136,10 @@ def quick_finish(
 ) -> tuple[str, str, Decimal]:
     """Plan and immediately finish a production work order."""
     from shopman.craftsman.services.execution import CraftExecution
-    from shopman.craftsman.services.scheduling import CraftPlanning
 
-    recipe = _get_active_recipe(recipe_id)
-    qty = _positive_decimal(quantity, error="Quantidade inválida.")
-    position_ref = _position_ref(position_id)
-
-    work_order = CraftPlanning.plan(
-        recipe,
-        qty,
-        date=timezone.localdate(),
-        position_ref=position_ref,
-        source_ref="quick_production",
-    )
-    CraftExecution.finish(order=work_order, finished=qty, actor=actor)
-    return recipe.output_sku, work_order.ref, qty
+    work_order = quick_plan(recipe_id=recipe_id, quantity=quantity, position_id=position_id)
+    CraftExecution.finish(order=work_order, finished=work_order.quantity, actor=actor)
+    return work_order.output_sku, work_order.ref, work_order.quantity
 
 
 def set_planned_quantity(

@@ -112,6 +112,7 @@ from .operations import (
     ProductionKDSView,
     ProductionManagementView,
     ProductionMiseEnPlaceView,
+    ProductionQCView,
     ProductionReportsView,
     ProductionWeighingView,
     WorkOrderAdvanceStepView,
@@ -149,6 +150,7 @@ urlpatterns = [
     path("operator/pin/reset/", OperatorPinResetView.as_view(), name="api-backstage-operator-pin-reset"),
     path("production/", ProductionBoardView.as_view(), name="api-backstage-production"),
     path("production/kds/", ProductionKDSView.as_view(), name="api-backstage-production-kds"),
+    path("production/qc/", ProductionQCView.as_view(), name="api-backstage-production-qc"),
     path("production/forecast/", ProductionForecastView.as_view(), name="api-backstage-production-forecast"),
     path(
         "production/mise-en-place/",

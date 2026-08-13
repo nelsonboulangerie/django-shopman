@@ -87,6 +87,8 @@ def test_recipe_waste_returns_top_waste_rows(report_data):
 
     assert report.waste_rows[0].recipe_ref == "report-cafe"
     assert report.waste_rows[0].loss_total == "4"
+    # Só a WO FINISHED entra: planejado 40 sobre capacity_per_day 100 × 1 dia.
+    assert report.waste_rows[0].capacity_utilization == "40%"
 
 
 @pytest.mark.django_db
