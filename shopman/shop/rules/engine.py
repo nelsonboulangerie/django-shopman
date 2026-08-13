@@ -119,17 +119,16 @@ def get_channel_rule_params(ref: str, channel_ref: str | None) -> dict | None:
 def load_rule(rule_config):
     """Import and instantiate a rule class from rule_config.rule_path.
 
-    Passes rule_config.params as kwargs to the constructor, IGNORANDO (com
-    WARNING nomeado) as chaves que a classe não conhece.
+    Passes rule_config.params as kwargs to the constructor. Chave que a classe
+    não conhece é FATAL, com erro nomeado: a regra roda exatamente como
+    configurada ou não roda — o sistema nunca inventa uma configuração de
+    fallback (decisão do Pablo, reafirmada em 2026-08-13; o conserto de rename
+    é migração de dados, ver 0010).
 
-    O descarte é deliberado, não conveniência: estas são regras de DINHEIRO.
-    Uma chave órfã nos dados (parâmetro renomeado no código sem migrar o JSON —
-    o incidente `da69c714`) levantava ``TypeError``, o ``_safe_load`` engolia
-    como WARNING e a regra inteira apagava em silêncio: o desconto de
-    funcionário sumiu da loja e ninguém foi avisado. Chave desconhecida não
-    pode custar a regra — ela é ignorada em voz alta e a regra segue viva com
-    os parâmetros que conhece. O caminho inverso (parâmetro novo no código,
-    dados antigos sem a chave) já entra por default de dataclass.
+    O que o incidente `da69c714` ensinou não foi "afrouxar o load": foi que a
+    morte era MUDA. O barulho mora em quem alcança o dado: o check
+    ``rules.load`` do release-readiness (CI/staging) e a coluna "carrega?" no
+    Admin de RuleConfig.
 
     Defense-in-depth: re-checks the whitelist even if the row bypassed clean()
     (e.g. raw SQL insert or fixture load). The primary gate is RuleConfig.clean().
@@ -162,14 +161,13 @@ def load_rule(rule_config):
         known = set(signature.parameters) - {"self"}
         unknown = sorted(set(params) - known)
         if unknown:
-            logger.warning(
-                "rules.engine: rule %s ignorando parâmetro(s) desconhecido(s) %s — "
-                "a regra segue ativa com os parâmetros conhecidos. Provável rename "
-                "de parâmetro sem migrar RuleConfig.params.",
-                rule_config.ref,
-                unknown,
+            # ValueError, não TypeError cru: o _safe_load loga esta mensagem
+            # concisa (sem traceback) e o readiness/Admin a exibem por extenso.
+            raise ValueError(
+                f"parâmetro(s) desconhecido(s) {unknown} em params — a regra NÃO "
+                f"carrega. Provável rename de parâmetro sem migrar "
+                f"RuleConfig.params (rename exige migração de dados; ver 0010)."
             )
-            params = {k: v for k, v in params.items() if k in known}
     return cls(**params)
 
 

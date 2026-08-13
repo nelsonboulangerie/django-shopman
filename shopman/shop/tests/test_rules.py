@@ -355,37 +355,24 @@ class TestEngine:
         assert rule.start == time(8, 0)
         assert rule.end == time(22, 0)
 
-    def test_load_rule_ignores_unknown_param_and_stays_alive(self, caplog):
-        """Chave órfã em params NÃO pode desligar a regra (incidente da69c714).
+    def test_load_rule_unknown_param_is_fatal_and_named(self):
+        """Chave órfã em params = a regra NÃO carrega, com erro NOMEADO.
 
-        Parâmetro renomeado no código sem migrar o JSON deixava a instanciação
-        levantar TypeError, o _safe_load engolia e a regra de DINHEIRO apagava
-        em silêncio. O contrato agora: a chave desconhecida é ignorada com
-        WARNING nomeado e a regra carrega com o que conhece.
+        Contrato estrito (decisão do Pablo, 2026-08-13): a regra roda
+        exatamente como configurada ou não roda — o sistema nunca inventa
+        fallback. O erro é ValueError (mensagem concisa no _safe_load, sem
+        traceback) nomeando a chave e o conserto (migração de dados). O
+        barulho fica com o check `rules.load` do readiness e a coluna
+        "carrega?" do Admin.
         """
-        import logging
-
         rc = self._create_rule(
             ref="employee_orphan_param",
             rule_path="shopman.shop.rules.pricing.EmployeeRule",
             params={"staff_discount_pct": 20, "discount_percent": 15},
         )
 
-        # O logger `shopman` tem propagate=False (config/settings.py), então o
-        # handler-raiz do caplog nunca vê o record — anexar direto, como em
-        # test_maintenance_worker._capture_worker_logs.
-        engine_logger = logging.getLogger("shopman.shop.rules.engine")
-        engine_logger.addHandler(caplog.handler)
-        try:
-            with caplog.at_level("WARNING", logger="shopman.shop.rules.engine"):
-                rule = load_rule(rc)
-        finally:
-            engine_logger.removeHandler(caplog.handler)
-
-        assert isinstance(rule, EmployeeRule)
-        # O parâmetro conhecido entrou; o órfão foi ignorado, não fatal.
-        assert rule.discount_percent == 15
-        assert any("staff_discount_pct" in m for m in caplog.messages)
+        with pytest.raises(ValueError, match="staff_discount_pct"):
+            load_rule(rc)
 
     def test_load_rule_bad_path_raises(self):
         rc = self._create_rule(ref="bad_path")

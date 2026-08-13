@@ -80,19 +80,29 @@ seed-data-quality.
   tomado de facto: três webhooks novos entraram desde o registro da dívida e
   todos escolheram 401; o ifood estava 4 a 1.
 
-- ⚠️ **REVISÃO DE DECISÃO DOCUMENTADA — chave órfã em `RuleConfig.params`.**
-  Existia uma decisão anterior, fixada em teste
-  (`test_the_obsolete_param_kills_the_rule_quietly`): dado velho DESLIGA a regra,
-  e o conserto de rename é migração de dados. A faxina **reverte o primeiro
-  termo e mantém o segundo**: a chave órfã agora é descartada com WARNING nomeado
-  e a regra segue viva (NÃO é alias — `group` não vira `price_tier`); a migração
-  de dados continua sendo o conserto correto (0010 existe e segue testada).
-  O que mudou de entendimento: (a) regras **validator** morrem do mesmo jeito, e
-  um guarda de horário comercial evaporado por typo é a loja aceitando pedido de
-  madrugada; (b) o incidente `da69c714` provou que o "silêncio" dura semanas.
-  Guarda não pode evaporar por chave órfã. A lápide antiga virou o teste do
-  contrato novo, com o racional dos dois lados no docstring. **Se o Pablo
-  discordar, o revert é pequeno e o teste antigo está no git.**
+- **Chave órfã em `RuleConfig.params` — DECISÃO DO PABLO (2026-08-13): estrito
+  + barulhento.** A faxina chegou a inverter o contrato (chave órfã ignorada,
+  regra viva com defaults); o dono reafirmou o estrito: **a regra roda
+  exatamente como configurada ou não roda** — nada de fallback inventado, nada
+  de alias (`group` não vira `price_tier`; a tradução é a migração 0010). O que
+  ficou do aprendizado do incidente `da69c714` é o **barulho**: a morte deixou
+  de ser um WARNING perdido no log —
+  - check **`rules.load`** no `release-readiness` (que roda no CI): regra
+    habilitada que não carrega = vermelho, com ref e motivo;
+  - coluna **"carrega?"** na lista de `RuleConfig` no Admin (verde/vermelho),
+    visível onde o dado velho mora;
+  - o erro do load **nomeia a chave** e aponta o conserto (migração de dados).
+  Alcance honesto: o CI semeia banco fresco, então rename-sem-migração se
+  manifesta onde há dado velho (staging/prod) — lá quem pega é o badge do Admin
+  e o readiness rodado no ambiente.
+
+- **`EmployeeRule.price_tier` era parâmetro DECORATIVO** — achado da pergunta
+  do Pablo ("está certo isso, Arnaldo?"). O modifier comparava contra o literal
+  `"staff"` cravado e nunca lia o parâmetro: mudar para `"vip"` no admin não
+  fazia nada (one question, dois donos). Ironia: o incidente `da69c714` inteiro
+  girou em torno de renomear uma chave que nada consumia. Agora o
+  `EmployeeDiscountModifier` lê `rule_params["price_tier"]` — o parâmetro é o
+  dono único da pergunta, com teste provando que `"staff"` deixou de ser mágico.
 - **Nada encontrado que justifique rename ou reorganização estrutural** nesta
   passada: a regra de dependência (storefront → shop ← backstage, cores nunca se
   importam) está respeitada nos pontos amostrados; vocabulário do glossário bate

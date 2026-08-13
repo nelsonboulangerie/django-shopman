@@ -152,6 +152,7 @@ def build_report(
             _migration_check(),
             _storefront_contact_check(),
             _omotenashi_seed_check(),
+            _rules_load_check(),
             _gateway_smoke_check(),
             _gateway_sandbox_check(),
             _manual_qa_check(manual_qa_evidence),
@@ -242,6 +243,53 @@ def _storefront_contact_check() -> ReadinessCheck:
         status="passed",
         message="Storefront WhatsApp contact is configured.",
         details={"whatsapp_url": whatsapp_url},
+    )
+
+
+def _rules_load_check() -> ReadinessCheck:
+    """Toda RuleConfig HABILITADA precisa carregar.
+
+    O contrato do load é estrito (chave órfã = regra não carrega — decisão do
+    Pablo, 2026-08-13); este check é a metade barulhenta: regra de dinheiro ou
+    guarda que não carrega fica VERMELHA aqui em vez de sumir num WARNING de
+    log, como no incidente `da69c714`. Alcance honesto: só enxerga o banco em
+    que roda — no CI o seed é fresco, então rename-sem-migração aparece onde o
+    dado velho mora (staging/prod) e na coluna "carrega?" do Admin.
+    """
+    try:
+        from shopman.shop.models import RuleConfig
+        from shopman.shop.rules.engine import load_rule
+
+        broken: list[dict] = []
+        total = 0
+        for rc in RuleConfig.objects.filter(enabled=True):
+            total += 1
+            try:
+                load_rule(rc)
+            except Exception as exc:  # noqa: BLE001 - o motivo vai no relatório
+                broken.append({"ref": rc.ref, "error": f"{type(exc).__name__}: {exc}"})
+    except Exception as exc:  # noqa: BLE001 - readiness must report every local blocker
+        return ReadinessCheck(
+            id="rules.load",
+            title="RuleConfig load contract",
+            status="failed",
+            message=f"{type(exc).__name__}: {exc}",
+        )
+
+    if broken:
+        return ReadinessCheck(
+            id="rules.load",
+            title="RuleConfig load contract",
+            status="failed",
+            message=f"{len(broken)} enabled rule(s) do not load.",
+            details={"broken": broken, "total_enabled": total},
+        )
+    return ReadinessCheck(
+        id="rules.load",
+        title="RuleConfig load contract",
+        status="passed",
+        message=f"{total} enabled rule(s) load cleanly.",
+        details={"total_enabled": total},
     )
 
 

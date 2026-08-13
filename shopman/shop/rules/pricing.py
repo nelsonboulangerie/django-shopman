@@ -41,10 +41,14 @@ class EmployeeRule(BaseRule):
 
     Novo parâmetro entra com default: ``RuleConfig`` antigo (sem a chave no JSON)
     continua instanciando. O caminho contrário — chave nos DADOS que a classe não
-    conhece — era fatal (``TypeError`` engolido, regra desligada em silêncio; o
-    incidente `da69c714`). Desde a faxina de 2026-08-13 o ``load_rule`` descarta
-    a chave órfã com WARNING nomeado e a regra segue viva; o conserto correto do
-    rename continua sendo migração de dados (ver 0010).
+    conhece — é FATAL por decisão (reafirmada 2026-08-13): a regra roda exatamente
+    como configurada ou não roda; o conserto de rename é migração de dados (0010).
+    O que o incidente `da69c714` mudou foi o barulho, não o contrato: a regra que
+    não carrega fica vermelha no ``rules.load`` do release-readiness e na coluna
+    "carrega?" do Admin, em vez de sumir num WARNING de log.
+
+    ``price_tier`` diz QUAL tier marca funcionário — e é consumido de verdade
+    pelo ``EmployeeDiscountModifier`` (era literal cravado; faxina 2026-08-13).
     """
 
     code = "shop.employee_discount"
