@@ -1324,10 +1324,12 @@ class WorkOrderQuickFinishView(_ProductionActionBase):
     def post(self, request):
         recipe_id = request.data.get("recipe_id")
         quantity = request.data.get("quantity")
+        # position_id opcional: sem ele a fornada cai na posição padrão (o
+        # quiosque de QC não escolhe forno; o grid do gestor continua enviando).
         position_id = request.data.get("position_id")
-        if not (recipe_id and quantity and position_id):
+        if not (recipe_id and quantity):
             return Response(
-                {"detail": "recipe_id, quantity e position_id são obrigatórios."},
+                {"detail": "recipe_id e quantity são obrigatórios."},
                 status=400,
             )
         try:

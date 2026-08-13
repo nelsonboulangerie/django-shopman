@@ -489,7 +489,7 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onWindowKeydown));
           ,
         </button>
       </div>
-      <PosNumpad
+      <OperatorNumpad
         compact
         :disabled="!items.length"
         :subject="numpadSubject"
