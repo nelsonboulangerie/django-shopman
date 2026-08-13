@@ -188,9 +188,16 @@ tratava `gestor.boulangerie.com.br` como o gestor de staging), mas muda o que
 ⚠️ **A loja do cliente é a única superfície sem hostname de produção.** O apex
 `boulangerie.com.br` **não tem registro web nenhum** — só MX, SPF, DKIM, DMARC e
 verificações. Todo aparelho de operador tem seu subdomínio; a loja não tem
-endereço. Hoje ela existe só em `shopman-staging-cdjpy.ondigitalocean.app` e
-`staging.nelsonboulangerie.com.br`. Se o testador for orientado a ir em
-"boulangerie.com.br", ele não chega a lugar nenhum.
+endereço. Se o testador for orientado a ir em "boulangerie.com.br", ele não chega
+a lugar nenhum.
+
+**Endereço a usar no convite do alpha** (medido em 2026-08-13):
+
+| Hostname | Serve | Estado |
+|---|---|---|
+| `staging.nelsonboulangerie.com.br` | a loja do cliente | ✅ HTTP 200, 1,3s |
+| `api.boulangerie.com.br` | a API do Django | ✅ `/health/` e `/ready/` 200 |
+| `boulangerie.com.br` (apex) | nada | ❌ sem registro web |
 
 Spec LIVE de hoje confirma a §3 da auditoria — nada mudou desde 11/08:
 
