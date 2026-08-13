@@ -23,7 +23,7 @@ import drawer_agent  # noqa: E402
 from drawer_agent import AgentConfig, DrawerHandler, kick_bytes  # noqa: E402
 
 TOKEN = "token-de-teste-com-tamanho-suficiente"
-ORIGIN = "https://pos.staging.nelsonboulangerie.com.br"
+ORIGIN = "https://pdv.boulangerie.com.br"
 
 
 # ── Bytes ─────────────────────────────────────────────────────────────────
@@ -320,6 +320,27 @@ def test_reinstalar_com_o_MESMO_token_nao_reescreve(tmp_path):
         path, queue="TM-T20", origin="https://pos.exemplo", token=TOKEN
     )
     assert written is False
+
+
+def test_sem_origem_a_allowlist_fica_vazia_em_vez_de_chutar_um_dominio(tmp_path):
+    """A primeira versão cravava um domínio inventado aqui.
+
+    Ele não correspondia a nada no deployment (o PDV é `pdv.boulangerie.com.br`),
+    então instalar sem `--origin` daria 403 calado na gaveta. Vazio é mais
+    frouxo, mas é honesto e o instalador avisa.
+    """
+    path = tmp_path / "agent.json"
+    config, _ = drawer_agent.write_config(path, queue="TM-T20", origin="", token=TOKEN)
+
+    assert config["allowed_origins"] == []
+    assert AgentConfig.from_dict(config).allows("https://pdv.boulangerie.com.br")
+
+
+def test_nenhum_dominio_de_deployment_cravado_no_agente():
+    """O agente é genérico. Quem sabe a origem é o Django, e ele a injeta."""
+    source = (Path(__file__).parent / "drawer_agent.py").read_text(encoding="utf-8")
+    for invented in ("nelsonboulangerie.com.br", "boulangerie.com.br"):
+        assert invented not in source, f"domínio de deployment cravado no agente: {invented}"
 
 
 def test_config_nasce_ilegivel_para_outros_usuarios(tmp_path):

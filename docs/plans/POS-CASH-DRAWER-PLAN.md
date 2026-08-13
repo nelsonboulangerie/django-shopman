@@ -17,7 +17,7 @@ um só, porque um segundo balcão não pode obrigar a mexer em código.
 
 ## 1. A pergunta que vinha antes de tudo: HTTPS → localhost
 
-A página do PDV é HTTPS (`pos.staging.nelsonboulangerie.com.br`) e o agente é
+A página do PDV é HTTPS (`pdv.boulangerie.com.br`) e o agente é
 local. Se o navegador bloqueasse essa chamada, o desenho inteiro mudava.
 
 **Medido no Chrome 148, de uma origem HTTPS pública para `http://127.0.0.1`:**
@@ -186,6 +186,26 @@ conferir; a tela também diz isso em vez de estourar 500.
 
 O token viaja no comando e aparece na tela do Admin. É deliberado: ele não abre
 nada além da gaveta daquele balcão, e o custo de errar a transcrição era maior.
+
+## 11. ⚠️ O domínio do PDV é `pdv.boulangerie.com.br`
+
+Conferido no spec LIVE da DO (2026-08-12): `SHOPMAN_POS_BASE_URL =
+https://pdv.boulangerie.com.br`, e o ingress casa a autoridade exata
+`pdv.boulangerie.com.br` para o serviço `pos-nuxt`.
+
+As superfícies de **operador** vivem em `boulangerie.com.br` (`pdv`, `gestor`,
+`kds`, `prod`, `central`, `mkt`, `api`); a **loja** e a API dela vivem em
+`staging.nelsonboulangerie.com.br`. São dois domínios, com propósitos diferentes.
+
+**O agente tinha um domínio inventado cravado** (`pos.staging.nelson…`), que não
+existe em lugar nenhum. Instalar sem `--origin` teria dado **403 calado** na
+gaveta. O constante saiu: sem `--origin`, a allowlist fica **vazia** (aceita
+qualquer origem, com o token ainda obrigatório) e o instalador avisa em voz alta.
+Quem sabe a origem é o Django, e o Admin já a injeta no comando.
+
+Um teste proíbe qualquer domínio de deployment dentro do agente — ele é
+genérico, e constante inventada em arquivo que ninguém revisa vira defeito
+silencioso no balcão.
 
 ### Se o operador reclamar da distância
 
