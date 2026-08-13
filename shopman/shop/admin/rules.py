@@ -8,6 +8,7 @@ muda. Ver ``shopman/shop/rules/params_schema.py``.
 
 from __future__ import annotations
 
+import logging
 from datetime import time
 
 from django import forms
@@ -21,6 +22,8 @@ from unfold.widgets import (
 
 from shopman.shop.models import RuleConfig
 from shopman.shop.rules.params_schema import PERCENT, TIME, schema_for
+
+logger = logging.getLogger(__name__)
 
 # Campos tipados de params declarados no nível da classe (união entre schemas);
 # o __init__ mantém só os relevantes à ``ref`` da regra.
@@ -142,7 +145,7 @@ class RuleConfigAdmin(ModelAdmin):
     # Prioridade de avaliação = lista arrastável (menor = avaliada primeiro).
     ordering_field = "priority"
     hide_ordering_field = True
-    list_display = ("label", "ref", "enabled", "rule_type_display", "params_summary")
+    list_display = ("label", "ref", "enabled", "rule_type_display", "params_summary", "loads_display")
     list_filter = ("enabled", RuleTypeFilter)
     search_fields = ("label", "ref")
     list_editable = ("enabled",)
@@ -204,6 +207,24 @@ class RuleConfigAdmin(ModelAdmin):
         if not params:
             return "—"
         return ", ".join(f"{k}={v}" for k, v in params.items())
+
+    @display(description="carrega?", label={"Sim": "success", "NÃO CARREGA": "danger"})
+    def loads_display(self, obj):
+        """A metade visível do contrato estrito de load.
+
+        Regra com chave órfã/path morto NÃO carrega (decisão 2026-08-13) — e
+        isso precisa aparecer ONDE O DADO MORA, não só num WARNING de log (o
+        silêncio foi o incidente `da69c714`). O outro alcance é o check
+        ``rules.load`` do release-readiness.
+        """
+        from shopman.shop.rules.engine import load_rule
+
+        try:
+            load_rule(obj)
+        except Exception as exc:  # noqa: BLE001 - qualquer falha de load = regra morta
+            logger.warning("rule_config.loads_display: %s não carrega — %s", obj.ref, exc)
+            return "NÃO CARREGA"
+        return "Sim"
 
     @admin.action(description="Ativar regras selecionadas")
     def enable_rules(self, request, queryset):

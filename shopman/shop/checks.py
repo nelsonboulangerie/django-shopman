@@ -184,7 +184,7 @@ def check_webhook_tokens(app_configs, **kwargs):
       the deploy.
     - iFood (``critical=False``) → **Warning**: fail-closed, mas NÃO é "opcional"
       se você recebe pedidos por webhook. ``/api/webhooks/ifood/`` ingere o pedido
-      no canal iFood; sem o token, TODO callback do iFood toma 403 e nenhum pedido
+      no canal iFood; sem o token, TODO callback do iFood toma 401 e nenhum pedido
       entra. É Warning (não Error) só porque um deployment que não usa iFood deve
       poder subir sem ele — mas se usa, este token é obrigatório.
     """
@@ -217,12 +217,12 @@ def check_webhook_tokens(app_configs, **kwargs):
             messages.append(
                 Warning(
                     f"{attr}['webhook_token'] não configurado — o webhook {name} "
-                    f"(/api/webhooks/ifood/) rejeita TODO callback com 403.",
+                    f"(/api/webhooks/ifood/) rejeita TODO callback com 401.",
                     hint=(
                         f"Se você recebe pedidos {name} por webhook, eles NÃO entram "
                         f"sem este token — o endpoint ingere o pedido no canal {name}, "
                         f"mas sem {env_var} (igual ao configurado no portal {name}) "
-                        f"todo callback toma 403. Defina {env_var}. Deixe vazio só se "
+                        f"todo callback toma 401. Defina {env_var}. Deixe vazio só se "
                         f"não usa o webhook {name}."
                     ),
                     id="SHOPMAN_W008",

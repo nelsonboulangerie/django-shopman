@@ -355,6 +355,25 @@ class TestEngine:
         assert rule.start == time(8, 0)
         assert rule.end == time(22, 0)
 
+    def test_load_rule_unknown_param_is_fatal_and_named(self):
+        """Chave órfã em params = a regra NÃO carrega, com erro NOMEADO.
+
+        Contrato estrito (decisão do Pablo, 2026-08-13): a regra roda
+        exatamente como configurada ou não roda — o sistema nunca inventa
+        fallback. O erro é ValueError (mensagem concisa no _safe_load, sem
+        traceback) nomeando a chave e o conserto (migração de dados). O
+        barulho fica com o check `rules.load` do readiness e a coluna
+        "carrega?" do Admin.
+        """
+        rc = self._create_rule(
+            ref="employee_orphan_param",
+            rule_path="shopman.shop.rules.pricing.EmployeeRule",
+            params={"staff_discount_pct": 20, "discount_percent": 15},
+        )
+
+        with pytest.raises(ValueError, match="staff_discount_pct"):
+            load_rule(rc)
+
     def test_load_rule_bad_path_raises(self):
         rc = self._create_rule(ref="bad_path")
         # Bypass full_clean to inject an unresolvable path directly

@@ -725,9 +725,14 @@ class EmployeeDiscountModifier:
         pickup_only = rule_params.get("pickup_only", self.pickup_only)
         delivering = pickup_only and data.get("fulfillment_type") == "delivery"
 
-        if price_tier != "staff" or delivering:
-            # Deixou de ser staff (ou trocou para entrega): limpa transparência
-            # residual de uma passagem anterior.
+        # QUAL tier marca funcionário é decisão da regra no admin, não um
+        # literal daqui — era "staff" cravado e o parâmetro ficava decorativo
+        # (achado da faxina 2026-08-13: one question, one owner).
+        employee_tier = rule_params.get("price_tier", "staff")
+
+        if price_tier != employee_tier or delivering:
+            # Deixou de ser o tier de funcionário (ou trocou para entrega):
+            # limpa transparência residual de uma passagem anterior.
             pricing = session.pricing or {}
             if pricing.pop("employee_discount", None) is not None:
                 session.pricing = pricing

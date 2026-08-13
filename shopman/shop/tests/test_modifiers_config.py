@@ -265,6 +265,25 @@ class TestEmployeeModifierRuleConfig:
             modifier.apply(channel=channel, session=session, ctx={})
         assert session.items[0]["unit_price_q"] == 1000  # not staff, not touched
 
+    def test_employee_tier_comes_from_ruleconfig_not_a_literal(self, modifier):
+        """O parâmetro ``price_tier`` da regra é o DONO da pergunta "qual tier
+        marca funcionário" — era um literal "staff" cravado e o parâmetro ficava
+        decorativo (achado da faxina 2026-08-13; one question, one owner)."""
+        channel = _make_channel()
+        params = {"discount_percent": 30, "price_tier": "vip"}
+
+        # O tier configurado ganha o desconto…
+        session = _make_session(data={"customer": {"price_tier": "vip"}})
+        with patch("shopman.shop.rules.engine.get_rule_params", return_value=params):
+            modifier.apply(channel=channel, session=session, ctx={})
+        assert session.items[0]["unit_price_q"] == 700  # 1000 - 30%
+
+        # …e "staff" deixa de ser mágico quando a regra aponta outro tier.
+        session = self._staff_session()
+        with patch("shopman.shop.rules.engine.get_rule_params", return_value=params):
+            modifier.apply(channel=channel, session=session, ctx={})
+        assert session.items[0]["unit_price_q"] == 1000
+
     def test_modifier_records_discount_in_meta_and_pricing(self, modifier):
         # A transparência durável vive em ``meta["_disc"]`` (modifiers_applied não
         # sobrevive ao normalize) e em ``session.pricing["employee_discount"]``.

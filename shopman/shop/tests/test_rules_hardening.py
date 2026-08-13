@@ -236,15 +236,23 @@ class TestEmployeeRuleParamRename:
         assert rule.discount_percent == 20
 
     @pytest.mark.django_db
-    def test_the_obsolete_param_kills_the_rule_quietly(self):
-        """O comportamento que a migração existe para evitar, fixado como aviso.
+    def test_the_obsolete_param_kills_the_rule_loudly(self):
+        """Dado velho DESLIGA a regra — decisão REAFIRMADA pelo Pablo (2026-08-13).
 
-        Não é para "consertar" aceitando `group` — alias de compatibilidade é proibido aqui
-        (pré-go-live). É para deixar registrado que dado velho DESLIGA regra sem gritar, e
-        que por isso rename de parâmetro exige migração de dados.
+        A faxina chegou a inverter este contrato (chave órfã ignorada, regra
+        viva com defaults); o dono reafirmou o estrito: a regra roda exatamente
+        como configurada ou não roda — nada de fallback inventado, nada de
+        alias (`group` NÃO vira `price_tier`; a tradução é a migração 0010,
+        testada abaixo).
+
+        O que a revisão MANTEVE do aprendizado do incidente `da69c714` é o
+        barulho: a morte não pode mais ser um WARNING perdido no log. Quem
+        grita é o check `rules.load` do release-readiness (vermelho no
+        CI/staging) e a coluna "carrega?" no Admin de RuleConfig — visível
+        onde o dado velho mora.
         """
         from shopman.shop.models import RuleConfig
-        from shopman.shop.rules.engine import _safe_load
+        from shopman.shop.rules.engine import _safe_load, load_rule
 
         config = RuleConfig.objects.create(
             ref="employee_discount_velho",
@@ -253,7 +261,31 @@ class TestEmployeeRuleParamRename:
             params={"discount_percent": 20, "group": "staff"},
         )
 
-        assert _safe_load(config) is None  # silêncio: só um WARNING no log
+        # O motor: não carrega, e o erro NOMEIA a chave e o conserto.
+        with pytest.raises(ValueError, match="group"):
+            load_rule(config)
+        assert _safe_load(config) is None
+
+        # O barulho: o readiness enxerga a regra quebrada.
+        import importlib.util
+        import pathlib
+        import sys
+
+        spec = importlib.util.spec_from_file_location(
+            "check_release_readiness",
+            pathlib.Path(__file__).resolve().parents[3] / "scripts" / "check_release_readiness.py",
+        )
+        readiness = importlib.util.module_from_spec(spec)
+        # @dataclass resolve annotations via sys.modules[__module__] — registrar
+        # antes do exec, senão NoneType.__dict__ dentro do dataclasses.py.
+        sys.modules[spec.name] = readiness
+        try:
+            spec.loader.exec_module(readiness)
+        finally:
+            sys.modules.pop(spec.name, None)
+        check = readiness._rules_load_check()
+        assert check.status == "failed"
+        assert any(b["ref"] == "employee_discount_velho" for b in check.details["broken"])
 
     @pytest.mark.django_db
     def test_the_migration_renames_the_key_in_stored_params(self):

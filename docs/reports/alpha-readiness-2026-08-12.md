@@ -26,7 +26,7 @@ O que falta é de três naturezas, e só uma delas é trabalho de engenharia:
 
 | Verificação | Resultado |
 |---|---|
-| `make test` | ✅ **4.192 passed, 16 skipped**, 28 subtests, 197s |
+| `make test` | ✅ verde, 197s. ⚠️ Correção (13/08): o número aqui era **4.192**, lido da última linha do log — que é só o bloco do FRAMEWORK. A suíte inteira soma os blocos: **~6.463 testes** (~2.184 cores + 4.248 framework + 31 tools) |
 | `make lint` (ruff + Admin/Unfold) | ✅ **All checks passed** + 254 testes de Admin canônico |
 | `makemigrations --check --dry-run` | ✅ **No changes detected** |
 | Working tree | ✅ limpo, **sem stash** |

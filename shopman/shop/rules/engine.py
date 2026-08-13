@@ -119,11 +119,22 @@ def get_channel_rule_params(ref: str, channel_ref: str | None) -> dict | None:
 def load_rule(rule_config):
     """Import and instantiate a rule class from rule_config.rule_path.
 
-    Passes rule_config.params as kwargs to the constructor.
+    Passes rule_config.params as kwargs to the constructor. Chave que a classe
+    não conhece é FATAL, com erro nomeado: a regra roda exatamente como
+    configurada ou não roda — o sistema nunca inventa uma configuração de
+    fallback (decisão do Pablo, reafirmada em 2026-08-13; o conserto de rename
+    é migração de dados, ver 0010).
+
+    O que o incidente `da69c714` ensinou não foi "afrouxar o load": foi que a
+    morte era MUDA. O barulho mora em quem alcança o dado: o check
+    ``rules.load`` do release-readiness (CI/staging) e a coluna "carrega?" no
+    Admin de RuleConfig.
 
     Defense-in-depth: re-checks the whitelist even if the row bypassed clean()
     (e.g. raw SQL insert or fixture load). The primary gate is RuleConfig.clean().
     """
+    import inspect
+
     from django.conf import settings
 
     allowed_prefixes = getattr(
@@ -140,7 +151,24 @@ def load_rule(rule_config):
     cls = _import_rule_class(rule_config.rule_path)
     if cls is None:
         raise ImportError(f"Cannot import rule: {rule_config.rule_path}")
-    return cls(**(rule_config.params or {}))
+
+    params = dict(rule_config.params or {})
+    signature = inspect.signature(cls.__init__)
+    accepts_kwargs = any(
+        p.kind is inspect.Parameter.VAR_KEYWORD for p in signature.parameters.values()
+    )
+    if params and not accepts_kwargs:
+        known = set(signature.parameters) - {"self"}
+        unknown = sorted(set(params) - known)
+        if unknown:
+            # ValueError, não TypeError cru: o _safe_load loga esta mensagem
+            # concisa (sem traceback) e o readiness/Admin a exibem por extenso.
+            raise ValueError(
+                f"parâmetro(s) desconhecido(s) {unknown} em params — a regra NÃO "
+                f"carrega. Provável rename de parâmetro sem migrar "
+                f"RuleConfig.params (rename exige migração de dados; ver 0010)."
+            )
+    return cls(**params)
 
 
 def register_active_rules():

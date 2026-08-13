@@ -30,7 +30,7 @@ Termos de domínio usados no código e na documentação.
 | Termo | Definição |
 |-------|-----------|
 | **Session** | Carrinho de compras em construção. Transiente — vive enquanto o cliente edita. Passa por modifiers e validators antes de commitar em Order. |
-| **Order** | Pedido selado e imutável. Status: `new` → `confirmed` → `preparing` → `ready` → `dispatched` → `delivered` → `completed` (ou `cancelled`/`returned`). |
+| **Order** | Pedido selado e imutável. Status: `new` → `accepted` → `preparing` → `ready` → `dispatched` → `delivered` → `completed` (ou `cancelled`/`returned`). `accepted` era `confirmed` até o rename de 2026-08-01 (`3b973a98`). |
 | **OrderItem** | Linha do pedido com `qty`, `unit_price_q` (centavos), snapshot do SessionItem. |
 | **OrderEvent** | Log de auditoria de mudanças de status (who, when, from/to status, reason, metadata). |
 | **Channel** | Canal de venda de onde o pedido origina (PDV, e-commerce, iFood, WhatsApp). Tem `ref`, `pricing_policy`, `edit_policy`, `config` dict. |

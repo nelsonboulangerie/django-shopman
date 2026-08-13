@@ -4,7 +4,7 @@ Covers the four cases called out in WP-GAP-01:
 
 * valid token → 200 + ``Order`` created (real :func:`ifood_ingest.ingest`
   path).
-* missing / wrong token → 403 with no side effects.
+* missing / wrong token → 401 with no side effects.
 * replay of the same ``order_id`` → 200 ``already_processed`` with no
   duplicate Order.
 * malformed payload (no ``order_id``) → 400.
@@ -55,30 +55,30 @@ class IFoodWebhookAuthTests(TestCase):
             ref="ifood", defaults={"name": "iFood", "is_active": True}
         )
 
-    def test_missing_token_returns_403(self) -> None:
+    def test_missing_token_returns_401(self) -> None:
         resp = self.client.post(URL, _payload(), format="json")
-        self.assertEqual(resp.status_code, 403)
+        self.assertEqual(resp.status_code, 401)
         self.assertEqual(resp.data.get("error_code"), "invalid_token")
         self.assertEqual(Order.objects.filter(channel_ref="ifood").count(), 0)
 
-    def test_wrong_token_returns_403(self) -> None:
+    def test_wrong_token_returns_401(self) -> None:
         resp = self.client.post(
             URL,
             _payload(),
             format="json",
             HTTP_X_IFOOD_WEBHOOK_TOKEN="nope",
         )
-        self.assertEqual(resp.status_code, 403)
+        self.assertEqual(resp.status_code, 401)
         self.assertEqual(resp.data.get("error_code"), "invalid_token")
         self.assertEqual(Order.objects.filter(channel_ref="ifood").count(), 0)
 
-    def test_wrong_token_via_query_returns_403(self) -> None:
+    def test_wrong_token_via_query_returns_401(self) -> None:
         resp = self.client.post(
             URL + "?token=nope",
             _payload(),
             format="json",
         )
-        self.assertEqual(resp.status_code, 403)
+        self.assertEqual(resp.status_code, 401)
         self.assertEqual(Order.objects.filter(channel_ref="ifood").count(), 0)
 
     @override_settings(SHOPMAN_IFOOD={"webhook_token": "", "merchant_id": ""})
@@ -90,7 +90,7 @@ class IFoodWebhookAuthTests(TestCase):
             format="json",
             HTTP_X_IFOOD_WEBHOOK_TOKEN="anything",
         )
-        self.assertEqual(resp.status_code, 403)
+        self.assertEqual(resp.status_code, 401)
 
 
 @override_settings(SHOPMAN_IFOOD=IFOOD_WEBHOOK_SETTINGS)

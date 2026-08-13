@@ -1,6 +1,8 @@
 # ACCEPTED-STATUS-RENAME-PLAN — `confirmed` vira `accepted` no núcleo
 
-**Status:** anotado, não executado (2026-07-31).
+**Status:** ✅ EXECUTADO (2026-08-01, `3b973a98` — `confirmed` vira `accepted`
+no núcleo, zero residuals). Header corrigido na faxina de 2026-08-13; dizia
+"não executado" com o rename já no main.
 **Decisão do Pablo:** fazer **logo**, enquanto só existe seed para atualizar e
 nada externo depende dos valores atuais.
 
