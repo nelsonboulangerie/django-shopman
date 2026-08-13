@@ -90,6 +90,22 @@ jobs:
       - name: Build deploy image
         run: docker build --tag django-shopman:ci .
 
+      # `docker build` prova que o COPY não falha, NÃO que o arquivo caiu onde o
+      # código procura. O Admin serve o agente da gaveta a partir de
+      # `BASE_DIR/tools/pos-drawer-agent/` (projections/pos_agent.py); se o
+      # caminho divergir, o build passa verde e o defeito só aparece quando
+      # alguém clica em "baixar" no balcão. Aqui o BASE_DIR é derivado do mesmo
+      # jeito que o config/settings.py deriva: o pai do pacote `config`.
+      - name: O agente da gaveta veio na imagem
+        run: |
+          docker run --rm django-shopman:ci python -c "
+          import pathlib, config
+          base = pathlib.Path(config.__file__).resolve().parent.parent
+          alvo = base / 'tools' / 'pos-drawer-agent' / 'drawer_agent.py'
+          assert alvo.is_file(), f'agente da gaveta ausente da imagem: {alvo}'
+          print('ok:', alvo)
+          "
+
   runtime-security-reliability:
     name: PostgreSQL + Redis runtime stress gate
     runs-on: ubuntu-latest
