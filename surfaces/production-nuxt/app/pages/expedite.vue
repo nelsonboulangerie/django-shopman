@@ -51,6 +51,18 @@ const closedOrders = computed(() =>
 // A próxima a vencer ganha moldura: a primeira aberta (started primeiro).
 const nextPk = computed(() => openOrders.value[0]?.pk ?? null);
 
+// Posição/forno só quando as fornadas ABERTAS divergem: igual em tudo (ou só
+// nas fechadas, que nem mostram posição) é ruído puro.
+const showPosition = computed(
+  () =>
+    new Set(
+      (kiosk.value?.orders ?? [])
+        .filter((o) => !o.closed)
+        .map((o) => o.position_ref)
+        .filter(Boolean),
+    ).size > 1,
+);
+
 function openOrder(order: QCOrderCardProjection) {
   if (!order.can_close) return;
   // Fechar com o alarme tocando: o lembrete cumpriu o papel — para o timer.
@@ -103,7 +115,11 @@ const screenTitle = computed(
 const screenSubtitle = computed(() => {
   const order = selectedOrder.value;
   if (!order) return selectedRecipe.value ? "fornada avulsa" : "";
-  const bits = [order.output_sku, order.position_ref, order.started_at_display].filter(Boolean);
+  const bits = [
+    order.output_sku,
+    showPosition.value ? order.position_ref : "",
+    order.started_at_display,
+  ].filter(Boolean);
   return bits.join(" · ");
 });
 const screenPlanned = computed(() => {
@@ -156,10 +172,6 @@ function ovenDigit(digit: string) {
 function ovenBackspace() {
   ovenMinutes.value = ovenMinutes.value.length <= 1 ? "0" : ovenMinutes.value.slice(0, -1);
 }
-function ovenPreset(minutes: number) {
-  ovenMinutes.value = String(minutes);
-  ovenFresh.value = true;
-}
 function ovenAdd(minutes: number) {
   const order = ovenOrder.value;
   if (!order) return;
@@ -201,6 +213,11 @@ function concludeOven() {
       title="Expedição"
       :count="kiosk?.closed_count"
       :count-label="`de ${kiosk?.total_count ?? 0} concluídas`"
+      :progress="
+        kiosk && kiosk.total_count > 0
+          ? Math.round((kiosk.closed_count / kiosk.total_count) * 100)
+          : null
+      "
       :pending="pending"
       @refresh="refresh"
     />
@@ -248,28 +265,6 @@ function concludeOven() {
               tabindex="-1"
             />
           </button>
-        </div>
-
-        <!-- Progresso do dia: a linha visual do quanto já concluiu. -->
-        <div
-          v-if="kiosk && kiosk.total_count > 0"
-          class="ml-auto inline-flex items-center gap-2"
-          role="progressbar"
-          :aria-valuenow="Math.round((kiosk.closed_count / kiosk.total_count) * 100)"
-          aria-valuemin="0"
-          aria-valuemax="100"
-          aria-label="Fornadas concluídas no dia"
-          :title="`${kiosk.closed_count} de ${kiosk.total_count} fornadas concluídas`"
-        >
-          <div class="h-1.5 w-24 overflow-hidden rounded-full bg-muted">
-            <div
-              class="h-full rounded-full bg-primary transition-all"
-              :style="{ width: `${Math.round((kiosk.closed_count / kiosk.total_count) * 100)}%` }"
-            />
-          </div>
-          <span class="text-xs font-medium tabular-nums text-muted-foreground"
-            >{{ Math.round((kiosk.closed_count / kiosk.total_count) * 100) }}%</span
-          >
         </div>
 
         <UiPopover :open="menuOpen" @update:open="(v: boolean) => (menuOpen = v)">
@@ -323,7 +318,7 @@ function concludeOven() {
             <p class="truncate text-base font-semibold">{{ order.recipe_name }}</p>
             <p class="truncate text-sm text-muted-foreground">
               {{ order.output_sku }}
-              <template v-if="order.position_ref"> · {{ order.position_ref }}</template>
+              <template v-if="showPosition && order.position_ref"> · {{ order.position_ref }}</template>
               <template v-if="order.started_at_display"> · iniciada às {{ order.started_at_display }}</template>
               <template v-else> · ainda não iniciada</template>
               <template v-if="order.order_refs.length">
@@ -352,14 +347,16 @@ function concludeOven() {
               <template v-else>Iniciar</template>
             </p>
           </div>
+          <!-- Hover invertido: contraste garantido mesmo com o card em accent. -->
           <button
             type="button"
-            class="flex size-20 shrink-0 flex-col items-center justify-center self-center rounded-xl border bg-background pt-1 transition hover:bg-accent active:translate-y-px"
-            :aria-label="`Fechar a fornada de ${order.recipe_name}`"
+            class="group flex size-20 shrink-0 flex-col items-center justify-center self-center rounded-xl border bg-background pt-0.5 transition hover:border-primary hover:bg-primary hover:text-primary-foreground active:translate-y-px"
+            :aria-label="`Finalizar a fornada de ${order.recipe_name}`"
             @click.stop="openOrder(order)"
           >
-            <span class="text-2xl font-semibold leading-none tabular-nums">{{ order.planned_qty }}</span>
-            <span class="mt-1.5 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">previstos</span>
+            <span class="text-xl font-semibold leading-none tabular-nums">{{ order.planned_qty }}</span>
+            <span class="text-[9px] font-medium uppercase tracking-wide text-muted-foreground group-hover:text-primary-foreground/75">previstos</span>
+            <span class="mt-1 text-[11px] font-semibold uppercase tracking-wide text-primary group-hover:text-primary-foreground">Finalizar</span>
           </button>
         </div>
 
@@ -412,7 +409,16 @@ function concludeOven() {
       :open="ovenOrder != null"
       @update:open="(v: boolean) => { if (!v) ovenOrder = null; }"
     >
-      <UiDialogContent class="sm:max-w-sm">
+      <UiDialogContent class="sm:max-w-sm" hide-close>
+        <!-- X maior, pensando em touch: é a única saída sem ação. -->
+        <template #close>
+          <UiDialogClose
+            class="absolute right-2 top-2 grid size-11 place-items-center rounded-md text-muted-foreground transition hover:bg-accent hover:text-foreground"
+            aria-label="Fechar"
+          >
+            <Icon name="lucide:x" class="size-6" />
+          </UiDialogClose>
+        </template>
         <UiDialogHeader>
           <UiDialogTitle>Timer do forno · {{ ovenOrder?.recipe_name }}</UiDialogTitle>
           <UiDialogDescription>Toca neste aparelho.</UiDialogDescription>
@@ -438,41 +444,75 @@ function concludeOven() {
           </p>
         </div>
 
-        <!-- Armando: tempos de forno prontos num toque. Depois: +N ao vivo. -->
-        <div class="grid grid-cols-4 gap-1.5">
-          <template v-if="dialogMode === 'idle'">
+        <!-- Armando: numpad de 4 colunas — os +N moram ao lado de 3/6/9 (eles
+             já substituem presets: 10 = C, +10) e o Iniciar fecha a grade. -->
+        <div v-if="dialogMode === 'idle'" class="grid grid-cols-4 gap-1.5" role="group" aria-label="Minutos do timer">
+          <template v-for="row in [[1, 2, 3], [4, 5, 6], [7, 8, 9]]" :key="row[0]">
             <button
-              v-for="preset in [5, 10, 15, 20]"
-              :key="preset"
+              v-for="digit in row"
+              :key="digit"
               type="button"
-              class="rounded-md border bg-card py-2.5 text-base font-semibold tabular-nums transition hover:bg-accent active:translate-y-px"
-              @click="ovenPreset(preset)"
+              class="rounded-md border bg-card py-2.5 text-lg font-semibold tabular-nums transition hover:bg-accent active:translate-y-px"
+              :aria-label="`Dígito ${digit}`"
+              @click="ovenDigit(String(digit))"
             >
-              {{ preset }}
+              {{ digit }}
+            </button>
+            <button
+              type="button"
+              class="rounded-md border border-dashed bg-card py-2.5 text-base font-semibold tabular-nums text-muted-foreground transition hover:bg-accent hover:text-foreground active:translate-y-px"
+              :aria-label="`Somar ${row[2] === 3 ? 1 : row[2] === 6 ? 5 : 10} minutos`"
+              @click="ovenAdd(row[2] === 3 ? 1 : row[2] === 6 ? 5 : 10)"
+            >
+              +{{ row[2] === 3 ? 1 : row[2] === 6 ? 5 : 10 }}
             </button>
           </template>
+          <button
+            type="button"
+            class="rounded-md border bg-card py-2.5 text-sm font-medium transition hover:bg-accent active:translate-y-px"
+            aria-label="Limpar minutos"
+            @click="ovenMinutes = '0'; ovenFresh = true"
+          >
+            C
+          </button>
+          <button
+            type="button"
+            class="rounded-md border bg-card py-2.5 text-lg font-semibold tabular-nums transition hover:bg-accent active:translate-y-px"
+            aria-label="Dígito 0"
+            @click="ovenDigit('0')"
+          >
+            0
+          </button>
+          <button
+            type="button"
+            class="grid place-items-center rounded-md border bg-card py-2.5 transition hover:bg-accent active:translate-y-px"
+            aria-label="Apagar último dígito"
+            @click="ovenBackspace()"
+          >
+            <Icon name="lucide:delete" class="size-5" />
+          </button>
+          <button
+            type="button"
+            :disabled="!(parseInt(ovenMinutes, 10) >= 1)"
+            class="rounded-md border border-transparent bg-primary py-2.5 text-sm font-semibold text-primary-foreground transition hover:bg-primary/90 active:translate-y-px disabled:opacity-50"
+            @click="startOven()"
+          >
+            Iniciar
+          </button>
+        </div>
+
+        <!-- Correndo/pausado/alarmando: +N ao vivo e o Concluir emenda no QC. -->
+        <div v-else class="grid grid-cols-4 gap-1.5">
           <button
             v-for="extra in [1, 5, 10]"
             :key="`add-${extra}`"
             type="button"
             class="rounded-md border bg-card py-2.5 text-base font-semibold tabular-nums transition hover:bg-accent active:translate-y-px"
-            :class="dialogMode !== 'idle' ? 'col-span-1' : ''"
             @click="ovenAdd(extra)"
           >
             +{{ extra }}
           </button>
           <button
-            v-if="dialogMode === 'idle'"
-            type="button"
-            class="rounded-md border bg-card py-2.5 text-sm font-medium transition hover:bg-accent active:translate-y-px"
-            aria-label="Apagar último dígito"
-            @click="ovenBackspace()"
-          >
-            <Icon name="lucide:delete" class="mx-auto size-4" />
-          </button>
-          <!-- Alarmou/correndo: o 4º slot fecha o ciclo — Concluir emenda no QC. -->
-          <button
-            v-else
             type="button"
             class="rounded-md border border-transparent bg-primary py-2.5 text-sm font-semibold text-primary-foreground transition hover:bg-primary/90 active:translate-y-px"
             @click="concludeOven()"
@@ -481,17 +521,7 @@ function concludeOven() {
           </button>
         </div>
 
-        <!-- Dígitos: fornada com tempo fora do padrão digita direto. -->
-        <OperatorNumpad
-          v-if="dialogMode === 'idle'"
-          compact
-          subject="minutos do timer"
-          @digit="ovenDigit"
-          @backspace="ovenBackspace"
-          @clear="ovenMinutes = '0'; ovenFresh = true"
-        />
-
-        <UiDialogFooter class="gap-2">
+        <UiDialogFooter v-if="dialogMode === 'running' || dialogMode === 'paused'" class="gap-2">
           <button
             v-if="dialogMode === 'running'"
             type="button"
@@ -501,28 +531,12 @@ function concludeOven() {
             Pausar
           </button>
           <button
-            v-else-if="dialogMode === 'paused'"
+            v-else
             type="button"
             class="mr-auto rounded-md border px-3 py-2 text-sm font-medium transition hover:bg-accent"
             @click="resumeOven()"
           >
             Retomar
-          </button>
-          <button
-            type="button"
-            class="rounded-md border px-3 py-2 text-sm font-medium transition hover:bg-accent"
-            @click="ovenOrder = null"
-          >
-            Fechar
-          </button>
-          <button
-            v-if="dialogMode === 'idle'"
-            type="button"
-            :disabled="!(parseInt(ovenMinutes, 10) >= 1)"
-            class="rounded-md border border-transparent bg-primary px-3 py-2 text-sm font-semibold text-primary-foreground transition hover:bg-primary/90 disabled:opacity-50"
-            @click="startOven()"
-          >
-            Iniciar
           </button>
         </UiDialogFooter>
       </UiDialogContent>

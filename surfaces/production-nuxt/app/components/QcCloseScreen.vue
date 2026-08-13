@@ -276,9 +276,13 @@ const fieldCard =
       </div>
     </div>
 
-    <!-- Cartões de motivo: uma linha cada, altura fixa (nada empurra o numpad).
-         Esquerda: a fornada e o que se perdeu dela. Direita: o sublote. -->
-    <div class="mt-4 grid h-14 shrink-0 grid-cols-2 gap-3">
+    <!-- Cartões de motivo: uma linha cada, ABAIXO do numpad (nada o empurra).
+         Esquerda: a fornada e o que se perdeu dela. Direita: o sublote.
+         Fornada limpa não paga a linha: o Confirmar encosta no numpad. -->
+    <div
+      v-if="loss > 0 || (discountEnabled && state.discountQty > 0)"
+      class="mt-4 grid h-14 shrink-0 grid-cols-2 gap-3"
+    >
       <button
         v-if="loss > 0"
         type="button"

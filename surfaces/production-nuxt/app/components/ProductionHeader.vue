@@ -8,6 +8,8 @@ defineProps<{
   title: string;
   count?: number;
   countLabel?: string;
+  /** 0–100: a linha visual do quanto o dia andou, JUNTO do contador. */
+  progress?: number | null;
   pending?: boolean;
 }>();
 const emit = defineEmits<{ refresh: [] }>();
@@ -72,13 +74,35 @@ function isActive(to: string): boolean {
 
     <div
       v-if="count != null"
-      class="ml-auto hidden flex-col items-end leading-none sm:flex"
+      class="ml-auto hidden flex-col items-end gap-1 leading-none sm:flex"
     >
-      <span class="text-lg font-bold tabular-nums">{{ count }}</span>
-      <span
-        class="text-xs font-medium uppercase tracking-wider text-muted-foreground"
-        >{{ countLabel || "ativos" }}</span
+      <span class="text-lg font-bold tabular-nums"
+        >{{ count }}
+        <span
+          class="text-xs font-medium uppercase tracking-wider text-muted-foreground"
+          >{{ countLabel || "ativos" }}</span
+        ></span
       >
+      <!-- O percentual mora COM o número que ele resume — nunca longe dele. -->
+      <div
+        v-if="progress != null"
+        class="flex items-center gap-1.5"
+        role="progressbar"
+        :aria-valuenow="progress"
+        aria-valuemin="0"
+        aria-valuemax="100"
+        aria-label="Progresso do dia"
+      >
+        <div class="h-1.5 w-24 overflow-hidden rounded-full bg-muted">
+          <div
+            class="h-full rounded-full bg-primary transition-all"
+            :style="{ width: `${progress}%` }"
+          />
+        </div>
+        <span class="text-xs font-medium tabular-nums text-muted-foreground"
+          >{{ progress }}%</span
+        >
+      </div>
     </div>
 
     <div

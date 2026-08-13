@@ -390,6 +390,7 @@ const headerCount = computed(() => {
       :title="title"
       :count="headerCount.count"
       :count-label="headerCount.label"
+      :progress="dayProgress?.pct ?? null"
       :pending="pending"
       @refresh="
         refresh();
@@ -455,26 +456,6 @@ const headerCount = computed(() => {
         <span class="text-sm text-muted-foreground">{{
           fullDateLabel(selectedDate)
         }}</span>
-        <div
-          v-if="dayProgress"
-          class="inline-flex items-center gap-2"
-          :title="`${dayProgress.finished} de ${dayProgress.planned} un. concluídas`"
-          role="progressbar"
-          :aria-valuenow="dayProgress.pct"
-          aria-valuemin="0"
-          aria-valuemax="100"
-          aria-label="Progresso do dia"
-        >
-          <div class="h-1.5 w-24 overflow-hidden rounded-full bg-muted">
-            <div
-              class="h-full rounded-full bg-primary transition-all"
-              :style="{ width: `${dayProgress.pct}%` }"
-            />
-          </div>
-          <span class="text-xs tabular-nums text-muted-foreground"
-            >{{ dayProgress.pct }}%</span
-          >
-        </div>
         <select
           v-if="baseOptions.length"
           v-model="baseFilter"
