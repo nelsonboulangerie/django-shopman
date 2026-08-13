@@ -44,6 +44,7 @@
 
 | Dívida | Impacto | Próxima ação |
 |--------|---------|--------------|
+| **D-1 é interino, superado por lote/validade** (ADR-017 + QC-FORNADA) | O conceito que "sempre incomodou o dono" segue operante (D1Rule 50%, posição "ontem", `cleanup_d1`, bucket do POS, moves `d1:` no fechamento) e a frente FOMO construiu o badge F3 em cima sem saber da superação. Cliente está protegido (`excluded_positions=["ontem"]` em todo canal remoto) — o risco é crescer em cima do morto-vivo. | Executar a migração D-1 → lote/validade como WP da implementação do QC-FORNADA; até lá, **não construir nada novo sobre D-1**. |
 | Gateway sandbox e snapshot real pendentes | Smoke local existe; falta provar divergência contra provedores reais. | Executar `make smoke-gateways-sandbox` com credenciais/staging reais. |
 | PostgreSQL pequeno exige disciplina de conexões | Sem pool, `CONN_MAX_AGE=60` saturou o Postgres da DO. | Staging usa pool em modo transaction; validar latência antes de repetir em produção. |
 | QA visual/manual ainda não cobre mundo real | Gates headless não provam toque real, teclado virtual, rede degradada. | Rodar dispositivo físico/staging antes de release real. |

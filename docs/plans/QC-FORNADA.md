@@ -2,7 +2,12 @@
 
 > Status: **desenho de produto fechado. Decisão arquitetural em [ADR-017](../decisions/adr-017-quality-as-production-outcome.md).**
 > Protótipo navegável: `qa/proto/qc-fornada.html` (fora do repo, entregue por chat).
-> Continuação de `docs/plans/POS-ALPHA-REMEDIATION-PLAN.md` (ondas 8–14, modelo de lote/validade).
+> Continuação do POS-ALPHA-REMEDIATION-PLAN (ondas 8–14, modelo de lote/validade).
+> ⚠️ **Esse plano NUNCA foi commitado** — viveu fora do repo, e com ele se perdeu a
+> discussão que decidiu a superação do D-1 pelo modelo de validade (o caso do
+> queijo: produto com validade de dias não cabe num balde binário "ontem").
+> A decisão sobrevive aqui e no ADR-017; o link morto fica como lição de
+> [plan-in-repo](../../docs/README.md).
 >
 > ⚠️ **Correção (2026-08-07):** os §6.2 e §9 deste documento recomendavam uma FK
 > `WorkOrder → Batch`. **Estava errado** — a ADR-004 proíbe FK cross-domain. O elo correto é
