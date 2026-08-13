@@ -348,27 +348,15 @@ def _upcoming_date_display(commitment: date, today: date) -> str:
 
 
 def _today_production_summary(selected_date: date) -> dict:
-    try:
-        from shopman.craftsman.models import WorkOrder
+    """Prévia do resumo que o fechamento vai persistir — a MESMA conta.
 
-        summary: dict[str, dict[str, int | str]] = {}
-        for wo in WorkOrder.objects.filter(target_date=selected_date).select_related("recipe"):
-            row = summary.setdefault(
-                wo.recipe.ref,
-                {
-                    "recipe_ref": wo.recipe.ref,
-                    "output_sku": wo.output_sku,
-                    "planned": 0,
-                    "finished": 0,
-                    "loss": 0,
-                },
-            )
-            row["planned"] = int(row["planned"]) + int(wo.quantity or 0)
-            if wo.finished is not None:
-                row["finished"] = int(row["finished"]) + int(wo.finished or 0)
-                started = wo.started_qty or wo.quantity
-                row["loss"] = int(row["loss"]) + max(0, int(started - wo.finished))
-        return summary
+    Era uma cópia divergente (sem qualidade, truncando fracionários); a fonte
+    única é ``services.closing.production_summary``.
+    """
+    try:
+        from shopman.backstage.services.closing import production_summary
+
+        return production_summary(selected_date)
     except Exception:
         logger.debug("closing.production_summary_failed", exc_info=True)
         return {}

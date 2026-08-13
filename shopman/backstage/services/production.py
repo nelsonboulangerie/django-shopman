@@ -81,14 +81,33 @@ def apply_quick_finish(
     quantity,
     position_id,
     actor: str,
+    partition=None,
+    force: bool = False,
 ):
-    """Plan and immediately finish a work order from the operator surface."""
-    return production_core.quick_finish(
-        recipe_id=recipe_id,
-        quantity=quantity,
-        position_id=position_id,
-        actor=actor,
+    """Plan and immediately finish a work order from the operator surface.
+
+    Com ``partition`` (quiosque de QC, fornada avulsa), o fechamento
+    passa pelo MESMO caminho do finish normal: veto resolvido na borda, N
+    lotes com percentual congelado, alerta quando a rastreabilidade falha.
+    """
+    if not partition:
+        return production_core.quick_finish(
+            recipe_id=recipe_id,
+            quantity=quantity,
+            position_id=position_id,
+            actor=actor,
+        )
+    work_order = production_core.quick_plan(
+        recipe_id=recipe_id, quantity=quantity, position_id=position_id
     )
+    wo_ref, total = apply_finish(
+        work_order_id=work_order.pk,
+        quantity=quantity,
+        actor=actor,
+        force=force,
+        partition=partition,
+    )
+    return work_order.output_sku, wo_ref, total
 
 
 def apply_planned(
@@ -150,9 +169,11 @@ def resolve_partition(work_order, *, quantity, quality: str = "", partition=None
     Três formas de entrada, uma saída — ``(finished_items, wasted_items)``:
 
     - ``partition`` explícita (``[{quantity, quality_grade_ref,
-      quality_defect_ref}]``): cada grupo vira linha de OUTPUT; grupo cujo
-      defeito tem ``forces_discard`` vira WASTE (o veto é resolvido AQUI, antes
-      do craft.finish — o core nunca interpreta o defeito).
+      quality_defect_ref, loss}]``): cada grupo vira linha de OUTPUT; grupo com
+      ``loss=True`` é perda declarada pelo operador (o que não saiu do forno) e
+      vira WASTE com o motivo, sem grau e sem lote; grupo cujo defeito tem
+      ``forces_discard`` também vira WASTE (o veto é resolvido AQUI, antes do
+      craft.finish — o core nunca interpreta o defeito).
     - ``quality`` sozinho (a superfície de hoje): partição de um grupo só.
     - nada: um grupo no grau padrão do catálogo.
 
@@ -195,6 +216,16 @@ def resolve_partition(work_order, *, quantity, quality: str = "", partition=None
             )
             defect = ""
 
+        if group.get("loss"):
+            # Perda declarada: abaixo do piso não existe grau, existe descarte
+            # (QC-FORNADA §2). Carrega o motivo, nunca grau nem lote.
+            wasted_items.append({
+                "item_ref": work_order.output_sku,
+                "quantity": group.get("quantity"),
+                "quality_defect_ref": defect,
+            })
+            continue
+
         if defect in vetoes:
             # Veto é segurança alimentar: as unidades nunca viram lote com
             # desconto — viram perda, carregando o motivo.
@@ -217,8 +248,8 @@ def resolve_partition(work_order, *, quantity, quality: str = "", partition=None
 
     if not finished_items:
         raise ProductionError(
-            "Todos os grupos da fornada foram vetados — registre como perda (void/waste), "
-            "não como conclusão."
+            "Nenhum grupo da fornada é vendável (só perda ou veto) — registre como perda "
+            "(void/waste), não como conclusão."
         )
     return finished_items, wasted_items
 

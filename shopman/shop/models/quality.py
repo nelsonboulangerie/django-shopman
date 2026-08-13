@@ -13,6 +13,7 @@ o torna feio: defeito cosmético vende com desconto.
 
 from __future__ import annotations
 
+from django.core.exceptions import ValidationError
 from django.db import models
 from django.utils.translation import gettext_lazy as _
 
@@ -60,6 +61,12 @@ class QualityGrade(models.Model):
                 condition=models.Q(is_default=True),
                 name="quality_grade_single_default",
             ),
+            # O percentual congela no lote (Batch.nonconformity_percent);
+            # acima de 100 escreveria preço negativo na venda.
+            models.CheckConstraint(
+                condition=models.Q(markdown_percent__lte=100),
+                name="quality_grade_markdown_at_most_100",
+            ),
         ]
 
     def __str__(self) -> str:
@@ -100,6 +107,20 @@ class QualityDefect(models.Model):
         verbose_name = _("defeito de fornada")
         verbose_name_plural = _("defeitos de fornada")
         ordering = ("position", "ref")
+
+    def clean(self) -> None:
+        # Desativar o defeito vetado tiraria "Contaminado" do quiosque e o
+        # operador registraria contaminação como defeito comum — lote com
+        # desconto de comida insegura. Primeiro tire o veto, conscientemente.
+        if not self.is_active and self.forces_discard:
+            raise ValidationError(
+                {
+                    "is_active": _(
+                        "Defeito com descarte obrigatório não pode ser desativado. "
+                        "Remova o veto primeiro, se for intencional."
+                    )
+                }
+            )
 
     def __str__(self) -> str:
         return self.label

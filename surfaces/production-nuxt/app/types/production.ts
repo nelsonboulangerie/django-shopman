@@ -18,6 +18,7 @@ import type {
   ProductionWeighingIngredientProjection,
   ProductionWeighingProjection,
   ProductionWeighingTicketProjection,
+  QCKioskProjection,
 } from "~/generated/productionContract";
 
 export type {
@@ -42,6 +43,10 @@ export type {
   ProductionSuggestionProjection,
   ProductionSurfaceAccess,
   ProductionWeighingProjection,
+  QCDefectProjection,
+  QCGradeProjection,
+  QCKioskProjection,
+  QCOrderCardProjection,
   RecipeOptionProjection,
   RecipeWasteRow,
   WorkOrderCardProjection,
@@ -159,4 +164,10 @@ export interface ProductionManagementResponse {
 
 export interface ProductionBlindMapResponse {
   blind_map: ProductionBlindMapProjection;
+}
+
+// ── Quiosque de QC (fechamento de fornada — ADR-017 §9) ─────────────────────
+
+export interface ProductionQCResponse {
+  qc: QCKioskProjection;
 }

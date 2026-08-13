@@ -52,13 +52,10 @@ export function useProductionKds() {
   }
 
   const advanceStep = (pk: number) => post(pk, `/api/v1/backstage/production/${pk}/advance-step/`);
-  // quality classifica a fornada (ref do catálogo QualityGrade; grava na linha
-  // de OUTPUT — ADR-017) e alimenta as regras de campanha do gestor. Vazio = o
-  // backend aplica o grau padrão do catálogo.
-  const finish = (pk: number, quantity: string, force = false, quality = "") =>
-    post(pk, `/api/v1/backstage/production/${pk}/finish/`, { quantity, force, quality });
+  // O finish não vive mais aqui: fechar a fornada é a Expedição (quiosque de
+  // QC, useQcKiosk), sempre com partição — ADR-017 §9.
   const voidOrder = (pk: number, reason: string) =>
     post(pk, `/api/v1/backstage/production/${pk}/void/`, { reason });
 
-  return { cards, totalCount, lateCount, pending, error, refresh, isBusy, advanceStep, finish, voidOrder };
+  return { cards, totalCount, lateCount, pending, error, refresh, isBusy, advanceStep, voidOrder };
 }

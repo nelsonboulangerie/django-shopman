@@ -70,6 +70,7 @@ from shopman.backstage.projections.production import (
     build_production_mise_en_place,
     build_production_reports,
     build_production_weighing,
+    build_qc_kiosk,
 )
 from shopman.backstage.services import (
     closing as closing_service,
@@ -638,6 +639,23 @@ class ProductionKDSView(APIView):
             position_ref=position_ref,
         )
         return Response({"kds": projection_data(kds)})
+
+
+@extend_schema_view(
+    get=extend_schema(
+        tags=["backstage"],
+        summary="QC kiosk (day's batches + quality catalogs)",
+        responses={200: OpenApiResponse(description="QC kiosk projection for the fournil.")},
+    ),
+)
+class ProductionQCView(APIView):
+    permission_classes = [HasBackstagePermission]
+    required_permission = "backstage.operate_production"
+
+    def get(self, request):
+        selected = _parse_date(request.query_params.get("date"))
+        kiosk = build_qc_kiosk(selected_date=selected)
+        return Response({"qc": projection_data(kiosk)})
 
 
 @extend_schema_view(
@@ -1262,7 +1280,8 @@ class WorkOrderFinishView(_ProductionActionBase):
                 # operador fecha sem pensar e cai no grau padrão do catálogo.
                 quality=str(request.data.get("quality") or "").strip(),
                 # Partição explícita (ADR-017): [{quantity, quality_grade_ref,
-                # quality_defect_ref}]. Quando presente, `quality` é ignorado.
+                # quality_defect_ref, loss}]. Quando presente, `quality` é
+                # ignorado; grupo com loss=true é perda declarada com motivo.
                 partition=partition if isinstance(partition, list) else None,
             )
         except ProductionError as exc:
@@ -1305,25 +1324,32 @@ class WorkOrderQuickFinishView(_ProductionActionBase):
     def post(self, request):
         recipe_id = request.data.get("recipe_id")
         quantity = request.data.get("quantity")
+        # position_id opcional: sem ele a fornada cai na posição padrão (o
+        # quiosque de QC não escolhe forno; o grid do gestor continua enviando).
         position_id = request.data.get("position_id")
-        if not (recipe_id and quantity and position_id):
+        if not (recipe_id and quantity):
             return Response(
-                {"detail": "recipe_id, quantity e position_id são obrigatórios."},
+                {"detail": "recipe_id e quantity são obrigatórios."},
                 status=400,
             )
         try:
-            wo = production_service.apply_quick_finish(
+            partition = request.data.get("partition")
+            _, wo_ref, qty = production_service.apply_quick_finish(
                 recipe_id=recipe_id,
                 quantity=quantity,
                 position_id=position_id,
                 actor=_production_actor(request),
+                # Fornada avulsa fechada pelo quiosque de QC: mesma
+                # partição do finish normal (ADR-017 §4).
+                partition=partition if isinstance(partition, list) else None,
+                force=bool(request.data.get("force")),
             )
         except ProductionError as exc:
             shortage = _shortage_response(exc)
             if shortage is not None:
                 return shortage
             return Response({"detail": str(exc) or "Falha ao finalizar."}, status=400)
-        return Response({"ok": True, "wo_ref": getattr(wo, "ref", None)})
+        return Response({"ok": True, "wo_ref": wo_ref, "quantity": str(qty)})
 
 
 @extend_schema_view(

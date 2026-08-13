@@ -324,6 +324,54 @@ export interface ProductionDashboardProjection {
   late_orders: ProductionLateWorkOrderProjection[];
 }
 
+/** Um grau da escala de QC (ADR-017 §6). */
+export interface QCGradeProjection {
+  ref: string;
+  label: string;
+  rank: number;
+  markdown_percent: number;
+  is_default: boolean;
+}
+
+/** Um defeito do catálogo de QC — o ``hint`` é a segunda linha do botão. */
+export interface QCDefectProjection {
+  ref: string;
+  label: string;
+  hint: string;
+  forces_discard: boolean;
+}
+
+/** Uma fornada do dia no painel do quiosque de QC. */
+export interface QCOrderCardProjection {
+  pk: number;
+  ref: string;
+  recipe_name: string;
+  output_sku: string;
+  position_ref: string;
+  status: string;
+  planned_qty: string;
+  started_at_display: string;
+  elapsed_minutes: number;
+  can_close: boolean;
+  closed: boolean;
+  order_refs: string[];
+  full_price_qty: string;
+  discounted_qty: string;
+  loss_qty: string;
+}
+
+/** O quiosque do fournil (ADR-017 §9): ordens do dia + catálogos de QC. */
+export interface QCKioskProjection {
+  selected_date: string;
+  selected_date_display: string;
+  orders: QCOrderCardProjection[];
+  closed_count: number;
+  total_count: number;
+  grades: QCGradeProjection[];
+  defects: QCDefectProjection[];
+  recipes: RecipeOptionProjection[];
+}
+
 /** Normalized filters for production reports. */
 export interface ProductionReportFilters {
   date_from: string;

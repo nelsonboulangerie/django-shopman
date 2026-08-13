@@ -38,6 +38,7 @@
 | P2 | Impressão DANFE NFC-e no PDV | Obrigação legal para venda presencial — incontornável antes de operação fiscal plena. | pós-alpha, ver [`plans/POS-FASE-C-REVISION.md`](plans/POS-FASE-C-REVISION.md) |
 | P3 | ManyChat conversacional | Pedido inbound por chat (ManyChat → session → confirmação). | [`plans/MANYCHAT-CONVERSACIONAL-PLAN.md`](plans/MANYCHAT-CONVERSACIONAL-PLAN.md) |
 | P3 | Buyman Fases 2–4 | PurchaseOrder, recebimento, reposição. | [`plans/BUYMAN-PROCUREMENT-PLAN.md`](plans/BUYMAN-PROCUREMENT-PLAN.md) — pós-go-live |
+| P3 | Tempo real de forno (BI da fornada) | Definição benzida (2026-08-13): start = armar o timer (enfornou), stop = Concluir declarado no timer (retirou); fim de timer sem resposta e Confirmar do QC NÃO medem tempo. Exige promover o timer (hoje localStorage) a fato do servidor. O QC segue dono do fato COMERCIAL (partição/lote). | frente separada, sem plano ainda — sem tabela de agregação (doutrina anti-BI) |
 | P3 | Pre-prod real | Executar playbook às vésperas do primeiro deploy com dado real. | [`plans/WP-GAP-07-pre-prod-migration-playbook.md`](plans/WP-GAP-07-pre-prod-migration-playbook.md) |
 
 ## Dívida Técnica Viva

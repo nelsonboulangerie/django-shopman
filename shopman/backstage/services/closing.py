@@ -77,7 +77,7 @@ def perform_day_closing(
             closed_by=user,
             data={
                 "items": snapshot,
-                "production_summary": _production_summary(closing_date),
+                "production_summary": production_summary(closing_date),
                 "pending_production": _pending_production_snapshot(closing_date),
                 "cash_shift_summary": _cash_shift_summary(closing_date),
                 "reconciliation_errors": _reconciliation_errors(
@@ -157,10 +157,24 @@ def _pending_production_snapshot(closing_date: date) -> list[dict]:
     return rows
 
 
-def _production_summary(closing_date: date) -> dict:
+def _json_qty(value: Decimal) -> int | float:
+    """Quantidade em JSON sem truncar: inteiro quando inteiro, float quando não.
+
+    ``int(...)`` transformava 2,5 kg em 2 — o resumo persistido mentia para
+    receitas fracionárias (massa por peso).
+    """
+    return int(value) if value == value.to_integral_value() else float(value)
+
+
+def production_summary(closing_date: date) -> dict:
+    """Resumo de produção do dia por receita — dono único da pergunta.
+
+    Consumido pelo fechamento (persistido em ``DayClosing.data``) e pela
+    projection de pré-fechamento. Uma fonte, dois leitores.
+    """
     from shopman.craftsman.models import WorkOrder, WorkOrderItem
 
-    summary: dict[str, dict[str, int | str | dict]] = {}
+    summary: dict[str, dict] = {}
     work_orders = WorkOrder.objects.filter(target_date=closing_date).select_related("recipe")
     by_pk: dict[int, str] = {}
     for wo in work_orders:
@@ -171,16 +185,16 @@ def _production_summary(closing_date: date) -> dict:
             {
                 "recipe_ref": recipe_ref,
                 "output_sku": wo.output_sku,
-                "planned": 0,
-                "finished": 0,
-                "loss": 0,
+                "planned": Decimal("0"),
+                "finished": Decimal("0"),
+                "loss": Decimal("0"),
             },
         )
-        row["planned"] = int(row["planned"]) + int(wo.quantity or 0)
+        row["planned"] += wo.quantity or Decimal("0")
         if wo.finished is not None:
-            row["finished"] = int(row["finished"]) + int(wo.finished or 0)
+            row["finished"] += wo.finished or Decimal("0")
             started = wo.started_qty or wo.quantity
-            row["loss"] = int(row["loss"]) + max(0, int(started - wo.finished))
+            row["loss"] += max(Decimal("0"), (started or Decimal("0")) - wo.finished)
 
     # Consolidação de qualidade do dia (ADR-017 §8): quantas unidades saíram em
     # cada grau, por receita. Linha sem grau (finish escalar) fica de fora — o
@@ -196,7 +210,13 @@ def _production_summary(closing_date: date) -> dict:
         for wo_id, grade_ref, quantity in quality_lines:
             row = summary[by_pk[wo_id]]
             grades = row.setdefault("quality", {})
-            grades[grade_ref] = int(grades.get(grade_ref, 0)) + int(quantity)
+            grades[grade_ref] = grades.get(grade_ref, Decimal("0")) + (quantity or Decimal("0"))
+
+    for row in summary.values():
+        for key in ("planned", "finished", "loss"):
+            row[key] = _json_qty(row[key])
+        if "quality" in row:
+            row["quality"] = {ref: _json_qty(qty) for ref, qty in row["quality"].items()}
     return summary
 
 
@@ -208,7 +228,7 @@ def _reconciliation_errors(*, closing_date: date, items: list[dict]) -> list[dic
 
     saleable_by_sku = {row["sku"]: int(row.get("qty_remaining", 0)) + int(row.get("qty_applied", 0)) for row in items}
     produced_by_sku: dict[str, int] = {}
-    for row in _production_summary(closing_date).values():
+    for row in production_summary(closing_date).values():
         produced_by_sku[str(row["output_sku"])] = produced_by_sku.get(str(row["output_sku"]), 0) + int(row["finished"])
 
     # Base do "vendido" é a DATA COMBINADA, não a data da venda (WP-D): a

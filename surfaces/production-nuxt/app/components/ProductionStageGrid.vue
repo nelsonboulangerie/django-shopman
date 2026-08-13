@@ -29,11 +29,10 @@ import type {
   ProductionMatrixRowProjection,
   ProductionShortageError,
   ProductionSuggestionProjection,
-  WorkOrderCardProjection,
 } from "~/types/production";
 
 const props = defineProps<{
-  stage: "plan" | "produce" | "expedite";
+  stage: "plan" | "produce";
   title: string;
 }>();
 
@@ -95,38 +94,23 @@ const lens = computed(() => {
       },
     } as const;
   }
-  if (props.stage === "produce") {
-    return {
-      read: {
-        key: "planned",
-        label: "Planejado",
-        visible: !!access.value?.can_view_planned,
-      },
-      action: {
-        key: "started",
-        label: "Processar",
-        visible: !!access.value?.can_view_started,
-        editable: !!access.value?.can_edit_started,
-      },
-    } as const;
-  }
   return {
     read: {
-      key: "started",
-      label: "Processado",
-      visible: !!access.value?.can_view_started,
+      key: "planned",
+      label: "Planejado",
+      visible: !!access.value?.can_view_planned,
     },
     action: {
-      key: "finished",
-      label: "Concluir",
-      visible: !!access.value?.can_view_finished,
-      editable: !!access.value?.can_edit_finished,
+      key: "started",
+      label: "Processar",
+      visible: !!access.value?.can_view_started,
+      editable: !!access.value?.can_edit_started,
     },
   } as const;
 });
 
-// Linhas por lente: Planejamento vê TODOS os SKUs; Produção/Expedição só quem
-// tem número relevante (higiene de foco na bancada).
+// Linhas por lente: Planejamento vê TODOS os SKUs; Produção só quem tem
+// número relevante (higiene de foco na bancada).
 const stageRows = computed<ProductionMatrixRowProjection[]>(() => {
   let base = rows.value.filter((r) => matchesRowQuery(r, query.value));
   if (baseFilter.value) {
@@ -136,9 +120,6 @@ const stageRows = computed<ProductionMatrixRowProjection[]>(() => {
   }
   if (props.stage === "produce") {
     return base.filter((r) => r.planned_qty !== "0" || r.started_qty !== "0");
-  }
-  if (props.stage === "expedite") {
-    return base.filter((r) => r.started_qty !== "0" || r.finished_qty !== "0");
   }
   return base;
 });
@@ -160,17 +141,11 @@ const stale = computed(() =>
 const emptyCopy = computed(() =>
   props.stage === "plan"
     ? { text: "Nenhuma receita ativa.", cta: "", to: "" }
-    : props.stage === "produce"
-      ? {
-          text: "Nada planejado para processar nesta data.",
-          cta: "Ir para o Planejamento",
-          to: "/plan",
-        }
-      : {
-          text: "Nada processado para concluir nesta data.",
-          cta: "Ir para a Produção",
-          to: "/",
-        },
+    : {
+        text: "Nada planejado para processar nesta data.",
+        cta: "Ir para o Planejamento",
+        to: "/plan",
+      },
 );
 
 // ── Overlays ────────────────────────────────────────────────────────────────
@@ -206,20 +181,6 @@ const PLAN_TITLE: Record<PlanMode, string> = {
 const startRow = ref<ProductionMatrixRowProjection | null>(null);
 const startQty = ref("");
 const startedRow = ref<ProductionMatrixRowProjection | null>(null);
-const finishRow = ref<ProductionMatrixRowProjection | null>(null);
-const finishQty = ref("");
-
-// Classificação da fornada, gravada em WorkOrder.meta["quality"]. O gestor usa
-// isso para decidir o que vira post ("só publica fornada ótima"); o operador
-// não posta nada, só diz como ficou. Os values são as refs do catálogo
-// QualityGrade (ADR-017) — o rótulo edita no Admin, o código não.
-const QUALITY_OPTIONS = [
-  { value: "excellent", label: "★★★ Ótima" },
-  { value: "standard", label: "★★ Normal" },
-  { value: "fair", label: "★ Razoável" },
-] as const;
-const DEFAULT_QUALITY = "standard";
-const finishQuality = ref<string>(DEFAULT_QUALITY);
 const voidReason = ref("");
 const voidConfirming = ref(false);
 const commitmentsRow = ref<ProductionMatrixRowProjection | null>(null);
@@ -235,46 +196,12 @@ const startedCard = computed<ProductionKDSCardProjection | null>(() => {
   return kds.cards.value.find((c) => c.pk === wo.pk) ?? null;
 });
 
-// Timer do forno (Expedição): lembrete armado por fornada — a ferramenta do
-// forneiro para conferir/retirar, com som. Não confundir com o relógio de
-// idade do lote (guardrail de esquecimento, que vive nos alertas).
-const oven = useOvenTimers();
-const ovenRow = ref<ProductionMatrixRowProjection | null>(null);
-const ovenMinutes = ref("15");
-function ovenKey(row: ProductionMatrixRowProjection): string {
-  return String(row.started_orders[0]?.pk ?? "");
-}
-function openOven(row: ProductionMatrixRowProjection) {
-  const key = ovenKey(row);
-  if (!key) return;
-  if (oven.isRinging(key)) {
-    oven.clear(key);
-    return;
-  }
-  ovenRow.value = row;
-  ovenMinutes.value = String(oven.get(key)?.minutes ?? 15);
-}
-function confirmOven() {
-  const row = ovenRow.value;
-  const minutes = parseFloat(ovenMinutes.value.replace(",", "."));
-  if (!row || Number.isNaN(minutes) || minutes < 1) return;
-  oven.arm(ovenKey(row), minutes);
-  ovenRow.value = null;
-}
-function cancelOven() {
-  const row = ovenRow.value;
-  if (row) oven.clear(ovenKey(row));
-  ovenRow.value = null;
-}
-
 // Stepper touch: quantidade sempre editável com +/− generosos.
 // (Recebe o NOME do campo — no template o Vue desembrulha refs, então passar
 // `planQty` entregaria a string, não o ref.)
 const qtyFields = {
   plan: planQty,
   start: startQty,
-  finish: finishQty,
-  oven: ovenMinutes,
 } as const;
 function bump(field: keyof typeof qtyFields, delta: number) {
   const target = qtyFields[field];
@@ -347,60 +274,6 @@ async function confirmStart() {
   }
 }
 
-// A conclusão mira UMA WorkOrder específica, não o agregado da linha. Com dois
-// lotes de 30 em processo, pré-preencher com o started_qty AGREGADO (60) contra a
-// WO[0] (30) fazia o ledger engolir rendimento de 200%. Aqui a qty pré-preenchida
-// é a do lote alvo, e o operador escolhe o lote quando há mais de um.
-const finishTargetPk = ref<number | null>(null);
-const finishTarget = computed<WorkOrderCardProjection | null>(() => {
-  const row = finishRow.value;
-  if (!row) return null;
-  return (
-    row.started_orders.find((w) => w.pk === finishTargetPk.value) ??
-    row.started_orders[0] ??
-    null
-  );
-});
-function selectFinishTarget(wo: WorkOrderCardProjection) {
-  finishTargetPk.value = wo.pk;
-  finishQty.value =
-    wo.started_qty !== "0"
-      ? wo.started_qty
-      : (finishRow.value?.planned_qty ?? "");
-}
-
-function openFinish(row: ProductionMatrixRowProjection) {
-  startedRow.value = null;
-  finishRow.value = row;
-  finishQuality.value = DEFAULT_QUALITY;
-  const wo0 = row.started_orders[0];
-  finishTargetPk.value = wo0?.pk ?? null;
-  finishQty.value =
-    wo0 && wo0.started_qty !== "0" ? wo0.started_qty : row.planned_qty;
-}
-
-async function confirmFinish(force = false) {
-  const row = finishRow.value;
-  const wo = finishTarget.value;
-  if (!row || !wo || !finishQty.value.trim()) return;
-  const res = await kds.finish(
-    wo.pk,
-    finishQty.value.trim(),
-    force,
-    finishQuality.value,
-  );
-  if (res.ok) {
-    finishRow.value = null;
-    refresh();
-    useSonner.success(
-      `Concluído: ${row.output_sku} × ${finishQty.value.trim()}`,
-    );
-  } else if (res.shortage) {
-    finishRow.value = null;
-    shortage.value = res.shortage;
-  }
-}
-
 // Inicia o próximo lote PLANEJADO sem sair do fluxo — antes, com um lote em
 // processo, qualquer toque caía no diálogo de gestão e não havia como largar o
 // próximo até concluir o primeiro.
@@ -408,22 +281,6 @@ function startNextBatch() {
   const row = startedRow.value;
   startedRow.value = null;
   if (row) openStart(row);
-}
-
-async function overrideShortage() {
-  const s = shortage.value;
-  shortage.value = null;
-  if (!s) return;
-  const ref = (s as { work_order_ref?: string }).work_order_ref;
-  const row = rows.value.find((r) =>
-    r.started_orders.some((wo) => wo.ref === ref),
-  );
-  if (row) {
-    finishRow.value = row;
-    const wo = row.started_orders.find((w) => w.ref === ref);
-    finishTargetPk.value = wo?.pk ?? row.started_orders[0]?.pk ?? null;
-    await confirmFinish(true);
-  }
 }
 
 async function confirmVoid() {
@@ -452,16 +309,13 @@ async function advanceStep() {
 
 function onAction(row: ProductionMatrixRowProjection) {
   if (props.stage === "plan") return openPlan(row);
-  if (props.stage === "produce") {
-    if (row.started_orders.length) {
-      startedRow.value = row;
-      voidConfirming.value = false;
-      kds.refresh();
-      return;
-    }
-    return openStart(row);
+  if (row.started_orders.length) {
+    startedRow.value = row;
+    voidConfirming.value = false;
+    kds.refresh();
+    return;
   }
-  return openFinish(row);
+  return openStart(row);
 }
 
 function rowValue(row: ProductionMatrixRowProjection, key: string): string {
@@ -474,15 +328,12 @@ function rowValue(row: ProductionMatrixRowProjection, key: string): string {
 function actionEnabled(row: ProductionMatrixRowProjection): boolean {
   if (!lens.value.action.editable) return false;
   if (props.stage === "plan") return row.recipe_pk != null;
-  if (props.stage === "produce")
-    return !!row.started_orders.length || !!startableWorkOrder(row);
-  return !!row.started_orders.length;
+  return !!row.started_orders.length || !!startableWorkOrder(row);
 }
 
 const ACTION_VERB: Record<string, string> = {
   plan: "Planejar",
   produce: "Processar",
-  expedite: "Concluir",
 };
 
 // Verbo da célula de plano: quando a produção já assumiu a quantidade do dia,
@@ -528,9 +379,7 @@ const dayProgress = computed(() => {
 const headerCount = computed(() => {
   if (props.stage === "plan")
     return { count: counts.value?.planned ?? 0, label: "planejados" };
-  if (props.stage === "produce")
-    return { count: counts.value?.started ?? 0, label: "em processo" };
-  return { count: counts.value?.finished ?? 0, label: "concluídos" };
+  return { count: counts.value?.started ?? 0, label: "em processo" };
 });
 </script>
 
@@ -541,6 +390,7 @@ const headerCount = computed(() => {
       :title="title"
       :count="headerCount.count"
       :count-label="headerCount.label"
+      :progress="dayProgress?.pct ?? null"
       :pending="pending"
       @refresh="
         refresh();
@@ -606,26 +456,6 @@ const headerCount = computed(() => {
         <span class="text-sm text-muted-foreground">{{
           fullDateLabel(selectedDate)
         }}</span>
-        <div
-          v-if="dayProgress"
-          class="inline-flex items-center gap-2"
-          :title="`${dayProgress.finished} de ${dayProgress.planned} un. concluídas`"
-          role="progressbar"
-          :aria-valuenow="dayProgress.pct"
-          aria-valuemin="0"
-          aria-valuemax="100"
-          aria-label="Progresso do dia"
-        >
-          <div class="h-1.5 w-24 overflow-hidden rounded-full bg-muted">
-            <div
-              class="h-full rounded-full bg-primary transition-all"
-              :style="{ width: `${dayProgress.pct}%` }"
-            />
-          </div>
-          <span class="text-xs tabular-nums text-muted-foreground"
-            >{{ dayProgress.pct }}%</span
-          >
-        </div>
         <select
           v-if="baseOptions.length"
           v-model="baseFilter"
@@ -726,33 +556,6 @@ const headerCount = computed(() => {
                     class="flex items-center gap-1.5 text-xs text-muted-foreground"
                   >
                     <span class="truncate">{{ row.recipe_name }}</span>
-                    <button
-                      v-if="stage === 'expedite' && ovenKey(row)"
-                      type="button"
-                      class="inline-flex shrink-0 items-center gap-1 rounded-md border px-1.5 py-0.5 text-xs font-semibold tabular-nums transition"
-                      :class="
-                        oven.isRinging(ovenKey(row))
-                          ? 'animate-pulse border-destructive/40 bg-destructive/10 text-destructive dark:text-orange-300'
-                          : oven.get(ovenKey(row))
-                            ? 'border-border bg-muted text-foreground'
-                            : 'border-dashed text-muted-foreground hover:bg-accent hover:text-foreground'
-                      "
-                      :aria-label="
-                        oven.isRinging(ovenKey(row))
-                          ? `Conferir ${row.output_sku} no forno`
-                          : `Timer do forno para ${row.output_sku}`
-                      "
-                      @click="openOven(row)"
-                    >
-                      <Icon name="lucide:alarm-clock" class="size-3" />
-                      <template v-if="oven.isRinging(ovenKey(row))"
-                        >Conferir!</template
-                      >
-                      <template v-else-if="oven.get(ovenKey(row))">{{
-                        oven.remainingLabel(ovenKey(row))
-                      }}</template>
-                      <template v-else>Timer</template>
-                    </button>
                     <button
                       v-if="rowCommittedUnits(row) > 0"
                       type="button"
@@ -1130,191 +933,6 @@ const headerCount = computed(() => {
       </UiDialogContent>
     </UiDialog>
 
-    <!-- concluir (a saída da produção — quantidade final, pós-conferência) -->
-    <UiDialog
-      :open="finishRow != null"
-      @update:open="
-        (v) => {
-          if (!v) finishRow = null;
-        }
-      "
-    >
-      <UiDialogContent class="sm:max-w-sm">
-        <UiDialogHeader>
-          <UiDialogTitle>Concluir {{ finishRow?.output_sku }}</UiDialogTitle>
-          <UiDialogDescription>
-            Quantidade final aprovada (#{{ finishTarget?.ref }}) — sai da
-            produção e segue para a vitrine.
-          </UiDialogDescription>
-        </UiDialogHeader>
-        <div
-          v-if="(finishRow?.started_orders.length ?? 0) > 1"
-          class="flex flex-wrap gap-1.5"
-          role="group"
-          aria-label="Escolher o lote a concluir"
-        >
-          <button
-            v-for="wo in finishRow?.started_orders"
-            :key="wo.pk"
-            type="button"
-            :aria-pressed="wo.pk === finishTargetPk"
-            class="rounded-md border px-2 py-1 text-xs font-medium tabular-nums transition"
-            :class="
-              wo.pk === finishTargetPk
-                ? 'border-primary bg-primary/5'
-                : 'hover:bg-accent'
-            "
-            @click="selectFinishTarget(wo)"
-          >
-            #{{ wo.ref }} · {{ wo.started_qty }} un.
-          </button>
-        </div>
-        <div class="flex items-center gap-2">
-          <button
-            type="button"
-            class="grid size-12 shrink-0 place-items-center rounded-md border text-xl font-bold transition hover:bg-accent"
-            aria-label="Diminuir"
-            @click="bump('finish', -1)"
-          >
-            −
-          </button>
-          <input
-            v-model="finishQty"
-            type="text"
-            inputmode="decimal"
-            class="h-12 w-full rounded-md border bg-background text-center text-3xl font-bold tabular-nums outline-none focus:ring-1 focus:ring-ring"
-            aria-label="Quantidade concluída"
-          />
-          <button
-            type="button"
-            class="grid size-12 shrink-0 place-items-center rounded-md border text-xl font-bold transition hover:bg-accent"
-            aria-label="Aumentar"
-            @click="bump('finish', 1)"
-          >
-            +
-          </button>
-        </div>
-        <!-- Como ficou a fornada. Não bloqueia: o padrão já é "Boa", e o
-             operador só toca quando quer destacar (ou avisar que caiu). -->
-        <div
-          class="flex gap-1.5"
-          role="group"
-          aria-label="Como ficou a fornada"
-        >
-          <button
-            v-for="option in QUALITY_OPTIONS"
-            :key="option.value"
-            type="button"
-            :aria-pressed="finishQuality === option.value"
-            class="flex-1 rounded-md border px-2 py-2 text-xs font-medium transition"
-            :class="
-              finishQuality === option.value
-                ? 'border-primary bg-primary/5'
-                : 'hover:bg-accent'
-            "
-            @click="finishQuality = option.value"
-          >
-            {{ option.label }}
-          </button>
-        </div>
-        <UiDialogFooter>
-          <button
-            type="button"
-            class="rounded-md border px-3 py-2 text-sm font-medium transition hover:bg-accent"
-            @click="finishRow = null"
-          >
-            Cancelar
-          </button>
-          <button
-            type="button"
-            :disabled="!finishQty.trim()"
-            class="rounded-md border border-transparent bg-primary px-3 py-2 text-sm font-semibold text-primary-foreground transition hover:bg-primary/90 disabled:opacity-50"
-            @click="confirmFinish(false)"
-          >
-            Confirmar conclusão
-          </button>
-        </UiDialogFooter>
-      </UiDialogContent>
-    </UiDialog>
-
-    <!-- timer do forno (lembrete por fornada, com som) -->
-    <UiDialog
-      :open="ovenRow != null"
-      @update:open="
-        (v) => {
-          if (!v) ovenRow = null;
-        }
-      "
-    >
-      <UiDialogContent class="sm:max-w-sm">
-        <UiDialogHeader>
-          <UiDialogTitle
-            >Timer do forno · {{ ovenRow?.output_sku }}</UiDialogTitle
-          >
-          <UiDialogDescription
-            >Minutos até o lembrete de conferir/retirar. Toca neste
-            aparelho.</UiDialogDescription
-          >
-        </UiDialogHeader>
-        <div class="flex items-center gap-2">
-          <button
-            type="button"
-            class="grid size-12 shrink-0 place-items-center rounded-md border text-xl font-bold transition hover:bg-accent"
-            aria-label="Diminuir"
-            @click="bump('oven', -1)"
-          >
-            −
-          </button>
-          <div class="relative w-full">
-            <input
-              v-model="ovenMinutes"
-              type="text"
-              inputmode="numeric"
-              class="h-12 w-full rounded-md border bg-background text-center text-3xl font-bold tabular-nums outline-none focus:ring-1 focus:ring-ring"
-              aria-label="Minutos do timer"
-            />
-            <span
-              class="pointer-events-none absolute inset-y-0 right-3 grid place-items-center text-sm text-muted-foreground"
-              >min</span
-            >
-          </div>
-          <button
-            type="button"
-            class="grid size-12 shrink-0 place-items-center rounded-md border text-xl font-bold transition hover:bg-accent"
-            aria-label="Aumentar"
-            @click="bump('oven', 1)"
-          >
-            +
-          </button>
-        </div>
-        <UiDialogFooter>
-          <button
-            v-if="ovenRow && oven.get(ovenKey(ovenRow))"
-            type="button"
-            class="mr-auto rounded-md border px-3 py-2 text-sm font-medium text-destructive transition hover:bg-destructive/10 dark:text-orange-300"
-            @click="cancelOven()"
-          >
-            Cancelar timer
-          </button>
-          <button
-            type="button"
-            class="rounded-md border px-3 py-2 text-sm font-medium transition hover:bg-accent"
-            @click="ovenRow = null"
-          >
-            Fechar
-          </button>
-          <button
-            type="button"
-            :disabled="!(parseFloat(ovenMinutes.replace(',', '.')) >= 1)"
-            class="rounded-md border border-transparent bg-primary px-3 py-2 text-sm font-semibold text-primary-foreground transition hover:bg-primary/90 disabled:opacity-50"
-            @click="confirmOven()"
-          >
-            Iniciar timer
-          </button>
-        </UiDialogFooter>
-      </UiDialogContent>
-    </UiDialog>
-
     <!-- pedidos vinculados -->
     <UiDialog
       :open="commitmentsRow != null"
@@ -1432,7 +1050,6 @@ const headerCount = computed(() => {
           if (!v) shortage = null;
         }
       "
-      @confirm="overrideShortage"
     />
   </main>
 </template>

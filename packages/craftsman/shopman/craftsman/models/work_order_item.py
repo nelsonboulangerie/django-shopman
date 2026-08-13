@@ -109,6 +109,10 @@ class WorkOrderItem(models.Model):
             models.Index(fields=["work_order", "kind"]),
             models.Index(fields=["item_ref", "kind"]),
             models.Index(fields=["recorded_at"]),
+            # O relatório de QC agrupa por grau/defeito num recorte de tempo
+            # ("qual defeito custou mais este mês") — GROUP BY indexado.
+            models.Index(fields=["quality_grade_ref", "recorded_at"]),
+            models.Index(fields=["quality_defect_ref", "recorded_at"]),
         ]
         constraints = [
             models.CheckConstraint(

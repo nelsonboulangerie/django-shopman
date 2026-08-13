@@ -62,6 +62,24 @@ def test_build_day_closing_exposes_today_production_summary(setup_stock):
 
 
 @pytest.mark.django_db
+def test_production_summary_keeps_fractional_quantities(setup_stock):
+    """Receita por peso: 2,5 kg não pode virar 2 no resumo (int truncava)."""
+    recipe = Recipe.objects.create(
+        ref="recon-massa", name="Massa por peso", output_sku="RECON-SKU", batch_size=Decimal("10"),
+    )
+    wo = craft.plan(recipe, Decimal("2.5"), date=date.today())
+    craft.start(wo, quantity=Decimal("2.5"), expected_rev=0)
+    craft.finish(wo, finished=Decimal("1.75"), actor="test")
+
+    closing = build_day_closing()
+
+    row = closing.production_summary["recon-massa"]
+    assert row["planned"] == 2.5
+    assert row["finished"] == 1.75
+    assert row["loss"] == 0.75
+
+
+@pytest.mark.django_db
 def test_perform_day_closing_persists_production_summary(client, setup_stock, closing_user):
     recipe = Recipe.objects.create(ref="recon-close", name="Recon Close", output_sku="RECON-SKU", batch_size=Decimal("10"))
     wo = craft.plan(recipe, 5, date=date.today())

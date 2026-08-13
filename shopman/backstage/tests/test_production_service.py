@@ -352,3 +352,63 @@ def test_partition_splits_lots_and_veto_goes_to_waste(recipe, monkeypatch):
 
     work_order.refresh_from_db()
     assert work_order.finished == Decimal("9")  # 6 + 3; a perda fica fora
+
+
+@pytest.mark.django_db
+def test_partition_declared_loss_becomes_waste_with_reason(recipe, monkeypatch):
+    """Perda declarada (loss=True) vira WASTE com o motivo, sem grau e sem lote.
+
+    A aritmética do quiosque: previsto = a preço cheio + com desconto + perda
+    (QC-FORNADA §4). A perda não passa por veto — é o que não saiu do forno,
+    e pede motivo mesmo quando o defeito não é de segurança alimentar.
+    """
+    recipe.meta = {"requires_batch_tracking": True, "shelf_life_days": 1}
+    recipe.save(update_fields=["meta"])
+    monkeypatch.setattr(production, "check_finish_materials", lambda work_order: [])
+
+    _, wo_ref, _, _ = production.apply_planned(
+        recipe_id=recipe.pk, quantity="40",
+        target_date_value=date.today().isoformat(), actor="production:op",
+    )
+    work_order = WorkOrder.objects.get(ref=wo_ref)
+    production.apply_start(work_order_id=work_order.pk, quantity="40", actor="production:op")
+    production.apply_finish(
+        work_order_id=work_order.pk, quantity="40", actor="production:op",
+        partition=[
+            {"quantity": "32", "quality_grade_ref": "standard"},
+            {"quantity": "5", "quality_grade_ref": "minimal", "quality_defect_ref": "underbaked"},
+            {"quantity": "3", "quality_defect_ref": "overbaked", "loss": True},
+        ],
+    )
+
+    outputs = WorkOrderItem.objects.filter(
+        work_order=work_order, kind=WorkOrderItem.Kind.OUTPUT
+    )
+    assert outputs.count() == 2
+    assert Batch.objects.filter(ref__in=[line.batch_ref for line in outputs]).count() == 2
+
+    waste = WorkOrderItem.objects.get(work_order=work_order, kind=WorkOrderItem.Kind.WASTE)
+    assert waste.quantity == Decimal("3")
+    assert waste.quality_defect_ref == "overbaked"
+    assert waste.quality_grade_ref == ""
+    assert waste.batch_ref == ""
+
+    work_order.refresh_from_db()
+    assert work_order.finished == Decimal("37")  # 32 + 5; a perda fica fora
+
+
+@pytest.mark.django_db
+def test_partition_with_only_loss_is_rejected(recipe, monkeypatch):
+    """Fornada sem grupo vendável não fecha como conclusão — é void/waste."""
+    monkeypatch.setattr(production, "check_finish_materials", lambda work_order: [])
+    _, wo_ref, _, _ = production.apply_planned(
+        recipe_id=recipe.pk, quantity="4",
+        target_date_value=date.today().isoformat(), actor="production:op",
+    )
+    work_order = WorkOrder.objects.get(ref=wo_ref)
+    production.apply_start(work_order_id=work_order.pk, quantity="4", actor="production:op")
+    with pytest.raises(production.ProductionError):
+        production.apply_finish(
+            work_order_id=work_order.pk, quantity="4", actor="production:op",
+            partition=[{"quantity": "4", "quality_defect_ref": "overbaked", "loss": True}],
+        )
