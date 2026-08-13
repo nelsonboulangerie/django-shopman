@@ -83,6 +83,8 @@ def _availability_for_sku(sku: str, *, channel_ref: str) -> dict | None:
             safety_margin=scope["safety_margin"],
             allowed_positions=scope["allowed_positions"],
             excluded_positions=scope.get("excluded_positions"),
+            expiry_margin_days=scope.get("expiry_margin_days", 0),
+            include_nonconforming=scope.get("sells_nonconforming", True),
         )
     except Exception:
         logger.debug("cart_context._availability_for_sku degraded; using fallback", exc_info=True)

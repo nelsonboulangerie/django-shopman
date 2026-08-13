@@ -28,6 +28,8 @@ def _get_availability(sku: str, *, target_date: date | None = None) -> dict | No
             safety_margin=scope["safety_margin"],
             allowed_positions=scope["allowed_positions"],
             excluded_positions=scope.get("excluded_positions"),
+            expiry_margin_days=scope.get("expiry_margin_days", 0),
+            include_nonconforming=scope.get("sells_nonconforming", True),
         )
     except Exception as e:
         logger.warning("availability_lookup_failed sku=%s: %s", sku, e, exc_info=True)

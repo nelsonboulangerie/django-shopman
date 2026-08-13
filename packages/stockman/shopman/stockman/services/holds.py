@@ -42,17 +42,22 @@ def _find_quant_for_hold(
     *,
     allowed_positions: list[str] | None = None,
     excluded_positions: list[str] | None = None,
+    expiry_margin_days: int = 0,
+    include_nonconforming: bool = True,
 ) -> Quant | None:
     """Find a quant with enough availability for the hold (FIFO).
 
     Uses the canonical :func:`quants_eligible_for` scope so hold eligibility
-    matches the availability read (shelflife, batch expiry, channel positions).
+    matches the availability read (shelflife, batch expiry + margin, batch
+    conformity, channel positions).
     """
     quants = quants_eligible_for(
         sku,
         target_date=target_date,
         allowed_positions=allowed_positions,
         excluded_positions=excluded_positions,
+        expiry_margin_days=expiry_margin_days,
+        include_nonconforming=include_nonconforming,
     )
 
     # Annotate held_qty to avoid N+1
@@ -89,6 +94,8 @@ class StockHolds:
              allowed_positions: list[str] | None = None,
              excluded_positions: list[str] | None = None,
              safety_margin: int = 0,
+             expiry_margin_days: int = 0,
+             include_nonconforming: bool = True,
              allow_demand: bool = False,
              **metadata):
         """
@@ -148,6 +155,8 @@ class StockHolds:
                 allowed_positions=allowed_positions,
                 excluded_positions=excluded_positions,
                 safety_margin=safety_margin,
+                expiry_margin_days=expiry_margin_days,
+                include_nonconforming=include_nonconforming,
             )
             policy = profile["availability_policy"] or decision.availability_policy
             approved = decision.approved
@@ -186,6 +195,8 @@ class StockHolds:
                 sku, product, target, quantity,
                 allowed_positions=allowed_positions,
                 excluded_positions=excluded_positions,
+                expiry_margin_days=expiry_margin_days,
+                include_nonconforming=include_nonconforming,
             )
 
             if quant:

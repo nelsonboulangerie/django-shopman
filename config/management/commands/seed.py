@@ -3050,7 +3050,13 @@ class Command(BaseCommand):
             # do marketplace (check_on_commit=False).
             # allow_untracked=False: canal de CLIENTE — typo de SKU não pode
             # virar pedido sem reserva (SKU fora do catálogo é recusado/alertado).
-            "stock": {"check_on_commit": False, "allow_untracked": False},
+            # sells_nonconforming=True: no balcão o lote com desconto de
+            # qualidade É vendido — a etiqueta explica (C2 do D1-RETIREMENT).
+            "stock": {
+                "check_on_commit": False,
+                "allow_untracked": False,
+                "sells_nonconforming": True,
+            },
             "handle_label": "Comanda",
             "handle_placeholder": "Ex: 42",
         }
@@ -3064,6 +3070,10 @@ class Command(BaseCommand):
             # Canais de CLIENTE não aceitam SKU fora do catálogo como pedido
             # sem reserva — typo de SKU falha limpo no gate de commit.
             "allow_untracked": False,
+            # C2 (D1-RETIREMENT): o LOTE decide o que o canal remoto oferece.
+            # Não conforme não sai no remoto (default explícito aqui por
+            # legibilidade); afrouxar é decisão consciente por canal.
+            "sells_nonconforming": False,
         }
         _remote_config = {
             # Aceite otimista em 1 min (alpha/staging): com estoque fantasma do

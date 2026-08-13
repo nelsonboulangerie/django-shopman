@@ -138,6 +138,10 @@ def create_hold(
             allowed_positions=allowed_positions,
             excluded_positions=excluded_positions,
             safety_margin=safety_margin,
+            # Gates de LOTE do canal (C2): a reserva respeita o mesmo escopo
+            # da leitura — vitrine e hold nunca discordam.
+            expiry_margin_days=scope.get("expiry_margin_days", 0),
+            include_nonconforming=scope.get("sells_nonconforming", True),
             allow_demand=allow_demand,
             **hold_kwargs,
         )
@@ -383,6 +387,8 @@ def get_availability(
     safety_margin: int = 0,
     allowed_positions: list[str] | None = None,
     excluded_positions: list[str] | None = None,
+    expiry_margin_days: int = 0,
+    include_nonconforming: bool = True,
 ) -> dict:
     """Return availability info for a SKU.
 
@@ -398,6 +404,8 @@ def get_availability(
         safety_margin=safety_margin,
         allowed_positions=allowed_positions,
         excluded_positions=excluded_positions,
+        expiry_margin_days=expiry_margin_days,
+        include_nonconforming=include_nonconforming,
     )
 
 
@@ -405,7 +413,10 @@ def get_channel_scope(channel_ref: str | None) -> dict:
     """Return stock scope for a channel.
 
     Keys: ``safety_margin`` (int), ``allowed_positions`` (list[str] | None),
-    ``excluded_positions`` (list[str] | None).
+    ``excluded_positions`` (list[str] | None), ``expiry_margin_days`` (int)
+    and ``sells_nonconforming`` (bool) — os dois gates de LOTE do C2: a
+    posição diz onde o estoque conta; o lote diz o que pode ser oferecido
+    (near-expiry fora com margem; não conforme só com decisão explícita).
 
     The scope is resolved from ``ChannelConfig.stock`` (cascade: defaults →
     Shop.defaults → Channel.config). When no ``channel_ref`` is given the
@@ -416,9 +427,7 @@ def get_channel_scope(channel_ref: str | None) -> dict:
             availability_scope_for_channel,
         )
 
-        base = availability_scope_for_channel(channel_ref)
-        base.setdefault("excluded_positions", None)
-        return base
+        return availability_scope_for_channel(channel_ref)
 
     from shopman.shop.config import ChannelConfig
 
@@ -427,6 +436,8 @@ def get_channel_scope(channel_ref: str | None) -> dict:
         "safety_margin": cfg.stock.safety_margin,
         "allowed_positions": cfg.stock.allowed_positions,
         "excluded_positions": cfg.stock.excluded_positions,
+        "expiry_margin_days": cfg.stock.expiry_margin_days,
+        "sells_nonconforming": cfg.stock.sells_nonconforming,
     }
 
 
@@ -438,6 +449,8 @@ def get_promise_decision(
     safety_margin: int = 0,
     allowed_positions: list[str] | None = None,
     excluded_positions: list[str] | None = None,
+    expiry_margin_days: int = 0,
+    include_nonconforming: bool = True,
 ):
     """Return Stockman's explicit operational promise decision for a SKU."""
     from shopman.stockman.services.availability import promise_decision_for_sku
@@ -449,6 +462,8 @@ def get_promise_decision(
         safety_margin=safety_margin,
         allowed_positions=allowed_positions,
         excluded_positions=excluded_positions,
+        expiry_margin_days=expiry_margin_days,
+        include_nonconforming=include_nonconforming,
     )
 
 
