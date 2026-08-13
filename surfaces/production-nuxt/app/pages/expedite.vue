@@ -90,12 +90,16 @@ const lastPayload = ref<{ quantity: string; partition: QcPartitionGroup[] } | nu
 
 async function onConfirm(payload: { quantity: string; partition: QcPartitionGroup[] }, force = false) {
   lastPayload.value = payload;
-  const result = selectedOrder.value
-    ? await finish(selectedOrder.value.pk, payload.quantity, payload.partition, force)
+  const closingOrder = selectedOrder.value;
+  const result = closingOrder
+    ? await finish(closingOrder.pk, payload.quantity, payload.partition, force)
     : selectedRecipe.value
       ? await quickFinish(selectedRecipe.value.pk, payload.quantity, payload.partition, force)
       : { ok: false };
   if (result.ok) {
+    // Fornada fechada leva o timer junto — senão ele fica órfão no
+    // localStorage e alarma depois, num card que nem existe mais.
+    if (closingOrder) oven.clear(ovenKey(closingOrder));
     useSonner.success("Fornada fechada.");
     backToBoard();
     return;
@@ -424,8 +428,28 @@ function concludeOven() {
           <UiDialogDescription>Toca neste aparelho.</UiDialogDescription>
         </UiDialogHeader>
 
-        <!-- O mostrador: minutos a armar, restante ao vivo, ou o alarme. -->
+        <!-- O mostrador. Correndo/pausado, o CARD INTEIRO é o botão de
+             pausar/continuar: símbolo à esquerda da contagem, sem borda
+             própria. Pausado, o mostrador pulsa e o símbolo vira play. -->
+        <button
+          v-if="dialogMode === 'running' || dialogMode === 'paused'"
+          type="button"
+          class="flex h-20 w-full items-center justify-center gap-3 rounded-lg border bg-background transition hover:bg-accent active:translate-y-px"
+          :class="dialogMode === 'paused' ? 'animate-pulse' : ''"
+          :title="dialogMode === 'paused' ? 'Continuar' : 'Pausar'"
+          :aria-label="dialogMode === 'paused' ? 'Continuar o timer' : 'Pausar o timer'"
+          @click="dialogMode === 'paused' ? resumeOven() : pauseOven()"
+        >
+          <Icon
+            :name="dialogMode === 'paused' ? 'lucide:play' : 'lucide:pause'"
+            class="size-8 shrink-0"
+          />
+          <span class="text-4xl font-bold tabular-nums">
+            {{ ovenOrder ? oven.remainingLabel(ovenKey(ovenOrder)) : "" }}
+          </span>
+        </button>
         <div
+          v-else
           class="grid h-20 place-items-center rounded-lg border text-center"
           :class="dialogMode === 'ringing' ? 'border-destructive/50 bg-destructive/10' : 'bg-background'"
         >
@@ -434,10 +458,6 @@ function concludeOven() {
             class="animate-pulse text-2xl font-bold text-destructive dark:text-orange-300"
           >
             Conferir Forno!
-          </p>
-          <p v-else-if="dialogMode !== 'idle'" class="text-4xl font-bold tabular-nums">
-            {{ ovenOrder ? oven.remainingLabel(ovenKey(ovenOrder)) : "" }}
-            <span v-if="dialogMode === 'paused'" class="block text-xs font-medium uppercase tracking-wide text-muted-foreground">pausado</span>
           </p>
           <p v-else class="text-4xl font-bold tabular-nums">
             {{ ovenMinutes }}<span class="ml-1 text-base font-medium text-muted-foreground">min</span>
@@ -521,24 +541,6 @@ function concludeOven() {
           </button>
         </div>
 
-        <UiDialogFooter v-if="dialogMode === 'running' || dialogMode === 'paused'" class="gap-2">
-          <button
-            v-if="dialogMode === 'running'"
-            type="button"
-            class="mr-auto rounded-md border px-3 py-2 text-sm font-medium transition hover:bg-accent"
-            @click="pauseOven()"
-          >
-            Pausar
-          </button>
-          <button
-            v-else
-            type="button"
-            class="mr-auto rounded-md border px-3 py-2 text-sm font-medium transition hover:bg-accent"
-            @click="resumeOven()"
-          >
-            Retomar
-          </button>
-        </UiDialogFooter>
       </UiDialogContent>
     </UiDialog>
   </main>
