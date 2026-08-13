@@ -61,12 +61,21 @@ O commit órfão `263f3036` corrige um domínio inventado cravado no agente da
 gaveta (`pdv.boulangerie.com.br` é o certo). Nasceu depois do merge do #134 e
 ficou sem PR — é o tipo de conserto que se perde.
 
-**Branches mortas (0 commits à frente do `origin/main`) — podem ser apagadas:**
+**Branches mortas — ✅ podadas em 2026-08-13.** Seis apagadas localmente
+(`claude/amazing-hopper-d1ee66`, `claude/festive-wing-1ca6c1`,
 `feat/f3b-absorb-showcase`, `plan/campaign-evolution`, `fix/pdv-stress-findings`,
-`claude/amazing-hopper-d1ee66`, `claude/festive-wing-1ca6c1`, `alpha-readiness`,
-e `claude/jovial-mahavira-5bcc47` (seu commit entrou no main como `164ef10d`).
+`claude/jovial-mahavira-5bcc47`) e as duas com remoto absorvido também no
+`origin`. As worktrees de agente correspondentes saíram (as duas estavam limpas,
+conferido antes).
 
-Há **7 worktrees** ativas; 5 apontam para branches já absorvidas.
+O `claude/jovial-mahavira-5bcc47` aparecia como "1 commit à frente", mas
+`git cherry -v` marca o patch com `-`: já está no main (entrou como `164ef10d`,
+PR #130). ⚠️ Lição barata: **"à frente" conta commits, não conteúdo** — o commit
+tinha entrado por outro sha.
+
+**Mantido de propósito:** a worktree `shopman-storefront-perf` e sua branch
+`alpha-readiness`. A branch está absorvida, mas a worktree é do Pablo e fica fora
+da área dos agentes — poda dela é decisão dele.
 
 ## 3. 🔴 Achado novo — o gate de gateway apagou em silêncio
 
@@ -156,11 +165,20 @@ recusar um pedido.
 
 ## 5. Staging vs produção
 
-> ⚠️ **Correção (2026-08-13).** A primeira versão desta seção afirmava que "não
-> existe app de produção na DigitalOcean". **Está errado**, e o erro foi de
-> método: rodei `doctl` no contexto `shopman-staging-deploy` e li "nenhuma app
-> chamada produção" como "nenhuma produção". Duas apps de produção estão no ar há
-> anos, e o domínio de produção já serve o Shopman.
+> ⚠️ **Correção (2026-08-13), em duas camadas.**
+>
+> **1. Vocabulário.** Neste projeto **"app de produção" é o app Nuxt Produção** —
+> as fornadas, `production-nuxt` — servido em **`prod.boulangerie.com.br`**
+> (`<title>Produção</title>`, HTTP 200). Padaria: Produção é fabricação, primeiro
+> sentido da palavra. Para infra, o certo é dizer **"ambiente de produção"** ou
+> nomear a app. A primeira versão desta seção usou "app de produção" no sentido de
+> infra, e isso gerou um mal-entendido inteiro.
+>
+> **2. O fato.** Mesmo lido como infra, "não existe app de produção na
+> DigitalOcean" **estava errado**, por erro de método: rodei `doctl` no contexto
+> `shopman-staging-deploy` (há dois; o `default` está sem token) e li "nenhuma app
+> chamada produção" como "nenhuma produção". Duas apps estão no ar há anos, e o
+> domínio de produção já serve o Shopman.
 
 **O que está no ar em produção hoje:**
 
@@ -171,9 +189,17 @@ recusar um pedido.
 
 **E o Shopman já está no domínio de produção.** A app `shopman-staging`
 reivindica, no próprio spec, **7 hostnames de `boulangerie.com.br`** como ALIAS —
-todos respondendo HTTP 200:
+todos respondendo HTTP 200, um por superfície:
 
-`gestor.` · `pdv.` · `kds.` · `prod.` · `central.` · `mkt.` · `api.`
+| Hostname | Superfície |
+|---|---|
+| `prod.` | **Produção** (fornadas, kiosk Solari) — é este o "app de produção" |
+| `pdv.` | PDV |
+| `kds.` | cozinha |
+| `gestor.` | gestor de pedidos |
+| `mkt.` | marketing |
+| `central.` | Central de Apps (hub) |
+| `api.` | o Django |
 
 O enunciado correto é mais estreito e mais útil: **não existe um deployment
 separado de produção do Shopman.** O domínio de produção aponta para a app cujo
