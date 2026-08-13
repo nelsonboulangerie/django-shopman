@@ -13,6 +13,7 @@ from .channel import Channel
 from .delivery import DeliveryDistanceBand, DeliveryZone
 from .omotenashi_copy import OmotenashiCopy
 from .promotion import Coupon, Promotion
+from .quality import QualityDefect, QualityGrade
 from .rules import RuleConfig
 from .settings_proxies import (
     ShopAppearance,
@@ -37,6 +38,8 @@ __all__ = [
     "CatalogSyncState",
     "SyncStatus",
     "NotificationTemplate",
+    "QualityDefect",
+    "QualityGrade",
     "RuleConfig",
     "OmotenashiCopy",
     "ShopAppearance",
