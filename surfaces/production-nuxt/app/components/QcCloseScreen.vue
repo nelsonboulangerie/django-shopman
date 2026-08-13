@@ -170,6 +170,9 @@ function submit() {
 
 // ── Teclado físico (numpad USB funciona sem mudança) ────────────────────────
 function onKeydown(event: KeyboardEvent) {
+  // Digitação num input real (ex.: busca do cabeçalho) não é entrada do numpad.
+  const target = event.target as HTMLElement | null;
+  if (target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement) return;
   if (event.key === "Escape") {
     sheetQuestion.value = null;
     submitAfterAnswer.value = false;

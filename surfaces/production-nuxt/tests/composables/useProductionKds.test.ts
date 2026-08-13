@@ -50,30 +50,14 @@ describe("useProductionKds — adaptive cadence under pressure", () => {
 describe("useProductionKds — per-WO writes", () => {
   beforeEach(() => env.reset());
 
-  it("advanceStep / finish / voidOrder hit the right endpoints; finish carries force", async () => {
+  it("advanceStep / voidOrder hit the right endpoints (o finish vive no quiosque de QC)", async () => {
     env.fetchData.value = kdsPayload();
-    const { advanceStep, finish, voidOrder } = useProductionKds();
+    const { advanceStep, voidOrder } = useProductionKds();
 
     await advanceStep(7);
     expect(env.fetchMock).toHaveBeenCalledWith(
       "/api/v1/backstage/production/7/advance-step/",
       expect.objectContaining({ method: "POST" }),
-    );
-
-    await finish(7, "30", true);
-    expect(env.fetchMock).toHaveBeenCalledWith(
-      "/api/v1/backstage/production/7/finish/",
-      expect.objectContaining({ body: { quantity: "30", force: true, quality: "" } }),
-    );
-
-    // Classificação da fornada segue junto no finish; vazio deixa o backend
-    // aplicar o grau padrão do catálogo, então o operador nunca fica travado.
-    await finish(8, "12", false, "excellent");
-    expect(env.fetchMock).toHaveBeenCalledWith(
-      "/api/v1/backstage/production/8/finish/",
-      expect.objectContaining({
-        body: { quantity: "12", force: false, quality: "excellent" },
-      }),
     );
 
     await voidOrder(7, "queimou");
@@ -87,11 +71,11 @@ describe("useProductionKds — per-WO writes", () => {
     env.fetchData.value = kdsPayload();
     let release!: () => void;
     env.fetchMock.mockImplementationOnce(() => new Promise<void>((r) => (release = r)));
-    const { finish, isBusy } = useProductionKds();
+    const { voidOrder, isBusy } = useProductionKds();
 
-    const first = finish(7, "30");
+    const first = voidOrder(7, "queimou");
     expect(isBusy(7)).toBe(true);
-    const second = await finish(7, "30");
+    const second = await voidOrder(7, "queimou");
     expect(second.ok).toBe(false);
     expect(env.fetchMock).toHaveBeenCalledTimes(1);
 
@@ -103,8 +87,8 @@ describe("useProductionKds — per-WO writes", () => {
   it("returns the shortage (retryable with force) instead of toasting", async () => {
     env.fetchData.value = kdsPayload();
     env.fetchMock.mockRejectedValueOnce({ data: { error: { code: "order_shortage" } } });
-    const { finish } = useProductionKds();
-    const res = await finish(7, "30");
+    const { voidOrder } = useProductionKds();
+    const res = await voidOrder(7, "estorno");
     expect(res.shortage?.code).toBe("order_shortage");
     expect(env.sonner.error).not.toHaveBeenCalled();
   });

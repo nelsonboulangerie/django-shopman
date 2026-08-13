@@ -16,8 +16,10 @@ const query = defineModel<string>("query", { default: "" });
 const route = useRoute();
 
 // As visões do dia em abas-etapa: decide → separa/pesa → produz → expede → painel.
-// "Relatórios" (persona gestor) só entra quando a sonda de acesso confirma a
-// perm fina no backend — o operador de chão nem vê a entrada.
+// A Expedição É o fechamento de fornada (QC, ADR-017 §9): a fornada sai do
+// forno já classificada. "Relatórios" (persona gestor) só entra quando a
+// sonda de acesso confirma a perm fina no backend — o operador de chão nem
+// vê a entrada.
 const { allowed: reportsAllowed } = useReportsAccess();
 const tabs = computed(() => [
   { to: "/plan", label: "Planejamento", icon: "lucide:layout-grid" },

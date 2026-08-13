@@ -14,11 +14,7 @@ const { authenticated, locked, mustChange, operator, lock } =
 const route = useRoute();
 const isPublicBoard = computed(() => route.path.startsWith("/menuboard"));
 const isKiosk = computed(
-  () =>
-    isPublicBoard.value ||
-    route.path.startsWith("/board") ||
-    // Quiosque de QC do fournil (ADR-017 §9): tela cheia, atrás do gate.
-    route.path.startsWith("/qc"),
+  () => isPublicBoard.value || route.path.startsWith("/board"),
 );
 
 const hubUrl = useRuntimeConfig().public.operatorHubUrl as string;

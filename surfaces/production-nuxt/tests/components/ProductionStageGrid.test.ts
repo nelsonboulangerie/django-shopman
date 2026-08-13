@@ -8,12 +8,12 @@ import type {
   WorkOrderCardProjection,
 } from "../../app/types/production";
 
-// ProductionStageGrid é dirigido por composables (useProductionBoard/useProductionKds/
-// useOvenTimers). Sem runtime Nuxt: reatividade Vue real como globais + os composables
-// stubados com refs que controlamos. Os helpers de presentation (~/presentation) rodam de
-// VERDADE (resolvidos pelo alias). O foco é o gesto de RISCO: concluir o lote CERTO quando
-// há mais de um em processo (o bug do rendimento de 200% — pré-preencher o agregado contra
-// a WO[0]).
+// ProductionStageGrid é dirigido por composables (useProductionBoard/useProductionKds).
+// Sem runtime Nuxt: reatividade Vue real como globais + os composables stubados com refs
+// que controlamos. Os helpers de presentation (~/presentation) rodam de VERDADE
+// (resolvidos pelo alias). O finish saiu do grid: fechar a fornada é a Expedição
+// (quiosque de QC), que mira UMA WorkOrder por cartão — o bug do rendimento de 200%
+// (pré-preencher o agregado contra a WO[0]) morreu por construção.
 
 // ── Fixtures ────────────────────────────────────────────────────────────────
 function wo(over: Partial<WorkOrderCardProjection> = {}): WorkOrderCardProjection {
@@ -76,7 +76,7 @@ const FULL_ACCESS = {
 
 // ── Composable stubs (refs controláveis por teste) ──────────────────────────
 const boardRows = ref<ProductionMatrixRowProjection[]>([]);
-const finishSpy = vi.fn().mockResolvedValue({ ok: true });
+const voidSpy = vi.fn().mockResolvedValue({ ok: true });
 const boardRefresh = vi.fn();
 
 function installGlobals() {
@@ -112,8 +112,7 @@ function installGlobals() {
     refresh: vi.fn(),
     isBusy: () => false,
     advanceStep: vi.fn().mockResolvedValue({ ok: true }),
-    finish: finishSpy,
-    voidOrder: vi.fn().mockResolvedValue({ ok: true }),
+    voidOrder: voidSpy,
   }));
   vi.stubGlobal("useOvenTimers", () => ({
     arm: vi.fn(),
@@ -141,9 +140,9 @@ const stubs = {
   UiBadge: passthrough,
 };
 
-function mountGrid() {
+function mountGrid(stage: "plan" | "produce" = "produce") {
   return mount(ProductionStageGrid, {
-    props: { stage: "expedite" as const, title: "Expedição" },
+    props: { stage, title: "Produção" },
     global: { stubs },
   });
 }
@@ -154,68 +153,40 @@ const byText = (w: ReturnType<typeof mountGrid>, sel: string, txt: string) =>
 beforeEach(() => {
   installGlobals();
   boardRows.value = [];
-  finishSpy.mockClear().mockResolvedValue({ ok: true });
+  voidSpy.mockClear().mockResolvedValue({ ok: true });
   boardRefresh.mockClear();
 });
 afterEach(() => vi.unstubAllGlobals());
 
-describe("ProductionStageGrid — expedite render", () => {
-  it("lists a started row with a 'Concluir' affordance", () => {
-    boardRows.value = [row({ started_qty: "30", started_orders: [wo()] })];
+describe("ProductionStageGrid — produce render", () => {
+  it("lists a planned row with a 'Processar' affordance", () => {
+    boardRows.value = [row({ planned_qty: "30", planned_orders: [wo({ status: "planned" })] })];
     const w = mountGrid();
     expect(w.text()).toContain("PAO-001");
-    expect(byText(w, "button", "Concluir")).toBeTruthy();
+    expect(byText(w, "button", "Processar")).toBeTruthy();
   });
 
-  it("shows the welcoming empty state when nothing is in process", () => {
+  it("shows the welcoming empty state when nothing is planned", () => {
     boardRows.value = [];
     const w = mountGrid();
-    expect(w.text()).toContain("Nada processado para concluir");
+    expect(w.text()).toContain("Nada planejado para processar");
   });
 });
 
-describe("ProductionStageGrid — multi-lote finish target (guards the 200% yield bug)", () => {
-  it("prefills a single lot's own started qty (not an aggregate)", async () => {
-    boardRows.value = [row({ started_qty: "30", started_orders: [wo({ pk: 1, started_qty: "30" })] })];
-    const w = mountGrid();
-    await byText(w, "button", "Concluir")!.trigger("click");
-    const input = w.find('input[aria-label="Quantidade concluída"]');
-    expect((input.element as HTMLInputElement).value).toBe("30");
-  });
-
-  it("with two lots in process, offers a lot picker and confirms the CHOSEN lot's qty", async () => {
-    const lotA = wo({ pk: 1, ref: "WO-001", started_qty: "30" });
-    const lotB = wo({ pk: 2, ref: "WO-002", started_qty: "45" });
-    // started_qty da LINHA é o agregado (75) — o bug era pré-preencher isso contra a WO[0].
-    boardRows.value = [row({ started_qty: "75", started_orders: [lotA, lotB] })];
+describe("ProductionStageGrid — lote em processo (gestão)", () => {
+  it("opens the management dialog for a started row and voids with a reason", async () => {
+    boardRows.value = [
+      row({ started_qty: "30", started_orders: [wo({ pk: 7, ref: "WO-007", started_qty: "30" })] }),
+    ];
     const w = mountGrid();
 
-    await byText(w, "button", "Concluir")!.trigger("click");
+    // Com lote em processo a célula de ação mostra a quantidade (30), não o verbo.
+    await byText(w, "button", "30")!.trigger("click");
+    expect(w.text()).toContain("em processo");
 
-    // Abre pré-preenchido com o lote 0 (30), NUNCA o agregado (75).
-    const input = w.find('input[aria-label="Quantidade concluída"]');
-    expect((input.element as HTMLInputElement).value).toBe("30");
-
-    // Escolhe o segundo lote → a quantidade passa a ser a DELE (45), não a agregada.
-    const lotBtn = byText(w, "button", "WO-002")!;
-    expect(lotBtn).toBeTruthy();
-    await lotBtn.trigger("click");
-    expect((input.element as HTMLInputElement).value).toBe("45");
-
-    // Confirma → conclui a WO escolhida (pk 2) com a qty do lote, não o agregado.
-    // O 4º argumento é a classificação da fornada — a ref do grau padrão do
-    // catálogo QualityGrade ("standard"; era o literal "bom" até o ADR-017).
-    // O gestor usa isso para decidir o que vira post. Afirmado aqui inteiro: o
-    // contrato mudar de novo em silêncio foi o que deixou este teste vermelho
-    // por duas semanas.
-    await byText(w, "button", "Confirmar conclusão")!.trigger("click");
-    expect(finishSpy).toHaveBeenCalledWith(2, "45", false, "standard");
-  });
-
-  it("does not show a lot picker when there is a single lot", async () => {
-    boardRows.value = [row({ started_qty: "30", started_orders: [wo({ pk: 1, ref: "WO-001", started_qty: "30" })] })];
-    const w = mountGrid();
-    await byText(w, "button", "Concluir")!.trigger("click");
-    expect(byText(w, "button", "WO-001")).toBeUndefined(); // no per-lot buttons
+    await byText(w, "button", "Estornar…")!.trigger("click");
+    await w.find('textarea[aria-label="Motivo do estorno"]').setValue("queimou");
+    await byText(w, "button", "Confirmar estorno")!.trigger("click");
+    expect(voidSpy).toHaveBeenCalledWith(7, "queimou");
   });
 });
