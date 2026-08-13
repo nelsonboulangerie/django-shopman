@@ -5199,7 +5199,7 @@ class Command(BaseCommand):
             name="Fornada pronta",
             defaults={
                 "trigger": Trigger.PRODUCTION_FINISHED,
-                "trigger_filter": {"quality_min": "bom"},
+                "trigger_filter": {"quality_min": "standard"},
                 "template": fornada,
                 "platforms": ["instagram", "whatsapp"],
                 # Quem favoritou e quem pediu para ser avisado: a audiência mais quente

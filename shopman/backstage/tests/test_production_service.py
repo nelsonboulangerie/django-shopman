@@ -209,11 +209,11 @@ def test_finish_records_the_quality_flag(recipe):
     production.apply_start(work_order_id=work_order.pk, quantity="10", actor="production:op")
     production.apply_finish(
         work_order_id=work_order.pk, quantity="10",
-        actor="production:op", quality="excelente",
+        actor="production:op", quality="excellent",
     )
 
     work_order.refresh_from_db()
-    assert work_order.meta["quality"] == "excelente"
+    assert work_order.meta["quality"] == "excellent"
 
 
 @pytest.mark.django_db
@@ -240,12 +240,12 @@ def test_quality_is_written_before_the_finish_signal(recipe):
         production.apply_start(work_order_id=work_order.pk, quantity="5", actor="production:op")
         production.apply_finish(
             work_order_id=work_order.pk, quantity="5",
-            actor="production:op", quality="excelente",
+            actor="production:op", quality="excellent",
         )
     finally:
         production_changed.disconnect(_spy)
 
-    assert seen["quality"] == "excelente"
+    assert seen["quality"] == "excellent"
 
 
 @pytest.mark.django_db
@@ -260,7 +260,7 @@ def test_finish_without_quality_defaults_to_bom(recipe):
     production.apply_finish(work_order_id=work_order.pk, quantity="4", actor="production:op")
 
     work_order.refresh_from_db()
-    assert work_order.meta["quality"] == "bom"
+    assert work_order.meta["quality"] == "standard"
 
 
 @pytest.mark.django_db
@@ -269,4 +269,4 @@ def test_unknown_quality_falls_back_to_the_default(recipe):
         recipe=recipe, output_sku=recipe.output_sku,
         quantity=Decimal("2"), target_date=date.today(),
     )
-    assert production.set_quality(work_order, "sublime") == "bom"
+    assert production.set_quality(work_order, "sublime") == "standard"

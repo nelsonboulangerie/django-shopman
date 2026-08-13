@@ -37,7 +37,7 @@ def rule():
 def _work_order(**overrides):
     fields = {
         "ref": "WO-2026-00001",
-        "meta": {"quality": "excelente"},
+        "meta": {"quality": "excellent"},
         "finished": 40,
         "finished_at": None,
         "output_sku": SKU,
@@ -67,11 +67,11 @@ class TestProductionReceiver:
 
     def test_quality_flows_from_work_order_meta(self, product, rule):
         self._fire()
-        assert Announcement.objects.get().trigger_context["quality"] == "excelente"
+        assert Announcement.objects.get().trigger_context["quality"] == "excellent"
 
-    def test_missing_quality_defaults_to_bom(self, product, rule):
+    def test_missing_quality_defaults_to_catalog_default(self, product, rule):
         self._fire(work_order=_work_order(meta={}))
-        assert Announcement.objects.get().trigger_context["quality"] == "bom"
+        assert Announcement.objects.get().trigger_context["quality"] == "standard"
 
     def test_evaluation_failure_never_breaks_the_bake(self, product, rule):
         """Marketing quebrado não pode impedir o operador de fechar a fornada."""

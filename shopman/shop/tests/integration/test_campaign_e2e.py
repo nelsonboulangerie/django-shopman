@@ -59,7 +59,7 @@ def rule():
         trigger="production_finished",
         template=template,
         platforms=["instagram"],
-        trigger_filter={"quality_min": "excelente"},
+        trigger_filter={"quality_min": "excellent"},
     )
 
 
@@ -91,7 +91,7 @@ def test_excellent_bake_reaches_the_manager_as_an_approvable_post(
     django_capture_on_commit_callbacks, recipe, rule, gestor
 ):
     with django_capture_on_commit_callbacks(execute=True):
-        work_order = _bake(recipe, quality="excelente")
+        work_order = _bake(recipe, quality="excellent")
 
     announcement = Announcement.objects.get()
     assert announcement.status == AnnouncementStatus.PENDING_REVIEW
@@ -121,7 +121,7 @@ def test_approval_turns_the_post_into_a_platform_directive(
     django_capture_on_commit_callbacks, recipe, rule, gestor
 ):
     with django_capture_on_commit_callbacks(execute=True):
-        _bake(recipe, quality="excelente")
+        _bake(recipe, quality="excellent")
 
     announcement = Announcement.objects.get()
     campaign.approve(announcement.pk, gestor)
@@ -139,7 +139,7 @@ def test_the_bake_survives_a_broken_campaign(
         campaign, "evaluate", lambda *a, **kw: (_ for _ in ()).throw(RuntimeError("boom"))
     )
     with django_capture_on_commit_callbacks(execute=True):
-        work_order = _bake(recipe, quality="excelente")
+        work_order = _bake(recipe, quality="excellent")
 
     assert work_order.status == WorkOrder.Status.FINISHED
     assert Announcement.objects.count() == 0
@@ -149,6 +149,6 @@ def test_no_active_rule_means_no_post(
     django_capture_on_commit_callbacks, recipe, gestor
 ):
     with django_capture_on_commit_callbacks(execute=True):
-        _bake(recipe, quality="excelente")
+        _bake(recipe, quality="excellent")
 
     assert Announcement.objects.count() == 0

@@ -59,7 +59,9 @@ def on_production_changed(sender, product_ref, date, action, work_order, **kwarg
     context = {
         "sku": product_ref,
         "trigger": "production_finished",
-        "quality": meta.get("quality", "bom"),
+        # O snapshot carrega uma ref CONCRETA: fornada sem classificação cai no
+        # grau padrão do catálogo (era o literal "bom" — ADR-017).
+        "quality": meta.get("quality") or _default_grade_ref(),
         "quantity": str(getattr(work_order, "finished", "") or ""),
         "work_order_ref": getattr(work_order, "ref", ""),
         "finished_at": _iso(getattr(work_order, "finished_at", None)),
@@ -114,6 +116,18 @@ def on_product_created(sender, instance=None, sku=None, **kwargs) -> None:
 
 
 # ── Helpers ──────────────────────────────────────────────────────────
+
+
+def _default_grade_ref() -> str:
+    """O grau padrão do catálogo; "standard" em banco sem o data seed."""
+    from shopman.shop.models import QualityGrade
+
+    try:
+        ref = QualityGrade.objects.filter(is_default=True).values_list("ref", flat=True).first()
+        return ref or "standard"
+    except Exception:
+        logger.debug("campaign.quality_default_lookup_failed", exc_info=True)
+        return "standard"
 
 
 def _evaluate_later(trigger: str, context: dict) -> None:

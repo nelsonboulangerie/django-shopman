@@ -29,7 +29,6 @@ from django.utils import timezone
 
 from shopman.shop.directives import ANNOUNCEMENT_NOTIFY, ANNOUNCEMENT_PUBLISH, create_deduped
 from shopman.shop.models import (
-    QUALITY_LEVELS,
     Announcement,
     AnnouncementStatus,
     Campaign,
@@ -213,11 +212,24 @@ def matches_filter(rule: Campaign, context: dict) -> bool:
 
 
 def _quality_at_least(quality, minimum) -> bool:
-    """Hierarquia excelente > bom > regular. Qualidade não informada = "bom"."""
-    quality = str(quality or "bom")
-    if quality not in QUALITY_LEVELS or minimum not in QUALITY_LEVELS:
+    """Hierarquia = ``QualityGrade.rank`` (maior = melhor), lida do catálogo.
+
+    Era o literal ``QUALITY_LEVELS`` triplicado em três módulos; o rank do
+    catálogo é a fonte única (ADR-017). Ref desconhecida = False, fail-safe:
+    campanha não dispara por causa de um valor que ninguém reconhece.
+    Qualidade não informada cai no grau padrão do catálogo.
+    """
+    from shopman.shop.models import QualityGrade
+
+    ranks = dict(QualityGrade.objects.values_list("ref", "rank"))
+    if not quality:
+        default = QualityGrade.objects.filter(is_default=True).values_list("ref", flat=True).first()
+        quality = default or ""
+    quality = str(quality)
+    minimum = str(minimum)
+    if quality not in ranks or minimum not in ranks:
         return False
-    return QUALITY_LEVELS.index(quality) >= QUALITY_LEVELS.index(minimum)
+    return ranks[quality] >= ranks[minimum]
 
 
 def _expiry(rule: Campaign):
@@ -594,8 +606,23 @@ def resolve_variables(context: dict, *, promotion_ref: str = "") -> dict:
         "product_image_url": product_image_url(sku),
         "time": timezone.localtime().strftime("%Hh%M"),
         "store_name": _brand_name(),
-        "quality": str(context.get("quality", "") or ""),
+        # O RÓTULO do grau, nunca a ref: `{{quality}}` cai em copy de cliente, e
+        # "excellent" no meio de uma frase em português é jargão vazando
+        # (mesma lei do D-1 que vira "Ontem" na UI). Minúsculo porque entra no
+        # meio da frase ("Fornada ótima de Croissant").
+        "quality": _quality_label(context.get("quality", "")),
     }
+
+
+def _quality_label(ref: str) -> str:
+    """Rótulo do catálogo para a ref do grau; a própria ref se não achar."""
+    from shopman.shop.models import QualityGrade
+
+    ref = str(ref or "")
+    if not ref:
+        return ""
+    label = QualityGrade.objects.filter(ref=ref).values_list("label", flat=True).first()
+    return (label or ref).lower()
 
 
 def available_variables() -> tuple[str, ...]:

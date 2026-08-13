@@ -143,9 +143,17 @@ def apply_start(
     )
 
 
-#: Como o operador classifica a fornada ao fechar. Sem isso, "bom".
-QUALITY_CHOICES = ("regular", "bom", "excelente")
-DEFAULT_QUALITY = "bom"
+def _default_grade_ref() -> str:
+    """O grau padrão do catálogo (``QualityGrade.is_default``); "standard" se o
+    catálogo estiver vazio (banco recém-migrado antes do data seed rodar)."""
+    from shopman.shop.models import QualityGrade
+
+    try:
+        ref = QualityGrade.objects.filter(is_default=True).values_list("ref", flat=True).first()
+        return ref or "standard"
+    except Exception:
+        logger.debug("production.quality_default_lookup_failed", exc_info=True)
+        return "standard"
 
 
 def set_quality(work_order, quality: str) -> str:
@@ -154,10 +162,20 @@ def set_quality(work_order, quality: str) -> str:
     Precisa acontecer ANTES do finish: é o ``production_changed`` do finish que
     alimenta a campanha, e a regra pode exigir ``quality_min``. Gravar depois
     faria a regra ler a qualidade da fornada anterior.
+
+    Os valores válidos são as refs do catálogo ``QualityGrade`` (era o literal
+    QUALITY_CHOICES triplicado — ADR-017): a escala é do deployment, não do
+    código. Valor desconhecido cai no grau padrão.
     """
-    quality = (quality or "").strip().lower() or DEFAULT_QUALITY
-    if quality not in QUALITY_CHOICES:
-        quality = DEFAULT_QUALITY
+    from shopman.shop.models import QualityGrade
+
+    quality = (quality or "").strip().lower() or _default_grade_ref()
+    try:
+        known = QualityGrade.objects.filter(ref=quality).exists()
+    except Exception:
+        known = False
+    if not known:
+        quality = _default_grade_ref()
     try:
         meta = dict(getattr(work_order, "meta", None) or {})
         if meta.get("quality") == quality:

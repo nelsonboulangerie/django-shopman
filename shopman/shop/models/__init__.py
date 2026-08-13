@@ -1,7 +1,6 @@
 """Shopman models — Shop, Channel, RuleConfig, Promotion, Coupon, entrega, Campaign."""
 
 from .campaign import (
-    QUALITY_LEVELS,
     Announcement,
     AnnouncementStatus,
     AnnouncementTemplate,
@@ -55,7 +54,6 @@ __all__ = [
     "AnnouncementTemplate",
     "AnnouncementStatus",
     "Trigger",
-    "QUALITY_LEVELS",
     "UserNotification",
     "NotificationCategory",
 ]

@@ -103,7 +103,7 @@ class TestFomoContext:
             )
             production = fomo_context.last_finished_bake(SKU)
         assert production["finished_at"] == finished
-        assert production["quality"] == "excelente"
+        assert production["quality"] == "excellent"
 
     def test_no_bake_yields_no_production(self):
         assert fomo_context.last_finished_bake(SKU) is None
@@ -129,7 +129,7 @@ class _FakeWorkOrder:
 
     def __init__(self, finished_at):
         self.finished_at = finished_at
-        self.meta = {"quality": "excelente"}
+        self.meta = {"quality": "excellent"}
 
 
 # ── Push SSE ─────────────────────────────────────────────────────────
