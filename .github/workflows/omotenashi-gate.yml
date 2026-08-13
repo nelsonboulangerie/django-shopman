@@ -84,6 +84,20 @@ jobs:
           SHOPMAN_CHROME_PATH: ${{ steps.setup-chrome.outputs.chrome-path }}
         run: make omotenashi-browser-ci
 
+      # Mora AQUI, e não no Runtime Gate, porque é o único job com banco
+      # migrado E semeado (o passo acima roda `migrate` + `seed --flush`): o
+      # check `omotenashi.seed` é bloqueante e exige os 11 cenários canônicos,
+      # e o `gateways.local` executa fixtures de verdade contra o banco.
+      #
+      # Modo NÃO estrito de propósito: falha só em falha real e tolera os
+      # bloqueios que dependem de credencial externa. Está no CI porque a
+      # versão "roda quando alguém lembra" apagou em silêncio — o
+      # gateways.local ficou ~3 semanas vermelho depois que o gate de SKU
+      # untracked entrou (2026-07-24), e a última leitura verde era de 2026-06-26.
+      - name: Release readiness (non-strict)
+        timeout-minutes: 5
+        run: make release-readiness
+
       - name: Upload Omotenashi QA evidence
         if: always()
         uses: actions/upload-artifact@v4

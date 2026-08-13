@@ -69,6 +69,10 @@ jobs:
           SHOPMAN_ALLOW_MOCK_PAYMENT_ADAPTERS: "true"
         run: .venv/bin/python manage.py check --deploy
 
+      # NOTA: o `release-readiness` NÃO mora aqui. Este job roda em SQLite sem
+      # banco migrado (o pytest cria o dele), e o gate precisa de banco migrado
+      # E semeado — `omotenashi.seed` é bloqueante e exige os 11 cenários
+      # canônicos. Ele vive no Omotenashi Gate, logo depois do seed.
       - name: Full test suite
         timeout-minutes: 15
         run: make test
