@@ -1339,7 +1339,7 @@ class WorkOrderQuickFinishView(_ProductionActionBase):
                 quantity=quantity,
                 position_id=position_id,
                 actor=_production_actor(request),
-                # Fornada fora do plano fechada pelo quiosque de QC: mesma
+                # Fornada avulsa fechada pelo quiosque de QC: mesma
                 # partição do finish normal (ADR-017 §4).
                 partition=partition if isinstance(partition, list) else None,
                 force=bool(request.data.get("force")),

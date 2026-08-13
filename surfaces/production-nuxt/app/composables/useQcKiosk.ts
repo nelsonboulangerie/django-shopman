@@ -14,11 +14,16 @@ export interface QcActResult {
 }
 
 export function useQcKiosk() {
+  // "" = hoje (default do backend). Outra data serve à fornada esquecida de
+  // ontem — o fechamento aceita qualquer dia com ordem aberta.
+  const selectedDate = ref("");
+
   const { data, pending, error, refresh } = useFetch<ProductionQCResponse>(
     "/api/v1/backstage/production/qc/",
     {
       key: "production-qc",
       server: true,
+      query: computed(() => (selectedDate.value ? { date: selectedDate.value } : {})),
       onResponseError: operatorSessionOnError,
     },
   );
@@ -49,7 +54,7 @@ export function useQcKiosk() {
   const finish = (pk: number, quantity: string, partition: QcPartitionGroup[], force = false) =>
     post(`/api/v1/backstage/production/${pk}/finish/`, { quantity, partition, force });
 
-  // Fornada fora do plano: plan + finish num passo, mesma partição. Sem
+  // Fornada avulsa: plan + finish num passo, mesma partição. Sem
   // position_id — o backend resolve a posição padrão.
   const quickFinish = (
     recipeId: number,
@@ -64,5 +69,5 @@ export function useQcKiosk() {
       force,
     });
 
-  return { kiosk, pending, error, refresh, submitting, finish, quickFinish };
+  return { kiosk, selectedDate, pending, error, refresh, submitting, finish, quickFinish };
 }

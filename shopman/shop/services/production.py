@@ -106,7 +106,7 @@ def quick_plan(
     quantity,
     position_id,
 ):
-    """Plan a same-day ad-hoc work order (fornada fora do plano).
+    """Plan a same-day ad-hoc work order (fornada avulsa).
 
     Nasce sem previsto herdado de plano nenhum — o previsto É o que o operador
     declarou. Quem fecha decide o caminho: escalar (``quick_finish``) ou

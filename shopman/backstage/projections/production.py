@@ -474,6 +474,9 @@ class QCOrderCardProjection:
     elapsed_minutes: int
     can_close: bool
     closed: bool
+    # Pedidos que aguardam esta fornada (production_order_sync): quem fecha
+    # precisa saber que há gente esperando — a Expedição antiga mostrava.
+    order_refs: tuple[str, ...]
     # Partição da fornada fechada (a preço cheio / com desconto / perda) —
     # vazio enquanto aberta. É o que o cartão esmaecido mostra.
     full_price_qty: str
@@ -1242,6 +1245,7 @@ def build_qc_kiosk(*, selected_date: date | None = None) -> QCKioskProjection:
             elapsed_minutes=elapsed,
             can_close=wo.status in (WorkOrder.Status.PLANNED, WorkOrder.Status.STARTED),
             closed=closed,
+            order_refs=() if closed else _linked_order_refs(wo),
             full_price_qty=_qty(full_qty) if full_qty is not None else "",
             discounted_qty=_qty(discounted_qty) if discounted_qty is not None else "",
             loss_qty=_qty(loss_qty) if loss_qty is not None else "",
@@ -1469,15 +1473,6 @@ def _order_commitments_for_work_order(wo: WorkOrder) -> tuple[OrderCommitmentPro
             )
         )
     return tuple(result)
-
-
-def _linked_order_refs(wo: WorkOrder) -> tuple[str, ...]:
-    try:
-        from shopman.shop.handlers.production_order_sync import linked_order_refs
-    except Exception:
-        logger.debug("production.order_ref_key_import_failed wo=%s", wo.ref, exc_info=True)
-        return ()
-    return linked_order_refs(wo)
 
 
 def _qty_required_for_order(order, sku: str) -> Decimal:

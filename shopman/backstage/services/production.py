@@ -86,7 +86,7 @@ def apply_quick_finish(
 ):
     """Plan and immediately finish a work order from the operator surface.
 
-    Com ``partition`` (quiosque de QC, fornada fora do plano), o fechamento
+    Com ``partition`` (quiosque de QC, fornada avulsa), o fechamento
     passa pelo MESMO caminho do finish normal: veto resolvido na borda, N
     lotes com percentual congelado, alerta quando a rastreabilidade falha.
     """

@@ -354,6 +354,7 @@ export interface QCOrderCardProjection {
   elapsed_minutes: number;
   can_close: boolean;
   closed: boolean;
+  order_refs: string[];
   full_price_qty: string;
   discounted_qty: string;
   loss_qty: string;

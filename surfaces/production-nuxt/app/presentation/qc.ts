@@ -8,7 +8,7 @@ import type { QCGradeProjection } from "~/types/production";
 // ── Estado da tela de fechamento ────────────────────────────────────────────
 
 export interface QcEntryState {
-  /** Previsto da ordem; null = fornada fora do plano (nasce sem expectativa). */
+  /** Previsto da ordem; null = fornada avulsa (nasce sem expectativa). */
   planned: number | null;
   fullQty: number;
   /** O operador já digitou no campo "a preço cheio"? Governa os padrões. */

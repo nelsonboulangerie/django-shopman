@@ -110,12 +110,12 @@ def test_qc_endpoint_behind_floor_gate(client, floor_operator, recipe):
     assert response.status_code == 200
     payload = response.json()["qc"]
     assert [g["ref"] for g in payload["grades"]][0] == "excellent"
-    assert payload["recipes"], "fornada fora do plano precisa da lista de receitas"
+    assert payload["recipes"], "fornada avulsa precisa da lista de receitas"
 
 
 @pytest.mark.django_db
 def test_quick_finish_accepts_partition(client, floor_operator, recipe, monkeypatch):
-    """Fornada fora do plano fechada pelo quiosque: N lotes, veto e perda."""
+    """Fornada avulsa fechada pelo quiosque: N lotes, veto e perda."""
     monkeypatch.setattr(production, "check_finish_materials", lambda work_order: [])
     client.force_login(floor_operator)
 

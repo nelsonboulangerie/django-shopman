@@ -11,11 +11,22 @@ import type {
 } from "~/types/production";
 import type { QcPartitionGroup } from "~/presentation/qc";
 
-const { kiosk, pending, submitting, refresh, finish, quickFinish } = useQcKiosk();
+const { kiosk, selectedDate, pending, submitting, refresh, finish, quickFinish } = useQcKiosk();
 
 useHead({ title: "Expedição · Produção" });
 
 const query = ref("");
+
+// ── Data: Hoje · Outra data (a fornada esquecida de ontem fecha por aqui) ───
+const isCustomDate = computed(() => selectedDate.value !== "");
+const customDateInput = ref<HTMLInputElement | null>(null);
+function openCustomDate() {
+  customDateInput.value?.showPicker?.();
+  customDateInput.value?.focus();
+}
+
+// Menu ⋯ do painel — a exceção mora aqui, fora de evidência.
+const menuOpen = ref(false);
 
 // ── Navegação interna (painel ⇄ fechamento) ─────────────────────────────────
 const selectedOrder = ref<QCOrderCardProjection | null>(null);
@@ -89,7 +100,7 @@ const screenTitle = computed(
 );
 const screenSubtitle = computed(() => {
   const order = selectedOrder.value;
-  if (!order) return selectedRecipe.value ? "fornada fora do plano" : "";
+  if (!order) return selectedRecipe.value ? "fornada avulsa" : "";
   const bits = [order.output_sku, order.position_ref, order.started_at_display].filter(Boolean);
   return bits.join(" · ");
 });
@@ -161,14 +172,55 @@ function cancelOven() {
     <!-- Painel de fornadas do dia. -->
     <div v-else class="mx-auto flex w-full max-w-3xl flex-col gap-4 px-4 py-4">
       <div class="flex items-center justify-between gap-3">
-        <p class="text-sm text-muted-foreground">{{ kiosk?.selected_date_display }}</p>
-        <button
-          type="button"
-          class="rounded-md border px-3 py-2 text-sm text-muted-foreground transition hover:bg-accent"
-          @click="recipePickerOpen = true"
-        >
-          fornada fora do plano
-        </button>
+        <!-- Data: mesmo padrão de chips das outras telas do backstage. -->
+        <div class="flex items-center gap-1 rounded-lg border bg-background p-0.5" role="group" aria-label="Data das fornadas">
+          <button
+            type="button"
+            class="rounded-md px-2.5 py-1.5 text-sm font-medium transition"
+            :class="!isCustomDate ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-accent hover:text-foreground'"
+            @click="selectedDate = ''"
+          >
+            Hoje
+          </button>
+          <button
+            type="button"
+            class="relative rounded-md px-2.5 py-1.5 text-sm font-medium transition"
+            :class="isCustomDate ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-accent hover:text-foreground'"
+            @click="openCustomDate"
+          >
+            {{ isCustomDate ? kiosk?.selected_date_display : "Outra data" }}
+            <input
+              ref="customDateInput"
+              v-model="selectedDate"
+              type="date"
+              class="absolute inset-0 cursor-pointer opacity-0"
+              aria-label="Escolher a data das fornadas"
+              tabindex="-1"
+            />
+          </button>
+        </div>
+
+        <UiPopover :open="menuOpen" @update:open="(v: boolean) => (menuOpen = v)">
+          <UiPopoverTrigger as-child>
+            <button
+              type="button"
+              class="grid size-9 place-items-center rounded-md border text-muted-foreground transition hover:bg-accent hover:text-foreground"
+              aria-label="Mais ações"
+            >
+              <Icon name="lucide:ellipsis-vertical" class="size-4" />
+            </button>
+          </UiPopoverTrigger>
+          <UiPopoverContent align="end" :side-offset="6" class="w-52 p-1.5">
+            <button
+              type="button"
+              class="flex w-full items-center gap-2 rounded px-2 py-2 text-left text-sm transition hover:bg-accent"
+              @click="menuOpen = false; recipePickerOpen = true"
+            >
+              <Icon name="lucide:plus" class="size-4 text-muted-foreground" />
+              Fornada avulsa
+            </button>
+          </UiPopoverContent>
+        </UiPopover>
       </div>
 
       <p v-if="pending && !kiosk" class="py-10 text-center text-muted-foreground">Carregando…</p>
@@ -177,57 +229,58 @@ function cancelOven() {
       </p>
 
       <div class="grid gap-2">
+        <!-- O toque no CARD abre o timer (a ação de toda hora); fechar a
+             fornada é o botão quadrado do previsto, à direita. -->
         <div
           v-for="order in openOrders"
           :key="order.pk"
           role="button"
           tabindex="0"
-          class="flex cursor-pointer items-center justify-between gap-3 rounded-lg border bg-card p-4 text-left transition hover:bg-accent"
+          class="flex cursor-pointer items-stretch justify-between gap-3 rounded-lg border bg-card p-4 text-left transition hover:bg-accent"
           :class="{ 'border-primary ring-2 ring-primary/30': order.pk === nextPk }"
-          :aria-label="`Fechar a fornada de ${order.recipe_name}`"
-          @click="openOrder(order)"
-          @keydown.enter="openOrder(order)"
+          :aria-label="`Timer do forno de ${order.recipe_name}`"
+          @click="openOven(order)"
+          @keydown.enter="openOven(order)"
         >
-          <div class="min-w-0">
+          <div class="min-w-0 flex-1">
             <p class="truncate text-base font-semibold">{{ order.recipe_name }}</p>
-            <p class="flex items-center gap-1.5 truncate text-sm text-muted-foreground">
-              <span class="truncate">
-                {{ order.output_sku }}
-                <template v-if="order.position_ref"> · {{ order.position_ref }}</template>
-                <template v-if="order.started_at_display"> · no forno desde {{ order.started_at_display }}</template>
-                <template v-else> · ainda não iniciada</template>
-              </span>
-              <button
-                v-if="order.started_at_display"
-                type="button"
-                class="inline-flex shrink-0 items-center gap-1 rounded-md border px-1.5 py-0.5 text-xs font-semibold tabular-nums transition"
-                :class="
-                  oven.isRinging(ovenKey(order))
-                    ? 'animate-pulse border-destructive/40 bg-destructive/10 text-destructive dark:text-orange-300'
-                    : oven.get(ovenKey(order))
-                      ? 'border-border bg-muted text-foreground'
-                      : 'border-dashed text-muted-foreground hover:bg-accent hover:text-foreground'
-                "
-                :aria-label="
-                  oven.isRinging(ovenKey(order))
-                    ? `Conferir ${order.output_sku} no forno`
-                    : `Timer do forno para ${order.output_sku}`
-                "
-                @click.stop="openOven(order)"
-              >
-                <Icon name="lucide:alarm-clock" class="size-3" />
-                <template v-if="oven.isRinging(ovenKey(order))">Conferir!</template>
-                <template v-else-if="oven.get(ovenKey(order))">{{
-                  oven.remainingLabel(ovenKey(order))
-                }}</template>
-                <template v-else>Timer</template>
-              </button>
+            <p class="truncate text-sm text-muted-foreground">
+              {{ order.output_sku }}
+              <template v-if="order.position_ref"> · {{ order.position_ref }}</template>
+              <template v-if="order.started_at_display"> · iniciada às {{ order.started_at_display }}</template>
+              <template v-else> · ainda não iniciada</template>
+              <template v-if="order.order_refs.length">
+                · <span class="text-primary">{{ order.order_refs.length }}
+                  {{ order.order_refs.length === 1 ? "pedido aguarda" : "pedidos aguardam" }}</span>
+              </template>
+            </p>
+            <p
+              class="mt-2 flex items-center gap-2 text-lg font-semibold tabular-nums"
+              :class="
+                oven.isRinging(ovenKey(order))
+                  ? 'animate-pulse text-destructive dark:text-orange-300'
+                  : oven.get(ovenKey(order))
+                    ? 'text-foreground'
+                    : 'text-muted-foreground'
+              "
+            >
+              <Icon name="lucide:alarm-clock" class="size-5" />
+              <template v-if="oven.isRinging(ovenKey(order))">Conferir o forno!</template>
+              <template v-else-if="oven.get(ovenKey(order))">{{
+                oven.remainingLabel(ovenKey(order))
+              }}</template>
+              <template v-else>Armar timer</template>
             </p>
           </div>
-          <div class="shrink-0 text-right">
-            <p class="text-2xl font-semibold tabular-nums">{{ order.planned_qty }}</p>
-            <p class="text-xs uppercase tracking-wide text-muted-foreground">previsto</p>
-          </div>
+          <button
+            type="button"
+            class="grid size-20 shrink-0 place-items-center self-center rounded-xl border bg-background transition hover:border-primary hover:bg-accent"
+            :aria-label="`Fechar a fornada de ${order.recipe_name}`"
+            @click.stop="openOrder(order)"
+          >
+            <span class="text-2xl font-semibold leading-none tabular-nums">{{ order.planned_qty }}</span>
+            <span class="mt-1 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">previsto</span>
+          </button>
         </div>
 
         <!-- Fechadas: visíveis e esmaecidas, com a partição declarada. -->
@@ -249,9 +302,9 @@ function cancelOven() {
       </div>
     </div>
 
-    <!-- Fornada fora do plano: lista de receitas, nasce sem previsto. -->
+    <!-- Fornada avulsa: lista de receitas, nasce sem previsto. -->
     <UiSheet :open="recipePickerOpen" @update:open="(v: boolean) => (recipePickerOpen = v)">
-      <UiSheetContent side="bottom" title="Fornada fora do plano">
+      <UiSheetContent side="bottom" title="Fornada avulsa">
         <template #content>
           <div class="grid grid-cols-2 gap-2 px-4 pb-6 sm:grid-cols-3">
             <button
