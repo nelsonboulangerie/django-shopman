@@ -66,7 +66,7 @@ bloco do framework, não o total — o total é a SOMA dos blocos.
 | **Services** | Estável | Orquestração: availability, cancellation, stock, payment, customer, etc. |
 | **Adapters** | Estável | EFI/PIX, Stripe, ManyChat, email, SMS, console, stock, inventory, Machine (courier) |
 | **Handlers** | Estável | Directive handlers com dedupe garantido e observabilidade (ADR-003, PR #62) |
-| **Rules engine** | Estável | `RuleConfig` no DB; pricing (D-1/Happy Hour) genérico e config-driven |
+| **Rules engine** | Estável | `RuleConfig` no DB; pricing (D-1/Happy Hour) genérico e config-driven. ⚠️ **D-1 é mecanismo INTERINO**: conceitualmente superado pelo modelo de lote/validade (ADR-017 + QC-FORNADA); migração pendente — não construir features novas sobre D-1 |
 | **Storefront (API)** | Estável | `api/` + `presentation/` + `intents/`; rate-limiting, delivery zones, favoritos, stock alerts |
 | **Backstage (API)** | Estável | POS, KDS, produção, orders, closing, operator; guards e idempotência endurecidos (PR #58) |
 | **Admin (Unfold)** | Estável | Unfold Canonical Gate (`make admin`); telas de produção e fechamento |
@@ -147,7 +147,7 @@ staging).
 - Compras: materiais/fornecedores (Buyman F1) → disponibilidade de insumo valida produção
 - Loyalty: acúmulo na confirmação, resgate no checkout
 - Auth: access link WhatsApp-first, SMS fallback, device trust, magic links
-- Fechamento do dia: sobras, D-1, apuração de caixa, reconciliação financeira diária
+- Fechamento do dia: sobras (hoje via D-1, interino — ver ADR-017/QC-FORNADA), apuração de caixa, reconciliação financeira diária
 - Entrega: zonas + geocoding em cascata; corrida Machine construída (aguarda creds)
 
 ---
