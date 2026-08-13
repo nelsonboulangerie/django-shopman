@@ -357,7 +357,12 @@ def serve(config: AgentConfig) -> None:
 INSTALL_DIR = Path.home() / ".local" / "share" / "nelson-pos-drawer"
 UNIT_PATH = Path.home() / ".config" / "systemd" / "user" / "nelson-pos-drawer.service"
 SERVICE_NAME = "nelson-pos-drawer.service"
-DEFAULT_ORIGIN = "https://pos.staging.nelsonboulangerie.com.br"
+
+# Não existe default de origem, de propósito. A primeira versão cravava um
+# domínio aqui e ele estava ERRADO — inventado, sem corresponder a nada no
+# deployment. Uma constante inventada num arquivo que ninguém revisa vira 403 na
+# gaveta, silencioso, no balcão. Quem sabe a origem é o Django
+# (`SHOPMAN_POS_BASE_URL`), e o Admin já a coloca no comando de instalação.
 
 
 def _unit_text(exec_path: Path) -> str:
@@ -416,7 +421,10 @@ def write_config(path: Path, *, queue: str, origin: str, token: str = "") -> tup
         "token": token or secrets.token_urlsafe(32),
         "port": 47811,
         "host": "127.0.0.1",
-        "allowed_origins": [origin.rstrip("/")],
+        # Sem origem declarada a lista fica VAZIA, que o agente lê como
+        # "qualquer origem". É mais frouxo, e o instalador avisa em voz alta —
+        # melhor do que cravar um domínio chutado, que vira 403 calado.
+        "allowed_origins": [origin.rstrip("/")] if origin else [],
     }
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(config, indent=2) + "\n", encoding="utf-8")
@@ -455,11 +463,9 @@ def install(argv: list[str]) -> int:
     target.chmod(0o755)
 
     token = _arg_value(argv, "--token")
+    origin = _arg_value(argv, "--origin")
     config, written = write_config(
-        DEFAULT_CONFIG_PATH,
-        queue=queue,
-        origin=_arg_value(argv, "--origin") or DEFAULT_ORIGIN,
-        token=token,
+        DEFAULT_CONFIG_PATH, queue=queue, origin=origin, token=token
     )
 
     if shutil.which("systemctl"):
@@ -478,6 +484,12 @@ def install(argv: list[str]) -> int:
         print(f"aviso: sem systemctl. Suba na mão: python3 {target}")
 
     print(f"\nAgente instalado em {target}")
+    if not config.get("allowed_origins"):
+        print(
+            "\naviso: sem --origin, este agente aceita pedido de QUALQUER página\n"
+            "       aberta neste navegador (o token continua obrigatório).\n"
+            "       Pegue o comando completo no Admin: Terminais do PDV → gaveta."
+        )
     if token:
         # Veio do Admin: o par já existe dos dois lados, nada a transcrever.
         print("Token recebido do Admin — nada a copiar de volta.")

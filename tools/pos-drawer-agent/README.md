@@ -22,7 +22,7 @@ preenchido** com o token, a fila e a origem daquele terminal. Nada a transcrever
 (pendrive, `scp`, ou colando num editor) e rode o comando que a tela mostrou:
 
 ```bash
-python3 drawer_agent.py --install --token TOKEN-DO-ADMIN --origin https://pos.staging.nelsonboulangerie.com.br
+python3 drawer_agent.py --install --token TOKEN-DO-ADMIN --origin https://pdv.boulangerie.com.br
 ```
 
 Ele lista as filas CUPS e pergunta qual é a da térmica (a fila já existe: é por
@@ -45,7 +45,7 @@ levaria 401 até os dois lados baterem, e ninguém quer descobrir isso no sábad
   "token": "…",
   "port": 47811,
   "host": "127.0.0.1",
-  "allowed_origins": ["https://pos.staging.nelsonboulangerie.com.br"]
+  "allowed_origins": ["https://pdv.boulangerie.com.br"]
 }
 ```
 
