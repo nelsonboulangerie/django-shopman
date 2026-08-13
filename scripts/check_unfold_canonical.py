@@ -160,6 +160,27 @@ CANONICAL_ADMIN_SURFACES: tuple[Surface, ...] = (
             "build_agent_install",
         ),
     ),
+    Surface(
+        id="admin-console-operator-badge",
+        kind="canonical-admin-unfold-page",
+        templates=(ROOT / "shopman/backstage/templates/admin_console/operator_badge",),
+        controllers=(ROOT / "shopman/backstage/admin_console/operator_badge.py",),
+        projections=(ROOT / "shopman/backstage/projections/operator_badge.py",),
+        url_prefixes=("/admin/operadores/cracha/",),
+        requires_model_admin_view_mixin=True,
+        required_extends="admin/base.html",
+        required_template_markers=(
+            'include "unfold/helpers/messages.html"',
+            'component "unfold/components/button.html"',
+            'component "unfold/components/container.html"',
+            'component "unfold/components/text.html"',
+            'component "unfold/components/title.html"',
+        ),
+        required_controller_markers=(
+            "UnfoldModelAdminViewMixin",
+            "build_operator_badge",
+        ),
+    ),
     # NOTA: a superfície `admin-console-production` foi removida (WP-ADM-7d) —
     # a produção vive no Produção (surfaces/production-nuxt) via
     # api/v1/backstage/production/* após a paridade do WP-ADM-7b (matriz `/`,
