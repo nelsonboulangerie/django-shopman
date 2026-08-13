@@ -226,7 +226,7 @@ const fieldCard =
         :class="[fieldCard, activeField === 'full' ? 'border-primary ring-2 ring-primary/30' : 'hover:bg-accent']"
         @click="focusField('full')"
       >
-        <span class="text-xs font-medium uppercase tracking-wide text-muted-foreground">A preço cheio</span>
+        <span class="text-xs font-medium uppercase tracking-wide text-muted-foreground">Qualidade OK</span>
         <span class="text-4xl font-semibold tabular-nums">{{ state.fullQty }}</span>
       </button>
       <button
@@ -242,14 +242,14 @@ const fieldCard =
         ]"
         @click="focusField('discount')"
       >
-        <span class="text-xs font-medium uppercase tracking-wide text-muted-foreground">Quantas assim</span>
+        <span class="text-xs font-medium uppercase tracking-wide text-muted-foreground">Quantas divergentes</span>
         <span class="text-4xl font-semibold tabular-nums">{{ discountEnabled ? state.discountQty : "" }}</span>
       </button>
     </div>
 
     <!-- Legenda do numpad: diz em qual campo se está. Altura fixa. -->
     <p class="flex h-8 shrink-0 items-center text-sm text-muted-foreground">
-      Digitando em: {{ activeField === "full" ? "a preço cheio" : "quantas assim" }}
+      Digitando em: {{ activeField === "full" ? "qualidade OK" : "quantas divergentes" }}
     </p>
 
     <!-- Numpad âncora + escala em coluna, vão maior entre os dois blocos. -->

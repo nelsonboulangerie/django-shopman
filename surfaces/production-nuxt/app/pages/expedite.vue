@@ -371,7 +371,7 @@ function concludeOven() {
             <p class="truncate text-sm text-muted-foreground">{{ order.output_sku }}</p>
           </div>
           <p class="shrink-0 text-sm tabular-nums text-muted-foreground">
-            {{ order.full_price_qty || "0" }} a preço cheio
+            {{ order.full_price_qty || "0" }} OK
             <template v-if="order.discounted_qty"> · {{ order.discounted_qty }} com desconto</template>
             <template v-if="order.loss_qty"> · {{ order.loss_qty }} de perda</template>
           </p>
