@@ -35,10 +35,36 @@
       {% component "unfold/components/card.html" %}
         <div class="flex flex-col gap-3">
           {% component "unfold/components/title.html" with class="text-lg" %}
+            Em qual sistema você vai instalar?
+          {% endcomponent %}
+          <div class="flex flex-wrap gap-2">
+            {% for option in agent_install.os_options %}
+              {% if option.active %}
+                {% component "unfold/components/button.html" with href=option.url variant="primary" size="sm" %}
+                  {{ option.label }} · {{ option.note }}
+                {% endcomponent %}
+              {% else %}
+                {% component "unfold/components/button.html" with href=option.url variant="default" size="sm" %}
+                  {{ option.label }} · {{ option.note }}
+                {% endcomponent %}
+              {% endif %}
+            {% endfor %}
+          </div>
+          {% if agent_install.os_caveat %}
+            {% component "unfold/components/text.html" with class="text-sm text-base-500" %}
+              {{ agent_install.os_caveat }}
+            {% endcomponent %}
+          {% endif %}
+        </div>
+      {% endcomponent %}
+
+      {% component "unfold/components/card.html" %}
+        <div class="flex flex-col gap-3">
+          {% component "unfold/components/title.html" with class="text-lg" %}
             1. Baixe o agente
           {% endcomponent %}
           {% component "unfold/components/text.html" with class="text-base-500" %}
-            Um arquivo só, sem instalar mais nada junto. Ele serve para qualquer balcão; o que é deste terminal vai no comando do passo 2.
+            O mesmo arquivo serve nos três sistemas e em qualquer balcão. O que é deste terminal vai no comando do passo 2.
           {% endcomponent %}
           <div class="flex flex-wrap items-center gap-3">
             {% component "unfold/components/button.html" with href=agent_install.download_url variant="primary" icon="download" %}
@@ -61,9 +87,11 @@
               {{ step.detail }}
             {% endcomponent %}
             {% if step.command %}
-              {# A fonte mono desenha `--` como um traço longo só. Conferido: são
-                 dois hífens de verdade (U+002D U+002D), então copiar e colar
-                 traz o comando certo, que é como este bloco é usado. #}
+              {% comment %}
+                A fonte mono desenha `--` como um traço longo só. Conferido: são
+                dois hífens de verdade (U+002D U+002D), então copiar e colar traz
+                o comando certo, que é como este bloco é usado.
+              {% endcomment %}
               <pre class="overflow-x-auto rounded-default bg-base-100 p-4 text-sm text-base-700 dark:bg-base-900 dark:text-base-300"><code>{{ step.command }}</code></pre>
             {% endif %}
           </div>

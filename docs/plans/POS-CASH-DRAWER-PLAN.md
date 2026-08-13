@@ -145,14 +145,11 @@ pede. Os testes travam o default nos bytes canônicos, dos dois lados.
 | a sonda não promete demais | "Fila TM-T20 respondendo. A gaveta abriu?" |
 | suítes | 20 (agente) + 22 (Django) + 199 (pos-nuxt) + 1021 (backstage) + `make admin`; typecheck limpo |
 
-⚠️ **O que continua sem prova:** o CUPS **de verdade** e a impressora. O `lp` foi
-dublado (macOS removeu suporte a fila raw — `lpadmin` recusa com "Filas brutas
-não são mais compatíveis"; é justamente o mecanismo que usamos, e no Linux ele
-existe). Falta, no balcão: instalar o agente, e o olho do operador confirmando
-que a gaveta abriu.
+⚠️ **O que continua sem prova:** a impressora. Falta, no balcão: instalar o
+agente, e o olho do operador confirmando que a gaveta abriu.
 
-> Nota para quem for testar em Mac: não dá. A ausência de fila raw no macOS é
-> remoção da Apple, não defeito nosso; o alvo é Linux.
+> ❌ **Correção (2026-08-13): "no Mac não dá" estava ERRADO.** Ver §12. O CUPS do
+> macOS entrega os bytes crus normalmente; o que a Apple removeu foi outra coisa.
 
 ## 9. Ordem
 
@@ -214,3 +211,53 @@ suprimento. Se na prática ele fizer falta na tela de venda, promover é barato:
 `useCashDrawer` já é compartilhado, e a tela de venda só precisa chamar o mesmo
 `openDrawerWithoutSale`. Não fizemos agora para não inventar affordance sem
 alguém tendo sentido falta.
+
+## 12. Os três sistemas (2026-08-13)
+
+O balcão **vai ser Linux** — é o oficial, e nada disso muda essa decisão. Mas a
+máquina do caixa **ainda roda Windows**, e a troca não pode ser feita com a loja
+aberta; e o dono precisa conseguir testar do Mac dele. Então o agente passou a
+falar os três, e a tela do Admin ganhou um seletor.
+
+### ❌ A correção: eu disse que no Mac não dava, e estava errado
+
+A afirmação anterior ("macOS removeu suporte a fila raw, é justamente o
+mecanismo") nasceu de **uma mensagem de erro lida rápido demais**:
+
+```
+$ lpadmin -p fila -v socket://… -m raw
+lpadmin: Filas brutas não são mais compatíveis com o macOS.
+```
+
+Isso recusa criar fila com o **driver** `raw`. A **opção de job** `-o raw` é
+outra coisa, e continua existindo. Numa fila sem driver, ela entrega os bytes
+sem tocar. **Medido** (CUPS 2.3.4, macOS, fila apontando para um socket local):
+
+```
+RECEBIDO: 1b 70 00 19 fa
+```
+
+Os cinco bytes, intactos. O erro de método foi concluir a partir do que a
+ferramenta **recusou**, em vez de testar o que eu precisava saber.
+
+### O que muda por sistema (menos do que parece)
+
+| | envio dos bytes | início automático | registro |
+|---|---|---|---|
+| **Linux** (oficial) | `lp -o raw` | systemd `--user` + linger | journald |
+| **macOS** | `lp -o raw` — **idêntico** | LaunchAgent (`KeepAlive`) | arquivo |
+| **Windows** | winspool via `ctypes`, datatype `RAW` | tarefa no logon (`pythonw`) | arquivo |
+
+Linux e macOS são o **mesmo** caminho de envio. Só o Windows troca o mecanismo —
+e ainda assim a linha que a pessoa digita é a mesma, fora o nome do interpretador.
+
+⚠️ **O log em arquivo não é enfeite.** No Linux o journald captura a saída; no
+macOS o launchd descarta, e no Windows o `pythonw` roda sem console. Sem o
+`--log-file` que o instalador passa nesses dois, a promessa da tela ("o agente
+registra cada abertura") seria falsa em dois dos três sistemas.
+
+⚠️ **O Windows não foi executado em Windows nenhum.** Não há máquina aqui. O que
+os testes travam é o despacho e o contrato; o `winspool` real só o caixa
+confirma. O `ctypes` evita `pywin32` porque o balcão não é lugar de
+`pip install` às 6h da manhã — mas o Windows também **não traz Python de
+fábrica**, e a tela avisa isso no passo da instalação.

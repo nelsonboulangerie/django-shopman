@@ -359,10 +359,10 @@ def test_a_unit_aponta_para_o_arquivo_instalado_e_reergue_sozinha():
 
 def test_instalar_com_fila_inexistente_para_antes_de_mexer_em_nada(monkeypatch, capsys):
     monkeypatch.setattr(drawer_agent.shutil, "which", lambda name: f"/usr/bin/{name}")
-    monkeypatch.setattr(drawer_agent, "_cups_queues", lambda: ["OUTRA"])
+    monkeypatch.setattr(drawer_agent, "list_queues", lambda: ["OUTRA"])
 
     assert drawer_agent.install(["--install", "--queue", "TM-T20"]) == 1
-    assert "não existe no CUPS" in capsys.readouterr().err
+    assert "não está entre as" in capsys.readouterr().err
 
 
 def test_instalar_sem_cups_diz_o_que_falta(monkeypatch, capsys):
@@ -370,3 +370,74 @@ def test_instalar_sem_cups_diz_o_que_falta(monkeypatch, capsys):
 
     assert drawer_agent.install(["--install"]) == 1
     assert "CUPS" in capsys.readouterr().err
+
+
+# ── Multiplataforma ───────────────────────────────────────────────────────
+#
+# Linux é o SO oficial do balcão. Windows existe porque a máquina do caixa
+# ainda roda Windows e a troca não dá para ser feita com a loja aberta; macOS
+# existe para o Pablo testar do Mac dele.
+#
+# ⚠️ O caminho Windows NÃO foi executado em Windows nenhum — não há máquina
+# aqui. O que estes testes travam é o despacho e o contrato; o kick de verdade
+# só o balcão confirma.
+
+
+def test_linux_e_macos_usam_o_MESMO_comando(monkeypatch):
+    """O macOS quase virou um terceiro caminho por um erro de leitura meu.
+
+    `lpadmin -m raw` é que foi removido (o DRIVER raw). A opção de job `-o raw`
+    continua entregando os bytes intactos — medido em CUPS 2.3.4 do macOS.
+    """
+    captured = {}
+
+    class Done:
+        returncode = 0
+        stdout = b"request id is TM-T20-1 (1 file(s))"
+        stderr = b""
+
+    monkeypatch.setattr(drawer_agent, "IS_WINDOWS", False)
+    monkeypatch.setattr(drawer_agent.shutil, "which", lambda name: f"/usr/bin/{name}")
+    monkeypatch.setattr(
+        drawer_agent.subprocess, "run", lambda cmd, **k: (captured.update(cmd=cmd), Done())[1]
+    )
+
+    drawer_agent.send_raw(CANONICAL_KICK, queue="TM-T20")
+    assert captured["cmd"][:5] == ["/usr/bin/lp", "-d", "TM-T20", "-o", "raw"]
+
+
+def test_windows_despacha_para_o_spooler_proprio(monkeypatch):
+    """No Windows não existe `lp`; quem entrega é o winspool."""
+    chamado = {}
+    monkeypatch.setattr(drawer_agent, "IS_WINDOWS", True)
+    monkeypatch.setattr(
+        drawer_agent, "_send_raw_windows",
+        lambda payload, *, queue, title: chamado.update(payload=payload, queue=queue) or "42",
+    )
+
+    assert drawer_agent.send_raw(CANONICAL_KICK, queue="TM-T20") == "42"
+    assert chamado["payload"] == CANONICAL_KICK
+
+
+def test_a_sonda_tambem_despacha_por_plataforma(monkeypatch):
+    monkeypatch.setattr(drawer_agent, "IS_WINDOWS", True)
+    monkeypatch.setattr(drawer_agent, "_probe_queue_windows", lambda q: {"ok": True, "accepting": True, "reason": q})
+    assert drawer_agent.probe_queue("TM-T20")["reason"] == "TM-T20"
+
+
+def test_o_launchagent_do_macos_reergue_sozinho():
+    plist = drawer_agent._plist_text(Path("/Users/pdv/agente/drawer_agent.py"))
+    assert "<string>/Users/pdv/agente/drawer_agent.py</string>" in plist
+    # KeepAlive é o Restart=always do launchd: ninguém confere se o agente caiu.
+    assert "<key>KeepAlive</key><true/>" in plist
+    assert drawer_agent.LAUNCH_AGENT_LABEL in plist
+
+
+def test_o_plist_do_macos_e_xml_valido():
+    """Plist malformado o launchd recusa em silêncio, e a gaveta some no boot."""
+    import plistlib
+
+    parsed = plistlib.loads(drawer_agent._plist_text(Path("/tmp/x.py")).encode())
+    assert parsed["Label"] == drawer_agent.LAUNCH_AGENT_LABEL
+    assert parsed["RunAtLoad"] is True
+    assert parsed["ProgramArguments"][1] == "/tmp/x.py"
