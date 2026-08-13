@@ -135,10 +135,13 @@ def last_finished_bake(sku: str) -> dict | None:
 
     if work_order is None:
         return None
+    from shopman.shop.services import quality as quality_service
+
     return {
         "finished_at": work_order.finished_at,
         "work_order_ref": work_order.ref,
-        "quality": (work_order.meta or {}).get("quality", ""),
+        # Derivada das linhas de OUTPUT (meta["quality"] morreu — ADR-017).
+        "quality": quality_service.derived_quality(work_order),
     }
 
 

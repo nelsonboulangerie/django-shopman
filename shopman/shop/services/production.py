@@ -249,15 +249,34 @@ def start_work_order(
 def finish_work_order(
     *,
     work_order_id,
-    quantity,
+    quantity=None,
     actor: str,
+    finished_items: list[dict] | None = None,
+    wasted_items: list[dict] | None = None,
 ) -> tuple[str, Decimal]:
-    """Finish an existing WorkOrder with the actual produced quantity."""
+    """Finish an existing WorkOrder — escalar ou particionado (ADR-017).
+
+    O escalar (``quantity``) continua válido e grava uma linha sem grau. Com
+    ``finished_items``, cada grupo vira uma linha de OUTPUT carregando
+    ``quality_grade_ref``/``quality_defect_ref``/``batch_ref`` — a fornada de
+    40 que produz 32+8+3 em vez de "38". ``wasted_items`` leva as unidades
+    vetadas com o defeito que as vetou.
+    """
     from shopman.craftsman.models import WorkOrder
     from shopman.craftsman.services.execution import CraftExecution
 
-    qty = _positive_decimal(quantity, error="Quantidade concluída inválida.")
     work_order = WorkOrder.objects.get(pk=work_order_id)
+    if finished_items:
+        CraftExecution.finish(
+            order=work_order,
+            finished=finished_items,
+            wasted=wasted_items or None,
+            actor=actor,
+        )
+        total = sum(Decimal(str(item["quantity"])) for item in finished_items)
+        return work_order.ref, total
+
+    qty = _positive_decimal(quantity, error="Quantidade concluída inválida.")
     CraftExecution.finish(order=work_order, finished=qty, actor=actor)
     return work_order.ref, qty
 

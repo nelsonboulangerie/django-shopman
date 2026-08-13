@@ -373,12 +373,25 @@ export interface RecipeWasteRow {
   capacity_utilization: string;
 }
 
+/** Partição de qualidade agregada por receita × grau × defeito (ADR-017). */
+export interface QualityReportRow {
+  recipe_ref: string;
+  recipe_name: string;
+  grade_ref: string;
+  grade_label: string;
+  defect_ref: string;
+  defect_label: string;
+  quantity: string;
+  share: string;
+}
+
 /** Top-level read model for production reports. */
 export interface ProductionReportsProjection {
   filters: ProductionReportFilters;
   history_rows: WorkOrderReportRow[];
   operator_rows: OperatorProductivityRow[];
   waste_rows: RecipeWasteRow[];
+  quality_rows: QualityReportRow[];
   available_recipes: RecipeOptionProjection[];
   available_positions: PositionOptionProjection[];
 }

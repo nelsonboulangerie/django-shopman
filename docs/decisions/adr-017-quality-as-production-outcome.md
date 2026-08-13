@@ -1,9 +1,21 @@
 # ADR-017 - Qualidade e o resultado da producao: nao e dominio novo
 
-**Status:** Proposto
+**Status:** Aceito — implementado (passos 1–8) em 2026-08-13
 **Data:** 2026-08-07
-**Escopo:** `craftsman` core, `craftsman.contrib.stockman`, `shopman/shop` (politica), `stockman` (nenhuma mudanca)
+**Escopo:** `craftsman` core, `craftsman.contrib.stockman`, `shopman/shop` (politica), `stockman` (duas colunas em `Batch` — ver correção abaixo)
 **Supersede parcialmente:** o §6.2 e o §9 de `docs/plans/QC-FORNADA.md`, que recomendavam uma FK `WorkOrder -> Batch`
+
+> ⚠️ **Correção de premissa (2026-08-13, na implementação):** o "Primeiro fato"
+> abaixo afirma que a Onda 14 (`ea429d14`) entregou `Batch.nonconformity_reason`
+> + `nonconformity_percent` com preço/destino/visibilidade amarrados. **Esse
+> commit nunca chegou a este repositório** — como o POS-ALPHA-REMEDIATION-PLAN,
+> viveu numa worktree/chat e se perdeu (`git log --all` não o encontra; nenhum
+> grep de `nonconformity`/`percent_for_lot`/`sells_nonconforming` retornava
+> nada). Consequência: o §4 "stockman não muda" caiu — a implementação criou as
+> duas colunas em `Batch` (stockman `0002`), porque o lote É o dono do fato e
+> escondê-lo em JSON violaria a constituição §2.5. Os consumidores da Onda 14
+> (preço por lote na venda, write-off no fechamento, gate `sells_nonconforming`)
+> seguem por construir — são a frente da aposentadoria do D-1.
 
 ---
 

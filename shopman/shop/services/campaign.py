@@ -197,8 +197,20 @@ def matches_filter(rule: Campaign, context: dict) -> bool:
         return False
 
     quality_min = rule_filter.get("quality_min")
-    if quality_min and not _quality_at_least(context.get("quality"), quality_min):
-        return False
+    if quality_min:
+        partition = context.get("output_partition")
+        if partition:
+            # Fornada ótima COM unidades fora dispara — com piso (ADR-017 §6):
+            # share = unidades em grau >= quality_min ÷ PREVISTO, limitado a
+            # 100. O previsto é o denominador de propósito, para a perda pesar.
+            # Ausente = 100 (fornada limpa): o default falha para o lado
+            # seguro; afrouxar é decisão consciente do marketing.
+            min_share = rule_filter.get("quality_min_share")
+            required = int(min_share) if min_share is not None else 100
+            if _quality_share(partition, quality_min, context.get("planned_qty")) < required:
+                return False
+        elif not _quality_at_least(context.get("quality"), quality_min):
+            return False
 
     max_remaining = rule_filter.get("max_remaining")
     if max_remaining is not None:
@@ -209,6 +221,45 @@ def matches_filter(rule: Campaign, context: dict) -> bool:
             return False
 
     return True
+
+
+def _quality_share(partition, minimum, planned_qty) -> int:
+    """Percentual (0–100) de unidades em grau >= ``minimum`` sobre o PREVISTO.
+
+    Perda pesa: 32 ótimas numa fornada prevista de 40 são 80%, não 100%.
+    Refs desconhecidas contam como abaixo do mínimo (fail-safe). Sem previsto
+    utilizável, cai no total produzido como denominador.
+    """
+    from decimal import Decimal, InvalidOperation
+
+    from shopman.shop.models import QualityGrade
+
+    ranks = dict(QualityGrade.objects.values_list("ref", "rank"))
+    min_rank = ranks.get(str(minimum))
+    if min_rank is None:
+        return 0
+
+    good = Decimal("0")
+    produced = Decimal("0")
+    for group in partition:
+        try:
+            qty = Decimal(str(group.get("quantity") or "0"))
+        except InvalidOperation:
+            continue
+        produced += qty
+        rank = ranks.get(str(group.get("grade_ref") or ""))
+        if rank is not None and rank >= min_rank:
+            good += qty
+
+    try:
+        denominator = Decimal(str(planned_qty or "0"))
+    except InvalidOperation:
+        denominator = Decimal("0")
+    if denominator <= 0:
+        denominator = produced
+    if denominator <= 0:
+        return 0
+    return min(100, int(good * 100 / denominator))
 
 
 def _quality_at_least(quality, minimum) -> bool:

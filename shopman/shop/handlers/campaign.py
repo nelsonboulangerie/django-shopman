@@ -51,17 +51,26 @@ def connect() -> None:
 
 
 def on_production_changed(sender, product_ref, date, action, work_order, **kwargs) -> None:
-    """Fornada concluída → avalia as regras de ``production_finished``."""
+    """Fornada concluída → avalia as regras de ``production_finished``.
+
+    A qualidade é DERIVADA das linhas de OUTPUT (ADR-017 §3 — não existe mais
+    ``meta["quality"]``). O contexto leva a partição inteira: ``quality`` é o
+    grau dominante (rótulo/log), mas o gate ``quality_min`` usa
+    ``output_partition`` + ``planned_qty`` — o dominante esconderia 8 unidades
+    mínimas atrás de 32 ótimas. Roda em ``on_commit``, DEPOIS das linhas
+    gravadas, então dá para lê-las daqui.
+    """
     if action != "finished" or not product_ref:
         return
 
-    meta = getattr(work_order, "meta", None) or {}
+    from shopman.shop.services import quality as quality_service
+
     context = {
         "sku": product_ref,
         "trigger": "production_finished",
-        # O snapshot carrega uma ref CONCRETA: fornada sem classificação cai no
-        # grau padrão do catálogo (era o literal "bom" — ADR-017).
-        "quality": meta.get("quality") or _default_grade_ref(),
+        "quality": quality_service.derived_quality(work_order),
+        "output_partition": quality_service.output_partition(work_order),
+        "planned_qty": str(getattr(work_order, "quantity", "") or ""),
         "quantity": str(getattr(work_order, "finished", "") or ""),
         "work_order_ref": getattr(work_order, "ref", ""),
         "finished_at": _iso(getattr(work_order, "finished_at", None)),
@@ -116,18 +125,6 @@ def on_product_created(sender, instance=None, sku=None, **kwargs) -> None:
 
 
 # ── Helpers ──────────────────────────────────────────────────────────
-
-
-def _default_grade_ref() -> str:
-    """O grau padrão do catálogo; "standard" em banco sem o data seed."""
-    from shopman.shop.models import QualityGrade
-
-    try:
-        ref = QualityGrade.objects.filter(is_default=True).values_list("ref", flat=True).first()
-        return ref or "standard"
-    except Exception:
-        logger.debug("campaign.quality_default_lookup_failed", exc_info=True)
-        return "standard"
 
 
 def _evaluate_later(trigger: str, context: dict) -> None:

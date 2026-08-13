@@ -281,6 +281,22 @@ class CraftExecution:
                 "finished", "status", "finished_at", "started_at", "updated_at",
             ])
 
+            # O ledger imutável carrega a partição (ADR-017 §7): o fato de que a
+            # fornada saiu em grupos não pode viver só em linhas mutáveis por
+            # admin — o evento é a testemunha. O core grava o que recebeu, opaco.
+            partition_payload = [
+                {
+                    "item_ref": item.item_ref,
+                    "quantity": str(item.quantity),
+                    "quality_grade_ref": item.quality_grade_ref,
+                    "quality_defect_ref": item.quality_defect_ref,
+                    "batch_ref": item.batch_ref,
+                }
+                for item in all_items
+                if item.kind in (WorkOrderItem.Kind.OUTPUT, WorkOrderItem.Kind.WASTE)
+                and (item.quality_grade_ref or item.quality_defect_ref or item.batch_ref)
+            ]
+
             next_seq = _next_seq(order)
             WorkOrderEvent.objects.create(
                 work_order=order,
@@ -296,6 +312,7 @@ class CraftExecution:
                     "source_ref": order.source_ref,
                     "position_ref": order.position_ref,
                     "operator_ref": order.operator_ref,
+                    **({"partition": partition_payload} if partition_payload else {}),
                 },
                 actor=actor or "",
                 idempotency_key=idempotency_key,

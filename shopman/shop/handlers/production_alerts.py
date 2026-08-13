@@ -221,6 +221,38 @@ def check_forgotten_planned_orders(*, today=None) -> int:
     return created
 
 
+def create_batch_traceability_alert(*, work_order_ref: str, output_sku: str, error: str) -> None:
+    """Alerta quando a fornada fechou mas os LOTES não foram gravados.
+
+    Era um WARNING de log (best-effort); com a partição (ADR-017) a falha
+    silenciosa ficou mais cara — N lotes carregam desconto e validade, e lote
+    não gravado é preço cheio indevido e rastreabilidade perdida. O finish não
+    desfaz (a fornada FOI produzida); o operador precisa saber e regravar.
+    """
+    if _recent_exists("production_batch_traceability", work_order_ref):
+        return
+    message = (
+        f"Produção {work_order_ref} ({output_sku}) concluiu mas os lotes não foram "
+        f"gravados: {error}"
+    )
+    alert_adapter.create(
+        "production_batch_traceability",
+        "error",
+        message,
+        order_ref=work_order_ref,
+    )
+    _notify_operator(
+        "production_batch_traceability",
+        severity="error",
+        context={
+            "message": message,
+            "work_order_ref": work_order_ref,
+            "output_sku": output_sku,
+            "error": error,
+        },
+    )
+
+
 def create_stock_short_alert(*, work_order_ref: str, output_sku: str, error: str) -> None:
     """Create an alert for a failed finish caused by stock/inventory shortage."""
     if _recent_exists("production_stock_short", work_order_ref):

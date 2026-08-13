@@ -9,7 +9,7 @@ evento operacional em conteúdo.
 - ``Announcement``  — o registro de um announcement gerado (pendente → publicado)
 
 O operador de produção não publica: ele marca a qualidade da fornada
-(``WorkOrder.meta["quality"]``) e o gestor decide. Separação de papéis
+(derivada das linhas de OUTPUT — ADR-017) e o gestor decide. Separação de papéis
 deliberada (FOMO-MARKETING-SPECS §8).
 """
 

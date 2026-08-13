@@ -5199,7 +5199,9 @@ class Command(BaseCommand):
             name="Fornada pronta",
             defaults={
                 "trigger": Trigger.PRODUCTION_FINISHED,
-                "trigger_filter": {"quality_min": "standard"},
+                # Piso de 90%: fornada boa COM até 10% de unidades fora ainda
+                # dispara — perda pesa no denominador (previsto). ADR-017 §6.
+                "trigger_filter": {"quality_min": "standard", "quality_min_share": 90},
                 "template": fornada,
                 "platforms": ["instagram", "whatsapp"],
                 # Quem favoritou e quem pediu para ser avisado: a audiência mais quente

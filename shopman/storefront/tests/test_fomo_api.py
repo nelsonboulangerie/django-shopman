@@ -97,7 +97,15 @@ class TestFomoContext:
 
     def test_recent_bake_enters_the_context(self):
         finished = timezone.now() - timedelta(minutes=5)
-        with patch("shopman.craftsman.models.WorkOrder.objects") as manager:
+        with (
+            patch("shopman.craftsman.models.WorkOrder.objects") as manager,
+            # A qualidade é DERIVADA das linhas de OUTPUT (ADR-017) — o dublê
+            # não tem linhas, então a derivação entra dublada também.
+            patch(
+                "shopman.shop.services.quality.derived_quality",
+                return_value="excellent",
+            ),
+        ):
             manager.filter.return_value.order_by.return_value.first.return_value = _FakeWorkOrder(
                 finished
             )
@@ -129,7 +137,7 @@ class _FakeWorkOrder:
 
     def __init__(self, finished_at):
         self.finished_at = finished_at
-        self.meta = {"quality": "excellent"}
+        self.meta = {}  # meta["quality"] morreu (ADR-017); a derivação é dublada no teste
 
 
 # ── Push SSE ─────────────────────────────────────────────────────────
