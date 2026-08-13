@@ -44,6 +44,10 @@ class PosDrawerAgentView(UnfoldModelAdminViewMixin, TemplateView):
         context["agent_install"] = build_agent_install(
             terminal,
             download_url=reverse("admin_console_pos_drawer_agent_download", args=[terminal.ref]),
+            # O SO é do COMPUTADOR, não do terminal: a mesma loja pode instalar
+            # no caixa Windows hoje e no Linux depois. Por isso vive na URL, e
+            # não vira mais um campo na config do terminal.
+            os_key=self.request.GET.get("so", ""),
         )
         context["terminal_change_url"] = reverse(
             "admin:backstage_posterminal_change", args=[terminal.pk]

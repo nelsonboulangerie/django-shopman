@@ -139,7 +139,18 @@ class AgentConfig:
         return (origin or "").rstrip("/") in self.allowed_origins
 
 
-# ── CUPS ──────────────────────────────────────────────────────────────────
+# ── Spooler ───────────────────────────────────────────────────────────────
+#
+# Duas implementações, não três. Linux e macOS falam CUPS e usam o MESMO
+# comando; só o Windows tem spooler próprio.
+#
+# ⚠️ O macOS quase ficou de fora por um erro de leitura meu: `lpadmin -m raw`
+# responde "Filas brutas não são mais compatíveis com o macOS", e eu li isso
+# como "não dá para mandar bytes crus". O que a Apple removeu foi o **driver**
+# raw; a **opção de job** `-o raw` continua existindo, e numa fila sem driver
+# ela entrega os bytes intactos. Medido: `1b 70 00 19 fa` chegou inteiro.
+
+IS_WINDOWS = os.name == "nt"
 
 
 class SpoolerError(RuntimeError):
@@ -147,7 +158,14 @@ class SpoolerError(RuntimeError):
 
 
 def send_raw(payload: bytes, *, queue: str, title: str = "cash-drawer") -> str:
-    """Entrega bytes crus à fila e devolve o id do job.
+    """Entrega bytes crus à fila e devolve o id do job."""
+    if IS_WINDOWS:
+        return _send_raw_windows(payload, queue=queue, title=title)
+    return _send_raw_cups(payload, queue=queue, title=title)
+
+
+def _send_raw_cups(payload: bytes, *, queue: str, title: str) -> str:
+    """Linux e macOS.
 
     ``-o raw`` é o ponto todo: sem ele o CUPS tenta *interpretar* o conteúdo e
     o filtro de texto transforma os cinco bytes em cinco bytes impressos.
@@ -170,6 +188,62 @@ def send_raw(payload: bytes, *, queue: str, title: str = "cash-drawer") -> str:
     return _job_id(completed.stdout)
 
 
+def _send_raw_windows(payload: bytes, *, queue: str, title: str) -> str:
+    """Windows, pelo spooler do sistema (winspool), via ctypes.
+
+    O datatype ``RAW`` é o equivalente do ``-o raw`` do CUPS: diz ao spooler
+    para entregar os bytes ao aparelho sem passar pelo driver de impressão.
+    ctypes em vez de pywin32 porque o agente não tem dependências — o balcão
+    não é lugar de `pip install` às 6h da manhã.
+    """
+    import ctypes
+    from ctypes import wintypes
+
+    winspool = ctypes.WinDLL("winspool.drv", use_last_error=True)
+
+    class DOC_INFO_1(ctypes.Structure):
+        _fields_ = [
+            ("pDocName", wintypes.LPWSTR),
+            ("pOutputFile", wintypes.LPWSTR),
+            ("pDatatype", wintypes.LPWSTR),
+        ]
+
+    winspool.OpenPrinterW.argtypes = [wintypes.LPWSTR, ctypes.POINTER(wintypes.HANDLE), ctypes.c_void_p]
+    winspool.StartDocPrinterW.argtypes = [wintypes.HANDLE, wintypes.DWORD, ctypes.POINTER(DOC_INFO_1)]
+    winspool.WritePrinter.argtypes = [
+        wintypes.HANDLE, ctypes.c_void_p, wintypes.DWORD, ctypes.POINTER(wintypes.DWORD)
+    ]
+
+    def _fail(step: str) -> SpoolerError:
+        return SpoolerError(f"{step} falhou (erro {ctypes.get_last_error()}) na fila '{queue}'")
+
+    handle = wintypes.HANDLE()
+    if not winspool.OpenPrinterW(queue, ctypes.byref(handle), None):
+        raise _fail("abrir a impressora")
+    try:
+        job = winspool.StartDocPrinterW(handle, 1, ctypes.byref(DOC_INFO_1(title, None, "RAW")))
+        if not job:
+            raise _fail("iniciar o trabalho")
+        try:
+            if not winspool.StartPagePrinter(handle):
+                raise _fail("iniciar a página")
+            written = wintypes.DWORD(0)
+            # Comprimento explícito: `create_string_buffer(payload)` sozinho
+            # acrescenta um NUL no fim, e um sexto byte indo para a impressora
+            # não é o que o manual manda.
+            buffer = ctypes.create_string_buffer(payload, len(payload))
+            if not winspool.WritePrinter(handle, buffer, len(payload), ctypes.byref(written)):
+                raise _fail("escrever na impressora")
+            if written.value != len(payload):
+                raise SpoolerError(f"spooler aceitou {written.value} de {len(payload)} bytes")
+            winspool.EndPagePrinter(handle)
+        finally:
+            winspool.EndDocPrinter(handle)
+    finally:
+        winspool.ClosePrinter(handle)
+    return str(job)
+
+
 def _job_id(stdout: bytes) -> str:
     # "request id is FILA-42 (1 file(s))" — nunca deixe a falta do id derrubar
     # um kick que já saiu.
@@ -181,13 +255,32 @@ def _job_id(stdout: bytes) -> str:
 
 
 def probe_queue(queue: str) -> dict:
-    """Pergunta ao CUPS se a fila existe e aceita trabalho.
+    """A fila existe e aceita trabalho?
 
-    Isto é o quanto dá para saber sem aparelho na mão: a fila está de pé. Se a
-    gaveta está plugada no RJ11 da impressora, ou se abriu, esta sonda **não**
-    sabe — a resposta viria pelo canal bidirecional, que um job de spool não
-    tem. Quem confirma é o olho do operador no teste de gaveta.
+    Isto é o quanto dá para saber sem aparelho na mão. Se a gaveta está plugada
+    no RJ11 da impressora, ou se abriu, esta sonda **não** sabe — a resposta
+    viria pelo canal bidirecional, que um job de spool não tem. Quem confirma é
+    o olho do operador no teste de gaveta.
     """
+    if IS_WINDOWS:
+        return _probe_queue_windows(queue)
+    return _probe_queue_cups(queue)
+
+
+def _probe_queue_windows(queue: str) -> dict:
+    import ctypes
+    from ctypes import wintypes
+
+    winspool = ctypes.WinDLL("winspool.drv", use_last_error=True)
+    winspool.OpenPrinterW.argtypes = [wintypes.LPWSTR, ctypes.POINTER(wintypes.HANDLE), ctypes.c_void_p]
+    handle = wintypes.HANDLE()
+    if not winspool.OpenPrinterW(queue, ctypes.byref(handle), None):
+        return {"ok": False, "accepting": False, "reason": f"impressora '{queue}' não encontrada no Windows"}
+    winspool.ClosePrinter(handle)
+    return {"ok": True, "accepting": True, "reason": ""}
+
+
+def _probe_queue_cups(queue: str) -> dict:
     lpstat = shutil.which("lpstat")
     if not lpstat:
         return {"ok": False, "accepting": False, "reason": "comando 'lpstat' não encontrado"}
@@ -354,9 +447,20 @@ def serve(config: AgentConfig) -> None:
 # editor. Dois arquivos que precisam chegar juntos são uma chance a mais de
 # chegar só um.
 
-INSTALL_DIR = Path.home() / ".local" / "share" / "nelson-pos-drawer"
+IS_MACOS = sys.platform == "darwin"
+
+#: No Windows `~/.local/share` seria um caminho estranho no meio do perfil do
+#: usuário; `%LOCALAPPDATA%` é onde o sistema espera um programa de usuário.
+INSTALL_DIR = (
+    Path(os.environ.get("LOCALAPPDATA", Path.home() / "AppData" / "Local")) / "NelsonPosDrawer"
+    if IS_WINDOWS
+    else Path.home() / ".local" / "share" / "nelson-pos-drawer"
+)
 UNIT_PATH = Path.home() / ".config" / "systemd" / "user" / "nelson-pos-drawer.service"
 SERVICE_NAME = "nelson-pos-drawer.service"
+LAUNCH_AGENT_LABEL = "com.nelson.pos-drawer"
+LAUNCH_AGENT_PATH = Path.home() / "Library" / "LaunchAgents" / f"{LAUNCH_AGENT_LABEL}.plist"
+WINDOWS_TASK_NAME = "NelsonPosDrawer"
 
 # Não existe default de origem, de propósito. A primeira versão cravava um
 # domínio aqui e ele estava ERRADO — inventado, sem corresponder a nada no
@@ -382,7 +486,45 @@ WantedBy=default.target
 """
 
 
-def _cups_queues() -> list[str]:
+#: Onde o agente escreve quando não há journald para capturá-lo. Cada abertura
+#: de gaveta vira uma linha aqui — é a verdade física do balcão, e sem isto o
+#: macOS (launchd) e o Windows (`pythonw`, sem console) engoliriam tudo.
+LOG_PATH = INSTALL_DIR / "drawer-agent.log"
+
+
+def _plist_text(exec_path: Path) -> str:
+    """LaunchAgent do macOS — o equivalente da unit do systemd.
+
+    `KeepAlive` faz o papel do `Restart=always`: o balcão abre cedo e ninguém
+    vai conferir se o agente continua de pé.
+    """
+    return f"""<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key><string>{LAUNCH_AGENT_LABEL}</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/usr/bin/python3</string>
+    <string>{exec_path}</string>
+    <string>--log-file</string>
+    <string>{LOG_PATH}</string>
+  </array>
+  <key>RunAtLoad</key><true/>
+  <key>KeepAlive</key><true/>
+</dict>
+</plist>
+"""
+
+
+def list_queues() -> list[str]:
+    """Nomes de fila que este sistema conhece."""
+    if IS_WINDOWS:
+        return _list_queues_windows()
+    return _list_queues_cups()
+
+
+def _list_queues_cups() -> list[str]:
     lpstat = shutil.which("lpstat")
     if not lpstat:
         return []
@@ -392,6 +534,39 @@ def _cups_queues() -> list[str]:
         return []
     text = (completed.stdout or b"").decode("utf-8", "replace")
     return [line.split()[0] for line in text.splitlines() if line.strip()]
+
+
+def _list_queues_windows() -> list[str]:
+    """Impressoras instaladas, pelo mesmo winspool que manda o kick.
+
+    Padrão de duas chamadas do EnumPrinters: a primeira só diz de quanta
+    memória ele precisa, a segunda preenche.
+    """
+    import ctypes
+    from ctypes import wintypes
+
+    winspool = ctypes.WinDLL("winspool.drv", use_last_error=True)
+
+    class PRINTER_INFO_4(ctypes.Structure):
+        _fields_ = [
+            ("pPrinterName", wintypes.LPWSTR),
+            ("pServerName", wintypes.LPWSTR),
+            ("Attributes", wintypes.DWORD),
+        ]
+
+    flags = 0x00000002 | 0x00000004  # LOCAL | CONNECTIONS
+    needed = wintypes.DWORD(0)
+    returned = wintypes.DWORD(0)
+    winspool.EnumPrintersW(flags, None, 4, None, 0, ctypes.byref(needed), ctypes.byref(returned))
+    if not needed.value:
+        return []
+    buffer = ctypes.create_string_buffer(needed.value)
+    if not winspool.EnumPrintersW(
+        flags, None, 4, buffer, needed.value, ctypes.byref(needed), ctypes.byref(returned)
+    ):
+        return []
+    entries = ctypes.cast(buffer, ctypes.POINTER(PRINTER_INFO_4))
+    return [entries[i].pPrinterName for i in range(returned.value) if entries[i].pPrinterName]
 
 
 def write_config(path: Path, *, queue: str, origin: str, token: str = "") -> tuple[dict, bool]:
@@ -436,23 +611,82 @@ def _arg_value(argv: list[str], flag: str) -> str:
     return argv[argv.index(flag) + 1] if flag in argv and len(argv) > argv.index(flag) + 1 else ""
 
 
+def _autostart_linux(target: Path) -> None:
+    if not shutil.which("systemctl"):
+        print(f"aviso: sem systemctl. Suba na mão: python3 {target}")
+        return
+    UNIT_PATH.parent.mkdir(parents=True, exist_ok=True)
+    UNIT_PATH.write_text(_unit_text(target), encoding="utf-8")
+    subprocess.run(["systemctl", "--user", "daemon-reload"], check=False)
+    subprocess.run(["systemctl", "--user", "enable", "--now", SERVICE_NAME], check=False)
+    # Sem linger o agente só existe enquanto alguém estiver logado na sessão
+    # gráfica — e morre no logout, que é exatamente quando ninguém percebe.
+    user = os.environ.get("USER", "")
+    linger = subprocess.run(["loginctl", "enable-linger", user], capture_output=True, check=False)
+    if linger.returncode != 0:
+        print(f"aviso: rode 'sudo loginctl enable-linger {user}'.")
+
+
+def _autostart_macos(target: Path) -> None:
+    LAUNCH_AGENT_PATH.parent.mkdir(parents=True, exist_ok=True)
+    LAUNCH_AGENT_PATH.write_text(_plist_text(target), encoding="utf-8")
+    # `bootout` antes de `bootstrap`: recarregar por cima de um agente já
+    # registrado é erro, e reinstalar tem que ser idempotente.
+    domain = f"gui/{os.getuid()}"
+    subprocess.run(["launchctl", "bootout", f"{domain}/{LAUNCH_AGENT_LABEL}"], capture_output=True, check=False)
+    loaded = subprocess.run(
+        ["launchctl", "bootstrap", domain, str(LAUNCH_AGENT_PATH)], capture_output=True, check=False
+    )
+    if loaded.returncode != 0:
+        # `bootstrap` é do launchd moderno; em macOS antigo só existe `load`.
+        subprocess.run(["launchctl", "load", "-w", str(LAUNCH_AGENT_PATH)], capture_output=True, check=False)
+
+
+def _autostart_windows(target: Path) -> None:
+    """Tarefa agendada no logon.
+
+    `pythonw` em vez de `python` para o agente não abrir uma janela preta de
+    console no balcão a cada boot. Sem privilégio de administrador: a tarefa é
+    do usuário que está instalando.
+    """
+    pythonw = Path(sys.executable).with_name("pythonw.exe")
+    runner = pythonw if pythonw.exists() else Path(sys.executable)
+    created = subprocess.run(
+        [
+            "schtasks", "/create", "/f",
+            "/tn", WINDOWS_TASK_NAME,
+            "/tr", f'"{runner}" "{target}" --log-file "{LOG_PATH}"',
+            "/sc", "onlogon",
+        ],
+        capture_output=True,
+        check=False,
+    )
+    if created.returncode != 0:
+        detail = (created.stdout or b"").decode("utf-8", "replace").strip()
+        print(f"aviso: não consegui agendar o início automático ({detail or 'schtasks falhou'}).")
+        print(f"       Suba na mão quando precisar: \"{runner}\" \"{target}\"")
+        return
+    subprocess.run(["schtasks", "/run", "/tn", WINDOWS_TASK_NAME], capture_output=True, check=False)
+
+
 def install(argv: list[str]) -> int:
-    if not shutil.which("lp"):
+    if not IS_WINDOWS and not shutil.which("lp"):
         print("erro: comando 'lp' não encontrado — instale o CUPS.", file=sys.stderr)
         return 1
 
+    rotulo = "impressoras instaladas" if IS_WINDOWS else "filas de impressão"
     queue = _arg_value(argv, "--queue")
+    queues = list_queues()
     if not queue:
-        queues = _cups_queues()
         if not queues:
-            print("erro: nenhuma fila CUPS encontrada. A impressora está instalada?", file=sys.stderr)
+            print(f"erro: nenhuma das {rotulo} encontrada. A impressora está instalada?", file=sys.stderr)
             return 1
-        print("Filas CUPS disponíveis:")
+        print(f"{rotulo.capitalize()}:")
         for name in queues:
             print(f"  - {name}")
-        queue = input("Nome da fila da impressora térmica: ").strip()
-    if queue not in _cups_queues():
-        print(f"erro: fila '{queue}' não existe no CUPS.", file=sys.stderr)
+        queue = input("Nome da impressora térmica: ").strip()
+    if queue not in queues:
+        print(f"erro: '{queue}' não está entre as {rotulo} deste computador.", file=sys.stderr)
         return 1
 
     INSTALL_DIR.mkdir(parents=True, exist_ok=True)
@@ -460,7 +694,8 @@ def install(argv: list[str]) -> int:
     source = Path(__file__).resolve()
     if source != target.resolve():
         shutil.copyfile(source, target)
-    target.chmod(0o755)
+    if not IS_WINDOWS:
+        target.chmod(0o755)
 
     token = _arg_value(argv, "--token")
     origin = _arg_value(argv, "--origin")
@@ -468,20 +703,12 @@ def install(argv: list[str]) -> int:
         DEFAULT_CONFIG_PATH, queue=queue, origin=origin, token=token
     )
 
-    if shutil.which("systemctl"):
-        UNIT_PATH.parent.mkdir(parents=True, exist_ok=True)
-        UNIT_PATH.write_text(_unit_text(target), encoding="utf-8")
-        subprocess.run(["systemctl", "--user", "daemon-reload"], check=False)
-        subprocess.run(["systemctl", "--user", "enable", "--now", SERVICE_NAME], check=False)
-        # Sem linger o agente só existe enquanto alguém estiver logado na sessão
-        # gráfica — e morre no logout, que é exatamente quando ninguém percebe.
-        linger = subprocess.run(
-            ["loginctl", "enable-linger", os.environ.get("USER", "")], capture_output=True, check=False
-        )
-        if linger.returncode != 0:
-            print(f"aviso: rode 'sudo loginctl enable-linger {os.environ.get('USER', '')}'.")
+    if IS_WINDOWS:
+        _autostart_windows(target)
+    elif IS_MACOS:
+        _autostart_macos(target)
     else:
-        print(f"aviso: sem systemctl. Suba na mão: python3 {target}")
+        _autostart_linux(target)
 
     print(f"\nAgente instalado em {target}")
     if not config.get("allowed_origins"):
@@ -501,15 +728,25 @@ def install(argv: list[str]) -> int:
         print("  └─────────────────────────────────────────────────────────────")
     else:
         print(f"Config já existia em {DEFAULT_CONFIG_PATH} — token e fila preservados.")
-    print(f"\nTeste sem navegador:\n  python3 {target} --kick")
+    runner = "python" if IS_WINDOWS else "python3"
+    print(f"\nTeste sem navegador:\n  {runner} \"{target}\" --kick")
     return 0
 
 
 def main(argv: list[str] | None = None) -> int:
     argv = list(sys.argv[1:] if argv is None else argv)
+    log_file = _arg_value(argv, "--log-file")
+    handlers = None
+    if log_file:
+        # No Linux o journald captura o stdout; no macOS (launchd) e no Windows
+        # (`pythonw`, sem console) ele iria para o nada. Um arquivo devolve a
+        # trilha física das aberturas nos três sistemas.
+        Path(log_file).parent.mkdir(parents=True, exist_ok=True)
+        handlers = [logging.FileHandler(log_file, encoding="utf-8")]
     logging.basicConfig(
         level=logging.DEBUG if "--verbose" in argv else logging.INFO,
         format="%(asctime)s %(levelname)s %(message)s",
+        handlers=handlers,
     )
     if "--install" in argv:
         return install(argv)

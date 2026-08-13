@@ -12,7 +12,7 @@ fila por onde o recibo já sai.
 
 Desenho e alternativas descartadas: [POS-CASH-DRAWER-PLAN](../../docs/plans/POS-CASH-DRAWER-PLAN.md).
 
-## Instalar (Linux, systemd --user)
+## Instalar (Linux oficial; Windows e macOS também)
 
 **Comece pelo Admin**, não por aqui: Terminais do PDV → o balcão → *Baixar o
 agente e ver como instalar*. Aquela tela entrega o arquivo e o comando **já
@@ -23,10 +23,23 @@ preenchido** com o token, a fila e a origem daquele terminal. Nada a transcrever
 
 ```bash
 python3 drawer_agent.py --install --token TOKEN-DO-ADMIN --origin https://pdv.boulangerie.com.br
+# no Windows, `python` no lugar de `python3`
 ```
 
-Ele lista as filas CUPS e pergunta qual é a da térmica (a fila já existe: é por
-ela que o recibo imprime hoje). Passe `--queue` para não ser perguntado.
+Ele lista as impressoras e pergunta qual é a da térmica (ela já existe: é por ela
+que o recibo imprime hoje). Passe `--queue` para não ser perguntado.
+
+| | envio dos bytes | início automático | registro |
+|---|---|---|---|
+| **Linux** (oficial) | `lp -o raw` | systemd `--user` + linger | journald |
+| **macOS** | `lp -o raw`, idêntico | LaunchAgent | arquivo em `~/.local/share/nelson-pos-drawer/` |
+| **Windows** | winspool (`ctypes`, datatype `RAW`) | tarefa no logon | arquivo em `%LOCALAPPDATA%\NelsonPosDrawer\` |
+
+⚠️ O **Windows não traz Python de fábrica** — instale pela Microsoft Store se o
+comando não for reconhecido. Linux e macOS já vêm com ele.
+
+⚠️ O caminho Windows **não foi executado em Windows nenhum** aqui; os testes
+travam o despacho e o contrato, o resto o balcão confirma.
 
 **Sem `--token`** ele gera um e imprime na tela para você colar no Admin. É o
 caminho de emergência, para quem estiver no balcão sem acesso ao Admin — o

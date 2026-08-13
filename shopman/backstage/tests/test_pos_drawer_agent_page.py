@@ -179,3 +179,91 @@ def test_a_config_do_terminal_linka_para_a_tela(client, manager):
 
     assert response.status_code == 200
     assert reverse("admin_console_pos_drawer_agent", args=[terminal.ref]) in response.content.decode()
+
+
+# ── Seletor de sistema operacional ────────────────────────────────────────
+#
+# Linux é o oficial. Windows existe porque o caixa ainda roda Windows e a troca
+# não pode ser feita com a loja aberta; macOS existe para o dono testar.
+
+
+@pytest.mark.parametrize("os_key,esperado", [("linux", "python3"), ("macos", "python3"), ("windows", "python ")])
+def test_o_comando_usa_o_interpretador_do_sistema(os_key, esperado):
+    guide = build_agent_install(_terminal(AGENT), download_url="/baixar/", os_key=os_key)
+    install = next(s for s in guide.steps if "--install" in s.command)
+    assert install.command.startswith(esperado)
+    assert AGENT["token"] in install.command
+
+
+def test_o_token_e_o_mesmo_em_qualquer_sistema():
+    """O par vive no Admin; o SO só muda como se digita, não o segredo."""
+    terminal = _terminal(AGENT)
+    tokens = {
+        next(s for s in build_agent_install(terminal, download_url="/x/", os_key=k).steps
+             if "--install" in s.command).command.split("--token ")[1].split()[0]
+        for k in ("linux", "windows", "macos")
+    }
+    assert tokens == {AGENT["token"]}
+
+
+@pytest.mark.parametrize("os_key,marca", [
+    ("linux", "journalctl"),
+    ("macos", "drawer-agent.log"),
+    ("windows", "LOCALAPPDATA"),
+])
+def test_cada_sistema_diz_onde_ver_o_registro(os_key, marca):
+    """Prometo na tela que 'o agente registra cada abertura' — em todos eles."""
+    guide = build_agent_install(_terminal(AGENT), download_url="/x/", os_key=os_key)
+    assert any(marca in s.command for s in guide.steps)
+
+
+def test_so_desconhecido_cai_no_oficial():
+    """`?so=haiku` não pode virar uma tela sem passos."""
+    guide = build_agent_install(_terminal(AGENT), download_url="/x/", os_key="haiku")
+    assert guide.os_key == "linux"
+    assert guide.steps
+
+
+def test_o_padrao_e_linux_e_ele_nao_tem_ressalva():
+    guide = build_agent_install(_terminal(AGENT), download_url="/x/")
+    assert guide.os_key == "linux"
+    assert guide.os_caveat == ""
+
+
+def test_windows_e_macos_dizem_que_nao_sao_o_oficial():
+    terminal = _terminal(AGENT)
+    for key in ("windows", "macos"):
+        guide = build_agent_install(terminal, download_url="/x/", os_key=key)
+        assert guide.os_caveat, key
+        assert "Linux" in guide.os_caveat
+
+
+def test_o_windows_avisa_que_pode_faltar_python():
+    """Linux e macOS já trazem; o Windows não, e descobrir isso no balcão custa caro."""
+    guide = build_agent_install(_terminal(AGENT), download_url="/x/", os_key="windows")
+    assert any("Microsoft Store" in s.detail for s in guide.steps)
+
+
+def test_a_tela_oferece_os_tres_sistemas(client, manager):
+    terminal = _terminal(AGENT)
+    response = client.get(reverse("admin_console_pos_drawer_agent", args=[terminal.ref]) + "?so=windows")
+
+    assert response.status_code == 200
+    body = response.content.decode()
+    for rotulo in ("Linux", "Windows", "macOS"):
+        assert rotulo in body
+    assert "?so=linux" in body and "?so=macos" in body
+
+
+def test_a_tela_nao_vaza_comentario_de_template(client, manager):
+    """`{# … #}` do Django é de UMA linha; em várias ele VIRA TEXTO na tela.
+
+    Aconteceu: um comentário meu sobre a fonte apareceu para o usuário, entre o
+    passo e o comando. Teste de conteúdo por palavra-chave não pega isso —
+    quem pegou foi olhar a tela.
+    """
+    terminal = _terminal(AGENT)
+    body = client.get(reverse("admin_console_pos_drawer_agent", args=[terminal.ref])).content.decode()
+
+    assert "U+002D" not in body
+    assert "{#" not in body and "#}" not in body
