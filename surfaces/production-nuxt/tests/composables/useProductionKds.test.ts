@@ -67,12 +67,12 @@ describe("useProductionKds — per-WO writes", () => {
     );
 
     // Classificação da fornada segue junto no finish; vazio deixa o backend
-    // aplicar o default ("bom"), então o operador nunca fica travado.
-    await finish(8, "12", false, "excelente");
+    // aplicar o grau padrão do catálogo, então o operador nunca fica travado.
+    await finish(8, "12", false, "excellent");
     expect(env.fetchMock).toHaveBeenCalledWith(
       "/api/v1/backstage/production/8/finish/",
       expect.objectContaining({
-        body: { quantity: "12", force: false, quality: "excelente" },
+        body: { quantity: "12", force: false, quality: "excellent" },
       }),
     );
 
