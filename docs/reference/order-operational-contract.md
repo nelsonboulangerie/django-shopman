@@ -52,7 +52,7 @@ insegura.
 - Só pode mover `new -> confirmed`.
 - Exige pagamento capturado quando o pagamento for digital e upfront.
 - Exige disponibilidade aprovada quando o canal não for externo.
-- A partir de `confirmed`, avanço segue o mapa canônico de `Order`.
+- A partir de `accepted`, avanço segue o mapa canônico de `Order`.
 
 ### Auto-confirm
 

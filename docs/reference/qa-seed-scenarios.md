@@ -36,12 +36,12 @@ pedidos, produção operacional, comandas, caixa, alertas.
 | Ref | Canal | Status | Pagamento | Data / dado-chave | Âncora do QA |
 |-----|-------|--------|-----------|-------------------|--------------|
 | `QA-PREORDER-01` | web | `new` | — | `is_preorder=True`, `delivery_date=localdate()+1`, slot `manha` | Encomenda nova aguardando confirmação |
-| `QA-PREORDER-02` | web | `confirmed` | — | idem (encomenda amanhã) | Encomenda já confirmada no board |
+| `QA-PREORDER-02` | web | `accepted` | — | idem (encomenda amanhã) | Encomenda já confirmada no board |
 | `QA-PAID-READY-01` | web | `ready` | PIX **captured** | pickup | Cancelamento tardio / estorno de pedido pago pronto |
 | `QA-PAID-READY-02` | web | `dispatched` | Cartão **captured** | delivery | Pago em rota, cancelamento tardio |
 | `QA-RETURNED-01` | web | `returned` | PIX **refunded** (capture + refund txn) | `return_reason` em `data`; alerta `order_returned` | Fluxo de devolução/estorno |
-| `QA-PIX-PENDING-01` | web | `confirmed` | PIX **pending** (`expires_at` futuro) | pickup | Pago × não-pago no card; timeout de pagamento |
-| `QA-IFOOD-01` | ifood | `confirmed` | external | `external_ref=IFOOD-QA-0001`, `handle_type=marketplace_order` | Fluxo de cancelamento marketplace |
+| `QA-PIX-PENDING-01` | web | `accepted` | PIX **pending** (`expires_at` futuro) | pickup | Pago × não-pago no card; timeout de pagamento |
+| `QA-IFOOD-01` | ifood | `accepted` | external | `external_ref=IFOOD-QA-0001`, `handle_type=marketplace_order` | Fluxo de cancelamento marketplace |
 | `QA-NOTES-01` | web | `preparing` | — | `order_notes` do cliente preenchido | Propagação da nota do cliente ao Gestor/KDS |
 | `QA-NAMED-ITEMS-01` | pdv | `preparing` | — | `OrderItem.name` preenchido explicitamente | Regressão do bug de SKU cru |
 | `QADH-<SKU>-<1..4>` | pdv | `completed` | (via `_seed_payments`) | 4 semanas atrás, mesmo dia-da-semana | Histórico de demanda p/ sugestão de produção (`craft.suggest`) |

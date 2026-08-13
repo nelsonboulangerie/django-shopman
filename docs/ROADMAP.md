@@ -1,13 +1,17 @@
 # ROADMAP — Django Shopman
 
-> Atualizado em 2026-07-11 (pós hardening pré-alpha, PRs #53–#69). Este documento é o
+> Atualizado em 2026-08-13 (faxina pré-alpha; antes: 2026-07-11, pós PRs #53–#69). Este documento é o
 > mapa executivo vivo. Estado factual fica em [`status.md`](status.md); planos
 > detalhados ficam em [`plans/README.md`](plans/README.md).
 
-## Estado Atual (factual, 2026-07-11)
+## Estado Atual (factual, 2026-08-13)
 
-- **Headless completo**: Django serve API JSON + projections; superfícies são 6 apps
+- **Headless completo**: Django serve API JSON + projections; superfícies são 7 apps
   Nuxt 4 SSR + layer `operator-kit` (ver [`status.md`](status.md)).
+- **Alpha destravado** (2026-08): checkout, cascata completa, SSE e virada do dia
+  exercitados de ponta a ponta no staging; PDV endurecido pelo teste de estresse;
+  gaveta e crachá construídos (falta QA físico). Ver
+  [`reports/alpha-readiness-2026-08-12.md`](reports/alpha-readiness-2026-08-12.md).
 - **11 core apps** pip-instaláveis, incluindo Buyman (compras, Fase 1) e Fiscalman
   (NFC-e, S0–S4).
 - **Suite ~6.500 testes** (~2.200 cores + ~4.250 framework + tools; medido 2026-08-13), CI com Runtime Gate

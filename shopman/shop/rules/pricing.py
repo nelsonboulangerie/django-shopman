@@ -40,9 +40,11 @@ class EmployeeRule(BaseRule):
     ninguém ver. No balcão isso não acontece porque alguém entrega na mão.
 
     Novo parâmetro entra com default: ``RuleConfig`` antigo (sem a chave no JSON)
-    continua instanciando. O caminho contrário é que quebra — parâmetro nos DADOS
-    que a classe não conhece levanta ``TypeError`` e o ``_safe_load`` engole como
-    WARNING, desligando a regra em silêncio (foi o que aconteceu em `da69c714`).
+    continua instanciando. O caminho contrário — chave nos DADOS que a classe não
+    conhece — era fatal (``TypeError`` engolido, regra desligada em silêncio; o
+    incidente `da69c714`). Desde a faxina de 2026-08-13 o ``load_rule`` descarta
+    a chave órfã com WARNING nomeado e a regra segue viva; o conserto correto do
+    rename continua sendo migração de dados (ver 0010).
     """
 
     code = "shop.employee_discount"

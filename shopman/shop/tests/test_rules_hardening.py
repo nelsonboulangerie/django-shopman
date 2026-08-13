@@ -236,12 +236,21 @@ class TestEmployeeRuleParamRename:
         assert rule.discount_percent == 20
 
     @pytest.mark.django_db
-    def test_the_obsolete_param_kills_the_rule_quietly(self):
-        """O comportamento que a migração existe para evitar, fixado como aviso.
+    def test_the_obsolete_param_no_longer_kills_the_rule(self):
+        """DECISÃO REVISADA (faxina 2026-08-13): chave órfã não desliga a regra.
 
-        Não é para "consertar" aceitando `group` — alias de compatibilidade é proibido aqui
-        (pré-go-live). É para deixar registrado que dado velho DESLIGA regra sem gritar, e
-        que por isso rename de parâmetro exige migração de dados.
+        A versão anterior deste teste fixava o contrário como decisão ("dado
+        velho DESLIGA regra sem gritar; rename exige migração de dados"). A
+        revisão não é alias de compatibilidade — `group` NÃO vira `price_tier`;
+        a chave órfã é DESCARTADA com WARNING nomeado e a regra carrega com o
+        que conhece. A migração de dados continua sendo o conserto correto do
+        rename (0010 existe e segue testada abaixo).
+
+        O que mudou de entendimento: regra morta por typo não é só desconto
+        sumido — regras VALIDATOR morrem do mesmo jeito, e um guarda de horário
+        comercial apagado em silêncio é a loja aceitando pedido de madrugada. O
+        incidente `da69c714` provou que o "silêncio" dura semanas. Guarda não
+        pode evaporar por causa de uma chave órfã.
         """
         from shopman.shop.models import RuleConfig
         from shopman.shop.rules.engine import _safe_load
@@ -253,7 +262,11 @@ class TestEmployeeRuleParamRename:
             params={"discount_percent": 20, "group": "staff"},
         )
 
-        assert _safe_load(config) is None  # silêncio: só um WARNING no log
+        rule = _safe_load(config)
+        assert rule is not None  # viva — com WARNING nomeando a chave órfã
+        assert rule.discount_percent == 20  # o parâmetro conhecido valeu
+        # `group` foi descartado, não traduzido: price_tier fica no default.
+        assert rule.price_tier == type(rule)().price_tier
 
     @pytest.mark.django_db
     def test_the_migration_renames_the_key_in_stored_params(self):

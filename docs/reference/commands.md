@@ -212,7 +212,7 @@ python manage.py auth_cleanup --days 30
 **App:** `shopman.shop`
 **Arquivo:** `shopman/shop/management/commands/reconcile_payments.py`
 
-Reconcilia pedidos `new`/`confirmed` antigos com `PaymentIntent` quando o
+Reconcilia pedidos `new`/`accepted` antigos com `PaymentIntent` quando o
 webhook pode ter sido perdido. E idempotente e deve ser rodado primeiro em
 `--dry-run` durante incidente.
 

@@ -62,10 +62,10 @@ def _config_links() -> list[dict]:
             "icon": "storefront",
         },
         {
-            # TODO(PR #110): quando o catálogo de copy ganhar rota própria em
-            # /admin/configuracao/copy/, apontar este atalho para ela.
+            # A tela própria do catálogo (navegação chave↔tela, PR #110) — não a
+            # changelist crua do model.
             "label": "Catálogo de copy",
-            "url": reverse("admin:shop_omotenashicopy_changelist"),
+            "url": reverse("admin_console_copy_catalog"),
             "icon": "edit_note",
         },
         {

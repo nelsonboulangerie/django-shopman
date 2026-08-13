@@ -67,7 +67,7 @@ Tela: página inicial do Shopman com logo.
 Narração/legenda: "Shopman — commerce platform for food businesses."
 
 ### Cena 2 — Dashboard Broadcast (10s)
-Tela: broadcast-nuxt dashboard (sem branding Nelson visível, ou com branding genérico).
+Tela: marketing-nuxt dashboard (sem branding Nelson visível, ou com branding genérico).
 Mostrar: lista de posts recentes, botão "New Post".
 
 ### Cena 3 — Composição do post (15s)
@@ -104,7 +104,7 @@ Legenda: "Content published via Content Posting API."
 - [ ] Website URL precisa ter Privacy Policy e Terms of Service visíveis (sem menu)
 - [ ] Redirect URI deve bater com o domínio do Website URL
 - [ ] Gravar demo video no sandbox
-- [ ] Garantir que o broadcast-nuxt não mostra branding Nelson no demo
+- [ ] Garantir que o marketing-nuxt não mostra branding Nelson no demo
 - [ ] Revisar que todos os scopes pedidos aparecem no video
 
 ---

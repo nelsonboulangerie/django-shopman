@@ -57,7 +57,7 @@ Mapa canônico status→ação em
 
 | Sinal outbound (iFood) | Status interno (gatilho) | Chamada HTTP à iFood | Onde no código | Condição |
 |---|---|---|---|---|
-| **confirm** (aceitar pedido) | `confirmed` | `POST /order/v1.0/orders/{id}/confirm` | `ifood_callbacks.py:82` (`confirm`), map em `:42` | `channel_ref=="ifood"` **e** existe `ifood_order_id` |
+| **confirm** (aceitar pedido) | `accepted` | `POST /order/v1.0/orders/{id}/confirm` | `ifood_callbacks.py:82` (`confirm`), map em `:42` | `channel_ref=="ifood"` **e** existe `ifood_order_id` |
 | **readyToPickup** (pronto) | `ready` | `POST /order/v1.0/orders/{id}/readyToPickup` | `ifood_callbacks.py:86` (`ready_to_pickup`), map em `:43` | idem |
 | **dispatch** (saiu p/ entrega) | `dispatched` | `POST /order/v1.0/orders/{id}/dispatch` | `ifood_callbacks.py:90` (`dispatch`), map em `:44` | idem |
 | **requestCancellation** (cancelar) | `cancelled` | `POST /order/v1.0/orders/{id}/requestCancellation` (body `{reason, cancellationCode}`) | `ifood_callbacks.py:120` (`request_cancellation`), map em `:45` | idem **e** `cancellation_default_code` (ou código escolhido pelo operador) preenchido — senão **falha alto** |

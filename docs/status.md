@@ -1,6 +1,6 @@
 # Status — Django Shopman
 
-> Última atualização: 2026-07-11
+> Última atualização: 2026-08-13
 
 Retrato factual do que está implementado e funcionando. Não é um plano — é o estado atual.
 Para gaps e roadmap, ver [ROADMAP.md](ROADMAP.md) e os planos ativos em `docs/plans/`.
@@ -22,7 +22,7 @@ falando com o Django via BFF Nitro (cookie de sessão cross-subdomínio `.boulan
 | Cozinha (KDS) | `surfaces/kds-nuxt` | :3003 | prep, picking, expedição, painel de retirada |
 | Gestor de pedidos | `surfaces/orders-nuxt` | :3004 | fila, cardápio, showcases |
 | Produção/fornadas | `surfaces/production-nuxt` | :3005 | kiosk Solari (plan/mise-en-place/expedite/board) |
-| Broadcast | `surfaces/broadcast-nuxt` | :3006 | revisão e publicação de posts operacionais (FOMO) |
+| Marketing | `surfaces/marketing-nuxt` | :3006 | campanhas, público (audience), anúncios e broadcast (FOMO); absorveu o antigo broadcast-nuxt |
 | — layer | `surfaces/operator-kit` | — | Nuxt layer compartilhada dos apps de operador (httpError, retry, connectivity, OperatorLock/PIN, telemetria) |
 
 Tempo real é **SSE-first** ([ADR-016](decisions/adr-016-sse-first-realtime.md)) com
@@ -34,19 +34,19 @@ canônico de erro `{detail, field, errors}` ([reference/errors.md](reference/err
 
 ## Core Apps (packages/)
 
-Testes coletados em 2026-07-11 (`pytest --collect-only`):
+Testes passando em 2026-08-13 (`make test`, por bloco):
 
 | Package | Pip | Testes | Status | Notas |
 |---------|-----|--------|--------|-------|
 | shopman-utils | `shopman-utils` | 98 | Estável | Monetário, phone, formatting, admin mixins |
 | shopman-refs | `shopman-refs` | 175 | Estável | Registro de refs tipadas, rename/audit, fields |
-| shopman-offerman | `shopman-offerman` | 249 | Estável | Catálogo, preços, listings, bundles, coleções |
-| shopman-stockman | `shopman-stockman` | 240 | Estável | Estoque, holds, moves, posições, alertas; shelf-life ligado (validator composto) |
-| shopman-craftsman | `shopman-craftsman` | 245 | Estável | Produção, receitas, work orders, BOM; guardrail de insumos ativo (`INVENTORY_BACKEND`) |
+| shopman-offerman | `shopman-offerman` | 273 | Estável | Catálogo, preços, listings, bundles, coleções |
+| shopman-stockman | `shopman-stockman` | 230 | Estável | Estoque, holds, moves, posições, alertas; shelf-life ligado (validator composto) |
+| shopman-craftsman | `shopman-craftsman` | 243 | Estável | Produção, receitas, work orders, BOM; guardrail de insumos ativo (`INVENTORY_BACKEND`) |
 | shopman-orderman | `shopman-orderman` | 289 | Estável | Pedidos, sessions, directives, channels; baseline selado com cópias (PR #69) |
-| shopman-guestman | `shopman-guestman` | 390 | Estável | CRM, clientes, loyalty, RFM, consent |
-| shopman-doorman | `shopman-doorman` | 279 | Estável | Auth OTP, device trust, access links, magic links |
-| shopman-payman | `shopman-payman` | 151 | Estável | Pagamentos, PIX, Stripe, reconciliação cumulativa |
+| shopman-guestman | `shopman-guestman` | 403 | Estável | CRM, clientes, loyalty, RFM, consent, etiquetas (CustomerTag) |
+| shopman-doorman | `shopman-doorman` | 293 | Estável | Auth OTP, device trust, access links, magic links, passkey (WebAuthn) |
+| shopman-payman | `shopman-payman` | 149 | Estável | Pagamentos, PIX, Stripe, reconciliação cumulativa |
 | shopman-buyman | `shopman-buyman` | 9 | Fase 1 | Compras: Material, Supplier, custo, shelf-life; Fases 2–4 pós-go-live |
 | shopman-fiscalman | `shopman-fiscalman` | 22 | S0–S4 | Classificação NFC-e em Product.metadata; resta S5 (NF-e mod. 55) + validação do contador |
 
@@ -70,6 +70,8 @@ bloco do framework, não o total — o total é a SOMA dos blocos.
 | **Storefront (API)** | Estável | `api/` + `presentation/` + `intents/`; rate-limiting, delivery zones, favoritos, stock alerts |
 | **Backstage (API)** | Estável | POS, KDS, produção, orders, closing, operator; guards e idempotência endurecidos (PR #58) |
 | **Admin (Unfold)** | Estável | Unfold Canonical Gate (`make admin`); telas de produção e fechamento |
+| **Marketing** (campanhas) | Estável | `Campaign` + público por interseção (`match: any/all`, CustomerTag/grupos), disparo com identidade no link, posting Meta/Google pendente (F13b) |
+| **PDV: caixa e gaveta** | Construído | troco/teto/sangria endurecidos (PR cd4b41c1), gaveta por software via agente local (tools/pos-drawer-agent), crachá com leitor; falta instalar no balcão |
 | **Fiscal** | Parcial | NFC-e via Focus NFe (S0–S4); e2e homolog + emissão em produção pendentes |
 | **iFood direto** | Staging | Polling + sync de catálogo; homologação de produção pendente |
 | **Machine (courier)** | Construído | pronto→corrida, status realtime, cotar/re-despachar/cancelar (PR #43); creds + homologação webhook pendentes |
@@ -100,11 +102,25 @@ originou 16 PRs mergeados no mesmo dia (#53–#69), incluindo:
 - **Login WhatsApp = access link** (`NB-XxXx`): pivô mergeado no main (PR #45).
   Reverse-OTP aposentado. Resta F3 (fluxo ManyChat, lado do dono) + URLs de staging.
 - **OTP SMS fallback** (Comtele creds ok), magic links, device trust.
+- **Passkey (WebAuthn)**: entrar com o rosto/digital; tela "acesso rápido" na loja
+  (ativar, entrar, revogar). A identidade sai do cookie.
+- **Desconto de funcionário na loja**: `EmployeeRule.pickup_only` (retirada
+  obrigatória — decisão 2026-08-11); commit preserva `ref` + `price_tier`.
 - **Copy omotenashi**: burndown fechado, backlog de copy **zerado** (PRs #49–#53);
   toda copy de cliente é canônica em `OmotenashiCopy`/`OMOTENASHI_DEFAULTS` e chega
   à tela via projection.
 - **Canais ativos**: balcão (POS), web (storefront), iFood direto (staging).
   ManyChat conversacional (pedido por chat) segue não reimplementado.
+
+---
+
+## Baseline de migrações (2026-08)
+
+Reset pré-go-live executado: ~110 migrações viraram 19 iniciais (hoje 35 arquivos
+no total — o shop já cresceu a 0011 por append). RBAC nasce em `setup_groups`.
+**Daqui em diante migrations são append-only** (ADR-015 vale a partir do
+`git tag go-live-v1`, mas o reset já aconteceu — não editar migração aplicada em
+staging).
 
 ---
 
