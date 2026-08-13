@@ -492,6 +492,63 @@ class TestFinish:
 
         assert exc.value.code == "INVALID_REF"
 
+    def test_finish_partition_carries_opaque_refs_and_meta(self, recipe_with_items):
+        """A fornada de 40 não produz "38" — produz grupos (ADR-017).
+
+        O core repassa as refs de partição e o `meta` SEM interpretar: são
+        ponteiros string (ADR-004). Antes, o ramo de `finished` perdia o `meta`
+        no caminho (só `wasted` recebia) — a assimetria que impedia a partição
+        de carregar informação.
+        """
+        wo = craft.plan(recipe_with_items, 40)
+        craft.finish(
+            wo,
+            finished=[
+                {
+                    "item_ref": "croissant",
+                    "quantity": 32,
+                    "batch_ref": "CROISSANT-20260813-1",
+                    "quality_grade_ref": "standard",
+                    "meta": {"oven": "A"},
+                },
+                {
+                    "item_ref": "croissant",
+                    "quantity": 8,
+                    "batch_ref": "CROISSANT-20260813-2",
+                    "quality_grade_ref": "minimal",
+                    "quality_defect_ref": "overbaked",
+                    "meta": {"oven": "A"},
+                },
+            ],
+            wasted=[
+                {
+                    "item_ref": "croissant",
+                    "quantity": 3,
+                    "quality_defect_ref": "contaminated",
+                },
+            ],
+            expected_rev=0,
+        )
+
+        outputs = WorkOrderItem.objects.filter(
+            work_order=wo, kind=WorkOrderItem.Kind.OUTPUT
+        ).order_by("batch_ref")
+        assert outputs.count() == 2
+        full, marked = outputs
+        assert full.batch_ref == "CROISSANT-20260813-1"
+        assert full.quality_grade_ref == "standard"
+        assert full.quality_defect_ref == ""
+        assert full.meta == {"oven": "A"}
+        assert marked.quality_grade_ref == "minimal"
+        assert marked.quality_defect_ref == "overbaked"
+
+        waste = WorkOrderItem.objects.get(work_order=wo, kind=WorkOrderItem.Kind.WASTE)
+        assert waste.quality_defect_ref == "contaminated"
+        assert waste.batch_ref == ""  # perda não vira lote
+
+        wo.refresh_from_db()
+        assert wo.finished == Decimal("40")  # 32 + 8; a perda fica fora
+
     def test_finish_rejects_malformed_finished_item(self, recipe_with_items):
         wo = craft.plan(recipe_with_items, 100)
 
