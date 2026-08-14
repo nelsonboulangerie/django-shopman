@@ -27,10 +27,9 @@ marketing e o histórico Yooga. Conclusões de uma linha:
 4. **A captura nova de melhor custo/benefício é re-ingerir o Yooga com as colunas hoje
    descartadas** (telefone, bairro, taxa de pagamento): destrava RFM histórico, resgate
    de clientes perdidos e geografia de delivery por ~zero risco (§4, N1).
-5. **Duas perguntas que parecem respondíveis NÃO são, por lacuna de dado** — e a análise
-   diz exatamente o que falta: "o forno 2 queima mais?" (não há fornos distintos
-   registrados, §4 N3) e "a campanha X vendeu?" (não existe atribuição campanha→venda,
-   §4 N6).
+5. **Uma pergunta que parece respondível NÃO é:** "a campanha X vendeu?" — não existe
+   atribuição campanha→venda (§4 N6). E uma segunda, "o forno 2 queima mais?", foi
+   **arquivada pelo dono**: a casa tem um forno só (§4 N3).
 6. **Etapas de produção: a concepção sempre foi ter timestamps por etapa — o código
    não honra** (`apply_advance_step` sobrescreve o carimbo a cada avanço). É correção
    de alta prioridade, barata e fora do core (§4, N9).
@@ -85,18 +84,18 @@ Todos os cenários abaixo cabem na gramática atual, sem uma linha de backend:
 | C6 | Perda · defeito × receita *(exemplo atual)* | Onde a perda se concentra? | Ajuste de processo por receita |
 | C7 | Perda · operador | Perda é de processo ou de pessoa? | Treinamento dirigido (nunca punitivo — ver §6.8) |
 | C8 | Perda · dia-da-semana | O domingo perde mais? | Reforço/escala no dia crítico |
-| C9 | Rendimento · receita × forno | Rendimento muda por forno? | ⚠️ decidível só após N3 (fornos distintos) |
+| ~~C9~~ | ~~Rendimento · receita × forno~~ | ❌ **fora** — a casa tem um forno só (decisão do dono, §4-N3) | — |
 | C10 | Tempo de forno · receita *(exemplo atual)* | Tempo real vs planejado por receita | Recalibrar `planned_seconds` das receitas |
 | C11 | Qtd produzida · grau × receita | Mix de qualidade por receita ao longo do tempo | Onde investir em consistência |
 | C12 | Quebra de caixa · operador | Quebra é sistêmica ou concentrada? | Auditoria/treinamento de caixa |
 
-**Ressalva de honestidade:** C9–C11 e tudo que depende de `OvenRun` começa a valer
+**Ressalva de honestidade:** C10–C11 e tudo que depende de `OvenRun` começa a valer
 quando o bi-nuxt + F2 estiverem em produção e a equipe adotar o timer — o dado nasce
 zerado; a cobertura declarada nos painéis é o KPI de adoção (já existe:
 `oven_coverage_percent`).
 
-**Proposta:** promover C1–C12 a exemplos curados na página Explorar (mexe só no array
-do cliente, decisão de F9: exemplos são chips de partida, sem tocar seed).
+**Proposta:** promover C1–C8 e C10–C12 a exemplos curados na página Explorar (mexe só
+no array do cliente, decisão de F9: exemplos são chips de partida, sem tocar seed).
 
 ---
 
@@ -285,17 +284,21 @@ Dimensões que faltam em métricas existentes, todas com dado disponível:
 - **Valor:** MÉDIO-ALTO — é a dimensão de negócio que o dono pediu explicitamente no
   levantamento do Yooga; sem ela, salão e balcão são um borrão só.
 
-### N3 Fornos distintos (config, quase sem código)
-- **Pergunta destravada:** "o forno 2 queima mais que o 1?" — a pergunta-motivadora do
-  QC é INDECIDÍVEL hoje: existe UMA posição "forno" no seed; `OvenRun.oven_ref` nasce
-  do `position_ref` da WO e portanto nunca distingue fornos.
-- **O que falta:** criar posições por forno físico (`forno-1`, `forno-2`) e a operação
-  planejar a WO na posição certa — OU um seletor de forno no arm do timer (1 toque às
-  5h; a decisão registrada no BI-PLAN §9d foi "zero toque novo", então o caminho
-  padrão é posição).
-- **Custo:** BAIXO (config + seed + hábito operacional). **Sem mudança de model.**
-- **Valor:** condiciona C9, L9 e qualquer análise por forno. Se a Nelson tem um forno
-  só, arquivar a pergunta explicitamente (também é resposta).
+### N3 Fornos distintos — ❌ ARQUIVADA (decisão do dono, 2026-08-14)
+- **Decisão: a Nelson tem UM forno na prática.** A pergunta "o forno 2 queima mais que
+  o 1?" (motivadora do QC-FORNADA §1) **não existe nesta casa** e sai do escopo — não
+  é lacuna a corrigir, é pergunta sem dono.
+- **Consequências imediatas:**
+  - C9 (rendimento · receita × forno) sai dos cenários curados — cruzamento que sempre
+    devolve uma linha só é ruído, não análise.
+  - A dimensão `oven` do explorador fica **dormente**: o campo `OvenRun.oven_ref`
+    continua sendo gravado (custo zero, e o dia que houver um segundo forno o passado
+    já está carimbado), mas a dimensão não deve aparecer nos selects enquanto houver
+    uma posição de forno só — oferecer um recorte que não recorta nada mente por
+    omissão.
+  - L9 (rendimento × tempo de forno) **segue de pé** e ganha importância: sem a
+    variável "qual forno", a pergunta vira "assar mais tempo queima mais?" — que é
+    justamente a acionável para um forno único.
 
 ### N4 `abandoned_at` na Session
 - **O que falta:** o sweep de sessões estale usa `queryset.update()` — nem `updated_at`
@@ -354,11 +357,17 @@ Dimensões que faltam em métricas existentes, todas com dado disponível:
   (`WorkOrder.meta["steps_progress"]`) e SOBRESCREVE `steps_progress_updated_at` a
   cada avanço — avançar para a etapa 3 apaga o carimbo da etapa 2. Não gera
   `WorkOrderEvent`. A trilha por etapa se perde; mise-en-place vive em localStorage.
-- **O que falta:** preservar a trilha — opção mínima sem tocar core: acumular
-  `steps_progress_history: [{step, at, actor}]` no próprio `meta` (append, nunca
-  sobrescrever), no serviço do backstage que já é o único escritor. Opção ledger:
-  evento próprio do backstage. (Kind novo em `WorkOrderEvent` mexe no craftsman —
-  Core é Sagrado, exigiria justificativa própria.)
+- **Decisão do dono (2026-08-14):** *"não sei se precisa de ledger, só preciso ter
+  dados históricos verdadeiros para BI."* → **caminho escolhido: o mínimo que seja
+  verdadeiro.** Acumular `steps_progress_history: [{step, at, actor}]` por append no
+  próprio `WorkOrder.meta`, no serviço do backstage que já é o único escritor — sem
+  tocar craftsman (Core é Sagrado; kind novo em `WorkOrderEvent` poria vocabulário de
+  padaria no core genérico e exigiria ADR própria).
+- **O que "verdadeiro" exige, concretamente** (senão o dado mente e não serve ao B.I.):
+  append que nunca sobrescreve; avanço lido-e-escrito na mesma transação (dois toques
+  simultâneos no kiosk não podem perder um passo — risco baixo com um kiosk, mas o
+  código precisa não depender disso); e o retrocesso/correção de etapa, se existir,
+  entra como linha nova, jamais editando a anterior.
 - **Custo:** BAIXO (append no mesmo serviço + registro em data-schemas).
 - **Valor:** tempo por etapa (onde a manhã emperra: massa? modelagem? forno?),
   duração real de fornada vs "OP aberta" (hoje `started_at→finished_at` inclui
@@ -425,22 +434,38 @@ Dimensões que faltam em métricas existentes, todas com dado disponível:
 
 | Pacote | Conteúdo | Esforço | Alavanca |
 |---|---|---|---|
-| **P1 — Curadoria** | C1–C12 como exemplos do Explorar (+ arquivar C9 se houver 1 forno só) | horas | Imediata: o B.I. novo mostra do que é capaz |
+| **P1 — Curadoria** | C1–C8 e C10–C12 como exemplos do Explorar; dimensão `oven` sai dos selects (um forno só) | horas | Imediata: o B.I. novo mostra do que é capaz |
 | **P2 — Funil do pedido** | L1 (+ L4 cancelamentos, L11 promessa) | dias | O maior dado inexplorado; melhora operação E promessa ao cliente |
 | **P3 — Yooga completo** | N1 re-ingestão (+ L5 YoY, C4/C5 curados) | dias | 2 anos de história viram clientes, zonas e sazonalidade acionáveis |
-| **P4 — Produção honesta** | N9 etapas (concepção original) + N3 fornos + L9 forno×defeito + L2 sold-out | dias | Fecha o ciclo âncora do B.I.: produzir a quantidade certa, assar certo |
+| **P4 — Produção honesta** | N9 etapas (concepção original) + L9 tempo de forno × defeito + L2 sold-out | dias | Fecha o ciclo âncora do B.I.: produzir a quantidade certa, assar certo |
 | **P5 — Dinheiro invisível** | L3 descontos + L10 quebra×contexto + dívidas §6.1–6.5 | dias | Controle interno; números confiáveis |
 | **P6 — Estruturais** | N6 atribuição de campanha; N7 margem (com Buyman F2); N2 regra B | semanas | Alto valor, cada um pede decisão de escopo própria |
 
 Sugestão de ordem: **P1 já; P2 e P3 em paralelo; P4 quando o bi-nuxt estiver
 deployado e o timer rodando; P5 encaixado; P6 são decisões separadas.**
 
-### Perguntas abertas para o dono
-1. Quais decisões você toma HOJE toda semana que gostaria de tomar com número? (a
-   priorização acima é minha leitura — a sua manda.)
-2. N1 (telefone do Yooga): persistir o telefone cru no histórico, ou só o vínculo
-   resolvido com `Customer`?
-3. N3: quantos fornos físicos a Nelson tem de fato? (Se 1, arquivamos a dimensão.)
-4. N9: a opção mínima (histórico no `meta`, sem tocar craftsman) honra a concepção
-   original ou você quer as etapas como fato de ledger?
-5. §6.7: snapshot mensal de RFM interessa já, ou espera o L8 mostrar apetite?
+### Perguntas ao dono — estado
+
+**Respondidas (2026-08-14):**
+- **Fornos:** um só, na prática → N3 arquivada, C9 fora dos exemplos, dimensão `oven`
+  dormente.
+- **Etapas de produção:** sem exigência de ledger; o requisito é **dado histórico
+  verdadeiro** → N9 segue pelo append em `meta`, com as três garantias listadas lá.
+
+**Abertas:**
+1. **Telefone do Yooga (N1)** — o export histórico tem a coluna `telefone` e a
+   ingestão atual a joga fora. Duas formas de aproveitá-la:
+   (a) **guardar o telefone junto da venda histórica** — o B.I. passa a poder
+   reconstruir sozinho quem comprava o quê, inclusive de quem nunca virou cliente no
+   Shopman; custo: dado pessoal de 2 anos passa a viver numa segunda tabela, com o
+   dever de protegê-lo;
+   (b) **usar o telefone só na hora da ingestão para achar o `Customer` correspondente
+   e guardar apenas esse vínculo** — o histórico fica sem PII nova, e quem nunca se
+   cadastrou no Shopman continua anônimo (perde-se a lista de resgate desses).
+   A diferença prática é essa: (a) permite campanha de resgate para quem sumiu; (b) é
+   mais conservador com dado pessoal.
+2. **Decisões semanais** — quais decisões você toma toda semana e gostaria de tomar
+   com número na frente? A priorização do §7 é minha leitura; a sua manda.
+3. **Snapshot de RFM (§6.7)** — hoje o RFM é foto: quando um cliente passa de
+   `champion` para `at_risk`, ninguém vê a mudança acontecer. Interessa começar a
+   guardar uma foto mensal já, ou espera L8 (coortes) mostrar apetite?
