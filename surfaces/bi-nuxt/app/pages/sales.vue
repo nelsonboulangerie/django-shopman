@@ -3,14 +3,15 @@
 // contado à parte (número escondido é número que mente).
 import type { BISalesReport } from "~/types/bi";
 import {
+  BUCKET_SPAN_LABELS,
   WEEKDAY_LABELS,
+  bucketLabel,
   bucketSalesDays,
   formatInt,
   formatMoney,
   formatMoneyCompact,
   formatQty,
   hourLabel,
-  shortDate,
 } from "~/presentation/bi";
 
 const { report, pending, error, refresh } = useBiReport<BISalesReport>("sales");
@@ -19,11 +20,11 @@ const hasHistory = computed(() => (report.value?.historical_days ?? 0) > 0);
 
 const revenueSeries = computed(() =>
   bucketSalesDays(report.value?.days ?? []).map((bucket) => ({
-    label: shortDate(bucket.date),
+    label: bucketLabel(bucket.date, bucket.span),
     value: bucket.revenue_q,
     muted: bucket.source === "yooga",
     detail: [
-      bucket.weekly ? "semana" : "",
+      BUCKET_SPAN_LABELS[bucket.span],
       `${formatInt(bucket.orders)} pedido${bucket.orders === 1 ? "" : "s"}`,
       bucket.source === "yooga" ? "histórico Yooga" : "",
     ]
@@ -80,7 +81,7 @@ const channelRows = computed(() =>
       <section class="rounded-md border border-border bg-card p-3">
         <h2 class="text-lg font-semibold text-foreground">Faturamento por dia</h2>
         <p class="mb-3 text-xs text-muted-foreground">
-          o tooltip traz os pedidos do ponto; janela longa agrega por semana
+          o tooltip traz os pedidos do ponto; janela longa agrega por semana ou mês
           <template v-if="hasHistory">
             · <span class="mx-0.5 inline-block h-2 w-2 rounded-sm bg-foreground/25 align-middle"></span>
             barras claras = histórico Yooga

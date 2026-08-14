@@ -3,7 +3,7 @@
 // ou troca a janela; análise não é telemetria de turno (ADR-016 não se aplica
 // a tendência).
 export function useBiReport<T>(kind: "production" | "sales" | "cash" | "customers") {
-  const { days, range } = useBiWindow();
+  const { range } = useBiWindow();
 
   const { data, pending, error, refresh } = useFetch<{ bi: T }>(
     `/api/v1/backstage/bi/${kind}/`,
@@ -17,5 +17,5 @@ export function useBiReport<T>(kind: "production" | "sales" | "cash" | "customer
 
   const report = computed(() => data.value?.bi ?? null);
 
-  return { report, pending, error, refresh, windowDays: days };
+  return { report, pending, error, refresh };
 }

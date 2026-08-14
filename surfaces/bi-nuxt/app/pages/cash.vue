@@ -3,16 +3,35 @@
 // pagamento consolidado pelo fechamento. `closings_missing` fica à vista:
 // buraco declarado, nunca silenciado.
 import type { BICashReport } from "~/types/bi";
-import { formatInt, formatMoney, shortDate } from "~/presentation/bi";
+import {
+  BUCKET_SPAN_LABELS,
+  bucketLabel,
+  bucketRows,
+  formatInt,
+  formatMoney,
+  shortDate,
+} from "~/presentation/bi";
 
 const { report, pending, error, refresh } = useBiReport<BICashReport>("cash");
 
 const differenceSeries = computed(() =>
-  (report.value?.days ?? []).map((day) => ({
-    label: shortDate(day.date),
-    value: day.difference_q,
-    detail: `${formatInt(day.shifts)} turno${day.shifts === 1 ? "" : "s"} · sangria ${formatMoney(day.sangria_q)} · suprimento ${formatMoney(day.suprimento_q)}`,
-  })),
+  bucketRows(report.value?.days ?? []).map((bucket) => {
+    const shifts = bucket.rows.reduce((sum, d) => sum + d.shifts, 0);
+    const sangria = bucket.rows.reduce((sum, d) => sum + d.sangria_q, 0);
+    const suprimento = bucket.rows.reduce((sum, d) => sum + d.suprimento_q, 0);
+    return {
+      label: bucketLabel(bucket.date, bucket.span),
+      value: bucket.rows.reduce((sum, d) => sum + d.difference_q, 0),
+      detail: [
+        BUCKET_SPAN_LABELS[bucket.span],
+        `${formatInt(shifts)} turno${shifts === 1 ? "" : "s"}`,
+        `sangria ${formatMoney(sangria)}`,
+        `suprimento ${formatMoney(suprimento)}`,
+      ]
+        .filter(Boolean)
+        .join(" · "),
+    };
+  }),
 );
 
 const methodRows = computed(() =>

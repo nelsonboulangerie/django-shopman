@@ -3,24 +3,53 @@
 // tempo REAL de forno (só o par armar→Concluir mede; a cobertura declara o
 // resto — ADR-021 §4).
 import type { BIProductionReport } from "~/types/bi";
-import { coverageLabel, formatInt, formatMinutes, formatQty, shortDate } from "~/presentation/bi";
+import {
+  BUCKET_SPAN_LABELS,
+  bucketLabel,
+  bucketRows,
+  coverageLabel,
+  formatInt,
+  formatMinutes,
+  formatQty,
+  shortDate,
+} from "~/presentation/bi";
 
 const { report, pending, error, refresh } = useBiReport<BIProductionReport>("production");
 
+const sum = (values: (string | number)[]) => values.reduce((total: number, v) => total + Number(v), 0);
+
 const finishedSeries = computed(() =>
-  (report.value?.days ?? []).map((day) => ({
-    label: shortDate(day.date),
-    value: Number(day.finished),
-    detail: `previsto ${formatQty(day.planned)} · perda ${formatQty(day.loss)}`,
+  bucketRows(report.value?.days ?? []).map((bucket) => ({
+    label: bucketLabel(bucket.date, bucket.span),
+    value: sum(bucket.rows.map((d) => d.finished)),
+    detail: [
+      BUCKET_SPAN_LABELS[bucket.span],
+      `previsto ${formatQty(String(sum(bucket.rows.map((d) => d.planned))))}`,
+      `perda ${formatQty(String(sum(bucket.rows.map((d) => d.loss))))}`,
+    ]
+      .filter(Boolean)
+      .join(" · "),
   })),
 );
 
 const yieldSeries = computed(() =>
-  (report.value?.days ?? []).map((day) => ({
-    label: shortDate(day.date),
-    value: day.yield_percent ?? 0,
-    detail: day.yield_percent === null ? "sem produção" : `cheio ${formatQty(day.full_price)} · desconto ${formatQty(day.discounted)}`,
-  })),
+  bucketRows(report.value?.days ?? []).map((bucket) => {
+    const planned = sum(bucket.rows.map((d) => d.planned));
+    const finished = sum(bucket.rows.map((d) => d.finished));
+    return {
+      label: bucketLabel(bucket.date, bucket.span),
+      value: planned ? Math.round((finished * 100) / planned) : 0,
+      detail: planned
+        ? [
+            BUCKET_SPAN_LABELS[bucket.span],
+            `cheio ${formatQty(String(sum(bucket.rows.map((d) => d.full_price))))}`,
+            `desconto ${formatQty(String(sum(bucket.rows.map((d) => d.discounted))))}`,
+          ]
+            .filter(Boolean)
+            .join(" · ")
+        : "sem produção",
+    };
+  }),
 );
 
 const lossTotal = computed(() =>

@@ -19,10 +19,11 @@ from decimal import Decimal
 
 from django.utils import timezone
 
-# Janela default e teto (a leitura é on-the-fly; varrer anos por request é o
-# gatilho de materialização da ADR-021 §3, não um default silencioso).
+# Janela default e teto. O teto cobre o histórico inteiro da casa (Yooga
+# começa em jul/2024) — a leitura segue on-the-fly; se a janela máxima um dia
+# passar do p95 de 2s, é o gatilho de materialização da ADR-021 §3.
 DEFAULT_WINDOW_DAYS = 28
-MAX_WINDOW_DAYS = 366
+MAX_WINDOW_DAYS = 1830
 
 
 @dataclass(frozen=True)

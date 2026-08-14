@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
+  DATA_EPOCH,
   WEEKDAY_LABELS,
+  bucketLabel,
   bucketSalesDays,
   coverageLabel,
   formatMinutes,
@@ -8,6 +10,7 @@ import {
   formatMoneyCompact,
   formatQty,
   hourLabel,
+  resolveWindowRange,
   shortDate,
 } from "~/presentation/bi";
 
@@ -47,7 +50,7 @@ describe("bucketSalesDays", () => {
   it("janela curta fica diária", () => {
     const out = bucketSalesDays([day("2026-08-13", 100), day("2026-08-14", 200)]);
     expect(out).toHaveLength(2);
-    expect(out[0]!.weekly).toBe(false);
+    expect(out[0]!.span).toBe("day");
   });
 
   it("janela longa agrega por semana começando na segunda", () => {
@@ -57,10 +60,39 @@ describe("bucketSalesDays", () => {
     });
     const out = bucketSalesDays(days);
     expect(out.length).toBeLessThan(25);
-    expect(out[0]!.weekly).toBe(true);
+    expect(out[0]!.span).toBe("week");
     expect(out.reduce((sum, bucket) => sum + bucket.revenue_q, 0)).toBe(13000);
     // 2026-01-01 é quinta: o primeiro balde ancora na segunda anterior.
     expect(out[0]!.date).toBe("2025-12-29");
+  });
+
+  it("acima de ~2 anos agrega por mês, com rótulo de mês", () => {
+    const days = Array.from({ length: 800 }, (_, index) => {
+      const d = new Date(Date.UTC(2024, 6, 1 + index));
+      return day(d.toISOString().slice(0, 10), 100, "yooga");
+    });
+    const out = bucketSalesDays(days);
+    expect(out[0]!.span).toBe("month");
+    expect(out[0]!.date).toBe("2024-07-01");
+    expect(bucketLabel(out[0]!.date, out[0]!.span)).toBe("jul/24");
+    expect(out.reduce((sum, bucket) => sum + bucket.revenue_q, 0)).toBe(80000);
+  });
+
+  it("resolveWindowRange cobre preset, No ano, Máx e personalizado", () => {
+    const today = new Date("2026-08-14T12:00:00Z");
+    expect(resolveWindowRange({ preset: "7d", from: "", to: "" }, today)).toEqual({
+      date_from: "2026-08-08",
+      date_to: "2026-08-14",
+    });
+    expect(resolveWindowRange({ preset: "ytd", from: "", to: "" }, today).date_from).toBe(
+      "2026-01-01",
+    );
+    expect(resolveWindowRange({ preset: "max", from: "", to: "" }, today).date_from).toBe(
+      DATA_EPOCH,
+    );
+    expect(
+      resolveWindowRange({ preset: "custom", from: "2025-01-10", to: "2025-02-10" }, today),
+    ).toEqual({ date_from: "2025-01-10", date_to: "2025-02-10" });
   });
 
   it("semana mista veste a fonte nativa; semana só-histórico fica yooga", () => {

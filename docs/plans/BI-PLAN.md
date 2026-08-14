@@ -258,6 +258,45 @@ Dependências: F1→F2→F3 é o caminho âncora; F4 é paralelo a F2/F3; F5 dep
 para as telas cross-suite); F6 é independente. Rebase sobre #146/#148/#149 quando mergearem —
 o F4 de write-offs só fecha pós-C4.
 
+## 11. Fase 2 do B.I. — de painéis a exploração (PROPOSTA, aguardando OK)
+
+> Demanda do dono (2026-08-14): "podemos extrair muitas mais informações ricas
+> desses dados… um mecanismo de BI mais flexível e potente em termos de
+> configurações, cenários, cruzamentos… e configurações salvas como
+> exemplos/favoritos". Registrado aqui para iteração antes de executar.
+
+O que já entrou junto com a demanda (aprovado na conversa): chips de período
+no padrão de bolsa (`1D · 7D · 28D · 3M · 6M · 12M · No ano · Máx`, "No ano" =
+YTD), período **Personalizado** com datas nativas, teto de janela cobrindo o
+histórico inteiro e granularidade automática dia→semana→mês.
+
+**F7 — Comparação com o período anterior** (o que Stripe/Shopify acertam):
+cada relatório ganha a série e os totais do período de MESMO tamanho
+imediatamente anterior (`previous` no contrato); tiles mostram o delta
+(▲/▼ %), gráficos mostram o período anterior como série fantasma. Comparação
+honesta por construção: janelas de 28d comparam mix igual de dias-da-semana.
+
+**F8 — Explorador (cruzamentos)**: um endpoint `bi/explore/` com gramática
+VALIDADA por whitelist — métrica × dimensões × filtros × grão de tempo.
+Chave desconhecida = requisição rejeitada (regra da casa: roda como
+configurada ou não roda; nunca vira SQL à la carte).
+- **Métricas**: faturamento, pedidos, ticket, qtd vendida, qtd produzida,
+  perda, rendimento, tempo de forno, quebra de caixa.
+- **Dimensões**: tempo (dia/semana/mês), canal, SKU, categoria, hora,
+  dia-da-semana, operador, receita, forno, grau de qualidade, defeito, fonte
+  (nativo/histórico).
+- A UI é um construtor simples (selects, não query builder de banco): escolhe
+  métrica, cruza por até 2 dimensões, filtra, vê tabela + gráfico.
+
+**F9 — Cenários salvos**: model `BIView` no backstage (nome, dono, favorito,
+config JSON validada pela MESMA gramática do explorador). Um cenário é
+config, zero código — vira menu "Meus cenários" no app, com exemplos
+semeados (ex.: "Perda por defeito × receita, 28d", "Sábados vs sábados").
+
+Ordem proposta: **F7 → F8 → F9** (comparação é a maior alavanca imediata e a
+gramática do F8 nasce servindo o F9). Cada fase: contrato TS gerado, testes,
+`make test` verde, um commit.
+
 ## Referências
 
 - [ADR-021 (minuta) — B.I. cross-suite](../decisions/adr-021-bi-cross-suite-read-layer.md)
