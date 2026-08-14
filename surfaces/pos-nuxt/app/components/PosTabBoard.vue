@@ -156,7 +156,7 @@ defineExpose({ focus: () => inputRef.value?.inputRef?.focus() });
             title="Disparado para a cozinha e ainda não pago"
           >
             <Icon name="lucide:flame" class="size-3" />
-            não pago
+            Não pago
           </span>
           <span
             v-else-if="view.pendingKitchen"
@@ -164,7 +164,7 @@ defineExpose({ focus: () => inputRef.value?.inputRef?.focus() });
             title="Tem itens ainda não enviados à cozinha"
           >
             <Icon name="lucide:utensils" class="size-3" />
-            a enviar
+            A enviar
           </span>
           <span v-else class="shrink-0 text-xs text-muted-foreground">{{ view.statusLabel }}</span>
         </div>
