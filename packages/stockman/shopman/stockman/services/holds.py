@@ -145,7 +145,7 @@ class StockHolds:
                 the hold will only consider quants at those positions.
             excluded_positions: Channel-scoped position denylist. Typically
                 used by remote channels to exclude staff-only positions
-                (e.g. ``ontem``) from customer-facing reservations.
+                from customer-facing reservations.
 
         Returns:
             hold_id in format "hold:{pk}"

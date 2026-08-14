@@ -59,7 +59,7 @@ Auditoria completa do sistema. Cada mecânica é classificada por maturidade dos
 |---|---|---|---|---|
 | **F1** | **"Últimas X unidades"** | `Quant.available` vs `ChannelConfig.Stock.low_stock_threshold` (default 5). Signal `availability_changed`. | Badge no card do produto no storefront. | 🔴 Alto — escassez visível converte |
 | **F2** | **"Esgotando rápido"** | `Hold` timestamps + `Order` timestamps + `Quant.available`. | Cálculo de velocidade de consumo (holds/hora vs estoque restante). | 🟡 Médio |
-| **F3** | **"D-1: última chance"** | `Quant(batch="D-1")` + `D1Modifier` (desconto automático). `Product.shelf_life_days`. | Badge "Último dia — amanhã não tem" + countdown até fechamento. | 🔴 Alto — desconto já existe mas é invisível |
+| **F3** | ~~"D-1: última chance"~~ **(aposentada)** | Morreu com o conceito de D-1 (C6 da aposentadoria, ADR-017): o lote datado com preço por lote assumiu o lugar; a urgência de validade é coberta por F1/F4. | — | — |
 | **F4** | **"Última fornada do dia"** | `WorkOrder(target_date=hoje, status)` + `Product.shelf_life_days=0`. `Shop.opening_hours`. | Cruzar produção com horário. Saber que não há mais fornadas planejadas. | 🟡 Médio |
 
 ### 1.2 Frescor / Timing

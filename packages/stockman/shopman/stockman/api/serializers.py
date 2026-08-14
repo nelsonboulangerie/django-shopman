@@ -14,7 +14,6 @@ class PositionAvailabilitySerializer(serializers.Serializer):
 class BreakdownSerializer(serializers.Serializer):
     ready = serializers.DecimalField(max_digits=12, decimal_places=3)
     in_production = serializers.DecimalField(max_digits=12, decimal_places=3)
-    d1 = serializers.DecimalField(max_digits=12, decimal_places=3)
 
 
 class AvailabilitySerializer(serializers.Serializer):

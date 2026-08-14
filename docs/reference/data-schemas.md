@@ -23,7 +23,6 @@ O Core não impõe schema — a governança é por convenção documentada aqui.
 | `order_notes` | `string` | CheckoutView, iFood webhook | CommitService, KDS ticket (`customer_note`) | Observações do pedido escritas pelo **cliente** no checkout. Exibida no ticket do KDS (nota do cliente). Distinta da `kitchen_note` (nota do operador) |
 | `origin_channel` | `string` | CartService, POS, iFood webhook | CommitService, hooks.py | Canal de origem: `"web"`, `"whatsapp"`, `"ifood"`, `"pos"`, `"instagram"` |
 | `coupon_code` | `string` | CartService.apply_coupon | CouponModifier, CartService.get_cart_summary | Código do cupom aplicado (uppercase) |
-| `availability` | `dict` | StockCheckHandler (via checks) | D1DiscountModifier | Mapa SKU → `{is_d1: bool}`. Flag D-1 por produto |
 | `outside_business_hours` | `bool` | BusinessHoursRule (validation) | CheckoutView, CommitService | `True` se pedido feito fora do horário. Não bloqueia checkout — apenas flag informativa |
 | `delivery_address_structured` | `dict` | CheckoutView (`set_data`) | CommitService | Endereço estruturado do Google Places: `{route, street_number, complement, neighborhood, city, state_code, postal_code, place_id, formatted_address, delivery_instructions, is_verified, latitude, longitude}` |
 | `payment` | `dict` | CheckoutView (`set_data`), POS, API | CommitService, hooks, handlers | Dados de pagamento iniciais: `{method}` (+ `change_for_q` em centavos quando dinheiro **na entrega** e o cliente pediu troco). Enriquecido por handlers pós-commit (intent_ref, status, etc.) |
@@ -77,7 +76,6 @@ Paths **proibidas** (geridas pelo sistema): `checks`, `issues`, `state`, `status
   "order_notes": "Sem cebola",
   "origin_channel": "whatsapp",
   "coupon_code": "WELCOME10",
-  "availability": {"CROIS-01": {"is_d1": true}},
   "checks": {
     "stock": {
       "rev": 3,
@@ -329,7 +327,7 @@ Escrito uma única vez por `CommitService._do_commit()`.
 
 | Chave | Tipo | Lido por | Descrição |
 |-------|------|----------|-----------|
-| `items` | `list[dict]` | hooks._build_directive_payload (stock.hold), customers.OrderingOrderHistoryBackend | Itens da sessão: `[{line_id, sku, name, qty, unit_price_q, line_total_q, meta}]`. Flag D-1 (sobras) mora em `meta.is_d1` — setada na inclusão quando o estoque é só D-1 (alinhado à vitrine) e consumida pelo AvailabilityDiscountModifier. Um `is_d1` no topo da linha NÃO sobrevive ao `Session._normalize_items` (whitelist), por isso vive em `meta` |
+| `items` | `list[dict]` | hooks._build_directive_payload (stock.hold), customers.OrderingOrderHistoryBackend | Itens da sessão: `[{line_id, sku, name, qty, unit_price_q, line_total_q, meta}]`. Campos extras no topo da linha NÃO sobrevivem ao `Session._normalize_items` (whitelist) — flag contextual de linha vive em `meta` |
 | `data` | `dict` | handlers/customer.py (fallback), hooks (stock.commit holds) | Cópia integral de `session.data` no momento do commit |
 | `pricing` | `dict` | customers.OrderingOrderHistoryBackend | Pricing da sessão: `{total_q, subtotal_q, discount_q, ...}` |
 | `rev` | `int` | hooks._build_directive_payload (stock.hold) | Revisão da sessão no commit |
@@ -735,7 +733,6 @@ Estas chaves são lidas diretamente de `channel.config` como dict bruto, sem pas
 | Chave | Lido por | Descrição |
 |-------|----------|-----------|
 | `cutoff_hour` | CheckoutView._get_cutoff_info | Hora de corte para pedidos do dia (default 18) |
-| `rules.d1_discount_percent` | D1DiscountModifier, product_cards | Percentual de desconto D-1 |
 
 ### Presets
 
@@ -832,7 +829,7 @@ Políticas do balcão, fora do schema do `ChannelConfig`.
 
 | Chave | Tipo | Lido por | Descrição |
 |-------|------|----------|-----------|
-| `pos.discount_approval_threshold_q` | `int` (centavos) | `discount_approval_threshold_q` (`shop/services/pos.py`) | Descontos manuais **acima** deste valor exigem PIN do gerente. `0` **desliga** o teto — nenhum desconto passa a exigir aprovação por valor (as exceções de D-1 e de preço alterado seguem exigindo, sempre). **Ausente = herda `SHOPMAN_POS_DISCOUNT_APPROVAL_THRESHOLD_Q`** (deploy). Editado em Reais no ShopAdmin. Dono único: o gate do orquestrador; a projection do backstage lê dele. |
+| `pos.discount_approval_threshold_q` | `int` (centavos) | `discount_approval_threshold_q` (`shop/services/pos.py`) | Descontos manuais **acima** deste valor exigem PIN do gerente. `0` **desliga** o teto — nenhum desconto passa a exigir aprovação por valor (a exceção de preço alterado segue exigindo, sempre). **Ausente = herda `SHOPMAN_POS_DISCOUNT_APPROVAL_THRESHOLD_Q`** (deploy). Editado em Reais no ShopAdmin. Dono único: o gate do orquestrador; a projection do backstage lê dele. |
 
 ### Alertas de estoque — `Shop.defaults["stock_alerts"]`
 
@@ -929,7 +926,6 @@ Contexto de venda/operacao do produto fora do schema estrutural do Offerman
 
 | Chave | Tipo | Escrito por | Lido por | Descrição |
 |-------|------|-------------|----------|-----------|
-| `allows_next_day_sale` | `bool` | seed/admin | pricing D-1 | Produto elegível à venda D-1 com desconto. |
 | `lead_time_hours` | `int` | seed/admin (Offerman) | `shop/services/lead_time.py` (checkout do storefront + gate de demanda em `shop/services/stock.hold`) | Antecedência mínima (horas) para registrar DEMANDA (encomenda para data sem fornada planejada). Sobrescreve `ChannelConfig.stock.default_lead_time_hours`. Não bloqueia encomenda com Quant planejado da data nem venda imediata do estoque físico de hoje. |
 
 ---
@@ -994,7 +990,7 @@ Registros antigos podem ser uma lista simples de snapshots. Registros novos usam
 
 | Chave | Tipo | Escrito por | Lido por | Descrição |
 |-------|------|-------------|----------|-----------|
-| `items` | `list[dict]` | `services/closing.py::perform_day_closing` | template fechamento | Snapshot por SKU com qty reportada, aplicada, D-1, perda. |
+| `items` | `list[dict]` | `services/closing.py::perform_day_closing` | template fechamento | Snapshot por SKU com qty reportada, aplicada, perda. |
 | `production_summary` | `dict[str, dict]` | `services/closing.py::_production_summary` | template fechamento, projection | Agregado de WOs do dia por receita: `{recipe_ref: {recipe_ref, output_sku, planned, finished, loss}}`. |
 | `pending_production` | `list[dict]` | `services/closing.py::_pending_production_snapshot` | auditoria | WOs ainda abertas (planned/started, `target_date <= data do fechamento`) no momento do fechamento: `{ref, output_sku, recipe_ref, status, quantity, target_date}`. O fechamento acusa, não bloqueia. |
 | `cash_shift_summary` | `dict` | `services/closing.py::_cash_shift_summary` | template fechamento, projection | Turnos de caixa do dia (fechados/abertos/totais). |

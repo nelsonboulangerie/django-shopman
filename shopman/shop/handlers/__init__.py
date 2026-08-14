@@ -66,7 +66,6 @@ ALL_HANDLERS = [
     # Validators
     "shopman.shop.rules.validation.DeliveryZoneRule",
     # Pricing modifiers (via shopman.modifiers)
-    "shopman.shop.modifiers.AvailabilityDiscountModifier",
     "shopman.shop.modifiers.DeliveryFeeModifier",
     "shopman.shop.modifiers.DiscountModifier",
     "shopman.shop.modifiers.EmployeeDiscountModifier",
@@ -250,7 +249,6 @@ def _register_loyalty_handler() -> None:
 def _register_pricing_modifiers() -> None:
     from shopman.shop.handlers.pricing import ItemPricingModifier, OffermanPricingBackend, SessionTotalModifier
     from shopman.shop.modifiers import (
-        AvailabilityDiscountModifier,
         DeliveryFeeModifier,
         DiscountModifier,
         EmployeeDiscountModifier,
@@ -262,7 +260,6 @@ def _register_pricing_modifiers() -> None:
     backend = OffermanPricingBackend()
     for modifier in [
         ItemPricingModifier(backend=backend),
-        AvailabilityDiscountModifier(),
         DiscountModifier(),
         SessionTotalModifier(),
         EmployeeDiscountModifier(),

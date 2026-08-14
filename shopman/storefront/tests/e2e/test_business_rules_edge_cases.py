@@ -6,7 +6,7 @@ plano de QA em uma asserção executável.
 
 Estrutura (espelha o roteiro de QA):
 
-    PRICING & PROMOTIONS  ....  D-1, happy hour, funcionário, quantidade,
+    PRICING & PROMOTIONS  ....  happy hour, funcionário, quantidade,
                                 melhor-desconto, cupom esgotado, total <= 0
     ESTOQUE & PRODUÇÃO    ....  hold exato, planejado (encomenda), sem produção,
                                 expiração, cancelamento, perecível vs não-perecível
@@ -186,7 +186,6 @@ def _unit_price(session, sku):
 
 
 # Dotted paths dos rules (gate dos modifiers)
-D1_RULE = "shopman.shop.rules.pricing.D1Rule"
 HAPPY_RULE = "shopman.shop.rules.pricing.HappyHourRule"
 EMPLOYEE_RULE = "shopman.shop.rules.pricing.EmployeeRule"
 
@@ -199,29 +198,8 @@ FIXED = "fixed"
 # ═════════════════════════════════════════════════════════════════════════════
 
 
-class TestD1Discount:
-    """1. D-1 (sobras do dia anterior)."""
-
-    def _session_with_d1(self, sku, price_q=1000, *, d1_percent=50):
-        from shopman.shop.services import sessions
-
-        _shop()
-        _channel("web")
-        _product(sku, price_q)
-        _rule("d1_discount", D1_RULE, {"discount_percent": d1_percent})
-        s = sessions.create_session("web")
-        return _reprice(
-            s,
-            [
-                _line(sku, qty=1),
-                {"op": "set_data", "path": "availability", "value": {sku: {"is_d1": True}}},
-            ],
-        )
-
-    def test_d1_percent_applied(self):
-        s = self._session_with_d1("PAO-D1", 1000, d1_percent=50)
-        assert _unit_price(s, "PAO-D1") == 500
-        assert s.pricing.get("d1_discount", {}).get("total_discount_q") == 500
+class TestDurableDiscountMarker:
+    """1. Fonte durável do desconto vencedor da linha."""
 
     def test_durable_discount_marker_lives_in_meta(self):
         """O desconto vencedor da linha vive em ``meta["_disc"]`` (fonte DURÁVEL —
@@ -229,57 +207,18 @@ class TestD1Discount:
         não persistia e cegava os guards anti-stacking) foi REMOVIDO — ver
         DISCOUNT-AUDIT-2026-08. Transparência agregada segue em ``session.pricing``.
         """
-        s = self._session_with_d1("PAO-D1", 1000, d1_percent=50)
-        line = next(i for i in s.items if i.get("sku") == "PAO-D1")
-        assert "d1_discount" in s.pricing
+        from shopman.shop.services import sessions
+
+        _shop()
+        _channel("web")
+        _product("PAO-PROMO", 1000)
+        _promotion("Promo Pão", ptype=PERCENT, value=30, skus=["PAO-PROMO"])
+        s = sessions.create_session("web")
+        s = _reprice(s, [_line("PAO-PROMO", qty=1)])
+        assert _unit_price(s, "PAO-PROMO") == 700
+        line = next(i for i in s.items if i.get("sku") == "PAO-PROMO")
         assert "modifiers_applied" not in line  # removido de vez
-        assert (line.get("meta") or {}).get("_disc", {}).get("type") == "d1_discount"
-
-    def test_d1_does_not_stack_with_auto_promotion(self):
-        """D-1 tem prioridade absoluta: promoção automática NÃO acumula (best-wins:
-        50% do D-1 > 30% da promo). Corrigido ao usar ``meta.is_d1`` durável."""
-        from shopman.shop.services import sessions
-
-        _shop()
-        _channel("web")
-        _product("PAO-D1", 1000)
-        _rule("d1_discount", D1_RULE, {"discount_percent": 50})
-        # Promoção automática de 30% no mesmo SKU.
-        _promotion("Promo Pão", ptype=PERCENT, value=30, skus=["PAO-D1"])
-        s = sessions.create_session("web")
-        s = _reprice(
-            s,
-            [
-                _line("PAO-D1", qty=1),
-                {"op": "set_data", "path": "availability", "value": {"PAO-D1": {"is_d1": True}}},
-            ],
-        )
-        # Só o D-1 (50%) — a promo de 30% não empilha nem vence (best-wins).
-        assert _unit_price(s, "PAO-D1") == 500
-        # Transparência: só o D-1 no pricing (sem dupla contagem).
-        assert "d1_discount" in s.pricing
-        assert "discount" not in s.pricing or not s.pricing["discount"].get("items")
-
-    def test_d1_does_not_stack_with_manual_coupon(self):
-        """Cupom (percentual) NÃO deve aplicar em linha D-1 (sem aprovação)."""
-        from shopman.shop.services import sessions
-
-        _shop()
-        _channel("web")
-        _product("PAO-D1", 1000)
-        _rule("d1_discount", D1_RULE, {"discount_percent": 50})
-        _promotion("Cupom 40", ptype=PERCENT, value=40, skus=["PAO-D1"], coupon_code="QUARENTA")
-        s = sessions.create_session("web")
-        s = _reprice(
-            s,
-            [
-                _line("PAO-D1", qty=1),
-                {"op": "set_data", "path": "availability", "value": {"PAO-D1": {"is_d1": True}}},
-                {"op": "set_data", "path": "coupon_code", "value": "QUARENTA"},
-            ],
-        )
-        # Invariante desejada: cupom ignorado na linha D-1 → fica só o D-1 (50%).
-        assert _unit_price(s, "PAO-D1") == 500
+        assert (line.get("meta") or {}).get("_disc", {}).get("type") == "promotion"
 
 
 class TestHappyHour:
@@ -377,30 +316,29 @@ class TestEmployeeDiscount:
         s = self._staff_session(price_tier="regular", percent=20)
         assert _unit_price(s, "PAO") == 1000
 
-    def test_staff_plus_d1_best_wins_no_stack(self):
-        """DECISÃO DE PRODUTO (maior desconto ganha): staff + D-1 NÃO acumulam.
+    def test_staff_plus_promo_best_wins_no_stack(self):
+        """DECISÃO DE PRODUTO (maior desconto ganha): staff + promoção NÃO acumulam.
 
-        O D-1 desconta 50% (1000 → 500); o funcionário (20%) calcula sobre a LISTA
-        e só substituiria se batesse os 50% — como 20% < 50%, o D-1 vence e o preço
-        fica 500 (antes empilhava para 400). Ver docs/plans/DISCOUNT-AUDIT-2026-08.md.
+        A promoção desconta 50% (1000 → 500); o funcionário (20%) calcula sobre a
+        LISTA e só substituiria se batesse os 50% — como 20% < 50%, a promoção vence
+        e o preço fica 500 (antes empilhava). Ver docs/plans/DISCOUNT-AUDIT-2026-08.md.
         """
         from shopman.shop.services import sessions
 
         _shop()
         _channel("web")
-        _product("PAO-D1", 1000)
-        _rule("d1_discount", D1_RULE, {"discount_percent": 50})
+        _product("PAO-PROMO-STAFF", 1000)
+        _promotion("Promo 50", ptype=PERCENT, value=50, skus=["PAO-PROMO-STAFF"])
         _rule("employee_discount", EMPLOYEE_RULE, {"discount_percent": 20})
         s = sessions.create_session("web")
         s = _reprice(
             s,
             [
-                _line("PAO-D1", qty=1),
-                {"op": "set_data", "path": "availability", "value": {"PAO-D1": {"is_d1": True}}},
+                _line("PAO-PROMO-STAFF", qty=1),
                 {"op": "set_data", "path": "customer", "value": {"price_tier": "staff"}},
             ],
         )
-        assert _unit_price(s, "PAO-D1") == 500  # D-1 vence; funcionário não empilha
+        assert _unit_price(s, "PAO-PROMO-STAFF") == 500  # promo vence; funcionário não empilha
 
 
 class TestQuantityPromotion:

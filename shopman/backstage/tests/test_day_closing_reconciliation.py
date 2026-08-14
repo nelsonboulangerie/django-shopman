@@ -33,7 +33,6 @@ def closing_user(db):
 def setup_stock(db):
     Shop.objects.create(name="Loja")
     loja = Position.objects.create(ref="loja", name="Loja", is_saleable=True)
-    Position.objects.create(ref="ontem", name="Ontem")
     Product.objects.create(sku="RECON-SKU", name="Recon SKU", shelf_life_days=0)
     StockMovements.receive(quantity=2, sku="RECON-SKU", position=loja, reason="seed")
     return loja

@@ -128,12 +128,8 @@ class CartService:
         unit_price_q: int,
         *,
         name: str = "",
-        is_d1: bool = False,
     ) -> Session:
         """Add item to cart. Merges with existing line if same SKU.
-
-        ``is_d1`` deve refletir a mesma regra da vitrine (estoque só D-1): assim o
-        AvailabilityDiscountModifier aplica e o DiscountModifier não empilha promoção automática.
 
         Delegates reservation and session mutation to the shop cart mutation
         facade. On shortage, raises CartUnavailableError with substitutes
@@ -158,7 +154,6 @@ class CartService:
             qty=qty,
             unit_price_q=unit_price_q,
             name=name,
-            is_d1=is_d1,
         )
         request.session["cart_session_key"] = session_key
         if not existing_key and CartService._link_customer(request, session_key):

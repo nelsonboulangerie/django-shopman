@@ -1,9 +1,9 @@
 """Tests: modifier RuleConfig integration.
 
-Verifies that the rule-driven discount modifiers (availability / time-window)
-and the Employee modifier read params from RuleConfig, are gated by the
-rule's enabled+channel state, and fall back to generic defaults. The rule
-lookup is mocked (``get_channel_rule_params`` / ``get_rule_params``).
+Verifies that the rule-driven discount modifiers (time-window) and the
+Employee modifier read params from RuleConfig, are gated by the rule's
+enabled+channel state, and fall back to generic defaults. The rule lookup
+is mocked (``get_channel_rule_params`` / ``get_rule_params``).
 """
 from __future__ import annotations
 
@@ -31,74 +31,6 @@ def _make_channel(rules=None):
     ch = MagicMock()
     ch.config = {"rules": rules or {}}
     return ch
-
-
-# ─── AvailabilityDiscountModifier (generic D-1) ──────────────────────────────
-
-
-class TestAvailabilityDiscountModifier:
-    """Rule-driven clearance discount on limited-availability lines.
-
-    Parity: the cents asserted here (50% → 500, 30% → 700) pin the discount math
-    so the rule-driven modifier stays price-neutral.
-    """
-
-    @pytest.fixture
-    def modifier(self):
-        from shopman.shop.modifiers import AvailabilityDiscountModifier
-        return AvailabilityDiscountModifier()
-
-    def _d1_item(self, price_q=1000):
-        return {"sku": "P001", "unit_price_q": price_q, "qty": 1, "is_d1": True}
-
-    def test_reads_percent_from_ruleconfig(self, modifier):
-        session = _make_session(items=[self._d1_item()])
-        channel = _make_channel()
-        with patch(
-            "shopman.shop.rules.engine.get_channel_rule_params",
-            return_value={"discount_percent": 30},
-        ):
-            modifier.apply(channel=channel, session=session, ctx={})
-        assert session.items[0]["unit_price_q"] == 700  # 1000 - 30%
-
-    def test_falls_back_to_default_when_params_empty(self, modifier):
-        session = _make_session(items=[self._d1_item()])
-        channel = _make_channel()
-        with patch("shopman.shop.rules.engine.get_channel_rule_params", return_value={}):
-            modifier.apply(channel=channel, session=session, ctx={})
-        assert session.items[0]["unit_price_q"] == 500  # 1000 - 50% (module default)
-
-    def test_skips_when_rule_disabled_or_other_channel(self, modifier):
-        session = _make_session(items=[self._d1_item()])
-        channel = _make_channel()
-        # None = no enabled rule for this channel → modifier must not touch prices.
-        with patch("shopman.shop.rules.engine.get_channel_rule_params", return_value=None):
-            modifier.apply(channel=channel, session=session, ctx={})
-        assert session.items[0]["unit_price_q"] == 1000
-
-    def test_non_d1_item_unaffected(self, modifier):
-        session = _make_session(items=[{"sku": "P001", "unit_price_q": 1000, "qty": 1}])
-        channel = _make_channel()
-        with patch(
-            "shopman.shop.rules.engine.get_channel_rule_params",
-            return_value={"discount_percent": 30},
-        ) as mock_params:
-            modifier.apply(channel=channel, session=session, ctx={})
-        assert session.items[0]["unit_price_q"] == 1000  # not d1, not touched
-        mock_params.assert_not_called()  # short-circuits before the rule lookup
-
-    def test_modifier_records_discount_in_meta_and_pricing(self, modifier):
-        # Fonte durável: meta["_disc"] (o vestígio modifiers_applied foi removido)
-        # + session.pricing["d1_discount"].
-        session = _make_session(items=[self._d1_item()])
-        channel = _make_channel()
-        with patch(
-            "shopman.shop.rules.engine.get_channel_rule_params",
-            return_value={"discount_percent": 50},
-        ):
-            modifier.apply(channel=channel, session=session, ctx={})
-        assert session.items[0]["meta"]["_disc"]["type"] == "d1_discount"
-        assert "d1_discount" in (session.pricing or {})
 
 
 class TestPricingNoopModifiers:
@@ -204,17 +136,17 @@ class TestTimeWindowDiscountModifier:
         assert session.items[0]["unit_price_q"] == 750  # 1000 - 25% (module default)
 
     def test_does_not_compound_on_a_bigger_existing_discount(self, modifier):
-        # "Maior desconto ganha": a line already at D-1 (50% off → 500) must NOT
+        # "Maior desconto ganha": a line already at 50% off (manual → 500) must NOT
         # get happy hour (20%) stacked on top. 20% < 50% → happy hour skips it.
         session = _make_session(items=[{
             "sku": "P001", "unit_price_q": 500, "qty": 1,
-            "meta": {"_list_q": 1000, "_disc": {"type": "d1_discount", "amount_q": 500}},
+            "meta": {"_list_q": 1000, "_disc": {"type": "manual", "amount_q": 500}},
         }])
         channel = _make_channel()
         rc = {"discount_percent": 20, "start": "00:00", "end": "23:59"}
         with self._gate(rc), patch("django.utils.timezone.localtime", self._at(12)):
             modifier.apply(channel=channel, session=session, ctx={})
-        assert session.items[0]["unit_price_q"] == 500  # kept D-1, no compounding
+        assert session.items[0]["unit_price_q"] == 500  # kept the bigger discount
 
     def test_skips_when_rule_not_enabled_for_channel(self, modifier):
         # No enabled rule for this channel → None → no discount.
@@ -330,19 +262,27 @@ class TestItemPricingModifierHonorsOverride:
 
 
 class TestDiscountModifiersSkipFrozenLine:
-    """Auto discounts (D-1 clearance) do NOT apply on top of an operator-frozen
+    """Auto discounts (happy hour) do NOT apply on top of an operator-frozen
     price — the override is the final price."""
 
-    def test_d1_clearance_skips_overridden_line(self):
-        from shopman.shop.modifiers import AvailabilityDiscountModifier
-        modifier = AvailabilityDiscountModifier()
+    def test_happy_hour_skips_overridden_line(self):
+        from shopman.shop.modifiers import TimeWindowDiscountModifier
+        modifier = TimeWindowDiscountModifier()
         session = _make_session(items=[
-            {"sku": "P001", "line_id": "L1", "qty": 1, "unit_price_q": 500, "is_d1": True,
-             "meta": {"price_overridden": True}},
+            {"sku": "P001", "line_id": "L1", "qty": 1, "unit_price_q": 500,
+             "meta": {"price_overridden": True, "_list_q": 500}},
         ])
-        channel = _make_channel({"availability_discount": {"enabled": True, "discount_percent": 50}})
-        with patch("shopman.shop.rules.engine.get_channel_rule_params", return_value={"discount_percent": 50}):
+        channel = _make_channel()
+
+        def _noon():
+            from datetime import datetime
+            return datetime(2026, 1, 1, 12, 0)
+
+        rc = {"discount_percent": 50, "start": "00:00", "end": "23:59"}
+        with patch(
+            "shopman.shop.rules.engine.get_channel_rule_params", return_value=rc
+        ), patch("django.utils.timezone.localtime", _noon):
             modifier.apply(channel=channel, session=session, ctx={})
-        # Frozen line keeps R$5,00 — no clearance discount applied (nem em meta._disc).
+        # Frozen line keeps R$5,00 — no auto discount applied (nem em meta._disc).
         assert session.items[0]["unit_price_q"] == 500
-        assert not (session.items[0].get("meta") or {}).get("_disc")
+        assert (session.items[0].get("meta") or {}).get("_disc") is None

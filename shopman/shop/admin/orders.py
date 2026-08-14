@@ -6,7 +6,7 @@ orchestrator owns cross-package composition, so it subclasses the orderman
 ``OrderAdmin`` to surface the payment intents (payman) linked to each order.
 
 This replaces the previous runtime ``type()`` monkey-patching of the registered
-admin classes. Same-package extensions (Fulfillment inline, product D-1 flag,
+admin classes. Same-package extensions (Fulfillment inline,
 batch/quant filters and links) now live in their own Core admins.
 """
 

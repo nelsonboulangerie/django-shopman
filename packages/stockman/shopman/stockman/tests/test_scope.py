@@ -34,11 +34,11 @@ def perishable_validator(settings):
 
 
 @pytest.fixture
-def ontem_position(db):
+def reserva_position(db):
     position, _ = Position.objects.get_or_create(
-        ref="ontem",
+        ref="reserva",
         defaults={
-            "name": "Vitrine D-1",
+            "name": "Reserva interna",
             "kind": PositionKind.PHYSICAL,
             "is_saleable": True,
         },
@@ -159,13 +159,13 @@ class TestShelflife:
 
 class TestPositionScope:
     def test_allowed_positions_limits_to_listed_refs(
-        self, product, vitrine, ontem_position, today,
+        self, product, vitrine, reserva_position, today,
     ):
         Quant.objects.create(
             sku=product.sku, position=vitrine, _quantity=Decimal("5"),
         )
         Quant.objects.create(
-            sku=product.sku, position=ontem_position, _quantity=Decimal("7"),
+            sku=product.sku, position=reserva_position, _quantity=Decimal("7"),
         )
 
         qs = quants_eligible_for(
@@ -176,50 +176,50 @@ class TestPositionScope:
         assert qs.first().position.ref == "vitrine"
 
     def test_excluded_positions_removes_listed_refs(
-        self, product, vitrine, ontem_position, today,
+        self, product, vitrine, reserva_position, today,
     ):
         Quant.objects.create(
             sku=product.sku, position=vitrine, _quantity=Decimal("5"),
         )
         Quant.objects.create(
-            sku=product.sku, position=ontem_position, _quantity=Decimal("7"),
+            sku=product.sku, position=reserva_position, _quantity=Decimal("7"),
         )
 
         qs = quants_eligible_for(
-            product.sku, target_date=today, excluded_positions=["ontem"],
+            product.sku, target_date=today, excluded_positions=["reserva"],
         )
 
         assert qs.count() == 1
         assert qs.first().position.ref == "vitrine"
 
     def test_excluded_positions_keeps_quants_without_position(
-        self, product, vitrine, ontem_position, today, tomorrow,
+        self, product, vitrine, reserva_position, today, tomorrow,
     ):
         """Planned quants typically have position=None and must survive a
         denylist check — the denylist only removes quants sitting at the
         listed refs."""
         Quant.objects.create(
-            sku=product.sku, position=ontem_position, _quantity=Decimal("5"),
+            sku=product.sku, position=reserva_position, _quantity=Decimal("5"),
         )
         Quant.objects.create(
             sku=product.sku, target_date=tomorrow, _quantity=Decimal("8"),
         )
 
         qs = quants_eligible_for(
-            product.sku, target_date=tomorrow, excluded_positions=["ontem"],
+            product.sku, target_date=tomorrow, excluded_positions=["reserva"],
         )
 
         assert qs.count() == 1
         assert qs.first().position is None
 
     def test_allowed_and_excluded_combine(
-        self, product, vitrine, ontem_position, deposito_position, today,
+        self, product, vitrine, reserva_position, deposito_position, today,
     ):
         Quant.objects.create(
             sku=product.sku, position=vitrine, _quantity=Decimal("5"),
         )
         Quant.objects.create(
-            sku=product.sku, position=ontem_position, _quantity=Decimal("7"),
+            sku=product.sku, position=reserva_position, _quantity=Decimal("7"),
         )
         Quant.objects.create(
             sku=product.sku, position=deposito_position, _quantity=Decimal("9"),
@@ -228,8 +228,8 @@ class TestPositionScope:
         qs = quants_eligible_for(
             product.sku,
             target_date=today,
-            allowed_positions=["vitrine", "ontem", "deposito"],
-            excluded_positions=["ontem"],
+            allowed_positions=["vitrine", "reserva", "deposito"],
+            excluded_positions=["reserva"],
         )
 
         refs = sorted(q.position.ref for q in qs)
@@ -321,12 +321,12 @@ class TestShelflifeBatchPrecedence:
 
 class TestCombinations:
     def test_denylist_plus_shelflife_plus_target(
-        self, perishable_product, vitrine, ontem_position, today, tomorrow,
+        self, perishable_product, vitrine, reserva_position, today, tomorrow,
         perishable_validator,
     ):
         """Realistic remote-channel scenario for a daily bread:
         - vitrine today: eligible
-        - ontem: excluded by denylist
+        - reserva: excluded by denylist
         - tomorrow's planned stock: excluded by target gate (target=today)
         """
         Quant.objects.create(
@@ -334,7 +334,7 @@ class TestCombinations:
             _quantity=Decimal("25"),
         )
         Quant.objects.create(
-            sku=perishable_product.sku, position=ontem_position,
+            sku=perishable_product.sku, position=reserva_position,
             _quantity=Decimal("27"),
         )
         Quant.objects.create(
@@ -345,7 +345,7 @@ class TestCombinations:
         qs = quants_eligible_for(
             perishable_product.sku,
             target_date=today,
-            excluded_positions=["ontem"],
+            excluded_positions=["reserva"],
         )
 
         positions = sorted(

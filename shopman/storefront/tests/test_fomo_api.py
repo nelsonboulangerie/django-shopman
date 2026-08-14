@@ -1,6 +1,6 @@
 """FOMO API + serviço de contexto — badges derivados de dados reais.
 
-Cobre: endpoint público, 404 de SKU inexistente, cache, gate de D-1 por canal,
+Cobre: endpoint público, 404 de SKU inexistente, cache,
 janela de frescor da fornada e a invalidação de cache pelo emissor SSE.
 """
 
@@ -51,7 +51,7 @@ class TestFomoEndpoint:
         _product()
         with patch(
             "shopman.shop.services.fomo._availability",
-            return_value={"available_qty": 2, "d1_qty": 0},
+            return_value={"available_qty": 2},
         ):
             response = client.get(f"/api/v1/fomo/{SKU}/")
         badges = response.json()["badges"]
@@ -62,7 +62,7 @@ class TestFomoEndpoint:
         _product()
         with patch(
             "shopman.shop.services.fomo._availability",
-            return_value={"available_qty": 1, "d1_qty": 0},
+            return_value={"available_qty": 1},
         ):
             badge = client.get(f"/api/v1/fomo/{SKU}/").json()["badges"][0]
         assert set(badge) == {"type", "label", "priority", "expires_at", "meta"}
@@ -71,7 +71,7 @@ class TestFomoEndpoint:
         _product()
         with patch(
             "shopman.shop.services.fomo._availability",
-            return_value={"available_qty": 3, "d1_qty": 0},
+            return_value={"available_qty": 3},
         ) as availability:
             client.get(f"/api/v1/fomo/{SKU}/")
             client.get(f"/api/v1/fomo/{SKU}/")
@@ -88,13 +88,6 @@ class TestFomoEndpoint:
 
 
 class TestFomoContext:
-    def test_d1_is_silent_when_the_channel_excludes_yesterday(self):
-        """Canal que não vende D-1 não pode anunciar D-1."""
-        from shopman.shop.config import ChannelConfig
-
-        config = ChannelConfig.from_dict({"stock": {"excluded_positions": ["ontem"]}})
-        assert fomo_context.d1_qty(SKU, config=config) == 0
-
     def test_recent_bake_enters_the_context(self):
         finished = timezone.now() - timedelta(minutes=5)
         with (
@@ -126,7 +119,7 @@ class TestFomoContext:
         _product()
         with patch(
             "shopman.shop.services.fomo._availability",
-            return_value={"available_qty": 1, "d1_qty": 0},
+            return_value={"available_qty": 1},
         ):
             badges = fomo_service.badges_for_sku(SKU)
         assert badges[0].label == "Última unidade"

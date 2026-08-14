@@ -6,7 +6,7 @@ import type { POSCartItem, POSSaleReviewProjection } from "~/types/pos";
 import { formatBRL } from "~/utils/posIntent";
 
 function item(overrides: Partial<POSCartItem> & { sku: string; name: string }): POSCartItem {
-  return { price_q: 1000, qty: 1, notes: "", is_d1: false, ...overrides };
+  return { price_q: 1000, qty: 1, notes: "", ...overrides };
 }
 
 function review(overrides: Partial<POSSaleReviewProjection> = {}): POSSaleReviewProjection {

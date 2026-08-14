@@ -98,7 +98,6 @@ def add_item(
     qty: int,
     unit_price_q: int,
     name: str = "",
-    is_d1: bool = False,
 ) -> tuple[Session, str]:
     """Reserve stock and add or merge a cart line."""
     session, resolved_key = get_or_create_session(
@@ -130,8 +129,6 @@ def add_item(
     op: dict = {"op": "add_line", "sku": sku, "qty": qty, "unit_price_q": unit_price_q}
     if name:
         op["name"] = name
-    if is_d1:
-        op["is_d1"] = True
     return (
         session_service.modify_session(
             session_key=resolved_key,

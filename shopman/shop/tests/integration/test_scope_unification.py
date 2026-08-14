@@ -7,8 +7,8 @@ holdar. Isso evita o bug em que o modal de shortage mostrava N disponíveis,
 o cliente clicava "aceitar N", e o servidor voltava 422 porque o reserve
 não conseguia colocar holds suficientes.
 
-Cobre também a regra de D-1 (posição ``ontem`` é staff-only: canais remotos
-não veem, PDV vê).
+Cobre também posições staff-only via denylist (canais remotos não veem,
+PDV vê).
 """
 
 from decimal import Decimal
@@ -22,13 +22,13 @@ pytestmark = pytest.mark.django_db
 
 
 @pytest.fixture
-def position_ontem(db):
+def position_reserva(db):
     from shopman.stockman.models import Position, PositionKind
 
     position, _ = Position.objects.get_or_create(
-        ref="ontem",
+        ref="reserva",
         defaults={
-            "name": "Vitrine D-1",
+            "name": "Reserva interna",
             "kind": PositionKind.PHYSICAL,
             "is_saleable": True,
         },
@@ -45,7 +45,7 @@ def web_channel(db):
         defaults={
             "name": "Loja online",
             "is_active": True,
-            "config": {"stock": {"excluded_positions": ["ontem"]}},
+            "config": {"stock": {"excluded_positions": ["reserva"]}},
         },
     )
     return channel
@@ -70,18 +70,18 @@ class TestScopeUnification:
     """``check(sku, qty, channel)['available_qty']`` equals the qty that
     ``reserve(sku, qty, channel)`` is actually able to hold."""
 
-    def test_remote_channel_excludes_ontem(
-        self, product, position_loja, position_ontem, web_channel,
+    def test_remote_channel_excludes_denylisted_position(
+        self, product, position_loja, position_reserva, web_channel,
     ):
-        """Web channel with excluded_positions=['ontem'] must not count
+        """Web channel with excluded_positions=['reserva'] must not count
         quants at that position."""
         StockMovements.receive(
             Decimal("5"), product.sku, position=position_loja,
             reason="Produção fresca",
         )
         StockMovements.receive(
-            Decimal("7"), product.sku, position=position_ontem,
-            reason="D-1 markdown",
+            Decimal("7"), product.sku, position=position_reserva,
+            reason="Reserva do balcão",
         )
 
         check_result = availability.check(
@@ -89,18 +89,18 @@ class TestScopeUnification:
         )
         assert check_result["available_qty"] == Decimal("5")
 
-    def test_staff_channel_sees_ontem(
-        self, product, position_loja, position_ontem, pdv_channel,
+    def test_staff_channel_sees_denylisted_position(
+        self, product, position_loja, position_reserva, pdv_channel,
     ):
         """PDV (staff) without excluded_positions must count all
-        saleable positions, including ontem."""
+        saleable positions, including reserva."""
         StockMovements.receive(
             Decimal("5"), product.sku, position=position_loja,
             reason="Produção fresca",
         )
         StockMovements.receive(
-            Decimal("7"), product.sku, position=position_ontem,
-            reason="D-1 markdown",
+            Decimal("7"), product.sku, position=position_reserva,
+            reason="Reserva do balcão",
         )
 
         check_result = availability.check(
@@ -109,7 +109,7 @@ class TestScopeUnification:
         assert check_result["available_qty"] == Decimal("12")
 
     def test_check_and_reserve_agree_for_fragmented_stock(
-        self, product, position_loja, position_ontem, web_channel,
+        self, product, position_loja, position_reserva, web_channel,
     ):
         """Fragmented stock across quants: the qty reported by check must
         be exactly what reserve can deliver (including fallback across quants).
@@ -124,8 +124,8 @@ class TestScopeUnification:
             reason="Lote manhã",
         )
         StockMovements.receive(
-            Decimal("4"), product.sku, position=position_ontem,
-            reason="D-1 (staff-only)",
+            Decimal("4"), product.sku, position=position_reserva,
+            reason="Reserva (staff-only)",
         )
 
         check = availability.check(
@@ -142,13 +142,13 @@ class TestScopeUnification:
         assert reserve["available_qty"] == promised
 
     def test_reserve_never_holds_on_excluded_position(
-        self, product, position_ontem, web_channel,
+        self, product, position_reserva, web_channel,
     ):
-        """Remote channel: if the only available stock is at ``ontem``,
+        """Remote channel: if the only available stock is at ``reserva``,
         reserve must refuse — matching check, which returns 0 visible."""
         StockMovements.receive(
-            Decimal("10"), product.sku, position=position_ontem,
-            reason="D-1",
+            Decimal("10"), product.sku, position=position_reserva,
+            reason="Reserva",
         )
 
         check = availability.check(
@@ -163,14 +163,14 @@ class TestScopeUnification:
         )
         assert reserve["ok"] is False
 
-    def test_staff_channel_can_reserve_ontem(
-        self, product, position_ontem, pdv_channel,
+    def test_staff_channel_can_reserve_denylisted_position(
+        self, product, position_reserva, pdv_channel,
     ):
-        """PDV reserves at ontem normally — the denylist is a per-channel
+        """PDV reserves at reserva normally — the denylist is a per-channel
         scoping concern, not a global rule."""
         StockMovements.receive(
-            Decimal("10"), product.sku, position=position_ontem,
-            reason="D-1",
+            Decimal("10"), product.sku, position=position_reserva,
+            reason="Reserva",
         )
 
         reserve = availability.reserve(

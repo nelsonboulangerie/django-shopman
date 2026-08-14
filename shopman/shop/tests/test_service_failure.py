@@ -446,7 +446,7 @@ class StockCheckDegradationTests(TestCase):
         cart = self._make_cart(skus=("SKU-A", "SKU-B"))
         request = self._make_request()
 
-        avail_ok = {"breakdown": {"ready": Decimal("10"), "in_production": Decimal("0"), "d1": Decimal("0")}}
+        avail_ok = {"breakdown": {"ready": Decimal("10"), "in_production": Decimal("0")}}
 
         def _avail(sku, **kwargs):
             return avail_ok if sku == "SKU-A" else None
@@ -481,7 +481,7 @@ class StockCheckDegradationTests(TestCase):
 
         cart = self._make_cart(skus=("SKU-C",))
         request = self._make_request()
-        avail = {"total_promisable": Decimal("5"), "breakdown": {"ready": Decimal("5"), "in_production": Decimal("0"), "d1": Decimal("0")}}
+        avail = {"total_promisable": Decimal("5"), "breakdown": {"ready": Decimal("5"), "in_production": Decimal("0")}}
 
         with patch("shopman.shop.projections.checkout_context._availability_for_sku", return_value=avail):
             shortfalls, service_unavailable = cart_stock_shortfalls(

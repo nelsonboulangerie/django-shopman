@@ -184,7 +184,6 @@ def _build_items() -> list[ClosingItemProjection]:
             position__is_saleable=True,
             _quantity__gt=0,
         )
-        .exclude(position__ref="ontem")
         .values("sku")
         .annotate(total_qty=Sum("_quantity"))
         .order_by("sku")

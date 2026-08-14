@@ -29,7 +29,6 @@ const pin = ref("");
 // gerente autorizava sem saber o que estava assinando.
 const REASON_COPY: Record<string, (thresholdQ: number) => string> = {
   discount_over_threshold: (q) => `Desconto acima de ${formatBRL(q)}.`,
-  d1_line_discount: () => "Desconto em item de véspera.",
   price_override: () => "Preço alterado à mão.",
 };
 const reason = computed(() => {

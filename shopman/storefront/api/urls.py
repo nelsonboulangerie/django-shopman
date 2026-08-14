@@ -101,7 +101,7 @@ urlpatterns = [
     # Availability
     path("availability/<str:sku>/", AvailabilityView.as_view(), name="api-availability"),
     path("availability/<str:sku>/notify/", StockAlertSubscribeView.as_view(), name="api-availability-notify"),
-    # FOMO — badges de urgência real (últimas unidades, saiu do forno, D-1…).
+    # FOMO — badges de urgência real (últimas unidades, saiu do forno…).
     # Fetch canônico do canal SSE ``fomo-<sku>``: o push só avisa que mudou.
     path("fomo/<str:sku>/", FomoBadgesView.as_view(), name="api-fomo"),
     # Stream público por SKU. Canal efêmero (sem histórico): o evento diz "mudou",

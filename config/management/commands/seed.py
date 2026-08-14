@@ -5400,12 +5400,11 @@ class Command(BaseCommand):
         """Brand overrides for generic interface copy.
 
         The pricing modifiers carry generic discount labels; Nelson overrides
-        them with its own wording (e.g. "Desconto de ontem") via OmotenashiCopy rows.
+        them with its own wording (e.g. "Hora da Xepa") via OmotenashiCopy rows.
         """
         self.stdout.write("  💬 Omotenashi copy (overrides de marca)...")
 
         COPY_OVERRIDES = [
-            {"key": "CART_DISCOUNT_LABEL_AVAILABILITY", "title": "Desconto de ontem"},
             {"key": "CART_DISCOUNT_LABEL_TIME_WINDOW", "title": "Hora da Xepa"},
         ]
 

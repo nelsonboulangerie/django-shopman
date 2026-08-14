@@ -557,7 +557,6 @@ def add_reorder_items(
                 qty=int(item.qty),
                 unit_price_q=price_q,
                 name=product.name,
-                is_d1=False,
             )
         except CartUnavailableError:
             skipped.append(product.name or item.sku)

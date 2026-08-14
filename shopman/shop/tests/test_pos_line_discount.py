@@ -1,9 +1,7 @@
 """Per-line manual discount (POS numpad "Desc"): pricing, intent and gate.
 
 Operator policy (decided 2026-05-30):
-- promo vs manual on the same line → "maior desconto ganha" (best wins);
-- a manual discount on a D-1 line is only honored with manager approval
-  (``approved_by`` stamped), and always requires the manager PIN gate.
+- promo vs manual on the same line → "maior desconto ganha" (best wins).
 """
 
 from __future__ import annotations
@@ -34,18 +32,17 @@ class TestCalcManual:
 
 
 class TestIntentPreservesLineDiscount:
-    def test_discount_and_is_d1_survive_parsing(self) -> None:
+    def test_discount_survives_parsing(self) -> None:
         intent = parse_pos_sale_intent(
             {
                 "items": [
                     {"sku": "BAGUETE", "qty": 2, "unit_price_q": 1300,
-                     "is_d1": True, "discount": {"value": 15, "reason": "fidelidade"}},
+                     "discount": {"value": 15, "reason": "fidelidade"}},
                 ],
             },
             for_commit=True,
         )
         item = intent.payload["items"][0]
-        assert item["is_d1"] is True
         assert item["discount"] == {"type": "percent", "value": 15.0, "reason": "fidelidade"}
 
     def test_percent_clamped_to_100(self) -> None:
@@ -71,19 +68,6 @@ class TestPayloadDiscountHelpers:
         ]}
         assert pos_service._payload_line_discounts_q(payload) == 260
 
-    def test_d1_line_discount_detected(self) -> None:
-        payload = {"items": [
-            {"sku": "A", "qty": 1, "unit_price_q": 1300, "is_d1": True, "discount": {"value": 10}},
-        ]}
-        assert pos_service._payload_has_d1_line_discount(payload) is True
-
-    def test_non_d1_line_discount_not_flagged(self) -> None:
-        payload = {"items": [
-            {"sku": "A", "qty": 1, "unit_price_q": 1300, "discount": {"value": 10}},
-        ]}
-        assert pos_service._payload_has_d1_line_discount(payload) is False
-
-
 @pytest.mark.django_db
 class TestBuildSessionOpsStampsDiscount:
     def test_stamps_manual_discount_meta_with_approved_by(self) -> None:
@@ -107,17 +91,8 @@ class TestBuildSessionOpsStampsDiscount:
 
 @pytest.mark.django_db
 class TestManagerApprovalGate:
-    def test_d1_line_discount_requires_approval_even_without_threshold(self) -> None:
-        payload = {
-            "items": [{"sku": "BAGUETE", "qty": 1, "unit_price_q": 1300,
-                       "is_d1": True, "discount": {"value": 10}}],
-        }
-        with pytest.raises(PosIntentError) as exc:
-            pos_service.validate_manager_approval(payload, operator_username="op")
-        assert exc.value.code == "manager_approval_required"
-
     def test_plain_line_discount_below_threshold_passes(self) -> None:
-        # Default threshold is 0 (no approval); a non-D-1 line discount does not gate.
+        # Default threshold is 0 (no approval); a plain line discount does not gate.
         payload = {
             "items": [{"sku": "BAGUETE", "qty": 1, "unit_price_q": 1300, "discount": {"value": 10}}],
         }
@@ -186,7 +161,7 @@ class TestServerSidePriceAuthority:
     price by hand off the catalog anchor. It is derived server-side (client intent
     plus an off-catalog price), never taken raw.
 
-    An automatic system discount (D-1/happy-hour/promotion) baked into the reloaded
+    An automatic system discount (happy-hour/promotion) baked into the reloaded
     ``unit_price_q`` is NOT a false override (the seed bug B1-2); a crafted low price
     without the operator intent is repriced by the ``internal`` pricing modifier on
     commit, so it needs no gate here; a genuine hand-fixed price still fires it.
@@ -238,18 +213,6 @@ class TestServerSidePriceAuthority:
         pos_service.derive_price_overrides(payload, channel=channel)
         assert payload["items"][0]["price_overridden"] is False
         # No friction: gate does not fire for a plain catalog sale.
-        pos_service.validate_manager_approval(payload, operator_username="op")
-
-    def test_baked_d1_discount_price_is_not_an_override(self) -> None:
-        # THE SEED BUG (B1-2): a previous persist baked the D-1 discount into
-        # unit_price_q (650 = 1300 − 50%) and the reload echoes it back WITHOUT any
-        # override intent. The old catalog comparison read this as a manual override
-        # and demanded a manager for every D-1 line. It must not.
-        channel = self._channel()
-        self._product(base_price_q=1300)
-        payload = {"items": [{"sku": "BAGUETE", "qty": 1, "unit_price_q": 650, "is_d1": True}]}
-        pos_service.derive_price_overrides(payload, channel=channel)
-        assert payload["items"][0]["price_overridden"] is False
         pos_service.validate_manager_approval(payload, operator_username="op")
 
     def test_baked_promotion_price_is_not_an_override(self) -> None:

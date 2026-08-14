@@ -71,7 +71,7 @@ function cartItem(overrides: Partial<POSCartItem> & { sku: string }): POSCartIte
     price_q: 0,
     qty: 1,
     notes: "",
-    is_d1: false,
+    
     ...overrides,
   };
 }
@@ -125,10 +125,8 @@ function product(overrides: Partial<POSProductProjection> & { sku: string }): PO
     price_q: 0,
     price_display: "",
     collection_ref: "",
-    is_d1: false,
+    
     image_url: "",
-    d1_price_q: 0,
-    d1_price_display: "",
     ...overrides,
   };
 }

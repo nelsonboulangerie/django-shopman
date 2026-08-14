@@ -373,7 +373,7 @@ def test_storefront_cart_intent_delegates_product_resolution():
         pytest.fail(
             "Storefront cart intent imported catalog/stock modules directly:\n"
             f"{_format_violations(violations)}\n\n"
-            "Keep cart intent parsing in storefront and route product price/D-1 "
+            "Keep cart intent parsing in storefront and route product price "
             "resolution through shopman.shop.projections.cart_context."
         )
 

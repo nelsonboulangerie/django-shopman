@@ -30,7 +30,7 @@ fica em [`_quarantine/`](_quarantine/).
 | [`IFOOD-DIRECT-INTEGRATION-PLAN.md`](IFOOD-DIRECT-INTEGRATION-PLAN.md) | Integração direta (polling) em staging; homologação de produção pendente. |
 | [`DELIVERY-EXTERNAL-LOGISTICS-PLAN.md`](DELIVERY-EXTERNAL-LOGISTICS-PLAN.md) | Machine (courier) construída (PR #43); faltam credenciais centrais + homologação de webhook. |
 | [`DELIVERY-GEOCODING-AND-FEEDBACK-PLAN.md`](DELIVERY-GEOCODING-AND-FEEDBACK-PLAN.md) | Cascata de geocoding entregue; pendente robustez multi-provedor + feedback omotenashi. |
-| [`VALIDITY-SHELFLIFE-REVIEW.md`](VALIDITY-SHELFLIFE-REVIEW.md) | Referência viva; P0 ligado (WP-B5, validator composto); P1/P2 = WP-B6 pendente. |
+| [`VALIDITY-SHELFLIFE-REVIEW.md`](completed/VALIDITY-SHELFLIFE-REVIEW.md) | Arquivado (retrato de 2026-06): P0 ligado (WP-B5); o caminho de validade virou o modelo de lote (ADR-017, C1–C6). |
 | [`OPERATION-DOMAIN-PLAN.md`](OPERATION-DOMAIN-PLAN.md) | Baseline de modelos/Admin implementado; próxima camada (superfície de execução, BI) aberta. |
 | [`OPERATION-RUNBOOKS-PLAN.md`](OPERATION-RUNBOOKS-PLAN.md) | Baseline de runbooks/diagnose concluído; snapshot/smoke real de gateway bloqueado por credenciais. |
 | [`OMOTENASHI-FIRST-FULLNESS-PLAN.md`](OMOTENASHI-FIRST-FULLNESS-PLAN.md) | Algumas rodadas entregues; maioria dos WP-OF-* não executados. |
