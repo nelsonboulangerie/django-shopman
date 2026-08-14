@@ -21,11 +21,11 @@ POSITION_REF = "loja"
 
 # Mirrors the seed's ``web`` ("Loja online") channel config so journeys exercise
 # the real remote lifecycle: optimistic auto-confirm, pix/card paid after the
-# store confirms (post_commit), D-1 stock hidden, 30-min holds.
+# store confirms (post_commit), 30-min holds.
 WEB_CHANNEL_CONFIG = {
     "confirmation": {"mode": "auto_confirm", "timeout_minutes": 5, "stale_new_alert_minutes": 10},
     "payment": {"method": ["pix", "card"], "timing": "post_commit", "timeout_minutes": 10},
-    "stock": {"excluded_positions": ["ontem"], "hold_ttl_minutes": 30},
+    "stock": {"hold_ttl_minutes": 30},
 }
 
 

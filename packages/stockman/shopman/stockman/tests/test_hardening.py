@@ -29,7 +29,7 @@ def _scope_resolver(channel_ref: str | None) -> dict:
         return {
             "safety_margin": 2,
             "allowed_positions": ["vitrine"],
-            "excluded_positions": ["ontem"],
+            "excluded_positions": ["reserva"],
             "expiry_margin_days": 3,
             "sells_nonconforming": False,
         }
@@ -97,7 +97,7 @@ class TestAvailabilityScopeForChannel:
         assert availability_scope_for_channel("remote") == {
             "safety_margin": 2,
             "allowed_positions": ["vitrine"],
-            "excluded_positions": ["ontem"],
+            "excluded_positions": ["reserva"],
             "expiry_margin_days": 3,
             "sells_nonconforming": False,
         }

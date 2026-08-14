@@ -23,7 +23,7 @@ from shopman.shop.rules.engine import load_rule
 def _make_rule_config(**kwargs) -> RuleConfig:
     defaults = {
         "ref": "test-rule",
-        "rule_path": "shopman.shop.rules.pricing.D1Rule",
+        "rule_path": "shopman.shop.rules.pricing.EmployeeRule",
         "label": "Test Rule",
         "enabled": True,
         "params": {},
@@ -66,7 +66,7 @@ class TestRuleConfigWhitelist(TestCase):
         assert "rule_path" in exc_info.value.message_dict
 
     def test_accepts_legitimate_pricing_rule(self):
-        rc = _make_rule_config(rule_path="shopman.shop.rules.pricing.D1Rule")
+        rc = _make_rule_config(rule_path="shopman.shop.rules.pricing.EmployeeRule")
         rc.clean()  # must not raise
 
     def test_accepts_legitimate_validation_rule(self):
@@ -90,11 +90,11 @@ class TestLoadRuleDefenseInDepth(TestCase):
 
     def test_load_rule_accepts_whitelisted_path(self):
         rc = RuleConfig.__new__(RuleConfig)
-        rc.rule_path = "shopman.shop.rules.pricing.D1Rule"
+        rc.rule_path = "shopman.shop.rules.pricing.EmployeeRule"
         rc.params = {}
         rule = load_rule(rc)
-        from shopman.shop.rules.pricing import D1Rule
-        assert isinstance(rule, D1Rule)
+        from shopman.shop.rules.pricing import EmployeeRule
+        assert isinstance(rule, EmployeeRule)
 
 
 class TestRuleConfigAdminPermission(TestCase):
@@ -147,7 +147,7 @@ class TestRuleConfigHistory(TestCase):
     def test_save_creates_historical_record(self):
         rc = RuleConfig.objects.create(
             ref="history-test",
-            rule_path="shopman.shop.rules.pricing.D1Rule",
+            rule_path="shopman.shop.rules.pricing.EmployeeRule",
             label="History Test",
             priority=99,
         )
@@ -157,7 +157,7 @@ class TestRuleConfigHistory(TestCase):
     def test_update_creates_second_historical_record(self):
         rc = RuleConfig.objects.create(
             ref="history-update",
-            rule_path="shopman.shop.rules.pricing.D1Rule",
+            rule_path="shopman.shop.rules.pricing.EmployeeRule",
             label="Before",
             priority=99,
         )
@@ -171,7 +171,7 @@ class TestRuleConfigHistory(TestCase):
     def test_delete_creates_delete_historical_record(self):
         rc = RuleConfig.objects.create(
             ref="history-delete",
-            rule_path="shopman.shop.rules.pricing.D1Rule",
+            rule_path="shopman.shop.rules.pricing.EmployeeRule",
             label="To Delete",
             priority=99,
         )

@@ -245,8 +245,6 @@ def _items(raw, *, for_commit: bool) -> list[dict]:
             "unit_price_q": unit_price_q,
             "notes": _text(item.get("notes"), limit=280),
         }
-        if item.get("is_d1"):
-            entry["is_d1"] = True
         if item.get("price_overridden"):
             # Advisory UI hint that the operator fixed this line's price. It is
             # NOT trusted: the POS service re-derives ``price_overridden`` from the

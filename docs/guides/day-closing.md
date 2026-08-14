@@ -1,6 +1,8 @@
-# Fechamento do dia e sobras (D-1)
+# Fechamento do dia e sobras (por lote)
 
-Guia operacional e de sistema: **informe de não vendidos**, movimentação para a posição **`ontem`**, relação com canais remotos e lacunas planejadas (descarte, auditoria).
+Guia operacional e de sistema: **informe de não vendidos** às cegas e o destino
+das sobras decidido pelo **LOTE** (validade + conformidade), sem posição
+especial de véspera.
 
 ---
 
@@ -8,17 +10,20 @@ Guia operacional e de sistema: **informe de não vendidos**, movimentação para
 
 1. **Listagem / canal** definem *o que pode ser ofertado*.
 2. **Fechamento do dia** registra *quanto sobrou fisicamente* na loja, **sem depender** do fechamento automático de vendas no caixa (informe **às cegas** em relação ao ticket — ver abaixo).
-3. SKUs **elegíveis para venda no dia seguinte em condição especial** têm sobras **movidas** para a posição de estoque **`ontem`** com lote **`D-1`**.
-4. **Canais remotos** não consideram estoque na posição `ontem` (configuração do canal + disponibilidade filtrada). Sobra só para **venda presencial** com picking consciente.
+3. **A sobra não se move.** O que decide o destino é o lote de cada quant:
+   - lote **não conforme** → write-off imediato (`perda_nao_conformidade:<data>`);
+   - lote **vencido** para a data do fechamento (ou produto do dia sem lote, `shelf_life_days == 0`) → write-off (`perda_vencido:<data>`);
+   - lote **com validade** → **fica onde está**, como lote datado na própria vitrine. No dia seguinte, o gate de validade por canal (`expiry_margin_days`, `sells_nonconforming`) e o preço por lote (`percent_for_lot`) decidem o que cada canal oferece e por quanto.
+4. Cada SKU fecha com uma **classificação**: `keep` (tudo fica), `expired` (tudo virou perda) ou `mixed` — o POS mostra "Fica / Parte vence / Vira perda".
 
 ---
 
 ## Informe “não vendidos” (às cegas)
 
 - O operador informa, **SKU a SKU**, apenas a quantidade que **sobrou fisicamente**.
-- A tela não exibe saldo disponível, destino, D-1, perda ou classificação interna. Isso evita viés na contagem.
-- O sistema decide automaticamente o destino operacional da sobra conforme regras do produto e posições de estoque.
-- Esse número **não é validado** contra somatório de vendas do PDV no mesmo passo: é um **conferência física** (o que ainda está na loja ao fechar).
+- A tela não exibe saldo disponível, destino, perda ou classificação interna. Isso evita viés na contagem.
+- O sistema decide automaticamente o destino da sobra pelas regras de lote acima.
+- Esse número **não é validado** contra somatório de vendas do PDV no mesmo passo: é uma **conferência física** (o que ainda está na loja ao fechar).
 - **Por quê?** Porque na prática há diferenças (amostras, erro de caixa, furto, ajuste manual). A auditoria cruzada (produzido vs vendido vs informado) é **relatório**, não bloqueio automático do formulário.
 - Se o informado for maior que o saldo conhecido, a movimentação física fica limitada ao saldo que o Stockman conhece, mas o snapshot registra `qty_reported`, `qty_applied` e `qty_discrepancy`. Divergência não é escondida.
 
@@ -28,10 +33,11 @@ Se no futuro o produto exigir **confirmação explícita** do tipo “revisei to
 
 ## Exemplo: sobraram 10 pães de forma
 
-1. O produto está elegível a D-1: `Product.metadata["allows_next_day_sale"] = true` (seed / admin).
-2. No fechamento, o operador informa **10** em “sobraram” para esse SKU.
-3. O sistema: **baixa** da vitrine (e outras posições vendáveis elegíveis), **entra** em `ontem` com **lote `D-1`**.
-4. **No dia seguinte**: se venderem só **5** no balcão com preço D-1, os **5 restantes** devem ser tratados como **descarte** (perda operacional): em termos de estoque, isso é uma **baixa** do saldo em `ontem` com motivo auditável (fluxo de “descarte / liquidação D-1” — ver *Roadmap* abaixo).
+1. No fechamento, o operador informa **10** em “sobraram” para esse SKU.
+2. O sistema olha os lotes desse saldo:
+   - 3 unidades de um lote marcado não conforme → `perda_nao_conformidade:<data>`;
+   - o produto tem `shelf_life_days == 1` e o lote de hoje vence amanhã → as 7 restantes **ficam** na vitrine como lote datado.
+3. **No dia seguinte**: o canal remoto só oferece o lote se a margem de validade do canal permitir; o balcão vende com o desconto congelado no lote (`percent_for_lot`). O que vencer morre no próximo fechamento como `perda_vencido`.
 
 ---
 
@@ -41,10 +47,9 @@ Se no futuro o produto exigir **confirmação explícita** do tipo “revisei to
 |------|------|
 | Tela de fechamento | Antesala do PDV: `surfaces/pos-nuxt/app/pages/session/closing.vue` |
 | API (GET/POST) | `shopman/backstage/api/operations.py` → `DayClosingView` (`/api/v1/backstage/closing/`) |
-| Registro auditável | `DayClosing` (`date`, `closed_by`, `data` = snapshot por SKU) |
-| Classificação por SKU | Interna: `d1` (elegível), `loss` (perecível same-day), `neutral` (restante fica onde está) |
-| Movimentação D-1 | `StockMovements.issue` nas posições vendáveis (exceto `ontem`) + `StockMovements.receive` em `ontem` com **`batch="D-1"`** |
-| Alerta de D-1 “velho” em `ontem` | `_has_old_d1_stock()` (heurística por movimento com `reason` prefixo `d1:`) |
+| Registro auditável | `DayClosing` (`date`, `closed_by`, `data` = snapshot por SKU com `qty_kept`, `qty_expired`, `qty_nonconforming`) |
+| Write-off por lote | `shopman/backstage/services/closing.py::_write_off_lots` (WASTE com motivo auditável) |
+| Classificação por SKU | `keep` / `expired` / `mixed` — derivada do snapshot, exibida no POS |
 
 Permissão: `shop.add_dayclosing`.
 
@@ -52,7 +57,6 @@ Permissão: `shop.add_dayclosing`.
 
 ## Roadmap / lacunas (produto)
 
-- **Liquidação explícita** do que sobrou em `ontem` após o dia de venda D-1 (descarte = issue com motivo padronizado, ou tela dedicada).
 - **Relatório** produzido vs vendido vs não vendido informado vs perda — base para auditoria sem substituir o informe às cegas.
 - **Superfície operacional**: antesala do PDV (`pos.<zona>/session/closing`), consumindo `GET/POST /api/v1/backstage/closing/` (mesma projection `build_day_closing()` e mesmo service). A tela Admin/Unfold foi removida (ADMIN-ROLE-PLAN WP-ADM-3); `DayClosingAdmin` mantém auditoria e histórico readonly.
 

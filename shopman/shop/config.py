@@ -110,7 +110,7 @@ class ChannelConfig:
         allowed_positions: list[str] | None = None  # None = all saleable positions
         excluded_positions: list[str] = field(default_factory=list)
         # Denylist aplicada depois de ``allowed_positions``. Uso típico: canais
-        # remotos declaram ``excluded_positions=["ontem"]`` para manter D-1
+        # remotos declaram ``excluded_positions`` para manter posições internas
         # (staff-only) fora do escopo de check/reserve do cliente.
         check_on_commit: bool = False  # validate per-item availability at commit
         low_stock_threshold: int = 5  # acima de 0 e <= este valor → "Últimas unidades" no cardápio
@@ -132,8 +132,8 @@ class ChannelConfig:
         # preenchido — ter motivo é ser)? Default falha para o lado seguro:
         # canal remoto não vende pão com desconto de qualidade sem decisão
         # explícita. O PDV declara True — no balcão a etiqueta explica.
-        # (D1-RETIREMENT C2: substitui a cerca por POSIÇÃO excluded_positions
-        # =["ontem"]; a posição diz ONDE, o lote diz O QUE.)
+        # (D1-RETIREMENT C2: substituiu a antiga cerca por POSIÇÃO;
+        # a posição diz ONDE, o lote diz O QUE.)
         expiry_margin_days: int = 0
         # Não oferecer lote a menos de N dias do vencimento (near-expiry).
         # 0 = só exclui o já vencido (comportamento de sempre). O queijo de

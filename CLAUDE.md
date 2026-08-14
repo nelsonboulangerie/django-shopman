@@ -36,7 +36,7 @@ shopman/                Namespace package (PEP 420) — sem __init__.py
 │   ├── projections/    types.py (shared projection types — Availability, OrderItem, etc.)
 │   ├── views/          health.py — /health/ e /ready/
 │   ├── middleware.py   AppPlatformHealthCheckHost, APIVersionHeader, OperatorSessionDomain
-│   ├── management/commands/   ~21 comandos: maintenance_worker, sweep_stuck_orders, cleanup_d1,
+│   ├── management/commands/   ~20 comandos: maintenance_worker, sweep_stuck_orders,
 │   │                   cleanup_stale_sessions, cleanup_stale_planning, ifood_poll, sync_catalog_ifood,
 │   │                   fiscal_emit, reconcile_payments, machine_register_webhook, suggest_production,
 │   │                   bootstrap_admin, setup_groups, entre outros — ver docs/reference/commands.md
@@ -96,7 +96,7 @@ pyproject.toml          Build + test config (repo root)
 > **Tenant = config + dados + marca, zero código.** Não há pacote Python de
 > instância. "Nelson" é o `Shop` singleton + dados no DB (`Channel`/`RuleConfig`/
 > `OmotenashiCopy`/catálogo via `seed`) + marca (assets do storefront) + settings
-> do deployment. O `seed` vive no app `config`; pricing (D-1/Happy Hour) e a
+> do deployment. O `seed` vive no app `config`; pricing (Happy Hour/lote) e a
 > estratégia de balcão são genéricos no orquestrador, dirigidos por `RuleConfig`.
 
 ### Regra de Dependência (3 apps)

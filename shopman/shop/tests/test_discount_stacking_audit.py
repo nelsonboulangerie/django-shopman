@@ -71,37 +71,7 @@ class DiscountStackingAuditTests(TestCase):
     def _line(self, session: Session):
         return next(i for i in session.items if i.get("sku") == self.product.sku)
 
-    # ── HOLE 1: happy hour must NOT compound on a D-1 line (best-wins) ───────
-    def test_happy_hour_does_not_compound_on_d1(self) -> None:
-        RuleConfig.objects.create(
-            ref="d1_discount",
-            rule_path="shopman.shop.rules.pricing.D1Rule",
-            label="D-1",
-            params={"discount_percent": 50},
-            enabled=True,
-        )
-        RuleConfig.objects.create(
-            ref="happy_hour",
-            rule_path="shopman.shop.rules.pricing.HappyHourRule",
-            label="Happy Hour",
-            params=_wide_window_params(25),
-            enabled=True,
-        )
-        cache.clear()
-
-        key = self._open_session()
-        session = ModifyService.modify_session(
-            session_key=key,
-            channel_ref="web",
-            ops=[{"op": "add_line", "sku": self.product.sku, "qty": 1,
-                  "unit_price_q": 1000, "is_d1": True}],
-        )
-        unit = self._line(session)["unit_price_q"]
-        # Best-wins: the deeper discount (50% D-1) applies; happy hour must NOT
-        # stack. Correct = 500. Bug compounds: 1000→500 (D-1)→375 (−25% again).
-        self.assertEqual(unit, 500, f"happy hour compounded on D-1: got {unit}, expected 500")
-
-    # ── HOLE 2: employee discount must NOT compound on a promo line (best-wins) ─
+    # ── HOLE: employee discount must NOT compound on a promo line (best-wins) ─
     def test_employee_does_not_compound_on_promotion(self) -> None:
         from shopman.shop.models import Promotion
 
@@ -132,39 +102,15 @@ class DiscountStackingAuditTests(TestCase):
         # 1000→700 (promo)→560 (−20% employee on the reduced price).
         self.assertEqual(unit, 700, f"employee compounded on promo: got {unit}, expected 700")
 
-    # ── HOLE (achado tardio): D-1 + promoção automática NÃO compõem ──────────
-    def test_d1_does_not_compound_with_auto_promotion(self) -> None:
-        # O guard "pula linha D-1" do DiscountModifier lia modifiers_applied (que
-        # não persiste) → sempre [] → D-1 nunca era pulado → a promo compunha sobre
-        # o preço de D-1 (1000→500→350). Agora usa a fonte durável (meta.is_d1).
-        RuleConfig.objects.create(
-            ref="d1_discount", rule_path="shopman.shop.rules.pricing.D1Rule",
-            label="D-1", params={"discount_percent": 50}, enabled=True,
-        )
+    # ── Invariante: cadeia inteira (promo + funcionário + happy hour) = 1 melhor ─
+    def test_full_chain_takes_single_best_discount(self) -> None:
         from shopman.shop.models import Promotion
 
         now = timezone.now()
         Promotion.objects.create(
-            ref="promo-30-2",
-            name="Promo 30", type=Promotion.PERCENT, value=30, is_active=True,
+            ref="promo-50",
+            name="Promo 50", type=Promotion.PERCENT, value=50, is_active=True,
             valid_from=now - timedelta(days=1), valid_until=now + timedelta(days=1),
-        )
-        cache.clear()
-
-        key = self._open_session()
-        session = ModifyService.modify_session(
-            session_key=key, channel_ref="web",
-            ops=[{"op": "add_line", "sku": self.product.sku, "qty": 1,
-                  "unit_price_q": 1000, "is_d1": True}],
-        )
-        unit = self._line(session)["unit_price_q"]
-        self.assertEqual(unit, 500, f"D-1 compounded with promo: got {unit}, expected 500")
-
-    # ── Invariante: cadeia inteira (D-1 + funcionário + happy hour) = 1 melhor ─
-    def test_full_chain_takes_single_best_discount(self) -> None:
-        RuleConfig.objects.create(
-            ref="d1_discount", rule_path="shopman.shop.rules.pricing.D1Rule",
-            label="D-1", params={"discount_percent": 50}, enabled=True,
         )
         RuleConfig.objects.create(
             ref="happy_hour", rule_path="shopman.shop.rules.pricing.HappyHourRule",
@@ -173,7 +119,7 @@ class DiscountStackingAuditTests(TestCase):
         cache.clear()
 
         key = self._open_session()
-        # Staff customer + D-1 line + happy hour window open — all three "apply".
+        # Staff customer + deep promo + happy hour window open — all three "apply".
         ModifyService.modify_session(
             session_key=key, channel_ref="web",
             ops=[{"op": "set_data", "path": "customer", "value": {"price_tier": "staff"}}],
@@ -181,12 +127,12 @@ class DiscountStackingAuditTests(TestCase):
         session = ModifyService.modify_session(
             session_key=key, channel_ref="web",
             ops=[{"op": "add_line", "sku": self.product.sku, "qty": 1,
-                  "unit_price_q": 1000, "is_d1": True}],
+                  "unit_price_q": 1000}],
         )
         unit = self._line(session)["unit_price_q"]
-        # Best of {D-1 50%, funcionário 20%, happy hour 25%} = 50% → 500. Nunca
+        # Best of {promo 50%, funcionário 20%, happy hour 25%} = 50% → 500. Nunca
         # compõe (o bug empilhava 1000→500→400→300).
-        self.assertEqual(unit, 500, f"chain compounded: got {unit}, expected 500 (D-1 wins)")
+        self.assertEqual(unit, 500, f"chain compounded: got {unit}, expected 500 (promo wins)")
 
     def test_flat_discount_wins_when_bigger_than_existing(self) -> None:
         # Happy hour (40%) É maior que uma promo de 10% → substitui (maior ganha).

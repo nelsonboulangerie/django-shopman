@@ -236,7 +236,7 @@ order_confirmation, account (profile/loyalty), order_history, shop/shop_status, 
   design:** o `/a` é uma ponte genérica (destino vem da metadata, não da audience); enforçar exigiria
   definir qual audience o exchange genérico requer. Débito de defense-in-depth, baixo risco.
 - **Agendamento de cleanups** — o comando `auth_cleanup` (purga device-trust + access links + códigos)
-  existe; falta rodá-lo periodicamente. É **infra compartilhada** (nenhum cleanup —`cleanup_d1`,
+  existe; falta rodá-lo periodicamente. É **infra compartilhada** (nenhum cleanup —`cleanup_stale_planning`,
   `cleanup_stale_sessions`, etc.— está agendado; DO App Platform não tem cron no spec). Resolver junto.
 
 ### ✅ Limpezas (WP-10)

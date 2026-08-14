@@ -128,9 +128,6 @@ class DayClosingBlindCountTests(TestCase):
             ).exists()
         )
 
-        # Nenhuma posição de véspera recebeu nada — a sobra não se move.
-        self.assertFalse(Quant.objects.filter(position__ref="ontem").exists())
-
     def test_nonconforming_leftover_is_written_off_with_its_own_reason(self) -> None:
         """Lote marcado não vai para o dia seguinte — mesmo com validade."""
         Batch.objects.create(

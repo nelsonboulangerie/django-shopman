@@ -55,8 +55,7 @@ must match the canonical table above.
 
 `pos` contains:
 
-- `products[]`: `sku`, `name`, `price_q`, `price_display`, `collection_ref`,
-  `is_d1`.
+- `products[]`: `sku`, `name`, `price_q`, `price_display`, `collection_ref`.
 - `collections[]`: `ref`, `name`.
 - `payment_methods[]`: canonical refs and labels for `cash`, `pix`, `card`,
   `mixed`.

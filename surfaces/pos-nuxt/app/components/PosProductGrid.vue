@@ -2,7 +2,7 @@
 // Sale Workspace · product grid (spec §2.2) — image-forward grade + rail de
 // categorias. Consumes the catalog Projection through `presentation/catalog`
 // (favourite-ordered categories, name/SKU filter); price and availability are
-// sealed in the Projection (price_display, is_d1) and only rendered. Search and
+// sealed in the Projection (price_display) and only rendered. Search and
 // the active collection are grid-local presentation state. Emits `add`; the
 // shell resolves the session command.
 import type { POSCartItem, POSCollectionProjection, POSProductProjection } from "~/types/pos";

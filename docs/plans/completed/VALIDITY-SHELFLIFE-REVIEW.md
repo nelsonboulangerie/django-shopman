@@ -4,6 +4,10 @@
 > trata **validade de produtos** nas 3 dimensões de uso da Nelson, para decidir o
 > caminho **priorizando configuração e o orquestrador; mudança no Core como último
 > recurso**. (2026-06-27)
+>
+> ⚠️ **Retrato histórico.** As menções a D-1/posição "ontem" descrevem o estado de
+> 2026-06; o conceito foi aposentado pelo modelo de lote/validade (ADR-017,
+> C1–C6) — o "P2 auto-transfer" proposto abaixo nunca será feito.
 
 ## Veredito de uma linha
 

@@ -61,7 +61,7 @@ class _Cart:
         self.items: list[dict] = []
         self.refuse = refuse or set()
 
-    def add_item(self, request, *, sku, qty, unit_price_q, name, is_d1):
+    def add_item(self, request, *, sku, qty, unit_price_q, name):
         if sku in self.refuse:
             raise RuntimeError("estoque recusou")
         self.items.append({"sku": sku, "qty": qty, "unit_price_q": unit_price_q, "name": name})

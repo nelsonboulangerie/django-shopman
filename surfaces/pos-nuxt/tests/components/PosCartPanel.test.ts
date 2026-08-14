@@ -10,7 +10,7 @@ function affordance(overrides: Partial<ActionAffordance> = {}): ActionAffordance
 }
 
 function item(overrides: Partial<POSCartItem> & { sku: string; name: string }): POSCartItem {
-  return { price_q: 500, qty: 1, notes: "", is_d1: false, ...overrides };
+  return { price_q: 500, qty: 1, notes: "", ...overrides };
 }
 
 function props(overrides: Record<string, unknown> = {}) {

@@ -362,7 +362,7 @@ def check(
             "available_qty": Decimal,   # total_promisable for this channel
             "is_paused": bool,          # product paused/unpublished
             "is_planned": bool,         # only future quants exist
-            "breakdown": {ready, in_production, d1},
+            "breakdown": {ready, in_production},
             "error_code": str | None,   # set when ok=False
             "is_bundle": bool,          # True when SKU is a bundle
             "failed_sku": str | None,   # component that caused failure (bundles only)

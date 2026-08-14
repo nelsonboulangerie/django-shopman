@@ -138,11 +138,8 @@ OMOTENASHI_DEFAULTS: dict[str, dict[str, dict[str, CopyEntry]]] = {
 
     # ── Cart microcopy ────────────────────────────────────────────
     # Discount-line labels for the rule-driven pricing modifiers. Generic by
-    # function; a deployment overrides with its brand wording (e.g. "D-1",
+    # function; a deployment overrides with its brand wording (e.g.
     # "Hora da Xepa") via an OmotenashiCopy row.
-    "CART_DISCOUNT_LABEL_AVAILABILITY": {
-        WILDCARD: {WILDCARD: CopyEntry(title="Liquidação")},
-    },
     "CART_DISCOUNT_LABEL_TIME_WINDOW": {
         WILDCARD: {WILDCARD: CopyEntry(title="Happy Hour")},
     },

@@ -138,7 +138,7 @@ class BulkAvailabilityView(APIView):
         )
 
         zero = Decimal("0")
-        zero_breakdown = {"ready": zero, "in_production": zero, "d1": zero}
+        zero_breakdown = {"ready": zero, "in_production": zero}
         results = []
 
         for sku in skus:

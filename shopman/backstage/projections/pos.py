@@ -44,24 +44,14 @@ logger = logging.getLogger(__name__)
 
 @dataclass(frozen=True)
 class POSProductProjection:
-    """A single product tile in the POS grid.
-
-    D-1 (sobras): when ``is_d1``, ``d1_price_q``/``d1_price_display`` carry the
-    already-discounted clearance price (from the ``d1_discount`` rule, same math
-    as ``AvailabilityDiscountModifier``). The POS shows and SENDS this price so
-    the review total and the committed order agree — the modifier re-derives the
-    identical value on commit. When the rule is off, ``d1_price_q == price_q``.
-    """
+    """A single product tile in the POS grid."""
 
     sku: str
     name: str
     price_q: int
     price_display: str
     collection_ref: str
-    is_d1: bool
     image_url: str = ""
-    d1_price_q: int = 0
-    d1_price_display: str = ""
 
 
 @dataclass(frozen=True)
@@ -546,7 +536,7 @@ def build_pos_customer_search(query: str, limit: int = 8) -> tuple[POSCustomerSe
 
 
 def _load_products() -> list[POSProductProjection]:
-    """Load products with prices and D-1 flags for the POS grid."""
+    """Load products with prices for the POS grid."""
     products: list[POSProductProjection] = []
 
     try:
@@ -1344,46 +1334,14 @@ def _product_projection(product: Product, price_q: int) -> POSProductProjection:
         .first()
     )
 
-    try:
-        from shopman.backstage.projections._helpers import _line_item_is_d1
-        is_d1 = _line_item_is_d1(product, listing_ref=POS_CHANNEL_REF)
-    except Exception:
-        logger.exception("pos_d1_check_failed sku=%s", product.sku)
-        is_d1 = False
-
-    d1_price_q = _d1_price_q(price_q) if is_d1 else price_q
-
     return POSProductProjection(
         sku=product.sku,
         name=product.name,
         price_q=price_q,
         price_display=f"R$ {format_money(price_q)}",
         collection_ref=ci.collection.ref if ci else "",
-        is_d1=is_d1,
         image_url=product.image_url or "",
-        d1_price_q=d1_price_q,
-        d1_price_display=f"R$ {format_money(d1_price_q)}",
     )
-
-
-def _d1_price_q(price_q: int) -> int:
-    """Clearance (D-1) unit price for the POS channel.
-
-    Mirrors ``AvailabilityDiscountModifier`` exactly — same rule gate
-    (``d1_discount`` for the POS channel) and same ``monetary_div`` math — so the
-    price shown/sent by the POS equals what the modifier re-derives on commit.
-    Falls back to the full price when the rule is disabled for this channel.
-    """
-    from shopman.utils.monetary import monetary_div
-
-    from shopman.shop.modifiers import DEFAULT_AVAILABILITY_DISCOUNT_PERCENT
-    from shopman.shop.rules.engine import get_channel_rule_params
-
-    params = get_channel_rule_params("d1_discount", POS_CHANNEL_REF)
-    if params is None:
-        return price_q
-    percent = params.get("discount_percent", DEFAULT_AVAILABILITY_DISCOUNT_PERCENT)
-    return price_q - monetary_div(price_q * percent, 100)
 
 
 def _tab_projection(*, ref: str, session: Session | None, display_ref: str = "") -> POSTabProjection:
@@ -1654,7 +1612,6 @@ def build_open_tab(session: Session) -> dict:
             "price_q": _tab_line_display_price_q(item, manual_originals),
             "qty": int(item.get("qty", 1)),
             "notes": (item.get("meta") or {}).get("notes", ""),
-            "is_d1": bool((item.get("meta") or {}).get("is_d1")),
             "fired": item.get("line_id", "") in fired_lines,
             "discount": _tab_payload_line_discount(item),
             "price_overridden": bool((item.get("meta") or {}).get("price_overridden")),

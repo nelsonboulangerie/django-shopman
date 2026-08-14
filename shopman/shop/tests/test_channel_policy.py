@@ -20,7 +20,7 @@ def test_resolves_channel_policy_from_channel_config():
             "payment": {"method": ["pix", "cash"], "timing": "at_commit"},
             "stock": {
                 "hold_ttl_minutes": 10,
-                "excluded_positions": ["ontem"],
+                "excluded_positions": ["reserva"],
                 "check_on_commit": True,
             },
             "notifications": {"backend": "manychat", "fallback_chain": ["sms"]},
@@ -35,7 +35,7 @@ def test_resolves_channel_policy_from_channel_config():
     assert policy.payment_timing == "at_commit"
     assert policy.requires_payment_gate is True
     assert policy.supports_access_link is True
-    assert policy.stock_scope["excluded_positions"] == ("ontem",)
+    assert policy.stock_scope["excluded_positions"] == ("reserva",)
     assert policy.stock_scope["check_on_commit"] is True
     assert policy.notifications["backend"] == "manychat"
     assert "pay" in policy.action_refs

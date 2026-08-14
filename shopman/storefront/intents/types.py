@@ -15,7 +15,6 @@ class SetQtyIntent:
     action: str          # "add" | "update" | "remove"
     line_id: str | None  # for "update" / "remove"
     unit_price_q: int    # for "add"
-    is_d1: bool          # for "add"
     product: object      # Product instance — carried for error-modal rendering
 
 
