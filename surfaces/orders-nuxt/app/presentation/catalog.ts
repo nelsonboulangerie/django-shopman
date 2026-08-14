@@ -146,9 +146,9 @@ export function surfaceDisplayIcon(surface: SurfaceProjection): string {
 // Rótulo CURTO (cabe na coluna estreita da matriz) + `title` com a frase inteira,
 // que é o que o operador lê ao pousar o mouse.
 const SYNC: Record<SurfaceSyncStatus, { label: string; title: string; toneClass: string } | null> = {
-  ok: { label: "em dia", title: "Sincronizado", toneClass: "text-emerald-600 dark:text-emerald-400" },
-  error: { label: "erro", title: "Erro de sincronização", toneClass: "text-destructive" },
-  never: { label: "nunca", title: "Nunca sincronizado", toneClass: "text-amber-600 dark:text-amber-400" },
+  ok: { label: "Em dia", title: "Sincronizado", toneClass: "text-emerald-600 dark:text-emerald-400" },
+  error: { label: "Erro", title: "Erro de sincronização", toneClass: "text-destructive" },
+  never: { label: "Nunca", title: "Nunca sincronizado", toneClass: "text-amber-600 dark:text-amber-400" },
   na: null, // não é alvo de projeção → sem badge
 };
 

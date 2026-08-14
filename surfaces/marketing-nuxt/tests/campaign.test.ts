@@ -65,13 +65,13 @@ describe("vipSummary", () => {
 
 describe("expiryLabel", () => {
   it("reads in minutes under an hour and in hours above it", () => {
-    expect(expiryLabel(12)).toBe("expira em 12 min");
-    expect(expiryLabel(59)).toBe("expira em 59 min");
-    expect(expiryLabel(90)).toBe("expira em 1 h");
+    expect(expiryLabel(12)).toBe("Expira em 12 min");
+    expect(expiryLabel(59)).toBe("Expira em 59 min");
+    expect(expiryLabel(90)).toBe("Expira em 1 h");
   });
 
   it("says the deadline passed instead of showing zero", () => {
-    expect(expiryLabel(0)).toBe("expirou");
+    expect(expiryLabel(0)).toBe("Expirou");
   });
 
   it("stays silent for announcements with no deadline", () => {
@@ -163,12 +163,12 @@ describe("audienceRulesSummary", () => {
 
   it("spells out the sources in order", () => {
     expect(audienceRulesSummary({ favorites: true, alerts: true, bought_within_days: 90 }))
-      .toBe("favoritos, alertas, recompra em 90 dias");
+      .toBe("Favoritos, alertas, recompra em 90 dias");
   });
 
   it("appends the VIP head start", () => {
     expect(audienceRulesSummary({ favorites: true, vip_first_minutes: 15 }))
-      .toBe("favoritos, melhores clientes 15 min antes");
+      .toBe("Favoritos, melhores clientes 15 min antes");
   });
 
   // ⚠️ O resumo conhecia só três das nove regras. Uma campanha para "cliente fiel" ou
@@ -178,8 +178,8 @@ describe("audienceRulesSummary", () => {
     expect(audienceRulesSummary({ price_tiers: ["atacado"] }, labels)).toBe("Atacado");
     expect(audienceRulesSummary({ rfm_segments: ["loyal_customer"] }, labels))
       .toBe("cliente fiel");
-    expect(audienceRulesSummary({ churn_risk_min: 0.7 })).toBe("quem está sumindo");
-    expect(audienceRulesSummary({ birthday_today: true })).toBe("aniversariantes de hoje");
+    expect(audienceRulesSummary({ churn_risk_min: 0.7 })).toBe("Quem está sumindo");
+    expect(audienceRulesSummary({ birthday_today: true })).toBe("Aniversariantes de hoje");
   });
 
   // Somar e cruzar as MESMAS regras alcançam gente diferente, então o resumo não pode
@@ -188,7 +188,7 @@ describe("audienceRulesSummary", () => {
     const rules = { price_tiers: ["atacado"], rfm_segments: ["loyal_customer"] };
     expect(audienceRulesSummary(rules, labels)).toBe("Atacado, cliente fiel");
     expect(audienceRulesSummary({ ...rules, match: "all" as const }, labels))
-      .toBe("cruzando Atacado, cliente fiel");
+      .toBe("Cruzando Atacado, cliente fiel");
   });
 
   it("does not say 'crossed' with a single rule, where it would mean nothing", () => {

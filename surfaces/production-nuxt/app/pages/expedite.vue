@@ -118,7 +118,7 @@ const screenTitle = computed(
 );
 const screenSubtitle = computed(() => {
   const order = selectedOrder.value;
-  if (!order) return selectedRecipe.value ? "fornada avulsa" : "";
+  if (!order) return selectedRecipe.value ? "Fornada avulsa" : "";
   const bits = [
     order.output_sku,
     showPosition.value ? order.position_ref : "",

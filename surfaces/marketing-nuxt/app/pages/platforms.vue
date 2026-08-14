@@ -54,9 +54,9 @@ function kindLabel(kind: string): string {
 
 /** Bloqueio, limitação e saúde não podem parecer iguais. */
 function tone(ready: boolean, limitation: string) {
-  if (!ready) return { chip: "bg-destructive/10 text-destructive", icon: "lucide:circle-slash", label: "não publica" };
-  if (limitation) return { chip: "bg-amber-500/10 text-amber-700 dark:text-amber-400", icon: "lucide:triangle-alert", label: "alcance limitado" };
-  return { chip: "bg-emerald-500/10 text-emerald-700 dark:text-emerald-400", icon: "lucide:check", label: "pronta" };
+  if (!ready) return { chip: "bg-destructive/10 text-destructive", icon: "lucide:circle-slash", label: "Não publica" };
+  if (limitation) return { chip: "bg-amber-500/10 text-amber-700 dark:text-amber-400", icon: "lucide:triangle-alert", label: "Alcance limitado" };
+  return { chip: "bg-emerald-500/10 text-emerald-700 dark:text-emerald-400", icon: "lucide:check", label: "Pronta" };
 }
 
 useHead({ title: "Plataformas · Marketing" });
@@ -97,7 +97,7 @@ useHead({ title: "Plataformas · Marketing" });
                 v-if="!platform.in_use"
                 class="rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground"
               >
-                sem uso
+                Sem uso
               </span>
             </span>
             <span class="mt-0.5 block truncate text-sm text-muted-foreground">

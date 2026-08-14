@@ -54,7 +54,7 @@ describe("AnnouncementCard", () => {
     const text = mountCard(makeAnnouncement()).text();
     expect(text).toContain("Fornada de pães");
     expect(text).toContain("12 favoritos, 3 alertas = 15 clientes");
-    expect(text).toContain("expira em 20 min");
+    expect(text).toContain("Expira em 20 min");
   });
 
   it("pre-selects exactly the platforms the rule chose", () => {
