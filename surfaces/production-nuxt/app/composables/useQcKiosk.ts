@@ -45,6 +45,9 @@ export function useQcKiosk() {
       const shortage = parseShortage(httpError(err).data);
       if (shortage) return { ok: false, shortage };
       useSonner.error(httpErrorMessage(err, "Não deu para fechar a fornada. Tente de novo."));
+      // Conflito de estado (fornada fechada/estornada em outra tela): o painel
+      // está mentindo — atualiza na hora em vez de esperar o poll de 30s.
+      if (httpErrorCode(err) === "state_conflict") await refresh();
       return { ok: false };
     } finally {
       submitting.value = false;

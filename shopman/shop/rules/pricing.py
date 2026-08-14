@@ -5,10 +5,10 @@ Each rule class declares a modifier's identity (``code``), its admin label and
 that modifier's runtime behaviour: enabled state, params and channel scope.
 
 Execution is rule-driven. The modifiers in ``shop.modifiers`` that read their
-params through ``get_channel_rule_params`` (``AvailabilityDiscountModifier``,
-``TimeWindowDiscountModifier``) skip entirely when their ``RuleConfig`` is
-disabled or not scoped to the channel being priced — so disabling a rule in the
-admin truly disables the discount.
+params through ``get_channel_rule_params`` (``TimeWindowDiscountModifier``)
+skip entirely when their ``RuleConfig`` is disabled or not scoped to the
+channel being priced — so disabling a rule in the admin truly disables the
+discount.
 """
 
 from __future__ import annotations
@@ -16,18 +16,6 @@ from __future__ import annotations
 from datetime import time
 
 from shopman.shop.rules import BaseRule
-
-
-class D1Rule(BaseRule):
-    """Desconto D-1 — sobras do dia anterior."""
-
-    code = "shop.d1_discount"
-    label = "Desconto de ontem"
-    rule_type = "modifier"
-    default_params = {"discount_percent": 50}
-
-    def __init__(self, *, discount_percent: int = 50):
-        self.discount_percent = discount_percent
 
 
 class EmployeeRule(BaseRule):

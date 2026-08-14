@@ -7,16 +7,19 @@ not manipulate inventory directly.
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Iterable
 from datetime import date
 from decimal import Decimal
 
 from django.db import transaction
 from django.utils import timezone
-from shopman.stockman import Position, Quant
+from shopman.stockman import Quant
 from shopman.stockman.services.movements import StockMovements
 
 from shopman.backstage.models import DayClosing
+
+logger = logging.getLogger(__name__)
 
 
 def perform_day_closing(
@@ -38,37 +41,41 @@ def perform_day_closing(
             qty_reported = _parse_qty(quantities_by_sku.get(sku, "0"))
 
             if qty_reported <= 0:
-                snapshot.append(_snapshot(item, qty_reported=qty_reported, qty_d1=0, qty_loss=0))
+                snapshot.append(
+                    _snapshot(item, qty_reported=qty_reported, qty_expired=0, qty_nonconforming=0)
+                )
                 continue
 
             qty_unsold = min(qty_reported, item.qty_available)
-            qty_d1 = 0
-            qty_loss = 0
 
-            if item.classification == "d1":
-                ontem_pos = Position.objects.filter(ref="ontem").first()
-                if ontem_pos:
-                    _issue_from_saleable(sku, qty_unsold, f"fechamento:{closing_date}")
-                    StockMovements.receive(
-                        quantity=Decimal(qty_unsold),
-                        sku=sku,
-                        position=ontem_pos,
-                        batch="D-1",
-                        reason=f"d1:{closing_date}",
-                        user=user,
-                    )
-                    qty_d1 = qty_unsold
-            elif item.classification == "loss":
-                _issue_from_saleable(sku, qty_unsold, f"perda:{closing_date}")
-                qty_loss = qty_unsold
+            # A sobra NÃO se move (C4 do D1-RETIREMENT): o LOTE decide.
+            #   1. Não conforme não vai para o dia seguinte — write-off com o
+            #      motivo carimbado (perda_nao_conformidade:<data>).
+            #   2. Validade vencida/vencendo hoje (ou produto do dia sem lote)
+            #      — write-off perda_vencido:<data>.
+            #   3. O resto FICA onde está: o desconto (se houver) e a cerca de
+            #      canal já vêm do lote (C1/C2), não de uma posição de véspera.
+            qty_nonconforming = _write_off_lots(
+                sku,
+                qty_unsold,
+                lot_refs=nonconforming_lot_refs(sku),
+                reason=f"perda_nao_conformidade:{closing_date}",
+            )
+            qty_expired = _write_off_lots(
+                sku,
+                qty_unsold - qty_nonconforming,
+                lot_refs=expired_lot_refs(sku, closing_date),
+                include_batchless=day_product_expires_on_close(sku),
+                reason=f"perda_vencido:{closing_date}",
+            )
 
             snapshot.append(
                 _snapshot(
                     item,
                     qty_reported=qty_reported,
                     qty_unsold=qty_unsold,
-                    qty_d1=qty_d1,
-                    qty_loss=qty_loss,
+                    qty_expired=qty_expired,
+                    qty_nonconforming=qty_nonconforming,
                 )
             )
 
@@ -97,37 +104,93 @@ def _parse_qty(raw_qty) -> int:
         return 0
 
 
-def _snapshot(item, *, qty_reported: int, qty_unsold: int = 0, qty_d1: int, qty_loss: int) -> dict:
+def _snapshot(
+    item, *, qty_reported: int, qty_unsold: int = 0, qty_expired: int, qty_nonconforming: int,
+) -> dict:
+    # qty_kept é derivada: o que sobrou, tem validade e FICA na posição — o
+    # fechamento não move estoque são (C4).
+    qty_kept = max(qty_unsold - qty_expired - qty_nonconforming, 0)
     return {
         "sku": item.sku,
         "qty_reported": qty_reported,
         "qty_applied": qty_unsold,
         "qty_discrepancy": qty_reported - qty_unsold,
         "qty_remaining": item.qty_available - qty_unsold,
-        "qty_d1": qty_d1,
-        "qty_loss": qty_loss,
+        "qty_expired": qty_expired,
+        "qty_nonconforming": qty_nonconforming,
+        "qty_kept": qty_kept,
     }
 
 
-def _issue_from_saleable(sku, quantity, reason) -> None:
-    """Issue stock from saleable positions, excluding D-1 stock."""
+def nonconforming_lot_refs(sku: str) -> set[str]:
+    """Lotes marcados — não vão para o dia seguinte (regra da casa)."""
+    from shopman.stockman.models import Batch
+
+    return set(Batch.objects.for_sku(sku).nonconforming().values_list("ref", flat=True))
+
+
+def expired_lot_refs(sku: str, closing_date: date) -> set[str]:
+    """Lotes que não sobrevivem ao fechamento: vencem hoje ou já venceram."""
+    from shopman.stockman.models import Batch
+
+    return set(
+        Batch.objects.for_sku(sku)
+        .filter(expiry_date__lte=closing_date)
+        .values_list("ref", flat=True)
+    )
+
+
+def day_product_expires_on_close(sku: str) -> bool:
+    """Produto do dia SEM rastreio de lote: a validade implícita é o próprio
+    dia (shelf_life_days == 0) — quant sem lote morre no fechamento."""
+    try:
+        from shopman.offerman.models import Product
+
+        product = Product.objects.filter(sku=sku).only("shelf_life_days").first()
+        return bool(product) and product.shelf_life_days == 0
+    except Exception:
+        logger.warning("shelf_life de %s indisponível; produto do dia não expira no fechamento", sku, exc_info=True)
+        return False
+
+
+def _write_off_lots(
+    sku,
+    quantity,
+    *,
+    lot_refs: set[str],
+    reason: str,
+    include_batchless: bool = False,
+) -> int:
+    """WASTE dos quants vendáveis cujo LOTE está em ``lot_refs``.
+
+    ``include_batchless``: também baixa quants sem lote (produto do dia sem
+    rastreio de lote — a validade implícita é o próprio dia). Retorna a
+    quantidade efetivamente baixada, limitada a ``quantity``.
+    """
+    if quantity <= 0:
+        return 0
     quants = (
         Quant.objects.filter(
             sku=sku,
             position__is_saleable=True,
             _quantity__gt=0,
         )
-        .exclude(position__ref="ontem")
         .select_for_update()
         .order_by("pk")
     )
     remaining = Decimal(quantity)
+    written_off = Decimal("0")
     for quant in quants:
         if remaining <= 0:
             break
+        in_lots = bool(quant.batch) and quant.batch in lot_refs
+        if not in_lots and not (include_batchless and not quant.batch):
+            continue
         take = min(remaining, quant._quantity)
         StockMovements.issue(quantity=take, quant=quant, reason=reason)
         remaining -= take
+        written_off += take
+    return int(written_off)
 
 
 def _pending_production_snapshot(closing_date: date) -> list[dict]:

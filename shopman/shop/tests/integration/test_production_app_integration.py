@@ -104,9 +104,9 @@ class TestFinishWorkOrderStockIntegration:
         """O destino do realize é a posição de venda PRIMÁRIA (primeira criada).
 
         Regressão do pão invisível: Position.Meta.ordering=['ref'] fazia o
-        .first() escolher por alfabeto, e "ontem" (vitrine de véspera,
-        excluída dos canais remotos) roubava a fornada recém-assada — o
-        storefront anunciava "recém saído" e vendia "Indisponível".
+        .first() escolher por alfabeto, e uma posição interna (excluída dos
+        canais remotos) roubava a fornada recém-assada — o storefront
+        anunciava "recém saído" e vendia "Indisponível".
         """
         from shopman.stockman.models import Position, PositionKind
 
@@ -116,7 +116,7 @@ class TestFinishWorkOrderStockIntegration:
         )
         Position.objects.create(
             # Alfabeticamente ANTES de "vitrine"; criada DEPOIS.
-            ref="ontem", name="Vitrine D-1", kind=PositionKind.PHYSICAL,
+            ref="armario", name="Armário interno", kind=PositionKind.PHYSICAL,
             is_saleable=True,
         )
         stock.receive(
@@ -135,7 +135,7 @@ class TestFinishWorkOrderStockIntegration:
         )
         assert saleable.quantity == Decimal("18")
         assert not Quant.objects.filter(
-            sku=croissant.sku, position__ref="ontem",
+            sku=croissant.sku, position__ref="armario",
         ).exists()
 
         # The only positive moves on the saleable quant are the single realize leg.

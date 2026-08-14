@@ -104,15 +104,15 @@ useHead({ title: "Painel · Marketing" });
     <section v-if="stats" class="mb-6 grid grid-cols-2 gap-3 sm:grid-cols-4" aria-label="Números de hoje">
       <div class="rounded-lg border border-border bg-card px-3 py-2.5">
         <p class="text-2xl font-bold">{{ stats.pending_count }}</p>
-        <p class="text-xs text-muted-foreground">aguardando você</p>
+        <p class="text-xs text-muted-foreground">Aguardando você</p>
       </div>
       <div class="rounded-lg border border-border bg-card px-3 py-2.5">
         <p class="text-2xl font-bold">{{ stats.published_today }}</p>
-        <p class="text-xs text-muted-foreground">publicados hoje</p>
+        <p class="text-xs text-muted-foreground">Publicados hoje</p>
       </div>
       <div class="rounded-lg border border-border bg-card px-3 py-2.5">
         <p class="text-2xl font-bold">{{ stats.audience_reached_today }}</p>
-        <p class="text-xs text-muted-foreground">clientes alcançados</p>
+        <p class="text-xs text-muted-foreground">Clientes alcançados</p>
       </div>
       <div
         class="rounded-lg border px-3 py-2.5"
@@ -121,7 +121,7 @@ useHead({ title: "Painel · Marketing" });
         <p class="text-2xl font-bold" :class="stats.failed_today > 0 ? 'text-destructive' : ''">
           {{ stats.failed_today }}
         </p>
-        <p class="text-xs text-muted-foreground">falharam</p>
+        <p class="text-xs text-muted-foreground">Falharam</p>
       </div>
     </section>
 

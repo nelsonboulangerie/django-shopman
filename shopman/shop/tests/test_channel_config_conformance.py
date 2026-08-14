@@ -309,6 +309,53 @@ class TestStockConformance:
             "PAIN-AU-CHOCOLAT", 2, channel_ref="web", target_date=None
         )
 
+    def test_lot_gates_default_to_the_safe_side(self):
+        """Sem declaração, canal NÃO vende não conforme e não tem margem extra."""
+        from shopman.shop.config import ChannelConfig
+
+        cfg = ChannelConfig.from_dict({})
+        assert cfg.stock.sells_nonconforming is False
+        assert cfg.stock.expiry_margin_days == 0
+
+    def test_lot_gates_parse_from_channel_config(self):
+        from shopman.shop.config import ChannelConfig
+
+        cfg = ChannelConfig.from_dict(
+            {"stock": {"sells_nonconforming": True, "expiry_margin_days": 3}},
+        )
+        assert cfg.stock.sells_nonconforming is True
+        assert cfg.stock.expiry_margin_days == 3
+        cfg.validate()
+
+    def test_lot_gates_reject_invalid_values(self):
+        import pytest
+
+        from shopman.shop.config import ChannelConfig
+
+        cfg = ChannelConfig.from_dict({"stock": {"sells_nonconforming": "sim"}})
+        with pytest.raises(ValueError, match="sells_nonconforming"):
+            cfg.validate()
+
+        cfg = ChannelConfig.from_dict({"stock": {"expiry_margin_days": -1}})
+        with pytest.raises(ValueError, match="expiry_margin_days"):
+            cfg.validate()
+
+    def test_lot_gates_project_into_channel_scope(self):
+        """O adapter projeta os gates do canal — é daqui que TODO leitor parte."""
+        from unittest.mock import patch as _patch
+
+        from shopman.shop.adapters import stock as stock_adapter
+        from shopman.shop.config import ChannelConfig
+
+        cfg = ChannelConfig.from_dict(
+            {"stock": {"sells_nonconforming": True, "expiry_margin_days": 2}},
+        )
+        with _patch.object(ChannelConfig, "for_channel", return_value=cfg):
+            scope = stock_adapter.get_channel_scope("pos")
+
+        assert scope["sells_nonconforming"] is True
+        assert scope["expiry_margin_days"] == 2
+
 
 # ── Aspect 5: Notifications ──
 

@@ -102,7 +102,6 @@ Tipos iniciais:
 - `preorder`: encomendas e compromissos ja confirmados via `DemandProtocol.committed()`.
 - `soldout`: extrapolacao quando historico indica ruptura antes do fim do periodo.
 - `waste`: reducao quando sobra/perda historica excede limite.
-- `d1`: ajuste por estoque D-1 vendavel apenas no balcao, sem prometer para canais remotos.
 - `capacity`: limite por forno, turno, masseira, operador ou janela de fermentacao.
 - `rounding`: multiplo minimo, tamanho de fornada, bandeja, forma ou pacote.
 

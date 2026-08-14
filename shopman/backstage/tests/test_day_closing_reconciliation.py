@@ -33,7 +33,6 @@ def closing_user(db):
 def setup_stock(db):
     Shop.objects.create(name="Loja")
     loja = Position.objects.create(ref="loja", name="Loja", is_saleable=True)
-    Position.objects.create(ref="ontem", name="Ontem")
     Product.objects.create(sku="RECON-SKU", name="Recon SKU", shelf_life_days=0)
     StockMovements.receive(quantity=2, sku="RECON-SKU", position=loja, reason="seed")
     return loja
@@ -77,6 +76,33 @@ def test_production_summary_keeps_fractional_quantities(setup_stock):
     assert row["planned"] == 2.5
     assert row["finished"] == 1.75
     assert row["loss"] == 0.75
+
+
+@pytest.mark.django_db
+def test_production_summary_consolidates_quality_partition(setup_stock):
+    """A partição do QC chega ao fechamento (ADR-017 §8): unidades por grau,
+    por receita — e o finish escalar (sem grau) fica fora do dict de quality."""
+    recipe = Recipe.objects.create(
+        ref="recon-qc", name="Recon QC", output_sku="RECON-SKU", batch_size=Decimal("10"),
+    )
+    wo = craft.plan(recipe, 10, date=date.today())
+    craft.start(wo, quantity=10, expected_rev=0)
+    craft.finish(
+        wo,
+        finished=[
+            {"item_ref": "RECON-SKU", "quantity": "7", "quality_grade_ref": "standard"},
+            {"item_ref": "RECON-SKU", "quantity": "2", "quality_grade_ref": "minimal"},
+        ],
+        wasted=[{"item_ref": "RECON-SKU", "quantity": "1"}],
+        actor="test",
+    )
+
+    closing = build_day_closing()
+
+    row = closing.production_summary["recon-qc"]
+    assert row["finished"] == 9
+    assert row["loss"] == 1
+    assert row["quality"] == {"standard": 7, "minimal": 2}
 
 
 @pytest.mark.django_db

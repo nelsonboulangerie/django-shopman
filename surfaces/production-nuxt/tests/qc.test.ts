@@ -12,6 +12,7 @@ import {
   gradeBandClass,
   initialState,
   lossQty,
+  ovenAnchor,
   pendingQuestions,
   typeBackspace,
   typeDigit,
@@ -40,6 +41,31 @@ describe("a escala", () => {
     expect(gradeBandClass(GRADES[1]!, GRADES)).toBe("bg-zinc-400");
     expect(gradeBandClass(GRADES[2]!, GRADES)).toBe("bg-amber-500");
     expect(gradeBandClass(GRADES[3]!, GRADES)).toBe("bg-orange-600");
+  });
+});
+
+describe("a âncora do fechamento (o que entrou no forno É o previsto daqui)", () => {
+  it("sem started, o planejado ancora sozinho", () => {
+    expect(ovenAnchor(10, null)).toEqual({ anchor: 10 });
+  });
+
+  it("com started, é ele o previsto — o plano não aparece mais", () => {
+    // Planejou 10, enfornou 11: fechar ancorado em 10 gravaria 1 de perda
+    // que nunca existiu. E o 10 não vira referência na tela: o que entrou
+    // no forno é o que se espera que saia dele.
+    expect(ovenAnchor(10, 11)).toEqual({ anchor: 11 });
+  });
+
+  it("started igual ao planejado dá no mesmo número", () => {
+    expect(ovenAnchor(10, 10)).toEqual({ anchor: 10 });
+  });
+
+  it("fornada avulsa: sem previsto e sem started, sem âncora", () => {
+    expect(ovenAnchor(null, null)).toEqual({ anchor: null });
+  });
+
+  it("started sem plano (avulsa iniciada) ancora sozinho", () => {
+    expect(ovenAnchor(null, 12)).toEqual({ anchor: 12 });
   });
 });
 
@@ -105,6 +131,21 @@ describe("Confirmar sempre ativo: as perguntas que faltam", () => {
     let state = initialState(40, "standard");
     state = { ...state, fullQty: 0, fullTouched: true };
     expect(canSubmit(state)).toBe(false);
+  });
+
+  it("acima do previsto pede confirmação ANTES de qualquer motivo", () => {
+    let state = initialState(22, "standard");
+    state = { ...state, fullQty: 222, fullTouched: true };
+    expect(pendingQuestions(state)).toEqual(["overshoot"]);
+
+    state = { ...state, overshootConfirmed: true };
+    expect(pendingQuestions(state)).toEqual([]);
+  });
+
+  it("fornada avulsa não tem previsto, logo não há acima-do-previsto", () => {
+    let state = initialState(null, "standard");
+    state = { ...state, fullQty: 999, fullTouched: true };
+    expect(pendingQuestions(state)).toEqual([]);
   });
 });
 

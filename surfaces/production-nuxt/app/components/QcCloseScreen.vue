@@ -20,6 +20,7 @@ import {
   gradeBandClass,
   initialState,
   lossQty,
+  ovenAnchor,
   pendingQuestions,
   typeBackspace,
   typeDigit,
@@ -33,6 +34,8 @@ const props = defineProps<{
   title: string;
   subtitle: string;
   planned: number | null;
+  /** A fornada real que entrou no forno (declarada no start); null sem start. */
+  started: number | null;
   grades: QCGradeProjection[];
   defects: QCDefectProjection[];
   submitting: boolean;
@@ -43,7 +46,12 @@ const emit = defineEmits<{
   confirm: [payload: { quantity: string; partition: QcPartitionGroup[] }];
 }>();
 
-const state = ref<QcEntryState>(initialState(props.planned, defaultGradeRef(props.grades)));
+// A âncora da aritmética É o previsto DESTA tela: o que entrou no forno é o
+// que se espera que saia dele, salvo ocorrência (o plano da produção já
+// cumpriu seu papel lá atrás). Ver `ovenAnchor` (QC-FORNADA §1/§4).
+const anchor = ovenAnchor(props.planned, props.started);
+
+const state = ref<QcEntryState>(initialState(anchor.anchor, defaultGradeRef(props.grades)));
 
 const topGrades = computed(() => fullPriceGrades(props.grades));
 const lowGrades = computed(() => discountGrades(props.grades));
@@ -68,6 +76,8 @@ function onDigit(digit: string) {
   } else {
     s.discountQty = typeDigit(s.discountQty, digit, fresh.value);
   }
+  // Editou quantidade: a confirmação de "saiu mais que o previsto" caduca.
+  s.overshootConfirmed = false;
   fresh.value = false;
   state.value = s;
 }
@@ -80,6 +90,7 @@ function onBackspace() {
   } else {
     s.discountQty = typeBackspace(s.discountQty);
   }
+  s.overshootConfirmed = false;
   state.value = s;
 }
 
@@ -91,6 +102,7 @@ function onClear() {
   } else {
     s.discountQty = 0;
   }
+  s.overshootConfirmed = false;
   fresh.value = true;
   state.value = s;
 }
@@ -119,9 +131,11 @@ const sheetQuestion = ref<QcQuestion | null>(null);
 const submitAfterAnswer = ref(false);
 
 const sheetTitle = computed(() =>
-  sheetQuestion.value === "loss_reason"
-    ? `O que houve com as ${loss.value} que não saíram?`
-    : `O que houve com as ${state.value.discountQty} do sublote?`,
+  sheetQuestion.value === "overshoot"
+    ? `Saíram ${total.value} de ${state.value.planned} previstas?`
+    : sheetQuestion.value === "loss_reason"
+      ? `O que houve com as ${loss.value} que não saíram?`
+      : `O que houve com as ${state.value.discountQty} do sublote?`,
 );
 
 function openQuestion(question: QcQuestion, thenSubmit: boolean) {
@@ -129,12 +143,7 @@ function openQuestion(question: QcQuestion, thenSubmit: boolean) {
   submitAfterAnswer.value = thenSubmit;
 }
 
-function answerDefect(defect: QCDefectProjection) {
-  const s = { ...state.value };
-  if (sheetQuestion.value === "loss_reason") s.lossDefectRef = defect.ref;
-  else s.discountDefectRef = defect.ref;
-  state.value = s;
-
+function _advanceQuestions() {
   const remaining = pendingQuestions(state.value);
   if (submitAfterAnswer.value && remaining.length) {
     sheetQuestion.value = remaining[0] ?? null;
@@ -144,6 +153,28 @@ function answerDefect(defect: QCDefectProjection) {
   sheetQuestion.value = null;
   submitAfterAnswer.value = false;
   if (shouldSubmit) submit();
+}
+
+function answerDefect(defect: QCDefectProjection) {
+  const s = { ...state.value };
+  if (sheetQuestion.value === "loss_reason") s.lossDefectRef = defect.ref;
+  else s.discountDefectRef = defect.ref;
+  state.value = s;
+  _advanceQuestions();
+}
+
+/** "Sim, saíram N": o operador assume o acima-do-previsto conscientemente. */
+function confirmOvershoot() {
+  state.value = { ...state.value, overshootConfirmed: true };
+  _advanceQuestions();
+}
+
+/** "Corrigir": volta para o campo com entrada fresca — era typo. */
+function fixOvershoot() {
+  sheetQuestion.value = null;
+  submitAfterAnswer.value = false;
+  activeField.value = "full";
+  fresh.value = true;
 }
 
 function onConfirm() {
@@ -207,15 +238,15 @@ const fieldCard =
         @click="emit('back')"
       >
         <Icon name="lucide:chevron-left" class="size-4" />
-        voltar
+        Voltar
       </button>
       <div class="min-w-0 text-center">
         <p class="truncate text-base font-semibold">{{ title }}</p>
         <p class="truncate text-xs text-muted-foreground">{{ subtitle }}</p>
       </div>
       <div class="rounded-md border bg-muted/40 px-3 py-2 text-sm tabular-nums">
-        <template v-if="planned !== null">{{ planned }} previstos</template>
-        <template v-else>sem previsto</template>
+        <template v-if="anchor.anchor !== null">{{ anchor.anchor }} previstos</template>
+        <template v-else>Sem previsto</template>
       </div>
     </header>
 
@@ -291,7 +322,7 @@ const fieldCard =
       >
         <span class="text-muted-foreground">Perda: <b class="tabular-nums text-foreground">{{ loss }}</b></span>
         <span :class="state.lossDefectRef ? 'font-medium' : 'text-muted-foreground'">
-          {{ state.lossDefectRef ? defectLabel(state.lossDefectRef) : "toque para o motivo" }}
+          {{ state.lossDefectRef ? defectLabel(state.lossDefectRef) : "Toque para o motivo" }}
         </span>
       </button>
       <span v-else aria-hidden="true" />
@@ -306,7 +337,7 @@ const fieldCard =
           <template v-if="state.discountDefectRef">
             {{ defectLabel(state.discountDefectRef) }}<template v-if="discountIsVetoed"> · vira descarte</template>
           </template>
-          <template v-else>toque para o motivo</template>
+          <template v-else>Toque para o motivo</template>
         </span>
       </button>
       <span v-else aria-hidden="true" />
@@ -326,7 +357,28 @@ const fieldCard =
     <UiSheet :open="sheetQuestion !== null" @update:open="(v: boolean) => { if (!v) { sheetQuestion = null; submitAfterAnswer = false; } }">
       <UiSheetContent side="bottom" :title="sheetTitle">
         <template #content>
-          <div class="grid grid-cols-2 gap-2 px-4 pb-6 sm:grid-cols-3">
+          <!-- Plausibilidade: acima do previsto pede confirmação consciente —
+               o typo (222 no lugar de 22) morre num toque de Corrigir. -->
+          <div
+            v-if="sheetQuestion === 'overshoot'"
+            class="grid grid-cols-2 gap-2 px-4 pb-6"
+          >
+            <button
+              type="button"
+              class="rounded-md border px-3 py-4 text-base font-medium transition hover:bg-accent active:translate-y-px"
+              @click="fixOvershoot()"
+            >
+              Corrigir
+            </button>
+            <button
+              type="button"
+              class="rounded-md border border-transparent bg-primary px-3 py-4 text-base font-semibold text-primary-foreground transition hover:bg-primary/90 active:translate-y-px"
+              @click="confirmOvershoot()"
+            >
+              Sim, saíram {{ total }}
+            </button>
+          </div>
+          <div v-else class="grid grid-cols-2 gap-2 px-4 pb-6 sm:grid-cols-3">
             <button
               v-for="defect in activeDefects"
               :key="defect.ref"

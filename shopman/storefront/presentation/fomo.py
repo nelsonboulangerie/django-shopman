@@ -8,7 +8,7 @@ Puro e testável: recebe dicts já resolvidos pelo chamador (``api/fomo.py``),
 não toca banco, não tem side effect. O relógio entra por ``now`` para o teste
 não depender do horário da máquina.
 
-Mecânicas cobertas (FOMO-MARKETING-SPECS §1): F1 (últimas unidades), F3 (D-1),
+Mecânicas cobertas (FOMO-MARKETING-SPECS §1): F1 (últimas unidades),
 F5 (saiu do forno), F13 (promoção expirando), F14 (happy hour), F16 (quanta
 gente quer) e F17 (quantos saíram hoje).
 """
@@ -37,7 +37,6 @@ MIN_SOLD_TODAY = 3
 # Prioridade: 1 = mais urgente. Empate mantém a ordem de derivação.
 PRIORITY_FRESH = 1
 PRIORITY_LOW_STOCK = 1
-PRIORITY_D1 = 2
 PRIORITY_DEMAND = 2
 PRIORITY_PROMO = 3
 PRIORITY_HAPPY_HOUR = 3
@@ -73,7 +72,7 @@ def badges_for_product(
 
     Args:
         sku: SKU do produto (entra no ``meta`` para o cliente correlacionar).
-        availability: estado de estoque — ``available_qty``, ``d1_qty``,
+        availability: estado de estoque — ``available_qty``,
             ``has_happy_hour``, ``happy_hour_end``.
         production: última fornada concluída — ``finished_at`` (datetime ou ISO)
             e, opcionalmente, ``quantity``. ``None`` quando não houve fornada.
@@ -93,7 +92,6 @@ def badges_for_product(
     badges: list[FomoBadge] = []
     badges.extend(_fresh(sku, production, now))
     badges.extend(_low_stock(sku, availability, channel_config))
-    badges.extend(_d1(sku, availability))
     badges.extend(_demand(sku, availability, social_proof))
     badges.extend(_promo_countdown(sku, promotions, now))
     badges.extend(_happy_hour(sku, availability))
@@ -122,24 +120,6 @@ def _low_stock(sku: str, availability: dict, channel_config: dict) -> list[FomoB
             label=label,
             priority=PRIORITY_LOW_STOCK,
             meta={"sku": sku, "available": available, "threshold": threshold},
-        )
-    ]
-
-
-def _d1(sku: str, availability: dict) -> list[FomoBadge]:
-    """F3 — lote de ontem, com desconto automático, no último dia de venda.
-
-    Sem travessão na copy (convenção de voz do storefront).
-    """
-    d1_qty = _int(availability.get("d1_qty"))
-    if d1_qty <= 0:
-        return []
-    return [
-        FomoBadge(
-            type="d1",
-            label="Último dia: amanhã não tem",
-            priority=PRIORITY_D1,
-            meta={"sku": sku, "qty": d1_qty},
         )
     ]
 

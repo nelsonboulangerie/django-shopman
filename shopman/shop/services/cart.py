@@ -13,7 +13,7 @@ from decimal import Decimal
 
 from shopman.orderman.models import Session
 
-from shopman.shop.services import availability
+from shopman.shop.services import availability, lot_pricing
 from shopman.shop.services import sessions as session_service
 
 logger = logging.getLogger(__name__)
@@ -98,7 +98,6 @@ def add_item(
     qty: int,
     unit_price_q: int,
     name: str = "",
-    is_d1: bool = False,
 ) -> tuple[Session, str]:
     """Reserve stock and add or merge a cart line."""
     session, resolved_key = get_or_create_session(
@@ -108,7 +107,7 @@ def add_item(
     )
 
     existing = next((item for item in session.items if item.get("sku") == sku), None)
-    _reserve_or_raise(
+    hold_id = _reserve_or_raise(
         sku=sku,
         qty=qty,
         session_key=resolved_key,
@@ -130,8 +129,12 @@ def add_item(
     op: dict = {"op": "add_line", "sku": sku, "qty": qty, "unit_price_q": unit_price_q}
     if name:
         op["name"] = name
-    if is_d1:
-        op["is_d1"] = True
+    # O lote que a reserva ancorou vira flag durável de linha (``meta``, único
+    # lugar que sobrevive ao ``_normalize_items``). É daqui que o
+    # LotDiscountModifier lê o desconto congelado no lote — ADR-017 §7.
+    batch_ref = lot_pricing.batch_ref_for_hold(hold_id)
+    if batch_ref:
+        op["meta"] = {"batch_ref": batch_ref}
     return (
         session_service.modify_session(
             session_key=resolved_key,
@@ -495,7 +498,12 @@ def clear_session(*, session_key: str, channel_ref: str) -> None:
     session_service.abandon_session(session_key=session_key, channel_ref=channel_ref)
 
 
-def _reserve_or_raise(*, sku: str, qty: int, session_key: str, channel_ref: str) -> None:
+def _reserve_or_raise(*, sku: str, qty: int, session_key: str, channel_ref: str):
+    """Reserva e devolve o ``hold_id`` — o elo até o LOTE (ADR-017/D1-RETIREMENT).
+
+    O hold ancora em um Quant, e o Quant carrega a ``Batch.ref``; é por aqui que
+    a linha descobre de qual lote saiu, e portanto qual desconto de lote vale.
+    """
     result = availability.reserve(
         sku,
         Decimal(str(qty)),
@@ -503,7 +511,7 @@ def _reserve_or_raise(*, sku: str, qty: int, session_key: str, channel_ref: str)
         channel_ref=channel_ref,
     )
     if result["ok"]:
-        return
+        return result.get("hold_id")
     raise CartUnavailableError(
         sku=sku,
         requested_qty=qty,

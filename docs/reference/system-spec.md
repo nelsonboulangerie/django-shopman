@@ -140,7 +140,7 @@ Cada pacote abaixo é pip-instalável (`shopman-<nome>`), vive em `packages/<nom
 - `find_by_reference/find_active_by_reference/retag_reference`.
 - `plan(quantity, product, target_date, position, reason, user, **meta)→Quant`.
 - `replan`, `realize(product, target_date, actual_quantity, to_position, from_position, from_batch)` — materializa holds; holds sem TTL ganham `DEFAULT_MATERIALIZED_HOLD_TTL_MINUTES=30`; emite signal `holds_materialized`.
-- `availability_for_sku/for_skus` — retornam `{sku, availability_policy, total_available, total_promisable, total_reserved, available, expected, planned, ready_physical, held_ready, breakdown{ready,in_production,planned,d1}, is_planned, is_paused, positions[]}`.
+- `availability_for_sku/for_skus` — retornam `{sku, availability_policy, total_available, total_promisable, total_reserved, available, expected, planned, ready_physical, held_ready, breakdown{ready,in_production,planned}, is_planned, is_paused, positions[]}`.
 - `promise_decision_for_sku(sku, qty, ...)→PromiseDecision(approved, requested_qty, available_qty, reason_code)`.
 
 **Scope gate canônico**: `quants_eligible_for(sku, channel_ref, target_date, allowed_positions, excluded_positions)` — aplicado por availability reads E hold finding; filtros na ordem: (1) sku+`_quantity>0`, (2) `filter_valid_quants()` shelflife, (3) allowed/excluded positions, (4) batch expiry.
@@ -151,7 +151,6 @@ Cada pacote abaixo é pip-instalável (`shopman-<nome>`), vive em `packages/<nom
 
 **Invariantes não-negociáveis**
 - **available = valid_quants_sum − active_holds_sum** (holds expirados nunca descontam — `is_active` checa TTL real-time).
-- **D-1 staff-only**: `batch='D-1'` é bucket separado; canais remotos usam `excluded_positions=["ontem"]`.
 - **Contrato check↔reserve travado**: ambos usam `quants_eligible_for()`. Check nunca aprova algo que reserve não consiga.
 - **Atomicidade**: Move save + Quant._quantity via `F()` em `transaction.atomic()`; Hold creation via `select_for_update()` + recheck após lock; Hold transitions via `select_for_update()` + status guard.
 - **Policy-driven promise**: `stock_only` (só ready), `planned_ok` (default, ready+planned), `demand_ok` (sempre aprovado, cria demand hold quant=None).
@@ -403,7 +402,7 @@ Sinal `order_changed` (de orderman) → `dispatch(order, phase)` → resolve `Ch
 - `register_active_rules()` + `bootstrap_active_rules()` (deferred após conexão DB pronta, via signal `connection_created`).
 
 **Tipos**:
-- **Pricing modifiers** (wraps em `shop.modifiers` para visibilidade admin): D1Rule, PromotionRule, EmployeeRule, HappyHourRule.
+- **Pricing modifiers** (wraps em `shop.modifiers` para visibilidade admin): PromotionRule, EmployeeRule, HappyHourRule.
 - **Validators**: BusinessHoursRule (flag `outside_business_hours`), DeliveryZoneRule (blocker).
 
 ### 2.6 Handlers + Directive Topics
@@ -523,7 +522,7 @@ Staff login → abrir caixa → POS board (grid + carrinho) → lookup phone →
 
 ### 4.5 POV: Dono / gestor
 
-Admin Unfold é CRUD + configuração: dashboard como landing de config/auditoria (atalhos de configuração, trilhas de auditoria, saúde da copy omotenashi, alertas de estoque/operador, estoque D-1). Operação ao vivo mora nos apps Nuxt (Gestor/PDV/KDS/Produção). Configura promoção no admin → aplicada automaticamente pelo modifier pipeline. Closing na antesala do PDV (`surfaces/pos-nuxt`, rota `/session/closing`): qty_unsold por SKU → D-1 movido para "ontem"; perecível vira perda; DayClosing audit record (readonly no Admin).
+Admin Unfold é CRUD + configuração: dashboard como landing de config/auditoria (atalhos de configuração, trilhas de auditoria, saúde da copy omotenashi, alertas de estoque/operador). Operação ao vivo mora nos apps Nuxt (Gestor/PDV/KDS/Produção). Configura promoção no admin → aplicada automaticamente pelo modifier pipeline. Closing na antesala do PDV (`surfaces/pos-nuxt`, rota `/session/closing`): qty_unsold por SKU → write-off por lote (vencido/não conforme); sobra com validade fica como lote datado; DayClosing audit record (readonly no Admin).
 
 ### 4.6 POV: Desenvolvedor / integrador
 
@@ -595,7 +594,6 @@ Cada Core viável standalone (Offerman = e-commerce catálogo, Stockman = estoqu
 - quants_eligible_for = scope gate único.
 - Hold via select_for_update + recheck.
 - is_active TTL real-time (sem cron dependence).
-- D-1 bucket separado, remotos excluem "ontem".
 - realize preserva TTL explícito.
 
 ### 6.5 Orquestração

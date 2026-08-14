@@ -402,7 +402,6 @@ Pedido confirmado
 
 ```
 Ordem 10:  pricing.item           → preço base do Listing/backend
-Ordem 15:  shop.d1_discount       → markdown D-1 (prioridade absoluta)
 Ordem 20:  shop.discount          → promoções + cupons
 Ordem 50:  pricing.session_total  → recalcula total
 Ordem 60:  shop.employee_discount → desconto funcionário
@@ -413,21 +412,10 @@ Ordem 65:  shop.happy_hour        → desconto happy hour
 
 ```
 POR ITEM, apenas UM desconto se aplica (o de maior valor absoluto).
-D-1 tem prioridade absoluta e bloqueia todos os outros.
 Employee e HappyHour são mutuamente exclusivos (employee bloqueia happy hour).
 ```
 
-### 6.3 D-1 (Produto do Dia Anterior)
-
-```yaml
-d1_discount:
-  percent: 50              # Configurável via rules.d1_discount_percent
-  detecção: item.is_d1 ou session.data.availability[sku].is_d1
-  efeito: modifica unit_price_q e line_total_q
-  prioridade: ABSOLUTA — bloqueia promoções, cupons, employee, happy hour
-```
-
-### 6.4 Promoções Automáticas
+### 6.3 Promoções Automáticas
 
 ```yaml
 promotion:
@@ -887,8 +875,6 @@ defaults:
 
 **Bundle:** COMBO-MANHA = 1× CROISSANT + 1× CAFE-ESPRESSO (economia R$ 2,90)
 
-**D-1 elegíveis:** PAO-FRANCES, BAGUETE, FOCACCIA, CIABATTA (metadata.allows_next_day_sale)
-
 ### A.3 Listings (4 catálogos de preço)
 
 | Listing  | Markup | Uso                                          |
@@ -915,13 +901,11 @@ defaults:
 | deposito  | Depósito              | physical | não      | —                        |
 | vitrine   | Vitrine / Exposição   | physical | sim      | sim                      |
 | producao  | Área de Produção      | physical | não      | —                        |
-| ontem     | Vitrine D-1 (ontem)   | physical | sim      | **não (staff-only)**     |
 
-> **D-1 é staff-only.** Canais remotos (`web`, `delivery`, `whatsapp`, `ifood`)
-> declaram `ChannelConfig.stock.excluded_positions = ["ontem"]` para que os
-> quants nesta posição não apareçam em `availability.check` nem sejam usados
-> por `availability.reserve`. O balcão (`balcao`) não exclui nada — é onde o
-> operador vende o D-1 com markdown.
+> **Posição staff-only via denylist.** Um canal pode declarar
+> `ChannelConfig.stock.excluded_positions = [<refs>]` para que os quants
+> daquelas posições não apareçam em `availability.check` nem sejam usados
+> por `availability.reserve`. Canal sem exclusão vê todas as saleáveis.
 
 > **Contrato check ↔ reserve.** Para qualquer SKU × canal × qty, o
 > `available_qty` devolvido por `availability.check` é exatamente o que

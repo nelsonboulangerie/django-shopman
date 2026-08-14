@@ -407,7 +407,7 @@ useHead({ title: "Catálogo · Gestor" });
                     v-if="syncBadge(s.sync_status)" class="truncate text-xs font-medium leading-tight"
                     :class="syncBadge(s.sync_status)!.toneClass" :title="syncBadge(s.sync_status)!.title"
                   >● {{ syncBadge(s.sync_status)!.label }}</span>
-                  <span v-else class="truncate text-xs font-medium leading-tight text-primary/60">pausado</span>
+                  <span v-else class="truncate text-xs font-medium leading-tight text-primary/60">Pausado</span>
                 </span>
               </div>
             </th>
@@ -469,9 +469,9 @@ useHead({ title: "Catálogo · Gestor" });
                         }"
                       >{{ rowStatuses[row.sku]?.label }}</span>
                       <!-- esgotado que repõe por produção: a próxima fornada reativa sozinha -->
-                      <span v-if="row.sold_out && row.replenish_qty" class="shrink-0 text-xs font-normal text-muted-foreground">repõe {{ row.replenish_qty }} na fornada</span>
+                      <span v-if="row.sold_out && row.replenish_qty" class="shrink-0 text-xs font-normal text-muted-foreground">Repõe {{ row.replenish_qty }} na fornada</span>
                       <!-- estoque baixo (produto ainda ativo): aviso discreto -->
-                      <span v-else-if="!rowStatuses[row.sku]?.off && row.low_stock" class="shrink-0 rounded-full bg-warning/15 px-1.5 py-0.5 text-xs font-medium text-amber-600 dark:text-amber-400">resta {{ row.stock_qty }}</span>
+                      <span v-else-if="!rowStatuses[row.sku]?.off && row.low_stock" class="shrink-0 rounded-full bg-warning/15 px-1.5 py-0.5 text-xs font-medium text-amber-600 dark:text-amber-400">Resta {{ row.stock_qty }}</span>
                       <!-- sync com erro em N plataforma(s): salta à vista + atalho p/ reenviar tudo -->
                       <button
                         v-if="rowSyncErrors(row)"
@@ -543,7 +543,7 @@ useHead({ title: "Catálogo · Gestor" });
                       <span
                         v-if="!row.pim_complete"
                         class="ml-auto rounded-full bg-warning/15 px-1.5 py-0.5 text-xs font-medium text-amber-600 dark:text-amber-400"
-                      >incompleto</span>
+                      >Incompleto</span>
                     </button>
                     <button
                       type="button" :disabled="isBusy(productKey(row.sku))"

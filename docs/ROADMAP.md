@@ -45,7 +45,7 @@
 
 | Dívida | Impacto | Próxima ação |
 |--------|---------|--------------|
-| **D-1 é interino, superado por lote/validade** (ADR-017 + QC-FORNADA) | ✅ **Fundação construída** (ADR-017 §1–8): partição de fornada, catálogos de grau/defeito, N lotes com percentual congelado, relatório de qualidade. O D-1 velho segue operante em paralelo (D1Rule 50%, posição "ontem", `cleanup_d1`, bucket do POS, badge F3). Cliente protegido (`excluded_positions=["ontem"]`). | **Consumidores** que substituem o D-1: preço por lote na venda (`percent_for_lot`), write-off de lote com desconto no fechamento, gate `sells_nonconforming`/validade por canal, quiosque de QC (ADR-017 §9). Só então remover D1Rule/"ontem"/`cleanup_d1`/F3. Até lá, **não construir nada novo sobre D-1**. |
+| **D-1 aposentado — lote/validade assumiu** (ADR-017 + QC-FORNADA) | ✅ **Concluído (C1–C6)**: preço por lote na venda (`percent_for_lot`), write-off de lote no fechamento, gate `sells_nonconforming`/validade por canal, quiosque de QC (ADR-017 §9), e o código do D-1 removido por inteiro (regra, posição "ontem", `cleanup_d1`, bucket do POS, badge F3). | — |
 | Gateway sandbox e snapshot real pendentes | Smoke local existe; falta provar divergência contra provedores reais. | Executar `make smoke-gateways-sandbox` com credenciais/staging reais. |
 | PostgreSQL pequeno exige disciplina de conexões | Sem pool, `CONN_MAX_AGE=60` saturou o Postgres da DO. | Staging usa pool em modo transaction; validar latência antes de repetir em produção. |
 | QA visual/manual ainda não cobre mundo real | Gates headless não provam toque real, teclado virtual, rede degradada. | Rodar dispositivo físico/staging antes de release real. |

@@ -103,7 +103,7 @@ const progress = computed(() =>
               v-if="ticket.target_seconds"
               class="text-xs font-medium uppercase tracking-wide opacity-60"
             >
-              alvo {{ targetLabel(ticket.target_seconds) }}
+              Alvo {{ targetLabel(ticket.target_seconds) }}
             </span>
           </div>
         </div>

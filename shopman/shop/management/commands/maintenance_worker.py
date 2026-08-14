@@ -7,7 +7,6 @@ manutenção num loop (default: a cada 5 minutos):
   cleanup_stale_sessions    — sessões abandonadas antigas (liberando os holds delas)
   sweep_orphan_holds        — holds indefinidos órfãos (sem sessão viva/data passada)
   cleanup_stale_planning    — quants planejados órfãos
-  cleanup_d1                — D-1 vencido vira perda
   expire_stale_announcements    — announcement pendente sem aprovação a tempo caduca
   dispatch_due_announcements — announcement aprovado com hora marcada sai quando chega a hora
   arm_scheduled_campaigns    — ARMA (não dispara) as ocasiões agendadas do próximo horizonte
@@ -42,7 +41,6 @@ MAINTENANCE_COMMANDS = (
     # órfãos liberados aqui destravam quants planejados órfãos no mesmo ciclo.
     "sweep_orphan_holds",
     "cleanup_stale_planning",
-    "cleanup_d1",
     # Timer de forno sem Concluir dentro do teto não mede (ADR-021 §4).
     "sweep_stale_oven_runs",
     # Frescor vencido não vira propaganda: announcement pendente além do prazo caduca.

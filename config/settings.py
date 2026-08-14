@@ -1051,8 +1051,8 @@ SHOPMAN_FOCUS_NFE = {
 }
 # Desconto manual no PDV acima deste valor (centavos) exige aprovação gerencial
 # por PIN. Default R$ 5,00 (500q) — política definida pelo Pablo (2026-07-13,
-# Questão 2 do QA exploratório do backstage). Descontos em linha D-1 e overrides
-# de preço exigem aprovação SEMPRE, independente deste piso.
+# Questão 2 do QA exploratório do backstage). Overrides de preço exigem
+# aprovação SEMPRE, independente deste piso.
 SHOPMAN_POS_DISCOUNT_APPROVAL_THRESHOLD_Q = int(
     os.environ.get("SHOPMAN_POS_DISCOUNT_APPROVAL_THRESHOLD_Q", "500")
 )

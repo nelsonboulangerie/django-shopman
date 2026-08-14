@@ -3,7 +3,7 @@
 O Admin é CRUD mínimo + configurações: a operação ao vivo mora nos apps Nuxt
 (Gestor/PDV/KDS/Produção). O dashboard reúne atalhos de configuração, trilhas
 de auditoria, saúde da copy omotenashi e os dados de atenção (alertas de
-estoque, alertas do operador, estoque D-1 pendente de fechamento).
+estoque, alertas do operador).
 
 Data is built by ``shopman.backstage.projections.dashboard.build_dashboard()``.
 This module only handles admin-specific table formatting (``format_html``).
@@ -18,7 +18,6 @@ from django.utils.html import format_html
 from shopman.utils import table_badge
 
 from shopman.backstage.projections.dashboard import build_dashboard
-from shopman.shop.services import pos_links
 
 logger = logging.getLogger(__name__)
 
@@ -46,11 +45,6 @@ def _omotenashi_health() -> dict:
         "active_overrides": active_overrides,
         "recent_changes": recent_changes,
     }
-
-
-def _day_closing_url() -> str:
-    """Deep-link do fechamento do dia na antesala do PDV; vazio ⇒ link oculto."""
-    return pos_links.pos_url(pos_links.path_day_closing())
 
 
 def _config_links() -> list[dict]:
@@ -119,21 +113,17 @@ def dashboard_callback(request, context):
         "config_links": _config_links(),
         "audit_links": _audit_links(),
         "omotenashi_health": _omotenashi_health(),
-        # Atenção (alertas e D-1)
+        # Atenção (alertas)
         "kpi_stock_alerts": proj.kpi_stock_alerts,
         "kpi_operator_alerts": proj.kpi_operator_alerts,
         "table_estoque_baixo": _build_alerts_table(proj.stock_alerts),
         "operator_alerts": proj.operator_alerts,
         "table_operator_alerts": _build_operator_alerts_table(proj.operator_alerts),
-        "d1_stock": proj.d1_stock,
-        "table_d1": _build_d1_table(proj.d1_stock) if proj.d1_stock else None,
         # Avaliações do cliente (fecha o loop): média móvel + últimos comentários.
         "rating_average": proj.rating_average,
         "rating_count": proj.rating_count,
         "rating_low_count": proj.rating_low_count,
         "table_ratings": _build_ratings_table(proj.recent_ratings),
-        # Fechamento do DIA vive na antesala do PDV (env-gated como o item da sidebar).
-        "day_closing_url": _day_closing_url(),
     })
     return context
 
@@ -159,23 +149,6 @@ def _build_alerts_table(alerts):
 
     return {
         "headers": ["SKU", "Atual", "Mínimo", "Déficit", "Posição"],
-        "rows": rows,
-    }
-
-
-def _build_d1_table(d1_rows):
-    """D-1 stock table for dashboard."""
-    rows = []
-    for item in d1_rows:
-        rows.append([
-            item.sku,
-            item.name,
-            item.qty,
-            item.entry_date_display,
-        ])
-
-    return {
-        "headers": ["SKU", "Produto", "Qtd", "Entrada"],
         "rows": rows,
     }
 

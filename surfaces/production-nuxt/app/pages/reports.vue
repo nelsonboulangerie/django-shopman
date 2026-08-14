@@ -53,6 +53,7 @@ const {
   historyRows,
   operatorRows,
   wasteRows,
+  qualityRows,
   availableRecipes,
   availablePositions,
   forbidden: reportsForbidden,
@@ -70,6 +71,7 @@ const forbidden = computed(
 const hasRows = computed(() => {
   if (kind.value === "operator_productivity") return operatorRows.value.length > 0;
   if (kind.value === "recipe_waste") return wasteRows.value.length > 0;
+  if (kind.value === "quality") return qualityRows.value.length > 0;
   return historyRows.value.length > 0;
 });
 const stale = computed(() =>
@@ -168,8 +170,8 @@ function refreshAll() {
           <p class="text-xs text-muted-foreground">
             {{
               management?.capacity_percent != null
-                ? "do planejado sobre a capacidade diária"
-                : "sem capacidade configurada nas fichas"
+                ? "Do planejado sobre a capacidade diária"
+                : "Sem capacidade configurada nas fichas"
             }}
           </p>
         </div>
@@ -192,7 +194,7 @@ function refreshAll() {
             {{ management?.loss_qty || "0" }}
           </p>
           <p class="text-xs text-muted-foreground">
-            concluído {{ management?.finished_qty || "0" }} de
+            Concluído {{ management?.finished_qty || "0" }} de
             {{ management?.started_qty || "0" }} iniciados
           </p>
         </div>
@@ -442,6 +444,36 @@ function refreshAll() {
         </table>
       </div>
 
+      <!-- Qualidade: a partição do QC por receita × grau × defeito -->
+      <div v-else-if="kind === 'quality'" class="overflow-x-auto rounded-lg border">
+        <table class="w-full text-sm">
+          <thead
+            class="bg-muted/50 text-left text-xs uppercase tracking-wide text-muted-foreground"
+          >
+            <tr>
+              <th class="px-3 py-2 font-semibold">Ficha técnica</th>
+              <th class="px-3 py-2 font-semibold">Grau</th>
+              <th class="px-3 py-2 font-semibold">Defeito</th>
+              <th class="px-3 py-2 text-right font-semibold">Qtd</th>
+              <th class="px-3 py-2 text-right font-semibold">% da receita</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y">
+            <tr
+              v-for="row in qualityRows"
+              :key="`${row.recipe_ref}:${row.grade_ref}:${row.defect_ref}`"
+              class="hover:bg-muted/30"
+            >
+              <td class="px-3 py-2 font-medium">{{ row.recipe_name }}</td>
+              <td class="px-3 py-2">{{ row.grade_label }}</td>
+              <td class="px-3 py-2">{{ row.defect_label || "—" }}</td>
+              <td class="px-3 py-2 text-right tabular-nums">{{ row.quantity }}</td>
+              <td class="px-3 py-2 text-right tabular-nums">{{ row.share }}</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
       <!-- Desperdício por ficha -->
       <div v-else class="overflow-x-auto rounded-lg border">
         <table class="w-full text-sm">
@@ -475,7 +507,7 @@ function refreshAll() {
         <div class="mb-2 flex flex-wrap items-center gap-2">
           <h2 class="text-base font-bold">Mapa código-cego</h2>
           <UiBadge variant="outline" class="px-1.5 py-0 text-xs"
-            >visão de gestor</UiBadge
+            >Visão de gestor</UiBadge
           >
         </div>
         <p class="mb-3 max-w-2xl text-sm text-muted-foreground">

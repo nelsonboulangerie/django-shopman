@@ -44,6 +44,10 @@ class BatchQuerySet(models.QuerySet):
         """Filter batches for a specific SKU."""
         return self.filter(sku=sku)
 
+    def nonconforming(self):
+        """Batches carrying a nonconformity reason — having a reason IS being."""
+        return self.exclude(nonconformity_reason="")
+
 
 class Batch(models.Model):
     """

@@ -67,7 +67,7 @@ describe("usePosSale — autosave debounced (auto-persist estilo Odoo)", () => {
     const actionCall = vi
       .fn()
       .mockResolvedValue(
-        makeTabPayload({ items: [{ sku: "PAO", name: "Pão", price_q: 500, qty: 1, notes: "", is_d1: false }] }),
+        makeTabPayload({ items: [{ sku: "PAO", name: "Pão", price_q: 500, qty: 1, notes: "" }] }),
       );
     const h = makeSale({ projection: openProjection(), actionCall });
 

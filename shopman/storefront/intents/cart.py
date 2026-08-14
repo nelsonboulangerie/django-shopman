@@ -26,7 +26,7 @@ def interpret_set_qty(sku: str, qty: int, cart: dict) -> CartIntentResult:
      1. Look up published product by SKU
      2. Find existing cart line for the SKU
      3. Determine action: "remove" (qty==0) | "update" (line exists) | "add"
-     4. Resolve listing price and D-1 flag for "add"
+     4. Resolve listing price for "add"
     """
     line = next(
         (item for item in cart.get("items") or [] if item.get("sku") == sku),
@@ -46,7 +46,6 @@ def interpret_set_qty(sku: str, qty: int, cart: dict) -> CartIntentResult:
                 action="remove",
                 line_id=line["line_id"],
                 unit_price_q=0,
-                is_d1=False,
                 product=product,
             ),
             error_type=None,
@@ -80,7 +79,6 @@ def interpret_set_qty(sku: str, qty: int, cart: dict) -> CartIntentResult:
             action=action,
             line_id=line_id,
             unit_price_q=product_ctx.unit_price_q if action == "add" else 0,
-            is_d1=product_ctx.is_d1,
             product=product,
         ),
         error_type=None,

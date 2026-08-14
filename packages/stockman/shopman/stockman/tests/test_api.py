@@ -109,14 +109,14 @@ class AvailabilityTests(StockmanAPITestBase):
         assert Decimal(data["total_available"]) == Decimal("0.000")
         assert Decimal(data["total_reserved"]) == Decimal("0.000")
 
-    def test_availability_allowed_positions_excludes_d1_on_ontem(self):
-        """Canais remotos: breakdown sem quants em posições fora da lista (ex.: D-1 só em ontem)."""
+    def test_availability_allowed_positions_excludes_out_of_scope(self):
+        """Canais remotos: breakdown sem quants em posições fora da lista."""
         from shopman.stockman.services.availability import availability_for_sku
 
-        ontem, _ = Position.objects.get_or_create(
-            ref="ontem",
+        reserva, _ = Position.objects.get_or_create(
+            ref="reserva",
             defaults={
-                "name": "Vitrine D-1 (ontem)",
+                "name": "Reserva interna",
                 "kind": PositionKind.PHYSICAL,
                 "is_saleable": True,
             },
@@ -124,18 +124,17 @@ class AvailabilityTests(StockmanAPITestBase):
         StockMovements.receive(
             Decimal("5"),
             self.product.sku,
-            position=ontem,
-            batch="D-1",
-            reason="Sobra D-1",
+            position=reserva,
+            reason="Sobra da reserva",
         )
         full = availability_for_sku(self.product.sku)
-        assert full["breakdown"]["d1"] == Decimal("5")
+        assert full["breakdown"]["ready"] == Decimal("5")
 
         filtered = availability_for_sku(
             self.product.sku,
             allowed_positions=["vitrine", "deposito"],
         )
-        assert filtered["breakdown"]["d1"] == Decimal("0")
+        assert filtered["breakdown"]["ready"] == Decimal("0")
         assert filtered["total_available"] == Decimal("0")
 
 

@@ -67,7 +67,7 @@ export function useCashDrawer(pos: ComputedRef<POSProjection | null>) {
     if (!import.meta.client || !canKick.value) return false;
     try {
       const payload = await callAgent("/kick", { reason, pulse: config.value?.pulse });
-      if (payload?.ok === false) throw new Error(payload?.error || "o agente recusou o comando.");
+      if (payload?.ok === false) throw new Error(payload?.error || "O agente recusou o comando.");
       return true;
     } catch (error) {
       toast.error(`A gaveta não abriu: ${messageOf(error)}`);
@@ -101,10 +101,10 @@ export function useCashDrawer(pos: ComputedRef<POSProjection | null>) {
 
 function messageOf(error: unknown): string {
   if (error instanceof DOMException && error.name === "TimeoutError") {
-    return "o agente não respondeu.";
+    return "O agente não respondeu.";
   }
   // `fetch` para porta fechada vira TypeError sem detalhe útil — o operador
   // precisa de um próximo passo, não do nome da exceção.
-  if (error instanceof TypeError) return "o agente da estação não está rodando.";
+  if (error instanceof TypeError) return "O agente da estação não está rodando.";
   return error instanceof Error ? error.message : String(error);
 }

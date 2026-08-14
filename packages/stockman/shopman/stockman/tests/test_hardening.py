@@ -26,7 +26,13 @@ def _position(ref: str) -> Position:
 
 def _scope_resolver(channel_ref: str | None) -> dict:
     if channel_ref == "remote":
-        return {"safety_margin": 2, "allowed_positions": ["vitrine"]}
+        return {
+            "safety_margin": 2,
+            "allowed_positions": ["vitrine"],
+            "excluded_positions": ["reserva"],
+            "expiry_margin_days": 3,
+            "sells_nonconforming": False,
+        }
     return {"safety_margin": 0, "allowed_positions": None}
 
 
@@ -70,9 +76,14 @@ class TestMoveQuerySetGuards:
 
 class TestAvailabilityScopeForChannel:
     def test_defaults_do_not_require_orchestrator(self):
+        # Sem resolver, o pacote fica permissivo: restringir é política do
+        # chamador (o orquestrador), nunca default de core.
         assert availability_scope_for_channel("any") == {
             "safety_margin": 0,
             "allowed_positions": None,
+            "excluded_positions": [],
+            "expiry_margin_days": 0,
+            "sells_nonconforming": True,
         }
 
     @override_settings(
@@ -81,7 +92,12 @@ class TestAvailabilityScopeForChannel:
         }
     )
     def test_optional_resolver_projects_channel_scope(self):
+        # O scope projeta TUDO que o resolver declara — a denylist era
+        # engolida aqui (bug), e os gates de lote (C2) viajam juntos.
         assert availability_scope_for_channel("remote") == {
             "safety_margin": 2,
             "allowed_positions": ["vitrine"],
+            "excluded_positions": ["reserva"],
+            "expiry_margin_days": 3,
+            "sells_nonconforming": False,
         }

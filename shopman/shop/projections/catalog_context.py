@@ -355,27 +355,12 @@ def availability_for_sku(
             safety_margin=scope["safety_margin"],
             allowed_positions=scope["allowed_positions"],
             excluded_positions=scope.get("excluded_positions"),
+            expiry_margin_days=scope.get("expiry_margin_days", 0),
+            include_nonconforming=scope.get("sells_nonconforming", True),
         )
     except Exception as exc:
         logger.warning("availability_lookup_failed sku=%s channel=%s: %s", sku, channel_ref, exc, exc_info=True)
         return None
-
-
-def is_d1_only(sku: str, *, channel_ref: str) -> bool:
-    """True when a SKU's only promisable stock is D-1 (next-day) in its scope.
-
-    Surface-agnostic read facade over ``availability_for_sku``: ready and
-    in-production are both zero while D-1 is positive. Callers pass the channel
-    whose scope defines "available now" (storefront/POS differ on D-1 access).
-    """
-    avail = availability_for_sku(sku, channel_ref=channel_ref)
-    if not avail:
-        return False
-    breakdown = avail.get("breakdown", {})
-    ready = breakdown.get("ready", Decimal("0"))
-    in_prod = breakdown.get("in_production", Decimal("0"))
-    d1 = breakdown.get("d1", Decimal("0"))
-    return d1 > 0 and ready == 0 and in_prod == 0
 
 
 def availability_for_skus(skus: list[str], *, channel_ref: str) -> dict[str, dict | None]:
@@ -392,6 +377,8 @@ def availability_for_skus(skus: list[str], *, channel_ref: str) -> dict[str, dic
             safety_margin=scope["safety_margin"],
             allowed_positions=scope["allowed_positions"],
             excluded_positions=scope.get("excluded_positions"),
+            expiry_margin_days=scope.get("expiry_margin_days", 0),
+            include_nonconforming=scope.get("sells_nonconforming", True),
         )
     except Exception as exc:
         logger.warning("batch_availability_failed channel=%s: %s", channel_ref, exc, exc_info=True)

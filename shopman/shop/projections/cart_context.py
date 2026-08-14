@@ -1,25 +1,21 @@
 """Cart product context — read-side facade for the cart mutation path.
 
-Resolves a product's listed price and D-1 flag for an add-to-cart intent.
-A clean read facade (policy/data, no presentation), so it lives in the
-orchestrator read-side (``shop/projections/``); the storefront cart intent
-consumes it without ever reaching into the Core directly.
+Resolves a product's listed price for an add-to-cart intent. A clean read
+facade (policy/data, no presentation), so it lives in the orchestrator
+read-side (``shop/projections/``); the storefront cart intent consumes it
+without ever reaching into the Core directly.
 """
 
 from __future__ import annotations
 
-import logging
 from dataclasses import dataclass
 from decimal import Decimal
-
-logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
 class CartProductContext:
     product: object
     unit_price_q: int
-    is_d1: bool
 
 
 def product_context(
@@ -35,12 +31,11 @@ def product_context(
     if not product:
         return None
     if not for_add:
-        return CartProductContext(product=product, unit_price_q=0, is_d1=False)
+        return CartProductContext(product=product, unit_price_q=0)
 
     return CartProductContext(
         product=product,
         unit_price_q=_price_q(product, channel_ref=channel_ref, qty=qty) or 0,
-        is_d1=_is_d1(product.sku, channel_ref=channel_ref),
     )
 
 
@@ -57,33 +52,3 @@ def _price_q(product, *, channel_ref: str, qty: int = 1) -> int | None:
         )
     except CatalogError:
         return product.base_price_q
-
-
-def _is_d1(sku: str, *, channel_ref: str) -> bool:
-    avail = _availability_for_sku(sku, channel_ref=channel_ref)
-    if not avail:
-        return False
-
-    breakdown = avail.get("breakdown", {})
-    ready = breakdown.get("ready", Decimal("0"))
-    in_prod = breakdown.get("in_production", Decimal("0"))
-    d1 = breakdown.get("d1", Decimal("0"))
-    return d1 > 0 and ready == 0 and in_prod == 0
-
-
-def _availability_for_sku(sku: str, *, channel_ref: str) -> dict | None:
-    try:
-        from shopman.stockman.services.availability import availability_for_sku
-
-        from shopman.shop.adapters import stock as stock_adapter
-
-        scope = stock_adapter.get_channel_scope(channel_ref)
-        return availability_for_sku(
-            sku,
-            safety_margin=scope["safety_margin"],
-            allowed_positions=scope["allowed_positions"],
-            excluded_positions=scope.get("excluded_positions"),
-        )
-    except Exception:
-        logger.debug("cart_context._availability_for_sku degraded; using fallback", exc_info=True)
-        return None

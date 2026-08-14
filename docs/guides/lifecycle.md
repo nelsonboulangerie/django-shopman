@@ -199,7 +199,6 @@ Rules são regras de negócio configuráveis pelo operador via admin (`RuleConfi
 
 | Code | Classe | Params | Descrição |
 |------|--------|--------|-----------|
-| `d1_discount` | `D1Discount` | `percent: int` | Desconto para produtos D-1 |
 | `promotion` | `PromotionDiscount` | — | Promoções automáticas do admin |
 | `employee_discount` | `EmployeeDiscount` | `percent: int` | Desconto para funcionários |
 | `happy_hour` | `HappyHour` | `percent: int, start_hour, end_hour` | Desconto em horário específico |

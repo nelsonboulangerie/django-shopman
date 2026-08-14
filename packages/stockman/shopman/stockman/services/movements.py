@@ -166,7 +166,7 @@ class StockMovements:
 
         Two ledger legs, atomic: issue from source, receive into destination —
         both ``kind=TRANSFER``. This is the canonical home for relocations
-        (e.g. depósito→vitrine, vitrine→"ontem"). Net stock unchanged; only the
+        (e.g. depósito→vitrine). Net stock unchanged; only the
         position (and optionally target_date/batch) moves.
 
         Raises:

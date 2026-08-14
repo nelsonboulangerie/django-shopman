@@ -51,6 +51,15 @@ class ProductionError(BackstageServiceError):
     """Raised when a production mutation cannot be applied."""
 
 
+class ProductionConflict(ProductionError):
+    """Raised when the work order changed state before the operator action landed.
+
+    Ex.: dois quiosques fechando a mesma fornada, ou o gestor estornando
+    enquanto o forneiro fecha. A camada HTTP mapeia para 409 (conflito de
+    estado), não 400 — mesmo padrão de ``OrderConflict``.
+    """
+
+
 class CatalogError(BackstageServiceError):
     """Raised when a catalog mutation cannot be applied."""
 

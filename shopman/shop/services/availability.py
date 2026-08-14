@@ -289,6 +289,8 @@ def decide(
         safety_margin=scope["safety_margin"],
         allowed_positions=scope["allowed_positions"],
         excluded_positions=scope.get("excluded_positions"),
+            expiry_margin_days=scope.get("expiry_margin_days", 0),
+            include_nonconforming=scope.get("sells_nonconforming", True),
     )
     if not info.get("is_paused", False) and not info.get("is_tracked", bool(info.get("positions"))):
         return {
@@ -360,7 +362,7 @@ def check(
             "available_qty": Decimal,   # total_promisable for this channel
             "is_paused": bool,          # product paused/unpublished
             "is_planned": bool,         # only future quants exist
-            "breakdown": {ready, in_production, d1},
+            "breakdown": {ready, in_production},
             "error_code": str | None,   # set when ok=False
             "is_bundle": bool,          # True when SKU is a bundle
             "failed_sku": str | None,   # component that caused failure (bundles only)

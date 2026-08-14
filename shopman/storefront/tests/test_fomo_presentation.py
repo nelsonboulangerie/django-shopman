@@ -1,6 +1,6 @@
 """FOMO badges (presentation/fomo.py) — derivação pura de urgência.
 
-Cobre: limiar de últimas unidades, singular/plural, D-1, janela de frescor de
+Cobre: limiar de últimas unidades, singular/plural, janela de frescor de
 60 min, contagem regressiva de promoção, happy hour, ordenação por prioridade e
 o teto de 2 badges por card. Sem banco: o módulo é puro.
 """
@@ -72,24 +72,6 @@ class TestLowStock:
     def test_decimal_string_quantity_is_coerced(self):
         badges = badges_for_product(SKU, availability={"available_qty": "2.0"}, now=NOW)
         assert _by_type(badges, "low_stock").label == "Últimas 2 unidades"
-
-
-# ── F3: D-1 ──────────────────────────────────────────────────────────
-
-
-class TestD1:
-    def test_d1_stock_shows_last_day_badge(self):
-        badges = badges_for_product(SKU, availability={"d1_qty": 4}, now=NOW)
-        assert _by_type(badges, "d1").label == "Último dia: amanhã não tem"
-
-    def test_no_d1_stock_is_silent(self):
-        badges = badges_for_product(SKU, availability={"d1_qty": 0}, now=NOW)
-        assert "d1" not in _types(badges)
-
-    def test_label_never_uses_em_dash(self):
-        """Travessão é proibido na copy do cliente."""
-        badges = badges_for_product(SKU, availability={"d1_qty": 1}, now=NOW)
-        assert "—" not in _by_type(badges, "d1").label
 
 
 # ── F5: saiu do forno ────────────────────────────────────────────────
@@ -248,7 +230,6 @@ class TestPriorityAndCap:
             SKU,
             availability={
                 "available_qty": 2,
-                "d1_qty": 3,
                 "has_happy_hour": True,
                 "happy_hour_end": "18:00",
             },
@@ -266,7 +247,7 @@ class TestPriorityAndCap:
     def test_ordered_by_priority(self):
         badges = badges_for_product(
             SKU,
-            availability={"d1_qty": 1, "has_happy_hour": True},
+            availability={"available_qty": 1, "has_happy_hour": True},
             now=NOW,
         )
         assert [badge.priority for badge in badges] == sorted(badge.priority for badge in badges)

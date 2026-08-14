@@ -8,7 +8,11 @@ import type { QCGradeProjection } from "~/types/production";
 // ── Estado da tela de fechamento ────────────────────────────────────────────
 
 export interface QcEntryState {
-  /** Previsto da ordem; null = fornada avulsa (nasce sem expectativa). */
+  /**
+   * A âncora do fechamento: o que ENTROU no forno (started quando existe,
+   * senão o previsto da ordem — ver ovenAnchor). null = fornada avulsa
+   * (nasce sem expectativa).
+   */
   planned: number | null;
   fullQty: number;
   /** O operador já digitou no campo "a preço cheio"? Governa os padrões. */
@@ -20,6 +24,27 @@ export interface QcEntryState {
   discountGradeRef: string;
   discountDefectRef: string;
   lossDefectRef: string;
+  /** O operador confirmou que saiu MAIS que o previsto (guarda anti-typo). */
+  overshootConfirmed: boolean;
+}
+
+/**
+ * A âncora do modelo subtrativo é a fornada REAL que entrou no forno
+ * (QC-FORNADA §1: "a quantidade prevista que chega ao forno é quente").
+ *
+ * E, na Expedição, essa É a quantidade prevista: o que entrou no forno é o
+ * que se espera que saia dele, salvo ocorrência. O plano da produção
+ * (planejou 10, enfornou 11) já cumpriu seu papel na tela anterior — aqui
+ * ele não é mais informação, é ruído; e ancorar nele pré-preencheria 10,
+ * gravando 1 de perda que nunca existiu.
+ */
+export interface QcAnchor {
+  /** O previsto DESTA tela: o que entrou no forno, senão o planejado. */
+  anchor: number | null;
+}
+
+export function ovenAnchor(planned: number | null, started: number | null): QcAnchor {
+  return { anchor: started !== null ? started : planned };
 }
 
 export function initialState(planned: number | null, defaultGradeRef: string): QcEntryState {
@@ -32,6 +57,7 @@ export function initialState(planned: number | null, defaultGradeRef: string): Q
     discountGradeRef: "",
     discountDefectRef: "",
     lossDefectRef: "",
+    overshootConfirmed: false,
   };
 }
 
@@ -105,15 +131,24 @@ export function finishedTotal(state: QcEntryState): number {
 
 // ── Confirmar sempre ativo: as perguntas que faltam ─────────────────────────
 
-export type QcQuestion = "loss_reason" | "discount_reason";
+export type QcQuestion = "overshoot" | "loss_reason" | "discount_reason";
+
+/** Saiu MAIS que o previsto — quase sempre é um dígito a mais, não milagre. */
+export function overshootQty(state: QcEntryState): number {
+  if (state.planned === null) return 0;
+  return Math.max(0, finishedTotal(state) - state.planned);
+}
 
 /**
- * O sheet de motivos não custa toque nenhum: Confirmar fecha a fornada e, se
- * falta um motivo, pergunta — um de cada vez, na ordem visual dos cartões
- * (perda à esquerda, sublote à direita) — e fecha na resposta.
+ * O sheet de perguntas não custa toque nenhum: Confirmar fecha a fornada e,
+ * se falta resposta, pergunta — uma de cada vez — e fecha na última. A
+ * plausibilidade vem primeiro (total acima do previsto pede confirmação: o
+ * typo de 222 no lugar de 22 morre aqui), depois os motivos na ordem visual
+ * dos cartões (perda à esquerda, sublote à direita).
  */
 export function pendingQuestions(state: QcEntryState): QcQuestion[] {
   const out: QcQuestion[] = [];
+  if (overshootQty(state) > 0 && !state.overshootConfirmed) out.push("overshoot");
   if (lossQty(state) > 0 && !state.lossDefectRef) out.push("loss_reason");
   if (state.discountQty > 0 && state.discountGradeRef && !state.discountDefectRef) {
     out.push("discount_reason");

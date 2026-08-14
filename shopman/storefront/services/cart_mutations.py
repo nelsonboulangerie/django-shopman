@@ -97,7 +97,6 @@ def set_qty_by_sku(
                     sku=intent.sku,
                     qty=intent.qty,
                     unit_price_q=intent.unit_price_q,
-                    is_d1=intent.is_d1,
                 )
     except CartUnavailableError as exc:
         raise CartMutationUnavailable(product=intent.product, stock_error=exc) from exc

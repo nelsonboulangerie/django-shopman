@@ -2,8 +2,8 @@
 //
 // Pure transforms over the catalog Projection: ordering the category rail,
 // filtering the product grid, and the calm tile fallback visual. No price or
-// availability arithmetic — those are sealed in the Projection (price_display,
-// is_d1) and only rendered here.
+// availability arithmetic — those are sealed in the Projection (price_display)
+// and only rendered here.
 
 import type { POSCollectionProjection, POSProductProjection } from "~/types/pos";
 

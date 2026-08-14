@@ -2,8 +2,9 @@
 //
 // Transforms puras sobre a DayClosingProjection. As BADGES derivam de
 // `classification` AQUI (a projection não carrega presentation — cada app
-// decide a própria pele). "D-1" é jargão interno: o rótulo visível é sempre
-// "Ontem".
+// decide a própria pele). Desde o C4 o LOTE decide o destino da sobra: o
+// que tem validade FICA; o que vence hoje (ou está marcado) vira perda no
+// fechamento — nada se move de posição.
 
 import type {
   ClosingItemProjection,
@@ -17,13 +18,13 @@ export interface ClosingBadge {
 }
 
 export function closingBadge(classification: string): ClosingBadge {
-  if (classification === "d1") {
-    return { label: "Ontem", css: "border-warning/50 bg-warning/10 text-amber-700 dark:text-amber-400" };
+  if (classification === "expired") {
+    return { label: "Vira perda", css: "border-destructive/50 bg-destructive/10 text-destructive" };
   }
-  if (classification === "loss") {
-    return { label: "Perda", css: "border-destructive/50 bg-destructive/10 text-destructive" };
+  if (classification === "mixed") {
+    return { label: "Parte vence", css: "border-warning/50 bg-warning/10 text-amber-700 dark:text-amber-400" };
   }
-  return { label: "Neutro", css: "border-border bg-muted text-muted-foreground" };
+  return { label: "Fica", css: "border-border bg-muted text-muted-foreground" };
 }
 
 /** Linhas da tabela "Produção do dia" (SKU · planejado · feito · perda). */

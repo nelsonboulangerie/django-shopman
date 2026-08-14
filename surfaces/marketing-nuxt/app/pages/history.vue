@@ -9,10 +9,10 @@ import { announcementOutcome, resultLabel, resultTone, shortDateTime, audienceSu
 const { announcements, loading, error, refresh } = useCampaignHistory();
 
 const OUTCOME_META = {
-  published: { label: "publicado", icon: "lucide:check-circle-2", class: "text-emerald-600" },
-  partial: { label: "parcial", icon: "lucide:alert-circle", class: "text-amber-600" },
-  failed: { label: "falhou", icon: "lucide:x-circle", class: "text-destructive" },
-  pending: { label: "na fila", icon: "lucide:clock", class: "text-muted-foreground" },
+  published: { label: "Publicado", icon: "lucide:check-circle-2", class: "text-emerald-600" },
+  partial: { label: "Parcial", icon: "lucide:alert-circle", class: "text-amber-600" },
+  failed: { label: "Falhou", icon: "lucide:x-circle", class: "text-destructive" },
+  pending: { label: "Na fila", icon: "lucide:clock", class: "text-muted-foreground" },
 } as const;
 
 const TONE_CLASS = {

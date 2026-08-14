@@ -99,7 +99,7 @@ function confirmTyped() {
       <div class="grid gap-2">
         <div class="flex items-center justify-between gap-2">
           <p class="text-sm font-medium text-muted-foreground">Comandas salvas</p>
-          <UiBadge v-if="hasDraft" variant="outline">rascunho atual</UiBadge>
+          <UiBadge v-if="hasDraft" variant="outline">Rascunho atual</UiBadge>
         </div>
         <div v-if="filteredTabs.length" class="grid max-h-72 gap-2 overflow-auto pr-1 sm:grid-cols-2">
           <button

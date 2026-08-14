@@ -18,10 +18,11 @@ const FILTERS: ReportFiltersQuery = {
 };
 
 describe("reportKindLabel", () => {
-  it("labels the three report kinds in pt-br", () => {
+  it("labels the four report kinds in pt-br", () => {
     expect(reportKindLabel("history")).toBe("Histórico");
     expect(reportKindLabel("operator_productivity")).toBe("Produtividade");
     expect(reportKindLabel("recipe_waste")).toBe("Desperdício");
+    expect(reportKindLabel("quality")).toBe("Qualidade");
   });
 
   it("exposes the kinds in the tab order of the page", () => {
@@ -29,6 +30,7 @@ describe("reportKindLabel", () => {
       "history",
       "operator_productivity",
       "recipe_waste",
+      "quality",
     ]);
   });
 });

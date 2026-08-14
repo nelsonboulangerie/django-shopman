@@ -26,7 +26,6 @@ DEFAULT_STOREFRONT_CHANNEL_REF = "web"
 
 # Pricing-modifier discount keys aggregated into the cart breakdown.
 _PRICING_MODIFIER_KEYS = (
-    "d1_discount",
     "employee_discount",
     "happy_hour",
     "loyalty_redeem",
@@ -275,8 +274,8 @@ def build_cart(
     grand_total_q = subtotal_q + (delivery_fee_q or 0)
 
     # Cupom promocional NÃO conta pros thresholds (mínimo de pedido/entrega, frete
-    # grátis): aplicar uma cortesia não pode tirar a elegibilidade do cliente. O D-1
-    # continua contando — é o preço real de venda, não cortesia.
+    # grátis): aplicar uma cortesia não pode tirar a elegibilidade do cliente. O
+    # preço por lote continua contando — é o preço real de venda, não cortesia.
     coupon_discount_q = coupon.discount_q if coupon else 0
     threshold_base_q = subtotal_q + coupon_discount_q
     minimum_order = build_minimum_order_progress(threshold_base_q, channel_ref)
@@ -349,6 +348,8 @@ def _availability(
             safety_margin=scope["safety_margin"],
             allowed_positions=scope["allowed_positions"],
             excluded_positions=scope.get("excluded_positions"),
+            expiry_margin_days=scope.get("expiry_margin_days", 0),
+            include_nonconforming=scope.get("sells_nonconforming", True),
         )
         own_holds = availability_service.own_holds_by_sku(session_key, skus)
         return avail_map, own_holds

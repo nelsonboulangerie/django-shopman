@@ -27,7 +27,7 @@ class RuleConfig(models.Model):
     ref = models.CharField("código", max_length=80, unique=True)
     rule_path = models.CharField(
         "caminho da regra", max_length=200,
-        help_text="Dotted path to the rule class (e.g. shopman.shop.rules.pricing.D1Rule)",
+        help_text="Dotted path to the rule class (e.g. shopman.shop.rules.pricing.EmployeeRule)",
     )
     label = models.CharField("nome exibido", max_length=120)
     enabled = models.BooleanField("ativa", default=True)

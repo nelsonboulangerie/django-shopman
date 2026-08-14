@@ -180,7 +180,7 @@ não dá categoria queryable).
   atualizados (de "NÃO ligar" → "ativo quando configurado"). framework 2149/craftsman 242.
 - **WP-B6 (encadeia VALIDITY)** — sobre essa base: FEFO de insumos, Batch+expiry
   no finish de produção, near-expiry gate (config). Ver
-  [VALIDITY-SHELFLIFE-REVIEW](VALIDITY-SHELFLIFE-REVIEW.md).
+  [VALIDITY-SHELFLIFE-REVIEW](completed/VALIDITY-SHELFLIFE-REVIEW.md).
 
 ## Custo / risco
 Fase 1 ~5–7 dias (pacote+model+admin, supplier+custo, 2-3 adapters, seed,
@@ -195,6 +195,6 @@ maiores, pós-go-live.
 3. **Custo por fornecedor** já na Fase 1, ou custo único por material primeiro?
 
 ## Referências
-- [MATERIAL-MASTER-PLAN](MATERIAL-MASTER-PLAN.md) (origem) · [VALIDITY-SHELFLIFE-REVIEW](VALIDITY-SHELFLIFE-REVIEW.md)
+- [MATERIAL-MASTER-PLAN](MATERIAL-MASTER-PLAN.md) (origem) · [VALIDITY-SHELFLIFE-REVIEW](completed/VALIDITY-SHELFLIFE-REVIEW.md)
 - CLAUDE.md (Offerman=vendáveis; regra de dependência) · offerman/conf.py (CostBackend)
 - protocols/sku.py (SkuValidator) · craftsman/adapters/catalog.py (CatalogBackend) · Batch.supplier

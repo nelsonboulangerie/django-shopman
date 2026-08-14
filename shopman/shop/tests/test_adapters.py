@@ -97,11 +97,11 @@ class TestChannelScopeResolution:
             defaults={
                 "name": "Test Remote",
                 "is_active": True,
-                "config": {"stock": {"excluded_positions": ["ontem"]}},
+                "config": {"stock": {"excluded_positions": ["reserva"]}},
             },
         )
         scope = stock.get_channel_scope("test-remote")
-        assert scope["excluded_positions"] == ["ontem"]
+        assert scope["excluded_positions"] == ["reserva"]
 
     def test_scope_defaults_empty_when_channel_has_no_denylist(self, db):
         from shopman.shop.adapters import stock
