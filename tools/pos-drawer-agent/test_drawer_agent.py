@@ -516,3 +516,74 @@ def test_fora_do_windows_a_config_segue_a_convencao_do_sistema():
     """No Linux/macOS quem administra a máquina espera achar em `~/.config`."""
     config = drawer_agent.config_path_for(Path("/home/pdv"), windows=False)
     assert config.parts[-3:] == (".config", "nelson-pos-drawer", "agent.json")
+
+
+# ── Página de teste ESC/POS ───────────────────────────────────────────────
+#
+# Ela existe para o PAPEL responder o que ninguém sabe de cabeça, antes de
+# alguém compor recibo — e muito antes de compor DANFE, que tem leiaute exigido
+# por lei.
+
+
+def test_o_qr_declara_o_comprimento_certo():
+    """`GS ( k` conta `cn`, `fn` e `m` ALÉM dos dados: três bytes a mais.
+
+    Errar isso é o defeito clássico do comando — a impressora lê menos do que
+    existe e imprime lixo, ou nada.
+    """
+    dados = b"https://pdv.boulangerie.com.br"
+    saida = drawer_agent._qr_code(dados.decode())
+
+    marcador = bytes([0x1D, 0x28, 0x6B])
+    i = saida.index(marcador + bytes([(len(dados) + 3) % 256]))
+    pL, pH = saida[i + 3], saida[i + 4]
+    assert pL + pH * 256 == len(dados) + 3
+    assert saida[i + 5:i + 8] == bytes([0x31, 0x50, 0x30])  # cn, fn, m
+    assert dados in saida
+
+
+def test_o_qr_sobrevive_a_dado_maior_que_255_bytes():
+    """Acima de 255 o comprimento passa a usar os dois bytes; é onde se erra."""
+    dados = "x" * 400
+    saida = drawer_agent._qr_code(dados)
+    tamanho = 403
+    assert bytes([tamanho % 256, tamanho // 256]) in saida
+
+
+def test_a_pagina_compara_tabelas_em_vez_de_chutar_uma():
+    """Escolher página de código no escuro é como "PÃO" vira "PÎO" no balcão."""
+    saida = drawer_agent.test_print_bytes()
+    for code, _ in drawer_agent._CODE_PAGES:
+        assert bytes([0x1B, ord("t"), code]) in saida
+    assert len(drawer_agent._CODE_PAGES) >= 2, "comparar exige mais de uma tabela"
+
+
+def test_a_pagina_manda_a_frase_acentuada_de_verdade():
+    """Uma amostra sem acento não testaria nada."""
+    saida = drawer_agent.test_print_bytes()
+    assert "Pão".encode("cp860") in saida
+    assert "açúcar".encode("cp850") in saida
+
+
+def test_a_regua_tem_exatamente_a_largura_declarada():
+    linha = "".join(str(i % 10) for i in range(1, 49))
+    assert linha.encode("cp860") in drawer_agent.test_print_bytes()
+    assert len(linha) == 48
+
+
+def test_as_duas_colunas_encostam_nas_bordas():
+    linha = drawer_agent._two_columns("Pao frances", "R$ 0,90", 48)
+    assert len(linha) == 48
+    assert linha.startswith("Pao frances")
+    assert linha.endswith("R$ 0,90")
+
+
+def test_coluna_com_nome_gigante_nao_estoura_a_linha():
+    linha = drawer_agent._two_columns("N" * 60, "R$ 9,99", 48)
+    assert len(linha) == 48
+
+
+def test_a_pagina_termina_cortando_o_papel():
+    saida = drawer_agent.test_print_bytes()
+    assert saida.startswith(bytes([0x1B, ord("@")])), "sem reset, herda estado do job anterior"
+    assert saida.endswith(bytes([0x1D, ord("V"), 1]))

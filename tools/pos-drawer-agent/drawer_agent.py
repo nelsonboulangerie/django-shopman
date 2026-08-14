@@ -99,6 +99,100 @@ def kick_bytes(*, pin: int = 0, on_ms: int = 50, off_ms: int = 500) -> bytes:
     return bytes([ESC, ord("p"), pin, on_units, off_units])
 
 
+# ── Página de teste ───────────────────────────────────────────────────────
+#
+# Antes de compor recibo — e muito antes de compor DANFE, que tem leiaute
+# exigido por lei — vale descobrir o que ESTA impressora faz. Esta página não
+# tenta ser bonita: ela faz o papel responder três perguntas que ninguém
+# consegue responder de cabeça.
+#
+# ⚠️ A página de código NÃO é chutada aqui. A mesma frase acentuada sai sob
+# várias tabelas, rotulada. O papel diz qual está certa; escolher uma no escuro
+# é como "PÃO" vira "PÎO" no balcão.
+
+#: `ESC t n` — tabelas de caractere que interessam ao português.
+_CODE_PAGES = ((3, "PC860 Portugues"), (2, "PC850 Multilingual"), (16, "WPC1252"))
+
+#: Largura em colunas da Fonte A numa térmica de 80mm. A régua confirma.
+_COLUMNS = 48
+
+
+#: Conteúdo do QR de teste. Texto neutro de propósito: o agente é genérico, e um
+#: domínio de deployment cravado aqui é a mesma armadilha da origem inventada.
+_QR_SAMPLE = "NELSON POS - TESTE DE QR CODE"
+
+
+def test_print_bytes(*, columns: int = _COLUMNS, qr_data: str = _QR_SAMPLE) -> bytes:
+    """Amostra de diagnóstico: acento, largura/alinhamento e QR nativo."""
+    out = bytearray()
+    out += bytes([ESC, ord("@")])  # reset
+
+    out += _line("TESTE DE IMPRESSAO")
+    out += _line("Agente da gaveta - Nelson")
+    out += _line("-" * columns)
+
+    # 1) Acento: a mesma frase sob cada tabela, rotulada.
+    out += _line("1) ACENTO - qual linha esta correta?")
+    for code, nome in _CODE_PAGES:
+        out += bytes([ESC, ord("t"), code])
+        out += _line(f"  {nome}: PAO, ACUCAR, MANTEIGA")
+        out += _encoded("  Pao de acucar e manteiga, R$ 12,90", code)
+    out += bytes([ESC, ord("t"), _CODE_PAGES[0][0]])
+    out += _line("")
+
+    # 2) Largura e alinhamento: a régua diz quantas colunas cabem de verdade.
+    out += _line("2) LARGURA - a regua termina no papel?")
+    out += _line("".join(str(i % 10) for i in range(1, columns + 1)))
+    out += _line(_two_columns("Pao frances", "R$ 0,90", columns))
+    out += _line(_two_columns("Sonho de creme", "R$ 7,50", columns))
+    out += _line(_two_columns("TOTAL", "R$ 8,40", columns))
+    out += _line("")
+
+    # 3) QR nativo: se sair em branco, esta impressora precisa de QR em imagem.
+    out += _line("3) QR - saiu um quadrado legivel?")
+    out += _qr_code(qr_data)
+    out += _line("")
+    out += _line("Fim do teste.")
+
+    out += bytes([ESC, ord("d"), 4])  # avanca antes de cortar
+    out += bytes([0x1D, ord("V"), 1])  # corte parcial
+    return bytes(out)
+
+
+def _line(text: str) -> bytes:
+    return text.encode("cp860", "replace") + b"\n"
+
+
+def _encoded(text: str, code_page: int) -> bytes:
+    """A frase acentuada codificada na tabela que acabou de ser selecionada."""
+    encoding = {3: "cp860", 2: "cp850", 16: "cp1252"}.get(code_page, "cp860")
+    acentuada = text.replace("Pao", "Pão").replace("acucar", "açúcar")
+    return acentuada.encode(encoding, "replace") + b"\n"
+
+
+def _two_columns(left: str, right: str, columns: int) -> str:
+    """Nome à esquerda, valor à direita, preenchendo a linha."""
+    espaco = max(1, columns - len(left) - len(right))
+    return f"{left}{' ' * espaco}{right}"[:columns]
+
+
+def _qr_code(data: str, *, module: int = 6) -> bytes:
+    """QR nativo do ESC/POS (`GS ( k`), modelo 2.
+
+    ⚠️ O comprimento conta ``cn``, ``fn`` e ``m`` além dos dados — três bytes a
+    mais. Errar isso é o defeito clássico deste comando: a impressora lê menos
+    dados do que existe e imprime lixo ou nada.
+    """
+    payload = data.encode("utf-8")
+    tamanho = len(payload) + 3
+    return bytes(
+        [0x1D, 0x28, 0x6B, 0x04, 0x00, 0x31, 0x41, 0x32, 0x00]  # modelo 2
+        + [0x1D, 0x28, 0x6B, 0x03, 0x00, 0x31, 0x43, module]  # tamanho do modulo
+        + [0x1D, 0x28, 0x6B, 0x03, 0x00, 0x31, 0x45, 0x31]  # correcao de erro M
+        + [0x1D, 0x28, 0x6B, tamanho % 256, tamanho // 256, 0x31, 0x50, 0x30]
+    ) + payload + bytes([0x1D, 0x28, 0x6B, 0x03, 0x00, 0x31, 0x51, 0x30])  # imprime
+
+
 def _pulse_units(value_ms: int, label: str) -> int:
     units = int(value_ms) // _PULSE_UNIT_MS
     if units < 1:
@@ -841,6 +935,13 @@ def main(argv: list[str] | None = None) -> int:
         # Teste de bancada sem navegador: prova o caminho até o spooler.
         job = send_raw(kick_bytes(), queue=config.queue, title="gaveta:cli")
         print(f"kick enviado para {config.queue} (job {job or '-'})")
+        return 0
+    if "--test-print" in argv:
+        # O papel responde o que ninguém sabe de cabeça: qual página de código
+        # acerta os acentos, quantas colunas cabem, e se o QR é nativo.
+        job = send_raw(test_print_bytes(), queue=config.queue, title="teste-impressao")
+        print(f"página de teste enviada para {config.queue} (job {job or '-'})")
+        print("Olhe o papel: 1) qual linha acentuada saiu certa  2) a régua coube  3) o QR apareceu")
         return 0
     serve(config)
     return 0
