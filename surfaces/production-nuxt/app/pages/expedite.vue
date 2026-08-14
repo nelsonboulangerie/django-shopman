@@ -328,6 +328,22 @@ function concludeOven() {
         <span>Sem atualizar. Mostrando o último painel carregado.</span>
       </div>
 
+      <!-- Fornada esquecida não depende de memória: o painel avisa e o toque
+           vai direto ao dia pendente mais recente. -->
+      <button
+        v-if="kiosk && kiosk.previous_open_count > 0"
+        type="button"
+        class="flex items-center gap-2 rounded-lg border border-warning/50 bg-warning/10 px-4 py-3 text-left text-sm text-amber-700 transition hover:bg-warning/20 dark:text-amber-300"
+        @click="selectedDate = kiosk.previous_open_date"
+      >
+        <Icon name="lucide:history" class="size-4 shrink-0" />
+        <span>
+          <b class="tabular-nums">{{ kiosk.previous_open_count }}</b>
+          {{ kiosk.previous_open_count === 1 ? "fornada aberta" : "fornadas abertas" }}
+          de dias anteriores. Toque para ver.
+        </span>
+      </button>
+
       <p v-if="pending && !kiosk" class="py-10 text-center text-muted-foreground">Carregando…</p>
       <p v-else-if="kiosk && !kiosk.orders.length" class="py-10 text-center text-muted-foreground">
         Nenhuma fornada planejada para hoje.

@@ -501,6 +501,11 @@ class QCKioskProjection:
     grades: tuple[QCGradeProjection, ...]
     defects: tuple[QCDefectProjection, ...]
     recipes: tuple[RecipeOptionProjection, ...]
+    # Fornadas ABERTAS de dias anteriores à data selecionada: o painel avisa
+    # (a fornada esquecida não pode depender de alguém lembrar de "Outra
+    # data"). A data é a mais recente com pendência, para o toque ir direto.
+    previous_open_count: int
+    previous_open_date: str
 
 
 @dataclass(frozen=True)
@@ -1265,6 +1270,16 @@ def build_qc_kiosk(*, selected_date: date | None = None) -> QCKioskProjection:
     closed_cards.reverse()
     cards = tuple(open_cards + closed_cards)
 
+    previous_open = (
+        WorkOrder.objects.filter(
+            target_date__lt=selected_date,
+            status__in=(WorkOrder.Status.PLANNED, WorkOrder.Status.STARTED),
+        )
+        .values_list("target_date", flat=True)
+        .order_by("-target_date")
+    )
+    previous_dates = list(previous_open)
+
     return QCKioskProjection(
         selected_date=selected_date.isoformat(),
         selected_date_display=selected_date.strftime("%d/%m/%Y"),
@@ -1277,6 +1292,8 @@ def build_qc_kiosk(*, selected_date: date | None = None) -> QCKioskProjection:
             RecipeOptionProjection(pk=r.pk, ref=r.ref, name=r.name or r.output_sku or r.ref)
             for r in Recipe.objects.filter(is_active=True).order_by("name", "ref")
         ),
+        previous_open_count=len(previous_dates),
+        previous_open_date=previous_dates[0].isoformat() if previous_dates else "",
     )
 
 
@@ -1288,24 +1305,40 @@ def _qc_closed_partitions(
 ) -> dict[int, tuple[Decimal, Decimal, Decimal]]:
     """Partição (a preço cheio, com desconto, perda) por fornada fechada.
 
-    Linha OUTPUT sem grau (finish escalar) conta no grupo do grau padrão —
-    mesma regra da derivação em ``shop.services.quality``.
+    "Com desconto" é o FATO CONGELADO do lote (``Batch.nonconformity_percent``
+    gravado no finish) — nunca a tabela de markdown atual: editar o percentual
+    de um grau no Admin não pode reescrever a leitura de fornada já fechada. A
+    tabela só entra como fallback para linha sem lote (finish escalar antigo).
+    Linha OUTPUT sem grau conta no grupo do grau padrão — mesma regra da
+    derivação em ``shop.services.quality``.
     """
     if not finished_pks:
         return {}
     from shopman.craftsman.models import WorkOrderItem
+    from shopman.stockman.models import Batch
 
     result: dict[int, tuple[Decimal, Decimal, Decimal]] = {}
-    lines = WorkOrderItem.objects.filter(
-        work_order_id__in=finished_pks,
-        kind__in=(WorkOrderItem.Kind.OUTPUT, WorkOrderItem.Kind.WASTE),
-    ).values_list("work_order_id", "kind", "quality_grade_ref", "quantity")
-    for wo_id, kind, grade_ref, quantity in lines:
+    lines = list(
+        WorkOrderItem.objects.filter(
+            work_order_id__in=finished_pks,
+            kind__in=(WorkOrderItem.Kind.OUTPUT, WorkOrderItem.Kind.WASTE),
+        ).values_list("work_order_id", "kind", "quality_grade_ref", "quantity", "batch_ref")
+    )
+    lot_percent = dict(
+        Batch.objects.filter(
+            ref__in=[row[4] for row in lines if row[4]],
+        ).values_list("ref", "nonconformity_percent")
+    )
+    for wo_id, kind, grade_ref, quantity, batch_ref in lines:
         full, discounted, loss = result.get(wo_id, (Decimal("0"), Decimal("0"), Decimal("0")))
         qty = quantity or Decimal("0")
         if kind == WorkOrderItem.Kind.WASTE:
             loss += qty
-        elif (markdown_by_ref.get(grade_ref, default_markdown) if grade_ref else default_markdown) > 0:
+        elif (
+            lot_percent[batch_ref]
+            if batch_ref in lot_percent
+            else (markdown_by_ref.get(grade_ref, default_markdown) if grade_ref else default_markdown)
+        ) > 0:
             discounted += qty
         else:
             full += qty

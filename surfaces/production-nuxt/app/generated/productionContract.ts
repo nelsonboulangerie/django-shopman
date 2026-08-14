@@ -371,6 +371,8 @@ export interface QCKioskProjection {
   grades: QCGradeProjection[];
   defects: QCDefectProjection[];
   recipes: RecipeOptionProjection[];
+  previous_open_count: number;
+  previous_open_date: string;
 }
 
 /** Normalized filters for production reports. */
