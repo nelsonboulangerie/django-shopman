@@ -54,29 +54,39 @@ def _day_closing_url() -> str:
 
 
 def _config_links() -> list[dict]:
-    """Atalhos canônicos de configuração (o papel do Admin)."""
+    """Os começos de caminho mais frequentes — não um índice do Admin.
+
+    O menu já lista tudo; repetir a lista inteira aqui não ajudaria ninguém. Estes
+    são os pontos de partida do dia a dia: o que a loja é, o que ela vende, quanto
+    cobra e o que diz.
+    """
     return [
         {
-            "label": "Loja & contato",
+            "label": "Loja e contato",
             "url": reverse("admin:shop_shop_changelist"),
             "icon": "storefront",
         },
         {
-            # A tela própria do catálogo (navegação chave↔tela, PR #110) — não a
-            # changelist crua do model.
-            "label": "Catálogo de copy",
-            "url": reverse("admin_console_copy_catalog"),
-            "icon": "edit_note",
-        },
-        {
-            "label": "Templates de notificação",
-            "url": reverse("admin:shop_notificationtemplate_changelist"),
-            "icon": "notifications",
+            "label": "Produtos",
+            "url": reverse("admin:offerman_product_changelist"),
+            "icon": "bakery_dining",
         },
         {
             "label": "Regras de preço",
             "url": reverse("admin:shop_ruleconfig_changelist"),
             "icon": "rule",
+        },
+        {
+            "label": "Promoções",
+            "url": reverse("admin:shop_promotion_changelist"),
+            "icon": "campaign",
+        },
+        {
+            # A tela própria do catálogo (navegação chave↔tela, PR #110) — não a
+            # changelist crua do model.
+            "label": "Textos da interface",
+            "url": reverse("admin_console_copy_catalog"),
+            "icon": "edit_note",
         },
         {
             "label": "Canais",
@@ -87,15 +97,15 @@ def _config_links() -> list[dict]:
 
 
 def _audit_links() -> list[dict]:
-    """Trilhas readonly de auditoria (fechamentos, pagamentos, turnos)."""
+    """Trilhas readonly de auditoria (pedidos, cobranças, caixa, fechamentos)."""
     return [
         {
-            "label": "Fechamentos",
-            "url": reverse("admin:backstage_dayclosing_changelist"),
-            "icon": "event_available",
+            "label": "Histórico de pedidos",
+            "url": reverse("admin:orderman_order_changelist"),
+            "icon": "receipt_long",
         },
         {
-            "label": "Pagamentos",
+            "label": "Cobranças",
             "url": reverse("admin:payman_paymentintent_changelist"),
             "icon": "payments",
         },
@@ -103,6 +113,11 @@ def _audit_links() -> list[dict]:
             "label": "Turnos de caixa",
             "url": reverse("admin:backstage_cashshift_changelist"),
             "icon": "point_of_sale",
+        },
+        {
+            "label": "Fechamentos do dia",
+            "url": reverse("admin:backstage_dayclosing_changelist"),
+            "icon": "event_available",
         },
     ]
 
