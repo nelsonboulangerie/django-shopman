@@ -5,7 +5,7 @@ import {
   bucketLabel,
   bucketSalesDays,
   coverageLabel,
-  deltaLabel,
+  delta,
   formatMinutes,
   formatMoney,
   formatMoneyCompact,
@@ -39,14 +39,17 @@ describe("presentation/bi", () => {
 
   it("cobertura sempre carrega o denominador", () => {
     expect(coverageLabel(3, 12)).toBe("3 de 12 fornadas medidas");
-    expect(coverageLabel(0, 0)).toBe("sem fornadas no período");
+    expect(coverageLabel(0, 0)).toBe("Sem fornadas no período");
   });
 
-  it("delta honesto: sem base não inventa infinito; queda e alta com seta", () => {
-    expect(deltaLabel(100, 0)).toBe("sem base anterior");
-    expect(deltaLabel(120, 100)).toBe("▲ 20% vs anterior");
-    expect(deltaLabel(80, 100)).toBe("▼ 20% vs anterior");
-    expect(deltaLabel(100, 100)).toBe("estável vs anterior");
+  it("delta honesto: sem base vira travessão; tom segue melhorou/piorou", () => {
+    expect(delta(100, 0)).toEqual({ text: "—", tone: "neutral" });
+    expect(delta(120, 100)).toEqual({ text: "▲ 20% vs Período anterior", tone: "positive" });
+    expect(delta(80, 100)).toEqual({ text: "▼ 20% vs Período anterior", tone: "negative" });
+    expect(delta(100, 100)).toEqual({ text: "Estável vs Período anterior", tone: "neutral" });
+    // Perda subindo é RUIM: downIsGood inverte o tom, nunca o texto.
+    expect(delta(120, 100, { downIsGood: true }).tone).toBe("negative");
+    expect(delta(80, 100, { downIsGood: true }).tone).toBe("positive");
   });
 });
 

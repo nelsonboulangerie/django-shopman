@@ -7,7 +7,7 @@ import {
   WEEKDAY_LABELS,
   bucketLabel,
   bucketSalesDays,
-  deltaLabel,
+  delta,
   formatInt,
   formatMoney,
   formatMoneyCompact,
@@ -78,29 +78,29 @@ const channelRows = computed(() =>
         <StatTile
           label="Pedidos"
           :value="formatInt(report.orders_total)"
-          :delta="deltaLabel(report.orders_total, report.previous.orders_total)"
+          :delta="delta(report.orders_total, report.previous.orders_total)"
         />
         <StatTile
           label="Faturamento"
           :value="formatMoneyCompact(report.revenue_total_q)"
-          :delta="deltaLabel(report.revenue_total_q, report.previous.revenue_total_q)"
+          :delta="delta(report.revenue_total_q, report.previous.revenue_total_q)"
         />
         <StatTile
           label="Ticket médio"
           :value="formatMoney(report.average_ticket_q)"
-          :delta="deltaLabel(report.average_ticket_q, report.previous.average_ticket_q)"
+          :delta="delta(report.average_ticket_q, report.previous.average_ticket_q)"
         />
         <StatTile
           label="Cancelados"
           :value="formatInt(report.cancelled_total)"
-          hint="fora do faturamento acima"
+          hint="Fora do faturamento acima"
         />
       </div>
 
       <section class="rounded-md border border-border bg-card p-3">
         <h2 class="text-lg font-semibold text-foreground">Faturamento por dia</h2>
         <p class="mb-3 text-xs text-muted-foreground">
-          traço = período anterior; janela longa agrega por semana ou mês
+          Traço = período anterior; janela longa agrega por semana ou mês
           <template v-if="hasHistory">
             · <span class="mx-0.5 inline-block h-2 w-2 rounded-sm bg-foreground/25 align-middle"></span>
             barras claras = histórico Yooga
@@ -112,12 +112,12 @@ const channelRows = computed(() =>
       <div class="grid gap-4 lg:grid-cols-2">
         <section class="rounded-md border border-border bg-card p-3">
           <h2 class="text-lg font-semibold text-foreground">Pedidos por hora</h2>
-          <p class="mb-3 text-xs text-muted-foreground">soma do período, hora local</p>
+          <p class="mb-3 text-xs text-muted-foreground">Soma do período, hora local</p>
           <ChartBarSeries :points="hourSeries" :format="(v) => formatInt(v)" :tick-every="4" />
         </section>
         <section class="rounded-md border border-border bg-card p-3">
           <h2 class="text-lg font-semibold text-foreground">Pedidos por dia da semana</h2>
-          <p class="mb-3 text-xs text-muted-foreground">soma do período</p>
+          <p class="mb-3 text-xs text-muted-foreground">Soma do período</p>
           <ChartBarSeries :points="weekdaySeries" :format="(v) => formatInt(v)" :tick-every="1" />
         </section>
       </div>
@@ -125,13 +125,13 @@ const channelRows = computed(() =>
       <div class="grid gap-4 lg:grid-cols-2">
         <section class="rounded-md border border-border bg-card p-3">
           <h2 class="text-lg font-semibold text-foreground">Por canal</h2>
-          <p class="mb-3 text-xs text-muted-foreground">faturamento do período</p>
+          <p class="mb-3 text-xs text-muted-foreground">Faturamento do período</p>
           <ChartHBarList v-if="channelRows.length" :rows="channelRows" />
           <p v-else class="text-sm text-muted-foreground">Sem vendas no período.</p>
         </section>
         <section class="rounded-md border border-border bg-card p-3">
           <h2 class="text-lg font-semibold text-foreground">Top produtos</h2>
-          <p class="mb-3 text-xs text-muted-foreground">por faturamento no período</p>
+          <p class="mb-3 text-xs text-muted-foreground">Por faturamento no período</p>
           <table v-if="report.top_skus.length" class="w-full text-sm">
             <thead>
               <tr class="border-b border-border text-left text-xs font-medium text-muted-foreground">

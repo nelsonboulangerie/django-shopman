@@ -7,7 +7,7 @@ import {
   BUCKET_SPAN_LABELS,
   bucketLabel,
   bucketRows,
-  deltaLabel,
+  delta,
   formatInt,
   formatMoney,
   shortDate,
@@ -58,18 +58,18 @@ const methodRows = computed(() =>
         <StatTile
           label="Turnos fechados"
           :value="formatInt(report.shifts_total)"
-          :delta="deltaLabel(report.shifts_total, report.previous.shifts_total)"
+          :delta="delta(report.shifts_total, report.previous.shifts_total)"
         />
         <StatTile
           label="Quebra acumulada"
           :value="formatMoney(report.difference_total_q)"
-          :delta="`anterior ${formatMoney(report.previous.difference_total_q)}`"
-          hint="contado − esperado; negativo = faltou"
+          :delta="{ text: `Anterior ${formatMoney(report.previous.difference_total_q)}`, tone: 'neutral' }"
+          hint="Contado − esperado; negativo = faltou"
         />
         <StatTile
           label="Dias sem fechamento"
           :value="formatInt(report.closings_missing)"
-          hint="na janela; o mix de pagamento só cobre dias fechados"
+          hint="Na janela; o mix de pagamento só cobre dias fechados"
         />
         <StatTile
           label="Período"
@@ -79,14 +79,14 @@ const methodRows = computed(() =>
 
       <section class="rounded-md border border-border bg-card p-3">
         <h2 class="text-lg font-semibold text-foreground">Quebra de caixa por dia</h2>
-        <p class="mb-3 text-xs text-muted-foreground">acima do zero sobrou; abaixo faltou</p>
+        <p class="mb-3 text-xs text-muted-foreground">Acima do zero sobrou; abaixo faltou</p>
         <ChartDivergingBars :points="differenceSeries" :format="formatMoney" />
       </section>
 
       <div class="grid gap-4 lg:grid-cols-2">
         <section class="rounded-md border border-border bg-card p-3">
           <h2 class="text-lg font-semibold text-foreground">Por operador</h2>
-          <p class="mb-3 text-xs text-muted-foreground">quebra acumulada no período</p>
+          <p class="mb-3 text-xs text-muted-foreground">Quebra acumulada no período</p>
           <table v-if="report.by_operator.length" class="w-full text-sm">
             <thead>
               <tr class="border-b border-border text-left text-xs font-medium text-muted-foreground">
@@ -112,7 +112,7 @@ const methodRows = computed(() =>
         </section>
         <section class="rounded-md border border-border bg-card p-3">
           <h2 class="text-lg font-semibold text-foreground">Meios de pagamento</h2>
-          <p class="mb-3 text-xs text-muted-foreground">consolidado dos fechamentos do período</p>
+          <p class="mb-3 text-xs text-muted-foreground">Consolidado dos fechamentos do período</p>
           <ChartHBarList v-if="methodRows.length" :rows="methodRows" />
           <p v-else class="text-sm text-muted-foreground">Nenhum fechamento na janela ainda.</p>
         </section>

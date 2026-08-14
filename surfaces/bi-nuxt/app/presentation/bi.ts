@@ -46,21 +46,38 @@ export function hourLabel(hour: number): string {
   return `${hour}h`;
 }
 
+export type DeltaTone = "positive" | "negative" | "neutral";
+
+export interface DeltaBadge {
+  text: string;
+  tone: DeltaTone;
+}
+
 /**
- * Delta vs o período anterior (F7). Sem base = diz que não há base — nunca
- * um "+∞" fingido. Sem cor: a semântica de "subir" muda por métrica (perda
- * subindo é ruim; faturamento subindo é bom), e cor é só funcional no DS.
+ * Delta vs o período anterior (F7). Sem base = travessão de dado ausente
+ * (decisão do dono; a proibição do travessão vale para prosa, não para
+ * placeholder). O tom veste os tokens semânticos dessaturados do tema
+ * (success/destructive): cor por MELHOROU/PIOROU, não por sinal — perda
+ * subindo é ruim, faturamento subindo é bom (`downIsGood` inverte).
  */
-export function deltaLabel(current: number, previous: number): string {
-  if (!previous) return "sem base anterior";
+export function delta(
+  current: number,
+  previous: number,
+  opts: { downIsGood?: boolean } = {},
+): DeltaBadge {
+  if (!previous) return { text: "—", tone: "neutral" };
   const pct = Math.round(((current - previous) / Math.abs(previous)) * 100);
-  if (pct === 0) return "estável vs anterior";
-  return `${pct > 0 ? "▲" : "▼"} ${Math.abs(pct)}% vs anterior`;
+  if (pct === 0) return { text: "Estável vs Período anterior", tone: "neutral" };
+  const improved = pct > 0 !== Boolean(opts.downIsGood);
+  return {
+    text: `${pct > 0 ? "▲" : "▼"} ${Math.abs(pct)}% vs Período anterior`,
+    tone: improved ? "positive" : "negative",
+  };
 }
 
 /** Cobertura da medição de forno, sempre com o denominador à vista. */
 export function coverageLabel(measured: number, finished: number): string {
-  if (!finished) return "sem fornadas no período";
+  if (!finished) return "Sem fornadas no período";
   return `${formatInt(measured)} de ${formatInt(finished)} fornadas medidas`;
 }
 

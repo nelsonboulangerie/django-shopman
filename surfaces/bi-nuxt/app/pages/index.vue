@@ -8,7 +8,7 @@ import {
   bucketLabel,
   bucketRows,
   coverageLabel,
-  deltaLabel,
+  delta,
   formatInt,
   formatMinutes,
   formatQty,
@@ -86,7 +86,7 @@ const ovenRows = (rows: BIProductionReport["oven_time_by_recipe"]) =>
         <StatTile
           label="Fornadas fechadas"
           :value="formatInt(report.batches_finished)"
-          :delta="deltaLabel(report.batches_finished, report.previous.batches_finished)"
+          :delta="delta(report.batches_finished, report.previous.batches_finished)"
         />
         <StatTile
           label="Tempo de forno medido"
@@ -96,8 +96,8 @@ const ovenRows = (rows: BIProductionReport["oven_time_by_recipe"]) =>
         <StatTile
           label="Perda no período"
           :value="formatInt(lossTotal)"
-          :delta="deltaLabel(lossTotal, Number(report.previous.loss_total))"
-          hint="unidades que não saíram do forno"
+          :delta="delta(lossTotal, Number(report.previous.loss_total), { downIsGood: true })"
+          hint="Unidades que não saíram do forno"
         />
         <StatTile
           label="Período"
@@ -108,14 +108,14 @@ const ovenRows = (rows: BIProductionReport["oven_time_by_recipe"]) =>
       <section class="rounded-md border border-border bg-card p-3">
         <h2 class="text-lg font-semibold text-foreground">Produção por dia</h2>
         <p class="mb-3 text-xs text-muted-foreground">
-          unidades que saíram do forno; traço = período anterior; o tooltip traz previsto e perda
+          Unidades que saíram do forno; traço = período anterior; o tooltip traz previsto e perda
         </p>
         <ChartBarSeries :points="finishedSeries" :format="(v) => formatInt(v)" />
       </section>
 
       <section class="rounded-md border border-border bg-card p-3">
         <h2 class="text-lg font-semibold text-foreground">Rendimento por dia</h2>
-        <p class="mb-3 text-xs text-muted-foreground">realizado ÷ previsto, em %</p>
+        <p class="mb-3 text-xs text-muted-foreground">Realizado ÷ previsto, em %</p>
         <ChartBarSeries :points="yieldSeries" :format="(v) => `${v}%`" />
       </section>
 
@@ -123,14 +123,14 @@ const ovenRows = (rows: BIProductionReport["oven_time_by_recipe"]) =>
         <section class="rounded-md border border-border bg-card p-3">
           <h2 class="text-lg font-semibold text-foreground">Tempo de forno por receita</h2>
           <p class="mb-3 text-xs text-muted-foreground">
-            média medida (armar → Concluir) · {{ coverageLabel(report.batches_measured, report.batches_finished) }}
+            Média medida (armar → Concluir) · {{ coverageLabel(report.batches_measured, report.batches_finished) }}
           </p>
           <ChartHBarList v-if="report.oven_time_by_recipe.length" :rows="ovenRows(report.oven_time_by_recipe)" />
           <p v-else class="text-sm text-muted-foreground">Nenhuma medição no período ainda. O timer do forno alimenta este quadro.</p>
         </section>
         <section class="rounded-md border border-border bg-card p-3">
           <h2 class="text-lg font-semibold text-foreground">Tempo de forno por forno</h2>
-          <p class="mb-3 text-xs text-muted-foreground">fornadas sem posição declarada ficam de fora deste corte</p>
+          <p class="mb-3 text-xs text-muted-foreground">Fornadas sem posição declarada ficam de fora deste corte</p>
           <ChartHBarList v-if="report.oven_time_by_oven.length" :rows="ovenRows(report.oven_time_by_oven)" />
           <p v-else class="text-sm text-muted-foreground">Nenhuma medição com forno atribuído no período.</p>
         </section>
