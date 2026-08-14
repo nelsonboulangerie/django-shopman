@@ -110,14 +110,18 @@ genéricas no craftsman, isso será uma ADR própria com 2+ consumidores reais.
 O QC segue dono do fato **comercial** (partição/lote); o timer é dono do fato **temporal**.
 Um não substitui o outro.
 
-### 5. Superfície: decisão do dono (registrada quando aprovada)
+### 5. Superfície: app Nuxt próprio — terceira exceção explícita ao Unfold Canonical Gate
 
-O Unfold Canonical Gate faz backstage novo nascer em Admin/Unfold por padrão; POS e
-Storefront são exceções explícitas. O B.I. é candidato a terceira exceção (precedente:
-`marketing-nuxt` e `orders-nuxt` como apps Nuxt de gestor). A escolha — página Admin/Unfold
-vs app Nuxt próprio — está aberta no `docs/plans/BI-PLAN.md` e será registrada aqui quando o
-dono decidir. Qualquer que seja a superfície, ela consome Projections registradas
-(ADR-012/014): dado puro no backend, copy pt-BR na presentation.
+Decisão do dono (2026-08-14): o B.I. nasce como **app Nuxt próprio** (`surfaces/bi-nuxt`,
+precedente: `marketing-nuxt` e `orders-nuxt` como apps Nuxt de gestor). Isso o torna a
+**terceira exceção explícita** ao Unfold Canonical Gate, ao lado de POS e Storefront — a
+exceção é registrada aqui, como o gate exige, e não cresce silenciosamente: telas de B.I.
+moram no app; o Admin segue config + auditoria.
+
+A superfície consome Projections registradas (ADR-012/014): dado puro no backend, copy pt-BR
+na presentation, contrato TypeScript gerado com teste de drift. Gráficos são permitidos no
+B.I. (decisão do dono: úteis, nunca decorativos); a decisão "sem gráficos" continua valendo
+nos relatórios operacionais do production-nuxt.
 
 ## Consequências
 

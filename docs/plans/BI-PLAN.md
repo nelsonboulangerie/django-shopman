@@ -1,6 +1,9 @@
 # BI-PLAN — B.I. cross-suite no backstage
 
-> **Status:** 🟡 Plano proposto — aguardando iteração e OK do dono. Nada executado.
+> **Status:** 🟢 Iterado com o dono (2026-08-14): superfície = **app Nuxt próprio**;
+> Yooga **entra** (fonte externa first-class, ingestão completável); gráficos **liberados**
+> ("lindões e super úteis", nunca decorativos). Pendências de semântica do timer anotadas no
+> §9 para a frente de produção. Aguardando OK final para iniciar a execução (F1).
 > **Mandato (Pablo, 2026-08-14):** "planejar e executar um app de B.I. no backstage…
 > Chegou a hora e esse ponto do timer deve ser resolvido também. O B.I. é algo cross-suite!"
 > **Reversão de doutrina:** este plano acompanha a minuta da
@@ -158,36 +161,47 @@ recorrentes por semana, churn-risk. Sem recálculo novo: o B.I. só lê o que o 
 **Write-offs (pós-C4, F4):** perda por vencimento vs não conformidade, por SKU, via
 `DayClosing.data` + `Move.reason`.
 
-## 6. Superfície — decisão do dono (F5)
+## 6. Superfície — decidido: app Nuxt próprio (F5)
 
-O backend (F1–F4) é idêntico nos dois cenários; a decisão não bloqueia nada.
+**Decisão do dono (2026-08-14): app Nuxt próprio.** O B.I. vira a terceira exceção explícita
+ao Unfold Canonical Gate (ao lado de POS e Storefront) — registrada na ADR-021 §5.
 
-**Opção A — Admin/Unfold** (default do Unfold Canonical Gate: "backstage novo nasce em
-Admin/Unfold"). Páginas custom com `UnfoldModelAdminViewMixin` consumindo as projections
-registradas (precedente: `operator_badge`). Custo baixo, gestor já vive no Admin, permissão
-pronta. Limite: interatividade de exploração (filtros ricos, drill-down) é mais dura no Admin.
+Proposta de concretização: `surfaces/bi-nuxt` (:3007), extends operator-kit, mesmo padrão de
+`marketing-nuxt`/`orders-nuxt` — BFF Nitro via `proxyDjangoApi`, `useOperatorLock` com a
+permissão `backstage.view_bi`, contrato TypeScript gerado (`export_bi_schema` + teste de
+drift), light-first (superfície de escritório), entrada na Central de Apps (hub-nuxt).
 
-**Opção B — app Nuxt próprio** (precedente: `marketing-nuxt`/`orders-nuxt`, :3007, extends
-operator-kit, `useOperatorLock("backstage.view_bi")`). Melhor para gráficos interativos e
-eventual painel de parede. Custo: uma superfície nova inteira (~7–10k LOC pelos precedentes).
+**Gráficos: liberados** — decisão do dono: "lindões e super úteis, só onde realmente fizer
+sentido, não é decorativo". Regra de aplicação: um gráfico só existe quando responde a
+pergunta melhor que uma tabela (tendência, distribuição, comparação); número pontual é tile,
+lista é tabela. Neutros, cor só funcional (padrão dos apps de operador). A decisão "sem
+gráficos" segue valendo nos relatórios operacionais do production-nuxt.
 
-**Recomendação:** nascer na **Opção A** (respeita o gate, entrega valor cedo, reversível) com
-graduação para B declarada como evolução — o mesmo caminho que a Central de Apps registrou.
-Se o dono já sabe que quer o app próprio, pulamos direto para B sem retrabalho de backend.
-
-Gráficos: a decisão "sem gráficos" era dos relatórios do production-nuxt, não global.
-Proponho liberar gráficos no B.I. (sóbrios, neutros — cor só funcional, padrão dos apps de
-operador). Confirmar no §9.
-
-## 7. Histórico Yooga (F6, opcional — confirmar escopo)
+## 7. Histórico Yooga (F6 — confirmado no escopo)
 
 Export existente: ~81k vendas autorizadas jul/24–jul/26, ~380k itens, consolidado no Drive
-(`yooga-consolidado.xlsx`). Se entrar: tabela própria do B.I. (ex.: `HistoricalSale`,
-imutável, `source="yooga"`), management command de ingestão one-shot, e as telas de vendas
-ganham a série longa com a origem sempre visível (nunca misturar Yooga e Shopman numa mesma
-barra sem rótulo). A inferência comer-aqui-vs-levar (regra B, âncora de bebida) já está
-decidida e documentada na memória do projeto — aplicável na ingestão. Mesa/balcão do Yooga
-não são confiáveis (não usar como verdade).
+(`yooga-consolidado.xlsx`).
+
+**Fonte externa é dimensão first-class, não cidadã de segunda.** O histórico entra em
+tabelas próprias do B.I. (`HistoricalSale` + `HistoricalSaleItem`), com `source="yooga"`
+carimbado em cada linha. Diferenças reais em relação ao dado nativo — e como aparecem:
+
+- **Origem sempre visível na UI**: séries longas rotulam o trecho Yooga; nunca misturar
+  Yooga e Shopman numa mesma barra sem rótulo.
+- **Profundidade diferente**: o Yooga não tem produção/qualidade/caixa — só vendas. As telas
+  de produção começam no Shopman; as de vendas ganham dois anos de passado.
+- **Semântica diferente onde o dado antigo não é confiável**: mesa/balcão do Yooga nunca
+  viram verdade de canal; a inferência comer-aqui-vs-levar usa a regra B (âncora de bebida),
+  já decidida e documentada na memória do projeto.
+- **Fora dos ledgers**: nada do Yooga entra em `Order`, `Move`, `DayClosing` ou relatórios
+  operacionais. Só o B.I. lê.
+
+**Ingestão completável por construção** (pergunta do dono, respondida por design): a chave
+natural é o id da venda no Yooga, e a ingestão é **idempotente (upsert)**. Vendas e itens são
+tabelas separadas; se hoje entrar só o cabeçalho do pedido e amanhã recuperarmos os itens (ou
+detalhe por venda: endereço, desconto), a segunda carga preenche/enriquece as linhas
+existentes sem duplicar nada. Como os agregados do B.I. são calculados na leitura (ou
+recomputáveis), completar o dado corrige os números automaticamente — sem bagunçar nada.
 
 ## 8. O que NÃO entra na v1
 
@@ -199,18 +213,28 @@ não são confiáveis (não usar como verdade).
 - Migrar relatórios operacionais existentes (`report_kind`, dashboard do Admin) para o B.I.
 - Comparativo automático Yooga × Shopman por SKU (mapeamento de catálogo é trabalho próprio).
 
-## 9. Perguntas abertas ao dono
+## 9. Decisões do dono (2026-08-14) e pendências anotadas
 
-1. **Superfície:** Opção A (Admin/Unfold primeiro — recomendada) ou direto Opção B (app Nuxt)?
-2. **Yooga:** a ingestão histórica (F6) entra nesta frente ou fica registrada para depois?
-3. **Timer, três confirmações de semântica:** (a) pausa/`+N` não afetam a medição; (b) abrir
-   o QC com timer tocando sem apertar Concluir = sem medição (run abandonado); (c) re-armar
-   uma WO com run aberto = nova enfornada, a anterior não mede. Confere?
-4. **Dimensão forno:** usar `position_ref` da WO quando existir (zero toque novo no kiosk),
-   aceitando que fornada sem posição fica sem forno atribuído. Ou vale um toque a mais para
-   declarar o forno no arm?
-5. **Gráficos liberados no B.I.** (sóbrios/neutros)? A decisão "sem gráficos" segue valendo
-   nos relatórios operacionais.
+**Decidido:**
+
+1. **Superfície: app Nuxt próprio** (§6).
+2. **Yooga: entra** (F6), como fonte externa first-class e ingestão completável (§7).
+3. **Gráficos: liberados**, úteis e nunca decorativos (§6).
+
+**Semântica da medição — resolvida nesta frente** (o dono liberou: o pertinente ao B.I. é
+como os timers viram dados; resolver aqui o necessário para avançar, tudo bem). O decidido
+abaixo governa **o fato `OvenRun` (a medição)**; a UX do kiosk é território da frente de
+produção e **não muda aqui** — se ela um dia mudar o fluxo (ex.: declarar forno no arm),
+ajusta-se o wiring, não o modelo:
+
+- (a) **Pausa/`+N` não afetam a medição** — pausar congela o countdown, não o tempo físico;
+  o pão continuou no forno.
+- (b) **Abrir o QC com timer tocando sem apertar Concluir = sem medição** (run `abandoned`)
+  — fiel à definição benzida: sem resposta declarada, sem medição.
+- (c) **Re-armar uma WO com run aberto = nova enfornada**; a anterior vira `abandoned`.
+- (d) **Dimensão forno**: `oven_ref` = snapshot do `position_ref` da WO no arm — zero toque
+  novo às 5h; fornada sem posição fica sem forno atribuído, e o relatório declara a
+  cobertura da atribuição em vez de fingir completude.
 
 ## 10. Fases (cada uma: um passo por commit, `make test` verde)
 
@@ -221,8 +245,8 @@ não são confiáveis (não usar como verdade).
 | **F2** | production-nuxt: `startOven`/`concludeOven` disparam os POSTs (best-effort, offline-tolerante); contrato de schema atualizado | surfaces/production-nuxt |
 | **F3** | B.I. produção: `projections/bi_production.py` + `api/bi.py` (tempo de forno, rendimento, perdas, qualidade; com cobertura) + permissão `view_bi` | backstage |
 | **F4** | B.I. vendas/caixa/clientes (+ write-offs pós-C4) | backstage |
-| **F5** | Superfície conforme decisão do §6 (páginas Unfold via `make admin`, ou scaffold do app Nuxt) | admin_console ou surfaces |
-| **F6** | (opcional) ingestão Yooga | backstage |
+| **F5** | Superfície: scaffold de `surfaces/bi-nuxt` (:3007, extends operator-kit) + telas de produção e vendas com gráficos | surfaces/bi-nuxt, hub-nuxt |
+| **F6** | Ingestão Yooga (`HistoricalSale`/`HistoricalSaleItem` + command idempotente) + série longa nas telas de vendas | backstage, surfaces/bi-nuxt |
 
 Dependências: F1→F2→F3 é o caminho âncora; F4 é paralelo a F2/F3; F5 depende de F3 (e F4
 para as telas cross-suite); F6 é independente. Rebase sobre #146/#148/#149 quando mergearem —
