@@ -355,7 +355,7 @@ export interface QCOrderCardProjection {
   elapsed_minutes: number;
   can_close: boolean;
   closed: boolean;
-  order_refs: string[];
+  committed_qty: string;
   full_price_qty: string;
   discounted_qty: string;
   loss_qty: string;
@@ -371,6 +371,8 @@ export interface QCKioskProjection {
   grades: QCGradeProjection[];
   defects: QCDefectProjection[];
   recipes: RecipeOptionProjection[];
+  previous_open_count: number;
+  previous_open_date: string;
 }
 
 /** Normalized filters for production reports. */

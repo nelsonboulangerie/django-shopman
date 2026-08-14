@@ -117,6 +117,51 @@ def test_kiosk_carries_the_real_oven_quantity(recipe):
 
 
 @pytest.mark.django_db
+def test_kiosk_warns_about_open_batches_from_previous_days(recipe):
+    """A fornada esquecida não depende de memória: o painel de hoje avisa."""
+    from datetime import timedelta
+
+    today = date.today()
+    craft.plan(recipe, 10, date=today - timedelta(days=2), position_ref="forno")
+    craft.plan(recipe, 12, date=today, position_ref="forno")
+
+    kiosk = build_qc_kiosk(selected_date=today)
+
+    assert kiosk.previous_open_count == 1
+    assert kiosk.previous_open_date == (today - timedelta(days=2)).isoformat()
+
+
+@pytest.mark.django_db
+def test_closed_card_partition_uses_the_frozen_lot_percent(recipe, monkeypatch):
+    """Editar o markdown de um grau no Admin não reescreve a leitura de
+    fornada já fechada — o card classifica pelo percentual CONGELADO no lote."""
+    from shopman.shop.models import QualityGrade
+
+    recipe.meta = {"requires_batch_tracking": True, "shelf_life_days": 1}
+    recipe.save(update_fields=["meta"])
+    monkeypatch.setattr(production, "check_finish_materials", lambda work_order: [])
+    today = date.today()
+
+    wo = craft.plan(recipe, 10, date=today, position_ref="forno")
+    craft.start(wo, quantity=10, position_ref="forno", expected_rev=0)
+    production.apply_finish(
+        work_order_id=wo.pk, quantity="10", actor="production:op",
+        partition=[
+            {"quantity": "7", "quality_grade_ref": "standard"},
+            {"quantity": "3", "quality_grade_ref": "fair", "quality_defect_ref": "misshapen"},
+        ],
+    )
+
+    # O gestor zera o desconto de "fair" DEPOIS do fechamento.
+    QualityGrade.objects.filter(ref="fair").update(markdown_percent=0)
+
+    kiosk = build_qc_kiosk(selected_date=today)
+    closed = next(o for o in kiosk.orders if o.closed and o.pk == wo.pk)
+    assert closed.full_price_qty == "7"
+    assert closed.discounted_qty == "3"  # o lote congelou 20%; a tabela nova não manda aqui
+
+
+@pytest.mark.django_db
 def test_qc_endpoint_behind_floor_gate(client, floor_operator, recipe):
     url = reverse("api-backstage-production-qc")
 

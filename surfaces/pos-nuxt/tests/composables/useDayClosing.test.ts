@@ -19,11 +19,10 @@ function asyncData(payload: unknown, error: unknown = null) {
 const CLOSING = {
   today: "2026-07-17",
   today_display: "17/07/2026",
-  items: [{ sku: "PAO", name: "Pão", qty_available: 3, classification: "d1" }],
+  items: [{ sku: "PAO", name: "Pão", qty_available: 3, classification: "keep", qty_expiring: 0, qty_nonconforming: 0 }],
   has_items: true,
   already_closed: false,
   existing_closing_display: "",
-  has_old_d1: false,
   total_available: 3,
   production_summary: {},
   reconciliation_errors: [],

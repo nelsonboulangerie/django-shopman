@@ -46,8 +46,9 @@ const emit = defineEmits<{
   confirm: [payload: { quantity: string; partition: QcPartitionGroup[] }];
 }>();
 
-// A âncora da aritmética: o que ENTROU no forno (started), com o previsto
-// como referência quando divergem — ver `ovenAnchor` (QC-FORNADA §1/§4).
+// A âncora da aritmética É o previsto DESTA tela: o que entrou no forno é o
+// que se espera que saia dele, salvo ocorrência (o plano da produção já
+// cumpriu seu papel lá atrás). Ver `ovenAnchor` (QC-FORNADA §1/§4).
 const anchor = ovenAnchor(props.planned, props.started);
 
 const state = ref<QcEntryState>(initialState(anchor.anchor, defaultGradeRef(props.grades)));
@@ -131,7 +132,7 @@ const submitAfterAnswer = ref(false);
 
 const sheetTitle = computed(() =>
   sheetQuestion.value === "overshoot"
-    ? `Saíram ${total.value} de ${state.value.planned} ${props.started !== null ? "no forno" : "previstas"}?`
+    ? `Saíram ${total.value} de ${state.value.planned} previstas?`
     : sheetQuestion.value === "loss_reason"
       ? `O que houve com as ${loss.value} que não saíram?`
       : `O que houve com as ${state.value.discountQty} do sublote?`,
@@ -244,12 +245,7 @@ const fieldCard =
         <p class="truncate text-xs text-muted-foreground">{{ subtitle }}</p>
       </div>
       <div class="rounded-md border bg-muted/40 px-3 py-2 text-sm tabular-nums">
-        <template v-if="started !== null"
-          >{{ started }} no forno<template v-if="anchor.planned !== null">
-            · {{ anchor.planned }} previstos</template
-          ></template
-        >
-        <template v-else-if="planned !== null">{{ planned }} previstos</template>
+        <template v-if="anchor.anchor !== null">{{ anchor.anchor }} previstos</template>
         <template v-else>Sem previsto</template>
       </div>
     </header>

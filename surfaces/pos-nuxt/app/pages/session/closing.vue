@@ -81,12 +81,6 @@ async function confirmSubmit() {
           <UiAlertDescription>{{ closing.existing_closing_display }}</UiAlertDescription>
         </UiAlert>
 
-        <UiAlert v-if="closing.has_old_d1" class="border-destructive/40 bg-destructive/10 text-destructive">
-          <Icon name="lucide:triangle-alert" class="size-4" />
-          <UiAlertTitle>Sobras antigas na posição de ontem</UiAlertTitle>
-          <UiAlertDescription>Há produto de "Ontem" com mais de 1 dia. Confira antes de fechar.</UiAlertDescription>
-        </UiAlert>
-
         <!-- Produção pendente -->
         <section v-if="closing.has_pending_production" class="grid gap-2 rounded-lg border bg-card p-4">
           <div class="flex items-center gap-2">

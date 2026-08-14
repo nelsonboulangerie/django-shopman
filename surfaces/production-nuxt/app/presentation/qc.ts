@@ -31,23 +31,20 @@ export interface QcEntryState {
 /**
  * A âncora do modelo subtrativo é a fornada REAL que entrou no forno
  * (QC-FORNADA §1: "a quantidade prevista que chega ao forno é quente").
- * Quando a Produção declarou um started diferente do previsto (planejou 10,
- * enfornou 11), é o started que ancora a aritmética — ancorar no previsto
- * pré-preencheria 10 e gravaria 1 de perda que nunca existiu. O previsto
- * sobrevive como referência ("11 no forno · 10 previstos") só quando diverge.
+ *
+ * E, na Expedição, essa É a quantidade prevista: o que entrou no forno é o
+ * que se espera que saia dele, salvo ocorrência. O plano da produção
+ * (planejou 10, enfornou 11) já cumpriu seu papel na tela anterior — aqui
+ * ele não é mais informação, é ruído; e ancorar nele pré-preencheria 10,
+ * gravando 1 de perda que nunca existiu.
  */
 export interface QcAnchor {
-  /** O que fecha a fornada: started quando existe, senão o previsto. */
+  /** O previsto DESTA tela: o que entrou no forno, senão o planejado. */
   anchor: number | null;
-  /** O previsto original, SÓ quando diverge da âncora (senão null). */
-  planned: number | null;
 }
 
 export function ovenAnchor(planned: number | null, started: number | null): QcAnchor {
-  if (started !== null) {
-    return { anchor: started, planned: planned !== null && planned !== started ? planned : null };
-  }
-  return { anchor: planned, planned: null };
+  return { anchor: started !== null ? started : planned };
 }
 
 export function initialState(planned: number | null, defaultGradeRef: string): QcEntryState {
