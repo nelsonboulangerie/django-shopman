@@ -4,6 +4,7 @@ from .alerts import OperatorAlert
 from .blind_prep import BlindPrepCode
 from .cash_register import CashMovement, CashShift, POSTerminal
 from .closing import DayClosing
+from .historical_sale import HistoricalSale, HistoricalSaleItem
 from .kds import KDSInstance, KDSTicket
 from .operation import (
     OperationArea,
@@ -26,6 +27,8 @@ __all__ = [
     "CashMovement",
     "CashShift",
     "DayClosing",
+    "HistoricalSale",
+    "HistoricalSaleItem",
     "KDSInstance",
     "KDSTicket",
     "OperationArea",
