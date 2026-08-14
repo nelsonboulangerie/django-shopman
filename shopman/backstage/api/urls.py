@@ -5,7 +5,7 @@ from __future__ import annotations
 from django.urls import path
 
 from .alerts import AlertAckView, AlertListView
-from .bi import BIProductionView
+from .bi import BICashView, BICustomersView, BIProductionView, BISalesView
 from .catalog import (
     CatalogAiAssistView,
     CatalogBulkPriceView,
@@ -183,6 +183,9 @@ urlpatterns = [
     ),
     # B.I. — persona gestor (perm fina backstage.view_bi, ADR-021)
     path("bi/production/", BIProductionView.as_view(), name="api-backstage-bi-production"),
+    path("bi/sales/", BISalesView.as_view(), name="api-backstage-bi-sales"),
+    path("bi/cash/", BICashView.as_view(), name="api-backstage-bi-cash"),
+    path("bi/customers/", BICustomersView.as_view(), name="api-backstage-bi-customers"),
     path("closing/", DayClosingView.as_view(), name="api-backstage-closing"),
     path("orders/", OrderQueueView.as_view(), name="api-backstage-orders"),
     # Catalog matrix (produto × superfície)

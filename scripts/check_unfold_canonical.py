@@ -281,6 +281,9 @@ EXCEPTION_SURFACES: tuple[Surface, ...] = (
             ROOT / "shopman/backstage/projections/production.py",
             ROOT / "shopman/backstage/projections/marketing.py",
             ROOT / "shopman/backstage/projections/bi_production.py",
+            ROOT / "shopman/backstage/projections/bi_sales.py",
+            ROOT / "shopman/backstage/projections/bi_cash.py",
+            ROOT / "shopman/backstage/projections/bi_customers.py",
         ),
         exception_reason=(
             "Order queue + KDS + catalog-matrix + feeds + day-closing + cash-session + "
