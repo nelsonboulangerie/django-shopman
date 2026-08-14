@@ -18,12 +18,12 @@ const item = (sku: string, classification = "neutral"): ClosingItemProjection =>
 });
 
 describe("presentation/closing — fechamento do dia (contagem cega)", () => {
-  it("deriva a badge de classification; rótulo visível de d1 é 'Ontem', nunca jargão", () => {
-    expect(closingBadge("d1").label).toBe("Ontem");
-    expect(closingBadge("loss").label).toBe("Perda");
-    expect(closingBadge("neutral").label).toBe("Neutro");
-    expect(closingBadge("unknown").label).toBe("Neutro");
-    expect(closingBadge("d1").label).not.toContain("D-1");
+  it("deriva a badge de classification — o LOTE decide (C4), sem jargão D-1", () => {
+    expect(closingBadge("expired").label).toBe("Vira perda");
+    expect(closingBadge("mixed").label).toBe("Parte vence");
+    expect(closingBadge("keep").label).toBe("Fica");
+    expect(closingBadge("unknown").label).toBe("Fica");
+    expect(closingBadge("expired").label).not.toContain("D-1");
   });
 
   it("mapeia production_summary em linhas ordenadas por SKU, com defaults", () => {

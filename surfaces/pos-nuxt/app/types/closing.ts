@@ -6,7 +6,9 @@ export interface ClosingItemProjection {
   sku: string;
   name: string;
   qty_available: number;
-  classification: "d1" | "loss" | "neutral" | string;
+  classification: "keep" | "expired" | "mixed" | string; // o LOTE decide (C4)
+  qty_expiring: number;
+  qty_nonconforming: number;
 }
 
 export interface ClosingProductionRow {
@@ -50,7 +52,6 @@ export interface DayClosingProjection {
   has_items: boolean;
   already_closed: boolean;
   existing_closing_display: string;
-  has_old_d1: boolean;
   total_available: number;
   production_summary: Record<string, ClosingProductionRow>;
   reconciliation_errors: ClosingReconciliationError[];
