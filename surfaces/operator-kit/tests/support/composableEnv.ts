@@ -5,6 +5,7 @@ import { computed, nextTick, reactive, readonly, ref, shallowRef, watch } from "
 // mock) para o teste exercitar o narrowing/mensagem de fato (os `catch` dos composables
 // dos apps usam httpError/httpErrorMessage do kit).
 import { httpError, httpErrorMessage } from "../../app/utils/httpError";
+import { retryWithBackoff } from "../../app/utils/retryBackoff";
 
 /**
  * Harness ÚNICO para testar composables de operador em env `node` — do próprio kit e
@@ -42,6 +43,8 @@ export interface ComposableEnv {
   sonner: { error: ReturnType<typeof vi.fn>; success: ReturnType<typeof vi.fn> };
   /** `refreshNuxtData` (usado pelo unlock e pelo operatorSessionOnError). */
   refreshNuxtData: ReturnType<typeof vi.fn>;
+  /** `reportClientError` (observabilidade — fronteira, mockada). */
+  clientErrorReport: ReturnType<typeof vi.fn>;
   /** `useAdaptivePoll` — no-op observável (o poll de verdade é testado à parte). */
   adaptivePoll: ReturnType<typeof vi.fn>;
   /** `useRuntimeConfig()`. */
@@ -59,6 +62,7 @@ export function installNuxtGlobals(): ComposableEnv {
     fetchMock: vi.fn(),
     sonner: { error: vi.fn(), success: vi.fn() },
     refreshNuxtData: vi.fn(),
+    clientErrorReport: vi.fn(),
     adaptivePoll: vi.fn(),
     runtimeConfig: { app: { baseURL: "/" }, public: { djangoPublicBaseUrl: "" } },
     states: new Map(),
@@ -69,6 +73,7 @@ export function installNuxtGlobals(): ComposableEnv {
       env.sonner.error.mockReset();
       env.sonner.success.mockReset();
       env.refreshNuxtData.mockReset();
+      env.clientErrorReport.mockReset().mockResolvedValue(true);
       env.adaptivePoll.mockReset();
       // Estado compartilhado é por-app em runtime; entre testes ele tem que morrer,
       // senão uma estação travada num teste vaza travada para o seguinte.
@@ -103,6 +108,8 @@ export function installNuxtGlobals(): ComposableEnv {
   vi.stubGlobal("useAdaptivePoll", env.adaptivePoll);
   vi.stubGlobal("httpError", httpError); // implementação REAL do kit (narrowing tipado)
   vi.stubGlobal("httpErrorMessage", httpErrorMessage); // implementação REAL do kit
+  vi.stubGlobal("retryWithBackoff", retryWithBackoff); // implementação REAL do kit
+  vi.stubGlobal("reportClientError", env.clientErrorReport);
   vi.stubGlobal("useFetch", () => ({
     data: ref(env.fetchData.value),
     pending: ref(false),

@@ -60,7 +60,7 @@ describe("design-system: tema operador centralizado (operator-theme.css) herdado
 // As 5 superfícies de operador estão endurecidas. O KDS é distance-first: sua escala de
 // densidade mapeia limpo aos papéis do canon (compact=title text-xl · cozy=figure text-3xl
 // · roomy=display text-4xl) — nenhum text-2xl/text-[..] avulso, então nada de allowlist.
-const TYPOGRAPHY_ENFORCED = ["pos-nuxt", "hub-nuxt", "orders-nuxt", "production-nuxt", "kds-nuxt"] as const;
+const TYPOGRAPHY_ENFORCED = ["pos-nuxt", "hub-nuxt", "orders-nuxt", "production-nuxt", "kds-nuxt", "bi-nuxt"] as const;
 
 // Arquivos isentos com justificativa (medium ≠ tela). Chave = caminho relativo ao app.
 const TYPOGRAPHY_ALLOWLIST: Record<string, string> = {

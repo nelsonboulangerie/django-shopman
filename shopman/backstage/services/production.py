@@ -210,6 +210,79 @@ def apply_start(
         raise translated from (None if translated is exc else exc)
 
 
+# Teto de sanidade da duração armada: um timer de forno não passa de 24h.
+OVEN_MAX_PLANNED_SECONDS = 86_400
+
+
+def apply_oven_arm(*, work_order_id, planned_seconds, operator_ref: str = "", actor: str = ""):
+    """Registra a declaração "enfornou" (ADR-021 §4, BI-PLAN §4).
+
+    O servidor carimba ``armed_at`` no recebimento — mesmo tratamento de
+    ``started_at``/``finished_at`` da WorkOrder; sem relógio de cliente.
+    Re-armar com run aberto = nova enfornada: o run anterior vira
+    ``abandoned`` (nunca mede) e um novo abre.
+    """
+    from django.db import transaction
+    from shopman.craftsman.models import WorkOrder
+
+    from shopman.backstage.models import OvenRun
+
+    try:
+        seconds = int(planned_seconds)
+    except (TypeError, ValueError):
+        raise ProductionError("Duração do timer inválida.") from None
+    if not 0 < seconds <= OVEN_MAX_PLANNED_SECONDS:
+        raise ProductionError("Duração do timer inválida.")
+
+    try:
+        work_order = _get_work_order(work_order_id)
+    except WorkOrder.DoesNotExist:
+        raise ProductionError("Ordem de produção não encontrada.") from None
+    if work_order.status in (WorkOrder.Status.FINISHED, WorkOrder.Status.VOID):
+        raise ProductionError("Ordem já encerrada; não há o que enfornar.")
+
+    with transaction.atomic():
+        superseded = OvenRun.objects.filter(
+            work_order_ref=work_order.ref, status="open"
+        ).update(status="abandoned")
+        run = OvenRun.objects.create(
+            work_order_ref=work_order.ref,
+            oven_ref=work_order.position_ref or "",
+            operator_ref=operator_ref or actor,
+            planned_seconds=seconds,
+            metadata={"superseded_open_runs": superseded} if superseded else {},
+        )
+    return run
+
+
+def apply_oven_conclude(*, work_order_id, actor: str = ""):
+    """Registra a declaração "retirou" (o Concluir do timer).
+
+    Sem run aberto não há o que medir — retorna ``None`` (o cliente é
+    best-effort; a honestidade fica na cobertura do relatório). Expiração do
+    timer e o Confirmar do QC nunca chegam aqui: só o Concluir declarado.
+    """
+    from shopman.craftsman.models import WorkOrder
+
+    from shopman.backstage.models import OvenRun
+
+    try:
+        work_order = _get_work_order(work_order_id)
+    except WorkOrder.DoesNotExist:
+        raise ProductionError("Ordem de produção não encontrada.") from None
+    run = (
+        OvenRun.objects.filter(work_order_ref=work_order.ref, status="open")
+        .order_by("-armed_at")
+        .first()
+    )
+    if run is None:
+        return None
+    run.status = "concluded"
+    run.concluded_at = timezone.now()
+    run.save(update_fields=["status", "concluded_at"])
+    return run
+
+
 def resolve_partition(work_order, *, quantity, quality: str = "", partition=None):
     """Normaliza a entrada do operador na partição da fornada (ADR-017 §4).
 

@@ -32,6 +32,7 @@ class DayClosing(models.Model):
             ("view_production_reports", "Pode ver relatórios de produção"),
             ("view_dayclosing_management", "Pode ver agregados gerenciais do fechamento"),
             ("operate_production", "Pode operar a produção (chão + planejamento) no app dedicado"),
+            ("view_bi", "Pode ver o B.I. (leitura analítica cross-suite)"),
         ]
 
     def __str__(self):

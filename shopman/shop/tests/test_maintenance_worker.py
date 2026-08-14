@@ -273,6 +273,7 @@ def test_once_runs_one_cycle_in_order_and_never_sleeps():
         call("cleanup_stale_sessions"),
         call("sweep_orphan_holds"),
         call("cleanup_stale_planning"),
+        call("sweep_stale_oven_runs"),
         call("expire_stale_announcements"),
         call("dispatch_due_announcements"),
         call("arm_scheduled_campaigns"),

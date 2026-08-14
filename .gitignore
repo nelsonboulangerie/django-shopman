@@ -43,3 +43,6 @@ surfaces/storefront-nuxt/blob-report/
 # Ver docs/plans/GO-LIVE-READINESS-PLAN.md.
 _to_delete/
 guia-credenciais-*.pdf
+
+# Dados externos locais (ex.: export Yooga) — nunca commitar
+var/

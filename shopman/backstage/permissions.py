@@ -41,6 +41,11 @@ def can_access_production(user) -> bool:
         return False
 
 
+def can_view_bi(user) -> bool:
+    """B.I. (ADR-021): leitura analítica cross-suite — persona de gestão."""
+    return is_superuser(user) or user.has_perm("backstage.view_bi")
+
+
 def can_view_production_reports(user) -> bool:
     return (
         is_superuser(user)

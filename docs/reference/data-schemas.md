@@ -993,7 +993,7 @@ Registros antigos podem ser uma lista simples de snapshots. Registros novos usam
 | `items` | `list[dict]` | `services/closing.py::perform_day_closing` | template fechamento | Snapshot por SKU com qty reportada, aplicada, perda. |
 | `production_summary` | `dict[str, dict]` | `services/closing.py::_production_summary` | template fechamento, projection | Agregado de WOs do dia por receita: `{recipe_ref: {recipe_ref, output_sku, planned, finished, loss}}`. |
 | `pending_production` | `list[dict]` | `services/closing.py::_pending_production_snapshot` | auditoria | WOs ainda abertas (planned/started, `target_date <= data do fechamento`) no momento do fechamento: `{ref, output_sku, recipe_ref, status, quantity, target_date}`. O fechamento acusa, não bloqueia. |
-| `cash_shift_summary` | `dict` | `services/closing.py::_cash_shift_summary` | template fechamento, projection | Turnos de caixa do dia (fechados/abertos/totais). |
+| `cash_shift_summary` | `dict` | `services/closing.py::_cash_shift_summary` | template fechamento, projection, **B.I.** (`projections/bi_cash.py` lê `payment_method_totals` — ADR-021) | Turnos de caixa do dia (fechados/abertos/totais). |
 | `reconciliation_errors` | `list[dict]` | `services/closing.py::_reconciliation_errors` | projection (`ReconciliationError.from_dict`) | Discrepâncias detectadas: SKUs vendidos além do que estoque + produção poderiam suprir. Schema: `{sku, sold, available, deficit}` (a projection converte para `ReconciliationError(sku, sold_qty, available_qty, deficit_qty)` na leitura). |
 
 ---

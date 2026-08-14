@@ -353,6 +353,8 @@ _OPERATOR_UNLOCK_PERMS = {
     # Campanha (surfaces/marketing-nuxt): sem esta entrada a tela de destravar
     # rejeita a permissão e o app fica trancado para sempre com o gate ligado.
     "shop.manage_campaigns",
+    # B.I. (surfaces/bi-nuxt, ADR-021): mesma armadilha da campanha acima.
+    "backstage.view_bi",
 }
 
 
@@ -1388,6 +1390,46 @@ class WorkOrderVoidView(_ProductionActionBase):
                 return conflict
             return Response({"detail": str(exc) or "Falha ao estornar."}, status=400)
         return Response({"ok": True, "wo_ref": ref})
+
+
+@extend_schema_view(
+    post=extend_schema(
+        tags=["backstage"],
+        summary="Declare oven-in for a work order (arm = enfornou)",
+        responses={200: OpenApiResponse(description="Oven run opened.")},
+    ),
+)
+class WorkOrderOvenArmView(_ProductionActionBase):
+    def post(self, request, wo_id: int):
+        try:
+            run = production_service.apply_oven_arm(
+                work_order_id=wo_id,
+                planned_seconds=request.data.get("planned_seconds"),
+                operator_ref=str(request.data.get("operator_ref") or "").strip(),
+                actor=_production_actor(request),
+            )
+        except ProductionError as exc:
+            return Response({"detail": str(exc) or "Falha ao registrar o enfornar."}, status=400)
+        return Response({"ok": True, "run_id": run.pk})
+
+
+@extend_schema_view(
+    post=extend_schema(
+        tags=["backstage"],
+        summary="Declare oven-out for a work order (Concluir = retirou)",
+        responses={200: OpenApiResponse(description="Oven run concluded (or nothing to measure).")},
+    ),
+)
+class WorkOrderOvenConcludeView(_ProductionActionBase):
+    def post(self, request, wo_id: int):
+        try:
+            run = production_service.apply_oven_conclude(
+                work_order_id=wo_id,
+                actor=_production_actor(request),
+            )
+        except ProductionError as exc:
+            return Response({"detail": str(exc) or "Falha ao registrar o retirar."}, status=400)
+        return Response({"ok": True, "measured": run is not None})
 
 
 # ── POS cash shift endpoints ──────────────────────────────────────────

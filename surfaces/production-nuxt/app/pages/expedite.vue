@@ -159,6 +159,8 @@ function cardAnchor(order: QCOrderCardProjection): string {
 // no rush: arma na enfornada, estende, pausa, e o Concluir emenda direto no
 // fechamento. Não confundir com o relógio de idade do lote (alertas).
 const oven = useOvenTimers();
+// O countdown é local; o FATO (enfornou/retirou) é declarado ao servidor.
+const ovenFacts = useOvenFacts();
 const ovenOrder = ref<QCOrderCardProjection | null>(null);
 const ovenMinutes = ref("15");
 const ovenFresh = ref(true);
@@ -214,6 +216,7 @@ function startOven() {
   const minutes = parseInt(ovenMinutes.value, 10);
   if (!order || !(minutes >= 1)) return;
   oven.arm(ovenKey(order), minutes);
+  void ovenFacts.armed(order.pk, minutes);
   ovenOrder.value = null;
 }
 function pauseOven() {
@@ -228,6 +231,7 @@ function concludeOven() {
   ovenOrder.value = null;
   if (!order) return;
   oven.clear(ovenKey(order));
+  void ovenFacts.concluded(order.pk);
   openOrder(order);
 }
 </script>

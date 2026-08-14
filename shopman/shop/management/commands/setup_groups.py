@@ -71,6 +71,8 @@ class Command(BaseCommand):
                 shop_cash("manage_operators"),
                 shop_dclo("perform_closing"),
                 shop_dclo("operate_production"),
+                # B.I. (ADR-021): leitura analítica cross-suite é persona de gestão.
+                shop_dclo("view_bi"),
                 shop_shop("view_reports"),
                 shop_shop("manage_customers"),
                 shop_shop("view_production_suggested"),

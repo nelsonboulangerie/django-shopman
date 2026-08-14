@@ -41,6 +41,8 @@ MAINTENANCE_COMMANDS = (
     # órfãos liberados aqui destravam quants planejados órfãos no mesmo ciclo.
     "sweep_orphan_holds",
     "cleanup_stale_planning",
+    # Timer de forno sem Concluir dentro do teto não mede (ADR-021 §4).
+    "sweep_stale_oven_runs",
     # Frescor vencido não vira propaganda: announcement pendente além do prazo caduca.
     "expire_stale_announcements",
     # Aprovado com hora marcada sai sozinho quando o relógio chega.
