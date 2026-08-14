@@ -2,17 +2,15 @@ name: Surfaces Gate
 
 # Rede de segurança das superfícies Nuxt: vitest + typecheck para CADA app de
 # surfaces/ (incluindo o layer operator-kit, dono dos guardrails de design system
-# que leem os tailwind.css dos apps irmãos). Matrix simples, sem paths-filter de
-# terceiros — o filtro nativo `paths` já limita o gate a mudanças em surfaces/.
+# que leem os tailwind.css dos apps irmãos). Roda em TODO pull_request, sem
+# paths filter: os jobs são required checks do main, e required check que não
+# reporta (workflow pulado pelo filtro) trava o merge para sempre.
 #
 # Node 22 SEMPRE (buildpack DigitalOcean = node 22; locks regenerados com outro
 # node quebram `npm ci` no deploy — ver memória do projeto).
 
 "on":
   pull_request:
-    paths:
-      - "surfaces/**"
-      - ".github/workflows/surfaces-gate.yml"
   push:
     branches:
       - main
