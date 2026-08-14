@@ -374,9 +374,8 @@ function concludeOven() {
               <template v-if="showPosition && order.position_ref"> · {{ order.position_ref }}</template>
               <template v-if="order.started_at_display"> · iniciada às {{ order.started_at_display }}</template>
               <template v-else> · ainda não iniciada</template>
-              <template v-if="order.order_refs.length">
-                · <span class="text-primary">{{ order.order_refs.length }}
-                  {{ order.order_refs.length === 1 ? "pedido aguarda" : "pedidos aguardam" }}</span>
+              <template v-if="order.committed_qty && order.committed_qty !== '0'">
+                · <span class="text-primary">{{ order.committed_qty }} comprometidas</span>
               </template>
             </p>
             <p
@@ -403,13 +402,12 @@ function concludeOven() {
           <!-- Hover invertido: contraste garantido mesmo com o card em accent. -->
           <button
             type="button"
-            class="group flex size-20 shrink-0 flex-col items-center justify-center self-center rounded-xl border bg-background pt-0.5 transition hover:border-primary hover:bg-primary hover:text-primary-foreground active:translate-y-px"
+            class="group flex size-20 shrink-0 flex-col items-center justify-center gap-1 self-center rounded-xl border bg-background transition hover:border-primary hover:bg-primary hover:text-primary-foreground active:translate-y-px"
             :aria-label="`Finalizar a fornada de ${order.recipe_name}`"
             @click.stop="openOrder(order)"
           >
-            <span class="text-xl font-semibold leading-none tabular-nums">{{ cardAnchor(order) }}</span>
-            <span class="text-xs font-medium uppercase tracking-wide text-muted-foreground group-hover:text-primary-foreground/75">previstos</span>
-            <span class="mt-1 text-xs font-semibold uppercase tracking-wide text-primary group-hover:text-primary-foreground">Finalizar</span>
+            <span class="text-xl font-semibold leading-none tabular-nums">{{ cardAnchor(order) }} un.</span>
+            <span class="text-xs font-semibold uppercase tracking-wide text-primary group-hover:text-primary-foreground">Finalizar</span>
           </button>
         </div>
 

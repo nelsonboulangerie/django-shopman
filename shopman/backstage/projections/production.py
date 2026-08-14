@@ -479,9 +479,10 @@ class QCOrderCardProjection:
     elapsed_minutes: int
     can_close: bool
     closed: bool
-    # Pedidos que aguardam esta fornada (production_order_sync): quem fecha
-    # precisa saber que há gente esperando — a Expedição antiga mostrava.
-    order_refs: tuple[str, ...]
+    # UNIDADES comprometidas com pedidos que aguardam esta fornada
+    # (production_order_sync): a pergunta do fournil é "quantos pães já têm
+    # dono", não "quantos pedidos existem" — um pedido de 6 pesa 6.
+    committed_qty: str
     # Partição da fornada fechada (a preço cheio / com desconto / perda) —
     # vazio enquanto aberta. É o que o cartão esmaecido mostra.
     full_price_qty: str
@@ -1257,7 +1258,7 @@ def build_qc_kiosk(*, selected_date: date | None = None) -> QCKioskProjection:
             elapsed_minutes=elapsed,
             can_close=wo.status in (WorkOrder.Status.PLANNED, WorkOrder.Status.STARTED),
             closed=closed,
-            order_refs=() if closed else _linked_order_refs(wo),
+            committed_qty="" if closed else _qty(_committed_units(wo)),
             full_price_qty=_qty(full_qty) if full_qty is not None else "",
             discounted_qty=_qty(discounted_qty) if discounted_qty is not None else "",
             loss_qty=_qty(loss_qty) if loss_qty is not None else "",
@@ -1294,6 +1295,14 @@ def build_qc_kiosk(*, selected_date: date | None = None) -> QCKioskProjection:
         ),
         previous_open_count=len(previous_dates),
         previous_open_date=previous_dates[0].isoformat() if previous_dates else "",
+    )
+
+
+def _committed_units(wo: WorkOrder) -> Decimal:
+    """Unidades já prometidas a pedidos que aguardam esta fornada."""
+    return sum(
+        (Decimal(item.qty_required) for item in _order_commitments_for_work_order(wo)),
+        Decimal("0"),
     )
 
 
