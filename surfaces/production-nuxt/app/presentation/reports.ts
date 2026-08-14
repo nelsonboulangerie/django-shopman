@@ -4,12 +4,15 @@
 // linhas já chegam prontas de tela (qty_*, yield_rate, duration pré-formatados)
 // — esta camada só deriva rótulos, a query dos filtros e o link do CSV.
 
-export type ReportKind = "history" | "operator_productivity" | "recipe_waste";
+export type ReportKind = "history" | "operator_productivity" | "recipe_waste" | "quality";
 
 export const REPORT_KINDS: readonly { kind: ReportKind; label: string }[] = [
   { kind: "history", label: "Histórico" },
   { kind: "operator_productivity", label: "Produtividade" },
   { kind: "recipe_waste", label: "Desperdício" },
+  // A partição do QC agregada por receita × grau × defeito (ADR-017 §8):
+  // é este relatório que diz se o forno 2 está queimando.
+  { kind: "quality", label: "Qualidade" },
 ] as const;
 
 export function reportKindLabel(kind: ReportKind): string {

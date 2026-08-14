@@ -409,6 +409,26 @@ def export_reports_csv(report_kind: str, filters: dict | None = None) -> bytes:
                 row.yield_avg,
                 row.duration_avg_minutes,
             ])
+    elif reports.filters.report_kind == "quality":
+        # Sem este ramo o "quality" caía no else e exportava o HISTÓRICO —
+        # o gestor baixava a tabela errada com o nome certo.
+        writer.writerow([
+            "Receita",
+            "Nome",
+            "Grau",
+            "Defeito",
+            "Qtd",
+            "% da receita",
+        ])
+        for row in reports.quality_rows:
+            writer.writerow([
+                row.recipe_ref,
+                row.recipe_name,
+                row.grade_label,
+                row.defect_label,
+                row.quantity,
+                row.share,
+            ])
     elif reports.filters.report_kind == "recipe_waste":
         writer.writerow([
             "Receita",

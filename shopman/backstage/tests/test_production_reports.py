@@ -163,6 +163,22 @@ def test_csv_export_operator_productivity_header(report_data):
 
 
 @pytest.mark.django_db
+def test_csv_export_quality_exports_the_quality_table(report_data):
+    """O kind 'quality' exporta a partição do QC — antes caía no else e saía
+    o HISTÓRICO com o nome de qualidade (a tabela errada, calada)."""
+    text = export_reports_csv(
+        "quality",
+        {"date_from": report_data["today"], "date_to": report_data["today"]},
+    ).decode("utf-8-sig")
+
+    first_line = text.splitlines()[0]
+    assert first_line == "Receita,Nome,Grau,Defeito,Qtd,% da receita"
+    # A fornada finalizada do fixture (finish escalar) conta no grau padrão.
+    assert "report-cafe" in text
+    assert "OP" not in first_line  # nada da tabela de histórico
+
+
+@pytest.mark.django_db
 def test_csv_export_recipe_waste_header(report_data):
     text = export_reports_csv(
         "recipe_waste",

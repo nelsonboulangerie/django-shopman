@@ -53,6 +53,7 @@ const {
   historyRows,
   operatorRows,
   wasteRows,
+  qualityRows,
   availableRecipes,
   availablePositions,
   forbidden: reportsForbidden,
@@ -70,6 +71,7 @@ const forbidden = computed(
 const hasRows = computed(() => {
   if (kind.value === "operator_productivity") return operatorRows.value.length > 0;
   if (kind.value === "recipe_waste") return wasteRows.value.length > 0;
+  if (kind.value === "quality") return qualityRows.value.length > 0;
   return historyRows.value.length > 0;
 });
 const stale = computed(() =>
@@ -437,6 +439,36 @@ function refreshAll() {
               <td class="px-3 py-2 text-right tabular-nums">{{ row.qty_total }}</td>
               <td class="px-3 py-2 text-right tabular-nums">{{ row.yield_avg || "—" }}</td>
               <td class="px-3 py-2 text-right tabular-nums">{{ row.duration_avg_minutes || "—" }}</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <!-- Qualidade: a partição do QC por receita × grau × defeito -->
+      <div v-else-if="kind === 'quality'" class="overflow-x-auto rounded-lg border">
+        <table class="w-full text-sm">
+          <thead
+            class="bg-muted/50 text-left text-xs uppercase tracking-wide text-muted-foreground"
+          >
+            <tr>
+              <th class="px-3 py-2 font-semibold">Ficha técnica</th>
+              <th class="px-3 py-2 font-semibold">Grau</th>
+              <th class="px-3 py-2 font-semibold">Defeito</th>
+              <th class="px-3 py-2 text-right font-semibold">Qtd</th>
+              <th class="px-3 py-2 text-right font-semibold">% da receita</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y">
+            <tr
+              v-for="row in qualityRows"
+              :key="`${row.recipe_ref}:${row.grade_ref}:${row.defect_ref}`"
+              class="hover:bg-muted/30"
+            >
+              <td class="px-3 py-2 font-medium">{{ row.recipe_name }}</td>
+              <td class="px-3 py-2">{{ row.grade_label }}</td>
+              <td class="px-3 py-2">{{ row.defect_label || "—" }}</td>
+              <td class="px-3 py-2 text-right tabular-nums">{{ row.quantity }}</td>
+              <td class="px-3 py-2 text-right tabular-nums">{{ row.share }}</td>
             </tr>
           </tbody>
         </table>
