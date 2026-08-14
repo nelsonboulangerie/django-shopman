@@ -4,6 +4,7 @@
 import type { BISalesReport } from "~/types/bi";
 import {
   WEEKDAY_LABELS,
+  bucketSalesDays,
   formatInt,
   formatMoney,
   formatMoneyCompact,
@@ -14,11 +15,20 @@ import {
 
 const { report, pending, error, refresh } = useBiReport<BISalesReport>("sales");
 
+const hasHistory = computed(() => (report.value?.historical_days ?? 0) > 0);
+
 const revenueSeries = computed(() =>
-  (report.value?.days ?? []).map((day) => ({
-    label: shortDate(day.date),
-    value: day.revenue_q,
-    detail: `${formatInt(day.orders)} pedido${day.orders === 1 ? "" : "s"} · ticket ${formatMoney(day.average_ticket_q)}`,
+  bucketSalesDays(report.value?.days ?? []).map((bucket) => ({
+    label: shortDate(bucket.date),
+    value: bucket.revenue_q,
+    muted: bucket.source === "yooga",
+    detail: [
+      bucket.weekly ? "semana" : "",
+      `${formatInt(bucket.orders)} pedido${bucket.orders === 1 ? "" : "s"}`,
+      bucket.source === "yooga" ? "histórico Yooga" : "",
+    ]
+      .filter(Boolean)
+      .join(" · "),
   })),
 );
 
@@ -69,7 +79,13 @@ const channelRows = computed(() =>
 
       <section class="rounded-md border border-border bg-card p-3">
         <h2 class="text-lg font-semibold text-foreground">Faturamento por dia</h2>
-        <p class="mb-3 text-xs text-muted-foreground">o tooltip traz pedidos e ticket do dia</p>
+        <p class="mb-3 text-xs text-muted-foreground">
+          o tooltip traz os pedidos do ponto; janela longa agrega por semana
+          <template v-if="hasHistory">
+            · <span class="mx-0.5 inline-block h-2 w-2 rounded-sm bg-foreground/25 align-middle"></span>
+            barras claras = histórico Yooga
+          </template>
+        </p>
         <ChartBarSeries :points="revenueSeries" :format="formatMoneyCompact" />
       </section>
 

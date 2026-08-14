@@ -6,7 +6,9 @@
 import { computed } from "vue";
 
 const props = defineProps<{
-  points: { label: string; value: number; detail?: string }[];
+  // `muted` marca a barra de outra classe visual (ex.: trecho histórico) —
+  // a página que usar DEVE mostrar a legenda correspondente.
+  points: { label: string; value: number; detail?: string; muted?: boolean }[];
   /** Formata o valor no tooltip e no rótulo direto. */
   format?: (value: number) => string;
   /** Rótulos do eixo x mostrados a cada N pontos (default: ~6 rótulos). */
@@ -35,7 +37,10 @@ const every = computed(
         class="group relative flex h-full min-w-0 max-w-16 flex-1 items-end"
       >
         <div
-          class="w-full rounded-t-sm bg-foreground/60 transition-colors group-hover:bg-foreground"
+          class="w-full rounded-t-sm transition-colors"
+          :class="point.muted
+            ? 'bg-foreground/25 group-hover:bg-foreground/50'
+            : 'bg-foreground/60 group-hover:bg-foreground'"
           :style="{ height: `${Math.max(point.value > 0 ? 3 : 0, (point.value / max) * 100)}%` }"
         ></div>
         <!-- Rótulo direto seletivo: só o pico do período. -->
@@ -54,13 +59,19 @@ const every = computed(
         </div>
       </div>
     </div>
+    <!-- Célula de tick pode vazar sobre as vizinhas (vazias por construção):
+         com muitas barras a célula fica mais estreita que o rótulo. -->
     <div class="mt-1 flex justify-center gap-px">
       <span
         v-for="(point, index) in points"
         :key="point.label"
-        class="min-w-0 max-w-16 flex-1 truncate text-center text-xs text-muted-foreground"
+        class="relative min-w-0 max-w-16 flex-1 text-center text-xs text-muted-foreground"
       >
-        {{ index % every === 0 ? point.label : "" }}
+        <span
+          v-if="index % every === 0"
+          class="absolute left-1/2 -translate-x-1/2 whitespace-nowrap"
+        >{{ point.label }}</span>
+        <span v-else>&nbsp;</span>
       </span>
     </div>
   </figure>

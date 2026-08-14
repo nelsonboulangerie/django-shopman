@@ -36,12 +36,13 @@ export interface BIProductionReport {
   oven_coverage_percent: number;
 }
 
-/** BISalesDay(date: 'str', orders: 'int', revenue_q: 'int', average_ticket_q: 'int') */
+/** BISalesDay(date: 'str', orders: 'int', revenue_q: 'int', average_ticket_q: 'int', source: 'str') */
 export interface BISalesDay {
   date: string;
   orders: number;
   revenue_q: number;
   average_ticket_q: number;
+  source: string;
 }
 
 /** BISalesChannelRow(channel_ref: 'str', orders: 'int', revenue_q: 'int') */
@@ -59,7 +60,7 @@ export interface BITopSkuRow {
   revenue_q: number;
 }
 
-/** BISalesReport(date_from: 'str', date_to: 'str', days: 'tuple[BISalesDay, ...]', by_channel: 'tuple[BISalesChannelRow, ...]', top_skus: 'tuple[BITopSkuRow, ...]', orders_by_hour: 'tuple[int, ...]', orders_by_weekday: 'tuple[int, ...]', orders_total: 'int', revenue_total_q: 'int', average_ticket_q: 'int', cancelled_total: 'int') */
+/** BISalesReport(date_from: 'str', date_to: 'str', days: 'tuple[BISalesDay, ...]', by_channel: 'tuple[BISalesChannelRow, ...]', top_skus: 'tuple[BITopSkuRow, ...]', orders_by_hour: 'tuple[int, ...]', orders_by_weekday: 'tuple[int, ...]', orders_total: 'int', revenue_total_q: 'int', average_ticket_q: 'int', cancelled_total: 'int', historical_days: 'int') */
 export interface BISalesReport {
   date_from: string;
   date_to: string;
@@ -72,6 +73,7 @@ export interface BISalesReport {
   revenue_total_q: number;
   average_ticket_q: number;
   cancelled_total: number;
+  historical_days: number;
 }
 
 /** BICashDay(date: 'str', shifts: 'int', difference_q: 'int', sangria_q: 'int', suprimento_q: 'int') */

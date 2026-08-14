@@ -1,12 +1,19 @@
-"""B.I. de vendas — leitura analítica (ADR-021, BI-PLAN §5/F4).
+"""B.I. de vendas — leitura analítica (ADR-021, BI-PLAN §5/F4 + F6).
 
 Série diária de pedidos/faturamento/ticket, mix por canal, top SKUs e
-distribuição por hora × dia-da-semana. Fonte: ``Order``/``OrderItem`` (os
-donos do fato); tudo calculado na leitura, sem tabela de agregação.
+distribuição por hora × dia-da-semana. Fontes: ``Order``/``OrderItem`` (os
+donos do fato nativo) e ``HistoricalSale``/``Item`` (histórico externo,
+BI-PLAN §7) — a origem viaja no contrato (``BISalesDay.source``) e a UI
+rotula o trecho histórico; nunca misturados sem rótulo.
 
-Atribuição temporal: ``created_at`` em data local (quando a venda nasceu).
-Pedidos cancelados/devolvidos ficam FORA do faturamento e são contados à
-parte — número escondido é número que mente.
+Política de fusão: **o dia nativo vence** — um dia com pedido Shopman lê só
+do Shopman; o histórico preenche os dias em que a suite não existia. Canais
+históricos entram como "yooga · delivery" e "yooga · loja" (delivery é o
+único rótulo confiável do sistema antigo; mesa/balcão nunca viram canal).
+
+Atribuição temporal: ``created_at``/``occurred_at`` em data local. Pedidos
+cancelados/devolvidos ficam FORA do faturamento e são contados à parte (o
+export Yooga só traz vendas autorizadas — cancelado histórico não existe).
 """
 
 from __future__ import annotations
@@ -27,6 +34,7 @@ class BISalesDay:
     orders: int
     revenue_q: int
     average_ticket_q: int
+    source: str  # "shopman" | "yooga" — a UI rotula o trecho histórico
 
 
 @dataclass(frozen=True)
@@ -57,12 +65,15 @@ class BISalesReport:
     revenue_total_q: int
     average_ticket_q: int
     cancelled_total: int
+    historical_days: int  # dias da janela preenchidos pelo histórico (yooga)
 
 
 def build_bi_sales(
     *, date_from: date | None = None, date_to: date | None = None
 ) -> BISalesReport:
     from shopman.orderman.models import Order, OrderItem
+
+    from shopman.backstage.models import HistoricalSale, HistoricalSaleItem
 
     date_from, date_to = _normalize_window(date_from, date_to)
     window = _local_datetime_window(date_from, date_to)
@@ -93,6 +104,26 @@ def build_bi_sales(
         by_hour[local.hour] += 1
         by_weekday[local.weekday()] += 1
 
+    # Histórico preenche só os dias em que o Shopman não vendeu (o dia nativo
+    # vence — nunca somar as duas fontes num mesmo dia).
+    native_days = set(day_orders)
+    historical = HistoricalSale.objects.filter(occurred_at__range=window).values_list(
+        "occurred_at", "total_q", "is_delivery"
+    )
+    hist_days: set[date] = set()
+    for occurred_at, total_q, is_delivery in historical:
+        local = timezone.localtime(occurred_at)
+        if local.date() in native_days:
+            continue
+        hist_days.add(local.date())
+        day_orders[local.date()] += 1
+        day_revenue[local.date()] += total_q
+        channel = "yooga · delivery" if is_delivery else "yooga · loja"
+        channel_orders[channel] += 1
+        channel_revenue[channel] += total_q
+        by_hour[local.hour] += 1
+        by_weekday[local.weekday()] += 1
+
     days = []
     day = date_from
     while day <= date_to:
@@ -104,6 +135,7 @@ def build_bi_sales(
                 orders=orders,
                 revenue_q=revenue,
                 average_ticket_q=revenue // orders if orders else 0,
+                source="yooga" if day in hist_days else "shopman",
             )
         )
         day += timedelta(days=1)
@@ -119,36 +151,69 @@ def build_bi_sales(
             BISalesChannelRow(channel_ref=ref, orders=channel_orders[ref], revenue_q=channel_revenue[ref])
             for ref in sorted(channel_orders, key=lambda ref: -channel_revenue[ref])
         ),
-        top_skus=_top_skus(OrderItem, window=window, excluded=excluded),
+        top_skus=_top_skus(
+            OrderItem,
+            HistoricalSaleItem,
+            window=window,
+            excluded=excluded,
+            native_days=native_days,
+        ),
         orders_by_hour=tuple(by_hour),
         orders_by_weekday=tuple(by_weekday),
         orders_total=orders_total,
         revenue_total_q=revenue_total,
         average_ticket_q=revenue_total // orders_total if orders_total else 0,
         cancelled_total=cancelled,
+        historical_days=len(hist_days),
     )
 
 
-def _top_skus(order_item_model, *, window, excluded, limit: int = 10) -> tuple[BITopSkuRow, ...]:
-    qty_by_sku: dict[str, Decimal] = defaultdict(Decimal)
-    revenue_by_sku: dict[str, int] = defaultdict(int)
-    name_by_sku: dict[str, str] = {}
+def _top_skus(
+    order_item_model,
+    historical_item_model,
+    *,
+    window,
+    excluded,
+    native_days: set[date],
+    limit: int = 10,
+) -> tuple[BITopSkuRow, ...]:
+    # Chave = sku quando existe; item histórico sem sku agrega pelo nome (7%
+    # do export — produto fora do catálogo atual não pode sumir do ranking).
+    qty_by_key: dict[str, Decimal] = defaultdict(Decimal)
+    revenue_by_key: dict[str, int] = defaultdict(int)
+    name_by_key: dict[str, str] = {}
+    sku_by_key: dict[str, str] = {}
+
+    def _fold(sku: str, name: str, qty, line_total_q: int) -> None:
+        key = sku or f"nome:{name}"
+        qty_by_key[key] += qty
+        revenue_by_key[key] += line_total_q
+        name_by_key[key] = name
+        sku_by_key[key] = sku
+
     rows = order_item_model.objects.filter(order__created_at__range=window).exclude(
         order__status__in=excluded
     ).values_list("sku", "name", "qty", "line_total_q")
     for sku, name, qty, line_total_q in rows:
-        qty_by_sku[sku] += qty
-        revenue_by_sku[sku] += line_total_q
-        name_by_sku[sku] = name
-    top = sorted(revenue_by_sku, key=lambda sku: -revenue_by_sku[sku])[:limit]
+        _fold(sku, name, qty, line_total_q)
+
+    historical = historical_item_model.objects.filter(
+        sale__occurred_at__range=window
+    ).values_list("sale__occurred_at", "sku", "product_name", "qty", "line_total_q")
+    for occurred_at, sku, name, qty, line_total_q in historical:
+        if timezone.localtime(occurred_at).date() in native_days:
+            continue  # o dia nativo vence também no ranking
+        _fold(sku, name, qty, line_total_q)
+
+    top = sorted(revenue_by_key, key=lambda key: -revenue_by_key[key])[:limit]
     return tuple(
         BITopSkuRow(
-            sku=sku,
-            name=name_by_sku[sku],
-            qty=_qty(qty_by_sku[sku]),
-            revenue_q=revenue_by_sku[sku],
+            sku=sku_by_key[key],
+            name=name_by_key[key],
+            qty=_qty(qty_by_key[key]),
+            revenue_q=revenue_by_key[key],
         )
-        for sku in top
+        for key in top
     )
 
 

@@ -61,4 +61,47 @@ export const WINDOW_PRESETS: readonly WindowPreset[] = [
   { days: 7, label: "7 dias" },
   { days: 28, label: "28 dias" },
   { days: 90, label: "90 dias" },
+  // 12 meses só faz sentido com o histórico Yooga ingerido (BI-PLAN F6).
+  { days: 365, label: "12 meses" },
 ];
+
+export interface SalesDayLike {
+  date: string;
+  orders: number;
+  revenue_q: number;
+  source: string;
+}
+
+/** Um balde da série de vendas: um dia, ou uma semana quando a janela é longa. */
+export interface SalesBucket {
+  date: string;
+  orders: number;
+  revenue_q: number;
+  source: string;
+  weekly: boolean;
+}
+
+/**
+ * Janela longa não cabe em barras diárias: acima de `maxDaily` dias, agrega
+ * por semana (segunda-feira). Um balde é "yooga" só se TODO dia com venda
+ * nele for histórico — semana mista veste a cor nativa (a legenda cobre).
+ */
+export function bucketSalesDays(days: readonly SalesDayLike[], maxDaily = 120): SalesBucket[] {
+  if (days.length <= maxDaily) {
+    return days.map((d) => ({ ...d, weekly: false }));
+  }
+  const buckets = new Map<string, SalesBucket>();
+  for (const day of days) {
+    const parsed = new Date(`${day.date}T12:00:00`);
+    parsed.setDate(parsed.getDate() - ((parsed.getDay() + 6) % 7)); // segunda
+    const key = parsed.toISOString().slice(0, 10);
+    const bucket = buckets.get(key) ?? {
+      date: key, orders: 0, revenue_q: 0, source: "yooga", weekly: true,
+    };
+    bucket.orders += day.orders;
+    bucket.revenue_q += day.revenue_q;
+    if (day.orders > 0 && day.source !== "yooga") bucket.source = "shopman";
+    buckets.set(key, bucket);
+  }
+  return [...buckets.values()].sort((a, b) => a.date.localeCompare(b.date));
+}

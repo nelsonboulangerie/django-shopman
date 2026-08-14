@@ -104,6 +104,45 @@ def test_sales_series_excludes_cancelled_and_counts_it(db):
     now = timezone.localtime()
     assert report.orders_by_hour[now.hour] == 2
     assert report.orders_by_weekday[now.weekday()] == 2
+    assert report.days[-1].source == "shopman"
+    assert report.historical_days == 0
+
+
+@pytest.mark.django_db
+def test_sales_historical_fills_only_days_without_native(db):
+    from datetime import timedelta
+
+    from shopman.backstage.models import HistoricalSale, HistoricalSaleItem
+
+    _order("BI-H1", total_q=2000, items=[("PAO", "Pão", 1, 2000)])
+    now = timezone.now()
+    yesterday_sale = HistoricalSale.objects.create(
+        source="yooga", external_id=1, occurred_at=now - timedelta(days=1),
+        total_q=3000, is_delivery=False,
+    )
+    HistoricalSaleItem.objects.create(
+        sale=yesterday_sale, seq=1, product_name="Pão de Ontem", sku="",
+        qty=Decimal("3"), unit_price_q=1000, line_total_q=3000,
+    )
+    # Mesmo dia que a venda nativa: o dia nativo VENCE — este registro não conta.
+    HistoricalSale.objects.create(
+        source="yooga", external_id=2, occurred_at=now, total_q=99900, is_delivery=True,
+    )
+
+    report = build_bi_sales()
+    today, yesterday = report.days[-1], report.days[-2]
+    assert today.source == "shopman" and today.revenue_q == 2000
+    assert yesterday.source == "yooga" and yesterday.revenue_q == 3000
+    assert report.historical_days == 1
+    assert report.orders_total == 2
+    assert report.revenue_total_q == 5000
+
+    channels = {row.channel_ref: row.revenue_q for row in report.by_channel}
+    assert channels == {"web": 2000, "yooga · loja": 3000}
+
+    tops = {(row.sku, row.name): row.revenue_q for row in report.top_skus}
+    # Item histórico sem sku agrega pelo nome; o do dia vencido não aparece.
+    assert tops == {("PAO", "Pão"): 2000, ("", "Pão de Ontem"): 3000}
 
 
 # ── Caixa ────────────────────────────────────────────────────────────────────
