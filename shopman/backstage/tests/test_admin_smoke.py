@@ -120,6 +120,30 @@ def test_order_changelist_renders_with_an_active_order(admin_client):
 
 
 @pytest.mark.django_db
+def test_session_changelist_renders_with_a_session(admin_client):
+    """Mesma fresta da lista de pedidos, outra trilha.
+
+    O admin de sessões pedia ``prefetch_related("items")``, mas ``Session.items``
+    é uma property que remonta as linhas em memória, não uma relação. O
+    ValueError só é levantado depois que a query devolve alguma linha — com o
+    banco vazio, o prefetch nem roda.
+    """
+    from shopman.orderman.models import Session
+
+    Session.objects.create(
+        session_key="smoke-session-list",
+        channel_ref="pdv",
+        handle_type="tab",
+        handle_ref="M1",
+    )
+
+    response = admin_client.get(_admin_url(Session, "changelist"))
+
+    assert response.status_code == 200
+    assert "smoke-session-list" in response.content.decode("utf-8")
+
+
+@pytest.mark.django_db
 def test_change_form_renders_for_seeded_order(admin_client):
     """The Order change form (rich display methods incl. cross-package payment
     info) must render against a real object."""

@@ -442,11 +442,38 @@ class ProductAdmin(_ProductImportExportBase):
             has_components=Exists(ProductComponent.objects.filter(parent=OuterRef("pk"))),
         )
 
-    @display(description="Combo", boolean=True)
+    def get_list_display(self, request):
+        """Custo e margem só entram na lista quando existe de onde tirá-los.
+
+        Ambos saem de ``Product.reference_cost_q``, que delega ao provedor de
+        custo (``OFFERMAN["COST_BACKEND"]``). Sem provedor configurado, as duas
+        colunas mostram "—" em cada linha do catálogo inteiro: ocupam largura,
+        pedem leitura e não informam nada. Configurado o provedor, elas voltam
+        sozinhas — a coluna é função de haver custo, não de alguém lembrar de
+        reativá-la.
+        """
+        from shopman.offerman.conf import get_cost_backend
+
+        columns = list(super().get_list_display(request))
+        if get_cost_backend() is None:
+            columns = [c for c in columns if c not in ("cost_display", "margin_display")]
+        return columns
+
+    @display(description="Combo")
     def is_bundle_display(self, obj):
-        if hasattr(obj, "has_components"):
-            return obj.has_components
-        return obj.is_bundle
+        """Marca o combo; o produto simples não desenha nada.
+
+        Como booleano, a coluna pintava um X vermelho em cada produto simples —
+        dezenas de negativas para sinalizar meia dúzia de exceções, e vermelho
+        onde não há nada de errado. Combo é a exceção: só ela merece tinta.
+        """
+        is_bundle = obj.has_components if hasattr(obj, "has_components") else obj.is_bundle
+        if not is_bundle:
+            return "—"
+
+        from shopman.utils.contrib.admin_unfold.badges import unfold_badge as _badge
+
+        return _badge("Combo", "blue")
 
     @display(description=_("Custo"))
     def cost_display(self, obj):

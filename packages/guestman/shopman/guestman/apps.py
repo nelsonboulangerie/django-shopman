@@ -6,7 +6,7 @@ class GuestmanConfig(AppConfig):
     default_auto_field = "django.db.models.BigAutoField"
     name = "shopman.guestman"
     label = "guestman"
-    verbose_name = _("Gestão de Clientes")
+    verbose_name = _("Clientes")
 
     def ready(self):
         self._register_ref_types()

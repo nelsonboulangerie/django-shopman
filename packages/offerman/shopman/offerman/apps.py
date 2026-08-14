@@ -6,7 +6,7 @@ class OffermanConfig(AppConfig):
     default_auto_field = "django.db.models.BigAutoField"
     name = "shopman.offerman"
     label = "offerman"
-    verbose_name = _("Catálogo de Produtos")
+    verbose_name = _("Catálogo de produtos")
 
     def ready(self):
         self._register_ref_types()

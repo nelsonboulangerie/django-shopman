@@ -305,8 +305,12 @@ class SessionAdmin(ModelAdmin):
     )
 
     def get_queryset(self, request):
-        qs = super().get_queryset(request).prefetch_related("items")
-        return qs.order_by("-updated_at", "-id")
+        # Sem prefetch de "items": em Session isso é uma property que remonta as
+        # linhas em memória, não uma relação — e prefetch_related() de um nome que
+        # não é relação levanta ValueError. Como o erro só acontece depois que a
+        # query traz alguma linha, a lista vazia passava ilesa e a tela caía com
+        # 500 assim que existisse uma sessão.
+        return super().get_queryset(request).order_by("-updated_at", "-id")
 
     # Cores de referência BADGES:
     # - Azul=#5EB1EF (info), Amarelo=#E2A336 (warning), Verde=#5BB98B (success), Vermelho=#EB8E90 (danger), Cinza=secondary

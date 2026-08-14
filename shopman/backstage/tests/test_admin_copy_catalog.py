@@ -1,4 +1,4 @@
-"""Catálogo de copy — página Admin canônica (navegação chave↔tela)."""
+"""Textos da interface — página Admin canônica (navegação chave↔tela)."""
 
 from __future__ import annotations
 
@@ -62,7 +62,7 @@ def test_catalog_page_renders_grouped_by_screen(staff_client):
 
     assert resp.status_code == 200
     content = resp.content.decode()
-    assert "Catálogo de copy" in content
+    assert "Textos da interface" in content
     assert "Página do produto" in content
     assert "PRODUCT_CROSS_SELL_HEADING" in content
     # Link de personalizar já leva com a chave preenchida.
@@ -94,13 +94,16 @@ def test_catalog_requires_view_permission(client, db):
 
 
 @pytest.mark.django_db
-def test_sidebar_points_copy_omotenashi_to_catalog(staff_client):
+def test_sidebar_opens_the_texts_page_not_the_raw_changelist(staff_client):
+    """A porta dos textos é a tela que navega por superfície → tela, não a tabela
+    de chaves: quem quer mudar uma frase reconhece a tela onde ela aparece, não a
+    constante que a nomeia."""
     from django.contrib import admin as dj_admin
     from django.test import RequestFactory
 
     request = RequestFactory().get("/admin/")
     request.user = get_user_model().objects.get(username="copyadmin")
     groups = dj_admin.site.get_sidebar_list(request)
-    config = next(group for group in groups if group["title"] == "Configurações")
-    item = next(i for i in config["items"] if i["title"] == "Textos da interface")
+    texts_group = next(group for group in groups if group["title"] == "Textos e mensagens")
+    item = next(i for i in texts_group["items"] if i["title"] == "Textos da interface")
     assert str(item["link"]).endswith("/admin/configuracao/copy/")

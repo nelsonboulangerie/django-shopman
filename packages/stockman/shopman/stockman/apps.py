@@ -6,4 +6,4 @@ class StockmanConfig(AppConfig):
     default_auto_field = "django.db.models.BigAutoField"
     name = "shopman.stockman"
     label = "stockman"
-    verbose_name = _("Gestão de Estoque")
+    verbose_name = _("Estoque")

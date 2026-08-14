@@ -35,15 +35,15 @@
             </div>
         {% endcomponent %}
 
-        {# Saúde da copy omotenashi #}
-        {% component "unfold/components/card.html" with title="Copy omotenashi" %}
+        {# Quanto da voz da loja já foi personalizado #}
+        {% component "unfold/components/card.html" with title="Textos da interface" %}
             <div class="flex flex-col gap-2">
                 <div class="flex items-center gap-2">
                     <span class="text-3xl font-bold text-font-important-light dark:text-font-important-dark">
                         {{ omotenashi_health.active_overrides|default:"0" }}
                     </span>
                     <span class="text-sm text-base-500">
-                        overrides de copy ativos
+                        textos personalizados
                     </span>
                 </div>
                 {% if omotenashi_health.recent_changes %}
