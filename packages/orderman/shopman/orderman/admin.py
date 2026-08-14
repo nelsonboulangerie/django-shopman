@@ -328,24 +328,8 @@ class SessionAdmin(ModelAdmin):
         return super().changeform_view(request, object_id, form_url, extra_context)
 
     def changelist_view(self, request, extra_context=None):
-        # UX: tab padrão = "Abertas" quando não há nenhum filtro explícito.
-        if request.method == "GET" and not request.GET:
-            return HttpResponseRedirect(f"{request.path}?state__exact=open")
-
-        # UX: date_hierarchy default = hoje quando o operador não escolheu data.
-        if request.method == "GET" and self.date_hierarchy:
-            field = str(self.date_hierarchy)
-            year_p = f"{field}__year"
-            month_p = f"{field}__month"
-            day_p = f"{field}__day"
-            if not any(p in request.GET for p in (year_p, month_p, day_p)):
-                today = timezone.localdate()
-                q = request.GET.copy()
-                q[year_p] = str(today.year)
-                q[month_p] = str(today.month)
-                q[day_p] = str(today.day)
-                return HttpResponseRedirect(f"{request.path}?{q.urlencode()}")
-
+        # Sem filtro automático: a trilha completa fica visível. O menu já carrega
+        # a intenção quando existe uma ("Sessões abertas" → state=open).
         # Supra-filtro por canal (barra rápida) — preserva contexto e mantém intenção do status (tabs).
         extra_context = extra_context or {}
 
@@ -362,9 +346,6 @@ class SessionAdmin(ModelAdmin):
 
         def _qs_for_channel(channel_id: str | None) -> str:
             q = request.GET.copy()
-            # Status (tabs): se não houver status explícito, default é "Abertas"
-            if "state__exact" not in request.GET:
-                q["state__exact"] = "open"
             q.pop("p", None)
             if channel_id:
                 q["channel__id__exact"] = str(channel_id)
@@ -510,7 +491,6 @@ class OrderAdmin(ModelAdmin):
         "production_wait_display",
         "total_display",
         "rating_display",
-        "operation_link_display",
         "created_at",
     )
     list_display_links = ("order_header",)
@@ -689,49 +669,17 @@ class OrderAdmin(ModelAdmin):
             html += format_html('<div class="mt-1 text-sm text-base-500">{}</div>', submitted_at)
         return html
 
-    @display(description=_("ação"))
-    def operation_link_display(self, obj: Order) -> str:
-        active_statuses = {
-            Order.Status.NEW,
-            Order.Status.ACCEPTED,
-            Order.Status.PREPARING,
-            Order.Status.READY,
-            Order.Status.DISPATCHED,
-            Order.Status.DELIVERED,
-        }
-        if obj.status not in active_statuses:
-            return "-"
-        url = reverse("admin_console_order_detail", args=[obj.ref])
-        return format_html(
-            '<a class="font-medium text-primary-600 hover:text-primary-700 dark:text-primary-400" href="{}">Fila</a>',
-            url,
-        )
+    def has_add_permission(self, request):
+        # Trilha de auditoria: pedidos nascem no fluxo de venda, nunca digitados aqui.
+        return False
+
+    def has_delete_permission(self, request, obj=None):
+        return False
 
     def changelist_view(self, request, extra_context=None):
-        # UX: tab padrão = "Novos" quando não há nenhum filtro explícito.
-        # Mas preserva filtros existentes (ex: ref=) se presentes
-        if request.method == "GET" and not request.GET:
-            return HttpResponseRedirect(f"{request.path}?status__exact=new")
-        elif request.method == "GET" and "ref" in request.GET and "status__exact" not in request.GET:
-            # Se há filtro por ref mas não há status, adiciona status=new preservando ref
-            q = request.GET.copy()
-            q["status__exact"] = "new"
-            return HttpResponseRedirect(f"{request.path}?{q.urlencode()}")
-
-        # UX: date_hierarchy default = hoje quando o operador não escolheu data.
-        if request.method == "GET" and self.date_hierarchy:
-            field = str(self.date_hierarchy)
-            year_p = f"{field}__year"
-            month_p = f"{field}__month"
-            day_p = f"{field}__day"
-            if not any(p in request.GET for p in (year_p, month_p, day_p)):
-                today = timezone.localdate()
-                q = request.GET.copy()
-                q[year_p] = str(today.year)
-                q[month_p] = str(today.month)
-                q[day_p] = str(today.day)
-                return HttpResponseRedirect(f"{request.path}?{q.urlencode()}")
-
+        # Sem filtro automático: esta é a trilha COMPLETA de pedidos. O menu já
+        # carrega a intenção quando existe uma (ex.: "Ações pendentes" → status);
+        # filtrar de novo aqui esconderia o histórico atrás de uma tela vazia.
         # Supra-filtro por canal (barra rápida) — preserva contexto e mantém intenção do status (tabs).
         extra_context = extra_context or {}
 
@@ -748,8 +696,6 @@ class OrderAdmin(ModelAdmin):
 
         def _qs_for_channel(channel_id: str | None) -> str:
             q = request.GET.copy()
-            if "status__exact" not in request.GET:
-                q["status__exact"] = "new"
             # remove alias possível
             q.pop("status", None)
             q.pop("p", None)
@@ -979,24 +925,8 @@ class DirectiveAdmin(ModelAdmin):
     # Se precisar criar novas diretivas manualmente no futuro, pode adicionar form customizado
 
     def changelist_view(self, request, extra_context=None):
-        # UX: tab padrão = "Em fila" quando não há nenhum filtro explícito.
-        if request.method == "GET" and not request.GET:
-            return HttpResponseRedirect(f"{request.path}?status__exact=queued")
-
-        # UX: date_hierarchy default = hoje quando o operador não escolheu data.
-        if request.method == "GET" and self.date_hierarchy:
-            field = str(self.date_hierarchy)
-            year_p = f"{field}__year"
-            month_p = f"{field}__month"
-            day_p = f"{field}__day"
-            if not any(p in request.GET for p in (year_p, month_p, day_p)):
-                today = timezone.localdate()
-                q = request.GET.copy()
-                q[year_p] = str(today.year)
-                q[month_p] = str(today.month)
-                q[day_p] = str(today.day)
-                return HttpResponseRedirect(f"{request.path}?{q.urlencode()}")
-
+        # Sem filtro automático: a fila inteira fica visível. O menu já carrega a
+        # intenção quando existe uma ("Ações pendentes" → status=queued).
         return super().changelist_view(request, extra_context=extra_context)
 
 

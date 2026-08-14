@@ -49,7 +49,8 @@ shopman/                Namespace package (PEP 420) — sem __init__.py
 │   ├── presentation/   projections puras (home, cart, checkout, order_tracking, payment, account…)
 │   ├── intents/        interpretação server-side de ações (cart set-qty, phone, auth)
 │   ├── services/       checkout, checkout_defaults, pickup_slots, ifood_*
-│   ├── models/         Promotion, Coupon (promotions), DeliveryZone, DeliveryDistanceBand (delivery), CustomerFavorite (favorites), StockAlertSubscription (stock_alerts)
+│   ├── models/         CustomerFavorite (favorites), StockAlertSubscription (stock_alerts)
+│   │                   ⚠️ Promotion/Coupon/DeliveryZone/DeliveryDistanceBand vivem em `shop/models/`
 │   ├── middleware.py   ChannelParamMiddleware (captura ?channel=)
 │   ├── urls.py         montado em /api/v1/ (o app cliente é surfaces/storefront-nuxt)
 │   └── tests/          api, projections, checkout, rate-limiting, delivery zones

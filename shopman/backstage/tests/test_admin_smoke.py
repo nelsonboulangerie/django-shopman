@@ -94,6 +94,32 @@ def test_add_form_renders(admin_client, model):
 
 
 @pytest.mark.django_db
+def test_order_changelist_renders_with_an_active_order(admin_client):
+    """A changelist precisa aguentar LINHAS, não só a lista vazia.
+
+    ``test_changelist_renders`` roda com o banco limpo, então nenhuma coluna
+    calculada por linha chega a ser exercitada. Foi essa fresta que deixou passar
+    uma coluna que revertia ``admin_console_order_detail`` — URL removida junto
+    com o console de pedidos: qualquer pedido ativo na lista derrubava a tela com
+    NoReverseMatch, e só não aparecia porque a tela abria filtrada no dia de hoje.
+    """
+    Order.objects.create(
+        ref="SMOKE-ACTIVE",
+        channel_ref="web",
+        session_key="smoke-active-session",
+        status=Order.Status.PREPARING,
+        total_q=2500,
+        currency="BRL",
+        data={"delivery_date": "2026-08-14", "is_preorder": True},
+    )
+
+    response = admin_client.get(_admin_url(Order, "changelist"))
+
+    assert response.status_code == 200
+    assert "SMOKE-ACTIVE" in response.content.decode("utf-8")
+
+
+@pytest.mark.django_db
 def test_change_form_renders_for_seeded_order(admin_client):
     """The Order change form (rich display methods incl. cross-package payment
     info) must render against a real object."""

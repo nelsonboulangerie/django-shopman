@@ -157,7 +157,7 @@ class AdminNavigationTests(TestCase):
             "Produção", "Integrações",
             "Canais", "Promoções", "Cupons",
             "Regras de preço", "Faixas de distância", "Zonas de entrega",
-            "Grupos de clientes", "Textos da interface", "Templates de notificação",
+            "Faixas de preço", "Textos da interface", "Templates de notificação",
             "Estações KDS", "Comandas do PDV",
         }:
             self.assertIn(expected, config_items)

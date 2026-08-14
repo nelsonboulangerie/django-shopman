@@ -10,7 +10,7 @@ from __future__ import annotations
 import logging
 
 from django.conf import settings
-from django.urls import NoReverseMatch, reverse
+from django.urls import reverse
 from django.utils import timezone
 
 from shopman.backstage import permissions
@@ -165,12 +165,12 @@ def get_sidebar_navigation(request):
             _item("Produção", "manufacturing", _url("admin:shop_shopproduction_changelist"), permission=_is_staff),
             _item("Integrações", "extension", _url("admin:shop_shopintegrations_changelist"), permission=_is_staff),
             _item("Canais", "storefront", _url("admin:shop_channel_changelist"), permission=_is_staff),
-            _item("Promoções", "sell", _url("admin:storefront_promotion_changelist"), permission=_is_staff),
-            _item("Cupons", "confirmation_number", _url("admin:storefront_coupon_changelist"), permission=_is_staff),
+            _item("Promoções", "sell", _url("admin:shop_promotion_changelist"), permission=_is_staff),
+            _item("Cupons", "confirmation_number", _url("admin:shop_coupon_changelist"), permission=_is_staff),
             _item("Regras de preço", "price_change", _url("admin:shop_ruleconfig_changelist"), permission=_is_staff),
-            _item("Faixas de distância", "straighten", _url("admin:storefront_deliverydistanceband_changelist"), permission=_is_staff),
-            _item("Zonas de entrega", "pin_drop", _url("admin:storefront_deliveryzone_changelist"), permission=_is_staff),
-            _item("Grupos de clientes", "groups", _url("admin:guestman_customergroup_changelist"), permission=_is_staff),
+            _item("Faixas de distância", "straighten", _url("admin:shop_deliverydistanceband_changelist"), permission=_is_staff),
+            _item("Zonas de entrega", "pin_drop", _url("admin:shop_deliveryzone_changelist"), permission=_is_staff),
+            _item("Faixas de preço", "groups", _url("admin:guestman_pricetier_changelist"), permission=_is_staff),
             _item("Textos da interface", "format_quote", _url("admin_console_copy_catalog"), permission=_is_staff),
             _item("Templates de notificação", "mail", _url("admin:shop_notificationtemplate_changelist"), permission=_is_staff),
             _item("Estações KDS", "settings_input_component", _url("admin:backstage_kdsinstance_changelist"), permission=_can_operate_kds),
@@ -241,10 +241,15 @@ def _item(
 
 
 def _url(name: str) -> str:
-    try:
-        return reverse(name)
-    except NoReverseMatch:
-        return "#"
+    """Resolve uma rota do menu, ou levanta.
+
+    Um item de menu que não resolve é bug, não estado válido: por meses o menu
+    serviu ``href="#"`` para Promoções, Cupons e Zonas de entrega (os models
+    migraram de storefront para shop e o link ficou para trás) sem que nada
+    reclamasse. A falha agora GRITA no boot do menu e o teste
+    ``test_admin_navigation`` cobre cada rota declarada.
+    """
+    return reverse(name)
 
 
 # Request-oriented adapters over the canonical predicates. The sidebar speaks
