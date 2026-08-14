@@ -642,29 +642,56 @@ def _autostart_macos(target: Path) -> None:
         subprocess.run(["launchctl", "load", "-w", str(LAUNCH_AGENT_PATH)], capture_output=True, check=False)
 
 
-def _autostart_windows(target: Path) -> None:
-    """Tarefa agendada no logon.
+def _windows_launcher(target: Path) -> Path:
+    """Um `.cmd` que sobe o agente, para o `schtasks` receber UM caminho só.
 
-    `pythonw` em vez de `python` para o agente não abrir uma janela preta de
-    console no balcão a cada boot. Sem privilégio de administrador: a tarefa é
-    do usuário que está instalando.
+    A primeira versão passava o comando inteiro em `/tr`, com três trechos entre
+    aspas. O `schtasks` é notoriamente ruim com aspas aninhadas: ele aceita, e
+    grava a tarefa com o comando mutilado. Resultado no balcão: a tarefa existe,
+    o agente não sobe, e nada avisa — porque o `--kick` da linha de comando é
+    outro processo e continua funcionando.
+
+    Com o launcher, `/tr` recebe um caminho sem espaço para ambiguidade. De
+    quebra, dá para dar dois cliques nele para subir o agente na mão.
     """
     pythonw = Path(sys.executable).with_name("pythonw.exe")
     runner = pythonw if pythonw.exists() else Path(sys.executable)
+    launcher = INSTALL_DIR / "nelson-pos-drawer.cmd"
+    launcher.write_text(
+        "@echo off\r\n"
+        f'"{runner}" "{target}" --log-file "{LOG_PATH}"\r\n',
+        encoding="utf-8",
+    )
+    return launcher
+
+
+def _autostart_windows(target: Path) -> None:
+    """Tarefa agendada no logon, apontando para o launcher.
+
+    `pythonw` para o agente não abrir uma janela preta de console no balcão a
+    cada boot. Sem privilégio de administrador: a tarefa é do usuário que está
+    instalando.
+    """
+    launcher = _windows_launcher(target)
     created = subprocess.run(
-        [
-            "schtasks", "/create", "/f",
-            "/tn", WINDOWS_TASK_NAME,
-            "/tr", f'"{runner}" "{target}" --log-file "{LOG_PATH}"',
-            "/sc", "onlogon",
-        ],
+        ["schtasks", "/create", "/f", "/tn", WINDOWS_TASK_NAME, "/tr", str(launcher), "/sc", "onlogon"],
         capture_output=True,
         check=False,
     )
     if created.returncode != 0:
         detail = (created.stdout or b"").decode("utf-8", "replace").strip()
         print(f"aviso: não consegui agendar o início automático ({detail or 'schtasks falhou'}).")
-        print(f"       Suba na mão quando precisar: \"{runner}\" \"{target}\"")
+        # Pasta Inicializar: não precisa de agendador nem de privilégio.
+        startup = (
+            Path(os.environ.get("APPDATA", Path.home() / "AppData" / "Roaming"))
+            / "Microsoft" / "Windows" / "Start Menu" / "Programs" / "Startup"
+        )
+        try:
+            startup.mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(launcher, startup / launcher.name)
+            print(f"       Coloquei na pasta Inicializar: {startup / launcher.name}")
+        except OSError as exc:
+            print(f"       Suba na mão quando precisar: {launcher} ({exc})")
         return
     subprocess.run(["schtasks", "/run", "/tn", WINDOWS_TASK_NAME], capture_output=True, check=False)
 
@@ -730,7 +757,46 @@ def install(argv: list[str]) -> int:
         print(f"Config já existia em {DEFAULT_CONFIG_PATH} — token e fila preservados.")
     runner = "python" if IS_WINDOWS else "python3"
     print(f"\nTeste sem navegador:\n  {runner} \"{target}\" --kick")
-    return 0
+
+    # ⚠️ Este bloco existe porque a versão anterior dizia "Agente instalado" sem
+    # nunca ter conferido que o agente estava ouvindo. No Windows a tarefa
+    # agendada nasceu quebrada, o serviço não subiu, e nada avisou: o `--kick`
+    # da linha de comando é OUTRO processo e continuava funcionando, então o
+    # defeito só apareceu no botão do PDV, depois, no balcão.
+    #
+    # Instalador que afirma o que não mediu é o mesmo pecado do health que
+    # inventava `ready`. Agora ele bate na própria porta antes de dizer pronto.
+    if _wait_until_listening(config):
+        print(f"\n✓ Agente respondendo em http://127.0.0.1:{config.get('port', 47811)}/health")
+        return 0
+
+    print(
+        f"\n✗ O agente NÃO está respondendo em http://127.0.0.1:{config.get('port', 47811)}/health.\n"
+        "  O início automático não pegou. O kick pela linha de comando pode até\n"
+        "  funcionar, mas o botão do PDV vai falhar até isto subir.\n"
+        f"  Suba na mão para confirmar:  {runner} \"{target}\"\n"
+        f"  E veja o motivo em:          {LOG_PATH}"
+    )
+    return 1
+
+
+def _wait_until_listening(config: dict, *, seconds: int = 10) -> bool:
+    """O agente atende em `/health`? Dá um tempo para o serviço nascer."""
+    import time
+    import urllib.error
+    import urllib.request
+
+    url = f"http://127.0.0.1:{config.get('port', 47811)}/health"
+    deadline = time.monotonic() + seconds
+    while time.monotonic() < deadline:
+        try:
+            with urllib.request.urlopen(url, timeout=2) as response:
+                if response.status == 200:
+                    return True
+        except (urllib.error.URLError, OSError):
+            pass
+        time.sleep(0.5)
+    return False
 
 
 def main(argv: list[str] | None = None) -> int:

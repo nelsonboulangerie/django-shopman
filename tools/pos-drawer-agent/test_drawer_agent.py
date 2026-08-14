@@ -441,3 +441,56 @@ def test_o_plist_do_macos_e_xml_valido():
     assert parsed["Label"] == drawer_agent.LAUNCH_AGENT_LABEL
     assert parsed["RunAtLoad"] is True
     assert parsed["ProgramArguments"][1] == "/tmp/x.py"
+
+
+# ── O instalador confere o que afirma ─────────────────────────────────────
+
+
+def test_o_launcher_do_windows_da_UM_caminho_ao_schtasks(monkeypatch, tmp_path):
+    """Aspas aninhadas em `/tr` fazem o schtasks gravar comando mutilado.
+
+    Foi o defeito real do balcão: a tarefa nasceu quebrada, o agente não subiu,
+    e o `--kick` da linha de comando continuou funcionando — então nada gritou.
+    """
+    monkeypatch.setattr(drawer_agent, "INSTALL_DIR", tmp_path)
+    monkeypatch.setattr(drawer_agent, "LOG_PATH", tmp_path / "drawer-agent.log")
+
+    launcher = drawer_agent._windows_launcher(tmp_path / "drawer_agent.py")
+
+    assert launcher.suffix == ".cmd"
+    conteudo = launcher.read_text(encoding="utf-8")
+    assert "drawer_agent.py" in conteudo
+    assert "--log-file" in conteudo
+
+
+def test_instalador_reprova_quando_o_agente_nao_sobe(monkeypatch, capsys, tmp_path):
+    """Dizer 'instalado' sem medir foi o que mandou o defeito para o balcão."""
+    monkeypatch.setattr(drawer_agent, "IS_WINDOWS", False)
+    monkeypatch.setattr(drawer_agent, "IS_MACOS", False)
+    monkeypatch.setattr(drawer_agent, "INSTALL_DIR", tmp_path / "inst")
+    monkeypatch.setattr(drawer_agent, "DEFAULT_CONFIG_PATH", tmp_path / "agent.json")
+    monkeypatch.setattr(drawer_agent, "list_queues", lambda: ["TM-T20"])
+    monkeypatch.setattr(drawer_agent.shutil, "which", lambda name: f"/usr/bin/{name}")
+    monkeypatch.setattr(drawer_agent, "_autostart_linux", lambda target: None)
+    monkeypatch.setattr(drawer_agent, "_wait_until_listening", lambda config, **k: False)
+
+    codigo = drawer_agent.install(["--install", "--queue", "TM-T20", "--token", TOKEN])
+
+    saida = capsys.readouterr().out
+    assert codigo == 1, "instalação que não sobe o agente não pode sair com sucesso"
+    assert "NÃO está respondendo" in saida
+    assert "botão do PDV vai falhar" in saida
+
+
+def test_instalador_aprova_quando_o_agente_responde(monkeypatch, capsys, tmp_path):
+    monkeypatch.setattr(drawer_agent, "IS_WINDOWS", False)
+    monkeypatch.setattr(drawer_agent, "IS_MACOS", False)
+    monkeypatch.setattr(drawer_agent, "INSTALL_DIR", tmp_path / "inst")
+    monkeypatch.setattr(drawer_agent, "DEFAULT_CONFIG_PATH", tmp_path / "agent.json")
+    monkeypatch.setattr(drawer_agent, "list_queues", lambda: ["TM-T20"])
+    monkeypatch.setattr(drawer_agent.shutil, "which", lambda name: f"/usr/bin/{name}")
+    monkeypatch.setattr(drawer_agent, "_autostart_linux", lambda target: None)
+    monkeypatch.setattr(drawer_agent, "_wait_until_listening", lambda config, **k: True)
+
+    assert drawer_agent.install(["--install", "--queue", "TM-T20", "--token", TOKEN]) == 0
+    assert "Agente respondendo" in capsys.readouterr().out
