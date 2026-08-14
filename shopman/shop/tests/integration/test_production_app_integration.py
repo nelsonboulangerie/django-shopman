@@ -98,6 +98,46 @@ class TestFinishWorkOrderStockIntegration:
         )
         assert saleable.quantity == Decimal("18")
 
+    def test_finish_output_lands_at_the_primary_saleable_not_the_alphabetical(
+        self, recipe, ingredient, croissant, position_producao, today,
+    ):
+        """O destino do realize é a posição de venda PRIMÁRIA (primeira criada).
+
+        Regressão do pão invisível: Position.Meta.ordering=['ref'] fazia o
+        .first() escolher por alfabeto, e "ontem" (vitrine de véspera,
+        excluída dos canais remotos) roubava a fornada recém-assada — o
+        storefront anunciava "recém saído" e vendia "Indisponível".
+        """
+        from shopman.stockman.models import Position, PositionKind
+
+        vitrine = Position.objects.create(
+            ref="vitrine", name="Vitrine", kind=PositionKind.PHYSICAL,
+            is_saleable=True,
+        )
+        Position.objects.create(
+            # Alfabeticamente ANTES de "vitrine"; criada DEPOIS.
+            ref="ontem", name="Vitrine D-1", kind=PositionKind.PHYSICAL,
+            is_saleable=True,
+        )
+        stock.receive(
+            quantity=Decimal("10"),
+            sku=ingredient.sku,
+            position=position_producao,
+            target_date=today,
+            reason="Ingredient stock",
+        )
+
+        wo = craft.plan(recipe, quantity=Decimal("20"), date=today)
+        craft.finish(wo, finished=18, actor="test")
+
+        saleable = Quant.objects.get(
+            sku=croissant.sku, position=vitrine, target_date=None, batch="",
+        )
+        assert saleable.quantity == Decimal("18")
+        assert not Quant.objects.filter(
+            sku=croissant.sku, position__ref="ontem",
+        ).exists()
+
         # The only positive moves on the saleable quant are the single realize leg.
         positive_moves = Move.objects.filter(quant=saleable, delta__gt=0)
         assert positive_moves.count() == 1

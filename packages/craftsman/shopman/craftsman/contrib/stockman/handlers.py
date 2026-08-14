@@ -496,8 +496,16 @@ def _handle_finished(work_order, product_ref, date):
     finished_qty = work_order.finished or work_order.quantity
 
     try:
-        # Find saleable destination (vitrine)
-        to_position = Position.objects.filter(is_saleable=True).first()
+        # Find saleable destination (vitrine). A intenção sempre foi "a
+        # primeira posição de venda da loja" — mas Position.Meta.ordering
+        # é ['ref'], então .first() sem order_by escolhia por ALFABETO e
+        # qualquer posição saleable de nome menor (ex.: uma vitrine de
+        # véspera) roubava a fornada recém-assada, que sumia dos canais
+        # que a excluem. Ordem de criação (pk) é estável e corresponde à
+        # posição de venda primária do deployment.
+        to_position = (
+            Position.objects.filter(is_saleable=True).order_by("pk").first()
+        )
         if not to_position:
             logger.warning(
                 "No saleable position found — cannot realize %s",
