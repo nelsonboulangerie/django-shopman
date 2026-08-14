@@ -1,7 +1,8 @@
 # Plano — Reconstrução do Admin/Unfold
 
-> Status: **PROPOSTA — aguardando aprovação do Pablo** (Fase 3 da missão de 2026-08-14).
-> Nada deste plano foi executado. A Fase 4 (execução em WPs) só começa após aprovação.
+> Status: **EXECUTADO** (aprovado pelo Pablo em 2026-08-14, com a instrução de ir além
+> dos 50% "desde que MUITO BEM ORGANIZADO" e de usar "Textos da interface" como nome único).
+> WP-ADM-R0 a R5 entregues; o resultado real está no §9, no fim deste documento.
 
 ## 1. Contexto e veredito
 
@@ -236,3 +237,41 @@ antes. Ordem pensada para valor imediato primeiro e demolição depois.
   `storefront/models/` — vivem em `shop/models/`. Sincronizar no WP-ADM-R0.
 - Unregister não apaga dado nenhum: só remove a tela. Reversível com uma linha.
 - A busca ⌘K continua cobrindo o que ficar registrado (inclusive os 👻).
+
+## 9. O que foi entregue (execução de 2026-08-14)
+
+**80 → 56 telas**, menu de 46 itens dispersos → **10 grupos por intenção**, nenhum com mais
+de 11 itens, **zero link morto e zero tela órfã** (ambos travados por teste).
+
+Onde o plano mudou depois de encostar no código:
+
+- **Movimentações de caixa e Referências ficaram.** A lista original as cortava; ao checar
+  os consumidores, cada uma tinha teste e razão próprios (o WP-ADM-6 já travara o caixa
+  como trilha somente-leitura; o rename em massa de refs é feature viva com tela de
+  confirmação). Cortá-las teria removido função, não ruído.
+- **Contatos precisavam de porta antes do corte.** `CustomerAddress` já era inline no
+  cliente, mas `ContactPoint` não era — cortar primeiro teria escondido os telefones. O
+  inline entrou junto com consentimento (LGPD, somente leitura, montado em tempo de request
+  porque o contrib é opcional).
+- **A curadoria virou um módulo do deployment**, não deleções dentro do Core: os pacotes de
+  `packages/` seguem registrando o Admin completo (são genéricos e não sabem quem os
+  instala), e `shopman/backstage/admin/curation.py` lista o que esta loja não mostra, com o
+  motivo ao lado de cada linha.
+
+Três bugs de 500 que a reorganização desenterrou — todos anteriores a ela:
+
+1. **Lista de pedidos**: a coluna "ação" revertia `admin_console_order_detail`, URL removida
+   com o console de pedidos. Qualquer pedido ativo na lista derrubava a tela. Não aparecia
+   porque a tela abria filtrada no dia corrente ("0 resultados (328 no total)").
+2. **Lista de sessões**: `prefetch_related("items")` sobre uma property, não uma relação —
+   `ValueError` assim que existisse uma sessão.
+3. **`format_html` sem interpolação**: 13 chamadas nos admins, cada uma um `TypeError` no
+   ramo de código que a executasse. Bastava um texto de interface sem padrão no código para
+   o formulário morrer.
+
+Os três passaram pela mesma fresta: a smoke de changelist roda com o banco **vazio**, e sem
+linhas nenhuma coluna calculada por linha chega a rodar. Foram fechados três guardas novos:
+`test_admin_renders_with_rows` (toda tela renderiza com uma linha de verdade),
+`test_admin_navigation` (toda rota resolve, nenhuma tela órfã, nenhum grupo longo demais) e
+`test_admin_format_html_contract` (varredura AST, com um teste que verifica que a varredura
+de fato lê o código).

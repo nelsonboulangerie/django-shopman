@@ -5,6 +5,7 @@ Auth Django Admin configuration.
 from django.contrib import admin
 from django.utils import timezone
 from django.utils.html import format_html
+from django.utils.safestring import mark_safe
 
 from .models import AccessLink, CustomerUser, TrustedDevice, VerificationCode
 
@@ -93,11 +94,11 @@ class AccessLinkAdmin(admin.ModelAdmin):
 
     def status_badge(self, obj):
         if obj.used_at:
-            return format_html('<span style="color: blue;">Used</span>')
+            return mark_safe('<span style="color: blue;">Used</span>')
         elif obj.is_expired:
-            return format_html('<span style="color: gray;">Expired</span>')
+            return mark_safe('<span style="color: gray;">Expired</span>')
         else:
-            return format_html('<span style="color: green;">Valid</span>')
+            return mark_safe('<span style="color: green;">Valid</span>')
 
     status_badge.short_description = "Status"
 
@@ -309,11 +310,11 @@ class TrustedDeviceAdmin(admin.ModelAdmin):
 
     def status_badge(self, obj):
         if not obj.is_active:
-            return format_html('<span style="color: red;">Revoked</span>')
+            return mark_safe('<span style="color: red;">Revoked</span>')
         elif obj.is_expired:
-            return format_html('<span style="color: gray;">Expired</span>')
+            return mark_safe('<span style="color: gray;">Expired</span>')
         else:
-            return format_html('<span style="color: green;">Active</span>')
+            return mark_safe('<span style="color: green;">Active</span>')
 
     status_badge.short_description = "Status"
 

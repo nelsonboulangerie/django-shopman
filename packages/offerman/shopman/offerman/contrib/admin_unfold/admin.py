@@ -10,6 +10,7 @@ from django import forms
 from django.contrib import admin, messages
 from django.core.exceptions import ValidationError
 from django.utils.html import format_html
+from django.utils.safestring import mark_safe
 from django.utils.translation import gettext_lazy as _
 from import_export.admin import ExportMixin, ImportExportModelAdmin
 from shopman.offerman.contrib.admin_unfold.nutrition_form import (
@@ -432,7 +433,7 @@ class ProductAdmin(_ProductImportExportBase):
         if not badges:
             return unfold_badge("Ativo", "green")
 
-        return format_html(" ".join(str(b) for b in badges))
+        return mark_safe(" ".join(str(b) for b in badges))
 
     def get_queryset(self, request):
         from django.db.models import Exists, OuterRef
