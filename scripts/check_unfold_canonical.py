@@ -280,6 +280,7 @@ EXCEPTION_SURFACES: tuple[Surface, ...] = (
             ROOT / "shopman/backstage/projections/cash_session.py",
             ROOT / "shopman/backstage/projections/production.py",
             ROOT / "shopman/backstage/projections/marketing.py",
+            ROOT / "shopman/backstage/projections/bi_production.py",
         ),
         exception_reason=(
             "Order queue + KDS + catalog-matrix + feeds + day-closing + cash-session + "
@@ -290,7 +291,10 @@ EXCEPTION_SURFACES: tuple[Surface, ...] = (
             "Admin/Unfold, a matriz operacional no Gestor, o fechamento do dia e os relatórios "
             "X/Z na antesala do PDV, a produção inteira no Produção). "
             "Campanha (FOMO-MARKETING-SPECS §6.1): a REVISÃO do anúncio é decisão operacional "
-            "no app dedicado; o CRUD de regra/modelo segue disponível no Admin/Unfold."
+            "no app dedicado; o CRUD de regra/modelo segue disponível no Admin/Unfold. "
+            "B.I. (ADR-021 §5, decisão do dono 2026-08-14): leitura analítica cross-suite via "
+            "api/v1/backstage/bi/* para o app dedicado bi-nuxt — terceira exceção explícita ao "
+            "gate, registrada na ADR."
         ),
     ),
 )

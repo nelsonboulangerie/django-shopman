@@ -5,6 +5,7 @@ from __future__ import annotations
 from django.urls import path
 
 from .alerts import AlertAckView, AlertListView
+from .bi import BIProductionView
 from .catalog import (
     CatalogAiAssistView,
     CatalogBulkPriceView,
@@ -180,6 +181,8 @@ urlpatterns = [
         ProductionBlindMapView.as_view(),
         name="api-backstage-production-blind-map",
     ),
+    # B.I. — persona gestor (perm fina backstage.view_bi, ADR-021)
+    path("bi/production/", BIProductionView.as_view(), name="api-backstage-bi-production"),
     path("closing/", DayClosingView.as_view(), name="api-backstage-closing"),
     path("orders/", OrderQueueView.as_view(), name="api-backstage-orders"),
     # Catalog matrix (produto × superfície)
