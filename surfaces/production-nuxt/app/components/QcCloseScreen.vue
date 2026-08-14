@@ -68,6 +68,8 @@ function onDigit(digit: string) {
   } else {
     s.discountQty = typeDigit(s.discountQty, digit, fresh.value);
   }
+  // Editou quantidade: a confirmação de "saiu mais que o previsto" caduca.
+  s.overshootConfirmed = false;
   fresh.value = false;
   state.value = s;
 }
@@ -80,6 +82,7 @@ function onBackspace() {
   } else {
     s.discountQty = typeBackspace(s.discountQty);
   }
+  s.overshootConfirmed = false;
   state.value = s;
 }
 
@@ -91,6 +94,7 @@ function onClear() {
   } else {
     s.discountQty = 0;
   }
+  s.overshootConfirmed = false;
   fresh.value = true;
   state.value = s;
 }
@@ -119,9 +123,11 @@ const sheetQuestion = ref<QcQuestion | null>(null);
 const submitAfterAnswer = ref(false);
 
 const sheetTitle = computed(() =>
-  sheetQuestion.value === "loss_reason"
-    ? `O que houve com as ${loss.value} que não saíram?`
-    : `O que houve com as ${state.value.discountQty} do sublote?`,
+  sheetQuestion.value === "overshoot"
+    ? `Saíram ${total.value} de ${state.value.planned} previstas?`
+    : sheetQuestion.value === "loss_reason"
+      ? `O que houve com as ${loss.value} que não saíram?`
+      : `O que houve com as ${state.value.discountQty} do sublote?`,
 );
 
 function openQuestion(question: QcQuestion, thenSubmit: boolean) {
@@ -129,12 +135,7 @@ function openQuestion(question: QcQuestion, thenSubmit: boolean) {
   submitAfterAnswer.value = thenSubmit;
 }
 
-function answerDefect(defect: QCDefectProjection) {
-  const s = { ...state.value };
-  if (sheetQuestion.value === "loss_reason") s.lossDefectRef = defect.ref;
-  else s.discountDefectRef = defect.ref;
-  state.value = s;
-
+function _advanceQuestions() {
   const remaining = pendingQuestions(state.value);
   if (submitAfterAnswer.value && remaining.length) {
     sheetQuestion.value = remaining[0] ?? null;
@@ -144,6 +145,28 @@ function answerDefect(defect: QCDefectProjection) {
   sheetQuestion.value = null;
   submitAfterAnswer.value = false;
   if (shouldSubmit) submit();
+}
+
+function answerDefect(defect: QCDefectProjection) {
+  const s = { ...state.value };
+  if (sheetQuestion.value === "loss_reason") s.lossDefectRef = defect.ref;
+  else s.discountDefectRef = defect.ref;
+  state.value = s;
+  _advanceQuestions();
+}
+
+/** "Sim, saíram N": o operador assume o acima-do-previsto conscientemente. */
+function confirmOvershoot() {
+  state.value = { ...state.value, overshootConfirmed: true };
+  _advanceQuestions();
+}
+
+/** "Corrigir": volta para o campo com entrada fresca — era typo. */
+function fixOvershoot() {
+  sheetQuestion.value = null;
+  submitAfterAnswer.value = false;
+  activeField.value = "full";
+  fresh.value = true;
 }
 
 function onConfirm() {
@@ -326,7 +349,28 @@ const fieldCard =
     <UiSheet :open="sheetQuestion !== null" @update:open="(v: boolean) => { if (!v) { sheetQuestion = null; submitAfterAnswer = false; } }">
       <UiSheetContent side="bottom" :title="sheetTitle">
         <template #content>
-          <div class="grid grid-cols-2 gap-2 px-4 pb-6 sm:grid-cols-3">
+          <!-- Plausibilidade: acima do previsto pede confirmação consciente —
+               o typo (222 no lugar de 22) morre num toque de Corrigir. -->
+          <div
+            v-if="sheetQuestion === 'overshoot'"
+            class="grid grid-cols-2 gap-2 px-4 pb-6"
+          >
+            <button
+              type="button"
+              class="rounded-md border px-3 py-4 text-base font-medium transition hover:bg-accent active:translate-y-px"
+              @click="fixOvershoot()"
+            >
+              Corrigir
+            </button>
+            <button
+              type="button"
+              class="rounded-md border border-transparent bg-primary px-3 py-4 text-base font-semibold text-primary-foreground transition hover:bg-primary/90 active:translate-y-px"
+              @click="confirmOvershoot()"
+            >
+              Sim, saíram {{ total }}
+            </button>
+          </div>
+          <div v-else class="grid grid-cols-2 gap-2 px-4 pb-6 sm:grid-cols-3">
             <button
               v-for="defect in activeDefects"
               :key="defect.ref"

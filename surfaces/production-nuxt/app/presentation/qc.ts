@@ -20,6 +20,8 @@ export interface QcEntryState {
   discountGradeRef: string;
   discountDefectRef: string;
   lossDefectRef: string;
+  /** O operador confirmou que saiu MAIS que o previsto (guarda anti-typo). */
+  overshootConfirmed: boolean;
 }
 
 export function initialState(planned: number | null, defaultGradeRef: string): QcEntryState {
@@ -32,6 +34,7 @@ export function initialState(planned: number | null, defaultGradeRef: string): Q
     discountGradeRef: "",
     discountDefectRef: "",
     lossDefectRef: "",
+    overshootConfirmed: false,
   };
 }
 
@@ -105,15 +108,24 @@ export function finishedTotal(state: QcEntryState): number {
 
 // ── Confirmar sempre ativo: as perguntas que faltam ─────────────────────────
 
-export type QcQuestion = "loss_reason" | "discount_reason";
+export type QcQuestion = "overshoot" | "loss_reason" | "discount_reason";
+
+/** Saiu MAIS que o previsto — quase sempre é um dígito a mais, não milagre. */
+export function overshootQty(state: QcEntryState): number {
+  if (state.planned === null) return 0;
+  return Math.max(0, finishedTotal(state) - state.planned);
+}
 
 /**
- * O sheet de motivos não custa toque nenhum: Confirmar fecha a fornada e, se
- * falta um motivo, pergunta — um de cada vez, na ordem visual dos cartões
- * (perda à esquerda, sublote à direita) — e fecha na resposta.
+ * O sheet de perguntas não custa toque nenhum: Confirmar fecha a fornada e,
+ * se falta resposta, pergunta — uma de cada vez — e fecha na última. A
+ * plausibilidade vem primeiro (total acima do previsto pede confirmação: o
+ * typo de 222 no lugar de 22 morre aqui), depois os motivos na ordem visual
+ * dos cartões (perda à esquerda, sublote à direita).
  */
 export function pendingQuestions(state: QcEntryState): QcQuestion[] {
   const out: QcQuestion[] = [];
+  if (overshootQty(state) > 0 && !state.overshootConfirmed) out.push("overshoot");
   if (lossQty(state) > 0 && !state.lossDefectRef) out.push("loss_reason");
   if (state.discountQty > 0 && state.discountGradeRef && !state.discountDefectRef) {
     out.push("discount_reason");

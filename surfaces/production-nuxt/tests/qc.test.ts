@@ -106,6 +106,21 @@ describe("Confirmar sempre ativo: as perguntas que faltam", () => {
     state = { ...state, fullQty: 0, fullTouched: true };
     expect(canSubmit(state)).toBe(false);
   });
+
+  it("acima do previsto pede confirmação ANTES de qualquer motivo", () => {
+    let state = initialState(22, "standard");
+    state = { ...state, fullQty: 222, fullTouched: true };
+    expect(pendingQuestions(state)).toEqual(["overshoot"]);
+
+    state = { ...state, overshootConfirmed: true };
+    expect(pendingQuestions(state)).toEqual([]);
+  });
+
+  it("fornada avulsa não tem previsto, logo não há acima-do-previsto", () => {
+    let state = initialState(null, "standard");
+    state = { ...state, fullQty: 999, fullTouched: true };
+    expect(pendingQuestions(state)).toEqual([]);
+  });
 });
 
 describe("o payload da partição (contrato do finish)", () => {
