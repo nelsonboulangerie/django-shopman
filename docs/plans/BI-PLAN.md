@@ -1,6 +1,7 @@
 # BI-PLAN — B.I. cross-suite no backstage
 
-> **Status:** 🟢 **APROVADO pelo dono (2026-08-14)** — ADR-021 aceita; em execução (F1).
+> **Status:** 🟢 **EXECUTADO F0–F6 (2026-08-14, PR #151)** — ADR-021 aceita; resta só o
+> deploy do bi-nuxt (spec DO + hostname). F6: 81.255 vendas Yooga ingeridas e verificadas.
 > Decisões da iteração: superfície = **app Nuxt próprio**; Yooga **entra** (fonte externa
 > first-class, ingestão completável); gráficos **liberados** ("lindões e super úteis",
 > nunca decorativos); timestamps do forno seguem os mesmos princípios da suite (servidor
