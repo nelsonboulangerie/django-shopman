@@ -271,3 +271,20 @@ def test_todo_terminal_que_nao_chuta_TEM_um_motivo():
         payload = CashDrawerConfig.from_dict(raw).surface_payload()
         if not payload["can_kick"]:
             assert payload["reason"].strip(), raw
+
+
+def test_o_seed_declara_a_gaveta_do_balcao_sem_inventar_token():
+    """Reseed apagava a gaveta em silêncio — o terminal é recriado do zero.
+
+    Declarada sem token, o estado vira "tem gaveta, falta instalar", que aponta
+    para a próxima ação. Token no seed seria um par que não existe do outro lado.
+    """
+    from pathlib import Path
+
+    seed = Path(__file__).resolve().parents[3] / "config" / "management" / "commands" / "seed.py"
+    fonte = seed.read_text(encoding="utf-8")
+
+    assert '"cash_drawer"' in fonte, "o seed precisa declarar a gaveta, senão o reseed a apaga"
+    trecho = fonte[fonte.index('"cash_drawer"'):][:400]
+    assert '"adapter": "agent"' in trecho
+    assert '"token": ""' in trecho, "o seed não pode inventar token"

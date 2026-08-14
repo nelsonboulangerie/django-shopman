@@ -86,7 +86,10 @@ class CashDrawerConfig:
         if not self.kicks_by_software:
             return ""
         if not self.token:
-            return "sem token — cole o token que o instalador do agente imprimiu"
+            # O token nasce no Admin desde que o fluxo inverteu: basta salvar o
+            # terminal com "Pelo agente local". Mandar colar o do instalador era
+            # instrução do fluxo antigo, e mandava a pessoa para o lado errado.
+            return "falta o token — salve este terminal com “Pelo agente local” para gerar um"
         if not self.agent_url:
             return "sem endereço do agente"
         return ""
