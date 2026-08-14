@@ -300,3 +300,69 @@ class TestNotifyHandler:
             self._handle(announcement)
         announcement.refresh_from_db()
         assert announcement.status == AnnouncementStatus.PUBLISHED
+
+
+# ── E2E: a fila do "Avise-me" na fornada real ─────────────────────────
+#
+# A dupla cobertura do finish é deliberada: o aviso direto do storefront
+# (`notify_bake_ready`, que carimba `notified_at`) e o announcement sugerido do
+# marketing (que conta a fila PENDENTE) escutam o MESMO sinal. A ordem dos
+# receivers (shop conecta antes de storefront — INSTALLED_APPS) garante que o
+# announcement nasce ANTES da drenagem. Se alguém reordenar os apps ou mover a
+# drenagem para antes da avaliação, a contagem zera em silêncio e o card do
+# gestor diz "Ninguém para avisar" com gente na fila — foi exatamente o
+# sintoma investigado em 2026-08-14 (era dado de staging, não código; este
+# teste impede que vire código).
+
+
+class TestAlertQueueSurvivesTheRealFinish:
+    @pytest.fixture
+    def terrain(self, product):
+        from decimal import Decimal
+
+        from shopman.craftsman.models import Recipe
+        from shopman.stockman.models import Position
+
+        position = Position.objects.create(
+            ref="vitrine-e2e", name="Vitrine", is_saleable=True, is_default=True
+        )
+        recipe = Recipe.objects.create(
+            ref="croissant-e2e", output_sku=SKU, batch_size=Decimal("10"),
+            is_active=True, name="Croissant",
+        )
+        template = AnnouncementTemplate.objects.create(
+            name="Fornada no ar", body="Saiu {{product_name}}!", is_active=True
+        )
+        Campaign.objects.create(
+            name="Fornada pronta e2e",
+            trigger="production_finished",
+            template=template,
+            platforms=["whatsapp"],
+            audience_rules={"favorites": True, "alerts": True, "vip_first_minutes": 15},
+            requires_approval=True,
+            is_active=True,
+        )
+        return recipe, position
+
+    @pytest.mark.django_db(transaction=True)
+    def test_announcement_counts_the_pending_queue(self, terrain):
+        recipe, position = terrain
+
+        from shopman.backstage.services import production as production_service
+        from shopman.storefront.services import stock_alerts
+
+        sub = stock_alerts.subscribe(SKU, phone="+5543999990099", alert_type="production_ready")
+        assert sub is not None
+
+        production_service.apply_quick_finish(
+            recipe_id=recipe.pk,
+            quantity="10",
+            position_id=position.pk,
+            actor="test",
+            partition=[{"quantity": "10", "quality_grade_ref": "standard"}],
+        )
+
+        announcement = Announcement.objects.get()
+        audience = announcement.audience or {}
+        assert audience.get("alerts_count") == 1
+        assert audience.get("total", 0) >= 1
