@@ -77,6 +77,21 @@ def _finished_wo(recipe, *, partition=None, quantity="40"):
 
 
 @pytest.mark.django_db
+def test_view_bi_is_a_valid_unlock_perm(client, bi_viewer):
+    """A perm do gate do bi-nuxt PRECISA estar na allowlist de unlock.
+
+    Sem a entrada em ``_OPERATOR_UNLOCK_PERMS``, o eligible responde 400, o
+    picker fica vazio e o app fica trancado para sempre — a mesma armadilha
+    que já mordeu o marketing (shop.manage_campaigns).
+    """
+    client.force_login(bi_viewer)
+    response = client.get(
+        reverse("api-backstage-operator-eligible"), {"perm": "backstage.view_bi"}
+    )
+    assert response.status_code == 200
+
+
+@pytest.mark.django_db
 def test_bi_production_requires_view_bi(client, recipe):
     bare = User.objects.create_user("bare-bi", password="pw", is_staff=True)
     client.force_login(bare)

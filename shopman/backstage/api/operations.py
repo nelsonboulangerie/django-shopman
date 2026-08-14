@@ -340,6 +340,8 @@ _OPERATOR_UNLOCK_PERMS = {
     # Campanha (surfaces/marketing-nuxt): sem esta entrada a tela de destravar
     # rejeita a permissão e o app fica trancado para sempre com o gate ligado.
     "shop.manage_campaigns",
+    # B.I. (surfaces/bi-nuxt, ADR-021): mesma armadilha da campanha acima.
+    "backstage.view_bi",
 }
 
 
