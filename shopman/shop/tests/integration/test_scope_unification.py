@@ -178,3 +178,134 @@ class TestScopeUnification:
             channel_ref="pdv",
         )
         assert reserve["ok"] is True
+
+
+class TestLotGates:
+    """C2 (D1-RETIREMENT): o LOTE decide o que cada canal vê e reserva.
+
+    O contrato independe da superfície: os testes entram pela API de
+    disponibilidade crua (``check``/``reserve`` por ``channel_ref``) — nenhum
+    invariante depende de a superfície lembrar de um campo.
+    """
+
+    @pytest.fixture
+    def sells_all_channel(self, db):
+        from shopman.shop.models import Channel
+
+        channel, _ = Channel.objects.update_or_create(
+            ref="pdv",
+            defaults={
+                "name": "Balcão / PDV",
+                "is_active": True,
+                "config": {"stock": {"sells_nonconforming": True}},
+            },
+        )
+        return channel
+
+    def _marked_lot(self, product, position_loja, today):
+        from datetime import timedelta
+
+        from shopman.stockman.models import Batch
+
+        Batch.objects.create(
+            sku=product.sku, ref="LOTE-OK",
+            expiry_date=today + timedelta(days=1),
+        )
+        Batch.objects.create(
+            sku=product.sku, ref="LOTE-MARCADO",
+            expiry_date=today + timedelta(days=1),
+            nonconformity_reason="Assou demais",
+            nonconformity_percent=50,
+        )
+        StockMovements.receive(
+            Decimal("5"), product.sku, position=position_loja,
+            batch="LOTE-OK", reason="fornada conforme",
+        )
+        StockMovements.receive(
+            Decimal("8"), product.sku, position=position_loja,
+            batch="LOTE-MARCADO", reason="fornada com desconto",
+        )
+
+    def test_remote_channel_neither_sees_nor_reserves_nonconforming(
+        self, product, position_loja, web_channel,
+    ):
+        """Canal remoto (default ``sells_nonconforming=False``): o lote
+        marcado não conta na vitrine e não vira hold."""
+        from django.utils import timezone
+
+        self._marked_lot(product, position_loja, timezone.localdate())
+
+        check = availability.check(
+            product.sku, Decimal("13"), channel_ref="web",
+        )
+        assert check["available_qty"] == Decimal("5")
+
+        reserve = availability.reserve(
+            product.sku, Decimal("5"), session_key="test-session",
+            channel_ref="web",
+        )
+        assert reserve["ok"] is True
+
+        from shopman.stockman.models import Hold
+
+        held_batches = set(
+            Hold.objects.filter(sku=product.sku).values_list(
+                "quant__batch", flat=True,
+            )
+        )
+        assert "LOTE-MARCADO" not in held_batches
+
+    def test_pos_sells_nonconforming_when_declared(
+        self, product, position_loja, sells_all_channel,
+    ):
+        """PDV com ``sells_nonconforming=True`` vê os dois lotes."""
+        from django.utils import timezone
+
+        self._marked_lot(product, position_loja, timezone.localdate())
+
+        check = availability.check(
+            product.sku, Decimal("13"), channel_ref="pdv",
+        )
+        assert check["available_qty"] == Decimal("13")
+
+    def test_expiry_margin_pulls_near_expiry_from_the_channel(
+        self, product, position_loja, db,
+    ):
+        """Canal com ``expiry_margin_days=3``: lote que vence em 2 dias some;
+        sem margem, ele conta até vencer."""
+        from datetime import timedelta
+
+        from django.utils import timezone
+        from shopman.stockman.models import Batch
+
+        from shopman.shop.models import Channel
+
+        today = timezone.localdate()
+        Batch.objects.create(
+            sku=product.sku, ref="VENCE-2D",
+            expiry_date=today + timedelta(days=2),
+        )
+        StockMovements.receive(
+            Decimal("6"), product.sku, position=position_loja,
+            batch="VENCE-2D", reason="lote curto",
+        )
+
+        Channel.objects.update_or_create(
+            ref="web",
+            defaults={
+                "name": "Loja online",
+                "is_active": True,
+                "config": {"stock": {"expiry_margin_days": 3}},
+            },
+        )
+        Channel.objects.update_or_create(
+            ref="pdv",
+            defaults={"name": "PDV", "is_active": True, "config": {}},
+        )
+
+        assert availability.check(
+            product.sku, Decimal("1"), channel_ref="web",
+        )["available_qty"] == Decimal("0")
+        assert availability.check(
+            product.sku, Decimal("1"), channel_ref="pdv",
+        )["available_qty"] == Decimal("6")

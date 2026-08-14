@@ -127,6 +127,18 @@ class ChannelConfig:
         # Antecedência mínima (horas) para registrar DEMANDA (encomenda sem
         # fornada planejada) quando o produto não declara
         # Product.metadata["lead_time_hours"]. 0 = sem exigência.
+        sells_nonconforming: bool = False
+        # O canal oferece lote NÃO CONFORME (Batch.nonconformity_reason
+        # preenchido — ter motivo é ser)? Default falha para o lado seguro:
+        # canal remoto não vende pão com desconto de qualidade sem decisão
+        # explícita. O PDV declara True — no balcão a etiqueta explica.
+        # (D1-RETIREMENT C2: substitui a cerca por POSIÇÃO excluded_positions
+        # =["ontem"]; a posição diz ONDE, o lote diz O QUE.)
+        expiry_margin_days: int = 0
+        # Não oferecer lote a menos de N dias do vencimento (near-expiry).
+        # 0 = só exclui o já vencido (comportamento de sempre). O queijo de
+        # 20 dias sai da vitrine remota com antecedência; o pão de 1 dia
+        # não é afetado.
 
     # ── 5. Notificações ──
     @dataclass
@@ -356,6 +368,14 @@ class ChannelConfig:
             raise ValueError("stock.allowed_positions deve ser uma lista ou null")
         if not isinstance(self.stock.excluded_positions, list):
             raise ValueError("stock.excluded_positions deve ser uma lista")
+        if not isinstance(self.stock.sells_nonconforming, bool):
+            raise ValueError("stock.sells_nonconforming deve ser true/false")
+        if (
+            isinstance(self.stock.expiry_margin_days, bool)
+            or not isinstance(self.stock.expiry_margin_days, int)
+            or self.stock.expiry_margin_days < 0
+        ):
+            raise ValueError("stock.expiry_margin_days deve ser um inteiro >= 0")
         # Só backends REGISTRADOS no registry — "webhook"/"push" validavam mas
         # nunca existiram, quebrando em runtime com "Backend not found".
         if self.notifications.backend not in {"manychat", "email", "console", "sms", "none"}:

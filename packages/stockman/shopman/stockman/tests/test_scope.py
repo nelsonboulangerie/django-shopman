@@ -352,3 +352,119 @@ class TestCombinations:
             (q.position.ref if q.position else None) for q in qs
         )
         assert positions == ["vitrine"]
+
+
+class TestExpiryMargin:
+    """``expiry_margin_days``: near-expiry sai do escopo ANTES de vencer."""
+
+    def test_margin_zero_keeps_historical_gate(self, product, vitrine, today):
+        Batch.objects.create(
+            sku=product.sku, ref="AMANHA", expiry_date=today + timedelta(days=1),
+        )
+        Quant.objects.create(
+            sku=product.sku, position=vitrine, batch="AMANHA",
+            _quantity=Decimal("5"),
+        )
+
+        qs = quants_eligible_for(product.sku, target_date=today)
+
+        assert [q.batch for q in qs] == ["AMANHA"]
+
+    def test_margin_excludes_lot_expiring_within_window(
+        self, product, vitrine, today,
+    ):
+        """Queijo que vence em 2 dias some com margem de 3; o de 10 dias fica."""
+        Batch.objects.create(
+            sku=product.sku, ref="VENCE-2D", expiry_date=today + timedelta(days=2),
+        )
+        Batch.objects.create(
+            sku=product.sku, ref="VENCE-10D", expiry_date=today + timedelta(days=10),
+        )
+        Quant.objects.create(
+            sku=product.sku, position=vitrine, batch="VENCE-2D",
+            _quantity=Decimal("3"),
+        )
+        Quant.objects.create(
+            sku=product.sku, position=vitrine, batch="VENCE-10D",
+            _quantity=Decimal("4"),
+        )
+
+        qs = quants_eligible_for(
+            product.sku, target_date=today, expiry_margin_days=3,
+        )
+
+        assert [q.batch for q in qs] == ["VENCE-10D"]
+
+    def test_lot_expiring_exactly_on_cutoff_stays(self, product, vitrine, today):
+        """A margem é 'a MENOS de N dias': vencer NO corte ainda vende."""
+        Batch.objects.create(
+            sku=product.sku, ref="NO-CORTE", expiry_date=today + timedelta(days=3),
+        )
+        Quant.objects.create(
+            sku=product.sku, position=vitrine, batch="NO-CORTE",
+            _quantity=Decimal("2"),
+        )
+
+        qs = quants_eligible_for(
+            product.sku, target_date=today, expiry_margin_days=3,
+        )
+
+        assert [q.batch for q in qs] == ["NO-CORTE"]
+
+
+class TestNonconformingGate:
+    """``include_nonconforming=False``: o LOTE decide o que o canal oferece.
+
+    Ter motivo é ser (Batch.nonconformity_reason != "") — o core não sabe o
+    que o motivo significa nem quem pode vender; só filtra quando mandam.
+    """
+
+    def _lots(self, product, vitrine, today):
+        Batch.objects.create(
+            sku=product.sku, ref="CONFORME",
+            expiry_date=today + timedelta(days=1),
+        )
+        Batch.objects.create(
+            sku=product.sku, ref="MARCADO",
+            expiry_date=today + timedelta(days=1),
+            nonconformity_reason="Assou demais",
+            nonconformity_percent=20,
+        )
+        Quant.objects.create(
+            sku=product.sku, position=vitrine, batch="CONFORME",
+            _quantity=Decimal("10"),
+        )
+        Quant.objects.create(
+            sku=product.sku, position=vitrine, batch="MARCADO",
+            _quantity=Decimal("4"),
+        )
+
+    def test_default_keeps_nonconforming_visible(self, product, vitrine, today):
+        self._lots(product, vitrine, today)
+
+        qs = quants_eligible_for(product.sku, target_date=today)
+
+        assert sorted(q.batch for q in qs) == ["CONFORME", "MARCADO"]
+
+    def test_gate_excludes_lots_with_reason(self, product, vitrine, today):
+        self._lots(product, vitrine, today)
+
+        qs = quants_eligible_for(
+            product.sku, target_date=today, include_nonconforming=False,
+        )
+
+        assert [q.batch for q in qs] == ["CONFORME"]
+
+    def test_batchless_quants_are_untouched_by_the_gate(
+        self, product, vitrine, today,
+    ):
+        """Quant sem lote não tem motivo — o gate é sobre LOTES marcados."""
+        Quant.objects.create(
+            sku=product.sku, position=vitrine, _quantity=Decimal("7"),
+        )
+
+        qs = quants_eligible_for(
+            product.sku, target_date=today, include_nonconforming=False,
+        )
+
+        assert qs.count() == 1

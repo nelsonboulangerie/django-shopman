@@ -61,6 +61,8 @@ def find(sku: str, *, qty: Decimal = Decimal("1"), channel: str | None = None, l
                 safety_margin=scope["safety_margin"],
                 allowed_positions=scope["allowed_positions"],
                 excluded_positions=scope.get("excluded_positions"),
+            expiry_margin_days=scope.get("expiry_margin_days", 0),
+            include_nonconforming=scope.get("sells_nonconforming", True),
             )
         except Exception as e:
             logger.warning("substitutes_availability_failed: %s", e, exc_info=True)
