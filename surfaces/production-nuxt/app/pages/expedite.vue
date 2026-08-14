@@ -10,8 +10,15 @@ import type {
   ProductionShortageError,
 } from "~/types/production";
 import type { QcPartitionGroup } from "~/presentation/qc";
+import { isStale } from "~/presentation/production";
 
-const { kiosk, selectedDate, pending, submitting, refresh, finish, quickFinish } = useQcKiosk();
+const { kiosk, selectedDate, pending, error, submitting, refresh, finish, quickFinish } =
+  useQcKiosk();
+
+// Tolerante a dado velho: poll falhou com painel na tela = chip de degradação
+// (dado velho visível > painel em branco). No quiosque isso importa dobrado:
+// fechar fornada com painel velho é fechar a fornada errada.
+const stale = computed(() => isStale({ error: !!error.value, hasData: !!kiosk.value }));
 
 useHead({ title: "Expedição · Produção" });
 
@@ -309,6 +316,16 @@ function concludeOven() {
             </button>
           </UiPopoverContent>
         </UiPopover>
+      </div>
+
+      <div
+        v-if="stale"
+        role="status"
+        aria-live="polite"
+        class="flex items-center gap-2 rounded-md border border-warning/40 bg-warning/10 px-3 py-2 text-sm font-medium text-amber-700 dark:text-amber-300"
+      >
+        <Icon name="lucide:wifi-off" class="size-4 shrink-0" />
+        <span>Sem atualizar. Mostrando o último painel carregado.</span>
       </div>
 
       <p v-if="pending && !kiosk" class="py-10 text-center text-muted-foreground">Carregando…</p>
