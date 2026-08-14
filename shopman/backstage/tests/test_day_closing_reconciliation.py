@@ -80,6 +80,33 @@ def test_production_summary_keeps_fractional_quantities(setup_stock):
 
 
 @pytest.mark.django_db
+def test_production_summary_consolidates_quality_partition(setup_stock):
+    """A partição do QC chega ao fechamento (ADR-017 §8): unidades por grau,
+    por receita — e o finish escalar (sem grau) fica fora do dict de quality."""
+    recipe = Recipe.objects.create(
+        ref="recon-qc", name="Recon QC", output_sku="RECON-SKU", batch_size=Decimal("10"),
+    )
+    wo = craft.plan(recipe, 10, date=date.today())
+    craft.start(wo, quantity=10, expected_rev=0)
+    craft.finish(
+        wo,
+        finished=[
+            {"item_ref": "RECON-SKU", "quantity": "7", "quality_grade_ref": "standard"},
+            {"item_ref": "RECON-SKU", "quantity": "2", "quality_grade_ref": "minimal"},
+        ],
+        wasted=[{"item_ref": "RECON-SKU", "quantity": "1"}],
+        actor="test",
+    )
+
+    closing = build_day_closing()
+
+    row = closing.production_summary["recon-qc"]
+    assert row["finished"] == 9
+    assert row["loss"] == 1
+    assert row["quality"] == {"standard": 7, "minimal": 2}
+
+
+@pytest.mark.django_db
 def test_perform_day_closing_persists_production_summary(client, setup_stock, closing_user):
     recipe = Recipe.objects.create(ref="recon-close", name="Recon Close", output_sku="RECON-SKU", batch_size=Decimal("10"))
     wo = craft.plan(recipe, 5, date=date.today())

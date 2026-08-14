@@ -9,7 +9,7 @@ from datetime import date
 from decimal import Decimal
 
 from django.db import transaction
-from django.db.models import Q, Sum
+from django.db.models import F, OuterRef, Q, Subquery, Sum
 from django.db.models.functions import Coalesce
 from django.utils import timezone
 from shopman.stockman.conf import stockman_settings
@@ -45,12 +45,21 @@ def _find_quant_for_hold(
     expiry_margin_days: int = 0,
     include_nonconforming: bool = True,
 ) -> Quant | None:
-    """Find a quant with enough availability for the hold (FIFO).
+    """Find a quant with enough availability for the hold (FEFO).
 
     Uses the canonical :func:`quants_eligible_for` scope so hold eligibility
     matches the availability read (shelflife, batch expiry + margin, batch
     conformity, channel positions).
+
+    Ordering is FEFO — first-expired, first-out: the lot expiring soonest is
+    reserved first (``Batch.expiry_date`` via subquery on the quant's batch
+    ref; lots without expiry, and batchless quants, come last). ``created_at``
+    is the stable tiebreak, so stock without validity keeps the historical
+    FIFO. With validity driving price and offer (C2), FIFO would strand the
+    lot expiring today while selling tomorrow's.
     """
+    from shopman.stockman.models import Batch
+
     quants = quants_eligible_for(
         sku,
         target_date=target_date,
@@ -62,6 +71,10 @@ def _find_quant_for_hold(
 
     # Annotate held_qty to avoid N+1
     now = timezone.now()
+    batch_expiry = (
+        Batch.objects.filter(sku=OuterRef("sku"), ref=OuterRef("batch"))
+        .values("expiry_date")[:1]
+    )
     quants = quants.annotate(
         _held_qty=Coalesce(
             Sum(
@@ -73,8 +86,9 @@ def _find_quant_for_hold(
                 ),
             ),
             Decimal('0'),
-        )
-    ).order_by('created_at')
+        ),
+        _batch_expiry=Subquery(batch_expiry),
+    ).order_by(F('_batch_expiry').asc(nulls_last=True), 'created_at')
 
     for quant in quants:
         available = quant._quantity - quant._held_qty

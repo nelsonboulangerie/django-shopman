@@ -94,8 +94,26 @@ def test_kiosk_orders_open_first_closed_carry_partition(recipe, monkeypatch):
     opened, finished = kiosk.orders
     assert opened.can_close and not opened.closed
     assert opened.planned_qty == "24"
+    assert opened.started_qty == ""  # planejada: nada entrou no forno ainda
     assert finished.closed and not finished.can_close
     assert (finished.full_price_qty, finished.discounted_qty, finished.loss_qty) == ("32", "5", "3")
+
+
+@pytest.mark.django_db
+def test_kiosk_carries_the_real_oven_quantity(recipe):
+    """Planejou 10, enfornou 11: o card carrega o started — é ele que ancora
+    o fechamento (QC-FORNADA §1); ancorar no previsto gravaria 1 de perda
+    que nunca existiu."""
+    today = date.today()
+
+    wo = craft.plan(recipe, 10, date=today, position_ref="forno", operator_ref="ana")
+    craft.start(wo, quantity=11, position_ref="forno", operator_ref="ana", expected_rev=0)
+
+    kiosk = build_qc_kiosk(selected_date=today)
+
+    (card,) = kiosk.orders
+    assert card.planned_qty == "10"
+    assert card.started_qty == "11"
 
 
 @pytest.mark.django_db
@@ -111,6 +129,56 @@ def test_qc_endpoint_behind_floor_gate(client, floor_operator, recipe):
     payload = response.json()["qc"]
     assert [g["ref"] for g in payload["grades"]][0] == "excellent"
     assert payload["recipes"], "fornada avulsa precisa da lista de receitas"
+
+
+@pytest.mark.django_db
+def test_double_finish_is_a_clean_conflict(client, floor_operator, recipe, monkeypatch):
+    """Dois quiosques fechando a MESMA fornada: o segundo leva 409 {detail}
+    em pt-BR, nunca 500 cru (o CraftError do kernel não era capturado)."""
+    monkeypatch.setattr(production, "check_finish_materials", lambda work_order: [])
+    client.force_login(floor_operator)
+    wo = craft.plan(recipe, 10, date=date.today(), position_ref="forno")
+    url = reverse("api-backstage-wo-finish", args=[wo.pk])
+    body = {"quantity": "10", "partition": [{"quantity": "10", "quality_grade_ref": "standard"}]}
+
+    first = client.post(url, body, content_type="application/json")
+    assert first.status_code == 200
+
+    second = client.post(url, body, content_type="application/json")
+    assert second.status_code == 409
+    payload = second.json()
+    assert "fechada em outra tela" in payload["detail"]
+    assert payload["error"]["code"] == "state_conflict"
+
+
+@pytest.mark.django_db
+def test_finish_after_void_and_void_after_finish_conflict(client, floor_operator, recipe, monkeypatch):
+    """Gestor estorna enquanto o forneiro fecha (e vice-versa): 409, com a
+    mensagem dizendo O QUE aconteceu com a fornada."""
+    monkeypatch.setattr(production, "check_finish_materials", lambda work_order: [])
+    client.force_login(floor_operator)
+    body = {"quantity": "10", "partition": [{"quantity": "10", "quality_grade_ref": "standard"}]}
+
+    voided = craft.plan(recipe, 10, date=date.today(), position_ref="forno")
+    craft.void(voided, reason="teste")
+    response = client.post(
+        reverse("api-backstage-wo-finish", args=[voided.pk]), body,
+        content_type="application/json",
+    )
+    assert response.status_code == 409
+    assert "estornada" in response.json()["detail"]
+
+    finished = craft.plan(recipe, 10, date=date.today(), position_ref="forno")
+    client.post(
+        reverse("api-backstage-wo-finish", args=[finished.pk]), body,
+        content_type="application/json",
+    )
+    response = client.post(
+        reverse("api-backstage-wo-void", args=[finished.pk]), {},
+        content_type="application/json",
+    )
+    assert response.status_code == 409
+    assert "não pode ser estornada" in response.json()["detail"]
 
 
 @pytest.mark.django_db
