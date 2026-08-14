@@ -7,6 +7,7 @@ not manipulate inventory directly.
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Iterable
 from datetime import date
 from decimal import Decimal
@@ -17,6 +18,8 @@ from shopman.stockman import Quant
 from shopman.stockman.services.movements import StockMovements
 
 from shopman.backstage.models import DayClosing
+
+logger = logging.getLogger(__name__)
 
 
 def perform_day_closing(
@@ -146,6 +149,7 @@ def day_product_expires_on_close(sku: str) -> bool:
         product = Product.objects.filter(sku=sku).only("shelf_life_days").first()
         return bool(product) and product.shelf_life_days == 0
     except Exception:
+        logger.warning("shelf_life de %s indisponível; produto do dia não expira no fechamento", sku, exc_info=True)
         return False
 
 
