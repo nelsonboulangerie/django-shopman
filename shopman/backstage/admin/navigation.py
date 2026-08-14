@@ -144,9 +144,7 @@ def get_sidebar_navigation(request):
         ]),
         _group("Clientes", "people", [
             _item("Clientes", "person_search", _url("admin:guestman_customer_changelist"), permission=_is_staff),
-            _item("Endereços", "location_on", _url("admin:guestman_customeraddress_changelist"), permission=_is_staff),
             _item("Contas de fidelidade", "loyalty", _url("admin:customer_loyalty_loyaltyaccount_changelist"), permission=_is_staff),
-            _item("Favoritos", "favorite", _url("admin:storefront_customerfavorite_changelist"), permission=_is_staff),
         ]),
         # Tudo que é CONFIGURAÇÃO da loja num lugar óbvio e descobrível.
         # Colapsável para não competir com a operação do dia a dia.
