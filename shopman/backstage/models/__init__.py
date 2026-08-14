@@ -17,6 +17,7 @@ from .operation import (
     OperationTaskStatus,
     OperationTaskTemplate,
 )
+from .oven_run import OvenRun
 from .pos import POSTab
 
 __all__ = [
@@ -37,6 +38,7 @@ __all__ = [
     "OperationTaskRun",
     "OperationTaskStatus",
     "OperationTaskTemplate",
+    "OvenRun",
     "POSTab",
     "POSTerminal",
 ]

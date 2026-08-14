@@ -117,6 +117,8 @@ from .operations import (
     ProductionWeighingView,
     WorkOrderAdvanceStepView,
     WorkOrderFinishView,
+    WorkOrderOvenArmView,
+    WorkOrderOvenConcludeView,
     WorkOrderPlanView,
     WorkOrderQuickFinishView,
     WorkOrderStartView,
@@ -255,6 +257,9 @@ urlpatterns = [
     path("production/<int:wo_id>/advance-step/", WorkOrderAdvanceStepView.as_view(), name="api-backstage-wo-advance"),
     path("production/quick-finish/", WorkOrderQuickFinishView.as_view(), name="api-backstage-wo-quick-finish"),
     path("production/<int:wo_id>/void/", WorkOrderVoidView.as_view(), name="api-backstage-wo-void"),
+    # Forno — o timer do kiosk declara; o servidor carimba (ADR-021 §4)
+    path("production/<int:wo_id>/oven/arm/", WorkOrderOvenArmView.as_view(), name="api-backstage-wo-oven-arm"),
+    path("production/<int:wo_id>/oven/conclude/", WorkOrderOvenConcludeView.as_view(), name="api-backstage-wo-oven-conclude"),
     # POS — cash session actions
     path("pos/cash/open/", POSCashOpenView.as_view(), name="api-backstage-pos-cash-open"),
     path("pos/cash/close/", POSCashCloseView.as_view(), name="api-backstage-pos-cash-close"),
