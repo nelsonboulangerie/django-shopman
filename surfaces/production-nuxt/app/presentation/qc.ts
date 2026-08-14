@@ -24,6 +24,28 @@ export interface QcEntryState {
   overshootConfirmed: boolean;
 }
 
+/**
+ * A âncora do modelo subtrativo é a fornada REAL que entrou no forno
+ * (QC-FORNADA §1: "a quantidade prevista que chega ao forno é quente").
+ * Quando a Produção declarou um started diferente do previsto (planejou 10,
+ * enfornou 11), é o started que ancora a aritmética — ancorar no previsto
+ * pré-preencheria 10 e gravaria 1 de perda que nunca existiu. O previsto
+ * sobrevive como referência ("11 no forno · 10 previstos") só quando diverge.
+ */
+export interface QcAnchor {
+  /** O que fecha a fornada: started quando existe, senão o previsto. */
+  anchor: number | null;
+  /** O previsto original, SÓ quando diverge da âncora (senão null). */
+  planned: number | null;
+}
+
+export function ovenAnchor(planned: number | null, started: number | null): QcAnchor {
+  if (started !== null) {
+    return { anchor: started, planned: planned !== null && planned !== started ? planned : null };
+  }
+  return { anchor: planned, planned: null };
+}
+
 export function initialState(planned: number | null, defaultGradeRef: string): QcEntryState {
   return {
     planned,

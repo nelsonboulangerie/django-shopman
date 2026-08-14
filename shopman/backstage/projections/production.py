@@ -470,6 +470,11 @@ class QCOrderCardProjection:
     position_ref: str
     status: str
     planned_qty: str
+    # A fornada REAL que entrou no forno (declarada no start) — "" enquanto
+    # planejada. É a âncora do modelo subtrativo quando diverge do previsto
+    # (QC-FORNADA §1: o previsto que importa é o que chega na boca do forno);
+    # fechar ancorado no previsto gravaria rendimento silenciosamente errado.
+    started_qty: str
     started_at_display: str
     elapsed_minutes: int
     can_close: bool
@@ -1231,6 +1236,7 @@ def build_qc_kiosk(*, selected_date: date | None = None) -> QCKioskProjection:
         elapsed = 0
         if wo.started_at and not closed:
             elapsed = max(0, int((now - wo.started_at).total_seconds() // 60))
+        started_qty = _wo_started_qty(wo)
         card = QCOrderCardProjection(
             pk=wo.pk,
             ref=wo.ref,
@@ -1239,6 +1245,7 @@ def build_qc_kiosk(*, selected_date: date | None = None) -> QCKioskProjection:
             position_ref=wo.position_ref,
             status=str(wo.status),
             planned_qty=_qty(wo.quantity),
+            started_qty=_qty(started_qty) if started_qty is not None else "",
             started_at_display=(
                 timezone.localtime(wo.started_at).strftime("%H:%M") if wo.started_at else ""
             ),

@@ -20,6 +20,7 @@ import {
   gradeBandClass,
   initialState,
   lossQty,
+  ovenAnchor,
   pendingQuestions,
   typeBackspace,
   typeDigit,
@@ -33,6 +34,8 @@ const props = defineProps<{
   title: string;
   subtitle: string;
   planned: number | null;
+  /** A fornada real que entrou no forno (declarada no start); null sem start. */
+  started: number | null;
   grades: QCGradeProjection[];
   defects: QCDefectProjection[];
   submitting: boolean;
@@ -43,7 +46,11 @@ const emit = defineEmits<{
   confirm: [payload: { quantity: string; partition: QcPartitionGroup[] }];
 }>();
 
-const state = ref<QcEntryState>(initialState(props.planned, defaultGradeRef(props.grades)));
+// A âncora da aritmética: o que ENTROU no forno (started), com o previsto
+// como referência quando divergem — ver `ovenAnchor` (QC-FORNADA §1/§4).
+const anchor = ovenAnchor(props.planned, props.started);
+
+const state = ref<QcEntryState>(initialState(anchor.anchor, defaultGradeRef(props.grades)));
 
 const topGrades = computed(() => fullPriceGrades(props.grades));
 const lowGrades = computed(() => discountGrades(props.grades));
@@ -237,7 +244,12 @@ const fieldCard =
         <p class="truncate text-xs text-muted-foreground">{{ subtitle }}</p>
       </div>
       <div class="rounded-md border bg-muted/40 px-3 py-2 text-sm tabular-nums">
-        <template v-if="planned !== null">{{ planned }} previstos</template>
+        <template v-if="started !== null"
+          >{{ started }} no forno<template v-if="anchor.planned !== null">
+            · {{ anchor.planned }} previstos</template
+          ></template
+        >
+        <template v-else-if="planned !== null">{{ planned }} previstos</template>
         <template v-else>sem previsto</template>
       </div>
     </header>

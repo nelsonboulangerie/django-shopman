@@ -350,6 +350,7 @@ export interface QCOrderCardProjection {
   position_ref: string;
   status: string;
   planned_qty: string;
+  started_qty: string;
   started_at_display: string;
   elapsed_minutes: number;
   can_close: boolean;

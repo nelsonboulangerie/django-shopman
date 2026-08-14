@@ -94,8 +94,26 @@ def test_kiosk_orders_open_first_closed_carry_partition(recipe, monkeypatch):
     opened, finished = kiosk.orders
     assert opened.can_close and not opened.closed
     assert opened.planned_qty == "24"
+    assert opened.started_qty == ""  # planejada: nada entrou no forno ainda
     assert finished.closed and not finished.can_close
     assert (finished.full_price_qty, finished.discounted_qty, finished.loss_qty) == ("32", "5", "3")
+
+
+@pytest.mark.django_db
+def test_kiosk_carries_the_real_oven_quantity(recipe):
+    """Planejou 10, enfornou 11: o card carrega o started — é ele que ancora
+    o fechamento (QC-FORNADA §1); ancorar no previsto gravaria 1 de perda
+    que nunca existiu."""
+    today = date.today()
+
+    wo = craft.plan(recipe, 10, date=today, position_ref="forno", operator_ref="ana")
+    craft.start(wo, quantity=11, position_ref="forno", operator_ref="ana", expected_rev=0)
+
+    kiosk = build_qc_kiosk(selected_date=today)
+
+    (card,) = kiosk.orders
+    assert card.planned_qty == "10"
+    assert card.started_qty == "11"
 
 
 @pytest.mark.django_db

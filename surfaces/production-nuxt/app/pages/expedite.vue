@@ -131,6 +131,22 @@ const screenPlanned = computed(() => {
   const value = Number(selectedOrder.value.planned_qty);
   return Number.isFinite(value) ? Math.round(value) : null;
 });
+// A fornada real que entrou no forno (started): quando diverge do previsto,
+// é ELA que ancora o fechamento — ver `ovenAnchor` em presentation/qc.ts.
+const screenStarted = computed(() => {
+  if (!selectedOrder.value?.started_qty) return null;
+  const value = Number(selectedOrder.value.started_qty);
+  return Number.isFinite(value) ? Math.round(value) : null;
+});
+
+// O quadradão "Finalizar" do card mostra a âncora, não o plano: 11 no forno
+// com 10 previstos fecha 11 — e o rótulo diz de onde o número veio.
+function cardAnchor(order: QCOrderCardProjection): string {
+  return order.started_qty || order.planned_qty;
+}
+function cardAnchorLabel(order: QCOrderCardProjection): string {
+  return order.started_qty && order.started_qty !== order.planned_qty ? "no forno" : "previstos";
+}
 
 // ── Timer do forno: lembrete armado por fornada, com som ────────────────────
 // A ferramenta ATIVA do forneiro para conferir/retirar — a ação de toda hora
@@ -233,6 +249,7 @@ function concludeOven() {
       :title="screenTitle"
       :subtitle="screenSubtitle"
       :planned="screenPlanned"
+      :started="screenStarted"
       :grades="kiosk.grades"
       :defects="kiosk.defects"
       :submitting="submitting"
@@ -325,6 +342,9 @@ function concludeOven() {
               <template v-if="showPosition && order.position_ref"> · {{ order.position_ref }}</template>
               <template v-if="order.started_at_display"> · iniciada às {{ order.started_at_display }}</template>
               <template v-else> · ainda não iniciada</template>
+              <template v-if="order.started_qty && order.started_qty !== order.planned_qty">
+                · {{ order.planned_qty }} previstos</template
+              >
               <template v-if="order.order_refs.length">
                 · <span class="text-primary">{{ order.order_refs.length }}
                   {{ order.order_refs.length === 1 ? "pedido aguarda" : "pedidos aguardam" }}</span>
@@ -358,9 +378,9 @@ function concludeOven() {
             :aria-label="`Finalizar a fornada de ${order.recipe_name}`"
             @click.stop="openOrder(order)"
           >
-            <span class="text-xl font-semibold leading-none tabular-nums">{{ order.planned_qty }}</span>
-            <span class="text-xs font-medium uppercase tracking-wide text-muted-foreground group-hover:text-primary-foreground/75">previstos</span>
-            <span class="mt-1 text-xs font-semibold uppercase tracking-wide text-primary group-hover:text-primary-foreground">Finalizar</span>
+            <span class="text-xl font-semibold leading-none tabular-nums">{{ cardAnchor(order) }}</span>
+            <span class="text-[9px] font-medium uppercase tracking-wide text-muted-foreground group-hover:text-primary-foreground/75">{{ cardAnchorLabel(order) }}</span>
+            <span class="mt-1 text-[11px] font-semibold uppercase tracking-wide text-primary group-hover:text-primary-foreground">Finalizar</span>
           </button>
         </div>
 
@@ -455,7 +475,7 @@ function concludeOven() {
         >
           <p
             v-if="dialogMode === 'ringing'"
-            class="animate-pulse text-3xl font-bold text-destructive dark:text-orange-300"
+            class="animate-pulse text-2xl font-bold text-destructive dark:text-orange-300"
           >
             Conferir Forno!
           </p>
