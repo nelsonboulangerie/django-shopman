@@ -81,6 +81,41 @@ def test_board_requires_operate_production(client, recipe):
 
 
 @pytest.mark.django_db
+def test_every_mutation_endpoint_enforces_the_floor_gate(client, recipe):
+    """Contrato independe da superfície: cada endpoint de ESCRITA da produção
+    recusa anônimo e staff sem ``operate_production`` — inclusive quem só tem
+    a perm fina de relatórios (gestor leitor não fecha fornada)."""
+    wo = craft.plan(recipe, 10, date=date.today(), position_ref="forno")
+    urls = [
+        reverse("api-backstage-wo-plan"),
+        reverse("api-backstage-wo-start", args=[wo.pk]),
+        reverse("api-backstage-wo-finish", args=[wo.pk]),
+        reverse("api-backstage-wo-advance", args=[wo.pk]),
+        reverse("api-backstage-wo-quick-finish"),
+        reverse("api-backstage-wo-void", args=[wo.pk]),
+    ]
+
+    for url in urls:
+        assert client.post(url, {}, content_type="application/json").status_code in (401, 403), url
+
+    bare = User.objects.create_user("bare-mutations", password="pw", is_staff=True)
+    client.force_login(bare)
+    for url in urls:
+        assert client.post(url, {}, content_type="application/json").status_code == 403, url
+
+    reports_only = User.objects.create_user("reports-only", password="pw", is_staff=True)
+    reports_only.user_permissions.add(
+        Permission.objects.get(
+            content_type=ContentType.objects.get_for_model(DayClosing),
+            codename="view_production_reports",
+        )
+    )
+    client.force_login(reports_only)
+    for url in urls:
+        assert client.post(url, {}, content_type="application/json").status_code == 403, url
+
+
+@pytest.mark.django_db
 def test_operator_and_superuser_pass_gate(client, recipe, production_operator, superuser):
     client.force_login(production_operator)
     assert client.get(reverse("api-backstage-production")).status_code == 200

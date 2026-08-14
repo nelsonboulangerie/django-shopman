@@ -49,6 +49,8 @@ def _operator_error(exc: Exception) -> Exception:
         return ProductionConflict(
             "A fornada mudou em outra tela. Atualize o painel e tente de novo."
         )
+    if code == "INVALID_QUANTITY":
+        return ProductionError("Quantidade inválida.")
     return ProductionError(str(exc) or "Falha na produção.")
 
 
