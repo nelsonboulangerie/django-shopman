@@ -30,6 +30,11 @@ from shopman.backstage.projections.bi_customers import (
     BICustomersReport,
     BICustomersWeekRow,
 )
+from shopman.backstage.projections.bi_explore import (
+    BIExploreMetricOption,
+    BIExploreReport,
+    BIExploreRow,
+)
 from shopman.backstage.projections.bi_production import (
     BIOvenTimeRow,
     BIProductionDay,
@@ -66,6 +71,9 @@ CONTRACT_DATACLASSES = (
     BICustomerSegmentRow,
     BICustomersWeekRow,
     BICustomersReport,
+    BIExploreRow,
+    BIExploreMetricOption,
+    BIExploreReport,
 )
 
 

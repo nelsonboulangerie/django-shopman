@@ -1,6 +1,7 @@
 """Backstage models — KDS, DayClosing, OperatorAlert, CashShift, Operation."""
 
 from .alerts import OperatorAlert
+from .bi_view import BIView
 from .blind_prep import BlindPrepCode
 from .cash_register import CashMovement, CashShift, POSTerminal
 from .closing import DayClosing
@@ -23,6 +24,7 @@ from .pos import POSTab
 
 __all__ = [
     "OperatorAlert",
+    "BIView",
     "BlindPrepCode",
     "CashMovement",
     "CashShift",

@@ -10,6 +10,7 @@ const section = computed(() =>
   route.path.startsWith("/sales") ? "sales"
   : route.path.startsWith("/cash") ? "cash"
   : route.path.startsWith("/customers") ? "customers"
+  : route.path.startsWith("/explore") ? "explore"
   : "production",
 );
 
@@ -18,6 +19,7 @@ const tabs = [
   { to: "/sales", key: "sales", label: "Vendas", icon: "lucide:shopping-basket" },
   { to: "/cash", key: "cash", label: "Caixa", icon: "lucide:banknote" },
   { to: "/customers", key: "customers", label: "Clientes", icon: "lucide:users" },
+  { to: "/explore", key: "explore", label: "Explorar", icon: "lucide:compass" },
 ] as const;
 
 const { selection, range, setPreset, applyCustom } = useBiWindow();

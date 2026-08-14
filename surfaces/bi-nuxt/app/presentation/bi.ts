@@ -88,6 +88,37 @@ export function coverageLabel(measured: number, finished: number): string {
 /** Primeiro dado da casa (export Yooga começa em jul/2024; folga no mês). */
 export const DATA_EPOCH = "2024-01-01";
 
+/** Formata um valor do explorador conforme a unidade do contrato. */
+export function formatExploreValue(unit: string, value: number): string {
+  if (unit === "q") return formatMoney(value);
+  if (unit === "qty") return formatQty(String(value));
+  if (unit === "percent") return `${value}%`;
+  if (unit === "minutes") return formatMinutes(String(value));
+  return formatInt(value);
+}
+
+/** Rótulos pt-BR das dimensões do explorador (espelham a gramática). */
+export const EXPLORE_DIMENSION_LABELS: Record<string, string> = {
+  time: "Tempo (dia)",
+  channel: "Canal",
+  hour: "Hora do dia",
+  weekday: "Dia da semana",
+  source: "Fonte (Shopman/Yooga)",
+  sku: "Produto",
+  recipe: "Receita",
+  oven: "Forno",
+  operator: "Operador",
+  grade: "Grau de qualidade",
+  defect: "Defeito",
+};
+
+/** Cenários de exemplo — chips de partida quando não há salvos (F9). */
+export const EXPLORE_EXAMPLES = [
+  { name: "Perda por defeito × receita", config: { metric: "loss", by: "defect", by2: "recipe" } },
+  { name: "Tempo de forno por receita", config: { metric: "oven_minutes", by: "recipe", by2: "" } },
+  { name: "Faturamento por hora", config: { metric: "revenue", by: "hour", by2: "" } },
+] as const;
+
 export interface WindowPreset {
   key: string;
   label: string;

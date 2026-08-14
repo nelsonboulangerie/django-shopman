@@ -5,7 +5,15 @@ from __future__ import annotations
 from django.urls import path
 
 from .alerts import AlertAckView, AlertListView
-from .bi import BICashView, BICustomersView, BIProductionView, BISalesView
+from .bi import (
+    BICashView,
+    BICustomersView,
+    BIExploreView,
+    BIProductionView,
+    BISalesView,
+    BIViewDetailView,
+    BIViewListView,
+)
 from .catalog import (
     CatalogAiAssistView,
     CatalogBulkPriceView,
@@ -186,6 +194,9 @@ urlpatterns = [
     path("bi/sales/", BISalesView.as_view(), name="api-backstage-bi-sales"),
     path("bi/cash/", BICashView.as_view(), name="api-backstage-bi-cash"),
     path("bi/customers/", BICustomersView.as_view(), name="api-backstage-bi-customers"),
+    path("bi/explore/", BIExploreView.as_view(), name="api-backstage-bi-explore"),
+    path("bi/views/", BIViewListView.as_view(), name="api-backstage-bi-views"),
+    path("bi/views/<int:pk>/", BIViewDetailView.as_view(), name="api-backstage-bi-view"),
     path("closing/", DayClosingView.as_view(), name="api-backstage-closing"),
     path("orders/", OrderQueueView.as_view(), name="api-backstage-orders"),
     # Catalog matrix (produto × superfície)

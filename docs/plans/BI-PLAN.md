@@ -278,10 +278,12 @@ período anterior como traço bullet-style por barra. Comparação honesta por
 construção: 28d compara mix igual de dias-da-semana, e o `previous` de vendas
 usa a MESMA regra de fusão nativo/histórico (teste de consistência cobra).
 
-**F8 — Explorador (cruzamentos)**: um endpoint `bi/explore/` com gramática
-VALIDADA por whitelist — métrica × dimensões × filtros × grão de tempo.
-Chave desconhecida = requisição rejeitada (regra da casa: roda como
-configurada ou não roda; nunca vira SQL à la carte).
+**F8 — Explorador (cruzamentos)** ✅ (2026-08-14): `bi/explore/` com gramática
+whitelist — métrica × até 2 dimensões × janela; matriz de compatibilidade por
+métrica; erro carrega a lista do que existe; ranking limitado com corte
+DECLARADO; perda sem defeito vira "(sem motivo)". Filtros por valor ficaram
+para depois (o cruzamento de 2ª dimensão cobre a maioria dos casos; filtro
+exige endpoint de opções de valores — não construir seam sem consumidor).
 - **Métricas**: faturamento, pedidos, ticket, qtd vendida, qtd produzida,
   perda, rendimento, tempo de forno, quebra de caixa.
 - **Dimensões**: tempo (dia/semana/mês), canal, SKU, categoria, hora,
@@ -290,10 +292,11 @@ configurada ou não roda; nunca vira SQL à la carte).
 - A UI é um construtor simples (selects, não query builder de banco): escolhe
   métrica, cruza por até 2 dimensões, filtra, vê tabela + gráfico.
 
-**F9 — Cenários salvos**: model `BIView` no backstage (nome, dono, favorito,
-config JSON validada pela MESMA gramática do explorador). Um cenário é
-config, zero código — vira menu "Meus cenários" no app, com exemplos
-semeados (ex.: "Perda por defeito × receita, 28d", "Sábados vs sábados").
+**F9 — Cenários salvos** ✅ (2026-08-14): model `BIView` (nome, dono, favorito,
+config validada pela MESMA gramática na borda — fora da gramática não salva);
+CRUD em `bi/views/` isolado por dono; chips na página Explorar com favoritos.
+Exemplos são chips de partida no cliente (sem tocar o seed) — viram cenário
+do usuário ao salvar.
 
 Ordem proposta: **F7 → F8 → F9** (comparação é a maior alavanca imediata e a
 gramática do F8 nasce servindo o F9). Cada fase: contrato TS gerado, testes,

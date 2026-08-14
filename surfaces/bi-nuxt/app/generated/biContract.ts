@@ -165,3 +165,36 @@ export interface BICustomersReport {
   at_risk: number;
   average_ticket_q: number;
 }
+
+/** BIExploreRow(key: 'str', label: 'str', key2: 'str', label2: 'str', value: 'float') */
+export interface BIExploreRow {
+  key: string;
+  label: string;
+  key2: string;
+  label2: string;
+  value: number;
+}
+
+/** BIExploreMetricOption(key: 'str', label: 'str', unit: 'str', dimensions: 'tuple[str, ...]') */
+export interface BIExploreMetricOption {
+  key: string;
+  label: string;
+  unit: string;
+  dimensions: string[];
+}
+
+/** BIExploreReport(metric: 'str', metric_label: 'str', unit: 'str', dimension: 'str', dimension_label: 'str', dimension2: 'str', dimension2_label: 'str', date_from: 'str', date_to: 'str', rows: 'tuple[BIExploreRow, ...]', truncated: 'int', metrics: 'tuple[BIExploreMetricOption, ...]') */
+export interface BIExploreReport {
+  metric: string;
+  metric_label: string;
+  unit: string;
+  dimension: string;
+  dimension_label: string;
+  dimension2: string;
+  dimension2_label: string;
+  date_from: string;
+  date_to: string;
+  rows: BIExploreRow[];
+  truncated: number;
+  metrics: BIExploreMetricOption[];
+}
