@@ -17,21 +17,17 @@ const query = defineModel<string>("query", { default: "" });
 
 const route = useRoute();
 
-// As visões do dia em abas-etapa: decide → separa/pesa → produz → expede → painel.
-// A Expedição É o fechamento de fornada (QC, ADR-017 §9): a fornada sai do
-// forno já classificada. "Relatórios" (persona gestor) só entra quando a
-// sonda de acesso confirma a perm fina no backend — o operador de chão nem
-// vê a entrada.
-const { allowed: reportsAllowed } = useReportsAccess();
+// As abas são SÓ o fluxo do dia do operador: decide → separa/pesa → produz →
+// expede. A Expedição É o fechamento de fornada (QC, ADR-017 §9): a fornada
+// sai do forno já classificada. O que não é etapa do fluxo — o Letreiro
+// (kiosk de TV) e os Relatórios (persona gestor) — mora no RAIL, não aqui:
+// primeiro nível enxuto, e a fileira nunca mais estoura a janela escondendo
+// aba sem aviso.
 const tabs = computed(() => [
   { to: "/plan", label: "Planejamento", icon: "lucide:layout-grid" },
   { to: "/mise-en-place", label: "Preparação", icon: "lucide:scale" },
   { to: "/", label: "Produção", icon: "lucide:flame" },
   { to: "/expedite", label: "Expedição", icon: "lucide:package-check" },
-  { to: "/board", label: "Painel", icon: "lucide:tower-control" },
-  ...(reportsAllowed.value
-    ? [{ to: "/reports", label: "Relatórios", icon: "lucide:table-2" }]
-    : []),
 ]);
 function isActive(to: string): boolean {
   return to === "/" ? route.path === "/" : route.path.startsWith(to);
