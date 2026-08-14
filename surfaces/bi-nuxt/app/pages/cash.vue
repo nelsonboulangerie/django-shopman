@@ -10,7 +10,6 @@ import {
   delta,
   formatInt,
   formatMoney,
-  shortDate,
 } from "~/presentation/bi";
 
 const { report, pending, error, refresh } = useBiReport<BICashReport>("cash");
@@ -42,6 +41,10 @@ const methodRows = computed(() =>
     display: formatMoney(row.amount_q),
   })),
 );
+
+const sangriaTotal = computed(() =>
+  (report.value?.days ?? []).reduce((sum, day) => sum + day.sangria_q, 0),
+);
 </script>
 
 <template>
@@ -72,8 +75,9 @@ const methodRows = computed(() =>
           hint="Na janela; o mix de pagamento só cobre dias fechados"
         />
         <StatTile
-          label="Período"
-          :value="`${shortDate(report.date_from)} – ${shortDate(report.date_to)}`"
+          label="Sangrias"
+          :value="formatMoney(sangriaTotal)"
+          hint="Retiradas do caixa no período"
         />
       </div>
 

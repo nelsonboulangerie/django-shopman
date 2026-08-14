@@ -144,6 +144,16 @@ export interface WindowSelection {
   to: string; // ISO, só para custom
 }
 
+/** Rótulo do botão de período: preset + a janela efetiva, sempre à vista. */
+export function windowButtonLabel(
+  selection: WindowSelection,
+  range: { date_from: string; date_to: string },
+): string {
+  const preset = WINDOW_PRESETS.find((p) => p.key === selection.preset);
+  const name = selection.preset === "custom" ? "Personalizado" : (preset?.label ?? "Período");
+  return `${name} · ${shortDate(range.date_from)} – ${shortDate(range.date_to)}`;
+}
+
 /** Resolve a seleção em date_from/date_to (o backend normaliza e clampa). */
 export function resolveWindowRange(
   selection: WindowSelection,

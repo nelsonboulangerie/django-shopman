@@ -12,7 +12,6 @@ import {
   formatInt,
   formatMinutes,
   formatQty,
-  shortDate,
 } from "~/presentation/bi";
 
 const { report, pending, error, refresh } = useBiReport<BIProductionReport>("production");
@@ -63,6 +62,21 @@ const lossTotal = computed(() =>
   (report.value?.days ?? []).reduce((sum, day) => sum + Number(day.loss), 0),
 );
 
+const finishedTotal = computed(() =>
+  (report.value?.days ?? []).reduce((sum, day) => sum + Number(day.finished), 0),
+);
+
+// Rendimento do período inteiro: realizado ÷ previsto (previsto = realizado + perda).
+const yieldPercent = (finished: number, loss: number) =>
+  finished + loss ? Math.round((finished * 100) / (finished + loss)) : 0;
+
+const yieldTotal = computed(() => yieldPercent(finishedTotal.value, lossTotal.value));
+const yieldPrevious = computed(() => {
+  const prev = report.value?.previous;
+  if (!prev) return 0;
+  return yieldPercent(Number(prev.finished_total), Number(prev.loss_total));
+});
+
 const ovenRows = (rows: BIProductionReport["oven_time_by_recipe"]) =>
   rows.map((row) => ({
     label: row.label,
@@ -100,8 +114,10 @@ const ovenRows = (rows: BIProductionReport["oven_time_by_recipe"]) =>
           hint="Unidades que não saíram do forno"
         />
         <StatTile
-          label="Período"
-          :value="`${shortDate(report.date_from)} – ${shortDate(report.date_to)}`"
+          label="Rendimento do período"
+          :value="`${yieldTotal}%`"
+          :delta="delta(yieldTotal, yieldPrevious)"
+          hint="Realizado ÷ previsto"
         />
       </div>
 
