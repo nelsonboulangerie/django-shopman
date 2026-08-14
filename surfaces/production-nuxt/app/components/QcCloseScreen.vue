@@ -131,7 +131,7 @@ const submitAfterAnswer = ref(false);
 
 const sheetTitle = computed(() =>
   sheetQuestion.value === "overshoot"
-    ? `Saíram ${total.value} de ${state.value.planned} previstas?`
+    ? `Saíram ${total.value} de ${state.value.planned} ${props.started !== null ? "no forno" : "previstas"}?`
     : sheetQuestion.value === "loss_reason"
       ? `O que houve com as ${loss.value} que não saíram?`
       : `O que houve com as ${state.value.discountQty} do sublote?`,
