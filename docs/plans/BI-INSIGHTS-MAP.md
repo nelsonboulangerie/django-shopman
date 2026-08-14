@@ -17,6 +17,12 @@
 O levantamento varreu os models de pedidos, produção, estoque, caixa, clientes,
 marketing e o histórico Yooga. Conclusões de uma linha:
 
+0. ⭐ **O eixo que o dono nomeou (rodada 2, §7) é planejamento de produção**: sobra ou
+   falta de pão, hora de chegada e de esgotamento por SKU, e quanto assar amanhã dado o
+   dia, a estação, a temperatura e o feriado. A descoberta central: **a fórmula de
+   sugestão que já existe tem o mecanismo de demanda reprimida pronto e desligado** —
+   falta apenas a hora de esgotamento, que o ledger de estoque sabe dar. Enquanto isso,
+   o sistema aprende a demanda truncada e **a falta se auto-perpetua**.
 1. **O explorador já responde mais do que os 3 exemplos curados mostram** — há ~12
    cenários de valor imediato dentro da gramática atual (§2). Custo: só curadoria.
 2. **A maior mina inexplorada com dado já existente é o funil temporal do pedido**:
@@ -430,19 +436,207 @@ Dimensões que faltam em métricas existentes, todas com dado disponível:
 
 ---
 
-## 7. Priorização proposta (para iterar com o dono)
+## 7. O eixo do dono: planejar a produção (rodada 2, 2026-08-14)
+
+> Perguntado "quais decisões você toma toda semana e gostaria de tomar com número",
+> o dono respondeu com um bloco só: **sobra ou falta de pão** (por dia-da-semana,
+> temperatura, estação, mês, semana do ano), **SKU que chega tarde na loja**, **SKU que
+> acaba cedo demais**, **projeção** ("se estivesse mais cedo, qual o impacto? se tivesse
+> mais unidades até tal hora?"), **quanto produzir amanhã** (dia-da-semana, semana do
+> ano, mês, temperatura/previsão, véspera e volta de feriado), com **flexibilidade para
+> dimensões que ele ainda não considerou**; e, em segundo plano, **comportamento
+> quantitativo do cliente** (o que se compra em cada hora, o que se compra junto).
+>
+> Isso reposiciona o B.I.: não é uma galeria de painéis, é **o ciclo de decisão da
+> fornada**. Medir (sobra/falta/hora) → contextualizar (dia, clima, calendário) →
+> decidir (quanto assar amanhã). O que segue é o que a suite sustenta hoje, verificado
+> no código.
+
+### 7.1 A descoberta que muda o plano: a fórmula já espera esse dado
+
+A suite **já tem** o cálculo de sugestão de produção, determinístico e explicável
+(`craft.suggest` em `packages/craftsman/.../services/queries.py`, com `basis` traduzido
+em frases pt-BR na tela de plano). E ele já contém, pronto e desligado, o mecanismo de
+demanda reprimida:
+
+- `DailyDemand.soldout_at` existe no protocolo (`protocols/demand.py`) e
+  `_estimate_demand` sabe extrapolar: se o produto esgotou às 10h, estima a demanda do
+  dia inteiro pela taxa de venda observada (com teto de 2× o vendido, para não delirar).
+- **O backend nunca preenche `soldout_at`** (`contrib/demand/backend.py` monta
+  `DailyDemand(date, sold, wasted)` e para aí). Logo o sistema hoje aprende a demanda
+  **truncada**: um pão que esgota toda quinta às 10h ensina à fórmula que a quinta vende
+  pouco, e ela sugere produzir pouco. **A falta se auto-perpetua.**
+
+Ou seja: a pergunta nº 1 do dono ("está faltando pão?") não é só um painel a construir;
+é um **campo morto a ligar** dentro de um mecanismo que a casa já desenhou. Isso é o
+"Core é Sagrado" funcionando a favor: antes de criar, achar onde ele já resolve.
+
+### 7.2 Três defeitos concretos na sugestão de hoje (achados nesta rodada)
+
+1. ⚠️ **A sugestão olha o dia da semana errado.** `craft.suggest(date=...)` recebe a
+   data-alvo, mas `DemandProtocol.history()` **não tem parâmetro de data** e o backend
+   filtra o histórico por `today.weekday()` (`backend.py:64-66`). Planejando na sexta a
+   fornada de sábado (o default do comando é *amanhã*), o histórico consultado é o das
+   **sextas**. O multiplicador de fim de semana, no mesmo cálculo, usa a data-alvo
+   correta (`date.weekday() in (4,5)`) — os dois eixos discordam dentro da mesma conta.
+   Sábado de padaria não é sexta; isso é dinheiro. Correção exige um argumento novo no
+   Protocol (mudança em core, justificada como correção, não feature).
+2. **A amostra é de 4 dias.** `HISTORICAL_DAYS=28` com `SAME_WEEKDAY_ONLY=True` dá 4
+   ocorrências do dia-da-semana. Pior: o backend lê só `OrderItem` **nativo** — os
+   81.255 pedidos do Yooga, com 2 anos de sábados, são invisíveis para a decisão de
+   produção. Um `DemandBackend` que enxergue nativo + histórico troca 4 amostras por
+   ~50 do mesmo dia-da-semana. E o `DEMAND_BACKEND` já é adapter plugável: é o seam
+   existente, com consumidor real (ADR-001 satisfeita, sem inventar arquitetura).
+3. **Dia fechado entra na média como dia fraco.** O calendário de fechamento existe
+   (`business_calendar`, feriados em `Shop.defaults`), mas `craft.suggest` não o
+   consulta: domingo fechado e feriado viram dias sem venda no histórico em vez de
+   dias excluídos.
+
+### 7.3 O que o ledger sustenta — e onde ele quebra (verificado)
+
+| Pergunta | Dá? | Fonte | Ressalva honesta |
+|---|---|---|---|
+| **A que horas o SKU chegou na loja** | **Sim** | `Move` de produção positivo no quant físico vendável (posição `vitrine`) — escrito na hora do finish da fornada | É a hora do **registro no kiosk**, não a hora física do forno. Registro tardio atrasa o dado junto. |
+| **A que horas esgotou fisicamente** | **Sim** | Soma acumulada do ledger `Move` por SKU até cruzar zero; o saldo é invariante garantida | Enviesado por canal: o PDV baixa no ato, a loja online só quando o pagamento confirma, o iFood no aceite do operador. |
+| **A que horas sumiu da vitrine para o cliente** | **Parcial** | O que o cliente vê é `saldo − reservado`, e o **reservado (`Hold`) não tem ledger**: é mutável e o prazo é reescrito por atividade de carrinho | É a lacuna real. Precisa de captura (§7.6, N11). |
+| **Quanto sobrou no fim do dia** | **Sim, já pronto** | `DayClosing.data.items[]` traz `qty_remaining`, `qty_loss`, `qty_d1` por SKU | Só existe em dia com fechamento feito. |
+| **Curva de demanda por hora, com 2 anos** | **Sim** | `HistoricalSale.occurred_at` tem hora; itens têm SKU, categoria e quantidade | O Yooga não tem produção nem estoque. |
+
+**A distinção que organiza tudo:** o passado do Yooga ensina **demanda** (que horas as
+pessoas compram o quê, em cada dia e estação); só o Shopman mede **abastecimento**
+(quando chegou, quando faltou, quanto sobrou). Um não substitui o outro, e a tela deve
+dizer qual está falando.
+
+⚠️ **Consequência prática para testes:** nada disso é observável no banco semeado. O
+`seed` cria pedidos e fornadas gravando direto no banco, sem passar pelo lifecycle —
+não gera movimento de venda nem de produção. Toda validação real depende de dados de
+produção acumulando após o go-live.
+
+### 7.4 A peça que resolve metade das perguntas de uma vez: contexto do dia
+
+O dono pediu recortes por **dia-da-semana, semana do ano, mês, estação, temperatura,
+véspera e volta de feriado** — e pediu espaço para dimensões que ainda não pensou.
+Construir isso como métricas separadas seria repetir a mesma lógica em cada uma. A
+forma econômica é uma **linha por data** (`DayContext`), com:
+
+- **Calendário** (derivável, zero captura): dia-da-semana, **semana do ano**, **mês do
+  ano**, estação.
+- **Feriado** (captura pequena): é feriado, véspera, volta, ponte, e a distinção entre
+  feriado nacional/estadual/municipal. Hoje o sistema só sabe se a loja **fecha**, não
+  se o dia é especial para a demanda.
+- **Clima** (captura externa): temperatura mínima/máxima/média e chuva. O histórico de
+  clima é obtível para os 2 anos do Yooga, o que dá base imediata em vez de esperar um
+  ano coletando.
+- **Marca de dia fechado**, para excluir do denominador em vez de contar como dia fraco.
+
+Com isso, **qualquer** métrica que tenha um dia associado ganha todos esses recortes de
+graça, e adicionar uma dimensão nova depois (evento na cidade, feira, greve, semana de
+prova) é acrescentar uma coluna, não reescrever análise. É também o que alimenta o seam
+de ajuste da fórmula (`FORMULA_FACTOR_PROVIDERS`, hoje vazio: aceita
+multiplicador/soma/piso/teto e é exatamente onde "está calor" ou "é véspera de feriado"
+deve entrar).
+
+**Nota sobre o eixo cíclico:** o explorador hoje agrupa o tempo de forma **contínua**
+(dia → semana → mês, conforme a janela). "Semana do ano" e "mês do ano" que o dono pediu
+são **cíclicos**: comparar todos os janeiros entre si, ou a semana 33 de cada ano. Só
+`dia-da-semana` é cíclico hoje; os outros dois precisam nascer como dimensões próprias.
+
+### 7.5 O que passa a ser mensurável (blocos, na ordem em que se sustentam)
+
+**B1 — Janela de disponibilidade por SKU e por dia** *(leitura nova; sem captura)*
+Chegou às HH:MM, esgotou às HH:MM, ficou N horas sem produto dentro do expediente.
+Responde diretamente "está indo tarde pra loja?" e "está acabando cedo?". Cruzada com o
+contexto do dia, vira o retrato do abastecimento.
+
+**B2 — Sobra e falta, lado a lado** *(leitura nova; sobra já está pronta no fechamento)*
+As duas caras da mesma decisão: sobra em unidades e em dinheiro (do fechamento), falta
+em horas sem produto. Por SKU × contexto do dia. É o painel que responde "sobrou ou
+faltou?" sem que ninguém precise cruzar duas telas.
+
+**B3 — `soldout_at` ligado na fórmula** *(liga campo morto; correção)*
+Derivado de B1, alimenta o mecanismo que já existe. Efeito imediato: a demanda deixa de
+ser aprendida truncada, e a sugestão para de perpetuar a falta. Junto disso vão as
+correções de 7.2 (dia-da-semana certo, dias fechados fora, e a extrapolação usando o
+horário real da loja em vez das 06:00–18:00 fixas que estão no código).
+
+**B4 — Venda estimada perdida** *(leitura nova; premissa declarada na tela)*
+Responde "se tivesse mais unidades até tal hora, qual o impacto?". Método honesto e
+explicável, sem caixa-preta: pega a curva de venda por hora **do próprio SKU em dias de
+contexto comparável em que não faltou**, aplica às horas em que faltou, e apresenta como
+estimativa **com a premissa escrita ao lado** ("supõe que a procura seguiria como nos
+dias parecidos em que houve produto"). O mesmo método, invertido, responde "se
+estivesse mais cedo na loja": compara os dias em que o SKU chegou cedo com aqueles em
+que chegou tarde, dentro do mesmo contexto.
+
+**B5 — Demanda que se manifestou sem virar venda** *(sinal já capturado, nunca lido)*
+`StockAlertSubscription` é a fila de "queria e não tinha": tem SKU, data, hora e canal,
+e o botão só aparece quando o produto está honestamente esgotado. Conta **pessoas, não
+unidades** — é indício, não medida, e a tela precisa dizer isso. Hoje alimenta o badge
+de vitrine e audiência de campanha; ninguém lê como série temporal.
+
+**B6 — Comportamento do cliente** *(leitura nova; 2 anos de base disponíveis)*
+O que se vende em cada hora (falta só a dimensão hora na métrica de quantidade), o que
+se compra junto, tudo recortável pelo contexto do dia. O histórico Yooga já tem hora,
+SKU, categoria e quantidade: **esse bloco tem 2 anos de base no primeiro dia**, ao
+contrário dos blocos de abastecimento.
+
+**B7 — Proxy de esgotamento no passado** *(leitura nova; barata)*
+O Yooga não sabe de estoque, mas sabe a **hora da última venda** de cada SKU em cada
+dia. Um SKU cuja venda cessa às 9h30 na maioria dos sábados e segue até as 17h nos
+outros dias estava esgotando. É inferência, não medição, e deve ser rotulada assim —
+mas dá uma leitura de 2 anos de "o que faltava" que nenhum outro caminho oferece.
+
+### 7.6 Captura nova que este eixo exige (além das já listadas no §4)
+
+- **N11 — Marcar quando o produto sai do ar para o cliente.** A quebra do §7.3: o
+  reservado não tem ledger. O caminho barato **não** é versionar reserva (caro e
+  invasivo); é carimbar o **evento de indisponibilidade** por SKU (ficou indisponível
+  às HH:MM, voltou às HH:MM), no mesmo ponto onde a disponibilidade já é calculada.
+  Custo baixo, e é o que torna B1 exato do ponto de vista do cliente em vez de aproximado
+  pelo físico.
+- **N12 — Contexto do dia** (§7.4): tabela + carga de calendário/feriados + clima
+  histórico e diário. Custo médio-baixo, valor transversal.
+- **N13 — Demanda que o checkout descartou.** Hoje, quando o cliente pede mais do que
+  há, o sistema calcula a diferença exata, mostra o erro e **joga fora**. Persistir essa
+  linha (SKU, quantidade pedida, quantidade disponível, data/hora) transforma o sinal
+  mais preciso de demanda reprimida — porque tem **quantidade**, não só pessoas — em
+  dado. Custo baixo.
+- **N14 — Busca sem resultado.** A busca do site é 100% no navegador: nenhum termo
+  chega ao servidor. "O que as pessoas procuram e não encontram" é hoje invisível.
+  Custo baixo, valor médio (entra também no cardápio, não só na produção).
+
+---
+
+## 8. Priorização proposta (para iterar com o dono)
+
+Reordenada após a rodada 2 (§7): o eixo de produção sobe ao topo, porque é a decisão
+que o dono toma toda semana.
 
 | Pacote | Conteúdo | Esforço | Alavanca |
 |---|---|---|---|
-| **P1 — Curadoria** | C1–C8 e C10–C12 como exemplos do Explorar; dimensão `oven` sai dos selects (um forno só) | horas | Imediata: o B.I. novo mostra do que é capaz |
-| **P2 — Funil do pedido** | L1 (+ L4 cancelamentos, L11 promessa) | dias | O maior dado inexplorado; melhora operação E promessa ao cliente |
-| **P3 — Yooga completo** | N1 re-ingestão (+ L5 YoY, C4/C5 curados) | dias | 2 anos de história viram clientes, zonas e sazonalidade acionáveis |
-| **P4 — Produção honesta** | N9 etapas (concepção original) + L9 tempo de forno × defeito + L2 sold-out | dias | Fecha o ciclo âncora do B.I.: produzir a quantidade certa, assar certo |
-| **P5 — Dinheiro invisível** | L3 descontos + L10 quebra×contexto + dívidas §6.1–6.5 | dias | Controle interno; números confiáveis |
-| **P6 — Estruturais** | N6 atribuição de campanha; N7 margem (com Buyman F2); N2 regra B | semanas | Alto valor, cada um pede decisão de escopo própria |
+| **P1 — Curadoria** | C1–C8 e C10–C12 como exemplos do Explorar; dimensão `oven` fora dos selects | horas | Imediata: o B.I. mostra do que já é capaz |
+| **P2 — Sobra e falta** ⭐ | B1 janela de disponibilidade + B2 sobra×falta por SKU | dias | Responde a pergunta nº 1 do dono com dado que já existe |
+| **P3 — Contexto do dia** ⭐ | N12 (`DayContext`: calendário, feriado, clima) + dimensões cíclicas semana/mês do ano + hora na métrica de quantidade | dias | Uma peça destrava sazonalidade, clima e feriado em TODAS as métricas |
+| **P4 — Fórmula honesta** ⭐ | B3 `soldout_at` ligado + as 3 correções do §7.2 (dia-da-semana, amostra com histórico Yooga, dias fechados) | dias | Para de perpetuar a falta; melhora a sugestão que já está na tela |
+| **P5 — Projeção** | B4 venda estimada perdida + B7 proxy de esgotamento no passado | dias | "Se tivesse mais unidades / chegasse mais cedo": o contrafactual pedido |
+| **P6 — Cliente quantitativo** | B6 (hora × SKU, cesta) + L6 attach + L7 Pareto | dias | 2 anos de base disponíveis desde o primeiro dia |
+| **P7 — Sinais de demanda** | B5 fila de "me avise" como série + N13 checkout descartado + N14 busca sem resultado | dias | Demanda reprimida deixa de ser invisível; N13 traz quantidade |
+| **P8 — Yooga completo** | N1 re-ingestão com telefone (**decidido: opção (a)**) + L5 comparação com ano anterior | dias | Resgate de clientes perdidos, geografia, sazonalidade anual |
+| **P9 — Produção honesta** | N9 etapas (concepção original) + L9 tempo de forno × defeito | dias | Fecha o ciclo do forno; N9 é dívida contra a concepção |
+| **P10 — Funil do pedido** | L1 lead time (+ L4 cancelamentos, L11 promessa) | dias | Grande dado inexplorado, mas de operação, não de produção |
+| **P11 — Dinheiro invisível** | L3 descontos + L10 quebra×contexto + dívidas §6.1–6.5 | dias | Controle interno; números confiáveis |
+| **P12 — Estruturais** | N6 atribuição de campanha; N7 margem (Buyman F2); N2 regra B; §6.7 snapshot de RFM (**decidido: começa já**) | semanas | Cada um pede decisão de escopo própria |
 
-Sugestão de ordem: **P1 já; P2 e P3 em paralelo; P4 quando o bi-nuxt estiver
-deployado e o timer rodando; P5 encaixado; P6 são decisões separadas.**
+Sugestão de ordem: **P1 já** (horas, zero risco); **P2→P3→P4 como uma frente só**, na
+ordem, porque cada um habilita o seguinte e juntos fecham o ciclo medir→contextualizar→
+decidir; **P5 e P6 em seguida** (P6 pode andar em paralelo: não depende do ledger);
+**P7–P12 conforme apetite.** N11 (marcar quando o produto sai do ar) entra junto do P2
+se o recorte "o que o cliente via" for considerado essencial; sem ele o P2 mede o
+físico, que já é muito melhor que nada.
+
+⚠️ **Expectativa de dados:** P2, P4 e P5 medem abastecimento, que só existe em dados de
+produção reais acumulando após o go-live (o banco de teste não gera esses movimentos).
+P3 e P6, ao contrário, valem imediatamente sobre os 2 anos do Yooga.
 
 ### Perguntas ao dono — estado
 
@@ -451,21 +645,29 @@ deployado e o timer rodando; P5 encaixado; P6 são decisões separadas.**
   dormente.
 - **Etapas de produção:** sem exigência de ledger; o requisito é **dado histórico
   verdadeiro** → N9 segue pelo append em `meta`, com as três garantias listadas lá.
+- **Telefone do Yooga (N1):** opção **(a)** — guardar o telefone junto da venda
+  histórica, aceitando o dever de proteger dois anos de dado pessoal, em troca de poder
+  reconstruir quem comprava o quê e montar campanha de resgate de quem sumiu.
+- **Snapshot de RFM (§6.7):** **começa já** — a foto mensal passa a ser guardada, para
+  que a migração de segmento ao longo do tempo seja visível quando a análise de coortes
+  chegar.
+- **Decisões semanais:** respondidas no §7 (planejamento de produção + comportamento
+  quantitativo do cliente) e refletidas na priorização acima.
 
-**Abertas:**
-1. **Telefone do Yooga (N1)** — o export histórico tem a coluna `telefone` e a
-   ingestão atual a joga fora. Duas formas de aproveitá-la:
-   (a) **guardar o telefone junto da venda histórica** — o B.I. passa a poder
-   reconstruir sozinho quem comprava o quê, inclusive de quem nunca virou cliente no
-   Shopman; custo: dado pessoal de 2 anos passa a viver numa segunda tabela, com o
-   dever de protegê-lo;
-   (b) **usar o telefone só na hora da ingestão para achar o `Customer` correspondente
-   e guardar apenas esse vínculo** — o histórico fica sem PII nova, e quem nunca se
-   cadastrou no Shopman continua anônimo (perde-se a lista de resgate desses).
-   A diferença prática é essa: (a) permite campanha de resgate para quem sumiu; (b) é
-   mais conservador com dado pessoal.
-2. **Decisões semanais** — quais decisões você toma toda semana e gostaria de tomar
-   com número na frente? A priorização do §7 é minha leitura; a sua manda.
-3. **Snapshot de RFM (§6.7)** — hoje o RFM é foto: quando um cliente passa de
-   `champion` para `at_risk`, ninguém vê a mudança acontecer. Interessa começar a
-   guardar uma foto mensal já, ou espera L8 (coortes) mostrar apetite?
+**Abertas (rodada 3):**
+1. **A correção do dia-da-semana da sugestão (§7.2-1) sai já, fora do B.I.?** É bug com
+   dinheiro em jogo toda semana, e a correção mexe no core (assinatura do protocolo de
+   demanda). Não depende de nada do B.I.
+2. **A sugestão deve enxergar o histórico Yooga (§7.2-2)?** Troca 4 amostras por ~50 do
+   mesmo dia-da-semana, mas mistura a demanda da casa antiga com a nova na decisão
+   operacional — e o cardápio mudou. Alternativa conservadora: usar o Yooga só para o
+   **formato** da curva (peso relativo entre dias e horas) e o nativo para o **nível**.
+3. **De onde vêm os feriados?** Nacional é fácil; municipal e estadual de Londrina
+   precisam de fonte (ou cadastro manual anual no Admin, que é honesto e barato).
+4. **Clima: vale a dependência externa?** É a única captura do §7 que traz um serviço de
+   fora para dentro. Meu voto: sim, porque o histórico de 2 anos é obtível e a
+   temperatura é justamente a variável que o dono citou espontaneamente — mas é decisão
+   dele, e a casa é parcimoniosa com dependência nova.
+5. **N11 (marcar quando o produto sai do ar) entra no P2 ou fica para depois?** Sem ele,
+   a janela de disponibilidade mede o esgotamento **físico**; com ele, mede o que o
+   cliente de fato via.
