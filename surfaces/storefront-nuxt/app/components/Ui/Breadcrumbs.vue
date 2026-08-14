@@ -2,7 +2,7 @@
   <nav
     ref="navRef"
     data-slot="breadcrumb"
-    aria-label="breadcrumb"
+    aria-label="Breadcrumb"
     :class="styles({ class: normalizeClass(props.class) || undefined })"
   >
     <template v-for="(item, i) in displayItems" :key="i">

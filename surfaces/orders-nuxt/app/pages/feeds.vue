@@ -46,7 +46,7 @@ useHead({ title: "Feeds · Gestor" });
       <div class="flex items-center gap-2">
         <Icon name="lucide:monitor-play" class="size-4 text-muted-foreground" />
         <h1 class="text-sm font-semibold">Feeds</h1>
-        <span class="text-xs text-muted-foreground">empurram o cardápio para fora (TV, Google, Meta)</span>
+        <span class="text-xs text-muted-foreground">Empurram o cardápio para fora (TV, Google, Meta)</span>
       </div>
       <template #end>
         <p class="hidden text-xs text-muted-foreground sm:block">

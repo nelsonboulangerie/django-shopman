@@ -102,7 +102,7 @@ useHead({ title: "Modelos · Marketing" });
           <p class="mt-0.5 truncate text-sm text-muted-foreground">{{ template.body }}</p>
           <p v-if="template.use_ai_generation" class="mt-1 inline-flex items-center gap-1 text-xs text-muted-foreground">
             <Icon name="lucide:sparkles" class="size-3.5" />
-            a IA escreve
+            A IA escreve
           </p>
         </button>
         <div class="flex shrink-0 items-center gap-2">
@@ -110,7 +110,7 @@ useHead({ title: "Modelos · Marketing" });
             v-if="!template.is_active"
             class="rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground"
           >
-            inativo
+            Inativo
           </span>
           <button
             type="button"
