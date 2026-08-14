@@ -146,13 +146,12 @@ const screenStarted = computed(() => {
   return Number.isFinite(value) ? Math.round(value) : null;
 });
 
-// O quadradão "Finalizar" do card mostra a âncora, não o plano: 11 no forno
-// com 10 previstos fecha 11 — e o rótulo diz de onde o número veio.
+// O quadradão "Finalizar" mostra a âncora — e a âncora É o previsto DESTA
+// tela: o que entrou no forno é o que se espera que saia dele, salvo
+// ocorrência. O plano da produção já cumpriu seu papel lá atrás; aqui ele
+// não é mais informação, é ruído. Um número, um rótulo.
 function cardAnchor(order: QCOrderCardProjection): string {
   return order.started_qty || order.planned_qty;
-}
-function cardAnchorLabel(order: QCOrderCardProjection): string {
-  return order.started_qty && order.started_qty !== order.planned_qty ? "no forno" : "previstos";
 }
 
 // ── Timer do forno: lembrete armado por fornada, com som ────────────────────
@@ -375,9 +374,6 @@ function concludeOven() {
               <template v-if="showPosition && order.position_ref"> · {{ order.position_ref }}</template>
               <template v-if="order.started_at_display"> · iniciada às {{ order.started_at_display }}</template>
               <template v-else> · ainda não iniciada</template>
-              <template v-if="order.started_qty && order.started_qty !== order.planned_qty">
-                · {{ order.planned_qty }} previstos</template
-              >
               <template v-if="order.order_refs.length">
                 · <span class="text-primary">{{ order.order_refs.length }}
                   {{ order.order_refs.length === 1 ? "pedido aguarda" : "pedidos aguardam" }}</span>
@@ -412,7 +408,7 @@ function concludeOven() {
             @click.stop="openOrder(order)"
           >
             <span class="text-xl font-semibold leading-none tabular-nums">{{ cardAnchor(order) }}</span>
-            <span class="text-xs font-medium uppercase tracking-wide text-muted-foreground group-hover:text-primary-foreground/75">{{ cardAnchorLabel(order) }}</span>
+            <span class="text-xs font-medium uppercase tracking-wide text-muted-foreground group-hover:text-primary-foreground/75">previstos</span>
             <span class="mt-1 text-xs font-semibold uppercase tracking-wide text-primary group-hover:text-primary-foreground">Finalizar</span>
           </button>
         </div>

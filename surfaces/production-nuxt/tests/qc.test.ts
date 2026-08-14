@@ -44,27 +44,28 @@ describe("a escala", () => {
   });
 });
 
-describe("a âncora do fechamento (o que entrou no forno)", () => {
-  it("sem started, o previsto ancora sozinho", () => {
-    expect(ovenAnchor(10, null)).toEqual({ anchor: 10, planned: null });
+describe("a âncora do fechamento (o que entrou no forno É o previsto daqui)", () => {
+  it("sem started, o planejado ancora sozinho", () => {
+    expect(ovenAnchor(10, null)).toEqual({ anchor: 10 });
   });
 
-  it("started diverge do previsto: ele ancora e o previsto vira referência", () => {
-    // Planejou 10, enfornou 11 — fechar ancorado em 10 gravaria 1 de perda
-    // que nunca existiu.
-    expect(ovenAnchor(10, 11)).toEqual({ anchor: 11, planned: 10 });
+  it("com started, é ele o previsto — o plano não aparece mais", () => {
+    // Planejou 10, enfornou 11: fechar ancorado em 10 gravaria 1 de perda
+    // que nunca existiu. E o 10 não vira referência na tela: o que entrou
+    // no forno é o que se espera que saia dele.
+    expect(ovenAnchor(10, 11)).toEqual({ anchor: 11 });
   });
 
-  it("started igual ao previsto não fabrica referência", () => {
-    expect(ovenAnchor(10, 10)).toEqual({ anchor: 10, planned: null });
+  it("started igual ao planejado dá no mesmo número", () => {
+    expect(ovenAnchor(10, 10)).toEqual({ anchor: 10 });
   });
 
   it("fornada avulsa: sem previsto e sem started, sem âncora", () => {
-    expect(ovenAnchor(null, null)).toEqual({ anchor: null, planned: null });
+    expect(ovenAnchor(null, null)).toEqual({ anchor: null });
   });
 
-  it("started sem previsto (avulsa iniciada) ancora sozinho", () => {
-    expect(ovenAnchor(null, 12)).toEqual({ anchor: 12, planned: null });
+  it("started sem plano (avulsa iniciada) ancora sozinho", () => {
+    expect(ovenAnchor(null, 12)).toEqual({ anchor: 12 });
   });
 });
 
