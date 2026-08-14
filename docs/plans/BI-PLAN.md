@@ -1,9 +1,10 @@
 # BI-PLAN — B.I. cross-suite no backstage
 
-> **Status:** 🟢 Iterado com o dono (2026-08-14): superfície = **app Nuxt próprio**;
-> Yooga **entra** (fonte externa first-class, ingestão completável); gráficos **liberados**
-> ("lindões e super úteis", nunca decorativos). Pendências de semântica do timer anotadas no
-> §9 para a frente de produção. Aguardando OK final para iniciar a execução (F1).
+> **Status:** 🟢 **APROVADO pelo dono (2026-08-14)** — ADR-021 aceita; em execução (F1).
+> Decisões da iteração: superfície = **app Nuxt próprio**; Yooga **entra** (fonte externa
+> first-class, ingestão completável); gráficos **liberados** ("lindões e super úteis",
+> nunca decorativos); timestamps do forno seguem os mesmos princípios da suite (servidor
+> carimba, sem relógio de cliente); semântica da medição resolvida no §9.
 > **Mandato (Pablo, 2026-08-14):** "planejar e executar um app de B.I. no backstage…
 > Chegou a hora e esse ponto do timer deve ser resolvido também. O B.I. é algo cross-suite!"
 > **Reversão de doutrina:** este plano acompanha a minuta da
@@ -120,11 +121,15 @@ class OvenRun(models.Model):
 
 ### 4.4 API e cliente
 
-- `POST /api/v1/backstage/production/<wo_id>/oven/arm/` `{planned_seconds, occurred_at?}` e
-  `POST .../oven/conclude/` `{occurred_at?}` — perm `backstage.operate_production`, mesmo
+- `POST /api/v1/backstage/production/<wo_id>/oven/arm/` `{planned_seconds}` e
+  `POST .../oven/conclude/` (sem corpo) — perm `backstage.operate_production`, mesmo
   gate `_ProductionActionBase` dos writes de produção.
-- `occurred_at` opcional (relógio do kiosk) para tolerar fila offline; o servidor aceita
-  dentro de uma janela de sanidade (não-futuro, < 24h), senão carimba hora do servidor.
+- **Mesmos princípios de timestamp da suite** (decidido com o dono, 2026-08-14): o operador
+  declara, o servidor carimba (`timezone.now()` no recebimento) — exatamente como
+  `started_at`/`finished_at` da WO e os carimbos por transição do Order. **Sem relógio de
+  cliente**: se o POST atrasar por retry/offline, o atraso vai junto, como em qualquer
+  transição hoje; a honestidade fica na cobertura (§4.5), não em precisão fingida. O timer
+  é só a ferramenta de UI da declaração; o dado se submete ao mesmo caminho.
 - No production-nuxt: `startOven()` passa a disparar o POST de arm; `concludeOven()` o de
   conclude — **best-effort com `retryWithBackoff` (operator-kit), nunca bloqueando o
   countdown local**. O localStorage continua sendo o mecanismo do countdown/alarme (offline
