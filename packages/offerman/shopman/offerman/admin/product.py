@@ -2,7 +2,6 @@
 
 from django.contrib import admin
 from django.db.models import Exists, OuterRef
-from django.utils.html import format_html
 from django.utils.safestring import mark_safe
 from shopman.offerman.models import Product, ProductComponent
 

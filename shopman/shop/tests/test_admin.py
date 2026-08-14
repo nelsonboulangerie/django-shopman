@@ -387,10 +387,9 @@ class TestGuestmanLoyaltyAdminUnfold:
     """WP-4 — admins guestman config-adjacentes ficam em Unfold (guarda)."""
 
     def test_loyalty_and_group_admins_are_unfold(self, db):
+        from shopman.guestman.contrib.loyalty.models import LoyaltyAccount
         from shopman.guestman.models import PriceTier
         from unfold.admin import ModelAdmin as UnfoldModelAdmin
-
-        from shopman.guestman.contrib.loyalty.models import LoyaltyAccount
 
         for model in (LoyaltyAccount, PriceTier):
             registered = admin.site._registry.get(model)
@@ -404,9 +403,8 @@ class TestGuestmanLoyaltyAdminUnfold:
         """A tela avulsa de transações saiu na curadoria (WP-ADM-R1): o extrato de
         pontos vive sob a conta. A guarda contra degradação para admin vanilla
         acompanha o dado — o inline também precisa ser Unfold."""
-        from unfold.admin import TabularInline as UnfoldTabularInline
-
         from shopman.guestman.contrib.loyalty.models import LoyaltyAccount
+        from unfold.admin import TabularInline as UnfoldTabularInline
 
         account_admin = admin.site._registry[LoyaltyAccount]
         transaction_inlines = [

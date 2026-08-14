@@ -9,7 +9,6 @@ from decimal import Decimal
 from django import forms
 from django.contrib import admin, messages
 from django.core.exceptions import ValidationError
-from django.utils.html import format_html
 from django.utils.safestring import mark_safe
 from django.utils.translation import gettext_lazy as _
 from import_export.admin import ExportMixin, ImportExportModelAdmin
