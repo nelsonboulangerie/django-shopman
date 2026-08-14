@@ -69,6 +69,7 @@ ALL_HANDLERS = [
     "shopman.shop.modifiers.DeliveryFeeModifier",
     "shopman.shop.modifiers.DiscountModifier",
     "shopman.shop.modifiers.EmployeeDiscountModifier",
+    "shopman.shop.modifiers.LotDiscountModifier",
     "shopman.shop.modifiers.LoyaltyRedeemModifier",
     "shopman.shop.modifiers.ManualDiscountModifier",
     "shopman.shop.modifiers.TimeWindowDiscountModifier",
@@ -252,6 +253,7 @@ def _register_pricing_modifiers() -> None:
         DeliveryFeeModifier,
         DiscountModifier,
         EmployeeDiscountModifier,
+        LotDiscountModifier,
         LoyaltyRedeemModifier,
         ManualDiscountModifier,
         TimeWindowDiscountModifier,
@@ -260,6 +262,7 @@ def _register_pricing_modifiers() -> None:
     backend = OffermanPricingBackend()
     for modifier in [
         ItemPricingModifier(backend=backend),
+        LotDiscountModifier(),
         DiscountModifier(),
         SessionTotalModifier(),
         EmployeeDiscountModifier(),

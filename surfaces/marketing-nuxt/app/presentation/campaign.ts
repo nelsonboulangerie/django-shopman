@@ -42,17 +42,17 @@ export function vipSummary(audience: Record<string, number> | undefined): string
 }
 
 /**
- * "expira em 12 min" — o prazo é a informação urgente do card.
+ * "Expira em 12 min" — o prazo é a informação urgente do card.
  *
  * Frescor é efêmero: sem prazo visível o gestor não sabe que revisar amanhã é
  * o mesmo que descartar.
  */
 export function expiryLabel(minutes: number): string {
   if (minutes < 0) return "";
-  if (minutes === 0) return "expirou";
-  if (minutes < 60) return `expira em ${minutes} min`;
+  if (minutes === 0) return "Expirou";
+  if (minutes < 60) return `Expira em ${minutes} min`;
   const hours = Math.floor(minutes / 60);
-  return `expira em ${hours} h`;
+  return `Expira em ${hours} h`;
 }
 
 /** Prazo curto pede destaque; prazo largo não deve gritar. */
@@ -132,7 +132,7 @@ export function parseHashtags(raw: string): string[] {
     .filter(Boolean);
 }
 
-/** Frase do resumo de público: "favoritos, alertas, recompra em 90 dias".
+/** Frase do resumo de público: "Favoritos, alertas, recompra em 90 dias".
  *
  *  ⚠️ Conhecia só três das nove regras. Uma campanha para "leais" ou para o grupo
  *  atacado — configurada, funcionando, alcançando gente — aparecia na lista como "Sem
@@ -143,15 +143,23 @@ export function audienceRulesSummary(
   rules: AudienceRules | undefined,
   labels: AudienceLabels = {},
 ): string {
-  const parts: string[] = [];
-  if (rules?.favorites) parts.push("favoritos");
-  if (rules?.alerts) parts.push("alertas");
-  if (rules?.bought_within_days) parts.push(`recompra em ${rules.bought_within_days} dias`);
-  if (rules?.price_tiers?.length) parts.push(named(rules.price_tiers, labels.priceTiers));
-  if (rules?.tags?.length) parts.push(named(rules.tags, labels.tags));
-  if (rules?.rfm_segments?.length) parts.push(named(rules.rfm_segments, labels.segments));
-  if (rules?.churn_risk_min) parts.push("quem está sumindo");
-  if (rules?.birthday_today) parts.push("aniversariantes de hoje");
+  // `fixed` = frase nossa (copy de UI, começa com maiúscula quando abre o resumo);
+  // o resto é rótulo/ref vindo de dados, que fica exatamente como veio.
+  const parts: { text: string; fixed: boolean }[] = [];
+  if (rules?.favorites) parts.push({ text: "favoritos", fixed: true });
+  if (rules?.alerts) parts.push({ text: "alertas", fixed: true });
+  if (rules?.bought_within_days) {
+    parts.push({ text: `recompra em ${rules.bought_within_days} dias`, fixed: true });
+  }
+  if (rules?.price_tiers?.length) {
+    parts.push({ text: named(rules.price_tiers, labels.priceTiers), fixed: false });
+  }
+  if (rules?.tags?.length) parts.push({ text: named(rules.tags, labels.tags), fixed: false });
+  if (rules?.rfm_segments?.length) {
+    parts.push({ text: named(rules.rfm_segments, labels.segments), fixed: false });
+  }
+  if (rules?.churn_risk_min) parts.push({ text: "quem está sumindo", fixed: true });
+  if (rules?.birthday_today) parts.push({ text: "aniversariantes de hoje", fixed: true });
   if (parts.length === 0) return "Sem público definido";
 
   // "Cruzando" primeiro, porque muda o SENTIDO do que vem depois: a mesma lista de
@@ -159,7 +167,10 @@ export function audienceRulesSummary(
   const prefix = rules?.match === "all" && parts.length > 1 ? "cruzando " : "";
   const vip = rules?.vip_first_minutes;
   const suffix = vip ? `, melhores clientes ${vip} min antes` : "";
-  return prefix + parts.join(", ") + suffix;
+  const summary = prefix + parts.map((part) => part.text).join(", ") + suffix;
+  // Sentence case só quando a abertura é copy nossa; rótulo de dado não se reescreve.
+  if (!prefix && !parts[0]!.fixed) return summary;
+  return summary.charAt(0).toUpperCase() + summary.slice(1);
 }
 
 /** Rótulos vindos do servidor. Faixa de preço e segmento têm dono no guestman

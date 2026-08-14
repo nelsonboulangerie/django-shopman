@@ -166,7 +166,7 @@ useHead({ title: "Campanhas · Marketing" });
             class="mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs"
           >
             <span class="text-muted-foreground">
-              saiu {{ rule.sent_count }}× · {{ rule.reached_total }}
+              Saiu {{ rule.sent_count }}× · {{ rule.reached_total }}
               {{ rule.reached_total === 1 ? "pessoa" : "pessoas" }}
             </span>
             <span v-if="rule.failed_count" class="text-destructive">
@@ -185,7 +185,7 @@ useHead({ title: "Campanhas · Marketing" });
               :name="rule.exhausted ? 'lucide:calendar-x' : 'lucide:calendar-clock'"
               class="size-3.5"
             />
-            {{ rule.exhausted ? 'não dispara mais' : rule.schedule_label }}
+            {{ rule.exhausted ? 'Não dispara mais' : rule.schedule_label }}
           </p>
         </button>
 
@@ -195,7 +195,7 @@ useHead({ title: "Campanhas · Marketing" });
             class="rounded-full bg-amber-500/10 px-2 py-0.5 text-xs font-medium text-amber-700 dark:text-amber-400"
             title="Publica sem passar por revisão"
           >
-            automática
+            Automática
           </span>
           <!-- Disparar não espera o evento: fica ao lado da campanha, mas só ativo
                quando ela está ligada — disparar campanha desligada é engano. -->

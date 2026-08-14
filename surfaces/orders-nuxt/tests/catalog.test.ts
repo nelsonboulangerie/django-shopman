@@ -142,7 +142,7 @@ describe("surface metadata", () => {
   it("no sync badge for non-projection surfaces", () => {
     expect(syncBadge("na")).toBeNull();
     // rótulo curto (cabe na coluna estreita); a frase inteira vai no title.
-    expect(syncBadge("ok")?.label).toBe("em dia");
+    expect(syncBadge("ok")?.label).toBe("Em dia");
     expect(syncBadge("ok")?.title).toBe("Sincronizado");
   });
 });

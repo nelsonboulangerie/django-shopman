@@ -238,7 +238,7 @@ const fieldCard =
         @click="emit('back')"
       >
         <Icon name="lucide:chevron-left" class="size-4" />
-        voltar
+        Voltar
       </button>
       <div class="min-w-0 text-center">
         <p class="truncate text-base font-semibold">{{ title }}</p>
@@ -246,7 +246,7 @@ const fieldCard =
       </div>
       <div class="rounded-md border bg-muted/40 px-3 py-2 text-sm tabular-nums">
         <template v-if="anchor.anchor !== null">{{ anchor.anchor }} previstos</template>
-        <template v-else>sem previsto</template>
+        <template v-else>Sem previsto</template>
       </div>
     </header>
 
@@ -322,7 +322,7 @@ const fieldCard =
       >
         <span class="text-muted-foreground">Perda: <b class="tabular-nums text-foreground">{{ loss }}</b></span>
         <span :class="state.lossDefectRef ? 'font-medium' : 'text-muted-foreground'">
-          {{ state.lossDefectRef ? defectLabel(state.lossDefectRef) : "toque para o motivo" }}
+          {{ state.lossDefectRef ? defectLabel(state.lossDefectRef) : "Toque para o motivo" }}
         </span>
       </button>
       <span v-else aria-hidden="true" />
@@ -337,7 +337,7 @@ const fieldCard =
           <template v-if="state.discountDefectRef">
             {{ defectLabel(state.discountDefectRef) }}<template v-if="discountIsVetoed"> · vira descarte</template>
           </template>
-          <template v-else>toque para o motivo</template>
+          <template v-else>Toque para o motivo</template>
         </span>
       </button>
       <span v-else aria-hidden="true" />

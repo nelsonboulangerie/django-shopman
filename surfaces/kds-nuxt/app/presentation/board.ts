@@ -210,7 +210,7 @@ export interface RealtimeIndicatorView {
 export function realtimeIndicator(state: RealtimeState): RealtimeIndicatorView {
   if (state === "live") {
     return {
-      label: "ao vivo",
+      label: "Ao vivo",
       live: true,
       dotClass: "bg-green-500",
       title: "Recebendo atualizações em tempo real",
@@ -218,14 +218,14 @@ export function realtimeIndicator(state: RealtimeState): RealtimeIndicatorView {
   }
   if (state === "connecting") {
     return {
-      label: "conectando…",
+      label: "Conectando…",
       live: false,
       dotClass: "bg-amber-500",
       title: "Estabelecendo tempo real; enquanto isso, atualiza sozinho",
     };
   }
   return {
-    label: "atualiza sozinho",
+    label: "Atualiza sozinho",
     live: false,
     dotClass: "bg-muted-foreground/40",
     title: "O painel atualiza sozinho a cada poucos segundos",

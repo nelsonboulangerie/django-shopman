@@ -332,7 +332,7 @@ function refreshAll() {
                           v-if="line.is_subrecipe"
                           variant="outline"
                           class="px-1.5 py-0 text-xs"
-                          >pré-preparo</UiBadge
+                          >Pré-preparo</UiBadge
                         >
                       </p>
                     </td>
@@ -356,7 +356,7 @@ function refreshAll() {
                         v-if="line.is_short"
                         class="text-xs font-medium text-destructive dark:text-orange-400"
                       >
-                        falta
+                        Falta
                       </p>
                     </td>
                     <td class="px-3 py-2 text-right">

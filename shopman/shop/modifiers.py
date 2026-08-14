@@ -128,7 +128,7 @@ def _reverse_prior_pricing(pricing: dict, item: dict) -> None:
             pricing["coupon"]["discount_q"] = sum(
                 int(d.get("discount_q", 0)) * int(d.get("qty", 1)) for d in kept if d.get("type") == "coupon"
             )
-    elif t in ("employee_discount", "happy_hour"):
+    elif t in ("lot_discount", "employee_discount", "happy_hour"):
         entry = pricing.get(t)
         if entry:
             new_total = int(entry.get("total_discount_q", 0)) - int(prior.get("amount_q", 0)) * qty
@@ -171,6 +171,81 @@ def _apply_flat_best_wins(session, *, percent, disc_type, label, pricing_key) ->
     session.pricing = pricing
     session.save(update_fields=["pricing"])
     return modified
+
+
+def _lot_label() -> str:
+    """Para o cliente é "Liquidação".
+
+    Reusa a chave de copy existente de propósito: o vocabulário do cliente não
+    muda porque a mecânica interna mudou, e chave nova sem tela vira órfã no
+    gate de copy.
+    """
+    return _discount_label("CART_DISCOUNT_LABEL_AVAILABILITY", "Liquidação")
+
+
+class LotDiscountModifier:
+    """Desconto do LOTE que a linha reservou (ADR-017 / D1-RETIREMENT-PLAN).
+
+    O percentual vem do ``Batch`` (congelado na inspeção da fornada), então pão
+    de um dia e queijo de vinte passam pelo mesmo caminho — a diferença é a
+    validade do lote, não um balde chamado "ontem".
+
+    Por linha, porque cada linha pode ter reservado um lote diferente: a mesma
+    fornada produz um lote a preço cheio e outro com desconto. É por isso que
+    não dá para reusar ``_apply_flat_best_wins``, que aplica um percentual único
+    à sacola inteira.
+
+    "Maior desconto ganha": aplica sobre o preço de LISTA e só vence a linha
+    quando bate o desconto já aplicado (promo, funcionário) — nunca compõe.
+    """
+
+    code = "shop.lot_discount"
+    order = 15
+
+    def apply(self, *, channel: Any, session: Any, ctx: dict) -> None:
+        from shopman.shop.services import lot_pricing
+
+        items = session.items or []
+        if not items:
+            return
+
+        pricing = session.pricing or {}
+        won_total_q = 0
+        modified = False
+        for item in items:
+            if _is_non_merchandise_line(item) or _price_is_frozen(item):
+                continue
+            batch_ref = (item.get("meta") or {}).get("batch_ref") or ""
+            if not batch_ref:
+                continue
+            percent = lot_pricing.percent_for_lot(batch_ref)
+            if percent <= 0:
+                continue
+            list_q = _list_price_q(item)
+            if list_q <= 0:
+                continue
+            my_disc = monetary_div(list_q * percent, 100)
+            if my_disc <= _current_disc_q(item):
+                continue  # o desconto já na linha vence ou empata
+            _reverse_prior_pricing(pricing, item)
+            qty = int(item.get("qty", 1)) or 1
+            item["unit_price_q"] = list_q - my_disc
+            item["line_total_q"] = item["unit_price_q"] * qty
+            _stamp_disc(item, "lot_discount", my_disc, _lot_label())
+            won_total_q += my_disc * qty
+            modified = True
+
+        if modified:
+            session.update_items(items)
+        if won_total_q > 0:
+            pricing["lot_discount"] = {
+                "total_discount_q": won_total_q,
+                "label": _lot_label(),
+            }
+        elif pricing.pop("lot_discount", None) is None and not modified:
+            return
+        session.pricing = pricing
+        session.save(update_fields=["pricing"])
 
 
 class TimeWindowDiscountModifier:
