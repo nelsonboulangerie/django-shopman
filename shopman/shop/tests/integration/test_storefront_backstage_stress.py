@@ -10,9 +10,9 @@ sempre pelos services reais — nada de mock de estoque:
   vazado, com retry pós-reposição na MESMA idempotency key.
 - Corrida de oversell (PostgreSQL + threads): nunca vende acima do físico e os
   perdedores não deixam reserva presa.
-- Escopo de posição D-1: canal remoto com ``stock.excluded_positions=["ontem"]``
-  não enxerga nem reserva o saldo da posição "ontem"; canal balcão (sem
-  exclusão) enxerga tudo.
+- Escopo de posição staff-only: canal remoto com
+  ``stock.excluded_positions=["reserva"]`` não enxerga nem reserva o saldo da
+  posição "reserva"; canal balcão (sem exclusão) enxerga tudo.
 - Encomenda/estoque planejado: data futura só com Quant ``target_date``
   correspondente; sem plano, canal com ``stock.preorder=False`` recusa limpo e
   canal com preorder registra DEMANDA (hold ``quant=None``) — seam documentado.
@@ -424,28 +424,28 @@ class OversellRaceTests(TransactionTestCase):
 
 
 # ═════════════════════════════════════════════════════════════════════════════
-# 4. Exclusão de posição D-1 ("ontem")
+# 4. Exclusão de posição staff-only ("reserva")
 # ═════════════════════════════════════════════════════════════════════════════
 
 
-class D1PositionExclusionTests(TestCase):
-    """Canal remoto com ``excluded_positions=["ontem"]`` não vê nem reserva D-1."""
+class PositionExclusionTests(TestCase):
+    """Canal remoto com ``excluded_positions=["reserva"]`` não vê nem reserva ali."""
 
-    SKU = "STRESS-D1-SKU"
+    SKU = "STRESS-SCOPE-SKU"
 
     def setUp(self):
         _make_shop()
         self.remote = _make_channel(
             "stress-remote",
-            config={"stock": {"excluded_positions": ["ontem"]}},
+            config={"stock": {"excluded_positions": ["reserva"]}},
         )
         self.balcao = _make_channel("stress-pdv-scope")  # sem exclusão: vê tudo
         _make_product(self.SKU)
         self.vitrine = _make_position("stress-vitrine")
-        self.ontem = _make_position("ontem")
-        _receive(4, self.SKU, self.ontem)  # só saldo D-1
+        self.reserva = _make_position("reserva")
+        _receive(4, self.SKU, self.reserva)  # só saldo na posição excluída
 
-    def test_remote_channel_does_not_see_ontem_balance(self) -> None:
+    def test_remote_channel_does_not_see_excluded_balance(self) -> None:
         from shopman.shop.services import availability
 
         remote = availability.check(self.SKU, Decimal("1"), channel_ref=self.remote.ref)
@@ -461,34 +461,34 @@ class D1PositionExclusionTests(TestCase):
 
         result = availability.reserve(
             self.SKU, Decimal("1"),
-            session_key="STRESS-D1-SS-001",
+            session_key="STRESS-SCOPE-SS-001",
             channel_ref=self.remote.ref,
         )
         self.assertFalse(result["ok"])
         self.assertIsNone(result["hold_id"])
         self.assertEqual(_active_holds(self.SKU).count(), 0)
 
-    def test_remote_commit_cannot_consume_ontem_but_balcao_can(self) -> None:
+    def test_remote_commit_cannot_consume_excluded_but_balcao_can(self) -> None:
         from shopman.orderman.exceptions import ValidationError
         from shopman.orderman.models import Order
         from shopman.stockman import Hold
 
-        # Canal remoto: gate transacional recusa (escopo exclui "ontem").
-        _open_session(self.remote.ref, "STRESS-D1-SS-002", self.SKU, qty=1)
+        # Canal remoto: gate transacional recusa (escopo exclui "reserva").
+        _open_session(self.remote.ref, "STRESS-SCOPE-SS-002", self.SKU, qty=1)
         with self.assertRaises(ValidationError) as ctx:
-            _commit("STRESS-D1-SS-002", self.remote.ref, "STRESS-D1-KEY-002")
+            _commit("STRESS-SCOPE-SS-002", self.remote.ref, "STRESS-SCOPE-KEY-002")
         self.assertEqual(ctx.exception.code, "insufficient_stock")
         self.assertEqual(Order.objects.count(), 0)
 
         # Balcão (sem exclusão) vende o mesmo saldo normalmente.
-        _open_session(self.balcao.ref, "STRESS-D1-SS-003", self.SKU, qty=1)
+        _open_session(self.balcao.ref, "STRESS-SCOPE-SS-003", self.SKU, qty=1)
         with self.captureOnCommitCallbacks(execute=True):
-            result = _commit("STRESS-D1-SS-003", self.balcao.ref, "STRESS-D1-KEY-003")
+            result = _commit("STRESS-SCOPE-SS-003", self.balcao.ref, "STRESS-SCOPE-KEY-003")
         order = Order.objects.get(ref=result.order_ref)
         entries = [h for h in order.data.get("hold_ids", []) if h.get("hold_id")]
         self.assertEqual(len(entries), 1)
         hold = Hold.objects.get(pk=int(entries[0]["hold_id"].split(":")[1]))
-        self.assertEqual(hold.quant.position.ref, "ontem")
+        self.assertEqual(hold.quant.position.ref, "reserva")
 
     def test_remote_still_sees_vitrine_balance(self) -> None:
         """A denylist é cirúrgica: com saldo em vitrine, o remoto vende dela."""

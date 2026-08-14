@@ -68,8 +68,8 @@ class PosSaleReview:
     manager_approval_threshold_q: int
     receipt_mode: str
     issue_fiscal_document: bool
-    # POR QUE o gerente foi chamado. O servidor conhece os três gatilhos
-    # (teto de desconto, desconto em linha D-1, preço alterado); sem publicá-los
+    # POR QUE o gerente foi chamado. O servidor conhece os gatilhos
+    # (teto de desconto, preço alterado); sem publicá-los
     # a tela chutava "descontos acima de R$ X" mesmo quando o gatilho tinha sido
     # outro, e o gerente autorizava sem saber o que estava autorizando.
     approval_reasons: tuple[str, ...] = ()
@@ -1065,7 +1065,7 @@ def build_session_ops(payload: dict, operator_username: str) -> list[dict]:
             # Freeze the operator's unit price: the pricing modifier honors this
             # flag and skips re-pricing. The flag is server-derived
             # (``derive_price_overrides``) — an operator hand-fixed price off the
-            # catalog anchor, not an automatic promotion/D-1 discount — so only a
+            # catalog anchor, not an automatic promotion discount — so only a
             # genuine override freezes. Stamp who approved (manager PIN gate).
             meta["price_overridden"] = True
             if approved_by:
@@ -1075,11 +1075,6 @@ def build_session_ops(payload: dict, operator_username: str) -> list[dict]:
             if approved_by:
                 line_discount["approved_by"] = approved_by
             meta["manual_discount"] = line_discount
-        if item.get("is_d1"):
-            # Forward the clearance flag into the durable line meta so the
-            # AvailabilityDiscountModifier applies the D-1 discount on commit
-            # (a bare top-level is_d1 would be stripped by _normalize_items).
-            meta["is_d1"] = True
         if meta:
             op["meta"] = meta
         ops.append(op)
@@ -1240,19 +1235,13 @@ def _approval_reasons(payload: dict, *, discount_q: int, threshold_q: int) -> li
     reasons: list[str] = []
     if threshold_q > 0 and discount_q > threshold_q:
         reasons.append("discount_over_threshold")
-    if _payload_has_d1_line_discount(payload):
-        reasons.append("d1_line_discount")
     if _payload_has_price_override(payload):
         reasons.append("price_override")
     return reasons
 
 
 def validate_manager_approval(payload: dict, *, operator_username: str) -> None:
-    """Require a manager PIN challenge for configured POS discount thresholds.
-
-    A manual discount on a D-1 line always requires manager approval (audited
-    exception), independent of the configured monetary threshold.
-    """
+    """Require a manager PIN challenge for configured POS discount thresholds."""
     threshold_q = discount_approval_threshold_q()
     discount_q = _payload_discount_q(payload)
     reasons = _approval_reasons(payload, discount_q=discount_q, threshold_q=threshold_q)
@@ -1431,14 +1420,6 @@ def _payload_line_discounts_q(payload: dict) -> int:
     return total
 
 
-def _payload_has_d1_line_discount(payload: dict) -> bool:
-    """True if any D-1 line carries a manual discount (always needs approval)."""
-    return any(
-        item.get("is_d1") and _normalize_line_discount(item.get("discount"))
-        for item in payload.get("items", [])
-    )
-
-
 def _payload_has_price_override(payload: dict) -> bool:
     """True if any line carries a unit-price override requiring manager approval.
 
@@ -1456,7 +1437,7 @@ def _canonical_pos_unit_price_q(sku: str, channel: Channel, qty: int) -> int | N
     commit: the same customer-agnostic, qty-aware cascade (customer tier is not
     resolved at commit — POS ``ctx`` carries no customer — so employee pricing
     stays a post-pricing modifier). This is the price a *legitimate* line already
-    carries in the payload, because D-1, happy-hour and employee discounts are
+    carries in the payload, because happy-hour and employee discounts are
     applied by later modifiers on commit, never baked into the quoted
     ``unit_price_q``. Returns ``None`` when the SKU has no catalog anchor.
     """
@@ -1483,10 +1464,10 @@ def derive_price_overrides(payload: dict, *, channel: Channel) -> None:
 
     Why the intent gate, not a bare catalog comparison:
 
-    * Automatic system discounts (D-1, happy-hour, promotion) are NOT operator
+    * Automatic system discounts (happy-hour, promotion) are NOT operator
       overrides. They are applied by later modifiers on commit; a previous persist
       bakes the discounted price into ``unit_price_q`` and the reload echoes it
-      back, so a plain catalog comparison read every promotion/D-1 line as an
+      back, so a plain catalog comparison read every promotion line as an
       override and demanded a manager for a cart nobody discounted (the seed bug
       B1-2). Those lines carry no override intent, so they no longer read as one.
     * A crafted request that lowers a price WITHOUT the intent flag cannot
@@ -1606,8 +1587,8 @@ def discount_approval_threshold_q() -> int:
     Política da loja em ``Shop.defaults["pos"]["discount_approval_threshold_q"]``
     (editada em Reais no Admin). Ausente = herda o padrão do deploy
     (``SHOPMAN_POS_DISCOUNT_APPROVAL_THRESHOLD_Q``). ``0`` DESLIGA o teto — nenhum
-    desconto passa a exigir aprovação por valor (as exceções auditadas de D-1 e de
-    preço alterado seguem exigindo, independentemente deste número).
+    desconto passa a exigir aprovação por valor (a exceção auditada de
+    preço alterado segue exigindo, independentemente deste número).
     """
     try:
         from shopman.shop.models import Shop

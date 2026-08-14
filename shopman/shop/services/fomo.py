@@ -2,7 +2,7 @@
 
 Divisão de trabalho em três camadas:
 
-- **aqui (shop)** — LÊ o domínio: estoque, lote de ontem, última fornada,
+- **aqui (shop)** — LÊ o domínio: estoque, última fornada,
   promoções, config do canal;
 - ``storefront/presentation/fomo.py`` — DECIDE o que vira badge (puro);
 - ``storefront/api/fomo.py`` — serve por HTTP.
@@ -24,10 +24,6 @@ from django.utils import timezone
 
 logger = logging.getLogger(__name__)
 
-# Posição onde vive o lote de ontem (D-1). Canais que a excluem do escopo não
-# vendem D-1 e portanto não anunciam D-1.
-D1_POSITION_REF = "ontem"
-
 # Espelha ``presentation.fomo.FRESH_WINDOW_MINUTES``: buscar fornada mais velha
 # que a janela seria trabalho jogado fora, já que nunca viraria badge.
 FRESH_WINDOW_MINUTES = 60
@@ -37,7 +33,7 @@ def context_for_sku(sku: str, *, channel_ref: str) -> dict:
     """Os insumos de ``badges_for_product``, resolvidos do estado atual."""
     config = _channel_config(channel_ref)
     return {
-        "availability": _availability(sku, channel_ref=channel_ref, config=config),
+        "availability": _availability(sku, channel_ref=channel_ref),
         "production": last_finished_bake(sku),
         "promotions": _promotions_for_sku(sku),
         "social_proof": social_proof(sku),
@@ -57,41 +53,18 @@ def cache_key(sku: str, channel_ref: str | None) -> str:
 # ── Estoque ──────────────────────────────────────────────────────────
 
 
-def _availability(sku: str, *, channel_ref: str, config) -> dict:
+def _availability(sku: str, *, channel_ref: str) -> dict:
     from shopman.shop.services import availability as avail_service
 
-    data: dict = {"available_qty": 0, "d1_qty": 0}
+    data: dict = {"available_qty": 0}
     try:
         result = avail_service.check(sku, Decimal("1"), channel_ref=channel_ref)
         data["available_qty"] = result.get("available_qty", 0)
     except Exception:
         logger.debug("fomo.availability_failed sku=%s", sku, exc_info=True)
 
-    data["d1_qty"] = d1_qty(sku, config=config)
     data.update(_happy_hour())
     return data
-
-
-def d1_qty(sku: str, *, config) -> int:
-    """Quanto há do lote de ontem — zero quando o canal não vende D-1.
-
-    O gate por ``excluded_positions`` é o mesmo que o ``check`` usa para
-    montar o escopo: badge e carrinho nunca divergem.
-    """
-    excluded = list(getattr(getattr(config, "stock", None), "excluded_positions", []) or [])
-    if D1_POSITION_REF in excluded:
-        return 0
-    try:
-        from shopman.stockman.models import Quant
-
-        total = sum(
-            quant.available
-            for quant in Quant.objects.filter(sku=sku, position__ref=D1_POSITION_REF)
-        )
-        return max(int(total), 0)
-    except Exception:
-        logger.debug("fomo.d1_lookup_failed sku=%s", sku, exc_info=True)
-        return 0
 
 
 def _happy_hour() -> dict:

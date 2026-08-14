@@ -45,14 +45,6 @@ RULE_PARAM_SCHEMAS: dict[str, RuleParamSchema] = {
                       "Hora em que a janela termina — exclusiva (HH:MM)."),
         ),
     ),
-    "d1_discount": RuleParamSchema(
-        ref="d1_discount",
-        title="Desconto de ontem",
-        params=(
-            RuleParam("discount_percent", PERCENT, "Desconto (%)",
-                      "Percentual sobre itens do dia anterior (ontem)."),
-        ),
-    ),
     "employee_discount": RuleParamSchema(
         ref="employee_discount",
         title="Desconto funcionário",

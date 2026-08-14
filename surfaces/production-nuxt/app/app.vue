@@ -10,6 +10,7 @@
 const OPERATOR_PERM = "backstage.operate_production";
 const { authenticated, locked, mustChange, operator, lock } =
   useOperatorLock(OPERATOR_PERM);
+const { allowed: reportsAllowed } = useReportsAccess();
 
 const route = useRoute();
 const isPublicBoard = computed(() => route.path.startsWith("/menuboard"));
@@ -41,7 +42,26 @@ useHead({ title: "Produção" });
           :central-url="hubUrl"
           :operator-name="operator?.name"
           @lock="lock"
-        />
+        >
+          <!-- O que não é etapa do fluxo sai das abas e mora aqui: o Letreiro
+               (kiosk de TV, tela cheia) e os Relatórios (persona gestor, só
+               aparece com a perm fina — a sonda pergunta ao backend). -->
+          <template #nav>
+            <RailItem
+              icon="tower-control"
+              label="Letreiro"
+              :active="route.path.startsWith('/board')"
+              @activate="navigateTo('/board')"
+            />
+            <RailItem
+              v-if="reportsAllowed"
+              icon="table-2"
+              label="Relatórios"
+              :active="route.path.startsWith('/reports')"
+              @activate="navigateTo('/reports')"
+            />
+          </template>
+        </OperatorRail>
       </div>
       <div class="flex min-w-0 flex-1 flex-col">
         <NuxtPage />

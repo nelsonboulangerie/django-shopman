@@ -41,6 +41,7 @@ jobs:
           - production-nuxt
           - hub-nuxt
           - marketing-nuxt
+          - bi-nuxt
 
     defaults:
       run:

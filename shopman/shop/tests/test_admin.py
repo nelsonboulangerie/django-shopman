@@ -878,7 +878,6 @@ class TestDashboardCallback:
         assert "kpi_operator_alerts" in result
         assert "table_estoque_baixo" in result
         assert "operator_alerts" in result
-        assert "day_closing_url" in result
 
     def test_no_live_operation_widgets(self, db):
         """Operação ao vivo (pedidos, produção) mora nos apps Nuxt, não aqui."""

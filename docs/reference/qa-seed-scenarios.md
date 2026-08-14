@@ -98,7 +98,7 @@ dirige 4 SKUs reais (o resto fica `available`). Datas relativas; determinístico
   histórico ativo — só os cenários nomeados recentes.
 - **`SHOPMAN_POS_DISCOUNT_APPROVAL_THRESHOLD_Q = 500`** (R$ 5,00): decisão de
   política do Pablo (2026-07-13, Questão 2 do QA). Desconto manual acima de R$ 5,00
-  exige PIN do gerente; D-1 e override de preço exigem sempre. Default no
+  exige PIN do gerente; override de preço exige sempre. Default no
   `config/settings.py`; a suíte (`settings_test.py`) fixa `0` como baseline
   hermético e exercita o gate via `override_settings`.
 
@@ -107,8 +107,6 @@ dirige 4 SKUs reais (o resto fica `available`). Datas relativas; determinístico
 O seed **não mascara** os três achados-manchete do QA — são bugs de código com fix
 próprio (ver o Princípio-guia do plano). O dado do seed é fiel à operação real:
 
-- Fornada finalizada caindo na posição "ontem": `vitrine` + `ontem` ambos
-  `is_saleable` está **correto** (D-1 é venda staff-only real).
 - Promoção "Semana do Pão" exigindo gerente: a promoção é um cenário **legítimo**.
 - Guardrail de insumo em finish de `MASSA-*`: massas serem `PROCESS`/não-estocáveis
   é **design correto**.

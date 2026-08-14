@@ -84,7 +84,13 @@ from shopman.backstage.services import (
 from shopman.backstage.services import (
     production as production_service,
 )
-from shopman.backstage.services.exceptions import OrderConflict, OrderError, POSError, ProductionError
+from shopman.backstage.services.exceptions import (
+    OrderConflict,
+    OrderError,
+    POSError,
+    ProductionConflict,
+    ProductionError,
+)
 from shopman.backstage.services.production import ProductionOrderShortError, ProductionStockShortError
 from shopman.shop.services import pos as pos_tabs_service
 from shopman.shop.services.pos import PosRecentSaleNotFound
@@ -122,14 +128,21 @@ def _production_actor(request) -> str:
     return f"production:{_actor(request)}"
 
 
-def _shortage_response(exc: ProductionError) -> Response | None:
-    """Structured error envelope for production shortage states.
+def _production_error_response(exc: ProductionError) -> Response | None:
+    """Structured error envelope for production error states.
 
     The floor app reproduces the material/order shortage modals from this
-    payload (mirrors the POS error envelope shape ``{detail, error: {code,…}}``).
-    Returns ``None`` for non-shortage errors so callers fall through to the
-    generic 400 handling.
+    payload (mirrors the POS error envelope shape ``{detail, error: {code,…}}``),
+    and state conflicts (fornada fechada/estornada em outra tela) come out as
+    409 ``state_conflict`` so the kiosk can refresh instead of guessing.
+    Returns ``None`` for other errors so callers fall through to the generic
+    400 handling.
     """
+    if isinstance(exc, ProductionConflict):
+        return Response(
+            {"detail": str(exc), "error": {"code": "state_conflict"}},
+            status=409,
+        )
     if isinstance(exc, ProductionStockShortError):
         return Response(
             {
@@ -340,6 +353,8 @@ _OPERATOR_UNLOCK_PERMS = {
     # Campanha (surfaces/marketing-nuxt): sem esta entrada a tela de destravar
     # rejeita a permissão e o app fica trancado para sempre com o gate ligado.
     "shop.manage_campaigns",
+    # B.I. (surfaces/bi-nuxt, ADR-021): mesma armadilha da campanha acima.
+    "backstage.view_bi",
 }
 
 
@@ -1220,7 +1235,7 @@ class WorkOrderPlanView(_ProductionActionBase):
                 source_ref="formula:suggestion" if source == "suggested" else "production_matrix",
             )
         except ProductionError as exc:
-            shortage = _shortage_response(exc)
+            shortage = _production_error_response(exc)
             if shortage is not None:
                 return shortage
             return Response({"detail": str(exc) or "Falha ao planejar produção."}, status=400)
@@ -1254,6 +1269,9 @@ class WorkOrderStartView(_ProductionActionBase):
                 actor=_production_actor(request),
             )
         except ProductionError as exc:
+            conflict = _production_error_response(exc)
+            if conflict is not None:
+                return conflict
             return Response({"detail": str(exc) or "Falha ao iniciar produção."}, status=400)
         except ValueError as exc:
             return Response({"detail": str(exc) or "Dados inválidos."}, status=400)
@@ -1285,7 +1303,7 @@ class WorkOrderFinishView(_ProductionActionBase):
                 partition=partition if isinstance(partition, list) else None,
             )
         except ProductionError as exc:
-            shortage = _shortage_response(exc)
+            shortage = _production_error_response(exc)
             if shortage is not None:
                 return shortage
             return Response({"detail": str(exc) or "Falha ao concluir produção."}, status=400)
@@ -1345,7 +1363,7 @@ class WorkOrderQuickFinishView(_ProductionActionBase):
                 force=bool(request.data.get("force")),
             )
         except ProductionError as exc:
-            shortage = _shortage_response(exc)
+            shortage = _production_error_response(exc)
             if shortage is not None:
                 return shortage
             return Response({"detail": str(exc) or "Falha ao finalizar."}, status=400)
@@ -1367,8 +1385,51 @@ class WorkOrderVoidView(_ProductionActionBase):
                 wo_id, actor=_production_actor(request), reason=reason,
             )
         except ProductionError as exc:
+            conflict = _production_error_response(exc)
+            if conflict is not None:
+                return conflict
             return Response({"detail": str(exc) or "Falha ao estornar."}, status=400)
         return Response({"ok": True, "wo_ref": ref})
+
+
+@extend_schema_view(
+    post=extend_schema(
+        tags=["backstage"],
+        summary="Declare oven-in for a work order (arm = enfornou)",
+        responses={200: OpenApiResponse(description="Oven run opened.")},
+    ),
+)
+class WorkOrderOvenArmView(_ProductionActionBase):
+    def post(self, request, wo_id: int):
+        try:
+            run = production_service.apply_oven_arm(
+                work_order_id=wo_id,
+                planned_seconds=request.data.get("planned_seconds"),
+                operator_ref=str(request.data.get("operator_ref") or "").strip(),
+                actor=_production_actor(request),
+            )
+        except ProductionError as exc:
+            return Response({"detail": str(exc) or "Falha ao registrar o enfornar."}, status=400)
+        return Response({"ok": True, "run_id": run.pk})
+
+
+@extend_schema_view(
+    post=extend_schema(
+        tags=["backstage"],
+        summary="Declare oven-out for a work order (Concluir = retirou)",
+        responses={200: OpenApiResponse(description="Oven run concluded (or nothing to measure).")},
+    ),
+)
+class WorkOrderOvenConcludeView(_ProductionActionBase):
+    def post(self, request, wo_id: int):
+        try:
+            run = production_service.apply_oven_conclude(
+                work_order_id=wo_id,
+                actor=_production_actor(request),
+            )
+        except ProductionError as exc:
+            return Response({"detail": str(exc) or "Falha ao registrar o retirar."}, status=400)
+        return Response({"ok": True, "measured": run is not None})
 
 
 # ── POS cash shift endpoints ──────────────────────────────────────────

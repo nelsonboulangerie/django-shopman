@@ -141,21 +141,5 @@
     </div>
     {% endif %}
 
-    {# ── ROW 4: D-1 Stock ───────────────────────────────────────── #}
-    {% if table_d1 %}
-    <div class="grid grid-cols-1 lg:grid-cols-3 gap-4 lg:gap-8">
-        {% component "unfold/components/card.html" with title="Estoque D-1" icon="schedule" %}
-            {% component "unfold/components/table.html" with table=table_d1 card_included=1 striped=1 height=220 %}{% endcomponent %}
-            {% if day_closing_url %}
-            <div class="px-4 pb-3">
-                {% component "unfold/components/link.html" with href=day_closing_url icon="arrow_forward" %}
-                    Ir para Fechamento
-                {% endcomponent %}
-            </div>
-            {% endif %}
-        {% endcomponent %}
-    </div>
-    {% endif %}
-
 </div>
 {% endblock %}

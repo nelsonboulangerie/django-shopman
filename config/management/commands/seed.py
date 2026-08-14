@@ -1842,12 +1842,14 @@ class Command(BaseCommand):
             p.metadata["price_tbd"] = True
             p.save(update_fields=["metadata"])
 
-        # D-1 eligible: breads that can be sold next day at discount
-        d1_skus = ["BAGUETE", "CIABATTA", "FENDU", "TABATIERE", "PAO-HAMBURGER"]
-        for sku in d1_skus:
+        # Pães que aguentam o dia seguinte: a VALIDADE diz isso agora
+        # (shelf_life_days=1 → o lote vence amanhã e sobrevive ao fechamento
+        # de hoje). O antigo flag allows_next_day_sale morreu com o D-1 (C4).
+        next_day_skus = ["BAGUETE", "CIABATTA", "FENDU", "TABATIERE", "PAO-HAMBURGER"]
+        for sku in next_day_skus:
             p = products[sku]
-            p.metadata["allows_next_day_sale"] = True
-            p.save(update_fields=["metadata"])
+            p.shelf_life_days = 1
+            p.save(update_fields=["shelf_life_days"])
 
         # Lead time de encomenda (Pablo, 2026-07-24): fermentação natural longa —
         # registrar DEMANDA (encomenda sem fornada planejada) exige antecedência.
@@ -1988,9 +1990,8 @@ class Command(BaseCommand):
     def _seed_positions(self):
         self.stdout.write("  📍 Posicoes de estoque...")
 
-        # Ref "ontem": sobras D-1 apos transferencia manual (fim do dia). Estoque com lote D-1
-        # deve ficar aqui — canais remotos usam stock.allowed_positions sem "ontem", entao vitrine
-        # API e reservas online ignoram esse saldo; PDV (allowed_positions omitido) ve tudo.
+        # A sobra NÃO tem posição própria: o LOTE (validade/conformidade) diz
+        # o que fica e o que perde no fechamento (C4). A antiga "ontem" morreu.
         positions = {}
         for ref, name, kind, saleable, default in [
             ("deposito", "Deposito", PositionKind.PHYSICAL, False, False),
@@ -1999,7 +2000,6 @@ class Command(BaseCommand):
             ("massa", "Massa", PositionKind.PROCESS, False, True),
             ("molde", "Molde", PositionKind.PROCESS, False, False),
             ("forno", "Forno", PositionKind.PROCESS, False, False),
-            ("ontem", "Vitrine D-1 (ontem)", PositionKind.PHYSICAL, True, False),
         ]:
             p, _ = Position.objects.update_or_create(
                 ref=ref,
@@ -2089,11 +2089,16 @@ class Command(BaseCommand):
                     reason=f"Estoque inicial seed Nelson: {sku}",
                 )
 
-        # D-1 stock (yesterday's leftovers in "ontem" position)
-        d1_position = positions["ontem"]
-        # Sobras D-1 realistas: ~5-8% da produção do dia; os XMLs mostram itens
-        # "metade preço" concentrados nos grandes volumes (madeleine, viennoiserie).
-        d1_items = [
+        # Sobras de ontem no cenário novo: LOTES datados de ontem, na própria
+        # vitrine (~5-8% da produção do dia). Quem decide o destino é a
+        # validade: shelf_life 1 vence HOJE (o fechamento baixa como
+        # perda_vencido), e o canal remoto respeita os gates de lote (C2).
+        from datetime import timedelta as _td
+
+        from shopman.stockman.models import Batch as _Batch
+
+        yesterday = date.today() - _td(days=1)
+        leftover_items = [
             ("BAGUETE", 2),
             ("FENDU", 2),
             ("TABATIERE", 3),
@@ -2103,16 +2108,30 @@ class Command(BaseCommand):
             ("CROISSANT", 3),
             ("PAIN-CHOCOLAT", 2),
         ]
-        for sku, qty in d1_items:
-            if sku in products:
-                stock.receive(
-                    quantity=Decimal(str(qty)),
-                    sku=sku,
-                    position=d1_position,
-                    reason=f"D-1 sobras seed Nelson: {sku}",
-                )
+        for sku, qty in leftover_items:
+            if sku not in products:
+                continue
+            shelf = products[sku].shelf_life_days or 0
+            lot_ref = f"{sku}-{yesterday:%Y%m%d}-SOBRA"
+            _Batch.objects.update_or_create(
+                ref=lot_ref,
+                defaults={
+                    "sku": sku,
+                    "production_date": yesterday,
+                    "expiry_date": yesterday + _td(days=shelf),
+                },
+            )
+            stock.receive(
+                quantity=Decimal(str(qty)),
+                sku=sku,
+                position=positions["vitrine"],
+                batch=lot_ref,
+                reason=f"Sobra de ontem (lote datado): {sku}",
+            )
 
-        self.stdout.write(f"  ✅ Estoque para {len(stock_data)} produtos + {len(d1_items)} D-1")
+        self.stdout.write(
+            f"  ✅ Estoque para {len(stock_data)} produtos + {len(leftover_items)} sobras de ontem (lotes datados)"
+        )
 
     # ────────────────────────────────────────────────────────────────
     # Receitas (Craftsman)
@@ -3050,20 +3069,25 @@ class Command(BaseCommand):
             # do marketplace (check_on_commit=False).
             # allow_untracked=False: canal de CLIENTE — typo de SKU não pode
             # virar pedido sem reserva (SKU fora do catálogo é recusado/alertado).
-            "stock": {"check_on_commit": False, "allow_untracked": False},
+            # sells_nonconforming=True: no balcão o lote com desconto de
+            # qualidade É vendido — a etiqueta explica (C2 do D1-RETIREMENT).
+            "stock": {
+                "check_on_commit": False,
+                "allow_untracked": False,
+                "sells_nonconforming": True,
+            },
             "handle_label": "Comanda",
             "handle_placeholder": "Ex: 42",
         }
-        # Remote: D-1 (posição "ontem") é staff-only — visível apenas no balcão.
-        # Usamos excluded_positions (denylist) para que posições novas herdem
-        # visibilidade automaticamente e só precisemos listar o que é de fato
-        # restrito.
         _remote_stock = {
-            "excluded_positions": ["ontem"],
             "hold_ttl_minutes": 30,
             # Canais de CLIENTE não aceitam SKU fora do catálogo como pedido
             # sem reserva — typo de SKU falha limpo no gate de commit.
             "allow_untracked": False,
+            # C2 (D1-RETIREMENT): o LOTE decide o que o canal remoto oferece.
+            # Não conforme não sai no remoto (default explícito aqui por
+            # legibilidade); afrouxar é decisão consciente por canal.
+            "sells_nonconforming": False,
         }
         _remote_config = {
             # Aceite otimista em 1 min (alpha/staging): com estoque fantasma do
@@ -5320,13 +5344,6 @@ class Command(BaseCommand):
 
         RULE_CONFIGS = [
             {
-                "ref": "d1_discount",
-                "rule_path": "shopman.shop.rules.pricing.D1Rule",
-                "label": "Desconto de ontem",
-                "params": {"discount_percent": 50},
-                "priority": 15,
-            },
-            {
                 "ref": "employee_discount",
                 "rule_path": "shopman.shop.rules.pricing.EmployeeRule",
                 "label": "Desconto Funcionário",
@@ -5383,12 +5400,11 @@ class Command(BaseCommand):
         """Brand overrides for generic interface copy.
 
         The pricing modifiers carry generic discount labels; Nelson overrides
-        them with its own wording (e.g. "Desconto de ontem") via OmotenashiCopy rows.
+        them with its own wording (e.g. "Hora da Xepa") via OmotenashiCopy rows.
         """
         self.stdout.write("  💬 Omotenashi copy (overrides de marca)...")
 
         COPY_OVERRIDES = [
-            {"key": "CART_DISCOUNT_LABEL_AVAILABILITY", "title": "Desconto de ontem"},
             {"key": "CART_DISCOUNT_LABEL_TIME_WINDOW", "title": "Hora da Xepa"},
         ]
 
@@ -5423,12 +5439,12 @@ class Command(BaseCommand):
             return
 
         closing_items = [
-            {"sku": "BAGUETE", "qty_reported": 6, "qty_applied": 6, "qty_discrepancy": 0, "qty_remaining": 6, "qty_d1": 4, "qty_loss": 2},
-            {"sku": "CIABATTA", "qty_reported": 3, "qty_applied": 3, "qty_discrepancy": 0, "qty_remaining": 3, "qty_d1": 2, "qty_loss": 1},
-            {"sku": "FENDU", "qty_reported": 7, "qty_applied": 7, "qty_discrepancy": 0, "qty_remaining": 7, "qty_d1": 5, "qty_loss": 2},
-            {"sku": "TABATIERE", "qty_reported": 5, "qty_applied": 5, "qty_discrepancy": 0, "qty_remaining": 5, "qty_d1": 4, "qty_loss": 1},
-            {"sku": "CIABATTA", "qty_reported": 4, "qty_applied": 4, "qty_discrepancy": 0, "qty_remaining": 4, "qty_d1": 3, "qty_loss": 1},
-            {"sku": "PAO-HAMBURGER", "qty_reported": 8, "qty_applied": 8, "qty_discrepancy": 0, "qty_remaining": 8, "qty_d1": 6, "qty_loss": 2},
+            {"sku": "BAGUETE", "qty_reported": 6, "qty_applied": 6, "qty_discrepancy": 0, "qty_remaining": 6, "qty_kept": 4, "qty_expired": 2, "qty_nonconforming": 0},
+            {"sku": "CIABATTA", "qty_reported": 3, "qty_applied": 3, "qty_discrepancy": 0, "qty_remaining": 3, "qty_kept": 2, "qty_expired": 1, "qty_nonconforming": 0},
+            {"sku": "FENDU", "qty_reported": 7, "qty_applied": 7, "qty_discrepancy": 0, "qty_remaining": 7, "qty_kept": 5, "qty_expired": 2, "qty_nonconforming": 0},
+            {"sku": "TABATIERE", "qty_reported": 5, "qty_applied": 5, "qty_discrepancy": 0, "qty_remaining": 5, "qty_kept": 4, "qty_expired": 1, "qty_nonconforming": 0},
+            {"sku": "CIABATTA", "qty_reported": 4, "qty_applied": 4, "qty_discrepancy": 0, "qty_remaining": 4, "qty_kept": 3, "qty_expired": 1, "qty_nonconforming": 0},
+            {"sku": "PAO-HAMBURGER", "qty_reported": 8, "qty_applied": 8, "qty_discrepancy": 0, "qty_remaining": 8, "qty_kept": 6, "qty_expired": 2, "qty_nonconforming": 0},
         ]
         production_summary = {}
         for work_order in WorkOrder.objects.filter(target_date=yesterday).select_related("recipe"):

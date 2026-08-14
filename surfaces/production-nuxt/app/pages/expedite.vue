@@ -10,8 +10,15 @@ import type {
   ProductionShortageError,
 } from "~/types/production";
 import type { QcPartitionGroup } from "~/presentation/qc";
+import { isStale } from "~/presentation/production";
 
-const { kiosk, selectedDate, pending, submitting, refresh, finish, quickFinish } = useQcKiosk();
+const { kiosk, selectedDate, pending, error, submitting, refresh, finish, quickFinish } =
+  useQcKiosk();
+
+// Tolerante a dado velho: poll falhou com painel na tela = chip de degradação
+// (dado velho visível > painel em branco). No quiosque isso importa dobrado:
+// fechar fornada com painel velho é fechar a fornada errada.
+const stale = computed(() => isStale({ error: !!error.value, hasData: !!kiosk.value }));
 
 useHead({ title: "Expedição · Produção" });
 
@@ -131,12 +138,29 @@ const screenPlanned = computed(() => {
   const value = Number(selectedOrder.value.planned_qty);
   return Number.isFinite(value) ? Math.round(value) : null;
 });
+// A fornada real que entrou no forno (started): quando diverge do previsto,
+// é ELA que ancora o fechamento — ver `ovenAnchor` em presentation/qc.ts.
+const screenStarted = computed(() => {
+  if (!selectedOrder.value?.started_qty) return null;
+  const value = Number(selectedOrder.value.started_qty);
+  return Number.isFinite(value) ? Math.round(value) : null;
+});
+
+// O quadradão "Finalizar" mostra a âncora — e a âncora É o previsto DESTA
+// tela: o que entrou no forno é o que se espera que saia dele, salvo
+// ocorrência. O plano da produção já cumpriu seu papel lá atrás; aqui ele
+// não é mais informação, é ruído. Um número, um rótulo.
+function cardAnchor(order: QCOrderCardProjection): string {
+  return order.started_qty || order.planned_qty;
+}
 
 // ── Timer do forno: lembrete armado por fornada, com som ────────────────────
 // A ferramenta ATIVA do forneiro para conferir/retirar — a ação de toda hora
 // no rush: arma na enfornada, estende, pausa, e o Concluir emenda direto no
 // fechamento. Não confundir com o relógio de idade do lote (alertas).
 const oven = useOvenTimers();
+// O countdown é local; o FATO (enfornou/retirou) é declarado ao servidor.
+const ovenFacts = useOvenFacts();
 const ovenOrder = ref<QCOrderCardProjection | null>(null);
 const ovenMinutes = ref("15");
 const ovenFresh = ref(true);
@@ -192,6 +216,7 @@ function startOven() {
   const minutes = parseInt(ovenMinutes.value, 10);
   if (!order || !(minutes >= 1)) return;
   oven.arm(ovenKey(order), minutes);
+  void ovenFacts.armed(order.pk, minutes);
   ovenOrder.value = null;
 }
 function pauseOven() {
@@ -206,6 +231,7 @@ function concludeOven() {
   ovenOrder.value = null;
   if (!order) return;
   oven.clear(ovenKey(order));
+  void ovenFacts.concluded(order.pk);
   openOrder(order);
 }
 </script>
@@ -233,6 +259,7 @@ function concludeOven() {
       :title="screenTitle"
       :subtitle="screenSubtitle"
       :planned="screenPlanned"
+      :started="screenStarted"
       :grades="kiosk.grades"
       :defects="kiosk.defects"
       :submitting="submitting"
@@ -294,6 +321,32 @@ function concludeOven() {
         </UiPopover>
       </div>
 
+      <div
+        v-if="stale"
+        role="status"
+        aria-live="polite"
+        class="flex items-center gap-2 rounded-md border border-warning/40 bg-warning/10 px-3 py-2 text-sm font-medium text-amber-700 dark:text-amber-300"
+      >
+        <Icon name="lucide:wifi-off" class="size-4 shrink-0" />
+        <span>Sem atualizar. Mostrando o último painel carregado.</span>
+      </div>
+
+      <!-- Fornada esquecida não depende de memória: o painel avisa e o toque
+           vai direto ao dia pendente mais recente. -->
+      <button
+        v-if="kiosk && kiosk.previous_open_count > 0"
+        type="button"
+        class="flex items-center gap-2 rounded-lg border border-warning/50 bg-warning/10 px-4 py-3 text-left text-sm text-amber-700 transition hover:bg-warning/20 dark:text-amber-300"
+        @click="selectedDate = kiosk.previous_open_date"
+      >
+        <Icon name="lucide:history" class="size-4 shrink-0" />
+        <span>
+          <b class="tabular-nums">{{ kiosk.previous_open_count }}</b>
+          {{ kiosk.previous_open_count === 1 ? "fornada aberta" : "fornadas abertas" }}
+          de dias anteriores. Toque para ver.
+        </span>
+      </button>
+
       <p v-if="pending && !kiosk" class="py-10 text-center text-muted-foreground">Carregando…</p>
       <p v-else-if="kiosk && !kiosk.orders.length" class="py-10 text-center text-muted-foreground">
         Nenhuma fornada planejada para hoje.
@@ -325,9 +378,8 @@ function concludeOven() {
               <template v-if="showPosition && order.position_ref"> · {{ order.position_ref }}</template>
               <template v-if="order.started_at_display"> · iniciada às {{ order.started_at_display }}</template>
               <template v-else> · ainda não iniciada</template>
-              <template v-if="order.order_refs.length">
-                · <span class="text-primary">{{ order.order_refs.length }}
-                  {{ order.order_refs.length === 1 ? "pedido aguarda" : "pedidos aguardam" }}</span>
+              <template v-if="order.committed_qty && order.committed_qty !== '0'">
+                · <span class="text-primary">{{ order.committed_qty }} comprometidas</span>
               </template>
             </p>
             <p
@@ -354,13 +406,12 @@ function concludeOven() {
           <!-- Hover invertido: contraste garantido mesmo com o card em accent. -->
           <button
             type="button"
-            class="group flex size-20 shrink-0 flex-col items-center justify-center self-center rounded-xl border bg-background pt-0.5 transition hover:border-primary hover:bg-primary hover:text-primary-foreground active:translate-y-px"
+            class="group flex size-20 shrink-0 flex-col items-center justify-center gap-1 self-center rounded-xl border bg-background transition hover:border-primary hover:bg-primary hover:text-primary-foreground active:translate-y-px"
             :aria-label="`Finalizar a fornada de ${order.recipe_name}`"
             @click.stop="openOrder(order)"
           >
-            <span class="text-xl font-semibold leading-none tabular-nums">{{ order.planned_qty }}</span>
-            <span class="text-xs font-medium uppercase tracking-wide text-muted-foreground group-hover:text-primary-foreground/75">previstos</span>
-            <span class="mt-1 text-xs font-semibold uppercase tracking-wide text-primary group-hover:text-primary-foreground">Finalizar</span>
+            <span class="text-xl font-semibold leading-none tabular-nums">{{ cardAnchor(order) }} un.</span>
+            <span class="text-xs font-semibold uppercase tracking-wide text-primary group-hover:text-primary-foreground">Finalizar</span>
           </button>
         </div>
 

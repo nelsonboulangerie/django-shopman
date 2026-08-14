@@ -1100,8 +1100,8 @@ SHOPMAN_FOCUS_NFE = {
 }
 # Desconto manual no PDV acima deste valor (centavos) exige aprovação gerencial
 # por PIN. Default R$ 5,00 (500q) — política definida pelo Pablo (2026-07-13,
-# Questão 2 do QA exploratório do backstage). Descontos em linha D-1 e overrides
-# de preço exigem aprovação SEMPRE, independente deste piso.
+# Questão 2 do QA exploratório do backstage). Overrides de preço exigem
+# aprovação SEMPRE, independente deste piso.
 SHOPMAN_POS_DISCOUNT_APPROVAL_THRESHOLD_Q = int(
     os.environ.get("SHOPMAN_POS_DISCOUNT_APPROVAL_THRESHOLD_Q", "500")
 )
@@ -1220,6 +1220,13 @@ SHOPMAN_MARKETING_BASE_URL = (
     os.environ.get("SHOPMAN_MARKETING_BASE_URL") or ""
 ).strip().rstrip("/")
 
+# Base URL pública do B.I. (surfaces/bi-nuxt) — app Nuxt dedicado, publicado em
+# `bi.` (staging: bi.boulangerie.com.br). Vazio ⇒ o tile "B.I." some da Central,
+# sem link morto.
+SHOPMAN_BI_BASE_URL = (
+    os.environ.get("SHOPMAN_BI_BASE_URL") or ""
+).strip().rstrip("/")
+
 # Zona de operador (OPERATOR-AUTH-PLAN, Opção A) — login único + sessão Django
 # escopada a um domínio-pai SEPARADO da loja pública. Os apps de operador
 # (gestor./kds./pdv./prod.) moram nesse domínio e proxeiam para o alias de API
@@ -1247,6 +1254,7 @@ SHOPMAN_SURFACE_URLS = {
         "gestor": SHOPMAN_ORDERS_BASE_URL,
         "production": SHOPMAN_PRODUCTION_BASE_URL,
         "marketing": SHOPMAN_MARKETING_BASE_URL,
+        "bi": SHOPMAN_BI_BASE_URL,
         "loja": SHOPMAN_STOREFRONT_BASE_URL,
     }.items()
     if url

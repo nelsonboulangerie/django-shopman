@@ -50,27 +50,8 @@ def _is_non_merchandise_line(item: dict) -> bool:
 
 def _price_is_frozen(item: dict) -> bool:
     """Operator fixed this line's unit price (numpad "Preço", manager-approved):
-    the price is FINAL — no auto discount (D-1, happy-hour, promo) applies on top."""
+    the price is FINAL — no auto discount (happy-hour, promo) applies on top."""
     return bool((item.get("meta") or {}).get("price_overridden"))
-
-
-def _line_is_d1(item: dict, availability: dict) -> bool:
-    """True when a line is flagged limited-availability (day-old / last-units).
-
-    The durable home for the flag is ``meta.is_d1`` — a plain top-level ``is_d1``
-    on a session line does NOT survive ``Session._normalize_items`` (which
-    whitelists ``line_id/sku/name/qty/unit_price_q/line_total_q/meta``), so by the
-    time this modifier runs the flag only exists inside ``meta``. The bare
-    ``item.get("is_d1")`` read is kept for direct (unpersisted) callers, and
-    ``session.data["availability"]`` remains an accepted per-sku override.
-    """
-    meta = item.get("meta") or {}
-    sku = item.get("sku", "")
-    return bool(
-        meta.get("is_d1")
-        or item.get("is_d1")
-        or availability.get(sku, {}).get("is_d1", False)
-    )
 
 
 def _discount_label(copy_key: str, fallback: str) -> str:
@@ -147,7 +128,7 @@ def _reverse_prior_pricing(pricing: dict, item: dict) -> None:
             pricing["coupon"]["discount_q"] = sum(
                 int(d.get("discount_q", 0)) * int(d.get("qty", 1)) for d in kept if d.get("type") == "coupon"
             )
-    elif t in ("d1_discount", "employee_discount", "happy_hour"):
+    elif t in ("lot_discount", "employee_discount", "happy_hour"):
         entry = pricing.get(t)
         if entry:
             new_total = int(entry.get("total_discount_q", 0)) - int(prior.get("amount_q", 0)) * qty
@@ -192,64 +173,79 @@ def _apply_flat_best_wins(session, *, percent, disc_type, label, pricing_key) ->
     return modified
 
 
-class AvailabilityDiscountModifier:
-    """Discount applied to lines flagged as limited-availability stock.
+def _lot_label() -> str:
+    """Para o cliente é "Liquidação".
 
-    Generic form of the "day-old / last-units" clearance discount: when a line
-    is flagged D-1 (see ``_line_is_d1`` — durably via ``meta.is_d1``, or via a
-    ``session.data["availability"]`` per-sku override) it receives a percentage
-    off. Rule-driven — params and channel scope come from the ``d1_discount``
-    RuleConfig; a disabled rule means no discount.
+    Reusa a chave de copy existente de propósito: o vocabulário do cliente não
+    muda porque a mecânica interna mudou, e chave nova sem tela vira órfã no
+    gate de copy.
+    """
+    return _discount_label("CART_DISCOUNT_LABEL_AVAILABILITY", "Liquidação")
+
+
+class LotDiscountModifier:
+    """Desconto do LOTE que a linha reservou (ADR-017 / D1-RETIREMENT-PLAN).
+
+    O percentual vem do ``Batch`` (congelado na inspeção da fornada), então pão
+    de um dia e queijo de vinte passam pelo mesmo caminho — a diferença é a
+    validade do lote, não um balde chamado "ontem".
+
+    Por linha, porque cada linha pode ter reservado um lote diferente: a mesma
+    fornada produz um lote a preço cheio e outro com desconto. É por isso que
+    não dá para reusar ``_apply_flat_best_wins``, que aplica um percentual único
+    à sacola inteira.
+
+    "Maior desconto ganha": aplica sobre o preço de LISTA e só vence a linha
+    quando bate o desconto já aplicado (promo, funcionário) — nunca compõe.
     """
 
-    code = "shop.d1_discount"
+    code = "shop.lot_discount"
     order = 15
 
     def apply(self, *, channel: Any, session: Any, ctx: dict) -> None:
-        from shopman.shop.rules.engine import get_channel_rule_params
+        from shopman.shop.services import lot_pricing
 
-        availability = (session.data or {}).get("availability", {})
         items = session.items or []
-        if not any(_line_is_d1(item, availability) for item in items):
+        if not items:
             return
 
-        params = get_channel_rule_params("d1_discount", getattr(channel, "ref", None))
-        if params is None:
-            return
-        percent = params.get("discount_percent", DEFAULT_AVAILABILITY_DISCOUNT_PERCENT)
-
+        pricing = session.pricing or {}
+        won_total_q = 0
         modified = False
-        total_discount_q = 0
         for item in items:
             if _is_non_merchandise_line(item) or _price_is_frozen(item):
                 continue
-            if not _line_is_d1(item, availability):
+            batch_ref = (item.get("meta") or {}).get("batch_ref") or ""
+            if not batch_ref:
                 continue
-
-            original_q = item.get("unit_price_q", 0)
-            if not original_q:
+            percent = lot_pricing.percent_for_lot(batch_ref)
+            if percent <= 0:
                 continue
-
-            discount_q = monetary_div(original_q * percent, 100)
-            item["unit_price_q"] = original_q - discount_q
-            item["line_total_q"] = item["unit_price_q"] * int(item.get("qty", 1))
-            _stamp_disc(item, "d1_discount", discount_q,
-                        _discount_label("CART_DISCOUNT_LABEL_AVAILABILITY", "Liquidação"))
-            total_discount_q += discount_q * int(item.get("qty", 1))
+            list_q = _list_price_q(item)
+            if list_q <= 0:
+                continue
+            my_disc = monetary_div(list_q * percent, 100)
+            if my_disc <= _current_disc_q(item):
+                continue  # o desconto já na linha vence ou empata
+            _reverse_prior_pricing(pricing, item)
+            qty = int(item.get("qty", 1)) or 1
+            item["unit_price_q"] = list_q - my_disc
+            item["line_total_q"] = item["unit_price_q"] * qty
+            _stamp_disc(item, "lot_discount", my_disc, _lot_label())
+            won_total_q += my_disc * qty
             modified = True
 
         if modified:
             session.update_items(items)
-            pricing = session.pricing or {}
-            if total_discount_q > 0:
-                pricing["d1_discount"] = {
-                    "total_discount_q": total_discount_q,
-                    "label": _discount_label("CART_DISCOUNT_LABEL_AVAILABILITY", "Liquidação"),
-                }
-            else:
-                pricing.pop("d1_discount", None)
-            session.pricing = pricing
-            session.save(update_fields=["pricing"])
+        if won_total_q > 0:
+            pricing["lot_discount"] = {
+                "total_discount_q": won_total_q,
+                "label": _lot_label(),
+            }
+        elif pricing.pop("lot_discount", None) is None and not modified:
+            return
+        session.pricing = pricing
+        session.save(update_fields=["pricing"])
 
 
 class TimeWindowDiscountModifier:
@@ -262,7 +258,7 @@ class TimeWindowDiscountModifier:
     (e.g. the online storefront, where listed prices would otherwise diverge).
 
     "Maior desconto ganha": aplica sobre o preço de LISTA e só vence a linha quando
-    bate o desconto já aplicado (D-1, promo, funcionário) — nunca compõe.
+    bate o desconto já aplicado (promo, funcionário) — nunca compõe.
     """
 
     code = "shop.happy_hour"
@@ -304,8 +300,6 @@ class DiscountModifier:
     Política: "maior desconto ganha" por item.
     Para cada item elegível, coleta candidatos (promoções ativas + cupom),
     calcula o desconto de cada sobre o preço BASE, e aplica apenas o maior.
-
-    Não se aplica a itens com D-1 (prioridade absoluta).
 
     Promoções com ``fulfillment_types`` só se aplicam depois que o cliente escolhe o tipo
     de entrega no checkout. Sem ``fulfillment_type`` na sessão → desconto não aplica.
@@ -376,7 +370,6 @@ class DiscountModifier:
                 )
 
         session_total = sum(item.get("line_total_q", 0) for item in items if not _is_non_merchandise_line(item))
-        availability = (session.data or {}).get("availability", {})
         modified = False
         total_coupon_discount_q = 0
         discounts_applied = []  # Persisted in session.pricing
@@ -389,52 +382,37 @@ class DiscountModifier:
             if not price_q:
                 continue
 
-            # D-1 items skip auto promos. A manager-approved manual discount may
-            # still apply to a D-1 line (audited exception); a plain operator
-            # manual discount on a non-D-1 line competes under "best wins".
-            # Fonte DURÁVEL (``meta.is_d1`` via ``_line_is_d1``) — NÃO
-            # ``modifiers_applied``, que não sobrevive ao ``_normalize_items``:
-            # lê-lo aqui daria sempre [] → D-1 nunca seria pulado → promo compunha
-            # sobre o preço já reduzido de D-1.
-            is_d1_line = _line_is_d1(item, availability)
             manual = (item.get("meta") or {}).get("manual_discount") or {}
-            manual_allowed = bool(
-                manual.get("value")
-                and (not is_d1_line or manual.get("approved_by"))
-            )
-            if is_d1_line and not manual_allowed:
-                continue
+            manual_allowed = bool(manual.get("value"))
 
             # Find best discount candidate
             best_discount_q = 0
             best_source = None  # (type, name)
 
-            # Auto-promotions and coupon do not apply to D-1 lines.
             # Only PERCENT discounts compete per-line: a percentage is intrinsically
             # per-unit. FIXED discounts are order-level and applied once, after this
             # loop (see the order-level fixed step below).
-            if not is_d1_line:
-                # Evaluate auto-promotions
-                for promo in promotions:
-                    if promo.type != "percent":
-                        continue
-                    if promo.min_order_q and session_total < promo.min_order_q:
-                        continue
-                    if not self._matches(promo, sku, ctx):
-                        continue
-                    discount_q = self._calc_discount(promo, price_q)
-                    if discount_q > best_discount_q:
-                        best_discount_q = discount_q
-                        best_source = ("promotion", promo.name, promo.pk)
+            # Evaluate auto-promotions
+            for promo in promotions:
+                if promo.type != "percent":
+                    continue
+                if promo.min_order_q and session_total < promo.min_order_q:
+                    continue
+                if not self._matches(promo, sku, ctx):
+                    continue
+                discount_q = self._calc_discount(promo, price_q)
+                if discount_q > best_discount_q:
+                    best_discount_q = discount_q
+                    best_source = ("promotion", promo.name, promo.pk)
 
-                # Evaluate coupon
-                if coupon_promo and coupon_promo.type == "percent":
-                    if not (coupon_promo.min_order_q and session_total < coupon_promo.min_order_q):
-                        if self._matches(coupon_promo, sku, ctx):
-                            coupon_discount_q = self._calc_discount(coupon_promo, price_q)
-                            if coupon_discount_q >= best_discount_q:
-                                best_discount_q = coupon_discount_q
-                                best_source = ("coupon", coupon_code, None)
+            # Evaluate coupon
+            if coupon_promo and coupon_promo.type == "percent":
+                if not (coupon_promo.min_order_q and session_total < coupon_promo.min_order_q):
+                    if self._matches(coupon_promo, sku, ctx):
+                        coupon_discount_q = self._calc_discount(coupon_promo, price_q)
+                        if coupon_discount_q >= best_discount_q:
+                            best_discount_q = coupon_discount_q
+                            best_source = ("coupon", coupon_code, None)
 
             # Evaluate operator manual per-line discount (percent), best wins.
             if manual_allowed:
@@ -482,7 +460,7 @@ class DiscountModifier:
                 if not _is_non_merchandise_line(item)
                 and not _price_is_frozen(item)
                 # Linha sem desconto por-linha (durável em ``meta._disc``): um fixo
-                # de pedido não empilha sobre D-1/promo/cupom/manual já aplicados.
+                # de pedido não empilha sobre promo/cupom/manual já aplicados.
                 and not (item.get("meta") or {}).get("_disc")
                 and int(item.get("line_total_q", 0)) > 0
                 and self._matches(fixed_promo, item.get("sku", ""), ctx)
@@ -697,7 +675,7 @@ class EmployeeDiscountModifier:
     or SHOPMAN_EMPLOYEE_DISCOUNT_PERCENT setting (default 20).
 
     "Maior desconto ganha": aplica sobre o preço de LISTA e só vence a linha quando
-    bate o desconto já aplicado (D-1, promo) — nunca compõe.
+    bate o desconto já aplicado (promo) — nunca compõe.
     """
 
     code = "shop.employee_discount"

@@ -60,7 +60,6 @@ Runtime:
 
 | Code | Classe | Params | Efeito |
 |------|--------|--------|--------|
-| `d1_discount` | `D1Discount` | `percent: int` | Desconto automático em produtos D-1 |
 | `promotion` | `PromotionDiscount` | — | Aplica promoções ativas do admin |
 | `employee_discount` | `EmployeeDiscount` | `percent: int` | Desconto para clientes do grupo "funcionário" |
 | `happy_hour` | `HappyHour` | `percent: int`, `start_hour`, `end_hour` | Desconto em faixa horária |
@@ -109,7 +108,7 @@ Exemplo no Channel.config:
 {
   "rules": {
     "validators": ["business_hours", "delivery_zone"],
-    "modifiers": ["d1_discount", "promotion"]
+    "modifiers": ["happy_hour", "promotion"]
   }
 }
 ```

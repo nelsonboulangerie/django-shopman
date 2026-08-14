@@ -243,6 +243,10 @@ class TestAvailabilityListingMembership:
             safety_margin=0,
             allowed_positions=None,
             excluded_positions=None,
+            # Gates de lote (C2) viajam com o scope; ausentes no scope, os
+            # defaults são permissivos (o canal é quem restringe).
+            expiry_margin_days=0,
+            include_nonconforming=True,
         )
 
     @patch("shopman.shop.services.availability.get_adapter")

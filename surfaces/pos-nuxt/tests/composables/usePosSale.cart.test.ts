@@ -26,32 +26,6 @@ describe("usePosSale — mutações de carrinho", () => {
     h.handles.dispose();
   });
 
-  it("addProduct de linha D-1 semeia o preço de liquidação (auto 50%)", () => {
-    const h = makeSale({ projection: freeCartProjection() });
-    const d1 = {
-      sku: "SOBRA", name: "Pão de ontem", price_q: 900, price_display: "R$ 9,00",
-      collection_ref: "padaria", is_d1: true, image_url: "",
-      d1_price_q: 450, d1_price_display: "R$ 4,50",
-    };
-    h.sale.addProduct(d1);
-    const line = h.sale.cart.items[0]!;
-    expect(line.price_q).toBe(450); // preço enviado = já com desconto → review == cobrado
-    expect(line.is_d1).toBe(true);
-    h.handles.dispose();
-  });
-
-  it("addProduct D-1 com regra desligada (d1_price_q == price_q) cobra cheio", () => {
-    const h = makeSale({ projection: freeCartProjection() });
-    const d1Off = {
-      sku: "SOBRA", name: "Pão de ontem", price_q: 900, price_display: "R$ 9,00",
-      collection_ref: "padaria", is_d1: true, image_url: "",
-      d1_price_q: 900, d1_price_display: "R$ 9,00",
-    };
-    h.sale.addProduct(d1Off);
-    expect(h.sale.cart.items[0]!.price_q).toBe(900);
-    h.handles.dispose();
-  });
-
   it("setQty(0) remove a linha; >0 ajusta", () => {
     const h = makeSale({ projection: freeCartProjection() });
     const pao = h.handles.posValue.value!.products[0]!;
@@ -129,7 +103,7 @@ describe("usePosSale — openTab / preserveDraft", () => {
 
   it("preserveDraft numa comanda já ocupada acusa erro (não sobrescreve)", async () => {
     const actionCall = vi.fn().mockResolvedValue(makeTabPayload({
-      items: [{ sku: "CAFE", name: "Café", price_q: 300, qty: 1, notes: "", is_d1: false }],
+      items: [{ sku: "CAFE", name: "Café", price_q: 300, qty: 1, notes: "" }],
     }));
     const h = makeSale({ projection: freeCartProjection(), actionCall });
     const pao = h.handles.posValue.value!.products[0]!;
@@ -150,7 +124,7 @@ describe("usePosSale — openTab / preserveDraft", () => {
       tab_ref: "M9",
       tab_display: "M9",
       customer_name: "Bruno",
-      items: [{ sku: "CAFE", name: "Café", price_q: 300, qty: 2, notes: "", is_d1: false }],
+      items: [{ sku: "CAFE", name: "Café", price_q: 300, qty: 2, notes: "" }],
     }));
     const h = makeSale({ projection: freeCartProjection(), actionCall });
 
@@ -306,7 +280,7 @@ describe("usePosSale — comandos de sessão (path + body + flags)", () => {
     const noTabCall = vi.fn().mockResolvedValue({});
     const noTab = makeSale({ projection: freeCartProjection(), actionCall: noTabCall });
     const pao = noTab.handles.posValue.value!.products[0]!;
-    noTab.sale.cart.items.push({ ...pao, qty: 1, notes: "", is_d1: false });
+    noTab.sale.cart.items.push({ ...pao, qty: 1, notes: "" });
     await noTab.sale.clearCurrentTab();
     expect(noTabCall).not.toHaveBeenCalled(); // sem sessão → só reset local
     expect(noTab.sale.cart.items).toHaveLength(0);

@@ -258,7 +258,7 @@ def bulk_price(
     grava num único ``bulk_update`` e reconcilia uma vez (padrão do bulk).
 
     Reprecificação é PERMANENTE (muda o cardápio). Para promoção temporária, use o
-    motor de regras (Happy Hour/D-1), não isto.
+    motor de regras (Happy Hour), não isto.
     """
     from shopman.offerman.models import ListingItem
 

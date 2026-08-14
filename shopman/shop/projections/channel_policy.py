@@ -93,6 +93,8 @@ def resolve_channel_policy(channel_or_ref: Any) -> ChannelPolicyResolution:
             "check_on_commit": config.stock.check_on_commit,
             "low_stock_threshold": config.stock.low_stock_threshold,
             "preorder": config.stock.preorder,
+            "sells_nonconforming": config.stock.sells_nonconforming,
+            "expiry_margin_days": config.stock.expiry_margin_days,
         },
         notifications={
             "backend": config.notifications.backend,

@@ -16,12 +16,17 @@ Filters applied, in order:
    ``excluded_positions`` (denylist). When a ``channel_ref`` is provided and
    neither list is given explicitly, the function resolves them from
    :func:`availability_scope_for_channel`.
-4. Batch expiry: quants whose batch has ``expiry_date < target`` are excluded.
+4. Batch expiry: quants whose batch expires before ``target`` plus the
+   caller's ``expiry_margin_days`` are excluded (0 = only already-expired).
+5. Batch conformity: with ``include_nonconforming=False``, quants from
+   batches carrying a ``nonconformity_reason`` are excluded. The core does
+   not decide WHO may sell nonconforming stock — the caller (channel policy)
+   does; the default ``True`` keeps this filter opt-in.
 """
 
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, timedelta
 from types import SimpleNamespace
 
 from django.db.models import QuerySet
@@ -38,6 +43,8 @@ def quants_eligible_for(
     target_date: date | None = None,
     allowed_positions: list[str] | None = None,
     excluded_positions: list[str] | None = None,
+    expiry_margin_days: int = 0,
+    include_nonconforming: bool = True,
 ) -> QuerySet[Quant]:
     """Return the canonical queryset of quants eligible for this SKU/scope.
 
@@ -53,6 +60,12 @@ def quants_eligible_for(
             considered. Takes precedence over the channel's configuration.
         excluded_positions: Position refs to exclude regardless of the
             allowlist. Applied after ``allowed_positions``.
+        expiry_margin_days: Also exclude lots expiring within this many days
+            AFTER ``target_date`` (near-expiry). 0 keeps the historical gate
+            (only lots already expired at ``target_date`` are out).
+        include_nonconforming: When ``False``, lots with a
+            ``nonconformity_reason`` are excluded — having a reason IS being
+            nonconforming. Opaque policy: the caller decides, the core filters.
 
     Returns:
         QuerySet[Quant] filtered and ``select_related("position")``. Callers
@@ -73,6 +86,8 @@ def quants_eligible_for(
         scope = availability_scope_for_channel(channel_ref)
         allowed_positions = scope.get("allowed_positions")
         excluded_positions = scope.get("excluded_positions")
+        expiry_margin_days = int(scope.get("expiry_margin_days") or 0)
+        include_nonconforming = bool(scope.get("sells_nonconforming", True))
 
     qs = Quant.objects.filter(sku=sku, _quantity__gt=0)
     # Validity precedence: shelf_life_days (relative window) and Batch.expiry_date
@@ -85,12 +100,20 @@ def quants_eligible_for(
     if excluded_positions:
         qs = qs.exclude(position__ref__in=excluded_positions)
 
+    expiry_cutoff = target + timedelta(days=max(0, expiry_margin_days))
     expired_refs = list(
-        Batch.objects.filter(sku=sku, expiry_date__lt=target).values_list(
+        Batch.objects.filter(sku=sku, expiry_date__lt=expiry_cutoff).values_list(
             "ref", flat=True,
         )
     )
     if expired_refs:
         qs = qs.exclude(batch__in=expired_refs)
+
+    if not include_nonconforming:
+        nonconforming_refs = list(
+            Batch.objects.for_sku(sku).nonconforming().values_list("ref", flat=True)
+        )
+        if nonconforming_refs:
+            qs = qs.exclude(batch__in=nonconforming_refs)
 
     return qs.select_related("position")

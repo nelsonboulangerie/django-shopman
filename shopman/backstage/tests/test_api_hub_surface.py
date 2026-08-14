@@ -23,6 +23,7 @@ SURFACE_URLS = {
     "gestor": "https://gestor.example.test/",
     "production": "https://prod.example.test/",
     "marketing": "https://mkt.example.test/",
+    "bi": "https://bi.example.test/",
     "loja": "https://loja.example.test/",
 }
 
@@ -63,7 +64,7 @@ def test_hub_superuser_sees_all_tiles(client, db):
     hub = client.get(reverse("api-backstage-hub")).json()["hub"]
 
     refs = [tile["ref"] for tile in hub["tiles"]]
-    assert refs == ["pos", "kds", "gestor", "production", "marketing", "loja"]
+    assert refs == ["pos", "kds", "gestor", "production", "marketing", "bi", "loja"]
 
     by_ref = {tile["ref"]: tile for tile in hub["tiles"]}
     # Ícone forte por app (DS §6).
@@ -72,6 +73,8 @@ def test_hub_superuser_sees_all_tiles(client, db):
     assert by_ref["gestor"]["icon"] == "clipboard-list"
     assert by_ref["production"]["icon"] == "croissant"
     assert by_ref["marketing"]["icon"] == "megaphone"
+    assert by_ref["bi"]["icon"] == "chart-line"
+    assert by_ref["bi"]["label"] == "B.I."
     # Nome público sem jargão interno: a superfície "production" é Produção e a
     # A ref da superfície é "marketing" (a seção), não "campaign" (a entidade dentro dela).
     assert by_ref["production"]["label"] == "Produção"
@@ -115,7 +118,7 @@ def test_hub_hides_surface_without_url(client, db):
 
     refs = [tile["ref"] for tile in tiles]
     assert "marketing" not in refs
-    assert refs == ["pos", "kds", "gestor", "production", "loja"]
+    assert refs == ["pos", "kds", "gestor", "production", "bi", "loja"]
     assert all("127.0.0.1" not in tile["url"] for tile in tiles)
 
 
@@ -130,4 +133,5 @@ def test_hub_debug_falls_back_to_dev_urls(client, db):
         for tile in client.get(reverse("api-backstage-hub")).json()["hub"]["tiles"]
     }
     assert by_ref["marketing"]["url"] == "http://127.0.0.1:3006/"
+    assert by_ref["bi"]["url"] == "http://127.0.0.1:3007/"
     assert by_ref["loja"]["url"] == "http://127.0.0.1:3000/"

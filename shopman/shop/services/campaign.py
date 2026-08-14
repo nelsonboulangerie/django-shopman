@@ -659,7 +659,7 @@ def resolve_variables(context: dict, *, promotion_ref: str = "") -> dict:
         "store_name": _brand_name(),
         # O RÓTULO do grau, nunca a ref: `{{quality}}` cai em copy de cliente, e
         # "excellent" no meio de uma frase em português é jargão vazando
-        # (mesma lei do D-1 que vira "Ontem" na UI). Minúsculo porque entra no
+        # (jargão interno nunca chega na UI). Minúsculo porque entra no
         # meio da frase ("Fornada ótima de Croissant").
         "quality": _quality_label(context.get("quality", "")),
     }

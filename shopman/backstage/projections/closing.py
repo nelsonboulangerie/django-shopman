@@ -1,7 +1,7 @@
 """DayClosingProjection — read models for the day closing page (Fase 4).
 
 Translates saleable stock, product classifications, and closing history into
-immutable projections. Replaces the inline ``_build_items`` / ``_has_old_d1_stock``
+immutable projections. Replaces the inline ``_build_items``
 logic now consumed by ``shopman.backstage.admin_console.closing``.
 
 Never imports from ``shopman.backstage.views.*``.
@@ -16,7 +16,7 @@ from datetime import date, timedelta
 from django.db.models import Sum
 from django.utils import timezone
 from shopman.offerman.models import Product
-from shopman.stockman import Move, Position, Quant
+from shopman.stockman import Quant
 
 from shopman.backstage.models import DayClosing
 
@@ -37,7 +37,9 @@ class ClosingItemProjection:
     sku: str
     name: str
     qty_available: int
-    classification: str  # "d1", "loss", "neutral"
+    classification: str  # "keep" | "expired" | "mixed" — o LOTE decide (C4)
+    qty_expiring: int  # em lotes vencendo hoje/vencidos (+ produto do dia sem lote)
+    qty_nonconforming: int  # em lotes marcados — não vão para o dia seguinte
 
 
 @dataclass(frozen=True)
@@ -46,8 +48,9 @@ class ClosingSnapshotItemProjection:
 
     sku: str
     qty_remaining: int
-    qty_d1: int
-    qty_loss: int
+    qty_kept: int
+    qty_expired: int
+    qty_nonconforming: int
 
 
 @dataclass(frozen=True)
@@ -113,7 +116,6 @@ class DayClosingProjection:
     has_items: bool
     already_closed: bool
     existing_closing_display: str  # "" if not closed, "Fechado por X às HH:MM"
-    has_old_d1: bool  # D-1 stock older than 1 day in "ontem" position
     total_available: int
     production_summary: dict
     cash_shift_summary: dict
@@ -161,7 +163,6 @@ def build_day_closing() -> DayClosingProjection:
         has_items=bool(items),
         already_closed=existing is not None,
         existing_closing_display=closing_display,
-        has_old_d1=_has_old_d1_stock(),
         total_available=total_available,
         production_summary=production_summary,
         cash_shift_summary=cash_shift_summary,
@@ -183,12 +184,18 @@ def _build_items() -> list[ClosingItemProjection]:
             position__is_saleable=True,
             _quantity__gt=0,
         )
-        .exclude(position__ref="ontem")
         .values("sku")
         .annotate(total_qty=Sum("_quantity"))
         .order_by("sku")
     )
 
+    from shopman.backstage.services.closing import (
+        day_product_expires_on_close,
+        expired_lot_refs,
+        nonconforming_lot_refs,
+    )
+
+    today = timezone.localdate()
     items: list[ClosingItemProjection] = []
     for row in quants:
         sku = row["sku"]
@@ -200,19 +207,32 @@ def _build_items() -> list[ClosingItemProjection]:
             product = None
 
         name = product.name if product else sku
-        shelf_life = product.shelf_life_days if product else None
-        allows_d1 = (
-            product.metadata.get("allows_next_day_sale", False)
-            if product
-            else False
-        )
 
-        if allows_d1:
-            classification = "d1"
-        elif shelf_life == 0:
-            classification = "loss"
+        # O LOTE decide o destino da sobra (C4): mesma lei do
+        # perform_day_closing, importada de lá — uma pergunta, um dono.
+        bad_lots = nonconforming_lot_refs(sku)
+        dying_lots = expired_lot_refs(sku, today)
+        batchless_dies = day_product_expires_on_close(sku)
+        qty_nonconforming = 0
+        qty_expiring = 0
+        for quant in Quant.objects.filter(
+            sku=sku, position__is_saleable=True, _quantity__gt=0,
+        ):
+            amount = int(quant._quantity)
+            if quant.batch and quant.batch in bad_lots:
+                qty_nonconforming += amount
+            elif (quant.batch and quant.batch in dying_lots) or (
+                not quant.batch and batchless_dies
+            ):
+                qty_expiring += amount
+
+        dying_total = qty_expiring + qty_nonconforming
+        if dying_total == 0:
+            classification = "keep"
+        elif dying_total >= int(qty):
+            classification = "expired"
         else:
-            classification = "neutral"
+            classification = "mixed"
 
         items.append(
             ClosingItemProjection(
@@ -220,33 +240,13 @@ def _build_items() -> list[ClosingItemProjection]:
                 name=name,
                 qty_available=int(qty),
                 classification=classification,
+                qty_expiring=qty_expiring,
+                qty_nonconforming=qty_nonconforming,
             )
         )
 
     return items
 
-
-def _has_old_d1_stock() -> bool:
-    """Check if there's D-1 stock older than 1 day in position 'ontem'."""
-    ontem_pos = Position.objects.filter(ref="ontem").first()
-    if not ontem_pos:
-        return False
-
-    old_quants = Quant.objects.filter(position=ontem_pos, _quantity__gt=0)
-    if not old_quants.exists():
-        return False
-
-    threshold = timezone.localdate() - timedelta(days=1)
-    for quant in old_quants:
-        last_move = (
-            Move.objects.filter(quant=quant, reason__startswith="d1:")
-            .order_by("-timestamp")
-            .first()
-        )
-        if last_move and last_move.timestamp.date() < threshold:
-            return True
-
-    return False
 
 
 def _closing_data(closing: DayClosing) -> dict:

@@ -62,7 +62,7 @@ describe("POS sale intent", () => {
       managerApproval: null,
       clientRequestId: "pos:test-1",
       items: [
-        { sku: "PAO", name: "Pao", price_q: 1200, qty: 2, notes: "", is_d1: false },
+        { sku: "PAO", name: "Pao", price_q: 1200, qty: 2, notes: "" },
       ],
     });
 
@@ -100,7 +100,7 @@ describe("POS sale intent", () => {
       receipt_email: "ana@example.com",
     });
     expect(payload.items).toEqual([
-      { sku: "PAO", name: "Pao", qty: 2, unit_price_q: 1200, notes: "", is_d1: false },
+      { sku: "PAO", name: "Pao", qty: 2, unit_price_q: 1200, notes: "" },
     ]);
     expect(payload.items[0]).not.toHaveProperty("price_q");
   });
@@ -130,8 +130,8 @@ describe("POS sale intent", () => {
 
   it("only computes local display totals from projected line prices", () => {
     expect(cartTotalQ([
-      { sku: "A", name: "A", price_q: 500, qty: 2, notes: "", is_d1: false },
-      { sku: "B", name: "B", price_q: 300, qty: 1, notes: "", is_d1: false },
+      { sku: "A", name: "A", price_q: 500, qty: 2, notes: "" },
+      { sku: "B", name: "B", price_q: 300, qty: 1, notes: "" },
     ])).toBe(1300);
   });
 
@@ -296,7 +296,7 @@ function baseIntentState(overrides: Record<string, unknown> = {}) {
     managerApproval: null,
     clientRequestId: "pos:test-base",
     items: [
-      { sku: "PAO", name: "Pao", price_q: 1200, qty: 1, notes: "", is_d1: false },
+      { sku: "PAO", name: "Pao", price_q: 1200, qty: 1, notes: "" },
     ],
     ...overrides,
   };

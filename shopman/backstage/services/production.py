@@ -16,11 +16,42 @@ from io import StringIO
 
 from django.utils import timezone
 
-from shopman.backstage.services.exceptions import ProductionError
+from shopman.backstage.services.exceptions import ProductionConflict, ProductionError
 from shopman.shop.services import production as production_core
 from shopman.shop.services import quality as quality_service
 
 logger = logging.getLogger(__name__)
+
+
+def _operator_error(exc: Exception) -> Exception:
+    """Traduz um ``CraftError`` do kernel para a borda do operador.
+
+    Sem isto, dois quiosques fechando a MESMA fornada davam 500 cru com
+    mensagem em inglês (o ``CraftError`` não é DRF nem ``ProductionError``,
+    então nenhuma view o capturava). Conflito de estado (fechada/estornada/
+    alterada em outra tela) vira ``ProductionConflict`` → 409; o resto vira
+    ``ProductionError`` → 400. Exceção que não é ``CraftError`` volta como
+    veio (o chamador decide).
+    """
+    from shopman.craftsman.exceptions import CraftError
+
+    if not isinstance(exc, CraftError):
+        return exc
+    code = getattr(exc, "code", "")
+    data = getattr(exc, "data", {}) or {}
+    if code in ("TERMINAL_STATUS", "VOID_FROM_DONE"):
+        if str(data.get("status") or "") == "void":
+            return ProductionConflict("Esta fornada foi estornada. Atualize o painel.")
+        if code == "VOID_FROM_DONE":
+            return ProductionConflict("Fornada concluída não pode ser estornada.")
+        return ProductionConflict("Esta fornada já foi fechada em outra tela. Atualize o painel.")
+    if code in ("INVALID_STATUS", "STALE_REVISION", "IDEMPOTENCY_CONFLICT"):
+        return ProductionConflict(
+            "A fornada mudou em outra tela. Atualize o painel e tente de novo."
+        )
+    if code == "INVALID_QUANTITY":
+        return ProductionError("Quantidade inválida.")
+    return ProductionError(str(exc) or "Falha na produção.")
 
 
 @dataclass(frozen=True)
@@ -68,11 +99,15 @@ def apply_void(
     reason: str = "Estornado via produção rápida",
 ) -> str:
     """Void a work order from the operator surface."""
-    return production_core.void_work_order(
-        work_order_id,
-        actor=actor,
-        reason=reason,
-    )
+    try:
+        return production_core.void_work_order(
+            work_order_id,
+            actor=actor,
+            reason=reason,
+        )
+    except Exception as exc:
+        translated = _operator_error(exc)
+        raise translated from (None if translated is exc else exc)
 
 
 def apply_quick_finish(
@@ -90,16 +125,20 @@ def apply_quick_finish(
     passa pelo MESMO caminho do finish normal: veto resolvido na borda, N
     lotes com percentual congelado, alerta quando a rastreabilidade falha.
     """
-    if not partition:
-        return production_core.quick_finish(
-            recipe_id=recipe_id,
-            quantity=quantity,
-            position_id=position_id,
-            actor=actor,
+    try:
+        if not partition:
+            return production_core.quick_finish(
+                recipe_id=recipe_id,
+                quantity=quantity,
+                position_id=position_id,
+                actor=actor,
+            )
+        work_order = production_core.quick_plan(
+            recipe_id=recipe_id, quantity=quantity, position_id=position_id
         )
-    work_order = production_core.quick_plan(
-        recipe_id=recipe_id, quantity=quantity, position_id=position_id
-    )
+    except Exception as exc:
+        translated = _operator_error(exc)
+        raise translated from (None if translated is exc else exc)
     wo_ref, total = apply_finish(
         work_order_id=work_order.pk,
         quantity=quantity,
@@ -131,16 +170,20 @@ def apply_planned(
         operator_ref=operator_ref,
         force=force,
     )
-    return production_core.set_planned_quantity(
-        recipe_id=recipe_id,
-        quantity=quantity,
-        target_date_value=target_date_value,
-        position_ref=position_ref,
-        operator_ref=operator_ref,
-        reason=reason,
-        actor=actor,
-        source_ref=source_ref,
-    )
+    try:
+        return production_core.set_planned_quantity(
+            recipe_id=recipe_id,
+            quantity=quantity,
+            target_date_value=target_date_value,
+            position_ref=position_ref,
+            operator_ref=operator_ref,
+            reason=reason,
+            actor=actor,
+            source_ref=source_ref,
+        )
+    except Exception as exc:
+        translated = _operator_error(exc)
+        raise translated from (None if translated is exc else exc)
 
 
 def apply_start(
@@ -153,14 +196,91 @@ def apply_start(
     actor: str,
 ):
     """Start a planned work order from the operator surface."""
-    return production_core.start_work_order(
-        work_order_id=work_order_id,
-        quantity=quantity,
-        position_id=position_id,
-        operator_ref=operator_ref,
-        note=note,
-        actor=actor,
+    try:
+        return production_core.start_work_order(
+            work_order_id=work_order_id,
+            quantity=quantity,
+            position_id=position_id,
+            operator_ref=operator_ref,
+            note=note,
+            actor=actor,
+        )
+    except Exception as exc:
+        translated = _operator_error(exc)
+        raise translated from (None if translated is exc else exc)
+
+
+# Teto de sanidade da duração armada: um timer de forno não passa de 24h.
+OVEN_MAX_PLANNED_SECONDS = 86_400
+
+
+def apply_oven_arm(*, work_order_id, planned_seconds, operator_ref: str = "", actor: str = ""):
+    """Registra a declaração "enfornou" (ADR-021 §4, BI-PLAN §4).
+
+    O servidor carimba ``armed_at`` no recebimento — mesmo tratamento de
+    ``started_at``/``finished_at`` da WorkOrder; sem relógio de cliente.
+    Re-armar com run aberto = nova enfornada: o run anterior vira
+    ``abandoned`` (nunca mede) e um novo abre.
+    """
+    from django.db import transaction
+    from shopman.craftsman.models import WorkOrder
+
+    from shopman.backstage.models import OvenRun
+
+    try:
+        seconds = int(planned_seconds)
+    except (TypeError, ValueError):
+        raise ProductionError("Duração do timer inválida.") from None
+    if not 0 < seconds <= OVEN_MAX_PLANNED_SECONDS:
+        raise ProductionError("Duração do timer inválida.")
+
+    try:
+        work_order = _get_work_order(work_order_id)
+    except WorkOrder.DoesNotExist:
+        raise ProductionError("Ordem de produção não encontrada.") from None
+    if work_order.status in (WorkOrder.Status.FINISHED, WorkOrder.Status.VOID):
+        raise ProductionError("Ordem já encerrada; não há o que enfornar.")
+
+    with transaction.atomic():
+        superseded = OvenRun.objects.filter(
+            work_order_ref=work_order.ref, status="open"
+        ).update(status="abandoned")
+        run = OvenRun.objects.create(
+            work_order_ref=work_order.ref,
+            oven_ref=work_order.position_ref or "",
+            operator_ref=operator_ref or actor,
+            planned_seconds=seconds,
+            metadata={"superseded_open_runs": superseded} if superseded else {},
+        )
+    return run
+
+
+def apply_oven_conclude(*, work_order_id, actor: str = ""):
+    """Registra a declaração "retirou" (o Concluir do timer).
+
+    Sem run aberto não há o que medir — retorna ``None`` (o cliente é
+    best-effort; a honestidade fica na cobertura do relatório). Expiração do
+    timer e o Confirmar do QC nunca chegam aqui: só o Concluir declarado.
+    """
+    from shopman.craftsman.models import WorkOrder
+
+    from shopman.backstage.models import OvenRun
+
+    try:
+        work_order = _get_work_order(work_order_id)
+    except WorkOrder.DoesNotExist:
+        raise ProductionError("Ordem de produção não encontrada.") from None
+    run = (
+        OvenRun.objects.filter(work_order_ref=work_order.ref, status="open")
+        .order_by("-armed_at")
+        .first()
     )
+    if run is None:
+        return None
+    run.status = "concluded"
+    run.concluded_at = timezone.now()
+    run.save(update_fields=["status", "concluded_at"])
+    return run
 
 
 def resolve_partition(work_order, *, quantity, quality: str = "", partition=None):
@@ -294,7 +414,8 @@ def apply_finish(
     except Exception as exc:
         if _looks_like_stock_error(exc):
             _create_stock_short_alert(work_order_id=work_order_id, error=str(exc))
-        raise
+        translated = _operator_error(exc)
+        raise translated from (None if translated is exc else exc)
     _record_batch_traceability(work_order_id=work_order_id)
     return result
 
@@ -360,6 +481,26 @@ def export_reports_csv(report_kind: str, filters: dict | None = None) -> bytes:
                 row.qty_total,
                 row.yield_avg,
                 row.duration_avg_minutes,
+            ])
+    elif reports.filters.report_kind == "quality":
+        # Sem este ramo o "quality" caía no else e exportava o HISTÓRICO —
+        # o gestor baixava a tabela errada com o nome certo.
+        writer.writerow([
+            "Receita",
+            "Nome",
+            "Grau",
+            "Defeito",
+            "Qtd",
+            "% da receita",
+        ])
+        for row in reports.quality_rows:
+            writer.writerow([
+                row.recipe_ref,
+                row.recipe_name,
+                row.grade_label,
+                row.defect_label,
+                row.quantity,
+                row.share,
             ])
     elif reports.filters.report_kind == "recipe_waste":
         writer.writerow([

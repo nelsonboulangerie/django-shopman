@@ -177,7 +177,7 @@ def hold(order, *, require_all: bool = False) -> None:
 
             # 2) Fallback: create a fresh hold via the adapter for the remainder.
             # channel_ref aplica o escopo de POSIÇÕES do canal (excluded_positions,
-            # ex.: D-1 staff-only). apply_safety_margin=False: a margem é buffer
+            # posições staff-only). apply_safety_margin=False: a margem é buffer
             # de vitrine — um pedido JÁ commitado pode consumi-la.
             result = adapter.create_hold(
                 sku=comp_sku,

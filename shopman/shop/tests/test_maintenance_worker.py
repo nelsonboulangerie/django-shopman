@@ -2,7 +2,7 @@
 
 O worker é o coração operacional: resgata PIX pago com webhook perdido
 (reconcile_payments), re-despacha pedido órfão em NEW (sweep_stuck_orders),
-libera holds vencidos, limpa sessions/planejamento/D-1. Cobertura:
+libera holds vencidos, limpa sessions/planejamento. Cobertura:
 
 * cada tarefa do ciclo executa via ``--once`` e produz o efeito real esperado
   (cenários mínimos reais; só a fronteira ``lifecycle.dispatch`` é mockada,
@@ -25,7 +25,7 @@ from django.core.management import call_command
 from django.utils import timezone
 from shopman.orderman.models import Order, Session
 from shopman.payman.models import PaymentIntent
-from shopman.stockman.models import Hold, HoldStatus, Move, Position, Quant
+from shopman.stockman.models import Hold, HoldStatus, Quant
 
 from shopman.shop.management.commands.maintenance_worker import MAINTENANCE_COMMANDS
 
@@ -130,26 +130,6 @@ def test_cycle_removes_stale_planning_quants():
 
     assert not Quant.objects.filter(pk=ghost.pk).exists()
     assert Quant.objects.filter(pk=planned.pk).exists()
-
-
-def test_cycle_registers_expired_d1_stock_as_loss():
-    ontem = Position.objects.create(ref="ontem", name="Ontem")
-    quant = Quant.objects.create(sku="CROISSANT", position=ontem, _quantity=Decimal("0"))
-    # Entrada D-1 de anteontem (Move.save soma o delta no cache do quant).
-    Move.objects.create(
-        quant=quant,
-        delta=Decimal("3"),
-        reason="d1:vitrine→ontem",
-        timestamp=timezone.now() - timedelta(days=2),
-    )
-
-    _run_once()
-
-    quant.refresh_from_db()
-    assert quant._quantity == Decimal("0")
-    waste = Move.objects.filter(quant=quant, kind=Move.Kind.WASTE)
-    assert waste.count() == 1
-    assert waste.get().reason.startswith("perda_d1_vencido:")
 
 
 def test_cycle_rescues_paid_order_with_lost_webhook():
@@ -293,7 +273,7 @@ def test_once_runs_one_cycle_in_order_and_never_sleeps():
         call("cleanup_stale_sessions"),
         call("sweep_orphan_holds"),
         call("cleanup_stale_planning"),
-        call("cleanup_d1"),
+        call("sweep_stale_oven_runs"),
         call("expire_stale_announcements"),
         call("dispatch_due_announcements"),
         call("arm_scheduled_campaigns"),

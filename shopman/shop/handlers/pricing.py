@@ -110,7 +110,7 @@ class ItemPricingModifier:
                     item["_base_price_q"] = item.get("unit_price_q", 0)
 
             # Árbitro "maior desconto ganha": carimba o preço de LISTA (pré-desconto)
-            # e zera o vencedor da rodada. Os descontos por-linha (D-1, promo,
+            # e zera o vencedor da rodada. Os descontos por-linha (promo,
             # funcionário, happy hour) calculam sobre ``_list_q`` e só vencem se
             # baterem o ``_disc`` atual — nunca compõem sobre um preço já reduzido.
             # ``meta`` sobrevive ao ``_normalize_items``; ``modifiers_applied`` NÃO.

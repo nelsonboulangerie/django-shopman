@@ -160,7 +160,6 @@ def add_offer_items(
                 qty=1,
                 unit_price_q=customer_orders._price_q(product, channel_ref=channel_ref),
                 name=product.name,
-                is_d1=False,
             )
         except Exception:
             # Inclui `CartUnavailableError` (estoque recusou). Uma oferta que não pode

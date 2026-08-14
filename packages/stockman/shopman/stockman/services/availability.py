@@ -6,7 +6,7 @@ Não importar de ``shopman.stockman.api.views``; views importam daqui.
 
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, timedelta
 from decimal import Decimal
 
 from django.db.models import Q, Sum
@@ -76,7 +76,6 @@ _ZERO_BREAKDOWN: dict = {
     "ready": Decimal("0"),
     "in_production": Decimal("0"),
     "planned": Decimal("0"),
-    "d1": Decimal("0"),
 }
 
 
@@ -122,11 +121,9 @@ def _build_availability_dict(
     ready: Decimal,
     in_production: Decimal,
     planned: Decimal,
-    d1: Decimal,
     held_ready: Decimal,
     held_production: Decimal,
     held_planned: Decimal,
-    held_d1: Decimal,
     safety_margin: int,
     is_planned: bool,
     positions_data: list,
@@ -138,7 +135,7 @@ def _build_availability_dict(
     single-SKU and batch entrypoints stay shape-identical.
     """
     zero = Decimal("0")
-    total_held = held_ready + held_production + held_planned + held_d1
+    total_held = held_ready + held_production + held_planned
     available = max(ready - held_ready - safety_margin, zero)
     expected = max(
         ready + in_production - held_ready - held_production - safety_margin,
@@ -167,7 +164,6 @@ def _build_availability_dict(
             "ready": ready - held_ready,
             "in_production": in_production - held_production,
             "planned": planned_clamped - held_planned,
-            "d1": d1 - held_d1,
         },
         "is_planned": is_planned,
         "is_paused": False,
@@ -184,14 +180,15 @@ def availability_for_sku(
     target_date: date | None = None,
     allowed_positions: list[str] | None = None,
     excluded_positions: list[str] | None = None,
+    expiry_margin_days: int = 0,
+    include_nonconforming: bool = True,
 ) -> dict:
     """
     Build availability dict for a SKU with breakdown.
 
     Breakdown categories:
-    - ready: Position.is_saleable=True, batch != "D-1"
+    - ready: Position.is_saleable=True
     - in_production: Position.is_saleable=False (e.g. producao)
-    - d1: batch == "D-1" (yesterday's leftovers)
 
     total_available = ready - held - safety_margin (only saleable stock).
     is_planned = True if any quant has a future target_date.
@@ -201,7 +198,9 @@ def availability_for_sku(
 
     ``allowed_positions`` / ``excluded_positions``: narrow the scope to
     channel-visible quants. Ignored when ``position`` is set (single-position
-    query).
+    query). ``expiry_margin_days`` / ``include_nonconforming`` are the lot
+    gates (see :func:`quants_eligible_for`) — likewise ignored for the
+    single-position query, which is an internal/ops view.
     """
     sellable = _sku_is_sellable(sku)
     availability_policy = _sku_availability_policy(sku)
@@ -231,16 +230,16 @@ def availability_for_sku(
             target_date=target,
             allowed_positions=allowed_positions,
             excluded_positions=excluded_positions,
+            expiry_margin_days=expiry_margin_days,
+            include_nonconforming=include_nonconforming,
         )
 
     ready = Decimal("0")
     in_production = Decimal("0")
     planned = Decimal("0")
-    d1 = Decimal("0")
     held_ready = Decimal("0")
     held_production = Decimal("0")
     held_planned = Decimal("0")
-    held_d1 = Decimal("0")
     positions_data = []
 
     for quant in quants:
@@ -254,9 +253,6 @@ def availability_for_sku(
         elif quant.is_future:
             planned += qty
             held_planned += held
-        elif quant.batch == "D-1":
-            d1 += qty
-            held_d1 += held
         elif quant.position and (
             quant.position.kind == "process" or not quant.position.is_saleable
         ):
@@ -283,11 +279,9 @@ def availability_for_sku(
         ready=ready,
         in_production=in_production,
         planned=planned,
-        d1=d1,
         held_ready=held_ready,
         held_production=held_production,
         held_planned=held_planned,
-        held_d1=held_d1,
         safety_margin=safety_margin,
         is_planned=is_planned,
         positions_data=positions_data,
@@ -303,6 +297,8 @@ def promise_decision_for_sku(
     safety_margin: int = 0,
     allowed_positions: list[str] | None = None,
     excluded_positions: list[str] | None = None,
+    expiry_margin_days: int = 0,
+    include_nonconforming: bool = True,
 ) -> PromiseDecision:
     """Return an explicit operational promise decision for a SKU."""
     qty_d = Decimal(str(qty))
@@ -312,6 +308,8 @@ def promise_decision_for_sku(
         safety_margin=safety_margin,
         allowed_positions=allowed_positions,
         excluded_positions=excluded_positions,
+        expiry_margin_days=expiry_margin_days,
+        include_nonconforming=include_nonconforming,
     )
     available_qty = info["total_promisable"]
     availability_policy = info.get("availability_policy", "planned_ok")
@@ -353,14 +351,17 @@ def availability_for_skus(
     target_date: date | None = None,
     allowed_positions: list[str] | None = None,
     excluded_positions: list[str] | None = None,
+    expiry_margin_days: int = 0,
+    include_nonconforming: bool = True,
 ) -> dict[str, dict]:
     """
     Batch version of availability_for_sku() — same logic, few queries regardless of N.
 
     Returns {sku: availability_dict} for all requested SKUs. Functionally
     identical to calling availability_for_sku() per SKU: shares the canonical
-    scope gate (shelflife, batch expiry, position allow/deny, target_date) via
-    per-SKU Python filtering on top of a bulk quant fetch.
+    scope gate (shelflife, batch expiry + margin, batch conformity, position
+    allow/deny, target_date) via per-SKU Python filtering on top of a bulk
+    quant fetch.
     """
     from types import SimpleNamespace
 
@@ -389,11 +390,17 @@ def availability_for_skus(
         for sku, info in sku_infos.items()
     }
 
-    # ── Query 2: expired batch refs grouped by SKU ────────────────────────────
-    # Maps sku → set of expired batch refs
+    # ── Query 2: excluded batch refs grouped by SKU ───────────────────────────
+    # Expiry honors the channel's near-expiry margin (0 = only already
+    # expired); conformity mirrors quants_eligible_for — having a reason IS
+    # being nonconforming, and whether that sells is the CALLER's policy.
+    expiry_cutoff = target + timedelta(days=max(0, expiry_margin_days))
     expired_refs_by_sku: dict[str, set[str]] = {}
-    for row in Batch.objects.filter(sku__in=skus, expiry_date__lt=target).values("sku", "ref"):
+    for row in Batch.objects.filter(sku__in=skus, expiry_date__lt=expiry_cutoff).values("sku", "ref"):
         expired_refs_by_sku.setdefault(row["sku"], set()).add(row["ref"])
+    if not include_nonconforming:
+        for row in Batch.objects.filter(sku__in=skus).nonconforming().values("sku", "ref"):
+            expired_refs_by_sku.setdefault(row["sku"], set()).add(row["ref"])
 
     # ── Query 3: planned SKUs (has future quants) ─────────────────────────────
     planned_skus: set[str] = set(
@@ -476,11 +483,9 @@ def availability_for_skus(
         ready = Decimal("0")
         in_production = Decimal("0")
         planned = Decimal("0")
-        d1 = Decimal("0")
         held_ready = Decimal("0")
         held_production = Decimal("0")
         held_planned = Decimal("0")
-        held_d1 = Decimal("0")
         positions_data = []
 
         shelflife_ns = SimpleNamespace(
@@ -503,9 +508,6 @@ def availability_for_skus(
             elif quant.is_future:
                 planned += qty
                 held_planned += held
-            elif quant.batch == "D-1":
-                d1 += qty
-                held_d1 += held
             elif quant.position and (
                 quant.position.kind == "process" or not quant.position.is_saleable
             ):
@@ -530,11 +532,9 @@ def availability_for_skus(
             ready=ready,
             in_production=in_production,
             planned=planned,
-            d1=d1,
             held_ready=held_ready,
             held_production=held_production,
             held_planned=held_planned,
-            held_d1=held_d1,
             safety_margin=safety_margin,
             is_planned=is_planned,
             positions_data=positions_data,
@@ -563,15 +563,21 @@ def availability_scope_for_channel(channel_ref: str | None) -> dict[str, int | l
 
     O catálogo (o que o canal "oferece") vem da Listagem vinculada ao canal; estes
     parâmetros só restringem **de quais posições físicas** o estoque conta para esse
-    canal (ex.: remoto sem ``ontem`` para D-1 só no balcão).
+    canal (ex.: remoto sem as posições internas de balcão).
 
     If ``STOCKMAN["CHANNEL_SCOPE_RESOLVER"]`` is configured, Stockman calls that
-    resolver to get ``safety_margin`` and ``allowed_positions`` for the channel.
-    This keeps the package standalone while letting the orchestrator project
-    ChannelConfig.stock into Stockman's canonical availability path.
+    resolver to get the channel's stock scope. This keeps the package
+    standalone while letting the orchestrator project ChannelConfig.stock into
+    Stockman's canonical availability path.
     """
     scope = _resolve_channel_scope(channel_ref)
     return {
         "safety_margin": scope.get("safety_margin", 0),
         "allowed_positions": scope.get("allowed_positions"),
+        # A denylist era ENGOLIDA aqui: quants_eligible_for(channel_ref=...)
+        # perdia excluded_positions em silêncio. Projetada junto, com os dois
+        # gates de lote (C2).
+        "excluded_positions": scope.get("excluded_positions") or [],
+        "expiry_margin_days": scope.get("expiry_margin_days", 0),
+        "sells_nonconforming": scope.get("sells_nonconforming", True),
     }

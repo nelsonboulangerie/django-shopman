@@ -73,7 +73,7 @@ class ProductListItemSerializer(serializers.Serializer):
     """Public product card — serializes a ``CatalogItemProjection`` directly.
 
     The headless catalog contract serves the same canonical card shape as the
-    web menu (one card everywhere). D-1 staff pricing is deliberately absent
+    web menu (one card everywhere). Staff pricing is deliberately absent
     from this public endpoint.
     """
 

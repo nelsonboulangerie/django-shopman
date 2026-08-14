@@ -31,7 +31,6 @@ from shopman.shop.models import Shop
 def setup(db):
     Shop.objects.create(name="Loja")
     Position.objects.create(ref="loja", name="Loja", is_saleable=True, is_default=True)
-    Position.objects.create(ref="ontem", name="Ontem")
     return User.objects.create_superuser("e2e-admin", "e2e@test.com", "pw")
 
 

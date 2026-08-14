@@ -27,6 +27,7 @@ export function useProductionReports(filters: Ref<ReportFiltersQuery>) {
   const historyRows = computed(() => reports.value?.history_rows ?? []);
   const operatorRows = computed(() => reports.value?.operator_rows ?? []);
   const wasteRows = computed(() => reports.value?.waste_rows ?? []);
+  const qualityRows = computed(() => reports.value?.quality_rows ?? []);
   const availableRecipes = computed(() => reports.value?.available_recipes ?? []);
   const availablePositions = computed(
     () => reports.value?.available_positions ?? [],
@@ -39,6 +40,7 @@ export function useProductionReports(filters: Ref<ReportFiltersQuery>) {
     historyRows,
     operatorRows,
     wasteRows,
+    qualityRows,
     availableRecipes,
     availablePositions,
     forbidden,

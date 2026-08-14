@@ -1,9 +1,11 @@
 """Backstage models — KDS, DayClosing, OperatorAlert, CashShift, Operation."""
 
 from .alerts import OperatorAlert
+from .bi_view import BIView
 from .blind_prep import BlindPrepCode
 from .cash_register import CashMovement, CashShift, POSTerminal
 from .closing import DayClosing
+from .historical_sale import HistoricalSale, HistoricalSaleItem
 from .kds import KDSInstance, KDSTicket
 from .operation import (
     OperationArea,
@@ -17,14 +19,18 @@ from .operation import (
     OperationTaskStatus,
     OperationTaskTemplate,
 )
+from .oven_run import OvenRun
 from .pos import POSTab
 
 __all__ = [
     "OperatorAlert",
+    "BIView",
     "BlindPrepCode",
     "CashMovement",
     "CashShift",
     "DayClosing",
+    "HistoricalSale",
+    "HistoricalSaleItem",
     "KDSInstance",
     "KDSTicket",
     "OperationArea",
@@ -37,6 +43,7 @@ __all__ = [
     "OperationTaskRun",
     "OperationTaskStatus",
     "OperationTaskTemplate",
+    "OvenRun",
     "POSTab",
     "POSTerminal",
 ]

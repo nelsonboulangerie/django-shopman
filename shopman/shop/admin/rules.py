@@ -1,6 +1,6 @@
 """Admin for RuleConfig — configurable rules via Unfold.
 
-Regras de preço conhecidas (happy_hour, d1_discount, employee_discount) editam
+Regras de preço conhecidas (happy_hour, employee_discount) editam
 ``params`` como campos tipados (percentual, horários); o JSON cru fica só para
 regras sem schema. Os modifiers continuam lendo ``params`` igual — só a EDIÇÃO
 muda. Ver ``shopman/shop/rules/params_schema.py``.
@@ -171,7 +171,7 @@ class RuleConfigAdmin(ModelAdmin):
                     "fields": ("params",),
                     "description": (
                         "Parâmetros JSON da regra. Regras de preço conhecidas "
-                        "(happy hour, D-1, funcionário) ganham campos tipados ao salvar."
+                        "(happy hour, funcionário) ganham campos tipados ao salvar."
                     ),
                 },
             )
