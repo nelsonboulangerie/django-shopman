@@ -29,6 +29,16 @@ export function useCashDrawer(pos: ComputedRef<POSProjection | null>) {
 
   /** Este balcão tem caminho de software? `false` = gaveta de chave. */
   const canKick = computed(() => Boolean(config.value?.can_kick));
+  /**
+   * Por que não dá, quando não dá — para a tela DIZER em vez de esconder.
+   *
+   * Esconder o card fez o dono procurar um botão que nunca ia aparecer,
+   * achando que o PDV estava quebrado. O servidor manda a frase pronta; aqui só
+   * sobra o caso de o terminal não ter mandado nada.
+   */
+  const unavailableReason = computed(
+    () => config.value?.reason || "Gaveta não configurada neste terminal. Configure em Terminais do PDV, no gestor.",
+  );
   /** O dono quer que a gaveta abra sozinha ao fechar venda em dinheiro? */
   const opensOnCashSale = computed(() => canKick.value && Boolean(config.value?.open_on_cash_sale));
 
@@ -96,7 +106,7 @@ export function useCashDrawer(pos: ComputedRef<POSProjection | null>) {
     }
   }
 
-  return { canKick, opensOnCashSale, probing, kick, probe };
+  return { canKick, unavailableReason, opensOnCashSale, probing, kick, probe };
 }
 
 function messageOf(error: unknown): string {

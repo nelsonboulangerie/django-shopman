@@ -244,6 +244,8 @@ export interface POSCashDrawerProjection {
   adapter: "manual" | "agent" | string;
   can_kick: boolean;
   open_on_cash_sale: boolean;
+  /** Por que não dá, quando `can_kick` é false. A tela mostra em vez de sumir. */
+  reason?: string;
   agent_url?: string;
   token?: string;
   pulse?: { pin: number; on_ms: number; off_ms: number };

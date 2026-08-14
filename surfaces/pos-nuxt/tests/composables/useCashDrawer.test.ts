@@ -119,3 +119,18 @@ describe("useCashDrawer — o caminho físico da gaveta", () => {
     expect((await drawer.probe()).message).toContain("chave");
   });
 });
+
+describe("useCashDrawer — a tela diz por que não dá", () => {
+  it("usa o motivo que o servidor mandou", () => {
+    const drawer = makeDrawer({
+      adapter: "manual", can_kick: false, open_on_cash_sale: false,
+      reason: "Este balcão abre a gaveta com a chave — o PDV não tem como abrir.",
+    });
+    expect(drawer.unavailableReason.value).toContain("chave");
+  });
+
+  it("terminal que não mandou motivo ainda assim explica algo útil", () => {
+    // Card mudo é pior que card ausente: o operador fica sem próximo passo.
+    expect(makeDrawer(null).unavailableReason.value).toContain("Terminais do PDV");
+  });
+});

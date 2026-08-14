@@ -104,6 +104,9 @@ class CashDrawerConfig:
                 "adapter": self.adapter if self.declared else ADAPTER_MANUAL,
                 "can_kick": False,
                 "open_on_cash_sale": False,
+                # A tela precisa DIZER por que não dá, em vez de esconder o card
+                # e deixar o operador achando que o PDV está quebrado.
+                "reason": self._unavailable_reason(),
             }
         return {
             "adapter": ADAPTER_AGENT,
@@ -116,7 +119,18 @@ class CashDrawerConfig:
                 "off_ms": self.pulse_off_ms,
             },
             "open_on_cash_sale": self.open_on_cash_sale,
+            "reason": self.misconfigured_reason,
         }
+
+    def _unavailable_reason(self) -> str:
+        """Por que este balcão não abre a gaveta por software, em uma frase."""
+        if not self.declared:
+            return "Gaveta não configurada neste terminal. Configure em Terminais do PDV, no gestor."
+        if not self.enabled:
+            return "A gaveta deste terminal está desligada na configuração."
+        if self.adapter != ADAPTER_AGENT:
+            return "Este balcão abre a gaveta com a chave — o PDV não tem como abrir."
+        return self.misconfigured_reason or "Gaveta indisponível."
 
 
 def _positive_int(value, fallback: int) -> int:

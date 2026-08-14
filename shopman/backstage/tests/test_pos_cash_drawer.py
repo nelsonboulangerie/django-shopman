@@ -238,3 +238,36 @@ def test_endpoint_registra_e_devolve_ok(client, operator):
     assert response.status_code == 200
     assert response.json()["ok"] is True
     assert CashShift.get_open_for_operator(operator).metadata["drawer_openings"][0]["reason"] == "Troco"
+
+
+# ── A tela DIZ por que não dá, em vez de sumir ────────────────────────────
+
+
+def test_terminal_sem_gaveta_manda_o_motivo_para_a_tela():
+    """Card sumindo calado fez o dono procurar um botão que nunca ia aparecer."""
+    payload = CashDrawerConfig.from_terminal(_terminal()).surface_payload()
+    assert payload["can_kick"] is False
+    assert "não configurada" in payload["reason"]
+
+
+def test_gaveta_de_chave_diz_que_abre_com_a_chave():
+    payload = CashDrawerConfig.from_terminal(_terminal({"adapter": "manual"})).surface_payload()
+    assert "chave" in payload["reason"]
+
+
+def test_gaveta_desligada_diz_que_esta_desligada():
+    payload = CashDrawerConfig.from_dict({**AGENT_CONFIG, "enabled": False}).surface_payload()
+    assert "desligada" in payload["reason"]
+
+
+def test_agente_sem_token_leva_o_motivo_ate_a_tela():
+    payload = CashDrawerConfig.from_dict({"adapter": "agent", "token": ""}).surface_payload()
+    assert "token" in payload["reason"]
+
+
+def test_todo_terminal_que_nao_chuta_TEM_um_motivo():
+    """Nenhum caminho pode devolver motivo vazio — vazio vira card mudo."""
+    for raw in (None, {"adapter": "manual"}, {"adapter": "agent"}, {**AGENT_CONFIG, "enabled": False}):
+        payload = CashDrawerConfig.from_dict(raw).surface_payload()
+        if not payload["can_kick"]:
+            assert payload["reason"].strip(), raw
