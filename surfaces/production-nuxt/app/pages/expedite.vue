@@ -396,8 +396,8 @@ function concludeOven() {
             @click.stop="openOrder(order)"
           >
             <span class="text-xl font-semibold leading-none tabular-nums">{{ cardAnchor(order) }}</span>
-            <span class="text-[9px] font-medium uppercase tracking-wide text-muted-foreground group-hover:text-primary-foreground/75">{{ cardAnchorLabel(order) }}</span>
-            <span class="mt-1 text-[11px] font-semibold uppercase tracking-wide text-primary group-hover:text-primary-foreground">Finalizar</span>
+            <span class="text-xs font-medium uppercase tracking-wide text-muted-foreground group-hover:text-primary-foreground/75">{{ cardAnchorLabel(order) }}</span>
+            <span class="mt-1 text-xs font-semibold uppercase tracking-wide text-primary group-hover:text-primary-foreground">Finalizar</span>
           </button>
         </div>
 
@@ -492,7 +492,7 @@ function concludeOven() {
         >
           <p
             v-if="dialogMode === 'ringing'"
-            class="animate-pulse text-2xl font-bold text-destructive dark:text-orange-300"
+            class="animate-pulse text-3xl font-bold text-destructive dark:text-orange-300"
           >
             Conferir Forno!
           </p>
