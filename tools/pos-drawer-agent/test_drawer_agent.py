@@ -494,3 +494,25 @@ def test_instalador_aprova_quando_o_agente_responde(monkeypatch, capsys, tmp_pat
 
     assert drawer_agent.install(["--install", "--queue", "TM-T20", "--token", TOKEN]) == 0
     assert "Agente respondendo" in capsys.readouterr().out
+
+
+def test_no_windows_config_programa_e_log_ficam_na_MESMA_pasta():
+    """Programa num lugar e config em outro fez o dono procurar o token e não achar.
+
+    A primeira versão mandava o agente para `%LOCALAPPDATA%\\NelsonPosDrawer` e a
+    config para uma `.config` de estilo Linux escondida na pasta do usuário.
+    """
+    home = Path(r"C:/Users/pdv")
+    appdata = r"C:/Users/pdv/AppData/Local"
+
+    pasta = drawer_agent.install_dir_for(home, windows=True, localappdata=appdata)
+    config = drawer_agent.config_path_for(home, windows=True, localappdata=appdata)
+
+    assert config.parent == pasta
+    assert pasta.name == "NelsonPosDrawer"
+
+
+def test_fora_do_windows_a_config_segue_a_convencao_do_sistema():
+    """No Linux/macOS quem administra a máquina espera achar em `~/.config`."""
+    config = drawer_agent.config_path_for(Path("/home/pdv"), windows=False)
+    assert config.parts[-3:] == (".config", "nelson-pos-drawer", "agent.json")

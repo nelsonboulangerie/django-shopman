@@ -30,10 +30,40 @@ from pathlib import Path
 
 VERSION = "1.0.0"
 
-DEFAULT_CONFIG_PATH = Path(
-    os.environ.get("DRAWER_AGENT_CONFIG")
-    or Path.home() / ".config" / "nelson-pos-drawer" / "agent.json"
+IS_WINDOWS = os.name == "nt"
+IS_MACOS = sys.platform == "darwin"
+
+#: Tudo do agente numa pasta só, por sistema — programa, config e log juntos.
+#: A primeira versão espalhava: no Windows o programa ia para
+#: `%LOCALAPPDATA%\NelsonPosDrawer` e a config para uma pasta `.config` de estilo
+#: Linux, escondida na pasta do usuário. Quem estivesse no balcão procurando o
+#: token não acharia. Um lugar, uma resposta.
+def install_dir_for(home: Path, *, windows: bool, localappdata: str = "") -> Path:
+    if windows:
+        return Path(localappdata or home / "AppData" / "Local") / "NelsonPosDrawer"
+    return home / ".local" / "share" / "nelson-pos-drawer"
+
+
+def config_path_for(home: Path, *, windows: bool, localappdata: str = "") -> Path:
+    """Onde a config mora, por sistema.
+
+    No Windows, junto do programa. No Linux/macOS, em ``~/.config`` — que é onde
+    quem administra a máquina espera achar.
+    """
+    if windows:
+        return install_dir_for(home, windows=True, localappdata=localappdata) / "agent.json"
+    return home / ".config" / "nelson-pos-drawer" / "agent.json"
+
+
+INSTALL_DIR = install_dir_for(
+    Path.home(), windows=IS_WINDOWS, localappdata=os.environ.get("LOCALAPPDATA", "")
 )
+_LEGACY_CONFIG_PATH = Path.home() / ".config" / "nelson-pos-drawer" / "agent.json"
+DEFAULT_CONFIG_PATH = Path(os.environ.get("DRAWER_AGENT_CONFIG") or "") if os.environ.get(
+    "DRAWER_AGENT_CONFIG"
+) else config_path_for(Path.home(), windows=IS_WINDOWS, localappdata=os.environ.get("LOCALAPPDATA", ""))
+
+LOG_PATH = INSTALL_DIR / "drawer-agent.log"
 
 logger = logging.getLogger("drawer-agent")
 
@@ -149,8 +179,6 @@ class AgentConfig:
 # como "não dá para mandar bytes crus". O que a Apple removeu foi o **driver**
 # raw; a **opção de job** `-o raw` continua existindo, e numa fila sem driver
 # ela entrega os bytes intactos. Medido: `1b 70 00 19 fa` chegou inteiro.
-
-IS_WINDOWS = os.name == "nt"
 
 
 class SpoolerError(RuntimeError):
@@ -447,15 +475,6 @@ def serve(config: AgentConfig) -> None:
 # editor. Dois arquivos que precisam chegar juntos são uma chance a mais de
 # chegar só um.
 
-IS_MACOS = sys.platform == "darwin"
-
-#: No Windows `~/.local/share` seria um caminho estranho no meio do perfil do
-#: usuário; `%LOCALAPPDATA%` é onde o sistema espera um programa de usuário.
-INSTALL_DIR = (
-    Path(os.environ.get("LOCALAPPDATA", Path.home() / "AppData" / "Local")) / "NelsonPosDrawer"
-    if IS_WINDOWS
-    else Path.home() / ".local" / "share" / "nelson-pos-drawer"
-)
 UNIT_PATH = Path.home() / ".config" / "systemd" / "user" / "nelson-pos-drawer.service"
 SERVICE_NAME = "nelson-pos-drawer.service"
 LAUNCH_AGENT_LABEL = "com.nelson.pos-drawer"
@@ -484,12 +503,6 @@ RestartSec=3
 [Install]
 WantedBy=default.target
 """
-
-
-#: Onde o agente escreve quando não há journald para capturá-lo. Cada abertura
-#: de gaveta vira uma linha aqui — é a verdade física do balcão, e sem isto o
-#: macOS (launchd) e o Windows (`pythonw`, sem console) engoliriam tudo.
-LOG_PATH = INSTALL_DIR / "drawer-agent.log"
 
 
 def _plist_text(exec_path: Path) -> str:
@@ -717,6 +730,13 @@ def install(argv: list[str]) -> int:
         return 1
 
     INSTALL_DIR.mkdir(parents=True, exist_ok=True)
+    # Config de uma instalação anterior, quando o Windows guardava em pasta
+    # separada. Mover em vez de gerar outra: duas configs na mesma máquina é
+    # como o token do PDV e o do agente acabam diferentes sem ninguém entender.
+    if IS_WINDOWS and _LEGACY_CONFIG_PATH.exists() and not DEFAULT_CONFIG_PATH.exists():
+        shutil.move(str(_LEGACY_CONFIG_PATH), str(DEFAULT_CONFIG_PATH))
+        print(f"config movida de {_LEGACY_CONFIG_PATH} para {DEFAULT_CONFIG_PATH}")
+
     target = INSTALL_DIR / "drawer_agent.py"
     source = Path(__file__).resolve()
     if source != target.resolve():
