@@ -55,6 +55,15 @@ HIDDEN_SCREENS: tuple[tuple[str, str, str], ...] = (
     ("backstage", "operationtaskrun", "inline em Execuções de checklist"),
     ("buyman", "suppliermaterialcost", "inline em Insumos e em Fornecedores"),
     ("guestman", "customeraddress", "inline em Clientes"),
+    ("guestman", "contactpoint", "inline em Clientes"),
+    ("customer_consent", "communicationconsent", "inline em Clientes"),
+    # ── A pergunta já tem dono em outro lugar ───────────────────────────
+    ("shop", "campaign", "regras de campanha vivem no Marketing"),
+    ("shop", "announcementtemplate", "modelos de anúncio vivem no Marketing"),
+    ("shop", "announcement", "aprovar/recusar anúncio vive no Marketing"),
+    ("customer_insights", "customerinsight", "RFM e risco de perda aparecem na lista de Clientes"),
+    ("customer_preferences", "customerpreference", "preferência é dado derivado; ninguém edita"),
+    ("customer_timeline", "timelineevent", "histórico derivado; a leitura útil vive nas superfícies"),
 )
 
 

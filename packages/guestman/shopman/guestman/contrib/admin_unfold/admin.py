@@ -12,6 +12,7 @@ from __future__ import annotations
 import csv
 
 from django import forms
+from django.apps import apps
 from django.contrib import admin, messages
 from django.http import HttpResponse
 from django.template.response import TemplateResponse
@@ -175,6 +176,42 @@ class CustomerAddressInline(BaseTabularInline):
     readonly_fields = ["is_verified"]
 
 
+class ContactPointInline(BaseTabularInline):
+    """Telefones e e-mails do cliente, no cliente.
+
+    Contato só faz sentido junto de quem ele contata: uma lista global de
+    telefones não responde nenhuma pergunta que alguém realmente faça. O estado
+    de verificação é lavrado pelo fluxo de verificação (OTP, link), nunca
+    digitado aqui.
+    """
+
+    model = ContactPoint
+    extra = 0
+    fields = ["type", "value_display", "is_primary", "is_verified", "verified_at"]
+    readonly_fields = ["is_verified", "verified_at"]
+    verbose_name = _("contato")
+    verbose_name_plural = _("contatos")
+
+
+class CommunicationConsentInline(BaseTabularInline):
+    """Consentimento de comunicação por canal — registro de LGPD, somente leitura.
+
+    Quem concede e quem revoga é o cliente, pelas superfícies dele. O Admin
+    mostra para que a loja consiga responder "posso mandar mensagem para esta
+    pessoa?" sem sair da ficha dela.
+    """
+
+    extra = 0
+    can_delete = False
+    verbose_name = _("consentimento")
+    verbose_name_plural = _("consentimentos de comunicação")
+    fields = ["channel", "status", "legal_basis", "source", "consented_at", "revoked_at"]
+    readonly_fields = fields
+
+    def has_add_permission(self, request, obj=None):
+        return False
+
+
 @admin.register(Customer)
 class CustomerAdmin(BaseModelAdmin):
     list_display = [
@@ -199,7 +236,30 @@ class CustomerAdmin(BaseModelAdmin):
     date_hierarchy = "created_at"
     search_fields = ["ref", "first_name", "last_name", "document", "phone", "email"]
     readonly_fields = ["uuid", "created_at", "updated_at"]
-    inlines = [CustomerAddressInline]
+
+    def get_inlines(self, request, obj=None):
+        """Endereços, contatos e — se o contrib de consentimento estiver instalado
+        neste deployment — o registro de LGPD.
+
+        O consentimento é opcional (``guestman.contrib.consent``), então o inline
+        se monta em tempo de request: um pacote genérico não pode assumir que
+        quem o instalou também instalou o contrib.
+        """
+        inlines = [CustomerAddressInline, ContactPointInline]
+
+        try:
+            consent_model = apps.get_model("customer_consent", "CommunicationConsent")
+        except LookupError:
+            return inlines
+
+        inlines.append(
+            type(
+                "BoundCommunicationConsentInline",
+                (CommunicationConsentInline,),
+                {"model": consent_model, "__module__": __name__},
+            )
+        )
+        return inlines
 
     fieldsets = [
         (
