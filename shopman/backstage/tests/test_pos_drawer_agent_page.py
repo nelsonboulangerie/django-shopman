@@ -267,3 +267,22 @@ def test_a_tela_nao_vaza_comentario_de_template(client, manager):
 
     assert "U+002D" not in body
     assert "{#" not in body and "#}" not in body
+
+
+def test_terminal_sem_gaveta_mostra_NAO_CONFIGURADA_selecionada():
+    """Sem opção vazia o navegador marca a primeira ("Com a chave") sozinho.
+
+    O formulário então exibia um estado que o banco não tinha, e salvar sem
+    tocar no campo gravava `manual`. Estado real e exibido divergindo é como a
+    config da gaveta some sem ninguém ter pedido.
+    """
+    form = POSTerminalForm(instance=_terminal())
+    html = str(form["drawer_adapter"])
+
+    assert 'value=""' in html, "falta a opção vazia"
+    assert html.index('value=""') < html.index('value="manual"'), "a vazia tem que vir primeiro"
+
+
+def test_terminal_com_agente_abre_o_formulario_com_agente_marcado():
+    form = POSTerminalForm(instance=_terminal(AGENT))
+    assert form["drawer_adapter"].value() == "agent"
