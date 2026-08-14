@@ -24,7 +24,17 @@ export interface BIProductionDay {
   discounted: string;
 }
 
-/** BIProductionReport(date_from: 'str', date_to: 'str', days: 'tuple[BIProductionDay, ...]', oven_time_by_recipe: 'tuple[BIOvenTimeRow, ...]', oven_time_by_oven: 'tuple[BIOvenTimeRow, ...]', batches_finished: 'int', batches_measured: 'int', oven_coverage_percent: 'int') */
+/** O período de mesmo tamanho imediatamente anterior (F7 — comparação). */
+export interface BIProductionPrevious {
+  date_from: string;
+  date_to: string;
+  batches_finished: number;
+  finished_total: string;
+  loss_total: string;
+  finished_by_day: string[];
+}
+
+/** BIProductionReport(date_from: 'str', date_to: 'str', days: 'tuple[BIProductionDay, ...]', oven_time_by_recipe: 'tuple[BIOvenTimeRow, ...]', oven_time_by_oven: 'tuple[BIOvenTimeRow, ...]', batches_finished: 'int', batches_measured: 'int', oven_coverage_percent: 'int', previous: 'BIProductionPrevious') */
 export interface BIProductionReport {
   date_from: string;
   date_to: string;
@@ -34,6 +44,7 @@ export interface BIProductionReport {
   batches_finished: number;
   batches_measured: number;
   oven_coverage_percent: number;
+  previous: BIProductionPrevious;
 }
 
 /** BISalesDay(date: 'str', orders: 'int', revenue_q: 'int', average_ticket_q: 'int', source: 'str') */
@@ -60,7 +71,17 @@ export interface BITopSkuRow {
   revenue_q: number;
 }
 
-/** BISalesReport(date_from: 'str', date_to: 'str', days: 'tuple[BISalesDay, ...]', by_channel: 'tuple[BISalesChannelRow, ...]', top_skus: 'tuple[BITopSkuRow, ...]', orders_by_hour: 'tuple[int, ...]', orders_by_weekday: 'tuple[int, ...]', orders_total: 'int', revenue_total_q: 'int', average_ticket_q: 'int', cancelled_total: 'int', historical_days: 'int') */
+/** O período de MESMO tamanho imediatamente anterior (F7 — comparação). */
+export interface BISalesPrevious {
+  date_from: string;
+  date_to: string;
+  orders_total: number;
+  revenue_total_q: number;
+  average_ticket_q: number;
+  revenue_by_day: number[];
+}
+
+/** BISalesReport(date_from: 'str', date_to: 'str', days: 'tuple[BISalesDay, ...]', by_channel: 'tuple[BISalesChannelRow, ...]', top_skus: 'tuple[BITopSkuRow, ...]', orders_by_hour: 'tuple[int, ...]', orders_by_weekday: 'tuple[int, ...]', orders_total: 'int', revenue_total_q: 'int', average_ticket_q: 'int', cancelled_total: 'int', historical_days: 'int', previous: 'BISalesPrevious') */
 export interface BISalesReport {
   date_from: string;
   date_to: string;
@@ -74,6 +95,7 @@ export interface BISalesReport {
   average_ticket_q: number;
   cancelled_total: number;
   historical_days: number;
+  previous: BISalesPrevious;
 }
 
 /** BICashDay(date: 'str', shifts: 'int', difference_q: 'int', sangria_q: 'int', suprimento_q: 'int') */
@@ -98,7 +120,16 @@ export interface BICashMethodRow {
   amount_q: number;
 }
 
-/** BICashReport(date_from: 'str', date_to: 'str', days: 'tuple[BICashDay, ...]', by_operator: 'tuple[BICashOperatorRow, ...]', payment_methods: 'tuple[BICashMethodRow, ...]', shifts_total: 'int', difference_total_q: 'int', closings_missing: 'int') */
+/** O período de mesmo tamanho imediatamente anterior (F7 — comparação). */
+export interface BICashPrevious {
+  date_from: string;
+  date_to: string;
+  shifts_total: number;
+  difference_total_q: number;
+  difference_by_day: number[];
+}
+
+/** BICashReport(date_from: 'str', date_to: 'str', days: 'tuple[BICashDay, ...]', by_operator: 'tuple[BICashOperatorRow, ...]', payment_methods: 'tuple[BICashMethodRow, ...]', shifts_total: 'int', difference_total_q: 'int', closings_missing: 'int', previous: 'BICashPrevious') */
 export interface BICashReport {
   date_from: string;
   date_to: string;
@@ -108,6 +139,7 @@ export interface BICashReport {
   shifts_total: number;
   difference_total_q: number;
   closings_missing: number;
+  previous: BICashPrevious;
 }
 
 /** BICustomerSegmentRow(segment: 'str', customers: 'int') */

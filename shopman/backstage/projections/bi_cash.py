@@ -40,6 +40,17 @@ class BICashMethodRow:
 
 
 @dataclass(frozen=True)
+class BICashPrevious:
+    """O período de mesmo tamanho imediatamente anterior (F7 — comparação)."""
+
+    date_from: str
+    date_to: str
+    shifts_total: int
+    difference_total_q: int
+    difference_by_day: tuple[int, ...]  # alinhado posicionalmente com `days`
+
+
+@dataclass(frozen=True)
 class BICashReport:
     date_from: str
     date_to: str
@@ -49,6 +60,7 @@ class BICashReport:
     shifts_total: int
     difference_total_q: int
     closings_missing: int
+    previous: BICashPrevious
 
 
 def build_bi_cash(
@@ -133,4 +145,36 @@ def build_bi_cash(
         shifts_total=len(shifts),
         difference_total_q=sum(day_difference.values()),
         closings_missing=window_days - len(closed_dates),
+        previous=_cash_previous(date_from, date_to),
+    )
+
+
+def _cash_previous(date_from: date, date_to: date) -> BICashPrevious:
+    from shopman.backstage.models import CashShift
+
+    from .bi_production import _previous_window
+
+    prev_from, prev_to = _previous_window(date_from, date_to)
+    day_difference: dict[date, int] = defaultdict(int)
+    shifts_total = 0
+    shifts = CashShift.objects.filter(
+        status=CashShift.Status.CLOSED,
+        closed_at__date__range=(prev_from, prev_to),
+    ).values_list("closed_at", "difference_q")
+    for closed_at, difference_q in shifts:
+        day_difference[timezone.localtime(closed_at).date()] += difference_q
+        shifts_total += 1
+
+    series = []
+    day = prev_from
+    while day <= prev_to:
+        series.append(day_difference.get(day, 0))
+        day += timedelta(days=1)
+
+    return BICashPrevious(
+        date_from=prev_from.isoformat(),
+        date_to=prev_to.isoformat(),
+        shifts_total=shifts_total,
+        difference_total_q=sum(day_difference.values()),
+        difference_by_day=tuple(series),
     )

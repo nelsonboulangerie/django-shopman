@@ -5,6 +5,7 @@ import {
   bucketLabel,
   bucketSalesDays,
   coverageLabel,
+  deltaLabel,
   formatMinutes,
   formatMoney,
   formatMoneyCompact,
@@ -39,6 +40,13 @@ describe("presentation/bi", () => {
   it("cobertura sempre carrega o denominador", () => {
     expect(coverageLabel(3, 12)).toBe("3 de 12 fornadas medidas");
     expect(coverageLabel(0, 0)).toBe("sem fornadas no período");
+  });
+
+  it("delta honesto: sem base não inventa infinito; queda e alta com seta", () => {
+    expect(deltaLabel(100, 0)).toBe("sem base anterior");
+    expect(deltaLabel(120, 100)).toBe("▲ 20% vs anterior");
+    expect(deltaLabel(80, 100)).toBe("▼ 20% vs anterior");
+    expect(deltaLabel(100, 100)).toBe("estável vs anterior");
   });
 });
 

@@ -8,6 +8,7 @@ import {
   bucketLabel,
   bucketRows,
   coverageLabel,
+  deltaLabel,
   formatInt,
   formatMinutes,
   formatQty,
@@ -18,10 +19,16 @@ const { report, pending, error, refresh } = useBiReport<BIProductionReport>("pro
 
 const sum = (values: (string | number)[]) => values.reduce((total: number, v) => total + Number(v), 0);
 
-const finishedSeries = computed(() =>
-  bucketRows(report.value?.days ?? []).map((bucket) => ({
+const finishedSeries = computed(() => {
+  const previous = report.value?.previous.finished_by_day ?? [];
+  const rows = (report.value?.days ?? []).map((day, index) => ({
+    ...day,
+    prev_finished: Number(previous[index] ?? 0),
+  }));
+  return bucketRows(rows).map((bucket) => ({
     label: bucketLabel(bucket.date, bucket.span),
     value: sum(bucket.rows.map((d) => d.finished)),
+    previous: sum(bucket.rows.map((d) => d.prev_finished)),
     detail: [
       BUCKET_SPAN_LABELS[bucket.span],
       `previsto ${formatQty(String(sum(bucket.rows.map((d) => d.planned))))}`,
@@ -29,8 +36,8 @@ const finishedSeries = computed(() =>
     ]
       .filter(Boolean)
       .join(" · "),
-  })),
-);
+  }));
+});
 
 const yieldSeries = computed(() =>
   bucketRows(report.value?.days ?? []).map((bucket) => {
@@ -76,13 +83,22 @@ const ovenRows = (rows: BIProductionReport["oven_time_by_recipe"]) =>
     </div>
     <template v-else-if="report">
       <div class="grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <StatTile label="Fornadas fechadas" :value="formatInt(report.batches_finished)" />
+        <StatTile
+          label="Fornadas fechadas"
+          :value="formatInt(report.batches_finished)"
+          :delta="deltaLabel(report.batches_finished, report.previous.batches_finished)"
+        />
         <StatTile
           label="Tempo de forno medido"
           :value="`${report.oven_coverage_percent}%`"
           :hint="coverageLabel(report.batches_measured, report.batches_finished)"
         />
-        <StatTile label="Perda no período" :value="formatInt(lossTotal)" hint="unidades que não saíram do forno" />
+        <StatTile
+          label="Perda no período"
+          :value="formatInt(lossTotal)"
+          :delta="deltaLabel(lossTotal, Number(report.previous.loss_total))"
+          hint="unidades que não saíram do forno"
+        />
         <StatTile
           label="Período"
           :value="`${shortDate(report.date_from)} – ${shortDate(report.date_to)}`"
@@ -91,7 +107,9 @@ const ovenRows = (rows: BIProductionReport["oven_time_by_recipe"]) =>
 
       <section class="rounded-md border border-border bg-card p-3">
         <h2 class="text-lg font-semibold text-foreground">Produção por dia</h2>
-        <p class="mb-3 text-xs text-muted-foreground">unidades que saíram do forno; o tooltip traz previsto e perda</p>
+        <p class="mb-3 text-xs text-muted-foreground">
+          unidades que saíram do forno; traço = período anterior; o tooltip traz previsto e perda
+        </p>
         <ChartBarSeries :points="finishedSeries" :format="(v) => formatInt(v)" />
       </section>
 

@@ -46,6 +46,18 @@ export function hourLabel(hour: number): string {
   return `${hour}h`;
 }
 
+/**
+ * Delta vs o período anterior (F7). Sem base = diz que não há base — nunca
+ * um "+∞" fingido. Sem cor: a semântica de "subir" muda por métrica (perda
+ * subindo é ruim; faturamento subindo é bom), e cor é só funcional no DS.
+ */
+export function deltaLabel(current: number, previous: number): string {
+  if (!previous) return "sem base anterior";
+  const pct = Math.round(((current - previous) / Math.abs(previous)) * 100);
+  if (pct === 0) return "estável vs anterior";
+  return `${pct > 0 ? "▲" : "▼"} ${Math.abs(pct)}% vs anterior`;
+}
+
 /** Cobertura da medição de forno, sempre com o denominador à vista. */
 export function coverageLabel(measured: number, finished: number): string {
   if (!finished) return "sem fornadas no período";
@@ -159,6 +171,8 @@ export interface SalesDayLike {
   orders: number;
   revenue_q: number;
   source: string;
+  /** Faturamento do dia correspondente do período anterior (F7, alinhado). */
+  prev_revenue_q?: number;
 }
 
 /** Um balde da série de vendas (dia, semana ou mês, conforme a janela). */
@@ -166,6 +180,7 @@ export interface SalesBucket {
   date: string;
   orders: number;
   revenue_q: number;
+  prev_revenue_q: number;
   source: string;
   span: BucketSpan;
 }
@@ -182,6 +197,7 @@ export function bucketSalesDays(days: readonly SalesDayLike[], maxDaily = 120): 
       span: bucket.span,
       orders: bucket.rows.reduce((sum, d) => sum + d.orders, 0),
       revenue_q: bucket.rows.reduce((sum, d) => sum + d.revenue_q, 0),
+      prev_revenue_q: bucket.rows.reduce((sum, d) => sum + (d.prev_revenue_q ?? 0), 0),
       source: withSales.length && withSales.every((d) => d.source === "yooga") ? "yooga" : "shopman",
     };
   });

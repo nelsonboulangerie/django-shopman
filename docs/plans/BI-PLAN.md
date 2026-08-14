@@ -270,11 +270,13 @@ no padrão de bolsa (`1D · 7D · 28D · 3M · 6M · 12M · No ano · Máx`, "No
 YTD), período **Personalizado** com datas nativas, teto de janela cobrindo o
 histórico inteiro e granularidade automática dia→semana→mês.
 
-**F7 — Comparação com o período anterior** (o que Stripe/Shopify acertam):
-cada relatório ganha a série e os totais do período de MESMO tamanho
-imediatamente anterior (`previous` no contrato); tiles mostram o delta
-(▲/▼ %), gráficos mostram o período anterior como série fantasma. Comparação
-honesta por construção: janelas de 28d comparam mix igual de dias-da-semana.
+**F7 — Comparação com o período anterior** ✅ (2026-08-14): `previous` no
+contrato de vendas/produção/caixa (clientes fica de fora: métricas de estoque,
+não de fluxo); tiles com delta ▲/▼ % ("sem base anterior" quando não há — nunca
+um +∞ fingido; sem cor: a semântica de subir muda por métrica), gráficos com o
+período anterior como traço bullet-style por barra. Comparação honesta por
+construção: 28d compara mix igual de dias-da-semana, e o `previous` de vendas
+usa a MESMA regra de fusão nativo/histórico (teste de consistência cobra).
 
 **F8 — Explorador (cruzamentos)**: um endpoint `bi/explore/` com gramática
 VALIDADA por whitelist — métrica × dimensões × filtros × grão de tempo.

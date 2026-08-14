@@ -6,9 +6,10 @@
 import { computed } from "vue";
 
 const props = defineProps<{
-  // `muted` marca a barra de outra classe visual (ex.: trecho histórico) —
-  // a página que usar DEVE mostrar a legenda correspondente.
-  points: { label: string; value: number; detail?: string; muted?: boolean }[];
+  // `muted` marca a barra de outra classe visual (ex.: trecho histórico);
+  // `previous` desenha um traço na altura do período anterior (bullet-style,
+  // F7) — a página que usar qualquer um DEVE mostrar a legenda correspondente.
+  points: { label: string; value: number; detail?: string; muted?: boolean; previous?: number }[];
   /** Formata o valor no tooltip e no rótulo direto. */
   format?: (value: number) => string;
   /** Rótulos do eixo x mostrados a cada N pontos (default: ~6 rótulos). */
@@ -16,7 +17,10 @@ const props = defineProps<{
 }>();
 
 const fmt = computed(() => props.format ?? ((v: number) => String(v)));
-const max = computed(() => Math.max(...props.points.map((p) => p.value), 1));
+// O máximo considera o traço do anterior — senão ele estoura o quadro.
+const max = computed(() =>
+  Math.max(...props.points.flatMap((p) => [p.value, p.previous ?? 0]), 1),
+);
 const maxIndex = computed(() => {
   const values = props.points.map((p) => p.value);
   const top = Math.max(...values);
@@ -43,6 +47,12 @@ const every = computed(
             : 'bg-foreground/60 group-hover:bg-foreground'"
           :style="{ height: `${Math.max(point.value > 0 ? 3 : 0, (point.value / max) * 100)}%` }"
         ></div>
+        <!-- Traço do período anterior (bullet-style): posição, não preenchimento. -->
+        <div
+          v-if="point.previous"
+          class="pointer-events-none absolute left-0 right-0 h-0.5 bg-foreground/45"
+          :style="{ bottom: `${(point.previous / max) * 100}%` }"
+        ></div>
         <!-- Rótulo direto seletivo: só o pico do período. -->
         <span
           v-if="index === maxIndex"
@@ -55,6 +65,8 @@ const every = computed(
         >
           <span class="text-muted-foreground">{{ point.label }}</span>
           · <span class="font-medium tabular-nums">{{ fmt(point.value) }}</span>
+          <span v-if="point.previous" class="text-muted-foreground">
+            · anterior {{ fmt(point.previous) }}</span>
           <span v-if="point.detail" class="text-muted-foreground"> · {{ point.detail }}</span>
         </div>
       </div>

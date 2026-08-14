@@ -22,6 +22,7 @@ from shopman.backstage.projections.bi_cash import (
     BICashDay,
     BICashMethodRow,
     BICashOperatorRow,
+    BICashPrevious,
     BICashReport,
 )
 from shopman.backstage.projections.bi_customers import (
@@ -32,11 +33,13 @@ from shopman.backstage.projections.bi_customers import (
 from shopman.backstage.projections.bi_production import (
     BIOvenTimeRow,
     BIProductionDay,
+    BIProductionPrevious,
     BIProductionReport,
 )
 from shopman.backstage.projections.bi_sales import (
     BISalesChannelRow,
     BISalesDay,
+    BISalesPrevious,
     BISalesReport,
     BITopSkuRow,
 )
@@ -48,14 +51,17 @@ OUTPUT_RELATIVE_PATH = Path("surfaces/bi-nuxt/app/generated/biContract.ts")
 CONTRACT_DATACLASSES = (
     BIOvenTimeRow,
     BIProductionDay,
+    BIProductionPrevious,
     BIProductionReport,
     BISalesDay,
     BISalesChannelRow,
     BITopSkuRow,
+    BISalesPrevious,
     BISalesReport,
     BICashDay,
     BICashOperatorRow,
     BICashMethodRow,
+    BICashPrevious,
     BICashReport,
     BICustomerSegmentRow,
     BICustomersWeekRow,

@@ -7,6 +7,7 @@ import {
   WEEKDAY_LABELS,
   bucketLabel,
   bucketSalesDays,
+  deltaLabel,
   formatInt,
   formatMoney,
   formatMoneyCompact,
@@ -18,10 +19,16 @@ const { report, pending, error, refresh } = useBiReport<BISalesReport>("sales");
 
 const hasHistory = computed(() => (report.value?.historical_days ?? 0) > 0);
 
-const revenueSeries = computed(() =>
-  bucketSalesDays(report.value?.days ?? []).map((bucket) => ({
+const revenueSeries = computed(() => {
+  const previous = report.value?.previous.revenue_by_day ?? [];
+  const rows = (report.value?.days ?? []).map((day, index) => ({
+    ...day,
+    prev_revenue_q: previous[index] ?? 0,
+  }));
+  return bucketSalesDays(rows).map((bucket) => ({
     label: bucketLabel(bucket.date, bucket.span),
     value: bucket.revenue_q,
+    previous: bucket.prev_revenue_q,
     muted: bucket.source === "yooga",
     detail: [
       BUCKET_SPAN_LABELS[bucket.span],
@@ -30,8 +37,8 @@ const revenueSeries = computed(() =>
     ]
       .filter(Boolean)
       .join(" · "),
-  })),
-);
+  }));
+});
 
 const hourSeries = computed(() =>
   (report.value?.orders_by_hour ?? []).map((count, hour) => ({
@@ -68,9 +75,21 @@ const channelRows = computed(() =>
     </div>
     <template v-else-if="report">
       <div class="grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <StatTile label="Pedidos" :value="formatInt(report.orders_total)" />
-        <StatTile label="Faturamento" :value="formatMoneyCompact(report.revenue_total_q)" />
-        <StatTile label="Ticket médio" :value="formatMoney(report.average_ticket_q)" />
+        <StatTile
+          label="Pedidos"
+          :value="formatInt(report.orders_total)"
+          :delta="deltaLabel(report.orders_total, report.previous.orders_total)"
+        />
+        <StatTile
+          label="Faturamento"
+          :value="formatMoneyCompact(report.revenue_total_q)"
+          :delta="deltaLabel(report.revenue_total_q, report.previous.revenue_total_q)"
+        />
+        <StatTile
+          label="Ticket médio"
+          :value="formatMoney(report.average_ticket_q)"
+          :delta="deltaLabel(report.average_ticket_q, report.previous.average_ticket_q)"
+        />
         <StatTile
           label="Cancelados"
           :value="formatInt(report.cancelled_total)"
@@ -81,7 +100,7 @@ const channelRows = computed(() =>
       <section class="rounded-md border border-border bg-card p-3">
         <h2 class="text-lg font-semibold text-foreground">Faturamento por dia</h2>
         <p class="mb-3 text-xs text-muted-foreground">
-          o tooltip traz os pedidos do ponto; janela longa agrega por semana ou mês
+          traço = período anterior; janela longa agrega por semana ou mês
           <template v-if="hasHistory">
             · <span class="mx-0.5 inline-block h-2 w-2 rounded-sm bg-foreground/25 align-middle"></span>
             barras claras = histórico Yooga

@@ -145,6 +145,54 @@ def test_sales_historical_fills_only_days_without_native(db):
     assert tops == {("PAO", "Pão"): 2000, ("", "Pão de Ontem"): 3000}
 
 
+# ── Comparação (F7) ──────────────────────────────────────────────────────────
+
+
+@pytest.mark.django_db
+def test_sales_previous_window_agrees_with_main_build(db):
+    """O `previous` usa a MESMA regra de fusão do principal: os totais têm que
+    bater com um build feito diretamente sobre a janela anterior."""
+    from datetime import date, timedelta
+
+    from shopman.backstage.models import HistoricalSale
+
+    today = timezone.localdate()
+    # 3 vendas históricas dentro da janela ANTERIOR à default de 28 dias.
+    for index in range(3):
+        HistoricalSale.objects.create(
+            source="yooga", external_id=100 + index,
+            occurred_at=timezone.now() - timedelta(days=30 + index),
+            total_q=1000 * (index + 1), is_delivery=False,
+        )
+    _order("BI-P1", total_q=2000)  # janela atual
+
+    report = build_bi_sales()
+    prev_from = date.fromisoformat(report.previous.date_from)
+    prev_to = date.fromisoformat(report.previous.date_to)
+    assert (prev_to - prev_from).days == (today - date.fromisoformat(report.date_from)).days
+    assert prev_to == date.fromisoformat(report.date_from) - timedelta(days=1)
+
+    direct = build_bi_sales(date_from=prev_from, date_to=prev_to)
+    assert report.previous.orders_total == direct.orders_total == 3
+    assert report.previous.revenue_total_q == direct.revenue_total_q == 6000
+    assert report.previous.average_ticket_q == direct.average_ticket_q
+    assert len(report.previous.revenue_by_day) == len(report.days)
+    assert sum(report.previous.revenue_by_day) == 6000
+
+
+@pytest.mark.django_db
+def test_cash_and_production_carry_previous(db):
+    from shopman.backstage.projections.bi_production import build_bi_production
+
+    cash = build_bi_cash()
+    assert cash.previous.shifts_total == 0
+    assert len(cash.previous.difference_by_day) == len(cash.days)
+
+    production = build_bi_production()
+    assert production.previous.batches_finished == 0
+    assert len(production.previous.finished_by_day) == len(production.days)
+
+
 # ── Caixa ────────────────────────────────────────────────────────────────────
 
 

@@ -53,6 +53,18 @@ class BIProductionDay:
 
 
 @dataclass(frozen=True)
+class BIProductionPrevious:
+    """O período de mesmo tamanho imediatamente anterior (F7 — comparação)."""
+
+    date_from: str
+    date_to: str
+    batches_finished: int
+    finished_total: str
+    loss_total: str
+    finished_by_day: tuple[str, ...]  # alinhado posicionalmente com `days`
+
+
+@dataclass(frozen=True)
 class BIProductionReport:
     date_from: str
     date_to: str
@@ -62,6 +74,7 @@ class BIProductionReport:
     batches_finished: int
     batches_measured: int
     oven_coverage_percent: int
+    previous: BIProductionPrevious
 
 
 def build_bi_production(
@@ -115,10 +128,51 @@ def build_bi_production(
         oven_coverage_percent=(
             round(batches_measured * 100 / batches_finished) if batches_finished else 0
         ),
+        previous=_production_previous(date_from, date_to),
+    )
+
+
+def _production_previous(date_from: date, date_to: date) -> BIProductionPrevious:
+    from shopman.craftsman.models import WorkOrder
+
+    prev_from, prev_to = _previous_window(date_from, date_to)
+    work_orders = list(
+        WorkOrder.objects.filter(
+            target_date__range=(prev_from, prev_to),
+            status=WorkOrder.Status.FINISHED,
+        )
+    )
+    finished_by_day: dict[date, Decimal] = defaultdict(Decimal)
+    planned_total = Decimal(0)
+    finished_total = Decimal(0)
+    for wo in work_orders:
+        finished_by_day[wo.target_date] += wo.finished or Decimal(0)
+        planned_total += wo.quantity
+        finished_total += wo.finished or Decimal(0)
+
+    series = []
+    day = prev_from
+    while day <= prev_to:
+        series.append(_qty(finished_by_day.get(day, Decimal(0))))
+        day += timedelta(days=1)
+
+    return BIProductionPrevious(
+        date_from=prev_from.isoformat(),
+        date_to=prev_to.isoformat(),
+        batches_finished=len(work_orders),
+        finished_total=_qty(finished_total),
+        loss_total=_qty(max(Decimal(0), planned_total - finished_total)),
+        finished_by_day=tuple(series),
     )
 
 
 # ── Janela ───────────────────────────────────────────────────────────────────
+
+
+def _previous_window(date_from: date, date_to: date) -> tuple[date, date]:
+    """O período de MESMO tamanho imediatamente anterior (F7 — comparação)."""
+    length = (date_to - date_from).days + 1
+    return date_from - timedelta(days=length), date_from - timedelta(days=1)
 
 
 def _normalize_window(date_from: date | None, date_to: date | None) -> tuple[date, date]:

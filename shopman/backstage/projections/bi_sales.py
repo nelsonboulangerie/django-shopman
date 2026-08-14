@@ -25,7 +25,7 @@ from decimal import Decimal
 
 from django.utils import timezone
 
-from .bi_production import _normalize_window, _qty
+from .bi_production import _normalize_window, _previous_window, _qty
 
 
 @dataclass(frozen=True)
@@ -53,6 +53,18 @@ class BITopSkuRow:
 
 
 @dataclass(frozen=True)
+class BISalesPrevious:
+    """O período de MESMO tamanho imediatamente anterior (F7 — comparação)."""
+
+    date_from: str
+    date_to: str
+    orders_total: int
+    revenue_total_q: int
+    average_ticket_q: int
+    revenue_by_day: tuple[int, ...]  # alinhado posicionalmente com `days`
+
+
+@dataclass(frozen=True)
 class BISalesReport:
     date_from: str
     date_to: str
@@ -66,6 +78,7 @@ class BISalesReport:
     average_ticket_q: int
     cancelled_total: int
     historical_days: int  # dias da janela preenchidos pelo histórico (yooga)
+    previous: BISalesPrevious
 
 
 def build_bi_sales(
@@ -165,6 +178,59 @@ def build_bi_sales(
         average_ticket_q=revenue_total // orders_total if orders_total else 0,
         cancelled_total=cancelled,
         historical_days=len(hist_days),
+        previous=_sales_previous(date_from, date_to),
+    )
+
+
+def _sales_previous(date_from: date, date_to: date) -> BISalesPrevious:
+    """Totais e série do período anterior, com a MESMA regra de fusão do
+    principal (dia nativo vence) — o teste de consistência compara os dois."""
+    from shopman.orderman.models import Order
+
+    from shopman.backstage.models import HistoricalSale
+
+    prev_from, prev_to = _previous_window(date_from, date_to)
+    window = _local_datetime_window(prev_from, prev_to)
+    excluded = (Order.Status.CANCELLED, Order.Status.RETURNED)
+
+    day_orders: dict[date, int] = defaultdict(int)
+    day_revenue: dict[date, int] = defaultdict(int)
+    native = Order.objects.filter(created_at__range=window).values_list(
+        "created_at", "total_q", "status"
+    )
+    for created_at, total_q, status in native:
+        if status in excluded:
+            continue
+        local_day = timezone.localtime(created_at).date()
+        day_orders[local_day] += 1
+        day_revenue[local_day] += total_q
+
+    native_days = set(day_orders)
+    historical = HistoricalSale.objects.filter(occurred_at__range=window).values_list(
+        "occurred_at", "total_q"
+    )
+    for occurred_at, total_q in historical:
+        local_day = timezone.localtime(occurred_at).date()
+        if local_day in native_days:
+            continue
+        day_orders[local_day] += 1
+        day_revenue[local_day] += total_q
+
+    series = []
+    day = prev_from
+    while day <= prev_to:
+        series.append(day_revenue.get(day, 0))
+        day += timedelta(days=1)
+
+    orders_total = sum(day_orders.values())
+    revenue_total = sum(day_revenue.values())
+    return BISalesPrevious(
+        date_from=prev_from.isoformat(),
+        date_to=prev_to.isoformat(),
+        orders_total=orders_total,
+        revenue_total_q=revenue_total,
+        average_ticket_q=revenue_total // orders_total if orders_total else 0,
+        revenue_by_day=tuple(series),
     )
 
 

@@ -7,6 +7,7 @@ import {
   BUCKET_SPAN_LABELS,
   bucketLabel,
   bucketRows,
+  deltaLabel,
   formatInt,
   formatMoney,
   shortDate,
@@ -54,10 +55,15 @@ const methodRows = computed(() =>
     </div>
     <template v-else-if="report">
       <div class="grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <StatTile label="Turnos fechados" :value="formatInt(report.shifts_total)" />
+        <StatTile
+          label="Turnos fechados"
+          :value="formatInt(report.shifts_total)"
+          :delta="deltaLabel(report.shifts_total, report.previous.shifts_total)"
+        />
         <StatTile
           label="Quebra acumulada"
           :value="formatMoney(report.difference_total_q)"
+          :delta="`anterior ${formatMoney(report.previous.difference_total_q)}`"
           hint="contado − esperado; negativo = faltou"
         />
         <StatTile

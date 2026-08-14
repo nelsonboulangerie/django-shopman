@@ -34,6 +34,22 @@ describe("chart/BarSeries", () => {
     const wrapper = mount(BarSeries, { props: { points } });
     expect(wrapper.text()).toContain("pico");
   });
+
+  it("período anterior vira traço, entra no máximo e no tooltip", () => {
+    const wrapper = mount(BarSeries, {
+      props: {
+        // anterior (80) maior que o atual (40): o máximo tem que considerá-lo.
+        points: [{ label: "14/08", value: 40, previous: 80 }],
+        format: (v: number) => `#${v}`,
+      },
+    });
+    const bar = wrapper.find(".rounded-t-sm");
+    expect(bar.attributes("style")).toContain("height: 50%");
+    const dash = wrapper.find(".h-0\\.5");
+    expect(dash.exists()).toBe(true);
+    expect(dash.attributes("style")).toContain("bottom: 100%");
+    expect(wrapper.text()).toContain("anterior #80");
+  });
 });
 
 describe("chart/DivergingBars", () => {
