@@ -170,8 +170,8 @@ function refreshAll() {
           <p class="text-xs text-muted-foreground">
             {{
               management?.capacity_percent != null
-                ? "do planejado sobre a capacidade diária"
-                : "sem capacidade configurada nas fichas"
+                ? "Do planejado sobre a capacidade diária"
+                : "Sem capacidade configurada nas fichas"
             }}
           </p>
         </div>
@@ -194,7 +194,7 @@ function refreshAll() {
             {{ management?.loss_qty || "0" }}
           </p>
           <p class="text-xs text-muted-foreground">
-            concluído {{ management?.finished_qty || "0" }} de
+            Concluído {{ management?.finished_qty || "0" }} de
             {{ management?.started_qty || "0" }} iniciados
           </p>
         </div>
@@ -507,7 +507,7 @@ function refreshAll() {
         <div class="mb-2 flex flex-wrap items-center gap-2">
           <h2 class="text-base font-bold">Mapa código-cego</h2>
           <UiBadge variant="outline" class="px-1.5 py-0 text-xs"
-            >visão de gestor</UiBadge
+            >Visão de gestor</UiBadge
           >
         </div>
         <p class="mb-3 max-w-2xl text-sm text-muted-foreground">
