@@ -6,7 +6,11 @@
 // O período é UM botão que sempre DIZ a janela ativa ("28D · 18/07 – 14/08");
 // os chips de bolsa (1D…Máx, No ano) e o personalizado moram no popover dele.
 // Um controle só: a barra não disputa espaço nem rola em tela estreita.
-import { WINDOW_PRESETS, windowButtonLabel } from "~/presentation/bi";
+import {
+  WINDOW_PRESETS_CALENDAR,
+  WINDOW_PRESETS_ROLLING,
+  windowButtonLabel,
+} from "~/presentation/bi";
 
 const route = useRoute();
 const section = computed(() =>
@@ -90,11 +94,25 @@ const chipClass = (active: boolean) =>
 
       <div
         v-if="open"
-        class="absolute right-0 top-full z-20 mt-2 w-72 max-w-[calc(100vw-4rem)] rounded-md border border-border bg-card p-3 shadow-md"
+        class="absolute right-0 top-full z-20 mt-2 w-80 max-w-[calc(100vw-4rem)] rounded-md border border-border bg-card p-3 shadow-md"
       >
-        <div class="grid grid-cols-4 gap-1.5 rounded-md bg-muted p-1" role="group" aria-label="Períodos rápidos">
+        <p class="mb-2 text-xs font-medium text-muted-foreground">Período atual</p>
+        <div class="grid grid-cols-4 gap-1.5 rounded-md bg-muted p-1" role="group" aria-label="Período atual do calendário">
           <button
-            v-for="preset in WINDOW_PRESETS"
+            v-for="preset in WINDOW_PRESETS_CALENDAR"
+            :key="preset.key"
+            type="button"
+            class="inline-flex h-8 items-center justify-center whitespace-nowrap rounded-md px-1 text-sm transition-all"
+            :class="chipClass(selection.preset === preset.key)"
+            @click="pick(preset.key)"
+          >
+            {{ preset.label }}
+          </button>
+        </div>
+        <p class="mb-2 mt-3 text-xs font-medium text-muted-foreground">Últimos</p>
+        <div class="grid grid-cols-4 gap-1.5 rounded-md bg-muted p-1" role="group" aria-label="Janelas móveis">
+          <button
+            v-for="preset in WINDOW_PRESETS_ROLLING"
             :key="preset.key"
             type="button"
             class="inline-flex h-8 items-center justify-center whitespace-nowrap rounded-md px-1 text-sm transition-all"
@@ -106,8 +124,8 @@ const chipClass = (active: boolean) =>
         </div>
         <div class="my-3 border-t border-border"></div>
         <p class="mb-2 text-xs font-medium text-muted-foreground">Personalizado</p>
-        <div class="flex items-end gap-2">
-          <label class="flex min-w-0 flex-1 flex-col gap-1 text-xs font-medium text-muted-foreground">
+        <div class="grid grid-cols-2 gap-2">
+          <label class="flex flex-col gap-1 text-xs font-medium text-muted-foreground">
             De
             <input
               v-model="customFrom"
@@ -115,7 +133,7 @@ const chipClass = (active: boolean) =>
               class="h-9 w-full rounded-md border border-border bg-background px-2 text-sm text-foreground"
             />
           </label>
-          <label class="flex min-w-0 flex-1 flex-col gap-1 text-xs font-medium text-muted-foreground">
+          <label class="flex flex-col gap-1 text-xs font-medium text-muted-foreground">
             Até
             <input
               v-model="customTo"
@@ -123,15 +141,15 @@ const chipClass = (active: boolean) =>
               class="h-9 w-full rounded-md border border-border bg-background px-2 text-sm text-foreground"
             />
           </label>
-          <button
-            type="button"
-            class="inline-flex h-9 shrink-0 items-center rounded-md bg-primary px-3 text-sm font-medium text-primary-foreground disabled:opacity-50"
-            :disabled="!customFrom || !customTo"
-            @click="submitCustom"
-          >
-            Aplicar
-          </button>
         </div>
+        <button
+          type="button"
+          class="mt-2 inline-flex h-9 w-full items-center justify-center rounded-md bg-primary px-3 text-sm font-medium text-primary-foreground disabled:opacity-50"
+          :disabled="!customFrom || !customTo"
+          @click="submitCustom"
+        >
+          Aplicar período
+        </button>
       </div>
     </div>
   </header>

@@ -82,8 +82,9 @@ export function coverageLabel(measured: number, finished: number): string {
 }
 
 // ── Janela de análise ────────────────────────────────────────────────────────
-// Padrão de bolsa nos chips (1 toque), vocabulário de varejo onde importa
-// ("No ano" = YTD) e "Máx" cobrindo o histórico inteiro (Yooga, jul/2024).
+// Dois vocabulários que coexistem (decisão do dono): "Período atual" é
+// CALENDÁRIO (o dia/semana/mês/ano corrente, do início até hoje) e "Últimos"
+// são as janelas MÓVEIS de bolsa (7D…5A; Máx cobre o histórico inteiro).
 
 /** Primeiro dado da casa (export Yooga começa em jul/2024; folga no mês). */
 export const DATA_EPOCH = "2024-01-01";
@@ -122,20 +123,33 @@ export const EXPLORE_EXAMPLES = [
 export interface WindowPreset {
   key: string;
   label: string;
-  days?: number; // ausente = resolvido por regra (ytd/max)
+  days?: number; // só nas janelas móveis; calendário resolve por regra
 }
 
-export const WINDOW_PRESETS: readonly WindowPreset[] = [
-  { key: "1d", label: "1D", days: 1 },
+/** Período CORRENTE do calendário — a semana começa na segunda. */
+export const WINDOW_PRESETS_CALENDAR: readonly WindowPreset[] = [
+  { key: "day", label: "Dia" },
+  { key: "week", label: "Semana" },
+  { key: "month", label: "Mês" },
+  { key: "year", label: "Ano" },
+];
+
+/** Janelas móveis terminando hoje. */
+export const WINDOW_PRESETS_ROLLING: readonly WindowPreset[] = [
   { key: "7d", label: "7D", days: 7 },
   // 28 e não 30: quatro semanas exatas têm o mesmo mix de dias-da-semana,
   // então médias e comparações não mentem (sábado ≠ terça numa padaria).
   { key: "28d", label: "28D", days: 28 },
   { key: "3m", label: "3M", days: 90 },
   { key: "6m", label: "6M", days: 180 },
-  { key: "12m", label: "12M", days: 365 },
-  { key: "ytd", label: "No ano" },
+  { key: "1y", label: "1A", days: 365 },
+  { key: "5y", label: "5A", days: 1826 },
   { key: "max", label: "Máx" },
+];
+
+export const WINDOW_PRESETS: readonly WindowPreset[] = [
+  ...WINDOW_PRESETS_CALENDAR,
+  ...WINDOW_PRESETS_ROLLING,
 ];
 
 export interface WindowSelection {
@@ -151,6 +165,7 @@ export function windowButtonLabel(
 ): string {
   const preset = WINDOW_PRESETS.find((p) => p.key === selection.preset);
   const name = selection.preset === "custom" ? "Personalizado" : (preset?.label ?? "Período");
+  if (range.date_from === range.date_to) return `${name} · ${shortDate(range.date_from)}`;
   return `${name} · ${shortDate(range.date_from)} – ${shortDate(range.date_to)}`;
 }
 
@@ -164,7 +179,18 @@ export function resolveWindowRange(
   if (selection.preset === "custom" && selection.from && selection.to) {
     return { date_from: selection.from, date_to: selection.to };
   }
-  if (selection.preset === "ytd") {
+  if (selection.preset === "day") {
+    return { date_from: to, date_to: to };
+  }
+  if (selection.preset === "week") {
+    const monday = new Date(today.getTime());
+    monday.setDate(monday.getDate() - ((monday.getDay() + 6) % 7));
+    return { date_from: iso(monday), date_to: to };
+  }
+  if (selection.preset === "month") {
+    return { date_from: `${to.slice(0, 7)}-01`, date_to: to };
+  }
+  if (selection.preset === "year") {
     return { date_from: `${today.getFullYear()}-01-01`, date_to: to };
   }
   if (selection.preset === "max") {

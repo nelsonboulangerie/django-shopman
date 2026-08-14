@@ -89,21 +89,36 @@ describe("bucketSalesDays", () => {
     expect(out.reduce((sum, bucket) => sum + bucket.revenue_q, 0)).toBe(80000);
   });
 
-  it("resolveWindowRange cobre preset, No ano, Máx e personalizado", () => {
+  it("resolveWindowRange: janelas móveis, Máx e personalizado", () => {
     const today = new Date("2026-08-14T12:00:00Z");
     expect(resolveWindowRange({ preset: "7d", from: "", to: "" }, today)).toEqual({
       date_from: "2026-08-08",
       date_to: "2026-08-14",
     });
-    expect(resolveWindowRange({ preset: "ytd", from: "", to: "" }, today).date_from).toBe(
-      "2026-01-01",
-    );
     expect(resolveWindowRange({ preset: "max", from: "", to: "" }, today).date_from).toBe(
       DATA_EPOCH,
     );
     expect(
       resolveWindowRange({ preset: "custom", from: "2025-01-10", to: "2025-02-10" }, today),
     ).toEqual({ date_from: "2025-01-10", date_to: "2025-02-10" });
+  });
+
+  it("resolveWindowRange: períodos do calendário correm do início até hoje", () => {
+    const friday = new Date("2026-08-14T12:00:00Z");
+    expect(resolveWindowRange({ preset: "day", from: "", to: "" }, friday)).toEqual({
+      date_from: "2026-08-14",
+      date_to: "2026-08-14",
+    });
+    // Semana começa na segunda: sexta 14/08 → segunda 10/08.
+    expect(resolveWindowRange({ preset: "week", from: "", to: "" }, friday).date_from).toBe(
+      "2026-08-10",
+    );
+    expect(resolveWindowRange({ preset: "month", from: "", to: "" }, friday).date_from).toBe(
+      "2026-08-01",
+    );
+    expect(resolveWindowRange({ preset: "year", from: "", to: "" }, friday).date_from).toBe(
+      "2026-01-01",
+    );
   });
 
   it("semana mista veste a fonte nativa; semana só-histórico fica yooga", () => {
