@@ -135,6 +135,7 @@ def get_sidebar_navigation(request):
             _item("Ordens de produção", "assignment", _url("admin:craftsman_workorder_changelist"), permission=_can_access_production),
             _item("Defeitos de fornada", "report", _url("admin:shop_qualitydefect_changelist"), permission=_can_access_production),
             _item("Graus de qualidade", "grade", _url("admin:shop_qualitygrade_changelist"), permission=_can_access_production),
+            _item("Motivos de episódio", "help_center", _url("admin:backstage_operationepisodekind_changelist"), permission=_is_staff),
             _item("Insumos", "grocery", _url("admin:buyman_material_changelist"), permission=_is_staff),
             _item("Fornecedores", "local_shipping", _url("admin:buyman_supplier_changelist"), permission=_is_staff),
             *(
@@ -192,6 +193,7 @@ def get_sidebar_navigation(request):
             _item("Conferir comprovante", "qr_code_scanner", _url("admin_console_cash_receipt_lookup"), permission=_can_view_cash_movement),
             _item("Fechamentos do dia", "event_available", _url("admin:backstage_dayclosing_changelist"), permission=_can_close_day),
             _item("Execuções de checklist", "checklist", _url("admin:backstage_operationchecklistrun_changelist"), permission=_is_staff),
+            _item("Episódios de operação", "report_problem", _url("admin:backstage_operationepisode_changelist"), permission=_can_close_day),
         ]),
         # A gaveta do "raramente, mas quando precisa é aqui": equipamento da casa,
         # quem entra e com o quê, e a infraestrutura de referências.

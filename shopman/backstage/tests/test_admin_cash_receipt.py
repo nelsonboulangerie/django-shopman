@@ -144,8 +144,8 @@ def test_chave_descartada_para_de_conferir(settings, movement):
     assert not build_receipt_verification(papel_velho).valid
 
 
-def _admin_host_com_env(**env) -> str:
-    """Reexecuta o `settings.py` com `env` e devolve o host derivado.
+def _reload_settings_com_env(**env):
+    """Reexecuta o `settings.py` com `env` e devolve o módulo.
 
     ⚠️ Recarregar o módulo mexe num objeto GLOBAL — outro teste que importe
     `config.settings` direto veria o estado do último reload. Por isso o
@@ -153,34 +153,39 @@ def _admin_host_com_env(**env) -> str:
     """
     import importlib
     import os
+    from contextlib import contextmanager
 
     import config.settings as s
 
-    original = {chave: os.environ.get(chave) for chave in env}
-    try:
-        for chave, valor in env.items():
-            if valor is None:
-                os.environ.pop(chave, None)
-            else:
-                os.environ[chave] = valor
-        importlib.reload(s)
-        return s.SHOPMAN_ADMIN_HOST
-    finally:
-        for chave, valor in original.items():
-            if valor is None:
-                os.environ.pop(chave, None)
-            else:
-                os.environ[chave] = valor
-        importlib.reload(s)
+    @contextmanager
+    def _ctx():
+        original = {chave: os.environ.get(chave) for chave in env}
+        try:
+            for chave, valor in env.items():
+                if valor is None:
+                    os.environ.pop(chave, None)
+                else:
+                    os.environ[chave] = valor
+            importlib.reload(s)
+            yield s
+        finally:
+            for chave, valor in original.items():
+                if valor is None:
+                    os.environ.pop(chave, None)
+                else:
+                    os.environ[chave] = valor
+            importlib.reload(s)
+
+    return _ctx()
 
 
 class TestAdminHostSetting:
     """O host que vai IMPRESSO no QR.
 
     Estes testes existem porque a suíte inteira do comprovante passava com
-    `settings.SHOPMAN_ADMIN_HOST` sobrescrito — e o setting não existia no
-    `settings.py`. Em produção o QR teria saído sem URL nenhuma, e ninguém
-    perceberia até alguém apontar o celular para um papel.
+    `settings.SHOPMAN_ADMIN_HOST` sobrescrito — nenhum perguntava o que o setting
+    vale de verdade. Um valor com esquema teria gerado `https://https://…` e
+    ninguém perceberia até alguém apontar o celular para um papel.
     """
 
     def test_o_setting_existe(self):
@@ -188,25 +193,52 @@ class TestAdminHostSetting:
 
         assert hasattr(settings, "SHOPMAN_ADMIN_HOST")
 
-    def test_cai_no_host_da_api_quando_nao_configurado(self):
-        # `api.` também serve /admin/, então o papel continua levando a algum
-        # lugar em vez de sair mudo.
-        host = _admin_host_com_env(
-            SHOPMAN_ADMIN_HOST=None, SHOPMAN_OPERATOR_API_HOST="api.exemplo.test"
-        )
-        assert host == "api.exemplo.test"
+    def test_perde_esquema_e_barra_final(self):
+        # É comparado com `request.get_host()` (que nunca traz esquema) e
+        # concatenado em `https://{host}{caminho}`. Lixo quebra os dois usos.
+        with _reload_settings_com_env(SHOPMAN_ADMIN_HOST="https://admin.exemplo.test/") as s:
+            assert s.SHOPMAN_ADMIN_HOST == "admin.exemplo.test"
 
-    def test_o_explicito_ganha_e_perde_o_esquema(self):
-        # O comprovante monta `https://{host}{caminho}`; host com esquema geraria
-        # `https://https://…`, um QR que não abre nada.
-        host = _admin_host_com_env(
-            SHOPMAN_ADMIN_HOST="https://admin.exemplo.test/",
-            SHOPMAN_OPERATOR_API_HOST="api.exemplo.test",
-        )
-        assert host == "admin.exemplo.test"
+    def test_vazio_continua_vazio(self):
+        # Vazio desliga o redirect da raiz; o setting não inventa host nenhum.
+        with _reload_settings_com_env(SHOPMAN_ADMIN_HOST=None) as s:
+            assert s.SHOPMAN_ADMIN_HOST == ""
 
-    def test_sem_nenhum_dos_dois_fica_vazio(self):
-        # Vazio é resposta honesta: o QR carrega só o código, e a conferência
-        # ainda funciona digitando.
-        host = _admin_host_com_env(SHOPMAN_ADMIN_HOST=None, SHOPMAN_OPERATOR_API_HOST=None)
-        assert host == ""
+
+class TestQRFallback:
+    """De onde o QR tira o host quando o canônico não está configurado."""
+
+    def test_cai_no_host_da_api(self, settings, movement):
+        from shopman.backstage.services.pos import cash_movement_receipt_payload
+
+        settings.SHOPMAN_ADMIN_HOST = ""
+        settings.SHOPMAN_OPERATOR_API_HOST = "api.exemplo.test"
+
+        payload = cash_movement_receipt_payload(
+            operator=movement.shift.operator, movement_id=movement.pk
+        )
+
+        import base64
+
+        # `api.` também serve /admin/, então o papel leva a algum lugar em vez de
+        # sair mudo.
+        assert b"https://api.exemplo.test/admin/cash/receipt/" in base64.b64decode(
+            payload["payload_b64"]
+        )
+
+    def test_sem_nenhum_host_o_qr_leva_so_o_codigo(self, settings, movement):
+        from shopman.backstage.services.pos import cash_movement_receipt_payload
+
+        settings.SHOPMAN_ADMIN_HOST = ""
+        settings.SHOPMAN_OPERATOR_API_HOST = ""
+
+        payload = cash_movement_receipt_payload(
+            operator=movement.shift.operator, movement_id=movement.pk
+        )
+
+        import base64
+
+        papel = base64.b64decode(payload["payload_b64"])
+        # Sem URL o QR ainda carrega o código — conferível digitando.
+        assert b"https://" not in papel
+        assert payload["verify_code"].encode() in papel

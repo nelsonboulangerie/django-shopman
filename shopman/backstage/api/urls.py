@@ -70,6 +70,7 @@ from .notifications import (
 )
 from .operations import (
     DayClosingView,
+    OperationEpisodeAnswerView,
     OperatorEligibleView,
     OperatorLockView,
     OperatorLoginView,
@@ -199,6 +200,11 @@ urlpatterns = [
     path("bi/views/", BIViewListView.as_view(), name="api-backstage-bi-views"),
     path("bi/views/<int:pk>/", BIViewDetailView.as_view(), name="api-backstage-bi-view"),
     path("closing/", DayClosingView.as_view(), name="api-backstage-closing"),
+    path(
+        "closing/episodes/<int:episode_id>/",
+        OperationEpisodeAnswerView.as_view(),
+        name="api-backstage-closing-episode",
+    ),
     path("orders/", OrderQueueView.as_view(), name="api-backstage-orders"),
     # Catalog matrix (produto × superfície)
     path("catalog/", CatalogMatrixView.as_view(), name="api-backstage-catalog"),

@@ -16,6 +16,7 @@ from shopman.backstage.admin_console.pos_drawer_agent import (
     pos_drawer_agent_view,
 )
 from shopman.backstage.views.two_factor import admin_2fa_verify
+from shopman.shop.views.admin_host import admin_host_root
 from shopman.shop.views.health import HealthCheckView, ReadyCheckView
 
 logger = logging.getLogger(__name__)
@@ -79,6 +80,10 @@ urlpatterns = [
     # OpenAPI
     path("api/schema/", SpectacularAPIView.as_view(), name="schema"),
     path("api/docs/", SpectacularSwaggerView.as_view(url_name="schema"), name="swagger-ui"),
+    # A raiz do host do Admin cai no Admin — `admin.…/admin` é redundante.
+    # `path("")` casa SÓ a raiz exata, então não sombreia as rotas do backstage
+    # logo abaixo.
+    path("", admin_host_root),
     path("", include("shopman.backstage.urls")),
 ]
 

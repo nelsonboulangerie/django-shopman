@@ -247,10 +247,17 @@ def cash_movement_receipt_payload(*, operator, movement_id: int, reprint: bool =
         raise POSError("Movimento não encontrado neste turno.") from exc
 
     code = code_for(movement.pk)
-    # A URL sai do host canônico do Admin, não de uma constante inventada. Sem
-    # ele configurado o QR leva só o código — melhor que apontar para um
-    # endereço que não existe.
-    host = str(getattr(settings, "SHOPMAN_ADMIN_HOST", "") or "").strip()
+    # A URL sai do host canônico do Admin, não de uma constante inventada.
+    #
+    # O fallback mora AQUI e não no setting: `SHOPMAN_ADMIN_HOST` também decide
+    # que a raiz daquele host redireciona para /admin/, e embutir o host da API
+    # nele faria a raiz de `api.` virar porta de Admin — comportamento novo que
+    # ninguém pediu. Para o papel, porém, `api.` serve: lá /admin/ responde, e um
+    # QR que abre em api. é melhor que um QR mudo.
+    host = (
+        str(getattr(settings, "SHOPMAN_ADMIN_HOST", "") or "").strip()
+        or str(getattr(settings, "SHOPMAN_OPERATOR_API_HOST", "") or "").strip()
+    )
     verify_url = f"https://{host}/admin/cash/receipt/{code}/" if host else code
     payload = cash_movement_receipt(
         movement, verify_code=code, verify_url=verify_url, reprint=reprint
