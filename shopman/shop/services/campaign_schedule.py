@@ -80,18 +80,18 @@ def next_publish_at(schedule: dict | None, *, now: datetime | None = None):
 def describe(schedule: dict | None) -> str:
     """Resumo legível da janela, para o Admin e o card do gestor."""
     if not isinstance(schedule, dict) or schedule.get("type") != PREFERRED_HOURS:
-        return "publica na hora"
+        return "Publica na hora"
     windows = _windows(schedule.get("windows"))
     if not windows:
-        return "publica na hora"
+        return "Publica na hora"
     faixas = ", ".join(
         f"{start.strftime('%H:%M')} às {end.strftime('%H:%M')}" for start, end in windows
     )
     weekdays = _weekdays(schedule.get("weekdays"))
     if weekdays == ALL_WEEKDAYS:
-        return f"publica entre {faixas}"
+        return f"Publica entre {faixas}"
     dias = ", ".join(_WEEKDAY_NAMES[day] for day in sorted(weekdays))
-    return f"publica entre {faixas} ({dias})"
+    return f"Publica entre {faixas} ({dias})"
 
 
 _WEEKDAY_NAMES = ("seg", "ter", "qua", "qui", "sex", "sáb", "dom")
@@ -240,14 +240,14 @@ def describe_occurrence(schedule: dict | None) -> str:
     if kind == ONCE:
         moment = _parse_datetime(schedule.get("at"))
         if moment is None:
-            return "data inválida"
-        return f"uma vez, em {timezone.localtime(moment).strftime('%d/%m às %H:%M')}"
+            return "Data inválida"
+        return f"Uma vez, em {timezone.localtime(moment).strftime('%d/%m às %H:%M')}"
     if kind != RECURRING:
         return ""
 
     windows = _windows(schedule.get("windows"))
     if not windows:
-        return "horário inválido"
+        return "Horário inválido"
     faixas = ", ".join(start.strftime("%H:%M") for start, _end in windows)
     weekdays = _weekdays(schedule.get("weekdays"))
     dias = (
@@ -258,7 +258,8 @@ def describe_occurrence(schedule: dict | None) -> str:
     ends_on = _parse_date(schedule.get("ends_on"))
     if ends_on:
         texto += f" (até {ends_on.strftime('%d/%m')})"
-    return texto
+    # O resumo abre a linha do card sozinho: sentence case, seja "Todo dia" ou "Seg, qua".
+    return texto[:1].upper() + texto[1:]
 
 
 def _parse_datetime(value):

@@ -23,21 +23,21 @@ from django.db import models
 class Trigger(models.TextChoices):
     """Eventos operacionais que podem gerar campanha."""
 
-    PRODUCTION_FINISHED = "production_finished", "fornada concluída"
-    LOW_STOCK = "low_stock", "estoque baixo"
-    STOCK_BACK = "stock_back", "voltou ao estoque"
-    PRODUCT_CREATED = "product_created", "produto novo"
+    PRODUCTION_FINISHED = "production_finished", "Fornada concluída"
+    LOW_STOCK = "low_stock", "Estoque baixo"
+    STOCK_BACK = "stock_back", "Voltou ao estoque"
+    PRODUCT_CREATED = "product_created", "Produto novo"
     #: O gestor decide agora, para quem ele escolher. Substitui o `scheduled`, que era
     #: escolha morta — `evaluate()` só era chamado por handler de evento, então nada
     #: nunca produziu uma campanha `scheduled`. Este tem produtor real: uma Action na
     #: superfície de Marketing.
-    MANUAL = "manual", "disparo manual"
+    MANUAL = "manual", "Disparo manual"
     #: O RELÓGIO é o evento: não há fornada por trás. Produtor real é a vassoura, que
     #: **arma** uma Directive no instante exato — quem dispara é a fila
     #: (`process_directives --watch`), com latência de segundos em vez dos até 5 minutos
     #: do ciclo de manutenção. Só este gatilho aceita `schedule` do tipo
     #: `once`/`recurring`.
-    SCHEDULE = "schedule", "agendado"
+    SCHEDULE = "schedule", "Agendado"
 
 
 class AnnouncementStatus(models.TextChoices):
