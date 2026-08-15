@@ -4,11 +4,12 @@
 > nada aqui vira código sem OK explícito. Mandato: "análise profunda das possibilidades
 > de insight — com os dados que JÁ existem e com os que PODEMOS passar a capturar".
 >
-> **Base assumida:** mundo pós-merge do PR #151 (B.I. F0–F9: `OvenRun`, `HistoricalSale`,
-> painéis, explorador, `BIView`) e da fila C1–C6 (#144/#146/#148/#149/#152 — write-offs
-> `perda_vencido`/`perda_nao_conformidade`, FEFO, preço por lote). O que depende de cada
-> um está marcado. Inventário de dados verificado no código em 2026-08-14 (main +
-> branch do PR #151); citações apontam o arquivo real.
+> **Base (verificada no main em 2026-08-14, após rebase):** o PR #151 (B.I. F0–F9:
+> `OvenRun`, `HistoricalSale`, painéis, explorador, `BIView`) **e** a fila C1–C6
+> (write-offs `perda_vencido`/`perda_nao_conformidade`, FEFO, preço por lote) **já
+> estão mergeados**, e o `bi.boulangerie.com.br` está no ar em staging com o Yooga
+> carregado. Nada aqui depende mais de fila. Citações apontam o arquivo real; os três
+> achados críticos do §7 foram revalidados contra o main após o merge.
 
 ---
 
@@ -388,24 +389,35 @@ Dimensões que faltam em métricas existentes, todas com dado disponível:
 
 ---
 
-## 5. Dependentes da fila C1–C6 (não fazer antes do merge)
+## 5. Destravado pela fila C1–C6 (já mergeada — pronto para ler)
 
-- **Perda por vencimento vs não conformidade, por SKU** — as chaves
-  `perda_vencido`/`perda_nao_conformidade`/`nonconformity_writeoffs` chegam com o C4
-  (#149). Vira painel/métrica de write-off no explorador.
-- **Validade × desconto (o markdown do grau converte?)** — hoje
-  `Batch.nonconformity_percent` é gravado mas nunca aplicado a preço (os consumidores
-  previstos no ADR-017 não existem no main); a fila C traz preço por lote. Só depois
-  dela a pergunta "o desconto do grau acelera o giro do lote?" é mensurável — e aí é
-  leitura nova de alto valor (FEFO + `Move` + preço praticado).
+A fila entrou no main; o que dependia dela deixou de ser espera e virou trabalho
+disponível:
+
+- **Perda por vencimento vs não conformidade, por SKU** — o fechamento já grava os
+  write-offs com motivo carimbado (`perda_vencido:<data>` e
+  `perda_nao_conformidade:<data>` em `shopman/backstage/services/closing.py`). Vira
+  métrica de perda por motivo no explorador. ⚠️ Ver §6.1: esses write-offs seguem sem
+  `kind` próprio, então um agrupamento por tipo de movimento os conta como ajuste de
+  inventário — a leitura tem de ir pelo motivo, não pelo tipo.
+- **Validade × desconto (o markdown do grau converte?)** — com o preço por lote no ar,
+  a pergunta "o desconto do lote acelera o giro?" passa a ser mensurável cruzando
+  validade, movimento de venda e preço praticado. Leitura nova de alto valor, e a que
+  fecha o ciclo do C1–C6 mostrando se a política de lote deu resultado.
 
 ---
 
 ## 6. Dívidas de honestidade do dado (não são insights; contaminam leituras)
 
-1. **Write-offs de fechamento caem em `kind=ADJUST`** (`closing.py` não passa kind) —
-   um GROUP BY por kind conta perda de fim de dia como ajuste de inventário. Corrigir
-   na fila C ou em seguida.
+1. ⚠️ **A perda do C4 é registrada como ajuste de inventário, não como perda**
+   (verificado no main pós-merge). `_write_off_lots` em
+   `shopman/backstage/services/closing.py:190` chama `StockMovements.issue(...)` sem
+   informar o tipo de movimento, e o padrão do método é `ADJUST` — apesar de a própria
+   docstring da função dizer "WASTE dos quants". Ou seja: `perda_vencido` e
+   `perda_nao_conformidade` chegam ao ledger com o motivo certo e o **tipo errado**.
+   Quem agrupar perda por tipo de movimento não vê a perda de fim de dia; quem agrupar
+   por motivo vê. É a métrica que o C4 existiu para habilitar, entrando torta. Correção
+   de uma linha (passar o tipo), e vale antes de qualquer painel de perda.
 2. **`Move.reason` tem 5 formatos coexistindo** (`perda:`, `perda_d1_vencido:`,
    `Perda de rendimento: WO-…`, …) e ligar Move→WO exige regex. Convenção a congelar
    antes de qualquer leitura de perdas por SKU.
