@@ -7,7 +7,7 @@
 // um gesto só; as ações (salvar/favoritar/apagar) recuam para o menu ⋯.
 import {
   EXPLORE_DIMENSION_LABELS,
-  EXPLORE_EXAMPLES,
+  availableExamples,
   bucketLabel,
   bucketRows,
   formatExploreValue,
@@ -25,6 +25,14 @@ const by2Options = computed(() =>
   (currentSpec.value?.dimensions ?? []).filter((d) => d !== "time" && d !== config.value.by),
 );
 
+// Exemplos = os fixos + os de contexto que a gramática do servidor declara
+// suportar agora (feriado/clima só existem depois de injetados). Chip que
+// abriria vazio não aparece.
+const supportedDimensions = computed(() => [
+  ...new Set((report.value?.metrics ?? []).flatMap((m) => m.dimensions)),
+]);
+const examples = computed(() => availableExamples(supportedDimensions.value));
+
 // ── Cenários: seleção num select; "" = corte livre (—) ───────────────────────
 const selectedScenario = ref("");
 
@@ -41,7 +49,7 @@ function onScenarioChange(value: string) {
     const view = views.value.find((v) => String(v.id) === value.slice(5));
     if (view) applyScenario(view.config);
   } else if (value.startsWith("example:")) {
-    const example = EXPLORE_EXAMPLES.find((e) => e.name === value.slice(8));
+    const example = examples.value.find((e) => e.name === value.slice(8));
     if (example) applyScenario({ ...example.config });
   }
 }
@@ -122,7 +130,7 @@ const rankingRows = computed(() => {
             </option>
           </optgroup>
           <optgroup label="Exemplos">
-            <option v-for="example in EXPLORE_EXAMPLES" :key="example.name" :value="`example:${example.name}`">
+            <option v-for="example in examples" :key="example.name" :value="`example:${example.name}`">
               {{ example.name }}
             </option>
           </optgroup>

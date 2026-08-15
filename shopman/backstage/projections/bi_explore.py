@@ -15,7 +15,7 @@ balde "(sem motivo)" em vez de sumir.
 from __future__ import annotations
 
 from collections import defaultdict
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import date
 from decimal import Decimal
 
@@ -96,12 +96,30 @@ DIMENSION_LABELS: dict[str, str] = {
     "operator": "Operador",
     "grade": "Grau de qualidade",
     "defect": "Defeito",
+    "day_kind": "Tipo de dia (feriado)",
+    "temperature": "Temperatura do dia",
+    "rain": "Chuva",
+}
+
+DAY_KIND_LABELS = {
+    "holiday": "Feriado",
+    "holiday_eve": "Véspera de feriado",
+    "post_holiday": "Volta de feriado",
+    "regular": "Dia comum",
 }
 
 # Dimensões que têm ordem própria: saem na sequência natural, não em ranking.
 ORDINAL_DIMENSIONS = frozenset(
-    {"time", "hour", "weekday", "month_of_year", "week_of_year"}
+    {"time", "hour", "weekday", "month_of_year", "week_of_year", "temperature"}
 )
+
+# Dimensões de CONTEXTO: dependem de dado que a suite não produz (calendário de
+# feriados, clima). Só entram na gramática quando alguém injetou o dado — sem
+# ele a opção nem aparece, em vez de aparecer e responder vazio. Não inventamos
+# contexto: ou sabemos, ou a pergunta não está disponível.
+CONTEXT_DIMENSIONS = ("day_kind", "temperature", "rain")
+
+CONTEXT_METRIC_FAMILIES = ("sales", "sales_items", "shelf")
 
 
 @dataclass(frozen=True)
@@ -137,9 +155,37 @@ class BIExploreReport:
     metrics: tuple[BIExploreMetricOption, ...]  # a gramática, para a UI montar os selects
 
 
+def available_context_dimensions() -> tuple[str, ...]:
+    """Quais dimensões de contexto têm dado carregado AGORA.
+
+    Feriado exige calendário injetado; temperatura e chuva exigem clima. Sem o
+    dado, a dimensão não existe para ninguém — nem no select, nem na validação.
+    """
+    from shopman.backstage.models import DayContext
+
+    available = []
+    if DayContext.objects.filter(has_calendar=True).exists():
+        available.append("day_kind")
+    if DayContext.objects.filter(temp_max_c__isnull=False).exists():
+        available.append("temperature")
+    if DayContext.objects.filter(rain_mm__isnull=False).exists():
+        available.append("rain")
+    return tuple(available)
+
+
+def _dimensions_for(spec: MetricSpec, context: tuple[str, ...]) -> tuple[str, ...]:
+    if spec.family not in CONTEXT_METRIC_FAMILIES:
+        return spec.dimensions
+    return (*spec.dimensions, *(dim for dim in CONTEXT_DIMENSIONS if dim in context))
+
+
 def metric_options() -> tuple[BIExploreMetricOption, ...]:
+    context = available_context_dimensions()
     return tuple(
-        BIExploreMetricOption(key=s.key, label=s.label, unit=s.unit, dimensions=s.dimensions)
+        BIExploreMetricOption(
+            key=s.key, label=s.label, unit=s.unit,
+            dimensions=_dimensions_for(s, context),
+        )
         for s in METRICS.values()
     )
 
@@ -149,6 +195,18 @@ def validate_config(metric: str, by: str, by2: str) -> MetricSpec:
     spec = METRICS.get(metric)
     if spec is None:
         raise ExploreError(f"Métrica desconhecida: {metric!r}. Existem: {', '.join(sorted(METRICS))}.")
+    # O contexto só é consultado quando a pergunta o envolve: validar métrica e
+    # dimensão comuns não precisa tocar o banco.
+    if by in CONTEXT_DIMENSIONS or by2 in CONTEXT_DIMENSIONS:
+        context = available_context_dimensions()
+        for requested in (by, by2):
+            if requested in CONTEXT_DIMENSIONS and requested not in context:
+                raise ExploreError(
+                    f"{DIMENSION_LABELS[requested]} exige dado carregado: rode "
+                    f"{'import_holidays' if requested == 'day_kind' else 'import_weather'}. "
+                    "Sem o dado, a suite não inventa o recorte."
+                )
+        spec = replace(spec, dimensions=_dimensions_for(spec, context))
     if by not in spec.dimensions:
         raise ExploreError(
             f"Dimensão {by!r} não vale para {spec.label}. Valem: {', '.join(spec.dimensions)}."
@@ -279,6 +337,8 @@ def _sales_rows(spec, by, by2, date_from, date_to) -> list[BIExploreRow]:
             continue
         events.append((local, total_q, "yooga · delivery" if is_delivery else "yooga · loja", "yooga"))
 
+    contexts = _day_contexts(date_from, date_to) if _wants_context(by, by2) else {}
+
     revenue: dict[tuple, int] = defaultdict(int)
     orders: dict[tuple, int] = defaultdict(int)
     labels: dict[tuple, tuple[str, str]] = {}
@@ -291,8 +351,12 @@ def _sales_rows(spec, by, by2, date_from, date_to) -> list[BIExploreRow]:
                 parts.append((channel, channel))
             elif dim == "source":
                 parts.append((source, source))
+            elif dim in CONTEXT_DIMENSIONS:
+                parts.append(_context_part(dim, local.date(), contexts))
             else:
                 parts.append(_dim_key(dim, local=local))
+        if any(part is None for part in parts):
+            continue  # dia sem o contexto pedido fica fora, em vez de virar balde
         key = (parts[0][0], parts[1][0])
         revenue[key] += total_q
         orders[key] += 1
@@ -327,6 +391,8 @@ def _sales_item_rows(spec, by, by2, date_from, date_to) -> list[BIExploreRow]:
         .values_list("created_at", flat=True)
     }
 
+    contexts = _day_contexts(date_from, date_to) if _wants_context(by, by2) else {}
+
     qty: dict[tuple, Decimal] = defaultdict(Decimal)
     labels: dict[tuple, tuple[str, str]] = {}
 
@@ -340,8 +406,12 @@ def _sales_item_rows(spec, by, by2, date_from, date_to) -> list[BIExploreRow]:
                 parts.append((key, name))
             elif dim == "source":
                 parts.append((source, source))
+            elif dim in CONTEXT_DIMENSIONS:
+                parts.append(_context_part(dim, local.date(), contexts))
             else:
                 parts.append(_dim_key(dim, local=local))
+        if any(part is None for part in parts):
+            return  # sem contexto para o dia, a linha não entra
         key = (parts[0][0], parts[1][0])
         qty[key] += quantity
         labels[key] = (parts[0][1], parts[1][1])
@@ -573,11 +643,12 @@ def _shelf_rows(spec, by, by2, date_from, date_to) -> list[BIExploreRow]:
 
     history = StockQueries.shelf_history(skus, since=date_from, until=date_to)
     leftovers = _leftovers_by_day(date_from, date_to) if spec.key == "leftover" else {}
+    contexts = _day_contexts(date_from, date_to) if _wants_context(by, by2) else {}
 
     totals: dict[tuple, float] = defaultdict(float)
     labels: dict[tuple, tuple[str, str]] = {}
 
-    def part(dim: str, sku: str, day: date) -> tuple[str, str]:
+    def part(dim: str, sku: str, day: date):
         if dim == "sku":
             return sku, sku
         if dim == "time":
@@ -587,6 +658,8 @@ def _shelf_rows(spec, by, by2, date_from, date_to) -> list[BIExploreRow]:
             return str(day.weekday()), WEEKDAY_LABELS[day.weekday()]
         if dim == "month_of_year":
             return f"{day.month:02d}", MONTH_LABELS[day.month - 1]
+        if dim in CONTEXT_DIMENSIONS:
+            return _context_part(dim, day, contexts)
         return "", ""
 
     for sku, days in history.items():
@@ -600,16 +673,24 @@ def _shelf_rows(spec, by, by2, date_from, date_to) -> list[BIExploreRow]:
             if value is None:
                 continue
             parts = [part(by, sku, day), part(by2, sku, day) if by2 else ("", "")]
+            if any(item is None for item in parts):
+                continue  # dia sem o contexto pedido fica fora da leitura
             key = (parts[0][0], parts[1][0])
             totals[key] += value
             labels[key] = (parts[0][1], parts[1][1])
 
+    # Num RANKING, o que não aconteceu não é linha: produto que nunca faltou não
+    # pertence à lista de faltas, e sessenta zeros escondem os dois SKUs que
+    # importam. Já numa SÉRIE (by=time), o zero é ponto de curva e fica — o dia
+    # em que nada faltou faz parte do desenho.
+    keep_zeros = by in ORDINAL_DIMENSIONS
     return [
         BIExploreRow(
             key=k1, label=labels[(k1, k2)][0], key2=k2, label2=labels[(k1, k2)][1],
             value=round(totals[(k1, k2)], 1),
         )
         for (k1, k2) in totals
+        if keep_zeros or totals[(k1, k2)] != 0
     ]
 
 
@@ -649,3 +730,45 @@ def _leftovers_by_day(date_from: date, date_to: date) -> dict:
                 continue
             out[(closing.date, sku)] = float(row.get("qty_remaining") or 0)
     return out
+
+
+# ── Contexto do dia (só existe quando alguém injetou o dado) ────────────────
+
+
+def _wants_context(by: str, by2: str) -> bool:
+    return by in CONTEXT_DIMENSIONS or by2 in CONTEXT_DIMENSIONS
+
+
+def _day_contexts(date_from: date, date_to: date) -> dict:
+    """{data: DayContext} da janela. Dia ausente = contexto desconhecido."""
+    from shopman.backstage.models import DayContext
+
+    return {
+        row.date: row
+        for row in DayContext.objects.filter(date__range=(date_from, date_to))
+    }
+
+
+def _context_part(dim: str, day: date, contexts: dict) -> tuple[str, str] | None:
+    """(chave, rótulo) do contexto, ou None quando o dia não tem o dado.
+
+    None faz a linha inteira sair da leitura: um dia sem temperatura medida não
+    é um dia frio nem quente, e forçá-lo a um balde seria inventar o recorte.
+    """
+    context = contexts.get(day)
+    if context is None:
+        return None
+    if dim == "day_kind":
+        kind = context.day_kind
+        return (kind, DAY_KIND_LABELS[kind]) if kind else None
+    if dim == "temperature":
+        if context.temp_max_c is None:
+            return None
+        floor = int(context.temp_max_c // 5 * 5)
+        return f"{floor:03d}", f"{floor} a {floor + 4} °C"
+    if dim == "rain":
+        if context.rain_mm is None:
+            return None
+        wet = context.rain_mm > 0
+        return ("1", "Com chuva") if wet else ("0", "Sem chuva")
+    return None

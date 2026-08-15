@@ -765,13 +765,10 @@ dimensão que existe, para que nenhum chip quebre ao abrir a tela.
 
 ### 9.4 O que NÃO foi feito, e por quê
 
-- **Clima (N8/§7.4)** — é a única captura do plano que traz um serviço externo
-  para dentro. A casa é parcimoniosa com dependência nova e o dono não decidiu;
-  fica como a pergunta aberta nº 4. Tudo o mais do "contexto do dia" que não
-  depende de rede (mês, semana, dia-da-semana) já está entregue.
-- **Feriados como dimensão de demanda (N12)** — hoje o sistema só sabe se a loja
-  *fecha*; véspera e volta de feriado não existem. Precisa de fonte (nacional é
-  fácil; municipal de Londrina não) ou cadastro anual no Admin.
+- ~~**Clima e feriados**~~ → **ENTREGUES na rodada 4** (§10). Decisão do dono:
+  "se tivermos os dados, mais opções aparecem na tela; se não tivermos, jamais
+  inventamos". O caminho escolhido evita a dependência de rede: os dados entram
+  por **arquivo**, e a gramática cresce sozinha quando eles chegam.
 - **N11 (marcar quando o produto sai do ar)** — sem ele, a janela mede o
   esgotamento **físico**, não o que o cliente via. É a pergunta aberta nº 5.
 - **Venda estimada perdida (B4/§7.5)** — depende de curva por hora em dias
@@ -788,3 +785,74 @@ de produção acumulando**: o banco de teste grava pedidos e fornadas direto, se
 passar pelo fluxo que gera os movimentos de estoque, então lá elas aparecem
 vazias por construção. As de venda e sazonalidade, ao contrário, valem
 imediatamente sobre os dois anos do Yooga.
+
+---
+
+## 10. Contexto do dia: feriado e clima por injeção (rodada 4, 2026-08-15)
+
+> Decisão do dono: *"calendário anual de feriados é fácil de obter, uma única
+> vez! Claro que é bom não depender pra funcionar… mas opcionalmente poder
+> injetar esses dados é muito bem-vindo. Mesma coisa para o clima: se tivermos
+> os dados, mais opções aparecem na tela. Se não tivermos, jamais inventamos."*
+
+Isso desenha a solução inteira: o dado é **opcional**, entra por **injeção**, e
+a tela **cresce quando ele chega**. Nada de dependência de rede para o B.I.
+funcionar, e nada de balde inventado quando o dado falta.
+
+### 10.1 Como entra
+
+`DayContext` — uma linha por data, com dois blocos independentes e ambos
+opcionais: **feriado** (nome, abrangência, e véspera/volta derivadas na carga) e
+**clima** (mínima, máxima, média, chuva). O que a suite deriva sozinha da data
+(dia da semana, mês, semana do ano) **não** mora lá: é função da data e sai
+calculado na leitura.
+
+Dois comandos, ambos por arquivo local e idempotentes:
+
+```bash
+python manage.py import_holidays --file calendario-2026.json   # ou .csv
+python manage.py import_weather  --file londrina-2024-2026.csv # ou .json
+```
+
+O de feriados **reescreve o ano inteiro** a partir do arquivo (o arquivo é a
+verdade daquele ano: feriado tirado de lá some do banco) e marca véspera e
+volta, que é o que muda o movimento de uma padaria. O de clima aceita os
+cabeçalhos que arquivos de série histórica já usam (`temperature_2m_max`,
+`precipitation_sum`), para não obrigar ninguém a reescrever cabeçalho na mão —
+convite a erro. Ambos têm `--dry-run`.
+
+Consolidação do histórico: um CSV com dois anos de temperatura torna os dois
+anos do Yooga cruzáveis por clima de uma vez só. É o mesmo princípio do
+histórico externo (ADR-021 §3): dado que a suite não produz só pode existir
+materializado, com a origem carimbada — `sources` guarda de qual arquivo veio
+cada bloco.
+
+### 10.2 A regra: sem dado, nenhuma afirmação
+
+Três camadas honram isso, e as três estão sob teste:
+
+1. **A dimensão não existe até o dado chegar.** `available_context_dimensions()`
+   consulta o que há carregado; sem clima, "Temperatura" e "Chuva" **não
+   aparecem no seletor** nem passam pela validação. Pedir mesmo assim devolve um
+   erro que diz qual comando rodar. Verificado ao vivo: apagando o clima, as duas
+   dimensões e os três cenários de clima somem da tela, e "Tipo de dia"
+   permanece — cada bloco entra e sai por conta própria.
+2. **Célula vazia é ausência, não zero.** Um dia sem medição fica nulo e **sai**
+   da leitura por temperatura, em vez de entrar como um dia de 0 °C.
+3. **Dia sem contexto não vira balde.** Se metade da janela tem clima e metade
+   não, a leitura por temperatura usa a metade que sabe — e não empurra a outra
+   para uma faixa qualquer.
+
+### 10.3 O que apareceu na tela
+
+Três dimensões novas (**Tipo de dia (feriado)**, **Temperatura do dia** em
+faixas de 5 °C, **Chuva** com/sem) aplicáveis a vendas, itens vendidos e
+abastecimento — não à produção: a fornada não é função do dia do cliente. E
+cinco cenários que só aparecem quando o dado existe: faturamento por
+temperatura, o que vende no calor, feriado/véspera/volta, falta em véspera de
+feriado, movimento com e sem chuva.
+
+Junto veio uma correção de leitura: **num ranking, o que não aconteceu não é
+linha**. Produto que nunca faltou não pertence à lista de faltas, e sessenta
+zeros escondiam os dois SKUs que importavam. Em série temporal o zero fica — ali
+ele é ponto da curva.
