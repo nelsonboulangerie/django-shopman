@@ -142,3 +142,71 @@ def test_chave_descartada_para_de_conferir(settings, movement):
     settings.SECRET_KEY_FALLBACKS = []
 
     assert not build_receipt_verification(papel_velho).valid
+
+
+def _admin_host_com_env(**env) -> str:
+    """Reexecuta o `settings.py` com `env` e devolve o host derivado.
+
+    ⚠️ Recarregar o módulo mexe num objeto GLOBAL — outro teste que importe
+    `config.settings` direto veria o estado do último reload. Por isso o
+    ambiente volta ao que era e o módulo é reexecutado limpo antes de sair.
+    """
+    import importlib
+    import os
+
+    import config.settings as s
+
+    original = {chave: os.environ.get(chave) for chave in env}
+    try:
+        for chave, valor in env.items():
+            if valor is None:
+                os.environ.pop(chave, None)
+            else:
+                os.environ[chave] = valor
+        importlib.reload(s)
+        return s.SHOPMAN_ADMIN_HOST
+    finally:
+        for chave, valor in original.items():
+            if valor is None:
+                os.environ.pop(chave, None)
+            else:
+                os.environ[chave] = valor
+        importlib.reload(s)
+
+
+class TestAdminHostSetting:
+    """O host que vai IMPRESSO no QR.
+
+    Estes testes existem porque a suíte inteira do comprovante passava com
+    `settings.SHOPMAN_ADMIN_HOST` sobrescrito — e o setting não existia no
+    `settings.py`. Em produção o QR teria saído sem URL nenhuma, e ninguém
+    perceberia até alguém apontar o celular para um papel.
+    """
+
+    def test_o_setting_existe(self):
+        from django.conf import settings
+
+        assert hasattr(settings, "SHOPMAN_ADMIN_HOST")
+
+    def test_cai_no_host_da_api_quando_nao_configurado(self):
+        # `api.` também serve /admin/, então o papel continua levando a algum
+        # lugar em vez de sair mudo.
+        host = _admin_host_com_env(
+            SHOPMAN_ADMIN_HOST=None, SHOPMAN_OPERATOR_API_HOST="api.exemplo.test"
+        )
+        assert host == "api.exemplo.test"
+
+    def test_o_explicito_ganha_e_perde_o_esquema(self):
+        # O comprovante monta `https://{host}{caminho}`; host com esquema geraria
+        # `https://https://…`, um QR que não abre nada.
+        host = _admin_host_com_env(
+            SHOPMAN_ADMIN_HOST="https://admin.exemplo.test/",
+            SHOPMAN_OPERATOR_API_HOST="api.exemplo.test",
+        )
+        assert host == "admin.exemplo.test"
+
+    def test_sem_nenhum_dos_dois_fica_vazio(self):
+        # Vazio é resposta honesta: o QR carrega só o código, e a conferência
+        # ainda funciona digitando.
+        host = _admin_host_com_env(SHOPMAN_ADMIN_HOST=None, SHOPMAN_OPERATOR_API_HOST=None)
+        assert host == ""

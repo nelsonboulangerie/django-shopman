@@ -1244,6 +1244,18 @@ SHOPMAN_BI_BASE_URL = (
 SHOPMAN_OPERATOR_COOKIE_DOMAIN = (os.environ.get("SHOPMAN_OPERATOR_COOKIE_DOMAIN") or "").strip()
 SHOPMAN_OPERATOR_API_HOST = (os.environ.get("SHOPMAN_OPERATOR_API_HOST") or "").strip()
 
+# Host canônico do Admin (ex.: "admin.boulangerie.com.br"). O Admin é alcançável por
+# mais de um host, mas o papel impresso precisa de UM endereço — o QR do comprovante
+# de caixa carrega uma URL absoluta, e quem lê está com um celular na mão, fora de
+# qualquer sessão que pudesse informar o host.
+#
+# ⚠️ Vazio ⇒ o QR carrega só o CÓDIGO, sem URL: continua conferível digitando, mas o
+# celular não abre nada. Por isso o default cai no host de API do operador quando ele
+# existe (lá `/admin/` responde), em vez de deixar o papel mudo.
+SHOPMAN_ADMIN_HOST = (
+    os.environ.get("SHOPMAN_ADMIN_HOST") or SHOPMAN_OPERATOR_API_HOST or ""
+).strip().removeprefix("https://").removeprefix("http://").rstrip("/")
+
 # URLs das superfícies para a Central de Apps (surfaces/hub-nuxt). REUSA as base URLs
 # públicas que o nav do Admin já usa — UMA fonte por superfície (DRY): quem já configurou
 # os links de operador do Admin (SHOPMAN_POS_BASE_URL etc.) ganha a Central de graça, sem
