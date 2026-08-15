@@ -134,7 +134,11 @@ Cores nunca se importam. Para causar efeito em outro app, a **interação decide
 - **Zero residuals em renames**: Ao renomear, zerar TUDO (variáveis, strings, comments, docstrings). Nada de `# formerly X`. ⚠️ **Vale até o go-live.** A partir do `git tag go-live-v1`, renames seguem expand-contract — ver [ADR-015](docs/decisions/adr-015-backward-compat-policy-post-prod.md) e [production-upgrades.md](docs/guides/production-upgrades.md).
 - **Zero backward-compat aliases**: Projeto novo, do zero. Não há consumidores externos. Nunca criar aliases tipo `OldName = NewName`. Apagar o nome antigo completamente. ⚠️ **Vale até o go-live.** Depois, aliases temporários são permitidos em janela explícita (1 sprint) com `# DEPRECATED(remove in v{version})` — ver [ADR-015](docs/decisions/adr-015-backward-compat-policy-post-prod.md).
 - **Offerman = somente produtos vendáveis**: Insumos ficam em Stockman/Craftsman, nunca no Offerman.
-- **Rotas de operador em inglês**: as rotas dos apps Nuxt de operador usam o vocabulário do domínio em inglês (`/plan`, `/mise-en-place`, `/expedite`, `/board`, `/pickup`, `/showcases`); as rotas pt-br antigas respondem 301 (bookmarks de kiosk preservados) — PR #68.
+- **URL é em inglês. Ponto.** Vale para **toda** rota do sistema — apps Nuxt de operador, telas custom do Admin, SSE do backstage, APIs. Não há exceção por superfície: uma convenção que vale em metade do sistema não é convenção, é lembrança.
+  - Apps Nuxt de operador: vocabulário do domínio em inglês (`/plan`, `/mise-en-place`, `/expedite`, `/board`, `/pickup`, `/showcases`); as rotas pt-br antigas respondem 301, bookmarks de kiosk preservados — PR #68.
+  - Admin e backstage: `/admin/settings/copy/`, `/admin/pos/terminal/<ref>/drawer/`, `/admin/operators/badge/`, `/admin/cash/receipt/<code>/`, `/events/*` — PR #169. Sem 301 aqui: são telas de gestor, não kiosk, e a regra pré-go-live é zerar o nome antigo.
+  - ⚠️ O **texto** da tela continua em português. Isto é sobre o caminho na URL, não sobre a copy.
+  - Subdomínio é **hostname**, não URL: `gestor.`, `pdv.`, `central.` seguem como estão — mexer ali é DNS.
 - **Chaves de projection em inglês**: contratos de projection (ex.: order-queue) usam chaves em inglês, mudança BE+FE atômica — PR #67.
 - **Dialeto canônico de erro**: toda resposta de erro JSON das APIs fala `{detail, field, errors}` (via `EXCEPTION_HANDLER` DRF em `shopman/shop/api_errors.py`). Ver [docs/reference/errors.md](docs/reference/errors.md).
 - **Frontend: HTMX ↔ servidor, Alpine.js ↔ DOM**:
