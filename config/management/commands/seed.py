@@ -5864,7 +5864,10 @@ class Command(BaseCommand):
             ("falta-de-energia", "Faltou energia", "A loja ficou sem luz", True, 10),
             ("falta-de-agua", "Faltou água", "Sem água na cozinha", True, 20),
             ("equipamento-parado", "Equipamento parado", "Forno, geladeira ou PDV fora", True, 30),
-            ("sistema-fora", "Sistema fora do ar", "Internet ou app indisponível", True, 40),
+            # Duas causas diferentes, com ações diferentes: sem conexão se liga
+            # para a operadora; sistema fora do ar se chama o suporte.
+            ("falta-de-conexao", "Faltou internet", "A loja ficou sem conexão", True, 40),
+            ("sistema-fora", "Sistema fora do ar", "Sistema indisponível, com internet ok", True, 45),
             ("rua-interditada", "Rua interditada", "Obra ou bloqueio na porta", True, 50),
             ("chuva-forte", "Chuva forte", "Temporal esvaziou a rua", True, 60),
             ("evento-na-regiao", "Evento na região", "Movimento fora do normal", False, 70),

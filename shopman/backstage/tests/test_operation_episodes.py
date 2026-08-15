@@ -280,3 +280,57 @@ class TestEndpoint:
 
         assert response.status_code == 404
         assert response.json()["field"] == "kind_ref"
+
+
+class TestTheCatalogIsEditable:
+    """Adicionar ou ajustar motivo é trabalho de gestor, não de deploy."""
+
+    def test_kinds_are_registered_in_the_admin(self):
+        from django.contrib import admin
+
+        from shopman.backstage.models import OperationEpisodeKind
+
+        assert OperationEpisodeKind in admin.site._registry, (
+            "sem registro no Admin, o catálogo só mudaria com deploy"
+        )
+
+    def test_a_new_kind_shows_up_as_an_option_without_deploy(self, motivos, loja):
+        from shopman.backstage.projections.closing import build_day_closing
+
+        hoje = timezone.localdate()
+        stamp_day(hoje)
+        _venda(hoje, 10, "ANTES")
+        _venda(hoje, 15, "DEPOIS")
+        episodes.detect_for_day(hoje)
+
+        OperationEpisodeKind.objects.create(
+            ref="falta-de-conexao", label="Faltou internet",
+            hint="A loja ficou sem conexão", affects_demand=True,
+        )
+
+        projection = build_day_closing()
+        assert "falta-de-conexao" in {o.ref for o in projection.episode_options}
+
+    def test_history_is_read_only(self):
+        """O registro nasce da detecção e da resposta — não do teclado."""
+        from django.contrib import admin
+
+        from shopman.backstage.models import OperationEpisode
+
+        episode_admin = admin.site._registry[OperationEpisode]
+        assert not episode_admin.has_add_permission(None)
+        assert not episode_admin.has_change_permission(None)
+
+    def test_deactivating_a_kind_removes_it_from_the_options(self, motivos, loja):
+        from shopman.backstage.projections.closing import build_day_closing
+
+        hoje = timezone.localdate()
+        stamp_day(hoje)
+        _venda(hoje, 10, "ANTES")
+        _venda(hoje, 15, "DEPOIS")
+        episodes.detect_for_day(hoje)
+        OperationEpisodeKind.objects.filter(ref="evento-na-regiao").update(is_active=False)
+
+        projection = build_day_closing()
+
+        assert "evento-na-regiao" not in {o.ref for o in projection.episode_options}
