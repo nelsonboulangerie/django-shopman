@@ -1,8 +1,10 @@
 # BI-INSIGHTS-MAP — mapa de perguntas de negócio e possibilidades de insight
 
-> **Status:** 🔍 ANÁLISE para iteração com o dono (2026-08-14). Não é plano de execução:
-> nada aqui vira código sem OK explícito. Mandato: "análise profunda das possibilidades
-> de insight — com os dados que JÁ existem e com os que PODEMOS passar a capturar".
+> **Status:** 🟢 **RODADA 3 EXECUTADA (2026-08-14)** — o dono mandou executar sem
+> interrupções ("quero o trabalho feito, até o fim"). O que saiu do papel está marcado
+> ✅ ao longo do documento e resumido no §9. O restante segue como análise para iterar.
+> Mandato original: "análise profunda das possibilidades de insight — com os dados que
+> JÁ existem e com os que PODEMOS passar a capturar".
 >
 > **Base (verificada no main em 2026-08-14, após rebase):** o PR #151 (B.I. F0–F9:
 > `OvenRun`, `HistoricalSale`, painéis, explorador, `BIView`) **e** a fila C1–C6
@@ -683,3 +685,106 @@ P3 e P6, ao contrário, valem imediatamente sobre os 2 anos do Yooga.
 5. **N11 (marcar quando o produto sai do ar) entra no P2 ou fica para depois?** Sem ele,
    a janela de disponibilidade mede o esgotamento **físico**; com ele, mede o que o
    cliente de fato via.
+
+---
+
+## 9. O que foi executado (rodada 3, 2026-08-14)
+
+Cinco commits, suíte inteira verde (~6.500 testes), ruff limpo, typecheck do
+bi-nuxt limpo.
+
+### 9.1 Correções (defeitos achados pela análise)
+
+**A perda do C4 entrava no ledger como ajuste de inventário** (§6.1). O
+write-off do fechamento chamava a saída de estoque sem informar o tipo, e o
+padrão é "ajuste" — apesar de a própria função se chamar de WASTE na
+documentação dela. `perda_vencido` e `perda_nao_conformidade` chegavam com o
+motivo certo e o tipo errado, sumindo de qualquer leitura de perda agrupada por
+tipo. Corrigido, com teste que cobra o tipo em ambas as famílias de motivo.
+⚠️ **Vale daqui pra frente**: o ledger é imutável, então movimentos já gravados
+seguem como ajuste. Leitura que cubra o período anterior precisa aceitar as duas
+formas.
+
+**A sugestão de produção amostrava o dia errado** (§7.2-1). O histórico era
+filtrado pelo dia-da-semana de *hoje*, e o comando roda para *amanhã* por
+padrão: planejar sábado numa sexta lia sextas. `target_date` passou a ser
+obrigatório no protocolo de demanda — quem pergunta pelo histórico tem de dizer
+para qual dia está planejando. Os testes existentes trocavam o método por um
+mock e por isso nunca exercitaram o filtro; o teste novo cria pedidos reais em
+dois dias-da-semana e cobra a amostra certa.
+
+**Dia fechado contava como dia fraco** (§7.2-3). Domingo de portas fechadas
+entrava na média e puxava a sugestão da semana para baixo. Quem conhece o
+calendário é o orquestrador, então é ele que resolve os dias e o core só recebe
+a lista; o `basis` declara quantos saíram.
+
+### 9.2 O ciclo do esgotamento (a descoberta do §7.1)
+
+`soldout_at` **ligado**: o campo que existia e ninguém preenchia. Agora a
+fórmula sabe que um dia esgotado mostra o estoque que havia, não a procura que
+houve, e para de perpetuar a falta.
+
+- `StockQueries.shelf_history` reconstrói, por SKU e dia, quando o produto
+  chegou à prateleira e quando acabou, a partir do ledger dos quants vendáveis.
+  Duas distinções que os testes cobram: **reposição desfaz o esgotamento**
+  anterior, e **descarte não é esgotamento** (zera a prateleira, mas é o oposto:
+  sobrou). Por isso o esgotamento só se fecha em movimento de venda — o que
+  torna o §9.1 pré-requisito, não coincidência.
+- A composição mora em `shop/adapters/demand.py`: quem pode ler pedidos e
+  estoque na mesma frase é o orquestrador. O core segue sem conhecer o outro
+  lado. `OrderingDemandBackend` virou export público do craftsman (já era
+  público de fato: é o valor default do setting).
+- **A extrapolação assumia expediente de 06:00–18:00** e a loja abre às 09:00 —
+  subestimava a demanda pela metade. A janela real viaja junto, vinda do horário
+  declarado. **Sem horário configurado, não extrapola**: perder precisão é
+  melhor que inventar procura. O `basis` declara `soldout_days`.
+- O seed ancorava o histórico só no dia-da-semana de hoje, por construção, para
+  casar com o filtro antigo; agora cobre também o dia planejado.
+
+### 9.3 Sobra e falta no B.I. (B1/B2 do §7.5)
+
+Três métricas novas no explorador, cruzáveis por SKU, dia, dia-da-semana e mês:
+**dias que acabaram**, **horas sem produto** (do esgotamento até o fim do
+expediente) e **sobra no fim do dia** (da contagem do fechamento). Falta vem do
+ledger, sobra vem do operador.
+
+Honestidade preservada em três pontos: dia sem produto não fala nem de sobra nem
+de falta e fica fora; dia sem fechamento é ausência, não sobra zero; sem horário
+declarado não há "resto do dia" a contar.
+
+**Sazonalidade** (parte do §7.4): dimensões cíclicas **mês do ano** e **semana
+do ano**, que juntam todos os anos no mesmo balde — diferentes da série do
+tempo, que é cronológica e nunca repete um balde. Junto: dimensão ordinal passa
+a sair em ordem natural em vez de ranking, porque curva ordenada por valor deixa
+de ser curva.
+
+**Curadoria** (P1): de 3 para 15 cenários de partida, na ordem em que a semana
+acontece — quanto assar, o que o cliente procura, como a casa foi. Cruzamento
+por forno fica de fora (um forno só). Um teste cobra que todo exemplo usa
+dimensão que existe, para que nenhum chip quebre ao abrir a tela.
+
+### 9.4 O que NÃO foi feito, e por quê
+
+- **Clima (N8/§7.4)** — é a única captura do plano que traz um serviço externo
+  para dentro. A casa é parcimoniosa com dependência nova e o dono não decidiu;
+  fica como a pergunta aberta nº 4. Tudo o mais do "contexto do dia" que não
+  depende de rede (mês, semana, dia-da-semana) já está entregue.
+- **Feriados como dimensão de demanda (N12)** — hoje o sistema só sabe se a loja
+  *fecha*; véspera e volta de feriado não existem. Precisa de fonte (nacional é
+  fácil; municipal de Londrina não) ou cadastro anual no Admin.
+- **N11 (marcar quando o produto sai do ar)** — sem ele, a janela mede o
+  esgotamento **físico**, não o que o cliente via. É a pergunta aberta nº 5.
+- **Venda estimada perdida (B4/§7.5)** — depende de curva por hora em dias
+  comparáveis; a fórmula já faz a versão simples disso internamente (taxa de
+  venda com teto de 2×). Virar tela é o passo seguinte natural.
+- **Tela própria de abastecimento** — as métricas entraram no explorador, que já
+  responde as perguntas com cruzamento. Uma página dedicada só se justifica
+  depois de ver quais cruzamentos o dono usa de fato.
+
+### 9.5 Expectativa de dados (importante)
+
+As métricas de abastecimento e o `soldout_at` só ganham vida com **dados reais
+de produção acumulando**: o banco de teste grava pedidos e fornadas direto, sem
+passar pelo fluxo que gera os movimentos de estoque, então lá elas aparecem
+vazias por construção. As de venda e sazonalidade, ao contrário, valem
+imediatamente sobre os dois anos do Yooga.

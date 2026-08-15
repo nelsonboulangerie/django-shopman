@@ -12,7 +12,7 @@ Este módulo é o gancho explícito do orquestrador: logging estruturado e ponto
 from __future__ import annotations
 
 import logging
-from datetime import date
+from datetime import date, timedelta
 from decimal import Decimal, InvalidOperation
 
 from django.utils import timezone
@@ -26,18 +26,56 @@ def suggest_for(target_date: date, output_skus: list[str] | None = None):
     Ponto único de resolução: estação (mês da data-alvo), multiplicador de alta
     demanda e margem de segurança vêm de ``ProductionConfig`` — CLI, projections
     e matriz enxergam exatamente a mesma sugestão.
+
+    O calendário também entra aqui: quem sabe quando a loja abre é o
+    orquestrador, então é ele que tira da amostra os dias fechados. Sem isso um
+    domingo de portas fechadas entra na média como um domingo fraco e puxa a
+    sugestão da semana inteira para baixo.
     """
     from shopman.craftsman import suggest as formula_suggest
+    from shopman.craftsman.conf import get_setting
 
     from shopman.shop.production_config import ProductionConfig
 
     suggestion = ProductionConfig.load().suggestion
+    window_days = int(get_setting("HISTORICAL_DAYS") or 28)
     return formula_suggest(
         target_date,
         output_skus=output_skus,
         season_months=suggestion.season_months_for(target_date.month),
         high_demand_multiplier=suggestion.high_demand_multiplier_decimal,
         safety_pct=suggestion.safety_stock_percent_decimal,
+        exclude_dates=closed_days_within(days=window_days),
+        selling_window=selling_window_for(target_date),
+    )
+
+
+def selling_window_for(day: date):
+    """O par (abre, fecha) do dia, do horário declarado da loja.
+
+    É com ele que a fórmula extrapola a demanda dos dias que esgotaram: o pão
+    que acabou às 10h vendeu numa fração do expediente, e a fração só é
+    calculável sabendo quando o expediente começa. Sem horário configurado
+    devolve None, e a fórmula prefere contar o que vendeu a inventar o resto.
+    """
+    from shopman.shop.services.business_calendar import selling_hours_for
+
+    return selling_hours_for(day)
+
+
+def closed_days_within(*, days: int, until: date | None = None) -> frozenset[date]:
+    """Dias sem expediente na janela ``[until - days, until)``.
+
+    Degrada para vazio se o calendário não estiver configurado — nunca esconde
+    dias por engano (a sugestão prefere amostra a mais do que amostra fantasma).
+    """
+    from shopman.shop.services.business_calendar import is_open_on
+
+    until = until or timezone.localdate()
+    return frozenset(
+        day
+        for offset in range(1, days + 1)
+        if not is_open_on(day := until - timedelta(days=offset))
     )
 
 

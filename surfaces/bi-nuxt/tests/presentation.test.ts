@@ -1,11 +1,15 @@
 import { describe, expect, it } from "vitest";
 import {
   DATA_EPOCH,
+  EXPLORE_DIMENSION_LABELS,
+  EXPLORE_EXAMPLES,
   WEEKDAY_LABELS,
   bucketLabel,
   bucketSalesDays,
   coverageLabel,
   delta,
+  formatExploreValue,
+  formatHours,
   formatMinutes,
   formatMoney,
   formatMoneyCompact,
@@ -29,6 +33,27 @@ describe("presentation/bi", () => {
   it("quantidades e minutos trocam ponto por vírgula", () => {
     expect(formatQty("38.5")).toBe("38,5");
     expect(formatMinutes("23.5")).toBe("23,5 min");
+  });
+
+  it("horas sem produto saem legíveis, e zero é resposta", () => {
+    expect(formatHours(7)).toBe("7 h");
+    expect(formatHours(1.53)).toBe("1,5 h");
+    expect(formatHours(0)).toBe("0 h");
+    expect(formatExploreValue("hours", 7)).toBe("7 h");
+  });
+
+  it("cenários de exemplo só usam a gramática existente", () => {
+    // Exemplo com dimensão inventada quebraria na primeira abertura da tela.
+    for (const example of EXPLORE_EXAMPLES) {
+      expect(EXPLORE_DIMENSION_LABELS[example.config.by]).toBeTruthy();
+      if (example.config.by2) {
+        expect(EXPLORE_DIMENSION_LABELS[example.config.by2]).toBeTruthy();
+      }
+    }
+  });
+
+  it("a curadoria abre pela pergunta do dia: falta ou sobra", () => {
+    expect(EXPLORE_EXAMPLES[0]?.config.metric).toBe("soldout_days");
   });
 
   it("datas curtas e rótulos", () => {

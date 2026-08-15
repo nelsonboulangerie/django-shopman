@@ -15,6 +15,7 @@ from decimal import Decimal
 from django.db import transaction
 from django.utils import timezone
 from shopman.stockman import Quant
+from shopman.stockman.models import Move
 from shopman.stockman.services.movements import StockMovements
 
 from shopman.backstage.models import DayClosing
@@ -187,7 +188,12 @@ def _write_off_lots(
         if not in_lots and not (include_batchless and not quant.batch):
             continue
         take = min(remaining, quant._quantity)
-        StockMovements.issue(quantity=take, quant=quant, reason=reason)
+        # WASTE, não o ADJUST default do issue(): perda de fim de dia é perda.
+        # Sem o kind, agrupar o ledger por tipo conta a perda como ajuste de
+        # inventário e a métrica que o write-off existe para alimentar nasce torta.
+        StockMovements.issue(
+            quantity=take, quant=quant, reason=reason, kind=Move.Kind.WASTE
+        )
         remaining -= take
         written_off += take
     return int(written_off)

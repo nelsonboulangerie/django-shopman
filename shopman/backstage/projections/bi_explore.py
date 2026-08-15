@@ -27,6 +27,11 @@ MAX_ROWS = 60
 
 WEEKDAY_LABELS = ("seg", "ter", "qua", "qui", "sex", "sáb", "dom")
 
+MONTH_LABELS = (
+    "jan", "fev", "mar", "abr", "mai", "jun",
+    "jul", "ago", "set", "out", "nov", "dez",
+)
+
 
 class ExploreError(ValueError):
     """Configuração fora da gramática — a mensagem já diz o que existe."""
@@ -45,12 +50,17 @@ METRICS: dict[str, MetricSpec] = {
     spec.key: spec
     for spec in (
         MetricSpec("revenue", "Faturamento", "q",
-                   ("time", "channel", "hour", "weekday", "source"), "sales"),
+                   ("time", "channel", "hour", "weekday", "month_of_year",
+                    "week_of_year", "source"), "sales"),
         MetricSpec("orders", "Pedidos", "count",
-                   ("time", "channel", "hour", "weekday", "source"), "sales"),
+                   ("time", "channel", "hour", "weekday", "month_of_year",
+                    "week_of_year", "source"), "sales"),
         MetricSpec("average_ticket", "Ticket médio", "q",
-                   ("time", "channel", "hour", "weekday", "source"), "sales"),
-        MetricSpec("qty_sold", "Quantidade vendida", "qty", ("time", "sku", "source"), "sales_items"),
+                   ("time", "channel", "hour", "weekday", "month_of_year",
+                    "week_of_year", "source"), "sales"),
+        MetricSpec("qty_sold", "Quantidade vendida", "qty",
+                   ("time", "sku", "hour", "weekday", "month_of_year",
+                    "week_of_year", "source"), "sales_items"),
         MetricSpec("qty_produced", "Quantidade produzida", "qty",
                    ("time", "recipe", "oven", "operator", "weekday", "grade"), "production"),
         MetricSpec("loss", "Perda de produção", "qty",
@@ -60,6 +70,13 @@ METRICS: dict[str, MetricSpec] = {
         MetricSpec("oven_minutes", "Tempo de forno", "minutes",
                    ("time", "recipe", "oven", "operator"), "oven"),
         MetricSpec("cash_difference", "Quebra de caixa", "q", ("time", "operator"), "cash"),
+        # Abastecimento: as duas caras da mesma decisão de fornada.
+        MetricSpec("soldout_days", "Dias que acabaram", "count",
+                   ("sku", "time", "weekday", "month_of_year"), "shelf"),
+        MetricSpec("hours_without_stock", "Horas sem produto", "hours",
+                   ("sku", "time", "weekday", "month_of_year"), "shelf"),
+        MetricSpec("leftover", "Sobra no fim do dia", "qty",
+                   ("sku", "time", "weekday", "month_of_year"), "shelf"),
     )
 }
 
@@ -68,6 +85,10 @@ DIMENSION_LABELS: dict[str, str] = {
     "channel": "Canal",
     "hour": "Hora do dia",
     "weekday": "Dia da semana",
+    # Cíclicas: juntam todos os anos no mesmo balde. É o eixo da sazonalidade —
+    # diferente da série do tempo, que é cronológica e nunca repete um balde.
+    "month_of_year": "Mês do ano",
+    "week_of_year": "Semana do ano",
     "source": "Fonte (Shopman/Yooga)",
     "sku": "Produto",
     "recipe": "Receita",
@@ -76,6 +97,11 @@ DIMENSION_LABELS: dict[str, str] = {
     "grade": "Grau de qualidade",
     "defect": "Defeito",
 }
+
+# Dimensões que têm ordem própria: saem na sequência natural, não em ranking.
+ORDINAL_DIMENSIONS = frozenset(
+    {"time", "hour", "weekday", "month_of_year", "week_of_year"}
+)
 
 
 @dataclass(frozen=True)
@@ -156,12 +182,14 @@ def build_bi_explore(
         "production": _production_rows,
         "oven": _oven_rows,
         "cash": _cash_rows,
+        "shelf": _shelf_rows,
     }[spec.family]
     rows = resolver(spec, by, by2, date_from, date_to)
 
-    # Série temporal sai em ordem cronológica completa; ranking sai por valor,
-    # limitado e com o corte declarado.
-    if by == "time":
+    # Dimensão ordinal (tempo, hora, dia-da-semana, mês, semana) sai na ordem
+    # natural: é curva, e curva ordenada por valor deixa de ser curva. As
+    # demais são ranking — por valor, limitado e com o corte declarado.
+    if by in ORDINAL_DIMENSIONS:
         rows.sort(key=lambda row: (row.key, row.key2))
         truncated = 0
     else:
@@ -193,6 +221,15 @@ def _weekday(local) -> tuple[str, str]:
     return str(index), WEEKDAY_LABELS[index]
 
 
+def _month_of_year(local) -> tuple[str, str]:
+    return f"{local.month:02d}", MONTH_LABELS[local.month - 1]
+
+
+def _week_of_year(local) -> tuple[str, str]:
+    week = local.isocalendar().week
+    return f"{week:02d}", f"sem {week}"
+
+
 def _dim_key(dim: str, *, local=None, extra=None) -> tuple[str, str]:
     """(key, label) para dimensões derivadas de um instante local."""
     if dim == "time":
@@ -202,6 +239,10 @@ def _dim_key(dim: str, *, local=None, extra=None) -> tuple[str, str]:
         return f"{local.hour:02d}", f"{local.hour}h"
     if dim == "weekday":
         return _weekday(local)
+    if dim == "month_of_year":
+        return _month_of_year(local)
+    if dim == "week_of_year":
+        return _week_of_year(local)
     return extra  # dimensões de valor direto: quem chama resolve
 
 
@@ -502,3 +543,109 @@ def _cash_rows(spec, by, by2, date_from, date_to) -> list[BIExploreRow]:
         BIExploreRow(key=k1, label=labels[(k1, k2)][0], key2=k2, label2=labels[(k1, k2)][1], value=float(total[(k1, k2)]))
         for (k1, k2) in total
     ]
+
+
+# ── Prateleira (sobra e falta: as duas caras da decisão da fornada) ─────────
+
+
+def _shelf_rows(spec, by, by2, date_from, date_to) -> list[BIExploreRow]:
+    """Dias que acabaram, horas sem produto e sobra — por SKU e por período.
+
+    Só entram SKUs com posição vendável no ledger: a pergunta é sobre o que o
+    cliente encontrava na loja.
+
+    ``hours_without_stock`` conta do esgotamento até o fim do expediente
+    declarado; sem horário configurado a loja não tem "fim do dia" e a métrica
+    fica zerada em vez de inventar um expediente.
+    """
+    from shopman.stockman.models import Quant
+    from shopman.stockman.services.queries import StockQueries
+
+    from shopman.shop.services.business_calendar import selling_hours_for
+
+    skus = sorted(
+        Quant.objects.filter(
+            position__is_saleable=True, target_date__isnull=True
+        ).values_list("sku", flat=True).distinct()
+    )
+    if not skus:
+        return []
+
+    history = StockQueries.shelf_history(skus, since=date_from, until=date_to)
+    leftovers = _leftovers_by_day(date_from, date_to) if spec.key == "leftover" else {}
+
+    totals: dict[tuple, float] = defaultdict(float)
+    labels: dict[tuple, tuple[str, str]] = {}
+
+    def part(dim: str, sku: str, day: date) -> tuple[str, str]:
+        if dim == "sku":
+            return sku, sku
+        if dim == "time":
+            iso = day.isoformat()
+            return iso, iso
+        if dim == "weekday":
+            return str(day.weekday()), WEEKDAY_LABELS[day.weekday()]
+        if dim == "month_of_year":
+            return f"{day.month:02d}", MONTH_LABELS[day.month - 1]
+        return "", ""
+
+    for sku, days in history.items():
+        for day, shelf in days.items():
+            if not shelf.had_stock:
+                continue  # dia sem produto não fala sobre sobra nem sobre falta
+            value = _shelf_value(
+                spec.key, shelf, sku=sku, day=day,
+                leftovers=leftovers, selling_hours=selling_hours_for,
+            )
+            if value is None:
+                continue
+            parts = [part(by, sku, day), part(by2, sku, day) if by2 else ("", "")]
+            key = (parts[0][0], parts[1][0])
+            totals[key] += value
+            labels[key] = (parts[0][1], parts[1][1])
+
+    return [
+        BIExploreRow(
+            key=k1, label=labels[(k1, k2)][0], key2=k2, label2=labels[(k1, k2)][1],
+            value=round(totals[(k1, k2)], 1),
+        )
+        for (k1, k2) in totals
+    ]
+
+
+def _shelf_value(metric: str, shelf, *, sku: str, day: date, leftovers, selling_hours):
+    if metric == "soldout_days":
+        return 1.0 if shelf.soldout_at is not None else 0.0
+    if metric == "hours_without_stock":
+        if shelf.soldout_at is None:
+            return 0.0
+        window = selling_hours(day)
+        if window is None:
+            return 0.0  # sem expediente declarado não há "resto do dia" a contar
+        closes_at = window[1]
+        soldout = timezone.localtime(shelf.soldout_at).time()
+        if soldout >= closes_at:
+            return 0.0  # acabou junto com o expediente: ninguém ficou sem
+        missing = (
+            closes_at.hour * 60 + closes_at.minute
+            - soldout.hour * 60 - soldout.minute
+        )
+        return missing / 60
+    # leftover: o que sobrou no fechamento, declarado pelo operador na contagem.
+    # Dia sem fechamento não vira zero — vira ausência (a linha não entra).
+    return leftovers.get((day, sku))
+
+
+def _leftovers_by_day(date_from: date, date_to: date) -> dict:
+    """Sobra por (dia, sku) a partir do fechamento — quem conta é o operador."""
+    from shopman.backstage.models import DayClosing
+
+    out: dict[tuple, float] = {}
+    for closing in DayClosing.objects.filter(date__range=(date_from, date_to)):
+        data = closing.data if isinstance(closing.data, dict) else {}
+        for row in data.get("items") or []:
+            sku = row.get("sku")
+            if not sku:
+                continue
+            out[(closing.date, sku)] = float(row.get("qty_remaining") or 0)
+    return out

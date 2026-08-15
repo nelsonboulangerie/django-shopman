@@ -95,7 +95,17 @@ export function formatExploreValue(unit: string, value: number): string {
   if (unit === "qty") return formatQty(String(value));
   if (unit === "percent") return `${value}%`;
   if (unit === "minutes") return formatMinutes(String(value));
+  if (unit === "hours") return formatHours(value);
   return formatInt(value);
+}
+
+/** Horas com uma casa: "7 h", "1,5 h". Zero é resposta, não vazio. */
+export function formatHours(value: number): string {
+  const rounded = Math.round(value * 10) / 10;
+  const text = Number.isInteger(rounded)
+    ? String(rounded)
+    : rounded.toFixed(1).replace(".", ",");
+  return `${text} h`;
 }
 
 /** Rótulos pt-BR das dimensões do explorador (espelham a gramática). */
@@ -104,6 +114,8 @@ export const EXPLORE_DIMENSION_LABELS: Record<string, string> = {
   channel: "Canal",
   hour: "Hora do dia",
   weekday: "Dia da semana",
+  month_of_year: "Mês do ano",
+  week_of_year: "Semana do ano",
   source: "Fonte (Shopman/Yooga)",
   sku: "Produto",
   recipe: "Receita",
@@ -113,11 +125,32 @@ export const EXPLORE_DIMENSION_LABELS: Record<string, string> = {
   defect: "Defeito",
 };
 
-/** Cenários de exemplo — chips de partida quando não há salvos (F9). */
+/** Cenários de exemplo — chips de partida quando não há salvos (F9).
+ *
+ * Curadoria pelas perguntas que se toma decisão em cima, na ordem em que a
+ * semana acontece: primeiro quanto assar, depois o que o cliente procura,
+ * depois como a casa foi. Cruzamento por forno fica de fora — a casa tem um
+ * forno só, e um recorte que nunca recorta é ruído.
+ */
 export const EXPLORE_EXAMPLES = [
-  { name: "Perda por defeito × receita", config: { metric: "loss", by: "defect", by2: "recipe" } },
-  { name: "Tempo de forno por receita", config: { metric: "oven_minutes", by: "recipe", by2: "" } },
+  // Está faltando ou sobrando pão?
+  { name: "Produtos que mais acabam", config: { metric: "soldout_days", by: "sku", by2: "" } },
+  { name: "Horas sem produto por SKU", config: { metric: "hours_without_stock", by: "sku", by2: "" } },
+  { name: "Sobra por produto", config: { metric: "leftover", by: "sku", by2: "" } },
+  { name: "Falta por dia da semana", config: { metric: "hours_without_stock", by: "weekday", by2: "sku" } },
+  // Quando o cliente vem e o que ele leva
   { name: "Faturamento por hora", config: { metric: "revenue", by: "hour", by2: "" } },
+  { name: "Movimento por hora × dia da semana", config: { metric: "orders", by: "hour", by2: "weekday" } },
+  { name: "O que vende em cada hora", config: { metric: "qty_sold", by: "hour", by2: "sku" } },
+  { name: "Sazonalidade por mês do ano", config: { metric: "revenue", by: "month_of_year", by2: "" } },
+  { name: "Ticket médio por canal", config: { metric: "average_ticket", by: "channel", by2: "" } },
+  { name: "Antes e depois do Shopman", config: { metric: "revenue", by: "time", by2: "source" } },
+  // Produção e caixa
+  { name: "Perda por defeito × receita", config: { metric: "loss", by: "defect", by2: "recipe" } },
+  { name: "Perda por dia da semana", config: { metric: "loss", by: "weekday", by2: "recipe" } },
+  { name: "Tempo de forno por receita", config: { metric: "oven_minutes", by: "recipe", by2: "" } },
+  { name: "Rendimento por receita", config: { metric: "yield_percent", by: "recipe", by2: "" } },
+  { name: "Quebra de caixa por operador", config: { metric: "cash_difference", by: "operator", by2: "" } },
 ] as const;
 
 export interface WindowPreset {

@@ -939,7 +939,11 @@ CRAFTSMAN = {
     # validação de disponibilidade de insumos, ligado desde o WP-B5b (Buyman
     # Fase 1, com estoque de insumo no seed) — guardrail ativo em adjust/finish.
     "INVENTORY_BACKEND": "shopman.shop.adapters.inventory.InventoryAvailabilityBackend",
-    "DEMAND_BACKEND": "shopman.craftsman.contrib.demand.backend.OrderingDemandBackend",
+    # Demanda = pedidos (craftsman.contrib.demand) + a hora em que a prateleira
+    # zerou (ledger de estoque). O dia que esgotou mostra o estoque que havia,
+    # não a procura que houve; sem a correção, o produto que acaba cedo ensina
+    # que vende pouco e a sugestão perpetua a falta.
+    "DEMAND_BACKEND": "shopman.shop.adapters.demand.LedgerAwareDemandBackend",
     # Composed: Offerman (vendáveis) + Buyman (insumos/Material). Resolução-only
     # (unidade do insumo p/ cross-check de RecipeItem) — não toca disponibilidade.
     "CATALOG_BACKEND": "shopman.shop.adapters.catalog_backend.ComposedCatalogBackend",
