@@ -163,3 +163,137 @@ def test_o_que_a_tabela_nao_tem_vira_equivalente_e_nao_lixo(movimento):
     assert "..." in papel
     # Acento de verdade CONTINUA saindo — a tradução não pode achatar português.
     assert "à parte" in papel
+
+
+# ── O caminho pelo servidor ───────────────────────────────────────────────
+
+
+def _grant(user):
+    from django.contrib.auth.models import Permission
+    from django.contrib.contenttypes.models import ContentType
+
+    ct = ContentType.objects.get_for_model(CashShift)
+    user.user_permissions.add(Permission.objects.get(content_type=ct, codename="operate_pos"))
+
+
+@pytest.fixture
+def operador_logado(client, movimento):
+    from shopman.shop.models import Shop
+
+    Shop.objects.create(name="Loja")
+    user = movimento.shift.operator
+    _grant(user)
+    client.force_login(user)
+    return client, movimento
+
+
+def test_o_servidor_entrega_os_bytes_prontos(operador_logado, settings):
+    """A tela relaia; ela não sabe compor ESC/POS nem precisa saber."""
+    import base64
+
+    from django.urls import reverse
+
+    settings.SHOPMAN_ADMIN_HOST = "admin.boulangerie.com.br"
+    client, movimento = operador_logado
+
+    response = client.get(reverse("api-backstage-pos-cash-receipt", args=[movimento.pk]))
+
+    assert response.status_code == 200
+    corpo = response.json()
+    papel = base64.b64decode(corpo["payload_b64"])
+    assert papel.startswith(bytes([0x1B, 0x40]))
+    assert corpo["verify_code"].startswith("SG-")
+    # O QR aponta para o host canônico do Admin, não para constante inventada.
+    assert b"https://admin.boulangerie.com.br/admin/caixa/comprovante/" in papel
+
+
+def test_sem_host_de_admin_o_QR_leva_so_o_codigo(operador_logado, settings):
+    """Melhor o código sozinho do que um endereço que não existe."""
+    import base64
+
+    from django.urls import reverse
+
+    settings.SHOPMAN_ADMIN_HOST = ""
+    client, movimento = operador_logado
+
+    papel = base64.b64decode(
+        client.get(reverse("api-backstage-pos-cash-receipt", args=[movimento.pk])).json()["payload_b64"]
+    )
+    assert b"https://" not in papel
+
+
+def test_comprovante_de_movimento_de_OUTRO_turno_e_recusado(operador_logado):
+    """Ninguém tira comprovante do caixa alheio."""
+    from django.contrib.auth import get_user_model
+    from django.urls import reverse
+
+    client, _ = operador_logado
+    outro = get_user_model().objects.create_user(username="outro", password="x", is_staff=True)
+    outro_shift = CashShift.objects.create(
+        terminal=POSTerminal.objects.create(ref="pdv-2"), operator=outro, opening_amount_q=0
+    )
+    alheio = CashMovement.objects.create(
+        shift=outro_shift, movement_type="sangria", amount_q=100, created_by="outro"
+    )
+
+    response = client.get(reverse("api-backstage-pos-cash-receipt", args=[alheio.pk]))
+    assert response.status_code == 400
+
+
+def test_o_balcao_registra_que_imprimiu(operador_logado):
+    from django.urls import reverse
+
+    client, movimento = operador_logado
+    response = client.post(
+        reverse("api-backstage-pos-cash-receipt", args=[movimento.pk]),
+        data={"status": "printed"},
+        content_type="application/json",
+    )
+
+    assert response.status_code == 200
+    movimento.refresh_from_db()
+    assert movimento.receipt_status == CashMovement.ReceiptStatus.PRINTED
+    assert movimento.receipt_at is not None
+
+
+def test_o_balcao_registra_a_FALHA_com_o_motivo(operador_logado):
+    """Falha sem motivo obriga alguém a adivinhar depois."""
+    from django.urls import reverse
+
+    client, movimento = operador_logado
+    client.post(
+        reverse("api-backstage-pos-cash-receipt", args=[movimento.pk]),
+        data={"status": "failed", "detail": "O agente da estação não está rodando."},
+        content_type="application/json",
+    )
+
+    movimento.refresh_from_db()
+    assert movimento.receipt_status == CashMovement.ReceiptStatus.FAILED
+    assert "não está rodando" in movimento.receipt_detail
+    assert movimento.receipt_at is None, "falha não pode carimbar hora de impressão"
+
+
+def test_impresso_NAO_volta_atras(operador_logado):
+    """Se já saiu papel uma vez, saiu. Regredir apagaria a testemunha."""
+    from django.urls import reverse
+
+    client, movimento = operador_logado
+    url = reverse("api-backstage-pos-cash-receipt", args=[movimento.pk])
+    client.post(url, data={"status": "printed"}, content_type="application/json")
+    client.post(url, data={"status": "failed", "detail": "erro"}, content_type="application/json")
+
+    movimento.refresh_from_db()
+    assert movimento.receipt_status == CashMovement.ReceiptStatus.PRINTED
+
+
+def test_status_invalido_e_recusado(operador_logado):
+    from django.urls import reverse
+
+    client, movimento = operador_logado
+    for ruim in ("", "pending", "qualquer"):
+        response = client.post(
+            reverse("api-backstage-pos-cash-receipt", args=[movimento.pk]),
+            data={"status": ruim},
+            content_type="application/json",
+        )
+        assert response.status_code == 400, ruim
