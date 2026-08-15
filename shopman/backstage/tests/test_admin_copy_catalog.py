@@ -94,16 +94,20 @@ def test_catalog_requires_view_permission(client, db):
 
 
 @pytest.mark.django_db
-def test_sidebar_opens_the_texts_page_not_the_raw_changelist(staff_client):
+def test_configuration_opens_the_texts_page_not_the_raw_changelist():
     """A porta dos textos é a tela que navega por superfície → tela, não a tabela
     de chaves: quem quer mudar uma frase reconhece a tela onde ela aparece, não a
-    constante que a nomeia."""
-    from django.contrib import admin as dj_admin
-    from django.test import RequestFactory
+    constante que a nomeia.
 
-    request = RequestFactory().get("/admin/")
-    request.user = get_user_model().objects.get(username="copyadmin")
-    groups = dj_admin.site.get_sidebar_list(request)
-    texts_group = next(group for group in groups if group["title"] == "Textos e mensagens")
-    item = next(i for i in texts_group["items"] if i["title"] == "Textos da interface")
-    assert str(item["link"]).endswith("/admin/settings/copy/")
+    Desde o WP-ADM-R6 essa porta fica na Configuração, não no menu: a projection
+    do hub é quem declara para onde o cartão aponta.
+    """
+    from shopman.backstage.projections.settings_hub import build_settings_hub
+
+    cards = {
+        card["label"]: card["url"]
+        for group in build_settings_hub()["groups"]
+        for card in group["cards"]
+    }
+
+    assert cards["Textos da interface"].endswith("/admin/settings/copy/")

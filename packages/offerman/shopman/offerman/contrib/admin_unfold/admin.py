@@ -31,6 +31,7 @@ from shopman.utils.admin.mixins import AutofillInlineMixin
 from shopman.utils.contrib.admin_unfold.badges import unfold_badge
 from shopman.utils.contrib.admin_unfold.base import BaseModelAdmin, BaseTabularInline
 from shopman.utils.monetary import format_money
+from taggit.managers import TaggableManager
 from unfold.contrib.filters.admin.numeric_filters import RangeNumericFilter
 from unfold.contrib.import_export.forms import ExportForm, ImportForm
 from unfold.decorators import display
@@ -76,6 +77,7 @@ class CollectionAdminForm(forms.ModelForm):
     """Form com editor JSON validado da regra (smart collection)."""
 
     rule = forms.CharField(
+        label="Regra",
         widget=UnfoldAdminTextareaWidget(attrs={"rows": 6}),
         required=False,
         help_text=_RULE_HELP,
@@ -305,6 +307,14 @@ class ProductActionForm(ActionForm):
 class ProductAdmin(_ProductImportExportBase):
     from shopman.offerman.contrib.admin_unfold.resources import ProductResource
 
+    # O campo de etiquetas vem do taggit, cujo widget é um campo de texto cru:
+    # dentro de um form Unfold ele aparecia com a borda do Django antigo. O taggit
+    # continua dono do PARSE (vírgula, aspas, etiqueta nova na hora); troca só o
+    # desenho.
+    formfield_overrides = {
+        TaggableManager: {"widget": UnfoldAdminTextInputWidget},
+    }
+
     form = ProductAdminForm
     resource_classes = [ProductResource]
 
@@ -327,7 +337,26 @@ class ProductAdmin(_ProductImportExportBase):
     ]
     list_filter_submit = True
     search_fields = ["sku", "name", "keywords__name"]
-    readonly_fields = ["uuid", "created_at", "updated_at", "is_bundle", "margin_percent", "is_perishable"]
+    # As três últimas são `property` do model: property não aceita
+    # `short_description`, então o rótulo precisa vir de um método do admin, senão
+    # o Django cai no nome do atributo ("Is bundle", "Margin percent").
+    readonly_fields = [
+        "uuid", "created_at", "updated_at",
+        "is_bundle_readonly", "margin_percent_readonly", "is_perishable_readonly",
+    ]
+
+    @display(description="É combo", boolean=True)
+    def is_bundle_readonly(self, obj):
+        return obj.is_bundle
+
+    @display(description="Margem (%)")
+    def margin_percent_readonly(self, obj):
+        margin = obj.margin_percent
+        return f"{margin:.1f}%" if margin is not None else "—"
+
+    @display(description="É perecível", boolean=True)
+    def is_perishable_readonly(self, obj):
+        return obj.is_perishable
     inlines = [ProductCollectionItemInline, ProductListingItemInline, ProductComponentInline]
 
     fieldsets = [
@@ -337,7 +366,7 @@ class ProductAdmin(_ProductImportExportBase):
         ),
         (
             "Preço e custo",
-            {"fields": ("base_price_q", "margin_percent"), "classes": ("tab",)},
+            {"fields": ("base_price_q", "margin_percent_readonly"), "classes": ("tab",)},
         ),
         (
             "Publicação e venda",
@@ -356,7 +385,7 @@ class ProductAdmin(_ProductImportExportBase):
                     "availability_policy",
                     "shelf_life_days",
                     "storage_tip",
-                    "is_perishable",
+                    "is_perishable_readonly",
                     "production_cycle_hours",
                     "is_batch_produced",
                     "allows_next_day_sale",

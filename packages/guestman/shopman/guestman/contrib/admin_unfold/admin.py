@@ -25,8 +25,10 @@ from shopman.guestman.models import (
     ExternalIdentity,
     PriceTier,
 )
+from shopman.utils import unfold_link
 from shopman.utils.contrib.admin_unfold.badges import unfold_badge, unfold_badge_numeric
 from shopman.utils.contrib.admin_unfold.base import BaseModelAdmin, BaseTabularInline
+from taggit.managers import TaggableManager
 from unfold.contrib.filters.admin.dropdown_filters import ChoicesDropdownFilter
 from unfold.decorators import display
 from unfold.widgets import UnfoldAdminRadioSelectWidget, UnfoldAdminTextInputWidget
@@ -216,6 +218,14 @@ class CommunicationConsentInline(BaseTabularInline):
 
 @admin.register(Customer)
 class CustomerAdmin(BaseModelAdmin):
+    # O campo de etiquetas vem do taggit, cujo widget é um campo de texto cru:
+    # dentro de um form Unfold ele aparecia com a borda do Django antigo. O taggit
+    # continua dono do PARSE (vírgula, aspas, etiqueta nova na hora); troca só o
+    # desenho.
+    formfield_overrides = {
+        TaggableManager: {"widget": UnfoldAdminTextInputWidget},
+    }
+
     list_display = [
         "customer_header",
         "customer_type_badge",
@@ -689,7 +699,7 @@ if LoyaltyAccount is not None:
             from django.urls import reverse
 
             url = reverse("admin:guestman_customer_change", args=[obj.customer.pk])
-            return format_html('<a class="font-medium text-link" href="{}">{}</a>', url, obj.customer.ref)
+            return unfold_link(url, obj.customer.ref)
 
         @display(description=_("Nível"))
         def tier_badge(self, obj):

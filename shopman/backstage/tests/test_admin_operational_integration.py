@@ -49,15 +49,19 @@ class AdminNavigationTests(TestCase):
             groups = admin.site.get_sidebar_list(request)
         titles = [group["title"] for group in groups]
 
-        self.assertEqual(titles[0], "Operação ao vivo")
+        # "Aplicativos": os itens abrem os apps do operador, FORA do Admin.
+        # "Operação ao vivo" não dizia o que era nem para onde levava. O grupo não
+        # é mais o primeiro: antes dele vem o alarme, item solto e sem título.
+        self.assertIn("Aplicativos", titles)
         self.assertIn("Catálogo", titles)
         self.assertIn("Produção", titles)
         self.assertIn("Auditoria", titles)
         self.assertNotIn("Regras", titles)
 
-        live = [item for item in groups[0]["items"] if item["has_permission"]]
+        apps = next(g for g in groups if g["title"] == "Aplicativos")
+        live = [item for item in apps["items"] if item["has_permission"]]
         live_items = [item["title"] for item in live]
-        self.assertEqual(live_items[:4], ["Pedidos", "Fechamento", "PDV", "Produção ao vivo"])
+        self.assertEqual(live_items, ["Pedidos", "Fechamento", "PDV", "Produção ao vivo"])
         self.assertNotIn("Produção", live_items)
         closing_item = next(item for item in live if item["title"] == "Fechamento")
         self.assertEqual(closing_item["link"], "https://pos.example.com/session/closing")
@@ -65,7 +69,10 @@ class AdminNavigationTests(TestCase):
         self.assertEqual(producao_item["link"], "https://prod.example.com")
 
         with override_settings(SHOPMAN_PRODUCTION_BASE_URL="https://prod.example.com"):
-            raw_live = navigation.get_sidebar_navigation(request)[0]["items"]
+            raw_live = next(
+                g for g in navigation.get_sidebar_navigation(request)
+                if g["title"] == "Aplicativos"
+            )["items"]
         raw_producao = next(item for item in raw_live if item["title"] == "Produção ao vivo")
         self.assertEqual(
             raw_producao["badge"],
@@ -82,7 +89,8 @@ class AdminNavigationTests(TestCase):
 
         with override_settings(SHOPMAN_POS_BASE_URL=""):
             groups = admin.site.get_sidebar_list(request)
-            live = {item["title"]: item for item in groups[0]["items"]}
+            apps = next(g for g in groups if g["title"] == "Aplicativos")
+            live = {item["title"]: item for item in apps["items"]}
             self.assertNotIn("PDV", live)
 
         with override_settings(
@@ -90,7 +98,8 @@ class AdminNavigationTests(TestCase):
             SHOPMAN_PRODUCTION_BASE_URL="",
         ):
             groups = admin.site.get_sidebar_list(request)
-            live = {item["title"]: item for item in groups[0]["items"]}
+            apps = next(g for g in groups if g["title"] == "Aplicativos")
+            live = {item["title"]: item for item in apps["items"]}
             self.assertIn("PDV", live)
             self.assertEqual(live["PDV"]["link"], "https://pos.example.com")
 
@@ -130,7 +139,10 @@ class AdminNavigationTests(TestCase):
         request.user = User.objects.create_superuser("opsnav", "opsnav@example.com", "pw")
 
         with override_settings(SHOPMAN_ORDERS_BASE_URL="", SHOPMAN_KDS_BASE_URL=""):
-            live = {item["title"]: item for item in admin.site.get_sidebar_list(request)[0]["items"]}
+            apps = next(
+                g for g in admin.site.get_sidebar_list(request) if g["title"] == "Aplicativos"
+            )
+            live = {item["title"]: item for item in apps["items"]}
             self.assertNotIn("Pedidos", live)
             self.assertNotIn("KDS", live)
 
@@ -138,59 +150,114 @@ class AdminNavigationTests(TestCase):
             SHOPMAN_ORDERS_BASE_URL="https://gestor.example.com",
             SHOPMAN_KDS_BASE_URL="https://kds.example.com",
         ):
-            live = {item["title"]: item for item in admin.site.get_sidebar_list(request)[0]["items"]}
+            apps = next(
+                g for g in admin.site.get_sidebar_list(request) if g["title"] == "Aplicativos"
+            )
+            live = {item["title"]: item for item in apps["items"]}
             self.assertEqual(live["Pedidos"]["link"], "https://gestor.example.com")
             self.assertEqual(live["KDS"]["link"], "https://kds.example.com")
 
-    def test_store_config_is_split_by_intent_instead_of_piled_in_one_drawer(self) -> None:
-        """Config agrupada pelo que a pessoa quer FAZER, não por ser "config".
+    def test_configuration_left_the_operation_menu_for_a_destination(self) -> None:
+        """Config e dado deixam de disputar o mesmo menu.
 
-        O WP-2 juntou toda a configuração num grupo só para acabar com a dispersão
-        — e resolveu a dispersão criando uma gaveta de vinte itens de sete
-        assuntos, onde nada era encontrado. A correção não é voltar a espalhar: é
-        separar por intenção. "Loja" responde *o que esta loja é*; "Vendas e
-        entrega" responde *quanto se cobra e como chega*; "Textos e mensagens",
-        *o que a loja diz*. Cada grupo cabe num olhar.
+        O WP-2 juntou toda a config num grupo só e criou uma gaveta de vinte itens
+        de sete assuntos. O WP-ADM-R3 quebrou a gaveta em grupos temáticos — melhor,
+        mas ainda no mesmo plano dos dados, o que obrigava a decidir "isso é ajuste
+        ou é dado?" ANTES de procurar. Para "Promoções" essa pergunta não tem
+        resposta óbvia, e a dúvida custava a busca inteira.
+
+        Agora o menu conta o que ESTÁ ACONTECENDO e a Configuração mostra o que dá
+        para MUDAR — o padrão de Shopify, Stripe, Linear e Notion. O menu de
+        operação não pode ter tela de ajuste de volta, e o caminho para a
+        Configuração precisa existir.
         """
         request = RequestFactory().get("/admin/")
         request.user = User.objects.create_superuser("cfg", "cfg@example.com", "pw")
 
-        groups = {group["title"]: group for group in admin.site.get_sidebar_list(request)}
+        groups = admin.site.get_sidebar_list(request)
+        titles = {group["title"] for group in groups}
+        all_items_by_title = {
+            item["title"]: item for group in groups for item in group["items"]
+        }
+        all_items = set(all_items_by_title)
 
-        def titles(group_name):
-            return {
-                item["title"]
-                for item in groups[group_name]["items"]
-                if item["has_permission"]
-            }
+        # Configuração expande como os outros grupos: o menu tem UM comportamento.
+        # Os subitens são os sete ESCOPOS, não as 33 telas — o Unfold só tem dois
+        # níveis, e listar as telas aqui recriaria a gaveta, sem descrição nem busca.
+        self.assertIn("Configuração", titles)
+        config_group = next(g for g in groups if g["title"] == "Configuração")
+        config_items = [i["title"] for i in config_group["items"] if i["has_permission"]]
+        hub_url = reverse("admin_console_settings_hub")
 
-        # "Loja" são as nove telas do que a loja é — e só elas.
+        self.assertEqual(config_items[0], "Todos os ajustes")
+        self.assertEqual(config_group["items"][0]["link"], hub_url)
         self.assertEqual(
-            titles("Loja"),
-            {
-                "Loja e contato", "Marca e aparência", "Horários e operação",
-                "Cardápio", "Pedidos e entrega", "Fidelidade", "PDV e alertas",
-                "Produção", "Integrações",
-            },
+            config_items[1:],
+            [
+                "A loja", "Como vendemos", "Como entregamos", "O que dizemos",
+                "Produção e estoque", "Equipamentos", "Quem entra",
+            ],
+        )
+        # Cada escopo é uma TELA própria, não âncora: âncora fazia os oito subitens
+        # compartilharem caminho, o Unfold acendia todos e clicar não parecia navegar.
+        for item in config_group["items"][1:]:
+            self.assertNotIn("#", item["link"], item["link"])
+            self.assertTrue(item["link"].startswith(hub_url), item["link"])
+            self.assertNotEqual(item["link"], hub_url)
+
+        # E nenhuma tela de ajuste sobrou solta no menu de operação.
+        for gone in (
+            "Loja e contato", "Marca e aparência", "Horários e operação", "Cardápio",
+            "Pedidos e entrega", "Fidelidade", "PDV e alertas", "Integrações",
+            "Canais", "Regras de preço", "Promoções", "Cupons", "Faixas de preço",
+            "Zonas de entrega", "Faixas de distância", "Textos da interface",
+            "Modelos de mensagem", "Estações KDS", "Terminais do PDV", "Usuários",
+        ):
+            self.assertNotIn(gone, all_items, f"{gone} deveria morar na Configuração")
+
+    def test_settings_hub_groups_configuration_by_scope(self) -> None:
+        """Dentro do destino, o eixo é ESCOPO — o que a loja é, como vende, como
+        entrega, o que diz, o que fabrica, com que equipamento, quem entra. É o
+        eixo que Stripe (Pessoal/Conta/Produto) e Linear (Account/Features/
+        Administration/Teams) usam; agrupar por "ser config" não distingue nada,
+        porque ali tudo é config."""
+        from shopman.backstage.projections.settings_hub import build_settings_hub
+
+        hub = build_settings_hub()
+        group_titles = [group["title"] for group in hub["groups"]]
+
+        self.assertEqual(
+            group_titles,
+            [
+                "A loja",
+                "Como vendemos",
+                "Como entregamos",
+                "O que dizemos",
+                "Produção e estoque",
+                "Equipamentos",
+                "Quem entra",
+            ],
         )
 
-        for expected in {"Canais", "Regras de preço", "Promoções", "Cupons",
-                         "Faixas de preço", "Zonas de entrega", "Faixas de distância"}:
-            self.assertIn(expected, titles("Vendas e entrega"))
+        # Todo cartão diz o que controla: uma grade de títulos sem texto é só um
+        # menu deitado, e não resolve o "não sei se o que procuro está aqui".
+        for group in hub["groups"]:
+            for card in group["cards"]:
+                self.assertTrue(card["description"].strip(), card["label"])
 
-        self.assertEqual(
-            titles("Textos e mensagens"),
-            {"Textos da interface", "Modelos de mensagem"},
-        )
+    def test_settings_hub_search_finds_a_screen_by_subject(self) -> None:
+        """Busca por assunto, sem acento e sem saber o nome exato da tela."""
+        from shopman.backstage.projections.settings_hub import build_settings_hub
 
-        # Equipamento e checklist são "raramente, mas quando precisa é aqui".
-        for expected in {"Estações KDS", "Comandas do PDV", "Terminais do PDV"}:
-            self.assertIn(expected, titles("Sistema"))
+        found = {
+            card["label"]
+            for group in build_settings_hub(q="producao")["groups"]
+            for card in group["cards"]
+        }
 
-        # E nenhuma config voltou a se misturar com os dados que ela governa.
-        self.assertNotIn("Promoções", titles("Catálogo"))
-        self.assertNotIn("Loja e contato", titles("Catálogo"))
-        self.assertNotIn("Canais", titles("Auditoria"))
+        self.assertIn("Produção", found)
+        self.assertIn("Defeitos de fornada", found)
+        self.assertNotIn("Cupons", found)
 
     def test_sidebar_badges_count_operational_attention(self) -> None:
         Order.objects.create(
@@ -207,23 +274,35 @@ class AdminNavigationTests(TestCase):
 
         self.assertEqual(navigation.badge_new_orders(request), "1")
 
-    def test_production_tabs_keep_crud_only_after_console_removal(self) -> None:
-        """WP-ADM-7d: as tabs do craftsman só linkam cadastro e consulta;
-        painel/planejamento/relatórios vivem no Produção."""
-        production_tabs = next(
-            tab for tab in settings.UNFOLD["TABS"] if "craftsman.workorder" in tab["models"]
-        )
-        tab_titles = [item["title"] for item in production_tabs["items"]]
+    def test_tabs_never_point_at_a_screen_the_menu_already_lists(self) -> None:
+        """Aba e menu disputando a mesma tela quebram o "onde estou".
 
-        self.assertEqual(
-            tab_titles,
-            [
-                "Fichas técnicas",
-                "Ordens de produção",
-                "Defeitos de fornada",
-                "Graus de qualidade",
-            ],
-        )
+        O Unfold marca como ativo todo item do menu que participe do grupo de abas
+        da página atual (`_get_is_tab_active`). Com Produtos, Coleções e Vitrines no
+        menu E na mesma aba, os três acendiam juntos. A aba passa a servir só para a
+        vizinhança que o menu NÃO mostra: hoje, os grupos que vivem na Configuração.
+        """
+        request = RequestFactory().get("/admin/")
+        request.user = User.objects.create_superuser("tabs", "tabs@example.com", "pw")
+        menu_paths = {
+            item["link"].split("?")[0]
+            for group in admin.site.get_sidebar_list(request)
+            for item in group["items"]
+        }
+
+        for tab in settings.UNFOLD["TABS"]:
+            for item in tab["items"]:
+                self.assertNotIn(
+                    str(item["link"]),
+                    menu_paths,
+                    f"{item['title']} está na aba E no menu: os dois vão acender juntos",
+                )
+
+    def test_production_operation_never_returns_to_tabs(self) -> None:
+        """WP-ADM-7d: painel/planejamento/relatório de produção vivem no Produção."""
+        tab_titles = [
+            item["title"] for tab in settings.UNFOLD["TABS"] for item in tab["items"]
+        ]
         for operational in ("Painel", "Planejamento", "Relatórios", "Pesagem"):
             self.assertNotIn(operational, tab_titles)
         self.assertEqual(str(WorkOrder._meta.verbose_name_plural), "ordens de produção")

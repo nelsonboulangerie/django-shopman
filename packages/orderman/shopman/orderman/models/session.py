@@ -370,7 +370,7 @@ class SessionEvent(models.Model):
     type = models.CharField(_("tipo"), max_length=64, db_index=True)
     actor = models.CharField(_("ator"), max_length=128)
     payload = models.JSONField(
-        _("payload"), default=dict,
+        _("dados do evento"), default=dict,
         help_text=_('Delta da ação. Ex: {"sku": "PAO", "qty_before": 3, "qty_after": 0}'),
     )
     created_at = models.DateTimeField(_("criado em"), auto_now_add=True)

@@ -4,8 +4,7 @@ from __future__ import annotations
 
 from django.conf import settings
 from django.contrib import admin
-from django.utils.html import format_html
-from shopman.utils import unfold_badge_numeric
+from shopman.utils import unfold_badge_numeric, unfold_link
 from unfold.admin import ModelAdmin
 from unfold.decorators import display
 
@@ -17,7 +16,9 @@ class DayClosingAdmin(ModelAdmin):
     list_display = ("date", "closed_by", "closed_at", "items_count_display", "errors_count_display", "operation_link_display")
     list_filter = ("closed_by",)
     date_hierarchy = "date"
-    search_fields = ("closed_by",)
+    # ``closed_by`` é FK para User — buscar nele direto quebra a busca global
+    # inteira com FieldError (icontains em relação). Atravesse até o texto.
+    search_fields = ("closed_by__username", "closed_by__first_name", "closed_by__last_name")
     readonly_fields = ("date", "closed_by", "closed_at", "notes", "data")
     compressed_fields = True
     list_fullwidth = True
@@ -41,10 +42,7 @@ class DayClosingAdmin(ModelAdmin):
         if not base:
             return "-"
         url = f"{base}/reports?date_from={obj.date.isoformat()}&date_to={obj.date.isoformat()}"
-        return format_html(
-            '<a class="font-medium text-link" href="{}">Relatório</a>',
-            url,
-        )
+        return unfold_link(url, "Relatório", icon="table_chart")
 
     def has_add_permission(self, request):
         return False

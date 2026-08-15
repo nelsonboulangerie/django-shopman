@@ -154,7 +154,7 @@ class OperationChecklistRun(models.Model):
         OperationChecklistTemplate,
         on_delete=models.PROTECT,
         related_name="runs",
-        verbose_name="template",
+        verbose_name="modelo de checklist",
     )
     business_date = models.DateField("data operacional", default=timezone.localdate)
     shift_ref = models.CharField("turno", max_length=50, blank=True, default="")
@@ -227,7 +227,7 @@ class OperationTaskRun(models.Model):
         OperationTaskTemplate,
         on_delete=models.PROTECT,
         related_name="task_runs",
-        verbose_name="template",
+        verbose_name="modelo de tarefa",
     )
     status = models.CharField(
         "status",

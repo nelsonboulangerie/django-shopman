@@ -62,30 +62,34 @@ class CashShift(models.Model):
         related_name="cash_shifts",
         verbose_name="Operador",
     )
-    opened_at = models.DateTimeField(default=timezone.now)
-    closed_at = models.DateTimeField(null=True, blank=True)
+    opened_at = models.DateTimeField(verbose_name="aberto em", default=timezone.now)
+    closed_at = models.DateTimeField(verbose_name="fechado em", null=True, blank=True)
     opening_amount_q = models.IntegerField(
+        verbose_name="valor de abertura (centavos)",
         default=0,
         help_text="Valor de abertura em centavos (fundo de troco).",
     )
     blind_closing_amount_q = models.IntegerField(
+        verbose_name="contagem cega (centavos)",
         null=True,
         blank=True,
         help_text="Valor contado no fechamento cego em centavos.",
     )
     expected_amount_q = models.IntegerField(
+        verbose_name="valor esperado (centavos)",
         null=True,
         blank=True,
         help_text="Calculado: abertura + vendas_dinheiro + suprimentos - sangrias.",
     )
     difference_q = models.IntegerField(
+        verbose_name="diferença (centavos)",
         null=True,
         blank=True,
         help_text="Diferença: contado - esperado (positivo = sobra).",
     )
-    notes = models.TextField(blank=True, default="")
+    notes = models.TextField(verbose_name="observações", blank=True, default="")
     status = models.CharField(max_length=10, choices=Status.choices, default=Status.OPEN)
-    metadata = models.JSONField(default=dict, blank=True)
+    metadata = models.JSONField("metadados", default=dict, blank=True)
 
     class Meta:
         ordering = ["-opened_at"]
@@ -280,16 +284,17 @@ class CashMovement(models.Model):
         choices=MovementType.choices,
         verbose_name="Tipo",
     )
-    amount_q = models.IntegerField(help_text="Valor em centavos (sempre positivo).")
-    reason = models.CharField(max_length=200, blank=True, default="")
-    created_by = models.CharField(max_length=150, blank=True, default="")
+    amount_q = models.IntegerField(verbose_name="valor (centavos)", help_text="Valor em centavos (sempre positivo).")
+    reason = models.CharField(verbose_name="motivo", max_length=200, blank=True, default="")
+    created_by = models.CharField(verbose_name="criado por", max_length=150, blank=True, default="")
     approved_by = models.CharField(
+        verbose_name="aprovado por",
         max_length=150,
         blank=True,
         default="",
         help_text="Gerente que autorizou a retirada (sangria e ajuste negativo).",
     )
-    created_at = models.DateTimeField(default=timezone.now)
+    created_at = models.DateTimeField("criado em", default=timezone.now)
 
     class ReceiptStatus(models.TextChoices):
         # ⚠️ O default é PENDING de propósito. Quem imprime é o navegador do

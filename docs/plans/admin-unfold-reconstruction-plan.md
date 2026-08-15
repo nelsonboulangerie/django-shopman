@@ -275,3 +275,39 @@ linhas nenhuma coluna calculada por linha chega a rodar. Foram fechados três gu
 `test_admin_navigation` (toda rota resolve, nenhuma tela órfã, nenhum grupo longo demais) e
 `test_admin_format_html_contract` (varredura AST, com um teste que verifica que a varredura
 de fato lê o código).
+
+
+## 10. Segunda rodada (2026-08-15) — canonicidade e idioma
+
+O menu ficou navegável, e aí apareceu o que a organização escondia. Quatro frentes,
+cada uma fechada com varredura em vez de inspeção manual.
+
+**Configuração virou destino.** Config e dado dividiam o menu, o que obrigava a
+classificar a própria dúvida ("isso é ajuste ou é dado?") antes de procurar — e
+para *Promoções* essa pergunta não tem resposta. Agora `/admin/settings/` lista 33
+telas em sete escopos, cada uma num cartão clicável com uma frase do que controla,
+com busca que ignora acento. No menu, "Configuração" expande como os outros grupos
+e mostra os sete escopos, cada um uma tela própria.
+
+**Quatro bugs que a reorganização desenterrou**, todos anteriores a ela:
+
+1. A busca global (⌘K) estava MORTA: dois `search_fields` apontavam para
+   ForeignKey crua, e como o endpoint varre todos os admins numa requisição só, o
+   FieldError derrubava qualquer termo. Isso importa mais do que parece: a busca é
+   o único jeito de achar tela sem saber onde ela mora.
+2. O menu acendia três itens em quase toda tela (e nenhum nas de configuração),
+   por sobreposição entre menu e abas do Unfold.
+3. 94 campos de formulário desenhavam com widget do Django dentro de telas Unfold
+   — incluindo `auth.User`, `auth.Group` e o 2FA, que estavam no Admin vanilla.
+4. 62 termos em inglês vazando para a tela, dos quais 43 por campo de model sem
+   `verbose_name` (o Django gera o rótulo do nome do atributo).
+
+**As guardas são o que fica.** Cada frente ganhou um teste que enumera em vez de
+amostrar: rota do menu viva e sem tela órfã; um único item aceso por tela; widget
+Unfold em todo campo de todo formulário; HTML canônico no Admin desenhado em
+Python; e todo rótulo escrito por alguém, não gerado pelo Django. Foram elas que
+pegaram, sozinhas, as telas que o `main` adicionou no meio do caminho.
+
+**Os pacotes seguem instaláveis sem Unfold**: os helpers caem para HTML simples
+quando o template não existe, e isso tem teste — inclusive do escape de XSS no
+fallback.

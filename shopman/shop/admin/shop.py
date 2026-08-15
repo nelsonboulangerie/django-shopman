@@ -12,6 +12,7 @@ from django.contrib import admin
 from django.contrib.admin.utils import flatten_fieldsets
 from django.utils.html import escape, format_html, format_html_join
 from django.utils.safestring import mark_safe
+from shopman.utils import unfold_component
 from unfold.admin import ModelAdmin
 from unfold.contrib.forms.widgets import ArrayWidget
 from unfold.widgets import (
@@ -24,6 +25,7 @@ from unfold.widgets import (
     UnfoldAdminSelectWidget,
     UnfoldAdminTextInputWidget,
     UnfoldAdminTimeWidget,
+    UnfoldBooleanSwitchWidget,
 )
 
 from shopman.shop import dynamic_collections
@@ -347,6 +349,7 @@ def _defaults_form_fields() -> dict[str, forms.Field]:
     fields["defaults_pos_fiscal_toggle"] = forms.BooleanField(
         label="Oferecer emissão de NFC-e no PDV",
         required=False,
+        widget=UnfoldBooleanSwitchWidget,
         help_text=(
             "Mostra a opção 'Nota fiscal' no PDV (o operador decide emitir por venda). "
             "Desligado = o recurso não aparece, mesmo com o Focus configurado. "
@@ -624,13 +627,17 @@ class ShopForm(forms.ModelForm):
     # Lista de URLs editada como inputs add/remove (ArrayWidget). Declarado
     # explicitamente para entregar a lista crua ao widget — o JSONField default
     # serializaria para string e o ArrayWidget quebraria no split por vírgula.
-    social_links = forms.Field(required=False, widget=ArrayWidget())
+    social_links = forms.Field(label="Redes sociais", required=False, widget=ArrayWidget())
 
     # Justificativas de cancelamento/recusa — mesma edição add/remove (ArrayWidget).
-    cancellation_presets = forms.Field(required=False, widget=ArrayWidget())
+    cancellation_presets = forms.Field(
+        label="Motivos de cancelamento e recusa", required=False, widget=ArrayWidget()
+    )
 
     # Tags de nota da cozinha — mesma edição add/remove (ArrayWidget).
-    kitchen_note_tags = forms.Field(required=False, widget=ArrayWidget())
+    kitchen_note_tags = forms.Field(
+        label="Tags de nota da cozinha", required=False, widget=ArrayWidget()
+    )
 
     locals().update(_defaults_form_fields())
     locals().update(_integrations_form_fields())
@@ -1478,57 +1485,90 @@ class ShopAppearanceAdmin(_ShopSingletonAdmin):
             ]),
         ]
 
-        # Chrome todo em classes do Unfold; o único estilo inline é a cor do
-        # swatch — que é o próprio dado previsto (nenhum token representa uma cor
-        # de marca arbitrária). Método não é varrido pelo gate (admin Python).
-        html_parts = [mark_safe('<div class="flex flex-col gap-3 mt-1">')]
+        # Texto e layout saem dos componentes do Unfold. O ÚNICO estilo inline é a
+        # cor do próprio swatch: ele existe para mostrar o hex que a pessoa
+        # escolheu, e cor de marca arbitrária não vira classe utilitária.
+        groups_html = []
 
         for group_label, items in groups:
-            html_parts.append(
-                format_html(
-                    '<div><strong class="text-xs uppercase tracking-wide '
-                    'text-base-500 dark:text-base-400">{}</strong>'
-                    '<div class="flex gap-1.5 mt-1">',
-                    group_label,
-                )
-            )
+            swatches = []
             for token_key, label in items:
                 raw = tokens.get(token_key, "128 128 128")
                 hex_color = _token_value_to_hex(raw)
                 dark_raw = dark.get(token_key, raw)
                 dark_hex = _token_value_to_hex(dark_raw)
 
-                html_parts.append(
-                    format_html(
-                        '<div class="text-center">'
-                        '<div class="flex rounded-default overflow-hidden border '
-                        'border-base-200 dark:border-base-700">'
-                        '<div class="w-9 h-9" style="background:{}" title="Light: {}"></div>'
-                        '<div class="w-9 h-9" style="background:{}" title="Dark: {}"></div>'
-                        '</div>'
-                        '<div class="text-xs text-base-400 mt-0.5">{}</div>'
-                        '<div class="text-xs font-mono text-base-400 uppercase">{}</div>'
-                        '</div>',
-                        hex_color, hex_color, dark_hex, dark_hex, label, hex_color,
+                chips = format_html(
+                    '<div class="flex rounded-default overflow-hidden border '
+                    'border-base-200 dark:border-base-700">'
+                    '<div class="w-9 h-9" style="background:{}" title="Claro: {}"></div>'
+                    '<div class="w-9 h-9" style="background:{}" title="Escuro: {}"></div>'
+                    "</div>",
+                    hex_color, hex_color, dark_hex, dark_hex,
+                )
+                caption = unfold_component(
+                    "unfold/components/text.html",
+                    children=label,
+                    **{"class": "text-xs text-base-400 mt-0.5"},
+                )
+                value = unfold_component(
+                    "unfold/components/text.html",
+                    children=hex_color,
+                    **{"class": "text-xs font-mono text-base-400 uppercase"},
+                )
+                swatches.append(
+                    unfold_component(
+                        "unfold/components/flex.html",
+                        children=f"{chips}{caption}{value}",
+                        col=1,
+                        **{"class": "text-center"},
                     )
                 )
-            html_parts.append(mark_safe("</div></div>"))
 
-        html_parts.append(mark_safe("</div>"))
-        return mark_safe("".join(str(part) for part in html_parts))
+            heading = unfold_component(
+                "unfold/components/text.html",
+                children=group_label,
+                **{"class": "text-xs uppercase tracking-wide text-base-500 dark:text-base-400"},
+            )
+            row = unfold_component(
+                "unfold/components/flex.html",
+                children="".join(swatches),
+                **{"class": "gap-1.5 mt-1"},
+            )
+            groups_html.append(
+                unfold_component(
+                    "unfold/components/flex.html",
+                    children=f"{heading}{row}",
+                    col=1,
+                )
+            )
+
+        return unfold_component(
+            "unfold/components/flex.html",
+            children="".join(groups_html),
+            col=1,
+            **{"class": "gap-3 mt-1"},
+        )
 
     @admin.display(description="Prévia ao vivo")
     def storefront_preview(self, obj):
         """Iframe da home — requer X-Frame-Options: SAMEORIGIN na HomeView.
 
-        Refresh via Alpine (padrão DOM do projeto), sem ``<script>`` cru; chrome
-        em classes do Unfold. O único estilo inline é a altura do iframe (sem
-        token equivalente). Método não é varrido pelo gate (admin Python).
+        O texto e o botão saem dos componentes do Unfold, renderizados aqui em vez
+        de terem as classes copiadas à mão: o botão tinha nove classes decalcadas
+        do `button.html`, que envelheceriam sozinhas no primeiro upgrade do pacote.
+        O refresh continua via Alpine (padrão DOM do projeto), agora passado ao
+        componente por ``attrs``.
+
+        Sobra um ``style``: a altura mínima do iframe. É ``min(70vh, 640px)``, um
+        cálculo que classe nenhuma do Unfold expressa, e sem ele a prévia nasce
+        rasteira demais para mostrar a loja.
         """
         if not obj or not obj.pk:
-            return mark_safe(
-                '<p class="text-sm text-base-500">'
-                "Salve a loja para carregar a prévia da loja.</p>"
+            return unfold_component(
+                "unfold/components/text.html",
+                children="Salve a loja para carregar a prévia da loja.",
+                **{"class": "text-base-500"},
             )
 
         from shopman.shop.services.storefront_links import home_url
@@ -1542,17 +1582,23 @@ class ShopAppearanceAdmin(_ShopSingletonAdmin):
             f"{{ src: {src}, bust() {{ const u = {src}; "
             'this.src = u + (u.includes("?") ? "&" : "?") + "__pv=" + Date.now(); } }'
         )
+        note = unfold_component(
+            "unfold/components/text.html",
+            children="A home pública permite iframe apenas neste site (SAMEORIGIN).",
+            **{"class": "text-xs text-base-500 mb-2"},
+        )
+        refresh = unfold_component(
+            "unfold/components/button.html",
+            children="Atualizar prévia",
+            variant="default",
+            size="sm",
+            icon="refresh",
+            attrs={"x-on:click": "bust()"},
+            **{"class": "mb-2"},
+        )
         return mark_safe(
             f'<div class="storefront-admin-preview max-w-full" x-data="{x_data}">'
-            '<p class="text-xs text-base-500 mb-2">'
-            "A home pública permite iframe apenas neste site (SAMEORIGIN).</p>"
-            '<div class="mb-2">'
-            '<button type="button" x-on:click="bust()" '
-            'class="border border-base-200 dark:border-base-700 rounded-default '
-            "px-3 py-1.5 text-sm font-medium text-base-700 dark:text-base-300 "
-            'hover:bg-base-50 dark:hover:bg-base-800 transition cursor-pointer">'
-            "Atualizar prévia</button>"
-            "</div>"
+            f"{note}{refresh}"
             '<iframe x-bind:src="src" title="Loja" '
             'class="w-full rounded-default border border-base-200 '
             'dark:border-base-700 bg-white" '

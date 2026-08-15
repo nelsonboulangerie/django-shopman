@@ -82,7 +82,7 @@ class OperationEpisode(models.Model):
                   "sentido: 'nenhuma venda entre 14h e 16h'.",
     )
     detector = models.CharField(
-        "detector", max_length=32, blank=True, db_index=True,
+        "quem detectou", max_length=32, blank=True, db_index=True,
         help_text="Quem levantou a lebre — usado para não duplicar o mesmo sinal.",
     )
     note = models.CharField("observação", max_length=200, blank=True)

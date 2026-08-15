@@ -38,8 +38,8 @@ class OmotenashiCopy(models.Model):
     message = models.TextField("mensagem", blank=True)
     active = models.BooleanField("ativa", default=True)
 
-    created_at = models.DateTimeField(auto_now_add=True)
-    updated_at = models.DateTimeField(auto_now=True)
+    created_at = models.DateTimeField(verbose_name="criado em", auto_now_add=True)
+    updated_at = models.DateTimeField(verbose_name="atualizado em", auto_now=True)
 
     history = HistoricalRecords()
 

@@ -47,6 +47,7 @@ from unfold.widgets import (
     UnfoldAdminSelectWidget,
     UnfoldAdminTextareaWidget,
     UnfoldAdminTextInputWidget,
+    UnfoldBooleanSwitchWidget,
 )
 
 logger = logging.getLogger(__name__)
@@ -174,6 +175,7 @@ class RecipeAdminForm(forms.ModelForm):
     requires_batch_tracking = forms.BooleanField(
         label=_("Rastrear lote"),
         required=False,
+        widget=UnfoldBooleanSwitchWidget,
         help_text=_("Cria um lote ao concluir a produção."),
     )
     shelf_life_days = forms.IntegerField(

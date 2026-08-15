@@ -4,8 +4,7 @@ from __future__ import annotations
 
 from django.conf import settings
 from django.contrib import admin
-from django.utils.html import format_html
-from shopman.utils import unfold_badge
+from shopman.utils import unfold_badge, unfold_link
 from unfold.admin import ModelAdmin
 from unfold.decorators import display
 
@@ -49,11 +48,7 @@ class KDSInstanceAdmin(ModelAdmin):
         base = (getattr(settings, "SHOPMAN_KDS_BASE_URL", "") or "").rstrip("/")
         if not base:
             return "—"
-        return format_html(
-            '<a class="font-medium text-link" href="{}/{}">Abrir</a>',
-            base,
-            obj.ref,
-        )
+        return unfold_link(f"{base}/{obj.ref}", "Abrir", icon="open_in_new", new_tab=True)
 
     def has_add_permission(self, request):
         return request.user.has_perm("backstage.operate_kds")

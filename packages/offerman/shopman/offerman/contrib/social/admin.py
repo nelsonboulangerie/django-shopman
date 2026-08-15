@@ -16,6 +16,11 @@ from shopman.offerman.contrib.social.schema import (
     get_social_attributes,
     set_social_attributes,
 )
+from unfold.widgets import (
+    UnfoldAdminSelectWidget,
+    UnfoldAdminTextareaWidget,
+    UnfoldAdminTextInputWidget,
+)
 
 SOCIAL_FORM_FIELDS = (
     "social_brand",
@@ -36,35 +41,42 @@ def build_social_form(base_form_cls):
     class SocialProductAdminForm(base_form_cls):
         social_brand = forms.CharField(
             label="Marca", required=False, max_length=100,
+            widget=UnfoldAdminTextInputWidget,
             help_text="Vazio usa o nome da loja. Google/Meta usam como marca do produto.",
         )
         social_gtin = forms.CharField(
             label="GTIN / código de barras", required=False, max_length=14,
+            widget=UnfoldAdminTextInputWidget,
             help_text="8, 12, 13 ou 14 dígitos. Vazio = 'sem código de barras' (identifier_exists=no no Google).",
         )
         social_mpn = forms.CharField(
             label="MPN", required=False, max_length=70,
+            widget=UnfoldAdminTextInputWidget,
             help_text="Código do fabricante. Só necessário no Google quando não há GTIN.",
         )
         social_condition = forms.ChoiceField(
             label="Condição", required=False, choices=CONDITION_CHOICES,
+            widget=UnfoldAdminSelectWidget,
             help_text="Novo por padrão.",
         )
         social_google_category = forms.CharField(
             label="Categoria Google", required=False, max_length=255,
+            widget=UnfoldAdminTextInputWidget,
             help_text="ID numérico (ex.: 2271) ou caminho ' > ' da taxonomia Google Shopping.",
         )
         social_tiktok_category = forms.CharField(
             label="Categoria TikTok", required=False, max_length=64,
+            widget=UnfoldAdminTextInputWidget,
             help_text="ID da categoria no TikTok Shop (quando aplicável).",
         )
         social_hashtags = forms.CharField(
             label="Hashtags", required=False,
+            widget=UnfoldAdminTextInputWidget,
             help_text="Separadas por espaço ou vírgula, sem #.",
         )
         social_caption = forms.CharField(
             label="Legenda social", required=False, max_length=2200,
-            widget=forms.Textarea(attrs={"rows": 3}),
+            widget=UnfoldAdminTextareaWidget(attrs={"rows": 3}),
             help_text="Texto curto para redes sociais (nome/descrição do produto são o padrão).",
         )
 

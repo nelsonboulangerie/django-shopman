@@ -4,10 +4,15 @@ from __future__ import annotations
 
 from django import forms
 from django.contrib import admin
-from django.utils.html import format_html
-from shopman.utils import unfold_badge, unfold_badge_numeric
+from shopman.utils import unfold_badge, unfold_badge_numeric, unfold_link
 from shopman.utils.monetary import format_money
 from unfold.admin import ModelAdmin
+from unfold.widgets import (
+    UnfoldAdminIntegerFieldWidget,
+    UnfoldAdminSelectWidget,
+    UnfoldAdminURLInputWidget,
+    UnfoldBooleanSwitchWidget,
+)
 
 from shopman.backstage.models import CashMovement, CashShift, POSTerminal
 from shopman.backstage.services.pos_hardware import (
@@ -40,7 +45,16 @@ class CashMovementInline(admin.TabularInline):
 class CashShiftAdmin(ModelAdmin):
     list_display = ("operator", "terminal", "opened_at", "status_display", "opening_display", "closing_display", "difference_display")
     list_filter = ("status", "terminal", "opened_at")
-    search_fields = ("operator", "terminal__ref", "terminal__label")
+    # ``operator`` é FK para User: buscar nele direto vira ``operator__icontains``,
+    # que o Django recusa em relação — e o erro derruba a BUSCA GLOBAL inteira, não
+    # só esta tela. Atravesse a relação até os campos de texto do usuário.
+    search_fields = (
+        "operator__username",
+        "operator__first_name",
+        "operator__last_name",
+        "terminal__ref",
+        "terminal__label",
+    )
     # ``notes`` é editável (gerente anota/corrige um turno fechado); a alteração
     # fica registrada no histórico do admin (LogEntry: quem/quando). Os valores
     # financeiros permanecem read-only (mutados só via PDV/serviço).
@@ -100,7 +114,15 @@ class CashMovementAdmin(ModelAdmin):
 
     list_display = ("shift", "movement_type", "amount_display", "reason", "created_by", "approved_by", "created_at")
     list_filter = ("movement_type", "created_at")
-    search_fields = ("shift__operator", "reason", "created_by", "approved_by")
+    # ``shift__operator`` também para numa FK (User): atravessa mais um salto.
+    # ``created_by``/``approved_by`` aqui são texto, não relação — esses ficam.
+    search_fields = (
+        "shift__operator__username",
+        "shift__operator__first_name",
+        "reason",
+        "created_by",
+        "approved_by",
+    )
     readonly_fields = ("created_by", "approved_by", "created_at")
     ordering = ["-created_at"]
     compressed_fields = True
@@ -136,6 +158,7 @@ class POSTerminalForm(forms.ModelForm):
     drawer_adapter = forms.ChoiceField(
         label="Como a gaveta abre",
         required=False,
+        widget=UnfoldAdminSelectWidget,
         # ⚠️ A opção vazia é obrigatória, não decoração. Sem ela, um terminal
         # sem gaveta configurada abria o formulário mostrando "Com a chave"
         # visualmente marcado (o navegador seleciona a primeira opção quando
@@ -151,6 +174,7 @@ class POSTerminalForm(forms.ModelForm):
     drawer_agent_url = forms.URLField(
         label="Endereço do agente",
         required=False,
+        widget=UnfoldAdminURLInputWidget,
         assume_scheme="http",
         initial=DEFAULT_AGENT_URL,
         help_text="Sempre loopback do próprio balcão. O servidor nunca alcança este endereço — quem chama é o navegador.",
@@ -158,17 +182,20 @@ class POSTerminalForm(forms.ModelForm):
     drawer_rotate_token = forms.BooleanField(
         label="Gerar um token novo",
         required=False,
+        widget=UnfoldBooleanSwitchWidget,
         help_text="Só marque se o token vazou ou se você vai reinstalar do zero. O agente do balcão para de abrir até receber o novo.",
     )
     drawer_pulse_pin = forms.ChoiceField(
         label="Pino do conector",
         required=False,
+        widget=UnfoldAdminSelectWidget,
         choices=(("0", "Pino 2 (padrão)"), ("1", "Pino 5")),
         help_text="Só mexa se a gaveta não abrir com o padrão.",
     )
     drawer_pulse_on_ms = forms.IntegerField(
         label="Pulso ligado (ms)",
         required=False,
+        widget=UnfoldAdminIntegerFieldWidget,
         min_value=2,
         max_value=510,
         initial=DEFAULT_PULSE_ON_MS,
@@ -177,6 +204,7 @@ class POSTerminalForm(forms.ModelForm):
     drawer_pulse_off_ms = forms.IntegerField(
         label="Pulso desligado (ms)",
         required=False,
+        widget=UnfoldAdminIntegerFieldWidget,
         min_value=2,
         max_value=510,
         initial=DEFAULT_PULSE_OFF_MS,
@@ -185,6 +213,7 @@ class POSTerminalForm(forms.ModelForm):
     drawer_open_on_cash_sale = forms.BooleanField(
         label="Abrir sozinha na venda em dinheiro",
         required=False,
+        widget=UnfoldBooleanSwitchWidget,
         initial=True,
         help_text="Desligue se o balcão prefere abrir só no botão.",
     )
@@ -293,10 +322,7 @@ class POSTerminalAdmin(ModelAdmin):
         from django.urls import reverse
 
         url = reverse("admin_console_pos_drawer_agent", args=[obj.ref])
-        return format_html(
-            '<a href="{}" class="font-medium underline underline-offset-4">Baixar o agente e ver como instalar</a>',
-            url,
-        )
+        return unfold_link(url, "Baixar o agente e ver como instalar", icon="download")
     drawer_install_display.short_description = "Instalação no balcão"
 
     _HEALTH = {

@@ -102,6 +102,7 @@ from shopman.orderman.models import (
     Session,
     SessionEvent,
 )
+from shopman.utils import unfold_badge, unfold_component
 from shopman.utils.monetary import format_money
 
 logger = logging.getLogger(__name__)
@@ -229,20 +230,26 @@ class SessionAdmin(ModelAdmin):
                 rows.append((ev.created_at, _("pedido"), ev.type, ev.actor, ev.payload))
         rows.sort(key=lambda row: (row[0] is None, row[0]))
         if not rows:
-            return format_html('<p class="text-base-500 text-sm">{}</p>', _("Sem eventos registrados."))
+            return unfold_component(
+                "unfold/components/text.html",
+                children=str(_("Sem eventos registrados.")),
+                **{"class": "text-base-500"},
+            )
 
+        # A etiqueta da fase (comanda/pedido) é badge, e badge tem helper: era um
+        # `span` com as classes do Unfold copiadas na mão.
         body = format_html_join(
             "",
             '<li class="border-b border-base-200 dark:border-base-700 py-1.5 text-sm">'
             '<span class="font-mono text-base-500">{}</span> '
-            '<span class="rounded-default bg-base-100 dark:bg-base-800 px-1.5 py-0.5 text-xs">{}</span> '
+            "{} "
             '<strong>{}</strong> '
             '<span class="text-base-500">· {} · {}</span>'
             "</li>",
             (
                 (
                     created_at.strftime("%d/%m %H:%M:%S") if created_at else "—",
-                    phase,
+                    unfold_badge(phase, "base"),
                     event_type,
                     actor or "—",
                     self._audit_summary(payload),

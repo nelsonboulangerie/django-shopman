@@ -29,15 +29,16 @@ class StockAlertSubscription(models.Model):
 
     sku = models.CharField(max_length=64, db_index=True)
     alert_type = models.CharField(
+        verbose_name="tipo de aviso",
         max_length=24,
         choices=AlertType.choices,
         default=AlertType.STOCK_BACK,
     )
-    channel_ref = models.CharField(max_length=32, default="web")
-    customer_ref = models.CharField(max_length=64, blank=True, default="")
-    contact_phone = models.CharField(max_length=32, blank=True, default="")
-    subscribed_at = models.DateTimeField(auto_now_add=True)
-    notified_at = models.DateTimeField(null=True, blank=True)
+    channel_ref = models.CharField(verbose_name="ref do canal", max_length=32, default="web")
+    customer_ref = models.CharField(verbose_name="ref do cliente", max_length=64, blank=True, default="")
+    contact_phone = models.CharField(verbose_name="telefone de contato", max_length=32, blank=True, default="")
+    subscribed_at = models.DateTimeField(verbose_name="pedido em", auto_now_add=True)
+    notified_at = models.DateTimeField(verbose_name="avisado em", null=True, blank=True)
 
     class Meta:
         app_label = "storefront"

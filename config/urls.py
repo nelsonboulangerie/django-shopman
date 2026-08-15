@@ -15,6 +15,7 @@ from shopman.backstage.admin_console.pos_drawer_agent import (
     pos_drawer_agent_download,
     pos_drawer_agent_view,
 )
+from shopman.backstage.admin_console.settings_hub import settings_hub_view
 from shopman.backstage.views.two_factor import admin_2fa_verify
 from shopman.shop.views.admin_host import admin_host_root
 from shopman.shop.views.health import HealthCheckView, ReadyCheckView
@@ -46,6 +47,13 @@ urlpatterns = [
     # WP-ADM-7d: a superfície canônica é o Produção (surfaces/production-nuxt)
     # via api/v1/backstage/production/* (paridade fechada no WP-ADM-7b).
     path(
+        "admin/settings/",
+        admin.site.admin_view(settings_hub_view),
+        name="admin_console_settings_hub",
+    ),
+    # ⚠️ ANTES do padrão <slug> abaixo: "copy" cairia no conversor de escopo e
+    # abriria uma tela de configuração vazia em vez do catálogo de textos.
+    path(
         "admin/settings/copy/",
         admin.site.admin_view(copy_catalog_view),
         name="admin_console_copy_catalog",
@@ -74,6 +82,11 @@ urlpatterns = [
         "admin/operators/badge/",
         admin.site.admin_view(operator_badge_view),
         name="admin_console_operator_badge",
+    ),
+    path(
+        "admin/settings/<slug:slug>/",
+        admin.site.admin_view(settings_hub_view),
+        name="admin_console_settings_scope",
     ),
     path("admin/2fa/verify/", admin_2fa_verify, name="admin_2fa_verify"),
     path("admin/", admin.site.urls),

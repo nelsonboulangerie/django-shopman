@@ -20,6 +20,7 @@ from unfold.enums import ActionVariant
 logger = logging.getLogger(__name__)
 
 from shopman.stockman.models import Batch, Hold, HoldStatus, Move, Position, Quant, StockAlert
+from shopman.utils import unfold_link
 from shopman.utils.contrib.admin_unfold.badges import unfold_badge, unfold_badge_numeric
 from shopman.utils.contrib.admin_unfold.base import BaseModelAdmin
 from shopman.utils.formatting import format_quantity
@@ -252,12 +253,11 @@ class QuantAdmin(BaseModelAdmin):
         if not obj.batch:
             return '-'
         from django.urls import reverse
-        from django.utils.html import format_html
 
         batch = Batch.objects.filter(ref=obj.batch).only('pk').first()
         if batch:
             url = reverse('admin:stockman_batch_change', args=[batch.pk])
-            return format_html('<a href="{}" class="text-primary-600 dark:text-primary-400">{}</a>', url, obj.batch)
+            return unfold_link(url, obj.batch)
         return obj.batch
 
     @display(description=_('Validade'))
@@ -396,7 +396,7 @@ class HoldAdmin(BaseModelAdmin):
     def is_demand_display(self, obj):
         return obj.is_demand
 
-    @admin.action(description=_('Liberar holds selecionados'))
+    @admin.action(description=_('Liberar reservas selecionadas'))
     def release_holds(self, request, queryset):
         from shopman.stockman import stock
 
@@ -430,7 +430,7 @@ class HoldAdmin(BaseModelAdmin):
 
         try:
             stock.release(hold.hold_id, reason='Liberado via admin')
-            messages.success(request, _("Hold liberado."))
+            messages.success(request, _("Reserva liberada."))
         except (ValueError, LookupError) as exc:
             messages.error(request, str(exc))
 
