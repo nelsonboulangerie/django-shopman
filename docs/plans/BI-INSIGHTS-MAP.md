@@ -856,3 +856,70 @@ Junto veio uma correção de leitura: **num ranking, o que não aconteceu não �
 linha**. Produto que nunca faltou não pertence à lista de faltas, e sessenta
 zeros escondiam os dois SKUs que importavam. Em série temporal o zero fica — ali
 ele é ponto da curva.
+
+---
+
+## 11. "Não ter o produto para oferecer" (rodada 5, 2026-08-15)
+
+> Decisão do dono: *"o que me interessa é o fato de 'não ter o produto para
+> oferecer'. Acho que, dentro das nuances, isso é o mais sensível."*
+
+Isso resolve o N11 e escolhe entre duas medidas que pareciam a mesma. **Falta é
+o que o cliente não encontra**, não o que o estoque não tem.
+
+### 11.1 Por que o ledger não bastava
+
+O que o cliente encontra é o saldo **menos o reservado** para carrinhos abertos
+e pedidos aceitos que ainda não saíram. Duas consequências que o ledger de
+estoque não registra:
+
+- o produto **some do cardápio com unidades ainda na loja**, quando tudo o que
+  resta está reservado;
+- o produto **volta sozinho** quando uma reserva expira, sem que nada tenha
+  entrado no estoque.
+
+A reserva é mutável e não guarda histórico, então esses dois instantes não
+existem em lugar nenhum. Enquanto a métrica lia só o físico, ela **subestimava
+sistematicamente** o tempo sem produto — e só no balcão os dois instantes
+coincidiam, porque ali a venda baixa no ato.
+
+### 11.2 O que foi feito
+
+`ShelfOutage` — período em que a casa não teve o produto para oferecer, **por
+canal**, porque a disponibilidade é por canal (o balcão enxerga posições que o
+delivery não vê).
+
+Quem responde "posso oferecer?" continua sendo o stockman (`availability_for_sku`
+com o escopo do canal). O backstage só **observa a transição** dessa resposta e
+carimba o período: uma pergunta, um dono.
+
+Dois gatilhos, porque nenhum sozinho cobre tudo:
+
+- **evento** (`post_save` de `Move` e de `Hold`, sempre após o commit): mudou
+  estoque ou reserva, a resposta pode ter mudado;
+- **reconciliação periódica** (`reconcile_shelf_outages` no ciclo do
+  `maintenance_worker`, logo depois de liberar reservas): reserva que expira sai
+  por atualização em massa e **não emite signal** — sem a varredura, a volta do
+  produto só seria percebida no próximo movimento de estoque, que pode ser no
+  dia seguinte, inflando a falta medida. A reconciliação recomputa do estado
+  atual e é idempotente.
+
+**Pausar não é faltar.** Produto pausado é decisão comercial, não ruptura de
+abastecimento; misturar os dois mentiria sobre a produção. Pausado não abre nem
+fecha falta.
+
+### 11.3 Na tela
+
+Métrica **"Horas sem poder vender"**, cruzável por SKU, canal, dia,
+dia-da-semana e mês (e pelo contexto do §10: feriado, temperatura, chuva). Conta
+só o que cai **dentro do expediente** — faltar de madrugada não custa venda — e
+falta em curso segue contando até agora, porque parar fingiria que o produto
+voltou.
+
+A métrica física antiga permanece, renomeada para **"Horas sem produto na
+prateleira"**. As duas respondem perguntas diferentes e a diferença entre elas é
+informativa: é o tempo em que havia produto na loja que ninguém podia comprar.
+
+⚠️ **A nova métrica só existe a partir de agora.** Período anterior à primeira
+medição fica **sem linha**, em vez de aparecer como "nunca faltou" — o passado
+segue coberto, de forma aproximada, pela métrica física.

@@ -135,7 +135,7 @@ export const CONTEXT_EXAMPLES = [
   { name: "Faturamento por temperatura", config: { metric: "revenue", by: "temperature", by2: "" } },
   { name: "O que vende no calor", config: { metric: "qty_sold", by: "temperature", by2: "sku" } },
   { name: "Feriado, véspera e volta", config: { metric: "revenue", by: "day_kind", by2: "" } },
-  { name: "Falta em véspera de feriado", config: { metric: "hours_without_stock", by: "day_kind", by2: "sku" } },
+  { name: "Falta em véspera de feriado", config: { metric: "unavailable_hours", by: "day_kind", by2: "sku" } },
   { name: "Movimento com e sem chuva", config: { metric: "orders", by: "rain", by2: "" } },
 ] as const;
 
@@ -168,9 +168,11 @@ export function availableExamples(
 export const EXPLORE_EXAMPLES = [
   // Está faltando ou sobrando pão?
   { name: "Produtos que mais acabam", config: { metric: "soldout_days", by: "sku", by2: "" } },
-  { name: "Horas sem produto por SKU", config: { metric: "hours_without_stock", by: "sku", by2: "" } },
+  { name: "Horas sem poder vender", config: { metric: "unavailable_hours", by: "sku", by2: "" } },
+  { name: "Sem vender por canal", config: { metric: "unavailable_hours", by: "channel", by2: "sku" } },
+  { name: "Horas sem produto na prateleira", config: { metric: "hours_without_stock", by: "sku", by2: "" } },
   { name: "Sobra por produto", config: { metric: "leftover", by: "sku", by2: "" } },
-  { name: "Falta por dia da semana", config: { metric: "hours_without_stock", by: "weekday", by2: "sku" } },
+  { name: "Falta por dia da semana", config: { metric: "unavailable_hours", by: "weekday", by2: "sku" } },
   // Quando o cliente vem e o que ele leva
   { name: "Faturamento por hora", config: { metric: "revenue", by: "hour", by2: "" } },
   { name: "Movimento por hora × dia da semana", config: { metric: "orders", by: "hour", by2: "weekday" } },
