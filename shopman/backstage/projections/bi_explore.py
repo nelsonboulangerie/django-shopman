@@ -83,6 +83,11 @@ METRICS: dict[str, MetricSpec] = {
                     "outage_reason"), "outage"),
         MetricSpec("paused_hours", "Horas pausado", "hours",
                    ("sku", "time", "weekday", "month_of_year", "channel"), "outage"),
+        # Proporção do expediente: comparável entre um sábado de nove horas e
+        # um feriado de quatro, o que a contagem em horas não permite.
+        MetricSpec("unavailable_share", "% do expediente sem vender", "percent",
+                   ("sku", "time", "weekday", "month_of_year", "channel",
+                    "outage_reason"), "outage"),
         MetricSpec("leftover", "Sobra no fim do dia", "qty",
                    ("sku", "time", "weekday", "month_of_year"), "shelf"),
     )
@@ -797,11 +802,16 @@ def _outage_rows(spec, by, by2, date_from, date_to) -> list[BIExploreRow]:
     momento em que a casa começou a medir. Período anterior fica sem linha, em
     vez de aparecer como "nunca faltou".
 
-    Conta só o que cai DENTRO do expediente: o produto faltar de madrugada não
-    custa venda. Sem horário declarado para o dia, a hora não é contada.
+    Conta só o que cai DENTRO do expediente daquele dia: o produto faltar de
+    madrugada não custa venda. O expediente vem CONGELADO do contexto do dia
+    (``business_day.stamp_day``) e não do horário de hoje — senão mexer no
+    cadastro reescreveria o passado, e dia em que a casa nem abriu contaria
+    como se tivesse aberto.
+
+    ``unavailable_share`` responde a mesma coisa em PROPORÇÃO do expediente, que
+    é o que permite comparar um sábado de nove horas com um feriado de quatro.
     """
     from shopman.backstage.models import ShelfOutage
-    from shopman.shop.services.business_calendar import selling_hours_for
 
     tz = timezone.get_current_timezone()
     window_start = datetime.combine(date_from, time.min, tzinfo=tz)
@@ -814,13 +824,21 @@ def _outage_rows(spec, by, by2, date_from, date_to) -> list[BIExploreRow]:
     )
     if spec.key == "paused_hours":
         outages = outages.filter(reason=OutageReason.PAUSED)
-    contexts = _day_contexts(date_from, date_to) if _wants_context(by, by2) else {}
+    # O contexto do dia é sempre necessário aqui: é dele que sai o expediente.
+    contexts = _day_contexts(date_from, date_to)
+    open_minutes = {
+        day: context.open_minutes
+        for day, context in contexts.items()
+        if context.open_minutes is not None
+    }
 
     totals: dict[tuple, float] = defaultdict(float)
+    denominators: dict[tuple, float] = defaultdict(float)
     labels: dict[tuple, tuple[str, str]] = {}
+    seen_days: dict[tuple, set] = defaultdict(set)
 
     for outage in outages:
-        for day, minutes in _outage_minutes_by_day(outage, date_from, date_to, selling_hours_for):
+        for day, minutes in _outage_minutes_by_day(outage, date_from, date_to, open_minutes, contexts):
             parts = []
             for dim in (by, by2):
                 if not dim:
@@ -847,20 +865,34 @@ def _outage_rows(spec, by, by2, date_from, date_to) -> list[BIExploreRow]:
             key = (parts[0][0], parts[1][0])
             totals[key] += minutes / 60
             labels[key] = (parts[0][1], parts[1][1])
+            if day not in seen_days[key]:
+                seen_days[key].add(day)
+                denominators[key] += open_minutes.get(day, 0) / 60
 
     keep_zeros = by in ORDINAL_DIMENSIONS
+
+    def value(key) -> float:
+        if spec.key != "unavailable_share":
+            return round(totals[key], 1)
+        base = denominators[key]
+        return round(totals[key] * 100 / base, 1) if base else 0.0
+
     return [
         BIExploreRow(
             key=k1, label=labels[(k1, k2)][0], key2=k2, label2=labels[(k1, k2)][1],
-            value=round(totals[(k1, k2)], 1),
+            value=value((k1, k2)),
         )
         for (k1, k2) in totals
-        if keep_zeros or totals[(k1, k2)] != 0
+        if keep_zeros or value((k1, k2)) != 0
     ]
 
 
-def _outage_minutes_by_day(outage, date_from: date, date_to: date, selling_hours):
-    """Minutos de falta por dia, recortados pelo expediente daquele dia."""
+def _outage_minutes_by_day(outage, date_from: date, date_to: date, open_minutes, contexts):
+    """Minutos de bloqueio por dia, recortados pelo expediente CONGELADO do dia.
+
+    Dia sem carimbo de expediente não entra: sem saber quando a casa esteve
+    aberta, contar horas seria inventar o denominador.
+    """
     tz = timezone.get_current_timezone()
     began = timezone.localtime(outage.started_at)
     finished = timezone.localtime(outage.ended_at or timezone.now())
@@ -868,7 +900,15 @@ def _outage_minutes_by_day(outage, date_from: date, date_to: date, selling_hours
     day = max(began.date(), date_from)
     last = min(finished.date(), date_to)
     while day <= last:
-        window = selling_hours(day)
+        context = contexts.get(day)
+        window = (
+            (context.opens_at, context.closes_at)
+            if context is not None
+            and open_minutes.get(day)
+            and context.opens_at
+            and context.closes_at
+            else None
+        )
         if window is not None:
             opens_at, closes_at = window
             open_dt = datetime.combine(day, opens_at, tzinfo=tz)

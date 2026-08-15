@@ -54,6 +54,20 @@ class DayContext(models.Model):
                   "não afirmamos que é dia comum, apenas não sabemos.",
     )
 
+    # ── Operação do dia (carimbada; é o DENOMINADOR das métricas de tempo)
+    open_minutes = models.PositiveIntegerField(
+        "minutos de expediente", null=True, blank=True,
+        help_text="Quanto tempo a casa esteve aberta NESTE dia, congelado. "
+                  "0 = não abriu. Nulo = não sabemos (dia anterior à medição).",
+    )
+    opens_at = models.TimeField("abriu às", null=True, blank=True)
+    closes_at = models.TimeField("fechou às", null=True, blank=True)
+    closed_reason = models.CharField(
+        "motivo do fechamento", max_length=120, blank=True,
+        help_text="Por que não abriu: feriado, férias coletivas, dia sem "
+                  "expediente regular. Vazio quando abriu.",
+    )
+
     # ── Clima (injetado; nulo = sem dado, nunca zero)
     temp_min_c = models.DecimalField(
         "temperatura mínima (°C)", max_digits=4, decimal_places=1, null=True, blank=True
@@ -90,6 +104,10 @@ class DayContext(models.Model):
     def has_weather(self) -> bool:
         """Só afirma clima quando há pelo menos a máxima do dia."""
         return self.temp_max_c is not None
+
+    @property
+    def was_open(self) -> bool:
+        return bool(self.open_minutes)
 
     @property
     def is_holiday(self) -> bool:

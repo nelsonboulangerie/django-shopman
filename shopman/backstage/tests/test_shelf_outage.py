@@ -48,6 +48,16 @@ def canal(db):
 
 
 @pytest.fixture
+def expediente(canal):
+    """Carimba o expediente dos dias da janela — o denominador das métricas."""
+    from shopman.backstage.services.business_day import stamp_day
+
+    today = timezone.localdate()
+    for offset in range(0, 6):
+        stamp_day(today - timedelta(days=offset))
+
+
+@pytest.fixture
 def pao(db):
     return Product.objects.create(
         sku="PAO", name="Pão", unit="un", base_price_q=100,
@@ -247,7 +257,7 @@ class TestReconciliation:
 class TestPausedTime:
     """Quanto tempo um produto ficou parado — métrica por si só."""
 
-    def test_paused_hours_counts_only_the_pause(self, vitrine, canal, pao):
+    def test_paused_hours_counts_only_the_pause(self, vitrine, canal, pao, expediente):
         today = timezone.localdate()
         yesterday = today - timedelta(days=1)
         tz = timezone.get_current_timezone()
@@ -274,7 +284,7 @@ class TestPausedTime:
         # O total soma os dois: para o cliente, sete horas sem poder comprar.
         assert [(r.key, r.value) for r in total.rows] == [("PAO", 7.0)]
 
-    def test_reason_is_a_dimension_of_the_total(self, vitrine, canal, pao):
+    def test_reason_is_a_dimension_of_the_total(self, vitrine, canal, pao, expediente):
         today = timezone.localdate()
         tz = timezone.get_current_timezone()
         for reason, de, ate in (
@@ -299,7 +309,7 @@ class TestPausedTime:
 
 
 class TestReadingTheOutage:
-    def test_hours_are_clipped_to_business_hours(self, vitrine, canal, pao):
+    def test_hours_are_clipped_to_business_hours(self, vitrine, canal, pao, expediente):
         """Faltar de madrugada não custa venda."""
         today = timezone.localdate()
         yesterday = today - timedelta(days=1)
@@ -322,7 +332,7 @@ class TestReadingTheOutage:
         # Falta das 3h às 12h, expediente 9h–18h: contam três horas.
         assert [(row.key, row.value) for row in report.rows] == [("PAO", 3.0)]
 
-    def test_outage_spanning_days_is_split_per_day(self, vitrine, canal, pao):
+    def test_outage_spanning_days_is_split_per_day(self, vitrine, canal, pao, expediente):
         today = timezone.localdate()
         start = today - timedelta(days=3)
         tz = timezone.get_current_timezone()
@@ -347,7 +357,7 @@ class TestReadingTheOutage:
         assert por_dia[start.isoformat()] == 3.0                      # 15h→18h
         assert por_dia[(start + timedelta(days=1)).isoformat()] == 2.0  # 9h→11h
 
-    def test_open_outage_counts_up_to_now(self, vitrine, canal, pao):
+    def test_open_outage_counts_up_to_now(self, vitrine, canal, pao, expediente):
         """Falta em curso segue contando: parar fingiria que o produto voltou."""
         today = timezone.localdate()
         ShelfOutage.objects.create(
@@ -363,7 +373,7 @@ class TestReadingTheOutage:
         assert report.rows and report.rows[0].value > 0
 
     def test_channel_is_a_dimension_because_availability_is_per_channel(
-        self, vitrine, canal, pao
+        self, vitrine, canal, pao, expediente
     ):
         today = timezone.localdate()
         tz = timezone.get_current_timezone()
@@ -384,3 +394,96 @@ class TestReadingTheOutage:
         )
 
         assert {row.key for row in report.rows} == {"web", "pdv"}
+
+
+class TestBusinessDayIsTheDenominator:
+    """O expediente do dia é congelado; sem ele, não se calcula proporção."""
+
+    def test_share_compares_days_of_different_length(self, vitrine, canal, pao):
+        from shopman.backstage.models import DayContext
+        from shopman.backstage.services.business_day import stamp_day
+
+        today = timezone.localdate()
+        longo = today - timedelta(days=2)   # expediente de 9h
+        curto = today - timedelta(days=1)   # meio expediente
+        tz = timezone.get_current_timezone()
+        stamp_day(longo)
+        stamp_day(curto)
+        DayContext.objects.filter(date=curto).update(
+            open_minutes=240, opens_at="09:00", closes_at="13:00"
+        )
+
+        for dia, fim in ((longo, 12), (curto, 12)):
+            ShelfOutage.objects.create(
+                sku="PAO", channel_ref="web",
+                started_at=timezone.datetime(dia.year, dia.month, dia.day, 9, 0, tzinfo=tz),
+                ended_at=timezone.datetime(dia.year, dia.month, dia.day, fim, 0, tzinfo=tz),
+            )
+
+        janela = {"date_from": today - timedelta(days=4), "date_to": today}
+        horas = build_bi_explore(metric="unavailable_hours", by="time", **janela)
+        share = build_bi_explore(metric="unavailable_share", by="time", **janela)
+
+        por_dia_horas = {r.key: r.value for r in horas.rows}
+        por_dia_share = {r.key: r.value for r in share.rows}
+        # Mesmas três horas nos dois dias…
+        assert por_dia_horas[longo.isoformat()] == 3.0
+        assert por_dia_horas[curto.isoformat()] == 3.0
+        # …mas pesos bem diferentes: 3h de 9h contra 3h de 4h.
+        assert por_dia_share[longo.isoformat()] == 33.3
+        assert por_dia_share[curto.isoformat()] == 75.0
+
+    def test_closed_day_stamps_zero_and_leaves_the_reading(self, canal, pao):
+        """Dia em que a casa não abriu não conta como falta.
+
+        Antes, o expediente vinha do horário de HOJE e um feriado fechado
+        aparecia como um dia inteiro sem produto.
+        """
+        from shopman.backstage.models import DayContext
+        from shopman.backstage.services.business_day import stamp_day
+
+        today = timezone.localdate()
+        feriado = today - timedelta(days=1)
+        shop = canal.shop
+        shop.defaults = {
+            "closed_dates": [{"date": feriado.isoformat(), "label": "Feriado"}]
+        }
+        shop.save()
+        stamp_day(feriado)
+
+        contexto = DayContext.objects.get(date=feriado)
+        assert contexto.open_minutes == 0
+        assert contexto.closed_reason
+        assert contexto.was_open is False
+
+        tz = timezone.get_current_timezone()
+        ShelfOutage.objects.create(
+            sku="PAO", channel_ref="web",
+            started_at=timezone.datetime(feriado.year, feriado.month, feriado.day, 0, 0, tzinfo=tz),
+            ended_at=timezone.datetime(today.year, today.month, today.day, 0, 0, tzinfo=tz),
+        )
+
+        report = build_bi_explore(
+            metric="unavailable_hours", by="sku",
+            date_from=feriado, date_to=feriado,
+        )
+
+        assert report.rows == ()
+
+    def test_day_without_stamp_is_not_counted(self, vitrine, canal, pao):
+        """Sem saber o expediente, contar horas seria inventar o denominador."""
+        today = timezone.localdate()
+        ontem = today - timedelta(days=1)
+        tz = timezone.get_current_timezone()
+        ShelfOutage.objects.create(
+            sku="PAO", channel_ref="web",
+            started_at=timezone.datetime(ontem.year, ontem.month, ontem.day, 10, 0, tzinfo=tz),
+            ended_at=timezone.datetime(ontem.year, ontem.month, ontem.day, 12, 0, tzinfo=tz),
+        )
+
+        report = build_bi_explore(
+            metric="unavailable_hours", by="sku",
+            date_from=today - timedelta(days=3), date_to=today,
+        )
+
+        assert report.rows == ()

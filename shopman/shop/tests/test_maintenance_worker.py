@@ -276,6 +276,7 @@ def test_once_runs_one_cycle_in_order_and_never_sleeps():
         # Depois de liberar reservas: reserva que expira sai por update em massa,
         # sem signal, então é aqui que a volta do produto é percebida.
         call("reconcile_shelf_outages"),
+        call("stamp_business_days"),
         call("sweep_stale_oven_runs"),
         call("expire_stale_announcements"),
         call("dispatch_due_announcements"),
