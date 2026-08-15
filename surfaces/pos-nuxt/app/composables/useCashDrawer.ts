@@ -29,6 +29,16 @@ export function useCashDrawer(pos: ComputedRef<POSProjection | null>) {
 
   /** Este balcão tem caminho de software? `false` = gaveta de chave. */
   const canKick = computed(() => Boolean(config.value?.can_kick));
+  /**
+   * Por que não dá, quando não dá — para a tela DIZER em vez de esconder.
+   *
+   * Esconder o card fez o dono procurar um botão que nunca ia aparecer,
+   * achando que o PDV estava quebrado. O servidor manda a frase pronta; aqui só
+   * sobra o caso de o terminal não ter mandado nada.
+   */
+  const unavailableReason = computed(
+    () => config.value?.reason || "Gaveta não configurada neste terminal. Configure em Terminais do PDV, no gestor.",
+  );
   /** O dono quer que a gaveta abra sozinha ao fechar venda em dinheiro? */
   const opensOnCashSale = computed(() => canKick.value && Boolean(config.value?.open_on_cash_sale));
 
@@ -86,9 +96,13 @@ export function useCashDrawer(pos: ComputedRef<POSProjection | null>) {
     probing.value = true;
     try {
       const payload = await callAgent("/health");
+      // A versão vai junto porque o balcão só se atualiza pelo download do
+      // Admin — sem rede, sem pendrive. Comparar o que a estação roda com o que
+      // o Admin entrega é a única forma de saber se a máquina está atrasada.
+      const versao = payload?.build ? ` Versão ${payload.build}.` : "";
       return payload?.ok
-        ? { ok: true, message: `Fila ${payload.queue} respondendo.` }
-        : { ok: false, message: payload?.reason || "A fila não está aceitando trabalho." };
+        ? { ok: true, message: `Fila ${payload.queue} respondendo.${versao}` }
+        : { ok: false, message: (payload?.reason || "A fila não está aceitando trabalho.") + versao };
     } catch (error) {
       return { ok: false, message: messageOf(error) };
     } finally {
@@ -96,7 +110,7 @@ export function useCashDrawer(pos: ComputedRef<POSProjection | null>) {
     }
   }
 
-  return { canKick, opensOnCashSale, probing, kick, probe };
+  return { canKick, unavailableReason, opensOnCashSale, probing, kick, probe };
 }
 
 function messageOf(error: unknown): string {

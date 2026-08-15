@@ -119,3 +119,40 @@ describe("useCashDrawer — o caminho físico da gaveta", () => {
     expect((await drawer.probe()).message).toContain("chave");
   });
 });
+
+describe("useCashDrawer — a tela diz por que não dá", () => {
+  it("usa o motivo que o servidor mandou", () => {
+    const drawer = makeDrawer({
+      adapter: "manual", can_kick: false, open_on_cash_sale: false,
+      reason: "Este balcão abre a gaveta com a chave — o PDV não tem como abrir.",
+    });
+    expect(drawer.unavailableReason.value).toContain("chave");
+  });
+
+  it("terminal que não mandou motivo ainda assim explica algo útil", () => {
+    // Card mudo é pior que card ausente: o operador fica sem próximo passo.
+    expect(makeDrawer(null).unavailableReason.value).toContain("Terminais do PDV");
+  });
+});
+
+describe("useCashDrawer — versão do agente no balcão", () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  it("a sonda mostra a versão que a estação roda", () => {
+    // Sem rede nem pendrive, comparar com o Admin é a única forma de saber se
+    // a máquina do caixa está atrasada.
+    stubFetch(() => okResponse({ ok: true, queue: "TM-T20", build: "a1b2c3d4" }));
+    return makeDrawer().probe().then((r) => {
+      expect(r.ok).toBe(true);
+      expect(r.message).toContain("a1b2c3d4");
+    });
+  });
+
+  it("agente antigo, sem carimbo, não quebra a sonda", () => {
+    stubFetch(() => okResponse({ ok: true, queue: "TM-T20" }));
+    return makeDrawer().probe().then((r) => {
+      expect(r.ok).toBe(true);
+      expect(r.message).toContain("TM-T20");
+    });
+  });
+});

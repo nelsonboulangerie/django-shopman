@@ -136,7 +136,13 @@ class POSTerminalForm(forms.ModelForm):
     drawer_adapter = forms.ChoiceField(
         label="Como a gaveta abre",
         required=False,
+        # ⚠️ A opção vazia é obrigatória, não decoração. Sem ela, um terminal
+        # sem gaveta configurada abria o formulário mostrando "Com a chave"
+        # visualmente marcado (o navegador seleciona a primeira opção quando
+        # nenhuma tem `selected`) — e salvar sem tocar no campo GRAVAVA
+        # `manual`. Estado real e estado exibido divergiam, e ninguém via.
         choices=(
+            ("", "— não configurada —"),
             (ADAPTER_MANUAL, "Com a chave (o PDV não abre)"),
             (ADAPTER_AGENT, "Pelo agente local (kick na impressora)"),
         ),

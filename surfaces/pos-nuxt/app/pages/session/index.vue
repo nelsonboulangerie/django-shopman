@@ -26,6 +26,7 @@ const {
   closeBlockingShift,
   registerCashMovement,
   canOpenDrawer,
+  drawerUnavailableReason,
   drawerProbing,
   openDrawerWithoutSale,
   probeDrawer,
@@ -286,11 +287,20 @@ async function confirmCloseBlocking() {
             <!-- Gaveta: só aparece onde existe caminho de software. Num balcão
                  de gaveta com chave, um botão que não abre nada seria pior que
                  botão nenhum. -->
-            <section v-if="canOpenDrawer" class="grid gap-2 rounded-lg border bg-card p-4">
+            <section class="grid gap-2 rounded-lg border bg-card p-4">
               <div class="flex items-center gap-2">
                 <Icon name="lucide:archive" class="size-4 text-muted-foreground" />
                 <h2 class="text-base font-semibold">Abrir gaveta</h2>
               </div>
+
+              <!-- Sem caminho de software o card DIZ por que, em vez de sumir.
+                   Sumir calado fez o dono procurar um botão que nunca ia
+                   aparecer, achando que o PDV estava quebrado. -->
+              <p v-if="!canOpenDrawer" class="text-sm text-muted-foreground">
+                {{ drawerUnavailableReason }}
+              </p>
+
+              <template v-else>
               <p class="text-sm text-muted-foreground">
                 Abrir sem venda fica registrado no turno: quem abriu, quando e por quê.
               </p>
@@ -324,6 +334,7 @@ async function confirmCloseBlocking() {
                   <template v-else>{{ drawerProbeResult.message }}</template>
                 </p>
               </div>
+              </template>
             </section>
 
             <section class="grid gap-2 rounded-lg border bg-card p-4">

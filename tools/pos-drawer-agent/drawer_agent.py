@@ -30,10 +30,60 @@ from pathlib import Path
 
 VERSION = "1.0.0"
 
-DEFAULT_CONFIG_PATH = Path(
-    os.environ.get("DRAWER_AGENT_CONFIG")
-    or Path.home() / ".config" / "nelson-pos-drawer" / "agent.json"
+
+def build_id() -> str:
+    """Impressão digital deste arquivo.
+
+    A máquina do balcão só recebe atualização pelo download do Admin, e não há
+    rede nem pendrive para conferir versões. Sem um carimbo, ninguém sabe se o
+    caixa está com o agente atual — e "reinstalei e continua igual" vira meia
+    hora perdida.
+
+    Hash do conteúdo em vez de número escrito à mão: ninguém precisa lembrar de
+    bumpar, e dois arquivos iguais têm o mesmo carimbo por construção.
+    """
+    import hashlib
+
+    try:
+        fonte = Path(__file__).resolve().read_bytes()
+    except OSError:
+        return "desconhecido"
+    return hashlib.sha256(fonte).hexdigest()[:8]
+
+IS_WINDOWS = os.name == "nt"
+IS_MACOS = sys.platform == "darwin"
+
+#: Tudo do agente numa pasta só, por sistema — programa, config e log juntos.
+#: A primeira versão espalhava: no Windows o programa ia para
+#: `%LOCALAPPDATA%\NelsonPosDrawer` e a config para uma pasta `.config` de estilo
+#: Linux, escondida na pasta do usuário. Quem estivesse no balcão procurando o
+#: token não acharia. Um lugar, uma resposta.
+def install_dir_for(home: Path, *, windows: bool, localappdata: str = "") -> Path:
+    if windows:
+        return Path(localappdata or home / "AppData" / "Local") / "NelsonPosDrawer"
+    return home / ".local" / "share" / "nelson-pos-drawer"
+
+
+def config_path_for(home: Path, *, windows: bool, localappdata: str = "") -> Path:
+    """Onde a config mora, por sistema.
+
+    No Windows, junto do programa. No Linux/macOS, em ``~/.config`` — que é onde
+    quem administra a máquina espera achar.
+    """
+    if windows:
+        return install_dir_for(home, windows=True, localappdata=localappdata) / "agent.json"
+    return home / ".config" / "nelson-pos-drawer" / "agent.json"
+
+
+INSTALL_DIR = install_dir_for(
+    Path.home(), windows=IS_WINDOWS, localappdata=os.environ.get("LOCALAPPDATA", "")
 )
+_LEGACY_CONFIG_PATH = Path.home() / ".config" / "nelson-pos-drawer" / "agent.json"
+DEFAULT_CONFIG_PATH = Path(os.environ.get("DRAWER_AGENT_CONFIG") or "") if os.environ.get(
+    "DRAWER_AGENT_CONFIG"
+) else config_path_for(Path.home(), windows=IS_WINDOWS, localappdata=os.environ.get("LOCALAPPDATA", ""))
+
+LOG_PATH = INSTALL_DIR / "drawer-agent.log"
 
 logger = logging.getLogger("drawer-agent")
 
@@ -67,6 +117,130 @@ def kick_bytes(*, pin: int = 0, on_ms: int = 50, off_ms: int = 500) -> bytes:
     on_units = _pulse_units(on_ms, "on_ms")
     off_units = _pulse_units(off_ms, "off_ms")
     return bytes([ESC, ord("p"), pin, on_units, off_units])
+
+
+# ── Página de teste ───────────────────────────────────────────────────────
+#
+# Antes de compor recibo — e muito antes de compor DANFE, que tem leiaute
+# exigido por lei — vale descobrir o que ESTA impressora faz. Esta página não
+# tenta ser bonita: ela faz o papel responder três perguntas que ninguém
+# consegue responder de cabeça.
+#
+# ⚠️ A página de código NÃO é chutada aqui. A mesma frase acentuada sai sob
+# várias tabelas, rotulada. O papel diz qual está certa; escolher uma no escuro
+# é como "PÃO" vira "PÎO" no balcão.
+
+#: `ESC t n` — tabelas de caractere que interessam ao português.
+_CODE_PAGES = ((3, "PC860 Portugues"), (2, "PC850 Multilingual"), (16, "WPC1252"))
+
+#: Largura em colunas da Fonte A numa térmica de 80mm. A régua confirma.
+_COLUMNS = 48
+
+#: Até onde a régua vai. Passa de 48 de propósito: a Fonte B da TM-T20 dá 64
+#: colunas, e a primeira rodada do teste voltou com "coube e sobrou espaço" —
+#: sinal de que a impressora não estava na largura que assumi. Régua que para
+#: onde eu chutei não descobre largura nenhuma.
+_RULER_MAX = 64
+
+#: Frase de aferição de acento. A primeira versão não discriminava: as
+#: maiúsculas iam SEM acento no código-fonte (saíam iguais em qualquer tabela) e
+#: entre as minúsculas só o "ã" separava as tabelas — um caractere, fácil de não
+#: notar. Agora cobre maiúsculas e minúsculas e junta os acentos que MUDAM de
+#: byte entre CP860, CP850 e WPC1252.
+_ACCENT_SAMPLE = "PÃO ÁGUA AÇÚCAR ÊNFASE ÕRFÃ · pão água açúcar ênfase órfã"
+
+
+#: Conteúdo do QR de teste. Texto neutro de propósito: o agente é genérico, e um
+#: domínio de deployment cravado aqui é a mesma armadilha da origem inventada.
+_QR_SAMPLE = "NELSON POS - TESTE DE QR CODE"
+
+
+def test_print_bytes(*, columns: int = _COLUMNS, qr_data: str = _QR_SAMPLE) -> bytes:
+    """Amostra de diagnóstico: acento, largura/alinhamento e QR nativo."""
+    out = bytearray()
+    out += bytes([ESC, ord("@")])  # reset
+
+    out += _line("TESTE DE IMPRESSAO")
+    out += _line("Agente da gaveta - Nelson")
+    out += _line("-" * columns)
+
+    # 1) Acento: a mesma frase sob cada tabela, rotulada.
+    out += _line("1) ACENTO - qual bloco saiu SEM lixo?")
+    out += _line("   (compare letra a letra, inclusive as MAIUSCULAS)")
+    for code, nome in _CODE_PAGES:
+        out += bytes([ESC, ord("t"), code])
+        out += _line(f"  [{nome}]")
+        out += _encoded(f"  {_ACCENT_SAMPLE}", code)
+    out += bytes([ESC, ord("t"), _CODE_PAGES[0][0]])
+    out += _line("")
+
+    # 2) Largura: a régua vai ALÉM do que assumi, senão não descobre nada.
+    out += _line("2) LARGURA - ate que numero a regua chega?")
+    out += _line(_ruler(_RULER_MAX))
+    out += _line(_two_columns("Pao frances", "R$ 0,90", columns))
+    out += _line(_two_columns("Sonho de creme", "R$ 7,50", columns))
+    out += _line(_two_columns("TOTAL", "R$ 8,40", columns))
+    out += _line("")
+
+    # 3) QR nativo: se sair em branco, esta impressora precisa de QR em imagem.
+    out += _line("3) QR - saiu um quadrado legivel?")
+    out += _qr_code(qr_data)
+    out += _line("")
+    out += _line("Fim do teste.")
+
+    out += bytes([ESC, ord("d"), 4])  # avanca antes de cortar
+    out += bytes([0x1D, ord("V"), 1])  # corte parcial
+    return bytes(out)
+
+
+def _line(text: str) -> bytes:
+    return text.encode("cp860", "replace") + b"\n"
+
+
+def _encoded(text: str, code_page: int) -> bytes:
+    """A frase acentuada codificada na tabela que acabou de ser selecionada."""
+    encoding = {3: "cp860", 2: "cp850", 16: "cp1252"}.get(code_page, "cp860")
+    return text.encode(encoding, "replace") + b"\n"
+
+
+def _ruler(width: int) -> str:
+    """Régua legível: marca dezenas, o resto são traços.
+
+    `----+----1----+----2…` — quem lê o papel só precisa dizer o último número
+    que apareceu inteiro, e isso dá a largura real da impressora.
+    """
+    marcas = []
+    for i in range(1, width + 1):
+        if i % 10 == 0:
+            marcas.append(str(i // 10))
+        elif i % 5 == 0:
+            marcas.append("+")
+        else:
+            marcas.append("-")
+    return "".join(marcas)
+
+
+def _two_columns(left: str, right: str, columns: int) -> str:
+    """Nome à esquerda, valor à direita, preenchendo a linha."""
+    espaco = max(1, columns - len(left) - len(right))
+    return f"{left}{' ' * espaco}{right}"[:columns]
+
+
+def _qr_code(data: str, *, module: int = 6) -> bytes:
+    """QR nativo do ESC/POS (`GS ( k`), modelo 2.
+
+    ⚠️ O comprimento conta ``cn``, ``fn`` e ``m`` além dos dados — três bytes a
+    mais. Errar isso é o defeito clássico deste comando: a impressora lê menos
+    dados do que existe e imprime lixo ou nada.
+    """
+    payload = data.encode("utf-8")
+    tamanho = len(payload) + 3
+    return bytes(
+        [0x1D, 0x28, 0x6B, 0x04, 0x00, 0x31, 0x41, 0x32, 0x00]  # modelo 2
+        + [0x1D, 0x28, 0x6B, 0x03, 0x00, 0x31, 0x43, module]  # tamanho do modulo
+        + [0x1D, 0x28, 0x6B, 0x03, 0x00, 0x31, 0x45, 0x31]  # correcao de erro M
+        + [0x1D, 0x28, 0x6B, tamanho % 256, tamanho // 256, 0x31, 0x50, 0x30]
+    ) + payload + bytes([0x1D, 0x28, 0x6B, 0x03, 0x00, 0x31, 0x51, 0x30])  # imprime
 
 
 def _pulse_units(value_ms: int, label: str) -> int:
@@ -149,8 +323,6 @@ class AgentConfig:
 # como "não dá para mandar bytes crus". O que a Apple removeu foi o **driver**
 # raw; a **opção de job** `-o raw` continua existindo, e numa fila sem driver
 # ela entrega os bytes intactos. Medido: `1b 70 00 19 fa` chegou inteiro.
-
-IS_WINDOWS = os.name == "nt"
 
 
 class SpoolerError(RuntimeError):
@@ -372,7 +544,7 @@ class DrawerHandler(BaseHTTPRequestHandler):
             self._reply(404, {"ok": False, "error": "rota desconhecida"})
             return
         probe = probe_queue(self.config.queue)
-        self._reply(200, {**probe, "queue": self.config.queue, "version": VERSION})
+        self._reply(200, {**probe, "queue": self.config.queue, "version": VERSION, "build": build_id()})
 
     def do_POST(self) -> None:  # noqa: N802
         if self.path.split("?")[0] != "/kick":
@@ -447,15 +619,6 @@ def serve(config: AgentConfig) -> None:
 # editor. Dois arquivos que precisam chegar juntos são uma chance a mais de
 # chegar só um.
 
-IS_MACOS = sys.platform == "darwin"
-
-#: No Windows `~/.local/share` seria um caminho estranho no meio do perfil do
-#: usuário; `%LOCALAPPDATA%` é onde o sistema espera um programa de usuário.
-INSTALL_DIR = (
-    Path(os.environ.get("LOCALAPPDATA", Path.home() / "AppData" / "Local")) / "NelsonPosDrawer"
-    if IS_WINDOWS
-    else Path.home() / ".local" / "share" / "nelson-pos-drawer"
-)
 UNIT_PATH = Path.home() / ".config" / "systemd" / "user" / "nelson-pos-drawer.service"
 SERVICE_NAME = "nelson-pos-drawer.service"
 LAUNCH_AGENT_LABEL = "com.nelson.pos-drawer"
@@ -484,12 +647,6 @@ RestartSec=3
 [Install]
 WantedBy=default.target
 """
-
-
-#: Onde o agente escreve quando não há journald para capturá-lo. Cada abertura
-#: de gaveta vira uma linha aqui — é a verdade física do balcão, e sem isto o
-#: macOS (launchd) e o Windows (`pythonw`, sem console) engoliriam tudo.
-LOG_PATH = INSTALL_DIR / "drawer-agent.log"
 
 
 def _plist_text(exec_path: Path) -> str:
@@ -642,29 +799,56 @@ def _autostart_macos(target: Path) -> None:
         subprocess.run(["launchctl", "load", "-w", str(LAUNCH_AGENT_PATH)], capture_output=True, check=False)
 
 
-def _autostart_windows(target: Path) -> None:
-    """Tarefa agendada no logon.
+def _windows_launcher(target: Path) -> Path:
+    """Um `.cmd` que sobe o agente, para o `schtasks` receber UM caminho só.
 
-    `pythonw` em vez de `python` para o agente não abrir uma janela preta de
-    console no balcão a cada boot. Sem privilégio de administrador: a tarefa é
-    do usuário que está instalando.
+    A primeira versão passava o comando inteiro em `/tr`, com três trechos entre
+    aspas. O `schtasks` é notoriamente ruim com aspas aninhadas: ele aceita, e
+    grava a tarefa com o comando mutilado. Resultado no balcão: a tarefa existe,
+    o agente não sobe, e nada avisa — porque o `--kick` da linha de comando é
+    outro processo e continua funcionando.
+
+    Com o launcher, `/tr` recebe um caminho sem espaço para ambiguidade. De
+    quebra, dá para dar dois cliques nele para subir o agente na mão.
     """
     pythonw = Path(sys.executable).with_name("pythonw.exe")
     runner = pythonw if pythonw.exists() else Path(sys.executable)
+    launcher = INSTALL_DIR / "nelson-pos-drawer.cmd"
+    launcher.write_text(
+        "@echo off\r\n"
+        f'"{runner}" "{target}" --log-file "{LOG_PATH}"\r\n',
+        encoding="utf-8",
+    )
+    return launcher
+
+
+def _autostart_windows(target: Path) -> None:
+    """Tarefa agendada no logon, apontando para o launcher.
+
+    `pythonw` para o agente não abrir uma janela preta de console no balcão a
+    cada boot. Sem privilégio de administrador: a tarefa é do usuário que está
+    instalando.
+    """
+    launcher = _windows_launcher(target)
     created = subprocess.run(
-        [
-            "schtasks", "/create", "/f",
-            "/tn", WINDOWS_TASK_NAME,
-            "/tr", f'"{runner}" "{target}" --log-file "{LOG_PATH}"',
-            "/sc", "onlogon",
-        ],
+        ["schtasks", "/create", "/f", "/tn", WINDOWS_TASK_NAME, "/tr", str(launcher), "/sc", "onlogon"],
         capture_output=True,
         check=False,
     )
     if created.returncode != 0:
         detail = (created.stdout or b"").decode("utf-8", "replace").strip()
         print(f"aviso: não consegui agendar o início automático ({detail or 'schtasks falhou'}).")
-        print(f"       Suba na mão quando precisar: \"{runner}\" \"{target}\"")
+        # Pasta Inicializar: não precisa de agendador nem de privilégio.
+        startup = (
+            Path(os.environ.get("APPDATA", Path.home() / "AppData" / "Roaming"))
+            / "Microsoft" / "Windows" / "Start Menu" / "Programs" / "Startup"
+        )
+        try:
+            startup.mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(launcher, startup / launcher.name)
+            print(f"       Coloquei na pasta Inicializar: {startup / launcher.name}")
+        except OSError as exc:
+            print(f"       Suba na mão quando precisar: {launcher} ({exc})")
         return
     subprocess.run(["schtasks", "/run", "/tn", WINDOWS_TASK_NAME], capture_output=True, check=False)
 
@@ -690,6 +874,13 @@ def install(argv: list[str]) -> int:
         return 1
 
     INSTALL_DIR.mkdir(parents=True, exist_ok=True)
+    # Config de uma instalação anterior, quando o Windows guardava em pasta
+    # separada. Mover em vez de gerar outra: duas configs na mesma máquina é
+    # como o token do PDV e o do agente acabam diferentes sem ninguém entender.
+    if IS_WINDOWS and _LEGACY_CONFIG_PATH.exists() and not DEFAULT_CONFIG_PATH.exists():
+        shutil.move(str(_LEGACY_CONFIG_PATH), str(DEFAULT_CONFIG_PATH))
+        print(f"config movida de {_LEGACY_CONFIG_PATH} para {DEFAULT_CONFIG_PATH}")
+
     target = INSTALL_DIR / "drawer_agent.py"
     source = Path(__file__).resolve()
     if source != target.resolve():
@@ -711,6 +902,7 @@ def install(argv: list[str]) -> int:
         _autostart_linux(target)
 
     print(f"\nAgente instalado em {target}")
+    print(f"Versao {VERSION} (build {build_id()}) — confira na tela do Admin se é a atual.")
     if not config.get("allowed_origins"):
         print(
             "\naviso: sem --origin, este agente aceita pedido de QUALQUER página\n"
@@ -730,7 +922,46 @@ def install(argv: list[str]) -> int:
         print(f"Config já existia em {DEFAULT_CONFIG_PATH} — token e fila preservados.")
     runner = "python" if IS_WINDOWS else "python3"
     print(f"\nTeste sem navegador:\n  {runner} \"{target}\" --kick")
-    return 0
+
+    # ⚠️ Este bloco existe porque a versão anterior dizia "Agente instalado" sem
+    # nunca ter conferido que o agente estava ouvindo. No Windows a tarefa
+    # agendada nasceu quebrada, o serviço não subiu, e nada avisou: o `--kick`
+    # da linha de comando é OUTRO processo e continuava funcionando, então o
+    # defeito só apareceu no botão do PDV, depois, no balcão.
+    #
+    # Instalador que afirma o que não mediu é o mesmo pecado do health que
+    # inventava `ready`. Agora ele bate na própria porta antes de dizer pronto.
+    if _wait_until_listening(config):
+        print(f"\n✓ Agente respondendo em http://127.0.0.1:{config.get('port', 47811)}/health")
+        return 0
+
+    print(
+        f"\n✗ O agente NÃO está respondendo em http://127.0.0.1:{config.get('port', 47811)}/health.\n"
+        "  O início automático não pegou. O kick pela linha de comando pode até\n"
+        "  funcionar, mas o botão do PDV vai falhar até isto subir.\n"
+        f"  Suba na mão para confirmar:  {runner} \"{target}\"\n"
+        f"  E veja o motivo em:          {LOG_PATH}"
+    )
+    return 1
+
+
+def _wait_until_listening(config: dict, *, seconds: int = 10) -> bool:
+    """O agente atende em `/health`? Dá um tempo para o serviço nascer."""
+    import time
+    import urllib.error
+    import urllib.request
+
+    url = f"http://127.0.0.1:{config.get('port', 47811)}/health"
+    deadline = time.monotonic() + seconds
+    while time.monotonic() < deadline:
+        try:
+            with urllib.request.urlopen(url, timeout=2) as response:
+                if response.status == 200:
+                    return True
+        except (urllib.error.URLError, OSError):
+            pass
+        time.sleep(0.5)
+    return False
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -755,6 +986,13 @@ def main(argv: list[str] | None = None) -> int:
         # Teste de bancada sem navegador: prova o caminho até o spooler.
         job = send_raw(kick_bytes(), queue=config.queue, title="gaveta:cli")
         print(f"kick enviado para {config.queue} (job {job or '-'})")
+        return 0
+    if "--test-print" in argv:
+        # O papel responde o que ninguém sabe de cabeça: qual página de código
+        # acerta os acentos, quantas colunas cabem, e se o QR é nativo.
+        job = send_raw(test_print_bytes(), queue=config.queue, title="teste-impressao")
+        print(f"página de teste enviada para {config.queue} (job {job or '-'})")
+        print("Olhe o papel: 1) qual linha acentuada saiu certa  2) a régua coube  3) o QR apareceu")
         return 0
     serve(config)
     return 0

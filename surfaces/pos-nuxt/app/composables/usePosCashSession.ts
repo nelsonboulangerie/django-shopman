@@ -147,6 +147,7 @@ export function usePosCashSession({ pos, actions, refresh, action }: CashSession
     registerCashMovement,
     // Gaveta: a antesala mostra o botão só onde existe caminho de software.
     canOpenDrawer: drawer.canKick,
+    drawerUnavailableReason: drawer.unavailableReason,
     drawerProbing: drawer.probing,
     openDrawerWithoutSale,
     probeDrawer: drawer.probe,

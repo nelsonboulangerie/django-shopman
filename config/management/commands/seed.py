@@ -5513,6 +5513,21 @@ class Command(BaseCommand):
         # o que hoje é sorte, e é o gancho para um balcão com rolo diferente.
         hardware = dict(terminal.metadata.get("hardware") or {})
         hardware["printer"] = {"adapter": "driver", "model": "epson-tm-t20", "roll_width_mm": 80}
+
+        # A gaveta do balcão pendura no RJ11 dessa mesma TM-T20 e abre pelo
+        # agente local. Declarar aqui, SEM token, é deliberado: o token nasce no
+        # Admin e forma par com a máquina do balcão — inventar um no seed criaria
+        # um par que não existe do outro lado.
+        #
+        # ⚠️ Isto existe porque o reseed apagava a gaveta em silêncio (o terminal
+        # é recriado, e antes só a impressora era declarada). O PDV escondia o
+        # card e ninguém entendia por quê. Declarado sem token, o estado passa a
+        # ser "tem gaveta, falta instalar" — que aponta para a próxima ação em
+        # vez de fingir que o balcão não tem gaveta.
+        hardware.setdefault(
+            "cash_drawer",
+            {"enabled": True, "adapter": "agent", "agent_url": "http://127.0.0.1:47811", "token": ""},
+        )
         terminal.metadata = {**terminal.metadata, "hardware": hardware}
         terminal.save(update_fields=["metadata"])
 
