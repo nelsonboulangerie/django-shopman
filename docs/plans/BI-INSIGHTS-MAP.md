@@ -955,3 +955,65 @@ Três detalhes que o código trava:
    reserva, então **nenhum signal dispara** — quem percebe é a reconciliação. Por
    isso ela usa a consulta em lote: varrer o catálogo a cada poucos minutos com
    uma consulta por SKU custaria centenas de idas ao banco por ciclo.
+
+---
+
+## 12. O denominador e o "diário de bordo" (rodada 6, 2026-08-15)
+
+> Pergunta do dono: *"uma dimensão interessante para cruzar com as horas
+> pausadas/esgotadas é o total de horas em que a casa ficou aberta (hmm, como
+> tratar mudanças de horário, feriados, férias coletivas? cada vez mais me
+> parece necessário criar um diário de bordo da empresa… vale o esforço?)"*
+
+A intuição estava certa e apontou **um defeito real** no que eu tinha entregue.
+
+### 12.1 O defeito: o passado era lido pelo horário de hoje
+
+As métricas de tempo recortavam o expediente chamando o calendário **com o
+horário atual da loja**, para qualquer dia. Duas consequências:
+
+- **mexer no cadastro reescrevia o passado** — mudar o horário de fechamento
+  hoje mudaria o valor da métrica de três meses atrás;
+- **dia em que a casa não abriu contava como expediente cheio** — a função de
+  horário só olha o dia da semana e não consulta feriados nem férias, então um
+  feriado fechado aparecia como um dia inteiro de produto em falta.
+
+### 12.2 O conserto: expediente congelado por dia
+
+O contexto do dia (§10) ganhou o que faltava: `open_minutes`, `opens_at`,
+`closes_at` e `closed_reason`, **carimbados quando o dia termina** e nunca mais
+recalculados. `stamp_business_days` roda no ciclo de manutenção; é idempotente e
+só olha para trás, porque o dia de hoje ainda não acabou.
+
+A leitura passou a usar esse carimbo. **Dia sem carimbo não entra na conta**: sem
+saber quando a casa esteve aberta, contar horas seria inventar o denominador.
+
+### 12.3 O que o denominador destrava
+
+Métrica **"% do expediente sem vender"** — e ela é melhor que a contagem em
+horas justamente pelo motivo que o dono levantou: três horas de falta num sábado
+de nove horas e três horas num feriado de quatro **não são a mesma coisa**. A
+proporção compara; a contagem, não.
+
+### 12.4 Vale um "diário de bordo"? Sim — e ele já começou
+
+**Vale**, com uma ressalva sobre a forma. O que não vale é abrir um registro
+genérico de anotações livres: sem pergunta com dono, vira vala comum, e a casa
+já tem cicatriz disso (o `InventoryProtocol` morto, os seams sem consumidor).
+
+O que vale é o que já existe: **`DayContext` é o diário de bordo**, uma linha por
+dia com fatos declarados, cada um com pergunta e dono. Hoje ele responde: a casa
+abriu, por quanto tempo, e por que não abriu; era feriado, véspera ou volta; que
+temperatura fez e se choveu. Cada bloco entrou porque uma pergunta pedia, e cada
+um é opcional — ausência é ausência, nunca zero.
+
+O critério para o que entra ali daqui pra frente é o mesmo: **um fato por vez,
+com a pergunta que ele responde**. Candidatos naturais que hoje estão soltos:
+falta de energia ou de água, equipamento parado, evento na vizinhança, greve,
+obra na rua. Todos têm a mesma forma (afetaram o dia inteiro ou uma faixa dele) e
+todos servem de contexto para explicar um dia fora da curva — que é exatamente o
+que o gestor quer quando olha um número estranho e pergunta "o que houve neste
+dia?".
+
+O que **não** deve ir para lá: qualquer coisa que já tenha dono (venda, fornada,
+turno de caixa) e qualquer campo livre sem pergunta.
