@@ -13,8 +13,8 @@
 {% include "unfold/helpers/messages.html" %}
 <main id="copy-catalog-main" role="main">
 {% component "unfold/components/container.html" %}
-  <div class="flex flex-col gap-6">
-    <div class="flex flex-col gap-1">
+  {% component "unfold/components/flex.html" with col=1 class="gap-6" %}
+    {% component "unfold/components/flex.html" with col=1 class="gap-1" %}
       {% component "unfold/components/title.html" %}
         Textos da interface
       {% endcomponent %}
@@ -24,16 +24,16 @@
       {% component "unfold/components/text.html" with class="text-sm text-base-500" %}
         {{ copy_catalog.total_keys }} chaves ({{ copy_catalog.mapped_keys }} mapeadas em telas) · {{ copy_catalog.active_overrides }} personalizações ativas.
       {% endcomponent %}
-    </div>
+    {% endcomponent %}
 
-    <form method="get" class="flex flex-col gap-3 lg:flex-row lg:items-center">
-      <div class="flex-1">
-        {% include "unfold/helpers/field.html" with field=copy_catalog_form.q %}
-      </div>
-      <div class="flex-1">
-        {% include "unfold/helpers/field.html" with field=copy_catalog_form.surface %}
-      </div>
-      <div class="flex gap-2">
+    <form method="get">
+      {% component "unfold/components/flex.html" with class="gap-4 items-center" %}
+        <div class="grow">
+          {% include "unfold/helpers/field.html" with field=copy_catalog_form.q %}
+        </div>
+        <div class="grow">
+          {% include "unfold/helpers/field.html" with field=copy_catalog_form.surface %}
+        </div>
         {% component "unfold/components/button.html" with submit=1 variant="primary" size="sm" icon="search" %}
           Filtrar
         {% endcomponent %}
@@ -41,7 +41,7 @@
         {% component "unfold/components/button.html" with href=overrides_url variant="default" size="sm" icon="tune" %}
           Ver personalizações
         {% endcomponent %}
-      </div>
+      {% endcomponent %}
     </form>
 
     {% if not copy_catalog_tables %}
@@ -51,17 +51,17 @@
     {% endif %}
 
     {% for group in copy_catalog_tables %}
-      <div class="flex flex-col gap-2">
-        <div class="flex items-center gap-2">
+      {% component "unfold/components/flex.html" with col=1 class="gap-2" %}
+        {% component "unfold/components/flex.html" with class="gap-2 items-center" %}
           {% component "unfold/components/title.html" with class="text-lg" %}
             {{ group.surface }} · {{ group.screen }}
           {% endcomponent %}
           {% include "unfold/helpers/label.html" with text=group.count type="info" %}
-        </div>
+        {% endcomponent %}
         {% component "unfold/components/table.html" with table=group.table striped=1 %}{% endcomponent %}
-      </div>
+      {% endcomponent %}
     {% endfor %}
-  </div>
+  {% endcomponent %}
 {% endcomponent %}
 </main>
 {% endblock %}

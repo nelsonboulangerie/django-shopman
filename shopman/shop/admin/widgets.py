@@ -7,6 +7,7 @@ import json
 from django import forms
 from django.utils.html import escape
 from django.utils.safestring import mark_safe
+from shopman.utils import unfold_component
 
 
 class FontPreviewWidget(forms.Select):
@@ -38,12 +39,19 @@ class FontPreviewWidget(forms.Select):
         )
         style_expr = escape("font ? (\"font-family: '\" + font + \"', sans-serif\") : ''")
 
+        # A caixa da amostra era um card decalcado (border + rounded + bg + p-4);
+        # agora é o `card.html` do Unfold. O `x-bind:style` sobrevive num elemento
+        # SEM classe nenhuma, cuja única função é carregar a ligação do Alpine: a
+        # fonte é escolhida em tempo de execução e baixada do Google Fonts, então
+        # não existe classe utilitária que a represente.
+        sample_box = unfold_component(
+            "unfold/components/card.html",
+            children=f'<div class="text-lg" x-bind:style="{style_expr}">{sample}</div>',
+        )
         preview_html = (
             f'<div x-data="{{ font: {font_init} }}" class="mt-2">'
             f'<link rel="stylesheet" x-bind:href="{href_expr}">'
-            f'<div class="border border-base-200 dark:border-base-700 '
-            f'bg-base-50 dark:bg-base-800 text-base-700 dark:text-base-300 '
-            f'rounded-default p-4 text-lg" x-bind:style="{style_expr}">{sample}</div>'
+            f"{sample_box}"
             f"</div>"
         )
         return mark_safe(select_html + preview_html)

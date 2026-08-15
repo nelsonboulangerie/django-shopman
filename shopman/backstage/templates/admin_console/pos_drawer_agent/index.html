@@ -13,19 +13,19 @@
 {% include "unfold/helpers/messages.html" %}
 <main id="pos-drawer-agent-main" role="main">
 {% component "unfold/components/container.html" %}
-  <div class="flex flex-col gap-6">
-    <div class="flex flex-col gap-1">
+  {% component "unfold/components/flex.html" with col=1 class="gap-6" %}
+    {% component "unfold/components/flex.html" with col=1 class="gap-1" %}
       {% component "unfold/components/title.html" %}
         Instalar o agente da gaveta
       {% endcomponent %}
       {% component "unfold/components/text.html" with class="text-base-500" %}
         {{ agent_install.terminal_label }} · a gaveta abre por um programinha que roda na máquina do balcão. Ele recebe o pedido do PDV e manda o comando para a impressora, que é quem tem o cabo da gaveta.
       {% endcomponent %}
-    </div>
+    {% endcomponent %}
 
     {% if agent_install.blocker %}
       {% component "unfold/components/card.html" %}
-        <div class="flex flex-col gap-3">
+        {% component "unfold/components/flex.html" with col=1 class="gap-3" %}
           {% component "unfold/components/title.html" with class="text-lg" %}
             Antes de instalar
           {% endcomponent %}
@@ -35,15 +35,15 @@
           {% component "unfold/components/button.html" with href=terminal_change_url variant="primary" size="sm" icon="tune" %}
             Ajustar o terminal
           {% endcomponent %}
-        </div>
+        {% endcomponent %}
       {% endcomponent %}
     {% else %}
       {% component "unfold/components/card.html" %}
-        <div class="flex flex-col gap-3">
+        {% component "unfold/components/flex.html" with col=1 class="gap-3" %}
           {% component "unfold/components/title.html" with class="text-lg" %}
             Em qual sistema você vai instalar?
           {% endcomponent %}
-          <div class="flex flex-wrap gap-2">
+          {% component "unfold/components/flex.html" with class="flex-wrap gap-2" %}
             {% for option in agent_install.os_options %}
               {% if option.active %}
                 {% component "unfold/components/button.html" with href=option.url variant="primary" size="sm" %}
@@ -55,37 +55,37 @@
                 {% endcomponent %}
               {% endif %}
             {% endfor %}
-          </div>
+          {% endcomponent %}
           {% if agent_install.os_caveat %}
             {% component "unfold/components/text.html" with class="text-sm text-base-500" %}
               {{ agent_install.os_caveat }}
             {% endcomponent %}
           {% endif %}
-        </div>
+        {% endcomponent %}
       {% endcomponent %}
 
       {% component "unfold/components/card.html" %}
-        <div class="flex flex-col gap-3">
+        {% component "unfold/components/flex.html" with col=1 class="gap-3" %}
           {% component "unfold/components/title.html" with class="text-lg" %}
             1. Baixe o agente
           {% endcomponent %}
           {% component "unfold/components/text.html" with class="text-base-500" %}
             O mesmo arquivo serve nos três sistemas e em qualquer balcão. O que é deste terminal vai no comando do passo 2.
           {% endcomponent %}
-          <div class="flex flex-wrap items-center gap-3">
+          {% component "unfold/components/flex.html" with class="flex-wrap gap-3 items-center" %}
             {% component "unfold/components/button.html" with href=agent_install.download_url variant="primary" icon="download" %}
               Baixar drawer_agent.py
             {% endcomponent %}
             {% component "unfold/components/text.html" with class="text-sm text-base-500" %}
               {{ agent_install.source_bytes|filesizeformat }}
             {% endcomponent %}
-          </div>
-        </div>
+          {% endcomponent %}
+        {% endcomponent %}
       {% endcomponent %}
 
       {% for step in agent_install.steps %}
         {% component "unfold/components/card.html" %}
-          <div class="flex flex-col gap-3">
+          {% component "unfold/components/flex.html" with col=1 class="gap-3" %}
             {% component "unfold/components/title.html" with class="text-lg" %}
               {{ forloop.counter|add:1 }}. {{ step.title }}
             {% endcomponent %}
@@ -100,12 +100,12 @@
               {% endcomment %}
               <pre class="overflow-x-auto rounded-default bg-base-100 p-4 text-sm text-base-700 dark:bg-base-900 dark:text-base-300"><code>{{ step.command }}</code></pre>
             {% endif %}
-          </div>
+          {% endcomponent %}
         {% endcomponent %}
       {% endfor %}
 
       {% component "unfold/components/card.html" %}
-        <div class="flex flex-col gap-3">
+        {% component "unfold/components/flex.html" with col=1 class="gap-3" %}
           {% component "unfold/components/title.html" with class="text-lg" %}
             Sobre o token que está no comando
           {% endcomponent %}
@@ -115,10 +115,10 @@
           {% component "unfold/components/button.html" with href=terminal_change_url variant="default" size="sm" icon="tune" %}
             Abrir a configuração do terminal
           {% endcomponent %}
-        </div>
+        {% endcomponent %}
       {% endcomponent %}
     {% endif %}
-  </div>
+  {% endcomponent %}
 {% endcomponent %}
 </main>
 {% endblock %}

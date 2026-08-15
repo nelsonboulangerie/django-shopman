@@ -35,39 +35,41 @@
 {% include "unfold/helpers/messages.html" %}
 <main id="operator-badge-main" role="main">
 {% component "unfold/components/container.html" %}
-  <div class="flex flex-col gap-6">
-    <div class="flex flex-col gap-1 badge-noprint">
+  {% component "unfold/components/flex.html" with col=1 class="gap-6" %}
+    {% component "unfold/components/flex.html" with col=1 class="gap-1 badge-noprint" %}
       {% component "unfold/components/title.html" %}
         Crachá do operador
       {% endcomponent %}
       {% component "unfold/components/text.html" with class="text-base-500" %}
         Imprima e cole no crachá. O leitor do balcão identifica quem está operando sem ninguém digitar PIN.
       {% endcomponent %}
-    </div>
+    {% endcomponent %}
 
     {% if badge %}
-      <div class="flex flex-col gap-2 badge-noprint">
+      {% component "unfold/components/flex.html" with col=1 class="gap-2 badge-noprint" %}
         {% component "unfold/components/text.html" with class="text-sm text-base-500" %}
           Este código aparece uma vez só. Imprima agora: depois de sair desta página nem o gerente consegue vê-lo de novo, só emitir outro (o que invalida este).
         {% endcomponent %}
         {% component "unfold/components/text.html" with class="text-sm text-base-500" %}
           Largura do código: {{ badge.width_mm }}mm por {{ badge.height_mm }}mm de altura. Confira se cabe na etiqueta antes de imprimir em lote.
         {% endcomponent %}
-      </div>
+      {% endcomponent %}
 
       <div id="badge-print-root">
-        <div class="flex flex-col items-center gap-2 rounded-default border border-base-200 p-6 dark:border-base-800">
-          {% component "unfold/components/title.html" with class="text-lg" %}
-            {{ badge.operator_name }}
+        {% component "unfold/components/card.html" with class="items-center" %}
+          {% component "unfold/components/flex.html" with col=1 class="gap-2 items-center" %}
+            {% component "unfold/components/title.html" with class="text-lg" %}
+              {{ badge.operator_name }}
+            {% endcomponent %}
+            <div>{{ badge.barcode_svg|safe }}</div>
+            {% component "unfold/components/text.html" with class="font-mono text-xs tracking-widest" %}
+              {{ badge.token }}
+            {% endcomponent %}
           {% endcomponent %}
-          <div>{{ badge.barcode_svg|safe }}</div>
-          {% component "unfold/components/text.html" with class="font-mono text-xs tracking-widest" %}
-            {{ badge.token }}
-          {% endcomponent %}
-        </div>
+        {% endcomponent %}
       </div>
 
-      <div class="flex gap-2 badge-noprint">
+      {% component "unfold/components/flex.html" with class="gap-2 badge-noprint" %}
         {% component "unfold/components/button.html" with variant="primary" size="sm" icon="print" attrs=print_button_attrs %}
           Imprimir
         {% endcomponent %}
@@ -75,19 +77,19 @@
         {% component "unfold/components/button.html" with href=operators_url variant="default" size="sm" icon="badge" %}
           Voltar aos operadores
         {% endcomponent %}
-      </div>
+      {% endcomponent %}
     {% else %}
       {% component "unfold/components/text.html" with class="text-base-500" %}
         Nenhum crachá para mostrar. O código aparece uma vez só, logo depois de emitir: se você recarregou a página, ele já foi embora.
       {% endcomponent %}
-      <div class="flex gap-2">
+      {% component "unfold/components/flex.html" with class="gap-2" %}
         {% url 'admin:doorman_pincredential_changelist' as operators_url %}
         {% component "unfold/components/button.html" with href=operators_url variant="primary" size="sm" icon="badge" %}
           Escolher operador e emitir
         {% endcomponent %}
-      </div>
+      {% endcomponent %}
     {% endif %}
-  </div>
+  {% endcomponent %}
 {% endcomponent %}
 </main>
 {% endblock %}
