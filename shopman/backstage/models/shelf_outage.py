@@ -15,8 +15,11 @@ disponibilidade — cujo dono segue sendo o stockman — produziu. Recomputável
 partir do estado atual (ver ``reconcile_outages``), e o passado anterior à
 primeira medição simplesmente não existe, em vez de aparecer como zero.
 
-Só conta falta: produto **pausado** não entra. Pausar é decisão comercial, não
-ruptura de abastecimento, e misturar as duas mentiria sobre a produção.
+**Todo bloqueio conta, e o motivo fica registrado.** Do ponto de vista de quem
+queria comprar, tanto faz se acabou ou se estava pausado: não deu para comprar.
+Por isso o período é aberto em qualquer um dos casos, e ``reason`` guarda a
+diferença — que importa para o gestor, não para o cliente: falta é problema de
+abastecimento, pausa é decisão da casa (e tempo pausado é métrica por si só).
 """
 
 from __future__ import annotations
@@ -25,9 +28,20 @@ from django.db import models
 from django.utils import timezone
 
 
+class OutageReason(models.TextChoices):
+    SOLD_OUT = "sold_out", "Esgotado"
+    PAUSED = "paused", "Pausado"
+
+
 class ShelfOutage(models.Model):
     sku = models.CharField("sku", max_length=100, db_index=True)
     channel_ref = models.CharField("canal", max_length=64, db_index=True)
+    reason = models.CharField(
+        "motivo", max_length=16, choices=OutageReason.choices,
+        default=OutageReason.SOLD_OUT, db_index=True,
+        help_text="Por que não dava para comprar. Pausa tem precedência sobre "
+                  "falta: produto pausado não é vendável nem com estoque cheio.",
+    )
     started_at = models.DateTimeField("ficou indisponível em")
     ended_at = models.DateTimeField(
         "voltou em", null=True, blank=True,
@@ -54,7 +68,7 @@ class ShelfOutage(models.Model):
         ]
 
     def __str__(self) -> str:
-        return f"{self.sku}@{self.channel_ref} desde {self.started_at}"
+        return f"{self.sku}@{self.channel_ref} ({self.get_reason_display()}) desde {self.started_at}"
 
     @property
     def is_open(self) -> bool:

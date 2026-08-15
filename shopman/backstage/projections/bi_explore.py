@@ -79,6 +79,9 @@ METRICS: dict[str, MetricSpec] = {
         # A pergunta que o dono chamou de mais sensível: não ter o que oferecer.
         # Fonte diferente da de cima — ver docstring de _outage_rows.
         MetricSpec("unavailable_hours", "Horas sem poder vender", "hours",
+                   ("sku", "time", "weekday", "month_of_year", "channel",
+                    "outage_reason"), "outage"),
+        MetricSpec("paused_hours", "Horas pausado", "hours",
                    ("sku", "time", "weekday", "month_of_year", "channel"), "outage"),
         MetricSpec("leftover", "Sobra no fim do dia", "qty",
                    ("sku", "time", "weekday", "month_of_year"), "shelf"),
@@ -101,6 +104,7 @@ DIMENSION_LABELS: dict[str, str] = {
     "operator": "Operador",
     "grade": "Grau de qualidade",
     "defect": "Defeito",
+    "outage_reason": "Motivo (esgotado/pausado)",
     "day_kind": "Tipo de dia (feriado)",
     "temperature": "Temperatura do dia",
     "rain": "Chuva",
@@ -803,9 +807,13 @@ def _outage_rows(spec, by, by2, date_from, date_to) -> list[BIExploreRow]:
     window_start = datetime.combine(date_from, time.min, tzinfo=tz)
     window_end = datetime.combine(date_to + timedelta(days=1), time.min, tzinfo=tz)
 
+    from shopman.backstage.models import OutageReason
+
     outages = ShelfOutage.objects.filter(started_at__lt=window_end).filter(
         Q(ended_at__isnull=True) | Q(ended_at__gt=window_start)
     )
+    if spec.key == "paused_hours":
+        outages = outages.filter(reason=OutageReason.PAUSED)
     contexts = _day_contexts(date_from, date_to) if _wants_context(by, by2) else {}
 
     totals: dict[tuple, float] = defaultdict(float)
@@ -821,6 +829,8 @@ def _outage_rows(spec, by, by2, date_from, date_to) -> list[BIExploreRow]:
                     parts.append((outage.sku, outage.sku))
                 elif dim == "channel":
                     parts.append((outage.channel_ref, outage.channel_ref))
+                elif dim == "outage_reason":
+                    parts.append((outage.reason, outage.get_reason_display()))
                 elif dim == "time":
                     iso = day.isoformat()
                     parts.append((iso, iso))

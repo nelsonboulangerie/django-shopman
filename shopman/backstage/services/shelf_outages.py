@@ -35,20 +35,33 @@ def offering_channel_refs() -> list[str]:
     )
 
 
-def can_offer(sku: str, *, channel_ref: str) -> bool | None:
-    """O produto está disponível para oferecer AGORA neste canal?
+def offer_block_reason(sku: str, *, channel_ref: str) -> str | None:
+    """Por que o cliente não consegue comprar este SKU agora, se for o caso.
 
-    ``None`` quando a pergunta não se aplica: produto pausado é decisão
-    comercial, não ruptura, e não deve virar falta de abastecimento.
+    Três respostas distintas, e a distinção importa:
+
+    - ``""`` — dá para comprar;
+    - ``"paused"`` / ``"sold_out"`` — não dá, e por quê;
+    - ``None`` — **não sabemos** (a consulta falhou). Nesse caso nada é aberto
+      nem fechado: ausência de resposta não é resposta.
+
+    Pausa tem precedência sobre falta: produto pausado não é vendável nem com
+    estoque cheio, então é a pausa que explica o bloqueio.
     """
     from shopman.shop.projections.catalog_context import availability_for_sku
 
     info = availability_for_sku(sku, channel_ref=channel_ref)
+    return _reason_from(info)
+
+
+def _reason_from(info: dict | None) -> str | None:
+    from shopman.backstage.models import OutageReason
+
     if info is None:
         return None
     if info.get("is_paused"):
-        return None
-    return _is_offerable(info)
+        return OutageReason.PAUSED
+    return "" if _is_offerable(info) else OutageReason.SOLD_OUT
 
 
 def _is_offerable(info: dict) -> bool:
@@ -72,15 +85,21 @@ def observe(sku: str, *, channels: list[str] | None = None) -> None:
     """
     try:
         for channel_ref in channels if channels is not None else offering_channel_refs():
-            _apply(sku, channel_ref, can_offer(sku, channel_ref=channel_ref))
+            _apply(sku, channel_ref, offer_block_reason(sku, channel_ref=channel_ref))
     except Exception:
         logger.debug("shelf_outage.observe falhou para %s", sku, exc_info=True)
 
 
-def _apply(sku: str, channel_ref: str, offerable: bool | None) -> None:
+def _apply(sku: str, channel_ref: str, reason: str | None) -> None:
+    """Abre, fecha ou troca o motivo do período aberto.
+
+    Mudança de motivo fecha um período e abre outro no mesmo instante: o
+    bloqueio continua ininterrupto para o cliente, e o tempo fica atribuído ao
+    motivo certo para o gestor.
+    """
     from shopman.backstage.models import ShelfOutage
 
-    if offerable is None:  # pausado: nem abre nem fecha; a falta não é de estoque
+    if reason is None:  # não sabemos: não afirmar nada
         return
     now = timezone.now()
     with transaction.atomic():
@@ -89,21 +108,26 @@ def _apply(sku: str, channel_ref: str, offerable: bool | None) -> None:
             .filter(sku=sku, channel_ref=channel_ref, ended_at__isnull=True)
             .first()
         )
-        if offerable and open_outage is not None:
+        if open_outage is not None and (not reason or open_outage.reason != reason):
             open_outage.ended_at = now
             open_outage.save(update_fields=["ended_at"])
-        elif not offerable and open_outage is None:
+            open_outage = None
+        if reason and open_outage is None:
             ShelfOutage.objects.create(
-                sku=sku, channel_ref=channel_ref, started_at=now
+                sku=sku, channel_ref=channel_ref, reason=reason, started_at=now
             )
 
 
 def reconcile_outages() -> dict[str, int]:
-    """Alinha as faltas abertas com o estado atual. Idempotente.
+    """Alinha os bloqueios abertos com o estado atual. Idempotente.
 
-    Cobre o buraco dos eventos: reserva que expira por varredura em massa não
-    dispara signal, e sem isto a volta do produto ficaria registrada só no
-    próximo movimento de estoque — que pode ser no dia seguinte.
+    Cobre dois buracos dos eventos: reserva que expira por varredura em massa
+    não dispara signal (sem isto a volta do produto ficaria registrada só no
+    próximo movimento de estoque, que pode ser no dia seguinte), e **pausar ou
+    despausar** um produto acontece no catálogo, longe de estoque e reserva.
+
+    Usa a consulta em LOTE: o ciclo roda a cada poucos minutos sobre o catálogo
+    inteiro, e uma consulta por SKU custaria centenas de idas ao banco.
     """
     from shopman.backstage.models import ShelfOutage
 
@@ -111,18 +135,18 @@ def reconcile_outages() -> dict[str, int]:
     if not channels:
         return {"opened": 0, "closed": 0, "checked": 0}
 
-    skus = set(_tracked_skus())
-    skus.update(
-        ShelfOutage.objects.filter(ended_at__isnull=True).values_list("sku", flat=True)
-    )
+    skus = sorted(_watched_skus())
+    if not skus:
+        return {"opened": 0, "closed": 0, "checked": 0}
 
     before_open = set(
         ShelfOutage.objects.filter(ended_at__isnull=True).values_list(
             "sku", "channel_ref"
         )
     )
-    for sku in sorted(skus):
-        observe(sku, channels=channels)
+    for channel_ref in channels:
+        for sku, reason in _reasons_for_channel(skus, channel_ref).items():
+            _apply(sku, channel_ref, reason)
     after_open = set(
         ShelfOutage.objects.filter(ended_at__isnull=True).values_list(
             "sku", "channel_ref"
@@ -136,12 +160,31 @@ def reconcile_outages() -> dict[str, int]:
     }
 
 
-def _tracked_skus() -> list[str]:
-    """SKUs com estoque controlado — os únicos que podem faltar."""
+def _reasons_for_channel(skus: list[str], channel_ref: str) -> dict[str, str | None]:
+    from shopman.shop.projections.catalog_context import availability_for_skus
+
+    infos = availability_for_skus(skus, channel_ref=channel_ref)
+    return {sku: _reason_from(infos.get(sku)) for sku in skus}
+
+
+def _watched_skus() -> set[str]:
+    """Tudo que a casa se propõe a vender, mais o que já está bloqueado.
+
+    Não bastam os SKUs com estoque: **produto pausado costuma não ter quant
+    nenhum**, e é justamente o tempo dele parado que se quer medir.
+    """
+    from shopman.offerman.models import Product
     from shopman.stockman.models import Quant
 
-    return list(
+    from shopman.backstage.models import ShelfOutage
+
+    skus = set(
         Quant.objects.filter(position__is_saleable=True)
         .values_list("sku", flat=True)
         .distinct()
     )
+    skus.update(Product.objects.values_list("sku", flat=True))
+    skus.update(
+        ShelfOutage.objects.filter(ended_at__isnull=True).values_list("sku", flat=True)
+    )
+    return {sku for sku in skus if sku}
