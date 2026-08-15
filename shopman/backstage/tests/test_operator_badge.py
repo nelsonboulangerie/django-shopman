@@ -106,7 +106,7 @@ class TestBadgeProjection:
 
 @pytest.fixture
 def _shop(db):
-    """Sem Shop o OnboardingMiddleware manda todo /admin/ para /gestor/setup/."""
+    """Sem Shop o OnboardingMiddleware manda todo /admin/ para o formulário do Shop."""
     from shopman.shop.models import Shop
 
     return Shop.objects.create(name="Loja")

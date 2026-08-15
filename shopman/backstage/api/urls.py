@@ -70,6 +70,7 @@ from .notifications import (
 )
 from .operations import (
     DayClosingView,
+    OperationEpisodeAnswerView,
     OperatorEligibleView,
     OperatorLockView,
     OperatorLoginView,
@@ -99,6 +100,7 @@ from .operations import (
     POSCashDrawerOpenView,
     POSCashMovementView,
     POSCashOpenView,
+    POSCashReceiptView,
     POSCashReportView,
     POSCloseSaleView,
     POSCustomerLookupView,
@@ -198,6 +200,11 @@ urlpatterns = [
     path("bi/views/", BIViewListView.as_view(), name="api-backstage-bi-views"),
     path("bi/views/<int:pk>/", BIViewDetailView.as_view(), name="api-backstage-bi-view"),
     path("closing/", DayClosingView.as_view(), name="api-backstage-closing"),
+    path(
+        "closing/episodes/<int:episode_id>/",
+        OperationEpisodeAnswerView.as_view(),
+        name="api-backstage-closing-episode",
+    ),
     path("orders/", OrderQueueView.as_view(), name="api-backstage-orders"),
     # Catalog matrix (produto × superfície)
     path("catalog/", CatalogMatrixView.as_view(), name="api-backstage-catalog"),
@@ -284,6 +291,11 @@ urlpatterns = [
     path("pos/cash/movement/", POSCashMovementView.as_view(), name="api-backstage-pos-cash-movement"),
     path("pos/cash/report/", POSCashReportView.as_view(), name="api-backstage-pos-cash-report"),
     path("pos/cash/drawer-open/", POSCashDrawerOpenView.as_view(), name="api-backstage-pos-cash-drawer-open"),
+    path(
+        "pos/cash/movement/<int:movement_id>/receipt/",
+        POSCashReceiptView.as_view(),
+        name="api-backstage-pos-cash-receipt",
+    ),
     # POS — tab (comanda) lifecycle
     path("pos/tabs/", POSTabCreateView.as_view(), name="api-backstage-pos-tab-create"),
     path("pos/tabs/<str:tab_ref>/open/", POSTabOpenView.as_view(), name="api-backstage-pos-tab-open"),

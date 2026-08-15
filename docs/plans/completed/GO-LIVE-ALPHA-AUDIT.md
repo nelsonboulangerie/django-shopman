@@ -8,7 +8,7 @@
 > rate-limit do checkout contando tentativas inválidas. Decisões que seguem com
 > o Pablo: impressão física (kiosk print vs KDS-only), NFC-e para venda online
 > (S5), e2e homolog Focus NFe (token disponível — plugar env e rodar), staging
-> sem PII real. Falso positivo confirmado: SSE /gestor/events já era gateado por
+> sem PII real. Falso positivo confirmado: SSE /events já era gateado por
 > staff via ShopmanChannelManager (EVENTSTREAM_CHANNELMANAGER_CLASS).
 
 > **Data:** 2026-07-02 · **Método:** 7 auditorias paralelas de código (lifecycle/pagamentos,
@@ -155,7 +155,7 @@
   FECHADO (expected/difference armazenados ficam errados, sem movimento de devolução).
 - **Crons de manutenção não agendados no app spec** (`release_expired_holds`, `cleanup_d1`,
   `cleanup_stale_planning`, `cleanup_stale_sessions`) — só worker + migrate no `.do/*.yaml`.
-- **SSE `/gestor/events/...` sem autenticação** (order_ref/status/contagens a anônimos).
+- **SSE `/events/...` sem autenticação** (order_ref/status/contagens a anônimos).
 - **Dupla execução de directive** (dispatcher on_commit não trava a linha que o poller processa):
   risco de notificação/emissão dupla com web+worker — mitigar travando no callback.
 - **Pagamento em intent "irmão" invisível** (dois intents por race de initiate → pedido preso

@@ -125,12 +125,15 @@ class CraftQueries:
         season_months: list | None = None,
         high_demand_multiplier: Decimal | None = None,
         safety_pct: Decimal | None = None,
+        exclude_dates: frozenset | None = None,
+        selling_window=None,
     ):
         """
         Suggest production quantities for a date.
 
         Args:
-            date: production date
+            date: production date. Também é a âncora do recorte por
+                  dia-da-semana no histórico: planejar sábado olha sábados.
             output_skus: optional list of output_sku strings to filter recipes.
                          If None, all active recipes are considered.
             season_months: optional list of month ints to filter history by season.
@@ -141,6 +144,12 @@ class CraftQueries:
             safety_pct: optional safety-margin override applied over
                         (avg_demand + committed). If None, the
                         SAFETY_STOCK_PERCENT setting is used.
+            exclude_dates: dias que não entram na amostra (loja fechada,
+                           feriado). Quem conhece o calendário é o
+                           orquestrador; o core só recebe a lista.
+            selling_window: par (abre, fecha) usado para extrapolar a demanda
+                           dos dias que esgotaram. Sem ele, dia esgotado conta
+                           o que vendeu e nada é inventado.
 
         Algorithm:
             For each active Recipe (optionally filtered by output_skus):
@@ -175,6 +184,7 @@ class CraftQueries:
             safety_pct = get_setting("SAFETY_STOCK_PERCENT")
         historical_days = get_setting("HISTORICAL_DAYS")
         same_weekday = get_setting("SAME_WEEKDAY_ONLY")
+        exclude_dates = frozenset(exclude_dates or ())
 
         suggestions = []
         recipes = Recipe.objects.filter(is_active=True)
@@ -185,6 +195,8 @@ class CraftQueries:
                 recipe.output_sku,
                 days=historical_days,
                 same_weekday=same_weekday,
+                target_date=date,
+                exclude_dates=exclude_dates,
             )
 
             if not history:
@@ -195,7 +207,7 @@ class CraftQueries:
                 history = [dd for dd in history if dd.date.month in season_months]
 
             # Estimate true demand for each historical day
-            estimates = [_estimate_demand(dd) for dd in history]
+            estimates = [_estimate_demand(dd, selling_window) for dd in history]
 
             # Confidence based on sample size
             confidence = _calc_confidence(len(estimates))
@@ -246,6 +258,10 @@ class CraftQueries:
                         "season": season_label,
                         "waste_rate": waste_rate,
                         "high_demand_applied": high_demand_applied,
+                        "excluded_days": len(exclude_dates),
+                        "soldout_days": sum(
+                            1 for dd in history if dd.soldout_at is not None
+                        ),
                     },
                 )
             )
@@ -465,26 +481,30 @@ def _season_label(months: list[int]) -> str | None:
     return None
 
 
-def _estimate_demand(dd):
+def _estimate_demand(dd, selling_window=None):
     """
     Estimate true demand from a DailyDemand record.
+
+    Um dia que ESGOTOU não mostra a demanda: mostra o estoque que havia. Sem
+    corrigir isso, o produto que acaba toda quinta às 10h ensina que quinta
+    vende pouco, a sugestão manda produzir pouco, e a falta se perpetua.
 
     If soldout_at is None → demand = sold (full day of selling).
     If soldout_at is set → extrapolate based on selling rate, capped at 2x.
         rate = sold / minutes_selling
         estimated = min(rate * full_day_minutes, 2 * sold)
 
-    Assumes bakery hours: 06:00 - 18:00 (720 minutes).
+    ``selling_window`` é o par (abre, fecha) do dia — quem sabe o horário da
+    loja é o orquestrador. **Sem janela, não extrapola**: chutar um expediente
+    padrão inventaria demanda que ninguém observou (a casa não finge dado).
     """
-    if dd.soldout_at is None:
+    if dd.soldout_at is None or selling_window is None:
         return dd.sold
 
     from datetime import date as date_type
-    from datetime import datetime, time
+    from datetime import datetime
 
-    # Standard bakery hours
-    open_time = time(6, 0)
-    close_time = time(18, 0)
+    open_time, close_time = selling_window
     dummy = date_type(2000, 1, 1)
 
     open_dt = datetime.combine(dummy, open_time)
@@ -496,6 +516,8 @@ def _estimate_demand(dd):
         return dd.sold
 
     full_day_minutes = (close_dt - open_dt).total_seconds() / 60
+    if full_day_minutes <= 0:
+        return dd.sold
 
     rate = dd.sold / Decimal(str(minutes_selling))
     estimated = rate * Decimal(str(full_day_minutes))

@@ -249,6 +249,18 @@ def _defaults_form_fields() -> dict[str, forms.Field]:
             decimal_places=2,
             widget=UnfoldAdminDecimalFieldWidget,
         ),
+        "defaults_sales_silence_minutes": forms.IntegerField(
+            label="Silêncio de vendas (minutos)",
+            required=False,
+            min_value=0,
+            widget=UnfoldAdminIntegerFieldWidget,
+            help_text=(
+                "Quanto tempo sem nenhuma venda, dentro do expediente, faz o "
+                "fechamento perguntar o que houve. Depende do movimento da casa: "
+                "num dia de jogo grande a rua some por mais tempo e isso é normal. "
+                "0 desliga a pergunta."
+            ),
+        ),
         "defaults_safety_stock_percent": forms.DecimalField(
             label="Estoque de segurança",
             required=False,
@@ -435,6 +447,17 @@ def _ensure_production_suggestion(defaults: dict) -> dict:
     production_cfg["suggestion"] = suggestion
     defaults["production"] = production_cfg
     return suggestion
+
+
+def _ensure_production_episodes(defaults: dict) -> dict:
+    """Escrita: garante e retorna ``defaults["production"]["episodes"]`` mutável."""
+    production_cfg = defaults.get("production")
+    production_cfg = dict(production_cfg) if isinstance(production_cfg, dict) else {}
+    episodes = production_cfg.get("episodes")
+    episodes = dict(episodes) if isinstance(episodes, dict) else {}
+    production_cfg["episodes"] = episodes
+    defaults["production"] = production_cfg
+    return episodes
 
 
 def _months_to_choice(months) -> list[str]:
@@ -736,6 +759,13 @@ class ShopForm(forms.ModelForm):
             )
             self.fields["defaults_safety_stock_percent"].initial = production_suggestion.get(
                 "safety_stock_percent"
+            )
+
+        if self._has("defaults_sales_silence_minutes"):
+            production = defaults.get("production") if isinstance(defaults.get("production"), dict) else {}
+            episodes_cfg = production.get("episodes") if isinstance(production.get("episodes"), dict) else {}
+            self.fields["defaults_sales_silence_minutes"].initial = episodes_cfg.get(
+                "sales_silence_minutes"
             )
 
         if self._has(DEFAULTS_RULE_Q_FIELDS[0][0]):
@@ -1052,6 +1082,14 @@ class ShopForm(forms.ModelForm):
             else:
                 suggestion_cfg[key] = str(value)
 
+        if self._has("defaults_sales_silence_minutes"):
+            episodes_cfg = _ensure_production_episodes(defaults)
+            minutos = self.cleaned_data.get("defaults_sales_silence_minutes")
+            if minutos is None:
+                episodes_cfg.pop("sales_silence_minutes", None)
+            else:
+                episodes_cfg["sales_silence_minutes"] = int(minutos)
+
         if self._has(DEFAULTS_RULE_Q_FIELDS[0][0]):
             rules = defaults.get("rules") if isinstance(defaults.get("rules"), dict) else {}
             rules = dict(rules)
@@ -1287,8 +1325,13 @@ _PRODUCTION_FIELDSETS = (
         "fields": (
             ("defaults_season_hot_months", "defaults_season_mild_months", "defaults_season_cold_months"),
             ("defaults_high_demand_multiplier", "defaults_safety_stock_percent"),
+            ("defaults_sales_silence_minutes",),
         ),
-        "description": "Parâmetros usados por sugestões operacionais e estoque de segurança.",
+        "description": (
+            "Parâmetros usados por sugestões operacionais e estoque de segurança. "
+            "O silêncio de vendas é o que faz o fechamento perguntar se houve "
+            "algum episódio no dia."
+        ),
     }),
 )
 

@@ -37,6 +37,9 @@ class DemandProtocol(Protocol):
         product_ref: str,
         days: int = 28,
         same_weekday: bool = True,
+        *,
+        target_date: date,
+        exclude_dates: frozenset[date] = frozenset(),
     ) -> list[DailyDemand]:
         """
         Return historical demand for a product.
@@ -44,7 +47,15 @@ class DemandProtocol(Protocol):
         Args:
             product_ref: Product reference string
             days: Number of days to look back (default: 28)
-            same_weekday: Only include same weekday as today (default: True)
+            same_weekday: Only include days with the same weekday as
+                ``target_date``. É o dia que está sendo PLANEJADO que define o
+                recorte, nunca o dia em que o cálculo roda: planejar o sábado
+                numa sexta tem de olhar sábados.
+            target_date: The day being planned. Obrigatório — sem ele o recorte
+                por dia-da-semana não tem âncora.
+            exclude_dates: Dias que não contam como amostra (loja fechada,
+                feriado). Sem isso um domingo fechado entra na média como um
+                domingo fraco e puxa a sugestão para baixo.
 
         Returns:
             List of DailyDemand entries

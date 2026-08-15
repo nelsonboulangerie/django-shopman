@@ -77,7 +77,7 @@
               Baixar drawer_agent.py
             {% endcomponent %}
             {% component "unfold/components/text.html" with class="text-sm text-base-500" %}
-              {{ agent_install.source_bytes|filesizeformat }}
+              {{ agent_install.source_bytes|filesizeformat }} · versão {{ agent_install.source_build }}
             {% endcomponent %}
           {% endcomponent %}
         {% endcomponent %}

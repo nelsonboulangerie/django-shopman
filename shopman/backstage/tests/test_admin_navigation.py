@@ -31,7 +31,7 @@ from shopman.backstage.projections.settings_hub import settings_screen_urls
 # Telas cuja porta é uma página própria, não a changelist crua. A chave é o model;
 # o valor, a página que o apresenta melhor do que a tabela apresentaria.
 REACHED_BY_CUSTOM_PAGE = {
-    "shop.omotenashicopy": "Textos da interface (/admin/configuracao/copy/)",
+    "shop.omotenashicopy": "Textos da interface (/admin/settings/copy/)",
 }
 
 

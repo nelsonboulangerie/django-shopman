@@ -441,3 +441,252 @@ def test_o_plist_do_macos_e_xml_valido():
     assert parsed["Label"] == drawer_agent.LAUNCH_AGENT_LABEL
     assert parsed["RunAtLoad"] is True
     assert parsed["ProgramArguments"][1] == "/tmp/x.py"
+
+
+# ── O instalador confere o que afirma ─────────────────────────────────────
+
+
+def test_o_launcher_do_windows_da_UM_caminho_ao_schtasks(monkeypatch, tmp_path):
+    """Aspas aninhadas em `/tr` fazem o schtasks gravar comando mutilado.
+
+    Foi o defeito real do balcão: a tarefa nasceu quebrada, o agente não subiu,
+    e o `--kick` da linha de comando continuou funcionando — então nada gritou.
+    """
+    monkeypatch.setattr(drawer_agent, "INSTALL_DIR", tmp_path)
+    monkeypatch.setattr(drawer_agent, "LOG_PATH", tmp_path / "drawer-agent.log")
+
+    launcher = drawer_agent._windows_launcher(tmp_path / "drawer_agent.py")
+
+    assert launcher.suffix == ".cmd"
+    conteudo = launcher.read_text(encoding="utf-8")
+    assert "drawer_agent.py" in conteudo
+    assert "--log-file" in conteudo
+
+
+def test_instalador_reprova_quando_o_agente_nao_sobe(monkeypatch, capsys, tmp_path):
+    """Dizer 'instalado' sem medir foi o que mandou o defeito para o balcão."""
+    monkeypatch.setattr(drawer_agent, "IS_WINDOWS", False)
+    monkeypatch.setattr(drawer_agent, "IS_MACOS", False)
+    monkeypatch.setattr(drawer_agent, "INSTALL_DIR", tmp_path / "inst")
+    monkeypatch.setattr(drawer_agent, "DEFAULT_CONFIG_PATH", tmp_path / "agent.json")
+    monkeypatch.setattr(drawer_agent, "list_queues", lambda: ["TM-T20"])
+    monkeypatch.setattr(drawer_agent.shutil, "which", lambda name: f"/usr/bin/{name}")
+    monkeypatch.setattr(drawer_agent, "_autostart_linux", lambda target: None)
+    monkeypatch.setattr(drawer_agent, "_wait_until_listening", lambda config, **k: False)
+
+    codigo = drawer_agent.install(["--install", "--queue", "TM-T20", "--token", TOKEN])
+
+    saida = capsys.readouterr().out
+    assert codigo == 1, "instalação que não sobe o agente não pode sair com sucesso"
+    assert "NÃO está respondendo" in saida
+    assert "botão do PDV vai falhar" in saida
+
+
+def test_instalador_aprova_quando_o_agente_responde(monkeypatch, capsys, tmp_path):
+    monkeypatch.setattr(drawer_agent, "IS_WINDOWS", False)
+    monkeypatch.setattr(drawer_agent, "IS_MACOS", False)
+    monkeypatch.setattr(drawer_agent, "INSTALL_DIR", tmp_path / "inst")
+    monkeypatch.setattr(drawer_agent, "DEFAULT_CONFIG_PATH", tmp_path / "agent.json")
+    monkeypatch.setattr(drawer_agent, "list_queues", lambda: ["TM-T20"])
+    monkeypatch.setattr(drawer_agent.shutil, "which", lambda name: f"/usr/bin/{name}")
+    monkeypatch.setattr(drawer_agent, "_autostart_linux", lambda target: None)
+    monkeypatch.setattr(drawer_agent, "_wait_until_listening", lambda config, **k: True)
+
+    assert drawer_agent.install(["--install", "--queue", "TM-T20", "--token", TOKEN]) == 0
+    assert "Agente respondendo" in capsys.readouterr().out
+
+
+def test_no_windows_config_programa_e_log_ficam_na_MESMA_pasta():
+    """Programa num lugar e config em outro fez o dono procurar o token e não achar.
+
+    A primeira versão mandava o agente para `%LOCALAPPDATA%\\NelsonPosDrawer` e a
+    config para uma `.config` de estilo Linux escondida na pasta do usuário.
+    """
+    home = Path(r"C:/Users/pdv")
+    appdata = r"C:/Users/pdv/AppData/Local"
+
+    pasta = drawer_agent.install_dir_for(home, windows=True, localappdata=appdata)
+    config = drawer_agent.config_path_for(home, windows=True, localappdata=appdata)
+
+    assert config.parent == pasta
+    assert pasta.name == "NelsonPosDrawer"
+
+
+def test_fora_do_windows_a_config_segue_a_convencao_do_sistema():
+    """No Linux/macOS quem administra a máquina espera achar em `~/.config`."""
+    config = drawer_agent.config_path_for(Path("/home/pdv"), windows=False)
+    assert config.parts[-3:] == (".config", "nelson-pos-drawer", "agent.json")
+
+
+# ── Página de teste ESC/POS ───────────────────────────────────────────────
+#
+# Ela existe para o PAPEL responder o que ninguém sabe de cabeça, antes de
+# alguém compor recibo — e muito antes de compor DANFE, que tem leiaute exigido
+# por lei.
+
+
+def test_o_qr_declara_o_comprimento_certo():
+    """`GS ( k` conta `cn`, `fn` e `m` ALÉM dos dados: três bytes a mais.
+
+    Errar isso é o defeito clássico do comando — a impressora lê menos do que
+    existe e imprime lixo, ou nada.
+    """
+    dados = b"https://pdv.boulangerie.com.br"
+    saida = drawer_agent._qr_code(dados.decode())
+
+    marcador = bytes([0x1D, 0x28, 0x6B])
+    i = saida.index(marcador + bytes([(len(dados) + 3) % 256]))
+    pL, pH = saida[i + 3], saida[i + 4]
+    assert pL + pH * 256 == len(dados) + 3
+    assert saida[i + 5:i + 8] == bytes([0x31, 0x50, 0x30])  # cn, fn, m
+    assert dados in saida
+
+
+def test_o_qr_sobrevive_a_dado_maior_que_255_bytes():
+    """Acima de 255 o comprimento passa a usar os dois bytes; é onde se erra."""
+    dados = "x" * 400
+    saida = drawer_agent._qr_code(dados)
+    tamanho = 403
+    assert bytes([tamanho % 256, tamanho // 256]) in saida
+
+
+def test_a_pagina_compara_tabelas_em_vez_de_chutar_uma():
+    """Escolher página de código no escuro é como "PÃO" vira "PÎO" no balcão."""
+    saida = drawer_agent.test_print_bytes()
+    for code, _ in drawer_agent._CODE_PAGES:
+        assert bytes([0x1B, ord("t"), code]) in saida
+    assert len(drawer_agent._CODE_PAGES) >= 2, "comparar exige mais de uma tabela"
+
+
+def test_a_amostra_de_acento_DISCRIMINA_as_tabelas():
+    """A primeira versão não discriminava e o teste no balcão não decidiu nada.
+
+    As maiúsculas iam SEM acento no código-fonte (saíam iguais em qualquer
+    tabela) e entre as minúsculas só o "ã" separava — um caractere. A amostra
+    precisa diferir em VÁRIOS bytes entre as três tabelas.
+    """
+    amostra = drawer_agent._ACCENT_SAMPLE
+    codificacoes = {
+        nome: amostra.encode(enc, "replace")
+        for nome, enc in (("cp860", "cp860"), ("cp850", "cp850"), ("cp1252", "cp1252"))
+    }
+    assert len(set(codificacoes.values())) == 3, "as três tabelas têm que produzir bytes diferentes"
+
+    diferencas = sum(
+        1 for a, b in zip(codificacoes["cp860"], codificacoes["cp850"], strict=True) if a != b
+    )
+    assert diferencas >= 4, f"só {diferencas} byte(s) separam CP860 de CP850 — fácil de não notar"
+
+    assert any(c.isupper() and not c.isascii() for c in amostra), "faltam maiúsculas acentuadas"
+    assert any(c.islower() and not c.isascii() for c in amostra), "faltam minúsculas acentuadas"
+
+
+def test_a_regua_vai_ALEM_da_largura_assumida():
+    """Régua que para onde eu chutei não descobre largura nenhuma.
+
+    O primeiro teste no balcão voltou "coube e sobrou espaço": a impressora era
+    mais larga que as 48 colunas assumidas, e a régua não tinha como mostrar
+    quanto.
+    """
+    assert drawer_agent._RULER_MAX > drawer_agent._COLUMNS
+    regua = drawer_agent._ruler(drawer_agent._RULER_MAX)
+    assert len(regua) == drawer_agent._RULER_MAX
+    assert regua.encode("cp860") in drawer_agent.test_print_bytes()
+    # Dezenas marcadas: quem lê diz o último número inteiro que apareceu.
+    # Índice 39 é a COLUNA 40 — a dezena. A coluna 48 não é dezena nenhuma.
+    assert regua[9] == "1" and regua[19] == "2" and regua[39] == "4"
+    assert regua[4] == "+", "as meias-dezenas ajudam a contar sem perder a conta"
+
+
+def test_as_duas_colunas_encostam_nas_bordas():
+    linha = drawer_agent._two_columns("Pao frances", "R$ 0,90", 48)
+    assert len(linha) == 48
+    assert linha.startswith("Pao frances")
+    assert linha.endswith("R$ 0,90")
+
+
+def test_coluna_com_nome_gigante_nao_estoura_a_linha():
+    linha = drawer_agent._two_columns("N" * 60, "R$ 9,99", 48)
+    assert len(linha) == 48
+
+
+def test_a_pagina_termina_cortando_o_papel():
+    saida = drawer_agent.test_print_bytes()
+    assert saida.startswith(bytes([0x1B, ord("@")])), "sem reset, herda estado do job anterior"
+    assert saida.endswith(bytes([0x1D, ord("V"), 1]))
+
+
+# ── /print: o agente é um cano ────────────────────────────────────────────
+
+
+def _print_req(base, body, origin=ORIGIN):
+    return _post(base, "/print", body, origin=origin)
+
+
+def test_print_entrega_os_bytes_que_o_servidor_compos(agent):
+    """O agente não sabe o que é sangria — quem compõe é o servidor."""
+    base, sent = agent
+    import base64
+
+    papel = b"\x1b@\x1bt\x03NELSON\n"
+    status, body, _ = _print_req(base, {
+        "token": TOKEN, "title": "sangria", "payload_b64": base64.b64encode(papel).decode(),
+    })
+
+    assert status == 200 and body["ok"] is True
+    assert sent[0]["payload"] == papel
+    assert sent[0]["title"] == "sangria"
+
+
+def test_print_sem_token_e_recusado(agent):
+    base, sent = agent
+    with pytest.raises(urllib.error.HTTPError) as exc:
+        _print_req(base, {"payload_b64": "AAAA"})
+    assert exc.value.code == 401
+    assert sent == []
+
+
+def test_print_de_origem_estranha_e_recusado(agent):
+    base, sent = agent
+    with pytest.raises(urllib.error.HTTPError) as exc:
+        _print_req(base, {"token": TOKEN, "payload_b64": "AAAA"}, origin="https://intruso.example")
+    assert exc.value.code == 403
+    assert sent == []
+
+
+@pytest.mark.parametrize("payload", ["nao-e-base64!!", "", None])
+def test_print_com_payload_invalido_nao_manda_lixo_para_a_impressora(agent, payload):
+    """Lixo no spooler vira papel rasgado de caracteres aleatórios."""
+    base, sent = agent
+    with pytest.raises(urllib.error.HTTPError) as exc:
+        _print_req(base, {"token": TOKEN, "payload_b64": payload})
+    assert exc.value.code == 400
+    assert sent == []
+
+
+def test_print_aceita_documento_grande(agent):
+    """Comprovante em base64 passa de 8 KB; a DANFE passa mais."""
+    import base64
+
+    base, sent = agent
+    grande = b"X" * 60_000
+    status, _, _ = _print_req(base, {
+        "token": TOKEN, "title": "danfe", "payload_b64": base64.b64encode(grande).decode(),
+    })
+    assert status == 200
+    assert sent[0]["payload"] == grande
+
+
+def test_falha_do_spooler_na_impressao_vira_502(agent, monkeypatch):
+    """A tela precisa saber que NÃO imprimiu, para registrar como falha."""
+    import base64
+
+    base, _ = agent
+
+    def boom(*a, **k):
+        raise drawer_agent.SpoolerError("fila parada")
+
+    monkeypatch.setattr(drawer_agent, "send_raw", boom)
+    with pytest.raises(urllib.error.HTTPError) as exc:
+        _print_req(base, {"token": TOKEN, "payload_b64": base64.b64encode(b"x").decode()})
+    assert exc.value.code == 502

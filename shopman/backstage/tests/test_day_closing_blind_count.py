@@ -159,6 +159,45 @@ class DayClosingBlindCountTests(TestCase):
             ).exists()
         )
 
+    def test_writeoffs_land_as_waste_not_adjust(self) -> None:
+        """Perda de fim de dia entra no ledger como WASTE.
+
+        Sem isso o write-off cai no ADJUST default do ``issue()`` e some de
+        qualquer leitura de perda agrupada por tipo de movimento — que é
+        exatamente a leitura que o write-off por motivo existe para alimentar.
+        """
+        Batch.objects.create(
+            sku=self.keeper.sku, ref="MARCADO-KIND",
+            expiry_date=self.today + timedelta(days=1),
+            nonconformity_reason="Assou demais", nonconformity_percent=20,
+        )
+        StockMovements.receive(
+            quantity=2, sku=self.keeper.sku, position=self.loja,
+            batch="MARCADO-KIND", reason="sublote com desconto",
+        )
+
+        resp = self.client.post(
+            "/api/v1/backstage/closing/",
+            {"quantities": {self.keeper.sku: "5", self.day_bread.sku: "2"}},
+            content_type="application/json",
+        )
+        self.assertEqual(resp.status_code, 200)
+
+        writeoffs = Move.objects.filter(reason__startswith="perda_")
+        self.assertTrue(writeoffs.exists(), "o fechamento não gerou write-off")
+        for move in writeoffs:
+            self.assertEqual(
+                move.kind, Move.Kind.WASTE,
+                f"write-off {move.reason!r} entrou como {move.kind!r}",
+            )
+        # E as duas famílias de motivo continuam distinguíveis no ledger.
+        self.assertTrue(
+            writeoffs.filter(reason=f"perda_nao_conformidade:{self.today}").exists()
+        )
+        self.assertTrue(
+            writeoffs.filter(reason=f"perda_vencido:{self.today}").exists()
+        )
+
     def test_closing_twice_returns_conflict(self) -> None:
         first = self.client.post(
             "/api/v1/backstage/closing/",

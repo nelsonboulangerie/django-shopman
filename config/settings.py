@@ -894,7 +894,11 @@ CRAFTSMAN = {
     # validação de disponibilidade de insumos, ligado desde o WP-B5b (Buyman
     # Fase 1, com estoque de insumo no seed) — guardrail ativo em adjust/finish.
     "INVENTORY_BACKEND": "shopman.shop.adapters.inventory.InventoryAvailabilityBackend",
-    "DEMAND_BACKEND": "shopman.craftsman.contrib.demand.backend.OrderingDemandBackend",
+    # Demanda = pedidos (craftsman.contrib.demand) + a hora em que a prateleira
+    # zerou (ledger de estoque). O dia que esgotou mostra o estoque que havia,
+    # não a procura que houve; sem a correção, o produto que acaba cedo ensina
+    # que vende pouco e a sugestão perpetua a falta.
+    "DEMAND_BACKEND": "shopman.shop.adapters.demand.LedgerAwareDemandBackend",
     # Composed: Offerman (vendáveis) + Buyman (insumos/Material). Resolução-only
     # (unidade do insumo p/ cross-check de RecipeItem) — não toca disponibilidade.
     "CATALOG_BACKEND": "shopman.shop.adapters.catalog_backend.ComposedCatalogBackend",
@@ -1194,6 +1198,19 @@ SHOPMAN_BI_BASE_URL = (
 #     "api.boulangerie.com.br" (o proxy Nuxt reescreve o Host para esse alias).
 SHOPMAN_OPERATOR_COOKIE_DOMAIN = (os.environ.get("SHOPMAN_OPERATOR_COOKIE_DOMAIN") or "").strip()
 SHOPMAN_OPERATOR_API_HOST = (os.environ.get("SHOPMAN_OPERATOR_API_HOST") or "").strip()
+
+#: Host canônico do Admin. Nele, a raiz redireciona para `/admin/` — o host já
+#: diz o que é, e obrigar a repetir a palavra no caminho é redundância.
+#: ⚠️ NÃO fechar o `/admin/` dos outros hosts: o BFF dos apps de operador
+#: inicializa o CSRF batendo em `/admin/login/` na API. Ver docs/reference.
+#:
+#: Normalizado porque é usado de duas formas incompatíveis com lixo: comparado
+#: com `request.get_host()` (que nunca traz esquema) e concatenado em
+#: `https://{host}{caminho}` no QR do comprovante de caixa — onde um valor com
+#: esquema viraria `https://https://…`, um QR que não abre nada.
+SHOPMAN_ADMIN_HOST = (
+    os.environ.get("SHOPMAN_ADMIN_HOST", "")
+).strip().removeprefix("https://").removeprefix("http://").rstrip("/")
 
 # URLs das superfícies para a Central de Apps (surfaces/hub-nuxt). REUSA as base URLs
 # públicas que o nav do Admin já usa — UMA fonte por superfície (DRY): quem já configurou

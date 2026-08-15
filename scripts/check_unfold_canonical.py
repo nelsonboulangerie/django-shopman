@@ -122,7 +122,7 @@ CANONICAL_ADMIN_SURFACES: tuple[Surface, ...] = (
         templates=(ROOT / "shopman/backstage/templates/admin_console/settings_hub",),
         controllers=(ROOT / "shopman/backstage/admin_console/settings_hub.py",),
         projections=(ROOT / "shopman/backstage/projections/settings_hub.py",),
-        url_prefixes=("/admin/ajustes/",),
+        url_prefixes=("/admin/settings/",),
         requires_model_admin_view_mixin=True,
         required_extends="admin/base.html",
         required_template_markers=(
@@ -147,7 +147,7 @@ CANONICAL_ADMIN_SURFACES: tuple[Surface, ...] = (
         templates=(ROOT / "shopman/backstage/templates/admin_console/copy_catalog",),
         controllers=(ROOT / "shopman/backstage/admin_console/copy_catalog.py",),
         projections=(ROOT / "shopman/backstage/projections/copy_catalog.py",),
-        url_prefixes=("/admin/configuracao/copy/",),
+        url_prefixes=("/admin/settings/copy/",),
         requires_model_admin_view_mixin=True,
         required_extends="admin/base.html",
         required_template_markers=(
@@ -169,7 +169,7 @@ CANONICAL_ADMIN_SURFACES: tuple[Surface, ...] = (
         templates=(ROOT / "shopman/backstage/templates/admin_console/pos_drawer_agent",),
         controllers=(ROOT / "shopman/backstage/admin_console/pos_drawer_agent.py",),
         projections=(ROOT / "shopman/backstage/projections/pos_agent.py",),
-        url_prefixes=("/admin/pdv/terminal/",),
+        url_prefixes=("/admin/pos/terminal/",),
         requires_model_admin_view_mixin=True,
         required_extends="admin/base.html",
         required_template_markers=(
@@ -186,12 +186,35 @@ CANONICAL_ADMIN_SURFACES: tuple[Surface, ...] = (
         ),
     ),
     Surface(
+        id="admin-console-cash-receipt",
+        kind="canonical-admin-unfold-page",
+        templates=(ROOT / "shopman/backstage/templates/admin_console/cash_receipt",),
+        controllers=(ROOT / "shopman/backstage/admin_console/cash_receipt.py",),
+        projections=(ROOT / "shopman/backstage/projections/cash_receipt.py",),
+        url_prefixes=("/admin/cash/receipt/",),
+        requires_model_admin_view_mixin=True,
+        required_extends="admin/base.html",
+        required_template_markers=(
+            'include "unfold/helpers/messages.html"',
+            'component "unfold/components/button.html"',
+            'component "unfold/components/card.html"',
+            'component "unfold/components/container.html"',
+            'component "unfold/components/table.html"',
+            'component "unfold/components/text.html"',
+            'component "unfold/components/title.html"',
+        ),
+        required_controller_markers=(
+            "UnfoldModelAdminViewMixin",
+            "build_receipt_verification",
+        ),
+    ),
+    Surface(
         id="admin-console-operator-badge",
         kind="canonical-admin-unfold-page",
         templates=(ROOT / "shopman/backstage/templates/admin_console/operator_badge",),
         controllers=(ROOT / "shopman/backstage/admin_console/operator_badge.py",),
         projections=(ROOT / "shopman/backstage/projections/operator_badge.py",),
-        url_prefixes=("/admin/operadores/cracha/",),
+        url_prefixes=("/admin/operators/badge/",),
         requires_model_admin_view_mixin=True,
         required_extends="admin/base.html",
         required_template_markers=(

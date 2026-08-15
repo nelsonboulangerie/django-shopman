@@ -1,8 +1,8 @@
 import { defineConfig, devices } from "@playwright/test";
 
 // E2E do Gestor (backend-independente). Mock backend serve uma sessão autenticada + uma
-// fila com cards → o board renderiza; + banner offline. Build com baseURL '/' (produção
-// usa '/gestor/'). Login efetivo, lock (Opção C) e ações reais rodam contra o Django real
+// fila com cards → o board renderiza; + banner offline. Build com baseURL '/', igual à
+// produção (o app é servido na raiz do subdomínio). Login efetivo, lock (Opção C) e ações reais rodam contra o Django real
 // (reviewer local) — ver tests/e2e/README.
 export default defineConfig({
   testDir: "./tests/e2e",

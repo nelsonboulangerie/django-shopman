@@ -178,6 +178,19 @@ def is_open_on(day: date, *, shop=None) -> bool:
     return _day_window(shop, day) is not None
 
 
+def selling_hours_for(day: date, *, shop=None) -> tuple[time, time] | None:
+    """O par (abre, fecha) declarado para o dia da semana de ``day``.
+
+    Devolve None quando não há horário configurado ou quando o dia não tem
+    expediente regular — quem consome decide o que fazer com a ausência, em vez
+    de receber um expediente inventado.
+    """
+    shop = _load_shop(shop)
+    if not shop:
+        return None
+    return _day_window(shop, day)
+
+
 def closed_weekdays(*, shop=None) -> list[int]:
     """Índices de dia da semana (0=segunda … 6=domingo) sem expediente regular."""
     shop = _load_shop(shop)

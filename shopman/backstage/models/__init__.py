@@ -5,6 +5,7 @@ from .bi_view import BIView
 from .blind_prep import BlindPrepCode
 from .cash_register import CashMovement, CashShift, POSTerminal
 from .closing import DayClosing
+from .day_context import DayContext, HolidayScope
 from .historical_sale import HistoricalSale, HistoricalSaleItem
 from .kds import KDSInstance, KDSTicket
 from .operation import (
@@ -19,8 +20,14 @@ from .operation import (
     OperationTaskStatus,
     OperationTaskTemplate,
 )
+from .operation_episode import (
+    EpisodeStatus,
+    OperationEpisode,
+    OperationEpisodeKind,
+)
 from .oven_run import OvenRun
 from .pos import POSTab
+from .shelf_outage import OutageReason, ShelfOutage
 
 __all__ = [
     "OperatorAlert",
@@ -29,11 +36,16 @@ __all__ = [
     "CashMovement",
     "CashShift",
     "DayClosing",
+    "DayContext",
+    "HolidayScope",
     "HistoricalSale",
     "HistoricalSaleItem",
     "KDSInstance",
     "KDSTicket",
+    "EpisodeStatus",
     "OperationArea",
+    "OperationEpisode",
+    "OperationEpisodeKind",
     "OperationChecklistRun",
     "OperationChecklistTemplate",
     "OperationChecklistTemplateTask",
@@ -45,5 +57,7 @@ __all__ = [
     "OperationTaskTemplate",
     "OvenRun",
     "POSTab",
+    "OutageReason",
+    "ShelfOutage",
     "POSTerminal",
 ]

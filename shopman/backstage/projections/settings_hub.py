@@ -19,7 +19,6 @@ menu E fora daqui.
 
 from __future__ import annotations
 
-import re
 import unicodedata
 from dataclasses import dataclass, field
 
@@ -48,17 +47,10 @@ class SettingsGroup:
     icon: str
     entries: tuple[SettingsEntry, ...] = field(default_factory=tuple)
 
-    @property
-    def slug(self) -> str:
-        """Âncora da seção. O menu lateral aponta para ela, então a tela e o menu
-        contam a mesma história: os sete escopos aparecem nos dois lugares."""
-        return _slugify(self.title)
-
-
-def _slugify(text: str) -> str:
-    plain = unicodedata.normalize("NFKD", text)
-    plain = "".join(c for c in plain if not unicodedata.combining(c)).lower()
-    return re.sub(r"[^a-z0-9]+", "-", plain).strip("-")
+    #: Pedaço da URL do escopo. Em INGLÊS por convenção do projeto ("URL é em
+    #: inglês. Ponto." — CLAUDE.md): o TÍTULO da tela segue em português, o
+    #: caminho não. Derivar do título geraria `/admin/settings/como-vendemos/`.
+    slug: str = ""
 
 
 def _model(label: str, app_model: str, description: str, icon: str) -> SettingsEntry:
@@ -73,6 +65,7 @@ def _model(label: str, app_model: str, description: str, icon: str) -> SettingsE
 SETTINGS_MAP: tuple[SettingsGroup, ...] = (
     SettingsGroup(
         title="A loja",
+        slug="store",
         hint="Quem somos, quando abrimos, o que servimos.",
         icon="storefront",
         entries=(
@@ -85,6 +78,7 @@ SETTINGS_MAP: tuple[SettingsGroup, ...] = (
     ),
     SettingsGroup(
         title="Como vendemos",
+        slug="selling",
         hint="Preço, desconto e por onde o pedido entra.",
         icon="sell",
         entries=(
@@ -98,6 +92,7 @@ SETTINGS_MAP: tuple[SettingsGroup, ...] = (
     ),
     SettingsGroup(
         title="Como entregamos",
+        slug="delivery",
         hint="Retirada, entrega e quanto custa cada uma.",
         icon="local_shipping",
         entries=(
@@ -108,6 +103,7 @@ SETTINGS_MAP: tuple[SettingsGroup, ...] = (
     ),
     SettingsGroup(
         title="O que dizemos",
+        slug="messages",
         hint="Cada frase que o cliente lê, na tela e nas mensagens.",
         icon="format_quote",
         entries=(
@@ -123,18 +119,21 @@ SETTINGS_MAP: tuple[SettingsGroup, ...] = (
     ),
     SettingsGroup(
         title="Produção e estoque",
+        slug="production",
         hint="Como a fornada é avaliada e onde o estoque mora.",
         icon="factory",
         entries=(
             _model("Produção", "shop_shopproduction", "Como o dia de produção é planejado e conferido.", "manufacturing"),
             _model("Defeitos de fornada", "shop_qualitydefect", "Os problemas que o padeiro pode apontar ao avaliar um lote.", "report"),
             _model("Graus de qualidade", "shop_qualitygrade", "As notas de qualidade e o desconto que cada uma aplica.", "grade"),
+            _model("Motivos de episódio", "backstage_operationepisodekind", "As explicações que o operador pode dar quando algo sai do previsto.", "help_center"),
             _model("Posições", "stockman_position", "Os lugares onde o estoque fica: balcão, câmara, depósito.", "domain"),
             _model("Alertas de estoque", "stockman_stockalert", "A partir de que quantidade a loja avisa que vai faltar.", "notification_important"),
         ),
     ),
     SettingsGroup(
         title="Equipamentos",
+        slug="equipment",
         hint="As máquinas e estações da casa.",
         icon="settings_input_component",
         entries=(
@@ -148,6 +147,7 @@ SETTINGS_MAP: tuple[SettingsGroup, ...] = (
     ),
     SettingsGroup(
         title="Quem entra",
+        slug="access",
         hint="Pessoas, permissões e credenciais.",
         icon="admin_panel_settings",
         entries=(

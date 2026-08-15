@@ -35,12 +35,18 @@ class OrderingDemandBackend:
         product_ref: str,
         days: int = 28,
         same_weekday: bool = True,
+        *,
+        target_date: date,
+        exclude_dates: frozenset[date] = frozenset(),
     ) -> list[DailyDemand]:
         """
         Return historical demand for a product based on Orderman orders.
 
         Queries OrderItems where sku matches product_ref, from orders
         with status completed or delivered, grouped by date.
+
+        O recorte por dia-da-semana segue ``target_date`` (o dia planejado), e
+        ``exclude_dates`` tira da amostra os dias em que a loja não abriu.
         """
         from shopman.orderman.models import OrderItem
 
@@ -48,9 +54,9 @@ class OrderingDemandBackend:
         # (__date, __week_day) extraem o dia convertendo created_at para
         # settings.TIME_ZONE. now().date() devolve o dia em UTC — as duas noções
         # de "hoje" divergem na janela 00:00–03:00 UTC (fim de tarde/noite no
-        # Brasil, justo quando a produção é planejada), e o filtro same_weekday
-        # passa a caçar o dia da semana errado, zerando o histórico. localdate()
-        # casa com o fuso usado pelos lookups.
+        # Brasil, justo quando a produção é planejada), e a janela histórica
+        # sairia deslocada de um dia. localdate() casa com o fuso dos lookups.
+        # (O recorte por dia-da-semana não depende de "hoje": segue target_date.)
         cutoff = timezone.localdate() - timedelta(days=days)
         today = timezone.localdate()
 
@@ -62,8 +68,9 @@ class OrderingDemandBackend:
         )
 
         if same_weekday:
-            target_weekday = today.weekday()
-            qs = qs.filter(order__created_at__week_day=_django_weekday(target_weekday))
+            qs = qs.filter(
+                order__created_at__week_day=_django_weekday(target_date.weekday())
+            )
 
         daily = (
             qs.annotate(order_date=TruncDate("order__created_at"))
@@ -91,7 +98,7 @@ class OrderingDemandBackend:
                 waste_by_date = {
                     row["work_order__target_date"]: row["total_wasted"]
                     for row in waste_qs
-                    if row["work_order__target_date"].weekday() == today.weekday()
+                    if row["work_order__target_date"].weekday() == target_date.weekday()
                 }
             else:
                 waste_by_date = {
@@ -114,6 +121,7 @@ class OrderingDemandBackend:
                 wasted=waste_by_date.get(row["order_date"], Decimal("0")),
             )
             for row in daily
+            if row["order_date"] not in exclude_dates
         ]
 
     def committed(self, product_ref: str, target_date: date) -> Decimal:

@@ -110,4 +110,4 @@ def test_configuration_opens_the_texts_page_not_the_raw_changelist():
         for card in group["cards"]
     }
 
-    assert cards["Textos da interface"].endswith("/admin/configuracao/copy/")
+    assert cards["Textos da interface"].endswith("/admin/settings/copy/")

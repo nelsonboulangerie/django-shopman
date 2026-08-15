@@ -24,11 +24,24 @@ import type { POSCashDrawerProjection, POSProjection } from "~/types/pos";
 /** Loopback responde em microssegundos; 3s só existe para agente pendurado. */
 const AGENT_TIMEOUT_MS = 3000;
 
+/** O que aconteceu com o papel. `skipped` = este balcão não tem impressora. */
+export type PrintOutcome = { status: "printed" | "failed" | "skipped"; detail: string };
+
 export function useCashDrawer(pos: ComputedRef<POSProjection | null>) {
   const config = computed<POSCashDrawerProjection | null>(() => pos.value?.cash_drawer ?? null);
 
   /** Este balcão tem caminho de software? `false` = gaveta de chave. */
   const canKick = computed(() => Boolean(config.value?.can_kick));
+  /**
+   * Por que não dá, quando não dá — para a tela DIZER em vez de esconder.
+   *
+   * Esconder o card fez o dono procurar um botão que nunca ia aparecer,
+   * achando que o PDV estava quebrado. O servidor manda a frase pronta; aqui só
+   * sobra o caso de o terminal não ter mandado nada.
+   */
+  const unavailableReason = computed(
+    () => config.value?.reason || "Gaveta não configurada neste terminal. Configure em Terminais do PDV, no gestor.",
+  );
   /** O dono quer que a gaveta abra sozinha ao fechar venda em dinheiro? */
   const opensOnCashSale = computed(() => canKick.value && Boolean(config.value?.open_on_cash_sale));
 
@@ -86,9 +99,13 @@ export function useCashDrawer(pos: ComputedRef<POSProjection | null>) {
     probing.value = true;
     try {
       const payload = await callAgent("/health");
+      // A versão vai junto porque o balcão só se atualiza pelo download do
+      // Admin — sem rede, sem pendrive. Comparar o que a estação roda com o que
+      // o Admin entrega é a única forma de saber se a máquina está atrasada.
+      const versao = payload?.build ? ` Versão ${payload.build}.` : "";
       return payload?.ok
-        ? { ok: true, message: `Fila ${payload.queue} respondendo.` }
-        : { ok: false, message: payload?.reason || "A fila não está aceitando trabalho." };
+        ? { ok: true, message: `Fila ${payload.queue} respondendo.${versao}` }
+        : { ok: false, message: (payload?.reason || "A fila não está aceitando trabalho.") + versao };
     } catch (error) {
       return { ok: false, message: messageOf(error) };
     } finally {
@@ -96,7 +113,26 @@ export function useCashDrawer(pos: ComputedRef<POSProjection | null>) {
     }
   }
 
-  return { canKick, opensOnCashSale, probing, kick, probe };
+  /**
+   * Imprime bytes que o SERVIDOR compôs. O agente é um cano; esta função
+   * também. Nenhuma das duas sabe o que é sangria.
+   *
+   * Devolve o que aconteceu, porque o servidor precisa registrar: papel que
+   * faltou tem que constar como falha, senão parece papel que alguém escondeu.
+   */
+  async function print(payloadB64: string, title: string): Promise<PrintOutcome> {
+    if (!import.meta.client) return { status: "skipped", detail: "Impressão fora do navegador." };
+    if (!canKick.value) return { status: "skipped", detail: unavailableReason.value };
+    try {
+      const payload = await callAgent("/print", { payload_b64: payloadB64, title });
+      if (payload?.ok === false) throw new Error(payload?.error || "O agente recusou a impressão.");
+      return { status: "printed", detail: "" };
+    } catch (error) {
+      return { status: "failed", detail: messageOf(error) };
+    }
+  }
+
+  return { canKick, unavailableReason, opensOnCashSale, probing, kick, print, probe };
 }
 
 function messageOf(error: unknown): string {

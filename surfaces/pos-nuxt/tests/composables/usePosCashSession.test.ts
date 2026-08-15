@@ -185,3 +185,88 @@ describe("usePosCashSession — a gaveta nos momentos que não imprimem nada", (
     expect(session.canOpenDrawer.value).toBe(false);
   });
 });
+
+describe("usePosCashSession — o comprovante sai sozinho e o resultado é registrado", () => {
+  beforeEach(() => vi.mocked(toast.error).mockClear());
+  afterEach(() => vi.unstubAllGlobals());
+
+  function makeReceiptSession(opts: { agentFails?: boolean } = {}) {
+    const agentCalls: string[] = [];
+    vi.stubGlobal("fetch", vi.fn((url: string) => {
+      agentCalls.push(String(url));
+      if (opts.agentFails && String(url).endsWith("/print")) {
+        return Promise.reject(new TypeError("Failed to fetch"));
+      }
+      return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve({ ok: true }) });
+    }));
+
+    const servidor: { path: string; body?: Record<string, unknown>; method?: string }[] = [];
+    const actionCall = vi.fn((path: string, opts2?: { method?: string; body?: Record<string, unknown> }) => {
+      servidor.push({ path, body: opts2?.body, method: opts2?.method });
+      if (path.endsWith("/receipt/") && opts2?.method === "GET") {
+        return Promise.resolve({ payload_b64: "SEVMTE8=", title: "comprovante:sangria" });
+      }
+      if (path.includes("/cash/movement/") && !path.endsWith("/receipt/")) {
+        return Promise.resolve({ ok: true, movement_id: 77 });
+      }
+      return Promise.resolve({ ok: true, movement_id: 77 });
+    });
+
+    const made = makeCashSession({
+      projection: makeProjection({ cash_drawer: AGENT_DRAWER }),
+      actionCall,
+    });
+    return { ...made, servidor, agentCalls };
+  }
+
+  it("sangria imprime sozinha — testemunha não pode depender de clique", async () => {
+    const { session, servidor, agentCalls } = makeReceiptSession();
+    await session.registerCashMovement({ kind: "sangria", amount: "50", reason: "cofre" });
+    await new Promise((r) => setTimeout(r, 10));
+
+    expect(agentCalls.some((u) => u.endsWith("/print"))).toBe(true);
+    const registro = servidor.find((c) => c.path.endsWith("/receipt/") && c.body);
+    expect(registro?.body).toMatchObject({ status: "printed" });
+  });
+
+  it("papel que NÃO saiu vira registro de falha, com motivo", async () => {
+    // Sem isto, papel que faltou pareceria papel que alguém escondeu.
+    const { session, servidor } = makeReceiptSession({ agentFails: true });
+    await session.registerCashMovement({ kind: "sangria", amount: "50", reason: "cofre" });
+    await new Promise((r) => setTimeout(r, 10));
+
+    const registro = servidor.find((c) => c.path.endsWith("/receipt/") && c.body);
+    expect(registro?.body?.status).toBe("failed");
+    expect(String(registro?.body?.detail)).toContain("não está rodando");
+    expect(vi.mocked(toast.error)).toHaveBeenCalled();
+  });
+
+  it("a falha de impressão NÃO desfaz o movimento", async () => {
+    // O dinheiro já saiu e o registro já existe; travar o caixa porque a
+    // impressora emperrou é remédio pior que a doença.
+    const { session } = makeReceiptSession({ agentFails: true });
+    const ok = await session.registerCashMovement({ kind: "sangria", amount: "50", reason: "cofre" });
+    expect(ok).toBe(true);
+  });
+
+  it("movimento RECUSADO não imprime nada", async () => {
+    // Comprovante de sangria que o servidor negou (PIN errado, caixa fechado)
+    // seria papel atestando dinheiro que não saiu.
+    const agentCalls: string[] = [];
+    vi.stubGlobal("fetch", vi.fn((url: string) => {
+      agentCalls.push(String(url));
+      return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve({ ok: true }) });
+    }));
+    const actionCall = vi.fn().mockRejectedValue(new Error("recusado"));
+    const { session } = makeCashSession({
+      projection: makeProjection({ cash_drawer: AGENT_DRAWER }),
+      actionCall,
+    });
+
+    const ok = await session.registerCashMovement({ kind: "sangria", amount: "50", reason: "cofre" });
+    await new Promise((r) => setTimeout(r, 10));
+
+    expect(ok).toBe(false);
+    expect(agentCalls).toEqual([]);
+  });
+});

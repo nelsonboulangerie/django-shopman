@@ -1,6 +1,7 @@
 import type { ComputedRef } from "vue";
 import { toast } from "vue-sonner";
 
+import type { PrintOutcome } from "~/composables/useCashDrawer";
 import type { Action, POSCashManagementCapability, POSProjection } from "~/types/pos";
 import { requiresOpenShiftForSale } from "~/presentation/cash";
 import { actionHref } from "~/utils/posIntent";
@@ -9,7 +10,14 @@ interface CashSessionDeps {
   pos: ComputedRef<POSProjection | null>;
   actions: ComputedRef<Action[]>;
   refresh: () => Promise<void>;
-  action: { call: (path: string, opts?: { body?: Record<string, unknown> }) => Promise<unknown> };
+  // Genérico e com `method` porque o comprovante é LIDO antes de ser impresso:
+  // o servidor compõe os bytes, a tela só relaia.
+  action: {
+    call: <T = unknown>(
+      path: string,
+      opts?: { method?: "GET" | "POST" | "PUT" | "PATCH" | "DELETE"; body?: Record<string, unknown> },
+    ) => Promise<T>;
+  };
 }
 
 /**
@@ -22,6 +30,8 @@ interface CashSessionDeps {
  */
 export function usePosCashSession({ pos, actions, refresh, action }: CashSessionDeps) {
   const busy = ref(false);
+  // O id do último movimento aceito pelo servidor — é dele que sai o comprovante.
+  const lastMovementId = ref<number | null>(null);
 
   // Sangria e suprimento mexem no dinheiro da gaveta e não imprimem nada — por
   // isso o gancho "abrir ao imprimir" do driver nunca serviria aqui. Mesmo
@@ -46,7 +56,8 @@ export function usePosCashSession({ pos, actions, refresh, action }: CashSession
     if (busy.value) return false;
     busy.value = true;
     try {
-      await action.call(path, { body });
+      const resposta = await action.call<{ movement_id?: number }>(path, { body });
+      lastMovementId.value = resposta?.movement_id ?? null;
       await refresh();
       return true;
     } catch (error) {
@@ -111,9 +122,45 @@ export function usePosCashSession({ pos, actions, refresh, action }: CashSession
     ).then((ok) => {
       // Só abre depois do servidor aceitar: gaveta aberta por um movimento que
       // foi recusado (PIN errado, caixa fechado) é dinheiro exposto sem lastro.
-      if (ok) void drawer.kick(payload.kind);
+      if (ok) {
+        void drawer.kick(payload.kind);
+        void printMovementReceipt(lastMovementId.value);
+      }
       return ok;
     });
+  }
+
+  /**
+   * Imprime o comprovante e REGISTRA o que aconteceu com o papel.
+   *
+   * O comprovante nasceu de "sangria sem testemunha" — o mesmo motivo do PIN.
+   * Por isso sai sozinho: testemunha que depende de alguém lembrar de clicar
+   * não é testemunha.
+   *
+   * ⚠️ A falha NÃO desfaz o movimento. O dinheiro já saiu e o registro já
+   * existe; travar o caixa porque a impressora emperrou seria remédio pior que
+   * a doença. O que não pode é a falha passar calada — ela vira registro e
+   * toast, e o papel pode ser reimpresso depois.
+   */
+  async function printMovementReceipt(movementId: number | null): Promise<void> {
+    if (!movementId) return;
+    const base = `/api/v1/backstage/pos/cash/movement/${movementId}/receipt/`;
+    let outcome: PrintOutcome;
+    try {
+      const receipt = await action.call<{ payload_b64: string; title: string }>(base, { method: "GET" });
+      outcome = await drawer.print(receipt.payload_b64, receipt.title);
+    } catch (error) {
+      outcome = { status: "failed", detail: httpErrorMessage(error, "Falha ao montar o comprovante.") };
+    }
+    if (outcome.status === "failed") {
+      toast.error(`O comprovante não saiu: ${outcome.detail}`);
+    }
+    // Registrar é o ponto todo: sem isto, papel que faltou parece papel que
+    // alguém escondeu. Se ESTA chamada falhar, o movimento fica "sem
+    // confirmação" — honesto, porque é exatamente o que sabemos.
+    await action
+      .call(base, { body: { status: outcome.status, detail: outcome.detail } })
+      .catch(() => {});
   }
 
   /**
@@ -147,6 +194,7 @@ export function usePosCashSession({ pos, actions, refresh, action }: CashSession
     registerCashMovement,
     // Gaveta: a antesala mostra o botão só onde existe caminho de software.
     canOpenDrawer: drawer.canKick,
+    drawerUnavailableReason: drawer.unavailableReason,
     drawerProbing: drawer.probing,
     openDrawerWithoutSale,
     probeDrawer: drawer.probe,

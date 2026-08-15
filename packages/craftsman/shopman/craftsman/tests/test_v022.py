@@ -338,6 +338,7 @@ class TestSuggestFilter:
         assert mock_backend.history.call_count == 1
         mock_backend.history.assert_called_once_with(
             "croissant", days=28, same_weekday=True,
+            target_date=tomorrow, exclude_dates=frozenset(),
         )
 
     def test_suggest_without_filter_returns_all(self, recipe, recipe_b, tomorrow, settings):
