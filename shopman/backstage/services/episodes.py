@@ -23,10 +23,22 @@ from django.utils import timezone
 
 logger = logging.getLogger(__name__)
 
-# Silêncio menor que isto é movimento fraco, não episódio. Duas horas sem uma
-# única venda dentro do expediente é a régua: abaixo disso a padaria só teve uma
-# tarde parada, acima disso alguma coisa aconteceu.
-SALES_SILENCE_MINUTES = 120
+# Régua padrão quando a loja não configurou: duas horas sem uma única venda
+# dentro do expediente. É só um ponto de partida — o número certo depende do
+# movimento da casa (num dia de jogo grande a rua some por mais tempo e isso é
+# normal), por isso ele é editável em Configuração › Produção.
+DEFAULT_SALES_SILENCE_MINUTES = 120
+
+
+def sales_silence_minutes() -> int:
+    """A régua da casa. ``0`` desliga o detector de silêncio."""
+    try:
+        from shopman.shop.production_config import ProductionConfig
+
+        return int(ProductionConfig.load().episodes.sales_silence_minutes)
+    except Exception:
+        logger.debug("config de episódios indisponível; usando o padrão", exc_info=True)
+        return DEFAULT_SALES_SILENCE_MINUTES
 
 
 def detect_for_day(day: date) -> list:
@@ -74,6 +86,9 @@ def _detect_sales_silence(day: date) -> list:
     Exige venda ANTES e DEPOIS do silêncio: assim o começo devagar da manhã e a
     ponta morta do fim da tarde não viram episódio.
     """
+    limite = sales_silence_minutes()
+    if limite <= 0:
+        return []  # a casa desligou este detector
     window = _open_window(day)
     if window is None:
         return []
@@ -85,7 +100,7 @@ def _detect_sales_silence(day: date) -> list:
     episodes = []
     for previous, following in zip(sales, sales[1:], strict=False):
         gap = (following - previous).total_seconds() / 60
-        if gap >= SALES_SILENCE_MINUTES:
+        if gap >= limite:
             episodes.append(
                 _raise(
                     detector="sales_silence",

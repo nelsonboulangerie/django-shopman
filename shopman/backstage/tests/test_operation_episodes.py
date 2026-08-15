@@ -334,3 +334,47 @@ class TestTheCatalogIsEditable:
         projection = build_day_closing()
 
         assert "evento-na-regiao" not in {o.ref for o in projection.episode_options}
+
+
+class TestTheRulerIsTheHouses:
+    """Quanto tempo parado vira pergunta é decisão da casa, não do código."""
+
+    def test_default_ruler_is_two_hours(self, ontem):
+        _venda(ontem, 10, "ANTES")
+        _venda(ontem, 13, "DEPOIS")   # 3h de silêncio
+
+        episodes.detect_for_day(ontem)
+
+        assert OperationEpisode.objects.filter(detector="sales_silence").exists()
+
+    def test_house_can_widen_the_ruler(self, ontem, loja):
+        """Dia de jogo grande: a rua some por mais tempo e isso é normal."""
+        loja.defaults = {"production": {"episodes": {"sales_silence_minutes": 240}}}
+        loja.save()
+        _venda(ontem, 10, "ANTES")
+        _venda(ontem, 13, "DEPOIS")   # 3h já não passa da régua de 4h
+
+        episodes.detect_for_day(ontem)
+
+        assert not OperationEpisode.objects.filter(detector="sales_silence").exists()
+
+    def test_zero_turns_the_detector_off_without_touching_the_others(self, ontem, loja):
+        loja.defaults = {"production": {"episodes": {"sales_silence_minutes": 0}}}
+        loja.save()
+        _venda(ontem, 10, "ANTES")
+        _venda(ontem, 15, "DEPOIS")
+
+        episodes.detect_for_day(ontem)
+
+        assert not OperationEpisode.objects.filter(detector="sales_silence").exists()
+
+    def test_the_ruler_is_editable_in_the_admin(self):
+        from shopman.shop.admin.shop import _PRODUCTION_FIELDSETS
+
+        campos = {
+            campo
+            for _titulo, opcoes in _PRODUCTION_FIELDSETS
+            for linha in opcoes["fields"]
+            for campo in (linha if isinstance(linha, tuple) else (linha,))
+        }
+        assert "defaults_sales_silence_minutes" in campos
