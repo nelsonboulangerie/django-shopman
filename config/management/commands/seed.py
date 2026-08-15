@@ -1994,8 +1994,8 @@ class Command(BaseCommand):
         # o que fica e o que perde no fechamento (C4). A antiga "ontem" morreu.
         positions = {}
         for ref, name, kind, saleable, default in [
-            ("deposito", "Deposito", PositionKind.PHYSICAL, False, False),
-            ("vitrine", "Vitrine / Exposicao", PositionKind.PHYSICAL, True, False),
+            ("deposito", "Depósito", PositionKind.PHYSICAL, False, False),
+            ("vitrine", "Vitrine / Exposição", PositionKind.PHYSICAL, True, False),
             ("producao", "Área de Produção", PositionKind.PHYSICAL, False, False),
             ("massa", "Massa", PositionKind.PROCESS, False, True),
             ("molde", "Molde", PositionKind.PROCESS, False, False),
@@ -2969,7 +2969,7 @@ class Command(BaseCommand):
         customers_data = [
             ("CLI-001", "Maria", "Santos", "individual", varejo, "+5543991111111"),
             ("CLI-002", "Restaurante", "Sabor da Terra", "business", atacado, "+5543992222222"),
-            ("CLI-003", "Joao", "Oliveira", "individual", varejo, "+5543993333333"),
+            ("CLI-003", "João", "Oliveira", "individual", varejo, "+5543993333333"),
             ("CLI-004", "Café", "Parisiense", "business", atacado, "+5543994444444"),
             ("CLI-005", "Ana", "Ferreira", "individual", varejo, "+5543995555555"),
             ("CLI-006", "Carlos", "Silva", "individual", staff_tier, "+5543996666666"),
@@ -3702,7 +3702,7 @@ class Command(BaseCommand):
                 "qa_notes": [
                     "tende a clicar duas vezes em confirmar",
                     "abandona pagamento PIX e volta pelo tracking",
-                    "precisa de mensagens curtas e recuperacao clara",
+                    "precisa de mensagens curtas e recuperação clara",
                 ],
             }
             low_attention.save(update_fields=["metadata"])
@@ -3718,7 +3718,7 @@ class Command(BaseCommand):
             customer=low_attention,
             created_at=now - timedelta(minutes=4),
             data={
-                "customer": {"name": getattr(low_attention, "name", "Cliente distraido")},
+                "customer": {"name": getattr(low_attention, "name", "Cliente distraído")},
                 "payment": {
                     "method": "pix",
                     "amount_q": product.base_price_q * 2,
@@ -3749,7 +3749,7 @@ class Command(BaseCommand):
             customer=low_attention,
             created_at=now - timedelta(minutes=18),
             data={
-                "customer": {"name": getattr(low_attention, "name", "Cliente distraido")},
+                "customer": {"name": getattr(low_attention, "name", "Cliente distraído")},
                 "payment": {
                     "method": "pix",
                     "amount_q": product.base_price_q,
@@ -3780,7 +3780,7 @@ class Command(BaseCommand):
             customer=low_attention,
             created_at=now - timedelta(minutes=26),
             data={
-                "customer": {"name": getattr(low_attention, "name", "Cliente distraido")},
+                "customer": {"name": getattr(low_attention, "name", "Cliente distraído")},
                 "payment": {
                     "method": "pix",
                     "amount_q": product.base_price_q * 3,
@@ -4645,60 +4645,60 @@ class Command(BaseCommand):
             ("CLI-001", [
                 {"label": "home", "formatted_address": "Rua Belo Horizonte, 540, Apto 12 - Centro, Londrina - PR, 86020-060",
                  "route": "Rua Belo Horizonte", "street_number": "540", "complement": "Apto 12",
-                 "neighborhood": "Centro", "city": "Londrina", "state": "Parana",
+                 "neighborhood": "Centro", "city": "Londrina", "state": "Paraná",
                  "state_code": "PR", "postal_code": "86020-060",
                  "latitude": Decimal("-23.3103000"), "longitude": Decimal("-51.1628000"), "is_default": True},
-                {"label": "work", "formatted_address": "Av. Higienopolis, 350, Sala 201 - Higienopolis, Londrina - PR, 86020-080",
-                 "route": "Av. Higienopolis", "street_number": "350", "complement": "Sala 201",
-                 "neighborhood": "Higienopolis", "city": "Londrina", "state": "Parana",
+                {"label": "work", "formatted_address": "Av. Higienópolis, 350, Sala 201 - Higienópolis, Londrina - PR, 86020-080",
+                 "route": "Av. Higienópolis", "street_number": "350", "complement": "Sala 201",
+                 "neighborhood": "Higienópolis", "city": "Londrina", "state": "Paraná",
                  "state_code": "PR", "postal_code": "86020-080",
                  "latitude": Decimal("-23.3065000"), "longitude": Decimal("-51.1650000"), "is_default": False},
             ]),
             ("CLI-002", [
                 {"label": "work", "formatted_address": "Rua Marselha, 191 - Jardim Piza, Londrina - PR, 86041-140",
                  "route": "Rua Marselha", "street_number": "191", "complement": "",
-                 "neighborhood": "Jardim Piza", "city": "Londrina", "state": "Parana",
+                 "neighborhood": "Jardim Piza", "city": "Londrina", "state": "Paraná",
                  "state_code": "PR", "postal_code": "86041-140",
                  "latitude": Decimal("-23.2960000"), "longitude": Decimal("-51.1520000"), "is_default": True},
             ]),
             ("CLI-003", [
-                {"label": "home", "formatted_address": "Rua Paranagua, 800, Bl B Apto 5 - Centro, Londrina - PR, 86020-030",
-                 "route": "Rua Paranagua", "street_number": "800", "complement": "Bl B Apto 5",
-                 "neighborhood": "Centro", "city": "Londrina", "state": "Parana",
+                {"label": "home", "formatted_address": "Rua Paranaguá, 800, Bl B Apto 5 - Centro, Londrina - PR, 86020-030",
+                 "route": "Rua Paranaguá", "street_number": "800", "complement": "Bl B Apto 5",
+                 "neighborhood": "Centro", "city": "Londrina", "state": "Paraná",
                  "state_code": "PR", "postal_code": "86020-030",
                  "latitude": Decimal("-23.3080000"), "longitude": Decimal("-51.1595000"), "is_default": True},
             ]),
             ("CLI-004", [
-                {"label": "work", "formatted_address": "Av. Madre Leonia Milito, 900 - Bela Suica, Londrina - PR, 86050-270",
-                 "route": "Av. Madre Leonia Milito", "street_number": "900", "complement": "",
-                 "neighborhood": "Bela Suica", "city": "Londrina", "state": "Parana",
+                {"label": "work", "formatted_address": "Av. Madre Leônia Milito, 900 - Bela Suíça, Londrina - PR, 86050-270",
+                 "route": "Av. Madre Leônia Milito", "street_number": "900", "complement": "",
+                 "neighborhood": "Bela Suíça", "city": "Londrina", "state": "Paraná",
                  "state_code": "PR", "postal_code": "86050-270",
                  "latitude": Decimal("-23.3040000"), "longitude": Decimal("-51.1630000"), "is_default": True},
             ]),
             ("CLI-005", [
                 {"label": "home", "formatted_address": "Rua Santos, 450, Apto 3 - Centro, Londrina - PR, 86020-040",
                  "route": "Rua Santos", "street_number": "450", "complement": "Apto 3",
-                 "neighborhood": "Centro", "city": "Londrina", "state": "Parana",
+                 "neighborhood": "Centro", "city": "Londrina", "state": "Paraná",
                  "state_code": "PR", "postal_code": "86020-040",
                  "latitude": Decimal("-23.3115000"), "longitude": Decimal("-51.1610000"), "is_default": True},
                 {"label": "other", "label_custom": "Casa da mae",
                  "formatted_address": "Rua Pernambuco, 120 - Centro, Londrina - PR, 86020-120",
                  "route": "Rua Pernambuco", "street_number": "120", "complement": "",
-                 "neighborhood": "Centro", "city": "Londrina", "state": "Parana",
+                 "neighborhood": "Centro", "city": "Londrina", "state": "Paraná",
                  "state_code": "PR", "postal_code": "86020-120",
                  "latitude": Decimal("-23.3090000"), "longitude": Decimal("-51.1575000"), "is_default": False},
             ]),
             ("CLI-006", [
                 {"label": "home", "formatted_address": "Av. Juscelino Kubitschek, 1200 - Ipiranga, Londrina - PR, 86010-540",
                  "route": "Av. Juscelino Kubitschek", "street_number": "1200", "complement": "",
-                 "neighborhood": "Ipiranga", "city": "Londrina", "state": "Parana",
+                 "neighborhood": "Ipiranga", "city": "Londrina", "state": "Paraná",
                  "state_code": "PR", "postal_code": "86010-540",
                  "latitude": Decimal("-23.3150000"), "longitude": Decimal("-51.1500000"), "is_default": True},
             ]),
             ("CLI-007", [
                 {"label": "work", "formatted_address": "Av. Ayrton Senna, 600 - Gleba Palhano, Londrina - PR, 86050-460",
                  "route": "Av. Ayrton Senna", "street_number": "600", "complement": "",
-                 "neighborhood": "Gleba Palhano", "city": "Londrina", "state": "Parana",
+                 "neighborhood": "Gleba Palhano", "city": "Londrina", "state": "Paraná",
                  "state_code": "PR", "postal_code": "86050-460",
                  "latitude": Decimal("-23.3280000"), "longitude": Decimal("-51.1870000"), "is_default": True},
             ]),
@@ -4789,7 +4789,7 @@ class Command(BaseCommand):
         promo_funcionario, _ = Promotion.objects.update_or_create(
             ref="funcionario",
             defaults={
-                "name": "Desconto Funcionario",
+                "name": "Desconto Funcionário",
                 "type": Promotion.PERCENT,
                 "value": 20,
                 "valid_from": now,
@@ -5308,24 +5308,24 @@ class Command(BaseCommand):
             # Alertas por SKU. Sem linha aqui, o adapter caía no texto genérico e o
             # operador não tinha onde mapear o flow — logo o alerta nunca alcançava quem
             # está fora da janela de 24h, que é justamente o caso de "me avise".
-            "stock_arrived": {"subject": "{product_name} disponível", "body": "Ola{customer_name_greeting}! O {product_name} que voce pediu para acompanhar esta disponivel: {action_url}"},
-            "production_ready": {"subject": "{product_name} saiu do forno", "body": "Ola{customer_name_greeting}! O {product_name} acabou de sair do forno: {action_url}"},
-            "order_received": {"subject": "Pedido {order_ref} recebido", "body": "Ola{customer_name_greeting}! Recebemos seu pedido *{order_ref}*. O estabelecimento vai conferir a disponibilidade. Acompanhe por aqui: {tracking_url}"},
-            "order_received_outside_hours": {"subject": "Pedido {order_ref} recebido", "body": "Ola{customer_name_greeting}! Recebemos seu pedido *{order_ref}* fora do nosso horario de atendimento. Vamos processar assim que abrirmos. Total: *{total}*."},
-            "order_accepted": {"subject": "Pedido {order_ref} confirmado", "body": "Ola{customer_name_greeting}! Seu pedido *{order_ref}* foi confirmado. Total: *{total}*.\n\nObrigado pela preferencia!"},
-            "order_preparing": {"subject": "Pedido {order_ref} em preparo", "body": "Ola{customer_name_greeting}! Seu pedido *{order_ref}* esta sendo preparado.\n\nAvisaremos quando estiver pronto!"},
-            "order_ready_pickup": {"subject": "Pedido {order_ref} pronto para retirada", "body": "Ola{customer_name_greeting}! Seu pedido *{order_ref}* esta pronto para retirada! \U0001f389\n\nVenha buscar. Obrigado!"},
-            "order_ready_delivery": {"subject": "Pedido {order_ref} pronto para entrega", "body": "Ola{customer_name_greeting}! Seu pedido *{order_ref}* esta pronto e aguardando entregador. Assim que sair para entrega avisamos. \U0001f4e6"},
-            "order_dispatched": {"subject": "Pedido {order_ref} saiu para entrega", "body": "Ola{customer_name_greeting}! Seu pedido *{order_ref}* saiu para entrega!\n\nEm breve estara com voce!"},
-            "order_delivered": {"subject": "Pedido {order_ref} entregue", "body": "Ola{customer_name_greeting}! Seu pedido *{order_ref}* foi entregue.\n\nEsperamos que tenha gostado! Obrigado pela preferencia."},
-            "order_cancelled": {"subject": "Pedido {order_ref} cancelado", "body": "Ola{customer_name_greeting}! Seu pedido *{order_ref}* foi cancelado.{reason_note}\n\nEm caso de duvidas, entre em contato."},
-            "order_rejected": {"subject": "Pedido {order_ref} nao confirmado", "body": "Ola{customer_name_greeting}! O estabelecimento nao conseguiu confirmar o pedido *{order_ref}*.\n\nMotivo: {reason}\n\nEm caso de duvidas, estamos aqui."},
-            "payment_requested": {"subject": "Pedido {order_ref}: pagamento liberado", "body": "Ola{customer_name_greeting}! Confirmamos a disponibilidade do pedido *{order_ref}*.\n\nPara continuar, conclua o pagamento dentro do prazo: {payment_url}"},
-            "payment_confirmed": {"subject": "Pagamento do pedido {order_ref} confirmado", "body": "Ola{customer_name_greeting}! O pagamento do pedido *{order_ref}* foi recebido.\n\nValor: *{total}*\n\nSeu pedido seguira para preparo. Obrigado!"},
-            "payment_expired": {"subject": "Pagamento do pedido {order_ref} expirado", "body": "Ola{customer_name_greeting}! O prazo de pagamento do pedido *{order_ref}* expirou.\n\nO pedido foi cancelado automaticamente."},
-            "payment_failed": {"subject": "Falha ao preparar pagamento do pedido {order_ref}", "body": "Ola{customer_name_greeting}! Nao conseguimos preparar o pagamento do pedido *{order_ref}*.\n\nAcesse {payment_url} para tentar novamente."},
-            "payment_refunded": {"subject": "Reembolso do pedido {order_ref} processado", "body": "Ola{customer_name_greeting}! O reembolso do pedido *{order_ref}* foi processado.\n\nValor: *{total}*"},
-            "loyalty_earned": {"subject": "Voce ganhou pontos de fidelidade!", "body": "Ola{customer_name_greeting}! Voce ganhou pontos de fidelidade com o pedido *{order_ref}*!"},
+            "stock_arrived": {"subject": "{product_name} disponível", "body": "Olá{customer_name_greeting}! O {product_name} que você pediu para acompanhar está disponível: {action_url}"},
+            "production_ready": {"subject": "{product_name} saiu do forno", "body": "Olá{customer_name_greeting}! O {product_name} acabou de sair do forno: {action_url}"},
+            "order_received": {"subject": "Pedido {order_ref} recebido", "body": "Olá{customer_name_greeting}! Recebemos seu pedido *{order_ref}*. O estabelecimento vai conferir a disponibilidade. Acompanhe por aqui: {tracking_url}"},
+            "order_received_outside_hours": {"subject": "Pedido {order_ref} recebido", "body": "Olá{customer_name_greeting}! Recebemos seu pedido *{order_ref}* fora do nosso horário de atendimento. Vamos processar assim que abrirmos. Total: *{total}*."},
+            "order_accepted": {"subject": "Pedido {order_ref} confirmado", "body": "Olá{customer_name_greeting}! Seu pedido *{order_ref}* foi confirmado. Total: *{total}*.\n\nObrigado pela preferência!"},
+            "order_preparing": {"subject": "Pedido {order_ref} em preparo", "body": "Olá{customer_name_greeting}! Seu pedido *{order_ref}* está sendo preparado.\n\nAvisaremos quando estiver pronto!"},
+            "order_ready_pickup": {"subject": "Pedido {order_ref} pronto para retirada", "body": "Olá{customer_name_greeting}! Seu pedido *{order_ref}* está pronto para retirada! \U0001f389\n\nVenha buscar. Obrigado!"},
+            "order_ready_delivery": {"subject": "Pedido {order_ref} pronto para entrega", "body": "Olá{customer_name_greeting}! Seu pedido *{order_ref}* está pronto e aguardando entregador. Assim que sair para entrega avisamos. \U0001f4e6"},
+            "order_dispatched": {"subject": "Pedido {order_ref} saiu para entrega", "body": "Olá{customer_name_greeting}! Seu pedido *{order_ref}* saiu para entrega!\n\nEm breve estará com você!"},
+            "order_delivered": {"subject": "Pedido {order_ref} entregue", "body": "Olá{customer_name_greeting}! Seu pedido *{order_ref}* foi entregue.\n\nEsperamos que tenha gostado! Obrigado pela preferência."},
+            "order_cancelled": {"subject": "Pedido {order_ref} cancelado", "body": "Olá{customer_name_greeting}! Seu pedido *{order_ref}* foi cancelado.{reason_note}\n\nEm caso de dúvidas, entre em contato."},
+            "order_rejected": {"subject": "Pedido {order_ref} não confirmado", "body": "Olá{customer_name_greeting}! O estabelecimento não conseguiu confirmar o pedido *{order_ref}*.\n\nMotivo: {reason}\n\nEm caso de dúvidas, estamos aqui."},
+            "payment_requested": {"subject": "Pedido {order_ref}: pagamento liberado", "body": "Olá{customer_name_greeting}! Confirmamos a disponibilidade do pedido *{order_ref}*.\n\nPara continuar, conclua o pagamento dentro do prazo: {payment_url}"},
+            "payment_confirmed": {"subject": "Pagamento do pedido {order_ref} confirmado", "body": "Olá{customer_name_greeting}! O pagamento do pedido *{order_ref}* foi recebido.\n\nValor: *{total}*\n\nSeu pedido seguirá para preparo. Obrigado!"},
+            "payment_expired": {"subject": "Pagamento do pedido {order_ref} expirado", "body": "Olá{customer_name_greeting}! O prazo de pagamento do pedido *{order_ref}* expirou.\n\nO pedido foi cancelado automaticamente."},
+            "payment_failed": {"subject": "Falha ao preparar pagamento do pedido {order_ref}", "body": "Olá{customer_name_greeting}! Não conseguimos preparar o pagamento do pedido *{order_ref}*.\n\nAcesse {payment_url} para tentar novamente."},
+            "payment_refunded": {"subject": "Reembolso do pedido {order_ref} processado", "body": "Olá{customer_name_greeting}! O reembolso do pedido *{order_ref}* foi processado.\n\nValor: *{total}*"},
+            "loyalty_earned": {"subject": "Você ganhou pontos de fidelidade!", "body": "Olá{customer_name_greeting}! Você ganhou pontos de fidelidade com o pedido *{order_ref}*!"},
             # Produção → operador (notification.send de sistema, WP-PE2).
             # Opt-in via Shop.defaults["production"]["notifications"].
             "production_late": {"subject": "Produção {work_order_ref} atrasada", "body": "A produção *{work_order_ref}* ({output_sku}) está há {elapsed_minutes} min em andamento (janela: {target_minutes} min).\n\nConfira o chão de produção."},
@@ -5553,7 +5553,7 @@ class Command(BaseCommand):
             movement_type="sangria",
             defaults={
                 "amount_q": 30000,  # R$ 300
-                "reason": "Retirada para deposito",
+                "reason": "Retirada para depósito",
                 "created_at": timezone.make_aware(datetime.combine(yesterday, time(14, 0))),
             },
         )

@@ -78,7 +78,7 @@ class RefSequence(models.Model):
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
 
-    sequence_name = models.CharField(max_length=32, db_index=True, verbose_name=_("nome da sequencia"))
+    sequence_name = models.CharField(max_length=32, db_index=True, verbose_name=_("nome da sequência"))
     scope_hash = models.CharField(max_length=64, db_index=True, verbose_name=_("hash do escopo"))
     scope = models.JSONField(default=dict, verbose_name=_("escopo"))
     last_value = models.PositiveIntegerField(default=0, verbose_name=_("último valor"))

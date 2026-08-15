@@ -30,7 +30,7 @@ class WorkOrderItem(models.Model):
     class Kind(models.TextChoices):
         REQUIREMENT = "requirement", _("Requisito")
         CONSUMPTION = "consumption", _("Consumo")
-        OUTPUT = "output", _("Saida")
+        OUTPUT = "output", _("Saída")
         WASTE = "waste", _("Perda")
 
     work_order = models.ForeignKey(
@@ -46,7 +46,7 @@ class WorkOrderItem(models.Model):
     )
     item_ref = models.CharField(
         max_length=100,
-        verbose_name=_("Referencia"),
+        verbose_name=_("Referência"),
         help_text=_("SKU ou identificador do material"),
     )
     quantity = models.DecimalField(

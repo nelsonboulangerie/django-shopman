@@ -59,4 +59,4 @@ def render_message(event: str, context: dict, fallback_templates: dict[str, str]
         return render_template(tpl, context)
 
     order_ref = (context or {}).get("order_ref", "")
-    return f"Notificacao: {event} — Pedido {order_ref}" if order_ref else f"Notificacao: {event}"
+    return f"Notificação: {event} — Pedido {order_ref}" if order_ref else f"Notificação: {event}"

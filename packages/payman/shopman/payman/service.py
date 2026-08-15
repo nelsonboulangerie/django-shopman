@@ -634,7 +634,7 @@ class PaymentService:
                 elif intent.status not in {PaymentIntent.Status.CAPTURED, PaymentIntent.Status.REFUNDED}:
                     raise PaymentError(
                         code="reconciliation_capture_drift",
-                        message="Status local nao permite registrar captura reconciliada",
+                        message="Status local não permite registrar captura reconciliada",
                         context={
                             "ref": ref,
                             "local_status": intent.status,
