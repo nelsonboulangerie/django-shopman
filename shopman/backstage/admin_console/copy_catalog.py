@@ -1,4 +1,4 @@
-"""Catálogo de copy omotenashi — página Admin canônica (Unfold).
+"""Textos da interface — página Admin canônica (Unfold).
 
 Inverte o índice do changelist: TODAS as chaves registradas, agrupadas por
 superfície → tela (mapa chave↔tela derivado do código), com default, estado de
@@ -44,7 +44,7 @@ class CopyCatalogFilterForm(forms.Form):
 
 
 class CopyCatalogView(UnfoldModelAdminViewMixin, TemplateView):
-    title = "Catálogo de copy"
+    title = "Textos da interface"
     permission_required = "shop.view_omotenashicopy"
     template_name = "admin_console/copy_catalog/index.html"
 

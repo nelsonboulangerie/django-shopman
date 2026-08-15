@@ -50,9 +50,9 @@ class AdminNavigationTests(TestCase):
         titles = [group["title"] for group in groups]
 
         self.assertEqual(titles[0], "Operação ao vivo")
-        self.assertIn("Pedidos", titles)
+        self.assertIn("Catálogo", titles)
         self.assertIn("Produção", titles)
-        self.assertIn("Auditoria e acesso", titles)
+        self.assertIn("Auditoria", titles)
         self.assertNotIn("Regras", titles)
 
         live = [item for item in groups[0]["items"] if item["has_permission"]]
@@ -94,15 +94,16 @@ class AdminNavigationTests(TestCase):
             self.assertIn("PDV", live)
             self.assertEqual(live["PDV"]["link"], "https://pos.example.com")
 
-        # WP-ADM-7d: sem base URL do Produção o grupo Produção fica só com o CRUD
-        # de fichas; "Relatórios" (superfície Nuxt) é env-gated e some.
+        # WP-ADM-7d: sem base URL do Produção o grupo fica só com o que se cadastra
+        # e se consulta; "Relatórios" (superfície Nuxt) é env-gated e some.
         production_group = next(group for group in groups if group["title"] == "Produção")
         production_items = [item["title"] for item in production_group["items"] if item["has_permission"]]
-        self.assertEqual(production_items, ["Fichas técnicas"])
+        self.assertNotIn("Relatórios", production_items)
+        self.assertIn("Fichas técnicas", production_items)
 
-        audit_group = next(group for group in groups if group["title"] == "Auditoria e acesso")
+        audit_group = next(group for group in groups if group["title"] == "Auditoria")
         audit_items = [item["title"] for item in audit_group["items"] if item["has_permission"]]
-        self.assertIn("Pagamentos", audit_items)
+        self.assertIn("Cobranças", audit_items)
 
     def test_production_reports_nav_item_is_env_gated_to_producao(self) -> None:
         """WP-ADM-7d: "Relatórios" do grupo Produção aponta p/ o Produção
@@ -117,7 +118,7 @@ class AdminNavigationTests(TestCase):
         production_group = next(group for group in groups if group["title"] == "Produção")
         items = {item["title"]: item for item in production_group["items"] if item["has_permission"]}
 
-        self.assertEqual(list(items), ["Fichas técnicas", "Relatórios"])
+        self.assertIn("Relatórios", items)
         self.assertEqual(items["Relatórios"]["link"], "https://prod.example.com/reports")
 
     def test_orders_and_kds_nav_items_are_env_gated(self) -> None:
@@ -141,37 +142,55 @@ class AdminNavigationTests(TestCase):
             self.assertEqual(live["Pedidos"]["link"], "https://gestor.example.com")
             self.assertEqual(live["KDS"]["link"], "https://kds.example.com")
 
-    def test_sidebar_groups_all_store_config_under_one_discoverable_group(self) -> None:
-        """WP-2 — config da loja num grupo 'Configurações' descobrível."""
+    def test_store_config_is_split_by_intent_instead_of_piled_in_one_drawer(self) -> None:
+        """Config agrupada pelo que a pessoa quer FAZER, não por ser "config".
+
+        O WP-2 juntou toda a configuração num grupo só para acabar com a dispersão
+        — e resolveu a dispersão criando uma gaveta de vinte itens de sete
+        assuntos, onde nada era encontrado. A correção não é voltar a espalhar: é
+        separar por intenção. "Loja" responde *o que esta loja é*; "Vendas e
+        entrega" responde *quanto se cobra e como chega*; "Textos e mensagens",
+        *o que a loja diz*. Cada grupo cabe num olhar.
+        """
         request = RequestFactory().get("/admin/")
         request.user = User.objects.create_superuser("cfg", "cfg@example.com", "pw")
 
-        groups = admin.site.get_sidebar_list(request)
-        config_group = next(group for group in groups if group["title"] == "Configurações")
-        config_items = {item["title"] for item in config_group["items"] if item["has_permission"]}
+        groups = {group["title"]: group for group in admin.site.get_sidebar_list(request)}
 
-        # Tudo que é config vive aqui — incl. as páginas focadas da Loja (WP-7).
-        for expected in {
-            "Loja & contato", "Marca & aparência", "Horários & operação",
-            "Cardápio", "Pedidos & entrega", "Fidelidade", "PDV & alertas",
-            "Produção", "Integrações",
-            "Canais", "Promoções", "Cupons",
-            "Regras de preço", "Faixas de distância", "Zonas de entrega",
-            "Grupos de clientes", "Textos da interface", "Templates de notificação",
-            "Estações KDS", "Comandas do PDV",
-        }:
-            self.assertIn(expected, config_items)
+        def titles(group_name):
+            return {
+                item["title"]
+                for item in groups[group_name]["items"]
+                if item["has_permission"]
+            }
 
-        # E saiu dos grupos de DADOS onde estava disperso.
-        orders_group = next(group for group in groups if group["title"] == "Pedidos")
-        orders_items = {item["title"] for item in orders_group["items"]}
-        self.assertNotIn("Canais", orders_items)
-        self.assertNotIn("Comandas do PDV", orders_items)
+        # "Loja" são as nove telas do que a loja é — e só elas.
+        self.assertEqual(
+            titles("Loja"),
+            {
+                "Loja e contato", "Marca e aparência", "Horários e operação",
+                "Cardápio", "Pedidos e entrega", "Fidelidade", "PDV e alertas",
+                "Produção", "Integrações",
+            },
+        )
 
-        catalog_group = next(group for group in groups if group["title"] == "Catálogo")
-        catalog_items = {item["title"] for item in catalog_group["items"]}
-        self.assertNotIn("Promoções", catalog_items)
-        self.assertNotIn("Loja & contato", catalog_items)
+        for expected in {"Canais", "Regras de preço", "Promoções", "Cupons",
+                         "Faixas de preço", "Zonas de entrega", "Faixas de distância"}:
+            self.assertIn(expected, titles("Vendas e entrega"))
+
+        self.assertEqual(
+            titles("Textos e mensagens"),
+            {"Textos da interface", "Modelos de mensagem"},
+        )
+
+        # Equipamento e checklist são "raramente, mas quando precisa é aqui".
+        for expected in {"Estações KDS", "Comandas do PDV", "Terminais do PDV"}:
+            self.assertIn(expected, titles("Sistema"))
+
+        # E nenhuma config voltou a se misturar com os dados que ela governa.
+        self.assertNotIn("Promoções", titles("Catálogo"))
+        self.assertNotIn("Loja e contato", titles("Catálogo"))
+        self.assertNotIn("Canais", titles("Auditoria"))
 
     def test_sidebar_badges_count_operational_attention(self) -> None:
         Order.objects.create(
@@ -189,16 +208,24 @@ class AdminNavigationTests(TestCase):
         self.assertEqual(navigation.badge_new_orders(request), "1")
 
     def test_production_tabs_keep_crud_only_after_console_removal(self) -> None:
-        """WP-ADM-7d: as tabs do craftsman só linkam CRUD (fichas + ordens);
+        """WP-ADM-7d: as tabs do craftsman só linkam cadastro e consulta;
         painel/planejamento/relatórios vivem no Produção."""
         production_tabs = next(
             tab for tab in settings.UNFOLD["TABS"] if "craftsman.workorder" in tab["models"]
         )
+        tab_titles = [item["title"] for item in production_tabs["items"]]
 
         self.assertEqual(
-            [item["title"] for item in production_tabs["items"]],
-            ["Fichas técnicas", "Ordens de produção"],
+            tab_titles,
+            [
+                "Fichas técnicas",
+                "Ordens de produção",
+                "Defeitos de fornada",
+                "Graus de qualidade",
+            ],
         )
+        for operational in ("Painel", "Planejamento", "Relatórios", "Pesagem"):
+            self.assertNotIn(operational, tab_titles)
         self.assertEqual(str(WorkOrder._meta.verbose_name_plural), "ordens de produção")
 
 

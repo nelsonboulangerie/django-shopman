@@ -5,6 +5,7 @@ from __future__ import annotations
 from django import forms
 from django.contrib import admin
 from django.utils.html import format_html
+from django.utils.safestring import mark_safe
 from unfold.admin import ModelAdmin
 from unfold.widgets import UnfoldAdminSelect2Widget, UnfoldAdminSelectWidget
 
@@ -85,7 +86,7 @@ class OmotenashiCopyAdmin(ModelAdmin):
             return "—"
         entry = default_for(obj.key, obj.moment or "*", obj.audience or "*")
         if not entry:
-            return format_html('<em class="text-yellow-700 dark:text-yellow-500">sem padrão no código</em>')
+            return mark_safe('<em class="text-yellow-700 dark:text-yellow-500">sem padrão no código</em>')
         return format_html(
             '<div class="text-sm leading-relaxed">'
             '<div><strong>Título:</strong> {}</div>'

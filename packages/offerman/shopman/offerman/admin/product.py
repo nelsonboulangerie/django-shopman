@@ -2,7 +2,7 @@
 
 from django.contrib import admin
 from django.db.models import Exists, OuterRef
-from django.utils.html import format_html
+from django.utils.safestring import mark_safe
 from shopman.offerman.models import Product, ProductComponent
 
 
@@ -92,12 +92,12 @@ class ProductAdmin(admin.ModelAdmin):
             )
 
         if not badges:
-            return format_html(
+            return mark_safe(
                 '<span style="background-color:#28a745;color:#fff;'
                 'padding:2px 6px;border-radius:3px;font-size:11px;">Active</span>'
             )
 
-        return format_html(" ".join(badges))
+        return mark_safe(" ".join(badges))
 
     visibility_status.short_description = "Status"
 

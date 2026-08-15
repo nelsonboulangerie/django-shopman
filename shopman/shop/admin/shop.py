@@ -1483,7 +1483,7 @@ class ShopAppearanceAdmin(_ShopSingletonAdmin):
         token equivalente). Método não é varrido pelo gate (admin Python).
         """
         if not obj or not obj.pk:
-            return format_html(
+            return mark_safe(
                 '<p class="text-sm text-base-500">'
                 "Salve a loja para carregar a prévia da loja.</p>"
             )

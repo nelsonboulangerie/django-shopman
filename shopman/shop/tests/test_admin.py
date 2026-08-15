@@ -387,20 +387,34 @@ class TestGuestmanLoyaltyAdminUnfold:
     """WP-4 — admins guestman config-adjacentes ficam em Unfold (guarda)."""
 
     def test_loyalty_and_group_admins_are_unfold(self, db):
-        from shopman.guestman.contrib.loyalty.models import (
-            LoyaltyAccount,
-            LoyaltyTransaction,
-        )
+        from shopman.guestman.contrib.loyalty.models import LoyaltyAccount
         from shopman.guestman.models import PriceTier
         from unfold.admin import ModelAdmin as UnfoldModelAdmin
 
-        for model in (LoyaltyAccount, LoyaltyTransaction, PriceTier):
+        for model in (LoyaltyAccount, PriceTier):
             registered = admin.site._registry.get(model)
             assert registered is not None, f"{model.__name__} não registrado"
             assert isinstance(registered, UnfoldModelAdmin), (
                 f"{model.__name__} não está em Unfold: "
                 f"{type(registered).__module__}"
             )
+
+    def test_loyalty_transaction_history_stays_unfold_inside_the_account(self, db):
+        """A tela avulsa de transações saiu na curadoria (WP-ADM-R1): o extrato de
+        pontos vive sob a conta. A guarda contra degradação para admin vanilla
+        acompanha o dado — o inline também precisa ser Unfold."""
+        from shopman.guestman.contrib.loyalty.models import LoyaltyAccount
+        from unfold.admin import TabularInline as UnfoldTabularInline
+
+        account_admin = admin.site._registry[LoyaltyAccount]
+        transaction_inlines = [
+            inline
+            for inline in account_admin.inlines
+            if inline.model.__name__ == "LoyaltyTransaction"
+        ]
+
+        assert transaction_inlines, "o extrato de pontos sumiu da conta de fidelidade"
+        assert issubclass(transaction_inlines[0], UnfoldTabularInline)
 
 
 class TestShopIntegrationsForm:

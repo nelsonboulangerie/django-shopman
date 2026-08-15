@@ -9,6 +9,7 @@ Contrib models have their own admin in their respective modules:
 from django.contrib import admin
 from django.db.models import Count
 from django.utils.html import format_html
+from django.utils.safestring import mark_safe
 from shopman.guestman.contrib.merge.admin import MergeAdminMixin
 from shopman.guestman.models import (
     ContactPoint,
@@ -240,8 +241,8 @@ class ContactPointAdmin(admin.ModelAdmin):
 
     def verified_badge(self, obj):
         if obj.is_verified:
-            return format_html('<span style="color: green;">V</span>')
-        return format_html('<span style="color: gray;">o</span>')
+            return mark_safe('<span style="color: green;">V</span>')
+        return mark_safe('<span style="color: gray;">o</span>')
 
     verified_badge.short_description = "Verified"
 

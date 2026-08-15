@@ -33,7 +33,7 @@ def bootstrap_rules_on_connection(sender, connection, **kwargs):
 class ShopmanConfig(AppConfig):
     name = "shopman.shop"
     label = "shop"
-    verbose_name = "Shopman"
+    verbose_name = "Loja"
     default_auto_field = "django.db.models.BigAutoField"
 
     def ready(self):

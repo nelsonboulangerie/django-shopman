@@ -733,13 +733,17 @@ UNFOLD = {
             "950": "rgb(25, 17, 12)",
         },
     },
+    # As abas repetem, DENTRO da tela, a vizinhança que o menu declara: quem está
+    # em Produtos alcança Coleções e Vitrines sem voltar ao menu. Por isso cada
+    # bloco espelha um grupo do sidebar (shopman/backstage/admin/navigation.py) —
+    # abas que discordam do menu são duas respostas para "o que fica perto do quê".
     "TABS": [
         {
             "models": ["offerman.product", "offerman.collection", "offerman.listing"],
             "items": [
                 {"title": "Produtos", "link": reverse_lazy("admin:offerman_product_changelist")},
                 {"title": "Coleções", "link": reverse_lazy("admin:offerman_collection_changelist")},
-                {"title": "Listagens", "link": reverse_lazy("admin:offerman_listing_changelist")},
+                {"title": "Vitrines", "link": reverse_lazy("admin:offerman_listing_changelist")},
             ],
         },
         {
@@ -752,27 +756,72 @@ UNFOLD = {
                 "stockman.stockalert",
             ],
             "items": [
-                {"title": "Saldo", "link": reverse_lazy("admin:stockman_quant_changelist")},
-                {"title": "Movimentos", "link": reverse_lazy("admin:stockman_move_changelist")},
+                {"title": "Saldos", "link": reverse_lazy("admin:stockman_quant_changelist")},
                 {"title": "Reservas", "link": reverse_lazy("admin:stockman_hold_changelist")},
+                {"title": "Movimentos", "link": reverse_lazy("admin:stockman_move_changelist")},
                 {"title": "Lotes", "link": reverse_lazy("admin:stockman_batch_changelist")},
+                {"title": "Posições", "link": reverse_lazy("admin:stockman_position_changelist")},
+                {"title": "Alertas", "link": reverse_lazy("admin:stockman_stockalert_changelist")},
             ],
         },
         # Operação de produção (painel/planejamento/relatórios) vive no Produção
         # (surfaces/production-nuxt) desde o WP-ADM-7d; o Admin mantém o CRUD.
         {
-            "models": ["craftsman.recipe", "craftsman.workorder"],
+            "models": [
+                "craftsman.recipe",
+                "craftsman.workorder",
+                "shop.qualitydefect",
+                "shop.qualitygrade",
+            ],
             "items": [
                 {"title": "Fichas técnicas", "link": reverse_lazy("admin:craftsman_recipe_changelist")},
                 {"title": "Ordens de produção", "link": reverse_lazy("admin:craftsman_workorder_changelist")},
+                {"title": "Defeitos de fornada", "link": reverse_lazy("admin:shop_qualitydefect_changelist")},
+                {"title": "Graus de qualidade", "link": reverse_lazy("admin:shop_qualitygrade_changelist")},
             ],
         },
         {
-            "models": ["orderman.order", "orderman.session", "orderman.directive"],
+            "models": ["buyman.material", "buyman.supplier"],
+            "items": [
+                {"title": "Insumos", "link": reverse_lazy("admin:buyman_material_changelist")},
+                {"title": "Fornecedores", "link": reverse_lazy("admin:buyman_supplier_changelist")},
+            ],
+        },
+        {
+            "models": [
+                "orderman.order",
+                "orderman.session",
+                "orderman.directive",
+                "payman.paymentintent",
+            ],
             "items": [
                 {"title": "Pedidos", "link": reverse_lazy("admin:orderman_order_changelist")},
-                {"title": "Comandas", "link": reverse_lazy("admin:orderman_session_changelist")},
-                {"title": "Ações", "link": reverse_lazy("admin:orderman_directive_changelist")},
+                {"title": "Sessões de venda", "link": reverse_lazy("admin:orderman_session_changelist")},
+                {"title": "Ações pendentes", "link": reverse_lazy("admin:orderman_directive_changelist")},
+                {"title": "Cobranças", "link": reverse_lazy("admin:payman_paymentintent_changelist")},
+            ],
+        },
+        {
+            "models": ["shop.promotion", "shop.coupon", "shop.ruleconfig"],
+            "items": [
+                {"title": "Regras de preço", "link": reverse_lazy("admin:shop_ruleconfig_changelist")},
+                {"title": "Promoções", "link": reverse_lazy("admin:shop_promotion_changelist")},
+                {"title": "Cupons", "link": reverse_lazy("admin:shop_coupon_changelist")},
+            ],
+        },
+        {
+            "models": ["shop.deliveryzone", "shop.deliverydistanceband"],
+            "items": [
+                {"title": "Zonas de entrega", "link": reverse_lazy("admin:shop_deliveryzone_changelist")},
+                {"title": "Faixas de distância", "link": reverse_lazy("admin:shop_deliverydistanceband_changelist")},
+            ],
+        },
+        {
+            "models": ["backstage.cashshift", "backstage.cashmovement", "backstage.dayclosing"],
+            "items": [
+                {"title": "Turnos de caixa", "link": reverse_lazy("admin:backstage_cashshift_changelist")},
+                {"title": "Movimentações", "link": reverse_lazy("admin:backstage_cashmovement_changelist")},
+                {"title": "Fechamentos do dia", "link": reverse_lazy("admin:backstage_dayclosing_changelist")},
             ],
         },
     ],

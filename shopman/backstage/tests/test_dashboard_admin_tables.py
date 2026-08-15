@@ -57,16 +57,23 @@ def test_dashboard_callback_populates_context(monkeypatch):
     assert context["rating_average"] == "—"
     assert context["rating_count"] == 0
     assert context["table_ratings"]["rows"] == []
+    # Começos de caminho do dia a dia — não um índice do Admin (o menu já é isso).
     labels = [link["label"] for link in context["config_links"]]
     assert labels == [
-        "Loja & contato",
-        "Catálogo de copy",
-        "Templates de notificação",
+        "Loja e contato",
+        "Produtos",
         "Regras de preço",
+        "Promoções",
+        "Textos da interface",
         "Canais",
     ]
     audit_labels = [link["label"] for link in context["audit_links"]]
-    assert audit_labels == ["Fechamentos", "Pagamentos", "Turnos de caixa"]
+    assert audit_labels == [
+        "Histórico de pedidos",
+        "Cobranças",
+        "Turnos de caixa",
+        "Fechamentos do dia",
+    ]
     # Operação ao vivo saiu do dashboard: mora nos apps Nuxt.
     for gone in ("order_summary", "revenue", "production", "table_pedidos_pendentes",
                  "recent_orders", "chart_pedidos_status", "table_sugestao_producao"):

@@ -8,5 +8,5 @@ from django.apps import AppConfig
 class BackstageConfig(AppConfig):
     name = "shopman.backstage"
     label = "backstage"
-    verbose_name = "Backstage"
+    verbose_name = "Operação"
     default_auto_field = "django.db.models.BigAutoField"
