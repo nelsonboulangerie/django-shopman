@@ -904,9 +904,7 @@ Dois gatilhos, porque nenhum sozinho cobre tudo:
   dia seguinte, inflando a falta medida. A reconciliação recomputa do estado
   atual e é idempotente.
 
-**Pausar não é faltar.** Produto pausado é decisão comercial, não ruptura de
-abastecimento; misturar os dois mentiria sobre a produção. Pausado não abre nem
-fecha falta.
+**Pausar também bloqueia — e conta** (ajustado pelo dono na mesma rodada, §11.4).
 
 ### 11.3 Na tela
 
@@ -923,3 +921,37 @@ informativa: é o tempo em que havia produto na loja que ninguém podia comprar.
 ⚠️ **A nova métrica só existe a partir de agora.** Período anterior à primeira
 medição fica **sem linha**, em vez de aparecer como "nunca faltou" — o passado
 segue coberto, de forma aproximada, pela métrica física.
+
+### 11.4 Pausa também conta — e vira métrica própria
+
+> Correção do dono: *"para o objetivo que estou visando, talvez a
+> indisponibilidade também conte! Não importa o motivo, o cliente não poderia
+> comprar aquele produto. Aliás, adicionalmente, essa pode ser uma métrica por
+> si só: quero saber quanto tempo um produto fica pausado."*
+
+Estava errado tratar pausa como não-falta. **Do lado de quem queria comprar,
+tanto faz o motivo**: não deu. A primeira versão media abastecimento; o que o
+dono quer medir é a **oferta**, e oferta pausada é oferta ausente.
+
+O período passa a ser aberto em qualquer bloqueio, com o **motivo registrado** —
+porque a distinção importa para o gestor, mesmo não importando para o cliente:
+falta é problema de abastecimento, pausa é decisão da casa.
+
+- **"Horas sem poder vender"** soma tudo: é a resposta à pergunta do cliente.
+- **"Horas pausado"** isola a decisão: quanto tempo cada produto ficou parado.
+- **"Motivo (esgotado/pausado)"** vira dimensão do total, para separar sem
+  precisar de duas telas.
+
+Três detalhes que o código trava:
+
+1. **Pausa tem precedência sobre falta.** Produto pausado não é vendável nem com
+   estoque cheio, então é a pausa que explica o bloqueio.
+2. **Trocar de motivo divide o período, sem interromper o bloqueio.** Despausar
+   um produto que continua esgotado fecha o trecho de pausa e abre o de falta no
+   mesmo instante: contínuo para o cliente, atribuído certo para o gestor.
+3. **A varredura passou a cobrir o catálogo inteiro, em lote.** Produto pausado
+   costuma não ter estoque nenhum, e era justamente o tempo dele parado que se
+   queria medir; além disso, pausar acontece no catálogo, longe de estoque e
+   reserva, então **nenhum signal dispara** — quem percebe é a reconciliação. Por
+   isso ela usa a consulta em lote: varrer o catálogo a cada poucos minutos com
+   uma consulta por SKU custaria centenas de idas ao banco por ciclo.

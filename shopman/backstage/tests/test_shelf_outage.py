@@ -17,7 +17,7 @@ from django.utils import timezone
 from shopman.offerman.models import Product
 from shopman.stockman.models import Hold, Move, Position, Quant
 
-from shopman.backstage.models import ShelfOutage
+from shopman.backstage.models import OutageReason, ShelfOutage
 from shopman.backstage.projections.bi_explore import build_bi_explore
 from shopman.backstage.services import shelf_outages
 
@@ -133,17 +133,62 @@ class TestObservingTheOutage:
         quant.refresh_from_db()
         assert quant.quantity == Decimal("4")  # o físico segue intacto
 
-    def test_paused_product_is_not_a_shortage(self, vitrine, canal, pao, apos_commit):
-        """Pausar é decisão comercial; misturar com falta mentiria sobre produção."""
+    def test_pausing_also_blocks_the_customer_and_is_recorded(
+        self, vitrine, canal, pao, apos_commit
+    ):
+        """Pausado com estoque cheio: o cliente não compra, e isso conta.
+
+        Para quem queria comprar tanto faz o motivo. O motivo importa para o
+        gestor — e fica registrado para separar depois.
+        """
+        quant = Quant.objects.create(sku="PAO", position=vitrine)
+        with apos_commit():
+            _receber(quant, 5)
+        assert not ShelfOutage.objects.exists()
+
+        Product.objects.filter(sku="PAO").update(is_sellable=False)
+        shelf_outages.observe("PAO")
+
+        outage = ShelfOutage.objects.get(sku="PAO", ended_at__isnull=True)
+        assert outage.reason == OutageReason.PAUSED
+        quant.refresh_from_db()
+        assert quant.quantity == Decimal("5")  # estoque intacto; a pausa é que bloqueia
+
+    def test_unpausing_ends_the_block(self, vitrine, canal, pao, apos_commit):
         quant = Quant.objects.create(sku="PAO", position=vitrine)
         with apos_commit():
             _receber(quant, 5)
         Product.objects.filter(sku="PAO").update(is_sellable=False)
+        shelf_outages.observe("PAO")
 
+        Product.objects.filter(sku="PAO").update(is_sellable=True)
+        shelf_outages.observe("PAO")
+
+        assert not ShelfOutage.objects.filter(ended_at__isnull=True).exists()
+
+    def test_changing_reason_splits_the_period(self, vitrine, canal, pao, apos_commit):
+        """Despausar sem estoque não devolve o produto: o bloqueio continua.
+
+        Fecha o período de pausa e abre o de falta no mesmo instante — contínuo
+        para o cliente, atribuído ao motivo certo para o gestor.
+        """
+        quant = Quant.objects.create(sku="PAO", position=vitrine)
         with apos_commit():
+            _receber(quant, 5)
             _vender(quant, 5)
+        Product.objects.filter(sku="PAO").update(is_sellable=False)
+        shelf_outages.observe("PAO")
+        assert (
+            ShelfOutage.objects.get(ended_at__isnull=True).reason
+            == OutageReason.PAUSED
+        )
 
-        assert not ShelfOutage.objects.exists()
+        Product.objects.filter(sku="PAO").update(is_sellable=True)
+        shelf_outages.observe("PAO")
+
+        aberto = ShelfOutage.objects.get(ended_at__isnull=True)
+        assert aberto.reason == OutageReason.SOLD_OUT
+        assert ShelfOutage.objects.filter(reason=OutageReason.PAUSED).count() == 1
 
     def test_only_one_open_outage_per_sku_and_channel(self, vitrine, canal, pao, apos_commit):
         quant = Quant.objects.create(sku="PAO", position=vitrine)
@@ -197,6 +242,60 @@ class TestReconciliation:
         assert second["opened"] == 0
         assert second["closed"] == 0
         assert first["checked"] == second["checked"]
+
+
+class TestPausedTime:
+    """Quanto tempo um produto ficou parado — métrica por si só."""
+
+    def test_paused_hours_counts_only_the_pause(self, vitrine, canal, pao):
+        today = timezone.localdate()
+        yesterday = today - timedelta(days=1)
+        tz = timezone.get_current_timezone()
+
+        def _periodo(reason, de, ate):
+            ShelfOutage.objects.create(
+                sku="PAO", channel_ref="web", reason=reason,
+                started_at=timezone.datetime(
+                    yesterday.year, yesterday.month, yesterday.day, de, 0, tzinfo=tz
+                ),
+                ended_at=timezone.datetime(
+                    yesterday.year, yesterday.month, yesterday.day, ate, 0, tzinfo=tz
+                ),
+            )
+
+        _periodo(OutageReason.PAUSED, 9, 12)      # 3h pausado
+        _periodo(OutageReason.SOLD_OUT, 14, 18)   # 4h esgotado
+
+        janela = {"date_from": today - timedelta(days=3), "date_to": today}
+        pausado = build_bi_explore(metric="paused_hours", by="sku", **janela)
+        total = build_bi_explore(metric="unavailable_hours", by="sku", **janela)
+
+        assert [(r.key, r.value) for r in pausado.rows] == [("PAO", 3.0)]
+        # O total soma os dois: para o cliente, sete horas sem poder comprar.
+        assert [(r.key, r.value) for r in total.rows] == [("PAO", 7.0)]
+
+    def test_reason_is_a_dimension_of_the_total(self, vitrine, canal, pao):
+        today = timezone.localdate()
+        tz = timezone.get_current_timezone()
+        for reason, de, ate in (
+            (OutageReason.PAUSED, 9, 11),
+            (OutageReason.SOLD_OUT, 15, 18),
+        ):
+            ShelfOutage.objects.create(
+                sku="PAO", channel_ref="web", reason=reason,
+                started_at=timezone.datetime(today.year, today.month, today.day, de, 0, tzinfo=tz),
+                ended_at=timezone.datetime(today.year, today.month, today.day, ate, 0, tzinfo=tz),
+            )
+
+        report = build_bi_explore(
+            metric="unavailable_hours", by="outage_reason",
+            date_from=today - timedelta(days=1), date_to=today,
+        )
+
+        assert {r.label: r.value for r in report.rows} == {
+            "Pausado": 2.0,
+            "Esgotado": 3.0,
+        }
 
 
 class TestReadingTheOutage:
