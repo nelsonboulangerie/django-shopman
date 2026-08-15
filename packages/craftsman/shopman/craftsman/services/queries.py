@@ -125,12 +125,14 @@ class CraftQueries:
         season_months: list | None = None,
         high_demand_multiplier: Decimal | None = None,
         safety_pct: Decimal | None = None,
+        exclude_dates: frozenset | None = None,
     ):
         """
         Suggest production quantities for a date.
 
         Args:
-            date: production date
+            date: production date. Também é a âncora do recorte por
+                  dia-da-semana no histórico: planejar sábado olha sábados.
             output_skus: optional list of output_sku strings to filter recipes.
                          If None, all active recipes are considered.
             season_months: optional list of month ints to filter history by season.
@@ -141,6 +143,9 @@ class CraftQueries:
             safety_pct: optional safety-margin override applied over
                         (avg_demand + committed). If None, the
                         SAFETY_STOCK_PERCENT setting is used.
+            exclude_dates: dias que não entram na amostra (loja fechada,
+                           feriado). Quem conhece o calendário é o
+                           orquestrador; o core só recebe a lista.
 
         Algorithm:
             For each active Recipe (optionally filtered by output_skus):
@@ -175,6 +180,7 @@ class CraftQueries:
             safety_pct = get_setting("SAFETY_STOCK_PERCENT")
         historical_days = get_setting("HISTORICAL_DAYS")
         same_weekday = get_setting("SAME_WEEKDAY_ONLY")
+        exclude_dates = frozenset(exclude_dates or ())
 
         suggestions = []
         recipes = Recipe.objects.filter(is_active=True)
@@ -185,6 +191,8 @@ class CraftQueries:
                 recipe.output_sku,
                 days=historical_days,
                 same_weekday=same_weekday,
+                target_date=date,
+                exclude_dates=exclude_dates,
             )
 
             if not history:
@@ -246,6 +254,7 @@ class CraftQueries:
                         "season": season_label,
                         "waste_rate": waste_rate,
                         "high_demand_applied": high_demand_applied,
+                        "excluded_days": len(exclude_dates),
                     },
                 )
             )

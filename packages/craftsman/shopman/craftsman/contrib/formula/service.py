@@ -47,6 +47,7 @@ def suggest(
     season_months: list[int] | None = None,
     high_demand_multiplier: Decimal | None = None,
     safety_pct: Decimal | None = None,
+    exclude_dates: frozenset[date] | None = None,
 ) -> list[FormulaSuggestionLine]:
     """Build ephemeral formula suggestions from craft.suggest()."""
     base_suggestions = craft.suggest(
@@ -55,6 +56,7 @@ def suggest(
         season_months=season_months,
         high_demand_multiplier=high_demand_multiplier,
         safety_pct=safety_pct,
+        exclude_dates=exclude_dates,
     )
     return [_build_line(suggestion, target_date=target_date) for suggestion in base_suggestions]
 

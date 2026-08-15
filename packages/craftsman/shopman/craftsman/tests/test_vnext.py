@@ -1221,7 +1221,11 @@ class TestSuggest:
         assert suggestions == []
 
     def test_passes_settings_to_backend(self, recipe, tomorrow, settings):
-        """HISTORICAL_DAYS and SAME_WEEKDAY_ONLY are passed to backend."""
+        """HISTORICAL_DAYS, SAME_WEEKDAY_ONLY e a DATA PLANEJADA vão ao backend.
+
+        A data-alvo viaja junto porque é ela que ancora o recorte por
+        dia-da-semana: quem planeja amanhã tem de amostrar amanhãs.
+        """
         from unittest.mock import MagicMock, patch
 
         mock_backend = MagicMock()
@@ -1244,6 +1248,8 @@ class TestSuggest:
             recipe.output_sku,
             days=14,
             same_weekday=False,
+            target_date=tomorrow,
+            exclude_dates=frozenset(),
         )
 
     def test_inactive_recipe_excluded(self, recipe, tomorrow, settings):
