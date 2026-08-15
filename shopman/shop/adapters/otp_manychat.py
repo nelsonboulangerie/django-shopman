@@ -65,7 +65,7 @@ class ManychatOTPSender:
 
     def _send_via_text(self, subscriber_id: int, code: str, config: dict) -> bool:
         """Send OTP as a direct ManyChat content message."""
-        message = f"Seu codigo de verificacao: {code}"
+        message = f"Seu código de verificação: {code}"
         payload = {
             "subscriber_id": subscriber_id,
             "data": {

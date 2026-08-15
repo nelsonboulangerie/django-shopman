@@ -311,8 +311,8 @@ def build_audience_count(rules: dict | None, *, sku: str = "") -> AudienceCountP
         total=result.total,
         match=result.match,
         match_label=(
-            "cruzando as regras" if result.match == audience_service.MATCH_ALL
-            else "somando as regras"
+            "Cruzando as regras" if result.match == audience_service.MATCH_ALL
+            else "Somando as regras"
         ),
         parts=parts,
         vip_count=len(result.vip),

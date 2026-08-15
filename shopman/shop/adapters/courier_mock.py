@@ -69,7 +69,7 @@ def dispatch(payload: dict) -> CourierDispatchResult:
 def get_status(courier_ref: str) -> str:
     ride = _rides.get(courier_ref)
     if ride is None:
-        raise CourierError("Solicitacao não encontrada.", transient=False)
+        raise CourierError("Solicitação não encontrada.", transient=False)
     return ride.get("status") or "D"
 
 
@@ -94,7 +94,7 @@ def get_position(courier_ref: str) -> dict | None:
 def cancel(courier_ref: str, *, reason_id: int | None = None) -> bool:
     ride = _rides.get(courier_ref)
     if ride is None:
-        raise CourierError("Solicitacao não encontrada.", transient=False)
+        raise CourierError("Solicitação não encontrada.", transient=False)
     if ride.get("status") in TERMINAL_STATUSES:
         raise CourierError("Solicitação já finalizada/cancelada.", transient=False)
     ride["status"] = "C"

@@ -98,16 +98,18 @@ class TagCustomersForm(forms.Form):
 # =============================================================================
 
 
-# Rótulos PT-BR dos segmentos (o valor cru vem em inglês da insight): fonte única
-# usada pelo filtro E pela coluna, para o operador nunca ver "At Risk"/"Lost".
-RFM_SEGMENT_LABELS = {
-    "champion": "Campeão",
-    "loyal_customer": "Cliente fiel",
-    "recent_customer": "Cliente recente",
-    "at_risk": "Em risco",
-    "lost": "Perdido",
-    "regular": "Regular",
-}
+def _rfm_segment_labels() -> dict[str, str]:
+    """Rótulos PT-BR dos segmentos (o valor cru vem em inglês da insight).
+
+    O dono é ``RFM_SEGMENTS``: filtro e coluna leem dele, para o operador nunca ver
+    "At Risk"/"Lost" nem um rótulo diferente do que a campanha mostra. Import tardio
+    porque ``contrib.insights`` é opcional — sem ele, não há segmento para rotular.
+    """
+    try:
+        from shopman.guestman.contrib.insights.models import RFM_SEGMENTS
+    except (ImportError, RuntimeError):
+        return {}
+    return dict(RFM_SEGMENTS)
 
 
 class RFMSegmentFilter(admin.SimpleListFilter):
@@ -116,7 +118,7 @@ class RFMSegmentFilter(admin.SimpleListFilter):
     parameter_name = "rfm_segment"
 
     def lookups(self, request, model_admin):
-        return list(RFM_SEGMENT_LABELS.items())
+        return list(_rfm_segment_labels().items())
 
     def queryset(self, request, queryset):
         value = self.value()
@@ -376,7 +378,7 @@ class CustomerAdmin(BaseModelAdmin):
         }
         color = segment_colors.get(segment, "base")
         # Rótulo PT-BR (nunca "At Risk"/"Lost" na cara do operador).
-        label = RFM_SEGMENT_LABELS.get(segment, segment.replace("_", " ").capitalize())
+        label = _rfm_segment_labels().get(segment, segment.replace("_", " ").capitalize())
         return unfold_badge(label, color)
 
     @display(description=_("Risco de perda"))

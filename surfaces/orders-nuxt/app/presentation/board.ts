@@ -395,7 +395,7 @@ export function flattenZones(zones: ZoneView[]): FlatRow[] {
  *  for a shift handover or a quick print. Pure so the columns/escaping are
  *  testable; the page owns the download. */
 export function rowsToCsv(rows: FlatRow[]): string {
-  const header = ["Codigo", "Etapa", "Canal", "Cliente", "Itens", "Total", "Tempo", "Atendente"];
+  const header = ["Código", "Etapa", "Canal", "Cliente", "Itens", "Total", "Tempo", "Atendente"];
   const esc = (v: unknown) => `"${String(v ?? "").replace(/"/g, '""')}"`;
   const body = rows.map((r) =>
     [

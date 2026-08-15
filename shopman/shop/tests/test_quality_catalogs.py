@@ -35,6 +35,13 @@ class TestSeed:
         """Sem a dica, escolher pela causa vira adivinhação."""
         assert not QualityDefect.objects.filter(hint="").exists()
 
+    def test_o_sintoma_abre_linha_com_maiuscula(self):
+        """A dica é a segunda linha do botão de QC: abre linha, então sentence case
+        (regra de copy). Confere que a 0018 reescreveu o que a 0013 semeou."""
+        hints = dict(QualityDefect.objects.values_list("ref", "hint"))
+        assert hints["underproofed"] == "Pequeno, denso, rasgou"
+        assert all(hint[:1] == hint[:1].upper() for hint in hints.values())
+
 
 class TestVeto:
     def test_so_contaminacao_veta(self):

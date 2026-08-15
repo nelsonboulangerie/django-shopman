@@ -78,7 +78,7 @@ class QualityDefect(models.Model):
 
     "Pequeno" não ensina nada num relatório; a causa quase sempre é fermentação,
     que pode ter faltado ou sobrado. O ``hint`` devolve o sintoma ao operador
-    ("pequeno, denso, rasgou") para a inferência não custar nada às 5h da manhã.
+    ("Pequeno, denso, rasgou") para a inferência não custar nada às 5h da manhã.
 
     Nenhum defeito carrega severidade: "escuro" e "queimado" são ``overbaked``
     em graus diferentes. A palavra não muda quando a severidade muda.

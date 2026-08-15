@@ -29,7 +29,7 @@ function makeAnnouncement(over: Partial<Announcement> = {}): Announcement {
     audience_total: 15,
     platform_results: [],
     trigger: "production_finished",
-    trigger_label: "fornada concluída",
+    trigger_label: "Fornada concluída",
     rule_name: "Fornada de pães",
     template_name: "Fornada",
     sku: "CRO-001",

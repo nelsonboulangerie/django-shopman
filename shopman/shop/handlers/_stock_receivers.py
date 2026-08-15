@@ -375,7 +375,7 @@ def _deadline_at_for_holds(hold_ids: list[str]) -> str | None:
 
 
 def _deadline_note(deadline_at: str | None) -> str:
-    """" Confirme ate as HH:MM." — vazio sem deadline (nunca prometemos prazo
+    """" Confirme até as HH:MM." — vazio sem deadline (nunca prometemos prazo
     que não existe)."""
     if not deadline_at:
         return ""
@@ -385,7 +385,7 @@ def _deadline_note(deadline_at: str | None) -> str:
         from django.utils import timezone as _tz
 
         local = _tz.localtime(datetime.fromisoformat(deadline_at))
-        return f" Confirme ate as {local.strftime('%H:%M')}."
+        return f" Confirme até as {local.strftime('%H:%M')}."
     except Exception:
         logger.debug("stock_receivers._deadline_note degraded", exc_info=True)
         return ""

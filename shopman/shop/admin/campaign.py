@@ -70,7 +70,7 @@ class CampaignAdmin(ModelAdmin):
         if not sched.fires_on_its_own(obj.schedule):
             return "—"
         if sched.next_occurrence(obj.schedule) is None:
-            return "não dispara mais"
+            return "Não dispara mais"
         return sched.describe_occurrence(obj.schedule)
 
 

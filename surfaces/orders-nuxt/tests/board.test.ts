@@ -300,7 +300,7 @@ describe("rowsToCsv", () => {
     ];
     const csv = rowsToCsv(rows);
     const [header, line] = csv.split("\n");
-    expect(header).toContain("Codigo");
+    expect(header).toContain("Código");
     expect(header).toContain("Atendente");
     expect(line).toContain('"A"');
     expect(line).toContain('"Ana ""Bela"""'); // doubled quotes

@@ -68,7 +68,7 @@ def _reduced(addr) -> SavedAddressProjection:
     place = " · ".join(part for part in (addr.neighborhood, addr.city) if part)
     return SavedAddressProjection(
         id=addr.id,
-        formatted_address=place or "endereço salvo",
+        formatted_address=place or "Endereço salvo",
         complement="",
         label=addr.label,
         is_default=addr.is_default,

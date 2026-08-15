@@ -17,69 +17,69 @@ logger = logging.getLogger(__name__)
 
 MESSAGE_TEMPLATES: dict[str, str] = {
     "order_received": (
-        "Ola{customer_name_greeting}! Recebemos seu pedido {order_ref}. "
+        "Olá{customer_name_greeting}! Recebemos seu pedido {order_ref}. "
         "O estabelecimento vai conferir a disponibilidade. Acompanhe: {tracking_url}"
     ),
     "order_accepted": (
-        "Ola{customer_name_greeting}! Seu pedido {order_ref} foi confirmado."
-        " Total: {total}. Obrigado pela preferencia! \U0001f950{tracking_suffix}"
+        "Olá{customer_name_greeting}! Seu pedido {order_ref} foi confirmado."
+        " Total: {total}. Obrigado pela preferência! \U0001f950{tracking_suffix}"
     ),
     "order_preparing": (
-        "Ola{customer_name_greeting}! Seu pedido {order_ref} esta em preparo."
+        "Olá{customer_name_greeting}! Seu pedido {order_ref} está em preparo."
         "{tracking_suffix}"
     ),
     "order_ready_pickup": (
-        "Ola{customer_name_greeting}! Seu pedido {order_ref} esta pronto"
+        "Olá{customer_name_greeting}! Seu pedido {order_ref} está pronto"
         " para retirada! \U0001f389\n\nVenha buscar. Obrigado!{tracking_suffix}"
     ),
     "order_ready_delivery": (
-        "Ola{customer_name_greeting}! Seu pedido {order_ref} esta pronto"
-        " e sera enviado em breve! \U0001f4e6{tracking_suffix}"
+        "Olá{customer_name_greeting}! Seu pedido {order_ref} está pronto"
+        " e será enviado em breve! \U0001f4e6{tracking_suffix}"
     ),
     "order_dispatched": (
-        "Ola{customer_name_greeting}! Seu pedido {order_ref} saiu para"
+        "Olá{customer_name_greeting}! Seu pedido {order_ref} saiu para"
         " entrega! \U0001f697{courier_tracking_suffix}{tracking_suffix}"
     ),
     "order_delivered": (
-        "Pedido {order_ref} entregue. Obrigado pela preferencia! \u2b50{reorder_suffix}"
+        "Pedido {order_ref} entregue. Obrigado pela preferência! \u2b50{reorder_suffix}"
     ),
     "order_cancelled": (
-        "Seu pedido {order_ref} foi cancelado.{reason_note}\n\nQualquer duvida, estamos aqui."
+        "Seu pedido {order_ref} foi cancelado.{reason_note}\n\nQualquer dúvida, estamos aqui."
     ),
     "order_rejected": (
-        "Seu pedido {order_ref} nao pode ser confirmado pelo estabelecimento. "
+        "Seu pedido {order_ref} não pode ser confirmado pelo estabelecimento. "
         "Motivo: {reason}. Se precisar de ajuda, estamos aqui."
     ),
     "payment_confirmed": (
-        "Ola{customer_name_greeting}! Pagamento do pedido {order_ref} recebido. "
-        "Seu pedido seguira para preparo."
+        "Olá{customer_name_greeting}! Pagamento do pedido {order_ref} recebido. "
+        "Seu pedido seguirá para preparo."
     ),
     "payment_requested": (
-        "Ola{customer_name_greeting}! Conferimos a disponibilidade do pedido {order_ref}. "
+        "Olá{customer_name_greeting}! Conferimos a disponibilidade do pedido {order_ref}. "
         "Agora falta o pagamento. Acesse: {payment_url}{pix_suffix}"
     ),
     "payment_reminder": (
-        "Ola{customer_name_greeting}! Seu pedido {order_ref} aguarda"
-        " pagamento PIX. Use o codigo: {copy_paste}"
+        "Olá{customer_name_greeting}! Seu pedido {order_ref} aguarda"
+        " pagamento PIX. Use o código: {copy_paste}"
     ),
     "payment_expired": (
         "Seu pedido {order_ref} foi cancelado pois o pagamento PIX"
-        " nao foi confirmado a tempo."
+        " não foi confirmado a tempo."
     ),
     "payment_failed": (
-        "Nao conseguimos preparar o pagamento do pedido {order_ref}. "
+        "Não conseguimos preparar o pagamento do pedido {order_ref}. "
         "Abra o link do pedido para tentar novamente: {payment_url}"
     ),
     "preorder_reminder": (
-        "Lembrete: seu pedido {order_ref} esta agendado para amanha. "
-        "Ja estamos preparando tudo!"
+        "Lembrete: seu pedido {order_ref} está agendado para amanhã. "
+        "Já estamos preparando tudo!"
     ),
     # Chegada de estoque (AVAILABILITY-PLAN §8.3 + "Me avise"): os pedaços
     # reserve_note/deadline_note/cta/action_url vem prontos do emissor —
     # reserva de sacola materializada traz prazo + link do carrinho; o
     # "Me avise" (sem reserva) traz o link do produto.
     "stock_arrived": (
-        "Boa noticia! {product_name} chegou.{reserve_note}{deadline_note} "
+        "Boa notícia! {product_name} chegou.{reserve_note}{deadline_note} "
         "{cta} {action_url}"
     ),
     # Fornada pronta ("Me avise quando sair do forno", F9 do FOMO-MARKETING):

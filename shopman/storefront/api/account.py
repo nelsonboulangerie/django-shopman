@@ -124,7 +124,7 @@ def _serialize_address(addr, *, reduced: bool = False) -> dict:
             "label": getattr(addr, "display_label", addr.label),
             "label_key": getattr(addr, "label", "home") or "home",
             "label_custom": getattr(addr, "label_custom", "") or "",
-            "formatted_address": place or "endereço salvo",
+            "formatted_address": place or "Endereço salvo",
             "complement": "",
             "delivery_instructions": "",
             "is_default": addr.is_default,

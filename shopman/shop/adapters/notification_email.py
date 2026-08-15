@@ -26,98 +26,98 @@ SUBJECT_TEMPLATES: dict[str, str] = {
     "order_dispatched": "Pedido {order_ref} saiu para entrega",
     "order_delivered": "Pedido {order_ref} entregue",
     "order_cancelled": "Pedido {order_ref} cancelado",
-    "order_rejected": "Pedido {order_ref} nao confirmado",
+    "order_rejected": "Pedido {order_ref} não confirmado",
     "payment_confirmed": "Pagamento do pedido {order_ref} confirmado",
     "payment_requested": "Pedido {order_ref}: pagamento liberado",
     "payment_expired": "Pagamento do pedido {order_ref} expirado",
     "payment_failed": "Falha ao preparar pagamento do pedido {order_ref}",
     "preorder_reminder": "Lembrete: pedido {order_ref} agendado para amanhã",
     "stock_alert": "Alerta de estoque: {sku}",
-    "stock_arrived": "Boa noticia: {product_name} chegou",
+    "stock_arrived": "Boa notícia: {product_name} chegou",
     "production_ready": "Saiu do forno agora: {product_name}",
     "announcement_published": "Novidade na padaria",
 }
 
 BODY_TEMPLATES: dict[str, str] = {
     "order_received": (
-        "Ola{customer_name_greeting}!\n\n"
+        "Olá{customer_name_greeting}!\n\n"
         "Recebemos seu pedido {order_ref}.\n\n"
-        "O estabelecimento vai conferir a disponibilidade e avisaremos a proxima etapa.\n"
+        "O estabelecimento vai conferir a disponibilidade e avisaremos a próxima etapa.\n"
     ),
     "order_accepted": (
-        "Ola{customer_name_greeting}!\n\n"
+        "Olá{customer_name_greeting}!\n\n"
         "Seu pedido {order_ref} foi confirmado.\n\n"
-        "Total: {total}\n\nObrigado pela preferencia!\n"
+        "Total: {total}\n\nObrigado pela preferência!\n"
     ),
     "order_preparing": (
-        "Ola{customer_name_greeting}!\n\n"
-        "Seu pedido {order_ref} esta em preparo.\n\n"
+        "Olá{customer_name_greeting}!\n\n"
+        "Seu pedido {order_ref} está em preparo.\n\n"
         "Avisaremos quando estiver pronto!\n"
     ),
     "order_ready_pickup": (
-        "Ola{customer_name_greeting}!\n\n"
-        "Seu pedido {order_ref} esta pronto para retirada.\n\n"
+        "Olá{customer_name_greeting}!\n\n"
+        "Seu pedido {order_ref} está pronto para retirada.\n\n"
         "Venha buscar. Obrigado!\n"
     ),
     "order_ready_delivery": (
-        "Ola{customer_name_greeting}!\n\n"
-        "Seu pedido {order_ref} esta pronto e sera enviado em breve.\n\n"
+        "Olá{customer_name_greeting}!\n\n"
+        "Seu pedido {order_ref} está pronto e será enviado em breve.\n\n"
         "Obrigado!\n"
     ),
     "order_dispatched": (
-        "Ola{customer_name_greeting}!\n\n"
+        "Olá{customer_name_greeting}!\n\n"
         "Seu pedido {order_ref} saiu para entrega."
         "{courier_tracking_suffix}\n\n"
         "Acompanhe pelo link de rastreamento.\n"
     ),
     "order_delivered": (
-        "Ola{customer_name_greeting}!\n\n"
-        "Seu pedido {order_ref} foi entregue.\n\nObrigado pela preferencia!\n"
+        "Olá{customer_name_greeting}!\n\n"
+        "Seu pedido {order_ref} foi entregue.\n\nObrigado pela preferência!\n"
     ),
     "order_cancelled": (
-        "Ola{customer_name_greeting}!\n\n"
+        "Olá{customer_name_greeting}!\n\n"
         "Seu pedido {order_ref} foi cancelado.{reason_note}\n\n"
-        "Em caso de duvidas, entre em contato.\n"
+        "Em caso de dúvidas, entre em contato.\n"
     ),
     "order_rejected": (
-        "Ola{customer_name_greeting}!\n\n"
-        "O estabelecimento nao conseguiu confirmar o pedido {order_ref}.\n\n"
+        "Olá{customer_name_greeting}!\n\n"
+        "O estabelecimento não conseguiu confirmar o pedido {order_ref}.\n\n"
         "Motivo: {reason}\n\n"
-        "Em caso de duvidas, entre em contato.\n"
+        "Em caso de dúvidas, entre em contato.\n"
     ),
     "payment_confirmed": (
-        "Ola{customer_name_greeting}!\n\n"
+        "Olá{customer_name_greeting}!\n\n"
         "O pagamento do pedido {order_ref} foi confirmado.\n\n"
-        "Seu pedido seguira para preparo.\n\n"
+        "Seu pedido seguirá para preparo.\n\n"
         "Obrigado!\n"
     ),
     "payment_requested": (
-        "Ola{customer_name_greeting}!\n\n"
+        "Olá{customer_name_greeting}!\n\n"
         "Conferimos a disponibilidade do pedido {order_ref}.\n\n"
         "Agora falta o pagamento. Acesse: {payment_url}\n\n"
         "{pix_suffix}\n"
     ),
     "payment_expired": (
-        "Ola{customer_name_greeting}!\n\n"
+        "Olá{customer_name_greeting}!\n\n"
         "O prazo de pagamento do pedido {order_ref} expirou.\n\n"
-        "Caso ainda deseje comprar, faca um novo pedido.\n"
+        "Caso ainda deseje comprar, faça um novo pedido.\n"
     ),
     "payment_failed": (
-        "Ola{customer_name_greeting}!\n\n"
-        "Nao conseguimos preparar o pagamento do pedido {order_ref}.\n\n"
+        "Olá{customer_name_greeting}!\n\n"
+        "Não conseguimos preparar o pagamento do pedido {order_ref}.\n\n"
         "Acesse {payment_url} para tentar novamente.\n"
     ),
     "stock_alert": (
         "Alerta de estoque\n\n"
         "Produto: {sku}\nQuantidade atual: {available}\n"
-        "Minimo configurado: {min_quantity}\n\nProvidencie reposicao.\n"
+        "Mínimo configurado: {min_quantity}\n\nProvidencie reposição.\n"
     ),
     "preorder_reminder": (
-        "Lembrete: seu pedido {order_ref} esta agendado para amanha.\n"
-        "Ja estamos preparando tudo!"
+        "Lembrete: seu pedido {order_ref} está agendado para amanhã.\n"
+        "Já estamos preparando tudo!"
     ),
     "stock_arrived": (
-        "Boa noticia!\n\n"
+        "Boa notícia!\n\n"
         "{product_name} chegou.{reserve_note}{deadline_note}\n\n"
         "{cta} {action_url}\n"
     ),

@@ -85,7 +85,7 @@ class CashShift(models.Model):
         verbose_name="diferença (centavos)",
         null=True,
         blank=True,
-        help_text="Diferenca: contado - esperado (positivo = sobra).",
+        help_text="Diferença: contado - esperado (positivo = sobra).",
     )
     notes = models.TextField(verbose_name="observações", blank=True, default="")
     status = models.CharField(max_length=10, choices=Status.choices, default=Status.OPEN)
