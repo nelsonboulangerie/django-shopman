@@ -614,3 +614,79 @@ def test_a_pagina_termina_cortando_o_papel():
     saida = drawer_agent.test_print_bytes()
     assert saida.startswith(bytes([0x1B, ord("@")])), "sem reset, herda estado do job anterior"
     assert saida.endswith(bytes([0x1D, ord("V"), 1]))
+
+
+# ── /print: o agente é um cano ────────────────────────────────────────────
+
+
+def _print_req(base, body, origin=ORIGIN):
+    return _post(base, "/print", body, origin=origin)
+
+
+def test_print_entrega_os_bytes_que_o_servidor_compos(agent):
+    """O agente não sabe o que é sangria — quem compõe é o servidor."""
+    base, sent = agent
+    import base64
+
+    papel = b"\x1b@\x1bt\x03NELSON\n"
+    status, body, _ = _print_req(base, {
+        "token": TOKEN, "title": "sangria", "payload_b64": base64.b64encode(papel).decode(),
+    })
+
+    assert status == 200 and body["ok"] is True
+    assert sent[0]["payload"] == papel
+    assert sent[0]["title"] == "sangria"
+
+
+def test_print_sem_token_e_recusado(agent):
+    base, sent = agent
+    with pytest.raises(urllib.error.HTTPError) as exc:
+        _print_req(base, {"payload_b64": "AAAA"})
+    assert exc.value.code == 401
+    assert sent == []
+
+
+def test_print_de_origem_estranha_e_recusado(agent):
+    base, sent = agent
+    with pytest.raises(urllib.error.HTTPError) as exc:
+        _print_req(base, {"token": TOKEN, "payload_b64": "AAAA"}, origin="https://intruso.example")
+    assert exc.value.code == 403
+    assert sent == []
+
+
+@pytest.mark.parametrize("payload", ["nao-e-base64!!", "", None])
+def test_print_com_payload_invalido_nao_manda_lixo_para_a_impressora(agent, payload):
+    """Lixo no spooler vira papel rasgado de caracteres aleatórios."""
+    base, sent = agent
+    with pytest.raises(urllib.error.HTTPError) as exc:
+        _print_req(base, {"token": TOKEN, "payload_b64": payload})
+    assert exc.value.code == 400
+    assert sent == []
+
+
+def test_print_aceita_documento_grande(agent):
+    """Comprovante em base64 passa de 8 KB; a DANFE passa mais."""
+    import base64
+
+    base, sent = agent
+    grande = b"X" * 60_000
+    status, _, _ = _print_req(base, {
+        "token": TOKEN, "title": "danfe", "payload_b64": base64.b64encode(grande).decode(),
+    })
+    assert status == 200
+    assert sent[0]["payload"] == grande
+
+
+def test_falha_do_spooler_na_impressao_vira_502(agent, monkeypatch):
+    """A tela precisa saber que NÃO imprimiu, para registrar como falha."""
+    import base64
+
+    base, _ = agent
+
+    def boom(*a, **k):
+        raise drawer_agent.SpoolerError("fila parada")
+
+    monkeypatch.setattr(drawer_agent, "send_raw", boom)
+    with pytest.raises(urllib.error.HTTPError) as exc:
+        _print_req(base, {"token": TOKEN, "payload_b64": base64.b64encode(b"x").decode()})
+    assert exc.value.code == 502
