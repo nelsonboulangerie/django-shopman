@@ -123,7 +123,40 @@ export const EXPLORE_DIMENSION_LABELS: Record<string, string> = {
   operator: "Operador",
   grade: "Grau de qualidade",
   defect: "Defeito",
+  // Contexto: só chegam na gramática quando alguém injetou o dado
+  // (import_holidays / import_weather). Sem dado, o servidor nem oferece.
+  day_kind: "Tipo de dia (feriado)",
+  temperature: "Temperatura do dia",
+  rain: "Chuva",
 };
+
+/** Cenários que dependem de contexto injetado — só valem se o servidor oferecer. */
+export const CONTEXT_EXAMPLES = [
+  { name: "Faturamento por temperatura", config: { metric: "revenue", by: "temperature", by2: "" } },
+  { name: "O que vende no calor", config: { metric: "qty_sold", by: "temperature", by2: "sku" } },
+  { name: "Feriado, véspera e volta", config: { metric: "revenue", by: "day_kind", by2: "" } },
+  { name: "Falta em véspera de feriado", config: { metric: "hours_without_stock", by: "day_kind", by2: "sku" } },
+  { name: "Movimento com e sem chuva", config: { metric: "orders", by: "rain", by2: "" } },
+] as const;
+
+/**
+ * Junta os exemplos fixos com os de contexto que a gramática do servidor
+ * declara suportar agora. Um chip que abriria vazio não aparece: a tela cresce
+ * quando o dado chega, e não promete o que não tem.
+ */
+export function availableExamples(
+  supportedDimensions: readonly string[],
+): ReadonlyArray<{ name: string; config: { metric: string; by: string; by2: string } }> {
+  const supported = new Set(supportedDimensions);
+  return [
+    ...EXPLORE_EXAMPLES,
+    ...CONTEXT_EXAMPLES.filter(
+      (example) =>
+        supported.has(example.config.by) &&
+        (!example.config.by2 || supported.has(example.config.by2)),
+    ),
+  ];
+}
 
 /** Cenários de exemplo — chips de partida quando não há salvos (F9).
  *

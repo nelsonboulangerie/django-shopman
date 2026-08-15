@@ -1,8 +1,10 @@
 import { describe, expect, it } from "vitest";
 import {
   DATA_EPOCH,
+  CONTEXT_EXAMPLES,
   EXPLORE_DIMENSION_LABELS,
   EXPLORE_EXAMPLES,
+  availableExamples,
   WEEKDAY_LABELS,
   bucketLabel,
   bucketSalesDays,
@@ -54,6 +56,25 @@ describe("presentation/bi", () => {
 
   it("a curadoria abre pela pergunta do dia: falta ou sobra", () => {
     expect(EXPLORE_EXAMPLES[0]?.config.metric).toBe("soldout_days");
+  });
+
+  it("cenário de contexto só aparece quando o servidor tem o dado", () => {
+    // Sem clima nem calendário injetados, a gramática não oferece as dimensões
+    // — e um chip que abriria vazio não deve existir na tela.
+    const semContexto = availableExamples(["sku", "time", "weekday"]);
+    expect(semContexto).toHaveLength(EXPLORE_EXAMPLES.length);
+
+    const comClima = availableExamples(["sku", "time", "temperature"]);
+    expect(comClima.length).toBeGreaterThan(EXPLORE_EXAMPLES.length);
+    expect(comClima.some((e) => e.config.by === "temperature")).toBe(true);
+    // Feriado segue fora: cada bloco de contexto entra por conta própria.
+    expect(comClima.some((e) => e.config.by === "day_kind")).toBe(false);
+  });
+
+  it("todo cenário de contexto usa dimensão rotulada", () => {
+    for (const example of CONTEXT_EXAMPLES) {
+      expect(EXPLORE_DIMENSION_LABELS[example.config.by]).toBeTruthy();
+    }
   });
 
   it("datas curtas e rótulos", () => {

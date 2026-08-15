@@ -86,7 +86,10 @@ class TestShelfMetrics:
         assert [(row.key, row.value) for row in report.rows] == [("PAO", 7.0)]
 
     def test_selling_out_at_closing_time_costs_nothing(self, vitrine, shop_9_to_18):
-        """Vendeu o último no fim do expediente: acertou a quantidade."""
+        """Vendeu o último no fim do expediente: acertou a quantidade.
+
+        Custo zero não vira linha no ranking de falta — não houve falta.
+        """
         today = timezone.localdate()
         quant = Quant.objects.create(sku="PAO", position=vitrine)
         _shelf_day(quant, today - timedelta(days=1), received=10, sold=10, soldout_hour=18)
@@ -96,7 +99,7 @@ class TestShelfMetrics:
             date_from=today - timedelta(days=3), date_to=today,
         )
 
-        assert [row.value for row in report.rows] == [0.0]
+        assert report.rows == ()
 
     def test_leftover_comes_from_the_closing_count(self, vitrine, shop_9_to_18):
         today = timezone.localdate()
@@ -128,6 +131,42 @@ class TestShelfMetrics:
         )
 
         assert report.rows == ()
+
+    def test_ranking_leaves_out_what_never_happened(self, vitrine, shop_9_to_18):
+        """Produto que nunca faltou não entra no ranking de faltas.
+
+        Sessenta linhas zeradas escondem os dois SKUs que importam.
+        """
+        today = timezone.localdate()
+        faltou = Quant.objects.create(sku="PAO", position=vitrine)
+        sobrou = Quant.objects.create(sku="BOLO", position=vitrine)
+        day = today - timedelta(days=1)
+        _shelf_day(faltou, day, received=10, sold=10, soldout_hour=11)
+        _shelf_day(sobrou, day, received=10, sold=2, soldout_hour=11)
+
+        report = build_bi_explore(
+            metric="soldout_days", by="sku",
+            date_from=today - timedelta(days=3), date_to=today,
+        )
+
+        assert [(row.key, row.value) for row in report.rows] == [("PAO", 1.0)]
+
+    def test_series_keeps_the_zero_because_it_is_a_point_on_the_curve(
+        self, vitrine, shop_9_to_18
+    ):
+        today = timezone.localdate()
+        quant = Quant.objects.create(sku="PAO", position=vitrine)
+        _shelf_day(quant, today - timedelta(days=2), received=10, sold=10, soldout_hour=11)
+        _shelf_day(quant, today - timedelta(days=1), received=10, sold=2, soldout_hour=11)
+
+        report = build_bi_explore(
+            metric="soldout_days", by="time",
+            date_from=today - timedelta(days=3), date_to=today,
+        )
+
+        # O dia seguinte também entra: sobrou produto na prateleira, e um dia
+        # com produto e sem esgotamento é um zero legítimo da curva.
+        assert sorted(row.value for row in report.rows) == [0.0, 0.0, 1.0]
 
     def test_shelf_metrics_cross_by_weekday(self, vitrine, shop_9_to_18):
         today = timezone.localdate()
