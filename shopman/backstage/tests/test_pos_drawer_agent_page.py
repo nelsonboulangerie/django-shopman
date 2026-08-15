@@ -286,3 +286,35 @@ def test_terminal_sem_gaveta_mostra_NAO_CONFIGURADA_selecionada():
 def test_terminal_com_agente_abre_o_formulario_com_agente_marcado():
     form = POSTerminalForm(instance=_terminal(AGENT))
     assert form["drawer_adapter"].value() == "agent"
+
+
+def test_a_tela_carimba_a_versao_do_arquivo_que_entrega():
+    """O balcão só se atualiza pelo download daqui — sem rede, sem pendrive.
+
+    Sem carimbo ninguém sabe se a máquina está com o agente atual, e
+    "reinstalei e continua igual" vira meia hora perdida.
+    """
+    import hashlib
+
+    from shopman.backstage.projections.pos_agent import AGENT_SOURCE
+
+    guide = build_agent_install(_terminal(AGENT), download_url="/x/")
+    esperado = hashlib.sha256(AGENT_SOURCE.read_bytes()).hexdigest()[:8]
+
+    assert guide.source_build == esperado
+
+
+def test_o_carimbo_da_tela_bate_com_o_que_o_agente_calcula_de_si():
+    """Dois carimbos que não batem seriam pior que carimbo nenhum."""
+    import sys
+
+    from shopman.backstage.projections.pos_agent import AGENT_SOURCE
+
+    sys.path.insert(0, str(AGENT_SOURCE.parent))
+    try:
+        import drawer_agent
+    finally:
+        sys.path.pop(0)
+
+    guide = build_agent_install(_terminal(AGENT), download_url="/x/")
+    assert guide.source_build == drawer_agent.build_id()

@@ -70,6 +70,10 @@ class AgentInstallGuide:
     #: O arquivo existe nesta instalação? `False` = não veio na imagem.
     source_available: bool
     source_bytes: int
+    #: Carimbo do arquivo que ESTA instalação entrega. O balcão só se atualiza
+    #: pelo download daqui, e sem carimbo ninguém sabe se a máquina está com o
+    #: atual — "reinstalei e continua igual" vira meia hora perdida.
+    source_build: str
     download_url: str
     os_key: str = DEFAULT_OS
     os_label: str = "Linux"
@@ -104,6 +108,7 @@ def build_agent_install(terminal, *, download_url: str, os_key: str = DEFAULT_OS
         blocker=blocker,
         source_available=available,
         source_bytes=AGENT_SOURCE.stat().st_size if available else 0,
+        source_build=_source_build() if available else "",
         download_url=download_url,
         os_key=os_key,
         os_label=label,
@@ -200,6 +205,17 @@ def _steps(config, os_key: str) -> tuple[AgentStep, ...]:
             command=runtime["logs"],
         ),
     )
+
+
+def _source_build() -> str:
+    """Mesma impressão digital que o agente calcula de si mesmo.
+
+    Hash do conteúdo, não número escrito à mão: ninguém precisa lembrar de
+    bumpar, e o carimbo da tela bate com o que o `/health` do balcão responde.
+    """
+    import hashlib
+
+    return hashlib.sha256(AGENT_SOURCE.read_bytes()).hexdigest()[:8]
 
 
 def _pos_origin() -> str:

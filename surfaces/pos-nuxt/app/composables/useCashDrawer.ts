@@ -96,9 +96,13 @@ export function useCashDrawer(pos: ComputedRef<POSProjection | null>) {
     probing.value = true;
     try {
       const payload = await callAgent("/health");
+      // A versão vai junto porque o balcão só se atualiza pelo download do
+      // Admin — sem rede, sem pendrive. Comparar o que a estação roda com o que
+      // o Admin entrega é a única forma de saber se a máquina está atrasada.
+      const versao = payload?.build ? ` Versão ${payload.build}.` : "";
       return payload?.ok
-        ? { ok: true, message: `Fila ${payload.queue} respondendo.` }
-        : { ok: false, message: payload?.reason || "A fila não está aceitando trabalho." };
+        ? { ok: true, message: `Fila ${payload.queue} respondendo.${versao}` }
+        : { ok: false, message: (payload?.reason || "A fila não está aceitando trabalho.") + versao };
     } catch (error) {
       return { ok: false, message: messageOf(error) };
     } finally {

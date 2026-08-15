@@ -134,3 +134,25 @@ describe("useCashDrawer — a tela diz por que não dá", () => {
     expect(makeDrawer(null).unavailableReason.value).toContain("Terminais do PDV");
   });
 });
+
+describe("useCashDrawer — versão do agente no balcão", () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  it("a sonda mostra a versão que a estação roda", () => {
+    // Sem rede nem pendrive, comparar com o Admin é a única forma de saber se
+    // a máquina do caixa está atrasada.
+    stubFetch(() => okResponse({ ok: true, queue: "TM-T20", build: "a1b2c3d4" }));
+    return makeDrawer().probe().then((r) => {
+      expect(r.ok).toBe(true);
+      expect(r.message).toContain("a1b2c3d4");
+    });
+  });
+
+  it("agente antigo, sem carimbo, não quebra a sonda", () => {
+    stubFetch(() => okResponse({ ok: true, queue: "TM-T20" }));
+    return makeDrawer().probe().then((r) => {
+      expect(r.ok).toBe(true);
+      expect(r.message).toContain("TM-T20");
+    });
+  });
+});

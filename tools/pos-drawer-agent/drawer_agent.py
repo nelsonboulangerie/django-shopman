@@ -30,6 +30,26 @@ from pathlib import Path
 
 VERSION = "1.0.0"
 
+
+def build_id() -> str:
+    """Impressão digital deste arquivo.
+
+    A máquina do balcão só recebe atualização pelo download do Admin, e não há
+    rede nem pendrive para conferir versões. Sem um carimbo, ninguém sabe se o
+    caixa está com o agente atual — e "reinstalei e continua igual" vira meia
+    hora perdida.
+
+    Hash do conteúdo em vez de número escrito à mão: ninguém precisa lembrar de
+    bumpar, e dois arquivos iguais têm o mesmo carimbo por construção.
+    """
+    import hashlib
+
+    try:
+        fonte = Path(__file__).resolve().read_bytes()
+    except OSError:
+        return "desconhecido"
+    return hashlib.sha256(fonte).hexdigest()[:8]
+
 IS_WINDOWS = os.name == "nt"
 IS_MACOS = sys.platform == "darwin"
 
@@ -524,7 +544,7 @@ class DrawerHandler(BaseHTTPRequestHandler):
             self._reply(404, {"ok": False, "error": "rota desconhecida"})
             return
         probe = probe_queue(self.config.queue)
-        self._reply(200, {**probe, "queue": self.config.queue, "version": VERSION})
+        self._reply(200, {**probe, "queue": self.config.queue, "version": VERSION, "build": build_id()})
 
     def do_POST(self) -> None:  # noqa: N802
         if self.path.split("?")[0] != "/kick":
@@ -882,6 +902,7 @@ def install(argv: list[str]) -> int:
         _autostart_linux(target)
 
     print(f"\nAgente instalado em {target}")
+    print(f"Versao {VERSION} (build {build_id()}) — confira na tela do Admin se é a atual.")
     if not config.get("allowed_origins"):
         print(
             "\naviso: sem --origin, este agente aceita pedido de QUALQUER página\n"
