@@ -137,7 +137,7 @@ def test_5xx_is_transient():
 
 @override_settings(DEBUG=False, SHOPMAN_MACHINE=MACHINE)
 def test_api_refusal_is_terminal_with_error_detail():
-    refusal = {"success": False, "errors": [{"code": 25, "message": "Solicitacao não encontrada."}]}
+    refusal = {"success": False, "errors": [{"code": 25, "message": "Solicitação não encontrada."}]}
     with patch(
         "shopman.shop.adapters.courier_machine.requests.request",
         return_value=_FakeResponse(400, refusal),
@@ -145,7 +145,7 @@ def test_api_refusal_is_terminal_with_error_detail():
         with pytest.raises(CourierError) as exc:
             courier_machine.cancel("999")
     assert exc.value.transient is False
-    assert "Solicitacao não encontrada" in str(exc.value)
+    assert "Solicitação não encontrada" in str(exc.value)
 
 
 @override_settings(DEBUG=False, SHOPMAN_MACHINE={**MACHINE, "username": ""})

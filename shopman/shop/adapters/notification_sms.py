@@ -23,21 +23,25 @@ from ._sms import to_digits
 
 logger = logging.getLogger(__name__)
 
+# ⚠️ ASCII de propósito: acento fora do GSM-7 (ã, ç, õ, á, í, ó, ú) força UCS-2 e o
+# segmento cai de 160 para 70 caracteres — o SMS passa a custar o dobro. Estes são
+# só o fallback: o template do Admin (NotificationTemplate) vale para todos os canais
+# e ESSE é acentuado; aqui, sem acento é decisão de custo, não erro.
 MESSAGE_TEMPLATES: dict[str, str] = {
     "order_received": "Recebemos o pedido {order_ref}. O estabelecimento vai conferir a disponibilidade.",
     "order_accepted": "Pedido {order_ref} confirmado! Total: {total}",
     "order_preparing": "Pedido {order_ref} em preparo! Avisaremos quando estiver pronto.",
     "order_ready_pickup": "Pedido {order_ref} pronto para retirada!",
-    "order_ready_delivery": "Pedido {order_ref} pronto! Será enviado em breve.",
+    "order_ready_delivery": "Pedido {order_ref} pronto! Sera enviado em breve.",
     "order_dispatched": "Pedido {order_ref} saiu para entrega!",
     "order_delivered": "Pedido {order_ref} entregue. Obrigado!",
-    "order_cancelled": "Pedido {order_ref} cancelado. Em caso de dúvidas, entre em contato.{reason_note}",
-    "order_rejected": "Pedido {order_ref} não foi confirmado pelo estabelecimento. Motivo: {reason}",
-    "payment_confirmed": "Pagamento do pedido {order_ref} recebido. Seu pedido seguirá para preparo.",
+    "order_cancelled": "Pedido {order_ref} cancelado. Em caso de duvidas, entre em contato.{reason_note}",
+    "order_rejected": "Pedido {order_ref} nao foi confirmado pelo estabelecimento. Motivo: {reason}",
+    "payment_confirmed": "Pagamento do pedido {order_ref} recebido. Seu pedido seguira para preparo.",
     "payment_requested": "Pedido {order_ref}: disponibilidade confirmada. Pague aqui: {payment_url}",
     "payment_expired": "Pedido {order_ref} cancelado: o prazo de pagamento expirou.",
-    "payment_failed": "Não conseguimos preparar o pagamento do pedido {order_ref}. Tente novamente: {payment_url}",
-    "preorder_reminder": "Lembrete: seu pedido {order_ref} está agendado para amanhã. Já estamos preparando tudo!",
+    "payment_failed": "Nao conseguimos preparar o pagamento do pedido {order_ref}. Tente novamente: {payment_url}",
+    "preorder_reminder": "Lembrete: seu pedido {order_ref} esta agendado para amanha. Ja estamos preparando tudo!",
     "stock_arrived": "{product_name} chegou!{reserve_note}{deadline_note} {cta} {action_url}",
     "production_ready": "Saiu do forno agora: {product_name}! {cta} {action_url}",
     "announcement_published": "{body} {cta} {action_url}",
