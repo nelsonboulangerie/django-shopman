@@ -26,18 +26,36 @@ class TestUnfoldBadge:
         assert "<br>" not in result
         assert "&lt;br&gt;" in result
 
-    def test_unknown_color_uses_base(self):
+    def test_unknown_color_falls_back_to_the_neutral_badge(self):
+        """Cor desconhecida não inventa cor: cai no badge neutro do Unfold.
+
+        A asserção antiga era `bg-base-100`, classe da tabela de cores que este
+        módulo COPIAVA do Unfold. Agora quem desenha é `unfold/helpers/label.html`,
+        e o neutro dele é `bg-base-500/8` — o que o teste garante é a intenção
+        (neutro, sem semântica de cor), não o valor que o Unfold escolheu.
+        """
         from shopman.utils.contrib.admin_unfold.badges import unfold_badge
 
         result = str(unfold_badge("Test", "nonexistent_color"))
-        assert "bg-base-100" in result
 
-    def test_badge_numeric(self):
+        assert "bg-base-500/8" in result
+        for semantic in ("bg-red-100", "bg-green-100", "bg-blue-100", "bg-orange-100"):
+            assert semantic not in result
+
+    def test_badge_numeric_renders_the_value_with_its_color(self):
+        """Número sai no badge, com a cor pedida.
+
+        A asserção antiga exigia ausência de `uppercase`, porque a variante
+        numérica existia só para tirar a caixa alta. Isso nunca mudou um pixel:
+        dígitos e sinais não têm caixa. Sobrou o que importa — o valor aparece e a
+        cor é a semântica certa do Unfold.
+        """
         from shopman.utils.contrib.admin_unfold.badges import unfold_badge_numeric
 
         result = str(unfold_badge_numeric("42", "blue"))
+
         assert "42" in result
-        assert "uppercase" not in result
+        assert "bg-blue-100" in result
 
     def test_badge_numeric_xss(self):
         from shopman.utils.contrib.admin_unfold.badges import unfold_badge_numeric

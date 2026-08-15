@@ -1,26 +1,52 @@
-"""Unfold badge helpers for the Shopman suite."""
+"""Badges do Admin — fachada fina sobre o helper canônico do Unfold.
 
-from django.utils.html import format_html
+Estas funções reconstruíam o markup do badge à mão, com a tabela de cores copiada
+do Unfold. Copiar classes é o anti-padrão que a política do projeto nomeia: a
+cópia não acompanha upgrade do pacote, perde o que o helper oficial oferece
+(ícone, link, tamanho, `title`) e faz o Admin envelhecer em pedaços — um badge
+igual ao Unfold de 2025 e o resto do Admin no Unfold de hoje.
 
-_COLOR_CLASSES = {
-    "base": "bg-base-100 text-base-700 dark:bg-base-500/20 dark:text-base-200",
-    "red": "bg-red-100 text-red-700 dark:bg-red-500/20 dark:text-red-400",
-    "green": "bg-green-100 text-green-700 dark:bg-green-500/20 dark:text-green-400",
-    "yellow": "bg-orange-100 text-orange-700 dark:bg-orange-500/20 dark:text-orange-400",
-    "orange": "bg-orange-100 text-orange-700 dark:bg-orange-500/20 dark:text-orange-400",
-    "blue": "bg-blue-100 text-blue-700 dark:bg-blue-500/20 dark:text-blue-400",
+Agora quem desenha é `unfold/helpers/label.html`. O que sobra aqui é a tradução
+do vocabulário de cor usado nos admins (verde, vermelho, azul) para o vocabulário
+semântico do Unfold (success, danger, info) — e é bom que essa tradução exista num
+lugar só, porque é ela que mantém "cor por significado" consistente entre telas.
+"""
+
+from django.template.loader import render_to_string
+from django.utils.safestring import mark_safe
+
+# Cor concreta → intenção do Unfold. O Unfold pensa em significado, não em tinta.
+_VARIANT_BY_COLOR = {
+    "base": "",
+    "red": "danger",
+    "green": "success",
+    "yellow": "warning",
+    "orange": "warning",
+    "blue": "info",
+    "primary": "primary",
 }
 
-_BASE = "inline-block font-semibold h-6 leading-6 px-2 rounded-default whitespace-nowrap"
+
+def _render(text, color: str) -> str:
+    return mark_safe(
+        render_to_string(
+            "unfold/helpers/label.html",
+            {"text": text, "variant": _VARIANT_BY_COLOR.get(color, "")},
+        ).strip()
+    )
 
 
 def unfold_badge(text, color="base"):
-    """Badge for status labels (uppercase, small text)."""
-    classes = f"{_BASE} text-[11px] uppercase {_COLOR_CLASSES.get(color, _COLOR_CLASSES['base'])}"
-    return format_html('<span class="{}">{}</span>', classes, text)
+    """Badge de status."""
+    return _render(text, color)
 
 
 def unfold_badge_numeric(text, color="base"):
-    """Badge for numeric values (small text, no uppercase transform)."""
-    classes = f"{_BASE} text-[11px] {_COLOR_CLASSES.get(color, _COLOR_CLASSES['base'])}"
-    return format_html('<span class="{}">{}</span>', classes, text)
+    """Badge de valor numérico.
+
+    Era uma variante só para tirar a caixa alta — distinção que nunca existiu na
+    tela, porque caixa alta em dígito e em sinal não muda pixel nenhum. Segue
+    existindo como nome, porque ele diz ao leitor do admin que ali vai número, e
+    porque trocar as chamadas nos pacotes não compraria nada.
+    """
+    return _render(text, color)
