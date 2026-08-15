@@ -22,6 +22,7 @@ from .operation import (
 )
 from .oven_run import OvenRun
 from .pos import POSTab
+from .shelf_outage import ShelfOutage
 
 __all__ = [
     "OperatorAlert",
@@ -48,5 +49,6 @@ __all__ = [
     "OperationTaskTemplate",
     "OvenRun",
     "POSTab",
+    "ShelfOutage",
     "POSTerminal",
 ]
