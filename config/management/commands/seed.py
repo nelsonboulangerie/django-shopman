@@ -705,15 +705,6 @@ class Command(BaseCommand):
 
         CraftRefSequence.objects.all().delete()
 
-        # Audit tables are data too in local seeds; keep --flush actually clean.
-        for model in [
-            Product.history.model,
-            ListingItem.history.model,
-            RuleConfig.history.model,
-            OmotenashiCopy.history.model,
-        ]:
-            model.objects.all().delete()
-
         # Payments
         hard_delete(PaymentTransaction)
         PaymentIntent.objects.all().delete()
@@ -780,7 +771,26 @@ class Command(BaseCommand):
         AnnouncementTemplate.objects.all().delete()
         Coupon.objects.all().delete()
         Promotion.objects.all().delete()
+        # Regras são config como qualquer outra (Shop, Channel, Promotion, Coupon): o
+        # `--flush` apaga e o `_seed_rule_configs` recria o conjunto canônico. Sem
+        # apagar, uma regra que saiu do RULE_CONFIGS sobrevive a todo re-seed — foi o
+        # que aconteceu com `d1_discount`, cuja classe morreu no C6 (PR #152) e cuja
+        # linha ficou no staging gritando "Could not import" a cada boot. A M2M
+        # `channels` já foi levada junto com os Channels apagados acima.
+        RuleConfig.objects.all().delete()
         Shop.objects.all().delete()
+
+        # Tabelas de auditoria são dado também num seed local; `--flush` deixa limpo
+        # de verdade. POR ÚLTIMO, de propósito: o simple_history grava uma linha de
+        # tombstone a cada delete, então limpar antes das deleções acima deixaria a
+        # history repovoada justamente pelo flush.
+        for model in [
+            Product.history.model,
+            ListingItem.history.model,
+            RuleConfig.history.model,
+            OmotenashiCopy.history.model,
+        ]:
+            model.objects.all().delete()
 
         self.stdout.write("  ✅ Dados limpos")
 
