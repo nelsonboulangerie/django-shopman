@@ -6,7 +6,7 @@ from django.db import migrations, models
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('shop', '0017_ruleconfig_help_text_example'),
+        ('shop', '0019_alter_campaign_trigger'),
     ]
 
     operations = [
