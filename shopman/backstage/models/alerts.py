@@ -27,7 +27,7 @@ class OperatorAlert(models.Model):
         ("production_stock_short", "Produção sem insumo suficiente"),
         ("directive_failed_spike", "Tarefas de fundo falhando"),
         ("directive_backlog", "Fila de tarefas de fundo acumulada"),
-        ("directive_worker_stale", "Worker de tarefas de fundo parado"),
+        ("directive_worker_stale", "Processador de tarefas de fundo parado"),
         ("lifecycle_phase_stuck", "Fase do pedido travada"),
         ("low_rating", "Avaliação baixa recebida"),
     ]

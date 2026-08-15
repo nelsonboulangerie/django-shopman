@@ -65,4 +65,21 @@ def register_totp_admin() -> None:
 
     @admin.register(TOTPDevice)
     class UnfoldTOTPDeviceAdmin(TOTPDeviceAdmin, ModelAdmin):
+        """O django_otp vem inteiro em inglês, e nada disso é nosso vocabulário.
+
+        Os fieldsets herdados diziam "Timestamps", "Configuration", "State"; os
+        campos, "Step", "Drift", "Tolerance". Redeclarar os fieldsets é o que dá
+        para fazer sem tocar no pacote de terceiros: os rótulos dos campos técnicos
+        (`step`, `drift`) seguem do django_otp, mas quem mexe nesta tela é
+        superusuário configurando 2FA, não o dono da padaria.
+        """
+
         compressed_fields = True
+        fieldsets = (
+            ("Identificação", {"fields": ("user", "name", "confirmed")}),
+            ("Chave", {"fields": ("key", "step", "t0", "digits", "tolerance", "drift")}),
+            (
+                "Bloqueio por tentativa",
+                {"fields": ("throttling_failure_timestamp", "throttling_failure_count")},
+            ),
+        )

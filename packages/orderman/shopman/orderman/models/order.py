@@ -91,7 +91,7 @@ class Order(models.Model):
     )
 
     snapshot = models.JSONField(
-        _("snapshot"), default=dict, blank=True, encoder=DecimalEncoder,
+        _("retrato do pedido"), default=dict, blank=True, encoder=DecimalEncoder,
         help_text=_("Snapshot selado do pedido no momento da criação. Não editar manualmente."),
     )
     data = models.JSONField(
@@ -390,7 +390,7 @@ class OrderEvent(models.Model):
     type = models.CharField(_("tipo"), max_length=64, db_index=True)
     actor = models.CharField(_("ator"), max_length=128)
     payload = models.JSONField(
-        _("payload"), default=dict,
+        _("dados do evento"), default=dict,
         help_text=_('Dados do evento. Ex: {"new_status": "accepted"} ou {"error": "motivo"}'),
     )
 

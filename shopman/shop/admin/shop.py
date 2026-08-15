@@ -604,13 +604,17 @@ class ShopForm(forms.ModelForm):
     # Lista de URLs editada como inputs add/remove (ArrayWidget). Declarado
     # explicitamente para entregar a lista crua ao widget — o JSONField default
     # serializaria para string e o ArrayWidget quebraria no split por vírgula.
-    social_links = forms.Field(required=False, widget=ArrayWidget())
+    social_links = forms.Field(label="Redes sociais", required=False, widget=ArrayWidget())
 
     # Justificativas de cancelamento/recusa — mesma edição add/remove (ArrayWidget).
-    cancellation_presets = forms.Field(required=False, widget=ArrayWidget())
+    cancellation_presets = forms.Field(
+        label="Motivos de cancelamento e recusa", required=False, widget=ArrayWidget()
+    )
 
     # Tags de nota da cozinha — mesma edição add/remove (ArrayWidget).
-    kitchen_note_tags = forms.Field(required=False, widget=ArrayWidget())
+    kitchen_note_tags = forms.Field(
+        label="Tags de nota da cozinha", required=False, widget=ArrayWidget()
+    )
 
     locals().update(_defaults_form_fields())
     locals().update(_integrations_form_fields())

@@ -11,5 +11,5 @@ from django.apps import AppConfig
 class DeploymentConfig(AppConfig):
     name = "config"
     label = "config"
-    verbose_name = "Deployment"
+    verbose_name = "Implantação"
     default_auto_field = "django.db.models.BigAutoField"

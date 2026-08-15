@@ -133,7 +133,7 @@ class Shop(models.Model):
     # ── Branding ──
     brand_name = models.CharField("marca", max_length=100, blank=True)
     short_name = models.CharField("nome curto (PWA)", max_length=30, blank=True)
-    tagline = models.CharField("tagline", max_length=200, blank=True)
+    tagline = models.CharField("slogan", max_length=200, blank=True)
     description = models.TextField("descrição", blank=True)
     conservation_tips_default = models.TextField(
         "dicas de conservação (padrão)",

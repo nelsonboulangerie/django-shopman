@@ -46,7 +46,7 @@ class PaymentTransaction(models.Model):
     )
     type = models.CharField(max_length=20, choices=Type.choices)
     amount_q = models.BigIntegerField()
-    gateway_id = models.CharField(max_length=200, blank=True, default="")
+    gateway_id = models.CharField(verbose_name="ID do gateway", max_length=200, blank=True, default="")
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:

@@ -396,7 +396,7 @@ class HoldAdmin(BaseModelAdmin):
     def is_demand_display(self, obj):
         return obj.is_demand
 
-    @admin.action(description=_('Liberar holds selecionados'))
+    @admin.action(description=_('Liberar reservas selecionadas'))
     def release_holds(self, request, queryset):
         from shopman.stockman import stock
 
@@ -430,7 +430,7 @@ class HoldAdmin(BaseModelAdmin):
 
         try:
             stock.release(hold.hold_id, reason='Liberado via admin')
-            messages.success(request, _("Hold liberado."))
+            messages.success(request, _("Reserva liberada."))
         except (ValueError, LookupError) as exc:
             messages.error(request, str(exc))
 

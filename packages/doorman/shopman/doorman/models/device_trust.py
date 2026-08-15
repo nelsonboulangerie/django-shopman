@@ -58,7 +58,7 @@ class SubjectType(models.TextChoices):
     """
 
     CUSTOMER = "customer", _("cliente")
-    DISPLAY = "display", _("display")
+    DISPLAY = "display", _("quadro")
 
 
 class TrustedDevice(models.Model):
@@ -100,7 +100,7 @@ class TrustedDevice(models.Model):
 
     # Device metadata
     user_agent = models.CharField(
-        _("user agent"), max_length=512, blank=True, default=""
+        _("navegador"), max_length=512, blank=True, default=""
     )
     ip_address = models.GenericIPAddressField(
         _("endereço IP"), null=True, blank=True

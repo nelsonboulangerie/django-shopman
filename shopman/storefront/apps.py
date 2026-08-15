@@ -8,7 +8,7 @@ from django.apps import AppConfig
 class StorefrontConfig(AppConfig):
     name = "shopman.storefront"
     label = "storefront"
-    verbose_name = "Storefront"
+    verbose_name = "Loja online"
     default_auto_field = "django.db.models.BigAutoField"
 
     def ready(self) -> None:

@@ -61,29 +61,30 @@ class PaymentIntent(models.Model):
     }
 
     ref = models.CharField(unique=True, max_length=64)
-    order_ref = models.CharField(max_length=64, db_index=True)
-    method = models.CharField(max_length=20, choices=Method.choices)
+    order_ref = models.CharField(verbose_name="ref do pedido", max_length=64, db_index=True)
+    method = models.CharField(verbose_name="forma de pagamento", max_length=20, choices=Method.choices)
     status = models.CharField(
         max_length=20,
         choices=Status.choices,
         default=Status.PENDING,
         db_index=True,
     )
-    amount_q = models.BigIntegerField()
-    currency = models.CharField(max_length=3, default="BRL")
-    gateway = models.CharField(max_length=50, blank=True, default="")
-    gateway_id = models.CharField(max_length=200, blank=True, default="")
+    amount_q = models.BigIntegerField(verbose_name="valor (centavos)")
+    currency = models.CharField(verbose_name="moeda", max_length=3, default="BRL")
+    gateway = models.CharField(verbose_name="gateway", max_length=50, blank=True, default="")
+    gateway_id = models.CharField(verbose_name="ID do gateway", max_length=200, blank=True, default="")
     gateway_data = models.JSONField(
+        verbose_name="dados do gateway",
         default=dict, blank=True,
         help_text=_('Dados de resposta do gateway. Populado automaticamente. Ex: {"pix_qr_code": "00020126...", "txid": "abc123"}'),
     )
-    idempotency_key = models.CharField(max_length=128, blank=True, default="", db_index=True)
-    created_at = models.DateTimeField(auto_now_add=True)
-    authorized_at = models.DateTimeField(null=True, blank=True)
-    captured_at = models.DateTimeField(null=True, blank=True)
-    cancelled_at = models.DateTimeField(null=True, blank=True)
-    expires_at = models.DateTimeField(null=True, blank=True)
-    cancel_reason = models.CharField(max_length=500, blank=True, default="")
+    idempotency_key = models.CharField(verbose_name="chave de idempotência", max_length=128, blank=True, default="", db_index=True)
+    created_at = models.DateTimeField(verbose_name="criado em", auto_now_add=True)
+    authorized_at = models.DateTimeField(verbose_name="autorizado em", null=True, blank=True)
+    captured_at = models.DateTimeField(verbose_name="capturado em", null=True, blank=True)
+    cancelled_at = models.DateTimeField(verbose_name="cancelado em", null=True, blank=True)
+    expires_at = models.DateTimeField(verbose_name="expira em", null=True, blank=True)
+    cancel_reason = models.CharField(verbose_name="motivo do cancelamento", max_length=500, blank=True, default="")
 
     class Meta:
         app_label = "payman"

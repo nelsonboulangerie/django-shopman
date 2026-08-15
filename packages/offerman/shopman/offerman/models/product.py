@@ -339,10 +339,12 @@ class Product(models.Model):
         """True if product has a shelf life (perishable)."""
         return self.shelf_life_days is not None
 
+
     @property
     def is_bundle(self) -> bool:
         """True if has components (is a bundle/combo)."""
         return self.components.exists()
+
 
     @property
     def reference_cost_q(self) -> int | None:
@@ -367,3 +369,4 @@ class Product(models.Model):
             return None
         margin = self.base_price_q - cost_q
         return Decimal(margin * 100 / self.base_price_q).quantize(Decimal("0.1"))
+

@@ -33,7 +33,7 @@ class Directive(models.Model):
         db_index=True,
     )
     payload = models.JSONField(
-        _("payload"), default=dict, blank=True, encoder=DecimalEncoder,
+        _("dados da tarefa"), default=dict, blank=True, encoder=DecimalEncoder,
         help_text=_('Dados da tarefa. Schema depende do topic. Ex: stock.hold → {"sku": "PAO-FRANCES", "qty": 10}'),
     )
 
