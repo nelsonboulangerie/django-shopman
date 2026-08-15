@@ -1137,7 +1137,11 @@ class TestSuggest:
         assert suggestions[0].basis["committed"] == Decimal("30")
 
     def test_soldout_extrapolation(self, recipe, tomorrow, settings):
-        """When soldout_at is set, demand is extrapolated."""
+        """Dia que esgotou mostra o estoque que havia, não a procura que houve.
+
+        A janela de venda vem de fora (o core não conhece o horário da loja);
+        aqui ela é declarada como um expediente de 06:00 às 18:00.
+        """
         from datetime import time
         from unittest.mock import MagicMock, patch
 
@@ -1163,11 +1167,14 @@ class TestSuggest:
             "django.utils.module_loading.import_string",
             return_value=mock_backend_class,
         ):
-            suggestions = craft.suggest(tomorrow)
+            suggestions = craft.suggest(
+                tomorrow, selling_window=(time(6, 0), time(18, 0))
+            )
 
         assert len(suggestions) == 1
         # Extrapolated: 100, safety 20% => 120
         assert suggestions[0].quantity == Decimal("120")
+        assert suggestions[0].basis["soldout_days"] == 1
 
     def test_soldout_capped_at_2x(self, recipe, tomorrow, settings):
         """Extrapolation is capped at 2x actual sold."""
@@ -1196,11 +1203,51 @@ class TestSuggest:
             "django.utils.module_loading.import_string",
             return_value=mock_backend_class,
         ):
-            suggestions = craft.suggest(tomorrow)
+            suggestions = craft.suggest(
+                tomorrow, selling_window=(time(6, 0), time(18, 0))
+            )
 
         assert len(suggestions) == 1
         # Capped at 2*50=100, safety 20% => 120
         assert suggestions[0].quantity == Decimal("120")
+
+    def test_without_selling_window_nothing_is_extrapolated(
+        self, recipe, tomorrow, settings
+    ):
+        """Sem horário declarado, o dia esgotado conta o que vendeu.
+
+        Extrapolar exigiria supor um expediente que ninguém informou — a casa
+        prefere perder precisão a inventar demanda.
+        """
+        from datetime import time
+        from unittest.mock import MagicMock, patch
+
+        from shopman.craftsman.protocols.demand import DailyDemand
+
+        mock_backend = MagicMock()
+        mock_backend.history.return_value = [
+            DailyDemand(
+                date=date(2026, 2, 18),
+                sold=Decimal("50"),
+                wasted=Decimal("0"),
+                soldout_at=time(7, 0),
+            ),
+        ]
+        mock_backend.committed.return_value = Decimal("0")
+        mock_backend_class = MagicMock(return_value=mock_backend)
+
+        settings.CRAFTSMAN = {"DEMAND_BACKEND": "test.MockDemandBackend"}
+
+        with patch(
+            "django.utils.module_loading.import_string",
+            return_value=mock_backend_class,
+        ):
+            suggestions = craft.suggest(tomorrow)
+
+        # 50 vendidos, margem de 20% => 60. E o esgotamento segue DECLARADO no
+        # basis: o operador vê que houve, mesmo sem virar conta.
+        assert suggestions[0].quantity == Decimal("60")
+        assert suggestions[0].basis["soldout_days"] == 1
 
     def test_empty_history_skips_recipe(self, recipe, tomorrow, settings):
         """Recipe with no history data is not included in suggestions."""

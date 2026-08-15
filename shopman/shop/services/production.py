@@ -46,7 +46,21 @@ def suggest_for(target_date: date, output_skus: list[str] | None = None):
         high_demand_multiplier=suggestion.high_demand_multiplier_decimal,
         safety_pct=suggestion.safety_stock_percent_decimal,
         exclude_dates=closed_days_within(days=window_days),
+        selling_window=selling_window_for(target_date),
     )
+
+
+def selling_window_for(day: date):
+    """O par (abre, fecha) do dia, do horário declarado da loja.
+
+    É com ele que a fórmula extrapola a demanda dos dias que esgotaram: o pão
+    que acabou às 10h vendeu numa fração do expediente, e a fração só é
+    calculável sabendo quando o expediente começa. Sem horário configurado
+    devolve None, e a fórmula prefere contar o que vendeu a inventar o resto.
+    """
+    from shopman.shop.services.business_calendar import selling_hours_for
+
+    return selling_hours_for(day)
 
 
 def closed_days_within(*, days: int, until: date | None = None) -> frozenset[date]:

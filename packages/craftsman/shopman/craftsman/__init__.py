@@ -32,8 +32,22 @@ def __getattr__(name):
         from shopman.craftsman.contrib.formula import suggest
 
         return suggest
+    if name == "OrderingDemandBackend":
+        # Backend de demanda de referência (lê pedidos). Já é público de fato:
+        # é o valor de DEMAND_BACKEND que a instância aponta e o ponto de
+        # partida de quem compõe um backend próprio.
+        from shopman.craftsman.contrib.demand.backend import OrderingDemandBackend
+
+        return OrderingDemandBackend
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 
-__all__ = ["craft", "CraftService", "CraftError", "StaleRevision", "suggest"]
+__all__ = [
+    "craft",
+    "CraftService",
+    "CraftError",
+    "StaleRevision",
+    "suggest",
+    "OrderingDemandBackend",
+]
 __version__ = "0.3.0"
