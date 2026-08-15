@@ -14,6 +14,7 @@ from django.urls import reverse
 from django.utils import timezone
 
 from shopman.backstage import permissions
+from shopman.backstage.projections.settings_hub import settings_nav_sections
 from shopman.shop.services import pos_links
 
 logger = logging.getLogger(__name__)
@@ -153,18 +154,28 @@ def get_sidebar_navigation(request):
             _item("Fechamentos do dia", "event_available", _url("admin:backstage_dayclosing_changelist"), permission=_can_close_day),
             _item("Execuções de checklist", "checklist", _url("admin:backstage_operationchecklistrun_changelist"), permission=_is_staff),
         ]),
-        # UMA porta para tudo que é ajuste, e ela é um LINK, não um grupo: grupo com
-        # um filho só faz o menu dizer a mesma coisa duas vezes. Sem título, o Unfold
-        # desenha o item solto no rodapé da navegação — que é onde Shopify e Notion
-        # põem Settings.
+        # Configuração expande como os outros grupos — o menu tem UM comportamento,
+        # não dois. Os subitens são os sete ESCOPOS, não as 33 telas: o Unfold só tem
+        # dois níveis, então listar as telas aqui recriaria a gaveta que este trabalho
+        # desmontou, e sem descrição nem busca.
         #
-        # O ganho de a configuração ser um destino, e não trinta linhas aqui, não é
-        # economizar espaço: é que lá cada tela cabe com UMA FRASE dizendo o que ela
-        # controla, e a tela inteira aceita busca. Nenhuma das duas coisas cabe num
-        # menu. Ver shopman/backstage/projections/settings_hub.py.
-        _group("", "settings", [
-            _item("Configuração", "settings", _url("admin_console_settings_hub"), permission=_is_staff),
-        ], collapsible=False),
+        # Cada escopo é âncora da seção correspondente. Assim o número de cliques até
+        # uma tela não muda (o cartão continua a um clique da página), e em troca o
+        # menu passa a mostrar a estrutura de onde as coisas moram sem precisar sair
+        # da tela em que se está. A lista vem da projection, então escopo novo nasce
+        # nos dois lugares de uma vez.
+        _group("Configuração", "settings", [
+            _item("Todos os ajustes", "tune", _url("admin_console_settings_hub"), permission=_is_staff),
+            *[
+                _item(
+                    section["title"],
+                    section["icon"],
+                    f"{_url('admin_console_settings_hub')}#{section['slug']}",
+                    permission=_is_staff,
+                )
+                for section in settings_nav_sections()
+            ],
+        ]),
     ]
 
 

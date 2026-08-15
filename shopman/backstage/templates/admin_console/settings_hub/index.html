@@ -51,6 +51,8 @@
     {% endif %}
 
     {% for group in settings_hub.groups %}
+      {# id = âncora que o item do menu lateral aponta (mesma lista, os dois lados) #}
+      <div id="{{ group.slug }}">
       {% component "unfold/components/flex.html" with col=1 class="gap-4" %}
 
         {% component "unfold/components/flex.html" with col=1 class="gap-1" %}
@@ -73,6 +75,7 @@
         </div>
 
       {% endcomponent %}
+      </div>
 
       {% if not forloop.last %}
         {% component "unfold/components/separator.html" %}{% endcomponent %}

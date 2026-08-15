@@ -166,15 +166,27 @@ class AdminNavigationTests(TestCase):
         }
         all_items = set(all_items_by_title)
 
-        # A porta única da configuração é um LINK solto, não um grupo: grupo com um
-        # filho só faz o menu dizer a mesma coisa duas vezes. Sem título, o Unfold
-        # desenha o item sozinho, como Shopify e Notion fazem com Settings.
-        self.assertNotIn("Configuração", titles, "virou grupo de novo")
-        config_item = next(
-            item for item in all_items_by_title.values()
-            if item["title"] == "Configuração"
+        # Configuração expande como os outros grupos: o menu tem UM comportamento.
+        # Os subitens são os sete ESCOPOS, não as 33 telas — o Unfold só tem dois
+        # níveis, e listar as telas aqui recriaria a gaveta, sem descrição nem busca.
+        self.assertIn("Configuração", titles)
+        config_group = next(g for g in groups if g["title"] == "Configuração")
+        config_items = [i["title"] for i in config_group["items"] if i["has_permission"]]
+        hub_url = reverse("admin_console_settings_hub")
+
+        self.assertEqual(config_items[0], "Todos os ajustes")
+        self.assertEqual(config_group["items"][0]["link"], hub_url)
+        self.assertEqual(
+            config_items[1:],
+            [
+                "A loja", "Como vendemos", "Como entregamos", "O que dizemos",
+                "Produção e estoque", "Equipamentos", "Quem entra",
+            ],
         )
-        self.assertEqual(config_item["link"], reverse("admin_console_settings_hub"))
+        # Cada escopo é âncora da seção — o cartão segue a um clique da página, então
+        # ganhar o mapa no menu não custou clique nenhum.
+        for item in config_group["items"][1:]:
+            self.assertTrue(item["link"].startswith(f"{hub_url}#"), item["link"])
 
         # E nenhuma tela de ajuste sobrou solta no menu de operação.
         for gone in (

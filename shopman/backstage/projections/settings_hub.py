@@ -19,6 +19,7 @@ menu E fora daqui.
 
 from __future__ import annotations
 
+import re
 import unicodedata
 from dataclasses import dataclass, field
 
@@ -46,6 +47,18 @@ class SettingsGroup:
     hint: str
     icon: str
     entries: tuple[SettingsEntry, ...] = field(default_factory=tuple)
+
+    @property
+    def slug(self) -> str:
+        """Âncora da seção. O menu lateral aponta para ela, então a tela e o menu
+        contam a mesma história: os sete escopos aparecem nos dois lugares."""
+        return _slugify(self.title)
+
+
+def _slugify(text: str) -> str:
+    plain = unicodedata.normalize("NFKD", text)
+    plain = "".join(c for c in plain if not unicodedata.combining(c)).lower()
+    return re.sub(r"[^a-z0-9]+", "-", plain).strip("-")
 
 
 def _model(label: str, app_model: str, description: str, icon: str) -> SettingsEntry:
@@ -195,6 +208,7 @@ def build_settings_hub(*, q: str = "") -> dict:
             groups.append(
                 {
                     "title": group.title,
+                    "slug": group.slug,
                     "hint": group.hint,
                     "icon": group.icon,
                     "cards": tuple(cards),
@@ -224,3 +238,14 @@ def settings_screen_urls() -> set[str]:
             except NoReverseMatch:
                 continue
     return urls
+
+
+def settings_nav_sections() -> tuple[dict, ...]:
+    """Os escopos, para o menu lateral desenhar os mesmos sete que a tela mostra.
+
+    Uma lista só, consultada pelos dois: se alguém criar um escopo novo aqui, ele
+    nasce no menu junto. Duas listas divergiriam no primeiro escopo novo.
+    """
+    return tuple(
+        {"title": g.title, "slug": g.slug, "icon": g.icon} for g in SETTINGS_MAP
+    )
