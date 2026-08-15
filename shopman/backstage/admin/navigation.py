@@ -94,18 +94,17 @@ def get_sidebar_navigation(request):
                 badge_variant="info",
             )
         )
-    live_items.append(
-        _item(
-            "Alertas ativos",
-            "warning",
-            _url("admin:backstage_operatoralert_changelist") + "?acknowledged__exact=0",
-            permission=_can_view_operator_alerts,
-            badge="shopman.backstage.admin.navigation.badge_operator_alerts",
-            badge_variant="danger",
-            badge_style="solid",
-        )
-    )
     return [
+        # O alarme não tem item no menu: a home do Admin já mostra os alertas numa
+        # seção, com severidade, mensagem e pedido. Um link destacado aqui era a
+        # mesma pergunta com dois donos — e um badge permanente pedindo atenção
+        # numa tela onde a atenção já está posta. A LISTA continua alcançável em
+        # Auditoria, que é o que ela é: a trilha do que foi alertado.
+        #
+        # Só os apps do operador, que são links para FORA do Admin e dependem da
+        # URL do deployment. Sem nenhuma configurada (dev, por exemplo) a lista
+        # fica vazia e o Unfold não desenha o grupo: melhor sumir do que anunciar
+        # aplicativos que não existem aqui.
         _group("Aplicativos", "apps", live_items, collapsible=False),
         _group("Catálogo", "store", [
             _item("Produtos", "bakery_dining", _url("admin:offerman_product_changelist"), permission=_is_staff),
@@ -153,6 +152,7 @@ def get_sidebar_navigation(request):
             _item("Movimentações de caixa", "currency_exchange", _url("admin:backstage_cashmovement_changelist"), permission=_can_operate_pos),
             _item("Fechamentos do dia", "event_available", _url("admin:backstage_dayclosing_changelist"), permission=_can_close_day),
             _item("Execuções de checklist", "checklist", _url("admin:backstage_operationchecklistrun_changelist"), permission=_is_staff),
+            _item("Alertas do operador", "warning", _url("admin:backstage_operatoralert_changelist"), permission=_can_view_operator_alerts),
         ]),
         # Configuração expande como os outros grupos — o menu tem UM comportamento,
         # não dois. Os subitens são os sete ESCOPOS, não as 33 telas: o Unfold só tem
@@ -201,12 +201,6 @@ def badge_started_work_orders(request) -> str:
 
     today = timezone.localdate()
     return str(WorkOrder.objects.filter(target_date=today, status=WorkOrder.Status.STARTED).count())
-
-
-def badge_operator_alerts(request) -> str:
-    from shopman.backstage.models import OperatorAlert
-
-    return str(OperatorAlert.objects.filter(acknowledged=False).count())
 
 
 def _group(title: str, icon: str, items: list[dict], *, collapsible: bool = True) -> dict:

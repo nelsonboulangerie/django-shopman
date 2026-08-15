@@ -50,16 +50,18 @@ class AdminNavigationTests(TestCase):
         titles = [group["title"] for group in groups]
 
         # "Aplicativos": os itens abrem os apps do operador, FORA do Admin.
-        # "Operação ao vivo" não dizia o que era nem para onde levava.
-        self.assertEqual(titles[0], "Aplicativos")
+        # "Operação ao vivo" não dizia o que era nem para onde levava. O grupo não
+        # é mais o primeiro: antes dele vem o alarme, item solto e sem título.
+        self.assertIn("Aplicativos", titles)
         self.assertIn("Catálogo", titles)
         self.assertIn("Produção", titles)
         self.assertIn("Auditoria", titles)
         self.assertNotIn("Regras", titles)
 
-        live = [item for item in groups[0]["items"] if item["has_permission"]]
+        apps = next(g for g in groups if g["title"] == "Aplicativos")
+        live = [item for item in apps["items"] if item["has_permission"]]
         live_items = [item["title"] for item in live]
-        self.assertEqual(live_items[:4], ["Pedidos", "Fechamento", "PDV", "Produção ao vivo"])
+        self.assertEqual(live_items, ["Pedidos", "Fechamento", "PDV", "Produção ao vivo"])
         self.assertNotIn("Produção", live_items)
         closing_item = next(item for item in live if item["title"] == "Fechamento")
         self.assertEqual(closing_item["link"], "https://pos.example.com/session/closing")
@@ -67,7 +69,10 @@ class AdminNavigationTests(TestCase):
         self.assertEqual(producao_item["link"], "https://prod.example.com")
 
         with override_settings(SHOPMAN_PRODUCTION_BASE_URL="https://prod.example.com"):
-            raw_live = navigation.get_sidebar_navigation(request)[0]["items"]
+            raw_live = next(
+                g for g in navigation.get_sidebar_navigation(request)
+                if g["title"] == "Aplicativos"
+            )["items"]
         raw_producao = next(item for item in raw_live if item["title"] == "Produção ao vivo")
         self.assertEqual(
             raw_producao["badge"],
@@ -84,7 +89,8 @@ class AdminNavigationTests(TestCase):
 
         with override_settings(SHOPMAN_POS_BASE_URL=""):
             groups = admin.site.get_sidebar_list(request)
-            live = {item["title"]: item for item in groups[0]["items"]}
+            apps = next(g for g in groups if g["title"] == "Aplicativos")
+            live = {item["title"]: item for item in apps["items"]}
             self.assertNotIn("PDV", live)
 
         with override_settings(
@@ -92,7 +98,8 @@ class AdminNavigationTests(TestCase):
             SHOPMAN_PRODUCTION_BASE_URL="",
         ):
             groups = admin.site.get_sidebar_list(request)
-            live = {item["title"]: item for item in groups[0]["items"]}
+            apps = next(g for g in groups if g["title"] == "Aplicativos")
+            live = {item["title"]: item for item in apps["items"]}
             self.assertIn("PDV", live)
             self.assertEqual(live["PDV"]["link"], "https://pos.example.com")
 
@@ -132,7 +139,10 @@ class AdminNavigationTests(TestCase):
         request.user = User.objects.create_superuser("opsnav", "opsnav@example.com", "pw")
 
         with override_settings(SHOPMAN_ORDERS_BASE_URL="", SHOPMAN_KDS_BASE_URL=""):
-            live = {item["title"]: item for item in admin.site.get_sidebar_list(request)[0]["items"]}
+            apps = next(
+                g for g in admin.site.get_sidebar_list(request) if g["title"] == "Aplicativos"
+            )
+            live = {item["title"]: item for item in apps["items"]}
             self.assertNotIn("Pedidos", live)
             self.assertNotIn("KDS", live)
 
@@ -140,7 +150,10 @@ class AdminNavigationTests(TestCase):
             SHOPMAN_ORDERS_BASE_URL="https://gestor.example.com",
             SHOPMAN_KDS_BASE_URL="https://kds.example.com",
         ):
-            live = {item["title"]: item for item in admin.site.get_sidebar_list(request)[0]["items"]}
+            apps = next(
+                g for g in admin.site.get_sidebar_list(request) if g["title"] == "Aplicativos"
+            )
+            live = {item["title"]: item for item in apps["items"]}
             self.assertEqual(live["Pedidos"]["link"], "https://gestor.example.com")
             self.assertEqual(live["KDS"]["link"], "https://kds.example.com")
 
