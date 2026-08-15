@@ -40,7 +40,16 @@ class CashMovementInline(admin.TabularInline):
 class CashShiftAdmin(ModelAdmin):
     list_display = ("operator", "terminal", "opened_at", "status_display", "opening_display", "closing_display", "difference_display")
     list_filter = ("status", "terminal", "opened_at")
-    search_fields = ("operator", "terminal__ref", "terminal__label")
+    # ``operator`` é FK para User: buscar nele direto vira ``operator__icontains``,
+    # que o Django recusa em relação — e o erro derruba a BUSCA GLOBAL inteira, não
+    # só esta tela. Atravesse a relação até os campos de texto do usuário.
+    search_fields = (
+        "operator__username",
+        "operator__first_name",
+        "operator__last_name",
+        "terminal__ref",
+        "terminal__label",
+    )
     # ``notes`` é editável (gerente anota/corrige um turno fechado); a alteração
     # fica registrada no histórico do admin (LogEntry: quem/quando). Os valores
     # financeiros permanecem read-only (mutados só via PDV/serviço).
@@ -100,7 +109,15 @@ class CashMovementAdmin(ModelAdmin):
 
     list_display = ("shift", "movement_type", "amount_display", "reason", "created_by", "approved_by", "created_at")
     list_filter = ("movement_type", "created_at")
-    search_fields = ("shift__operator", "reason", "created_by", "approved_by")
+    # ``shift__operator`` também para numa FK (User): atravessa mais um salto.
+    # ``created_by``/``approved_by`` aqui são texto, não relação — esses ficam.
+    search_fields = (
+        "shift__operator__username",
+        "shift__operator__first_name",
+        "reason",
+        "created_by",
+        "approved_by",
+    )
     readonly_fields = ("created_by", "approved_by", "created_at")
     ordering = ["-created_at"]
     compressed_fields = True
