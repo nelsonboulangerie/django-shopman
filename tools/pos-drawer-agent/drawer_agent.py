@@ -116,6 +116,19 @@ _CODE_PAGES = ((3, "PC860 Portugues"), (2, "PC850 Multilingual"), (16, "WPC1252"
 #: Largura em colunas da Fonte A numa térmica de 80mm. A régua confirma.
 _COLUMNS = 48
 
+#: Até onde a régua vai. Passa de 48 de propósito: a Fonte B da TM-T20 dá 64
+#: colunas, e a primeira rodada do teste voltou com "coube e sobrou espaço" —
+#: sinal de que a impressora não estava na largura que assumi. Régua que para
+#: onde eu chutei não descobre largura nenhuma.
+_RULER_MAX = 64
+
+#: Frase de aferição de acento. A primeira versão não discriminava: as
+#: maiúsculas iam SEM acento no código-fonte (saíam iguais em qualquer tabela) e
+#: entre as minúsculas só o "ã" separava as tabelas — um caractere, fácil de não
+#: notar. Agora cobre maiúsculas e minúsculas e junta os acentos que MUDAM de
+#: byte entre CP860, CP850 e WPC1252.
+_ACCENT_SAMPLE = "PÃO ÁGUA AÇÚCAR ÊNFASE ÕRFÃ · pão água açúcar ênfase órfã"
+
 
 #: Conteúdo do QR de teste. Texto neutro de propósito: o agente é genérico, e um
 #: domínio de deployment cravado aqui é a mesma armadilha da origem inventada.
@@ -132,17 +145,18 @@ def test_print_bytes(*, columns: int = _COLUMNS, qr_data: str = _QR_SAMPLE) -> b
     out += _line("-" * columns)
 
     # 1) Acento: a mesma frase sob cada tabela, rotulada.
-    out += _line("1) ACENTO - qual linha esta correta?")
+    out += _line("1) ACENTO - qual bloco saiu SEM lixo?")
+    out += _line("   (compare letra a letra, inclusive as MAIUSCULAS)")
     for code, nome in _CODE_PAGES:
         out += bytes([ESC, ord("t"), code])
-        out += _line(f"  {nome}: PAO, ACUCAR, MANTEIGA")
-        out += _encoded("  Pao de acucar e manteiga, R$ 12,90", code)
+        out += _line(f"  [{nome}]")
+        out += _encoded(f"  {_ACCENT_SAMPLE}", code)
     out += bytes([ESC, ord("t"), _CODE_PAGES[0][0]])
     out += _line("")
 
-    # 2) Largura e alinhamento: a régua diz quantas colunas cabem de verdade.
-    out += _line("2) LARGURA - a regua termina no papel?")
-    out += _line("".join(str(i % 10) for i in range(1, columns + 1)))
+    # 2) Largura: a régua vai ALÉM do que assumi, senão não descobre nada.
+    out += _line("2) LARGURA - ate que numero a regua chega?")
+    out += _line(_ruler(_RULER_MAX))
     out += _line(_two_columns("Pao frances", "R$ 0,90", columns))
     out += _line(_two_columns("Sonho de creme", "R$ 7,50", columns))
     out += _line(_two_columns("TOTAL", "R$ 8,40", columns))
@@ -166,8 +180,24 @@ def _line(text: str) -> bytes:
 def _encoded(text: str, code_page: int) -> bytes:
     """A frase acentuada codificada na tabela que acabou de ser selecionada."""
     encoding = {3: "cp860", 2: "cp850", 16: "cp1252"}.get(code_page, "cp860")
-    acentuada = text.replace("Pao", "Pão").replace("acucar", "açúcar")
-    return acentuada.encode(encoding, "replace") + b"\n"
+    return text.encode(encoding, "replace") + b"\n"
+
+
+def _ruler(width: int) -> str:
+    """Régua legível: marca dezenas, o resto são traços.
+
+    `----+----1----+----2…` — quem lê o papel só precisa dizer o último número
+    que apareceu inteiro, e isso dá a largura real da impressora.
+    """
+    marcas = []
+    for i in range(1, width + 1):
+        if i % 10 == 0:
+            marcas.append(str(i // 10))
+        elif i % 5 == 0:
+            marcas.append("+")
+        else:
+            marcas.append("-")
+    return "".join(marcas)
 
 
 def _two_columns(left: str, right: str, columns: int) -> str:

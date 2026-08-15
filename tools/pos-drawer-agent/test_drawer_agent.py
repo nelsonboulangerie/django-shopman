@@ -558,17 +558,44 @@ def test_a_pagina_compara_tabelas_em_vez_de_chutar_uma():
     assert len(drawer_agent._CODE_PAGES) >= 2, "comparar exige mais de uma tabela"
 
 
-def test_a_pagina_manda_a_frase_acentuada_de_verdade():
-    """Uma amostra sem acento não testaria nada."""
-    saida = drawer_agent.test_print_bytes()
-    assert "Pão".encode("cp860") in saida
-    assert "açúcar".encode("cp850") in saida
+def test_a_amostra_de_acento_DISCRIMINA_as_tabelas():
+    """A primeira versão não discriminava e o teste no balcão não decidiu nada.
+
+    As maiúsculas iam SEM acento no código-fonte (saíam iguais em qualquer
+    tabela) e entre as minúsculas só o "ã" separava — um caractere. A amostra
+    precisa diferir em VÁRIOS bytes entre as três tabelas.
+    """
+    amostra = drawer_agent._ACCENT_SAMPLE
+    codificacoes = {
+        nome: amostra.encode(enc, "replace")
+        for nome, enc in (("cp860", "cp860"), ("cp850", "cp850"), ("cp1252", "cp1252"))
+    }
+    assert len(set(codificacoes.values())) == 3, "as três tabelas têm que produzir bytes diferentes"
+
+    diferencas = sum(
+        1 for a, b in zip(codificacoes["cp860"], codificacoes["cp850"], strict=True) if a != b
+    )
+    assert diferencas >= 4, f"só {diferencas} byte(s) separam CP860 de CP850 — fácil de não notar"
+
+    assert any(c.isupper() and not c.isascii() for c in amostra), "faltam maiúsculas acentuadas"
+    assert any(c.islower() and not c.isascii() for c in amostra), "faltam minúsculas acentuadas"
 
 
-def test_a_regua_tem_exatamente_a_largura_declarada():
-    linha = "".join(str(i % 10) for i in range(1, 49))
-    assert linha.encode("cp860") in drawer_agent.test_print_bytes()
-    assert len(linha) == 48
+def test_a_regua_vai_ALEM_da_largura_assumida():
+    """Régua que para onde eu chutei não descobre largura nenhuma.
+
+    O primeiro teste no balcão voltou "coube e sobrou espaço": a impressora era
+    mais larga que as 48 colunas assumidas, e a régua não tinha como mostrar
+    quanto.
+    """
+    assert drawer_agent._RULER_MAX > drawer_agent._COLUMNS
+    regua = drawer_agent._ruler(drawer_agent._RULER_MAX)
+    assert len(regua) == drawer_agent._RULER_MAX
+    assert regua.encode("cp860") in drawer_agent.test_print_bytes()
+    # Dezenas marcadas: quem lê diz o último número inteiro que apareceu.
+    # Índice 39 é a COLUNA 40 — a dezena. A coluna 48 não é dezena nenhuma.
+    assert regua[9] == "1" and regua[19] == "2" and regua[39] == "4"
+    assert regua[4] == "+", "as meias-dezenas ajudam a contar sem perder a conta"
 
 
 def test_as_duas_colunas_encostam_nas_bordas():
