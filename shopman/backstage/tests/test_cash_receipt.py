@@ -204,7 +204,7 @@ def test_o_servidor_entrega_os_bytes_prontos(operador_logado, settings):
     assert papel.startswith(bytes([0x1B, 0x40]))
     assert corpo["verify_code"].startswith("SG-")
     # O QR aponta para o host canônico do Admin, não para constante inventada.
-    assert b"https://admin.boulangerie.com.br/admin/caixa/comprovante/" in papel
+    assert b"https://admin.boulangerie.com.br/admin/cash/receipt/" in papel
 
 
 def test_sem_host_de_admin_o_QR_leva_so_o_codigo(operador_logado, settings):

@@ -8,15 +8,22 @@ from shopman.shop.models import Shop
 
 
 class OnboardingMiddleware:
-    """Redirect staff to /gestor/setup/ if no Shop exists.
+    """Manda o staff criar a loja quando ainda não existe nenhuma.
 
-    Uses Shop.load() (cached singleton) so this costs zero DB queries
-    in normal operation. Only falls through to .exists() if cache miss
-    returns None AND objects.first() returns None.
+    Usa Shop.load() (singleton em cache), então custa zero query na operação
+    normal.
+
+    ⚠️ Este redirect apontava para `/gestor/setup/`, a tela do shell de operador
+    HTMX — que foi aposentado no cutover headless. O alvo virou 404: uma
+    instalação nova mandava o dono para lugar nenhum, justamente no primeiro
+    minuto de uso. Agora aponta para o formulário do `Shop` no Admin, que é onde
+    a loja de fato nasce.
     """
 
-    SETUP_PATH = "/gestor/setup/"
-    GUARDED_PREFIXES = ("/admin/", "/gestor/")
+    #: Também serve de passe-livre: qualquer caminho sob este prefixo escapa do
+    #: redirect, senão criar a loja seria um loop.
+    SETUP_PATH = "/admin/shop/shop/"
+    GUARDED_PREFIXES = ("/admin/",)
     SKIP_PREFIXES = ("/static/", "/media/", "/api/", "/favicon")
 
     def __init__(self, get_response):
@@ -38,6 +45,6 @@ class OnboardingMiddleware:
             return self.get_response(request)
 
         if Shop.load() is None:
-            return redirect(self.SETUP_PATH)
+            return redirect(f"{self.SETUP_PATH}add/")
 
         return self.get_response(request)

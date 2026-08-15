@@ -31,8 +31,13 @@ class InvalidReceiptCode(ValueError):
 
 
 def code_for(movement_id: int) -> str:
-    """Código impresso no comprovante, ex.: ``SG-42-7K3PQR2M``."""
-    return f"{PREFIX}-{movement_id}-{_signature(movement_id)}"
+    """Código impresso no comprovante, ex.: ``SG-42-7K3PQR2M``.
+
+    Assina sempre com a chave **atual**. Papel novo nasce com a assinatura de
+    hoje; papel velho continua conferindo pelas chaves antigas (ver
+    ``movement_id_from``).
+    """
+    return f"{PREFIX}-{movement_id}-{_signature(movement_id, settings.SECRET_KEY)}"
 
 
 def movement_id_from(code: str) -> int:
@@ -48,14 +53,25 @@ def movement_id_from(code: str) -> int:
         movement_id = int(partes[1])
     except ValueError as exc:
         raise InvalidReceiptCode("Código de comprovante malformado.") from exc
-    if not hmac.compare_digest(partes[2], _signature(movement_id)):
+    # ⚠️ Sem as chaves antigas, girar a SECRET_KEY (o que se faz depois de um
+    # vazamento, e é a receita do próprio Django) transformaria em "não confere"
+    # TODO comprovante já impresso e guardado na gaveta — meses de papel de
+    # auditoria virando lixo por causa de uma troca de chave. `SECRET_KEY_FALLBACKS`
+    # é o mecanismo que o Django tem exatamente para essa janela.
+    aceitas = [settings.SECRET_KEY, *getattr(settings, "SECRET_KEY_FALLBACKS", [])]
+    # Sem short-circuit: comparar contra todas as chaves sempre custa o mesmo, e
+    # o tempo de resposta não conta a ninguém qual delas acertou.
+    confere = False
+    for chave in aceitas:
+        confere |= hmac.compare_digest(partes[2], _signature(movement_id, chave))
+    if not confere:
         raise InvalidReceiptCode("Código de comprovante não confere.")
     return movement_id
 
 
-def _signature(movement_id: int) -> str:
+def _signature(movement_id: int, secret: str) -> str:
     digest = hmac.new(
-        settings.SECRET_KEY.encode("utf-8"),
+        secret.encode("utf-8"),
         f"cash-movement-receipt:{movement_id}".encode(),
         hashlib.sha256,
     ).digest()

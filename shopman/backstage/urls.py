@@ -27,15 +27,15 @@ def user_events_view(request):
 
 urlpatterns = [
     # Realtime
-    path("gestor/events/me/", user_events_view, name="user_events"),
+    path("events/me/", user_events_view, name="user_events"),
     path(
-        "gestor/events/<slug:kind>/",
+        "events/<slug:kind>/",
         eventstream_view,
         {"format-channels": ["backstage-{kind}-main"]},
         name="events",
     ),
     path(
-        "gestor/events/<slug:kind>/<slug:scope>/",
+        "events/<slug:kind>/<slug:scope>/",
         eventstream_view,
         {"format-channels": ["backstage-{kind}-{scope}"]},
         name="events_scoped",

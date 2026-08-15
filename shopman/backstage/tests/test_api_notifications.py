@@ -228,7 +228,7 @@ class TestAction:
 
 class TestUserStream:
     def test_anonymous_gets_404_not_a_reconnect_loop(self, client):
-        assert client.get("/gestor/events/me/").status_code == 404
+        assert client.get("/events/me/").status_code == 404
 
     def test_channel_manager_only_lets_the_owner_read(self, gestor, colega):
         from shopman.shop.eventstream import ShopmanChannelManager

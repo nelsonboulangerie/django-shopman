@@ -102,7 +102,7 @@ That single command runs the strict canonical gate and the Admin/Unfold integrat
 During local iteration, the same command can be scoped to a registered relative Admin URL:
 
 ```bash
-make admin url=/admin/configuracao/copy/
+make admin url=/admin/settings/copy/
 ```
 
 Scoped mode checks the installed Unfold package and only the surface registered for that URL. It is not the final PR gate; run `make admin` without `url` before review.

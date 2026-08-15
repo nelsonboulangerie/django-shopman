@@ -62,7 +62,7 @@ shopman/                Namespace package (PEP 420) — sem __init__.py
     ├── models/         KDSInstance, KDSTicket, DayClosing, OperatorAlert, CashRegister*
     ├── admin_console/  telas Admin/Unfold (produção, fechamento)
     ├── middleware.py   OnboardingMiddleware
-    ├── urls.py         montado em /api/v1/backstage/ + SSE /gestor/events/ (os apps são surfaces/*-nuxt)
+    ├── urls.py         montado em /api/v1/backstage/ + SSE /events/ (os apps são surfaces/*-nuxt)
     └── tests/          POS, KDS, produção, fechamento, contratos de superfície, e2e
 
 surfaces/               7 apps Nuxt 4 (SSR) + 1 layer compartilhada — as superfícies vivas em produção
@@ -187,7 +187,7 @@ Para iterar em uma tela especifica sem bloquear por divida nao relacionada, use 
 URL relativa:
 
 ```bash
-make admin url=/admin/configuracao/copy/
+make admin url=/admin/settings/copy/
 ```
 
 Esse escopo e para desenvolvimento local. Antes de PR, rode `make admin` sem `url`.
@@ -200,7 +200,7 @@ make test-offerman     # Apenas offerman
 make test-stockman     # Apenas stockman
 make test-framework    # Orquestrador + integration + e2e
 make admin             # Tudo de Admin/Unfold
-make admin url=/admin/configuracao/copy/  # Escopo local por URL Admin
+make admin url=/admin/settings/copy/  # Escopo local por URL Admin
 make lint              # Ruff + Admin/Unfold
 make run               # Dev server (localhost:8000)
 make seed              # Popular banco com dados Nelson Boulangerie

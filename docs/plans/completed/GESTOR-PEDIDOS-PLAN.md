@@ -22,7 +22,7 @@ browser ao vivo (lote/staging). Arc 6 (analytics) = pós-v1.
 - Board 3 zonas (Entrada / Preparo / Saída) — `app/pages/index.vue`,
   `app/composables/useOrdersBoard.ts`, `app/presentation/board.ts`.
 - Detalhe full-page — `app/pages/[ref].vue`, `app/composables/useOrderDetail.ts`.
-- Realtime: SSE `/gestor/events/orders/` + polling 30s.
+- Realtime: SSE `/events/orders/` + polling 30s.
 
 **Superfície legado (duplicada)**: `surfaces/backstage-nuxt` (`app/pages/pedidos/`)
 — tabela com filtro de canal + view-mode grid/table + detalhe em slideover. É o

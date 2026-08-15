@@ -1,0 +1,73 @@
+{% extends "admin/base.html" %}
+{% load i18n unfold %}
+
+{% block title %}Conferir comprovante | {{ site_title|default:_('Django site admin') }}{% endblock %}
+
+{% block content %}
+{% include "unfold/helpers/messages.html" %}
+<main id="cash-receipt-main" role="main">
+{% component "unfold/components/container.html" %}
+  <div class="flex flex-col gap-6">
+    <div class="flex flex-col gap-1">
+      {% component "unfold/components/title.html" %}
+        Conferir comprovante
+      {% endcomponent %}
+      {% component "unfold/components/text.html" with class="text-base-500" %}
+        Leia o QR do papel, ou digite o código impresso embaixo dele.
+      {% endcomponent %}
+    </div>
+
+    <form method="get" class="flex flex-col gap-3 lg:flex-row lg:items-center">
+      <div class="flex-1">
+        {% include "unfold/helpers/field.html" with field=receipt_form.code %}
+      </div>
+      <div class="flex gap-2">
+        {% component "unfold/components/button.html" with submit=1 variant="primary" size="sm" icon="search" %}
+          Conferir
+        {% endcomponent %}
+        {% url 'admin:backstage_cashmovement_changelist' as movements_url %}
+        {% component "unfold/components/button.html" with href=movements_url variant="default" size="sm" icon="payments" %}
+          Ver movimentações
+        {% endcomponent %}
+      </div>
+    </form>
+
+    {% if verification %}
+      {% component "unfold/components/card.html" %}
+        <div class="flex flex-col gap-4">
+          <div class="flex flex-col gap-2">
+            {% if verification.valid %}
+              <div>{% include "unfold/helpers/label.html" with text="Confere" type="success" %}</div>
+            {% else %}
+              <div>{% include "unfold/helpers/label.html" with text="Não confere" type="danger" %}</div>
+            {% endif %}
+            {% component "unfold/components/title.html" with class="text-lg" %}
+              {{ verification.verdict }}
+            {% endcomponent %}
+            {% if verification.problem %}
+              {% component "unfold/components/text.html" with class="text-base-500" %}
+                {{ verification.problem }}
+              {% endcomponent %}
+            {% endif %}
+          </div>
+
+          {% if verification.valid %}
+            {% component "unfold/components/table.html" with table=movement_table striped=1 %}{% endcomponent %}
+
+            {% comment %}
+              A honestidade que a tela deve ao conferente: o código prova que o
+              MOVIMENTO existe. Não prova que este papel é o único — fotocópia de
+              comprovante legítimo confere igual. Omitir isso daria uma segurança
+              que a conferência não tem.
+            {% endcomment %}
+            {% component "unfold/components/text.html" with class="text-sm text-base-500" %}
+              Isto confirma que o movimento está registrado, e mostra o que ele diz. Não distingue o papel original de uma cópia: havendo dois papéis com este mesmo código, os dois conferem.
+            {% endcomponent %}
+          {% endif %}
+        </div>
+      {% endcomponent %}
+    {% endif %}
+  </div>
+{% endcomponent %}
+</main>
+{% endblock %}

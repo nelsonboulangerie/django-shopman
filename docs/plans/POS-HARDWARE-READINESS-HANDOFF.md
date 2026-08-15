@@ -308,7 +308,7 @@ clicar num botão** (foco no `BODY`) — o caso que a implementação antiga per
 O `issue_badge` deixou de ser código sem chamador. Em **Gestão do Acesso →
 Credenciais PIN** (`/admin/doorman/pincredential/`) o gerente seleciona um operador
 e usa **Emitir crachá**: o sistema sorteia o token, mostra **uma vez** e abre a folha
-de impressão (`/admin/operadores/cracha/`) com o código de barras pronto. **Revogar
+de impressão (`/admin/operators/badge/`) com o código de barras pronto. **Revogar
 crachá** é a outra ação, para crachá perdido. A coluna "Crachá" diz quem já tem.
 
 Decisões que valem registro:

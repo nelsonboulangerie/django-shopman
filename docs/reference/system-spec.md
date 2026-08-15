@@ -454,7 +454,7 @@ Sinal `order_changed` (de orderman) → `dispatch(order, phase)` → resolve `Ch
 
 ### 2.9 Middleware + Context Processors
 
-**Middleware**: `ChannelParamMiddleware` (captura `?channel=`), `OnboardingMiddleware` (redireciona staff para `/gestor/setup/` se sem Shop), `WelcomeGateMiddleware` (redireciona cliente autenticado sem nome para `/bem-vindo/`).
+**Middleware**: `ChannelParamMiddleware` (captura `?channel=`), `OnboardingMiddleware` (redireciona staff para `/admin/shop/shop/add/` se sem Shop), `WelcomeGateMiddleware` (redireciona cliente autenticado sem nome para `/bem-vindo/`).
 
 **Context processors**: `shop()`, `omotenashi()`, `cart_count()`.
 

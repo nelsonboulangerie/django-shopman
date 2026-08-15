@@ -251,7 +251,7 @@ def cash_movement_receipt_payload(*, operator, movement_id: int, reprint: bool =
     # ele configurado o QR leva só o código — melhor que apontar para um
     # endereço que não existe.
     host = str(getattr(settings, "SHOPMAN_ADMIN_HOST", "") or "").strip()
-    verify_url = f"https://{host}/admin/caixa/comprovante/{code}/" if host else code
+    verify_url = f"https://{host}/admin/cash/receipt/{code}/" if host else code
     payload = cash_movement_receipt(
         movement, verify_code=code, verify_url=verify_url, reprint=reprint
     )

@@ -13,7 +13,7 @@ Backstage usa `django-eventstream` para atualizar superfícies operacionais sem 
 
 ## KDS
 
-`/admin/operacao/kds/<ref>/` assina `/gestor/events/kds/<ref>/` e mantém fallback `every 30s`.
+`/admin/operacao/kds/<ref>/` assina `/events/kds/<ref>/` e mantém fallback `every 30s`.
 Eventos específicos (`created`, `status-changed`, `station-changed`) também disparam refresh.
 
 O som do KDS é local ao navegador:
@@ -51,7 +51,7 @@ para release.
 ## Debug
 
 1. Abra DevTools em Network e filtre por `event-stream`.
-2. Confirme que `/gestor/events/<kind>/...` fica aberto.
+2. Confirme que `/events/<kind>/...` fica aberto.
 3. Execute a ação operacional e verifique o evento.
 4. Se o evento chega e a UI não muda, confira o `hx-trigger`.
 5. Se o evento não chega, confira logs do receiver e se `django_eventstream` está instalado.
