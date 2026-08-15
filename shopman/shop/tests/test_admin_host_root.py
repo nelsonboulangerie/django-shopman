@@ -48,7 +48,7 @@ def test_o_atalho_NAO_sombreia_as_rotas_do_backstage(client):
     """
     from django.urls import resolve
 
-    assert resolve("/gestor/events/me/").url_name == "user_events"
+    assert resolve("/events/me/").url_name == "user_events"
 
 
 @override_settings(SHOPMAN_ADMIN_HOST=ADMIN_HOST, ALLOWED_HOSTS=["*"])

@@ -2,7 +2,7 @@
 //   - useFetch the canonical two-zone projection (GET /api/v1/backstage/orders/);
 //   - poll every 30s as a robust fallback (mirrors the Admin queue `every 30s`);
 //   - SSE realtime: EventSource same-origin no BFF (/sse/orders → proxy do
-//     /gestor/events/orders/ do Django) → refresh on push.
+//     /events/orders/ do Django) → refresh on push.
 // Writes go through the django proxy (CSRF handled there) and reconcile via refresh.
 // SSE/poll are client-only (EventSource is a browser API).
 import type { CancellationReason, OrderQueueResponse, TwoZoneQueueProjection } from "~/types/orders";

@@ -46,7 +46,7 @@ Duas invariantes que valem a pena não quebrar:
 
 ## Tempo real
 
-SSE no canal PESSOAL do gestor (`/sse/notifications` → `/gestor/events/me/` →
+SSE no canal PESSOAL do gestor (`/sse/notifications` → `/events/me/` →
 canal `user-<id>`). O push só avisa que chegou algo; a verdade é sempre o refetch
 do painel (ADR-016). Poll de 60s como rede de segurança.
 

@@ -509,7 +509,9 @@ class DrawerHandler(BaseHTTPRequestHandler):
         length = int(self.headers.get("Content-Length") or 0)
         if length <= 0:
             return {}
-        if length > 8192:
+        # Um comprovante em base64 já passa de 8 KB, e a DANFE passa mais. O
+        # teto continua existindo para o agente não virar despejo de memória.
+        if length > 512 * 1024:
             raise ValueError("corpo grande demais")
         raw = self.rfile.read(length)
         try:
@@ -547,7 +549,8 @@ class DrawerHandler(BaseHTTPRequestHandler):
         self._reply(200, {**probe, "queue": self.config.queue, "version": VERSION, "build": build_id()})
 
     def do_POST(self) -> None:  # noqa: N802
-        if self.path.split("?")[0] != "/kick":
+        rota = self.path.split("?")[0]
+        if rota not in ("/kick", "/print"):
             self._reply(404, {"ok": False, "error": "rota desconhecida"})
             return
         origin = self._origin()
@@ -564,6 +567,9 @@ class DrawerHandler(BaseHTTPRequestHandler):
             logger.warning("kick recusado: token inválido (origem %s)", origin or "-")
             self._reply(401, {"ok": False, "error": "token inválido"})
             return
+
+        if rota == "/print":
+            return self._do_print(data)
 
         pulse = data.get("pulse") or {}
         reason = str(data.get("reason") or "unspecified")[:60]
@@ -588,6 +594,36 @@ class DrawerHandler(BaseHTTPRequestHandler):
         # A gaveta abrindo é evento de controle de caixa. O journald guarda a
         # verdade física do balcão; o servidor só sabe o que a tela mandou.
         logger.info("kick OK motivo=%s fila=%s job=%s", reason, self.config.queue, job or "-")
+        self._reply(200, {"ok": True, "queue": self.config.queue, "job_id": job})
+
+    def _do_print(self, data: dict) -> None:
+        """Imprime bytes JÁ COMPOSTOS pelo servidor.
+
+        O agente não sabe o que é sangria, nem leiaute, nem tabela de acento —
+        ele é um cano. Quem compõe é o servidor, dono único do formato; se cada
+        balcão compusesse, dois imprimiriam diferente e a DANFE (leiaute exigido
+        por lei) teria de ser reimplementada em cada máquina.
+        """
+        import base64
+        import binascii
+
+        titulo = str(data.get("title") or "documento")[:60]
+        try:
+            payload = base64.b64decode(str(data.get("payload_b64") or ""), validate=True)
+        except (binascii.Error, ValueError) as exc:
+            logger.warning("impressao recusada: payload invalido (%s)", exc)
+            self._reply(400, {"ok": False, "error": "payload_b64 inválido"})
+            return
+        if not payload:
+            self._reply(400, {"ok": False, "error": "payload vazio"})
+            return
+        try:
+            job = send_raw(payload, queue=self.config.queue, title=titulo)
+        except SpoolerError as exc:
+            logger.error("impressao FALHOU titulo=%s erro=%s", titulo, exc)
+            self._reply(502, {"ok": False, "error": str(exc), "queue": self.config.queue})
+            return
+        logger.info("impressao OK titulo=%s bytes=%s job=%s", titulo, len(payload), job or "-")
         self._reply(200, {"ok": True, "queue": self.config.queue, "job_id": job})
 
     def log_message(self, fmt: str, *args) -> None:

@@ -59,11 +59,11 @@ describe("proxyEventStream — BFF SSE das superfícies de operador", () => {
       "last-event-id": "evt-9",
     });
 
-    const result = await proxyEventStream(event, "/gestor/events/orders/");
+    const result = await proxyEventStream(event, "/events/orders/");
 
     // Alvo correto + método GET.
     expect(calls).toHaveLength(1);
-    expect(calls[0]!.url).toBe(`${DJANGO}/gestor/events/orders/`);
+    expect(calls[0]!.url).toBe(`${DJANGO}/events/orders/`);
     // Cookie de sessão e Last-Event-ID (resume) repassados; Accept de SSE.
     expect(calls[0]!.options.headers.cookie).toBe("sessionid=s1; csrftoken=t");
     expect(calls[0]!.options.headers["last-event-id"]).toBe("evt-9");
@@ -78,7 +78,7 @@ describe("proxyEventStream — BFF SSE das superfícies de operador", () => {
 
   it("não envia cookie nem last-event-id quando ausentes", async () => {
     const { event } = makeEvent();
-    await proxyEventStream(event, "/gestor/events/orders/");
+    await proxyEventStream(event, "/events/orders/");
     expect(calls[0]!.options.headers.cookie).toBeUndefined();
     expect(calls[0]!.options.headers["last-event-id"]).toBeUndefined();
   });
@@ -90,7 +90,7 @@ describe("proxyEventStream — BFF SSE das superfícies de operador", () => {
     });
     const { event, res } = makeEvent();
 
-    const result = await proxyEventStream(event, "/gestor/events/orders/");
+    const result = await proxyEventStream(event, "/events/orders/");
 
     expect(result).toBe("");
     expect(res.statusCode).toBe(403);
@@ -102,7 +102,7 @@ describe("proxyEventStream — BFF SSE das superfícies de operador", () => {
     (fetch as any).mockImplementationOnce(() => Promise.reject(new Error("down")));
     const { event, res } = makeEvent();
 
-    const result = await proxyEventStream(event, "/gestor/events/kds/bancada/");
+    const result = await proxyEventStream(event, "/events/kds/bancada/");
 
     expect(result).toBe("");
     expect(res.statusCode).toBe(502);
@@ -116,7 +116,7 @@ describe("proxyEventStream — BFF SSE das superfícies de operador", () => {
     });
     const { event, req } = makeEvent();
 
-    await proxyEventStream(event, "/gestor/events/orders/");
+    await proxyEventStream(event, "/events/orders/");
     expect(signal?.aborted).toBe(false);
     req.emit("close");
     expect(signal?.aborted).toBe(true);

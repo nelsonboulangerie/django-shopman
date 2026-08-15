@@ -8,6 +8,7 @@ from django.contrib import admin
 from django.urls import include, path
 from drf_spectacular.views import SpectacularAPIView, SpectacularSwaggerView
 
+from shopman.backstage.admin_console.cash_receipt import cash_receipt_verify_view
 from shopman.backstage.admin_console.copy_catalog import copy_catalog_view
 from shopman.backstage.admin_console.operator_badge import operator_badge_view
 from shopman.backstage.admin_console.pos_drawer_agent import (
@@ -45,22 +46,32 @@ urlpatterns = [
     # WP-ADM-7d: a superfície canônica é o Produção (surfaces/production-nuxt)
     # via api/v1/backstage/production/* (paridade fechada no WP-ADM-7b).
     path(
-        "admin/configuracao/copy/",
+        "admin/settings/copy/",
         admin.site.admin_view(copy_catalog_view),
         name="admin_console_copy_catalog",
     ),
     path(
-        "admin/pdv/terminal/<slug:ref>/gaveta/",
+        "admin/pos/terminal/<slug:ref>/drawer/",
         admin.site.admin_view(pos_drawer_agent_view),
         name="admin_console_pos_drawer_agent",
     ),
     path(
-        "admin/pdv/terminal/<slug:ref>/gaveta/agente.py",
+        "admin/pos/terminal/<slug:ref>/drawer/agent.py",
         admin.site.admin_view(pos_drawer_agent_download),
         name="admin_console_pos_drawer_agent_download",
     ),
     path(
-        "admin/operadores/cracha/",
+        "admin/cash/receipt/<str:code>/",
+        admin.site.admin_view(cash_receipt_verify_view),
+        name="admin_console_cash_receipt",
+    ),
+    path(
+        "admin/cash/receipt/",
+        admin.site.admin_view(cash_receipt_verify_view),
+        name="admin_console_cash_receipt_lookup",
+    ),
+    path(
+        "admin/operators/badge/",
         admin.site.admin_view(operator_badge_view),
         name="admin_console_operator_badge",
     ),

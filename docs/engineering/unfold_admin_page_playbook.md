@@ -82,7 +82,7 @@ make admin
 Durante a iteracao local em uma tela registrada, o mesmo comando aceita escopo por URL relativa:
 
 ```bash
-make admin url=/admin/configuracao/copy/
+make admin url=/admin/settings/copy/
 ```
 
 Escopo por URL serve para evitar bloqueio por divida nao relacionada durante o desenvolvimento. O

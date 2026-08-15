@@ -100,6 +100,7 @@ from .operations import (
     POSCashDrawerOpenView,
     POSCashMovementView,
     POSCashOpenView,
+    POSCashReceiptView,
     POSCashReportView,
     POSCloseSaleView,
     POSCustomerLookupView,
@@ -290,6 +291,11 @@ urlpatterns = [
     path("pos/cash/movement/", POSCashMovementView.as_view(), name="api-backstage-pos-cash-movement"),
     path("pos/cash/report/", POSCashReportView.as_view(), name="api-backstage-pos-cash-report"),
     path("pos/cash/drawer-open/", POSCashDrawerOpenView.as_view(), name="api-backstage-pos-cash-drawer-open"),
+    path(
+        "pos/cash/movement/<int:movement_id>/receipt/",
+        POSCashReceiptView.as_view(),
+        name="api-backstage-pos-cash-receipt",
+    ),
     # POS — tab (comanda) lifecycle
     path("pos/tabs/", POSTabCreateView.as_view(), name="api-backstage-pos-tab-create"),
     path("pos/tabs/<str:tab_ref>/open/", POSTabOpenView.as_view(), name="api-backstage-pos-tab-open"),

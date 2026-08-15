@@ -56,7 +56,7 @@ def test_unfold_surface_contract_requires_pos_runtime_templates_to_be_registered
 
 
 def test_unfold_gate_can_scope_registered_admin_url_to_surface() -> None:
-    surfaces = check_unfold_canonical.surfaces_for_url("/admin/configuracao/copy/")
+    surfaces = check_unfold_canonical.surfaces_for_url("/admin/settings/copy/")
 
     assert [surface.id for surface in surfaces] == ["admin-console-copy-catalog"]
 
@@ -76,7 +76,7 @@ def test_unfold_gate_removed_production_console_url_scope_is_unknown() -> None:
 
 
 def test_unfold_gate_scoped_targets_are_limited_to_registered_surface() -> None:
-    surfaces = check_unfold_canonical.surfaces_for_url("/admin/configuracao/copy/")
+    surfaces = check_unfold_canonical.surfaces_for_url("/admin/settings/copy/")
     files = {
         path.relative_to(check_unfold_canonical.ROOT).as_posix()
         for path in check_unfold_canonical.iter_templates(

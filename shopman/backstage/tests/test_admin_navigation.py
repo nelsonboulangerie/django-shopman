@@ -25,7 +25,7 @@ from shopman.backstage.admin.navigation import get_sidebar_navigation
 # Telas cuja porta no menu é uma página própria, não a changelist crua. A chave é
 # o model; o valor, a página que o apresenta melhor do que a tabela apresentaria.
 REACHED_BY_CUSTOM_PAGE = {
-    "shop.omotenashicopy": "Textos da interface (/admin/configuracao/copy/)",
+    "shop.omotenashicopy": "Textos da interface (/admin/settings/copy/)",
 }
 
 

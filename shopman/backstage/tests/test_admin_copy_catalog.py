@@ -106,4 +106,4 @@ def test_sidebar_opens_the_texts_page_not_the_raw_changelist(staff_client):
     groups = dj_admin.site.get_sidebar_list(request)
     texts_group = next(group for group in groups if group["title"] == "Textos e mensagens")
     item = next(i for i in texts_group["items"] if i["title"] == "Textos da interface")
-    assert str(item["link"]).endswith("/admin/configuracao/copy/")
+    assert str(item["link"]).endswith("/admin/settings/copy/")
