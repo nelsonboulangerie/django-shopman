@@ -8,9 +8,14 @@ migraram de ``storefront`` para ``shop`` — o menu seguiu apontando para
 configuração ficaram inalcançáveis sem que nenhum teste reclamasse.
 
 O contrato tem duas metades, e a segunda é o que mantém o Admin enxuto: toda tela
-registrada precisa estar no menu. Registrar sem dar caminho cria a tela que existe
-mas ninguém encontra — havia 41 delas. Se uma tela não merece lugar no menu,
-também não merece registro: o caminho é a curadoria, não esconder.
+registrada precisa ser alcançável. Registrar sem dar caminho cria a tela que existe
+mas ninguém encontra — havia 41 delas. Se uma tela não merece caminho, também não
+merece registro: o caminho é a curadoria, não esconder.
+
+"Alcançável" tem duas portas desde que a configuração virou destino próprio: o menu
+de operação e a tela de Configuração. A segunda é consultada na própria projection
+que a monta — manter aqui uma cópia da lista seria criar a divergência que o teste
+existe para impedir.
 """
 
 from __future__ import annotations
@@ -21,9 +26,10 @@ from django.contrib.auth.models import User
 from django.test import RequestFactory
 
 from shopman.backstage.admin.navigation import get_sidebar_navigation
+from shopman.backstage.projections.settings_hub import settings_screen_urls
 
-# Telas cuja porta no menu é uma página própria, não a changelist crua. A chave é
-# o model; o valor, a página que o apresenta melhor do que a tabela apresentaria.
+# Telas cuja porta é uma página própria, não a changelist crua. A chave é o model;
+# o valor, a página que o apresenta melhor do que a tabela apresentaria.
 REACHED_BY_CUSTOM_PAGE = {
     "shop.omotenashicopy": "Textos da interface (/admin/configuracao/copy/)",
 }
@@ -51,10 +57,11 @@ def test_every_menu_link_resolves():
 
 
 @pytest.mark.django_db
-def test_no_registered_screen_is_orphan_from_the_menu():
+def test_no_registered_screen_is_orphan():
     linked_paths = {
         item["link"].split("?")[0] for item in _menu_items(_superuser_request())
     }
+    linked_paths |= {url.split("?")[0] for url in settings_screen_urls()}
 
     orphans = []
     for model in admin.site._registry:
@@ -66,8 +73,8 @@ def test_no_registered_screen_is_orphan_from_the_menu():
             orphans.append(key)
 
     assert not orphans, (
-        "telas registradas fora do menu — dê um item de menu ou tire da curadoria: "
-        + ", ".join(sorted(orphans))
+        "telas registradas sem caminho — dê um item de menu, um cartão na "
+        "Configuração, ou tire da curadoria: " + ", ".join(sorted(orphans))
     )
 
 

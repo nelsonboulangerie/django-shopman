@@ -142,55 +142,93 @@ class AdminNavigationTests(TestCase):
             self.assertEqual(live["Pedidos"]["link"], "https://gestor.example.com")
             self.assertEqual(live["KDS"]["link"], "https://kds.example.com")
 
-    def test_store_config_is_split_by_intent_instead_of_piled_in_one_drawer(self) -> None:
-        """Config agrupada pelo que a pessoa quer FAZER, não por ser "config".
+    def test_configuration_left_the_operation_menu_for_a_destination(self) -> None:
+        """Config e dado deixam de disputar o mesmo menu.
 
-        O WP-2 juntou toda a configuração num grupo só para acabar com a dispersão
-        — e resolveu a dispersão criando uma gaveta de vinte itens de sete
-        assuntos, onde nada era encontrado. A correção não é voltar a espalhar: é
-        separar por intenção. "Loja" responde *o que esta loja é*; "Vendas e
-        entrega" responde *quanto se cobra e como chega*; "Textos e mensagens",
-        *o que a loja diz*. Cada grupo cabe num olhar.
+        O WP-2 juntou toda a config num grupo só e criou uma gaveta de vinte itens
+        de sete assuntos. O WP-ADM-R3 quebrou a gaveta em grupos temáticos — melhor,
+        mas ainda no mesmo plano dos dados, o que obrigava a decidir "isso é ajuste
+        ou é dado?" ANTES de procurar. Para "Promoções" essa pergunta não tem
+        resposta óbvia, e a dúvida custava a busca inteira.
+
+        Agora o menu conta o que ESTÁ ACONTECENDO e a Configuração mostra o que dá
+        para MUDAR — o padrão de Shopify, Stripe, Linear e Notion. O menu de
+        operação não pode ter tela de ajuste de volta, e o caminho para a
+        Configuração precisa existir.
         """
         request = RequestFactory().get("/admin/")
         request.user = User.objects.create_superuser("cfg", "cfg@example.com", "pw")
 
-        groups = {group["title"]: group for group in admin.site.get_sidebar_list(request)}
+        groups = admin.site.get_sidebar_list(request)
+        titles = {group["title"] for group in groups}
+        all_items_by_title = {
+            item["title"]: item for group in groups for item in group["items"]
+        }
+        all_items = set(all_items_by_title)
 
-        def titles(group_name):
-            return {
-                item["title"]
-                for item in groups[group_name]["items"]
-                if item["has_permission"]
-            }
+        # A porta única da configuração é um LINK solto, não um grupo: grupo com um
+        # filho só faz o menu dizer a mesma coisa duas vezes. Sem título, o Unfold
+        # desenha o item sozinho, como Shopify e Notion fazem com Settings.
+        self.assertNotIn("Configuração", titles, "virou grupo de novo")
+        config_item = next(
+            item for item in all_items_by_title.values()
+            if item["title"] == "Configuração"
+        )
+        self.assertEqual(config_item["link"], reverse("admin_console_settings_hub"))
 
-        # "Loja" são as nove telas do que a loja é — e só elas.
+        # E nenhuma tela de ajuste sobrou solta no menu de operação.
+        for gone in (
+            "Loja e contato", "Marca e aparência", "Horários e operação", "Cardápio",
+            "Pedidos e entrega", "Fidelidade", "PDV e alertas", "Integrações",
+            "Canais", "Regras de preço", "Promoções", "Cupons", "Faixas de preço",
+            "Zonas de entrega", "Faixas de distância", "Textos da interface",
+            "Modelos de mensagem", "Estações KDS", "Terminais do PDV", "Usuários",
+        ):
+            self.assertNotIn(gone, all_items, f"{gone} deveria morar na Configuração")
+
+    def test_settings_hub_groups_configuration_by_scope(self) -> None:
+        """Dentro do destino, o eixo é ESCOPO — o que a loja é, como vende, como
+        entrega, o que diz, o que fabrica, com que equipamento, quem entra. É o
+        eixo que Stripe (Pessoal/Conta/Produto) e Linear (Account/Features/
+        Administration/Teams) usam; agrupar por "ser config" não distingue nada,
+        porque ali tudo é config."""
+        from shopman.backstage.projections.settings_hub import build_settings_hub
+
+        hub = build_settings_hub()
+        group_titles = [group["title"] for group in hub["groups"]]
+
         self.assertEqual(
-            titles("Loja"),
-            {
-                "Loja e contato", "Marca e aparência", "Horários e operação",
-                "Cardápio", "Pedidos e entrega", "Fidelidade", "PDV e alertas",
-                "Produção", "Integrações",
-            },
+            group_titles,
+            [
+                "A loja",
+                "Como vendemos",
+                "Como entregamos",
+                "O que dizemos",
+                "Produção e estoque",
+                "Equipamentos",
+                "Quem entra",
+            ],
         )
 
-        for expected in {"Canais", "Regras de preço", "Promoções", "Cupons",
-                         "Faixas de preço", "Zonas de entrega", "Faixas de distância"}:
-            self.assertIn(expected, titles("Vendas e entrega"))
+        # Todo cartão diz o que controla: uma grade de títulos sem texto é só um
+        # menu deitado, e não resolve o "não sei se o que procuro está aqui".
+        for group in hub["groups"]:
+            for card in group["cards"]:
+                self.assertTrue(card["description"].strip(), card["label"])
 
-        self.assertEqual(
-            titles("Textos e mensagens"),
-            {"Textos da interface", "Modelos de mensagem"},
-        )
+    def test_settings_hub_search_finds_a_screen_by_subject(self) -> None:
+        """Busca por assunto, sem acento e sem saber o nome exato da tela."""
+        from shopman.backstage.projections.settings_hub import build_settings_hub
 
-        # Equipamento e checklist são "raramente, mas quando precisa é aqui".
-        for expected in {"Estações KDS", "Comandas do PDV", "Terminais do PDV"}:
-            self.assertIn(expected, titles("Sistema"))
+        found = {
+            card["label"]
+            for group in build_settings_hub(q="producao")["groups"]
+            for card in group["cards"]
+        }
 
-        # E nenhuma config voltou a se misturar com os dados que ela governa.
-        self.assertNotIn("Promoções", titles("Catálogo"))
-        self.assertNotIn("Loja e contato", titles("Catálogo"))
-        self.assertNotIn("Canais", titles("Auditoria"))
+        self.assertIn("Produção", found)
+        self.assertIn("Defeitos de fornada", found)
+        self.assertNotIn("Cupons", found)
 
     def test_sidebar_badges_count_operational_attention(self) -> None:
         Order.objects.create(

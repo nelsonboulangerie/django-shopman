@@ -117,6 +117,31 @@ def _glob(pattern: str) -> tuple[Path, ...]:
 # WP-ADM-3); a projection de closing alimenta a API headless (exceção abaixo).
 CANONICAL_ADMIN_SURFACES: tuple[Surface, ...] = (
     Surface(
+        id="admin-console-settings-hub",
+        kind="canonical-admin-unfold-page",
+        templates=(ROOT / "shopman/backstage/templates/admin_console/settings_hub",),
+        controllers=(ROOT / "shopman/backstage/admin_console/settings_hub.py",),
+        projections=(ROOT / "shopman/backstage/projections/settings_hub.py",),
+        url_prefixes=("/admin/ajustes/",),
+        requires_model_admin_view_mixin=True,
+        required_extends="admin/base.html",
+        required_template_markers=(
+            'include "unfold/helpers/messages.html"',
+            'include "unfold/helpers/field.html"',
+            'component "unfold/components/button.html"',
+            'component "unfold/components/card.html"',
+            'component "unfold/components/container.html"',
+            'component "unfold/components/flex.html"',
+            'component "unfold/components/separator.html"',
+            'component "unfold/components/text.html"',
+            'component "unfold/components/title.html"',
+        ),
+        required_controller_markers=(
+            "UnfoldAdminTextInputWidget",
+            "build_settings_hub",
+        ),
+    ),
+    Surface(
         id="admin-console-copy-catalog",
         kind="canonical-admin-unfold-page",
         templates=(ROOT / "shopman/backstage/templates/admin_console/copy_catalog",),

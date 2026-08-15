@@ -1,0 +1,85 @@
+{% extends "admin/base.html" %}
+{% load i18n unfold %}
+
+{% block title %}Configuração | {{ site_title|default:_('Django site admin') }}{% endblock %}
+
+{# Sem este bloco a página custom perde a marca e o ícone do topo. O
+   `admin/base.html` não os desenha sozinho: cada tela declara, como o dashboard. #}
+{% block branding %}
+    {% include "unfold/helpers/site_branding.html" %}
+{% endblock %}
+
+{% block content %}
+{% include "unfold/helpers/messages.html" %}
+<main id="settings-hub-main" role="main">
+{% component "unfold/components/container.html" %}
+  {% component "unfold/components/flex.html" with col=1 class="gap-8" %}
+
+    {% component "unfold/components/flex.html" with col=1 class="gap-1" %}
+      {% component "unfold/components/title.html" %}
+        Configuração
+      {% endcomponent %}
+      {% component "unfold/components/text.html" with class="text-base-500" %}
+        Tudo que se ajusta nesta loja, agrupado pelo que a coisa é. Leia o que cada tela controla em vez de lembrar onde ela estava.
+      {% endcomponent %}
+      {% component "unfold/components/text.html" with class="text-base-500" %}
+        {{ settings_hub.total }} tela{{ settings_hub.total|pluralize }} de configuração.
+      {% endcomponent %}
+    {% endcomponent %}
+
+    <form method="get">
+      {% component "unfold/components/flex.html" with class="gap-4 items-center" %}
+        <div class="grow">
+          {% include "unfold/helpers/field.html" with field=settings_hub_form.q %}
+        </div>
+        {% component "unfold/components/button.html" with submit=1 variant="primary" icon="search" %}
+          Buscar
+        {% endcomponent %}
+        {% if settings_hub.query %}
+          {% url 'admin_console_settings_hub' as hub_url %}
+          {% component "unfold/components/button.html" with href=hub_url variant="default" icon="close" %}
+            Limpar
+          {% endcomponent %}
+        {% endif %}
+      {% endcomponent %}
+    </form>
+
+    {% if not settings_hub.groups %}
+      {% component "unfold/components/text.html" with class="text-base-500" %}
+        Nada com esse termo. Tente a palavra que você usaria para o assunto: entrega, preço, horário, texto.
+      {% endcomponent %}
+    {% endif %}
+
+    {% for group in settings_hub.groups %}
+      {% component "unfold/components/flex.html" with col=1 class="gap-4" %}
+
+        {% component "unfold/components/flex.html" with col=1 class="gap-1" %}
+          {% component "unfold/components/title.html" with class="text-lg" %}
+            {{ group.title }}
+          {% endcomponent %}
+          {% component "unfold/components/text.html" with class="text-base-500" %}
+            {{ group.hint }}
+          {% endcomponent %}
+        {% endcomponent %}
+
+        <div class="grid grid-cols-1 gap-4 lg:grid-cols-3 md:grid-cols-2">
+          {% for card in group.cards %}
+            {% component "unfold/components/card.html" with href=card.url title=card.label icon=card.icon %}
+              {% component "unfold/components/text.html" with class="text-base-500" %}
+                {{ card.description }}
+              {% endcomponent %}
+            {% endcomponent %}
+          {% endfor %}
+        </div>
+
+      {% endcomponent %}
+
+      {% if not forloop.last %}
+        {% component "unfold/components/separator.html" %}{% endcomponent %}
+      {% endif %}
+    {% endfor %}
+
+  {% endcomponent %}
+{% endcomponent %}
+</main>
+{% endblock %}

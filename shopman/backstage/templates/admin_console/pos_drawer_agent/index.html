@@ -3,6 +3,12 @@
 
 {% block title %}Instalar o agente da gaveta | {{ site_title|default:_('Django site admin') }}{% endblock %}
 
+{# Sem este bloco a página custom perde a marca e o ícone do topo. O
+   `admin/base.html` não os desenha sozinho: cada tela declara, como o dashboard. #}
+{% block branding %}
+    {% include "unfold/helpers/site_branding.html" %}
+{% endblock %}
+
 {% block content %}
 {% include "unfold/helpers/messages.html" %}
 <main id="pos-drawer-agent-main" role="main">

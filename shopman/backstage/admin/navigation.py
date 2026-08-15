@@ -111,30 +111,16 @@ def get_sidebar_navigation(request):
             _item("Coleções", "category", _url("admin:offerman_collection_changelist"), permission=_is_staff),
             _item("Vitrines", "shoppingmode", _url("admin:offerman_listing_changelist"), permission=_is_staff),
         ]),
-        # Como se cobra e como se entrega. Preço e entrega andam juntos porque a
-        # pergunta do gestor é uma só: "quanto essa pessoa paga por isso, aqui?".
-        _group("Vendas e entrega", "sell", [
-            _item("Canais", "storefront", _url("admin:shop_channel_changelist"), permission=_is_staff),
-            _item("Regras de preço", "price_change", _url("admin:shop_ruleconfig_changelist"), permission=_is_staff),
-            _item("Promoções", "campaign", _url("admin:shop_promotion_changelist"), permission=_is_staff),
-            _item("Cupons", "confirmation_number", _url("admin:shop_coupon_changelist"), permission=_is_staff),
-            _item("Faixas de preço", "groups", _url("admin:guestman_pricetier_changelist"), permission=_is_staff),
-            _item("Zonas de entrega", "pin_drop", _url("admin:shop_deliveryzone_changelist"), permission=_is_staff),
-            _item("Faixas de distância", "straighten", _url("admin:shop_deliverydistanceband_changelist"), permission=_is_staff),
-        ]),
         _group("Clientes", "people", [
             _item("Clientes", "person_search", _url("admin:guestman_customer_changelist"), permission=_is_staff),
             _item("Contas de fidelidade", "loyalty", _url("admin:customer_loyalty_loyaltyaccount_changelist"), permission=_is_staff),
             _item("Avisos de reposição", "notifications_active", _url("admin:storefront_stockalertsubscription_changelist"), permission=_is_staff),
         ]),
-        # Painel/planejamento migraram para o Produção (WP-ADM-7d); aqui fica o que
-        # se cadastra uma vez e se consulta depois — mais os insumos, que são a
-        # entrada da receita.
+        # O que se fabrica e com o quê. A régua de qualidade e o planejamento do dia
+        # são ajuste, não operação: moram na Configuração.
         _group("Produção", "factory", [
             _item("Fichas técnicas", "menu_book", _url("admin:craftsman_recipe_changelist"), permission=_can_access_production),
             _item("Ordens de produção", "assignment", _url("admin:craftsman_workorder_changelist"), permission=_can_access_production),
-            _item("Defeitos de fornada", "report", _url("admin:shop_qualitydefect_changelist"), permission=_can_access_production),
-            _item("Graus de qualidade", "grade", _url("admin:shop_qualitygrade_changelist"), permission=_can_access_production),
             _item("Insumos", "grocery", _url("admin:buyman_material_changelist"), permission=_is_staff),
             _item("Fornecedores", "local_shipping", _url("admin:buyman_supplier_changelist"), permission=_is_staff),
             *(
@@ -155,28 +141,6 @@ def get_sidebar_navigation(request):
             _item("Reservas", "keep", _url("admin:stockman_hold_changelist"), permission=_is_staff),
             _item("Movimentos", "swap_horiz", _url("admin:stockman_move_changelist"), permission=_is_staff),
             _item("Lotes", "inventory", _url("admin:stockman_batch_changelist"), permission=_is_staff),
-            _item("Posições", "domain", _url("admin:stockman_position_changelist"), permission=_is_staff),
-            _item("Alertas de estoque", "notification_important", _url("admin:stockman_stockalert_changelist"), permission=_is_staff),
-        ]),
-        # As nove telas da configuração da loja, e nada além delas: o grupo tem uma
-        # intenção só, "configurar a loja", e por isso é previsível. O que virava
-        # gaveta de tudo (o antigo "Configurações", com vinte itens de sete
-        # assuntos) é justamente onde ninguém achava nada.
-        _group("Loja", "settings", [
-            _item("Loja e contato", "store", _url("admin:shop_shop_changelist"), permission=_is_staff),
-            _item("Marca e aparência", "palette", _url("admin:shop_shopappearance_changelist"), permission=_is_staff),
-            _item("Horários e operação", "schedule", _url("admin:shop_shopoperation_changelist"), permission=_is_staff),
-            _item("Cardápio", "restaurant_menu", _url("admin:shop_shopmenu_changelist"), permission=_is_staff),
-            _item("Pedidos e entrega", "local_shipping", _url("admin:shop_shopordering_changelist"), permission=_is_staff),
-            _item("Fidelidade", "loyalty", _url("admin:shop_shoployalty_changelist"), permission=_is_staff),
-            _item("PDV e alertas", "point_of_sale", _url("admin:shop_shoppos_changelist"), permission=_is_staff),
-            _item("Produção", "manufacturing", _url("admin:shop_shopproduction_changelist"), permission=_is_staff),
-            _item("Integrações", "extension", _url("admin:shop_shopintegrations_changelist"), permission=_is_staff),
-        ]),
-        # O que a loja diz — na tela e nas mensagens que ela manda.
-        _group("Textos e mensagens", "format_quote", [
-            _item("Textos da interface", "format_quote", _url("admin_console_copy_catalog"), permission=_is_staff),
-            _item("Modelos de mensagem", "mail", _url("admin:shop_notificationtemplate_changelist"), permission=_is_staff),
         ]),
         # Trilha: o que já aconteceu. Nada aqui se opera, tudo aqui se confere.
         _group("Auditoria", "history", [
@@ -189,21 +153,18 @@ def get_sidebar_navigation(request):
             _item("Fechamentos do dia", "event_available", _url("admin:backstage_dayclosing_changelist"), permission=_can_close_day),
             _item("Execuções de checklist", "checklist", _url("admin:backstage_operationchecklistrun_changelist"), permission=_is_staff),
         ]),
-        # A gaveta do "raramente, mas quando precisa é aqui": equipamento da casa,
-        # quem entra e com o quê, e a infraestrutura de referências.
-        _group("Sistema", "admin_panel_settings", [
-            _item("Estações KDS", "settings_input_component", _url("admin:backstage_kdsinstance_changelist"), permission=_can_operate_kds),
-            _item("Comandas do PDV", "receipt", _url("admin:backstage_postab_changelist"), permission=_can_operate_pos),
-            _item("Terminais do PDV", "point_of_sale", _url("admin:backstage_posterminal_changelist"), permission=_can_operate_pos),
-            _item("Modelos de checklist", "fact_check", _url("admin:backstage_operationchecklisttemplate_changelist"), permission=_is_staff),
-            _item("Modelos de tarefa", "task_alt", _url("admin:backstage_operationtasktemplate_changelist"), permission=_is_staff),
-            _item("Usuários", "person", _url("admin:auth_user_changelist"), permission=_is_superuser),
-            _item("Grupos", "group", _url("admin:auth_group_changelist"), permission=_is_superuser),
-            _item("Operadores e PIN", "badge", _url("admin:doorman_pincredential_changelist"), permission=_is_superuser),
-            _item("Dispositivos confiáveis", "devices", _url("admin:doorman_trusteddevice_changelist"), permission=_is_superuser),
-            _item("Verificação em duas etapas", "security", _url("admin:otp_totp_totpdevice_changelist"), permission=_is_superuser),
-            _item("Referências", "tag", _url("admin:refs_ref_changelist"), permission=_is_superuser),
-        ]),
+        # UMA porta para tudo que é ajuste, e ela é um LINK, não um grupo: grupo com
+        # um filho só faz o menu dizer a mesma coisa duas vezes. Sem título, o Unfold
+        # desenha o item solto no rodapé da navegação — que é onde Shopify e Notion
+        # põem Settings.
+        #
+        # O ganho de a configuração ser um destino, e não trinta linhas aqui, não é
+        # economizar espaço: é que lá cada tela cabe com UMA FRASE dizendo o que ela
+        # controla, e a tela inteira aceita busca. Nenhuma das duas coisas cabe num
+        # menu. Ver shopman/backstage/projections/settings_hub.py.
+        _group("", "settings", [
+            _item("Configuração", "settings", _url("admin_console_settings_hub"), permission=_is_staff),
+        ], collapsible=False),
     ]
 
 

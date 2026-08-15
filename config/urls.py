@@ -14,6 +14,7 @@ from shopman.backstage.admin_console.pos_drawer_agent import (
     pos_drawer_agent_download,
     pos_drawer_agent_view,
 )
+from shopman.backstage.admin_console.settings_hub import settings_hub_view
 from shopman.backstage.views.two_factor import admin_2fa_verify
 from shopman.shop.views.health import HealthCheckView, ReadyCheckView
 
@@ -43,6 +44,11 @@ urlpatterns = [
     # (OPERATOR-APPS-PLAN Fase 2). O console Admin de produção saiu no
     # WP-ADM-7d: a superfície canônica é o Produção (surfaces/production-nuxt)
     # via api/v1/backstage/production/* (paridade fechada no WP-ADM-7b).
+    path(
+        "admin/ajustes/",
+        admin.site.admin_view(settings_hub_view),
+        name="admin_console_settings_hub",
+    ),
     path(
         "admin/configuracao/copy/",
         admin.site.admin_view(copy_catalog_view),
