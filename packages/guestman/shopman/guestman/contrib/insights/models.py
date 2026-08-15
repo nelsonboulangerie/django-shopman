@@ -12,13 +12,17 @@ from django.utils.translation import gettext_lazy as _
 #: segmentos ao gestor). Vocabulário sem nome é vocabulário que divergiu — e este já
 #: havia divergido: o `help_text` deste campo dizia `'campeão', 'em_risco', 'novo'`,
 #: valores que nenhum escritor produz.
+#:
+#: Os rótulos rendem como chip/badge (público da campanha, coluna e filtro do Admin),
+#: abrindo linha — sentence case. Numa lista ("Atacado, Cliente fiel") ficam como
+#: nome próprio de público, ao lado dos grupos.
 RFM_SEGMENTS: tuple[tuple[str, str], ...] = (
-    ("champion", "campeão"),
-    ("loyal_customer", "cliente fiel"),
-    ("recent_customer", "cliente recente"),
-    ("regular", "regular"),
-    ("at_risk", "em risco"),
-    ("lost", "perdido"),
+    ("champion", "Campeão"),
+    ("loyal_customer", "Cliente fiel"),
+    ("recent_customer", "Cliente recente"),
+    ("regular", "Regular"),
+    ("at_risk", "Em risco"),
+    ("lost", "Perdido"),
 )
 
 class CustomerInsight(models.Model):

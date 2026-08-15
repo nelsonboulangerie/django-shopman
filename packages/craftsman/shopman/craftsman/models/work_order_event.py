@@ -75,7 +75,7 @@ class WorkOrderEvent(models.Model):
         verbose_name=_("Ordem"),
     )
     seq = models.PositiveIntegerField(
-        verbose_name=_("Sequencia"),
+        verbose_name=_("Sequência"),
     )
     kind = models.CharField(
         max_length=20,
@@ -98,7 +98,7 @@ class WorkOrderEvent(models.Model):
         unique=True,
         null=True,
         blank=True,
-        verbose_name=_("Chave de Idempotencia"),
+        verbose_name=_("Chave de Idempotência"),
     )
     created_at = models.DateTimeField(
         auto_now_add=True,

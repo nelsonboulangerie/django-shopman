@@ -19,7 +19,7 @@ from django.utils import timezone
 
 
 class Command(BaseCommand):
-    help = "Carrega dados de demonstracao para o Craftsman vNext"
+    help = "Carrega dados de demonstração para o Craftsman vNext"
 
     def add_arguments(self, parser):
         parser.add_argument(
@@ -32,7 +32,7 @@ class Command(BaseCommand):
         from shopman.craftsman.models import Recipe, RecipeItem, WorkOrder, WorkOrderEvent, WorkOrderItem
 
         self.stdout.write("=" * 60)
-        self.stdout.write("Carregando dados de demonstracao do Craftsman vNext...")
+        self.stdout.write("Carregando dados de demonstração do Craftsman vNext...")
         self.stdout.write("=" * 60)
 
         if options["clear"]:
@@ -71,10 +71,10 @@ class Command(BaseCommand):
             },
             {
                 "ref": "pao-frances-v1",
-                "name": "Pao Frances",
+                "name": "Pão Francês",
                 "output_sku": "pao-frances",
                 "batch_size": Decimal("50"),
-                "steps": ["Mistura", "Fermentacao", "Modelagem", "Forno"],
+                "steps": ["Mistura", "Fermentação", "Modelagem", "Forno"],
                 "items": [
                     ("farinha-t55", Decimal("15"), "kg"),
                     ("agua", Decimal("10"), "L"),
@@ -87,7 +87,7 @@ class Command(BaseCommand):
                 "name": "Baguette",
                 "output_sku": "baguette",
                 "batch_size": Decimal("40"),
-                "steps": ["Mistura", "Fermentacao", "Modelagem", "Forno"],
+                "steps": ["Mistura", "Fermentação", "Modelagem", "Forno"],
                 "items": [
                     ("farinha-t65", Decimal("12"), "kg"),
                     ("agua", Decimal("8"), "L"),
@@ -100,7 +100,7 @@ class Command(BaseCommand):
                 "name": "Brioche",
                 "output_sku": "brioche",
                 "batch_size": Decimal("20"),
-                "steps": ["Mistura", "Fermentacao", "Modelagem", "Forno"],
+                "steps": ["Mistura", "Fermentação", "Modelagem", "Forno"],
                 "items": [
                     ("farinha-t45", Decimal("8"), "kg"),
                     ("manteiga", Decimal("4"), "kg"),
@@ -189,4 +189,4 @@ class Command(BaseCommand):
             f"    VOID: {WorkOrder.objects.filter(status=WorkOrder.Status.VOID).count()}"
         )
         self.stdout.write("=" * 60)
-        self.stdout.write(self.style.SUCCESS("Dados de demonstracao carregados."))
+        self.stdout.write(self.style.SUCCESS("Dados de demonstração carregados."))

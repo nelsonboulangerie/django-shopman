@@ -158,7 +158,7 @@ describe("hashtags", () => {
 describe("audienceRulesSummary", () => {
   const labels = {
     priceTiers: { atacado: "Atacado" },
-    segments: { loyal_customer: "cliente fiel" },
+    segments: { loyal_customer: "Cliente fiel" },
   };
 
   it("spells out the sources in order", () => {
@@ -177,7 +177,7 @@ describe("audienceRulesSummary", () => {
   it("spells out the audiences the manager chooses, not only the event ones", () => {
     expect(audienceRulesSummary({ price_tiers: ["atacado"] }, labels)).toBe("Atacado");
     expect(audienceRulesSummary({ rfm_segments: ["loyal_customer"] }, labels))
-      .toBe("cliente fiel");
+      .toBe("Cliente fiel");
     expect(audienceRulesSummary({ churn_risk_min: 0.7 })).toBe("Quem está sumindo");
     expect(audienceRulesSummary({ birthday_today: true })).toBe("Aniversariantes de hoje");
   });
@@ -186,9 +186,9 @@ describe("audienceRulesSummary", () => {
   // desenhar as duas coisas igual.
   it("says when the rules are crossed instead of added", () => {
     const rules = { price_tiers: ["atacado"], rfm_segments: ["loyal_customer"] };
-    expect(audienceRulesSummary(rules, labels)).toBe("Atacado, cliente fiel");
+    expect(audienceRulesSummary(rules, labels)).toBe("Atacado, Cliente fiel");
     expect(audienceRulesSummary({ ...rules, match: "all" as const }, labels))
-      .toBe("Cruzando Atacado, cliente fiel");
+      .toBe("Cruzando Atacado, Cliente fiel");
   });
 
   it("does not say 'crossed' with a single rule, where it would mean nothing", () => {

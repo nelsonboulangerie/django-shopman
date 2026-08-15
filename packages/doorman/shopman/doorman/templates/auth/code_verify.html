@@ -3,12 +3,12 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Verificar codigo</title>
+    <title>Verificar código</title>
 </head>
 <body>
-    <h1>Verificar codigo</h1>
+    <h1>Verificar código</h1>
 
-    <p>Enviamos um codigo para <strong>{{ target|default:phone }}</strong>.</p>
+    <p>Enviamos um código para <strong>{{ target|default:phone }}</strong>.</p>
 
     {% if error %}
     <p style="color: red;">{{ error }}</p>
@@ -21,7 +21,7 @@
     <form method="post">
         {% csrf_token %}
         <input type="hidden" name="target" value="{{ target|default:phone }}">
-        <label for="code">Codigo:</label>
+        <label for="code">Código:</label>
         <input type="text" id="code" name="code" maxlength="6"
                pattern="[0-9]{6}" inputmode="numeric" autocomplete="one-time-code"
                placeholder="000000" required autofocus>

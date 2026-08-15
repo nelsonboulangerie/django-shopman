@@ -321,7 +321,7 @@ def _build_context(order, payload: dict, template: str) -> dict:
         context["payment_url"] = context.get("payment_url") or storefront_links.order_tracking_url(order.ref)
         copy_paste = payment.get("copy_paste")
         context["copy_paste"] = copy_paste or ""
-        context["pix_suffix"] = f" Codigo PIX: {copy_paste}" if copy_paste else ""
+        context["pix_suffix"] = f" Código PIX: {copy_paste}" if copy_paste else ""
     else:
         context["payment_url"] = context.get("payment_url") or storefront_links.order_tracking_url(order.ref)
         context["pix_suffix"] = ""

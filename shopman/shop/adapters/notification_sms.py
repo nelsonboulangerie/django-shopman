@@ -23,6 +23,10 @@ from ._sms import to_digits
 
 logger = logging.getLogger(__name__)
 
+# ⚠️ ASCII de propósito: acento fora do GSM-7 (ã, ç, õ, á, í, ó, ú) força UCS-2 e o
+# segmento cai de 160 para 70 caracteres — o SMS passa a custar o dobro. Estes são
+# só o fallback: o template do Admin (NotificationTemplate) vale para todos os canais
+# e ESSE é acentuado; aqui, sem acento é decisão de custo, não erro.
 MESSAGE_TEMPLATES: dict[str, str] = {
     "order_received": "Recebemos o pedido {order_ref}. O estabelecimento vai conferir a disponibilidade.",
     "order_accepted": "Pedido {order_ref} confirmado! Total: {total}",

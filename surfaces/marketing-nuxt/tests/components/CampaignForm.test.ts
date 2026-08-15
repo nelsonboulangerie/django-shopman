@@ -11,7 +11,7 @@ beforeAll(() => {
 
 const TRIGGERS = [
   { value: "production_finished", label: "fornada pronta" },
-  { value: "schedule", label: "agendado" },
+  { value: "schedule", label: "Agendado" },
 ];
 const PLATFORMS = [
   { value: "whatsapp", label: "WhatsApp" },
@@ -42,7 +42,7 @@ function makeRule(over: Partial<Campaign> = {}): Campaign {
     pk: 5,
     name: "Relâmpago das 17h30",
     trigger: "schedule",
-    trigger_label: "agendado",
+    trigger_label: "Agendado",
     platforms: ["whatsapp"],
     template_id: 1,
     audience_rules: {},

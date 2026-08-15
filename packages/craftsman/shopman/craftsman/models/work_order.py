@@ -63,7 +63,7 @@ class WorkOrder(models.Model):
         max_digits=12,
         decimal_places=3,
         verbose_name=_("Quantidade Planejada"),
-        help_text=_("Planejado atual (mutavel via adjust enquanto planned)"),
+        help_text=_("Planejado atual (mutável via adjust enquanto planned)"),
     )
     finished = models.DecimalField(
         max_digits=12,
@@ -71,7 +71,7 @@ class WorkOrder(models.Model):
         null=True,
         blank=True,
         verbose_name=_("Quantidade Concluída"),
-        help_text=_("Set no finish, imutavel depois"),
+        help_text=_("Set no finish, imutável depois"),
     )
 
     status = models.CharField(
@@ -82,7 +82,7 @@ class WorkOrder(models.Model):
     )
     rev = models.PositiveIntegerField(
         default=0,
-        verbose_name=_("Revisao"),
+        verbose_name=_("Revisão"),
         help_text=_("Optimistic concurrency counter"),
     )
 
@@ -118,7 +118,7 @@ class WorkOrder(models.Model):
     operator_ref = models.CharField(
         max_length=100,
         blank=True,
-        verbose_name=_("Responsavel"),
+        verbose_name=_("Responsável"),
         help_text=_("'user:joao'"),
     )
 

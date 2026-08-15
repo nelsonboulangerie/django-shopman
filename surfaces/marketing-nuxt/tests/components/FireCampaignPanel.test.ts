@@ -14,7 +14,7 @@ function fakeCount(over: Partial<AudienceCount> = {}): AudienceCount {
   return {
     total: 2,
     match: "any",
-    match_label: "somando as regras",
+    match_label: "Somando as regras",
     parts: [{ label: "Faixa de preço", count: 2 }],
     vip_count: 0,
     empty_selection: false,
@@ -57,8 +57,8 @@ const TAGS = [
   { value: "sem-gluten", label: "sem glúten (1)" },
 ];
 const SEGMENTS = [
-  { value: "champion", label: "campeão" },
-  { value: "at_risk", label: "em risco" },
+  { value: "champion", label: "Campeão" },
+  { value: "at_risk", label: "Em risco" },
 ];
 
 function makeRule(over: Partial<Campaign> = {}): Campaign {
@@ -66,7 +66,7 @@ function makeRule(over: Partial<Campaign> = {}): Campaign {
     pk: 3,
     name: "Novidade da semana",
     trigger: "manual",
-    trigger_label: "disparo manual",
+    trigger_label: "Disparo manual",
     platforms: ["whatsapp"],
     audience_rules: { favorites: true },
     requires_approval: true,
@@ -105,10 +105,10 @@ describe("FireCampaignPanel — disparar agora", () => {
     const wrapper = panel();
     await wrapper.findAll('input[name="audience-mode"]')[1]!.setValue();
 
-    // "Atacado" e "em risco" — o gestor clica em frases, não em chaves.
+    // "Atacado" e "Em risco" — o gestor clica em frases, não em chaves.
     const chips = wrapper.findAll("button[aria-pressed]");
     await chips.find((c) => c.text() === "Atacado")!.trigger("click");
-    await chips.find((c) => c.text() === "em risco")!.trigger("click");
+    await chips.find((c) => c.text() === "Em risco")!.trigger("click");
     await wrapper.find("form").trigger("submit");
 
     expect(wrapper.emitted("submit")?.[0]).toEqual([
@@ -266,7 +266,7 @@ describe("FireCampaignPanel — somar ou cruzar as regras", () => {
     await wrapper.findAll('input[name="audience-mode"]')[1]!.setValue();
     const chips = wrapper.findAll("button[aria-pressed]");
     await chips.find((c) => c.text() === "Atacado")!.trigger("click");
-    await chips.find((c) => c.text() === "em risco")!.trigger("click");
+    await chips.find((c) => c.text() === "Em risco")!.trigger("click");
     return wrapper;
   }
 

@@ -903,7 +903,7 @@ class TestAudienceCount:
         data = response.json()
         assert data["total"] == 3
         assert data["match"] == "any"
-        assert data["match_label"] == "somando as regras"
+        assert data["match_label"] == "Somando as regras"
 
     def test_crossing_rules_narrows_it(self, client, gestor):
         """"fiéis QUE são atacado" — o recorte que a união não sabe fazer."""
@@ -920,7 +920,7 @@ class TestAudienceCount:
 
         data = response.json()
         assert data["total"] == 1
-        assert data["match_label"] == "cruzando as regras"
+        assert data["match_label"] == "Cruzando as regras"
 
     def test_the_parts_explain_the_total(self, client, gestor):
         """""Faixa de preço 2, comportamento 2, total 1": a leitura junta ensina o recorte."""

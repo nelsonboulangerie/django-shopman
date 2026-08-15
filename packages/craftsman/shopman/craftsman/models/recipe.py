@@ -46,7 +46,7 @@ class Recipe(models.Model):
         unique=True,
         max_length=50,
         verbose_name=_("Ref"),
-        help_text=_("Identificador unico (ex: croissant-v1)"),
+        help_text=_("Identificador único (ex: croissant-v1)"),
     )
     name = models.CharField(
         max_length=200,
@@ -124,7 +124,7 @@ class Recipe(models.Model):
             for i, s in enumerate(self.steps):
                 if not isinstance(s, str) or not s.strip():
                     raise ValidationError(
-                        {"steps": _("Etapa %(step)s deve ser uma string nao-vazia.") % {"step": i + 1}}
+                        {"steps": _("Etapa %(step)s deve ser uma string não vazia.") % {"step": i + 1}}
                     )
 
     def save(self, *args, **kwargs):
@@ -181,7 +181,7 @@ class RecipeItem(models.Model):
         ref_type="SKU",
         verbose_name=_("Insumo"),
         max_length=100,
-        help_text=_("Referencia do material de entrada"),
+        help_text=_("Referência do material de entrada"),
         db_index=False,
     )
     quantity = models.DecimalField(
