@@ -20,6 +20,11 @@ from .operation import (
     OperationTaskStatus,
     OperationTaskTemplate,
 )
+from .operation_episode import (
+    EpisodeStatus,
+    OperationEpisode,
+    OperationEpisodeKind,
+)
 from .oven_run import OvenRun
 from .pos import POSTab
 from .shelf_outage import OutageReason, ShelfOutage
@@ -37,7 +42,10 @@ __all__ = [
     "HistoricalSaleItem",
     "KDSInstance",
     "KDSTicket",
+    "EpisodeStatus",
     "OperationArea",
+    "OperationEpisode",
+    "OperationEpisodeKind",
     "OperationChecklistRun",
     "OperationChecklistTemplate",
     "OperationChecklistTemplateTask",

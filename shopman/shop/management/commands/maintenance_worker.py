@@ -47,6 +47,9 @@ MAINTENANCE_COMMANDS = (
     # O expediente do dia que terminou vira denominador congelado: sem isso,
     # mexer no horário da loja reescreveria as métricas do passado.
     "stamp_business_days",
+    # Depende do expediente carimbado acima: é ele que diz quando a casa
+    # estava aberta, e só dentro disso um silêncio de vendas é episódio.
+    "detect_operation_episodes",
     # Timer de forno sem Concluir dentro do teto não mede (ADR-021 §4).
     "sweep_stale_oven_runs",
     # Frescor vencido não vira propaganda: announcement pendente além do prazo caduca.

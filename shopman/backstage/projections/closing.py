@@ -107,6 +107,28 @@ class UpcomingPreorderRowProjection:
 
 
 @dataclass(frozen=True)
+class EpisodeOptionProjection:
+    """Uma opção de resposta — o operador escolhe, não digita."""
+
+    ref: str
+    label: str
+    hint: str
+
+
+@dataclass(frozen=True)
+class PendingEpisodeProjection:
+    """Algo estranho que o sistema notou e ainda ninguém explicou.
+
+    O texto do sinal é o que o sistema MEDIU; o motivo vem das opções. A
+    pergunta só aparece quando há sinal — nada de formulário em branco todo dia.
+    """
+
+    id: int
+    signal: str          # "nenhuma venda entre 14h e 16h"
+    window_display: str  # "14:05 → 16:20"
+
+
+@dataclass(frozen=True)
 class DayClosingProjection:
     """Top-level read model for the day closing page."""
 
@@ -124,6 +146,9 @@ class DayClosingProjection:
     has_pending_production: bool
     upcoming_preorders: tuple[UpcomingPreorderRowProjection, ...] = ()
     has_upcoming_preorders: bool = False
+    pending_episodes: tuple[PendingEpisodeProjection, ...] = ()
+    episode_options: tuple[EpisodeOptionProjection, ...] = ()
+    has_pending_episodes: bool = False
 
 
 # ── Builder ────────────────────────────────────────────────────────────
@@ -156,6 +181,8 @@ def build_day_closing() -> DayClosingProjection:
     pending_production = _pending_production(today)
     upcoming_preorders = _upcoming_preorders(today)
 
+    pending_episodes = _pending_episodes(today)
+
     return DayClosingProjection(
         today=today.isoformat(),
         today_display=today.strftime("%d/%m/%Y"),
@@ -171,10 +198,47 @@ def build_day_closing() -> DayClosingProjection:
         has_pending_production=bool(pending_production),
         upcoming_preorders=upcoming_preorders,
         has_upcoming_preorders=bool(upcoming_preorders),
+        pending_episodes=pending_episodes,
+        episode_options=_episode_options() if pending_episodes else (),
+        has_pending_episodes=bool(pending_episodes),
     )
 
 
 # ── Internals ──────────────────────────────────────────────────────────
+
+
+def _pending_episodes(day) -> tuple:
+    """O que o sistema notou e ainda ninguém explicou.
+
+    Vazio na esmagadora maioria dos dias — a pergunta só aparece quando houve
+    sinal, e é isso que a mantém respondível.
+    """
+    from shopman.backstage.services.episodes import pending_for_day
+
+    rows = []
+    for episode in pending_for_day(day):
+        inicio = timezone.localtime(episode.started_at)
+        fim = timezone.localtime(episode.ended_at) if episode.ended_at else None
+        rows.append(
+            PendingEpisodeProjection(
+                id=episode.pk,
+                signal=episode.detected_signal,
+                window_display=(
+                    f"{inicio:%H:%M} → {fim:%H:%M}" if fim else f"desde {inicio:%H:%M}"
+                ),
+            )
+        )
+    return tuple(rows)
+
+
+def _episode_options() -> tuple:
+    """As opções de resposta, do catálogo — escolher, nunca digitar."""
+    from shopman.backstage.models import OperationEpisodeKind
+
+    return tuple(
+        EpisodeOptionProjection(ref=kind.ref, label=kind.label, hint=kind.hint)
+        for kind in OperationEpisodeKind.objects.filter(is_active=True)
+    )
 
 
 def _build_items() -> list[ClosingItemProjection]:

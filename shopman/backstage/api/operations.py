@@ -39,6 +39,7 @@ import json
 import logging
 from datetime import date
 
+from django.core.exceptions import ObjectDoesNotExist
 from django.utils.decorators import method_decorator
 from django_ratelimit.decorators import ratelimit
 from drf_spectacular.utils import OpenApiResponse, extend_schema, extend_schema_view
@@ -814,6 +815,36 @@ class ProductionBlindMapView(APIView):
         responses={200: OpenApiResponse(description="Items pending closing decision.")},
     ),
 )
+class OperationEpisodeAnswerView(APIView):
+    """O operador responde o que houve — uma escolha, não um formulário.
+
+    Corpo: ``{"kind_ref": "falta-de-energia"}`` para explicar, ou
+    ``{"kind_ref": ""}`` para dizer que não houve nada (falso alarme).
+    """
+
+    permission_classes = [HasBackstagePermission]
+    required_permission = "backstage.perform_closing"
+
+    def post(self, request, episode_id: int):
+        from shopman.backstage.services.episodes import answer
+
+        kind_ref = str(request.data.get("kind_ref", "") or "").strip()
+        note = str(request.data.get("note", "") or "").strip()
+        try:
+            episode = answer(
+                episode_id,
+                kind_ref=kind_ref,
+                actor=request.user.get_username(),
+                note=note,
+            )
+        except ObjectDoesNotExist:
+            return Response(
+                {"detail": "Episódio ou motivo não encontrado.", "field": "kind_ref"},
+                status=404,
+            )
+        return Response({"ok": True, "status": episode.status})
+
+
 class DayClosingView(APIView):
     permission_classes = [HasBackstagePermission]
     required_permission = "backstage.perform_closing"

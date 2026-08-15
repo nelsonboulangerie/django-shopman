@@ -5843,12 +5843,41 @@ class Command(BaseCommand):
         vitrine = positions.get("vitrine")
         if vitrine is None:
             return
+        self._seed_episode_kinds()
         self._seed_business_days(days=days)
         self._seed_shelf_movements(products, vitrine, days=days)
         self._seed_shelf_outages(products, days=days)
         self._seed_oven_runs(days=days)
         self._seed_day_weather(days=days)
         self.stdout.write(f"  ✅ B.I.: {days} dias de prateleira, faltas, forno e contexto")
+
+    def _seed_episode_kinds(self) -> None:
+        """As opções que o operador escolhe no fechamento.
+
+        Vocabulário da casa, editável no Admin. ``affects_demand`` marca o que
+        atrapalhou a venda — esses dias saem da amostra que ensina quanto
+        produzir, porque vender pouco sem energia não é procura baixa.
+        """
+        from shopman.backstage.models import OperationEpisodeKind
+
+        catalogo = [
+            ("falta-de-energia", "Faltou energia", "A loja ficou sem luz", True, 10),
+            ("falta-de-agua", "Faltou água", "Sem água na cozinha", True, 20),
+            ("equipamento-parado", "Equipamento parado", "Forno, geladeira ou PDV fora", True, 30),
+            ("sistema-fora", "Sistema fora do ar", "Internet ou app indisponível", True, 40),
+            ("rua-interditada", "Rua interditada", "Obra ou bloqueio na porta", True, 50),
+            ("chuva-forte", "Chuva forte", "Temporal esvaziou a rua", True, 60),
+            ("evento-na-regiao", "Evento na região", "Movimento fora do normal", False, 70),
+            ("equipe-reduzida", "Equipe reduzida", "Faltou gente no turno", True, 80),
+        ]
+        for ref, label, hint, afeta, ordem in catalogo:
+            OperationEpisodeKind.objects.update_or_create(
+                ref=ref,
+                defaults={
+                    "label": label, "hint": hint,
+                    "affects_demand": afeta, "position": ordem, "is_active": True,
+                },
+            )
 
     def _seed_business_days(self, *, days: int) -> None:
         """Expediente congelado por dia — o denominador das métricas de tempo."""

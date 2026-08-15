@@ -1017,3 +1017,57 @@ dia?".
 
 O que **não** deve ir para lá: qualquer coisa que já tenha dono (venda, fornada,
 turno de caixa) e qualquer campo livre sem pergunta.
+
+---
+
+## 13. Episódios de operação: o sistema nota, a pessoa explica (rodada 7)
+
+> Diretriz do dono: *"o máximo de registros **DEVE SER AUTOMÁTICO**! O sistema
+> facilita, apenas perguntando se houve algum episódio, dando opções. Simples,
+> fácil, elegante."*
+
+Isso resolveu o risco que eu tinha levantado no §12.4 — "só existe se alguém
+registrar" — invertendo quem começa a conversa.
+
+### 13.1 O sistema não sabe o motivo, mas sabe o sinal
+
+Ninguém vai lembrar, às 17h, de anotar que faltou luz às 14h. Formulário em
+branco todo dia vira campo morto — e pior que campo morto: a ausência de
+registro passaria a ser lida como "não houve nada".
+
+Mas o sistema **já sabe** que a loja parou de vender por duas horas no meio de
+um expediente normal, que um dia de expediente não teve venda nenhuma, e que uma
+fornada planejada não saiu. Isso basta para levantar a mão.
+
+Daí a separação que governa o model: **o sinal nasce sozinho, o motivo só existe
+se alguém disser**. Nenhum detector chuta o porquê.
+
+### 13.2 A pergunta
+
+Aparece **no fechamento**, onde o operador já passa todo dia contando o estoque —
+sem tela nova, sem ritual novo. E aparece **só quando houve sinal**: na
+esmagadora maioria dos dias não há nada a perguntar, e é isso que a mantém
+respondível.
+
+Responder é escolher uma opção do catálogo (editável no Admin, como os defeitos
+de qualidade) ou dizer que não houve nada. Nunca digitar.
+
+### 13.3 A consequência, que é o que dá sentido ao registro
+
+Cada tipo declara se **atrapalhou a venda**. Quando atrapalhou, o dia sai da
+amostra que ensina quanto produzir — pelo mesmo gancho que já tirava os dias
+fechados. Vender pouco porque a loja estava sem energia **não é procura baixa**,
+e sem isso o dia ruim viraria previsão ruim.
+
+Duas decisões de honestidade:
+
+- **Episódio não explicado ainda protege a previsão.** O sinal existiu; é mais
+  seguro não aprender com um dia estranho do que aprender errado.
+- **Só sai da conta o que alguém descartou** como falso alarme — aí houve
+  julgamento humano, não silêncio.
+
+### 13.4 Fronteira
+
+A decisão de "o que a fórmula aprende" é do orquestrador, mas o episódio é fato
+da operação e mora no backstage. O orquestrador chega nele por `adapters/`, que
+é a única exceção que a regra de dependência abre (o mesmo caminho do KDS).
