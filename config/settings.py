@@ -1244,6 +1244,12 @@ SHOPMAN_BI_BASE_URL = (
 SHOPMAN_OPERATOR_COOKIE_DOMAIN = (os.environ.get("SHOPMAN_OPERATOR_COOKIE_DOMAIN") or "").strip()
 SHOPMAN_OPERATOR_API_HOST = (os.environ.get("SHOPMAN_OPERATOR_API_HOST") or "").strip()
 
+#: Host canônico do Admin. Nele, a raiz redireciona para `/admin/` — o host já
+#: diz o que é, e obrigar a repetir a palavra no caminho é redundância.
+#: ⚠️ NÃO fechar o `/admin/` dos outros hosts: o BFF dos apps de operador
+#: inicializa o CSRF batendo em `/admin/login/` na API. Ver docs/reference.
+SHOPMAN_ADMIN_HOST = os.environ.get("SHOPMAN_ADMIN_HOST", "")
+
 # URLs das superfícies para a Central de Apps (surfaces/hub-nuxt). REUSA as base URLs
 # públicas que o nav do Admin já usa — UMA fonte por superfície (DRY): quem já configurou
 # os links de operador do Admin (SHOPMAN_POS_BASE_URL etc.) ganha a Central de graça, sem
