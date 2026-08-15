@@ -48,8 +48,7 @@ def _visible_fields(model_admin, request):
         form = model_admin.get_form(request)
     except Exception:
         return
-    for name, field in getattr(form, "base_fields", {}).items():
-        yield name, field
+    yield from getattr(form, "base_fields", {}).items()
 
 
 def _request():
