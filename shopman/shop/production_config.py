@@ -73,6 +73,22 @@ class ProductionConfig:
         def low_yield_threshold_decimal(self) -> Decimal:
             return Decimal(self.low_yield_threshold)
 
+    # ── 2b. Episódios que atrapalharam o dia ──
+
+    @dataclass
+    class Episodes:
+        """Quando um silêncio de vendas vira pergunta no fechamento.
+
+        A régua é da casa, não do código: numa padaria de bairro duas horas
+        paradas no meio da tarde já é sinal de que algo houve; num dia de jogo
+        grande, a rua inteira some por mais tempo e isso é normal. Quem sabe é
+        quem opera — por isso o número mora na configuração.
+
+        ``0`` desliga o detector de silêncio (os outros seguem).
+        """
+
+        sales_silence_minutes: int = 120
+
     # ── 3. Notificações ──
 
     @dataclass
@@ -101,6 +117,7 @@ class ProductionConfig:
 
     suggestion: Suggestion = field(default_factory=Suggestion)
     alerts: Alerts = field(default_factory=Alerts)
+    episodes: Episodes = field(default_factory=Episodes)
     notifications: Notifications = field(default_factory=Notifications)
     panel: Panel = field(default_factory=Panel)
     order_match: str = "first_planned"
@@ -117,6 +134,7 @@ class ProductionConfig:
         return cls(
             suggestion=_safe_init(cls.Suggestion, data.get("suggestion", {})),
             alerts=_safe_init(cls.Alerts, data.get("alerts", {})),
+            episodes=_safe_init(cls.Episodes, data.get("episodes", {})),
             notifications=_safe_init(cls.Notifications, data.get("notifications", {})),
             panel=_safe_init(cls.Panel, data.get("panel", {})),
             order_match=data.get("order_match", cls.order_match),
@@ -175,6 +193,9 @@ class ProductionConfig:
             raise ValueError("production.alerts.default_max_started_minutes deve ser > 0")
         if self.alerts.late_check_cadence_minutes < 0:
             raise ValueError("production.alerts.late_check_cadence_minutes deve ser >= 0")
+
+        if self.episodes.sales_silence_minutes < 0:
+            raise ValueError("production.episodes.sales_silence_minutes deve ser >= 0")
 
         if not isinstance(self.notifications.enabled, bool):
             raise ValueError("production.notifications.enabled deve ser booleano")
