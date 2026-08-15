@@ -8,6 +8,12 @@ from django.utils.html import format_html
 from shopman.utils import unfold_badge, unfold_badge_numeric
 from shopman.utils.monetary import format_money
 from unfold.admin import ModelAdmin
+from unfold.widgets import (
+    UnfoldAdminIntegerFieldWidget,
+    UnfoldAdminSelectWidget,
+    UnfoldAdminURLInputWidget,
+    UnfoldBooleanSwitchWidget,
+)
 
 from shopman.backstage.models import CashMovement, CashShift, POSTerminal
 from shopman.backstage.services.pos_hardware import (
@@ -153,6 +159,7 @@ class POSTerminalForm(forms.ModelForm):
     drawer_adapter = forms.ChoiceField(
         label="Como a gaveta abre",
         required=False,
+        widget=UnfoldAdminSelectWidget,
         choices=(
             (ADAPTER_MANUAL, "Com a chave (o PDV não abre)"),
             (ADAPTER_AGENT, "Pelo agente local (kick na impressora)"),
@@ -162,6 +169,7 @@ class POSTerminalForm(forms.ModelForm):
     drawer_agent_url = forms.URLField(
         label="Endereço do agente",
         required=False,
+        widget=UnfoldAdminURLInputWidget,
         assume_scheme="http",
         initial=DEFAULT_AGENT_URL,
         help_text="Sempre loopback do próprio balcão. O servidor nunca alcança este endereço — quem chama é o navegador.",
@@ -169,17 +177,20 @@ class POSTerminalForm(forms.ModelForm):
     drawer_rotate_token = forms.BooleanField(
         label="Gerar um token novo",
         required=False,
+        widget=UnfoldBooleanSwitchWidget,
         help_text="Só marque se o token vazou ou se você vai reinstalar do zero. O agente do balcão para de abrir até receber o novo.",
     )
     drawer_pulse_pin = forms.ChoiceField(
         label="Pino do conector",
         required=False,
+        widget=UnfoldAdminSelectWidget,
         choices=(("0", "Pino 2 (padrão)"), ("1", "Pino 5")),
         help_text="Só mexa se a gaveta não abrir com o padrão.",
     )
     drawer_pulse_on_ms = forms.IntegerField(
         label="Pulso ligado (ms)",
         required=False,
+        widget=UnfoldAdminIntegerFieldWidget,
         min_value=2,
         max_value=510,
         initial=DEFAULT_PULSE_ON_MS,
@@ -188,6 +199,7 @@ class POSTerminalForm(forms.ModelForm):
     drawer_pulse_off_ms = forms.IntegerField(
         label="Pulso desligado (ms)",
         required=False,
+        widget=UnfoldAdminIntegerFieldWidget,
         min_value=2,
         max_value=510,
         initial=DEFAULT_PULSE_OFF_MS,
@@ -196,6 +208,7 @@ class POSTerminalForm(forms.ModelForm):
     drawer_open_on_cash_sale = forms.BooleanField(
         label="Abrir sozinha na venda em dinheiro",
         required=False,
+        widget=UnfoldBooleanSwitchWidget,
         initial=True,
         help_text="Desligue se o balcão prefere abrir só no botão.",
     )

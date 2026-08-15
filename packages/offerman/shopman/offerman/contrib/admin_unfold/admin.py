@@ -31,6 +31,7 @@ from shopman.utils.admin.mixins import AutofillInlineMixin
 from shopman.utils.contrib.admin_unfold.badges import unfold_badge
 from shopman.utils.contrib.admin_unfold.base import BaseModelAdmin, BaseTabularInline
 from shopman.utils.monetary import format_money
+from taggit.managers import TaggableManager
 from unfold.contrib.filters.admin.numeric_filters import RangeNumericFilter
 from unfold.contrib.import_export.forms import ExportForm, ImportForm
 from unfold.decorators import display
@@ -304,6 +305,14 @@ class ProductActionForm(ActionForm):
 @admin.register(Product)
 class ProductAdmin(_ProductImportExportBase):
     from shopman.offerman.contrib.admin_unfold.resources import ProductResource
+
+    # O campo de etiquetas vem do taggit, cujo widget é um campo de texto cru:
+    # dentro de um form Unfold ele aparecia com a borda do Django antigo. O taggit
+    # continua dono do PARSE (vírgula, aspas, etiqueta nova na hora); troca só o
+    # desenho.
+    formfield_overrides = {
+        TaggableManager: {"widget": UnfoldAdminTextInputWidget},
+    }
 
     form = ProductAdminForm
     resource_classes = [ProductResource]

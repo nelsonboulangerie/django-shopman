@@ -19,6 +19,7 @@ from shopman.fiscalman.classification import (
 )
 from shopman.offerman.contrib.admin_unfold.admin import ProductAdmin
 from shopman.offerman.contrib.admin_unfold.nutrition_form import ProductAdminForm
+from unfold.widgets import UnfoldAdminSelectWidget, UnfoldAdminTextInputWidget
 
 FISCAL_FORM_FIELDS = ("fiscal_profile", "fiscal_ncm", "fiscal_cest")
 
@@ -29,6 +30,7 @@ class FiscalProductAdminForm(ProductAdminForm):
     fiscal_profile = forms.ChoiceField(
         label="Perfil fiscal",
         required=False,
+        widget=UnfoldAdminSelectWidget,
         choices=[(key, profile.name) for key, profile in FISCAL_PROFILES.items()],
         help_text=(
             "Define CFOP/CSOSN/origem/PIS-COFINS na emissão. "
@@ -38,12 +40,14 @@ class FiscalProductAdminForm(ProductAdminForm):
     fiscal_ncm = forms.CharField(
         label="NCM",
         required=False,
+        widget=UnfoldAdminTextInputWidget,
         max_length=8,
         help_text="8 dígitos. Ex.: 19059010 (pão), 19059090 (folhados/salgados).",
     )
     fiscal_cest = forms.CharField(
         label="CEST",
         required=False,
+        widget=UnfoldAdminTextInputWidget,
         max_length=7,
         help_text="7 dígitos. Só para itens de Revenda sujeitos a ST. Vazio em fabricação própria.",
     )

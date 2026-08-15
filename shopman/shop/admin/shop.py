@@ -25,6 +25,7 @@ from unfold.widgets import (
     UnfoldAdminSelectWidget,
     UnfoldAdminTextInputWidget,
     UnfoldAdminTimeWidget,
+    UnfoldBooleanSwitchWidget,
 )
 
 from shopman.shop import dynamic_collections
@@ -336,6 +337,7 @@ def _defaults_form_fields() -> dict[str, forms.Field]:
     fields["defaults_pos_fiscal_toggle"] = forms.BooleanField(
         label="Oferecer emissão de NFC-e no PDV",
         required=False,
+        widget=UnfoldBooleanSwitchWidget,
         help_text=(
             "Mostra a opção 'Nota fiscal' no PDV (o operador decide emitir por venda). "
             "Desligado = o recurso não aparece, mesmo com o Focus configurado. "

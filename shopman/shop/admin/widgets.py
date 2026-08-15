@@ -4,13 +4,13 @@ from __future__ import annotations
 
 import json
 
-from django import forms
 from django.utils.html import escape
 from django.utils.safestring import mark_safe
 from shopman.utils import unfold_component
+from unfold.widgets import UnfoldAdminSelectWidget
 
 
-class FontPreviewWidget(forms.Select):
+class FontPreviewWidget(UnfoldAdminSelectWidget):
     """Select widget with a live Google Fonts preview.
 
     Renders the Unfold select followed by a preview block whose font updates

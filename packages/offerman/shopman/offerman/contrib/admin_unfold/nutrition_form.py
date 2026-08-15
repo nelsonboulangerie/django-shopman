@@ -16,6 +16,12 @@ from shopman.offerman.nutrition import (
     NUTRIENT_LABELS_PT,
     NutritionFacts,
 )
+from unfold.widgets import (
+    UnfoldAdminDecimalFieldWidget,
+    UnfoldAdminTextInputWidget,
+    UnfoldAdminURLInputWidget,
+    UnfoldBooleanSwitchWidget,
+)
 
 # Ordered groups for fieldset rendering ("fieldset-like" sub-order in the admin).
 SERVING_FIELDS = ("serving_size_g", "servings_per_container")
@@ -32,7 +38,13 @@ MICRONUTRIENTS = ("fiber_g", "sodium_mg")
 
 
 def _widget_for(field_name: str) -> forms.Widget:
-    return forms.NumberInput(attrs={"step": "0.01", "class": "vTextField"})
+    """Widget do Unfold, não `NumberInput` com a classe legada do Django admin.
+
+    Era `forms.NumberInput(attrs={"class": "vTextField"})`: `vTextField` é do
+    Admin antigo do Django, e nesta tela o campo saía com a cara de 2010 no meio
+    de um formulário Unfold.
+    """
+    return UnfoldAdminDecimalFieldWidget(attrs={"step": "0.01"})
 
 
 def _field_for(field_name: str) -> forms.Field:
@@ -75,6 +87,7 @@ class ProductAdminForm(forms.ModelForm):
     image_url = forms.URLField(
         label="URL da imagem",
         required=False,
+        widget=UnfoldAdminURLInputWidget,
         max_length=500,
         assume_scheme="https",
         help_text="URL da imagem principal do produto (ex: Unsplash, Cloudinary, S3)",
@@ -82,26 +95,31 @@ class ProductAdminForm(forms.ModelForm):
     allergens_text = forms.CharField(
         label="Alérgenos",
         required=False,
+        widget=UnfoldAdminTextInputWidget,
         help_text="Separe por vírgula. Ex.: glúten, leite, gergelim.",
     )
     dietary_info_text = forms.CharField(
         label="Restrições",
         required=False,
+        widget=UnfoldAdminTextInputWidget,
         help_text="Separe por vírgula. Ex.: 100% vegetal, sem lactose.",
     )
     serves_text = forms.CharField(
         label="Serve",
         required=False,
+        widget=UnfoldAdminTextInputWidget,
         help_text="Ex.: 2 a 4 pessoas.",
     )
     approx_dimensions_text = forms.CharField(
         label="Medidas aproximadas",
         required=False,
+        widget=UnfoldAdminTextInputWidget,
         help_text="Ex.: aprox. 24 x 12 x 10 cm.",
     )
     allows_next_day_sale = forms.BooleanField(
         label="Permite venda no dia seguinte",
         required=False,
+        widget=UnfoldBooleanSwitchWidget,
         help_text="Produto pode ser vendido no dia seguinte com preço reduzido.",
     )
 

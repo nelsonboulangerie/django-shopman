@@ -1,5 +1,10 @@
 """Backstage admin — KDS, closing, alerts, cash register, operation, dashboard."""
 
+from shopman.backstage.admin.accounts import (  # noqa: F401
+    GroupAdmin,
+    UserAdmin,
+    register_totp_admin,
+)
 from shopman.backstage.admin.alerts import OperatorAlertAdmin  # noqa: F401
 from shopman.backstage.admin.cash_register import CashShiftAdmin, POSTerminalAdmin  # noqa: F401
 from shopman.backstage.admin.closing import DayClosingAdmin  # noqa: F401
@@ -13,6 +18,8 @@ from shopman.backstage.admin.operation import (  # noqa: F401
 )
 from shopman.backstage.admin.operators import PinCredentialAdmin  # noqa: F401
 from shopman.backstage.admin.pos import POSTabAdmin  # noqa: F401
+
+register_totp_admin()
 
 # Depois de todo mundo registrar: o backstage é o último app do INSTALLED_APPS, e
 # esta chamada é a última linha do módulo, então Core e shop já colocaram no site

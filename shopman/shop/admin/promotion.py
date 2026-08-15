@@ -4,13 +4,17 @@ from __future__ import annotations
 
 from django.contrib import admin
 from django.utils import timezone
-from unfold.admin import ModelAdmin
+from unfold.admin import ModelAdmin, TabularInline
 from unfold.decorators import display
 
 from shopman.shop.models import Coupon, Promotion
 
 
-class CouponInline(admin.TabularInline):
+class CouponInline(TabularInline):
+    """Inline do Unfold, não o do Django: com `admin.TabularInline` os campos saem
+    com os widgets do Admin antigo (`AdminTextInputWidget`) dentro de uma tela
+    Unfold."""
+
     model = Coupon
     extra = 1
     fields = ("code", "max_uses", "uses_count", "is_active")
