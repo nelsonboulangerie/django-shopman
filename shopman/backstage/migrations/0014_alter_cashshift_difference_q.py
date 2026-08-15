@@ -6,7 +6,7 @@ from django.db import migrations, models
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('backstage', '0008_day_context'),
+        ('backstage', '0013_cashmovement_receipt'),
     ]
 
     operations = [
