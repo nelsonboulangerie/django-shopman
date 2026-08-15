@@ -194,6 +194,13 @@ envs:
   - key: SHOPMAN_OPERATOR_COOKIE_DOMAIN
     value: ".boulangerie.com.br"
     scope: RUN_TIME
+  # Host canônico do Admin — é o endereço que vai IMPRESSO no QR do comprovante de
+  # caixa. Sem ele, o QR cai no host da API (que também serve /admin/ e funciona),
+  # mas o papel duraria mais que a conveniência: comprovante fica meses na gaveta.
+  - key: SHOPMAN_ADMIN_HOST
+    value: "admin.boulangerie.com.br"
+    scope: RUN_TIME
+    type: GENERAL
     type: GENERAL
   - key: SHOPMAN_REQUIRE_ACTIVE_OPERATOR
     value: "true"

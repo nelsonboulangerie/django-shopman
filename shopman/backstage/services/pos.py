@@ -221,3 +221,85 @@ def _terminal(terminal_ref: str = ""):
         return terminal
     terminal = POSTerminal.objects.filter(is_active=True).order_by("ref").first()
     return terminal or POSTerminal.default()
+
+
+def cash_movement_receipt_payload(*, operator, movement_id: int, reprint: bool = False) -> dict:
+    """Bytes do comprovante, prontos para o agente do balcão imprimir.
+
+    O servidor compõe; a tela só relaia. Devolve base64 porque JSON não carrega
+    byte cru, e o caminho todo (tela → agente) já é JSON.
+    """
+    import base64
+
+    from django.conf import settings
+
+    from shopman.backstage.models import CashMovement, CashShift
+    from shopman.backstage.services.receipt_escpos import cash_movement_receipt
+    from shopman.backstage.services.receipt_verify import code_for
+
+    shift = CashShift.get_open_for_operator(operator)
+    if not shift:
+        raise POSError("Caixa não aberto.")
+    try:
+        # Preso ao turno DO OPERADOR: ninguém tira comprovante do caixa alheio.
+        movement = CashMovement.objects.select_related("shift").get(pk=movement_id, shift=shift)
+    except CashMovement.DoesNotExist as exc:
+        raise POSError("Movimento não encontrado neste turno.") from exc
+
+    code = code_for(movement.pk)
+    # A URL sai do host canônico do Admin, não de uma constante inventada.
+    #
+    # O fallback mora AQUI e não no setting: `SHOPMAN_ADMIN_HOST` também decide
+    # que a raiz daquele host redireciona para /admin/, e embutir o host da API
+    # nele faria a raiz de `api.` virar porta de Admin — comportamento novo que
+    # ninguém pediu. Para o papel, porém, `api.` serve: lá /admin/ responde, e um
+    # QR que abre em api. é melhor que um QR mudo.
+    host = (
+        str(getattr(settings, "SHOPMAN_ADMIN_HOST", "") or "").strip()
+        or str(getattr(settings, "SHOPMAN_OPERATOR_API_HOST", "") or "").strip()
+    )
+    verify_url = f"https://{host}/admin/cash/receipt/{code}/" if host else code
+    payload = cash_movement_receipt(
+        movement, verify_code=code, verify_url=verify_url, reprint=reprint
+    )
+    return {
+        "movement_id": movement.pk,
+        "title": f"comprovante:{movement.movement_type}",
+        "payload_b64": base64.b64encode(payload).decode("ascii"),
+        "verify_code": code,
+    }
+
+
+def record_receipt_result(*, operator, movement_id: int, status: str, detail: str = ""):
+    """Grava o que ACONTECEU com o papel.
+
+    ⚠️ Só o balcão sabe se imprimiu — quem manda ao agente é o navegador. Sem
+    este registro, papel que faltou pareceria papel que alguém escondeu, e a
+    sangria voltaria a não ter testemunha.
+
+    Nunca volta atrás de `printed`: se já imprimiu uma vez, imprimiu.
+    """
+    from django.utils import timezone
+
+    from shopman.backstage.models import CashMovement, CashShift
+
+    valores = set(CashMovement.ReceiptStatus.values)
+    if status not in valores or status == CashMovement.ReceiptStatus.PENDING:
+        raise POSError("Resultado de impressão inválido.")
+
+    shift = CashShift.get_open_for_operator(operator)
+    if not shift:
+        raise POSError("Caixa não aberto.")
+    try:
+        movement = CashMovement.objects.get(pk=movement_id, shift=shift)
+    except CashMovement.DoesNotExist as exc:
+        raise POSError("Movimento não encontrado neste turno.") from exc
+
+    if movement.receipt_status == CashMovement.ReceiptStatus.PRINTED:
+        return movement
+
+    movement.receipt_status = status
+    movement.receipt_detail = str(detail or "").strip()[:200]
+    movement.receipt_at = timezone.now() if status == CashMovement.ReceiptStatus.PRINTED else None
+    movement.save(update_fields=["receipt_status", "receipt_detail", "receipt_at"])
+    return movement

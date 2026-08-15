@@ -225,6 +225,9 @@ class Command(BaseCommand):
         self._seed_cash_register()
         self._seed_operation_checklists()
 
+        # B.I.: sem movimento de prateleira o painel de abastecimento nasce vazio.
+        self._seed_bi_history(products, positions)
+
     def _seed_qa_dynamic(self, products, customers, channels, positions):
         """Perfil qa: conjunto determinístico com cenários nomeados garantidos.
 
@@ -269,6 +272,10 @@ class Command(BaseCommand):
         # Cenários de DISPONIBILIDADE da vitrine (cliente): roda por último, depois
         # de todo estoque/produção, para dirigir SKUs reais a cada estado da loja.
         self._seed_qa_storefront_availability(positions)
+
+        # B.I.: sem movimento de prateleira o painel de abastecimento nasce
+        # vazio. Vai depois da vitrine para não disputar os quants dela.
+        self._seed_bi_history(products, positions)
 
     # SKUs canônicos de cada estado de vitrine no perfil qa (datas relativas).
     QA_STOREFRONT_STATES = {
@@ -705,15 +712,6 @@ class Command(BaseCommand):
 
         CraftRefSequence.objects.all().delete()
 
-        # Audit tables are data too in local seeds; keep --flush actually clean.
-        for model in [
-            Product.history.model,
-            ListingItem.history.model,
-            RuleConfig.history.model,
-            OmotenashiCopy.history.model,
-        ]:
-            model.objects.all().delete()
-
         # Payments
         hard_delete(PaymentTransaction)
         PaymentIntent.objects.all().delete()
@@ -780,7 +778,26 @@ class Command(BaseCommand):
         AnnouncementTemplate.objects.all().delete()
         Coupon.objects.all().delete()
         Promotion.objects.all().delete()
+        # Regras são config como qualquer outra (Shop, Channel, Promotion, Coupon): o
+        # `--flush` apaga e o `_seed_rule_configs` recria o conjunto canônico. Sem
+        # apagar, uma regra que saiu do RULE_CONFIGS sobrevive a todo re-seed — foi o
+        # que aconteceu com `d1_discount`, cuja classe morreu no C6 (PR #152) e cuja
+        # linha ficou no staging gritando "Could not import" a cada boot. A M2M
+        # `channels` já foi levada junto com os Channels apagados acima.
+        RuleConfig.objects.all().delete()
         Shop.objects.all().delete()
+
+        # Tabelas de auditoria são dado também num seed local; `--flush` deixa limpo
+        # de verdade. POR ÚLTIMO, de propósito: o simple_history grava uma linha de
+        # tombstone a cada delete, então limpar antes das deleções acima deixaria a
+        # history repovoada justamente pelo flush.
+        for model in [
+            Product.history.model,
+            ListingItem.history.model,
+            RuleConfig.history.model,
+            OmotenashiCopy.history.model,
+        ]:
+            model.objects.all().delete()
 
         self.stdout.write("  ✅ Dados limpos")
 
@@ -5809,3 +5826,214 @@ class Command(BaseCommand):
         complete_checklist_run(closing_run, user=admin)
 
         self.stdout.write("  ✅ 3 templates e 3 execuções de checklist operacional")
+
+    # ── B.I.: a série que dá o que ver ──────────────────────────────────────
+    #
+    # O resto do seed grava pedidos e fornadas DIRETO no banco, sem passar pelo
+    # lifecycle — rápido e determinístico, mas deixa o B.I. cego: sem movimento
+    # de estoque não há prateleira, sem prateleira não há sobra nem falta, e as
+    # métricas de abastecimento nascem vazias por construção.
+    #
+    # Esta seção fecha esse buraco escrevendo o que a operação real escreveria,
+    # com PERFIS distintos e reconhecíveis: um produto que acaba cedo todo dia,
+    # um que sobra sempre, um que só falha no fim de semana, um pausado. Sem
+    # perfis, o gráfico vira ruído e ninguém consegue dizer se a tela está certa.
+
+    BI_SHELF_PROFILES = {
+        # sku: (produção/dia, hora que acaba ou None, dias de folga)
+        "CROISSANT": (42, 11, ()),          # some cedo: subprodução crônica
+        "PAIN-CHOCOLAT": (36, 13, ()),      # some no meio da tarde
+        "BAGUETE": (22, 16, ()),            # aguenta quase o dia
+        "CAMPAGNE": (16, None, ()),         # sempre sobra
+        "MADELEINE": (68, 12, (5, 6)),      # só falta no fim de semana
+    }
+
+    def _seed_bi_history(self, products, positions, days: int = 42) -> None:
+        """Prateleira, faltas, forno e contexto do dia — o que o B.I. lê."""
+        vitrine = positions.get("vitrine")
+        if vitrine is None:
+            return
+        self._seed_episode_kinds()
+        self._seed_business_days(days=days)
+        self._seed_shelf_movements(products, vitrine, days=days)
+        self._seed_shelf_outages(products, days=days)
+        self._seed_oven_runs(days=days)
+        self._seed_day_weather(days=days)
+        self.stdout.write(f"  ✅ B.I.: {days} dias de prateleira, faltas, forno e contexto")
+
+    def _seed_episode_kinds(self) -> None:
+        """As opções que o operador escolhe no fechamento.
+
+        Vocabulário da casa, editável no Admin. ``affects_demand`` marca o que
+        atrapalhou a venda — esses dias saem da amostra que ensina quanto
+        produzir, porque vender pouco sem energia não é procura baixa.
+        """
+        from shopman.backstage.models import OperationEpisodeKind
+
+        catalogo = [
+            ("falta-de-energia", "Faltou energia", "A loja ficou sem luz", True, 10),
+            ("falta-de-agua", "Faltou água", "Sem água na cozinha", True, 20),
+            ("equipamento-parado", "Equipamento parado", "Forno, geladeira ou PDV fora", True, 30),
+            # Duas causas diferentes, com ações diferentes: sem conexão se liga
+            # para a operadora; sistema fora do ar se chama o suporte.
+            ("falta-de-conexao", "Faltou internet", "A loja ficou sem conexão", True, 40),
+            ("sistema-fora", "Sistema fora do ar", "Sistema indisponível, com internet ok", True, 45),
+            ("rua-interditada", "Rua interditada", "Obra ou bloqueio na porta", True, 50),
+            ("chuva-forte", "Chuva forte", "Temporal esvaziou a rua", True, 60),
+            ("evento-na-regiao", "Evento na região", "Movimento fora do normal", False, 70),
+            ("equipe-reduzida", "Equipe reduzida", "Faltou gente no turno", True, 80),
+        ]
+        for ref, label, hint, afeta, ordem in catalogo:
+            OperationEpisodeKind.objects.update_or_create(
+                ref=ref,
+                defaults={
+                    "label": label, "hint": hint,
+                    "affects_demand": afeta, "position": ordem, "is_active": True,
+                },
+            )
+
+    def _seed_business_days(self, *, days: int) -> None:
+        """Expediente congelado por dia — o denominador das métricas de tempo."""
+        from shopman.backstage.services.business_day import stamp_day
+
+        today = timezone.localdate()
+        for offset in range(1, days + 1):
+            stamp_day(today - timedelta(days=offset))
+
+    def _seed_shelf_movements(self, products, vitrine, *, days: int) -> None:
+        """Fornada de manhã, venda ao longo do dia, sobra descartada no fim.
+
+        Escreve o ledger como a operação escreveria: MAKE na chegada, SELL na
+        saída, WASTE no fechamento. É isso que faz `shelf_history` enxergar
+        quando o produto chegou e quando acabou.
+        """
+        from shopman.stockman.models import Move, Quant
+
+        today = timezone.localdate()
+        rng = random.Random(20260815)
+        for sku, (base, soldout_hour, weekend_only) in self.BI_SHELF_PROFILES.items():
+            if sku not in products:
+                continue
+            quant, _ = Quant.objects.get_or_create(
+                sku=sku, position=vitrine, target_date=None, batch=""
+            )
+            for offset in range(1, days + 1):
+                day = today - timedelta(days=offset)
+                if not self._shop_operates_on(day):
+                    continue
+                produced = max(1, base + rng.randint(-4, 4))
+                acaba = soldout_hour if not weekend_only or day.weekday() in weekend_only else None
+                sold = produced if acaba else int(produced * 0.75)
+                Move.objects.create(
+                    quant=quant, delta=Decimal(produced), kind=Move.Kind.MAKE,
+                    reason=f"Recebido de produção: seed {day}",
+                    timestamp=self._at(day, 9),
+                )
+                Move.objects.create(
+                    quant=quant, delta=Decimal(-sold), kind=Move.Kind.SELL,
+                    reason=f"Entrega hold:seed-{day}",
+                    timestamp=self._at(day, acaba or 16),
+                )
+                leftover = produced - sold
+                if leftover:
+                    Move.objects.create(
+                        quant=quant, delta=Decimal(-leftover), kind=Move.Kind.WASTE,
+                        reason=f"perda_vencido:{day}",
+                        timestamp=self._at(day, 18),
+                    )
+
+    def _seed_shelf_outages(self, products, *, days: int) -> None:
+        """Períodos sem poder vender: os que acabaram e um que ficou pausado.
+
+        O registro nasce da observação em tempo real, que o seed não roda — então
+        aqui ele é escrito direto, espelhando o que teria sido observado.
+        """
+        from shopman.backstage.models import OutageReason, ShelfOutage
+
+        today = timezone.localdate()
+        for sku, (_, soldout_hour, weekend_only) in self.BI_SHELF_PROFILES.items():
+            if sku not in products or soldout_hour is None:
+                continue
+            for offset in range(1, days + 1):
+                day = today - timedelta(days=offset)
+                if not self._shop_operates_on(day):
+                    continue
+                if weekend_only and day.weekday() not in weekend_only:
+                    continue
+                ShelfOutage.objects.get_or_create(
+                    sku=sku, channel_ref="web",
+                    started_at=self._at(day, soldout_hour),
+                    defaults={
+                        "reason": OutageReason.SOLD_OUT,
+                        "ended_at": self._at(day + timedelta(days=1), 9),
+                    },
+                )
+        # Um produto parado por decisão: é o que a métrica de tempo pausado lê.
+        pausado = "KURO-PAN"
+        if pausado in products:
+            ShelfOutage.objects.get_or_create(
+                sku=pausado, channel_ref="web",
+                started_at=self._at(today - timedelta(days=9), 9),
+                defaults={
+                    "reason": OutageReason.PAUSED,
+                    "ended_at": self._at(today - timedelta(days=4), 18),
+                },
+            )
+
+    def _seed_oven_runs(self, *, days: int) -> None:
+        """Tempo de forno com cobertura PARCIAL — o KPI de adoção precisa disso.
+
+        Cobertura 100% esconderia o indicador que mostra se a equipe está mesmo
+        usando o timer; aqui ~70% das fornadas têm medição.
+        """
+        from shopman.craftsman.models import WorkOrder
+
+        from shopman.backstage.models import OvenRun
+
+        rng = random.Random(20260816)
+        finished = WorkOrder.objects.filter(
+            status=WorkOrder.Status.FINISHED, finished_at__isnull=False
+        ).order_by("-target_date")[: days * 4]
+        for index, wo in enumerate(finished):
+            if index % 10 < 3:  # 30% sem medição: fornada em que ninguém armou
+                continue
+            planned = rng.choice((18, 22, 25, 30)) * 60
+            real = planned + rng.randint(-180, 420)  # às vezes passa do ponto
+            armed = wo.finished_at - timedelta(seconds=real)
+            OvenRun.objects.get_or_create(
+                work_order_ref=wo.ref,
+                defaults={
+                    "oven_ref": wo.position_ref or "",
+                    "operator_ref": wo.operator_ref or "",
+                    "planned_seconds": planned,
+                    "armed_at": armed,
+                    "concluded_at": wo.finished_at,
+                    "status": "concluded",
+                },
+            )
+
+    def _seed_day_weather(self, *, days: int) -> None:
+        """Clima de exemplo, CARIMBADO como exemplo.
+
+        Dado de demonstração não pode se passar por medição: `sources.weather`
+        diz "seed", e quem injetar o arquivo real sobrescreve.
+        """
+        from shopman.backstage.models import DayContext
+
+        today = timezone.localdate()
+        rng = random.Random(20260817)
+        for offset in range(1, days + 1):
+            day = today - timedelta(days=offset)
+            estacao = 1 if day.month in (12, 1, 2, 3) else 0
+            tmax = Decimal(str(round(22 + estacao * 7 + rng.uniform(-4, 5), 1)))
+            context, _ = DayContext.objects.get_or_create(date=day)
+            context.temp_max_c = tmax
+            context.temp_min_c = tmax - Decimal("9.0")
+            context.temp_avg_c = tmax - Decimal("4.5")
+            context.rain_mm = Decimal(str(round(max(0.0, rng.uniform(-8, 14)), 1)))
+            context.sources = {**(context.sources or {}), "weather": "seed"}
+            context.save()
+
+    def _at(self, day, hour: int):
+        """Instante local do dia — o B.I. lê tudo em hora da loja."""
+        return timezone.make_aware(datetime.combine(day, time(hour=hour)))

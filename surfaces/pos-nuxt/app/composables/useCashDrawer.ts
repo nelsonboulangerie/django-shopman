@@ -24,6 +24,9 @@ import type { POSCashDrawerProjection, POSProjection } from "~/types/pos";
 /** Loopback responde em microssegundos; 3s só existe para agente pendurado. */
 const AGENT_TIMEOUT_MS = 3000;
 
+/** O que aconteceu com o papel. `skipped` = este balcão não tem impressora. */
+export type PrintOutcome = { status: "printed" | "failed" | "skipped"; detail: string };
+
 export function useCashDrawer(pos: ComputedRef<POSProjection | null>) {
   const config = computed<POSCashDrawerProjection | null>(() => pos.value?.cash_drawer ?? null);
 
@@ -110,7 +113,26 @@ export function useCashDrawer(pos: ComputedRef<POSProjection | null>) {
     }
   }
 
-  return { canKick, unavailableReason, opensOnCashSale, probing, kick, probe };
+  /**
+   * Imprime bytes que o SERVIDOR compôs. O agente é um cano; esta função
+   * também. Nenhuma das duas sabe o que é sangria.
+   *
+   * Devolve o que aconteceu, porque o servidor precisa registrar: papel que
+   * faltou tem que constar como falha, senão parece papel que alguém escondeu.
+   */
+  async function print(payloadB64: string, title: string): Promise<PrintOutcome> {
+    if (!import.meta.client) return { status: "skipped", detail: "Impressão fora do navegador." };
+    if (!canKick.value) return { status: "skipped", detail: unavailableReason.value };
+    try {
+      const payload = await callAgent("/print", { payload_b64: payloadB64, title });
+      if (payload?.ok === false) throw new Error(payload?.error || "O agente recusou a impressão.");
+      return { status: "printed", detail: "" };
+    } catch (error) {
+      return { status: "failed", detail: messageOf(error) };
+    }
+  }
+
+  return { canKick, unavailableReason, opensOnCashSale, probing, kick, print, probe };
 }
 
 function messageOf(error: unknown): string {

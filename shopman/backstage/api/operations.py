@@ -39,6 +39,7 @@ import json
 import logging
 from datetime import date
 
+from django.core.exceptions import ObjectDoesNotExist
 from django.utils.decorators import method_decorator
 from django_ratelimit.decorators import ratelimit
 from drf_spectacular.utils import OpenApiResponse, extend_schema, extend_schema_view
@@ -814,6 +815,36 @@ class ProductionBlindMapView(APIView):
         responses={200: OpenApiResponse(description="Items pending closing decision.")},
     ),
 )
+class OperationEpisodeAnswerView(APIView):
+    """O operador responde o que houve — uma escolha, não um formulário.
+
+    Corpo: ``{"kind_ref": "falta-de-energia"}`` para explicar, ou
+    ``{"kind_ref": ""}`` para dizer que não houve nada (falso alarme).
+    """
+
+    permission_classes = [HasBackstagePermission]
+    required_permission = "backstage.perform_closing"
+
+    def post(self, request, episode_id: int):
+        from shopman.backstage.services.episodes import answer
+
+        kind_ref = str(request.data.get("kind_ref", "") or "").strip()
+        note = str(request.data.get("note", "") or "").strip()
+        try:
+            episode = answer(
+                episode_id,
+                kind_ref=kind_ref,
+                actor=request.user.get_username(),
+                note=note,
+            )
+        except ObjectDoesNotExist:
+            return Response(
+                {"detail": "Episódio ou motivo não encontrado.", "field": "kind_ref"},
+                status=404,
+            )
+        return Response({"ok": True, "status": episode.status})
+
+
 class DayClosingView(APIView):
     permission_classes = [HasBackstagePermission]
     required_permission = "backstage.perform_closing"
@@ -1578,6 +1609,58 @@ class POSCashMovementView(APIView):
             logger.debug("pos_cash_movement_failed user=%s kind=%s", _actor(request), kind, exc_info=True)
             return Response({"detail": str(exc) or "Falha ao registrar movimento."}, status=400)
         return Response({"ok": True, "movement_id": getattr(mov, "pk", None)})
+
+
+@extend_schema_view(
+    get=extend_schema(
+        tags=["backstage"],
+        summary="Cash movement receipt bytes (ESC/POS, base64) for the counter agent",
+        responses={200: OpenApiResponse(description="Receipt payload.")},
+    ),
+    post=extend_schema(
+        tags=["backstage"],
+        summary="Record whether the receipt actually printed",
+        responses={200: OpenApiResponse(description="Result recorded.")},
+    ),
+)
+class POSCashReceiptView(APIView):
+    """O papel da sangria: o servidor compõe, a tela relaia, o balcão responde.
+
+    ⚠️ O `POST` existe porque **só o balcão sabe se imprimiu** — quem manda ao
+    agente é o navegador. Sem ele, o registro ficaria "sem confirmação" para
+    sempre e papel que faltou pareceria papel que alguém escondeu.
+    """
+
+    permission_classes = [HasBackstagePermission]
+    required_permission = "backstage.operate_pos"
+
+    def get(self, request, movement_id: int):
+        reprint = str(request.query_params.get("reprint") or "").lower() in {"1", "true", "on"}
+        try:
+            payload = pos_service.cash_movement_receipt_payload(
+                operator=request.user, movement_id=movement_id, reprint=reprint
+            )
+        except PosIntentError as exc:
+            return Response({"detail": exc.message, "error": exc.as_dict()}, status=exc.status)
+        except Exception as exc:
+            logger.debug("pos_receipt_payload_failed user=%s", _actor(request), exc_info=True)
+            return Response({"detail": str(exc) or "Falha ao montar o comprovante."}, status=400)
+        return Response(payload)
+
+    def post(self, request, movement_id: int):
+        try:
+            movement = pos_service.record_receipt_result(
+                operator=request.user,
+                movement_id=movement_id,
+                status=(request.data.get("status") or "").strip(),
+                detail=request.data.get("detail") or "",
+            )
+        except PosIntentError as exc:
+            return Response({"detail": exc.message, "error": exc.as_dict()}, status=exc.status)
+        except Exception as exc:
+            logger.debug("pos_receipt_result_failed user=%s", _actor(request), exc_info=True)
+            return Response({"detail": str(exc) or "Falha ao registrar o comprovante."}, status=400)
+        return Response({"ok": True, "receipt_status": movement.receipt_status})
 
 
 @extend_schema_view(

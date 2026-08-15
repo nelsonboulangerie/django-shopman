@@ -13,7 +13,7 @@ Backstage usa `django-eventstream` para atualizar superfícies operacionais sem 
 
 ## KDS
 
-`/admin/operacao/kds/<ref>/` assina `/gestor/events/kds/<ref>/` e mantém fallback `every 30s`.
+`/admin/operacao/kds/<ref>/` assina `/events/kds/<ref>/` e mantém fallback `every 30s`.
 Eventos específicos (`created`, `status-changed`, `station-changed`) também disparam refresh.
 
 O som do KDS é local ao navegador:
@@ -24,8 +24,13 @@ O som do KDS é local ao navegador:
 
 ## Produção
 
-`/gestor/producao/` e `/gestor/producao/kds/` assinam `production`.
-O payload contém `ref`, `status`, `action` e `output_sku`; a UI refaz o partial canônico.
+O servidor **emite** no canal `production` (`_on_production_changed` →
+`backstage-production-update`), com `ref`, `status`, `action` e `output_sku`.
+
+⚠️ **Hoje esse canal não tem consumidor.** Quem assinava era o shell HTMX
+(`/gestor/producao/`), aposentado no cutover headless; o Produção
+(`surfaces/production-nuxt`) busca por REST e não abre `EventSource`. O canal
+segue de pé e correto — falta ligar a superfície, não consertar o servidor.
 
 ## Produção ↔ Pedidos
 
@@ -51,7 +56,7 @@ para release.
 ## Debug
 
 1. Abra DevTools em Network e filtre por `event-stream`.
-2. Confirme que `/gestor/events/<kind>/...` fica aberto.
+2. Confirme que `/events/<kind>/...` fica aberto.
 3. Execute a ação operacional e verifique o evento.
 4. Se o evento chega e a UI não muda, confira o `hx-trigger`.
 5. Se o evento não chega, confira logs do receiver e se `django_eventstream` está instalado.

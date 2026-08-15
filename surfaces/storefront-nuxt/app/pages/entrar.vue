@@ -453,7 +453,11 @@ useSeoMeta({
               Entrar com o rosto ou a digital
             </UiButton>
             <p v-if="passkeyError" class="shop-caption text-muted-foreground">{{ passkeyError }}</p>
-            <p class="shop-caption text-center text-muted-foreground">ou</p>
+            <div class="flex items-center gap-3" aria-hidden="true">
+              <span class="h-px flex-1 bg-border" />
+              <span class="shop-meta uppercase tracking-widest">ou</span>
+              <span class="h-px flex-1 bg-border" />
+            </div>
           </div>
 
           <WhatsappVerifyPanel

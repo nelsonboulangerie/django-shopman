@@ -291,6 +291,31 @@ class CashMovement(models.Model):
     )
     created_at = models.DateTimeField(default=timezone.now)
 
+    class ReceiptStatus(models.TextChoices):
+        # ⚠️ O default é PENDING de propósito. Quem imprime é o navegador do
+        # balcão, e ele pode fechar antes de confirmar. Assumir "impresso" sem
+        # confirmação transformaria papel que faltou em papel que alguém
+        # escondeu — exatamente o que o comprovante existe para evitar.
+        PENDING = "pending", "Sem confirmação"
+        PRINTED = "printed", "Impresso"
+        FAILED = "failed", "Falhou"
+        SKIPPED = "skipped", "Sem impressora"
+
+    receipt_status = models.CharField(
+        "comprovante",
+        max_length=10,
+        choices=ReceiptStatus.choices,
+        default=ReceiptStatus.PENDING,
+    )
+    receipt_detail = models.CharField(
+        "detalhe do comprovante",
+        max_length=200,
+        blank=True,
+        default="",
+        help_text="Por que não imprimiu, quando não imprimiu.",
+    )
+    receipt_at = models.DateTimeField("impresso em", null=True, blank=True)
+
     class Meta:
         ordering = ["-created_at"]
         verbose_name = "movimentação de caixa"

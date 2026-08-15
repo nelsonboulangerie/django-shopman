@@ -17,7 +17,7 @@ export function usePosAction() {
 
   async function call<T = unknown>(
     path: string,
-    options: { method?: "POST" | "PUT" | "PATCH" | "DELETE"; body?: Record<string, unknown> } = {},
+    options: { method?: "GET" | "POST" | "PUT" | "PATCH" | "DELETE"; body?: Record<string, unknown> } = {},
   ): Promise<T> {
     try {
       return await $fetch<T>(apiPath(path), {

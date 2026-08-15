@@ -16,9 +16,10 @@ from __future__ import annotations
 
 from collections import defaultdict
 from dataclasses import dataclass, replace
-from datetime import date
+from datetime import date, datetime, time, timedelta
 from decimal import Decimal
 
+from django.db.models import Q
 from django.utils import timezone
 
 from .bi_production import _normalize_window
@@ -73,8 +74,20 @@ METRICS: dict[str, MetricSpec] = {
         # Abastecimento: as duas caras da mesma decisão de fornada.
         MetricSpec("soldout_days", "Dias que acabaram", "count",
                    ("sku", "time", "weekday", "month_of_year"), "shelf"),
-        MetricSpec("hours_without_stock", "Horas sem produto", "hours",
+        MetricSpec("hours_without_stock", "Horas sem produto na prateleira", "hours",
                    ("sku", "time", "weekday", "month_of_year"), "shelf"),
+        # A pergunta que o dono chamou de mais sensível: não ter o que oferecer.
+        # Fonte diferente da de cima — ver docstring de _outage_rows.
+        MetricSpec("unavailable_hours", "Horas sem poder vender", "hours",
+                   ("sku", "time", "weekday", "month_of_year", "channel",
+                    "outage_reason"), "outage"),
+        MetricSpec("paused_hours", "Horas pausado", "hours",
+                   ("sku", "time", "weekday", "month_of_year", "channel"), "outage"),
+        # Proporção do expediente: comparável entre um sábado de nove horas e
+        # um feriado de quatro, o que a contagem em horas não permite.
+        MetricSpec("unavailable_share", "% do expediente sem vender", "percent",
+                   ("sku", "time", "weekday", "month_of_year", "channel",
+                    "outage_reason"), "outage"),
         MetricSpec("leftover", "Sobra no fim do dia", "qty",
                    ("sku", "time", "weekday", "month_of_year"), "shelf"),
     )
@@ -96,6 +109,7 @@ DIMENSION_LABELS: dict[str, str] = {
     "operator": "Operador",
     "grade": "Grau de qualidade",
     "defect": "Defeito",
+    "outage_reason": "Motivo (esgotado/pausado)",
     "day_kind": "Tipo de dia (feriado)",
     "temperature": "Temperatura do dia",
     "rain": "Chuva",
@@ -119,7 +133,7 @@ ORDINAL_DIMENSIONS = frozenset(
 # contexto: ou sabemos, ou a pergunta não está disponível.
 CONTEXT_DIMENSIONS = ("day_kind", "temperature", "rain")
 
-CONTEXT_METRIC_FAMILIES = ("sales", "sales_items", "shelf")
+CONTEXT_METRIC_FAMILIES = ("sales", "sales_items", "shelf", "outage")
 
 
 @dataclass(frozen=True)
@@ -241,6 +255,7 @@ def build_bi_explore(
         "oven": _oven_rows,
         "cash": _cash_rows,
         "shelf": _shelf_rows,
+        "outage": _outage_rows,
     }[spec.family]
     rows = resolver(spec, by, by2, date_from, date_to)
 
@@ -772,3 +787,134 @@ def _context_part(dim: str, day: date, contexts: dict) -> tuple[str, str] | None
         wet = context.rain_mm > 0
         return ("1", "Com chuva") if wet else ("0", "Sem chuva")
     return None
+
+
+# ── Sem poder vender (o que o cliente encontrava, não o que o estoque tinha) ──
+
+
+def _outage_rows(spec, by, by2, date_from, date_to) -> list[BIExploreRow]:
+    """Horas em que a casa não teve o produto para oferecer.
+
+    Diferente de "horas sem produto na prateleira": o que o cliente encontra é
+    o saldo MENOS o reservado, então o produto some do cardápio antes de acabar
+    fisicamente e volta quando uma reserva expira. Esta métrica lê os períodos
+    observados (``ShelfOutage``) e é a resposta fiel — mas só existe a partir do
+    momento em que a casa começou a medir. Período anterior fica sem linha, em
+    vez de aparecer como "nunca faltou".
+
+    Conta só o que cai DENTRO do expediente daquele dia: o produto faltar de
+    madrugada não custa venda. O expediente vem CONGELADO do contexto do dia
+    (``business_day.stamp_day``) e não do horário de hoje — senão mexer no
+    cadastro reescreveria o passado, e dia em que a casa nem abriu contaria
+    como se tivesse aberto.
+
+    ``unavailable_share`` responde a mesma coisa em PROPORÇÃO do expediente, que
+    é o que permite comparar um sábado de nove horas com um feriado de quatro.
+    """
+    from shopman.backstage.models import ShelfOutage
+
+    tz = timezone.get_current_timezone()
+    window_start = datetime.combine(date_from, time.min, tzinfo=tz)
+    window_end = datetime.combine(date_to + timedelta(days=1), time.min, tzinfo=tz)
+
+    from shopman.backstage.models import OutageReason
+
+    outages = ShelfOutage.objects.filter(started_at__lt=window_end).filter(
+        Q(ended_at__isnull=True) | Q(ended_at__gt=window_start)
+    )
+    if spec.key == "paused_hours":
+        outages = outages.filter(reason=OutageReason.PAUSED)
+    # O contexto do dia é sempre necessário aqui: é dele que sai o expediente.
+    contexts = _day_contexts(date_from, date_to)
+    open_minutes = {
+        day: context.open_minutes
+        for day, context in contexts.items()
+        if context.open_minutes is not None
+    }
+
+    totals: dict[tuple, float] = defaultdict(float)
+    denominators: dict[tuple, float] = defaultdict(float)
+    labels: dict[tuple, tuple[str, str]] = {}
+    seen_days: dict[tuple, set] = defaultdict(set)
+
+    for outage in outages:
+        for day, minutes in _outage_minutes_by_day(outage, date_from, date_to, open_minutes, contexts):
+            parts = []
+            for dim in (by, by2):
+                if not dim:
+                    parts.append(("", ""))
+                elif dim == "sku":
+                    parts.append((outage.sku, outage.sku))
+                elif dim == "channel":
+                    parts.append((outage.channel_ref, outage.channel_ref))
+                elif dim == "outage_reason":
+                    parts.append((outage.reason, outage.get_reason_display()))
+                elif dim == "time":
+                    iso = day.isoformat()
+                    parts.append((iso, iso))
+                elif dim == "weekday":
+                    parts.append((str(day.weekday()), WEEKDAY_LABELS[day.weekday()]))
+                elif dim == "month_of_year":
+                    parts.append((f"{day.month:02d}", MONTH_LABELS[day.month - 1]))
+                elif dim in CONTEXT_DIMENSIONS:
+                    parts.append(_context_part(dim, day, contexts))
+                else:
+                    parts.append(("", ""))
+            if any(part is None for part in parts):
+                continue
+            key = (parts[0][0], parts[1][0])
+            totals[key] += minutes / 60
+            labels[key] = (parts[0][1], parts[1][1])
+            if day not in seen_days[key]:
+                seen_days[key].add(day)
+                denominators[key] += open_minutes.get(day, 0) / 60
+
+    keep_zeros = by in ORDINAL_DIMENSIONS
+
+    def value(key) -> float:
+        if spec.key != "unavailable_share":
+            return round(totals[key], 1)
+        base = denominators[key]
+        return round(totals[key] * 100 / base, 1) if base else 0.0
+
+    return [
+        BIExploreRow(
+            key=k1, label=labels[(k1, k2)][0], key2=k2, label2=labels[(k1, k2)][1],
+            value=value((k1, k2)),
+        )
+        for (k1, k2) in totals
+        if keep_zeros or value((k1, k2)) != 0
+    ]
+
+
+def _outage_minutes_by_day(outage, date_from: date, date_to: date, open_minutes, contexts):
+    """Minutos de bloqueio por dia, recortados pelo expediente CONGELADO do dia.
+
+    Dia sem carimbo de expediente não entra: sem saber quando a casa esteve
+    aberta, contar horas seria inventar o denominador.
+    """
+    tz = timezone.get_current_timezone()
+    began = timezone.localtime(outage.started_at)
+    finished = timezone.localtime(outage.ended_at or timezone.now())
+
+    day = max(began.date(), date_from)
+    last = min(finished.date(), date_to)
+    while day <= last:
+        context = contexts.get(day)
+        window = (
+            (context.opens_at, context.closes_at)
+            if context is not None
+            and open_minutes.get(day)
+            and context.opens_at
+            and context.closes_at
+            else None
+        )
+        if window is not None:
+            opens_at, closes_at = window
+            open_dt = datetime.combine(day, opens_at, tzinfo=tz)
+            close_dt = datetime.combine(day, closes_at, tzinfo=tz)
+            start = max(began, open_dt)
+            end = min(finished, close_dt)
+            if end > start:
+                yield day, (end - start).total_seconds() / 60
+        day += timedelta(days=1)

@@ -147,7 +147,7 @@ adicionais opcionais (§7), dá para chegar a ~50.
 
 | Tela | Veredito | Nota |
 |---|---|---|
-| Catálogo de copy (`/admin/configuracao/copy/`) | ✅ | Canônica (projection + Unfold), boa. Unificar o NOME (ver §5). |
+| Catálogo de copy (`/admin/settings/copy/`) | ✅ | Canônica (projection + Unfold), boa. Unificar o NOME (ver §5). |
 | Crachá do operador (`operator_badge`) | ✅ | Par do PinCredential. |
 | Agente da gaveta (`pos_drawer_agent`) | ✅ | Necessário p/ instalar no balcão. |
 | Dashboard (`dashboard_callback`) | ✅ 🔧 | Atualizar atalhos após reorganização; hoje aponta só para 5 configs e há 20+. |

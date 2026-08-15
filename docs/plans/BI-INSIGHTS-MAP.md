@@ -856,3 +856,218 @@ Junto veio uma correção de leitura: **num ranking, o que não aconteceu não �
 linha**. Produto que nunca faltou não pertence à lista de faltas, e sessenta
 zeros escondiam os dois SKUs que importavam. Em série temporal o zero fica — ali
 ele é ponto da curva.
+
+---
+
+## 11. "Não ter o produto para oferecer" (rodada 5, 2026-08-15)
+
+> Decisão do dono: *"o que me interessa é o fato de 'não ter o produto para
+> oferecer'. Acho que, dentro das nuances, isso é o mais sensível."*
+
+Isso resolve o N11 e escolhe entre duas medidas que pareciam a mesma. **Falta é
+o que o cliente não encontra**, não o que o estoque não tem.
+
+### 11.1 Por que o ledger não bastava
+
+O que o cliente encontra é o saldo **menos o reservado** para carrinhos abertos
+e pedidos aceitos que ainda não saíram. Duas consequências que o ledger de
+estoque não registra:
+
+- o produto **some do cardápio com unidades ainda na loja**, quando tudo o que
+  resta está reservado;
+- o produto **volta sozinho** quando uma reserva expira, sem que nada tenha
+  entrado no estoque.
+
+A reserva é mutável e não guarda histórico, então esses dois instantes não
+existem em lugar nenhum. Enquanto a métrica lia só o físico, ela **subestimava
+sistematicamente** o tempo sem produto — e só no balcão os dois instantes
+coincidiam, porque ali a venda baixa no ato.
+
+### 11.2 O que foi feito
+
+`ShelfOutage` — período em que a casa não teve o produto para oferecer, **por
+canal**, porque a disponibilidade é por canal (o balcão enxerga posições que o
+delivery não vê).
+
+Quem responde "posso oferecer?" continua sendo o stockman (`availability_for_sku`
+com o escopo do canal). O backstage só **observa a transição** dessa resposta e
+carimba o período: uma pergunta, um dono.
+
+Dois gatilhos, porque nenhum sozinho cobre tudo:
+
+- **evento** (`post_save` de `Move` e de `Hold`, sempre após o commit): mudou
+  estoque ou reserva, a resposta pode ter mudado;
+- **reconciliação periódica** (`reconcile_shelf_outages` no ciclo do
+  `maintenance_worker`, logo depois de liberar reservas): reserva que expira sai
+  por atualização em massa e **não emite signal** — sem a varredura, a volta do
+  produto só seria percebida no próximo movimento de estoque, que pode ser no
+  dia seguinte, inflando a falta medida. A reconciliação recomputa do estado
+  atual e é idempotente.
+
+**Pausar também bloqueia — e conta** (ajustado pelo dono na mesma rodada, §11.4).
+
+### 11.3 Na tela
+
+Métrica **"Horas sem poder vender"**, cruzável por SKU, canal, dia,
+dia-da-semana e mês (e pelo contexto do §10: feriado, temperatura, chuva). Conta
+só o que cai **dentro do expediente** — faltar de madrugada não custa venda — e
+falta em curso segue contando até agora, porque parar fingiria que o produto
+voltou.
+
+A métrica física antiga permanece, renomeada para **"Horas sem produto na
+prateleira"**. As duas respondem perguntas diferentes e a diferença entre elas é
+informativa: é o tempo em que havia produto na loja que ninguém podia comprar.
+
+⚠️ **A nova métrica só existe a partir de agora.** Período anterior à primeira
+medição fica **sem linha**, em vez de aparecer como "nunca faltou" — o passado
+segue coberto, de forma aproximada, pela métrica física.
+
+### 11.4 Pausa também conta — e vira métrica própria
+
+> Correção do dono: *"para o objetivo que estou visando, talvez a
+> indisponibilidade também conte! Não importa o motivo, o cliente não poderia
+> comprar aquele produto. Aliás, adicionalmente, essa pode ser uma métrica por
+> si só: quero saber quanto tempo um produto fica pausado."*
+
+Estava errado tratar pausa como não-falta. **Do lado de quem queria comprar,
+tanto faz o motivo**: não deu. A primeira versão media abastecimento; o que o
+dono quer medir é a **oferta**, e oferta pausada é oferta ausente.
+
+O período passa a ser aberto em qualquer bloqueio, com o **motivo registrado** —
+porque a distinção importa para o gestor, mesmo não importando para o cliente:
+falta é problema de abastecimento, pausa é decisão da casa.
+
+- **"Horas sem poder vender"** soma tudo: é a resposta à pergunta do cliente.
+- **"Horas pausado"** isola a decisão: quanto tempo cada produto ficou parado.
+- **"Motivo (esgotado/pausado)"** vira dimensão do total, para separar sem
+  precisar de duas telas.
+
+Três detalhes que o código trava:
+
+1. **Pausa tem precedência sobre falta.** Produto pausado não é vendável nem com
+   estoque cheio, então é a pausa que explica o bloqueio.
+2. **Trocar de motivo divide o período, sem interromper o bloqueio.** Despausar
+   um produto que continua esgotado fecha o trecho de pausa e abre o de falta no
+   mesmo instante: contínuo para o cliente, atribuído certo para o gestor.
+3. **A varredura passou a cobrir o catálogo inteiro, em lote.** Produto pausado
+   costuma não ter estoque nenhum, e era justamente o tempo dele parado que se
+   queria medir; além disso, pausar acontece no catálogo, longe de estoque e
+   reserva, então **nenhum signal dispara** — quem percebe é a reconciliação. Por
+   isso ela usa a consulta em lote: varrer o catálogo a cada poucos minutos com
+   uma consulta por SKU custaria centenas de idas ao banco por ciclo.
+
+---
+
+## 12. O denominador e o "diário de bordo" (rodada 6, 2026-08-15)
+
+> Pergunta do dono: *"uma dimensão interessante para cruzar com as horas
+> pausadas/esgotadas é o total de horas em que a casa ficou aberta (hmm, como
+> tratar mudanças de horário, feriados, férias coletivas? cada vez mais me
+> parece necessário criar um diário de bordo da empresa… vale o esforço?)"*
+
+A intuição estava certa e apontou **um defeito real** no que eu tinha entregue.
+
+### 12.1 O defeito: o passado era lido pelo horário de hoje
+
+As métricas de tempo recortavam o expediente chamando o calendário **com o
+horário atual da loja**, para qualquer dia. Duas consequências:
+
+- **mexer no cadastro reescrevia o passado** — mudar o horário de fechamento
+  hoje mudaria o valor da métrica de três meses atrás;
+- **dia em que a casa não abriu contava como expediente cheio** — a função de
+  horário só olha o dia da semana e não consulta feriados nem férias, então um
+  feriado fechado aparecia como um dia inteiro de produto em falta.
+
+### 12.2 O conserto: expediente congelado por dia
+
+O contexto do dia (§10) ganhou o que faltava: `open_minutes`, `opens_at`,
+`closes_at` e `closed_reason`, **carimbados quando o dia termina** e nunca mais
+recalculados. `stamp_business_days` roda no ciclo de manutenção; é idempotente e
+só olha para trás, porque o dia de hoje ainda não acabou.
+
+A leitura passou a usar esse carimbo. **Dia sem carimbo não entra na conta**: sem
+saber quando a casa esteve aberta, contar horas seria inventar o denominador.
+
+### 12.3 O que o denominador destrava
+
+Métrica **"% do expediente sem vender"** — e ela é melhor que a contagem em
+horas justamente pelo motivo que o dono levantou: três horas de falta num sábado
+de nove horas e três horas num feriado de quatro **não são a mesma coisa**. A
+proporção compara; a contagem, não.
+
+### 12.4 Vale um "diário de bordo"? Sim — e ele já começou
+
+**Vale**, com uma ressalva sobre a forma. O que não vale é abrir um registro
+genérico de anotações livres: sem pergunta com dono, vira vala comum, e a casa
+já tem cicatriz disso (o `InventoryProtocol` morto, os seams sem consumidor).
+
+O que vale é o que já existe: **`DayContext` é o diário de bordo**, uma linha por
+dia com fatos declarados, cada um com pergunta e dono. Hoje ele responde: a casa
+abriu, por quanto tempo, e por que não abriu; era feriado, véspera ou volta; que
+temperatura fez e se choveu. Cada bloco entrou porque uma pergunta pedia, e cada
+um é opcional — ausência é ausência, nunca zero.
+
+O critério para o que entra ali daqui pra frente é o mesmo: **um fato por vez,
+com a pergunta que ele responde**. Candidatos naturais que hoje estão soltos:
+falta de energia ou de água, equipamento parado, evento na vizinhança, greve,
+obra na rua. Todos têm a mesma forma (afetaram o dia inteiro ou uma faixa dele) e
+todos servem de contexto para explicar um dia fora da curva — que é exatamente o
+que o gestor quer quando olha um número estranho e pergunta "o que houve neste
+dia?".
+
+O que **não** deve ir para lá: qualquer coisa que já tenha dono (venda, fornada,
+turno de caixa) e qualquer campo livre sem pergunta.
+
+---
+
+## 13. Episódios de operação: o sistema nota, a pessoa explica (rodada 7)
+
+> Diretriz do dono: *"o máximo de registros **DEVE SER AUTOMÁTICO**! O sistema
+> facilita, apenas perguntando se houve algum episódio, dando opções. Simples,
+> fácil, elegante."*
+
+Isso resolveu o risco que eu tinha levantado no §12.4 — "só existe se alguém
+registrar" — invertendo quem começa a conversa.
+
+### 13.1 O sistema não sabe o motivo, mas sabe o sinal
+
+Ninguém vai lembrar, às 17h, de anotar que faltou luz às 14h. Formulário em
+branco todo dia vira campo morto — e pior que campo morto: a ausência de
+registro passaria a ser lida como "não houve nada".
+
+Mas o sistema **já sabe** que a loja parou de vender por duas horas no meio de
+um expediente normal, que um dia de expediente não teve venda nenhuma, e que uma
+fornada planejada não saiu. Isso basta para levantar a mão.
+
+Daí a separação que governa o model: **o sinal nasce sozinho, o motivo só existe
+se alguém disser**. Nenhum detector chuta o porquê.
+
+### 13.2 A pergunta
+
+Aparece **no fechamento**, onde o operador já passa todo dia contando o estoque —
+sem tela nova, sem ritual novo. E aparece **só quando houve sinal**: na
+esmagadora maioria dos dias não há nada a perguntar, e é isso que a mantém
+respondível.
+
+Responder é escolher uma opção do catálogo (editável no Admin, como os defeitos
+de qualidade) ou dizer que não houve nada. Nunca digitar.
+
+### 13.3 A consequência, que é o que dá sentido ao registro
+
+Cada tipo declara se **atrapalhou a venda**. Quando atrapalhou, o dia sai da
+amostra que ensina quanto produzir — pelo mesmo gancho que já tirava os dias
+fechados. Vender pouco porque a loja estava sem energia **não é procura baixa**,
+e sem isso o dia ruim viraria previsão ruim.
+
+Duas decisões de honestidade:
+
+- **Episódio não explicado ainda protege a previsão.** O sinal existiu; é mais
+  seguro não aprender com um dia estranho do que aprender errado.
+- **Só sai da conta o que alguém descartou** como falso alarme — aí houve
+  julgamento humano, não silêncio.
+
+### 13.4 Fronteira
+
+A decisão de "o que a fórmula aprende" é do orquestrador, mas o episódio é fato
+da operação e mora no backstage. O orquestrador chega nele por `adapters/`, que
+é a única exceção que a regra de dependência abre (o mesmo caminho do KDS).

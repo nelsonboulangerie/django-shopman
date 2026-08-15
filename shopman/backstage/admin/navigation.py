@@ -135,6 +135,7 @@ def get_sidebar_navigation(request):
             _item("Ordens de produção", "assignment", _url("admin:craftsman_workorder_changelist"), permission=_can_access_production),
             _item("Defeitos de fornada", "report", _url("admin:shop_qualitydefect_changelist"), permission=_can_access_production),
             _item("Graus de qualidade", "grade", _url("admin:shop_qualitygrade_changelist"), permission=_can_access_production),
+            _item("Motivos de episódio", "help_center", _url("admin:backstage_operationepisodekind_changelist"), permission=_is_staff),
             _item("Insumos", "grocery", _url("admin:buyman_material_changelist"), permission=_is_staff),
             _item("Fornecedores", "local_shipping", _url("admin:buyman_supplier_changelist"), permission=_is_staff),
             *(
@@ -186,8 +187,13 @@ def get_sidebar_navigation(request):
             _item("Cobranças", "credit_card", _url("admin:payman_paymentintent_changelist"), permission=_can_manage_orders),
             _item("Turnos de caixa", "payments", _url("admin:backstage_cashshift_changelist"), permission=_can_operate_pos),
             _item("Movimentações de caixa", "currency_exchange", _url("admin:backstage_cashmovement_changelist"), permission=_can_operate_pos),
+            # Sem esta entrada, a conferência só existiria para quem tem um QR
+            # legível na mão — e o comprovante amassado, que é justamente o
+            # caso em que alguém quer conferir, não teria porta nenhuma.
+            _item("Conferir comprovante", "qr_code_scanner", _url("admin_console_cash_receipt_lookup"), permission=_can_view_cash_movement),
             _item("Fechamentos do dia", "event_available", _url("admin:backstage_dayclosing_changelist"), permission=_can_close_day),
             _item("Execuções de checklist", "checklist", _url("admin:backstage_operationchecklistrun_changelist"), permission=_is_staff),
+            _item("Episódios de operação", "report_problem", _url("admin:backstage_operationepisode_changelist"), permission=_can_close_day),
         ]),
         # A gaveta do "raramente, mas quando precisa é aqui": equipamento da casa,
         # quem entra e com o quê, e a infraestrutura de referências.
@@ -301,6 +307,11 @@ def _can_close_day(request) -> bool:
 
 def _can_operate_pos(request) -> bool:
     return permissions.can_operate_pos(request.user)
+
+
+def _can_view_cash_movement(request) -> bool:
+    """Espelha o gate da própria tela — link que aparece e depois nega é pior que link que falta."""
+    return request.user.has_perm("backstage.view_cashmovement")
 
 
 def _can_operate_kds(request) -> bool:
