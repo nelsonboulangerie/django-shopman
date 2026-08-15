@@ -12,7 +12,9 @@ semântico do Unfold (success, danger, info) — e é bom que essa tradução ex
 lugar só, porque é ela que mantém "cor por significado" consistente entre telas.
 """
 
+from django.template import TemplateDoesNotExist
 from django.template.loader import render_to_string
+from django.utils.html import format_html
 from django.utils.safestring import mark_safe
 
 # Cor concreta → intenção do Unfold. O Unfold pensa em significado, não em tinta.
@@ -28,12 +30,20 @@ _VARIANT_BY_COLOR = {
 
 
 def _render(text, color: str) -> str:
-    return mark_safe(
-        render_to_string(
-            "unfold/helpers/label.html",
-            {"text": text, "variant": _VARIANT_BY_COLOR.get(color, "")},
-        ).strip()
-    )
+    """⚠️ Sem Unfold instalado, badge vira texto simples e escapado.
+
+    O Unfold é sugerido, não obrigatório: num Django Admin puro o template não
+    existe, e um badge que explode seria pior que um badge sem cor.
+    """
+    try:
+        return mark_safe(
+            render_to_string(
+                "unfold/helpers/label.html",
+                {"text": text, "variant": _VARIANT_BY_COLOR.get(color, "")},
+            ).strip()
+        )
+    except TemplateDoesNotExist:
+        return format_html("<span>{}</span>", text)
 
 
 def unfold_badge(text, color="base"):

@@ -173,7 +173,7 @@ def _matches(entry: SettingsEntry, group: SettingsGroup, needle: str) -> bool:
     return needle in haystack
 
 
-def build_settings_hub(*, q: str = "") -> dict:
+def build_settings_hub(*, q: str = "", slug: str = "") -> dict:
     """Monta a tela de Configuração, opcionalmente filtrada por um termo.
 
     Uma entrada que não resolve é omitida com o motivo — o app pode não estar
@@ -186,6 +186,8 @@ def build_settings_hub(*, q: str = "") -> dict:
     unavailable: list[str] = []
 
     for group in SETTINGS_MAP:
+        if slug and group.slug != slug:
+            continue
         cards = []
         for entry in group.entries:
             try:
@@ -215,11 +217,15 @@ def build_settings_hub(*, q: str = "") -> dict:
                 }
             )
 
+    current = next((g for g in SETTINGS_MAP if g.slug == slug), None)
     return {
         "groups": tuple(groups),
         "total": total,
         "query": q,
         "unavailable": tuple(unavailable),
+        "scope": {"title": current.title, "hint": current.hint, "slug": current.slug}
+        if current
+        else None,
     }
 
 
@@ -249,3 +255,22 @@ def settings_nav_sections() -> tuple[dict, ...]:
     return tuple(
         {"title": g.title, "slug": g.slug, "icon": g.icon} for g in SETTINGS_MAP
     )
+
+
+def settings_scope_urls(slug: str) -> set[str]:
+    """As telas de UM escopo — o menu usa para saber que escopo destacar.
+
+    Sem isto, editar "Zonas de entrega" não acende nada no menu: a tela é
+    alcançada pela Configuração e não tem item próprio. Com isto, o escopo dela
+    ("Como entregamos") fica destacado enquanto ela está aberta.
+    """
+    group = next((g for g in SETTINGS_MAP if g.slug == slug), None)
+    if group is None:
+        return set()
+    urls = set()
+    for entry in group.entries:
+        try:
+            urls.add(entry.url)
+        except NoReverseMatch:
+            continue
+    return urls

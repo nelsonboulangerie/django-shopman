@@ -22,12 +22,45 @@ usaria, com o mesmo contexto.
 então vai por `**{"class": ...}`.
 """
 
+from django.template import TemplateDoesNotExist
 from django.template.loader import render_to_string
+from django.utils.html import format_html
 from django.utils.safestring import mark_safe
 
 
-def unfold_component(template: str, *, children: str = "", **context) -> str:
-    """Renderiza um componente do Unfold com o mesmo contexto que a tag passaria."""
-    return mark_safe(
-        render_to_string(template, {"children": mark_safe(children), **context}).strip()
+def unfold_component(
+    template: str, *, children: str = "", fallback: str = "", **context
+) -> str:
+    """Renderiza um componente do Unfold com o mesmo contexto que a tag passaria.
+
+    ⚠️ O Unfold é sugerido, não obrigatório: estes pacotes precisam rodar num
+    Django Admin puro. Quando o template não existe, o componente não pode
+    explodir — devolve o `fallback`, que é HTML simples e correto, sem classe
+    nenhuma do Unfold (classe de um tema ausente seria pior que estilo nenhum).
+    """
+    try:
+        return mark_safe(
+            render_to_string(template, {"children": mark_safe(children), **context}).strip()
+        )
+    except TemplateDoesNotExist:
+        return mark_safe(fallback or children)
+
+
+def unfold_link(href: str, text: str, *, icon: str = "", new_tab: bool = False, **context) -> str:
+    """Um link do Admin, desenhado pelo `link.html` do Unfold.
+
+    Existia como `<a class="font-medium underline underline-offset-4">` repetido
+    em sete lugares, cada um com a sua combinação de classes: dois sublinhados
+    diferentes, duas cores de primário. Link é a coisa mais comum de um Admin, e
+    era a menos consistente.
+    """
+    target = ' target="_blank" rel="noopener"' if new_tab else ""
+    return unfold_component(
+        "unfold/components/link.html",
+        children=text,
+        href=href,
+        icon=icon,
+        external=new_tab,
+        fallback=format_html("<a href=\"{}\"{}>{}</a>", href, mark_safe(target), text),
+        **context,
     )

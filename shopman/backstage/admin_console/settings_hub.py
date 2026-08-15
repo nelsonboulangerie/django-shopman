@@ -36,7 +36,7 @@ class SettingsHubView(UnfoldModelAdminViewMixin, TemplateView):
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         q = self.request.GET.get("q", "")
-        hub = build_settings_hub(q=q)
+        hub = build_settings_hub(q=q, slug=kwargs.get("slug", ""))
         context.update(
             {
                 "settings_hub": hub,

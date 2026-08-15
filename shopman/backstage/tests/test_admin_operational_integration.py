@@ -49,7 +49,9 @@ class AdminNavigationTests(TestCase):
             groups = admin.site.get_sidebar_list(request)
         titles = [group["title"] for group in groups]
 
-        self.assertEqual(titles[0], "Operação ao vivo")
+        # "Aplicativos": os itens abrem os apps do operador, FORA do Admin.
+        # "Operação ao vivo" não dizia o que era nem para onde levava.
+        self.assertEqual(titles[0], "Aplicativos")
         self.assertIn("Catálogo", titles)
         self.assertIn("Produção", titles)
         self.assertIn("Auditoria", titles)
@@ -183,10 +185,12 @@ class AdminNavigationTests(TestCase):
                 "Produção e estoque", "Equipamentos", "Quem entra",
             ],
         )
-        # Cada escopo é âncora da seção — o cartão segue a um clique da página, então
-        # ganhar o mapa no menu não custou clique nenhum.
+        # Cada escopo é uma TELA própria, não âncora: âncora fazia os oito subitens
+        # compartilharem caminho, o Unfold acendia todos e clicar não parecia navegar.
         for item in config_group["items"][1:]:
-            self.assertTrue(item["link"].startswith(f"{hub_url}#"), item["link"])
+            self.assertNotIn("#", item["link"], item["link"])
+            self.assertTrue(item["link"].startswith(hub_url), item["link"])
+            self.assertNotEqual(item["link"], hub_url)
 
         # E nenhuma tela de ajuste sobrou solta no menu de operação.
         for gone in (
@@ -257,23 +261,35 @@ class AdminNavigationTests(TestCase):
 
         self.assertEqual(navigation.badge_new_orders(request), "1")
 
-    def test_production_tabs_keep_crud_only_after_console_removal(self) -> None:
-        """WP-ADM-7d: as tabs do craftsman só linkam cadastro e consulta;
-        painel/planejamento/relatórios vivem no Produção."""
-        production_tabs = next(
-            tab for tab in settings.UNFOLD["TABS"] if "craftsman.workorder" in tab["models"]
-        )
-        tab_titles = [item["title"] for item in production_tabs["items"]]
+    def test_tabs_never_point_at_a_screen_the_menu_already_lists(self) -> None:
+        """Aba e menu disputando a mesma tela quebram o "onde estou".
 
-        self.assertEqual(
-            tab_titles,
-            [
-                "Fichas técnicas",
-                "Ordens de produção",
-                "Defeitos de fornada",
-                "Graus de qualidade",
-            ],
-        )
+        O Unfold marca como ativo todo item do menu que participe do grupo de abas
+        da página atual (`_get_is_tab_active`). Com Produtos, Coleções e Vitrines no
+        menu E na mesma aba, os três acendiam juntos. A aba passa a servir só para a
+        vizinhança que o menu NÃO mostra: hoje, os grupos que vivem na Configuração.
+        """
+        request = RequestFactory().get("/admin/")
+        request.user = User.objects.create_superuser("tabs", "tabs@example.com", "pw")
+        menu_paths = {
+            item["link"].split("?")[0]
+            for group in admin.site.get_sidebar_list(request)
+            for item in group["items"]
+        }
+
+        for tab in settings.UNFOLD["TABS"]:
+            for item in tab["items"]:
+                self.assertNotIn(
+                    str(item["link"]),
+                    menu_paths,
+                    f"{item['title']} está na aba E no menu: os dois vão acender juntos",
+                )
+
+    def test_production_operation_never_returns_to_tabs(self) -> None:
+        """WP-ADM-7d: painel/planejamento/relatório de produção vivem no Produção."""
+        tab_titles = [
+            item["title"] for tab in settings.UNFOLD["TABS"] for item in tab["items"]
+        ]
         for operational in ("Painel", "Planejamento", "Relatórios", "Pesagem"):
             self.assertNotIn(operational, tab_titles)
         self.assertEqual(str(WorkOrder._meta.verbose_name_plural), "ordens de produção")

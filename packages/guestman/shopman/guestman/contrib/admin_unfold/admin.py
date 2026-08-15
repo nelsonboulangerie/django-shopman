@@ -25,6 +25,7 @@ from shopman.guestman.models import (
     ExternalIdentity,
     PriceTier,
 )
+from shopman.utils import unfold_link
 from shopman.utils.contrib.admin_unfold.badges import unfold_badge, unfold_badge_numeric
 from shopman.utils.contrib.admin_unfold.base import BaseModelAdmin, BaseTabularInline
 from taggit.managers import TaggableManager
@@ -696,7 +697,7 @@ if LoyaltyAccount is not None:
             from django.urls import reverse
 
             url = reverse("admin:guestman_customer_change", args=[obj.customer.pk])
-            return format_html('<a class="font-medium text-link" href="{}">{}</a>', url, obj.customer.ref)
+            return unfold_link(url, obj.customer.ref)
 
         @display(description=_("Nível"))
         def tier_badge(self, obj):

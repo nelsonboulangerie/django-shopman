@@ -106,7 +106,7 @@ def get_sidebar_navigation(request):
         )
     )
     return [
-        _group("Operação ao vivo", "bolt", live_items, collapsible=False),
+        _group("Aplicativos", "apps", live_items, collapsible=False),
         _group("Catálogo", "store", [
             _item("Produtos", "bakery_dining", _url("admin:offerman_product_changelist"), permission=_is_staff),
             _item("Coleções", "category", _url("admin:offerman_collection_changelist"), permission=_is_staff),
@@ -165,13 +165,24 @@ def get_sidebar_navigation(request):
         # da tela em que se está. A lista vem da projection, então escopo novo nasce
         # nos dois lugares de uma vez.
         _group("Configuração", "settings", [
-            _item("Todos os ajustes", "tune", _url("admin_console_settings_hub"), permission=_is_staff),
+            _item(
+                "Todos os ajustes",
+                "tune",
+                _url("admin_console_settings_hub"),
+                permission=_is_staff,
+                active=_exactly(_url("admin_console_settings_hub")),
+            ),
             *[
                 _item(
                     section["title"],
                     section["icon"],
-                    f"{_url('admin_console_settings_hub')}#{section['slug']}",
+                    reverse("admin_console_settings_scope", args=[section["slug"]]),
                     permission=_is_staff,
+                    # Destaca o escopo TAMBÉM quando se está dentro de uma tela dele:
+                    # "Zonas de entrega" é alcançada pela Configuração e não tem item
+                    # próprio, então sem isto o menu não acenderia nada e a pessoa
+                    # perderia a noção de onde está.
+                    active=_scope_active(section["slug"]),
                 )
                 for section in settings_nav_sections()
             ],
@@ -217,6 +228,7 @@ def _item(
     badge: str | None = None,
     badge_variant: str = "primary",
     badge_style: str = "soft",
+    active=None,
 ) -> dict:
     item = {
         "title": title,
@@ -224,6 +236,8 @@ def _item(
         "link": link,
         "permission": permission,
     }
+    if active is not None:
+        item["active"] = active
     if badge:
         item.update({
             "badge": badge,
@@ -231,6 +245,28 @@ def _item(
             "badge_style": badge_style,
         })
     return item
+
+
+def _exactly(path: str):
+    """Ativo só nesta tela — sem o `in` que o Unfold usa por padrão."""
+
+    def _check(request) -> bool:
+        return request.path == path
+
+    return _check
+
+
+def _scope_active(slug: str):
+    """Ativo na tela do escopo E em qualquer tela de configuração dele."""
+    from shopman.backstage.projections.settings_hub import settings_scope_urls
+
+    def _check(request) -> bool:
+        scope_url = reverse("admin_console_settings_scope", args=[slug])
+        if request.path == scope_url:
+            return True
+        return any(request.path.startswith(url) for url in settings_scope_urls(slug))
+
+    return _check
 
 
 def _url(name: str) -> str:

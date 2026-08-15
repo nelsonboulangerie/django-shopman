@@ -50,6 +50,11 @@ urlpatterns = [
         name="admin_console_settings_hub",
     ),
     path(
+        "admin/ajustes/<slug:slug>/",
+        admin.site.admin_view(settings_hub_view),
+        name="admin_console_settings_scope",
+    ),
+    path(
         "admin/configuracao/copy/",
         admin.site.admin_view(copy_catalog_view),
         name="admin_console_copy_catalog",

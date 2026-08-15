@@ -8,10 +8,13 @@ DATABASES = {
 }
 
 INSTALLED_APPS = [
-    # `unfold` entra porque este pacote tem um módulo `contrib/admin_unfold`, e o
-    # que ele faz é justamente delegar aos templates do Unfold em vez de copiar o
-    # markup deles. Testar esse módulo sem o Unfold instalado testaria a cópia —
-    # a coisa que queremos não ter.
+    # `unfold` entra para testar o caminho CANÔNICO: o módulo `contrib/admin_unfold`
+    # delega aos templates do Unfold em vez de copiar o markup deles, e sem o pacote
+    # instalado o teste não veria isso acontecer.
+    #
+    # O caminho SEM Unfold (que precisa existir: o Unfold é sugerido, não
+    # obrigatório) é coberto em `TestWithoutUnfold`, que simula o template ausente
+    # e confere que os helpers caem para HTML simples — ainda escapado.
     "unfold",
     "django.contrib.contenttypes",
     "django.contrib.auth",

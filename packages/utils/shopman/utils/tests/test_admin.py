@@ -171,3 +171,62 @@ class TestEnrichedAutocompleteJsonView:
         result = view.serialize_result(obj, "pk")
         assert "id" in result
         assert "text" in result
+
+
+class TestWithoutUnfold:
+    """O Unfold é sugerido, não obrigatório: sem ele, nada pode explodir.
+
+    Estes pacotes são instaláveis num Django Admin puro. Os helpers desenham com
+    os templates do Unfold quando ele existe e caem para HTML simples quando não
+    existe — nunca para classe de um tema ausente, que seria estilo quebrado em
+    vez de estilo nenhum.
+    """
+
+    def _sem_unfold(self, monkeypatch):
+        from django.template import TemplateDoesNotExist
+
+        from shopman.utils.contrib.admin_unfold import badges, render
+
+        def explode(*args, **kwargs):
+            raise TemplateDoesNotExist("unfold não instalado")
+
+        monkeypatch.setattr(badges, "render_to_string", explode)
+        monkeypatch.setattr(render, "render_to_string", explode)
+
+    def test_badge_degrades_to_plain_text(self, monkeypatch):
+        from shopman.utils.contrib.admin_unfold.badges import unfold_badge
+
+        self._sem_unfold(monkeypatch)
+        result = str(unfold_badge("Ativo", "green"))
+
+        assert "Ativo" in result
+        assert "bg-green" not in result, "classe de tema ausente é pior que sem estilo"
+
+    def test_badge_still_escapes_without_unfold(self, monkeypatch):
+        """O fallback não pode abrir buraco de XSS que o caminho normal fecha."""
+        from shopman.utils.contrib.admin_unfold.badges import unfold_badge
+
+        self._sem_unfold(monkeypatch)
+        result = str(unfold_badge('<script>alert("xss")</script>'))
+
+        assert "<script>" not in result
+        assert "&lt;script&gt;" in result
+
+    def test_link_degrades_to_plain_anchor(self, monkeypatch):
+        from shopman.utils.contrib.admin_unfold.render import unfold_link
+
+        self._sem_unfold(monkeypatch)
+        result = str(unfold_link("/admin/x/", "Abrir", new_tab=True))
+
+        assert 'href="/admin/x/"' in result
+        assert "Abrir" in result
+        assert 'target="_blank"' in result
+
+    def test_link_escapes_text_without_unfold(self, monkeypatch):
+        from shopman.utils.contrib.admin_unfold.render import unfold_link
+
+        self._sem_unfold(monkeypatch)
+        result = str(unfold_link("/x/", '<img src=x onerror="alert(1)">'))
+
+        assert "<img" not in result
+        assert "&lt;img" in result

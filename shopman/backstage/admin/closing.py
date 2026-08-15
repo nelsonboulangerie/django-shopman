@@ -4,8 +4,7 @@ from __future__ import annotations
 
 from django.conf import settings
 from django.contrib import admin
-from django.utils.html import format_html
-from shopman.utils import unfold_badge_numeric
+from shopman.utils import unfold_badge_numeric, unfold_link
 from unfold.admin import ModelAdmin
 from unfold.decorators import display
 
@@ -43,10 +42,7 @@ class DayClosingAdmin(ModelAdmin):
         if not base:
             return "-"
         url = f"{base}/reports?date_from={obj.date.isoformat()}&date_to={obj.date.isoformat()}"
-        return format_html(
-            '<a class="font-medium text-link" href="{}">Relatório</a>',
-            url,
-        )
+        return unfold_link(url, "Relatório", icon="table_chart")
 
     def has_add_permission(self, request):
         return False

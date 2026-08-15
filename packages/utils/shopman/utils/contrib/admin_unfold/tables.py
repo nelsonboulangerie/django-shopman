@@ -32,7 +32,6 @@ Usage in a dashboard callback::
 
 from django.urls import reverse
 from django.utils.html import format_html
-from django.utils.safestring import mark_safe
 
 # ── Color palettes ────────────────────────────────────────────────────
 
@@ -62,14 +61,9 @@ def table_link(url, text, new_tab=False):
         text: Display text (will be escaped).
         new_tab: If True, opens in a new browser tab.
     """
-    target = ' target="_blank" rel="noopener"' if new_tab else ""
-    return format_html(
-        '<a href="{}" class="text-primary-600 dark:text-primary-400 '
-        'font-medium hover:underline"{}>{}</a>',
-        url,
-        mark_safe(target),
-        text,
-    )
+    from shopman.utils.contrib.admin_unfold.render import unfold_link
+
+    return unfold_link(url, text, new_tab=new_tab)
 
 
 def table_admin_link(model_name, pk, text, app_label=None):

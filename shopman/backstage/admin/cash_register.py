@@ -4,8 +4,7 @@ from __future__ import annotations
 
 from django import forms
 from django.contrib import admin
-from django.utils.html import format_html
-from shopman.utils import unfold_badge, unfold_badge_numeric
+from shopman.utils import unfold_badge, unfold_badge_numeric, unfold_link
 from shopman.utils.monetary import format_money
 from unfold.admin import ModelAdmin
 from unfold.widgets import (
@@ -317,10 +316,7 @@ class POSTerminalAdmin(ModelAdmin):
         from django.urls import reverse
 
         url = reverse("admin_console_pos_drawer_agent", args=[obj.ref])
-        return format_html(
-            '<a href="{}" class="font-medium underline underline-offset-4">Baixar o agente e ver como instalar</a>',
-            url,
-        )
+        return unfold_link(url, "Baixar o agente e ver como instalar", icon="download")
     drawer_install_display.short_description = "Instalação no balcão"
 
     _HEALTH = {

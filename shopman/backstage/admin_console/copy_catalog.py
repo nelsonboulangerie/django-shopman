@@ -14,7 +14,7 @@ from django.contrib import admin
 from django.http import HttpRequest, HttpResponse
 from django.utils.html import format_html
 from django.views.generic import TemplateView
-from shopman.utils import table_badge
+from shopman.utils import table_badge, unfold_link
 from unfold.views import UnfoldModelAdminViewMixin
 from unfold.widgets import UnfoldAdminSelectWidget, UnfoldAdminTextInputWidget
 
@@ -92,15 +92,12 @@ def _group_table(rows) -> dict:
             if row.override_count
             else table_badge("Padrão do código", "base")
         )
-        actions = format_html(
-            '<a href="{}" class="font-medium underline underline-offset-4">Personalizar</a>',
-            row.add_url,
-        )
+        actions = unfold_link(row.add_url, "Personalizar", icon="edit")
         if row.override_count:
             actions = format_html(
-                '{} · <a href="{}" class="font-medium underline underline-offset-4">Ver ajustes</a>',
+                "{} · {}",
                 actions,
-                row.list_url,
+                unfold_link(row.list_url, "Ver ajustes", icon="tune"),
             )
         built.append([
             format_html('<span class="font-medium">{}</span>', row.key),
