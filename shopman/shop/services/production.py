@@ -45,7 +45,7 @@ def suggest_for(target_date: date, output_skus: list[str] | None = None):
         season_months=suggestion.season_months_for(target_date.month),
         high_demand_multiplier=suggestion.high_demand_multiplier_decimal,
         safety_pct=suggestion.safety_stock_percent_decimal,
-        exclude_dates=closed_days_within(days=window_days),
+        exclude_dates=untrustworthy_days(days=window_days),
         selling_window=selling_window_for(target_date),
     )
 
@@ -61,6 +61,22 @@ def selling_window_for(day: date):
     from shopman.shop.services.business_calendar import selling_hours_for
 
     return selling_hours_for(day)
+
+
+def untrustworthy_days(*, days: int, until: date | None = None) -> frozenset[date]:
+    """Dias que não devem ensinar demanda, por qualquer motivo.
+
+    Duas famílias, mesmo efeito: dia em que a casa **não abriu** (calendário) e
+    dia **atrapalhado** por um episódio (faltou luz, equipamento parado). O
+    segundo é tão enganoso quanto o primeiro — vender pouco porque a loja
+    estava sem energia não é sinal de que a procura caiu.
+    """
+    from shopman.shop.adapters.episodes import disrupted_days
+
+    until = until or timezone.localdate()
+    closed = closed_days_within(days=days, until=until)
+    disrupted = disrupted_days(since=until - timedelta(days=days), until=until)
+    return closed | disrupted
 
 
 def closed_days_within(*, days: int, until: date | None = None) -> frozenset[date]:
