@@ -22,7 +22,7 @@ jobs:
   quality:
     name: Quality + deploy contract
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 30
 
     steps:
       - name: Checkout
@@ -73,8 +73,13 @@ jobs:
       # banco migrado (o pytest cria o dele), e o gate precisa de banco migrado
       # E semeado — `omotenashi.seed` é bloqueante e exige os 11 cenários
       # canônicos. Ele vive no Omotenashi Gate, logo depois do seed.
+      # 25 min porque a suíte inteira (~6.500 testes) já gastava 11m47s dos 15 que
+      # tinha, e o seed passou a semear dois anos de histórico para o "o que
+      # esperar" ter o que comparar — ~10s por chamada, e sete testes chamam o
+      # seed. Teto apertado assim não é guardrail, é tripwire: dispara por
+      # crescimento normal da suíte e a falha não diz nada sobre o código.
       - name: Full test suite
-        timeout-minutes: 15
+        timeout-minutes: 25
         run: make test
 
   docker-image:
