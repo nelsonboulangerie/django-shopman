@@ -269,6 +269,11 @@ class POSProjection:
     fiscal_label: str
     fiscal_message: str
     operators: tuple[dict, ...] = ()
+    # Quem pode AUTORIZAR exceção (sangria, desconto acima do teto). Conjunto
+    # diferente de `operators`: operar o PDV e assinar uma exceção são duas
+    # permissões distintas, e confundir as duas colocaria o balconista na lista
+    # de quem autoriza a própria sangria.
+    managers: tuple[dict, ...] = ()
     auto_lock_seconds: int = 60
     # Geometria do rolo declarada pelo terminal (0 = não declarou, e aí o
     # default do CSS do PDV manda). A superfície escreve estes dois valores nas
@@ -367,6 +372,7 @@ def build_pos(*, terminal=None, operator=None) -> POSProjection:
         fiscal_label=fiscal_label,
         fiscal_message=fiscal_message,
         operators=_eligible_operator_cards(),
+        managers=_manager_cards(),
         auto_lock_seconds=int((getattr(terminal, "metadata", None) or {}).get("auto_lock_seconds", 60)),
         terminal_roll_width_mm=runtime.printer.roll_width_mm,
         terminal_roll_margin_mm=runtime.printer.margin_mm,
@@ -379,6 +385,29 @@ def _eligible_operator_cards() -> tuple[dict, ...]:
     from shopman.backstage.services.operator import eligible_operators, operator_card
 
     return tuple(operator_card(u) for u in eligible_operators())
+
+
+def _manager_cards() -> tuple[dict, ...]:
+    """Gerentes que podem autorizar exceção, para o diálogo de PIN oferecer a lista.
+
+    Existe porque a tela pedia o nome do gerente DIGITADO, e nome digitado erra: o
+    servidor resolve o usuário por ``username`` e valida o PIN contra a credencial
+    daquela pessoa — a assinatura que fica em ``CashMovement.approved_by``. Com a
+    lista, o ``username`` sai daqui já certo em vez de sair de um chute do balcão.
+
+    Sai só nome e ``username``. Nada de id, e-mail ou qualquer coisa da credencial:
+    esta lista é lida por qualquer terminal com sessão de balcão, e o que ela
+    publica vira superfície de ataque.
+    """
+    from shopman.backstage.services.operator import ADJUST_CASHSHIFT, eligible_operators
+
+    return tuple(
+        {
+            "username": user.get_username(),
+            "name": user.get_full_name().strip() or user.get_username(),
+        }
+        for user in eligible_operators(perm=ADJUST_CASHSHIFT)
+    )
 
 
 def build_pos_shift_summary(*, channel_ref: str = POS_CHANNEL_REF) -> POSShiftSummaryProjection:

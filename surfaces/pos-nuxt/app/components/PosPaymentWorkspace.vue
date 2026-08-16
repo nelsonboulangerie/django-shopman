@@ -21,6 +21,7 @@ import type {
   POSCustomerLookupProjection,
   POSCustomerSearchResult,
   POSFulfillmentOptionProjection,
+  POSManagerProjection,
   POSPaymentCollectionProjection,
   POSPaymentMethodProjection,
   POSPaymentTenderDraft,
@@ -58,6 +59,8 @@ const props = defineProps<{
   managerUsername: string;
   managerPin: string;
   managerApprovalError: string;
+  /** Quem pode assinar a exceção. Vazio = o diálogo cai no campo livre. */
+  managers: POSManagerProjection[];
   fulfillmentType: "pickup" | "delivery";
   paymentCollection: "terminal" | "on_delivery";
   paymentTenders: POSPaymentTenderDraft[];
@@ -677,6 +680,7 @@ function onAddressSelected(address: StructuredAddressProjection) {
     v-model:open="managerAuthOpen"
     :threshold-q="managerThresholdQ"
     :reasons="review?.approval_reasons"
+    :managers="managers"
     :busy="loading"
     :error="managerApprovalError"
     @authorize="onManagerAuthorize"

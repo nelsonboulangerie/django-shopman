@@ -40,7 +40,16 @@ import {
   tenderLineView,
   tenderSumQ,
 } from "../app/presentation/payment";
-import { formatOpenedAt, isTerminalOccupied, movementLabel, requiresOpenShiftForSale, sessionScreenState } from "../app/presentation/cash";
+import {
+  canRegisterMovement,
+  formatOpenedAt,
+  isTerminalOccupied,
+  movementLabel,
+  movementReasons,
+  requiresOpenShiftForSale,
+  sessionScreenState,
+} from "../app/presentation/cash";
+import { canAuthorize, managerAuthReason } from "../app/presentation/managerAuth";
 import {
   availableMoveModes,
   buildMovePayload,
@@ -453,6 +462,69 @@ describe("presentation/cash — blind drawer shaping", () => {
     expect(sessionScreenState({ ...base, status: "terminal_occupied" }, false)).toBe("occupied");
     expect(sessionScreenState(base, true)).toBe("open");
     expect(sessionScreenState(base, false)).toBe("closed");
+  });
+
+  // O motivo responde PARA ONDE o dinheiro foi. Repetir o tipo ("sangria" no campo
+  // motivo) é o que acontece quando a única saída é digitar com a fila andando.
+  it("offers clickable reasons per movement kind, never repeating the kind", () => {
+    expect(movementReasons("sangria")).toEqual(["Cofre", "Banco", "Fornecedor", "Troco"]);
+    expect(movementReasons("suprimento")).toEqual(["Troco", "Reforço"]);
+    expect(movementReasons("ajuste")).toEqual(["Sobra", "Falta", "Erro de lançamento"]);
+    for (const kind of ["sangria", "suprimento", "ajuste"]) {
+      expect(movementReasons(kind).map((r) => r.toLowerCase())).not.toContain(kind);
+    }
+  });
+
+  // Tipo desconhecido cai no campo livre: lista vazia é o sinal para a tela não
+  // esconder a única porta que sobrou.
+  it("returns no canned reasons for an unknown kind", () => {
+    expect(movementReasons("custom")).toEqual([]);
+    expect(movementReasons("")).toEqual([]);
+  });
+
+  // O motivo é exigência da SUPERFÍCIE (o servidor aceita `reason` vazio). Se este
+  // gate afrouxar, passa sangria sem motivo e a trilha perde o que ela existe para
+  // contar.
+  it("requires kind, amount and reason before a movement can be registered", () => {
+    expect(canRegisterMovement("sangria", "50", "Cofre")).toBe(true);
+    expect(canRegisterMovement("", "50", "Cofre")).toBe(false);
+    expect(canRegisterMovement("sangria", "", "Cofre")).toBe(false);
+    expect(canRegisterMovement("sangria", "   ", "Cofre")).toBe(false);
+    expect(canRegisterMovement("sangria", "50", "")).toBe(false);
+    expect(canRegisterMovement("sangria", "50", "   ")).toBe(false);
+  });
+});
+
+describe("presentation/managerAuth — o que se assina e quem assina", () => {
+  it("prefers the ready-made reason text over the review codes", () => {
+    expect(
+      managerAuthReason({ reasonText: "Retirar dinheiro da gaveta é exceção auditada.", reasons: ["price_override"] }),
+    ).toBe("Retirar dinheiro da gaveta é exceção auditada.");
+  });
+
+  it("spells out the review codes, threshold included", () => {
+    const text = managerAuthReason({ reasons: ["discount_over_threshold", "price_override"], thresholdQ: 1500 });
+    expect(text).toContain("Desconto acima de");
+    expect(text).toContain("15,00");
+    expect(text).toContain("Preço alterado à mão.");
+  });
+
+  // Dizer pouco é melhor que dizer errado: o diálogo já afirmou "desconto acima de
+  // R$ X" quando o gatilho era preço alterado, e o gerente assinou sem saber o quê.
+  it("falls back to a generic line instead of guessing a reason", () => {
+    expect(managerAuthReason({})).toBe("Esta operação precisa da autorização de um gerente.");
+    expect(managerAuthReason({ reasons: ["codigo_desconhecido"] })).toBe(
+      "Esta operação precisa da autorização de um gerente.",
+    );
+  });
+
+  // Sem username o servidor não sabe contra QUAL credencial validar o PIN, e a
+  // assinatura em `approved_by` sairia da pessoa errada.
+  it("blocks the authorization without both an identified manager and a PIN", () => {
+    expect(canAuthorize("marina", "1234")).toBe(true);
+    expect(canAuthorize("", "1234")).toBe(false);
+    expect(canAuthorize("   ", "1234")).toBe(false);
+    expect(canAuthorize("marina", "")).toBe(false);
   });
 });
 
