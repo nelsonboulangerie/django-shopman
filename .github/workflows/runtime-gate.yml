@@ -73,11 +73,22 @@ jobs:
       # banco migrado (o pytest cria o dele), e o gate precisa de banco migrado
       # E semeado — `omotenashi.seed` é bloqueante e exige os 11 cenários
       # canônicos. Ele vive no Omotenashi Gate, logo depois do seed.
-      # 25 min porque a suíte inteira (~6.500 testes) já gastava 11m47s dos 15 que
-      # tinha, e o seed passou a semear dois anos de histórico para o "o que
-      # esperar" ter o que comparar — ~10s por chamada, e sete testes chamam o
-      # seed. Teto apertado assim não é guardrail, é tripwire: dispara por
-      # crescimento normal da suíte e a falha não diz nada sobre o código.
+      # ⚠️ 15 minutos deixaram de caber. A suíte inteira (~6.500 testes) já
+      # gastava 11m47s dos 15, e o seed passou a semear dois anos de histórico
+      # para o "o que esperar" ter o que comparar — ~10s por chamada, e sete
+      # testes chamam o seed. O primeiro PR grande depois disso estourou a 83%
+      # da suíte: falha por RELÓGIO, não por teste.
+      #
+      # Teto apertado assim não é guardrail, é tripwire — dispara com o
+      # crescimento normal da suíte e a falha não diz nada sobre o código. E
+      # gate que reprova por tempo ensina a duvidar do vermelho, que é o pior
+      # hábito que um gate pode criar.
+      #
+      # O teto do JOB (30) tem que ficar acima deste, senão ele mata primeiro e
+      # os 25 aqui viram enfeite — o job ainda paga ~1min30 de setup antes.
+      #
+      # O que 25min NÃO resolvem: `make test` encadeia 13 alvos em SÉRIE. Quando
+      # apertarem de novo, a resposta é paralelizar, não subir o teto outra vez.
       - name: Full test suite
         timeout-minutes: 25
         run: make test
