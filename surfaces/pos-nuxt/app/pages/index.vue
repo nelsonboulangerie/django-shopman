@@ -369,6 +369,7 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onGlobalKeydown));
         v-model:issue-fiscal-document="cart.issueFiscalDocument"
         v-model:receipt-mode="cart.receiptMode"
         v-model:receipt-email="cart.receiptEmail"
+        :managers="pos?.managers || []"
         :tab-display="cart.tabDisplay"
         :items="cart.items"
         :has-open-tab="hasOpenTab"

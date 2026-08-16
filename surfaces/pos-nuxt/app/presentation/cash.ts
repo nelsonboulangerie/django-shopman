@@ -19,6 +19,40 @@ export function movementLabel(kind: string): string {
 }
 
 /**
+ * Os motivos comuns de cada tipo de movimento, para virarem botão.
+ *
+ * O motivo é obrigatório e continua sendo — mas exigir DIGITAÇÃO no meio da fila
+ * é como se obriga o balcão a escrever "sangria" no campo motivo e seguir a vida:
+ * a exigência sobrevive e a informação morre. Com opções para tocar, o motivo
+ * responde o que a trilha precisa saber depois — PARA ONDE o dinheiro foi — em
+ * vez de repetir o tipo que já está registrado ao lado.
+ *
+ * Tipo desconhecido devolve lista vazia de propósito: aí a tela cai no campo
+ * livre, que é a saída honesta para o que não foi previsto aqui.
+ */
+const MOVEMENT_REASONS: Record<string, readonly string[]> = {
+  sangria: ["Cofre", "Banco", "Fornecedor", "Troco"],
+  suprimento: ["Troco", "Reforço"],
+  ajuste: ["Sobra", "Falta", "Erro de lançamento"],
+};
+
+export function movementReasons(kind: string): readonly string[] {
+  return MOVEMENT_REASONS[kind] || [];
+}
+
+/**
+ * Se o movimento pode ser registrado: tipo, valor e motivo, os três presentes.
+ *
+ * O motivo é exigência da SUPERFÍCIE, não do servidor (`reason` é `blank=True`).
+ * Fica aqui, puro, porque é regra de negócio da tela e não detalhe de template:
+ * afrouxar isto por engano deixaria passar sangria sem motivo, e sangria sem
+ * motivo é exatamente o buraco que o comprovante e o PIN do gerente fecham.
+ */
+export function canRegisterMovement(kind: string, amount: string, reason: string): boolean {
+  return Boolean(kind && amount.trim() && reason.trim());
+}
+
+/**
  * Format the shift opening timestamp for the panel header (pt-BR, short). Falls
  * back to the raw string if it is not a parseable date, and to an em dash when
  * absent.
