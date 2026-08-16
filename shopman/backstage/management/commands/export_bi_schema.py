@@ -35,6 +35,15 @@ from shopman.backstage.projections.bi_explore import (
     BIExploreReport,
     BIExploreRow,
 )
+from shopman.backstage.projections.bi_forecast import (
+    BIForecastReport,
+    DayForecast,
+    Expectation,
+    ForecastBasis,
+    ForecastBranch,
+    ForecastOccasion,
+    OccasionYear,
+)
 from shopman.backstage.projections.bi_production import (
     BIOvenTimeRow,
     BIProductionDay,
@@ -74,6 +83,13 @@ CONTRACT_DATACLASSES = (
     BIExploreRow,
     BIExploreMetricOption,
     BIExploreReport,
+    Expectation,
+    ForecastBranch,
+    ForecastBasis,
+    OccasionYear,
+    ForecastOccasion,
+    DayForecast,
+    BIForecastReport,
 )
 
 

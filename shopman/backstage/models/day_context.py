@@ -40,13 +40,36 @@ class DayContext(models.Model):
     holiday_scope = models.CharField(
         "abrangência", max_length=16, choices=HolidayScope.choices, blank=True
     )
-    is_holiday_eve = models.BooleanField(
-        "véspera de feriado", default=False,
-        help_text="Derivado na carga do calendário: o dia anterior a um feriado.",
+
+    # ── Data comercial (injetada) — dia das mães, Páscoa, dia dos namorados…
+    # Fica separada do feriado porque a consequência é outra: feriado pode
+    # FECHAR a loja, data comercial nunca fecha — ela enche. Guardar as duas no
+    # mesmo campo obrigaria a escolher entre perder o Natal como feriado ou
+    # perdê-lo como data comercial, e ele é os dois.
+    commercial_name = models.CharField(
+        "data comercial", max_length=120, blank=True,
+        help_text="Data que move o movimento sem ser feriado (ou além de ser).",
     )
-    is_post_holiday = models.BooleanField(
-        "volta de feriado", default=False,
-        help_text="Derivado na carga do calendário: o dia seguinte a um feriado.",
+
+    # Derivados da UNIÃO das duas: a véspera do dia das mães enche uma padaria
+    # tanto quanto a véspera de um feriado.
+    is_special_eve = models.BooleanField(
+        "véspera de data especial", default=False,
+        help_text="Derivado na carga: o dia anterior a um feriado ou data comercial.",
+    )
+    is_post_special = models.BooleanField(
+        "volta de data especial", default=False,
+        help_text="Derivado na carga: o dia seguinte a um feriado ou data comercial.",
+    )
+    # De QUAL data este dia é véspera. Guardar o nome, e não só o booleano, tem
+    # motivo declarado pelo dono: numa padaria fechada no dia seguinte, **é na
+    # véspera que o dinheiro acontece** — então ela é ocasião por direito
+    # próprio, e a véspera do dia das mães não é a véspera de um feriado
+    # qualquer. A volta segue sendo só um booleano de propósito: nela o
+    # movimento apenas esvazia, e o motivo não muda a decisão.
+    eve_of = models.CharField(
+        "véspera de", max_length=120, blank=True,
+        help_text="Nome da data especial do dia seguinte. Derivado na carga.",
     )
     has_calendar = models.BooleanField(
         "calendário carregado", default=False,
@@ -115,13 +138,55 @@ class DayContext(models.Model):
 
     @property
     def day_kind(self) -> str:
-        """Feriado, véspera, volta ou dia comum — só com calendário carregado."""
+        """Que tipo de dia é este — só com calendário carregado.
+
+        **A data comercial tem identidade própria**, e não um balde genérico:
+        perguntar "o que esperar no dia das mães" tem de comparar com dias das
+        mães, não com o dia dos namorados. Jogar todas num balde "data
+        comercial" responderia a pergunta errada com aparência de certeza.
+
+        A ordem também é intencional: o dia em si vence o derivado (véspera,
+        volta), e a data comercial vence o feriado porque é mais específica —
+        o Natal é os dois, e "Natal" diz mais do que "feriado". Se a loja fecha
+        nesse dia, quem cuida disso é o expediente carimbado, não este rótulo.
+        """
         if not self.has_calendar:
             return ""
+        if self.commercial_name:
+            return f"commercial:{self.commercial_name.strip().lower()}"
         if self.is_holiday:
             return "holiday"
-        if self.is_holiday_eve:
-            return "holiday_eve"
-        if self.is_post_holiday:
-            return "post_holiday"
+        if self.eve_of:
+            return f"eve:{self.eve_of.strip().lower()}"
+        if self.is_special_eve:
+            return "special_eve"
+        if self.is_post_special:
+            return "post_special"
         return "regular"
+
+    @property
+    def day_kind_label(self) -> str:
+        """O rótulo legível do tipo de dia. Vazio quando não sabemos."""
+        if self.commercial_name:
+            return self.commercial_name
+        if self.eve_of and not self.is_holiday:
+            return f"{self.eve_of} (véspera)"
+        return {
+            "holiday": "Feriado",
+            "special_eve": "Véspera de data especial",
+            "post_special": "Volta de data especial",
+            "regular": "Dia comum",
+        }.get(self.day_kind, "")
+
+    @property
+    def occasion_name(self) -> str:
+        """A data especial de que este dia participa, se houver.
+
+        A véspera devolve o nome da data que ela antecede, porque é a mesma
+        ocasião vista do dia em que a padaria de fato vende.
+        """
+        return self.commercial_name or self.eve_of
+
+    @property
+    def occasion_is_eve(self) -> bool:
+        return not self.commercial_name and bool(self.eve_of)

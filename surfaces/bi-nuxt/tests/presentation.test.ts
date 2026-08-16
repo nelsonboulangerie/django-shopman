@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import type { ForecastBasisLike } from "~/presentation/bi";
 import {
   DATA_EPOCH,
   CONTEXT_EXAMPLES,
@@ -6,6 +7,8 @@ import {
   EXPLORE_EXAMPLES,
   availableExamples,
   WEEKDAY_LABELS,
+  basisHeadline,
+  basisNotes,
   bucketLabel,
   bucketSalesDays,
   coverageLabel,
@@ -17,8 +20,11 @@ import {
   formatMoneyCompact,
   formatQty,
   hourLabel,
+  missingLabel,
+  rangeLabel,
   resolveWindowRange,
   shortDate,
+  shortDateWithYear,
 } from "~/presentation/bi";
 
 describe("presentation/bi", () => {
@@ -175,5 +181,92 @@ describe("bucketSalesDays", () => {
     const out = bucketSalesDays(days);
     expect(out[0]!.source).toBe("yooga");
     expect(out[1]!.source).toBe("shopman");
+  });
+});
+
+describe("presentation/bi — projeção", () => {
+  const basis = (over: Partial<ForecastBasisLike> = {}): ForecastBasisLike => ({
+    sample_size: 14,
+    applied: ["weekday", "day_kind"],
+    relaxed: [],
+    unavailable: [],
+    window_from: "2024-08-01",
+    window_to: "2026-08-15",
+    excluded_closed: 0,
+    excluded_disrupted: 0,
+    without_sales: 0,
+    level_days: 28,
+    ...over,
+  });
+
+  // A concordância é o risco real aqui: em pt-BR os dias em "-feira" são
+  // femininos e flexionam as duas partes no plural. Errar o gênero num número
+  // que o padeiro usa para decidir a fornada tira a autoridade do número.
+  it("a manchete da base concorda com o dia da semana", () => {
+    expect(basisHeadline(basis(), "quarta-feira")).toBe(
+      "14 quartas-feiras parecidas, casadas por dia da semana e tipo de dia.",
+    );
+    expect(basisHeadline(basis({ sample_size: 9 }), "sábado")).toBe(
+      "9 sábados parecidos, casados por dia da semana e tipo de dia.",
+    );
+  });
+
+  it("amostra de um dia fica no singular, e sem critério não inventa oração", () => {
+    expect(basisHeadline(basis({ sample_size: 1, applied: ["weekday"] }), "sexta-feira")).toBe(
+      "1 sexta-feira parecida, casada por dia da semana.",
+    );
+    expect(basisHeadline(basis({ sample_size: 1 }), "domingo")).toBe(
+      "1 domingo parecido, casado por dia da semana e tipo de dia.",
+    );
+    expect(basisHeadline(basis({ applied: [] }), "terça-feira")).toBe(
+      "14 terças-feiras parecidas.",
+    );
+  });
+
+  it("três critérios saem com vírgula e 'e' no último", () => {
+    expect(basisHeadline(basis({ applied: ["weekday", "day_kind", "season"] }), "quinta-feira")).toBe(
+      "14 quintas-feiras parecidas, casadas por dia da semana, tipo de dia e estação.",
+    );
+  });
+
+  // Afrouxado ≠ indisponível: o primeiro é escolha do cálculo diante de amostra
+  // curta, o segundo é dado que a casa não tem. Fundir os dois faria a tela
+  // culpar o cálculo por uma ausência de dado, e ninguém saberia o que carregar.
+  it("cada ressalva da base é dita por inteiro, e o patamar sempre aparece", () => {
+    expect(basisNotes(basis())).toEqual([
+      "O patamar aplicado é o movimento típico de agora, medido em 28 dias.",
+    ]);
+    expect(
+      basisNotes(
+        basis({
+          relaxed: ["season"],
+          unavailable: ["temperature"],
+          without_sales: 1,
+          excluded_closed: 3,
+          excluded_disrupted: 2,
+        }),
+      ),
+    ).toEqual([
+      "Ignoramos estação: com esse recorte sobravam poucos dias.",
+      "Não sabemos temperatura do dia perguntado, então esse recorte não entrou no casamento.",
+      "1 dia parecido sem venda registrada ficou de fora: ausência não é zero.",
+      "3 dias em que a casa não abriu ficaram de fora.",
+      "2 dias atrapalhados por episódio ficaram de fora.",
+      "O patamar aplicado é o movimento típico de agora, medido em 28 dias.",
+    ]);
+  });
+
+  // Motivo desconhecido não pode virar tela em branco: sem base, a página
+  // precisa dizer que não sabe, e não deixar o gestor achar que o número sumiu.
+  it("motivo de ausência vira frase, inclusive o motivo que não conhecemos", () => {
+    expect(missingLabel("amostra_insuficiente")).toBe(
+      "Não temos dias parecidos o bastante para dizer.",
+    );
+    expect(missingLabel("motivo_que_nao_existe")).toBe("Não temos base para projetar este dia.");
+  });
+
+  it("a faixa e a data com ano saem no formato da casa", () => {
+    expect(rangeLabel(124000, 168000).replace(/ /g, " ")).toBe("R$ 1,2 mil a R$ 1,7 mil");
+    expect(shortDateWithYear("2025-05-11")).toBe("11/05/2025");
   });
 });

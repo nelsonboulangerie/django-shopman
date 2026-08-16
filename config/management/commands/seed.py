@@ -63,6 +63,7 @@ from shopman.backstage.models import (
     CashMovement,
     CashShift,
     DayClosing,
+    DayContext,
     KDSInstance,
     OperationArea,
     OperationChecklistRun,
@@ -5848,8 +5849,19 @@ class Command(BaseCommand):
         "MADELEINE": (68, 12, (5, 6)),      # só falta no fim de semana
     }
 
+    # Dois anos: é o alcance do histórico real da casa, e sem ele nenhuma
+    # pergunta de "o que esperar" tem o que comparar — um mês de dados não tem
+    # duas quartas de dezembro nem um único dia das mães.
+    BI_LONG_DAYS = 730
+
     def _seed_bi_history(self, products, positions, days: int = 42) -> None:
-        """Prateleira, faltas, forno e contexto do dia — o que o B.I. lê."""
+        """Prateleira, faltas, forno e contexto do dia — o que o B.I. lê.
+
+        Duas escalas, e é assim na vida real: o **abastecimento** (prateleira,
+        faltas, forno) só existe no presente curto, porque depende do ledger da
+        casa; a **venda** vem de dois anos de histórico, que é o que sustenta
+        sazonalidade e previsibilidade.
+        """
         vitrine = positions.get("vitrine")
         if vitrine is None:
             return
@@ -5858,8 +5870,15 @@ class Command(BaseCommand):
         self._seed_shelf_movements(products, vitrine, days=days)
         self._seed_shelf_outages(products, days=days)
         self._seed_oven_runs(days=days)
-        self._seed_day_weather(days=days)
-        self.stdout.write(f"  ✅ B.I.: {days} dias de prateleira, faltas, forno e contexto")
+        self._seed_day_weather(days=self.BI_LONG_DAYS)
+        self._seed_day_calendar(days=self.BI_LONG_DAYS)
+        sales = self._seed_long_sales_history(products, days=self.BI_LONG_DAYS)
+        native = self._seed_recent_native_volume(products, days=days)
+        self.stdout.write(
+            f"  ✅ B.I.: {days} dias de prateleira/faltas/forno, "
+            f"{self.BI_LONG_DAYS} dias de contexto, {sales} vendas históricas "
+            f"e {native} pedidos nativos de volume"
+        )
 
     def _seed_episode_kinds(self) -> None:
         """As opções que o operador escolhe no fechamento.
@@ -6037,3 +6056,341 @@ class Command(BaseCommand):
     def _at(self, day, hour: int):
         """Instante local do dia — o B.I. lê tudo em hora da loja."""
         return timezone.make_aware(datetime.combine(day, time(hour=hour)))
+
+    # ── Calendário e histórico longo: a base de "o que esperar" ──────────────
+
+    # Fixos nacionais + o aniversário de Londrina. Móveis saem da Páscoa.
+    BI_FIXED_HOLIDAYS = {
+        (1, 1): ("Confraternização Universal", "national"),
+        (4, 21): ("Tiradentes", "national"),
+        (5, 1): ("Dia do Trabalho", "national"),
+        (9, 7): ("Independência", "national"),
+        (10, 10): ("Aniversário de Londrina", "city"),
+        (10, 12): ("Nossa Senhora Aparecida", "national"),
+        (11, 2): ("Finados", "national"),
+        (11, 15): ("Proclamação da República", "national"),
+        (11, 20): ("Consciência Negra", "national"),
+        (12, 25): ("Natal", "national"),
+    }
+
+    def _seed_day_calendar(self, *, days: int) -> None:
+        """Feriados do período, com véspera e volta derivadas.
+
+        Sem isso o recorte "tipo de dia" não existe num banco semeado: a regra
+        da casa é que a dimensão só aparece quando há calendário carregado, e um
+        banco de teste sem feriado nenhum esconderia a funcionalidade em vez de
+        demonstrá-la.
+        """
+        from shopman.backstage.models import DayContext
+
+        today = timezone.localdate()
+        first = today - timedelta(days=days)
+        holidays: dict[date, tuple[str, str]] = {}
+        commercial: dict[date, str] = {}
+        for year in range(first.year, today.year + 2):
+            for (month, day_of), value in self.BI_FIXED_HOLIDAYS.items():
+                holidays[date(year, month, day_of)] = value
+            easter = self._easter(year)
+            holidays[easter - timedelta(days=47)] = ("Carnaval", "national")
+            holidays[easter - timedelta(days=2)] = ("Sexta-feira Santa", "national")
+            holidays[easter + timedelta(days=60)] = ("Corpus Christi", "national")
+            commercial.update(self._commercial_dates(year))
+
+        # Véspera e volta saem da UNIÃO: o sábado antes do dia das mães enche
+        # tanto quanto a véspera de um feriado. A véspera guarda DE QUAL data
+        # ela é véspera — numa padaria fechada no domingo, é no sábado que o
+        # dia das mães acontece.
+        special = {
+            **{day: name for day, (name, _scope) in holidays.items()},
+            **commercial,  # data comercial nomeia o dia quando é os dois
+        }
+
+        # O calendário cobre até um ano à frente: perguntar "o que esperar no
+        # dia das mães que vem" exige saber que ele vem.
+        for offset in range(-365, days + 1):
+            day = today - timedelta(days=offset)
+            name, scope = holidays.get(day, ("", ""))
+            context, _ = DayContext.objects.get_or_create(date=day)
+            context.holiday_name = name
+            context.holiday_scope = scope
+            context.commercial_name = commercial.get(day, "")
+            context.eve_of = special.get(day + timedelta(days=1), "")
+            context.is_special_eve = bool(context.eve_of)
+            context.is_post_special = (day - timedelta(days=1)) in special
+            context.has_calendar = True
+            context.sources = {**(context.sources or {}), "holiday": "seed"}
+            context.save()
+
+    def _commercial_dates(self, year: int) -> dict:
+        """As datas que movem a Nelson sem serem feriado (lista do dono).
+
+        O Natal e a Páscoa são feriado E data comercial: os dois campos convivem
+        porque respondem perguntas diferentes (a loja abre? / o movimento sobe?).
+        """
+        easter = self._easter(year)
+        return {
+            self._nth_sunday(year, 5, 2): "Dia das Mães",
+            self._nth_sunday(year, 8, 2): "Dia dos Pais",
+            easter: "Páscoa",
+            date(year, 6, 12): "Dia dos Namorados",
+            date(year, 12, 25): "Natal",
+        }
+
+    @staticmethod
+    def _nth_sunday(year: int, month: int, nth: int) -> date:
+        first = date(year, month, 1)
+        first_sunday = first + timedelta(days=(6 - first.weekday()) % 7)
+        return first_sunday + timedelta(days=7 * (nth - 1))
+
+    @staticmethod
+    def _easter(year: int) -> date:
+        """Domingo de Páscoa (algoritmo gregoriano anônimo)."""
+        a, b, c = year % 19, year // 100, year % 100
+        d, e = b // 4, b % 4
+        g = (b - (b + 8) // 25 + 1) // 3
+        h = (19 * a + b - d - g + 15) % 30
+        i, k = c // 4, c % 4
+        el = (32 + 2 * e + 2 * i - h - k) % 7
+        m = (a + 11 * h + 22 * el) // 451
+        month = (h + el - 7 * m + 114) // 31
+        return date(year, month, (h + el - 7 * m + 114) % 31 + 1)
+
+    # ── Calibração: os pesos abaixo vêm da OPERAÇÃO REAL, não de chute ──────
+    #
+    # Primeira versão destes números era palpite meu, e errava o volume em ~8×
+    # (16 vendas/dia contra ~111 reais). Um seed que erra de ordem de grandeza
+    # não demonstra a tela: ensina o dono a desconfiar dela.
+    #
+    # Fonte: painel do próprio Yooga da Nelson (81.255 pedidos, jul/2024 a
+    # 20/jul/2026). Só a FORMA vem de lá; nenhuma venda real é copiada.
+
+    # Pedidos/dia por dia da semana ÷ média dos dias abertos. O domingo real tem
+    # 224 pedidos em dois anos (a casa não abre), e fica aqui só por completude.
+    BI_WEEKDAY_WEIGHT = (0.87, 0.90, 0.90, 0.92, 1.11, 1.30, 0.02)
+
+    # Pedidos/mês ÷ média. Duas surpresas contra a intuição: **julho é o pico**
+    # (não dezembro), e **janeiro despenca** para um terço — é quando a casa
+    # para. Dezembro é um mês comum.
+    BI_MONTH_WEIGHT = (0.31, 0.86, 1.03, 0.96, 1.11, 1.03, 1.48, 1.24, 1.02, 1.08, 0.94, 0.94)
+
+    # Pedidos por dia de expediente, na média (81.255 ÷ ~626 dias abertos).
+    BI_DAILY_ORDERS = 128
+
+    def _seed_long_sales_history(self, products, *, days: int) -> int:
+        """Dois anos de venda com estrutura reconhecível.
+
+        Vai para ``HistoricalSale`` e não para ``Order`` de propósito, e o
+        motivo é o mesmo da vida real: o passado longo da casa não tem ledger,
+        estoque nem fornada — é só venda. Gravar dois anos de pedidos nativos
+        inventaria um passado operacional que nunca existiu, além de custar
+        caro.
+
+        A origem fica carimbada como ``seed``: dado de demonstração não pode se
+        passar por um export real que ninguém carregou.
+        """
+        from shopman.backstage.models import DayContext, HistoricalSale, HistoricalSaleItem
+
+        catalogo = [p for sku, p in products.items() if sku in self.BI_SHELF_PROFILES]
+        if not catalogo:
+            catalogo = list(products.values())[:8]
+        if not catalogo:
+            return 0
+
+        HistoricalSale.objects.filter(source="seed").delete()
+
+        today = timezone.localdate()
+        rng = random.Random(20260819)
+        contexts = {
+            row.date: row
+            for row in DayContext.objects.filter(date__gte=today - timedelta(days=days))
+        }
+
+        sales, items_by_key = [], {}
+        external_id = 1
+        for offset in range(days, 0, -1):
+            day = today - timedelta(days=offset)
+            if not self._shop_operates_on(day):
+                continue
+            context = contexts.get(day)
+            if context is not None and context.holiday_name:
+                continue  # feriado de portas fechadas não vende
+            count = self._bi_sales_count(day, context, offset=offset, days=days, rng=rng)
+            price_factor = self._bi_price_factor(offset=offset, days=days)
+            for _ in range(count):
+                lines = [
+                    (product, rng.randint(1, 3), int(product.base_price_q * price_factor))
+                    for product in rng.sample(catalogo, k=min(len(catalogo), rng.randint(1, 3)))
+                ]
+                total_q = sum(unit * qty for _p, qty, unit in lines)
+                sales.append(
+                    HistoricalSale(
+                        source="seed",
+                        external_id=external_id,
+                        occurred_at=self._at(day, rng.choice((8, 9, 10, 10, 11, 12, 15, 16, 17))),
+                        total_q=total_q,
+                        is_delivery=rng.random() < 0.12,
+                    )
+                )
+                items_by_key[external_id] = lines
+                external_id += 1
+
+        HistoricalSale.objects.bulk_create(sales, batch_size=1000)
+        ids = dict(
+            HistoricalSale.objects.filter(source="seed").values_list("external_id", "id")
+        )
+        HistoricalSaleItem.objects.bulk_create(
+            [
+                HistoricalSaleItem(
+                    sale_id=ids[key], seq=seq, product_name=product.name,
+                    sku=product.sku, category=self._bi_category(product),
+                    qty=Decimal(qty), unit_price_q=unit, line_total_q=unit * qty,
+                )
+                for key, lines in items_by_key.items()
+                for seq, (product, qty, unit) in enumerate(lines, start=1)
+            ],
+            batch_size=1000,
+        )
+        return len(sales)
+
+    def _bi_sales_count(self, day, context, *, offset: int, days: int, rng) -> int:
+        """Quantas vendas naquele dia, com as estruturas que o B.I. deve achar.
+
+        Cada fator existe para uma pergunta virar visível na tela: dia da
+        semana, sazonalidade do ano, véspera e volta de feriado, data
+        comercial, clima e crescimento da casa.
+        """
+        base = float(self.BI_DAILY_ORDERS)
+        weight = self.BI_WEEKDAY_WEIGHT[day.weekday()] * self.BI_MONTH_WEIGHT[day.month - 1]
+        if context is not None:
+            if context.is_special_eve:
+                # A véspera de uma data comercial carrega quase todo o peso
+                # dela: a casa fecha no domingo do dia das mães, então é no
+                # sábado que a compra acontece. Véspera de feriado comum tem o
+                # empurrão modesto de sempre.
+                commercial = self.BI_COMMERCIAL_WEIGHT.get(context.eve_of)
+                weight *= 1 + (commercial - 1) * 0.9 if commercial else 1.35
+            if context.is_post_special:
+                weight *= 0.85
+            if context.temp_max_c is not None and context.temp_max_c > 30:
+                weight *= 0.9
+            if context.rain_mm is not None and context.rain_mm > 6:
+                weight *= 0.78
+            # A data comercial vem do contexto já carregado, não de uma segunda
+            # conta de calendário: duas contas divergiriam no primeiro ano em
+            # que alguém editasse uma delas.
+            weight *= self.BI_COMMERCIAL_WEIGHT.get(context.commercial_name, 1.0)
+        return max(1, int(base * weight * rng.uniform(0.85, 1.15)))
+
+    # A rampa do ticket, relativa ao preço do catálogo de hoje: o histórico real
+    # começa em R$ 42,65 (jul/2024) e termina em R$ 66,30 (jul/2026).
+    BI_TICKET_RAMP = (0.75, 1.19)
+
+    def _bi_price_factor(self, *, offset: int, days: int) -> float:
+        """O crescimento da casa mora no TICKET, não no volume.
+
+        Nos dois anos reais o número de pedidos por mês ficou **estável** (até
+        caiu um pouco) e o ticket médio subiu 55%. Inventar crescimento de
+        volume, como a primeira versão fazia, contradiria o próprio dado — e o
+        método de "nível do presente" ganha demonstração igual pelo preço.
+        """
+        start, end = self.BI_TICKET_RAMP
+        return start + (end - start) * (days - offset) / max(days, 1)
+
+    # Quanto cada data move o movimento, para a estrutura existir no dado.
+    BI_COMMERCIAL_WEIGHT = {
+        "Dia das Mães": 1.9,
+        "Natal": 2.2,
+        "Páscoa": 1.6,
+        "Dia dos Pais": 1.4,
+        "Dia dos Namorados": 1.2,
+    }
+
+    def _seed_recent_native_volume(self, products, *, days: int) -> int:
+        """Volume de verdade nos dias recentes, do lado do Shopman.
+
+        Sem isto o seed descreve uma casa que **não existe**: dois anos de
+        histórico com ~128 vendas/dia e um presente com quatro pedidos de QA por
+        dia. Como o dia nativo vence o histórico no mesmo dia (regra certa,
+        evita contar a venda duas vezes), o presente medido virava 12% do
+        passado — e a projeção inteira saía oito vezes baixa, com toda a
+        aparência de estar certa.
+
+        Os pedidos de QA continuam onde estão; estes só somam o movimento que
+        uma casa em operação teria. Vão em lote, sem passar pelo lifecycle:
+        aqui interessa a série de vendas, não o ciclo do pedido.
+        """
+        from shopman.orderman.models import OrderItem
+
+        catalogo = [p for sku, p in products.items() if sku in self.BI_SHELF_PROFILES]
+        if not catalogo:
+            return 0
+
+        Order.objects.filter(ref__startswith="BIV-").delete()
+        today = timezone.localdate()
+        rng = random.Random(20260821)
+        contexts = {
+            row.date: row
+            for row in DayContext.objects.filter(date__gte=today - timedelta(days=days))
+        }
+
+        created = 0
+        for offset in range(1, days + 1):
+            day = today - timedelta(days=offset)
+            if not self._shop_operates_on(day):
+                continue
+            context = contexts.get(day)
+            if context is not None and context.holiday_name:
+                continue
+            count = self._bi_sales_count(
+                day, context, offset=offset, days=self.BI_LONG_DAYS, rng=rng
+            )
+            price_factor = self._bi_price_factor(offset=offset, days=self.BI_LONG_DAYS)
+            orders, lines_by_ref = [], {}
+            for index in range(count):
+                # Convenção de ref da casa: PREFIXO-aammdd-sufixo (há teste cobrando).
+                ref = f"BIV-{day:%y%m%d}-{index}"
+                lines = [
+                    (product, rng.randint(1, 3), int(product.base_price_q * price_factor))
+                    for product in rng.sample(
+                        catalogo, k=min(len(catalogo), rng.randint(1, 3))
+                    )
+                ]
+                orders.append(
+                    Order(
+                        ref=ref, channel_ref="pdv", session_key=f"seed-{ref}",
+                        status=Order.Status.COMPLETED,
+                        total_q=sum(unit * qty for _p, qty, unit in lines),
+                        snapshot={"seed": "nelson", "source": "bi_native_volume"},
+                    )
+                )
+                lines_by_ref[ref] = lines
+            Order.objects.bulk_create(orders, batch_size=500)
+            ids = dict(
+                Order.objects.filter(ref__startswith=f"BIV-{day:%y%m%d}-")
+                .values_list("ref", "id")
+            )
+            OrderItem.objects.bulk_create(
+                [
+                    OrderItem(
+                        order_id=ids[ref], line_id=f"{ref}-{seq}", sku=product.sku,
+                        name=product.name, qty=Decimal(qty), unit_price_q=unit,
+                        line_total_q=unit * qty,
+                    )
+                    for ref, lines in lines_by_ref.items()
+                    for seq, (product, qty, unit) in enumerate(lines, start=1)
+                ],
+                batch_size=500,
+            )
+            # created_at é auto_now_add: só depois do insert dá para datar.
+            Order.objects.filter(ref__startswith=f"BIV-{day:%y%m%d}-").update(
+                created_at=self._at(day, 11)
+            )
+            created += len(orders)
+        return created
+
+    def _bi_category(self, product) -> str:
+        """Categoria da linha histórica — o recorte barato de 2 anos."""
+        return {
+            "CROISSANT": "Viennoiserie", "PAIN-CHOCOLAT": "Viennoiserie",
+            "BAGUETE": "Pães", "CAMPAGNE": "Pães", "MADELEINE": "Confeitaria",
+        }.get(product.sku, "Pães")

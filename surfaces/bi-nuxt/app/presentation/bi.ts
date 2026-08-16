@@ -126,7 +126,7 @@ export const EXPLORE_DIMENSION_LABELS: Record<string, string> = {
   // Contexto: só chegam na gramática quando alguém injetou o dado
   // (import_holidays / import_weather). Sem dado, o servidor nem oferece.
   outage_reason: "Motivo (esgotado/pausado)",
-  day_kind: "Tipo de dia (feriado)",
+  day_kind: "Tipo de dia (feriado, data comercial)",
   temperature: "Temperatura do dia",
   rain: "Chuva",
 };
@@ -135,8 +135,9 @@ export const EXPLORE_DIMENSION_LABELS: Record<string, string> = {
 export const CONTEXT_EXAMPLES = [
   { name: "Faturamento por temperatura", config: { metric: "revenue", by: "temperature", by2: "" } },
   { name: "O que vende no calor", config: { metric: "qty_sold", by: "temperature", by2: "sku" } },
-  { name: "Feriado, véspera e volta", config: { metric: "revenue", by: "day_kind", by2: "" } },
-  { name: "Falta em véspera de feriado", config: { metric: "unavailable_hours", by: "day_kind", by2: "sku" } },
+  { name: "Feriado, data comercial e véspera", config: { metric: "revenue", by: "day_kind", by2: "" } },
+  { name: "O que vende no dia das mães", config: { metric: "qty_sold", by: "day_kind", by2: "sku" } },
+  { name: "Falta em véspera de data especial", config: { metric: "unavailable_hours", by: "day_kind", by2: "sku" } },
   { name: "Movimento com e sem chuva", config: { metric: "orders", by: "rain", by2: "" } },
 ] as const;
 
@@ -356,4 +357,132 @@ export function bucketSalesDays(days: readonly SalesDayLike[], maxDaily = 120): 
       source: withSales.length && withSales.every((d) => d.source === "yooga") ? "yooga" : "shopman",
     };
   });
+}
+
+// ── "O que esperar": a prestação de contas vira frase ────────────────────────
+//
+// O número da projeção só pode aparecer acompanhado de como se chegou nele.
+// Estas funções traduzem o `basis` cru — que é vocabulário de código — na frase
+// que o gestor lê para decidir se confia.
+
+const CRITERION_LABELS: Record<string, string> = {
+  weekday: "dia da semana",
+  day_kind: "tipo de dia",
+  season: "estação",
+  temperature: "temperatura",
+};
+
+const MISSING_LABELS: Record<string, string> = {
+  amostra_insuficiente: "Não temos dias parecidos o bastante para dizer.",
+  sem_movimento_recente: "Falta movimento recente para servir de referência.",
+  patamar_nao_representativo:
+    "Os últimos dias registram uma fração do que a casa costuma vender. Enquanto a operação não estiver toda no sistema, o patamar de hoje não serve de base.",
+};
+
+export interface ForecastBasisLike {
+  sample_size: number;
+  applied: string[];
+  relaxed: string[];
+  unavailable: string[];
+  window_from: string;
+  window_to: string;
+  excluded_closed: number;
+  excluded_disrupted: number;
+  without_sales: number;
+  level_days: number;
+}
+
+function list(keys: string[]): string {
+  const names = keys.map((key) => CRITERION_LABELS[key] ?? key);
+  if (names.length <= 1) return names.join("");
+  return `${names.slice(0, -1).join(", ")} e ${names[names.length - 1]}`;
+}
+
+const plural = (count: number) => (count === 1 ? "" : "s");
+const days = (count: number) => `${formatInt(count)} dia${plural(count)}`;
+const stayedOut = (count: number) => (count === 1 ? "ficou de fora" : "ficaram de fora");
+
+/**
+ * "14 quartas-feiras parecidas, casadas por dia da semana e tipo de dia."
+ *
+ * O gênero acompanha o dia: em pt-BR os dias em "-feira" são femininos e
+ * sábado e domingo são masculinos, e o plural de "quarta-feira" flexiona as
+ * duas partes. Uma concordância errada num número que o gestor vai usar para
+ * decidir tira a autoridade do número.
+ */
+export function basisHeadline(basis: ForecastBasisLike, weekdayLabel: string): string {
+  const many = basis.sample_size !== 1;
+  const feminine = weekdayLabel.endsWith("-feira");
+  const gender = feminine ? "a" : "o";
+  const s = many ? "s" : "";
+  const day = !many
+    ? weekdayLabel
+    : feminine
+      ? weekdayLabel.replace("-feira", "s-feiras")
+      : `${weekdayLabel}s`;
+  const criteria = basis.applied.length
+    ? `, casad${gender}${s} por ${list(basis.applied)}`
+    : "";
+  return `${formatInt(basis.sample_size)} ${day} parecid${gender}${s}${criteria}.`;
+}
+
+/**
+ * As ressalvas, cada uma dita por inteiro. Afrouxado e indisponível são coisas
+ * diferentes: o primeiro é escolha do cálculo diante de amostra curta, o
+ * segundo é dado que a casa não tem.
+ */
+export function basisNotes(basis: ForecastBasisLike): string[] {
+  const notes: string[] = [];
+  if (basis.relaxed.length) {
+    notes.push(`Ignoramos ${list(basis.relaxed)}: com esse recorte sobravam poucos dias.`);
+  }
+  if (basis.unavailable.length) {
+    notes.push(
+      `Não sabemos ${list(basis.unavailable)} do dia perguntado, então esse recorte não entrou no casamento.`,
+    );
+  }
+  if (basis.without_sales) {
+    notes.push(
+      `${days(basis.without_sales)} parecido${plural(basis.without_sales)} sem venda registrada ${stayedOut(basis.without_sales)}: ausência não é zero.`,
+    );
+  }
+  if (basis.excluded_closed) {
+    notes.push(
+      `${days(basis.excluded_closed)} em que a casa não abriu ${stayedOut(basis.excluded_closed)}.`,
+    );
+  }
+  if (basis.excluded_disrupted) {
+    notes.push(
+      `${days(basis.excluded_disrupted)} atrapalhado${plural(basis.excluded_disrupted)} por episódio ${stayedOut(basis.excluded_disrupted)}.`,
+    );
+  }
+  notes.push(
+    `O patamar aplicado é o movimento típico de agora, medido em ${formatInt(basis.level_days)} dias.`,
+  );
+  return notes;
+}
+
+export function missingLabel(reason: string): string {
+  return MISSING_LABELS[reason] ?? "Não temos base para projetar este dia.";
+}
+
+/** "R$ 1.240 a R$ 1.680" — a faixa onde caiu metade dos dias parecidos. */
+export function rangeLabel(low: number, high: number): string {
+  return `${formatMoneyCompact(low)} a ${formatMoneyCompact(high)}`;
+}
+
+export const HORIZON_LABELS = [
+  { key: "day", label: "O dia" },
+  { key: "week", label: "A semana" },
+  { key: "month", label: "O mês" },
+] as const;
+
+/**
+ * ISO "2025-06-12" → "12/06/2025". O ano é obrigatório quando as linhas são
+ * ocorrências de anos diferentes: sem ele, dois dias das mães aparecem com o
+ * mesmo rótulo e a lista deixa de fazer sentido.
+ */
+export function shortDateWithYear(iso: string): string {
+  const [year, month, day] = iso.split("-");
+  return `${day}/${month}/${year}`;
 }

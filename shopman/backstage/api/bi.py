@@ -6,8 +6,9 @@ escreve; os ledgers seguem donos do fato.
 
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, timedelta
 
+from django.utils import timezone
 from drf_spectacular.utils import OpenApiResponse, extend_schema, extend_schema_view
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -19,6 +20,7 @@ from shopman.backstage.projections.bi_explore import (
     build_bi_explore,
     validate_config,
 )
+from shopman.backstage.projections.bi_forecast import ForecastError, build_bi_forecast
 from shopman.backstage.projections.bi_production import build_bi_production
 from shopman.backstage.projections.bi_sales import build_bi_sales
 
@@ -125,6 +127,32 @@ class BIExploreView(_BIBase):
                 date_to=_query_date(request, "date_to"),
             )
         except ExploreError as exc:
+            return Response({"detail": str(exc)}, status=400)
+        return Response({"bi": projection_data(report)})
+
+
+@extend_schema_view(
+    get=extend_schema(
+        tags=["backstage"],
+        summary="B.I. forecast: what to expect for a day, week or month",
+        responses={200: OpenApiResponse(description="B.I. forecast report.")},
+    ),
+)
+class BIForecastView(_BIBase):
+    """O que esperar — projeção a partir dos dias parecidos.
+
+    Sem ``target`` a pergunta é sobre amanhã, que é o horizonte que a casa usa
+    todo dia para decidir a fornada.
+    """
+
+    def get(self, request):
+        target = _query_date(request, "target") or timezone.localdate() + timedelta(days=1)
+        try:
+            report = build_bi_forecast(
+                target=target,
+                horizon=str(request.GET.get("horizon") or "day").strip(),
+            )
+        except ForecastError as exc:
             return Response({"detail": str(exc)}, status=400)
         return Response({"bi": projection_data(report)})
 

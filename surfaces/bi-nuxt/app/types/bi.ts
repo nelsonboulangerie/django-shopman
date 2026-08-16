@@ -8,6 +8,7 @@ export type {
   BICustomerSegmentRow,
   BICustomersReport,
   BICustomersWeekRow,
+  BIForecastReport,
   BIOvenTimeRow,
   BIProductionDay,
   BIProductionReport,
@@ -15,4 +16,10 @@ export type {
   BISalesDay,
   BISalesReport,
   BITopSkuRow,
+  DayForecast,
+  Expectation,
+  ForecastBasis,
+  ForecastBranch,
+  ForecastOccasion,
+  OccasionYear,
 } from "~/generated/biContract";
