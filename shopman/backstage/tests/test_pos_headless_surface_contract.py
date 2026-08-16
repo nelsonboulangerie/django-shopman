@@ -763,6 +763,43 @@ class POSHeadlessSurfaceContractTests(TestCase):
         self.assertEqual(response.json()["error"]["code"], "manager_approval_invalid")
         self.assertNotEqual(Order.objects.get(ref=order_ref).status, Order.Status.CANCELLED)
 
+    def test_pos_projection_publishes_managers_who_may_authorize(self) -> None:
+        # A lista existe para o diálogo de PIN parar de pedir o nome DIGITADO: o
+        # `username` que o servidor exige em `{username, pin}` sai daqui já certo.
+        manager = self._create_manager()
+        manager.first_name = "Marina"
+        manager.save(update_fields=["first_name"])
+
+        payload = self.client.get("/api/v1/backstage/pos/").json()
+
+        managers = payload["pos"]["managers"]
+        self.assertEqual(managers, [{"username": "pos-manager", "name": "Marina"}])
+        # Operar o PDV não é autorizar exceção: o balconista não pode aparecer na
+        # lista de quem assina a própria sangria.
+        self.assertNotIn("pos-headless", [entry["username"] for entry in managers])
+
+    def test_pos_projection_manager_card_leaks_nothing_beyond_identity(self) -> None:
+        # A projection é lida por qualquer terminal com sessão de balcão. Um id ou
+        # e-mail a mais aqui é superfície de ataque publicada sem consumidor.
+        manager = self._create_manager()
+        manager.email = "marina@example.com"
+        manager.save(update_fields=["email"])
+
+        payload = self.client.get("/api/v1/backstage/pos/").json()
+
+        self.assertEqual(set(payload["pos"]["managers"][0]), {"username", "name"})
+
+    def test_pos_projection_omits_manager_without_pin_credential(self) -> None:
+        # Gerente sem PIN não consegue autorizar nada. Listá-lo seria oferecer uma
+        # porta que não abre, e o operador chamaria a pessoa errada no balcão.
+        User = get_user_model()
+        pinless = User.objects.create_user(username="pos-manager-sem-pin", password="x", is_staff=True)
+        _grant_adjust_cashshift_perm(pinless)
+
+        payload = self.client.get("/api/v1/backstage/pos/").json()
+
+        self.assertEqual(payload["pos"]["managers"], [])
+
     def test_api_cancel_recent_sale_unknown_ref_is_404(self) -> None:
         # Não-encontrado mapeia por TIPO de exceção (PosRecentSaleNotFound),
         # não por substring da mensagem. O desafio gerencial vem antes do lookup,

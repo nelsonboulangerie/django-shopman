@@ -46,6 +46,7 @@ function props(overrides: Record<string, unknown> = {}) {
     discountReason: "",
     managerUsername: "",
     managerPin: "",
+    managers: [],
     fulfillmentType: "pickup",
     paymentCollection: "terminal",
     paymentTenders: [],

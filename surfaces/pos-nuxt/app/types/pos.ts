@@ -251,6 +251,16 @@ export interface POSOperatorProjection {
   name: string;
 }
 
+/** Quem pode ASSINAR uma exceção (sangria, desconto acima do teto).
+ *
+ * Só identidade: o `username` é o que o servidor exige no contrato
+ * `{username, pin}` da aprovação. A projection não publica id nem e-mail, e a
+ * tela não tem por que pedi-los. */
+export interface POSManagerProjection {
+  username: string;
+  name: string;
+}
+
 export interface POSProjection {
   products: POSProductProjection[];
   collections: POSCollectionProjection[];
@@ -274,6 +284,7 @@ export interface POSProjection {
   fiscal_label: string;
   fiscal_message: string;
   operators: POSOperatorProjection[];
+  managers: POSManagerProjection[];
   auto_lock_seconds: number;
   // Geometria do rolo declarada pelo terminal; 0 = não declarou e vale o default
   // do print CSS (80mm). Ver presentation/printGeometry.
