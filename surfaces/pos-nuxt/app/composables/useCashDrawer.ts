@@ -27,6 +27,24 @@ const AGENT_TIMEOUT_MS = 3000;
 /** O que aconteceu com o papel. `skipped` = este balcão não tem impressora. */
 export type PrintOutcome = { status: "printed" | "failed" | "skipped"; detail: string };
 
+/**
+ * O agente da estação é mais antigo que o recurso que acabou de ser pedido.
+ *
+ * Vale a classe própria porque a saída é diferente de toda outra falha: não é
+ * fila parada, não é cabo solto, não é token errado. É software velho, e o
+ * conserto é uma frase — reinstalar. Sem isto, a tela repetia "rota
+ * desconhecida" e mandava o operador procurar defeito na impressora.
+ */
+class AgentTooOldError extends Error {
+  constructor(readonly route: string) {
+    super(
+      "O agente desta estação está desatualizado e não conhece esta função. "
+      + "Baixe e reinstale pelo gestor, em Terminais do PDV.",
+    );
+    this.name = "AgentTooOldError";
+  }
+}
+
 export function useCashDrawer(pos: ComputedRef<POSProjection | null>) {
   const config = computed<POSCashDrawerProjection | null>(() => pos.value?.cash_drawer ?? null);
 
@@ -62,6 +80,11 @@ export function useCashDrawer(pos: ComputedRef<POSProjection | null>) {
     // operador precisa ler. Tratar isso como exceção apagava justamente a
     // informação que a sonda existe para trazer.
     if (!response.ok) {
+      // 404 do agente quer dizer uma coisa só: ele não conhece esta rota, ou
+      // seja, está rodando uma versão anterior à que criou o endpoint. O agente
+      // responde "rota desconhecida", que é exato e não ajuda ninguém — o
+      // operador do balcão não tem como saber que aquilo significa "reinstale".
+      if (response.status === 404) throw new AgentTooOldError(path);
       throw new Error(payload?.error || `Agente respondeu ${response.status}.`);
     }
     return payload;

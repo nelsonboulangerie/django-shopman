@@ -811,7 +811,15 @@ def _autostart_linux(target: Path) -> None:
     UNIT_PATH.parent.mkdir(parents=True, exist_ok=True)
     UNIT_PATH.write_text(_unit_text(target), encoding="utf-8")
     subprocess.run(["systemctl", "--user", "daemon-reload"], check=False)
-    subprocess.run(["systemctl", "--user", "enable", "--now", SERVICE_NAME], check=False)
+    subprocess.run(["systemctl", "--user", "enable", SERVICE_NAME], check=False)
+    # `restart`, não `enable --now`. O `--now` só SOBE o serviço parado: se já
+    # estiver rodando, ele não faz nada — e reinstalar por cima trocava o
+    # arquivo enquanto o processo velho seguia servindo o código velho. Foi
+    # assim que o balcão baixou o agente novo, reinstalou, e continuou
+    # respondendo "rota desconhecida" ao /print que só existe na versão nova.
+    # Windows e macOS já reiniciavam de fato (`schtasks /run`, `bootout` +
+    # `bootstrap`); só o Linux ficava com o processo antigo.
+    subprocess.run(["systemctl", "--user", "restart", SERVICE_NAME], check=False)
     # Sem linger o agente só existe enquanto alguém estiver logado na sessão
     # gráfica — e morre no logout, que é exatamente quando ninguém percebe.
     user = os.environ.get("USER", "")

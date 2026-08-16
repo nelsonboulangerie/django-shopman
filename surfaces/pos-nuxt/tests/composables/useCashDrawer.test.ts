@@ -156,3 +156,44 @@ describe("useCashDrawer — versão do agente no balcão", () => {
     });
   });
 });
+
+describe("agente velho — o defeito tem que se explicar sozinho", () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  it("traduz o 404 do agente em 'reinstale', não repete 'rota desconhecida'", async () => {
+    // O agente responde 404 com o próprio jargão quando não conhece a rota. Foi
+    // o que aconteceu no balcão: agente anterior ao /print, e a tela mandava o
+    // operador procurar defeito na impressora.
+    stubFetch(() => ({
+      ok: false,
+      status: 404,
+      json: () => Promise.resolve({ ok: false, error: "rota desconhecida" }),
+    }));
+    const drawer = makeDrawer();
+
+    const outcome = await drawer.print("Zm9v", "comprovante:sangria");
+
+    expect(outcome.status).toBe("failed");
+    expect(outcome.detail).toContain("desatualizado");
+    expect(outcome.detail).toContain("reinstale");
+    expect(outcome.detail).not.toContain("rota desconhecida");
+  });
+
+  it("erro que NÃO é 404 continua chegando com o motivo do agente", async () => {
+    // Fila pausada, cabo solto, token errado: aí a frase do agente é a
+    // informação útil, e trocá-la por "reinstale" mandaria o operador refazer
+    // uma instalação que está correta.
+    stubFetch(() => ({
+      ok: false,
+      status: 502,
+      json: () => Promise.resolve({ ok: false, error: "fila 'TM-T20' não aceita trabalho" }),
+    }));
+    const drawer = makeDrawer();
+
+    const outcome = await drawer.print("Zm9v", "comprovante:sangria");
+
+    expect(outcome.status).toBe("failed");
+    expect(outcome.detail).toContain("não aceita trabalho");
+    expect(outcome.detail).not.toContain("desatualizado");
+  });
+});
