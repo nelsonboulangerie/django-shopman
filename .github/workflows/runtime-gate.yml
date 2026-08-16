@@ -73,8 +73,16 @@ jobs:
       # banco migrado (o pytest cria o dele), e o gate precisa de banco migrado
       # E semeado — `omotenashi.seed` é bloqueante e exige os 11 cenários
       # canônicos. Ele vive no Omotenashi Gate, logo depois do seed.
+      # ⚠️ 15 minutos deixaram de caber. O `main` já rodava em ~13min — 87% do
+      # teto — e o primeiro PR grande depois disso estourou a 83% da suíte,
+      # falhando por RELÓGIO e não por teste. Gate que reprova por tempo ensina
+      # a duvidar do vermelho, que é o pior hábito que um gate pode criar.
+      #
+      # 25min dá folga real para a suíte crescer mais um tanto. O que isto NÃO
+      # resolve: a suíte roda em série (`make test` encadeia 13 alvos). Quando
+      # 25min também apertar, a resposta é paralelizar, não subir de novo.
       - name: Full test suite
-        timeout-minutes: 15
+        timeout-minutes: 25
         run: make test
 
   docker-image:
