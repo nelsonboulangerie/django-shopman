@@ -690,3 +690,37 @@ def test_falha_do_spooler_na_impressao_vira_502(agent, monkeypatch):
     with pytest.raises(urllib.error.HTTPError) as exc:
         _print_req(base, {"token": TOKEN, "payload_b64": base64.b64encode(b"x").decode()})
     assert exc.value.code == 502
+
+
+def test_reinstalar_no_linux_REINICIA_o_servico(monkeypatch):
+    """`enable --now` não reinicia serviço que já está de pé.
+
+    Este é o bug que fez o balcão baixar o agente novo, reinstalar, e continuar
+    respondendo "rota desconhecida": o arquivo era trocado, mas o processo velho
+    seguia servindo o código velho. macOS (bootout+bootstrap) e Windows
+    (schtasks /run) já reiniciavam de fato; só o Linux ficava para trás.
+    """
+    chamadas = []
+
+    def fake_run(cmd, *args, **kwargs):
+        chamadas.append(list(cmd))
+
+        class R:
+            returncode = 0
+            stderr = b""
+        return R()
+
+    monkeypatch.setattr(drawer_agent.shutil, "which", lambda name: f"/usr/bin/{name}")
+    monkeypatch.setattr(drawer_agent.subprocess, "run", fake_run)
+    monkeypatch.setattr(drawer_agent, "UNIT_PATH", drawer_agent.Path("/tmp/nao-usado.service"))
+    monkeypatch.setattr(drawer_agent.Path, "write_text", lambda self, *a, **k: None)
+    monkeypatch.setattr(drawer_agent.Path, "mkdir", lambda self, *a, **k: None)
+
+    drawer_agent._autostart_linux(drawer_agent.Path("/tmp/drawer_agent.py"))
+
+    systemctl = [c for c in chamadas if c and c[0] == "systemctl"]
+    verbos = [c[2] for c in systemctl if len(c) > 2]
+    assert "restart" in verbos, f"faltou reiniciar; chamou apenas {verbos}"
+    # `enable` sem `--now` continua sendo necessário (sobreviver ao reboot), mas
+    # ele não pode ser o único jeito de o processo novo entrar no ar.
+    assert "enable" in verbos
