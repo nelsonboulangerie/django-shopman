@@ -62,9 +62,81 @@ class TestHolidayImport:
 
         assert natal.day_kind == "holiday"
         assert natal.holiday_scope == "national"
-        assert vespera.day_kind == "holiday_eve"
-        assert volta.day_kind == "post_holiday"
+        assert vespera.day_kind == "eve:natal"
+        assert vespera.eve_of == "Natal"
+        assert volta.day_kind == "post_special"
         assert DayContext.objects.get(date=date(2026, 3, 10)).day_kind == "regular"
+
+    def test_data_comercial_tem_identidade_propria(self, tmp_path):
+        """Dia das mães compara com dias das mães, não com "data comercial"."""
+        calendar = json.dumps([
+            {"date": "2026-05-10", "name": "Dia das Mães", "kind": "comercial"},
+            {"date": "2026-06-12", "name": "Dia dos Namorados", "kind": "comercial"},
+        ])
+        call_command("import_holidays", file=_write(tmp_path, "c.json", calendar))
+
+        maes = DayContext.objects.get(date=date(2026, 5, 10))
+        namorados = DayContext.objects.get(date=date(2026, 6, 12))
+
+        assert maes.day_kind == "commercial:dia das mães"
+        assert maes.day_kind != namorados.day_kind
+        assert maes.day_kind_label == "Dia das Mães"
+        # Data comercial não fecha a loja: não é feriado.
+        assert not maes.is_holiday
+
+    def test_vespera_sabe_de_que_data_ela_e_vespera(self, tmp_path):
+        """Numa casa fechada no domingo, o dia das mães acontece no sábado.
+
+        Por isso a véspera não pode ser um balde genérico: o sábado do dia das
+        mães e o sábado antes de um feriado qualquer vendem coisas diferentes.
+        """
+        calendar = json.dumps([
+            {"date": "2026-05-10", "name": "Dia das Mães", "kind": "comercial"},
+            {"date": "2026-04-21", "name": "Tiradentes", "scope": "national"},
+        ])
+        call_command("import_holidays", file=_write(tmp_path, "c.json", calendar))
+
+        sabado = DayContext.objects.get(date=date(2026, 5, 9))
+        vespera_feriado = DayContext.objects.get(date=date(2026, 4, 20))
+
+        assert sabado.eve_of == "Dia das Mães"
+        assert sabado.day_kind == "eve:dia das mães"
+        assert sabado.day_kind_label == "Dia das Mães (véspera)"
+        assert sabado.occasion_name == "Dia das Mães"
+        assert sabado.occasion_is_eve
+        # E não se confunde com a véspera de outra data.
+        assert vespera_feriado.day_kind != sabado.day_kind
+
+    def test_um_dia_pode_ser_feriado_e_data_comercial(self, tmp_path):
+        """O Natal é os dois, e perder um dos lados perderia uma pergunta."""
+        calendar = json.dumps([
+            {"date": "2026-12-25", "name": "Natal", "scope": "national"},
+            {"date": "2026-12-25", "name": "Natal", "kind": "comercial"},
+        ])
+        call_command("import_holidays", file=_write(tmp_path, "c.json", calendar))
+
+        natal = DayContext.objects.get(date=date(2026, 12, 25))
+
+        assert natal.is_holiday
+        assert natal.holiday_scope == "national"
+        assert natal.commercial_name == "Natal"
+        assert natal.day_kind == "commercial:natal"
+
+    def test_tipo_desconhecido_diz_o_que_existe(self, tmp_path):
+        calendar = json.dumps([{"date": "2026-05-10", "name": "X", "kind": "promoção"}])
+
+        with pytest.raises(CommandError, match="feriado.*comercial"):
+            call_command("import_holidays", file=_write(tmp_path, "c.json", calendar))
+
+    def test_data_comercial_nao_tem_abrangencia(self, tmp_path):
+        """Abrangência é do feriado, que define quem fecha."""
+        calendar = json.dumps([
+            {"date": "2026-05-10", "name": "Dia das Mães", "kind": "comercial",
+             "scope": "national"},
+        ])
+
+        with pytest.raises(CommandError, match="abrangência"):
+            call_command("import_holidays", file=_write(tmp_path, "c.json", calendar))
 
     def test_csv_is_accepted_too(self, tmp_path):
         csv_text = "date,name,scope\n2026-01-01,Confraternização,national\n"
@@ -235,5 +307,7 @@ class TestReadingByContext:
         )
         by_label = {row.label: row.value for row in report.rows}
 
-        assert by_label["Véspera de feriado"] == 5000.0
+        # A véspera diz de QUE data ela é véspera: é nela que a padaria vende,
+        # e "véspera do Natal" não é "véspera de um feriado qualquer".
+        assert by_label["Feriado de teste (véspera)"] == 5000.0
         assert by_label["Feriado"] == 500.0

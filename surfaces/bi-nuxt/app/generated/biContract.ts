@@ -198,3 +198,77 @@ export interface BIExploreReport {
   truncated: number;
   metrics: BIExploreMetricOption[];
 }
+
+/** O provável, e a faixa onde caiu metade dos dias parecidos. */
+export interface Expectation {
+  expected: number;
+  low: number;
+  high: number;
+}
+
+/** Um ramo condicional: 'se fizer calor', 'se chover'. */
+export interface ForecastBranch {
+  key: string;
+  label: string;
+  sample_size: number;
+  revenue_q: Expectation;
+  orders: Expectation;
+}
+
+/** A prestação de contas. Sem ela o número vira promessa. */
+export interface ForecastBasis {
+  sample_size: number;
+  applied: string[];
+  relaxed: string[];
+  unavailable: string[];
+  window_from: string;
+  window_to: string;
+  excluded_closed: number;
+  excluded_disrupted: number;
+  without_sales: number;
+  without_level: number;
+  level_revenue_q: number;
+  level_days: number;
+}
+
+/** Uma ocorrência passada da mesma data comercial. */
+export interface OccasionYear {
+  date: string;
+  revenue_q: number;
+  ratio: number;
+}
+
+/** O que ESTA data fez nos anos anteriores. */
+export interface ForecastOccasion {
+  name: string;
+  is_eve: boolean;
+  years: OccasionYear[];
+  expected_revenue_q: number;
+}
+
+/** DayForecast(date: 'str', weekday: 'int', weekday_label: 'str', closed: 'bool', closed_reason: 'str', revenue_q: 'Expectation | None', orders: 'Expectation | None', branches: 'tuple[ForecastBranch, ...]', occasion: 'ForecastOccasion | None', basis: 'ForecastBasis | None', missing_reason: 'str') */
+export interface DayForecast {
+  date: string;
+  weekday: number;
+  weekday_label: string;
+  closed: boolean;
+  closed_reason: string;
+  revenue_q: Expectation | null;
+  orders: Expectation | null;
+  branches: ForecastBranch[];
+  occasion: ForecastOccasion | null;
+  basis: ForecastBasis | null;
+  missing_reason: string;
+}
+
+/** BIForecastReport(horizon: 'str', target: 'str', date_from: 'str', date_to: 'str', days: 'tuple[DayForecast, ...]', total_revenue_q: 'Expectation | None', total_orders: 'Expectation | None', total_missing_days: 'tuple[str, ...]') */
+export interface BIForecastReport {
+  horizon: string;
+  target: string;
+  date_from: string;
+  date_to: string;
+  days: DayForecast[];
+  total_revenue_q: Expectation | null;
+  total_orders: Expectation | null;
+  total_missing_days: string[];
+}

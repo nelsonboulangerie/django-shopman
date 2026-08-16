@@ -110,16 +110,9 @@ DIMENSION_LABELS: dict[str, str] = {
     "grade": "Grau de qualidade",
     "defect": "Defeito",
     "outage_reason": "Motivo (esgotado/pausado)",
-    "day_kind": "Tipo de dia (feriado)",
+    "day_kind": "Tipo de dia (feriado, data comercial)",
     "temperature": "Temperatura do dia",
     "rain": "Chuva",
-}
-
-DAY_KIND_LABELS = {
-    "holiday": "Feriado",
-    "holiday_eve": "Véspera de feriado",
-    "post_holiday": "Volta de feriado",
-    "regular": "Dia comum",
 }
 
 # Dimensões que têm ordem própria: saem na sequência natural, não em ranking.
@@ -344,13 +337,16 @@ def _sales_rows(spec, by, by2, date_from, date_to) -> list[BIExploreRow]:
         native_days.add(local.date())
         events.append((local, total_q, channel_ref, "shopman"))
     historical = HistoricalSale.objects.filter(occurred_at__range=window).values_list(
-        "occurred_at", "total_q", "is_delivery"
+        "occurred_at", "total_q", "is_delivery", "source"
     )
-    for occurred_at, total_q, is_delivery in historical:
+    # Rótulo derivado do campo: histórico semeado se anuncia como "seed", nunca
+    # com o nome de um export real que ninguém carregou.
+    for occurred_at, total_q, is_delivery, source in historical:
         local = timezone.localtime(occurred_at)
         if local.date() in native_days:
             continue
-        events.append((local, total_q, "yooga · delivery" if is_delivery else "yooga · loja", "yooga"))
+        channel = f"{source} · {'delivery' if is_delivery else 'loja'}"
+        events.append((local, total_q, channel, source))
 
     contexts = _day_contexts(date_from, date_to) if _wants_context(by, by2) else {}
 
@@ -774,13 +770,20 @@ def _context_part(dim: str, day: date, contexts: dict) -> tuple[str, str] | None
     if context is None:
         return None
     if dim == "day_kind":
+        # O rótulo vem do próprio contexto: com datas comerciais o conjunto de
+        # tipos deixou de ser fechado (cada data tem nome próprio), e um dicionário
+        # aqui quebraria no primeiro "dia das mães" carregado.
         kind = context.day_kind
-        return (kind, DAY_KIND_LABELS[kind]) if kind else None
+        return (kind, context.day_kind_label) if kind else None
     if dim == "temperature":
-        if context.temp_max_c is None:
+        # A régua da faixa mora no seletor de dias parecidos: "25 a 29 °C" tem
+        # de querer dizer a mesma coisa aqui e na tela de "o que esperar".
+        from shopman.backstage.services.day_similarity import temperature_band
+
+        band = temperature_band(context.temp_max_c)
+        if not band:
             return None
-        floor = int(context.temp_max_c // 5 * 5)
-        return f"{floor:03d}", f"{floor} a {floor + 4} °C"
+        return band, f"{int(band)} a {int(band) + 4} °C"
     if dim == "rain":
         if context.rain_mm is None:
             return None

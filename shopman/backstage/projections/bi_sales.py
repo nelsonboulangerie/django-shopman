@@ -121,17 +121,17 @@ def build_bi_sales(
     # vence — nunca somar as duas fontes num mesmo dia).
     native_days = set(day_orders)
     historical = HistoricalSale.objects.filter(occurred_at__range=window).values_list(
-        "occurred_at", "total_q", "is_delivery"
+        "occurred_at", "total_q", "is_delivery", "source"
     )
-    hist_days: set[date] = set()
-    for occurred_at, total_q, is_delivery in historical:
+    hist_days: dict[date, str] = {}
+    for occurred_at, total_q, is_delivery, source in historical:
         local = timezone.localtime(occurred_at)
         if local.date() in native_days:
             continue
-        hist_days.add(local.date())
+        hist_days.setdefault(local.date(), source)
         day_orders[local.date()] += 1
         day_revenue[local.date()] += total_q
-        channel = "yooga · delivery" if is_delivery else "yooga · loja"
+        channel = f"{source} · {'delivery' if is_delivery else 'loja'}"
         channel_orders[channel] += 1
         channel_revenue[channel] += total_q
         by_hour[local.hour] += 1
@@ -148,7 +148,7 @@ def build_bi_sales(
                 orders=orders,
                 revenue_q=revenue,
                 average_ticket_q=revenue // orders if orders else 0,
-                source="yooga" if day in hist_days else "shopman",
+                source=hist_days.get(day, "shopman"),
             )
         )
         day += timedelta(days=1)

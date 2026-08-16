@@ -1071,3 +1071,22 @@ Duas decisões de honestidade:
 A decisão de "o que a fórmula aprende" é do orquestrador, mas o episódio é fato
 da operação e mora no backstage. O orquestrador chega nele por `adapters/`, que
 é a única exceção que a regra de dependência abre (o mesmo caminho do KDS).
+
+---
+
+## 14. Daqui em diante: "o que esperar" (rodada 8) → documento próprio
+
+As rodadas 3 a 7 fecharam **medir** e **contextualizar**. Falta **projetar** — a
+parte do pedido original que a v1 tinha deixado explicitamente de fora
+([BI-PLAN.md §8](BI-PLAN.md)).
+
+A análise dessa frente vive em **[BI-FORECAST-PLAN.md](BI-FORECAST-PLAN.md)**, e a
+descoberta que a organiza é esta: **as rodadas 4 a 7 construíram, sem que esse
+fosse o objetivo, exatamente os ingredientes da comparabilidade** — contexto do
+dia, expediente congelado, dias fechados, dias atrapalhados, hora de esgotamento.
+Falta compor tudo numa frase só: *"estes dias são parecidos com o dia que você
+perguntou"*.
+
+Por isso o trabalho não é construir um modelo, e sim **uma definição de dia
+parecido**, usada em todo lugar — inclusive pela fórmula de produção, para que a
+tela de plano e o B.I. nunca discordem sobre o que foi a última quarta.
