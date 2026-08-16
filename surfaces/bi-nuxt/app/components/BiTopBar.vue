@@ -14,7 +14,8 @@ import {
 
 const route = useRoute();
 const section = computed(() =>
-  route.path.startsWith("/sales") ? "sales"
+  route.path.startsWith("/forecast") ? "forecast"
+  : route.path.startsWith("/sales") ? "sales"
   : route.path.startsWith("/cash") ? "cash"
   : route.path.startsWith("/customers") ? "customers"
   : route.path.startsWith("/explore") ? "explore"
@@ -27,6 +28,8 @@ const tabs = [
   { to: "/cash", key: "cash", label: "Caixa", icon: "lucide:banknote" },
   { to: "/customers", key: "customers", label: "Clientes", icon: "lucide:users" },
   { to: "/explore", key: "explore", label: "Explorar", icon: "lucide:compass" },
+  // Última: as outras abas olham o que aconteceu; esta é a única que projeta.
+  { to: "/forecast", key: "forecast", label: "Projeção", icon: "lucide:telescope" },
 ] as const;
 
 const { selection, range, setPreset, applyCustom } = useBiWindow();
