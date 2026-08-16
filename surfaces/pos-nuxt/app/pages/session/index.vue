@@ -6,7 +6,13 @@
 // turno, o CTA "Continuar vendendo" leva de volta. BLIND: a antesala nunca
 // mostra o valor esperado da gaveta — a conferência (esperado vs contado) fica
 // no retaguarda. O fechamento do DIA (sobras/perdas) entra em `/session/closing`.
-import { formatOpenedAt, movementLabel, sessionScreenState } from "~/presentation/cash";
+import {
+  canRegisterMovement,
+  formatOpenedAt,
+  movementLabel,
+  movementReasons,
+  sessionScreenState,
+} from "~/presentation/cash";
 import type { DayClosingResponse } from "~/types/closing";
 
 useHead({ title: "Sessão de caixa · Shopman POS" });
@@ -56,12 +62,47 @@ async function submitOpen() {
 }
 
 // Movimentos de gaveta: sangria / suprimento / ajuste.
+//
+// O motivo é obrigatório e vem em BOTÕES, como já acontece na abertura de gaveta
+// ao lado. Motivo obrigatório só de digitar não sobrevive ao balcão: a fila anda,
+// alguém escreve "sangria" no campo motivo, e a trilha fica com uma linha que
+// repete o tipo e não conta nada. Com opções para tocar, o motivo responde o que
+// a conferência vai perguntar depois — para onde o dinheiro foi.
 const movementKind = ref("");
 const movementAmount = ref("");
-const movementReason = ref("");
+// Escolhido e digitado são campos SEPARADOS, e um limpa o outro no ato: com um
+// só, a tela mostraria dois motivos ao mesmo tempo e mandaria um deles calada.
+const movementReasonPick = ref("");
+const movementReasonOther = ref("");
+const movementReasonOptions = computed(() => movementReasons(movementKind.value));
+const movementReason = computed(() => movementReasonPick.value || movementReasonOther.value.trim());
 const canSubmitMovement = computed(
-  () => Boolean(movementKind.value && movementAmount.value.trim() && movementReason.value.trim()),
+  () => canRegisterMovement(movementKind.value, movementAmount.value, movementReason.value),
 );
+
+// Trocar de tipo zera o motivo: "Cofre" faz sentido numa sangria e nenhum num
+// suprimento. Motivo herdado do tipo anterior entraria na trilha como mentira.
+function pickMovementKind(kind: string) {
+  movementKind.value = kind;
+  clearMovementReason();
+}
+
+function pickMovementReason(reason: string) {
+  movementReasonPick.value = reason;
+  movementReasonOther.value = "";
+}
+
+function clearMovementReason() {
+  movementReasonPick.value = "";
+  movementReasonOther.value = "";
+}
+
+// Digitar desfaz o botão escolhido. O caminho inverso já está em
+// `pickMovementReason`, e o "se tem texto" evita que a limpeza programática de lá
+// volte para desmarcar o botão que acabou de ser escolhido.
+watch(movementReasonOther, (typed) => {
+  if (typed) movementReasonPick.value = "";
+});
 // Retirada de gaveta precisa da segunda assinatura: o servidor recusa com
 // `manager_approval_required`, o diálogo sobe e o mesmo movimento é reenviado
 // com o PIN. O `managerChallenge` reabre o diálogo quando o PIN vem errado.
@@ -80,7 +121,7 @@ async function submitMovement(managerApproval: { username: string; pin: string }
     managerChallenge.value = null;
     managerAuthOpen.value = false;
     movementAmount.value = "";
-    movementReason.value = "";
+    clearMovementReason();
   }
 }
 
@@ -252,24 +293,61 @@ async function confirmCloseBlocking() {
               </UiButton>
             </section>
 
-            <section class="grid gap-2 rounded-lg border bg-card p-4">
+            <section class="grid gap-3 rounded-lg border bg-card p-4">
               <h2 class="text-base font-semibold">Movimento de caixa</h2>
-              <div class="grid grid-cols-3 gap-2">
-                <UiButton
-                  v-for="kind in movementKinds"
-                  :key="kind"
-                  variant="outline"
-                  size="sm"
-                  :class="movementKind === kind ? 'border-primary bg-primary/5' : ''"
-                  @click="movementKind = kind"
+              <div class="grid gap-1.5">
+                <span id="movement-kind-label" class="text-sm font-medium text-muted-foreground">Tipo</span>
+                <div class="grid grid-cols-3 gap-2" role="group" aria-labelledby="movement-kind-label">
+                  <UiButton
+                    v-for="kind in movementKinds"
+                    :key="kind"
+                    variant="outline"
+                    size="sm"
+                    :aria-pressed="movementKind === kind"
+                    :class="movementKind === kind ? 'border-primary bg-primary/5' : ''"
+                    @click="pickMovementKind(kind)"
+                  >
+                    {{ movementLabel(kind) }}
+                  </UiButton>
+                </div>
+              </div>
+              <label class="grid gap-1.5 text-sm">
+                <span class="font-medium text-muted-foreground">Valor</span>
+                <UiInput v-model="movementAmount" inputmode="decimal" placeholder="0,00" />
+              </label>
+
+              <!-- Motivo obrigatório, em botões. O digitado fica como saída para o
+                   que não estava previsto, e é o único caminho quando o tipo não
+                   tem opções conhecidas. -->
+              <div v-if="movementKind" class="grid gap-1.5">
+                <span id="movement-reason-label" class="text-sm font-medium text-muted-foreground">
+                  Motivo (obrigatório)
+                </span>
+                <div
+                  v-if="movementReasonOptions.length"
+                  class="grid grid-cols-2 gap-2 sm:grid-cols-4"
+                  role="group"
+                  aria-labelledby="movement-reason-label"
                 >
-                  {{ movementLabel(kind) }}
-                </UiButton>
+                  <UiButton
+                    v-for="reason in movementReasonOptions"
+                    :key="reason"
+                    variant="outline"
+                    size="sm"
+                    :aria-pressed="movementReasonPick === reason"
+                    :class="movementReasonPick === reason ? 'border-primary bg-primary/5' : ''"
+                    @click="pickMovementReason(reason)"
+                  >
+                    {{ reason }}
+                  </UiButton>
+                </div>
+                <UiInput
+                  v-model="movementReasonOther"
+                  :aria-label="movementReasonOptions.length ? 'Outro motivo' : 'Motivo'"
+                  :placeholder="movementReasonOptions.length ? 'Outro motivo' : 'Motivo'"
+                />
               </div>
-              <div class="grid grid-cols-2 gap-2">
-                <UiInput v-model="movementAmount" inputmode="decimal" placeholder="Valor" />
-                <UiInput v-model="movementReason" placeholder="Motivo" />
-              </div>
+
               <p v-if="movementKind === 'sangria'" class="flex items-start gap-2 text-xs text-muted-foreground">
                 <Icon name="lucide:shield-check" class="mt-0.5 size-4 shrink-0" />
                 <span>Tirar dinheiro da gaveta precisa da autorização de um gerente.</span>
@@ -403,6 +481,7 @@ async function confirmCloseBlocking() {
     <PosManagerAuthDialog
       v-model:open="managerAuthOpen"
       reason-text="Retirar dinheiro da gaveta é exceção auditada: um gerente precisa autorizar."
+      :managers="pos?.managers || []"
       :busy="busy"
       :error="managerChallenge?.code === 'manager_approval_invalid' ? managerChallenge.message : ''"
       @authorize="onMovementAuthorize"
