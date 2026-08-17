@@ -1035,6 +1035,160 @@ def _escolher_fila(queues: list[str], rotulo: str) -> str:
     return escolha
 
 
+# ── Diagnóstico e leitura do pino ─────────────────────────────────────────
+#
+# Quem opera o balcão não tem terminal, não tem `od`, não tem paciência para
+# `printf '\x10\x04\x03' | sudo tee`. Cada comando digitado à mão é uma chance
+# de errar e concluir que o defeito é da impressora. Estes dois comandos existem
+# para que a resposta caiba numa linha e o diagnóstico seja do programa, não da
+# pessoa.
+
+def doctor() -> int:
+    """`--doctor`: responde, de uma vez, se este balcão está são."""
+    print("\nAgente do balcão — diagnóstico\n")
+    tudo_certo = True
+
+    esperado = build_id()
+    print(f"  versão deste arquivo ..... {esperado}")
+
+    # ⚠️ O diagnóstico NÃO pode morrer no primeiro problema que encontra: sem
+    # config ele saía com SystemExit e nem chegava a olhar o serviço ou a
+    # impressora. Ferramenta de diagnóstico que aborta no primeiro achado obriga
+    # a pessoa a consertar às cegas, um item por vez.
+    try:
+        config = AgentConfig.load(DEFAULT_CONFIG_PATH)
+    except SystemExit as exc:
+        print(f"  config .................. ✗ {str(exc).splitlines()[0]}")
+        print("\n  Sem config o agente não sobe. Reinstale pelo gestor.\n")
+        return 1
+    print(f"  config ................... {DEFAULT_CONFIG_PATH}")
+
+    saude = _wait_until_listening({"port": config.port}, seconds=3)
+    if saude is None:
+        print("  versão no ar ............. ninguém respondeu na porta")
+        print(f"     ✗ o agente não está rodando. Reinstale, ou suba com: python3 {Path(__file__).resolve()}")
+        tudo_certo = False
+    else:
+        rodando = str(saude.get("build") or "?")
+        igual = rodando == esperado
+        print(f"  versão no ar ............. {rodando}" + ("   ✓" if igual else "   ✗ DIFERENTE"))
+        if not igual:
+            print("     ✗ quem responde não é este arquivo: a última instalação não pegou.")
+            print(f"       na porta: {_quem_ocupa_a_porta(config.port)}")
+            print(f"       derrube:  {_comando_de_parada()}")
+            tudo_certo = False
+
+    if sys.platform.startswith("linux"):
+        atual = _servico_ativo(SERVICE_NAME)
+        antigo = _servico_ativo(LEGACY_SERVICE_NAME)
+        print(f"  serviço .................. {SERVICE_NAME}: {'ativo ✓' if atual else 'PARADO ✗'}")
+        print(f"  serviço antigo ........... {'AINDA EXISTE ✗' if antigo else 'removido ✓'}")
+        if antigo:
+            print("     ✗ o antigo segura a porta e impede o novo de subir.")
+            print(f"       derrube: systemctl --user stop {LEGACY_SERVICE_NAME}")
+        tudo_certo = tudo_certo and atual and not antigo
+
+    fila = probe_queue(config.queue)
+    ok_fila = bool(fila.get("ok"))
+    print(f"  impressora ............... {config.queue}: " + ("aceitando ✓" if ok_fila else f"{fila.get('reason') or 'não aceita trabalho'} ✗"))
+    tudo_certo = tudo_certo and ok_fila
+
+    print("\n  " + ("tudo certo." if tudo_certo else "há o que resolver acima.") + "\n")
+    return 0 if tudo_certo else 1
+
+
+def _servico_ativo(nome: str) -> bool:
+    """`is-active` responde 0 só quando o serviço está de pé."""
+    if not shutil.which("systemctl"):
+        return False
+    r = subprocess.run(
+        ["systemctl", "--user", "is-active", "--quiet", nome], capture_output=True, check=False
+    )
+    return r.returncode == 0
+
+
+#: `DLE EOT 3` — status em tempo real do conector da gaveta.
+_DRAWER_STATUS_QUERY = bytes([0x10, 0x04, 0x03])
+
+
+def _dispositivos_possiveis() -> list[Path]:
+    """Onde o kernel costuma expor a impressora USB, do mais provável ao menos."""
+    achados: list[Path] = []
+    for padrao in ("/dev/usb/lp*", "/dev/lp*", "/dev/ttyUSB*"):
+        achados.extend(sorted(Path("/").glob(padrao.lstrip("/"))))
+    return achados
+
+
+def _ler_pino(device: Path, *, timeout: float = 2.0) -> tuple[int | None, str]:
+    """Pergunta o estado e lê UM byte. Devolve (byte, motivo-da-falha)."""
+    import select
+
+    try:
+        fd = os.open(str(device), os.O_RDWR | os.O_NONBLOCK)
+    except PermissionError:
+        return None, f"sem permissão para abrir {device} (o usuário precisa estar no grupo 'lp')"
+    except OSError as exc:
+        return None, f"não consegui abrir {device}: {exc}"
+    try:
+        os.write(fd, _DRAWER_STATUS_QUERY)
+        pronto, _, _ = select.select([fd], [], [], timeout)
+        if not pronto:
+            return None, "a impressora não respondeu (o canal pode ser só de escrita)"
+        dados = os.read(fd, 1)
+        return (dados[0], "") if dados else (None, "resposta vazia")
+    except OSError as exc:
+        return None, f"falha ao conversar com {device}: {exc}"
+    finally:
+        os.close(fd)
+
+
+def drawer_status(argv: list[str]) -> int:
+    """`--drawer-status`: descobre se dá para LER se a gaveta está aberta.
+
+    Não afirma nada de antemão. Lê o byte com a gaveta fechada e de novo com ela
+    aberta, e compara — se mudar, o estado é legível e o sistema pode passar a
+    avisar "gaveta aberta há 3 minutos". Se não mudar, a resposta honesta é que
+    por este caminho não dá, e paramos de gastar tempo.
+    """
+    if IS_WINDOWS:
+        print("Leitura do pino ainda não implementada no Windows.")
+        return 1
+
+    dispositivos = _dispositivos_possiveis()
+    if not dispositivos:
+        print("Não achei o dispositivo da impressora (/dev/usb/lp*).")
+        print("A impressora está ligada e instalada?")
+        return 1
+    device = Path(_arg_value(argv, "--device") or dispositivos[0])
+    print(f"\nLendo pela {device}" + (f"  (outras: {', '.join(str(d) for d in dispositivos[1:])})" if len(dispositivos) > 1 else ""))
+
+    leituras: list[int] = []
+    for rotulo in ("FECHADA", "ABERTA"):
+        input(f"\n  Deixe a gaveta {rotulo} e tecle Enter... ")
+        byte, motivo = _ler_pino(device)
+        if byte is None:
+            print(f"  ✗ {motivo}")
+            print("\n  Não dá para ler o estado da gaveta por este caminho.")
+            print("  Isso NÃO é defeito: significa que o controle de gaveta aberta")
+            print("  precisa ser físico (gaveta com alarme), não de software.\n")
+            return 1
+        leituras.append(byte)
+        print(f"  byte lido: 0x{byte:02x}")
+
+    fechada, aberta = leituras
+    if fechada == aberta:
+        print(f"\n  Os dois bytes são iguais (0x{fechada:02x}).")
+        print("  A impressora responde, mas não distingue a gaveta — por este")
+        print("  caminho não dá. Controle de gaveta aberta tem que ser físico.\n")
+        return 1
+
+    mudou = fechada ^ aberta
+    print(f"\n  ✓ FUNCIONA. Fechada 0x{fechada:02x}, aberta 0x{aberta:02x} (bit 0x{mudou:02x}).")
+    print("  Dá para o sistema saber quando a gaveta fica aberta. Me mande estes")
+    print("  dois números que eu ligo o alerta.\n")
+    return 0
+
+
 def install(argv: list[str]) -> int:
     if not IS_WINDOWS and not shutil.which("lp"):
         print("erro: comando 'lp' não encontrado — instale o CUPS.", file=sys.stderr)
@@ -1223,6 +1377,10 @@ def main(argv: list[str] | None = None) -> int:
     )
     if "--install" in argv:
         return install(argv)
+    if "--doctor" in argv:
+        return doctor()
+    if "--drawer-status" in argv:
+        return drawer_status(argv)
     config = AgentConfig.load(DEFAULT_CONFIG_PATH)
     if "--kick" in argv:
         # Teste de bancada sem navegador: prova o caminho até o spooler.
