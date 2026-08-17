@@ -3,7 +3,7 @@
 Read model da antesala do PDV (ADMIN-ROLE-PLAN WP-ADM-4, benchmark Odoo POS):
 
 - **Leitura X** — parcial do turno ABERTO do operador: abertura, movimentos
-  (sangria/suprimento/ajuste), contagem de vendas e vendas por método.
+  (sangria/suprimento), contagem de vendas e vendas por método.
 - **Leitura Z** — fechamento de cada turno FECHADO do dia: abertura, valor
   CONTADO (contagem cega), movimentos e totais operacionais de vendas.
 - **Histórico do dia** — totais agregados de turnos e vendas.
@@ -46,9 +46,9 @@ _METHOD_ORDER = ("cash", "pix", "card", "external")
 class CashMovementRowProjection:
     """A manual drawer movement inside a shift."""
 
-    kind: str  # "sangria" | "suprimento" | "ajuste"
+    kind: str  # "sangria" | "suprimento"
     kind_label: str  # "Sangria" | "Suprimento" | "Ajuste"
-    amount_q: int  # signed for ajuste (negative = falta)
+    amount_q: int  # sempre positivo; a direção vem do `kind`
     amount_display: str
     reason: str
     created_by: str
@@ -86,9 +86,9 @@ class ShiftReadingProjection:
     counted_amount_q: int | None  # blind count; None while open
     counted_amount_display: str  # "" while open
     movements: tuple[CashMovementRowProjection, ...]
-    movements_in_q: int  # suprimentos + ajustes positivos
+    movements_in_q: int  # suprimentos
     movements_in_display: str
-    movements_out_q: int  # sangrias + ajustes negativos (valor absoluto)
+    movements_out_q: int  # sangrias
     movements_out_display: str
     sales_count: int
     sales_total_q: int
@@ -204,11 +204,8 @@ def _shift_reading(shift: CashShift) -> ShiftReadingProjection:
 
 
 def _is_inflow(row: CashMovementRowProjection) -> bool:
-    if row.kind == "suprimento":
-        return True
-    if row.kind == "ajuste":
-        return row.amount_q >= 0
-    return False  # sangria
+    """Suprimento entra, sangria sai. O valor é sempre positivo; o sinal é o tipo."""
+    return row.kind == "suprimento"
 
 
 def _shift_sales(shift: CashShift) -> tuple[int, int, dict[str, dict]]:

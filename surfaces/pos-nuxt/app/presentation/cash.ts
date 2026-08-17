@@ -11,7 +11,6 @@ import type { POSCashManagementCapability, POSCashRuntimeProjection } from "~/ty
 const MOVEMENT_LABELS: Record<string, string> = {
   sangria: "Sangria",
   suprimento: "Suprimento",
-  ajuste: "Ajuste",
 };
 
 export function movementLabel(kind: string): string {
@@ -19,21 +18,27 @@ export function movementLabel(kind: string): string {
 }
 
 /**
- * Os motivos comuns de cada tipo de movimento, para virarem botão.
+ * Os motivos comuns de cada tipo, para virarem botão.
  *
  * O motivo é obrigatório e continua sendo — mas exigir DIGITAÇÃO no meio da fila
- * é como se obriga o balcão a escrever "sangria" no campo motivo e seguir a vida:
- * a exigência sobrevive e a informação morre. Com opções para tocar, o motivo
- * responde o que a trilha precisa saber depois — PARA ONDE o dinheiro foi — em
- * vez de repetir o tipo que já está registrado ao lado.
+ * é como se obriga o balcão a escrever "sangria" no campo motivo e seguir a
+ * vida: a exigência sobrevive e a informação morre. Com opções para tocar, ele
+ * responde a única pergunta que a trilha precisa depois: **para onde foi**
+ * (sangria) ou **de onde veio** (suprimento).
+ *
+ * ⚠️ "Troco" NÃO é motivo de sangria, e a ausência é deliberada — há teste que
+ * trava. Trocar uma nota não muda o dinheiro que existe na gaveta: saem R$ 50,
+ * entram 5×R$ 10, o total é o mesmo. Lançar como sangria derruba o esperado por
+ * um dinheiro que nunca saiu, e o turno fecha com falta fantasma se ninguém
+ * lembrar do suprimento gêmeo. Gaveta que abre sem mover dinheiro é "abrir sem
+ * venda", que já existe e já pede motivo.
  *
  * Tipo desconhecido devolve lista vazia de propósito: aí a tela cai no campo
  * livre, que é a saída honesta para o que não foi previsto aqui.
  */
 const MOVEMENT_REASONS: Record<string, readonly string[]> = {
-  sangria: ["Cofre", "Banco", "Fornecedor", "Troco"],
-  suprimento: ["Troco", "Reforço"],
-  ajuste: ["Sobra", "Falta", "Erro de lançamento"],
+  sangria: ["Cofre", "Banco", "Fornecedor"],
+  suprimento: ["Reforço de troco", "Cofre", "Banco"],
 };
 
 export function movementReasons(kind: string): readonly string[] {

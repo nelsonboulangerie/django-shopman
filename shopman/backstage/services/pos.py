@@ -49,12 +49,12 @@ def open_cash_shift(*, operator, opening_amount_raw="0", terminal_ref: str = "")
 def movement_removes_cash(movement_type: str, amount_q: int) -> bool:
     """O movimento TIRA dinheiro da gaveta?
 
-    Sangria (qualquer valor) e ajuste negativo reduzem o esperado do fechamento.
-    São os dois caminhos pelos quais dinheiro sai e a contagem cega ainda bate:
-    o próprio lançamento justifica a falta. Suprimento e ajuste positivo só criam
-    sobra, que aparece na conferência — esses seguem sem gerente.
+    Só a sangria. É o único caminho pelo qual dinheiro sai E a contagem cega
+    ainda bate — o próprio lançamento justifica a falta, e por isso ele exige a
+    segunda assinatura. Suprimento só cria sobra, que aparece na conferência
+    sozinha e não tem como esconder desfalque.
     """
-    return movement_type == "sangria" or (movement_type == "ajuste" and amount_q < 0)
+    return movement_type == "sangria"
 
 
 def register_cash_movement(
@@ -69,7 +69,7 @@ def register_cash_movement(
 
     Retirada exige PIN de gerente — SEM limiar, em qualquer valor. Antes um
     operador sozinho lançava sangria à vontade: como o fechamento calcula
-    ``esperado = abertura + vendas + suprimentos + ajustes − sangrias``, uma
+    ``esperado = abertura + vendas + suprimentos − sangrias``, uma
     sangria inventada abaixava o esperado e a contagem cega fechava redonda.
     O dinheiro saía e o caixa batia. Agora a retirada tem duas assinaturas: quem
     lança e quem autoriza, ambas gravadas.
@@ -83,14 +83,11 @@ def register_cash_movement(
     if shift.status != CashShift.Status.OPEN:
         raise POSError("Turno de caixa já fechado.")
 
-    normalized_type = movement_type if movement_type in {"sangria", "suprimento", "ajuste"} else "sangria"
+    normalized_type = movement_type if movement_type in {"sangria", "suprimento"} else "sangria"
     amount_q = parse_money_to_q(amount_raw)
-    # Ajuste aceita valor negativo (falta/quebra na conferência); sangria e
-    # suprimento continuam estritamente positivos.
-    if normalized_type == "ajuste":
-        if amount_q == 0:
-            raise POSError("Valor inválido.")
-    elif amount_q <= 0:
+    # Sempre positivo: o sinal vive no TIPO. Aceitar negativo aqui daria um
+    # segundo jeito de lançar sangria — disfarçada de suprimento, e sem gerente.
+    if amount_q <= 0:
         raise POSError("Valor inválido.")
 
     approved_by = ""

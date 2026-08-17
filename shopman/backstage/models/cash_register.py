@@ -221,13 +221,11 @@ class CashShift(models.Model):
         movements = self.movements.aggregate(
             suprimentos=Sum("amount_q", filter=models.Q(movement_type="suprimento")),
             sangrias=Sum("amount_q", filter=models.Q(movement_type="sangria")),
-            ajustes=Sum("amount_q", filter=models.Q(movement_type="ajuste")),
         )
         suprimentos_q = movements["suprimentos"] or 0
         sangrias_q = movements["sangrias"] or 0
-        ajustes_q = movements["ajustes"] or 0
 
-        expected = self.opening_amount_q + cash_sales_q + suprimentos_q + ajustes_q - sangrias_q
+        expected = self.opening_amount_q + cash_sales_q + suprimentos_q - sangrias_q
 
         self.blind_closing_amount_q = counted_q
         self.expected_amount_q = expected
@@ -269,9 +267,18 @@ class CashMovement(models.Model):
     """A manual cash movement within a cash shift."""
 
     class MovementType(models.TextChoices):
+        """Dinheiro sai, ou dinheiro entra. Não existe uma terceira coisa.
+
+        Havia um ``ajuste`` com sinal, aposentado porque era aritmeticamente
+        idêntico aos outros dois: ``+X`` somava ao esperado como suprimento e
+        ``−X`` subtraía como sangria. Pior, seus motivos eram "Sobra" e "Falta"
+        — o RESULTADO que ``close()`` calcula. Lançar a diferença como movimento
+        empurrava o esperado até bater com a contagem e ZERAVA a divergência que
+        a contagem cega existe para revelar.
+        """
+
         SANGRIA = "sangria", "Sangria"
         SUPRIMENTO = "suprimento", "Suprimento"
-        AJUSTE = "ajuste", "Ajuste"
 
     shift = models.ForeignKey(
         CashShift,
@@ -292,7 +299,7 @@ class CashMovement(models.Model):
         max_length=150,
         blank=True,
         default="",
-        help_text="Gerente que autorizou a retirada (sangria e ajuste negativo).",
+        help_text="Gerente que autorizou a retirada (sangria)."
     )
     created_at = models.DateTimeField("criado em", default=timezone.now)
 
@@ -326,12 +333,12 @@ class CashMovement(models.Model):
         verbose_name = "movimentação de caixa"
         verbose_name_plural = "movimentações de caixa"
         constraints = [
-            # Ajuste registra sobra (+) ou falta (−) da conferência; sangria e
-            # suprimento são estritamente positivos.
+            # O sinal vive no TIPO, não no valor: sangria subtrai, suprimento
+            # soma. Valor negativo aqui seria um segundo jeito de dizer a mesma
+            # coisa — e dois jeitos de dizer a mesma coisa é como se lança uma
+            # sangria disfarçada de suprimento.
             models.CheckConstraint(
-                condition=models.Q(amount_q__gt=0) | (
-                    models.Q(movement_type="ajuste") & ~models.Q(amount_q=0)
-                ),
+                condition=models.Q(amount_q__gt=0),
                 name="backstage_cashmovement_amount_positive",
             ),
         ]

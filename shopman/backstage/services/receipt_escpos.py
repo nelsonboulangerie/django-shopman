@@ -27,7 +27,7 @@ COLUMNS = 48
 
 
 def cash_movement_receipt(movement, *, verify_code: str, verify_url: str, reprint: bool = False) -> bytes:
-    """Comprovante de movimento de gaveta (sangria, suprimento, ajuste).
+    """Comprovante de movimento de gaveta (sangria, suprimento).
 
     ⚠️ O comprovante NÃO é a verdade — ele **aponta** para ela. O código e o QR
     resolvem para o registro; papel inventado não tem código que resolva, e

@@ -35,12 +35,11 @@ export function shiftPeriodDisplay(reading: Pick<ShiftReading, "opened_at" | "cl
 }
 
 /**
- * Direção do movimento na gaveta: suprimento entra, sangria sai, ajuste segue
- * o sinal (positivo = sobra registrada, negativo = falta).
+ * Direção do movimento na gaveta: suprimento entra, sangria sai. O valor é
+ * sempre positivo — o sinal vive no tipo.
  */
 export function movementFlow(movement: Pick<CashMovementRow, "kind" | "amount_q">): "in" | "out" {
   if (movement.kind === "suprimento") return "in";
-  if (movement.kind === "ajuste") return movement.amount_q >= 0 ? "in" : "out";
   return "out";
 }
 
