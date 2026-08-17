@@ -277,8 +277,13 @@ class CashMovement(models.Model):
         a contagem cega existe para revelar.
         """
 
-        SANGRIA = "sangria", "Sangria"
-        SUPRIMENTO = "suprimento", "Suprimento"
+        # ⚠️ O VALOR fica `sangria`/`suprimento` — é o identificador do domínio,
+        # está no banco e na API, e trocá-lo seria churn sem ganho. O RÓTULO é
+        # que muda: "sangria" é vocabulário de PDV brasileiro e some para quem
+        # lê a filipeta dias depois, fora de contexto. Entrada/Saída não precisa
+        # ser aprendido.
+        SANGRIA = "sangria", "Saída de caixa"
+        SUPRIMENTO = "suprimento", "Entrada de caixa"
 
     shift = models.ForeignKey(
         CashShift,
