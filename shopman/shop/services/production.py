@@ -163,8 +163,8 @@ def quick_plan(
     """Plan a same-day ad-hoc work order (fornada avulsa).
 
     Nasce sem previsto herdado de plano nenhum — o previsto É o que o operador
-    declarou. Quem fecha decide o caminho: escalar (``quick_finish``) ou
-    particionado (``apply_finish`` do quiosque de QC).
+    declarou. Quem fecha é sempre o ``apply_finish`` do backstage, com ou sem
+    partição: é lá que mora o guardrail de insumo.
     """
     from shopman.craftsman.services.scheduling import CraftPlanning
 
@@ -179,21 +179,6 @@ def quick_plan(
         position_ref=position_ref,
         source_ref="quick_production",
     )
-
-
-def quick_finish(
-    *,
-    recipe_id,
-    quantity,
-    position_id,
-    actor: str,
-) -> tuple[str, str, Decimal]:
-    """Plan and immediately finish a production work order."""
-    from shopman.craftsman.services.execution import CraftExecution
-
-    work_order = quick_plan(recipe_id=recipe_id, quantity=quantity, position_id=position_id)
-    CraftExecution.finish(order=work_order, finished=work_order.quantity, actor=actor)
-    return work_order.output_sku, work_order.ref, work_order.quantity
 
 
 def set_planned_quantity(

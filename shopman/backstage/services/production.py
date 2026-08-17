@@ -131,18 +131,17 @@ def apply_quick_finish(
 ):
     """Plan and immediately finish a work order from the operator surface.
 
-    Com ``partition`` (quiosque de QC, fornada avulsa), o fechamento
-    passa pelo MESMO caminho do finish normal: veto resolvido na borda, N
-    lotes com percentual congelado, alerta quando a rastreabilidade falha.
+    O fechamento passa pelo MESMO caminho do finish normal, COM ou SEM
+    ``partition``: guardrail de insumo (``check_finish_materials``), veto
+    resolvido na borda, N lotes com percentual congelado, alerta quando a
+    rastreabilidade falha.
+
+    Sem partição isto ia direto ao ``quick_finish`` do core, pulando o
+    ``apply_finish`` — e a fornada avulsa era o único fechamento da casa que
+    fechava sem farinha no estoque, calado. A mesma ação era barrada no
+    quiosque de QC (que manda partição) e livre no grid do gestor.
     """
     try:
-        if not partition:
-            return production_core.quick_finish(
-                recipe_id=recipe_id,
-                quantity=quantity,
-                position_id=position_id,
-                actor=actor,
-            )
         work_order = production_core.quick_plan(
             recipe_id=recipe_id, quantity=quantity, position_id=position_id
         )
