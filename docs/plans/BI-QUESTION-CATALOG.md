@@ -839,3 +839,57 @@ reescreve o passado** (`active_from`).
 - **M7/M8 (desistiu por falta de mesa; salão × fila do balcão)** — o sinal de
   casa cheia sustentada existe agora (`room_full_minutes`); ligá-lo ao episódio de
   fechamento é o passo seguinte natural.
+
+---
+
+## 9. ⚠️ Deploy: o que exige reseed (PENDENTE)
+
+Duas coisas deste trabalho chegam ao staging por caminhos diferentes, e uma
+delas **não tem caminho cirúrgico**.
+
+### 9.1 O que o `setup_bi_reference` resolve
+
+```bash
+python manage.py setup_bi_reference
+```
+
+Instala as três tabelas de referência — papéis de consumo, as 59 etiquetas
+curadas, os 17 lugares do salão — **sem tocar em operação**. Pode rodar em
+qualquer ambiente, quantas vezes quiser.
+
+Com isso, funcionam: **modo de consumo** (todas as métricas de venda e itens) e
+**salão** (lotação, pico, teto, giro, valor por lugar-hora). **Forma de
+pagamento** já funcionava sem nada — lê `Order`/`HistoricalSale` direto.
+
+### 9.2 O que FICA PENDENTE até um reseed completo
+
+A **taxonomia de coleções** mora dentro do `_seed_catalog`, que é grande demais
+para recortar. Enquanto não houver reseed (ou trabalho manual no Admin), o
+ambiente segue com:
+
+| O que muda | Estado sem reseed |
+|---|---|
+| Coleção **"Balcão"** extinta | continua existindo, com os 7 produtos dentro |
+| **"Despensa"** → **"Mercearia"** | continua "Despensa" (ref e rótulo) |
+| Coleção **"Combos"** criada | não existe; o combo segue em "Balcão" |
+| Fendu, Tabatière, Mini Baguete, Pão de Hambúrguer → Rústicos | seguem em "Balcão" |
+| Brioche Burger Bun, Pão para Hot Dog → Finos | seguem em "Balcão" |
+
+**O B.I. não depende disso** — a etiqueta de consumo é chaveada por SKU, não por
+coleção, então as leituras saem certas de qualquer jeito. O que fica errado é o
+**catálogo**: a vitrine, o menu impresso e as TVs seguem com a taxonomia velha.
+
+### 9.3 Duas consequências do reseed, quando ele acontecer
+
+- **Feeds exibem por coleção.** Os 6 produtos escondidos em "Balcão" passam a
+  poder aparecer no menu impresso e nas TVs. Se a intenção era só reorganizar,
+  a configuração dos feeds precisa de um ajuste junto.
+- **Promoção é escopada por coleção.** A "Semana do Pão" do seed dá 15% em
+  Rústicos, que ganha quatro produtos — incluindo o Pão de Hambúrguer.
+
+⚠️ E o `seed` completo **não serve** para um ambiente com operação de verdade:
+ele roda o bloco de demonstração inteiro (pedidos, sessões, pagamentos,
+fechamentos, 5.748 pedidos de volume). Num staging com dado real, isso soma
+operação inventada à real. O caminho honesto para a taxonomia, sem reseed, é
+fazer as mudanças de coleção **no Admin**, à mão: são 7 produtos, 2 coleções
+novas e 2 aposentadas.
