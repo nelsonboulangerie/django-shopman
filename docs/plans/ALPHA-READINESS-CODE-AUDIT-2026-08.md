@@ -82,7 +82,32 @@ taxa — e, com `expected_total_q`, o checkout barrava com `total_changed`.
 
 ## Precisa endereçar antes do GO-LIVE (não bloqueia o alpha mock)
 
-### P1 (go-live) — `WorkOrder.finish()` grava o ledger de estoque fora da transação
+### ~~P1~~ → **P3 latente** (revisado) — `WorkOrder.finish()` grava o ledger fora da transação
+
+> **Revisão 2026-08-17, após verificação independente em PostgreSQL.** Duas
+> afirmações abaixo estavam **erradas** e a severidade estava **superestimada**.
+> O mecanismo é real (reproduzido: `finish()` retorna OK, insumo consumido,
+> vitrine zero, retry em `TERMINAL_STATUS`), mas: (1) o escritor de estoque é o
+> receiver **#0**, então nenhum receiver anterior o preempta; (2) só a perna de
+> *output* engole — a de insumos **propaga**; (3) todo gatilho de operação normal
+> já está fechado (over/under-yield corrigidos com regressão, insumo insuficiente
+> barrado no backstage, quant planejado ausente não é caminho de drift), então
+> exige falha genuína (queda de DB/deploy no meio do handler).
+>
+> **O problema real é o silêncio, não a probabilidade.** Quando falha, as unidades
+> ficam no quant `started`, que a política `planned_ok` (a do seed Nelson) segue
+> vendendo — a loja opera normal e o fechamento *mascara* (produção sai de
+> `WorkOrder.finished`). Nada alerta: os engolimentos logam `WARNING` e o Sentry
+> só captura `ERROR`. O tipo `stock_discrepancy` existe e nunca é emitido.
+>
+> Dois achados **novos** da verificação: um receiver *posterior* estourando faz
+> uma fornada commitada devolver 400 ao operador (e o retry morre em
+> `TERMINAL_STATUS`, porque o backstage não passa `idempotency_key`); e o
+> **quick-finish sem partição** não passa pelo guardrail de insumos.
+>
+> Plano de execução: [WP-ALPHA-FIX-01](WP-ALPHA-FIX-01-producao-e-efi.md).
+
+Descrição original do mecanismo:
 `packages/craftsman/.../services/execution.py:324` dispara
 `production_changed` (a escrita canônica craftsman→stockman, kind=MAKE)
 **depois** do bloco `transaction.atomic()`, e os handlers
@@ -238,9 +263,15 @@ se autoconfirmar de graça. **Recomendação:** default `false` no template de p
 
 ## Prioridade sugerida
 
-1. **(go-live)** Transação + reconciliação no `finish()` de produção (P1 estoque).
-2. **(go-live)** Webhook Efí header-only + mTLS exigido; fechar o fail-open de
-   valor; default `false` no auto-confirm mock do template de prod.
+> Execução detalhada, com as armadilhas que fazem a "correção óbvia" não corrigir
+> nada, em [WP-ALPHA-FIX-01](WP-ALPHA-FIX-01-producao-e-efi.md).
+
+1. **(go-live)** Tirar o silêncio do `finish()` de produção: parar de engolir a
+   perna de output, marcador durável + sweeper, quick-finish sem partição honrando
+   o guardrail de insumos, e `idempotency_key` no finish do backstage.
+2. **(go-live)** Webhook Efí header-only (não há proxy mTLS no deploy — o token é a
+   autenticação única); fechar o fail-open de valor; default `false` no
+   auto-confirm mock do template de prod.
 3. **(alpha, opcional)** Gate de borda nas superfícies públicas do staging e
    telefone verificado no stock-alert anônimo.
 4. **(hardening)** `cancellation.cancel()` com trava; SSE/KDS por permissão fina;
