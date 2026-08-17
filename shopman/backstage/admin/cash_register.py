@@ -169,9 +169,9 @@ class POSTerminalForm(forms.ModelForm):
             (ADAPTER_MANUAL, "Com a chave (o PDV não abre)"),
             (ADAPTER_AGENT, "Pelo agente local (kick na impressora)"),
         ),
-        help_text="O agente é um processo na máquina do balcão. Instale com <code>python3 drawer_agent.py --install</code>.",
+        help_text="O agente é um processo na máquina do balcão. Instale com <code>python3 counter_agent.py --install</code>.",
     )
-    drawer_agent_url = forms.URLField(
+    counter_agent_url = forms.URLField(
         label="Endereço do agente",
         required=False,
         widget=UnfoldAdminURLInputWidget,
@@ -228,7 +228,7 @@ class POSTerminalForm(forms.ModelForm):
             return
         config = CashDrawerConfig.from_terminal(self.instance)
         self.fields["drawer_adapter"].initial = config.adapter if config.declared else ""
-        self.fields["drawer_agent_url"].initial = config.agent_url
+        self.fields["counter_agent_url"].initial = config.agent_url
         self.fields["drawer_pulse_pin"].initial = str(config.pulse_pin)
         self.fields["drawer_pulse_on_ms"].initial = config.pulse_on_ms
         self.fields["drawer_pulse_off_ms"].initial = config.pulse_off_ms
@@ -237,8 +237,8 @@ class POSTerminalForm(forms.ModelForm):
     def clean(self):
         cleaned = super().clean()
         if cleaned.get("drawer_adapter") == ADAPTER_AGENT:
-            if not (cleaned.get("drawer_agent_url") or "").strip():
-                self.add_error("drawer_agent_url", "Informe o endereço do agente.")
+            if not (cleaned.get("counter_agent_url") or "").strip():
+                self.add_error("counter_agent_url", "Informe o endereço do agente.")
         return cleaned
 
     def _resolved_token(self) -> str:
@@ -265,7 +265,7 @@ class POSTerminalForm(forms.ModelForm):
             hardware["cash_drawer"] = {
                 "enabled": True,
                 "adapter": adapter,
-                "agent_url": (self.cleaned_data.get("drawer_agent_url") or "").strip(),
+                "agent_url": (self.cleaned_data.get("counter_agent_url") or "").strip(),
                 "token": self._resolved_token(),
                 "pulse_pin": int(self.cleaned_data.get("drawer_pulse_pin") or 0),
                 "pulse_on_ms": self.cleaned_data.get("drawer_pulse_on_ms") or DEFAULT_PULSE_ON_MS,
@@ -299,7 +299,7 @@ class POSTerminalAdmin(ModelAdmin):
             "Gaveta de dinheiro",
             {
                 "fields": (
-                    "drawer_adapter", "drawer_agent_url", "drawer_pulse_pin",
+                    "drawer_adapter", "counter_agent_url", "drawer_pulse_pin",
                     "drawer_pulse_on_ms", "drawer_pulse_off_ms", "drawer_open_on_cash_sale",
                     "drawer_install_display",
                 ),
@@ -321,7 +321,7 @@ class POSTerminalAdmin(ModelAdmin):
             return "Salve o terminal primeiro."
         from django.urls import reverse
 
-        url = reverse("admin_console_pos_drawer_agent", args=[obj.ref])
+        url = reverse("admin_console_pos_counter_agent", args=[obj.ref])
         return unfold_link(url, "Baixar o agente e ver como instalar", icon="download")
     drawer_install_display.short_description = "Instalação no balcão"
 

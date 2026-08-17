@@ -310,7 +310,7 @@ const AGENT_DRAWER = {
   pulse: { pin: 0, on_ms: 50, off_ms: 500 },
 };
 
-/** Carrinho pronto para checkout num balcão com agente de gaveta. */
+/** Carrinho pronto para checkout num balcão com o agente local instalado. */
 function saleWithDrawer(actionCall: ReturnType<typeof vi.fn>, drawer = AGENT_DRAWER) {
   const projection = makeProjection({
     checkout: {

@@ -67,7 +67,7 @@ export function useCashDrawer(pos: ComputedRef<POSProjection | null>) {
 
   async function callAgent(path: string, body?: Record<string, unknown>) {
     const drawer = config.value;
-    if (!drawer?.agent_url) throw new Error("Terminal sem agente de gaveta configurado.");
+    if (!drawer?.agent_url) throw new Error("Terminal sem agente do balcão configurado.");
     const response = await fetch(`${drawer.agent_url}${path}`, {
       method: body ? "POST" : "GET",
       headers: body ? { "content-type": "application/json" } : undefined,

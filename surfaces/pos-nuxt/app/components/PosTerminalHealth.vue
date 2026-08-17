@@ -27,7 +27,7 @@ const STATUS_META: Record<string, StatusMeta> = {
   // neutro, e NÃO acende o badge geral. Só falha o que existe.
   absent: { label: "Não instalado", dot: "bg-muted-foreground/40", text: "text-muted-foreground", badge: "outline" },
   // O servidor não alcança a loopback do balcão, então não tem como saber se o
-  // agente da gaveta está de pé. Quem sonda é a antesala do caixa, no botão
+  // agente do balcão está de pé. Quem sonda é a antesala do caixa, no botão
   // "Testar gaveta". Fingir verde aqui era o defeito do adapter "simulated".
   deferred: { label: "Na estação", dot: "bg-muted-foreground/60", text: "text-muted-foreground", badge: "outline" },
 };

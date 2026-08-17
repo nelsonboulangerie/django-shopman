@@ -61,7 +61,7 @@ O pulso viaja no request. O agente **não tem** pulso configurável — ele apli
 que recebe. Assim não existe "o pulso do Django" e "o pulso do agente" para
 discordarem.
 
-## 3. O agente (`tools/pos-drawer-agent/`)
+## 3. O agente (`tools/pos-counter-agent/`)
 
 Python 3 da stdlib, zero dependências, HTTP em `127.0.0.1`.
 
@@ -168,7 +168,7 @@ agente, e o olho do operador confirmando que a gaveta abriu.
 
 O dono já está no Admin configurando o terminal. Mandá-lo caçar um arquivo no
 repositório para completar a tarefa é atrito bobo, então a tela
-`/admin/pos/terminal/<ref>/drawer/` entrega o arquivo e as instruções.
+`/admin/pos/terminal/<ref>/agent/` entrega o arquivo e as instruções.
 
 **O token inverteu de dono.** Antes nascia no instalador e alguém transcrevia 43
 caracteres de um terminal Linux para o formulário — erro que só aparecia como
