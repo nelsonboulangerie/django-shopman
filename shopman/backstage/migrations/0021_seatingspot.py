@@ -6,7 +6,7 @@ from django.db import migrations, models
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('backstage', '0019_consumptionrole_productconsumptiontag'),
+        ('backstage', '0020_consumptionrole_productconsumptiontag'),
     ]
 
     operations = [
