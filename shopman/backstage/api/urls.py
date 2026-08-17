@@ -103,6 +103,9 @@ from .operations import (
     POSCashOpenView,
     POSCashReceiptView,
     POSCashReportView,
+    POSChangeRequestCancelView,
+    POSChangeRequestServeView,
+    POSChangeRequestView,
     POSCloseSaleView,
     POSCustomerLookupView,
     POSCustomerResolveView,
@@ -293,6 +296,23 @@ urlpatterns = [
     path("pos/cash/movement/", POSCashMovementView.as_view(), name="api-backstage-pos-cash-movement"),
     path("pos/cash/report/", POSCashReportView.as_view(), name="api-backstage-pos-cash-report"),
     path("pos/cash/drawer-open/", POSCashDrawerOpenView.as_view(), name="api-backstage-pos-cash-drawer-open"),
+    # Pedido de troco: o dinheiro não anda, o troco vem até o balcão. Net zero —
+    # nenhuma destas rotas cria movimento nem mexe no esperado do fechamento.
+    path(
+        "pos/cash/change-request/",
+        POSChangeRequestView.as_view(),
+        name="api-backstage-pos-change-request",
+    ),
+    path(
+        "pos/cash/change-request/<str:request_ref>/serve/",
+        POSChangeRequestServeView.as_view(),
+        name="api-backstage-pos-change-request-serve",
+    ),
+    path(
+        "pos/cash/change-request/<str:request_ref>/cancel/",
+        POSChangeRequestCancelView.as_view(),
+        name="api-backstage-pos-change-request-cancel",
+    ),
     path(
         "pos/cash/movement/<int:movement_id>/receipt/",
         POSCashReceiptView.as_view(),

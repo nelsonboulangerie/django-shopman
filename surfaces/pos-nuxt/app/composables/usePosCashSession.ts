@@ -183,6 +183,64 @@ export function usePosCashSession({ pos, actions, refresh, action }: CashSession
     return drawer.kick("no_sale");
   }
 
+  // ── Pedido de troco ─────────────────────────────────────────────────────
+  //
+  // Faltou troco: em vez de o operador atravessar a loja com dinheiro até o
+  // cofre — trajeto que a câmera só cobre em parte, e cuja falta só apareceria
+  // no fechamento —, ele PEDE, alguém traz, e a troca acontece no balcão entre
+  // duas pessoas.
+  //
+  // ⚠️ NENHUMA destas três funções mexe em dinheiro. Trocar é net zero: saem
+  // R$ 50, entram 5×R$ 10, o total da gaveta não muda. Se alguma delas passar
+  // por `cash/movement/`, o esperado do fechamento cai por um dinheiro que nunca
+  // saiu e o turno fecha com falta fantasma.
+
+  const pendingChangeRequests = computed(
+    () => pos.value?.cash_runtime?.pending_change_requests ?? [],
+  );
+
+  function requestChange(payload: { kind: string; amount: string; note: string }): Promise<boolean> {
+    return run(
+      actionHref(actions.value, "request_change", "/api/v1/backstage/pos/cash/change-request/"),
+      { kind: payload.kind, amount: payload.amount || "0", note: payload.note },
+      "Falha ao pedir troco.",
+    );
+  }
+
+  /**
+   * O gerente atende no balcão: PIN, gaveta abre, a troca acontece à vista.
+   *
+   * Envia sem aprovação primeiro, como a sangria ao lado: quem decide o que
+   * exige assinatura é o SERVIDOR. Duplicar essa regra na tela daria dois donos
+   * para a mesma pergunta, e o dia em que divergissem a tela é que estaria
+   * errada — mas quem pagaria seria a gaveta.
+   */
+  function serveChangeRequest(payload: {
+    ref: string;
+    managerApproval?: { username: string; pin: string } | null;
+  }): Promise<boolean> {
+    const body: Record<string, unknown> = {};
+    if (payload.managerApproval) body.manager_approval = payload.managerApproval;
+    return run(
+      `/api/v1/backstage/pos/cash/change-request/${encodeURIComponent(payload.ref)}/serve/`,
+      body,
+      "Falha ao atender o pedido.",
+    ).then((ok) => {
+      // Só depois do `ok`: gaveta aberta por um atendimento recusado (PIN
+      // errado, pedido já resolvido) é dinheiro exposto sem lastro.
+      if (ok) void drawer.kick("change_request");
+      return ok;
+    });
+  }
+
+  function cancelChangeRequest(ref: string): Promise<boolean> {
+    return run(
+      `/api/v1/backstage/pos/cash/change-request/${encodeURIComponent(ref)}/cancel/`,
+      {},
+      "Falha ao cancelar o pedido.",
+    );
+  }
+
   return {
     busy,
     movementKinds,
@@ -198,5 +256,10 @@ export function usePosCashSession({ pos, actions, refresh, action }: CashSession
     drawerProbing: drawer.probing,
     openDrawerWithoutSale,
     probeDrawer: drawer.probe,
+    // Pedido de troco: o dinheiro fica no balcão, o troco vem até ele.
+    pendingChangeRequests,
+    requestChange,
+    serveChangeRequest,
+    cancelChangeRequest,
   };
 }

@@ -6,7 +6,11 @@
 // (Unfold), NOT here — the POS never reveals the expected drawer, so the
 // operator counts blind and the system computes the variance server-side.
 
-import type { POSCashManagementCapability, POSCashRuntimeProjection } from "~/types/pos";
+import type {
+  POSCashManagementCapability,
+  POSCashRuntimeProjection,
+  POSChangeRequestProjection,
+} from "~/types/pos";
 
 const MOVEMENT_LABELS: Record<string, string> = {
   sangria: "Sangria",
@@ -87,6 +91,57 @@ export function requiresOpenShiftForSale(
   cashManagement: POSCashManagementCapability | null | undefined,
 ): boolean {
   return cashManagement?.requires_open_shift_for_sale !== false;
+}
+
+// ── Pedido de troco ────────────────────────────────────────────────────────
+//
+// Quando falta troco, o operador saía do balcão com dinheiro até o cofre: parte
+// do trajeto tem câmera, parte não, e a falta só apareceria no fechamento. Aqui
+// ele PEDE, alguém traz, e a troca acontece no balcão entre duas pessoas.
+//
+// ⚠️ Trocar dinheiro é NET ZERO — saem R$ 50, entram 5×R$ 10. Nada nesta seção
+// fala de valor esperado, movimento ou fechamento, e não pode passar a falar:
+// somar um pedido ao caixa inventaria uma diferença que não existe.
+
+/** O que o balcão pode pedir. Ref em inglês (contrato), rótulo pt-BR na tela. */
+export const CHANGE_REQUEST_KINDS = [
+  { ref: "coins", label: "Moedas" },
+  { ref: "small_bills", label: "Notas pequenas" },
+  { ref: "amount", label: "Valor" },
+] as const;
+
+export function changeRequestLabel(kind: string): string {
+  return CHANGE_REQUEST_KINDS.find((k) => k.ref === kind)?.label || kind;
+}
+
+/**
+ * Só o pedido por VALOR exige número.
+ *
+ * "Acabou moeda" já é um pedido inteiro, e exigir um valor ali travaria a fila
+ * por um dado que ninguém tem na hora. Já "me traz um valor" sem número não diz
+ * nada a quem vai buscar o troco — o servidor recusa, e a tela recusa antes.
+ */
+export function canRequestChange(kind: string, amount: string): boolean {
+  if (!kind) return false;
+  return kind === "amount" ? Boolean(amount.trim()) : true;
+}
+
+/**
+ * A linha que o gerente lê antes de assinar: o que foi pedido, e quanto se o
+ * pedido falou de valor. Sem sufixo inventado quando não falou.
+ */
+export function changeRequestSummary(request: POSChangeRequestProjection): string {
+  const label = changeRequestLabel(request.kind);
+  return request.amount_display ? `${label} · ${request.amount_display}` : label;
+}
+
+/** Format the request timestamp for the pending list (pt-BR, hour and minute). */
+export function formatRequestedAt(raw: string | null | undefined): string {
+  if (!raw) return "";
+  const date = new Date(raw);
+  return Number.isNaN(date.getTime())
+    ? raw
+    : date.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
 }
 
 /** The lobby's single screen state — drives which card the antesala shows. */

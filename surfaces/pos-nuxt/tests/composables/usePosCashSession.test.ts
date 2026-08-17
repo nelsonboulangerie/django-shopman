@@ -270,3 +270,95 @@ describe("usePosCashSession — o comprovante sai sozinho e o resultado é regis
     expect(agentCalls).toEqual([]);
   });
 });
+
+// ── Pedido de troco ───────────────────────────────────────────────────────
+//
+// O operador pede troco em vez de atravessar a loja com dinheiro até o cofre. O
+// gerente traz, assina, a gaveta abre e a troca acontece no balcão.
+//
+// ⚠️ A regra que não pode cair: trocar é NET ZERO. Nenhuma destas chamadas pode
+// virar movimento de caixa — o esperado do fechamento não pode sentir nada.
+
+describe("usePosCashSession — pedido de troco (o dinheiro fica no balcão)", () => {
+  beforeEach(() => vi.mocked(toast.error).mockClear());
+  afterEach(() => vi.unstubAllGlobals());
+
+  it("pedir troco envia tipo, valor e observação", async () => {
+    const { session, actionCall } = makeCashSession();
+    const ok = await session.requestChange({ kind: "coins", amount: "", note: "acabou moeda" });
+    expect(ok).toBe(true);
+    expect(actionCall).toHaveBeenCalledWith(
+      "/api/v1/backstage/pos/cash/change-request/",
+      { body: { kind: "coins", amount: "0", note: "acabou moeda" } },
+    );
+  });
+
+  it("a antesala lê os pendentes do cash_runtime", () => {
+    const { session } = makeCashSession({
+      projection: makeProjection({
+        cash_runtime: {
+          pending_change_requests: [
+            { ref: "a1", kind: "coins", amount_q: 0, amount_display: "", note: "", requested_by: "marina", requested_at: "" },
+          ],
+        } as POSProjection["cash_runtime"],
+      }),
+    });
+    expect(session.pendingChangeRequests.value).toHaveLength(1);
+    expect(session.pendingChangeRequests.value[0]!.ref).toBe("a1");
+  });
+
+  it("pendentes ausentes viram lista vazia, não explosão", () => {
+    const { session } = makeCashSession();
+    expect(session.pendingChangeRequests.value).toEqual([]);
+  });
+
+  it("atender manda o PIN do gerente para a ref do pedido", async () => {
+    const { session, actionCall } = makeCashSession();
+    await session.serveChangeRequest({ ref: "a1", managerApproval: { username: "pablo", pin: "4321" } });
+    expect(actionCall).toHaveBeenCalledWith(
+      "/api/v1/backstage/pos/cash/change-request/a1/serve/",
+      { body: { manager_approval: { username: "pablo", pin: "4321" } } },
+    );
+  });
+
+  it("atender abre a gaveta — é onde a troca acontece", async () => {
+    const { session, kicks } = makeDrawerSession();
+    await session.serveChangeRequest({ ref: "a1", managerApproval: { username: "pablo", pin: "4321" } });
+    expect(kicks).toEqual(["change_request"]);
+  });
+
+  it("atendimento RECUSADO não abre a gaveta", async () => {
+    // Gaveta aberta por um atendimento que o servidor negou (PIN errado, pedido
+    // já resolvido) é dinheiro exposto sem nada justificando.
+    const actionCall = vi.fn().mockRejectedValue(new Error("recusado"));
+    const { session, kicks } = makeDrawerSession({ actionCall });
+    await session.serveChangeRequest({ ref: "a1", managerApproval: { username: "pablo", pin: "4321" } });
+    expect(kicks).toEqual([]);
+  });
+
+  it("cancelar bate na rota do pedido, sem corpo de dinheiro", async () => {
+    const { session, actionCall } = makeCashSession();
+    const ok = await session.cancelChangeRequest("a1");
+    expect(ok).toBe(true);
+    expect(actionCall).toHaveBeenCalledWith(
+      "/api/v1/backstage/pos/cash/change-request/a1/cancel/",
+      { body: {} },
+    );
+  });
+
+  it("NENHUMA ação de troco encosta em movimento de caixa nem imprime comprovante", async () => {
+    // A prova da regra, do lado da tela: se qualquer uma destas passar por
+    // `cash/movement/`, o esperado do fechamento cai por um dinheiro que nunca
+    // saiu e o turno fecha com falta fantasma (o defeito desfeito no PR #178).
+    const { session, actionCall } = makeCashSession();
+    await session.requestChange({ kind: "amount", amount: "50,00", note: "" });
+    await session.serveChangeRequest({ ref: "a1", managerApproval: { username: "pablo", pin: "4321" } });
+    await session.cancelChangeRequest("a2");
+    await new Promise((r) => setTimeout(r, 10));
+
+    const caminhos = actionCall.mock.calls.map((c) => String(c[0]));
+    expect(caminhos.some((p) => p.includes("/cash/movement/"))).toBe(false);
+    expect(caminhos.some((p) => p.includes("/receipt/"))).toBe(false);
+    for (const caminho of caminhos) expect(caminho).toContain("/cash/change-request/");
+  });
+});
