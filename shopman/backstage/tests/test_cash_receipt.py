@@ -349,3 +349,38 @@ def test_o_qr_sai_centralizado_e_devolve_o_alinhamento(movimento):
     assert centraliza in papel
     assert papel.index(centraliza) < papel.index(esquerda), "tem que voltar DEPOIS do QR"
     assert papel.count(centraliza) == papel.count(esquerda) == 1
+
+
+def test_as_duas_assinaturas_ficam_na_mesma_linha(movimento):
+    """Quem lança e quem autoriza são um par; separá-las rebaixa a segunda.
+
+    A autorização do gerente é a substância da retirada, não um detalhe do
+    cabeçalho — na mesma linha, quem confere lê a dupla de uma vez.
+    """
+    from shopman.backstage.services.receipt_escpos import cash_movement_receipt
+
+    papel = cash_movement_receipt(movimento, verify_code="X", verify_url="https://x/y")
+    # O separador sai como "-": a CP860 não tem o ponto médio, e a tabela de
+    # transliteração o converte em vez de deixar virar "?" no papel.
+    assert b"marina - autorizado por admin" in papel
+
+
+def test_sem_autorizador_a_linha_nao_inventa_sufixo(movimento):
+    """Suprimento não tem segunda assinatura — e o papel não finge que tem."""
+    from shopman.backstage.services.receipt_escpos import cash_movement_receipt
+
+    movimento.approved_by = ""
+    papel = cash_movement_receipt(movimento, verify_code="X", verify_url="https://x/y")
+    assert b"autorizado por" not in papel
+
+
+def test_o_valor_fica_emoldurado_entre_tracos(movimento):
+    """Cercado de branco entre duas réguas, o olho acha antes de procurar."""
+    from shopman.backstage.services.receipt_escpos import cash_movement_receipt
+
+    papel = cash_movement_receipt(movimento, verify_code="X", verify_url="https://x/y")
+    regua = ("-" * 48).encode("cp860")
+    valor = papel.index(b"- R$ 150,00")
+    antes = papel.rindex(regua, 0, valor)
+    depois = papel.index(regua, valor)
+    assert antes < valor < depois, "o valor tem que estar ENTRE duas réguas"

@@ -48,31 +48,35 @@ def cash_movement_receipt(movement, *, verify_code: str, verify_url: str, reprin
         out += _centered("*** 2a VIA ***")
     out += _rule()
 
-    # O VALOR COM SINAL, em corpo duplo. Quem confere tem um maço na mão e
-    # precisa somar: com `+`/`−` o sentido está no próprio número, e some sem
-    # ler o cabeçalho de cada papel. Sinal é a diferença entre somar e conferir.
-    sinal = "-" if movement.movement_type == "sangria" else "+"
-    out += _double(f"{sinal} R$ {format_money(movement.amount_q)}")
-    out += _line("")
-
-    # Quem/quando numa linha só. Eram quatro linhas rotuladas ("Turno", "Operador",
-    # "Quando") para três dados curtos — rótulo mais longo que o conteúdo, e papel
-    # é o recurso escasso aqui. A assinatura do gerente fica separada de propósito:
-    # ela é a substância da autorização, não um detalhe do cabeçalho.
-    out += _line(f"Turno #{movement.shift_id} · {movement.created_by or '-'} · {_local(movement.created_at)}")
+    # Contexto primeiro, em três linhas: QUANDO, QUEM, POR QUÊ.
+    #
+    # As duas assinaturas moram na MESMA linha porque são um par — quem lança e
+    # quem autoriza. Separá-las fazia a segunda parecer um detalhe do cabeçalho,
+    # quando ela é a substância da autorização de uma retirada.
+    out += _line(f"Turno #{movement.shift_id} · {_local(movement.created_at)}")
+    quem = movement.created_by or "-"
     if movement.approved_by:
-        out += _line(f"Autorizado por {movement.approved_by}")
+        quem = f"{quem} · autorizado por {movement.approved_by}"
+    out += _line(quem)
     for pedaco in _wrap(f"Motivo: {movement.reason or '-'}", COLUMNS):
         out += _line(pedaco)
 
+    # O VALOR sozinho, emoldurado, no meio do papel. Com o sinal dentro do
+    # número (`+`/`−`), quem confere soma o maço sem ler o cabeçalho de cada
+    # folha — e é literalmente isso que a conferência faz. Emoldurar em vez de
+    # empilhar no topo: cercado de branco, o olho acha antes de procurar.
     out += _rule()
+    out += _line("")
+    sinal = "-" if movement.movement_type == "sangria" else "+"
+    out += _double(f"{sinal} R$ {format_money(movement.amount_q)}")
+    out += _line("")
+    out += _rule()
+
     out += _centered(verify_code)
     out += _centered("confira apontando a camera")
     # ⚠️ Centralizado. Sem `ESC a 1` o QR sai encostado à esquerda, com metade do
     # papel vazia ao lado — parece defeito de impressão.
     out += _qr(verify_url)
-    out += _line("")
-    out += _centered("Sem o codigo, este papel nao vale nada.")
 
     out += bytes([ESC, ord("d"), 4])
     out += bytes([GS, ord("V"), 1])  # corte parcial
