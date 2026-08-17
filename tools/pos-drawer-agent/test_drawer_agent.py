@@ -472,7 +472,7 @@ def test_instalador_reprova_quando_o_agente_nao_sobe(monkeypatch, capsys, tmp_pa
     monkeypatch.setattr(drawer_agent, "list_queues", lambda: ["TM-T20"])
     monkeypatch.setattr(drawer_agent.shutil, "which", lambda name: f"/usr/bin/{name}")
     monkeypatch.setattr(drawer_agent, "_autostart_linux", lambda target: None)
-    monkeypatch.setattr(drawer_agent, "_wait_until_listening", lambda config, **k: False)
+    monkeypatch.setattr(drawer_agent, "_wait_until_listening", lambda config, **k: None)
 
     codigo = drawer_agent.install(["--install", "--queue", "TM-T20", "--token", TOKEN])
 
@@ -490,10 +490,14 @@ def test_instalador_aprova_quando_o_agente_responde(monkeypatch, capsys, tmp_pat
     monkeypatch.setattr(drawer_agent, "list_queues", lambda: ["TM-T20"])
     monkeypatch.setattr(drawer_agent.shutil, "which", lambda name: f"/usr/bin/{name}")
     monkeypatch.setattr(drawer_agent, "_autostart_linux", lambda target: None)
-    monkeypatch.setattr(drawer_agent, "_wait_until_listening", lambda config, **k: True)
+    monkeypatch.setattr(drawer_agent, "_wait_until_listening", lambda config, **k: {"ok": True, "build": drawer_agent.build_id()})
 
     assert drawer_agent.install(["--install", "--queue", "TM-T20", "--token", TOKEN]) == 0
-    assert "Agente respondendo" in capsys.readouterr().out
+    saida = capsys.readouterr().out
+    assert "respondendo" in saida
+    # A versão sai na mensagem porque é o que o operador compara com o Admin
+    # quando desconfia de que o balcão está atrasado.
+    assert drawer_agent.build_id() in saida
 
 
 def test_no_windows_config_programa_e_log_ficam_na_MESMA_pasta():
@@ -724,3 +728,31 @@ def test_reinstalar_no_linux_REINICIA_o_servico(monkeypatch):
     # `enable` sem `--now` continua sendo necessário (sobreviver ao reboot), mas
     # ele não pode ser o único jeito de o processo novo entrar no ar.
     assert "enable" in verbos
+
+
+def test_instalador_reprova_quando_quem_atende_e_outra_versao(monkeypatch, capsys, tmp_path):
+    """Responder não é ser — e foi por isso que reinstalar não adiantou no balcão.
+
+    O processo ANTIGO nunca morria, seguia segurando a porta, e o instalador só
+    perguntava "alguém responde?". Dizia pronto com a versão velha no ar; o PDV
+    continuava acusando agente desatualizado, e estava certo. A prova de
+    identidade é o `build` — sha256 do próprio arquivo.
+    """
+    monkeypatch.setattr(drawer_agent, "IS_WINDOWS", False)
+    monkeypatch.setattr(drawer_agent, "IS_MACOS", False)
+    monkeypatch.setattr(drawer_agent, "INSTALL_DIR", tmp_path / "inst")
+    monkeypatch.setattr(drawer_agent, "DEFAULT_CONFIG_PATH", tmp_path / "agent.json")
+    monkeypatch.setattr(drawer_agent, "list_queues", lambda: ["TM-T20"])
+    monkeypatch.setattr(drawer_agent.shutil, "which", lambda name: f"/usr/bin/{name}")
+    monkeypatch.setattr(drawer_agent, "_autostart_linux", lambda target: None)
+    monkeypatch.setattr(
+        drawer_agent, "_wait_until_listening", lambda config, **k: {"ok": True, "build": "deadbeef"}
+    )
+
+    codigo = drawer_agent.install(["--install", "--queue", "TM-T20", "--token", TOKEN])
+
+    saida = capsys.readouterr().out
+    assert codigo == 1, "instalação que não trocou o processo não pode sair com sucesso"
+    assert "NÃO pegou" in saida
+    assert "deadbeef" in saida, "tem que mostrar a versão que está no ar"
+    assert drawer_agent.build_id() in saida, "e a que deveria estar"

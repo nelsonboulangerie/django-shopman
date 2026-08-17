@@ -975,22 +975,75 @@ def install(argv: list[str]) -> int:
     #
     # Instalador que afirma o que não mediu é o mesmo pecado do health que
     # inventava `ready`. Agora ele bate na própria porta antes de dizer pronto.
-    if _wait_until_listening(config):
-        print(f"\n✓ Agente respondendo em http://127.0.0.1:{config.get('port', 47811)}/health")
-        return 0
+    porta = config.get("port", 47811)
+    saude = _wait_until_listening(config)
 
-    print(
-        f"\n✗ O agente NÃO está respondendo em http://127.0.0.1:{config.get('port', 47811)}/health.\n"
-        "  O início automático não pegou. O kick pela linha de comando pode até\n"
-        "  funcionar, mas o botão do PDV vai falhar até isto subir.\n"
-        f"  Suba na mão para confirmar:  {runner} \"{target}\"\n"
-        f"  E veja o motivo em:          {LOG_PATH}"
+    if saude is None:
+        print(
+            f"\n✗ O agente NÃO está respondendo em http://127.0.0.1:{porta}/health.\n"
+            "  O início automático não pegou. O kick pela linha de comando pode até\n"
+            "  funcionar, mas o botão do PDV vai falhar até isto subir.\n"
+            f"  Suba na mão para confirmar:  {runner} \"{target}\"\n"
+            f"  E veja o motivo em:          {LOG_PATH}"
+        )
+        return 1
+
+    # ⚠️ Responder não é ser. O bloco acima só sabia que ALGUÉM atende na porta —
+    # e quem atendia era o processo ANTIGO, que nunca morreu e continuava segurando
+    # o 47811. O instalador trocava o arquivo, dizia "pronto", e o balcão seguia com
+    # a versão velha: o botão do PDV falhava com "rota desconhecida" e reinstalar
+    # não adiantava, porque reinstalar era exatamente o que não estava pegando.
+    #
+    # A prova de identidade é o `build` (sha256 do próprio arquivo). Se o que atende
+    # não for este arquivo, a instalação NÃO valeu — e dizer o contrário manda o
+    # operador procurar defeito na impressora.
+    esperado = build_id()
+    rodando = str(saude.get("build") or "?")
+    if rodando != esperado:
+        print(
+            f"\n✗ A instalação NÃO pegou: quem atende na porta {porta} é outra versão.\n"
+            f"    versão que este arquivo instala: {esperado}\n"
+            f"    versão que está no ar agora:     {rodando}\n\n"
+            "  O processo antigo continua vivo e segurando a porta, então o novo\n"
+            "  nem conseguiu subir. Enquanto isto durar, o PDV vai dizer que o\n"
+            "  agente está desatualizado — e vai estar certo.\n\n"
+            f"  Quem está na porta:  {_quem_ocupa_a_porta(porta)}\n"
+            f"  Derrube e reinstale: {_comando_de_parada()}\n"
+            f"                       {runner} \"{target}\" --install"
+        )
+        return 1
+
+    print(f"\n✓ Agente {esperado} respondendo em http://127.0.0.1:{porta}/health")
+    return 0
+
+
+def _quem_ocupa_a_porta(porta: int) -> str:
+    """PID que segura a porta, para o diagnóstico não parar em 'algo está lá'."""
+    if os.name == "nt":
+        return f'netstat -ano | findstr :{porta}'
+    achado = subprocess.run(
+        ["lsof", "-ti", f":{porta}"], capture_output=True, text=True, check=False
     )
-    return 1
+    pids = achado.stdout.split()
+    return f"PID {', '.join(pids)}" if pids else f"não identificado (tente: lsof -i :{porta})"
 
 
-def _wait_until_listening(config: dict, *, seconds: int = 10) -> bool:
-    """O agente atende em `/health`? Dá um tempo para o serviço nascer."""
+def _comando_de_parada() -> str:
+    if sys.platform.startswith("linux"):
+        return f"systemctl --user stop {SERVICE_NAME}"
+    if sys.platform == "darwin":
+        return f"launchctl bootout gui/$(id -u)/{LAUNCH_AGENT_LABEL}"
+    if os.name == "nt":
+        return f'schtasks /end /tn "{WINDOWS_TASK_NAME}"'
+    return "encerre o processo acima"
+
+
+def _wait_until_listening(config: dict, *, seconds: int = 10) -> dict | None:
+    """Devolve o corpo do `/health`, ou ``None`` se ninguém atender a tempo.
+
+    Devolve o CORPO, não um booleano, porque quem chama precisa saber **quem**
+    atendeu — o `build` é a única prova de que o processo no ar é este arquivo.
+    """
     import time
     import urllib.error
     import urllib.request
@@ -1001,11 +1054,11 @@ def _wait_until_listening(config: dict, *, seconds: int = 10) -> bool:
         try:
             with urllib.request.urlopen(url, timeout=2) as response:
                 if response.status == 200:
-                    return True
-        except (urllib.error.URLError, OSError):
+                    return json.loads(response.read().decode("utf-8"))
+        except (urllib.error.URLError, OSError, ValueError):
             pass
         time.sleep(0.5)
-    return False
+    return None
 
 
 def main(argv: list[str] | None = None) -> int:
