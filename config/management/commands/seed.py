@@ -6228,6 +6228,11 @@ class Command(BaseCommand):
                         external_id=external_id,
                         occurred_at=self._at(day, rng.choice((8, 9, 10, 10, 11, 12, 15, 16, 17))),
                         total_q=total_q,
+                        # Forma de pagamento crua, como o export externo entrega.
+                        # Sem ela a previsão de troco não teria de onde tirar
+                        # "quantas vendas em dinheiro num sábado", que é o único
+                        # fator dela com dois anos de base.
+                        payment=self._bi_historical_payment(day, rng),
                         is_delivery=rng.random() < 0.12,
                     )
                 )
@@ -6355,11 +6360,13 @@ class Command(BaseCommand):
                         catalogo, k=min(len(catalogo), rng.randint(1, 3))
                     )
                 ]
+                total_q = sum(unit * qty for _p, qty, unit in lines)
                 orders.append(
                     Order(
                         ref=ref, channel_ref="pdv", session_key=f"seed-{ref}",
                         status=Order.Status.COMPLETED,
-                        total_q=sum(unit * qty for _p, qty, unit in lines),
+                        total_q=total_q,
+                        data=self._bi_native_payment(day, total_q, rng),
                         snapshot={"seed": "nelson", "source": "bi_native_volume"},
                     )
                 )
@@ -6387,6 +6394,44 @@ class Command(BaseCommand):
             )
             created += len(orders)
         return created
+
+    # Fatia das vendas pagas em espécie no balcão. Fim de semana puxa dinheiro
+    # para cima (movimento de bairro, compra pequena); dia útil puxa para baixo.
+    BI_CASH_SHARE = (0.30, 0.30, 0.30, 0.32, 0.36, 0.44, 0.44)
+
+    def _bi_historical_payment(self, day, rng) -> str:
+        """Texto cru de forma de pagamento, no dialeto do export externo."""
+        roll = rng.random()
+        if roll < self.BI_CASH_SHARE[day.weekday()]:
+            return "DINHEIRO"
+        return "PIX" if roll < 0.72 else rng.choice(("CARTAO DE CREDITO", "CARTAO DE DEBITO"))
+
+    def _bi_native_payment(self, day, total_q: int, rng) -> dict:
+        """O bloco ``payment`` de uma venda de balcão, como o PDV grava.
+
+        O troco entra **medido**, e não estimado: é o que separa a previsão de
+        troco de um chute. Uma parte das vendas em dinheiro sai sem
+        ``tendered_q`` de propósito — o operador nem sempre digita o valor
+        recebido, e a tela precisa enxergar esse buraco de medição em vez de
+        encontrar um mundo perfeito que a casa não tem.
+        """
+        payment = {"method": "pix", "collection": "terminal", "amount_q": total_q}
+        roll = rng.random()
+        if roll >= self.BI_CASH_SHARE[day.weekday()]:
+            payment["method"] = "pix" if roll < 0.72 else "card"
+            return {"payment": payment}
+
+        payment.update({"method": "cash", "cash_received_q": total_q})
+        if rng.random() < 0.12:
+            return {"payment": payment}  # ninguém registrou o valor recebido
+        # A nota que o cliente entrega quase sempre é a mais próxima do total;
+        # a de R$ 50 aparece, mas é minoria. Uniformizar os degraus inflaria o
+        # troco médio e a tela pediria muito mais dinheiro do que a casa precisa.
+        step = rng.choice((500, 500, 500, 1000, 1000, 2000))
+        tendered_q = total_q if rng.random() < 0.10 else -(-total_q // step) * step
+        payment["tendered_q"] = tendered_q
+        payment["change_q"] = max(0, tendered_q - total_q)
+        return {"payment": payment}
 
     def _bi_category(self, product) -> str:
         """Categoria da linha histórica — o recorte barato de 2 anos."""

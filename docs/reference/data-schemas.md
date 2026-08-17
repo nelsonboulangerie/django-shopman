@@ -261,6 +261,11 @@ Classificações: **canonical** = fonte de verdade para decisões; **display** =
 | `transaction_id` | `string` | audit | `payment.capture()` | — | Transaction ID do adapter pós-capture |
 | `marked_paid_by` | `string` | legacy audit | endpoint removido | leitura histórica apenas | Campo legado de versões antigas; não é status de pagamento, não deve liberar fluxo operacional e não existe mais como ação de operador |
 | `error` | `string` | audit | `payment.initiate()` | — | Mensagem de erro se create_intent falhou (max 200 chars) |
+| `collection` | `string` | **canonical** | POS (`shop/services/pos.py`) | POS, cash service | `"terminal"` (recebido no balcão) ou `"on_delivery"` (recebido na entrega) |
+| `tenders` | `list[dict]` | **canonical** | POS (`shop/services/pos.py`) | POS, cash service, fechamento | Linhas do pagamento (misto): `{method, amount_q, collection, status, ...}` |
+| `cash_received_q` | `int` | **canonical** | POS (`shop/services/pos.py`) | fechamento de caixa, B.I. de troco | Soma das linhas em espécie recebidas no terminal. É o que identifica venda em dinheiro num pagamento misto, em que `method` vira `"mixed"` |
+| `tendered_q` | `int` | measurement | POS (`shop/services/pos.py`) | B.I. de troco | Quanto o cliente entregou em espécie. **Ausente quando o operador não digitou** — ausência de medição, nunca "pagou justo" |
+| `change_q` | `int` | measurement | POS (`shop/services/pos.py`) | POS (revisão), B.I. de troco | Troco devolvido, em centavos. Escrito junto com `tendered_q`. É a única fonte de troco do sistema: `HistoricalSale` (export externo) **não tem troco**, e por isso a previsão de necessidade de troco lê só pedido nativo |
 
 ### returns — detalhamento
 

@@ -14,6 +14,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from shopman.backstage.projections.bi_cash import build_bi_cash
+from shopman.backstage.projections.bi_change import build_bi_change
 from shopman.backstage.projections.bi_customers import build_bi_customers
 from shopman.backstage.projections.bi_explore import (
     ExploreError,
@@ -149,6 +150,32 @@ class BIForecastView(_BIBase):
         target = _query_date(request, "target") or timezone.localdate() + timedelta(days=1)
         try:
             report = build_bi_forecast(
+                target=target,
+                horizon=str(request.GET.get("horizon") or "day").strip(),
+            )
+        except ForecastError as exc:
+            return Response({"detail": str(exc)}, status=400)
+        return Response({"bi": projection_data(report)})
+
+
+@extend_schema_view(
+    get=extend_schema(
+        tags=["backstage"],
+        summary="B.I. change: how much change money the day is likely to need",
+        responses={200: OpenApiResponse(description="B.I. change report.")},
+    ),
+)
+class BIChangeView(_BIBase):
+    """Previsão de necessidade de troco.
+
+    Mesmo default de ``target`` da projeção: a pergunta útil é sobre amanhã,
+    porque abastecer troco é decisão de véspera.
+    """
+
+    def get(self, request):
+        target = _query_date(request, "target") or timezone.localdate() + timedelta(days=1)
+        try:
+            report = build_bi_change(
                 target=target,
                 horizon=str(request.GET.get("horizon") or "day").strip(),
             )

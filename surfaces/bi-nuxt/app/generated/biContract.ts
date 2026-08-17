@@ -272,3 +272,51 @@ export interface BIForecastReport {
   total_orders: Expectation | null;
   total_missing_days: string[];
 }
+
+/** Quanto de troco sai por venda em dinheiro — o hábito do bairro. */
+export interface ChangeHabit {
+  per_cash_order_q: Expectation;
+  band: string;
+  measured_days: number;
+  measured_orders: number;
+  unmeasured_orders: number;
+  window_from: string;
+  window_to: string;
+}
+
+/** A tendência da denominação. Nunca uma contagem de peças. */
+export interface ChangeMix {
+  tendency: string;
+  coin_value_percent: number;
+  small_change_percent: number;
+  sample_size: number;
+}
+
+/** DayChangeForecast(date: 'str', weekday: 'int', weekday_label: 'str', closed: 'bool', closed_reason: 'str', change_q: 'Expectation | None', coin_floor_q: 'float | None', cash_orders: 'Expectation | None', cash_share_percent: 'int', cash_share_days: 'int', missing_reason: 'str') */
+export interface DayChangeForecast {
+  date: string;
+  weekday: number;
+  weekday_label: string;
+  closed: boolean;
+  closed_reason: string;
+  change_q: Expectation | null;
+  coin_floor_q: number | null;
+  cash_orders: Expectation | null;
+  cash_share_percent: number;
+  cash_share_days: number;
+  missing_reason: string;
+}
+
+/** BIChangeReport(horizon: 'str', target: 'str', date_from: 'str', date_to: 'str', days: 'tuple[DayChangeForecast, ...]', total_change_q: 'Expectation | None', total_missing_days: 'tuple[str, ...]', habit: 'ChangeHabit | None', mix: 'ChangeMix | None', missing_reason: 'str') */
+export interface BIChangeReport {
+  horizon: string;
+  target: string;
+  date_from: string;
+  date_to: string;
+  days: DayChangeForecast[];
+  total_change_q: Expectation | null;
+  total_missing_days: string[];
+  habit: ChangeHabit | null;
+  mix: ChangeMix | null;
+  missing_reason: string;
+}
