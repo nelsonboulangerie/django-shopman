@@ -897,6 +897,30 @@ def _autostart_windows(target: Path) -> None:
     subprocess.run(["schtasks", "/run", "/tn", WINDOWS_TASK_NAME], capture_output=True, check=False)
 
 
+def _escolher_fila(queues: list[str], rotulo: str) -> str:
+    """Escolha por NÚMERO, não digitando o nome do dispositivo.
+
+    Nome de fila do CUPS costuma ser coisa como `EPSON_TM-T20X_Receipt5` — quem
+    instala no balcão erra um caractere, o instalador recusa, e a pessoa acha que
+    a impressora é que está com problema. Um dígito não tem como sair errado.
+    O nome ainda é aceito, para quem já sabe o que quer e para o `--queue`.
+    """
+    if len(queues) == 1:
+        # Uma só: já é a resposta. Perguntar "qual das 1?" é cerimônia.
+        unica = queues[0]
+        resposta = input(f"Usar a impressora '{unica}'? [S/n] ").strip().lower()
+        return "" if resposta.startswith("n") else unica
+
+    print(f"{rotulo.capitalize()}:")
+    for i, name in enumerate(queues, start=1):
+        print(f"  {i}) {name}")
+    escolha = input(f"Número da impressora térmica [1-{len(queues)}]: ").strip()
+    if escolha.isdigit() and 1 <= int(escolha) <= len(queues):
+        return queues[int(escolha) - 1]
+    # Não é número: pode ser o nome digitado, e recusar aqui seria pedantismo.
+    return escolha
+
+
 def install(argv: list[str]) -> int:
     if not IS_WINDOWS and not shutil.which("lp"):
         print("erro: comando 'lp' não encontrado — instale o CUPS.", file=sys.stderr)
@@ -909,10 +933,10 @@ def install(argv: list[str]) -> int:
         if not queues:
             print(f"erro: nenhuma das {rotulo} encontrada. A impressora está instalada?", file=sys.stderr)
             return 1
-        print(f"{rotulo.capitalize()}:")
-        for name in queues:
-            print(f"  - {name}")
-        queue = input("Nome da impressora térmica: ").strip()
+        queue = _escolher_fila(queues, rotulo)
+        if not queue:
+            print("erro: nenhuma impressora escolhida.", file=sys.stderr)
+            return 1
     if queue not in queues:
         print(f"erro: '{queue}' não está entre as {rotulo} deste computador.", file=sys.stderr)
         return 1
