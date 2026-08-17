@@ -239,3 +239,86 @@ def test_a_previously_seeded_environment_cleans_itself_when_real_data_arrives():
     )
     Command()._seed_long_sales_history({}, days=30)
     assert list(HistoricalSale.objects.values_list("source", flat=True)) == ["yooga"]
+
+
+# ── O comando cirúrgico: referência sim, operação não ────────────────────────
+
+
+@pytest.mark.django_db
+def test_bi_reference_installs_the_three_tables_and_nothing_else():
+    """A guarda que justifica o comando existir.
+
+    Rodar o `seed` completo num ambiente com operação de verdade injetaria venda
+    de demonstração junto — e a leitura do B.I. passaria a somar operação real
+    com inventada. Este comando instala CADASTRO e não encosta em movimento.
+    """
+    from shopman.orderman.models import Order, Session
+    from shopman.stockman.models import Move
+
+    from shopman.backstage.models import (
+        ConsumptionRole,
+        DayClosing,
+        ProductConsumptionTag,
+        SeatingSpot,
+    )
+
+    Order.objects.create(ref="REAL-1", channel_ref="pdv",
+                         status=Order.Status.COMPLETED, total_q=1000)
+    operational_before = (
+        Order.objects.count(), Session.objects.count(),
+        Move.objects.count(), DayClosing.objects.count(),
+    )
+
+    _run("setup_bi_reference")
+
+    assert ConsumptionRole.objects.count() == 3
+    assert ProductConsumptionTag.objects.count() == 59
+    assert ProductConsumptionTag.objects.filter(reviewed=True).count() == 59
+    # 4 mesas internas + 4 externas + 6 lugares de balcão contam no teto; o
+    # bistrô (2) e o bancão externo ficam fora, e é justamente por ficarem fora
+    # que "bateu no teto" continua sendo um sinal.
+    assert SeatingSpot.objects.count() == 17
+    assert SeatingSpot.objects.filter(counts_in_capacity=True).count() == 14
+
+    operational_after = (
+        Order.objects.count(), Session.objects.count(),
+        Move.objects.count(), DayClosing.objects.count(),
+    )
+    assert operational_after == operational_before, "o comando criou operação"
+
+
+@pytest.mark.django_db
+def test_bi_reference_is_idempotent():
+    from shopman.backstage.models import ProductConsumptionTag, SeatingSpot
+
+    _run("setup_bi_reference")
+    _run("setup_bi_reference")
+    assert ProductConsumptionTag.objects.count() == 59
+    assert SeatingSpot.objects.count() == 17
+
+
+@pytest.mark.django_db
+def test_bi_reference_dry_run_writes_nothing():
+    from shopman.backstage.models import ProductConsumptionTag
+
+    output = _run("setup_bi_reference", "--dry-run")
+    assert ProductConsumptionTag.objects.count() == 0
+    assert "nada gravado" in output
+
+
+@pytest.mark.django_db
+def test_the_seed_is_the_source_and_wins_over_an_admin_edit():
+    """Reinstalar desfaz edição feita no Admin — e isso é decisão, não surpresa.
+
+    A curadoria canônica mora no seed. Quem editar no Admin e quiser preservar
+    precisa levar a mudança para lá; do contrário a próxima instalação a desfaz.
+    """
+    from shopman.backstage.models import ConsumptionRole, ProductConsumptionTag, Reading
+
+    _run("setup_bi_reference")
+    leva = ConsumptionRole.objects.get(reading=Reading.TAKEAWAY)
+    ProductConsumptionTag.objects.filter(sku="ESPRESSO").update(role=leva, note="mexi no Admin")
+
+    _run("setup_bi_reference")
+    tag = ProductConsumptionTag.objects.select_related("role").get(sku="ESPRESSO")
+    assert tag.role.reading == Reading.ANCHOR

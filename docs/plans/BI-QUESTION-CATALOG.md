@@ -608,8 +608,22 @@ Cada fase é entregável sozinha e não bloqueia a seguinte.
 
 Três contagens no staging (que tem o Yooga carregado), cada uma decide um parâmetro:
 
-✅ **Os dois comandos existem** (17/08). Rodam onde o histórico está carregado —
+✅ **Os comandos existem** (17/08). Rodam onde o histórico está carregado —
 hoje, só o staging:
+
+```bash
+python manage.py setup_bi_reference --dry-run   # e sem --dry-run para instalar
+```
+
+⚠️ **Não use `seed` para instalar isto num ambiente com operação de verdade.**
+O `seed` sem `--flush` roda o bloco de demonstração inteiro — pedidos, sessões,
+pagamentos, fechamentos, 5.748 pedidos de volume — e a leitura do B.I. passaria
+a somar operação real com inventada. O `setup_bi_reference` instala só as três
+tabelas de referência (papéis, etiquetas, lugares) e não encosta em movimento;
+um teste compara as contagens de `Order`, `Session`, `Move` e `DayClosing` antes
+e depois para garantir isso.
+
+Depois:
 
 ```bash
 python manage.py propose_consumption_tags --dry-run   # e sem --dry-run para gravar
