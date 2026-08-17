@@ -112,7 +112,6 @@ def _stamp_leg(work_order, key: str) -> None:
     então continua intacto.
     """
     from django.utils import timezone
-
     from shopman.craftsman.models import WorkOrder
 
     meta = dict(work_order.meta or {})
