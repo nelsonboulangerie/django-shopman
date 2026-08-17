@@ -48,7 +48,13 @@ def cash_movement_receipt(movement, *, verify_code: str, verify_url: str, reprin
         out += _centered("*** 2a VIA ***")
     out += _rule()
 
-    out += _pair("Valor", f"R$ {format_money(movement.amount_q)}")
+    # O VALOR em corpo duplo, logo abaixo do tipo. Quem confere o caixa no fim
+    # do dia tem um maço de filipetas na mão e precisa somar: se o número está
+    # do mesmo tamanho do resto, some no meio de "Turno #7" e "Operador marina"
+    # e a conferência vira caça ao tesouro. É o único dado que se lê de longe.
+    out += _double(f"R$ {format_money(movement.amount_q)}")
+    out += _line("")
+
     out += _pair("Turno", f"#{movement.shift_id}")
     out += _pair("Operador", movement.created_by or "-")
     if movement.approved_by:
@@ -88,6 +94,22 @@ _TRANSLITERACAO = str.maketrans({
 
 def _line(text: str) -> bytes:
     return text.translate(_TRANSLITERACAO).encode(ENCODING, "replace") + b"\n"
+
+
+def _double(text: str) -> bytes:
+    """Uma linha em corpo duplo (largura e altura), centrada.
+
+    `GS ! n`: o nibble alto é a largura, o baixo a altura — `0x11` dobra as
+    duas. Volta a `0x00` na mesma função, senão o resto do papel sai gigante:
+    o modo é de estado, não de escopo.
+    """
+    recorte = text[: COLUMNS // 2]
+    margem = max(0, (COLUMNS // 2 - len(recorte)) // 2)
+    return (
+        bytes([GS, ord("!"), 0x11])
+        + _line(" " * margem + recorte)
+        + bytes([GS, ord("!"), 0x00])
+    )
 
 
 def _centered(text: str) -> bytes:

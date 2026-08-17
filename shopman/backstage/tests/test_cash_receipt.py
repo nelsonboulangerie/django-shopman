@@ -297,3 +297,26 @@ def test_status_invalido_e_recusado(operador_logado):
             content_type="application/json",
         )
         assert response.status_code == 400, ruim
+
+
+def test_o_valor_sai_em_corpo_duplo(movimento):
+    """O único dado que se lê de longe no maço de filipetas.
+
+    Quem confere o caixa no fim do dia tem um punhado de papéis na mão e precisa
+    somar. Valor do mesmo tamanho de "Turno #7" some no meio do resto, e a
+    conferência vira caça ao tesouro — o motivo de existir o comprovante é
+    justamente ela ser rápida.
+    """
+    from shopman.backstage.services.receipt_escpos import cash_movement_receipt
+
+    papel = cash_movement_receipt(movimento, verify_code="SG-1-AAAAAAAA", verify_url="https://x/y")
+
+    # `GS ! 0x11` liga largura e altura dobradas; `GS ! 0x00` volta ao normal.
+    liga = bytes([0x1D, ord("!"), 0x11])
+    desliga = bytes([0x1D, ord("!"), 0x00])
+    assert liga in papel, "o valor precisa sair em corpo duplo"
+    assert papel.index(liga) < papel.index(b"R$ 150,00") < papel.index(desliga), (
+        "o corpo duplo tem que envolver o VALOR, não outra linha"
+    )
+    # Sem o desliga, todo o resto do papel sairia gigante — o modo é de estado.
+    assert papel.count(liga) == papel.count(desliga) == 1

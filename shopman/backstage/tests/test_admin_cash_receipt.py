@@ -45,7 +45,7 @@ def test_codigo_valido_resolve_para_o_movimento(movement):
 
     assert resultado.valid
     assert resultado.amount == "R$ 150,00"
-    assert resultado.movement_type == "Sangria"
+    assert resultado.movement_type == "Saída de caixa"
     assert resultado.approved_by == "admin"
     assert resultado.reason == "Depósito no cofre"
     # Ninguém confirmou impressão neste movimento: a tela não pode dizer que
