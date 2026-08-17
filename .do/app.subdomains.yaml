@@ -157,8 +157,13 @@ envs:
     value: "false"
     scope: RUN_TIME
     type: GENERAL
+  # false em produção, e não por redundância: enquanto o E003 barra o
+  # payment_mock isto é inerte, mas fica PRÉ-ARMADO — no dia em que alguém
+  # ligar SHOPMAN_ALLOW_MOCK_PAYMENT_ADAPTERS=true para destravar um deploy,
+  # todo PIX passa a se autoconfirmar de graça. A primeira trava é justamente
+  # a que será desligada sob pressão.
   - key: SHOPMAN_MOCK_PIX_AUTO_CONFIRM
-    value: "true"
+    value: "false"
     scope: RUN_TIME
     type: GENERAL
   - key: SHOPMAN_MOCK_PIX_CONFIRM_DELAY_SECONDS
