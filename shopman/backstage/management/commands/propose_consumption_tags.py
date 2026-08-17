@@ -14,6 +14,12 @@ Duas fontes, nesta ordem: a **coleção do catálogo** (produto que a casa vende
 hoje) e a **categoria do histórico** (produto que só existe nos dois anos do
 Yooga). O que nenhuma das duas alcança sai listado, para alguém decidir — nunca
 chutado.
+
+⚠️ **A etiqueta diz a VOCAÇÃO do produto, não um fato sobre a venda** (nomeado
+pelo dono, 17/08). Croissant tem vocação ambígua; o croissant daquela venda pode
+ter sido comido ali ou levado, e ninguém sabe. Por isso ela mora do lado
+analítico e não no catálogo, e por isso toda leitura derivada dela sai rotulada
+como inferida.
 """
 
 from __future__ import annotations
@@ -26,11 +32,15 @@ COLLECTION_READING: dict[str, str] = {
     "bebidas-quentes": "anchor",
     "bebidas-geladas": "anchor",
     "torneira": "anchor",
+    # Correção do dono (17/08): "Salgados" na Nelson é prato quente servido no
+    # prato — Croque Monsieur, Croque Madame, Queijo-Quente, Jambon-Beurre,
+    # Pain Grillé, Tábua de Iguarias. Quem pede um croque sentou. A proposta
+    # anterior os lia como "acompanha", o que esvaziaria o salão nos almoços.
+    "salgados": "anchor",
     "rusticos": "takeaway",
     "despensa": "takeaway",
     "finos": "neutral",
     "doces": "neutral",
-    "salgados": "neutral",
 }
 
 # Palavra na categoria do histórico → leitura. Só entra quando o SKU não está

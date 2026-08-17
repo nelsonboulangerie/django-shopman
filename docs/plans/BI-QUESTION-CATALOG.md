@@ -143,7 +143,7 @@ registrar:
 
 | Sinal na cesta | Classificação |
 |---|---|
-| Âncora (bebida preparada, bebida pronta, prato quente, lanche montado) | **local** |
+| Âncora (bebidas; e os salgados da casa, que são prato quente) | **local** |
 | Âncora **+ item de levar** (pão, varejo) | **local + levar** |
 | Sem âncora (pão, varejo, ou doce sozinho) | **levar** |
 | `is_delivery` / `fulfillment_type=delivery` | **entrega** — precede tudo |
@@ -176,6 +176,38 @@ contas:
   chamar as duas de "consumiu e levou" (e todo croissant que acompanha um café
   vira pão levado) ou abandonar o modo "consumir no local e levar", que foi
   pedido no mandato original.
+
+### 3.1.1.1 A etiqueta é vocação, não fato
+
+> Dono (17/08): *"você reconhece que esse dado diz apenas sobre a **vocação** do
+> SKU, e não é algo rígido? Pode ser útil como regra para B.I., mas não tenho
+> certeza se deveria morar no modelo do SKU."*
+
+Reconheço, e o desenho já parte disso — vale deixar escrito porque é o que
+justifica três decisões que de outro modo pareceriam excesso de zelo:
+
+- **A etiqueta não mora no catálogo.** `ProductConsumptionTag` é do backstage e
+  é chaveada por texto do SKU, não por FK a `Product`. Etiqueta de análise não é
+  atributo de produto vendável, e o Offerman fica intocado. (Bônus: produto que
+  saiu do cardápio continua classificável, o que o histórico exige.)
+- **Toda leitura derivada sai rotulada como inferida.** A vocação do croissant é
+  ambígua; o croissant daquela venda pode ter sido comido ali ou levado, e
+  ninguém sabe. A tela não pode falar como se soubesse.
+- **A inferência não manda em decisão operacional** (§6.6). Serve para entender
+  o negócio — mix, ticket, cesta, tendência — e não para fila, cozinha ou fiscal.
+
+E é também o motivo de `reviewed` existir: reetiquetar muda números publicados,
+inclusive de meses passados, então proposta e curadoria não podem se confundir.
+
+**Naming, anotado e adiado** (decisão do dono: "não importa agora"): `anchor` é
+um termo estranho para o que a coisa é — algo como `eat_in` diria melhor. Fica
+como dívida pequena, com uma ressalva para quem for mexer: `dine_in` já é o nome
+de um **modo** (o veredito da cesta), e reaproveitá-lo para a **leitura** (uma
+propriedade do item) confundiria dois conceitos diferentes.
+
+**Os `ref` dos papéis ficam como estão** (`consome-aqui`, `leva`, `acompanha`) —
+decisão do dono. A regra que ele confirmou vale para **enum**: valor armazenado
+em inglês, rótulo em pt-BR, que é o que `Reading` já faz.
 
 ### 3.1.2 A contraproposta do booleano — e por que ela vira medição, não debate
 

@@ -78,12 +78,19 @@ class ConsumptionRole(models.Model):
 
 
 class ProductConsumptionTag(models.Model):
-    """Que papel um SKU cumpre na cesta.
+    """A VOCAÇÃO de um SKU — não um fato sobre nenhuma venda.
 
-    Chaveado por **texto do SKU**, não por FK ao catálogo, de propósito: o
-    histórico externo tem produtos que não existem mais no cardápio, e eles
-    precisam ser classificáveis do mesmo jeito. É também o que mantém o
-    Offerman intocado — etiqueta de análise não é atributo de produto vendável.
+    Nomeado pelo dono (17/08): *"esse dado diz apenas sobre a vocação do SKU, e
+    não é algo rígido"*. Croissant tem vocação ambígua; o croissant daquela
+    venda pode ter sido comido ali ou levado, e ninguém sabe. É por isso que
+    toda leitura derivada daqui sai rotulada como inferida, e que ela serve ao
+    B.I. sem nunca mandar em decisão operacional.
+
+    Por isso ela **não mora no modelo do produto**, e sim aqui: etiqueta de
+    análise não é atributo de produto vendável, e o Offerman fica intocado.
+    Chaveada por **texto do SKU**, não por FK ao catálogo — o histórico externo
+    tem produtos que saíram do cardápio, e eles precisam ser classificáveis do
+    mesmo jeito.
     """
 
     sku = models.CharField("sku", max_length=64, unique=True)
