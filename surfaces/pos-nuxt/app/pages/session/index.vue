@@ -7,8 +7,12 @@
 // mostra o valor esperado da gaveta — a conferência (esperado vs contado) fica
 // no retaguarda. O fechamento do DIA (sobras/perdas) entra em `/session/closing`.
 import {
+  CHANGE_REQUEST_KINDS,
   canRegisterMovement,
+  canRequestChange,
+  changeRequestSummary,
   formatOpenedAt,
+  formatRequestedAt,
   movementLabel,
   movementReasons,
   sessionScreenState,
@@ -36,6 +40,10 @@ const {
   drawerProbing,
   openDrawerWithoutSale,
   probeDrawer,
+  pendingChangeRequests,
+  requestChange,
+  serveChangeRequest,
+  cancelChangeRequest,
 } = usePosCashSession({ pos, actions, refresh, action });
 
 // Entrada do FECHAMENTO DO DIA (contagem cega de sobras): o gate é da API
@@ -103,14 +111,35 @@ function clearMovementReason() {
 watch(movementReasonOther, (typed) => {
   if (typed) movementReasonPick.value = "";
 });
-// Retirada de gaveta precisa da segunda assinatura: o servidor recusa com
-// `manager_approval_required`, o diálogo sobe e o mesmo movimento é reenviado
-// com o PIN. O `managerChallenge` reabre o diálogo quando o PIN vem errado.
+// Retirada de gaveta e atendimento de pedido de troco precisam da segunda
+// assinatura: o servidor recusa com `manager_approval_required`, o diálogo sobe
+// e a MESMA ação é reenviada com o PIN. O `managerChallenge` reabre o diálogo
+// quando o PIN vem errado.
+//
+// Um diálogo só para as duas ações, e uma intenção dizendo qual reenviar: com
+// dois diálogos, o PIN digitado num poderia reenviar a ação do outro — e nesse
+// caso a assinatura gravada seria de uma coisa que o gerente não autorizou.
+type ManagerIntent = { action: "movement" } | { action: "serve_change"; ref: string };
+const managerIntent = ref<ManagerIntent>({ action: "movement" });
 const managerAuthOpen = ref(false);
 watch(managerChallenge, (challenge) => { if (challenge) managerAuthOpen.value = true; });
 
+const managerAuthReasonText = computed(() =>
+  managerIntent.value.action === "serve_change"
+    ? "Atender o pedido abre a gaveta: um gerente precisa autorizar e assinar a troca."
+    : "Retirar dinheiro da gaveta é exceção auditada: um gerente precisa autorizar.",
+);
+
+function onManagerAuthorize(username: string, pin: string) {
+  managerAuthOpen.value = false;
+  const intent = managerIntent.value;
+  if (intent.action === "serve_change") serveChange(intent.ref, { username, pin });
+  else submitMovement({ username, pin });
+}
+
 async function submitMovement(managerApproval: { username: string; pin: string } | null = null) {
   if (!canSubmitMovement.value) return;
+  managerIntent.value = { action: "movement" };
   const ok = await registerCashMovement({
     kind: movementKind.value,
     amount: movementAmount.value,
@@ -125,9 +154,53 @@ async function submitMovement(managerApproval: { username: string; pin: string }
   }
 }
 
-function onMovementAuthorize(username: string, pin: string) {
-  managerAuthOpen.value = false;
-  submitMovement({ username, pin });
+// Pedido de troco: o operador pede, alguém traz, e a troca acontece aqui no
+// balcão, entre duas pessoas. Ninguém sai carregando dinheiro até o cofre.
+//
+// ⚠️ Nada disto é movimento de caixa. A troca é net zero (saem R$ 50, entram
+// 5×R$ 10) e o esperado do fechamento não pode sentir nada.
+const changeKind = ref("");
+const changeAmount = ref("");
+const changeNote = ref("");
+const canSubmitChange = computed(() => canRequestChange(changeKind.value, changeAmount.value));
+
+// Trocar de tipo zera o valor: um número herdado de "Valor" viraria um pedido de
+// moedas com quantia que ninguém digitou para ele.
+function pickChangeKind(kind: string) {
+  changeKind.value = kind;
+  changeAmount.value = "";
+}
+
+async function submitChangeRequest() {
+  if (!canSubmitChange.value) return;
+  const ok = await requestChange({
+    kind: changeKind.value,
+    amount: changeAmount.value,
+    note: changeNote.value,
+  });
+  if (ok) {
+    changeKind.value = "";
+    changeAmount.value = "";
+    changeNote.value = "";
+  }
+}
+
+async function serveChange(ref_: string, managerApproval: { username: string; pin: string } | null = null) {
+  managerIntent.value = { action: "serve_change", ref: ref_ };
+  const ok = await serveChangeRequest({ ref: ref_, managerApproval });
+  if (ok) {
+    managerChallenge.value = null;
+    managerAuthOpen.value = false;
+  }
+}
+
+// Cancelar descarta um pedido que o balcão ainda espera: confirma antes, e a
+// confirmação é POR pedido — um "sim" genérico com dois pendentes na tela
+// cancelaria o errado.
+const cancellingChangeRef = ref("");
+async function confirmCancelChange(ref_: string) {
+  const ok = await cancelChangeRequest(ref_);
+  if (ok) cancellingChangeRef.value = "";
 }
 
 // Abrir a gaveta sem venda. Um motivo é obrigatório porque este é o único dos
@@ -291,6 +364,117 @@ async function confirmCloseBlocking() {
                 <Icon name="lucide:shopping-basket" class="size-5" />
                 Continuar vendendo
               </UiButton>
+            </section>
+
+            <!-- Pedido de troco: o dinheiro fica no balcão, o troco vem até ele.
+                 Antes o operador atravessava a loja até o cofre com dinheiro na
+                 mão; agora ele pede, alguém traz, e a troca acontece aqui, à
+                 vista das duas pessoas. Trocar não muda o total da gaveta. -->
+            <section class="grid gap-3 rounded-lg border bg-card p-4">
+              <div class="flex items-center gap-2">
+                <Icon name="lucide:coins" class="size-4 text-muted-foreground" />
+                <h2 class="text-base font-semibold">Pedido de troco</h2>
+              </div>
+
+              <!-- Pendentes primeiro: é o que a próxima pessoa a chegar ao
+                   balcão precisa ver, e é onde a troca acontece. -->
+              <ul v-if="pendingChangeRequests.length" class="grid gap-2" aria-label="Pedidos de troco pendentes">
+                <li
+                  v-for="request in pendingChangeRequests"
+                  :key="request.ref"
+                  class="grid gap-2 rounded-md border bg-muted/30 p-3"
+                >
+                  <div class="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
+                    <span class="text-sm font-medium">{{ changeRequestSummary(request) }}</span>
+                    <span class="text-xs text-muted-foreground">
+                      {{ request.requested_by }}<template v-if="formatRequestedAt(request.requested_at)"> · {{ formatRequestedAt(request.requested_at) }}</template>
+                    </span>
+                  </div>
+                  <p v-if="request.note" class="text-xs text-muted-foreground">{{ request.note }}</p>
+
+                  <div v-if="cancellingChangeRef !== request.ref" class="grid grid-cols-2 gap-2">
+                    <UiButton size="sm" :disabled="busy" @click="serveChange(request.ref)">
+                      <Icon name="lucide:hand-coins" class="size-4" />
+                      Atender
+                    </UiButton>
+                    <UiButton
+                      variant="outline"
+                      size="sm"
+                      :disabled="busy"
+                      @click="cancellingChangeRef = request.ref"
+                    >
+                      Cancelar pedido
+                    </UiButton>
+                  </div>
+                  <div v-else class="grid gap-2 rounded-md border border-destructive/40 bg-destructive/5 p-3">
+                    <p class="text-sm font-medium">Cancelar este pedido? Ninguém vai trazer o troco.</p>
+                    <div class="grid grid-cols-2 gap-2">
+                      <UiButton variant="outline" size="sm" :disabled="busy" @click="cancellingChangeRef = ''">
+                        Voltar
+                      </UiButton>
+                      <UiButton
+                        variant="destructive"
+                        size="sm"
+                        :disabled="busy"
+                        :loading="busy"
+                        @click="confirmCancelChange(request.ref)"
+                      >
+                        Confirmar
+                      </UiButton>
+                    </div>
+                  </div>
+                </li>
+              </ul>
+
+              <p class="text-sm text-muted-foreground">
+                Peça o troco em vez de sair do balcão com dinheiro. Um gerente traz e autoriza aqui mesmo.
+              </p>
+
+              <div class="grid gap-1.5">
+                <span id="change-kind-label" class="text-sm font-medium text-muted-foreground">O que falta</span>
+                <div class="grid grid-cols-3 gap-2" role="group" aria-labelledby="change-kind-label">
+                  <UiButton
+                    v-for="option in CHANGE_REQUEST_KINDS"
+                    :key="option.ref"
+                    variant="outline"
+                    size="sm"
+                    :aria-pressed="changeKind === option.ref"
+                    :class="changeKind === option.ref ? 'border-primary bg-primary/5' : ''"
+                    @click="pickChangeKind(option.ref)"
+                  >
+                    {{ option.label }}
+                  </UiButton>
+                </div>
+              </div>
+
+              <label v-if="changeKind === 'amount'" class="grid gap-1.5 text-sm">
+                <span class="font-medium text-muted-foreground">Valor aproximado</span>
+                <UiInput v-model="changeAmount" inputmode="decimal" placeholder="0,00" @keydown.enter="submitChangeRequest" />
+              </label>
+
+              <UiInput
+                v-if="changeKind"
+                v-model="changeNote"
+                aria-label="Observação do pedido"
+                placeholder="Observação (opcional)"
+                @keydown.enter="submitChangeRequest"
+              />
+
+              <UiButton
+                variant="outline"
+                size="sm"
+                :disabled="busy || !canSubmitChange"
+                @click="submitChangeRequest"
+              >
+                Preciso de troco
+              </UiButton>
+
+              <!-- Honestidade: o registro é trilha e dado, não um recado
+                   entregue. Ninguém está de olho numa tela de alertas aqui. -->
+              <p class="flex items-start gap-2 text-xs text-muted-foreground">
+                <Icon name="lucide:megaphone" class="mt-0.5 size-4 shrink-0" />
+                <span>O pedido fica registrado no turno. Avise em voz alta também.</span>
+              </p>
             </section>
 
             <section class="grid gap-3 rounded-lg border bg-card p-4">
@@ -480,11 +664,11 @@ async function confirmCloseBlocking() {
 
     <PosManagerAuthDialog
       v-model:open="managerAuthOpen"
-      reason-text="Retirar dinheiro da gaveta é exceção auditada: um gerente precisa autorizar."
+      :reason-text="managerAuthReasonText"
       :managers="pos?.managers || []"
       :busy="busy"
       :error="managerChallenge?.code === 'manager_approval_invalid' ? managerChallenge.message : ''"
-      @authorize="onMovementAuthorize"
+      @authorize="onManagerAuthorize"
     />
   </main>
 </template>

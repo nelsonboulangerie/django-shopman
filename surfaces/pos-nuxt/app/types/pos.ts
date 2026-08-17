@@ -123,6 +123,24 @@ export interface POSCheckoutContractProjection {
   capabilities: POSCheckoutCapabilities;
 }
 
+/**
+ * Um pedido de troco pendente, à espera de alguém trazer.
+ *
+ * O troco não sai andando: o operador pede, o gerente traz, e a troca acontece
+ * no balcão à vista de todos. Nada aqui é dinheiro do fechamento — trocar é net
+ * zero, o total da gaveta não muda.
+ */
+export interface POSChangeRequestProjection {
+  ref: string;
+  kind: "coins" | "small_bills" | "amount" | string;
+  amount_q: number;
+  /** Vazio quando o pedido não fala de valor. "R$ 0,00" pareceria pedido quebrado. */
+  amount_display: string;
+  note: string;
+  requested_by: string;
+  requested_at: string;
+}
+
 export interface POSCashRuntimeProjection {
   has_open_shift: boolean;
   shift_id: number | null;
@@ -135,6 +153,8 @@ export interface POSCashRuntimeProjection {
   blocking_shift_id?: number | null;
   blocking_message?: string;
   can_close_blocking?: boolean;
+  /** Só os PENDENTES: atendido e cancelado ficam na trilha do turno, não na tela. */
+  pending_change_requests?: POSChangeRequestProjection[];
 }
 
 export interface POSAddressAutocompleteProjection {

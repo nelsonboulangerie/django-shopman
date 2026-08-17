@@ -1695,6 +1695,107 @@ class POSCashDrawerOpenView(APIView):
 
 
 @extend_schema_view(
+    post=extend_schema(
+        tags=["backstage"],
+        summary="Request change (coins / small bills) without leaving the counter",
+        responses={200: OpenApiResponse(description="Change request registered.")},
+    ),
+)
+class POSChangeRequestView(APIView):
+    """O operador pede troco em vez de atravessar a loja com dinheiro.
+
+    O trajeto até o cofre é a janela clássica de desvio: parte tem câmera, parte
+    não, e a falta só apareceria no fechamento. Aqui o dinheiro fica no balcão e
+    alguém traz o troco até ele.
+
+    ⚠️ Um pedido não é movimento de caixa. Nada aqui cria ``CashMovement`` nem
+    encosta em ``expected_amount_q`` — a troca é net zero.
+    """
+
+    permission_classes = [HasBackstagePermission]
+    required_permission = "backstage.operate_pos"
+
+    def post(self, request):
+        try:
+            entry = pos_service.request_change(
+                operator=request.user,
+                kind=(request.data.get("kind") or "").strip(),
+                amount_raw=str(request.data.get("amount", "0")),
+                note=request.data.get("note") or "",
+            )
+        except PosIntentError as exc:
+            return Response({"detail": exc.message, "error": exc.as_dict()}, status=exc.status)
+        except Exception as exc:
+            logger.debug("pos_change_request_failed user=%s", _actor(request), exc_info=True)
+            return Response({"detail": str(exc) or "Falha ao pedir troco."}, status=400)
+        return Response({"ok": True, "request_ref": entry["ref"]})
+
+
+@extend_schema_view(
+    post=extend_schema(
+        tags=["backstage"],
+        summary="Serve a pending change request (manager PIN, drawer opens, net zero)",
+        responses={200: OpenApiResponse(description="Change request served.")},
+    ),
+)
+class POSChangeRequestServeView(APIView):
+    """O gerente atende o pedido no balcão, com PIN, à vista das duas pessoas.
+
+    Mesmo gate da sangria (``backstage.adjust_cashshift``, validado no service):
+    a gaveta vai abrir com dinheiro dentro e quem mexe nela é alguém de fora do
+    turno. Sem a segunda assinatura, atender viraria um jeito de abrir a gaveta
+    sem testemunha.
+    """
+
+    permission_classes = [HasBackstagePermission]
+    required_permission = "backstage.operate_pos"
+
+    def post(self, request, request_ref: str):
+        try:
+            pos_service.serve_change_request(
+                operator=request.user,
+                request_ref=request_ref,
+                manager_approval=request.data.get("manager_approval"),
+            )
+        # O desafio de PIN precisa chegar à tela COM o código, para o PDV abrir o
+        # diálogo do gerente em vez de mostrar um toast sem saída.
+        except PosIntentError as exc:
+            return Response({"detail": exc.message, "error": exc.as_dict()}, status=exc.status)
+        except Exception as exc:
+            logger.debug("pos_change_request_serve_failed user=%s", _actor(request), exc_info=True)
+            return Response({"detail": str(exc) or "Falha ao atender o pedido."}, status=400)
+        return Response({"ok": True})
+
+
+@extend_schema_view(
+    post=extend_schema(
+        tags=["backstage"],
+        summary="Cancel a pending change request",
+        responses={200: OpenApiResponse(description="Change request cancelled.")},
+    ),
+)
+class POSChangeRequestCancelView(APIView):
+    """Achou troco na gaveta: o pedido morre aqui.
+
+    Sem esta saída o pendente fica pendurado e a lista vira ruído — e lista em
+    que ninguém acredita devolve o balcão à caminhada até o cofre.
+    """
+
+    permission_classes = [HasBackstagePermission]
+    required_permission = "backstage.operate_pos"
+
+    def post(self, request, request_ref: str):
+        try:
+            pos_service.cancel_change_request(operator=request.user, request_ref=request_ref)
+        except PosIntentError as exc:
+            return Response({"detail": exc.message, "error": exc.as_dict()}, status=exc.status)
+        except Exception as exc:
+            logger.debug("pos_change_request_cancel_failed user=%s", _actor(request), exc_info=True)
+            return Response({"detail": str(exc) or "Falha ao cancelar o pedido."}, status=400)
+        return Response({"ok": True})
+
+
+@extend_schema_view(
     get=extend_schema(
         tags=["backstage"],
         summary="Cash session report — X/Z readings and today's shift history",

@@ -1032,3 +1032,41 @@ motivo. Config ignorada em silêncio é pior que config ausente: a loja acha que
 
 A margem é derivada, nunca declarada: `ceil((roll_width_mm - print_width_mm) / 2)`. Um rolo de 80mm
 dá 4mm por lado; um de 58mm dá **5mm**, não 4 — daí ela não ser um segundo botão para alguém errar.
+
+---
+
+## CashShift.metadata
+
+Dado contextual de um turno de caixa. Nenhuma destas chaves entra no cálculo do
+fechamento (`opening_amount_q`, `expected_amount_q`, `difference_q`) — são
+trilha, não dinheiro.
+
+| Chave | Tipo | Escrito por | Lido por | Descrição |
+|-------|------|-------------|----------|-----------|
+| `drawer_openings` | `list[dict]` | `backstage/services/pos.py::register_drawer_opening` | auditoria | Aberturas de gaveta **sem venda e sem movimento** — o único momento que não deixa rastro sozinho. Schema: `{at, by, reason}`. Teto de 500 entradas (as mais recentes). |
+| `change_requests` | `list[dict]` | `backstage/services/pos.py::request_change` / `serve_change_request` / `cancel_change_request` | projection POS (`cash_runtime.pending_change_requests`), auditoria, B.I. | Pedidos de troco do balcão. Ver abaixo. Teto de 50 entradas (as mais recentes). |
+
+### change_requests — pedido de troco sem trânsito
+
+O operador **pede** troco em vez de atravessar a loja com dinheiro até o cofre;
+o gerente traz e assina no balcão, à vista das duas pessoas. Elimina o trajeto
+em vez de vigiá-lo.
+
+⚠️ **A troca é NET ZERO.** Saem R$ 50, entram 5×R$ 10 — o total da gaveta não
+muda. Atender um pedido **não cria `CashMovement`** e **não toca em
+`expected_amount_q`**. É uma abertura de gaveta com motivo e duas assinaturas.
+Lançar isso como movimento faria o esperado cair por um dinheiro que nunca saiu,
+e o turno fecharia com falta fantasma (foi o defeito desfeito no PR #178).
+
+| Chave | Tipo | Descrição |
+|-------|------|-----------|
+| `ref` | `str` | Identificador do pedido (hex curto, aleatório). É por ele que a tela atende e cancela — o índice na lista mudaria quando o teto apara as antigas. |
+| `kind` | `str` | `coins`, `small_bills` ou `amount`. Rótulo pt-BR fica na superfície (`presentation/cash.ts`). |
+| `amount_q` | `int` | Valor aproximado em centavos. `0` quando o pedido não fala de valor ("acabou moeda" já é um pedido inteiro). Obrigatório > 0 só para `kind="amount"`. |
+| `note` | `str` | Texto livre do operador (até 120 caracteres). |
+| `status` | `str` | `pending` → `served` ou `cancelled`. Só `pending` chega à tela. |
+| `requested_by` | `str` | `username` de quem pediu. |
+| `requested_at` | `str` | ISO 8601. |
+| `served_by` | `str` | `username` do **gerente** que autorizou (mesma permissão da sangria, `backstage.adjust_cashshift`). Vazio enquanto pendente. |
+| `served_at` | `str` | ISO 8601, vazio enquanto pendente. |
+| `cancelled_at` | `str` | ISO 8601, vazio salvo quando cancelado. |

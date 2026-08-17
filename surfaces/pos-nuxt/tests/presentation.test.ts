@@ -41,8 +41,13 @@ import {
   tenderSumQ,
 } from "../app/presentation/payment";
 import {
+  CHANGE_REQUEST_KINDS,
   canRegisterMovement,
+  canRequestChange,
+  changeRequestLabel,
+  changeRequestSummary,
   formatOpenedAt,
+  formatRequestedAt,
   isTerminalOccupied,
   movementLabel,
   movementReasons,
@@ -491,6 +496,44 @@ describe("presentation/cash — blind drawer shaping", () => {
     expect(canRegisterMovement("sangria", "   ", "Cofre")).toBe(false);
     expect(canRegisterMovement("sangria", "50", "")).toBe(false);
     expect(canRegisterMovement("sangria", "50", "   ")).toBe(false);
+  });
+});
+
+describe("presentation/cash — pedido de troco (o dinheiro não anda)", () => {
+  it("names the three things the counter can ask for, in pt-BR", () => {
+    expect(CHANGE_REQUEST_KINDS.map((k) => k.ref)).toEqual(["coins", "small_bills", "amount"]);
+    expect(changeRequestLabel("coins")).toBe("Moedas");
+    expect(changeRequestLabel("small_bills")).toBe("Notas pequenas");
+    expect(changeRequestLabel("amount")).toBe("Valor");
+    expect(changeRequestLabel("desconhecido")).toBe("desconhecido");
+  });
+
+  // "Acabou moeda" já é um pedido inteiro; exigir número ali travaria a fila por
+  // um dado que ninguém tem na hora. Já "me traz um valor" sem número não diz
+  // nada a quem vai buscar o troco.
+  it("only the amount request needs a number", () => {
+    expect(canRequestChange("coins", "")).toBe(true);
+    expect(canRequestChange("small_bills", "")).toBe(true);
+    expect(canRequestChange("amount", "")).toBe(false);
+    expect(canRequestChange("amount", "   ")).toBe(false);
+    expect(canRequestChange("amount", "50,00")).toBe(true);
+    expect(canRequestChange("", "50,00")).toBe(false);
+  });
+
+  // Um "R$ 0,00" pendurado na linha pareceria pedido malformado — e pedido em
+  // que o balcão não confia é pedido que volta a virar caminhada até o cofre.
+  it("shows the amount only when the request actually named one", () => {
+    const base = { ref: "a1", kind: "coins", amount_q: 0, amount_display: "", note: "", requested_by: "marina", requested_at: "" };
+    expect(changeRequestSummary(base)).toBe("Moedas");
+    expect(changeRequestSummary({ ...base, kind: "amount", amount_q: 5000, amount_display: "R$ 50,00" }))
+      .toBe("Valor · R$ 50,00");
+  });
+
+  it("formats the request time, falling back gracefully", () => {
+    expect(formatRequestedAt(null)).toBe("");
+    expect(formatRequestedAt("")).toBe("");
+    expect(formatRequestedAt("not-a-date")).toBe("not-a-date");
+    expect(formatRequestedAt("2026-06-06T13:05:00")).toMatch(/13:05/);
   });
 });
 

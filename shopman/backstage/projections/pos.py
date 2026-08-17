@@ -146,6 +146,28 @@ class POSCheckoutContractProjection:
 
 
 @dataclass(frozen=True)
+class POSChangeRequestProjection:
+    """Um pedido de troco pendente, à espera de alguém trazer.
+
+    Existe para o troco não sair andando: o operador pede, o gerente traz, e a
+    troca acontece no balcão à vista de todos, em vez de alguém atravessar a
+    loja com dinheiro por um trajeto que a câmera cobre só em parte.
+
+    ⚠️ Não carrega nada de fechamento. Trocar dinheiro é net zero — o total da
+    gaveta não muda — e um valor daqui perto do esperado convidaria a próxima
+    tela a somar os dois.
+    """
+
+    ref: str
+    kind: str
+    amount_q: int
+    amount_display: str
+    note: str
+    requested_by: str
+    requested_at: str
+
+
+@dataclass(frozen=True)
 class POSCashRuntimeProjection:
     """Active cash runtime resolved for the current operator surface."""
 
@@ -162,6 +184,10 @@ class POSCashRuntimeProjection:
     # O operador atual pode fechar o turno bloqueante daqui (gerente ou o dono)?
     # Anti-fraude: operador comum não fecha o caixa de outro.
     can_close_blocking: bool = False
+    # Só os PENDENTES, e o nome diz isso: atendido e cancelado ficam na trilha do
+    # turno, não na tela. Uma lista chamada `change_requests` que mostrasse tudo
+    # faria o balcão procurar troco para pedido já resolvido.
+    pending_change_requests: tuple[POSChangeRequestProjection, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -764,6 +790,36 @@ def _pos_actions() -> tuple[Action, ...]:
             idempotency="none",
         ),
         Action(
+            ref="request_change",
+            kind="mutation",
+            label="Pedir troco",
+            priority="quiet",
+            method="POST",
+            href="/api/v1/backstage/pos/cash/change-request/",
+            payload_schema={"required": ["kind"], "optional": ["amount", "note"]},
+            idempotency="none",
+        ),
+        Action(
+            ref="serve_change_request",
+            kind="mutation",
+            label="Atender pedido de troco",
+            priority="quiet",
+            method="POST",
+            href="/api/v1/backstage/pos/cash/change-request/{request_ref}/serve/",
+            payload_schema={"path": {"request_ref": "string"}, "required": ["manager_approval"]},
+            idempotency="none",
+        ),
+        Action(
+            ref="cancel_change_request",
+            kind="mutation",
+            label="Cancelar pedido de troco",
+            priority="quiet",
+            method="POST",
+            href="/api/v1/backstage/pos/cash/change-request/{request_ref}/cancel/",
+            payload_schema={"path": {"request_ref": "string"}},
+            idempotency="none",
+        ),
+        Action(
             ref="customer_lookup",
             kind="query",
             label="Buscar cliente",
@@ -1306,6 +1362,30 @@ def _cash_runtime_projection(cash_shift, runtime, operator, *, terminal_cash_shi
         operator_username=cash_shift.operator.get_username(),
         opened_at=cash_shift.opened_at.isoformat() if cash_shift.opened_at else "",
         status="open",
+        pending_change_requests=_pending_change_requests(cash_shift),
+    )
+
+
+def _pending_change_requests(cash_shift) -> tuple[POSChangeRequestProjection, ...]:
+    from shopman.backstage.services.pos import pending_change_requests
+
+    return tuple(
+        POSChangeRequestProjection(
+            ref=str(entry.get("ref") or ""),
+            kind=str(entry.get("kind") or ""),
+            amount_q=int(entry.get("amount_q") or 0),
+            # Pedido sem valor mostra vazio, não "R$ 0,00": "faltou moeda" é um
+            # pedido inteiro, e um zero na tela pareceria pedido malformado.
+            amount_display=(
+                f"R$ {format_money(int(entry.get('amount_q') or 0))}"
+                if int(entry.get("amount_q") or 0) > 0
+                else ""
+            ),
+            note=str(entry.get("note") or ""),
+            requested_by=str(entry.get("requested_by") or ""),
+            requested_at=str(entry.get("requested_at") or ""),
+        )
+        for entry in pending_change_requests(cash_shift)
     )
 
 

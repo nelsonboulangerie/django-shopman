@@ -166,6 +166,222 @@ def register_drawer_opening(*, operator, reason: str = ""):
     return shift
 
 
+#: O que o balcão pode pedir. Refs em inglês (contrato), rótulo em pt-BR na tela.
+#: `amount` é o pedido que só fala de valor ("me traz uns R$ 50 em troco").
+CHANGE_REQUEST_KINDS = ("coins", "small_bills", "amount")
+
+#: Teto da lista de pedidos guardada no turno. Um turno pede troco meia dúzia de
+#: vezes no pior sábado; 50 cobre isso com folga e impede que um botão repetido
+#: engorde o JSONField sem limite.
+_CHANGE_REQUEST_LOG_CAP = 50
+
+
+def _change_request_ref() -> str:
+    """Identificador curto do pedido — é por ele que a tela atende e cancela.
+
+    Aleatório, não sequencial: o índice na lista mudaria quando o teto apara as
+    entradas antigas, e aí "atender o pedido 3" atenderia outro pedido.
+    """
+    import secrets
+
+    return secrets.token_hex(4)
+
+
+def request_change(*, operator, kind: str = "coins", amount_raw="0", note: str = ""):
+    """O operador PEDE troco. Ninguém sai do balcão.
+
+    Este é o ponto todo da feature: quando falta troco, o operador atravessava a
+    loja com dinheiro até o cofre, por um trajeto que a câmera só cobre em parte.
+    Se sumisse dinheiro ali, ninguém provava nem desprovava, e a falta só
+    aparecia no fechamento, horas depois, misturada com o turno inteiro. Aqui o
+    dinheiro fica onde está: o operador pede, alguém traz, e a troca acontece no
+    balcão, à vista, entre duas pessoas.
+
+    ⚠️ Um pedido NÃO é movimento de caixa e nunca vai virar um. Trocar uma nota
+    de R$ 50 por cinco de R$ 10 é NET ZERO: o total da gaveta não muda. Se isto
+    criasse ``CashMovement``, o ``expected_amount_q`` cairia por um dinheiro que
+    nunca saiu e o turno fecharia com falta fantasma — foi exatamente o defeito
+    que o PR #178 teve de desfazer.
+
+    Mora em ``CashShift.metadata`` porque é dado contextual de um turno — o
+    idioma do projeto para isso é JSONField, não migração.
+    """
+    from django.db import transaction
+    from django.utils import timezone
+
+    from shopman.backstage.models import CashShift
+
+    kind = str(kind or "").strip()
+    if kind not in CHANGE_REQUEST_KINDS:
+        raise POSError("Tipo de pedido inválido.")
+    amount_q = max(0, parse_money_to_q(amount_raw))
+    # O pedido "amount" É o valor: sem número ele não diz nada a quem vai trazer.
+    # Nos outros o valor é opcional, porque "faltou moeda" já é um pedido inteiro.
+    if kind == "amount" and amount_q <= 0:
+        raise POSError("Informe o valor aproximado.")
+    note = str(note or "").strip()[:120]
+
+    with transaction.atomic():
+        # Sem o lock, dois pedidos quase simultâneos leem a mesma lista e o
+        # segundo sobrescreve o primeiro — um pedido sumiria antes de ser visto.
+        shift = (
+            CashShift.objects.select_for_update()
+            .filter(operator=operator, status=CashShift.Status.OPEN)
+            .first()
+        )
+        if not shift:
+            raise POSError("Caixa não aberto.")
+        entry = {
+            "ref": _change_request_ref(),
+            "kind": kind,
+            "amount_q": amount_q,
+            "note": note,
+            "status": "pending",
+            "requested_by": operator.username,
+            "requested_at": timezone.now().isoformat(),
+            "served_by": "",
+            "served_at": "",
+            "cancelled_at": "",
+        }
+        _save_change_requests(shift, [*_change_requests(shift), entry])
+
+    _announce_change_request(shift, entry)
+    return entry
+
+
+def serve_change_request(*, operator, request_ref: str, manager_approval: dict | None = None):
+    """O gerente traz o troco e assina no balcão. A gaveta abre; o esperado, não.
+
+    Mesma permissão de quem autoriza uma sangria (``backstage.adjust_cashshift``)
+    porque a gaveta abre com dinheiro dentro e alguém de fora do turno mexe nela:
+    sem a segunda assinatura, "atender um pedido" viraria um jeito de abrir a
+    gaveta sem ninguém olhando — o buraco que este fluxo existe para fechar.
+
+    ⚠️ NÃO cria ``CashMovement`` e NÃO toca em ``expected_amount_q``. A troca é
+    net zero (saem R$ 50, entram 5×R$ 10); qualquer lançamento aqui inventaria
+    uma diferença no fechamento cego.
+    """
+    from django.db import transaction
+    from django.utils import timezone
+
+    from shopman.backstage.models import CashShift
+    from shopman.shop.services.pos import validate_manager_override
+
+    validate_manager_override(
+        manager_approval or {},
+        operator_username=operator.username,
+        action="cash_change_request_serve",
+    )
+    approved_by = str((manager_approval or {}).get("username") or "").strip()
+
+    with transaction.atomic():
+        shift = (
+            CashShift.objects.select_for_update()
+            .filter(operator=operator, status=CashShift.Status.OPEN)
+            .first()
+        )
+        if not shift:
+            raise POSError("Caixa não aberto.")
+        requests = _change_requests(shift)
+        entry = _find_pending(requests, request_ref)
+        entry["status"] = "served"
+        entry["served_by"] = approved_by
+        entry["served_at"] = timezone.now().isoformat()
+        _save_change_requests(shift, requests)
+
+    _announce_change_request(shift, entry)
+    return entry
+
+
+def cancel_change_request(*, operator, request_ref: str):
+    """O operador achou troco na gaveta e o pedido não vale mais.
+
+    Sem esta saída o pendente fica pendurado para sempre, e uma lista com
+    pedidos mortos é uma lista em que ninguém acredita — daí a próxima falta de
+    troco volta a ser resolvida na caminhada até o cofre.
+    """
+    from django.db import transaction
+    from django.utils import timezone
+
+    from shopman.backstage.models import CashShift
+
+    with transaction.atomic():
+        shift = (
+            CashShift.objects.select_for_update()
+            .filter(operator=operator, status=CashShift.Status.OPEN)
+            .first()
+        )
+        if not shift:
+            raise POSError("Caixa não aberto.")
+        requests = _change_requests(shift)
+        entry = _find_pending(requests, request_ref)
+        entry["status"] = "cancelled"
+        entry["cancelled_at"] = timezone.now().isoformat()
+        _save_change_requests(shift, requests)
+
+    _announce_change_request(shift, entry)
+    return entry
+
+
+def pending_change_requests(shift) -> list[dict]:
+    """Os pedidos que ainda esperam alguém trazer o troco."""
+    if shift is None:
+        return []
+    return [r for r in _change_requests(shift) if r.get("status") == "pending"]
+
+
+def _change_requests(shift) -> list[dict]:
+    return [dict(r) for r in (dict(shift.metadata or {}).get("change_requests") or [])]
+
+
+def _save_change_requests(shift, requests: list[dict]) -> None:
+    metadata = dict(shift.metadata or {})
+    metadata["change_requests"] = requests[-_CHANGE_REQUEST_LOG_CAP:]
+    shift.metadata = metadata
+    shift.save(update_fields=["metadata"])
+
+
+def _find_pending(requests: list[dict], request_ref: str) -> dict:
+    """Acha o pedido pendente, ou explica qual dos dois erros aconteceu.
+
+    Atendido/cancelado tem mensagem própria porque o caso real é duas pessoas na
+    mesma tela: se o segundo toque dissesse "não encontrado", o gerente
+    procuraria defeito no sistema em vez de ver que o pedido já foi resolvido.
+    """
+    ref = str(request_ref or "").strip()
+    for entry in requests:
+        if entry.get("ref") == ref:
+            if entry.get("status") != "pending":
+                raise POSError("Este pedido de troco já foi resolvido.")
+            return entry
+    raise POSError("Pedido de troco não encontrado.")
+
+
+def _announce_change_request(shift, entry: dict) -> None:
+    """Anuncia o pedido no canal `alerts` do SSE.
+
+    ⚠️ Isto NÃO substitui o operador chamar em voz alta. Numa padaria pequena
+    ninguém está com a tela de alertas aberta esperando — e hoje as superfícies
+    de operador leem alertas por POLL, não por este canal. O que o registro
+    entrega de verdade é a trilha (quem pediu, o quê, quando) e o dado para o
+    B.I. depois: quantas vezes por dia falta troco, e em qual horário. Prometer
+    recado entregue seria mentira, e mentira de tela vira dinheiro no chão.
+    """
+    from shopman.shop.handlers._sse_emitters import emit_change_request
+
+    emit_change_request(
+        {
+            "ref": entry.get("ref", ""),
+            "status": entry.get("status", ""),
+            "kind": entry.get("kind", ""),
+            "amount_q": entry.get("amount_q", 0),
+            "shift_id": shift.pk,
+            "terminal_ref": shift.terminal.ref if shift.terminal_id else "",
+            "requested_by": entry.get("requested_by", ""),
+        }
+    )
+
+
 def close_cash_shift(*, operator, closing_amount_raw="0", notes: str = ""):
     from shopman.backstage.models import CashShift
 

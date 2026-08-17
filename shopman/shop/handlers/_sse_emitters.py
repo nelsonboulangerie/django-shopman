@@ -350,6 +350,25 @@ def _on_operator_alert_saved(sender, instance, created, **kwargs):
     )
 
 
+def emit_change_request(payload: dict) -> None:
+    """Publica um pedido de troco do balcão no canal ``alerts``.
+
+    ⚠️ Honestidade sobre o alcance: as superfícies de operador hoje leem alertas
+    por POLL, e numa padaria pequena ninguém fica com essa tela aberta. Quem
+    avisa o gerente continua sendo o operador, em voz alta. O que este evento
+    entrega é a trilha e o dado — não um recado entregue. Tratar isto como
+    notificação faria o balcão esperar por alguém que não foi chamado.
+    """
+    # `type` identifica o alerta, como no evento de ``OperatorAlert`` ao lado — o
+    # `kind` do payload é o que o balcão pediu (moeda, nota pequena), outra coisa.
+    _emit_backstage(
+        "alerts",
+        "backstage-alerts-update",
+        {"type": "change_request", **payload},
+        scope=_default_backstage_scope(),
+    )
+
+
 def emit_kds_change(ticket, *, event_type: str = "backstage-kds-update", scope: str | None = None) -> None:
     """Publish a Backstage KDS event for ticket creation/status/item changes."""
     station_ref = ticket.kds_instance.ref if ticket.kds_instance_id else ""
