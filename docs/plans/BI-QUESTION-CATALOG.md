@@ -551,6 +551,18 @@ Cada fase é entregável sozinha e não bloqueia a seguinte.
 
 Três contagens no staging (que tem o Yooga carregado), cada uma decide um parâmetro:
 
+✅ **Os dois comandos existem** (17/08). Rodam onde o histórico está carregado —
+hoje, só o staging:
+
+```bash
+python manage.py propose_consumption_tags --dry-run   # e sem --dry-run para gravar
+python manage.py bi_calibrate
+```
+
+O `bi_calibrate` **imprime e não grava nada** — é medição, não migração. Aceita
+`--from`/`--to` e `--role REF=LEITURA` para variantes extras (ex.:
+`--role bebida-pronta=neutral`).
+
 1. Distribuição real de `HistoricalSale.payment` — dimensiona a whitelist de F1.
 2. **As variantes da regra**, sobre os dois anos — quanto muda o retrato? É o que
    congela o F3 com número em vez de opinião. São duas, independentes:
@@ -575,6 +587,12 @@ o que comparar. A contagem 1 roda a qualquer momento. Sequência real:
 - **Etiquetas por SKU** — o trabalho de verdade, e ele é uma escolha entre TRÊS
   por produto (§3.1.1): consome aqui · leva · acompanha. Cadastro editável no
   Admin, como os defeitos de qualidade já são.
+- ✅ **`propose_consumption_tags`** troca *decidir do zero* por *conferir uma
+  lista*: propõe a partir da coleção do catálogo (e, com
+  `--include-historical`, da categoria do histórico). ⚠️ **Proposta não é
+  curadoria** — tudo entra com `reviewed=False`, e o Admin filtra por
+  "revisada = não". O que o mapa não alcança (coleção "Balcão", que agrupa por
+  ONDE vende; produto em coleções que discordam) sai **listado**, nunca chutado.
 - **A regra como função pura e testável**, aplicada igual ao `OrderItem` nativo e ao
   `HistoricalSaleItem`. Uma implementação, dois consumidores — nunca duas cópias que
   divergem.
@@ -740,11 +758,11 @@ reescreve o passado** (`active_from`).
 
 ### 8.4 O que NÃO foi feito, e por quê
 
-- **F2 (as três contagens no staging)** — precisa do banco com o Yooga
-  carregado, que é o staging. Fica para você rodar ou pedir: é o que congela a
-  variante da âncora com número em vez de opinião.
+- **Rodar o F2** — os comandos existem (§5-F2); falta executá-los no staging, que
+  é onde o Yooga está carregado.
 - **Curadoria das etiquetas produto a produto** — é decisão de negócio, não
-  trabalho de código. O vocabulário está no ar; as etiquetas esperam por você.
+  trabalho de código. O `propose_consumption_tags` reduz isso a conferir uma
+  lista, mas quem confere é gente: o nome engana.
 - **"Qual mesa rende mais"** — saiu do catálogo (⛔ M4): era a única pergunta que
   exigia o vínculo vetado.
 - **M7/M8 (desistiu por falta de mesa; salão × fila do balcão)** — o sinal de

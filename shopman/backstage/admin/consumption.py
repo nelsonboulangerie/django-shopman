@@ -46,10 +46,29 @@ class ConsumptionRoleAdmin(ModelAdmin):
 
 @admin.register(ProductConsumptionTag)
 class ProductConsumptionTagAdmin(ModelAdmin):
-    list_display = ("sku", "role", "note", "updated_at")
-    list_filter = ("role",)
+    """A curadoria acontece aqui — e a proposta fica visível como proposta.
+
+    `propose_consumption_tags` preenche a lista a partir das coleções do
+    catálogo, mas nada do que ele escreve entra como revisado. Filtre por
+    "revisada = não" para ver o que ainda espera por gente.
+    """
+
+    list_display = ("sku", "role", "review_display", "note", "updated_at")
+    list_filter = ("reviewed", "role")
     search_fields = ("sku", "note")
-    autocomplete_fields = ()
-    ordering = ("sku",)
-    fields = ("sku", "role", "note")
+    ordering = ("reviewed", "sku")
+    fields = ("sku", "role", "note", "reviewed")
     list_per_page = 100
+    actions = ("mark_reviewed",)
+
+    @display(
+        description="curadoria",
+        label={"revisada": "success", "proposta — revisar": "warning"},
+    )
+    def review_display(self, obj):
+        return "revisada" if obj.reviewed else "proposta — revisar"
+
+    @admin.action(description="Marcar como revisada")
+    def mark_reviewed(self, request, queryset):
+        updated = queryset.update(reviewed=True)
+        self.message_user(request, f"{updated} etiqueta(s) marcada(s) como revisada(s).")

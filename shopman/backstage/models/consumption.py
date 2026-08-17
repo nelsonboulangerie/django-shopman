@@ -95,6 +95,14 @@ class ProductConsumptionTag(models.Model):
         "observação", max_length=140, blank=True,
         help_text="Por que este papel, quando o nome do produto engana.",
     )
+    reviewed = models.BooleanField(
+        "revisada por gente", default=False,
+        help_text=(
+            "Etiqueta proposta pela coleção do catálogo entra FALSA. Proposta "
+            "não é curadoria: o nome engana (o 'Hambúrguer 100g' é o pão), e "
+            "número calculado sobre palpite não pode parecer conferido."
+        ),
+    )
     updated_at = models.DateTimeField("atualizada em", auto_now=True)
 
     class Meta:
