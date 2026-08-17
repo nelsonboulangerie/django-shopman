@@ -48,31 +48,35 @@ def cash_movement_receipt(movement, *, verify_code: str, verify_url: str, reprin
         out += _centered("*** 2a VIA ***")
     out += _rule()
 
-    # O VALOR em corpo duplo, logo abaixo do tipo. Quem confere o caixa no fim
-    # do dia tem um maço de filipetas na mão e precisa somar: se o número está
-    # do mesmo tamanho do resto, some no meio de "Turno #7" e "Operador marina"
-    # e a conferência vira caça ao tesouro. É o único dado que se lê de longe.
-    out += _double(f"R$ {format_money(movement.amount_q)}")
-    out += _line("")
-
-    out += _pair("Turno", f"#{movement.shift_id}")
-    out += _pair("Operador", movement.created_by or "-")
+    # Contexto primeiro, em três linhas: QUANDO, QUEM, POR QUÊ.
+    #
+    # As duas assinaturas moram na MESMA linha porque são um par — quem lança e
+    # quem autoriza. Separá-las fazia a segunda parecer um detalhe do cabeçalho,
+    # quando ela é a substância da autorização de uma retirada.
+    out += _line(f"Turno #{movement.shift_id} · {_local(movement.created_at)}")
+    quem = movement.created_by or "-"
     if movement.approved_by:
-        # A retirada tem duas assinaturas; o papel mostra as duas.
-        out += _pair("Autorizado por", movement.approved_by)
-    out += _pair("Quando", _local(movement.created_at))
-    out += _line("")
-    out += _line("Motivo:")
-    for pedaco in _wrap(movement.reason or "-", COLUMNS - 2):
-        out += _line(f"  {pedaco}")
+        quem = f"{quem} · autorizado por {movement.approved_by}"
+    out += _line(quem)
+    for pedaco in _wrap(f"Motivo: {movement.reason or '-'}", COLUMNS):
+        out += _line(pedaco)
 
+    # O VALOR sozinho, emoldurado, no meio do papel. Com o sinal dentro do
+    # número (`+`/`−`), quem confere soma o maço sem ler o cabeçalho de cada
+    # folha — e é literalmente isso que a conferência faz. Emoldurar em vez de
+    # empilhar no topo: cercado de branco, o olho acha antes de procurar.
     out += _rule()
-    out += _centered("CONFIRA ESTE COMPROVANTE")
+    out += _line("")
+    sinal = "-" if movement.movement_type == "sangria" else "+"
+    out += _double(f"{sinal} R$ {format_money(movement.amount_q)}")
+    out += _line("")
+    out += _rule()
+
     out += _centered(verify_code)
-    out += _line("")
+    out += _centered("confira apontando a camera")
+    # ⚠️ Centralizado. Sem `ESC a 1` o QR sai encostado à esquerda, com metade do
+    # papel vazia ao lado — parece defeito de impressão.
     out += _qr(verify_url)
-    out += _line("")
-    out += _centered("Sem o codigo, este papel nao vale nada.")
 
     out += bytes([ESC, ord("d"), 4])
     out += bytes([GS, ord("V"), 1])  # corte parcial
@@ -164,9 +168,11 @@ def _qr(data: str, *, module: int = 6) -> bytes:
     """
     payload = data.encode("utf-8")
     tamanho = len(payload) + 3
-    return bytes(
+    # `ESC a 1` centraliza, `ESC a 0` devolve à esquerda. É modo de ESTADO: sem
+    # o retorno, tudo abaixo do QR sairia centralizado também.
+    return bytes([ESC, ord("a"), 1]) + bytes(
         [GS, 0x28, 0x6B, 0x04, 0x00, 0x31, 0x41, 0x32, 0x00]
         + [GS, 0x28, 0x6B, 0x03, 0x00, 0x31, 0x43, module]
         + [GS, 0x28, 0x6B, 0x03, 0x00, 0x31, 0x45, 0x31]
         + [GS, 0x28, 0x6B, tamanho % 256, tamanho // 256, 0x31, 0x50, 0x30]
-    ) + payload + bytes([GS, 0x28, 0x6B, 0x03, 0x00, 0x31, 0x51, 0x30])
+    ) + payload + bytes([GS, 0x28, 0x6B, 0x03, 0x00, 0x31, 0x51, 0x30]) + bytes([ESC, ord("a"), 0])
