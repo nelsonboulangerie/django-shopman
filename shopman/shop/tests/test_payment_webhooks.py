@@ -613,8 +613,8 @@ class EfiPixWebhookTests(WebhookTestBase):
         intent = _create_pix_intent(order)
 
         with patch("shopman.shop.lifecycle.dispatch") as mock_dispatch:
-            confirm_pix(txid=intent.gateway_id, valor="10.00")
-            confirm_pix(txid=intent.gateway_id, valor="10.00")
+            confirm_pix(txid=intent.gateway_id, amount="10.00")
+            confirm_pix(txid=intent.gateway_id, amount="10.00")
 
         self.assertEqual(mock_dispatch.call_count, 1)
 
@@ -753,7 +753,7 @@ class PixCaptureSufficiencyTests(WebhookTestBase):
         intent = _create_pix_intent(order)
 
         with patch("shopman.shop.lifecycle.dispatch") as mock_dispatch:
-            confirm_pix(txid=intent.gateway_id, e2e_id="E_PARTIAL", valor="5.00")
+            confirm_pix(txid=intent.gateway_id, e2e_id="E_PARTIAL", amount="5.00")
 
         mock_dispatch.assert_not_called()
         order.refresh_from_db()
@@ -775,8 +775,8 @@ class PixCaptureSufficiencyTests(WebhookTestBase):
         intent = _create_pix_intent(order)
 
         with patch("shopman.shop.lifecycle.dispatch") as mock_dispatch:
-            confirm_pix(txid=intent.gateway_id, e2e_id="E_PART_1", valor="5.00")
-            confirm_pix(txid=intent.gateway_id, e2e_id="E_PART_2", valor="5.00")
+            confirm_pix(txid=intent.gateway_id, e2e_id="E_PART_1", amount="5.00")
+            confirm_pix(txid=intent.gateway_id, e2e_id="E_PART_2", amount="5.00")
 
         mock_dispatch.assert_not_called()
         self.assertEqual(
@@ -793,7 +793,7 @@ class PixCaptureSufficiencyTests(WebhookTestBase):
         intent = _create_pix_intent(order)
 
         with patch("shopman.shop.lifecycle.dispatch") as mock_dispatch:
-            confirm_pix(txid=intent.gateway_id, e2e_id="E_FULL", valor="10.00")
+            confirm_pix(txid=intent.gateway_id, e2e_id="E_FULL", amount="10.00")
 
         mock_dispatch.assert_called_once_with(order, "on_paid")
         order.refresh_from_db()
@@ -818,7 +818,7 @@ class PixCaptureSufficiencyTests(WebhookTestBase):
         )
 
         with patch("shopman.shop.lifecycle.dispatch") as mock_dispatch:
-            confirm_pix(txid="txid_legacy_1", e2e_id="E_LEG_PART", valor="5.00")
+            confirm_pix(txid="txid_legacy_1", e2e_id="E_LEG_PART", amount="5.00")
 
         mock_dispatch.assert_not_called()
         order.refresh_from_db()
@@ -829,8 +829,11 @@ class PixCaptureSufficiencyTests(WebhookTestBase):
             ).exists()
         )
 
-    def test_pix_without_valor_on_legacy_order_does_not_dispatch(self) -> None:
-        """Webhook autenticado SEM ``valor`` não é prova de pagamento.
+    def test_pix_without_amount_on_legacy_order_does_not_dispatch(self) -> None:
+        """Webhook autenticado sem o valor pago não é prova de pagamento.
+
+        (Na EFI o campo se chama ``valor``; para dentro ele viaja como
+        ``amount``.)
 
         No ramo legado (sem intent no Payman) o único número disponível é o do
         próprio webhook. Ausência de valor era lida como "cobre o total" e
@@ -840,7 +843,7 @@ class PixCaptureSufficiencyTests(WebhookTestBase):
         from shopman.shop.services.pix_confirmation import confirm_pix
 
         order = Order.objects.create(
-            ref="PIX-LEGACY-NO-VALOR",
+            ref="PIX-LEGACY-NO-AMOUNT",
             channel_ref="web",
             status="accepted",
             total_q=1000,
@@ -848,7 +851,7 @@ class PixCaptureSufficiencyTests(WebhookTestBase):
         )
 
         with patch("shopman.shop.lifecycle.dispatch") as mock_dispatch:
-            confirm_pix(txid="txid_legacy_3", e2e_id="E_LEG_NO_VALOR", valor="")
+            confirm_pix(txid="txid_legacy_3", e2e_id="E_LEG_NO_AMOUNT", amount="")
 
         mock_dispatch.assert_not_called()
         order.refresh_from_db()
@@ -871,7 +874,7 @@ class PixCaptureSufficiencyTests(WebhookTestBase):
         )
 
         with patch("shopman.shop.lifecycle.dispatch") as mock_dispatch:
-            confirm_pix(txid="txid_legacy_2", e2e_id="E_LEG_FULL", valor="10.00")
+            confirm_pix(txid="txid_legacy_2", e2e_id="E_LEG_FULL", amount="10.00")
 
         mock_dispatch.assert_called_once_with(order, "on_paid")
         order.refresh_from_db()

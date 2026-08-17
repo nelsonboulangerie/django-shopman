@@ -45,7 +45,7 @@ class MockPixConfirmHandler:
         confirm_pix(
             txid=txid,
             e2e_id=payload.get("e2e_id", ""),
-            valor=payload.get("valor", ""),
+            amount=payload.get("amount", ""),
         )
 
 

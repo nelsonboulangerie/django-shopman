@@ -11,7 +11,7 @@ from shopman.shop.adapters.payment_efi import _brl_to_q
 
 
 @pytest.mark.parametrize(
-    ("valor", "expected_q"),
+    ("amount", "expected_q"),
     [
         ("4.35", 435),  # float trunca para 434
         ("115.70", 11570),
@@ -21,5 +21,5 @@ from shopman.shop.adapters.payment_efi import _brl_to_q
         (4.35, 435),
     ],
 )
-def test_brl_to_q_never_truncates(valor, expected_q):
-    assert _brl_to_q(valor) == expected_q
+def test_brl_to_q_never_truncates(amount, expected_q):
+    assert _brl_to_q(amount) == expected_q

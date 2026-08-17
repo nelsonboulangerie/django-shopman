@@ -32,11 +32,11 @@ _EFI_TOKEN_CACHE_KEY = "efi_access_token"
 _EFI_TOKEN_TTL = 3300  # 55 min — EFI tokens last 1h
 
 
-def _brl_to_q(valor: str | float) -> int:
-    """Converte valor decimal da EFI ("4.35") em centavos (canônico em utils)."""
+def _brl_to_q(amount: str | float) -> int:
+    """Converte o decimal da EFI ("4.35") em centavos (canônico em utils)."""
     from shopman.utils.monetary import brl_to_q
 
-    return brl_to_q(valor)
+    return brl_to_q(amount)
 
 
 def _get_config() -> dict:
@@ -149,11 +149,12 @@ def create_intent(
         return _intent_from_db(db_intent, currency=currency)
 
     txid = uuid.uuid5(uuid.NAMESPACE_URL, f"shopman-efi:{idempotency_key}").hex if idempotency_key else uuid.uuid4().hex[:35]
-    valor = f"{amount_q / 100:.2f}"
+    # A chave "valor" é do contrato da EFI; a variável é nossa.
+    amount = f"{amount_q / 100:.2f}"
 
     payload = {
         "calendario": {"expiracao": pix_expiry_seconds},
-        "valor": {"original": valor},
+        "valor": {"original": amount},
         "chave": efi_config.get("pix_key"),
         "infoAdicionais": [
             {"nome": "Referência", "valor": order_ref},
@@ -339,15 +340,15 @@ def refund(
             )
 
         e2eid = pix_list[0].get("endToEndId", "")
-        valor = f"{amount_q / 100:.2f}" if amount_q else cob["valor"]["original"]
+        amount = f"{amount_q / 100:.2f}" if amount_q else cob["valor"]["original"]
         if idempotency_key:
             dev_id = hashlib.sha256(idempotency_key.encode()).hexdigest()[:35]
         else:
             dev_id = uuid.uuid4().hex[:35]
 
-        response = _request("PUT", f"/v2/pix/{e2eid}/devolucao/{dev_id}", {"valor": valor})
+        response = _request("PUT", f"/v2/pix/{e2eid}/devolucao/{dev_id}", {"valor": amount})
 
-        refund_amount = _brl_to_q(valor)
+        refund_amount = _brl_to_q(amount)
         try:
             PaymentService.refund(
                 intent_ref,

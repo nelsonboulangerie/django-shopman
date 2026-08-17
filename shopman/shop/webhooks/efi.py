@@ -102,7 +102,9 @@ class EfiPixWebhookView(APIView):
 
             txid = str(pix_item.get("txid") or "").strip()
             e2e_id = str(pix_item.get("endToEndId") or "").strip()
-            valor = str(pix_item.get("valor") or "").strip()
+            # ``valor`` é o nome do campo NA EFI, e ele morre aqui: para
+            # dentro o pagamento viaja como ``amount``.
+            amount = str(pix_item.get("valor") or "").strip()
 
             if not txid:
                 invalid += 1
@@ -120,7 +122,7 @@ class EfiPixWebhookView(APIView):
                 continue
 
             try:
-                confirm_pix(txid=txid, e2e_id=e2e_id, valor=valor)
+                confirm_pix(txid=txid, e2e_id=e2e_id, amount=amount)
                 webhook_idempotency.mark_done(
                     claim,
                     response_body={"status": "processed", "txid": txid, "e2e_id": e2e_id},
