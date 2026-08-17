@@ -1090,3 +1090,27 @@ perguntou"*.
 Por isso o trabalho não é construir um modelo, e sim **uma definição de dia
 parecido**, usada em todo lugar — inclusive pela fórmula de produção, para que a
 tela de plano e o B.I. nunca discordem sobre o que foi a última quarta.
+
+---
+
+## 15. Composição da venda, mesas e pagamento (rodada 9) → documento próprio
+
+> Pergunta do dono (2026-08-17): *"o que representa mais vendas: quem vem só buscar
+> pão, quem vem só consumir no local, quem consome e leva, entregas? Qual o valor
+> por mesa, a quantidade ideal de mesas, ocupação, ociosidade? Vendas por forma de
+> pagamento? E: vou ter que formular TODAS as perguntas?"*
+
+Três frentes que este mapa **não** cobria, e o catálogo de perguntas que a última
+delas pedia, vivem em **[BI-QUESTION-CATALOG.md](BI-QUESTION-CATALOG.md)**.
+
+O diagnóstico em uma linha cada: **forma de pagamento** é dado durável que ninguém
+lê direito (`order.data.payment.tenders[]` + dois anos de Yooga, hoje visíveis só
+como total do dia no painel de caixa); **modo de consumo** não existe no nativo
+(`fulfillment_type` só conhece `pickup`/`delivery`, e o PDV grava `pickup` sempre);
+**mesa** não existe como conceito (o que há é a comanda `POSTab`, número reusável
+sem lugar nem lotação).
+
+A descoberta que organiza aquele plano é a mesma espécie da do §7.1 — a casa já
+construiu metade sem querer: **vincular a comanda a uma mesa responde as duas
+perguntas de uma vez** (consumo local passa a ser dedução do gesto, não pergunta ao
+operador), e o denominador da ocupação é o `open_minutes` carimbado na rodada 6.

@@ -184,3 +184,27 @@ def test_qty_sold_by_sku_merges_sources_and_declares_truncation(db):
     assert report.truncated == 0
     assert [row.key for row in report.rows][:1] == ["P2"]  # ranking por valor
     assert report.rows[0].value == 3.0
+
+
+# ── Curadoria × gramática (o chip precisa abrir) ─────────────────────────────
+
+
+def test_every_curated_example_is_valid_in_the_real_grammar():
+    """Chip curado com par métrica×dimensão inválido dá 400 ao ser clicado.
+
+    O teste do bi-nuxt confere que a dimensão TEM RÓTULO; só o servidor sabe se
+    ela vale para aquela métrica. Sem esta guarda, "recebido por produto" passa
+    no front e quebra na tela.
+    """
+    import re
+    from pathlib import Path
+
+    source = Path(__file__).resolve().parents[3] / "surfaces/bi-nuxt/app/presentation/bi.ts"
+    assert source.exists(), f"curadoria mudou de lugar: {source}"
+    block = source.read_text().split("export const EXPLORE_EXAMPLES")[1].split("] as const")[0]
+    examples = re.findall(
+        r'metric:\s*"([a-z_]+)",\s*by:\s*"([a-z_]*)",\s*by2:\s*"([a-z_]*)"', block
+    )
+    assert len(examples) >= 20, f"curadoria encolheu sem aviso: {len(examples)} cenários"
+    for metric, by, by2 in examples:
+        validate_config(metric, by, by2)  # ExploreError se o par não existir
