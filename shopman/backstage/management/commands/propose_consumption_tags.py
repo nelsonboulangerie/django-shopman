@@ -38,7 +38,7 @@ COLLECTION_READING: dict[str, str] = {
     # anterior os lia como "acompanha", o que esvaziaria o salão nos almoços.
     "salgados": "anchor",
     "rusticos": "takeaway",
-    "despensa": "takeaway",
+    "mercearia": "takeaway",
     "finos": "hybrid",
     "doces": "hybrid",
 }
@@ -62,13 +62,10 @@ HISTORICAL_KEYWORD_READING: tuple[tuple[str, str], ...] = (
     ("lanche", "hybrid"),
 )
 
-# Coleções deliberadamente NÃO mapeadas: "balcão" agrupa por onde o produto é
-# vendido, não pelo que ele é, então propor a partir dela seria chutar.
-# ⚠️ O dono (17/08) foi além: "essa coleção NEM deveria existir, não faz
-# sentido" — vai redirecionar os produtos dela e extingui-la. Quando isso
-# acontecer, esta linha some junto, e os 7 SKUs passam a ser propostos pela
-# coleção nova. Até lá, seguem cobertos pela curadoria do seed.
-UNMAPPED_COLLECTIONS = ("balcao",)
+# "Combos" fica de fora de propósito: um bundle não tem vocação própria — ele
+# herda a dos componentes, e propor uma leitura para ele a partir da coleção
+# seria inventar. Fica para a curadoria, que é onde ele já está.
+UNMAPPED_COLLECTIONS = ("combos",)
 
 
 class Command(BaseCommand):
@@ -188,7 +185,7 @@ class Command(BaseCommand):
                 self.stdout.write(f"  {sku}")
 
         for title, skus in (
-            ("sem coleção mapeada (inclui o 'Balcão', que agrupa por onde vende, não pelo que é)", uncovered),
+            ("sem coleção mapeada (inclui 'Combos' — bundle herda a vocação dos componentes)", uncovered),
             ("só no histórico, sem categoria reconhecida", historical_uncovered),
         ):
             if skus:

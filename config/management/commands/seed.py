@@ -1002,17 +1002,17 @@ class Command(BaseCommand):
             "MELON-ICED-SANDO": ["doce", "frutas", "chantilly", "japones", "gelado"],
             "PURIN": ["doce", "pudim", "japones", "sobremesa"],
             "TEA-JELLY": ["doce", "gelatina", "cha", "sobremesa"],
-            "MOSTARDA-CASA": ["despensa", "mostarda", "artesanal", "pote"],
-            "BACON-CASA": ["despensa", "bacon", "defumado", "artesanal"],
-            "TAPENADE": ["despensa", "tapenade", "azeitona", "pote"],
-            "PATE-RATATOUILLE": ["despensa", "pate", "ratatouille", "vegetal", "pote"],
-            "CORNICHONS": ["despensa", "picles", "conserva", "frances"],
-            "GELEIA-MINI": ["despensa", "geleia", "fruta", "mini"],
-            "QUEIJO-CAMEMBERT": ["despensa", "queijo", "camembert", "frances"],
-            "QUEIJO-POMERODE": ["despensa", "queijo", "colonial", "local"],
-            "CAFE-GRAO": ["despensa", "cafe", "grao", "torra"],
-            "CHA-LATA": ["despensa", "cha", "lata", "presente"],
-            "LATA-NELSON": ["despensa", "presente", "lata", "biscoito", "madeleine"],
+            "MOSTARDA-CASA": ["mercearia", "despensa", "mostarda", "artesanal", "pote"],
+            "BACON-CASA": ["mercearia", "despensa", "bacon", "defumado", "artesanal"],
+            "TAPENADE": ["mercearia", "despensa", "tapenade", "azeitona", "pote"],
+            "PATE-RATATOUILLE": ["mercearia", "despensa", "pate", "ratatouille", "vegetal", "pote"],
+            "CORNICHONS": ["mercearia", "despensa", "picles", "conserva", "frances"],
+            "GELEIA-MINI": ["mercearia", "despensa", "geleia", "fruta", "mini"],
+            "QUEIJO-CAMEMBERT": ["mercearia", "despensa", "queijo", "camembert", "frances"],
+            "QUEIJO-POMERODE": ["mercearia", "despensa", "queijo", "colonial", "local"],
+            "CAFE-GRAO": ["mercearia", "despensa", "cafe", "grao", "torra"],
+            "CHA-LATA": ["mercearia", "despensa", "cha", "lata", "presente"],
+            "LATA-NELSON": ["mercearia", "despensa", "presente", "lata", "biscoito", "madeleine"],
         }
 
 
@@ -1886,8 +1886,11 @@ class Command(BaseCommand):
         ProductComponent.objects.create(parent=combo, component=products["CROISSANT"], qty=Decimal("1"))
         ProductComponent.objects.create(parent=combo, component=products["MINI-BAGUETE"], qty=Decimal("1"))
 
-        # Collections — a taxonomia do Cardápio 2027: o copo lidera; `balcao` e
-        # `despensa` existem mas ficam fora dos feeds (menu impresso/TVs).
+        # Collections — a taxonomia do Cardápio 2027: o copo lidera; `mercearia`
+        # e `combos` existem mas ficam fora dos feeds (menu impresso/TVs).
+        # `balcao` foi extinta (decisão do dono, 17/08): agrupava por ONDE o
+        # produto era vendido, não pelo que ele é, e por isso nunca classificou
+        # nada. Os 7 produtos dela foram redistribuídos.
         collection_refs = [
             "bebidas-quentes",
             "bebidas-geladas",
@@ -1896,14 +1899,14 @@ class Command(BaseCommand):
             "finos",
             "salgados",
             "doces",
-            "balcao",
-            "despensa",
+            "combos",
+            "mercearia",
         ]
         # Limpa também as coleções da taxonomia anterior (refs que saíram).
         CollectionItem.objects.filter(
-            collection__ref__in=collection_refs + ["macios", "folhados"]
+            collection__ref__in=collection_refs + ["macios", "folhados", "balcao", "despensa"]
         ).delete()
-        Collection.objects.filter(ref__in=["macios", "folhados"]).delete()
+        Collection.objects.filter(ref__in=["macios", "folhados", "balcao", "despensa"]).delete()
 
         collections_by_ref = {}
         for order, (ref, name) in enumerate(
@@ -1915,8 +1918,8 @@ class Command(BaseCommand):
                 ("finos", "Finos"),
                 ("salgados", "Salgados"),
                 ("doces", "Doces"),
-                ("balcao", "Balcão"),
-                ("despensa", "Despensa"),
+                ("combos", "Combos"),
+                ("mercearia", "Mercearia"),
             ],
             start=1,
         ):
@@ -1933,10 +1936,16 @@ class Command(BaseCommand):
             "bebidas-geladas": ["CHA-GELADO-DIA", "COFFEE-FLOAT", "FRAPPE", "AGUA"],
             "torneira": ["CREAM-SODA-DIA", "SODA-LARANJA"],
             "rusticos": [
+                # Vindos da extinta "balcao" (17/08): três pães de casca e o pão
+                # de hambúrguer, que o dono classificou aqui apesar da massa macia.
+                "FENDU", "TABATIERE", "MINI-BAGUETE", "PAO-HAMBURGER",
                 "BAGUETE", "CAMPAGNE", "CAMPAGNE-PASSAS", "CIABATTA",
                 "BAGUETE-GERGELIM", "FOCACCIA-DIA",
             ],
             "finos": [
+                # Vindos da extinta "balcao" (17/08): buns em pacote, massa
+                # enriquecida, na mesma família dos pães japoneses daqui.
+                "BRIOCHE-BURGER", "PAO-HOTDOG",
                 "CROISSANT", "PAIN-CHOCOLAT", "FOLHADO-DIA", "SHOKUPAN",
                 "KURO-PAN", "MELON-PAN", "ANIMALZINHO", "CORNET",
             ],
@@ -1946,11 +1955,10 @@ class Command(BaseCommand):
                 "PAIN-GRILLE", "TABUA-IGUARIAS",
             ],
             "doces": ["PAIN-PERDU", "MELON-ICED-SANDO", "MADELEINE", "PURIN", "TEA-JELLY"],
-            "balcao": [
-                "FENDU", "TABATIERE", "MINI-BAGUETE", "PAO-HAMBURGER",
-                "BRIOCHE-BURGER", "PAO-HOTDOG", "COMBO-PETIT-DEJ",
-            ],
-            "despensa": [
+            # Bundle não é categoria de produto: o combo tem coleção própria
+            # para não inflar Rústicos nem Finos com um item que é os dois.
+            "combos": ["COMBO-PETIT-DEJ"],
+            "mercearia": [
                 "MOSTARDA-CASA", "BACON-CASA", "TAPENADE", "PATE-RATATOUILLE",
                 "CORNICHONS", "GELEIA-MINI", "QUEIJO-CAMEMBERT", "QUEIJO-POMERODE",
                 "CAFE-GRAO", "CHA-LATA", "LATA-NELSON",
