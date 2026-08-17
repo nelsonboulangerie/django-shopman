@@ -93,13 +93,40 @@
               {{ step.detail }}
             {% endcomponent %}
             {% if step.command %}
-              {% comment %}
-                A fonte mono desenha `--` como um traço longo só. Conferido: são
-                dois hífens de verdade (U+002D U+002D), então copiar e colar traz
-                o comando certo, que é como este bloco é usado.
-              {% endcomment %}
-              <pre class="overflow-x-auto rounded-default bg-base-100 p-4 text-sm text-base-700 dark:bg-base-900 dark:text-base-300"><code>{{ step.command }}</code></pre>
+              {% include "admin_console/pos_counter_agent/_command.html" with command=step.command %}
             {% endif %}
+          {% endcomponent %}
+        {% endcomponent %}
+      {% endfor %}
+
+      {% comment %}
+        Todo comando do balcão mora AQUI, com botão de copiar. A alternativa é o
+        dono transcrever comando de uma conversa para o terminal, e cada
+        transcrição é uma chance de errar um caractere e concluir que o defeito é
+        da impressora. Vem depois da instalação porque instalar se faz uma vez e
+        conferir se faz sempre.
+      {% endcomment %}
+      {% component "unfold/components/card.html" %}
+        {% component "unfold/components/flex.html" with col=1 class="gap-3" %}
+          {% component "unfold/components/title.html" with class="text-lg" %}
+            Comandos do balcão
+          {% endcomponent %}
+          {% component "unfold/components/text.html" with class="text-base-500" %}
+            Copie e cole no terminal da máquina do balcão. Todos apontam para o agente já instalado, não para o arquivo baixado.
+          {% endcomponent %}
+        {% endcomponent %}
+      {% endcomponent %}
+
+      {% for step in agent_install.commands %}
+        {% component "unfold/components/card.html" %}
+          {% component "unfold/components/flex.html" with col=1 class="gap-3" %}
+            {% component "unfold/components/title.html" with class="text-base" %}
+              {{ step.title }}
+            {% endcomponent %}
+            {% component "unfold/components/text.html" with class="text-base-500" %}
+              {{ step.detail }}
+            {% endcomponent %}
+            {% include "admin_console/pos_counter_agent/_command.html" with command=step.command %}
           {% endcomponent %}
         {% endcomponent %}
       {% endfor %}

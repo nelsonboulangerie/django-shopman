@@ -1,0 +1,18 @@
+{% load unfold %}
+{% comment %}
+  Um comando pronto, com botão de copiar.
+
+  A fonte mono desenha `--` como um traço longo só. Conferido: são dois hífens de
+  verdade (U+002D U+002D), então copiar e colar traz o comando certo.
+
+  O clipboard é exceção explícita do CLAUDE.md (API do browser sem equivalente
+  Alpine). O estado do "copiado!" é Alpine, como manda a casa.
+{% endcomment %}
+<div class="flex flex-col gap-2" x-data="{ copiado: false }">
+  <pre class="overflow-x-auto rounded-default bg-base-100 p-4 text-sm text-base-700 dark:bg-base-900 dark:text-base-300"><code x-ref="cmd">{{ command }}</code></pre>
+  <div class="flex gap-2">
+    {% component "unfold/components/button.html" with variant="default" size="sm" icon="content_copy" attrs=copy_button_attrs %}
+      <span x-text="copiado ? 'copiado!' : 'Copiar comando'"></span>
+    {% endcomponent %}
+  </div>
+</div>

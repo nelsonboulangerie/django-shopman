@@ -81,6 +81,10 @@ class AgentInstallGuide:
     os_caveat: str = ""
     os_options: tuple[OSOption, ...] = field(default_factory=tuple)
     steps: tuple[AgentStep, ...] = field(default_factory=tuple)
+    #: Os comandos do dia a dia, prontos para copiar. Separados dos `steps`
+    #: porque instalação se faz uma vez e diagnóstico se faz sempre — misturar
+    #: obrigaria a reler o roteiro inteiro para achar o comando de conferir.
+    commands: tuple[AgentStep, ...] = field(default_factory=tuple)
 
 
 def build_agent_install(terminal, *, download_url: str, os_key: str = DEFAULT_OS) -> AgentInstallGuide:
@@ -118,6 +122,10 @@ def build_agent_install(terminal, *, download_url: str, os_key: str = DEFAULT_OS
             for key, lbl, note in OS_CHOICES
         ),
         steps=_steps(config, os_key) if not blocker else (),
+        # Os comandos do dia a dia saem MESMO com blocker: quando o terminal
+        # está mal configurado é justamente quando alguém precisa rodar o
+        # `--doctor` para descobrir o que falta.
+        commands=_commands(os_key),
     )
 
 
@@ -137,26 +145,80 @@ _OS_CAVEATS = {
 #: onde o agente deixa o registro das aberturas. O comando de instalação e o
 #: mecanismo de envio são os mesmos no Linux e no macOS (ambos CUPS); o Windows
 #: troca o mecanismo por baixo, mas não a linha que a pessoa digita.
+#: Onde o agente FICA depois de instalado. Os comandos do dia a dia apontam
+#: para cá, não para a pasta de downloads: o arquivo baixado é descartável — o
+#: instalador se copia sozinho — e mandar o dono rodar `--doctor` no Downloads
+#: faz ele diagnosticar uma cópia que não é a que está no ar.
 _OS_RUNTIME = {
     "linux": {
+        "installed": "~/.local/share/nelson-pos-counter/counter_agent.py",
         "python": "python3",
         "logs": "journalctl --user -u nelson-pos-counter -f",
         "logs_note": "O agente registra cada abertura e cada impressão no journal do sistema.",
         "carry": "Pendrive, scp, ou copiar e colar num editor, o que for mais fácil.",
     },
     "macos": {
+        "installed": "~/.local/share/nelson-pos-counter/counter_agent.py",
         "python": "python3",
         "logs": "tail -f ~/.local/share/nelson-pos-counter/counter-agent.log",
         "logs_note": "No macOS o launchd não guarda a saída, então o agente escreve num arquivo.",
         "carry": "Pendrive, AirDrop, ou copiar e colar num editor.",
     },
     "windows": {
+        "installed": "%LOCALAPPDATA%\\NelsonPosCounter\\counter_agent.py",
         "python": "python",
         "logs": "type %LOCALAPPDATA%\\NelsonPosCounter\\counter-agent.log",
         "logs_note": "No Windows o agente roda sem janela de console, então escreve num arquivo.",
         "carry": "Pendrive ou copiar e colar num editor (Bloco de Notas serve).",
     },
 }
+
+
+def _commands(os_key: str) -> tuple[AgentStep, ...]:
+    """Todo comando que o balcão pode precisar, pronto para copiar.
+
+    Existe porque a alternativa é o dono transcrever comando de uma conversa
+    para o terminal — e cada transcrição é uma chance de errar um caractere e
+    concluir que o defeito é da impressora. Nenhum comando desta casa deveria
+    morar fora da tela onde ele é usado.
+    """
+    runtime = _OS_RUNTIME[os_key]
+    agente = f"{runtime['python']} {runtime['installed']}"
+    return (
+        AgentStep(
+            title="Está tudo certo neste balcão?",
+            detail=(
+                "Um relatório: a versão instalada contra a que está no ar, a config, o "
+                "serviço, o serviço antigo e a impressora. Não para no primeiro problema — "
+                "varre tudo e diz o que fazer em cada linha."
+            ),
+            command=f"{agente} --doctor",
+        ),
+        AgentStep(
+            title="A gaveta abre?",
+            detail="Manda os cinco bytes direto, sem passar pelo navegador. Se abrir aqui e não abrir no PDV, o problema é de rede ou token, não da impressora.",
+            command=f"{agente} --kick",
+        ),
+        AgentStep(
+            title="A impressora está boa?",
+            detail="Sai uma página com acento, régua de largura e QR. É o papel que responde, não o palpite.",
+            command=f"{agente} --test-print",
+        ),
+        AgentStep(
+            title="Dá para saber se a gaveta ficou aberta?",
+            detail=(
+                "Ele conduz o teste: pede a gaveta fechada, lê; pede aberta, lê de novo; e "
+                "compara. Se der certo, o sistema pode passar a avisar quando alguém deixa a "
+                "gaveta aberta. Se não der, ele diz que por este caminho não dá."
+            ),
+            command=f"{agente} --drawer-status",
+        ),
+        AgentStep(
+            title="O que o agente registrou",
+            detail=f"{runtime['logs_note']} É a verdade física do balcão.",
+            command=runtime["logs"],
+        ),
+    )
 
 
 def _steps(config, os_key: str) -> tuple[AgentStep, ...]:
@@ -198,11 +260,6 @@ def _steps(config, os_key: str) -> tuple[AgentStep, ...]:
                 "se a gaveta abriu, quem sabe é você. Se a fila responder e a gaveta não abrir, "
                 "o cabo dela na impressora é o primeiro lugar para olhar."
             ),
-        ),
-        AgentStep(
-            title="Se algo der errado",
-            detail=f"{runtime['logs_note']} É a verdade física do balcão.",
-            command=runtime["logs"],
         ),
     )
 

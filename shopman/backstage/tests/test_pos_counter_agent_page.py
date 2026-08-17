@@ -213,8 +213,10 @@ def test_o_token_e_o_mesmo_em_qualquer_sistema():
 ])
 def test_cada_sistema_diz_onde_ver_o_registro(os_key, marca):
     """Prometo na tela que 'o agente registra cada abertura' — em todos eles."""
+    # O log saiu do roteiro de instalação e virou comando do dia a dia: ver
+    # registro se faz sempre, instalar se faz uma vez.
     guide = build_agent_install(_terminal(AGENT), download_url="/x/", os_key=os_key)
-    assert any(marca in s.command for s in guide.steps)
+    assert any(marca in c.command for c in guide.commands)
 
 
 def test_so_desconhecido_cai_no_oficial():
@@ -318,3 +320,42 @@ def test_o_carimbo_da_tela_bate_com_o_que_o_agente_calcula_de_si():
 
     guide = build_agent_install(_terminal(AGENT), download_url="/x/")
     assert guide.source_build == counter_agent.build_id()
+
+
+def test_a_tela_traz_TODO_comando_que_o_balcao_precisa():
+    """Comando que só existe numa conversa é comando que alguém transcreve errado.
+
+    O dono não tem terminal de desenvolvedor no balcão: cada caractere digitado à
+    mão é uma chance de errar e concluir que o defeito é da impressora. A tela é
+    o único lugar onde o comando pode estar certo por construção.
+    """
+    from shopman.backstage.projections.pos_agent import _commands
+
+    for so in ("linux", "macos", "windows"):
+        comandos = " ".join(c.command for c in _commands(so))
+        for flag in ("--doctor", "--kick", "--test-print", "--drawer-status"):
+            assert flag in comandos, f"{flag} ausente em {so}"
+        assert all(c.command for c in _commands(so)), "todo comando desta lista tem que ser copiável"
+
+
+def test_os_comandos_apontam_para_o_agente_INSTALADO():
+    """O arquivo baixado é descartável — o instalador se copia sozinho.
+
+    Rodar `--doctor` na pasta de downloads diagnostica uma cópia que não é a que
+    está no ar, e o relatório sairia mentindo sobre a versão.
+    """
+    from shopman.backstage.projections.pos_agent import _commands
+
+    for so, marca in (("linux", "nelson-pos-counter"), ("windows", "NelsonPosCounter")):
+        for passo in _commands(so):
+            if "--" in passo.command:  # os do agente, não o de log
+                assert marca in passo.command, f"{so}: {passo.command} não aponta para o instalado"
+
+
+def test_os_comandos_saem_mesmo_com_o_terminal_mal_configurado():
+    """É justamente quando falta config que alguém precisa do `--doctor`."""
+    guia = build_agent_install(_terminal(None), download_url="/x/")
+
+    assert guia.blocker, "este terminal deveria estar bloqueado"
+    assert guia.steps == (), "o roteiro de instalação não sai com blocker"
+    assert guia.commands, "mas os comandos de diagnóstico saem"
