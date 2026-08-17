@@ -861,11 +861,22 @@ Com isso, funcionam: **modo de consumo** (todas as métricas de venda e itens) e
 **salão** (lotação, pico, teto, giro, valor por lugar-hora). **Forma de
 pagamento** já funcionava sem nada — lê `Order`/`HistoricalSale` direto.
 
-### 9.2 O que FICA PENDENTE até um reseed completo
+### 9.2 A taxonomia — resolvida por comando (17/08)
 
-A **taxonomia de coleções** mora dentro do `_seed_catalog`, que é grande demais
-para recortar. Enquanto não houver reseed (ou trabalho manual no Admin), o
-ambiente segue com:
+```bash
+python manage.py apply_catalog_taxonomy --dry-run   # e sem --dry-run para aplicar
+```
+
+Extingue "Balcão", renomeia "Despensa" para "Mercearia" **no lugar** (recriar
+perderia os 11 vínculos) e cria "Combos", movendo os 7 produtos. Idempotente,
+transacional, e o `--dry-run` **executa e desfaz** em vez de simular — ensaio que
+não reflete a execução é pior que ensaio nenhum.
+
+Duas guardas: coleção que ainda tem produto **não é apagada** (senão eles
+ficariam sem casa), e um teste compara os destinos do comando com a lista do
+`_seed_catalog`, para que ambiente migrado e ambiente novo não divirjam.
+
+Sem rodá-lo, o ambiente segue com:
 
 | O que muda | Estado sem reseed |
 |---|---|
@@ -879,6 +890,9 @@ ambiente segue com:
 coleção, então as leituras saem certas de qualquer jeito. O que fica errado é o
 **catálogo**: a vitrine, o menu impresso e as TVs seguem com a taxonomia velha.
 
+**Ordem no staging:** `setup_bi_reference` → `apply_catalog_taxonomy`. Os dois
+são idempotentes e nenhum toca em operação.
+
 ### 9.3 Duas consequências do reseed, quando ele acontecer
 
 - **Feeds exibem por coleção.** Os 6 produtos escondidos em "Balcão" passam a
@@ -890,6 +904,4 @@ coleção, então as leituras saem certas de qualquer jeito. O que fica errado �
 ⚠️ E o `seed` completo **não serve** para um ambiente com operação de verdade:
 ele roda o bloco de demonstração inteiro (pedidos, sessões, pagamentos,
 fechamentos, 5.748 pedidos de volume). Num staging com dado real, isso soma
-operação inventada à real. O caminho honesto para a taxonomia, sem reseed, é
-fazer as mudanças de coleção **no Admin**, à mão: são 7 produtos, 2 coleções
-novas e 2 aposentadas.
+operação inventada à real — e é por isso que os dois comandos acima existem.
