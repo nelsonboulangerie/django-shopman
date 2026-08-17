@@ -28,6 +28,19 @@ logger = logging.getLogger(__name__)
 
 STARTED_BATCH = "started"
 
+# Marcadores duráveis das duas pernas do ledger de produção, em
+# ``WorkOrder.meta`` (JSONField que já existe — dado contextual, sem migração
+# de schema). São o GUARDA de quem re-roda: ``_handle_finished`` não é
+# idempotente (o ``realize`` credita o ``actual`` cheio, independente do saldo
+# planejado), então re-executar sem guarda credita a vitrine EM DOBRO.
+#
+# Uma marca por perna, e não uma por handler, porque a falha típica é
+# parcial: o insumo baixa antes do ``try`` do output, então o drift real é
+# "insumo consumido, vitrine zerada" — re-rodar tudo consumiria o insumo
+# duas vezes para consertar a vitrine uma.
+STOCK_CONSUMED_KEY = "stock_consumed_at"
+STOCK_REALIZED_KEY = "stock_realized_at"
+
 
 def _stockman_available() -> bool:
     """Check if Stockman is installed."""
@@ -83,6 +96,50 @@ def handle_production_changed(sender, product_ref, date, **kwargs):
         _handle_finished(work_order, product_ref, date)
     else:
         logger.warning("Unknown production_changed action: %s", action)
+
+
+def _leg_done(work_order, key: str) -> bool:
+    return bool((work_order.meta or {}).get(key))
+
+
+def _stamp_leg(work_order, key: str) -> None:
+    """Carimba a perna concluída, durável, sem tocar em mais nada.
+
+    ``update()`` de propósito: ``save()`` dispararia ``auto_now`` no
+    ``updated_at`` (que as telas de operação usam como "mexeu agora") e
+    reescreveria o objeto inteiro por cima de quem estiver editando o meta em
+    paralelo. O ``rev`` do controle otimista é bumpado só pelo ``_check_rev``,
+    então continua intacto.
+    """
+    from django.utils import timezone
+
+    from shopman.craftsman.models import WorkOrder
+
+    meta = dict(work_order.meta or {})
+    if meta.get(key):
+        return
+    meta[key] = timezone.now().isoformat()
+    work_order.meta = meta
+    WorkOrder.objects.filter(pk=work_order.pk).update(meta=meta)
+
+
+def stock_legs_complete(work_order) -> bool:
+    """As duas pernas do ledger de produção já foram escritas?"""
+    return _leg_done(work_order, STOCK_CONSUMED_KEY) and _leg_done(
+        work_order, STOCK_REALIZED_KEY
+    )
+
+
+def realize_finished_production(work_order) -> None:
+    """Reexecuta as pernas de estoque de uma WO ``finished`` que não fechou.
+
+    Entrada do sweeper de recuperação. Chama o handler direto, sem reemitir
+    ``production_changed``: o signal acordaria também os outros receivers
+    (sync de pedido, alerta de yield, anúncio, campanha) e duplicaria o que
+    eles já fizeram. Cada perna é guardada pelo seu marcador, então re-rodar
+    só refaz o que faltou.
+    """
+    _handle_finished(work_order, work_order.output_sku, work_order.target_date)
 
 
 def _resolve_position(ref: str):
@@ -480,13 +537,19 @@ def _handle_finished(work_order, product_ref, date):
         return
 
     # Ingredients-out leg — independent of planned-output target_date.
-    _consume_materials(work_order)
+    if not _leg_done(work_order, STOCK_CONSUMED_KEY):
+        _consume_materials(work_order)
+        _stamp_leg(work_order, STOCK_CONSUMED_KEY)
+
+    if _leg_done(work_order, STOCK_REALIZED_KEY):
+        return
 
     if not date:
         logger.info(
             "WorkOrder %s finished without target_date — no planned output to realize",
             work_order.ref,
         )
+        _stamp_leg(work_order, STOCK_REALIZED_KEY)
         return
 
     from shopman.stockman.models import Position
@@ -507,6 +570,9 @@ def _handle_finished(work_order, product_ref, date):
             Position.objects.filter(is_saleable=True).order_by("pk").first()
         )
         if not to_position:
+            # Sem marcador de propósito: falta uma posição de venda no
+            # catálogo, e a fornada VOLTA a ser realizável no minuto em que
+            # alguém criar uma. O sweeper insiste (e reclama) até lá.
             logger.warning(
                 "No saleable position found — cannot realize %s",
                 work_order.ref,
@@ -531,11 +597,15 @@ def _handle_finished(work_order, product_ref, date):
             # Fallback: try without position filter
             quant = StockQueries.get_quant(product_ref, target_date=date)
         if quant is None:
+            # Não há o que realizar (WO sem planejado, ou já consumido por
+            # outro caminho). A perna terminou: marcar, senão o sweeper volta
+            # nesta WO para sempre.
             logger.info(
                 "No planned quant for %s @ %s — nothing to realize",
                 product_ref,
                 date,
             )
+            _stamp_leg(work_order, STOCK_REALIZED_KEY)
             return
 
         StockPlanning.realize(
@@ -557,6 +627,7 @@ def _handle_finished(work_order, product_ref, date):
         )
 
         _write_off_yield_shortfall(work_order, product_ref, date, finished_qty)
+        _stamp_leg(work_order, STOCK_REALIZED_KEY)
     except Exception:
         # "Insumo consumido e NADA realizado" não cabe numa linha de log. Quando
         # esta perna falha a WorkOrder já está FINISHED (o send é pós-commit), a

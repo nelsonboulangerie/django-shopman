@@ -963,6 +963,17 @@ Contexto operacional de produção mantido fora do core Craftsman.
 | `formula_basis` | `dict` | `set_planned_quantity` (`shop/services/production.py`) | matriz/auditoria de sugestão | Basis da sugestão aceita (demanda média, committed, margem, `accepted_quantity`). Só quando `source_ref="formula:suggestion"`. |
 | `consolidated_work_order_refs` | `list[string]` | `set_planned_quantity` | auditoria | Refs de WOs planned duplicadas consolidadas nesta. |
 | `_recipe_snapshot` | `dict` | Core (`CraftPlanning.plan`) | Core (`finish`) | BOM congelada no plan — **gerida pelo Core, nunca editar**. |
+| `stock_consumed_at` | `string` (ISO 8601) | `craftsman/contrib/stockman/handlers` (`_handle_finished`) | `sweep_unrealized_production` | Instante em que a perna de INSUMO do ledger fechou. Ausente numa WO `finished` = o consumo não rodou. |
+| `stock_realized_at` | `string` (ISO 8601) | `craftsman/contrib/stockman/handlers` (`_handle_finished`) | `sweep_unrealized_production` | Instante em que a perna de OUTPUT do ledger fechou (realize + write-off de rendimento). Ausente numa WO `finished` = a fornada não entrou no estoque. |
+
+> **Os dois marcadores acima são o guarda do sweeper, não decoração.**
+> `_handle_finished` **não é idempotente** — o `realize` credita o `actual`
+> cheio, independente do saldo planejado, então re-executar sem consultar o
+> marcador credita a vitrine **em dobro**. São dois (e não um) porque a falha
+> típica é parcial: o insumo baixa antes do `try` do output, então re-rodar o
+> handler inteiro consumiria o insumo duas vezes para consertar a vitrine uma.
+> A migração `craftsman/0005` carimbou o histórico como já realizado, para o
+> primeiro ciclo do sweeper não reprocessar tudo que existia antes deles.
 
 ## Recipe.meta
 
