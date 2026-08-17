@@ -11,9 +11,9 @@ from drf_spectacular.views import SpectacularAPIView, SpectacularSwaggerView
 from shopman.backstage.admin_console.cash_receipt import cash_receipt_verify_view
 from shopman.backstage.admin_console.copy_catalog import copy_catalog_view
 from shopman.backstage.admin_console.operator_badge import operator_badge_view
-from shopman.backstage.admin_console.pos_drawer_agent import (
-    pos_drawer_agent_download,
-    pos_drawer_agent_view,
+from shopman.backstage.admin_console.pos_counter_agent import (
+    pos_counter_agent_download,
+    pos_counter_agent_view,
 )
 from shopman.backstage.admin_console.settings_hub import settings_hub_view
 from shopman.backstage.views.two_factor import admin_2fa_verify
@@ -59,14 +59,14 @@ urlpatterns = [
         name="admin_console_copy_catalog",
     ),
     path(
-        "admin/pos/terminal/<slug:ref>/drawer/",
-        admin.site.admin_view(pos_drawer_agent_view),
-        name="admin_console_pos_drawer_agent",
+        "admin/pos/terminal/<slug:ref>/agent/",
+        admin.site.admin_view(pos_counter_agent_view),
+        name="admin_console_pos_counter_agent",
     ),
     path(
-        "admin/pos/terminal/<slug:ref>/drawer/agent.py",
-        admin.site.admin_view(pos_drawer_agent_download),
-        name="admin_console_pos_drawer_agent_download",
+        "admin/pos/terminal/<slug:ref>/agent/counter_agent.py",
+        admin.site.admin_view(pos_counter_agent_download),
+        name="admin_console_pos_counter_agent_download",
     ),
     path(
         "admin/cash/receipt/<str:code>/",

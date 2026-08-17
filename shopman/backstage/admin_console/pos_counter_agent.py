@@ -1,4 +1,4 @@
-"""Instalar o agente da gaveta — página Admin canônica (Unfold).
+"""Instalar o agente do balcão — página Admin canônica (Unfold).
 
 O dono já está no Admin colando a config do terminal. Mandá-lo caçar um arquivo
 no repositório para completar a tarefa é atrito bobo: aqui ele baixa o agente e
@@ -33,17 +33,17 @@ def _terminal(ref: str):
         raise Http404("Terminal não encontrado.") from exc
 
 
-class PosDrawerAgentView(UnfoldModelAdminViewMixin, TemplateView):
-    title = "Instalar o agente da gaveta"
+class PosCounterAgentView(UnfoldModelAdminViewMixin, TemplateView):
+    title = "Instalar o agente do balcão"
     permission_required = REQUIRED_PERM
-    template_name = "admin_console/pos_drawer_agent/index.html"
+    template_name = "admin_console/pos_counter_agent/index.html"
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         terminal = _terminal(self.kwargs["ref"])
         context["agent_install"] = build_agent_install(
             terminal,
-            download_url=reverse("admin_console_pos_drawer_agent_download", args=[terminal.ref]),
+            download_url=reverse("admin_console_pos_counter_agent_download", args=[terminal.ref]),
             # O SO é do COMPUTADOR, não do terminal: a mesma loja pode instalar
             # no caixa Windows hoje e no Linux depois. Por isso vive na URL, e
             # não vira mais um campo na config do terminal.
@@ -61,12 +61,12 @@ def _terminal_model_admin():
     return admin.site._registry[POSTerminal]
 
 
-def pos_drawer_agent_view(request: HttpRequest, *args, **kwargs) -> HttpResponse:
+def pos_counter_agent_view(request: HttpRequest, *args, **kwargs) -> HttpResponse:
     """Resolve o ModelAdmin tardiamente (ordem de import do URLConf)."""
-    return PosDrawerAgentView.as_view(model_admin=_terminal_model_admin())(request, *args, **kwargs)
+    return PosCounterAgentView.as_view(model_admin=_terminal_model_admin())(request, *args, **kwargs)
 
 
-def pos_drawer_agent_download(request: HttpRequest, ref: str) -> HttpResponse:
+def pos_counter_agent_download(request: HttpRequest, ref: str) -> HttpResponse:
     """Serve o agente como anexo.
 
     Gate explícito: `admin.site.admin_view` já garante staff logado, mas quem

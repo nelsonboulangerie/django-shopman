@@ -246,7 +246,7 @@ export interface POSTerminalComponentProjection {
   label: string;
   /**
    * `deferred` = a resposta existe, mas só a estação alcança quem a tem (o
-   * agente da gaveta vive na loopback do balcão). O servidor dizer `ready` aí
+   * agente do balcão vive na loopback do balcão). O servidor dizer `ready` aí
    * seria repetir a mentira antiga do adapter "simulated".
    */
   status: "ready" | "warning" | "error" | "absent" | "deferred" | string;

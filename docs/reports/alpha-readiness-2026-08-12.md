@@ -34,8 +34,8 @@ O que falta é de três naturezas, e só uma delas é trabalho de engenharia:
 ⚠️ **A worktree principal está 8 commits atrás do `origin/main`.** O que falta
 puxar é a frente da gaveta do PDV e o leitor de crachá (PRs #133/#134, já
 mergeados). Um deles, `e8c5c420`, faz uma coisa que importa: adiciona
-`test-drawer-agent` à cadeia do `make test`. Ou seja — **os 351 testes do agente
-da gaveta não rodaram no número acima**, porque localmente eles ainda estão fora
+`test-counter-agent` à cadeia do `make test`. Ou seja — **os 351 testes do agente
+do balcão não rodaram no número acima**, porque localmente eles ainda estão fora
 do runner. Puxar o main resolve.
 
 ```bash
@@ -57,8 +57,8 @@ O vermelho do #129 **não é um defeito do PR**: o job falha em
 migração que **já existe no `main`** (o check local passa limpo). É defasagem, não
 regressão.
 
-O commit órfão `263f3036` corrige um domínio inventado cravado no agente da
-gaveta (`pdv.boulangerie.com.br` é o certo). Nasceu depois do merge do #134 e
+O commit órfão `263f3036` corrige um domínio inventado cravado no agente do
+balcão (`pdv.boulangerie.com.br` é o certo). Nasceu depois do merge do #134 e
 ficou sem PR — é o tipo de conserto que se perde.
 
 **Branches mortas — ✅ podadas em 2026-08-13.** Seis apagadas localmente
@@ -274,7 +274,7 @@ Pendências (todas do dono, nenhuma é código):
 
 **Antes de chamar testadores:**
 
-1. ✅ `git pull --ff-only` — main em `97da26d1`, agente da gaveta na cadeia do `make test`.
+1. ✅ `git pull --ff-only` — main em `97da26d1`, agente do balcão na cadeia do `make test`.
 2. ✅ **`gateways.local` consertado** e pendurado no Runtime Gate (§3).
 3. Mergear o #135, rebasear o #129, resolver o commit órfão `263f3036`.
 4. Podar as 7 branches mortas.

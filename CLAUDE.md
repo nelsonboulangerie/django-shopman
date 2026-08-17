@@ -136,7 +136,7 @@ Cores nunca se importam. Para causar efeito em outro app, a **interação decide
 - **Offerman = somente produtos vendáveis**: Insumos ficam em Stockman/Craftsman, nunca no Offerman.
 - **URL é em inglês. Ponto.** Vale para **toda** rota do sistema — apps Nuxt de operador, telas custom do Admin, SSE do backstage, APIs. Não há exceção por superfície: uma convenção que vale em metade do sistema não é convenção, é lembrança.
   - Apps Nuxt de operador: vocabulário do domínio em inglês (`/plan`, `/mise-en-place`, `/expedite`, `/board`, `/pickup`, `/showcases`); as rotas pt-br antigas respondem 301, bookmarks de kiosk preservados — PR #68.
-  - Admin e backstage: `/admin/settings/copy/`, `/admin/pos/terminal/<ref>/drawer/`, `/admin/operators/badge/`, `/admin/cash/receipt/<code>/`, `/events/*` — PR #169. Sem 301 aqui: são telas de gestor, não kiosk, e a regra pré-go-live é zerar o nome antigo.
+  - Admin e backstage: `/admin/settings/copy/`, `/admin/pos/terminal/<ref>/agent/`, `/admin/operators/badge/`, `/admin/cash/receipt/<code>/`, `/events/*` — PR #169. Sem 301 aqui: são telas de gestor, não kiosk, e a regra pré-go-live é zerar o nome antigo.
   - ⚠️ O **texto** da tela continua em português. Isto é sobre o caminho na URL, não sobre a copy.
   - Subdomínio é **hostname**, não URL: `gestor.`, `pdv.`, `central.` seguem como estão — mexer ali é DNS.
 - **Chaves de projection em inglês**: contratos de projection (ex.: order-queue) usam chaves em inglês, mudança BE+FE atômica — PR #67.

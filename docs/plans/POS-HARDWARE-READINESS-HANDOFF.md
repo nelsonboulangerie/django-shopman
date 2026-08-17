@@ -195,7 +195,7 @@ e corte no fim do recibo, que é configuração do driver, não do CSS.
 ## 2. Gaveta — ✅ caminho construído (2026-08-12)
 
 > **Fechado em software.** O agente local existe
-> (`tools/pos-drawer-agent/`), a config é por terminal no Admin, e os quatro
+> (`tools/pos-counter-agent/`), a config é por terminal no Admin, e os quatro
 > momentos chamam um caminho só. Falta o balcão: instalar o agente, colar o
 > token, e o olho do operador confirmando que abriu.
 > Ver [POS-CASH-DRAWER-PLAN](POS-CASH-DRAWER-PLAN.md) — inclusive a medição que

@@ -149,7 +149,7 @@ adicionais opcionais (§7), dá para chegar a ~50.
 |---|---|---|
 | Catálogo de copy (`/admin/settings/copy/`) | ✅ | Canônica (projection + Unfold), boa. Unificar o NOME (ver §5). |
 | Crachá do operador (`operator_badge`) | ✅ | Par do PinCredential. |
-| Agente da gaveta (`pos_drawer_agent`) | ✅ | Necessário p/ instalar no balcão. |
+| Agente do balcão (`pos_counter_agent`) | ✅ | Necessário p/ instalar no balcão. |
 | Dashboard (`dashboard_callback`) | ✅ 🔧 | Atualizar atalhos após reorganização; hoje aponta só para 5 configs e há 20+. |
 
 ## 4. Menu lateral proposto — por intenção de uso, não por app Python
@@ -172,7 +172,7 @@ adicionais opcionais (§7), dá para chegar a ~50.
    Cobranças · Fechamentos · Turnos de caixa.
 9. **Sistema & acesso** (só admin/superuser): Usuários · Grupos · Operadores (PIN & crachá) ·
    Dispositivos confiáveis · 2FA · Estações KDS · Comandas do PDV · Terminais ·
-   Modelos de checklist · Execuções de checklist · Agente da gaveta.
+   Modelos de checklist · Execuções de checklist · Agente do balcão.
 
 Tabs do Unfold (`UNFOLD["TABS"]`) seguem os mesmos agrupamentos (ex.: tab de Produção ganha
 Ordens + Fichas + Qualidade; some a situação atual de estar numa tela sem tab ativa).

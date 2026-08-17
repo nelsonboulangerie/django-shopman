@@ -1,4 +1,4 @@
-"""Testes do agente da gaveta.
+"""Testes do agente do balcão.
 
 O que estes testes travam é o que ninguém consegue conferir no balcão às 6h da
 manhã: os bytes exatos, o `-o raw` que impede o CUPS de imprimir o comando em
@@ -19,8 +19,8 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).parent))
 
-import drawer_agent  # noqa: E402
-from drawer_agent import AgentConfig, DrawerHandler, kick_bytes  # noqa: E402
+import counter_agent  # noqa: E402
+from counter_agent import AgentConfig, CounterAgentHandler, kick_bytes  # noqa: E402
 
 TOKEN = "token-de-teste-com-tamanho-suficiente"
 ORIGIN = "https://pdv.boulangerie.com.br"
@@ -84,10 +84,10 @@ def test_send_raw_usa_o_flag_raw(monkeypatch):
         captured["input"] = kwargs.get("input")
         return Done()
 
-    monkeypatch.setattr(drawer_agent.shutil, "which", lambda name: f"/usr/bin/{name}")
-    monkeypatch.setattr(drawer_agent.subprocess, "run", fake_run)
+    monkeypatch.setattr(counter_agent.shutil, "which", lambda name: f"/usr/bin/{name}")
+    monkeypatch.setattr(counter_agent.subprocess, "run", fake_run)
 
-    job = drawer_agent.send_raw(b"\x1b\x70\x00\x19\xfa", queue="TM-T20")
+    job = counter_agent.send_raw(b"\x1b\x70\x00\x19\xfa", queue="TM-T20")
 
     assert "-o" in captured["cmd"]
     assert captured["cmd"][captured["cmd"].index("-o") + 1] == "raw"
@@ -103,11 +103,11 @@ def test_send_raw_propaga_a_falha_do_cups(monkeypatch):
         stdout = b""
         stderr = b"lp: The printer or class does not exist."
 
-    monkeypatch.setattr(drawer_agent.shutil, "which", lambda name: f"/usr/bin/{name}")
-    monkeypatch.setattr(drawer_agent.subprocess, "run", lambda *a, **k: Failed())
+    monkeypatch.setattr(counter_agent.shutil, "which", lambda name: f"/usr/bin/{name}")
+    monkeypatch.setattr(counter_agent.subprocess, "run", lambda *a, **k: Failed())
 
-    with pytest.raises(drawer_agent.SpoolerError, match="does not exist"):
-        drawer_agent.send_raw(b"\x1b", queue="fantasma")
+    with pytest.raises(counter_agent.SpoolerError, match="does not exist"):
+        counter_agent.send_raw(b"\x1b", queue="fantasma")
 
 
 # ── Config ────────────────────────────────────────────────────────────────
@@ -146,16 +146,16 @@ def agent(monkeypatch):
         sent.append({"payload": payload, "queue": queue, "title": title})
         return "TM-T20-1"
 
-    monkeypatch.setattr(drawer_agent, "send_raw", fake_send_raw)
+    monkeypatch.setattr(counter_agent, "send_raw", fake_send_raw)
     monkeypatch.setattr(
-        drawer_agent, "probe_queue",
+        counter_agent, "probe_queue",
         lambda queue: {"ok": True, "accepting": True, "reason": ""},
     )
 
     config = AgentConfig.from_dict(
         {"queue": "TM-T20", "token": TOKEN, "port": 0, "allowed_origins": [ORIGIN]}
     )
-    handler = type("Bound", (DrawerHandler,), {"config": config})
+    handler = type("Bound", (CounterAgentHandler,), {"config": config})
     httpd = ThreadingHTTPServer(("127.0.0.1", 0), handler)
     thread = threading.Thread(target=httpd.serve_forever, daemon=True)
     thread.start()
@@ -229,9 +229,9 @@ def test_falha_do_spooler_vira_502_e_nao_500(agent, monkeypatch):
     base, _ = agent
 
     def boom(*a, **k):
-        raise drawer_agent.SpoolerError("fila 'TM-T20' não existe")
+        raise counter_agent.SpoolerError("fila 'TM-T20' não existe")
 
-    monkeypatch.setattr(drawer_agent, "send_raw", boom)
+    monkeypatch.setattr(counter_agent, "send_raw", boom)
     with pytest.raises(urllib.error.HTTPError) as exc:
         _post(base, "/kick", {"token": TOKEN})
 
@@ -260,7 +260,7 @@ def test_health_devolve_a_sonda_da_fila(agent):
 
     assert body["ok"] is True
     assert body["queue"] == "TM-T20"
-    assert body["version"] == drawer_agent.VERSION
+    assert body["version"] == counter_agent.VERSION
 
 
 # ── Instalação ────────────────────────────────────────────────────────────
@@ -268,7 +268,7 @@ def test_health_devolve_a_sonda_da_fila(agent):
 
 def test_instalar_gera_config_utilizavel(tmp_path):
     path = tmp_path / "agent.json"
-    config, created = drawer_agent.write_config(path, queue="TM-T20", origin="https://pos.exemplo/")
+    config, created = counter_agent.write_config(path, queue="TM-T20", origin="https://pos.exemplo/")
 
     assert created is True
     assert config["queue"] == "TM-T20"
@@ -283,8 +283,8 @@ def test_reinstalar_PRESERVA_o_token(tmp_path):
     """Trocar o token numa reinstalação deixaria o PDV levando 401 até alguém
     colar o novo no Admin — descoberto no meio do sábado."""
     path = tmp_path / "agent.json"
-    first, _ = drawer_agent.write_config(path, queue="TM-T20", origin="https://pos.exemplo")
-    second, created = drawer_agent.write_config(path, queue="OUTRA", origin="https://outra.exemplo")
+    first, _ = counter_agent.write_config(path, queue="TM-T20", origin="https://pos.exemplo")
+    second, created = counter_agent.write_config(path, queue="OUTRA", origin="https://outra.exemplo")
 
     assert created is False
     assert second["token"] == first["token"]
@@ -294,7 +294,7 @@ def test_reinstalar_PRESERVA_o_token(tmp_path):
 def test_token_do_admin_manda_na_primeira_instalacao(tmp_path):
     """O Admin é o dono do par — o agente não inventa um por cima."""
     path = tmp_path / "agent.json"
-    config, _ = drawer_agent.write_config(
+    config, _ = counter_agent.write_config(
         path, queue="TM-T20", origin="https://pos.exemplo", token=TOKEN
     )
     assert config["token"] == TOKEN
@@ -303,8 +303,8 @@ def test_token_do_admin_manda_na_primeira_instalacao(tmp_path):
 def test_token_novo_do_admin_ROTACIONA_a_config_existente(tmp_path):
     """Rotação é a única razão para mexer num token já instalado."""
     path = tmp_path / "agent.json"
-    drawer_agent.write_config(path, queue="TM-T20", origin="https://pos.exemplo", token=TOKEN)
-    config, written = drawer_agent.write_config(
+    counter_agent.write_config(path, queue="TM-T20", origin="https://pos.exemplo", token=TOKEN)
+    config, written = counter_agent.write_config(
         path, queue="TM-T20", origin="https://pos.exemplo", token="token-rotacionado-pelo-admin"
     )
 
@@ -315,8 +315,8 @@ def test_token_novo_do_admin_ROTACIONA_a_config_existente(tmp_path):
 
 def test_reinstalar_com_o_MESMO_token_nao_reescreve(tmp_path):
     path = tmp_path / "agent.json"
-    drawer_agent.write_config(path, queue="TM-T20", origin="https://pos.exemplo", token=TOKEN)
-    _, written = drawer_agent.write_config(
+    counter_agent.write_config(path, queue="TM-T20", origin="https://pos.exemplo", token=TOKEN)
+    _, written = counter_agent.write_config(
         path, queue="TM-T20", origin="https://pos.exemplo", token=TOKEN
     )
     assert written is False
@@ -330,7 +330,7 @@ def test_sem_origem_a_allowlist_fica_vazia_em_vez_de_chutar_um_dominio(tmp_path)
     frouxo, mas é honesto e o instalador avisa.
     """
     path = tmp_path / "agent.json"
-    config, _ = drawer_agent.write_config(path, queue="TM-T20", origin="", token=TOKEN)
+    config, _ = counter_agent.write_config(path, queue="TM-T20", origin="", token=TOKEN)
 
     assert config["allowed_origins"] == []
     assert AgentConfig.from_dict(config).allows("https://pdv.boulangerie.com.br")
@@ -338,37 +338,37 @@ def test_sem_origem_a_allowlist_fica_vazia_em_vez_de_chutar_um_dominio(tmp_path)
 
 def test_nenhum_dominio_de_deployment_cravado_no_agente():
     """O agente é genérico. Quem sabe a origem é o Django, e ele a injeta."""
-    source = (Path(__file__).parent / "drawer_agent.py").read_text(encoding="utf-8")
+    source = (Path(__file__).parent / "counter_agent.py").read_text(encoding="utf-8")
     for invented in ("nelsonboulangerie.com.br", "boulangerie.com.br"):
         assert invented not in source, f"domínio de deployment cravado no agente: {invented}"
 
 
 def test_config_nasce_ilegivel_para_outros_usuarios(tmp_path):
     path = tmp_path / "agent.json"
-    drawer_agent.write_config(path, queue="TM-T20", origin="https://pos.exemplo")
+    counter_agent.write_config(path, queue="TM-T20", origin="https://pos.exemplo")
     assert oct(path.stat().st_mode)[-3:] == "600"
 
 
 def test_a_unit_aponta_para_o_arquivo_instalado_e_reergue_sozinha():
-    unit = drawer_agent._unit_text(Path("/home/pdv/.local/share/nelson-pos-drawer/drawer_agent.py"))
-    assert "ExecStart=/usr/bin/env python3 /home/pdv/.local/share/nelson-pos-drawer/drawer_agent.py" in unit
+    unit = counter_agent._unit_text(Path("/home/pdv/.local/share/nelson-pos-counter/counter_agent.py"))
+    assert "ExecStart=/usr/bin/env python3 /home/pdv/.local/share/nelson-pos-counter/counter_agent.py" in unit
     assert "Restart=always" in unit
     # O balcão abre antes do CUPS estar de pé se a ordem não for dita.
     assert "After=cups.service" in unit
 
 
 def test_instalar_com_fila_inexistente_para_antes_de_mexer_em_nada(monkeypatch, capsys):
-    monkeypatch.setattr(drawer_agent.shutil, "which", lambda name: f"/usr/bin/{name}")
-    monkeypatch.setattr(drawer_agent, "list_queues", lambda: ["OUTRA"])
+    monkeypatch.setattr(counter_agent.shutil, "which", lambda name: f"/usr/bin/{name}")
+    monkeypatch.setattr(counter_agent, "list_queues", lambda: ["OUTRA"])
 
-    assert drawer_agent.install(["--install", "--queue", "TM-T20"]) == 1
+    assert counter_agent.install(["--install", "--queue", "TM-T20"]) == 1
     assert "não está entre as" in capsys.readouterr().err
 
 
 def test_instalar_sem_cups_diz_o_que_falta(monkeypatch, capsys):
-    monkeypatch.setattr(drawer_agent.shutil, "which", lambda name: None)
+    monkeypatch.setattr(counter_agent.shutil, "which", lambda name: None)
 
-    assert drawer_agent.install(["--install"]) == 1
+    assert counter_agent.install(["--install"]) == 1
     assert "CUPS" in capsys.readouterr().err
 
 
@@ -396,49 +396,49 @@ def test_linux_e_macos_usam_o_MESMO_comando(monkeypatch):
         stdout = b"request id is TM-T20-1 (1 file(s))"
         stderr = b""
 
-    monkeypatch.setattr(drawer_agent, "IS_WINDOWS", False)
-    monkeypatch.setattr(drawer_agent.shutil, "which", lambda name: f"/usr/bin/{name}")
+    monkeypatch.setattr(counter_agent, "IS_WINDOWS", False)
+    monkeypatch.setattr(counter_agent.shutil, "which", lambda name: f"/usr/bin/{name}")
     monkeypatch.setattr(
-        drawer_agent.subprocess, "run", lambda cmd, **k: (captured.update(cmd=cmd), Done())[1]
+        counter_agent.subprocess, "run", lambda cmd, **k: (captured.update(cmd=cmd), Done())[1]
     )
 
-    drawer_agent.send_raw(CANONICAL_KICK, queue="TM-T20")
+    counter_agent.send_raw(CANONICAL_KICK, queue="TM-T20")
     assert captured["cmd"][:5] == ["/usr/bin/lp", "-d", "TM-T20", "-o", "raw"]
 
 
 def test_windows_despacha_para_o_spooler_proprio(monkeypatch):
     """No Windows não existe `lp`; quem entrega é o winspool."""
     chamado = {}
-    monkeypatch.setattr(drawer_agent, "IS_WINDOWS", True)
+    monkeypatch.setattr(counter_agent, "IS_WINDOWS", True)
     monkeypatch.setattr(
-        drawer_agent, "_send_raw_windows",
+        counter_agent, "_send_raw_windows",
         lambda payload, *, queue, title: chamado.update(payload=payload, queue=queue) or "42",
     )
 
-    assert drawer_agent.send_raw(CANONICAL_KICK, queue="TM-T20") == "42"
+    assert counter_agent.send_raw(CANONICAL_KICK, queue="TM-T20") == "42"
     assert chamado["payload"] == CANONICAL_KICK
 
 
 def test_a_sonda_tambem_despacha_por_plataforma(monkeypatch):
-    monkeypatch.setattr(drawer_agent, "IS_WINDOWS", True)
-    monkeypatch.setattr(drawer_agent, "_probe_queue_windows", lambda q: {"ok": True, "accepting": True, "reason": q})
-    assert drawer_agent.probe_queue("TM-T20")["reason"] == "TM-T20"
+    monkeypatch.setattr(counter_agent, "IS_WINDOWS", True)
+    monkeypatch.setattr(counter_agent, "_probe_queue_windows", lambda q: {"ok": True, "accepting": True, "reason": q})
+    assert counter_agent.probe_queue("TM-T20")["reason"] == "TM-T20"
 
 
 def test_o_launchagent_do_macos_reergue_sozinho():
-    plist = drawer_agent._plist_text(Path("/Users/pdv/agente/drawer_agent.py"))
-    assert "<string>/Users/pdv/agente/drawer_agent.py</string>" in plist
+    plist = counter_agent._plist_text(Path("/Users/pdv/agente/counter_agent.py"))
+    assert "<string>/Users/pdv/agente/counter_agent.py</string>" in plist
     # KeepAlive é o Restart=always do launchd: ninguém confere se o agente caiu.
     assert "<key>KeepAlive</key><true/>" in plist
-    assert drawer_agent.LAUNCH_AGENT_LABEL in plist
+    assert counter_agent.LAUNCH_AGENT_LABEL in plist
 
 
 def test_o_plist_do_macos_e_xml_valido():
     """Plist malformado o launchd recusa em silêncio, e a gaveta some no boot."""
     import plistlib
 
-    parsed = plistlib.loads(drawer_agent._plist_text(Path("/tmp/x.py")).encode())
-    assert parsed["Label"] == drawer_agent.LAUNCH_AGENT_LABEL
+    parsed = plistlib.loads(counter_agent._plist_text(Path("/tmp/x.py")).encode())
+    assert parsed["Label"] == counter_agent.LAUNCH_AGENT_LABEL
     assert parsed["RunAtLoad"] is True
     assert parsed["ProgramArguments"][1] == "/tmp/x.py"
 
@@ -452,29 +452,29 @@ def test_o_launcher_do_windows_da_UM_caminho_ao_schtasks(monkeypatch, tmp_path):
     Foi o defeito real do balcão: a tarefa nasceu quebrada, o agente não subiu,
     e o `--kick` da linha de comando continuou funcionando — então nada gritou.
     """
-    monkeypatch.setattr(drawer_agent, "INSTALL_DIR", tmp_path)
-    monkeypatch.setattr(drawer_agent, "LOG_PATH", tmp_path / "drawer-agent.log")
+    monkeypatch.setattr(counter_agent, "INSTALL_DIR", tmp_path)
+    monkeypatch.setattr(counter_agent, "LOG_PATH", tmp_path / "counter-agent.log")
 
-    launcher = drawer_agent._windows_launcher(tmp_path / "drawer_agent.py")
+    launcher = counter_agent._windows_launcher(tmp_path / "counter_agent.py")
 
     assert launcher.suffix == ".cmd"
     conteudo = launcher.read_text(encoding="utf-8")
-    assert "drawer_agent.py" in conteudo
+    assert "counter_agent.py" in conteudo
     assert "--log-file" in conteudo
 
 
 def test_instalador_reprova_quando_o_agente_nao_sobe(monkeypatch, capsys, tmp_path):
     """Dizer 'instalado' sem medir foi o que mandou o defeito para o balcão."""
-    monkeypatch.setattr(drawer_agent, "IS_WINDOWS", False)
-    monkeypatch.setattr(drawer_agent, "IS_MACOS", False)
-    monkeypatch.setattr(drawer_agent, "INSTALL_DIR", tmp_path / "inst")
-    monkeypatch.setattr(drawer_agent, "DEFAULT_CONFIG_PATH", tmp_path / "agent.json")
-    monkeypatch.setattr(drawer_agent, "list_queues", lambda: ["TM-T20"])
-    monkeypatch.setattr(drawer_agent.shutil, "which", lambda name: f"/usr/bin/{name}")
-    monkeypatch.setattr(drawer_agent, "_autostart_linux", lambda target: None)
-    monkeypatch.setattr(drawer_agent, "_wait_until_listening", lambda config, **k: None)
+    monkeypatch.setattr(counter_agent, "IS_WINDOWS", False)
+    monkeypatch.setattr(counter_agent, "IS_MACOS", False)
+    monkeypatch.setattr(counter_agent, "INSTALL_DIR", tmp_path / "inst")
+    monkeypatch.setattr(counter_agent, "DEFAULT_CONFIG_PATH", tmp_path / "agent.json")
+    monkeypatch.setattr(counter_agent, "list_queues", lambda: ["TM-T20"])
+    monkeypatch.setattr(counter_agent.shutil, "which", lambda name: f"/usr/bin/{name}")
+    monkeypatch.setattr(counter_agent, "_autostart_linux", lambda target: None)
+    monkeypatch.setattr(counter_agent, "_wait_until_listening", lambda config, **k: None)
 
-    codigo = drawer_agent.install(["--install", "--queue", "TM-T20", "--token", TOKEN])
+    codigo = counter_agent.install(["--install", "--queue", "TM-T20", "--token", TOKEN])
 
     saida = capsys.readouterr().out
     assert codigo == 1, "instalação que não sobe o agente não pode sair com sucesso"
@@ -483,43 +483,43 @@ def test_instalador_reprova_quando_o_agente_nao_sobe(monkeypatch, capsys, tmp_pa
 
 
 def test_instalador_aprova_quando_o_agente_responde(monkeypatch, capsys, tmp_path):
-    monkeypatch.setattr(drawer_agent, "IS_WINDOWS", False)
-    monkeypatch.setattr(drawer_agent, "IS_MACOS", False)
-    monkeypatch.setattr(drawer_agent, "INSTALL_DIR", tmp_path / "inst")
-    monkeypatch.setattr(drawer_agent, "DEFAULT_CONFIG_PATH", tmp_path / "agent.json")
-    monkeypatch.setattr(drawer_agent, "list_queues", lambda: ["TM-T20"])
-    monkeypatch.setattr(drawer_agent.shutil, "which", lambda name: f"/usr/bin/{name}")
-    monkeypatch.setattr(drawer_agent, "_autostart_linux", lambda target: None)
-    monkeypatch.setattr(drawer_agent, "_wait_until_listening", lambda config, **k: {"ok": True, "build": drawer_agent.build_id()})
+    monkeypatch.setattr(counter_agent, "IS_WINDOWS", False)
+    monkeypatch.setattr(counter_agent, "IS_MACOS", False)
+    monkeypatch.setattr(counter_agent, "INSTALL_DIR", tmp_path / "inst")
+    monkeypatch.setattr(counter_agent, "DEFAULT_CONFIG_PATH", tmp_path / "agent.json")
+    monkeypatch.setattr(counter_agent, "list_queues", lambda: ["TM-T20"])
+    monkeypatch.setattr(counter_agent.shutil, "which", lambda name: f"/usr/bin/{name}")
+    monkeypatch.setattr(counter_agent, "_autostart_linux", lambda target: None)
+    monkeypatch.setattr(counter_agent, "_wait_until_listening", lambda config, **k: {"ok": True, "build": counter_agent.build_id()})
 
-    assert drawer_agent.install(["--install", "--queue", "TM-T20", "--token", TOKEN]) == 0
+    assert counter_agent.install(["--install", "--queue", "TM-T20", "--token", TOKEN]) == 0
     saida = capsys.readouterr().out
     assert "respondendo" in saida
     # A versão sai na mensagem porque é o que o operador compara com o Admin
     # quando desconfia de que o balcão está atrasado.
-    assert drawer_agent.build_id() in saida
+    assert counter_agent.build_id() in saida
 
 
 def test_no_windows_config_programa_e_log_ficam_na_MESMA_pasta():
     """Programa num lugar e config em outro fez o dono procurar o token e não achar.
 
-    A primeira versão mandava o agente para `%LOCALAPPDATA%\\NelsonPosDrawer` e a
+    A primeira versão mandava o agente para `%LOCALAPPDATA%\\NelsonPosCounter` e a
     config para uma `.config` de estilo Linux escondida na pasta do usuário.
     """
     home = Path(r"C:/Users/pdv")
     appdata = r"C:/Users/pdv/AppData/Local"
 
-    pasta = drawer_agent.install_dir_for(home, windows=True, localappdata=appdata)
-    config = drawer_agent.config_path_for(home, windows=True, localappdata=appdata)
+    pasta = counter_agent.install_dir_for(home, windows=True, localappdata=appdata)
+    config = counter_agent.config_path_for(home, windows=True, localappdata=appdata)
 
     assert config.parent == pasta
-    assert pasta.name == "NelsonPosDrawer"
+    assert pasta.name == "NelsonPosCounter"
 
 
 def test_fora_do_windows_a_config_segue_a_convencao_do_sistema():
     """No Linux/macOS quem administra a máquina espera achar em `~/.config`."""
-    config = drawer_agent.config_path_for(Path("/home/pdv"), windows=False)
-    assert config.parts[-3:] == (".config", "nelson-pos-drawer", "agent.json")
+    config = counter_agent.config_path_for(Path("/home/pdv"), windows=False)
+    assert config.parts[-3:] == (".config", "nelson-pos-counter", "agent.json")
 
 
 # ── Página de teste ESC/POS ───────────────────────────────────────────────
@@ -536,7 +536,7 @@ def test_o_qr_declara_o_comprimento_certo():
     existe e imprime lixo, ou nada.
     """
     dados = b"https://pdv.boulangerie.com.br"
-    saida = drawer_agent._qr_code(dados.decode())
+    saida = counter_agent._qr_code(dados.decode())
 
     marcador = bytes([0x1D, 0x28, 0x6B])
     i = saida.index(marcador + bytes([(len(dados) + 3) % 256]))
@@ -549,17 +549,17 @@ def test_o_qr_declara_o_comprimento_certo():
 def test_o_qr_sobrevive_a_dado_maior_que_255_bytes():
     """Acima de 255 o comprimento passa a usar os dois bytes; é onde se erra."""
     dados = "x" * 400
-    saida = drawer_agent._qr_code(dados)
+    saida = counter_agent._qr_code(dados)
     tamanho = 403
     assert bytes([tamanho % 256, tamanho // 256]) in saida
 
 
 def test_a_pagina_compara_tabelas_em_vez_de_chutar_uma():
     """Escolher página de código no escuro é como "PÃO" vira "PÎO" no balcão."""
-    saida = drawer_agent.test_print_bytes()
-    for code, _ in drawer_agent._CODE_PAGES:
+    saida = counter_agent.test_print_bytes()
+    for code, _ in counter_agent._CODE_PAGES:
         assert bytes([0x1B, ord("t"), code]) in saida
-    assert len(drawer_agent._CODE_PAGES) >= 2, "comparar exige mais de uma tabela"
+    assert len(counter_agent._CODE_PAGES) >= 2, "comparar exige mais de uma tabela"
 
 
 def test_a_amostra_de_acento_DISCRIMINA_as_tabelas():
@@ -569,7 +569,7 @@ def test_a_amostra_de_acento_DISCRIMINA_as_tabelas():
     tabela) e entre as minúsculas só o "ã" separava — um caractere. A amostra
     precisa diferir em VÁRIOS bytes entre as três tabelas.
     """
-    amostra = drawer_agent._ACCENT_SAMPLE
+    amostra = counter_agent._ACCENT_SAMPLE
     codificacoes = {
         nome: amostra.encode(enc, "replace")
         for nome, enc in (("cp860", "cp860"), ("cp850", "cp850"), ("cp1252", "cp1252"))
@@ -592,10 +592,10 @@ def test_a_regua_vai_ALEM_da_largura_assumida():
     mais larga que as 48 colunas assumidas, e a régua não tinha como mostrar
     quanto.
     """
-    assert drawer_agent._RULER_MAX > drawer_agent._COLUMNS
-    regua = drawer_agent._ruler(drawer_agent._RULER_MAX)
-    assert len(regua) == drawer_agent._RULER_MAX
-    assert regua.encode("cp860") in drawer_agent.test_print_bytes()
+    assert counter_agent._RULER_MAX > counter_agent._COLUMNS
+    regua = counter_agent._ruler(counter_agent._RULER_MAX)
+    assert len(regua) == counter_agent._RULER_MAX
+    assert regua.encode("cp860") in counter_agent.test_print_bytes()
     # Dezenas marcadas: quem lê diz o último número inteiro que apareceu.
     # Índice 39 é a COLUNA 40 — a dezena. A coluna 48 não é dezena nenhuma.
     assert regua[9] == "1" and regua[19] == "2" and regua[39] == "4"
@@ -603,19 +603,19 @@ def test_a_regua_vai_ALEM_da_largura_assumida():
 
 
 def test_as_duas_colunas_encostam_nas_bordas():
-    linha = drawer_agent._two_columns("Pao frances", "R$ 0,90", 48)
+    linha = counter_agent._two_columns("Pao frances", "R$ 0,90", 48)
     assert len(linha) == 48
     assert linha.startswith("Pao frances")
     assert linha.endswith("R$ 0,90")
 
 
 def test_coluna_com_nome_gigante_nao_estoura_a_linha():
-    linha = drawer_agent._two_columns("N" * 60, "R$ 9,99", 48)
+    linha = counter_agent._two_columns("N" * 60, "R$ 9,99", 48)
     assert len(linha) == 48
 
 
 def test_a_pagina_termina_cortando_o_papel():
-    saida = drawer_agent.test_print_bytes()
+    saida = counter_agent.test_print_bytes()
     assert saida.startswith(bytes([0x1B, ord("@")])), "sem reset, herda estado do job anterior"
     assert saida.endswith(bytes([0x1D, ord("V"), 1]))
 
@@ -688,9 +688,9 @@ def test_falha_do_spooler_na_impressao_vira_502(agent, monkeypatch):
     base, _ = agent
 
     def boom(*a, **k):
-        raise drawer_agent.SpoolerError("fila parada")
+        raise counter_agent.SpoolerError("fila parada")
 
-    monkeypatch.setattr(drawer_agent, "send_raw", boom)
+    monkeypatch.setattr(counter_agent, "send_raw", boom)
     with pytest.raises(urllib.error.HTTPError) as exc:
         _print_req(base, {"token": TOKEN, "payload_b64": base64.b64encode(b"x").decode()})
     assert exc.value.code == 502
@@ -714,13 +714,13 @@ def test_reinstalar_no_linux_REINICIA_o_servico(monkeypatch):
             stderr = b""
         return R()
 
-    monkeypatch.setattr(drawer_agent.shutil, "which", lambda name: f"/usr/bin/{name}")
-    monkeypatch.setattr(drawer_agent.subprocess, "run", fake_run)
-    monkeypatch.setattr(drawer_agent, "UNIT_PATH", drawer_agent.Path("/tmp/nao-usado.service"))
-    monkeypatch.setattr(drawer_agent.Path, "write_text", lambda self, *a, **k: None)
-    monkeypatch.setattr(drawer_agent.Path, "mkdir", lambda self, *a, **k: None)
+    monkeypatch.setattr(counter_agent.shutil, "which", lambda name: f"/usr/bin/{name}")
+    monkeypatch.setattr(counter_agent.subprocess, "run", fake_run)
+    monkeypatch.setattr(counter_agent, "UNIT_PATH", counter_agent.Path("/tmp/nao-usado.service"))
+    monkeypatch.setattr(counter_agent.Path, "write_text", lambda self, *a, **k: None)
+    monkeypatch.setattr(counter_agent.Path, "mkdir", lambda self, *a, **k: None)
 
-    drawer_agent._autostart_linux(drawer_agent.Path("/tmp/drawer_agent.py"))
+    counter_agent._autostart_linux(counter_agent.Path("/tmp/counter_agent.py"))
 
     systemctl = [c for c in chamadas if c and c[0] == "systemctl"]
     verbos = [c[2] for c in systemctl if len(c) > 2]
@@ -738,24 +738,24 @@ def test_instalador_reprova_quando_quem_atende_e_outra_versao(monkeypatch, capsy
     continuava acusando agente desatualizado, e estava certo. A prova de
     identidade é o `build` — sha256 do próprio arquivo.
     """
-    monkeypatch.setattr(drawer_agent, "IS_WINDOWS", False)
-    monkeypatch.setattr(drawer_agent, "IS_MACOS", False)
-    monkeypatch.setattr(drawer_agent, "INSTALL_DIR", tmp_path / "inst")
-    monkeypatch.setattr(drawer_agent, "DEFAULT_CONFIG_PATH", tmp_path / "agent.json")
-    monkeypatch.setattr(drawer_agent, "list_queues", lambda: ["TM-T20"])
-    monkeypatch.setattr(drawer_agent.shutil, "which", lambda name: f"/usr/bin/{name}")
-    monkeypatch.setattr(drawer_agent, "_autostart_linux", lambda target: None)
+    monkeypatch.setattr(counter_agent, "IS_WINDOWS", False)
+    monkeypatch.setattr(counter_agent, "IS_MACOS", False)
+    monkeypatch.setattr(counter_agent, "INSTALL_DIR", tmp_path / "inst")
+    monkeypatch.setattr(counter_agent, "DEFAULT_CONFIG_PATH", tmp_path / "agent.json")
+    monkeypatch.setattr(counter_agent, "list_queues", lambda: ["TM-T20"])
+    monkeypatch.setattr(counter_agent.shutil, "which", lambda name: f"/usr/bin/{name}")
+    monkeypatch.setattr(counter_agent, "_autostart_linux", lambda target: None)
     monkeypatch.setattr(
-        drawer_agent, "_wait_until_listening", lambda config, **k: {"ok": True, "build": "deadbeef"}
+        counter_agent, "_wait_until_listening", lambda config, **k: {"ok": True, "build": "deadbeef"}
     )
 
-    codigo = drawer_agent.install(["--install", "--queue", "TM-T20", "--token", TOKEN])
+    codigo = counter_agent.install(["--install", "--queue", "TM-T20", "--token", TOKEN])
 
     saida = capsys.readouterr().out
     assert codigo == 1, "instalação que não trocou o processo não pode sair com sucesso"
     assert "NÃO pegou" in saida
     assert "deadbeef" in saida, "tem que mostrar a versão que está no ar"
-    assert drawer_agent.build_id() in saida, "e a que deveria estar"
+    assert counter_agent.build_id() in saida, "e a que deveria estar"
 
 
 def test_escolha_de_fila_por_numero(monkeypatch, capsys):
@@ -767,7 +767,7 @@ def test_escolha_de_fila_por_numero(monkeypatch, capsys):
     """
     monkeypatch.setattr("builtins.input", lambda _: "2")
 
-    escolhida = drawer_agent._escolher_fila(["TM-T20", "EPSON_TM-T20X_Receipt5"], "filas")
+    escolhida = counter_agent._escolher_fila(["TM-T20", "EPSON_TM-T20X_Receipt5"], "filas")
 
     assert escolhida == "EPSON_TM-T20X_Receipt5"
     assert "2) EPSON_TM-T20X_Receipt5" in capsys.readouterr().out
@@ -777,14 +777,14 @@ def test_escolha_aceita_o_nome_tambem(monkeypatch):
     """Quem já sabe o nome não precisa procurar o número dele na lista."""
     monkeypatch.setattr("builtins.input", lambda _: "TM-T20")
 
-    assert drawer_agent._escolher_fila(["TM-T20", "outra"], "filas") == "TM-T20"
+    assert counter_agent._escolher_fila(["TM-T20", "outra"], "filas") == "TM-T20"
 
 
 def test_fila_unica_so_pede_confirmacao(monkeypatch, capsys):
     """Perguntar "qual das 1?" é cerimônia. Enter aceita."""
     monkeypatch.setattr("builtins.input", lambda _: "")
 
-    assert drawer_agent._escolher_fila(["TM-T20"], "filas") == "TM-T20"
+    assert counter_agent._escolher_fila(["TM-T20"], "filas") == "TM-T20"
     assert "1)" not in capsys.readouterr().out, "lista numerada não faz sentido com uma só"
 
 
@@ -792,4 +792,141 @@ def test_fila_unica_pode_ser_recusada(monkeypatch):
     """Recusar devolve vazio, e o instalador para em vez de assumir a errada."""
     monkeypatch.setattr("builtins.input", lambda _: "n")
 
-    assert drawer_agent._escolher_fila(["TM-T20"], "filas") == ""
+    assert counter_agent._escolher_fila(["TM-T20"], "filas") == ""
+
+
+# ── O nome antigo não pode continuar servindo ─────────────────────────────
+#
+# O agente nasceu chutando só a gaveta e se chamava por isso; hoje ele também
+# imprime (comprovante de caixa, e a DANFE NFC-e depois). Trocar o nome é de
+# graça no repositório e caro no balcão: a máquina do caixa continua com o
+# serviço antigo instalado, e ele SEGURA a porta 47811.
+
+
+def test_instalador_DERRUBA_o_servico_antigo_ANTES_de_subir_o_novo(monkeypatch, tmp_path):
+    """Ordem importa: com o velho de pé, o novo nem chega a ouvir.
+
+    Dois agentes não dividem a 47811, e quem chegou primeiro ganha. Se o
+    instalador subisse o novo antes da faxina, o serviço novo falharia calado, o
+    `/health` continuaria respondendo (o velho atende), e o operador levaria uma
+    instalação "concluída" com o código antigo no ar — que foi exatamente o que
+    custou duas reinstalações no balcão.
+    """
+    chamadas = []
+
+    def fake_run(cmd, *args, **kwargs):
+        chamadas.append(list(cmd))
+
+        class R:
+            returncode = 0
+            stdout = b""
+            stderr = b""
+        return R()
+
+    unit_antiga = tmp_path / "nelson-pos-drawer.service"
+    unit_antiga.write_text("[Unit]\n", encoding="utf-8")
+
+    monkeypatch.setattr(counter_agent, "IS_WINDOWS", False)
+    monkeypatch.setattr(counter_agent, "IS_MACOS", False)
+    monkeypatch.setattr(counter_agent, "INSTALL_DIR", tmp_path / "inst")
+    monkeypatch.setattr(counter_agent, "DEFAULT_CONFIG_PATH", tmp_path / "agent.json")
+    monkeypatch.setattr(counter_agent, "LEGACY_CONFIG_PATHS", ())
+    monkeypatch.setattr(counter_agent, "LEGACY_UNIT_PATH", unit_antiga)
+    monkeypatch.setattr(counter_agent, "UNIT_PATH", tmp_path / "nelson-pos-counter.service")
+    monkeypatch.setattr(counter_agent, "list_queues", lambda: ["TM-T20"])
+    monkeypatch.setattr(counter_agent.shutil, "which", lambda name: f"/usr/bin/{name}")
+    monkeypatch.setattr(counter_agent.subprocess, "run", fake_run)
+    monkeypatch.setattr(
+        counter_agent,
+        "_wait_until_listening",
+        lambda config, **k: {"ok": True, "build": counter_agent.build_id()},
+    )
+
+    codigo = counter_agent.install(["--install", "--queue", "TM-T20", "--token", TOKEN])
+    assert codigo == 0
+
+    systemctl = [c for c in chamadas if c and c[0] == "systemctl"]
+    verbos = [(c[2], c[3]) for c in systemctl if len(c) > 3]
+    parou = verbos.index(("stop", counter_agent.LEGACY_SERVICE_NAME))
+    subiu = verbos.index(("restart", counter_agent.SERVICE_NAME))
+    assert parou < subiu, f"o novo subiu antes da faxina: {verbos}"
+    assert ("disable", counter_agent.LEGACY_SERVICE_NAME) in verbos, (
+        "parar sem desabilitar deixa o antigo voltar no próximo boot"
+    )
+    assert not unit_antiga.exists(), "a unit antiga tem que sair, senão ela ressuscita"
+
+
+def test_a_faxina_do_antigo_e_TOLERANTE_em_maquina_nova(monkeypatch, tmp_path):
+    """Máquina que nunca teve o agente antigo não tem nada para parar.
+
+    Sem isto, o primeiro caixa novo receberia um traceback do instalador por
+    causa de um serviço que ele nunca deveria ter tido.
+    """
+
+    def sem_comando(*args, **kwargs):
+        raise FileNotFoundError("systemctl")
+
+    monkeypatch.setattr(counter_agent, "IS_WINDOWS", False)
+    monkeypatch.setattr(counter_agent, "IS_MACOS", False)
+    monkeypatch.setattr(counter_agent, "LEGACY_UNIT_PATH", tmp_path / "nao-existe.service")
+    monkeypatch.setattr(counter_agent.subprocess, "run", sem_comando)
+
+    counter_agent.stop_legacy_service()  # não pode levantar
+
+
+def test_a_config_do_nome_antigo_e_MOVIDA_com_o_token_dentro(monkeypatch, tmp_path):
+    """O token é metade de um par que o Admin guarda do outro lado.
+
+    Gerar um novo em vez de mover deixaria os dois lados diferentes, e o balcão
+    passaria a levar 401 no meio do troco — falha que só aparece com cliente na
+    frente.
+    """
+    antiga = tmp_path / "antigo" / "agent.json"
+    antiga.parent.mkdir()
+    antiga.write_text(json.dumps({"queue": "TM-T20", "token": TOKEN}), encoding="utf-8")
+    nova = tmp_path / "novo" / "agent.json"
+
+    monkeypatch.setattr(counter_agent, "DEFAULT_CONFIG_PATH", nova)
+    monkeypatch.setattr(counter_agent, "LEGACY_CONFIG_PATHS", (antiga,))
+
+    counter_agent.migrate_legacy_config()
+
+    assert not antiga.exists(), "duas configs na mesma máquina é como os tokens divergem"
+    assert json.loads(nova.read_text(encoding="utf-8"))["token"] == TOKEN
+
+
+def test_config_atual_MANDA_sobre_a_do_nome_antigo(monkeypatch, tmp_path):
+    """Sobra do nome antigo não pode sobrescrever o que já está valendo."""
+    antiga = tmp_path / "antigo" / "agent.json"
+    antiga.parent.mkdir()
+    antiga.write_text(json.dumps({"queue": "VELHA", "token": TOKEN}), encoding="utf-8")
+    nova = tmp_path / "novo" / "agent.json"
+    nova.parent.mkdir()
+    nova.write_text(json.dumps({"queue": "TM-T20", "token": TOKEN}), encoding="utf-8")
+
+    monkeypatch.setattr(counter_agent, "DEFAULT_CONFIG_PATH", nova)
+    monkeypatch.setattr(counter_agent, "LEGACY_CONFIG_PATHS", (antiga,))
+
+    counter_agent.migrate_legacy_config()
+
+    assert json.loads(nova.read_text(encoding="utf-8"))["queue"] == "TM-T20"
+    assert antiga.exists(), "sem migração para fazer, não se mexe em nada"
+
+
+def test_o_nome_antigo_so_existe_para_ser_derrubado():
+    """Nome velho vivo em qualquer outro lugar é o agente se reinstalando velho.
+
+    A faxina precisa dele escrito; o resto do arquivo, não. Sem esta trava, um
+    caminho esquecido com o nome antigo volta a criar serviço, pasta ou log
+    fantasma na máquina do balcão — e a próxima pessoa acha que é do agente
+    atual.
+    """
+    fonte = Path(counter_agent.__file__).read_text(encoding="utf-8")
+    sobras = [
+        linha
+        for linha in fonte.splitlines()
+        if ("pos-drawer" in linha or "PosDrawer" in linha)
+        and "LEGACY" not in linha
+        and "antigas" not in linha
+    ]
+    assert not sobras, f"nome antigo fora da faxina: {sobras}"

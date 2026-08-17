@@ -1,4 +1,4 @@
-"""A tela do Admin que entrega o agente da gaveta.
+"""A tela do Admin que entrega o agente do balcão.
 
 O dono já está no Admin configurando o terminal. O que se prova aqui é que ele
 consegue terminar a tarefa sem sair dali: baixar o arquivo e ler o comando já
@@ -58,7 +58,7 @@ def _form_data(**overrides) -> dict:
         "location_ref": "",
         "is_active": "on",
         "drawer_adapter": "agent",
-        "drawer_agent_url": "http://127.0.0.1:47811",
+        "counter_agent_url": "http://127.0.0.1:47811",
         "drawer_pulse_pin": "0",
         "drawer_pulse_on_ms": "50",
         "drawer_pulse_off_ms": "500",
@@ -135,21 +135,21 @@ def test_terminal_de_gaveta_manual_explica_em_vez_de_oferecer_download():
 
 def test_a_pagina_mostra_o_comando_pronto(client, manager):
     terminal = _terminal(AGENT)
-    response = client.get(reverse("admin_console_pos_drawer_agent", args=[terminal.ref]))
+    response = client.get(reverse("admin_console_pos_counter_agent", args=[terminal.ref]))
 
     assert response.status_code == 200
     body = response.content.decode()
     assert AGENT["token"] in body
-    assert "Baixar drawer_agent.py" in body
+    assert "Baixar counter_agent.py" in body
 
 
 def test_o_download_entrega_o_agente_de_verdade(client, manager):
     terminal = _terminal(AGENT)
-    response = client.get(reverse("admin_console_pos_drawer_agent_download", args=[terminal.ref]))
+    response = client.get(reverse("admin_console_pos_counter_agent_download", args=[terminal.ref]))
 
     assert response.status_code == 200
     assert "attachment" in response["Content-Disposition"]
-    assert "drawer_agent.py" in response["Content-Disposition"]
+    assert "counter_agent.py" in response["Content-Disposition"]
     body = b"".join(response.streaming_content).decode()
     # É o agente mesmo, não um arquivo qualquer com o nome certo.
     assert "def kick_bytes(" in body
@@ -164,12 +164,12 @@ def test_quem_nao_configura_terminal_nao_baixa_o_agente(client):
     user = get_user_model().objects.create_user(username="curioso", password="x", is_staff=True)
     client.force_login(user)
 
-    response = client.get(reverse("admin_console_pos_drawer_agent_download", args=[terminal.ref]))
+    response = client.get(reverse("admin_console_pos_counter_agent_download", args=[terminal.ref]))
     assert response.status_code in (302, 403, 404)
 
 
 def test_terminal_inexistente_nao_serve_arquivo(client, manager):
-    response = client.get(reverse("admin_console_pos_drawer_agent_download", args=["fantasma"]))
+    response = client.get(reverse("admin_console_pos_counter_agent_download", args=["fantasma"]))
     assert response.status_code == 404
 
 
@@ -178,7 +178,7 @@ def test_a_config_do_terminal_linka_para_a_tela(client, manager):
     response = client.get(reverse("admin:backstage_posterminal_change", args=[terminal.pk]))
 
     assert response.status_code == 200
-    assert reverse("admin_console_pos_drawer_agent", args=[terminal.ref]) in response.content.decode()
+    assert reverse("admin_console_pos_counter_agent", args=[terminal.ref]) in response.content.decode()
 
 
 # ── Seletor de sistema operacional ────────────────────────────────────────
@@ -208,7 +208,7 @@ def test_o_token_e_o_mesmo_em_qualquer_sistema():
 
 @pytest.mark.parametrize("os_key,marca", [
     ("linux", "journalctl"),
-    ("macos", "drawer-agent.log"),
+    ("macos", "counter-agent.log"),
     ("windows", "LOCALAPPDATA"),
 ])
 def test_cada_sistema_diz_onde_ver_o_registro(os_key, marca):
@@ -246,7 +246,7 @@ def test_o_windows_avisa_que_pode_faltar_python():
 
 def test_a_tela_oferece_os_tres_sistemas(client, manager):
     terminal = _terminal(AGENT)
-    response = client.get(reverse("admin_console_pos_drawer_agent", args=[terminal.ref]) + "?so=windows")
+    response = client.get(reverse("admin_console_pos_counter_agent", args=[terminal.ref]) + "?so=windows")
 
     assert response.status_code == 200
     body = response.content.decode()
@@ -263,7 +263,7 @@ def test_a_tela_nao_vaza_comentario_de_template(client, manager):
     quem pegou foi olhar a tela.
     """
     terminal = _terminal(AGENT)
-    body = client.get(reverse("admin_console_pos_drawer_agent", args=[terminal.ref])).content.decode()
+    body = client.get(reverse("admin_console_pos_counter_agent", args=[terminal.ref])).content.decode()
 
     assert "U+002D" not in body
     assert "{#" not in body and "#}" not in body
@@ -312,9 +312,9 @@ def test_o_carimbo_da_tela_bate_com_o_que_o_agente_calcula_de_si():
 
     sys.path.insert(0, str(AGENT_SOURCE.parent))
     try:
-        import drawer_agent
+        import counter_agent
     finally:
         sys.path.pop(0)
 
     guide = build_agent_install(_terminal(AGENT), download_url="/x/")
-    assert guide.source_build == drawer_agent.build_id()
+    assert guide.source_build == counter_agent.build_id()

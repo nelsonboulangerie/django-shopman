@@ -52,7 +52,7 @@ Testes passando em 2026-08-13 (`make test`, por bloco):
 
 **Total cores:** ~2.200 testes. **Framework** (`make test-framework`): ~4.250 testes
 (shop + storefront + backstage). **Suite completa (`make test`): ~6.500 testes**
-(inclui `test-drawer-agent`, 31). Medido em 2026-08-13; a última linha do log é o
+(inclui `test-counter-agent`, 31). Medido em 2026-08-13; a última linha do log é o
 bloco do framework, não o total — o total é a SOMA dos blocos.
 
 ---
@@ -72,7 +72,7 @@ bloco do framework, não o total — o total é a SOMA dos blocos.
 | **Backstage (API)** | Estável | POS, KDS, produção, orders, closing, operator; guards e idempotência endurecidos (PR #58) |
 | **Admin (Unfold)** | Estável | Unfold Canonical Gate (`make admin`); telas de produção e fechamento |
 | **Marketing** (campanhas) | Estável | `Campaign` + público por interseção (`match: any/all`, CustomerTag/grupos), disparo com identidade no link, posting Meta/Google pendente (F13b) |
-| **PDV: caixa e gaveta** | Construído | troco/teto/sangria endurecidos (PR cd4b41c1), gaveta por software via agente local (tools/pos-drawer-agent), crachá com leitor; falta instalar no balcão |
+| **PDV: caixa e gaveta** | Construído | troco/teto/sangria endurecidos (PR cd4b41c1), gaveta por software via agente local (tools/pos-counter-agent), crachá com leitor; falta instalar no balcão |
 | **Fiscal** | Parcial | NFC-e via Focus NFe (S0–S4); e2e homolog + emissão em produção pendentes |
 | **iFood direto** | Staging | Polling + sync de catálogo; homologação de produção pendente |
 | **Machine (courier)** | Construído | pronto→corrida, status realtime, cotar/re-despachar/cancelar (PR #43); creds + homologação webhook pendentes |

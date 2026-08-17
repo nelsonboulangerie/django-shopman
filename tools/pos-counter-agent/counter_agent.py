@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Agente local que abre a gaveta de dinheiro do PDV.
+"""Agente local do balcão: a ponte do navegador com o hardware do caixa.
 
 O PDV roda no navegador e o navegador não fala ESC/POS. A gaveta não tem cabo
 próprio: ela pendura no RJ11 da impressora e abre quando a impressora recebe
@@ -8,8 +8,11 @@ interface (é assim que o ``window.print()`` do recibo funciona), não há WebUS
 possível — brigar pela interface quebraria a impressão.
 
 Sobra este caminho: um processo local que recebe um pedido do navegador em
-``127.0.0.1`` e entrega os cinco bytes ao **spooler** como trabalho raw, pela
-mesma fila por onde o recibo já sai.
+``127.0.0.1`` e entrega bytes crus ao **spooler**, pela mesma fila por onde o
+recibo já sai. É o mesmo cano para a gaveta (``/kick``) e para o papel
+(``/print``) — comprovante de movimento de caixa hoje, DANFE NFC-e depois, que é
+obrigação legal. Por isso ele é do BALCÃO e não da gaveta: a gaveta é um dos
+aparelhos que ele alcança, não o escopo dele.
 
 Zero dependências: é um processo que precisa subir junto com o balcão, todo dia,
 sem ninguém olhando. ``pip install`` é uma coisa a mais para quebrar às 6h.
@@ -55,13 +58,13 @@ IS_MACOS = sys.platform == "darwin"
 
 #: Tudo do agente numa pasta só, por sistema — programa, config e log juntos.
 #: A primeira versão espalhava: no Windows o programa ia para
-#: `%LOCALAPPDATA%\NelsonPosDrawer` e a config para uma pasta `.config` de estilo
+#: `%LOCALAPPDATA%\NelsonPosCounter` e a config para uma pasta `.config` de estilo
 #: Linux, escondida na pasta do usuário. Quem estivesse no balcão procurando o
 #: token não acharia. Um lugar, uma resposta.
 def install_dir_for(home: Path, *, windows: bool, localappdata: str = "") -> Path:
     if windows:
-        return Path(localappdata or home / "AppData" / "Local") / "NelsonPosDrawer"
-    return home / ".local" / "share" / "nelson-pos-drawer"
+        return Path(localappdata or home / "AppData" / "Local") / "NelsonPosCounter"
+    return home / ".local" / "share" / "nelson-pos-counter"
 
 
 def config_path_for(home: Path, *, windows: bool, localappdata: str = "") -> Path:
@@ -72,20 +75,42 @@ def config_path_for(home: Path, *, windows: bool, localappdata: str = "") -> Pat
     """
     if windows:
         return install_dir_for(home, windows=True, localappdata=localappdata) / "agent.json"
-    return home / ".config" / "nelson-pos-drawer" / "agent.json"
+    return home / ".config" / "nelson-pos-counter" / "agent.json"
 
 
 INSTALL_DIR = install_dir_for(
     Path.home(), windows=IS_WINDOWS, localappdata=os.environ.get("LOCALAPPDATA", "")
 )
-_LEGACY_CONFIG_PATH = Path.home() / ".config" / "nelson-pos-drawer" / "agent.json"
-DEFAULT_CONFIG_PATH = Path(os.environ.get("DRAWER_AGENT_CONFIG") or "") if os.environ.get(
-    "DRAWER_AGENT_CONFIG"
+
+
+def legacy_config_paths(home: Path, *, windows: bool, localappdata: str = "") -> tuple[Path, ...]:
+    """Onde a config já morou antes de o agente ser do balcão. Mais nova primeiro.
+
+    O agente nasceu chutando só a gaveta e se chamava por isso. As máquinas que
+    já rodam o antigo têm o ``agent.json`` gravado com o nome velho, e o token
+    dele é metade de um par que o Admin guarda: gerar outro em vez de mover
+    deixaria os dois lados diferentes, e o balcão passaria a levar 401 no meio
+    do troco. No Windows são dois caminhos porque houve uma migração anterior —
+    o programa foi para o ``%LOCALAPPDATA%`` e a config ficou na pasta
+    ``.config`` de estilo Linux.
+    """
+    antigas = [home / ".config" / "nelson-pos-drawer" / "agent.json"]
+    if windows:
+        local = Path(localappdata or home / "AppData" / "Local")
+        antigas.insert(0, local / "NelsonPosDrawer" / "agent.json")
+    return tuple(antigas)
+
+
+LEGACY_CONFIG_PATHS = legacy_config_paths(
+    Path.home(), windows=IS_WINDOWS, localappdata=os.environ.get("LOCALAPPDATA", "")
+)
+DEFAULT_CONFIG_PATH = Path(os.environ.get("COUNTER_AGENT_CONFIG") or "") if os.environ.get(
+    "COUNTER_AGENT_CONFIG"
 ) else config_path_for(Path.home(), windows=IS_WINDOWS, localappdata=os.environ.get("LOCALAPPDATA", ""))
 
-LOG_PATH = INSTALL_DIR / "drawer-agent.log"
+LOG_PATH = INSTALL_DIR / "counter-agent.log"
 
-logger = logging.getLogger("drawer-agent")
+logger = logging.getLogger("counter-agent")
 
 # ── ESC/POS ───────────────────────────────────────────────────────────────
 
@@ -161,7 +186,7 @@ def test_print_bytes(*, columns: int = _COLUMNS, qr_data: str = _QR_SAMPLE) -> b
     out += bytes([ESC, ord("@")])  # reset
 
     out += _line("TESTE DE IMPRESSAO")
-    out += _line("Agente da gaveta - Nelson")
+    out += _line("Agente do balcão - Nelson")
     out += _line("-" * columns)
 
     # 1) Acento: a mesma frase sob cada tabela, rotulada.
@@ -280,7 +305,7 @@ class AgentConfig:
         except FileNotFoundError as exc:
             raise SystemExit(
                 f"config não encontrada em {path}.\n"
-                "Rode 'python3 drawer_agent.py --install' ou aponte DRAWER_AGENT_CONFIG para o arquivo."
+                "Rode 'python3 counter_agent.py --install' ou aponte COUNTER_AGENT_CONFIG para o arquivo."
             ) from exc
         except json.JSONDecodeError as exc:
             raise SystemExit(f"config inválida em {path}: {exc}") from exc
@@ -477,8 +502,8 @@ def _probe_queue_cups(queue: str) -> dict:
 # ── HTTP ──────────────────────────────────────────────────────────────────
 
 
-class DrawerHandler(BaseHTTPRequestHandler):
-    server_version = f"nelson-drawer-agent/{VERSION}"
+class CounterAgentHandler(BaseHTTPRequestHandler):
+    server_version = f"nelson-counter-agent/{VERSION}"
     config: AgentConfig  # injetado pelo serve()
 
     protocol_version = "HTTP/1.1"
@@ -631,10 +656,10 @@ class DrawerHandler(BaseHTTPRequestHandler):
 
 
 def serve(config: AgentConfig) -> None:
-    handler = type("BoundDrawerHandler", (DrawerHandler,), {"config": config})
+    handler = type("BoundCounterAgentHandler", (CounterAgentHandler,), {"config": config})
     httpd = ThreadingHTTPServer((config.host, config.port), handler)
     logger.info(
-        "agente da gaveta ouvindo em http://%s:%s (fila=%s, origens=%s)",
+        "agente do balcão ouvindo em http://%s:%s (fila=%s, origens=%s)",
         config.host,
         config.port,
         config.queue,
@@ -655,11 +680,27 @@ def serve(config: AgentConfig) -> None:
 # editor. Dois arquivos que precisam chegar juntos são uma chance a mais de
 # chegar só um.
 
-UNIT_PATH = Path.home() / ".config" / "systemd" / "user" / "nelson-pos-drawer.service"
-SERVICE_NAME = "nelson-pos-drawer.service"
-LAUNCH_AGENT_LABEL = "com.nelson.pos-drawer"
+UNIT_PATH = Path.home() / ".config" / "systemd" / "user" / "nelson-pos-counter.service"
+SERVICE_NAME = "nelson-pos-counter.service"
+LAUNCH_AGENT_LABEL = "com.nelson.pos-counter"
 LAUNCH_AGENT_PATH = Path.home() / "Library" / "LaunchAgents" / f"{LAUNCH_AGENT_LABEL}.plist"
-WINDOWS_TASK_NAME = "NelsonPosDrawer"
+WINDOWS_TASK_NAME = "NelsonPosCounter"
+
+#: O serviço que o agente teve quando ainda era só da gaveta.
+#:
+#: ⚠️ Ele não é lembrança: numa máquina que já rodava o antigo, o serviço velho
+#: continua de pé e SEGURA a porta 47811. O novo então não sobe, quem responde é
+#: o código velho — que não conhece as rotas novas — e reinstalar não resolve,
+#: porque reinstalar é exatamente o que não está pegando. Custou duas
+#: reinstalações no balcão descobrir isso com o nome anterior do arquivo.
+LEGACY_SERVICE_NAME = "nelson-pos-drawer.service"
+LEGACY_UNIT_PATH = Path.home() / ".config" / "systemd" / "user" / LEGACY_SERVICE_NAME
+LEGACY_LAUNCH_AGENT_LABEL = "com.nelson.pos-drawer"
+LEGACY_LAUNCH_AGENT_PATH = (
+    Path.home() / "Library" / "LaunchAgents" / f"{LEGACY_LAUNCH_AGENT_LABEL}.plist"
+)
+LEGACY_WINDOWS_TASK_NAME = "NelsonPosDrawer"
+LEGACY_WINDOWS_LAUNCHER = "nelson-pos-drawer.cmd"
 
 # Não existe default de origem, de propósito. A primeira versão cravava um
 # domínio aqui e ele estava ERRADO — inventado, sem corresponder a nada no
@@ -670,7 +711,7 @@ WINDOWS_TASK_NAME = "NelsonPosDrawer"
 
 def _unit_text(exec_path: Path) -> str:
     return f"""[Unit]
-Description=Agente da gaveta de dinheiro do PDV (Nelson)
+Description=Agente do balcão do PDV (Nelson)
 After=cups.service
 
 [Service]
@@ -804,6 +845,83 @@ def _arg_value(argv: list[str], flag: str) -> str:
     return argv[argv.index(flag) + 1] if flag in argv and len(argv) > argv.index(flag) + 1 else ""
 
 
+def stop_legacy_service() -> None:
+    """Derruba o serviço do nome antigo, ANTES de subir o novo.
+
+    Só parar não basta: enquanto a unit/tarefa antiga existir, ela ressuscita no
+    próximo boot e volta a segurar a porta. Por isso o serviço é parado,
+    desabilitado e o arquivo dele apagado.
+
+    Tolerante de propósito — numa máquina nova nada disso existe, e não achar o
+    serviço antigo não é erro. Erro é deixá-lo vivo: dois agentes disputando a
+    47811 é uma disputa que o velho ganha, porque ele chegou primeiro.
+    """
+    if IS_WINDOWS:
+        _run_quiet(["schtasks", "/end", "/tn", LEGACY_WINDOWS_TASK_NAME])
+        _run_quiet(["schtasks", "/delete", "/f", "/tn", LEGACY_WINDOWS_TASK_NAME])
+        # A pasta Inicializar é o fallback de quando o agendador recusa. Um
+        # `.cmd` esquecido lá sobe o agente antigo a cada logon, e aí a máquina
+        # volta a ter o problema no dia seguinte, quando ninguém liga uma coisa
+        # à outra.
+        _rm(_windows_startup_dir() / LEGACY_WINDOWS_LAUNCHER)
+        return
+    if IS_MACOS:
+        _run_quiet(["launchctl", "bootout", f"gui/{os.getuid()}/{LEGACY_LAUNCH_AGENT_LABEL}"])
+        _rm(LEGACY_LAUNCH_AGENT_PATH)
+        return
+    _run_quiet(["systemctl", "--user", "stop", LEGACY_SERVICE_NAME])
+    _run_quiet(["systemctl", "--user", "disable", LEGACY_SERVICE_NAME])
+    _rm(LEGACY_UNIT_PATH)
+    _run_quiet(["systemctl", "--user", "daemon-reload"])
+
+
+def _run_quiet(cmd: list[str]) -> None:
+    """Roda e engole o resultado.
+
+    Faxina não tem direito de derrubar a instalação: parar um serviço que não
+    existe, numa máquina que nunca teve o agente antigo, é o resultado desejado
+    — e nem o comando precisa existir.
+    """
+    try:
+        subprocess.run(cmd, capture_output=True, check=False)
+    except OSError:
+        pass
+
+
+def _rm(path: Path) -> None:
+    """Apaga se existir. Arquivo que já não está lá é o resultado desejado."""
+    try:
+        path.unlink(missing_ok=True)
+    except OSError as exc:
+        print(f"aviso: não consegui apagar {path} ({exc}).")
+
+
+def migrate_legacy_config() -> None:
+    """Traz o ``agent.json`` do nome antigo, se ele ainda estiver lá.
+
+    Mover, e não copiar: duas configs na mesma máquina é como o token do PDV e o
+    do agente acabam diferentes sem ninguém entender. Não mexe se a config nova
+    já existe — a atual é a que manda.
+    """
+    if DEFAULT_CONFIG_PATH.exists():
+        return
+    for antiga in LEGACY_CONFIG_PATHS:
+        if not antiga.exists():
+            continue
+        DEFAULT_CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
+        shutil.move(str(antiga), str(DEFAULT_CONFIG_PATH))
+        print(f"config movida de {antiga} para {DEFAULT_CONFIG_PATH}")
+        return
+
+
+def _windows_startup_dir() -> Path:
+    """Pasta Inicializar do usuário — não precisa de agendador nem privilégio."""
+    return (
+        Path(os.environ.get("APPDATA", Path.home() / "AppData" / "Roaming"))
+        / "Microsoft" / "Windows" / "Start Menu" / "Programs" / "Startup"
+    )
+
+
 def _autostart_linux(target: Path) -> None:
     if not shutil.which("systemctl"):
         print(f"aviso: sem systemctl. Suba na mão: python3 {target}")
@@ -857,7 +975,7 @@ def _windows_launcher(target: Path) -> Path:
     """
     pythonw = Path(sys.executable).with_name("pythonw.exe")
     runner = pythonw if pythonw.exists() else Path(sys.executable)
-    launcher = INSTALL_DIR / "nelson-pos-drawer.cmd"
+    launcher = INSTALL_DIR / "nelson-pos-counter.cmd"
     launcher.write_text(
         "@echo off\r\n"
         f'"{runner}" "{target}" --log-file "{LOG_PATH}"\r\n',
@@ -882,11 +1000,7 @@ def _autostart_windows(target: Path) -> None:
     if created.returncode != 0:
         detail = (created.stdout or b"").decode("utf-8", "replace").strip()
         print(f"aviso: não consegui agendar o início automático ({detail or 'schtasks falhou'}).")
-        # Pasta Inicializar: não precisa de agendador nem de privilégio.
-        startup = (
-            Path(os.environ.get("APPDATA", Path.home() / "AppData" / "Roaming"))
-            / "Microsoft" / "Windows" / "Start Menu" / "Programs" / "Startup"
-        )
+        startup = _windows_startup_dir()
         try:
             startup.mkdir(parents=True, exist_ok=True)
             shutil.copyfile(launcher, startup / launcher.name)
@@ -942,14 +1056,9 @@ def install(argv: list[str]) -> int:
         return 1
 
     INSTALL_DIR.mkdir(parents=True, exist_ok=True)
-    # Config de uma instalação anterior, quando o Windows guardava em pasta
-    # separada. Mover em vez de gerar outra: duas configs na mesma máquina é
-    # como o token do PDV e o do agente acabam diferentes sem ninguém entender.
-    if IS_WINDOWS and _LEGACY_CONFIG_PATH.exists() and not DEFAULT_CONFIG_PATH.exists():
-        shutil.move(str(_LEGACY_CONFIG_PATH), str(DEFAULT_CONFIG_PATH))
-        print(f"config movida de {_LEGACY_CONFIG_PATH} para {DEFAULT_CONFIG_PATH}")
+    migrate_legacy_config()
 
-    target = INSTALL_DIR / "drawer_agent.py"
+    target = INSTALL_DIR / "counter_agent.py"
     source = Path(__file__).resolve()
     if source != target.resolve():
         shutil.copyfile(source, target)
@@ -962,6 +1071,11 @@ def install(argv: list[str]) -> int:
         DEFAULT_CONFIG_PATH, queue=queue, origin=origin, token=token
     )
 
+    # Primeiro derruba o antigo, depois sobe o novo. Invertido, o novo tenta
+    # subir com a porta ocupada, falha calado, e o instalador só descobre lá
+    # embaixo, na conferência do `build` — com o operador achando que o agente
+    # instalou.
+    stop_legacy_service()
     if IS_WINDOWS:
         _autostart_windows(target)
     elif IS_MACOS:
@@ -975,14 +1089,21 @@ def install(argv: list[str]) -> int:
         print(
             "\naviso: sem --origin, este agente aceita pedido de QUALQUER página\n"
             "       aberta neste navegador (o token continua obrigatório).\n"
-            "       Pegue o comando completo no Admin: Terminais do PDV → gaveta."
+            "       Pegue o comando completo no Admin: Terminais do PDV → este\n"
+            "       terminal → Baixar o agente e ver como instalar."
         )
     if token:
         # Veio do Admin: o par já existe dos dois lados, nada a transcrever.
         print("Token recebido do Admin — nada a copiar de volta.")
     elif written:
-        print("\n  ┌─ COLE ESTE TOKEN no Admin ─────────────────────────────────")
-        print("  │  Admin → Terminais do PDV → gaveta → token")
+        # Emergência: quem está no balcão sem acesso ao Admin. O Admin não tem
+        # onde COLAR token — quem gera o par é ele. Então este aqui só faz o
+        # agente subir; enquanto os dois lados não baterem, o PDV leva 401. Dizer
+        # "cole no Admin" mandava a pessoa procurar um campo que não existe.
+        print("\n  ┌─ TOKEN GERADO AQUI, sem o Admin ───────────────────────────")
+        print("  │  O agente sobe, mas o PDV só abre quando os dois lados baterem.")
+        print("  │  Com acesso ao Admin, reinstale com o comando de lá:")
+        print("  │  Terminais do PDV → este terminal → Baixar o agente.")
         print("  │")
         print(f"  │  {config['token']}")
         print("  └─────────────────────────────────────────────────────────────")

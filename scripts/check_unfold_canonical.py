@@ -164,10 +164,10 @@ CANONICAL_ADMIN_SURFACES: tuple[Surface, ...] = (
         ),
     ),
     Surface(
-        id="admin-console-pos-drawer-agent",
+        id="admin-console-pos-counter-agent",
         kind="canonical-admin-unfold-page",
-        templates=(ROOT / "shopman/backstage/templates/admin_console/pos_drawer_agent",),
-        controllers=(ROOT / "shopman/backstage/admin_console/pos_drawer_agent.py",),
+        templates=(ROOT / "shopman/backstage/templates/admin_console/pos_counter_agent",),
+        controllers=(ROOT / "shopman/backstage/admin_console/pos_counter_agent.py",),
         projections=(ROOT / "shopman/backstage/projections/pos_agent.py",),
         url_prefixes=("/admin/pos/terminal/",),
         requires_model_admin_view_mixin=True,

@@ -1,4 +1,4 @@
-"""Instalação do agente da gaveta — o que a tela do Admin mostra.
+"""Instalação do agente do balcão — o que a tela do Admin mostra.
 
 O dono já está no Admin configurando o terminal; obrigá-lo a sair dali para
 caçar um arquivo no repositório é atrito bobo. Esta projection monta o que a
@@ -20,9 +20,9 @@ from django.conf import settings
 #: Onde o agente mora na árvore do deploy. O Dockerfile copia `tools/` só por
 #: causa desta tela — se o download quebrar em produção e funcionar local, é
 #: aqui que se olha primeiro.
-AGENT_SOURCE = Path(settings.BASE_DIR) / "tools" / "pos-drawer-agent" / "drawer_agent.py"
+AGENT_SOURCE = Path(settings.BASE_DIR) / "tools" / "pos-counter-agent" / "counter_agent.py"
 
-AGENT_FILENAME = "drawer_agent.py"
+AGENT_FILENAME = "counter_agent.py"
 
 #: Linux é o SO **oficial** do balcão — é para onde a máquina do caixa vai. Os
 #: outros dois existem por uma razão concreta, não por completude: o caixa ainda
@@ -140,19 +140,19 @@ _OS_CAVEATS = {
 _OS_RUNTIME = {
     "linux": {
         "python": "python3",
-        "logs": "journalctl --user -u nelson-pos-drawer -f",
-        "logs_note": "O agente registra cada abertura no journal do sistema.",
+        "logs": "journalctl --user -u nelson-pos-counter -f",
+        "logs_note": "O agente registra cada abertura e cada impressão no journal do sistema.",
         "carry": "Pendrive, scp, ou copiar e colar num editor, o que for mais fácil.",
     },
     "macos": {
         "python": "python3",
-        "logs": "tail -f ~/.local/share/nelson-pos-drawer/drawer-agent.log",
+        "logs": "tail -f ~/.local/share/nelson-pos-counter/counter-agent.log",
         "logs_note": "No macOS o launchd não guarda a saída, então o agente escreve num arquivo.",
         "carry": "Pendrive, AirDrop, ou copiar e colar num editor.",
     },
     "windows": {
         "python": "python",
-        "logs": "type %LOCALAPPDATA%\\NelsonPosDrawer\\drawer-agent.log",
+        "logs": "type %LOCALAPPDATA%\\NelsonPosCounter\\counter-agent.log",
         "logs_note": "No Windows o agente roda sem janela de console, então escreve num arquivo.",
         "carry": "Pendrive ou copiar e colar num editor (Bloco de Notas serve).",
     },

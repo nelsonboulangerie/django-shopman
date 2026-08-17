@@ -1,7 +1,7 @@
 {% extends "admin/base.html" %}
 {% load i18n unfold %}
 
-{% block title %}Instalar o agente da gaveta | {{ site_title|default:_('Django site admin') }}{% endblock %}
+{% block title %}Instalar o agente do balcão | {{ site_title|default:_('Django site admin') }}{% endblock %}
 
 {# Sem este bloco a página custom perde a marca e o ícone do topo. O
    `admin/base.html` não os desenha sozinho: cada tela declara, como o dashboard. #}
@@ -11,15 +11,15 @@
 
 {% block content %}
 {% include "unfold/helpers/messages.html" %}
-<main id="pos-drawer-agent-main" role="main">
+<main id="pos-counter-agent-main" role="main">
 {% component "unfold/components/container.html" %}
   {% component "unfold/components/flex.html" with col=1 class="gap-6" %}
     {% component "unfold/components/flex.html" with col=1 class="gap-1" %}
       {% component "unfold/components/title.html" %}
-        Instalar o agente da gaveta
+        Instalar o agente do balcão
       {% endcomponent %}
       {% component "unfold/components/text.html" with class="text-base-500" %}
-        {{ agent_install.terminal_label }} · a gaveta abre por um programinha que roda na máquina do balcão. Ele recebe o pedido do PDV e manda o comando para a impressora, que é quem tem o cabo da gaveta.
+        {{ agent_install.terminal_label }} · é um programinha que roda na máquina do balcão. Ele recebe o pedido do PDV e fala com a impressora, que é quem tem o cabo da gaveta e o papel: abre a gaveta e imprime o comprovante.
       {% endcomponent %}
     {% endcomponent %}
 
@@ -74,7 +74,7 @@
           {% endcomponent %}
           {% component "unfold/components/flex.html" with class="flex-wrap gap-3 items-center" %}
             {% component "unfold/components/button.html" with href=agent_install.download_url variant="primary" icon="download" %}
-              Baixar drawer_agent.py
+              Baixar counter_agent.py
             {% endcomponent %}
             {% component "unfold/components/text.html" with class="text-sm text-base-500" %}
               {{ agent_install.source_bytes|filesizeformat }} · versão {{ agent_install.source_build }}
@@ -110,7 +110,7 @@
             Sobre o token que está no comando
           {% endcomponent %}
           {% component "unfold/components/text.html" with class="text-base-500" %}
-            É o que impede que qualquer página aberta no navegador do balcão abra a gaveta de dinheiro. Ele vale só para este terminal e só para a gaveta. Se precisar trocar, marque “Gerar um token novo” no terminal e reinstale com o comando novo. Até lá o agente para de abrir.
+            É o que impede que qualquer página aberta no navegador do balcão abra a gaveta de dinheiro ou imprima. Ele vale só para este terminal. Se precisar trocar, marque “Gerar um token novo” no terminal e reinstale com o comando novo. Até lá o agente para de atender.
           {% endcomponent %}
           {% component "unfold/components/button.html" with href=terminal_change_url variant="default" size="sm" icon="tune" %}
             Abrir a configuração do terminal
