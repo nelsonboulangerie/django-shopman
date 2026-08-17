@@ -6327,13 +6327,30 @@ class Command(BaseCommand):
         """
         from shopman.backstage.models import DayContext, HistoricalSale, HistoricalSaleItem
 
+        # Limpa o que ESTE seed criou antes — nunca o que veio de um export.
+        # Vem antes de qualquer saída antecipada de propósito: faxina não pode
+        # depender de haver catálogo, senão um ambiente sem produtos guarda
+        # linhas sintéticas órfãs para sempre.
+        HistoricalSale.objects.filter(source="seed").delete()
+
+        # ⚠️ Onde já existe histórico de verdade, não se inventa histórico.
+        # Sem esta guarda, rodar o seed num ambiente com o export carregado
+        # somava dois anos sintéticos aos dois anos reais, e TODA leitura do
+        # B.I. passava a ser metade ficção — o `source` rotula a série, mas os
+        # totais são a soma. Com o delete acima, um ambiente semeado no passado
+        # se limpa sozinho ao atualizar.
+        real = HistoricalSale.objects.exclude(source="seed")
+        if real.exists():
+            self.stdout.write(
+                f"  ↷ histórico sintético pulado: já há {real.count()} vendas reais carregadas"
+            )
+            return 0
+
         catalogo = [p for sku, p in products.items() if sku in self.BI_SHELF_PROFILES]
         if not catalogo:
             catalogo = list(products.values())[:8]
         if not catalogo:
             return 0
-
-        HistoricalSale.objects.filter(source="seed").delete()
 
         today = timezone.localdate()
         rng = random.Random(20260819)

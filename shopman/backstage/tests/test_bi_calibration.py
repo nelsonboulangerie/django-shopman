@@ -202,3 +202,40 @@ def test_calibration_without_tags_says_what_to_do_instead_of_showing_zeros(db):
 def test_role_override_adds_a_third_variant_without_a_second_rule(history):
     output = _run("bi_calibrate", "--role", "hibrido=takeaway")
     assert "hibrido=takeaway" in output
+
+
+# ── O seed não inventa histórico onde já há histórico ────────────────────────
+
+
+@pytest.mark.django_db
+def test_seed_does_not_invent_history_where_real_history_exists():
+    """Somar dois anos sintéticos a dois anos reais faria toda leitura ser
+    metade ficção — o `source` rotula a série, mas os totais são a soma.
+    """
+    from config.management.commands.seed import Command
+
+    HistoricalSale.objects.create(
+        source="yooga", external_id=1, occurred_at=timezone.now() - timedelta(days=1),
+        total_q=1000, payment="PIX",
+    )
+    created = Command()._seed_long_sales_history({}, days=30)
+    assert created == 0
+    assert HistoricalSale.objects.count() == 1
+    assert HistoricalSale.objects.filter(source="seed").count() == 0
+
+
+@pytest.mark.django_db
+def test_a_previously_seeded_environment_cleans_itself_when_real_data_arrives():
+    """Ambiente semeado no passado se limpa ao rodar de novo com dado real."""
+    from config.management.commands.seed import Command
+
+    HistoricalSale.objects.create(
+        source="seed", external_id=9, occurred_at=timezone.now() - timedelta(days=2),
+        total_q=500, payment="Dinheiro",
+    )
+    HistoricalSale.objects.create(
+        source="yooga", external_id=1, occurred_at=timezone.now() - timedelta(days=1),
+        total_q=1000, payment="PIX",
+    )
+    Command()._seed_long_sales_history({}, days=30)
+    assert list(HistoricalSale.objects.values_list("source", flat=True)) == ["yooga"]
