@@ -120,17 +120,23 @@ def test_base_suficiente_devolve_valor_e_faixa(wednesday):
 
 
 def test_a_fatia_de_dinheiro_vem_dos_dias_parecidos(wednesday):
-    """O primeiro fator pode usar o histórico externo: forma de pagamento ele tem."""
+    """O primeiro fator PODE usar o histórico externo: forma de pagamento ele tem.
+
+    As duas fontes divergem de propósito. O sistema novo mede semanas em que
+    todo mundo pagou em dinheiro; os dois anos anteriores dizem que metade
+    paga. Se a fatia saísse só das semanas medidas, ela viria 100% e o dia
+    pediria o dobro do troco que precisa.
+    """
     _external(days=200, orders=20, cash_share=0.5)
     # Medição de troco só nas últimas semanas, como na vida real.
     for offset in range(1, 41):
         day = timezone.localdate() - timedelta(days=offset)
-        _sold(day, orders=20, cash=10, change=lambda i: 150 + i * 40)
+        _sold(day, orders=20, cash=20, change=lambda i: 150 + i * 40)
 
     day = build_bi_change(target=wednesday).days[0]
 
     assert day.cash_share_percent == pytest.approx(50, abs=6)
-    assert day.cash_share_days >= 5
+    assert day.cash_share_days >= 20  # bem além das semanas do sistema novo
 
 
 # ── Base rasa: "ainda não sabemos", nunca um número ───────────────────────────
