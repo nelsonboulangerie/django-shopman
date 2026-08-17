@@ -57,16 +57,16 @@ def test_add_via_admin_is_forbidden(client, shift):
 def test_changelist_remains_visible(client, shift):
     CashMovement.objects.create(
         shift=shift,
-        movement_type=CashMovement.MovementType.AJUSTE,
-        amount_q=-250,
-        reason="Falta na conferência",
+        movement_type=CashMovement.MovementType.SANGRIA,
+        amount_q=250,
+        reason="Cofre",
         created_by="op-user",
     )
     admin_user = User.objects.create_superuser("cash-admin", "c@test.com", "pw")
     client.force_login(admin_user)
     resp = client.get(reverse("admin:backstage_cashmovement_changelist"))
     assert resp.status_code == 200
-    assert "Falta na conferência" in resp.content.decode()
+    assert "Cofre" in resp.content.decode()
 
 
 def _req():

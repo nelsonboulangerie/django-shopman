@@ -35,7 +35,7 @@ describe("usePosCashSession — sessão de caixa (antesala)", () => {
 
   it("movementKinds cai no default quando a capability não veio", () => {
     const { session } = makeCashSession();
-    expect(session.movementKinds.value).toEqual(["sangria", "suprimento", "ajuste"]);
+    expect(session.movementKinds.value).toEqual(["sangria", "suprimento"]);
   });
 
   it("movementKinds lê a capability do contrato quando presente", () => {

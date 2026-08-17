@@ -225,7 +225,7 @@ def cancel_done(order_ref: str) -> PosCancelResult:
 
 @dataclass(frozen=True)
 class PosCashMessage:
-    """A cash-register status line (sangria/suprimento/ajuste, close)."""
+    """A cash-register status line (sangria/suprimento, close)."""
 
     TEMPLATE: ClassVar[str] = f"{_FRAGMENTS}/cash_message.html"
     text: str
@@ -233,7 +233,7 @@ class PosCashMessage:
     small: bool = False
 
 
-_CASH_MOVEMENT_LABELS = {"sangria": "Sangria", "suprimento": "Suprimento", "ajuste": "Ajuste"}
+_CASH_MOVEMENT_LABELS = {"sangria": "Sangria", "suprimento": "Suprimento"}
 
 
 def cash_movement_done(movement) -> PosCashMessage:

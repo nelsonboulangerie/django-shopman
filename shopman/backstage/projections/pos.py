@@ -1204,7 +1204,7 @@ def _checkout_contract(
                 "open_action_ref": "open_cash_shift",
                 "close_action_ref": "close_cash_shift",
                 "movement_action_ref": "cash_movement",
-                "movement_kinds": ("sangria", "suprimento", "ajuste"),
+                "movement_kinds": ("sangria", "suprimento"),
                 "requires_open_shift_for_sale": True,
                 "blocks_close_when_offline_queue_pending": True,
             },

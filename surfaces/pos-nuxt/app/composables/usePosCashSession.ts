@@ -22,7 +22,7 @@ interface CashSessionDeps {
 
 /**
  * Write-side da SESSÃO de caixa (antesala): abrir/fechar turno, fechar turno
- * bloqueante e movimentos (sangria/suprimento/ajuste). Vivia dentro do
+ * bloqueante e movimentos (sangria/suprimento). Vivia dentro do
  * usePosSale quando o caixa era um diálogo da tela de venda; com a antesala
  * (`/session`) a sessão tem tela própria e o write-side acompanha. Cada ação
  * devolve `true` no sucesso para a página decidir navegação (ex.: abrir caixa
@@ -42,7 +42,7 @@ export function usePosCashSession({ pos, actions, refresh, action }: CashSession
     () => pos.value?.checkout?.capabilities?.cash_management ?? null,
   );
   const movementKinds = computed<string[]>(
-    () => cashManagement.value?.movement_kinds || ["sangria", "suprimento", "ajuste"],
+    () => cashManagement.value?.movement_kinds || ["sangria", "suprimento"],
   );
   // O bloqueio de venda sem turno é contrato da Projection (hoje sempre true);
   // o gate de redirect da antesala lê daqui em vez de assumir.
@@ -99,7 +99,7 @@ export function usePosCashSession({ pos, actions, refresh, action }: CashSession
     );
   }
 
-  // Retirada de gaveta (sangria, ajuste negativo) exige PIN do gerente. Quem
+  // Retirada de gaveta (sangria) exige PIN do gerente. Quem
   // decide é o servidor: a tela envia, e só abre o desafio quando ele recusa com
   // `manager_approval_required`. Assim a regra do que precisa de autorização tem
   // um dono só, e o PDV não precisa adivinhar antes de perguntar.

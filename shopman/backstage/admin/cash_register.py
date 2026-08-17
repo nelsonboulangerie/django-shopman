@@ -106,7 +106,7 @@ class CashShiftAdmin(ModelAdmin):
 
 @admin.register(CashMovement)
 class CashMovementAdmin(ModelAdmin):
-    """Trilha readonly de sangria/suprimento/ajuste.
+    """Trilha readonly de sangria/suprimento.
 
     Movimentos nascem no PDV (POST ``pos/cash/movement/``); o Admin só lista e
     inspeciona a trilha de auditoria.

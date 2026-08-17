@@ -102,7 +102,6 @@ const numpadMode = ref<"qty" | "disc" | "price">("qty");
 const defaultReasons = [
   { ref: "cortesia", label: "Cortesia" },
   { ref: "fidelidade", label: "Fidelidade" },
-  { ref: "ajuste", label: "Ajuste" },
   { ref: "qualidade", label: "Qualidade" },
 ];
 const reasonOptions = computed(() => {
