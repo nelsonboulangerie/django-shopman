@@ -5930,7 +5930,7 @@ class Command(BaseCommand):
         """
         from shopman.backstage.models import ConsumptionRole, Reading
 
-        catalogo = [
+        catalog = [
             ("consome-aqui", "Consome aqui",
              "Café, suco, prato quente, lanche montado", Reading.ANCHOR, 10),
             ("leva", "Leva",
@@ -5938,12 +5938,12 @@ class Command(BaseCommand):
             ("acompanha", "Acompanha",
              "Croissant, doce individual: come junto ou leva", Reading.NEUTRAL, 30),
         ]
-        for ref, label, hint, leitura, ordem in catalogo:
+        for ref, label, hint, reading, position in catalog:
             ConsumptionRole.objects.update_or_create(
                 ref=ref,
                 defaults={
-                    "label": label, "hint": hint, "reading": leitura,
-                    "ordering": ordem, "is_active": True,
+                    "label": label, "hint": hint, "reading": reading,
+                    "ordering": position, "is_active": True,
                 },
             )
 
@@ -5959,28 +5959,28 @@ class Command(BaseCommand):
         """
         from shopman.backstage.models import SeatingSpot, SpotKind
 
-        lugares = []
-        for numero in range(1, 5):
-            lugares.append((f"mesa-interna-{numero}", f"Mesa interna {numero}",
+        spots = []
+        for index in range(1, 5):
+            spots.append((f"mesa-interna-{index}", f"Mesa interna {index}",
                             SpotKind.TABLE, "Salão interno", 2, True))
-        for numero in range(1, 5):
-            lugares.append((f"mesa-externa-{numero}", f"Mesa externa {numero}",
+        for index in range(1, 5):
+            spots.append((f"mesa-externa-{index}", f"Mesa externa {index}",
                             SpotKind.TABLE, "Calçada", 2, True))
-        for numero in range(1, 7):
-            lugares.append((f"balcao-{numero}", f"Balcão {numero}",
+        for index in range(1, 7):
+            spots.append((f"balcao-{index}", f"Balcão {index}",
                             SpotKind.COUNTER, "Balcão", 1, True))
-        for numero in range(1, 3):
-            lugares.append((f"bistro-{numero}", f"Mesinha alta {numero}",
+        for index in range(1, 3):
+            spots.append((f"bistro-{index}", f"Mesinha alta {index}",
                             SpotKind.TABLE, "Salão interno", 2, False))
-        lugares.append(("bancao-externo", "Bancão externo",
+        spots.append(("bancao-externo", "Bancão externo",
                         SpotKind.COUNTER, "Calçada", 4, False))
 
-        for ref, label, kind, area, seats, conta in lugares:
+        for ref, label, kind, area, seats, counts in spots:
             SeatingSpot.objects.update_or_create(
                 ref=ref,
                 defaults={
                     "label": label, "kind": kind, "area": area,
-                    "seats": seats, "counts_in_capacity": conta,
+                    "seats": seats, "counts_in_capacity": counts,
                 },
             )
 
