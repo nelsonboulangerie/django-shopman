@@ -177,9 +177,14 @@ def test_qc_endpoint_behind_floor_gate(client, floor_operator, recipe):
 
 
 @pytest.mark.django_db
-def test_double_finish_is_a_clean_conflict(client, floor_operator, recipe, monkeypatch):
-    """Dois quiosques fechando a MESMA fornada: o segundo leva 409 {detail}
-    em pt-BR, nunca 500 cru (o CraftError do kernel não era capturado)."""
+def test_repeating_the_same_finish_is_idempotent(client, floor_operator, recipe, monkeypatch):
+    """O MESMO fechamento, repetido, é replay — não conflito.
+
+    O `idempotency_key` do finish sai do resultado resolvido (WO + linhas), e o
+    core devolve a fornada existente. É o que tira o operador do beco: um
+    receiver posterior estoura DEPOIS do commit, ele vê erro numa fornada que
+    já está fechada, aperta de novo e agora funciona.
+    """
     monkeypatch.setattr(production, "check_finish_materials", lambda work_order: [])
     client.force_login(floor_operator)
     wo = craft.plan(recipe, 10, date=date.today(), position_ref="forno")
@@ -190,6 +195,37 @@ def test_double_finish_is_a_clean_conflict(client, floor_operator, recipe, monke
     assert first.status_code == 200
 
     second = client.post(url, body, content_type="application/json")
+    assert second.status_code == 200
+    assert second.json()["wo_ref"] == first.json()["wo_ref"]
+
+
+@pytest.mark.django_db
+def test_finishing_the_same_batch_with_other_numbers_is_a_clean_conflict(
+    client, floor_operator, recipe, monkeypatch
+):
+    """Dois quiosques discordando do rendimento: o segundo leva 409 {detail}
+    em pt-BR, nunca 500 cru (o CraftError do kernel não era capturado).
+
+    Números diferentes é o caso perigoso — não é retry, é um segundo
+    fechamento de uma fornada já fechada, com outra verdade.
+    """
+    monkeypatch.setattr(production, "check_finish_materials", lambda work_order: [])
+    client.force_login(floor_operator)
+    wo = craft.plan(recipe, 10, date=date.today(), position_ref="forno")
+    url = reverse("api-backstage-wo-finish", args=[wo.pk])
+
+    first = client.post(
+        url,
+        {"quantity": "10", "partition": [{"quantity": "10", "quality_grade_ref": "standard"}]},
+        content_type="application/json",
+    )
+    assert first.status_code == 200
+
+    second = client.post(
+        url,
+        {"quantity": "8", "partition": [{"quantity": "8", "quality_grade_ref": "standard"}]},
+        content_type="application/json",
+    )
     assert second.status_code == 409
     payload = second.json()
     assert "fechada em outra tela" in payload["detail"]

@@ -419,6 +419,9 @@ def apply_finish(
             actor=actor,
             finished_items=finished_items,
             wasted_items=wasted_items,
+            idempotency_key=_finish_idempotency_key(
+                work_order, finished_items, wasted_items
+            ),
         )
     except Exception as exc:
         if _looks_like_stock_error(exc):
@@ -427,6 +430,38 @@ def apply_finish(
         raise translated from (None if translated is exc else exc)
     _record_batch_traceability(work_order_id=work_order_id)
     return result
+
+
+def _finish_idempotency_key(work_order, finished_items, wasted_items) -> str:
+    """Chave estável do fechamento: mesma fornada, mesmo resultado, mesma chave.
+
+    O core devolve a WO existente quando a chave se repete, então o retry do
+    operador depois de um erro que veio DEPOIS do commit para de morrer em
+    ``TERMINAL_STATUS`` — o hazard em que um receiver posterior estoura e a
+    fornada fica correta no banco e impossível de fechar na tela.
+
+    A chave sai do RESULTADO (as linhas resolvidas), não do que o operador
+    digitou: é o que o core vai gravar. Fechar de novo com outro número gera
+    outra chave de propósito — aí não é retry, é um segundo fechamento de uma
+    fornada já fechada, e o conflito tem que aparecer.
+
+    Derivada no servidor, sem contrato novo com a superfície: o quiosque
+    reenvia o mesmo POST e a chave cai igual sozinha.
+    """
+    import hashlib
+    import json
+
+    payload = json.dumps(
+        {
+            "work_order": work_order.pk,
+            "finished": finished_items,
+            "wasted": wasted_items,
+        },
+        sort_keys=True,
+        default=str,
+    )
+    digest = hashlib.sha256(payload.encode("utf-8")).hexdigest()[:32]
+    return f"production.finish:{work_order.pk}:{digest}"
 
 
 def apply_advance_step(*, work_order_id, actor: str) -> int:
