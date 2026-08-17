@@ -561,7 +561,7 @@ python manage.py bi_calibrate
 
 O `bi_calibrate` **imprime e não grava nada** — é medição, não migração. Aceita
 `--from`/`--to` e `--role REF=LEITURA` para variantes extras (ex.:
-`--role bebida-pronta=neutral`).
+`--role acompanha=takeaway`).
 
 1. Distribuição real de `HistoricalSale.payment` — dimensiona a whitelist de F1.
 2. **As variantes da regra**, sobre os dois anos — quanto muda o retrato? É o que

@@ -27,9 +27,12 @@ from datetime import date
 
 from django.core.management.base import BaseCommand
 
+# Chave de variante é CÓDIGO, e código é em inglês. O `ref` do papel que vai no
+# `--role` é DADO — e dado de catálogo nesta casa é pt-BR (`bebidas-quentes`,
+# `falta-de-energia`), então `acompanha` está certo onde está.
 VARIANTS: dict[str, str] = {
     "base": "como etiquetado",
-    "ambiguo-leva": 'classe "acompanha" lida como "leva" (a proposta do booleano)',
+    "ambiguous-as-takeaway": 'classe "acompanha" lida como "leva" (a proposta do booleano)',
 }
 
 
@@ -43,8 +46,8 @@ class Command(BaseCommand):
             "--role", action="append", default=[], metavar="REF=LEITURA",
             help=(
                 "Variante extra: relê um papel com outra leitura. "
-                "Ex.: --role bebida-pronta=neutral para testar 'bebida pronta "
-                "só ancora acompanhada'."
+                "Ex.: --role acompanha=takeaway. O REF é o do papel cadastrado; "
+                "a LEITURA é anchor, takeaway ou neutral."
             ),
         )
 
@@ -156,7 +159,7 @@ class Command(BaseCommand):
 
         variants = {
             "base": base,
-            "ambiguo-leva": {
+            "ambiguous-as-takeaway": {
                 sku: (TAKEAWAY_ITEM if reading == NEUTRAL else reading)
                 for sku, reading in base.items()
             },
