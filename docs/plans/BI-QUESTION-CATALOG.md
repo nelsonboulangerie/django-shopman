@@ -177,6 +177,47 @@ contas:
   vira pão levado) ou abandonar o modo "consumir no local e levar", que foi
   pedido no mandato original.
 
+### 3.1.2 A contraproposta do booleano — e por que ela vira medição, não debate
+
+> Dono, na sequência: *"ainda acho que dá pra fazer só com o booleano. Se a cesta
+> tem só SKU com âncora True, coluna 1; se só tem False, coluna 3; se tem os dois,
+> coluna do meio (1 consumo local, 2 misto, 3 levar). Faz sentido ou não?"*
+
+**Faz — e já está implementado.** O esquema dele é este, com a leitura
+"acompanha" nunca usada. Etiquetando o croissant como "leva":
+
+| Cesta | Coluna dele | O que a regra devolve |
+|---|---|---|
+| só café | 1 | `local` |
+| café + pão | 2 | `local + levar` |
+| só pão | 3 | `levar` |
+| café + croissant | 2 | `local + levar` |
+| só croissant | 3 | `levar` |
+
+Idêntico. Adotar o booleano **não custa mudança nenhuma**: basta curar com dois
+valores e nunca tocar no terceiro.
+
+**Onde as duas divergem:** numa cesta só — âncora + item ambíguo. E o problema
+não é o número de colunas (três saídas a partir de um bit está correto), é a
+**pergunta da etiqueta**: *"este item é de consumo local?"* não tem resposta
+honesta para croissant, pain au chocolat, salgado, doce individual — e numa
+boulangerie essa classe é enorme. Ela quebra nos dois sentidos:
+
+- **ambíguo = True** → croissant sozinho vira "consumo local", contrariando o
+  próprio estudo (doce sozinho SEM bebida é pra levar);
+- **ambíguo = False** → café + croissant vira "misto", enquanto o estudo o trata
+  como consumo local — é disso que vêm os ~38%.
+
+O item é ambíguo **sozinho**, e é a bebida que resolve. Esse é o terceiro estado.
+
+**A consequência é medível, não teórica:** com o ambíguo em False, *café +
+croissant* — provavelmente o pedido mais comum da casa — sai da coluna 1 e vai
+para a 2. O salão esvazia e o misto incha.
+
+**Decisão: não se resolve no debate, resolve-se no F2.** São duas leituras
+plausíveis do mesmo dado, produzindo retratos diferentes — exatamente o tipo de
+pergunta que a contagem sobre os dois anos responde. Virou a variante 2 do F2.
+
 **As três leituras, cada uma fazendo algo distinto:**
 
 | Leitura | O que faz |
@@ -511,16 +552,20 @@ Cada fase é entregável sozinha e não bloqueia a seguinte.
 Três contagens no staging (que tem o Yooga carregado), cada uma decide um parâmetro:
 
 1. Distribuição real de `HistoricalSale.payment` — dimensiona a whitelist de F1.
-2. As **duas variantes da âncora** (bebida pronta ancorando sozinha × só acompanhada)
-   sobre os dois anos: quanto muda o retrato? É o que congela a regra de F3 com
-   número, não com opinião.
+2. **As variantes da regra**, sobre os dois anos — quanto muda o retrato? É o que
+   congela o F3 com número em vez de opinião. São duas, independentes:
+   a. bebida pronta ancorando **sozinha** × só acompanhada;
+   b. classe ambígua (croissant, doce, salgado) como **"acompanha"** × como
+      **"leva"** — a contraproposta do booleano (§3.1.2). Se a diferença for
+      pequena, o booleano vence por ser mais barato de curar; se o "misto" engolir
+      o salão, a terceira leitura se pagou.
 ⚠️ **`table_label` saiu do F2** (17/08). Eu tinha proposto usá-lo como "teste de
 aderência" da inferência, e isso contradiz a decisão que o próprio dono tomou: se
 mesa/balcão do Yooga não eram preenchidos com disciplina, discordância entre o
 campo e a regra **não diz quem errou**. É um número que não se pode interpretar,
 e um número assim é pior que nenhum.
 
-⚠️ **A ordem do F2 estava errada.** A contagem 2 (as duas variantes da âncora)
+⚠️ **A ordem do F2 estava errada.** A contagem 2 (as variantes da regra)
 **depende das etiquetas existirem** — sem elas tudo sai não classificado e não há
 o que comparar. A contagem 1 roda a qualquer momento. Sequência real:
 **curadoria → variantes → congelar o parâmetro**.
