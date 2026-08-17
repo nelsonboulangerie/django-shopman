@@ -431,9 +431,12 @@ describe("presentation/payment — digital proof (PCI SAQ A)", () => {
 });
 
 describe("presentation/cash — blind drawer shaping", () => {
+  // O REF continua `sangria`/`suprimento` (identificador do domínio, viaja na
+  // API); o RÓTULO diz a direção, porque quem confere o caixa lê a filipeta
+  // dias depois e pode nunca ter ouvido a palavra "sangria".
   it("labels movement kinds with a fallback", () => {
-    expect(movementLabel("sangria")).toBe("Sangria");
-    expect(movementLabel("suprimento")).toBe("Suprimento");
+    expect(movementLabel("sangria")).toBe("Saída de caixa");
+    expect(movementLabel("suprimento")).toBe("Entrada de caixa");
     expect(movementLabel("custom")).toBe("custom");
   });
 

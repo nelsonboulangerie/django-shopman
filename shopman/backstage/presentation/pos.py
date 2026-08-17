@@ -233,7 +233,7 @@ class PosCashMessage:
     small: bool = False
 
 
-_CASH_MOVEMENT_LABELS = {"sangria": "Sangria", "suprimento": "Suprimento"}
+_CASH_MOVEMENT_LABELS = {"sangria": "Saída de caixa", "suprimento": "Entrada de caixa"}
 
 
 def cash_movement_done(movement) -> PosCashMessage:
