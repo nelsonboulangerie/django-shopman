@@ -1,0 +1,95 @@
+"""Etiquetas de produto que sustentam a inferência de modo de consumo.
+
+O sistema não registra quem sentou e quem levou — e a decisão do dono (17/08) é
+**não passar a registrar**: o modo de consumo se lê da cesta. Isso vale para
+trás (os dois anos do histórico externo) e não depende de ninguém lembrar de
+apertar nada.
+
+Para a cesta falar, cada produto precisa de um **papel**. É a mesma forma dos
+defeitos de qualidade e dos tipos de episódio: catálogo editável no Admin, com o
+comportamento declarado em campo — não em código. Assim, cadastrar "sorvete na
+casquinha" como algo que ancora consumo local não pede deploy.
+
+⚠️ **A etiqueta é curadoria humana, produto a produto.** O nome não classifica:
+"Hambúrguer 100g" na Nelson é o **pão** de hambúrguer, não o sanduíche montado —
+e etiquetá-lo pelo nome leria toda compra de pão de churrasco como alguém
+almoçando na casa. Quem revisa precisa conhecer o cardápio.
+
+Produto sem etiqueta **não vira "levar" por omissão**: a venda inteira sai como
+não classificada, e a tela declara a cobertura. Ausência de dado é ausência de
+dado.
+"""
+
+from __future__ import annotations
+
+from django.db import models
+
+
+class ConsumptionRole(models.Model):
+    """Papel de um produto na cesta — o vocabulário da inferência.
+
+    Os dois booleanos são o que a regra lê. Nada além deles: se um papel novo
+    precisar de comportamento novo, é sinal de que a regra mudou, e regra muda
+    com teste, não com cadastro.
+    """
+
+    ref = models.SlugField("ref", max_length=32, unique=True)
+    label = models.CharField("rótulo", max_length=80)
+    hint = models.CharField(
+        "dica", max_length=140, blank=True,
+        help_text="Para quem etiqueta escolher sem pensar duas vezes.",
+    )
+    anchors_dine_in = models.BooleanField(
+        "ancora consumo local", default=False,
+        help_text=(
+            "Item cuja presença indica que a pessoa consumiu aqui — bebida "
+            "preparada, bebida pronta, prato quente. Na Nelson, levar bebida é "
+            "desprezível, e é isso que faz a âncora funcionar."
+        ),
+    )
+    travels = models.BooleanField(
+        "é item de levar", default=False,
+        help_text=(
+            "Pão, varejo, mercearia. Junto de uma âncora vira 'consumiu e "
+            "levou'; sozinho, é uma compra para levar."
+        ),
+    )
+    is_active = models.BooleanField("ativo", default=True)
+    ordering = models.PositiveSmallIntegerField("ordem", default=0)
+
+    class Meta:
+        verbose_name = "papel de consumo"
+        verbose_name_plural = "papéis de consumo"
+        ordering = ["ordering", "label"]
+
+    def __str__(self) -> str:
+        return self.label
+
+
+class ProductConsumptionTag(models.Model):
+    """Que papel um SKU cumpre na cesta.
+
+    Chaveado por **texto do SKU**, não por FK ao catálogo, de propósito: o
+    histórico externo tem produtos que não existem mais no cardápio, e eles
+    precisam ser classificáveis do mesmo jeito. É também o que mantém o
+    Offerman intocado — etiqueta de análise não é atributo de produto vendável.
+    """
+
+    sku = models.CharField("sku", max_length=64, unique=True)
+    role = models.ForeignKey(
+        ConsumptionRole, on_delete=models.PROTECT,
+        related_name="products", verbose_name="papel",
+    )
+    note = models.CharField(
+        "observação", max_length=140, blank=True,
+        help_text="Por que este papel, quando o nome do produto engana.",
+    )
+    updated_at = models.DateTimeField("atualizada em", auto_now=True)
+
+    class Meta:
+        verbose_name = "etiqueta de consumo"
+        verbose_name_plural = "etiquetas de consumo"
+        ordering = ["sku"]
+
+    def __str__(self) -> str:
+        return f"{self.sku} → {self.role_id and self.role.label}"

@@ -52,16 +52,16 @@ METRICS: dict[str, MetricSpec] = {
     for spec in (
         MetricSpec("revenue", "Faturamento", "q",
                    ("time", "channel", "hour", "weekday", "month_of_year",
-                    "week_of_year", "source"), "sales"),
+                    "week_of_year", "source", "consumption_mode"), "sales"),
         MetricSpec("orders", "Pedidos", "count",
                    ("time", "channel", "hour", "weekday", "month_of_year",
-                    "week_of_year", "source"), "sales"),
+                    "week_of_year", "source", "consumption_mode"), "sales"),
         MetricSpec("average_ticket", "Ticket médio", "q",
                    ("time", "channel", "hour", "weekday", "month_of_year",
-                    "week_of_year", "source"), "sales"),
+                    "week_of_year", "source", "consumption_mode"), "sales"),
         MetricSpec("qty_sold", "Quantidade vendida", "qty",
                    ("time", "sku", "hour", "weekday", "month_of_year",
-                    "week_of_year", "source"), "sales_items"),
+                    "week_of_year", "source", "consumption_mode"), "sales_items"),
         MetricSpec("qty_produced", "Quantidade produzida", "qty",
                    ("time", "recipe", "oven", "operator", "weekday", "grade"), "production"),
         MetricSpec("loss", "Perda de produção", "qty",
@@ -90,6 +90,19 @@ METRICS: dict[str, MetricSpec] = {
                     "outage_reason"), "outage"),
         MetricSpec("leftover", "Sobra no fim do dia", "qty",
                    ("sku", "time", "weekday", "month_of_year"), "shelf"),
+        # Forma de pagamento: dado durável no pedido, até aqui visível só como
+        # total do dia no painel de caixa (e só em dia com fechamento feito).
+        MetricSpec("payment_received", "Recebido por forma de pagamento", "q",
+                   ("payment_method", "time", "hour", "weekday", "month_of_year",
+                    "week_of_year", "channel", "source"), "payment"),
+        MetricSpec("payment_orders", "Pedidos por forma de pagamento", "count",
+                   ("payment_method", "time", "hour", "weekday", "month_of_year",
+                    "week_of_year", "channel", "source"), "payment"),
+        # Dinheiro na rua não é caixa: cobrança na entrega ainda não recebida
+        # sai do "recebido" e tem métrica própria em vez de sumir.
+        MetricSpec("payment_pending", "A receber na entrega", "q",
+                   ("payment_method", "time", "weekday", "month_of_year",
+                    "week_of_year", "channel"), "payment"),
     )
 }
 
@@ -110,6 +123,8 @@ DIMENSION_LABELS: dict[str, str] = {
     "grade": "Grau de qualidade",
     "defect": "Defeito",
     "outage_reason": "Motivo (esgotado/pausado)",
+    "payment_method": "Forma de pagamento",
+    "consumption_mode": "Modo de consumo (inferido)",
     "day_kind": "Tipo de dia (feriado, data comercial)",
     "temperature": "Temperatura do dia",
     "rain": "Chuva",
@@ -126,7 +141,7 @@ ORDINAL_DIMENSIONS = frozenset(
 # contexto: ou sabemos, ou a pergunta não está disponível.
 CONTEXT_DIMENSIONS = ("day_kind", "temperature", "rain")
 
-CONTEXT_METRIC_FAMILIES = ("sales", "sales_items", "shelf", "outage")
+CONTEXT_METRIC_FAMILIES = ("sales", "sales_items", "shelf", "outage", "payment")
 
 
 @dataclass(frozen=True)
@@ -249,6 +264,7 @@ def build_bi_explore(
         "cash": _cash_rows,
         "shelf": _shelf_rows,
         "outage": _outage_rows,
+        "payment": _payment_rows,
     }[spec.family]
     rows = resolver(spec, by, by2, date_from, date_to)
 
@@ -325,35 +341,43 @@ def _sales_rows(spec, by, by2, date_from, date_to) -> list[BIExploreRow]:
     window = _local_datetime_window(date_from, date_to)
     excluded = (Order.Status.CANCELLED, Order.Status.RETURNED)
 
-    events: list[tuple] = []  # (local_dt, total_q, channel, source)
+    wants_mode = _wants_consumption(by, by2)
+    native_modes, historical_modes = _consumption_modes(window) if wants_mode else ({}, {})
+    from shopman.backstage.services.consumption import UNCLASSIFIED
+
+    events: list[tuple] = []  # (local_dt, total_q, channel, source, mode)
     native_days: set[date] = set()
     native = Order.objects.filter(created_at__range=window).values_list(
-        "created_at", "total_q", "channel_ref", "status"
+        "created_at", "total_q", "channel_ref", "status", "id"
     )
-    for created_at, total_q, channel_ref, status in native:
+    for created_at, total_q, channel_ref, status, order_id in native:
         if status in excluded:
             continue
         local = timezone.localtime(created_at)
         native_days.add(local.date())
-        events.append((local, total_q, channel_ref, "shopman"))
+        # Pedido sem linha nenhuma não está no mapa: sai como não classificado,
+        # que é o que ele é.
+        events.append((local, total_q, channel_ref, "shopman",
+                       native_modes.get(order_id, UNCLASSIFIED)))
     historical = HistoricalSale.objects.filter(occurred_at__range=window).values_list(
-        "occurred_at", "total_q", "is_delivery", "source"
+        "occurred_at", "total_q", "is_delivery", "source", "id"
     )
     # Rótulo derivado do campo: histórico semeado se anuncia como "seed", nunca
     # com o nome de um export real que ninguém carregou.
-    for occurred_at, total_q, is_delivery, source in historical:
+    for occurred_at, total_q, is_delivery, source, sale_id in historical:
         local = timezone.localtime(occurred_at)
         if local.date() in native_days:
             continue
         channel = f"{source} · {'delivery' if is_delivery else 'loja'}"
-        events.append((local, total_q, channel, source))
+        events.append((local, total_q, channel, source,
+                       historical_modes.get(sale_id, UNCLASSIFIED)))
 
     contexts = _day_contexts(date_from, date_to) if _wants_context(by, by2) else {}
 
     revenue: dict[tuple, int] = defaultdict(int)
     orders: dict[tuple, int] = defaultdict(int)
     labels: dict[tuple, tuple[str, str]] = {}
-    for local, total_q, channel, source in events:
+    for local, total_q, channel, source, mode in events:
         parts = []
         for dim in (by, by2):
             if not dim:
@@ -362,6 +386,8 @@ def _sales_rows(spec, by, by2, date_from, date_to) -> list[BIExploreRow]:
                 parts.append((channel, channel))
             elif dim == "source":
                 parts.append((source, source))
+            elif dim == "consumption_mode":
+                parts.append(_consumption_part(mode))
             elif dim in CONTEXT_DIMENSIONS:
                 parts.append(_context_part(dim, local.date(), contexts))
             else:
@@ -407,7 +433,7 @@ def _sales_item_rows(spec, by, by2, date_from, date_to) -> list[BIExploreRow]:
     qty: dict[tuple, Decimal] = defaultdict(Decimal)
     labels: dict[tuple, tuple[str, str]] = {}
 
-    def fold(local, sku, name, quantity, source):
+    def fold(local, sku, name, quantity, source, mode):
         parts = []
         for dim in (by, by2):
             if not dim:
@@ -417,6 +443,8 @@ def _sales_item_rows(spec, by, by2, date_from, date_to) -> list[BIExploreRow]:
                 parts.append((key, name))
             elif dim == "source":
                 parts.append((source, source))
+            elif dim == "consumption_mode":
+                parts.append(_consumption_part(mode))
             elif dim in CONTEXT_DIMENSIONS:
                 parts.append(_context_part(dim, local.date(), contexts))
             else:
@@ -427,24 +455,210 @@ def _sales_item_rows(spec, by, by2, date_from, date_to) -> list[BIExploreRow]:
         qty[key] += quantity
         labels[key] = (parts[0][1], parts[1][1])
 
+    wants_mode = _wants_consumption(by, by2)
+    native_modes, historical_modes = _consumption_modes(window) if wants_mode else ({}, {})
+    from shopman.backstage.services.consumption import UNCLASSIFIED
+
     native_items = OrderItem.objects.filter(order__created_at__range=window).exclude(
         order__status__in=excluded
-    ).values_list("order__created_at", "sku", "name", "qty")
-    for created_at, sku, name, quantity in native_items:
-        fold(timezone.localtime(created_at), sku, name, quantity, "shopman")
+    ).values_list("order__created_at", "sku", "name", "qty", "order_id")
+    for created_at, sku, name, quantity, order_id in native_items:
+        # O modo é da VENDA, não da linha: o item herda o veredito da cesta em
+        # que veio. É o que torna "o que o salão come" uma pergunta respondível.
+        fold(timezone.localtime(created_at), sku, name, quantity, "shopman",
+             native_modes.get(order_id, UNCLASSIFIED))
 
     historical_items = HistoricalSaleItem.objects.filter(
         sale__occurred_at__range=window
-    ).values_list("sale__occurred_at", "sku", "product_name", "qty")
-    for occurred_at, sku, name, quantity in historical_items:
+    ).values_list("sale__occurred_at", "sku", "product_name", "qty", "sale_id")
+    for occurred_at, sku, name, quantity, sale_id in historical_items:
         local = timezone.localtime(occurred_at)
         if local.date() in native_days:
             continue
-        fold(local, sku, name, quantity, "yooga")
+        fold(local, sku, name, quantity, "yooga",
+             historical_modes.get(sale_id, UNCLASSIFIED))
 
     return [
         BIExploreRow(key=k1, label=labels[(k1, k2)][0], key2=k2, label2=labels[(k1, k2)][1], value=float(qty[(k1, k2)]))
         for (k1, k2) in qty
+    ]
+
+
+# ── Modo de consumo (inferido da cesta — §3.1 do BI-QUESTION-CATALOG) ───────
+
+
+def _wants_consumption(by: str, by2: str) -> bool:
+    return "consumption_mode" in (by, by2)
+
+
+def _consumption_modes(window) -> tuple[dict[int, str], dict[int, str]]:
+    """(nativo por order_id, histórico por sale_id) → modo de consumo.
+
+    Uma varredura das linhas de cada fonte, e a MESMA regra aplicada às duas —
+    é isso que torna a série de dois anos comparável consigo mesma. Só roda
+    quando a pergunta envolve a dimensão: classificar 380k linhas para responder
+    "faturamento por hora" seria trabalho jogado fora.
+    """
+    from shopman.orderman.models import Order, OrderItem
+
+    from shopman.backstage.models import HistoricalSale, HistoricalSaleItem
+    from shopman.backstage.services.consumption import classify_basket, role_flags
+
+    flags = role_flags()
+
+    native_lines: dict[int, list] = defaultdict(list)
+    for order_id, sku, qty in OrderItem.objects.filter(
+        order__created_at__range=window
+    ).values_list("order_id", "sku", "qty"):
+        native_lines[order_id].append((sku, qty))
+    native_delivery = {
+        pk: (data or {}).get("fulfillment_type") == "delivery"
+        for pk, data in Order.objects.filter(created_at__range=window).values_list("id", "data")
+    }
+    native = {
+        order_id: classify_basket(
+            lines, flags, is_delivery=native_delivery.get(order_id, False)
+        )
+        for order_id, lines in native_lines.items()
+    }
+
+    historical_lines: dict[int, list] = defaultdict(list)
+    for sale_id, sku, qty in HistoricalSaleItem.objects.filter(
+        sale__occurred_at__range=window
+    ).values_list("sale_id", "sku", "qty"):
+        historical_lines[sale_id].append((sku, qty))
+    # `is_delivery` é o único rótulo de canal confiável do histórico — mesa e
+    # balcão de lá nunca viram verdade (ver docstring de HistoricalSale).
+    historical_delivery = dict(
+        HistoricalSale.objects.filter(occurred_at__range=window).values_list("id", "is_delivery")
+    )
+    historical = {
+        sale_id: classify_basket(
+            lines, flags, is_delivery=historical_delivery.get(sale_id, False)
+        )
+        for sale_id, lines in historical_lines.items()
+    }
+    return native, historical
+
+
+def _consumption_part(mode: str) -> tuple[str, str]:
+    from shopman.backstage.services.consumption import mode_label
+
+    return mode, mode_label(mode)
+
+
+# ── Pagamento (o dinheiro repartido por forma, do pedido — não do fechamento) ─
+
+
+def _payment_rows(spec, by, by2, date_from, date_to) -> list[BIExploreRow]:
+    """Recebido, pedidos e a receber, por forma de pagamento.
+
+    A fonte é o **pedido**, não o fechamento do dia: assim o recorte existe em
+    todo dia (inclusive nos sem fechamento) e cruza com hora, canal e contexto.
+    A regra de repartição é a mesma que o fechamento usa
+    (``services/payments.iter_order_payments``) — uma pergunta, um dono.
+
+    O histórico externo entra pelo mesmo eixo, com a forma crua normalizada
+    (``bi_payments``) e a mesma fusão "dia nativo vence" das demais famílias de
+    venda: um dia que já tem pedido nativo não recebe linha histórica, senão a
+    mesma venda contaria duas vezes.
+    """
+    from shopman.orderman.models import Order
+
+    from shopman.backstage.models import HistoricalSale
+    from shopman.backstage.services.payments import iter_order_payments
+
+    from .bi_payments import normalize_historical_payment, payment_method_label
+    from .bi_sales import _local_datetime_window
+
+    window = _local_datetime_window(date_from, date_to)
+    excluded = (Order.Status.CANCELLED, Order.Status.RETURNED)
+
+    # (local, método, rótulo, valor, pendente, canal, fonte, chave-do-pedido)
+    events: list[tuple] = []
+    native_days: set[date] = set()
+    native = Order.objects.filter(created_at__range=window).values_list(
+        "created_at", "total_q", "channel_ref", "status", "data", "ref"
+    )
+    for created_at, total_q, channel_ref, status, data, ref in native:
+        if status in excluded:
+            continue
+        local = timezone.localtime(created_at)
+        native_days.add(local.date())
+        for entry in iter_order_payments(data, total_q):
+            events.append((
+                local, entry.method, payment_method_label(entry.method),
+                entry.amount_q, entry.pending, channel_ref, "shopman", ref,
+            ))
+
+    historical = HistoricalSale.objects.filter(occurred_at__range=window).values_list(
+        "occurred_at", "total_q", "is_delivery", "source", "payment", "external_id"
+    )
+    for occurred_at, total_q, is_delivery, source, raw_payment, external_id in historical:
+        local = timezone.localtime(occurred_at)
+        if local.date() in native_days:
+            continue
+        method, label = normalize_historical_payment(raw_payment)
+        channel = f"{source} · {'delivery' if is_delivery else 'loja'}"
+        # O histórico não conhece cobrança pendente: o export só traz venda
+        # concluída. Marcar como pendente inventaria dívida que não existe.
+        events.append((
+            local, method, label, total_q, False, channel, source,
+            f"{source}:{external_id}",
+        ))
+
+    contexts = _day_contexts(date_from, date_to) if _wants_context(by, by2) else {}
+
+    received: dict[tuple, int] = defaultdict(int)
+    pending: dict[tuple, int] = defaultdict(int)
+    # Pedido dividido em duas formas conta uma vez em CADA forma — é o que a
+    # pergunta "quantos pedidos usaram PIX?" quer saber. Somar a coluna entre
+    # formas, porém, passa do total de pedidos, e por isso a contagem é de
+    # pedidos distintos por balde, não de parcelas.
+    order_keys: dict[tuple, set] = defaultdict(set)
+    labels: dict[tuple, tuple[str, str]] = {}
+
+    for local, method, method_label, amount_q, is_pending, channel, source, order_key in events:
+        parts = []
+        for dim in (by, by2):
+            if not dim:
+                parts.append(("", ""))
+            elif dim == "payment_method":
+                parts.append((method, method_label))
+            elif dim == "channel":
+                parts.append((channel, channel))
+            elif dim == "source":
+                parts.append((source, source))
+            elif dim in CONTEXT_DIMENSIONS:
+                parts.append(_context_part(dim, local.date(), contexts))
+            else:
+                parts.append(_dim_key(dim, local=local))
+        if any(part is None for part in parts):
+            continue  # dia sem o contexto pedido fica fora, em vez de virar balde
+        key = (parts[0][0], parts[1][0])
+        labels[key] = (parts[0][1], parts[1][1])
+        if is_pending:
+            pending[key] += amount_q
+            continue
+        received[key] += amount_q
+        order_keys[key].add(order_key)
+
+    source_map = {
+        "payment_received": received,
+        "payment_pending": pending,
+        "payment_orders": order_keys,
+    }[spec.key]
+
+    def value(bucket) -> float:
+        return float(len(bucket) if spec.key == "payment_orders" else bucket)
+
+    return [
+        BIExploreRow(
+            key=k1, label=labels[(k1, k2)][0],
+            key2=k2, label2=labels[(k1, k2)][1],
+            value=value(bucket),
+        )
+        for (k1, k2), bucket in source_map.items()
     ]
 
 

@@ -123,6 +123,8 @@ export const EXPLORE_DIMENSION_LABELS: Record<string, string> = {
   operator: "Operador",
   grade: "Grau de qualidade",
   defect: "Defeito",
+  payment_method: "Forma de pagamento",
+  consumption_mode: "Modo de consumo (inferido)",
   // Contexto: só chegam na gramática quando alguém injetou o dado
   // (import_holidays / import_weather). Sem dado, o servidor nem oferece.
   outage_reason: "Motivo (esgotado/pausado)",
@@ -184,6 +186,18 @@ export const EXPLORE_EXAMPLES = [
   { name: "Sazonalidade por mês do ano", config: { metric: "revenue", by: "month_of_year", by2: "" } },
   { name: "Ticket médio por canal", config: { metric: "average_ticket", by: "channel", by2: "" } },
   { name: "Antes e depois do Shopman", config: { metric: "revenue", by: "time", by2: "source" } },
+  // Quem senta, quem leva, quem recebe em casa (inferido da cesta)
+  { name: "O que representa mais vendas", config: { metric: "revenue", by: "consumption_mode", by2: "" } },
+  { name: "Quem gasta mais: senta ou leva?", config: { metric: "average_ticket", by: "consumption_mode", by2: "" } },
+  { name: "O que o salão come", config: { metric: "qty_sold", by: "consumption_mode", by2: "sku" } },
+  { name: "Salão por hora do dia", config: { metric: "orders", by: "hour", by2: "consumption_mode" } },
+  { name: "Consumo local por dia da semana", config: { metric: "revenue", by: "weekday", by2: "consumption_mode" } },
+  // Como o cliente paga
+  { name: "Recebido por forma de pagamento", config: { metric: "payment_received", by: "payment_method", by2: "" } },
+  { name: "Forma de pagamento por hora", config: { metric: "payment_received", by: "payment_method", by2: "hour" } },
+  { name: "Dinheiro ao longo dos meses", config: { metric: "payment_received", by: "time", by2: "payment_method" } },
+  { name: "Como se paga em cada canal", config: { metric: "payment_orders", by: "channel", by2: "payment_method" } },
+  { name: "A receber na entrega", config: { metric: "payment_pending", by: "payment_method", by2: "" } },
   // Produção e caixa
   { name: "Perda por defeito × receita", config: { metric: "loss", by: "defect", by2: "recipe" } },
   { name: "Perda por dia da semana", config: { metric: "loss", by: "weekday", by2: "recipe" } },

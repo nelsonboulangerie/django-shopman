@@ -8,6 +8,10 @@ from shopman.backstage.admin.accounts import (  # noqa: F401
 from shopman.backstage.admin.alerts import OperatorAlertAdmin  # noqa: F401
 from shopman.backstage.admin.cash_register import CashShiftAdmin, POSTerminalAdmin  # noqa: F401
 from shopman.backstage.admin.closing import DayClosingAdmin  # noqa: F401
+from shopman.backstage.admin.consumption import (  # noqa: F401
+    ConsumptionRoleAdmin,
+    ProductConsumptionTagAdmin,
+)
 from shopman.backstage.admin.curation import hide_curated_screens  # noqa: F401
 from shopman.backstage.admin.episodes import (  # noqa: F401
     OperationEpisodeAdmin,

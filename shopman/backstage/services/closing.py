@@ -382,30 +382,20 @@ def _cash_shift_summary(closing_date: date) -> dict:
 
 
 def _payment_method_totals(orders) -> dict:
+    # A regra de repartição mora em services/payments.py — o B.I. conta o mesmo
+    # dinheiro pela mesma regra em vez de reimplementá-la e divergir.
+    from .payments import iter_order_payments
+
     totals: dict[str, int] = {}
     cod_pending_q = 0
     cod_pending_count = 0
     for order in orders:
-        payment = (order.data or {}).get("payment") or {}
-        tenders = payment.get("tenders") or []
-        if tenders:
-            for tender in tenders:
-                method = str(tender.get("method") or "external")
-                collection = str(tender.get("collection") or "terminal")
-                status = str(tender.get("status") or "")
-                amount_q = int(tender.get("amount_q") or 0)
-                if collection == "on_delivery" and status != "received":
-                    cod_pending_q += amount_q
-                    cod_pending_count += 1
-                    continue
-                totals[method] = totals.get(method, 0) + amount_q
-            continue
-        method = str(payment.get("method") or "external")
-        if payment.get("collection") == "on_delivery" and not payment.get("cod_settled_at"):
-            cod_pending_q += int(order.total_q or 0)
-            cod_pending_count += 1
-            continue
-        totals[method] = totals.get(method, 0) + int(order.total_q or 0)
+        for entry in iter_order_payments(order.data, order.total_q):
+            if entry.pending:
+                cod_pending_q += entry.amount_q
+                cod_pending_count += 1
+                continue
+            totals[entry.method] = totals.get(entry.method, 0) + entry.amount_q
     totals["cod_pending_q"] = cod_pending_q
     totals["cod_pending_count"] = cod_pending_count
     return totals

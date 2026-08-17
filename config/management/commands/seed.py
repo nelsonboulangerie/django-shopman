@@ -5866,6 +5866,7 @@ class Command(BaseCommand):
         if vitrine is None:
             return
         self._seed_episode_kinds()
+        self._seed_consumption_roles()
         self._seed_business_days(days=days)
         self._seed_shelf_movements(products, vitrine, days=days)
         self._seed_shelf_outages(products, days=days)
@@ -5908,6 +5909,38 @@ class Command(BaseCommand):
                 defaults={
                     "label": label, "hint": hint,
                     "affects_demand": afeta, "position": ordem, "is_active": True,
+                },
+            )
+
+    def _seed_consumption_roles(self) -> None:
+        """O vocabulário que faz a cesta dizer quem sentou e quem levou.
+
+        A âncora é a bebida: nesta casa, quem pede bebida pra levar é
+        quantidade desprezível, então bebida na cesta significa alguém que
+        sentou. Prato quente e lanche montado ancoram pelo mesmo motivo.
+
+        ⚠️ Aqui nasce só o VOCABULÁRIO. Etiquetar produto a produto é curadoria
+        do gestor, no Admin — e tem de ser, porque o nome engana: "Hambúrguer
+        100g" é o pão, não o sanduíche.
+        """
+        from shopman.backstage.models import ConsumptionRole
+
+        catalogo = [
+            ("bebida-preparada", "Bebida preparada", "Café, capuccino, chá na xícara", True, False, 10),
+            ("bebida-pronta", "Bebida pronta", "Garrafa, lata, suco de geladeira", True, False, 20),
+            ("prato-quente", "Prato quente", "Servido no prato, para comer aqui", True, False, 30),
+            ("lanche-montado", "Lanche montado", "Sanduíche pronto para comer", True, False, 40),
+            ("pao-de-levar", "Pão de levar", "Pão, baguete, pão de forma, pão de hambúrguer", False, True, 50),
+            ("varejo", "Varejo / mercearia", "Geleia, café em grão, produto embalado", False, True, 60),
+            ("fino-individual", "Doce / viennoiserie", "Croissant, doce individual: sozinho, é de levar", False, False, 70),
+        ]
+        for ref, label, hint, ancora, leva, ordem in catalogo:
+            ConsumptionRole.objects.update_or_create(
+                ref=ref,
+                defaults={
+                    "label": label, "hint": hint,
+                    "anchors_dine_in": ancora, "travels": leva,
+                    "ordering": ordem, "is_active": True,
                 },
             )
 
