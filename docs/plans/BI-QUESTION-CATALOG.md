@@ -222,22 +222,28 @@ sentou**. Falta só saber por quanto tempo. Três peças, nenhuma com atrito de 
 
 1. **Cadastro de mesas** — uma tela de Admin, preenchida uma vez. É o denominador, e
    é de graça: ninguém no balcão toca nisso.
-2. **Duração** — quando a venda passou por comanda aberta, ela é medida
-   (`Session.opened_at` → `committed_at`, colunas duráveis). Quando foi venda direta,
-   é estimada por um valor calibrado.
+2. **Duração** — **medida**, não estimada. Ver abaixo.
 3. **Simultaneidade** — contar intervalos que se sobrepõem, minuto a minuto.
 
-⚠️ **Um detalhe que mantém isso honesto:** o carimbo da venda direta é o momento em que
-a pessoa **pagou**, e na Nelson isso é antes de sentar — o intervalo é `[venda,
-venda+duração]`. Numa comanda é o contrário: paga ao sair, e o intervalo é `[abertura,
-fechamento]`. O sistema sabe distinguir os dois casos (`handle_type`), então não
-precisa escolher uma suposição só para todo mundo.
+✅ **Resposta do dono (17/08): "sempre abrimos comanda. Ponto."** Isso elimina a única
+suposição que restava no plano inteiro. Toda venda passa por comanda, então a
+permanência sai de `Session.opened_at` → `committed_at` — **colunas duráveis, medidas,
+por venda**. Não há duração calibrada, não há três cenários de sensibilidade, não há
+observação manual de sábado para conferir. O F4 passa a ser leitura pura de dado
+existente.
 
-**E a duração estimada não precisa ser exata para a conclusão valer.** O jeito honesto
-de tratá-la é rodar a leitura com três valores (20, 30, 45 min) e ver se a resposta
-muda. Se "sábado das 9h às 11h bate no teto e o resto da semana sobra mesa" for
-verdade nos três, a suposição não importa e não há o que capturar. Se mudar, aí sim
-vale uma observação manual de um sábado para calibrar — uma vez, não todo dia.
+Três consequências que valem registrar:
+
+- **A janela é a comanda, não uma suposição.** Abre quando a pessoa pede, fecha quando
+  paga. É mais larga que o tempo sentado (inclui o pedido em pé no balcão) e a tela
+  deve chamá-la pelo nome — *"tempo de comanda aberta"* — em vez de vender como tempo
+  de permanência. Nomear certo é mais barato que corrigir depois.
+- **Comanda de quem leva também abre.** Ela dura um minuto e some sozinha da conta:
+  quem filtra a ocupação é o modo de consumo (§3.1), não a existência da comanda.
+- ⚠️ **O código tem um caminho de venda direta** (`direct_checkout` em
+  `shopman/shop/services/pos.py:247`), que fecha sem comanda. A prática da casa é não
+  usá-lo, mas a leitura deve **declarar a fração** que passou por ele em vez de supor
+  zero — se um dia subir, o número avisa sozinho, em vez de a métrica emagrecer calada.
 
 #### 3.2.4 O salão real (informado pelo dono, 17/08)
 
@@ -277,7 +283,7 @@ A leitura correta, então, não é uma porcentagem fina, é:
 | **Vezes no teto** | contagem de períodos com 8 mesas ocupadas | ⭐ "falta mesa?" |
 | **Faturamento por mesa-hora** | faturamento local ÷ (8 × horas abertas) | ⭐ "quantas mesas?" |
 | **Giro** | grupos locais ÷ mesas ÷ dia | "a mesa roda?" |
-| **Permanência** | duração medida (comanda) ou calibrada | "quanto tempo ficam?" |
+| **Tempo de comanda aberta** | `opened_at` → `committed_at`, medido | "quanto tempo ficam?" |
 
 O denominador de tempo **já existe**: `DayContext.open_minutes`, carimbado na rodada 6
 para que métricas de tempo não fossem lidas pelo horário de hoje. Ocupação herda a
@@ -365,7 +371,7 @@ Legenda: ✅ o B.I. já responde · 🟡 o dado existe, falta leitura · 🔴 fa
 | M2 | Que dias e horários o salão fica **ocioso**? | 🟡 | §3.2 |
 | M3 | Qual o **faturamento por mesa-hora**? | 🟡 | §3.2 — a métrica que responde "quantas mesas" |
 | M4 | Qual mesa rende mais (a posição importa)? | ⛔ | **fora** — única que exigia o vínculo vetado (§3.2.1) |
-| M5 | Quanto tempo um grupo fica na mesa, e isso mudou? | 🟡 | medido onde há comanda, calibrado no resto |
+| M5 | Quanto tempo a comanda fica aberta, e isso mudou? | 🟡 | **medido** — a casa sempre abre comanda |
 | M6 | Quantas vezes o salão **bateu no teto**? | 🟡 | §3.2 — a leitura principal, no lugar da % |
 | M7 | Teve gente que **desistiu por falta de mesa**? | 🔴 | episódio no fechamento — o único toque pedido |
 | M8 | O salão tira gente da fila do balcão ou soma? | 🔴 | M1 × filas do balcão |
@@ -499,12 +505,12 @@ comanda↔mesa** — nenhum gesto novo é pedido ao balcão.
 - **Cadastro de mesas** no Admin, preenchido uma vez: 4 internas + 4 externas + 6
   lugares de balcão, com os espaços elásticos (bistrô, bancão) registrados como
   **fora da capacidade oficial**, porque é assim que a casa os trata.
-- **Simultaneidade por intervalos**, derivada do modo de consumo (F3): comanda dá
-  duração medida, venda direta usa duração calibrada, e o `handle_type` distingue os
-  dois (venda direta paga **antes** de sentar; comanda paga **ao sair**).
-- **Sensibilidade declarada:** a leitura sai com três durações (20/30/45 min). Se a
-  conclusão não muda, a suposição não importa e a tela diz isso. Se muda, uma
-  observação manual de um sábado calibra — uma vez.
+- **Simultaneidade por intervalos medidos**: `Session.opened_at` → `committed_at`,
+  filtrados pelas vendas que o F3 classificou como consumo local. Sem suposição de
+  duração — a casa sempre abre comanda.
+- **Cobertura declarada:** a fração de vendas que fechou por `direct_checkout` (sem
+  comanda) aparece na tela. Hoje é ~zero por prática da casa; se subir, o número
+  avisa.
 - **Apresentação em faixas grossas + "vezes no teto"**, nunca porcentagem com
   decimal: a capacidade real estica, e numerador preciso sobre denominador elástico é
   falsa precisão (§3.2.4).
@@ -537,11 +543,10 @@ Da tabela do §4, os 🟡 em ordem de custo crescente: C4 (clientes distintos), 
 3. **Ticket médio dos painéis exclui frete** (`delivery_fee_q` fora de `total_q`).
    Comparar ticket de entrega com ticket de salão sem resolver isso compara coisas
    diferentes. Vale resolver junto de V6.
-4. **A duração da permanência é a única suposição do F4.** Ela não é medida na venda
-   direta, e é por isso que a leitura sai com três valores e declara se a conclusão
-   muda entre eles. Suposição declarada e testada é aceitável; suposição escondida
-   dentro de um número redondo não é. **Nada do core é tocado no F4** — o cadastro de
-   mesas mora no backstage e a leitura é derivada.
+4. **A janela medida é a comanda, não o tempo sentado.** Ela abre no pedido e fecha no
+   pagamento, então inclui o tempo em pé no balcão. A tela chama pelo nome — "tempo de
+   comanda aberta" — em vez de prometer permanência. **Nada do core é tocado no F4**:
+   o cadastro de mesas mora no backstage e a leitura é derivada.
 5. **`table_label` do Yooga não vira verdade de canal** — nem depois de F2. Se a
    contagem mostrar boa cobertura, ele serve para **medir o erro** da inferência, e é
    assim que deve aparecer.
@@ -554,11 +559,9 @@ Da tabela do §4, os 🟡 em ordem de custo crescente: C4 (clientes distintos), 
 
 ## 7. Perguntas ao dono
 
-1. ✅ **Respondida em 17/08 — e a resposta foi "não vale o atrito".** O vínculo
-   comanda↔mesa sai do plano; F4 mede o salão sem pedir gesto novo (§3.2). A pergunta
-   que fica no lugar dela: **o balcão usa comanda hoje, e em que fração das vendas?**
-   Onde há comanda a permanência é medida em vez de suposta, então esse número diz
-   quanto do F4 é medido e quanto é calibrado.
+1. ✅ **Respondidas em 17/08, as duas.** O vínculo comanda↔mesa sai do plano (não vale
+   o atrito), e **a casa sempre abre comanda** — então a permanência é medida, não
+   calibrada. O F4 não tem mais nenhuma suposição e nenhuma pergunta aberta.
 2. ✅ **Respondida em 17/08** (§3.2.4): 4 mesas internas + 4 externas + 6 lugares de
    balcão como capacidade oficial; bistrô e bancão externo ficam fora da conta, e o
    sofá permite apertar. Fica só o detalhe de durabilidade: o cadastro guarda **desde
