@@ -88,14 +88,14 @@ def test_commit_with_a_stale_baseline_is_refused(client):
     _seed_surface()
     _add_item(client)
 
-    atual = displayed_total_q(client)
-    resp = _post(client, _payload(expected_total_q=atual - 1))
+    current = displayed_total_q(client)
+    resp = _post(client, _payload(expected_total_q=current - 1))
 
     assert resp.status_code == 400, resp.content
     body = resp.json()
     assert body.get("error_code") == "total_changed", body
     # O servidor diz o número certo, para a pessoa reconfirmar sobre ele.
-    assert body["context"]["new_total_q"] == atual, body
+    assert body["context"]["new_total_q"] == current, body
 
 
 def test_commit_with_the_displayed_baseline_goes_through(client):
@@ -103,8 +103,8 @@ def test_commit_with_the_displayed_baseline_goes_through(client):
     _seed_surface()
     _add_item(client)
 
-    atual = displayed_total_q(client)
-    resp = _post(client, _payload(expected_total_q=atual))
+    current = displayed_total_q(client)
+    resp = _post(client, _payload(expected_total_q=current))
 
     assert resp.status_code == 201, resp.content
 
@@ -112,7 +112,7 @@ def test_commit_with_the_displayed_baseline_goes_through(client):
 
     order = Order.objects.get(ref=resp.json()["order_ref"])
     # O que foi cobrado é exatamente o que a tela mostrava.
-    assert order.total_q == atual
+    assert order.total_q == current
 
 
 def test_a_low_baseline_cannot_dictate_the_price(client):
@@ -124,11 +124,11 @@ def test_a_low_baseline_cannot_dictate_the_price(client):
     _seed_surface()
     _add_item(client)
 
-    atual = displayed_total_q(client)
+    current = displayed_total_q(client)
     resp = _post(client, _payload(expected_total_q=1))
 
     assert resp.status_code == 400, resp.content
-    assert resp.json()["context"]["new_total_q"] == atual
+    assert resp.json()["context"]["new_total_q"] == current
     from shopman.orderman.models import Order
 
     assert not Order.objects.exists(), "nenhum pedido pode nascer de uma baseline forjada"

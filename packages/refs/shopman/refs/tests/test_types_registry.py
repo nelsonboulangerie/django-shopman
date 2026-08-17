@@ -17,7 +17,7 @@ def clean_registry():
     clear_ref_types()
 
 
-MESA = RefType(slug="POS_TABLE", label="Mesa", scope_keys=("store_id", "business_date"))
+TABLE = RefType(slug="POS_TABLE", label="Mesa", scope_keys=("store_id", "business_date"))
 TICKET = RefType(
     slug="PICKUP_TICKET",
     label="Senha de Retirada",
@@ -73,21 +73,21 @@ class TestRefTypeValidation:
 
 class TestRefTypeRegistry:
     def test_register_and_get(self):
-        register_ref_type(MESA)
+        register_ref_type(TABLE)
         result = get_ref_type("POS_TABLE")
-        assert result == MESA
+        assert result == TABLE
 
     def test_get_unknown_returns_none(self):
         assert get_ref_type("DOES_NOT_EXIST") is None
 
     def test_duplicate_slug_raises(self):
-        register_ref_type(MESA)
+        register_ref_type(TABLE)
         with pytest.raises(ValueError, match="already registered"):
-            register_ref_type(MESA)
+            register_ref_type(TABLE)
 
     def test_get_all_returns_registered(self):
         from shopman.refs.registry import get_all_ref_types
-        register_ref_type(MESA)
+        register_ref_type(TABLE)
         register_ref_type(TICKET)
         all_types = get_all_ref_types()
         slugs = {rt.slug for rt in all_types}
@@ -96,7 +96,7 @@ class TestRefTypeRegistry:
 
     def test_get_all_empty_after_clear(self):
         from shopman.refs.registry import get_all_ref_types
-        register_ref_type(MESA)
+        register_ref_type(TABLE)
         clear_ref_types()
         assert get_all_ref_types() == []
 
@@ -104,10 +104,10 @@ class TestRefTypeRegistry:
         """Two RefTypeRegistry instances don't share state."""
         r1 = RefTypeRegistry()
         r2 = RefTypeRegistry()
-        r1.register(MESA)
+        r1.register(TABLE)
         assert r2.get("POS_TABLE") is None
 
     def test_clear_resets_state(self):
-        register_ref_type(MESA)
+        register_ref_type(TABLE)
         clear_ref_types()
         assert get_ref_type("POS_TABLE") is None

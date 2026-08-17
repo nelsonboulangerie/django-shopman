@@ -842,8 +842,8 @@ class TestStatusColours:
         tz = ZoneInfo("America/Sao_Paulo")
         shop_instance.timezone = "America/Sao_Paulo"
         shop_instance.opening_hours = {
-            dia: {"open": "09:00", "close": "18:00"}
-            for dia in ("monday", "tuesday", "wednesday", "thursday", "friday", "saturday")
+            day: {"open": "09:00", "close": "18:00"}
+            for day in ("monday", "tuesday", "wednesday", "thursday", "friday", "saturday")
         }
         shop_instance.save(update_fields=["timezone", "opening_hours"])
         order.data["payment"] = {"method": "pix"}

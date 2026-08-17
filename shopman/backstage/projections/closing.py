@@ -217,14 +217,14 @@ def _pending_episodes(day) -> tuple:
 
     rows = []
     for episode in pending_for_day(day):
-        inicio = timezone.localtime(episode.started_at)
-        fim = timezone.localtime(episode.ended_at) if episode.ended_at else None
+        start = timezone.localtime(episode.started_at)
+        end = timezone.localtime(episode.ended_at) if episode.ended_at else None
         rows.append(
             PendingEpisodeProjection(
                 id=episode.pk,
                 signal=episode.detected_signal,
                 window_display=(
-                    f"{inicio:%H:%M} → {fim:%H:%M}" if fim else f"desde {inicio:%H:%M}"
+                    f"{start:%H:%M} → {end:%H:%M}" if end else f"desde {start:%H:%M}"
                 ),
             )
         )

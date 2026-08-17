@@ -56,9 +56,9 @@ def export_file(tmp_path):
                   "Produto Extinto", None, None, 1, 19.48, 0, 19.48, None))
     itens.append((1002, "2025-03-10", "18:30:00", "2025-03", "segunda", 18,
                   "Baguete Francesa", "BF", "Pães Rústicos", 1, 6.49, 1.0, 6.49, None))
-    produtos = wb.create_sheet("Produtos")
-    produtos.append(PRODUTOS_HEADER)
-    produtos.append((1, "Baguete Francesa", "BF", "Pães Rústicos", 13, None))
+    products = wb.create_sheet("Produtos")
+    products.append(PRODUTOS_HEADER)
+    products.append((1, "Baguete Francesa", "BF", "Pães Rústicos", 13, None))
     path = tmp_path / "yooga.xlsx"
     wb.save(path)
     return str(path)

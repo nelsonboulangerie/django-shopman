@@ -82,15 +82,15 @@ def apos_commit(django_capture_on_commit_callbacks):
     return Executor
 
 
-def _receber(quant, quantidade: int):
+def _receber(quant, quantity: int):
     Move.objects.create(
-        quant=quant, delta=Decimal(quantidade), kind=Move.Kind.MAKE, reason="fornada"
+        quant=quant, delta=Decimal(quantity), kind=Move.Kind.MAKE, reason="fornada"
     )
 
 
-def _vender(quant, quantidade: int):
+def _vender(quant, quantity: int):
     Move.objects.create(
-        quant=quant, delta=Decimal(-quantidade), kind=Move.Kind.SELL, reason="venda"
+        quant=quant, delta=Decimal(-quantity), kind=Move.Kind.SELL, reason="venda"
     )
 
 
@@ -196,8 +196,8 @@ class TestObservingTheOutage:
         Product.objects.filter(sku="PAO").update(is_sellable=True)
         shelf_outages.observe("PAO")
 
-        aberto = ShelfOutage.objects.get(ended_at__isnull=True)
-        assert aberto.reason == OutageReason.SOLD_OUT
+        is_open = ShelfOutage.objects.get(ended_at__isnull=True)
+        assert is_open.reason == OutageReason.SOLD_OUT
         assert ShelfOutage.objects.filter(reason=OutageReason.PAUSED).count() == 1
 
     def test_only_one_open_outage_per_sku_and_channel(self, vitrine, canal, pao, apos_commit):
@@ -413,18 +413,18 @@ class TestBusinessDayIsTheDenominator:
             open_minutes=240, opens_at="09:00", closes_at="13:00"
         )
 
-        for dia, fim in ((longo, 12), (curto, 12)):
+        for day, end in ((longo, 12), (curto, 12)):
             ShelfOutage.objects.create(
                 sku="PAO", channel_ref="web",
-                started_at=timezone.datetime(dia.year, dia.month, dia.day, 9, 0, tzinfo=tz),
-                ended_at=timezone.datetime(dia.year, dia.month, dia.day, fim, 0, tzinfo=tz),
+                started_at=timezone.datetime(day.year, day.month, day.day, 9, 0, tzinfo=tz),
+                ended_at=timezone.datetime(day.year, day.month, day.day, end, 0, tzinfo=tz),
             )
 
         janela = {"date_from": today - timedelta(days=4), "date_to": today}
-        horas = build_bi_explore(metric="unavailable_hours", by="time", **janela)
+        hours = build_bi_explore(metric="unavailable_hours", by="time", **janela)
         share = build_bi_explore(metric="unavailable_share", by="time", **janela)
 
-        por_dia_horas = {r.key: r.value for r in horas.rows}
+        por_dia_horas = {r.key: r.value for r in hours.rows}
         por_dia_share = {r.key: r.value for r in share.rows}
         # Mesmas três horas nos dois dias…
         assert por_dia_horas[longo.isoformat()] == 3.0

@@ -32,10 +32,10 @@ def closing_user(db):
 @pytest.fixture
 def setup_stock(db):
     Shop.objects.create(name="Loja")
-    loja = Position.objects.create(ref="loja", name="Loja", is_saleable=True)
+    shop = Position.objects.create(ref="loja", name="Loja", is_saleable=True)
     Product.objects.create(sku="RECON-SKU", name="Recon SKU", shelf_life_days=0)
-    StockMovements.receive(quantity=2, sku="RECON-SKU", position=loja, reason="seed")
-    return loja
+    StockMovements.receive(quantity=2, sku="RECON-SKU", position=shop, reason="seed")
+    return shop
 
 
 @pytest.mark.django_db

@@ -25,7 +25,7 @@ pytestmark = pytest.mark.django_db
 
 
 @pytest.fixture
-def loja():
+def shop():
     Shop.objects.get_or_create(name="Test Shop")
     web, _ = Channel.objects.get_or_create(ref="web", defaults={"name": "Loja online"})
     pdv, _ = Channel.objects.get_or_create(ref="pdv", defaults={"name": "PDV"})
@@ -70,7 +70,7 @@ def _apply(channel_ref: str, code: str, *, customer=None):
     )
 
 
-def test_the_pos_gets_coupons_for_free(loja):
+def test_the_pos_gets_coupons_for_free(shop):
     """O valor prometido pela F6: o cupom funciona no `pdv` sem código de PDV.
 
     Nenhuma linha em `shop/services/pos.py` foi escrita para isto. As portas moram no
@@ -85,9 +85,9 @@ def test_the_pos_gets_coupons_for_free(loja):
     assert int((session.pricing or {})["discount"]["total_discount_q"]) == 100
 
 
-def test_a_web_only_coupon_is_refused_at_the_counter(loja):
+def test_a_web_only_coupon_is_refused_at_the_counter(shop):
     """Porta NOVA: antes de `Promotion.channels` o cupom da web descontava no balcão."""
-    web, _pdv = loja
+    web, _pdv = shop
     promo = _promotion("so-web", channels=[web])
     Coupon.objects.create(code="SOWEB", promotion=promo, max_uses=0, is_active=True)
 
@@ -99,13 +99,13 @@ def test_a_web_only_coupon_is_refused_at_the_counter(loja):
     assert exc.value.code == "coupon_wrong_channel"
 
 
-def test_unknown_code_is_invalid(loja):
+def test_unknown_code_is_invalid(shop):
     with pytest.raises(cart_service.CouponRejected) as exc:
         _apply("web", "NAOEXISTE")
     assert exc.value.code == "invalid_coupon"
 
 
-def test_exhausted_coupon_says_so(loja):
+def test_exhausted_coupon_says_so(shop):
     promo = _promotion("uma-vez")
     Coupon.objects.create(
         code="UMAVEZ", promotion=promo, max_uses=1, uses_count=1, is_active=True
@@ -115,7 +115,7 @@ def test_exhausted_coupon_says_so(loja):
     assert exc.value.code == "coupon_exhausted"
 
 
-def test_expired_promotion_says_expired_not_invalid(loja):
+def test_expired_promotion_says_expired_not_invalid(shop):
     """A distinção existe para a copy poder ser específica, não genérica."""
     promo = _promotion("acabou", expired=True)
     Coupon.objects.create(code="ACABOU", promotion=promo, max_uses=0, is_active=True)
@@ -124,7 +124,7 @@ def test_expired_promotion_says_expired_not_invalid(loja):
     assert exc.value.code == "coupon_expired"
 
 
-def test_segment_gated_coupon_refuses_the_anonymous_visitor(loja):
+def test_segment_gated_coupon_refuses_the_anonymous_visitor(shop):
     """Recusar na porta em vez de gravar um cupom MUDO (desconto 0) sem avisar."""
     promo = _promotion("staff")
     promo.customer_segments = ["staff"]
@@ -136,7 +136,7 @@ def test_segment_gated_coupon_refuses_the_anonymous_visitor(loja):
     assert exc.value.code == "coupon_not_eligible"
 
 
-def test_the_code_is_normalized_before_the_lookup(loja):
+def test_the_code_is_normalized_before_the_lookup(shop):
     """Minúscula com espaço acha o cupom: normalizar é do dono, não da superfície."""
     promo = _promotion("dez")
     Coupon.objects.create(code="DEZ", promotion=promo, max_uses=0, is_active=True)

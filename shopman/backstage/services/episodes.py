@@ -144,12 +144,12 @@ def _detect_missed_batch(day: date) -> list:
     window = _open_window(day)
     if window is None:
         return []
-    nomes = ", ".join(wo.recipe.name for wo in pending)
+    names = ", ".join(wo.recipe.name for wo in pending)
     episode = _raise(
         detector="missed_batch",
         started_at=window[0],
         ended_at=window[1],
-        signal=f"fornada planejada não saiu: {nomes}",
+        signal=f"fornada planejada não saiu: {names}",
     )
     return [episode] if episode else []
 

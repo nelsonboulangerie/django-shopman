@@ -29,7 +29,7 @@ pytestmark = pytest.mark.django_db
 
 
 @pytest.fixture
-def loja(db):
+def shop(db):
     from shopman.shop.models import Shop
 
     shop = Shop.objects.create(name="Nelson")
@@ -45,14 +45,14 @@ def loja(db):
 
 
 @pytest.fixture
-def ontem(loja):
+def ontem(shop):
     day = timezone.localdate() - timedelta(days=1)
     stamp_day(day)
     return day
 
 
 @pytest.fixture
-def motivos(db):
+def reasons(db):
     OperationEpisodeKind.objects.create(
         ref="falta-de-energia", label="Faltou energia", affects_demand=True
     )
@@ -61,13 +61,13 @@ def motivos(db):
     )
 
 
-def _venda(day, hora: int, ref: str) -> None:
+def _venda(day, hour: int, ref: str) -> None:
     order = Order.objects.create(
         ref=ref, channel_ref="web", status="completed", total_q=1000
     )
     tz = timezone.get_current_timezone()
     Order.objects.filter(pk=order.pk).update(
-        created_at=timezone.datetime(day.year, day.month, day.day, hora, 0, tzinfo=tz)
+        created_at=timezone.datetime(day.year, day.month, day.day, hour, 0, tzinfo=tz)
     )
 
 
@@ -122,11 +122,11 @@ class TestDetection:
 
         assert OperationEpisode.objects.filter(detector="sales_silence").count() == 1
 
-    def test_closed_day_raises_nothing(self, loja):
+    def test_closed_day_raises_nothing(self, shop):
         """Dia sem expediente não tem silêncio a explicar."""
         day = timezone.localdate() - timedelta(days=2)
-        loja.defaults = {"closed_dates": [{"date": day.isoformat(), "label": "Feriado"}]}
-        loja.save()
+        shop.defaults = {"closed_dates": [{"date": day.isoformat(), "label": "Feriado"}]}
+        shop.save()
         stamp_day(day)
 
         episodes.detect_for_day(day)
@@ -135,7 +135,7 @@ class TestDetection:
 
 
 class TestAnswering:
-    def test_answering_records_what_happened(self, ontem, motivos):
+    def test_answering_records_what_happened(self, ontem, reasons):
         _venda(ontem, 10, "ANTES")
         _venda(ontem, 15, "DEPOIS")
         episodes.detect_for_day(ontem)
@@ -148,7 +148,7 @@ class TestAnswering:
         assert episode.kind.ref == "falta-de-energia"
         assert episode.resolved_by == "marina"
 
-    def test_saying_nothing_happened_dismisses_it(self, ontem, motivos):
+    def test_saying_nothing_happened_dismisses_it(self, ontem, reasons):
         _venda(ontem, 10, "ANTES")
         _venda(ontem, 15, "DEPOIS")
         episodes.detect_for_day(ontem)
@@ -173,7 +173,7 @@ class TestConsequence:
         # com um dia estranho do que aprender errado.
         assert ontem in episodes.disrupted_days(since=ontem, until=ontem)
 
-    def test_kind_that_did_not_hurt_sales_keeps_the_day(self, ontem, motivos):
+    def test_kind_that_did_not_hurt_sales_keeps_the_day(self, ontem, reasons):
         _venda(ontem, 10, "ANTES")
         _venda(ontem, 15, "DEPOIS")
         episodes.detect_for_day(ontem)
@@ -183,7 +183,7 @@ class TestConsequence:
 
         assert ontem not in episodes.disrupted_days(since=ontem, until=ontem)
 
-    def test_disrupted_day_leaves_the_production_sample(self, ontem, motivos):
+    def test_disrupted_day_leaves_the_production_sample(self, ontem, reasons):
         """A ponta que dá sentido a tudo: o dia ruim não vira previsão."""
         from shopman.shop.services.production import untrustworthy_days
 
@@ -199,7 +199,7 @@ class TestConsequence:
 
 
 class TestTheQuestionOnlyShowsWhenThereIsASignal:
-    def test_closing_asks_nothing_on_a_normal_day(self, ontem, motivos):
+    def test_closing_asks_nothing_on_a_normal_day(self, ontem, reasons):
         from shopman.backstage.projections.closing import build_day_closing
 
         projection = build_day_closing()
@@ -207,7 +207,7 @@ class TestTheQuestionOnlyShowsWhenThereIsASignal:
         assert projection.has_pending_episodes is False
         assert projection.episode_options == ()
 
-    def test_closing_asks_with_options_when_something_happened(self, motivos, loja):
+    def test_closing_asks_with_options_when_something_happened(self, reasons, shop):
         from shopman.backstage.projections.closing import build_day_closing
 
         hoje = timezone.localdate()
@@ -246,7 +246,7 @@ def _operador_de_fechamento():
 
 
 class TestEndpoint:
-    def test_operator_answers_through_the_api(self, ontem, motivos, client):
+    def test_operator_answers_through_the_api(self, ontem, reasons, client):
         _venda(ontem, 10, "ANTES")
         _venda(ontem, 15, "DEPOIS")
         episodes.detect_for_day(ontem)
@@ -264,7 +264,7 @@ class TestEndpoint:
         episode.refresh_from_db()
         assert episode.status == EpisodeStatus.CONFIRMED
 
-    def test_unknown_kind_is_rejected_with_the_field(self, ontem, motivos, client):
+    def test_unknown_kind_is_rejected_with_the_field(self, ontem, reasons, client):
         _venda(ontem, 10, "ANTES")
         _venda(ontem, 15, "DEPOIS")
         episodes.detect_for_day(ontem)
@@ -294,7 +294,7 @@ class TestTheCatalogIsEditable:
             "sem registro no Admin, o catálogo só mudaria com deploy"
         )
 
-    def test_a_new_kind_shows_up_as_an_option_without_deploy(self, motivos, loja):
+    def test_a_new_kind_shows_up_as_an_option_without_deploy(self, reasons, shop):
         from shopman.backstage.projections.closing import build_day_closing
 
         hoje = timezone.localdate()
@@ -321,7 +321,7 @@ class TestTheCatalogIsEditable:
         assert not episode_admin.has_add_permission(None)
         assert not episode_admin.has_change_permission(None)
 
-    def test_deactivating_a_kind_removes_it_from_the_options(self, motivos, loja):
+    def test_deactivating_a_kind_removes_it_from_the_options(self, reasons, shop):
         from shopman.backstage.projections.closing import build_day_closing
 
         hoje = timezone.localdate()
@@ -347,10 +347,10 @@ class TestTheRulerIsTheHouses:
 
         assert OperationEpisode.objects.filter(detector="sales_silence").exists()
 
-    def test_house_can_widen_the_ruler(self, ontem, loja):
+    def test_house_can_widen_the_ruler(self, ontem, shop):
         """Dia de jogo grande: a rua some por mais tempo e isso é normal."""
-        loja.defaults = {"production": {"episodes": {"sales_silence_minutes": 240}}}
-        loja.save()
+        shop.defaults = {"production": {"episodes": {"sales_silence_minutes": 240}}}
+        shop.save()
         _venda(ontem, 10, "ANTES")
         _venda(ontem, 13, "DEPOIS")   # 3h já não passa da régua de 4h
 
@@ -358,9 +358,9 @@ class TestTheRulerIsTheHouses:
 
         assert not OperationEpisode.objects.filter(detector="sales_silence").exists()
 
-    def test_zero_turns_the_detector_off_without_touching_the_others(self, ontem, loja):
-        loja.defaults = {"production": {"episodes": {"sales_silence_minutes": 0}}}
-        loja.save()
+    def test_zero_turns_the_detector_off_without_touching_the_others(self, ontem, shop):
+        shop.defaults = {"production": {"episodes": {"sales_silence_minutes": 0}}}
+        shop.save()
         _venda(ontem, 10, "ANTES")
         _venda(ontem, 15, "DEPOIS")
 
@@ -371,10 +371,10 @@ class TestTheRulerIsTheHouses:
     def test_the_ruler_is_editable_in_the_admin(self):
         from shopman.shop.admin.shop import _PRODUCTION_FIELDSETS
 
-        campos = {
-            campo
-            for _titulo, opcoes in _PRODUCTION_FIELDSETS
-            for linha in opcoes["fields"]
-            for campo in (linha if isinstance(linha, tuple) else (linha,))
+        fields = {
+            field
+            for _title, opcoes in _PRODUCTION_FIELDSETS
+            for line in opcoes["fields"]
+            for field in (line if isinstance(line, tuple) else (line,))
         }
-        assert "defaults_sales_silence_minutes" in campos
+        assert "defaults_sales_silence_minutes" in fields

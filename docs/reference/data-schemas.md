@@ -445,6 +445,28 @@ Write-back: spawns `pix.timeout` e `notification.send` (reminder)
 | `intent_ref` | `string` | PixGenerateHandler | PixTimeoutHandler |
 | `expires_at` | `string` | PixGenerateHandler | PixTimeoutHandler |
 
+#### `mock_pix.confirm`
+
+Só dev/staging: o adapter `payment_mock` agenda a confirmação do PIX que nunca
+vai chegar de gateway nenhum. Nasce apenas com `mock_pix_auto_confirm=True`, e
+o handler recusa (`DirectiveTerminalError`) se a chave vier diferente — a
+autoconfirmação é opt-in explícito, nunca inferida.
+
+| Chave | Tipo | Escrito por | Lido por |
+|-------|------|-------------|----------|
+| `order_ref` | `string` | `adapters.payment_mock` | MockPixConfirmHandler |
+| `txid` | `string` | `adapters.payment_mock` | MockPixConfirmHandler → `confirm_pix` |
+| `e2e_id` | `string` | `adapters.payment_mock` | MockPixConfirmHandler → `confirm_pix` |
+| `amount` | `string` | `adapters.payment_mock` | MockPixConfirmHandler → `confirm_pix` |
+| `mock_pix_auto_confirm` | `bool` | `adapters.payment_mock` | MockPixConfirmHandler (recusa se ≠ `True`) |
+
+> `amount` é decimal em reais como string (`"12.50"`), não centavos — é o
+> formato de fio do gateway, convertido por `_amount_to_q`. **Chamava-se
+> `valor`**: o nome era da API da Efí e vazou para um payload nosso, que só o
+> nosso handler lê. Renomeada junto com o resto do caminho de pagamento; o
+> `valor` sobrevive apenas onde é contrato da Efí de verdade
+> (`pix_item["valor"]`, `{"valor": {"original": …}}`).
+
 #### `payment.capture`
 
 | Chave | Tipo | Escrito por | Lido por |

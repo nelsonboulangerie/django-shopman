@@ -103,9 +103,9 @@ def test_nelson_seed_populates_production_history_alerts_and_batches(monkeypatch
     from shopman.stockman import stock as stock_service
     from shopman.stockman.models import Quant
 
-    deposito = Position.objects.get(ref="deposito")
-    assert Quant.objects.filter(sku="FARINHA-T65", position=deposito).exists()
-    assert stock_service.available("FARINHA-T65", position=deposito) == Decimal("500")
+    warehouse = Position.objects.get(ref="deposito")
+    assert Quant.objects.filter(sku="FARINHA-T65", position=warehouse).exists()
+    assert stock_service.available("FARINHA-T65", position=warehouse) == Decimal("500")
 
     suggestions = craft.suggest(date.today() + timedelta(days=1), output_skus=["CROISSANT"])
     assert suggestions
