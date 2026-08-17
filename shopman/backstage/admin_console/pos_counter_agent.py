@@ -49,6 +49,16 @@ class PosCounterAgentView(UnfoldModelAdminViewMixin, TemplateView):
             # não vira mais um campo na config do terminal.
             os_key=self.request.GET.get("so", ""),
         )
+        # Copiar é ato de DOM, então o estado vive no Alpine e a ação usa o
+        # clipboard — exceção explícita do CLAUDE.md, por não ter equivalente
+        # Alpine. Vem por `attrs` para o controle continuar sendo o componente
+        # canônico do Unfold, em vez de marcação escrita à mão.
+        context["copy_button_attrs"] = {
+            "@click": (
+                "navigator.clipboard.writeText($refs.cmd.textContent.trim());"
+                " copiado = true; setTimeout(() => copiado = false, 2000)"
+            ),
+        }
         context["terminal_change_url"] = reverse(
             "admin:backstage_posterminal_change", args=[terminal.pk]
         )
