@@ -35,18 +35,18 @@ Das três coisas que você trouxe, o diagnóstico honesto é:
    do Yooga, **sem depender de ritual de ninguém**, e vale no primeiro dia.
    → §3.1, §5-F3.
 
-3. **Mesa — o conceito não existe no sistema.** O que existe é a **comanda**
-   (`POSTab`): um número reusável, sem lugar, sem lotação, sem vínculo com mesa. Sem
-   um cadastro de mesas e um vínculo comanda↔mesa, "valor por mesa", "ocupação" e
-   "quantas mesas eu deveria ter" não têm denominador — não são perguntas difíceis,
-   são perguntas **sem dado**. → §3.2, §5-F4.
+3. **Mesa — o conceito não existe, mas cinco das seis perguntas não precisam dele.**
+   O que existe é a comanda (`POSTab`): número reusável, sem lugar e sem lotação. O
+   dono vetou o vínculo comanda↔mesa com razão (*"a pessoa nem sabe onde vai
+   sentar"*), e o veto custa pouco: só "qual mesa rende mais" depende dele. Ocupação,
+   ociosidade, giro e "quantas mesas eu deveria ter" saem do modo de consumo do §3.1
+   mais um **cadastro de mesas** que ninguém no balcão toca. → §3.2, §5-F4.
 
-**O que a decisão do item 2 muda:** os itens 2 e 3 **deixam de ser a mesma frente**.
-Modo de consumo vira leitura pura, sem captura, sem cobertura declarada, sem
-dependência do que a equipe lembra de fazer — e retroativa. A mesa continua exigindo
-captura, mas agora **só pelas perguntas dela** (ocupação, giro, ociosidade): não é
-mais pré-requisito de nada. As duas frentes andam em qualquer ordem, ou uma sem a
-outra.
+**O fio que liga os três:** nenhum deles pede um gesto novo a quem está no balcão.
+Pagamento já está gravado; modo de consumo se lê da cesta; ocupação se deriva do modo
+de consumo mais um cadastro feito uma vez. O único toque pedido em todo este documento
+é a resposta a "teve fila hoje?", **e só nos dias em que o sistema detectar casa
+cheia** — que é o padrão de episódios que a casa já usa.
 
 O denominador da ocupação (quanto tempo a casa esteve aberta naquele dia) **já foi
 construído** na rodada 6 (`DayContext.open_minutes`), sem que esse fosse o objetivo.
@@ -157,9 +157,19 @@ dois anos e ver a diferença antes de congelar (é barato: a regra é função p
 
 **O trabalho real é curadoria, não código.** As etiquetas por SKU (bebida preparada,
 bebida pronta, prato quente, pão-de-levar, fino individual, varejo/mercearia) são o
-esforço; a regra em si é uma função testável. Seguem abertos os dois casos do estudo:
-Baguete Lanche e Hambúrguer 100g (são lanche montado, e portanto âncora?) e o corte de
-"estoque" (hoje 4+ do mesmo item).
+esforço; a regra em si é uma função testável.
+
+✅ **Caso aberto do estudo, resolvido pelo dono (17/08): Baguete Lanche e Hambúrguer
+100g são PÃES, não lanches.** Etiqueta `pão-de-levar`, **não** ancoram consumo local.
+O nome enganava a classificação: "Hambúrguer 100g" é o pão de hambúrguer, não o
+sanduíche montado. Sem essa correção a regra leria toda compra de pão de hambúrguer
+como alguém almoçando na casa — e o retrato do salão sairia inflado exatamente nos
+dias de churrasco, que é quando esse pão vende.
+
+⚠️ **A lição, que vale como guarda:** o nome do SKU não classifica. A etiqueta é
+curadoria humana, produto a produto, e a revisão precisa passar por quem conhece o
+cardápio — não por quem lê a lista. Continua aberto só o corte de "estoque" (hoje 4+
+do mesmo item).
 
 **A honestidade que a tela precisa carregar:** a leitura é **inferida**, e diz isso —
 com a regra vigente ao alcance de um clique, porque um número que muda quando alguém
@@ -169,70 +179,128 @@ leitura coerente de ponta a ponta.
 
 ### 3.2 Mesa — valor, ocupação, ociosidade, quantidade ideal
 
-**Estado: 🔴 o conceito não existe.**
+**Estado: 🟡 o conceito não existe, mas a maior parte das perguntas não precisa dele.**
 
 O que existe é a **comanda** (`POSTab`): `ref`, `label`, `is_active`
 ([`pos.py:9`](../../shopman/backstage/models/pos.py)). Um número reusável — o seed
-cadastra 1007 a 1012. Não tem lugar, não tem lotação, não tem mesa. Nada no sistema
-sabe quantas mesas a Nelson tem.
+cadastra 1007 a 1012. Não tem lugar, não tem lotação, não tem mesa.
 
-**O que já dá para derivar hoje, sem capturar nada:**
+#### 3.2.1 A objeção do dono, que está certa
 
-- **Duração da comanda**: `Session.opened_at` → `Session.committed_at` são colunas
-  duráveis ([`session.py:136`](../../packages/orderman/shopman/orderman/models/session.py)).
-- **Valor por comanda**: o `Order` carrega `handle_type="pos_tab"` e
-  `handle_ref=<número da comanda>` como colunas indexáveis
-  ([`order.py:81`](../../packages/orderman/shopman/orderman/models/order.py)).
-- **Simultaneidade**: quantas comandas estavam abertas ao mesmo tempo, por faixa
-  horária, é uma varredura dos intervalos acima.
+> *"O vínculo comanda/mesa é difícil de fazer na hora, a pessoa nem sabe onde vai
+> sentar! Por isso sempre evitamos usar em termos de mesa. Se dificultou, tô fora."*
 
-**O que NÃO dá, e por quê:** ocupação e ociosidade são frações — precisam de
-denominador. "3 comandas abertas" só vira "60% de ocupação" se o sistema souber que
-existem 5 mesas. E "quantidade ideal de mesas" precisa, além disso, saber quantos
-lugares cada uma tem.
+A objeção derruba a proposta que eu tinha feito, e derruba com razão. Amarrar comanda
+a mesa **no ato de abrir** exige uma informação que ninguém tem naquele instante. O
+resultado previsível seria mesa errada, mesa em branco, ou o operador escolhendo
+qualquer uma para o sistema parar de perguntar — e aí a métrica não fica só
+incompleta, fica **mentirosa**, que é pior do que não existir.
 
-**Caminho mínimo — três peças pequenas:**
+**Então a recomendação muda: não crie o vínculo comanda↔mesa.**
 
-1. **Cadastro de mesas** (`ref`, rótulo, lugares, ativa). Uma tela de Admin, um
-   punhado de linhas. É o denominador.
-2. **Vínculo comanda↔mesa** no ato de abrir a comanda: `table_ref` na
-   `Session.data`, propagado a `Order.data` pela lista explícita do `CommitService`
-   (o contrato Session→Order, regra 5 do CLAUDE.md; a chave entra em
-   `docs/reference/data-schemas.md` antes de ser usada).
-3. **Leitura**: as métricas abaixo, todas derivadas, nenhuma capturada.
+#### 3.2.2 O que cada pergunta realmente exige
 
-**O denominador de tempo já existe.** `DayContext.open_minutes`, `opens_at`,
-`closes_at` e `closed_reason` foram carimbados na rodada 6 justamente para que
-métricas de tempo não fossem lidas pelo horário de hoje. Ocupação de mesa usa o mesmo
-carimbo — e herda a mesma garantia: **dia sem carimbo não entra na conta**, em vez de
-inventar um expediente.
+Separando o que você pediu, quase nada precisa saber *em qual* mesa a pessoa sentou:
 
-**O que passa a ser mensurável:**
+| Pergunta | Precisa do vínculo? | O que precisa de verdade |
+|---|---|---|
+| O salão está ocioso? | **não** | quantos grupos sentados ao mesmo tempo, e a capacidade |
+| Que dias e horários sobra mesa? | **não** | idem, por faixa |
+| Quantas mesas eu deveria ter? | **não** | pico de simultaneidade + faturamento por mesa-hora |
+| Quanto tempo o grupo fica? | **não** | duração, calibrada uma vez |
+| Quanto rende o salão? | **não** | modo de consumo (§3.1) — já resolvido |
+| **Qual mesa** rende mais (a da janela vale mais?) | **sim** | vínculo |
+
+**Uma pergunta em seis.** E é a menos acionável das seis: saber que a mesa da janela
+rende mais não muda a decisão de comprar ou tirar mesa, muda no máximo a arrumação —
+que você já conhece melhor que qualquer relatório.
+
+#### 3.2.3 O que dá para medir sem pedir nada a ninguém
+
+Com o modo de consumo inferido (§3.1), toda venda de consumo local já é um **grupo que
+sentou**. Falta só saber por quanto tempo. Três peças, nenhuma com atrito de operador:
+
+1. **Cadastro de mesas** — uma tela de Admin, preenchida uma vez. É o denominador, e
+   é de graça: ninguém no balcão toca nisso.
+2. **Duração** — quando a venda passou por comanda aberta, ela é medida
+   (`Session.opened_at` → `committed_at`, colunas duráveis). Quando foi venda direta,
+   é estimada por um valor calibrado.
+3. **Simultaneidade** — contar intervalos que se sobrepõem, minuto a minuto.
+
+⚠️ **Um detalhe que mantém isso honesto:** o carimbo da venda direta é o momento em que
+a pessoa **pagou**, e na Nelson isso é antes de sentar — o intervalo é `[venda,
+venda+duração]`. Numa comanda é o contrário: paga ao sair, e o intervalo é `[abertura,
+fechamento]`. O sistema sabe distinguir os dois casos (`handle_type`), então não
+precisa escolher uma suposição só para todo mundo.
+
+**E a duração estimada não precisa ser exata para a conclusão valer.** O jeito honesto
+de tratá-la é rodar a leitura com três valores (20, 30, 45 min) e ver se a resposta
+muda. Se "sábado das 9h às 11h bate no teto e o resto da semana sobra mesa" for
+verdade nos três, a suposição não importa e não há o que capturar. Se mudar, aí sim
+vale uma observação manual de um sábado para calibrar — uma vez, não todo dia.
+
+#### 3.2.4 O salão real (informado pelo dono, 17/08)
+
+| Espaço | Quantidade | Lugares | Conta? |
+|---|---|---|---|
+| Mesas internas | 4 | ~2 cada | **sim** |
+| Assentos de balcão | 6 | 6 | **sim** |
+| Mesas externas | 4 | ~2 cada | **sim** |
+| Mesinhas altas (bistrô, em pé) | 2 | ~2 cada | não |
+| Bancão externo comprido | 1 | ~4 em dia cheio | não |
+
+**Capacidade oficial: 8 mesas + 6 lugares de balcão.** Fora da conta ficam o bistrô e
+o bancão externo — e, dentro das mesas internas, o fato de que o sofá permite apertar
+mais gente com menos conforto.
+
+⚠️ **Isso é o achado mais importante desta seção, e muda como a métrica deve ser
+apresentada.** Se o próprio denominador é elástico — a casa comporta mais do que os
+números oficiais dizem —, então **um numerador preciso é falsa precisão**. Publicar
+"ocupação de 73,4%" sobre uma capacidade que na prática estica seria inventar exatidão
+onde ela não existe.
+
+A leitura correta, então, não é uma porcentagem fina, é:
+
+- **"bateu no teto oficial"** como **evento contado**, não como taxa: quantas vezes,
+  em que faixas, em que dias. Bater no teto é o sinal de que a capacidade elástica
+  entrou em uso — e é exatamente o momento que interessa.
+- **ociosidade em faixas grossas** (vazio / meio / cheio / no teto), não em decimais.
+- **por mesa, não por lugar** (decisão do dono): mesa ocupada é mesa ocupada,
+  independentemente de quantas pessoas sentaram.
+
+#### 3.2.5 O que passa a ser mensurável
 
 | Métrica | Como se calcula | Responde |
 |---|---|---|
-| **Ocupação (%)** | Σ minutos de mesa ocupada ÷ (mesas ativas × `open_minutes`) | "o salão está ocioso?" |
-| **Ociosidade por faixa** | 1 − ocupação, por hora × dia-da-semana | "que dias e horários sobram mesa?" |
-| **Giro** | comandas fechadas ÷ mesa ÷ dia | "a mesa roda ou fica parada?" |
-| **Valor por mesa** | faturamento ÷ mesa | "qual mesa rende mais?" (posição importa) |
-| **Faturamento por mesa-hora** | faturamento ÷ (mesas × horas) | ⭐ a métrica que responde "quantas mesas?" |
-| **Permanência média** | duração da comanda | "quanto tempo cada grupo fica?" |
-| **Pico de simultaneidade** | máximo de mesas ocupadas por faixa | "quantas vezes bateu no teto?" |
+| **Grupos simultâneos** | intervalos sobrepostos de consumo local | "quão cheio esteve?" |
+| **Ociosidade por faixa** | faixa grossa por hora × dia-da-semana | "que dias e horários sobra mesa?" |
+| **Vezes no teto** | contagem de períodos com 8 mesas ocupadas | ⭐ "falta mesa?" |
+| **Faturamento por mesa-hora** | faturamento local ÷ (8 × horas abertas) | ⭐ "quantas mesas?" |
+| **Giro** | grupos locais ÷ mesas ÷ dia | "a mesa roda?" |
+| **Permanência** | duração medida (comanda) ou calibrada | "quanto tempo ficam?" |
 
-**Sobre "a quantidade ideal de mesas", com honestidade:** o número ideal não sai de
-uma conta, sai de duas leituras. A primeira é o **pico de simultaneidade por faixa
-horária**: se o teto é atingido raramente, mesa a mais é espaço morto; se é atingido
-todo sábado das 9h às 11h, mesa a mais é dinheiro. A segunda é o **faturamento por
-mesa-hora**: acrescentar mesa só compensa enquanto ele não cair — o ponto em que
-começa a cair é o ponto em que a casa tem mesas demais.
+O denominador de tempo **já existe**: `DayContext.open_minutes`, carimbado na rodada 6
+para que métricas de tempo não fossem lidas pelo horário de hoje. Ocupação herda a
+mesma garantia — **dia sem carimbo não entra na conta**, em vez de inventar expediente.
 
-⚠️ **E o que nenhuma delas vê: quem chegou, olhou, não achou mesa e foi embora.** É a
-demanda reprimida do salão, e é exatamente o mesmo problema do pão que esgota (§7.1
-do INSIGHTS-MAP: "o sistema aprende a demanda truncada"). O ledger não registra
-desistência. A saída barata é a mesma que a casa já usa para episódios: quando o
-sistema detectar **casa cheia sustentada** (todas as mesas ocupadas por mais de X
-minutos), oferecer no fechamento a pergunta com opções — "teve gente esperando? teve
-gente que desistiu?". O sinal é automático; só o motivo depende de alguém dizer.
+**Sobre "a quantidade ideal de mesas":** o número não sai de uma conta, sai de duas
+leituras. O **pico** diz se falta (teto raramente atingido = mesa a mais é espaço
+morto; teto todo sábado às 10h = mesa a mais é dinheiro). O **faturamento por
+mesa-hora** diz até onde compensa: acrescentar mesa vale enquanto ele não cair.
+
+⚠️ **O que nenhuma delas vê: quem chegou, olhou, não achou lugar e foi embora.** É a
+demanda reprimida do salão — o mesmo problema do pão que esgota (§7.1 do INSIGHTS-MAP:
+"o sistema aprende a demanda truncada"). A saída é a que a casa já usa para episódios:
+o sistema detecta **casa cheia sustentada**, e no fechamento oferece a pergunta com
+opções — "teve fila? teve gente que desistiu?". Sinal automático, motivo em um toque,
+só nos dias em que houve sinal.
+
+#### 3.2.6 Se um dia o vínculo fizer sentido
+
+Ele não fica impossível — fica **opcional e posterior**. E o momento natural para ele
+nunca foi a abertura da comanda: é a **entrega na mesa**, quando quem leva o pedido já
+sabe onde a pessoa sentou. Se algum dia essa pergunta importar, o gesto existe ali,
+sem atrito. Nada neste plano depende disso.
 
 ### 3.3 Forma de pagamento
 
@@ -293,13 +361,13 @@ Legenda: ✅ o B.I. já responde · 🟡 o dado existe, falta leitura · 🔴 fa
 
 | # | Pergunta | Estado | Fonte / o que falta |
 |---|---|---|---|
-| M1 | Qual a **ocupação** do salão, por dia e faixa horária? | 🔴 | §3.2 |
-| M2 | Que dias e horários o salão fica **ocioso**? | 🔴 | §3.2 |
-| M3 | Qual o **faturamento por mesa-hora**? | 🔴 | §3.2 — a métrica que responde "quantas mesas" |
-| M4 | Qual mesa rende mais (a posição importa)? | 🔴 | §3.2 |
-| M5 | Quanto tempo um grupo fica na mesa, e isso mudou? | 🔴 | §3.2 (`opened_at`→`committed_at`) |
-| M6 | Quantas vezes o salão **bateu no teto**? | 🔴 | §3.2 |
-| M7 | Teve gente que **desistiu por falta de mesa**? | 🔴 | episódio no fechamento, §3.2 |
+| M1 | Quão cheio esteve o salão, por dia e faixa horária? | 🟡 | §3.2 — deriva de V2 + cadastro |
+| M2 | Que dias e horários o salão fica **ocioso**? | 🟡 | §3.2 |
+| M3 | Qual o **faturamento por mesa-hora**? | 🟡 | §3.2 — a métrica que responde "quantas mesas" |
+| M4 | Qual mesa rende mais (a posição importa)? | ⛔ | **fora** — única que exigia o vínculo vetado (§3.2.1) |
+| M5 | Quanto tempo um grupo fica na mesa, e isso mudou? | 🟡 | medido onde há comanda, calibrado no resto |
+| M6 | Quantas vezes o salão **bateu no teto**? | 🟡 | §3.2 — a leitura principal, no lugar da % |
+| M7 | Teve gente que **desistiu por falta de mesa**? | 🔴 | episódio no fechamento — o único toque pedido |
 | M8 | O salão tira gente da fila do balcão ou soma? | 🔴 | M1 × filas do balcão |
 
 ### 4.3 Cliente
@@ -423,24 +491,31 @@ Três contagens no staging (que tem o Yooga carregado), cada uma decide um parâ
 
 **Independe de F4.** Não depende de mesa, de comanda, nem de ritual de equipe.
 
-### F4 — Mesa: ocupação, giro, valor ⭐
+### F4 — Salão: ocupação, giro, valor *(sem vínculo comanda↔mesa)*
 
-Frente própria agora, movida **só pelas perguntas de mesa** (M1–M8) — deixou de ser
-pré-requisito do modo de consumo.
+Revisto em 17/08 depois da objeção do dono (§3.2.1). **Não entra vínculo
+comanda↔mesa** — nenhum gesto novo é pedido ao balcão.
 
-- Cadastro de mesas (ref, rótulo, lugares, ativa desde quando) + vínculo
-  comanda↔mesa: `table_ref` na `Session.data`, propagado a `Order.data` pela lista
-  explícita do `CommitService`, registrado antes em `data-schemas.md`.
-- Métricas do quadro do §3.2, todas sobre `DayContext.open_minutes` como
-  denominador, herdando "dia sem carimbo não entra na conta".
+- **Cadastro de mesas** no Admin, preenchido uma vez: 4 internas + 4 externas + 6
+  lugares de balcão, com os espaços elásticos (bistrô, bancão) registrados como
+  **fora da capacidade oficial**, porque é assim que a casa os trata.
+- **Simultaneidade por intervalos**, derivada do modo de consumo (F3): comanda dá
+  duração medida, venda direta usa duração calibrada, e o `handle_type` distingue os
+  dois (venda direta paga **antes** de sentar; comanda paga **ao sair**).
+- **Sensibilidade declarada:** a leitura sai com três durações (20/30/45 min). Se a
+  conclusão não muda, a suposição não importa e a tela diz isso. Se muda, uma
+  observação manual de um sábado calibra — uma vez.
+- **Apresentação em faixas grossas + "vezes no teto"**, nunca porcentagem com
+  decimal: a capacidade real estica, e numerador preciso sobre denominador elástico é
+  falsa precisão (§3.2.4).
+- **Ociosidade por mesa, não por lugar** (decisão do dono).
 - Sinal de **casa cheia sustentada** → pergunta com opções no fechamento, no catálogo
   de episódios que já existe.
-- Cenários curados: ocupação por hora × dia-da-semana; faturamento por mesa-hora ao
-  longo dos meses; permanência por faixa.
-- ⚠️ Aqui a cobertura **continua importando**: se o salão não abrir comanda por mesa,
-  a ocupação mede uma fatia. É a pergunta nº 1 do §7.
 
-### F6 — Catálogo, conforme apetite
+**Depende do F3** (é dele que vem "esta venda foi consumo local"). Não depende de mais
+nada.
+
+### F5 — Catálogo, conforme apetite
 
 Da tabela do §4, os 🟡 em ordem de custo crescente: C4 (clientes distintos), P2
 (Pareto), L3 (descontos), L4 (cancelamentos), O1 (lead time), P3 (attach rate), C2
@@ -462,10 +537,11 @@ Da tabela do §4, os 🟡 em ordem de custo crescente: C4 (clientes distintos), 
 3. **Ticket médio dos painéis exclui frete** (`delivery_fee_q` fora de `total_q`).
    Comparar ticket de entrega com ticket de salão sem resolver isso compara coisas
    diferentes. Vale resolver junto de V6.
-4. **Mesa é dado de operação, não do core.** O cadastro e o vínculo moram no
-   backstage; `Order.data` recebe a chave pela lista explícita do `CommitService`,
-   registrada em `docs/reference/data-schemas.md` antes do uso. Nenhum campo novo em
-   modelo do core.
+4. **A duração da permanência é a única suposição do F4.** Ela não é medida na venda
+   direta, e é por isso que a leitura sai com três valores e declara se a conclusão
+   muda entre eles. Suposição declarada e testada é aceitável; suposição escondida
+   dentro de um número redondo não é. **Nada do core é tocado no F4** — o cadastro de
+   mesas mora no backstage e a leitura é derivada.
 5. **`table_label` do Yooga não vira verdade de canal** — nem depois de F2. Se a
    contagem mostrar boa cobertura, ele serve para **medir o erro** da inferência, e é
    assim que deve aparecer.
@@ -478,16 +554,18 @@ Da tabela do §4, os 🟡 em ordem de custo crescente: C4 (clientes distintos), 
 
 ## 7. Perguntas ao dono
 
-1. **O salão vai passar a abrir comanda por mesa?** Agora essa pergunta decide **só o
-   F4** — com o modo de consumo inferido, F3 anda sem ela. Se sim, a ocupação mede a
-   casa; se não, mede uma fatia com cobertura declarada, e talvez F4 não se pague.
-   *(Pergunta reformulada em 17/08: antes ela decidia as duas frentes.)*
-2. **Quantas mesas e quantos lugares a Nelson tem hoje?** É o denominador; sem ele
-   não há ocupação. (E se mudar ao longo do tempo, o cadastro precisa saber desde
-   quando — mesa acrescentada em março não pode reescrever a ocupação de janeiro.)
-3. **Ociosidade interessa por mesa ou por lugar?** Uma mesa de 4 ocupada por 1 pessoa
-   está ocupada ou 25% ocupada? A primeira leitura é grátis; a segunda exige perguntar
-   quantas pessoas — um tap a mais, na abertura da comanda.
+1. ✅ **Respondida em 17/08 — e a resposta foi "não vale o atrito".** O vínculo
+   comanda↔mesa sai do plano; F4 mede o salão sem pedir gesto novo (§3.2). A pergunta
+   que fica no lugar dela: **o balcão usa comanda hoje, e em que fração das vendas?**
+   Onde há comanda a permanência é medida em vez de suposta, então esse número diz
+   quanto do F4 é medido e quanto é calibrado.
+2. ✅ **Respondida em 17/08** (§3.2.4): 4 mesas internas + 4 externas + 6 lugares de
+   balcão como capacidade oficial; bistrô e bancão externo ficam fora da conta, e o
+   sofá permite apertar. Fica só o detalhe de durabilidade: o cadastro guarda **desde
+   quando** cada mesa existe, para que mesa acrescentada em março não reescreva a
+   ocupação de janeiro.
+3. ✅ **Respondida em 17/08: por mesa.** Mesa ocupada é mesa ocupada, sem perguntar
+   quantas pessoas sentaram — o que também elimina o único tap que ainda restava.
 4. **Entrega própria e iFood entram no mesmo balde "entregas"?** Custo e margem são
    muito diferentes; a leitura pode ser uma ou duas.
 5. **F1 já?** É pequena, independente, e vale sobre dois anos desde o primeiro dia.
