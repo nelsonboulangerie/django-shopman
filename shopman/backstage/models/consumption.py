@@ -36,7 +36,9 @@ class Reading(models.TextChoices):
 
     ANCHOR = "anchor", "Consome aqui"
     TAKEAWAY = "takeaway", "Leva"
-    NEUTRAL = "neutral", "Acompanha"
+    # "Híbrido" é a palavra do dono (17/08) para esta classe, e é melhor que
+    # a minha: o produto não "acompanha", ele serve aos dois usos.
+    HYBRID = "hybrid", "Híbrido"
 
 
 class ConsumptionRole(models.Model):
@@ -56,13 +58,13 @@ class ConsumptionRole(models.Model):
     )
     reading = models.CharField(
         "o que diz sobre a cesta", max_length=16,
-        choices=Reading.choices, default=Reading.NEUTRAL,
+        choices=Reading.choices, default=Reading.HYBRID,
         help_text=(
             "Consome aqui: bebida, prato, lanche — a presença indica alguém "
             "que sentou (nesta casa, levar bebida é desprezível). "
             "Leva: pão, varejo — junto de uma âncora vira 'consumiu e levou'. "
-            "Acompanha: doce, viennoiserie — não decide nada sozinho, mas tira "
-            "a cesta do balde 'sem etiqueta'."
+            "Híbrido: croissant, doce, pão japonês — serve aos dois usos, então "
+            "não decide sozinho, mas tira a cesta do balde 'sem etiqueta'."
         ),
     )
     is_active = models.BooleanField("ativo", default=True)

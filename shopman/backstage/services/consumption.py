@@ -27,7 +27,7 @@ UNCLASSIFIED = "unclassified"
 # As três leituras que um produto pode ter (espelham models.Reading).
 ANCHOR = "anchor"
 TAKEAWAY_ITEM = "takeaway"
-NEUTRAL = "neutral"
+HYBRID = "hybrid"
 
 MODE_LABELS: dict[str, str] = {
     DINE_IN: "Consumiu aqui",

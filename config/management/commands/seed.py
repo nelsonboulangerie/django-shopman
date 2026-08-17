@@ -5867,6 +5867,7 @@ class Command(BaseCommand):
             return
         self._seed_episode_kinds()
         self._seed_consumption_roles()
+        self._seed_consumption_tags()
         self._seed_seating()
         self._seed_business_days(days=days)
         self._seed_shelf_movements(products, vitrine, days=days)
@@ -5935,8 +5936,8 @@ class Command(BaseCommand):
              "Café, suco, prato quente, lanche montado", Reading.ANCHOR, 10),
             ("leva", "Leva",
              "Pão, geleia, café em grão — o que sai pela porta", Reading.TAKEAWAY, 20),
-            ("acompanha", "Acompanha",
-             "Croissant, doce individual: come junto ou leva", Reading.NEUTRAL, 30),
+            ("hibrido", "Híbrido",
+             "Croissant, doce, pão japonês: serve aos dois usos", Reading.HYBRID, 30),
         ]
         for ref, label, hint, reading, position in catalog:
             ConsumptionRole.objects.update_or_create(
@@ -5946,6 +5947,61 @@ class Command(BaseCommand):
                     "ordering": position, "is_active": True,
                 },
             )
+
+    def _seed_consumption_tags(self) -> None:
+        """A curadoria do dono, produto a produto (revisada em 17/08/2026).
+
+        Etiqueta é decisão de negócio, não dedução: o `propose_consumption_tags`
+        propõe a partir da coleção, mas quem confirma é quem conhece o cardápio.
+        Estas 59 linhas entram como `reviewed=True` porque foram
+        conferidas uma a uma — diferente de proposta, que nasce falsa.
+
+        Duas correções que só a revisão pegaria: os **salgados** da casa são
+        prato quente (croque, queijo-quente, jambon-beurre), então ancoram; e a
+        **viennoiserie** é híbrida, não "de levar" — croissant, pain au
+        chocolat, madeleine e os pães japoneses servem aos dois usos.
+        """
+        from shopman.backstage.models import ConsumptionRole, ProductConsumptionTag
+
+        curated = {
+            "consome-aqui": [
+                "AGUA", "CAPPUCCINO", "CHA-BLEU",
+                "CHA-CAMILLE", "CHA-GELADO-DIA", "CHA-ROUGE",
+                "CHA-SOPHIE", "COADO", "COFFEE-FLOAT",
+                "COMBO-PETIT-DEJ", "CREAM-SODA-DIA", "CROQUE-COMPLET",
+                "CROQUE-MADAME", "CROQUE-MONSIEUR", "ESPRESSO",
+                "FRAPPE", "JAMBON-BEURRE", "MELON-ICED-SANDO",
+                "MOCHACCINO", "PAIN-GRILLE", "PAIN-PERDU",
+                "PURIN", "QUEIJO-QUENTE", "SALGADO-DIA",
+                "SODA-LARANJA", "TABUA-IGUARIAS", "TEA-JELLY",
+            ],
+            "leva": [
+                "BACON-CASA", "BAGUETE", "BAGUETE-GERGELIM",
+                "BRIOCHE-BURGER", "CAFE-GRAO", "CAMPAGNE",
+                "CAMPAGNE-PASSAS", "CHA-LATA", "CORNICHONS",
+                "FOCACCIA-DIA", "KURO-PAN", "LATA-NELSON",
+                "MOSTARDA-CASA", "PAO-HAMBURGER", "PAO-HOTDOG",
+                "QUEIJO-CAMEMBERT", "QUEIJO-POMERODE", "SHOKUPAN",
+            ],
+            "hibrido": [
+                "ANIMALZINHO", "CIABATTA", "CORNET",
+                "CROISSANT", "FENDU", "FOLHADO-DIA",
+                "GELEIA-MINI", "MADELEINE", "MELON-PAN",
+                "MINI-BAGUETE", "PAIN-CHOCOLAT", "PATE-RATATOUILLE",
+                "TABATIERE", "TAPENADE",
+            ],
+        }
+        roles = {role.ref: role for role in ConsumptionRole.objects.all()}
+        for role_ref, skus in curated.items():
+            role = roles.get(role_ref)
+            if role is None:
+                continue
+            for sku in skus:
+                ProductConsumptionTag.objects.update_or_create(
+                    sku=sku,
+                    defaults={"role": role, "reviewed": True,
+                              "note": "curadoria do cardápio 2027"},
+                )
 
     def _seed_seating(self) -> None:
         """O salão real da Nelson (informado pelo dono, 17/08).

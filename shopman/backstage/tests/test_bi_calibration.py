@@ -36,7 +36,7 @@ def roles(db):
         for ref, label, reading in [
             ("consome-aqui", "Consome aqui", Reading.ANCHOR),
             ("leva", "Leva", Reading.TAKEAWAY),
-            ("acompanha", "Acompanha", Reading.NEUTRAL),
+            ("hibrido", "Híbrido", Reading.HYBRID),
         ]
     }
 
@@ -86,7 +86,7 @@ def test_collections_map_to_readings(roles, catalog):
     tags = {t.sku: t.role.reading for t in ProductConsumptionTag.objects.select_related("role")}
     assert tags["CAFE"] == Reading.ANCHOR
     assert tags["PAO"] == Reading.TAKEAWAY
-    assert tags["CROISSANT"] == Reading.NEUTRAL
+    assert tags["CROISSANT"] == Reading.HYBRID
 
 
 @pytest.mark.django_db
@@ -147,7 +147,7 @@ def history(roles):
                 qty=Decimal(qty), unit_price_q=500, line_total_q=500,
             )
     ProductConsumptionTag.objects.create(sku="CAFE", role=roles[Reading.ANCHOR], reviewed=True)
-    ProductConsumptionTag.objects.create(sku="CROISSANT", role=roles[Reading.NEUTRAL], reviewed=True)
+    ProductConsumptionTag.objects.create(sku="CROISSANT", role=roles[Reading.HYBRID], reviewed=True)
 
 
 @pytest.mark.django_db
@@ -200,5 +200,5 @@ def test_calibration_without_tags_says_what_to_do_instead_of_showing_zeros(db):
 
 @pytest.mark.django_db
 def test_role_override_adds_a_third_variant_without_a_second_rule(history):
-    output = _run("bi_calibrate", "--role", "acompanha=takeaway")
-    assert "acompanha=takeaway" in output
+    output = _run("bi_calibrate", "--role", "hibrido=takeaway")
+    assert "hibrido=takeaway" in output

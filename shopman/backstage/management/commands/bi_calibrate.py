@@ -32,7 +32,7 @@ from django.core.management.base import BaseCommand
 # `falta-de-energia`), então `acompanha` está certo onde está.
 VARIANTS: dict[str, str] = {
     "base": "como etiquetado",
-    "ambiguous-as-takeaway": 'classe "acompanha" lida como "leva" (a proposta do booleano)',
+    "ambiguous-as-takeaway": 'classe "híbrido" lida como "leva" (a proposta do booleano)',
 }
 
 
@@ -47,7 +47,7 @@ class Command(BaseCommand):
             help=(
                 "Variante extra: relê um papel com outra leitura. "
                 "Ex.: --role acompanha=takeaway. O REF é o do papel cadastrado; "
-                "a LEITURA é anchor, takeaway ou neutral."
+                "a LEITURA é anchor, takeaway ou hybrid."
             ),
         )
 
@@ -124,8 +124,8 @@ class Command(BaseCommand):
     def _consumption(self, window, role_overrides):
         from shopman.backstage.models import HistoricalSale, HistoricalSaleItem
         from shopman.backstage.services.consumption import (
+            HYBRID,
             MODE_LABELS,
-            NEUTRAL,
             TAKEAWAY_ITEM,
             UNCLASSIFIED,
             sku_readings,
@@ -160,7 +160,7 @@ class Command(BaseCommand):
         variants = {
             "base": base,
             "ambiguous-as-takeaway": {
-                sku: (TAKEAWAY_ITEM if reading == NEUTRAL else reading)
+                sku: (TAKEAWAY_ITEM if reading == HYBRID else reading)
                 for sku, reading in base.items()
             },
         }

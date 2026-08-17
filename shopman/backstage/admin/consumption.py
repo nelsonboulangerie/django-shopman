@@ -33,7 +33,7 @@ class ConsumptionRoleAdmin(ModelAdmin):
 
     @display(
         description="o que a cesta passa a dizer",
-        label={"Consome aqui": "success", "Leva": "info", "Acompanha": "warning"},
+        label={"Consome aqui": "success", "Leva": "info", "Híbrido": "warning"},
     )
     def reading_display(self, obj):
         return obj.get_reading_display()

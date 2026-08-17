@@ -39,8 +39,8 @@ COLLECTION_READING: dict[str, str] = {
     "salgados": "anchor",
     "rusticos": "takeaway",
     "despensa": "takeaway",
-    "finos": "neutral",
-    "doces": "neutral",
+    "finos": "hybrid",
+    "doces": "hybrid",
 }
 
 # Palavra na categoria do histórico → leitura. Só entra quando o SKU não está
@@ -56,14 +56,18 @@ HISTORICAL_KEYWORD_READING: tuple[tuple[str, str], ...] = (
     ("padaria", "takeaway"),
     ("mercearia", "takeaway"),
     ("merci", "takeaway"),
-    ("doce", "neutral"),
-    ("salgado", "neutral"),
-    ("confeitaria", "neutral"),
-    ("lanche", "neutral"),
+    ("doce", "hybrid"),
+    ("salgado", "hybrid"),
+    ("confeitaria", "hybrid"),
+    ("lanche", "hybrid"),
 )
 
 # Coleções deliberadamente NÃO mapeadas: "balcão" agrupa por onde o produto é
 # vendido, não pelo que ele é, então propor a partir dela seria chutar.
+# ⚠️ O dono (17/08) foi além: "essa coleção NEM deveria existir, não faz
+# sentido" — vai redirecionar os produtos dela e extingui-la. Quando isso
+# acontecer, esta linha some junto, e os 7 SKUs passam a ser propostos pela
+# coleção nova. Até lá, seguem cobertos pela curadoria do seed.
 UNMAPPED_COLLECTIONS = ("balcao",)
 
 

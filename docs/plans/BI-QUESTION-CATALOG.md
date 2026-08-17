@@ -209,6 +209,31 @@ propriedade do item) confundiria dois conceitos diferentes.
 decisão do dono. A regra que ele confirmou vale para **enum**: valor armazenado
 em inglês, rótulo em pt-BR, que é o que `Reading` já faz.
 
+### 3.1.1.2 A curadoria feita (17/08/2026)
+
+O dono revisou os 59 SKUs do cardápio 2027 linha a linha. Resultado:
+**27 consome aqui · 18 leva · 14 híbrido**, todos com `reviewed=True` no seed —
+não é proposta, é curadoria.
+
+Três coisas que só a revisão pegaria, e que nenhuma regra automática acertaria:
+
+- **Salgados são prato quente.** Croque Monsieur, Croque Madame, Queijo-Quente,
+  Jambon-Beurre, Pain Grillé, Tábua de Iguarias: ancoram.
+- **Viennoiserie é híbrida, não "de levar".** Croissant, pain au chocolat,
+  madeleine, cornet, folhado, e os pães japoneses (melonpan, shokupan) servem
+  aos dois usos. Eu tinha proposto vários como "leva".
+- **Alguns produtos de despensa são híbridos**: geleia mini, patê de
+  ratatouille, tapenade — vão para a mesa junto do pão.
+
+**"Híbrido" é a palavra do dono**, e substituiu a minha ("acompanha"): o produto
+não *acompanha*, ele **serve aos dois usos**. O valor armazenado virou `hybrid`,
+seguindo a regra que ele confirmou (enum em inglês, rótulo em pt-BR).
+
+⚠️ **A coleção "Balcão" será extinta** (decisão do dono: *"nem deveria existir,
+não faz sentido"*). Os 7 SKUs dela já estão etiquetados pela curadoria; quando
+ela sumir, eles passam a ser propostos pela coleção nova e a exceção no
+`propose_consumption_tags` sai junto.
+
 ### 3.1.2 A contraproposta do booleano — e por que ela vira medição, não debate
 
 > Dono, na sequência: *"ainda acho que dá pra fazer só com o booleano. Se a cesta
@@ -256,7 +281,7 @@ pergunta que a contagem sobre os dois anos responde. Virou a variante 2 do F2.
 |---|---|
 | **Consome aqui** (bebida, prato, lanche) | diz que a pessoa consumiu aqui |
 | **Leva** (pão, varejo) | junto de uma âncora, vira "consumiu e levou" |
-| **Acompanha** (doce, viennoiserie) | não decide sozinha — mas tira a cesta do balde "sem etiqueta" |
+| **Híbrido** (croissant, doce, pão japonês) | serve aos dois usos: não decide sozinho, mas tira a cesta do balde "sem etiqueta" |
 
 O catálogo segue editável: a casa nomeia como quiser ("café", "salgado assado",
 "geleia"), e cada nome escolhe **uma** das três leituras. Nome novo é cadastro;
@@ -617,7 +642,7 @@ o que comparar. A contagem 1 roda a qualquer momento. Sequência real:
 ### F3 — Modo de consumo, inferido ⭐
 
 - **Etiquetas por SKU** — o trabalho de verdade, e ele é uma escolha entre TRÊS
-  por produto (§3.1.1): consome aqui · leva · acompanha. Cadastro editável no
+  por produto (§3.1.1): consome aqui · leva · híbrido. Cadastro editável no
   Admin, como os defeitos de qualidade já são.
 - ✅ **`propose_consumption_tags`** troca *decidir do zero* por *conferir uma
   lista*: propõe a partir da coleção do catálogo (e, com

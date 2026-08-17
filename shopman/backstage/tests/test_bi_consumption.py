@@ -46,7 +46,7 @@ def roles(db):
         for ref, label, reading in [
             ("consome-aqui", "Consome aqui", Reading.ANCHOR),
             ("leva", "Leva", Reading.TAKEAWAY),
-            ("acompanha", "Acompanha", Reading.NEUTRAL),
+            ("hibrido", "Híbrido", Reading.HYBRID),
         ]
     }
 
@@ -60,7 +60,7 @@ def tagged(roles):
         # Os dois que o nome engana: são PÃES, não lanches (correção do dono).
         "BAGUETE-LANCHE": "leva",
         "HAMBURGUER-100G": "leva",
-        "CROISSANT": "acompanha",
+        "CROISSANT": "hibrido",
     }
     for sku, role_ref in tags.items():
         ProductConsumptionTag.objects.create(sku=sku, role=roles[role_ref])
@@ -264,4 +264,4 @@ def test_readings_ignore_inactive_roles(roles):
 @pytest.mark.django_db
 def test_the_vocabulary_has_exactly_three_readings():
     """Nome novo é bem-vindo; comportamento novo muda com teste, não cadastro."""
-    assert {choice.value for choice in Reading} == {"anchor", "takeaway", "neutral"}
+    assert {choice.value for choice in Reading} == {"anchor", "takeaway", "hybrid"}
