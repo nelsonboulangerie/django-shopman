@@ -88,6 +88,8 @@ SETTINGS_MAP: tuple[SettingsGroup, ...] = (
             _model("Cupons", "shop_coupon", "Códigos que o cliente digita para ganhar desconto.", "confirmation_number"),
             _model("Faixas de preço", "guestman_pricetier", "Tabelas de preço por tipo de cliente.", "groups"),
             _model("Fidelidade", "shop_shoployalty", "Como o cliente acumula e troca pontos.", "loyalty"),
+            _model("Papéis de consumo", "backstage_consumptionrole", "O que faz uma cesta indicar consumo no salão: bebida, lanche, prato quente.", "restaurant"),
+            _model("Etiquetas de consumo", "backstage_productconsumptiontag", "Que papel cada produto cumpre na cesta. O nome engana: pão de hambúrguer é pão.", "label"),
         ),
     ),
     SettingsGroup(
@@ -140,6 +142,7 @@ SETTINGS_MAP: tuple[SettingsGroup, ...] = (
             _model("PDV e alertas", "shop_shoppos", "Comportamento do balcão e quais alertas o operador recebe.", "point_of_sale"),
             _model("Estações KDS", "backstage_kdsinstance", "As telas da cozinha e o que cada uma exibe.", "tv"),
             _model("Comandas do PDV", "backstage_postab", "As comandas fixas do balcão.", "receipt"),
+            _model("Lugares do salão", "backstage_seatingspot", "Mesas, balcão e o que só é usado em dia cheio.", "table_restaurant"),
             _model("Terminais do PDV", "backstage_posterminal", "Os caixas físicos e a gaveta de dinheiro de cada um.", "point_of_sale"),
             _model("Modelos de checklist", "backstage_operationchecklisttemplate", "As rotinas de abertura e fechamento da casa.", "fact_check"),
             _model("Modelos de tarefa", "backstage_operationtasktemplate", "As tarefas que compõem cada rotina.", "task_alt"),

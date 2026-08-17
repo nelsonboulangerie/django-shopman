@@ -1002,17 +1002,17 @@ class Command(BaseCommand):
             "MELON-ICED-SANDO": ["doce", "frutas", "chantilly", "japones", "gelado"],
             "PURIN": ["doce", "pudim", "japones", "sobremesa"],
             "TEA-JELLY": ["doce", "gelatina", "cha", "sobremesa"],
-            "MOSTARDA-CASA": ["despensa", "mostarda", "artesanal", "pote"],
-            "BACON-CASA": ["despensa", "bacon", "defumado", "artesanal"],
-            "TAPENADE": ["despensa", "tapenade", "azeitona", "pote"],
-            "PATE-RATATOUILLE": ["despensa", "pate", "ratatouille", "vegetal", "pote"],
-            "CORNICHONS": ["despensa", "picles", "conserva", "frances"],
-            "GELEIA-MINI": ["despensa", "geleia", "fruta", "mini"],
-            "QUEIJO-CAMEMBERT": ["despensa", "queijo", "camembert", "frances"],
-            "QUEIJO-POMERODE": ["despensa", "queijo", "colonial", "local"],
-            "CAFE-GRAO": ["despensa", "cafe", "grao", "torra"],
-            "CHA-LATA": ["despensa", "cha", "lata", "presente"],
-            "LATA-NELSON": ["despensa", "presente", "lata", "biscoito", "madeleine"],
+            "MOSTARDA-CASA": ["mercearia", "despensa", "mostarda", "artesanal", "pote"],
+            "BACON-CASA": ["mercearia", "despensa", "bacon", "defumado", "artesanal"],
+            "TAPENADE": ["mercearia", "despensa", "tapenade", "azeitona", "pote"],
+            "PATE-RATATOUILLE": ["mercearia", "despensa", "pate", "ratatouille", "vegetal", "pote"],
+            "CORNICHONS": ["mercearia", "despensa", "picles", "conserva", "frances"],
+            "GELEIA-MINI": ["mercearia", "despensa", "geleia", "fruta", "mini"],
+            "QUEIJO-CAMEMBERT": ["mercearia", "despensa", "queijo", "camembert", "frances"],
+            "QUEIJO-POMERODE": ["mercearia", "despensa", "queijo", "colonial", "local"],
+            "CAFE-GRAO": ["mercearia", "despensa", "cafe", "grao", "torra"],
+            "CHA-LATA": ["mercearia", "despensa", "cha", "lata", "presente"],
+            "LATA-NELSON": ["mercearia", "despensa", "presente", "lata", "biscoito", "madeleine"],
         }
 
 
@@ -1886,8 +1886,11 @@ class Command(BaseCommand):
         ProductComponent.objects.create(parent=combo, component=products["CROISSANT"], qty=Decimal("1"))
         ProductComponent.objects.create(parent=combo, component=products["MINI-BAGUETE"], qty=Decimal("1"))
 
-        # Collections — a taxonomia do Cardápio 2027: o copo lidera; `balcao` e
-        # `despensa` existem mas ficam fora dos feeds (menu impresso/TVs).
+        # Collections — a taxonomia do Cardápio 2027: o copo lidera; `mercearia`
+        # e `combos` existem mas ficam fora dos feeds (menu impresso/TVs).
+        # `balcao` foi extinta (decisão do dono, 17/08): agrupava por ONDE o
+        # produto era vendido, não pelo que ele é, e por isso nunca classificou
+        # nada. Os 7 produtos dela foram redistribuídos.
         collection_refs = [
             "bebidas-quentes",
             "bebidas-geladas",
@@ -1896,14 +1899,14 @@ class Command(BaseCommand):
             "finos",
             "salgados",
             "doces",
-            "balcao",
-            "despensa",
+            "combos",
+            "mercearia",
         ]
         # Limpa também as coleções da taxonomia anterior (refs que saíram).
         CollectionItem.objects.filter(
-            collection__ref__in=collection_refs + ["macios", "folhados"]
+            collection__ref__in=collection_refs + ["macios", "folhados", "balcao", "despensa"]
         ).delete()
-        Collection.objects.filter(ref__in=["macios", "folhados"]).delete()
+        Collection.objects.filter(ref__in=["macios", "folhados", "balcao", "despensa"]).delete()
 
         collections_by_ref = {}
         for order, (ref, name) in enumerate(
@@ -1915,8 +1918,8 @@ class Command(BaseCommand):
                 ("finos", "Finos"),
                 ("salgados", "Salgados"),
                 ("doces", "Doces"),
-                ("balcao", "Balcão"),
-                ("despensa", "Despensa"),
+                ("combos", "Combos"),
+                ("mercearia", "Mercearia"),
             ],
             start=1,
         ):
@@ -1933,10 +1936,16 @@ class Command(BaseCommand):
             "bebidas-geladas": ["CHA-GELADO-DIA", "COFFEE-FLOAT", "FRAPPE", "AGUA"],
             "torneira": ["CREAM-SODA-DIA", "SODA-LARANJA"],
             "rusticos": [
+                # Vindos da extinta "balcao" (17/08): três pães de casca e o pão
+                # de hambúrguer, que o dono classificou aqui apesar da massa macia.
+                "FENDU", "TABATIERE", "MINI-BAGUETE", "PAO-HAMBURGER",
                 "BAGUETE", "CAMPAGNE", "CAMPAGNE-PASSAS", "CIABATTA",
                 "BAGUETE-GERGELIM", "FOCACCIA-DIA",
             ],
             "finos": [
+                # Vindos da extinta "balcao" (17/08): buns em pacote, massa
+                # enriquecida, na mesma família dos pães japoneses daqui.
+                "BRIOCHE-BURGER", "PAO-HOTDOG",
                 "CROISSANT", "PAIN-CHOCOLAT", "FOLHADO-DIA", "SHOKUPAN",
                 "KURO-PAN", "MELON-PAN", "ANIMALZINHO", "CORNET",
             ],
@@ -1946,11 +1955,10 @@ class Command(BaseCommand):
                 "PAIN-GRILLE", "TABUA-IGUARIAS",
             ],
             "doces": ["PAIN-PERDU", "MELON-ICED-SANDO", "MADELEINE", "PURIN", "TEA-JELLY"],
-            "balcao": [
-                "FENDU", "TABATIERE", "MINI-BAGUETE", "PAO-HAMBURGER",
-                "BRIOCHE-BURGER", "PAO-HOTDOG", "COMBO-PETIT-DEJ",
-            ],
-            "despensa": [
+            # Bundle não é categoria de produto: o combo tem coleção própria
+            # para não inflar Rústicos nem Finos com um item que é os dois.
+            "combos": ["COMBO-PETIT-DEJ"],
+            "mercearia": [
                 "MOSTARDA-CASA", "BACON-CASA", "TAPENADE", "PATE-RATATOUILLE",
                 "CORNICHONS", "GELEIA-MINI", "QUEIJO-CAMEMBERT", "QUEIJO-POMERODE",
                 "CAFE-GRAO", "CHA-LATA", "LATA-NELSON",
@@ -5866,6 +5874,9 @@ class Command(BaseCommand):
         if vitrine is None:
             return
         self._seed_episode_kinds()
+        self._seed_consumption_roles()
+        self._seed_consumption_tags()
+        self._seed_seating()
         self._seed_business_days(days=days)
         self._seed_shelf_movements(products, vitrine, days=days)
         self._seed_shelf_outages(products, days=days)
@@ -5908,6 +5919,132 @@ class Command(BaseCommand):
                 defaults={
                     "label": label, "hint": hint,
                     "affects_demand": afeta, "position": ordem, "is_active": True,
+                },
+            )
+
+    def _seed_consumption_roles(self) -> None:
+        """O vocabulário que faz a cesta dizer quem sentou e quem levou.
+
+        São TRÊS, porque são três as coisas que a regra sabe usar. Uma lista
+        maior (bebida preparada, bebida pronta, prato quente, lanche montado…)
+        seria quatro nomes para a mesma leitura: mais escolhas do que
+        consequências, e mais trabalho de curadoria sem nenhum ganho.
+
+        A âncora é a bebida: nesta casa, quem pede bebida pra levar é quantidade
+        desprezível, então bebida na cesta significa alguém que sentou.
+
+        ⚠️ Aqui nasce só o VOCABULÁRIO. Etiquetar produto a produto é curadoria
+        do gestor, no Admin — e tem de ser, porque o nome engana: "Hambúrguer
+        100g" é o pão, não o sanduíche.
+        """
+        from shopman.backstage.models import ConsumptionRole, Reading
+
+        catalog = [
+            ("consome-aqui", "Consome aqui",
+             "Café, suco, prato quente, lanche montado", Reading.ANCHOR, 10),
+            ("leva", "Leva",
+             "Pão, geleia, café em grão — o que sai pela porta", Reading.TAKEAWAY, 20),
+            ("hibrido", "Híbrido",
+             "Croissant, doce, pão japonês: serve aos dois usos", Reading.HYBRID, 30),
+        ]
+        for ref, label, hint, reading, position in catalog:
+            ConsumptionRole.objects.update_or_create(
+                ref=ref,
+                defaults={
+                    "label": label, "hint": hint, "reading": reading,
+                    "ordering": position, "is_active": True,
+                },
+            )
+
+    def _seed_consumption_tags(self) -> None:
+        """A curadoria do dono, produto a produto (revisada em 17/08/2026).
+
+        Etiqueta é decisão de negócio, não dedução: o `propose_consumption_tags`
+        propõe a partir da coleção, mas quem confirma é quem conhece o cardápio.
+        Estas 59 linhas entram como `reviewed=True` porque foram
+        conferidas uma a uma — diferente de proposta, que nasce falsa.
+
+        Duas correções que só a revisão pegaria: os **salgados** da casa são
+        prato quente (croque, queijo-quente, jambon-beurre), então ancoram; e a
+        **viennoiserie** é híbrida, não "de levar" — croissant, pain au
+        chocolat, madeleine e os pães japoneses servem aos dois usos.
+        """
+        from shopman.backstage.models import ConsumptionRole, ProductConsumptionTag
+
+        curated = {
+            "consome-aqui": [
+                "AGUA", "CAPPUCCINO", "CHA-BLEU",
+                "CHA-CAMILLE", "CHA-GELADO-DIA", "CHA-ROUGE",
+                "CHA-SOPHIE", "COADO", "COFFEE-FLOAT",
+                "COMBO-PETIT-DEJ", "CREAM-SODA-DIA", "CROQUE-COMPLET",
+                "CROQUE-MADAME", "CROQUE-MONSIEUR", "ESPRESSO",
+                "FRAPPE", "JAMBON-BEURRE", "MELON-ICED-SANDO",
+                "MOCHACCINO", "PAIN-GRILLE", "PAIN-PERDU",
+                "PURIN", "QUEIJO-QUENTE", "SALGADO-DIA",
+                "SODA-LARANJA", "TABUA-IGUARIAS", "TEA-JELLY",
+            ],
+            "leva": [
+                "BACON-CASA", "BAGUETE", "BAGUETE-GERGELIM",
+                "BRIOCHE-BURGER", "CAFE-GRAO", "CAMPAGNE",
+                "CAMPAGNE-PASSAS", "CHA-LATA", "CORNICHONS",
+                "FOCACCIA-DIA", "KURO-PAN", "LATA-NELSON",
+                "MOSTARDA-CASA", "PAO-HAMBURGER", "PAO-HOTDOG",
+                "QUEIJO-CAMEMBERT", "QUEIJO-POMERODE", "SHOKUPAN",
+            ],
+            "hibrido": [
+                "ANIMALZINHO", "CIABATTA", "CORNET",
+                "CROISSANT", "FENDU", "FOLHADO-DIA",
+                "GELEIA-MINI", "MADELEINE", "MELON-PAN",
+                "MINI-BAGUETE", "PAIN-CHOCOLAT", "PATE-RATATOUILLE",
+                "TABATIERE", "TAPENADE",
+            ],
+        }
+        roles = {role.ref: role for role in ConsumptionRole.objects.all()}
+        for role_ref, skus in curated.items():
+            role = roles.get(role_ref)
+            if role is None:
+                continue
+            for sku in skus:
+                ProductConsumptionTag.objects.update_or_create(
+                    sku=sku,
+                    defaults={"role": role, "reviewed": True,
+                              "note": "curadoria do cardápio 2027"},
+                )
+
+    def _seed_seating(self) -> None:
+        """O salão real da Nelson (informado pelo dono, 17/08).
+
+        Capacidade oficial: 4 mesas internas + 4 externas + 6 lugares de balcão.
+        Ficam FORA da conta as duas mesinhas altas de bistrô (em pé) e o bancão
+        externo — eles existem e comportam gente em dia cheio, mas contá-los
+        esconderia o momento em que a casa bateu no teto, que é exatamente o que
+        a leitura precisa enxergar. Pelo mesmo motivo o sofá das mesas internas,
+        que permite apertar mais gente com menos conforto, não vira lugar novo.
+        """
+        from shopman.backstage.models import SeatingSpot, SpotKind
+
+        spots = []
+        for index in range(1, 5):
+            spots.append((f"mesa-interna-{index}", f"Mesa interna {index}",
+                            SpotKind.TABLE, "Salão interno", 2, True))
+        for index in range(1, 5):
+            spots.append((f"mesa-externa-{index}", f"Mesa externa {index}",
+                            SpotKind.TABLE, "Calçada", 2, True))
+        for index in range(1, 7):
+            spots.append((f"balcao-{index}", f"Balcão {index}",
+                            SpotKind.COUNTER, "Balcão", 1, True))
+        for index in range(1, 3):
+            spots.append((f"bistro-{index}", f"Mesinha alta {index}",
+                            SpotKind.TABLE, "Salão interno", 2, False))
+        spots.append(("bancao-externo", "Bancão externo",
+                        SpotKind.COUNTER, "Calçada", 4, False))
+
+        for ref, label, kind, area, seats, counts in spots:
+            SeatingSpot.objects.update_or_create(
+                ref=ref,
+                defaults={
+                    "label": label, "kind": kind, "area": area,
+                    "seats": seats, "counts_in_capacity": counts,
                 },
             )
 
@@ -6190,13 +6327,30 @@ class Command(BaseCommand):
         """
         from shopman.backstage.models import DayContext, HistoricalSale, HistoricalSaleItem
 
+        # Limpa o que ESTE seed criou antes — nunca o que veio de um export.
+        # Vem antes de qualquer saída antecipada de propósito: faxina não pode
+        # depender de haver catálogo, senão um ambiente sem produtos guarda
+        # linhas sintéticas órfãs para sempre.
+        HistoricalSale.objects.filter(source="seed").delete()
+
+        # ⚠️ Onde já existe histórico de verdade, não se inventa histórico.
+        # Sem esta guarda, rodar o seed num ambiente com o export carregado
+        # somava dois anos sintéticos aos dois anos reais, e TODA leitura do
+        # B.I. passava a ser metade ficção — o `source` rotula a série, mas os
+        # totais são a soma. Com o delete acima, um ambiente semeado no passado
+        # se limpa sozinho ao atualizar.
+        real = HistoricalSale.objects.exclude(source="seed")
+        if real.exists():
+            self.stdout.write(
+                f"  ↷ histórico sintético pulado: já há {real.count()} vendas reais carregadas"
+            )
+            return 0
+
         catalogo = [p for sku, p in products.items() if sku in self.BI_SHELF_PROFILES]
         if not catalogo:
             catalogo = list(products.values())[:8]
         if not catalogo:
             return 0
-
-        HistoricalSale.objects.filter(source="seed").delete()
 
         today = timezone.localdate()
         rng = random.Random(20260819)
