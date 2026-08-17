@@ -84,9 +84,6 @@ jobs:
       # gate que reprova por tempo ensina a duvidar do vermelho, que é o pior
       # hábito que um gate pode criar.
       #
-      # O teto do JOB (30) tem que ficar acima deste, senão ele mata primeiro e
-      # os 25 aqui viram enfeite — o job ainda paga ~1min30 de setup antes.
-      #
       # O que 25min NÃO resolvem: `make test` encadeia 13 alvos em SÉRIE. Quando
       # apertarem de novo, a resposta é paralelizar, não subir o teto outra vez.
       - name: Full test suite
