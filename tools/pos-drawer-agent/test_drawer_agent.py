@@ -756,3 +756,40 @@ def test_instalador_reprova_quando_quem_atende_e_outra_versao(monkeypatch, capsy
     assert "NÃO pegou" in saida
     assert "deadbeef" in saida, "tem que mostrar a versão que está no ar"
     assert drawer_agent.build_id() in saida, "e a que deveria estar"
+
+
+def test_escolha_de_fila_por_numero(monkeypatch, capsys):
+    """Ninguém deveria precisar digitar `EPSON_TM-T20X_Receipt5` sem errar.
+
+    Nome de fila do CUPS é comprido e cheio de underscore. Quem instala no balcão
+    erra um caractere, o instalador recusa, e a pessoa conclui que a impressora
+    está com problema — quando o defeito é o instalador exigir transcrição.
+    """
+    monkeypatch.setattr("builtins.input", lambda _: "2")
+
+    escolhida = drawer_agent._escolher_fila(["TM-T20", "EPSON_TM-T20X_Receipt5"], "filas")
+
+    assert escolhida == "EPSON_TM-T20X_Receipt5"
+    assert "2) EPSON_TM-T20X_Receipt5" in capsys.readouterr().out
+
+
+def test_escolha_aceita_o_nome_tambem(monkeypatch):
+    """Quem já sabe o nome não precisa procurar o número dele na lista."""
+    monkeypatch.setattr("builtins.input", lambda _: "TM-T20")
+
+    assert drawer_agent._escolher_fila(["TM-T20", "outra"], "filas") == "TM-T20"
+
+
+def test_fila_unica_so_pede_confirmacao(monkeypatch, capsys):
+    """Perguntar "qual das 1?" é cerimônia. Enter aceita."""
+    monkeypatch.setattr("builtins.input", lambda _: "")
+
+    assert drawer_agent._escolher_fila(["TM-T20"], "filas") == "TM-T20"
+    assert "1)" not in capsys.readouterr().out, "lista numerada não faz sentido com uma só"
+
+
+def test_fila_unica_pode_ser_recusada(monkeypatch):
+    """Recusar devolve vazio, e o instalador para em vez de assumir a errada."""
+    monkeypatch.setattr("builtins.input", lambda _: "n")
+
+    assert drawer_agent._escolher_fila(["TM-T20"], "filas") == ""
