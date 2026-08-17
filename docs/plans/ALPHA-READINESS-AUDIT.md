@@ -11,6 +11,14 @@ O objetivo aqui é honesto: dizer **o que já dá para testar de verdade**, **o 
 está simulado/degradado no staging** (e o que isso significa para o teste), e
 **o que falta fechar** para um alpha sem furos.
 
+> **Auditoria de código (2026-08-17):** a prontidão de **corretude e segurança
+> do código** (dinheiro, concorrência, auth, webhooks, superfícies públicas) foi
+> auditada à parte em
+> [ALPHA-READINESS-CODE-AUDIT-2026-08](ALPHA-READINESS-CODE-AUDIT-2026-08.md) —
+> veredito **pronto para alpha**, com um bug de dinheiro (composição de desconto
+> de lote × promoção) **corrigido e blindado** ali, e uma lista priorizada de
+> itens de go-live.
+
 Staging: loja `https://shopman-staging-cdjpy.ondigitalocean.app` ·
 gestor `https://gestor.boulangerie.com.br` (PIN) · admin
 `https://admin.staging.nelsonboulangerie.com.br`.

@@ -374,13 +374,28 @@ class DiscountModifier:
         total_coupon_discount_q = 0
         discounts_applied = []  # Persisted in session.pricing
 
+        # ``pricing`` é o mesmo objeto de ``session.pricing`` para que
+        # ``_reverse_prior_pricing`` (best-wins) reconcilie a transparência do
+        # desconto substituído — ex.: um % promo/cupom que vença o desconto de
+        # LOTE precisa tirar a contribuição do lote de ``pricing["lot_discount"]``.
+        pricing = session.pricing or {}
+        session.pricing = pricing
+
         for item in items:
             if _is_non_merchandise_line(item) or _price_is_frozen(item):
                 continue
             sku = item.get("sku", "")
-            price_q = item.get("unit_price_q", 0)
-            if not price_q:
+            # Percentuais competem sobre o preço de LISTA e vencem a linha em
+            # "maior desconto ganha", NUNCA compondo sobre um desconto já aplicado
+            # (ex.: LotDiscountModifier, order 15, roda antes). Ler ``unit_price_q``
+            # aqui empilharia o % sobre o preço já reduzido pelo lote — cobrança a
+            # menor silenciosa que o guard de total não pega (tela e cobrança usam
+            # o mesmo ``line_total_q`` furado). Ver DISCOUNT-AUDIT / lot best-wins.
+            list_q = _list_price_q(item)
+            if list_q <= 0:
                 continue
+            current_disc_q = _current_disc_q(item)
+            price_q = list_q
 
             manual = (item.get("meta") or {}).get("manual_discount") or {}
             manual_allowed = bool(manual.get("value"))
@@ -421,9 +436,12 @@ class DiscountModifier:
                     best_discount_q = manual_discount_q
                     best_source = ("manual", manual.get("reason") or "manual", None)
 
-            # Apply winner
-            if best_source and best_discount_q > 0:
-                item["unit_price_q"] = price_q - best_discount_q
+            # Apply winner — só quando bate o desconto já na linha (best-wins, sem
+            # composição). Reconcilia a transparência do desconto substituído
+            # (ex.: lote) antes de gravar o novo vencedor.
+            if best_source and best_discount_q > current_disc_q:
+                _reverse_prior_pricing(pricing, item)
+                item["unit_price_q"] = list_q - best_discount_q
                 item["line_total_q"] = item["unit_price_q"] * int(item.get("qty", 1))
 
                 source_type, source_name, source_id = best_source
@@ -945,13 +963,21 @@ class DeliveryFeeModifier:
             and (item.get("meta") or {}).get("type") != "delivery_fee"
         )
 
+        # Cupom promocional NÃO conta pros thresholds de frete grátis: aplicar uma
+        # cortesia não pode tirar a elegibilidade do cliente. Mesma base que a
+        # projeção do carrinho (``threshold_base_q``, cart.py) e o gate de mínimo
+        # de entrega (validation.py) — senão a tela diz "frete grátis" e o modifier
+        # cobra a taxa. O preço por lote continua contando (é venda real).
+        coupon_discount_q = int(((session.pricing or {}).get("coupon") or {}).get("discount_q") or 0)
+        threshold_base_q = subtotal_q + coupon_discount_q
+
         candidates = [base_fee_q]
 
         # Política 1: o limiar permanente da loja.
         from shopman.shop.projections.cart import shop_rule_q
 
         free_above_q = shop_rule_q("free_delivery_above_q")
-        if free_above_q and subtotal_q >= free_above_q:
+        if free_above_q and threshold_base_q >= free_above_q:
             candidates.append(0)
 
         # Política 2: promoção de entrega grátis (automática ou por cupom). O
@@ -959,7 +985,7 @@ class DeliveryFeeModifier:
         # depois do desconto (order=20), então o cupom já está resolvido em
         # `session.data` quando a taxa é calculada.
         waived = DeliveryFeeModifier._promotional_fee_q(
-            base_fee_q, session, channel=channel, subtotal_q=subtotal_q
+            base_fee_q, session, channel=channel, subtotal_q=threshold_base_q
         )
         if waived is not None:
             candidates.append(waived)

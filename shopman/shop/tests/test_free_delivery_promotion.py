@@ -162,6 +162,44 @@ def test_the_more_generous_policy_wins(loja):
     assert _fee_q(_delivery_cart()) == FEE_Q - 500
 
 
+def test_coupon_does_not_cost_the_customer_the_free_delivery_threshold(loja):
+    """Cupom promocional NÃO derruba a elegibilidade de frete grátis.
+
+    Invariante do projeto: thresholds (mínimo/frete grátis) leem
+    ``subtotal + coupon_discount`` (``threshold_base_q``) — uma cortesia não pode
+    tirar um benefício. A projeção do carrinho e o gate de mínimo já respeitam
+    isso; a taxa (DeliveryFeeModifier) precisa ler a MESMA base, senão a tela diz
+    "frete grátis" e a cobrança aplica a taxa (ou o guard de total barra o
+    checkout). Regressão da auditoria alpha.
+    """
+    shop, _ = loja
+    defaults = dict(shop.defaults or {})
+    # Frete grátis acima de R$ 50,00.
+    defaults["rules"] = {**(defaults.get("rules") or {}), "free_delivery_above_q": 5000}
+    shop.defaults = defaults
+    shop.save(update_fields=["defaults"])
+
+    # Cupom de 20%: R$ 60,00 de mercadoria → R$ 48,00 líquido (abaixo do limiar),
+    # mas o desconto de R$ 12,00 é cortesia e não conta contra o limiar.
+    now = timezone.now()
+    promo = Promotion.objects.create(
+        ref="cupom-20", name="Cupom 20%", type=Promotion.PERCENT, value=20,
+        valid_from=now - timedelta(days=1), valid_until=now + timedelta(days=1),
+        is_active=True,
+    )
+    Coupon.objects.create(code="MENOS20", promotion=promo, max_uses=0, is_active=True)
+
+    # Sem cupom: R$ 60,00 ≥ R$ 50,00 → já é grátis (linha de base).
+    assert _fee_q(_delivery_cart(qty=3)) == 0
+    # Com cupom: líquido R$ 48,00, mas base do limiar = 48,00 + 12,00 = 60,00 →
+    # continua grátis. Sem o add-back, o modifier veria 48,00 e cobraria a taxa.
+    session = _delivery_cart(qty=3, coupon="MENOS20")
+    assert _fee_q(session) == 0, (
+        "cupom derrubou o frete grátis: a taxa foi cobrada mesmo com a mercadoria "
+        "acima do limiar (o desconto do cupom não deveria contar contra o limiar)"
+    )
+
+
 def test_a_scoped_waiver_does_not_reach_another_channel(loja):
     """`Promotion.channels` vale para a renúncia também — é a mesma régua."""
     _shop, web = loja
