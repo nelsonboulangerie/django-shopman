@@ -8,7 +8,7 @@ from __future__ import annotations
 import pytest
 from django.test import override_settings
 
-from shopman.shop.realtime import PISO_ABSOLUTO_SEGUNDOS, RealtimeConfig
+from shopman.shop.realtime import ABSOLUTE_FLOOR_SECONDS, RealtimeConfig
 
 pytestmark = pytest.mark.django_db
 
@@ -50,7 +50,7 @@ class TestGuardaDeServidor:
 
         cfg = RealtimeConfig.load()
 
-        assert cfg.tracking_seconds() >= PISO_ABSOLUTO_SEGUNDOS
+        assert cfg.tracking_seconds() >= ABSOLUTE_FLOOR_SECONDS
 
     def test_min_poll_seconds_eleva_as_duas_telas(self, loja):
         shop = loja

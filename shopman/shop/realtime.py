@@ -23,7 +23,7 @@ from django.conf import settings
 logger = logging.getLogger(__name__)
 
 # Piso absoluto: nem config nem Admin descem abaixo disto.
-PISO_ABSOLUTO_SEGUNDOS = 3
+ABSOLUTE_FLOOR_SECONDS = 3
 
 
 @dataclass(frozen=True)
@@ -40,22 +40,22 @@ class RealtimeConfig:
     @classmethod
     def load(cls) -> RealtimeConfig:
         """Cascata: Shop.realtime ← settings ← default da dataclass."""
-        valores = {
+        values = {
             "tracking_poll_seconds": _from_settings("STOREFRONT_TRACKING_POLL_SECONDS"),
             "payment_poll_seconds": _from_settings("STOREFRONT_PAYMENT_POLL_SECONDS"),
             "min_poll_seconds": _from_settings("STOREFRONT_MIN_POLL_SECONDS"),
         }
-        valores = {k: v for k, v in valores.items() if v is not None}
-        valores.update(_from_shop())
+        values = {k: v for k, v in values.items() if v is not None}
+        values.update(_from_shop())
         base = cls()
-        limpos = {}
-        for campo, padrao in asdict(base).items():
-            bruto = valores.get(campo, padrao)
+        cleaned = {}
+        for field, default in asdict(base).items():
+            raw = values.get(field, default)
             try:
-                limpos[campo] = max(int(bruto), PISO_ABSOLUTO_SEGUNDOS)
+                cleaned[field] = max(int(raw), ABSOLUTE_FLOOR_SECONDS)
             except (TypeError, ValueError):
-                limpos[campo] = padrao
-        return cls(**limpos)
+                cleaned[field] = default
+        return cls(**cleaned)
 
     def tracking_seconds(self) -> int:
         return max(self.tracking_poll_seconds, self.min_poll_seconds)
@@ -64,9 +64,9 @@ class RealtimeConfig:
         return max(self.payment_poll_seconds, self.min_poll_seconds)
 
 
-def _from_settings(nome: str) -> int | None:
-    valor = getattr(settings, nome, None)
-    return valor if valor is not None else None
+def _from_settings(name: str) -> int | None:
+    value = getattr(settings, name, None)
+    return value if value is not None else None
 
 
 def _from_shop() -> dict:
@@ -74,12 +74,12 @@ def _from_shop() -> dict:
         from shopman.shop.models import Shop
 
         shop = Shop.load()
-        bruto = getattr(shop, "realtime", None) if shop else None
-        return dict(bruto) if isinstance(bruto, dict) else {}
+        raw = getattr(shop, "realtime", None) if shop else None
+        return dict(raw) if isinstance(raw, dict) else {}
     except Exception:
         # Base ainda não migrada / Shop ausente: cai no settings + default.
         logger.debug("realtime_config_shop_lookup_degraded", exc_info=True)
         return {}
 
 
-__all__ = ["PISO_ABSOLUTO_SEGUNDOS", "RealtimeConfig"]
+__all__ = ["ABSOLUTE_FLOOR_SECONDS", "RealtimeConfig"]
