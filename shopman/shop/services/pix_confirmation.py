@@ -177,9 +177,14 @@ def _captured_payment_is_sufficient(
 
     Com intent no Payman a fonte canônica é
     ``payment.has_sufficient_captured_payment`` (mesmo contrato do webhook
-    Stripe). No fallback legado o Payman não conhece este pagamento, então a
-    comparação usa o ``paid_amount_q`` reportado pelo webhook; webhook sem
-    ``valor`` não indica pagamento parcial.
+    Stripe). No fallback legado o Payman não conhece este pagamento, então o
+    único número disponível é o ``paid_amount_q`` reportado pelo webhook.
+
+    Webhook autenticado **sem** ``valor`` era lido como "cobre o total" e
+    disparava ``on_paid``: pedido entregue sem que ninguém conferisse um
+    centavo. Ausência de valor não é prova de pagamento, é indeterminação — e
+    indeterminado espera (vira alerta ``payment_insufficient``, o pedido segue
+    aguardando).
     """
     from shopman.shop.services import payment as payment_service
 
@@ -187,7 +192,7 @@ def _captured_payment_is_sufficient(
         return payment_service.has_sufficient_captured_payment(order) is True
     paid_q = payment_data.get("paid_amount_q")
     if paid_q is None:
-        return True
+        return False
     return int(paid_q) >= int(getattr(order, "total_q", 0) or 0)
 
 

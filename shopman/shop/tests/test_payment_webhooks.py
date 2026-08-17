@@ -699,6 +699,27 @@ class EfiPixWebhookTests(WebhookTestBase):
         )
         self.assertEqual(resp.status_code, 401)
 
+    def test_efi_token_in_query_string_returns_401(self) -> None:
+        """Segredo em query string vaza: entra no access log do provedor e vai
+        junto no evento do Sentry (o SDK captura a query; `send_default_pii`
+        não remove). Sem proxy mTLS no deploy, este token é a autenticação
+        ÚNICA — então ele só viaja por header."""
+        resp = self.client.post(
+            f"{self.URL}?token=test-efi-token",
+            {"pix": [{"txid": "abc", "endToEndId": "E1", "valor": "10.00"}]},
+            format="json",
+        )
+        self.assertEqual(resp.status_code, 401)
+
+    def test_efi_query_token_does_not_rescue_a_wrong_header(self) -> None:
+        resp = self.client.post(
+            f"{self.URL}?token=test-efi-token",
+            {"pix": [{"txid": "abc", "endToEndId": "E1", "valor": "10.00"}]},
+            format="json",
+            HTTP_X_EFI_WEBHOOK_TOKEN="wrong-token",
+        )
+        self.assertEqual(resp.status_code, 401)
+
     @override_settings(SHOPMAN_EFI_WEBHOOK={"webhook_token": ""})
     def test_efi_unconfigured_token_rejects_all_requests(self) -> None:
         """Unconfigured webhook_token → every request is rejected, including
@@ -798,6 +819,36 @@ class PixCaptureSufficiencyTests(WebhookTestBase):
 
         with patch("shopman.shop.lifecycle.dispatch") as mock_dispatch:
             confirm_pix(txid="txid_legacy_1", e2e_id="E_LEG_PART", valor="5.00")
+
+        mock_dispatch.assert_not_called()
+        order.refresh_from_db()
+        self.assertNotIn("captured_at", order.data["payment"])
+        self.assertTrue(
+            OperatorAlert.objects.filter(
+                type="payment_insufficient", order_ref=order.ref,
+            ).exists()
+        )
+
+    def test_pix_without_valor_on_legacy_order_does_not_dispatch(self) -> None:
+        """Webhook autenticado SEM ``valor`` não é prova de pagamento.
+
+        No ramo legado (sem intent no Payman) o único número disponível é o do
+        próprio webhook. Ausência de valor era lida como "cobre o total" e
+        disparava ``on_paid`` de graça: pedido entregue sem conferir um
+        centavo. Valor ausente é indeterminado, e indeterminado espera.
+        """
+        from shopman.shop.services.pix_confirmation import confirm_pix
+
+        order = Order.objects.create(
+            ref="PIX-LEGACY-NO-VALOR",
+            channel_ref="web",
+            status="accepted",
+            total_q=1000,
+            data={"payment": {"method": "pix", "intent_ref": "legacy-txid_legacy_3"}},
+        )
+
+        with patch("shopman.shop.lifecycle.dispatch") as mock_dispatch:
+            confirm_pix(txid="txid_legacy_3", e2e_id="E_LEG_NO_VALOR", valor="")
 
         mock_dispatch.assert_not_called()
         order.refresh_from_db()

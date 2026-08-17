@@ -11,10 +11,18 @@ EFI authenticates itself to this endpoint in two layers:
    ``SHOPMAN_EFI_WEBHOOK["mtls_header"]``, default ``X-SSL-Client-Verify``)
    to ``SUCCESS``. This is the canonical mechanism supported by EFI.
 
-2. **Shared token (defense-in-depth, always required).** A secret shared
-   between this service and the EFI dashboard, passed either in the
-   ``X-Efi-Webhook-Token`` header or a ``token`` query parameter. The token
-   is verified with :func:`hmac.compare_digest`.
+2. **Shared token (always required).** A secret shared between this service
+   and the EFI dashboard, passed in the ``X-Efi-Webhook-Token`` **header** and
+   verified with :func:`hmac.compare_digest`.
+
+   ⚠️ **Header only — never a query parameter.** A secret in the query string
+   lands in the provider's access logs and rides along in every Sentry event
+   (the SDK captures the query string, and ``send_default_pii=False`` does not
+   strip it). Because the deployment has no mTLS proxy in front (DO App
+   Platform serves this directly, so layer 1's header never arrives), this
+   token is the endpoint's *only* authentication. Registering the webhook on
+   EFI's side must therefore configure the custom header, not a
+   ``?token=`` URL.
 
 Both layers use **the same code path in dev and prod** — there is no
 "skip signature" flag. In local development, a developer must set
@@ -185,9 +193,13 @@ class EfiPixWebhookView(APIView):
         if mtls_status:
             logger.debug("EfiPixWebhook: mTLS pre-auth header %s=%s", mtls_header, mtls_status)
 
+        # SÓ header. Em query string o segredo entra no access log do provedor
+        # e viaja junto no evento do Sentry (o SDK captura a query string;
+        # `send_default_pii=False` não a remove). Como o deploy não tem proxy
+        # mTLS (DO App Platform direto, o `X-SSL-Client-Verify` nunca chega),
+        # este token é a autenticação ÚNICA deste endpoint — não é um
+        # segundo fator que pode se dar ao luxo de vazar.
         token = request.META.get("HTTP_X_EFI_WEBHOOK_TOKEN", "")
-        if not token:
-            token = request.query_params.get("token", "")
 
         if not token:
             logger.warning("EfiPixWebhook: missing token — rejecting")

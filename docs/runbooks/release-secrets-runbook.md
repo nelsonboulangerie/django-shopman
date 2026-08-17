@@ -84,6 +84,13 @@ EFI_WEBHOOK_TOKEN=<shared secret definido para o webhook>
 EFI_MTLS_HEADER=HTTP_X_SSL_CLIENT_VERIFY
 ```
 
+⚠️ **O `EFI_WEBHOOK_TOKEN` só é aceito no header `X-Efi-Webhook-Token`.** Ao
+cadastrar a URL do webhook na Conta Efi, configure o header customizado — uma
+URL com `?token=...` recebe **401**. Segredo em query string entra no access
+log do provedor e viaja em todo evento do Sentry, e como o deploy não tem proxy
+mTLS na frente (DO App Platform direto), esse token é a autenticação **única**
+do endpoint.
+
 O certificado precisa existir no filesystem do container no caminho de
 `EFI_CERTIFICATE_PATH`. Se o provedor de deploy nao monta arquivo secreto,
 converta isso em etapa de build/runtime segura antes de habilitar `payment_efi`.
