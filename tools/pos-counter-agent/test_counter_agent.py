@@ -996,3 +996,34 @@ def test_leitura_do_pino_sem_permissao_explica_o_grupo(monkeypatch, tmp_path):
 
     assert byte is None
     assert "grupo 'lp'" in motivo
+
+
+def test_veredito_bytes_iguais_e_honesto(capsys):
+    """Responder e distinguir são coisas diferentes — e o texto tem que separar."""
+    assert counter_agent._veredito_do_pino(0x12, 0x12) == 1
+    saida = capsys.readouterr().out
+    assert "iguais" in saida
+    assert "fisico" in saida, "sem alternativa, o operador fica sem saída"
+
+
+def test_veredito_bytes_diferentes_mostra_o_bit(capsys):
+    """O bit que mudou é o dado que eu preciso para ligar o alerta."""
+    assert counter_agent._veredito_do_pino(0x12, 0x16) == 0
+    saida = capsys.readouterr().out
+    assert "0x12" in saida and "0x16" in saida
+    assert "0x04" in saida, "o bit que mudou tem que aparecer"
+
+
+def test_windows_tenta_ler_em_vez_de_recusar(monkeypatch):
+    """A recusa anterior era limitação do MEU código, não do Windows.
+
+    O agente já fala com o `winspool.drv` para imprimir; a mesma biblioteca tem
+    `ReadPrinter`. Dizer "não implementado" mandava o dono achar que o sistema
+    dele é que não servia.
+    """
+    monkeypatch.setattr(counter_agent, "IS_WINDOWS", True)
+    chamou = []
+    monkeypatch.setattr(counter_agent, "_drawer_status_windows", lambda: chamou.append(1) or 0)
+
+    assert counter_agent.drawer_status([]) == 0
+    assert chamou, "no Windows tem que tentar pelo spooler"
