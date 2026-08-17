@@ -39,6 +39,19 @@ def __getattr__(name):
         from shopman.craftsman.contrib.demand.backend import OrderingDemandBackend
 
         return OrderingDemandBackend
+    if name in (
+        "realize_finished_production",
+        "stock_legs_complete",
+        "STOCK_CONSUMED_KEY",
+        "STOCK_REALIZED_KEY",
+    ):
+        # API de recuperação da ponte craftsman→stockman. O `finish` emite o
+        # signal FORA do atomic, então uma queda no meio do handler deixa a
+        # fornada concluída com o ledger pela metade; quem varre precisa saber
+        # ler os marcadores por perna e refazer o que faltou.
+        from shopman.craftsman.contrib.stockman import handlers
+
+        return getattr(handlers, name)
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 
@@ -49,5 +62,9 @@ __all__ = [
     "StaleRevision",
     "suggest",
     "OrderingDemandBackend",
+    "realize_finished_production",
+    "stock_legs_complete",
+    "STOCK_CONSUMED_KEY",
+    "STOCK_REALIZED_KEY",
 ]
 __version__ = "0.3.0"

@@ -49,7 +49,7 @@ class Command(BaseCommand):
         parser.add_argument("--dry-run", action="store_true", help="Só reporta, não re-realiza.")
 
     def handle(self, *args, **options):
-        from shopman.craftsman.contrib.stockman.handlers import (
+        from shopman.craftsman import (
             STOCK_CONSUMED_KEY,
             STOCK_REALIZED_KEY,
             realize_finished_production,

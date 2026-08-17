@@ -361,10 +361,7 @@ def _ensure_stock_ledger_closed(work_order) -> None:
     guardam a reexecução (sem guarda, refazer credita a vitrine em dobro).
     No caminho feliz isto é uma consulta e nada mais.
     """
-    from shopman.craftsman.contrib.stockman.handlers import (
-        realize_finished_production,
-        stock_legs_complete,
-    )
+    from shopman.craftsman import realize_finished_production, stock_legs_complete
 
     work_order.refresh_from_db(fields=["meta"])
     if stock_legs_complete(work_order):

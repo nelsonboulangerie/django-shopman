@@ -16,10 +16,7 @@ from decimal import Decimal
 import pytest
 from django.core.management import call_command
 from django.utils import timezone
-from shopman.craftsman.contrib.stockman.handlers import (
-    STOCK_CONSUMED_KEY,
-    STOCK_REALIZED_KEY,
-)
+from shopman.craftsman import STOCK_CONSUMED_KEY, STOCK_REALIZED_KEY
 from shopman.craftsman.models import Recipe, RecipeItem, WorkOrder
 from shopman.craftsman.service import craft
 from shopman.stockman import stock
