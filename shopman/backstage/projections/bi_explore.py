@@ -103,6 +103,22 @@ METRICS: dict[str, MetricSpec] = {
         MetricSpec("payment_pending", "A receber na entrega", "q",
                    ("payment_method", "time", "weekday", "month_of_year",
                     "week_of_year", "channel"), "payment"),
+        # Salão: lotação sem vínculo comanda↔mesa. A comanda mede o tempo, a
+        # cesta diz quem sentou, o expediente congelado é o denominador.
+        MetricSpec("room_minutes", "Tempo de salão por lotação", "minutes",
+                   ("room_load", "hour", "weekday", "time", "month_of_year"), "room"),
+        MetricSpec("room_peak_groups", "Pico de grupos no salão", "count",
+                   ("hour", "weekday", "time", "month_of_year"), "room"),
+        MetricSpec("room_full_minutes", "Tempo no teto do salão", "minutes",
+                   ("hour", "weekday", "time", "month_of_year"), "room"),
+        # A métrica que responde "quantas mesas eu deveria ter": acrescentar
+        # lugar compensa enquanto ela não cair.
+        MetricSpec("room_revenue_per_spot_hour", "Faturamento por lugar-hora", "q",
+                   ("time", "weekday", "month_of_year"), "room"),
+        MetricSpec("room_turns", "Giro por lugar", "count",
+                   ("time", "weekday", "month_of_year"), "room"),
+        MetricSpec("room_tab_minutes", "Tempo de comanda aberta", "minutes",
+                   ("time", "weekday", "month_of_year"), "room"),
     )
 }
 
@@ -125,6 +141,7 @@ DIMENSION_LABELS: dict[str, str] = {
     "outage_reason": "Motivo (esgotado/pausado)",
     "payment_method": "Forma de pagamento",
     "consumption_mode": "Modo de consumo (inferido)",
+    "room_load": "Lotação do salão",
     "day_kind": "Tipo de dia (feriado, data comercial)",
     "temperature": "Temperatura do dia",
     "rain": "Chuva",
@@ -132,7 +149,8 @@ DIMENSION_LABELS: dict[str, str] = {
 
 # Dimensões que têm ordem própria: saem na sequência natural, não em ranking.
 ORDINAL_DIMENSIONS = frozenset(
-    {"time", "hour", "weekday", "month_of_year", "week_of_year", "temperature"}
+    {"time", "hour", "weekday", "month_of_year", "week_of_year", "temperature",
+     "room_load"}
 )
 
 # Dimensões de CONTEXTO: dependem de dado que a suite não produz (calendário de
@@ -141,7 +159,7 @@ ORDINAL_DIMENSIONS = frozenset(
 # contexto: ou sabemos, ou a pergunta não está disponível.
 CONTEXT_DIMENSIONS = ("day_kind", "temperature", "rain")
 
-CONTEXT_METRIC_FAMILIES = ("sales", "sales_items", "shelf", "outage", "payment")
+CONTEXT_METRIC_FAMILIES = ("sales", "sales_items", "shelf", "outage", "payment", "room")
 
 
 @dataclass(frozen=True)
@@ -265,6 +283,7 @@ def build_bi_explore(
         "shelf": _shelf_rows,
         "outage": _outage_rows,
         "payment": _payment_rows,
+        "room": _room_rows,
     }[spec.family]
     rows = resolver(spec, by, by2, date_from, date_to)
 
@@ -545,6 +564,115 @@ def _consumption_part(mode: str) -> tuple[str, str]:
     from shopman.backstage.services.consumption import mode_label
 
     return mode, mode_label(mode)
+
+
+# ── Salão (lotação sem vínculo comanda↔mesa — §3.2 do BI-QUESTION-CATALOG) ──
+
+
+def _room_rows(spec, by, by2, date_from, date_to) -> list[BIExploreRow]:
+    """Lotação, pico, giro e valor do salão — sem pedir gesto novo a ninguém.
+
+    O vínculo comanda↔mesa foi vetado pelo dono, com razão: no ato de abrir a
+    comanda a pessoa nem sabe onde vai sentar. Das seis perguntas de salão, só
+    "qual mesa rende mais" precisava dele. As demais saem de três coisas que já
+    existiam: a comanda mede o tempo, a cesta diz quem sentou, e o expediente
+    congelado do dia é o denominador.
+
+    ⚠️ **Dia sem expediente carimbado não vira linha.** Feriado fechado
+    apareceria como um dia inteiro de salão vazio, e isso é pior que ausência.
+    """
+    from shopman.backstage.services.room import LOAD_LABELS, room_days
+
+    days = room_days(date_from, date_to)
+    if not days:
+        return []
+
+    contexts = _day_contexts(date_from, date_to) if _wants_context(by, by2) else {}
+
+    totals: dict[tuple, float] = defaultdict(float)
+    denominators: dict[tuple, float] = defaultdict(float)
+    labels: dict[tuple, tuple[str, str]] = {}
+    peaks: dict[tuple, int] = defaultdict(int)
+
+    def parts_for(day: date, *, band: str | None = None, hour: int | None = None):
+        parts = []
+        for dim in (by, by2):
+            if not dim:
+                parts.append(("", ""))
+            elif dim == "room_load":
+                parts.append((band, LOAD_LABELS[band]))
+            elif dim == "hour":
+                parts.append((f"{hour:02d}", f"{hour}h"))
+            elif dim == "time":
+                iso = day.isoformat()
+                parts.append((iso, iso))
+            elif dim == "weekday":
+                parts.append((str(day.weekday()), WEEKDAY_LABELS[day.weekday()]))
+            elif dim == "month_of_year":
+                parts.append((f"{day.month:02d}", MONTH_LABELS[day.month - 1]))
+            elif dim in CONTEXT_DIMENSIONS:
+                parts.append(_context_part(dim, day, contexts))
+            else:
+                parts.append(("", ""))
+        return parts
+
+    def fold(parts, *, add: float = 0.0, peak: int | None = None, base: float = 0.0):
+        if any(part is None for part in parts):
+            return  # dia sem o contexto pedido fica fora, em vez de virar balde
+        key = (parts[0][0], parts[1][0])
+        labels[key] = (parts[0][1], parts[1][1])
+        totals[key] += add
+        denominators[key] += base
+        if peak is not None:
+            peaks[key] = max(peaks[key], peak)
+
+    for day, room in days.items():
+        if spec.key in ("room_minutes", "room_full_minutes"):
+            for (band, hour), minutes in room.minutes_by_band_hour.items():
+                from shopman.backstage.services.room import FULL
+
+                if spec.key == "room_full_minutes" and band != FULL:
+                    continue
+                fold(parts_for(day, band=band, hour=hour), add=minutes)
+        elif spec.key == "room_peak_groups":
+            if "hour" in (by, by2):
+                for hour, peak in room.peak_by_hour.items():
+                    fold(parts_for(day, hour=hour), peak=peak)
+            else:
+                fold(parts_for(day), peak=room.peak_groups)
+        elif spec.key == "room_tab_minutes":
+            for minutes in room.tab_minutes:
+                fold(parts_for(day), add=minutes, base=1)
+        elif spec.key == "room_turns":
+            # Giro é grupos por lugar: o denominador é a capacidade oficial,
+            # que muda quando a casa ganha ou perde mesa.
+            fold(parts_for(day), add=room.groups, base=room.capacity)
+        else:  # room_revenue_per_spot_hour
+            fold(parts_for(day), add=room.revenue_q,
+                 base=room.capacity * room.open_minutes / 60)
+
+    def value(key) -> float:
+        if spec.key == "room_peak_groups":
+            return float(peaks[key])
+        if spec.key in ("room_minutes", "room_full_minutes"):
+            return round(totals[key], 1)
+        base = denominators[key]
+        if not base:
+            return 0.0
+        if spec.key == "room_revenue_per_spot_hour":
+            return float(int(totals[key] / base))
+        return round(totals[key] / base, 1)
+
+    keep_zeros = by in ORDINAL_DIMENSIONS
+
+    return [
+        BIExploreRow(
+            key=k1, label=labels[(k1, k2)][0], key2=k2, label2=labels[(k1, k2)][1],
+            value=value((k1, k2)),
+        )
+        for (k1, k2) in labels
+        if keep_zeros or value((k1, k2)) != 0
+    ]
 
 
 # ── Pagamento (o dinheiro repartido por forma, do pedido — não do fechamento) ─

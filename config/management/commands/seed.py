@@ -5867,6 +5867,7 @@ class Command(BaseCommand):
             return
         self._seed_episode_kinds()
         self._seed_consumption_roles()
+        self._seed_seating()
         self._seed_business_days(days=days)
         self._seed_shelf_movements(products, vitrine, days=days)
         self._seed_shelf_outages(products, days=days)
@@ -5941,6 +5942,43 @@ class Command(BaseCommand):
                     "label": label, "hint": hint,
                     "anchors_dine_in": ancora, "travels": leva,
                     "ordering": ordem, "is_active": True,
+                },
+            )
+
+    def _seed_seating(self) -> None:
+        """O salão real da Nelson (informado pelo dono, 17/08).
+
+        Capacidade oficial: 4 mesas internas + 4 externas + 6 lugares de balcão.
+        Ficam FORA da conta as duas mesinhas altas de bistrô (em pé) e o bancão
+        externo — eles existem e comportam gente em dia cheio, mas contá-los
+        esconderia o momento em que a casa bateu no teto, que é exatamente o que
+        a leitura precisa enxergar. Pelo mesmo motivo o sofá das mesas internas,
+        que permite apertar mais gente com menos conforto, não vira lugar novo.
+        """
+        from shopman.backstage.models import SeatingSpot, SpotKind
+
+        lugares = []
+        for numero in range(1, 5):
+            lugares.append((f"mesa-interna-{numero}", f"Mesa interna {numero}",
+                            SpotKind.TABLE, "Salão interno", 2, True))
+        for numero in range(1, 5):
+            lugares.append((f"mesa-externa-{numero}", f"Mesa externa {numero}",
+                            SpotKind.TABLE, "Calçada", 2, True))
+        for numero in range(1, 7):
+            lugares.append((f"balcao-{numero}", f"Balcão {numero}",
+                            SpotKind.COUNTER, "Balcão", 1, True))
+        for numero in range(1, 3):
+            lugares.append((f"bistro-{numero}", f"Mesinha alta {numero}",
+                            SpotKind.TABLE, "Salão interno", 2, False))
+        lugares.append(("bancao-externo", "Bancão externo",
+                        SpotKind.COUNTER, "Calçada", 4, False))
+
+        for ref, label, kind, area, seats, conta in lugares:
+            SeatingSpot.objects.update_or_create(
+                ref=ref,
+                defaults={
+                    "label": label, "kind": kind, "area": area,
+                    "seats": seats, "counts_in_capacity": conta,
                 },
             )
 

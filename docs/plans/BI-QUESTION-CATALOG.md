@@ -9,6 +9,10 @@
 > nasce de um dado que a suite tem ou pode ter, com o estado dela verificado no
 > código. Seu papel é riscar o que não interessa e apontar a ordem.
 >
+> **Status:** 🟢 **F1, F3 e F4 EXECUTADOS (17/08/2026)** — o dono mandou fazer tudo
+> autonomamente. O que saiu do papel está resumido no §8; o resto do catálogo (§4)
+> segue como trabalho disponível.
+>
 > **Base verificada:** `origin/main` @ `708491f92` (17/08/2026). Este documento é
 > irmão de [BI-INSIGHTS-MAP.md](BI-INSIGHTS-MAP.md) (rodadas 1–7, o que já foi
 > entregue) e [BI-FORECAST-PLAN.md](BI-FORECAST-PLAN.md) (a frente de projeção).
@@ -577,3 +581,84 @@ Da tabela do §4, os 🟡 em ordem de custo crescente: C4 (clientes distintos), 
    original do estudo pedia bebida pronta *acompanhada*; a sua frase de 17/08 a torna
    âncora por si. Concordo com o raciocínio (levar bebida é desprezível aqui), e
    proponho só congelar depois do F2-2, que mostra de quanto é o deslocamento.
+
+
+---
+
+## 8. O que foi executado (17/08/2026)
+
+Três frentes, na ordem do §5. Suíte do backstage verde, bi-nuxt com 29 testes e
+typecheck limpo.
+
+### 8.1 F1 — forma de pagamento
+
+Três métricas novas (**recebido**, **pedidos** e **a receber na entrega**) e a
+dimensão **forma de pagamento**, cruzáveis com hora, canal, fonte e contexto do
+dia. A leitura passou a ser do **pedido**, não do fechamento: existe todo dia,
+inclusive nos sem fechamento feito, que era o limite do painel de caixa.
+
+A regra de repartição saiu de dentro de `services/closing.py` para
+`services/payments.py`. Era o único lugar que sabia ler `order.data.payment`, e o
+B.I. teria de reimplementá-la — duas implementações divergiriam no primeiro caso
+de borda. Um teste cobra que as duas telas contam o mesmo dinheiro.
+
+Duas honestidades sob teste: cobrança na entrega ainda não recebida **sai do
+recebido** e tem métrica própria (dinheiro na rua não é caixa, mas também não
+some); e a forma crua do histórico que o vocabulário não conhece **preserva o
+texto original** em vez de cair num balde "(outros)" — uma forma que a casa usava
+e eu não previ tem de aparecer.
+
+### 8.2 F3 — modo de consumo inferido
+
+Dimensão **modo de consumo** (`local`, `local + levar`, `levar`, `entrega`) nas
+métricas de venda e de itens. A mesma função classifica o `OrderItem` nativo e o
+`HistoricalSaleItem` — é isso que torna os dois anos comparáveis com o presente.
+
+As etiquetas por produto são catálogo editável no Admin, com o comportamento em
+campo (`anchors_dine_in`, `travels`) e não em código, como os defeitos de
+qualidade. O seed traz o **vocabulário**; etiquetar produto a produto é curadoria
+do gestor.
+
+✅ **Baguete Lanche e Hambúrguer 100g entraram como `pão-de-levar`**, com teste
+próprio: o nome engana, e sem isso o salão apareceria cheio nos dias de churrasco.
+
+Três decisões travadas por teste: produto sem etiqueta **não vira "levar" por
+omissão** (a venda se declara não classificada); **a âncora vence o corte de
+estoque** (quatro cafés são uma mesa de quatro, não uma despensa — o corte de 4+
+só olha item de levar); e **"consumiu e levou" sai da composição da cesta**.
+
+⚠️ **Um parâmetro segue aberto** (§3.1): bebida pronta ancorando sozinha desloca
+parte do "levar" para o "local". Está implementado assim, conforme a sua frase, e
+o tamanho do deslocamento sai da contagem do F2.
+
+### 8.3 F4 — o salão
+
+Cadastro de lugares (`SeatingSpot`) e seis métricas, **sem vínculo comanda↔mesa**:
+tempo por lotação, pico de grupos, tempo no teto, faturamento por lugar-hora,
+giro e tempo de comanda aberta.
+
+O seed traz o salão real: 4 mesas internas + 4 externas + 6 lugares de balcão na
+capacidade oficial; bistrô e bancão externo cadastrados **fora da conta**, porque
+contá-los esconderia o momento em que a casa bateu no teto.
+
+A lotação sai em **faixa grossa** (vazio / até a metade / cheio / no teto), nunca
+em porcentagem com decimal: a capacidade oficial não é limite duro, e numerador
+preciso sobre denominador elástico é falsa precisão.
+
+Quatro coisas que o código trava: só quem consumiu aqui ocupa lugar (comanda de
+quem levou some sozinha da conta); **dia sem expediente carimbado não vira
+linha**; tempo fora do expediente não custa mesa; e mesa cadastrada depois **não
+reescreve o passado** (`active_from`).
+
+### 8.4 O que NÃO foi feito, e por quê
+
+- **F2 (as três contagens no staging)** — precisa do banco com o Yooga
+  carregado, que é o staging. Fica para você rodar ou pedir: é o que congela a
+  variante da âncora com número em vez de opinião.
+- **Curadoria das etiquetas produto a produto** — é decisão de negócio, não
+  trabalho de código. O vocabulário está no ar; as etiquetas esperam por você.
+- **"Qual mesa rende mais"** — saiu do catálogo (⛔ M4): era a única pergunta que
+  exigia o vínculo vetado.
+- **M7/M8 (desistiu por falta de mesa; salão × fila do balcão)** — o sinal de
+  casa cheia sustentada existe agora (`room_full_minutes`); ligá-lo ao episódio de
+  fechamento é o passo seguinte natural.
