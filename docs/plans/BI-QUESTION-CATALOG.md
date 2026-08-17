@@ -27,11 +27,13 @@ Das três coisas que você trouxe, o diagnóstico honesto é:
    feito**. Virar métrica e dimensão do explorador é o item mais barato e mais
    imediato deste documento. → §3.3, §5-F1.
 
-2. **Modo de consumo (levar / local / local+levar / entrega) — a casa não registra.**
-   `fulfillment_type` só conhece `pickup` e `delivery`, e o PDV grava `pickup`
-   sempre. Salão e balcão são um borrão só. Existem dois caminhos, e eles se
-   somam: capturar daqui pra frente (§3.1) e inferir o passado do Yooga pela cesta
-   (regra B, já decidida). → §3.1, §5-F3/F6.
+2. **Modo de consumo — decidido: é inferido pela cesta, não capturado.** O nativo não
+   registra (`fulfillment_type` só conhece `pickup`/`delivery`, e o PDV grava
+   `pickup` sempre), e **não vai passar a registrar**: a regra da âncora de bebida já
+   foi estudada e definida, e a decisão do dono (17/08) é aplicá-la como leitura
+   derivada. Consequência boa: a mesma regra vale para o nativo e para os dois anos
+   do Yooga, **sem depender de ritual de ninguém**, e vale no primeiro dia.
+   → §3.1, §5-F3.
 
 3. **Mesa — o conceito não existe no sistema.** O que existe é a **comanda**
    (`POSTab`): um número reusável, sem lugar, sem lotação, sem vínculo com mesa. Sem
@@ -39,12 +41,15 @@ Das três coisas que você trouxe, o diagnóstico honesto é:
    "quantas mesas eu deveria ter" não têm denominador — não são perguntas difíceis,
    são perguntas **sem dado**. → §3.2, §5-F4.
 
-**A descoberta que organiza o plano:** os itens 2 e 3 são a **mesma captura**. Se a
-comanda for aberta *numa mesa*, o sistema sabe sozinho que aquilo é consumo local —
-sem perguntar nada a ninguém, sem tap novo no PDV, usando um gesto que o operador já
-faz. Uma captura, duas perguntas respondidas. E o denominador da ocupação (quanto
-tempo a casa esteve aberta naquele dia) **já foi construído** na rodada 6
-(`DayContext.open_minutes`), sem que esse fosse o objetivo.
+**O que a decisão do item 2 muda:** os itens 2 e 3 **deixam de ser a mesma frente**.
+Modo de consumo vira leitura pura, sem captura, sem cobertura declarada, sem
+dependência do que a equipe lembra de fazer — e retroativa. A mesa continua exigindo
+captura, mas agora **só pelas perguntas dela** (ocupação, giro, ociosidade): não é
+mais pré-requisito de nada. As duas frentes andam em qualquer ordem, ou uma sem a
+outra.
+
+O denominador da ocupação (quanto tempo a casa esteve aberta naquele dia) **já foi
+construído** na rodada 6 (`DayContext.open_minutes`), sem que esse fosse o objetivo.
 
 ---
 
@@ -95,7 +100,8 @@ afirmação**. Dimensão que não tem dado carregado não aparece no seletor; c�
 
 ### 3.1 Modo de consumo — levar, local, local+levar, entrega
 
-**Estado: 🔴 o dado não existe no nativo.**
+**Estado: 🟡 nenhuma fonte registra o modo — e a decisão é não passar a registrar:
+ele se infere da cesta, que já existe em toda venda, nativa e histórica.**
 
 Verificado: `fulfillment_type` aceita exatamente dois valores, `pickup` e `delivery`
 ([`surface.py:659`](../../shopman/storefront/api/surface.py)), e o PDV abre toda
@@ -111,36 +117,55 @@ já registrada é que **mesa/balcão do Yooga não são confiáveis** — a dist
 feita no dia a dia ([`historical_sale.py:9`](../../shopman/backstage/models/historical_sale.py)).
 O único rótulo confiável de lá é `is_delivery`.
 
-**Caminho — dois, e eles se somam:**
+**Decisão do dono (17/08/2026): o modo de consumo é INFERIDO pela cesta.** Não haverá
+captura no PDV. O estudo que definiu a regra já foi feito, e a razão pela qual ela
+funciona nesta casa foi dita na mesma frase: *"quem pede bebida pra levar é uma
+quantidade quase desprezível atualmente"*. A âncora é a **presença de item de
+preparo** — bebida preparada, lanche montado — **mais a bebida pronta**, que aqui
+também ancora, justamente porque quase ninguém a leva.
 
-**(a) Daqui pra frente: a mesa é a captura.** Se abrir comanda numa mesa, a venda é
-consumo local por construção. Venda direta no balcão, sem comanda de mesa, é levar. E
-"consumiu e levou" deixa de precisar de um terceiro botão: é a **composição da cesta
-de uma comanda de mesa** (tem pão-de-levar junto do café?), que se lê dos itens sem
-capturar nada. Nenhum tap novo no PDV, nenhuma pergunta ao operador, nenhum campo em
-branco esperando disciplina — o sinal nasce do gesto que já existe. É o mesmo
-princípio dos episódios de operação (§13 do INSIGHTS-MAP): o sistema nota, a pessoa
-não preenche.
+Isso é melhor do que a captura que eu tinha proposto, por três motivos que valem
+registrar:
 
-⚠️ **A ressalva honesta:** isso só é verdade se o ritual do salão for abrir comanda de
-mesa. Se metade das mesas for atendida por venda direta no balcão, a medida vira meia
-verdade — e é melhor a tela declarar a cobertura ("N% das vendas do período têm modo
-de consumo conhecido") do que fingir que 100% é levar. A cobertura declarada é o mesmo
-padrão do `oven_coverage_percent` que já está no ar.
+- **Vale para trás.** A mesma regra classifica os dois anos do Yooga e o nativo. Não
+  há "antes e depois da captura".
+- **Não depende de ritual.** Nenhuma cobertura declarada, nenhuma disciplina de
+  equipe, nenhum campo em branco esperando alguém lembrar. A cesta sempre existe.
+- **Uma pergunta, um dono.** A classificação mora num lugar só e vale igual no
+  histórico e no nativo — em vez de duas verdades (uma medida, uma inferida) que a
+  tela teria de manter separadas para sempre.
 
-**(b) Para trás: inferência por cesta (regra B), rotulada como inferida.** A decisão
-já foi tomada e o método já existe: âncora de bebida — consumo local exige bebida
-junto; doce sozinho sem bebida é pra levar; 4+ do mesmo item é estoque/levar. O
-retrato que ela produziu no levantamento foi ~56% levar, ~38% local, ~6% delivery,
-com ticket local (R$ 63) acima do ticket de levar (R$ 53). O trabalho é a **curadoria
-de etiquetas por SKU** (bebida preparada, bebida pronta, prato quente, pão-de-levar,
-fino individual, varejo), não o código — a regra é código puro e testável. Ficaram
-abertos dois casos: Baguete Lanche e Hambúrguer 100g (são lanche montado?) e o corte
-de "estoque" (hoje 4+ do mesmo item).
+**A regra, como fica:**
 
-**A honestidade que a tela precisa carregar:** nativo é **medido**, Yooga é
-**inferido**. Misturar os dois num gráfico só, sem rótulo, é exatamente o defeito que
-o §6.4 do INSIGHTS-MAP aponta em `orders_by_hour`. Duas séries rotuladas, sempre.
+| Sinal na cesta | Classificação |
+|---|---|
+| Item de preparo (bebida preparada, lanche montado) | **local** |
+| Bebida pronta | **local** (refinamento do dono: levar bebida é desprezível) |
+| Doce / viennoiserie / pão sozinho, sem bebida | **levar** |
+| 4+ unidades do mesmo item | **levar** (compra de estoque) |
+| `is_delivery` (Yooga) / `fulfillment_type=delivery` (nativo) | **entrega** — precede tudo |
+| Cesta local **com** pão-de-levar junto | **local + levar** |
+
+O retrato que o estudo produziu com a regra: **~56% levar, ~38% local, ~6% delivery**,
+com ticket local (R$ 63) acima do ticket de levar (R$ 53).
+
+⚠️ **O refinamento "bebida pronta ancora sozinha" mexe no resultado e é mensurável.**
+Na formulação original a bebida pronta só ancorava acompanhada de item de consumo
+local; agora ancora sozinha. O efeito é deslocar parte do "levar" para o "local", e o
+tamanho desse deslocamento sai de uma contagem — vale rodar as duas variantes sobre os
+dois anos e ver a diferença antes de congelar (é barato: a regra é função pura).
+
+**O trabalho real é curadoria, não código.** As etiquetas por SKU (bebida preparada,
+bebida pronta, prato quente, pão-de-levar, fino individual, varejo/mercearia) são o
+esforço; a regra em si é uma função testável. Seguem abertos os dois casos do estudo:
+Baguete Lanche e Hambúrguer 100g (são lanche montado, e portanto âncora?) e o corte de
+"estoque" (hoje 4+ do mesmo item).
+
+**A honestidade que a tela precisa carregar:** a leitura é **inferida**, e diz isso —
+com a regra vigente ao alcance de um clique, porque um número que muda quando alguém
+reetiqueta um SKU precisa dizer de que regra veio. O que **não** é mais necessário:
+separar série medida de série inferida. Não há série medida, e é isso que torna a
+leitura coerente de ponta a ponta.
 
 ### 3.2 Mesa — valor, ocupação, ociosidade, quantidade ideal
 
@@ -254,9 +279,9 @@ Legenda: ✅ o B.I. já responde · 🟡 o dado existe, falta leitura · 🔴 fa
 | # | Pergunta | Estado | Fonte / o que falta |
 |---|---|---|---|
 | V1 | Quanto vende cada canal (balcão, loja online, iFood)? | ✅ | dimensão `channel` |
-| V2 | Quanto vende cada **modo de consumo** (levar, local, local+levar, entrega)? | 🔴 | §3.1 |
-| V3 | Qual o **ticket** de cada modo de consumo? Quem senta gasta mais? | 🔴 | §3.1 |
-| V4 | Qual a **cesta típica** de cada modo (o que o salão come, o que o balcão leva)? | 🔴 | §3.1 + itens |
+| V2 | Quanto vende cada **modo de consumo** (levar, local, local+levar, entrega)? | 🟡 | §3.1 — inferido da cesta; falta etiquetar SKUs |
+| V3 | Qual o **ticket** de cada modo de consumo? Quem senta gasta mais? | 🟡 | §3.1 |
+| V4 | Qual a **cesta típica** de cada modo (o que o salão come, o que o balcão leva)? | 🟡 | §3.1 + itens |
 | V5 | Quanto vende cada **forma de pagamento**, e como isso muda por hora e dia? | 🟡 | §3.3 |
 | V6 | Entrega paga o custo que carrega (ticket × taxa × distância)? | 🟡 | ticket por canal existe; `delivery_fee_q` está fora de `total_q` (§6.5 INSIGHTS-MAP) |
 | V7 | Que dias e horários concentram faturamento? | ✅ | hora × dia-da-semana |
@@ -286,7 +311,7 @@ Legenda: ✅ o B.I. já responde · 🟡 o dado existe, falta leitura · 🔴 fa
 | C3 | Quem eram os **bons clientes do Yooga que nunca voltaram**? | 🔴 | N1 — re-ingestão com telefone (decidida, não feita) |
 | C4 | Quantos clientes **distintos** por período (recorrência sem RFM)? | 🟡 | métrica nova, dado existe |
 | C5 | Que fração da venda é de **cliente identificado**? | 🟡 | `customer_ref` no pedido |
-| C6 | Quem senta é o mesmo que leva, ou são dois públicos? | 🔴 | §3.1 × `customer_ref` |
+| C6 | Quem senta é o mesmo que leva, ou são dois públicos? | 🟡 | §3.1 × `customer_ref` |
 | C7 | Que horário cada segmento prefere? | 🟡 | `CustomerInsight.preferred_hour` existe, ninguém lê |
 
 ### 4.4 Produto e cardápio
@@ -368,43 +393,52 @@ Cada fase é entregável sozinha e não bloqueia a seguinte.
 
 ### F2 — Medir antes de construir *(meio dia, evita construir no vazio)*
 
-Antes de F3/F4, rodar no staging (que tem o Yooga carregado) três contagens que
-mudam a decisão:
+Três contagens no staging (que tem o Yooga carregado), cada uma decide um parâmetro:
 
-1. Que fração das vendas do Yooga tem `table_label` preenchido — se for alta, a
-   inferência da regra B ganha um **teste de aderência** grátis (não vira verdade,
-   mas mede o erro do método).
-2. Qual a distribuição real de `HistoricalSale.payment` — dimensiona a whitelist de
-   F1.
-3. Que fração das vendas do PDV hoje passa por comanda contra venda direta — é o
-   número que diz se o caminho (a) do §3.1 mede a casa ou uma fatia dela.
+1. Distribuição real de `HistoricalSale.payment` — dimensiona a whitelist de F1.
+2. As **duas variantes da âncora** (bebida pronta ancorando sozinha × só acompanhada)
+   sobre os dois anos: quanto muda o retrato? É o que congela a regra de F3 com
+   número, não com opinião.
+3. Que fração das vendas do Yooga tem `table_label` preenchido — não vira verdade de
+   canal (a decisão de que mesa/balcão do Yooga não são confiáveis continua de pé),
+   mas se a cobertura for alta serve de **teste de aderência** da inferência: mede o
+   erro do método sem custar nada.
 
-### F3 — Modo de consumo, capturado ⭐
+### F3 — Modo de consumo, inferido ⭐
 
-- Cadastro de mesas + vínculo comanda↔mesa (§3.2, peças 1 e 2). **Uma captura, duas
-  perguntas.**
-- Dimensão **"Modo de consumo"** com os valores que o dado sustenta: `salão`,
-  `balcão-levar`, `retirada agendada`, `entrega`, `iFood` — derivados, não digitados.
-- **Cobertura declarada na tela**: que fração do período tem modo conhecido.
-- ⚠️ Sem inventar o terceiro estado: "consumiu e levou" sai da composição da cesta da
-  comanda de mesa, não de um botão.
+- **Etiquetas por SKU** — o trabalho de verdade. Bebida preparada, bebida pronta,
+  lanche montado, prato quente, pão-de-levar, fino individual, varejo. Cadastro
+  editável no Admin, como os defeitos de qualidade já são.
+- **A regra como função pura e testável**, aplicada igual ao `OrderItem` nativo e ao
+  `HistoricalSaleItem`. Uma implementação, dois consumidores — nunca duas cópias que
+  divergem.
+- **Dimensão "Modo de consumo"**: `local`, `local + levar`, `levar`, `entrega`,
+  aplicável às famílias de vendas e itens (e portanto cruzável com hora, dia,
+  contexto do dia, forma de pagamento de F1).
+- **Rotulada como inferida na tela**, com a regra vigente ao alcance de um clique.
+- Decidir os dois casos abertos: Baguete Lanche / Hambúrguer 100g e o corte de
+  "estoque" (4+).
+- ⚠️ SKU sem etiqueta não pode virar "levar" por omissão — vira **não classificado**,
+  declarado. Etiqueta faltando é ausência de dado, não um veredito.
+
+**Independe de F4.** Não depende de mesa, de comanda, nem de ritual de equipe.
 
 ### F4 — Mesa: ocupação, giro, valor ⭐
 
+Frente própria agora, movida **só pelas perguntas de mesa** (M1–M8) — deixou de ser
+pré-requisito do modo de consumo.
+
+- Cadastro de mesas (ref, rótulo, lugares, ativa desde quando) + vínculo
+  comanda↔mesa: `table_ref` na `Session.data`, propagado a `Order.data` pela lista
+  explícita do `CommitService`, registrado antes em `data-schemas.md`.
 - Métricas do quadro do §3.2, todas sobre `DayContext.open_minutes` como
   denominador, herdando "dia sem carimbo não entra na conta".
 - Sinal de **casa cheia sustentada** → pergunta com opções no fechamento, no catálogo
   de episódios que já existe.
 - Cenários curados: ocupação por hora × dia-da-semana; faturamento por mesa-hora ao
   longo dos meses; permanência por faixa.
-
-### F5 — Modo de consumo, inferido (os dois anos)
-
-- Etiquetas de SKU (o trabalho é curadoria, não código) + regra B como função pura e
-  testável, aplicada ao `HistoricalSaleItem`.
-- **Sempre rotulado "inferido"**, sempre em série separada do medido.
-- Resolver os dois casos abertos: Baguete Lanche / Hambúrguer 100g, e o corte de
-  "estoque" (hoje 4+ do mesmo item).
+- ⚠️ Aqui a cobertura **continua importando**: se o salão não abrir comanda por mesa,
+  a ocupação mede uma fatia. É a pergunta nº 1 do §7.
 
 ### F6 — Catálogo, conforme apetite
 
@@ -416,12 +450,15 @@ Da tabela do §4, os 🟡 em ordem de custo crescente: C4 (clientes distintos), 
 
 ## 6. Riscos e dívidas que este trabalho toca
 
-1. **A cobertura da comanda decide a honestidade do §3.1.** Se o salão não abrir
-   comanda, a métrica mede uma fatia e chama de tudo. Por isso F2 vem antes de F3, e
-   por isso a tela carrega cobertura declarada.
-2. **`OrderItem.sku` segue sem índice** com 380k+ linhas históricas. F1 e F5 aumentam
-   a carga do explorador sobre a tabela de itens — o gatilho medido da ADR-021 §3
-   (p95 do explorador no staging com o Yooga carregado) vale a pena antes de F5.
+1. **A etiqueta de SKU vira parâmetro de negócio.** Com o modo de consumo inferido,
+   reetiquetar um produto **muda números publicados** — inclusive de meses passados.
+   Duas travas: a regra vigente fica visível na tela, e mudança de etiqueta é evento
+   com data, não edição silenciosa. É o preço justo da inferência, e é menor que o
+   preço da captura que ela substitui.
+2. **`OrderItem.sku` segue sem índice** com 380k+ linhas históricas. F1 e F3 aumentam
+   a carga do explorador sobre a tabela de itens, e F3 mais que todas: classificar por
+   cesta obriga a varrer os itens de cada venda. O gatilho medido da ADR-021 §3 (p95 do
+   explorador no staging com o Yooga carregado) vale a pena **antes** de F3.
 3. **Ticket médio dos painéis exclui frete** (`delivery_fee_q` fora de `total_q`).
    Comparar ticket de entrega com ticket de salão sem resolver isso compara coisas
    diferentes. Vale resolver junto de V6.
@@ -430,16 +467,21 @@ Da tabela do §4, os 🟡 em ordem de custo crescente: C4 (clientes distintos), 
    registrada em `docs/reference/data-schemas.md` antes do uso. Nenhum campo novo em
    modelo do core.
 5. **`table_label` do Yooga não vira verdade de canal** — nem depois de F2. Se a
-   contagem mostrar boa cobertura, ele serve para **medir o erro** da regra B, e é
+   contagem mostrar boa cobertura, ele serve para **medir o erro** da inferência, e é
    assim que deve aparecer.
+6. **Modo de consumo inferido não vale para decisão operacional.** É leitura de
+   gestão: mix, ticket, cesta, tendência. Nada de fila, cozinha ou fiscal deve passar
+   a depender dele — inferência é boa para entender o negócio e ruim para mandar em
+   alguém.
 
 ---
 
 ## 7. Perguntas ao dono
 
-1. **O salão vai passar a abrir comanda por mesa?** É a única pergunta que muda o
-   plano inteiro. Se sim, F3/F4 medem a casa. Se não, medem uma fatia — ainda útil,
-   mas com cobertura declarada, e talvez não valha F4.
+1. **O salão vai passar a abrir comanda por mesa?** Agora essa pergunta decide **só o
+   F4** — com o modo de consumo inferido, F3 anda sem ela. Se sim, a ocupação mede a
+   casa; se não, mede uma fatia com cobertura declarada, e talvez F4 não se pague.
+   *(Pergunta reformulada em 17/08: antes ela decidia as duas frentes.)*
 2. **Quantas mesas e quantos lugares a Nelson tem hoje?** É o denominador; sem ele
    não há ocupação. (E se mudar ao longo do tempo, o cadastro precisa saber desde
    quando — mesa acrescentada em março não pode reescrever a ocupação de janeiro.)
@@ -450,3 +492,7 @@ Da tabela do §4, os 🟡 em ordem de custo crescente: C4 (clientes distintos), 
    muito diferentes; a leitura pode ser uma ou duas.
 5. **F1 já?** É pequena, independente, e vale sobre dois anos desde o primeiro dia.
    Meu voto é sim, antes de qualquer coisa deste documento.
+6. **Bebida pronta ancora sozinha — confirmar depois de ver o número.** A formulação
+   original do estudo pedia bebida pronta *acompanhada*; a sua frase de 17/08 a torna
+   âncora por si. Concordo com o raciocínio (levar bebida é desprezível aqui), e
+   proponho só congelar depois do F2-2, que mostra de quanto é o deslocamento.
