@@ -5,7 +5,7 @@
 // esperado da gaveta nem a variância — a conferência é da retaguarda.
 
 export interface CashMovementRow {
-  kind: "sangria" | "suprimento" | "ajuste" | string;
+  kind: "sangria" | "suprimento" | string;
   kind_label: string;
   amount_q: number;
   amount_display: string;

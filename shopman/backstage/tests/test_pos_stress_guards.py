@@ -205,30 +205,32 @@ class CashRemovalNeedsAManagerTests(PosGuardsBase):
                 manager_approval={"username": self.operator.username, "pin": "1111"},
             )
 
-    def test_negative_adjustment_is_a_removal_too(self) -> None:
-        # Um ajuste negativo abaixa o esperado igual a uma sangria; deixá-lo livre
-        # seria trancar uma porta e deixar a do lado aberta.
-        with self.assertRaises(PosIntentError):
+    def test_valor_negativo_nao_vira_sangria_disfarcada(self) -> None:
+        # O `ajuste` com sinal foi aposentado justamente porque era uma segunda
+        # porta para o mesmo efeito. Agora valor negativo é recusado: um
+        # suprimento de −20 seria uma sangria sem gerente.
+        with self.assertRaises(POSError):
             register_cash_movement(
-                operator=self.operator, movement_type="ajuste",
-                amount_raw="-20,00", reason="quebra",
+                operator=self.operator, movement_type="suprimento",
+                amount_raw="-20,00", reason="Cofre",
             )
 
     def test_suprimento_needs_no_manager(self) -> None:
         movement = register_cash_movement(
             operator=self.operator, movement_type="suprimento",
-            amount_raw="30,00", reason="troco",
+            amount_raw="30,00", reason="Reforço de troco",
         )
 
         self.assertEqual(movement.approved_by, "")
 
-    def test_positive_adjustment_needs_no_manager(self) -> None:
-        movement = register_cash_movement(
-            operator=self.operator, movement_type="ajuste",
-            amount_raw="5,00", reason="sobra",
-        )
-
-        self.assertEqual(movement.approved_by, "")
+    def test_tipo_desconhecido_cai_em_sangria_e_exige_gerente(self) -> None:
+        # Fail-safe: o que não é suprimento é tratado como retirada. Cair no
+        # tipo permissivo deixaria passar dinheiro saindo sem assinatura.
+        with self.assertRaises(PosIntentError):
+            register_cash_movement(
+                operator=self.operator, movement_type="ajuste",
+                amount_raw="5,00", reason="sobra",
+            )
 
     def test_movement_still_requires_an_open_shift(self) -> None:
         self.shift.close(blind_closing_amount_q=10000)

@@ -26,19 +26,20 @@ describe("presentation/cashReport — leituras X/Z da antesala", () => {
     expect(shiftPeriodDisplay({ opened_at: "", closed_at: "" })).toBe("");
   });
 
-  it("classifica o fluxo do movimento: suprimento entra, sangria sai, ajuste segue o sinal", () => {
+  it("classifica o fluxo do movimento: suprimento entra, sangria sai", () => {
     expect(movementFlow({ kind: "suprimento", amount_q: 1000 })).toBe("in");
     expect(movementFlow({ kind: "sangria", amount_q: 1000 })).toBe("out");
-    expect(movementFlow({ kind: "ajuste", amount_q: 500 })).toBe("in");
-    expect(movementFlow({ kind: "ajuste", amount_q: -500 })).toBe("out");
+    // Só o tipo decide a direção — o valor é sempre positivo desde que o
+    // `ajuste` com sinal foi aposentado.
+    expect(movementFlow({ kind: "sangria", amount_q: 500 })).toBe("out");
   });
 
   it("exibe o movimento com sinal explícito sobre o valor absoluto", () => {
     expect(signedMovementDisplay({ kind: "suprimento", amount_q: 1000 })).toContain("+");
     expect(signedMovementDisplay({ kind: "sangria", amount_q: 2000 })).toContain("-");
     // Ajuste negativo (falta): sinal de saída, valor absoluto — nunca "--".
-    expect(signedMovementDisplay({ kind: "ajuste", amount_q: -500 })).not.toContain("--");
-    expect(signedMovementDisplay({ kind: "ajuste", amount_q: -500 })).toContain("-");
+    expect(signedMovementDisplay({ kind: "sangria", amount_q: 500 })).not.toContain("--");
+    expect(signedMovementDisplay({ kind: "sangria", amount_q: 500 })).toContain("-");
   });
 
   it("intitula a leitura pelo estado do turno: X aberto, Z fechado", () => {

@@ -1579,7 +1579,7 @@ class POSCashCloseBlockingView(APIView):
 @extend_schema_view(
     post=extend_schema(
         tags=["backstage"],
-        summary="Register cash movement (sangria/suprimento/ajuste)",
+        summary="Register cash movement (sangria/suprimento)",
         responses={200: OpenApiResponse(description="Movement registered.")},
     ),
 )
@@ -1591,8 +1591,8 @@ class POSCashMovementView(APIView):
         kind = (request.data.get("kind") or "").strip()
         amount = request.data.get("amount", "0")
         reason = (request.data.get("reason") or "").strip()
-        if kind not in {"sangria", "suprimento", "ajuste"}:
-            return Response({"detail": "kind deve ser 'sangria', 'suprimento' ou 'ajuste'."}, status=400)
+        if kind not in {"sangria", "suprimento"}:
+            return Response({"detail": "kind deve ser 'sangria' ou 'suprimento'."}, status=400)
         try:
             mov = pos_service.register_cash_movement(
                 operator=request.user,

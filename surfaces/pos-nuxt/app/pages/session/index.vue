@@ -1,6 +1,6 @@
 <script setup lang="ts">
 // ANTESALA do PDV (benchmark Odoo POS): a tela de SESSÃO antes da venda. O
-// operador abre o caixa (fundo de troco), registra sangria/suprimento/ajuste e
+// operador abre o caixa (fundo de troco), registra sangria/suprimento e
 // fecha o turno (contagem cega) aqui — não mais num diálogo espremido dentro da
 // tela de venda. Sem turno aberto, a tela de venda redireciona para cá; com
 // turno, o CTA "Continuar vendendo" leva de volta. BLIND: a antesala nunca
@@ -69,7 +69,7 @@ async function submitOpen() {
   if (ok) await navigateTo("/");
 }
 
-// Movimentos de gaveta: sangria / suprimento / ajuste.
+// Movimentos de gaveta: sangria (sai) / suprimento (entra).
 //
 // O motivo é obrigatório e vem em BOTÕES, como já acontece na abertura de gaveta
 // ao lado. Motivo obrigatório só de digitar não sobrevive ao balcão: a fila anda,

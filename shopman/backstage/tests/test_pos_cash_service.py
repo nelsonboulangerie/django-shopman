@@ -19,7 +19,7 @@ def operator(db):
 def manager_approval(db):
     """Autorização válida de gerente para as RETIRADAS de gaveta.
 
-    Sangria e ajuste negativo exigem a segunda assinatura (ver
+    Sangria exige a segunda assinatura (ver
     ``register_cash_movement``); os testes que só querem exercitar valor e tipo
     passam a carregar esta credencial.
     """
@@ -213,11 +213,12 @@ def test_two_open_shifts_do_not_double_count_untagged_sale(operator):
 
 
 @pytest.mark.django_db
-def test_negative_adjustment_reduces_expected(operator, manager_approval):
+def test_sangria_reduz_o_esperado(operator, manager_approval):
+    """Era o teste do ajuste negativo — que é uma sangria escrita de outro jeito."""
     shift = CashShift.objects.create(operator=operator, terminal=POSTerminal.default(), opening_amount_q=1000)
     pos.register_cash_movement(
-        operator=operator, movement_type="ajuste", amount_raw="-5,00",
-        reason="falta na conferência", manager_approval=manager_approval,
+        operator=operator, movement_type="sangria", amount_raw="5,00",
+        reason="Cofre", manager_approval=manager_approval,
     )
 
     shift.close(blind_closing_amount_q=500)

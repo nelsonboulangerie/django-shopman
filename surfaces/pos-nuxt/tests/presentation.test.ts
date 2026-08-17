@@ -434,7 +434,6 @@ describe("presentation/cash — blind drawer shaping", () => {
   it("labels movement kinds with a fallback", () => {
     expect(movementLabel("sangria")).toBe("Sangria");
     expect(movementLabel("suprimento")).toBe("Suprimento");
-    expect(movementLabel("ajuste")).toBe("Ajuste");
     expect(movementLabel("custom")).toBe("custom");
   });
 
@@ -469,13 +468,13 @@ describe("presentation/cash — blind drawer shaping", () => {
     expect(sessionScreenState(base, false)).toBe("closed");
   });
 
-  // O motivo responde PARA ONDE o dinheiro foi. Repetir o tipo ("sangria" no campo
-  // motivo) é o que acontece quando a única saída é digitar com a fila andando.
+  // O motivo responde PARA ONDE o dinheiro foi (sangria) ou DE ONDE veio
+  // (suprimento). Repetir o tipo no campo motivo é o que acontece quando a única
+  // saída é digitar com a fila andando.
   it("offers clickable reasons per movement kind, never repeating the kind", () => {
-    expect(movementReasons("sangria")).toEqual(["Cofre", "Banco", "Fornecedor", "Troco"]);
-    expect(movementReasons("suprimento")).toEqual(["Troco", "Reforço"]);
-    expect(movementReasons("ajuste")).toEqual(["Sobra", "Falta", "Erro de lançamento"]);
-    for (const kind of ["sangria", "suprimento", "ajuste"]) {
+    expect(movementReasons("sangria")).toEqual(["Cofre", "Banco", "Fornecedor"]);
+    expect(movementReasons("suprimento")).toEqual(["Reforço de troco", "Cofre", "Banco"]);
+    for (const kind of ["sangria", "suprimento"]) {
       expect(movementReasons(kind).map((r) => r.toLowerCase())).not.toContain(kind);
     }
   });
@@ -769,5 +768,19 @@ describe("presentation/receipt — print shaping (D3)", () => {
   it("labels payments from the method projection", () => {
     const methods = [{ ref: "cash", label: "Dinheiro", icon: "", requires_change: true }] as any;
     expect(receiptPayments(snap, methods)).toEqual([{ label: "Dinheiro", amountDisplay: formatBRL(3500) }]);
+  });
+});
+
+describe("troco não é sangria", () => {
+  it("nenhum motivo de sangria oferece trocar nota", () => {
+    // Trocar uma nota não muda o dinheiro que existe na gaveta: saem R$ 50,
+    // entram 5×R$ 10. Lançar como sangria derruba o esperado por um dinheiro
+    // que nunca saiu, e o turno fecha com falta fantasma se ninguém lembrar do
+    // suprimento gêmeo. Gaveta que abre sem mover dinheiro é "abrir sem venda".
+    expect(movementReasons("sangria").some((r) => /troco/i.test(r))).toBe(false);
+  });
+
+  it("o ajuste não existe mais e não devolve motivo nenhum", () => {
+    expect(movementReasons("ajuste")).toEqual([]);
   });
 });
