@@ -1142,6 +1142,112 @@ def _ler_pino(device: Path, *, timeout: float = 2.0) -> tuple[int | None, str]:
         os.close(fd)
 
 
+def _veredito_do_pino(fechada: int, aberta: int) -> int:
+    """A conclusão do experimento. Uma só, para Linux e Windows não divergirem."""
+    if fechada == aberta:
+        print(f"\n  Os dois bytes sao iguais (0x{fechada:02x}).")
+        print("  A impressora responde, mas nao distingue a gaveta - por este")
+        print("  caminho nao da. Controle de gaveta aberta tem que ser fisico.\n")
+        return 1
+    mudou = fechada ^ aberta
+    print(f"\n  OK, FUNCIONA. Fechada 0x{fechada:02x}, aberta 0x{aberta:02x} (bit 0x{mudou:02x}).")
+    print("  Da para o sistema saber quando a gaveta fica aberta. Me mande estes")
+    print("  dois numeros que eu ligo o alerta.\n")
+    return 0
+
+
+def _ler_pino_windows(queue: str, *, timeout: float = 2.0) -> tuple[int | None, str]:
+    """Pergunta o estado pelo spooler e tenta LER a resposta de volta.
+
+    O agente ja conversa com o ``winspool.drv`` para imprimir (``OpenPrinter`` +
+    ``WritePrinter``); a mesma biblioteca tem ``ReadPrinter``. Tentar ler nao e
+    caminho novo - e uma funcao a mais no canal que ja existe.
+
+    O que NAO e garantido: ler de volta pelo spooler depende de a porta e o
+    driver serem bidirecionais, e isso varia por instalacao. Quando nao for,
+    ``ReadPrinter`` devolve zero bytes - e a resposta honesta e essa, nao um
+    chute. O caminho garantido no Windows e o driver da Epson (OPOS/APD), que
+    expoe o estado da gaveta como funcao pronta, mas custa uma instalacao.
+    """
+    import ctypes
+    import time
+    from ctypes import wintypes
+
+    winspool = ctypes.WinDLL("winspool.drv", use_last_error=True)
+
+    class DOC_INFO_1(ctypes.Structure):
+        _fields_ = [
+            ("pDocName", wintypes.LPWSTR),
+            ("pOutputFile", wintypes.LPWSTR),
+            ("pDatatype", wintypes.LPWSTR),
+        ]
+
+    winspool.OpenPrinterW.argtypes = [wintypes.LPWSTR, ctypes.POINTER(wintypes.HANDLE), ctypes.c_void_p]
+    winspool.StartDocPrinterW.argtypes = [wintypes.HANDLE, wintypes.DWORD, ctypes.POINTER(DOC_INFO_1)]
+    winspool.WritePrinter.argtypes = [
+        wintypes.HANDLE, ctypes.c_void_p, wintypes.DWORD, ctypes.POINTER(wintypes.DWORD)
+    ]
+    winspool.ReadPrinter.argtypes = [
+        wintypes.HANDLE, ctypes.c_void_p, wintypes.DWORD, ctypes.POINTER(wintypes.DWORD)
+    ]
+
+    handle = wintypes.HANDLE()
+    if not winspool.OpenPrinterW(queue, ctypes.byref(handle), None):
+        return None, f"nao consegui abrir a impressora '{queue}' (erro {ctypes.get_last_error()})"
+    try:
+        info = DOC_INFO_1("estado-gaveta", None, "RAW")
+        if not winspool.StartDocPrinterW(handle, 1, ctypes.byref(info)):
+            return None, f"nao consegui iniciar o trabalho (erro {ctypes.get_last_error()})"
+        try:
+            winspool.StartPagePrinter(handle)
+            escritos = wintypes.DWORD(0)
+            buffer = ctypes.create_string_buffer(_DRAWER_STATUS_QUERY, len(_DRAWER_STATUS_QUERY))
+            if not winspool.WritePrinter(handle, buffer, len(_DRAWER_STATUS_QUERY), ctypes.byref(escritos)):
+                return None, f"nao consegui perguntar a impressora (erro {ctypes.get_last_error()})"
+            winspool.EndPagePrinter(handle)
+        finally:
+            winspool.EndDocPrinter(handle)
+
+        # A resposta nao vem instantanea: a impressora processa e devolve. Sem
+        # esta espera a leitura sai vazia e pareceria "nao e bidirecional"
+        # quando e so pressa.
+        lido = wintypes.DWORD(0)
+        resposta = ctypes.create_string_buffer(8)
+        limite = time.monotonic() + timeout
+        while time.monotonic() < limite:
+            if winspool.ReadPrinter(handle, resposta, 1, ctypes.byref(lido)) and lido.value:
+                return resposta.raw[0], ""
+            time.sleep(0.1)
+        return None, (
+            "a impressora nao devolveu nada. Esta porta provavelmente nao e "
+            "bidirecional pelo spooler - o caminho garantido no Windows e o "
+            "driver da Epson (OPOS/APD)"
+        )
+    finally:
+        winspool.ClosePrinter(handle)
+
+
+def _drawer_status_windows() -> int:
+    """O mesmo experimento do Linux, pelo canal que o Windows tem."""
+    config = AgentConfig.load(DEFAULT_CONFIG_PATH)
+    print(f"\nLendo pela impressora '{config.queue}' (spooler do Windows)")
+
+    leituras: list[int] = []
+    for rotulo in ("FECHADA", "ABERTA"):
+        input(f"\n  Deixe a gaveta {rotulo} e tecle Enter... ")
+        byte, motivo = _ler_pino_windows(config.queue)
+        if byte is None:
+            print(f"  x {motivo}")
+            print("\n  Nao da para ler o estado da gaveta por este caminho.")
+            print("  Isso NAO e defeito da impressora: o comando existe e ela responde,")
+            print("  mas a resposta nao volta pelo spooler nesta instalacao.\n")
+            return 1
+        leituras.append(byte)
+        print(f"  byte lido: 0x{byte:02x}")
+
+    return _veredito_do_pino(leituras[0], leituras[1])
+
+
 def drawer_status(argv: list[str]) -> int:
     """`--drawer-status`: descobre se dá para LER se a gaveta está aberta.
 
@@ -1151,8 +1257,7 @@ def drawer_status(argv: list[str]) -> int:
     por este caminho não dá, e paramos de gastar tempo.
     """
     if IS_WINDOWS:
-        print("Leitura do pino ainda não implementada no Windows.")
-        return 1
+        return _drawer_status_windows()
 
     dispositivos = _dispositivos_possiveis()
     if not dispositivos:
@@ -1175,18 +1280,7 @@ def drawer_status(argv: list[str]) -> int:
         leituras.append(byte)
         print(f"  byte lido: 0x{byte:02x}")
 
-    fechada, aberta = leituras
-    if fechada == aberta:
-        print(f"\n  Os dois bytes são iguais (0x{fechada:02x}).")
-        print("  A impressora responde, mas não distingue a gaveta — por este")
-        print("  caminho não dá. Controle de gaveta aberta tem que ser físico.\n")
-        return 1
-
-    mudou = fechada ^ aberta
-    print(f"\n  ✓ FUNCIONA. Fechada 0x{fechada:02x}, aberta 0x{aberta:02x} (bit 0x{mudou:02x}).")
-    print("  Dá para o sistema saber quando a gaveta fica aberta. Me mande estes")
-    print("  dois números que eu ligo o alerta.\n")
-    return 0
+    return _veredito_do_pino(leituras[0], leituras[1])
 
 
 def install(argv: list[str]) -> int:
