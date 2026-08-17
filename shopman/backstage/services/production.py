@@ -32,9 +32,19 @@ def _operator_error(exc: Exception) -> Exception:
     alterada em outra tela) vira ``ProductionConflict`` → 409; o resto vira
     ``ProductionError`` → 400. Exceção que não é ``CraftError`` volta como
     veio (o chamador decide).
+
+    ``StockError`` entra na mesma tradução: desde que a perna de output parou
+    de engolir a falha, ela sobe até aqui, e sem isso o operador levava 500 cru
+    numa fornada que JÁ está fechada.
     """
     from shopman.craftsman.exceptions import CraftError
+    from shopman.stockman.exceptions import StockError
 
+    if isinstance(exc, StockError):
+        return ProductionError(
+            f"A fornada foi fechada, mas não entrou no estoque: {exc}. "
+            "Confira a posição de venda antes de repetir."
+        )
     if not isinstance(exc, CraftError):
         return exc
     code = getattr(exc, "code", "")

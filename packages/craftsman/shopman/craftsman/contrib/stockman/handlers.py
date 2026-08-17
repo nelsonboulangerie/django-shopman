@@ -558,8 +558,16 @@ def _handle_finished(work_order, product_ref, date):
 
         _write_off_yield_shortfall(work_order, product_ref, date, finished_qty)
     except Exception:
-        logger.warning(
-            "Failed to realize production for %s (non-fatal)",
+        # "Insumo consumido e NADA realizado" não cabe numa linha de log. Quando
+        # esta perna falha a WorkOrder já está FINISHED (o send é pós-commit), a
+        # vitrine fica zero e o retry do operador morre em TERMINAL_STATUS —
+        # irrecuperável pela mesma API. Engolir aqui deixava a divergência
+        # invisível: `warning` não chega ao Sentry e nenhuma tela reclama.
+        # `exception` (ERROR) chega, e propagar leva o erro até o operador —
+        # é o mesmo tratamento da perna de insumos, que já propaga.
+        logger.exception(
+            "Failed to realize production for %s: insumos consumidos e nada "
+            "realizado (divergência de estoque)",
             work_order.ref,
-            exc_info=True,
         )
+        raise
