@@ -521,9 +521,9 @@ def _consumption_modes(window) -> tuple[dict[int, str], dict[int, str]]:
     from shopman.orderman.models import Order, OrderItem
 
     from shopman.backstage.models import HistoricalSale, HistoricalSaleItem
-    from shopman.backstage.services.consumption import classify_basket, role_flags
+    from shopman.backstage.services.consumption import classify_basket, sku_readings
 
-    flags = role_flags()
+    readings = sku_readings()
 
     native_lines: dict[int, list] = defaultdict(list)
     for order_id, sku, qty in OrderItem.objects.filter(
@@ -536,7 +536,7 @@ def _consumption_modes(window) -> tuple[dict[int, str], dict[int, str]]:
     }
     native = {
         order_id: classify_basket(
-            lines, flags, is_delivery=native_delivery.get(order_id, False)
+            lines, readings, is_delivery=native_delivery.get(order_id, False)
         )
         for order_id, lines in native_lines.items()
     }
@@ -553,7 +553,7 @@ def _consumption_modes(window) -> tuple[dict[int, str], dict[int, str]]:
     )
     historical = {
         sale_id: classify_basket(
-            lines, flags, is_delivery=historical_delivery.get(sale_id, False)
+            lines, readings, is_delivery=historical_delivery.get(sale_id, False)
         )
         for sale_id, lines in historical_lines.items()
     }

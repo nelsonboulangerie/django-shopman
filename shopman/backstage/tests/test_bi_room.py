@@ -24,6 +24,7 @@ from shopman.backstage.models import (
     ConsumptionRole,
     DayContext,
     ProductConsumptionTag,
+    Reading,
     SeatingSpot,
     SpotKind,
 )
@@ -57,9 +58,10 @@ def room(db):
 
 @pytest.fixture
 def tagged(db):
-    coffee = ConsumptionRole.objects.create(ref="bebida-preparada", label="Bebida preparada",
-                                            anchors_dine_in=True)
-    bread = ConsumptionRole.objects.create(ref="pao-de-levar", label="Pão de levar", travels=True)
+    coffee = ConsumptionRole.objects.create(ref="consome-aqui", label="Consome aqui",
+                                            reading=Reading.ANCHOR)
+    bread = ConsumptionRole.objects.create(ref="leva", label="Leva",
+                                           reading=Reading.TAKEAWAY)
     ProductConsumptionTag.objects.create(sku="CAFE", role=coffee)
     ProductConsumptionTag.objects.create(sku="PAO", role=bread)
 

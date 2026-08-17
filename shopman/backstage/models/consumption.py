@@ -25,12 +25,27 @@ from __future__ import annotations
 from django.db import models
 
 
+class Reading(models.TextChoices):
+    """O que a presença do produto na cesta diz. São exatamente três coisas.
+
+    Não é acaso serem três: são as três que a regra sabe usar. Um vocabulário
+    maior (bebida preparada, bebida pronta, prato quente, lanche montado…) seria
+    quatro nomes para a MESMA leitura — mais escolhas do que consequências, e um
+    convite a achar que a distinção muda alguma coisa. Ela não muda.
+    """
+
+    ANCHOR = "anchor", "Consome aqui"
+    TAKEAWAY = "takeaway", "Leva"
+    NEUTRAL = "neutral", "Acompanha"
+
+
 class ConsumptionRole(models.Model):
     """Papel de um produto na cesta — o vocabulário da inferência.
 
-    Os dois booleanos são o que a regra lê. Nada além deles: se um papel novo
-    precisar de comportamento novo, é sinal de que a regra mudou, e regra muda
-    com teste, não com cadastro.
+    O catálogo continua editável (a casa nomeia como quiser: "café", "salgado
+    assado", "geleia"), mas cada nome escolhe UMA das três leituras. É a
+    diferença entre dar nome ao que a casa vende e inventar comportamento novo
+    — comportamento muda com teste, não com cadastro.
     """
 
     ref = models.SlugField("ref", max_length=32, unique=True)
@@ -39,19 +54,15 @@ class ConsumptionRole(models.Model):
         "dica", max_length=140, blank=True,
         help_text="Para quem etiqueta escolher sem pensar duas vezes.",
     )
-    anchors_dine_in = models.BooleanField(
-        "ancora consumo local", default=False,
+    reading = models.CharField(
+        "o que diz sobre a cesta", max_length=16,
+        choices=Reading.choices, default=Reading.NEUTRAL,
         help_text=(
-            "Item cuja presença indica que a pessoa consumiu aqui — bebida "
-            "preparada, bebida pronta, prato quente. Na Nelson, levar bebida é "
-            "desprezível, e é isso que faz a âncora funcionar."
-        ),
-    )
-    travels = models.BooleanField(
-        "é item de levar", default=False,
-        help_text=(
-            "Pão, varejo, mercearia. Junto de uma âncora vira 'consumiu e "
-            "levou'; sozinho, é uma compra para levar."
+            "Consome aqui: bebida, prato, lanche — a presença indica alguém "
+            "que sentou (nesta casa, levar bebida é desprezível). "
+            "Leva: pão, varejo — junto de uma âncora vira 'consumiu e levou'. "
+            "Acompanha: doce, viennoiserie — não decide nada sozinho, mas tira "
+            "a cesta do balde 'sem etiqueta'."
         ),
     )
     is_active = models.BooleanField("ativo", default=True)

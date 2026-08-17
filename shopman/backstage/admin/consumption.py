@@ -25,7 +25,7 @@ class ConsumptionRoleAdmin(ModelAdmin):
     list_display = ("label", "ref", "hint", "reading_display", "ordering", "is_active")
     list_editable = ("ordering", "is_active")
     ordering = ("ordering",)
-    fields = ("ref", "label", "hint", "anchors_dine_in", "travels", "ordering", "is_active")
+    fields = ("ref", "label", "hint", "reading", "ordering", "is_active")
 
     def get_readonly_fields(self, request, obj=None):
         # Etiquetas gravadas apontam para o ref; o rótulo edita à vontade.
@@ -33,18 +33,10 @@ class ConsumptionRoleAdmin(ModelAdmin):
 
     @display(
         description="o que a cesta passa a dizer",
-        label={
-            "ancora consumo local": "success",
-            "item de levar": "info",
-            "neutro": "warning",
-        },
+        label={"Consome aqui": "success", "Leva": "info", "Acompanha": "warning"},
     )
     def reading_display(self, obj):
-        if obj.anchors_dine_in:
-            return "ancora consumo local"
-        if obj.travels:
-            return "item de levar"
-        return "neutro"
+        return obj.get_reading_display()
 
     def has_delete_permission(self, request, obj=None):
         # Apagar um papel em uso deixaria produtos sem classificação e mudaria

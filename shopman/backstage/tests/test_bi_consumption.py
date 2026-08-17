@@ -25,6 +25,7 @@ from shopman.backstage.models import (
     HistoricalSale,
     HistoricalSaleItem,
     ProductConsumptionTag,
+    Reading,
 )
 from shopman.backstage.projections.bi_explore import ExploreError, build_bi_explore, validate_config
 from shopman.backstage.services.consumption import (
@@ -33,40 +34,37 @@ from shopman.backstage.services.consumption import (
     TAKEAWAY,
     UNCLASSIFIED,
     classify_basket,
-    role_flags,
+    sku_readings,
 )
 
 
 @pytest.fixture
 def roles(db):
-    """O vocabulário do seed, no mínimo que a regra precisa."""
-    made = {}
-    for ref, label, anchors, travels in [
-        ("bebida-preparada", "Bebida preparada", True, False),
-        ("bebida-pronta", "Bebida pronta", True, False),
-        ("pao-de-levar", "Pão de levar", False, True),
-        ("fino-individual", "Doce / viennoiserie", False, False),
-    ]:
-        made[ref] = ConsumptionRole.objects.create(
-            ref=ref, label=label, anchors_dine_in=anchors, travels=travels
-        )
-    return made
+    """As três leituras do seed — três, porque são três os comportamentos."""
+    return {
+        ref: ConsumptionRole.objects.create(ref=ref, label=label, reading=reading)
+        for ref, label, reading in [
+            ("consome-aqui", "Consome aqui", Reading.ANCHOR),
+            ("leva", "Leva", Reading.TAKEAWAY),
+            ("acompanha", "Acompanha", Reading.NEUTRAL),
+        ]
+    }
 
 
 @pytest.fixture
 def tagged(roles):
     tags = {
-        "CAFE": "bebida-preparada",
-        "SUCO": "bebida-pronta",
-        "PAO-FRANCES": "pao-de-levar",
+        "CAFE": "consome-aqui",
+        "SUCO": "consome-aqui",
+        "PAO-FRANCES": "leva",
         # Os dois que o nome engana: são PÃES, não lanches (correção do dono).
-        "BAGUETE-LANCHE": "pao-de-levar",
-        "HAMBURGUER-100G": "pao-de-levar",
-        "CROISSANT": "fino-individual",
+        "BAGUETE-LANCHE": "leva",
+        "HAMBURGUER-100G": "leva",
+        "CROISSANT": "acompanha",
     }
     for sku, role_ref in tags.items():
         ProductConsumptionTag.objects.create(sku=sku, role=roles[role_ref])
-    return role_flags()
+    return sku_readings()
 
 
 # ── A regra ──────────────────────────────────────────────────────────────────
@@ -95,13 +93,26 @@ def test_drink_with_bread_is_ate_here_and_took_some(tagged):
     assert classify_basket([("CAFE", 1), ("PAO-FRANCES", 2)], tagged) == DINE_IN_TAKEAWAY
 
 
-def test_bread_by_the_dozen_is_a_stock_purchase(tagged):
+def test_quantity_does_not_change_any_verdict(tagged):
+    """Houve um corte de "compra de estoque" que não decidia nada, e saiu.
+
+    Com estes quatro modos, cesta sem âncora já é "levou" — com uma unidade ou
+    com uma dúzia. E quatro cafés são uma mesa de quatro, não uma despensa.
+    """
+    assert classify_basket([("PAO-FRANCES", 1)], tagged) == TAKEAWAY
     assert classify_basket([("PAO-FRANCES", 10)], tagged) == TAKEAWAY
-
-
-def test_four_coffees_are_a_table_of_four_not_a_pantry(tagged):
-    """O corte de estoque só olha item de levar — senão lê o sábado ao contrário."""
     assert classify_basket([("CAFE", 4)], tagged) == DINE_IN
+
+
+def test_the_second_reading_is_what_separates_what_she_took_from_what_she_ate(tagged):
+    """Por que "leva" não pode ser um booleano de âncora só.
+
+    Com um bit apenas, estas duas cestas seriam idênticas — âncora mais
+    não-âncora — e o quarto modo que o dono pediu ("consumir no local e levar")
+    ou some, ou passa a incluir todo croissant que acompanha um café.
+    """
+    assert classify_basket([("CAFE", 1), ("PAO-FRANCES", 1)], tagged) == DINE_IN_TAKEAWAY
+    assert classify_basket([("CAFE", 1), ("CROISSANT", 1)], tagged) == DINE_IN
 
 
 def test_the_two_breads_whose_name_lies_do_not_anchor(tagged):
@@ -241,10 +252,16 @@ def test_consumption_mode_is_in_the_grammar_where_it_belongs():
 
 
 @pytest.mark.django_db
-def test_role_flags_ignores_inactive_roles(roles):
-    ProductConsumptionTag.objects.create(sku="CAFE", role=roles["bebida-preparada"])
-    assert "CAFE" in role_flags()
-    ConsumptionRole.objects.filter(ref="bebida-preparada").update(is_active=False)
+def test_readings_ignore_inactive_roles(roles):
+    ProductConsumptionTag.objects.create(sku="CAFE", role=roles["consome-aqui"])
+    assert "CAFE" in sku_readings()
+    ConsumptionRole.objects.filter(ref="consome-aqui").update(is_active=False)
     # Papel desativado sai de circulação: o produto volta a não ter veredito, em
     # vez de continuar ancorando com uma regra que o gestor tirou do ar.
-    assert "CAFE" not in role_flags()
+    assert "CAFE" not in sku_readings()
+
+
+@pytest.mark.django_db
+def test_the_vocabulary_has_exactly_three_readings():
+    """Nome novo é bem-vindo; comportamento novo muda com teste, não cadastro."""
+    assert {choice.value for choice in Reading} == {"anchor", "takeaway", "neutral"}

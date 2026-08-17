@@ -10,7 +10,7 @@ capturar.
 quem pede bebida pra levar é quantidade desprezível — então bebida na cesta
 significa alguém que sentou. Prato quente e lanche montado ancoram pelo mesmo
 motivo. O que ancora não está escrito aqui: está no catálogo
-(``ConsumptionRole.anchors_dine_in``), editável sem deploy.
+(``ConsumptionRole.reading``), editável sem deploy.
 
 **Nada é inventado.** Cesta cujos produtos não têm etiqueta sai
 ``UNCLASSIFIED`` — nunca "levar" por omissão. Quem lê declara a cobertura.
@@ -18,14 +18,16 @@ motivo. O que ancora não está escrito aqui: está no catálogo
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-from decimal import Decimal
-
 DINE_IN = "dine_in"
 DINE_IN_TAKEAWAY = "dine_in_takeaway"
 TAKEAWAY = "takeaway"
 DELIVERY = "delivery"
 UNCLASSIFIED = "unclassified"
+
+# As três leituras que um produto pode ter (espelham models.Reading).
+ANCHOR = "anchor"
+TAKEAWAY_ITEM = "takeaway"
+NEUTRAL = "neutral"
 
 MODE_LABELS: dict[str, str] = {
     DINE_IN: "Consumiu aqui",
@@ -35,45 +37,36 @@ MODE_LABELS: dict[str, str] = {
     UNCLASSIFIED: "(sem etiqueta)",
 }
 
-STOCK_QUANTITY_CUT = Decimal("4")
-"""A partir de quantas unidades do MESMO item de levar a compra é de estoque.
-
-Uma dúzia de pães é despensa, não café da manhã na casa. O corte veio do estudo
-original e vale só para itens de levar — quatro cafés são uma mesa de quatro, e
-tratá-los como estoque leria o movimento de sábado ao contrário.
-"""
-
-
-@dataclass(frozen=True)
-class RoleFlags:
-    anchors_dine_in: bool
-    travels: bool
-
-
-def role_flags() -> dict[str, RoleFlags]:
-    """SKU → papel, a partir do catálogo etiquetado. Uma consulta por leitura."""
+def sku_readings() -> dict[str, str]:
+    """SKU → leitura, a partir do catálogo etiquetado. Uma consulta por leitura."""
     from shopman.backstage.models import ProductConsumptionTag
 
-    rows = ProductConsumptionTag.objects.filter(role__is_active=True).values_list(
-        "sku", "role__anchors_dine_in", "role__travels"
+    return dict(
+        ProductConsumptionTag.objects.filter(role__is_active=True).values_list(
+            "sku", "role__reading"
+        )
     )
-    return {sku: RoleFlags(anchors, travels) for sku, anchors, travels in rows}
 
 
-def classify_basket(lines, flags: dict[str, RoleFlags], *, is_delivery: bool = False) -> str:
+def classify_basket(lines, readings: dict[str, str], *, is_delivery: bool = False) -> str:
     """Modo de consumo de UMA venda, a partir das suas linhas.
 
-    ``lines`` é um iterável de ``(sku, qty)``. A ordem de decisão importa e está
-    aqui, explícita, porque cada degrau já foi uma pergunta:
+    ``lines`` é um iterável de ``(sku, qty)``. A regra inteira lê **duas coisas**
+    na cesta: tem âncora? tem item de levar? Cada degrau abaixo já foi uma
+    pergunta:
 
     1. **Entrega precede tudo.** Quem recebe em casa não sentou, qualquer que
        seja a cesta.
     2. **Sem nenhum produto etiquetado, não há veredito.** A venda sai não
        classificada em vez de cair no balde mais provável.
-    3. **A âncora vence o corte de estoque.** Quatro cafés são uma mesa cheia,
-       não uma despensa — por isso o corte só olha item de levar.
-    4. **Âncora + item de levar = consumiu e levou.** É o terceiro estado que o
-       dono pediu, e ele não precisa de botão: está na composição da cesta.
+    3. **Âncora + item de levar = consumiu e levou.** É o único trabalho que a
+       leitura "leva" faz — e é o que separa *café + pão* (levou pão) de
+       *café + croissant* (comeu junto). Sem ela, o quarto modo não existe.
+
+    ⚠️ **A quantidade não entra.** Houve um corte de "compra de estoque" (4+ do
+    mesmo item) que não mudava veredito nenhum: com estes quatro modos, cesta sem
+    âncora já é "levou", com uma unidade ou com uma dúzia. Ele volta no dia em
+    que existir um modo "compra de estoque" para ele decidir.
     """
     if is_delivery:
         return DELIVERY
@@ -81,28 +74,24 @@ def classify_basket(lines, flags: dict[str, RoleFlags], *, is_delivery: bool = F
     known = False
     anchored = False
     travelling = False
-    stock_purchase = False
 
-    for sku, qty in lines:
-        role = flags.get(sku or "")
-        if role is None:
+    for sku, _qty in lines:
+        reading = readings.get(sku or "")
+        if reading is None:
             continue
         known = True
-        if role.anchors_dine_in:
+        if reading == ANCHOR:
             anchored = True
-        if role.travels:
+        elif reading == TAKEAWAY_ITEM:
             travelling = True
-            if Decimal(str(qty or 0)) >= STOCK_QUANTITY_CUT:
-                stock_purchase = True
 
     if not known:
         return UNCLASSIFIED
     if anchored:
         return DINE_IN_TAKEAWAY if travelling else DINE_IN
-    if stock_purchase or travelling:
-        return TAKEAWAY
-    # Etiquetado, sem âncora e sem item de levar: doce ou fino sozinho. O estudo
-    # descartou a leitura permissiva (doce sozinho = local) por inflar o salão.
+    # Etiquetado e sem âncora: levou. Vale para pão, para varejo e para o doce
+    # sozinho — o estudo descartou a leitura permissiva (doce sozinho = local)
+    # por inflar o salão.
     return TAKEAWAY
 
 

@@ -5916,31 +5916,33 @@ class Command(BaseCommand):
     def _seed_consumption_roles(self) -> None:
         """O vocabulário que faz a cesta dizer quem sentou e quem levou.
 
-        A âncora é a bebida: nesta casa, quem pede bebida pra levar é
-        quantidade desprezível, então bebida na cesta significa alguém que
-        sentou. Prato quente e lanche montado ancoram pelo mesmo motivo.
+        São TRÊS, porque são três as coisas que a regra sabe usar. Uma lista
+        maior (bebida preparada, bebida pronta, prato quente, lanche montado…)
+        seria quatro nomes para a mesma leitura: mais escolhas do que
+        consequências, e mais trabalho de curadoria sem nenhum ganho.
+
+        A âncora é a bebida: nesta casa, quem pede bebida pra levar é quantidade
+        desprezível, então bebida na cesta significa alguém que sentou.
 
         ⚠️ Aqui nasce só o VOCABULÁRIO. Etiquetar produto a produto é curadoria
         do gestor, no Admin — e tem de ser, porque o nome engana: "Hambúrguer
         100g" é o pão, não o sanduíche.
         """
-        from shopman.backstage.models import ConsumptionRole
+        from shopman.backstage.models import ConsumptionRole, Reading
 
         catalogo = [
-            ("bebida-preparada", "Bebida preparada", "Café, capuccino, chá na xícara", True, False, 10),
-            ("bebida-pronta", "Bebida pronta", "Garrafa, lata, suco de geladeira", True, False, 20),
-            ("prato-quente", "Prato quente", "Servido no prato, para comer aqui", True, False, 30),
-            ("lanche-montado", "Lanche montado", "Sanduíche pronto para comer", True, False, 40),
-            ("pao-de-levar", "Pão de levar", "Pão, baguete, pão de forma, pão de hambúrguer", False, True, 50),
-            ("varejo", "Varejo / mercearia", "Geleia, café em grão, produto embalado", False, True, 60),
-            ("fino-individual", "Doce / viennoiserie", "Croissant, doce individual: sozinho, é de levar", False, False, 70),
+            ("consome-aqui", "Consome aqui",
+             "Café, suco, prato quente, lanche montado", Reading.ANCHOR, 10),
+            ("leva", "Leva",
+             "Pão, geleia, café em grão — o que sai pela porta", Reading.TAKEAWAY, 20),
+            ("acompanha", "Acompanha",
+             "Croissant, doce individual: come junto ou leva", Reading.NEUTRAL, 30),
         ]
-        for ref, label, hint, ancora, leva, ordem in catalogo:
+        for ref, label, hint, leitura, ordem in catalogo:
             ConsumptionRole.objects.update_or_create(
                 ref=ref,
                 defaults={
-                    "label": label, "hint": hint,
-                    "anchors_dine_in": ancora, "travels": leva,
+                    "label": label, "hint": hint, "reading": leitura,
                     "ordering": ordem, "is_active": True,
                 },
             )

@@ -139,19 +139,55 @@ registrar:
   histórico e no nativo — em vez de duas verdades (uma medida, uma inferida) que a
   tela teria de manter separadas para sempre.
 
-**A regra, como fica:**
+**A regra, como fica** — e ela lê **duas coisas** na cesta, não sete:
 
 | Sinal na cesta | Classificação |
 |---|---|
-| Item de preparo (bebida preparada, lanche montado) | **local** |
-| Bebida pronta | **local** (refinamento do dono: levar bebida é desprezível) |
-| Doce / viennoiserie / pão sozinho, sem bebida | **levar** |
-| 4+ unidades do mesmo item | **levar** (compra de estoque) |
-| `is_delivery` (Yooga) / `fulfillment_type=delivery` (nativo) | **entrega** — precede tudo |
-| Cesta local **com** pão-de-levar junto | **local + levar** |
+| Âncora (bebida preparada, bebida pronta, prato quente, lanche montado) | **local** |
+| Âncora **+ item de levar** (pão, varejo) | **local + levar** |
+| Sem âncora (pão, varejo, ou doce sozinho) | **levar** |
+| `is_delivery` / `fulfillment_type=delivery` | **entrega** — precede tudo |
+| Nenhum produto etiquetado | **não classificado** |
 
-O retrato que o estudo produziu com a regra: **~56% levar, ~38% local, ~6% delivery**,
-com ticket local (R$ 63) acima do ticket de levar (R$ 53).
+O retrato que o estudo produziu com a regra: **~56% levar, ~38% local, ~6%
+delivery**, com ticket local (R$ 63) acima do ticket de levar (R$ 53).
+
+### 3.1.1 O dado por SKU é uma escolha entre TRÊS, não um papel entre sete
+
+> Desafio do dono (17/08): *"Só vejo um dado relevante, e seria booleano: é
+> âncora local? Sim ou não. Me prove o contrário."*
+
+Ele estava certo em quase tudo, e o desafio expôs um defeito real. O acerto de
+contas:
+
+- ❌ **O corte de "compra de estoque" (4+ do mesmo item) era código morto.** Os
+  dois ramos finais da regra devolviam `TAKEAWAY`; a variável era calculada e
+  nunca mudava um veredito. Pior, a docstring afirmava que "a âncora vence o
+  corte" — a âncora não vencia nada, o corte não fazia nada. E o teste que
+  provava essa precedência passava por acidente (café nem era item de levar, então
+  a variável jamais era ligada). **Removido**, com nota: volta no dia em que
+  existir um modo "compra de estoque" para ele decidir.
+- ❌ **Sete papéis eram três comportamentos.** Bebida preparada, bebida pronta,
+  prato quente e lanche montado eram quatro nomes para o mesmo bit. **Colapsados
+  para três leituras.**
+- ✅ **Mas o segundo bit sobrevive — e por causa da quarta pergunta do dono.**
+  Com só o booleano de âncora, *café + pão francês* e *café + croissant* são a
+  mesma cesta: âncora mais não-âncora. Aí só há dois caminhos, ambos errados —
+  chamar as duas de "consumiu e levou" (e todo croissant que acompanha um café
+  vira pão levado) ou abandonar o modo "consumir no local e levar", que foi
+  pedido no mandato original.
+
+**As três leituras, cada uma fazendo algo distinto:**
+
+| Leitura | O que faz |
+|---|---|
+| **Consome aqui** (bebida, prato, lanche) | diz que a pessoa consumiu aqui |
+| **Leva** (pão, varejo) | junto de uma âncora, vira "consumiu e levou" |
+| **Acompanha** (doce, viennoiserie) | não decide sozinha — mas tira a cesta do balde "sem etiqueta" |
+
+O catálogo segue editável: a casa nomeia como quiser ("café", "salgado assado",
+"geleia"), e cada nome escolhe **uma** das três leituras. Nome novo é cadastro;
+comportamento novo é teste.
 
 ⚠️ **O refinamento "bebida pronta ancora sozinha" mexe no resultado e é mensurável.**
 Na formulação original a bebida pronta só ancorava acompanhada de item de consumo
@@ -172,8 +208,9 @@ dias de churrasco, que é quando esse pão vende.
 
 ⚠️ **A lição, que vale como guarda:** o nome do SKU não classifica. A etiqueta é
 curadoria humana, produto a produto, e a revisão precisa passar por quem conhece o
-cardápio — não por quem lê a lista. Continua aberto só o corte de "estoque" (hoje 4+
-do mesmo item).
+cardápio — não por quem lê a lista. ✅ O corte de "estoque" (4+ do mesmo item), que
+era o outro caso aberto do estudo, **deixou de ser pergunta**: ele não decidia
+nada (§3.1.1) e saiu.
 
 **A honestidade que a tela precisa carregar:** a leitura é **inferida**, e diz isso —
 com a regra vigente ao alcance de um clique, porque um número que muda quando alguém
@@ -477,16 +514,22 @@ Três contagens no staging (que tem o Yooga carregado), cada uma decide um parâ
 2. As **duas variantes da âncora** (bebida pronta ancorando sozinha × só acompanhada)
    sobre os dois anos: quanto muda o retrato? É o que congela a regra de F3 com
    número, não com opinião.
-3. Que fração das vendas do Yooga tem `table_label` preenchido — não vira verdade de
-   canal (a decisão de que mesa/balcão do Yooga não são confiáveis continua de pé),
-   mas se a cobertura for alta serve de **teste de aderência** da inferência: mede o
-   erro do método sem custar nada.
+⚠️ **`table_label` saiu do F2** (17/08). Eu tinha proposto usá-lo como "teste de
+aderência" da inferência, e isso contradiz a decisão que o próprio dono tomou: se
+mesa/balcão do Yooga não eram preenchidos com disciplina, discordância entre o
+campo e a regra **não diz quem errou**. É um número que não se pode interpretar,
+e um número assim é pior que nenhum.
+
+⚠️ **A ordem do F2 estava errada.** A contagem 2 (as duas variantes da âncora)
+**depende das etiquetas existirem** — sem elas tudo sai não classificado e não há
+o que comparar. A contagem 1 roda a qualquer momento. Sequência real:
+**curadoria → variantes → congelar o parâmetro**.
 
 ### F3 — Modo de consumo, inferido ⭐
 
-- **Etiquetas por SKU** — o trabalho de verdade. Bebida preparada, bebida pronta,
-  lanche montado, prato quente, pão-de-levar, fino individual, varejo. Cadastro
-  editável no Admin, como os defeitos de qualidade já são.
+- **Etiquetas por SKU** — o trabalho de verdade, e ele é uma escolha entre TRÊS
+  por produto (§3.1.1): consome aqui · leva · acompanha. Cadastro editável no
+  Admin, como os defeitos de qualidade já são.
 - **A regra como função pura e testável**, aplicada igual ao `OrderItem` nativo e ao
   `HistoricalSaleItem`. Uma implementação, dois consumidores — nunca duas cópias que
   divergem.
@@ -494,8 +537,8 @@ Três contagens no staging (que tem o Yooga carregado), cada uma decide um parâ
   aplicável às famílias de vendas e itens (e portanto cruzável com hora, dia,
   contexto do dia, forma de pagamento de F1).
 - **Rotulada como inferida na tela**, com a regra vigente ao alcance de um clique.
-- Decidir os dois casos abertos: Baguete Lanche / Hambúrguer 100g e o corte de
-  "estoque" (4+).
+- ✅ Casos abertos do estudo, decididos: Baguete Lanche e Hambúrguer 100g são
+  pães; o corte de "estoque" saiu por não decidir nada.
 - ⚠️ SKU sem etiqueta não pode virar "levar" por omissão — vira **não classificado**,
   declarado. Etiqueta faltando é ausência de dado, não um veredito.
 
