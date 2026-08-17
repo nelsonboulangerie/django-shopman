@@ -25,6 +25,12 @@ from shopman.backstage.projections.bi_cash import (
     BICashPrevious,
     BICashReport,
 )
+from shopman.backstage.projections.bi_change import (
+    BIChangeReport,
+    ChangeHabit,
+    ChangeMix,
+    DayChangeForecast,
+)
 from shopman.backstage.projections.bi_customers import (
     BICustomerSegmentRow,
     BICustomersReport,
@@ -90,6 +96,10 @@ CONTRACT_DATACLASSES = (
     ForecastOccasion,
     DayForecast,
     BIForecastReport,
+    ChangeHabit,
+    ChangeMix,
+    DayChangeForecast,
+    BIChangeReport,
 )
 
 

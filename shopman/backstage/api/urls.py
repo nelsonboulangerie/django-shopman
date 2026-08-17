@@ -7,6 +7,7 @@ from django.urls import path
 from .alerts import AlertAckView, AlertListView
 from .bi import (
     BICashView,
+    BIChangeView,
     BICustomersView,
     BIExploreView,
     BIForecastView,
@@ -202,6 +203,7 @@ urlpatterns = [
     path("bi/customers/", BICustomersView.as_view(), name="api-backstage-bi-customers"),
     path("bi/explore/", BIExploreView.as_view(), name="api-backstage-bi-explore"),
     path("bi/forecast/", BIForecastView.as_view(), name="api-backstage-bi-forecast"),
+    path("bi/change/", BIChangeView.as_view(), name="api-backstage-bi-change"),
     path("bi/views/", BIViewListView.as_view(), name="api-backstage-bi-views"),
     path("bi/views/<int:pk>/", BIViewDetailView.as_view(), name="api-backstage-bi-view"),
     path("closing/", DayClosingView.as_view(), name="api-backstage-closing"),

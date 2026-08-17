@@ -377,6 +377,10 @@ const MISSING_LABELS: Record<string, string> = {
   sem_movimento_recente: "Falta movimento recente para servir de referência.",
   patamar_nao_representativo:
     "Os últimos dias registram uma fração do que a casa costuma vender. Enquanto a operação não estiver toda no sistema, o patamar de hoje não serve de base.",
+  troco_sem_base:
+    "Ainda não sabemos quanto de troco sai por venda em dinheiro. O histórico antigo tem o total e a forma de pagamento, nunca o troco, e a medição começou com o sistema novo.",
+  sem_mix_de_pagamento:
+    "Não sabemos que fatia dos dias parecidos pagou em dinheiro, então não dá para dizer quanto de troco o dia pede.",
 };
 
 export interface ForecastBasisLike {
@@ -485,4 +489,86 @@ export const HORIZON_LABELS = [
 export function shortDateWithYear(iso: string): string {
   const [year, month, day] = iso.split("-");
   return `${day}/${month}/${year}`;
+}
+
+// ── Troco: a previsão que tem dois fatores com confianças diferentes ─────────
+//
+// A tela é obrigada a dizer de onde veio cada metade da conta. "Quantas vendas
+// em dinheiro" tem dois anos de base; "quanto de troco por venda" tem semanas.
+// Misturar as duas numa frase só faria a parte frágil herdar a confiança da
+// parte sólida, que é como uma previsão vira promessa.
+
+export interface ChangeHabitLike {
+  band: string;
+  measured_days: number;
+  measured_orders: number;
+  unmeasured_orders: number;
+  window_from: string;
+  window_to: string;
+}
+
+export interface ChangeMixLike {
+  tendency: string;
+  coin_value_percent: number;
+  small_change_percent: number;
+  sample_size: number;
+}
+
+const TENDENCY_LABELS: Record<string, string> = {
+  mostly_coins: "A maior parte sai em dinheiro miúdo, abaixo de R$ 5",
+  mixed: "O troco se divide entre miudeza e notas",
+  mostly_notes: "A maior parte sai em notas",
+};
+
+/** O que a distribuição dos valores permite dizer. Nunca quantas peças. */
+export function changeMixLabel(mix: ChangeMixLike): string {
+  return TENDENCY_LABELS[mix.tendency] ?? "Não dá para dizer como o troco se reparte";
+}
+
+/**
+ * A ressalva que impede a leitura errada: o sistema mede o VALOR do troco e
+ * nunca as peças. Sem esta frase alguém lê "a maior parte em moeda" como se a
+ * casa soubesse contar moedas, e passa a cobrar da tela um número que o balcão
+ * jamais registrou.
+ */
+export function changeMixCaveat(mix: ChangeMixLike): string {
+  return `Medido em ${formatInt(mix.sample_size)} ${
+    mix.sample_size === 1 ? "troco" : "trocos"
+  }. Sabemos o valor que voltou, nunca quais moedas e notas saíram da gaveta.`;
+}
+
+/**
+ * Por que existe um piso de moeda, e o que a distribuição sugere além dele.
+ * O piso é aritmética sobre o que foi medido: centavo nenhum fecha em nota.
+ */
+export function coinFloorHint(mix: ChangeMixLike): string {
+  return `Os centavos de um troco não fecham em nota, então essa parte sai sempre em moeda. ${changeMixLabel(mix)}.`;
+}
+
+/** Quanto da conta veio de onde, para o dia. */
+export function cashOrdersNote(cashOrders: number, sharePercent: number, sampleDays: number): string {
+  return `${formatInt(Math.round(cashOrders))} vendas em dinheiro prováveis: ${sharePercent}% do movimento do dia, que é a fatia dos ${formatInt(sampleDays)} dias parecidos.`;
+}
+
+/** A prestação de contas do fator frágil, com o tamanho da base à vista. */
+export function changeHabitNotes(habit: ChangeHabitLike): string[] {
+  const notes = [
+    `O troco por venda saiu de ${formatInt(habit.measured_orders)} vendas em dinheiro medidas em ${days(habit.measured_days)}, entre ${shortDate(habit.window_from)} e ${shortDate(habit.window_to)}.`,
+  ];
+  if (habit.band === "full_range") {
+    notes.push(
+      "A faixa mostra o menor e o maior dia medido, e não o miolo: com poucas semanas de base, um intervalo estreito fingiria uma precisão que ainda não existe.",
+    );
+  } else {
+    notes.push("Metade dos dias medidos ficou dentro dessa faixa.");
+  }
+  if (habit.unmeasured_orders) {
+    notes.push(
+      `${formatInt(habit.unmeasured_orders)} ${habit.unmeasured_orders === 1 ? "venda em dinheiro ficou" : "vendas em dinheiro ficaram"} de fora por não ter o valor recebido registrado. Ausência de medição não é troco zero, então ${habit.unmeasured_orders === 1 ? "ela não entrou" : "elas não entraram"} na média.`,
+    );
+  }
+  notes.push(
+    "O histórico anterior ao sistema traz total e forma de pagamento, mas nunca o troco, então ele conta as vendas em dinheiro e não a razão.",
+  );
+  return notes;
 }

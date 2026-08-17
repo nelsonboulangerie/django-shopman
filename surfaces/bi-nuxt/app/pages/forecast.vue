@@ -10,6 +10,11 @@ import {
   HORIZON_LABELS,
   basisHeadline,
   basisNotes,
+  cashOrdersNote,
+  changeHabitNotes,
+  changeMixCaveat,
+  changeMixLabel,
+  coinFloorHint,
   formatInt,
   formatMoney,
   formatMoneyCompact,
@@ -20,6 +25,15 @@ import {
 } from "~/presentation/bi";
 
 const { report, pending, error, refresh, target, horizon } = useBiForecast();
+
+// O troco é a mesma decisão de véspera: quem planeja o sábado quer abastecer a
+// gaveta no mesmo momento em que decide a fornada. Separá-lo em outra aba faria
+// a conta existir e ninguém olhar.
+const { change } = useBiChange(target, horizon);
+
+const singleChange = computed(() =>
+  change.value?.horizon === "day" ? change.value.days[0] : null,
+);
 
 const single = computed(() => (report.value?.horizon === "day" ? report.value.days[0] : null));
 
@@ -228,11 +242,64 @@ const occasionTitle = (occasion: ForecastOccasion) =>
             </div>
           </div>
         </section>
+
+        <!--
+          Troco: irmã da projeção, e no mesmo lugar de propósito. Quem abre esta
+          tela para planejar o sábado decide a fornada e o caixa na mesma
+          sentada; o troco numa aba própria seria uma conta que existe e ninguém
+          olha, e a falta continuaria aparecendo no meio da fila.
+        -->
+        <section
+          v-if="singleChange && !singleChange.closed"
+          class="rounded-md border border-border bg-card p-4"
+        >
+          <h2 class="text-lg font-semibold text-foreground">Troco para separar</h2>
+          <p class="mb-3 text-xs text-muted-foreground">
+            Para abastecer na véspera, no seu tempo, em vez de resolver no meio do movimento.
+          </p>
+
+          <template v-if="singleChange.change_q && singleChange.cash_orders && change?.habit">
+            <div class="grid gap-3 sm:grid-cols-2">
+              <StatTile
+                label="Troco provável"
+                :value="formatMoney(Math.round(singleChange.change_q.expected))"
+                :hint="`entre ${rangeLabel(singleChange.change_q.low, singleChange.change_q.high)}`"
+              />
+              <StatTile
+                v-if="change.mix && singleChange.coin_floor_q !== null"
+                label="Em moeda, no mínimo"
+                :value="formatMoney(Math.round(singleChange.coin_floor_q))"
+                :hint="coinFloorHint(change.mix)"
+              />
+            </div>
+
+            <p v-if="change.mix" class="mt-2 text-xs text-muted-foreground">
+              {{ changeMixCaveat(change.mix) }}
+            </p>
+
+            <p class="mt-3 text-sm text-foreground">
+              {{
+                cashOrdersNote(
+                  singleChange.cash_orders.expected,
+                  singleChange.cash_share_percent,
+                  singleChange.cash_share_days,
+                )
+              }}
+            </p>
+            <ul class="mt-1 space-y-0.5 text-xs text-muted-foreground">
+              <li v-for="note in changeHabitNotes(change.habit)" :key="note">{{ note }}</li>
+            </ul>
+          </template>
+
+          <p v-else class="text-sm text-muted-foreground">
+            {{ missingLabel(singleChange.missing_reason) }}
+          </p>
+        </section>
       </template>
 
       <!-- Semana ou mês: a soma dos dias, cada um com a sua amostra -->
       <template v-else>
-        <div class="grid grid-cols-2 gap-3">
+        <div class="grid gap-3 sm:grid-cols-3">
           <StatTile
             label="Faturamento provável no período"
             :value="report.total_revenue_q ? formatMoney(Math.round(report.total_revenue_q.expected)) : '—'"
@@ -246,6 +313,17 @@ const occasionTitle = (occasion: ForecastOccasion) =>
             label="Pedidos prováveis no período"
             :value="report.total_orders ? formatInt(Math.round(report.total_orders.expected)) : '—'"
             :hint="`${formatInt(openDays.length)} dias de expediente`"
+          />
+          <StatTile
+            label="Troco no período"
+            :value="change?.total_change_q ? formatMoney(Math.round(change.total_change_q.expected)) : '—'"
+            :hint="
+              change?.total_change_q
+                ? `entre ${rangeLabel(change.total_change_q.low, change.total_change_q.high)}`
+                : change?.missing_reason
+                  ? missingLabel(change.missing_reason)
+                  : 'um dia do período ficou sem base, então o total não sai'
+            "
           />
         </div>
 
