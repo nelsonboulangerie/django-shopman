@@ -930,3 +930,69 @@ def test_o_nome_antigo_so_existe_para_ser_derrubado():
         and "antigas" not in linha
     ]
     assert not sobras, f"nome antigo fora da faxina: {sobras}"
+
+
+def test_doctor_nao_morre_no_primeiro_problema(monkeypatch, capsys, tmp_path):
+    """Diagnóstico que aborta no primeiro achado obriga a consertar às cegas.
+
+    A primeira versão saía com SystemExit quando faltava config e nem chegava a
+    olhar o serviço ou a impressora — a pessoa consertava um item, rodava de
+    novo, descobria o seguinte. Um relatório inteiro por execução.
+    """
+    monkeypatch.setattr(counter_agent, "DEFAULT_CONFIG_PATH", tmp_path / "nao-existe.json")
+
+    codigo = counter_agent.doctor()
+
+    saida = capsys.readouterr().out
+    assert codigo == 1
+    assert "config" in saida
+    assert "Reinstale" in saida
+
+
+def test_doctor_acusa_versao_diferente_no_ar(monkeypatch, capsys, tmp_path):
+    """Versão no ar diferente da do arquivo = a última instalação não pegou."""
+    cfg = tmp_path / "agent.json"
+    cfg.write_text('{"queue": "TM-T20", "token": "token-de-teste-longo", "port": 47811}')
+    monkeypatch.setattr(counter_agent, "DEFAULT_CONFIG_PATH", cfg)
+    monkeypatch.setattr(counter_agent, "_wait_until_listening", lambda c, **k: {"build": "deadbeef"})
+    monkeypatch.setattr(counter_agent, "probe_queue", lambda q: {"ok": True})
+    monkeypatch.setattr(counter_agent, "_servico_ativo", lambda n: n == counter_agent.SERVICE_NAME)
+
+    codigo = counter_agent.doctor()
+
+    saida = capsys.readouterr().out
+    assert codigo == 1
+    assert "deadbeef" in saida
+    assert counter_agent.build_id() in saida
+    assert "não pegou" in saida
+
+
+def test_doctor_acusa_o_servico_antigo_de_pe(monkeypatch, capsys, tmp_path):
+    """O antigo segura a porta — é o fantasma que custou duas reinstalações."""
+    if not sys.platform.startswith("linux"):
+        pytest.skip("a checagem de serviço só roda no Linux")
+    cfg = tmp_path / "agent.json"
+    cfg.write_text('{"queue": "TM-T20", "token": "token-de-teste-longo", "port": 47811}')
+    monkeypatch.setattr(counter_agent, "DEFAULT_CONFIG_PATH", cfg)
+    monkeypatch.setattr(counter_agent, "_wait_until_listening", lambda c, **k: {"build": counter_agent.build_id()})
+    monkeypatch.setattr(counter_agent, "probe_queue", lambda q: {"ok": True})
+    monkeypatch.setattr(counter_agent, "_servico_ativo", lambda n: True)  # os DOIS de pé
+
+    codigo = counter_agent.doctor()
+
+    saida = capsys.readouterr().out
+    assert codigo == 1
+    assert "AINDA EXISTE" in saida
+
+
+def test_leitura_do_pino_sem_permissao_explica_o_grupo(monkeypatch, tmp_path):
+    """Erro de permissão vira instrução, não `PermissionError` cru na tela."""
+    def nega(*a, **k):
+        raise PermissionError("negado")
+
+    monkeypatch.setattr(counter_agent.os, "open", nega)
+
+    byte, motivo = counter_agent._ler_pino(tmp_path / "lp0")
+
+    assert byte is None
+    assert "grupo 'lp'" in motivo
