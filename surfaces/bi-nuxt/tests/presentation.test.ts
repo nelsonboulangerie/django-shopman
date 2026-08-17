@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { ForecastBasisLike } from "~/presentation/bi";
+import type { ChangeHabitLike, ChangeMixLike, ForecastBasisLike } from "~/presentation/bi";
 import {
   DATA_EPOCH,
   CONTEXT_EXAMPLES,
@@ -11,6 +11,11 @@ import {
   basisNotes,
   bucketLabel,
   bucketSalesDays,
+  cashOrdersNote,
+  changeHabitNotes,
+  changeMixCaveat,
+  changeMixLabel,
+  coinFloorHint,
   coverageLabel,
   delta,
   formatExploreValue,
@@ -268,5 +273,87 @@ describe("presentation/bi — projeção", () => {
   it("a faixa e a data com ano saem no formato da casa", () => {
     expect(rangeLabel(124000, 168000).replace(/ /g, " ")).toBe("R$ 1,2 mil a R$ 1,7 mil");
     expect(shortDateWithYear("2025-05-11")).toBe("11/05/2025");
+  });
+
+  // ── Troco ──────────────────────────────────────────────────────────────────
+
+  const habit = (over: Partial<ChangeHabitLike> = {}): ChangeHabitLike => ({
+    band: "interquartile",
+    measured_days: 34,
+    measured_orders: 1420,
+    unmeasured_orders: 0,
+    window_from: "2026-02-18",
+    window_to: "2026-08-16",
+    ...over,
+  });
+
+  const mix = (over: Partial<ChangeMixLike> = {}): ChangeMixLike => ({
+    tendency: "mostly_coins",
+    coin_value_percent: 18,
+    small_change_percent: 82,
+    sample_size: 1180,
+    ...over,
+  });
+
+  // A tela pode falar de TENDÊNCIA e de valor; peça, nunca. Ninguém registra
+  // moeda a moeda num balcão, e uma frase com contagem de peças faria a casa
+  // conferir a gaveta contra um número que o sistema inventou.
+  it("a denominação sai como tendência e o aviso vem junto", () => {
+    expect(changeMixLabel(mix())).toBe("A maior parte sai em dinheiro miúdo, abaixo de R$ 5");
+    expect(changeMixLabel(mix({ tendency: "mostly_notes" }))).toBe("A maior parte sai em notas");
+    expect(changeMixLabel(mix({ tendency: "coisa_nova" }))).toBe(
+      "Não dá para dizer como o troco se reparte",
+    );
+    expect(changeMixCaveat(mix())).toContain(
+      "nunca quais moedas e notas saíram da gaveta",
+    );
+    expect(changeMixCaveat(mix({ sample_size: 1 }))).toContain("1 troco.");
+  });
+
+  it("o piso de moeda explica a aritmética antes da tendência", () => {
+    expect(coinFloorHint(mix())).toBe(
+      "Os centavos de um troco não fecham em nota, então essa parte sai sempre em moeda. " +
+        "A maior parte sai em dinheiro miúdo, abaixo de R$ 5.",
+    );
+  });
+
+  // Base curta e base confortável não podem sair com a mesma frase: a faixa
+  // quer dizer coisas diferentes, e o gestor decide quanta folga levar.
+  it("a base curta declara que a faixa mostra os extremos", () => {
+    expect(changeHabitNotes(habit({ band: "full_range", measured_days: 12 }))[1]).toContain(
+      "menor e o maior dia medido",
+    );
+    expect(changeHabitNotes(habit())[1]).toBe("Metade dos dias medidos ficou dentro dessa faixa.");
+  });
+
+  it("venda em dinheiro sem valor recebido aparece como buraco de medição", () => {
+    expect(changeHabitNotes(habit())).toHaveLength(3);
+    const notes = changeHabitNotes(habit({ unmeasured_orders: 1 }));
+    expect(notes).toHaveLength(4);
+    expect(notes[2]).toContain("1 venda em dinheiro ficou de fora");
+    expect(notes[2]).toContain("Ausência de medição não é troco zero");
+    expect(changeHabitNotes(habit({ unmeasured_orders: 9 }))[2]).toContain(
+      "9 vendas em dinheiro ficaram de fora",
+    );
+  });
+
+  // O limite que define a confiança tem de estar escrito na tela, e não só no
+  // código: o histórico antigo conta as vendas em dinheiro, nunca o troco.
+  it("a prestação de contas separa o que o histórico antigo sabe do que não sabe", () => {
+    const notes = changeHabitNotes(habit());
+    expect(notes[0]).toContain("1.420 vendas em dinheiro medidas em 34 dias");
+    expect(notes[0]).toContain("entre 18/02 e 16/08");
+    expect(notes[notes.length - 1]).toContain("nunca o troco");
+  });
+
+  it("o motivo de ausência do troco vira frase própria", () => {
+    expect(missingLabel("troco_sem_base")).toContain("Ainda não sabemos");
+    expect(missingLabel("sem_mix_de_pagamento")).toContain("pagou em dinheiro");
+  });
+
+  it("as vendas em dinheiro previstas saem com a fatia e o tamanho da amostra", () => {
+    expect(cashOrdersNote(41.6, 34, 12)).toBe(
+      "42 vendas em dinheiro prováveis: 34% do movimento do dia, que é a fatia dos 12 dias parecidos.",
+    );
   });
 });
