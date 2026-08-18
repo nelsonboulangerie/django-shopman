@@ -8,6 +8,10 @@ name: Omotenashi Gate
 
 "on":
   pull_request:
+  # A fila de merge testa o RESULTADO do merge, não o branch isolado.
+  # Sem este gatilho os checks obrigatórios nunca rodam no merge group
+  # e a fila trava para sempre, esperando algo que não vai acontecer.
+  merge_group:
   push:
     branches:
       - main
