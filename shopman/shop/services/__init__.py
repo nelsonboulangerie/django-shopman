@@ -15,9 +15,9 @@ SYNC services:
     stock.fulfill(order)         — Fulfill holds
     stock.release(order)         — Release holds (cancellation)
     stock.revert(order)          — Return stock (returns)
-    payment.initiate(order)      — Create payment intent
+    payment.initiate(order)      — Create payment intent (cash/external no terminal: nasce capturado)
     payment.capture(order)       — Capture payment
-    payment.refund(order)        — Refund (smart no-op)
+    payment.refund(order)        — Refund (no-op só sem intent)
     customer.ensure(order)       — Resolve/create customer
     sessions.create/modify/commit — Canonical surface-to-Orderman session writes
     fulfillment.create(order)    — Create fulfillment record

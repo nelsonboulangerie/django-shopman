@@ -226,6 +226,95 @@ class RefundTests(TestCase):
         self.assertIsNotNone(txn)
 
 
+class SettleTests(TestCase):
+    """``settle``: dinheiro e cobrança externa liquidam sem gateway, mas entram no livro."""
+
+    def test_settle_cash_creates_captured_intent_with_capture_transaction(self) -> None:
+        intent = PaymentService.settle("ORD-CASH-1", 4500, "cash")
+
+        self.assertEqual(intent.method, PaymentIntent.Method.CASH)
+        self.assertEqual(intent.status, PaymentIntent.Status.CAPTURED)
+        self.assertEqual(intent.amount_q, 4500)
+        self.assertEqual(intent.gateway, "")
+        self.assertEqual(intent.gateway_id, "")
+        self.assertIsNotNone(intent.authorized_at)
+        self.assertIsNotNone(intent.captured_at)
+
+        transactions = list(intent.transactions.all())
+        self.assertEqual(len(transactions), 1)
+        self.assertEqual(transactions[0].type, PaymentTransaction.Type.CAPTURE)
+        self.assertEqual(transactions[0].amount_q, 4500)
+        self.assertEqual(transactions[0].gateway_id, "")
+        self.assertEqual(PaymentService.captured_total(intent.ref), 4500)
+
+    def test_settle_external_creates_captured_intent(self) -> None:
+        intent = PaymentService.settle("ORD-EXT-1", 9900, "external", gateway_data={"source": "maquininha"})
+
+        self.assertEqual(intent.method, PaymentIntent.Method.EXTERNAL)
+        self.assertEqual(intent.status, PaymentIntent.Status.CAPTURED)
+        self.assertEqual(intent.gateway, "")
+        self.assertEqual(intent.gateway_data, {"source": "maquininha"})
+
+    def test_settle_refuses_gateway_methods(self) -> None:
+        for method in ("pix", "card"):
+            with self.subTest(method=method):
+                with self.assertRaises(PaymentError) as ctx:
+                    PaymentService.settle("ORD-GW", 1000, method)
+                self.assertEqual(ctx.exception.code, "method_requires_gateway")
+        self.assertFalse(PaymentIntent.objects.filter(order_ref="ORD-GW").exists())
+
+    def test_settle_refuses_non_positive_amount(self) -> None:
+        with self.assertRaises(PaymentError) as ctx:
+            PaymentService.settle("ORD-CASH-0", 0, "cash")
+        self.assertEqual(ctx.exception.code, "invalid_amount")
+
+    def test_settle_is_idempotent_by_key(self) -> None:
+        first = PaymentService.settle("ORD-CASH-IDEM", 2500, "cash", idempotency_key="pos:ORD-CASH-IDEM:cash")
+        second = PaymentService.settle("ORD-CASH-IDEM", 2500, "cash", idempotency_key="pos:ORD-CASH-IDEM:cash")
+
+        self.assertEqual(first.pk, second.pk)
+        self.assertEqual(second.status, PaymentIntent.Status.CAPTURED)
+        self.assertEqual(PaymentIntent.objects.filter(order_ref="ORD-CASH-IDEM").count(), 1)
+        self.assertEqual(second.transactions.filter(type=PaymentTransaction.Type.CAPTURE).count(), 1)
+
+    def test_settle_key_reused_with_other_params_conflicts(self) -> None:
+        PaymentService.settle("ORD-CASH-K", 2500, "cash", idempotency_key="pos:key-shared")
+        with self.assertRaises(PaymentError) as ctx:
+            PaymentService.settle("ORD-CASH-K", 2600, "cash", idempotency_key="pos:key-shared")
+        self.assertEqual(ctx.exception.code, "idempotency_key_conflict")
+
+    def test_settle_key_of_dead_intent_is_not_revived(self) -> None:
+        pending = PaymentService.create_intent("ORD-CASH-DEAD", 1000, "cash", idempotency_key="pos:dead")
+        PaymentService.cancel(pending.ref, reason="desistiu")
+
+        with self.assertRaises(PaymentError) as ctx:
+            PaymentService.settle("ORD-CASH-DEAD", 1000, "cash", idempotency_key="pos:dead")
+        self.assertEqual(ctx.exception.code, "invalid_transition")
+
+    def test_settled_cash_refunds_like_any_capture(self) -> None:
+        intent = PaymentService.settle("ORD-CASH-REF", 8000, "cash")
+
+        partial = PaymentService.refund(intent.ref, amount_q=3000, reason="item devolvido")
+        self.assertEqual(partial.type, PaymentTransaction.Type.REFUND)
+        self.assertEqual(partial.amount_q, 3000)
+        self.assertEqual(PaymentService.refunded_total(intent.ref), 3000)
+
+        rest = PaymentService.refund(intent.ref)
+        self.assertEqual(rest.amount_q, 5000)
+        intent.refresh_from_db()
+        self.assertEqual(intent.status, PaymentIntent.Status.REFUNDED)
+
+    def test_settled_intent_cannot_be_captured_again(self) -> None:
+        intent = PaymentService.settle("ORD-CASH-2X", 1500, "cash")
+        with self.assertRaises(PaymentError) as ctx:
+            PaymentService.capture(intent.ref)
+        self.assertEqual(ctx.exception.code, "invalid_transition")
+
+    def test_settle_lists_in_get_by_order(self) -> None:
+        intent = PaymentService.settle("ORD-CASH-Q", 700, "cash")
+        self.assertEqual(list(PaymentService.get_by_order("ORD-CASH-Q")), [intent])
+
+
 class CancelTests(TestCase):
     def test_cancel_pending(self) -> None:
         intent = PaymentService.create_intent("ORD-CX1", 5000, "pix")

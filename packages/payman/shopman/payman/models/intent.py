@@ -54,6 +54,13 @@ class PaymentIntent(models.Model):
 
     TERMINAL_STATUSES = [Status.FAILED, Status.CANCELLED, Status.REFUNDED]
 
+    # Métodos que liquidam sem gateway: o dinheiro troca de mãos no balcão
+    # (``cash``) ou a cobrança aconteceu fora do sistema (``external``:
+    # maquininha avulsa, marketplace). Não há autorização remota nem
+    # webhook: o intent nasce e captura no mesmo gesto, via
+    # ``PaymentService.settle``, com ``gateway=""``. Único dono da lista.
+    METHODS_WITHOUT_GATEWAY = frozenset({Method.CASH, Method.EXTERNAL})
+
     STATUS_TIMESTAMP_FIELDS = {
         Status.AUTHORIZED: "authorized_at",
         Status.CAPTURED: "captured_at",

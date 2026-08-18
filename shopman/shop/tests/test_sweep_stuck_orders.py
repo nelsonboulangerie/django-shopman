@@ -141,6 +141,25 @@ def test_redispatches_paid_order_via_payman_sufficient_capture():
     assert dispatch.call_args.args[1] == "on_paid"
 
 
+def test_settled_cash_intent_does_not_owe_on_paid():
+    # Venda de balcão em dinheiro: intent capturado na venda (ADR-022), sem
+    # webhook a perder. on_paid nunca é despachado para ela; o sweeper não
+    # pode "recuperar" uma fase que ninguém deve.
+    from shopman.payman import PaymentService
+
+    order = _order(
+        "ORD-CASH-SWEEP",
+        status=Order.Status.ACCEPTED,
+        data={
+            "lifecycle": {"on_commit": "done", "on_accepted": "done"},
+            "payment": {"intent_ref": "PI-CASH-SWEEP", "method": "cash", "collection": "terminal"},
+        },
+    )
+    PaymentService.settle(order.ref, 1000, "cash", ref="PI-CASH-SWEEP")
+    dispatch = _sweep()
+    dispatch.assert_not_called()
+
+
 def test_skips_paid_order_with_completed_marker():
     _order(
         "ORD-PAID-OK",

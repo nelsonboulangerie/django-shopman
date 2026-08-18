@@ -13,6 +13,12 @@ Display keys (qr_code, copy_paste, client_secret, expires_at, amount_q) are also
 Payman is the live canonical source when an intent exists. Embedded status is
 only a compatibility/read fallback for imported or legacy orders without an
 intent.
+
+Métodos sem gateway (``cash``, ``external``): o Payman também é o livro
+deles (ADR-022). Quando a coleta é no terminal (``payment.collection ==
+"terminal"``, escrito pelo PDV) o intent nasce capturado na venda via
+``PaymentService.settle``; sem ``collection`` (loja online) ou com coleta na
+entrega (COD) o dinheiro ainda não trocou de mãos e o intent nasce no acerto.
 """
 
 from __future__ import annotations
@@ -25,9 +31,23 @@ from django.conf import settings
 from django.utils import timezone
 
 from shopman.shop.adapters import get_adapter
-from shopman.shop.adapters.payment_types import PaymentIntent
+from shopman.shop.adapters.payment_types import PaymentIntent, PaymentResult
 
 logger = logging.getLogger(__name__)
+
+
+def settles_without_gateway(method: str | None) -> bool:
+    """True para os métodos que liquidam sem gateway (dinheiro, cobrança externa).
+
+    Dono da lista é o Payman (``PaymentIntent.METHODS_WITHOUT_GATEWAY``); este
+    helper existe para quem raciocina a partir do ``Order.data.payment.method``.
+    Um intent desses nasce capturado na venda: não há webhook, autorização
+    remota nem ``on_paid`` a recuperar (o pedido do PDV já roda o ciclo pelo
+    ``payment.timing == "external"``).
+    """
+    from shopman.payman import PaymentIntent as PaymanIntent
+
+    return str(method or "").strip().lower() in PaymanIntent.METHODS_WITHOUT_GATEWAY
 
 
 def initiate(order) -> None:
@@ -38,16 +58,24 @@ def initiate(order) -> None:
     calls adapter.create_intent(), then saves intent_ref and display data
     in order.data["payment"].
 
+    Métodos sem gateway (``cash``/``external``) não têm adapter: quando a
+    coleta é no terminal o intent nasce capturado (``_settle_at_terminal``);
+    fora disso não há intent a criar ainda.
+
     SYNC — needs the intent/QR data to show to the client.
     """
     payment_data = order.data.get("payment", {})
     method = payment_data.get("method")
 
-    if not method or method in ("cash", "external"):
+    if not method:
         return
 
     # Idempotent: skip if intent already exists
     if payment_data.get("intent_ref"):
+        return
+
+    if settles_without_gateway(method):
+        _settle_at_terminal(order, payment_data=payment_data, method=method)
         return
 
     amount_q = order.total_q
@@ -172,6 +200,90 @@ def _persist_intent(
         _schedule_payment_timeout(order, intent)
 
 
+def _settle_at_terminal(order, *, payment_data: dict, method: str) -> None:
+    """Dinheiro/cobrança externa recebidos no terminal viram intent capturado.
+
+    Só quando ``payment.collection == "terminal"``: é o PDV declarando que o
+    valor foi recebido no balcão, no ato. Sem ``collection`` (loja online,
+    WhatsApp) ou com ``on_delivery`` (COD) o dinheiro ainda não trocou de
+    mãos, e o intent nasce no acerto, não aqui.
+
+    O valor é o dos tenders do método recebidos no terminal (o que ficou na
+    gaveta depois do troco), não o que o cliente entregou nem o total do
+    pedido: numa venda com troco o tender já vale o total. Venda mista
+    (``method == "mixed"``) não passa por aqui: lá é um intent por tender,
+    criado no fechamento da venda junto com o lançamento no livro-caixa
+    (WP-3 do CASHMAN-PLAN).
+    """
+    collection = str(payment_data.get("collection") or "").strip().lower()
+    if collection != "terminal":
+        return
+    if str(getattr(order, "status", "") or "").lower() in {"cancelled", "returned"}:
+        # Venda que morreu no próprio commit (gate de disponibilidade) não
+        # recebeu dinheiro: liquidar aqui inventaria captura em pedido cancelado.
+        return
+
+    amount_q = _terminal_amount_q(order, payment_data=payment_data, method=method)
+    if amount_q <= 0:
+        return
+
+    existing_intent = _existing_active_intent(order, method=method, amount_q=amount_q)
+    if existing_intent:
+        _persist_intent(order, payment_data=payment_data, method=method, amount_q=amount_q, intent=existing_intent)
+        logger.info(
+            "payment.initiate: reused existing %s intent %s for order %s",
+            method,
+            existing_intent.intent_ref,
+            order.ref,
+        )
+        return
+
+    from shopman.payman import PaymentService
+
+    idempotency_key = _ensure_payment_idempotency_key(
+        order,
+        payment_data=payment_data,
+        method=method,
+        amount_q=amount_q,
+    )
+    intent = PaymentService.settle(
+        order.ref,
+        amount_q,
+        method,
+        currency="BRL",
+        idempotency_key=idempotency_key,
+    )
+    _persist_intent(
+        order,
+        payment_data=payment_data,
+        method=method,
+        amount_q=amount_q,
+        intent=_payment_intent_from_payman(intent),
+    )
+    logger.info(
+        "payment.initiate: %s settled at terminal, intent %s for order %s",
+        method, intent.ref, order.ref,
+    )
+
+
+def _terminal_amount_q(order, *, payment_data: dict, method: str) -> int:
+    """Soma dos tenders deste método recebidos no terminal; sem tenders, o total."""
+    tenders = [t for t in (payment_data.get("tenders") or []) if isinstance(t, dict)]
+    if not tenders:
+        return int(order.total_q or 0)
+    total = 0
+    for tender in tenders:
+        if str(tender.get("method") or "").strip().lower() != method:
+            continue
+        if str(tender.get("collection") or "terminal").strip().lower() != "terminal":
+            continue
+        try:
+            total += int(tender.get("amount_q") or 0)
+        except (TypeError, ValueError):
+            continue
+    return total
+
+
 def capture(order) -> None:
     """
     Capture a previously authorized payment via adapter.
@@ -217,7 +329,12 @@ def refund(
     """
     Refund payment for the order.
 
-    Smart no-op: if order has no payment intent, does nothing.
+    Sem intent não há o que estornar (pedido ainda não liquidado, COD por
+    acertar, pedido legado): no-op. Com intent, o estorno vale para qualquer
+    método, dinheiro incluído: uma venda em dinheiro do PDV tem intent
+    capturado (``PaymentService.settle``) e o cancel dela grava
+    ``PaymentTransaction(REFUND)`` no Payman, sem adapter (o dinheiro sai da
+    gaveta; o livro-caixa é pergunta do ``cashman``, não daqui).
     Uses Payman (PaymentService) as idempotency source.
 
     ``amount_q`` limita o estorno (devolução PARCIAL); ``None`` estorna o saldo
@@ -234,7 +351,6 @@ def refund(
     intent_ref = payment_data.get("intent_ref")
 
     if not intent_ref:
-        # Smart no-op: no payment to refund (cash, external, etc.)
         return
 
     if idempotency_key is None:
@@ -256,17 +372,26 @@ def refund(
             return
 
     method = payment_data.get("method", "pix")
-    adapter = get_adapter("payment", method=method)
-    if not adapter:
-        return
+    adapter = None
+    if not settles_without_gateway(method):
+        adapter = get_adapter("payment", method=method)
+        if not adapter:
+            return
 
     try:
-        result = adapter.refund(
-            intent_ref,
-            amount_q=requested_q,
-            reason="order_cancelled",
-            idempotency_key=idempotency_key,
-        )
+        if adapter is None:
+            result = _refund_without_gateway(
+                intent_ref,
+                amount_q=requested_q,
+                idempotency_key=idempotency_key,
+            )
+        else:
+            result = adapter.refund(
+                intent_ref,
+                amount_q=requested_q,
+                reason="order_cancelled",
+                idempotency_key=idempotency_key,
+            )
     except Exception as exc:
         # Falha TRANSIENTE (gateway fora/timeout). Estorno é idempotente, então
         # retentamos com backoff em vez de desistir e reter o dinheiro do cliente.
@@ -295,6 +420,30 @@ def refund(
     detail = getattr(result, "message", None) or getattr(result, "error_code", None) or "ver logs"
     logger.error("payment.refund: adapter recusou o estorno do pedido %s: %s", order.ref, detail)
     alert_refund_failed(order, intent_ref, requested_q, detail)
+
+
+def _refund_without_gateway(intent_ref: str, *, amount_q: int | None, idempotency_key: str) -> PaymentResult:
+    """Estorno de intent sem gateway (dinheiro, cobrança externa): direto no Payman.
+
+    Não há adapter para converter a resposta, então este helper fala o mesmo
+    dialeto (``PaymentResult``) para o ``refund`` tratar sucesso, recusa e
+    retry por um caminho só. A chave de idempotência ocupa o ``gateway_id`` da
+    transação de estorno, exatamente como fazem os adapters reais: é o único
+    campo pelo qual o Payman deduplica um retry (worker morto, at-least-once)
+    e sem ele um cancel reapresentado devolveria o mesmo dinheiro duas vezes.
+    """
+    from shopman.payman import PaymentError, PaymentService
+
+    try:
+        txn = PaymentService.refund(
+            intent_ref,
+            amount_q=amount_q,
+            reason="order_cancelled",
+            gateway_id=idempotency_key,
+        )
+    except PaymentError as exc:
+        return PaymentResult(success=False, error_code=exc.code, message=exc.message)
+    return PaymentResult(success=True, transaction_id=txn.gateway_id, amount_q=txn.amount_q)
 
 
 def alert_refund_failed(order, intent_ref, amount_q, detail) -> None:
@@ -391,8 +540,11 @@ def get_payment_status(order) -> str | None:
     Retorna o status canônico de pagamento via Payman.
 
     Consulta PaymentService pelo intent_ref. Retorna None para pedidos sem
-    intent/status (cash, external). Se existe intent mas Payman não responde,
-    retorna ``"unknown"`` para impedir decisões operacionais fail-open.
+    intent/status (dinheiro ainda não recebido: COD por acertar, loja online
+    a pagar no balcão). Venda em dinheiro do PDV tem intent capturado e
+    responde ``"captured"`` como qualquer outro método. Se existe intent mas
+    Payman não responde, retorna ``"unknown"`` para impedir decisões
+    operacionais fail-open.
     """
     payment_data = (order.data or {}).get("payment") or {}
     embedded_status = _embedded_payment_status(payment_data)

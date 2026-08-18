@@ -9,7 +9,10 @@ Usage:
     tx = PaymentService.capture(intent.ref)
     PaymentService.refund(intent.ref, amount_q=500, reason="item danificado")
 
-5 verbs: create_intent, authorize, capture, refund, cancel.
+    # Sem gateway (dinheiro no balcão, cobrança externa): nasce capturado.
+    intent = PaymentService.settle("ORD-002", 1500, "cash")
+
+6 verbs: create_intent, settle, authorize, capture, refund, cancel.
 2 queries: get, get_by_order.
 1 helper: get_active_intent.
 

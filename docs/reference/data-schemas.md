@@ -247,8 +247,8 @@ Classificações: **canonical** = fonte de verdade para decisões; **display** =
 
 | Sub-chave | Tipo | Classe | Escrito por | Lido por | Descrição |
 |-----------|------|--------|-------------|----------|-----------|
-| `method` | `string` | **canonical** | CheckoutView → CommitService | lifecycle, views, handlers | `"pix"`, `"card"`, `"counter"`, `"external"` |
-| `intent_ref` | `string` | **canonical** | `payment.initiate()` | `payment_svc.get_payment_status`, PaymentStatusView | ID do intent no Payman/gateway |
+| `method` | `string` | **canonical** | CheckoutView → CommitService; POS (`shop/services/pos.py`) | lifecycle, views, handlers | `"pix"`, `"card"`, `"cash"`, `"external"`; `"mixed"` quando o PDV recebe em mais de um meio (ver `tenders`) |
+| `intent_ref` | `string` | **canonical** | `payment.initiate()` | `payment_svc.get_payment_status`, PaymentStatusView, reconciliação financeira | Ref do intent no Payman. Pix/cartão: intent do gateway. `cash`/`external` **com `collection == "terminal"`** (venda do PDV): intent capturado no ato (`PaymentService.settle`, `gateway=""`), gravado depois do total selado (ADR-022). Sem `collection` (loja online) ou `on_delivery` (COD): ausente até o acerto |
 | `idempotency_key` | `string` | idempotency | `payment.initiate()` | adapters Payman/gateway | Chave da tentativa de pagamento para retry seguro; não é status e não libera fluxo operacional |
 | `amount_q` | `int` | display | `payment.initiate()` | PaymentView, templates | Valor em centavos (referência para UI) |
 | `qr_code` | `string` | display | `payment.initiate()` | PaymentView template | QR code image (data URI) — PIX only |

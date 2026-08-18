@@ -9,12 +9,16 @@ Usage:
     tx = PaymentService.capture(intent.ref)
     PaymentService.refund(intent.ref, amount_q=500, reason="item danificado")
 
+    # Sem gateway (dinheiro no balcão, cobrança externa): nasce capturado.
+    intent = PaymentService.settle("ORD-002", 1500, "cash")
+
 Lifecycle:
     create_intent → authorize → capture → (refund)
                   → cancel
                   → fail
+    settle (cash/external) = create_intent + capture, atômico
 
-5 verbs: create_intent, authorize, capture, refund, cancel.
+6 verbs: create_intent, settle, authorize, capture, refund, cancel.
 2 queries: get, get_by_order.
 1 helper: get_active_intent.
 
@@ -181,6 +185,121 @@ class PaymentService:
         logger.info(
             "Intent created",
             extra={"ref": intent.ref, "order_ref": order_ref, "amount_q": amount_q, "method": method},
+        )
+
+        return intent
+
+    # ================================================================
+    # Settle (métodos sem gateway)
+    # ================================================================
+
+    @classmethod
+    @transaction.atomic
+    def settle(
+        cls,
+        order_ref: str,
+        amount_q: int,
+        method: str,
+        *,
+        currency: str = "BRL",
+        gateway_data: dict | None = None,
+        ref: str | None = None,
+        idempotency_key: str = "",
+    ) -> PaymentIntent:
+        """
+        Cria e captura, na mesma transação, um pagamento que liquidou sem gateway.
+
+        Dinheiro em espécie e cobrança externa (maquininha avulsa, marketplace)
+        não passam por autorização remota nem por webhook: o valor está na mão
+        no instante em que a venda fecha. Mesmo assim o Payman é o livro de
+        pagamentos de TODOS os métodos: é isso que dá ao mix de meios de
+        pagamento um dono só (receita por método sai daqui, não do JSON do
+        pedido) e deixa a reconciliação financeira enxergar dinheiro em vez
+        de ser cega para ele. O caixa físico (turno, gaveta, sangria) é
+        pergunta de outro pacote (``cashman``); o único fato compartilhado é o
+        tender em dinheiro, ligado pelo ``ref`` deste intent.
+
+        Não é adapter nem Protocol: só existe uma forma de "capturar" dinheiro,
+        e um seam plugável sem duas implementações reais é dívida. É um ramo
+        do próprio service, com ``gateway=""`` e ``gateway_id=""``. O intent
+        percorre a máquina de estados normal (pending → authorized →
+        captured): autorização e captura são o mesmo gesto porque a nota já
+        está na gaveta, mas os invariantes do modelo continuam os mesmos.
+
+        Estorno de dinheiro é ``refund`` normal (``PaymentTransaction(REFUND)``).
+
+        Args:
+            order_ref: Referência do pedido (string, sem FK)
+            amount_q: Valor efetivamente recebido para este pedido, em centavos
+                (o valor do tender depois de descontado o troco; nunca o que
+                o cliente entregou)
+            method: ``cash`` ou ``external`` (``PaymentIntent.METHODS_WITHOUT_GATEWAY``)
+            currency: Código ISO 4217
+            gateway_data: Dados livres de auditoria (ex.: terminal, operador)
+            ref: Referência customizada (auto-gerada se None)
+            idempotency_key: Chave estável para retry seguro; uma repetição
+                devolve o intent já capturado em vez de cobrar duas vezes
+
+        Returns:
+            PaymentIntent com status CAPTURED e uma ``PaymentTransaction`` de captura.
+
+        Raises:
+            PaymentError: METHOD_REQUIRES_GATEWAY (pix/card não liquidam aqui),
+                INVALID_AMOUNT, IDEMPOTENCY_KEY_CONFLICT, INVALID_TRANSITION
+                (chave reutilizada por um intent que já morreu)
+        """
+        if method not in PaymentIntent.METHODS_WITHOUT_GATEWAY:
+            raise PaymentError(
+                code="method_requires_gateway",
+                message=(
+                    f"Método '{method}' passa por gateway; use create_intent/authorize/capture. "
+                    f"Sem gateway só {sorted(PaymentIntent.METHODS_WITHOUT_GATEWAY)}"
+                ),
+                context={"method": method, "order_ref": order_ref},
+            )
+
+        intent = cls.create_intent(
+            order_ref,
+            amount_q,
+            method,
+            currency=currency,
+            gateway="",
+            gateway_id="",
+            gateway_data=gateway_data,
+            ref=ref,
+            idempotency_key=idempotency_key,
+        )
+        intent = cls._get_for_update(intent.ref)
+
+        # Retry com a mesma chave: o intent já liquidou, devolve como está.
+        if intent.status in (PaymentIntent.Status.CAPTURED, PaymentIntent.Status.REFUNDED):
+            return intent
+
+        cls._require_status(intent, PaymentIntent.Status.PENDING, "settle")
+
+        intent.status = PaymentIntent.Status.AUTHORIZED
+        intent.save()
+        intent.status = PaymentIntent.Status.CAPTURED
+        intent.save()
+
+        txn = PaymentTransaction.objects.create(
+            intent=intent,
+            type=PaymentTransaction.Type.CAPTURE,
+            amount_q=intent.amount_q,
+            gateway_id="",
+        )
+
+        payment_captured.send(
+            sender=PaymentService,
+            intent=intent,
+            order_ref=intent.order_ref,
+            amount_q=intent.amount_q,
+            transaction=txn,
+        )
+
+        logger.info(
+            "Intent settled without gateway",
+            extra={"ref": intent.ref, "order_ref": order_ref, "amount_q": intent.amount_q, "method": method},
         )
 
         return intent

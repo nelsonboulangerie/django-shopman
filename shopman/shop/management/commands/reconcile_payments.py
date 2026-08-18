@@ -7,7 +7,8 @@ pode ter sido perdido (timeout, reinicialização de servidor, falha de rede).
 Lógica:
   1. Busca Orders NEW/CONFIRMED criadas antes de `--since` atrás.
   2. Para cada uma, lê intent_ref em order.data["payment"].
-  3. Consulta Payman: PaymentService.get(intent_ref).
+  3. Consulta Payman: PaymentService.get(intent_ref). Intent sem gateway
+     (cash/external, capturado na venda) é ignorado: não há webhook a perder.
   4. Se intent capturada → dispatch("on_paid") (pulado se a fase já completou).
   5. Se intent PENDING vencida (expires_at no passado — Payman não tem status
      "expired") → re-arma a directive payment.timeout, que é quem sabe cancelar
@@ -67,6 +68,8 @@ class Command(BaseCommand):
     def handle(self, *args, **options):
         from shopman.orderman.models import Order
 
+        from shopman.shop.services import payment as payment_service
+
         since_str = options["since"]
         dry_run = options["dry_run"]
 
@@ -109,6 +112,14 @@ class Command(BaseCommand):
                     intent_ref, order.ref, exc,
                 )
                 skipped += 1
+                continue
+
+            if payment_service.settles_without_gateway(intent.method):
+                # Dinheiro/cobrança externa: capturado na venda, sem webhook a
+                # perder (ADR-022). Não há on_paid a recuperar; despachar aqui
+                # mandaria "pagamento confirmado" para toda venda de balcão.
+                skipped += 1
+                logger.debug("reconcile_payments: order %s intent %s sem gateway, ignorando.", order.ref, intent_ref)
                 continue
 
             if intent.status == "captured":
