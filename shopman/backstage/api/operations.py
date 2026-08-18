@@ -182,10 +182,13 @@ def _production_error_response(exc: ProductionError) -> Response | None:
 
 
 def _cash_shift_result(shift) -> dict:
-    # Blind close: the operator sees only what they counted, never the expected
-    # amount or variance. ``expected_amount_q``/``difference_q`` are still
-    # computed and stored on the shift; managers review them via Admin and the
-    # day-closing reconciliation, never at the cashier terminal.
+    # Fechamento cego: o operador vê só o que contou, nunca o esperado nem a
+    # diferença. Os dois são provados pelo livro (``cashman``) e lidos pela
+    # retaguarda (Admin, fechamento do dia), jamais pelo terminal.
+    from shopman.cashman import services as cash
+    from shopman.cashman.models import Entry
+
+    float_q = sum(entry.amount_q for entry in cash.timeline(shift) if entry.kind == Entry.Kind.FLOAT_IN)
     return {
         "id": shift.pk,
         "terminal_ref": shift.terminal.ref,
@@ -193,8 +196,8 @@ def _cash_shift_result(shift) -> dict:
         "status": shift.status,
         "opened_at": shift.opened_at.isoformat() if shift.opened_at else "",
         "closed_at": shift.closed_at.isoformat() if shift.closed_at else "",
-        "opening_amount_q": shift.opening_amount_q,
-        "blind_closing_amount_q": shift.blind_closing_amount_q,
+        "opening_amount_q": float_q,
+        "blind_closing_amount_q": cash.counted(shift),
     }
 
 
@@ -211,10 +214,11 @@ def _pos_payload_with_runtime(request, body: dict) -> dict:
 
 
 def _open_cash_shift_for_request(request):
+    """O turno ABERTO do operador no ``cashman`` — é o pk dele que vai em ``cash_shift_id``."""
     try:
-        from shopman.backstage.models import CashShift
+        from shopman.cashman import services as cash
 
-        return CashShift.get_open_for_operator(request.user)
+        return cash.open_shift_for(request.user)
     except Exception:
         logger.debug("pos_runtime_payload_enrichment_failed user=%s", _actor(request), exc_info=True)
         return None
@@ -278,7 +282,7 @@ def _pos_sale_review_payload(review) -> dict:
 )
 class POSView(APIView):
     permission_classes = [HasBackstagePermission]
-    required_permission = "backstage.operate_pos"
+    required_permission = "cashman.operate_pos"
 
     def get(self, request):
         from shopman.backstage.services.operator import (
@@ -312,7 +316,7 @@ class POSPaymentStatusView(APIView):
     """
 
     permission_classes = [HasBackstagePermission]
-    required_permission = "backstage.operate_pos"
+    required_permission = "cashman.operate_pos"
 
     def get(self, request, ref: str):
         from django.http import Http404
@@ -347,7 +351,7 @@ class POSPaymentStatusView(APIView):
 # Permissions a surface may ask the operator to satisfy at unlock (whitelist, so a
 # client can only restrict — never widen — who may unlock there).
 _OPERATOR_UNLOCK_PERMS = {
-    "backstage.operate_pos",
+    "cashman.operate_pos",
     "backstage.operate_kds",
     "backstage.operate_production",
     "shop.manage_orders",
@@ -564,13 +568,13 @@ class OperatorPinChangeView(APIView):
 class OperatorPinResetView(APIView):
     """Manager resets an operator's PIN → temp PIN + forced change on first use.
 
-    Gated by ``backstage.manage_operators`` (against the active operator when the
+    Gated by ``cashman.manage_operators`` (against the active operator when the
     Opção C flag is on, else the device user). The temp PIN is returned once — the
     manager reads it to the operator; only its HMAC digest is stored.
     """
 
     permission_classes = [HasBackstagePermission]
-    required_permission = "backstage.manage_operators"
+    required_permission = "cashman.manage_operators"
 
     def post(self, request):
         from django.contrib.auth import get_user_model
@@ -1475,7 +1479,7 @@ class WorkOrderOvenConcludeView(_ProductionActionBase):
 )
 class POSCashOpenView(APIView):
     permission_classes = [HasBackstagePermission]
-    required_permission = "backstage.operate_pos"
+    required_permission = "cashman.operate_pos"
 
     def post(self, request):
         amount = request.data.get("opening_amount", "0")
@@ -1520,7 +1524,7 @@ class POSCashOpenView(APIView):
 )
 class POSCashCloseView(APIView):
     permission_classes = [HasBackstagePermission]
-    required_permission = "backstage.operate_pos"
+    required_permission = "cashman.operate_pos"
 
     def post(self, request):
         amount = request.data.get("closing_amount", "0")
@@ -1546,7 +1550,7 @@ class POSCashCloseBlockingView(APIView):
     """
 
     permission_classes = [HasBackstagePermission]
-    required_permission = "backstage.operate_pos"
+    required_permission = "cashman.operate_pos"
 
     def post(self, request):
         from shopman.backstage.services.exceptions import POSPermissionError
@@ -1583,9 +1587,9 @@ class POSCashCloseBlockingView(APIView):
         responses={200: OpenApiResponse(description="Movement registered.")},
     ),
 )
-class POSCashMovementView(APIView):
+class POSMovementView(APIView):
     permission_classes = [HasBackstagePermission]
-    required_permission = "backstage.operate_pos"
+    required_permission = "cashman.operate_pos"
 
     def post(self, request):
         kind = (request.data.get("kind") or "").strip()
@@ -1594,7 +1598,7 @@ class POSCashMovementView(APIView):
         if kind not in {"sangria", "suprimento"}:
             return Response({"detail": "kind deve ser 'sangria' ou 'suprimento'."}, status=400)
         try:
-            mov = pos_service.register_cash_movement(
+            entry = pos_service.register_cash_movement(
                 operator=request.user,
                 movement_type=kind,
                 amount_raw=str(amount),
@@ -1608,7 +1612,7 @@ class POSCashMovementView(APIView):
         except Exception as exc:
             logger.debug("pos_cash_movement_failed user=%s kind=%s", _actor(request), kind, exc_info=True)
             return Response({"detail": str(exc) or "Falha ao registrar movimento."}, status=400)
-        return Response({"ok": True, "movement_id": getattr(mov, "pk", None)})
+        return Response({"ok": True, "entry_id": getattr(entry, "pk", None)})
 
 
 @extend_schema_view(
@@ -1632,13 +1636,13 @@ class POSCashReceiptView(APIView):
     """
 
     permission_classes = [HasBackstagePermission]
-    required_permission = "backstage.operate_pos"
+    required_permission = "cashman.operate_pos"
 
-    def get(self, request, movement_id: int):
+    def get(self, request, entry_id: int):
         reprint = str(request.query_params.get("reprint") or "").lower() in {"1", "true", "on"}
         try:
             payload = pos_service.cash_movement_receipt_payload(
-                operator=request.user, movement_id=movement_id, reprint=reprint
+                operator=request.user, entry_id=entry_id, reprint=reprint
             )
         except PosIntentError as exc:
             return Response({"detail": exc.message, "error": exc.as_dict()}, status=exc.status)
@@ -1647,11 +1651,11 @@ class POSCashReceiptView(APIView):
             return Response({"detail": str(exc) or "Falha ao montar o comprovante."}, status=400)
         return Response(payload)
 
-    def post(self, request, movement_id: int):
+    def post(self, request, entry_id: int):
         try:
-            movement = pos_service.record_receipt_result(
+            result = pos_service.record_receipt_result(
                 operator=request.user,
-                movement_id=movement_id,
+                entry_id=entry_id,
                 status=(request.data.get("status") or "").strip(),
                 detail=request.data.get("detail") or "",
             )
@@ -1660,7 +1664,7 @@ class POSCashReceiptView(APIView):
         except Exception as exc:
             logger.debug("pos_receipt_result_failed user=%s", _actor(request), exc_info=True)
             return Response({"detail": str(exc) or "Falha ao registrar o comprovante."}, status=400)
-        return Response({"ok": True, "receipt_status": movement.receipt_status})
+        return Response({"ok": True, "receipt_status": str((result.payload or {}).get("status") or "")})
 
 
 @extend_schema_view(
@@ -1680,7 +1684,7 @@ class POSCashDrawerOpenView(APIView):
     """
 
     permission_classes = [HasBackstagePermission]
-    required_permission = "backstage.operate_pos"
+    required_permission = "cashman.operate_pos"
 
     def post(self, request):
         reason = (request.data.get("reason") or "").strip()
@@ -1708,12 +1712,12 @@ class POSChangeRequestView(APIView):
     não, e a falta só apareceria no fechamento. Aqui o dinheiro fica no balcão e
     alguém traz o troco até ele.
 
-    ⚠️ Um pedido não é movimento de caixa. Nada aqui cria ``CashMovement`` nem
-    encosta em ``expected_amount_q`` — a troca é net zero.
+    ⚠️ Um pedido não é movimento de caixa: a linha ``change_requested`` tem
+    efeito zero no livro — a troca é net zero.
     """
 
     permission_classes = [HasBackstagePermission]
-    required_permission = "backstage.operate_pos"
+    required_permission = "cashman.operate_pos"
 
     def post(self, request):
         try:
@@ -1728,7 +1732,7 @@ class POSChangeRequestView(APIView):
         except Exception as exc:
             logger.debug("pos_change_request_failed user=%s", _actor(request), exc_info=True)
             return Response({"detail": str(exc) or "Falha ao pedir troco."}, status=400)
-        return Response({"ok": True, "request_ref": entry["ref"]})
+        return Response({"ok": True, "request_ref": str(entry.pk)})
 
 
 @extend_schema_view(
@@ -1741,14 +1745,14 @@ class POSChangeRequestView(APIView):
 class POSChangeRequestServeView(APIView):
     """O gerente atende o pedido no balcão, com PIN, à vista das duas pessoas.
 
-    Mesmo gate da sangria (``backstage.adjust_cashshift``, validado no service):
+    Mesmo gate da sangria (``cashman.adjust_shift``, validado no service):
     a gaveta vai abrir com dinheiro dentro e quem mexe nela é alguém de fora do
     turno. Sem a segunda assinatura, atender viraria um jeito de abrir a gaveta
     sem testemunha.
     """
 
     permission_classes = [HasBackstagePermission]
-    required_permission = "backstage.operate_pos"
+    required_permission = "cashman.operate_pos"
 
     def post(self, request, request_ref: str):
         try:
@@ -1782,7 +1786,7 @@ class POSChangeRequestCancelView(APIView):
     """
 
     permission_classes = [HasBackstagePermission]
-    required_permission = "backstage.operate_pos"
+    required_permission = "cashman.operate_pos"
 
     def post(self, request, request_ref: str):
         try:
@@ -1805,15 +1809,15 @@ class POSChangeRequestCancelView(APIView):
 class POSCashReportView(APIView):
     """Leitura X (turno aberto), leituras Z (turnos fechados) e histórico do dia.
 
-    Gate único `backstage.operate_pos`: a projection nunca expõe o valor
+    Gate único `cashman.operate_pos`: a projection nunca expõe o valor
     ESPERADO da gaveta nem a variância (blind count) — nem no X, nem no Z —
     então não há nada aqui que exija o gate mais forte do gerente. A
-    conferência (esperado vs contado, `perform_closing`/`audit_cashshift`)
+    conferência (esperado vs contado, `perform_closing`/`cashman.audit_shift`)
     permanece exclusiva da retaguarda.
     """
 
     permission_classes = [HasBackstagePermission]
-    required_permission = "backstage.operate_pos"
+    required_permission = "cashman.operate_pos"
 
     def get(self, request):
         report = build_cash_session_report(operator=request.user)
@@ -1840,7 +1844,7 @@ def _username (request) -> str:
 )
 class POSTabCreateView(APIView):
     permission_classes = [HasBackstagePermission]
-    required_permission = "backstage.operate_pos"
+    required_permission = "cashman.operate_pos"
 
     def post(self, request):
         tab_ref = (request.data.get("tab_ref") or "").strip()
@@ -1864,7 +1868,7 @@ class POSTabCreateView(APIView):
 )
 class POSTabOpenView(APIView):
     permission_classes = [HasBackstagePermission]
-    required_permission = "backstage.operate_pos"
+    required_permission = "cashman.operate_pos"
 
     def post(self, request, tab_ref: str):
         try:
@@ -1889,7 +1893,7 @@ class POSTabOpenView(APIView):
 )
 class POSTabSaveView(APIView):
     permission_classes = [HasBackstagePermission]
-    required_permission = "backstage.operate_pos"
+    required_permission = "cashman.operate_pos"
 
     def post(self, request):
         body = request.data if hasattr(request, "data") else {}
@@ -1924,7 +1928,7 @@ class POSTabSaveView(APIView):
 )
 class POSTabClearView(APIView):
     permission_classes = [HasBackstagePermission]
-    required_permission = "backstage.operate_pos"
+    required_permission = "cashman.operate_pos"
 
     def delete(self, request, session_key: str):
         try:
@@ -1950,7 +1954,7 @@ class POSTabClearView(APIView):
 )
 class POSTabMoveLinesView(APIView):
     permission_classes = [HasBackstagePermission]
-    required_permission = "backstage.operate_pos"
+    required_permission = "cashman.operate_pos"
 
     def post(self, request):
         body = request.data if hasattr(request, "data") else {}
@@ -1980,7 +1984,7 @@ class POSTabMoveLinesView(APIView):
 
 class POSTabRenameView(APIView):
     permission_classes = [HasBackstagePermission]
-    required_permission = "backstage.operate_pos"
+    required_permission = "cashman.operate_pos"
 
     def post(self, request):
         body = request.data if hasattr(request, "data") else {}
@@ -2002,7 +2006,7 @@ class POSTabRenameView(APIView):
 
 class POSTabFireView(APIView):
     permission_classes = [HasBackstagePermission]
-    required_permission = "backstage.operate_pos"
+    required_permission = "cashman.operate_pos"
 
     def post(self, request):
         body = request.data if hasattr(request, "data") else {}
@@ -2030,7 +2034,7 @@ class POSTabFireView(APIView):
 
 class POSTabUnfireView(APIView):
     permission_classes = [HasBackstagePermission]
-    required_permission = "backstage.operate_pos"
+    required_permission = "cashman.operate_pos"
 
     def post(self, request):
         body = request.data if hasattr(request, "data") else {}
@@ -2065,7 +2069,7 @@ class POSTabUnfireView(APIView):
 )
 class POSCustomerLookupView(APIView):
     permission_classes = [HasBackstagePermission]
-    required_permission = "backstage.operate_pos"
+    required_permission = "cashman.operate_pos"
 
     def get(self, request):
         phone = (request.query_params.get("phone") or "").strip()
@@ -2086,7 +2090,7 @@ class POSCustomerLookupView(APIView):
 )
 class POSCustomerSearchView(APIView):
     permission_classes = [HasBackstagePermission]
-    required_permission = "backstage.operate_pos"
+    required_permission = "cashman.operate_pos"
 
     def get(self, request):
         query = (request.query_params.get("q") or "").strip()
@@ -2107,7 +2111,7 @@ class POSCustomerResolveView(APIView):
     the same lookup projection as customer_lookup (ref + memory + addresses)."""
 
     permission_classes = [HasBackstagePermission]
-    required_permission = "backstage.operate_pos"
+    required_permission = "cashman.operate_pos"
 
     def post(self, request):
         body = request.data or {}
@@ -2140,7 +2144,7 @@ class POSCustomerResolveView(APIView):
 )
 class POSReviewSaleView(APIView):
     permission_classes = [HasBackstagePermission]
-    required_permission = "backstage.operate_pos"
+    required_permission = "cashman.operate_pos"
 
     def post(self, request):
         body = request.data if hasattr(request, "data") else {}
@@ -2168,7 +2172,7 @@ class POSReviewSaleView(APIView):
 )
 class POSCloseSaleView(APIView):
     permission_classes = [HasBackstagePermission]
-    required_permission = "backstage.operate_pos"
+    required_permission = "cashman.operate_pos"
 
     def post(self, request):
         body = request.data if hasattr(request, "data") else {}
@@ -2202,7 +2206,7 @@ class POSCloseSaleView(APIView):
 )
 class POSCancelRecentSaleView(APIView):
     permission_classes = [HasBackstagePermission]
-    required_permission = "backstage.operate_pos"
+    required_permission = "cashman.operate_pos"
 
     def post(self, request):
         order_ref = (request.data.get("order_ref") or "").strip()

@@ -8,26 +8,28 @@ from django.contrib.auth import get_user_model
 from django.contrib.auth.models import Permission
 from django.contrib.contenttypes.models import ContentType
 from django.test import TestCase, override_settings
+from shopman.cashman import services as cash
+from shopman.cashman.models import Shift, Terminal
 from shopman.guestman.models import Customer, CustomerAddress
 from shopman.offerman.models import Listing, ListingItem, Product
 from shopman.orderman.models import Order
 
 from shopman.backstage.api.projections import projection_data
-from shopman.backstage.models import CashShift, POSTab, POSTerminal
+from shopman.backstage.models import POSTab
 from shopman.backstage.projections.pos import build_pos
 from shopman.shop.models import Channel, Shop
 from shopman.shop.services.pos_intent import POS_SALE_INTENT_VERSION
 
 
 def _grant_pos_perm(user) -> None:
-    ct = ContentType.objects.get_for_model(CashShift)
+    ct = ContentType.objects.get_for_model(Shift)
     perm = Permission.objects.get(content_type=ct, codename="operate_pos")
     user.user_permissions.add(perm)
 
 
-def _grant_adjust_cashshift_perm(user) -> None:
-    ct = ContentType.objects.get_for_model(CashShift)
-    perm = Permission.objects.get(content_type=ct, codename="adjust_cashshift")
+def _grant_adjust_shift_perm(user) -> None:
+    ct = ContentType.objects.get_for_model(Shift)
+    perm = Permission.objects.get(content_type=ct, codename="adjust_shift")
     user.user_permissions.add(perm)
 
 
@@ -65,8 +67,8 @@ class POSHeadlessSurfaceContractTests(TestCase):
         self.operator = User.objects.create_user(username="pos-headless", password="x", is_staff=True)
         _grant_pos_perm(self.operator)
         self.client.force_login(self.operator)
-        self.terminal = POSTerminal.default()
-        self.shift = CashShift.objects.create(operator=self.operator, terminal=self.terminal, opening_amount_q=0)
+        self.terminal = Terminal.default()
+        self.shift = cash.open_shift(operator=self.operator, terminal=self.terminal, float_q=0)
 
     def test_api_pos_payload_matches_projection_builder(self) -> None:
         response = self.client.get("/api/v1/backstage/pos/")
@@ -141,8 +143,8 @@ class POSHeadlessSurfaceContractTests(TestCase):
         User = get_user_model()
         other = User.objects.create_user(username="other-pos-operator", password="x", is_staff=True)
         _grant_pos_perm(other)
-        self.shift.close(blind_closing_amount_q=0)
-        CashShift.objects.create(operator=other, terminal=self.terminal, opening_amount_q=0)
+        cash.close_shift(self.shift, counted_q=0, actor=self.operator)
+        cash.open_shift(operator=other, terminal=self.terminal, float_q=0)
 
         payload = projection_data(build_pos(operator=self.operator))
 
@@ -413,7 +415,7 @@ class POSHeadlessSurfaceContractTests(TestCase):
         from shopman.doorman.models import PinCredential
 
         manager = get_user_model().objects.create_user(username="pos-manager-api", password="secret", is_staff=True)
-        _grant_adjust_cashshift_perm(manager)
+        _grant_adjust_shift_perm(manager)
         PinCredential.set_for(manager, "4321")
         payload = {
             "intent_version": POS_SALE_INTENT_VERSION,
@@ -666,7 +668,7 @@ class POSHeadlessSurfaceContractTests(TestCase):
 
         User = get_user_model()
         manager = User.objects.create_user(username="pos-manager", password="x", is_staff=True)
-        _grant_adjust_cashshift_perm(manager)
+        _grant_adjust_shift_perm(manager)
         PinCredential.set_for(manager, pin)
         return manager
 
@@ -794,7 +796,7 @@ class POSHeadlessSurfaceContractTests(TestCase):
         # porta que não abre, e o operador chamaria a pessoa errada no balcão.
         User = get_user_model()
         pinless = User.objects.create_user(username="pos-manager-sem-pin", password="x", is_staff=True)
-        _grant_adjust_cashshift_perm(pinless)
+        _grant_adjust_shift_perm(pinless)
 
         payload = self.client.get("/api/v1/backstage/pos/").json()
 

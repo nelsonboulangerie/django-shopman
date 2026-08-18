@@ -44,7 +44,7 @@ class SetOperatorPinCommandTests(TestCase):
 
         op = User.objects.create_user("ana", password="x", is_staff=True)
         op.user_permissions.add(
-            Permission.objects.get(content_type__app_label="backstage", codename="operate_pos")
+            Permission.objects.get(content_type__app_label="cashman", codename="operate_pos")
         )
         call_command("set_operator_pin", "ana", "--pin", "4321")
         op = User.objects.get(pk=op.pk)

@@ -18,7 +18,7 @@ const { expired: sessionExpired, reset: resetSession } = useOperatorSession();
 
 // Identidade do operador (PIN/crachá) pelo LOCK COMPARTILHADO do kit — o MESMO
 // `useOperatorLock` + `<OperatorLock>` dos outros 4 apps de operador.
-const OPERATOR_PERM = "backstage.operate_pos";
+const OPERATOR_PERM = "cashman.operate_pos";
 const { locked, authenticated, mustChange, lock } = useOperatorLock(OPERATOR_PERM);
 
 // Auto-lock por ociosidade é a única particularidade de kiosk do PDV (os outros apps

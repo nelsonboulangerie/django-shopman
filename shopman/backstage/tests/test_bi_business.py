@@ -15,11 +15,13 @@ from django.contrib.auth.models import Permission, User
 from django.contrib.contenttypes.models import ContentType
 from django.urls import reverse
 from django.utils import timezone
+from shopman.cashman import services as cash
+from shopman.cashman.models import Entry, Terminal
 from shopman.guestman.contrib.insights.models import CustomerInsight
 from shopman.guestman.models import Customer
 from shopman.orderman.models import Order, OrderItem
 
-from shopman.backstage.models import CashMovement, CashShift, DayClosing, POSTerminal
+from shopman.backstage.models import DayClosing
 from shopman.backstage.projections.bi_cash import build_bi_cash
 from shopman.backstage.projections.bi_customers import build_bi_customers
 from shopman.backstage.projections.bi_sales import build_bi_sales
@@ -198,23 +200,13 @@ def test_cash_and_production_carry_previous(db):
 
 @pytest.mark.django_db
 def test_cash_variance_by_operator_and_missing_closings(db):
-    operator = User.objects.create_user("caixa-ana", password="pw")
-    terminal = POSTerminal.objects.create(ref="t1", label="Caixa 1")
-    now = timezone.now()
-    shift = CashShift.objects.create(
-        terminal=terminal,
-        operator=operator,
-        opened_at=now,
-        closed_at=now,
-        opening_amount_q=10000,
-        blind_closing_amount_q=9800,
-        expected_amount_q=10000,
-        difference_q=-200,
-        status=CashShift.Status.CLOSED,
-    )
-    CashMovement.objects.create(
-        shift=shift, movement_type="sangria", amount_q=5000, reason="teste", created_by=operator
-    )
+    operator = User.objects.create_user("caixa-ana", password="pw", is_staff=True)
+    manager = User.objects.create_user("gerente-bi", password="pw", is_staff=True)
+    terminal = Terminal.objects.create(ref="t1", label="Caixa 1")
+    # Tudo pelo livro: fundo 100,00, sangria 50,00, contagem 48,00 → falta de 2,00.
+    shift = cash.open_shift(operator=operator, terminal=terminal, float_q=10000)
+    cash.record(Entry.Kind.CASH_OUT, shift=shift, operator=operator, approved_by=manager, amount_q=-5000, reason="teste")
+    cash.close_shift(shift, counted_q=4800, actor=operator)
     DayClosing.objects.create(
         date=timezone.localdate(),
         closed_by=operator,

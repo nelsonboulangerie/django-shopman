@@ -214,6 +214,7 @@ INSTALLED_APPS = [
     "shopman.craftsman.contrib.admin_unfold",
     "shopman.payman.contrib.admin_unfold",
     "shopman.buyman.contrib.admin_unfold",
+    "shopman.cashman.contrib.admin_unfold",
     "shopman.stockman.contrib.alerts",
     "shopman.guestman.contrib.consent",
     "shopman.guestman.contrib.identifiers",

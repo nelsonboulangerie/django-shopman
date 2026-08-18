@@ -148,15 +148,17 @@ def get_sidebar_navigation(request):
             _item("Sessões de venda", "shopping_bag", _url("admin:orderman_session_changelist"), permission=_can_manage_orders),
             _item("Ações pendentes", "playlist_add_check", _url("admin:orderman_directive_changelist") + "?status__exact=queued", permission=_can_manage_orders),
             _item("Cobranças", "credit_card", _url("admin:payman_paymentintent_changelist"), permission=_can_manage_orders),
-            _item("Turnos de caixa", "payments", _url("admin:backstage_cashshift_changelist"), permission=_can_operate_pos),
-            _item("Movimentações de caixa", "currency_exchange", _url("admin:backstage_cashmovement_changelist"), permission=_can_operate_pos),
+            # A movimentação (sangria, suprimento) é linha do turno, não tela: o
+            # livro inteiro se lê de dentro do turno, em ordem. Um item próprio
+            # seria a mesma pergunta com dois donos.
+            _item("Turnos de caixa", "payments", _url("admin:cashman_shift_changelist"), permission=_can_operate_pos),
             _item("Fechamentos do dia", "event_available", _url("admin:backstage_dayclosing_changelist"), permission=_can_close_day),
             _item("Execuções de checklist", "checklist", _url("admin:backstage_operationchecklistrun_changelist"), permission=_is_staff),
             _item("Episódios de operação", "report_problem", _url("admin:backstage_operationepisode_changelist"), permission=_can_close_day),
             # Sem esta entrada, a conferência só existiria para quem tem um QR
             # legível na mão — e o comprovante amassado, que é justamente o
             # caso em que alguém quer conferir, não teria porta nenhuma.
-            _item("Conferir comprovante", "qr_code_scanner", _url("admin_console_cash_receipt_lookup"), permission=_can_view_cash_movement),
+            _item("Conferir comprovante", "qr_code_scanner", _url("admin_console_cash_receipt_lookup"), permission=_can_audit_shift),
             _item("Alertas do operador", "warning", _url("admin:backstage_operatoralert_changelist"), permission=_can_view_operator_alerts),
         ]),
         # Configuração expande como os outros grupos — o menu tem UM comportamento,
@@ -318,9 +320,9 @@ def _can_operate_production(request) -> bool:
     return permissions.can_operate_production(request.user)
 
 
-def _can_view_cash_movement(request) -> bool:
+def _can_audit_shift(request) -> bool:
     """Espelha o gate da própria tela — link que aparece e depois nega é pior que link que falta."""
-    return request.user.has_perm("backstage.view_cashmovement")
+    return request.user.has_perm("cashman.audit_shift")
 
 
 def _can_view_operator_alerts(request) -> bool:

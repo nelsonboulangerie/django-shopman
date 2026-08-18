@@ -24,7 +24,7 @@ useHead({ title: "Sessão de caixa · Shopman POS" });
 const action = usePosAction();
 const { pos, shift, actions, pending, refresh } = await usePosTerminal();
 
-const OPERATOR_PERM = "backstage.operate_pos";
+const OPERATOR_PERM = "cashman.operate_pos";
 const { operator: activeOperator, lock } = useOperatorLock(OPERATOR_PERM);
 
 const {

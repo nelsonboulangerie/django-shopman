@@ -8,8 +8,8 @@ from __future__ import annotations
 from django.contrib.auth import get_user_model
 from django.test import TestCase, override_settings
 from rest_framework.test import APIClient
+from shopman.cashman.models import Shift
 
-from shopman.backstage.models import CashShift
 from shopman.backstage.services import pos as pos_service
 from shopman.shop.models import Shop
 
@@ -31,7 +31,7 @@ class POSCloseBlockingApiTests(TestCase):
     def setUp(self):
         Shop.objects.create(name="Test", brand_name="Test")
         self.owner = _grant(
-            User.objects.create_user("dono", password="x", is_staff=True), CashShift, "operate_pos"
+            User.objects.create_user("dono", password="x", is_staff=True), Shift, "operate_pos"
         )
         self.shift = pos_service.open_cash_shift(operator=self.owner, opening_amount_raw="50,00")
 
@@ -46,13 +46,13 @@ class POSCloseBlockingApiTests(TestCase):
         )
         self.assertEqual(resp.status_code, 200)
         self.shift.refresh_from_db()
-        self.assertEqual(self.shift.status, CashShift.Status.CLOSED)
+        self.assertEqual(self.shift.status, Shift.Status.CLOSED)
 
     def test_manager_closes_others_shift(self):
         from shopman.backstage.models import DayClosing
 
         manager = _grant(
-            _grant(User.objects.create_user("ger", password="x", is_staff=True), CashShift, "operate_pos"),
+            _grant(User.objects.create_user("ger", password="x", is_staff=True), Shift, "operate_pos"),
             DayClosing, "perform_closing",
         )
         resp = self._client(manager).post(
@@ -62,14 +62,14 @@ class POSCloseBlockingApiTests(TestCase):
 
     def test_regular_operator_forbidden(self):
         stranger = _grant(
-            User.objects.create_user("comum", password="x", is_staff=True), CashShift, "operate_pos"
+            User.objects.create_user("comum", password="x", is_staff=True), Shift, "operate_pos"
         )
         resp = self._client(stranger).post(
             URL, {"shift_id": self.shift.pk, "closing_amount": "50,00"}, format="json"
         )
         self.assertEqual(resp.status_code, 403)
         self.shift.refresh_from_db()
-        self.assertEqual(self.shift.status, CashShift.Status.OPEN)
+        self.assertEqual(self.shift.status, Shift.Status.OPEN)
 
     def test_missing_shift_id_400(self):
         resp = self._client(self.owner).post(URL, {"closing_amount": "0"}, format="json")

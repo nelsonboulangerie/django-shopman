@@ -36,7 +36,7 @@ class Command(BaseCommand):
             return _perm("backstage", "kdsticket", c)
 
         def shop_cash(c):
-            return _perm("backstage", "cashshift", c)
+            return _perm("cashman", "shift", c)
 
         def shop_dclo(c):
             return _perm("backstage", "dayclosing", c)
@@ -67,7 +67,7 @@ class Command(BaseCommand):
                 # a tem, e o app fica inalcançável.
                 shop_shop("manage_campaigns"),
                 shop_cash("operate_pos"),
-                shop_cash("adjust_cashshift"),
+                shop_cash("adjust_shift"),
                 shop_cash("manage_operators"),
                 shop_dclo("perform_closing"),
                 shop_dclo("operate_production"),

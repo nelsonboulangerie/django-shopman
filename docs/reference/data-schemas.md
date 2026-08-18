@@ -1036,10 +1036,15 @@ Registros antigos podem ser uma lista simples de snapshots. Registros novos usam
 
 ---
 
-## POSTerminal.metadata
+## cashman.Terminal.metadata
 
-Configuração por terminal do PDV. Lida por `shopman/backstage/services/pos_terminal.py::runtime_profile`,
-que devolve o `TerminalRuntimeProfile` consumido pela projection do POS e pelo badge de saúde no Admin.
+Configuração por terminal do PDV (`packages/cashman`, `Terminal.metadata`; até o WP-4 do
+CASHMAN-PLAN morava em `backstage.POSTerminal.metadata`, mesma tabela de chaves). Escrita pelo
+Admin do backstage (`shopman/backstage/admin/terminal.py`, que registra por cima do contrib do
+pacote porque hardware é da superfície) e pelo `seed`; lida por
+`shopman/backstage/services/pos_terminal.py::runtime_profile`, que devolve o
+`TerminalRuntimeProfile` consumido pela projection do POS e pelo badge de saúde no Admin, e por
+`pos_hardware.py::CashDrawerConfig.from_terminal`.
 
 | Chave | Tipo | Escrito por | Lido por | Descrição |
 |-------|------|-------------|----------|-----------|
@@ -1073,44 +1078,6 @@ dá 4mm por lado; um de 58mm dá **5mm**, não 4 — daí ela não ser um segund
 
 ---
 
-## CashShift.metadata
-
-Dado contextual de um turno de caixa. Nenhuma destas chaves entra no cálculo do
-fechamento (`opening_amount_q`, `expected_amount_q`, `difference_q`) — são
-trilha, não dinheiro.
-
-| Chave | Tipo | Escrito por | Lido por | Descrição |
-|-------|------|-------------|----------|-----------|
-| `drawer_openings` | `list[dict]` | `backstage/services/pos.py::register_drawer_opening` | auditoria | Aberturas de gaveta **sem venda e sem movimento** — o único momento que não deixa rastro sozinho. Schema: `{at, by, reason}`. Teto de 500 entradas (as mais recentes). |
-| `change_requests` | `list[dict]` | `backstage/services/pos.py::request_change` / `serve_change_request` / `cancel_change_request` | projection POS (`cash_runtime.pending_change_requests`), auditoria, B.I. | Pedidos de troco do balcão. Ver abaixo. Teto de 50 entradas (as mais recentes). |
-
-### change_requests — pedido de troco sem trânsito
-
-O operador **pede** troco em vez de atravessar a loja com dinheiro até o cofre;
-o gerente traz e assina no balcão, à vista das duas pessoas. Elimina o trajeto
-em vez de vigiá-lo.
-
-⚠️ **A troca é NET ZERO.** Saem R$ 50, entram 5×R$ 10 — o total da gaveta não
-muda. Atender um pedido **não cria `CashMovement`** e **não toca em
-`expected_amount_q`**. É uma abertura de gaveta com motivo e duas assinaturas.
-Lançar isso como movimento faria o esperado cair por um dinheiro que nunca saiu,
-e o turno fecharia com falta fantasma (foi o defeito desfeito no PR #178).
-
-| Chave | Tipo | Descrição |
-|-------|------|-----------|
-| `ref` | `str` | Identificador do pedido (hex curto, aleatório). É por ele que a tela atende e cancela — o índice na lista mudaria quando o teto apara as antigas. |
-| `kind` | `str` | `coins`, `small_bills` ou `amount`. Rótulo pt-BR fica na superfície (`presentation/cash.ts`). |
-| `amount_q` | `int` | Valor aproximado em centavos. `0` quando o pedido não fala de valor ("acabou moeda" já é um pedido inteiro). Obrigatório > 0 só para `kind="amount"`. |
-| `note` | `str` | Texto livre do operador (até 120 caracteres). |
-| `status` | `str` | `pending` → `served` ou `cancelled`. Só `pending` chega à tela. |
-| `requested_by` | `str` | `username` de quem pediu. |
-| `requested_at` | `str` | ISO 8601. |
-| `served_by` | `str` | `username` do **gerente** que autorizou (mesma permissão da sangria, `backstage.adjust_cashshift`). Vazio enquanto pendente. |
-| `served_at` | `str` | ISO 8601, vazio enquanto pendente. |
-| `cancelled_at` | `str` | ISO 8601, vazio salvo quando cancelado. |
-
----
-
 ## cashman.Entry.payload
 
 O livro-caixa do turno (`packages/cashman`, ADR-022) é **append-only**: uma
@@ -1131,24 +1098,24 @@ coluna**: são `Σ` do livro (`services.expected_before_count/counted/difference
 | `sale` | ≥ 0 (efeito em dinheiro; 0 para pix/cartão/external) | — | `{method, received_q, change_q}` | `shop` na venda (WP-3) |
 | `cod_settled` | > 0 | — | `{courier}` | acerto de entrega (WP-3) |
 | `refund` | < 0 | `sale` opcional | — | cancelamento/devolução (WP-3) |
-| `cash_in` | > 0 | — | — | suprimento (WP-4) |
-| `cash_out` | < 0 (exige `approved_by`) | — | — | sangria (WP-4) |
+| `cash_in` | > 0 | — | — (motivo em `reason`) | suprimento: `backstage/services/pos.py::register_cash_movement` |
+| `cash_out` | < 0 (exige `approved_by`) | — | — (motivo em `reason`) | sangria: idem (PIN de gerente, `cashman.adjust_shift`) |
 | `count` | contado − esperado | — | `{counted_q, notes, supervisory}` | `services.close_shift` |
 | `count_correction` | ± (exige `approved_by`) | `count` | — (motivo em `reason`) | `services.correct_count` |
-| `drawer_open` | 0 | — | — (motivo em `reason`) | abertura sem venda (WP-4) |
+| `drawer_open` | 0 | — | — (motivo em `reason`) | abertura sem venda: `backstage/services/pos.py::register_drawer_opening` |
 | `drawer_unlock` | 0 (exige `approved_by`) | — | `{drawer_raw}` | destrave da trava (WP-8) |
-| `change_requested` | 0 | — | `{kind: coins\|small_bills\|amount, amount_q, note}` | pedido de troco (WP-4) |
-| `change_served` | 0 (exige `approved_by`) | `change_requested` | — | idem |
-| `change_cancelled` | 0 | `change_requested` | — | idem |
-| `receipt_result` | 0 | `cash_out`/`cash_in` | `{status: printed\|failed\|skipped, detail}` | comprovante (WP-4) |
+| `change_requested` | 0 | — | `{kind: coins\|small_bills\|amount, amount_q, note}` | pedido de troco: `backstage/services/pos.py::request_change` |
+| `change_served` | 0 (exige `approved_by`) | `change_requested` | — | `serve_change_request` (PIN de gerente, `cashman.adjust_shift`) |
+| `change_cancelled` | 0 | `change_requested` | — | `cancel_change_request` |
+| `receipt_result` | 0 | `cash_out`/`cash_in` | `{status: printed\|failed\|skipped, detail}` | comprovante: `record_receipt_result` (só o navegador do balcão sabe se imprimiu; a conferência no Admin lê o ÚLTIMO filho) |
 | `note` | 0 | — | `{text}` | anotação gerencial em turno fechado |
 
 O estado do pedido de troco é **dobrado** do livro (`services.change_requests`):
 `pending` → `served`/`cancelled` pela primeira resolução com `parent` apontando
-para o pedido; só `pending` chega à tela do PDV.
+para o pedido; só `pending` chega à tela do PDV (`cash_runtime.pending_change_requests`,
+cujo `ref` é o `id` da linha `change_requested` — é por ele que a tela atende e cancela).
 
-## cashman.Terminal.metadata
-
-Config do aparelho. Enquanto o `backstage` opera sobre `POSTerminal`, o
-schema é o de `POSTerminal.metadata` (acima); no WP-4 o hardware passa a ler
-daqui e a seção antiga é substituída por esta.
+⚠️ **A troca é NET ZERO.** Saem R$ 50, entram 5×R$ 10 — o total da gaveta não muda.
+Atender um pedido tem `amount_q = 0` por construção (CheckConstraint do pacote). Lançar
+isso com valor faria o esperado cair por um dinheiro que nunca saiu, e o turno fecharia
+com falta fantasma (foi o defeito desfeito no PR #178).

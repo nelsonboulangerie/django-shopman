@@ -1,6 +1,7 @@
 """WP-D5 — contract for which fields are editable vs locked (with admin-history audit).
 
-- CashShift.notes is editable (manager corrections; audited via LogEntry history).
+- O turno de caixa (``cashman.Shift``) é INTEIRO read-only no Admin: a anotação
+  gerencial é lançamento (``note``) no livro, não coluna editável (ADR-022).
 - OperationTaskRun evidence + execution trail (who/when) is read-only (anti-fraud
   record captured by the app, never forged in the admin). A tela avulsa saiu na
   curadoria do WP-ADM-R1 (duplicata do inline), então o contrato passa a ser
@@ -11,14 +12,16 @@
 from __future__ import annotations
 
 from django.contrib import admin
+from shopman.cashman.models import Shift
 
 from shopman.backstage.admin.operation import OperationTaskRunInline
-from shopman.backstage.models import CashShift, OperationChecklistRun
+from shopman.backstage.models import OperationChecklistRun
 
 
-def test_cashshift_notes_is_editable():
-    cash_admin = admin.site._registry[CashShift]
-    assert "notes" not in cash_admin.readonly_fields
+def test_cash_shift_is_locked_in_the_admin():
+    """Turno fechado é imutável; correção é lançamento novo (``count_correction``/``note``)."""
+    shift_admin = admin.site._registry[Shift]
+    assert set(shift_admin.readonly_fields) >= {"terminal", "operator", "opened_at", "closed_at", "status"}
 
 
 def test_operation_task_run_evidence_is_locked():

@@ -46,7 +46,7 @@ def _create_shop():
 # Operator RBAC is now exercised on the headless API the dedicated apps consume:
 #   orders → /api/v1/backstage/orders/   (gate: shop.manage_orders)
 #   KDS    → /api/v1/backstage/kds/<ref>/ (gate: backstage.operate_kds)
-#   POS    → /api/v1/backstage/pos/       (gate: backstage.operate_pos)
+#   POS    → /api/v1/backstage/pos/       (gate: cashman.operate_pos)
 # DRF returns 403 for unauthenticated/forbidden (no login redirect).
 ORDERS_URL = "/api/v1/backstage/orders/"
 POS_URL = "/api/v1/backstage/pos/"
@@ -132,7 +132,7 @@ class TestOperateKdsPerm(TestCase):
 class TestOperatePosPerm(TestCase):
     def setUp(self):
         self.client = Client()
-        self.perm = _get_perm("backstage", "cashshift", "operate_pos")
+        self.perm = _get_perm("cashman", "shift", "operate_pos")
         _create_shop()  # required: OnboardingMiddleware redirects /gestor/ if no Shop
 
     def test_staff_without_perm_gets_403(self):
@@ -261,12 +261,18 @@ class TestDefaultGroupsExist(TestCase):
     def setUpTestData(cls):
         _ensure_groups()
 
-    def _has_perm(self, group, codename):
-        return group.permissions.filter(codename=codename).exists()
+    def _has_perm(self, group, codename, app_label=None):
+        qs = group.permissions.filter(codename=codename)
+        if app_label:
+            qs = qs.filter(content_type__app_label=app_label)
+        return qs.exists()
 
     def test_cashier_group_exists_with_perms(self):
         g = Group.objects.get(name="Caixa")
-        self.assertTrue(self._has_perm(g, "operate_pos"))
+        # O caixa é do cashman (ADR-022): a permissão concedida tem de ser a do
+        # content type novo, não a legada ainda declarada em backstage.CashShift.
+        self.assertTrue(self._has_perm(g, "operate_pos", "cashman"))
+        self.assertFalse(self._has_perm(g, "operate_pos", "backstage"))
         self.assertTrue(self._has_perm(g, "manage_orders"))
 
     def test_kitchen_group_exists_with_perms(self):
@@ -278,7 +284,9 @@ class TestDefaultGroupsExist(TestCase):
     def test_manager_group_exists_with_perms(self):
         g = Group.objects.get(name="Gerente")
         self.assertTrue(self._has_perm(g, "manage_orders"))
-        self.assertTrue(self._has_perm(g, "operate_pos"))
+        self.assertTrue(self._has_perm(g, "operate_pos", "cashman"))
+        self.assertTrue(self._has_perm(g, "adjust_shift", "cashman"))
+        self.assertTrue(self._has_perm(g, "manage_operators", "cashman"))
         self.assertTrue(self._has_perm(g, "perform_closing"))
         self.assertTrue(self._has_perm(g, "operate_production"))
         self.assertTrue(self._has_perm(g, "view_reports"))

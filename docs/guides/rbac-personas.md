@@ -20,7 +20,10 @@ evidência e auditoria, sem confirmar pedido automaticamente.
 |------------|--------|-----------------|---------|
 | `shop.manage_orders` | `Shop` | Confirmar, rejeitar, avançar, cancelar pedidos; adicionar notas internas | Gestor (orders-nuxt, `gestor.`) via `api/v1/backstage/orders/*` |
 | `backstage.operate_kds` | `KDSTicket` | Check item, marcar ticket done, ações de expedição | KDS (kds-nuxt, `kds.`) via `api/v1/backstage/kds/*` |
-| `backstage.operate_pos` | `CashRegisterSession` | Abrir/fechar caixa, sangria, lookup de cliente, fechar venda | PDV (pos-nuxt, `pos.`) — antesala `/session` + venda |
+| `cashman.operate_pos` | `cashman.Shift` | Abrir/fechar caixa, sangria, lookup de cliente, fechar venda | PDV (pos-nuxt, `pos.`) — antesala `/session` + venda |
+| `cashman.audit_shift` | `cashman.Shift` | Ver esperado, contado e diferença dos turnos; conferir comprovante | Admin (Turnos de caixa, Conferir comprovante) |
+| `cashman.adjust_shift` | `cashman.Shift` | Segunda assinatura das exceções do caixa: sangria, troco atendido, correção da contagem, desconto acima do teto (PIN de gerente) | PDV (diálogo de gerente) |
+| `cashman.manage_operators` | `cashman.Shift` | Resetar PIN, provisionar operador, crachá | Admin (Operadores) |
 | `shop.manage_production` | `Shop` | Criar WorkOrders, planejar e avançar produção | Produção (production-nuxt, `prod.`) via `api/v1/backstage/production/*` |
 | `backstage.perform_closing` | `DayClosing` | Executar fechamento do dia, registrar perdas, mover sobras p/ "Ontem" | PDV `/session/closing` (antesala) via `api/v1/backstage/closing/` |
 | `shop.manage_catalog` | `Shop` | Criar/editar Product, Listing, Collection | Admin |
@@ -36,9 +39,9 @@ Criados automaticamente por `make migrate`. Nenhum usuário é atribuído por de
 
 | Grupo | Permissões | Persona típica |
 |-------|-----------|----------------|
-| **Caixa** | `backstage.operate_pos`, `shop.manage_orders` | Atendente de balcão / PDV |
+| **Caixa** | `cashman.operate_pos`, `shop.manage_orders` | Atendente de balcão / PDV |
 | **Cozinha** | `backstage.operate_kds`, `shop.manage_production` | Cozinheiro / preparador |
-| **Gerente** | `shop.manage_orders`, `backstage.operate_pos`, `backstage.perform_closing`, `backstage.view_production_reports`, `shop.manage_customers` | Gerente de turno |
+| **Gerente** | `shop.manage_orders`, `cashman.operate_pos`, `cashman.adjust_shift`, `cashman.manage_operators`, `backstage.perform_closing`, `backstage.view_production_reports`, `shop.manage_customers` | Gerente de turno |
 | **Admin de Catálogo** | `manage_catalog`, `manage_rules` | Responsável por produtos e regras |
 | **Rules Managers** | `manage_rules` | Segurança (WP-GAP-06, sem membros por default) |
 
@@ -108,7 +111,7 @@ O comando recria/atualiza todos os 4 grupos padrão com as permissões corretas.
 
 - `KDSInstanceAdmin`: visível apenas para usuários com `shop.operate_kds`
 - `DayClosingAdmin`: visível apenas para usuários com `shop.perform_closing`
-- `CashRegisterSessionAdmin`: visível apenas para usuários com `shop.operate_pos`
+- `ShiftAdmin` (cashman): visível para usuários com `cashman.operate_pos` ou `cashman.audit_shift`
 - `RuleConfigAdmin`: visível apenas para usuários com `shop.manage_rules` (WP-GAP-06)
 
 ---

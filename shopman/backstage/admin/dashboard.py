@@ -105,7 +105,7 @@ def _audit_links() -> list[dict]:
         },
         {
             "label": "Turnos de caixa",
-            "url": reverse("admin:backstage_cashshift_changelist"),
+            "url": reverse("admin:cashman_shift_changelist"),
             "icon": "point_of_sale",
         },
         {

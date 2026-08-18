@@ -11,8 +11,9 @@ from __future__ import annotations
 import pytest
 from django.contrib.auth import get_user_model
 from django.urls import reverse
+from shopman.cashman import services as cash
+from shopman.cashman.models import Entry, Shift, Terminal
 
-from shopman.backstage.models import CashShift, POSTerminal
 from shopman.backstage.services import pos as pos_service
 from shopman.backstage.services.exceptions import POSError
 from shopman.backstage.services.pos_hardware import CashDrawerConfig
@@ -27,9 +28,9 @@ AGENT_CONFIG = {
 }
 
 
-def _terminal(drawer=None, ref="pdv-teste") -> POSTerminal:
+def _terminal(drawer=None, ref="pdv-teste") -> Terminal:
     metadata = {"hardware": {"cash_drawer": drawer}} if drawer else {}
-    return POSTerminal.objects.create(ref=ref, label="Balcão", metadata=metadata)
+    return Terminal.objects.create(ref=ref, label="Balcão", metadata=metadata)
 
 
 def _drawer(terminal):
@@ -144,7 +145,7 @@ def test_terminal_sem_gaveta_nao_vaza_token_para_a_superficie():
 @pytest.fixture
 def operator():
     user = get_user_model().objects.create_user(username="marina", password="x", is_staff=True)
-    CashShift.objects.create(terminal=POSTerminal.default(), operator=user, opening_amount_q=10000)
+    cash.open_shift(operator=user, terminal=Terminal.default(), float_q=10000)
     return user
 
 
@@ -152,20 +153,26 @@ def _grant_pos_perm(user) -> None:
     from django.contrib.auth.models import Permission
     from django.contrib.contenttypes.models import ContentType
 
-    ct = ContentType.objects.get_for_model(CashShift)
+    ct = ContentType.objects.get_for_model(Shift)
     user.user_permissions.add(Permission.objects.get(content_type=ct, codename="operate_pos"))
+
+
+def _openings(operator) -> list[Entry]:
+    return list(Entry.objects.filter(shift=cash.open_shift_for(operator), kind=Entry.Kind.DRAWER_OPEN))
 
 
 def test_abrir_sem_venda_deixa_rastro_de_quem_quando_e_por_que(operator):
     """É o único dos quatro momentos que não tem venda nem movimento contando a história."""
-    pos_service.register_drawer_opening(operator=operator, reason="Troco para cliente")
+    entry = pos_service.register_drawer_opening(operator=operator, reason="Troco para cliente")
 
-    shift = CashShift.get_open_for_operator(operator)
-    openings = shift.metadata["drawer_openings"]
+    openings = _openings(operator)
     assert len(openings) == 1
-    assert openings[0]["by"] == "marina"
-    assert openings[0]["reason"] == "Troco para cliente"
-    assert openings[0]["at"]
+    assert openings[0].pk == entry.pk
+    assert openings[0].operator.get_username() == "marina"
+    assert openings[0].reason == "Troco para cliente"
+    assert openings[0].at
+    # Efeito zero: abrir a gaveta não é dinheiro.
+    assert openings[0].amount_q == 0
 
 
 def test_abrir_sem_motivo_e_recusado(operator):
@@ -184,29 +191,16 @@ def test_aberturas_acumulam_sem_apagar_a_anterior(operator):
     pos_service.register_drawer_opening(operator=operator, reason="primeira")
     pos_service.register_drawer_opening(operator=operator, reason="segunda")
 
-    openings = CashShift.get_open_for_operator(operator).metadata["drawer_openings"]
-    assert [o["reason"] for o in openings] == ["primeira", "segunda"]
-
-
-def test_a_trilha_tem_teto_para_um_clique_preso_nao_inchar_o_turno(operator):
-    shift = CashShift.get_open_for_operator(operator)
-    shift.metadata = {"drawer_openings": [{"at": "x", "by": "y", "reason": f"n{i}"} for i in range(500)]}
-    shift.save(update_fields=["metadata"])
-
-    pos_service.register_drawer_opening(operator=operator, reason="a mais recente")
-
-    openings = CashShift.get_open_for_operator(operator).metadata["drawer_openings"]
-    assert len(openings) == 500
-    assert openings[-1]["reason"] == "a mais recente"
+    assert [o.reason for o in _openings(operator)] == ["primeira", "segunda"]
 
 
 def test_abrir_sem_venda_nao_mexe_no_dinheiro_esperado(operator):
     """Abrir a gaveta não é movimento: o fechamento cego não pode sentir isso."""
     pos_service.register_drawer_opening(operator=operator, reason="conferência")
 
-    shift = CashShift.get_open_for_operator(operator)
-    assert shift.movements.count() == 0
-    assert shift.opening_amount_q == 10000
+    shift = cash.open_shift_for(operator)
+    assert not Entry.objects.filter(shift=shift, kind__in=[Entry.Kind.CASH_OUT, Entry.Kind.CASH_IN]).exists()
+    assert cash.balance(shift) == 10000
 
 
 # ── Endpoint ──────────────────────────────────────────────────────────────
@@ -237,7 +231,7 @@ def test_endpoint_registra_e_devolve_ok(client, operator):
 
     assert response.status_code == 200
     assert response.json()["ok"] is True
-    assert CashShift.get_open_for_operator(operator).metadata["drawer_openings"][0]["reason"] == "Troco"
+    assert _openings(operator)[0].reason == "Troco"
 
 
 # ── A tela DIZ por que não dá, em vez de sumir ────────────────────────────

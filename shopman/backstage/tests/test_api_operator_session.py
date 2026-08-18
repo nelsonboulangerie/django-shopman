@@ -68,7 +68,7 @@ def test_eligible_filters_by_perm_and_validates(client, device, baker):
     assert ok.status_code == 200
     assert any(o["username"] == "bia" for o in ok.json()["operators"])
     # an operator without operate_pos must not appear in the POS picker
-    pos = client.get(reverse("api-backstage-operator-eligible"), {"perm": "backstage.operate_pos"})
+    pos = client.get(reverse("api-backstage-operator-eligible"), {"perm": "cashman.operate_pos"})
     assert all(o["username"] != "bia" for o in pos.json()["operators"])
     # unknown perm rejected
     assert client.get(reverse("api-backstage-operator-eligible"), {"perm": "evil"}).status_code == 400
@@ -89,7 +89,7 @@ def test_unlock_wrong_pin_and_missing_perm(client, device, baker):
     # right pin but demanding a perm the operator lacks → rejected
     nope = client.post(
         reverse("api-backstage-operator-unlock"),
-        {"operator_id": baker.pk, "pin": "4321", "perm": "backstage.operate_pos"},
+        {"operator_id": baker.pk, "pin": "4321", "perm": "cashman.operate_pos"},
         content_type="application/json",
     )
     assert nope.status_code == 403

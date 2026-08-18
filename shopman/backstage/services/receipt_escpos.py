@@ -26,8 +26,11 @@ ENCODING = "cp860"
 COLUMNS = 48
 
 
-def cash_movement_receipt(movement, *, verify_code: str, verify_url: str, reprint: bool = False) -> bytes:
-    """Comprovante de movimento de gaveta (sangria, suprimento).
+def cash_movement_receipt(entry, *, verify_code: str, verify_url: str, reprint: bool = False) -> bytes:
+    """Comprovante de movimento de gaveta (sangria, suprimento) a partir da linha do livro.
+
+    ``entry`` é um ``cashman.Entry`` de tipo ``cash_out``/``cash_in``: o papel é
+    a projeção impressa dessa linha, e nada mais.
 
     ⚠️ O comprovante NÃO é a verdade — ele **aponta** para ela. O código e o QR
     resolvem para o registro; papel inventado não tem código que resolva, e
@@ -41,7 +44,7 @@ def cash_movement_receipt(movement, *, verify_code: str, verify_url: str, reprin
     out += bytes([ESC, ord("t"), CODE_PAGE])
 
     out += _centered("NELSON BOULANGERIE")
-    out += _centered(movement.get_movement_type_display().upper())
+    out += _centered(str(entry.get_kind_display()).upper())
     if reprint:
         # Sem esta marca, dois papéis idênticos circulam e a segunda via passa
         # por original.
@@ -53,22 +56,23 @@ def cash_movement_receipt(movement, *, verify_code: str, verify_url: str, reprin
     # As duas assinaturas moram na MESMA linha porque são um par — quem lança e
     # quem autoriza. Separá-las fazia a segunda parecer um detalhe do cabeçalho,
     # quando ela é a substância da autorização de uma retirada.
-    out += _line(f"Turno #{movement.shift_id} · {_local(movement.created_at)}")
-    quem = movement.created_by or "-"
-    if movement.approved_by:
-        quem = f"{quem} · autorizado por {movement.approved_by}"
+    out += _line(f"Turno #{entry.shift_id} · {_local(entry.at)}")
+    quem = entry.operator.get_username() if entry.operator_id else "-"
+    if entry.approved_by_id:
+        quem = f"{quem} · autorizado por {entry.approved_by.get_username()}"
     out += _line(quem)
-    for pedaco in _wrap(f"Motivo: {movement.reason or '-'}", COLUMNS):
+    for pedaco in _wrap(f"Motivo: {entry.reason or '-'}", COLUMNS):
         out += _line(pedaco)
 
     # O VALOR sozinho, emoldurado, no meio do papel. Com o sinal dentro do
     # número (`+`/`−`), quem confere soma o maço sem ler o cabeçalho de cada
     # folha — e é literalmente isso que a conferência faz. Emoldurar em vez de
     # empilhar no topo: cercado de branco, o olho acha antes de procurar.
+    # O sinal é o do próprio lançamento: sangria é negativa no livro.
     out += _rule()
     out += _line("")
-    sinal = "-" if movement.movement_type == "sangria" else "+"
-    out += _double(f"{sinal} R$ {format_money(movement.amount_q)}")
+    sinal = "-" if entry.amount_q < 0 else "+"
+    out += _double(f"{sinal} R$ {format_money(abs(int(entry.amount_q)))}")
     out += _line("")
     out += _rule()
 

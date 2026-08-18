@@ -658,19 +658,19 @@ class Command(BaseCommand):
 
         # Operadores nomeados para o seletor da tela de bloqueio parecer real.
         operators = [
-            ("ana", "Ana", "Costa", ["backstage.operate_pos", "backstage.operate_kds"]),
+            ("ana", "Ana", "Costa", ["cashman.operate_pos", "backstage.operate_kds"]),
             ("joao", "João", "Silva", ["backstage.operate_kds", "backstage.operate_production"]),
             (
                 "marina",
                 "Marina",
                 "Dias",
                 [
-                    "backstage.operate_pos",
+                    "cashman.operate_pos",
                     "backstage.operate_kds",
                     "backstage.operate_production",
                     "backstage.perform_closing",
-                    "backstage.adjust_cashshift",
-                    "backstage.manage_operators",
+                    "cashman.adjust_shift",
+                    "cashman.manage_operators",
                     "shop.manage_orders",
                 ],
             ),
@@ -765,7 +765,16 @@ class Command(BaseCommand):
         KDSInstance.objects.all().delete()
         POSTab.objects.all().delete()
 
-        # Cash register
+        # Caixa (cashman): o livro é imutável pelo app (delete levanta), então o
+        # flush apaga cru — antes do turno e do terminal, que o protegem por FK.
+        from shopman.cashman.models import Entry as CashEntry
+        from shopman.cashman.models import Shift as CashShiftLedger
+        from shopman.cashman.models import Terminal as CashTerminal
+
+        hard_delete(CashEntry)
+        CashShiftLedger.objects.all().delete()
+        CashTerminal.objects.all().delete()
+        # Tabelas legadas do caixa (somem no WP-5 do CASHMAN-PLAN; até lá, limpar).
         CashMovement.objects.all().delete()
         CashShift.objects.all().delete()
         POSTerminal.objects.all().delete()
@@ -5514,22 +5523,34 @@ class Command(BaseCommand):
         self.stdout.write("  ✅ DayClosing criado" if created else "  ✅ DayClosing atualizado")
 
     # ────────────────────────────────────────────────────────────────
-    # CashShift (caixa)
+    # Caixa (cashman: terminal, turno, livro)
     # ────────────────────────────────────────────────────────────────
 
     def _seed_cash_register(self):
-        self.stdout.write("  💵 Sessoes de caixa...")
+        """Um turno fechado ontem (com o livro populado) e um aberto hoje.
+
+        Tudo pelos services do ``cashman``: o seed não escreve ``Entry`` na mão,
+        porque o livro tem regras (sinal por tipo, segunda assinatura, contagem
+        só no fechamento) e o único jeito de o dado de demonstração respeitá-las
+        é passar por quem as guarda.
+        """
+        from shopman.cashman import services as cash
+        from shopman.cashman.models import Entry as CashEntry
+        from shopman.cashman.models import Shift as CashShiftLedger
+        from shopman.cashman.models import Terminal as CashTerminal
+
+        self.stdout.write("  💵 Turnos de caixa...")
 
         admin = User.objects.filter(is_superuser=True).first()
         if not admin:
-            self.stdout.write("  ⏭️  Sem superuser, pulando CashRegister")
+            self.stdout.write("  ⏭️  Sem superuser, pulando o caixa")
             return
 
         yesterday = timezone.localdate() - timedelta(days=1)
         yesterday_open = timezone.make_aware(datetime.combine(yesterday, time(8, 30)))
         yesterday_close = timezone.make_aware(datetime.combine(yesterday, time(18, 15)))
 
-        terminal = POSTerminal.default()
+        terminal = CashTerminal.default()
 
         # O aparelho do balcão da Nelson: Epson TM-T20, USB, rolo de 80mm
         # (confirmado com o Pablo em 2026-08-12). Declarar a largura aqui é o que
@@ -5557,46 +5578,68 @@ class Command(BaseCommand):
         terminal.metadata = {**terminal.metadata, "hardware": hardware}
         terminal.save(update_fields=["metadata"])
 
-        # Yesterday's closed shift
-        session_yesterday, _ = CashShift.objects.update_or_create(
-            operator=admin,
-            opened_at=yesterday_open,
-            defaults={
-                "terminal": terminal,
-                "status": "closed",
-                "closed_at": yesterday_close,
-                "opening_amount_q": 20000,   # R$ 200 fundo de troco
-                "blind_closing_amount_q": 89200,   # R$ 892 (reported)
-                "expected_amount_q": 89500,  # R$ 895 (calculated)
-                "difference_q": -300,        # -R$ 3,00 (small shortage)
-                "notes": "Dia tranquilo, faltou R$3 no caixa.",
-            },
-        )
+        # Ontem: turno fechado com o livro inteiro — fundo de troco, as vendas do
+        # PDV de ontem (uma linha `sale` por pedido, efeito em dinheiro só para o
+        # que foi pago em espécie), uma sangria autorizada e a contagem cega com
+        # R$ 3 a menos. Idempotente: se o turno de ontem já existe, não repete.
+        already = CashShiftLedger.objects.filter(operator=admin, opened_at=yesterday_open).exists()
+        if not already and not cash.open_shift_for(admin) and not cash.open_shift_for_terminal(terminal):
+            shift_yesterday = cash.open_shift(operator=admin, terminal=terminal, float_q=20000, at=yesterday_open)
+            for order in (
+                Order.objects.filter(
+                    channel_ref=terminal.channel_ref,
+                    created_at__gte=yesterday_open,
+                    created_at__lte=yesterday_close,
+                )
+                .exclude(status__in=["cancelled", "returned"])
+                .order_by("created_at")
+            ):
+                payment = dict((order.data or {}).get("payment") or {})
+                method = str(payment.get("method") or "external")
+                if payment.get("collection", "terminal") == "on_delivery":
+                    continue
+                cash_q = 0
+                if method == "cash":
+                    cash_q = int(payment.get("cash_received_q") or order.total_q or 0)
+                cash.record(
+                    CashEntry.Kind.SALE,
+                    shift=shift_yesterday,
+                    operator=admin,
+                    amount_q=max(0, cash_q),
+                    order_ref=order.ref,
+                    payment_ref=str(payment.get("intent_ref") or ""),
+                    payload={"method": method, "collection": "terminal"},
+                    at=order.created_at,
+                )
+            # A sangria sai do que a gaveta TEM: R$ 300 num dia com vendas em
+            # dinheiro, R$ 100 quando o histórico do perfil não trouxe venda de
+            # ontem no PDV (o livro nunca pode ficar negativo por dado de demo).
+            in_drawer_q = cash.balance(shift_yesterday)
+            withdrawal_q = 30000 if in_drawer_q >= 30300 else 10000
+            cash.record(
+                CashEntry.Kind.CASH_OUT,
+                shift=shift_yesterday,
+                operator=admin,
+                approved_by=admin,
+                amount_q=-withdrawal_q,
+                reason="Retirada para depósito",
+                at=timezone.make_aware(datetime.combine(yesterday, time(14, 0))),
+            )
+            expected_q = cash.expected_before_count(shift_yesterday)
+            cash.close_shift(
+                shift_yesterday,
+                counted_q=expected_q - 300,  # faltou R$ 3,00 na gaveta
+                actor=admin,
+                notes="Dia tranquilo, faltou R$3 no caixa.",
+                at=yesterday_close,
+            )
 
-        # Sangria
-        CashMovement.objects.update_or_create(
-            shift=session_yesterday,
-            movement_type="sangria",
-            defaults={
-                "amount_q": 30000,  # R$ 300
-                "reason": "Retirada para depósito",
-                "created_at": timezone.make_aware(datetime.combine(yesterday, time(14, 0))),
-            },
-        )
+        # Hoje: turno aberto com fundo de troco.
+        if not cash.open_shift_for(admin) and not cash.open_shift_for_terminal(terminal):
+            today_open = timezone.make_aware(datetime.combine(timezone.localdate(), time(8, 45)))
+            cash.open_shift(operator=admin, terminal=terminal, float_q=20000, at=today_open)
 
-        # Today's open session
-        today_open = timezone.make_aware(datetime.combine(timezone.localdate(), time(8, 45)))
-        CashShift.objects.update_or_create(
-            operator=admin,
-            opened_at=today_open,
-            defaults={
-                "terminal": terminal,
-                "status": "open",
-                "opening_amount_q": 20000,  # R$ 200 fundo de troco
-            },
-        )
-
-        self.stdout.write("  ✅ 2 sessoes de caixa (ontem fechada + hoje aberta)")
+        self.stdout.write("  ✅ 2 turnos de caixa (ontem fechado + hoje aberto)")
 
     # ────────────────────────────────────────────────────────────────
     # Operation checklists (abertura, rotina, fechamento)

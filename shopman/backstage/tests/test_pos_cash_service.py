@@ -1,11 +1,12 @@
-"""POS cash-register service tests."""
+"""Serviço de caixa do PDV sobre o ``cashman``: o balcão fala, o livro grava."""
 
 from __future__ import annotations
 
 import pytest
 from django.contrib.auth.models import User
+from shopman.cashman import services as cash
+from shopman.cashman.models import Entry, Shift, Terminal
 
-from shopman.backstage.models import CashMovement, CashShift, POSTerminal
 from shopman.backstage.services import pos
 from shopman.backstage.services.exceptions import POSError
 
@@ -16,28 +17,32 @@ def operator(db):
 
 
 @pytest.fixture
-def manager_approval(db):
-    """Autorização válida de gerente para as RETIRADAS de gaveta.
-
-    Sangria exige a segunda assinatura (ver
-    ``register_cash_movement``); os testes que só querem exercitar valor e tipo
-    passam a carregar esta credencial.
-    """
+def manager(db):
     from django.contrib.auth.models import Permission
     from django.contrib.contenttypes.models import ContentType
     from shopman.doorman.models import PinCredential
 
     user = User.objects.create_user(username="cash-manager", password="x", is_staff=True)
-    ct = ContentType.objects.get_for_model(CashShift)
-    user.user_permissions.add(Permission.objects.get(content_type=ct, codename="adjust_cashshift"))
+    ct = ContentType.objects.get_for_model(Shift)
+    user.user_permissions.add(Permission.objects.get(content_type=ct, codename="adjust_shift"))
     PinCredential.set_for(user, "4321")
-    return {"username": user.username, "pin": "4321"}
+    return user
+
+
+@pytest.fixture
+def manager_approval(manager):
+    """Autorização válida de gerente para as RETIRADAS de gaveta.
+
+    Sangria exige a segunda assinatura (ver ``register_cash_movement``); os
+    testes que só querem exercitar valor e tipo passam a carregar esta credencial.
+    """
+    return {"username": manager.username, "pin": "4321"}
 
 
 def test_parse_money_to_q_accepts_common_operator_inputs():
     assert pos.parse_money_to_q("12,34") == 1234
     assert pos.parse_money_to_q("12.34") == 1234
-    assert pos.parse_money_to_q("-10") == -1000  # ajuste de falta
+    assert pos.parse_money_to_q("-10") == -1000
     assert pos.parse_money_to_q("") == 0
 
 
@@ -55,37 +60,45 @@ def test_open_cash_shift_creates_or_returns_current_shift(operator):
     same = pos.open_cash_shift(operator=operator, opening_amount_raw="99,00")
 
     assert shift.pk == same.pk
-    assert shift.opening_amount_q == 5000
-    assert CashShift.objects.count() == 1
-    assert shift.terminal == POSTerminal.default()
+    assert isinstance(shift, Shift)
+    assert Shift.objects.count() == 1
+    assert shift.terminal == Terminal.default()
+    # O fundo de troco é a primeira linha do livro, não coluna do turno.
+    float_in = Entry.objects.get(shift=shift, kind=Entry.Kind.FLOAT_IN)
+    assert float_in.amount_q == 5000
+    assert cash.balance(shift) == 5000
 
 
 @pytest.mark.django_db
 def test_open_cash_shift_blocks_terminal_double_open(operator):
     other = User.objects.create_user(username="other-cash", password="x", is_staff=True)
-    terminal = POSTerminal.default()
+    terminal = Terminal.default()
     pos.open_cash_shift(operator=operator, terminal_ref=terminal.ref)
 
-    with pytest.raises(POSError):
+    with pytest.raises(POSError, match="Terminal POS já possui turno aberto"):
         pos.open_cash_shift(operator=other, terminal_ref=terminal.ref)
 
 
 @pytest.mark.django_db
+def test_open_cash_shift_rejects_unknown_terminal(operator):
+    with pytest.raises(POSError, match="Terminal POS inválido"):
+        pos.open_cash_shift(operator=operator, terminal_ref="nao-existe")
+
+
+@pytest.mark.django_db
 def test_register_cash_movement_requires_open_session(operator):
-    with pytest.raises(POSError):
+    with pytest.raises(POSError, match="Caixa não aberto"):
         pos.register_cash_movement(operator=operator, amount_raw="10")
 
 
 @pytest.mark.django_db
-def test_register_cash_movement_validates_amount_and_normalizes_type(operator, manager_approval):
-    session = CashShift.objects.create(operator=operator, opening_amount_q=0)
+def test_register_cash_movement_validates_amount_and_normalizes_type(operator, manager, manager_approval):
+    shift = cash.open_shift(operator=operator, float_q=0)
 
     with pytest.raises(POSError):
-        pos.register_cash_movement(
-            operator=operator, amount_raw="0", manager_approval=manager_approval,
-        )
+        pos.register_cash_movement(operator=operator, amount_raw="0", manager_approval=manager_approval)
 
-    movement = pos.register_cash_movement(
+    entry = pos.register_cash_movement(
         operator=operator,
         movement_type="unknown",
         amount_raw="25,50",
@@ -93,32 +106,79 @@ def test_register_cash_movement_validates_amount_and_normalizes_type(operator, m
         manager_approval=manager_approval,
     )
 
-    assert movement.shift_id == session.pk
-    assert movement.movement_type == "sangria"
-    assert movement.amount_q == 2550
-    assert movement.created_by == operator.username
-    assert CashMovement.objects.count() == 1
+    assert entry.shift_id == shift.pk
+    # Tipo desconhecido cai em sangria (o caminho que exige gerente), e o sinal
+    # vive no tipo: sangria entra NEGATIVA no livro.
+    assert entry.kind == Entry.Kind.CASH_OUT
+    assert entry.amount_q == -2550
+    assert entry.operator == operator
+    assert entry.approved_by == manager
+    assert entry.reason == "troco"
+    assert Entry.objects.filter(shift=shift, kind=Entry.Kind.CASH_OUT).count() == 1
+
+
+@pytest.mark.django_db
+def test_suprimento_enters_positive_without_manager(operator):
+    shift = cash.open_shift(operator=operator, float_q=1000)
+    entry = pos.register_cash_movement(operator=operator, movement_type="suprimento", amount_raw="5,00", reason="troco")
+
+    assert entry.kind == Entry.Kind.CASH_IN
+    assert entry.amount_q == 500
+    assert entry.approved_by is None
+    assert cash.balance(shift) == 1500
+
+
+@pytest.mark.django_db
+def test_sangria_requires_manager_pin(operator):
+    from shopman.shop.services.pos_intent import PosIntentError
+
+    cash.open_shift(operator=operator, float_q=1000)
+    with pytest.raises(PosIntentError) as exc:
+        pos.register_cash_movement(operator=operator, movement_type="sangria", amount_raw="5,00")
+    assert exc.value.code == "manager_approval_required"
+    assert not Entry.objects.filter(kind=Entry.Kind.CASH_OUT).exists()
+
+
+@pytest.mark.django_db
+def test_sangria_reduz_o_esperado(operator, manager_approval):
+    shift = cash.open_shift(operator=operator, float_q=1000)
+    pos.register_cash_movement(
+        operator=operator, movement_type="sangria", amount_raw="5,00",
+        reason="Cofre", manager_approval=manager_approval,
+    )
+
+    pos.close_cash_shift(operator=operator, closing_amount_raw="5,00")
+    assert cash.expected_before_count(shift) == 500
+    assert cash.difference(shift) == 0
 
 
 @pytest.mark.django_db
 def test_close_cash_shift_requires_open_shift(operator):
-    with pytest.raises(POSError):
+    with pytest.raises(POSError, match="Caixa não aberto"):
         pos.close_cash_shift(operator=operator, closing_amount_raw="0")
 
 
 @pytest.mark.django_db
-def test_close_cash_shift_closes_and_records_notes(operator):
-    CashShift.objects.create(operator=operator, opening_amount_q=1000)
+def test_close_cash_shift_closes_and_records_count_with_notes(operator):
+    cash.open_shift(operator=operator, float_q=1000)
 
-    shift = pos.close_cash_shift(
-        operator=operator,
-        closing_amount_raw="10,00",
-        notes="fim do turno",
-    )
+    shift = pos.close_cash_shift(operator=operator, closing_amount_raw="10,00", notes="fim do turno")
 
-    assert shift.status == CashShift.Status.CLOSED
-    assert shift.blind_closing_amount_q == 1000
-    assert shift.notes == "fim do turno"
+    assert shift.status == Shift.Status.CLOSED
+    count = Entry.objects.get(shift=shift, kind=Entry.Kind.COUNT)
+    assert count.payload["counted_q"] == 1000
+    assert count.payload["notes"] == "fim do turno"
+    assert count.payload["supervisory"] is False
+    assert cash.counted(shift) == 1000
+    assert cash.difference(shift) == 0
+
+
+@pytest.mark.django_db
+def test_close_cash_shift_rejects_negative_count(operator):
+    cash.open_shift(operator=operator, float_q=1000)
+    with pytest.raises(POSError):
+        pos.close_cash_shift(operator=operator, closing_amount_raw="-10")
+    assert cash.open_shift_for(operator) is not None
 
 
 @pytest.mark.django_db
@@ -126,104 +186,20 @@ def test_cash_shift_result_is_blind_to_operator(operator):
     """The operator close response never exposes the expected amount or variance."""
     from shopman.backstage.api.operations import _cash_shift_result
 
-    terminal = POSTerminal.default()
-    shift = CashShift.objects.create(operator=operator, terminal=terminal, opening_amount_q=1000)
-    shift.close(blind_closing_amount_q=800)
+    shift = cash.open_shift(operator=operator, float_q=1000)
+    cash.close_shift(shift, counted_q=800, actor=operator)
 
-    # The shift still stores the variance for manager review...
-    assert shift.expected_amount_q == 1000
-    assert shift.difference_q == -200
+    # O livro ainda prova a diferença para a retaguarda...
+    assert cash.expected_before_count(shift) == 1000
+    assert cash.difference(shift) == -200
 
-    # ...but the operator-facing payload hides both.
+    # ...mas o payload do operador esconde as duas.
     result = _cash_shift_result(shift)
+    assert result["opening_amount_q"] == 1000
     assert result["blind_closing_amount_q"] == 800
     assert "expected_amount_q" not in result
     assert "difference_q" not in result
-
-
-@pytest.mark.django_db
-def test_close_cash_shift_counts_terminal_cash_not_delivery_cash(operator):
-    from shopman.orderman.models import Order
-
-    terminal = POSTerminal.default()
-    shift = CashShift.objects.create(operator=operator, terminal=terminal, opening_amount_q=1000)
-    Order.objects.create(
-        ref="POS-CASH-TERMINAL",
-        channel_ref=terminal.channel_ref,
-        session_key="pos-cash-terminal",
-        total_q=2000,
-        data={
-            "pos": {"cash_shift_id": shift.pk},
-            "payment": {
-                "method": "cash",
-                "collection": "terminal",
-                "cash_received_q": 2000,
-            },
-        },
-    )
-    Order.objects.create(
-        ref="POS-CASH-DELIVERY",
-        channel_ref=terminal.channel_ref,
-        session_key="pos-cash-delivery",
-        total_q=3000,
-        data={
-            "pos": {"cash_shift_id": shift.pk},
-            "payment": {
-                "method": "cash",
-                "collection": "on_delivery",
-            },
-        },
-    )
-
-    shift.close(blind_closing_amount_q=3000)
-
-    assert shift.expected_amount_q == 3000
-    assert shift.difference_q == 0
-
-
-@pytest.mark.django_db
-def test_two_open_shifts_do_not_double_count_untagged_sale(operator):
-    """Venda cash sem tag de turno é ADOTADA pelo 1º fechamento que a conta.
-
-    Regressão do audit: com dois terminais abertos no mesmo canal, o
-    catch-all por created_at somava a mesma venda no expected dos DOIS turnos.
-    """
-    from shopman.orderman.models import Order
-
-    other_op = User.objects.create_user(username="cash-op-2", password="x", is_staff=True)
-    terminal_a = POSTerminal.default()
-    terminal_b = POSTerminal.objects.create(ref="pos-2", label="POS 2", channel_ref=terminal_a.channel_ref)
-    shift_a = CashShift.objects.create(operator=operator, terminal=terminal_a, opening_amount_q=0)
-    shift_b = CashShift.objects.create(operator=other_op, terminal=terminal_b, opening_amount_q=0)
-
-    Order.objects.create(
-        ref="POS-CASH-ORPHAN",
-        channel_ref=terminal_a.channel_ref,
-        session_key="pos-cash-orphan",
-        total_q=2000,
-        data={"payment": {"method": "cash", "collection": "terminal", "cash_received_q": 2000}},
-    )
-
-    shift_a.close(blind_closing_amount_q=2000)
-    assert shift_a.expected_amount_q == 2000
-
-    shift_b.close(blind_closing_amount_q=0)
-    # O turno B NÃO conta a venda adotada pelo A.
-    assert shift_b.expected_amount_q == 0
-
-
-@pytest.mark.django_db
-def test_sangria_reduz_o_esperado(operator, manager_approval):
-    """Era o teste do ajuste negativo — que é uma sangria escrita de outro jeito."""
-    shift = CashShift.objects.create(operator=operator, terminal=POSTerminal.default(), opening_amount_q=1000)
-    pos.register_cash_movement(
-        operator=operator, movement_type="sangria", amount_raw="5,00",
-        reason="Cofre", manager_approval=manager_approval,
-    )
-
-    shift.close(blind_closing_amount_q=500)
-    assert shift.expected_amount_q == 500
-    assert shift.difference_q == 0
+    assert "balance" not in result
 
 
 def test_mixed_tender_change_comes_from_cash_not_electronic():
@@ -241,85 +217,13 @@ def test_mixed_tender_change_comes_from_cash_not_electronic():
 
 
 @pytest.mark.django_db
-def test_cod_cash_counted_by_collecting_shift_not_creating_shift(operator):
-    """COD coletado por um turno diferente do que criou a venda é contado pelo
-    turno que COLETOU (regressão do code-review: o guard pos_shift_id cegava o
-    ramo COD e o dinheiro sumia dos dois fechamentos)."""
-    from shopman.orderman.models import Order
-
-    other_op = User.objects.create_user(username="cod-op-2", password="x", is_staff=True)
-    terminal_a = POSTerminal.default()
-    terminal_b = POSTerminal.objects.create(ref="pos-cod-2", label="POS 2", channel_ref=terminal_a.channel_ref)
-    shift_a = CashShift.objects.create(operator=operator, terminal=terminal_a, opening_amount_q=0)
-    shift_b = CashShift.objects.create(operator=other_op, terminal=terminal_b, opening_amount_q=0)
-
-    # Venda criada no turno A, COD coletado (settle) pelo turno B.
-    Order.objects.create(
-        ref="POS-COD-DIFF-SHIFT",
-        channel_ref=terminal_a.channel_ref,
-        session_key="pos-cod-diff",
-        total_q=3000,
-        data={
-            "pos": {"cash_shift_id": shift_a.pk},
-            "payment": {
-                "method": "cash",
-                "collection": "on_delivery",
-                "cash_received_q": 3000,
-                "cod_cash_shift_id": shift_b.pk,
-            },
-        },
-    )
-
-    shift_b.close(blind_closing_amount_q=3000)
-    assert shift_b.expected_amount_q == 3000  # B conta o que coletou
-
-    shift_a.close(blind_closing_amount_q=0)
-    assert shift_a.expected_amount_q == 0  # A não conta (não coletou)
-
-
-@pytest.mark.django_db
-def test_close_is_atomic_rolls_back_adoption_on_failure(operator, monkeypatch):
-    """Se o save final do turno falhar, as adoções de vendas órfãs revertem
-    (nenhum pedido fica carimbado a um turno que não fechou)."""
-    from shopman.orderman.models import Order
-
-    terminal = POSTerminal.default()
-    shift = CashShift.objects.create(operator=operator, terminal=terminal, opening_amount_q=0)
-    order = Order.objects.create(
-        ref="POS-ATOMIC-1",
-        channel_ref=terminal.channel_ref,
-        session_key="pos-atomic-1",
-        total_q=1000,
-        data={"payment": {"method": "cash", "collection": "terminal", "cash_received_q": 1000}},
-    )
-
-    # Falha no save final do turno (após o laço de adoção).
-    original_save = CashShift.save
-
-    def boom(self, *args, **kwargs):
-        if "expected_amount_q" in (kwargs.get("update_fields") or []):
-            raise RuntimeError("disco cheio")
-        return original_save(self, *args, **kwargs)
-
-    monkeypatch.setattr(CashShift, "save", boom)
-    with pytest.raises(RuntimeError):
-        shift.close(blind_closing_amount_q=1000)
-
-    # A adoção do pedido reverteu junto — não ficou carimbado.
-    order.refresh_from_db()
-    assert (order.data.get("pos") or {}).get("cash_shift_id") != shift.pk
-
-
-
-
-@pytest.mark.django_db
 def test_close_blocking_shift_owner_can_close(operator):
     shift = pos.open_cash_shift(operator=operator, opening_amount_raw="50,00")
-    closed = pos.close_blocking_shift(
-        actor_user=operator, shift_id=shift.pk, closing_amount_raw="50,00"
-    )
+    closed = pos.close_blocking_shift(actor_user=operator, shift_id=shift.pk, closing_amount_raw="50,00")
     assert closed.pk == shift.pk
-    assert closed.status == CashShift.Status.CLOSED
+    assert closed.status == Shift.Status.CLOSED
+    count = Entry.objects.get(shift=shift, kind=Entry.Kind.COUNT)
+    assert count.payload["supervisory"] is False
 
 
 @pytest.mark.django_db
@@ -335,10 +239,12 @@ def test_close_blocking_shift_manager_can_close_others(operator):
     manager.user_permissions.add(Permission.objects.get(content_type=ct, codename="perform_closing"))
     manager = User.objects.get(pk=manager.pk)  # refresca cache de permissão
 
-    closed = pos.close_blocking_shift(
-        actor_user=manager, shift_id=shift.pk, closing_amount_raw="10,00"
-    )
-    assert closed.status == CashShift.Status.CLOSED
+    closed = pos.close_blocking_shift(actor_user=manager, shift_id=shift.pk, closing_amount_raw="10,00")
+    assert closed.status == Shift.Status.CLOSED
+    # Fechamento supervisório: quem agiu foi o gerente, e o livro diz isso.
+    count = Entry.objects.get(shift=shift, kind=Entry.Kind.COUNT)
+    assert count.operator == manager
+    assert count.payload["supervisory"] is True
 
 
 @pytest.mark.django_db
@@ -351,10 +257,12 @@ def test_close_blocking_shift_regular_operator_forbidden(operator):
     with pytest.raises(POSPermissionError):
         pos.close_blocking_shift(actor_user=stranger, shift_id=shift.pk, closing_amount_raw="10,00")
     shift.refresh_from_db()
-    assert shift.status == CashShift.Status.OPEN  # nada foi fechado
+    assert shift.status == Shift.Status.OPEN  # nada foi fechado
 
 
 @pytest.mark.django_db
 def test_close_blocking_shift_unknown_shift_errors(operator):
     with pytest.raises(POSError):
         pos.close_blocking_shift(actor_user=operator, shift_id=999999, closing_amount_raw="0")
+    with pytest.raises(POSError):
+        pos.close_blocking_shift(actor_user=operator, shift_id="abc", closing_amount_raw="0")

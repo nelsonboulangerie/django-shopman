@@ -15,8 +15,13 @@ from shopman.backstage.services.operator import (
 User = get_user_model()
 
 
+# As permissões do caixa moram no ``cashman`` (ADR-022); as demais seguem no ``backstage``.
+_CASHMAN_PERMS = {"operate_pos", "adjust_shift", "audit_shift", "manage_operators"}
+
+
 def _grant(user, codename):
-    perm = Permission.objects.get(content_type__app_label="backstage", codename=codename)
+    app_label = "cashman" if codename in _CASHMAN_PERMS else "backstage"
+    perm = Permission.objects.get(content_type__app_label=app_label, codename=codename)
     user.user_permissions.add(perm)
     return User.objects.get(pk=user.pk)  # refresh perm cache
 
@@ -60,8 +65,8 @@ class OperatorPinTests(TestCase):
         # only operate_pos → cannot authorize overrides
         mgr = _grant(mgr, "operate_pos")
         self.assertFalse(verify_manager_pin(mgr, "9999"))
-        # grant adjust_cashshift → can
-        mgr = _grant(mgr, "adjust_cashshift")
+        # grant adjust_shift → can
+        mgr = _grant(mgr, "adjust_shift")
         self.assertTrue(verify_manager_pin(mgr, "9999"))
 
     def test_eligible_operators_lists_only_pinned_permitted_staff(self):
@@ -103,7 +108,7 @@ class OperatorBadgeTests(TestCase):
     def test_badge_honours_permission_filter(self):
         token = PinCredential.issue_badge(self.op)
         # has operate_production but not operate_pos
-        self.assertIsNone(resolve_operator_by_badge(token, required_perm="backstage.operate_pos"))
+        self.assertIsNone(resolve_operator_by_badge(token, required_perm="cashman.operate_pos"))
         self.assertIsNotNone(resolve_operator_by_badge(token, required_perm="backstage.operate_production"))
 
     def test_pin_identity_only_decouples_from_pos(self):

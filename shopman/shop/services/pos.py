@@ -1205,7 +1205,7 @@ def _verify_manager_pin(username: str, pin: str):
 
     A short, rate-limited PIN challenge replaces account passwords in the sale
     payload. Reuses doorman's generic ``PinCredential`` (HMAC hash + lockout)
-    and the same ``backstage.adjust_cashshift`` permission the override gates
+    and the same ``cashman.adjust_shift`` permission the override gates
     require. Returns the authorizing user, or ``None`` if the challenge fails.
     """
     from django.contrib.auth import get_user_model
@@ -1216,7 +1216,7 @@ def _verify_manager_pin(username: str, pin: str):
         user = user_model.objects.get(username=username, is_active=True, is_staff=True)
     except user_model.DoesNotExist:
         return None
-    if not user.has_perm("backstage.adjust_cashshift"):
+    if not user.has_perm("cashman.adjust_shift"):
         return None
     try:
         credential = user.pin_credential
@@ -1282,7 +1282,7 @@ def validate_manager_override(approval: dict | None, *, operator_username: str, 
 
     Cancelar uma venda fechada é exceção auditada (anti-fraude), não fluxo do
     operador: exige o mesmo desafio de PIN gerencial do desconto acima do teto
-    (``backstage.adjust_cashshift``), sempre — não há limiar.
+    (``cashman.adjust_shift``), sempre — não há limiar.
     """
     approval = approval or {}
     username = str(approval.get("username") or "").strip()

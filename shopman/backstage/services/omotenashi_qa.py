@@ -7,12 +7,13 @@ from typing import Literal
 
 from django.urls import NoReverseMatch, reverse
 from django.utils import timezone
+from shopman.cashman.models import Shift
 from shopman.craftsman.models import WorkOrder
 from shopman.offerman.models import Product
 from shopman.orderman.models import Order, Session
 from shopman.payman.models import PaymentIntent
 
-from shopman.backstage.models import CashShift, DayClosing, KDSTicket, POSTab
+from shopman.backstage.models import DayClosing, KDSTicket, POSTab
 from shopman.shop.services import operator_links, pos_links, storefront_links
 
 Status = Literal["ready", "missing"]
@@ -291,7 +292,7 @@ def _production_check() -> OmotenashiQACheck:
 
 def _pos_check() -> OmotenashiQACheck:
     tab = POSTab.objects.filter(is_active=True).order_by("ref").first()
-    shift = CashShift.objects.filter(status="open").order_by("-opened_at", "-id").first()
+    shift = Shift.objects.filter(status=Shift.Status.OPEN).order_by("-opened_at", "-id").first()
     evidence = ""
     if tab and shift:
         evidence = f"tab={tab.ref} cash_shift={shift.pk}"
@@ -325,7 +326,7 @@ def _day_closing_check() -> OmotenashiQACheck:
 
 
 def _cash_register_check() -> OmotenashiQACheck:
-    register = CashShift.objects.order_by("-opened_at", "-id").first()
+    register = Shift.objects.order_by("-opened_at", "-id").first()
     evidence = f"cash_shift={register.pk} status={register.status}" if register else ""
     return _check(
         id="desktop.cash_register.shift",

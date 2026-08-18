@@ -1,11 +1,15 @@
-"""Como o dinheiro de um pedido se reparte entre formas de pagamento.
+"""Como o PEDIDO declara que foi pago — a repartição entre formas de pagamento.
 
-Uma pergunta, um dono. Esta regra nasceu dentro do fechamento do dia e era o
-único lugar que sabia ler ``order.data.payment`` — o B.I. que quisesse contar o
-mesmo dinheiro teria de reimplementá-la, e as duas telas divergiriam no primeiro
-caso de borda (pagamento dividido, cobrança na entrega ainda não recebida). Por
-isso ela mora aqui, e tanto ``services/closing.py`` quanto
-``projections/bi_payments.py`` a chamam em vez de reescrevê-la.
+Uma pergunta, um dono. Esta regra lê ``order.data.payment`` e responde o que só
+o pedido sabe: como o cliente declarou pagar (método, tenders, troco) e se uma
+cobrança na entrega ainda está na rua. É isso que o fiscal, o recibo e o recorte
+do B.I. por contexto do pedido (hora, canal) precisam.
+
+⚠️ NÃO é fonte de caixa nem de receita por método (ADR-022). "Quanto entrou, por
+método" é do ``payman`` (intents capturados de TODOS os métodos, dinheiro
+incluso); "quanto há na gaveta" é do ``cashman``. O fechamento do dia
+(``services/closing.py``) usa esta função só para o pendente de entrega
+(``cod_pending_*``); o mix de meios ele lê do ``payman``.
 
 Três fatos que a regra precisa respeitar:
 

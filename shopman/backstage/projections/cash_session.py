@@ -1,23 +1,30 @@
-"""CashSessionReportProjection — leitura X/Z e histórico de turnos do dia.
+"""CashSessionReportProjection — leitura X/Z e histórico de turnos do dia, sobre o livro.
 
 Read model da antesala do PDV (ADMIN-ROLE-PLAN WP-ADM-4, benchmark Odoo POS):
 
-- **Leitura X** — parcial do turno ABERTO do operador: abertura, movimentos
+- **Leitura X** — parcial do turno ABERTO do operador: fundo de troco, movimentos
   (sangria/suprimento), contagem de vendas e vendas por método.
-- **Leitura Z** — fechamento de cada turno FECHADO do dia: abertura, valor
+- **Leitura Z** — fechamento de cada turno FECHADO do dia: fundo de troco, valor
   CONTADO (contagem cega), movimentos e totais operacionais de vendas.
 - **Histórico do dia** — totais agregados de turnos e vendas.
 
+Duas fontes, cada uma dona da sua pergunta (ADR-022):
+
+- **``cashman``** (o livro do turno): fundo de troco (``float_in``), movimentos
+  (``cash_out``/``cash_in``), contagem (``count`` + correções) e QUAIS vendas
+  passaram por este turno (``sale``/``cod_settled``/``refund``, por ``order_ref``
+  e ``payment_ref``).
+- **``payman``** (o livro de pagamentos): QUANTO cada venda recebeu, por método.
+  A linha ``sale`` aponta os intents (``payment_ref`` e ``payload.intents``); o
+  valor e o método vêm de lá. Uma linha sem intent resolvível (dado antigo,
+  seed) entra pelo efeito em dinheiro da própria linha, e só como dinheiro.
+
 ⚠️ BLIND COUNT (anti-fraude): o PDV NUNCA expõe o valor ESPERADO da gaveta —
 nem no X (turno aberto), nem no Z (turno fechado). A conferência (esperado vs
-contado vs variância — ``expected_amount_q`` / ``difference_q``) é da
-retaguarda (Admin/Unfold, ``audit_cashshift``). Aqui, o Z mostra o que o
-operador CONTOU e o que a operação registrou, nada derivável do esperado.
-
-A atribuição de vendas a um turno espelha ``CashShift.close()`` (read-only,
-sem adoção de órfãs): tag durável ``Order.data.pos.cash_shift_id`` /
-``payment.cod_cash_shift_id`` / tender ``cash_shift_id`` decide; sem tag, vale
-a janela temporal do turno no canal do terminal.
+contado vs diferença) é da retaguarda (Admin/Unfold, ``cashman.audit_shift``).
+Aqui, o Z mostra o que o operador CONTOU e o que a operação registrou, nada
+derivável do esperado. Por construção: esta projection nunca chama
+``cashman.services.balance``/``expected_before_count``/``difference``.
 
 Never imports from ``shopman.backstage.views.*``.
 """
@@ -27,11 +34,9 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass
 
-from django.db import models
 from django.utils import timezone
 from shopman.utils.monetary import format_money
 
-from shopman.backstage.models import CashShift
 from shopman.backstage.presentation.status import payment_method_label
 
 logger = logging.getLogger(__name__)
@@ -43,11 +48,11 @@ _METHOD_ORDER = ("cash", "pix", "card", "external")
 
 
 @dataclass(frozen=True)
-class CashMovementRowProjection:
+class MovementRowProjection:
     """A manual drawer movement inside a shift."""
 
-    kind: str  # "sangria" | "suprimento"
-    kind_label: str  # "Sangria" | "Suprimento" | "Ajuste"
+    kind: str  # "sangria" | "suprimento" (vocabulário do balcão; o livro diz cash_out/cash_in)
+    kind_label: str  # "Saída de caixa" | "Entrada de caixa"
     amount_q: int  # sempre positivo; a direção vem do `kind`
     amount_display: str
     reason: str
@@ -85,7 +90,7 @@ class ShiftReadingProjection:
     opening_amount_display: str
     counted_amount_q: int | None  # blind count; None while open
     counted_amount_display: str  # "" while open
-    movements: tuple[CashMovementRowProjection, ...]
+    movements: tuple[MovementRowProjection, ...]
     movements_in_q: int  # suprimentos
     movements_in_display: str
     movements_out_q: int  # sangrias
@@ -133,13 +138,16 @@ def build_cash_session_report(*, operator) -> CashSessionReportProjection:
     covers every shift closed today, terminal-wide — the shift history the
     antesala shows. Neither exposes expected/variance (blind count).
     """
+    from shopman.cashman import services as cash
+    from shopman.cashman.models import Shift
+
     today = timezone.localdate()
 
-    open_shift = CashShift.get_open_for_operator(operator)
+    open_shift = cash.open_shift_for(operator)
     x_reading = _shift_reading(open_shift) if open_shift else None
 
     closed = (
-        CashShift.objects.filter(status=CashShift.Status.CLOSED, closed_at__date=today)
+        Shift.objects.filter(status=Shift.Status.CLOSED, closed_at__date=today)
         .select_related("terminal", "operator")
         .order_by("closed_at")
     )
@@ -159,24 +167,39 @@ def build_cash_session_report(*, operator) -> CashSessionReportProjection:
 # ── Internals ──────────────────────────────────────────────────────────
 
 
-def _shift_reading(shift: CashShift) -> ShiftReadingProjection:
-    movements = tuple(
-        CashMovementRowProjection(
-            kind=movement.movement_type,
-            kind_label=movement.get_movement_type_display(),
-            amount_q=movement.amount_q,
-            amount_display=format_money(movement.amount_q),
-            reason=movement.reason,
-            created_by=movement.created_by,
-            created_at=movement.created_at.isoformat() if movement.created_at else "",
-        )
-        for movement in shift.movements.order_by("created_at")
-    )
-    movements_in_q = sum(row.amount_q for row in movements if _is_inflow(row))
-    movements_out_q = sum(abs(row.amount_q) for row in movements if not _is_inflow(row))
+def _shift_reading(shift) -> ShiftReadingProjection:
+    from shopman.cashman import services as cash
+    from shopman.cashman.models import Entry
 
-    sales_count, sales_total_q, by_method = _shift_sales(shift)
-    is_open = shift.status == CashShift.Status.OPEN
+    from shopman.backstage.services.pos import MOVEMENT_API_BY_KIND
+
+    entries = list(cash.timeline(shift))
+    Kind = Entry.Kind
+
+    opening_amount_q = sum(e.amount_q for e in entries if e.kind == Kind.FLOAT_IN)
+
+    movements = tuple(
+        MovementRowProjection(
+            kind=MOVEMENT_API_BY_KIND[e.kind],
+            kind_label=str(e.get_kind_display()),
+            amount_q=abs(int(e.amount_q)),
+            amount_display=format_money(abs(int(e.amount_q))),
+            reason=e.reason,
+            created_by=e.operator.get_username() if e.operator_id else "",
+            created_at=e.at.isoformat() if e.at else "",
+        )
+        for e in entries
+        if e.kind in (Kind.CASH_OUT, Kind.CASH_IN)
+    )
+    movements_in_q = sum(row.amount_q for row in movements if row.kind == "suprimento")
+    movements_out_q = sum(row.amount_q for row in movements if row.kind == "sangria")
+
+    sales_count, sales_total_q, by_method = _shift_sales(entries)
+    is_open = shift.is_open
+    # O que o operador CONTOU (com correções gerenciais posteriores). Nunca o
+    # esperado: ``counted`` é a única leitura do pacote que esta tela pode fazer.
+    counted_q = None if is_open else cash.counted(shift)
+    notes = "" if is_open else _count_notes(entries)
 
     return ShiftReadingProjection(
         shift_id=shift.pk,
@@ -186,10 +209,10 @@ def _shift_reading(shift: CashShift) -> ShiftReadingProjection:
         operator=shift.operator.get_username(),
         opened_at=shift.opened_at.isoformat() if shift.opened_at else "",
         closed_at=shift.closed_at.isoformat() if shift.closed_at else "",
-        opening_amount_q=shift.opening_amount_q or 0,
-        opening_amount_display=format_money(shift.opening_amount_q or 0),
-        counted_amount_q=None if is_open else (shift.blind_closing_amount_q or 0),
-        counted_amount_display="" if is_open else format_money(shift.blind_closing_amount_q or 0),
+        opening_amount_q=opening_amount_q,
+        opening_amount_display=format_money(opening_amount_q),
+        counted_amount_q=counted_q,
+        counted_amount_display="" if counted_q is None else format_money(counted_q),
         movements=movements,
         movements_in_q=movements_in_q,
         movements_in_display=format_money(movements_in_q),
@@ -199,99 +222,97 @@ def _shift_reading(shift: CashShift) -> ShiftReadingProjection:
         sales_total_q=sales_total_q,
         sales_total_display=format_money(sales_total_q),
         sales_by_method=_method_rows(by_method),
-        notes=shift.notes or "",
+        notes=notes,
     )
 
 
-def _is_inflow(row: CashMovementRowProjection) -> bool:
-    """Suprimento entra, sangria sai. O valor é sempre positivo; o sinal é o tipo."""
-    return row.kind == "suprimento"
+def _count_notes(entries) -> str:
+    """As observações do fechamento moram no payload da contagem."""
+    for entry in entries:
+        if entry.kind == "count":
+            return str((entry.payload or {}).get("notes") or "")
+    return ""
 
 
-def _shift_sales(shift: CashShift) -> tuple[int, int, dict[str, dict]]:
-    """Count the shift's sales and split received amounts by method (read-only).
+def _shift_sales(entries) -> tuple[int, int, dict[str, dict]]:
+    """Vendas do turno: QUAIS vêm do livro, QUANTO e POR MÉTODO vêm do ``payman``.
 
-    Mirrors the attribution of ``CashShift.close()`` without mutating orders:
-    an order belongs to the shift when its durable tag says so, or when it is
-    untagged and was created inside the shift's window on the terminal's
-    channel. Cash follows the COLLECTION tags (COD ``cod_cash_shift_id`` and
-    tender ``cash_shift_id`` name who received the money); other methods follow
-    the creating shift.
+    Cada ``sale``/``cod_settled`` aponta seus intents (``payment_ref`` e
+    ``payload.intents``); o valor líquido (captura − estornos) e o método são
+    do intent. Uma linha cujo intent não resolve entra pelo efeito em dinheiro
+    da própria linha — é o que o livro sabe sozinho, e só como ``cash``.
+    ``refund`` já está descontado no ``payman`` quando o intent resolve; sem
+    intent, é o efeito negativo da linha, também em dinheiro.
     """
-    from django.conf import settings
-    from shopman.orderman.models import Order
+    from shopman.cashman.models import Entry
 
-    channel_ref = shift.terminal.channel_ref or getattr(settings, "SHOPMAN_POS_CHANNEL_REF", "pdv")
-    window_end = shift.closed_at or timezone.now()
+    Kind = Entry.Kind
+    money_kinds = (Kind.SALE, Kind.COD_SETTLED, Kind.REFUND)
+    money_entries = [e for e in entries if e.kind in money_kinds]
 
-    orders_qs = (
-        Order.objects.filter(channel_ref=channel_ref)
-        .filter(
-            models.Q(data__pos__cash_shift_id=shift.pk)
-            | models.Q(data__payment__cod_cash_shift_id=shift.pk)
-            | models.Q(created_at__gte=shift.opened_at, created_at__lte=window_end)
-        )
-        .exclude(status="cancelled")
-    )
+    refs_by_entry: dict[int, list[str]] = {}
+    all_refs: set[str] = set()
+    for entry in money_entries:
+        refs = _intent_refs(entry)
+        refs_by_entry[entry.pk] = refs
+        all_refs.update(refs)
 
-    sales_count = 0
-    sales_total_q = 0
+    intents = _intents_by_ref(all_refs)
+
     by_method: dict[str, dict] = {}
-
-    for order in orders_qs:
-        data = order.data or {}
-        payment = data.get("payment") or {}
-        pos_shift_id = _int_or_none((data.get("pos") or {}).get("cash_shift_id"))
-        in_window = bool(
-            order.created_at and shift.opened_at <= order.created_at <= window_end
-        )
-        belongs = pos_shift_id == shift.pk or (pos_shift_id is None and in_window)
-
-        if belongs:
-            sales_count += 1
-            sales_total_q += int(order.total_q or 0)
-
-        cash_received_q = payment.get("cash_received_q")
-        if cash_received_q is not None:
-            cod_shift_id = _int_or_none(payment.get("cod_cash_shift_id"))
-            if cod_shift_id:
-                # COD: o dinheiro é do turno que COLETOU, não do que criou.
-                if cod_shift_id == shift.pk:
-                    _tally(by_method, "cash", int(cash_received_q or 0))
+    seen_refs: set[str] = set()
+    for entry in money_entries:
+        resolved = [ref for ref in refs_by_entry[entry.pk] if ref in intents]
+        if resolved:
+            # ``refund`` com intent: o estorno já está líquido no intent da venda.
+            if entry.kind == Kind.REFUND:
                 continue
-            if belongs:
-                _tally(by_method, "cash", int(cash_received_q or 0))
+            for ref in resolved:
+                if ref in seen_refs:
+                    continue  # duas linhas do mesmo intent (tenders): conta uma vez
+                seen_refs.add(ref)
+                method, amount_q = intents[ref]
+                _tally(by_method, method, amount_q)
             continue
+        if entry.amount_q != 0:
+            _tally(by_method, "cash", int(entry.amount_q))
 
-        tenders = payment.get("tenders") or []
-        if tenders:
-            for tender in tenders:
-                method = str(tender.get("method") or "").strip().lower()
-                amount_q = _int_or_none(tender.get("amount_q")) or 0
-                if not method or amount_q <= 0:
-                    continue
-                if method == "cash":
-                    if tender.get("collection", "terminal") != "terminal":
-                        continue  # COD pendente vive no braço cash_received_q
-                    tender_shift_id = _int_or_none(tender.get("cash_shift_id"))
-                    if tender_shift_id:
-                        if tender_shift_id != shift.pk:
-                            continue
-                    elif not belongs:
-                        continue
-                    _tally(by_method, "cash", amount_q)
-                elif belongs:
-                    _tally(by_method, method, amount_q)
-            continue
-
-        method = str(payment.get("method") or "").strip().lower()
-        if not belongs or not method or method == "mixed":
-            continue
-        if method == "cash" and payment.get("collection", "terminal") == "on_delivery":
-            continue
-        _tally(by_method, method, int(order.total_q or 0))
-
+    sales_count = len({e.order_ref or f"#{e.pk}" for e in money_entries if e.kind == Kind.SALE})
+    sales_total_q = sum(int(bucket["amount_q"]) for bucket in by_method.values())
     return sales_count, sales_total_q, by_method
+
+
+def _intent_refs(entry) -> list[str]:
+    payload = entry.payload or {}
+    refs: list[str] = []
+    if entry.payment_ref:
+        refs.append(str(entry.payment_ref))
+    intents = payload.get("intents") or {}
+    if isinstance(intents, dict):
+        refs.extend(str(ref) for ref in intents.values() if ref)
+    # Ordem estável, sem repetição.
+    return list(dict.fromkeys(refs))
+
+
+def _intents_by_ref(refs: set[str]) -> dict[str, tuple[str, int]]:
+    """``ref → (método, valor líquido)`` para os intents que liquidaram."""
+    if not refs:
+        return {}
+    from django.db.models import Sum
+    from shopman.payman.models import PaymentIntent, PaymentTransaction
+
+    settled = (PaymentIntent.Status.CAPTURED, PaymentIntent.Status.REFUNDED)
+    intents = PaymentIntent.objects.filter(ref__in=refs, status__in=settled).values_list("ref", "method", "amount_q")
+    refunded = dict(
+        PaymentTransaction.objects.filter(intent__ref__in=refs, type=PaymentTransaction.Type.REFUND)
+        .values("intent__ref")
+        .annotate(total=Sum("amount_q"))
+        .values_list("intent__ref", "total")
+    )
+    return {
+        ref: (str(method or "").strip().lower() or "external", int(amount_q or 0) - int(refunded.get(ref) or 0))
+        for ref, method, amount_q in intents
+    }
 
 
 def _tally(by_method: dict[str, dict], method: str, amount_q: int) -> None:
@@ -340,12 +361,3 @@ def _day_totals(z_readings: tuple[ShiftReadingProjection, ...]) -> DayTotalsProj
         counted_total_display=format_money(counted_total_q),
         sales_by_method=_method_rows(merged),
     )
-
-
-def _int_or_none(value) -> int | None:
-    try:
-        if value in (None, ""):
-            return None
-        return int(value)
-    except (TypeError, ValueError):
-        return None

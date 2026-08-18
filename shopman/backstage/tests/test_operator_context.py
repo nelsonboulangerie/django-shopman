@@ -7,12 +7,13 @@ from decimal import Decimal
 
 import pytest
 from django.contrib.auth.models import Permission, User
+from shopman.cashman import services as cash
 from shopman.craftsman import craft
 from shopman.craftsman.models import Recipe
 from shopman.orderman.models import Order
 from shopman.stockman.models import Position
 
-from shopman.backstage.models import CashShift, OperatorAlert
+from shopman.backstage.models import OperatorAlert
 from shopman.backstage.operator.context import build_operator_context
 from shopman.shop.models import Shop
 
@@ -25,12 +26,12 @@ def _grant(user, app_label: str, codename: str) -> None:
 @pytest.mark.django_db
 def test_operator_context_summarizes_alerts_shift_kpis_and_permissions(rf):
     user = User.objects.create_user("op", password="x", is_staff=True)
-    _grant(user, "backstage", "operate_pos")
+    _grant(user, "cashman", "operate_pos")
     _grant(user, "backstage", "operate_kds")
     _grant(user, "shop", "manage_orders")
     _grant(user, "shop", "view_production_started")
 
-    CashShift.objects.create(operator=user, opening_amount_q=1000)
+    cash.open_shift(operator=user, float_q=1000)
     OperatorAlert.objects.create(type="stock_low", severity="warning", message="Estoque baixo")
     OperatorAlert.objects.create(type="production_late", severity="critical", message="Produção atrasada")
     Position.objects.create(ref="balcao", name="Balcão", is_default=True)

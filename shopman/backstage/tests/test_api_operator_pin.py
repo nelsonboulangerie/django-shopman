@@ -15,13 +15,16 @@ User = get_user_model()
 
 UNLOCK = "/api/v1/backstage/operator/unlock/"
 LOCK = "/api/v1/backstage/operator/lock/"
-POS_PERM = "backstage.operate_pos"
+POS_PERM = "cashman.operate_pos"
+
+
+# As permissões do caixa moram no ``cashman`` (ADR-022); as demais seguem no ``backstage``.
+_CASHMAN_PERMS = {"operate_pos", "adjust_shift", "audit_shift", "manage_operators"}
 
 
 def _grant(user, codename):
-    user.user_permissions.add(
-        Permission.objects.get(content_type__app_label="backstage", codename=codename)
-    )
+    app_label = "cashman" if codename in _CASHMAN_PERMS else "backstage"
+    user.user_permissions.add(Permission.objects.get(content_type__app_label=app_label, codename=codename))
     return User.objects.get(pk=user.pk)
 
 

@@ -88,10 +88,12 @@ def cancellation_reasons(order) -> list[dict]:
 
 
 def settle_delivery_cash(order, *, operator, amount_raw: str = "", actor: str):
-    from shopman.backstage.models import CashShift
+    """Acerto do dinheiro de entrega: entra no turno ABERTO (``cashman``) de quem recebeu."""
+    from shopman.cashman import services as cash
+
     from shopman.backstage.services.pos import parse_money_to_q
 
-    shift = CashShift.get_open_for_operator(operator)
+    shift = cash.open_shift_for(operator)
     amount_q = parse_money_to_q(amount_raw) if str(amount_raw or "").strip() else None
     try:
         return operator_orders.settle_delivery_cash(

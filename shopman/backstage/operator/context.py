@@ -66,9 +66,9 @@ def build_operator_context(request) -> OperatorContext:
 
 
 def _open_cash_shift(user):
-    from shopman.backstage.models import CashShift
+    from shopman.cashman import services as cash
 
-    return CashShift.get_open_for_operator(user)
+    return cash.open_shift_for(user)
 
 
 def _alert_counts() -> tuple[int, int]:
@@ -134,7 +134,7 @@ def _permissions(user) -> OperatorPermissions:
 
     production_access = resolve_production_access(user)
     return OperatorPermissions(
-        can_operate_pos=user.has_perm("backstage.operate_pos"),
+        can_operate_pos=user.has_perm("cashman.operate_pos"),
         can_operate_kds=user.has_perm("backstage.operate_kds"),
         can_manage_orders=user.has_perm("shop.manage_orders"),
         can_access_production=production_access.can_access_board,

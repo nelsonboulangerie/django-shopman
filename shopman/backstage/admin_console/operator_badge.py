@@ -24,7 +24,7 @@ from shopman.backstage.projections.operator_badge import build_operator_badge
 #: Chave de sessão onde a ação do changelist deixa o token recém-sorteado.
 BADGE_SESSION_KEY = "pending_operator_badge"
 
-MANAGE_OPERATORS = "backstage.manage_operators"
+MANAGE_OPERATORS = "cashman.manage_operators"
 
 
 class OperatorBadgeView(UnfoldModelAdminViewMixin, TemplateView):

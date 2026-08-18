@@ -4,11 +4,11 @@
 // `requires_manager_approval`.
 //
 // O gerente é ESCOLHIDO NUMA LISTA, não digitado. O nome nunca foi decoração: o
-// servidor resolve o usuário por `username`, confere `backstage.adjust_cashshift`
+// servidor resolve o usuário por `username`, confere `cashman.adjust_shift`
 // e valida o PIN contra a credencial daquela pessoa (`PinCredential`, por usuário).
 // Nome digitado erra, e nome errado grava a assinatura errada em
-// `CashMovement.approved_by` — justamente a segunda assinatura que a sangria
-// existe para ter. O contrato do servidor segue `{username, pin}`; o que mudou é
+// `Entry.approved_by` do livro do turno — justamente a segunda assinatura que a
+// sangria existe para ter. O contrato do servidor segue `{username, pin}`; o que mudou é
 // só COMO a tela descobre o username.
 //
 // O campo de texto continua vivo como ÚNICA porta quando a lista chega vazia

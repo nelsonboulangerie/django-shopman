@@ -14,10 +14,9 @@ from shopman.shop.services import pos as pos_service
 def _grant_pos_perm(user):
     from django.contrib.auth.models import Permission
     from django.contrib.contenttypes.models import ContentType
+    from shopman.cashman.models import Shift
 
-    from shopman.backstage.models import CashShift
-
-    ct = ContentType.objects.get_for_model(CashShift)
+    ct = ContentType.objects.get_for_model(Shift)
     perm = Permission.objects.get(content_type=ct, codename="operate_pos")
     user.user_permissions.add(perm)
 

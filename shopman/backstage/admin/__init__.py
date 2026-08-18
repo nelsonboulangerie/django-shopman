@@ -1,4 +1,4 @@
-"""Backstage admin — KDS, closing, alerts, cash register, operation, dashboard."""
+"""Backstage admin — KDS, closing, alerts, terminal do PDV, operation, dashboard."""
 
 from shopman.backstage.admin.accounts import (  # noqa: F401
     GroupAdmin,
@@ -6,7 +6,6 @@ from shopman.backstage.admin.accounts import (  # noqa: F401
     register_totp_admin,
 )
 from shopman.backstage.admin.alerts import OperatorAlertAdmin  # noqa: F401
-from shopman.backstage.admin.cash_register import CashShiftAdmin, POSTerminalAdmin  # noqa: F401
 from shopman.backstage.admin.closing import DayClosingAdmin  # noqa: F401
 from shopman.backstage.admin.consumption import (  # noqa: F401
     ConsumptionRoleAdmin,
@@ -27,6 +26,7 @@ from shopman.backstage.admin.operation import (  # noqa: F401
 from shopman.backstage.admin.operators import PinCredentialAdmin  # noqa: F401
 from shopman.backstage.admin.pos import POSTabAdmin  # noqa: F401
 from shopman.backstage.admin.seating import SeatingSpotAdmin  # noqa: F401
+from shopman.backstage.admin.terminal import TerminalAdmin  # noqa: F401
 
 register_totp_admin()
 

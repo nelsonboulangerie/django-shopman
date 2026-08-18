@@ -1,10 +1,10 @@
 """Permission parity regression — guards the "bug-semente" (SEED-DATA-QUALITY Fase 0).
 
 A runtime gate is dead code the moment it checks a permission that no group
-grants: ``user.has_perm("backstage.adjust_cashshift")`` returns ``False`` for
+grants: ``user.has_perm("cashman.adjust_shift")`` returns ``False`` for
 every non-superuser, so the feature silently works only for superusers. That is
 exactly what happened before Fase 0 (Gerente lacked ``adjust_cashshift`` and
-``manage_operators``).
+``manage_operators``, the pre-cashman names of these grants).
 
 This module canonizes the fix in two layers:
 
@@ -39,16 +39,18 @@ GATE_FILES = [
     "shopman/backstage/admin/pos.py",
     "shopman/backstage/admin/kds.py",
     "shopman/backstage/admin/closing.py",
-    "shopman/backstage/admin/cash_register.py",
+    "shopman/backstage/admin/terminal.py",
+    "shopman/backstage/admin_console/cash_receipt.py",
+    "shopman/backstage/admin/navigation.py",
     "shopman/backstage/api/operations.py",
     "shopman/backstage/projections/production.py",
 ]
 
-# Matches a permission literal like "backstage.adjust_cashshift" or
+# Matches a permission literal like "cashman.adjust_shift" or
 # "shop.manage_orders". f-strings that interpolate a column
 # (f"shop.view_production_{column}") contain a brace before the closing quote and
 # therefore do NOT match here — they are covered explicitly in the parity table.
-_PERM_LITERAL = re.compile(r'"((?:shop|backstage)\.[a-z_]+)"')
+_PERM_LITERAL = re.compile(r'"((?:shop|backstage|cashman)\.[a-z_]+)"')
 
 # ---------------------------------------------------------------------------
 # Explicit parity table: (permission, {groups that MUST grant it}).
@@ -56,13 +58,13 @@ _PERM_LITERAL = re.compile(r'"((?:shop|backstage)\.[a-z_]+)"')
 # ---------------------------------------------------------------------------
 PARITY_TABLE: list[tuple[str, set[str]]] = [
     # pos.py::_verify_manager_pin (POS manager approval) + cash adjust
-    ("backstage.adjust_cashshift", {"Gerente"}),
+    ("cashman.adjust_shift", {"Gerente"}),
     # admin/operators.py::PinCredentialAdmin (reset / provision operator PIN)
-    ("backstage.manage_operators", {"Gerente"}),
+    ("cashman.manage_operators", {"Gerente"}),
     # permissions.can_close_day + admin/closing.py + admin_console/closing.py
     ("backstage.perform_closing", {"Gerente"}),
-    # permissions.can_operate_pos + admin/pos.py + admin/cash_register.py
-    ("backstage.operate_pos", {"Caixa", "Gerente"}),
+    # permissions.can_operate_pos + admin/pos.py + cashman.contrib.admin_unfold
+    ("cashman.operate_pos", {"Caixa", "Gerente"}),
     # permissions.can_operate_kds + admin/kds.py
     ("backstage.operate_kds", {"Cozinha"}),
     # permissions.can_operate_production (dedicated floor app gate)
@@ -104,6 +106,13 @@ UNGRANTED_BY_DESIGN: dict[str, str] = {
     "backstage.view_production_reports": (
         "OR-alternative in can_view_production_reports; covered by "
         "shop.manage_production on Cozinha/Gerente."
+    ),
+    # Retaguarda do caixa: ver esperado/diferença no Admin e conferir comprovante.
+    # Antes do cashman era ``backstage.audit_cashshift``, igualmente fora dos
+    # grupos padrão: é grant do dono, dado à mão a quem audita, não persona.
+    "cashman.audit_shift": (
+        "Auditoria de turno (esperado/diferença, comprovante) é grant do dono, "
+        "não persona de operação; ShiftAdmin também aceita cashman.operate_pos."
     ),
 }
 
@@ -163,10 +172,10 @@ def test_discovered_gate_perms_are_covered_by_some_group():
 
     discovered = _discover_gate_perms()
     # Sanity: the scan actually found the gates (not a silent no-op).
-    assert "backstage.adjust_cashshift" in discovered, (
-        "discovery regex found no adjust_cashshift gate — the scan is broken"
+    assert "cashman.adjust_shift" in discovered, (
+        "discovery regex found no adjust_shift gate — the scan is broken"
     )
-    assert "backstage.operate_pos" in discovered
+    assert "cashman.operate_pos" in discovered
 
     dead_gates = {
         perm

@@ -1,12 +1,19 @@
-"""Admin for POS terminals, CashShift, and CashMovement."""
+"""Admin do terminal do PDV: o do ``cashman`` mais a gaveta e a saúde do balcão.
+
+O pacote registra ``Terminal`` como config genérica (ref, canal, local). O que é
+da SUPERFÍCIE de operador — como a gaveta abre, o agente do balcão, o pulso do
+solenoide, a saúde dos periféricos — não é do pacote e não pode morar nele
+(``cashman`` não sabe o que é um agente de impressora). Por isso o backstage
+registra por cima: tira o Admin do contrib e põe uma subclasse com o form de
+hardware. Um Admin só para o terminal, e o hardware onde a superfície manda.
+"""
 
 from __future__ import annotations
 
 from django import forms
 from django.contrib import admin
-from shopman.utils import unfold_badge, unfold_badge_numeric, unfold_link
-from shopman.utils.monetary import format_money
-from unfold.admin import ModelAdmin
+from shopman.cashman.models import Terminal
+from shopman.utils import unfold_badge, unfold_link
 from unfold.widgets import (
     UnfoldAdminIntegerFieldWidget,
     UnfoldAdminSelectWidget,
@@ -14,7 +21,6 @@ from unfold.widgets import (
     UnfoldBooleanSwitchWidget,
 )
 
-from shopman.backstage.models import CashMovement, CashShift, POSTerminal
 from shopman.backstage.services.pos_hardware import (
     ADAPTER_AGENT,
     ADAPTER_MANUAL,
@@ -25,129 +31,7 @@ from shopman.backstage.services.pos_hardware import (
 )
 
 
-class CashMovementInline(admin.TabularInline):
-    model = CashMovement
-    extra = 0
-    # `approved_by` fica ao lado de `created_by`: a retirada tem duas assinaturas,
-    # e a conferência da retaguarda precisa ver as duas juntas.
-    readonly_fields = ("movement_type", "amount_display", "reason", "created_by", "approved_by", "created_at")
-    fields = ("movement_type", "amount_display", "reason", "created_by", "approved_by", "created_at")
-
-    def amount_display(self, obj):
-        return f"R$ {format_money(obj.amount_q)}"
-    amount_display.short_description = "Valor"
-
-    def has_add_permission(self, request, obj=None):
-        return False
-
-
-@admin.register(CashShift)
-class CashShiftAdmin(ModelAdmin):
-    list_display = ("operator", "terminal", "opened_at", "status_display", "opening_display", "closing_display", "difference_display")
-    list_filter = ("status", "terminal", "opened_at")
-    # ``operator`` é FK para User: buscar nele direto vira ``operator__icontains``,
-    # que o Django recusa em relação — e o erro derruba a BUSCA GLOBAL inteira, não
-    # só esta tela. Atravesse a relação até os campos de texto do usuário.
-    search_fields = (
-        "operator__username",
-        "operator__first_name",
-        "operator__last_name",
-        "terminal__ref",
-        "terminal__label",
-    )
-    # ``notes`` é editável (gerente anota/corrige um turno fechado); a alteração
-    # fica registrada no histórico do admin (LogEntry: quem/quando). Os valores
-    # financeiros permanecem read-only (mutados só via PDV/serviço).
-    readonly_fields = (
-        "terminal", "operator", "opened_at", "closed_at", "status",
-        "opening_display", "closing_display", "expected_display", "difference_display",
-    )
-    inlines = [CashMovementInline]
-    ordering = ["-opened_at"]
-    list_fullwidth = True
-    compressed_fields = True
-
-    def status_display(self, obj):
-        if obj.status == CashShift.Status.OPEN:
-            return unfold_badge("aberto", "yellow")
-        return unfold_badge("fechado", "green")
-    status_display.short_description = "Status"
-
-    def opening_display(self, obj):
-        return unfold_badge_numeric(f"R$ {format_money(obj.opening_amount_q)}", "base")
-    opening_display.short_description = "Abertura"
-
-    def closing_display(self, obj):
-        if obj.blind_closing_amount_q is None:
-            return "—"
-        return unfold_badge_numeric(f"R$ {format_money(obj.blind_closing_amount_q)}", "base")
-    closing_display.short_description = "Fechamento"
-
-    def expected_display(self, obj):
-        if obj.expected_amount_q is None:
-            return "—"
-        return f"R$ {format_money(obj.expected_amount_q)}"
-    expected_display.short_description = "Esperado"
-
-    def difference_display(self, obj):
-        if obj.difference_q is None:
-            return "—"
-        sign = "+" if obj.difference_q >= 0 else ""
-        color = "green" if obj.difference_q == 0 else "yellow"
-        return unfold_badge_numeric(f"{sign}R$ {format_money(obj.difference_q)}", color)
-    difference_display.short_description = "Diferença"
-
-    def has_add_permission(self, request):
-        return False
-
-    def has_view_permission(self, request, obj=None):
-        return request.user.has_perm("backstage.operate_pos")
-
-
-@admin.register(CashMovement)
-class CashMovementAdmin(ModelAdmin):
-    """Trilha readonly de sangria/suprimento.
-
-    Movimentos nascem no PDV (POST ``pos/cash/movement/``); o Admin só lista e
-    inspeciona a trilha de auditoria.
-    """
-
-    list_display = ("shift", "movement_type", "amount_display", "reason", "created_by", "approved_by", "created_at")
-    list_filter = ("movement_type", "created_at")
-    # ``shift__operator`` também para numa FK (User): atravessa mais um salto.
-    # ``created_by``/``approved_by`` aqui são texto, não relação — esses ficam.
-    search_fields = (
-        "shift__operator__username",
-        "shift__operator__first_name",
-        "reason",
-        "created_by",
-        "approved_by",
-    )
-    readonly_fields = ("created_by", "approved_by", "created_at")
-    ordering = ["-created_at"]
-    compressed_fields = True
-
-    def amount_display(self, obj):
-        return f"R$ {format_money(obj.amount_q)}"
-    amount_display.short_description = "Valor"
-
-    def has_change_permission(self, request, obj=None):
-        return False
-
-    def has_delete_permission(self, request, obj=None):
-        return False
-
-    def has_add_permission(self, request):
-        return False
-
-    def has_view_permission(self, request, obj=None):
-        return request.user.has_perm("backstage.operate_pos")
-
-    def has_module_permission(self, request):
-        return request.user.has_perm("backstage.operate_pos")
-
-
-class POSTerminalForm(forms.ModelForm):
+class TerminalForm(forms.ModelForm):
     """Config da gaveta em campos de verdade, não num JSON para o dono decorar.
 
     O schema mora na dataclass (`CashDrawerConfig`); este form é só a tela dela.
@@ -219,7 +103,7 @@ class POSTerminalForm(forms.ModelForm):
     )
 
     class Meta:
-        model = POSTerminal
+        model = Terminal
         fields = ("ref", "label", "channel_ref", "location_ref", "is_active")
 
     def __init__(self, *args, **kwargs):
@@ -285,13 +169,17 @@ class POSTerminalForm(forms.ModelForm):
         return instance
 
 
-@admin.register(POSTerminal)
-class POSTerminalAdmin(ModelAdmin):
-    form = POSTerminalForm
-    list_display = ("ref", "label", "channel_ref", "health_display", "is_active")
-    list_filter = ("is_active", "channel_ref")
-    search_fields = ("ref", "label", "channel_ref")
-    ordering = ("ref",)
+# A base é o que o pacote REGISTROU (``shopman.cashman.contrib.admin_unfold``),
+# lida do site em vez de importada: a superfície não entra no contrib do Core
+# (fronteira de imports), ela herda do que o Core pôs no Admin.
+_CashmanTerminalAdmin = type(admin.site._registry[Terminal])
+
+
+class TerminalAdmin(_CashmanTerminalAdmin):
+    """O Admin do pacote, mais a gaveta (form) e a saúde do balcão (coluna)."""
+
+    form = TerminalForm
+    list_display = ("ref", "label", "channel_ref", "health_display", "active_badge")
     readonly_fields = ("health_display", "drawer_install_display")
     fieldsets = (
         (None, {"fields": ("ref", "label", "channel_ref", "location_ref", "is_active", "health_display")}),
@@ -309,7 +197,6 @@ class POSTerminalAdmin(ModelAdmin):
             },
         ),
     )
-    compressed_fields = True
 
     def drawer_install_display(self, obj):
         """Ponte para a tela que entrega o agente e o comando pronto.
@@ -341,3 +228,10 @@ class POSTerminalAdmin(ModelAdmin):
         label, color = self._HEALTH.get(profile.status, (profile.status, "base"))
         return unfold_badge(label, color)
     health_display.short_description = "saúde"
+
+
+# Registrar por cima do contrib: o backstage vem depois do cashman no
+# INSTALLED_APPS, então o Admin do pacote já está no site quando este módulo
+# importa. Tirar e pôr é o jeito honesto de dizer "aqui a superfície manda".
+admin.site.unregister(Terminal)
+admin.site.register(Terminal, TerminalAdmin)

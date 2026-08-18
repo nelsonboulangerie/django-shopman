@@ -206,10 +206,10 @@ describe("usePosCashSession — o comprovante sai sozinho e o resultado é regis
       if (path.endsWith("/receipt/") && opts2?.method === "GET") {
         return Promise.resolve({ payload_b64: "SEVMTE8=", title: "comprovante:sangria" });
       }
-      if (path.includes("/cash/movement/") && !path.endsWith("/receipt/")) {
-        return Promise.resolve({ ok: true, movement_id: 77 });
+      if (path.includes("/cash/movement/")) {
+        return Promise.resolve({ ok: true, entry_id: 77 });
       }
-      return Promise.resolve({ ok: true, movement_id: 77 });
+      return Promise.resolve({ ok: true, entry_id: 77 });
     });
 
     const made = makeCashSession({
@@ -225,6 +225,8 @@ describe("usePosCashSession — o comprovante sai sozinho e o resultado é regis
     await new Promise((r) => setTimeout(r, 10));
 
     expect(agentCalls.some((u) => u.endsWith("/print"))).toBe(true);
+    // O comprovante sai da LINHA do livro (`entry_id`), não de um "movimento".
+    expect(servidor.some((c) => c.path === "/api/v1/backstage/pos/cash/entry/77/receipt/")).toBe(true);
     const registro = servidor.find((c) => c.path.endsWith("/receipt/") && c.body);
     expect(registro?.body).toMatchObject({ status: "printed" });
   });
