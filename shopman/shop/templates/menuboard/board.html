@@ -45,26 +45,25 @@
 </head>
 <body>
   {% comment %}
-    A TV desenha SEM JavaScript. O quadro é renderizado aqui pelo servidor, e o
-    Alpine só assume depois que carrega — para atualizar ao vivo pelo SSE.
+    DUAS PINTURAS, e a do servidor não depende de nada.
 
-    Antes, tudo vivia dentro de `x-cloak` e dependia do Alpine para aparecer. Um
-    CDN fora do ar deixava a tela da loja em branco com o servidor saudável e o
-    cardápio já embutido no HTML. Kiosk não pode depender de rede externa para
-    mostrar o que já tem em mãos.
+    A de baixo (Alpine) só existe para seguir o SSE. Ela nasce com `x-cloak` e o
+    Alpine a revela; a de cima é HTML puro, SEM NENHUMA DIRETIVA, e some só
+    quando o Alpine consegue rodar e a esconde de dentro do `init()`.
 
-    `hydrated` faz a troca: falso enquanto o Alpine não roda (o servidor manda),
-    verdadeiro depois do init (o Alpine manda). Sem Alpine ele nunca vira, o
-    bloco do servidor fica, e a única coisa perdida é a atualização automática.
+    A ordem importa e foi aprendida na tela: a versão anterior punha
+    `x-show="!hydrated"` no bloco do servidor. Expressão do Alpine que FALHA é
+    tratada como falsa, então o bloco do servidor era escondido justamente
+    quando o Alpine estava quebrado — falhava fechado. Agora falha aberto: sem
+    Alpine, o cardápio fica.
   {% endcomment %}
-  <div class="board" x-data="menuboard()" x-init="init()">
-    <header>
-      <h1 x-text="hydrated ? board.title : null">{{ board.title }}</h1>
-      <div class="subtitle" x-text="hydrated ? board.subtitle : null">{{ board.subtitle }}</div>
-    </header>
 
-    {# Pintura do servidor: some quando o Alpine assume. #}
-    <div class="cols" x-show="!hydrated">
+  <div id="menuboard-server">
+    <header>
+      <h1>{{ board.title }}</h1>
+      <div class="subtitle">{{ board.subtitle }}</div>
+    </header>
+    <div class="cols">
       {% for group in board.groups %}
         <section>
           <div class="section-title">{{ group.title }}</div>
@@ -85,9 +84,17 @@
         </section>
       {% endfor %}
     </div>
+    {% if not board.groups %}<div class="empty">Sem itens no momento.</div>{% endif %}
+    <footer><span class="live-dot stale"></span><span>cardápio do servidor</span></footer>
+  </div>
 
-    {# Pintura do Alpine: entra quando ele carrega e passa a seguir o SSE. #}
-    <div class="cols" x-show="hydrated" x-cloak>
+  <div class="board" id="menuboard-root" data-ref="{{ ref }}"
+       x-data="menuboard()" x-init="init()" x-cloak>
+    <header>
+      <h1 x-text="board.title"></h1>
+      <div class="subtitle" x-text="board.subtitle"></div>
+    </header>
+    <div class="cols">
       <template x-for="group in board.groups" :key="group.title">
         <section>
           <div class="section-title" x-text="group.title"></div>
@@ -105,55 +112,22 @@
         </section>
       </template>
     </div>
-
-    {% if not board.groups %}<div class="empty" x-show="!hydrated">Sem itens no momento.</div>{% endif %}
-    <div class="empty" x-show="hydrated && totalItems === 0" x-cloak>Sem itens no momento.</div>
-
+    <div class="empty" x-show="totalItems === 0">Sem itens no momento.</div>
     <footer>
       <span class="live-dot" :class="{ stale: !live }"></span>
-      {# Sem Alpine não há SSE: dizer "ao vivo" ali seria promessa falsa. #}
-      <span x-text="hydrated ? (live ? 'ao vivo' : 'reconectando…') : null">cardápio do servidor</span>
+      <span x-text="live ? 'ao vivo' : 'reconectando…'"></span>
     </footer>
   </div>
 
-  {# Servido por nós: ver shopman/shop/static/shop/vendor/README.md #}
+  {% comment %}
+    Estado inicial como DADO, não como código: `type="application/json"` não é
+    executado, então o CSP não o bloqueia. Era o `{{ initial }}` embutido num
+    `<script>` executável que ia junto com o script inline barrado.
+  {% endcomment %}
+  <script id="menuboard-initial" type="application/json">{{ initial|safe }}</script>
+
+  {# Servidos por nós: ver shopman/shop/static/shop/vendor/README.md #}
+  <script src="{% static 'shop/js/menuboard.js' %}"></script>
   <script src="{% static 'shop/vendor/alpine-3.14.1.min.js' %}" defer></script>
-  <script>
-    // Componente Alpine do quadro. Estado inicial embutido (paint imediato); SSE no
-    // canal público stock-{ref} que o motor de disponibilidade já emite ao pausar/
-    // reprecificar; poll de fallback a cada 30s.
-    function menuboard() {
-      var ref = "{{ ref|escapejs }}";
-      return {
-        hydrated: false,
-        board: {{ initial|safe }},
-        live: true,
-        get totalItems() { return (this.board.groups || []).reduce(function (n, g) { return n + (g.items || []).length; }, 0); },
-        brl: function (q) { return "R$ " + ((q || 0) / 100).toFixed(2).replace(".", ","); },
-        refresh: function () {
-          var self = this;
-          fetch("/menuboard/" + ref + "/data/", { headers: { accept: "application/json" }, credentials: "same-origin" })
-            .then(function (r) { return r.ok ? r.json() : null; })
-            .then(function (b) { if (b) { self.board = b; self.live = true; } })
-            .catch(function () { self.live = false; });
-        },
-        init: function () {
-          var self = this;
-          // A partir daqui quem desenha é o Alpine: o bloco do servidor sai de
-          // cena e o dele entra. Sem esta linha os dois apareceriam juntos.
-          this.hydrated = true;
-          try {
-            var es = new EventSource("/menuboard/" + ref + "/events/");
-            var onEvt = function () { self.refresh(); };
-            es.onmessage = onEvt;
-            ["listing-changed", "product-paused", "stock-update"].forEach(function (t) { es.addEventListener(t, onEvt); });
-            es.onopen = function () { self.live = true; };
-            es.onerror = function () { self.live = false; };
-          } catch (e) { self.live = false; }
-          setInterval(function () { self.refresh(); }, 30000);
-        },
-      };
-    }
-  </script>
 </body>
 </html>

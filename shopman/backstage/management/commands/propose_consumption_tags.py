@@ -26,6 +26,9 @@ from __future__ import annotations
 
 from django.core.management.base import BaseCommand
 
+# A tabela mora no service, junto da regra que a usa — uma pergunta, um dono.
+from shopman.backstage.services.consumption import CATEGORY_READING
+
 # Coleção do catálogo → leitura. Visível de propósito: é uma regra de negócio,
 # não um detalhe, e quem discordar tem de conseguir apontar a linha.
 COLLECTION_READING: dict[str, str] = {
@@ -45,37 +48,6 @@ COLLECTION_READING: dict[str, str] = {
 
 # Palavra na categoria do histórico → leitura. Só entra quando o SKU não está
 # em nenhuma coleção viva: o catálogo de hoje manda mais que o rótulo de ontem.
-HISTORICAL_KEYWORD_READING: tuple[tuple[str, str], ...] = (
-    # ⚠️ A ORDEM MANDA: a primeira palavra que casar vence. Por isso o
-    # específico vem antes do genérico — "pães finos" antes de "pão", senão
-    # 38.369 linhas de viennoiserie cairiam em "leva".
-    #
-    # As categorias abaixo são as do export real do Yooga, medidas em 18/08
-    # (linhas afetadas entre parênteses), e as leituras são decisão do dono.
-    ("pães finos", "hybrid"),          # 38.369 — viennoiserie serve aos dois usos
-    ("paes finos", "hybrid"),
-    ("sanduíche", "anchor"),           # 907 — tartine é prato montado, come aqui
-    ("sanduiche", "anchor"),
-    ("tartine", "anchor"),
-    ("sobremesa", "anchor"),           # 108 — decisão do dono: consumo local
-    ("pães rústicos", "takeaway"),     # 15.299
-    ("paes rusticos", "takeaway"),
-    ("café", "anchor"),                # 5.211
-    ("cafe", "anchor"),
-    ("bebida", "anchor"),
-    ("suco", "anchor"),
-    ("refri", "anchor"),
-    ("mercearia", "takeaway"),
-    ("doce", "hybrid"),
-    ("salgado", "hybrid"),
-    ("confeitaria", "hybrid"),
-    ("lanche", "anchor"),              # lanche montado come aqui, como a tartine
-    # Genéricos por último: só pegam o que os específicos não pegaram.
-    ("pão", "takeaway"),
-    ("pao", "takeaway"),
-    ("padaria", "takeaway"),
-)
-
 # "Combos" fica de fora de propósito: um bundle não tem vocação própria — ele
 # herda a dos componentes, e propor uma leitura para ele a partir da coleção
 # seria inventar. Fica para a curadoria, que é onde ele já está.
@@ -162,20 +134,31 @@ class Command(BaseCommand):
         from shopman.backstage.models import HistoricalSaleItem
 
         proposals: list[tuple[str, str, str]] = []
-        uncovered: list[str] = []
+        uncovered: set[str] = set()
         seen: dict[str, str] = {}
-        rows = HistoricalSaleItem.objects.exclude(sku="").values_list("sku", "category").distinct()
+        # ⚠️ `.order_by()` limpando o ordering do Meta é OBRIGATÓRIO antes do
+        # `.distinct()`: o Django acrescenta as colunas do ORDER BY ao SELECT, e
+        # com `ordering = ["sale", "seq"]` o DISTINCT passava a ser sobre
+        # (sku, categoria, venda, linha) — ou seja, não deduplicava nada. O
+        # comando varria 380 mil linhas para achar ~150 pares, e a lista de
+        # não-cobertos repetia o mesmo SKU centenas de vezes.
+        rows = (
+            HistoricalSaleItem.objects.exclude(sku="")
+            .order_by()
+            .values_list("sku", "category")
+            .distinct()
+        )
         for sku, category in rows:
             if sku in already or sku in proposed_skus or sku in conflicted or sku in seen:
                 continue
             lowered = (category or "").lower()
-            for needle, reading in HISTORICAL_KEYWORD_READING:
+            for needle, reading in CATEGORY_READING:
                 if needle in lowered:
                     seen[sku] = reading
                     proposals.append((sku, reading, "categoria do histórico"))
                     break
             else:
-                uncovered.append(sku)
+                uncovered.add(sku)
         return proposals, sorted(uncovered)
 
     def _report(self, proposals, conflicted, uncovered, historical_uncovered, *, dry_run):

@@ -37,6 +37,63 @@ MODE_LABELS: dict[str, str] = {
     UNCLASSIFIED: "(sem etiqueta)",
 }
 
+CATEGORY_READING: tuple[tuple[str, str], ...] = (
+    # ⚠️ A ORDEM MANDA: a primeira palavra que casar vence. Por isso o
+    # específico vem antes do genérico — "pães finos" antes de "pão", senão
+    # 38.369 linhas de viennoiserie cairiam em "leva".
+    #
+    # As categorias abaixo são as do export real do Yooga, medidas em 18/08
+    # (linhas afetadas entre parênteses), e as leituras são decisão do dono.
+    ("pães finos", "hybrid"),          # 38.369 — viennoiserie serve aos dois usos
+    ("paes finos", "hybrid"),
+    ("sanduíche", "anchor"),           # 907 — tartine é prato montado, come aqui
+    ("sanduiche", "anchor"),
+    ("tartine", "anchor"),
+    ("sobremesa", "anchor"),           # 108 — decisão do dono: consumo local
+    ("pães rústicos", "takeaway"),     # 15.299
+    ("paes rusticos", "takeaway"),
+    ("café", "anchor"),                # 5.211
+    ("cafe", "anchor"),
+    ("bebida", "anchor"),
+    ("suco", "anchor"),
+    ("refri", "anchor"),
+    ("mercearia", "takeaway"),
+    ("chai", "anchor"),                # 290 — "Festival Chai" é bebida (dono, 18/08).
+                                       # Vem DEPOIS de mercearia: a lata de chai
+                                       # da prateleira é compra, não consumo.
+    ("doce", "hybrid"),
+    ("salgado", "hybrid"),
+    ("confeitaria", "hybrid"),
+    ("lanche", "anchor"),              # lanche montado come aqui, como a tartine
+    # Genéricos por último: só pegam o que os específicos não pegaram.
+    ("pão", "takeaway"),
+    ("pao", "takeaway"),
+    ("padaria", "takeaway"),
+)
+
+
+def reading_for(sku: str, category: str, sku_readings: dict[str, str]) -> str | None:
+    """A leitura de UMA linha: etiqueta do SKU primeiro, categoria como reserva.
+
+    ⚠️ A reserva não é luxo: **27.177 linhas do histórico não têm SKU** — 11.688
+    delas são bebidas (Coca-Cola 350ml, chás gelados) e 3.670 são cafés. Sem a
+    reserva, essas linhas ficam invisíveis para a regra, e as vendas em que elas
+    aparecem deixam de ser consumo local. Medido sobre os dois anos: 19,2% → 23,5%
+    de "consumiu aqui", e o não classificado cai de 7,3% para 6,1%.
+
+    A etiqueta do SKU vence sempre que existe: ela é curadoria, a categoria é o
+    rótulo do sistema antigo.
+    """
+    etiqueta = sku_readings.get(sku or "")
+    if etiqueta is not None:
+        return etiqueta
+    lowered = (category or "").lower()
+    for needle, reading in CATEGORY_READING:
+        if needle in lowered:
+            return reading
+    return None
+
+
 def sku_readings() -> dict[str, str]:
     """SKU → leitura, a partir do catálogo etiquetado. Uma consulta por leitura."""
     from shopman.backstage.models import ProductConsumptionTag

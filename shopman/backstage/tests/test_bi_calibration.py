@@ -330,13 +330,14 @@ def test_the_seed_is_the_source_and_wins_over_an_admin_edit():
 @pytest.mark.parametrize(
     "category,expected,linhas",
     [
-        ("Pães Finos", "hybrid", 38369),
-        ("Pães Rústicos", "takeaway", 15299),
-        ("Cafés", "anchor", 5211),
-        ("Sanduíches & Tartines", "anchor", 907),
-        ("Sobremesas", "anchor", 108),
-        ("Mercearia", "takeaway", 33),
-        ("Bebidas", "anchor", 24),
+        ("Pães Finos", "hybrid", 227167),
+        ("Pães Rústicos", "takeaway", 89328),
+        ("Cafés", "anchor", 30973),
+        ("Sanduíches & Tartines", "anchor", 4216),
+        ("Sobremesas", "anchor", 633),
+        ("Mercearia", "takeaway", 71),
+        ("Festival Chai", "anchor", 290),
+        ("Bebidas", "anchor", 11728),
     ],
 )
 def test_every_real_yooga_category_reads_as_the_owner_decided(category, expected, linhas):
@@ -346,12 +347,10 @@ def test_every_real_yooga_category_reads_as_the_owner_decided(category, expected
     com ela e a mandaria para "leva", quando a viennoiserie é híbrida. São 38.369
     linhas — errar aqui inclinaria o retrato inteiro dos dois anos.
     """
-    from shopman.backstage.management.commands.propose_consumption_tags import (
-        HISTORICAL_KEYWORD_READING,
-    )
+    from shopman.backstage.services.consumption import CATEGORY_READING
 
     lowered = category.lower()
-    for needle, reading in HISTORICAL_KEYWORD_READING:
+    for needle, reading in CATEGORY_READING:
         if needle in lowered:
             assert reading == expected, (
                 f"{category} ({linhas} linhas) casou '{needle}' → {reading}, "
@@ -363,13 +362,38 @@ def test_every_real_yooga_category_reads_as_the_owner_decided(category, expected
 
 def test_the_specific_keyword_beats_the_generic_one():
     """A guarda é a ORDEM: genérico antes de específico apagaria a decisão."""
-    from shopman.backstage.management.commands.propose_consumption_tags import (
-        HISTORICAL_KEYWORD_READING,
-    )
+    from shopman.backstage.services.consumption import CATEGORY_READING
 
-    order = [needle for needle, _ in HISTORICAL_KEYWORD_READING]
+    order = [needle for needle, _ in CATEGORY_READING]
     for specific, generic in (("pães finos", "pão"), ("pães rústicos", "pão"),
                               ("sanduíche", "pão"), ("mercearia", "pão")):
         assert order.index(specific) < order.index(generic), (
             f"'{specific}' precisa vir antes de '{generic}' — a primeira que casa vence"
         )
+
+
+@pytest.mark.django_db
+def test_historical_scan_deduplicates_by_sku(roles):
+    """O `Meta.ordering` do model quebrava o `.distinct()`.
+
+    O Django acrescenta as colunas do ORDER BY ao SELECT, então
+    `values_list("sku","category").distinct()` virava distinct sobre
+    (sku, categoria, venda, linha) — nada deduplicado. O comando varria 380 mil
+    linhas para achar ~150 pares, e a lista de não-cobertos repetia o mesmo SKU
+    centenas de vezes na tela.
+    """
+    from shopman.backstage.management.commands.propose_consumption_tags import Command
+
+    sale = HistoricalSale.objects.create(
+        source="yooga", external_id=1, occurred_at=timezone.now() - timedelta(days=1),
+        total_q=1000, payment="PIX",
+    )
+    for seq in range(5):
+        HistoricalSaleItem.objects.create(
+            sale=sale, seq=seq, product_name="Desconhecido", sku="XPTO",
+            category="Categoria Que Ninguém Mapeou", qty=Decimal("1"),
+            unit_price_q=200, line_total_q=200,
+        )
+
+    _proposals, uncovered = Command()._historical(set(), set(), [])
+    assert uncovered == ["XPTO"], f"SKU repetido na lista: {uncovered}"
