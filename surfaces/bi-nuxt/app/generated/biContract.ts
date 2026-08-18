@@ -107,11 +107,21 @@ export interface BICashDay {
   suprimento_q: number;
 }
 
-/** BICashOperatorRow(operator: 'str', shifts: 'int', difference_q: 'int') */
+/** BICashOperatorRow(operator: 'str', shifts: 'int', difference_q: 'int', drawer_openings: 'int', drawer_unlocks: 'int', change_requests: 'int') */
 export interface BICashOperatorRow {
   operator: string;
   shifts: number;
   difference_q: number;
+  drawer_openings: number;
+  drawer_unlocks: number;
+  change_requests: number;
+}
+
+/** Uma hora do dia com atividade de gaveta. Só horas com algo aparecem. */
+export interface BICashHourRow {
+  hour: number;
+  drawer_openings: number;
+  drawer_unlocks: number;
 }
 
 /** BICashMethodRow(method: 'str', amount_q: 'int') */
@@ -129,7 +139,7 @@ export interface BICashPrevious {
   difference_by_day: number[];
 }
 
-/** BICashReport(date_from: 'str', date_to: 'str', days: 'tuple[BICashDay, ...]', by_operator: 'tuple[BICashOperatorRow, ...]', payment_methods: 'tuple[BICashMethodRow, ...]', shifts_total: 'int', difference_total_q: 'int', closings_missing: 'int', previous: 'BICashPrevious') */
+/** BICashReport(date_from: 'str', date_to: 'str', days: 'tuple[BICashDay, ...]', by_operator: 'tuple[BICashOperatorRow, ...]', payment_methods: 'tuple[BICashMethodRow, ...]', shifts_total: 'int', difference_total_q: 'int', closings_missing: 'int', previous: 'BICashPrevious', drawer_by_hour: 'tuple[BICashHourRow, ...]') */
 export interface BICashReport {
   date_from: string;
   date_to: string;
@@ -140,6 +150,7 @@ export interface BICashReport {
   difference_total_q: number;
   closings_missing: number;
   previous: BICashPrevious;
+  drawer_by_hour: BICashHourRow[];
 }
 
 /** BICustomerSegmentRow(segment: 'str', customers: 'int') */

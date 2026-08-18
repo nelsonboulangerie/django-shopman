@@ -45,6 +45,20 @@ const methodRows = computed(() =>
 const sangriaTotal = computed(() =>
   (report.value?.days ?? []).reduce((sum, day) => sum + day.sangria_q, 0),
 );
+
+// Gaveta por hora do dia, do log de eventos do PDV. Aberturas sem venda e
+// destraves da trava juntos na barra; o destrave vai no detalhe porque é a
+// exceção (gerente com PIN), e exceção se lê separada.
+const drawerHourRows = computed(() =>
+  (report.value?.drawer_by_hour ?? []).map((row) => ({
+    label: `${String(row.hour).padStart(2, "0")}h`,
+    value: row.drawer_openings + row.drawer_unlocks,
+    display: formatInt(row.drawer_openings + row.drawer_unlocks),
+    hint: row.drawer_unlocks
+      ? `${formatInt(row.drawer_unlocks)} destrave${row.drawer_unlocks === 1 ? "" : "s"} por gerente`
+      : undefined,
+  })),
+);
 </script>
 
 <template>
@@ -90,13 +104,16 @@ const sangriaTotal = computed(() =>
       <div class="grid gap-4 lg:grid-cols-2">
         <section class="rounded-md border border-border bg-card p-3">
           <h2 class="text-lg font-semibold text-foreground">Por operador</h2>
-          <p class="mb-3 text-xs text-muted-foreground">Quebra acumulada no período</p>
+          <p class="mb-3 text-xs text-muted-foreground">Quebra acumulada, aberturas de gaveta sem venda, destraves por gerente e pedidos de troco no período</p>
           <table v-if="report.by_operator.length" class="w-full text-sm">
             <thead>
               <tr class="border-b border-border text-left text-xs font-medium text-muted-foreground">
                 <th class="pb-2 font-medium">Operador</th>
                 <th class="pb-2 text-right font-medium">Turnos</th>
                 <th class="pb-2 text-right font-medium">Quebra</th>
+                <th class="pb-2 text-right font-medium">Gaveta</th>
+                <th class="pb-2 text-right font-medium">Destraves</th>
+                <th class="pb-2 text-right font-medium">Troco</th>
               </tr>
             </thead>
             <tbody>
@@ -109,10 +126,18 @@ const sangriaTotal = computed(() =>
                 >
                   {{ formatMoney(row.difference_q) }}
                 </td>
+                <td class="py-2 text-right tabular-nums text-foreground">{{ formatInt(row.drawer_openings) }}</td>
+                <td
+                  class="py-2 text-right tabular-nums"
+                  :class="row.drawer_unlocks ? 'font-semibold text-foreground' : 'text-muted-foreground'"
+                >
+                  {{ formatInt(row.drawer_unlocks) }}
+                </td>
+                <td class="py-2 text-right tabular-nums text-foreground">{{ formatInt(row.change_requests) }}</td>
               </tr>
             </tbody>
           </table>
-          <p v-else class="text-sm text-muted-foreground">Nenhum turno fechado no período.</p>
+          <p v-else class="text-sm text-muted-foreground">Nenhum turno fechado nem evento de caixa no período.</p>
         </section>
         <section class="rounded-md border border-border bg-card p-3">
           <h2 class="text-lg font-semibold text-foreground">Meios de pagamento</h2>
@@ -121,6 +146,13 @@ const sangriaTotal = computed(() =>
           <p v-else class="text-sm text-muted-foreground">Nenhum fechamento na janela ainda.</p>
         </section>
       </div>
+
+      <section class="rounded-md border border-border bg-card p-3">
+        <h2 class="text-lg font-semibold text-foreground">Gaveta por hora do dia</h2>
+        <p class="mb-3 text-xs text-muted-foreground">Aberturas sem venda e destraves da trava, do log de eventos do PDV</p>
+        <ChartHBarList v-if="drawerHourRows.length" :rows="drawerHourRows" />
+        <p v-else class="text-sm text-muted-foreground">Nenhuma abertura de gaveta sem venda no período.</p>
+      </section>
     </template>
   </main>
 </template>
