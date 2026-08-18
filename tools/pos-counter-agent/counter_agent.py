@@ -1137,7 +1137,28 @@ def _servico_ativo(nome: str) -> bool:
 
 
 #: `DLE EOT 3` — status em tempo real do conector da gaveta.
-_DRAWER_STATUS_QUERY = bytes([0x10, 0x04, 0x03])
+#: `DLE EOT n` - status em tempo real. O `n` escolhe QUAL status.
+#:
+#: ⚠️ Perguntamos os quatro, e nao so o que eu acho ser o certo. A primeira
+#: versao usou `n=3` (status de ERRO) e o balcao devolveu 0x12 com a gaveta
+#: fechada E aberta - o byte estava certo, a pergunta e que era outra. Pelo
+#: manual o pino da gaveta vive no `n=1` (status da impressora, bit 2), mas
+#: perguntar os quatro custa milissegundos e dispensa eu estar certo: quem
+#: responde qual muda e a impressora, nao a minha memoria.
+_DRAWER_STATUS_QUERIES = {
+    1: "status da impressora",
+    2: "status offline",
+    3: "status de erro",
+    4: "sensor de papel",
+}
+
+
+def _status_query(n: int) -> bytes:
+    return bytes([0x10, 0x04, n])
+
+
+#: Compatibilidade interna: os leitores de UMA pergunta ainda usam este.
+_DRAWER_STATUS_QUERY = _status_query(1)
 
 
 def _dispositivos_possiveis() -> list[Path]:
@@ -1148,7 +1169,7 @@ def _dispositivos_possiveis() -> list[Path]:
     return achados
 
 
-def _ler_pino(device: Path, *, timeout: float = 2.0) -> tuple[int | None, str]:
+def _ler_pino(device: Path, *, query: bytes = _DRAWER_STATUS_QUERY, timeout: float = 2.0) -> tuple[int | None, str]:
     """Pergunta o estado e lê UM byte. Devolve (byte, motivo-da-falha)."""
     import select
 
@@ -1159,7 +1180,7 @@ def _ler_pino(device: Path, *, timeout: float = 2.0) -> tuple[int | None, str]:
     except OSError as exc:
         return None, f"não consegui abrir {device}: {exc}"
     try:
-        os.write(fd, _DRAWER_STATUS_QUERY)
+        os.write(fd, query)
         pronto, _, _ = select.select([fd], [], [], timeout)
         if not pronto:
             return None, "a impressora não respondeu (o canal pode ser só de escrita)"
@@ -1169,6 +1190,48 @@ def _ler_pino(device: Path, *, timeout: float = 2.0) -> tuple[int | None, str]:
         return None, f"falha ao conversar com {device}: {exc}"
     finally:
         os.close(fd)
+
+
+def _varre_status(ler) -> dict[int, int]:
+    """Pergunta os quatro status e devolve {n: byte} do que respondeu.
+
+    `ler` e uma funcao que recebe a pergunta e devolve (byte, motivo) - assim o
+    mesmo varredor serve para o Linux, para o spooler e para o USB direto.
+    """
+    lidos: dict[int, int] = {}
+    for n in sorted(_DRAWER_STATUS_QUERIES):
+        byte, _motivo = ler(_status_query(n))
+        if byte is not None:
+            lidos[n] = byte
+    return lidos
+
+
+def _veredito_da_varredura(fechada: dict[int, int], aberta: dict[int, int]) -> int:
+    """Qual dos status muda com a gaveta - e o bit exato dentro dele."""
+    print("")
+    mudaram = []
+    for n, rotulo in sorted(_DRAWER_STATUS_QUERIES.items()):
+        f, a = fechada.get(n), aberta.get(n)
+        if f is None or a is None:
+            print(f"  DLE EOT {n} ({rotulo}): sem resposta")
+            continue
+        marca = "  <-- MUDOU" if f != a else ""
+        print(f"  DLE EOT {n} ({rotulo}): fechada 0x{f:02x} · aberta 0x{a:02x}{marca}")
+        if f != a:
+            mudaram.append((n, f, a))
+
+    if not mudaram:
+        print("\n  Nenhum dos quatro status muda com a gaveta.")
+        print("  A impressora responde, mas nao reporta o pino nesta montagem.")
+        print("  O que resta e o driver da Epson (OPOS/APD); se nem ele, o")
+        print("  controle de gaveta aberta tem que ser fisico (gaveta com alarme).\n")
+        return 1
+
+    n, f, a = mudaram[0]
+    print(f"\n  OK, FUNCIONA. `DLE EOT {n}`, bit 0x{f ^ a:02x}.")
+    print("  Da para o sistema saber quando a gaveta fica aberta.")
+    print("  Me mande estas linhas que eu ligo o alerta.\n")
+    return 0
 
 
 def _veredito_do_pino(fechada: int, aberta: int) -> int:
@@ -1279,7 +1342,7 @@ def _caminho_usb_windows() -> tuple[str, str]:
         setupapi.SetupDiDestroyDeviceInfoList(conjunto)
 
 
-def _ler_pino_usb_windows(*, timeout: float = 2.0) -> tuple[int | None, str]:
+def _ler_pino_usb_windows(*, query: bytes = _DRAWER_STATUS_QUERY, timeout: float = 2.0) -> tuple[int | None, str]:
     """Fala com o APARELHO, sem spooler. E o caminho de quem precisa de resposta."""
     import ctypes
     import time
@@ -1318,8 +1381,8 @@ def _ler_pino_usb_windows(*, timeout: float = 2.0) -> tuple[int | None, str]:
         return None, f"nao consegui abrir o dispositivo USB (erro {erro})"
     try:
         escritos = wintypes.DWORD(0)
-        buf = ctypes.create_string_buffer(_DRAWER_STATUS_QUERY, len(_DRAWER_STATUS_QUERY))
-        if not kernel32.WriteFile(h, buf, len(_DRAWER_STATUS_QUERY), ctypes.byref(escritos), None):
+        buf = ctypes.create_string_buffer(query, len(query))
+        if not kernel32.WriteFile(h, buf, len(query), ctypes.byref(escritos), None):
             return None, f"nao consegui perguntar ao aparelho (erro {ctypes.get_last_error()})"
 
         lido = wintypes.DWORD(0)
@@ -1334,7 +1397,7 @@ def _ler_pino_usb_windows(*, timeout: float = 2.0) -> tuple[int | None, str]:
         kernel32.CloseHandle(h)
 
 
-def _ler_pino_windows(queue: str, *, timeout: float = 2.0) -> tuple[int | None, str]:
+def _ler_pino_windows(queue: str, *, query: bytes = _DRAWER_STATUS_QUERY, timeout: float = 2.0) -> tuple[int | None, str]:
     """Pergunta o estado pelo spooler e tenta LER a resposta de volta.
 
     O agente ja conversa com o ``winspool.drv`` para imprimir (``OpenPrinter`` +
@@ -1391,8 +1454,8 @@ def _ler_pino_windows(queue: str, *, timeout: float = 2.0) -> tuple[int | None, 
         try:
             winspool.StartPagePrinter(handle)
             escritos = wintypes.DWORD(0)
-            buffer = ctypes.create_string_buffer(_DRAWER_STATUS_QUERY, len(_DRAWER_STATUS_QUERY))
-            if not winspool.WritePrinter(handle, buffer, len(_DRAWER_STATUS_QUERY), ctypes.byref(escritos)):
+            buffer = ctypes.create_string_buffer(query, len(query))
+            if not winspool.WritePrinter(handle, buffer, len(query), ctypes.byref(escritos)):
                 return None, f"nao consegui perguntar a impressora (erro {ctypes.get_last_error()})"
             winspool.EndPagePrinter(handle)
         finally:
@@ -1422,29 +1485,39 @@ def _drawer_status_windows() -> int:
     config = AgentConfig.load(DEFAULT_CONFIG_PATH)
     print(f"\nLendo pela impressora '{config.queue}' (spooler do Windows)")
 
-    leituras: list[int] = []
+    # Descobre UMA vez por qual caminho a impressora responde, e usa ele nas
+    # duas leituras. Redescobrir a cada pergunta imprimiria o "tentando falar
+    # direto" oito vezes e esconderia o resultado no meio do ruido.
+    def pelo_spooler(q):
+        return _ler_pino_windows(config.queue, query=q)
+
+    byte, motivo = pelo_spooler(_status_query(1))
+    ler = pelo_spooler
+    if byte is None:
+        print(f"  - pelo spooler: {motivo}")
+        print("  - tentando falar direto com o aparelho USB...")
+        byte, motivo_usb = _ler_pino_usb_windows(query=_status_query(1))
+        if byte is None:
+            print(f"  x {motivo_usb}")
+            print("\n  Nao da para ler o estado da gaveta nesta maquina.")
+            print("  Isso NAO e defeito da impressora: o comando existe e ela responde.")
+            print("  O caminho que resta e o driver da Epson (OPOS/APD), que expoe o")
+            print("  estado como funcao pronta - mas custa uma instalacao aqui.\n")
+            return 1
+        print("  (respondeu falando direto com o aparelho)")
+        ler = lambda q: _ler_pino_usb_windows(query=q)  # noqa: E731
+
+    varreduras: list[dict[int, int]] = []
     for rotulo in ("FECHADA", "ABERTA"):
         input(f"\n  Deixe a gaveta {rotulo} e tecle Enter... ")
-        byte, motivo = _ler_pino_windows(config.queue)
-        if byte is None:
-            # O spooler nao devolveu. Antes de desistir, fala DIRETO com o
-            # aparelho pelo usbprint.sys: e onde a bidirecionalidade sobrevive
-            # quando a fila de impressao a perde.
-            print(f"  - pelo spooler: {motivo}")
-            print("  - tentando falar direto com o aparelho USB...")
-            byte, motivo_usb = _ler_pino_usb_windows()
-            if byte is None:
-                print(f"  x {motivo_usb}")
-                print("\n  Nao da para ler o estado da gaveta nesta maquina.")
-                print("  Isso NAO e defeito da impressora: o comando existe e ela responde.")
-                print("  O caminho que resta e o driver da Epson (OPOS/APD), que expoe o")
-                print("  estado como funcao pronta - mas custa uma instalacao aqui.\n")
-                return 1
-            print("  (respondeu falando direto com o aparelho)")
-        leituras.append(byte)
-        print(f"  byte lido: 0x{byte:02x}")
+        lidos = _varre_status(ler)
+        if not lidos:
+            print("  x a impressora parou de responder no meio do teste")
+            return 1
+        varreduras.append(lidos)
+        print("  respondeu: " + " · ".join(f"EOT{n}=0x{b:02x}" for n, b in sorted(lidos.items())))
 
-    return _veredito_do_pino(leituras[0], leituras[1])
+    return _veredito_da_varredura(varreduras[0], varreduras[1])
 
 
 def drawer_status(argv: list[str]) -> int:
@@ -1466,20 +1539,21 @@ def drawer_status(argv: list[str]) -> int:
     device = Path(_arg_value(argv, "--device") or dispositivos[0])
     print(f"\nLendo pela {device}" + (f"  (outras: {', '.join(str(d) for d in dispositivos[1:])})" if len(dispositivos) > 1 else ""))
 
-    leituras: list[int] = []
+    varreduras: list[dict[int, int]] = []
     for rotulo in ("FECHADA", "ABERTA"):
         input(f"\n  Deixe a gaveta {rotulo} e tecle Enter... ")
-        byte, motivo = _ler_pino(device)
-        if byte is None:
+        lidos = _varre_status(lambda q: _ler_pino(device, query=q))
+        if not lidos:
+            byte, motivo = _ler_pino(device)
             print(f"  ✗ {motivo}")
             print("\n  Não dá para ler o estado da gaveta por este caminho.")
             print("  Isso NÃO é defeito: significa que o controle de gaveta aberta")
             print("  precisa ser físico (gaveta com alarme), não de software.\n")
             return 1
-        leituras.append(byte)
-        print(f"  byte lido: 0x{byte:02x}")
+        varreduras.append(lidos)
+        print("  respondeu: " + " · ".join(f"EOT{n}=0x{b:02x}" for n, b in sorted(lidos.items())))
 
-    return _veredito_do_pino(leituras[0], leituras[1])
+    return _veredito_da_varredura(varreduras[0], varreduras[1])
 
 
 def install(argv: list[str]) -> int:
