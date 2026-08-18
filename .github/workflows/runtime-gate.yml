@@ -50,6 +50,19 @@ jobs:
       - name: Migrations are committed
         run: .venv/bin/python manage.py makemigrations --check --dry-run
 
+      # `makemigrations --check` valida o GRAFO; ele não prova que as migrações
+      # APLICAM em ordem sobre um banco vazio. A distinção não é teórica: duas
+      # colisões de número aconteceram em 18/08, e o que provou nas duas vezes
+      # foi o `migrate` de banco zerado — que só existia como alvo local do
+      # Makefile, opcional, rodado na máquina de quem lembrava.
+      #
+      # Com o `strict` desligado (a fila de merge o tornou redundante), ninguém
+      # é mais obrigado a estar em dia com o main, então o hábito local deixou
+      # de ser garantia. Aqui ele passa a rodar na fila, contra a árvore que o
+      # merge produz — que é o único lugar onde a colisão existe.
+      - name: Migrations apply from an empty database
+        run: make test-migrations
+
       - name: Deploy checks
         env:
           DJANGO_DEBUG: "false"
