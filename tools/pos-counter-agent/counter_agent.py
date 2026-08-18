@@ -406,6 +406,18 @@ def _send_raw_windows(payload: bytes, *, queue: str, title: str) -> str:
         ]
 
     winspool.OpenPrinterW.argtypes = [wintypes.LPWSTR, ctypes.POINTER(wintypes.HANDLE), ctypes.c_void_p]
+    # As de HANDLE puro funcionam hoje por acaso: recebem um objeto ctypes, nao
+    # um int cru. Declaradas mesmo assim - a hora em que alguem passar um int
+    # (foi o que quebrou a leitura da gaveta) e a hora em que ninguem lembra
+    # desta distincao.
+    winspool.StartPagePrinter.argtypes = [wintypes.HANDLE]
+    winspool.StartPagePrinter.restype = wintypes.BOOL
+    winspool.EndPagePrinter.argtypes = [wintypes.HANDLE]
+    winspool.EndPagePrinter.restype = wintypes.BOOL
+    winspool.EndDocPrinter.argtypes = [wintypes.HANDLE]
+    winspool.EndDocPrinter.restype = wintypes.BOOL
+    winspool.ClosePrinter.argtypes = [wintypes.HANDLE]
+    winspool.ClosePrinter.restype = wintypes.BOOL
     winspool.StartDocPrinterW.argtypes = [wintypes.HANDLE, wintypes.DWORD, ctypes.POINTER(DOC_INFO_1)]
     winspool.WritePrinter.argtypes = [
         wintypes.HANDLE, ctypes.c_void_p, wintypes.DWORD, ctypes.POINTER(wintypes.DWORD)
@@ -470,6 +482,18 @@ def _probe_queue_windows(queue: str) -> dict:
 
     winspool = ctypes.WinDLL("winspool.drv", use_last_error=True)
     winspool.OpenPrinterW.argtypes = [wintypes.LPWSTR, ctypes.POINTER(wintypes.HANDLE), ctypes.c_void_p]
+    # As de HANDLE puro funcionam hoje por acaso: recebem um objeto ctypes, nao
+    # um int cru. Declaradas mesmo assim - a hora em que alguem passar um int
+    # (foi o que quebrou a leitura da gaveta) e a hora em que ninguem lembra
+    # desta distincao.
+    winspool.StartPagePrinter.argtypes = [wintypes.HANDLE]
+    winspool.StartPagePrinter.restype = wintypes.BOOL
+    winspool.EndPagePrinter.argtypes = [wintypes.HANDLE]
+    winspool.EndPagePrinter.restype = wintypes.BOOL
+    winspool.EndDocPrinter.argtypes = [wintypes.HANDLE]
+    winspool.EndDocPrinter.restype = wintypes.BOOL
+    winspool.ClosePrinter.argtypes = [wintypes.HANDLE]
+    winspool.ClosePrinter.restype = wintypes.BOOL
     handle = wintypes.HANDLE()
     if not winspool.OpenPrinterW(queue, ctypes.byref(handle), None):
         return {"ok": False, "accepting": False, "reason": f"impressora '{queue}' não encontrada no Windows"}
@@ -791,6 +815,11 @@ def _list_queues_windows() -> list[str]:
     flags = 0x00000002 | 0x00000004  # LOCAL | CONNECTIONS
     needed = wintypes.DWORD(0)
     returned = wintypes.DWORD(0)
+    winspool.EnumPrintersW.argtypes = [
+        wintypes.DWORD, wintypes.LPWSTR, wintypes.DWORD, ctypes.c_void_p,
+        wintypes.DWORD, ctypes.POINTER(wintypes.DWORD), ctypes.POINTER(wintypes.DWORD),
+    ]
+    winspool.EnumPrintersW.restype = wintypes.BOOL
     winspool.EnumPrintersW(flags, None, 4, None, 0, ctypes.byref(needed), ctypes.byref(returned))
     if not needed.value:
         return []
@@ -1182,17 +1211,43 @@ def _caminho_usb_windows() -> tuple[str, str]:
             ("Flags", wintypes.DWORD), ("Reserved", ctypes.POINTER(ctypes.c_ulong)),
         ]
 
-    guid = GUID()
+    # ⚠️ TODA funcao usada aqui precisa de `argtypes`. Sem isso o ctypes assume
+    # `int` de 32 bits para cada argumento, e o handle que o Windows devolve em
+    # 64 bits NAO CABE: a chamada morre com "int too long to convert" - erro que
+    # parece problema do GUID e nao e. Foi assim que a primeira versao quebrou no
+    # balcao, e quebrou duas vezes: na chamada e de novo no `finally`.
     ole32 = ctypes.WinDLL("ole32", use_last_error=True)
+    ole32.CLSIDFromString.argtypes = [wintypes.LPCWSTR, ctypes.POINTER(GUID)]
+    ole32.CLSIDFromString.restype = ctypes.c_long
+
+    setupapi.SetupDiGetClassDevsW.argtypes = [
+        ctypes.POINTER(GUID), wintypes.LPCWSTR, wintypes.HWND, wintypes.DWORD
+    ]
+    setupapi.SetupDiGetClassDevsW.restype = wintypes.HANDLE
+    setupapi.SetupDiEnumDeviceInterfaces.argtypes = [
+        wintypes.HANDLE, ctypes.c_void_p, ctypes.POINTER(GUID), wintypes.DWORD,
+        ctypes.POINTER(SP_DEVICE_INTERFACE_DATA),
+    ]
+    setupapi.SetupDiEnumDeviceInterfaces.restype = wintypes.BOOL
+    setupapi.SetupDiGetDeviceInterfaceDetailW.argtypes = [
+        wintypes.HANDLE, ctypes.POINTER(SP_DEVICE_INTERFACE_DATA), ctypes.c_void_p,
+        wintypes.DWORD, ctypes.POINTER(wintypes.DWORD), ctypes.c_void_p,
+    ]
+    setupapi.SetupDiGetDeviceInterfaceDetailW.restype = wintypes.BOOL
+    setupapi.SetupDiDestroyDeviceInfoList.argtypes = [wintypes.HANDLE]
+    setupapi.SetupDiDestroyDeviceInfoList.restype = wintypes.BOOL
+
+    guid = GUID()
     if ole32.CLSIDFromString(_GUID_USBPRINT, ctypes.byref(guid)) != 0:
         return "", "nao consegui montar o identificador da interface USB"
 
     DIGCF_PRESENT, DIGCF_DEVICEINTERFACE = 0x02, 0x10
-    setupapi.SetupDiGetClassDevsW.restype = wintypes.HANDLE
     conjunto = setupapi.SetupDiGetClassDevsW(
         ctypes.byref(guid), None, None, DIGCF_PRESENT | DIGCF_DEVICEINTERFACE
     )
-    if conjunto == wintypes.HANDLE(-1).value:
+    # `restype=HANDLE` devolve None quando o retorno e NULL; sem tratar, o
+    # `finally` receberia None e mascararia o erro real.
+    if not conjunto or conjunto == wintypes.HANDLE(-1).value:
         return "", "nao consegui listar as impressoras USB do sistema"
 
     try:
@@ -1235,10 +1290,28 @@ def _ler_pino_usb_windows(*, timeout: float = 2.0) -> tuple[int | None, str]:
         return None, motivo
 
     kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
-    GENERIC_READ, GENERIC_WRITE, OPEN_EXISTING = 0x80000000, 0x40000000, 3
+    # Mesma regra do bloco acima: sem `argtypes` o handle de 64 bits nao passa.
+    kernel32.CreateFileW.argtypes = [
+        wintypes.LPCWSTR, wintypes.DWORD, wintypes.DWORD, ctypes.c_void_p,
+        wintypes.DWORD, wintypes.DWORD, wintypes.HANDLE,
+    ]
     kernel32.CreateFileW.restype = wintypes.HANDLE
+    kernel32.WriteFile.argtypes = [
+        wintypes.HANDLE, ctypes.c_void_p, wintypes.DWORD,
+        ctypes.POINTER(wintypes.DWORD), ctypes.c_void_p,
+    ]
+    kernel32.WriteFile.restype = wintypes.BOOL
+    kernel32.ReadFile.argtypes = [
+        wintypes.HANDLE, ctypes.c_void_p, wintypes.DWORD,
+        ctypes.POINTER(wintypes.DWORD), ctypes.c_void_p,
+    ]
+    kernel32.ReadFile.restype = wintypes.BOOL
+    kernel32.CloseHandle.argtypes = [wintypes.HANDLE]
+    kernel32.CloseHandle.restype = wintypes.BOOL
+
+    GENERIC_READ, GENERIC_WRITE, OPEN_EXISTING = 0x80000000, 0x40000000, 3
     h = kernel32.CreateFileW(caminho, GENERIC_READ | GENERIC_WRITE, 0, None, OPEN_EXISTING, 0, None)
-    if h == wintypes.HANDLE(-1).value:
+    if not h or h == wintypes.HANDLE(-1).value:
         erro = ctypes.get_last_error()
         if erro == 32:  # ERROR_SHARING_VIOLATION
             return None, "o dispositivo esta ocupado - feche o que estiver imprimindo e tente de novo"
@@ -1288,6 +1361,18 @@ def _ler_pino_windows(queue: str, *, timeout: float = 2.0) -> tuple[int | None, 
         ]
 
     winspool.OpenPrinterW.argtypes = [wintypes.LPWSTR, ctypes.POINTER(wintypes.HANDLE), ctypes.c_void_p]
+    # As de HANDLE puro funcionam hoje por acaso: recebem um objeto ctypes, nao
+    # um int cru. Declaradas mesmo assim - a hora em que alguem passar um int
+    # (foi o que quebrou a leitura da gaveta) e a hora em que ninguem lembra
+    # desta distincao.
+    winspool.StartPagePrinter.argtypes = [wintypes.HANDLE]
+    winspool.StartPagePrinter.restype = wintypes.BOOL
+    winspool.EndPagePrinter.argtypes = [wintypes.HANDLE]
+    winspool.EndPagePrinter.restype = wintypes.BOOL
+    winspool.EndDocPrinter.argtypes = [wintypes.HANDLE]
+    winspool.EndDocPrinter.restype = wintypes.BOOL
+    winspool.ClosePrinter.argtypes = [wintypes.HANDLE]
+    winspool.ClosePrinter.restype = wintypes.BOOL
     winspool.StartDocPrinterW.argtypes = [wintypes.HANDLE, wintypes.DWORD, ctypes.POINTER(DOC_INFO_1)]
     winspool.WritePrinter.argtypes = [
         wintypes.HANDLE, ctypes.c_void_p, wintypes.DWORD, ctypes.POINTER(wintypes.DWORD)
