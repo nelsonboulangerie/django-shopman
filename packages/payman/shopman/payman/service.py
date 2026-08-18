@@ -205,6 +205,7 @@ class PaymentService:
         gateway_data: dict | None = None,
         ref: str | None = None,
         idempotency_key: str = "",
+        asserted_at_terminal: bool = False,
     ) -> PaymentIntent:
         """
         Cria e captura, na mesma transação, um pagamento que liquidou sem gateway.
@@ -239,24 +240,35 @@ class PaymentService:
             ref: Referência customizada (auto-gerada se None)
             idempotency_key: Chave estável para retry seguro; uma repetição
                 devolve o intent já capturado em vez de cobrar duas vezes
+            asserted_at_terminal: O operador ATESTOU no terminal que um método
+                COM gateway (pix, cartão) foi recebido fora dele — QR estático,
+                maquininha avulsa numa venda mista. É a única porta para pix/card
+                passarem por aqui, e fica gravada em ``gateway_data`` para a
+                reconciliação distinguir "capturado pelo gateway" de "atestado
+                pelo balcão". Sem a flag, pix/card continuam recusados: o caminho
+                deles é o gateway.
 
         Returns:
             PaymentIntent com status CAPTURED e uma ``PaymentTransaction`` de captura.
 
         Raises:
-            PaymentError: METHOD_REQUIRES_GATEWAY (pix/card não liquidam aqui),
+            PaymentError: METHOD_REQUIRES_GATEWAY (pix/card sem a atestação),
                 INVALID_AMOUNT, IDEMPOTENCY_KEY_CONFLICT, INVALID_TRANSITION
                 (chave reutilizada por um intent que já morreu)
         """
-        if method not in PaymentIntent.METHODS_WITHOUT_GATEWAY:
+        if method not in PaymentIntent.METHODS_WITHOUT_GATEWAY and not asserted_at_terminal:
             raise PaymentError(
                 code="method_requires_gateway",
                 message=(
                     f"Método '{method}' passa por gateway; use create_intent/authorize/capture. "
-                    f"Sem gateway só {sorted(PaymentIntent.METHODS_WITHOUT_GATEWAY)}"
+                    f"Sem gateway só {sorted(PaymentIntent.METHODS_WITHOUT_GATEWAY)}, "
+                    "ou pix/card atestados no terminal (asserted_at_terminal=True)."
                 ),
                 context={"method": method, "order_ref": order_ref},
             )
+        gateway_data = dict(gateway_data or {})
+        if asserted_at_terminal:
+            gateway_data["asserted_at_terminal"] = True
 
         intent = cls.create_intent(
             order_ref,

@@ -290,12 +290,26 @@ def cancel_order(
 
 
 def settle_delivery_cash(order: Order, *, cash_shift, actor: str, amount_q: int | None = None) -> int:
-    """Record cash returned from a delivery order into the active CashShift."""
+    """O dinheiro da entrega chega ao balcão: acerto no turno de quem RECEBEU.
+
+    Três registros, na mesma transação, cada um na sua casa:
+    - o pedido diz que foi acertado (``cod_settled_at/by``, tender recebido);
+    - o Payman recebe o intent de dinheiro capturado (``settle``): é o livro de
+      pagamentos de todos os métodos, e a entrega paga na porta só liquida aqui;
+    - o livro-caixa do turno recebe ``cod_settled`` (efeito = valor): é o turno
+      que COLETOU, independente de quem criou a venda, o que antes era regra
+      escondida num algoritmo de fechamento e hoje é a linha em si.
+
+    Nada de etiqueta de turno no pedido: a atribuição É o lançamento.
+    """
+    from django.db import transaction
+    from shopman.cashman import services as cash_ledger
+
     if get_fulfillment_type(order) != "delivery":
         raise ValueError("Acerto de entrega só se aplica a pedidos delivery.")
     if order.status not in {Order.Status.DISPATCHED, Order.Status.DELIVERED, Order.Status.COMPLETED}:
         raise ValueError("Acerto de entrega só é permitido depois da saída para entrega.")
-    if cash_shift is None or getattr(cash_shift, "status", "") != "open":
+    if cash_shift is None or not getattr(cash_shift, "is_open", False):
         raise ValueError("Abra um turno de caixa para registrar o acerto.")
 
     data = dict(order.data or {})
@@ -311,47 +325,64 @@ def settle_delivery_cash(order: Order, *, cash_shift, actor: str, amount_q: int 
     if amount != int(order.total_q or 0):
         raise ValueError("Valor de acerto deve bater com o total do pedido.")
 
-    tenders = list(payment.get("tenders") or [])
-    updated = False
-    for tender in tenders:
-        if tender.get("method") == "cash" and tender.get("collection") == "on_delivery":
-            tender["collection"] = "terminal"
-            tender["status"] = "received"
-            tender["cash_shift_id"] = cash_shift.pk
-            tender["terminal_ref"] = cash_shift.terminal.ref
-            tender["received_at"] = timezone_now_iso()
-            updated = True
-            break
-    if not updated:
-        tenders.append({
-            "method": "cash",
-            "amount_q": amount,
-            "collection": "terminal",
-            "status": "received",
-            "cash_shift_id": cash_shift.pk,
-            "terminal_ref": cash_shift.terminal.ref,
-            "received_at": timezone_now_iso(),
-        })
+    from django.contrib.auth import get_user_model
+    from shopman.payman import PaymentService
 
-    payment["tenders"] = tenders
-    payment["cash_received_q"] = amount
-    payment["cod_cash_shift_id"] = cash_shift.pk
-    payment["cod_terminal_ref"] = cash_shift.terminal.ref
-    payment["cod_settled_at"] = timezone_now_iso()
-    payment["cod_settled_by"] = actor
-    data["payment"] = payment
-    order.data = data
-    order.save(update_fields=["data", "updated_at"])
-    order.emit_event(
-        event_type="payment_collected",
-        actor=actor,
-        payload={
-            "method": "cash",
-            "amount_q": amount,
-            "cash_shift_id": cash_shift.pk,
-            "terminal_ref": cash_shift.terminal.ref,
-        },
-    )
+    receiver = get_user_model().objects.filter(username=str(actor or "").removeprefix("pos:")).first() or cash_shift.operator
+
+    with transaction.atomic():
+        intent = PaymentService.settle(
+            order.ref,
+            amount,
+            "cash",
+            currency="BRL",
+            idempotency_key=f"order-payment:{order.ref}:cash:{amount}:on_delivery",
+            gateway_data={"collection": "on_delivery", "terminal_ref": cash_shift.terminal.ref},
+        )
+        tenders = list(payment.get("tenders") or [])
+        updated = False
+        for tender in tenders:
+            if tender.get("method") == "cash" and tender.get("collection") == "on_delivery":
+                tender["collection"] = "terminal"
+                tender["status"] = "received"
+                tender["terminal_ref"] = cash_shift.terminal.ref
+                tender["received_at"] = timezone_now_iso()
+                tender["intent_ref"] = intent.ref
+                updated = True
+                break
+        if not updated:
+            tenders.append({
+                "method": "cash",
+                "amount_q": amount,
+                "collection": "terminal",
+                "status": "received",
+                "terminal_ref": cash_shift.terminal.ref,
+                "received_at": timezone_now_iso(),
+                "intent_ref": intent.ref,
+            })
+
+        payment["tenders"] = tenders
+        payment["cash_received_q"] = amount
+        payment["intent_ref"] = intent.ref
+        payment["cod_settled_at"] = timezone_now_iso()
+        payment["cod_settled_by"] = actor
+        data["payment"] = payment
+        order.data = data
+        order.save(update_fields=["data", "updated_at"])
+        cash_ledger.record(
+            "cod_settled",
+            shift=cash_shift,
+            operator=receiver,
+            amount_q=amount,
+            order_ref=order.ref,
+            payment_ref=intent.ref,
+            payload={"settled_by": actor},
+        )
+        order.emit_event(
+            event_type="payment_collected",
+            actor=actor,
+            payload={"method": "cash", "amount_q": amount, "terminal_ref": cash_shift.terminal.ref},
+        )
     logger.info("operator_settle_delivery_cash order=%s shift=%s amount=%s", order.ref, cash_shift.pk, amount)
     return amount
 
