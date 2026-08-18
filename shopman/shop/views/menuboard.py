@@ -37,7 +37,14 @@ class MenuboardPageView(View):
         response = render(
             request,
             "menuboard/board.html",
-            {"ref": ref, "initial": json.dumps(asdict(board), ensure_ascii=False)},
+            {
+                "ref": ref,
+                # `board` é a pintura do SERVIDOR (a TV desenha sem JS); `initial`
+                # é o mesmo estado embutido para o Alpine continuar de onde o
+                # servidor parou, sem uma ida à rede só para repetir o que já veio.
+                "board": board,
+                "initial": json.dumps(asdict(board), ensure_ascii=False),
+            },
         )
         # Operador logado abrindo o quadro autoriza ESTE dispositivo: é o
         # provisionamento inteiro da TV, sem token em URL.
