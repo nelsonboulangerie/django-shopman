@@ -297,6 +297,15 @@ class AgentConfig:
     port: int = 47811
     host: str = "127.0.0.1"
     allowed_origins: tuple[str, ...] = field(default_factory=tuple)
+    #: Como ESTA gaveta reporta o estado. `None` = ainda não medido, e aí o
+    #: agente responde "não sei" em vez de chutar.
+    #:
+    #: ⚠️ A polaridade NÃO é constante entre montagens. No balcão da Nelson
+    #: medimos fechada=0x16 (bit ligado) e aberta=0x12 (bit desligado) — o
+    #: INVERSO do que a leitura ingênua do manual sugere. Cravar isso em
+    #: constante faria o alerta gritar o dia todo com a gaveta fechada e ficar
+    #: mudo quando ela ficasse aberta de verdade: pior que não ter alerta.
+    drawer_status: dict | None = None
 
     @classmethod
     def load(cls, path: Path) -> AgentConfig:
@@ -330,7 +339,21 @@ class AgentConfig:
             port=int(raw.get("port") or 47811),
             host=str(raw.get("host") or "127.0.0.1"),
             allowed_origins=tuple(str(o).rstrip("/") for o in origins if str(o).strip()),
+            drawer_status=raw.get("drawer_status") or None,
         )
+
+    def estado_da_gaveta(self, byte: int) -> bool | None:
+        """True = aberta. `None` = esta maquina nunca mediu, entao nao sabemos.
+
+        Devolver `None` em vez de um palpite e o ponto: alerta de gaveta aberta
+        que erra a polaridade grita o dia inteiro com a gaveta fechada, e a
+        pessoa aprende a ignorar - matando junto o aviso legitimo.
+        """
+        cfg = self.drawer_status or {}
+        mascara, fechada = cfg.get("mask"), cfg.get("closed_value")
+        if mascara is None or fechada is None:
+            return None
+        return (byte & int(mascara)) != int(fechada)
 
     def allows(self, origin: str) -> bool:
         if not self.allowed_origins:
@@ -591,11 +614,36 @@ class CounterAgentHandler(BaseHTTPRequestHandler):
         self.end_headers()
 
     def do_GET(self) -> None:  # noqa: N802
-        if self.path.split("?")[0] != "/health":
+        rota = self.path.split("?")[0]
+        if rota == "/drawer":
+            return self._reply(200, self._estado_da_gaveta())
+        if rota != "/health":
             self._reply(404, {"ok": False, "error": "rota desconhecida"})
             return
         probe = probe_queue(self.config.queue)
         self._reply(200, {**probe, "queue": self.config.queue, "version": VERSION, "build": build_id()})
+
+    def _estado_da_gaveta(self) -> dict:
+        """A gaveta esta aberta agora? `known: false` quando nao da para saber.
+
+        Sem token de proposito: e leitura, nao efeito. Exigir token aqui
+        obrigaria a tela a mandar o segredo num GET a cada poucos segundos, e
+        segredo em URL/log e pior que a informacao "a gaveta esta aberta".
+        """
+        cfg = self.config.drawer_status or {}
+        if not cfg:
+            return {
+                "known": False,
+                "reason": "esta estacao nunca mediu a gaveta. Rode --drawer-status.",
+            }
+        query = _status_query(int(cfg.get("query") or 1))
+        byte, motivo = _ler_estado(self.config, query=query)
+        if byte is None:
+            return {"known": False, "reason": motivo}
+        aberta = self.config.estado_da_gaveta(byte)
+        if aberta is None:
+            return {"known": False, "reason": "polaridade nao configurada"}
+        return {"known": True, "open": aberta, "raw": f"0x{byte:02x}"}
 
     def do_POST(self) -> None:  # noqa: N802
         rota = self.path.split("?")[0]
@@ -1192,6 +1240,19 @@ def _ler_pino(device: Path, *, query: bytes = _DRAWER_STATUS_QUERY, timeout: flo
         os.close(fd)
 
 
+def _ler_estado(config, *, query: bytes) -> tuple[int | None, str]:
+    """Le um status pelo caminho que ESTE sistema tem."""
+    if IS_WINDOWS:
+        byte, motivo = _ler_pino_windows(config.queue, query=query)
+        if byte is not None:
+            return byte, ""
+        return _ler_pino_usb_windows(query=query)
+    dispositivos = _dispositivos_possiveis()
+    if not dispositivos:
+        return None, "dispositivo da impressora nao encontrado"
+    return _ler_pino(dispositivos[0], query=query)
+
+
 def _varre_status(ler) -> dict[int, int]:
     """Pergunta os quatro status e devolve {n: byte} do que respondeu.
 
@@ -1228,10 +1289,31 @@ def _veredito_da_varredura(fechada: dict[int, int], aberta: dict[int, int]) -> i
         return 1
 
     n, f, a = mudaram[0]
-    print(f"\n  OK, FUNCIONA. `DLE EOT {n}`, bit 0x{f ^ a:02x}.")
-    print("  Da para o sistema saber quando a gaveta fica aberta.")
-    print("  Me mande estas linhas que eu ligo o alerta.\n")
+    mascara = f ^ a
+    print(f"\n  OK, FUNCIONA. `DLE EOT {n}`, bit 0x{mascara:02x}.")
+
+    # Grava o que ESTA gaveta respondeu. A polaridade varia por montagem: aqui
+    # medimos fechada=0x16 (bit ligado) e aberta=0x12 (desligado), o inverso do
+    # que a leitura ingenua do manual sugere. Salvar o medido, e nunca uma
+    # constante, e o que impede o alerta de nascer invertido.
+    salvo = _salvar_drawer_status({"query": n, "mask": mascara, "closed_value": f & mascara})
+    if salvo:
+        print(f"  Aprendido e gravado em {DEFAULT_CONFIG_PATH}.")
+        print("  O PDV ja pode avisar quando a gaveta ficar aberta.\n")
+    else:
+        print("  (nao consegui gravar na config; me mande estas linhas)\n")
     return 0
+
+
+def _salvar_drawer_status(medido: dict) -> bool:
+    """Guarda a polaridade medida junto do resto da config da maquina."""
+    try:
+        raw = json.loads(DEFAULT_CONFIG_PATH.read_text(encoding="utf-8"))
+        raw["drawer_status"] = medido
+        DEFAULT_CONFIG_PATH.write_text(json.dumps(raw, indent=2), encoding="utf-8")
+        return True
+    except (OSError, ValueError):
+        return False
 
 
 def _veredito_do_pino(fechada: int, aberta: int) -> int:
