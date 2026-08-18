@@ -18,17 +18,27 @@ export default defineConfig({
           environment: "node",
           globals: true,
           include: ["tests/**/*.test.ts"],
-          exclude: ["tests/components/**", "tests/composables/**", "tests/e2e/**", "node_modules/**"],
+          exclude: ["tests/components/**", "tests/composables/**", "tests/pages/**", "tests/e2e/**", "node_modules/**"],
         },
       },
       // Component: monta componentes Vue reais com auto-imports/composables do Nuxt
       // (mountSuspended). Env `nuxt` (happy-dom) — mais pesado, isolado aqui.
+      //
+      // `tests/pages/**` entra aqui porque uma PÁGINA também se monta, e há
+      // regra que só a página decide: o fechamento do dia recebe da projection
+      // os números da produção (precisa deles depois do registro) e escolhe não
+      // mostrá-los antes, para a contagem ser cega. Testar isso pela projection
+      // provaria o contrário do que interessa.
       await defineVitestProject({
         test: {
           name: "component",
           environment: "nuxt",
           globals: true,
-          include: ["tests/components/**/*.test.ts", "tests/composables/**/*.test.ts"],
+          include: [
+            "tests/components/**/*.test.ts",
+            "tests/composables/**/*.test.ts",
+            "tests/pages/**/*.test.ts",
+          ],
         },
       }),
     ],

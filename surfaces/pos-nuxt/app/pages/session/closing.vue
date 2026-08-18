@@ -3,9 +3,24 @@
 // sai do Admin/Unfold para o ritual de fim de dia do PDV, ao lado do fechar
 // caixa. Mesma projection e mesmo service da retaguarda (GET/POST
 // /api/v1/backstage/closing/), gate `backstage.perform_closing` (Gerente).
-// Paridade com a tela Admin: produção pendente (com atrasadas + link p/ o
-// Produção), produção do dia, encomendas dos próximos dias, discrepâncias e a
-// contagem cega por SKU. Rótulo visível de sobra aproveitável = "Ontem".
+// Rótulo visível de sobra aproveitável = "Ontem".
+//
+// ⚠️ A TELA TEM DOIS MOMENTOS, e a ordem é a regra:
+//
+//   ANTES da contagem — só o que se conta e o que IMPEDE fechar.
+//   DEPOIS de registrada — o quadro do dia inteiro.
+//
+// A tela nasceu em paridade com o Admin e mostrava "Produção do dia"
+// (planejado/feito/perda por SKU) e "Discrepâncias" (disponível por SKU) ACIMA
+// dos campos de contagem. Isso é o gabarito em cima da prova: feito menos
+// vendido é a resposta que o operador deveria descobrir contando. Uma contagem
+// com o número na tela não é cega, é confirmação — e o fechamento às cegas
+// existe justamente para pegar o que a conta não pega.
+//
+// Produção pendente é a exceção parcial, porque é BLOQUEIO: ordem aberta tem
+// que ser resolvida antes de encerrar. Antes da contagem ela aparece como
+// aviso e contagem de ordens, sem SKU e sem quantidade; a tabela inteira volta
+// depois.
 import {
   allQuantitiesFilled,
   buildQuantitiesPayload,
@@ -81,8 +96,35 @@ async function confirmSubmit() {
           <UiAlertDescription>{{ closing.existing_closing_display }}</UiAlertDescription>
         </UiAlert>
 
+        <!-- BLOQUEIO, antes da contagem. Diz QUANTAS ordens faltam e para onde
+             ir; não diz SKU nem quantidade, que é o que entregaria a resposta.
+             A tabela completa aparece depois que a contagem é registrada. -->
+        <section
+          v-if="!closing.already_closed && closing.has_pending_production"
+          class="grid gap-2 rounded-lg border border-warning/40 bg-warning/10 p-4"
+        >
+          <div class="flex items-center gap-2">
+            <Icon name="lucide:triangle-alert" class="size-4 text-amber-700 dark:text-amber-400" />
+            <h2 class="text-base font-semibold">Produção em aberto</h2>
+          </div>
+          <p class="text-sm text-muted-foreground">
+            {{ closing.pending_production.length === 1
+              ? "Uma ordem de produção ainda está aberta."
+              : `${closing.pending_production.length} ordens de produção ainda estão abertas.` }}
+            Conclua ou estorne antes de encerrar o dia.
+          </p>
+          <a
+            v-if="productionUrl"
+            class="text-sm font-medium underline underline-offset-4"
+            :href="productionUrl"
+            target="_blank" rel="noopener"
+          >
+            Resolver na produção
+          </a>
+        </section>
+
         <!-- Produção pendente -->
-        <section v-if="closing.has_pending_production" class="grid gap-2 rounded-lg border bg-card p-4">
+        <section v-if="closing.already_closed && closing.has_pending_production" class="grid gap-2 rounded-lg border bg-card p-4">
           <div class="flex items-center gap-2">
             <h2 class="text-base font-semibold">Produção pendente</h2>
             <span class="inline-flex items-center rounded-md border border-warning/50 bg-warning/10 px-1.5 py-0.5 text-xs font-medium text-amber-700 dark:text-amber-400">
@@ -90,7 +132,7 @@ async function confirmSubmit() {
             </span>
           </div>
           <p class="text-sm text-muted-foreground">
-            Ordens ainda abertas neste fechamento. Conclua ou estorne antes de encerrar o dia. O registro fica no snapshot.
+            Ordens que seguiam abertas quando o dia foi encerrado. Ficaram registradas no snapshot; resolva na produção.
           </p>
           <div class="overflow-x-auto">
             <table class="w-full text-sm">
@@ -124,8 +166,8 @@ async function confirmSubmit() {
           </a>
         </section>
 
-        <!-- Produção do dia -->
-        <section class="grid gap-2 rounded-lg border bg-card p-4">
+        <!-- Produção do dia (pós-contagem: é a resposta da prova) -->
+        <section v-if="closing.already_closed" class="grid gap-2 rounded-lg border bg-card p-4">
           <h2 class="text-base font-semibold">Produção do dia</h2>
           <p v-if="!dayProduction.length" class="text-sm text-muted-foreground">Sem produção registrada hoje.</p>
           <div v-else class="overflow-x-auto">
@@ -151,7 +193,7 @@ async function confirmSubmit() {
         </section>
 
         <!-- Encomendas dos próximos dias -->
-        <section v-if="closing.has_upcoming_preorders" class="grid gap-2 rounded-lg border bg-card p-4">
+        <section v-if="closing.already_closed && closing.has_upcoming_preorders" class="grid gap-2 rounded-lg border bg-card p-4">
           <div class="flex items-center gap-2">
             <h2 class="text-base font-semibold">Encomendas para os próximos dias</h2>
             <span class="inline-flex items-center rounded-md border border-border bg-muted px-1.5 py-0.5 text-xs font-medium text-muted-foreground">
@@ -182,7 +224,7 @@ async function confirmSubmit() {
         </section>
 
         <!-- Discrepâncias -->
-        <section v-if="closing.reconciliation_errors.length" class="grid gap-2 rounded-lg border border-destructive/40 bg-card p-4">
+        <section v-if="closing.already_closed && closing.reconciliation_errors.length" class="grid gap-2 rounded-lg border border-destructive/40 bg-card p-4">
           <h2 class="text-base font-semibold text-destructive">Discrepâncias detectadas</h2>
           <div class="overflow-x-auto">
             <table class="w-full text-sm">
