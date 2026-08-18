@@ -123,6 +123,7 @@ const {
   renameTab,
   openCancelSaleDialog,
   cancelRecentSale,
+  drawerLock,
 } = usePosSale({ pos, tabs, actions, refresh, action, apiPath, requestHeaders, ordersUrl });
 
 // Kitchen handoff affordances (spec §2.5): the fire/unfire CTAs come from the
@@ -509,6 +510,27 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onGlobalKeydown));
       :disallowed-chars="tabDisallowedChars"
       @confirm="openTabFromDialog"
       @select="openTabFromDialog"
+    />
+
+    <!-- A trava da gaveta: só aparece quando o sensor DISSE que está aberta.
+         Fechar o diálogo desiste da venda que esperava; "já fechei" relê o
+         sensor; o gerente libera pelo PIN e o destrave vai para o log. -->
+    <PosDrawerLockDialog
+      :open="drawerLock.open.value"
+      :still-open="drawerLock.stillOpen.value"
+      :busy="drawerLock.busy.value"
+      @update:open="(value) => { if (!value) drawerLock.dismiss(); }"
+      @recheck="drawerLock.recheck"
+      @manager="drawerLock.askManager"
+    />
+    <PosManagerAuthDialog
+      :open="drawerLock.managerOpen.value"
+      reason-text="Liberar a próxima venda com a gaveta aberta."
+      :managers="pos?.managers || []"
+      :busy="drawerLock.busy.value"
+      :error="drawerLock.managerError.value"
+      @update:open="(value) => { if (!value) drawerLock.managerOpen.value = false; }"
+      @authorize="drawerLock.unlock"
     />
 
     <PosCancelSaleDialog
