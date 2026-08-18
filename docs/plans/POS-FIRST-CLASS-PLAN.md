@@ -553,7 +553,7 @@ Prompt autocontido:
 Implemente PIN operacional e aprovacoes gerenciais no POS.
 
 Contexto:
-- Hoje permissao usa usuario Django/staff e perm backstage.operate_pos.
+- Hoje permissao usa usuario Django/staff e perm cashman.operate_pos.
 - CashShift guarda operator.
 - Vendas guardam pos_operator em Order.data.
 - A sessao Django autoriza o terminal, mas o operador ativo do atendimento precisa poder ser trocado rapidamente por PIN de 4 digitos, sem contaminar auditoria com o usuario que apenas abriu o navegador.

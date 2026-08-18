@@ -33,7 +33,7 @@ _THIRD_PARTY = ("django.contrib.", "django_otp", "taggit")
 #: lê igual nos dois idiomas, não uma desculpa para deixar inglês passar.
 _JA_E_PORTUGUES = {
     "id", "uuid", "ref", "sku", "status", "email", "gateway",
-    "latitude", "longitude",
+    "latitude", "longitude", "terminal",
 }
 
 

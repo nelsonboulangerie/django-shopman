@@ -25,9 +25,10 @@ from shopman.backstage.projections.cash_receipt import (
     build_receipt_verification,
 )
 
-#: Quem já pode ver movimentos de caixa pode conferir um. Não inventamos
-#: permissão nova: seria uma segunda resposta para a mesma pergunta.
-REQUIRED_PERM = "backstage.view_cashmovement"
+#: Conferir um comprovante é auditar o que saiu da gaveta: a mesma permissão que
+#: lê esperado e diferença no turno. Não inventamos permissão nova: seria uma
+#: segunda resposta para a mesma pergunta.
+REQUIRED_PERM = "cashman.audit_shift"
 
 
 class ReceiptCodeForm(forms.Form):
@@ -77,7 +78,7 @@ _RECEIPT_COLORS = {
 
 
 def _movement_table(verification: ReceiptVerification) -> dict:
-    """O que o movimento diz, lado a lado com o que está no papel."""
+    """O que o lançamento diz, lado a lado com o que está no papel."""
     estado = table_badge(
         verification.receipt_status,
         _RECEIPT_COLORS.get(verification.receipt_status, "gray"),
@@ -107,14 +108,16 @@ def _movement_table(verification: ReceiptVerification) -> dict:
     return {"headers": ["Campo", "Registro no sistema"], "rows": linhas}
 
 
-def _movement_model_admin():
-    from shopman.backstage.models import CashMovement
+def _shift_model_admin():
+    # A página se pendura no Admin do turno: o lançamento conferido é uma linha
+    # dele, e é lá que o auditor continua a leitura.
+    from shopman.cashman.models import Shift
 
-    return admin.site._registry[CashMovement]
+    return admin.site._registry[Shift]
 
 
 def cash_receipt_verify_view(request: HttpRequest, *args, **kwargs) -> HttpResponse:
     """Resolve o ModelAdmin tardiamente (ordem de import do URLConf)."""
-    return CashReceiptVerifyView.as_view(model_admin=_movement_model_admin())(
+    return CashReceiptVerifyView.as_view(model_admin=_shift_model_admin())(
         request, *args, **kwargs
     )

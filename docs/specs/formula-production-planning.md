@@ -335,10 +335,10 @@ expected_amount_q =
 
 | Permissao | Uso |
 | --- | --- |
-| `backstage.operate_pos` | Operar POS, abrir turno, registrar sangria/suprimento, fechar turno. |
+| `cashman.operate_pos` | Operar POS, abrir turno, registrar sangria/suprimento, fechar turno. |
 | `backstage.view_cashshift` | Ver historico de turnos. |
-| `backstage.audit_cashshift` | Ver esperado, diferenca e detalhes gerenciais. |
-| `backstage.adjust_cashshift` | Criar ajuste gerencial auditado. |
+| `cashman.audit_shift` | Ver esperado, diferenca e detalhes gerenciais. |
+| `cashman.adjust_shift` | Criar ajuste gerencial auditado. |
 | `backstage.perform_closing` | Executar `DayClosing`. |
 | `backstage.view_dayclosing_management` | Ver agregados gerenciais completos. |
 

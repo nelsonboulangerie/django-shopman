@@ -12,15 +12,15 @@ from django.contrib.auth import get_user_model
 from django.contrib.auth.models import Permission
 from django.contrib.contenttypes.models import ContentType
 from django.test import TestCase, override_settings
+from shopman.cashman.models import Shift
 
-from shopman.backstage.models import CashShift
 from shopman.shop.models import Shop
 
 POS_URL = "/api/v1/backstage/pos/"
 
 
 def _grant(user, codename: str) -> None:
-    ct = ContentType.objects.get_for_model(CashShift)
+    ct = ContentType.objects.get_for_model(Shift)
     user.user_permissions.add(Permission.objects.get(content_type=ct, codename=codename))
 
 

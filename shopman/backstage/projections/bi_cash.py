@@ -1,9 +1,10 @@
-"""B.I. de caixa — leitura analítica (ADR-021, BI-PLAN §5/F4).
+"""B.I. de caixa — leitura analítica (ADR-021, BI-PLAN §5/F4), sobre o livro.
 
-Tendência de quebra de caixa (``difference_q``) por dia e por operador,
-sangrias/suprimentos e o mix de meios de pagamento consolidado pelo
-fechamento (``DayClosing.data.cash_shift_summary.payment_method_totals`` —
-consumo registrado em docs/reference/data-schemas.md). Dias da janela sem
+Tendência de quebra de caixa por dia e por operador (a diferença de cada turno
+fechado, provada pelo livro do ``cashman``: ``count`` + correções), sangrias e
+suprimentos (linhas ``cash_out``/``cash_in``) e o mix de meios de pagamento
+consolidado pelo fechamento (``DayClosing.data.cash_shift_summary.payment_method_totals``
+— consumo registrado em docs/reference/data-schemas.md). Dias da janela sem
 fechamento entram em ``closings_missing``: o buraco é declarado, nunca
 silenciado.
 """
@@ -66,18 +67,21 @@ class BICashReport:
 def build_bi_cash(
     *, date_from: date | None = None, date_to: date | None = None
 ) -> BICashReport:
-    from shopman.backstage.models import CashMovement, CashShift, DayClosing
+    from shopman.cashman.models import Shift
+
+    from shopman.backstage.models import DayClosing
 
     from .bi_production import _normalize_window
 
     date_from, date_to = _normalize_window(date_from, date_to)
 
     shifts = list(
-        CashShift.objects.filter(
-            status=CashShift.Status.CLOSED,
+        Shift.objects.filter(
+            status=Shift.Status.CLOSED,
             closed_at__date__range=(date_from, date_to),
         ).select_related("operator")
     )
+    difference_by_shift = _difference_by_shift([shift.pk for shift in shifts])
 
     day_shifts: dict[date, int] = defaultdict(int)
     day_difference: dict[date, int] = defaultdict(int)
@@ -85,18 +89,14 @@ def build_bi_cash(
     operator_difference: dict[str, int] = defaultdict(int)
     for shift in shifts:
         day = timezone.localtime(shift.closed_at).date()
+        difference_q = difference_by_shift.get(shift.pk, 0)
         day_shifts[day] += 1
-        day_difference[day] += shift.difference_q
+        day_difference[day] += difference_q
         operator = shift.operator.get_username()
         operator_shifts[operator] += 1
-        operator_difference[operator] += shift.difference_q
+        operator_difference[operator] += difference_q
 
-    day_movements: dict[date, dict[str, int]] = defaultdict(lambda: defaultdict(int))
-    movements = CashMovement.objects.filter(
-        created_at__date__range=(date_from, date_to)
-    ).values_list("created_at", "movement_type", "amount_q")
-    for created_at, movement_type, amount_q in movements:
-        day_movements[timezone.localtime(created_at).date()][movement_type] += amount_q
+    day_movements = _movements_by_day(date_from, date_to)
 
     days = []
     day = date_from
@@ -106,8 +106,8 @@ def build_bi_cash(
                 date=day.isoformat(),
                 shifts=day_shifts.get(day, 0),
                 difference_q=day_difference.get(day, 0),
-                sangria_q=day_movements.get(day, {}).get("sangria", 0),
-                suprimento_q=day_movements.get(day, {}).get("suprimento", 0),
+                sangria_q=day_movements.get(day, {}).get("cash_out", 0),
+                suprimento_q=day_movements.get(day, {}).get("cash_in", 0),
             )
         )
         day += timedelta(days=1)
@@ -150,19 +150,22 @@ def build_bi_cash(
 
 
 def _cash_previous(date_from: date, date_to: date) -> BICashPrevious:
-    from shopman.backstage.models import CashShift
+    from shopman.cashman.models import Shift
 
     from .bi_production import _previous_window
 
     prev_from, prev_to = _previous_window(date_from, date_to)
     day_difference: dict[date, int] = defaultdict(int)
     shifts_total = 0
-    shifts = CashShift.objects.filter(
-        status=CashShift.Status.CLOSED,
-        closed_at__date__range=(prev_from, prev_to),
-    ).values_list("closed_at", "difference_q")
-    for closed_at, difference_q in shifts:
-        day_difference[timezone.localtime(closed_at).date()] += difference_q
+    shifts = list(
+        Shift.objects.filter(
+            status=Shift.Status.CLOSED,
+            closed_at__date__range=(prev_from, prev_to),
+        ).values_list("pk", "closed_at")
+    )
+    difference_by_shift = _difference_by_shift([pk for pk, _ in shifts])
+    for pk, closed_at in shifts:
+        day_difference[timezone.localtime(closed_at).date()] += difference_by_shift.get(pk, 0)
         shifts_total += 1
 
     series = []
@@ -178,3 +181,37 @@ def _cash_previous(date_from: date, date_to: date) -> BICashPrevious:
         difference_total_q=sum(day_difference.values()),
         difference_by_day=tuple(series),
     )
+
+
+def _difference_by_shift(shift_ids: list[int]) -> dict[int, int]:
+    """Diferença vigente de cada turno: ``Σ count + Σ count_correction``, do livro.
+
+    Uma consulta agrupada em vez de ``cashman.services.difference`` por turno:
+    a janela do B.I. pode ter centenas de turnos, e é a mesma soma que o
+    pacote define — só que em lote.
+    """
+    from django.db.models import Sum
+    from shopman.cashman.models import Entry
+
+    if not shift_ids:
+        return {}
+    rows = (
+        Entry.objects.filter(shift_id__in=shift_ids, kind__in=[Entry.Kind.COUNT, Entry.Kind.COUNT_CORRECTION])
+        .values("shift_id")
+        .annotate(total=Sum("amount_q"))
+    )
+    return {int(row["shift_id"]): int(row["total"] or 0) for row in rows}
+
+
+def _movements_by_day(date_from: date, date_to: date) -> dict[date, dict[str, int]]:
+    """Sangria e suprimento por dia, em valor absoluto (o sinal já é o tipo)."""
+    from shopman.cashman.models import Entry
+
+    day_movements: dict[date, dict[str, int]] = defaultdict(lambda: defaultdict(int))
+    movements = Entry.objects.filter(
+        kind__in=[Entry.Kind.CASH_OUT, Entry.Kind.CASH_IN],
+        at__date__range=(date_from, date_to),
+    ).values_list("at", "kind", "amount_q")
+    for at, kind, amount_q in movements:
+        day_movements[timezone.localtime(at).date()][kind] += abs(int(amount_q))
+    return day_movements

@@ -30,8 +30,9 @@ interface CashSessionDeps {
  */
 export function usePosCashSession({ pos, actions, refresh, action }: CashSessionDeps) {
   const busy = ref(false);
-  // O id do último movimento aceito pelo servidor — é dele que sai o comprovante.
-  const lastMovementId = ref<number | null>(null);
+  // O id do último lançamento (sangria/suprimento) aceito pelo servidor — é
+  // dele que sai o comprovante: a linha do livro do turno (`cashman.Entry`).
+  const lastEntryId = ref<number | null>(null);
 
   // Sangria e suprimento mexem no dinheiro da gaveta e não imprimem nada — por
   // isso o gancho "abrir ao imprimir" do driver nunca serviria aqui. Mesmo
@@ -56,8 +57,8 @@ export function usePosCashSession({ pos, actions, refresh, action }: CashSession
     if (busy.value) return false;
     busy.value = true;
     try {
-      const resposta = await action.call<{ movement_id?: number }>(path, { body });
-      lastMovementId.value = resposta?.movement_id ?? null;
+      const resposta = await action.call<{ entry_id?: number }>(path, { body });
+      lastEntryId.value = resposta?.entry_id ?? null;
       await refresh();
       return true;
     } catch (error) {
@@ -124,7 +125,7 @@ export function usePosCashSession({ pos, actions, refresh, action }: CashSession
       // foi recusado (PIN errado, caixa fechado) é dinheiro exposto sem lastro.
       if (ok) {
         void drawer.kick(payload.kind);
-        void printMovementReceipt(lastMovementId.value);
+        void printMovementReceipt(lastEntryId.value);
       }
       return ok;
     });
@@ -142,9 +143,9 @@ export function usePosCashSession({ pos, actions, refresh, action }: CashSession
    * a doença. O que não pode é a falha passar calada — ela vira registro e
    * toast, e o papel pode ser reimpresso depois.
    */
-  async function printMovementReceipt(movementId: number | null): Promise<void> {
-    if (!movementId) return;
-    const base = `/api/v1/backstage/pos/cash/movement/${movementId}/receipt/`;
+  async function printMovementReceipt(entryId: number | null): Promise<void> {
+    if (!entryId) return;
+    const base = `/api/v1/backstage/pos/cash/entry/${entryId}/receipt/`;
     let outcome: PrintOutcome;
     try {
       const receipt = await action.call<{ payload_b64: string; title: string }>(base, { method: "GET" });
@@ -167,7 +168,7 @@ export function usePosCashSession({ pos, actions, refresh, action }: CashSession
    * Abrir a gaveta sem venda e sem movimento — conferência, troco, o que for.
    *
    * É o único dos quatro momentos que não deixa rastro sozinho: não há pedido
-   * nem `CashMovement` contando a história depois. Por isso passa pelo servidor
+   * nem sangria/suprimento contando a história depois. Por isso passa pelo servidor
    * ANTES de chutar: primeiro a linha na trilha, depois a gaveta. Se o registro
    * falhar, a gaveta não abre — senão sobraria justamente o buraco que a chave
    * física já deixava.

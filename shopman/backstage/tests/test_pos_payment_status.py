@@ -22,10 +22,9 @@ STATUS_URL = "/api/v1/backstage/pos/payment/{ref}/status/"
 def _grant_pos_perm(user):
     from django.contrib.auth.models import Permission
     from django.contrib.contenttypes.models import ContentType
+    from shopman.cashman.models import Shift
 
-    from shopman.backstage.models import CashShift
-
-    ct = ContentType.objects.get_for_model(CashShift)
+    ct = ContentType.objects.get_for_model(Shift)
     user.user_permissions.add(Permission.objects.get(content_type=ct, codename="operate_pos"))
 
 

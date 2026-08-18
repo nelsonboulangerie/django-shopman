@@ -9,8 +9,8 @@ configurou e o papel sai cortado sem ninguém entender por quê.
 from __future__ import annotations
 
 from django.test import TestCase
+from shopman.cashman.models import Terminal
 
-from shopman.backstage.models.cash_register import POSTerminal
 from shopman.backstage.services.pos_terminal import printer_geometry, runtime_profile
 
 
@@ -73,7 +73,7 @@ class PrinterGeometryTests(TestCase):
 
 class TerminalProfileGeometryTests(TestCase):
     def setUp(self):
-        self.terminal = POSTerminal.objects.create(ref="pdv-geometria", label="PDV geometria")
+        self.terminal = Terminal.objects.create(ref="pdv-geometria", label="PDV geometria")
 
     def _set_printer(self, config):
         self.terminal.metadata = {"hardware": {"printer": config}}
@@ -108,7 +108,7 @@ class POSProjectionGeometryTests(TestCase):
     def test_projection_expoe_a_geometria_do_terminal(self):
         from shopman.backstage.projections.pos import build_pos
 
-        terminal = POSTerminal.objects.create(
+        terminal = Terminal.objects.create(
             ref="pdv-projection",
             label="PDV projection",
             metadata={"hardware": {"printer": {"adapter": "driver", "roll_width_mm": 58}}},
@@ -120,7 +120,7 @@ class POSProjectionGeometryTests(TestCase):
     def test_projection_manda_zero_quando_o_terminal_cala(self):
         from shopman.backstage.projections.pos import build_pos
 
-        terminal = POSTerminal.objects.create(ref="pdv-mudo", label="PDV mudo")
+        terminal = Terminal.objects.create(ref="pdv-mudo", label="PDV mudo")
         projection = build_pos(terminal=terminal)
         self.assertEqual(projection.terminal_roll_width_mm, 0)
         self.assertEqual(projection.terminal_roll_margin_mm, 0)

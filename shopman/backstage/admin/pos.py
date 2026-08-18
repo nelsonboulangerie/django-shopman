@@ -46,13 +46,13 @@ class POSTabAdmin(ModelAdmin):
         return unfold_badge("ativa" if obj.is_active else "inativa", "green" if obj.is_active else "base")
 
     def has_view_permission(self, request, obj=None):
-        return request.user.has_perm("backstage.operate_pos")
+        return request.user.has_perm("cashman.operate_pos")
 
     def has_add_permission(self, request):
-        return request.user.has_perm("backstage.operate_pos")
+        return request.user.has_perm("cashman.operate_pos")
 
     def has_change_permission(self, request, obj=None):
-        return request.user.has_perm("backstage.operate_pos")
+        return request.user.has_perm("cashman.operate_pos")
 
     def has_delete_permission(self, request, obj=None):
-        return request.user.has_perm("backstage.operate_pos")
+        return request.user.has_perm("cashman.operate_pos")

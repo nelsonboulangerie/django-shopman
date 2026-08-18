@@ -12,18 +12,18 @@ from django.contrib.auth import get_user_model
 from django.contrib.auth.models import Permission
 from django.contrib.contenttypes.models import ContentType
 from django.urls import reverse
+from shopman.cashman.models import Terminal
 
-from shopman.backstage.admin.cash_register import POSTerminalForm
-from shopman.backstage.models import POSTerminal
+from shopman.backstage.admin.terminal import TerminalForm
 from shopman.backstage.projections.pos_agent import build_agent_install
 from shopman.backstage.services.pos_hardware import CashDrawerConfig
 
 pytestmark = pytest.mark.django_db
 
 
-def _terminal(drawer=None, ref="pdv-agente") -> POSTerminal:
+def _terminal(drawer=None, ref="pdv-agente") -> Terminal:
     metadata = {"hardware": {"cash_drawer": drawer}} if drawer else {}
-    return POSTerminal.objects.create(ref=ref, label="Balcão", metadata=metadata)
+    return Terminal.objects.create(ref=ref, label="Balcão", metadata=metadata)
 
 
 AGENT = {
@@ -41,8 +41,8 @@ def manager(client):
 
     Shop.objects.create(name="Loja")
     user = get_user_model().objects.create_user(username="dono", password="x", is_staff=True)
-    ct = ContentType.objects.get_for_model(POSTerminal)
-    user.user_permissions.add(Permission.objects.get(content_type=ct, codename="change_posterminal"))
+    ct = ContentType.objects.get_for_model(Terminal)
+    user.user_permissions.add(Permission.objects.get(content_type=ct, codename="change_terminal"))
     client.force_login(user)
     return user
 
@@ -71,12 +71,12 @@ def _form_data(**overrides) -> dict:
 def test_escolher_o_agente_ja_gera_o_token():
     """Ninguém transcreve 43 caracteres de um terminal Linux para cá."""
     terminal = _terminal()
-    form = POSTerminalForm(_form_data(), instance=terminal)
+    form = TerminalForm(_form_data(), instance=terminal)
 
     assert form.is_valid(), form.errors
     form.save()
 
-    config = CashDrawerConfig.from_terminal(POSTerminal.objects.get(pk=terminal.pk))
+    config = CashDrawerConfig.from_terminal(Terminal.objects.get(pk=terminal.pk))
     assert len(config.token) >= 16
     assert config.kicks_by_software is True
     assert config.misconfigured_reason == ""
@@ -85,19 +85,19 @@ def test_escolher_o_agente_ja_gera_o_token():
 def test_salvar_de_novo_NAO_troca_o_token():
     """Trocar sozinho deixaria o balcão levando 401 sem ninguém ter pedido."""
     terminal = _terminal(AGENT)
-    POSTerminalForm(_form_data(), instance=terminal).save()
+    TerminalForm(_form_data(), instance=terminal).save()
 
-    assert CashDrawerConfig.from_terminal(POSTerminal.objects.get(pk=terminal.pk)).token == AGENT["token"]
+    assert CashDrawerConfig.from_terminal(Terminal.objects.get(pk=terminal.pk)).token == AGENT["token"]
 
 
 def test_marcar_gerar_novo_troca_o_token():
     terminal = _terminal(AGENT)
-    form = POSTerminalForm(_form_data(drawer_rotate_token="on"), instance=terminal)
+    form = TerminalForm(_form_data(drawer_rotate_token="on"), instance=terminal)
 
     assert form.is_valid(), form.errors
     form.save()
 
-    assert CashDrawerConfig.from_terminal(POSTerminal.objects.get(pk=terminal.pk)).token != AGENT["token"]
+    assert CashDrawerConfig.from_terminal(Terminal.objects.get(pk=terminal.pk)).token != AGENT["token"]
 
 
 # ── A projection das instruções ───────────────────────────────────────────
@@ -175,7 +175,7 @@ def test_terminal_inexistente_nao_serve_arquivo(client, manager):
 
 def test_a_config_do_terminal_linka_para_a_tela(client, manager):
     terminal = _terminal(AGENT)
-    response = client.get(reverse("admin:backstage_posterminal_change", args=[terminal.pk]))
+    response = client.get(reverse("admin:cashman_terminal_change", args=[terminal.pk]))
 
     assert response.status_code == 200
     assert reverse("admin_console_pos_counter_agent", args=[terminal.ref]) in response.content.decode()
@@ -278,7 +278,7 @@ def test_terminal_sem_gaveta_mostra_NAO_CONFIGURADA_selecionada():
     tocar no campo gravava `manual`. Estado real e exibido divergindo é como a
     config da gaveta some sem ninguém ter pedido.
     """
-    form = POSTerminalForm(instance=_terminal())
+    form = TerminalForm(instance=_terminal())
     html = str(form["drawer_adapter"])
 
     assert 'value=""' in html, "falta a opção vazia"
@@ -286,7 +286,7 @@ def test_terminal_sem_gaveta_mostra_NAO_CONFIGURADA_selecionada():
 
 
 def test_terminal_com_agente_abre_o_formulario_com_agente_marcado():
-    form = POSTerminalForm(instance=_terminal(AGENT))
+    form = TerminalForm(instance=_terminal(AGENT))
     assert form["drawer_adapter"].value() == "agent"
 
 

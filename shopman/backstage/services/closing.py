@@ -333,12 +333,22 @@ def _reconciliation_errors(*, closing_date: date, items: list[dict]) -> list[dic
 
 
 def _cash_shift_summary(closing_date: date) -> dict:
-    from shopman.orderman.models import Order
+    """O caixa do dia, calculado do livro (``cashman``) no momento do fechamento.
 
-    from shopman.backstage.models import CashShift
+    É snapshot: pode congelar números. O que não pode é ser uma segunda fonte
+    viva — esperado, contado e diferença são somas do livro (``cashman.services``),
+    e o mix de meios de pagamento é do ``payman``. Nada aqui reinterpreta o JSON
+    do pedido para contar dinheiro.
+    """
+    from shopman.cashman import services as cash
+    from shopman.cashman.models import Entry, Shift
 
-    closed = CashShift.objects.filter(closed_at__date=closing_date).select_related("terminal", "operator")
-    open_shifts = CashShift.objects.filter(status=CashShift.Status.OPEN).select_related("terminal", "operator")
+    closed = (
+        Shift.objects.filter(status=Shift.Status.CLOSED, closed_at__date=closing_date)
+        .select_related("terminal", "operator")
+        .order_by("closed_at")
+    )
+    open_shifts = Shift.objects.filter(status=Shift.Status.OPEN).select_related("terminal", "operator")
 
     shift_rows = []
     totals = {
@@ -348,16 +358,17 @@ def _cash_shift_summary(closing_date: date) -> dict:
         "difference_q": 0,
     }
     for shift in closed:
+        float_q = sum(e.amount_q for e in cash.timeline(shift) if e.kind == Entry.Kind.FLOAT_IN)
         row = {
             "id": shift.pk,
             "terminal_ref": shift.terminal.ref,
             "operator": shift.operator.get_username(),
             "opened_at": shift.opened_at.isoformat() if shift.opened_at else "",
             "closed_at": shift.closed_at.isoformat() if shift.closed_at else "",
-            "opening_amount_q": shift.opening_amount_q or 0,
-            "blind_closing_amount_q": shift.blind_closing_amount_q or 0,
-            "expected_amount_q": shift.expected_amount_q or 0,
-            "difference_q": shift.difference_q or 0,
+            "opening_amount_q": float_q,
+            "blind_closing_amount_q": cash.counted(shift) or 0,
+            "expected_amount_q": cash.expected_before_count(shift),
+            "difference_q": cash.difference(shift) or 0,
         }
         shift_rows.append(row)
         for key in totals:
@@ -375,27 +386,52 @@ def _cash_shift_summary(closing_date: date) -> dict:
             for shift in open_shifts
         ],
         "totals": totals,
-        "payment_method_totals": _payment_method_totals(
-            Order.objects.filter(created_at__date=closing_date).exclude(status__in=["cancelled", "returned"])
-        ),
+        "payment_method_totals": _payment_method_totals(closing_date),
     }
 
 
-def _payment_method_totals(orders) -> dict:
-    # A regra de repartição mora em services/payments.py — o B.I. conta o mesmo
-    # dinheiro pela mesma regra em vez de reimplementá-la e divergir.
+def _payment_method_totals(closing_date: date) -> dict:
+    """Recebido no dia por método, do ``payman`` — o único dono de "receita por método".
+
+    Intents capturados no dia (``captured_at``), líquidos de estorno, agrupados
+    por método. Dinheiro e ``external`` entram aqui desde que o PDV passou a
+    liquidá-los no ``payman`` (ADR-022 §4); antes disso o mix saía de uma
+    releitura do JSON do pedido, que era uma segunda fonte para a mesma pergunta.
+
+    ``cod_pending_*`` continua sendo o que só o pedido sabe: cobrança na
+    entrega ainda na rua não é pagamento, então não está no ``payman`` — é
+    receita a receber, e sai daqui marcada para quem soma recebido a ignorar e
+    quem quer saber o que está na rua a encontrar.
+    """
+    from django.db.models import Sum
+    from shopman.orderman.models import Order
+    from shopman.payman.models import PaymentIntent, PaymentTransaction
+
     from .payments import iter_order_payments
 
+    settled = (PaymentIntent.Status.CAPTURED, PaymentIntent.Status.REFUNDED)
+    day_intents = PaymentIntent.objects.filter(status__in=settled, captured_at__date=closing_date)
+    captured = day_intents.values("method").annotate(total=Sum("amount_q"))
+    refunded = (
+        PaymentTransaction.objects.filter(intent__in=day_intents, type=PaymentTransaction.Type.REFUND)
+        .values("intent__method")
+        .annotate(total=Sum("amount_q"))
+    )
     totals: dict[str, int] = {}
+    for row in captured:
+        totals[str(row["method"])] = int(row["total"] or 0)
+    for row in refunded:
+        method = str(row["intent__method"])
+        totals[method] = totals.get(method, 0) - int(row["total"] or 0)
+
     cod_pending_q = 0
     cod_pending_count = 0
+    orders = Order.objects.filter(created_at__date=closing_date).exclude(status__in=["cancelled", "returned"])
     for order in orders:
         for entry in iter_order_payments(order.data, order.total_q):
             if entry.pending:
                 cod_pending_q += entry.amount_q
                 cod_pending_count += 1
-                continue
-            totals[entry.method] = totals.get(entry.method, 0) + entry.amount_q
     totals["cod_pending_q"] = cod_pending_q
     totals["cod_pending_count"] = cod_pending_count
     return totals

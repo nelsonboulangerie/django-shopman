@@ -956,12 +956,18 @@ def _oven_rows(spec, by, by2, date_from, date_to) -> list[BIExploreRow]:
 
 
 def _cash_rows(spec, by, by2, date_from, date_to) -> list[BIExploreRow]:
-    from shopman.backstage.models import CashShift
+    """Diferença de caixa por dia/operador: a soma de ``count`` + correções de cada turno fechado (livro do ``cashman``)."""
+    from shopman.cashman.models import Shift
 
-    shifts = CashShift.objects.filter(
-        status=CashShift.Status.CLOSED,
-        closed_at__date__range=(date_from, date_to),
-    ).select_related("operator")
+    from .bi_cash import _difference_by_shift
+
+    shifts = list(
+        Shift.objects.filter(
+            status=Shift.Status.CLOSED,
+            closed_at__date__range=(date_from, date_to),
+        ).select_related("operator")
+    )
+    difference_by_shift = _difference_by_shift([shift.pk for shift in shifts])
 
     total: dict[tuple, int] = defaultdict(int)
     labels: dict[tuple, tuple[str, str]] = {}
@@ -978,7 +984,7 @@ def _cash_rows(spec, by, by2, date_from, date_to) -> list[BIExploreRow]:
                 username = shift.operator.get_username()
                 parts.append((username, username))
         key = (parts[0][0], parts[1][0])
-        total[key] += shift.difference_q
+        total[key] += difference_by_shift.get(shift.pk, 0)
         labels[key] = (parts[0][1], parts[1][1])
 
     return [

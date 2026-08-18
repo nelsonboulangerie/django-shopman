@@ -20,8 +20,8 @@ from shopman.doorman.models import PinCredential
 
 User = get_user_model()
 
-OPERATE_POS = "backstage.operate_pos"
-ADJUST_CASHSHIFT = "backstage.adjust_cashshift"
+OPERATE_POS = "cashman.operate_pos"
+ADJUST_SHIFT = "cashman.adjust_shift"
 
 # Server-session key holding the active operator on a (shared) terminal. The
 # device holds a Django staff session (station trust); the *active operator* is
@@ -126,12 +126,12 @@ def verify_manager_pin(user, raw_pin: str) -> bool:
     Used by the anti-fraud override gates (void sent item, discount/price,
     refund/cancel, cash-out/no-sale).
     """
-    return _verify_with_perm(user, raw_pin, ADJUST_CASHSHIFT)
+    return _verify_with_perm(user, raw_pin, ADJUST_SHIFT)
 
 
 # ── PIN self-service (change) + manager reset ────────────────────────────────
 
-MANAGE_OPERATORS = "backstage.manage_operators"
+MANAGE_OPERATORS = "cashman.manage_operators"
 
 
 class PinChangeError(ValueError):

@@ -12,10 +12,11 @@ from django.contrib.auth import get_user_model
 from django.contrib.auth.models import Permission
 from django.contrib.contenttypes.models import ContentType
 from django.test import TestCase, override_settings
+from shopman.cashman import services as cash
+from shopman.cashman.models import Entry, Shift, Terminal
 from shopman.doorman.models import PinCredential
 from shopman.offerman.models import Listing, ListingItem, Product
 
-from shopman.backstage.models import CashMovement, CashShift, POSTerminal
 from shopman.backstage.projections.pos import build_pos
 from shopman.backstage.services.exceptions import POSError
 from shopman.backstage.services.pos import register_cash_movement
@@ -25,7 +26,7 @@ from shopman.shop.services.pos_intent import POS_SALE_INTENT_VERSION, PosIntentE
 
 
 def _grant(user, codename: str) -> None:
-    ct = ContentType.objects.get_for_model(CashShift)
+    ct = ContentType.objects.get_for_model(Shift)
     user.user_permissions.add(Permission.objects.get(content_type=ct, codename=codename))
 
 
@@ -55,9 +56,9 @@ class PosGuardsBase(TestCase):
         self.operator = User.objects.create_user(username="guard-op", password="x", is_staff=True)
         _grant(self.operator, "operate_pos")
         self.manager = User.objects.create_user(username="guard-mgr", password="x", is_staff=True)
-        _grant(self.manager, "adjust_cashshift")
+        _grant(self.manager, "adjust_shift")
         PinCredential.set_for(self.manager, "4321")
-        self.terminal = POSTerminal.default()
+        self.terminal = Terminal.default()
 
     def _payload(self, **over):
         payload = {
@@ -161,9 +162,7 @@ class CashRemovalNeedsAManagerTests(PosGuardsBase):
 
     def setUp(self) -> None:
         super().setUp()
-        self.shift = CashShift.objects.create(
-            operator=self.operator, terminal=self.terminal, opening_amount_q=10000,
-        )
+        self.shift = cash.open_shift(operator=self.operator, terminal=self.terminal, float_q=10000)
 
     def test_sangria_without_approval_is_refused(self) -> None:
         with self.assertRaises(PosIntentError) as ctx:
@@ -173,7 +172,7 @@ class CashRemovalNeedsAManagerTests(PosGuardsBase):
             )
 
         self.assertEqual(ctx.exception.code, "manager_approval_required")
-        self.assertFalse(CashMovement.objects.exists())
+        self.assertFalse(Entry.objects.filter(kind=Entry.Kind.CASH_OUT).exists())
 
     def test_sangria_with_a_valid_pin_records_both_signatures(self) -> None:
         movement = register_cash_movement(
@@ -182,8 +181,9 @@ class CashRemovalNeedsAManagerTests(PosGuardsBase):
             manager_approval={"username": self.manager.username, "pin": "4321"},
         )
 
-        self.assertEqual(movement.created_by, self.operator.username)
-        self.assertEqual(movement.approved_by, self.manager.username)
+        self.assertEqual(movement.operator, self.operator)
+        self.assertEqual(movement.approved_by, self.manager)
+        self.assertEqual(movement.amount_q, -5000)
 
     def test_sangria_with_a_wrong_pin_is_refused(self) -> None:
         with self.assertRaises(PosIntentError) as ctx:
@@ -221,7 +221,9 @@ class CashRemovalNeedsAManagerTests(PosGuardsBase):
             amount_raw="30,00", reason="Reforço de troco",
         )
 
-        self.assertEqual(movement.approved_by, "")
+        self.assertIsNone(movement.approved_by)
+        self.assertEqual(movement.kind, Entry.Kind.CASH_IN)
+        self.assertEqual(movement.amount_q, 3000)
 
     def test_tipo_desconhecido_cai_em_sangria_e_exige_gerente(self) -> None:
         # Fail-safe: o que não é suprimento é tratado como retirada. Cair no
@@ -233,7 +235,7 @@ class CashRemovalNeedsAManagerTests(PosGuardsBase):
             )
 
     def test_movement_still_requires_an_open_shift(self) -> None:
-        self.shift.close(blind_closing_amount_q=10000)
+        cash.close_shift(self.shift, counted_q=10000, actor=self.operator)
 
         with self.assertRaises(POSError):
             register_cash_movement(

@@ -215,10 +215,12 @@ def test_nelson_seed_qa_profile_builds_named_scenarios(monkeypatch):
     from datetime import timedelta
 
     from django.utils import timezone
+    from shopman.cashman import services as cash
+    from shopman.cashman.models import Shift
     from shopman.craftsman.models import WorkOrder
     from shopman.payman.models import PaymentIntent, PaymentTransaction
 
-    from shopman.backstage.models import CashShift, KDSTicket, POSTab
+    from shopman.backstage.models import KDSTicket, POSTab
 
     monkeypatch.setenv("ADMIN_PASSWORD", "strong-seed-admin-password")
     call_command("seed", "--flush", "--profile", "qa", stdout=StringIO())
@@ -286,11 +288,11 @@ def test_nelson_seed_qa_profile_builds_named_scenarios(monkeypatch):
     assert stuck_wo.status == WorkOrder.Status.STARTED
     assert stuck_wo.target_date == today - timedelta(days=1)
 
-    # Caixa: 1 aberto + 1 fechado com divergência conhecida.
-    assert CashShift.objects.filter(status="open").exists()
-    closed = CashShift.objects.filter(status="closed")
+    # Caixa (cashman): 1 aberto + 1 fechado com divergência conhecida, provada pelo livro.
+    assert Shift.objects.filter(status=Shift.Status.OPEN).exists()
+    closed = Shift.objects.filter(status=Shift.Status.CLOSED)
     assert closed.exists()
-    assert closed.first().difference_q != 0
+    assert cash.difference(closed.first()) == -300
 
     # Comandas: aberta com itens (00001007) + uma com item disparado à cozinha.
     assert POSTab.objects.filter(ref="00002001").exists()

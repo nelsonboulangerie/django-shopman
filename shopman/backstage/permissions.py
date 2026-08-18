@@ -59,7 +59,7 @@ def can_close_day(user) -> bool:
 
 
 def can_operate_pos(user) -> bool:
-    return is_superuser(user) or user.has_perm("backstage.operate_pos")
+    return is_superuser(user) or user.has_perm("cashman.operate_pos")
 
 
 def can_operate_kds(user) -> bool:

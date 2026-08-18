@@ -1,21 +1,24 @@
 """O comprovante de sangria: papel que aponta para a verdade.
 
 O comprovante existe porque a política de PIN nasceu de "sangria sem
-testemunha". Papel sem vínculo com o registro seria só papel.
+testemunha". Papel sem vínculo com o registro seria só papel. O registro é a
+linha ``cash_out``/``cash_in`` do livro do turno (``cashman.Entry``); o que
+aconteceu com o papel é outra linha (``receipt_result``) apontando para ela.
 """
 
 from __future__ import annotations
 
 import pytest
 from django.contrib.auth import get_user_model
-from django.utils import timezone
+from shopman.cashman import services as cash
+from shopman.cashman.models import Entry, Shift, Terminal
 
-from shopman.backstage.models import CashMovement, CashShift, POSTerminal
+from shopman.backstage.services.pos import receipt_result_for
 from shopman.backstage.services.receipt_escpos import COLUMNS, ENCODING, cash_movement_receipt
 from shopman.backstage.services.receipt_verify import (
     InvalidReceiptCode,
     code_for,
-    movement_id_from,
+    entry_id_from,
 )
 
 pytestmark = pytest.mark.django_db
@@ -24,17 +27,15 @@ pytestmark = pytest.mark.django_db
 @pytest.fixture
 def movimento():
     user = get_user_model().objects.create_user(username="marina", password="x", is_staff=True)
-    shift = CashShift.objects.create(
-        terminal=POSTerminal.default(), operator=user, opening_amount_q=10000
-    )
-    return CashMovement.objects.create(
+    admin = get_user_model().objects.create_user(username="admin", password="x", is_staff=True)
+    shift = cash.open_shift(operator=user, terminal=Terminal.default(), float_q=10000)
+    return cash.record(
+        Entry.Kind.CASH_OUT,
         shift=shift,
-        movement_type="sangria",
-        amount_q=15000,
+        operator=user,
+        approved_by=admin,
+        amount_q=-15000,
         reason="Retirada para o cofre",
-        created_by="marina",
-        approved_by="admin",
-        created_at=timezone.now(),
     )
 
 
@@ -46,27 +47,28 @@ def test_o_movimento_nasce_SEM_confirmacao_de_impressao(movimento):
     papel que alguém escondeu — o oposto do que o comprovante existe para fazer.
 
     Quem imprime é o navegador do balcão, e ele pode fechar antes de confirmar.
+    Sem ``receipt_result`` filho, o estado é "sem confirmação".
     """
-    assert movimento.receipt_status == CashMovement.ReceiptStatus.PENDING
-    assert movimento.receipt_at is None
+    assert receipt_result_for(movimento) is None
 
 
-def test_os_quatro_estados_do_papel_existem():
-    valores = set(CashMovement.ReceiptStatus.values)
-    assert valores == {"pending", "printed", "failed", "skipped"}
+def test_os_tres_resultados_do_papel_existem():
+    from shopman.backstage.services.pos import RECEIPT_RESULT_STATUSES
+
+    assert set(RECEIPT_RESULT_STATUSES) == {"printed", "failed", "skipped"}
 
 
 # ── O código de conferência ───────────────────────────────────────────────
 
 
 def test_o_codigo_resolve_para_o_movimento(movimento):
-    assert movement_id_from(code_for(movimento.pk)) == movimento.pk
+    assert entry_id_from(code_for(movimento.pk)) == movimento.pk
 
 
 def test_codigo_inventado_NAO_resolve():
     """Sem assinatura, bastaria escrever 'SG-999' num papel qualquer."""
     with pytest.raises(InvalidReceiptCode):
-        movement_id_from("SG-999-AAAAAAAA")
+        entry_id_from("SG-999-AAAAAAAA")
 
 
 def test_codigo_de_outro_movimento_nao_serve_para_este(movimento):
@@ -74,13 +76,13 @@ def test_codigo_de_outro_movimento_nao_serve_para_este(movimento):
     codigo = code_for(movimento.pk)
     adulterado = codigo.replace(f"-{movimento.pk}-", f"-{movimento.pk + 1}-")
     with pytest.raises(InvalidReceiptCode):
-        movement_id_from(adulterado)
+        entry_id_from(adulterado)
 
 
 @pytest.mark.parametrize("lixo", ["", "SG", "SG-1", "XX-1-AAAAAAAA", "SG-abc-AAAAAAAA", None])
 def test_codigo_malformado_nao_explode_feio(lixo):
     with pytest.raises(InvalidReceiptCode):
-        movement_id_from(lixo)
+        entry_id_from(lixo)
 
 
 def test_o_codigo_evita_caracteres_que_se_confundem(movimento):
@@ -133,8 +135,20 @@ def test_a_segunda_via_sai_MARCADA(movimento):
     assert "2a VIA" in segunda
 
 
+def _com_motivo(movimento, reason: str):
+    """A linha do livro é imutável: um motivo diferente é outra linha."""
+    return cash.record(
+        Entry.Kind.CASH_OUT,
+        shift=movimento.shift,
+        operator=movimento.operator,
+        approved_by=movimento.approved_by,
+        amount_q=movimento.amount_q,
+        reason=reason,
+    )
+
+
 def test_nenhuma_linha_passa_da_largura_do_papel(movimento):
-    movimento.reason = "Retirada " * 30  # motivo gigante, digitado sem dó
+    movimento = _com_motivo(movimento, "Retirada " * 30)  # motivo gigante, digitado sem dó
     papel = _texto(cash_movement_receipt(movimento, verify_code="SG-1-XXXXXXXX", verify_url="https://x/y"))
 
     for linha in papel.splitlines():
@@ -143,7 +157,7 @@ def test_nenhuma_linha_passa_da_largura_do_papel(movimento):
 
 
 def test_motivo_vazio_nao_deixa_o_papel_mudo(movimento):
-    movimento.reason = ""
+    movimento = _com_motivo(movimento, "")
     papel = _texto(cash_movement_receipt(movimento, verify_code="X", verify_url="u"))
     assert "Motivo:" in papel
 
@@ -154,7 +168,7 @@ def test_o_que_a_tabela_nao_tem_vira_equivalente_e_nao_lixo(movimento):
     O operador digita (ou o celular põe sozinho) e o motivo da sangria sairia
     corrompido, parecendo defeito da impressora.
     """
-    movimento.reason = "Cofre — “fim de turno” … valor à parte"
+    movimento = _com_motivo(movimento, "Cofre — “fim de turno” … valor à parte")
     papel = _texto(cash_movement_receipt(movimento, verify_code="X", verify_url="u"))
 
     assert "?" not in papel, "algum caractere não foi traduzido e virou lixo"
@@ -172,7 +186,7 @@ def _grant(user):
     from django.contrib.auth.models import Permission
     from django.contrib.contenttypes.models import ContentType
 
-    ct = ContentType.objects.get_for_model(CashShift)
+    ct = ContentType.objects.get_for_model(Shift)
     user.user_permissions.add(Permission.objects.get(content_type=ct, codename="operate_pos"))
 
 
@@ -229,12 +243,8 @@ def test_comprovante_de_movimento_de_OUTRO_turno_e_recusado(operador_logado):
 
     client, _ = operador_logado
     outro = get_user_model().objects.create_user(username="outro", password="x", is_staff=True)
-    outro_shift = CashShift.objects.create(
-        terminal=POSTerminal.objects.create(ref="pdv-2"), operator=outro, opening_amount_q=0
-    )
-    alheio = CashMovement.objects.create(
-        shift=outro_shift, movement_type="sangria", amount_q=100, created_by="outro"
-    )
+    outro_shift = cash.open_shift(operator=outro, terminal=Terminal.objects.create(ref="pdv-2"), float_q=0)
+    alheio = cash.record(Entry.Kind.CASH_IN, shift=outro_shift, operator=outro, amount_q=100)
 
     response = client.get(reverse("api-backstage-pos-cash-receipt", args=[alheio.pk]))
     assert response.status_code == 400
@@ -251,9 +261,11 @@ def test_o_balcao_registra_que_imprimiu(operador_logado):
     )
 
     assert response.status_code == 200
-    movimento.refresh_from_db()
-    assert movimento.receipt_status == CashMovement.ReceiptStatus.PRINTED
-    assert movimento.receipt_at is not None
+    assert response.json()["receipt_status"] == "printed"
+    resultado = receipt_result_for(movimento)
+    assert resultado.kind == Entry.Kind.RECEIPT_RESULT
+    assert resultado.parent_id == movimento.pk
+    assert resultado.payload["status"] == "printed"
 
 
 def test_o_balcao_registra_a_FALHA_com_o_motivo(operador_logado):
@@ -267,10 +279,9 @@ def test_o_balcao_registra_a_FALHA_com_o_motivo(operador_logado):
         content_type="application/json",
     )
 
-    movimento.refresh_from_db()
-    assert movimento.receipt_status == CashMovement.ReceiptStatus.FAILED
-    assert "não está rodando" in movimento.receipt_detail
-    assert movimento.receipt_at is None, "falha não pode carimbar hora de impressão"
+    resultado = receipt_result_for(movimento)
+    assert resultado.payload["status"] == "failed"
+    assert "não está rodando" in resultado.payload["detail"]
 
 
 def test_impresso_NAO_volta_atras(operador_logado):
@@ -282,8 +293,9 @@ def test_impresso_NAO_volta_atras(operador_logado):
     client.post(url, data={"status": "printed"}, content_type="application/json")
     client.post(url, data={"status": "failed", "detail": "erro"}, content_type="application/json")
 
-    movimento.refresh_from_db()
-    assert movimento.receipt_status == CashMovement.ReceiptStatus.PRINTED
+    assert receipt_result_for(movimento).payload["status"] == "printed"
+    # E não nasce linha nova depois do "impresso": o livro não recebe regressão.
+    assert movimento.children.filter(kind=Entry.Kind.RECEIPT_RESULT).count() == 1
 
 
 def test_status_invalido_e_recusado(operador_logado):
@@ -329,8 +341,8 @@ def test_o_valor_sai_com_sinal(movimento):
     saida = cash_movement_receipt(movimento, verify_code="X", verify_url="https://x/y")
     assert b"- R$ 150,00" in saida
 
-    movimento.movement_type = "suprimento"
-    entrada = cash_movement_receipt(movimento, verify_code="X", verify_url="https://x/y")
+    suprimento = cash.record(Entry.Kind.CASH_IN, shift=movimento.shift, operator=movimento.operator, amount_q=15000)
+    entrada = cash_movement_receipt(suprimento, verify_code="X", verify_url="https://x/y")
     assert b"+ R$ 150,00" in entrada
 
 
@@ -369,8 +381,8 @@ def test_sem_autorizador_a_linha_nao_inventa_sufixo(movimento):
     """Suprimento não tem segunda assinatura — e o papel não finge que tem."""
     from shopman.backstage.services.receipt_escpos import cash_movement_receipt
 
-    movimento.approved_by = ""
-    papel = cash_movement_receipt(movimento, verify_code="X", verify_url="https://x/y")
+    suprimento = cash.record(Entry.Kind.CASH_IN, shift=movimento.shift, operator=movimento.operator, amount_q=15000)
+    papel = cash_movement_receipt(suprimento, verify_code="X", verify_url="https://x/y")
     assert b"autorizado por" not in papel
 
 

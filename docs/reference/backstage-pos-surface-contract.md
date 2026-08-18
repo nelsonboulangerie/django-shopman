@@ -118,9 +118,9 @@ Expected action refs:
 | `review_sale` | mutation | none | no | POS intent/service |
 | `close_sale` | mutation | required | submit confirmation by UX | POS service + Orderman |
 | `cancel_recent_sale` | mutation | none | destructive | cancellation service |
-| `open_cash_shift` | mutation | none | no | CashShift service |
-| `close_cash_shift` | mutation | none | destructive | CashShift service |
-| `cash_movement` | mutation | none | no | CashMovement service |
+| `open_cash_shift` | mutation | none | no | `cashman.services.open_shift` |
+| `close_cash_shift` | mutation | none | destructive | `cashman.services.close_shift` |
+| `cash_movement` | mutation | none | no | `cashman.services.record` (`cash_out`/`cash_in`) |
 | `customer_lookup` | query | none | no | Guestman/customer projection |
 | `reverse_geocode` | mutation | none | no | Geocode service |
 
@@ -223,7 +223,7 @@ permissions or backend preconditions from local policy.
 
 Backend must validate:
 
-- staff/auth permission `backstage.operate_pos`;
+- staff/auth permission `cashman.operate_pos`;
 - open cash shift for review/close when `cash_management.requires_open_shift_for_sale`;
 - JSON object payload and intent version;
 - allowed top-level keys only;
@@ -255,12 +255,12 @@ backend validation.
 
 | Operation | Permission |
 | --- | --- |
-| Load POS projection | `backstage.operate_pos` |
-| Open/close shift and movement | `backstage.operate_pos` |
-| Tab lifecycle and sale review/close | `backstage.operate_pos` |
-| Recent sale correction | `backstage.operate_pos` |
-| Manager approval | approving user must have `backstage.adjust_cashshift` |
-| Cash shift audit/admin | `backstage.audit_cashshift` / admin permissions |
+| Load POS projection | `cashman.operate_pos` |
+| Open/close shift and movement | `cashman.operate_pos` |
+| Tab lifecycle and sale review/close | `cashman.operate_pos` |
+| Recent sale correction | `cashman.operate_pos` |
+| Manager approval | approving user must have `cashman.adjust_shift` |
+| Cash shift audit/admin | `cashman.audit_shift` / admin permissions |
 
 ## Idempotency
 
@@ -334,7 +334,7 @@ acceptable only for unexpected infrastructure errors.
 | Product price | POS projection/Offerman | display only |
 | Cart draft | Orderman session or direct local draft before commit | yes, reconciled on save/review |
 | Tab state | `build_pos_tabs` | no authoritative local state |
-| Cash shift open/closed | `CashShift` projection/API | no |
+| Cash shift open/closed | `cashman.Shift` projection/API | no |
 | Payment/tender status | POS service/Payman/Order data | no |
 | Order status | Orderman | no |
 | Customer profile | Guestman | draft fields only |

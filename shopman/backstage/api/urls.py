@@ -100,7 +100,6 @@ from .operations import (
     POSCashCloseBlockingView,
     POSCashCloseView,
     POSCashDrawerOpenView,
-    POSCashMovementView,
     POSCashOpenView,
     POSCashReceiptView,
     POSCashReportView,
@@ -111,6 +110,7 @@ from .operations import (
     POSCustomerLookupView,
     POSCustomerResolveView,
     POSCustomerSearchView,
+    POSMovementView,
     POSPaymentStatusView,
     POSReviewSaleView,
     POSTabClearView,
@@ -295,7 +295,7 @@ urlpatterns = [
     path("pos/cash/open/", POSCashOpenView.as_view(), name="api-backstage-pos-cash-open"),
     path("pos/cash/close/", POSCashCloseView.as_view(), name="api-backstage-pos-cash-close"),
     path("pos/cash/close-blocking/", POSCashCloseBlockingView.as_view(), name="api-backstage-pos-cash-close-blocking"),
-    path("pos/cash/movement/", POSCashMovementView.as_view(), name="api-backstage-pos-cash-movement"),
+    path("pos/cash/movement/", POSMovementView.as_view(), name="api-backstage-pos-cash-movement"),
     path("pos/cash/report/", POSCashReportView.as_view(), name="api-backstage-pos-cash-report"),
     path("pos/cash/drawer-open/", POSCashDrawerOpenView.as_view(), name="api-backstage-pos-cash-drawer-open"),
     # Pedido de troco: o dinheiro não anda, o troco vem até o balcão. Net zero —
@@ -316,7 +316,7 @@ urlpatterns = [
         name="api-backstage-pos-change-request-cancel",
     ),
     path(
-        "pos/cash/movement/<int:movement_id>/receipt/",
+        "pos/cash/entry/<int:entry_id>/receipt/",
         POSCashReceiptView.as_view(),
         name="api-backstage-pos-cash-receipt",
     ),

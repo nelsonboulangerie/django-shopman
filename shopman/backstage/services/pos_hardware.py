@@ -1,6 +1,6 @@
 """Configuração de periférico do terminal do PDV.
 
-Dataclass como source of truth do JSONField (`POSTerminal.metadata["hardware"]`):
+Dataclass como source of truth do JSONField (`cashman.Terminal.metadata["hardware"]`):
 o schema mora aqui, e o Admin, a projection e os testes leem daqui em vez de
 cada um decorar as chaves.
 

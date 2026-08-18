@@ -5,11 +5,15 @@ tem câmera, parte não — a janela clássica de desvio, com a falta aparecendo
 no fechamento, horas depois e misturada com o turno inteiro. Aqui o operador
 PEDE, alguém traz, e a troca acontece no balcão, entre duas pessoas.
 
+O pedido é linha do livro (``cashman.Entry``): ``change_requested`` com
+``amount_q = 0``, e o atendimento/cancelamento é outra linha apontando para ele
+por ``parent``. O estado é dobrado do livro (``cashman.services.change_requests``).
+
 ⚠️ O que este arquivo protege acima de tudo: a troca é NET ZERO. Saem R$ 50,
-entram 5×R$ 10 — o total da gaveta não muda. Atender um pedido NÃO pode criar
-``CashMovement`` nem mexer no esperado do fechamento. Já aconteceu o contrário
-(Troco entrou como motivo de sangria, PR #178): o esperado caía por um dinheiro
-que nunca saiu e o turno fechava com falta fantasma.
+entram 5×R$ 10 — o total da gaveta não muda. Atender um pedido NÃO pode mexer no
+saldo do livro. Já aconteceu o contrário (Troco entrou como motivo de sangria,
+PR #178): o esperado caía por um dinheiro que nunca saiu e o turno fechava com
+falta fantasma.
 """
 
 from __future__ import annotations
@@ -19,9 +23,10 @@ from django.contrib.auth import get_user_model
 from django.contrib.auth.models import Permission
 from django.contrib.contenttypes.models import ContentType
 from django.urls import reverse
+from shopman.cashman import services as cash
+from shopman.cashman.models import Entry, Shift
 from shopman.doorman.models import PinCredential
 
-from shopman.backstage.models import CashShift, POSTerminal
 from shopman.backstage.projections.pos import build_pos
 from shopman.backstage.services import pos as pos_service
 from shopman.backstage.services.exceptions import POSError
@@ -33,21 +38,21 @@ MANAGER_PIN = "4321"
 
 
 def _grant(user, codename: str) -> None:
-    ct = ContentType.objects.get_for_model(CashShift)
+    ct = ContentType.objects.get_for_model(Shift)
     user.user_permissions.add(Permission.objects.get(content_type=ct, codename=codename))
 
 
 @pytest.fixture
 def operator():
     user = get_user_model().objects.create_user(username="marina", password="x", is_staff=True)
-    CashShift.objects.create(terminal=POSTerminal.default(), operator=user, opening_amount_q=10000)
+    cash.open_shift(operator=user, float_q=10000)
     return user
 
 
 @pytest.fixture
 def manager():
     user = get_user_model().objects.create_user(username="pablo", password="x", is_staff=True)
-    _grant(user, "adjust_cashshift")
+    _grant(user, "adjust_shift")
     PinCredential.set_for(user, MANAGER_PIN)
     return user
 
@@ -56,16 +61,21 @@ def _approval(username: str = "pablo", pin: str = MANAGER_PIN) -> dict:
     return {"username": username, "pin": pin}
 
 
+def _requests(operator) -> list[dict]:
+    return cash.change_requests(cash.open_shift_for(operator))
+
+
 # ── Pedir ─────────────────────────────────────────────────────────────────
 
 
 def test_pedir_troco_grava_quem_o_que_e_quando(operator):
     entry = pos_service.request_change(operator=operator, kind="coins")
 
-    shift = CashShift.get_open_for_operator(operator)
-    pedidos = shift.metadata["change_requests"]
+    assert entry.kind == Entry.Kind.CHANGE_REQUESTED
+    assert entry.amount_q == 0
+    pedidos = _requests(operator)
     assert len(pedidos) == 1
-    assert pedidos[0]["ref"] == entry["ref"]
+    assert pedidos[0]["entry_id"] == entry.pk
     assert pedidos[0]["kind"] == "coins"
     assert pedidos[0]["status"] == "pending"
     assert pedidos[0]["requested_by"] == "marina"
@@ -74,7 +84,9 @@ def test_pedir_troco_grava_quem_o_que_e_quando(operator):
 
 def test_pedido_por_valor_aproximado_guarda_centavos(operator):
     entry = pos_service.request_change(operator=operator, kind="amount", amount_raw="50,00")
-    assert entry["amount_q"] == 5000
+    # O valor pedido é payload, nunca efeito no saldo: a linha continua zerada.
+    assert entry.payload["amount_q"] == 5000
+    assert entry.amount_q == 0
 
 
 def test_pedido_por_valor_sem_valor_e_recusado(operator):
@@ -86,7 +98,7 @@ def test_pedido_por_valor_sem_valor_e_recusado(operator):
 def test_falta_de_moeda_nao_precisa_de_valor(operator):
     """"Acabou moeda" já é um pedido inteiro — exigir número travaria a fila."""
     entry = pos_service.request_change(operator=operator, kind="coins")
-    assert entry["amount_q"] == 0
+    assert entry.payload["amount_q"] == 0
 
 
 def test_tipo_desconhecido_e_recusado(operator):
@@ -104,32 +116,17 @@ def test_pedidos_acumulam_sem_apagar_o_anterior(operator):
     pos_service.request_change(operator=operator, kind="coins")
     pos_service.request_change(operator=operator, kind="small_bills")
 
-    pedidos = CashShift.get_open_for_operator(operator).metadata["change_requests"]
-    assert [p["kind"] for p in pedidos] == ["coins", "small_bills"]
+    assert [p["kind"] for p in _requests(operator)] == ["coins", "small_bills"]
 
 
-def test_a_lista_tem_teto_para_um_botao_repetido_nao_inchar_o_turno(operator):
-    shift = CashShift.get_open_for_operator(operator)
-    shift.metadata = {
-        "change_requests": [{"ref": f"r{i}", "kind": "coins", "status": "served"} for i in range(50)]
-    }
-    shift.save(update_fields=["metadata"])
-
-    pos_service.request_change(operator=operator, kind="small_bills")
-
-    pedidos = CashShift.get_open_for_operator(operator).metadata["change_requests"]
-    assert len(pedidos) == 50
-    assert pedidos[-1]["kind"] == "small_bills"
-
-
-def test_pedido_nao_apaga_a_trilha_de_abertura_de_gaveta(operator):
-    """Os dois vizinhos moram no mesmo JSONField; escrever um não pode zerar o outro."""
+def test_pedido_e_abertura_de_gaveta_convivem_no_mesmo_livro(operator):
+    """Os dois vizinhos são linhas do mesmo turno; uma não apaga a outra."""
     pos_service.register_drawer_opening(operator=operator, reason="Conferência")
     pos_service.request_change(operator=operator, kind="coins")
 
-    metadata = CashShift.get_open_for_operator(operator).metadata
-    assert len(metadata["drawer_openings"]) == 1
-    assert len(metadata["change_requests"]) == 1
+    shift = cash.open_shift_for(operator)
+    kinds = [e.kind for e in cash.timeline(shift)]
+    assert kinds == [Entry.Kind.FLOAT_IN, Entry.Kind.DRAWER_OPEN, Entry.Kind.CHANGE_REQUESTED]
 
 
 # ── Atender ───────────────────────────────────────────────────────────────
@@ -139,7 +136,7 @@ def test_atender_exige_pin_de_gerente(operator):
     entry = pos_service.request_change(operator=operator, kind="coins")
 
     with pytest.raises(PosIntentError) as exc:
-        pos_service.serve_change_request(operator=operator, request_ref=entry["ref"])
+        pos_service.serve_change_request(operator=operator, request_ref=str(entry.pk))
     assert exc.value.code == "manager_approval_required"
 
 
@@ -151,7 +148,7 @@ def test_pin_de_quem_nao_e_gerente_nao_atende(operator):
     with pytest.raises(PosIntentError) as exc:
         pos_service.serve_change_request(
             operator=operator,
-            request_ref=entry["ref"],
+            request_ref=str(entry.pk),
             manager_approval=_approval("marina", "1111"),
         )
     assert exc.value.code == "manager_approval_invalid"
@@ -160,11 +157,15 @@ def test_pin_de_quem_nao_e_gerente_nao_atende(operator):
 def test_atender_grava_quem_atendeu_e_quando(operator, manager):
     entry = pos_service.request_change(operator=operator, kind="small_bills")
 
-    pos_service.serve_change_request(
-        operator=operator, request_ref=entry["ref"], manager_approval=_approval()
+    served = pos_service.serve_change_request(
+        operator=operator, request_ref=str(entry.pk), manager_approval=_approval()
     )
 
-    pedido = CashShift.get_open_for_operator(operator).metadata["change_requests"][0]
+    # A linha de atendimento aponta para o pedido e leva a segunda assinatura.
+    assert served.kind == Entry.Kind.CHANGE_SERVED
+    assert served.parent_id == entry.pk
+    assert served.approved_by == manager
+    pedido = _requests(operator)[0]
     assert pedido["status"] == "served"
     assert pedido["served_by"] == "pablo"
     assert pedido["served_at"]
@@ -175,78 +176,77 @@ def test_atender_grava_quem_atendeu_e_quando(operator, manager):
 def test_atender_duas_vezes_diz_que_ja_foi_resolvido(operator, manager):
     """Duas pessoas na mesma tela: o segundo toque precisa explicar, não confundir."""
     entry = pos_service.request_change(operator=operator, kind="coins")
-    pos_service.serve_change_request(
-        operator=operator, request_ref=entry["ref"], manager_approval=_approval()
-    )
+    pos_service.serve_change_request(operator=operator, request_ref=str(entry.pk), manager_approval=_approval())
 
     with pytest.raises(POSError, match="já foi resolvido"):
-        pos_service.serve_change_request(
-            operator=operator, request_ref=entry["ref"], manager_approval=_approval()
-        )
+        pos_service.serve_change_request(operator=operator, request_ref=str(entry.pk), manager_approval=_approval())
 
 
 def test_atender_pedido_inexistente_e_recusado(operator, manager):
     with pytest.raises(POSError, match="não encontrado"):
-        pos_service.serve_change_request(
-            operator=operator, request_ref="nao-existe", manager_approval=_approval()
-        )
+        pos_service.serve_change_request(operator=operator, request_ref="nao-existe", manager_approval=_approval())
+    with pytest.raises(POSError, match="não encontrado"):
+        pos_service.serve_change_request(operator=operator, request_ref="999999", manager_approval=_approval())
+
+
+def test_pedido_de_outro_turno_nao_e_atendido_daqui(operator, manager):
+    """O ``ref`` é id de linha, mas só do livro DO OPERADOR: turno alheio não resolve."""
+    other = get_user_model().objects.create_user(username="outro", password="x", is_staff=True)
+    from shopman.cashman.models import Terminal
+
+    other_shift = cash.open_shift(
+        operator=other, terminal=Terminal.objects.create(ref="pos-2", label="POS 2"), float_q=0
+    )
+    alheio = cash.record(Entry.Kind.CHANGE_REQUESTED, shift=other_shift, operator=other, payload={"kind": "coins"})
+
+    with pytest.raises(POSError, match="não encontrado"):
+        pos_service.serve_change_request(operator=operator, request_ref=str(alheio.pk), manager_approval=_approval())
 
 
 # ── ⚠️ A regra que não pode ser violada: NET ZERO ─────────────────────────
 
 
-def test_atender_pedido_nao_cria_movimento_nem_altera_o_esperado(operator, manager):
+def test_atender_pedido_nao_altera_o_saldo_do_livro(operator, manager):
     """A prova da feature: trocar dinheiro NÃO muda o total da gaveta.
 
-    Saem R$ 50, entram 5×R$ 10. Se atender criasse ``CashMovement``, o
-    ``expected_amount_q`` do fechamento cairia por um dinheiro que nunca saiu e o
-    turno fecharia com falta fantasma — exatamente o defeito que o PR #178
-    desfez quando "Troco" era motivo de sangria. Este teste falha se alguém
-    reintroduzir isso.
+    Saem R$ 50, entram 5×R$ 10. Se atender lançasse valor, o esperado do
+    fechamento cairia por um dinheiro que nunca saiu e o turno fecharia com falta
+    fantasma — exatamente o defeito que o PR #178 desfez quando "Troco" era
+    motivo de sangria. Este teste falha se alguém reintroduzir isso.
     """
-    shift = CashShift.get_open_for_operator(operator)
-    esperado_antes = shift.expected_amount_q
-    abertura_antes = shift.opening_amount_q
+    shift = cash.open_shift_for(operator)
+    saldo_antes = cash.balance(shift)
 
     entry = pos_service.request_change(operator=operator, kind="amount", amount_raw="50,00")
-    pos_service.serve_change_request(
-        operator=operator, request_ref=entry["ref"], manager_approval=_approval()
-    )
+    pos_service.serve_change_request(operator=operator, request_ref=str(entry.pk), manager_approval=_approval())
 
-    shift.refresh_from_db()
-    assert shift.movements.count() == 0, "pedido de troco não é movimento de caixa"
-    assert shift.expected_amount_q == esperado_antes
-    assert shift.opening_amount_q == abertura_antes
+    assert cash.balance(shift) == saldo_antes
+    assert not Entry.objects.filter(shift=shift, kind__in=[Entry.Kind.CASH_OUT, Entry.Kind.CASH_IN]).exists()
 
 
 def test_fechamento_cego_nao_sente_o_pedido_de_troco(operator, manager):
-    """A prova pelo fechamento: o esperado sai igual com e sem pedido atendido.
-
-    O teste acima olha o turno no meio do caminho; este roda o cálculo real de
-    ``close()``, que é onde a falta fantasma apareceria para o operador.
-    """
+    """A prova pelo fechamento: o esperado sai igual com e sem pedido atendido."""
     entry = pos_service.request_change(operator=operator, kind="amount", amount_raw="50,00")
-    pos_service.serve_change_request(
-        operator=operator, request_ref=entry["ref"], manager_approval=_approval()
-    )
+    pos_service.serve_change_request(operator=operator, request_ref=str(entry.pk), manager_approval=_approval())
 
-    shift = CashShift.get_open_for_operator(operator)
-    shift.close(blind_closing_amount_q=10000)
+    shift = cash.open_shift_for(operator)
+    cash.close_shift(shift, counted_q=10000, actor=operator)
 
-    shift.refresh_from_db()
-    # Abertura 100,00, zero vendas, zero movimentos → esperado 100,00 e sem
+    # Fundo 100,00, zero vendas, zero movimentos → esperado 100,00 e sem
     # diferença. Um lançamento escondido no pedido apareceria aqui como falta.
-    assert shift.expected_amount_q == 10000
-    assert shift.difference_q == 0
+    assert cash.expected_before_count(shift) == 10000
+    assert cash.difference(shift) == 0
 
 
-def test_cancelar_tambem_nao_cria_movimento(operator):
+def test_cancelar_tambem_nao_mexe_no_saldo(operator):
+    shift = cash.open_shift_for(operator)
     entry = pos_service.request_change(operator=operator, kind="coins")
-    pos_service.cancel_change_request(operator=operator, request_ref=entry["ref"])
+    cancelled = pos_service.cancel_change_request(operator=operator, request_ref=str(entry.pk))
 
-    shift = CashShift.get_open_for_operator(operator)
-    assert shift.movements.count() == 0
-    assert shift.expected_amount_q is None
+    assert cancelled.kind == Entry.Kind.CHANGE_CANCELLED
+    assert cancelled.parent_id == entry.pk
+    assert cancelled.amount_q == 0
+    assert cash.balance(shift) == 10000
 
 
 # ── Cancelar ──────────────────────────────────────────────────────────────
@@ -256,24 +256,29 @@ def test_cancelar_tira_o_pedido_da_tela_sem_apagar_a_trilha(operator):
     """Achou troco na gaveta: o pendente some da tela, mas o registro fica."""
     entry = pos_service.request_change(operator=operator, kind="coins")
 
-    pos_service.cancel_change_request(operator=operator, request_ref=entry["ref"])
+    pos_service.cancel_change_request(operator=operator, request_ref=str(entry.pk))
 
-    shift = CashShift.get_open_for_operator(operator)
+    shift = cash.open_shift_for(operator)
     assert pos_service.pending_change_requests(shift) == []
-    pedido = shift.metadata["change_requests"][0]
+    pedido = _requests(operator)[0]
     assert pedido["status"] == "cancelled"
     assert pedido["cancelled_at"]
+    # A trilha é o livro: pedido e cancelamento continuam lá, em ordem.
+    assert Entry.objects.filter(shift=shift, kind=Entry.Kind.CHANGE_REQUESTED).count() == 1
+    assert Entry.objects.filter(shift=shift, kind=Entry.Kind.CHANGE_CANCELLED).count() == 1
 
 
 # ── Projection ────────────────────────────────────────────────────────────
 
 
 def test_o_pendente_chega_a_antesala_pelo_cash_runtime(operator):
-    pos_service.request_change(operator=operator, kind="amount", amount_raw="50,00", note="notas de 10")
+    entry = pos_service.request_change(operator=operator, kind="amount", amount_raw="50,00", note="notas de 10")
 
     runtime = build_pos(operator=operator).cash_runtime
     assert len(runtime.pending_change_requests) == 1
     pedido = runtime.pending_change_requests[0]
+    # O ``ref`` da tela é o id da linha: é por ele que a tela atende e cancela.
+    assert pedido.ref == str(entry.pk)
     assert pedido.kind == "amount"
     assert pedido.amount_display == "R$ 50,00"
     assert pedido.note == "notas de 10"
@@ -290,9 +295,7 @@ def test_pedido_sem_valor_nao_mostra_zero_reais(operator):
 
 def test_atendido_sai_da_tela(operator, manager):
     entry = pos_service.request_change(operator=operator, kind="coins")
-    pos_service.serve_change_request(
-        operator=operator, request_ref=entry["ref"], manager_approval=_approval()
-    )
+    pos_service.serve_change_request(operator=operator, request_ref=str(entry.pk), manager_approval=_approval())
 
     assert build_pos(operator=operator).cash_runtime.pending_change_requests == ()
 
@@ -329,8 +332,8 @@ def test_endpoint_pede_troco_e_devolve_a_ref(client, operator):
 
     assert response.status_code == 200
     ref = response.json()["request_ref"]
-    pedido = CashShift.get_open_for_operator(operator).metadata["change_requests"][0]
-    assert pedido["ref"] == ref
+    pedido = _requests(operator)[0]
+    assert str(pedido["entry_id"]) == ref
     assert pedido["note"] == "acabou moeda de 50 centavos"
 
 
@@ -341,7 +344,7 @@ def test_endpoint_de_atender_sem_pin_devolve_o_codigo_do_desafio(client, operato
     entry = pos_service.request_change(operator=operator, kind="coins")
 
     response = client.post(
-        reverse("api-backstage-pos-change-request-serve", args=[entry["ref"]]),
+        reverse("api-backstage-pos-change-request-serve", args=[str(entry.pk)]),
         data={},
         content_type="application/json",
     )
@@ -358,16 +361,16 @@ def test_endpoint_de_atender_com_pin_do_gerente_resolve(client, operator, manage
     entry = pos_service.request_change(operator=operator, kind="coins")
 
     response = client.post(
-        reverse("api-backstage-pos-change-request-serve", args=[entry["ref"]]),
+        reverse("api-backstage-pos-change-request-serve", args=[str(entry.pk)]),
         data={"manager_approval": _approval()},
         content_type="application/json",
     )
 
     assert response.status_code == 200
-    shift = CashShift.get_open_for_operator(operator)
-    assert shift.metadata["change_requests"][0]["status"] == "served"
-    # ⚠️ Net zero também pelo endpoint: nenhuma linha de movimento nasceu aqui.
-    assert shift.movements.count() == 0
+    shift = cash.open_shift_for(operator)
+    assert _requests(operator)[0]["status"] == "served"
+    # ⚠️ Net zero também pelo endpoint: o saldo do livro não mexeu.
+    assert cash.balance(shift) == 10000
 
 
 def test_endpoint_de_cancelar_resolve(client, operator):
@@ -376,13 +379,13 @@ def test_endpoint_de_cancelar_resolve(client, operator):
     entry = pos_service.request_change(operator=operator, kind="coins")
 
     response = client.post(
-        reverse("api-backstage-pos-change-request-cancel", args=[entry["ref"]]),
+        reverse("api-backstage-pos-change-request-cancel", args=[str(entry.pk)]),
         data={},
         content_type="application/json",
     )
 
     assert response.status_code == 200
-    assert CashShift.get_open_for_operator(operator).metadata["change_requests"][0]["status"] == "cancelled"
+    assert _requests(operator)[0]["status"] == "cancelled"
 
 
 # ── Aviso ─────────────────────────────────────────────────────────────────
@@ -405,12 +408,13 @@ def test_o_pedido_anuncia_no_canal_de_alertas(operator, monkeypatch, django_capt
     )
 
     with django_capture_on_commit_callbacks(execute=True):
-        pos_service.request_change(operator=operator, kind="coins")
+        entry = pos_service.request_change(operator=operator, kind="coins")
 
     assert enviados, "o pedido de troco precisa deixar sinal no canal de alertas"
     kind, event_type, payload = enviados[-1]
     assert (kind, event_type) == ("alerts", "backstage-alerts-update")
     assert payload["type"] == "change_request"
+    assert payload["ref"] == str(entry.pk)
     assert payload["kind"] == "coins"
     assert payload["status"] == "pending"
     assert payload["requested_by"] == "marina"

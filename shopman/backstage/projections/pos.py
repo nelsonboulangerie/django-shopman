@@ -353,9 +353,9 @@ def build_pos(*, terminal=None, operator=None) -> POSProjection:
     if terminal is None and cash_shift is not None:
         terminal = cash_shift.terminal
     if terminal is None:
-        from shopman.backstage.models import POSTerminal
+        from shopman.cashman.models import Terminal
 
-        terminal = POSTerminal.default()
+        terminal = Terminal.default()
     terminal_cash_shift = _active_cash_shift_for_terminal(terminal)
     from shopman.backstage.services.pos_hardware import CashDrawerConfig
     from shopman.backstage.services.pos_terminal import runtime_profile
@@ -418,21 +418,21 @@ def _manager_cards() -> tuple[dict, ...]:
 
     Existe porque a tela pedia o nome do gerente DIGITADO, e nome digitado erra: o
     servidor resolve o usuário por ``username`` e valida o PIN contra a credencial
-    daquela pessoa — a assinatura que fica em ``CashMovement.approved_by``. Com a
+    daquela pessoa — a assinatura que fica em ``Entry.approved_by`` do livro. Com a
     lista, o ``username`` sai daqui já certo em vez de sair de um chute do balcão.
 
     Sai só nome e ``username``. Nada de id, e-mail ou qualquer coisa da credencial:
     esta lista é lida por qualquer terminal com sessão de balcão, e o que ela
     publica vira superfície de ataque.
     """
-    from shopman.backstage.services.operator import ADJUST_CASHSHIFT, eligible_operators
+    from shopman.backstage.services.operator import ADJUST_SHIFT, eligible_operators
 
     return tuple(
         {
             "username": user.get_username(),
             "name": user.get_full_name().strip() or user.get_username(),
         }
-        for user in eligible_operators(perm=ADJUST_CASHSHIFT)
+        for user in eligible_operators(perm=ADJUST_SHIFT)
     )
 
 
@@ -1299,9 +1299,9 @@ def _active_cash_shift(operator):
     if operator is None:
         return None
     try:
-        from shopman.backstage.models import CashShift
+        from shopman.cashman import services as cash
 
-        return CashShift.get_open_for_operator(operator)
+        return cash.open_shift_for(operator)
     except Exception:
         logger.debug("pos_active_cash_shift_lookup_failed", exc_info=True)
         return None
@@ -1311,9 +1311,9 @@ def _active_cash_shift_for_terminal(terminal):
     if terminal is None:
         return None
     try:
-        from shopman.backstage.models import CashShift
+        from shopman.cashman import services as cash
 
-        return CashShift.get_open_for_terminal(terminal)
+        return cash.open_shift_for_terminal(terminal)
     except Exception:
         logger.debug("pos_terminal_cash_shift_lookup_failed", exc_info=True)
         return None
@@ -1369,9 +1369,11 @@ def _cash_runtime_projection(cash_shift, runtime, operator, *, terminal_cash_shi
 def _pending_change_requests(cash_shift) -> tuple[POSChangeRequestProjection, ...]:
     from shopman.backstage.services.pos import pending_change_requests
 
+    # O ``ref`` da tela é o id do lançamento ``change_requested``: é por ele que o
+    # balcão atende e cancela (``change-request/<ref>/serve|cancel``).
     return tuple(
         POSChangeRequestProjection(
-            ref=str(entry.get("ref") or ""),
+            ref=str(entry.get("entry_id") or ""),
             kind=str(entry.get("kind") or ""),
             amount_q=int(entry.get("amount_q") or 0),
             # Pedido sem valor mostra vazio, não "R$ 0,00": "faltou moeda" é um

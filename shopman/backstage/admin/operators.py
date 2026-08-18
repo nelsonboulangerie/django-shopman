@@ -7,7 +7,7 @@ UMA vez ao gerente e marca ``must_change`` — o operador é forçado a trocá-l
 próximo uso. O PIN nunca é revelado (só o digest é guardado); o temporário
 aparece uma vez na mensagem para o gerente repassar.
 
-Gateado por ``backstage.manage_operators``. Provisionar o PRIMEIRO PIN de um
+Gateado por ``cashman.manage_operators``. Provisionar o PRIMEIRO PIN de um
 operador novo continua pela CLI (``set_operator_pin``) ou pelo próprio reset.
 """
 
@@ -22,7 +22,7 @@ from unfold.admin import ModelAdmin
 from shopman.backstage.admin_console.operator_badge import BADGE_SESSION_KEY
 from shopman.backstage.services.operator import reset_operator_pin
 
-MANAGE_OPERATORS = "backstage.manage_operators"
+MANAGE_OPERATORS = "cashman.manage_operators"
 
 
 @admin.register(PinCredential)

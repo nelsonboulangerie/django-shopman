@@ -1,8 +1,24 @@
-"""POS mutation service for backstage cash-shift mutations."""
+"""Mutações de caixa do PDV, sobre o ``cashman``.
+
+O balcão fala em "abrir caixa", "sangria", "pedir troco"; o pacote fala em turno
+e lançamento. Este módulo é a tradução: recebe o que a tela manda (texto de
+dinheiro, tipo em português, PIN de gerente), valida o que é da superfície e
+chama o único escritor do livro (``shopman.cashman.services``). Nada aqui grava
+``Entry`` por conta própria, e nada aqui soma o livro: esperado e diferença são
+do pacote e da retaguarda, nunca do terminal (fechamento cego, ADR-011 §4).
+"""
 
 from __future__ import annotations
 
 from shopman.backstage.services.exceptions import POSError, POSPermissionError
+
+#: Vocabulário do balcão ↔ tipo do livro. O PDV (rota ``pos/cash/movement/``,
+#: relatório X/Z, capability ``movement_kinds``) fala ``sangria``/``suprimento``
+#: porque é assim que o operador brasileiro chama; o livro fala ``cash_out``/
+#: ``cash_in`` porque é assim que o pacote nomeia o efeito. A tradução mora aqui,
+#: num lugar só, para o resto do backstage não decorar os dois dialetos.
+MOVEMENT_KIND_BY_API: dict[str, str] = {"sangria": "cash_out", "suprimento": "cash_in"}
+MOVEMENT_API_BY_KIND: dict[str, str] = {kind: api for api, kind in MOVEMENT_KIND_BY_API.items()}
 
 
 def parse_money_to_q(raw) -> int:
@@ -27,23 +43,28 @@ def parse_money_to_q(raw) -> int:
 
 
 def open_cash_shift(*, operator, opening_amount_raw="0", terminal_ref: str = ""):
-    from shopman.backstage.models import CashShift
+    """Abre o turno do operador com o fundo de troco; devolve o já aberto se houver.
 
-    existing = CashShift.get_open_for_operator(operator)
+    Idempotente de propósito: a tela reenvia "abrir" depois de um refresh, e um
+    segundo turno para a mesma pessoa é o que a constraint do pacote proíbe.
+    """
+    from shopman.cashman import services as cash
+    from shopman.cashman.exceptions import CashError
+
+    existing = cash.open_shift_for(operator)
     if existing:
         return existing
 
     terminal = _terminal(terminal_ref)
-    terminal_open = CashShift.get_open_for_terminal(terminal)
-    if terminal_open:
-        raise POSError("Terminal POS já possui turno aberto.")
-
-    opening_amount_q = max(0, parse_money_to_q(opening_amount_raw))
-    return CashShift.objects.create(
-        terminal=terminal,
-        operator=operator,
-        opening_amount_q=opening_amount_q,
-    )
+    float_q = max(0, parse_money_to_q(opening_amount_raw))
+    try:
+        return cash.open_shift(operator=operator, terminal=terminal, float_q=float_q)
+    except CashError as exc:
+        if exc.code == "SHIFT_ALREADY_OPEN":
+            # A tela distingue "terminal ocupado" (409, escolha outro terminal ou
+            # feche o turno alheio) de qualquer outra falha (400) por esta mensagem.
+            raise POSError("Terminal POS já possui turno aberto.") from exc
+        raise POSError(exc.message) from exc
 
 
 def movement_removes_cash(movement_type: str, amount_q: int) -> bool:
@@ -65,130 +86,76 @@ def register_cash_movement(
     reason: str = "",
     manager_approval: dict | None = None,
 ):
-    """Registra um movimento de gaveta.
+    """Lança sangria (``cash_out``) ou suprimento (``cash_in``) no turno aberto.
 
     Retirada exige PIN de gerente — SEM limiar, em qualquer valor. Antes um
-    operador sozinho lançava sangria à vontade: como o fechamento calcula
-    ``esperado = abertura + vendas + suprimentos − sangrias``, uma
-    sangria inventada abaixava o esperado e a contagem cega fechava redonda.
-    O dinheiro saía e o caixa batia. Agora a retirada tem duas assinaturas: quem
-    lança e quem autoriza, ambas gravadas.
+    operador sozinho lançava sangria à vontade: como o esperado é a soma do
+    livro, uma sangria inventada abaixava o esperado e a contagem cega fechava
+    redonda. O dinheiro saía e o caixa batia. Agora a retirada tem duas
+    assinaturas: quem lança (``operator``) e quem autoriza (``approved_by``),
+    ambas gravadas na mesma linha do livro.
     """
-    from shopman.backstage.models import CashMovement, CashShift
     from shopman.shop.services.pos import validate_manager_override
 
-    shift = CashShift.get_open_for_operator(operator)
-    if not shift:
-        raise POSError("Caixa não aberto.")
-    if shift.status != CashShift.Status.OPEN:
-        raise POSError("Turno de caixa já fechado.")
+    shift = _open_shift_or_raise(operator)
 
-    normalized_type = movement_type if movement_type in {"sangria", "suprimento"} else "sangria"
+    api_kind = movement_type if movement_type in MOVEMENT_KIND_BY_API else "sangria"
     amount_q = parse_money_to_q(amount_raw)
-    # Sempre positivo: o sinal vive no TIPO. Aceitar negativo aqui daria um
-    # segundo jeito de lançar sangria — disfarçada de suprimento, e sem gerente.
+    # Sempre positivo na entrada: o sinal vive no TIPO. Aceitar negativo aqui
+    # daria um segundo jeito de lançar sangria — disfarçada de suprimento, e sem
+    # gerente. O livro recebe o valor já assinado.
     if amount_q <= 0:
         raise POSError("Valor inválido.")
 
-    approved_by = ""
-    if movement_removes_cash(normalized_type, amount_q):
+    approved_by = None
+    if movement_removes_cash(api_kind, amount_q):
         approval = manager_approval or {}
         validate_manager_override(
             approval,
-            operator_username=operator.username,
-            action=f"cash_{normalized_type}",
+            operator_username=operator.get_username(),
+            action=f"cash_{api_kind}",
         )
-        approved_by = str(approval.get("username") or "").strip()
+        approved_by = _approver(approval)
 
-    return CashMovement.objects.create(
+    kind = MOVEMENT_KIND_BY_API[api_kind]
+    signed_q = -amount_q if kind == "cash_out" else amount_q
+    return _record(
+        kind,
         shift=shift,
-        movement_type=normalized_type,
-        amount_q=amount_q,
-        reason=reason.strip(),
-        created_by=operator.username,
+        operator=operator,
+        amount_q=signed_q,
         approved_by=approved_by,
+        reason=reason,
     )
 
 
-#: Teto da trilha de aberturas guardada no turno. Um turno normal abre a gaveta
-#: dezenas de vezes; 500 cobre o pior sábado com folga e impede que um clique
-#: preso engorde o JSONField sem limite.
-_DRAWER_OPENING_LOG_CAP = 500
-
-
 def register_drawer_opening(*, operator, reason: str = ""):
-    """Registra uma abertura de gaveta SEM venda e sem movimento.
+    """Registra uma abertura de gaveta SEM venda e sem movimento (``drawer_open``).
 
-    Os outros três momentos que abrem a gaveta já deixam rastro sozinhos: a
-    venda em dinheiro tem o pedido, a sangria e o suprimento têm o
-    ``CashMovement``. Este não tem nada — é o operador abrindo para conferir,
-    trocar nota, ou por qualquer motivo que só ele sabe. Sem registro, é
-    exatamente o buraco que a chave física deixava.
+    Os outros momentos que abrem a gaveta já deixam rastro sozinhos: a venda em
+    dinheiro tem a linha ``sale``, a sangria e o suprimento têm a sua. Este não
+    teria nada — é o operador abrindo para conferir, trocar nota, ou por
+    qualquer motivo que só ele sabe. Sem registro, é exatamente o buraco que a
+    chave física deixava. Efeito zero no saldo; o motivo é a substância.
 
     ⚠️ Isto NÃO decide quem pode abrir. A política de autorização de gaveta é da
     frente de estresse do PDV (retirada exige PIN em qualquer valor); aqui é o
-    caminho físico. O motivo é substância da auditoria, não portaria.
-
-    Mora em ``CashShift.metadata`` porque é dado contextual de um turno — o
-    idioma do projeto para isso é JSONField, não migração.
+    caminho físico.
     """
-    from django.db import transaction
-    from django.utils import timezone
-
-    from shopman.backstage.models import CashShift
-
     reason = str(reason or "").strip()[:120]
     if not reason:
         raise POSError("Informe o motivo da abertura.")
-
-    with transaction.atomic():
-        # Sem o lock, duas aberturas quase simultâneas leem a mesma lista e a
-        # segunda sobrescreve a primeira — uma abertura sumiria da trilha.
-        shift = (
-            CashShift.objects.select_for_update()
-            .filter(operator=operator, status=CashShift.Status.OPEN)
-            .first()
-        )
-        if not shift:
-            raise POSError("Caixa não aberto.")
-        metadata = dict(shift.metadata or {})
-        openings = list(metadata.get("drawer_openings") or [])
-        openings.append(
-            {
-                "at": timezone.now().isoformat(),
-                "by": operator.username,
-                "reason": reason,
-            }
-        )
-        metadata["drawer_openings"] = openings[-_DRAWER_OPENING_LOG_CAP:]
-        shift.metadata = metadata
-        shift.save(update_fields=["metadata"])
-    return shift
+    shift = _open_shift_or_raise(operator)
+    return _record("drawer_open", shift=shift, operator=operator, reason=reason)
 
 
 #: O que o balcão pode pedir. Refs em inglês (contrato), rótulo em pt-BR na tela.
 #: `amount` é o pedido que só fala de valor ("me traz uns R$ 50 em troco").
 CHANGE_REQUEST_KINDS = ("coins", "small_bills", "amount")
 
-#: Teto da lista de pedidos guardada no turno. Um turno pede troco meia dúzia de
-#: vezes no pior sábado; 50 cobre isso com folga e impede que um botão repetido
-#: engorde o JSONField sem limite.
-_CHANGE_REQUEST_LOG_CAP = 50
-
-
-def _change_request_ref() -> str:
-    """Identificador curto do pedido — é por ele que a tela atende e cancela.
-
-    Aleatório, não sequencial: o índice na lista mudaria quando o teto apara as
-    entradas antigas, e aí "atender o pedido 3" atenderia outro pedido.
-    """
-    import secrets
-
-    return secrets.token_hex(4)
-
 
 def request_change(*, operator, kind: str = "coins", amount_raw="0", note: str = ""):
-    """O operador PEDE troco. Ninguém sai do balcão.
+    """O operador PEDE troco (``change_requested``). Ninguém sai do balcão.
 
     Este é o ponto todo da feature: quando falta troco, o operador atravessava a
     loja com dinheiro até o cofre, por um trajeto que a câmera só cobre em parte.
@@ -197,20 +164,12 @@ def request_change(*, operator, kind: str = "coins", amount_raw="0", note: str =
     dinheiro fica onde está: o operador pede, alguém traz, e a troca acontece no
     balcão, à vista, entre duas pessoas.
 
-    ⚠️ Um pedido NÃO é movimento de caixa e nunca vai virar um. Trocar uma nota
-    de R$ 50 por cinco de R$ 10 é NET ZERO: o total da gaveta não muda. Se isto
-    criasse ``CashMovement``, o ``expected_amount_q`` cairia por um dinheiro que
-    nunca saiu e o turno fecharia com falta fantasma — foi exatamente o defeito
-    que o PR #178 teve de desfazer.
-
-    Mora em ``CashShift.metadata`` porque é dado contextual de um turno — o
-    idioma do projeto para isso é JSONField, não migração.
+    ⚠️ Um pedido NÃO mexe no saldo e nunca vai mexer. Trocar uma nota de R$ 50
+    por cinco de R$ 10 é NET ZERO: o total da gaveta não muda. O lançamento tem
+    ``amount_q = 0`` por construção (CheckConstraint do pacote); se isto tivesse
+    valor, o esperado cairia por um dinheiro que nunca saiu e o turno fecharia
+    com falta fantasma — foi exatamente o defeito que o PR #178 teve de desfazer.
     """
-    from django.db import transaction
-    from django.utils import timezone
-
-    from shopman.backstage.models import CashShift
-
     kind = str(kind or "").strip()
     if kind not in CHANGE_REQUEST_KINDS:
         raise POSError("Tipo de pedido inválido.")
@@ -221,143 +180,107 @@ def request_change(*, operator, kind: str = "coins", amount_raw="0", note: str =
         raise POSError("Informe o valor aproximado.")
     note = str(note or "").strip()[:120]
 
-    with transaction.atomic():
-        # Sem o lock, dois pedidos quase simultâneos leem a mesma lista e o
-        # segundo sobrescreve o primeiro — um pedido sumiria antes de ser visto.
-        shift = (
-            CashShift.objects.select_for_update()
-            .filter(operator=operator, status=CashShift.Status.OPEN)
-            .first()
-        )
-        if not shift:
-            raise POSError("Caixa não aberto.")
-        entry = {
-            "ref": _change_request_ref(),
-            "kind": kind,
-            "amount_q": amount_q,
-            "note": note,
-            "status": "pending",
-            "requested_by": operator.username,
-            "requested_at": timezone.now().isoformat(),
-            "served_by": "",
-            "served_at": "",
-            "cancelled_at": "",
-        }
-        _save_change_requests(shift, [*_change_requests(shift), entry])
-
-    _announce_change_request(shift, entry)
+    shift = _open_shift_or_raise(operator)
+    entry = _record(
+        "change_requested",
+        shift=shift,
+        operator=operator,
+        payload={"kind": kind, "amount_q": amount_q, "note": note},
+    )
+    _announce_change_request(shift, _change_request(shift, entry.pk))
     return entry
 
 
 def serve_change_request(*, operator, request_ref: str, manager_approval: dict | None = None):
-    """O gerente traz o troco e assina no balcão. A gaveta abre; o esperado, não.
+    """O gerente traz o troco e assina no balcão (``change_served``). A gaveta abre; o esperado, não.
 
-    Mesma permissão de quem autoriza uma sangria (``backstage.adjust_cashshift``)
+    Mesma permissão de quem autoriza uma sangria (``cashman.adjust_shift``)
     porque a gaveta abre com dinheiro dentro e alguém de fora do turno mexe nela:
     sem a segunda assinatura, "atender um pedido" viraria um jeito de abrir a
     gaveta sem ninguém olhando — o buraco que este fluxo existe para fechar.
-
-    ⚠️ NÃO cria ``CashMovement`` e NÃO toca em ``expected_amount_q``. A troca é
-    net zero (saem R$ 50, entram 5×R$ 10); qualquer lançamento aqui inventaria
-    uma diferença no fechamento cego.
     """
-    from django.db import transaction
-    from django.utils import timezone
-
-    from shopman.backstage.models import CashShift
     from shopman.shop.services.pos import validate_manager_override
 
     validate_manager_override(
         manager_approval or {},
-        operator_username=operator.username,
+        operator_username=operator.get_username(),
         action="cash_change_request_serve",
     )
-    approved_by = str((manager_approval or {}).get("username") or "").strip()
+    approved_by = _approver(manager_approval or {})
 
-    with transaction.atomic():
-        shift = (
-            CashShift.objects.select_for_update()
-            .filter(operator=operator, status=CashShift.Status.OPEN)
-            .first()
-        )
-        if not shift:
-            raise POSError("Caixa não aberto.")
-        requests = _change_requests(shift)
-        entry = _find_pending(requests, request_ref)
-        entry["status"] = "served"
-        entry["served_by"] = approved_by
-        entry["served_at"] = timezone.now().isoformat()
-        _save_change_requests(shift, requests)
-
-    _announce_change_request(shift, entry)
+    shift = _open_shift_or_raise(operator)
+    request = _pending_request(shift, request_ref)
+    entry = _record(
+        "change_served",
+        shift=shift,
+        operator=operator,
+        approved_by=approved_by,
+        parent=request,
+    )
+    _announce_change_request(shift, _change_request(shift, request.pk))
     return entry
 
 
 def cancel_change_request(*, operator, request_ref: str):
-    """O operador achou troco na gaveta e o pedido não vale mais.
+    """O operador achou troco na gaveta e o pedido não vale mais (``change_cancelled``).
 
     Sem esta saída o pendente fica pendurado para sempre, e uma lista com
     pedidos mortos é uma lista em que ninguém acredita — daí a próxima falta de
     troco volta a ser resolvida na caminhada até o cofre.
     """
-    from django.db import transaction
-    from django.utils import timezone
-
-    from shopman.backstage.models import CashShift
-
-    with transaction.atomic():
-        shift = (
-            CashShift.objects.select_for_update()
-            .filter(operator=operator, status=CashShift.Status.OPEN)
-            .first()
-        )
-        if not shift:
-            raise POSError("Caixa não aberto.")
-        requests = _change_requests(shift)
-        entry = _find_pending(requests, request_ref)
-        entry["status"] = "cancelled"
-        entry["cancelled_at"] = timezone.now().isoformat()
-        _save_change_requests(shift, requests)
-
-    _announce_change_request(shift, entry)
+    shift = _open_shift_or_raise(operator)
+    request = _pending_request(shift, request_ref)
+    entry = _record("change_cancelled", shift=shift, operator=operator, parent=request)
+    _announce_change_request(shift, _change_request(shift, request.pk))
     return entry
 
 
 def pending_change_requests(shift) -> list[dict]:
-    """Os pedidos que ainda esperam alguém trazer o troco."""
+    """Os pedidos que ainda esperam alguém trazer o troco.
+
+    O estado não mora em coluna: o pacote dobra ``change_requested`` com o
+    ``change_served``/``change_cancelled`` que aponta para ele por ``parent``.
+    """
+    from shopman.cashman import services as cash
+
     if shift is None:
         return []
-    return [r for r in _change_requests(shift) if r.get("status") == "pending"]
+    return [r for r in cash.change_requests(shift) if r.get("status") == "pending"]
 
 
-def _change_requests(shift) -> list[dict]:
-    return [dict(r) for r in (dict(shift.metadata or {}).get("change_requests") or [])]
-
-
-def _save_change_requests(shift, requests: list[dict]) -> None:
-    metadata = dict(shift.metadata or {})
-    metadata["change_requests"] = requests[-_CHANGE_REQUEST_LOG_CAP:]
-    shift.metadata = metadata
-    shift.save(update_fields=["metadata"])
-
-
-def _find_pending(requests: list[dict], request_ref: str) -> dict:
+def _pending_request(shift, request_ref: str):
     """Acha o pedido pendente, ou explica qual dos dois erros aconteceu.
 
     Atendido/cancelado tem mensagem própria porque o caso real é duas pessoas na
     mesma tela: se o segundo toque dissesse "não encontrado", o gerente
     procuraria defeito no sistema em vez de ver que o pedido já foi resolvido.
     """
-    ref = str(request_ref or "").strip()
-    for entry in requests:
-        if entry.get("ref") == ref:
-            if entry.get("status") != "pending":
-                raise POSError("Este pedido de troco já foi resolvido.")
-            return entry
-    raise POSError("Pedido de troco não encontrado.")
+    from shopman.cashman.models import Entry
+
+    entry_id = _int_or_none(request_ref)
+    request = (
+        Entry.objects.filter(pk=entry_id, shift=shift, kind=Entry.Kind.CHANGE_REQUESTED).first()
+        if entry_id is not None
+        else None
+    )
+    if request is None:
+        raise POSError("Pedido de troco não encontrado.")
+    state = _change_request(shift, request.pk)
+    if state.get("status") != "pending":
+        raise POSError("Este pedido de troco já foi resolvido.")
+    return request
 
 
-def _announce_change_request(shift, entry: dict) -> None:
+def _change_request(shift, entry_id: int) -> dict:
+    from shopman.cashman import services as cash
+
+    for request in cash.change_requests(shift):
+        if request["entry_id"] == entry_id:
+            return request
+    return {"entry_id": entry_id}
+
+
+def _announce_change_request(shift, request: dict) -> None:
     """Anuncia o pedido no canal `alerts` do SSE.
 
     ⚠️ Isto NÃO substitui o operador chamar em voz alta. Numa padaria pequena
@@ -371,28 +294,21 @@ def _announce_change_request(shift, entry: dict) -> None:
 
     emit_change_request(
         {
-            "ref": entry.get("ref", ""),
-            "status": entry.get("status", ""),
-            "kind": entry.get("kind", ""),
-            "amount_q": entry.get("amount_q", 0),
+            "ref": str(request.get("entry_id") or ""),
+            "status": request.get("status", ""),
+            "kind": request.get("kind", ""),
+            "amount_q": request.get("amount_q", 0),
             "shift_id": shift.pk,
             "terminal_ref": shift.terminal.ref if shift.terminal_id else "",
-            "requested_by": entry.get("requested_by", ""),
+            "requested_by": request.get("requested_by", ""),
         }
     )
 
 
 def close_cash_shift(*, operator, closing_amount_raw="0", notes: str = ""):
-    from shopman.backstage.models import CashShift
-
-    shift = CashShift.get_open_for_operator(operator)
-    if not shift:
-        raise POSError("Caixa não aberto.")
-
-    shift.close(
-        blind_closing_amount_q=parse_money_to_q(closing_amount_raw),
-        notes=notes.strip(),
-    )
+    """Fechamento cego do turno do operador: a contagem vira o lançamento ``count``."""
+    shift = _open_shift_or_raise(operator)
+    _close(shift, actor=operator, counted_raw=closing_amount_raw, notes=notes)
     return shift
 
 
@@ -403,12 +319,19 @@ def close_blocking_shift(*, actor_user, shift_id, closing_amount_raw="0", notes:
     operador atual, ele fica preso sem poder vender. Aqui o GERENTE
     (``perform_closing``) ou o DONO do turno conta a gaveta e fecha o turno
     bloqueante — liberando o terminal. Operador comum não fecha o caixa de
-    outro (anti-fraude) → POSPermissionError.
+    outro (anti-fraude) → POSPermissionError. Quem fechou fica no lançamento
+    ``count`` como quem agiu; o pacote marca ``supervisory`` no payload quando o
+    ator não é o dono.
     """
-    from shopman.backstage.models import CashShift
+    from shopman.cashman.models import Shift
+
     from shopman.backstage.permissions import can_close_day
 
-    shift = CashShift.objects.filter(pk=shift_id, status=CashShift.Status.OPEN).first()
+    shift = (
+        Shift.objects.filter(pk=_int_or_none(shift_id), status=Shift.Status.OPEN)
+        .select_related("terminal", "operator")
+        .first()
+    )
     if not shift:
         raise POSError("Turno não encontrado ou já fechado.")
 
@@ -416,50 +339,49 @@ def close_blocking_shift(*, actor_user, shift_id, closing_amount_raw="0", notes:
     if not (can_close_day(actor_user) or is_owner):
         raise POSPermissionError("Sem permissão para fechar o turno de outro operador.")
 
-    shift.close(
-        blind_closing_amount_q=parse_money_to_q(closing_amount_raw),
-        notes=notes.strip(),
-    )
+    _close(shift, actor=actor_user, counted_raw=closing_amount_raw, notes=notes)
     return shift
 
 
+def _close(shift, *, actor, counted_raw, notes: str) -> None:
+    from shopman.cashman import services as cash
+    from shopman.cashman.exceptions import CashError
+
+    try:
+        cash.close_shift(shift, counted_q=parse_money_to_q(counted_raw), actor=actor, notes=str(notes or "").strip())
+    except CashError as exc:
+        raise POSError(exc.message) from exc
+
+
 def _terminal(terminal_ref: str = ""):
-    from shopman.backstage.models import POSTerminal
+    from shopman.cashman.models import Terminal
 
     ref = str(terminal_ref or "").strip()
     if ref:
-        terminal = POSTerminal.objects.filter(ref=ref, is_active=True).first()
+        terminal = Terminal.objects.filter(ref=ref, is_active=True).first()
         if not terminal:
             raise POSError("Terminal POS inválido.")
         return terminal
-    terminal = POSTerminal.objects.filter(is_active=True).order_by("ref").first()
-    return terminal or POSTerminal.default()
+    terminal = Terminal.objects.filter(is_active=True).order_by("ref").first()
+    return terminal or Terminal.default()
 
 
-def cash_movement_receipt_payload(*, operator, movement_id: int, reprint: bool = False) -> dict:
-    """Bytes do comprovante, prontos para o agente do balcão imprimir.
+def cash_movement_receipt_payload(*, operator, entry_id: int, reprint: bool = False) -> dict:
+    """Bytes do comprovante de sangria/suprimento, prontos para o agente do balcão imprimir.
 
-    O servidor compõe; a tela só relaia. Devolve base64 porque JSON não carrega
-    byte cru, e o caminho todo (tela → agente) já é JSON.
+    O servidor compõe a partir da linha do livro; a tela só relaia. Devolve
+    base64 porque JSON não carrega byte cru, e o caminho todo (tela → agente) já
+    é JSON.
     """
     import base64
 
     from django.conf import settings
 
-    from shopman.backstage.models import CashMovement, CashShift
     from shopman.backstage.services.receipt_escpos import cash_movement_receipt
     from shopman.backstage.services.receipt_verify import code_for
 
-    shift = CashShift.get_open_for_operator(operator)
-    if not shift:
-        raise POSError("Caixa não aberto.")
-    try:
-        # Preso ao turno DO OPERADOR: ninguém tira comprovante do caixa alheio.
-        movement = CashMovement.objects.select_related("shift").get(pk=movement_id, shift=shift)
-    except CashMovement.DoesNotExist as exc:
-        raise POSError("Movimento não encontrado neste turno.") from exc
-
-    code = code_for(movement.pk)
+    entry = _movement_entry(operator, entry_id)
+    code = code_for(entry.pk)
     # A URL sai do host canônico do Admin, não de uma constante inventada.
     #
     # O fallback mora AQUI e não no setting: `SHOPMAN_ADMIN_HOST` também decide
@@ -472,47 +394,110 @@ def cash_movement_receipt_payload(*, operator, movement_id: int, reprint: bool =
         or str(getattr(settings, "SHOPMAN_OPERATOR_API_HOST", "") or "").strip()
     )
     verify_url = f"https://{host}/admin/cash/receipt/{code}/" if host else code
-    payload = cash_movement_receipt(
-        movement, verify_code=code, verify_url=verify_url, reprint=reprint
-    )
+    payload = cash_movement_receipt(entry, verify_code=code, verify_url=verify_url, reprint=reprint)
     return {
-        "movement_id": movement.pk,
-        "title": f"comprovante:{movement.movement_type}",
+        "entry_id": entry.pk,
+        "title": f"comprovante:{MOVEMENT_API_BY_KIND[entry.kind]}",
         "payload_b64": base64.b64encode(payload).decode("ascii"),
         "verify_code": code,
     }
 
 
-def record_receipt_result(*, operator, movement_id: int, status: str, detail: str = ""):
-    """Grava o que ACONTECEU com o papel.
+#: O que o balcão pode dizer sobre o papel. ``pending`` não entra: é o estado de
+#: quem ainda não disse nada, e "dizer que não disse" seria linha vazia no livro.
+RECEIPT_RESULT_STATUSES = ("printed", "failed", "skipped")
+
+
+def record_receipt_result(*, operator, entry_id: int, status: str, detail: str = ""):
+    """Grava o que ACONTECEU com o papel (``receipt_result`` apontando para a sangria/suprimento).
 
     ⚠️ Só o balcão sabe se imprimiu — quem manda ao agente é o navegador. Sem
     este registro, papel que faltou pareceria papel que alguém escondeu, e a
     sangria voltaria a não ter testemunha.
 
-    Nunca volta atrás de `printed`: se já imprimiu uma vez, imprimiu.
+    Nunca volta atrás de `printed`: se já imprimiu uma vez, imprimiu — um
+    resultado posterior não apaga o anterior (livro é livro), e a leitura
+    considera o último; por isso, depois de `printed`, não se grava outro.
     """
-    from django.utils import timezone
-
-    from shopman.backstage.models import CashMovement, CashShift
-
-    valores = set(CashMovement.ReceiptStatus.values)
-    if status not in valores or status == CashMovement.ReceiptStatus.PENDING:
+    if status not in RECEIPT_RESULT_STATUSES:
         raise POSError("Resultado de impressão inválido.")
 
-    shift = CashShift.get_open_for_operator(operator)
+    entry = _movement_entry(operator, entry_id)
+    last = receipt_result_for(entry)
+    if last is not None and (last.payload or {}).get("status") == "printed":
+        return last
+
+    return _record(
+        "receipt_result",
+        shift=entry.shift,
+        operator=operator,
+        parent=entry,
+        payload={"status": status, "detail": str(detail or "").strip()[:200]},
+    )
+
+
+def receipt_result_for(entry):
+    """O último ``receipt_result`` que responde a esta linha, ou ``None`` (sem confirmação)."""
+    from shopman.cashman.models import Entry
+
+    return entry.children.filter(kind=Entry.Kind.RECEIPT_RESULT).order_by("-at", "-id").first()
+
+
+def _movement_entry(operator, entry_id: int):
+    """A sangria/suprimento pedida, presa aos turnos DO OPERADOR: ninguém tira comprovante do caixa alheio.
+
+    Não exige turno aberto: o navegador pode confirmar a impressão (ou pedir a
+    segunda via) depois de o turno fechar, e o pacote aceita ``receipt_result``
+    em turno fechado exatamente por isso.
+    """
+    from shopman.cashman.models import Entry
+
+    entry = (
+        Entry.objects.filter(
+            pk=_int_or_none(entry_id),
+            shift__operator=operator,
+            kind__in=list(MOVEMENT_KIND_BY_API.values()),
+        )
+        .select_related("shift", "shift__terminal", "operator", "approved_by")
+        .first()
+    )
+    if entry is None:
+        raise POSError("Movimento não encontrado neste turno.")
+    return entry
+
+
+def _open_shift_or_raise(operator):
+    from shopman.cashman import services as cash
+
+    shift = cash.open_shift_for(operator)
     if not shift:
         raise POSError("Caixa não aberto.")
+    return shift
+
+
+def _record(kind, **kwargs):
+    """``cashman.services.record`` com a recusa traduzida para o dialeto da superfície."""
+    from shopman.cashman import services as cash
+    from shopman.cashman.exceptions import CashError
+
     try:
-        movement = CashMovement.objects.get(pk=movement_id, shift=shift)
-    except CashMovement.DoesNotExist as exc:
-        raise POSError("Movimento não encontrado neste turno.") from exc
+        return cash.record(kind, **kwargs)
+    except CashError as exc:
+        raise POSError(exc.message) from exc
 
-    if movement.receipt_status == CashMovement.ReceiptStatus.PRINTED:
-        return movement
 
-    movement.receipt_status = status
-    movement.receipt_detail = str(detail or "").strip()[:200]
-    movement.receipt_at = timezone.now() if status == CashMovement.ReceiptStatus.PRINTED else None
-    movement.save(update_fields=["receipt_status", "receipt_detail", "receipt_at"])
-    return movement
+def _approver(approval: dict):
+    """O gerente que assinou, como User: o livro guarda a pessoa, não o nome digitado."""
+    from django.contrib.auth import get_user_model
+
+    username = str(approval.get("username") or "").strip()
+    return get_user_model().objects.filter(username=username, is_active=True, is_staff=True).first()
+
+
+def _int_or_none(value) -> int | None:
+    try:
+        if value in (None, ""):
+            return None
+        return int(value)
+    except (TypeError, ValueError):
+        return None

@@ -68,8 +68,16 @@ def test_cash_on_delivery_not_received_is_pending_not_cash_in_hand():
 
 
 def test_closing_and_bi_count_the_same_money(db):
-    """A regra é uma só — o risco que este teste guarda é a divergência."""
+    """Duas fontes, um só dinheiro — o risco que este teste guarda é a divergência.
+
+    O fechamento do dia lê o mix de meios do ``payman`` (intents capturados,
+    ADR-022: dono único de "receita por método"); o explorador do B.I. lê a
+    declaração do PEDIDO para cruzar com hora e canal. Quando o PDV liquida
+    cada tender no ``payman`` (WP-3), os dois têm de bater ao centavo.
+    """
+    from django.utils import timezone
     from shopman.orderman.models import Order
+    from shopman.payman.models import PaymentIntent, PaymentTransaction
 
     from shopman.backstage.services.closing import _payment_method_totals
 
@@ -80,7 +88,15 @@ def test_closing_and_bi_count_the_same_money(db):
             {"method": "pix", "amount_q": 1500},
         ]}},
     )
-    totals = _payment_method_totals(Order.objects.all())
+    for method, amount_q in (("cash", 1000), ("pix", 1500)):
+        intent = PaymentIntent.objects.create(
+            ref=f"PI-SAME-{method}", order_ref="PAY-SAME", method=method, amount_q=amount_q,
+            status=PaymentIntent.Status.CAPTURED, gateway="" if method == "cash" else "test",
+            captured_at=timezone.now(),
+        )
+        PaymentTransaction.objects.create(intent=intent, type=PaymentTransaction.Type.CAPTURE, amount_q=amount_q)
+
+    totals = _payment_method_totals(timezone.localdate())
     report = build_bi_explore(metric="payment_received", by="payment_method")
     bi = {row.key: int(row.value) for row in report.rows}
     assert bi == {"cash": totals["cash"], "pix": totals["pix"]} == {"cash": 1000, "pix": 1500}

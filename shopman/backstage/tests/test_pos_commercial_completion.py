@@ -2,9 +2,11 @@ from __future__ import annotations
 
 from django.contrib.auth import get_user_model
 from django.test import TestCase
+from shopman.cashman import services as cash
+from shopman.cashman.models import Terminal
 from shopman.orderman.models import Order
 
-from shopman.backstage.models import CashShift, POSTab, POSTerminal
+from shopman.backstage.models import POSTab
 from shopman.backstage.projections.pos import build_open_tab
 from shopman.shop.models import Channel, Shop
 from shopman.shop.services import operator_orders
@@ -28,7 +30,7 @@ class POSCommercialCompletionTests(TestCase):
         )
         User = get_user_model()
         self.operator = User.objects.create_user(username="commercial-pos", password="x", is_staff=True)
-        self.terminal = POSTerminal.default()
+        self.terminal = Terminal.default()
 
     def _open_tab(self) -> dict:
         return build_open_tab(pos_service.open_pos_tab(
@@ -50,8 +52,11 @@ class POSCommercialCompletionTests(TestCase):
         payload.update(overrides)
         return payload
 
-    def test_split_tender_persists_mixed_payment_and_counts_only_cash_in_shift(self) -> None:
-        shift = CashShift.objects.create(operator=self.operator, terminal=self.terminal, opening_amount_q=1000)
+    def test_split_tender_persists_mixed_payment(self) -> None:
+        # O turno é do cashman: é o pk dele que o servidor injeta em ``cash_shift_id``.
+        # O que o livro recebe da venda (linha ``sale``) é contrato do shop
+        # (CASHMAN-PLAN WP-3) e se prova em shop/tests; aqui, o pedido.
+        shift = cash.open_shift(operator=self.operator, terminal=self.terminal, float_q=1000)
         opened = self._open_tab()
 
         result = pos_service.close_sale(
@@ -74,10 +79,7 @@ class POSCommercialCompletionTests(TestCase):
         self.assertEqual(payment["method"], "mixed")
         self.assertEqual(payment["cash_received_q"], 500)
         self.assertEqual(payment["tenders"][1]["reference"], "PIX-123")
-
-        shift.close(blind_closing_amount_q=1500)
-        self.assertEqual(shift.expected_amount_q, 1500)
-        self.assertEqual(shift.difference_q, 0)
+        self.assertEqual(order.data["pos"]["terminal_ref"], self.terminal.ref)
 
     def test_duplicate_client_request_id_returns_existing_order_after_commit(self) -> None:
         opened = self._open_tab()
@@ -100,7 +102,7 @@ class POSCommercialCompletionTests(TestCase):
         self.assertEqual(Order.objects.filter(data__pos__client_request_id="pos:idem-commercial-001").count(), 1)
 
     def test_delivery_cash_settlement_moves_on_delivery_cash_to_active_shift(self) -> None:
-        shift = CashShift.objects.create(operator=self.operator, terminal=self.terminal, opening_amount_q=0)
+        shift = cash.open_shift(operator=self.operator, terminal=self.terminal, float_q=0)
         order = Order.objects.create(
             ref="ORD-COD-SETTLE",
             channel_ref="pdv",
@@ -126,10 +128,8 @@ class POSCommercialCompletionTests(TestCase):
         order.refresh_from_db()
 
         self.assertEqual(amount_q, 1200)
-        self.assertEqual(order.data["payment"]["cod_cash_shift_id"], shift.pk)
         self.assertEqual(order.data["payment"]["cash_received_q"], 1200)
         self.assertEqual(order.events.filter(type="payment_collected").count(), 1)
-
-        shift.close(blind_closing_amount_q=1200)
-        self.assertEqual(shift.expected_amount_q, 1200)
-        self.assertEqual(shift.difference_q, 0)
+        # O acerto entra no turno ABERTO de quem recebeu (linha ``cod_settled`` do
+        # livro é contrato do shop, WP-3); o turno segue aberto para a próxima venda.
+        self.assertTrue(cash.open_shift_for(self.operator).pk == shift.pk)

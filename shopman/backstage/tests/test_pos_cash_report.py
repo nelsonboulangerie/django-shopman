@@ -1,3 +1,5 @@
+"""Relatório X/Z da antesala do PDV, lido do livro do ``cashman`` e do ``payman``."""
+
 from __future__ import annotations
 
 import json
@@ -6,9 +8,10 @@ from django.contrib.auth import get_user_model
 from django.contrib.auth.models import Permission
 from django.contrib.contenttypes.models import ContentType
 from django.test import TestCase
-from shopman.orderman.models import Order
+from shopman.cashman import services as cash
+from shopman.cashman.models import Entry, Shift, Terminal
+from shopman.payman.models import PaymentIntent, PaymentTransaction
 
-from shopman.backstage.models import CashShift, POSTerminal
 from shopman.backstage.services import pos as pos_service
 
 REPORT_URL = "/api/v1/backstage/pos/cash/report/"
@@ -21,7 +24,7 @@ def _make_shop():
 
 
 def _grant_operate_pos(user):
-    ct = ContentType.objects.get_for_model(CashShift)
+    ct = ContentType.objects.get_for_model(Shift)
     perm = Permission.objects.get(content_type=ct, codename="operate_pos")
     user.user_permissions.add(perm)
 
@@ -32,10 +35,24 @@ def _manager_approval():
 
     User = get_user_model()
     user = User.objects.create_user(username="gerente-relatorio", password="x", is_staff=True)
-    ct = ContentType.objects.get_for_model(CashShift)
-    user.user_permissions.add(Permission.objects.get(content_type=ct, codename="adjust_cashshift"))
+    ct = ContentType.objects.get_for_model(Shift)
+    user.user_permissions.add(Permission.objects.get(content_type=ct, codename="adjust_shift"))
     PinCredential.set_for(user, "4321")
     return {"username": user.username, "pin": "4321"}
+
+
+def _captured_intent(ref: str, *, order_ref: str, method: str, amount_q: int) -> PaymentIntent:
+    """Um intent liquidado no ``payman`` — a fonte de "quanto, por método"."""
+    intent = PaymentIntent.objects.create(
+        ref=ref,
+        order_ref=order_ref,
+        method=method,
+        status=PaymentIntent.Status.CAPTURED,
+        amount_q=amount_q,
+        gateway="" if method in ("cash", "external") else "test",
+    )
+    PaymentTransaction.objects.create(intent=intent, type=PaymentTransaction.Type.CAPTURE, amount_q=amount_q)
+    return intent
 
 
 class POSCashReportTests(TestCase):
@@ -46,6 +63,10 @@ class POSCashReportTests(TestCase):
     ESPERADO da gaveta nem a variância — nem no X, nem no Z. A conferência é
     da retaguarda; aqui garantimos por contrato que essas chaves NÃO existem
     na resposta.
+
+    As vendas entram como o WP-3 do CASHMAN-PLAN as grava: uma linha ``sale``
+    no turno com ``payment_ref``/``payload.intents`` apontando os intents do
+    ``payman``; o valor por método vem de lá, o efeito em dinheiro da linha.
     """
 
     def setUp(self) -> None:
@@ -54,28 +75,34 @@ class POSCashReportTests(TestCase):
         self.operator = User.objects.create_user(username="caixa", password="x", is_staff=True)
         _grant_operate_pos(self.operator)
         self.client.force_login(self.operator)
-        self.terminal = POSTerminal.default()
+        self.terminal = Terminal.default()
         self.manager_approval = _manager_approval()
 
     # ── helpers ────────────────────────────────────────────────────────
 
-    def _open_shift(self, *, opening="50,00") -> CashShift:
+    def _open_shift(self, *, opening="50,00") -> Shift:
         return pos_service.open_cash_shift(
             operator=self.operator,
             opening_amount_raw=opening,
             terminal_ref=self.terminal.ref,
         )
 
-    def _sale(self, ref: str, *, shift: CashShift, total_q: int, tenders: list[dict]) -> Order:
-        return Order.objects.create(
-            ref=ref,
-            channel_ref=self.terminal.channel_ref,
-            session_key=f"sess-{ref}",
-            total_q=total_q,
-            data={
-                "pos": {"cash_shift_id": shift.pk},
-                "payment": {"method": "mixed" if len(tenders) > 1 else tenders[0]["method"], "tenders": tenders},
-            },
+    def _sale(self, ref: str, *, shift: Shift, tenders: list[tuple[str, int]], operator=None) -> Entry:
+        """Uma venda no livro do turno, no formato do WP-3: intents no payman + linha ``sale``."""
+        intents = {
+            method: _captured_intent(f"PI-{ref}-{method}", order_ref=ref, method=method, amount_q=amount_q).ref
+            for method, amount_q in tenders
+        }
+        cash_q = sum(amount_q for method, amount_q in tenders if method == "cash")
+        method = "mixed" if len(tenders) > 1 else tenders[0][0]
+        return cash.record(
+            Entry.Kind.SALE,
+            shift=shift,
+            operator=operator or self.operator,
+            amount_q=cash_q,
+            order_ref=ref,
+            payment_ref=intents.get(method, "") if method != "mixed" else "",
+            payload={"method": method, "collection": "terminal", "intents": intents},
         )
 
     # ── gate ───────────────────────────────────────────────────────────
@@ -100,14 +127,8 @@ class POSCashReportTests(TestCase):
         pos_service.register_cash_movement(
             operator=self.operator, movement_type="suprimento", amount_raw="10,00", reason="reforço",
         )
-        self._sale(
-            "POS-X-CASH", shift=shift, total_q=3000,
-            tenders=[{"method": "cash", "amount_q": 3000, "collection": "terminal", "cash_shift_id": shift.pk}],
-        )
-        self._sale(
-            "POS-X-PIX", shift=shift, total_q=2500,
-            tenders=[{"method": "pix", "amount_q": 2500, "collection": "terminal"}],
-        )
+        self._sale("POS-X-CASH", shift=shift, tenders=[("cash", 3000)])
+        self._sale("POS-X-PIX", shift=shift, tenders=[("pix", 2500)])
 
         resp = self.client.get(REPORT_URL)
 
@@ -131,13 +152,51 @@ class POSCashReportTests(TestCase):
         # Turno aberto: contagem ainda não existe.
         self.assertIsNone(x["counted_amount_q"])
 
+    def test_mixed_tender_sale_splits_by_method_from_payman(self) -> None:
+        """Venda mista: uma linha, dois intents; cada método com o seu valor, contado uma vez."""
+        shift = self._open_shift()
+        self._sale("POS-X-MIX", shift=shift, tenders=[("cash", 4000), ("card", 2000)])
+
+        x = self.client.get(REPORT_URL).json()["report"]["x_reading"]
+
+        self.assertEqual(x["sales_count"], 1)
+        self.assertEqual(x["sales_total_q"], 6000)
+        by_method = {row["method"]: row for row in x["sales_by_method"]}
+        self.assertEqual(by_method["cash"]["amount_q"], 4000)
+        self.assertEqual(by_method["card"]["amount_q"], 2000)
+
+    def test_refund_nets_out_of_the_method_it_returned(self) -> None:
+        """Estorno: o payman já liquida o intent; a linha ``refund`` do livro não conta em dobro."""
+        shift = self._open_shift()
+        sale = self._sale("POS-X-REF", shift=shift, tenders=[("cash", 3000)])
+        intent = PaymentIntent.objects.get(order_ref="POS-X-REF")
+        PaymentTransaction.objects.create(intent=intent, type=PaymentTransaction.Type.REFUND, amount_q=3000)
+        cash.record(
+            Entry.Kind.REFUND, shift=shift, operator=self.operator, amount_q=-3000,
+            order_ref="POS-X-REF", payment_ref=intent.ref, parent=sale,
+        )
+
+        x = self.client.get(REPORT_URL).json()["report"]["x_reading"]
+
+        by_method = {row["method"]: row for row in x["sales_by_method"]}
+        self.assertEqual(by_method["cash"]["amount_q"], 0)
+        self.assertEqual(x["sales_total_q"], 0)
+
+    def test_sale_without_intent_counts_only_its_cash_effect(self) -> None:
+        """Linha sem intent resolvível (dado antigo, seed): o que o livro sabe sozinho é o dinheiro."""
+        shift = self._open_shift()
+        cash.record(Entry.Kind.SALE, shift=shift, operator=self.operator, amount_q=1500, order_ref="POS-LEGACY")
+
+        x = self.client.get(REPORT_URL).json()["report"]["x_reading"]
+
+        self.assertEqual(x["sales_count"], 1)
+        by_method = {row["method"]: row for row in x["sales_by_method"]}
+        self.assertEqual(by_method["cash"]["amount_q"], 1500)
+
     def test_x_reading_never_exposes_expected_drawer_amount(self) -> None:
         """BLIND COUNT: nenhuma chave de esperado/variância na resposta."""
         shift = self._open_shift(opening="100,00")
-        self._sale(
-            "POS-X-BLIND", shift=shift, total_q=4000,
-            tenders=[{"method": "cash", "amount_q": 4000, "collection": "terminal", "cash_shift_id": shift.pk}],
-        )
+        self._sale("POS-X-BLIND", shift=shift, tenders=[("cash", 4000)])
 
         resp = self.client.get(REPORT_URL)
 
@@ -145,6 +204,7 @@ class POSCashReportTests(TestCase):
         raw = json.dumps(resp.json())
         self.assertNotIn("expected", raw)
         self.assertNotIn("difference", raw)
+        self.assertNotIn("balance", raw)
 
     def test_x_reading_absent_without_open_shift(self) -> None:
         resp = self.client.get(REPORT_URL)
@@ -156,21 +216,12 @@ class POSCashReportTests(TestCase):
         self.assertEqual(report["z_readings"], [])
         self.assertEqual(report["day_totals"]["shifts_count"], 0)
 
-    def test_x_reading_ignores_sales_tagged_to_another_shift(self) -> None:
-        other_operator = get_user_model().objects.create_user(
-            username="outro-caixa", password="x", is_staff=True,
-        )
-        other_terminal = POSTerminal.objects.create(
-            ref="pdv-2", label="PDV 2", channel_ref=self.terminal.channel_ref,
-        )
-        other_shift = pos_service.open_cash_shift(
-            operator=other_operator, terminal_ref=other_terminal.ref,
-        )
+    def test_x_reading_ignores_sales_of_another_shift(self) -> None:
+        other_operator = get_user_model().objects.create_user(username="outro-caixa", password="x", is_staff=True)
+        other_terminal = Terminal.objects.create(ref="pdv-2", label="PDV 2", channel_ref=self.terminal.channel_ref)
+        other_shift = pos_service.open_cash_shift(operator=other_operator, terminal_ref=other_terminal.ref)
         shift = self._open_shift()
-        self._sale(
-            "POS-OTHER-SHIFT", shift=other_shift, total_q=9900,
-            tenders=[{"method": "cash", "amount_q": 9900, "collection": "terminal", "cash_shift_id": other_shift.pk}],
-        )
+        self._sale("POS-OTHER-SHIFT", shift=other_shift, tenders=[("cash", 9900)], operator=other_operator)
 
         resp = self.client.get(REPORT_URL)
 
@@ -187,14 +238,8 @@ class POSCashReportTests(TestCase):
             operator=self.operator, movement_type="sangria", amount_raw="15,00", reason="banco",
             manager_approval=self.manager_approval,
         )
-        self._sale(
-            "POS-Z-CASH", shift=shift, total_q=3000,
-            tenders=[{"method": "cash", "amount_q": 3000, "collection": "terminal", "cash_shift_id": shift.pk}],
-        )
-        self._sale(
-            "POS-Z-CARD", shift=shift, total_q=4500,
-            tenders=[{"method": "card", "amount_q": 4500, "collection": "terminal"}],
-        )
+        self._sale("POS-Z-CASH", shift=shift, tenders=[("cash", 3000)])
+        self._sale("POS-Z-CARD", shift=shift, tenders=[("card", 4500)])
         pos_service.close_cash_shift(operator=self.operator, closing_amount_raw="63,00", notes="ok")
 
         resp = self.client.get(REPORT_URL)
@@ -224,18 +269,18 @@ class POSCashReportTests(TestCase):
         self.assertEqual(totals["counted_total_q"], 6300)
 
     def test_z_reading_never_exposes_expected_nor_variance(self) -> None:
-        """O turno fechado TEM expected/difference no model; o PDV não os serve."""
+        """O livro PROVA esperado/diferença; o PDV não os serve."""
         shift = self._open_shift(opening="10,00")
-        self._sale(
-            "POS-Z-BLIND", shift=shift, total_q=2000,
-            tenders=[{"method": "cash", "amount_q": 2000, "collection": "terminal", "cash_shift_id": shift.pk}],
-        )
+        self._sale("POS-Z-BLIND", shift=shift, tenders=[("cash", 2000)])
         pos_service.close_cash_shift(operator=self.operator, closing_amount_raw="25,00")
-        shift.refresh_from_db()
-        self.assertIsNotNone(shift.expected_amount_q)  # o model calcula…
+        self.assertEqual(cash.expected_before_count(shift), 3000)  # o livro sabe…
+        self.assertEqual(cash.difference(shift), -500)
 
         resp = self.client.get(REPORT_URL)
 
         raw = json.dumps(resp.json())  # …mas a resposta não carrega.
         self.assertNotIn("expected", raw)
         self.assertNotIn("difference", raw)
+        self.assertNotIn("balance", raw)
+        z = resp.json()["report"]["z_readings"][0]
+        self.assertEqual(z["counted_amount_q"], 2500)

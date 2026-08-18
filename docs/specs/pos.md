@@ -50,8 +50,8 @@ projections, actions and capabilities.
 | Term | Meaning | Owner |
 | --- | --- | --- |
 | POS terminal | Physical or digital selling point with runtime metadata. | Backstage POS runtime |
-| Cash shift | Open/closed cash drawer period for one operator and terminal. | `CashShift` |
-| Cash movement | Manual sangria, suprimento or ajuste inside a cash shift. | `CashMovement` |
+| Cash shift | Open/closed cash drawer period for one operator and terminal. | `cashman.Shift` |
+| Cash movement | Manual sangria or suprimento inside a cash shift. | `cashman.Entry` (`cash_out`/`cash_in`) |
 | POS tab | Operator-facing comanda reference backed by an Orderman session. | `POSTab` + Orderman `Session` |
 | POS sale intent | Versioned operator payload `pos.sale-intent.v1`. | `shopman.shop.services.pos_intent` |
 | Sale review | Non-committing validation and normalized total preview. | POS service/API |
@@ -62,15 +62,15 @@ projections, actions and capabilities.
 
 ## Entities And Aggregates
 
-- `POSTerminal`: terminal ref, label, channel, location, active flag and hardware
+- `cashman.Terminal`: terminal ref, label, channel, location, active flag and hardware
   metadata. Terminal metadata may expose favorite collections, default
   fulfillment and component adapters.
-- `CashShift`: one open shift per operator and one open shift per terminal.
+- `cashman.Shift`: one open shift per operator and one open shift per terminal.
   Closing computes expected amount and difference from opening amount, terminal
   cash sales and cash movements.
   If a terminal is open under another operator, the runtime is blocked for the
   current operator until that shift is closed or another terminal is selected.
-- `CashMovement`: positive manual movement in an open shift.
+- `cashman.Entry`: the immutable ledger of the shift (float, sales, movements, count).
 - `POSTab`: persistent operator label/reference. It does not own cart contents.
 - Orderman `Session`: canonical mutable cart for in-use tabs and direct checkout.
 - Orderman `Order`: canonical committed sale and operational lifecycle.
@@ -88,12 +88,12 @@ projections, actions and capabilities.
 | Whether an item can be promised or committed | Stockman/Orderman commit validation |
 | Order creation and lifecycle | Orderman/session commit/cancellation services |
 | Payment gateway status | Payman |
-| Cash drawer state and counted cash | `CashShift`/`CashMovement` |
+| Cash drawer state and counted cash | `cashman.Shift`/`cashman.Entry` |
 | Customer identity, addresses and memory | Guestman/Doorman customer services |
 | Fulfillment handoff to production/KDS/order queue | Orderman + Craftsman/KDS projections |
 | Fiscal document emission and cancellation | Fiscal adapter/directives |
-| Operator access | Django staff permission `backstage.operate_pos` |
-| Manager approval for discount | Permission `backstage.adjust_cashshift` |
+| Operator access | Django staff permission `cashman.operate_pos` |
+| Manager approval for discount | Permission `cashman.adjust_shift` |
 | Channel variation | ChannelConfig/policy resolution before projection |
 
 If a POS surface needs an operational answer that is not listed above, the gap
@@ -211,13 +211,13 @@ Critical mutations:
 
 ## Invariants
 
-- POS sale review and close require a staff operator with `backstage.operate_pos`.
+- POS sale review and close require a staff operator with `cashman.operate_pos`.
 - POS sale review and close require an open cash shift when
   `cash_management.requires_open_shift_for_sale` is true.
 - Only one open cash shift can exist per operator and per terminal.
 - A terminal occupied by another operator is a canonical cash runtime state,
   not a UI guess; projections must expose the blocking shift/operator.
-- A terminal sale received in cash must be counted in the active CashShift.
+- A terminal sale received in cash must be counted in the active `cashman.Shift` (a `sale` entry in its ledger).
 - Cash on delivery is not counted in the terminal shift until settled by a
   canonical operator order action.
 - Tender lines must close the reviewed total before commit.
@@ -234,7 +234,7 @@ Critical mutations:
   tender. Individual on-delivery tender lines must be cash.
 - Manual discount is normalized by backend from type/value/reason; above the
   configured threshold it requires manager credentials and
-  `backstage.adjust_cashshift`.
+  `cashman.adjust_shift`.
 - Delivery close requires a delivery address; structured address is preferred.
 - Fiscal with unsupported delivery-fee shape is rejected before commit until the
   fiscal path supports it.
@@ -253,9 +253,9 @@ Critical mutations:
 
 ## Permissions
 
-- `backstage.operate_pos`: load POS projection and execute POS actions.
-- `backstage.audit_cashshift`: audit shifts.
-- `backstage.adjust_cashshift`: approve discounts and adjustments.
+- `cashman.operate_pos`: load POS projection and execute POS actions.
+- `cashman.audit_shift`: audit shifts.
+- `cashman.adjust_shift`: approve discounts and adjustments.
 - Production/KDS and order management keep their own permissions; POS must not
   bypass them.
 

@@ -1,7 +1,7 @@
 """A tela de conferência de comprovante.
 
 O que precisa ficar travado: ela **exige login** (é dinheiro), o código
-assinado resolve para o movimento certo, e um papel forjado é recusado.
+assinado resolve para a linha certa do livro, e um papel forjado é recusado.
 """
 
 from __future__ import annotations
@@ -9,8 +9,9 @@ from __future__ import annotations
 import pytest
 from django.contrib.auth import get_user_model
 from django.urls import reverse
+from shopman.cashman import services as cash
+from shopman.cashman.models import Entry, Terminal
 
-from shopman.backstage.models import CashMovement, CashShift, POSTerminal
 from shopman.backstage.projections.cash_receipt import build_receipt_verification
 from shopman.backstage.services.receipt_verify import code_for
 
@@ -27,16 +28,17 @@ def _shop():
 
 @pytest.fixture
 def movement():
-    terminal = POSTerminal.objects.create(ref="balcao", label="Balcão")
+    terminal = Terminal.objects.create(ref="balcao", label="Balcão")
     operator = get_user_model().objects.create_user("marina", password="x")
-    shift = CashShift.objects.create(terminal=terminal, operator=operator, opening_amount_q=10000)
-    return CashMovement.objects.create(
+    admin = get_user_model().objects.create_user("admin", password="x", is_staff=True)
+    shift = cash.open_shift(operator=operator, terminal=terminal, float_q=10000)
+    return cash.record(
+        Entry.Kind.CASH_OUT,
         shift=shift,
-        movement_type=CashMovement.MovementType.SANGRIA,
-        amount_q=15000,
+        operator=operator,
+        approved_by=admin,
+        amount_q=-15000,
         reason="Depósito no cofre",
-        created_by="marina",
-        approved_by="admin",
     )
 
 
@@ -70,9 +72,28 @@ def test_codigo_malformado_nao_explode(lixo):
     assert resultado.verdict
 
 
+def test_confirmacao_de_impressao_aparece_na_conferencia(movement):
+    """O ÚLTIMO ``receipt_result`` filho é o que a tela mostra."""
+    cash.record(
+        Entry.Kind.RECEIPT_RESULT, shift=movement.shift, operator=movement.operator,
+        parent=movement, payload={"status": "failed", "detail": "sem papel"},
+    )
+    cash.record(
+        Entry.Kind.RECEIPT_RESULT, shift=movement.shift, operator=movement.operator,
+        parent=movement, payload={"status": "printed", "detail": ""},
+    )
+
+    resultado = build_receipt_verification(code_for(movement.pk))
+
+    assert resultado.receipt_status == "Impresso"
+    assert resultado.receipt_detail == ""
+
+
 def test_movimento_apagado_e_dito_com_todas_as_letras(movement):
     codigo = code_for(movement.pk)
-    movement.delete()
+    # O livro não apaga pelo app (a guarda levanta); só quem tem acesso ao
+    # banco consegue — e é exatamente esse cenário que a tela denuncia.
+    Entry.objects.filter(pk=movement.pk)._raw_delete(Entry.objects.db)
 
     resultado = build_receipt_verification(codigo)
 
@@ -87,6 +108,16 @@ def test_pagina_exige_login(client, movement):
 
     assert resposta.status_code == 302
     assert "/admin/login/" in resposta["Location"]
+
+
+def test_pagina_exige_auditar_turnos(client, movement):
+    """Staff sem ``cashman.audit_shift`` não confere: é a planta de uma retirada."""
+    user = get_user_model().objects.create_user("curioso", password="senha", is_staff=True)
+    client.force_login(user)
+
+    resposta = client.get(reverse("admin_console_cash_receipt", args=[code_for(movement.pk)]))
+
+    assert resposta.status_code in (302, 403)
 
 
 def test_pagina_mostra_o_movimento_para_quem_entrou(client, movement):
@@ -106,7 +137,7 @@ def test_qr_do_comprovante_aponta_para_a_pagina(settings, movement):
 
     settings.SHOPMAN_ADMIN_HOST = "admin.exemplo.test"
     payload = cash_movement_receipt_payload(
-        operator=movement.shift.operator, movement_id=movement.pk
+        operator=movement.shift.operator, entry_id=movement.pk
     )
 
     import base64
@@ -215,7 +246,7 @@ class TestQRFallback:
         settings.SHOPMAN_OPERATOR_API_HOST = "api.exemplo.test"
 
         payload = cash_movement_receipt_payload(
-            operator=movement.shift.operator, movement_id=movement.pk
+            operator=movement.shift.operator, entry_id=movement.pk
         )
 
         import base64
@@ -233,7 +264,7 @@ class TestQRFallback:
         settings.SHOPMAN_OPERATOR_API_HOST = ""
 
         payload = cash_movement_receipt_payload(
-            operator=movement.shift.operator, movement_id=movement.pk
+            operator=movement.shift.operator, entry_id=movement.pk
         )
 
         import base64

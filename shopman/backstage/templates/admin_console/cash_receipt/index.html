@@ -25,9 +25,9 @@
         {% component "unfold/components/button.html" with submit=1 variant="primary" size="sm" icon="search" %}
           Conferir
         {% endcomponent %}
-        {% url 'admin:backstage_cashmovement_changelist' as movements_url %}
-        {% component "unfold/components/button.html" with href=movements_url variant="default" size="sm" icon="payments" %}
-          Ver movimentações
+        {% url 'admin:cashman_shift_changelist' as shifts_url %}
+        {% component "unfold/components/button.html" with href=shifts_url variant="default" size="sm" icon="payments" %}
+          Ver turnos de caixa
         {% endcomponent %}
       </div>
     </form>

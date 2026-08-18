@@ -43,7 +43,8 @@ _EXPECTED = [
     ("/admin/shop/deliveryzone/", "Como entregamos"),
     ("/admin/shop/notificationtemplate/", "O que dizemos"),
     ("/admin/shop/qualitydefect/", "Produção e estoque"),
-    ("/admin/backstage/posterminal/", "Equipamentos"),
+    ("/admin/cashman/terminal/", "Equipamentos"),
+    ("/admin/cashman/shift/", "Turnos de caixa"),
     ("/admin/auth/user/", "Quem entra"),
 ]
 

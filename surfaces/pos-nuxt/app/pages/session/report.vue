@@ -2,7 +2,7 @@
 // RELATÓRIO da sessão de caixa na antesala (WP-ADM-4, benchmark Odoo POS):
 // leitura X (parcial do turno ABERTO do operador), leituras Z (turnos
 // FECHADOS do dia) e o histórico agregado de turnos/vendas. Read-only sobre
-// GET /api/v1/backstage/pos/cash/report/, gate `backstage.operate_pos`.
+// GET /api/v1/backstage/pos/cash/report/, gate `cashman.operate_pos`.
 // BLIND: o PDV nunca mostra o valor ESPERADO da gaveta nem a variância — a
 // conferência (esperado vs contado) é da retaguarda. Impressão térmica fica
 // fora (capítulo NFC-e).

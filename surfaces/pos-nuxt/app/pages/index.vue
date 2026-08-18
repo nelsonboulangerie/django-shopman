@@ -33,7 +33,7 @@ if (
 }
 
 // Identidade do operador — mesmo estado compartilhado do shell (useFetch deduplicado).
-const OPERATOR_PERM = "backstage.operate_pos";
+const OPERATOR_PERM = "cashman.operate_pos";
 const { operator: activeOperator, locked, lock } = useOperatorLock(OPERATOR_PERM);
 
 // Write-side of the open sale: cart draft + every session command.

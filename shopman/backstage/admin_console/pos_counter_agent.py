@@ -21,15 +21,15 @@ from shopman.backstage.projections.pos_agent import (
 
 #: Mesmo gate do resto da config de terminal. Quem pode configurar a gaveta pode
 #: baixar o agente — o arquivo não guarda segredo (o token vive no Admin).
-REQUIRED_PERM = "backstage.change_posterminal"
+REQUIRED_PERM = "cashman.change_terminal"
 
 
 def _terminal(ref: str):
-    from shopman.backstage.models import POSTerminal
+    from shopman.cashman.models import Terminal
 
     try:
-        return POSTerminal.objects.get(ref=ref)
-    except POSTerminal.DoesNotExist as exc:
+        return Terminal.objects.get(ref=ref)
+    except Terminal.DoesNotExist as exc:
         raise Http404("Terminal não encontrado.") from exc
 
 
@@ -60,15 +60,15 @@ class PosCounterAgentView(UnfoldModelAdminViewMixin, TemplateView):
             ),
         }
         context["terminal_change_url"] = reverse(
-            "admin:backstage_posterminal_change", args=[terminal.pk]
+            "admin:cashman_terminal_change", args=[terminal.pk]
         )
         return context
 
 
 def _terminal_model_admin():
-    from shopman.backstage.models import POSTerminal
+    from shopman.cashman.models import Terminal
 
-    return admin.site._registry[POSTerminal]
+    return admin.site._registry[Terminal]
 
 
 def pos_counter_agent_view(request: HttpRequest, *args, **kwargs) -> HttpResponse:
