@@ -1,0 +1,32 @@
+[build-system]
+requires = ["setuptools>=68.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "shopman-cashman"
+version = "0.1.0"
+description = "Shopman Cashman — Terminals, cash shifts and the immutable cash ledger"
+requires-python = ">=3.12"
+dependencies = [
+    "Django>=6.0,<6.1",
+    "shopman-utils",
+]
+
+[project.optional-dependencies]
+unfold = [
+    "django-unfold>=0.92,<0.93",
+]
+dev = [
+    "pytest>=8.0",
+    "pytest-django>=4.5",
+]
+
+[tool.setuptools.packages.find]
+include = ["shopman.cashman*"]
+
+[tool.setuptools.package-data]
+"*" = ["templates/**/*", "static/**/*", "locale/**/*.mo"]
+
+[tool.pytest.ini_options]
+DJANGO_SETTINGS_MODULE = "cashman_test_settings"
+pythonpath = ["."]

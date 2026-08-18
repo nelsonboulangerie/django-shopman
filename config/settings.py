@@ -200,6 +200,7 @@ INSTALLED_APPS = [
     "shopman.doorman",
     "shopman.buyman",
     "shopman.fiscalman",
+    "shopman.cashman",
     # Shopman core integration contribs
     "shopman.craftsman.contrib.stockman",
     "shopman.craftsman.contrib.formula",

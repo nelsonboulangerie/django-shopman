@@ -5,7 +5,7 @@ Instruções para agentes de código que trabalham neste repositório.
 ## Estrutura do Projeto
 
 ```
-packages/               11 apps pip-instaláveis (sem dependência entre si)
+packages/               12 apps pip-instaláveis (sem dependência entre si)
 ├── utils/              Utilitários compartilhados (monetary, phone, admin)          [shopman-utils]
 ├── refs/               Registro de refs tipadas, rename/audit e campos reutilizáveis [shopman-refs]
 ├── offerman/           Catálogo: produtos, preços, listings, coleções, bundles      [shopman-offerman]
@@ -16,7 +16,8 @@ packages/               11 apps pip-instaláveis (sem dependência entre si)
 ├── doorman/            Auth: OTP, device trust, bridge tokens, magic links          [shopman-doorman]
 ├── payman/             Pagamentos: intents, transactions, service                   [shopman-payman]
 ├── buyman/             Compras: fornecedores, materiais, custos (procurement, Fase 1) [shopman-buyman]
-└── fiscalman/          Fiscal: classificação NFC-e (schema em Product.metadata)      [shopman-fiscalman]
+├── fiscalman/          Fiscal: classificação NFC-e (schema em Product.metadata)      [shopman-fiscalman]
+└── cashman/            Caixa: terminal, turno (custódia) e livro-caixa imutável       [shopman-cashman]
 
 shopman/                Namespace package (PEP 420) — sem __init__.py
 ├── shop/               Orquestrador (app Django, label="shop") — health/readiness views [django-shopman]
@@ -107,7 +108,7 @@ storefront ──imports──→ shop ←──imports── backstage
      ↓                   ↓                    ↓
   (never)            packages/            (never)
                    ↗  ↑  ↑  ↖
-          offerman stockman orderman craftsman ...
+          offerman stockman orderman craftsman cashman ...
 ```
 
 ### Conceitos Primários
