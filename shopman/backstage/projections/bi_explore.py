@@ -506,6 +506,11 @@ def _sales_item_rows(spec, by, by2, date_from, date_to) -> list[BIExploreRow]:
 # ── Modo de consumo (inferido da cesta — §3.1 do BI-QUESTION-CATALOG) ───────
 
 
+# Prefixo das chaves sintéticas do histórico: a leitura já vem resolvida na
+# linha, então a "chave de SKU" só precisa carregá-la até a regra.
+_RESOLVED = "leitura:"
+
+
 def _wants_consumption(by: str, by2: str) -> bool:
     return "consumption_mode" in (by, by2)
 
@@ -521,7 +526,14 @@ def _consumption_modes(window) -> tuple[dict[int, str], dict[int, str]]:
     from shopman.orderman.models import Order, OrderItem
 
     from shopman.backstage.models import HistoricalSale, HistoricalSaleItem
-    from shopman.backstage.services.consumption import classify_basket, sku_readings
+    from shopman.backstage.services.consumption import (
+        ANCHOR,
+        HYBRID,
+        TAKEAWAY_ITEM,
+        classify_basket,
+        reading_for,
+        sku_readings,
+    )
 
     readings = sku_readings()
 
@@ -541,19 +553,26 @@ def _consumption_modes(window) -> tuple[dict[int, str], dict[int, str]]:
         for order_id, lines in native_lines.items()
     }
 
+    # O histórico traz CATEGORIA, e ela é a reserva quando a linha não tem SKU —
+    # são 27 mil linhas assim, quase metade delas bebida. Cada linha vira uma
+    # chave sintética com a leitura já resolvida, para a mesma `classify_basket`
+    # decidir sobre nativo e histórico sem saber de onde veio.
     historical_lines: dict[int, list] = defaultdict(list)
-    for sale_id, sku, qty in HistoricalSaleItem.objects.filter(
+    for sale_id, sku, qty, category in HistoricalSaleItem.objects.filter(
         sale__occurred_at__range=window
-    ).values_list("sale_id", "sku", "qty"):
-        historical_lines[sale_id].append((sku, qty))
+    ).values_list("sale_id", "sku", "qty", "category"):
+        leitura = reading_for(sku, category, readings)
+        if leitura is not None:
+            historical_lines[sale_id].append((f"{_RESOLVED}{leitura}", qty))
     # `is_delivery` é o único rótulo de canal confiável do histórico — mesa e
     # balcão de lá nunca viram verdade (ver docstring de HistoricalSale).
     historical_delivery = dict(
         HistoricalSale.objects.filter(occurred_at__range=window).values_list("id", "is_delivery")
     )
+    resolvidas = {f"{_RESOLVED}{r}": r for r in (ANCHOR, TAKEAWAY_ITEM, HYBRID)}
     historical = {
         sale_id: classify_basket(
-            lines, readings, is_delivery=historical_delivery.get(sale_id, False)
+            lines, resolvidas, is_delivery=historical_delivery.get(sale_id, False)
         )
         for sale_id, lines in historical_lines.items()
     }

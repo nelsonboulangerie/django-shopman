@@ -330,13 +330,14 @@ def test_the_seed_is_the_source_and_wins_over_an_admin_edit():
 @pytest.mark.parametrize(
     "category,expected,linhas",
     [
-        ("Pães Finos", "hybrid", 38369),
-        ("Pães Rústicos", "takeaway", 15299),
-        ("Cafés", "anchor", 5211),
-        ("Sanduíches & Tartines", "anchor", 907),
-        ("Sobremesas", "anchor", 108),
-        ("Mercearia", "takeaway", 33),
-        ("Bebidas", "anchor", 24),
+        ("Pães Finos", "hybrid", 227167),
+        ("Pães Rústicos", "takeaway", 89328),
+        ("Cafés", "anchor", 30973),
+        ("Sanduíches & Tartines", "anchor", 4216),
+        ("Sobremesas", "anchor", 633),
+        ("Mercearia", "takeaway", 71),
+        ("Festival Chai", "anchor", 290),
+        ("Bebidas", "anchor", 11728),
     ],
 )
 def test_every_real_yooga_category_reads_as_the_owner_decided(category, expected, linhas):
@@ -346,12 +347,10 @@ def test_every_real_yooga_category_reads_as_the_owner_decided(category, expected
     com ela e a mandaria para "leva", quando a viennoiserie é híbrida. São 38.369
     linhas — errar aqui inclinaria o retrato inteiro dos dois anos.
     """
-    from shopman.backstage.management.commands.propose_consumption_tags import (
-        HISTORICAL_KEYWORD_READING,
-    )
+    from shopman.backstage.services.consumption import CATEGORY_READING
 
     lowered = category.lower()
-    for needle, reading in HISTORICAL_KEYWORD_READING:
+    for needle, reading in CATEGORY_READING:
         if needle in lowered:
             assert reading == expected, (
                 f"{category} ({linhas} linhas) casou '{needle}' → {reading}, "
@@ -363,11 +362,9 @@ def test_every_real_yooga_category_reads_as_the_owner_decided(category, expected
 
 def test_the_specific_keyword_beats_the_generic_one():
     """A guarda é a ORDEM: genérico antes de específico apagaria a decisão."""
-    from shopman.backstage.management.commands.propose_consumption_tags import (
-        HISTORICAL_KEYWORD_READING,
-    )
+    from shopman.backstage.services.consumption import CATEGORY_READING
 
-    order = [needle for needle, _ in HISTORICAL_KEYWORD_READING]
+    order = [needle for needle, _ in CATEGORY_READING]
     for specific, generic in (("pães finos", "pão"), ("pães rústicos", "pão"),
                               ("sanduíche", "pão"), ("mercearia", "pão")):
         assert order.index(specific) < order.index(generic), (
