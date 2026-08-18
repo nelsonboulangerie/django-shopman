@@ -12,6 +12,7 @@ sync-status projection.
 from __future__ import annotations
 
 from django.db import models
+from shopman.utils.refs import RefField
 
 
 class SyncStatus(models.TextChoices):
@@ -23,7 +24,7 @@ class SyncStatus(models.TextChoices):
 
 
 class CatalogSyncState(models.Model):
-    sku = models.CharField(max_length=100, db_index=True)
+    sku = RefField(ref_type="SKU", max_length=100, db_index=True)
     # Platform / projection channel ref (== listing_ref): ifood, meta, google, whatsapp, tiktok.
     # Ref do canal — a mesma chave para transacional (`ifood`) e exibição
     # (`meta-catalog`). Uma pergunta, uma chave (ADR-018).

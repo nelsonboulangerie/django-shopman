@@ -26,6 +26,7 @@ from __future__ import annotations
 
 from django.db import models
 from django.utils import timezone
+from shopman.utils.refs import RefField
 
 
 class OutageReason(models.TextChoices):
@@ -34,7 +35,7 @@ class OutageReason(models.TextChoices):
 
 
 class ShelfOutage(models.Model):
-    sku = models.CharField("sku", max_length=100, db_index=True)
+    sku = RefField(ref_type="SKU", verbose_name="sku", max_length=100, db_index=True)
     channel_ref = models.CharField("canal", max_length=64, db_index=True)
     reason = models.CharField(
         "motivo", max_length=16, choices=OutageReason.choices,

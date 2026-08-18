@@ -14,6 +14,7 @@ Usage:
 
 from django.db import models
 from django.utils.translation import gettext_lazy as _
+from shopman.utils.refs import RefField
 
 
 class StockAlert(models.Model):
@@ -24,7 +25,8 @@ class StockAlert(models.Model):
     considered triggered.
     """
 
-    sku = models.CharField(
+    sku = RefField(
+        ref_type="SKU",
         max_length=100,
         db_index=True,
         verbose_name=_('SKU'),

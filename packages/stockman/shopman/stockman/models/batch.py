@@ -15,6 +15,7 @@ Usage:
 
 from django.db import models
 from django.utils.translation import gettext_lazy as _
+from shopman.utils.refs import RefField
 
 
 class BatchQuerySet(models.QuerySet):
@@ -64,7 +65,8 @@ class Batch(models.Model):
         help_text=_('Identificador único do lote (ex: CRO-20260319-M).'),
     )
 
-    sku = models.CharField(
+    sku = RefField(
+        ref_type="SKU",
         max_length=100,
         db_index=True,
         verbose_name=_('SKU'),

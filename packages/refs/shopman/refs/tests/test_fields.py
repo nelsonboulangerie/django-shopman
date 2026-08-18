@@ -18,9 +18,31 @@ class TestRefFieldDefaults:
         field = RefField()
         assert field.max_length == 64
 
-    def test_default_db_index(self):
+    def test_no_db_index_default(self):
+        # Same default as CharField. A True default here did not survive
+        # Field.clone(), which rebuilds from deconstruct() — and deconstruct()
+        # masquerades as CharField, dropping db_index when it is False. Fields
+        # declared db_index=False came back True, so makemigrations wrote
+        # indexes nobody asked for.
         field = RefField()
-        assert field.db_index is True
+        assert field.db_index is False
+
+    def test_db_index_survives_clone(self):
+        # The invariant the old default broke. clone() is what makemigrations
+        # uses to build model state, so a field that does not round-trip
+        # produces a migration on every run.
+        for declared in (True, False):
+            field = RefField(ref_type="SKU", db_index=declared)
+            assert field.clone().db_index is declared
+
+    def test_deconstruct_round_trips(self):
+        from django.db.models import CharField
+
+        field = RefField(ref_type="SKU", max_length=100, unique=True, db_index=False)
+        _name, _path, args, kwargs = field.deconstruct()
+        # Rebuilt as the plain CharField the deconstruct claims to be: the two
+        # must deconstruct identically, or the autodetector sees a phantom diff.
+        assert CharField(*args, **kwargs).deconstruct()[1:] == field.deconstruct()[1:]
 
     def test_ref_type_none_by_default(self):
         field = RefField()
@@ -67,7 +89,8 @@ class TestRefFieldDeconstruct:
         field.set_attributes_from_name("ref")
         _, _, _, kwargs = field.deconstruct()
         assert kwargs["max_length"] == 64
-        assert kwargs["db_index"] is True
+        # db_index is absent because it is False, exactly as CharField does it.
+        assert "db_index" not in kwargs
 
     def test_custom_max_length_in_kwargs(self):
         field = RefField(max_length=128)
@@ -76,11 +99,11 @@ class TestRefFieldDeconstruct:
         assert kwargs["max_length"] == 128
 
     def test_zero_migration_churn(self):
-        """RefField() and CharField(max_length=64, db_index=True) produce identical deconstruct."""
+        """RefField() and CharField(max_length=64) produce identical deconstruct."""
         from django.db.models import CharField
         ref_field = RefField()
         ref_field.set_attributes_from_name("slug")
-        plain = CharField(max_length=64, db_index=True)
+        plain = CharField(max_length=64)
         plain.set_attributes_from_name("slug")
         assert ref_field.deconstruct() == plain.deconstruct()
 
