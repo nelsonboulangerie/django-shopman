@@ -1156,6 +1156,111 @@ def _veredito_do_pino(fechada: int, aberta: int) -> int:
     return 0
 
 
+#: GUID da interface que o `usbprint.sys` do Windows expoe para impressora USB.
+#: Abrir por aqui fala com o APARELHO, sem passar pelo spooler - que e onde a
+#: bidirecionalidade se perde. Documentado pela Microsoft, sem driver de
+#: terceiro: e o mesmo caminho que os utilitarios de fabricante usam.
+_GUID_USBPRINT = "{28d78fad-5a12-11d1-ae5b-0000f803a8c2}"
+
+
+def _caminho_usb_windows() -> tuple[str, str]:
+    """Descobre o caminho do dispositivo da impressora USB. ("", motivo) se nao achar."""
+    import ctypes
+    from ctypes import wintypes
+
+    setupapi = ctypes.WinDLL("setupapi", use_last_error=True)
+
+    class GUID(ctypes.Structure):
+        _fields_ = [
+            ("Data1", ctypes.c_ulong), ("Data2", ctypes.c_ushort),
+            ("Data3", ctypes.c_ushort), ("Data4", ctypes.c_ubyte * 8),
+        ]
+
+    class SP_DEVICE_INTERFACE_DATA(ctypes.Structure):
+        _fields_ = [
+            ("cbSize", wintypes.DWORD), ("InterfaceClassGuid", GUID),
+            ("Flags", wintypes.DWORD), ("Reserved", ctypes.POINTER(ctypes.c_ulong)),
+        ]
+
+    guid = GUID()
+    ole32 = ctypes.WinDLL("ole32", use_last_error=True)
+    if ole32.CLSIDFromString(_GUID_USBPRINT, ctypes.byref(guid)) != 0:
+        return "", "nao consegui montar o identificador da interface USB"
+
+    DIGCF_PRESENT, DIGCF_DEVICEINTERFACE = 0x02, 0x10
+    setupapi.SetupDiGetClassDevsW.restype = wintypes.HANDLE
+    conjunto = setupapi.SetupDiGetClassDevsW(
+        ctypes.byref(guid), None, None, DIGCF_PRESENT | DIGCF_DEVICEINTERFACE
+    )
+    if conjunto == wintypes.HANDLE(-1).value:
+        return "", "nao consegui listar as impressoras USB do sistema"
+
+    try:
+        interface = SP_DEVICE_INTERFACE_DATA()
+        interface.cbSize = ctypes.sizeof(SP_DEVICE_INTERFACE_DATA)
+        if not setupapi.SetupDiEnumDeviceInterfaces(conjunto, None, ctypes.byref(guid), 0, ctypes.byref(interface)):
+            return "", "nenhuma impressora USB encontrada (ela esta ligada e no USB?)"
+
+        # Primeira chamada so para saber o tamanho; a segunda traz o caminho.
+        tamanho = wintypes.DWORD(0)
+        setupapi.SetupDiGetDeviceInterfaceDetailW(
+            conjunto, ctypes.byref(interface), None, 0, ctypes.byref(tamanho), None
+        )
+
+        class DETALHE(ctypes.Structure):
+            _fields_ = [("cbSize", wintypes.DWORD), ("DevicePath", ctypes.c_wchar * (tamanho.value or 256))]
+
+        detalhe = DETALHE()
+        # 8 em 64 bits, 6 em 32: o cbSize aqui e do CABECALHO, nao da struct
+        # inteira. Passar sizeof(DETALHE) faz a chamada falhar com "parametro
+        # invalido", que e o erro mais enganoso desta API.
+        detalhe.cbSize = 8 if ctypes.sizeof(ctypes.c_void_p) == 8 else 6
+        if not setupapi.SetupDiGetDeviceInterfaceDetailW(
+            conjunto, ctypes.byref(interface), ctypes.byref(detalhe), tamanho, None, None
+        ):
+            return "", f"nao consegui o caminho do dispositivo (erro {ctypes.get_last_error()})"
+        return detalhe.DevicePath, ""
+    finally:
+        setupapi.SetupDiDestroyDeviceInfoList(conjunto)
+
+
+def _ler_pino_usb_windows(*, timeout: float = 2.0) -> tuple[int | None, str]:
+    """Fala com o APARELHO, sem spooler. E o caminho de quem precisa de resposta."""
+    import ctypes
+    import time
+    from ctypes import wintypes
+
+    caminho, motivo = _caminho_usb_windows()
+    if not caminho:
+        return None, motivo
+
+    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    GENERIC_READ, GENERIC_WRITE, OPEN_EXISTING = 0x80000000, 0x40000000, 3
+    kernel32.CreateFileW.restype = wintypes.HANDLE
+    h = kernel32.CreateFileW(caminho, GENERIC_READ | GENERIC_WRITE, 0, None, OPEN_EXISTING, 0, None)
+    if h == wintypes.HANDLE(-1).value:
+        erro = ctypes.get_last_error()
+        if erro == 32:  # ERROR_SHARING_VIOLATION
+            return None, "o dispositivo esta ocupado - feche o que estiver imprimindo e tente de novo"
+        return None, f"nao consegui abrir o dispositivo USB (erro {erro})"
+    try:
+        escritos = wintypes.DWORD(0)
+        buf = ctypes.create_string_buffer(_DRAWER_STATUS_QUERY, len(_DRAWER_STATUS_QUERY))
+        if not kernel32.WriteFile(h, buf, len(_DRAWER_STATUS_QUERY), ctypes.byref(escritos), None):
+            return None, f"nao consegui perguntar ao aparelho (erro {ctypes.get_last_error()})"
+
+        lido = wintypes.DWORD(0)
+        resposta = ctypes.create_string_buffer(8)
+        limite = time.monotonic() + timeout
+        while time.monotonic() < limite:
+            if kernel32.ReadFile(h, resposta, 1, ctypes.byref(lido), None) and lido.value:
+                return resposta.raw[0], ""
+            time.sleep(0.1)
+        return None, "o aparelho nao devolveu nada nem falando direto com ele"
+    finally:
+        kernel32.CloseHandle(h)
+
+
 def _ler_pino_windows(queue: str, *, timeout: float = 2.0) -> tuple[int | None, str]:
     """Pergunta o estado pelo spooler e tenta LER a resposta de volta.
 
@@ -1237,11 +1342,20 @@ def _drawer_status_windows() -> int:
         input(f"\n  Deixe a gaveta {rotulo} e tecle Enter... ")
         byte, motivo = _ler_pino_windows(config.queue)
         if byte is None:
-            print(f"  x {motivo}")
-            print("\n  Nao da para ler o estado da gaveta por este caminho.")
-            print("  Isso NAO e defeito da impressora: o comando existe e ela responde,")
-            print("  mas a resposta nao volta pelo spooler nesta instalacao.\n")
-            return 1
+            # O spooler nao devolveu. Antes de desistir, fala DIRETO com o
+            # aparelho pelo usbprint.sys: e onde a bidirecionalidade sobrevive
+            # quando a fila de impressao a perde.
+            print(f"  - pelo spooler: {motivo}")
+            print("  - tentando falar direto com o aparelho USB...")
+            byte, motivo_usb = _ler_pino_usb_windows()
+            if byte is None:
+                print(f"  x {motivo_usb}")
+                print("\n  Nao da para ler o estado da gaveta nesta maquina.")
+                print("  Isso NAO e defeito da impressora: o comando existe e ela responde.")
+                print("  O caminho que resta e o driver da Epson (OPOS/APD), que expoe o")
+                print("  estado como funcao pronta - mas custa uma instalacao aqui.\n")
+                return 1
+            print("  (respondeu falando direto com o aparelho)")
         leituras.append(byte)
         print(f"  byte lido: 0x{byte:02x}")
 
