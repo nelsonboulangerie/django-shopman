@@ -1152,3 +1152,53 @@ def test_veredito_quando_nenhum_status_muda(capsys):
     assert "Nenhum dos quatro" in saida
     assert "OPOS/APD" in saida, "tem que dizer o que resta"
     assert "fisico" in saida, "e a saída final, se nem o driver resolver"
+
+
+class TestPolaridadeDaGaveta:
+    """A polaridade é MEDIDA, nunca constante.
+
+    No balcão da Nelson: fechada 0x16 (bit ligado), aberta 0x12 (desligado) —
+    o INVERSO do que a leitura ingênua do manual sugere. Cravar a constante
+    faria o alerta gritar o dia todo com a gaveta fechada, a pessoa aprenderia
+    a ignorar, e o aviso legítimo morreria junto.
+    """
+
+    def _config(self, drawer_status=None):
+        return counter_agent.AgentConfig(
+            queue="TM-T20", token="token-de-teste-longo", drawer_status=drawer_status
+        )
+
+    def test_a_medicao_do_balcao_da_nelson(self):
+        # mask 0x04, fechada com o bit LIGADO
+        cfg = self._config({"query": 1, "mask": 4, "closed_value": 4})
+
+        assert cfg.estado_da_gaveta(0x16) is False, "0x16 é FECHADA nesta gaveta"
+        assert cfg.estado_da_gaveta(0x12) is True, "0x12 é ABERTA nesta gaveta"
+
+    def test_a_polaridade_inversa_tambem_funciona(self):
+        """Outra montagem pode ligar ao contrário — e aí é a config que mando."""
+        cfg = self._config({"query": 1, "mask": 4, "closed_value": 0})
+
+        assert cfg.estado_da_gaveta(0x12) is False
+        assert cfg.estado_da_gaveta(0x16) is True
+
+    def test_sem_medicao_responde_NAO_SEI(self):
+        """Palpite aqui é pior que silêncio: alerta invertido ensina a ignorar."""
+        assert self._config(None).estado_da_gaveta(0x16) is None
+        assert self._config({}).estado_da_gaveta(0x16) is None
+        # Medição pela metade também não vale palpite.
+        assert self._config({"mask": 4}).estado_da_gaveta(0x16) is None
+
+
+def test_veredito_grava_a_polaridade_medida(monkeypatch, capsys, tmp_path):
+    """O que a gaveta respondeu tem que sobreviver ao fim do comando."""
+    cfg = tmp_path / "agent.json"
+    cfg.write_text('{"queue": "TM-T20", "token": "token-de-teste-longo"}')
+    monkeypatch.setattr(counter_agent, "DEFAULT_CONFIG_PATH", cfg)
+
+    counter_agent._veredito_da_varredura({1: 0x16, 3: 0x12}, {1: 0x12, 3: 0x12})
+
+    import json as _json
+    salvo = _json.loads(cfg.read_text())["drawer_status"]
+    assert salvo == {"query": 1, "mask": 4, "closed_value": 4}
+    assert "gravado" in capsys.readouterr().out
