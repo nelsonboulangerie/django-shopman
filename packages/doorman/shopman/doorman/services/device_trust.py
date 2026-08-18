@@ -15,6 +15,7 @@ Security:
 from __future__ import annotations
 
 import logging
+import re
 import uuid
 from typing import TYPE_CHECKING
 
@@ -35,10 +36,21 @@ class DeviceTrustService:
     """Service for device trust operations."""
 
     @classmethod
-    def cookie_name_for(cls, subject_type: str) -> str:
-        """Cookie de cada tipo de sujeito. Um cookie guarda um token só."""
+    def cookie_name_for(cls, subject_type: str, subject_id=None) -> str:
+        """Cookie de cada sujeito. Um cookie guarda um token só.
+
+        ⚠️ Para DISPLAY o nome carrega o ``subject_id``, e isso não é detalhe: um
+        computador pode tocar duas TVs. Com um nome só, autorizar o segundo
+        quadro sobrescrevia o token do primeiro, e o primeiro voltava a dar 403 —
+        as duas telas se derrubavam em revezamento. Cliente segue com nome único
+        de propósito: um navegador é de uma pessoa.
+        """
         if subject_type == SubjectType.DISPLAY:
-            return doorman_settings.DEVICE_TRUST_DISPLAY_COOKIE_NAME
+            base = doorman_settings.DEVICE_TRUST_DISPLAY_COOKIE_NAME
+            if subject_id is None:
+                return base
+            seguro = re.sub(r"[^A-Za-z0-9_-]", "_", str(subject_id))
+            return f"{base}_{seguro}"
         return doorman_settings.DEVICE_TRUST_COOKIE_NAME
 
     @classmethod
@@ -51,7 +63,7 @@ class DeviceTrustService:
         if not doorman_settings.DEVICE_TRUST_ENABLED:
             return False
 
-        raw_token = request.COOKIES.get(cls.cookie_name_for(subject_type))
+        raw_token = request.COOKIES.get(cls.cookie_name_for(subject_type, subject_id))
         if not raw_token:
             return False
 
@@ -103,7 +115,7 @@ class DeviceTrustService:
         )
 
         # Set cookie
-        cookie_name = cls.cookie_name_for(subject_type)
+        cookie_name = cls.cookie_name_for(subject_type, subject_id)
         max_age = doorman_settings.DEVICE_TRUST_TTL_DAYS * 86400
         response.set_cookie(
             cookie_name,
