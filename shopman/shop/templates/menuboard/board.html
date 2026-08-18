@@ -1,4 +1,4 @@
-{% load static %}<!doctype html>
+{% load static money %}<!doctype html>
 <html lang="pt-BR">
 <head>
   <meta charset="utf-8" />
@@ -44,12 +44,50 @@
   </style>
 </head>
 <body>
-  <div class="board" x-data="menuboard()" x-init="init()" x-cloak>
+  {% comment %}
+    A TV desenha SEM JavaScript. O quadro é renderizado aqui pelo servidor, e o
+    Alpine só assume depois que carrega — para atualizar ao vivo pelo SSE.
+
+    Antes, tudo vivia dentro de `x-cloak` e dependia do Alpine para aparecer. Um
+    CDN fora do ar deixava a tela da loja em branco com o servidor saudável e o
+    cardápio já embutido no HTML. Kiosk não pode depender de rede externa para
+    mostrar o que já tem em mãos.
+
+    `hydrated` faz a troca: falso enquanto o Alpine não roda (o servidor manda),
+    verdadeiro depois do init (o Alpine manda). Sem Alpine ele nunca vira, o
+    bloco do servidor fica, e a única coisa perdida é a atualização automática.
+  {% endcomment %}
+  <div class="board" x-data="menuboard()" x-init="init()">
     <header>
-      <h1 x-text="board.title">…</h1>
-      <div class="subtitle" x-text="board.subtitle"></div>
+      <h1 x-text="hydrated ? board.title : null">{{ board.title }}</h1>
+      <div class="subtitle" x-text="hydrated ? board.subtitle : null">{{ board.subtitle }}</div>
     </header>
-    <div class="cols">
+
+    {# Pintura do servidor: some quando o Alpine assume. #}
+    <div class="cols" x-show="!hydrated">
+      {% for group in board.groups %}
+        <section>
+          <div class="section-title">{{ group.title }}</div>
+          {% for it in group.items %}
+            <div>
+              <div class="row{% if not it.available %} out{% endif %}">
+                <span class="name">{{ it.name }}</span>
+                <span class="leader"></span>
+                {% if it.available %}
+                  <span class="price">{{ it.price_q|brl }}</span>
+                {% else %}
+                  <span class="tag-out">Esgotado</span>
+                {% endif %}
+              </div>
+              {% if it.description %}<div class="desc">{{ it.description }}</div>{% endif %}
+            </div>
+          {% endfor %}
+        </section>
+      {% endfor %}
+    </div>
+
+    {# Pintura do Alpine: entra quando ele carrega e passa a seguir o SSE. #}
+    <div class="cols" x-show="hydrated" x-cloak>
       <template x-for="group in board.groups" :key="group.title">
         <section>
           <div class="section-title" x-text="group.title"></div>
@@ -67,14 +105,19 @@
         </section>
       </template>
     </div>
-    <div class="empty" x-show="totalItems === 0">Sem itens no momento.</div>
+
+    {% if not board.groups %}<div class="empty" x-show="!hydrated">Sem itens no momento.</div>{% endif %}
+    <div class="empty" x-show="hydrated && totalItems === 0" x-cloak>Sem itens no momento.</div>
+
     <footer>
       <span class="live-dot" :class="{ stale: !live }"></span>
-      <span x-text="live ? 'ao vivo' : 'reconectando…'"></span>
+      {# Sem Alpine não há SSE: dizer "ao vivo" ali seria promessa falsa. #}
+      <span x-text="hydrated ? (live ? 'ao vivo' : 'reconectando…') : null">cardápio do servidor</span>
     </footer>
   </div>
 
-  <script src="https://unpkg.com/alpinejs@3.14.1/dist/cdn.min.js" defer></script>
+  {# Servido por nós: ver shopman/shop/static/shop/vendor/README.md #}
+  <script src="{% static 'shop/vendor/alpine-3.14.1.min.js' %}" defer></script>
   <script>
     // Componente Alpine do quadro. Estado inicial embutido (paint imediato); SSE no
     // canal público stock-{ref} que o motor de disponibilidade já emite ao pausar/
@@ -82,6 +125,7 @@
     function menuboard() {
       var ref = "{{ ref|escapejs }}";
       return {
+        hydrated: false,
         board: {{ initial|safe }},
         live: true,
         get totalItems() { return (this.board.groups || []).reduce(function (n, g) { return n + (g.items || []).length; }, 0); },
@@ -95,6 +139,9 @@
         },
         init: function () {
           var self = this;
+          // A partir daqui quem desenha é o Alpine: o bloco do servidor sai de
+          // cena e o dele entra. Sem esta linha os dois apareceriam juntos.
+          this.hydrated = true;
           try {
             var es = new EventSource("/menuboard/" + ref + "/events/");
             var onEvt = function () { self.refresh(); };

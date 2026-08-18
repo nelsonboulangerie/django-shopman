@@ -46,20 +46,34 @@ COLLECTION_READING: dict[str, str] = {
 # Palavra na categoria do histórico → leitura. Só entra quando o SKU não está
 # em nenhuma coleção viva: o catálogo de hoje manda mais que o rótulo de ontem.
 HISTORICAL_KEYWORD_READING: tuple[tuple[str, str], ...] = (
-    ("bebida", "anchor"),
+    # ⚠️ A ORDEM MANDA: a primeira palavra que casar vence. Por isso o
+    # específico vem antes do genérico — "pães finos" antes de "pão", senão
+    # 38.369 linhas de viennoiserie cairiam em "leva".
+    #
+    # As categorias abaixo são as do export real do Yooga, medidas em 18/08
+    # (linhas afetadas entre parênteses), e as leituras são decisão do dono.
+    ("pães finos", "hybrid"),          # 38.369 — viennoiserie serve aos dois usos
+    ("paes finos", "hybrid"),
+    ("sanduíche", "anchor"),           # 907 — tartine é prato montado, come aqui
+    ("sanduiche", "anchor"),
+    ("tartine", "anchor"),
+    ("sobremesa", "anchor"),           # 108 — decisão do dono: consumo local
+    ("pães rústicos", "takeaway"),     # 15.299
+    ("paes rusticos", "takeaway"),
+    ("café", "anchor"),                # 5.211
     ("cafe", "anchor"),
-    ("café", "anchor"),
+    ("bebida", "anchor"),
     ("suco", "anchor"),
     ("refri", "anchor"),
-    ("pão", "takeaway"),
-    ("pao", "takeaway"),
-    ("padaria", "takeaway"),
     ("mercearia", "takeaway"),
-    ("merci", "takeaway"),
     ("doce", "hybrid"),
     ("salgado", "hybrid"),
     ("confeitaria", "hybrid"),
-    ("lanche", "hybrid"),
+    ("lanche", "anchor"),              # lanche montado come aqui, como a tartine
+    # Genéricos por último: só pegam o que os específicos não pegaram.
+    ("pão", "takeaway"),
+    ("pao", "takeaway"),
+    ("padaria", "takeaway"),
 )
 
 # "Combos" fica de fora de propósito: um bundle não tem vocação própria — ele
