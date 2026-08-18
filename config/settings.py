@@ -1340,12 +1340,35 @@ if SENTRY_DSN:
         from sentry_sdk.integrations.django import DjangoIntegration
 
         _sentry_traces = float(os.environ.get("SENTRY_TRACES_SAMPLE_RATE", "0") or "0")
+
+        def _strip_query_string(event, hint):
+            """Tira a query string da URL antes do evento sair daqui.
+
+            `send_default_pii=False` NÃO remove query string. E o webhook da
+            Efí autentica por `?token=` — não por escolha nossa: a Efí não
+            envia cabeçalho customizado, o mecanismo dela é hash no fim da URL
+            registrada. Sem este corte, qualquer erro naquele endpoint manda o
+            segredo de autenticação em texto puro para um serviço externo, e
+            fica lá guardado.
+
+            Vale para TODA URL, não só a da Efí: query string é onde token de
+            acesso, chave de assinatura e telefone de cliente costumam viajar.
+            """
+            request = event.get("request")
+            if isinstance(request, dict):
+                url = request.get("url")
+                if isinstance(url, str) and "?" in url:
+                    request["url"] = url.split("?", 1)[0]
+                request.pop("query_string", None)
+            return event
+
         sentry_sdk.init(
             dsn=SENTRY_DSN,
             environment=SHOPMAN_ENVIRONMENT,
             integrations=[DjangoIntegration()],
             traces_sample_rate=_sentry_traces,
             send_default_pii=False,
+            before_send=_strip_query_string,
         )
     except Exception:  # pragma: no cover - inerte sem a dependência
         import logging as _logging

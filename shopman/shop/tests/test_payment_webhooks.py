@@ -699,19 +699,35 @@ class EfiPixWebhookTests(WebhookTestBase):
         )
         self.assertEqual(resp.status_code, 401)
 
-    def test_efi_token_in_query_string_returns_401(self) -> None:
-        """Segredo em query string vaza: entra no access log do provedor e vai
-        junto no evento do Sentry (o SDK captura a query; `send_default_pii`
-        não remove). Sem proxy mTLS no deploy, este token é a autenticação
-        ÚNICA — então ele só viaja por header."""
+    def test_efi_token_in_query_string_is_accepted(self) -> None:
+        """A Efí NÃO envia cabeçalho customizado.
+
+        Os mecanismos documentados dela são mTLS, allowlist de IP e hash no fim
+        da URL registrada. Recusar a query aqui derrubaria o PIX de produção
+        inteiro (401 em todo webhook). O vazamento em log é tratado onde dá
+        para tratar: o `before_send` do Sentry corta a query string, e o token
+        é rotacionado como credencial que vaza por desenho."""
+        order = _create_order_with_payment("web", "pix")
+        intent = _create_pix_intent(order)
         resp = self.client.post(
             f"{self.URL}?token=test-efi-token",
+            {"pix": [{"txid": intent.gateway_id, "endToEndId": "E_QS", "valor": "10.00"}]},
+            format="json",
+        )
+        self.assertEqual(resp.status_code, 200, resp.data)
+        intent.refresh_from_db()
+        self.assertEqual(intent.status, "captured")
+
+    def test_efi_wrong_token_in_query_string_returns_401(self) -> None:
+        resp = self.client.post(
+            f"{self.URL}?token=nope",
             {"pix": [{"txid": "abc", "endToEndId": "E1", "valor": "10.00"}]},
             format="json",
         )
         self.assertEqual(resp.status_code, 401)
 
-    def test_efi_query_token_does_not_rescue_a_wrong_header(self) -> None:
+    def test_efi_wrong_header_is_not_rescued_by_the_query(self) -> None:
+        """Header presente e errado decide: não cai para a query."""
         resp = self.client.post(
             f"{self.URL}?token=test-efi-token",
             {"pix": [{"txid": "abc", "endToEndId": "E1", "valor": "10.00"}]},

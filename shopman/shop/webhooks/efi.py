@@ -12,17 +12,28 @@ EFI authenticates itself to this endpoint in two layers:
    to ``SUCCESS``. This is the canonical mechanism supported by EFI.
 
 2. **Shared token (always required).** A secret shared between this service
-   and the EFI dashboard, passed in the ``X-Efi-Webhook-Token`` **header** and
-   verified with :func:`hmac.compare_digest`.
+   and the EFI dashboard, verified with :func:`hmac.compare_digest`. Accepted
+   in the ``X-Efi-Webhook-Token`` header **or** the ``token`` query parameter.
 
-   ⚠️ **Header only — never a query parameter.** A secret in the query string
-   lands in the provider's access logs and rides along in every Sentry event
-   (the SDK captures the query string, and ``send_default_pii=False`` does not
-   strip it). Because the deployment has no mTLS proxy in front (DO App
-   Platform serves this directly, so layer 1's header never arrives), this
-   token is the endpoint's *only* authentication. Registering the webhook on
-   EFI's side must therefore configure the custom header, not a
-   ``?token=`` URL.
+   ⚠️ **A query string is not our preference — it is EFI's only option.** EFI
+   cannot send custom headers on outbound notifications: their documented
+   mechanisms are mTLS, an IP allowlist, and "a hash appended to the end of the
+   registered webhook URL". The header branch stays for local dev and for any
+   future proxy that can inject it; production authenticates by query.
+
+   That secret therefore lands in the provider's access logs, so two
+   mitigations are mandatory and NOT optional hygiene:
+
+   * the Sentry ``before_send`` in ``config/settings.py`` strips the query
+     string off ``request.url`` — without it every error event carries the
+     token in plain text (``send_default_pii=False`` does NOT remove it);
+   * ``EFI_WEBHOOK_TOKEN`` is rotated like any leaked-by-design credential.
+     Rotating means re-registering the webhook URL on EFI's side with the new
+     value, because the secret IS part of the URL.
+
+   Because the deployment has no mTLS proxy in front (DO App Platform serves
+   this directly, so layer 1's header never arrives), this token is the
+   endpoint's *only* authentication.
 
 Both layers use **the same code path in dev and prod** — there is no
 "skip signature" flag. In local development, a developer must set
@@ -195,13 +206,16 @@ class EfiPixWebhookView(APIView):
         if mtls_status:
             logger.debug("EfiPixWebhook: mTLS pre-auth header %s=%s", mtls_header, mtls_status)
 
-        # SÓ header. Em query string o segredo entra no access log do provedor
-        # e viaja junto no evento do Sentry (o SDK captura a query string;
-        # `send_default_pii=False` não a remove). Como o deploy não tem proxy
-        # mTLS (DO App Platform direto, o `X-SSL-Client-Verify` nunca chega),
-        # este token é a autenticação ÚNICA deste endpoint — não é um
-        # segundo fator que pode se dar ao luxo de vazar.
+        # Header primeiro (dev local, e qualquer proxy futuro que injete), com
+        # fallback para a query. A query NÃO é preferência nossa: a Efí não
+        # envia cabeçalho customizado — o mecanismo dela é hash no fim da URL
+        # registrada. Como o deploy não tem proxy mTLS (DO App Platform direto,
+        # o `X-SSL-Client-Verify` nunca chega), este token é a autenticação
+        # ÚNICA daqui, e por isso o vazamento em log é tratado no `before_send`
+        # do Sentry (que corta a query string) + rotação.
         token = request.META.get("HTTP_X_EFI_WEBHOOK_TOKEN", "")
+        if not token:
+            token = request.query_params.get("token", "")
 
         if not token:
             logger.warning("EfiPixWebhook: missing token — rejecting")
