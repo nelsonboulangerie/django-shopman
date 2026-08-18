@@ -162,9 +162,20 @@ class Command(BaseCommand):
         from shopman.backstage.models import HistoricalSaleItem
 
         proposals: list[tuple[str, str, str]] = []
-        uncovered: list[str] = []
+        uncovered: set[str] = set()
         seen: dict[str, str] = {}
-        rows = HistoricalSaleItem.objects.exclude(sku="").values_list("sku", "category").distinct()
+        # ⚠️ `.order_by()` limpando o ordering do Meta é OBRIGATÓRIO antes do
+        # `.distinct()`: o Django acrescenta as colunas do ORDER BY ao SELECT, e
+        # com `ordering = ["sale", "seq"]` o DISTINCT passava a ser sobre
+        # (sku, categoria, venda, linha) — ou seja, não deduplicava nada. O
+        # comando varria 380 mil linhas para achar ~150 pares, e a lista de
+        # não-cobertos repetia o mesmo SKU centenas de vezes.
+        rows = (
+            HistoricalSaleItem.objects.exclude(sku="")
+            .order_by()
+            .values_list("sku", "category")
+            .distinct()
+        )
         for sku, category in rows:
             if sku in already or sku in proposed_skus or sku in conflicted or sku in seen:
                 continue
@@ -175,7 +186,7 @@ class Command(BaseCommand):
                     proposals.append((sku, reading, "categoria do histórico"))
                     break
             else:
-                uncovered.append(sku)
+                uncovered.add(sku)
         return proposals, sorted(uncovered)
 
     def _report(self, proposals, conflicted, uncovered, historical_uncovered, *, dry_run):

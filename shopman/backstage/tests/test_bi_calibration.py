@@ -373,3 +373,30 @@ def test_the_specific_keyword_beats_the_generic_one():
         assert order.index(specific) < order.index(generic), (
             f"'{specific}' precisa vir antes de '{generic}' — a primeira que casa vence"
         )
+
+
+@pytest.mark.django_db
+def test_historical_scan_deduplicates_by_sku(roles):
+    """O `Meta.ordering` do model quebrava o `.distinct()`.
+
+    O Django acrescenta as colunas do ORDER BY ao SELECT, então
+    `values_list("sku","category").distinct()` virava distinct sobre
+    (sku, categoria, venda, linha) — nada deduplicado. O comando varria 380 mil
+    linhas para achar ~150 pares, e a lista de não-cobertos repetia o mesmo SKU
+    centenas de vezes na tela.
+    """
+    from shopman.backstage.management.commands.propose_consumption_tags import Command
+
+    sale = HistoricalSale.objects.create(
+        source="yooga", external_id=1, occurred_at=timezone.now() - timedelta(days=1),
+        total_q=1000, payment="PIX",
+    )
+    for seq in range(5):
+        HistoricalSaleItem.objects.create(
+            sale=sale, seq=seq, product_name="Desconhecido", sku="XPTO",
+            category="Categoria Que Ninguém Mapeou", qty=Decimal("1"),
+            unit_price_q=200, line_total_q=200,
+        )
+
+    _proposals, uncovered = Command()._historical(set(), set(), [])
+    assert uncovered == ["XPTO"], f"SKU repetido na lista: {uncovered}"
