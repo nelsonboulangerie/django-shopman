@@ -79,52 +79,93 @@ terço deles não é produto. O que dá para adotar é o **código-base** de cad
 produto real (`CT`, `MD`, `PC`, `CI`, `TB`, `FE`…) — e isso o Shopman já modela
 melhor do que o sistema antigo modelava.
 
-### 2.1 A pergunta que sobra é de granularidade, e é sua
+### 2.1 Granularidade — decidido (18/08)
 
-Descontados preço e canal, ainda sobra produto de verdade colapsado. O caso mais
-claro:
+O dono confirmou: **variante com recheio ou preparo próprio é produto**, e volume
+baixo não desqualifica.
 
-```
-CROISSANT (cardápio 2027)  ←  CT   Croissant Tradicional      21.298 linhas
-                           ←  CM   Croissant Mini             13.195 linhas
-                           ←  CPQ  Croissant Presunto e Queijo 5.660 linhas
-```
+| Produto 2027 | Vira | Códigos |
+|---|---|---|
+| `CROISSANT` | **3** | `CT` tradicional · `CM` mini · `CPQ` presunto e queijo |
+| `ANIMALZINHO` | **3** | `ANC` coelhinho *de chocolate* · `ANU` ursinho *de creme* · `ANP` porquinho *de creme* |
+| `CORNET` | **2** | `CO` · `COC` de chocolate |
+| `ESPRESSO` | **2** | `SS` · `SL` macchiato |
+| `CAMPAGNE` | **2** | `CGO` oval · `CGR` redondo |
+| `KURO-PAN` | **2** | `KP` · `KBB` burger |
+| `BAGUETE-GERGELIM` | **2** | `BE` · `BEP` mini, **usada em caixas presente** |
+| `PAO-HOTDOG` | 1 | `MIPHO` (mini) não vinga |
+| `CIABATTA` | 1 | `CIQ` (quadrado) não vinga |
 
-O Yooga tratava os três como produtos distintos. O cardápio 2027 tem **um**
-`CROISSANT`. Mesma história em `CORNET` (`CO` × `COC` de chocolate), `ESPRESSO`
-(`SS` × `SL` macchiato), `CAMPAGNE` (`CGO` oval × `CGR` redondo), `KURO-PAN`
-(`KP` × `KBB` burger) — **13 dos 27 produtos** têm mais de um código real.
+⚠️ **`ANP` nasce inativo** — porquinho de creme não está sendo feito no momento.
+O produto existe, guarda a história e volta com uma flag, não com um SKU novo.
+É o que `is_sellable=False` serve para dizer.
 
-Duas leituras, e a escolha é sua:
+⚠️ **`BEP` é a lição.** Eu tinha lido "14 linhas em dois anos" como produto morto.
+É produto de **caixa presente** — vende pouco no balcão por não ser vendido no
+balcão. Volume mede o canal, não a existência. Mesma armadilha do §4.
 
-1. **O cardápio 2027 aposentou variantes de propósito.** Aí o produto fica um só,
-   herda o código do irmão de maior volume (`CT`), e o histórico dos outros
-   continua legível pelo `HistoricalSaleItem` — que não muda.
-2. **O seed colapsou o que a casa vende separado.** Aí não é rename, é
-   desdobramento de produto: `CT`, `CM` e `CPQ` viram três `Product`.
+### 2.2 O "do dia" — recomendação
 
-⚠️ **A escolha muda o B.I., não só o nome.** Colapsado, "croissant" vende 40.439;
-desdobrado, o tradicional vende 21.298 e o mini 13.195 — e a pergunta "o mini
-puxa venda ou canibaliza?" só existe na segunda leitura.
+O cardápio 2027 colapsou famílias inteiras em produtos rotativos: "Folhado do
+dia", "Salgado do dia", "Focaccia do dia", "Chá Gelado do dia", "Cream Soda do
+dia". É por isso que 29 produtos de alto volume do Yooga não têm par —
+`BCH` Brioche Chocolat (11.983 linhas), `CN` Chausson (10.711), `PR` Pain aux
+Raisins (8.866), `FF` Folhado de Frango (5.387).
 
-### 2.2 Os 31 produtos sem código real
+**Recomendação: restaurar os SKUs originais e deixar o "do dia" ser uma coleção,
+não um produto.** Quatro razões, e nenhuma é de gosto:
 
-Dos 58 produtos do cardápio 2027, **27 têm código real e 31 não têm**. Os sem
-código são, na maior parte, produto novo que o Yooga nunca viu: a linha de chás
-(`CHA-BLEU`, `CHA-CAMILLE`, `CHA-ROUGE`, `CHA-SOPHIE`), `PURIN`, `TEA-JELLY`,
-`MELON-ICED-SANDO`, `SHOKUPAN`, `COFFEE-FLOAT`. Esses precisam de código novo, e
-aí a numeração é decisão de desenho — não há histórico a respeitar.
+1. **O eixo do B.I. é planejar a produção.** "Folhado do dia" como SKU não
+   responde *qual* folhado assar amanhã — que é a pergunta.
+2. **Fornada precisa de `output_sku` real.** Não existe ficha técnica de "do dia":
+   a `Recipe` produz um pão específico.
+3. **Estoque não distingue.** Um quant de "Folhado do dia" não separa "sobrou
+   frango" de "faltou queijo" — e sobra/falta é medição que já está no ar.
+4. **Preço.** Focaccia Alecrim saía a R$ 28 e a de Cebola/Bacon/Tomilho a R$ 36.
+   Um SKU só não guarda dois preços.
 
-O mapa para conferência está em
-[`sku-real-mapa.csv`](sku-real-mapa.csv) (143 linhas, coluna `SEU_SKU_CORRETO`
-em branco para você preencher).
+O sistema já tem o mecanismo certo do outro lado: **coleção e listing**. O
+cardápio mostra "Folhado do dia — hoje, de frango"; por baixo, o produto é o
+`FF`. A vitrine fica curta sem que a identidade se perca, e disponibilidade já é
+função do quando ([availability](../guides/lifecycle.md)).
 
----
+### 2.3 Os 30 códigos novos
+
+Produto que o Yooga nunca viu ganha código pela mesma convenção — 2 letras
+(iniciais, ou 1ª + consoante marcante), 3 quando é família:
+
+`THB` `THC` `THR` `THS` `THG` `THL` (chás — família própria, porque `C*` já
+carrega croissant, cornet, campagne, croque, challah, chausson, ciabatta,
+chocolate quente e caffè latte) · `CD` coado · `CE` coffee float · `AG` água ·
+`SO` soda de laranja · `CV` cream soda · `LN` lata Nelson · `PU` purin ·
+`TJ` tea jelly · `SK` shokupan · `PG` pain grillé · `FD` focaccia do dia ·
+`MS` melon iced sando · `SD` salgado do dia · `FL` folhado do dia ·
+`TI` tábua de iguarias · `GR` café em grão · `GL` geleia · `QP` queijo pomerode ·
+`BK` bacon · `MT` mostarda · `CX` cornichons · `TP` tapenade · `PT` patê.
+
+Zero colisão com os 143 do Yooga e entre si. ⚠️ Vários destes deixam de ser
+necessários se o §2.2 for adotado — `FD`, `SD`, `FL` e `THG` são justamente os
+"do dia".
 
 ## 3. Execução
 
-**F1 — O mapa.** ✅ 56 correspondências levantadas e conferidas por você (18/08).
-Falta a decisão do §2.1 (granularidade) e os 31 do §2.2.
+**F1 — O mapa.** 🟡 [`sku-real-mapa.csv`](sku-real-mapa.csv) traz as 143 linhas
+com preço praticado (últimos 12 meses, histórico até 20/07) e cada uma
+classificada:
+
+| `situacao` | Quantas | O que significa |
+|---|---:|---|
+| `confirmado` | 26 | par conferido pelo dono |
+| `desdobrar` | 10 | vira produto próprio (§2.1) |
+| `juntar` | 2 | variante que não vingou, entra no irmão |
+| `CANDIDATO` | 27 | **decisão sua**: par que meu casador perdeu, ou aposentado? |
+| `aposentado?` | 20 | baixo volume, provavelmente fora |
+| `preco` | 41 | `M*` metade do preço — vira modifier, nunca SKU |
+| `canal` | 16 | `IFOOD_*` — vira espelho de canal, nunca SKU |
+
+⚠️ Dois candidatos com cara de família perdida: `JO` Caranguejo (4.211 linhas) e
+`MA` Maçã (4.433) parecem ser moldados como os animalzinhos, só que sem o
+prefixo `AN`.
 
 **F2 — O mecanismo.** ✅ Feito. SKU no registro de refs, 17 campos no cascade,
 defeito do `db_index` corrigido, cobertura testada.
