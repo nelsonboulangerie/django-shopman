@@ -34,13 +34,13 @@ def _link(customer_id, *, phone: str | None, username: str) -> CustomerUser:
 
 class TestRepair:
     def test_relinks_by_phone_when_the_uuid_died(self):
-        atual = _customer("CLI-900", "+5543990000001")
+        current = _customer("CLI-900", "+5543990000001")
         orfao = _link(uuid_lib.uuid4(), phone="+5543990000001", username="c900")
 
         call_command("cleanup_orphan_customer_links", verbosity=0)
 
         orfao.refresh_from_db()
-        assert orfao.customer_id == atual.uuid
+        assert orfao.customer_id == current.uuid
 
     def test_leaves_healthy_links_alone(self):
         vivo = _customer("CLI-901", "+5543990000002")
@@ -84,8 +84,8 @@ class TestLinkRecordsPhone:
         """Sem isto o reparo é impossível: nada liga o login ao cliente novo."""
         from shopman.doorman.services._user_bridge import get_or_create_user_for_customer
 
-        cliente = _customer("CLI-905", "+5543990000004")
-        user, _ = get_or_create_user_for_customer(cliente)
+        customer = _customer("CLI-905", "+5543990000004")
+        user, _ = get_or_create_user_for_customer(customer)
 
         link = CustomerUser.objects.get(user=user)
         assert link.metadata.get("phone") == "+5543990000004"

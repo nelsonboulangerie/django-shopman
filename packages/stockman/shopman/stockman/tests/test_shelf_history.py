@@ -24,7 +24,7 @@ def vitrine(db):
 
 
 @pytest.fixture
-def deposito(db):
+def warehouse(db):
     return Position.objects.create(ref="deposito", name="Depósito", is_saleable=False)
 
 
@@ -155,11 +155,11 @@ class TestOpeningBalanceAndScope:
         assert days[yesterday].opening == Decimal("0")
         assert days[today].opening == Decimal("8")
 
-    def test_non_saleable_position_is_out_of_scope(self, deposito, quant):
+    def test_non_saleable_position_is_out_of_scope(self, warehouse, quant):
         """Depósito não é prateleira: a pergunta é o que o cliente encontrava."""
         day = timezone.localdate()
-        estoque = Quant.objects.create(sku="PAO", position=deposito)
-        _move(estoque, delta="50", when=_at(day, 5))
+        stock = Quant.objects.create(sku="PAO", position=warehouse)
+        _move(stock, delta="50", when=_at(day, 5))
         _move(quant, delta="3", when=_at(day, 6))
         _move(quant, delta="-3", when=_at(day, 7))
 

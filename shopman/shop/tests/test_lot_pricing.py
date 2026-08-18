@@ -15,7 +15,7 @@ import pytest
 from django.utils import timezone
 from shopman.stockman.models import Batch
 
-from shopman.shop.modifiers import LotDiscountModifier
+from shopman.shop.modifiers import DiscountModifier, LotDiscountModifier
 from shopman.shop.services import lot_pricing
 
 pytestmark = pytest.mark.django_db
@@ -154,3 +154,81 @@ class TestLotDiscountModifier:
         ])
         LotDiscountModifier().apply(channel=MagicMock(), session=session, ctx={})
         assert session.items[0]["unit_price_q"] == 1000
+
+
+# ── Lote × promoção/cupom: maior desconto ganha na fronteira order 15 → 20 ──
+
+
+class TestLotDiscountVsPromotion:
+    """A interação LotDiscountModifier(order 15) → DiscountModifier(order 20).
+
+    O lote roda ANTES do desconto de promoção/cupom/manual. O DiscountModifier
+    precisa calcular o percentual sobre o preço de LISTA e vencer a linha só em
+    "maior desconto ganha" — se calcular sobre o ``unit_price_q`` já reduzido
+    pelo lote, empilha o percentual sobre um preço já descontado e cobra a MENOS.
+
+    Regressão do furo de auditoria alpha (cobrança silenciosa a menor): o guard
+    de total não pega, porque a tela e a cobrança leem o mesmo ``line_total_q``
+    furado — nenhuma divergência para o ``expected_total_q`` acusar.
+    """
+
+    def _channel(self):
+        return MagicMock(ref="web")
+
+    def _promo(self, percent):
+        from shopman.shop.models import Promotion
+
+        now = timezone.now()
+        Promotion.objects.create(
+            ref=f"promo-{percent}", name=f"Promo {percent}",
+            type=Promotion.PERCENT, value=percent, is_active=True,
+            valid_from=now - timedelta(days=1), valid_until=now + timedelta(days=1),
+        )
+        from django.core.cache import cache
+        cache.clear()
+
+    def test_percent_promo_does_not_compound_on_lot_discount(self):
+        """Lote 50% vs promo 30%: cobra 500 (lote vence), NUNCA 350 (empilhado)."""
+        Batch.objects.create(
+            ref="LOTE-LIQ", sku="PAO", production_date=timezone.localdate(),
+            nonconformity_percent=50,
+        )
+        self._promo(30)
+        session = _session([_line("PAO", price_q=1000, batch_ref="LOTE-LIQ")])
+
+        LotDiscountModifier().apply(channel=self._channel(), session=session, ctx={})
+        assert session.items[0]["unit_price_q"] == 500  # lote 50%
+        DiscountModifier().apply(channel=self._channel(), session=session, ctx={})
+
+        unit = session.items[0]["unit_price_q"]
+        assert unit == 500, (
+            f"promo 30% empilhou sobre o lote: cobrou {unit}, esperado 500 "
+            f"(cobrança a menor de {500 - unit})"
+        )
+        # Transparência: o lote fica, a promo não entra nesta linha.
+        pricing = session.pricing or {}
+        assert (pricing.get("lot_discount") or {}).get("total_discount_q") == 500
+        assert "PAO" not in [d.get("sku") for d in (pricing.get("discount") or {}).get("items", [])]
+
+    def test_bigger_percent_promo_replaces_lot_discount_best_wins(self):
+        """Lote 20% vs promo 40%: promo vence (600), lote é revertido — sem compor."""
+        Batch.objects.create(
+            ref="LOTE-P20", sku="PAO", production_date=timezone.localdate(),
+            nonconformity_percent=20,
+        )
+        self._promo(40)
+        session = _session([_line("PAO", price_q=1000, batch_ref="LOTE-P20")])
+
+        LotDiscountModifier().apply(channel=self._channel(), session=session, ctx={})
+        assert session.items[0]["unit_price_q"] == 800  # lote 20%
+        DiscountModifier().apply(channel=self._channel(), session=session, ctx={})
+
+        unit = session.items[0]["unit_price_q"]
+        assert unit == 600, (
+            f"melhor desconto não substituiu: cobrou {unit}, esperado 600 "
+            f"(promo 40% sobre a lista, não 1000×0,8×0,6=480 empilhado)"
+        )
+        # Transparência reconciliada: o lote saiu, a promo entrou.
+        pricing = session.pricing or {}
+        assert "lot_discount" not in pricing or not pricing.get("lot_discount")
+        assert (pricing.get("discount") or {}).get("total_discount_q") == 400

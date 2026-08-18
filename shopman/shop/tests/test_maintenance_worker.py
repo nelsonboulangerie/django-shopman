@@ -284,6 +284,9 @@ def test_once_runs_one_cycle_in_order_and_never_sleeps():
         call("arm_scheduled_campaigns"),
         call("reconcile_payments"),
         call("sweep_stuck_orders"),
+        # O mesmo resgate do lado da produção: fornada concluída cujo ledger
+        # de estoque não fechou volta a ser realizada.
+        call("sweep_unrealized_production"),
         call("check_directive_health"),
     ]
 

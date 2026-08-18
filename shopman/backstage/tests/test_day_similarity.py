@@ -278,11 +278,11 @@ def test_sem_medicao_nao_ha_faixa():
 def test_untrustworthy_days_junta_fechado_e_atrapalhado(monkeypatch):
     today = timezone.localdate()
     since, until = today - timedelta(days=6), today - timedelta(days=1)
-    fechado = since + timedelta(days=1)
+    closed = since + timedelta(days=1)
     atrapalhado = since + timedelta(days=2)
     for offset in range(6):
         day = since + timedelta(days=offset)
-        _context(day, open_minutes=0 if day == fechado else 540)
+        _context(day, open_minutes=0 if day == closed else 540)
     monkeypatch.setattr(
         "shopman.backstage.services.episodes.disrupted_days",
         lambda **kwargs: frozenset({atrapalhado}),
@@ -290,6 +290,6 @@ def test_untrustworthy_days_junta_fechado_e_atrapalhado(monkeypatch):
 
     days = untrustworthy_days(since=since, until=until)
 
-    assert fechado in days
+    assert closed in days
     assert atrapalhado in days
     assert since not in days

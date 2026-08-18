@@ -28,9 +28,9 @@ def _money(value_q: int | None) -> str:
     return f"R$ {format_money(int(value_q or 0))}"
 
 
-def _format_chave(chave: str) -> str:
+def _format_chave(key: str) -> str:
     """44 dígitos da chave de acesso em grupos de 4 (padrão do DANFE)."""
-    digits = "".join(ch for ch in str(chave or "") if ch.isdigit())
+    digits = "".join(ch for ch in str(key or "") if ch.isdigit())
     return " ".join(digits[i : i + 4] for i in range(0, len(digits), 4))
 
 
@@ -89,7 +89,7 @@ class DanfeDocument:
     # documento
     number: str
     series: str
-    chave: str
+    key: str
     chave_grouped: str
     protocol: str
 
@@ -136,7 +136,7 @@ def build_danfe(order_ref: str) -> DanfeDocument | None:
     env = str((getattr(settings, "SHOPMAN_FOCUS_NFE", {}) or {}).get("environment", "homologacao")).lower()
     is_homolog = "prod" not in env
 
-    chave = str(data.get("nfce_access_key") or "")
+    key = str(data.get("nfce_access_key") or "")
     qr_content = str(data.get("nfce_qrcode_url") or "")
 
     items: list[DanfeItem] = []
@@ -160,18 +160,18 @@ def build_danfe(order_ref: str) -> DanfeDocument | None:
 
     return DanfeDocument(
         order_ref=order.ref,
-        emitted=bool(chave),
+        emitted=bool(key),
         is_homolog=is_homolog,
         environment_label="Homologação" if is_homolog else "Produção",
-        status=str(data.get("nfce_status") or ("autorizado" if chave else "não emitida")),
+        status=str(data.get("nfce_status") or ("autorizado" if key else "não emitida")),
         shop_name=(getattr(shop, "brand_name", "") or getattr(shop, "name", "") or "") if shop else "",
         shop_legal_name=(getattr(shop, "legal_name", "") or "") if shop else "",
         shop_cnpj=(getattr(shop, "document", "") or "") if shop else "",
         shop_address=_shop_address(shop),
         number=str(data.get("nfce_number") or ""),
         series=str(data.get("nfce_series") or ""),
-        chave=chave,
-        chave_grouped=_format_chave(chave),
+        key=key,
+        chave_grouped=_format_chave(key),
         protocol=str(data.get("nfce_protocol") or ""),
         items=tuple(items),
         item_count=len(items),

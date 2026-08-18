@@ -8,13 +8,13 @@ from __future__ import annotations
 import pytest
 from django.test import override_settings
 
-from shopman.shop.realtime import PISO_ABSOLUTO_SEGUNDOS, RealtimeConfig
+from shopman.shop.realtime import ABSOLUTE_FLOOR_SECONDS, RealtimeConfig
 
 pytestmark = pytest.mark.django_db
 
 
 @pytest.fixture
-def loja():
+def shop():
     """Shop singleton — `Shop.load()` devolve None sem ele, e a config cai no default."""
     from shopman.shop.models import Shop
 
@@ -33,9 +33,9 @@ class TestCascata:
         assert RealtimeConfig.load().tracking_poll_seconds == 12
 
     @override_settings(STOREFRONT_TRACKING_POLL_SECONDS=12)
-    def test_shop_sobrescreve_settings(self, loja):
+    def test_shop_sobrescreve_settings(self, shop):
         """O gestor manda mais que o deploy — é ele que sente a tela."""
-        shop = loja
+        shop = shop
         shop.realtime = {"tracking_poll_seconds": 7}
         shop.save(update_fields=["realtime"])
 
@@ -43,17 +43,17 @@ class TestCascata:
 
 
 class TestGuardaDeServidor:
-    def test_piso_absoluto_vence_config_afobada(self, loja):
-        shop = loja
+    def test_piso_absoluto_vence_config_afobada(self, shop):
+        shop = shop
         shop.realtime = {"tracking_poll_seconds": 0, "min_poll_seconds": 0}
         shop.save(update_fields=["realtime"])
 
         cfg = RealtimeConfig.load()
 
-        assert cfg.tracking_seconds() >= PISO_ABSOLUTO_SEGUNDOS
+        assert cfg.tracking_seconds() >= ABSOLUTE_FLOOR_SECONDS
 
-    def test_min_poll_seconds_eleva_as_duas_telas(self, loja):
-        shop = loja
+    def test_min_poll_seconds_eleva_as_duas_telas(self, shop):
+        shop = shop
         shop.realtime = {
             "tracking_poll_seconds": 5,
             "payment_poll_seconds": 5,
@@ -66,8 +66,8 @@ class TestGuardaDeServidor:
         assert cfg.tracking_seconds() == 20
         assert cfg.payment_seconds() == 20
 
-    def test_lixo_no_json_cai_no_default_em_vez_de_explodir(self, loja):
-        shop = loja
+    def test_lixo_no_json_cai_no_default_em_vez_de_explodir(self, shop):
+        shop = shop
         shop.realtime = {"tracking_poll_seconds": "meia dúzia"}
         shop.save(update_fields=["realtime"])
 
@@ -75,11 +75,11 @@ class TestGuardaDeServidor:
 
 
 class TestChegaNasProjecoes:
-    def test_acompanhamento_carrega_a_cadencia_viva(self, loja):
+    def test_acompanhamento_carrega_a_cadencia_viva(self, shop):
         """Mudar no Admin vale na próxima carga, sem reiniciar o processo."""
         from shopman.shop.projections.order_tracking import _stale_after_seconds
 
-        shop = loja
+        shop = shop
         shop.realtime = {"tracking_poll_seconds": 17}
         shop.save(update_fields=["realtime"])
 

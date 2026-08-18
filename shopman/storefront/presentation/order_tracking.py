@@ -711,13 +711,13 @@ def _promise_copy(
         # "Pagamento confirmado." empilhava uma terceira linha dizendo o que a
         # frase já podia dizer — e o histórico registra o passo de qualquer jeito.
         # Chaves literais: o scanner do usage_map lê a chamada, não a variável.
-        titulo = copy.title("TRACKING_PROMISE_RECEIVED_TITLE", "Pedido recebido")
+        title = copy.title("TRACKING_PROMISE_RECEIVED_TITLE", "Pedido recebido")
         if payment_confirmed:
-            return titulo, copy.message(
+            return title, copy.message(
                 "TRACKING_PROMISE_AVAILABILITY_MESSAGE_PAID",
                 "Pagamento confirmado. Estamos conferindo a disponibilidade.",
             )
-        return titulo, copy.message(
+        return title, copy.message(
             "TRACKING_PROMISE_AVAILABILITY_MESSAGE",
             "Estamos conferindo a disponibilidade. Avisamos em seguida.",
         )

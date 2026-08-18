@@ -73,8 +73,8 @@ class Command(BaseCommand):
             if link.customer_id in ativos:
                 continue
 
-            telefone = str((link.metadata or {}).get("phone") or "").strip()
-            destino = por_telefone.get(telefone) if telefone else None
+            phone = str((link.metadata or {}).get("phone") or "").strip()
+            destino = por_telefone.get(phone) if phone else None
 
             if destino is not None:
                 religados += 1
@@ -82,7 +82,7 @@ class Command(BaseCommand):
                     link.customer_id = destino
                     link.save(update_fields=["customer_id"])
                     logger.info(
-                        "customer_link_repaired user=%s phone=%s", link.user_id, telefone,
+                        "customer_link_repaired user=%s phone=%s", link.user_id, phone,
                     )
                 continue
 

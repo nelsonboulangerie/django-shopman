@@ -105,7 +105,7 @@ def create_intent(
                 "order_ref": order_ref,
                 "txid": gateway_id,
                 "e2e_id": f"E2E{uuid4().hex[:24].upper()}",
-                "valor": f"{amount_q / 100:.2f}",
+                "amount": f"{amount_q / 100:.2f}",
                 "mock_pix_auto_confirm": True,
             },
             available_at=available_at,

@@ -32,9 +32,19 @@ def _operator_error(exc: Exception) -> Exception:
     alterada em outra tela) vira ``ProductionConflict`` → 409; o resto vira
     ``ProductionError`` → 400. Exceção que não é ``CraftError`` volta como
     veio (o chamador decide).
+
+    ``StockError`` entra na mesma tradução: desde que a perna de output parou
+    de engolir a falha, ela sobe até aqui, e sem isso o operador levava 500 cru
+    numa fornada que JÁ está fechada.
     """
     from shopman.craftsman.exceptions import CraftError
+    from shopman.stockman.exceptions import StockError
 
+    if isinstance(exc, StockError):
+        return ProductionError(
+            f"A fornada foi fechada, mas não entrou no estoque: {exc}. "
+            "Confira a posição de venda antes de repetir."
+        )
     if not isinstance(exc, CraftError):
         return exc
     code = getattr(exc, "code", "")
@@ -121,18 +131,17 @@ def apply_quick_finish(
 ):
     """Plan and immediately finish a work order from the operator surface.
 
-    Com ``partition`` (quiosque de QC, fornada avulsa), o fechamento
-    passa pelo MESMO caminho do finish normal: veto resolvido na borda, N
-    lotes com percentual congelado, alerta quando a rastreabilidade falha.
+    O fechamento passa pelo MESMO caminho do finish normal, COM ou SEM
+    ``partition``: guardrail de insumo (``check_finish_materials``), veto
+    resolvido na borda, N lotes com percentual congelado, alerta quando a
+    rastreabilidade falha.
+
+    Sem partição isto ia direto ao ``quick_finish`` do core, pulando o
+    ``apply_finish`` — e a fornada avulsa era o único fechamento da casa que
+    fechava sem farinha no estoque, calado. A mesma ação era barrada no
+    quiosque de QC (que manda partição) e livre no grid do gestor.
     """
     try:
-        if not partition:
-            return production_core.quick_finish(
-                recipe_id=recipe_id,
-                quantity=quantity,
-                position_id=position_id,
-                actor=actor,
-            )
         work_order = production_core.quick_plan(
             recipe_id=recipe_id, quantity=quantity, position_id=position_id
         )
@@ -410,6 +419,9 @@ def apply_finish(
             actor=actor,
             finished_items=finished_items,
             wasted_items=wasted_items,
+            idempotency_key=_finish_idempotency_key(
+                work_order, finished_items, wasted_items
+            ),
         )
     except Exception as exc:
         if _looks_like_stock_error(exc):
@@ -418,6 +430,38 @@ def apply_finish(
         raise translated from (None if translated is exc else exc)
     _record_batch_traceability(work_order_id=work_order_id)
     return result
+
+
+def _finish_idempotency_key(work_order, finished_items, wasted_items) -> str:
+    """Chave estável do fechamento: mesma fornada, mesmo resultado, mesma chave.
+
+    O core devolve a WO existente quando a chave se repete, então o retry do
+    operador depois de um erro que veio DEPOIS do commit para de morrer em
+    ``TERMINAL_STATUS`` — o hazard em que um receiver posterior estoura e a
+    fornada fica correta no banco e impossível de fechar na tela.
+
+    A chave sai do RESULTADO (as linhas resolvidas), não do que o operador
+    digitou: é o que o core vai gravar. Fechar de novo com outro número gera
+    outra chave de propósito — aí não é retry, é um segundo fechamento de uma
+    fornada já fechada, e o conflito tem que aparecer.
+
+    Derivada no servidor, sem contrato novo com a superfície: o quiosque
+    reenvia o mesmo POST e a chave cai igual sozinha.
+    """
+    import hashlib
+    import json
+
+    payload = json.dumps(
+        {
+            "work_order": work_order.pk,
+            "finished": finished_items,
+            "wasted": wasted_items,
+        },
+        sort_keys=True,
+        default=str,
+    )
+    digest = hashlib.sha256(payload.encode("utf-8")).hexdigest()[:32]
+    return f"production.finish:{work_order.pk}:{digest}"
 
 
 def apply_advance_step(*, work_order_id, actor: str) -> int:

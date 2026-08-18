@@ -46,11 +46,11 @@ def movement_id_from(code: str) -> int:
     Comparação em tempo constante: um código inválido não deve revelar, pelo
     tempo de resposta, o quanto acertou.
     """
-    partes = str(code or "").strip().upper().split("-")
-    if len(partes) != 3 or partes[0] != PREFIX:
+    parts = str(code or "").strip().upper().split("-")
+    if len(parts) != 3 or parts[0] != PREFIX:
         raise InvalidReceiptCode("Código de comprovante malformado.")
     try:
-        movement_id = int(partes[1])
+        movement_id = int(parts[1])
     except ValueError as exc:
         raise InvalidReceiptCode("Código de comprovante malformado.") from exc
     # ⚠️ Sem as chaves antigas, girar a SECRET_KEY (o que se faz depois de um
@@ -58,13 +58,13 @@ def movement_id_from(code: str) -> int:
     # TODO comprovante já impresso e guardado na gaveta — meses de papel de
     # auditoria virando lixo por causa de uma troca de chave. `SECRET_KEY_FALLBACKS`
     # é o mecanismo que o Django tem exatamente para essa janela.
-    aceitas = [settings.SECRET_KEY, *getattr(settings, "SECRET_KEY_FALLBACKS", [])]
+    accepted = [settings.SECRET_KEY, *getattr(settings, "SECRET_KEY_FALLBACKS", [])]
     # Sem short-circuit: comparar contra todas as chaves sempre custa o mesmo, e
     # o tempo de resposta não conta a ninguém qual delas acertou.
-    confere = False
-    for chave in aceitas:
-        confere |= hmac.compare_digest(partes[2], _signature(movement_id, chave))
-    if not confere:
+    matches = False
+    for key in accepted:
+        matches |= hmac.compare_digest(parts[2], _signature(movement_id, key))
+    if not matches:
         raise InvalidReceiptCode("Código de comprovante não confere.")
     return movement_id
 
@@ -75,9 +75,9 @@ def _signature(movement_id: int, secret: str) -> str:
         f"cash-movement-receipt:{movement_id}".encode(),
         hashlib.sha256,
     ).digest()
-    numero = int.from_bytes(digest[:8], "big")
-    saida = []
+    number = int.from_bytes(digest[:8], "big")
+    out = []
     for _ in range(_SIGNATURE_LEN):
-        numero, resto = divmod(numero, len(_ALPHABET))
-        saida.append(_ALPHABET[resto])
-    return "".join(saida)
+        number, rest = divmod(number, len(_ALPHABET))
+        out.append(_ALPHABET[rest])
+    return "".join(out)

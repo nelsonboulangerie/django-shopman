@@ -27,7 +27,7 @@ FEE_Q = 1200  # taxa da zona de entrega neste teste
 
 
 @pytest.fixture
-def loja():
+def shop():
     """Loja com taxa de entrega vinda de uma zona por CEP — como em produção."""
     shop = Shop.objects.create(name="Test Shop")
     DeliveryZone.objects.create(
@@ -81,27 +81,27 @@ def _fee_lines(session) -> list:
     return [i for i in (session.items or []) if i.get("sku") == "__DELIVERY_FEE__"]
 
 
-def test_without_promotion_the_fee_is_charged(loja):
+def test_without_promotion_the_fee_is_charged(shop):
     """A linha de base: sem promoção nem limiar, a taxa é cobrada."""
     session = _delivery_cart()
     assert _fee_q(session) == FEE_Q
     assert len(_fee_lines(session)) == 1
 
 
-def test_automatic_promotion_waives_the_whole_fee(loja):
+def test_automatic_promotion_waives_the_whole_fee(shop):
     _free_delivery("frete-gratis")
     session = _delivery_cart()
     assert _fee_q(session) == 0
 
 
-def test_a_waived_fee_removes_the_line_instead_of_showing_zero(loja):
+def test_a_waived_fee_removes_the_line_instead_of_showing_zero(shop):
     """R$ 0,00 no carrinho é ruído; a linha some. Sai de graça do dono da taxa."""
     _free_delivery("frete-gratis")
     session = _delivery_cart()
     assert _fee_lines(session) == []
 
 
-def test_the_waiver_never_becomes_a_discount_line(loja):
+def test_the_waiver_never_becomes_a_discount_line(shop):
     """A prova da invariante: renúncia mexe na TAXA, não no desconto."""
     _free_delivery("frete-gratis")
     session = _delivery_cart()
@@ -109,27 +109,27 @@ def test_the_waiver_never_becomes_a_discount_line(loja):
     assert discount_q == 0, "entrega grátis não pode aparecer como desconto"
 
 
-def test_value_is_a_cap_and_the_customer_pays_the_difference(loja):
+def test_value_is_a_cap_and_the_customer_pays_the_difference(shop):
     """`value > 0` = teto: 'entrega grátis até R$ 8,00' sobre taxa de R$ 12,00."""
     _free_delivery("frete-ate-8", cap_q=800)
     session = _delivery_cart()
     assert _fee_q(session) == FEE_Q - 800
 
 
-def test_a_cap_above_the_fee_waives_everything(loja):
+def test_a_cap_above_the_fee_waives_everything(shop):
     _free_delivery("frete-ate-50", cap_q=5000)
     session = _delivery_cart()
     assert _fee_q(session) == 0
 
 
-def test_min_order_gates_the_waiver(loja):
+def test_min_order_gates_the_waiver(shop):
     """Renúncia com pedido mínimo: abaixo do mínimo, a taxa continua."""
     _free_delivery("frete-acima-de-100", min_order_q=10_000)
     assert _fee_q(_delivery_cart(qty=1)) == FEE_Q  # R$ 20,00
     assert _fee_q(_delivery_cart(qty=5)) == 0      # R$ 100,00
 
 
-def test_a_coupon_can_carry_the_waiver(loja):
+def test_a_coupon_can_carry_the_waiver(shop):
     """Frete grátis por cupom: o encanamento já existia, sem nada novo.
 
     O modifier da taxa roda em `order=70`, cinquenta slots depois do desconto
@@ -142,16 +142,16 @@ def test_a_coupon_can_carry_the_waiver(loja):
     assert _fee_q(_delivery_cart(coupon="FRETEGRATIS")) == 0
 
 
-def test_a_coupon_only_waiver_does_not_leak_without_the_coupon(loja):
+def test_a_coupon_only_waiver_does_not_leak_without_the_coupon(shop):
     """Promoção com cupom não é automática — só vale ativada."""
     promo = _free_delivery("cupom-frete")
     Coupon.objects.create(code="FRETEGRATIS", promotion=promo, max_uses=0, is_active=True)
     assert _fee_q(_delivery_cart()) == FEE_Q
 
 
-def test_the_more_generous_policy_wins(loja):
+def test_the_more_generous_policy_wins(shop):
     """Limiar permanente e promoção convivem; vence quem renuncia mais."""
-    shop, _ = loja
+    shop, _ = shop
     defaults = dict(shop.defaults or {})
     defaults["rules"] = {**(defaults.get("rules") or {}), "free_delivery_above_q": 100_000}
     shop.defaults = defaults
@@ -162,9 +162,47 @@ def test_the_more_generous_policy_wins(loja):
     assert _fee_q(_delivery_cart()) == FEE_Q - 500
 
 
-def test_a_scoped_waiver_does_not_reach_another_channel(loja):
+def test_coupon_does_not_cost_the_customer_the_free_delivery_threshold(shop):
+    """Cupom promocional NÃO derruba a elegibilidade de frete grátis.
+
+    Invariante do projeto: thresholds (mínimo/frete grátis) leem
+    ``subtotal + coupon_discount`` (``threshold_base_q``) — uma cortesia não pode
+    tirar um benefício. A projeção do carrinho e o gate de mínimo já respeitam
+    isso; a taxa (DeliveryFeeModifier) precisa ler a MESMA base, senão a tela diz
+    "frete grátis" e a cobrança aplica a taxa (ou o guard de total barra o
+    checkout). Regressão da auditoria alpha.
+    """
+    shop, _ = shop
+    defaults = dict(shop.defaults or {})
+    # Frete grátis acima de R$ 50,00.
+    defaults["rules"] = {**(defaults.get("rules") or {}), "free_delivery_above_q": 5000}
+    shop.defaults = defaults
+    shop.save(update_fields=["defaults"])
+
+    # Cupom de 20%: R$ 60,00 de mercadoria → R$ 48,00 líquido (abaixo do limiar),
+    # mas o desconto de R$ 12,00 é cortesia e não conta contra o limiar.
+    now = timezone.now()
+    promo = Promotion.objects.create(
+        ref="cupom-20", name="Cupom 20%", type=Promotion.PERCENT, value=20,
+        valid_from=now - timedelta(days=1), valid_until=now + timedelta(days=1),
+        is_active=True,
+    )
+    Coupon.objects.create(code="MENOS20", promotion=promo, max_uses=0, is_active=True)
+
+    # Sem cupom: R$ 60,00 ≥ R$ 50,00 → já é grátis (linha de base).
+    assert _fee_q(_delivery_cart(qty=3)) == 0
+    # Com cupom: líquido R$ 48,00, mas base do limiar = 48,00 + 12,00 = 60,00 →
+    # continua grátis. Sem o add-back, o modifier veria 48,00 e cobraria a taxa.
+    session = _delivery_cart(qty=3, coupon="MENOS20")
+    assert _fee_q(session) == 0, (
+        "cupom derrubou o frete grátis: a taxa foi cobrada mesmo com a mercadoria "
+        "acima do limiar (o desconto do cupom não deveria contar contra o limiar)"
+    )
+
+
+def test_a_scoped_waiver_does_not_reach_another_channel(shop):
     """`Promotion.channels` vale para a renúncia também — é a mesma régua."""
-    _shop, web = loja
+    _shop, web = shop
     promo = _free_delivery("frete-so-web")
     promo.channels.set([web])
 
@@ -187,7 +225,7 @@ def test_a_scoped_waiver_does_not_reach_another_channel(loja):
     assert _fee_q(session) == FEE_Q
 
 
-def test_pickup_only_free_delivery_is_refused_at_the_edge(loja):
+def test_pickup_only_free_delivery_is_refused_at_the_edge(shop):
     """Configuração que não quer dizer nada não deve ser gravável."""
     now = timezone.now()
     promo = Promotion(
@@ -204,7 +242,7 @@ def test_pickup_only_free_delivery_is_refused_at_the_edge(loja):
     assert "fulfillment_types" in exc.value.message_dict
 
 
-def test_free_delivery_for_delivery_is_valid(loja):
+def test_free_delivery_for_delivery_is_valid(shop):
     now = timezone.now()
     Promotion(
         ref="ok",

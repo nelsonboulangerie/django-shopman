@@ -84,6 +84,27 @@ EFI_WEBHOOK_TOKEN=<shared secret definido para o webhook>
 EFI_MTLS_HEADER=HTTP_X_SSL_CLIENT_VERIFY
 ```
 
+⚠️ **O `EFI_WEBHOOK_TOKEN` viaja NA URL do webhook**, porque a Efí não envia
+cabeçalho customizado (os mecanismos dela são mTLS, allowlist de IP e hash no
+fim da URL registrada). Cadastre a URL já com a query:
+
+```
+https://api.<dominio>/api/webhooks/efi/pix/?token=<EFI_WEBHOOK_TOKEN>
+```
+
+O header `X-Efi-Webhook-Token` continua aceito, para dev local e para um proxy
+futuro que consiga injetá-lo.
+
+Como o deploy não tem proxy mTLS na frente (DO App Platform direto), esse token
+é a autenticação **única** do endpoint — e ele fica gravado no access log do
+provedor por desenho. Duas consequências que NÃO são higiene opcional:
+
+1. o `before_send` do Sentry (`config/settings.py`) corta a query string de
+   `request.url`; sem ele todo evento de erro carregava o segredo em texto puro
+   (`send_default_pii=False` não remove query string);
+2. rotacionar o `EFI_WEBHOOK_TOKEN` significa **recadastrar a URL na Efí**, já
+   que o segredo é parte dela.
+
 O certificado precisa existir no filesystem do container no caminho de
 `EFI_CERTIFICATE_PATH`. Se o provedor de deploy nao monta arquivo secreto,
 converta isso em etapa de build/runtime segura antes de habilitar `payment_efi`.

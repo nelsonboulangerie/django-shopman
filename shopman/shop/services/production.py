@@ -163,8 +163,8 @@ def quick_plan(
     """Plan a same-day ad-hoc work order (fornada avulsa).
 
     Nasce sem previsto herdado de plano nenhum — o previsto É o que o operador
-    declarou. Quem fecha decide o caminho: escalar (``quick_finish``) ou
-    particionado (``apply_finish`` do quiosque de QC).
+    declarou. Quem fecha é sempre o ``apply_finish`` do backstage, com ou sem
+    partição: é lá que mora o guardrail de insumo.
     """
     from shopman.craftsman.services.scheduling import CraftPlanning
 
@@ -179,21 +179,6 @@ def quick_plan(
         position_ref=position_ref,
         source_ref="quick_production",
     )
-
-
-def quick_finish(
-    *,
-    recipe_id,
-    quantity,
-    position_id,
-    actor: str,
-) -> tuple[str, str, Decimal]:
-    """Plan and immediately finish a production work order."""
-    from shopman.craftsman.services.execution import CraftExecution
-
-    work_order = quick_plan(recipe_id=recipe_id, quantity=quantity, position_id=position_id)
-    CraftExecution.finish(order=work_order, finished=work_order.quantity, actor=actor)
-    return work_order.output_sku, work_order.ref, work_order.quantity
 
 
 def set_planned_quantity(
@@ -323,6 +308,7 @@ def finish_work_order(
     actor: str,
     finished_items: list[dict] | None = None,
     wasted_items: list[dict] | None = None,
+    idempotency_key: str | None = None,
 ) -> tuple[str, Decimal]:
     """Finish an existing WorkOrder — escalar ou particionado (ADR-017).
 
@@ -331,6 +317,10 @@ def finish_work_order(
     ``quality_grade_ref``/``quality_defect_ref``/``batch_ref`` — a fornada de
     40 que produz 32+8+3 em vez de "38". ``wasted_items`` leva as unidades
     vetadas com o defeito que as vetou.
+
+    Com ``idempotency_key``, o core devolve a WO existente em vez de estourar
+    ``TERMINAL_STATUS`` quando o mesmo fechamento chega duas vezes — é assim
+    que o retry do operador deixa de ser beco sem saída.
     """
     from shopman.craftsman.models import WorkOrder
     from shopman.craftsman.services.execution import CraftExecution
@@ -342,13 +332,45 @@ def finish_work_order(
             finished=finished_items,
             wasted=wasted_items or None,
             actor=actor,
+            idempotency_key=idempotency_key,
         )
         total = sum(Decimal(str(item["quantity"])) for item in finished_items)
-        return work_order.ref, total
+    else:
+        total = _positive_decimal(quantity, error="Quantidade concluída inválida.")
+        CraftExecution.finish(
+            order=work_order,
+            finished=total,
+            actor=actor,
+            idempotency_key=idempotency_key,
+        )
 
-    qty = _positive_decimal(quantity, error="Quantidade concluída inválida.")
-    CraftExecution.finish(order=work_order, finished=qty, actor=actor)
-    return work_order.ref, qty
+    _ensure_stock_ledger_closed(work_order)
+    return work_order.ref, total
+
+
+def _ensure_stock_ledger_closed(work_order) -> None:
+    """O retry tem que CONSERTAR, não só devolver 200.
+
+    No replay o core devolve a WO existente e não reemite
+    ``production_changed`` — certo quando o que falhou foi um receiver
+    posterior (tudo já commitado), errado quando o que falhou foi a própria
+    perna de estoque: aí o segundo toque "daria certo" com a vitrine ainda
+    zerada, e a divergência só sumiria da vista.
+
+    Os marcadores por perna dizem qual dos dois casos é, e são eles que
+    guardam a reexecução (sem guarda, refazer credita a vitrine em dobro).
+    No caminho feliz isto é uma consulta e nada mais.
+    """
+    from shopman.craftsman import realize_finished_production, stock_legs_complete
+
+    work_order.refresh_from_db(fields=["meta"])
+    if stock_legs_complete(work_order):
+        return
+    logger.warning(
+        "production.finish: ledger de estoque aberto em %s — fechando agora",
+        work_order.ref,
+    )
+    realize_finished_production(work_order)
 
 
 def _merge_committed_order_links(primary, duplicates: list) -> None:

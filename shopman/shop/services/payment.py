@@ -304,16 +304,16 @@ def alert_refund_failed(order, intent_ref, amount_q, detail) -> None:
     from shopman.shop.services.observability import create_operator_alert
 
     try:
-        valor = format_money(amount_q) if amount_q is not None else "valor a apurar"
+        amount_display = format_money(amount_q) if amount_q is not None else "valor a apurar"
     except Exception:
         logger.debug("alert_refund_failed: money format failed for amount_q=%s", amount_q, exc_info=True)
-        valor = "valor a apurar"
+        amount_display = "valor a apurar"
 
     create_operator_alert(
         type="payment_refund_failed",
         severity="critical",
         message=(
-            f"Estorno FALHOU para o pedido {order.ref} (intent {intent_ref}, {valor}): "
+            f"Estorno FALHOU para o pedido {order.ref} (intent {intent_ref}, {amount_display}): "
             f"{detail}. O dinheiro do cliente pode estar retido — conferir no gateway "
             "e reprocessar o estorno."
         ),

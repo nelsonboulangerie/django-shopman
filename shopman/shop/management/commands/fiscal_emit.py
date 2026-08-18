@@ -64,13 +64,13 @@ class Command(BaseCommand):
 
         order.refresh_from_db()
         result = order.data or {}
-        chave = result.get("nfce_access_key")
-        if not chave:
+        key = result.get("nfce_access_key")
+        if not key:
             raise CommandError("Emissão não retornou chave de acesso (ver status/erro acima).")
 
         self.stdout.write(self.style.SUCCESS("  ✅ NFC-e autorizada em homologação"))
         self.stdout.write(f"     status:    {result.get('nfce_status')}")
-        self.stdout.write(f"     chave:     {chave}")
+        self.stdout.write(f"     chave:     {key}")
         self.stdout.write(f"     protocolo: {result.get('nfce_protocol')}")
         self.stdout.write(f"     nº/série:  {result.get('nfce_number')}/{result.get('nfce_series')}")
         self.stdout.write(f"     DANFE:     {result.get('nfce_danfe_url')}")

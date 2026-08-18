@@ -12,6 +12,7 @@ manutenção num loop (default: a cada 5 minutos):
   arm_scheduled_campaigns    — ARMA (não dispara) as ocasiões agendadas do próximo horizonte
   reconcile_payments        — PIX pago com webhook perdido é resgatado
   sweep_stuck_orders        — fase de lifecycle perdida (crash pós-commit) é re-despachada
+  sweep_unrealized_production — fornada concluída sem o ledger de estoque fechado é re-realizada
   check_directive_health    — failed/backlog/heartbeat da fila viram OperatorAlert (ADR-003)
 
 Cada tarefa é isolada: uma falha loga e NUNCA derruba o ciclo das demais.
@@ -59,6 +60,9 @@ MAINTENANCE_COMMANDS = (
     "arm_scheduled_campaigns",
     "reconcile_payments",
     "sweep_stuck_orders",
+    # O mesmo resgate, do lado da produção: fornada concluída cujo ledger de
+    # estoque não fechou (queda no meio do handler) volta a ser realizada.
+    "sweep_unrealized_production",
     # Por último: as checagens veem o estado PÓS-remediação do ciclo (menos flap).
     "check_directive_health",
 )

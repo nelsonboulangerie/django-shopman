@@ -29,7 +29,7 @@ from shopman.orderman.models import Order
 logger = logging.getLogger(__name__)
 
 
-def confirm_pix(*, txid: str, e2e_id: str = "", valor: str = "") -> None:
+def confirm_pix(*, txid: str, e2e_id: str = "", amount: str = "") -> None:
     """Record a PIX payment as captured and dispatch ``on_paid``.
 
     Parameters
@@ -42,9 +42,10 @@ def confirm_pix(*, txid: str, e2e_id: str = "", valor: str = "") -> None:
     e2e_id:
         End-to-end transaction id from the PIX network. Used for
         idempotency — a second webhook for the same ``e2e_id`` is a noop.
-    valor:
-        Paid amount as a decimal string (``"12.50"``). Converted to
-        centavos for ``PaymentService.capture``.
+    amount:
+        Paid amount as a decimal string (``"12.50"``) — the gateway's own
+        wire format. Converted to centavos for ``PaymentService.capture``.
+        (EFI calls this field ``valor``; the name stops at the webhook.)
     """
     from shopman.payman import PaymentError, PaymentService
 
@@ -61,10 +62,10 @@ def confirm_pix(*, txid: str, e2e_id: str = "", valor: str = "") -> None:
                 "pix_confirmation: no payment intent or order for txid=%s", txid,
             )
             return
-        _apply_order_payment(order, e2e_id=e2e_id, valor=valor, intent_backed=False)
+        _apply_order_payment(order, e2e_id=e2e_id, amount=amount, intent_backed=False)
         return
 
-    amount_q = _amount_to_q(valor, default=db_intent.amount_q)
+    amount_q = _amount_to_q(amount, default=db_intent.amount_q)
 
     try:
         if db_intent.status == "pending":
@@ -98,11 +99,11 @@ def confirm_pix(*, txid: str, e2e_id: str = "", valor: str = "") -> None:
             )
             return
 
-    _apply_order_payment(order, e2e_id=e2e_id, valor=valor)
+    _apply_order_payment(order, e2e_id=e2e_id, amount=amount)
 
 
 def _apply_order_payment(
-    order: Order, *, e2e_id: str, valor: str, intent_backed: bool = True,
+    order: Order, *, e2e_id: str, amount: str, intent_backed: bool = True,
 ) -> None:
     """Record PIX transaction audit data on the order and dispatch ``on_paid``.
 
@@ -132,8 +133,8 @@ def _apply_order_payment(
 
         if e2e_id:
             payment_data["e2e_id"] = e2e_id
-        if valor:
-            payment_data["paid_amount_q"] = _amount_to_q(valor, default=order.total_q)
+        if amount:
+            payment_data["paid_amount_q"] = _amount_to_q(amount, default=order.total_q)
 
         sufficient = _captured_payment_is_sufficient(
             order, payment_data, intent_backed=intent_backed,
@@ -177,9 +178,14 @@ def _captured_payment_is_sufficient(
 
     Com intent no Payman a fonte canônica é
     ``payment.has_sufficient_captured_payment`` (mesmo contrato do webhook
-    Stripe). No fallback legado o Payman não conhece este pagamento, então a
-    comparação usa o ``paid_amount_q`` reportado pelo webhook; webhook sem
-    ``valor`` não indica pagamento parcial.
+    Stripe). No fallback legado o Payman não conhece este pagamento, então o
+    único número disponível é o ``paid_amount_q`` reportado pelo webhook.
+
+    Webhook autenticado **sem** ``valor`` era lido como "cobre o total" e
+    disparava ``on_paid``: pedido entregue sem que ninguém conferisse um
+    centavo. Ausência de valor não é prova de pagamento, é indeterminação — e
+    indeterminado espera (vira alerta ``payment_insufficient``, o pedido segue
+    aguardando).
     """
     from shopman.shop.services import payment as payment_service
 
@@ -187,7 +193,7 @@ def _captured_payment_is_sufficient(
         return payment_service.has_sufficient_captured_payment(order) is True
     paid_q = payment_data.get("paid_amount_q")
     if paid_q is None:
-        return True
+        return False
     return int(paid_q) >= int(getattr(order, "total_q", 0) or 0)
 
 
@@ -225,20 +231,20 @@ def _create_insufficient_payment_alert(order: Order, *, paid_q) -> None:
         )
 
 
-def _amount_to_q(valor: str, *, default: int | None = None) -> int:
+def _amount_to_q(amount: str, *, default: int | None = None) -> int:
     from shopman.utils.monetary import brl_to_q
 
-    if valor in ("", None):
+    if amount in ("", None):
         if default is None:
             raise ValueError("PIX amount is required")
         return int(default)
     try:
-        amount = Decimal(str(valor))
+        parsed = Decimal(str(amount))
     except (InvalidOperation, ValueError) as exc:
         raise ValueError("PIX amount must be decimal") from exc
-    if amount <= 0:
+    if parsed <= 0:
         raise ValueError("PIX amount must be positive")
-    return brl_to_q(amount)
+    return brl_to_q(parsed)
 
 
 def _cancel_stale_intents(order: Order, *, keep_intent_ref: str) -> None:
