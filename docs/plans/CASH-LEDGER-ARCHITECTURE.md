@@ -161,13 +161,13 @@ O caixa de uma padaria tem exatamente três coisas:
 Tudo o mais (leitura X/Z, esperado, diferença, mix de meios no dia, "quem abre a
 gaveta 3× mais") é **leitura do livro**.
 
-### 3.2 O livro: `CashEntry` (nome de trabalho; ver §5)
+### 3.2 O livro: `cashman.Entry` (nome final; `Shift` e `Terminal` idem, ver §5)
 
 Um lançamento por acontecimento na gaveta de um turno. Segue `Move` e
 `PaymentTransaction` à risca:
 
 ```
-CashEntry                                    "lançamento de caixa"
+Entry                                        "lançamento de caixa"   (cashman.Entry)
   shift        FK CashShift, PROTECT         em qual custódia aconteceu
   operator     FK user, PROTECT              quem agiu (o do turno, ou o gerente num fechamento supervisório)
   approved_by  FK user, PROTECT, null        a segunda assinatura (sangria, destrave, troco atendido)
@@ -189,7 +189,7 @@ CashEntry                                    "lançamento de caixa"
 livro carrega lançamentos sem dinheiro**, e o invariante que interessa é
 `saldo = Σ amount_q`. O sinal no tipo (como no `CashMovement`) foi a escolha
 certa quando havia só dois tipos; com uma dúzia, o CheckConstraint por tipo
-(`sale > 0`, `refund < 0`, `drawer_open = 0`) dá a mesma proteção sem
+(`sale ≥ 0`, `refund < 0`, `drawer_open = 0`) dá a mesma proteção sem
 espalhar a aritmética por quem lê.
 
 **Tipos** (identificadores em inglês; rótulo pt-BR na tela):
@@ -232,10 +232,10 @@ O que **sai** de cena por consequência direta:
 - **`shop/adapters/pos.py::cash_shift_is_closed`**: `shop` importa o pacote
   (§3.5) e pergunta ao turno.
 
-### 3.3 O `CashShift`, enxuto
+### 3.3 O `Shift`, enxuto
 
 ```
-CashShift                                     "turno de caixa"
+Shift                                         "turno de caixa"   (cashman.Shift)
   terminal    FK POSTerminal, PROTECT
   operator    FK user, PROTECT
   opened_at, closed_at, status (open|closed|void)
@@ -349,7 +349,7 @@ desenho acima:
 
 | No #198 | No livro |
 |---------|----------|
-| `POSEvent` + guarda `Move`-like | `CashEntry` (mesma guarda) |
+| `POSEvent` + guarda `Move`-like | `cashman.Entry` (mesma guarda) |
 | `cash_in`/`cash_out` → FK `CashMovement` | **são** as linhas; `CashMovement` some |
 | `drawer_opened`, `drawer_unlocked`, `change_*` | tipos de `amount_q = 0`, `parent` em vez de `ref` no payload |
 | `shift_opened`/`shift_closed` com `opening_amount_q`/`difference_q` no payload | `float_in` / `count` **com o valor como `amount_q`** |

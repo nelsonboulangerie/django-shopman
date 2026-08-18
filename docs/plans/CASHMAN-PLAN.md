@@ -206,8 +206,13 @@ porquê, e a bateria de gates do fim deste documento. Nenhum merge sem o dono.
   `record_receipt_result` → `receipt_result` com `parent`; `close_cash_shift`/
   `close_blocking_shift` → `close_shift` (fechamento supervisório = `actor` ≠
   dono do turno, no payload do `count`).
-- API (`api/operations.py`, `api/urls.py`): **URLs iguais**, contratos JSON
-  iguais (`movement_id` passa a ser `entry_id`; a superfície só relaia).
+- API (`api/operations.py`, `api/urls.py`): rotas de turno, sangria/suprimento,
+  gaveta, troco e destrave **mantêm URL e corpo**. O que muda de nome muda
+  inteiro (renames zeram tudo): `movement_id` → `entry_id` na resposta de
+  `pos/cash/movement/`, e a rota do comprovante
+  `pos/cash/movement/<movement_id>/receipt/` → `pos/cash/entry/<entry_id>/receipt/`,
+  com o `pos-nuxt` acompanhando no mesmo PR (`usePosCashSession.lastMovementId`
+  → `lastEntryId`, `actionHref` do comprovante), BE+FE atômico como no PR #67.
   Comprovante: `code_for(entry.pk)`; `cash_receipt.py` lê a linha + último
   `receipt_result` filho.
 - Projections: `pos.py` (`cash_runtime`, `pending_change_requests`),
@@ -351,6 +356,14 @@ rm db.sqlite3 && .venv/bin/python manage.py migrate --noinput     # banco zerado
 Superfícies tocadas: `npm run test` **e** `npm run typecheck` no app. Em
 worktree: `PYTHON=` e `PYTHONPATH=` explícitos (ver
 `reference_worktree_gate_recipe`), uma suíte por chamada.
+
+⚠️ Desde 2026-08-18 o repositório é `nelsonboulangerie/django-shopman`, com
+**fila de merge** e `strict` desligado, e `Testes (test-backstage)` **não
+bloqueia mais** o merge. Consequências para este plano: (1) o `migrate` de
+banco zerado depois do rebase é o **único** check que prova colisão de
+migração, e é obrigatório antes de entrar na fila; (2) quem toca `backstage`
+(WP-4, WP-5, WP-7, WP-8) **olha o resultado do `test-backstage` no CI à mão**
+antes de pedir merge, porque ninguém mais vai ser barrado por ele.
 
 ## Riscos e como cada um é tratado
 
