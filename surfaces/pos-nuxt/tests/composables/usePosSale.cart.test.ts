@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { nextTick } from "vue";
 
 import { makeProjection, makeSale, makeTabPayload } from "./_posSaleHarness";
@@ -82,6 +82,95 @@ describe("usePosSale — gate de comanda para usar o carrinho", () => {
     expect(h.sale.cart.items).toHaveLength(0);
     expect(h.sale.tabDialogOpen.value).toBe(true);
     expect(h.sale.tabDialogReason.value).toBe("cart");
+    h.handles.dispose();
+  });
+});
+
+describe("usePosSale — a trava da gaveta morde ao INICIAR a venda", () => {
+  const AGENT_DRAWER = {
+    adapter: "agent", can_kick: true, open_on_cash_sale: true,
+    agent_url: "http://127.0.0.1:47811", token: "token-do-balcao",
+  };
+  function drawerProjection() {
+    return makeProjection({
+      checkout: {
+        intent_version: 1,
+        capabilities: { tab_lifecycle: { requires_open_tab_for_cart: false, requires_tab_before_save: false } },
+      } as ReturnType<typeof makeProjection>["checkout"],
+      cash_drawer: AGENT_DRAWER as ReturnType<typeof makeProjection>["cash_drawer"],
+    });
+  }
+  function stubDrawer(body: Record<string, unknown>) {
+    vi.stubGlobal("fetch", vi.fn(() => Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(body) })));
+  }
+  afterEach(() => vi.unstubAllGlobals());
+
+  it("gaveta sabidamente aberta: NÃO abre a comanda, sobe a trava", async () => {
+    stubDrawer({ known: true, open: true, raw: "0x12" });
+    const actionCall = vi.fn().mockResolvedValue(makeTabPayload());
+    const h = makeSale({ projection: drawerProjection(), actionCall });
+
+    await h.sale.openTab("M1");
+
+    expect(actionCall).not.toHaveBeenCalled();
+    expect(h.sale.drawerLock.open.value).toBe(true);
+    expect(h.sale.hasOpenTab.value).toBe(false);
+    h.handles.dispose();
+  });
+
+  it("gaveta fechada: a comanda abre normalmente", async () => {
+    stubDrawer({ known: true, open: false, raw: "0x16" });
+    const actionCall = vi.fn().mockResolvedValue(makeTabPayload());
+    const h = makeSale({ projection: drawerProjection(), actionCall });
+
+    await h.sale.openTab("M1");
+    await nextTick();
+
+    expect(actionCall).toHaveBeenCalledTimes(1);
+    expect(h.sale.hasOpenTab.value).toBe(true);
+    h.handles.dispose();
+  });
+
+  it("estado desconhecido NUNCA trava", async () => {
+    stubDrawer({ known: false, reason: "esta estacao nunca mediu a gaveta." });
+    const actionCall = vi.fn().mockResolvedValue(makeTabPayload());
+    const h = makeSale({ projection: drawerProjection(), actionCall });
+
+    await h.sale.openTab("M1");
+    await nextTick();
+
+    expect(actionCall).toHaveBeenCalledTimes(1);
+    expect(h.sale.drawerLock.open.value).toBe(false);
+    h.handles.dispose();
+  });
+
+  it("venda já começada escolhendo comanda (preserveDraft) não vira refém", async () => {
+    stubDrawer({ known: true, open: true, raw: "0x12" });
+    const actionCall = vi.fn().mockResolvedValue(makeTabPayload());
+    const h = makeSale({ projection: drawerProjection(), actionCall });
+    h.sale.addProduct(h.handles.posValue.value!.products[0]!);
+
+    await h.sale.openTab("M1", { preserveDraft: true });
+
+    expect(actionCall).toHaveBeenCalledTimes(1);
+    expect(h.sale.drawerLock.open.value).toBe(false);
+    h.handles.dispose();
+  });
+
+  it("'já fechei' com a gaveta fechada abre a comanda que esperava", async () => {
+    stubDrawer({ known: true, open: true, raw: "0x12" });
+    const actionCall = vi.fn().mockResolvedValue(makeTabPayload());
+    const h = makeSale({ projection: drawerProjection(), actionCall });
+    await h.sale.openTab("M1");
+    expect(actionCall).not.toHaveBeenCalled();
+
+    stubDrawer({ known: true, open: false, raw: "0x16" });
+    await h.sale.drawerLock.recheck();
+    await nextTick();
+
+    expect(actionCall).toHaveBeenCalledTimes(1);
+    expect(h.sale.hasOpenTab.value).toBe(true);
+    expect(h.sale.drawerLock.open.value).toBe(false);
     h.handles.dispose();
   });
 });
