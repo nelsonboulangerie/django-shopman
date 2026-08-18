@@ -14,6 +14,7 @@ def test_menuboard_paints_without_javascript(settings, monkeypatch):
     """
     settings.SHOPMAN_MENUBOARD_PUBLIC = True
     from shopman.offerman.models import Collection, CollectionItem, Product
+
     from shopman.shop.models import Channel
 
     col = Collection.objects.create(ref="rusticos", name="Rústicos")
