@@ -39,6 +39,7 @@ RUN python -m pip install --upgrade pip \
         ./packages/payman \
         ./packages/buyman \
         ./packages/fiscalman \
+        ./packages/cashman \
         .
 
 RUN mkdir -p /app/staticfiles /app/media \

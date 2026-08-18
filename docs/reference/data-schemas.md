@@ -1108,3 +1108,47 @@ e o turno fecharia com falta fantasma (foi o defeito desfeito no PR #178).
 | `served_by` | `str` | `username` do **gerente** que autorizou (mesma permissão da sangria, `backstage.adjust_cashshift`). Vazio enquanto pendente. |
 | `served_at` | `str` | ISO 8601, vazio enquanto pendente. |
 | `cancelled_at` | `str` | ISO 8601, vazio salvo quando cancelado. |
+
+---
+
+## cashman.Entry.payload
+
+O livro-caixa do turno (`packages/cashman`, ADR-022) é **append-only**: uma
+linha por acontecimento na gaveta, com `amount_q` **assinado** (efeito no
+saldo; zero quando não mexe em dinheiro), `kind`, `operator`, `approved_by`
+(segunda assinatura), `order_ref`, `payment_ref` (intent do `payman`),
+`parent` (o lançamento que este responde/corrige), `reason`, e este `payload`
+com o específico de cada tipo. Esperado, contado e diferença **não têm
+coluna**: são `Σ` do livro (`services.expected_before_count/counted/difference`).
+
+⚠️ O valor de venda, sangria e suprimento é o próprio `amount_q`; o payload
+**não** repete valor. Guarda de imutabilidade igual à do `stockman.Move`
+(`update()`/`delete()` levantam); imutabilidade real no banco não é prometida.
+
+| `kind` | `amount_q` | `parent` | payload | Escrito por |
+|--------|-----------|----------|---------|-------------|
+| `float_in` | > 0 | — | — | `services.open_shift` |
+| `sale` | ≥ 0 (efeito em dinheiro; 0 para pix/cartão/external) | — | `{method, received_q, change_q}` | `shop` na venda (WP-3) |
+| `cod_settled` | > 0 | — | `{courier}` | acerto de entrega (WP-3) |
+| `refund` | < 0 | `sale` opcional | — | cancelamento/devolução (WP-3) |
+| `cash_in` | > 0 | — | — | suprimento (WP-4) |
+| `cash_out` | < 0 (exige `approved_by`) | — | — | sangria (WP-4) |
+| `count` | contado − esperado | — | `{counted_q, notes, supervisory}` | `services.close_shift` |
+| `count_correction` | ± (exige `approved_by`) | `count` | — (motivo em `reason`) | `services.correct_count` |
+| `drawer_open` | 0 | — | — (motivo em `reason`) | abertura sem venda (WP-4) |
+| `drawer_unlock` | 0 (exige `approved_by`) | — | `{drawer_raw}` | destrave da trava (WP-8) |
+| `change_requested` | 0 | — | `{kind: coins\|small_bills\|amount, amount_q, note}` | pedido de troco (WP-4) |
+| `change_served` | 0 (exige `approved_by`) | `change_requested` | — | idem |
+| `change_cancelled` | 0 | `change_requested` | — | idem |
+| `receipt_result` | 0 | `cash_out`/`cash_in` | `{status: printed\|failed\|skipped, detail}` | comprovante (WP-4) |
+| `note` | 0 | — | `{text}` | anotação gerencial em turno fechado |
+
+O estado do pedido de troco é **dobrado** do livro (`services.change_requests`):
+`pending` → `served`/`cancelled` pela primeira resolução com `parent` apontando
+para o pedido; só `pending` chega à tela do PDV.
+
+## cashman.Terminal.metadata
+
+Config do aparelho. Enquanto o `backstage` opera sobre `POSTerminal`, o
+schema é o de `POSTerminal.metadata` (acima); no WP-4 o hardware passa a ler
+daqui e a seção antiga é substituída por esta.

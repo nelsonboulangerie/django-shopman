@@ -54,6 +54,7 @@ PROTECTED_KERNEL_PACKAGES = (
     "orderman",
     "doorman",
     "payman",
+    "cashman",
 )
 
 

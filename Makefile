@@ -15,7 +15,7 @@ APP_COMPOSE := $(COMPOSE) --profile app
 RELEASE_COMPOSE := $(COMPOSE) --profile release
 NUXT_DIR := surfaces/storefront-nuxt
 
-.PHONY: surfaces surfaces-types help install test test-refs test-utils test-offerman test-stockman test-craftsman test-orderman test-payman test-guestman test-doorman test-buyman test-framework test-counter-agent test-migrations test-runtime-preflight test-runtime load-test storefront-e2e test-coverage lint omotenashi-qa omotenashi-browser-qa omotenashi-browser-ci admin admin-update admin-ui admin-ui-ci admin-ui-maturity admin-ui-strict admin-ui-surfaces admin-ui-test admin-ui-update unfold unfold-ci unfold-maturity unfold-strict unfold-surfaces unfold-update lint-unfold lint-unfold-maturity clean migrate run nuxt dev seed coverage fonts up down logs db-shell diagnose-runtime diagnose-worker diagnose-payments diagnose-webhooks diagnose-health release-readiness release-readiness-strict reconcile-financial-day audit-branches smoke-gateways smoke-gateways-sandbox deploy-env-check deploy-check deploy-build deploy-release deploy-up deploy-down deploy-logs deploy-ps collectstatic
+.PHONY: surfaces surfaces-types help install test test-refs test-utils test-offerman test-stockman test-craftsman test-orderman test-payman test-guestman test-doorman test-buyman test-cashman test-framework test-counter-agent test-migrations test-runtime-preflight test-runtime load-test storefront-e2e test-coverage lint omotenashi-qa omotenashi-browser-qa omotenashi-browser-ci admin admin-update admin-ui admin-ui-ci admin-ui-maturity admin-ui-strict admin-ui-surfaces admin-ui-test admin-ui-update unfold unfold-ci unfold-maturity unfold-strict unfold-surfaces unfold-update lint-unfold lint-unfold-maturity clean migrate run nuxt dev seed coverage fonts up down logs db-shell diagnose-runtime diagnose-worker diagnose-payments diagnose-webhooks diagnose-health release-readiness release-readiness-strict reconcile-financial-day audit-branches smoke-gateways smoke-gateways-sandbox deploy-env-check deploy-check deploy-build deploy-release deploy-up deploy-down deploy-logs deploy-ps collectstatic
 
 help: ## Mostra este help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | \
@@ -54,6 +54,7 @@ install: ## Instala deps + apps da suite em modo editável
 	$(PYTHON) -m pip install -e packages/payman
 	$(PYTHON) -m pip install -e packages/buyman
 	$(PYTHON) -m pip install -e packages/fiscalman
+	$(PYTHON) -m pip install -e packages/cashman
 	$(PYTHON) -m pip install -e .
 	@echo "✓ Dependências instaladas"
 
@@ -63,10 +64,10 @@ install: ## Instala deps + apps da suite em modo editável
 # tudo que é rápido — na prática ~1 min somado, contra ~12 do framework. Sem
 # ele, ou o CI listava onze entradas de matriz (onze `make install`, cada um
 # custando mais que o teste) ou os cores voltavam a esperar o framework.
-test-cores: test-refs test-utils test-offerman test-stockman test-craftsman test-orderman test-payman test-guestman test-doorman test-buyman test-fiscalman ## Todos os pacotes do Core
+test-cores: test-refs test-utils test-offerman test-stockman test-craftsman test-orderman test-payman test-guestman test-doorman test-buyman test-fiscalman test-cashman ## Todos os pacotes do Core
 	@echo "✓ Cores passaram"
 
-test: test-refs test-utils test-offerman test-stockman test-craftsman test-orderman test-payman test-guestman test-doorman test-buyman test-fiscalman test-framework test-counter-agent ## Roda todos os testes
+test: test-refs test-utils test-offerman test-stockman test-craftsman test-orderman test-payman test-guestman test-doorman test-buyman test-fiscalman test-cashman test-framework test-counter-agent ## Roda todos os testes
 	@echo "✓ Todos os testes passaram"
 
 test-refs: ## Testes do shopman.refs
@@ -112,6 +113,10 @@ test-buyman: ## Testes do shopman.buyman (compras)
 test-fiscalman: ## Testes do shopman.fiscalman (fiscal)
 	@echo "── Fiscalman ──"
 	cd packages/fiscalman && $(PYTHON) -m pytest -x -q
+
+test-cashman: ## Testes do shopman.cashman (caixa: terminal, turno, livro)
+	@echo "── Cashman ──"
+	cd packages/cashman && $(PYTHON) -m pytest -x -q
 
 test-framework: test-shop test-storefront test-backstage ## Testes do framework (orquestração)
 	@echo "✓ Framework passou"
