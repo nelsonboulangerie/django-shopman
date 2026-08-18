@@ -73,27 +73,53 @@ jobs:
       # banco migrado (o pytest cria o dele), e o gate precisa de banco migrado
       # E semeado — `omotenashi.seed` é bloqueante e exige os 11 cenários
       # canônicos. Ele vive no Omotenashi Gate, logo depois do seed.
-      # ⚠️ 15 minutos deixaram de caber. A suíte inteira (~6.500 testes) já
-      # gastava 11m47s dos 15, e o seed passou a semear dois anos de histórico
-      # para o "o que esperar" ter o que comparar — ~10s por chamada, e sete
-      # testes chamam o seed. O primeiro PR grande depois disso estourou a 83%
-      # da suíte: falha por RELÓGIO, não por teste.
-      #
-      # Teto apertado assim não é guardrail, é tripwire — dispara com o
-      # crescimento normal da suíte e a falha não diz nada sobre o código. E
-      # gate que reprova por tempo ensina a duvidar do vermelho, que é o pior
-      # hábito que um gate pode criar.
-      #
-      # O que 25min NÃO resolvem: `make test` encadeia 13 alvos em SÉRIE. Quando
-      # apertarem de novo, a resposta é paralelizar, não subir o teto outra vez.
-      - name: Full test suite
-        timeout-minutes: 25
-        run: make test
+
+  # ⚠️ A suíte roda em MATRIZ, em job próprio. Antes vivia dentro do `quality`,
+  # encadeando 13 alvos: ~1 min de cores + ~12 de framework, um esperando o
+  # outro — e o gate inteiro levava 18 min. Em paralelo o relógio passa a ser o
+  # alvo mais lento, não a soma.
+  #
+  # A cobertura é a MESMA: os mesmos alvos, todos, só que ao mesmo tempo. E o
+  # `quality` fica com lint, migrações e deploy-check, que respondem em minutos
+  # e reprovam cedo o erro bobo.
+  tests:
+    name: Testes
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    strategy:
+      # `fail-fast: false` de propósito: quando duas frentes quebram, quero ver
+      # as duas no mesmo relatório. Parar na primeira esconde a segunda e custa
+      # mais um ciclo inteiro para descobri-la.
+      fail-fast: false
+      matrix:
+        suite: [test-cores, test-shop, test-storefront, test-backstage, test-counter-agent]
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Create virtualenv
+        run: python -m venv .venv
+
+      - name: Install dependencies
+        run: make install
+
+      - name: ${{ matrix.suite }}
+        timeout-minutes: 20
+        run: make ${{ matrix.suite }}
 
   docker-image:
     name: Docker deploy image
     runs-on: ubuntu-latest
-    needs: quality
+    # ⚠️ SEM `needs: quality`. Não depende do resultado dos testes — é
+    # checagem independente. Encadear empurrava ~5 min para o fim do caminho
+    # crítico sem proteger nada: se os testes quebram, o PR reprova igual.
     timeout-minutes: 20
 
     steps:
@@ -122,7 +148,9 @@ jobs:
   runtime-security-reliability:
     name: PostgreSQL + Redis runtime stress gate
     runs-on: ubuntu-latest
-    needs: quality
+    # ⚠️ SEM `needs: quality`. Não depende do resultado dos testes — é
+    # checagem independente. Encadear empurrava ~5 min para o fim do caminho
+    # crítico sem proteger nada: se os testes quebram, o PR reprova igual.
     timeout-minutes: 20
 
     services:
