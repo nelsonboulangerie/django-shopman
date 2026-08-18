@@ -322,3 +322,54 @@ def test_the_seed_is_the_source_and_wins_over_an_admin_edit():
     _run("setup_bi_reference")
     tag = ProductConsumptionTag.objects.select_related("role").get(sku="ESPRESSO")
     assert tag.role.reading == Reading.ANCHOR
+
+
+# ── As categorias reais do Yooga (medidas em 18/08, no staging) ──────────────
+
+
+@pytest.mark.parametrize(
+    "category,expected,linhas",
+    [
+        ("Pães Finos", "hybrid", 38369),
+        ("Pães Rústicos", "takeaway", 15299),
+        ("Cafés", "anchor", 5211),
+        ("Sanduíches & Tartines", "anchor", 907),
+        ("Sobremesas", "anchor", 108),
+        ("Mercearia", "takeaway", 33),
+        ("Bebidas", "anchor", 24),
+    ],
+)
+def test_every_real_yooga_category_reads_as_the_owner_decided(category, expected, linhas):
+    """As sete categorias que existem de verdade nos dois anos de histórico.
+
+    ⚠️ "Pães Finos" é o caso que motivou o teste: a palavra genérica "pão" casa
+    com ela e a mandaria para "leva", quando a viennoiserie é híbrida. São 38.369
+    linhas — errar aqui inclinaria o retrato inteiro dos dois anos.
+    """
+    from shopman.backstage.management.commands.propose_consumption_tags import (
+        HISTORICAL_KEYWORD_READING,
+    )
+
+    lowered = category.lower()
+    for needle, reading in HISTORICAL_KEYWORD_READING:
+        if needle in lowered:
+            assert reading == expected, (
+                f"{category} ({linhas} linhas) casou '{needle}' → {reading}, "
+                f"mas o dono decidiu {expected}"
+            )
+            return
+    raise AssertionError(f"{category} ({linhas} linhas) não casa com nenhuma palavra")
+
+
+def test_the_specific_keyword_beats_the_generic_one():
+    """A guarda é a ORDEM: genérico antes de específico apagaria a decisão."""
+    from shopman.backstage.management.commands.propose_consumption_tags import (
+        HISTORICAL_KEYWORD_READING,
+    )
+
+    order = [needle for needle, _ in HISTORICAL_KEYWORD_READING]
+    for specific, generic in (("pães finos", "pão"), ("pães rústicos", "pão"),
+                              ("sanduíche", "pão"), ("mercearia", "pão")):
+        assert order.index(specific) < order.index(generic), (
+            f"'{specific}' precisa vir antes de '{generic}' — a primeira que casa vence"
+        )
