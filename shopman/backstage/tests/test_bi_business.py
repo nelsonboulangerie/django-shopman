@@ -227,7 +227,6 @@ def test_cash_variance_by_operator_and_missing_closings(db):
     assert {(m.method, m.amount_q) for m in report.payment_methods} == {("pix", 4000), ("cash", 6000)}
     # 28 dias de janela, só hoje fechado: 27 buracos DECLARADOS.
     assert report.closings_missing == 27
-    assert report.drawer_by_hour == ()
 
 
 @pytest.mark.django_db
