@@ -1069,3 +1069,26 @@ def test_windows_so_manda_instalar_driver_quando_os_DOIS_falham(monkeypatch, cap
     saida = capsys.readouterr().out
     assert "OPOS/APD" in saida, "aí sim, o caminho que resta"
     assert "NAO e defeito da impressora" in saida
+
+
+def test_toda_chamada_do_windows_declara_argtypes():
+    """Sem `argtypes`, o ctypes assume int de 32 bits — e o handle não cabe.
+
+    Foi exatamente assim que a leitura da gaveta quebrou no balcão:
+    `SetupDiGetClassDevs` devolve um handle de 64 bits, as funções seguintes
+    receberam como int, e o Windows respondeu "int too long to convert" — erro
+    que parece problema do GUID e não é.
+
+    Este teste lê o PRÓPRIO código, então pega a regressão num Mac, sem Windows.
+    Toda função de DLL usada nos blocos do Windows precisa de `argtypes`.
+    """
+    import re
+
+    fonte = Path(counter_agent.__file__).read_text(encoding="utf-8")
+    usadas = set(re.findall(r"\b(?:setupapi|kernel32|winspool|ole32)\.([A-Z]\w+)\(", fonte))
+    declaradas = set(re.findall(r"\b(?:setupapi|kernel32|winspool|ole32)\.(\w+)\.argtypes\s*=", fonte))
+
+    faltando = sorted(usadas - declaradas)
+    assert not faltando, (
+        f"sem argtypes (handle de 64 bits vira int de 32 e a chamada morre): {faltando}"
+    )
