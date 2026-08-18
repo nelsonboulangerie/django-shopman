@@ -6,7 +6,7 @@ from django import forms
 from django.contrib import admin
 from shopman.utils import unfold_badge, unfold_badge_numeric, unfold_link
 from shopman.utils.monetary import format_money
-from unfold.admin import ModelAdmin
+from unfold.admin import ModelAdmin, TabularInline
 from unfold.widgets import (
     UnfoldAdminIntegerFieldWidget,
     UnfoldAdminSelectWidget,
@@ -14,7 +14,7 @@ from unfold.widgets import (
     UnfoldBooleanSwitchWidget,
 )
 
-from shopman.backstage.models import CashMovement, CashShift, POSTerminal
+from shopman.backstage.models import CashMovement, CashShift, POSEvent, POSTerminal
 from shopman.backstage.services.pos_hardware import (
     ADAPTER_AGENT,
     ADAPTER_MANUAL,
@@ -41,6 +41,86 @@ class CashMovementInline(admin.TabularInline):
         return False
 
 
+class POSEventInline(TabularInline):
+    """A linha do tempo do turno: o que aconteceu no caixa, em ordem.
+
+    Só leitura, e ordem cronológica de propósito (o model já ordena por ``at``):
+    a pergunta que esta trilha responde é "o que houve neste turno", e ela se lê
+    de cima para baixo como aconteceu. Nada aqui se edita, porque o log é
+    append-only — o Admin mostra, não corrige.
+    """
+
+    model = POSEvent
+    fk_name = "shift"
+    extra = 0
+    can_delete = False
+    verbose_name = "evento"
+    verbose_name_plural = "linha do tempo do turno"
+    readonly_fields = ("at", "kind", "operator", "detail_display")
+    fields = readonly_fields
+
+    def detail_display(self, obj):
+        return event_detail(obj)
+    detail_display.short_description = "Detalhe"
+
+    def has_add_permission(self, request, obj=None):
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        return False
+
+
+def event_detail(event: POSEvent) -> str:
+    """Uma frase por evento, a partir do ``payload`` de cada tipo.
+
+    O valor de sangria/suprimento vem do ``CashMovement`` ligado, não do
+    payload: a tabela do dinheiro é uma só e o evento só aponta para ela.
+    """
+    payload = event.payload or {}
+    kind = event.kind
+    if kind in (POSEvent.Kind.CASH_IN, POSEvent.Kind.CASH_OUT):
+        movement = event.movement
+        if movement is None:
+            return ""
+        parts = [f"R$ {format_money(movement.amount_q)}"]
+        if movement.reason:
+            parts.append(movement.reason)
+        if movement.approved_by:
+            parts.append(f"autorizado por {movement.approved_by}")
+        return " · ".join(parts)
+    if kind == POSEvent.Kind.SHIFT_OPENED:
+        return f"fundo de troco R$ {format_money(int(payload.get('opening_amount_q') or 0))}"
+    if kind == POSEvent.Kind.SHIFT_CLOSED:
+        difference = payload.get("difference_q")
+        text = "" if difference is None else f"diferença {'+' if difference >= 0 else ''}R$ {format_money(difference)}"
+        if payload.get("supervisory"):
+            text = f"{text} · fechamento supervisório".strip(" ·")
+        return text
+    if kind == POSEvent.Kind.DRAWER_OPENED:
+        return str(payload.get("reason") or "")
+    if kind == POSEvent.Kind.DRAWER_UNLOCKED:
+        text = f"liberado por {payload.get('approved_by') or '?'}"
+        if payload.get("drawer_raw"):
+            text += f" · sensor {payload['drawer_raw']}"
+        return text
+    if kind == POSEvent.Kind.CHANGE_REQUESTED:
+        parts = [str(payload.get("kind") or "")]
+        if payload.get("amount_q"):
+            parts.append(f"R$ {format_money(int(payload['amount_q']))}")
+        if payload.get("note"):
+            parts.append(str(payload["note"]))
+        return " · ".join(p for p in parts if p)
+    if kind == POSEvent.Kind.CHANGE_SERVED:
+        return f"atendido por {payload.get('served_by') or '?'}"
+    if kind == POSEvent.Kind.CHANGE_CANCELLED:
+        return ""
+    if kind == POSEvent.Kind.DAY_CLOSED:
+        return str(payload.get("date") or "")
+    if kind == POSEvent.Kind.RECONCILIATION_FAILED:
+        return f"{payload.get('critical', 0)} crítica(s), {payload.get('errors', 0)} erro(s)"
+    return ""
+
+
 @admin.register(CashShift)
 class CashShiftAdmin(ModelAdmin):
     list_display = ("operator", "terminal", "opened_at", "status_display", "opening_display", "closing_display", "difference_display")
@@ -62,7 +142,7 @@ class CashShiftAdmin(ModelAdmin):
         "terminal", "operator", "opened_at", "closed_at", "status",
         "opening_display", "closing_display", "expected_display", "difference_display",
     )
-    inlines = [CashMovementInline]
+    inlines = [CashMovementInline, POSEventInline]
     ordering = ["-opened_at"]
     list_fullwidth = True
     compressed_fields = True

@@ -12,7 +12,7 @@ import pytest
 from django.contrib.auth import get_user_model
 from django.urls import reverse
 
-from shopman.backstage.models import CashShift, POSTerminal
+from shopman.backstage.models import CashShift, POSEvent, POSTerminal
 from shopman.backstage.services import pos as pos_service
 from shopman.backstage.services.exceptions import POSError
 from shopman.backstage.services.pos_hardware import CashDrawerConfig
@@ -156,16 +156,26 @@ def _grant_pos_perm(user) -> None:
     user.user_permissions.add(Permission.objects.get(content_type=ct, codename="operate_pos"))
 
 
+def _openings(operator):
+    return list(
+        POSEvent.objects.filter(
+            shift=CashShift.get_open_for_operator(operator),
+            kind=POSEvent.Kind.DRAWER_OPENED,
+        )
+    )
+
+
 def test_abrir_sem_venda_deixa_rastro_de_quem_quando_e_por_que(operator):
     """É o único dos quatro momentos que não tem venda nem movimento contando a história."""
     pos_service.register_drawer_opening(operator=operator, reason="Troco para cliente")
 
-    shift = CashShift.get_open_for_operator(operator)
-    openings = shift.metadata["drawer_openings"]
+    openings = _openings(operator)
     assert len(openings) == 1
-    assert openings[0]["by"] == "marina"
-    assert openings[0]["reason"] == "Troco para cliente"
-    assert openings[0]["at"]
+    assert openings[0].operator == operator
+    assert openings[0].payload["reason"] == "Troco para cliente"
+    assert openings[0].at
+    # É evento do log, não estado do turno: o metadata fica limpo.
+    assert "drawer_openings" not in (CashShift.get_open_for_operator(operator).metadata or {})
 
 
 def test_abrir_sem_motivo_e_recusado(operator):
@@ -184,20 +194,25 @@ def test_aberturas_acumulam_sem_apagar_a_anterior(operator):
     pos_service.register_drawer_opening(operator=operator, reason="primeira")
     pos_service.register_drawer_opening(operator=operator, reason="segunda")
 
-    openings = CashShift.get_open_for_operator(operator).metadata["drawer_openings"]
-    assert [o["reason"] for o in openings] == ["primeira", "segunda"]
+    assert [o.payload["reason"] for o in _openings(operator)] == ["primeira", "segunda"]
 
 
-def test_a_trilha_tem_teto_para_um_clique_preso_nao_inchar_o_turno(operator):
-    shift = CashShift.get_open_for_operator(operator)
-    shift.metadata = {"drawer_openings": [{"at": "x", "by": "y", "reason": f"n{i}"} for i in range(500)]}
-    shift.save(update_fields=["metadata"])
+def test_a_trilha_e_imutavel(operator):
+    """Abertura registrada não se edita nem se apaga — correção é evento novo.
+    A guarda vale no app (não é trigger de banco): protege do descuido, não do DBA."""
+    pos_service.register_drawer_opening(operator=operator, reason="primeira")
+    event = _openings(operator)[0]
 
-    pos_service.register_drawer_opening(operator=operator, reason="a mais recente")
-
-    openings = CashShift.get_open_for_operator(operator).metadata["drawer_openings"]
-    assert len(openings) == 500
-    assert openings[-1]["reason"] == "a mais recente"
+    with pytest.raises(ValueError, match="imutáveis"):
+        event.payload = {"reason": "outra"}
+        event.save()
+    with pytest.raises(ValueError, match="imutáveis"):
+        event.delete()
+    with pytest.raises(ValueError, match="imutáveis"):
+        POSEvent.objects.filter(pk=event.pk).update(payload={})
+    with pytest.raises(ValueError, match="imutáveis"):
+        POSEvent.objects.filter(pk=event.pk).delete()
+    assert _openings(operator)[0].payload["reason"] == "primeira"
 
 
 def test_abrir_sem_venda_nao_mexe_no_dinheiro_esperado(operator):
@@ -237,7 +252,7 @@ def test_endpoint_registra_e_devolve_ok(client, operator):
 
     assert response.status_code == 200
     assert response.json()["ok"] is True
-    assert CashShift.get_open_for_operator(operator).metadata["drawer_openings"][0]["reason"] == "Troco"
+    assert _openings(operator)[0].payload["reason"] == "Troco"
 
 
 # ── A tela DIZ por que não dá, em vez de sumir ────────────────────────────

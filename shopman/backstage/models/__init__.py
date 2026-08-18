@@ -28,6 +28,7 @@ from .operation_episode import (
 )
 from .oven_run import OvenRun
 from .pos import POSTab
+from .pos_event import POSEvent
 from .seating import SeatingSpot, SpotKind
 from .shelf_outage import OutageReason, ShelfOutage
 
@@ -59,6 +60,7 @@ __all__ = [
     "OperationTaskStatus",
     "OperationTaskTemplate",
     "OvenRun",
+    "POSEvent",
     "POSTab",
     "ProductConsumptionTag",
     "Reading",

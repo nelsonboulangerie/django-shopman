@@ -790,6 +790,16 @@ def _pos_actions() -> tuple[Action, ...]:
             idempotency="none",
         ),
         Action(
+            ref="drawer_unlock",
+            kind="mutation",
+            label="Liberar próxima venda com a gaveta aberta",
+            priority="quiet",
+            method="POST",
+            href="/api/v1/backstage/pos/cash/drawer-unlock/",
+            payload_schema={"required": ["manager_approval"], "optional": ["drawer_raw"]},
+            idempotency="none",
+        ),
+        Action(
             ref="request_change",
             kind="mutation",
             label="Pedir troco",

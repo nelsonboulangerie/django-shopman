@@ -1697,6 +1697,43 @@ class POSCashDrawerOpenView(APIView):
 @extend_schema_view(
     post=extend_schema(
         tags=["backstage"],
+        summary="Manager unlocks the next sale while the drawer is still open",
+        responses={200: OpenApiResponse(description="Unlock recorded.")},
+    ),
+)
+class POSCashDrawerUnlockView(APIView):
+    """A trava da gaveta é do PDV; o destrave passa por aqui para ficar no log.
+
+    O PDV recusa iniciar a próxima venda enquanto SABE que a gaveta está aberta
+    (quem lê o sensor é a página, pelo agente do balcão; o servidor não alcança).
+    O gerente libera com PIN — mesmo desafio da sangria — e a liberação vira
+    evento com quem, para quem e quando. Sem este registro, o destrave seria a
+    única exceção do caixa que não deixa rastro.
+    """
+
+    permission_classes = [HasBackstagePermission]
+    required_permission = "backstage.operate_pos"
+
+    def post(self, request):
+        try:
+            pos_service.unlock_drawer(
+                operator=request.user,
+                manager_approval=request.data.get("manager_approval"),
+                drawer_raw=str(request.data.get("drawer_raw") or ""),
+            )
+        # O desafio de PIN precisa chegar à tela COM o código, para o PDV abrir o
+        # diálogo do gerente em vez de mostrar um toast sem saída.
+        except PosIntentError as exc:
+            return Response({"detail": exc.message, "error": exc.as_dict()}, status=exc.status)
+        except Exception as exc:
+            logger.debug("pos_drawer_unlock_failed user=%s", _actor(request), exc_info=True)
+            return Response({"detail": str(exc) or "Falha ao liberar a gaveta."}, status=400)
+        return Response({"ok": True})
+
+
+@extend_schema_view(
+    post=extend_schema(
+        tags=["backstage"],
         summary="Request change (coins / small bills) without leaving the counter",
         responses={200: OpenApiResponse(description="Change request registered.")},
     ),

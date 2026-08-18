@@ -107,8 +107,10 @@ Um caminho só (`useCashDrawer`), quatro chamadas:
 
 **Abrir sem venda é o único que não deixa rastro sozinho** — não há venda nem
 movimento para contar a história. Por isso passa pelo servidor antes de chutar:
-grava quem, quando e por quê em `CashShift.metadata["drawer_openings"]`
-(JSONField, sem migração — é o idioma do projeto para dado contextual).
+grava quem, quando e por quê como evento `drawer_opened` no log do PDV
+(`backstage.POSEvent`, append-only). Nasceu numa lista em
+`CashShift.metadata`; migrou quando o log unificou os rastros do caixa (ver
+`docs/reference/data-schemas.md#posevent-payload`).
 
 ⚠️ **O que este plano NÃO decide:** quem pode abrir. A frente de estresse do PDV
 já resolveu que retirada exige PIN em qualquer valor, e isso está no `main`. Aqui

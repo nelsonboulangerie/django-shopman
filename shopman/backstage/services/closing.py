@@ -18,7 +18,8 @@ from shopman.stockman import Quant
 from shopman.stockman.models import Move
 from shopman.stockman.services.movements import StockMovements
 
-from shopman.backstage.models import DayClosing
+from shopman.backstage.models import DayClosing, POSEvent
+from shopman.backstage.services import pos_events
 
 logger = logging.getLogger(__name__)
 
@@ -80,7 +81,7 @@ def perform_day_closing(
                 )
             )
 
-        DayClosing.objects.create(
+        closing = DayClosing.objects.create(
             date=closing_date,
             closed_by=user,
             data={
@@ -93,6 +94,13 @@ def perform_day_closing(
                     items=snapshot,
                 ),
             },
+        )
+        # O snapshot continua no DayClosing; a linha do tempo do caixa ganha o
+        # marco "dia fechado" para o fechamento aparecer em ordem com o resto.
+        pos_events.record(
+            POSEvent.Kind.DAY_CLOSED,
+            operator=user,
+            payload={"date": closing_date.isoformat(), "day_closing_id": closing.pk},
         )
 
     return closing_date

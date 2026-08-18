@@ -1040,38 +1040,75 @@ dá 4mm por lado; um de 58mm dá **5mm**, não 4 — daí ela não ser um segund
 
 ---
 
-## CashShift.metadata
+## POSEvent.payload
 
-Dado contextual de um turno de caixa. Nenhuma destas chaves entra no cálculo do
-fechamento (`opening_amount_q`, `expected_amount_q`, `difference_q`) — são
-trilha, não dinheiro.
+O log de eventos do PDV (`backstage.POSEvent`) é **append-only**: uma linha por
+coisa que aconteceu no caixa, com `at`, `shift`, `terminal`, `operator`,
+`kind` e este `payload` com o específico de cada tipo. Substituiu as listas
+`drawer_openings` e `change_requests` que viviam em `CashShift.metadata`
+(evento não é estado; a regra "dado contextual vai em JSONField" vale para como
+o turno ESTÁ, não para o que ACONTECEU). Guarda de imutabilidade igual à do
+`stockman.Move`: `update()`/`delete()` levantam; correção é evento novo.
 
-| Chave | Tipo | Escrito por | Lido por | Descrição |
-|-------|------|-------------|----------|-----------|
-| `drawer_openings` | `list[dict]` | `backstage/services/pos.py::register_drawer_opening` | auditoria | Aberturas de gaveta **sem venda e sem movimento** — o único momento que não deixa rastro sozinho. Schema: `{at, by, reason}`. Teto de 500 entradas (as mais recentes). |
-| `change_requests` | `list[dict]` | `backstage/services/pos.py::request_change` / `serve_change_request` / `cancel_change_request` | projection POS (`cash_runtime.pending_change_requests`), auditoria, B.I. | Pedidos de troco do balcão. Ver abaixo. Teto de 50 entradas (as mais recentes). |
+⚠️ **Limite honesto:** a guarda é no app. Quem tem acesso ao banco edita o que
+quiser; imutabilidade real exigiria trigger no Postgres, e nem o `Move` tem.
 
-### change_requests — pedido de troco sem trânsito
+⚠️ **O dinheiro não se duplica.** `cash_in`/`cash_out` apontam para o
+`CashMovement` pelo FK `movement`; o valor mora lá, nunca no payload.
+
+| `kind` | Payload | Escrito por | Lido por |
+|--------|---------|-------------|----------|
+| `shift_opened` | `{opening_amount_q}` | `services/pos.py::open_cash_shift` | Admin (inline do turno), B.I. |
+| `shift_closed` | `{difference_q, supervisory}` | `services/pos.py::_close_shift` | Admin, B.I. |
+| `cash_in` / `cash_out` | `{}` (valor no `movement`) | `services/pos.py::register_cash_movement` | Admin, B.I. |
+| `drawer_opened` | `{reason}` | `services/pos.py::register_drawer_opening` | Admin, B.I. (`bi_cash.events_by_operator`) |
+| `drawer_unlocked` | `{approved_by, drawer_raw?}` | `services/pos.py::unlock_drawer` | Admin, B.I. |
+| `change_requested` | `{ref, kind, amount_q, note, requested_by}` | `services/pos.py::request_change` | projection POS (`cash_runtime.pending_change_requests`), Admin, B.I. |
+| `change_served` | `{ref, served_by}` | `services/pos.py::serve_change_request` | idem |
+| `change_cancelled` | `{ref}` | `services/pos.py::cancel_change_request` | idem |
+| `day_closed` | `{date, day_closing_id}` | `services/closing.py::perform_day_closing` | Admin |
+| `reconciliation_failed` | `{date, critical, errors, day_closing_id}` | `services/financial_reconciliation.py::persist_financial_reconciliation` | Admin |
+
+### change_requested / change_served / change_cancelled: pedido de troco sem trânsito
 
 O operador **pede** troco em vez de atravessar a loja com dinheiro até o cofre;
 o gerente traz e assina no balcão, à vista das duas pessoas. Elimina o trajeto
 em vez de vigiá-lo.
 
-⚠️ **A troca é NET ZERO.** Saem R$ 50, entram 5×R$ 10 — o total da gaveta não
+⚠️ **A troca é NET ZERO.** Saem R$ 50, entram 5×R$ 10; o total da gaveta não
 muda. Atender um pedido **não cria `CashMovement`** e **não toca em
 `expected_amount_q`**. É uma abertura de gaveta com motivo e duas assinaturas.
 Lançar isso como movimento faria o esperado cair por um dinheiro que nunca saiu,
 e o turno fecharia com falta fantasma (foi o defeito desfeito no PR #178).
 
+O **estado** do pedido não mora em coluna nenhuma: `services/pos_events.py::change_requests`
+dobra os três eventos pelo `ref` (pedido, depois atendimento OU cancelamento) e
+devolve a lista com `status` (`pending` → `served`/`cancelled`), `requested_at`,
+`served_by`/`served_at`, `cancelled_at`. Só `pending` chega à tela.
+
 | Chave | Tipo | Descrição |
 |-------|------|-----------|
-| `ref` | `str` | Identificador do pedido (hex curto, aleatório). É por ele que a tela atende e cancela — o índice na lista mudaria quando o teto apara as antigas. |
+| `ref` | `str` | Identificador do pedido (hex curto, aleatório). É a chave que liga o pedido à sua resolução no log. |
 | `kind` | `str` | `coins`, `small_bills` ou `amount`. Rótulo pt-BR fica na superfície (`presentation/cash.ts`). |
 | `amount_q` | `int` | Valor aproximado em centavos. `0` quando o pedido não fala de valor ("acabou moeda" já é um pedido inteiro). Obrigatório > 0 só para `kind="amount"`. |
 | `note` | `str` | Texto livre do operador (até 120 caracteres). |
-| `status` | `str` | `pending` → `served` ou `cancelled`. Só `pending` chega à tela. |
 | `requested_by` | `str` | `username` de quem pediu. |
-| `requested_at` | `str` | ISO 8601. |
-| `served_by` | `str` | `username` do **gerente** que autorizou (mesma permissão da sangria, `backstage.adjust_cashshift`). Vazio enquanto pendente. |
-| `served_at` | `str` | ISO 8601, vazio enquanto pendente. |
-| `cancelled_at` | `str` | ISO 8601, vazio salvo quando cancelado. |
+| `served_by` | `str` | (no `change_served`) `username` do **gerente** que autorizou (mesma permissão da sangria, `backstage.adjust_cashshift`). |
+
+### drawer_unlocked: a trava da gaveta
+
+O PDV recusa **iniciar** a próxima venda enquanto **sabe** que a gaveta está
+aberta (quem lê é a página, pelo `GET /drawer` do agente do balcão; estado
+desconhecido nunca trava; sem carência). O gerente libera com PIN, e cada
+liberação vale **uma** venda e vira um evento: `approved_by` é o gerente,
+`drawer_raw` é o byte que o sensor devolveu na hora (ex.: `0x12`), prova de que
+a trava agiu porque sabia.
+
+---
+
+## CashShift.metadata
+
+Sem chaves em uso. As trilhas que moravam aqui (`drawer_openings`,
+`change_requests`) viraram eventos em `POSEvent` (acima). Se algo voltar a ser
+gravado neste campo, precisa ser **estado** do turno (como ele está), nunca
+**evento** (o que aconteceu): evento vai para o log.

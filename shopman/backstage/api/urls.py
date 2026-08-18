@@ -100,6 +100,7 @@ from .operations import (
     POSCashCloseBlockingView,
     POSCashCloseView,
     POSCashDrawerOpenView,
+    POSCashDrawerUnlockView,
     POSCashMovementView,
     POSCashOpenView,
     POSCashReceiptView,
@@ -298,6 +299,9 @@ urlpatterns = [
     path("pos/cash/movement/", POSCashMovementView.as_view(), name="api-backstage-pos-cash-movement"),
     path("pos/cash/report/", POSCashReportView.as_view(), name="api-backstage-pos-cash-report"),
     path("pos/cash/drawer-open/", POSCashDrawerOpenView.as_view(), name="api-backstage-pos-cash-drawer-open"),
+    # A trava vive no PDV (é ele que lê a gaveta); o destrave passa aqui para
+    # ficar no log com quem liberou.
+    path("pos/cash/drawer-unlock/", POSCashDrawerUnlockView.as_view(), name="api-backstage-pos-cash-drawer-unlock"),
     # Pedido de troco: o dinheiro não anda, o troco vem até o balcão. Net zero —
     # nenhuma destas rotas cria movimento nem mexe no esperado do fechamento.
     path(

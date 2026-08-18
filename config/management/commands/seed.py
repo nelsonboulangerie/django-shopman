@@ -74,6 +74,7 @@ from shopman.backstage.models import (
     OperationTaskRun,
     OperationTaskTemplate,
     OperatorAlert,
+    POSEvent,
     POSTab,
     POSTerminal,
 )
@@ -765,7 +766,10 @@ class Command(BaseCommand):
         KDSInstance.objects.all().delete()
         POSTab.objects.all().delete()
 
-        # Cash register
+        # Cash register — o log de eventos é append-only (a guarda do QuerySet
+        # recusa delete) e PROTEGE turno, terminal e movimentação: sai primeiro,
+        # pelo mesmo caminho cru do ledger de estoque.
+        hard_delete(POSEvent)
         CashMovement.objects.all().delete()
         CashShift.objects.all().delete()
         POSTerminal.objects.all().delete()

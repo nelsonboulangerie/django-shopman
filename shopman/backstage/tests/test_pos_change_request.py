@@ -21,9 +21,10 @@ from django.contrib.contenttypes.models import ContentType
 from django.urls import reverse
 from shopman.doorman.models import PinCredential
 
-from shopman.backstage.models import CashShift, POSTerminal
+from shopman.backstage.models import CashShift, POSEvent, POSTerminal
 from shopman.backstage.projections.pos import build_pos
 from shopman.backstage.services import pos as pos_service
+from shopman.backstage.services import pos_events
 from shopman.backstage.services.exceptions import POSError
 from shopman.shop.services.pos_intent import PosIntentError
 
@@ -56,14 +57,18 @@ def _approval(username: str = "pablo", pin: str = MANAGER_PIN) -> dict:
     return {"username": username, "pin": pin}
 
 
+def _requests(operator) -> list[dict]:
+    """Os pedidos do turno, dobrados a partir do log (pedido + resolução)."""
+    return pos_events.change_requests(CashShift.get_open_for_operator(operator))
+
+
 # ── Pedir ─────────────────────────────────────────────────────────────────
 
 
 def test_pedir_troco_grava_quem_o_que_e_quando(operator):
     entry = pos_service.request_change(operator=operator, kind="coins")
 
-    shift = CashShift.get_open_for_operator(operator)
-    pedidos = shift.metadata["change_requests"]
+    pedidos = _requests(operator)
     assert len(pedidos) == 1
     assert pedidos[0]["ref"] == entry["ref"]
     assert pedidos[0]["kind"] == "coins"
@@ -104,32 +109,42 @@ def test_pedidos_acumulam_sem_apagar_o_anterior(operator):
     pos_service.request_change(operator=operator, kind="coins")
     pos_service.request_change(operator=operator, kind="small_bills")
 
-    pedidos = CashShift.get_open_for_operator(operator).metadata["change_requests"]
+    pedidos = _requests(operator)
     assert [p["kind"] for p in pedidos] == ["coins", "small_bills"]
 
 
-def test_a_lista_tem_teto_para_um_botao_repetido_nao_inchar_o_turno(operator):
+def test_o_pedido_e_um_evento_do_log_e_nao_mora_no_turno(operator):
+    """Pedido de troco é EVENTO, não estado do turno: vai para o log, não para o
+    ``metadata``. Era ali que a trilha vivia, com teto e sem ordem com o resto."""
+    pos_service.request_change(operator=operator, kind="coins")
+
     shift = CashShift.get_open_for_operator(operator)
-    shift.metadata = {
-        "change_requests": [{"ref": f"r{i}", "kind": "coins", "status": "served"} for i in range(50)]
-    }
-    shift.save(update_fields=["metadata"])
-
-    pos_service.request_change(operator=operator, kind="small_bills")
-
-    pedidos = CashShift.get_open_for_operator(operator).metadata["change_requests"]
-    assert len(pedidos) == 50
-    assert pedidos[-1]["kind"] == "small_bills"
+    assert "change_requests" not in (shift.metadata or {})
+    event = POSEvent.objects.get(shift=shift, kind=POSEvent.Kind.CHANGE_REQUESTED)
+    assert event.operator == operator
+    assert event.payload["kind"] == "coins"
 
 
-def test_pedido_nao_apaga_a_trilha_de_abertura_de_gaveta(operator):
-    """Os dois vizinhos moram no mesmo JSONField; escrever um não pode zerar o outro."""
+def test_a_trilha_nao_tem_teto_porque_e_append_only(operator):
+    """No JSONField havia teto de 50 para o botão preso não inchar o turno. Numa
+    tabela append-only o teto não faz sentido — e apagar o mais antigo apagaria
+    exatamente o que a auditoria procura."""
+    for _ in range(51):
+        pos_service.request_change(operator=operator, kind="coins")
+
+    assert len(_requests(operator)) == 51
+
+
+def test_pedido_e_abertura_de_gaveta_ficam_em_ordem_no_mesmo_log(operator):
+    """Antes eram duas listas em dois cantos do JSONField; agora é uma linha do
+    tempo, e a ordem entre os dois é a ordem em que aconteceram."""
     pos_service.register_drawer_opening(operator=operator, reason="Conferência")
     pos_service.request_change(operator=operator, kind="coins")
 
-    metadata = CashShift.get_open_for_operator(operator).metadata
-    assert len(metadata["drawer_openings"]) == 1
-    assert len(metadata["change_requests"]) == 1
+    kinds = list(
+        pos_events.for_shift(CashShift.get_open_for_operator(operator)).values_list("kind", flat=True)
+    )
+    assert kinds == [POSEvent.Kind.DRAWER_OPENED, POSEvent.Kind.CHANGE_REQUESTED]
 
 
 # ── Atender ───────────────────────────────────────────────────────────────
@@ -164,7 +179,7 @@ def test_atender_grava_quem_atendeu_e_quando(operator, manager):
         operator=operator, request_ref=entry["ref"], manager_approval=_approval()
     )
 
-    pedido = CashShift.get_open_for_operator(operator).metadata["change_requests"][0]
+    pedido = _requests(operator)[0]
     assert pedido["status"] == "served"
     assert pedido["served_by"] == "pablo"
     assert pedido["served_at"]
@@ -260,9 +275,11 @@ def test_cancelar_tira_o_pedido_da_tela_sem_apagar_a_trilha(operator):
 
     shift = CashShift.get_open_for_operator(operator)
     assert pos_service.pending_change_requests(shift) == []
-    pedido = shift.metadata["change_requests"][0]
+    pedido = _requests(operator)[0]
     assert pedido["status"] == "cancelled"
     assert pedido["cancelled_at"]
+    # A trilha fica: pedido E cancelamento, os dois no log.
+    assert POSEvent.objects.filter(shift=shift, kind=POSEvent.Kind.CHANGE_CANCELLED).count() == 1
 
 
 # ── Projection ────────────────────────────────────────────────────────────
@@ -329,7 +346,7 @@ def test_endpoint_pede_troco_e_devolve_a_ref(client, operator):
 
     assert response.status_code == 200
     ref = response.json()["request_ref"]
-    pedido = CashShift.get_open_for_operator(operator).metadata["change_requests"][0]
+    pedido = _requests(operator)[0]
     assert pedido["ref"] == ref
     assert pedido["note"] == "acabou moeda de 50 centavos"
 
@@ -365,7 +382,7 @@ def test_endpoint_de_atender_com_pin_do_gerente_resolve(client, operator, manage
 
     assert response.status_code == 200
     shift = CashShift.get_open_for_operator(operator)
-    assert shift.metadata["change_requests"][0]["status"] == "served"
+    assert _requests(operator)[0]["status"] == "served"
     # ⚠️ Net zero também pelo endpoint: nenhuma linha de movimento nasceu aqui.
     assert shift.movements.count() == 0
 
@@ -382,7 +399,7 @@ def test_endpoint_de_cancelar_resolve(client, operator):
     )
 
     assert response.status_code == 200
-    assert CashShift.get_open_for_operator(operator).metadata["change_requests"][0]["status"] == "cancelled"
+    assert _requests(operator)[0]["status"] == "cancelled"
 
 
 # ── Aviso ─────────────────────────────────────────────────────────────────

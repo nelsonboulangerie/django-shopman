@@ -240,10 +240,25 @@ def persist_financial_reconciliation(
 
     alert_created = False
     if create_alert and report.has_errors:
+        from shopman.backstage.models import POSEvent
+        from shopman.backstage.services import pos_events
         from shopman.shop.services import observability
 
         critical = sum(1 for issue in report.issues if issue.severity == "critical")
         errors = sum(1 for issue in report.issues if issue.severity == "error")
+        # O alerta é o aviso (tem reconhecimento, some da tela); o evento é o
+        # registro (fica, em ordem, com o resto do dia do caixa). Sem o evento,
+        # a divergência sumiria da linha do tempo assim que alguém a marcasse
+        # como vista.
+        pos_events.record(
+            POSEvent.Kind.RECONCILIATION_FAILED,
+            payload={
+                "date": report.date.isoformat(),
+                "critical": critical,
+                "errors": errors,
+                "day_closing_id": closing.pk if closing else None,
+            },
+        )
         alert = observability.create_operator_alert(
             type="payment_reconciliation_failed",
             severity="critical" if critical else "error",
