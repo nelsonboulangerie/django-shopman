@@ -1040,19 +1040,30 @@ def test_windows_tenta_o_usb_quando_o_spooler_nao_devolve(monkeypatch, capsys, t
     cfg.write_text('{"queue": "TM-T20", "token": "token-de-teste-longo", "port": 47811}')
     monkeypatch.setattr(counter_agent, "DEFAULT_CONFIG_PATH", cfg)
     monkeypatch.setattr(counter_agent, "_ler_pino_windows", lambda q, **k: (None, "porta nao bidirecional"))
-    tentou_usb = []
-    respostas = iter([0x12, 0x16])
-    monkeypatch.setattr(
-        counter_agent, "_ler_pino_usb_windows",
-        lambda **k: (tentou_usb.append(1), (next(respostas), ""))[1],
-    )
-    monkeypatch.setattr("builtins.input", lambda _: "")
+
+    # A gaveta muda só o bit 0x04 do `DLE EOT 1`, que é onde o manual diz que
+    # ele vive. Os outros status ficam iguais — é assim no aparelho real.
+    estado = {"aberta": False}
+    def usb(*, query, **k):
+        n = query[2]
+        if n == 1:
+            return (0x16 if estado["aberta"] else 0x12), ""
+        return 0x00, ""
+    monkeypatch.setattr(counter_agent, "_ler_pino_usb_windows", usb)
+
+    # O PRIMEIRO Enter é com a gaveta fechada; a partir do segundo, aberta.
+    enters = {"n": 0}
+    def enter(_):
+        enters["n"] += 1
+        estado["aberta"] = enters["n"] > 1
+        return ""
+    monkeypatch.setattr("builtins.input", enter)
 
     codigo = counter_agent._drawer_status_windows()
 
     saida = capsys.readouterr().out
-    assert len(tentou_usb) == 2, "tem que tentar o USB nas duas leituras"
     assert codigo == 0
+    assert "DLE EOT 1" in saida and "MUDOU" in saida
     assert "0x04" in saida, "o bit que mudou é o dado que eu preciso"
 
 
@@ -1092,3 +1103,52 @@ def test_toda_chamada_do_windows_declara_argtypes():
     assert not faltando, (
         f"sem argtypes (handle de 64 bits vira int de 32 e a chamada morre): {faltando}"
     )
+
+
+def test_varredura_pergunta_os_QUATRO_status():
+    """Perguntar só o que eu acho ser o certo já custou uma noite do dono.
+
+    A primeira versão usou `DLE EOT 3` (status de ERRO) e o balcão devolveu 0x12
+    com a gaveta fechada E aberta: o byte estava certo, a pergunta é que era
+    outra. Perguntar os quatro custa milissegundos e dispensa eu estar certo —
+    quem responde qual muda é a impressora.
+    """
+    perguntas = []
+    counter_agent._varre_status(lambda q: (perguntas.append(bytes(q)), (0x12, ""))[1])
+
+    assert perguntas == [bytes([0x10, 0x04, n]) for n in (1, 2, 3, 4)]
+
+
+def test_varredura_ignora_o_status_que_nao_responde():
+    """Nem todo status responde em toda impressora — e isso não é erro."""
+    def so_o_primeiro(q):
+        return (0x12, "") if q[2] == 1 else (None, "sem resposta")
+
+    assert counter_agent._varre_status(so_o_primeiro) == {1: 0x12}
+
+
+def test_veredito_aponta_QUAL_status_muda_e_o_bit(capsys):
+    """O dado que eu preciso para ligar o alerta é o `n` e o bit, não 'funcionou'."""
+    codigo = counter_agent._veredito_da_varredura(
+        {1: 0x12, 2: 0x00, 3: 0x12, 4: 0x00},
+        {1: 0x16, 2: 0x00, 3: 0x12, 4: 0x00},
+    )
+
+    saida = capsys.readouterr().out
+    assert codigo == 0
+    assert "DLE EOT 1" in saida and "MUDOU" in saida
+    assert "0x04" in saida, "o bit que mudou tem que aparecer"
+    # E os que NÃO mudaram continuam listados: é assim que se vê que a varredura
+    # foi completa, em vez de ter parado no primeiro.
+    assert "DLE EOT 3" in saida
+
+
+def test_veredito_quando_nenhum_status_muda(capsys):
+    """O caso do balcão: responde, mas não reporta o pino nesta montagem."""
+    iguais = {1: 0x12, 2: 0x00, 3: 0x12, 4: 0x00}
+
+    assert counter_agent._veredito_da_varredura(iguais, dict(iguais)) == 1
+    saida = capsys.readouterr().out
+    assert "Nenhum dos quatro" in saida
+    assert "OPOS/APD" in saida, "tem que dizer o que resta"
+    assert "fisico" in saida, "e a saída final, se nem o driver resolver"
