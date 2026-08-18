@@ -1027,3 +1027,45 @@ def test_windows_tenta_ler_em_vez_de_recusar(monkeypatch):
 
     assert counter_agent.drawer_status([]) == 0
     assert chamou, "no Windows tem que tentar pelo spooler"
+
+
+def test_windows_tenta_o_usb_quando_o_spooler_nao_devolve(monkeypatch, capsys, tmp_path):
+    """Spooler mudo não é o fim: o aparelho ainda pode responder direto.
+
+    A fila de impressão perde a bidirecionalidade em muitas instalações; o
+    `usbprint.sys` fala com o aparelho e a preserva. Desistir no primeiro
+    "não devolveu nada" mandaria instalar driver sem necessidade.
+    """
+    cfg = tmp_path / "agent.json"
+    cfg.write_text('{"queue": "TM-T20", "token": "token-de-teste-longo", "port": 47811}')
+    monkeypatch.setattr(counter_agent, "DEFAULT_CONFIG_PATH", cfg)
+    monkeypatch.setattr(counter_agent, "_ler_pino_windows", lambda q, **k: (None, "porta nao bidirecional"))
+    tentou_usb = []
+    respostas = iter([0x12, 0x16])
+    monkeypatch.setattr(
+        counter_agent, "_ler_pino_usb_windows",
+        lambda **k: (tentou_usb.append(1), (next(respostas), ""))[1],
+    )
+    monkeypatch.setattr("builtins.input", lambda _: "")
+
+    codigo = counter_agent._drawer_status_windows()
+
+    saida = capsys.readouterr().out
+    assert len(tentou_usb) == 2, "tem que tentar o USB nas duas leituras"
+    assert codigo == 0
+    assert "0x04" in saida, "o bit que mudou é o dado que eu preciso"
+
+
+def test_windows_so_manda_instalar_driver_quando_os_DOIS_falham(monkeypatch, capsys, tmp_path):
+    """Mandar instalar driver cedo demais é fazer o dono trabalhar à toa."""
+    cfg = tmp_path / "agent.json"
+    cfg.write_text('{"queue": "TM-T20", "token": "token-de-teste-longo", "port": 47811}')
+    monkeypatch.setattr(counter_agent, "DEFAULT_CONFIG_PATH", cfg)
+    monkeypatch.setattr(counter_agent, "_ler_pino_windows", lambda q, **k: (None, "porta nao bidirecional"))
+    monkeypatch.setattr(counter_agent, "_ler_pino_usb_windows", lambda **k: (None, "aparelho mudo"))
+    monkeypatch.setattr("builtins.input", lambda _: "")
+
+    assert counter_agent._drawer_status_windows() == 1
+    saida = capsys.readouterr().out
+    assert "OPOS/APD" in saida, "aí sim, o caminho que resta"
+    assert "NAO e defeito da impressora" in saida
