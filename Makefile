@@ -59,6 +59,13 @@ install: ## Instala deps + apps da suite em modo editável
 
 # ── Testes ────────────────────────────────────────────────────────────
 
+# Os 11 pacotes do Core juntos. Existe para a matriz do CI ter um alvo só com
+# tudo que é rápido — na prática ~1 min somado, contra ~12 do framework. Sem
+# ele, ou o CI listava onze entradas de matriz (onze `make install`, cada um
+# custando mais que o teste) ou os cores voltavam a esperar o framework.
+test-cores: test-refs test-utils test-offerman test-stockman test-craftsman test-orderman test-payman test-guestman test-doorman test-buyman test-fiscalman ## Todos os pacotes do Core
+	@echo "✓ Cores passaram"
+
 test: test-refs test-utils test-offerman test-stockman test-craftsman test-orderman test-payman test-guestman test-doorman test-buyman test-fiscalman test-framework test-counter-agent ## Roda todos os testes
 	@echo "✓ Todos os testes passaram"
 
@@ -106,9 +113,27 @@ test-fiscalman: ## Testes do shopman.fiscalman (fiscal)
 	@echo "── Fiscalman ──"
 	cd packages/fiscalman && $(PYTHON) -m pytest -x -q
 
-test-framework: ## Testes do framework (orquestração)
-	@echo "── Framework ──"
-	$(PYTHON) -m pytest shopman/shop/tests shopman/storefront/tests shopman/backstage/tests -x -q
+test-framework: test-shop test-storefront test-backstage ## Testes do framework (orquestração)
+	@echo "✓ Framework passou"
+
+# Os três apps separados existem para a MATRIZ do CI: rodavam em série num alvo
+# só, e o relógio era a soma. Medido (local): shop 64s, storefront 20s,
+# backstage 244s. Em paralelo o gate passa a esperar só o backstage.
+#
+# ⚠️ O backstage é 74% do tempo, e ~100s dele são SETE testes que chamam o
+# `seed` (dois anos de histórico, ~10s cada). É ali que está o próximo ganho —
+# dividir mais os arquivos só embaralharia sem tirar o peso do lugar.
+test-shop: ## Orquestrador
+	@echo "── Shop ──"
+	$(PYTHON) -m pytest shopman/shop/tests -x -q
+
+test-storefront: ## Loja (API headless)
+	@echo "── Storefront ──"
+	$(PYTHON) -m pytest shopman/storefront/tests -x -q
+
+test-backstage: ## Operador (POS, KDS, produção, caixa, B.I.)
+	@echo "── Backstage ──"
+	$(PYTHON) -m pytest shopman/backstage/tests -x -q
 
 # O agente do balcão vive fora de `shopman/` (é programa de OUTRA máquina), então
 # ficava de fora da suíte — justo o processo que roda sozinho no balcão, sem
