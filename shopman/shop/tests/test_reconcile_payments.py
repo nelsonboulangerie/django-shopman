@@ -53,6 +53,25 @@ def test_captured_intent_dispatches_on_paid():
     assert dispatch.call_args.args[1] == "on_paid"
 
 
+def test_settled_cash_intent_is_ignored():
+    # Dinheiro no balcão nasce capturado (ADR-022) e não tem webhook a perder:
+    # não é candidato a "on_paid perdido".
+    from shopman.payman import PaymentService
+
+    order = _order(
+        "ORD-REC-CASH",
+        status=Order.Status.ACCEPTED,
+        data={
+            "lifecycle": {"on_commit": "done", "on_accepted": "done"},
+            "payment": {"intent_ref": "PI-REC-CASH", "method": "cash", "collection": "terminal"},
+        },
+    )
+    PaymentService.settle(order.ref, 1000, "cash", ref="PI-REC-CASH")
+    with patch("shopman.shop.lifecycle.dispatch") as dispatch:
+        _run()
+    dispatch.assert_not_called()
+
+
 def test_captured_intent_skips_when_on_paid_already_complete():
     order = _order(
         "ORD-REC-DONE",

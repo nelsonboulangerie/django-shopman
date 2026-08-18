@@ -10,7 +10,8 @@ No lifecycle classes — behavior is purely configuration-driven.
 
 Timing × Phase table:
     payment.timing:
-        "external"    → no payment.initiate (cash/marketplace)
+        "external"    → no payment.initiate pelo lifecycle (balcão/marketplace;
+                        o PDV chama payment.initiate por conta própria ao fechar a venda)
         "at_commit"   → payment.initiate on commit
         "post_commit" → payment.initiate on confirmed (default)
 

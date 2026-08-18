@@ -308,7 +308,7 @@ def close_sale(
     payment_result = {}
     if order is not None:
         order = _reconcile_order_payment_to_total(order)
-        payment_result = _maybe_initiate_pos_gateway_payment(order)
+        payment_result = _maybe_initiate_pos_payment(order)
     return PosSaleResult(
         order_ref=result.order_ref,
         total_q=int(order.total_q if order is not None else result.total_q),
@@ -1764,18 +1764,36 @@ def _reconcile_order_payment_to_total(order: Order) -> Order:
     return order
 
 
-def _maybe_initiate_pos_gateway_payment(order: Order) -> dict:
-    """Create gateway payment display data for POS terminal digital tenders."""
+def _maybe_initiate_pos_payment(order: Order) -> dict:
+    """Cria o intent de pagamento da venda de terminal e devolve o que o PDV exibe.
+
+    Roda DEPOIS de ``_reconcile_order_payment_to_total``: o valor dos tenders
+    só é definitivo com o total selado, e o intent tem de nascer com o valor
+    final do tender (o que ficou na gaveta depois do troco), não com o que o
+    operador digitou.
+
+    - ``pix``/``card``: intent no gateway; a resposta traz QR/URL para a tela.
+    - ``cash``/``external``: intent capturado no ato (``PaymentService.settle``,
+      ADR-022), sem nada a exibir. Só quando há um método (``method`` não é
+      ``"mixed"``): a venda mista tem um intent por tender e nasce junto com o
+      lançamento no livro-caixa, no mesmo laço, no WP-3 do CASHMAN-PLAN.
+    - coleta na entrega (COD): o intent nasce no acerto, não aqui.
+    """
     payment = dict((order.data or {}).get("payment") or {})
     method = str(payment.get("method") or "").strip().lower()
     collection = str(payment.get("collection") or "terminal").strip().lower()
-    if collection != "terminal" or method not in {"pix", "card"}:
+    if collection != "terminal" or method not in {"pix", "card", "cash", "external"}:
         return {}
 
     try:
         payment_service.initiate(order)
     except Exception as exc:
         logger.warning("pos_payment_initiate_failed order=%s method=%s", order.ref, method, exc_info=True)
+        if method not in {"pix", "card"}:
+            # O dinheiro já está na gaveta e a venda já commitou: não há o
+            # que desfazer nem o que exibir. Fica o warning acima; o cruzamento
+            # Payman × livro-caixa (WP-7) é quem aponta a venda sem intent.
+            return {}
         return {
             "method": method,
             "amount_q": int(payment.get("amount_q") or order.total_q or 0),

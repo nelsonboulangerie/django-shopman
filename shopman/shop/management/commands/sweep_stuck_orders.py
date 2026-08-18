@@ -127,7 +127,15 @@ class Command(BaseCommand):
                 self._alert(order, phase)
 
     def _payment_captured(self, order) -> bool:
-        """True quando há captura suficiente registrada para o pedido."""
+        """True quando há captura de gateway suficiente registrada para o pedido.
+
+        Dinheiro e cobrança externa (``cash``/``external``) têm intent
+        capturado no Payman desde a venda (ADR-022), mas ninguém dispara
+        ``on_paid`` para eles: não há webhook a perder. Tratar essa captura
+        como "fase devida" faria o sweeper re-despachar ``on_paid`` em toda
+        venda de balcão parada em ``accepted``, com aviso de "pagamento
+        confirmado" cinco minutos depois. Fora do escopo.
+        """
         payment = (order.data or {}).get("payment") or {}
         if payment.get("captured_at"):
             return True
@@ -136,6 +144,8 @@ class Command(BaseCommand):
         try:
             from shopman.shop.services import payment as payment_service
 
+            if payment_service.settles_without_gateway(payment.get("method")):
+                return False
             return payment_service.has_sufficient_captured_payment(order) is True
         except Exception:
             logger.warning(

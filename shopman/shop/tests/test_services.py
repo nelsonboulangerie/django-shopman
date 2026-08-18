@@ -668,10 +668,17 @@ class TestPaymentService:
         assert order.data["payment"]["checkout_url"] == "https://checkout.stripe.com/c/pay/cs_test_xyz"
         assert order.data["payment"]["intent_ref"] == "INT-002"
 
-    def test_initiate_cash_noop(self):
+    def test_initiate_cash_without_terminal_collection_noop(self):
+        # Sem ``collection == "terminal"`` o dinheiro ainda não trocou de mãos
+        # (loja online, COD): nada a liquidar. O caminho do PDV está em
+        # test_payment_without_gateway.py.
         from shopman.shop.services.payment import initiate
 
         order = _make_order(data={"payment": {"method": "cash"}})
+        initiate(order)
+        order.save.assert_not_called()
+
+        order = _make_order(data={"payment": {"method": "cash", "collection": "on_delivery"}})
         initiate(order)
         order.save.assert_not_called()
 

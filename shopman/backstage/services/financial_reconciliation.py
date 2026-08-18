@@ -187,6 +187,11 @@ def build_financial_reconciliation(
         )
 
     by_method = Counter(intent.method or "-" for intent in intents)
+    # "-" = intent sem gateway: dinheiro/cobrança externa liquidados no balcão
+    # (``PaymentService.settle``, ADR-022). Nenhum check acima depende de
+    # ``intent.gateway``; esses intents passam pelas mesmas invariantes de
+    # captura/estorno que pix/cartão e entram em ``captured_q``/``net_q``.
+    # O cruzamento com o livro-caixa é o check ``cash_ledger_mismatch`` (WP-7).
     by_gateway = Counter(intent.gateway or "-" for intent in intents)
 
     captured_q = sum(row["capture"] for row in daily_totals.values())

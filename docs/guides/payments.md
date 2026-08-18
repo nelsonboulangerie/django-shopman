@@ -9,6 +9,30 @@ O sistema de pagamentos é composto por duas camadas:
 
 O core não sabe nada sobre gateways (Efi, Stripe, etc.). Os backends implementam o `PaymentBackend` protocol e são configurados no orquestrador.
 
+O Payman é o livro de pagamentos de **todos** os métodos, com ou sem gateway
+([ADR-022](../decisions/adr-022-cashman-ledger.md)): dinheiro e cobrança externa
+não passam por adapter, mas passam pelo Payman. É isso que dá ao mix de meios de
+pagamento um dono só e deixa a reconciliação financeira enxergar dinheiro.
+
+### Métodos
+
+| Método | Gateway | Como o intent nasce | Quem cria | Estorno |
+|--------|---------|---------------------|-----------|---------|
+| `pix` | Efí (ou mock) | `create_intent` pending → webhook autoriza/captura | `payment.initiate` (loja online, WhatsApp, PDV) | adapter → `PaymentService.refund` |
+| `card` | Stripe Checkout (ou mock) | `create_intent` pending → webhook captura | `payment.initiate` | adapter → `PaymentService.refund` |
+| `cash` | nenhum (`gateway=""`) | **capturado no ato** via `PaymentService.settle`, quando a coleta é no terminal (`Order.data.payment.collection == "terminal"`, PDV) e depois do total selado | `payment.initiate`, chamado por `close_sale` do PDV | `PaymentService.refund` direto (sem adapter), no cancel/devolução |
+| `external` | nenhum (`gateway=""`) | idem `cash` (maquininha avulsa recebida no terminal) | idem | idem |
+
+Dinheiro **fora do terminal** não tem intent até o acerto: pedido da loja online
+em dinheiro (retirada ou entrega) e COD do PDV (`collection == "on_delivery"`)
+ficam sem `intent_ref`; o intent nasce quando o dinheiro troca de mãos (WP-3 do
+[CASHMAN-PLAN](../plans/CASHMAN-PLAN.md)). Marketplace (`external` sem coleta no
+terminal) também segue sem intent aqui.
+
+O caixa físico (turno, gaveta, sangria, troco) não é pergunta do Payman: é do
+pacote `cashman`. O único fato compartilhado é o tender em dinheiro: captura no
+Payman, lançamento `sale` no livro-caixa, ligados pelo `ref` do intent.
+
 ## Modelo de Dados
 
 ### PaymentIntent
@@ -19,12 +43,12 @@ Representa uma intenção de pagamento vinculada a um pedido.
 |-------|------|-----------|
 | `ref` | str | Identificador único (auto: `PAY-XXXXXXXXXXXX`) |
 | `order_ref` | str | Referência do pedido (string, sem FK) |
-| `method` | str | `pix`, `card`, `counter`, `external` |
+| `method` | str | `pix`, `card`, `cash`, `external` |
 | `status` | str | Estado atual do pagamento |
 | `amount_q` | int | Valor em centavos |
 | `currency` | str | ISO 4217 (default: `BRL`) |
-| `gateway` | str | Nome do gateway (`efi`, `stripe`, etc.) |
-| `gateway_id` | str | ID da transação no gateway externo |
+| `gateway` | str | Nome do gateway (`efi`, `stripe`, etc.); vazio para `cash`/`external` liquidados via `settle` |
+| `gateway_id` | str | ID da transação no gateway externo (vazio sem gateway) |
 | `gateway_data` | JSON | Dados extras do gateway (QR code, chave PIX, etc.) |
 | `expires_at` | datetime | Expiração do intent |
 
@@ -51,6 +75,10 @@ PENDING → AUTHORIZED → CAPTURED → REFUNDED
 
 **Estados terminais:** `CAPTURED`, `REFUNDED`, `FAILED`, `CANCELLED`.
 
+`settle` (métodos sem gateway) percorre a mesma máquina, `PENDING → AUTHORIZED →
+CAPTURED`, numa única transação: autorização e captura são o mesmo gesto porque
+a nota já está na gaveta. Só o signal `payment_captured` é emitido.
+
 ## PaymentService API
 
 Todas as operações state-changing usam `@transaction.atomic` + `select_for_update()`. Cada transição emite o signal correspondente.
@@ -60,6 +88,10 @@ from shopman.payman import PaymentService, PaymentError
 
 # Criar intent
 intent = PaymentService.create_intent("ORD-001", 1500, "pix")
+
+# Sem gateway (dinheiro no balcão, cobrança externa): nasce capturado.
+# `amount_q` é o valor do tender (o que ficou na gaveta depois do troco).
+intent = PaymentService.settle("ORD-002", 1500, "cash", idempotency_key="order-payment:ORD-002:cash:1500:g0")
 
 # Autorizar (gateway confirmou fundos)
 PaymentService.authorize(intent.ref, gateway_id="efi_txid_123")

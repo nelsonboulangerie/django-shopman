@@ -72,6 +72,64 @@ def test_financial_reconciliation_happy_path_persists_to_day_closing():
     assert not OperatorAlert.objects.filter(type="payment_reconciliation_failed").exists()
 
 
+def _settled_cash_order(*, ref: str, status=Order.Status.ACCEPTED, total_q: int = 1200):
+    """Venda de balcão em dinheiro como o PDV a deixa (ADR-022): intent capturado, sem gateway."""
+    from shopman.payman import PaymentService
+
+    intent = PaymentService.settle(ref, total_q, "cash", ref=f"PAY-{ref}")
+    order = Order.objects.create(
+        ref=ref,
+        channel_ref="pdv",
+        status=status,
+        total_q=total_q,
+        data={
+            "payment": {
+                "method": "cash",
+                "collection": "terminal",
+                "intent_ref": intent.ref,
+                "amount_q": total_q,
+                "tenders": [{"method": "cash", "amount_q": total_q, "collection": "terminal", "status": "received"}],
+            }
+        },
+    )
+    return order, intent
+
+
+@pytest.mark.django_db
+def test_financial_reconciliation_settled_cash_sale_is_clean_and_counted():
+    """Intent de dinheiro (gateway vazio) não é falso positivo e entra no capturado do dia."""
+    today = timezone.localdate()
+    _paid_order(ref="FIN-PIX")
+    _settled_cash_order(ref="FIN-CASH")
+    DayClosing.objects.create(date=today, closed_by=_user(), data={"items": []})
+
+    report = build_financial_reconciliation(reconciliation_date=today, require_closing=True)
+
+    assert [issue.code for issue in report.issues] == []
+    assert report.by_method == {"cash": 1, "pix": 1}
+    assert report.by_gateway == {"-": 1, "efi": 1}
+    assert report.captured_q == 2400
+    assert report.net_q == 2400
+
+
+@pytest.mark.django_db
+def test_financial_reconciliation_refunded_cash_sale_is_clean():
+    """Cancel de venda em dinheiro grava o estorno no Payman: saldo zero, nada a gritar."""
+    from shopman.payman import PaymentService
+
+    today = timezone.localdate()
+    order, intent = _settled_cash_order(ref="FIN-CASH-CANCEL", status=Order.Status.CANCELLED)
+    PaymentService.refund(intent.ref, reason="order_cancelled", gateway_id=f"order-refund:{order.ref}")
+    DayClosing.objects.create(date=today, closed_by=_user(), data={"items": []})
+
+    report = build_financial_reconciliation(reconciliation_date=today, require_closing=True)
+
+    assert [issue.code for issue in report.issues] == []
+    assert report.captured_q == 1200
+    assert report.refunded_q == 1200
+    assert report.net_q == 0
+
+
 @pytest.mark.django_db
 def test_financial_reconciliation_alerts_cancelled_order_with_captured_balance():
     today = timezone.localdate()

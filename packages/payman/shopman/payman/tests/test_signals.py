@@ -48,6 +48,25 @@ class PaymentSignalTests(TestCase):
         finally:
             payment_captured.disconnect(handler)
 
+    def test_settle_emits_only_payment_captured(self) -> None:
+        """Dinheiro não tem momento de autorização: o único fato é a captura."""
+        captured = MagicMock()
+        authorized = MagicMock()
+        payment_captured.connect(captured)
+        payment_authorized.connect(authorized)
+        try:
+            PaymentService.settle("ORD-SIG-CASH", 3200, "cash")
+
+            captured.assert_called_once()
+            kwargs = captured.call_args[1]
+            self.assertEqual(kwargs["order_ref"], "ORD-SIG-CASH")
+            self.assertEqual(kwargs["amount_q"], 3200)
+            self.assertIsInstance(kwargs["transaction"], PaymentTransaction)
+            authorized.assert_not_called()
+        finally:
+            payment_captured.disconnect(captured)
+            payment_authorized.disconnect(authorized)
+
     def test_payment_refunded_signal(self) -> None:
         handler = MagicMock()
         payment_refunded.connect(handler)
