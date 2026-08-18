@@ -16,6 +16,7 @@ from django.conf import settings
 from django.db import IntegrityError, transaction
 from django.db.models import Q
 from django.utils import timezone
+from shopman.cashman import services as cash_ledger
 from shopman.orderman.models import Order, Session
 from shopman.utils.monetary import format_money
 
@@ -241,6 +242,10 @@ def close_sale(
     existing = _existing_sale_by_client_request_id(channel_ref=channel.ref, payload=payload)
     if existing is not None and session is None:
         return PosSaleResult(order_ref=existing.ref, total_q=existing.total_q, fiscal_hint=_sale_fiscal_hint(existing))
+    # A venda do terminal acontece DENTRO de um turno de caixa: é no livro dele
+    # que a linha `sale` vai nascer. Sem turno aberto não há onde registrar, e
+    # a recusa tem de vir ANTES do commit do pedido, não depois.
+    shift = _require_open_shift(payload)
     if session is None:
         if _payload_has_tab_identity(payload):
             raise ValueError("Abra um POS tab antes de finalizar.")
@@ -308,7 +313,7 @@ def close_sale(
     payment_result = {}
     if order is not None:
         order = _reconcile_order_payment_to_total(order)
-        payment_result = _maybe_initiate_pos_payment(order)
+        payment_result = _settle_pos_sale(order, shift=shift, operator_username=operator_username)
     return PosSaleResult(
         order_ref=result.order_ref,
         total_q=int(order.total_q if order is not None else result.total_q),
@@ -341,7 +346,6 @@ def review_sale(
         payload,
         payment_collection=payment_collection,
         total_q=total_q,
-        cash_shift_id=payload.get("cash_shift_id"),
         pos_terminal_ref=str(payload.get("pos_terminal_ref") or "").strip(),
         require_complete=False,
     )
@@ -967,8 +971,11 @@ def cancel_recent_order(
     Escopo: SÓ vendas do canal POS. Pedido de outro canal (web/iFood) tem
     fluxo próprio no gestor, com permissão ``manage_orders`` e, no iFood,
     ``cancellation_code`` — a janela de 5 min do PDV não é um atalho.
-    Venda cujo turno de caixa JÁ FECHOU também não: o ``expected_amount_q``
-    do fechamento ficaria mentindo, sem movimento de devolução.
+
+    O dinheiro devolvido sai da gaveta de AGORA: a devolução é um lançamento
+    ``refund`` no turno aberto de quem devolve, apontando para a linha ``sale``
+    original. Por isso não importa se o turno da venda já fechou; o que importa
+    é que quem devolve tenha um turno aberto para o dinheiro sair de algum lugar.
 
     ``channel_ref=None`` resolve o canal POS do deployment
     (``SHOPMAN_POS_CHANNEL_REF``) — nunca hardcodar "pdv", senão um deployment
@@ -999,22 +1006,49 @@ def cancel_recent_order(
     # reverte o estoque baixado (_on_cancelled), então a cozinha vê sumir.
     if order.status not in (Order.Status.NEW, Order.Status.ACCEPTED, Order.Status.PREPARING):
         raise ValueError(f"Pedido {order_ref} não pode ser cancelado (status: {order.status})")
-    if _order_cash_shift_closed(order):
-        raise ValueError(
-            f"O caixa da venda {order_ref} já foi fechado — registre a devolução pelo gestor."
-        )
+    refund_shift = _shift_for_refund(order, actor=actor)
 
-    cancel(order, reason="pos_operator", actor=actor)
+    with transaction.atomic():
+        cancel(order, reason="pos_operator", actor=actor)
+        if refund_shift is not None:
+            _record_refund(order, shift=refund_shift, actor=actor)
     logger.info("pos_cancel_last order=%s actor=%s", order_ref, actor)
 
 
-def _order_cash_shift_closed(order) -> bool:
-    shift_id = ((order.data or {}).get("pos") or {}).get("cash_shift_id")
-    if not shift_id:
-        return False
-    from shopman.shop.adapters import pos as pos_adapter
+def _shift_for_refund(order, *, actor: str):
+    """O turno aberto de quem devolve, quando a venda tinha dinheiro no terminal.
 
-    return pos_adapter.cash_shift_is_closed(shift_id)
+    Venda sem dinheiro (pix/cartão) não mexe na gaveta: cancela sem turno. Com
+    dinheiro, exige turno aberto de quem está devolvendo: senão o dinheiro
+    sairia da gaveta sem linha no livro, que é o buraco de antes.
+    """
+    if _terminal_cash_amount_q(order) <= 0:
+        return None
+    user = _user_for_actor(actor)
+    shift = cash_ledger.open_shift_for(user) if user is not None else None
+    if shift is None:
+        raise ValueError(f"Abra o caixa para devolver o dinheiro da venda {order.ref}.")
+    return shift
+
+
+def _record_refund(order, *, shift, actor: str) -> None:
+    """Uma linha ``refund`` (efeito = −dinheiro devolvido) na gaveta de quem devolve."""
+    payment = dict((order.data or {}).get("payment") or {})
+    cash_q = _terminal_cash_amount_q(order)
+    if cash_q <= 0:
+        return
+    original = _sale_entry(order)
+    cash_ledger.record(
+        "refund",
+        shift=shift,
+        operator=_user_for_actor(actor) or shift.operator,
+        amount_q=-cash_q,
+        order_ref=order.ref,
+        payment_ref=_cash_intent_ref(payment),
+        parent=original if original is not None and original.shift_id == shift.pk else None,
+        reason="cancelamento no PDV",
+        payload={"method": payment.get("method", ""), "cancel_reason": "pos_operator"},
+    )
 
 
 def reopen_recent_order_for_correction(
@@ -1138,9 +1172,8 @@ def build_session_ops(payload: dict, operator_username: str) -> list[dict]:
     payment_collection = _payload_payment_collection(payload, fulfillment_type)
     total_q = _payload_total_q(payload)
 
-    cash_shift_id = payload.get("cash_shift_id")
-    if cash_shift_id:
-        ops.append({"op": "set_data", "path": "pos.cash_shift_id", "value": int(cash_shift_id)})
+    # O turno da venda NÃO é etiqueta no pedido: é a linha `sale` no livro do
+    # turno (cashman). O terminal fica, porque é dado do pedido (recibo, fiscal).
     pos_terminal_ref = str(payload.get("pos_terminal_ref") or "").strip()
     if pos_terminal_ref:
         ops.append({"op": "set_data", "path": "pos.terminal_ref", "value": pos_terminal_ref})
@@ -1155,7 +1188,6 @@ def build_session_ops(payload: dict, operator_username: str) -> list[dict]:
         payload,
         payment_collection=payment_collection,
         total_q=total_q,
-        cash_shift_id=cash_shift_id,
         pos_terminal_ref=pos_terminal_ref,
     )
     payment_method = _legacy_payment_method(payload, tenders)
@@ -1558,7 +1590,6 @@ def _validate_payment_completion(payload: dict) -> None:
         payload,
         payment_collection=payment_collection,
         total_q=total_q,
-        cash_shift_id=payload.get("cash_shift_id"),
         pos_terminal_ref=str(payload.get("pos_terminal_ref") or "").strip(),
         require_complete=True,
     )
@@ -1608,7 +1639,6 @@ def _payload_tenders(
     *,
     payment_collection: str,
     total_q: int,
-    cash_shift_id,
     pos_terminal_ref: str,
     require_complete: bool = False,
 ) -> list[dict]:
@@ -1644,8 +1674,6 @@ def _payload_tenders(
             reference = str(tender.get("reference") or "").strip()
             if reference:
                 entry["reference"] = reference[:120]
-            if cash_shift_id and entry["collection"] == "terminal":
-                entry["cash_shift_id"] = int(cash_shift_id)
             if pos_terminal_ref and entry["collection"] == "terminal":
                 entry["terminal_ref"] = pos_terminal_ref
             if entry["collection"] == "terminal":
@@ -1680,8 +1708,6 @@ def _payload_tenders(
         "collection": payment_collection,
         "status": "pending" if payment_collection == "on_delivery" else "received",
     }
-    if cash_shift_id and payment_collection == "terminal":
-        tender["cash_shift_id"] = int(cash_shift_id)
     if pos_terminal_ref and payment_collection == "terminal":
         tender["terminal_ref"] = pos_terminal_ref
     if payment_collection == "terminal":
@@ -1764,46 +1790,163 @@ def _reconcile_order_payment_to_total(order: Order) -> Order:
     return order
 
 
-def _maybe_initiate_pos_payment(order: Order) -> dict:
-    """Cria o intent de pagamento da venda de terminal e devolve o que o PDV exibe.
+def _settle_pos_sale(order: Order, *, shift, operator_username: str) -> dict:
+    """Liquida no Payman e escreve a venda no livro do turno. Devolve o que o PDV exibe.
 
     Roda DEPOIS de ``_reconcile_order_payment_to_total``: o valor dos tenders
-    só é definitivo com o total selado, e o intent tem de nascer com o valor
-    final do tender (o que ficou na gaveta depois do troco), não com o que o
-    operador digitou.
+    só é definitivo com o total selado, e tanto o intent quanto a linha do
+    livro têm de nascer com o valor final (o que ficou na gaveta depois do
+    troco), não com o que o operador digitou.
 
-    - ``pix``/``card``: intent no gateway; a resposta traz QR/URL para a tela.
-    - ``cash``/``external``: intent capturado no ato (``PaymentService.settle``,
-      ADR-022), sem nada a exibir. Só quando há um método (``method`` não é
-      ``"mixed"``): a venda mista tem um intent por tender e nasce junto com o
-      lançamento no livro-caixa, no mesmo laço, no WP-3 do CASHMAN-PLAN.
-    - coleta na entrega (COD): o intent nasce no acerto, não aqui.
+    Uma linha ``sale`` por venda, sempre: ``amount_q`` é o EFEITO EM DINHEIRO
+    na gaveta (a soma dos tenders em dinheiro no terminal; zero para pix,
+    cartão, external, e para a entrega paga na porta), ``payment_ref`` aponta
+    o intent do dinheiro (ou o único intent), e o payload guarda método,
+    recebido, troco e os intents por método. É assim que a leitura Z sabe
+    "vendas deste turno" sem algoritmo, e o saldo da gaveta é ``Σ``.
+
+    Ordem e atomicidade: métodos sem gateway (dinheiro, external, e pix/cartão
+    atestados numa venda mista) liquidam no Payman e gravam a linha na MESMA
+    transação: ou o dinheiro consta nos dois livros, ou em nenhum. Pix/cartão
+    sozinhos vão ao gateway (rede) fora de transação, como sempre; a linha da
+    venda nasce depois, com efeito zero, e leva o intent se o gateway aceitou.
     """
     payment = dict((order.data or {}).get("payment") or {})
     method = str(payment.get("method") or "").strip().lower()
     collection = str(payment.get("collection") or "terminal").strip().lower()
-    if collection != "terminal" or method not in {"pix", "card", "cash", "external"}:
+    operator = _user_for_actor(operator_username) or shift.operator
+
+    if collection != "terminal":
+        # Entrega paga na porta: a venda é deste turno, o dinheiro vem no acerto.
+        _record_sale(order, shift=shift, operator=operator, cash_q=0, payment_ref="", intents={})
         return {}
 
+    gateway_only = method in {"pix", "card"}
+    payment_result: dict = {}
+    if gateway_only:
+        # Rede fora de transação: gateway primeiro, linha depois.
+        try:
+            payment_service.initiate(order)
+        except Exception as exc:
+            logger.warning("pos_payment_initiate_failed order=%s method=%s", order.ref, method, exc_info=True)
+            payment_result = {
+                "method": method,
+                "amount_q": int(payment.get("amount_q") or order.total_q or 0),
+                "amount_display": f"R$ {format_money(int(payment.get('amount_q') or order.total_q or 0))}",
+                "status": "error",
+                "error": str(exc),
+                "message": "Pagamento não foi criado no gateway. Revise a configuração e use recuperação operacional.",
+            }
+        order = Order.objects.get(ref=order.ref)
+        payment = dict((order.data or {}).get("payment") or {})
+        intents = {method: payment["intent_ref"]} if payment.get("intent_ref") else {}
+        _record_sale(order, shift=shift, operator=operator, cash_q=0, payment_ref=intents.get(method, ""), intents=intents)
+        return payment_result or _pos_payment_response(order)
+
     try:
-        payment_service.initiate(order)
-    except Exception as exc:
-        logger.warning("pos_payment_initiate_failed order=%s method=%s", order.ref, method, exc_info=True)
-        if method not in {"pix", "card"}:
-            # O dinheiro já está na gaveta e a venda já commitou: não há o
-            # que desfazer nem o que exibir. Fica o warning acima; o cruzamento
-            # Payman × livro-caixa (WP-7) é quem aponta a venda sem intent.
-            return {}
-        return {
-            "method": method,
-            "amount_q": int(payment.get("amount_q") or order.total_q or 0),
-            "amount_display": f"R$ {format_money(int(payment.get('amount_q') or order.total_q or 0))}",
-            "status": "error",
-            "error": str(exc),
-            "message": "Pagamento não foi criado no gateway. Revise a configuração e use recuperação operacional.",
-        }
-    order = Order.objects.get(ref=order.ref)
-    return _pos_payment_response(order)
+        with transaction.atomic():
+            intents = payment_service.settle_terminal_tenders(order)
+            order = Order.objects.get(ref=order.ref)
+            cash_q = _terminal_cash_amount_q(order)
+            _record_sale(
+                order,
+                shift=shift,
+                operator=operator,
+                cash_q=cash_q,
+                payment_ref=intents.get("cash") or (next(iter(intents.values())) if len(intents) == 1 else ""),
+                intents=intents,
+            )
+    except Exception:
+        # A venda já commitou e o dinheiro já está na gaveta: não há o que
+        # desfazer no pedido. Fica o erro; o cruzamento Payman × livro-caixa
+        # (WP-7) e a leitura Z do turno acusam a venda sem linha.
+        logger.exception("pos_sale_settlement_failed order=%s", order.ref)
+    return {}
+
+
+def _record_sale(order: Order, *, shift, operator, cash_q: int, payment_ref: str, intents: dict) -> None:
+    """A linha ``sale`` da venda no livro do turno; idempotente por (turno, pedido)."""
+    from shopman.cashman import Entry
+
+    if Entry.objects.filter(shift=shift, kind=Entry.Kind.SALE, order_ref=order.ref).exists():
+        return
+    payment = dict((order.data or {}).get("payment") or {})
+    payload = {
+        "method": str(payment.get("method") or ""),
+        "collection": str(payment.get("collection") or "terminal"),
+        "intents": dict(intents),
+    }
+    tendered_q = _int_q(payment.get("tendered_q"))
+    if tendered_q > 0:
+        payload["received_q"] = tendered_q
+        payload["change_q"] = _int_q(payment.get("change_q"))
+    cash_ledger.record(
+        "sale",
+        shift=shift,
+        operator=operator,
+        amount_q=int(cash_q),
+        order_ref=order.ref,
+        payment_ref=str(payment_ref or ""),
+        payload=payload,
+    )
+
+
+def _sale_entry(order: Order):
+    from shopman.cashman import Entry
+
+    return Entry.objects.filter(kind=Entry.Kind.SALE, order_ref=order.ref).order_by("id").first()
+
+
+def _terminal_cash_amount_q(order: Order) -> int:
+    """Quanto dinheiro em espécie desta venda entrou na gaveta (tenders cash no terminal)."""
+    payment = dict((order.data or {}).get("payment") or {})
+    tenders = [t for t in (payment.get("tenders") or []) if isinstance(t, dict)]
+    if tenders:
+        return _cash_received_q(tenders)
+    if str(payment.get("method") or "").lower() == "cash" and str(payment.get("collection") or "terminal") == "terminal":
+        return int(order.total_q or 0)
+    return 0
+
+
+def _cash_intent_ref(payment: dict) -> str:
+    for tender in payment.get("tenders") or []:
+        if isinstance(tender, dict) and tender.get("method") == "cash" and tender.get("intent_ref"):
+            return str(tender["intent_ref"])
+    if str(payment.get("method") or "") == "cash":
+        return str(payment.get("intent_ref") or "")
+    return ""
+
+
+def _require_open_shift(payload: dict):
+    """O turno aberto de quem vende, resolvido pelo servidor (``cash_shift_id`` vem do backstage, nunca do browser)."""
+    from shopman.cashman import Shift
+
+    shift_id = payload.get("cash_shift_id")
+    shift = None
+    if shift_id:
+        shift = Shift.objects.filter(pk=shift_id).select_related("terminal", "operator").first()
+    if shift is None or not shift.is_open:
+        raise PosIntentError(
+            code="cash_shift_required",
+            message="Abra o caixa antes de finalizar uma venda.",
+            field="cash_shift_id",
+            focus="cash",
+            status=409,
+            recovery="Abra um turno de caixa neste terminal e tente novamente.",
+        )
+    return shift
+
+
+def _user_for_actor(actor: str):
+    """O User por trás de um ``operator_username``/``actor`` (``pos:<username>`` ou o próprio username)."""
+    from django.contrib.auth import get_user_model
+
+    username = str(actor or "").strip()
+    if username.startswith("pos:"):
+        username = username[4:]
+    if not username:
+        return None
+    return get_user_model().objects.filter(username=username).first()
 
 
 def _pos_payment_response(order: Order) -> dict:

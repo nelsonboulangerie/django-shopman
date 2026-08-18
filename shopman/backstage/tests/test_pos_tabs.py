@@ -47,6 +47,13 @@ class POSTabSessionTests(TestCase):
         super().setUp()
         Shop.objects.create(name="Test Shop", brand_name="Test")
         Channel.objects.create(ref="pdv", name="Balcão", is_active=True)
+        # Fechar venda exige turno de caixa aberto do operador (a linha `sale`
+        # nasce no livro do cashman); o pk vai no payload como faz o backstage.
+        from django.contrib.auth import get_user_model
+        from shopman.cashman import services as cash
+
+        alice = get_user_model().objects.create_user(username="alice", password="x")
+        self.shift = cash.open_shift(operator=alice, float_q=0)
         POSTab.objects.create(ref="00001007", label="1007")
         POSTab.objects.create(ref="00001008", label="1008")
         from shopman.offerman.models import Product
@@ -161,6 +168,7 @@ class POSTabSessionTests(TestCase):
         ))
         payload = _payload(qty=2, tab_session_key=opened["tab_session_key"])
         payload.update({
+            "cash_shift_id": self.shift.pk,
             "payment_method": "mixed",
             "payment_tenders": [
                 {"method": "cash", "amount_q": 1000, "collection": "terminal"},
@@ -187,7 +195,7 @@ class POSTabSessionTests(TestCase):
         ))
         result = pos_service.close_sale(
             channel_ref="pdv",
-            payload=_payload(qty=2, tab_session_key=opened["tab_session_key"]),
+            payload={**_payload(qty=2, tab_session_key=opened["tab_session_key"]), "cash_shift_id": self.shift.pk},
             actor="pos:alice",
             operator_username="alice",
         )
@@ -209,6 +217,7 @@ class POSTabSessionTests(TestCase):
         ))
         payload = _payload(tab_session_key=opened["tab_session_key"], customer_phone="43999990000")
         payload.update({
+            "cash_shift_id": self.shift.pk,
             "customer_tax_id": "52998224725",
             "tendered_amount_q": 5000,
             "issue_fiscal_document": True,
@@ -239,6 +248,7 @@ class POSTabSessionTests(TestCase):
         ))
         payload = _payload(tab_session_key=opened["tab_session_key"], customer_phone="43999990000")
         payload.update({
+            "cash_shift_id": self.shift.pk,
             "fulfillment_type": "delivery",
             "delivery_address": "Rua das Flores, 100",
             "delivery_time_slot": "14:00-14:30",

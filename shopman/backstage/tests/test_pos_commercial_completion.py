@@ -82,8 +82,11 @@ class POSCommercialCompletionTests(TestCase):
         self.assertEqual(order.data["pos"]["terminal_ref"], self.terminal.ref)
 
     def test_duplicate_client_request_id_returns_existing_order_after_commit(self) -> None:
+        shift = cash.open_shift(operator=self.operator, terminal=self.terminal, float_q=0)
         opened = self._open_tab()
-        payload = self._payload(opened, client_request_id="pos:idem-commercial-001", tendered_amount_q=1200)
+        payload = self._payload(
+            opened, client_request_id="pos:idem-commercial-001", tendered_amount_q=1200, cash_shift_id=shift.pk
+        )
 
         first = pos_service.close_sale(
             channel_ref="pdv",

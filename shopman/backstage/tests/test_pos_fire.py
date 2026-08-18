@@ -123,10 +123,18 @@ class POSFireTabTests(TestCase):
         tickets_after_fire = KDSTicket.objects.filter(session_key=session.session_key).exclude(status="cancelled").count()
         self.assertEqual(tickets_after_fire, 1)
 
+        # A venda do terminal acontece dentro de um turno do cashman (a linha
+        # `sale` nasce no livro dele); sem turno o shop recusa antes do commit.
+        from django.contrib.auth import get_user_model
+        from shopman.cashman import services as cash
+
+        alice = get_user_model().objects.create_user(username="alice", password="x")
+        shift = cash.open_shift(operator=alice, float_q=0)
         pos_service.close_sale(
             channel_ref="pdv",
             payload={
                 "intent_version": pos_service.POS_SALE_INTENT_VERSION,
+                "cash_shift_id": shift.pk,
                 "tab_ref": "2001",
                 "tab_session_key": session.session_key,
                 "items": [

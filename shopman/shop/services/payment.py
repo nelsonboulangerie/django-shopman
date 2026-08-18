@@ -59,7 +59,7 @@ def initiate(order) -> None:
     in order.data["payment"].
 
     Métodos sem gateway (``cash``/``external``) não têm adapter: quando a
-    coleta é no terminal o intent nasce capturado (``_settle_at_terminal``);
+    coleta é no terminal o intent nasce capturado (``settle_terminal_tenders``);
     fora disso não há intent a criar ainda.
 
     SYNC — needs the intent/QR data to show to the client.
@@ -75,7 +75,7 @@ def initiate(order) -> None:
         return
 
     if settles_without_gateway(method):
-        _settle_at_terminal(order, payment_data=payment_data, method=method)
+        settle_terminal_tenders(order)
         return
 
     amount_q = order.total_q
@@ -200,88 +200,153 @@ def _persist_intent(
         _schedule_payment_timeout(order, intent)
 
 
-def _settle_at_terminal(order, *, payment_data: dict, method: str) -> None:
-    """Dinheiro/cobrança externa recebidos no terminal viram intent capturado.
+def settle_terminal_tenders(order) -> dict[str, str]:
+    """Liquida no Payman o que o terminal recebeu, UM intent por método.
 
-    Só quando ``payment.collection == "terminal"``: é o PDV declarando que o
-    valor foi recebido no balcão, no ato. Sem ``collection`` (loja online,
-    WhatsApp) ou com ``on_delivery`` (COD) o dinheiro ainda não trocou de
-    mãos, e o intent nasce no acerto, não aqui.
+    É o que faz do Payman o livro de pagamentos de todos os métodos: receita
+    por método sai daqui, não do JSON do pedido, e a reconciliação enxerga
+    dinheiro. Devolve ``{method: intent_ref}`` só dos métodos liquidados aqui.
 
-    O valor é o dos tenders do método recebidos no terminal (o que ficou na
-    gaveta depois do troco), não o que o cliente entregou nem o total do
-    pedido: numa venda com troco o tender já vale o total. Venda mista
-    (``method == "mixed"``) não passa por aqui: lá é um intent por tender,
-    criado no fechamento da venda junto com o lançamento no livro-caixa
-    (WP-3 do CASHMAN-PLAN).
+    Regras:
+    - Só quando ``payment.collection == "terminal"``: é o PDV declarando que o
+      valor foi recebido no balcão, no ato. Sem ``collection`` (loja online,
+      WhatsApp) ou com ``on_delivery`` (COD) o dinheiro ainda não trocou de
+      mãos, e o intent nasce no acerto, não aqui.
+    - O valor de cada método é a SOMA dos seus tenders recebidos no terminal
+      (o que ficou na gaveta depois do troco), nunca o que o cliente entregou
+      nem o total do pedido.
+    - ``cash``/``external`` liquidam sempre. ``pix``/``card`` só numa venda
+      MISTA: ali não há gateway (o operador atestou o recebimento: QR estático,
+      maquininha avulsa) e o intent nasce ``asserted_at_terminal``. Numa venda
+      só de pix/cartão o caminho continua sendo o gateway (``initiate``).
+    - Idempotente por método: repetir devolve o mesmo intent (chave estável
+      no Payman + reaproveitamento do capturado quando o ``data`` não gravou).
+
+    Grava ``tenders[i].intent_ref`` em cada linha do método e, quando o pedido
+    tem UM método, também ``payment.intent_ref`` (contrato que o restante do
+    orquestrador já lê). O ``payment.method`` continua sendo o do pedido.
     """
+    payment_data = dict((order.data or {}).get("payment") or {})
     collection = str(payment_data.get("collection") or "").strip().lower()
     if collection != "terminal":
-        return
+        return {}
     if str(getattr(order, "status", "") or "").lower() in {"cancelled", "returned"}:
         # Venda que morreu no próprio commit (gate de disponibilidade) não
         # recebeu dinheiro: liquidar aqui inventaria captura em pedido cancelado.
-        return
+        return {}
 
-    amount_q = _terminal_amount_q(order, payment_data=payment_data, method=method)
-    if amount_q <= 0:
-        return
-
-    existing_intent = _existing_active_intent(order, method=method, amount_q=amount_q)
-    if existing_intent:
-        _persist_intent(order, payment_data=payment_data, method=method, amount_q=amount_q, intent=existing_intent)
-        logger.info(
-            "payment.initiate: reused existing %s intent %s for order %s",
-            method,
-            existing_intent.intent_ref,
-            order.ref,
-        )
-        return
+    by_method = _terminal_amounts_by_method(order, payment_data=payment_data)
+    if not by_method:
+        return {}
+    mixed = len(by_method) > 1
 
     from shopman.payman import PaymentService
 
-    idempotency_key = _ensure_payment_idempotency_key(
-        order,
-        payment_data=payment_data,
-        method=method,
-        amount_q=amount_q,
-    )
-    intent = PaymentService.settle(
-        order.ref,
-        amount_q,
-        method,
-        currency="BRL",
-        idempotency_key=idempotency_key,
-    )
-    _persist_intent(
-        order,
-        payment_data=payment_data,
-        method=method,
-        amount_q=amount_q,
-        intent=_payment_intent_from_payman(intent),
-    )
-    logger.info(
-        "payment.initiate: %s settled at terminal, intent %s for order %s",
-        method, intent.ref, order.ref,
-    )
-
-
-def _terminal_amount_q(order, *, payment_data: dict, method: str) -> int:
-    """Soma dos tenders deste método recebidos no terminal; sem tenders, o total."""
-    tenders = [t for t in (payment_data.get("tenders") or []) if isinstance(t, dict)]
-    if not tenders:
-        return int(order.total_q or 0)
-    total = 0
-    for tender in tenders:
-        if str(tender.get("method") or "").strip().lower() != method:
+    settled: dict[str, str] = {}
+    for method, amount_q in by_method.items():
+        gateway_method = not settles_without_gateway(method)
+        if gateway_method and not mixed:
+            continue  # pix/cartão sozinhos: gateway, via initiate()
+        existing_ref = _existing_tender_intent_ref(payment_data, method=method)
+        if existing_ref:
+            settled[method] = existing_ref
             continue
-        if str(tender.get("collection") or "terminal").strip().lower() != "terminal":
+        existing_intent = _existing_active_intent(order, method=method, amount_q=amount_q)
+        if existing_intent and existing_intent.status == "captured":
+            settled[method] = existing_intent.intent_ref
+            logger.info(
+                "payment.settle_terminal_tenders: reused captured %s intent %s for order %s",
+                method, existing_intent.intent_ref, order.ref,
+            )
+            continue
+        idempotency_key = f"order-payment:{order.ref}:{method}:{amount_q}:terminal"
+        intent = PaymentService.settle(
+            order.ref,
+            amount_q,
+            method,
+            currency="BRL",
+            idempotency_key=idempotency_key,
+            gateway_data={"collection": "terminal", "terminal_ref": _terminal_ref(order)},
+            asserted_at_terminal=gateway_method,
+        )
+        settled[method] = intent.ref
+        logger.info(
+            "payment.settle_terminal_tenders: %s settled at terminal, intent %s for order %s",
+            method, intent.ref, order.ref,
+        )
+
+    if settled:
+        _persist_tender_intents(order, payment_data=payment_data, settled=settled, single=not mixed)
+    return settled
+
+
+def _terminal_amounts_by_method(order, *, payment_data: dict) -> dict[str, int]:
+    """Soma dos tenders recebidos no terminal, por método; sem tenders, o método do pedido pelo total."""
+    tenders = [t for t in (payment_data.get("tenders") or []) if isinstance(t, dict)]
+    totals: dict[str, int] = {}
+    if not tenders:
+        method = str(payment_data.get("method") or "").strip().lower()
+        total_q = int(order.total_q or 0)
+        if method and method != "mixed" and total_q > 0:
+            totals[method] = total_q
+        return totals
+    for tender in tenders:
+        method = str(tender.get("method") or "").strip().lower()
+        if not method or str(tender.get("collection") or "terminal").strip().lower() != "terminal":
             continue
         try:
-            total += int(tender.get("amount_q") or 0)
+            amount_q = int(tender.get("amount_q") or 0)
         except (TypeError, ValueError):
             continue
-    return total
+        if amount_q <= 0:
+            continue
+        totals[method] = totals.get(method, 0) + amount_q
+    return totals
+
+
+def _existing_tender_intent_ref(payment_data: dict, *, method: str) -> str:
+    for tender in payment_data.get("tenders") or []:
+        if not isinstance(tender, dict):
+            continue
+        if str(tender.get("method") or "").strip().lower() == method and tender.get("intent_ref"):
+            return str(tender["intent_ref"])
+    if len(_methods_of(payment_data)) <= 1 and payment_data.get("intent_ref"):
+        return str(payment_data["intent_ref"])
+    return ""
+
+
+def _methods_of(payment_data: dict) -> set[str]:
+    tenders = [t for t in (payment_data.get("tenders") or []) if isinstance(t, dict)]
+    if tenders:
+        return {str(t.get("method") or "").strip().lower() for t in tenders if t.get("method")}
+    method = str(payment_data.get("method") or "").strip().lower()
+    return {method} if method and method != "mixed" else set()
+
+
+def _terminal_ref(order) -> str:
+    return str(((order.data or {}).get("pos") or {}).get("terminal_ref") or "")
+
+
+def _persist_tender_intents(order, *, payment_data: dict, settled: dict[str, str], single: bool) -> None:
+    """Grava a ref do intent nas linhas de tender do método (e no topo, quando há um método só)."""
+    result = dict(payment_data)
+    tenders = [dict(t) for t in (result.get("tenders") or []) if isinstance(t, dict)]
+    for tender in tenders:
+        method = str(tender.get("method") or "").strip().lower()
+        if method in settled and str(tender.get("collection") or "terminal").strip().lower() == "terminal":
+            tender["intent_ref"] = settled[method]
+    if tenders:
+        result["tenders"] = tenders
+    if single:
+        (method, ref), = settled.items()
+        result["intent_ref"] = ref
+        result["method"] = method
+    result.pop("error", None)
+    data = dict(order.data or {})
+    data["payment"] = result
+    order.data = data
+    order.save(update_fields=["data", "updated_at"])
+    _ack_payment_failed_alerts(order)
 
 
 def capture(order) -> None:
@@ -348,35 +413,84 @@ def refund(
     SYNC — direct refund.
     """
     payment_data = (order.data or {}).get("payment", {})
-    intent_ref = payment_data.get("intent_ref")
-
-    if not intent_ref:
-        return
 
     if idempotency_key is None:
         idempotency_key = f"order-refund:{order.ref}"
 
+    # Todo intent capturado do pedido, não só o ``payment.intent_ref``: a venda
+    # mista do terminal tem um intent por método, e o cancel dela devolve todos.
+    # A fonte é o Payman (livro), não o JSON: pedido antigo sem tenders com
+    # intent_ref cai no mesmo laço.
+    intents = _refundable_intents(order, payment_data=payment_data)
+    remaining_q = amount_q
+    for method, intent_ref in intents:
+        if remaining_q is not None and remaining_q <= 0:
+            return
+        refunded_q = _refund_intent(
+            order,
+            intent_ref=intent_ref,
+            method=method,
+            amount_q=remaining_q,
+            # Um intent só mantém a chave histórica (retries antigos continuam
+            # deduplicando); com vários, cada estorno tem a sua.
+            idempotency_key=idempotency_key if len(intents) == 1 else f"{idempotency_key}:{intent_ref}",
+            _from_directive=_from_directive,
+        )
+        if remaining_q is not None:
+            remaining_q -= refunded_q
+
+
+def _refundable_intents(order, *, payment_data: dict) -> list[tuple[str, str]]:
+    """``[(method, intent_ref)]`` capturados do pedido, dinheiro primeiro.
+
+    Dinheiro primeiro porque uma devolução parcial devolve o que está na mão:
+    o operador entrega nota, não estorna cartão pela metade.
+    """
+    try:
+        from shopman.payman import PaymentService
+
+        intents = list(
+            PaymentService.get_by_order(order.ref).filter(status__in={"captured", "refunded"}).order_by("id")
+        )
+    except Exception:
+        logger.debug("payment.refund: intent lookup failed order=%s", order.ref, exc_info=True)
+        intents = []
+    if not intents:
+        legacy_ref = payment_data.get("intent_ref")
+        return [(str(payment_data.get("method") or "pix"), legacy_ref)] if legacy_ref else []
+    return sorted(((i.method, i.ref) for i in intents), key=lambda pair: (pair[0] != "cash", pair[1]))
+
+
+def _refund_intent(
+    order,
+    *,
+    intent_ref: str,
+    method: str,
+    amount_q: int | None,
+    idempotency_key: str,
+    _from_directive: bool,
+) -> int:
+    """Estorna um intent (gateway ou sem gateway) e devolve quanto pediu para estornar."""
     refundable_q = _payman_refundable_amount(intent_ref)
 
     # Idempotency via Payman — skip only when the captured balance is fully
     # refunded. Payman status REFUNDED can also mean a partial refund.
     if refundable_q is not None and refundable_q <= 0:
-        return
+        return 0
     if refundable_q is None and _payman_intent_refunded(intent_ref):
-        return
+        return 0
 
     requested_q = refundable_q
     if amount_q is not None:
         requested_q = amount_q if refundable_q is None else min(int(amount_q), refundable_q)
         if requested_q <= 0:
-            return
+            return 0
 
-    method = payment_data.get("method", "pix")
     adapter = None
-    if not settles_without_gateway(method):
+    if not settles_without_gateway(method) and not _asserted_at_terminal(intent_ref):
         adapter = get_adapter("payment", method=method)
         if not adapter:
-            return
+            return 0
 
     try:
         if adapter is None:
@@ -410,16 +524,29 @@ def refund(
             amount_q=requested_q,
             idempotency_key=idempotency_key,
         )
-        return
+        return int(requested_q or 0)
 
     if result.success:
         logger.info("payment.refund: refunded %s for order %s", intent_ref, order.ref)
-        return
+        return int(requested_q or 0)
 
     # Falha TERMINAL (recusa do gateway): retry não ajuda → alerta já.
     detail = getattr(result, "message", None) or getattr(result, "error_code", None) or "ver logs"
     logger.error("payment.refund: adapter recusou o estorno do pedido %s: %s", order.ref, detail)
     alert_refund_failed(order, intent_ref, requested_q, detail)
+    return 0
+
+
+def _asserted_at_terminal(intent_ref: str) -> bool:
+    """Pix/cartão atestados no balcão (venda mista) não têm gateway para estornar."""
+    try:
+        from shopman.payman import PaymentService
+
+        intent = PaymentService.get(intent_ref)
+        return bool(intent and not intent.gateway and (intent.gateway_data or {}).get("asserted_at_terminal"))
+    except Exception:
+        logger.debug("payment._asserted_at_terminal: lookup failed intent_ref=%s", intent_ref, exc_info=True)
+        return False
 
 
 def _refund_without_gateway(intent_ref: str, *, amount_q: int | None, idempotency_key: str) -> PaymentResult:

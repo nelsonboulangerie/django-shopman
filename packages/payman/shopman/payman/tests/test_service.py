@@ -263,6 +263,15 @@ class SettleTests(TestCase):
                 self.assertEqual(ctx.exception.code, "method_requires_gateway")
         self.assertFalse(PaymentIntent.objects.filter(order_ref="ORD-GW").exists())
 
+    def test_settle_accepts_pix_only_when_asserted_at_terminal(self) -> None:
+        """Pix numa venda mista do balcão (QR estático) não passa por gateway: o
+        operador atesta. A atestação fica no gateway_data para a reconciliação."""
+        intent = PaymentService.settle("ORD-MIX", 700, "pix", asserted_at_terminal=True)
+        assert intent.status == PaymentIntent.Status.CAPTURED
+        assert intent.gateway == ""
+        assert intent.gateway_data["asserted_at_terminal"] is True
+        assert PaymentService.captured_total(intent.ref) == 700
+
     def test_settle_refuses_non_positive_amount(self) -> None:
         with self.assertRaises(PaymentError) as ctx:
             PaymentService.settle("ORD-CASH-0", 0, "cash")

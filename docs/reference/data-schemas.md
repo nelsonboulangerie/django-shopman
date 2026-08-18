@@ -161,7 +161,7 @@ for key in (
 | `awaiting_wo_refs` | `list[string]` | `shop.handlers.production_order_sync` | Backstage pedidos/producao projections | Refs de WorkOrders que cobrem itens produzidos do pedido. Contextual, derivável e limpável em void. |
 | `pos_committed_at` | `string` | `shop/services/pos.py` (`_mark_tab_committed`) | — | Timestamp ISO de quando a comanda foi finalizada no POS |
 | `client_request_id` | `string` | `shop/services/pos.py` (`_mark_tab_committed`) | `_existing_sale_by_client_request_id` (dedupe) | Chave de idempotência do checkout direto POS. Espelhada em `pos.client_request_id` |
-| `pos` | `dict` | `shop/services/pos.py` (`_mark_tab_committed`) | POS projections, `CashShift.close()` | Contexto POS selado no Order: `{cash_shift_id, client_request_id, ...}`. `cash_shift_id` liga a venda ao turno de caixa para reconciliação |
+| `pos` | `dict` | `shop/services/pos.py` (`_mark_tab_committed`, `close_sale`) | POS projections | Contexto POS selado no Order: `{terminal_ref, client_request_id, direct_checkout, intent_version, customer_memory_action}`. **Não há `cash_shift_id`**: a atribuição da venda ao turno é a linha `sale` no livro do `cashman` (ADR-022), nunca etiqueta no pedido |
 | `external_order_code` | `string` | `shop/services/ifood_ingest.py` | — | Código do pedido no marketplace iFood. Duplicado em `ifood.order_code` |
 | `merchant_id` | `string` | `shop/services/ifood_ingest.py` | — | ID do merchant na iFood. Duplicado em `ifood.merchant_id` |
 | `ifood` | `dict` | `shop/services/ifood_ingest.py` | — | Contexto da iFood (só em pedidos ingeridos via `ifood_ingest`): `{order_code, merchant_id, created_at}` |
@@ -248,7 +248,7 @@ Classificações: **canonical** = fonte de verdade para decisões; **display** =
 | Sub-chave | Tipo | Classe | Escrito por | Lido por | Descrição |
 |-----------|------|--------|-------------|----------|-----------|
 | `method` | `string` | **canonical** | CheckoutView → CommitService; POS (`shop/services/pos.py`) | lifecycle, views, handlers | `"pix"`, `"card"`, `"cash"`, `"external"`; `"mixed"` quando o PDV recebe em mais de um meio (ver `tenders`) |
-| `intent_ref` | `string` | **canonical** | `payment.initiate()` | `payment_svc.get_payment_status`, PaymentStatusView, reconciliação financeira | Ref do intent no Payman. Pix/cartão: intent do gateway. `cash`/`external` **com `collection == "terminal"`** (venda do PDV): intent capturado no ato (`PaymentService.settle`, `gateway=""`), gravado depois do total selado (ADR-022). Sem `collection` (loja online) ou `on_delivery` (COD): ausente até o acerto |
+| `intent_ref` | `string` | **canonical** | `payment.initiate()` | `payment_svc.get_payment_status`, PaymentStatusView, reconciliação financeira | Ref do intent no Payman. Pix/cartão: intent do gateway. `cash`/`external` **com `collection == "terminal"`** (venda do PDV): intent capturado no ato (`PaymentService.settle`, `gateway=""`), gravado depois do total selado (ADR-022). Sem `collection` (loja online) ou `on_delivery` (COD): ausente até o acerto (`settle_delivery_cash` grava). Venda **mista** do PDV não tem `intent_ref` no topo: cada `tenders[].intent_ref` aponta o intent do seu método (pix/cartão dentro de mista nascem `asserted_at_terminal` no `gateway_data`) |
 | `idempotency_key` | `string` | idempotency | `payment.initiate()` | adapters Payman/gateway | Chave da tentativa de pagamento para retry seguro; não é status e não libera fluxo operacional |
 | `amount_q` | `int` | display | `payment.initiate()` | PaymentView, templates | Valor em centavos (referência para UI) |
 | `qr_code` | `string` | display | `payment.initiate()` | PaymentView template | QR code image (data URI) — PIX only |
@@ -262,10 +262,11 @@ Classificações: **canonical** = fonte de verdade para decisões; **display** =
 | `marked_paid_by` | `string` | legacy audit | endpoint removido | leitura histórica apenas | Campo legado de versões antigas; não é status de pagamento, não deve liberar fluxo operacional e não existe mais como ação de operador |
 | `error` | `string` | audit | `payment.initiate()` | — | Mensagem de erro se create_intent falhou (max 200 chars) |
 | `collection` | `string` | **canonical** | POS (`shop/services/pos.py`) | POS, cash service | `"terminal"` (recebido no balcão) ou `"on_delivery"` (recebido na entrega) |
-| `tenders` | `list[dict]` | **canonical** | POS (`shop/services/pos.py`) | POS, cash service, fechamento | Linhas do pagamento (misto): `{method, amount_q, collection, status, ...}` |
+| `tenders` | `list[dict]` | **canonical** | POS (`shop/services/pos.py`), acerto de entrega | POS, leitura X/Z, reconciliação | Linhas do pagamento: `{method, amount_q, collection, status, terminal_ref?, received_at?, reference?, intent_ref?}`. `intent_ref` é o intent do Payman daquele método (um por método; venda mista tem um por linha de método). **Sem `cash_shift_id`**: turno é lançamento no livro do `cashman` |
 | `cash_received_q` | `int` | **canonical** | POS (`shop/services/pos.py`) | fechamento de caixa, B.I. de troco | Soma das linhas em espécie recebidas no terminal. É o que identifica venda em dinheiro num pagamento misto, em que `method` vira `"mixed"` |
 | `tendered_q` | `int` | measurement | POS (`shop/services/pos.py`) | B.I. de troco | Quanto o cliente entregou em espécie. **Ausente quando o operador não digitou** — ausência de medição, nunca "pagou justo" |
 | `change_q` | `int` | measurement | POS (`shop/services/pos.py`) | POS (revisão), B.I. de troco | Troco devolvido, em centavos. Escrito junto com `tendered_q`. É a única fonte de troco do sistema: `HistoricalSale` (export externo) **não tem troco**, e por isso a previsão de necessidade de troco lê só pedido nativo |
+| `cod_settled_at` / `cod_settled_by` | `string` | audit | `operator_orders.settle_delivery_cash` | acerto (guard de repetição), gestor | Quando e quem acertou o dinheiro da entrega no balcão. O turno que recebeu **não** fica aqui: é a linha `cod_settled` no livro do `cashman` |
 
 ### returns — detalhamento
 
@@ -1095,9 +1096,9 @@ coluna**: são `Σ` do livro (`services.expected_before_count/counted/difference
 | `kind` | `amount_q` | `parent` | payload | Escrito por |
 |--------|-----------|----------|---------|-------------|
 | `float_in` | > 0 | — | — | `services.open_shift` |
-| `sale` | ≥ 0 (efeito em dinheiro; 0 para pix/cartão/external) | — | `{method, received_q, change_q}` | `shop` na venda (WP-3) |
-| `cod_settled` | > 0 | — | `{courier}` | acerto de entrega (WP-3) |
-| `refund` | < 0 | `sale` opcional | — | cancelamento/devolução (WP-3) |
+| `sale` | ≥ 0 (efeito em dinheiro; 0 para pix/cartão/external e para entrega paga na porta) | — | `{method, collection, intents: {method: intent_ref}, received_q?, change_q?}` | `shop/services/pos.py::_settle_pos_sale` (uma linha por venda; `payment_ref` = intent do dinheiro, ou o único intent) |
+| `cod_settled` | > 0 | — | `{settled_by}` | `shop/services/operator_orders.py::settle_delivery_cash` (turno de quem RECEBEU; `payment_ref` = intent cash com `gateway_data.collection = on_delivery`) |
+| `refund` | < 0 | `sale` original (só se do mesmo turno; senão `order_ref` liga) | `{method, cancel_reason}` | `shop/services/pos.py::cancel_recent_order` (turno aberto de quem devolve; motivo em `reason`) |
 | `cash_in` | > 0 | — | — (motivo em `reason`) | suprimento: `backstage/services/pos.py::register_cash_movement` |
 | `cash_out` | < 0 (exige `approved_by`) | — | — (motivo em `reason`) | sangria: idem (PIN de gerente, `cashman.adjust_shift`) |
 | `count` | contado − esperado | — | `{counted_q, notes, supervisory}` | `services.close_shift` |

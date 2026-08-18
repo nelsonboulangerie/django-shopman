@@ -248,11 +248,20 @@ def test_refund_without_intent_is_still_a_noop():
 
 
 class _PosSale:
-    """Venda direta no PDV (sem comanda), com catálogo mínimo."""
+    """Venda direta no PDV (sem comanda), com catálogo mínimo e um turno de caixa aberto.
+
+    A venda do terminal acontece DENTRO de um turno do ``cashman`` (a linha
+    ``sale`` nasce no livro dele); o ``cash_shift_id`` vem do servidor, como
+    faz o backstage.
+    """
 
     def __init__(self):
+        from django.contrib.auth import get_user_model
+        from shopman.cashman import services as cash
         from shopman.offerman.models import Product
 
+        self.operator = get_user_model().objects.create_user(username="cash-operator", password="x")
+        self.shift = cash.open_shift(operator=self.operator, float_q=10000)
         Shop.objects.create(name="Test Shop", brand_name="Test")
         Channel.objects.create(
             ref="pdv",
@@ -278,6 +287,7 @@ class _PosSale:
             "customer_name": "Cliente PDV",
             "payment_method": "cash",
             "client_request_id": client_request_id,
+            "cash_shift_id": self.shift.pk,
         }
         payload.update(overrides)
         return pos_service.close_sale(
@@ -323,8 +333,8 @@ def test_pos_cash_sale_repeat_request_keeps_single_intent(pos_sale):
     assert _intents(first.order_ref).count() == 1
 
 
-def test_pos_mixed_sale_does_not_settle_yet(pos_sale):
-    """Venda mista: um intent por tender nasce junto com o livro-caixa (WP-3), não aqui."""
+def test_pos_mixed_sale_settles_one_intent_per_method(pos_sale):
+    """Venda mista: um intent por método, cada tender aponta o seu; sem ``intent_ref`` no topo."""
     result = pos_sale.close(
         client_request_id="pos:cash-mixed",
         payment_tenders=[
@@ -334,9 +344,15 @@ def test_pos_mixed_sale_does_not_settle_yet(pos_sale):
     )
 
     order = Order.objects.get(ref=result.order_ref)
-    assert order.data["payment"]["method"] == "mixed"
-    assert "intent_ref" not in order.data["payment"]
-    assert not _intents(order.ref).exists()
+    payment = order.data["payment"]
+    assert payment["method"] == "mixed"
+    assert "intent_ref" not in payment
+    by_method = {i.method: i for i in _intents(order.ref)}
+    assert set(by_method) == {"cash", "external"}
+    assert by_method["cash"].amount_q == 500 and by_method["external"].amount_q == 700
+    assert all(i.status == PaymentIntent.Status.CAPTURED for i in by_method.values())
+    assert payment["tenders"][0]["intent_ref"] == by_method["cash"].ref
+    assert payment["tenders"][1]["intent_ref"] == by_method["external"].ref
 
 
 def test_pos_cash_on_delivery_does_not_settle(pos_sale):
