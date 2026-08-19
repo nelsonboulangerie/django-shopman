@@ -6267,7 +6267,7 @@ class Command(BaseCommand):
     def _seed_bi_alert_rules(self) -> None:
         """Os primeiros alarmes do B.I. — regras como dado, editáveis no Admin.
 
-        Duas regras, uma ativa: o faturamento de ontem abaixo de 70% da média
+        Cinco regras, quatro ativas: o faturamento de ontem abaixo de 70% da média
         do mesmo dia da semana (4 semanas) avisa o operador uma vez por dia. A
         de importação silenciosa nasce DESLIGADA: o export do Yooga é único até
         hoje; quando um export passar a ser recorrente, ativa-se e ajusta-se a
@@ -6295,6 +6295,43 @@ class Command(BaseCommand):
                 "cooldown_minutes": 24 * 60,
                 "source": "yooga",
                 "expected_every_days": 7,
+            },
+            # O guard da fusão como alarme: um pedido de teste num dia antigo apaga
+            # ~110 vendas do Yooga daquele dia — certo por regra, mudo não.
+            {
+                "ref": "pedido-nativo-apagou-historico",
+                "label": "Pedido nativo apagou histórico",
+                "metric": BIAlertRule.Metric.NATIVE_OVERRIDES_HISTORY,
+                "is_active": True,
+                "severity": "warning",
+                "cooldown_minutes": 7 * 24 * 60,
+                "lookback_days": 7,
+                "max_native_orders": 5,
+                "min_historical_dropped": 20,
+            },
+            # Apuração: o aviso ao operador não carrega nome nem valor; o detalhe
+            # é para quem audita. Régua inicial R$ 50,00 em 7 dias — ajuste do dono.
+            {
+                "ref": "quebra-de-caixa-acumulada",
+                "label": "Quebra de caixa acumulada por operador",
+                "metric": BIAlertRule.Metric.CASH_VARIANCE_BY_OPERATOR,
+                "is_active": True,
+                "severity": "warning",
+                "cooldown_minutes": 24 * 60,
+                "lookback_days": 7,
+                "threshold_q": 5000,
+            },
+            # Fecha o ciclo humano da camada canônica: lote novo com linhas sem
+            # de-para confirmado é número ainda não confiável.
+            {
+                "ref": "de-para-de-produto-pendente",
+                "label": "De-para de produto pendente",
+                "metric": BIAlertRule.Metric.CURATION_PENDING,
+                "is_active": True,
+                "severity": "warning",
+                "cooldown_minutes": 7 * 24 * 60,
+                "source": "yooga",
+                "threshold_percent": 20,
             },
         )
         for rule in rules:

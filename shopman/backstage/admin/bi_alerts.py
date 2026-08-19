@@ -14,6 +14,7 @@ from unfold.admin import ModelAdmin
 from unfold.decorators import display
 
 from shopman.backstage.models import BIAlertEvent, BIAlertRule
+from shopman.backstage.permissions import can_audit_cash
 
 
 @admin.register(BIAlertRule)
@@ -44,7 +45,23 @@ class BIAlertRuleAdmin(ModelAdmin):
         if not reading:
             return "ainda não avaliado"
         prefix = "DISPAROU · " if reading.get("fired") else ""
+        if obj.metric in BIAlertRule.AUDIT_ONLY_METRICS and not can_audit_cash(self._request_user):
+            # Apuração de caixa: quem opera vê que houve disparo, não quem nem quanto.
+            return f"{prefix}apuração de caixa — detalhe só para quem audita"
         return f"{prefix}{reading.get('message', '')}"
+
+    _request_user = None
+
+    def changelist_view(self, request, extra_context=None):
+        self._request_user = request.user
+        return super().changelist_view(request, extra_context)
+
+    def get_fieldsets(self, request, obj=None):
+        fieldsets = super().get_fieldsets(request, obj)
+        if obj is not None and obj.metric in BIAlertRule.AUDIT_ONLY_METRICS and not can_audit_cash(request.user):
+            # Sem o bloco "Última avaliação": a leitura traz nome e valor.
+            return tuple(fs for fs in fieldsets if fs[0] != "Última avaliação")
+        return fieldsets
 
     def has_delete_permission(self, request, obj=None):
         # Disparos apontam para a regra (PROTECT). Sai de circulação desligando.
@@ -59,6 +76,13 @@ class BIAlertEventAdmin(ModelAdmin):
     ordering = ("-fired_at",)
     fields = ("rule", "fired_at", "severity", "value", "baseline", "message", "operator_alert")
     readonly_fields = fields
+
+    def get_queryset(self, request):
+        # Disparo de apuração de caixa traz nome e valor: só para quem audita.
+        queryset = super().get_queryset(request)
+        if can_audit_cash(request.user):
+            return queryset
+        return queryset.exclude(rule__metric__in=BIAlertRule.AUDIT_ONLY_METRICS)
 
     def has_add_permission(self, request):
         return False

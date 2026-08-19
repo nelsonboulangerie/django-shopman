@@ -60,14 +60,26 @@ def evaluate_all(*, now=None) -> CycleSummary:
     return summary
 
 
-def _evaluate(rule, now, summary: CycleSummary) -> None:
+def _measure(rule, now) -> Reading:
     from shopman.backstage.models import BIAlertRule
 
-    reading = (
-        import_silence(rule, now=now)
-        if rule.metric == BIAlertRule.Metric.IMPORT_SILENCE
-        else revenue_vs_baseline(rule, today=timezone.localtime(now).date())
-    )
+    Metric = BIAlertRule.Metric
+    today = timezone.localtime(now).date()
+    if rule.metric == Metric.IMPORT_SILENCE:
+        return import_silence(rule, now=now)
+    if rule.metric == Metric.DAILY_REVENUE_VS_BASELINE:
+        return revenue_vs_baseline(rule, today=today)
+    if rule.metric == Metric.NATIVE_OVERRIDES_HISTORY:
+        return native_overrides_history(rule, today=today)
+    if rule.metric == Metric.CASH_VARIANCE_BY_OPERATOR:
+        return cash_variance_by_operator(rule, today=today)
+    if rule.metric == Metric.CURATION_PENDING:
+        return curation_pending(rule)
+    return Reading(value=None, baseline=None, fired=False, message=f"métrica desconhecida: {rule.metric}")
+
+
+def _evaluate(rule, now, summary: CycleSummary) -> None:
+    reading = _measure(rule, now)
     summary.evaluated += 1
     if reading.value is None and not reading.fired:
         summary.abstained += 1
@@ -89,18 +101,36 @@ def _evaluate(rule, now, summary: CycleSummary) -> None:
     rule.save(update_fields=fields)
 
 
+#: O tipo de OperatorAlert por métrica — o bus do operador fala o vocabulário dele.
+_ALERT_TYPE_BY_METRIC = {
+    "import_silence": "bi_import_silence",
+    "daily_revenue_vs_baseline": "bi_below_baseline",
+    "native_overrides_history": "bi_source_conflict",
+    "cash_variance_by_operator": "bi_cash_variance",
+    "curation_pending": "bi_curation_pending",
+}
+
+#: O que o operador lê quando a métrica é apuração de caixa: nem nome, nem
+#: valor. O detalhe mora no BIAlertEvent, que o Admin só mostra a quem audita.
+_CASH_AUDIT_PUBLIC_MESSAGE = (
+    "quebra de caixa acumulada passou da régua em {count} operador(es) nos últimos {days} dias. "
+    "Detalhe no B.I. › Caixa (quem audita)."
+)
+
+
 def _fire(rule, reading: Reading, now) -> None:
     from shopman.backstage.models import BIAlertEvent, BIAlertRule
     from shopman.backstage.services.alerts import create_alert
 
-    alert_type = (
-        "bi_import_silence"
-        if rule.metric == BIAlertRule.Metric.IMPORT_SILENCE
-        else "bi_below_baseline"
-    )
+    alert_type = _ALERT_TYPE_BY_METRIC[rule.metric]
+    public_message = reading.message
+    if rule.metric in BIAlertRule.AUDIT_ONLY_METRICS:
+        public_message = _CASH_AUDIT_PUBLIC_MESSAGE.format(
+            count=int(reading.value or 0), days=int(rule.lookback_days or 0),
+        )
     with transaction.atomic():
         operator_alert = create_alert(
-            type=alert_type, severity=rule.severity, message=f"{rule.label}: {reading.message}",
+            type=alert_type, severity=rule.severity, message=f"{rule.label}: {public_message}",
         )
         BIAlertEvent.objects.create(
             rule=rule,
@@ -183,15 +213,138 @@ def revenue_vs_baseline(rule, *, today: date) -> Reading:
         return Reading(
             value=measured, baseline=baseline, fired=True,
             message=(
-                f"{target:%d/%m} ({_weekday_name(target)}) faturou R$ {measured / 100:,.2f}, "
-                f"{share:.0f}% do esperado (R$ {baseline / 100:,.2f} na média de {len(samples)} "
+                f"{target:%d/%m} ({_weekday_name(target)}) faturou {_brl(measured)}, "
+                f"{share:.0f}% do esperado ({_brl(baseline)} na média de {len(samples)} "
                 f"{_weekday_name(target)}s); régua: {threshold}%"
-            ).replace(",", "X").replace(".", ",").replace("X", "."),
+            ),
         )
     return Reading(
         value=measured, baseline=baseline, fired=False,
         message=f"{target:%d/%m}: {share:.0f}% do esperado, acima da régua de {threshold}%",
     )
+
+
+def native_overrides_history(rule, *, today: date) -> Reading:
+    """Dias recentes em que um punhado de pedidos nativos apagou muito histórico.
+
+    Lê o guard persistido na série diária (``DailySalesFact.historical_dropped``);
+    sem a série materializada para a janela, recompõe pela canônica. Um pedido
+    de teste num dia antigo apaga ~110 vendas do Yooga daquele dia — a regra é
+    certa, ficar mudo é que não era.
+    """
+    from shopman.backstage.bi.canonical import read_sales
+    from shopman.backstage.bi.daily_series import materialized
+    from shopman.backstage.models import DailySalesFact
+
+    days = int(rule.lookback_days or 7)
+    since, until = today - timedelta(days=days - 1), today
+    max_native = int(rule.max_native_orders or 0)
+    min_dropped = int(rule.min_historical_dropped or 0)
+
+    if materialized(since, until) is not None:
+        rows = DailySalesFact.objects.filter(
+            date__range=(since, until), source="shopman", historical_dropped__gt=min_dropped,
+            orders__lte=max_native,
+        ).values_list("date", "orders", "historical_dropped")
+        hits = [(day, orders, dropped) for day, orders, dropped in rows]
+    else:
+        window = read_sales(since, until)
+        native_per_day: dict[date, int] = {}
+        for sale in window.sales:
+            if sale.source == "shopman":
+                native_per_day[sale.day] = native_per_day.get(sale.day, 0) + 1
+        hits = [
+            (day, native_per_day[day], dropped)
+            for day, dropped in sorted(window.historical_dropped.items())
+            if native_per_day.get(day, 0) <= max_native and dropped > min_dropped
+        ]
+    if not hits:
+        return Reading(value=0.0, baseline=float(min_dropped), fired=False,
+                       message=f"nenhum dia nos últimos {days} em que pedido nativo apagou histórico acima da régua")
+    worst = max(hits, key=lambda hit: hit[2])
+    listing = "; ".join(f"{day:%d/%m}: {orders} nativo(s) apagaram {dropped}" for day, orders, dropped in hits)
+    return Reading(
+        value=float(worst[2]), baseline=float(min_dropped), fired=True,
+        message=f"{len(hits)} dia(s) em que um pedido nativo apagou histórico — {listing}",
+    )
+
+
+def cash_variance_by_operator(rule, *, today: date) -> Reading:
+    """|Σ quebra| por operador nos turnos fechados da janela, contra a régua em centavos.
+
+    O valor é a CONTAGEM de operadores acima da régua; o detalhe (quem, quanto)
+    vai na mensagem do disparo — que o Admin só mostra a quem audita.
+    """
+    from shopman.backstage.bi.sources import cashman
+
+    days = int(rule.lookback_days or 7)
+    threshold = abs(int(rule.threshold_q or 0))
+    since, until = today - timedelta(days=days - 1), today
+    by_operator: dict[str, int] = {}
+    shifts = 0
+    for shift in cashman.read_closed_shifts(since, until):
+        shifts += 1
+        by_operator[shift.operator_key] = by_operator.get(shift.operator_key, 0) + (shift.difference_q or 0)
+    if not shifts:
+        return Reading(value=None, baseline=float(threshold), fired=False,
+                       message=f"nenhum turno fechado nos últimos {days} dias: sem leitura")
+    over = {op: total for op, total in by_operator.items() if abs(total) > threshold}
+    if not over:
+        return Reading(value=0.0, baseline=float(threshold), fired=False,
+                       message=f"{shifts} turno(s) em {days} dias; nenhum operador acima da régua")
+    detail = "; ".join(
+        f"{op}: {'−' if total < 0 else '+'}{_brl(abs(total))}" for op, total in sorted(over.items())
+    )
+    return Reading(
+        value=float(len(over)), baseline=float(threshold), fired=True,
+        message=f"{len(over)} operador(es) com quebra acumulada acima de {_brl(threshold)} em {days} dias — {detail}",
+    )
+
+
+def curation_pending(rule) -> Reading:
+    """No último lote concluído da origem, a fatia de linhas sem de-para de produto confirmado."""
+    from shopman.backstage.models import HistoricalSaleItem, ImportBatch, ProductAlias
+
+    batch = (
+        ImportBatch.objects.filter(source=rule.source, status=ImportBatch.Status.DONE)
+        .order_by("-imported_at")
+        .first()
+    )
+    if batch is None:
+        return Reading(value=None, baseline=None, fired=False,
+                       message=f"nenhum lote concluído de '{rule.source}': nada a curar")
+    confirmed_skus = set(
+        ProductAlias.objects.confirmed().filter(source=rule.source).exclude(external_sku="")
+        .values_list("external_sku", flat=True)
+    )
+    confirmed_names = set(
+        ProductAlias.objects.confirmed().filter(source=rule.source, external_sku="")
+        .values_list("external_name", flat=True)
+    )
+    total = 0
+    pending = 0
+    for sku, name in HistoricalSaleItem.objects.filter(sale__batch=batch).order_by().values_list("sku", "product_name"):
+        total += 1
+        key_ok = (sku in confirmed_skus) if sku else ((name or "") in confirmed_names)
+        if not key_ok:
+            pending += 1
+    if not total:
+        return Reading(value=None, baseline=None, fired=False,
+                       message=f"lote #{batch.pk} de '{rule.source}' não tem linhas de item")
+    share = pending / total * 100
+    threshold = int(rule.threshold_percent or 0)
+    message = (
+        f"lote #{batch.pk} de '{rule.source}' ({timezone.localtime(batch.imported_at):%d/%m}): "
+        f"{pending} de {total} linhas ({share:.0f}%) sem de-para de produto confirmado; régua {threshold}%"
+    )
+    return Reading(value=round(share, 1), baseline=float(threshold), fired=share > threshold, message=message)
+
+
+def _brl(cents: float) -> str:
+    """Centavos → "R$ 1.234,56", para a frase do alarme."""
+    from shopman.utils.monetary import format_money
+
+    return f"R$ {format_money(int(round(cents)))}"
 
 
 _WEEKDAYS = ("segunda", "terça", "quarta", "quinta", "sexta", "sábado", "domingo")

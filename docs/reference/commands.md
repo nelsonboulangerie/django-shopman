@@ -556,10 +556,16 @@ de cada regra: mede e registra a cada ciclo, mas não avisa de novo antes do sil
 python manage.py evaluate_bi_alerts
 ```
 
-**Métricas do v1:** `import_silence` (a origem deveria receber lote concluído a cada N dias e não
-recebeu — lote que falhou não conta) e `daily_revenue_vs_baseline` (faturamento de **ontem** abaixo
+**Métricas:** `import_silence` (a origem deveria receber lote concluído a cada N dias e não
+recebeu — lote que falhou não conta); `daily_revenue_vs_baseline` (faturamento de **ontem** abaixo
 de X% da média do mesmo dia da semana nas últimas N semanas, fora dos dias fechados/atrapalhados;
-com menos de 3 dias parecidos a regra **não opina**). Roda no `maintenance_worker` depois do
+com menos de 3 dias parecidos a regra **não opina**); `native_overrides_history` (nos últimos N
+dias, um dia com até K pedidos nativos apagou mais de M vendas históricas — o guard da fusão,
+lido de `DailySalesFact.historical_dropped`); `cash_variance_by_operator` (|Σ quebra| de algum
+operador acima da régua em centavos na janela — **apuração**: o aviso ao operador não carrega
+nome nem valor, o detalhe fica no disparo e só quem tem `cashman.audit_shift` o vê no Admin);
+`curation_pending` (no último lote concluído da origem, % de linhas sem de-para de produto
+confirmado acima da régua). Roda no `maintenance_worker` depois do
 `refresh_bi_daily_series`. As regras padrão vêm do `seed`/`setup_bi_reference` (a de importação
 nasce desligada: o export do Yooga é único até hoje).
 
