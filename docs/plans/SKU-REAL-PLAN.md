@@ -238,10 +238,35 @@ Dois efeitos que só apareceram ao rodar:
    §2.2 for adotada, os quatro "do dia" (`FD`, `SD`, `FL`, `THG`) saem e viram
    coleção.
 
-**F5 — O iFood.** Ressincronizar o catálogo e conferir `CatalogSyncState`. É o
-único ponto fora do nosso banco: renomear aqui não renomeia lá.
+**F5 — O iFood.** ✅ Feito, e era mais sério do que "ressincronizar".
 
-## 4. O que NÃO fazer
+⚠️ **O id do item no iFood sai do NOSSO SKU:** `uuid5(merchant_id, "item:" +
+sku)` (ver `catalog_projection_ifood`). Trocar `CROISSANT` por `CT` muda o uuid —
+o sync cria um item **novo**, e o antigo **continua no cardápio deles,
+disponível para venda**, apontando para um SKU que não existe mais aqui. Pedido
+nesse item chega e não resolve produto.
+
+O `sync_catalog_ifood` incremental não alcança: ele reconcilia o que está na
+listagem, e o nome antigo saiu dela. Quem sabe o nome antigo é o mapa do rename.
+
+[`ifood_retract_renamed_skus`](../../shopman/shop/management/commands/ifood_retract_renamed_skus.py)
+parte desse mapa e retira os órfãos. A **ordem importa, e o comando a protege**:
+ele recusa retirar SKU que ainda existe no catálogo, porque antes do rename o
+nome antigo é o produto que está vendendo. Só retira os pares cujo código novo
+já está no catálogo — se o rename não rodou, não há órfão.
+
+## 4. A ordem de execução
+
+```bash
+python manage.py ingest_yooga --delivery-flags-only   # 201 vendas mal marcadas
+python manage.py rename_skus_to_real --dry-run        # confere
+python manage.py rename_skus_to_real                  # aplica
+python manage.py ifood_retract_renamed_skus --dry-run # confere
+python manage.py ifood_retract_renamed_skus           # limpa o cardápio deles
+python manage.py sync_catalog_ifood --full            # publica os códigos novos
+```
+
+## 5. O que NÃO fazer
 
 - **Não criar apelido, `legacy_sku` nem tabela de tradução.** Pré-go-live não há
   legado: o nome antigo se apaga (CLAUDE.md). As duas versões anteriores deste
