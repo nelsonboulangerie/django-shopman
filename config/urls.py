@@ -103,14 +103,18 @@ urlpatterns = [
 # ── Core APIs ──────────────────────────────────────────────────────
 #
 # Os ViewSets de CRUD dos pacotes do kernel (orderman, offerman, stockman,
-# craftsman, guestman, payman) NÃO são montados no deployment. Eles herdam o
+# craftsman, guestman) NÃO são montados no deployment. Eles herdam o
 # default DRF `IsAuthenticated`, e clientes do storefront viram usuários Django
 # autenticados (login OTP chama `login()`), então expô-los deixaria qualquer
 # cliente logado ler/mutar dados do kernel — sessões e comandas do POS, base de
-# PII, ledger de estoque, BOM (segredo de negócio), payment intents. Nenhuma
+# PII, ledger de estoque, BOM (segredo de negócio). Nenhuma
 # superfície os consome: os apps Nuxt entram por `api/v1/` (storefront) e
 # `api/v1/backstage/` (projections gateadas por permissão). Guardrail que trava
 # a re-introdução: shopman/shop/tests/test_api_perimeter.py.
+#
+# O `payman` não aparece na lista porque não tem mais pacote `api/`: pagamento
+# não tem consumidor por HTTP direto (Admin + reconciliação do backstage dão
+# conta), e código de superfície pública sem trava é brecha esperando tomada.
 #
 # Se um desses ganhar consumidor real, ele volta COM permissão explícita
 # (IsAdminUser/DjangoModelPermissions) e o guardrail é atualizado deliberadamente.
