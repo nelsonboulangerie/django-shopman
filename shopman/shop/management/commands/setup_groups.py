@@ -73,6 +73,10 @@ class Command(BaseCommand):
                 shop_dclo("operate_production"),
                 # B.I. (ADR-021): leitura analítica cross-suite é persona de gestão.
                 shop_dclo("view_bi"),
+                # …e o que alimenta o B.I. (lotes de importação, vendas históricas)
+                # se lê no Admin com a mesma persona: trilha, somente leitura.
+                _perm("backstage", "importbatch", "view_importbatch"),
+                _perm("backstage", "historicalsale", "view_historicalsale"),
                 shop_shop("view_reports"),
                 shop_shop("manage_customers"),
                 shop_shop("view_production_suggested"),

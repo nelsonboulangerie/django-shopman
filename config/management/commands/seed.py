@@ -6484,13 +6484,20 @@ class Command(BaseCommand):
         A origem fica carimbada como ``seed``: dado de demonstração não pode se
         passar por um export real que ninguém carregou.
         """
-        from shopman.backstage.models import DayContext, HistoricalSale, HistoricalSaleItem
+        from shopman.backstage.models import (
+            DayContext,
+            HistoricalSale,
+            HistoricalSaleItem,
+            ImportBatch,
+        )
 
         # Limpa o que ESTE seed criou antes — nunca o que veio de um export.
         # Vem antes de qualquer saída antecipada de propósito: faxina não pode
         # depender de haver catálogo, senão um ambiente sem produtos guarda
-        # linhas sintéticas órfãs para sempre.
+        # linhas sintéticas órfãs para sempre. As vendas saem antes do lote
+        # (a FK protege o lote enquanto houver venda pendurada).
         HistoricalSale.objects.filter(source="seed").delete()
+        ImportBatch.objects.filter(source="seed").delete()
 
         # ⚠️ Onde já existe histórico de verdade, não se inventa histórico.
         # Sem esta guarda, rodar o seed num ambiente com o export carregado
@@ -6552,6 +6559,18 @@ class Command(BaseCommand):
                 items_by_key[external_id] = lines
                 external_id += 1
 
+        # Dado sintético também tem lote: a proveniência de TODA venda histórica
+        # é declarada, e aqui ela diz "seed", sem arquivo nem hash.
+        batch = ImportBatch.objects.create(
+            source="seed",
+            status=ImportBatch.Status.DONE,
+            rows_read=len(sales),
+            sales_created=len(sales),
+            items_created=sum(len(lines) for lines in items_by_key.values()),
+            notes="histórico sintético gerado pelo seed",
+        )
+        for sale in sales:
+            sale.batch = batch
         HistoricalSale.objects.bulk_create(sales, batch_size=1000)
         ids = dict(
             HistoricalSale.objects.filter(source="seed").values_list("external_id", "id")

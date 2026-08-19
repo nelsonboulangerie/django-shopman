@@ -25,6 +25,7 @@ from shopman.backstage.projections.bi_explore import (
     validate_config,
 )
 from shopman.backstage.services.production import apply_finish, apply_oven_arm, apply_oven_conclude
+from shopman.backstage.tests.support import historical_batch
 
 
 @pytest.fixture
@@ -84,7 +85,7 @@ def test_revenue_by_channel_crossed_with_source(db):
 
     Order.objects.create(ref="EXP-1", channel_ref="web", status=Order.Status.COMPLETED, total_q=2000)
     HistoricalSale.objects.create(
-        source="yooga", external_id=1, occurred_at=timezone.now() - timedelta(days=2),
+        batch=historical_batch("yooga"), source="yooga", external_id=1, occurred_at=timezone.now() - timedelta(days=2),
         total_q=5000, is_delivery=True,
     )
     report = build_bi_explore(metric="revenue", by="channel", by2="source")
@@ -173,7 +174,7 @@ def test_saved_views_crud_validated_by_grammar(client, bi_viewer):
 def test_qty_sold_by_sku_merges_sources_and_declares_truncation(db):
     for index in range(3):
         sale = HistoricalSale.objects.create(
-            source="yooga", external_id=10 + index,
+            batch=historical_batch("yooga"), source="yooga", external_id=10 + index,
             occurred_at=timezone.now() - timedelta(days=3), total_q=1000,
         )
         HistoricalSaleItem.objects.create(

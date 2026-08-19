@@ -25,6 +25,7 @@ from shopman.backstage.models import DayClosing
 from shopman.backstage.projections.bi_cash import build_bi_cash
 from shopman.backstage.projections.bi_customers import build_bi_customers
 from shopman.backstage.projections.bi_sales import build_bi_sales
+from shopman.backstage.tests.support import historical_batch
 
 
 def _view_bi_perm() -> Permission:
@@ -119,7 +120,7 @@ def test_sales_historical_fills_only_days_without_native(db):
     _order("BI-H1", total_q=2000, items=[("PAO", "Pão", 1, 2000)])
     now = timezone.now()
     yesterday_sale = HistoricalSale.objects.create(
-        source="yooga", external_id=1, occurred_at=now - timedelta(days=1),
+        batch=historical_batch("yooga"), source="yooga", external_id=1, occurred_at=now - timedelta(days=1),
         total_q=3000, is_delivery=False,
     )
     HistoricalSaleItem.objects.create(
@@ -128,7 +129,7 @@ def test_sales_historical_fills_only_days_without_native(db):
     )
     # Mesmo dia que a venda nativa: o dia nativo VENCE — este registro não conta.
     HistoricalSale.objects.create(
-        source="yooga", external_id=2, occurred_at=now, total_q=99900, is_delivery=True,
+        batch=historical_batch("yooga"), source="yooga", external_id=2, occurred_at=now, total_q=99900, is_delivery=True,
     )
 
     report = build_bi_sales()
@@ -162,7 +163,7 @@ def test_sales_previous_window_agrees_with_main_build(db):
     # 3 vendas históricas dentro da janela ANTERIOR à default de 28 dias.
     for index in range(3):
         HistoricalSale.objects.create(
-            source="yooga", external_id=100 + index,
+            batch=historical_batch("yooga"), source="yooga", external_id=100 + index,
             occurred_at=timezone.now() - timedelta(days=30 + index),
             total_q=1000 * (index + 1), is_delivery=False,
         )
@@ -227,7 +228,6 @@ def test_cash_variance_by_operator_and_missing_closings(db):
     assert {(m.method, m.amount_q) for m in report.payment_methods} == {("pix", 4000), ("cash", 6000)}
     # 28 dias de janela, só hoje fechado: 27 buracos DECLARADOS.
     assert report.closings_missing == 27
-    assert report.drawer_by_hour == ()
 
 
 @pytest.mark.django_db

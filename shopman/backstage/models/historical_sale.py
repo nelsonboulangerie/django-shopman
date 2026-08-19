@@ -36,8 +36,20 @@ class HistoricalSale(models.Model):
     )
     customer_external_id = models.BigIntegerField("cliente (id externo)", null=True, blank=True)
     customer_name = models.CharField("cliente", max_length=200, blank=True)
-    metadata = models.JSONField("metadata", default=dict, blank=True)
+    metadata = models.JSONField(
+        "metadados", default=dict, blank=True,
+        help_text="O que o export traz e nenhuma coluna guarda. Chaves em docs/reference/data-schemas.md.",
+    )
     ingested_at = models.DateTimeField("ingerido em", auto_now_add=True)
+    # PROTECT: apagar um lote com vendas penduradas apagaria a proveniência
+    # delas. O caminho para refazer é `--rebuild`, que apaga as vendas primeiro.
+    batch = models.ForeignKey(
+        "backstage.ImportBatch",
+        on_delete=models.PROTECT,
+        related_name="sales",
+        verbose_name="lote",
+        help_text="A importação que trouxe esta venda.",
+    )
 
     class Meta:
         verbose_name = "venda histórica"

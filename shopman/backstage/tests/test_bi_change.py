@@ -17,6 +17,7 @@ from shopman.orderman.models import Order
 
 from shopman.backstage.models import DayContext, HistoricalSale
 from shopman.backstage.projections.bi_change import ForecastError, build_bi_change
+from shopman.backstage.tests.support import historical_batch
 
 pytestmark = pytest.mark.django_db
 
@@ -74,13 +75,14 @@ def _external(*, days: int, orders: int = 12, cash_share: float = 0.5) -> None:
     today = timezone.localdate()
     rows = []
     external_id = 1
+    batch = historical_batch("yooga")
     for offset in range(1, days + 1):
         day = today - timedelta(days=offset)
         _open(day)
         for index in range(orders):
             rows.append(
                 HistoricalSale(
-                    source="yooga",
+                    batch=batch, source="yooga",
                     external_id=external_id,
                     occurred_at=timezone.datetime(day.year, day.month, day.day, 10, tzinfo=tz),
                     total_q=TICKET_Q,

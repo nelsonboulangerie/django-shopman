@@ -16,6 +16,7 @@ from shopman.backstage.admin.episodes import (  # noqa: F401
     OperationEpisodeAdmin,
     OperationEpisodeKindAdmin,
 )
+from shopman.backstage.admin.imports import HistoricalSaleAdmin, ImportBatchAdmin  # noqa: F401
 from shopman.backstage.admin.kds import KDSInstanceAdmin  # noqa: F401
 from shopman.backstage.admin.operation import (  # noqa: F401
     OperationChecklistRunAdmin,

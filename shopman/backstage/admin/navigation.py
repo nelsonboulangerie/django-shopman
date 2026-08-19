@@ -161,6 +161,14 @@ def get_sidebar_navigation(request):
             _item("Conferir comprovante", "qr_code_scanner", _url("admin_console_cash_receipt_lookup"), permission=_can_audit_shift),
             _item("Alertas do operador", "warning", _url("admin:backstage_operatoralert_changelist"), permission=_can_view_operator_alerts),
         ]),
+        # O que entrou de fora no B.I. — trilha, como Auditoria, mas com dono
+        # próprio: Auditoria está no teto que ainda se escaneia, e o B.I. vai
+        # ganhar mais telas desta família (de-paras, cenários). Nasce aqui para
+        # não dividir Auditoria depois. Só quem vê o B.I. vê o que o alimenta.
+        _group("B.I.", "query_stats", [
+            _item("Importações", "upload_file", _url("admin:backstage_importbatch_changelist"), permission=_can_view_bi),
+            _item("Vendas históricas", "history_edu", _url("admin:backstage_historicalsale_changelist"), permission=_can_view_bi),
+        ]),
         # Configuração expande como os outros grupos — o menu tem UM comportamento,
         # não dois. Os subitens são os sete ESCOPOS, não as 33 telas: o Unfold só tem
         # dois níveis, então listar as telas aqui recriaria a gaveta que este trabalho
@@ -298,6 +306,10 @@ def _can_manage_orders(request) -> bool:
 
 def _can_access_production(request) -> bool:
     return permissions.can_access_production(request.user)
+
+
+def _can_view_bi(request) -> bool:
+    return permissions.can_view_bi(request.user)
 
 
 def _can_view_production_reports(request) -> bool:
