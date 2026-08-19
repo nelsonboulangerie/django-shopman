@@ -17,9 +17,11 @@ class BackstageConfig(AppConfig):
         # emite signal — quem cobre esse buraco é a reconciliação periódica
         # no maintenance_worker (services/shelf_outages.reconcile_outages).
         from django.db.models.signals import post_save
+        from shopman.cashman.signals import entry_recorded
         from shopman.stockman.models import Hold, Move
 
         from shopman.backstage.handlers import (
+            on_entry_for_change_request,
             on_hold_for_shelf_outage,
             on_move_for_shelf_outage,
         )
@@ -34,5 +36,14 @@ class BackstageConfig(AppConfig):
             on_hold_for_shelf_outage,
             sender=Hold,
             dispatch_uid="backstage.shelf_outage.on_hold",
+            weak=False,
+        )
+
+        # O pedido de troco é anunciado por quem OUVE a linha entrar no livro, e
+        # não por quem a grava: o `cashman` não sabe o que é SSE, e o balcão não
+        # deve precisar lembrar de anunciar. `entry_recorded` já sai no commit.
+        entry_recorded.connect(
+            on_entry_for_change_request,
+            dispatch_uid="backstage.change_request.on_entry",
             weak=False,
         )
