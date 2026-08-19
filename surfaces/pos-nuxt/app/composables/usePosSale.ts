@@ -87,6 +87,10 @@ export function usePosSale(deps: PosSaleDeps) {
   // se o operador lembrar de clicar imprimir. Falha silenciosa exatamente no
   // momento em que a mão já está esperando.
   const drawer = useCashDrawer(pos);
+  // A trava da gaveta: o PDV recusa INICIAR a próxima venda enquanto SABE que a
+  // gaveta está aberta. Vive num composable próprio (regras + diálogo); aqui só
+  // se decide ONDE ela morde — em `openTab`, o único portão de entrada na venda.
+  const drawerLock = useDrawerLock({ drawer, actions, action });
 
   const tabInput = ref("");
   const busy = ref(false);
@@ -608,7 +612,10 @@ export function usePosSale(deps: PosSaleDeps) {
     tabDialogOpen.value = true;
   }
 
-  async function openTab(tab: POSTabProjection | string, options: { preserveDraft?: boolean } = {}) {
+  async function openTab(
+    tab: POSTabProjection | string,
+    options: { preserveDraft?: boolean; drawerChecked?: boolean } = {},
+  ) {
     if (busy.value) return; // guarda de reentrância
     stopPixPolling(); // saiu da tela de resultado → encerra o polling da venda anterior
     const tabRef = sanitizeTabRef(typeof tab === "string" ? tab : tab.ref);
@@ -616,6 +623,14 @@ export function usePosSale(deps: PosSaleDeps) {
     if (hasDraftWithoutTab.value && !options.preserveDraft) {
       tabInput.value = tabRef;
       requestTabAssociation("start");
+      return;
+    }
+    // A trava morde AQUI, no toque que inicia a próxima venda — e só aqui.
+    // `preserveDraft` é uma venda JÁ começada escolhendo comanda: não vira refém.
+    // `drawerChecked` é a volta pela trava (fechou ou o gerente liberou): não
+    // pergunta duas vezes.
+    if (!options.preserveDraft && !options.drawerChecked) {
+      await drawerLock.guard(() => openTab(tab, { ...options, drawerChecked: true }));
       return;
     }
     serverError.value = "";
@@ -651,12 +666,21 @@ export function usePosSale(deps: PosSaleDeps) {
   async function openTabFromDialog(tab: POSTabProjection | string) {
     const reason = tabDialogReason.value;
     const preserveDraft = hasDraftWithoutTab.value;
-    await openTab(tab, { preserveDraft });
-    if (!cart.tabSessionKey) return;
-    tabDialogOpen.value = false;
-    if (reason === "save" && cart.items.length) {
-      await saveTab();
+    const proceed = async () => {
+      await openTab(tab, { preserveDraft, drawerChecked: true });
+      if (!cart.tabSessionKey) return;
+      tabDialogOpen.value = false;
+      if (reason === "save" && cart.items.length) {
+        await saveTab();
+      }
+    };
+    // A trava passa por fora do `openTab` aqui para que, liberada, o fechamento
+    // do seletor venha junto — senão o diálogo ficaria aberto sobre a venda.
+    if (preserveDraft) {
+      await proceed();
+      return;
     }
+    await drawerLock.guard(proceed);
   }
 
   function currentIntentState() {
@@ -1343,6 +1367,7 @@ export function usePosSale(deps: PosSaleDeps) {
     cart,
     tabInput,
     busy,
+    drawerLock,
     saving,
     pixStatus,
     unsaved,

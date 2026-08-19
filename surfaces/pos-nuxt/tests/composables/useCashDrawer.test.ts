@@ -197,3 +197,57 @@ describe("agente velho — o defeito tem que se explicar sozinho", () => {
     expect(outcome.detail).not.toContain("desatualizado");
   });
 });
+
+// ── readState: a gaveta está aberta AGORA? ────────────────────────────────
+
+describe("useCashDrawer — readState nunca chuta", () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  it("lê pelo GET /drawer, sem token, e devolve o que o agente MEDIU", async () => {
+    const fetchSpy = stubFetch(() => okResponse({ known: true, open: true, raw: "0x12" }));
+    const drawer = makeDrawer();
+
+    expect(await drawer.readState()).toEqual({ known: true, open: true, raw: "0x12" });
+
+    const [url, init] = fetchSpy.mock.calls[0]!;
+    expect(url).toBe("http://127.0.0.1:47811/drawer");
+    expect(init!.method).toBe("GET");
+    expect(init!.body).toBeUndefined();
+  });
+
+  it("gaveta fechada é sabidamente fechada", async () => {
+    stubFetch(() => okResponse({ known: true, open: false, raw: "0x16" }));
+    expect(await makeDrawer().readState()).toEqual({ known: true, open: false, raw: "0x16" });
+  });
+
+  it("estação que nunca mediu diz 'não sei' com o motivo, não um palpite", async () => {
+    stubFetch(() => okResponse({ known: false, reason: "esta estacao nunca mediu a gaveta." }));
+    const state = await makeDrawer().readState();
+    expect(state.known).toBe(false);
+    expect(state).toMatchObject({ reason: expect.stringContaining("nunca mediu") });
+  });
+
+  it("agente fora do ar é 'não sei', nunca exceção: a trava não pode parar o balcão", async () => {
+    stubFetch(() => { throw new TypeError("Failed to fetch"); });
+    const state = await makeDrawer().readState();
+    expect(state.known).toBe(false);
+  });
+
+  it("agente antigo (404 na rota) é 'não sei'", async () => {
+    stubFetch(() => ({ ok: false, status: 404, json: () => Promise.resolve({ error: "rota desconhecida" }) }));
+    const state = await makeDrawer().readState();
+    expect(state.known).toBe(false);
+  });
+
+  it("balcão de gaveta com chave não bate no agente e não sabe", async () => {
+    const fetchSpy = stubFetch(() => okResponse({ known: true, open: true }));
+    const state = await makeDrawer({ adapter: "manual", can_kick: false, open_on_cash_sale: false }).readState();
+    expect(state.known).toBe(false);
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it("resposta malformada (known sem open) é 'não sei'", async () => {
+    stubFetch(() => okResponse({ known: true }));
+    expect((await makeDrawer().readState()).known).toBe(false);
+  });
+});

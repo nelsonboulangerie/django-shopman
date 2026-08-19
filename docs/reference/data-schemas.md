@@ -1104,7 +1104,7 @@ coluna**: são `Σ` do livro (`services.expected_before_count/counted/difference
 | `count` | contado − esperado | — | `{counted_q, notes, supervisory}` | `services.close_shift` |
 | `count_correction` | ± (exige `approved_by`) | `count` | — (motivo em `reason`) | `services.correct_count` |
 | `drawer_open` | 0 | — | — (motivo em `reason`) | abertura sem venda: `backstage/services/pos.py::register_drawer_opening` |
-| `drawer_unlock` | 0 (exige `approved_by`) | — | `{drawer_raw}` | destrave da trava (WP-8) |
+| `drawer_unlock` | 0 (exige `approved_by`) | — | `{drawer_raw}` (o byte que o sensor devolveu, ex. `0x12`) | destrave da trava da gaveta: `backstage/services/pos.py::unlock_drawer` (`POST pos/cash/drawer-unlock/`, PIN de gerente). A trava é do PDV (`useDrawerLock`): recusa INICIAR a próxima venda quando o agente do balcão diz `known: true, open: true`; estado desconhecido nunca trava; sem carência; cada destrave vale UMA venda |
 | `change_requested` | 0 | — | `{amount_q, denominations: [int], note}` | pedido de troco: `backstage/services/pos.py::request_change` |
 | `change_served` | 0 (exige `approved_by`) | `change_requested` | — | `serve_change_request` (PIN de gerente, `cashman.adjust_shift`) |
 | `change_cancelled` | 0 | `change_requested` | — | `cancel_change_request` |

@@ -23,9 +23,24 @@ import type { POSCashDrawerProjection, POSProjection } from "~/types/pos";
 
 /** Loopback responde em microssegundos; 3s só existe para agente pendurado. */
 const AGENT_TIMEOUT_MS = 3000;
+/**
+ * A leitura da gaveta acontece no toque que INICIA a venda. Se o agente pendurar,
+ * o balcão não pode esperar 3s por cliente: 1s e a resposta vira "não sei", que
+ * é o modo de falha desejado (sem controle, nunca fila parada).
+ */
+const DRAWER_READ_TIMEOUT_MS = 1000;
 
 /** O que aconteceu com o papel. `skipped` = este balcão não tem impressora. */
 export type PrintOutcome = { status: "printed" | "failed" | "skipped"; detail: string };
+
+/**
+ * A gaveta está aberta AGORA? Só duas respostas honestas: sei (e é isto), ou não
+ * sei (e é por isto). Nunca um palpite: quem trava uma venda por palpite ensina o
+ * balcão a ignorar a trava, e o aviso legítimo morre junto.
+ */
+export type DrawerState =
+  | { known: true; open: boolean; raw: string }
+  | { known: false; reason: string };
 
 /**
  * O agente da estação é mais antigo que o recurso que acabou de ser pedido.
@@ -65,14 +80,14 @@ export function useCashDrawer(pos: ComputedRef<POSProjection | null>) {
 
   const probing = ref(false);
 
-  async function callAgent(path: string, body?: Record<string, unknown>) {
+  async function callAgent(path: string, body?: Record<string, unknown>, timeoutMs = AGENT_TIMEOUT_MS) {
     const drawer = config.value;
     if (!drawer?.agent_url) throw new Error("Terminal sem agente do balcão configurado.");
     const response = await fetch(`${drawer.agent_url}${path}`, {
       method: body ? "POST" : "GET",
       headers: body ? { "content-type": "application/json" } : undefined,
       body: body ? JSON.stringify({ token: drawer.token, ...body }) : undefined,
-      signal: AbortSignal.timeout(AGENT_TIMEOUT_MS),
+      signal: AbortSignal.timeout(timeoutMs),
     });
     const payload = await response.json().catch(() => ({}));
     // Só o status HTTP é falha de transporte. `ok: false` no corpo é uma
@@ -155,7 +170,35 @@ export function useCashDrawer(pos: ComputedRef<POSProjection | null>) {
     }
   }
 
-  return { canKick, unavailableReason, opensOnCashSale, probing, kick, print, probe };
+  /**
+   * Lê se a gaveta está aberta agora. **Nunca lança**: toda falha vira
+   * `{ known: false }` com o motivo.
+   *
+   * O agente responde `{known, open, raw}` e só diz `known: true` quando ESTA
+   * estação mediu a polaridade (`--drawer-status`): no balcão da Nelson o bit
+   * está LIGADO com a gaveta fechada, o inverso do que o manual sugere, e uma
+   * constante cravada aqui gritaria o dia inteiro com a gaveta fechada. Por isso
+   * a leitura é dado do agente, nunca conta desta função.
+   *
+   * Sem agente (gaveta de chave) nem tenta: a resposta é "não sei" na hora, sem
+   * rede, e a trava simplesmente não existe naquele balcão.
+   */
+  async function readState(): Promise<DrawerState> {
+    if (!import.meta.client || !canKick.value) {
+      return { known: false, reason: "Este balcão não tem agente para ler a gaveta." };
+    }
+    try {
+      const payload = await callAgent("/drawer", undefined, DRAWER_READ_TIMEOUT_MS);
+      if (payload?.known === true && typeof payload.open === "boolean") {
+        return { known: true, open: payload.open, raw: String(payload.raw ?? "") };
+      }
+      return { known: false, reason: String(payload?.reason || "O agente não sabe o estado da gaveta.") };
+    } catch (error) {
+      return { known: false, reason: messageOf(error) };
+    }
+  }
+
+  return { canKick, unavailableReason, opensOnCashSale, probing, kick, print, probe, readState };
 }
 
 function messageOf(error: unknown): string {
