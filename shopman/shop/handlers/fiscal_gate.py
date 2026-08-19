@@ -31,11 +31,20 @@ logger = logging.getLogger(__name__)
 
 
 def _refuse(product, listing_ref: str, errors: list[str]) -> None:
+    """Recusa a publicação dizendo o que cadastrar, onde, e como ver o resto.
+
+    A recusa chega uma por ``save()``, e quem a vê costuma estar no meio de um
+    ``seed`` ou de um sync de catálogo — ou seja, com N produtos incompletos e a
+    notícia de um só. Por isso a mensagem aponta o comando de auditoria: sem ele o
+    operador conserta um, roda de novo, descobre o próximo, e assim por diante.
+    """
     where = f" na vitrine '{listing_ref}'" if listing_ref else ""
     raise ValidationError(
         f"Produto {product.sku} ({product.name}) não pode ser publicado{where}: "
-        f"{' '.join(errors)} Classifique em Admin → Produtos → Fiscal (perfil + NCM; "
-        "CEST na revenda) ou desligue "
+        f"{' '.join(errors)} Cadastre em Admin → Produtos → Fiscal: perfil fiscal "
+        "(fabricação própria ou revenda), NCM com 8 dígitos e, na revenda, CEST com "
+        "7 dígitos. Para ver todos os pendentes de uma vez rode "
+        "`manage.py fiscal_audit_catalog`; para voltar ao estado pré-go-live, desligue "
         f"{fiscal_catalog.SETTING_REQUIRE_ON_PUBLISH}."
     )
 
