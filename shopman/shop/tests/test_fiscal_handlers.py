@@ -182,3 +182,34 @@ def test_cancel_terminal_failure_alerts_operator(order):
     alert = OperatorAlert.objects.filter(type="fiscal_cancel_failed").first()
     assert alert is not None
     assert order.ref in alert.message
+
+
+def test_record_does_not_clobber_what_another_writer_saved_meanwhile(order):
+    """Regressão do audit do Fiscalman (F8): `_record` fazia read-modify-write do
+    `order.data` inteiro a partir do objeto lido no início do `handle`, sem lock.
+
+    O dispatcher não cobre isso: o claim dele é da DIRECTIVE, não do pedido
+    (`orderman/dispatch.py::_process_directive`). Pagamento e PDV gravam o mesmo
+    JSON, e quem gravasse por último apagava as chaves do outro — inclusive as
+    `nfce_*`, deixando nota autorizada na SEFAZ sem registro local.
+    """
+
+    class BackendThatRacesWithPayment:
+        """Outro escritor grava em order.data DEPOIS que o handler leu o pedido."""
+
+        def emit(self, **kwargs):
+            concurrent = Order.objects.get(pk=order.pk)
+            concurrent.data["payment"] = {"captured_at": "2026-08-19T10:00:00Z"}
+            concurrent.save(update_fields=["data"])
+            return AUTHORIZED
+
+        def query_status(self, *, reference):
+            return FiscalDocumentResult(success=False)
+
+    NFCeEmitHandler(BackendThatRacesWithPayment()).handle(
+        message=_emit_directive(order), ctx={}
+    )
+
+    order.refresh_from_db()
+    assert order.data["nfce_access_key"] == AUTHORIZED.access_key
+    assert order.data["payment"] == {"captured_at": "2026-08-19T10:00:00Z"}
