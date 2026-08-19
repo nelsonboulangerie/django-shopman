@@ -17,7 +17,6 @@ from shopman.cashman import Entry
 from shopman.cashman import services as cash
 from shopman.guestman.models import Customer
 from shopman.orderman.models import Order
-from shopman.payman import PaymentService
 from shopman.payman.models import PaymentIntent
 
 from shopman.shop.services import house_account, operator_orders

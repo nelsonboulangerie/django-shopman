@@ -40,6 +40,32 @@ class BICashOperatorRow:
     drawer_openings: int
     drawer_unlocks: int
     change_requests: int
+    # Acertos de conta recebidos em dinheiro por este operador (``account_settled``).
+    account_settled_q: int = 0
+
+
+@dataclass(frozen=True)
+class BICashAccountRow:
+    customer_name: str
+    balance_q: int
+
+
+@dataclass(frozen=True)
+class BICashAccounts:
+    """Conta do cliente na janela: o que virou dívida, o que foi acertado, o que está em aberto hoje.
+
+    ``sales_q`` e ``settled_q`` vêm do Payman (intents ``account`` autorizados /
+    capturados na janela, qualquer método de acerto); ``settled_cash_q`` é a parte
+    que entrou na gaveta (``account_settled`` no livro). ``open_q`` é o saldo
+    devedor total HOJE (derivado, não da janela), com os maiores devedores.
+    """
+
+    sales_q: int = 0
+    settled_q: int = 0
+    settled_cash_q: int = 0
+    open_q: int = 0
+    open_customers: int = 0
+    top_open: tuple[BICashAccountRow, ...] = ()  # maiores saldos em aberto hoje
 
 
 @dataclass(frozen=True)
@@ -80,6 +106,7 @@ class BICashReport:
     closings_missing: int
     previous: BICashPrevious
     drawer_by_hour: tuple[BICashHourRow, ...]
+    accounts: BICashAccounts = BICashAccounts()
 
 
 def build_bi_cash(
@@ -117,9 +144,12 @@ def build_bi_cash(
     operator_events: dict[str, dict[str, int]] = defaultdict(lambda: defaultdict(int))
     hour_events: dict[int, dict[str, int]] = defaultdict(lambda: defaultdict(int))
     counted = (Kind.DRAWER_OPEN, Kind.DRAWER_UNLOCK, Kind.CHANGE_REQUESTED)
+    operator_account_settled: dict[str, int] = defaultdict(int)
     for event in cashman.read_events(local_window(date_from, date_to)):
         if event.kind in (Kind.CASH_OUT, Kind.CASH_IN):
             day_movements[event.day][event.kind] += abs(event.amount_q)  # o sinal já é o tipo
+        elif event.kind == Kind.ACCOUNT_SETTLED:
+            operator_account_settled[event.operator_key] += event.amount_q
         elif event.kind in counted:
             operator_events[event.operator_key][event.kind] += 1
             if event.kind != Kind.CHANGE_REQUESTED:
@@ -147,7 +177,7 @@ def build_bi_cash(
                 continue
             method_totals[method] += amount
 
-    operators = sorted(set(operator_shifts) | set(operator_events))
+    operators = sorted(set(operator_shifts) | set(operator_events) | set(operator_account_settled))
     window_days = (date_to - date_from).days + 1
 
     return BICashReport(
@@ -162,6 +192,7 @@ def build_bi_cash(
                 drawer_openings=operator_events[operator][Kind.DRAWER_OPEN],
                 drawer_unlocks=operator_events[operator][Kind.DRAWER_UNLOCK],
                 change_requests=operator_events[operator][Kind.CHANGE_REQUESTED],
+                account_settled_q=operator_account_settled.get(operator, 0),
             )
             for operator in operators
         ),
@@ -181,6 +212,32 @@ def build_bi_cash(
             )
             for hour in sorted(hour_events)
         ),
+        accounts=_cash_accounts(date_from, date_to, settled_cash_q=sum(operator_account_settled.values())),
+    )
+
+
+def _cash_accounts(date_from: date, date_to: date, *, settled_cash_q: int) -> BICashAccounts:
+    """Conta do cliente: dívida nova e acerto na janela (Payman), saldo em aberto hoje (derivado)."""
+    from django.db.models import Sum
+    from shopman.payman.models import PaymentIntent
+
+    from shopman.backstage.bi.canonical import local_window
+    from shopman.shop.services import house_account
+
+    window = local_window(date_from, date_to)
+    account = PaymentIntent.objects.filter(method=PaymentIntent.Method.ACCOUNT)
+    sales_q = int(account.filter(authorized_at__range=window).aggregate(t=Sum("amount_q"))["t"] or 0)
+    settled_q = int(
+        account.filter(captured_at__range=window, status__in=["captured", "refunded"]).aggregate(t=Sum("amount_q"))["t"] or 0
+    )
+    balances = house_account.balances()
+    return BICashAccounts(
+        sales_q=sales_q,
+        settled_q=settled_q,
+        settled_cash_q=settled_cash_q,
+        open_q=sum(row.balance_q for row in balances),
+        open_customers=len(balances),
+        top_open=tuple(BICashAccountRow(customer_name=row.customer_name, balance_q=row.balance_q) for row in balances[:5]),
     )
 
 

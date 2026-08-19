@@ -68,6 +68,7 @@ lançamento novo apontando para o que corrige.
 | `cash_in` / `cash_out` | > 0 / < 0 | backstage (`register_cash_movement`) | Suprimento / sangria. Sangria exige `approved_by` e motivo. |
 | `refund` | < 0 | shop (`payment.refund_cash`) | Dinheiro devolvido ao cliente, pela gaveta de quem devolveu. **Cancelar não é devolver**: o cancel deixa pendência; esta linha é o gesto físico, com PIN. |
 | `courier_out` / `courier_in` | < 0 / ≥ 0 | shop (`advance_order` no despacho / `settle_delivery_cash`) | Troco que saiu com o entregador e o que voltou (zero fecha o ciclo). Custódia temporária, não pagamento. |
+| `account_settled` | > 0 | shop (`house_account.settle_account`) | Cliente acertou a conta EM DINHEIRO: uma linha por intent `account` capturado, no turno de quem recebeu. |
 | `count` | ± | `close_shift` | Fechamento cego: `contado − esperado`. Depois dele, `Σ` = o que a gaveta tinha. |
 | `count_correction` | ± | `correct_count` (turno fechado, `approved_by`, motivo) | Ajuste gerencial auditado. |
 | `drawer_open`, `drawer_unlock` | 0 | backstage | Gaveta aberta sem venda (motivo); trava liberada pelo gerente. |
