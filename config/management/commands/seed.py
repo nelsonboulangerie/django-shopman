@@ -171,6 +171,7 @@ class Command(BaseCommand):
         self._seed_delivery_distance_bands()
         self._seed_delivery_zones()
         products = self._seed_catalog()
+        self._relink_bi_aliases()
         positions = self._seed_positions()
         self._seed_stock(products, positions)
         self._seed_recipes()
@@ -687,6 +688,22 @@ class Command(BaseCommand):
             Channel,
         ]:
             model.objects.all().delete()
+
+        # B.I.: a curadoria de de-paras é assinada por gente e NÃO é dado de seed —
+        # sobrevive ao flush. Mas a FK para o produto é PROTECT (apagar catálogo não
+        # pode apagar tradução em silêncio), então apagar Product abaixo estouraria
+        # ProtectedError com qualquer alias confirmado — e o flush não é transacional:
+        # pararia aqui com metade do banco já apagada. O flush solta a FK guardando o
+        # SKU; `_relink_bi_aliases` religa por SKU quando o catálogo renasce. Produto
+        # que não voltar fica com FK vazia — a semântica existente de produto extinto.
+        from shopman.backstage.models import ProductAlias
+
+        self._alias_product_keys = {
+            pk: (sku, name)
+            for pk, sku, name in ProductAlias.objects.filter(product__isnull=False)
+            .values_list("pk", "product__sku", "product__name")
+        }
+        ProductAlias.objects.filter(product__isnull=False).update(product=None)
 
         # Offerman
         for model in [ListingItem, Listing, CollectionItem, Collection, ProductComponent, Product]:
@@ -6508,6 +6525,49 @@ class Command(BaseCommand):
                 ProductConsumptionTag.objects.update_or_create(
                     sku=sku, defaults={"role": role, "reviewed": True, "note": note},
                 )
+
+    def _relink_bi_aliases(self) -> None:
+        """Devolve aos de-paras de produto o alvo que o flush soltou, agora por SKU.
+
+        Só faz algo depois de um `--flush` (é ele quem anota os SKUs). O pk do
+        Product muda a cada seed; o SKU é o nome estável — é por ele que a
+        curadoria atravessa o reseed inteira.
+        """
+        remembered = getattr(self, "_alias_product_keys", None)
+        if not remembered:
+            return
+        from shopman.offerman.models import Product
+
+        from shopman.backstage.models import ProductAlias
+
+        # SKU primeiro; nome como segunda chance, e só quando é ÚNICO no catálogo
+        # novo. A segunda chance não é luxo: o catálogo vivo do staging tem SKUs
+        # editados à mão (CROISSANT), o seed tem os curtos do cardápio (CT) — o
+        # produto é o mesmo e o nome diz isso ("Croissant" = "Croissant").
+        product_by_sku: dict[str, object] = {}
+        name_counts: dict[str, int] = {}
+        product_by_name: dict[str, object] = {}
+        for pk, sku, name in Product.objects.values_list("pk", "sku", "name"):
+            product_by_sku[sku] = pk
+            key = name.strip().casefold()
+            name_counts[key] = name_counts.get(key, 0) + 1
+            product_by_name[key] = pk
+        by_target: dict[object, list[int]] = {}
+        extinct = 0
+        for alias_pk, (sku, name) in remembered.items():
+            product_pk = product_by_sku.get(sku)
+            if product_pk is None:
+                key = name.strip().casefold()
+                product_pk = product_by_name.get(key) if name_counts.get(key) == 1 else None
+            if product_pk is None:
+                extinct += 1
+                continue
+            by_target.setdefault(product_pk, []).append(alias_pk)
+        relinked = 0
+        for product_pk, alias_pks in by_target.items():
+            relinked += ProductAlias.objects.filter(pk__in=alias_pks).update(product=product_pk)
+        note = f" ({extinct} sem produto no catálogo novo: extintos)" if extinct else ""
+        self.stdout.write(f"  ✅ {relinked} de-paras de produto religados por SKU ou nome{note}")
 
     def _seed_bi_aliases(self) -> None:
         """Os vocabulários do B.I. — de-para de categoria e de forma de pagamento.
