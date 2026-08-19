@@ -7,7 +7,7 @@ porém, precisam ser recriadas ou corrigidas com frequência — depois de um
 comando faz só isso, é idempotente, e não encosta em nenhum dado de negócio.
 
 ⚠️ **Grupo, nunca permissão avulsa.** O ``seed`` antigo concedia
-``user_permissions`` direto: ``marina`` recebia sete permissões copiadas à mão
+``user_permissions`` direto: a gerente recebia sete permissões copiadas à mão
 que imitavam o grupo "Gerente" sem serem ele. O efeito é que a tela de Grupos do
 Admin mentia — mostrava gente sem grupo nenhum operando o sistema inteiro — e
 qualquer mudança em ``setup_groups`` não alcançava ninguém. Aqui a associação é
@@ -32,6 +32,10 @@ ADMIN_PASSWORD = "admin"
 
 #: username, nome, sobrenome, grupos, é superusuário?
 #:
+#: Sobrenome vazio é deliberado: são pessoas de verdade da casa, e inventar um
+#: sobrenome seria pior do que deixar em branco. Preencher pelo Admin quando
+#: alguém souber.
+#:
 #: O elenco cobre os papéis que a loja tem de verdade, um por grupo, para que
 #: testar "o que o gerente enxerga" seja entrar como o gerente — e não imaginar.
 CAST: tuple[tuple[str, str, str, tuple[str, ...], bool], ...] = (
@@ -41,11 +45,11 @@ CAST: tuple[tuple[str, str, str, tuple[str, ...], bool], ...] = (
     ("admin", "Dono", "da Casa", ("Dono",), True),
     # O gestor: opera, autoriza exceção, fecha o dia. NÃO audita — ele conta às
     # cegas como todo mundo (ver docs/guides/rbac-personas.md).
-    ("marina", "Marina", "Dias", ("Gerente",), False),
+    ("joyce", "Joyce", "", ("Gerente",), False),
     # Loja: balcão e PDV.
-    ("ana", "Ana", "Costa", ("Caixa",), False),
+    ("fran", "Fran", "", ("Caixa",), False),
     # Produção: cozinha e fornadas.
-    ("joao", "João", "Silva", ("Cozinha",), False),
+    ("diofer", "Diofer", "", ("Cozinha",), False),
 )
 
 

@@ -80,7 +80,7 @@ Ou via shell:
 ```python
 from django.contrib.auth.models import User, Group
 
-u = User.objects.create_user("joao", password="...", is_staff=True)
+u = User.objects.create_user("novo-operador", password="...", is_staff=True)
 g = Group.objects.get(name="Caixa")
 u.groups.add(g)
 ```
@@ -127,9 +127,9 @@ qualquer permissão avulsa que alguém tenha dado à mão:
 | Usuário | Grupo | Entra com |
 |---|---|---|
 | `admin` | **Dono** (+ superusuário) | senha `admin` e PIN `1234` |
-| `marina` | **Gerente** | só PIN `1234` |
-| `ana` | **Caixa** (loja) | só PIN `1234` |
-| `joao` | **Cozinha** (produção) | só PIN `1234` |
+| `joyce` | **Gerente** | só PIN `1234` |
+| `fran` | **Caixa** (loja) | só PIN `1234` |
+| `diofer` | **Cozinha** (produção) | só PIN `1234` |
 
 Serve para **consertar acesso no staging sem rodar o `seed`**, que recriaria
 catálogo e milhares de pedidos falsos. Não toca em nenhum dado de negócio.
@@ -140,7 +140,7 @@ sozinho.
 
 ⚠️ **Permissão avulsa é apagada.** O grupo passa a ser a única resposta para
 "por que essa pessoa consegue fazer isso?". Antes o `seed` dava sete permissões
-copiadas à mão para a `marina`, que imitavam o "Gerente" sem serem ele — a tela
+copiadas à mão para a gerente, que imitavam o "Gerente" sem serem ele — a tela
 de Grupos do Admin mostrava gente sem grupo nenhum operando o sistema inteiro.
 
 ---

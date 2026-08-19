@@ -1,6 +1,6 @@
 """O elenco de dev/staging existe, e existe LIGADO A GRUPOS.
 
-O `seed` antigo dava `user_permissions` direto: `marina` recebia sete
+O `seed` antigo dava `user_permissions` direto: `joyce` recebia sete
 permissões copiadas à mão que imitavam o grupo "Gerente" sem serem ele. Duas
 listas para a mesma pergunta saem de sincronia no primeiro dia — mudar o grupo
 não alcançava ninguém, e a tela de Grupos do Admin mostrava gente sem grupo
@@ -34,16 +34,16 @@ def test_sem_yes_o_comando_recusa():
     with pytest.raises(CommandError, match="produção"):
         call_command("setup_operators", verbosity=0)
 
-    assert not get_user_model().objects.filter(username="marina").exists()
+    assert not get_user_model().objects.filter(username="joyce").exists()
 
 
 def test_o_elenco_cobre_os_quatro_papeis(elenco):
-    assert set(elenco) >= {"admin", "marina", "ana", "joao"}
+    assert set(elenco) >= {"admin", "joyce", "fran", "diofer"}
 
 
 @pytest.mark.parametrize(
     ("username", "grupo"),
-    [("admin", "Dono"), ("marina", "Gerente"), ("ana", "Caixa"), ("joao", "Cozinha")],
+    [("admin", "Dono"), ("joyce", "Gerente"), ("fran", "Caixa"), ("diofer", "Cozinha")],
 )
 def test_cada_um_no_seu_grupo(elenco, username, grupo):
     assert [g.name for g in elenco[username].groups.all()] == [grupo]
@@ -63,9 +63,9 @@ def test_o_dono_audita_e_o_gerente_nao(elenco):
     """O coração da política, agora exercitado por gente de verdade."""
     from shopman.backstage.permissions import can_audit_cash, can_operate_pos
 
-    marina = get_user_model().objects.get(pk=elenco["marina"].pk)
-    assert can_operate_pos(marina)
-    assert not can_audit_cash(marina)
+    joyce = get_user_model().objects.get(pk=elenco["joyce"].pk)
+    assert can_operate_pos(joyce)
+    assert not can_audit_cash(joyce)
 
     # `admin` é superusuário: audita por isso. O grupo importa mesmo assim —
     # sem ele o "Dono" nasceria vazio, e a apuração ficaria invisível para
@@ -86,7 +86,7 @@ def test_admin_entra_com_senha_e_os_outros_so_com_pin(elenco):
     assert elenco["admin"].check_password(setup_operators.ADMIN_PASSWORD)
     assert elenco["admin"].is_superuser
 
-    for username in ("marina", "ana", "joao"):
+    for username in ("joyce", "fran", "diofer"):
         assert not elenco[username].has_usable_password()
         assert not elenco[username].is_superuser
         assert elenco[username].is_staff
@@ -96,24 +96,24 @@ def test_rodar_duas_vezes_nao_duplica_nem_acumula(elenco):
     """Idempotente de verdade: é assim que se conserta acesso no staging."""
     call_command("setup_operators", "--yes", verbosity=0)
 
-    marina = get_user_model().objects.get(username="marina")
-    assert get_user_model().objects.filter(username="marina").count() == 1
-    assert [g.name for g in marina.groups.all()] == ["Gerente"]
-    assert marina.user_permissions.count() == 0
+    joyce = get_user_model().objects.get(username="joyce")
+    assert get_user_model().objects.filter(username="joyce").count() == 1
+    assert [g.name for g in joyce.groups.all()] == ["Gerente"]
+    assert joyce.user_permissions.count() == 0
 
 
 def test_permissao_avulsa_antiga_e_LIMPA(elenco):
     """Rodar de novo tira o que alguém deu à mão — inclusive o seed velho.
 
     Sem isto, um banco que já passou pelo seed antigo ficaria para sempre com as
-    sete permissões da `marina` por cima do grupo, e o grupo mentiria.
+    sete permissões da `joyce` por cima do grupo, e o grupo mentiria.
     """
     from django.contrib.auth.models import Permission
 
-    marina = get_user_model().objects.get(username="marina")
-    marina.user_permissions.add(Permission.objects.get(codename="audit_shift"))
-    assert marina.user_permissions.count() == 1
+    joyce = get_user_model().objects.get(username="joyce")
+    joyce.user_permissions.add(Permission.objects.get(codename="audit_shift"))
+    assert joyce.user_permissions.count() == 1
 
     call_command("setup_operators", "--yes", verbosity=0)
 
-    assert get_user_model().objects.get(username="marina").user_permissions.count() == 0
+    assert get_user_model().objects.get(username="joyce").user_permissions.count() == 0
