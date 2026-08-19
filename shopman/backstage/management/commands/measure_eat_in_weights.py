@@ -22,9 +22,10 @@ Só os híbridos: "consome aqui"/bebidas (95) e "leva" (5) são curadoria firme
 e ficam como estão. SKU sem venda de balcão suficiente (< ``--min-sales``)
 mantém o peso do papel, declarado.
 
-Os SKUs do cardápio 2027 ainda não têm venda nativa que diga algo; quando têm
-um gêmeo no Yooga (CROISSANT ↔ CT), herdam o peso do gêmeo — é o mesmo
-produto. Quem não tem gêmeo (geleia mini, tapenade) fica no peso do papel.
+O catálogo usa os códigos da casa, então cada SKU se mede no próprio
+histórico. A única herança que sobra é a do meio-preço: `MCT` é o croissant a
+metade do preço e não tem base própria, então herda do `CT`. Quem não tem
+histórico (geleia mini, tapenade) fica no peso do papel.
 
 Imprime sempre; grava só com ``--apply``. A nota da etiqueta registra de onde o
 peso veio e com que base, para ninguém confundir medida com palpite.
@@ -35,23 +36,6 @@ from __future__ import annotations
 from django.core.management.base import BaseCommand
 
 from shopman.backstage.services.consumption import HYBRID, beverage_rate, sku_signal
-
-# SKU do cardápio 2027 → gêmeo no Yooga (mesmo produto, outro código). Vários
-# gêmeos = média simples dos que tiverem sinal. Curadoria pequena e visível:
-# se um nome enganar, o lugar de corrigir é aqui.
-TWINS: dict[str, tuple[str, ...]] = {
-    "CROISSANT": ("CT",),
-    "PAIN-CHOCOLAT": ("PC",),
-    "MADELEINE": ("MD",),
-    "CORNET": ("CO", "COC"),
-    "MELON-PAN": ("ME",),
-    "FENDU": ("FE",),
-    "TABATIERE": ("TB",),
-    "CIABATTA": ("CI",),
-    "MINI-BAGUETE": ("MIB",),
-    "FOLHADO-DIA": ("FF",),
-    "ANIMALZINHO": ("ANC", "JO", "ANU", "ANP"),
-}
 
 FLOOR, CEILING = 5, 95
 
@@ -98,11 +82,19 @@ class Command(BaseCommand):
         for tag in tags:
             if tag.sku in measured:
                 continue
-            candidates = list(TWINS.get(tag.sku, ()))
             # Convenção do Yooga: "M" + SKU é a variante (metade do preço) do
             # mesmo produto — sem base própria, herda do pai.
-            if not candidates and tag.sku.startswith("M") and tag.sku[1:] in measured:
-                candidates = [tag.sku[1:]]
+            #
+            # Havia aqui um mapa `TWINS` de SKU do cardápio 2027 para o gêmeo no
+            # Yooga (CROISSANT → CT). Ele existia porque os dois lados usavam
+            # códigos diferentes para o mesmo pão; desde que o catálogo passou a
+            # usar os códigos da casa, os dois lados são o MESMO SKU e cada um
+            # se mede sozinho. O mapa virou entrada inalcançável e saiu.
+            candidates = (
+                [tag.sku[1:]]
+                if tag.sku.startswith("M") and tag.sku[1:] in measured
+                else []
+            )
             twins = [t for t in candidates if t in measured]
             if not twins:
                 continue

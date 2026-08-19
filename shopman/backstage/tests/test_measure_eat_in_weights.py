@@ -60,7 +60,7 @@ def world(db):
     bev = ConsumptionRole.objects.create(ref="bebida-preparada", label="Bebida", reading=Reading.ANCHOR,
                                          beverage=Beverage.PREPARED, eat_in_weight=95)
     leva = ConsumptionRole.objects.create(ref="leva", label="Leva", reading=Reading.TAKEAWAY, eat_in_weight=5)
-    for sku, role in [("CT", hib), ("MCT", hib), ("CROISSANT", hib), ("TB", hib), ("RARO", hib),
+    for sku, role in [("CT", hib), ("MCT", hib), ("TB", hib), ("RARO", hib),
                       ("CAFE", bev), ("PAO", leva)]:
         ProductConsumptionTag.objects.create(sku=sku, role=role)
     # 10 vendas de balcão: 4 com café → média da casa 40%
@@ -99,9 +99,11 @@ def test_apply_sets_measured_inherited_and_leaves_the_rest(world):
     assert by["CT"].eat_in_weight == 48 and "peso pelo histórico" in by["CT"].note
     # TB: 0% → piso
     assert by["TB"].eat_in_weight == 5
-    # variante "M"+SKU e gêmeo do cardápio herdam do CT
+    # A herança que sobra é a do meio-preço: MCT é o mesmo croissant, sem base
+    # própria. Havia aqui um caso "CROISSANT herda de CT", do tempo em que o
+    # cardápio e o Yooga usavam códigos diferentes para o mesmo pão — o
+    # catálogo passou a usar os códigos da casa, e o gêmeo virou o próprio SKU.
     assert by["MCT"].eat_in_weight == 48 and "herdado do gêmeo CT" in by["MCT"].note
-    assert by["CROISSANT"].eat_in_weight == 48
     # base pequena fica no peso do papel; âncora e leva não são tocados
     assert by["RARO"].eat_in_weight is None
     assert by["CAFE"].eat_in_weight is None and by["PAO"].eat_in_weight is None
