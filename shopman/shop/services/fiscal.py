@@ -148,15 +148,28 @@ def _build_fiscal_items(order) -> list[dict]:
 
 
 def _products_by_sku(skus: list[str]) -> dict[str, object]:
+    """Produtos por SKU para montar o payload fiscal. A falha de leitura SOBE.
+
+    Engolir a exceção aqui (``except Exception`` → ``{}``) compunha três decisões
+    razoáveis num modo de falha péssimo: um soluço de banco fazia TODOS os itens
+    perderem o metadado fiscal; o adapter, correto, recusava item sem NCM; e o
+    handler classificava essa recusa como **terminal** — nota morta na fila,
+    sem retry, com um diagnóstico ("produto sem NCM") que mentia sobre a causa
+    ("o SELECT falhou").
+
+    São dois fatos diferentes e cada um vai para o seu lado: **NCM ausente no
+    produto** é verdade terminal (o adapter recusa em
+    ``fiscal_focusnfe._map_item``, e o pedido precisa de gente); **catálogo
+    ilegível** é transiente, e quem re-tenta transiente é quem chamou, não este
+    módulo. Como o payload é montado no fechamento do pedido (``fiscal.emit``
+    dentro do ``on_commit`` do lifecycle), deixar subir também garante que
+    nenhuma directive nasça com um retrato falso do catálogo.
+    """
     if not skus:
         return {}
-    try:
-        from shopman.offerman.models import Product
+    from shopman.offerman.models import Product
 
-        return {
-            product.sku: product
-            for product in Product.objects.filter(sku__in=set(skus)).only("sku", "unit", "metadata")
-        }
-    except Exception:
-        logger.debug("fiscal.emit: product metadata lookup failed", exc_info=True)
-        return {}
+    return {
+        product.sku: product
+        for product in Product.objects.filter(sku__in=set(skus)).only("sku", "unit", "metadata")
+    }
