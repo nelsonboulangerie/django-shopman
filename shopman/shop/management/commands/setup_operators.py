@@ -32,14 +32,24 @@ ADMIN_PASSWORD = "admin"
 
 
 def dev_badge(username: str) -> str:
-    """O código de barras do crachá de dev — previsível de propósito.
+    """O código de barras do crachá de dev — previsível, e no FORMATO da tela.
 
-    Em produção o token é sorteado e só existe impresso no crachá. Aqui ele
-    precisa ser DIGITÁVEL: sem isso, testar o leitor exigiria imprimir um
-    crachá antes de saber se o leitor funciona, e foi por isso que a leitura
-    parecia quebrada quando na verdade ninguém tinha crachá nenhum.
+    ⚠️ 24 hexadecimais, não um texto bonito. A tela de bloqueio valida o formato
+    ANTES de perguntar ao servidor (`isLikelyBadge`, 24 hex), porque é isso que
+    um leitor HID emite — e é o que impede que teclas soltas ao longo do turno
+    se somem num token falso.
+
+    A primeira versão disto era `CRACHA-<USUARIO>`, escolhida para ser digitável.
+    O servidor resolvia, e ficou provado que resolvia; a TELA descartava calada,
+    porque 11 caracteres com hífen não são 24 hex. O token nunca virava
+    requisição. Provar no servidor não prova o caminho do usuário.
+
+    Derivado do username para ser estável entre execuções: o crachá impresso
+    ontem continua valendo depois de rodar o comando de novo.
     """
-    return f"CRACHA-{username.upper()}"
+    import hashlib
+
+    return hashlib.sha256(f"shopman-dev-badge:{username}".encode()).hexdigest()[:24]
 
 #: username, nome, sobrenome, grupos, é superusuário?, identidades que ele ABSORVE
 #:
@@ -138,9 +148,15 @@ class Command(BaseCommand):
                     self.stdout.write(aviso)
 
         self.stdout.write(self.style.SUCCESS(f"setup_operators: OK (PIN {DEV_PIN} para todos)"))
-        self.stdout.write("  Crachás de dev (o código de barras é o próprio texto):")
+        self.stdout.write("  Crachás de dev (imprima em Operadores → Crachá do operador):")
         for username, *_ in CAST:
             self.stdout.write(f"    {username}: {dev_badge(username)}")
+        self.stdout.write(
+            "  ⚠️  Não dá para testar digitando nem colando, e isso é de propósito:\n"
+            "      a tela exige 24 hex com menos de 120ms entre teclas — dedo humano\n"
+            "      não chega lá, e colar não gera evento de tecla nenhum. Teste com o\n"
+            "      leitor, num crachá impresso."
+        )
 
     def _emitir_cracha(self, user, username: str) -> None:
         """Grava o hash do crachá de dev, para a leitura ter o que casar.

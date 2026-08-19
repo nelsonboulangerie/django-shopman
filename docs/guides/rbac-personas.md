@@ -126,25 +126,31 @@ qualquer permissão avulsa que alguém tenha dado à mão:
 
 | Usuário | Grupo | Entra com |
 |---|---|---|
-| `admin` | **Dono** (+ superusuário) | senha `admin`, PIN `1234`, crachá `CRACHA-ADMIN` |
+| `admin` | **Dono** (+ superusuário) | senha `admin`, PIN `1234`, crachá emitido |
 | `joyce` | **Gerente** | só PIN `1234` |
-| `fran` | **Caixa** (loja) | PIN `1234`, crachá `CRACHA-FRAN` |
-| `diofer` | **Cozinha** (produção) | PIN `1234`, crachá `CRACHA-DIOFER` |
+| `fran` | **Caixa** (loja) | PIN `1234`, crachá emitido |
+| `diofer` | **Cozinha** (produção) | PIN `1234`, crachá emitido |
 
 Serve para **consertar acesso no staging sem rodar o `seed`**, que recriaria
 catálogo e milhares de pedidos falsos. Não toca em nenhum dado de negócio.
 
-### O crachá de dev é digitável
+### O crachá NÃO se testa digitando
 
-O leitor de crachá é um teclado: ele "digita" o token e termina com Enter. Em
-produção o token é sorteado e só existe impresso. Aqui ele é previsível
-(`CRACHA-<USUARIO>`) porque, senão, testar o leitor exigiria imprimir um crachá
-**antes** de saber se o leitor funciona — foi por isso que a leitura pareceu
-quebrada por muito tempo: a máquina estava pronta e ninguém tinha crachá.
+O leitor é um teclado: ele "digita" o token depressa e termina com Enter. A tela
+só aceita **24 hexadecimais com menos de 120ms entre teclas** — as duas regras
+existem para que teclas soltas ao longo do turno não se somem num token falso.
 
-Para testar sem leitor, basta digitar o texto na tela de bloqueio e apertar
-Enter depressa (teclas separadas por mais de meio segundo recomeçam o buffer, de
-propósito, para dedo humano não virar token falso).
+⚠️ **Consequência: não dá para testar digitando nem colando.** Dedo humano não
+chega a 120ms por tecla, e colar (`Ctrl+V`) não gera evento de tecla nenhum —
+o leitor não vê nada. Quem tentar vai concluir que está quebrado.
+
+**Como testar de verdade:** imprima o crachá em *Operadores → Crachá do
+operador* e passe no leitor. O token de dev é derivado do username, então é
+estável: o crachá impresso ontem continua valendo depois de rodar o comando de
+novo.
+
+O comando imprime os tokens na saída, para conferência e para gerar o código de
+barras.
 
 ### Herança da identidade antiga
 

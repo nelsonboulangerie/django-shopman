@@ -135,8 +135,39 @@ def test_todos_saem_com_cracha_emitido(elenco):
         assert cred.badge_hash, f"{username} sem crachá"
 
 
-def test_o_cracha_de_dev_e_digitavel(elenco):
-    """Previsível de propósito: testar o leitor não pode exigir imprimir antes."""
+def test_o_cracha_de_dev_tem_o_FORMATO_QUE_A_TELA_ACEITA(elenco):
+    """24 hexadecimais — não um texto bonito.
+
+    A primeira versão era `CRACHA-<USUARIO>`, escolhida para ser digitável. O
+    servidor resolvia, e ficou provado que resolvia; a TELA descartava calada,
+    porque `isLikelyBadge` exige 24 hex e "CRACHA-FRAN" tem 11 caracteres com
+    hífen. O token nunca virava requisição.
+
+    Este teste é o par do que vive em `operator-kit/tests/components/
+    OperatorLock.test.ts`: lá se prova que a tela descarta o formato errado;
+    aqui, que o que emitimos tem o formato certo. Um sem o outro deixa o buraco
+    exatamente onde ele estava.
+    """
+    import re
+
+    for username, *_ in setup_operators.CAST:
+        token = setup_operators.dev_badge(username)
+        assert re.fullmatch(r"[0-9a-f]{24}", token), f"{username}: {token!r} não passa na tela"
+
+
+def test_o_cracha_e_estavel_entre_execucoes(elenco):
+    """O crachá impresso ontem continua valendo depois de rodar de novo."""
+    antes = setup_operators.dev_badge("fran")
+    call_command("setup_operators", "--yes", verbosity=0)
+    assert setup_operators.dev_badge("fran") == antes
+
+
+def test_cada_pessoa_tem_um_cracha_diferente(elenco):
+    tokens = {setup_operators.dev_badge(u) for u, *_ in setup_operators.CAST}
+    assert len(tokens) == len(setup_operators.CAST)
+
+
+def test_o_cracha_resolve_para_a_pessoa_certa(elenco):
     from shopman.backstage.services.operator import resolve_operator_by_badge
 
     achado = resolve_operator_by_badge(
