@@ -1,7 +1,7 @@
 # POS-CASH-DRAWER-PLAN — o caminho que abre a gaveta
 
-**Status:** em execução (2026-08-12). Nasce da seção 2 do
-[POS-HARDWARE-READINESS-HANDOFF](POS-HARDWARE-READINESS-HANDOFF.md), que
+**Status:** concluído e SUPERADO no registro (2026-08-19): o caminho físico da gaveta (agente local, pulso, abrir-na-venda) está no `main`; o **registro** de cada abertura deixou de ser `CashShift.metadata["drawer_openings"]` e virou lançamento `drawer_open` no livro do `cashman` ([ADR-022](../../decisions/adr-022-cashman-ledger.md), [CASHMAN-PLAN](../CASHMAN-PLAN.md)); `POSTerminal` virou `cashman.Terminal` (mesmas chaves de `metadata`). Mantido como histórico. Era: em execução (2026-08-12). Nasce da seção 2 do
+[POS-HARDWARE-READINESS-HANDOFF](../POS-HARDWARE-READINESS-HANDOFF.md), que
 diagnosticou o problema e descartou dois caminhos. Este plano constrói o
 terceiro.
 
