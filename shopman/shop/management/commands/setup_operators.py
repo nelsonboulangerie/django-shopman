@@ -124,13 +124,18 @@ class Command(BaseCommand):
                 PinCredential.set_for(user, DEV_PIN)
                 self._emitir_cracha(user, username)
 
-                herdadas = self._absorver(user, absorve)
+                herdadas, avisos = self._absorver(user, absorve)
 
                 verbo = "criado" if criado else "atualizado"
                 linha = f"  {username}: {verbo} → {', '.join(nomes_de_grupo)}"
                 if herdadas:
                     linha += f" (herdou o histórico de {', '.join(herdadas)})"
                 self.stdout.write(linha)
+                # Os avisos saem DEPOIS da linha da pessoa. Antes eles eram
+                # escritos de dentro do `_absorver`, ou seja, apareciam acima —
+                # e quem lia atribuía a travessia à pessoa anterior da lista.
+                for aviso in avisos:
+                    self.stdout.write(aviso)
 
         self.stdout.write(self.style.SUCCESS(f"setup_operators: OK (PIN {DEV_PIN} para todos)"))
         self.stdout.write("  Crachás de dev (o código de barras é o próprio texto):")
@@ -151,7 +156,7 @@ class Command(BaseCommand):
         cred.set_badge(dev_badge(username))
         cred.save(update_fields=["badge_hash"])
 
-    def _absorver(self, user, usernames: tuple[str, ...]) -> list[str]:
+    def _absorver(self, user, usernames: tuple[str, ...]) -> tuple[list[str], list[str]]:
         """A pessoa nova herda o histórico da conta antiga, que então some.
 
         O elenco antigo (`marina`, `ana`, `joao`) tinha permissões avulsas e
@@ -171,6 +176,7 @@ class Command(BaseCommand):
 
         User = get_user_model()
         herdadas: list[str] = []
+        avisos: list[str] = []
 
         for antigo_nome in usernames:
             antigo = User.objects.filter(username=antigo_nome).first()
@@ -186,14 +192,14 @@ class Command(BaseCommand):
                     # recusaria) e herdar PIN alheio seria pior ainda.
                     modelo.objects.filter(**{campo: antigo}).delete()
                     continue
-                self._reatribuir(modelo, campo, antigo, user)
+                avisos.extend(self._reatribuir(modelo, campo, antigo, user))
 
             antigo.delete()
             herdadas.append(antigo_nome)
 
-        return herdadas
+        return herdadas, avisos
 
-    def _reatribuir(self, modelo, campo: str, antigo, novo) -> None:
+    def _reatribuir(self, modelo, campo: str, antigo, novo) -> list[str]:
         """Troca o dono das linhas — inclusive nos livros IMUTÁVEIS.
 
         `stockman.Move` (e os livros que seguem o mesmo padrão) recusam
@@ -213,14 +219,24 @@ class Command(BaseCommand):
         """
         from django.db.models import QuerySet
 
-        alvo = modelo.objects.filter(**{campo: antigo})
+        # CONTAR ANTES. O `update()` do livro imutável levanta sem olhar se há
+        # linha, então tentar-e-avisar anunciava travessia que nunca houve — o
+        # log dizia "livro imutável reatribuído" para uma pessoa que herdou
+        # zero lançamentos. Numa auditoria, isso é pior que não avisar.
+        quantas = modelo.objects.filter(**{campo: antigo}).count()
+        if not quantas:
+            return []
+
         try:
-            alvo.update(**{campo: novo})
+            modelo.objects.filter(**{campo: antigo}).update(**{campo: novo})
+            return []
         except ValueError:
             # O manager do modelo é que recusa; um QuerySet cru fala com a
             # tabela sem passar pela guarda. Explícito para o leitor saber que
             # a exceção foi lida e não engolida.
             QuerySet(model=modelo).filter(**{campo: antigo}).update(**{campo: novo})
-            self.stdout.write(
-                f"    ⚠️  {modelo._meta.label}.{campo}: livro imutável reatribuído (dev/staging)"
-            )
+            linhas = "linha" if quantas == 1 else "linhas"
+            return [
+                f"    ⚠️  {modelo._meta.label}.{campo}: {quantas} {linhas} "
+                f"de livro imutável reatribuídas (dev/staging)"
+            ]

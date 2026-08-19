@@ -199,3 +199,54 @@ def test_sem_conta_antiga_nada_acontece():
 
     assert get_user_model().objects.filter(username="joyce").exists()
     assert not get_user_model().objects.filter(username="marina").exists()
+
+
+# ── O log não pode mentir ──────────────────────────────────────────────────
+
+
+@pytest.mark.django_db
+def test_nao_anuncia_travessia_de_livro_imutavel_que_nao_houve(capsys):
+    """Herdar NADA não pode logar "livro imutável reatribuído".
+
+    O `update()` do livro imutável levanta sem olhar se há linha, então
+    tentar-e-avisar anunciava travessia que nunca houve. Numa auditoria isso é
+    pior que não avisar: quem lê acredita que a trilha do caixa foi reescrita.
+    """
+    get_user_model().objects.create_user(username="marina", password="x", is_staff=True)
+
+    call_command("setup_operators", "--yes")
+
+    assert "livro imutável" not in capsys.readouterr().out
+
+
+@pytest.mark.django_db
+def test_anuncia_a_travessia_quando_ela_ACONTECE(capsys):
+    """E quando há linha de verdade, diz quantas — o número é a prova."""
+    from shopman.cashman.models import Entry, Shift, Terminal
+
+    antiga = get_user_model().objects.create_user(username="marina", password="x", is_staff=True)
+    turno = Shift.objects.create(terminal=Terminal.default(), operator=antiga)
+    Entry.objects.create(shift=turno, operator=antiga, kind=Entry.Kind.DRAWER_OPEN, amount_q=0)
+
+    call_command("setup_operators", "--yes")
+    saida = capsys.readouterr().out
+
+    assert "1 linha de livro imutável reatribuída" in saida
+    assert "cashman.Entry.operator" in saida
+
+
+@pytest.mark.django_db
+def test_o_aviso_sai_DEPOIS_da_pessoa_a_quem_pertence(capsys):
+    """Antes ele saía acima, e o leitor atribuía a travessia à pessoa anterior."""
+    from shopman.cashman.models import Entry, Shift, Terminal
+
+    antiga = get_user_model().objects.create_user(username="marina", password="x", is_staff=True)
+    turno = Shift.objects.create(terminal=Terminal.default(), operator=antiga)
+    Entry.objects.create(shift=turno, operator=antiga, kind=Entry.Kind.DRAWER_OPEN, amount_q=0)
+
+    call_command("setup_operators", "--yes")
+    linhas = [ln for ln in capsys.readouterr().out.splitlines() if ln.strip()]
+
+    idx_joyce = next(i for i, ln in enumerate(linhas) if ln.strip().startswith("joyce:"))
+    idx_aviso = next(i for i, ln in enumerate(linhas) if "livro imutável" in ln)
+    assert idx_aviso > idx_joyce
