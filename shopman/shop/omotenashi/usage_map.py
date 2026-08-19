@@ -396,6 +396,10 @@ USAGE: dict[str, tuple[tuple[str, str, str], ...]] = {
         ("shopman/backstage/presentation/status.py", "Operador", "Rótulos de status"),
         ("shopman/storefront/presentation/status.py", "Loja", "Rótulos de status"),
     ),
+    "PAYMENT_METHOD_ACCOUNT": (
+        ("shopman/backstage/presentation/status.py", "Operador", "Rótulos de status"),
+        ("shopman/storefront/presentation/status.py", "Loja", "Rótulos de status"),
+    ),
     "PAYMENT_METHOD_CARD": (
         ("shopman/backstage/presentation/status.py", "Operador", "Rótulos de status"),
         ("shopman/storefront/presentation/status.py", "Loja", "Rótulos de status"),
@@ -407,9 +411,6 @@ USAGE: dict[str, tuple[tuple[str, str, str], ...]] = {
     "PAYMENT_METHOD_EXTERNAL": (
         ("shopman/backstage/presentation/status.py", "Operador", "Rótulos de status"),
         ("shopman/storefront/presentation/status.py", "Loja", "Rótulos de status"),
-    ),
-    "PAYMENT_METHOD_ACCOUNT": (
-        ("shopman/backstage/presentation/status.py", "Operador", "Rótulos de status"),
     ),
     "PAYMENT_METHOD_MIXED": (
         ("shopman/backstage/presentation/status.py", "Operador", "Rótulos de status"),

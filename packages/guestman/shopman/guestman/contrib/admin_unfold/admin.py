@@ -31,7 +31,7 @@ from shopman.utils.contrib.admin_unfold.base import BaseModelAdmin, BaseTabularI
 from taggit.managers import TaggableManager
 from unfold.contrib.filters.admin.dropdown_filters import ChoicesDropdownFilter
 from unfold.decorators import display
-from unfold.widgets import UnfoldAdminRadioSelectWidget, UnfoldAdminTextInputWidget
+from unfold.widgets import UnfoldAdminRadioSelectWidget, UnfoldAdminTextInputWidget, UnfoldBooleanSwitchWidget
 
 # Unregister basic admins
 for model in [Customer, PriceTier, CustomerAddress, ContactPoint, ExternalIdentity]:
@@ -228,6 +228,7 @@ class CustomerForm(forms.ModelForm):
     house_account = forms.BooleanField(
         label=_("Conta na casa"),
         required=False,
+        widget=UnfoldBooleanSwitchWidget,
         help_text=_("O cliente pode comprar \"em conta\" no PDV e acertar por período. Não se divulga; é por cliente."),
     )
 

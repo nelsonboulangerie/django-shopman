@@ -453,7 +453,8 @@ def refund(
     # intent_ref cai no mesmo laço.
     # Venda em conta cancelada: a dívida morre com ela (authorized → cancelled).
     # Não é estorno (nada foi pago); é o intent deixando de contar no saldo.
-    _cancel_open_account_intents(order)
+    if _pays_on_account(payment_data):
+        _cancel_open_account_intents(order)
     intents = [pair for pair in _refundable_intents(order, payment_data=payment_data) if pair[0] != "cash"]
     remaining_q = amount_q
     for method, intent_ref in intents:
@@ -471,6 +472,16 @@ def refund(
         )
         if remaining_q is not None:
             remaining_q -= refunded_q
+
+
+def _pays_on_account(payment_data: dict) -> bool:
+    if str(payment_data.get("method") or "").lower() == "account":
+        return True
+    return any(
+        str(t.get("method") or "").lower() == "account"
+        for t in (payment_data.get("tenders") or [])
+        if isinstance(t, dict)
+    )
 
 
 def _cancel_open_account_intents(order) -> None:
