@@ -53,13 +53,15 @@ class MaterialSkuValidator:
                 )
         return result
 
-    def get_sku_info(self, sku: str):
-        from shopman.buyman.models import Material
+    def _to_sku_info(self, material):
+        """Um insumo, visto pelo contrato de SKU do Stockman.
+
+        Fonte única dos dez campos: `get_sku_info`, `get_sku_infos` e
+        `search_skus` respondem pela MESMA construção, então não existe o dia em
+        que alguém atualiza duas cópias e esquece a terceira.
+        """
         from shopman.stockman.protocols.sku import SkuInfo
 
-        material = Material.objects.filter(sku=sku).first()
-        if material is None:
-            return None
         return SkuInfo(
             sku=material.sku,
             name=material.name,
@@ -74,56 +76,31 @@ class MaterialSkuValidator:
             metadata=material.metadata or None,
         )
 
+    def get_sku_info(self, sku: str):
+        from shopman.buyman.models import Material
+
+        material = Material.objects.filter(sku=sku).first()
+        if material is None:
+            return None
+        return self._to_sku_info(material)
+
     def get_sku_infos(self, skus: list[str]) -> dict:
         from shopman.buyman.models import Material
-        from shopman.stockman.protocols.sku import SkuInfo
 
         found = {m.sku: m for m in Material.objects.filter(sku__in=skus)}
-        result: dict = {}
-        for sku in skus:
-            material = found.get(sku)
-            if material is None:
-                result[sku] = None
-            else:
-                result[sku] = SkuInfo(
-                    sku=material.sku,
-                    name=material.name,
-                    description=None,
-                    is_published=material.is_active,
-                    is_sellable=False,
-                    unit=material.unit,
-                    category="insumo",
-                    base_price_q=None,
-                    availability_policy="planned_ok",
-                    shelflife_days=material.shelf_life_days,
-                    metadata=material.metadata or None,
-                )
-        return result
+        return {
+            sku: (self._to_sku_info(found[sku]) if sku in found else None)
+            for sku in skus
+        }
 
     def search_skus(self, query: str, limit: int = 20, include_inactive: bool = False) -> list:
         from django.db.models import Q
         from shopman.buyman.models import Material
-        from shopman.stockman.protocols.sku import SkuInfo
 
         qs = Material.objects.filter(Q(sku__icontains=query) | Q(name__icontains=query))
         if not include_inactive:
             qs = qs.filter(is_active=True)
-        return [
-            SkuInfo(
-                sku=m.sku,
-                name=m.name,
-                description=None,
-                is_published=m.is_active,
-                is_sellable=False,
-                unit=m.unit,
-                category="insumo",
-                base_price_q=None,
-                availability_policy="planned_ok",
-                shelflife_days=m.shelf_life_days,
-                metadata=m.metadata or None,
-            )
-            for m in qs[:limit]
-        ]
+        return [self._to_sku_info(m) for m in qs[:limit]]
 
 
 _lock = threading.Lock()

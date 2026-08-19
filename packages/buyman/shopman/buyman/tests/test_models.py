@@ -33,10 +33,19 @@ class TestSupplierMaterialCost:
         s1 = Supplier.objects.create(ref="SUP-A", name="A")
         s2 = Supplier.objects.create(ref="SUP-B", name="B")
         m = Material.objects.create(sku="FARINHA", name="Farinha")
+        first = SupplierMaterialCost.objects.create(supplier=s1, material=m, cost_q=350, is_preferred=True)
+        # marking a second one promotes it and demotes the first (same transaction)
+        SupplierMaterialCost.objects.create(supplier=s2, material=m, cost_q=300, is_preferred=True)
+        first.refresh_from_db()
+        assert first.is_preferred is False
+        assert SupplierMaterialCost.objects.filter(material=m, is_preferred=True).count() == 1
+
+    def test_db_still_refuses_two_preferred_when_save_is_bypassed(self):
+        """A promoção é do model; a unicidade continua sendo do banco."""
+        s1 = Supplier.objects.create(ref="SUP-A", name="A")
+        s2 = Supplier.objects.create(ref="SUP-B", name="B")
+        m = Material.objects.create(sku="FARINHA", name="Farinha")
         SupplierMaterialCost.objects.create(supplier=s1, material=m, cost_q=350, is_preferred=True)
-        # second preferred for the same material is rejected
+        alternative = SupplierMaterialCost.objects.create(supplier=s2, material=m, cost_q=300)
         with pytest.raises(IntegrityError), transaction.atomic():
-            SupplierMaterialCost.objects.create(supplier=s2, material=m, cost_q=300, is_preferred=True)
-        # but a non-preferred second cost is fine
-        cost = SupplierMaterialCost.objects.create(supplier=s2, material=m, cost_q=300)
-        assert cost.pk is not None
+            SupplierMaterialCost.objects.filter(pk=alternative.pk).update(is_preferred=True)

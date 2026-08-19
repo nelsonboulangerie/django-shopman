@@ -866,7 +866,9 @@ SPECTACULAR_SETTINGS = {
 
 OFFERMAN = {
     # Seam de leitura do Offerman (Product.reference_cost_q/margin_percent); None
-    # até existir um provedor real de custo (ex.: adapter no Craftsman via receita).
+    # até existir um provedor real de custo. Ele vai compor receita (Craftsman) com
+    # custo de insumo (Buyman), então nasce aqui no orquestrador — depois da decisão
+    # em docs/decisions/adr-023-cost-live-and-frozen.md.
     "COST_BACKEND": None,
     "PRICING_BACKEND": "shopman.shop.adapters.pricing.PromotionPricingBackend",
     # Canonical catalog projection registry (env-gated above).

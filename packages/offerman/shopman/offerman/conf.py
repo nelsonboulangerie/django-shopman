@@ -5,7 +5,10 @@ Usage in settings.py:
     OFFERMAN = {
         "MAX_COLLECTION_DEPTH": 10,
         "BUNDLE_MAX_DEPTH": 5,
-        "COST_BACKEND": None,  # e.g. "shopman.craftsman.adapters.catalog.CraftingCostBackend"
+        # Nenhum provedor de custo existe ainda; o backend composto (receita ×
+        # custo de insumo) vive no orquestrador e será escrito depois da decisão
+        # em docs/decisions/adr-023-cost-live-and-frozen.md.
+        "COST_BACKEND": None,
         "PRICING_BACKEND": None,  # e.g. "framework.shopman.adapters.pricing.StorefrontPricingBackend"
         "PROJECTION_BACKENDS": {},  # e.g. {"ifood": "myproj.offers.iFoodProjectionBackend"}
     }

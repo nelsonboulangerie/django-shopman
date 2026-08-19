@@ -48,3 +48,24 @@ class TestMaterialSkuValidator:
         v = MaterialSkuValidator()
         assert v.validate_sku("SAL").valid is True
         assert v.validate_sku("NOPE").valid is False
+
+    def test_as_tres_portas_respondem_a_mesma_coisa(self):
+        """`get_sku_info`, `get_sku_infos` e `search_skus` saem de `_to_sku_info`.
+
+        Trava a fonte única: divergir uma das três passa a quebrar aqui.
+        """
+        pytest.importorskip("shopman.stockman")
+        from shopman.buyman.adapters.sku_validator import MaterialSkuValidator
+
+        Material.objects.create(
+            sku="CHOCOLATE-70", name="Chocolate amargo 70%", unit="kg",
+            shelf_life_days=365, metadata={"diet": "vegan"},
+        )
+        v = MaterialSkuValidator()
+
+        singular = v.get_sku_info("CHOCOLATE-70")
+        plural = v.get_sku_infos(["CHOCOLATE-70"])["CHOCOLATE-70"]
+        found = next(i for i in v.search_skus("CHOCOLATE") if i.sku == "CHOCOLATE-70")
+
+        assert singular == plural == found
+        assert v.get_sku_infos(["NOPE"]) == {"NOPE": None}
