@@ -122,7 +122,7 @@ Cada fase é útil sozinha e nenhuma exige a seguinte.
   `is_approximate`. O Admin mostra os dois números lado a lado — "R$ 180,00 / saco 25 kg"
   e "R$ 7,20 / kg" — e o `≈` aparece quando o segundo veio de ponte aproximada.
 
-### Fase 4 — a anotação de preparo (requisito do dono)
+### Fase 4 — a anotação de preparo (requisito do dono) · ✅ concluída
 
 - `MiseEnPlaceLineProjection` (`shopman/backstage/projections/production.py`) ganha a
   anotação derivada: `300 g · ≈ 6 ovos`, calculada na hora do fator `approximate` do
@@ -131,8 +131,24 @@ Cada fase é útil sozinha e nenhuma exige a seguinte.
 - O `≈` **só** aparece quando o número passou por fator aproximado. Número exato não
   ganha enfeite.
 - Depende só da Fase 2.
+- **Como ficou:** `MiseEnPlaceLineProjection.annotation` (string vazia quando o insumo
+  não tem conversão de contagem declarada), regenerada no contrato da superfície e
+  exibida sob a quantidade em `surfaces/production-nuxt/app/pages/mise-en-place.vue`.
+  Duas escolhas que o plano não especificava e a bancada resolve:
+  - **só conversões sem fornecedor** entram na anotação — na bancada não há fornecedor
+    em contexto, e a equivalência física é do insumo, não de quem vende;
+  - quando o insumo tem mais de uma, **vence a de menor fator**: quem separa conta ovo
+    na mão, não 0,2 cartela.
+  Anotação nunca trava a lista: unidade que não alcança a base devolve `""` em vez de
+  erro.
 
-### Fase 5 — a entrada carimbada (recebimento)
+### Fase 5 — a entrada carimbada (recebimento) · ⏳ aberta
+
+> **Por que não entrou com as Fases 1–4:** depende da Fase 3 do
+> [BUYMAN-PROCUREMENT-PLAN](BUYMAN-PROCUREMENT-PLAN.md) — hoje `Move.Kind.BUY` não tem
+> emissor nenhum, então o carimbo não teria onde ser posto. É também aqui que entra a
+> recusa por **rótulo não cadastrado** (R4 com "cadastre a conversão X"), porque é o
+> recebimento quem digita rótulo.
 
 - O recebimento converte para a base pela conversão declarada e grava
   `Move.metadata["converted_via"] = {"label", "factor", "approximate"}` — o JSONField já
@@ -142,7 +158,12 @@ Cada fase é útil sozinha e nenhuma exige a seguinte.
 - Casa com a **Fase 3 do BUYMAN-PROCUREMENT-PLAN** (recebimento → `stock.receive` com
   `kind=BUY`), que é quando `Move.Kind.BUY` finalmente ganha um emissor.
 
-### Fase 6 — a NF-e de entrada preenche a tabela sozinha
+### Fase 6 — a NF-e de entrada preenche a tabela sozinha · ⏳ aberta
+
+> **Por que não entrou com as Fases 1–4:** depende dos 5 a 10 XMLs de NF-e de entrada
+> que o dono ainda vai providenciar (ADR-024 §Evidência 4). Sem eles, o vocabulário de
+> `uCom` seria adivinhado — que é exatamente o que esta frente inteira existe para não
+> fazer.
 
 - Ingestão de XML **por arquivo** (dado externo entra por arquivo — convenção da casa):
   `uCom`/`qCom`/`vUnCom` + `uTrib`/`qTrib`/`vUnTrib` viram, respectivamente, a linha de
@@ -179,7 +200,7 @@ com a tabela ainda vazia.)
 | 1 | ida e volta sem perda; par sem caminho **levanta** ✅ |
 | 2 | fator ≤ 0 recusado; rótulo duplicado recusado; aproximada não passa por exata ✅ |
 | 3 | custo por base derivado com precisão; conversão incoerente (outro insumo / outro fornecedor / inativa) **recusa** ✅ |
-| 4 | anotação derivada muda quando o fator muda, sem tocar na ficha |
+| 4 | anotação derivada muda quando o fator muda, sem tocar na ficha ✅ |
 | 5 | `Move` de entrada carrega `converted_via`; saldo aproximado sinalizado |
 | 6 | XML de exemplo vira sugestão de conversão + custo, sem gravar sozinho |
 

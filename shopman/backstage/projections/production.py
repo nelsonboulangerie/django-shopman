@@ -19,6 +19,8 @@ from django.utils import timezone
 from shopman.craftsman import craft
 from shopman.craftsman.models import Recipe, RecipeItem, WorkOrder
 from shopman.stockman import Position
+from shopman.utils import units
+from shopman.utils.units import UnitError
 
 from shopman.backstage.presentation.status import order_status_label
 
@@ -280,6 +282,11 @@ class MiseEnPlaceLineProjection:
     available_display: str  # "" quando o ledger de insumos não tem leitura
     is_short: bool
     breakdown: tuple[MiseEnPlaceBreakdownProjection, ...]
+    # "≈ 6 ovos" — o mesmo peso dito na contagem que a bancada usa. Derivada da
+    # conversão declarada no insumo, NUNCA gravada: corrigir o fator (o ovo do
+    # fornecedor novo é jumbo) atualiza toda lista de separação sozinho. "" quando
+    # o insumo não tem conversão de contagem declarada.
+    annotation: str
 
 
 @dataclass(frozen=True)
@@ -905,6 +912,7 @@ def build_production_mise_en_place(
     }
     product_names = _product_names(skus)
     availability = _ingredient_availability(skus)
+    conversions = _counting_conversions(skus)
 
     lines = []
     for need in needs:
@@ -923,6 +931,9 @@ def build_production_mise_en_place(
                 available_display=_measure(available, need.unit) if available is not None else "",
                 is_short=bool(available is not None and available < need.quantity),
                 breakdown=tuple(breakdown_by_sku.get(need.item_ref, ())),
+                annotation=_preparation_annotation(
+                    need.quantity, need.unit, conversions.get(need.item_ref)
+                ),
             )
         )
     lines.sort(key=lambda line: (not line.is_subrecipe, line.name.lower()))
@@ -1090,6 +1101,73 @@ def _blind_window(selected_date: date) -> tuple[date, date, date]:
         return start + timedelta(days=delta)
 
     return (step(selected_date, -1), selected_date, step(selected_date, 1))
+
+
+@dataclass(frozen=True)
+class _CountingConversion:
+    """A conversão que ajuda quem separa: rótulo, fator e a base do insumo."""
+
+    label: str
+    factor: Decimal
+    base_unit: str
+    is_approximate: bool
+
+
+def _counting_conversions(skus: set[str]) -> dict[str, _CountingConversion]:
+    """Conversão de contagem por insumo — dict vazio quando o Buyman não responde.
+
+    Só conversões **ativas e sem fornecedor**: na bancada não há fornecedor em
+    contexto, e a equivalência física ("1 ovo ≈ 50 g") é do insumo, não de quem
+    vende. Quando o insumo tem mais de uma, vence a de **menor fator** — a
+    unidade mais fina é a que se conta na mão ("ovo", não "caixa com 360").
+    """
+    if not skus:
+        return {}
+    try:
+        from shopman.buyman.models import MaterialConversion
+
+        rows = (
+            MaterialConversion.objects.filter(
+                material__sku__in=skus, is_active=True, supplier__isnull=True,
+            )
+            .select_related("material")
+            .order_by("material__sku", "to_base_factor", "label")
+        )
+        conversions: dict[str, _CountingConversion] = {}
+        for row in rows:
+            conversions.setdefault(
+                row.material.sku,
+                _CountingConversion(
+                    label=row.label,
+                    factor=Decimal(row.to_base_factor),
+                    base_unit=row.material.unit,
+                    is_approximate=row.is_approximate,
+                ),
+            )
+        return conversions
+    except Exception:
+        logger.debug("production.mise_en_place_conversions_failed", exc_info=True)
+        return {}
+
+
+def _preparation_annotation(
+    quantity: Decimal, unit: str, conversion: _CountingConversion | None
+) -> str:
+    """O mesmo número dito na contagem da bancada — "≈ 6 ovos".
+
+    O ``≈`` só entra quando o fator é aproximado; número exato não ganha
+    enfeite (ADR-024, R3). Sem conversão declarada, ou quando a unidade da ficha
+    não alcança a base do insumo, devolve ``""``: a lista de separação nunca
+    trava por causa de uma anotação.
+    """
+    if conversion is None or conversion.factor <= 0:
+        return ""
+    try:
+        quantity_in_base = units.convert(quantity, unit, conversion.base_unit)
+    except UnitError:
+        return ""
+    prefix = "≈ " if conversion.is_approximate else ""
+    return f"{prefix}{_measure(quantity_in_base / conversion.factor, conversion.label)}"
 
 
 def _ingredient_availability(skus: set[str]) -> dict[str, Decimal]:

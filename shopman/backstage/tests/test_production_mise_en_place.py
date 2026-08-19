@@ -165,6 +165,133 @@ class TestMiseEnPlaceAvailability:
         assert not sal.available_display or sal.available_display == "0 kg"
 
 
+class TestMiseEnPlaceAnnotation:
+    """A anotação de preparo — "300 g" dito como "≈ 6 ovos" (ADR-024 §4).
+
+    Derivada na hora do fator declarado no insumo, nunca gravada: corrigir o
+    fator atualiza toda lista de separação sozinho.
+    """
+
+    @pytest.fixture
+    def ovos(self, db):
+        from shopman.buyman.models import Material
+
+        return Material.objects.create(sku="OVOS", name="Ovos", unit="kg")
+
+    @pytest.fixture
+    def madeleine(self, db):
+        recipe = Recipe.objects.create(
+            ref="madeleine", name="Madeleine", output_sku="MD", batch_size=24
+        )
+        RecipeItem.objects.create(
+            recipe=recipe, input_sku="OVOS", quantity="0.300", unit="kg"
+        )
+        return recipe
+
+    def _line(self, sku="OVOS"):
+        projection = build_production_mise_en_place(selected_date=date.today())
+        return next(line for line in projection.lines if line.sku == sku)
+
+    def test_without_a_declared_conversion_there_is_no_annotation(self, ovos, madeleine):
+        craft.plan(madeleine, 24, date=date.today())
+        line = self._line()
+        assert line.quantity_display == "0,3 kg"
+        assert line.annotation == ""
+
+    def test_approximate_factor_annotates_with_the_tilde(self, ovos, madeleine):
+        from shopman.buyman.models import MaterialConversion
+
+        MaterialConversion.objects.create(
+            material=ovos, label="ovos", to_base_factor=Decimal("0.05"),
+            kind=MaterialConversion.Kind.APPROXIMATE,
+        )
+        craft.plan(madeleine, 24, date=date.today())
+
+        line = self._line()
+        assert line.quantity_display == "0,3 kg"
+        assert line.annotation == "≈ 6 ovos"
+
+    def test_conventional_factor_does_not_get_the_tilde(self, ovos, madeleine):
+        from shopman.buyman.models import MaterialConversion
+
+        MaterialConversion.objects.create(
+            material=ovos, label="potes de 100 g", to_base_factor=Decimal("0.1"),
+        )
+        craft.plan(madeleine, 24, date=date.today())
+        assert self._line().annotation == "3 potes de 100 g"
+
+    def test_fixing_the_factor_updates_the_list_without_touching_the_sheet(
+        self, ovos, madeleine
+    ):
+        from shopman.buyman.models import MaterialConversion
+
+        conversion = MaterialConversion.objects.create(
+            material=ovos, label="ovos", to_base_factor=Decimal("0.05"),
+            kind=MaterialConversion.Kind.APPROXIMATE,
+        )
+        craft.plan(madeleine, 24, date=date.today())
+        assert self._line().annotation == "≈ 6 ovos"
+
+        # O fornecedor novo manda ovo jumbo: 60 g cada.
+        conversion.to_base_factor = Decimal("0.06")
+        conversion.save()
+
+        item = RecipeItem.objects.get(recipe=madeleine, input_sku="OVOS")
+        assert item.quantity == Decimal("0.300")  # a ficha não foi tocada
+        assert self._line().annotation == "≈ 5 ovos"
+
+    def test_the_finest_conversion_wins(self, ovos, madeleine):
+        from shopman.buyman.models import MaterialConversion
+
+        MaterialConversion.objects.create(
+            material=ovos, label="cartelas", to_base_factor=Decimal("1.5"),
+            kind=MaterialConversion.Kind.APPROXIMATE,
+        )
+        MaterialConversion.objects.create(
+            material=ovos, label="ovos", to_base_factor=Decimal("0.05"),
+            kind=MaterialConversion.Kind.APPROXIMATE,
+        )
+        craft.plan(madeleine, 24, date=date.today())
+        # Quem separa conta ovo na mão, não 0,2 cartela.
+        assert self._line().annotation == "≈ 6 ovos"
+
+    def test_supplier_scoped_conversion_is_not_read_on_the_bench(self, ovos, madeleine):
+        from shopman.buyman.models import MaterialConversion, Supplier
+
+        granja = Supplier.objects.create(ref="SUP-GRANJA", name="Granja")
+        MaterialConversion.objects.create(
+            material=ovos, supplier=granja, label="ovos", to_base_factor=Decimal("0.05"),
+            kind=MaterialConversion.Kind.APPROXIMATE,
+        )
+        craft.plan(madeleine, 24, date=date.today())
+        # Na bancada não há fornecedor em contexto — a linha dele não vale aqui.
+        assert self._line().annotation == ""
+
+    def test_inactive_conversion_is_ignored(self, ovos, madeleine):
+        from shopman.buyman.models import MaterialConversion
+
+        MaterialConversion.objects.create(
+            material=ovos, label="ovos", to_base_factor=Decimal("0.05"),
+            kind=MaterialConversion.Kind.APPROXIMATE, is_active=False,
+        )
+        craft.plan(madeleine, 24, date=date.today())
+        assert self._line().annotation == ""
+
+    def test_subrecipe_has_no_annotation(self, pao):
+        massa = Recipe.objects.create(
+            ref="massa-base", name="Massa Base", output_sku="MASSA-BASE", batch_size=1
+        )
+        RecipeItem.objects.create(recipe=massa, input_sku="FARINHA", quantity="0.5", unit="kg")
+        croissant = Recipe.objects.create(
+            ref="croissant", name="Croissant", output_sku="CROISSANT", batch_size=10
+        )
+        RecipeItem.objects.create(
+            recipe=croissant, input_sku="MASSA-BASE", quantity="2", unit="kg"
+        )
+        craft.plan(croissant, 10, date=date.today())
+        assert self._line("MASSA-BASE").annotation == ""
+
+
 class TestMiseEnPlaceAPI:
     def test_endpoint_returns_projection(self, pao):
         craft.plan(pao, 10, date=date.today())

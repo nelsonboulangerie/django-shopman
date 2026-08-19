@@ -238,6 +238,7 @@ export interface MiseEnPlaceLineProjection {
   available_display: string;
   is_short: boolean;
   breakdown: MiseEnPlaceBreakdownProjection[];
+  annotation: string;
 }
 
 /** Aggregated material needs for the day's open work orders. */

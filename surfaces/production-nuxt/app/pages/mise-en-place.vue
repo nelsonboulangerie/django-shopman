@@ -338,6 +338,14 @@ function refreshAll() {
                     </td>
                     <td class="px-3 py-2 text-right font-semibold tabular-nums">
                       {{ line.quantity_display }}
+                      <!-- O mesmo peso dito na contagem da bancada. O "≈" vem do
+                           servidor quando o fator é aproximado; aqui só se mostra. -->
+                      <p
+                        v-if="line.annotation"
+                        class="text-xs font-normal text-muted-foreground"
+                      >
+                        {{ line.annotation }}
+                      </p>
                     </td>
                     <td
                       v-if="projection?.has_stock_readings"
