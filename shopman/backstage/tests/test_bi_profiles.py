@@ -48,13 +48,15 @@ from shopman.backstage.services.hour_bands import HOUR_BANDS, band_for
 @pytest.fixture
 def roles(db):
     return {
-        ref: ConsumptionRole.objects.create(ref=ref, label=ref, reading=reading, beverage=bev)
-        for ref, reading, bev in [
-            ("bebida-preparada", Reading.ANCHOR, Beverage.PREPARED),
-            ("bebida-pronta", Reading.ANCHOR, Beverage.READY),
-            ("consome-aqui", Reading.ANCHOR, Beverage.NONE),
-            ("leva", Reading.TAKEAWAY, Beverage.NONE),
-            ("hibrido", Reading.HYBRID, Beverage.NONE),
+        ref: ConsumptionRole.objects.create(
+            ref=ref, label=ref, reading=reading, beverage=bev, eat_in_weight=weight
+        )
+        for ref, reading, bev, weight in [
+            ("bebida-preparada", Reading.ANCHOR, Beverage.PREPARED, 95),
+            ("bebida-pronta", Reading.ANCHOR, Beverage.READY, 95),
+            ("consome-aqui", Reading.ANCHOR, Beverage.NONE, 95),
+            ("leva", Reading.TAKEAWAY, Beverage.NONE, 5),
+            ("hibrido", Reading.HYBRID, Beverage.NONE, 50),
         ]
     }
 
@@ -104,6 +106,7 @@ def _basket(lines, *, is_delivery=False):
     facts = rule.sku_facts()
     readings = {k: f.reading for k, f in facts.items()}
     beverages = {k: f.beverage for k, f in facts.items()}
+    weights = {k: f.weight for k, f in facts.items()}
     return rule.Basket(
         source="yooga", sale_id=0, local=_local(1, 10), total_q=0, is_delivery=is_delivery,
         channel="", lines=tuple(
@@ -112,6 +115,7 @@ def _basket(lines, *, is_delivery=False):
                 reading=rule.reading_for(sku, category, readings, name=name),
                 beverage=rule.beverage_for(sku, category, beverages, name=name),
                 qty=Decimal(1), line_total_q=100,
+                weight=rule.weight_for(sku, category, weights, name=name),
             )
             for sku, name, category in lines
         ),
@@ -191,6 +195,62 @@ def test_beverage_role_reads_like_consome_aqui(roles):
     assert before == after == rule.DINE_IN  # PAO sem etiqueta neste teste
 
 
+# ── A leitura em graus: o peso ───────────────────────────────────────────────
+
+
+@pytest.mark.django_db
+def test_the_biggest_weight_in_the_basket_decides(tagged):
+    """P(sentou) é o MAIOR peso, não o produto: café + croissant é o café falando."""
+    assert _basket([("CAFE", "Café", "")]).eat_in_probability() == 0.95
+    assert _basket([("PAO", "Pão", "")]).eat_in_probability() == 0.05
+    assert _basket([("CROISSANT", "Croissant", "")]).eat_in_probability() == 0.5
+    assert _basket([("CAFE", "Café", ""), ("CROISSANT", "Croissant", "")]).eat_in_probability() == 0.95
+    assert _basket([("PAO", "Pão", ""), ("CROISSANT", "Croissant", "")]).eat_in_probability() == 0.5
+    # três croissants não são mais "sentado" do que um: contagem não é evidência
+    assert _basket([("CROISSANT", "Croissant", "")] * 3).eat_in_probability() == 0.5
+
+
+@pytest.mark.django_db
+def test_delivery_is_zero_and_unweighted_is_unknown(tagged):
+    assert _basket([("CAFE", "Café", "")], is_delivery=True).eat_in_probability() == 0.0
+    assert _basket([("XPTO", "Novo", "")]).eat_in_probability() is None
+    assert _basket([]).eat_in_probability() is None
+
+
+@pytest.mark.django_db
+def test_sku_weight_overrides_the_role_weight(roles):
+    """O papel dá o peso de partida; o SKU pode dizer o seu."""
+    tag = ProductConsumptionTag.objects.create(sku="CROISSANT", role=roles["hibrido"])
+    assert _basket([("CROISSANT", "Croissant", "")]).eat_in_probability() == 0.5
+    tag.eat_in_weight = 35
+    tag.save()
+    assert _basket([("CROISSANT", "Croissant", "")]).eat_in_probability() == 0.35
+    # e mudar o peso do papel move todos os que herdam dele
+    roles["hibrido"].eat_in_weight = 60
+    roles["hibrido"].save()
+    ProductConsumptionTag.objects.create(sku="MADELEINE", role=roles["hibrido"])
+    assert _basket([("MADELEINE", "Madeleine", "")]).eat_in_probability() == 0.6
+    assert _basket([("CROISSANT", "Croissant", "")]).eat_in_probability() == 0.35  # o SKU vence
+
+
+@pytest.mark.django_db
+def test_category_gives_a_starting_weight_to_lines_without_tag(tagged):
+    lines = _basket([("", "Espresso Duplo", "Cafés"), ("", "Baguete", "Pães Rústicos"),
+                     ("", "Chausson", "Pães Finos"), ("", "Coisa", "")]).lines
+    assert [line.weight for line in lines] == [95, 5, 50, None]
+
+
+@pytest.mark.django_db
+def test_sku_signal_tells_what_history_knows(week):
+    signal = rule.sku_signal("PAO")
+    # PAO em duas vendas de balcão (a entrega fica fora): café+pão e pão sozinho
+    assert signal.sales == 2 and signal.with_beverage_pct == 50
+    assert signal.alone_pct == 50 and signal.bulk_pct == 0
+    combo = rule.sku_signal("nome:Combo Cola + Hotdog")
+    assert combo.sales == 1 and combo.alone_pct == 100 and combo.with_beverage_pct == 0
+    assert rule.sku_signal("NUNCA-VENDIDO") is None
+
+
 # ── O relatório ──────────────────────────────────────────────────────────────
 
 
@@ -262,6 +322,20 @@ def test_row_metrics(week):
     assert b.orders_by_band == (1, 0, 0, 0, 0)
     assert b.revenue_by_band_q == (1500, 0, 0, 0, 0)
     assert week.coverage == round(500 / 6, 1)
+
+
+@pytest.mark.django_db
+def test_weighted_estimate(week):
+    """A esperança sob os pesos: quantos comeram aqui, quantos só buscaram."""
+    est = week.estimate
+    # café+pão .95 · croissant .5 · croque+água .95 · pão .05 · combo .95 · novidade sem peso
+    assert est.weighted_orders == 5 and est.unweighted_orders == 1
+    assert est.seated_orders == 3.4 and est.seated_share == 68.0
+    assert est.takeaway_orders == 1.6 and est.takeaway_share == 32.0
+    assert est.seated_revenue_q == 7330 and est.seated_revenue_share == round(7330 * 100 / 8900, 1)
+    assert est.seated_by_band == (0.95, 0.5, 1.0, 0.95, 0.0)
+    assert est.orders_by_band == (1, 1, 2, 1, 0)
+    assert week.previous.estimate.weighted_orders == 0
 
 
 @pytest.mark.django_db

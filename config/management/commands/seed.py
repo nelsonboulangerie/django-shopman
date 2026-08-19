@@ -5985,29 +5985,34 @@ class Command(BaseCommand):
         """
         from shopman.backstage.models import Beverage, ConsumptionRole, Reading
 
+        # O peso (%) é a vocação em graus — P(consumido aqui | está na cesta).
+        # Parte da leitura e é editável no Admin, por papel e por SKU: é o que
+        # transforma a faixa piso–teto numa estimativa (passo 1 do
+        # BI-CONSUMPTION-PROFILES §8; o passo 2 mede pela comanda).
         catalog = [
             ("bebida-preparada", "Bebida preparada",
              "Café, chá, frappé, soda da casa — feita aqui, bebida aqui",
-             Reading.ANCHOR, Beverage.PREPARED, 5),
+             Reading.ANCHOR, Beverage.PREPARED, 95, 5),
             ("bebida-pronta", "Bebida pronta",
              "Água, refrigerante, suco de garrafa — abre e bebe aqui",
-             Reading.ANCHOR, Beverage.READY, 6),
+             Reading.ANCHOR, Beverage.READY, 95, 6),
             ("consome-aqui", "Consome aqui",
              "Prato quente, lanche montado, sobremesa servida", Reading.ANCHOR,
-             Beverage.NONE, 10),
+             Beverage.NONE, 95, 10),
             ("leva", "Leva",
              "Pão, geleia, café em grão — o que sai pela porta", Reading.TAKEAWAY,
-             Beverage.NONE, 20),
+             Beverage.NONE, 5, 20),
             ("hibrido", "Híbrido",
              "Croissant, doce, pão japonês: serve aos dois usos", Reading.HYBRID,
-             Beverage.NONE, 30),
+             Beverage.NONE, 50, 30),
         ]
-        for ref, label, hint, reading, beverage, position in catalog:
+        for ref, label, hint, reading, beverage, weight, position in catalog:
             ConsumptionRole.objects.update_or_create(
                 ref=ref,
                 defaults={
                     "label": label, "hint": hint, "reading": reading,
-                    "beverage": beverage, "ordering": position, "is_active": True,
+                    "beverage": beverage, "eat_in_weight": weight,
+                    "ordering": position, "is_active": True,
                 },
             )
 

@@ -193,6 +193,42 @@ const tdClass = "whitespace-nowrap py-1.5 pl-2 text-right tabular-nums text-fore
         </div>
       </section>
 
+      <section class="rounded-md border border-border bg-card p-3">
+        <h2 class="text-lg font-semibold text-foreground">Estimativa ponderada: quantos comeram aqui</h2>
+        <p class="mb-3 text-xs text-muted-foreground">
+          A vocação em graus: cada produto tem um peso (% de chance de ser consumido aqui, editável em
+          Configurações › Como vendemos, por papel e por produto) e a cesta vale o seu maior peso. É esperança
+          sob os pesos vigentes, não medida; a faixa piso–teto abaixo continua sendo o que o dado garante.
+        </p>
+        <div class="grid grid-cols-2 gap-3 lg:grid-cols-4">
+          <StatTile
+            label="Alguém comeu aqui"
+            :value="`≈ ${formatInt(Math.round(report.estimate.seated_orders))}`"
+            :hint="`${formatPercent(report.estimate.seated_share)} dos pedidos com peso · ${formatMoneyCompact(report.estimate.seated_revenue_q)} (${formatPercent(report.estimate.seated_revenue_share)} da receita)`"
+            :delta="delta(report.estimate.seated_share, report.previous.estimate.seated_share)"
+          />
+          <StatTile
+            label="Só vieram buscar"
+            :value="`≈ ${formatInt(Math.round(report.estimate.takeaway_orders))}`"
+            :hint="`${formatPercent(report.estimate.takeaway_share)} dos pedidos com peso`"
+          />
+          <StatTile
+            label="Pedidos com peso"
+            :value="formatInt(report.estimate.weighted_orders)"
+            :hint="report.estimate.unweighted_orders ? `${formatInt(report.estimate.unweighted_orders)} sem peso ficam fora desta conta` : 'todos os pedidos de balcão entraram'"
+          />
+          <div class="rounded-md border border-border bg-card p-3">
+            <p class="text-xs font-medium text-muted-foreground">Por faixa · % que comeu aqui</p>
+            <ul class="mt-1 flex flex-col gap-0.5 text-sm">
+              <li v-for="(band, index) in bandOptions" :key="band.key" class="flex justify-between tabular-nums">
+                <span class="text-muted-foreground">{{ band.label }}</span>
+                <span class="text-foreground">{{ report.estimate.orders_by_band[index] ? formatPercent(Math.round((report.estimate.seated_by_band[index]! * 1000) / report.estimate.orders_by_band[index]!) / 10) : '—' }}</span>
+              </li>
+            </ul>
+          </div>
+        </div>
+      </section>
+
       <div class="grid gap-4 lg:grid-cols-2">
         <section class="rounded-md border border-border bg-card p-3">
           <h2 class="text-lg font-semibold text-foreground">A faixa honesta</h2>

@@ -23,11 +23,12 @@ from shopman.backstage.models import ConsumptionRole, ProductConsumptionTag
 @admin.register(ConsumptionRole)
 class ConsumptionRoleAdmin(ModelAdmin):
     list_display = (
-        "label", "ref", "hint", "reading_display", "beverage_display", "ordering", "is_active",
+        "label", "ref", "hint", "reading_display", "beverage_display", "eat_in_weight",
+        "ordering", "is_active",
     )
-    list_editable = ("ordering", "is_active")
+    list_editable = ("eat_in_weight", "ordering", "is_active")
     ordering = ("ordering",)
-    fields = ("ref", "label", "hint", "reading", "beverage", "ordering", "is_active")
+    fields = ("ref", "label", "hint", "reading", "beverage", "eat_in_weight", "ordering", "is_active")
 
     def get_readonly_fields(self, request, obj=None):
         # Etiquetas gravadas apontam para o ref; o rótulo edita à vontade.
@@ -61,13 +62,38 @@ class ProductConsumptionTagAdmin(ModelAdmin):
     "revisada = não" para ver o que ainda espera por gente.
     """
 
-    list_display = ("sku", "role", "review_display", "note", "updated_at")
+    list_display = ("sku", "role", "weight_display", "review_display", "note", "updated_at")
     list_filter = ("reviewed", "role")
     search_fields = ("sku", "note")
     ordering = ("reviewed", "sku")
-    fields = ("sku", "role", "note", "reviewed")
+    fields = ("sku", "role", "eat_in_weight", "signal_display", "note", "reviewed")
+    readonly_fields = ("signal_display",)
     list_per_page = 100
     actions = ("mark_reviewed",)
+
+    @display(description="peso (%)")
+    def weight_display(self, obj):
+        # O peso do SKU quando há; senão o do papel, entre parênteses, para
+        # quem lê a lista saber que aquele número é herdado.
+        if obj.eat_in_weight is not None:
+            return str(obj.eat_in_weight)
+        return f"({obj.role.eat_in_weight})"
+
+    @display(description="o que o histórico sabe")
+    def signal_display(self, obj):
+        # A dica ao lado do peso: não classifica, informa. Uma consulta por
+        # SKU, só na tela de edição (a lista não paga esse custo).
+        from shopman.backstage.services.consumption import sku_signal
+
+        if not obj.pk:
+            return "salve a etiqueta para ver o sinal do histórico"
+        signal = sku_signal(obj.sku)
+        if signal is None:
+            return "sem venda de balcão no histórico"
+        return (
+            f"{signal.sales} vendas de balcão · {signal.with_beverage_pct}% com bebida · "
+            f"{signal.alone_pct}% sozinho · {signal.bulk_pct}% em 4+ unidades"
+        )
 
     @display(
         description="curadoria",

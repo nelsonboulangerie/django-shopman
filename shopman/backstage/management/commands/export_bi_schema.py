@@ -60,6 +60,7 @@ from shopman.backstage.projections.bi_profiles import (
     BIConsumptionProfilesReport,
     BIProfileBand,
     BIProfileBeverage,
+    BIProfileEstimate,
     BIProfileCategoryRow,
     BIProfileRange,
     BIProfileReading,
@@ -122,6 +123,7 @@ CONTRACT_DATACLASSES = (
     BIStrikeCell,
     BIProfileBeverage,
     BIRevpashRow,
+    BIProfileEstimate,
     BIProfilesPrevious,
     BIConsumptionProfilesReport,
 )
