@@ -18,8 +18,15 @@ LEGACY_NOTE = "anterior ao controle de lote: arquivo e hash desconhecidos"
 def _legacy_batches(apps, schema_editor):
     HistoricalSale = apps.get_model("backstage", "HistoricalSale")
     ImportBatch = apps.get_model("backstage", "ImportBatch")
-    orphan_sources = (
+    # ⚠️ `.order_by()` limpando o ordering do Meta é OBRIGATÓRIO antes do
+    # `.distinct()`: o Django acrescenta as colunas do ORDER BY ao SELECT e, com
+    # `ordering = ["-occurred_at"]`, o DISTINCT passaria a ser sobre (source,
+    # occurred_at) — 81 mil "fontes" em vez de duas, e o laço abaixo faria 81 mil
+    # INSERTs e UPDATEs da tabela inteira (foi o que prendeu o staging por uma
+    # hora em 19/08/2026). Materializado em lista: duas fontes, um laço.
+    orphan_sources = list(
         HistoricalSale.objects.filter(batch__isnull=True)
+        .order_by()
         .values_list("source", flat=True)
         .distinct()
     )
