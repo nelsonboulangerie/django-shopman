@@ -1,7 +1,11 @@
 # Migração Nuxt 4.5 — como subir sem quebrar
 
-> **Estado:** plano aberto, aguardando execução. Medições de 2026-08-19 contra
-> `nuxt@4.5.2` (as superfícies rodam `4.4.5`).
+> **Estado:** plano aberto. Medições de 2026-08-19 contra `nuxt@4.5.2` e
+> `4.4.8` (as superfícies rodam `4.4.5`).
+> **Revisão 3:** a bissecção encontrou a causa da Categoria B — **duplicata de
+> `vue`** na árvore, conserto de uma linha (`vue: ^3.5.41`). Não era bug do Nuxt
+> nem havia o que esperar do upstream. Com isso a migração deixa de ter parte
+> bloqueada. Ver §3.
 > **Origem:** triagem dos 284 alertas do Dependabot (PR #225). A conclusão de lá:
 > nenhum alerta alcança produção, mas seis advisories de SSR do Nuxt só estão
 > inertes por causa de config que um commit futuro pode virar sem querer.
@@ -35,10 +39,15 @@ a partir de suítes 100% verdes:
 | Superfície | Baseline | Com 4.5.2 |
 |---|---|---|
 | `storefront-nuxt` | 381/381 testes ✓, 0 erros TS | 16 falhas + 1 suíte sem coletar, 21 erros TS |
-| `pos-nuxt` | 248/248 testes ✓, 0 erros TS | 6 falhas, 10 erros TS |
+| `pos-nuxt` | 276/276 testes ✓, 0 erros TS | 6 falhas, 10 erros TS |
 
 Verificado contra baseline limpo e re-rodado com `.nuxt` apagado — não é tipo
 gerado velho, não é flake.
+
+> ⚠️ Correção de medição: uma versão anterior registrou o baseline do PDV como
+> `248/248` em 19 arquivos. O número certo é **276/276 em 20 arquivos** — a
+> primeira medição rodou antes do `nuxt prepare` regenerar os tipos. A contagem
+> de falhas (6) estava correta.
 
 ### ✅ O achado que barateia tudo: `npm run build` **passa**
 
@@ -56,7 +65,8 @@ typecheck e de teste, não de runtime.** Isso reclassifica a migração: não é
 
 ## 3. As quatro categorias de quebra
 
-A quebra parece grande e não é: são 4 causas, e duas delas são de uma linha.
+A quebra parece grande e não é: são 4 causas, **todas com causa conhecida e
+caminho definido**. Nada depende de terceiros.
 
 ### Categoria A — `vi.stubGlobal('$fetch', …)` não intercepta mais
 
@@ -123,7 +133,7 @@ Arquivos: `tests/components/{cartQuantityAction,stockNotifyButton}.test.ts`,
 ### Categoria B — auto-import some do **tipo** do template
 
 **Impacto:** storefront 16 erros · PDV 9 erros. Só tipo — o build passa.
-**Não é dívida nossa: é regressão conhecida do `nuxt typecheck`, upstream.**
+**✅ CAUSA ENCONTRADA: duplicata de `vue` na árvore. Conserto de uma linha.**
 
 Símbolos usados em `<template>` deixam de existir no tipo da instância:
 
@@ -134,32 +144,84 @@ Símbolos usados em `<template>` deixam de existir no tipo da instância:
 | `orderTrackingRoute` | `app/utils/routes.ts` | 2 (storefront) |
 | `navigateTo` | do próprio Nuxt | 2 storefront + 9 PDV |
 
-O [nuxt#34562](https://github.com/nuxt/nuxt/issues/34562) descreve exatamente
-isto — inclusive o `colorMode` da Categoria C, no mesmo issue. A causa: o Nuxt 4
-adotou **project references** do TypeScript, e o `nuxt typecheck` roda
-`vue-tsc -b --noEmit` (modo build); em modo build o TS não resolve as declarações
-globais de `.nuxt/types/imports.d.ts` através da fronteira de projeto.
+#### A causa, e o conserto
 
-É regressão que vai e volta entre patches (relatada em 4.3.0, 4.3.1 e 4.4.2; o
-nosso 4.4.5 está limpo; o 4.5.2 volta a falhar). **Consequência prática: não
-gastar esforço "consertando" isto no nosso código.** O caminho é acompanhar o
-upstream e, se preciso, um ajuste de `tsconfig`/flag de typecheck — nunca
-espalhar import explícito por 25 sítios para contornar bug de terceiro.
+O Nuxt 4.5 exige `vue` ≥ 3.5.41. O nosso `package.json` declara `^3.5.34`, e o
+npm resolveu a raiz para **3.5.34**, aninhando **3.5.41** dentro do `nuxt` e do
+`@nuxt/nitro-server`:
+
+```
+3.5.34  <- node_modules/vue                              ← nossos componentes
+3.5.41  <- node_modules/nuxt/node_modules/vue            ← o Nuxt
+3.5.41  <- node_modules/@nuxt/nitro-server/node_modules/vue
+```
+
+`.nuxt/types/imports.d.ts` faz `declare module 'vue' { interface
+ComponentCustomProperties { … } }`. Com duas cópias de `vue`, a augmentação dos
+nossos auto-imports e a do Nuxt caem em **módulos diferentes** e não fundem. É
+exatamente o que o erro dizia, e que passou despercebido: `$nuxt` aparece no tipo
+da instância (augmentação do Nuxt aplicada) e `formatCount` não (a nossa, não).
+
+**O conserto:**
+
+```jsonc
+// package.json de cada superfície
+"vue": "^3.5.41"   // era ^3.5.34
+```
+
+Medido no `storefront-nuxt`, em 4.5.2:
+
+| | erros de tipo |
+|---|---|
+| com `vue` duplicado | 21 |
+| com `vue` deduplicado | **2** |
+
+Os 2 que sobram são os da Categoria C — reais e nossos. No `pos-nuxt` o mesmo
+conserto leva a **0 erros de tipo**.
+
+#### Como isso foi encontrado (e o que foi descartado no caminho)
+
+A bissecção descartou, em ordem: **módulos** (com `modules: []` os erros-assinatura
+continuam), **o override `typescript.tsConfig`** (removê-lo piora — ele sustenta
+os tipos do `google.maps`), e uma **referência quebrada** em `.nuxt/nuxt.d.ts`
+(`./eslint-typegen.d.ts` não existe — é um defeito real, mas criar o arquivo não
+muda nada).
+
+O que virou a chave foi parar de mexer na config e **ler os tipos gerados**:
+`formatCount` estava lá, correto, em `.nuxt/types/imports.d.ts:704`. Se o tipo é
+gerado e não é visto, o problema não é geração — é identidade de módulo.
+
+> 📌 Lição para a próxima: `$nuxt` presente e o resto ausente no mesmo tipo é
+> assinatura de augmentação que não fundiu, ou seja, de pacote duplicado. Não é
+> bug de framework.
+
+#### Histórico: a atribuição ao upstream estava errada
+
+Uma versão anterior deste documento dizia que isto era o
+[nuxt#34562](https://github.com/nuxt/nuxt/issues/34562) e que bastava esperar o
+upstream. Errado nas duas pontas: o issue está **fechado como `completed` desde
+2026-04-02**, e não havia issue aberto com o sintoma. Foi casamento por
+semelhança, não por evidência — e a causa real nem era do Nuxt.
+
+O sinal que deveria ter contado desde o início: **não reproduzia em app mínimo**
+(três tentativas, todas limpas). App mínimo tem uma cópia só do `vue`.
 
 ### Categoria C — deriva de tipo de módulo/lib
 
 **Impacto:** 5 erros no storefront, 1 no PDV.
 
-- **`$colorMode` (3 storefront + 1 PDV)** — mesmo issue #34562 da Categoria B.
-  Não é problema do `@nuxtjs/color-mode`. Some junto quando o upstream resolver.
+- **`$colorMode` (3 storefront + 1 PDV)** — era a mesma duplicata de `vue` da
+  Categoria B. **Some com o `vue: ^3.5.41`.**
 - **`useShopTheme.ts` — `useHead`.** Este é real e declarado: as notas do 4.5
   dizem que o **unhead v3 introduz type-narrowing no `useHead`, "which can be a
-  breaking type change"**. Ajuste nosso, pequeno e legítimo.
-- **`Ui/Nav/Item.vue` — props do `NuxtLink`.** Único erro sem origem confirmada;
-  investigar na Fase 2.
+  breaking type change"**. Ajuste nosso, pequeno e legítimo. Específico do 4.5 —
+  não aparece no 4.4.8.
+- **`Ui/Nav/Item.vue` — props do `NuxtLink`.** Também só no 4.5; origem não
+  confirmada. Sobrevive à deduplicação, então é trabalho nosso.
 
-Ou seja: dos 31 erros de tipo entre as duas superfícies, **28 são o issue
-upstream** e **2 são trabalho nosso de verdade**.
+Dos 31 erros entre as duas superfícies, **29 somem com o `vue: ^3.5.41`** e
+sobram **2**, ambos no storefront: o `useHead` (quebra declarada pelo unhead v3)
+e o `NuxtLink`. O `pos-nuxt` fica em **zero**.
 
 ### Categoria D — bug nosso, que o vite 7 engolia
 
@@ -189,29 +251,27 @@ Remover o import duplicado em `tests/checkoutFlow.test.ts`. Vale por si: é um
 identificador redeclarado que hoje só não explode por tolerância do bundler.
 Zero risco, zero relação com o bump.
 
-### Fase 1 — decidir o que fazer com a Categoria B (o gate do plano)
+### Fase 1 — bissecção da Categoria B ✅ CONCLUÍDA
 
-As duas perguntas que estavam em aberto **já foram respondidas** (§3): a causa da
-Categoria A é o nuxt#35581 e a correção está provada; a Categoria B é o
-nuxt#34562, upstream. Sobra uma decisão, e ela é de política, não de técnica:
+Era o gate do plano e está fechada: a causa é a **duplicata de `vue`** (§3,
+Categoria B). Não havia decisão de política a tomar, nem espera pelo upstream —
+havia um bug nosso de resolução de dependência, de uma linha.
 
-**Aceitamos subir com o `typecheck` vermelho por causa de bug de terceiro, ou
-seguramos a frota em 4.4.5 até o upstream resolver?**
+Com isso o quadro do 4.5.2 muda por completo:
 
-Três saídas, em ordem de preferência:
+| | advisories abertas | `test` | `typecheck` | `build` |
+|---|---|---|---|---|
+| **4.4.5** (hoje) | **16** | ✓ | ✓ 0 | ✓ |
+| **4.4.8** | **7** | ✓ | ✗ 19 | ✓ |
+| **4.5.2** cru | **0** | ✗ 16 falhas | ✗ 21 | ✓ |
+| **4.5.2 + `vue ^3.5.41`** | **0** | ✗ 16 falhas (Cat. A) | **✓ 2** | ✓ |
 
-1. **Esperar o upstream.** Zero trabalho nosso, zero gambiarra. Custo: a frota
-   fica em 4.4.5 por tempo indeterminado — aceitável, já que a alcançabilidade
-   hoje é nula (§1). Recomendada **se** houver correção à vista no issue.
-2. **Ajustar o typecheck.** O issue aponta o modo build (`vue-tsc -b`) com
-   project references como a causa. Se houver flag ou `tsconfig` que restaure a
-   resolução dos tipos globais sem desligar a checagem, é a saída limpa.
-   **Investigar antes de escolher a 3.**
-3. **Último recurso: import explícito nos 25 sítios.** Espalha ruído pelo código
-   para contornar bug de terceiro, e deixa resíduo quando o upstream consertar.
-   Só com decisão consciente e um `# DEPRECATED` apontando para o issue.
+O 4.4.8 deixa de interessar: fecha só 7 das 16 e ainda paga 19 erros de tipo. E
+o 4.5.2 deixa de ser uma escolha entre males — com o `vue` deduplicado ele fecha
+**todas as 16 advisories** com **2 erros de tipo** e o único trabalho restante
+sendo a migração de mock, já provada.
 
-⚠️ **Nunca** desligar o `typecheck` no gate das superfícies para fazer passar.
+**Não há mais decisão pendente do dono.** O que existe é execução (Fase 2).
 
 ### Fase 2 — o bump, por superfície, **atômico**
 
@@ -220,9 +280,11 @@ Descoberta que reorganizou este plano: a correção do mock **não roda em 4.4.5
 cada superfície, num único commit, entram juntos:
 
 1. `npx nuxt upgrade --dedupe` (o caminho oficial; ver §"caminho de upgrade")
-2. a conversão dos testes da Categoria A para `mockNuxtImport` + `vi.hoisted`
-3. o ajuste do `useHead` (unhead v3) e do `NuxtLink`, se a superfície tiver
-4. o que a Fase 1 decidiu sobre a Categoria B
+2. **`vue: ^3.5.41` no `package.json`** — sem isto, 19 erros de tipo fantasma
+   (§3, Categoria B). Conferir depois com
+   `node -e "…"` ou `npm ls vue`: tem de haver **uma** cópia só.
+3. a conversão dos testes da Categoria A para `mockNuxtImport` + `vi.hoisted`
+4. o ajuste do `useHead` (unhead v3) e do `NuxtLink`, se a superfície tiver
 
 Ordem deliberada, da menor consequência para a maior:
 
@@ -273,7 +335,8 @@ gate das superfícies decide. Major segue fora do automático.
 - [ ] Storefront e PDV conferidos em tela no staging.
 - [ ] Os alertas de `nuxt`/`@nuxt/nitro-server` fechados no Dependabot.
 - [ ] Padrão de mock de `$fetch` documentado, para o próximo teste nascer certo.
-- [ ] Decisão da Fase 1 registrada — inclusive se a escolha foi *esperar*.
+- [x] Gatilho da Categoria B isolado: duplicata de `vue`.
+- [ ] `npm ls vue` mostra **uma** versão em cada uma das 9 superfícies.
 
 ## 6. O que **não** fazer
 
@@ -285,6 +348,15 @@ gate das superfícies decide. Major segue fora do automático.
   o framework em grupo próprio.
 - **Tratar `npm run build` verde como prova de que funciona.** Ele prova que
   compila. Tela é tela.
+- **Abrir issue upstream sem reprodução.** Tentado e recuado: não reproduz em app
+  mínimo, então o relatório seria fechado — com razão.
+- **Casar sintoma com issue fechado e chamar de causa.** Foi o erro da primeira
+  versão deste documento; custou uma recomendação errada ("esperar o upstream").
+  A causa real era duplicata de `vue` — nossa, e de uma linha.
+- **Deixar `vue` frouxo em relação ao que o Nuxt exige.** Um range nosso mais
+  velho que o do framework produz duas cópias, e augmentação de tipo que não
+  funde não dá erro de instalação: dá 19 erros de tipo que parecem bug de
+  terceiro.
 
 ## 7. Referências
 
@@ -294,9 +366,9 @@ gate das superfícies decide. Major segue fora do automático.
   unhead v3 ("type-narrowing for `useHead`, which can be a breaking type change")
 - [nuxt#35581](https://github.com/nuxt/nuxt/pull/35581) — "Auto-import `$fetch`
   where possible": a causa da Categoria A
-- [nuxt#34562](https://github.com/nuxt/nuxt/issues/34562) — `$route`,
-  `navigateTo` e `colorMode` fora do tipo da instância no typecheck: Categorias
-  B e C
+- [nuxt#34562](https://github.com/nuxt/nuxt/issues/34562) — sintoma idêntico ao
+  da Categoria B, mas **fechado como `completed` em 2026-04-02**. Fica como
+  referência histórica, NÃO como a causa (ver a correção em §3)
 - [Guia oficial de upgrade](https://nuxt.com/docs/getting-started/upgrade)
 
 **Interno:**
