@@ -42,6 +42,10 @@ class PaymentIntent(models.Model):
         CASH = "cash", _("Dinheiro")
         CARD = "card", _("Cartão")
         EXTERNAL = "external", _("Externo")
+        # Conta do cliente: a venda aconteceu e a obrigação está reconhecida
+        # (``authorized`` = deve); vira ``captured`` no acerto (= pagou). Sem
+        # gateway; o saldo devedor é derivado (Σ autorizados), nunca tabela.
+        ACCOUNT = "account", _("Em conta")
 
     TRANSITIONS = {
         Status.PENDING: [Status.AUTHORIZED, Status.FAILED, Status.CANCELLED],
