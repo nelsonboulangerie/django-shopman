@@ -418,6 +418,26 @@ def _check_intent(
             )
         )
 
+    if chargeback_q > 0:
+        # Chargeback não é reembolso: o dinheiro voltou por decisão do
+        # banco/PSP (disputa de cartão, MED do Pix), não da loja, e tem prazo
+        # de contestação. Sem código próprio ele só aparecia diluído no
+        # ``net_q``, que é um número — não um pedido para alguém olhar.
+        issues.append(
+            FinancialReconciliationIssue(
+                code="intent_has_chargeback",
+                severity="error",
+                message="Intent tem chargeback: dinheiro devolvido por decisão do banco/PSP.",
+                order_ref=order.ref,
+                intent_ref=intent.ref,
+                context={
+                    "chargeback_q": chargeback_q,
+                    "captured_q": captured_q,
+                    "refunded_q": refunded_q,
+                },
+            )
+        )
+
     if returned_q > captured_q:
         issues.append(
             FinancialReconciliationIssue(

@@ -162,6 +162,31 @@ def test_financial_reconciliation_flags_open_intent_with_capture():
 
 
 @pytest.mark.django_db
+def test_financial_reconciliation_flags_chargeback_with_its_own_code():
+    """Chargeback pede alguém olhando: código próprio, não um zero diluído no net_q."""
+    from shopman.payman import PaymentService
+
+    today = timezone.localdate()
+    _, intent = _paid_order(ref="FIN-CB")
+    PaymentService.reconcile_gateway_status(
+        intent.ref,
+        gateway_status="captured",
+        amount_q=1200,
+        captured_q=1200,
+        chargeback_q=1200,
+        chargeback_gateway_id="du-fin-cb",
+    )
+    DayClosing.objects.create(date=today, closed_by=_user(), data={"items": []})
+
+    report = build_financial_reconciliation(reconciliation_date=today, require_closing=True)
+
+    assert "intent_has_chargeback" in [issue.code for issue in report.issues]
+    assert report.has_errors is True
+    assert report.chargeback_q == 1200
+    assert report.net_q == 0
+
+
+@pytest.mark.django_db
 def test_financial_reconciliation_dry_run_does_not_persist_or_alert():
     today = timezone.localdate()
     _paid_order(ref="FIN-DRY", status=Order.Status.CANCELLED)

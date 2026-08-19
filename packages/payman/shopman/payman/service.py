@@ -83,6 +83,10 @@ class PaymentReconciliationResult:
     changed: bool
     actions: tuple[str, ...]
     drift: tuple[str, ...] = ()
+    # Devolvido por decisão de terceiro (disputa de cartão, MED do Pix), não
+    # pela loja. Fica separado de ``refunded_q`` porque a natureza muda o que
+    # o gestor faz a seguir — contestar, não conferir.
+    chargeback_q: int = 0
 
 
 class PaymentService:
@@ -465,7 +469,8 @@ class PaymentService:
         Processa reembolso (parcial ou total).
 
         Contract: multiple partial refunds are allowed while
-        ``captured_total - refunded_total > 0``. The intent transitions to
+        ``captured_total - refunded_total - chargeback_total > 0`` (dinheiro
+        tomado de volta pelo banco já saiu). The intent transitions to
         REFUNDED on the first refund and stays there for subsequent ones.
         ``refunded_total(ref)`` is the financial source of truth, not the
         status field alone.
@@ -502,14 +507,18 @@ class PaymentService:
             )
 
         captured_q = cls._captured_total(intent)
-        refunded_q = cls._refunded_total(intent)
-        available_q = captured_q - refunded_q
+        returned_q = cls._returned_total(intent)
+        available_q = captured_q - returned_q
 
         if available_q <= 0:
             raise PaymentError(
                 code="already_refunded",
-                message="Intent já foi totalmente reembolsado",
-                context={"captured_q": captured_q, "refunded_q": refunded_q},
+                message="Intent não tem saldo capturado para devolver",
+                context={
+                    "captured_q": captured_q,
+                    "refunded_q": cls._refunded_total(intent),
+                    "chargeback_q": cls._chargeback_total(intent),
+                },
             )
 
         refund_amount = amount_q if amount_q is not None else available_q
@@ -670,11 +679,13 @@ class PaymentService:
         amount_q: int | None = None,
         captured_q: int | None = None,
         refunded_q: int = 0,
+        chargeback_q: int = 0,
         currency: str = "BRL",
         gateway_id: str = "",
         gateway_data: dict | None = None,
         capture_gateway_id: str = "",
         refund_gateway_id: str = "",
+        chargeback_gateway_id: str = "",
     ) -> PaymentReconciliationResult:
         """
         Reconcile Payman with a cumulative gateway snapshot.
@@ -683,6 +694,33 @@ class PaymentService:
         ``charge.amount_refunded`` is cumulative, for example. This method is
         the canonical place to apply those snapshots without double refunding,
         missing a later partial refund, or moving money backwards.
+
+        Chargeback
+        ----------
+
+        ``chargeback_q`` é o total devolvido por decisão de TERCEIRO — disputa
+        de cartão, MED do Pix — e não por vontade da loja. Mesma mecânica do
+        refund: snapshot cumulativo, guarda de monotonicidade nos dois
+        sentidos, uma ``PaymentTransaction(CHARGEBACK)`` só pelo delta.
+
+        Duas diferenças deliberadas em relação ao refund:
+
+        * **viaja como valor, não como status.** Não existe ``gateway_status``
+          de chargeback no mapa: a disputa acontece por fora do ciclo da
+          cobrança, o dinheiro capturado continua capturado no vocabulário da
+          máquina de estados, e quem responde "quanto voltou" é o livro
+          (``chargeback_total``), não o campo ``status``. Inventar um status
+          traria uma transição nova para um fato que a loja não decide.
+        * **não emite signal.** Os cinco sinais do pacote anunciam transições
+          de status, e aqui não há transição. Quem precisa ver chargeback vê
+          pela reconciliação financeira diária, que tem issue-code próprio
+          (``intent_has_chargeback`` em
+          ``shopman/backstage/services/financial_reconciliation.py``).
+
+        Quem alimenta: qualquer chamador do gateway. Hoje nenhum adapter
+        escuta os eventos de disputa (o adapter Stripe trata
+        ``charge.refunded``, não ``charge.dispute.*``); o valor chega por
+        reconciliação manual do operador até que passem a escutar.
         """
         intent = cls._get_for_update(ref)
         status = cls._normalize_gateway_status(gateway_status)
@@ -697,6 +735,7 @@ class PaymentService:
             else int(captured_q or 0)
         )
         snapshot_refunded_q = int(refunded_q or 0)
+        snapshot_chargeback_q = int(chargeback_q or 0)
         snapshot_currency = (currency or intent.currency).upper()
 
         cls._validate_gateway_snapshot(
@@ -705,6 +744,7 @@ class PaymentService:
             amount_q=snapshot_amount_q,
             captured_q=snapshot_captured_q,
             refunded_q=snapshot_refunded_q,
+            chargeback_q=snapshot_chargeback_q,
             currency=snapshot_currency,
             gateway_id=gateway_id,
         )
@@ -844,6 +884,41 @@ class PaymentService:
                 actions.append("refunded")
                 changed = True
 
+        if snapshot_chargeback_q:
+            local_chargeback_q = cls._chargeback_total(intent)
+            if snapshot_chargeback_q < local_chargeback_q:
+                raise PaymentError(
+                    code="reconciliation_chargeback_mismatch",
+                    message="Total de chargeback local excede o gateway",
+                    context={
+                        "ref": ref,
+                        "local_chargeback_q": local_chargeback_q,
+                        "gateway_chargeback_q": snapshot_chargeback_q,
+                    },
+                )
+
+            chargeback_delta_q = snapshot_chargeback_q - local_chargeback_q
+            if chargeback_delta_q > 0:
+                if intent.status not in {PaymentIntent.Status.CAPTURED, PaymentIntent.Status.REFUNDED}:
+                    raise PaymentError(
+                        code="reconciliation_chargeback_drift",
+                        message="Gateway reportou chargeback para intent sem captura local",
+                        context={
+                            "ref": ref,
+                            "local_status": intent.status,
+                            "gateway_chargeback_q": snapshot_chargeback_q,
+                        },
+                    )
+
+                PaymentTransaction.objects.create(
+                    intent=intent,
+                    type=PaymentTransaction.Type.CHARGEBACK,
+                    amount_q=chargeback_delta_q,
+                    gateway_id=chargeback_gateway_id or gateway_id,
+                )
+                actions.append("chargeback")
+                changed = True
+
         if status == "cancelled" and intent.status in {PaymentIntent.Status.PENDING, PaymentIntent.Status.AUTHORIZED}:
             intent.status = PaymentIntent.Status.CANCELLED
             intent.cancel_reason = "gateway_reconciliation"
@@ -872,6 +947,7 @@ class PaymentService:
 
         final_captured_q = cls._captured_total(intent)
         final_refunded_q = cls._refunded_total(intent)
+        final_chargeback_q = cls._chargeback_total(intent)
         result = PaymentReconciliationResult(
             intent_ref=ref,
             status=PaymentIntent.objects.only("status").get(pk=intent.pk).status,
@@ -880,6 +956,7 @@ class PaymentService:
             changed=changed,
             actions=tuple(actions),
             drift=tuple(drift),
+            chargeback_q=final_chargeback_q,
         )
         logger.info(
             "payment.reconciled",
@@ -892,6 +969,7 @@ class PaymentService:
                 "local_status": result.status,
                 "captured_q": final_captured_q,
                 "refunded_q": final_refunded_q,
+                "chargeback_q": final_chargeback_q,
                 "changed": changed,
                 "actions": result.actions,
             },
@@ -960,6 +1038,12 @@ class PaymentService:
         """Total reembolsado para um intent."""
         intent = cls.get(ref)
         return cls._refunded_total(intent)
+
+    @classmethod
+    def chargeback_total(cls, ref: str) -> int:
+        """Total devolvido por decisão de terceiro (disputa, MED) para um intent."""
+        intent = cls.get(ref)
+        return cls._chargeback_total(intent)
 
     # ================================================================
     # Private
@@ -1115,6 +1199,7 @@ class PaymentService:
         amount_q: int,
         captured_q: int,
         refunded_q: int,
+        chargeback_q: int,
         currency: str,
         gateway_id: str,
     ) -> None:
@@ -1124,7 +1209,7 @@ class PaymentService:
                 message=f"Status de gateway desconhecido: {status}",
                 context={"ref": intent.ref, "gateway_status": status},
             )
-        if amount_q <= 0 or captured_q < 0 or refunded_q < 0:
+        if amount_q <= 0 or captured_q < 0 or refunded_q < 0 or chargeback_q < 0:
             raise PaymentError(
                 code="reconciliation_invalid_amount",
                 message="Snapshot do gateway tem valores invalidos",
@@ -1133,6 +1218,7 @@ class PaymentService:
                     "amount_q": amount_q,
                     "captured_q": captured_q,
                     "refunded_q": refunded_q,
+                    "chargeback_q": chargeback_q,
                 },
             )
         if amount_q != intent.amount_q:
@@ -1159,6 +1245,17 @@ class PaymentService:
                 message="Total reembolsado no gateway excede o capturado",
                 context={"ref": intent.ref, "captured_q": captured_q, "refunded_q": refunded_q},
             )
+        if refunded_q + chargeback_q > captured_q:
+            raise PaymentError(
+                code="reconciliation_chargeback_exceeds_capture",
+                message="Reembolso + chargeback no gateway excedem o capturado",
+                context={
+                    "ref": intent.ref,
+                    "captured_q": captured_q,
+                    "refunded_q": refunded_q,
+                    "chargeback_q": chargeback_q,
+                },
+            )
         if gateway_id and intent.gateway_id and gateway_id != intent.gateway_id:
             raise PaymentError(
                 code="reconciliation_gateway_id_mismatch",
@@ -1183,6 +1280,24 @@ class PaymentService:
             )["total"]
             or 0
         )
+
+    @classmethod
+    def _chargeback_total(cls, intent: PaymentIntent) -> int:
+        return (
+            intent.transactions.filter(type=PaymentTransaction.Type.CHARGEBACK).aggregate(
+                total=models.Sum("amount_q")
+            )["total"]
+            or 0
+        )
+
+    @classmethod
+    def _returned_total(cls, intent: PaymentIntent) -> int:
+        """Tudo que voltou ao cliente: reembolso da loja + chargeback de terceiro.
+
+        É este o saldo que limita um novo reembolso. Dinheiro tomado de volta
+        pelo banco já saiu da conta; estornar de novo pagaria duas vezes.
+        """
+        return cls._refunded_total(intent) + cls._chargeback_total(intent)
 
     @classmethod
     def _generate_ref(cls) -> str:
