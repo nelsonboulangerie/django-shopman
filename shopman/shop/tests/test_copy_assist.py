@@ -221,3 +221,29 @@ def test_rewriting_never_saves_by_itself(configured, monkeypatch, template):
 
     announcement.refresh_from_db()
     assert announcement.content["body"] == before
+
+
+def test_a_reply_cut_at_the_token_ceiling_is_a_failure_not_a_suggestion(configured, monkeypatch):
+    """Meio JSON lido como inteiro foi a primeira rodada real dos cenários (19/08/2026).
+
+    O SDK diz ``stop_reason == "max_tokens"``; ``suggest`` repassa isso como erro
+    com o teto no texto, em vez de devolver a frase pela metade.
+    """
+    import sys
+    import types
+
+    class _Message:
+        stop_reason = "max_tokens"
+        content = [types.SimpleNamespace(type="text", text='{"scenarios": [{"title": "cort')]
+
+    class _Client:
+        def __init__(self, api_key):
+            self.messages = types.SimpleNamespace(create=lambda **kw: _Message())
+
+    fake = types.ModuleType("anthropic")
+    fake.Anthropic = _Client
+    fake.APIError = Exception
+    monkeypatch.setitem(sys.modules, "anthropic", fake)
+
+    with pytest.raises(copy_assist.CopyAssistError, match="limite de 50 tokens"):
+        copy_assist.suggest("qualquer coisa", max_tokens=50, voice="voz")
