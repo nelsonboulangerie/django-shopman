@@ -53,9 +53,9 @@ def test_o_movimento_nasce_SEM_confirmacao_de_impressao(movimento):
 
 
 def test_os_tres_resultados_do_papel_existem():
-    from shopman.backstage.services.pos import RECEIPT_RESULT_STATUSES
+    from shopman.backstage.services.pos import _receipt_result_statuses
 
-    assert set(RECEIPT_RESULT_STATUSES) == {"printed", "failed", "skipped"}
+    assert set(_receipt_result_statuses()) == {"printed", "failed", "skipped"}
 
 
 # ── O código de conferência ───────────────────────────────────────────────
