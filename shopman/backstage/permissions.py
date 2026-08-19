@@ -62,6 +62,25 @@ def can_operate_pos(user) -> bool:
     return is_superuser(user) or user.has_perm("cashman.operate_pos")
 
 
+def can_audit_cash(user) -> bool:
+    """Quem pode ver a APURAÇÃO do caixa: esperado, contado, diferença.
+
+    Não é quem opera. O balconista abre o turno, vende, faz sangria e fecha
+    contando às cegas — e nada disso exige saber quanto *deveria* haver na
+    gaveta. Quem sabe o esperado não conta às cegas: confere um gabarito, e o
+    fechamento cego perde a única coisa que ele existe para pegar.
+
+    O gerente também não tem: ``setup_groups`` dá a ele ``operate_pos``,
+    ``adjust_shift`` e ``manage_operators``, e **não** ``audit_shift``. Ele
+    opera, autoriza exceção e fecha o turno; a apuração é de quem audita.
+
+    ⚠️ A permissão existia desde o começo e ninguém a consultava — as telas
+    mostravam a apuração para qualquer um com ``operate_pos``. Este predicado é
+    onde ela passa a valer.
+    """
+    return is_superuser(user) or user.has_perm("cashman.audit_shift")
+
+
 def can_operate_kds(user) -> bool:
     return is_superuser(user) or user.has_perm("backstage.operate_kds")
 

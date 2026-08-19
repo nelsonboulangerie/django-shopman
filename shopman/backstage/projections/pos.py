@@ -186,6 +186,12 @@ class POSCashRuntimeProjection:
     # O operador atual pode fechar o turno bloqueante daqui (gerente ou o dono)?
     # Anti-fraude: operador comum não fecha o caixa de outro.
     can_close_blocking: bool = False
+    # O operador atual pode ver a APURAÇÃO (esperado, contado, diferença)?
+    #
+    # Quem sabe o esperado não conta às cegas: confere um gabarito. O balcão
+    # opera o turno inteiro sem isso, e o gerente também — `setup_groups` não dá
+    # `audit_shift` a ele. Sai `false` para quase todo mundo, de propósito.
+    can_audit_cash: bool = False
     # Só os PENDENTES, e o nome diz isso: atendido e cancelado ficam na trilha do
     # turno, não na tela. Uma lista chamada `change_requests` que mostrasse tudo
     # faria o balcão procurar troco para pedido já resolvido.
@@ -1340,6 +1346,12 @@ def _active_cash_shift_for_terminal(terminal):
 
 
 def _cash_runtime_projection(cash_shift, runtime, operator, *, terminal_cash_shift=None) -> POSCashRuntimeProjection:
+    from shopman.backstage.permissions import can_audit_cash
+
+    # Resolvido UMA vez, nos três caminhos: o card do relatório não pode aparecer
+    # só porque o turno está fechado, ou só porque o terminal está ocupado.
+    audita = bool(operator is not None and can_audit_cash(operator))
+
     if cash_shift is None:
         if terminal_cash_shift is not None:
             operator_username = terminal_cash_shift.operator.get_username()
@@ -1364,6 +1376,7 @@ def _cash_runtime_projection(cash_shift, runtime, operator, *, terminal_cash_shi
                 blocking_shift_id=terminal_cash_shift.pk,
                 blocking_message=f"Terminal aberto por {operator_username}.",
                 can_close_blocking=can_close_blocking,
+                can_audit_cash=audita,
             )
         return POSCashRuntimeProjection(
             has_open_shift=False,
@@ -1373,6 +1386,7 @@ def _cash_runtime_projection(cash_shift, runtime, operator, *, terminal_cash_shi
             operator_username=getattr(operator, "username", "") if operator is not None else "",
             opened_at="",
             status="closed",
+            can_audit_cash=audita,
         )
     return POSCashRuntimeProjection(
         has_open_shift=True,
@@ -1382,6 +1396,7 @@ def _cash_runtime_projection(cash_shift, runtime, operator, *, terminal_cash_shi
         operator_username=cash_shift.operator.get_username(),
         opened_at=cash_shift.opened_at.isoformat() if cash_shift.opened_at else "",
         status="open",
+        can_audit_cash=audita,
         pending_change_requests=_pending_change_requests(cash_shift),
     )
 

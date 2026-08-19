@@ -1809,15 +1809,24 @@ class POSChangeRequestCancelView(APIView):
 class POSCashReportView(APIView):
     """Leitura X (turno aberto), leituras Z (turnos fechados) e histórico do dia.
 
-    Gate único `cashman.operate_pos`: a projection nunca expõe o valor
-    ESPERADO da gaveta nem a variância (blind count) — nem no X, nem no Z —
-    então não há nada aqui que exija o gate mais forte do gerente. A
-    conferência (esperado vs contado, `perform_closing`/`cashman.audit_shift`)
-    permanece exclusiva da retaguarda.
+    Gate `cashman.audit_shift`, e a razão MUDOU — vale registrar as duas, porque
+    são perguntas diferentes:
+
+    1. **Contagem cega.** A projection nunca expõe o ESPERADO nem a variância,
+       nem no X nem no Z. Isso continua verdade e continua sendo por construção;
+       não é este gate que garante.
+    2. **Privacidade do faturamento.** O relatório mostra `sales_total`,
+       `counted_total` e a quebra por método — quanto a casa vendeu hoje. Isso é
+       questão financeira, e a decisão do dono é que ela não fica visível para
+       quem opera, **nem para o gerente**: ele opera, autoriza exceção e fecha o
+       turno contando às cegas; quem vê a apuração é quem audita.
+
+    O balcão não perde o que precisa: a antesala segue mostrando a CONTAGEM de
+    vendas do próprio turno, que é operação, não apuração.
     """
 
     permission_classes = [HasBackstagePermission]
-    required_permission = "cashman.operate_pos"
+    required_permission = "cashman.audit_shift"
 
     def get(self, request):
         report = build_cash_session_report(operator=request.user)

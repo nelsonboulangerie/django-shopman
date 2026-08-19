@@ -59,6 +59,14 @@ const screen = computed(() => {
   return sessionScreenState(pos.value.cash_runtime, pos.value.has_open_cash_session);
 });
 const cashRuntime = computed(() => pos.value?.cash_runtime ?? null);
+// Ausente vale `false`: contrato mudo não abre porta de dinheiro.
+const canAuditCash = computed(() => cashRuntime.value?.can_audit_cash === true);
+
+// Exceção e encerramento nascem RECOLHIDOS. Ver o formulário é uma escolha, e a
+// escolha é o que separa "abri a gaveta porque precisei" de "abri porque estava
+// ali". Nada some: os dois abrem a um toque.
+const openingDrawerPanel = ref(false);
+const closingPanel = ref(false);
 // A capability é a FONTE dos motivos de movimento e das denominações do troco.
 // Repetir as listas em TypeScript seria assinar uma divergência para o dia em
 // que uma moeda saísse de circulação.
@@ -587,10 +595,30 @@ async function confirmCloseBlocking() {
             <!-- Gaveta: só aparece onde existe caminho de software. Num balcão
                  de gaveta com chave, um botão que não abre nada seria pior que
                  botão nenhum. -->
+            <!-- ABRIR GAVETA É EXCEÇÃO, e a tela precisa dizer isso pelo tamanho.
+                 Como card aberto do mesmo porte dos outros, ela convidava: abrir
+                 a gaveta sem venda é o buraco que a chave física deixava, e todo
+                 o controle de caixa fica de pé só enquanto isso for raro. Segue
+                 disponível, a um toque, e continua exigindo motivo e registro —
+                 mas não fica em exposição.
+
+                 O mesmo vale para "Fechar caixa" logo abaixo: dois campos de
+                 dinheiro abertos o turno inteiro são ruído em 99% das visitas e
+                 um toque errado no 1% restante. -->
             <section class="grid gap-2 rounded-lg border bg-card p-4">
-              <div class="flex items-center gap-2">
-                <Icon name="lucide:archive" class="size-4 text-muted-foreground" />
-                <h2 class="text-base font-semibold">Abrir gaveta</h2>
+              <div class="flex items-center justify-between gap-3">
+                <div class="flex items-center gap-2">
+                  <Icon name="lucide:archive" class="size-4 text-muted-foreground" />
+                  <h2 class="text-base font-semibold">Abrir gaveta</h2>
+                </div>
+                <UiButton
+                  v-if="canOpenDrawer && !openingDrawerPanel"
+                  variant="ghost"
+                  size="sm"
+                  @click="openingDrawerPanel = true"
+                >
+                  Abrir sem venda
+                </UiButton>
               </div>
 
               <!-- Sem caminho de software o card DIZ por que, em vez de sumir.
@@ -600,7 +628,7 @@ async function confirmCloseBlocking() {
                 {{ drawerUnavailableReason }}
               </p>
 
-              <template v-else>
+              <template v-else-if="openingDrawerPanel">
               <p class="text-sm text-muted-foreground">
                 Abrir sem venda fica registrado no turno: quem abriu, quando e por quê.
               </p>
@@ -638,7 +666,14 @@ async function confirmCloseBlocking() {
             </section>
 
             <section class="grid gap-2 rounded-lg border bg-card p-4">
-              <h2 class="text-base font-semibold">Fechar caixa</h2>
+              <div class="flex items-center justify-between gap-3">
+                <h2 class="text-base font-semibold">Fechar caixa</h2>
+                <UiButton v-if="!closingPanel" variant="ghost" size="sm" @click="closingPanel = true">
+                  Encerrar turno
+                </UiButton>
+              </div>
+
+              <template v-if="closingPanel">
               <div class="flex items-start gap-2 rounded-md border bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
                 <Icon name="lucide:eye-off" class="mt-0.5 size-4 shrink-0" />
                 <span>Contagem cega: conte o dinheiro do caixa e informe o valor. A conferência fica no gestor.</span>
@@ -665,11 +700,17 @@ async function confirmCloseBlocking() {
                   </UiButton>
                 </div>
               </div>
+              </template>
             </section>
           </template>
 
           <!-- Relatório de caixa: leituras X/Z e histórico de turnos do dia. -->
-          <section class="grid gap-2 rounded-lg border bg-card p-4">
+          <!-- Relatório de caixa: quem AUDITA, não quem opera. Mostra faturamento
+               do dia e a quebra por método — questão financeira, que não fica
+               visível para o balcão nem para o gerente. O servidor recusa por
+               conta própria (`cashman.audit_shift`); isto aqui só evita oferecer
+               uma porta que vai bater na cara. -->
+          <section v-if="canAuditCash" class="grid gap-2 rounded-lg border bg-card p-4">
             <div class="flex items-center gap-2">
               <Icon name="lucide:receipt-text" class="size-4 text-muted-foreground" />
               <h2 class="text-base font-semibold">Relatório de caixa</h2>

@@ -21,7 +21,7 @@ evidência e auditoria, sem confirmar pedido automaticamente.
 | `shop.manage_orders` | `Shop` | Confirmar, rejeitar, avançar, cancelar pedidos; adicionar notas internas | Gestor (orders-nuxt, `gestor.`) via `api/v1/backstage/orders/*` |
 | `backstage.operate_kds` | `KDSTicket` | Check item, marcar ticket done, ações de expedição | KDS (kds-nuxt, `kds.`) via `api/v1/backstage/kds/*` |
 | `cashman.operate_pos` | `cashman.Shift` | Abrir/fechar caixa, sangria, lookup de cliente, fechar venda | PDV (pos-nuxt, `pos.`) — antesala `/session` + venda |
-| `cashman.audit_shift` | `cashman.Shift` | Ver esperado, contado e diferença dos turnos; conferir comprovante | Admin (Turnos de caixa, Conferir comprovante) |
+| `cashman.audit_shift` | `cashman.Shift` | **Ver a apuração**: esperado, contado e diferença dos turnos; faturamento do dia; conferir comprovante | Admin (Turnos de caixa) **e** PDV `/session/report` |
 | `cashman.adjust_shift` | `cashman.Shift` | Segunda assinatura das exceções do caixa: sangria, troco atendido, correção da contagem, desconto acima do teto (PIN de gerente) | PDV (diálogo de gerente) |
 | `cashman.manage_operators` | `cashman.Shift` | Resetar PIN, provisionar operador, crachá | Admin (Operadores) |
 | `shop.manage_production` | `Shop` | Criar WorkOrders, planejar e avançar produção | Produção (production-nuxt, `prod.`) via `api/v1/backstage/production/*` |
@@ -44,8 +44,25 @@ Criados automaticamente por `make migrate`. Nenhum usuário é atribuído por de
 | **Gerente** | `shop.manage_orders`, `cashman.operate_pos`, `cashman.adjust_shift`, `cashman.manage_operators`, `backstage.perform_closing`, `backstage.view_production_reports`, `shop.manage_customers` | Gerente de turno |
 | **Admin de Catálogo** | `manage_catalog`, `manage_rules` | Responsável por produtos e regras |
 | **Rules Managers** | `manage_rules` | Segurança (WP-GAP-06, sem membros por default) |
+| **Dono** | `cashman.audit_shift` | Quem vê dinheiro. Portão, não persona — some com "Gerente" quando a pessoa faz as duas coisas |
 
 ---
+
+### O gerente opera, o dono audita
+
+O **Gerente** não tem `cashman.audit_shift`, e isso não é esquecimento.
+
+Ele abre e fecha turno, autoriza sangria com o PIN, resolve exceção — e conta às
+cegas, como todo mundo. **Quem sabe o esperado não conta às cegas**: confere um
+gabarito, e o fechamento cego perde a única coisa que existe para pegar. O mesmo
+vale para o faturamento do dia, que é questão financeira e não operação.
+
+Quem audita **e** opera entra em **Dono** e **Gerente**. Permissões somam, e
+separá-las deixa a pergunta "quem vê dinheiro?" com uma resposta só, legível numa
+tela do Admin.
+
+O que o balcão **não** perde: a antesala segue mostrando a contagem de vendas do
+próprio turno. Contagem é operação; valor é apuração.
 
 ## Como adicionar um novo operador
 

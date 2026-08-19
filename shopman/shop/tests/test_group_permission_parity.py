@@ -107,13 +107,19 @@ UNGRANTED_BY_DESIGN: dict[str, str] = {
         "OR-alternative in can_view_production_reports; covered by "
         "shop.manage_production on Cozinha/Gerente."
     ),
-    # Retaguarda do caixa: ver esperado/diferença no Admin e conferir comprovante.
-    # Antes do cashman era ``backstage.audit_cashshift``, igualmente fora dos
-    # grupos padrão: é grant do dono, dado à mão a quem audita, não persona.
-    "cashman.audit_shift": (
-        "Auditoria de turno (esperado/diferença, comprovante) é grant do dono, "
-        "não persona de operação; ShiftAdmin também aceita cashman.operate_pos."
-    ),
+    # `cashman.audit_shift` VIVIA AQUI e saiu — vale dizer por quê, para ninguém
+    # a trazer de volta achando que corrige algo.
+    #
+    # A justificativa antiga era "grant do dono, dado à mão a quem audita, não
+    # persona". Foi exatamente isso que fez a permissão não ser administrada por
+    # ninguém: sem grupo, ela só chegava a um superusuário ou a quem alguém
+    # lembrasse de marcar na mão, e some da tela onde se administra papel. O
+    # resultado prático é que nada no sistema a consultava — as telas mostravam
+    # apuração para qualquer um com `operate_pos`.
+    #
+    # Agora existe o grupo "Dono", que é um PORTÃO e não uma persona, no mesmo
+    # espírito do "Rules Managers": um lugar único, visível no Admin, onde se
+    # concede o financeiro. O `Gerente` segue de fora de propósito.
 }
 
 

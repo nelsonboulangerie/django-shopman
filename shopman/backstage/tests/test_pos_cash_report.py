@@ -23,10 +23,10 @@ def _make_shop():
     return Shop.objects.get_or_create(name="Test Shop", defaults={"brand_name": "Test"})[0]
 
 
-def _grant_operate_pos(user):
+def _grant(user, *codenames):
     ct = ContentType.objects.get_for_model(Shift)
-    perm = Permission.objects.get(content_type=ct, codename="operate_pos")
-    user.user_permissions.add(perm)
+    for codename in codenames:
+        user.user_permissions.add(Permission.objects.get(content_type=ct, codename=codename))
 
 
 def _manager_approval():
@@ -73,7 +73,7 @@ class POSCashReportTests(TestCase):
         _make_shop()
         User = get_user_model()
         self.operator = User.objects.create_user(username="caixa", password="x", is_staff=True)
-        _grant_operate_pos(self.operator)
+        _grant(self.operator, "operate_pos", "audit_shift")
         self.client.force_login(self.operator)
         self.terminal = Terminal.default()
         self.manager_approval = _manager_approval()
@@ -107,7 +107,7 @@ class POSCashReportTests(TestCase):
 
     # ── gate ───────────────────────────────────────────────────────────
 
-    def test_report_requires_operate_pos_permission(self) -> None:
+    def test_report_requires_a_permission(self) -> None:
         User = get_user_model()
         other = User.objects.create_user(username="sem-perm", password="x", is_staff=True)
         self.client.force_login(other)
@@ -115,6 +115,27 @@ class POSCashReportTests(TestCase):
         resp = self.client.get(REPORT_URL)
 
         self.assertEqual(resp.status_code, 403)
+
+    def test_operar_o_caixa_nao_da_direito_a_ver_o_faturamento(self) -> None:
+        """Quem opera não audita — e é pela API crua que isso tem de valer.
+
+        O relatório mostra `sales_total` e a quebra por método: quanto a casa
+        vendeu hoje. Esconder o card na tela e deixar a rota aberta seria fechar
+        a porta e esquecer a janela — basta o endereço para ler tudo.
+
+        O `Gerente` cai aqui junto com o balcão: `setup_groups` dá a ele
+        `operate_pos`, `adjust_shift` e `manage_operators`, e **não**
+        `audit_shift`.
+        """
+        User = get_user_model()
+        balconista = User.objects.create_user(username="so-opera", password="x", is_staff=True)
+        _grant(balconista, "operate_pos", "adjust_shift", "manage_operators")
+        self.client.force_login(balconista)
+
+        resp = self.client.get(REPORT_URL)
+
+        self.assertEqual(resp.status_code, 403)
+        self.assertNotIn("report", resp.json())
 
     # ── leitura X (turno aberto) ───────────────────────────────────────
 
