@@ -90,6 +90,7 @@ def cancellation_reasons(order) -> list[dict]:
 def settle_delivery_cash(order, *, operator, amount_raw: str = "", actor: str):
     """Acerto do dinheiro de entrega: entra no turno ABERTO (``cashman``) de quem recebeu."""
     from shopman.cashman import services as cash
+    from shopman.cashman.exceptions import CashError
 
     from shopman.backstage.services.pos import parse_money_to_q
 
@@ -102,6 +103,11 @@ def settle_delivery_cash(order, *, operator, amount_raw: str = "", actor: str):
             actor=actor,
             amount_q=amount_q,
         )
+    except CashError as exc:
+        # Dois acertos do mesmo pedido no mesmo turno (duplo toque no gestor) são
+        # recusados pela constraint do livro; a tela merece o 400 com a mensagem
+        # do pacote, não um 500.
+        raise OrderError(exc.message) from exc
     except (ValueError, InvalidTransition) as exc:
         raise OrderError(str(exc)) from exc
 

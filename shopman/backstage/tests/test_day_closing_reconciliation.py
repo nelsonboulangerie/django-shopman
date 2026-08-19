@@ -328,3 +328,54 @@ def test_build_day_closing_lists_upcoming_preorders(setup_stock):
         (closing.upcoming_preorders[1].date_display, 1, "R$ 10,00"),
     ]
     assert closing.upcoming_preorders[0].total_q == 4000
+
+
+# ── Caixa aberto no fechamento do dia ─────────────────────────────────────
+
+
+@pytest.mark.django_db
+def test_fechar_o_dia_com_caixa_aberto_levanta_alerta(client, setup_stock, closing_user):
+    """O turno esquecido aberto vira aviso, com nome e balcão.
+
+    O snapshot já listava o turno em `open_shifts`, mas ninguém era avisado: o
+    gerente fechava o dia e a gaveta continuava sob custódia de alguém que foi
+    embora. Sem o aviso, a próxima notícia é a contagem do dia seguinte.
+    """
+    from shopman.backstage.models import OperatorAlert
+
+    terminal = Terminal.objects.create(ref="balcao-1", label="Balcão 1")
+    esquecido = User.objects.create_user("marina", password="pw", is_staff=True)
+    cash.open_shift(operator=esquecido, terminal=terminal, float_q=1000)
+    client.force_login(closing_user)
+
+    response = client.post(
+        "/api/v1/backstage/closing/",
+        {"quantities": {"RECON-SKU": "0"}},
+        content_type="application/json",
+    )
+
+    assert response.status_code == 200
+    alerta = OperatorAlert.objects.get(type="cash_shift_open_at_closing")
+    assert alerta.severity == "warning"
+    assert "marina" in alerta.message
+    assert "balcao-1" in alerta.message
+    # O turno segue aberto: avisar não é fechar o caixa de ninguém.
+    assert DayClosing.objects.get().data["cash_shift_summary"]["open_shifts"][0]["operator"] == "marina"
+
+
+@pytest.mark.django_db
+def test_fechar_o_dia_com_todo_caixa_fechado_nao_alerta(client, setup_stock, closing_user):
+    from shopman.backstage.models import OperatorAlert
+
+    shift = cash.open_shift(operator=closing_user, terminal=Terminal.default(), float_q=1000)
+    cash.close_shift(shift, counted_q=1000, actor=closing_user)
+    client.force_login(closing_user)
+
+    response = client.post(
+        "/api/v1/backstage/closing/",
+        {"quantities": {"RECON-SKU": "0"}},
+        content_type="application/json",
+    )
+
+    assert response.status_code == 200
+    assert not OperatorAlert.objects.filter(type="cash_shift_open_at_closing").exists()
