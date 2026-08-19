@@ -27,6 +27,7 @@ export type {
   BISalesDay,
   BISalesReport,
   BIStrikeCell,
+  BISourceConflict,
   BITopSkuRow,
   ChangeHabit,
   ChangeMix,

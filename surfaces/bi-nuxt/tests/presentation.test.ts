@@ -35,6 +35,9 @@ import {
   shortDate,
   shortDateWithYear,
   strikeMatrix,
+  sourceConflictLabel,
+  sourceLabel,
+  sourcesCaption,
 } from "~/presentation/bi";
 
 describe("presentation/bi", () => {
@@ -402,5 +405,24 @@ describe("presentation/bi — perfis de consumo", () => {
   it("o denominador do RevPASH fica à vista", () => {
     expect(revpashHint(24, 3, 26)).toBe("24 assentos × 3 h × 26 dias");
     expect(revpashHint(24, 2, 1)).toBe("24 assentos × 2 h × 1 dia");
+  });
+});
+
+describe("presentation/bi — fontes", () => {
+  it("nomeia a fonte para gente, e o que não é a casa é histórico", () => {
+    expect(sourceLabel("shopman")).toBe("Shopman");
+    expect(sourceLabel("yooga")).toBe("histórico Yooga");
+    expect(sourceLabel("seed")).toBe("histórico de demonstração");
+  });
+
+  it("hora e dia da semana avisam quando somam histórico", () => {
+    expect(sourcesCaption(["shopman"])).toBe("");
+    expect(sourcesCaption(["shopman", "yooga"])).toBe(" · inclui histórico Yooga");
+  });
+
+  it("o dia em que o nativo apagou histórico vira frase com os dois números", () => {
+    expect(
+      sourceConflictLabel({ date: "2026-08-03", native_orders: 1, historical_dropped: 112, source: "yooga" }),
+    ).toBe("03/08: 1 pedido nativo apagou 112 vendas do histórico Yooga nesse dia");
   });
 });

@@ -76,6 +76,7 @@ from shopman.backstage.projections.bi_sales import (
     BISalesDay,
     BISalesPrevious,
     BISalesReport,
+    BISourceConflict,
     BITopSkuRow,
 )
 
@@ -92,6 +93,7 @@ CONTRACT_DATACLASSES = (
     BISalesChannelRow,
     BITopSkuRow,
     BISalesPrevious,
+    BISourceConflict,
     BISalesReport,
     BICashDay,
     BICashOperatorRow,

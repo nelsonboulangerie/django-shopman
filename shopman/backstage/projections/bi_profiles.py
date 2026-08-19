@@ -30,11 +30,11 @@ from dataclasses import dataclass
 from datetime import date
 from decimal import Decimal
 
+from shopman.backstage.bi.canonical import local_window
 from shopman.backstage.services import consumption as rule
 from shopman.backstage.services.hour_bands import HOUR_BANDS, OUTSIDE, band_by_key, band_for
 
 from .bi_production import _normalize_window, _previous_window
-from .bi_sales import _local_datetime_window
 
 # ── Perfis ───────────────────────────────────────────────────────────────────
 
@@ -315,7 +315,7 @@ def build_bi_consumption_profiles(
 
 
 def _fused(date_from: date, date_to: date) -> list[rule.Basket]:
-    native, historical = rule.collect_baskets(_local_datetime_window(date_from, date_to))
+    native, historical = rule.collect_baskets(local_window(date_from, date_to))
     return rule.fuse_baskets(native, historical)
 
 

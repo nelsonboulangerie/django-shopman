@@ -13,11 +13,15 @@ import {
   formatMoneyCompact,
   formatQty,
   hourLabel,
+  sourceConflictLabel,
+  sourcesCaption,
 } from "~/presentation/bi";
 
 const { report, pending, error, refresh } = useBiReport<BISalesReport>("sales");
 
 const hasHistory = computed(() => (report.value?.historical_days ?? 0) > 0);
+const sourcesNote = computed(() => sourcesCaption(report.value?.sources ?? []));
+const conflicts = computed(() => (report.value?.source_conflicts ?? []).map(sourceConflictLabel));
 
 const revenueSeries = computed(() => {
   const previous = report.value?.previous.revenue_by_day ?? [];
@@ -107,17 +111,21 @@ const channelRows = computed(() =>
           </template>
         </p>
         <ChartBarSeries :points="revenueSeries" :format="formatMoneyCompact" />
+        <p v-if="conflicts.length" class="mt-3 text-xs text-muted-foreground">
+          Dia com pedido no Shopman lê só o Shopman, e o histórico daquele dia sai da conta.
+          <span v-for="line in conflicts" :key="line" class="block">{{ line }}.</span>
+        </p>
       </section>
 
       <div class="grid gap-4 lg:grid-cols-2">
         <section class="rounded-md border border-border bg-card p-3">
           <h2 class="text-lg font-semibold text-foreground">Pedidos por hora</h2>
-          <p class="mb-3 text-xs text-muted-foreground">Soma do período, hora local</p>
+          <p class="mb-3 text-xs text-muted-foreground">Soma do período, hora local{{ sourcesNote }}</p>
           <ChartBarSeries :points="hourSeries" :format="(v) => formatInt(v)" :tick-every="4" />
         </section>
         <section class="rounded-md border border-border bg-card p-3">
           <h2 class="text-lg font-semibold text-foreground">Pedidos por dia da semana</h2>
-          <p class="mb-3 text-xs text-muted-foreground">Soma do período</p>
+          <p class="mb-3 text-xs text-muted-foreground">Soma do período{{ sourcesNote }}</p>
           <ChartBarSeries :points="weekdaySeries" :format="(v) => formatInt(v)" :tick-every="1" />
         </section>
       </div>
