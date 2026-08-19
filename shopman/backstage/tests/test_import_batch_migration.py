@@ -9,6 +9,8 @@ zerado (CI) cobre o caminho vazio.
 
 from __future__ import annotations
 
+from datetime import timedelta
+
 import pytest
 from django.db import connection
 from django.db.migrations.executor import MigrationExecutor
@@ -25,9 +27,14 @@ def test_existing_sales_receive_one_legacy_batch_per_source():
     old_apps = executor.loader.project_state(BEFORE).apps
     HistoricalSale = old_apps.get_model("backstage", "HistoricalSale")
     now = timezone.now()
+    # Instantes DIFERENTES de propósito: com o `ordering = ["-occurred_at"]` do
+    # model, um `.distinct()` sem `.order_by()` contaria uma "fonte" por instante
+    # — e este teste passava com três linhas no mesmo segundo enquanto o staging
+    # ficava preso em 81 mil iterações (19/08/2026).
     HistoricalSale.objects.bulk_create([
-        HistoricalSale(source="yooga", external_id=1, occurred_at=now, total_q=100),
-        HistoricalSale(source="yooga", external_id=2, occurred_at=now, total_q=200),
+        HistoricalSale(source="yooga", external_id=n, occurred_at=now - timedelta(minutes=n), total_q=100 * n)
+        for n in range(1, 41)
+    ] + [
         HistoricalSale(source="seed", external_id=1, occurred_at=now, total_q=300),
     ])
 
@@ -37,10 +44,12 @@ def test_existing_sales_receive_one_legacy_batch_per_source():
     ImportBatch = new_apps.get_model("backstage", "ImportBatch")
     HistoricalSale = new_apps.get_model("backstage", "HistoricalSale")
 
+    # UM lote por origem — nem um a mais, seja qual for o número de instantes.
+    assert ImportBatch.objects.count() == 2
     batches = {b.source: b for b in ImportBatch.objects.all()}
     assert set(batches) == {"yooga", "seed"}
-    assert batches["yooga"].sales_created == 2
+    assert batches["yooga"].sales_created == 40
     assert batches["yooga"].file_sha256 == ""
     assert "anterior ao controle" in batches["yooga"].notes
     assert HistoricalSale.objects.filter(batch__isnull=True).count() == 0
-    assert HistoricalSale.objects.filter(source="yooga", batch=batches["yooga"]).count() == 2
+    assert HistoricalSale.objects.filter(source="yooga", batch=batches["yooga"]).count() == 40

@@ -460,8 +460,11 @@ def _ingest_items(sheet, sale_model, item_model, product_map) -> int:
     # Só grava itens de vendas que ainda não os têm — completável: se um
     # export futuro trouxer itens de vendas antigas, eles entram sem duplicar.
     sale_pk = dict(sale_model.objects.filter(source=SOURCE).values_list("external_id", "id"))
+    # `.order_by()` antes do `.distinct()`: o ordering do item entraria no
+    # DISTINCT e a consulta traria as 353 mil linhas em vez das ~81 mil vendas.
     with_items = set(
         item_model.objects.filter(sale__source=SOURCE)
+        .order_by()
         .values_list("sale__external_id", flat=True)
         .distinct()
     )
