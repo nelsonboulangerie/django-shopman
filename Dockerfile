@@ -17,7 +17,7 @@ RUN addgroup --system shopman \
     && apt-get install -y --no-install-recommends curl \
     && rm -rf /var/lib/apt/lists/*
 
-COPY pyproject.toml README.md manage.py ./
+COPY pyproject.toml constraints.txt README.md manage.py ./
 COPY config ./config
 COPY packages ./packages
 COPY shopman ./shopman
@@ -26,8 +26,11 @@ COPY shopman ./shopman
 # para descobrir. Ver shopman/backstage/admin_console/pos_counter_agent.py.
 COPY tools ./tools
 
+# `-c constraints.txt` fixa a versão de cada dependência transitiva no conjunto
+# que a suíte validou. Sem ele, a resolução acontecia no dia do build e a imagem
+# podia subir com pacotes que nenhum teste tinha visto. Ver constraints.txt.
 RUN python -m pip install --upgrade pip \
-    && python -m pip install \
+    && python -m pip install -c constraints.txt \
         ./packages/refs \
         ./packages/utils \
         ./packages/offerman \
