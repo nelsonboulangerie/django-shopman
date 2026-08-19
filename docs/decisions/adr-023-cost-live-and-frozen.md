@@ -1,9 +1,9 @@
 # ADR-023 — Custo: vivo para precificar, congelado no fato para contar história
 
-**Status:** Proposto (rascunho para decisão do dono, 2026-08-19)
-**Data:** 2026-08-19
-**Escopo (se aceito):** `shopman/shop` (adapter de custo composto, `OFFERMAN["COST_BACKEND"]`); `packages/craftsman` (snapshot de custo no `finish`); `packages/buyman` (leitura do custo preferencial); `docs/reference/data-schemas.md`
-**Não muda nada hoje:** esta ADR **não** vem com implementação. O backend de custo só é escrito **depois** que o dono responder a pergunta do fim.
+**Status:** **Aceito** (dono, 2026-08-19) — opção A: dois custos
+**Data:** 2026-08-19 (proposta e decisão no mesmo dia)
+**Escopo:** `shopman/shop` (adapter de custo composto, `OFFERMAN["COST_BACKEND"]`); `packages/craftsman` (snapshot de custo no `finish`); `packages/buyman` (leitura do custo preferencial); `docs/reference/data-schemas.md`
+**Ainda não implementado:** o backend depende da unidade em que o custo é expresso — [ADR-024](adr-024-material-unit-base-and-purchase.md) segue **Proposto**. Escrever o backend antes dela seria migrar dado de custo duas vezes.
 **Origem:** auditoria do Buyman (2026-08-18), achado B1
 
 ---
@@ -115,12 +115,19 @@ número vai mudar sozinho a cada compra de farinha.
   consulta temporal em todo relatório e ainda erra quando a *receita* muda.
   Snapshot no fato guarda o custo **e** a receita que valeram naquele dia.
 
-## Pergunta ao dono (responda A ou B)
+## Decisão do dono (2026-08-19)
 
-> O custo de uma fornada deve **congelar no dia em que ela foi feita** (A: dois
-> custos — vivo para precificar, congelado no WorkOrder para história e B.I.),
-> ou o histórico pode ser sempre recalculado com o custo de hoje (B: um custo só,
-> vivo — mais simples, e a margem de agosto muda quando a farinha subir)?
+> Pergunta: o custo de uma fornada deve **congelar no dia em que ela foi feita**
+> (A: dois custos — vivo para precificar, congelado no WorkOrder para história e
+> B.I.), ou o histórico pode ser sempre recalculado com o custo de hoje (B: um
+> custo só, vivo)?
+
+**Resposta: A — o custo congela.** A margem de agosto não muda quando a farinha
+subir em setembro. Valem, a partir daqui, os cinco pontos da decisão acima: dois
+custos com nomes distintos, backend vivo no orquestrador, congelamento no
+`finish`, ausência registrada como ausência (nunca zero) — e o código só depois
+da [ADR-024](adr-024-material-unit-base-and-purchase.md), que decide a unidade em
+que esse custo é expresso.
 
 ## Referências
 
