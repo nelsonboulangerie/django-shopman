@@ -2,6 +2,52 @@
 
 Instruções para agentes de código que trabalham neste repositório.
 
+## ⛔ ANTES DE ESCREVER A PRIMEIRA LINHA: abra um worktree
+
+Este repositório roda com **várias sessões do Claude Code ao mesmo tempo**. O checkout
+principal (`/django-shopman`) é chão compartilhado: um `git checkout` ou `reset --hard`
+ali troca o branch de todas as outras sessões e apaga o que elas ainda não commitaram.
+Já aconteceu em 30/07, 12/08, 13/08 e 19/08, sempre com perda de trabalho.
+
+**A regra é uma só: se você vai escrever qualquer coisa, entre num worktree primeiro.**
+
+```
+EnterWorktree                          → worktree novo, só seu
+EnterWorktree { path: "<caminho>" }    → entra num que já existe (git worktree list)
+```
+
+Faça isso **no começo da tarefa**, antes do primeiro edit e antes do primeiro commit.
+Não espere "parecer paralelo": o paralelismo não se anuncia, e quando você percebe já
+commitou no branch de outra pessoa.
+
+O que continua livre no checkout principal: **ler, buscar, rodar teste, `git status`,
+`git log`, `git diff`**. Investigar ali é ótimo. Escrever não.
+
+Uma trava de hook (`~/.claude/hooks/guard-paralelo.sh`) bloqueia `checkout`, `switch`,
+`reset --hard`, `rebase`, `merge`, `cherry-pick`, `clean -fd`, `branch -D` e `git stash`
+mutante quando a sessão está no principal, e pede confirmação em `Edit`/`Write`. Ela
+bloqueia até em modo bypass. Dentro do seu worktree nada é bloqueado. Se a trava te
+barrar, a saída é entrar no worktree, **nunca contornar**.
+
+### Quatro armadilhas do repositório compartilhado
+
+- **`git add` no principal só aceita ARQUIVO nomeado.** `git add -A`, `git add .`,
+  `git add -u` e `git add <diretório>` varrem arquivo de outra frente para dentro do seu
+  commit, sem aviso. Aconteceu em 12/08 e 19/08. Use `git add caminho/arquivo.py`.
+- **`git stash` é do repositório, não da sua worktree.** A sessão irmã dá `pop` na sua
+  entrada e o trabalho some. Use `git diff > /tmp/meu-wip.patch` ou um branch de rascunho.
+- **Numeração de migração colide em silêncio.** Duas branches criam `0002` no mesmo app e
+  o sintoma (`multiple leaf nodes in the migration graph`) só aparece quando alguém roda
+  `migrate`. Antes de abrir PR: `ls <app>/migrations | sed 's/_.*//' | sort | uniq -d`.
+- **PR em `CONFLICTING` não dispara workflow de `pull_request`.** A ausência de check
+  parece "ainda não começou" e na verdade é "bloqueado", e você espera por algo que nunca
+  vai rodar. A verdade sai em `gh pr view <N> --json mergeable`.
+
+E uma sobre testes: **a worktree não testa `packages/*` sozinha.** O `.venv` da raiz tem
+editable installs apontando para a árvore principal, então rodar teste no worktree exige
+`PYTHONPATH` e `PYTHON` explícitos.
+
+
 ## Estrutura do Projeto
 
 ```
