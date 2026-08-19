@@ -6,8 +6,13 @@ class SupplierMaterialCost(models.Model):
     """Custo de um insumo por fornecedor, em centavos.
 
     Uma linha por par (fornecedor, insumo). ``is_preferred`` marca o custo
-    canônico daquele insumo — é ele que alimenta o custeio (CostBackend) e o
-    custo de receita. Histórico de preço fica para uma fase futura.
+    canônico daquele insumo — o que **vai alimentar** o custeio de receita e o
+    ``CostBackend`` do Offerman. Hoje esta tabela não tem leitor no repositório:
+    o backend só será escrito depois da decisão de custo vivo × congelado
+    (docs/decisions/adr-023-cost-live-and-frozen.md), e a unidade em que este
+    ``cost_q`` é expresso está em aberto na
+    docs/decisions/adr-024-material-unit-base-and-purchase.md.
+    Histórico de preço fica para uma fase futura.
     """
 
     supplier = models.ForeignKey(
