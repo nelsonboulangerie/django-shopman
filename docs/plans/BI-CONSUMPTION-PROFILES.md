@@ -193,6 +193,13 @@ que define; salgado sozinho não ancora**. Efeito 2025: mudam piso→teto **63,6
 vigente A 56,5% · B 12,7% · C 30,8%. A largura que sobra é croissant, pain au chocolat e
 madeleine, híbridos de propósito.
 
+**Segunda rodada (19/08, 70 propostas restantes, também no seed):** cafés/chás do Yooga →
+`bebida-preparada`; croques/queijo quente/jambon/pain perdu → `consome-aqui`; pães rústicos,
+chás Kãnfa e SKUs iFood → `leva`; **ciabatta, tabatière, fendu e mini baguete → `hibrido`**
+(como no cardápio 2027, embora só 14–18% das vendas levem bebida) e mini focaccias → `hibrido`.
+Zero propostas restantes. Efeito 2025: mudam piso→teto **64,9%** (a ciabatta, R$ 171 mil, voltou
+para a classe ambígua); vigente A 56,5% · B 9,8% · C 33,7%.
+
 **Conciliação:** balcão R$ 2.124.088,85 + entrega R$ 178.064,20 = **R$ 2.302.153,05 = `bi_sales`** ✓
 (testado e conferido na aba Vendas). **63,6% dos pedidos mudam de perfil entre piso e teto** — a
 faixa é larga porque "Pães Finos" (55% da receita, 61 SKUs, todos etiquetados híbrido por proposta
