@@ -17,7 +17,8 @@ Dois consumidores:
   ``shopman/shop/handlers/fiscal_gate.py``.
 - **Auditoria** (``incomplete_published_products``): responde "quais vendáveis
   publicados estão fiscalmente incompletos?" ANTES do primeiro dia de emissão
-  obrigatória, em vez de a cada nota recusada.
+  obrigatória, em vez de a cada nota recusada. Comando:
+  ``manage.py fiscal_audit_catalog``.
 
 A guarda tardia do adapter (``fiscal_focusnfe._map_item`` recusa item sem NCM)
 continua onde está: última linha, não a única.

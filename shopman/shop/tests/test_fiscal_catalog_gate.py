@@ -185,3 +185,51 @@ def test_audit_ignores_products_that_are_not_published():
     _publish(listing, hidden)
 
     assert fiscal_catalog.incomplete_published_products() == []
+
+
+# ── comando de auditoria ──────────────────────────────────────────────────────
+
+
+def test_audit_command_reports_incomplete_products_as_json():
+    import json
+    from io import StringIO
+
+    from django.core.management import call_command
+
+    listing = _listing()
+    _publish(listing, _product("PAO-OK", metadata=COMPLETE))
+    _publish(listing, _product("PAO-X"))
+
+    out = StringIO()
+    call_command("fiscal_audit_catalog", "--json", stdout=out)
+    report = json.loads(out.getvalue())
+
+    assert report["channels"] == ["pdv"]
+    assert [row["sku"] for row in report["incomplete"]] == ["PAO-X"]
+    assert report["incomplete"][0]["listing_refs"] == ["pdv"]
+
+
+def test_audit_command_strict_exits_nonzero_when_catalog_is_incomplete():
+    from io import StringIO
+
+    from django.core.management import call_command
+
+    listing = _listing()
+    _publish(listing, _product("PAO-X"))
+
+    with pytest.raises(SystemExit) as exc:
+        call_command("fiscal_audit_catalog", "--strict", stdout=StringIO())
+    assert exc.value.code == 1
+
+
+def test_audit_command_is_clean_when_every_published_product_is_classified():
+    from io import StringIO
+
+    from django.core.management import call_command
+
+    listing = _listing()
+    _publish(listing, _product("PAO-OK", metadata=COMPLETE))
+
+    out = StringIO()
+    call_command("fiscal_audit_catalog", "--strict", stdout=out)
+    assert "classificação fiscal completa" in out.getvalue()

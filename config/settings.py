@@ -1049,8 +1049,9 @@ SHOPMAN_FISCAL_EMISSION_RESOLVER = (
 # venda exige classificação fiscal completa (perfil + NCM; CEST na revenda) — em
 # QUALQUER porta (admin, seed, sync do iFood, script), porque a guarda é signal.
 # DESLIGADO no pré-go-live: o catálogo ainda está sendo classificado com o
-# contador. Liga na virada, junto com o adapter fiscal.
-# Gate em shopman.shop.handlers.fiscal_gate.
+# contador. Liga na virada, junto com o adapter fiscal. Gate em
+# shopman.shop.handlers.fiscal_gate; para ver o estrago antes de ligar,
+# `manage.py fiscal_audit_catalog`.
 SHOPMAN_FISCAL_REQUIRE_CLASSIFICATION_ON_PUBLISH = _env_bool(
     "SHOPMAN_FISCAL_REQUIRE_CLASSIFICATION_ON_PUBLISH", False
 )
