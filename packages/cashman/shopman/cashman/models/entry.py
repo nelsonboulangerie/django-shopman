@@ -44,6 +44,9 @@ class Entry(models.Model):
         FLOAT_IN = "float_in", _("Fundo de troco")
         SALE = "sale", _("Venda")
         COD_SETTLED = "cod_settled", _("Acerto de entrega")
+        # Cliente acertou a conta em dinheiro: o intent `account` do Payman vira
+        # capturado e a nota entra na gaveta de quem recebeu. Uma linha por intent.
+        ACCOUNT_SETTLED = "account_settled", _("Acerto de conta")
         CASH_IN = "cash_in", _("Entrada de caixa")
         # Dinheiro sai
         REFUND = "refund", _("Devolução")
@@ -73,6 +76,7 @@ class Entry(models.Model):
         Kind.FLOAT_IN: "+",
         Kind.SALE: "+0",
         Kind.COD_SETTLED: "+",
+        Kind.ACCOUNT_SETTLED: "+",
         Kind.CASH_IN: "+",
         Kind.REFUND: "-",
         Kind.CASH_OUT: "-",
@@ -190,7 +194,7 @@ class Entry(models.Model):
             # a mesma coisa; dois jeitos é como um lançamento se disfarça de outro.
             models.CheckConstraint(
                 condition=(
-                    models.Q(kind__in=["float_in", "cod_settled", "cash_in"], amount_q__gt=0)
+                    models.Q(kind__in=["float_in", "cod_settled", "account_settled", "cash_in"], amount_q__gt=0)
                     | models.Q(kind__in=["sale", "courier_in"], amount_q__gte=0)
                     | models.Q(kind__in=["refund", "cash_out", "courier_out"], amount_q__lt=0)
                     | models.Q(kind__in=["count", "count_correction"])

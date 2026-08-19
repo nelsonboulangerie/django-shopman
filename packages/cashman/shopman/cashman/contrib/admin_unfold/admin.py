@@ -25,6 +25,7 @@ _KIND_COLORS = {
     Entry.Kind.FLOAT_IN: "base",
     Entry.Kind.SALE: "green",
     Entry.Kind.COD_SETTLED: "green",
+    Entry.Kind.ACCOUNT_SETTLED: "green",
     Entry.Kind.CASH_IN: "green",
     Entry.Kind.REFUND: "orange",
     Entry.Kind.CASH_OUT: "orange",
