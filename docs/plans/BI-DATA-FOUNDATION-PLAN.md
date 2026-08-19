@@ -1,8 +1,8 @@
 # BI-DATA-FOUNDATION-PLAN — a fundação de dados do B.I. em três camadas
 
 > **Status: 🟢 ETAPA 1 APROVADA em 2026-08-18 ("acato as recomendações") — as três decisões do
-> §6 ficaram como recomendado; ETAPA 2 em andamento: P0 ✅ (#209), P1 ✅ (#211), P2 ✅
-> (`feat/bi-canonical`); próximo P3 (série diária materializada).** Frente B, v1. Irmão de
+> §6 ficaram como recomendado; ETAPA 2 em andamento: P0 ✅ (#209), P1 ✅ (#211), P2 ✅ (#212),
+> P3 ✅ (`feat/bi-daily-series`); próximo P4 (caixa via `cashman.Entry`, absorve o WP-8).** Frente B, v1. Irmão de
 > [BI-PLAN.md](BI-PLAN.md), [BI-INSIGHTS-MAP.md](BI-INSIGHTS-MAP.md),
 > [BI-FORECAST-PLAN.md](BI-FORECAST-PLAN.md) e [BI-QUESTION-CATALOG.md](BI-QUESTION-CATALOG.md).
 > Não depende da consulta de perfis (frente separada); se ela existir quando isto rodar, é só
@@ -427,7 +427,18 @@ Detalhe original do passo abaixo.
 - Aceite: equivalência numérica em fixture com os dois tipos de dia (só histórico, só nativo,
   misto); `test_bi_schema_export` sem drift; `bi-nuxt` `npm run test` + `typecheck`.
 
-**P3 — Camada de leitura materializada (1 PR).** Só o que tem motivo.
+**P3 — Camada de leitura materializada. ✅ ENTREGUE 2026-08-19 (branch `feat/bi-daily-series`,
+sobre a do P2).** Como saiu: `backstage.DailySalesFact` (migração `0024`; uma linha por dia
+**coberto** — dia sem venda entra com zero: presença = cobertura, ausência = "ninguém calculou";
+`historical_dropped` persistido para os alarmes; `refreshed_at`), `bi/daily_series.py`
+(`refresh(intervalo)` apaga-e-regrava; `refresh_all()` zera e recomputa do primeiro dia com
+venda; `materialized(since, until)` só responde com a janela inteira coberta), comando
+`refresh_bi_daily_series` (default últimos 3 dias; `--all`; `--from/--to`) no
+`maintenance_worker`, no fim do `ingest_yooga` e do `seed`; `sales_series.daily_sales` lê a
+tabela quando pode e **cai para o cálculo ao vivo** quando não (nunca inventa zero; testes
+seguem ao vivo). Teste de igualdade materializado == vivo. Admin somente leitura "Vendas por dia".
+⚠️ Deploy: rodar `refresh_bi_daily_series --all` uma vez (o worker mantém dali em diante).
+Detalhe original do passo abaixo.
 - `bi.DailySalesFact` (`date`, `source`, `channel_key`, `revenue_q`, `orders`, `cash_orders`,
   `payments_known`, `refreshed_at`, `batch`/`warning`) — refeita por `refresh_bi_daily_series
   --days N` no `maintenance_worker` (ciclo de 300 s, ADR-003 intacto) e por sinal de lote novo

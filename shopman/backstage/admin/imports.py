@@ -19,7 +19,7 @@ from shopman.utils.monetary import format_money
 from unfold.admin import ModelAdmin
 from unfold.decorators import display
 
-from shopman.backstage.models import HistoricalSale, HistoricalSaleItem, ImportBatch
+from shopman.backstage.models import DailySalesFact, HistoricalSale, HistoricalSaleItem, ImportBatch
 
 
 class _ReadOnly:
@@ -100,3 +100,30 @@ class HistoricalSaleAdmin(_ReadOnly, ModelAdmin):
         # O único rótulo confiável do histórico. Mesa/balcão crus ficam nos
         # campos deles, sem virar canal.
         return unfold_badge("delivery" if obj.is_delivery else "loja", "blue" if obj.is_delivery else "base")
+
+
+@admin.register(DailySalesFact)
+class DailySalesFactAdmin(_ReadOnly, ModelAdmin):
+    """A série diária como a projeção a lê — para conferir, não para editar.
+
+    Recomputável do zero (`refresh_bi_daily_series --all`); editar à mão criaria
+    um número que nenhuma fonte sustenta. `refreshed_at` diz há quanto tempo o
+    worker passou por aquele dia.
+    """
+
+    list_display = (
+        "date", "source", "orders", "revenue_display", "cash_orders", "payments_known",
+        "historical_dropped", "refreshed_at",
+    )
+    list_filter = ("source",)
+    date_hierarchy = "date"
+    ordering = ("-date",)
+    fields = (
+        "date", "source", "orders", "revenue_display", "cash_orders", "payments_known",
+        "historical_dropped", "refreshed_at",
+    )
+    readonly_fields = fields
+
+    @display(description="faturamento")
+    def revenue_display(self, obj):
+        return unfold_badge_numeric(f"R$ {format_money(obj.revenue_q)}", "base")

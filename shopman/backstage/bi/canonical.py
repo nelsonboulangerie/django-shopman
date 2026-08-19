@@ -100,7 +100,8 @@ class SalesWindow:
     sales: tuple[CanonicalSale, ...]
     native_days: frozenset[date]
     historical_days: dict[date, str]  # dia preenchido pelo histórico → fonte
-    source_conflicts: tuple[SourceConflict, ...]
+    historical_dropped: dict[date, int]  # dia nativo → quantas vendas históricas ficaram de fora
+    source_conflicts: tuple[SourceConflict, ...]  # os `historical_dropped` que passam da régua
     cancelled_native: int  # pedidos nativos cancelados/devolvidos: contados à parte, fora da venda
     _lines: list[CanonicalSaleLine] | None = field(default=None, repr=False, compare=False)
 
@@ -174,6 +175,7 @@ def read_sales(date_from: date, date_to: date) -> SalesWindow:
         sales=tuple(kept),
         native_days=native_days,
         historical_days=historical_days,
+        historical_dropped={day: count for day, (count, _source) in dropped.items()},
         source_conflicts=conflicts,
         cancelled_native=cancelled,
     )

@@ -5917,10 +5917,15 @@ class Command(BaseCommand):
         self._seed_day_calendar(days=self.BI_LONG_DAYS)
         sales = self._seed_long_sales_history(products, days=self.BI_LONG_DAYS)
         native = self._seed_recent_native_volume(products, days=days)
+        # A série diária materializada é derivada do que acabou de ser semeado:
+        # recomputada do zero, senão a projeção leria a tabela de um seed antigo.
+        from shopman.backstage.bi.daily_series import refresh_all
+
+        materialized = refresh_all()
         self.stdout.write(
             f"  ✅ B.I.: {days} dias de prateleira/faltas/forno, "
-            f"{self.BI_LONG_DAYS} dias de contexto, {sales} vendas históricas "
-            f"e {native} pedidos nativos de volume"
+            f"{self.BI_LONG_DAYS} dias de contexto, {sales} vendas históricas, "
+            f"{native} pedidos nativos de volume e {materialized} dias materializados"
         )
 
     def _seed_episode_kinds(self) -> None:
