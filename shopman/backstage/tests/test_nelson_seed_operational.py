@@ -86,7 +86,10 @@ def test_nelson_seed_populates_production_history_alerts_and_batches(monkeypatch
     farinha = Material.objects.get(sku="FARINHA-T65")
     assert (farinha.unit, farinha.shelf_life_days) == ("kg", 180)
     assert farinha.metadata["allergens"] == ["glúten"]
-    assert Material.objects.get(sku="AGUA").shelf_life_days is None  # não perecível
+    # A água da massa é AGUA-FILTRADA: AGUA é a garrafa que se vende no balcão, e
+    # produto e insumo dividem um namespace de SKU só (shop/services/sku_namespace.py).
+    assert Material.objects.get(sku="AGUA-FILTRADA").shelf_life_days is None  # não perecível
+    assert not Material.objects.filter(sku="AGUA").exists()
     assert Material.objects.get(sku="FERMENTO-NAT").shelf_life_days == 7
     # Todo input de receita resolve: insumo cru (Material), intermediário (output
     # de outra receita, ex. MASSA-*) ou produto. Sem inputs órfãos pós-rename.

@@ -70,6 +70,10 @@ class ShopmanConfig(AppConfig):
         # 8. Inject store-driven stock-alert cooldown into the stockman Core
         self._register_stock_alert_resolvers()
 
+        # 9. Guard the single SKU namespace shared by Product (Offerman) and
+        #    Material (Buyman) — neither core can see the other (ADR-001)
+        self._connect_sku_namespace_guard()
+
     def _register_admin_dashboard(self):
         from django.contrib import admin
 
@@ -142,6 +146,37 @@ class ShopmanConfig(AppConfig):
 
         set_alert_cooldown_resolver(resolve_cooldown_minutes)
         logger.info("ShopmanConfig: stock alert resolvers registered.")
+
+    def _connect_sku_namespace_guard(self):
+        """Refuse the same SKU on both sides of the catalog, at every door.
+
+        Product (vendável) e Material (insumo) são únicos cada um na sua tabela e
+        dividem um namespace só — o do estoque, o da ficha técnica, o dos
+        adapters compostos. Cores não se importam, então o porteiro é do
+        orquestrador (ver ``shopman/shop/services/sku_namespace.py``).
+        """
+        from django.db.models.signals import pre_save
+        from shopman.buyman.models import Material
+        from shopman.offerman.models import Product
+
+        from shopman.shop.services.sku_namespace import (
+            refuse_material_sku_taken_by_product,
+            refuse_product_sku_taken_by_material,
+        )
+
+        pre_save.connect(
+            refuse_material_sku_taken_by_product,
+            sender=Material,
+            dispatch_uid="shopman.shop.sku_namespace.material",
+            weak=False,
+        )
+        pre_save.connect(
+            refuse_product_sku_taken_by_material,
+            sender=Product,
+            dispatch_uid="shopman.shop.sku_namespace.product",
+            weak=False,
+        )
+        logger.info("ShopmanConfig: SKU namespace guard connected.")
 
     def _register_handlers(self):
         """Register all directive handlers, modifiers, validators, and stock signals.

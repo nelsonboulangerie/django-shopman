@@ -4,10 +4,15 @@ Composed SkuValidator — Offerman (vendáveis) + Buyman (insumos) + neutro.
 Resolves a sku as a sellable Product (Offerman) first, then as an ingredient
 Material (Buyman). Implements Stockman's SkuValidator protocol.
 
-⚠️ NOT wired globally yet. STOCKMAN["SKU_VALIDATOR"] stays Noop until Buyman
-WP-B5 turns shelf-life/availability on with care (flipping a real validator
-changes availability semantics for every sku — see config/settings STOCKMAN
-note and ADR-001). This adapter is the resolution layer that B5 will activate.
+Ligado em STOCKMAN["SKU_VALIDATOR"] (config/settings.py) — é este validador que
+responde disponibilidade e shelf-life de todo sku do sistema.
+
+⚠️ Produto e insumo dividem um namespace de SKU só, sem unicidade cruzada no
+banco, e aqui a precedência é do produto. Diferente do catálogo composto, este
+caminho é QUENTE (disponibilidade da loja), então ele não paga uma consulta extra
+por resolução para detectar colisão: quem impede a colisão de nascer é o porteiro
+em shopman/shop/services/sku_namespace.py (pre_save nos dois modelos), e quem
+denuncia a colisão preexistente é o system check SHOPMAN_W012.
 """
 
 from __future__ import annotations
