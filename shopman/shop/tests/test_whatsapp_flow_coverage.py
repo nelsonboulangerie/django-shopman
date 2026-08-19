@@ -43,7 +43,7 @@ def test_no_campaign_no_warning(db):
 
 def test_a_whatsapp_campaign_without_a_flow_warns(db):
     _campaign("Fornada", platforms=["whatsapp"])
-    assert _ids(check_whatsapp_flow_coverage(None)) == ["SHOPMAN_W010"]
+    assert _ids(check_whatsapp_flow_coverage(None)) == ["SHOPMAN_W014"]
 
 
 def test_the_warning_names_the_campaigns_so_the_fix_is_obvious(db):
@@ -74,7 +74,7 @@ def test_an_empty_flow_ns_does_not_count_as_configured(db):
     _campaign("Fornada", platforms=["whatsapp"])
     NotificationTemplate.objects.create(event=EVENT, subject="", body="oi", whatsapp_flow_ns="")
 
-    assert _ids(check_whatsapp_flow_coverage(None)) == ["SHOPMAN_W010"]
+    assert _ids(check_whatsapp_flow_coverage(None)) == ["SHOPMAN_W014"]
 
 
 def test_a_campaign_without_whatsapp_is_not_the_subject(db):

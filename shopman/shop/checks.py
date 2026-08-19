@@ -8,7 +8,6 @@ Errors (block runserver/migrate --deploy in production):
   SHOPMAN_E002  ALLOWED_HOSTS is empty or contains '*'
   SHOPMAN_E003  PIX or CARD payment adapter is missing or payment_mock without explicit staging allowance
   SHOPMAN_E004  A webhook integration has no token configured
-  SHOPMAN_E005  Guestman (Manychat) webhook secret not configured
   SHOPMAN_E006  Shared Redis cache is not configured
   SHOPMAN_E007  Database backend is SQLite in production
   SHOPMAN_E008  Doorman access-link API key is not configured
@@ -26,8 +25,13 @@ Warnings (non-blocking, logged at startup):
   SHOPMAN_W005  OFFERMAN pricing backend not configured
   SHOPMAN_W006  Mock payment adapter explicitly allowed outside DEBUG
   SHOPMAN_W007  Debug OTP exposure explicitly allowed in staging
+  SHOPMAN_W008  iFood webhook token is not configured (integration webhook unauthenticated)
+  SHOPMAN_W009  Manychat webhook secret is not configured
   SHOPMAN_W010  Machine courier enabled without webhook token (status via polling only)
   SHOPMAN_W011  Piloto automático de staging ligado (pedidos andam sozinhos)
+  SHOPMAN_W012  Display channel has no valid display.prices_from pointer
+  SHOPMAN_W013  Publicly tracked channel takes price from a non-public channel
+  SHOPMAN_W014  Active WhatsApp campaign without an approved template (flow ns)
 """
 
 from __future__ import annotations
@@ -707,7 +711,7 @@ def check_display_channel_price_source(app_configs, **kwargs):
                         "pode anunciar preço que a loja não cobra. Defina "
                         "config.display.prices_from com a ref de um canal de venda."
                     ),
-                    id="SHOPMAN_W008",
+                    id="SHOPMAN_W012",
                 )
             )
             continue
@@ -722,7 +726,7 @@ def check_display_channel_price_source(app_configs, **kwargs):
                         "obrigaria a honrá-lo para qualquer um. Aponte prices_from para o "
                         "canal da loja."
                     ),
-                    id="SHOPMAN_W009",
+                    id="SHOPMAN_W013",
                 )
             )
 
@@ -797,7 +801,7 @@ def check_whatsapp_flow_coverage(app_configs, **kwargs):
                 "aprove na Meta e cole o ns no Admin — `manage.py manychat_flows` lista "
                 "os ns disponíveis."
             ),
-            id="SHOPMAN_W010",
+            id="SHOPMAN_W014",
         )
     )
     return warnings
