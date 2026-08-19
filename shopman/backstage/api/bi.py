@@ -6,6 +6,7 @@ escreve; os ledgers seguem donos do fato.
 
 from __future__ import annotations
 
+from dataclasses import replace
 from datetime import date, timedelta
 
 from django.utils import timezone
@@ -13,12 +14,15 @@ from drf_spectacular.utils import OpenApiResponse, extend_schema, extend_schema_
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from shopman.backstage.permissions import CASH_AUDIT_PERMISSION, can_audit_cash
 from shopman.backstage.projections.bi_cash import build_bi_cash
 from shopman.backstage.projections.bi_change import build_bi_change
 from shopman.backstage.projections.bi_customers import build_bi_customers
 from shopman.backstage.projections.bi_explore import (
+    AUDIT_ONLY_FAMILIES,
     ExploreError,
     build_bi_explore,
+    metric_family,
     validate_config,
 )
 from shopman.backstage.projections.bi_forecast import ForecastError, build_bi_forecast
@@ -87,6 +91,12 @@ class BISalesView(_BIBase):
     ),
 )
 class BICashView(_BIBase):
+    """Apuração, não faturamento: quebra por operador é o que o fechamento cego
+    existe para produzir. Por isso exige ``cashman.audit_shift`` além de
+    ``view_bi`` — o gerente opera e conta às cegas; quem audita vê."""
+
+    required_permission = ("backstage.view_bi", CASH_AUDIT_PERMISSION)
+
     def get(self, request):
         report = build_bi_cash(
             date_from=_query_date(request, "date_from"),
@@ -119,10 +129,23 @@ class BICustomersView(_BIBase):
     ),
 )
 class BIExploreView(_BIBase):
+    """A família ``cash`` (quebra de caixa) é apuração: só para quem audita.
+
+    A gramática devolvida a quem não pode NÃO lista a métrica — a tela não
+    oferece o que a API vai recusar —, e pedir por ela direto é 403.
+    """
+
     def get(self, request):
+        metric = str(request.GET.get("metric") or "revenue").strip()
+        auditor = can_audit_cash(_permission_subject(request))
+        if not auditor and metric_family(metric) in AUDIT_ONLY_FAMILIES:
+            return Response(
+                {"detail": "Apuração de caixa é só para quem audita o turno (cashman.audit_shift)."},
+                status=403,
+            )
         try:
             report = build_bi_explore(
-                metric=str(request.GET.get("metric") or "revenue").strip(),
+                metric=metric,
                 by=str(request.GET.get("by") or "time").strip(),
                 by2=str(request.GET.get("by2") or "").strip(),
                 date_from=_query_date(request, "date_from"),
@@ -130,7 +153,17 @@ class BIExploreView(_BIBase):
             )
         except ExploreError as exc:
             return Response({"detail": str(exc)}, status=400)
+        if not auditor:
+            report = replace(
+                report,
+                metrics=tuple(m for m in report.metrics if metric_family(m.key) not in AUDIT_ONLY_FAMILIES),
+            )
         return Response({"bi": projection_data(report)})
+
+
+def _permission_subject(request):
+    """Quem responde pela permissão: o operador ativo (Opção C) ou a sessão."""
+    return getattr(request, "active_operator_user", None) or request.user
 
 
 @extend_schema_view(

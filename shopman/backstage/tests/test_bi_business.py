@@ -71,14 +71,55 @@ def test_bi_endpoints_require_view_bi(client, url_name):
 
 
 @pytest.mark.django_db
-@pytest.mark.parametrize(
-    "url_name", ["api-backstage-bi-sales", "api-backstage-bi-cash", "api-backstage-bi-customers"]
-)
+@pytest.mark.parametrize("url_name", ["api-backstage-bi-sales", "api-backstage-bi-customers"])
 def test_bi_endpoints_respond_for_viewer(client, bi_viewer, url_name):
     client.force_login(bi_viewer)
     response = client.get(reverse(url_name))
     assert response.status_code == 200
     assert "bi" in response.json()
+
+
+def _audit_perm() -> Permission:
+    from shopman.cashman.models import Shift
+
+    return Permission.objects.get(
+        content_type=ContentType.objects.get_for_model(Shift), codename="audit_shift"
+    )
+
+
+@pytest.mark.django_db
+def test_cash_panel_is_audit_only_even_for_a_bi_viewer(client, bi_viewer):
+    """Quebra por operador é apuração, não faturamento: quem opera não vê (decisão do dono, 19/08).
+
+    `view_bi` sozinho abre vendas e produção; o caixa pede `cashman.audit_shift`
+    além dele — a permissão que o fechamento cego reserva a quem audita.
+    """
+    client.force_login(bi_viewer)
+    assert client.get(reverse("api-backstage-bi-cash")).status_code == 403
+    # A gramática do explorador não oferece o que a API vai recusar…
+    explore = client.get(reverse("api-backstage-bi-explore"))
+    assert explore.status_code == 200
+    assert "cash_difference" not in {m["key"] for m in explore.json()["bi"]["metrics"]}
+    # …e pedir por ela direto é 403, com o motivo.
+    denied = client.get(reverse("api-backstage-bi-explore"), {"metric": "cash_difference", "by": "operator"})
+    assert denied.status_code == 403
+    assert "audit" in denied.json()["detail"]
+
+    bi_viewer.user_permissions.add(_audit_perm())
+    client.force_login(bi_viewer)  # perms são cacheadas por request user; relogar limpa
+    assert client.get(reverse("api-backstage-bi-cash")).status_code == 200
+    explore = client.get(reverse("api-backstage-bi-explore"))
+    assert "cash_difference" in {m["key"] for m in explore.json()["bi"]["metrics"]}
+    assert client.get(reverse("api-backstage-bi-explore"), {"metric": "cash_difference", "by": "operator"}).status_code == 200
+
+
+@pytest.mark.django_db
+def test_audit_alone_does_not_open_the_bi(client):
+    """As duas permissões são exigidas: auditar o turno não é ver o B.I."""
+    auditor = User.objects.create_user("so-audita", password="pw", is_staff=True)
+    auditor.user_permissions.add(_audit_perm())
+    client.force_login(auditor)
+    assert client.get(reverse("api-backstage-bi-cash")).status_code == 403
 
 
 # ── Vendas ───────────────────────────────────────────────────────────────────
@@ -207,6 +248,12 @@ def test_cash_variance_by_operator_and_missing_closings(db):
     # Tudo pelo livro: fundo 100,00, sangria 50,00, contagem 48,00 → falta de 2,00.
     shift = cash.open_shift(operator=operator, terminal=terminal, float_q=10000)
     cash.record(Entry.Kind.CASH_OUT, shift=shift, operator=operator, approved_by=manager, amount_q=-5000, reason="teste")
+    # E o comportamento de gaveta, do mesmo livro (WP-8): duas aberturas sem
+    # venda, um destrave por gerente e um pedido de troco — por operador e por hora.
+    cash.record(Entry.Kind.DRAWER_OPEN, shift=shift, operator=operator, reason="conferir")
+    cash.record(Entry.Kind.DRAWER_OPEN, shift=shift, operator=operator, reason="conferir")
+    cash.record(Entry.Kind.DRAWER_UNLOCK, shift=shift, operator=operator, approved_by=manager, reason="emperrou")
+    cash.record(Entry.Kind.CHANGE_REQUESTED, shift=shift, operator=operator, payload={"amount_q": 5000})
     cash.close_shift(shift, counted_q=4800, actor=operator)
     DayClosing.objects.create(
         date=timezone.localdate(),
@@ -219,12 +266,11 @@ def test_cash_variance_by_operator_and_missing_closings(db):
     assert today.shifts == 1
     assert today.difference_q == -200
     assert today.sangria_q == 5000
-    assert report.by_operator == (
-        report.by_operator[0].__class__(
-            operator="caixa-ana", shifts=1, difference_q=-200,
-            drawer_openings=0, drawer_unlocks=0, change_requests=0,
-        ),
-    )
+    (ana,) = report.by_operator
+    assert (ana.operator, ana.shifts, ana.difference_q) == ("caixa-ana", 1, -200)
+    assert (ana.drawer_openings, ana.drawer_unlocks, ana.change_requests) == (2, 1, 1)
+    hour = timezone.localtime(timezone.now()).hour
+    assert [(row.hour, row.drawer_openings, row.drawer_unlocks) for row in report.drawer_by_hour] == [(hour, 2, 1)]
     assert {(m.method, m.amount_q) for m in report.payment_methods} == {("pix", 4000), ("cash", 6000)}
     # 28 dias de janela, só hoje fechado: 27 buracos DECLARADOS.
     assert report.closings_missing == 27

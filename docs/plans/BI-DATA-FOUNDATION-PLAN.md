@@ -2,7 +2,8 @@
 
 > **Status: 🟢 ETAPA 1 APROVADA em 2026-08-18 ("acato as recomendações") — as três decisões do
 > §6 ficaram como recomendado; ETAPA 2 em andamento: P0 ✅ (#209), P1 ✅ (#211), P2 ✅ (#212),
-> P3 ✅ (`feat/bi-daily-series`); próximo P4 (caixa via `cashman.Entry`, absorve o WP-8).** Frente B, v1. Irmão de
+> P3 ✅ (#214), P4 ✅ (`feat/bi-cash-canonical`). **v1 da fundação completo**; P5 (NFC-e) espera
+> emissão real; roadmap (§7) desenhado, não implementado.** Frente B, v1. Irmão de
 > [BI-PLAN.md](BI-PLAN.md), [BI-INSIGHTS-MAP.md](BI-INSIGHTS-MAP.md),
 > [BI-FORECAST-PLAN.md](BI-FORECAST-PLAN.md) e [BI-QUESTION-CATALOG.md](BI-QUESTION-CATALOG.md).
 > Não depende da consulta de perfis (frente separada); se ela existir quando isto rodar, é só
@@ -449,7 +450,18 @@ Detalhe original do passo abaixo.
   hora até o gatilho da ADR-021 disparar — e quando disparar, o formato já existe.
 - Aceite: `daily_sales` materializado == calculado (teste de igualdade); p95 medido antes/depois.
 
-**P4 — Caixa: `cashman.Entry` entra pelo padrão provado (1 PR, após WP-4 mergeado).**
+**P4 — Caixa: `cashman.Entry` entra pelo padrão provado. ✅ ENTREGUE 2026-08-19 (branch
+`feat/bi-cash-canonical`, sobre a do P3; WP-4 já estava no `main`).** Como saiu:
+`CanonicalCashEvent`/`CanonicalShift` no contrato + `bi/sources/cashman.py` (`read_events`,
+`read_closed_shifts` com a diferença provada pelo livro em lote); `bi_cash` e a família `cash` do
+explorador leem o adaptador; **WP-8 do CASHMAN-PLAN entregue aqui**: `by_operator` ganha
+`drawer_openings`/`drawer_unlocks`/`change_requests`, `drawer_by_hour`, contrato regenerado,
+`cash.vue` com as colunas e a seção "Gaveta por hora". **Gate (decisão do dono, 19/08):** o painel
+de caixa (`bi/cash/`) e a métrica `cash_difference` exigem `cashman.audit_shift` ALÉM de
+`view_bi` (`HasBackstagePermission` aceita tupla; a gramática do explorador esconde a métrica de
+quem não pode; pedir direto é 403); faturamento/vendas seguem em `view_bi`. ⚠️ `audit_shift`
+só se concede pelo grupo "Dono" (#215), que nasce vazio — pós-deploy alguém entra nele.
+Detalhe original do passo abaixo.
 - `bi/sources/cashman.py` (`iter_cash_events(window)` → `CanonicalCashEvent`: `shift`,
   `operator_key`, `kind`, `amount_q`, `at`, `order_ref`, `parent`). `bi_cash` e a família `cash`
   do explorador migram; **o WP-8 do CASHMAN-PLAN (por operador: aberturas, destraves, troco;

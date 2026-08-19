@@ -32,7 +32,10 @@ class HasBackstagePermission(BasePermission):
     """Check a specific Django permission code declared on the view.
 
     The view must define ``required_permission = "backstage.operate_kds"``
-    (or similar). Falls back to staff-only when no permission is declared.
+    (or similar) — or a tuple of codes, ALL required (e.g. the B.I. cash panel:
+    ``("backstage.view_bi", "cashman.audit_shift")``, because apuração de caixa
+    é mais restrita que o resto do B.I.). Falls back to staff-only when no
+    permission is declared.
 
     **Opção C (gated by ``SHOPMAN_REQUIRE_ACTIVE_OPERATOR``):** when ON, the device
     session only provides station trust — the permission is checked against the
@@ -51,10 +54,11 @@ class HasBackstagePermission(BasePermission):
         if not (user and user.is_authenticated and user.is_staff):
             return False
         perm = getattr(view, "required_permission", None)
+        perms = _required_codes(perm)
 
         if not getattr(settings, "SHOPMAN_REQUIRE_ACTIVE_OPERATOR", False):
             # Default / legacy: the authenticated device session decides.
-            return perm is None or user.has_perm(perm)
+            return all(user.has_perm(code) for code in perms)
 
         # Opção C: authorize against the operator who unlocked the terminal.
         from shopman.backstage.services.operator import resolve_active_operator_user
@@ -65,10 +69,19 @@ class HasBackstagePermission(BasePermission):
             self.code = STATION_LOCKED_CODE
             return False
         request.active_operator_user = operator
-        if perm is not None and not operator.has_perm(perm):
+        if not all(operator.has_perm(code) for code in perms):
             self.message = "Operador sem permissão para esta ação."
             return False
         return True
+
+
+def _required_codes(perm) -> tuple[str, ...]:
+    """``None`` → nada exigido; string → uma; tupla/lista → todas."""
+    if perm is None:
+        return ()
+    if isinstance(perm, str):
+        return (perm,)
+    return tuple(perm)
 
 
 class CanViewOperatorAlerts(BasePermission):

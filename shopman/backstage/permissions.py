@@ -62,6 +62,11 @@ def can_operate_pos(user) -> bool:
     return is_superuser(user) or user.has_perm("cashman.operate_pos")
 
 
+#: A permissão da apuração. O B.I. de caixa (quebra por operador) a exige ALÉM
+#: de ``view_bi`` — decisão do dono, 19/08/2026; a permissão mora no ``cashman``.
+CASH_AUDIT_PERMISSION = "cashman.audit_shift"
+
+
 def can_audit_cash(user) -> bool:
     """Quem pode ver a APURAÇÃO do caixa: esperado, contado, diferença.
 
@@ -78,7 +83,7 @@ def can_audit_cash(user) -> bool:
     mostravam a apuração para qualquer um com ``operate_pos``. Este predicado é
     onde ela passa a valer.
     """
-    return is_superuser(user) or user.has_perm("cashman.audit_shift")
+    return is_superuser(user) or user.has_perm(CASH_AUDIT_PERMISSION)
 
 
 def can_operate_kds(user) -> bool:

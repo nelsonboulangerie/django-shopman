@@ -2,6 +2,7 @@
 // `python manage.py export_bi_schema`; o teste de drift falha se divergir.
 export type {
   BICashDay,
+  BICashHourRow,
   BICashMethodRow,
   BICashOperatorRow,
   BICashReport,

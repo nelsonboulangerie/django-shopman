@@ -1,21 +1,25 @@
 """B.I. de caixa — leitura analítica (ADR-021, BI-PLAN §5/F4), sobre o livro.
 
-Tendência de quebra de caixa por dia e por operador (a diferença de cada turno
-fechado, provada pelo livro do ``cashman``: ``count`` + correções), sangrias e
-suprimentos (linhas ``cash_out``/``cash_in``) e o mix de meios de pagamento
-consolidado pelo fechamento (``DayClosing.data.cash_shift_summary.payment_method_totals``
-— consumo registrado em docs/reference/data-schemas.md). Dias da janela sem
+Lê o livro do ``cashman`` pela camada canônica (``bi/sources/cashman.py``):
+a quebra de cada turno fechado (``count`` + correções), sangrias e suprimentos
+(``cash_out``/``cash_in``), e o comportamento de gaveta que motivou o log de
+eventos — aberturas sem venda, destraves por gerente e pedidos de troco, por
+operador e por hora do dia (WP-8 do CASHMAN-PLAN). O mix de meios vem do
+fechamento do dia (``DayClosing.data.cash_shift_summary.payment_method_totals``,
+consumo registrado em docs/reference/data-schemas.md). Dias da janela sem
 fechamento entram em ``closings_missing``: o buraco é declarado, nunca
 silenciado.
+
+⚠️ Isto é APURAÇÃO, não faturamento: quebra por operador é o que o fechamento
+cego existe para produzir. O endpoint exige ``cashman.audit_shift`` além de
+``backstage.view_bi`` (decisão do dono, 19/08/2026) — quem opera não vê.
 """
 
 from __future__ import annotations
 
 from collections import defaultdict
 from dataclasses import dataclass
-from datetime import date, timedelta
-
-from django.utils import timezone
+from datetime import date
 
 
 @dataclass(frozen=True)
@@ -32,7 +36,7 @@ class BICashOperatorRow:
     operator: str
     shifts: int
     difference_q: int
-    # Do livro do turno: contagens no período. Zero é zero, não "não sei".
+    # Do livro: contagens no período. Zero é zero, não "não sei".
     drawer_openings: int
     drawer_unlocks: int
     change_requests: int
@@ -81,55 +85,60 @@ class BICashReport:
 def build_bi_cash(
     *, date_from: date | None = None, date_to: date | None = None
 ) -> BICashReport:
-    from shopman.cashman.models import Shift
+    from shopman.cashman.models import Entry
 
+    from shopman.backstage.bi.canonical import iter_days, local_window
+    from shopman.backstage.bi.sources import cashman
     from shopman.backstage.models import DayClosing
 
     from .bi_production import _normalize_window
 
     date_from, date_to = _normalize_window(date_from, date_to)
-
-    shifts = list(
-        Shift.objects.filter(
-            status=Shift.Status.CLOSED,
-            closed_at__date__range=(date_from, date_to),
-        ).select_related("operator")
-    )
-    difference_by_shift = _difference_by_shift([shift.pk for shift in shifts])
+    Kind = Entry.Kind
 
     day_shifts: dict[date, int] = defaultdict(int)
     day_difference: dict[date, int] = defaultdict(int)
     operator_shifts: dict[str, int] = defaultdict(int)
     operator_difference: dict[str, int] = defaultdict(int)
+    shifts = cashman.read_closed_shifts(date_from, date_to)
     for shift in shifts:
-        day = timezone.localtime(shift.closed_at).date()
-        difference_q = difference_by_shift.get(shift.pk, 0)
+        day = shift.closed_at.date()
+        difference_q = shift.difference_q or 0
         day_shifts[day] += 1
         day_difference[day] += difference_q
-        operator = shift.operator.get_username()
-        operator_shifts[operator] += 1
-        operator_difference[operator] += difference_q
+        operator_shifts[shift.operator_key] += 1
+        operator_difference[shift.operator_key] += difference_q
 
-    day_movements = _movements_by_day(date_from, date_to)
+    # Uma passada pelo livro: sangria/suprimento por dia, e o comportamento de
+    # gaveta por operador E por hora — "quem" e "quando" são as duas perguntas
+    # do gerente. Operador que só tem evento (turno ainda aberto) também entra
+    # na tabela: a abertura de gaveta não espera o fechamento para contar.
+    day_movements: dict[date, dict[str, int]] = defaultdict(lambda: defaultdict(int))
+    operator_events: dict[str, dict[str, int]] = defaultdict(lambda: defaultdict(int))
+    hour_events: dict[int, dict[str, int]] = defaultdict(lambda: defaultdict(int))
+    counted = (Kind.DRAWER_OPEN, Kind.DRAWER_UNLOCK, Kind.CHANGE_REQUESTED)
+    for event in cashman.read_events(local_window(date_from, date_to)):
+        if event.kind in (Kind.CASH_OUT, Kind.CASH_IN):
+            day_movements[event.day][event.kind] += abs(event.amount_q)  # o sinal já é o tipo
+        elif event.kind in counted:
+            operator_events[event.operator_key][event.kind] += 1
+            if event.kind != Kind.CHANGE_REQUESTED:
+                hour_events[event.at.hour][event.kind] += 1
 
-    days = []
-    day = date_from
-    while day <= date_to:
-        days.append(
-            BICashDay(
-                date=day.isoformat(),
-                shifts=day_shifts.get(day, 0),
-                difference_q=day_difference.get(day, 0),
-                sangria_q=day_movements.get(day, {}).get("cash_out", 0),
-                suprimento_q=day_movements.get(day, {}).get("cash_in", 0),
-            )
+    days = tuple(
+        BICashDay(
+            date=day.isoformat(),
+            shifts=day_shifts.get(day, 0),
+            difference_q=day_difference.get(day, 0),
+            sangria_q=day_movements[day][Kind.CASH_OUT],
+            suprimento_q=day_movements[day][Kind.CASH_IN],
         )
-        day += timedelta(days=1)
+        for day in iter_days(date_from, date_to)
+    )
 
     method_totals: dict[str, int] = defaultdict(int)
-    closings = DayClosing.objects.filter(date__range=(date_from, date_to))
     closed_dates = set()
-    for closing in closings:
+    for closing in DayClosing.objects.filter(date__range=(date_from, date_to)):
         closed_dates.add(closing.date)
         data = closing.data if isinstance(closing.data, dict) else {}
         totals = (data.get("cash_shift_summary") or {}).get("payment_method_totals") or {}
@@ -138,27 +147,21 @@ def build_bi_cash(
                 continue
             method_totals[method] += amount
 
-    # Comportamento de gaveta, do livro. Por operador E por hora, porque "quem"
-    # e "quando" são as duas perguntas do gerente ("quem abre a gaveta 3× mais
-    # que os outros?", "quantos destraves, em que horário?"). Operador que só
-    # tem lançamento (turno ainda aberto) também entra na tabela: a abertura de
-    # gaveta não espera o fechamento para contar.
-    operator_events, hour_events = _drawer_behaviour(date_from, date_to)
     operators = sorted(set(operator_shifts) | set(operator_events))
     window_days = (date_to - date_from).days + 1
 
     return BICashReport(
         date_from=date_from.isoformat(),
         date_to=date_to.isoformat(),
-        days=tuple(days),
+        days=days,
         by_operator=tuple(
             BICashOperatorRow(
                 operator=operator,
                 shifts=operator_shifts.get(operator, 0),
                 difference_q=operator_difference.get(operator, 0),
-                drawer_openings=operator_events[operator]["drawer_open"],
-                drawer_unlocks=operator_events[operator]["drawer_unlock"],
-                change_requests=operator_events[operator]["change_requested"],
+                drawer_openings=operator_events[operator][Kind.DRAWER_OPEN],
+                drawer_unlocks=operator_events[operator][Kind.DRAWER_UNLOCK],
+                change_requests=operator_events[operator][Kind.CHANGE_REQUESTED],
             )
             for operator in operators
         ),
@@ -173,94 +176,30 @@ def build_bi_cash(
         drawer_by_hour=tuple(
             BICashHourRow(
                 hour=hour,
-                drawer_openings=hour_events[hour]["drawer_open"],
-                drawer_unlocks=hour_events[hour]["drawer_unlock"],
+                drawer_openings=hour_events[hour][Kind.DRAWER_OPEN],
+                drawer_unlocks=hour_events[hour][Kind.DRAWER_UNLOCK],
             )
             for hour in sorted(hour_events)
         ),
     )
 
 
-def _drawer_behaviour(date_from: date, date_to: date):
-    """Aberturas sem venda, destraves e pedidos de troco: por operador e por hora."""
-    from shopman.cashman.models import Entry
-
-    kinds = (Entry.Kind.DRAWER_OPEN, Entry.Kind.DRAWER_UNLOCK, Entry.Kind.CHANGE_REQUESTED)
-    operator_events: dict[str, dict[str, int]] = defaultdict(lambda: defaultdict(int))
-    hour_events: dict[int, dict[str, int]] = defaultdict(lambda: defaultdict(int))
-    rows = Entry.objects.filter(kind__in=kinds, at__date__range=(date_from, date_to)).values_list(
-        "at", "kind", "operator__username"
-    )
-    for at, kind, username in rows:
-        operator_events[username or "sistema"][kind] += 1
-        if kind != Entry.Kind.CHANGE_REQUESTED:
-            hour_events[timezone.localtime(at).hour][kind] += 1
-    return operator_events, hour_events
-
-
 def _cash_previous(date_from: date, date_to: date) -> BICashPrevious:
-    from shopman.cashman.models import Shift
+    from shopman.backstage.bi.canonical import iter_days
+    from shopman.backstage.bi.sources import cashman
 
     from .bi_production import _previous_window
 
     prev_from, prev_to = _previous_window(date_from, date_to)
     day_difference: dict[date, int] = defaultdict(int)
-    shifts_total = 0
-    shifts = list(
-        Shift.objects.filter(
-            status=Shift.Status.CLOSED,
-            closed_at__date__range=(prev_from, prev_to),
-        ).values_list("pk", "closed_at")
-    )
-    difference_by_shift = _difference_by_shift([pk for pk, _ in shifts])
-    for pk, closed_at in shifts:
-        day_difference[timezone.localtime(closed_at).date()] += difference_by_shift.get(pk, 0)
-        shifts_total += 1
-
-    series = []
-    day = prev_from
-    while day <= prev_to:
-        series.append(day_difference.get(day, 0))
-        day += timedelta(days=1)
+    shifts = cashman.read_closed_shifts(prev_from, prev_to)
+    for shift in shifts:
+        day_difference[shift.closed_at.date()] += shift.difference_q or 0
 
     return BICashPrevious(
         date_from=prev_from.isoformat(),
         date_to=prev_to.isoformat(),
-        shifts_total=shifts_total,
+        shifts_total=len(shifts),
         difference_total_q=sum(day_difference.values()),
-        difference_by_day=tuple(series),
+        difference_by_day=tuple(day_difference.get(day, 0) for day in iter_days(prev_from, prev_to)),
     )
-
-
-def _difference_by_shift(shift_ids: list[int]) -> dict[int, int]:
-    """Diferença vigente de cada turno: ``Σ count + Σ count_correction``, do livro.
-
-    Uma consulta agrupada em vez de ``cashman.services.difference`` por turno:
-    a janela do B.I. pode ter centenas de turnos, e é a mesma soma que o
-    pacote define — só que em lote.
-    """
-    from django.db.models import Sum
-    from shopman.cashman.models import Entry
-
-    if not shift_ids:
-        return {}
-    rows = (
-        Entry.objects.filter(shift_id__in=shift_ids, kind__in=[Entry.Kind.COUNT, Entry.Kind.COUNT_CORRECTION])
-        .values("shift_id")
-        .annotate(total=Sum("amount_q"))
-    )
-    return {int(row["shift_id"]): int(row["total"] or 0) for row in rows}
-
-
-def _movements_by_day(date_from: date, date_to: date) -> dict[date, dict[str, int]]:
-    """Sangria e suprimento por dia, em valor absoluto (o sinal já é o tipo)."""
-    from shopman.cashman.models import Entry
-
-    day_movements: dict[date, dict[str, int]] = defaultdict(lambda: defaultdict(int))
-    movements = Entry.objects.filter(
-        kind__in=[Entry.Kind.CASH_OUT, Entry.Kind.CASH_IN],
-        at__date__range=(date_from, date_to),
-    ).values_list("at", "kind", "amount_q")
-    for at, kind, amount_q in movements:
-        day_movements[timezone.localtime(at).date()][kind] += abs(int(amount_q))
-    return day_movements
