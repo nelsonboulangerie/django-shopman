@@ -1,0 +1,96 @@
+# Dependabot — atualização de dependências.
+#
+# Contexto (triagem de 2026-08-19): os 284 alertas abertos eram TODOS npm, vindos
+# das lockfiles das superfícies. Nenhum alcançava um processo de produção: o que
+# roda é `node .output/server/index.mjs`, um bundle Nitro, e quase toda a árvore
+# apontada (tar, shell-quote, postcss, svgo, brace-expansion, esbuild, vite) só
+# existe em build ou no dev server. O que faltava não era urgência — era cadência.
+#
+# A lição do dia também está codificada aqui: `nuxt` sobe SOZINHO, num grupo só
+# dele. Subir 4.4.5 → 4.5.2 (um minor, dentro de `^4.4.5`) quebrou 16 testes e 21
+# erros de tipo no storefront, e 6 testes + 10 erros no PDV, a partir de suítes
+# 100% verdes. Framework não entra de carona num PR de faxina.
+
+version: 2
+
+updates:
+  # ── Superfícies Nuxt ────────────────────────────────────────────────────────
+  - package-ecosystem: npm
+    directories:
+      - /surfaces/storefront-nuxt
+      - /surfaces/pos-nuxt
+      - /surfaces/hub-nuxt
+      - /surfaces/kds-nuxt
+      - /surfaces/orders-nuxt
+      - /surfaces/production-nuxt
+      - /surfaces/marketing-nuxt
+      - /surfaces/bi-nuxt
+      - /surfaces/operator-kit
+    schedule:
+      interval: weekly
+      day: monday
+      time: "06:00"
+      timezone: America/Sao_Paulo
+    open-pull-requests-limit: 5
+    groups:
+      # O framework anda junto e sozinho: nuxt, nitro, devtools e vite são um
+      # organismo só (subir `nuxt` arrasta `vite` de major). PR isolado, para
+      # que o gate das superfícies fale sobre UMA mudança.
+      nuxt-framework:
+        patterns:
+          - nuxt
+          - "@nuxt/*"
+          - vite
+          - "@vitejs/*"
+        update-types:
+          - minor
+          - patch
+      # Todo o resto — a cauda longa que produziu ~250 dos 284 alertas.
+      # Transitivos de build resolvem-se em bloco, num PR só.
+      build-tooling:
+        patterns:
+          - "*"
+        exclude-patterns:
+          - nuxt
+          - "@nuxt/*"
+          - vite
+          - "@vitejs/*"
+        update-types:
+          - minor
+          - patch
+    # Major fica de fora do automático: vue 3→4, nuxt 4→5 e vite 7→8 são
+    # migração com dono, não PR de segunda-feira.
+    ignore:
+      - dependency-name: "*"
+        update-types:
+          - version-update:semver-major
+
+  # ── Python (raiz) ───────────────────────────────────────────────────────────
+  # Sem alerta aberto hoje, mas é aqui que mora o risco real: `pyproject.toml`
+  # declara faixas e a imagem resolve no build. Ver `constraints.txt`.
+  - package-ecosystem: pip
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: "06:00"
+      timezone: America/Sao_Paulo
+    open-pull-requests-limit: 5
+    groups:
+      python-runtime:
+        patterns:
+          - "*"
+        update-types:
+          - minor
+          - patch
+
+  # ── GitHub Actions ──────────────────────────────────────────────────────────
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly
+    open-pull-requests-limit: 3
+    groups:
+      actions:
+        patterns:
+          - "*"

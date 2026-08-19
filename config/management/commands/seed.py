@@ -22,11 +22,11 @@ from datetime import date, datetime, time, timedelta
 from decimal import Decimal
 
 from django.conf import settings
-from django.contrib.auth.models import Permission, User
+from django.contrib.auth.models import User
+from django.core.management import call_command
 from django.core.management.base import BaseCommand, CommandError
 from django.utils import timezone
 from shopman.craftsman.models import Recipe, RecipeItem, WorkOrder, WorkOrderItem
-from shopman.doorman.models import PinCredential
 from shopman.guestman.models import (
     ContactPoint,
     Customer,
@@ -83,6 +83,7 @@ from shopman.backstage.services.operations import (
     start_checklist_run,
     supervise_task_run,
 )
+from shopman.shop.management.commands import setup_operators
 from shopman.shop.models import (
     Announcement,
     AnnouncementTemplate,
@@ -630,63 +631,22 @@ class Command(BaseCommand):
             self.stdout.write("  ⏭️  Superuser 'admin' ja existe")
 
     def _seed_operators(self):
-        """Operadores (staff) com PIN para as superfícies operacionais.
+        """Delega ao `setup_operators`: o elenco tem UM dono.
 
-        O gate de operador ativo (``SHOPMAN_REQUIRE_ACTIVE_OPERATOR``, ligado no
-        staging) só destrava uma tela de backstage para um staff que tenha
-        ``PinCredential`` **e** a permissão da superfície (POS/KDS/produção). Sem
-        isto, o backstage nasce inacessível após um ``--flush``.
+        Aqui viviam quatro pessoas com ``user_permissions`` copiadas à mão —
+        ``marina`` tinha sete permissões que imitavam o grupo "Gerente" sem serem
+        ele. Duas listas para a mesma pergunta ("quem pode o quê?") saem de
+        sincronia no primeiro dia em que alguém mexe só numa: mudar o grupo
+        "Gerente" não alcançava ninguém, e a tela de Grupos do Admin mostrava
+        gente sem grupo nenhum operando o sistema inteiro.
 
-        PIN ``1234`` é conveniência de dev/staging — **trocar no go-live** (via
-        Admin ou ``set_operator_pin``). Os operadores nomeados são identidades
-        só-PIN (senha inutilizável): a confiança do dispositivo entra pelo
-        ``admin``; a identidade que opera é estabelecida pelo PIN (Opção C).
+        O comando irmão é idempotente e não toca em dado de negócio, então
+        também serve para consertar acesso no staging **sem** rodar este seed —
+        que recriaria o catálogo e milhares de pedidos falsos.
         """
-        dev_pin = "1234"
-
-        def grant(user, *perms: str) -> None:
-            for perm in perms:
-                app_label, codename = perm.split(".", 1)
-                user.user_permissions.add(
-                    Permission.objects.get(content_type__app_label=app_label, codename=codename)
-                )
-
-        # O superuser 'admin' também opera: como superuser satisfaz qualquer
-        # permissão, um PIN nele destrava toda superfície com a conta que já existe.
-        admin = User.objects.get(username="admin")
-        PinCredential.set_for(admin, dev_pin)
-
-        # Operadores nomeados para o seletor da tela de bloqueio parecer real.
-        operators = [
-            ("ana", "Ana", "Costa", ["cashman.operate_pos", "backstage.operate_kds"]),
-            ("joao", "João", "Silva", ["backstage.operate_kds", "backstage.operate_production"]),
-            (
-                "marina",
-                "Marina",
-                "Dias",
-                [
-                    "cashman.operate_pos",
-                    "backstage.operate_kds",
-                    "backstage.operate_production",
-                    "backstage.perform_closing",
-                    "cashman.adjust_shift",
-                    "cashman.manage_operators",
-                    "shop.manage_orders",
-                ],
-            ),
-        ]
-        for username, first, last, perms in operators:
-            user, _ = User.objects.update_or_create(
-                username=username,
-                defaults={"first_name": first, "last_name": last, "is_staff": True, "is_active": True},
-            )
-            user.set_unusable_password()
-            user.save(update_fields=["password"])
-            user.user_permissions.clear()
-            grant(user, *perms)
-            PinCredential.set_for(user, dev_pin)
-
-        self.stdout.write(f"  ✅ Operadores com PIN {dev_pin}: admin, ana, joão, marina (gerente)")
+        call_command("setup_operators", "--yes", verbosity=0)
+        nomes = ", ".join(u for u, *_ in setup_operators.CAST)
+        self.stdout.write(f"  ✅ Operadores em grupos, PIN {setup_operators.DEV_PIN}: {nomes}")
 
     # ────────────────────────────────────────────────────────────────
     # Flush
@@ -6013,29 +5973,34 @@ class Command(BaseCommand):
         """
         from shopman.backstage.models import Beverage, ConsumptionRole, Reading
 
+        # O peso (%) é a vocação em graus — P(consumido aqui | está na cesta).
+        # Parte da leitura e é editável no Admin, por papel e por SKU: é o que
+        # transforma a faixa piso–teto numa estimativa (passo 1 do
+        # BI-CONSUMPTION-PROFILES §8; o passo 2 mede pela comanda).
         catalog = [
             ("bebida-preparada", "Bebida preparada",
              "Café, chá, frappé, soda da casa — feita aqui, bebida aqui",
-             Reading.ANCHOR, Beverage.PREPARED, 5),
+             Reading.ANCHOR, Beverage.PREPARED, 95, 5),
             ("bebida-pronta", "Bebida pronta",
              "Água, refrigerante, suco de garrafa — abre e bebe aqui",
-             Reading.ANCHOR, Beverage.READY, 6),
+             Reading.ANCHOR, Beverage.READY, 95, 6),
             ("consome-aqui", "Consome aqui",
              "Prato quente, lanche montado, sobremesa servida", Reading.ANCHOR,
-             Beverage.NONE, 10),
+             Beverage.NONE, 95, 10),
             ("leva", "Leva",
              "Pão, geleia, café em grão — o que sai pela porta", Reading.TAKEAWAY,
-             Beverage.NONE, 20),
+             Beverage.NONE, 5, 20),
             ("hibrido", "Híbrido",
              "Croissant, doce, pão japonês: serve aos dois usos", Reading.HYBRID,
-             Beverage.NONE, 30),
+             Beverage.NONE, 50, 30),
         ]
-        for ref, label, hint, reading, beverage, position in catalog:
+        for ref, label, hint, reading, beverage, weight, position in catalog:
             ConsumptionRole.objects.update_or_create(
                 ref=ref,
                 defaults={
                     "label": label, "hint": hint, "reading": reading,
-                    "beverage": beverage, "ordering": position, "is_active": True,
+                    "beverage": beverage, "eat_in_weight": weight,
+                    "ordering": position, "is_active": True,
                 },
             )
 
@@ -6165,7 +6130,38 @@ class Command(BaseCommand):
                 "nome:Combo Cola + Donut", "nome:Combo Citrus + Donut",
             ]),
         }
-        for role_ref, (note, skus) in historical.items():
+        # Segunda rodada (19/08/2026): as 70 propostas que restavam — cafés,
+        # pratos e pães rústicos do Yooga — revisadas pelo dono. Duas decisões
+        # que o dado sozinho não daria: ciabatta, tabatière, fendu e mini
+        # baguete ficam HÍBRIDOS (como seus gêmeos no cardápio 2027, para o
+        # histórico não discordar do cardápio), embora só 14–18% das vendas
+        # levem bebida; e as mini focaccias são lanchinho, híbridas também.
+        # O café do Yooga vira "bebida preparada" por curadoria, não por
+        # reserva de categoria.
+        round_two = (
+            ("bebida-preparada", "café/chá da casa — revisão do dono 19/08/2026 (SKUs do Yooga)", [
+                "PS", "SS", "SL", "CL", "CQ", "FP", "MH", "CTV", "MC", "SE", "HI", "CHAI_A",
+            ]),
+            ("consome-aqui", "prato servido à mesa — revisão do dono 19/08/2026 (SKUs do Yooga)", [
+                "CMO", "QQ", "CMA", "CCOM", "JB", "PPU",   # croques, queijo quente, jambon, pain perdu
+            ]),
+            ("leva", "pão rústico / mercearia — revisão do dono 19/08/2026 (SKUs do Yooga)", [
+                "BAX", "BF", "CF", "CGO", "CPX", "BE", "BAP", "CBT", "PH", "FOA", "BA", "CGR",
+                "MBAX", "MBF", "MCF", "MCGO", "MCPX", "MBAP", "MCBT", "MFOA", "MBA", "MCGR",
+                "BEP", "FOC", "MPH",
+                # chás Kãnfa em pouch/lata (mercearia, como CHA-LATA)
+                "INTU_P50", "CHEGO_P50", "INTIMI_P50", "CHEGO_L50", "NAMAS_P50", "INTU_L70",
+                "NAMAS_L60", "INTIMI_L50", "SOFIA_P50", "VITAL_P50", "MAMA_L60", "MAMA_P50",
+                # pães com SKU do iFood (só entrega)
+                "IFOOD_76da4710c82b11ee8012e9ac1", "IFOOD_7554d170c82b11ee9bb70dcd9",
+            ]),
+            ("hibrido", "serve aos dois usos (como no cardápio 2027; mini focaccia é lanchinho) — revisão do dono 19/08/2026", [
+                "CI", "CIQ", "MCI", "TB", "MTB", "FE", "MFE", "MIB",
+                "MICBT", "MIF", "MIFOC", "MMICBT", "MMIF",
+            ]),
+        )
+        entries = [(ref, note, skus) for ref, (note, skus) in historical.items()] + list(round_two)
+        for role_ref, note, skus in entries:
             role = roles.get(role_ref)
             if role is None:
                 continue

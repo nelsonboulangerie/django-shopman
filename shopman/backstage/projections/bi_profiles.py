@@ -167,12 +167,34 @@ class BIRevpashRow:
 
 
 @dataclass(frozen=True)
+class BIProfileEstimate:
+    """A leitura em graus: P(alguém sentou) por cesta = maior peso da cesta.
+
+    Esperança sob os pesos vigentes — não é medida. A faixa piso–teto continua
+    ao lado como a honestidade de fundo; isto é onde o gestor acha que o
+    número está, com os pesos que ele declarou (e que o passo 2 vai medir).
+    """
+
+    seated_orders: float  # Σ P(sentou) — "pedidos em que alguém comeu aqui"
+    seated_share: float  # % dos pedidos de balcão COM peso
+    seated_revenue_q: int  # Σ P(sentou) × total
+    seated_revenue_share: float
+    takeaway_orders: float  # Σ (1 − P) — "só vieram buscar"
+    takeaway_share: float
+    weighted_orders: int  # pedidos com ao menos uma linha com peso
+    unweighted_orders: int  # pedidos sem peso nenhum — fora da conta, declarados
+    seated_by_band: tuple[float, ...]  # alinhado a `bands`
+    orders_by_band: tuple[int, ...]  # pedidos com peso por faixa (o denominador)
+
+
+@dataclass(frozen=True)
 class BIProfilesPrevious:
     date_from: str
     date_to: str
     counter_orders: int
     counter_revenue_q: int
     rows: tuple[BIProfileRow, ...]  # só a leitura vigente
+    estimate: BIProfileEstimate
 
 
 @dataclass(frozen=True)
@@ -191,6 +213,7 @@ class BIConsumptionProfilesReport:
     revenue_total_q: int  # balcão + entrega = faturamento do recorte (conciliação)
     coverage: float  # % de pedidos de balcão com ao menos uma linha etiquetada
     days_with_sales: int
+    estimate: BIProfileEstimate
     sensitivity: BIProfileSensitivity
     categories: tuple[BIProfileCategoryRow, ...]
     category_lines_revenue_q: int  # soma das linhas de balcão
@@ -264,6 +287,7 @@ def build_bi_consumption_profiles(
         revenue_total_q=counter_revenue + delivery_revenue,
         coverage=_share(sum(1 for b in counter if any(line.reading for line in b.lines)), len(counter)),
         days_with_sales=days_with_sales,
+        estimate=_estimate(counter),
         sensitivity=_sensitivity(counter, profile_rows),
         categories=_categories(counter),
         category_lines_revenue_q=sum(line.line_total_q for b in counter for line in b.lines),
@@ -278,6 +302,7 @@ def build_bi_consumption_profiles(
             counter_orders=len(prev_counter),
             counter_revenue_q=sum(b.total_q for b in prev_counter),
             rows=tuple(_profile_rows(prev_counter, rule.READING_CURRENT)),
+            estimate=_estimate(prev_counter),
         ),
     )
 
@@ -352,6 +377,41 @@ def _profile_rows(counter, variant: str) -> list[BIProfileRow]:
             revenue_by_band_q=tuple(revenue_by_band[profile]),
         ))
     return rows
+
+
+def _estimate(counter) -> BIProfileEstimate:
+    slots = len(HOUR_BANDS) + 1
+    seated = 0.0
+    seated_revenue = 0.0
+    weighted = 0
+    unweighted = 0
+    revenue_weighted = 0
+    seated_by_band = [0.0] * slots
+    orders_by_band = [0] * slots
+    for basket in counter:
+        p = basket.eat_in_probability()
+        if p is None:
+            unweighted += 1
+            continue
+        weighted += 1
+        revenue_weighted += basket.total_q
+        seated += p
+        seated_revenue += p * basket.total_q
+        index = _band_index(basket.local.hour)
+        seated_by_band[index] += p
+        orders_by_band[index] += 1
+    return BIProfileEstimate(
+        seated_orders=round(seated, 1),
+        seated_share=_share(seated, weighted),
+        seated_revenue_q=int(round(seated_revenue)),
+        seated_revenue_share=_share(seated_revenue, revenue_weighted),
+        takeaway_orders=round(weighted - seated, 1),
+        takeaway_share=_share(weighted - seated, weighted),
+        weighted_orders=weighted,
+        unweighted_orders=unweighted,
+        seated_by_band=tuple(round(v, 2) for v in seated_by_band),
+        orders_by_band=tuple(orders_by_band),
+    )
 
 
 def _sensitivity(counter, profile_rows) -> BIProfileSensitivity:
