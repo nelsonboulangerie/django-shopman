@@ -1,4 +1,5 @@
-from django.db import models
+from django.core.exceptions import ValidationError
+from django.db import IntegrityError, models, transaction
 from django.utils.translation import gettext_lazy as _
 
 
@@ -13,6 +14,17 @@ class SupplierMaterialCost(models.Model):
     ``cost_q`` é expresso está em aberto na
     docs/decisions/adr-024-material-unit-base-and-purchase.md.
     Histórico de preço fica para uma fase futura.
+
+    Três invariantes, e cada uma tem um guarda à altura:
+
+    - **custo é positivo** — ``CheckConstraint`` no banco (dinheiro zero ou
+      negativo aqui é erro de digitação, não desconto);
+    - **um preferencial por insumo** — ``UniqueConstraint`` parcial; marcar um
+      novo **demove o anterior na mesma transação**, para o operador nunca ver
+      ``IntegrityError`` cru na tela do inline;
+    - **o preferencial aponta para par vivo** — insumo ou fornecedor inativo é
+      recusado com mensagem, porque custo canônico de par aposentado é uma
+      resposta errada esperando para ser lida.
     """
 
     supplier = models.ForeignKey(
@@ -48,7 +60,64 @@ class SupplierMaterialCost(models.Model):
                 condition=models.Q(is_preferred=True),
                 name="buyman_one_preferred_cost_per_material",
             ),
+            models.CheckConstraint(
+                condition=models.Q(cost_q__gt=0),
+                name="buyman_cost_positive",
+                violation_error_message=_("O custo precisa ser maior que zero."),
+            ),
         ]
+
+    def clean(self):
+        super().clean()
+        self._refuse_preferred_of_retired_pair()
+
+    def save(self, *args, **kwargs):
+        """Promove o preferencial de forma atômica: demove o anterior e assume.
+
+        A unicidade continua sendo do banco; o gesto de troca é que passa a ser
+        nosso, e não um ``IntegrityError`` na cara de quem marcou a caixinha.
+        """
+        self._refuse_preferred_of_retired_pair()
+        with transaction.atomic():
+            if self.is_preferred and self.material_id:
+                (
+                    type(self)
+                    .objects.filter(material_id=self.material_id, is_preferred=True)
+                    .exclude(pk=self.pk)
+                    .update(is_preferred=False)
+                )
+            try:
+                super().save(*args, **kwargs)
+            except IntegrityError as exc:
+                if "buyman_one_preferred_cost_per_material" not in str(exc):
+                    raise  # custo não positivo, par duplicado: cada um com seu erro
+                # Duas promoções no mesmo instante: a constraint decide, e a
+                # mensagem continua sendo a nossa.
+                raise ValidationError({
+                    "is_preferred": _(
+                        "Outro custo deste insumo foi marcado como preferencial ao "
+                        "mesmo tempo. Recarregue a página e tente de novo."
+                    )
+                }) from exc
+
+    def _refuse_preferred_of_retired_pair(self) -> None:
+        if not self.is_preferred:
+            return
+        if self.material_id and not self.material.is_active:
+            raise ValidationError({
+                "is_preferred": _(
+                    "O insumo '%(sku)s' está inativo — um insumo aposentado não pode "
+                    "ter custo canônico. Reative o insumo ou marque outro custo."
+                ) % {"sku": self.material.sku}
+            })
+        if self.supplier_id and not self.supplier.is_active:
+            raise ValidationError({
+                "is_preferred": _(
+                    "O fornecedor '%(ref)s' está inativo — o custo canônico não pode "
+                    "apontar para um fornecedor aposentado. Reative o fornecedor ou "
+                    "promova outro custo."
+                ) % {"ref": self.supplier.ref}
+            })
 
     def __str__(self) -> str:
         return f"{self.material_id}@{self.supplier_id}: {self.cost_q}"
