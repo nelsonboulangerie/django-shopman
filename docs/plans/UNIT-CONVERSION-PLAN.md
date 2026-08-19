@@ -95,7 +95,7 @@ Cada fase é útil sozinha e nenhuma exige a seguinte.
   sobre `material` + `label`) "cartela" sem fornecedor podia entrar duas vezes no mesmo
   insumo e ninguém saberia qual fator valeu.
 
-### Fase 3 — o custo lança pela conversão · **é esta que não pode atrasar**
+### Fase 3 — o custo lança pela conversão · ✅ concluída
 
 - `SupplierMaterialCost` ganha `conversion` (FK opcional para `MaterialConversion`);
   `cost_q` passa a ser "centavos por unidade de compra" e o **custo por unidade-base
@@ -104,10 +104,23 @@ Cada fase é útil sozinha e nenhuma exige a seguinte.
   divisão é da máquina (regra R2).
 - Custo cuja unidade ≠ base **sem conversão declarada**: recusa com mensagem dizendo o
   que cadastrar (regra R4).
-- **Ordem que evita migrar dado de custo duas vezes:** hoje existem **zero** linhas de
-  `SupplierMaterialCost` (o seed não cria nenhuma). Esta fase tem de entrar **antes da
-  primeira linha de custo real ser digitada** — depois dela, é migração de dado de
-  dinheiro.
+- **Ordem que evita migrar dado de custo duas vezes:** existiam **zero** linhas de
+  `SupplierMaterialCost` (o seed não cria nenhuma), e é por isso que esta fase entrou
+  agora — depois da primeira linha real, seria migração de dado de dinheiro.
+- **Como ficou** (e onde o plano divergiu da realidade do código): a linha de custo
+  **não redeclara unidade** — quem declara é a FK `conversion`, exatamente como a
+  [ADR-024 §3](../decisions/adr-024-material-unit-base-and-purchase.md) pediu ("um
+  mecanismo, não dois"). Então não existe estado "unidade ≠ base sem conversão": ou a
+  FK aponta para a conversão usada, ou está vazia e a compra foi na própria base.
+  A recusa da R4 materializou-se nos três guardas que **podem** acontecer com a FK
+  preenchida — conversão de outro insumo, conversão que só vale para outro fornecedor,
+  conversão inativa —, cada um com a mensagem dizendo o que cadastrar. A recusa por
+  **rótulo não cadastrado** ("cartela" que ninguém declarou) pertence a quem digita
+  rótulo, e quem digita rótulo é o recebimento: entra na Fase 5, junto com o emissor.
+- Derivados no modelo: `base_factor`, `cost_per_base_unit` (`Decimal`, sem arredondar),
+  `cost_per_base_unit_q` (inteiro, arredonda **só aqui**), `purchase_unit_label` e
+  `is_approximate`. O Admin mostra os dois números lado a lado — "R$ 180,00 / saco 25 kg"
+  e "R$ 7,20 / kg" — e o `≈` aparece quando o segundo veio de ponte aproximada.
 
 ### Fase 4 — a anotação de preparo (requisito do dono)
 
@@ -147,7 +160,8 @@ Fase 0 (dado) ─┬─► Fase 1 (física em utils) ─► Fase 2 (tabela) ─�
 ```
 
 Regra de ouro da ordem: **a Fase 3 tem de acontecer antes de existir custo real
-cadastrado.** Todo o resto tolera atraso; dinheiro já digitado, não.
+cadastrado.** Todo o resto tolera atraso; dinheiro já digitado, não. (Aconteceu: entrou
+com a tabela ainda vazia.)
 
 ## Não-objetivos (para não virar projeto grande)
 
@@ -164,7 +178,7 @@ cadastrado.** Todo o resto tolera atraso; dinheiro já digitado, não.
 | 0 | ficha de insumo pesado bate com a base; líquido em `L` com densidade no perfil; `full_clean()` em cada linha do seed ✅ |
 | 1 | ida e volta sem perda; par sem caminho **levanta** ✅ |
 | 2 | fator ≤ 0 recusado; rótulo duplicado recusado; aproximada não passa por exata ✅ |
-| 3 | custo por base derivado com precisão; unidade ≠ base sem conversão **recusa** |
+| 3 | custo por base derivado com precisão; conversão incoerente (outro insumo / outro fornecedor / inativa) **recusa** ✅ |
 | 4 | anotação derivada muda quando o fator muda, sem tocar na ficha |
 | 5 | `Move` de entrada carrega `converted_via`; saldo aproximado sinalizado |
 | 6 | XML de exemplo vira sugestão de conversão + custo, sem gravar sozinho |

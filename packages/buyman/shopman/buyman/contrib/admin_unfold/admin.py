@@ -27,8 +27,8 @@ class CostOnSupplierInline(BaseTabularInline):
 
     model = SupplierMaterialCost
     extra = 0
-    fields = ("material", "cost_q", "is_preferred")
-    autocomplete_fields = ("material",)
+    fields = ("material", "conversion", "cost_q", "is_preferred")
+    autocomplete_fields = ("material", "conversion")
 
 
 class CostOnMaterialInline(BaseTabularInline):
@@ -36,8 +36,8 @@ class CostOnMaterialInline(BaseTabularInline):
 
     model = SupplierMaterialCost
     extra = 0
-    fields = ("supplier", "cost_q", "is_preferred")
-    autocomplete_fields = ("supplier",)
+    fields = ("supplier", "conversion", "cost_q", "is_preferred")
+    autocomplete_fields = ("supplier", "conversion")
 
 
 class ConversionOnMaterialInline(BaseTabularInline):
@@ -75,15 +75,25 @@ class SupplierAdmin(BaseModelAdmin):
 
 @admin.register(SupplierMaterialCost)
 class SupplierMaterialCostAdmin(BaseModelAdmin):
-    list_display = ("material", "supplier", "cost_display", "preferred_display")
+    list_display = (
+        "material", "supplier", "cost_display", "base_cost_display", "preferred_display",
+    )
     list_filter = ("is_preferred",)
     search_fields = ("material__sku", "material__name", "supplier__ref", "supplier__name")
-    autocomplete_fields = ("material", "supplier")
+    autocomplete_fields = ("material", "supplier", "conversion")
     ordering = ("material", "supplier")
 
-    @display(description=_("Custo"))
+    @display(description=_("Custo da compra"))
     def cost_display(self, obj: SupplierMaterialCost):
-        return format_money(obj.cost_q)
+        """O número da nota, com a unidade em que ele foi digitado."""
+        return f"{format_money(obj.cost_q)} / {obj.purchase_unit_label}".strip(" /")
+
+    @display(description=_("Por unidade-base"))
+    def base_cost_display(self, obj: SupplierMaterialCost):
+        """A divisão que o operador não precisa fazer — e o "≈" quando é estimada."""
+        prefix = "≈ " if obj.is_approximate else ""
+        unit = obj.material.unit if obj.material_id else ""
+        return f"{prefix}{format_money(obj.cost_per_base_unit_q)} / {unit}".strip(" /")
 
     @display(description=_("Preferencial"))
     def preferred_display(self, obj: SupplierMaterialCost):

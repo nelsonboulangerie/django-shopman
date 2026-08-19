@@ -1,19 +1,32 @@
+from decimal import ROUND_HALF_UP, Decimal
+
 from django.core.exceptions import ValidationError
 from django.db import IntegrityError, models, transaction
 from django.utils.translation import gettext_lazy as _
 
 
 class SupplierMaterialCost(models.Model):
-    """Custo de um insumo por fornecedor, em centavos.
+    """Custo de um insumo por fornecedor, em centavos **da unidade de compra**.
 
     Uma linha por par (fornecedor, insumo). ``is_preferred`` marca o custo
     canônico daquele insumo — o que **vai alimentar** o custeio de receita e o
     ``CostBackend`` do Offerman. Hoje esta tabela não tem leitor no repositório:
     o backend só será escrito depois da decisão de custo vivo × congelado
-    (docs/decisions/adr-023-cost-live-and-frozen.md), e a unidade em que este
-    ``cost_q`` é expresso está em aberto na
-    docs/decisions/adr-024-material-unit-base-and-purchase.md.
+    (docs/decisions/adr-023-cost-live-and-frozen.md).
     Histórico de preço fica para uma fase futura.
+
+    **O operador nunca divide** (ADR-024, R2). Ele copia da nota os três números
+    impressos nela — "1 saco", "R$ 180,00", e o rótulo do saco — e quem divide é
+    a máquina: ``conversion`` aponta para a linha de :class:`MaterialConversion`
+    que diz quanto aquele saco vale na unidade-base, e
+    :attr:`cost_per_base_unit` deriva o resto em ``Decimal``. Sem conversão, a
+    unidade de compra **é** a base, e o fator é 1.
+
+    O custo por unidade-base é **derivado, nunca gravado**: corrigir o fator do
+    saco (o moinho passou de 25 kg para 20) reprecifica tudo sozinho, sem
+    migração de dado de dinheiro. E o arredondamento para centavo inteiro
+    acontece só na ponta em que o número vai para a tela ou para o custeio
+    (:attr:`cost_per_base_unit_q`), nunca no meio da conta.
 
     Três invariantes, e cada uma tem um guarda à altura:
 
@@ -35,9 +48,20 @@ class SupplierMaterialCost(models.Model):
         "buyman.Material", on_delete=models.CASCADE, related_name="supplier_costs",
         verbose_name=_("Insumo"),
     )
+    conversion = models.ForeignKey(
+        "buyman.MaterialConversion", on_delete=models.PROTECT, related_name="costs",
+        null=True, blank=True, verbose_name=_("Unidade de compra"),
+        help_text=_(
+            "A conversão declarada que descreve como este insumo foi comprado "
+            "('saco 25 kg', 'cartela'). Vazio = comprado na própria unidade-base."
+        ),
+    )
     cost_q = models.BigIntegerField(
         verbose_name=_("Custo (centavos)"),
-        help_text=_("Custo por unidade do insumo, em centavos."),
+        help_text=_(
+            "Custo de UMA unidade de compra, em centavos — o número da nota. "
+            "O custo por unidade-base é derivado pela conversão."
+        ),
     )
     is_preferred = models.BooleanField(
         default=False, verbose_name=_("Preferencial"),
@@ -67,9 +91,46 @@ class SupplierMaterialCost(models.Model):
             ),
         ]
 
+    @property
+    def purchase_unit_label(self) -> str:
+        """Como o operador chama a unidade que ele digitou o preço."""
+        if self.conversion_id:
+            return self.conversion.label
+        return getattr(self.material, "unit", "") if self.material_id else ""
+
+    @property
+    def base_factor(self) -> Decimal:
+        """Quanto uma unidade de compra vale na unidade-base. Sem conversão, 1."""
+        if self.conversion_id:
+            return Decimal(self.conversion.to_base_factor)
+        return Decimal(1)
+
+    @property
+    def cost_per_base_unit(self) -> Decimal:
+        """Centavos por unidade-base, em ``Decimal`` — **sem arredondar**."""
+        return Decimal(self.cost_q) / self.base_factor
+
+    @property
+    def cost_per_base_unit_q(self) -> int:
+        """Centavos por unidade-base, inteiro. É aqui, e só aqui, que arredonda."""
+        return int(self.cost_per_base_unit.quantize(Decimal("1"), rounding=ROUND_HALF_UP))
+
+    @property
+    def is_approximate(self) -> bool:
+        """``True`` quando o custo por base atravessou uma equivalência aproximada.
+
+        Compra-se ovo por cartela e consome-se ovo por peso: a ponte entre os
+        dois lados é necessariamente aproximada, e o número que sai dela é
+        **estimado**. A regra R3 da ADR-024 não proíbe a ponte — proíbe que ela
+        vire um número liso, do qual ninguém mais consegue perguntar se foi
+        pesado ou convertido.
+        """
+        return bool(self.conversion_id) and self.conversion.is_approximate
+
     def clean(self):
         super().clean()
         self._refuse_preferred_of_retired_pair()
+        self._refuse_incoherent_conversion()
 
     def save(self, *args, **kwargs):
         """Promove o preferencial de forma atômica: demove o anterior e assume.
@@ -78,6 +139,7 @@ class SupplierMaterialCost(models.Model):
         nosso, e não um ``IntegrityError`` na cara de quem marcou a caixinha.
         """
         self._refuse_preferred_of_retired_pair()
+        self._refuse_incoherent_conversion()
         with transaction.atomic():
             if self.is_preferred and self.material_id:
                 (
@@ -117,6 +179,52 @@ class SupplierMaterialCost(models.Model):
                     "apontar para um fornecedor aposentado. Reative o fornecedor ou "
                     "promova outro custo."
                 ) % {"ref": self.supplier.ref}
+            })
+
+    def _refuse_incoherent_conversion(self) -> None:
+        """A conversão apontada tem de ser deste insumo, deste fornecedor, e viva.
+
+        Sem estes três, o ``cost_q`` estaria dividido por um fator que não é o
+        desta compra — e o erro seria caro e silencioso (fator 25× errado é
+        custo 25× errado). Regra R4: recusa com a mensagem dizendo o que fazer,
+        nunca "assume 1:1".
+        """
+        if not self.conversion_id:
+            return
+        conversion = self.conversion
+        if self.material_id and conversion.material_id != self.material_id:
+            raise ValidationError({
+                "conversion": _(
+                    "A conversão '%(label)s' é do insumo '%(other)s'. Cadastre a "
+                    "unidade de compra no próprio insumo '%(sku)s'."
+                ) % {
+                    "label": conversion.label,
+                    "other": conversion.material.sku,
+                    "sku": self.material.sku,
+                }
+            })
+        if (
+            conversion.supplier_id
+            and self.supplier_id
+            and conversion.supplier_id != self.supplier_id
+        ):
+            raise ValidationError({
+                "conversion": _(
+                    "A conversão '%(label)s' vale só para o fornecedor "
+                    "'%(other)s'. Cadastre a mesma unidade de compra para "
+                    "'%(supplier)s' — o saco de cada fornecedor pode ter um peso."
+                ) % {
+                    "label": conversion.label,
+                    "other": conversion.supplier.name or conversion.supplier.ref,
+                    "supplier": self.supplier.name or self.supplier.ref,
+                }
+            })
+        if not conversion.is_active:
+            raise ValidationError({
+                "conversion": _(
+                    "A conversão '%(label)s' está inativa. Reative-a ou escolha a "
+                    "unidade de compra que este fornecedor usa hoje."
+                ) % {"label": conversion.label}
             })
 
     def __str__(self) -> str:
