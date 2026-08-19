@@ -20,6 +20,7 @@ from django.core.management.base import BaseCommand
 from shopman.backstage.contracts import render_contract_module, run_contract_export
 from shopman.backstage.projections.bi_cash import (
     BICashDay,
+    BICashHourRow,
     BICashMethodRow,
     BICashOperatorRow,
     BICashPrevious,
@@ -94,6 +95,7 @@ CONTRACT_DATACLASSES = (
     BISalesReport,
     BICashDay,
     BICashOperatorRow,
+    BICashHourRow,
     BICashMethodRow,
     BICashPrevious,
     BICashReport,

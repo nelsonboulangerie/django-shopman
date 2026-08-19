@@ -219,11 +219,49 @@ def test_cash_variance_by_operator_and_missing_closings(db):
     assert today.difference_q == -200
     assert today.sangria_q == 5000
     assert report.by_operator == (
-        report.by_operator[0].__class__(operator="caixa-ana", shifts=1, difference_q=-200),
+        report.by_operator[0].__class__(
+            operator="caixa-ana", shifts=1, difference_q=-200,
+            drawer_openings=0, drawer_unlocks=0, change_requests=0,
+        ),
     )
     assert {(m.method, m.amount_q) for m in report.payment_methods} == {("pix", 4000), ("cash", 6000)}
     # 28 dias de janela, só hoje fechado: 27 buracos DECLARADOS.
     assert report.closings_missing == 27
+    assert report.drawer_by_hour == ()
+
+
+@pytest.mark.django_db
+def test_cash_drawer_behaviour_comes_from_the_ledger(db):
+    """Quem abre a gaveta, quantos destraves, e a que horas: a pergunta que
+    motivou o livro. O operador com turno ainda ABERTO entra na tabela mesmo
+    assim: a abertura de gaveta não espera o fechamento para contar."""
+    from datetime import datetime, time
+
+    ana = User.objects.create_user("caixa-ana", password="pw", is_staff=True)
+    bia = User.objects.create_user("caixa-bia", password="pw", is_staff=True)
+    manager = User.objects.create_user("gerente-bi", password="pw", is_staff=True)
+    shift_a = cash.open_shift(operator=ana, terminal=Terminal.objects.create(ref="t1"), float_q=0)
+    shift_b = cash.open_shift(operator=bia, terminal=Terminal.objects.create(ref="t2"), float_q=0)
+    tz = timezone.get_current_timezone()
+    at_10 = timezone.make_aware(datetime.combine(timezone.localdate(), time(10, 15)), tz)
+    at_16 = timezone.make_aware(datetime.combine(timezone.localdate(), time(16, 40)), tz)
+
+    for _ in range(3):
+        cash.record(Entry.Kind.DRAWER_OPEN, shift=shift_a, operator=ana, at=at_10, reason="x")
+    cash.record(Entry.Kind.DRAWER_UNLOCK, shift=shift_a, operator=ana, approved_by=manager, at=at_16)
+    cash.record(Entry.Kind.CHANGE_REQUESTED, shift=shift_b, operator=bia, at=at_16, payload={"kind": "coins"})
+
+    report = build_bi_cash()
+
+    by_operator = {row.operator: row for row in report.by_operator}
+    assert by_operator["caixa-ana"].drawer_openings == 3
+    assert by_operator["caixa-ana"].drawer_unlocks == 1
+    assert by_operator["caixa-ana"].shifts == 0  # turno aberto: ainda sem quebra
+    assert by_operator["caixa-bia"].change_requests == 1
+    assert [(h.hour, h.drawer_openings, h.drawer_unlocks) for h in report.drawer_by_hour] == [
+        (10, 3, 0),
+        (16, 0, 1),
+    ]
 
 
 # ── Clientes ─────────────────────────────────────────────────────────────────
