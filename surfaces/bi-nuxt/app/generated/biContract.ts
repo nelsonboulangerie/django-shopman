@@ -389,7 +389,7 @@ export interface BIStrikeCell {
   rate: number;
 }
 
-/** BIProfileBeverage(orders_with_beverage: 'int', strike_rate: 'float', prepared_rate: 'float', ready_revenue_q: 'int', ready_share: 'float', local_orders: 'int', per_local_order: 'str', by_weekday_band: 'tuple[BIStrikeCell, ...]', by_weekday: 'tuple[BIStrikeCell, ...]', by_band: 'tuple[BIStrikeCell, ...]') */
+/** BIProfileBeverage(orders_with_beverage: 'int', strike_rate: 'float', prepared_rate: 'float', ready_revenue_q: 'int', ready_share: 'float', local_orders: 'int', per_local_order: 'str', beverage_only_orders: 'int', beverage_only_share: 'float', beverage_only_ticket_q: 'int', beverage_only_by_band: 'tuple[int, ...]', by_weekday_band: 'tuple[BIStrikeCell, ...]', by_weekday: 'tuple[BIStrikeCell, ...]', by_band: 'tuple[BIStrikeCell, ...]') */
 export interface BIProfileBeverage {
   orders_with_beverage: number;
   strike_rate: number;
@@ -398,6 +398,10 @@ export interface BIProfileBeverage {
   ready_share: number;
   local_orders: number;
   per_local_order: string;
+  beverage_only_orders: number;
+  beverage_only_share: number;
+  beverage_only_ticket_q: number;
+  beverage_only_by_band: number[];
   by_weekday_band: BIStrikeCell[];
   by_weekday: BIStrikeCell[];
   by_band: BIStrikeCell[];
