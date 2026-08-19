@@ -928,6 +928,37 @@ class Command(BaseCommand):
              unsplash("photo-1760602180499-382146d5eb02"), 80, "Conservar em local seco e fechado"),
             ("LN", "Lata Nelson", "Lata de presente: madeleines sortidas e biscoitos da casa", 8900, "un", 30, True,
              unsplash("photo-1765850258842-af769210194f"), 400, "Conservar em local seco e fechado"),
+            # ── Linha Chai Kãnfa (19/08) ──
+            # Marca de terceiro que a casa revendia. Entra pela mesma regra das
+            # outras restaurações — o que a casa vendia, existe. Volume baixo
+            # (2 a 40 vendas cada) não desqualifica: foi a lição da mini baguete
+            # de gergelim, que vende pouco no balcão por ser de caixa presente.
+            ("CHAI_A", "Soft Chai Cítrico", "Chai da casa com cítricos, servido gelado", 2100, "un", None, True,
+             "", 0, ""),
+            ("CHEGO_L50", "Aconchego Chai Kãnfa — Lata 50g", "Blend Kãnfa em folhas, para levar", 7300, "un", 365, True,
+             "", 60, "Conservar em local seco e fechado"),
+            ("CHEGO_P50", "Aconchego Chai Kãnfa — Pouch 50g", "Blend Kãnfa em folhas, para levar", 6000, "un", 365, True,
+             "", 60, "Conservar em local seco e fechado"),
+            ("INTIMI_L50", "Intimidade Kãnfa — Lata 50g", "Blend Kãnfa em folhas, para levar", 8800, "un", 365, True,
+             "", 60, "Conservar em local seco e fechado"),
+            ("INTIMI_P50", "Intimidade Kãnfa — Pouch 50g", "Blend Kãnfa em folhas, para levar", 7300, "un", 365, True,
+             "", 60, "Conservar em local seco e fechado"),
+            ("INTU_L70", "Intuição Chai Kãnfa — Lata 70g", "Blend Kãnfa em folhas, para levar", 8800, "un", 365, True,
+             "", 60, "Conservar em local seco e fechado"),
+            ("INTU_P50", "Intuição Chai Kãnfa — Pouch 50g", "Blend Kãnfa em folhas, para levar", 7300, "un", 365, True,
+             "", 60, "Conservar em local seco e fechado"),
+            ("MAMA_L60", "Mama Chai Kãnfa — Lata 60g", "Blend Kãnfa em folhas, para levar", 7300, "un", 365, True,
+             "", 60, "Conservar em local seco e fechado"),
+            ("MAMA_P50", "Mama Chai Kãnfa — Pouch 50g", "Blend Kãnfa em folhas, para levar", 6000, "un", 365, True,
+             "", 60, "Conservar em local seco e fechado"),
+            ("NAMAS_L60", "Namastê Chai Kãnfa — Lata 60g", "Blend Kãnfa em folhas, para levar", 7300, "un", 365, True,
+             "", 60, "Conservar em local seco e fechado"),
+            ("NAMAS_P50", "Namastê Chai Kãnfa — Pouch 50g", "Blend Kãnfa em folhas, para levar", 6000, "un", 365, True,
+             "", 60, "Conservar em local seco e fechado"),
+            ("SOFIA_P50", "Chalosofia Kãnfa — Pouch 50g", "Blend Kãnfa em folhas, para levar", 6000, "un", 365, True,
+             "", 60, "Conservar em local seco e fechado"),
+            ("VITAL_P50", "Vital Chai Kãnfa — Pouch 50g", "Blend Kãnfa em folhas, para levar", 6000, "un", 365, True,
+             "", 60, "Conservar em local seco e fechado"),
             # ── Voltaram do Yooga (18/08) ──
             # O cardápio 2027 tinha colapsado famílias inteiras em produtos
             # rotativos ("Folhado do dia") e enxugado outras. O dono decidiu que
@@ -1530,6 +1561,9 @@ class Command(BaseCommand):
             # herdado, o que não existia não se inventa), e o do storefront quer
             # compra web para todo produto publicado. Fabricar compra só para
             # passar no portão seria enganá-lo.
+            "CHAI_A", "CHEGO_L50", "CHEGO_P50", "INTIMI_L50", "INTIMI_P50",
+            "INTU_L70", "INTU_P50", "MAMA_L60", "MAMA_P50", "NAMAS_L60",
+            "NAMAS_P50", "SOFIA_P50", "VITAL_P50",
             "SL", "CL", "CQ", "MH", "MA", "CM", "BCH", "CN", "BH", "PR", "FOA",
             "DL", "HO", "HI", "CTV",
             "COC", "CH", "BN", "ANU", "ANP", "KBB", "MBBBG", "FA", "BAP",
@@ -2122,6 +2156,11 @@ class Command(BaseCommand):
             "bebidas-geladas": ["CE", "FP", "AG",
                 # voltaram do Yooga (18/08)
                 "HI", "CTV",
+                # ⚠️ Chai tem duas naturezas, e o mapa as confundia: a BEBIDA é
+                # preparo nosso e mora aqui; a FOLHA embalada é revenda e mora
+                # na mercearia. "Vendemos os pouches e latinhas com o chá seco
+                # para preparar em casa" — dono, 19/08.
+                "CHAI_A",
             ],
             "torneira": ["CV", "SO"],
             "rusticos": [
@@ -2159,6 +2198,11 @@ class Command(BaseCommand):
                 "MT", "BK", "TP", "PT",
                 "CX", "GL", "QC", "QP",
                 "GR", "THL", "LN",
+                # linha Chai Kãnfa (19/08)
+                # A FOLHA seca é mercearia: leva-se para preparar em casa.
+                "CHEGO_L50", "CHEGO_P50", "INTIMI_L50", "INTIMI_P50",
+                "INTU_L70", "INTU_P50", "MAMA_L60", "MAMA_P50", "NAMAS_L60",
+                "NAMAS_P50", "SOFIA_P50", "VITAL_P50",
             ],
         }
         # ── As coleções "do dia" ──
@@ -2214,10 +2258,21 @@ class Command(BaseCommand):
         # iFood uses pricing.policy="external": the marketplace controls final prices,
         # so listing prices are reference-only — no markup stored on our side.
         markup_map = {"pdv": 0, "ifood": 0, "web": 0}
+
+        # "O produto produzido é a unidade, mas são vendidos em packs" (dono,
+        # 19/08). A alavanca disso é o CARDÁPIO, não o estoque: `is_sellable`
+        # aqui significa "não prometo este saldo a ninguém" — com ele desligado
+        # o `total_promisable` vai a zero e o pacote deixa de poder ser montado
+        # do próprio pão. A unidade segue vendável e some das vitrines de
+        # cliente; no PDV ela fica, porque no balcão alguém pede um pão só.
+        so_no_balcao = {"PHO", "BBB"}
+
         for listing_obj in [pdv, ifood, web]:
             ListingItem.objects.filter(listing=listing_obj).delete()
             markup = Decimal(markup_map[listing_obj.ref]) / 100
             for _sku, product in products.items():
+                if _sku in so_no_balcao and listing_obj.ref != "pdv":
+                    continue
                 price_q = int(product.base_price_q * (1 + markup))
                 ListingItem.objects.create(
                     listing=listing_obj,
