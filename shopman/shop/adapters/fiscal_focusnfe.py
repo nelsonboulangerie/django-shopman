@@ -441,7 +441,7 @@ def _map_item(number: int, item: dict, config: dict) -> dict:
         # CFOP mantém fallback porque ``default_cfop_nfce`` é configuração
         # explícita do deployment (``FOCUS_NFE_NFCE_DEFAULT_CFOP``), não palpite
         # do adapter. O valor em si (5101 × 5102) é pergunta aberta para o
-        # contador.
+        # contador — docs/reference/fiscal-cfop-5101-vs-5102.md.
         "cfop": str(_first(fiscal, "cfop", default=config.get("default_cfop_nfce") or "5102")),
         "unidade_comercial": unit,
         "quantidade_comercial": qty,

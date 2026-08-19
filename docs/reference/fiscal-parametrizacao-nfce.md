@@ -62,4 +62,6 @@ Vive no painel do **Focus NFe** e/ou na **SEFA-PR**, configurado por Pablo/conta
 
 - [ ] NCMs da tabela (esp. salgados/tartines `19059090` vs `21069090`; café `2101.x`).
 - [ ] CFOP `5102` confirma? (só seria `5101` se o estabelecimento for registrado como **indústria**.)
+      Pauta pronta, com as vozes que hoje discordam no código e a pergunta exata:
+      [CFOP 5101 × 5102](fiscal-cfop-5101-vs-5102.md).
 - [ ] Quais itens de revenda (ST) entram, e seus NCM/CEST.
