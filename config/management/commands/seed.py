@@ -1538,6 +1538,26 @@ class Command(BaseCommand):
             "QP": "04061010",
             "GR": "09012100",
             "THL": "09022000",
+            # ── Linha Chai Kãnfa (19/08) ──
+            # ⚠️ Sem isto os 13 cairiam no default de PANIFICAÇÃO (1905.90.90),
+            # que é o NCM errado para chá. Vão por analogia ao que a casa já
+            # declara para a mesma natureza: a folha seca embalada acompanha o
+            # `THL` (chá da casa em lata), a bebida pronta acompanha os blends
+            # servidos em bule.
+            #
+            # ⚠️ E fica UMA pergunta para o contador, que eu não decido: os
+            # pouches e latas são revenda de industrializado, e o perfil fiscal
+            # do catálogo hoje é `own_production` (não-ST) para tudo. Se eles
+            # forem `resale`, passam a exigir CSOSN 500, CFOP 5405/6405 e **CEST
+            # por produto**. A bebida preparada não entra nessa dúvida: a regra
+            # lista "bebidas preparadas" em `own_production` nominalmente.
+            "CHAI_A": "09024000",
+            **dict.fromkeys(
+                ("INTU_P50", "INTU_L70", "CHEGO_P50", "CHEGO_L50",
+                 "NAMAS_P50", "NAMAS_L60", "INTIMI_P50", "INTIMI_L50",
+                 "VITAL_P50", "SOFIA_P50", "MAMA_P50", "MAMA_L60"),
+                "09022000",
+            ),
             "LN": "19053100",
         }
 
