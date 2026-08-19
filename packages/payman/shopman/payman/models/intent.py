@@ -54,6 +54,12 @@ class PaymentIntent(models.Model):
 
     TERMINAL_STATUSES = [Status.FAILED, Status.CANCELLED, Status.REFUNDED]
 
+    # Cobrança em andamento: o dinheiro ainda está sendo esperado. NÃO é o
+    # complemento de TERMINAL_STATUSES — ``captured`` não é terminal (ainda
+    # pode virar ``refunded``) e também não é ativo: já entrou. Quem pergunta
+    # "qual cobrança está de pé para este pedido?" quer estas duas.
+    ACTIVE_STATUSES = [Status.PENDING, Status.AUTHORIZED]
+
     # Métodos que liquidam sem gateway: o dinheiro troca de mãos no balcão
     # (``cash``) ou a cobrança aconteceu fora do sistema (``external``:
     # maquininha avulsa, marketplace). Não há autorização remota nem

@@ -1126,6 +1126,18 @@ SHOPMAN_EFI_WEBHOOK = {
     # and equal to "SUCCESS", the request is treated as pre-authenticated by
     # the proxy. The shared token is still verified as defense-in-depth.
     "mtls_header": os.environ.get("EFI_MTLS_HEADER", "HTTP_X_SSL_CLIENT_VERIFY"),
+    # Optional: CIDRs de onde a EFI notifica (EFI_WEBHOOK_IP_ALLOWLIST, separados
+    # por vírgula — ex.: "34.193.0.0/16,52.5.0.0/16"). VAZIA = sem enforcement,
+    # e é esse o default: uma lista ausente não pode derrubar o webhook de
+    # produção. Configurada, é a terceira camada (a EFI documenta mTLS, allowlist
+    # de IP e hash na URL; sem proxy mTLS na DO, só as duas últimas são nossas).
+    # Ver o contrato de o que é confiado como IP de origem em
+    # shopman/shop/webhooks/efi.py.
+    "ip_allowlist": tuple(
+        entry.strip()
+        for entry in os.environ.get("EFI_WEBHOOK_IP_ALLOWLIST", "").split(",")
+        if entry.strip()
+    ),
 }
 
 # ── Server-Sent Events (django-eventstream) ──────────────────────────

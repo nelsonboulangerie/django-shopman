@@ -260,7 +260,16 @@ def settle_terminal_tenders(order) -> dict[str, str]:
                 method, existing_intent.intent_ref, order.ref,
             )
             continue
-        idempotency_key = f"order-payment:{order.ref}:{method}:{amount_q}:terminal"
+        # Sem o valor na chave. Com ele, um total que mudasse entre duas
+        # tentativas (falha parcial + reedição) gerava chave nova e um SEGUNDO
+        # intent capturado do mesmo método no mesmo pedido — receita dobrada no
+        # Payman com uma gaveta só, e linha imutável que ninguém apaga. Chave
+        # estável por (pedido, método) deixa o `_require_idempotent_match` do
+        # Payman acusar a divergência de valor, que é para isso que ele existe:
+        # o erro sobe, o PDV registra `pos_sale_settlement_failed`, e a venda
+        # fica sem intent — falta que a reconciliação diária aponta e um humano
+        # conserta, ao contrário do dobro.
+        idempotency_key = f"order-payment:{order.ref}:{method}:terminal"
         intent = PaymentService.settle(
             order.ref,
             amount_q,
@@ -683,10 +692,11 @@ def _refund_without_gateway(intent_ref: str, *, amount_q: int | None, idempotenc
 
     Não há adapter para converter a resposta, então este helper fala o mesmo
     dialeto (``PaymentResult``) para o ``refund`` tratar sucesso, recusa e
-    retry por um caminho só. A chave de idempotência ocupa o ``gateway_id`` da
-    transação de estorno, exatamente como fazem os adapters reais: é o único
-    campo pelo qual o Payman deduplica um retry (worker morto, at-least-once)
-    e sem ele um cancel reapresentado devolveria o mesmo dinheiro duas vezes.
+    retry por um caminho só. A chave vai no campo próprio
+    (``PaymentTransaction.idempotency_key``, com unicidade no banco) e também
+    no ``gateway_id``, que é como os adapters reais identificam a devolução: o
+    Payman deduplica pelos dois, e sem isso um cancel reapresentado (worker
+    morto, at-least-once) devolveria o mesmo dinheiro duas vezes.
     """
     from shopman.payman import PaymentError, PaymentService
 
@@ -696,6 +706,7 @@ def _refund_without_gateway(intent_ref: str, *, amount_q: int | None, idempotenc
             amount_q=amount_q,
             reason="order_cancelled",
             gateway_id=idempotency_key,
+            idempotency_key=idempotency_key,
         )
     except PaymentError as exc:
         return PaymentResult(success=False, error_code=exc.code, message=exc.message)

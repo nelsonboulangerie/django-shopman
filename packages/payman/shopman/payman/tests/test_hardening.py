@@ -13,6 +13,7 @@ from datetime import timedelta
 from django.db import IntegrityError, transaction
 from django.test import TestCase
 from django.utils import timezone
+from shopman.payman.exceptions import PaymentError
 from shopman.payman.models import PaymentIntent, PaymentTransaction
 from shopman.payman.service import PaymentService
 
@@ -221,3 +222,161 @@ class CancelReasonTests(TestCase):
 
         intent.refresh_from_db()
         self.assertEqual(intent.cancel_reason, "fraud_detected")
+
+
+# ---------------------------------------------------------------------------
+# Fix 5 — refund(reason=...) persistido na transação
+# ---------------------------------------------------------------------------
+
+class RefundReasonTests(TestCase):
+    """O motivo do reembolso não pode morar só no log.
+
+    Cancelamento é dinheiro que não entrou; reembolso é dinheiro que SAIU — a
+    operação sobre a qual auditoria e contador perguntam "por quê". O motivo
+    fica na própria linha imutável, ao lado do valor.
+    """
+
+    def _captured(self, ref: str) -> PaymentIntent:
+        intent = _make_intent(ref)
+        PaymentService.authorize(intent.ref)
+        PaymentService.capture(intent.ref)
+        return intent
+
+    def test_refund_reason_persisted_on_transaction(self) -> None:
+        intent = self._captured("REF-RSN-1")
+        txn = PaymentService.refund(intent.ref, amount_q=1000, reason="item danificado")
+
+        txn.refresh_from_db()
+        self.assertEqual(txn.reason, "item danificado")
+
+    def test_refund_without_reason_stores_empty_string(self) -> None:
+        intent = self._captured("REF-RSN-2")
+        txn = PaymentService.refund(intent.ref, amount_q=1000)
+
+        txn.refresh_from_db()
+        self.assertEqual(txn.reason, "")
+
+    def test_each_partial_refund_keeps_its_own_reason(self) -> None:
+        intent = self._captured("REF-RSN-3")
+        PaymentService.refund(intent.ref, amount_q=1000, reason="pão queimado")
+        PaymentService.refund(intent.ref, amount_q=2000, reason="entrega atrasada")
+
+        reasons = list(
+            PaymentTransaction.objects.filter(
+                intent=intent, type=PaymentTransaction.Type.REFUND
+            )
+            .order_by("created_at")
+            .values_list("reason", flat=True)
+        )
+        self.assertEqual(reasons, ["pão queimado", "entrega atrasada"])
+
+    def test_refund_reason_survives_the_immutability_guard(self) -> None:
+        """A linha é imutável, e o motivo com ela: não há caminho para reescrever."""
+        intent = self._captured("REF-RSN-4")
+        txn = PaymentService.refund(intent.ref, amount_q=1000, reason="troco errado")
+
+        with self.assertRaises(ValueError):
+            PaymentTransaction.objects.filter(pk=txn.pk).update(reason="outra história")
+
+        txn.refresh_from_db()
+        self.assertEqual(txn.reason, "troco errado")
+
+    def test_reconciled_refund_records_its_origin(self) -> None:
+        """Reembolso que veio do snapshot do gateway diz de onde veio."""
+        intent = self._captured("REF-RSN-5")
+        PaymentService.reconcile_gateway_status(
+            intent.ref,
+            gateway_status="refunded",
+            amount_q=5000,
+            captured_q=5000,
+            refunded_q=5000,
+            refund_gateway_id="re_rsn_5",
+        )
+
+        txn = PaymentTransaction.objects.get(intent=intent, type=PaymentTransaction.Type.REFUND)
+        self.assertEqual(txn.reason, "gateway_reconciliation")
+
+
+# ---------------------------------------------------------------------------
+# Fix 6 — refund(idempotency_key=...) para estorno sem gateway
+# ---------------------------------------------------------------------------
+
+class RefundIdempotencyKeyTests(TestCase):
+    """Estorno de dinheiro não tem gateway_id — e mesmo assim pode repetir.
+
+    A dedupe do refund era só por ``gateway_id``, que o estorno de balcão nunca
+    tem (``""``). Dois disparos (retry de rede, duplo clique que escape do
+    guard de UI) criavam DUAS devoluções enquanto houvesse saldo.
+    """
+
+    def _captured(self, ref: str, amount_q: int = 5000) -> PaymentIntent:
+        intent = PaymentService.settle(f"ORD-{ref}", amount_q, "cash", ref=f"PAY-{ref}")
+        return intent
+
+    def test_same_key_twice_refunds_once(self) -> None:
+        intent = self._captured("IDEM-1")
+
+        first = PaymentService.refund(intent.ref, amount_q=2000, idempotency_key="order-refund:IDEM-1")
+        second = PaymentService.refund(intent.ref, amount_q=2000, idempotency_key="order-refund:IDEM-1")
+
+        self.assertEqual(first.pk, second.pk)
+        self.assertEqual(
+            PaymentTransaction.objects.filter(intent=intent, type=PaymentTransaction.Type.REFUND).count(),
+            1,
+        )
+        self.assertEqual(PaymentService.refunded_total(intent.ref), 2000)
+
+    def test_without_key_two_calls_still_refund_twice(self) -> None:
+        """Sem chave não há o que deduplicar: o contrato exige que o chamador a passe."""
+        intent = self._captured("IDEM-2")
+
+        PaymentService.refund(intent.ref, amount_q=1000)
+        PaymentService.refund(intent.ref, amount_q=1000)
+
+        self.assertEqual(PaymentService.refunded_total(intent.ref), 2000)
+
+    def test_key_reused_with_other_amount_is_refused(self) -> None:
+        intent = self._captured("IDEM-3")
+        PaymentService.refund(intent.ref, amount_q=1000, idempotency_key="order-refund:IDEM-3")
+
+        with self.assertRaises(PaymentError) as ctx:
+            PaymentService.refund(intent.ref, amount_q=2500, idempotency_key="order-refund:IDEM-3")
+
+        self.assertEqual(ctx.exception.code, "idempotency_key_conflict")
+        self.assertIn("amount_q", ctx.exception.context["mismatched"])
+        self.assertEqual(PaymentService.refunded_total(intent.ref), 1000)
+
+    def test_key_reused_on_another_intent_is_refused(self) -> None:
+        first = self._captured("IDEM-4A")
+        second = self._captured("IDEM-4B")
+        PaymentService.refund(first.ref, amount_q=1000, idempotency_key="order-refund:IDEM-4")
+
+        with self.assertRaises(PaymentError) as ctx:
+            PaymentService.refund(second.ref, amount_q=1000, idempotency_key="order-refund:IDEM-4")
+
+        self.assertEqual(ctx.exception.code, "idempotency_key_conflict")
+        self.assertIn("intent_ref", ctx.exception.context["mismatched"])
+        self.assertEqual(PaymentService.refunded_total(second.ref), 0)
+
+    def test_key_uniqueness_is_enforced_by_the_database(self) -> None:
+        """A trava final é constraint, não o if do service."""
+        intent = self._captured("IDEM-5")
+        PaymentService.refund(intent.ref, amount_q=1000, idempotency_key="order-refund:IDEM-5")
+
+        with self.assertRaises(IntegrityError), transaction.atomic():
+            PaymentTransaction.objects.create(
+                intent=intent,
+                type=PaymentTransaction.Type.REFUND,
+                amount_q=1000,
+                idempotency_key="order-refund:IDEM-5",
+            )
+
+    def test_full_refund_retry_matches_without_explicit_amount(self) -> None:
+        """Retry do cancel (estorno total, sem amount_q) devolve a mesma transação."""
+        intent = self._captured("IDEM-6")
+
+        first = PaymentService.refund(intent.ref, idempotency_key="order-refund:IDEM-6")
+        second = PaymentService.refund(intent.ref, idempotency_key="order-refund:IDEM-6")
+
+        self.assertEqual(first.pk, second.pk)
+        self.assertEqual(PaymentService.refunded_total(intent.ref), 5000)

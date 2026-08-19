@@ -1,19 +1,28 @@
 """Perímetro das APIs do kernel — guardrail de segurança.
 
-Os pacotes do kernel (orderman, offerman, stockman, craftsman, guestman, payman)
+Os pacotes do kernel (orderman, offerman, stockman, craftsman, guestman)
 expõem ViewSets DRF de CRUD com o default global `IsAuthenticated`. Como clientes
 do storefront viram usuários Django autenticados (login OTP chama `login()`), montar
 essas rotas no deployment deixaria qualquer cliente logado ler/mutar dados do kernel
-(sessões e comandas POS, base de PII, ledger de estoque, BOM, payment intents).
+(sessões e comandas POS, base de PII, ledger de estoque, BOM).
 
 Nenhuma superfície consome essas rotas — os apps Nuxt entram por `api/v1/` (storefront)
 e `api/v1/backstage/` (projections gateadas por permissão). Elas foram desmontadas do
 `config/urls.py`. Este teste trava a re-introdução silenciosa.
 
+O `payman` saiu da lista porque não tem mais pacote `api/`: era código morto no
+deployment cuja única trava era `IsAuthenticated` (qualquer cliente logado
+listaria os intents da loja e filtraria por `order_ref` alheio). A superfície de
+pagamento do operador é o Admin (`payman.contrib.admin_unfold`, leitura) mais a
+reconciliação financeira diária do backstage. O guardrail virou ausência do
+módulo, abaixo.
+
 Contrato: se um dia uma dessas superfícies ganhar consumidor real, ela volta COM
 permissão explícita (`IsAdminUser`/`DjangoModelPermissions`) e este guardrail é
 atualizado deliberadamente — nunca por reflexo.
 """
+
+from pathlib import Path
 
 import pytest
 from django.urls import get_resolver
@@ -25,7 +34,6 @@ UNMOUNTED_KERNEL_API_PREFIXES = [
     "api/stockman/",
     "api/craftsman/",
     "api/customers/",
-    "api/payments/",
 ]
 
 # Prefixos que DEVEM continuar montados (consumidos pelas superfícies/BFF).
@@ -56,6 +64,26 @@ def test_kernel_crud_api_is_not_mounted(prefix):
         f"{prefix} está montado no config/urls.py. APIs de CRUD do kernel não podem "
         "ser expostas no deployment — são superfície de ataque sem consumidor "
         "(clientes têm sessão Django). Ver test_api_perimeter."
+    )
+
+
+def test_payman_has_no_api_package():
+    """O Payman não tem superfície HTTP própria — nem desmontada.
+
+    Dado de pagamento é o mais sensível do sistema e não tem consumidor por
+    HTTP direto: o que o operador precisa vem do Admin e das projections do
+    backstage. Um pacote `api/` parado no repositório é só um plug esperando
+    tomada.
+    """
+    import shopman.payman
+
+    # Olha o diretório do pacote em uso, não ``find_spec``: num worktree, o
+    # finder do editable install responde pelo checkout principal e o teste
+    # falaria de outra árvore.
+    api_dir = Path(shopman.payman.__path__[0]) / "api"
+    assert not api_dir.exists(), (
+        f"{api_dir} voltou a existir. Superfície HTTP de pagamento só com "
+        "consumidor real E permissão explícita — ver test_api_perimeter."
     )
 
 

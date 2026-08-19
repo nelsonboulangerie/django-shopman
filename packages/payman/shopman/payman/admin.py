@@ -15,7 +15,7 @@ if not apps.is_installed("shopman.payman.contrib.admin_unfold"):
     class PaymentTransactionInline(admin.TabularInline):
         model = PaymentTransaction
         extra = 0
-        readonly_fields = ("type", "amount_q", "gateway_id", "created_at")
+        readonly_fields = ("type", "amount_q", "reason", "gateway_id", "created_at")
 
     @admin.register(PaymentIntent)
     class PaymentIntentAdmin(admin.ModelAdmin):
@@ -36,7 +36,7 @@ if not apps.is_installed("shopman.payman.contrib.admin_unfold"):
 
     @admin.register(PaymentTransaction)
     class PaymentTransactionAdmin(admin.ModelAdmin):
-        list_display = ("intent", "type", "amount_q", "gateway_id", "created_at")
+        list_display = ("intent", "type", "amount_q", "reason", "gateway_id", "created_at")
         list_filter = ("type",)
         search_fields = ("intent__ref", "gateway_id")
         readonly_fields = ("created_at",)

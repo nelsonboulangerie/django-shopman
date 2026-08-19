@@ -749,6 +749,89 @@ class EfiPixWebhookTests(WebhookTestBase):
         self.assertEqual(resp.status_code, 401)
 
 
+@override_settings(SHOPMAN_EFI_WEBHOOK=EFI_WEBHOOK_SETTINGS)
+class EfiPixWebhookIpAllowlistTests(WebhookTestBase):
+    """A allowlist de IP é a terceira camada da Efí, e ela é opt-in.
+
+    Lista vazia (o default) passa tudo: configuração ausente não pode ser o
+    motivo de a loja parar de receber notificação de pagamento. Configurada,
+    o endereço avaliado é a ÚLTIMA entrada do ``X-Forwarded-For`` — a que a
+    borda da plataforma acrescentou, e a única que o chamador não forja.
+    """
+
+    URL = "/api/webhooks/efi/pix/"
+
+    def _post(self, txid: str = "abc", **extra):
+        return self.client.post(
+            self.URL,
+            {"pix": [{"txid": txid, "endToEndId": "E-IP", "valor": "10.00"}]},
+            format="json",
+            HTTP_X_EFI_WEBHOOK_TOKEN="test-efi-token",
+            **extra,
+        )
+
+    def test_empty_allowlist_accepts_any_source(self) -> None:
+        resp = self._post(REMOTE_ADDR="203.0.113.77")
+        self.assertEqual(resp.status_code, 200, resp.data)
+
+    @override_settings(
+        SHOPMAN_EFI_WEBHOOK={"webhook_token": "test-efi-token", "ip_allowlist": ("198.51.100.0/24",)}
+    )
+    def test_allowlisted_source_is_accepted(self) -> None:
+        resp = self._post(REMOTE_ADDR="198.51.100.9")
+        self.assertEqual(resp.status_code, 200, resp.data)
+
+    @override_settings(
+        SHOPMAN_EFI_WEBHOOK={"webhook_token": "test-efi-token", "ip_allowlist": ("198.51.100.0/24",)}
+    )
+    def test_source_outside_allowlist_is_rejected(self) -> None:
+        resp = self._post(REMOTE_ADDR="203.0.113.77")
+        self.assertEqual(resp.status_code, 401)
+
+    @override_settings(
+        SHOPMAN_EFI_WEBHOOK={"webhook_token": "test-efi-token", "ip_allowlist": ("198.51.100.0/24",)}
+    )
+    def test_forwarded_for_uses_the_last_hop(self) -> None:
+        """Atrás do proxy da plataforma, quem vale é o último salto."""
+        resp = self._post(
+            HTTP_X_FORWARDED_FOR="203.0.113.77, 198.51.100.9",
+            REMOTE_ADDR="10.0.0.1",
+        )
+        self.assertEqual(resp.status_code, 200, resp.data)
+
+    @override_settings(
+        SHOPMAN_EFI_WEBHOOK={"webhook_token": "test-efi-token", "ip_allowlist": ("198.51.100.0/24",)}
+    )
+    def test_spoofed_forwarded_for_does_not_pass(self) -> None:
+        """Chamador que prepende um IP da lista continua de fora."""
+        resp = self._post(
+            HTTP_X_FORWARDED_FOR="198.51.100.9, 203.0.113.77",
+            REMOTE_ADDR="10.0.0.1",
+        )
+        self.assertEqual(resp.status_code, 401)
+
+    @override_settings(
+        SHOPMAN_EFI_WEBHOOK={"webhook_token": "test-efi-token", "ip_allowlist": ("198.51.100.0/24",)}
+    )
+    def test_allowlist_is_checked_before_the_token(self) -> None:
+        """Token certo não resgata origem errada."""
+        resp = self.client.post(
+            f"{self.URL}?token=test-efi-token",
+            {"pix": [{"txid": "abc", "endToEndId": "E-IP", "valor": "10.00"}]},
+            format="json",
+            REMOTE_ADDR="203.0.113.77",
+        )
+        self.assertEqual(resp.status_code, 401)
+
+    @override_settings(
+        SHOPMAN_EFI_WEBHOOK={"webhook_token": "test-efi-token", "ip_allowlist": ("nao-e-cidr",)}
+    )
+    def test_broken_cidr_does_not_open_the_door(self) -> None:
+        """Entrada inválida na lista é logada e ignorada — não vira 'passa tudo'."""
+        resp = self._post(REMOTE_ADDR="198.51.100.9")
+        self.assertEqual(resp.status_code, 401)
+
+
 # ══════════════════════════════════════════════════════════════
 # PIX capture sufficiency (confirm_pix ↔ Stripe parity)
 # ══════════════════════════════════════════════════════════════

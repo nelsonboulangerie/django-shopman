@@ -18,9 +18,11 @@ Lifecycle:
                   → fail
     settle (cash/external) = create_intent + capture, atômico
 
-6 verbs: create_intent, settle, authorize, capture, refund, cancel.
-2 queries: get, get_by_order.
-1 helper: get_active_intent.
+7 verbos: create_intent, settle, authorize, capture, refund, cancel, fail.
+Reconciliação: reconcile_gateway_status (snapshot cumulativo do gateway).
+Consultas: get, get_by_order, get_by_gateway_id, get_active_intent
+(cobrança de pé — pendente ou autorizada, nunca capturada).
+Somas: captured_total, refunded_total, chargeback_total.
 
 Domain Contracts:
 
@@ -35,7 +37,14 @@ Domain Contracts:
         - ``refunded_total(ref)`` is the financial source of truth for how
           much has actually been returned to the customer.
         - Multiple partial refunds are allowed as long as
-          ``captured_total - refunded_total > 0``.
+          ``captured_total - refunded_total - chargeback_total > 0``.
+
+    Chargeback:
+        - Devolução decidida por terceiro (disputa de cartão, MED do Pix).
+          Entra pelo snapshot do gateway (``reconcile_gateway_status``), não
+          por verbo próprio: a loja não decide o fato, só registra.
+        - Não muda o ``status`` do intent — consome saldo devolvível e é
+          contado por ``chargeback_total(ref)``.
 
     Mutation Surface:
         - ``PaymentService`` is the canonical mutation surface. All status
@@ -83,6 +92,10 @@ class PaymentReconciliationResult:
     changed: bool
     actions: tuple[str, ...]
     drift: tuple[str, ...] = ()
+    # Devolvido por decisão de terceiro (disputa de cartão, MED do Pix), não
+    # pela loja. Fica separado de ``refunded_q`` porque a natureza muda o que
+    # o gestor faz a seguir — contestar, não conferir.
+    chargeback_q: int = 0
 
 
 class PaymentService:
@@ -90,7 +103,7 @@ class PaymentService:
     Interface pública para operações de pagamento.
 
     Todas as operações state-changing usam @transaction.atomic + select_for_update().
-    Toda transição emite o signal correspondente.
+    Toda transição anuncia o signal correspondente DEPOIS do COMMIT (``_announce``).
     O core é AGNÓSTICO — não sabe nada sobre gateways (Efi, Stripe, etc.).
     """
 
@@ -301,8 +314,8 @@ class PaymentService:
             gateway_id="",
         )
 
-        payment_captured.send(
-            sender=PaymentService,
+        cls._announce(
+            payment_captured,
             intent=intent,
             order_ref=intent.order_ref,
             amount_q=intent.amount_q,
@@ -358,8 +371,8 @@ class PaymentService:
             intent.gateway_data = {**intent.gateway_data, **gateway_data}
         intent.save()
 
-        payment_authorized.send(
-            sender=PaymentService,
+        cls._announce(
+            payment_authorized,
             intent=intent,
             order_ref=intent.order_ref,
             amount_q=intent.amount_q,
@@ -432,8 +445,8 @@ class PaymentService:
             gateway_id=gateway_id,
         )
 
-        payment_captured.send(
-            sender=PaymentService,
+        cls._announce(
+            payment_captured,
             intent=intent,
             order_ref=intent.order_ref,
             amount_q=capture_amount,
@@ -460,12 +473,14 @@ class PaymentService:
         amount_q: int | None = None,
         reason: str = "",
         gateway_id: str = "",
+        idempotency_key: str = "",
     ) -> PaymentTransaction:
         """
         Processa reembolso (parcial ou total).
 
         Contract: multiple partial refunds are allowed while
-        ``captured_total - refunded_total > 0``. The intent transitions to
+        ``captured_total - refunded_total - chargeback_total > 0`` (dinheiro
+        tomado de volta pelo banco já saiu). The intent transitions to
         REFUNDED on the first refund and stays there for subsequent ones.
         ``refunded_total(ref)`` is the financial source of truth, not the
         status field alone.
@@ -473,14 +488,23 @@ class PaymentService:
         Args:
             ref: Referência do intent
             amount_q: Valor a reembolsar (None = total capturado - já reembolsado)
-            reason: Motivo do reembolso
+            reason: Motivo do reembolso. Fica gravado na própria transação
+                (imutável, como ela): é o "por quê" que auditoria e contador
+                perguntam sobre dinheiro que SAIU.
             gateway_id: ID do refund no gateway
+            idempotency_key: Chave estável do chamador para retry seguro.
+                Necessária porque a dedupe por ``gateway_id`` não alcança
+                estorno de DINHEIRO: ele não tem gateway, e dois disparos do
+                mesmo estorno de balcão (retry de rede, duplo clique) criariam
+                duas devoluções enquanto houvesse saldo.
 
         Returns:
-            PaymentTransaction de refund criada
+            PaymentTransaction de refund criada, ou a existente quando a mesma
+            chave/gateway_id é reapresentada.
 
         Raises:
-            PaymentError: INTENT_NOT_FOUND, INVALID_TRANSITION, AMOUNT_EXCEEDS_CAPTURED
+            PaymentError: INTENT_NOT_FOUND, INVALID_TRANSITION,
+                AMOUNT_EXCEEDS_CAPTURED, IDEMPOTENCY_KEY_CONFLICT
         """
         intent = cls._get_for_update(ref)
 
@@ -494,6 +518,15 @@ class PaymentService:
             if existing is not None:
                 return existing
 
+        idempotency_key = (idempotency_key or "").strip()
+        if idempotency_key:
+            existing = PaymentTransaction.objects.filter(
+                type=PaymentTransaction.Type.REFUND, idempotency_key=idempotency_key
+            ).first()
+            if existing is not None:
+                cls._require_idempotent_refund_match(existing, intent=intent, amount_q=amount_q)
+                return existing
+
         if intent.status not in (PaymentIntent.Status.CAPTURED, PaymentIntent.Status.REFUNDED):
             raise PaymentError(
                 code="invalid_transition",
@@ -502,14 +535,18 @@ class PaymentService:
             )
 
         captured_q = cls._captured_total(intent)
-        refunded_q = cls._refunded_total(intent)
-        available_q = captured_q - refunded_q
+        returned_q = cls._returned_total(intent)
+        available_q = captured_q - returned_q
 
         if available_q <= 0:
             raise PaymentError(
                 code="already_refunded",
-                message="Intent já foi totalmente reembolsado",
-                context={"captured_q": captured_q, "refunded_q": refunded_q},
+                message="Intent não tem saldo capturado para devolver",
+                context={
+                    "captured_q": captured_q,
+                    "refunded_q": cls._refunded_total(intent),
+                    "chargeback_q": cls._chargeback_total(intent),
+                },
             )
 
         refund_amount = amount_q if amount_q is not None else available_q
@@ -528,20 +565,36 @@ class PaymentService:
                 context={"refund_amount": refund_amount, "available_q": available_q},
             )
 
-        txn = PaymentTransaction.objects.create(
-            intent=intent,
-            type=PaymentTransaction.Type.REFUND,
-            amount_q=refund_amount,
-            gateway_id=gateway_id,
-        )
+        try:
+            txn = PaymentTransaction.objects.create(
+                intent=intent,
+                type=PaymentTransaction.Type.REFUND,
+                amount_q=refund_amount,
+                gateway_id=gateway_id,
+                reason=reason,
+                idempotency_key=idempotency_key,
+            )
+        except IntegrityError:
+            # A constraint parcial única é a rede final: dois estornos com a
+            # mesma chave em intents diferentes (bug do chamador), ou uma
+            # corrida que escapou do lock deste intent.
+            if not idempotency_key:
+                raise
+            existing = PaymentTransaction.objects.filter(
+                type=PaymentTransaction.Type.REFUND, idempotency_key=idempotency_key
+            ).first()
+            if existing is None:
+                raise
+            cls._require_idempotent_refund_match(existing, intent=intent, amount_q=refund_amount)
+            return existing
 
         # Transition to refunded status (idempotent if already refunded)
         if intent.status != PaymentIntent.Status.REFUNDED:
             intent.status = PaymentIntent.Status.REFUNDED
             intent.save()
 
-        payment_refunded.send(
-            sender=PaymentService,
+        cls._announce(
+            payment_refunded,
             intent=intent,
             order_ref=intent.order_ref,
             amount_q=refund_amount,
@@ -588,8 +641,8 @@ class PaymentService:
         intent.cancel_reason = reason
         intent.save()
 
-        payment_cancelled.send(
-            sender=PaymentService,
+        cls._announce(
+            payment_cancelled,
             intent=intent,
             order_ref=intent.order_ref,
         )
@@ -641,8 +694,8 @@ class PaymentService:
             }
         intent.save()
 
-        payment_failed.send(
-            sender=PaymentService,
+        cls._announce(
+            payment_failed,
             intent=intent,
             order_ref=intent.order_ref,
             error_code=error_code,
@@ -670,11 +723,13 @@ class PaymentService:
         amount_q: int | None = None,
         captured_q: int | None = None,
         refunded_q: int = 0,
+        chargeback_q: int = 0,
         currency: str = "BRL",
         gateway_id: str = "",
         gateway_data: dict | None = None,
         capture_gateway_id: str = "",
         refund_gateway_id: str = "",
+        chargeback_gateway_id: str = "",
     ) -> PaymentReconciliationResult:
         """
         Reconcile Payman with a cumulative gateway snapshot.
@@ -683,6 +738,33 @@ class PaymentService:
         ``charge.amount_refunded`` is cumulative, for example. This method is
         the canonical place to apply those snapshots without double refunding,
         missing a later partial refund, or moving money backwards.
+
+        Chargeback
+        ----------
+
+        ``chargeback_q`` é o total devolvido por decisão de TERCEIRO — disputa
+        de cartão, MED do Pix — e não por vontade da loja. Mesma mecânica do
+        refund: snapshot cumulativo, guarda de monotonicidade nos dois
+        sentidos, uma ``PaymentTransaction(CHARGEBACK)`` só pelo delta.
+
+        Duas diferenças deliberadas em relação ao refund:
+
+        * **viaja como valor, não como status.** Não existe ``gateway_status``
+          de chargeback no mapa: a disputa acontece por fora do ciclo da
+          cobrança, o dinheiro capturado continua capturado no vocabulário da
+          máquina de estados, e quem responde "quanto voltou" é o livro
+          (``chargeback_total``), não o campo ``status``. Inventar um status
+          traria uma transição nova para um fato que a loja não decide.
+        * **não emite signal.** Os cinco sinais do pacote anunciam transições
+          de status, e aqui não há transição. Quem precisa ver chargeback vê
+          pela reconciliação financeira diária, que tem issue-code próprio
+          (``intent_has_chargeback`` em
+          ``shopman/backstage/services/financial_reconciliation.py``).
+
+        Quem alimenta: qualquer chamador do gateway. Hoje nenhum adapter
+        escuta os eventos de disputa (o adapter Stripe trata
+        ``charge.refunded``, não ``charge.dispute.*``); o valor chega por
+        reconciliação manual do operador até que passem a escutar.
         """
         intent = cls._get_for_update(ref)
         status = cls._normalize_gateway_status(gateway_status)
@@ -697,6 +779,7 @@ class PaymentService:
             else int(captured_q or 0)
         )
         snapshot_refunded_q = int(refunded_q or 0)
+        snapshot_chargeback_q = int(chargeback_q or 0)
         snapshot_currency = (currency or intent.currency).upper()
 
         cls._validate_gateway_snapshot(
@@ -705,6 +788,7 @@ class PaymentService:
             amount_q=snapshot_amount_q,
             captured_q=snapshot_captured_q,
             refunded_q=snapshot_refunded_q,
+            chargeback_q=snapshot_chargeback_q,
             currency=snapshot_currency,
             gateway_id=gateway_id,
         )
@@ -721,8 +805,8 @@ class PaymentService:
         if status == "authorized" and intent.status == PaymentIntent.Status.PENDING:
             intent.status = PaymentIntent.Status.AUTHORIZED
             intent.save()
-            payment_authorized.send(
-                sender=PaymentService,
+            cls._announce(
+                payment_authorized,
                 intent=intent,
                 order_ref=intent.order_ref,
                 amount_q=intent.amount_q,
@@ -747,8 +831,8 @@ class PaymentService:
             if intent.status == PaymentIntent.Status.PENDING:
                 intent.status = PaymentIntent.Status.AUTHORIZED
                 intent.save()
-                payment_authorized.send(
-                    sender=PaymentService,
+                cls._announce(
+                    payment_authorized,
                     intent=intent,
                     order_ref=intent.order_ref,
                     amount_q=intent.amount_q,
@@ -779,8 +863,8 @@ class PaymentService:
                     amount_q=snapshot_captured_q,
                     gateway_id=capture_gateway_id or gateway_id,
                 )
-                payment_captured.send(
-                    sender=PaymentService,
+                cls._announce(
+                    payment_captured,
                     intent=intent,
                     order_ref=intent.order_ref,
                     amount_q=snapshot_captured_q,
@@ -830,12 +914,13 @@ class PaymentService:
                     type=PaymentTransaction.Type.REFUND,
                     amount_q=refund_delta_q,
                     gateway_id=refund_gateway_id or gateway_id,
+                    reason="gateway_reconciliation",
                 )
                 if intent.status != PaymentIntent.Status.REFUNDED:
                     intent.status = PaymentIntent.Status.REFUNDED
                     intent.save()
-                payment_refunded.send(
-                    sender=PaymentService,
+                cls._announce(
+                    payment_refunded,
                     intent=intent,
                     order_ref=intent.order_ref,
                     amount_q=refund_delta_q,
@@ -844,11 +929,47 @@ class PaymentService:
                 actions.append("refunded")
                 changed = True
 
+        if snapshot_chargeback_q:
+            local_chargeback_q = cls._chargeback_total(intent)
+            if snapshot_chargeback_q < local_chargeback_q:
+                raise PaymentError(
+                    code="reconciliation_chargeback_mismatch",
+                    message="Total de chargeback local excede o gateway",
+                    context={
+                        "ref": ref,
+                        "local_chargeback_q": local_chargeback_q,
+                        "gateway_chargeback_q": snapshot_chargeback_q,
+                    },
+                )
+
+            chargeback_delta_q = snapshot_chargeback_q - local_chargeback_q
+            if chargeback_delta_q > 0:
+                if intent.status not in {PaymentIntent.Status.CAPTURED, PaymentIntent.Status.REFUNDED}:
+                    raise PaymentError(
+                        code="reconciliation_chargeback_drift",
+                        message="Gateway reportou chargeback para intent sem captura local",
+                        context={
+                            "ref": ref,
+                            "local_status": intent.status,
+                            "gateway_chargeback_q": snapshot_chargeback_q,
+                        },
+                    )
+
+                PaymentTransaction.objects.create(
+                    intent=intent,
+                    type=PaymentTransaction.Type.CHARGEBACK,
+                    amount_q=chargeback_delta_q,
+                    gateway_id=chargeback_gateway_id or gateway_id,
+                    reason="gateway_chargeback",
+                )
+                actions.append("chargeback")
+                changed = True
+
         if status == "cancelled" and intent.status in {PaymentIntent.Status.PENDING, PaymentIntent.Status.AUTHORIZED}:
             intent.status = PaymentIntent.Status.CANCELLED
             intent.cancel_reason = "gateway_reconciliation"
             intent.save()
-            payment_cancelled.send(sender=PaymentService, intent=intent, order_ref=intent.order_ref)
+            cls._announce(payment_cancelled, intent=intent, order_ref=intent.order_ref)
             actions.append("cancelled")
             changed = True
 
@@ -860,8 +981,8 @@ class PaymentService:
                 "error_message": "Gateway reportou falha no pagamento",
             }
             intent.save()
-            payment_failed.send(
-                sender=PaymentService,
+            cls._announce(
+                payment_failed,
                 intent=intent,
                 order_ref=intent.order_ref,
                 error_code="gateway_reconciliation",
@@ -872,6 +993,7 @@ class PaymentService:
 
         final_captured_q = cls._captured_total(intent)
         final_refunded_q = cls._refunded_total(intent)
+        final_chargeback_q = cls._chargeback_total(intent)
         result = PaymentReconciliationResult(
             intent_ref=ref,
             status=PaymentIntent.objects.only("status").get(pk=intent.pk).status,
@@ -880,6 +1002,7 @@ class PaymentService:
             changed=changed,
             actions=tuple(actions),
             drift=tuple(drift),
+            chargeback_q=final_chargeback_q,
         )
         logger.info(
             "payment.reconciled",
@@ -892,6 +1015,7 @@ class PaymentService:
                 "local_status": result.status,
                 "captured_q": final_captured_q,
                 "refunded_q": final_refunded_q,
+                "chargeback_q": final_chargeback_q,
                 "changed": changed,
                 "actions": result.actions,
             },
@@ -921,16 +1045,31 @@ class PaymentService:
         return PaymentIntent.objects.filter(order_ref=order_ref)
 
     @classmethod
-    def get_active_intent(cls, order_ref: str) -> PaymentIntent | None:
-        """Retorna o intent não-terminal e não-expirado mais recente para o pedido."""
+    def get_active_intent(cls, order_ref: str, *, method: str | None = None) -> PaymentIntent | None:
+        """A cobrança de pé para o pedido: pendente ou autorizada, não expirada.
+
+        "Ativo" é o dinheiro que ainda se espera, não o que já entrou:
+        ``captured`` fica de fora (ver ``PaymentIntent.ACTIVE_STATUSES``, que
+        não é o complemento de ``TERMINAL_STATUSES``). Quem quer saber se o
+        pedido foi pago pergunta a ``captured_total``.
+
+        Cardinalidade: um pedido pode ter mais de um intent — venda mista cria
+        um por método (``settle_terminal_tenders`` em
+        ``shopman/shop/services/payment.py``), e uma tentativa de pix que falha
+        deixa a geração anterior para trás. Os do terminal nascem capturados e
+        já saem daqui; das gerações queimadas, a mais recente é a cobrança
+        corrente (o orquestrador cancela as anteriores em
+        ``cancel_stale_intents``). Passe ``method`` quando a pergunta for sobre
+        um meio de pagamento específico, ou use ``get_by_order`` para ver todos.
+        """
         now = timezone.now()
-        return (
-            PaymentIntent.objects.filter(order_ref=order_ref)
-            .exclude(status__in=PaymentIntent.TERMINAL_STATUSES)
-            .filter(Q(expires_at__isnull=True) | Q(expires_at__gt=now))
-            .order_by("-created_at")
-            .first()
-        )
+        qs = PaymentIntent.objects.filter(
+            order_ref=order_ref,
+            status__in=PaymentIntent.ACTIVE_STATUSES,
+        ).filter(Q(expires_at__isnull=True) | Q(expires_at__gt=now))
+        if method is not None:
+            qs = qs.filter(method=method)
+        return qs.order_by("-created_at").first()
 
     @classmethod
     def get_by_gateway_id(
@@ -961,9 +1100,42 @@ class PaymentService:
         intent = cls.get(ref)
         return cls._refunded_total(intent)
 
+    @classmethod
+    def chargeback_total(cls, ref: str) -> int:
+        """Total devolvido por decisão de terceiro (disputa, MED) para um intent."""
+        intent = cls.get(ref)
+        return cls._chargeback_total(intent)
+
     # ================================================================
     # Private
     # ================================================================
+
+    @classmethod
+    def _announce(cls, signal, **kwargs) -> None:
+        """Anuncia um fato de pagamento DEPOIS do COMMIT.
+
+        Dentro da transação o anúncio é promessa, não fato: o chamador pode
+        abrir um atomic externo, capturar e falhar depois — é literalmente o
+        que ``_settle_pos_sale`` faz em ``shopman/shop/services/pos.py`` (um
+        ``atomic`` em volta de ``settle_terminal_tenders`` + escrita da venda
+        no livro do turno). Com o ``send`` lá dentro, o rollback desfaz o
+        pagamento e deixa de pé o que o receiver já fez com a notícia de um
+        dinheiro que, para o banco, nunca existiu. Pior: exceção de receiver
+        aborta a própria captura — o rabo abana o cachorro.
+
+        ``on_commit`` inverte as duas coisas: o fato só é anunciado quando é
+        fato, e quem escuta não derruba quem cobra. É o idioma do pacote irmão
+        (``packages/cashman/shopman/cashman/services/ledger.py``). Fora de
+        bloco atômico o Django roda o callback na hora, então chamador
+        não-transacional não muda de comportamento.
+
+        O kwarg ``intent`` é a instância viva, não um retrato do instante do
+        fato: quando um mesmo verbo encadeia transições (o ``reconcile`` que
+        autoriza e captura no mesmo snapshot), o receiver lê o estado FINAL.
+        Quem precisar do estado exato de cada etapa lê ``transaction`` (linha
+        imutável) ou refaz a leitura no banco.
+        """
+        transaction.on_commit(lambda: signal.send(sender=cls, **kwargs))
 
     @classmethod
     def _get_for_update(cls, ref: str) -> PaymentIntent:
@@ -1054,6 +1226,32 @@ class PaymentService:
             )
 
     @classmethod
+    def _require_idempotent_refund_match(
+        cls,
+        txn: PaymentTransaction,
+        *,
+        intent: PaymentIntent,
+        amount_q: int | None,
+    ) -> None:
+        """Recusa a chave de um estorno reapresentada para OUTRO estorno.
+
+        Mesma postura do ``create_intent``: devolver a transação existente em
+        silêncio quando os parâmetros mudaram mascara o bug do chamador — e
+        aqui o bug é sobre dinheiro que sai.
+        """
+        mismatched: dict[str, dict] = {}
+        if txn.intent_id != intent.pk:
+            mismatched["intent_ref"] = {"expected": intent.ref, "actual": txn.intent.ref}
+        if amount_q is not None and txn.amount_q != int(amount_q):
+            mismatched["amount_q"] = {"expected": int(amount_q), "actual": txn.amount_q}
+        if mismatched:
+            raise PaymentError(
+                code="idempotency_key_conflict",
+                message="Chave de idempotência reutilizada com outro reembolso",
+                context={"idempotency_key": txn.idempotency_key, "mismatched": mismatched},
+            )
+
+    @classmethod
     def _normalize_gateway_status(cls, status: str) -> str:
         normalized = str(status or "").strip().lower()
         status_map = {
@@ -1088,6 +1286,7 @@ class PaymentService:
         amount_q: int,
         captured_q: int,
         refunded_q: int,
+        chargeback_q: int,
         currency: str,
         gateway_id: str,
     ) -> None:
@@ -1097,7 +1296,7 @@ class PaymentService:
                 message=f"Status de gateway desconhecido: {status}",
                 context={"ref": intent.ref, "gateway_status": status},
             )
-        if amount_q <= 0 or captured_q < 0 or refunded_q < 0:
+        if amount_q <= 0 or captured_q < 0 or refunded_q < 0 or chargeback_q < 0:
             raise PaymentError(
                 code="reconciliation_invalid_amount",
                 message="Snapshot do gateway tem valores invalidos",
@@ -1106,6 +1305,7 @@ class PaymentService:
                     "amount_q": amount_q,
                     "captured_q": captured_q,
                     "refunded_q": refunded_q,
+                    "chargeback_q": chargeback_q,
                 },
             )
         if amount_q != intent.amount_q:
@@ -1132,6 +1332,17 @@ class PaymentService:
                 message="Total reembolsado no gateway excede o capturado",
                 context={"ref": intent.ref, "captured_q": captured_q, "refunded_q": refunded_q},
             )
+        if refunded_q + chargeback_q > captured_q:
+            raise PaymentError(
+                code="reconciliation_chargeback_exceeds_capture",
+                message="Reembolso + chargeback no gateway excedem o capturado",
+                context={
+                    "ref": intent.ref,
+                    "captured_q": captured_q,
+                    "refunded_q": refunded_q,
+                    "chargeback_q": chargeback_q,
+                },
+            )
         if gateway_id and intent.gateway_id and gateway_id != intent.gateway_id:
             raise PaymentError(
                 code="reconciliation_gateway_id_mismatch",
@@ -1156,6 +1367,24 @@ class PaymentService:
             )["total"]
             or 0
         )
+
+    @classmethod
+    def _chargeback_total(cls, intent: PaymentIntent) -> int:
+        return (
+            intent.transactions.filter(type=PaymentTransaction.Type.CHARGEBACK).aggregate(
+                total=models.Sum("amount_q")
+            )["total"]
+            or 0
+        )
+
+    @classmethod
+    def _returned_total(cls, intent: PaymentIntent) -> int:
+        """Tudo que voltou ao cliente: reembolso da loja + chargeback de terceiro.
+
+        É este o saldo que limita um novo reembolso. Dinheiro tomado de volta
+        pelo banco já saiu da conta; estornar de novo pagaria duas vezes.
+        """
+        return cls._refunded_total(intent) + cls._chargeback_total(intent)
 
     @classmethod
     def _generate_ref(cls) -> str:

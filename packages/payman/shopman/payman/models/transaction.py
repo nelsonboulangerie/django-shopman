@@ -47,6 +47,21 @@ class PaymentTransaction(models.Model):
     type = models.CharField(max_length=20, choices=Type.choices)
     amount_q = models.BigIntegerField()
     gateway_id = models.CharField(verbose_name="ID do gateway", max_length=200, blank=True, default="")
+    # Por que este dinheiro voltou. Mora na linha, não no JSON do intent: a
+    # linha é imutável, e o motivo de uma devolução tem de ser tão imutável
+    # quanto ela. É a pergunta que auditoria e contador fazem primeiro.
+    reason = models.CharField(verbose_name="motivo", max_length=500, blank=True, default="")
+    # Chave estável do CHAMADOR para retry seguro, com unicidade no banco.
+    # Diferente de ``gateway_id``, que é o id que o gateway devolveu: estorno
+    # de dinheiro no balcão não tem gateway nenhum e mesmo assim pode ser
+    # disparado duas vezes. Hoje só ``PaymentService.refund`` a escreve.
+    idempotency_key = models.CharField(
+        verbose_name="chave de idempotência",
+        max_length=128,
+        blank=True,
+        default="",
+        db_index=True,
+    )
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
@@ -58,6 +73,11 @@ class PaymentTransaction(models.Model):
             models.CheckConstraint(
                 condition=models.Q(amount_q__gt=0),
                 name="pay_transaction_amount_q_positive",
+            ),
+            models.UniqueConstraint(
+                fields=["idempotency_key"],
+                condition=models.Q(idempotency_key__gt=""),
+                name="pay_transaction_idempotency_key_unique",
             ),
         ]
 

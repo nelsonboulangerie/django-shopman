@@ -118,8 +118,8 @@ class PaymentTransactionInline(BaseTabularInline):
 
     model = PaymentTransaction
     extra = 0
-    fields = ("type_badge", "amount_display", "gateway_id", "created_at_display")
-    readonly_fields = ("type_badge", "amount_display", "gateway_id", "created_at_display")
+    fields = ("type_badge", "amount_display", "reason", "gateway_id", "created_at_display")
+    readonly_fields = ("type_badge", "amount_display", "reason", "gateway_id", "created_at_display")
 
     def has_add_permission(self, request, obj=None):
         return False
@@ -345,10 +345,10 @@ class PaymentIntentAdmin(BaseModelAdmin):
 class PaymentTransactionAdmin(BaseModelAdmin):
     """Read-only audit trail of financial movements (immutable model)."""
 
-    list_display = ("intent", "type_badge", "amount_display", "gateway_id", "created_at_display")
+    list_display = ("intent", "type_badge", "amount_display", "reason", "gateway_id", "created_at_display")
     list_filter = (("type", ChoicesRadioFilter),)
-    search_fields = ("intent__ref", "gateway_id")
-    readonly_fields = ("intent", "type", "amount_q", "gateway_id", "created_at")
+    search_fields = ("intent__ref", "gateway_id", "reason")
+    readonly_fields = ("intent", "type", "amount_q", "reason", "gateway_id", "created_at")
     ordering = ("-created_at",)
     compressed_fields = True
 
