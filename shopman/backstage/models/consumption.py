@@ -90,6 +90,15 @@ class ConsumptionRole(models.Model):
             "em grão e chá em lata ficam como 'não é bebida'."
         ),
     )
+    eat_in_weight = models.PositiveSmallIntegerField(
+        "peso de consumo local (%)", default=50,
+        help_text=(
+            "Probabilidade de o produto ser consumido na casa quando aparece "
+            "na cesta, de 0 a 100. É o que transforma a vocação (0 ou 1) numa "
+            "estimativa: 'consome aqui' perto de 100, 'leva' perto de 0, "
+            "'híbrido' no meio. Cada SKU pode ter o seu próprio peso."
+        ),
+    )
     is_active = models.BooleanField("ativo", default=True)
     ordering = models.PositiveSmallIntegerField("ordem", default=0)
 
@@ -134,6 +143,15 @@ class ProductConsumptionTag(models.Model):
     note = models.CharField(
         "observação", max_length=140, blank=True,
         help_text="Por que este papel, quando o nome do produto engana.",
+    )
+    eat_in_weight = models.PositiveSmallIntegerField(
+        "peso de consumo local (%)", null=True, blank=True,
+        help_text=(
+            "Vazio = herda o peso do papel. Preencha para dizer, deste produto, "
+            "quantas vezes em 100 ele é consumido aqui quando está na cesta. "
+            "A dica ao lado mostra o que o histórico sabe: % das vendas dele "
+            "com bebida e % em lote (4+)."
+        ),
     )
     reviewed = models.BooleanField(
         "revisada por gente", default=False,

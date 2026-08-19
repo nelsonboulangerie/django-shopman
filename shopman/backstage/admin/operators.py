@@ -15,6 +15,7 @@ from __future__ import annotations
 
 from django.contrib import admin, messages
 from django.shortcuts import redirect
+from django.utils.html import format_html
 from shopman.doorman.models import PinCredential, PinCredentialError
 from shopman.utils import unfold_badge
 from unfold.admin import ModelAdmin
@@ -28,8 +29,8 @@ MANAGE_OPERATORS = "cashman.manage_operators"
 @admin.register(PinCredential)
 class PinCredentialAdmin(ModelAdmin):
     list_display = (
-        "operator_display", "state_display", "badge_display", "must_change_display",
-        "last_verified_at", "updated_at",
+        "operator_display", "groups_display", "state_display", "badge_display",
+        "must_change_display", "last_verified_at", "updated_at",
     )
     list_filter = ("must_change",)
     search_fields = ("user__username", "user__first_name", "user__last_name")
@@ -41,12 +42,31 @@ class PinCredentialAdmin(ModelAdmin):
     actions = ["issue_badge", "revoke_badge", "reset_pin", "unlock_pin"]
     compressed_fields = True
 
+    list_select_related = ("user",)
+
     def get_queryset(self, request):
-        return super().get_queryset(request).select_related("user")
+        return super().get_queryset(request).select_related("user").prefetch_related("user__groups")
 
     @admin.display(description="Operador")
     def operator_display(self, obj):
         return obj.user.get_full_name().strip() or obj.user.get_username()
+
+    @admin.display(description="Papel")
+    def groups_display(self, obj):
+        """O papel da pessoa, na MESMA linha do PIN e do crachá.
+
+        Antes, montar alguém exigia duas telas: esta para PIN/crachá e a de
+        Usuários para o grupo. Duas telas para uma pessoa é como se esquece
+        metade — e a metade esquecida costuma ser a permissão, que só aparece
+        quando alguém não consegue trabalhar.
+
+        Sem grupo aparece em vermelho de propósito: conta que opera sem grupo é
+        acesso por permissão avulsa, que não se explica pela tela de Grupos.
+        """
+        nomes = [g.name for g in obj.user.groups.all()]
+        if not nomes:
+            return unfold_badge("sem grupo", "red")
+        return format_html(" ".join(["{}"] * len(nomes)), *(unfold_badge(n, "base") for n in nomes))
 
     @admin.display(description="Situação")
     def state_display(self, obj):
