@@ -21,7 +21,7 @@ Errors (block runserver/migrate --deploy in production):
 Warnings (non-blocking, logged at startup):
   SHOPMAN_W001  Database backend is SQLite in local/debug mode
   SHOPMAN_W002  Notification backend is console while DEBUG=False
-  SHOPMAN_W003  No fiscal adapter configured while a fiscal-enabled channel exists
+  SHOPMAN_W003  Store offers NFC-e at the counter but no fiscal adapter is configured
   SHOPMAN_W004  Listing.ref has no matching Channel.ref
   SHOPMAN_W005  OFFERMAN pricing backend not configured
   SHOPMAN_W006  Mock payment adapter explicitly allowed outside DEBUG
@@ -492,32 +492,50 @@ def check_pricing_backend(app_configs, **kwargs):
 
 @register()
 def check_fiscal_adapter(app_configs, **kwargs):
+    """A loja oferece NFC-e no balcão e não há adapter fiscal configurado.
+
+    O gestor liga "Nota fiscal" no Admin e, sem adapter, **nada acontece**: o
+    toggle nem aparece no PDV (``backstage/projections/pos._supports_fiscal_document``
+    exige os dois) e nenhuma nota sai. Configuração ligada que não faz efeito é o
+    que este aviso existe para tirar do silêncio.
+
+    O predicado é o que a loja realmente usa —
+    ``Shop.defaults["pos"]["fiscal_toggle"]``, pela função dona da pergunta
+    (``shop.services.pos.fiscal_toggle_enabled``). Até 2026-08-19 este check
+    olhava ``Channel.config["fiscal"]["enabled"]``, chave que nenhum código do
+    sistema escreve: o check nunca disparou uma vez.
+
+    Espelho do ``SHOPMAN_E013`` e não redundante com ele: lá o adapter existe e
+    falta a política de emissão (erro, bloqueia deploy); aqui a loja quer emitir
+    e falta o adapter (aviso — pré-go-live é um estado legítimo).
+    """
     warnings = []
-    fiscal_adapter = getattr(settings, "SHOPMAN_FISCAL_ADAPTER", None)
-    if fiscal_adapter:
+    if getattr(settings, "SHOPMAN_FISCAL_ADAPTER", None):
         return warnings
 
     from django.db.utils import OperationalError, ProgrammingError
 
-    from shopman.shop.models import Channel
+    from shopman.shop.services.pos import fiscal_toggle_enabled
 
     try:
-        channels = list(Channel.objects.all())
+        offers_fiscal = fiscal_toggle_enabled()
     except (OperationalError, ProgrammingError):
         return warnings  # tables not ready (initial migration)
 
-    for channel in channels:
-        data = channel.config or {}
-        fiscal = data.get("fiscal", {})
-        if fiscal.get("enabled"):
-            warnings.append(
-                Warning(
-                    f"Canal '{channel.ref}' tem fiscal ativo mas nenhum adapter fiscal está configurado.",
-                    hint="Defina SHOPMAN_FISCAL_ADAPTER em settings ou desative fiscal neste canal.",
-                    id="SHOPMAN_W003",
-                )
+    if offers_fiscal:
+        warnings.append(
+            Warning(
+                "A loja oferece NFC-e no PDV (Shop.defaults['pos']['fiscal_toggle']) "
+                "mas nenhum adapter fiscal está configurado.",
+                hint=(
+                    "O toggle 'Nota fiscal' não aparece no balcão e nenhuma nota é "
+                    "emitida. Defina SHOPMAN_FISCAL_ADAPTER (ex.: "
+                    "shopman.shop.adapters.fiscal_focusnfe.FocusNFeBackend) ou desligue "
+                    "'Emitir nota fiscal' no Admin da loja."
+                ),
+                id="SHOPMAN_W003",
             )
-
+        )
     return warnings
 
 
@@ -534,8 +552,8 @@ def check_fiscal_emission_resolver(app_configs, **kwargs):
 
     Erro de deploy, não warning: com emissão obrigatória valendo, cada venda que
     passa sem nota é passivo fiscal, e o log de um worker não é onde isso se
-    descobre. O espelho deste check é o ``SHOPMAN_W003`` (canal fiscal ativo sem
-    adapter nenhum).
+    descobre. O espelho deste check é o ``SHOPMAN_W003`` (a loja oferece NFC-e no
+    balcão e não há adapter nenhum).
     """
     errors = []
     if settings.DEBUG:

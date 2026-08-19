@@ -365,3 +365,56 @@ def test_fiscal_resolver_configured_is_clean(selling_channel):
 )
 def test_fiscal_resolver_accepts_the_comma_separated_or_list(selling_channel):
     assert checks.check_fiscal_emission_resolver(None) == []
+
+
+# ── W003: a loja oferece NFC-e e não há adapter (check que voltou a valer) ────
+#
+# Até 2026-08-19 o predicado era `Channel.config["fiscal"]["enabled"]`, chave que
+# nenhum código do sistema escreve — o check nunca disparou uma vez. O que a
+# loja realmente usa é `Shop.defaults["pos"]["fiscal_toggle"]`.
+
+
+def _shop_with_pos_defaults(pos_cfg: dict):
+    from shopman.shop.models import Shop
+
+    # ``Shop.save`` já limpa o cache do singleton.
+    return Shop.objects.create(name="Nelson", defaults={"pos": pos_cfg})
+
+
+@pytest.fixture
+def store_offering_nfce(db):
+    return _shop_with_pos_defaults({"fiscal_toggle": True})
+
+
+@override_settings(SHOPMAN_FISCAL_ADAPTER=None)
+def test_store_offering_nfce_without_fiscal_adapter_warns(store_offering_nfce):
+    messages = checks.check_fiscal_adapter(None)
+    assert [m.id for m in messages] == ["SHOPMAN_W003"]
+    from django.core.checks import Warning as CheckWarning
+
+    assert isinstance(messages[0], CheckWarning)
+
+
+@override_settings(
+    SHOPMAN_FISCAL_ADAPTER="shopman.shop.adapters.fiscal_focusnfe.FocusNFeBackend"
+)
+def test_store_offering_nfce_with_adapter_is_clean(store_offering_nfce):
+    assert checks.check_fiscal_adapter(None) == []
+
+
+@override_settings(SHOPMAN_FISCAL_ADAPTER=None)
+def test_store_not_offering_nfce_is_clean(db):
+    _shop_with_pos_defaults({})
+
+    assert checks.check_fiscal_adapter(None) == []
+
+
+@override_settings(SHOPMAN_FISCAL_ADAPTER=None)
+def test_channel_config_fiscal_enabled_is_not_the_predicate_anymore(db):
+    # A chave antiga não é escrita por nada no sistema; se alguém a colocar na
+    # mão, ela não ressuscita o check — o predicado é o da loja.
+    from shopman.shop.models import Channel
+
+    Channel.objects.create(ref="pdv", name="PDV", config={"fiscal": {"enabled": True}})
+
+    assert checks.check_fiscal_adapter(None) == []
