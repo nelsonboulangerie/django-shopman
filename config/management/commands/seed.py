@@ -6137,7 +6137,38 @@ class Command(BaseCommand):
                 "nome:Combo Cola + Donut", "nome:Combo Citrus + Donut",
             ]),
         }
-        for role_ref, (note, skus) in historical.items():
+        # Segunda rodada (19/08/2026): as 70 propostas que restavam — cafés,
+        # pratos e pães rústicos do Yooga — revisadas pelo dono. Duas decisões
+        # que o dado sozinho não daria: ciabatta, tabatière, fendu e mini
+        # baguete ficam HÍBRIDOS (como seus gêmeos no cardápio 2027, para o
+        # histórico não discordar do cardápio), embora só 14–18% das vendas
+        # levem bebida; e as mini focaccias são lanchinho, híbridas também.
+        # O café do Yooga vira "bebida preparada" por curadoria, não por
+        # reserva de categoria.
+        round_two = (
+            ("bebida-preparada", "café/chá da casa — revisão do dono 19/08/2026 (SKUs do Yooga)", [
+                "PS", "SS", "SL", "CL", "CQ", "FP", "MH", "CTV", "MC", "SE", "HI", "CHAI_A",
+            ]),
+            ("consome-aqui", "prato servido à mesa — revisão do dono 19/08/2026 (SKUs do Yooga)", [
+                "CMO", "QQ", "CMA", "CCOM", "JB", "PPU",   # croques, queijo quente, jambon, pain perdu
+            ]),
+            ("leva", "pão rústico / mercearia — revisão do dono 19/08/2026 (SKUs do Yooga)", [
+                "BAX", "BF", "CF", "CGO", "CPX", "BE", "BAP", "CBT", "PH", "FOA", "BA", "CGR",
+                "MBAX", "MBF", "MCF", "MCGO", "MCPX", "MBAP", "MCBT", "MFOA", "MBA", "MCGR",
+                "BEP", "FOC", "MPH",
+                # chás Kãnfa em pouch/lata (mercearia, como CHA-LATA)
+                "INTU_P50", "CHEGO_P50", "INTIMI_P50", "CHEGO_L50", "NAMAS_P50", "INTU_L70",
+                "NAMAS_L60", "INTIMI_L50", "SOFIA_P50", "VITAL_P50", "MAMA_L60", "MAMA_P50",
+                # pães com SKU do iFood (só entrega)
+                "IFOOD_76da4710c82b11ee8012e9ac1", "IFOOD_7554d170c82b11ee9bb70dcd9",
+            ]),
+            ("hibrido", "serve aos dois usos (como no cardápio 2027; mini focaccia é lanchinho) — revisão do dono 19/08/2026", [
+                "CI", "CIQ", "MCI", "TB", "MTB", "FE", "MFE", "MIB",
+                "MICBT", "MIF", "MIFOC", "MMICBT", "MMIF",
+            ]),
+        )
+        entries = [(ref, note, skus) for ref, (note, skus) in historical.items()] + list(round_two)
+        for role_ref, note, skus in entries:
             role = roles.get(role_ref)
             if role is None:
                 continue
