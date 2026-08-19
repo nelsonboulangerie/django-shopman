@@ -1134,10 +1134,6 @@ em vez de repetir os números em TypeScript. Duas listas viram uma divergência 
 dia em que uma moeda sair de circulação, e o pedido passaria a falar de um
 dinheiro que não existe.
 
-⚠️ `amount_q` aqui é **payload, nunca saldo**: a linha continua com
-`Entry.amount_q = 0` por CheckConstraint. Trocar dinheiro é net zero, e um valor
-com efeito faria o esperado cair por um dinheiro que nunca saiu.
-
 ⚠️ **A troca é NET ZERO.** Saem R$ 50, entram 5×R$ 10 — o total da gaveta não muda.
 Atender um pedido tem `amount_q = 0` por construção (CheckConstraint do pacote). Lançar
 isso com valor faria o esperado cair por um dinheiro que nunca saiu, e o turno fecharia
