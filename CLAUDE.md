@@ -223,7 +223,7 @@ make migrate           # Migrações
 
 ## Core é Sagrado — Regras de Integridade
 
-O `packages/` é um conjunto de 11 apps pip-instaláveis, muito bem desenhado, robusto e flexível.
+O `packages/` é um conjunto de 12 apps pip-instaláveis, muito bem desenhado, robusto e flexível.
 Antes de alterar qualquer coisa no Core, **compreenda como ele já resolve o problema**.
 
 1. **Não adicionar campos a modelos do Core sem necessidade comprovada.** Os modelos `Session`, `Order`,

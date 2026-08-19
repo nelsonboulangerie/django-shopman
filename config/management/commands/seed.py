@@ -725,11 +725,11 @@ class Command(BaseCommand):
         # Caixa (cashman): o livro é imutável pelo app (delete levanta), então o
         # flush apaga cru — antes do turno e do terminal, que o protegem por FK.
         from shopman.cashman.models import Entry as CashEntry
-        from shopman.cashman.models import Shift as CashShiftLedger
+        from shopman.cashman.models import Shift as CashmanShift
         from shopman.cashman.models import Terminal as CashTerminal
 
         hard_delete(CashEntry)
-        CashShiftLedger.objects.all().delete()
+        CashmanShift.objects.all().delete()
         CashTerminal.objects.all().delete()
 
         # Day closing
@@ -5699,7 +5699,7 @@ class Command(BaseCommand):
         """
         from shopman.cashman import services as cash
         from shopman.cashman.models import Entry as CashEntry
-        from shopman.cashman.models import Shift as CashShiftLedger
+        from shopman.cashman.models import Shift as CashmanShift
         from shopman.cashman.models import Terminal as CashTerminal
 
         self.stdout.write("  💵 Turnos de caixa...")
@@ -5745,7 +5745,7 @@ class Command(BaseCommand):
         # PDV de ontem (uma linha `sale` por pedido, efeito em dinheiro só para o
         # que foi pago em espécie), uma sangria autorizada e a contagem cega com
         # R$ 3 a menos. Idempotente: se o turno de ontem já existe, não repete.
-        already = CashShiftLedger.objects.filter(operator=admin, opened_at=yesterday_open).exists()
+        already = CashmanShift.objects.filter(operator=admin, opened_at=yesterday_open).exists()
         if not already and not cash.open_shift_for(admin) and not cash.open_shift_for_terminal(terminal):
             shift_yesterday = cash.open_shift(operator=admin, terminal=terminal, float_q=20000, at=yesterday_open)
             for order in (

@@ -296,6 +296,13 @@ grita e o dono decide o que fazer com a contagem que não houve.
 
 ## WP-6: remoções e docs
 
+**Status: ENTREGUE (2026-08-19).** Resíduo de código já tinha saído nos WP-4/5 (o grep do aceite
+só acha migrações, docs de decisão/histórico e nomes legítimos como `POSTerminalComponentProjection`
+e `CashMovementRow`); este corte entrega `docs/guides/cashman.md`, glossário (seção Cashman),
+ADR-021 (inventário com `cashman.Entry`), ADR-022 → Aceito, `CLAUDE.md` (12 apps),
+`POS-CASH-DRAWER-PLAN` → `completed/` (superado no registro). O `HANDOFF-POS-EVENT-LOG.md` já não
+existia no repo (o #198 fechou sem merge). Memória do projeto atualizada.
+
 **Entrega**
 
 - Zero resíduo: `CashShift`, `CashMovement`, `POSTerminal`, `_adopt_orphan_sale`,
@@ -360,6 +367,14 @@ vendas cash não gera falso positivo.
 ---
 
 ## WP-9: o troco da entrega sai e volta pelo livro
+
+**Status: ENTREGUE (PR aberto em 2026-08-19).** Como ficou: `courier_in` é ≥ 0 (voltou zero
+também fecha o ciclo), `parent` só quando o acerto é no mesmo turno (senão `order_ref` +
+`payload.courier_out_id`), o valor é exigido pelo SERVIDOR no despacho (409 `change_out_required`
+com a sugestão) e no acerto (400), e o gestor pergunta antes (diálogo no despacho e campo no
+acerto); despacho que pede troco fica fora do lote de avançar. Reconciliação: `courier_*` fora
+do `cash_ledger_mismatch` por construção + `warning` `courier_change_unsettled`. A custódia da
+maquininha (`Order.data.courier.equipment`) NÃO entrou neste corte.
 
 **O problema (medido no código, 2026-08-19):** a loja coleta o pedido de troco
 no checkout do delivery (`change_for_q`, em `Order.data.payment`, escrito por

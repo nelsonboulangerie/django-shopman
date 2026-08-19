@@ -39,13 +39,41 @@ def reject_order(order, *, reason: str, actor: str, rejected_by: str, cancellati
         raise OrderError(str(exc)) from exc
 
 
-def advance_order(order, *, actor: str):
+def advance_order(order, *, actor: str, operator=None, change_out_raw: str | None = None):
+    """Avança o pedido; no despacho de entrega em dinheiro, leva o troco da gaveta.
+
+    ``change_out_raw`` é o valor que o entregador leva (texto em reais; vazio é
+    "não informado", e o shop decide se isso basta). Quando há valor, sai do
+    turno ABERTO de quem despacha (``courier_out``). A falta de valor num pedido
+    que pede troco vira ``ChangeOutRequired`` → ``OrderChangeOutRequired`` (409
+    com a sugestão), para a tela perguntar, e para a API crua não passar calada.
+    """
+    from shopman.backstage.services.pos import parse_money_to_q
+
+    change_out_q = None
+    if change_out_raw is not None and str(change_out_raw).strip() != "":
+        change_out_q = parse_money_to_q(str(change_out_raw))
+    shift = None
+    if operator is not None and change_out_q:
+        from shopman.cashman import services as cash
+
+        shift = cash.open_shift_for(operator)
     try:
-        return operator_orders.advance_order(order, actor=actor)
+        return operator_orders.advance_order(order, actor=actor, change_out_q=change_out_q, cash_shift=shift)
+    except operator_orders.ChangeOutRequired as exc:
+        raise OrderChangeOutRequired(str(exc), suggested_q=exc.suggested_q) from exc
     except (ValueError, InvalidTransition) as exc:
         # Surface the specific, operator-facing reason (advance_block_reason),
         # like confirm/reject do — never swallow it into a generic message.
         raise OrderError(str(exc) or "Ação inválida") from exc
+
+
+class OrderChangeOutRequired(OrderError):
+    """O despacho precisa saber quanto de troco o entregador leva (409 + sugestão)."""
+
+    def __init__(self, message: str, *, suggested_q: int):
+        super().__init__(message)
+        self.suggested_q = int(suggested_q)
 
 
 def cancel_order(order, *, reason: str, actor: str, cancellation_code: str = "", customer_note: str = ""):
@@ -87,8 +115,13 @@ def cancellation_reasons(order) -> list[dict]:
     ]
 
 
-def settle_delivery_cash(order, *, operator, amount_raw: str = "", actor: str):
-    """Acerto do dinheiro de entrega: entra no turno ABERTO (``cashman``) de quem recebeu."""
+def settle_delivery_cash(order, *, operator, amount_raw: str = "", actor: str, change_back_raw: str | None = None):
+    """Acerto do dinheiro de entrega: entra no turno ABERTO (``cashman``) de quem recebeu.
+
+    ``change_back_raw`` é o troco que voltou com o entregador (texto em reais;
+    vazio = não informado). O shop exige quando saiu troco no despacho, zero
+    incluído, e grava ``courier_in`` na mesma transação do ``cod_settled``.
+    """
     from shopman.cashman import services as cash
     from shopman.cashman.exceptions import CashError
 
@@ -96,12 +129,16 @@ def settle_delivery_cash(order, *, operator, amount_raw: str = "", actor: str):
 
     shift = cash.open_shift_for(operator)
     amount_q = parse_money_to_q(amount_raw) if str(amount_raw or "").strip() else None
+    change_back_q = None
+    if change_back_raw is not None and str(change_back_raw).strip() != "":
+        change_back_q = parse_money_to_q(str(change_back_raw))
     try:
         return operator_orders.settle_delivery_cash(
             order,
             cash_shift=shift,
             actor=actor,
             amount_q=amount_q,
+            change_back_q=change_back_q,
         )
     except CashError as exc:
         # Dois acertos do mesmo pedido no mesmo turno (duplo toque no gestor) são

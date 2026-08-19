@@ -198,7 +198,7 @@ e corte no fim do recibo, que é configuração do driver, não do CSS.
 > (`tools/pos-counter-agent/`), a config é por terminal no Admin, e os quatro
 > momentos chamam um caminho só. Falta o balcão: instalar o agente, colar o
 > token, e o olho do operador confirmando que abriu.
-> Ver [POS-CASH-DRAWER-PLAN](POS-CASH-DRAWER-PLAN.md) — inclusive a medição que
+> Ver [POS-CASH-DRAWER-PLAN](completed/POS-CASH-DRAWER-PLAN.md) — inclusive a medição que
 > destravou o desenho (HTTPS → `127.0.0.1` **passa** no Chrome 148) e a correção
 > do pulso (**50/500ms**, não 25/250 — aqueles são as unidades de 2ms).
 

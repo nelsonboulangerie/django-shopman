@@ -207,6 +207,44 @@ def test_cod_acertado_conta_no_dia_do_acerto_nos_dois_livros(counter):
     assert again.cash_ledger.difference_q == 0
 
 
+def test_troco_do_entregador_fica_fora_do_cruzamento_e_ganha_o_seu_espelho(counter):
+    """``courier_out``/``courier_in`` não são pagamento: o cruzamento Payman ×
+    livro não os vê. O espelho deles é outro: saiu e não voltou é ``warning``
+    (``courier_change_unsettled``), e some quando o acerto diz quanto voltou
+    (zero incluído)."""
+    order = Order.objects.create(
+        ref="DLV-1",
+        channel_ref="pdv",
+        status=Order.Status.READY,
+        total_q=3000,
+        data={
+            "fulfillment_type": "delivery",
+            "payment": {
+                "method": "cash",
+                "collection": "on_delivery",
+                "amount_q": 3000,
+                "change_for_q": 5000,
+                "tenders": [{"method": "cash", "amount_q": 3000, "collection": "on_delivery", "status": "pending"}],
+            },
+        },
+    )
+    operator_orders.advance_order(order, actor="marina", change_out_q=2000, cash_shift=counter.shift)
+
+    report = build_financial_reconciliation(reconciliation_date=_today())
+    assert "cash_ledger_mismatch" not in _codes(report)
+    issue = _issue(report, "courier_change_unsettled")
+    assert issue.severity == "warning"
+    assert issue.context == {"order_count": 1, "courier_out_q": 2000, "orders": "DLV-1"}
+    assert report.cash_ledger.ledger_net_q == 0  # o troco na rua não é venda
+
+    operator_orders.settle_delivery_cash(order, cash_shift=counter.shift, actor="marina", change_back_q=0)
+
+    report = build_financial_reconciliation(reconciliation_date=_today())
+    assert "courier_change_unsettled" not in _codes(report)
+    assert "cash_ledger_mismatch" not in _codes(report)
+    assert report.cash_ledger.payman_captured_q == 3000 == report.cash_ledger.ledger_cod_settled_q
+
+
 def test_cancelamento_devolve_o_dinheiro_nos_dois_livros(counter, django_capture_on_commit_callbacks):
     """Cancel no PDV: ``REFUND`` no Payman e linha ``refund`` na gaveta, mesmo
     instante. Capturado 12, devolvido 12; gaveta +12 −12. Nada a gritar."""

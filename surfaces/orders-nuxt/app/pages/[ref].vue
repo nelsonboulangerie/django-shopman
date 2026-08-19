@@ -4,7 +4,9 @@
 // via useOrderDetail; actions POST through the django proxy and reconcile.
 import {
   appendTag,
+  changeBackSuggestionQ,
   lucideIcon,
+  moneyInput,
   splitRef,
   statusTone,
   toneBadge,
@@ -46,17 +48,28 @@ function applyNoteTag(tag: string) {
 // reject + cancel + settle dialogs. Reject/cancel share OrderReasonDialog, which is
 // marketplace-aware: for an iFood order it shows the provider's required coded reasons
 // (fetched live per order); other channels get the store presets + free text.
-const dialog = ref<"" | "reject" | "cancel" | "settle">("");
+const dialog = ref<"" | "reject" | "cancel" | "settle" | "dispatch">("");
 const amount = ref("");
+// troco da entrega: o que voltou (acerto) e o que o entregador leva (despacho)
+const changeBack = ref("");
+const changeOut = ref("");
+const asksChangeBack = computed(() => Boolean(order.value?.change_back_pending));
+// Pronto + delivery + a loja sugere troco: o despacho pergunta antes de avançar
+// (o servidor recusa com 409 se ninguém disser quanto saiu).
+const dispatchAsksChange = computed(
+  () => order.value?.status === "ready" && (order.value?.change_out_suggested_q ?? 0) > 0,
+);
 const reasons = ref<CancellationReason[]>([]);
 const reasonsLoading = ref(false);
 
 // Store-configured justification presets (Admin/Unfold) for non-marketplace channels.
 const presets = computed(() => order.value?.cancellation_presets ?? []);
 
-async function openDialog(kind: "reject" | "cancel" | "settle") {
+async function openDialog(kind: "reject" | "cancel" | "settle" | "dispatch") {
   dialog.value = kind;
   amount.value = "";
+  changeBack.value = order.value?.change_back_pending ? moneyInput(changeBackSuggestionQ(order.value)) : "";
+  changeOut.value = moneyInput(order.value?.change_out_suggested_q ?? 0);
   if (kind === "reject" || kind === "cancel") {
     // Pull the order's valid cancellation reasons — a coded list for iFood, [] else.
     reasons.value = [];
@@ -79,7 +92,18 @@ async function submitReason(payload: { reason: string; cancellationCode: string 
 }
 
 async function submitSettle() {
-  const ok = await settleCash(amount.value.trim());
+  const back = asksChangeBack.value ? changeBack.value.trim() || "0" : undefined;
+  const ok = await settleCash(amount.value.trim(), back);
+  if (ok) dialog.value = "";
+}
+
+function onAdvance() {
+  if (dispatchAsksChange.value) openDialog("dispatch");
+  else advance();
+}
+
+async function submitDispatch(value: string) {
+  const ok = await advance(value.trim() || "0");
   if (ok) dialog.value = "";
 }
 
@@ -134,7 +158,7 @@ const fiscalHref = (link: { href?: string; url?: string }) => link.href || link.
 
       <!-- actions -->
       <section class="flex flex-wrap gap-2">
-        <button v-if="order.can_settle_delivery_cash !== undefined && order.status !== 'cancelled'" type="button" :disabled="busy" class="inline-flex items-center gap-1.5 rounded-md border border-transparent bg-primary px-3.5 py-2 text-sm font-semibold text-primary-foreground transition hover:bg-primary/90 disabled:opacity-50" @click="advance">
+        <button v-if="order.can_settle_delivery_cash !== undefined && order.status !== 'cancelled'" type="button" :disabled="busy" class="inline-flex items-center gap-1.5 rounded-md border border-transparent bg-primary px-3.5 py-2 text-sm font-semibold text-primary-foreground transition hover:bg-primary/90 disabled:opacity-50" @click="onAdvance">
           <Icon name="lucide:arrow-right" class="size-4" /> Avançar
         </button>
         <button type="button" :disabled="busy" class="inline-flex items-center gap-1.5 rounded-md border px-3.5 py-2 text-sm font-semibold transition hover:bg-accent disabled:opacity-50" @click="confirm">
@@ -283,6 +307,17 @@ const fiscalHref = (link: { href?: string; url?: string }) => link.href || link.
           class="w-full rounded-md border bg-background p-2.5 text-sm outline-none focus:ring-1 focus:ring-ring"
           aria-label="Valor recebido"
         />
+        <label v-if="asksChangeBack" class="flex flex-col gap-1 text-sm" data-change-back>
+          <span class="text-muted-foreground">{{ order?.change_label }}. Quanto voltou?</span>
+          <input
+            v-model="changeBack"
+            type="text"
+            inputmode="decimal"
+            placeholder="0,00"
+            class="w-full rounded-md border bg-background p-2.5 text-sm outline-none focus:ring-1 focus:ring-ring"
+            aria-label="Troco que voltou"
+          />
+        </label>
         <UiDialogFooter>
           <button type="button" class="rounded-md border px-3 py-2 text-sm font-medium transition hover:bg-accent" @click="dialog = ''">Voltar</button>
           <button
@@ -292,6 +327,39 @@ const fiscalHref = (link: { href?: string; url?: string }) => link.href || link.
             @click="submitSettle"
           >
             Confirmar
+          </button>
+        </UiDialogFooter>
+      </UiDialogContent>
+    </UiDialog>
+
+    <!-- dispatch dialog: how much change leaves the drawer with the courier -->
+    <UiDialog :open="dialog === 'dispatch'" @update:open="(v) => { if (!v) dialog = '' }">
+      <UiDialogContent class="sm:max-w-md" data-dispatch-dialog>
+        <UiDialogHeader>
+          <UiDialogTitle>Troco para o entregador</UiDialogTitle>
+          <UiDialogDescription>{{ order?.change_label }}. O valor sai do seu turno de caixa e volta no acerto.</UiDialogDescription>
+        </UiDialogHeader>
+        <label class="flex items-center gap-2 text-sm">
+          <span class="text-muted-foreground">R$</span>
+          <input
+            v-model="changeOut"
+            type="text"
+            inputmode="decimal"
+            placeholder="Ex.: 20,00"
+            class="w-full rounded-md border bg-background p-2.5 text-sm outline-none focus:ring-1 focus:ring-ring"
+            aria-label="Troco que o entregador leva"
+          />
+        </label>
+        <UiDialogFooter>
+          <button type="button" class="rounded-md border px-3 py-2 text-sm font-medium transition hover:bg-accent" @click="dialog = ''">Voltar</button>
+          <button type="button" :disabled="busy" class="rounded-md border px-3 py-2 text-sm font-medium transition hover:bg-accent disabled:opacity-50" @click="submitDispatch('0')">Saiu sem troco</button>
+          <button
+            type="button"
+            :disabled="busy"
+            class="rounded-md border border-transparent bg-primary px-3 py-2 text-sm font-semibold text-primary-foreground transition hover:bg-primary/90 disabled:opacity-50"
+            @click="submitDispatch(changeOut)"
+          >
+            Levou o troco
           </button>
         </UiDialogFooter>
       </UiDialogContent>

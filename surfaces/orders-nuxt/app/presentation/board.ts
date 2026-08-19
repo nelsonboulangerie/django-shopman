@@ -464,8 +464,37 @@ export function bulkableRefs(
   selected: ReadonlySet<string>,
   action: BulkAction,
 ): string[] {
-  const can = action === "confirm" ? (c: OrderCardProjection) => c.can_confirm : (c: OrderCardProjection) => c.can_advance;
+  // Despacho que pede troco não entra no lote: precisa de um valor por pedido
+  // (o servidor recusa sem ele), e o lote não tem onde perguntar.
+  const can =
+    action === "confirm"
+      ? (c: OrderCardProjection) => c.can_confirm
+      : (c: OrderCardProjection) => c.can_advance && !dispatchAsksChange(c);
   return cards.filter((c) => selected.has(c.ref) && can(c)).map((c) => c.ref);
+}
+
+// ── Troco da entrega (WP-9) ─────────────────────────────────────────────────
+// O livro do caixa é a fonte (courier_out/courier_in); o card só traz os números
+// e a frase pronta. Aqui mora o que a tela decide com eles: quando perguntar.
+
+/** O próximo passo é "saiu para entrega" e a loja sugere troco: perguntar o
+ *  valor antes de avançar (o servidor recusa com 409 se ninguém disser). */
+export function dispatchAsksChange(card: Pick<OrderCardProjection, "next_status" | "change_out_suggested_q">): boolean {
+  return card.next_status === "dispatched" && card.change_out_suggested_q > 0;
+}
+
+/** Sugestão do que deve ter voltado: o que saiu menos o troco devido ao cliente.
+ *  Levou R$ 25 para um troco de R$ 20 → R$ 5 de volta; levou exato → zero. */
+export function changeBackSuggestionQ(
+  card: Pick<OrderCardProjection, "change_out_q" | "change_out_suggested_q">,
+): number {
+  return Math.max(0, card.change_out_q - card.change_out_suggested_q);
+}
+
+/** Centavos → "20,00" (para preencher o campo; o rótulo "R$" fica na tela). */
+export function moneyInput(amountQ: number): string {
+  const cents = Math.max(0, Math.round(amountQ));
+  return `${Math.floor(cents / 100)},${String(cents % 100).padStart(2, "0")}`;
 }
 
 // ── Kitchen note tags ───────────────────────────────────────────────────────

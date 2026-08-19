@@ -72,6 +72,20 @@ Termos de domínio usados no código e na documentação.
 | **PaymentTransaction** | Registro imutável de transação (captura, reembolso). Ligado a um Intent. |
 | **PaymentError** | Exceção base do payments core. Codes: `INTENT_NOT_FOUND`, `INVALID_TRANSITION`, `ALREADY_CAPTURED`, `AMOUNT_EXCEEDS_CAPTURED`, etc. |
 
+## Cashman (Caixa)
+
+| Termo | Definição |
+|-------|-----------|
+| **Terminal** | O aparelho do PDV (`ref`, canal, hardware em `metadata`). Não guarda dinheiro. `Terminal.default()` = `pdv-main`. |
+| **Shift** (turno) | A custódia: operador × terminal, de `opened_at` a `closed_at`. **Sem coluna de dinheiro**: esperado, contado e diferença são provados pelo livro. Um aberto por operador e um por terminal. |
+| **Entry** (lançamento) | Uma linha do livro-caixa do turno, append-only. `kind` diz o que foi; `amount_q` é o **efeito no saldo**, assinado (zero quando não mexe em dinheiro); `parent` aponta o que responde/corrige; `approved_by` é a segunda assinatura. O sinal mora no tipo (CheckConstraint). |
+| **livro-caixa** | `Σ Entry.amount_q` do turno. "Quanto era para ter" é a soma; "o que aconteceu, em ordem" é a lista (`services.timeline`). |
+| **fechamento cego** | O operador conta sem ver o esperado; `close_shift` grava `count = contado − esperado`. A diferença é essa linha (ADR-011 §4, mantido pela ADR-022). |
+| **sangria / suprimento** | `cash_out` (< 0, exige `approved_by` e motivo) / `cash_in` (> 0). |
+| **cancelar não é devolver** | O cancel de venda em dinheiro deixa uma pendência derivada; `refund` (< 0) só nasce quando alguém devolve as notas pela gaveta, com PIN (`payment.refund_cash`). |
+| **troco da entrega** | `courier_out` (< 0, no despacho) / `courier_in` (≥ 0, no acerto): custódia temporária do entregador, não pagamento. |
+| **CashError** | Exceção do pacote. Codes: `INVALID_KIND`, `INVALID_AMOUNT`, `PARENT_REQUIRED`, `PARENT_MISMATCH`, `APPROVAL_REQUIRED`, `SHIFT_NOT_OPEN`, `SHIFT_NOT_CLOSED`, `SHIFT_ALREADY_OPEN`. |
+
 ## Orquestrador
 
 | Termo | Definição |

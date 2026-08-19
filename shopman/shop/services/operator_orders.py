@@ -8,6 +8,7 @@ the HTTP layer.
 from __future__ import annotations
 
 import logging
+from dataclasses import dataclass
 from enum import StrEnum
 
 from django.db import transaction
@@ -28,6 +29,23 @@ class OrderStateConflict(ValueError):
     exemplo, recusar um pedido que acabou de ser aceito (ACCEPTED →
     CANCELLED é transição válida). A camada HTTP mapeia para 409.
     """
+
+
+class ChangeOutRequired(ValueError):
+    """O pedido pede troco e ninguém disse quanto o entregador leva.
+
+    A loja coleta "troco para quanto?" no checkout; o despacho é a hora em que
+    esse dado vira dinheiro saindo da gaveta. Avançar para "saiu para entrega"
+    sem dizer o valor (zero vale: "levou sem troco") deixaria a gaveta
+    desfalcada sem linha no livro. A camada HTTP devolve 409 com a sugestão.
+    """
+
+    def __init__(self, suggested_q: int):
+        self.suggested_q = int(suggested_q)
+        super().__init__(
+            "Informe o troco que o entregador leva da gaveta (pode ser zero). "
+            f"Sugestão: {self.suggested_q} centavos."
+        )
 
 
 class AdvanceBlock(StrEnum):
@@ -185,17 +203,136 @@ def advance_block_reason(order: Order) -> str:
     return advance_block_message(advance_block(order))
 
 
-def advance_order(order: Order, *, actor: str) -> str:
-    """Advance an order through the operator lifecycle."""
+def advance_order(order: Order, *, actor: str, change_out_q: int | None = None, cash_shift=None) -> str:
+    """Advance an order through the operator lifecycle.
+
+    No despacho de uma entrega paga em dinheiro, o troco que o entregador leva
+    sai da gaveta AQUI (``courier_out`` no turno de quem despacha, mesma
+    transação da transição). Quando o pedido pede troco (``change_for_q`` acima
+    do total) o valor é obrigatório, zero incluído: é o servidor que exige, não
+    a tela, porque uma gaveta desfalcada sem linha é exatamente o buraco.
+    """
     blocked = advance_block_reason(order)
     if blocked:
         raise ValueError(blocked)
     next_status = next_status_for(order)
-    _sync_delivery_fulfillment(order, next_status)
-    order.transition_status(next_status, actor=actor)
-    if next_status == Order.Status.DISPATCHED and get_fulfillment_type(order) == "delivery":
+
+    dispatching = next_status == Order.Status.DISPATCHED and get_fulfillment_type(order) == "delivery"
+    change_out = 0
+    if dispatching:
+        suggested_q = change_out_suggested_q(order)
+        if change_out_q is None and suggested_q > 0:
+            raise ChangeOutRequired(suggested_q)
+        change_out = int(change_out_q or 0)
+        if change_out < 0:
+            raise ValueError("O troco levado não pode ser negativo.")
+        if change_out > 0 and (cash_shift is None or not getattr(cash_shift, "is_open", False)):
+            raise ValueError("Abra um turno de caixa para o entregador levar troco da gaveta.")
+
+    with transaction.atomic():
+        _sync_delivery_fulfillment(order, next_status)
+        order.transition_status(next_status, actor=actor)
+        if change_out > 0:
+            from shopman.cashman import services as cash_ledger
+
+            cash_ledger.record(
+                "courier_out",
+                shift=cash_shift,
+                operator=_user_for_actor(actor) or cash_shift.operator,
+                amount_q=-change_out,
+                order_ref=order.ref,
+                payload={
+                    "change_for_q": _change_for_q(order),
+                    "suggested_q": change_out_suggested_q(order),
+                    "dispatched_by": actor,
+                },
+            )
+    if dispatching:
         schedule_delivery_auto_complete(order)
     return next_status
+
+
+# ── Troco da entrega: o que a loja coletou e o que o livro diz ─────────────
+
+
+@dataclass(frozen=True)
+class CourierChange:
+    """O troco de uma entrega, visto do livro: saiu quanto, voltou quanto.
+
+    ``suggested_q`` é o que a loja coletou (``change_for_q − total``), enquanto
+    o dinheiro da entrega não foi acertado; ``out_q`` é o que de fato saiu com o
+    entregador (``courier_out``); ``back_q`` é o que voltou (``courier_in``),
+    ``None`` enquanto o acerto não fechou o ciclo.
+    """
+
+    suggested_q: int = 0
+    out_q: int = 0
+    back_q: int | None = None
+
+    @property
+    def pending(self) -> bool:
+        """Saiu e ainda não voltou (nem "voltou zero")."""
+        return self.out_q > 0 and self.back_q is None
+
+
+def _change_for_q(order: Order) -> int:
+    payment = (order.data or {}).get("payment") or {}
+    try:
+        return max(0, int(payment.get("change_for_q") or 0))
+    except (TypeError, ValueError):
+        return 0
+
+
+def change_out_suggested_q(order: Order) -> int:
+    """Quanto de troco a loja sugere que o entregador leve: ``change_for_q − total``.
+
+    Só enquanto é entrega em dinheiro na porta ainda não acertada; zero quando o
+    cliente não pediu troco, pediu abaixo do total (erro de digitação) ou o
+    dinheiro já entrou.
+    """
+    payment = (order.data or {}).get("payment") or {}
+    if get_fulfillment_type(order) != "delivery":
+        return 0
+    if payment.get("method") != "cash" or payment.get("collection") != "on_delivery":
+        return 0
+    if payment.get("cod_settled_at"):
+        return 0
+    return max(0, _change_for_q(order) - int(order.total_q or 0))
+
+
+def courier_change_by_order(order_refs) -> dict[str, tuple[int, int | None]]:
+    """``{order_ref: (out_q, back_q | None)}`` numa consulta, para projections com muitos cards."""
+    from shopman.cashman.models import Entry
+
+    refs = [str(ref) for ref in order_refs if ref]
+    if not refs:
+        return {}
+    out: dict[str, int] = {}
+    back: dict[str, int] = {}
+    rows = Entry.objects.filter(
+        kind__in=[Entry.Kind.COURIER_OUT, Entry.Kind.COURIER_IN], order_ref__in=refs
+    ).values_list("order_ref", "kind", "amount_q")
+    for ref, kind, amount_q in rows:
+        if kind == Entry.Kind.COURIER_OUT:
+            out[ref] = out.get(ref, 0) - int(amount_q)
+        else:
+            back[ref] = back.get(ref, 0) + int(amount_q)
+    return {ref: (out.get(ref, 0), back.get(ref)) for ref in set(out) | set(back)}
+
+
+def courier_change(order: Order) -> CourierChange:
+    out_q, back_q = courier_change_by_order([order.ref]).get(order.ref, (0, None))
+    return CourierChange(suggested_q=change_out_suggested_q(order), out_q=out_q, back_q=back_q)
+
+
+def _user_for_actor(actor: str):
+    """O usuário por trás do ``actor`` ("pos:ana", "gestor:pablo", "ana"), ou ``None``."""
+    from django.contrib.auth import get_user_model
+
+    username = str(actor or "")
+    if ":" in username:
+        username = username.split(":", 1)[1]
+    return get_user_model().objects.filter(username=username).first() if username else None
 
 
 def schedule_delivery_auto_complete(order: Order) -> None:
@@ -289,7 +426,14 @@ def cancel_order(
     cancel(order, reason=reason, actor=actor, extra_data=extra_data or None)
 
 
-def settle_delivery_cash(order: Order, *, cash_shift, actor: str, amount_q: int | None = None) -> int:
+def settle_delivery_cash(
+    order: Order,
+    *,
+    cash_shift,
+    actor: str,
+    amount_q: int | None = None,
+    change_back_q: int | None = None,
+) -> int:
     """O dinheiro da entrega chega ao balcão: acerto no turno de quem RECEBEU.
 
     Três registros, na mesma transação, cada um na sua casa:
@@ -300,7 +444,10 @@ def settle_delivery_cash(order: Order, *, cash_shift, actor: str, amount_q: int 
       que COLETOU, independente de quem criou a venda, o que antes era regra
       escondida num algoritmo de fechamento e hoje é a linha em si.
 
-    Nada de etiqueta de turno no pedido: a atribuição É o lançamento.
+    Quando o entregador levou troco da gaveta (``courier_out`` no despacho), o
+    acerto fecha o ciclo: ``change_back_q`` é obrigatório (zero vale: usou tudo)
+    e vira ``courier_in`` na mesma transação, apontando para a saída quando é o
+    mesmo turno. Nada de etiqueta de turno no pedido: a atribuição É o lançamento.
     """
     from django.db import transaction
     from shopman.cashman import services as cash_ledger
@@ -325,10 +472,20 @@ def settle_delivery_cash(order: Order, *, cash_shift, actor: str, amount_q: int 
     if amount != int(order.total_q or 0):
         raise ValueError("Valor de acerto deve bater com o total do pedido.")
 
-    from django.contrib.auth import get_user_model
+    change = courier_change(order)
+    change_back: int | None = None
+    if change.pending:
+        if change_back_q is None:
+            raise ValueError("Informe quanto de troco voltou com o entregador (pode ser zero).")
+        change_back = int(change_back_q)
+        if change_back < 0 or change_back > change.out_q:
+            raise ValueError("O troco que voltou não pode ser negativo nem maior do que saiu.")
+    elif change_back_q:
+        raise ValueError("Este pedido não levou troco da gaveta.")
+
     from shopman.payman import PaymentService
 
-    receiver = get_user_model().objects.filter(username=str(actor or "").removeprefix("pos:")).first() or cash_shift.operator
+    receiver = _user_for_actor(actor) or cash_shift.operator
 
     with transaction.atomic():
         intent = PaymentService.settle(
@@ -378,6 +535,21 @@ def settle_delivery_cash(order: Order, *, cash_shift, actor: str, amount_q: int 
             payment_ref=intent.ref,
             payload={"settled_by": actor},
         )
+        if change_back is not None:
+            from shopman.cashman.models import Entry
+
+            courier_out = (
+                Entry.objects.filter(kind=Entry.Kind.COURIER_OUT, order_ref=order.ref).order_by("-id").first()
+            )
+            cash_ledger.record(
+                "courier_in",
+                shift=cash_shift,
+                operator=receiver,
+                amount_q=change_back,
+                order_ref=order.ref,
+                parent=courier_out if courier_out is not None and courier_out.shift_id == cash_shift.pk else None,
+                payload={"courier_out_id": courier_out.pk if courier_out else None, "settled_by": actor},
+            )
         order.emit_event(
             event_type="payment_collected",
             actor=actor,

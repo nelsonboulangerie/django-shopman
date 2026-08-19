@@ -948,8 +948,22 @@ class OrderAdvanceView(_OrderActionBase):
         order, err = self._get_order(ref)
         if err:
             return err
+        # ``change_out``: troco que o entregador leva da gaveta no despacho de
+        # entrega em dinheiro (reais; "0" = levou sem troco). Ausente em pedido
+        # que pede troco → 409 com a sugestão, para a tela perguntar.
+        change_out = (request.data or {}).get("change_out")
         try:
-            orders_service.advance_order(order, actor=_actor(request))
+            orders_service.advance_order(
+                order,
+                actor=_actor(request),
+                operator=request.user,
+                change_out_raw=None if change_out is None else str(change_out),
+            )
+        except orders_service.OrderChangeOutRequired as exc:
+            return Response(
+                {"detail": str(exc), "code": "change_out_required", "suggested_q": exc.suggested_q},
+                status=409,
+            )
         except OrderError as exc:
             return Response({"detail": str(exc) or "Ação inválida."}, status=400)
         return Response({"ok": True, "ref": ref})
@@ -1071,11 +1085,13 @@ class OrderSettleDeliveryCashView(_OrderActionBase):
         if err:
             return err
         try:
+            change_back = (request.data or {}).get("change_back")
             amount_q = orders_service.settle_delivery_cash(
                 order,
                 operator=request.user,
                 amount_raw=str(request.data.get("amount", "")),
                 actor=_actor(request),
+                change_back_raw=None if change_back is None else str(change_back),
             )
         except OrderError as exc:
             return Response({"detail": str(exc) or "Falha no acerto de dinheiro."}, status=400)

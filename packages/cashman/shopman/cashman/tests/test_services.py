@@ -65,6 +65,22 @@ def test_venda_em_dinheiro_e_venda_sem_dinheiro(shift, operator):
     assert cash.timeline(shift).filter(kind=K.SALE).count() == 2
 
 
+def test_troco_da_entrega_sai_e_volta_pelo_livro(shift, operator):
+    """O entregador leva R$ 20 de troco (``courier_out``, sem segunda assinatura:
+    é rotina do despacho) e volta com R$ 5 (``courier_in``, ≥ 0). No meio, o
+    saldo do livro é o que a gaveta TEM: a contagem cega não acusa falta falsa."""
+    out = cash.record(K.COURIER_OUT, shift=shift, operator=operator, amount_q=-2000, order_ref="D01")
+    assert cash.balance(shift) == 8000
+    cash.record(K.COD_SETTLED, shift=shift, operator=operator, amount_q=3500, order_ref="D01", payment_ref="pi_d")
+    back = cash.record(K.COURIER_IN, shift=shift, operator=operator, amount_q=500, order_ref="D01", parent=out)
+    assert back.parent_id == out.pk
+    assert cash.balance(shift) == 12000
+    # Voltou zero: o entregador usou tudo; o acerto ainda fecha o ciclo.
+    cash.record(K.COURIER_IN, shift=shift, operator=operator, amount_q=0, order_ref="D02")
+    with pytest.raises(CashError):
+        cash.record(K.COURIER_OUT, shift=shift, operator=operator, amount_q=2000, order_ref="D03")
+
+
 def test_sangria_exige_assinatura_e_sinal_negativo(shift, operator, manager):
     with pytest.raises(CashError) as exc:
         cash.record(K.CASH_OUT, shift=shift, operator=operator, amount_q=-5000)
