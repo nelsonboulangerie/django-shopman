@@ -343,6 +343,107 @@ vendas cash não gera falso positivo.
 
 ---
 
+## WP-9: o troco da entrega sai e volta pelo livro
+
+**O problema (medido no código, 2026-08-19):** a loja coleta o pedido de troco
+no checkout do delivery (`change_for_q`, em `Order.data.payment`, escrito por
+`storefront/api/views.py` e `intents/checkout.py`) e **ninguém lê depois**: não
+está no card da expedição (`projections/order_queue.py`), não chega ao
+entregador (orders-nuxt), não entra no caixa. O entregador descobre na porta.
+E o troco que ele leva da gaveta ao sair não tem linha: a gaveta fica
+fisicamente desfalcada enquanto ele está na rua (contagem cega nesse intervalo
+acusa falta falsa) e, quando volta, o `cod_settled` lança só o total da venda;
+o troco que voltou "aparece" sem explicação.
+
+**Entrega**
+
+- `cashman.Entry.Kind` ganha dois tipos, espelho um do outro, com `order_ref`
+  (ou lista de pedidos no payload quando um entregador sai com vários):
+  - `courier_out` (< 0): troco que SAIU da gaveta com o entregador, na hora do
+    despacho. Não exige segunda assinatura (é rotina do despacho, não exceção),
+    mas exige turno aberto de quem despacha e `order_ref`.
+  - `courier_in` (> 0): o que VOLTOU de troco não usado, no acerto do
+    entregador. `parent` = o `courier_out` correspondente.
+  - `cod_settled` continua sendo a venda (+total), como hoje. Saldo do turno
+    verdadeiro em todo instante: `float − troco levado + venda + troco de volta`.
+- `CheckConstraint` do sinal por tipo, `sign_allows`, `services.record` e os
+  testes do pacote acompanham. Migração `cashman/0002` (só choices/constraint).
+- `shop/services/operator_orders.py`: `dispatch_delivery` (ou o ponto em que o
+  pedido vai para `dispatched`) aceita `change_out_q` e grava `courier_out` no
+  turno aberto de quem despacha; `settle_delivery_cash` aceita `change_back_q`
+  e grava `courier_in` com `parent` no mesmo `atomic` do `cod_settled`.
+  Sugestão de troco = `max(0, change_for_q − total_q)`; o operador confirma ou
+  corrige (levou menos porque tinha nota quebrada).
+- `projections/order_queue.py` + orders-nuxt: o card de entrega mostra
+  "Cliente paga com R$ 50,00 (levar R$ 20,00 de troco)" e o despacho pede
+  confirmação do valor levado; o acerto mostra "voltou R$ X de troco".
+- `data-schemas.md`: `change_for_q` deixa de ser dado morto (leitores
+  declarados); tipos novos na tabela do `Entry.payload`.
+- WP-7: o check `cash_ledger_mismatch` exclui `courier_out`/`courier_in` (não
+  são pagamento; são custódia temporária do entregador), e ganha o espelho
+  `Σ courier_out + Σ courier_in` por pedido/dia como alerta `warning` quando
+  o troco saiu e não voltou nem foi acertado.
+
+**Aceite**: pacote, shop, backstage, orders-nuxt verdes; fixture "entregador
+sai com R$ 20 de troco de dois pedidos, volta com R$ 5" prova o saldo da gaveta
+em cada passo; `migrate` de banco zerado.
+
+---
+
+## WP-10: conta do cliente (acerto semanal/mensal)
+
+**O problema:** não existe. O Payman não tem método que expresse "deve"; a
+fidelidade do guestman é ponto, não crédito. Hoje a única forma de registrar
+uma venda "em conta" seria `external` ("recebido fora"), que é mentira. O
+fenômeno existe (alguns clientes antigos acertam por período) e não se
+divulga: é por cliente, desligado por padrão.
+
+**Desenho (cabe no que já existe, sem tabela de saldo):**
+
+- **Payman**: método `account` ("Em conta"). O intent nasce `authorized`
+  ("deve"; a venda aconteceu, a obrigação está reconhecida) e só vira
+  `captured` no acerto ("pagou"). É a máquina de estados que o Payman já tem,
+  sem gateway (`gateway=""`), no mesmo ramo do `settle` mas parando em
+  `authorized`. Saldo devedor do cliente = Σ dos intents `account` autorizados
+  e não capturados, por `customer_ref` (via `Order`). **Derivado, não tabela.**
+- **Guestman**: elegibilidade no cliente (`CustomerGroup` "Conta" ou flag em
+  `Customer.metadata.house_account`, documentada em `data-schemas.md`),
+  desligada por padrão; só o Admin dá.
+- **Shop**: tender `account` no `close_sale` só quando o cliente identificado
+  é elegível (recusa com `PosIntentError` senão); grava linha `sale` com efeito
+  zero (nada entrou na gaveta) e `payload.method = account`; `payment.timing`
+  do PDV é `external`, então o pedido segue normalmente; fiscal na venda, como
+  hoje.
+- **Acerto** (`shop/services/payment.py::settle_account(customer, amount_q,
+  method, shift, actor)`): captura os intents `account` mais antigos do
+  cliente até o valor (FIFO), na mesma transação em que, se for dinheiro,
+  grava `account_settled` (+valor) no turno de quem recebeu (tipo novo no
+  `cashman`, irmão do `cod_settled`); pix/cartão via gateway ou atestado.
+  Acerto parcial permitido (captura parcial = intents inteiros até o valor; o
+  resto fica autorizado).
+- **Backstage/PDV**: tender "Em conta" visível só para cliente elegível;
+  tela de acerto no gestor (lista de clientes com saldo, histórico, botão
+  "acertar" com método); na antesala, o acerto em dinheiro passa pela gaveta
+  aberta, sem PIN: entrada de dinheiro não exige segunda assinatura (o
+  suprimento também não); só saída exige.
+- **B.I.**: `by_operator`/dia ganham `account_sales_q` e `account_settled_q`;
+  relatório de saldos em aberto por cliente (`audit_shift`).
+- **Reconciliação (WP-7)**: `account` autorizado não entra em `cash_ledger`
+  (não é dinheiro); no acerto em dinheiro, `account_settled` entra no `Σ` do
+  livro e a captura do intent no `Σ` do Payman, e batem.
+- **Fora**: juros, limite de crédito, cobrança automática, extrato ao cliente
+  pelo WhatsApp (ideias; só com gatilho).
+
+**Aceite**: venda em conta recusada para cliente não elegível; venda em conta
+não mexe na gaveta; acerto em dinheiro grava os dois livros juntos; acerto
+parcial deixa o resto autorizado; B.I. e reconciliação quietos; migrações
+`payman/000N` (choices) e `cashman/000N` (tipo), `migrate` de banco zerado.
+
+**Ordem**: depois do WP-5 e do WP-9 (o WP-9 é menor e destrava a dor que já
+existe no delivery; o WP-10 é feature nova).
+
+---
+
 ## Gates de todo WP
 
 ```bash
@@ -384,6 +485,10 @@ antes de pedir merge, porque ninguém mais vai ser barrado por ele.
 3. WP-3 ‖ WP-4 (dois worktrees), rebase sobre WP-1/2 mergeados.
 4. WP-5 (uma sessão, com o dono por perto no deploy).
 5. WP-6 ‖ WP-7 ‖ WP-8.
+6. WP-9 (troco da entrega), depois WP-10 (conta do cliente): descobertos em
+   2026-08-19 ao revisar os fenômenos cotidianos; o WP-9 fecha uma lacuna
+   (dado coletado e jogado fora), o WP-10 é feature nova e desligada por
+   padrão. Lição da fila de merge: **sem PR empilhado**, cada WP nasce do `main`.
 
 Cada sessão nova lê **este arquivo** e o desenho antes de qualquer linha
 (memória `feedback_plan_in_repo`: planos moram no repo; ninguém inventa WP).
