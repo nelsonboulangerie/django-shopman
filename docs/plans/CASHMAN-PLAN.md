@@ -434,7 +434,7 @@ em cada passo; `migrate` de banco zerado.
 
 **Status: ENTREGUE (PR aberto em 2026-08-19).** Como ficou: Payman `Method.ACCOUNT` +
 `charge_to_account` (authorized = deve) + `capture(gateway_data=)` + `account_balance_q`/`account_balances`
-(derivado); `cashman.account_settled` (0003); `shop/services/house_account.py` (elegibilidade lida de
+(derivado); `cashman.account_settled` (0004); `shop/services/house_account.py` (elegibilidade lida de
 `Customer.metadata.house_account`, acerto FIFO por venda inteira, dinheiro grava Payman+livro juntos;
 cancel da venda em conta cancela o intent); Admin do cliente com checkbox "Conta na casa"; PDV: o lookup
 diz `house_account`/`account_balance_q`, "Em conta" só aparece para esse cliente, a antesala lista
