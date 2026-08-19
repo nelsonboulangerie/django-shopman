@@ -46,3 +46,17 @@ guia-credenciais-*.pdf
 
 # Dados externos locais (ex.: export Yooga) — nunca commitar
 var/
+
+# Credenciais — o repo é PÚBLICO. Reconstruído a partir do
+# shopman/shop/tests/test_secret_files_never_tracked.py, que sobreviveu ao
+# `git reset --hard` que apagou a versão original desta seção.
+*.pem
+*.p12
+*.pfx
+*.key
+*.jks
+*.keystore
+*.crt
+*.cer
+.env.*
+!.env.example
