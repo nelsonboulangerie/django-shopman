@@ -2425,6 +2425,12 @@ class Command(BaseCommand):
         # mesmo quant no ledger — ver shopman/shop/services/sku_namespace.py.
         from shopman.buyman.models import Material
 
+        # A unidade aqui é a UNIDADE-BASE: aquela em que o livro conta o insumo no
+        # momento da verdade (ADR-024 §Regra 1). Ovo e limão entram por peso porque
+        # é assim que a produção os usa — "0,300 de OVOS" é 300 g de ovo, e a
+        # anotação "≈ 6 ovos" é derivada na tela de mise-en-place, nunca gravada.
+        # Canela e alecrim também são pesados: base kg, e a precisão de custo é
+        # problema do eixo de compra, não da unidade-base.
         material_attrs = {
             "FARINHA-T65": ("kg", 180), "FARINHA-T55": ("kg", 180),
             "FARINHA-T45": ("kg", 180), "FARINHA-INT": ("kg", 120),
@@ -2432,10 +2438,10 @@ class Command(BaseCommand):
             "ACUCAR": ("kg", None), "SAL": ("kg", None), "GERGELIM": ("kg", 180),
             "AGUA-FILTRADA": ("l", None), "LEITE": ("l", 7), "AZEITE": ("l", 540),
             "FERMENTO-NAT": ("kg", 7), "FERMENTO-BIO": ("kg", 14),
-            "MANTEIGA-FR": ("kg", 60), "OVOS": ("un", 28),
+            "MANTEIGA-FR": ("kg", 60), "OVOS": ("kg", 28),
             "CHOCOLATE-70": ("kg", 365), "AZEITONA": ("kg", 180),
-            "CEBOLA-ROXA": ("kg", 30), "MACA": ("kg", 30), "LIMAO": ("un", 21),
-            "CANELA": ("g", 365), "ALECRIM": ("g", 14),
+            "CEBOLA-ROXA": ("kg", 30), "MACA": ("kg", 30), "LIMAO": ("kg", 21),
+            "CANELA": ("kg", 365), "ALECRIM": ("kg", 14),
         }
         for sku, profile in INGREDIENT_PROFILES.items():
             unit, shelf = material_attrs.get(sku, ("un", None))
@@ -2464,6 +2470,22 @@ class Command(BaseCommand):
             )
         self.stdout.write(f"  ✅ estoque de abertura para {len(INGREDIENT_PROFILES)} insumos")
 
+        def _recipe_item_unit(input_sku: str) -> str:
+            """A ficha fala na unidade-base do insumo — explícito, não por default.
+
+            Insumo pesado responde a própria base (hoje, kg em todos). Entrada que
+            não é Material (pré-preparo, produto) fica em kg, que é como a massa é
+            medida.
+
+            ⚠️ Líquidos (AGUA-FILTRADA, LEITE, AZEITE) ainda nascem em kg apesar de
+            a base ser `l`: declarar `l` aqui exige `density_g_per_ml` no perfil,
+            senão o item é IGNORADO no cálculo de nutrição (ver
+            `shopman/shop/services/nutrition_from_recipe.py::_item_quantity_grams`).
+            É a Fase 1 de docs/plans/UNIT-CONVERSION-PLAN.md.
+            """
+            unit = material_attrs.get(input_sku, ("kg", None))[0]
+            return unit if unit in ("kg", "g") else "kg"
+
         for rd in recipes_data:
             product = Product.objects.filter(sku=rd["output_sku"]).first()
             shelf_life_days = product.shelf_life_days if product else None
@@ -2490,6 +2512,7 @@ class Command(BaseCommand):
                     recipe=recipe,
                     input_sku=input_sku,
                     quantity=qty,
+                    unit=_recipe_item_unit(input_sku),
                     meta=meta,
                 )
             if product:

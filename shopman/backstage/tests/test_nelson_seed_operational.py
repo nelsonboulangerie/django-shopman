@@ -91,6 +91,18 @@ def test_nelson_seed_populates_production_history_alerts_and_batches(monkeypatch
     assert Material.objects.get(sku="AGUA-FILTRADA").shelf_life_days is None  # não perecível
     assert not Material.objects.filter(sku="AGUA").exists()
     assert Material.objects.get(sku="FERMENTO-NAT").shelf_life_days == 7
+    # Insumo PESADO tem base de peso, e a ficha fala na mesma unidade — ADR-024:
+    # "0,300 de OVOS" é 300 g de ovo, não 0,3 ovo. A anotação "≈ 6 ovos" é
+    # derivada na tela de preparo, nunca gravada como verdade.
+    for sku in ("OVOS", "LIMAO", "CANELA", "ALECRIM"):
+        assert Material.objects.get(sku=sku).unit == "kg", sku
+    weighed = {
+        m.sku: m.unit
+        for m in Material.objects.filter(unit__in=["kg", "g"])
+    }
+    for item in RecipeItem.objects.filter(input_sku__in=weighed):
+        assert item.unit == weighed[item.input_sku], f"{item.input_sku}: {item.unit}"
+        item.full_clean()  # a unidade da ficha bate com a do catálogo
     # Todo input de receita resolve: insumo cru (Material), intermediário (output
     # de outra receita, ex. MASSA-*) ou produto. Sem inputs órfãos pós-rename.
     recipe_inputs = set(RecipeItem.objects.values_list("input_sku", flat=True))
