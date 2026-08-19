@@ -34,7 +34,7 @@ class FiscalProductAdminForm(ProductAdminForm):
         choices=[(key, profile.name) for key, profile in FISCAL_PROFILES.items()],
         help_text=(
             "Define CFOP/CSOSN/origem/PIS-COFINS na emissão. "
-            "Fabricação própria (5101/102) ou Revenda com ST (5405/500)."
+            "Fabricação própria (5102/102) ou Revenda com ST (5405/500)."
         ),
     )
     fiscal_ncm = forms.CharField(

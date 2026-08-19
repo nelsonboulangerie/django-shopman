@@ -3,7 +3,8 @@
 > Fonte: orientação do escritório contábil ("PROCEDIMENTO E PARAMETRIZAÇÃO", SEFA-PR) +
 > decisões do projeto. Registrado/destilado em 2026-06-29. Referência canônica da configuração
 > fiscal; a implementação vive no plano [FISCALMAN-PLAN](../plans/FISCALMAN-PLAN.md) e na persona
-> `shopman.fiscalman`. **Validar os NCMs e o caso 5102-vs-5101 com o contador antes da emissão real.**
+> `shopman.fiscalman`. **Validar os NCMs com o contador antes da emissão real.** O caso 5102-vs-5101 está
+> decidido (5102, 2026-08-19) — ver [CFOP 5101 × 5102](fiscal-cfop-5101-vs-5102.md).
 
 ## 1. Regime
 
@@ -61,7 +62,9 @@ Vive no painel do **Focus NFe** e/ou na **SEFA-PR**, configurado por Pablo/conta
 ## 6. Pendências de validação com o contador
 
 - [ ] NCMs da tabela (esp. salgados/tartines `19059090` vs `21069090`; café `2101.x`).
-- [ ] CFOP `5102` confirma? (só seria `5101` se o estabelecimento for registrado como **indústria**.)
-      Pauta pronta, com as vozes que hoje discordam no código e a pergunta exata:
+- [x] CFOP `5102`: **decidido pelo dono em 2026-08-19** e já valendo no código (a Nelson
+      fabrica o que vende mas não é registrada como **indústria**, e sob Simples o CFOP não
+      altera o DAS). Falta só a **ratificação** do contador — nada espera por ela para emitir.
+      Razão, vozes alinhadas e o que muda se ele discordar:
       [CFOP 5101 × 5102](fiscal-cfop-5101-vs-5102.md).
 - [ ] Quais itens de revenda (ST) entram, e seus NCM/CEST.

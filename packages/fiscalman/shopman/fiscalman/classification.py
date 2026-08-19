@@ -44,13 +44,22 @@ class FiscalProfile:
     product): CFOP, CSOSN, origem, PIS/COFINS CST. CFOP comes in two flavours —
     intrastate and interstate — and the emission layer picks one by the buyer's
     UF (see ``resolve_fiscal_item``).
+
+    **CFOP da fabricação própria = 5102 (interno) / 6102 (interestadual).**
+    Decisão do dono em 2026-08-19. Razão: a Nelson fabrica o que vende mas NÃO é
+    registrada como indústria — 5101 é venda de produção do estabelecimento
+    industrial —, e sob Simples Nacional (CRT-01) o CFOP não altera o imposto,
+    recolhido no DAS. É também o que a parametrização do contador registra
+    ("alimentação em geral, salgados, doces" = comercialização).
+    Referências: ``docs/reference/fiscal-cfop-5101-vs-5102.md`` (decisão) e
+    ``docs/reference/fiscal-parametrizacao-nfce.md`` §2 (parametrização).
     """
 
     key: str
     name: str
     csosn: str             # ICMS situação tributária no Simples (e.g. "102", "500").
-    cfop_internal: str     # Operação interna (mesmo estado), e.g. "5101".
-    cfop_interstate: str   # Operação interestadual, e.g. "6101".
+    cfop_internal: str     # Operação interna (mesmo estado), e.g. "5102".
+    cfop_interstate: str   # Operação interestadual, e.g. "6102".
     icms_origem: str = "0"     # 0 = Nacional.
     pis_cst: str = "99"        # Simples (CRT-01): 99 = outras operações (parametrização do contador).
     cofins_cst: str = "99"
