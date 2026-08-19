@@ -16,6 +16,7 @@ Errors (block runserver/migrate --deploy in production):
   SHOPMAN_E010  Debug OTP exposure enabled outside non-production
   SHOPMAN_E011  Machine courier adapter enabled without API credentials
   SHOPMAN_E012  Piloto automático de staging habilitado em produção
+  SHOPMAN_E013  Adapter fiscal + canal de venda ativo sem resolver de emissão que resolva
 
 Warnings (non-blocking, logged at startup):
   SHOPMAN_W001  Database backend is SQLite in local/debug mode
@@ -518,6 +519,92 @@ def check_fiscal_adapter(app_configs, **kwargs):
             )
 
     return warnings
+
+
+@register(deploy=True)
+def check_fiscal_emission_resolver(app_configs, **kwargs):
+    """Adapter fiscal ligado + canal de venda ativo ⇒ resolver de emissão que resolve.
+
+    Silêncio é o pior modo de falha deste domínio. Quem decide SE a nota sai é o
+    resolver (``shop/services/fiscal.emission_resolver``); com o resolver vazio,
+    ou apontando para um caminho que não importa, o motor cai no fallback
+    (opt-in do operador, ``order.data['fiscal']['issue_document']``) e registra
+    um warning no log — e o sistema simplesmente não emite, venda após venda,
+    sem nada na tela de ninguém.
+
+    Erro de deploy, não warning: com emissão obrigatória valendo, cada venda que
+    passa sem nota é passivo fiscal, e o log de um worker não é onde isso se
+    descobre. O espelho deste check é o ``SHOPMAN_W003`` (canal fiscal ativo sem
+    adapter nenhum).
+    """
+    errors = []
+    if settings.DEBUG:
+        return errors
+    if not getattr(settings, "SHOPMAN_FISCAL_ADAPTER", None):
+        return errors
+
+    from django.db.utils import OperationalError, ProgrammingError
+
+    from shopman.shop.models import Channel
+
+    try:
+        selling = Channel.objects.filter(
+            is_active=True, commerce_policy=Channel.CommercePolicy.ORDER
+        ).exists()
+    except (OperationalError, ProgrammingError):
+        return errors  # tabelas ainda não existem (migração inicial)
+    if not selling:
+        return errors
+
+    raw = getattr(settings, "SHOPMAN_FISCAL_EMISSION_RESOLVER", "") or ""
+    paths = [p.strip() for p in str(raw).split(",") if p.strip()]
+    if not paths:
+        errors.append(
+            Error(
+                "Adapter fiscal configurado e canal de venda ativo, mas "
+                "SHOPMAN_FISCAL_EMISSION_RESOLVER está vazio.",
+                hint=(
+                    "Sem resolver, a NFC-e só sai quando o operador marca 'emitir' no "
+                    "pedido — em silêncio, venda após venda. Aponte a política fiscal "
+                    "do deployment: 'shopman.shop.fiscal_resolvers.always' (toda venda) "
+                    "ou '...on_request_or_tax_id' (pediu ou informou CPF). Exemplos e "
+                    "combinadores em shopman.shop.fiscal_resolvers."
+                ),
+                id="SHOPMAN_E013",
+            )
+        )
+        return errors
+
+    from django.utils.module_loading import import_string
+
+    for path in paths:
+        try:
+            resolver = import_string(path)
+        except ImportError as exc:
+            errors.append(
+                Error(
+                    f"SHOPMAN_FISCAL_EMISSION_RESOLVER aponta para '{path}', que não importa: {exc}.",
+                    hint=(
+                        "O motor engole o erro e cai no fallback (opt-in do operador): "
+                        "a emissão fica silenciosamente desligada. Corrija o caminho ou "
+                        "remova-o da lista."
+                    ),
+                    id="SHOPMAN_E013",
+                )
+            )
+            continue
+        if not callable(resolver):
+            errors.append(
+                Error(
+                    f"SHOPMAN_FISCAL_EMISSION_RESOLVER aponta para '{path}', que não é chamável.",
+                    hint=(
+                        "Um resolver é callable(order) -> bool. Fábricas como "
+                        "`channels('pdv')` precisam de um wrapper importável já aplicado."
+                    ),
+                    id="SHOPMAN_E013",
+                )
+            )
+    return errors
 
 
 @register()

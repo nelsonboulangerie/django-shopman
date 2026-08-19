@@ -1,6 +1,7 @@
 from base64 import b64encode
 from pathlib import Path
 
+import pytest
 from django.test import override_settings
 
 from config import settings as project_settings
@@ -287,3 +288,80 @@ def test_payment_stripe_adapter_requires_credentials_outside_debug():
 )
 def test_real_payment_adapters_accept_complete_gateway_settings():
     assert checks.check_payment_adapters(None) == []
+
+
+# ── fiscal: resolver de emissão (silêncio fiscal é o pior modo de falha) ──────
+
+
+@pytest.fixture
+def selling_channel(db):
+    from shopman.shop.models import Channel
+
+    return Channel.objects.create(
+        ref="pdv", name="PDV", commerce_policy=Channel.CommercePolicy.ORDER
+    )
+
+
+@override_settings(DEBUG=False, SHOPMAN_FISCAL_ADAPTER=None, SHOPMAN_FISCAL_EMISSION_RESOLVER="")
+def test_fiscal_resolver_check_silent_without_fiscal_adapter(selling_channel):
+    assert checks.check_fiscal_emission_resolver(None) == []
+
+
+@override_settings(
+    DEBUG=False,
+    SHOPMAN_FISCAL_ADAPTER="shopman.shop.adapters.fiscal_focusnfe.FocusNFeBackend",
+    SHOPMAN_FISCAL_EMISSION_RESOLVER="",
+)
+def test_fiscal_adapter_with_selling_channel_requires_a_resolver(selling_channel):
+    messages = checks.check_fiscal_emission_resolver(None)
+    assert [m.id for m in messages] == ["SHOPMAN_E013"]
+    from django.core.checks import Error as CheckError
+
+    assert isinstance(messages[0], CheckError)
+
+
+@override_settings(
+    DEBUG=False,
+    SHOPMAN_FISCAL_ADAPTER="shopman.shop.adapters.fiscal_focusnfe.FocusNFeBackend",
+    SHOPMAN_FISCAL_EMISSION_RESOLVER="",
+)
+def test_fiscal_resolver_check_silent_without_active_selling_channel(db):
+    from shopman.shop.models import Channel
+
+    Channel.objects.create(
+        ref="menuboard", name="Menu", commerce_policy=Channel.CommercePolicy.DISPLAY
+    )
+    assert checks.check_fiscal_emission_resolver(None) == []
+
+
+@override_settings(
+    DEBUG=False,
+    SHOPMAN_FISCAL_ADAPTER="shopman.shop.adapters.fiscal_focusnfe.FocusNFeBackend",
+    SHOPMAN_FISCAL_EMISSION_RESOLVER="shopman.shop.fiscal_resolvers.nao_existe",
+)
+def test_fiscal_resolver_that_does_not_import_blocks_deploy(selling_channel):
+    # O motor engole o ImportError e cai no fallback: a emissão fica desligada
+    # em silêncio. É exatamente o modo de falha que o check existe para pegar.
+    messages = checks.check_fiscal_emission_resolver(None)
+    assert [m.id for m in messages] == ["SHOPMAN_E013"]
+
+
+@override_settings(
+    DEBUG=False,
+    SHOPMAN_FISCAL_ADAPTER="shopman.shop.adapters.fiscal_focusnfe.FocusNFeBackend",
+    SHOPMAN_FISCAL_EMISSION_RESOLVER="shopman.shop.fiscal_resolvers.always",
+)
+def test_fiscal_resolver_configured_is_clean(selling_channel):
+    assert checks.check_fiscal_emission_resolver(None) == []
+
+
+@override_settings(
+    DEBUG=False,
+    SHOPMAN_FISCAL_ADAPTER="shopman.shop.adapters.fiscal_focusnfe.FocusNFeBackend",
+    SHOPMAN_FISCAL_EMISSION_RESOLVER=(
+        "shopman.shop.fiscal_resolvers.on_request_or_tax_id,"
+        "shopman.shop.fiscal_resolvers.card_payment"
+    ),
+)
+def test_fiscal_resolver_accepts_the_comma_separated_or_list(selling_channel):
+    assert checks.check_fiscal_emission_resolver(None) == []
