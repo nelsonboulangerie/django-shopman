@@ -377,6 +377,15 @@ o troco que voltou "aparece" sem explicação.
 - `projections/order_queue.py` + orders-nuxt: o card de entrega mostra
   "Cliente paga com R$ 50,00 (levar R$ 20,00 de troco)" e o despacho pede
   confirmação do valor levado; o acerto mostra "voltou R$ X de troco".
+- **Equipamento que sai com o entregador (maquininha):** é custódia de
+  aparelho, não de dinheiro, então NÃO mora no `cashman`. Mora no mesmo gesto:
+  o despacho registra o que saiu (`Order.data.courier.equipment`, lista de refs
+  de uma catálogo curto configurado no canal de entrega, ex.
+  `["maquininha-01"]`; documentar em `data-schemas.md`) e o acerto marca o que
+  voltou. "Onde está a maquininha agora" é derivado: pedido despachado e não
+  acertado que a levou; aparece no card da expedição e no acerto. Sem tabela
+  nova; se um dia houver frota, aí se discute `Fulfillment` (ver
+  CORE-BOUNDARIES-AUDIT §3, item 5).
 - `data-schemas.md`: `change_for_q` deixa de ser dado morto (leitores
   declarados); tipos novos na tabela do `Entry.payload`.
 - WP-7: o check `cash_ledger_mismatch` exclui `courier_out`/`courier_in` (não
