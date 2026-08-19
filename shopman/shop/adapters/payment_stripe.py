@@ -8,13 +8,20 @@ Após pagamento, o webhook `checkout.session.completed` confirma o intent.
 
 Persists via PaymentService (DB) + communicates with Stripe API.
 Requires: pip install stripe
+
+Além do ciclo da cobrança, este adapter escuta as **disputas** (`charge.dispute.*`)
+e as traduz para o snapshot cumulativo de chargeback do Payman — ver
+:func:`handle_dispute_event`.
 """
 
 from __future__ import annotations
 
 import logging
+from datetime import UTC, datetime
 
 from django.conf import settings
+from django.db import transaction
+from django.utils import timezone
 
 from shopman.shop.adapters.payment_types import PaymentIntent, PaymentResult
 from shopman.shop.services import storefront_links
@@ -386,6 +393,324 @@ def webhook_event_key(event, payload: bytes) -> str:
     return f"payload:{stable_webhook_key(payload)}"
 
 
+# ══════════════════════════════════════════════════════════════════════
+# Disputas (chargeback)
+# ══════════════════════════════════════════════════════════════════════
+
+# Os cinco eventos de disputa do Stripe. Todos chegam pelo MESMO endpoint e
+# passam pelo mesmo dedupe durável por `event.id`
+# (`shopman/shop/services/webhook_idempotency.py`), então cada um pode chegar
+# repetido e fora de ordem.
+DISPUTE_EVENT_TYPES = frozenset({
+    "charge.dispute.created",
+    "charge.dispute.updated",
+    "charge.dispute.closed",
+    "charge.dispute.funds_withdrawn",
+    "charge.dispute.funds_reinstated",
+})
+
+# `Dispute.status` (https://docs.stripe.com/api/disputes/object). Terminal =
+# a disputa acabou; o valor não muda mais.
+_DISPUTE_LOST_STATUSES = frozenset({"lost"})
+_DISPUTE_TERMINAL_STATUSES = frozenset({"lost", "won", "warning_closed", "prevented"})
+
+
+def _stripe_object_id(value) -> str:
+    """Id de um campo expandível do Stripe (string crua ou objeto com `.id`)."""
+    if not value:
+        return ""
+    if isinstance(value, str):
+        return value.strip()
+    nested = getattr(value, "id", None)
+    if nested is None and isinstance(value, dict):
+        nested = value.get("id")
+    return str(nested or "").strip()
+
+
+def _resolve_disputed_intent(dispute):
+    """Acha o intent local da disputa pelo id que o Payman guarda.
+
+    O `gateway_id` do intent é o `payment_intent` do Stripe — promovido a
+    partir do id da Checkout Session quando `checkout.session.completed`
+    chega. A `charge` entra como segunda tentativa para a janela em que a
+    promoção não aconteceu.
+    """
+    from shopman.payman import PaymentService
+
+    for candidate in (
+        getattr(dispute, "payment_intent", None),
+        getattr(dispute, "charge", None),
+    ):
+        gateway_id = _stripe_object_id(candidate)
+        if not gateway_id:
+            continue
+        db_intent = PaymentService.get_by_gateway_id(gateway_id, gateway="stripe")
+        if db_intent is not None:
+            return db_intent
+    return None
+
+
+def _evidence_due_by(dispute) -> str:
+    details = getattr(dispute, "evidence_details", None)
+    due_by = getattr(details, "due_by", None)
+    if due_by is None and isinstance(details, dict):
+        due_by = details.get("due_by")
+    try:
+        return datetime.fromtimestamp(int(due_by), tz=UTC).isoformat()
+    except (TypeError, ValueError, OSError, OverflowError):
+        return ""
+
+
+def handle_dispute_event(event) -> str:
+    """Traduz um evento `charge.dispute.*` para o snapshot do Payman.
+
+    **Só entra como chargeback o dinheiro que saiu e não volta mais.** O ciclo
+    do Stripe tem três regimes distintos de dinheiro, e confundi-los é
+    contabilizar prejuízo que não houve:
+
+    * ``warning_needs_response`` / ``warning_under_review`` — *inquiry*: o
+      emissor pergunta antes de abrir disputa formal e **nenhum dinheiro se
+      move**. ``warning_closed`` encerra sem chargeback.
+    * ``needs_response`` / ``under_review`` — disputa aberta. O Stripe retira o
+      valor da conta (``charge.dispute.funds_withdrawn``), mas a retirada é
+      **reversível**: ganhando, ``charge.dispute.funds_reinstated`` devolve.
+    * ``won`` / ``prevented`` — acabou a favor da loja. **Não é chargeback.**
+    * ``lost`` — acabou contra a loja. O dinheiro foi e não volta.
+
+    Por isso a ``PaymentTransaction(CHARGEBACK)`` nasce **só em ``lost``**, e a
+    razão é o formato do livro, não preferência: a transação é imutável e o
+    snapshot de chargeback do ``reconcile_gateway_status`` é monotônico (total
+    menor que o local levanta ``reconciliation_chargeback_mismatch``, ver
+    ``packages/payman/shopman/payman/service.py``). Chargeback lançado não tem
+    como ser desfeito — lançar na abertura deixaria a loja permanentemente mais
+    pobre no livro toda vez que ela **ganhasse** a disputa.
+
+    Enquanto a disputa está viva o valor em risco fica em
+    ``intent.gateway_data["disputes"][<dispute_id>]``, que é contexto
+    (reversível) e não livro, e o operador é avisado pelo alerta
+    ``payment_disputed`` — a defesa tem prazo. ⚠️ A disputa **aberta** não
+    aparece no relatório financeiro diário: o intent só entra no escopo do dia
+    em que teve transação (ver ``build_financial_reconciliation``), e uma
+    disputa aberta não cria transação nenhuma. O canal dela é o alerta; o do
+    dinheiro é o chargeback, que cria transação e dispara
+    ``intent_has_chargeback``.
+
+    Entrega at-least-once e fora de ordem: o estado por disputa é guardado por
+    id, o status terminal é **grudento** (um ``created`` atrasado não reabre
+    disputa encerrada) e o valor mandado ao Payman é a soma cumulativa das
+    disputas perdidas — reapresentar o mesmo ``closed`` dá delta zero.
+
+    Returns:
+        A ref do intent afetado, ou string vazia quando a disputa não mapeia
+        para nenhum intent local.
+    """
+    from shopman.payman import PaymentError, PaymentService
+    from shopman.payman import PaymentIntent as PaymanIntentModel
+
+    dispute = event.data.object
+    dispute_id = _stripe_object_id(dispute)
+    event_type = str(getattr(event, "type", "") or "")
+    db_intent = _resolve_disputed_intent(dispute)
+
+    if db_intent is None or not dispute_id:
+        logger.warning(
+            "payment_stripe: disputa %s (%s) não mapeia para nenhum intent local — "
+            "sem intent não há livro onde lançar",
+            dispute_id or "?",
+            event_type,
+        )
+        return ""
+
+    incoming_status = str(getattr(dispute, "status", "") or "").strip()
+    incoming_amount_q = int(getattr(dispute, "amount", 0) or 0)
+
+    with transaction.atomic():
+        # Lock da linha: dois eventos da mesma disputa (ou de duas disputas da
+        # mesma cobrança) chegam por requests diferentes, e o merge do
+        # `gateway_data` é read-modify-write.
+        locked = PaymanIntentModel.objects.select_for_update().get(pk=db_intent.pk)
+        gateway_data = dict(locked.gateway_data or {})
+        disputes = dict(gateway_data.get("disputes") or {})
+        stored = dict(disputes.get(dispute_id) or {})
+        stored_status = str(stored.get("status") or "")
+
+        status = incoming_status
+        amount_q = incoming_amount_q or int(stored.get("amount_q") or 0)
+        if stored_status in _DISPUTE_TERMINAL_STATUSES and status not in _DISPUTE_TERMINAL_STATUSES:
+            # Fora de ordem: `created` chegando depois do `closed` não reabre
+            # o que já terminou.
+            status = stored_status
+            amount_q = int(stored.get("amount_q") or amount_q)
+
+        record = {
+            "status": status,
+            "amount_q": amount_q,
+            "currency": str(getattr(dispute, "currency", "") or "").upper(),
+            "reason": str(getattr(dispute, "reason", "") or ""),
+            "charge_id": _stripe_object_id(getattr(dispute, "charge", None)),
+            "evidence_due_by": _evidence_due_by(dispute) or str(stored.get("evidence_due_by") or ""),
+            "funds_withdrawn": bool(stored.get("funds_withdrawn"))
+            or event_type == "charge.dispute.funds_withdrawn",
+            "funds_reinstated": bool(stored.get("funds_reinstated"))
+            or event_type == "charge.dispute.funds_reinstated",
+            "last_event": event_type,
+            "updated_at": timezone.now().isoformat(),
+        }
+        disputes[dispute_id] = record
+        gateway_data["disputes"] = disputes
+        locked.gateway_data = gateway_data
+        locked.save(update_fields=["gateway_data"])
+
+        was_lost = stored_status in _DISPUTE_LOST_STATUSES
+        is_lost = status in _DISPUTE_LOST_STATUSES
+
+        if was_lost and not is_lost:
+            # Reversão depois do lançamento (arbitragem ganha depois de
+            # perdida). O livro é imutável: o chargeback lançado FICA, e a
+            # correção é humana — dinheiro que volta por outra via.
+            from shopman.shop.services import observability
+
+            observability.create_operator_alert(
+                type="payment_reconciliation_failed",
+                severity="critical",
+                message=(
+                    f"Disputa {dispute_id} do intent {locked.ref} saiu de 'lost' para "
+                    f"'{status}': o chargeback já lançado no Payman não é reversível. "
+                    "Conciliar à mão com o extrato do Stripe."
+                ),
+                dedupe_key=f"dispute-reversal:{dispute_id}",
+                intent_ref=locked.ref,
+                order_ref=locked.order_ref,
+            )
+
+        lost_total_q = sum(
+            int(item.get("amount_q") or 0)
+            for item in disputes.values()
+            if str(item.get("status") or "") in _DISPUTE_LOST_STATUSES
+        )
+        local_chargeback_q = PaymentService.chargeback_total(locked.ref)
+
+        if lost_total_q > local_chargeback_q:
+            captured_q = PaymentService.captured_total(locked.ref)
+            refunded_q = PaymentService.refunded_total(locked.ref)
+            try:
+                PaymentService.reconcile_gateway_status(
+                    locked.ref,
+                    gateway_status="refunded" if refunded_q else "captured",
+                    amount_q=locked.amount_q,
+                    # Captura e reembolso vão com o total LOCAL de propósito: o
+                    # evento de disputa não fala da cobrança, só do valor
+                    # contestado. Passar o local deixa esses dois braços do
+                    # snapshot em delta zero e mexe apenas no chargeback — e
+                    # ainda satisfaz as guardas de soma do
+                    # `_validate_gateway_snapshot`.
+                    captured_q=captured_q,
+                    refunded_q=refunded_q,
+                    chargeback_q=lost_total_q,
+                    gateway_id=locked.gateway_id,
+                    chargeback_gateway_id=dispute_id,
+                )
+            except PaymentError as exc:
+                logger.warning(
+                    "Stripe dispute reconciliation drift intent=%s dispute=%s code=%s context=%s",
+                    locked.ref,
+                    dispute_id,
+                    exc.code,
+                    exc.context,
+                )
+                from shopman.shop.services import observability
+
+                observability.record_payment_reconciliation_failure(
+                    gateway="stripe",
+                    intent_ref=locked.ref,
+                    order_ref=locked.order_ref,
+                    code=exc.code,
+                    context={**(exc.context or {}), "dispute_id": dispute_id},
+                    exc=exc,
+                )
+            else:
+                _alert_dispute_lost(
+                    intent_ref=locked.ref,
+                    order_ref=locked.order_ref,
+                    dispute_id=dispute_id,
+                    amount_q=amount_q,
+                )
+        elif status and status not in _DISPUTE_TERMINAL_STATUSES:
+            _alert_dispute_open(
+                intent_ref=locked.ref,
+                order_ref=locked.order_ref,
+                dispute_id=dispute_id,
+                amount_q=amount_q,
+                evidence_due_by=record["evidence_due_by"],
+            )
+
+    from shopman.shop.services import observability
+
+    observability.operational_event(
+        "payment_dispute.received",
+        gateway="stripe",
+        event_type=event_type,
+        dispute_id=dispute_id,
+        intent_ref=db_intent.ref,
+        order_ref=db_intent.order_ref,
+        dispute_status=status,
+        amount_q=amount_q,
+    )
+    return db_intent.ref
+
+
+def _alert_dispute_open(
+    *,
+    intent_ref: str,
+    order_ref: str,
+    dispute_id: str,
+    amount_q: int,
+    evidence_due_by: str,
+) -> None:
+    from shopman.shop.services import observability
+
+    prazo = f" Prazo de defesa: {evidence_due_by}." if evidence_due_by else ""
+    observability.create_operator_alert(
+        type="payment_disputed",
+        severity="error",
+        order_ref=order_ref,
+        message=(
+            f"Cartão contestado: {amount_q} centavos do pedido {order_ref or '-'} "
+            f"estão em disputa no Stripe (intent {intent_ref}).{prazo} "
+            "Sem defesa no prazo, o valor vira chargeback."
+        ),
+        dedupe_key=f"dispute-open:{dispute_id}",
+        debounce_minutes=60,
+        intent_ref=intent_ref,
+        dispute_id=dispute_id,
+    )
+
+
+def _alert_dispute_lost(
+    *,
+    intent_ref: str,
+    order_ref: str,
+    dispute_id: str,
+    amount_q: int,
+) -> None:
+    from shopman.shop.services import observability
+
+    observability.create_operator_alert(
+        type="payment_disputed",
+        severity="critical",
+        order_ref=order_ref,
+        message=(
+            f"Disputa perdida: {amount_q} centavos do pedido {order_ref or '-'} "
+            f"foram retirados pelo banco (intent {intent_ref}). "
+            "Lançado como chargeback no Payman."
+        ),
+        dedupe_key=f"dispute-lost:{dispute_id}",
+        debounce_minutes=60,
+        intent_ref=intent_ref,
+        dispute_id=dispute_id,
+    )
+
+
 def handle_webhook_event(event) -> dict:
     """Process a verified Stripe webhook event."""
     from shopman.payman import PaymentError, PaymentService
@@ -450,6 +775,9 @@ def handle_webhook_event(event) -> dict:
                 )
             except PaymentError:
                 pass
+
+    elif event.type in DISPUTE_EVENT_TYPES:
+        intent_ref = handle_dispute_event(event) or None
 
     elif event.type == "charge.refunded":
         charge = event.data.object

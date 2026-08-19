@@ -13,6 +13,7 @@ class OperatorAlert(models.Model):
         ("payment_failed", "Pagamento falhou"),
         ("payment_insufficient", "Pagamento abaixo do total"),
         ("payment_reconciliation_failed", "Reconciliação de pagamento falhou"),
+        ("payment_disputed", "Cartão contestado (disputa)"),
         ("webhook_failed", "Webhook falhou"),
         ("stock_discrepancy", "Discrepância de estoque"),
         ("payment_after_cancel", "Pagamento após cancelamento"),
