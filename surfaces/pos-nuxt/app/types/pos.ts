@@ -174,6 +174,19 @@ export interface POSPendingCashRefundProjection {
   cancelled_at: string;
 }
 
+/**
+ * Um cliente com conta na casa e saldo em aberto (Σ das vendas "em conta" ainda
+ * não acertadas, derivado do Payman; nunca tabela de saldo).
+ */
+export interface POSAccountBalanceProjection {
+  customer_ref: string;
+  customer_name: string;
+  balance_q: number;
+  balance_display: string;
+  intents: number;
+  oldest_at: string;
+}
+
 export interface POSCashRuntimeProjection {
   has_open_shift: boolean;
   shift_id: number | null;
@@ -197,6 +210,8 @@ export interface POSCashRuntimeProjection {
   pending_change_requests?: POSChangeRequestProjection[];
   /** Devoluções em dinheiro de vendas canceladas, à espera de uma gaveta aberta. */
   pending_cash_refunds?: POSPendingCashRefundProjection[];
+  /** Contas na casa com saldo em aberto: quem está com a gaveta aberta recebe o acerto. */
+  account_balances?: POSAccountBalanceProjection[];
 }
 
 export interface POSAddressAutocompleteProjection {
@@ -265,6 +280,10 @@ export interface POSCustomerLookupProjection {
   default_address: SavedAddressProjection | null;
   saved_addresses: SavedAddressProjection[];
   memory: POSCustomerMemoryProjection;
+  /** Conta na casa: só o Admin liga; sem ela o PDV nem mostra "Em conta". */
+  house_account?: boolean;
+  /** Quanto o cliente deve hoje (centavos), quando tem conta. */
+  account_balance_q?: number;
 }
 
 export interface POSCustomerLookupResponse {

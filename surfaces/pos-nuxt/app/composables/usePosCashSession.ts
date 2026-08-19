@@ -263,6 +263,23 @@ export function usePosCashSession({ pos, actions, refresh, action }: CashSession
     });
   }
 
+  // Conta na casa: o cliente acerta (parte d)a conta. Em dinheiro, entra neste
+  // turno; pix/cartão é atestado no balcão. O servidor captura por venda inteira
+  // (FIFO) e recusa valor que não cobre nem a mais antiga.
+  const accountBalances = computed(() => pos.value?.cash_runtime?.account_balances ?? []);
+
+  function settleAccount(payload: { customerRef: string; amount: string; method: string }): Promise<boolean> {
+    return run(
+      `/api/v1/backstage/pos/accounts/${encodeURIComponent(payload.customerRef)}/settle/`,
+      { amount: payload.amount, method: payload.method },
+      "Falha ao receber o acerto.",
+    ).then((ok) => {
+      // Dinheiro entrando: a gaveta abre para guardar, depois do `ok`.
+      if (ok && payload.method === "cash") void drawer.kick("account_settled");
+      return ok;
+    });
+  }
+
   function cancelChangeRequest(ref: string): Promise<boolean> {
     return run(
       `/api/v1/backstage/pos/cash/change-request/${encodeURIComponent(ref)}/cancel/`,
@@ -294,5 +311,8 @@ export function usePosCashSession({ pos, actions, refresh, action }: CashSession
     // Devolução em dinheiro de venda cancelada: o gesto físico, com PIN.
     pendingCashRefunds,
     refundCash,
+    // Conta na casa: saldos em aberto e o acerto.
+    accountBalances,
+    settleAccount,
   };
 }

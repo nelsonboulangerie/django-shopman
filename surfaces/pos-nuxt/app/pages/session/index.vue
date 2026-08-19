@@ -43,6 +43,8 @@ const {
   pendingChangeRequests,
   pendingCashRefunds,
   refundCash,
+  accountBalances,
+  settleAccount,
   requestChange,
   serveChangeRequest,
   cancelChangeRequest,
@@ -169,6 +171,25 @@ async function refundPending(orderRef: string, managerApproval: { username: stri
     managerChallenge.value = null;
     managerAuthOpen.value = false;
   }
+}
+
+// Conta na casa: o cliente veio acertar. Valor + método; em dinheiro entra neste
+// turno (a gaveta abre para guardar), pix/cartão é atestado no balcão. Sem PIN:
+// entrada não exige segunda assinatura (suprimento também não).
+const settleCustomerRef = ref<string | null>(null);
+const settleAmount = ref("");
+const settleMethod = ref<"cash" | "pix" | "card" | "external">("cash");
+const settleCustomer = computed(() => accountBalances.value.find((a) => a.customer_ref === settleCustomerRef.value) ?? null);
+function openSettle(customerRef: string, balanceQ: number) {
+  settleCustomerRef.value = customerRef;
+  settleAmount.value = (balanceQ / 100).toFixed(2).replace(".", ",");
+  settleMethod.value = "cash";
+}
+async function submitSettle() {
+  const customerRef = settleCustomerRef.value;
+  if (!customerRef || !settleAmount.value.trim()) return;
+  const ok = await settleAccount({ customerRef, amount: settleAmount.value.trim(), method: settleMethod.value });
+  if (ok) settleCustomerRef.value = null;
 }
 
 async function submitMovement(managerApproval: { username: string; pin: string } | null = null) {
@@ -436,6 +457,68 @@ async function confirmCloseBlocking() {
               <p class="text-xs text-muted-foreground">
                 O dinheiro sai desta gaveta e fica registrado no turno. Um gerente autoriza com o PIN.
               </p>
+            </section>
+
+            <!-- Conta na casa: quem deve quanto, e o acerto. Só aparece quando há
+                 saldo em aberto: dado opcional faz a tela crescer. -->
+            <section v-if="accountBalances.length" class="grid gap-3 rounded-lg border bg-card p-4" data-house-accounts>
+              <div class="flex items-center gap-2">
+                <Icon name="lucide:book-user" class="size-4 text-muted-foreground" />
+                <h2 class="text-base font-semibold">Contas na casa</h2>
+              </div>
+              <ul class="grid gap-2" aria-label="Contas na casa com saldo em aberto">
+                <li
+                  v-for="account in accountBalances"
+                  :key="account.customer_ref"
+                  class="grid gap-2 rounded-md border bg-muted/30 p-3"
+                >
+                  <div class="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
+                    <span class="text-sm font-medium">{{ account.customer_name }}</span>
+                    <span class="text-sm tabular-nums">{{ account.balance_display }}</span>
+                    <span class="text-xs text-muted-foreground">
+                      {{ account.intents }} {{ account.intents === 1 ? "venda" : "vendas" }} em aberto
+                    </span>
+                  </div>
+                  <template v-if="settleCustomerRef === account.customer_ref">
+                    <div class="grid gap-2 sm:grid-cols-[1fr_auto_auto] sm:items-end">
+                      <label class="grid gap-1.5 text-sm">
+                        <span class="font-medium text-muted-foreground">Recebido</span>
+                        <UiInput
+                          v-model="settleAmount"
+                          inputmode="decimal"
+                          placeholder="0,00"
+                          class="text-right tabular-nums"
+                          aria-label="Valor recebido no acerto"
+                          @keydown.enter="submitSettle"
+                        />
+                      </label>
+                      <label class="grid gap-1.5 text-sm">
+                        <span class="font-medium text-muted-foreground">Como</span>
+                        <select v-model="settleMethod" class="h-10 rounded-md border bg-background px-3 text-sm" aria-label="Método do acerto">
+                          <option value="cash">Dinheiro</option>
+                          <option value="pix">Pix</option>
+                          <option value="card">Cartão</option>
+                          <option value="external">Outro</option>
+                        </select>
+                      </label>
+                      <div class="flex gap-2">
+                        <UiButton size="sm" variant="outline" :disabled="busy" @click="settleCustomerRef = null">Cancelar</UiButton>
+                        <UiButton size="sm" :disabled="busy || !settleAmount.trim()" @click="submitSettle">
+                          <Icon name="lucide:check" class="size-4" />
+                          Receber
+                        </UiButton>
+                      </div>
+                    </div>
+                    <p class="text-xs text-muted-foreground">
+                      O acerto é por venda inteira, da mais antiga para a mais nova; o que não couber fica em aberto.
+                    </p>
+                  </template>
+                  <UiButton v-else size="sm" :disabled="busy" @click="openSettle(account.customer_ref, account.balance_q)">
+                    <Icon name="lucide:hand-coins" class="size-4" />
+                    Receber acerto
+                  </UiButton>
+                </li>
+              </ul>
             </section>
 
             <section class="grid gap-3 rounded-lg border bg-card p-4">

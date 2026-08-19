@@ -23,7 +23,11 @@ const PAYMENT_ICONS: Record<string, string> = {
   card: "lucide:credit-card",
   mixed: "lucide:layers",
   external: "lucide:ellipsis",
+  account: "lucide:book-user",
 };
+
+/** O método "em conta", que só existe para cliente com conta na casa. */
+export const ACCOUNT_METHOD: POSPaymentMethodProjection = { ref: "account", label: "Em conta" };
 
 export function paymentIcon(ref: string): string {
   return PAYMENT_ICONS[ref] || "lucide:wallet";
@@ -34,8 +38,14 @@ export function paymentIcon(ref: string): string {
  * is never a button — the method is derived from the set of tenders, not picked
  * (see `resolvePayment`).
  */
-export function injectableMethods(methods: POSPaymentMethodProjection[]): POSPaymentMethodProjection[] {
-  return methods.filter((method) => method.ref !== "mixed");
+export function injectableMethods(
+  methods: POSPaymentMethodProjection[],
+  options: { houseAccount?: boolean } = {},
+): POSPaymentMethodProjection[] {
+  const base = methods.filter((method) => method.ref !== "mixed" && method.ref !== ACCOUNT_METHOD.ref);
+  // "Em conta" só aparece para cliente com conta na casa: dado opcional faz a
+  // tela crescer; sem a flag a opção nem existe (e o servidor recusa de todo jeito).
+  return options.houseAccount ? [...base, ACCOUNT_METHOD] : base;
 }
 
 export function methodLabel(ref: string, methods: POSPaymentMethodProjection[]): string {
