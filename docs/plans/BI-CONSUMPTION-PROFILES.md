@@ -135,9 +135,9 @@ linhas por pedido; medir p95 no staging antes de otimizar).
 
 ## 4. Deploy no staging (depois do merge)
 
-`migrate` (campo novo, default vazio) → `setup_bi_reference` (idempotente: papéis novos, bebidas
-reetiquetadas, 4 propostas por nome) → conferir as propostas no Admin (os 4 combos e, se quiser
-estreitar a faixa, as 61 "Pães Finos" híbridas). Nunca `seed`.
+✅ Feito em 18/08: `migrate` (0022) → `setup_bi_reference` → combos e os 61 "Pães Finos"
+revisados pelo dono no Admin/por script; a curadoria foi levada ao seed em seguida (PR próprio),
+então `setup_bi_reference` num ambiente novo instala tudo já revisado. Nunca `seed` no staging.
 
 ## 5. Decisões (respondidas pelo dono em 18/08/2026)
 
@@ -184,6 +184,14 @@ estreitar a faixa, as 61 "Pães Finos" híbridas). Nunca `seed`.
 | B · local + levar | 31,1% | **10,2%** · ticket R$ 82,62 | 32,9% |
 | C · só local | 12,3% | **33,2%** · ticket R$ 53,88 | 53,3% |
 | sem etiqueta | 0,0% (1 pedido) | | |
+
+**Revisão dos 61 "Pães Finos" (SKUs do Yooga) feita pelo dono em 18/08 e gravada no seed
+(`_seed_historical_consumption_tags`, instalada pelo `setup_bi_reference`):** 18 pães de
+abastecimento → `leva` (forma, burger bun, pão de hot dog, pita, challah, nanterre, kuro pan);
+salgados montados e viennoiserie → `hibrido` confirmado — **regra fixada: a bebida no pedido é
+que define; salgado sozinho não ancora**. Efeito 2025: mudam piso→teto **63,6% → 54,4%**;
+vigente A 56,5% · B 12,7% · C 30,8%. A largura que sobra é croissant, pain au chocolat e
+madeleine, híbridos de propósito.
 
 **Conciliação:** balcão R$ 2.124.088,85 + entrega R$ 178.064,20 = **R$ 2.302.153,05 = `bi_sales`** ✓
 (testado e conferido na aba Vendas). **63,6% dos pedidos mudam de perfil entre piso e teto** — a
