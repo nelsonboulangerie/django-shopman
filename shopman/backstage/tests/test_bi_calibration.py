@@ -435,3 +435,57 @@ def test_historical_scan_deduplicates_by_sku(roles):
 
     _proposals, uncovered = Command()._historical(set(), set(), [])
     assert uncovered == ["XPTO"], f"SKU repetido na lista: {uncovered}"
+
+
+class TestTaxaDeEntregaMarcaEntrega:
+    """A linha de taxa é sinal de canal — o cabeçalho da venda não sabia disso.
+
+    Medido no histórico real (18/08): 201 vendas tinham taxa de entrega e
+    NENHUMA estava marcada como entrega. Todas caíam na inferência pela cesta e
+    viravam "consumiu aqui" ou "levou".
+    """
+
+    @pytest.mark.django_db
+    def test_venda_com_taxa_vira_entrega(self):
+        from shopman.backstage.bi.ingest.yooga import marcar_entrega_por_taxa
+        from shopman.backstage.models import HistoricalSale, HistoricalSaleItem
+
+        def venda(external_id, skus):
+            v = HistoricalSale.objects.create(
+                source="yooga", external_id=external_id, occurred_at=timezone.now(),
+                total_q=1000, is_delivery=False,
+            )
+            for seq, sku in enumerate(skus, start=1):
+                HistoricalSaleItem.objects.create(
+                    sale=v, seq=seq, product_name=sku, sku=sku,
+                    qty=1, unit_price_q=500, line_total_q=500,
+                )
+            return v
+
+        com_taxa = venda(1, ["CT", "TX"])
+        sem_taxa = venda(2, ["CT"])
+
+        marcadas = marcar_entrega_por_taxa()
+
+        assert marcadas == 1
+        com_taxa.refresh_from_db()
+        sem_taxa.refresh_from_db()
+        assert com_taxa.is_delivery is True
+        assert sem_taxa.is_delivery is False
+
+    @pytest.mark.django_db
+    def test_rodar_de_novo_nao_conta_de_novo(self):
+        # O ingest é completável: roda a cada export novo, sobre o mesmo banco.
+        from shopman.backstage.bi.ingest.yooga import marcar_entrega_por_taxa
+        from shopman.backstage.models import HistoricalSale, HistoricalSaleItem
+
+        v = HistoricalSale.objects.create(
+            source="yooga", external_id=3, occurred_at=timezone.now(),
+            total_q=1000, is_delivery=False,
+        )
+        HistoricalSaleItem.objects.create(
+            sale=v, seq=1, product_name="taxa", sku="TX",
+            qty=1, unit_price_q=500, line_total_q=500,
+        )
+        assert marcar_entrega_por_taxa() == 1
+        assert marcar_entrega_por_taxa() == 0
