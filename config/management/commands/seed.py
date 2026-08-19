@@ -5968,10 +5968,13 @@ class Command(BaseCommand):
     def _seed_consumption_roles(self) -> None:
         """O vocabulário que faz a cesta dizer quem sentou e quem levou.
 
-        São TRÊS, porque são três as coisas que a regra sabe usar. Uma lista
-        maior (bebida preparada, bebida pronta, prato quente, lanche montado…)
-        seria quatro nomes para a mesma leitura: mais escolhas do que
-        consequências, e mais trabalho de curadoria sem nenhum ganho.
+        As LEITURAS são três, porque são três as coisas que a regra sabe usar.
+        Os papéis são cinco porque bebida é um fato à parte da leitura: três
+        perguntas do B.I. (strike rate, bebidas por pedido, receita de bebida
+        pronta industrializada) precisam saber "esta linha é bebida? preparada
+        ou pronta?" — e isso é dado do papel, não nome de categoria hardcoded.
+        Bebida preparada e bebida pronta leem IGUAL a "consome aqui" (ancoram):
+        trocar um SKU entre eles não muda perfil nenhum, só a conta de bebida.
 
         A âncora é a bebida: nesta casa, quem pede bebida pra levar é quantidade
         desprezível, então bebida na cesta significa alguém que sentou.
@@ -5980,22 +5983,31 @@ class Command(BaseCommand):
         do gestor, no Admin — e tem de ser, porque o nome engana: "Hambúrguer
         100g" é o pão, não o sanduíche.
         """
-        from shopman.backstage.models import ConsumptionRole, Reading
+        from shopman.backstage.models import Beverage, ConsumptionRole, Reading
 
         catalog = [
+            ("bebida-preparada", "Bebida preparada",
+             "Café, chá, frappé, soda da casa — feita aqui, bebida aqui",
+             Reading.ANCHOR, Beverage.PREPARED, 5),
+            ("bebida-pronta", "Bebida pronta",
+             "Água, refrigerante, suco de garrafa — abre e bebe aqui",
+             Reading.ANCHOR, Beverage.READY, 6),
             ("consome-aqui", "Consome aqui",
-             "Café, suco, prato quente, lanche montado", Reading.ANCHOR, 10),
+             "Prato quente, lanche montado, sobremesa servida", Reading.ANCHOR,
+             Beverage.NONE, 10),
             ("leva", "Leva",
-             "Pão, geleia, café em grão — o que sai pela porta", Reading.TAKEAWAY, 20),
+             "Pão, geleia, café em grão — o que sai pela porta", Reading.TAKEAWAY,
+             Beverage.NONE, 20),
             ("hibrido", "Híbrido",
-             "Croissant, doce, pão japonês: serve aos dois usos", Reading.HYBRID, 30),
+             "Croissant, doce, pão japonês: serve aos dois usos", Reading.HYBRID,
+             Beverage.NONE, 30),
         ]
-        for ref, label, hint, reading, position in catalog:
+        for ref, label, hint, reading, beverage, position in catalog:
             ConsumptionRole.objects.update_or_create(
                 ref=ref,
                 defaults={
                     "label": label, "hint": hint, "reading": reading,
-                    "ordering": position, "is_active": True,
+                    "beverage": beverage, "ordering": position, "is_active": True,
                 },
             )
 
@@ -6015,16 +6027,25 @@ class Command(BaseCommand):
         from shopman.backstage.models import ConsumptionRole, ProductConsumptionTag
 
         curated = {
+            # Bebida é papel próprio (mesma leitura de "consome aqui"), porque
+            # o B.I. conta bebida por pedido. Preparada = feita na casa; pronta
+            # = industrializada. Água é pronta.
+            "bebida-preparada": [
+                "CAPPUCCINO", "CHA-BLEU", "CHA-CAMILLE", "CHA-GELADO-DIA",
+                "CHA-ROUGE", "CHA-SOPHIE", "COADO", "COFFEE-FLOAT",
+                "CREAM-SODA-DIA", "ESPRESSO", "FRAPPE", "MOCHACCINO",
+                "SODA-LARANJA",
+            ],
+            "bebida-pronta": [
+                "AGUA",
+            ],
             "consome-aqui": [
-                "AGUA", "CAPPUCCINO", "CHA-BLEU",
-                "CHA-CAMILLE", "CHA-GELADO-DIA", "CHA-ROUGE",
-                "CHA-SOPHIE", "COADO", "COFFEE-FLOAT",
-                "COMBO-PETIT-DEJ", "CREAM-SODA-DIA", "CROQUE-COMPLET",
-                "CROQUE-MADAME", "CROQUE-MONSIEUR", "ESPRESSO",
-                "FRAPPE", "JAMBON-BEURRE", "MELON-ICED-SANDO",
-                "MOCHACCINO", "PAIN-GRILLE", "PAIN-PERDU",
+                "COMBO-PETIT-DEJ", "CROQUE-COMPLET",
+                "CROQUE-MADAME", "CROQUE-MONSIEUR",
+                "JAMBON-BEURRE", "MELON-ICED-SANDO",
+                "PAIN-GRILLE", "PAIN-PERDU",
                 "PURIN", "QUEIJO-QUENTE", "SALGADO-DIA",
-                "SODA-LARANJA", "TABUA-IGUARIAS", "TEA-JELLY",
+                "TABUA-IGUARIAS", "TEA-JELLY",
             ],
             "leva": [
                 "BACON-CASA", "BAGUETE", "BAGUETE-GERGELIM",
@@ -6052,6 +6073,26 @@ class Command(BaseCommand):
                     sku=sku,
                     defaults={"role": role, "reviewed": True,
                               "note": "curadoria do cardápio 2027"},
+                )
+
+        # Os combos do Yooga (jul/24–jul/25): 9 mil linhas sem SKU e sem
+        # categoria, em 5,5 mil vendas — invisíveis à regra até aqui. Entram
+        # pelo NOME (a chave `nome:`) como "consome aqui" — decisão do dono
+        # (18/08). NÃO como bebida: a linha é o combo inteiro (lanche +
+        # refrigerante), e contá-la como bebida pronta jogaria R$ 140 mil de
+        # hotdog na receita de refrigerante. A linha nasce PROPOSTA
+        # (reviewed=False) para ele confirmar no Admin.
+        combos = (
+            "Combo Cola + Hotdog", "Combo Citrus + Hotdog",
+            "Combo Cola + Donut", "Combo Citrus + Donut",
+        )
+        eat_in = roles.get("consome-aqui")
+        if eat_in is not None:
+            for name in combos:
+                ProductConsumptionTag.objects.get_or_create(
+                    sku=f"nome:{name}",
+                    defaults={"role": eat_in, "reviewed": False,
+                              "note": "combo do Yooga sem SKU: lanche + refrigerante, come aqui"},
                 )
 
     def _seed_seating(self) -> None:

@@ -506,11 +506,6 @@ def _sales_item_rows(spec, by, by2, date_from, date_to) -> list[BIExploreRow]:
 # ── Modo de consumo (inferido da cesta — §3.1 do BI-QUESTION-CATALOG) ───────
 
 
-# Prefixo das chaves sintéticas do histórico: a leitura já vem resolvida na
-# linha, então a "chave de SKU" só precisa carregá-la até a regra.
-_RESOLVED = "leitura:"
-
-
 def _wants_consumption(by: str, by2: str) -> bool:
     return "consumption_mode" in (by, by2)
 
@@ -518,65 +513,19 @@ def _wants_consumption(by: str, by2: str) -> bool:
 def _consumption_modes(window) -> tuple[dict[int, str], dict[int, str]]:
     """(nativo por order_id, histórico por sale_id) → modo de consumo.
 
-    Uma varredura das linhas de cada fonte, e a MESMA regra aplicada às duas —
-    é isso que torna a série de dois anos comparável consigo mesma. Só roda
-    quando a pergunta envolve a dimensão: classificar 380k linhas para responder
+    A cesta é coletada UMA vez (`collect_baskets`: linhas com leitura e bebida
+    resolvidas, nas duas fontes) e a MESMA regra decide sobre as duas — é isso
+    que torna a série de dois anos comparável consigo mesma. Só roda quando a
+    pergunta envolve a dimensão: classificar 380k linhas para responder
     "faturamento por hora" seria trabalho jogado fora.
     """
-    from shopman.orderman.models import Order, OrderItem
+    from shopman.backstage.services.consumption import collect_baskets
 
-    from shopman.backstage.models import HistoricalSale, HistoricalSaleItem
-    from shopman.backstage.services.consumption import (
-        ANCHOR,
-        HYBRID,
-        TAKEAWAY_ITEM,
-        classify_basket,
-        reading_for,
-        sku_readings,
+    native, historical = collect_baskets(window)
+    return (
+        {basket.sale_id: basket.mode() for basket in native},
+        {basket.sale_id: basket.mode() for basket in historical},
     )
-
-    readings = sku_readings()
-
-    native_lines: dict[int, list] = defaultdict(list)
-    for order_id, sku, qty in OrderItem.objects.filter(
-        order__created_at__range=window
-    ).values_list("order_id", "sku", "qty"):
-        native_lines[order_id].append((sku, qty))
-    native_delivery = {
-        pk: (data or {}).get("fulfillment_type") == "delivery"
-        for pk, data in Order.objects.filter(created_at__range=window).values_list("id", "data")
-    }
-    native = {
-        order_id: classify_basket(
-            lines, readings, is_delivery=native_delivery.get(order_id, False)
-        )
-        for order_id, lines in native_lines.items()
-    }
-
-    # O histórico traz CATEGORIA, e ela é a reserva quando a linha não tem SKU —
-    # são 27 mil linhas assim, quase metade delas bebida. Cada linha vira uma
-    # chave sintética com a leitura já resolvida, para a mesma `classify_basket`
-    # decidir sobre nativo e histórico sem saber de onde veio.
-    historical_lines: dict[int, list] = defaultdict(list)
-    for sale_id, sku, qty, category in HistoricalSaleItem.objects.filter(
-        sale__occurred_at__range=window
-    ).values_list("sale_id", "sku", "qty", "category"):
-        leitura = reading_for(sku, category, readings)
-        if leitura is not None:
-            historical_lines[sale_id].append((f"{_RESOLVED}{leitura}", qty))
-    # `is_delivery` é o único rótulo de canal confiável do histórico — mesa e
-    # balcão de lá nunca viram verdade (ver docstring de HistoricalSale).
-    historical_delivery = dict(
-        HistoricalSale.objects.filter(occurred_at__range=window).values_list("id", "is_delivery")
-    )
-    resolvidas = {f"{_RESOLVED}{r}": r for r in (ANCHOR, TAKEAWAY_ITEM, HYBRID)}
-    historical = {
-        sale_id: classify_basket(
-            lines, resolvidas, is_delivery=historical_delivery.get(sale_id, False)
-        )
-        for sale_id, lines in historical_lines.items()
-    }
-    return native, historical
 
 
 def _consumption_part(mode: str) -> tuple[str, str]:

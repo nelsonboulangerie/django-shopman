@@ -23,6 +23,7 @@ from shopman.backstage.projections.bi_explore import (
 )
 from shopman.backstage.projections.bi_forecast import ForecastError, build_bi_forecast
 from shopman.backstage.projections.bi_production import build_bi_production
+from shopman.backstage.projections.bi_profiles import build_bi_consumption_profiles
 from shopman.backstage.projections.bi_sales import build_bi_sales
 
 from .permissions import HasBackstagePermission
@@ -129,6 +130,33 @@ class BIExploreView(_BIBase):
             )
         except ExploreError as exc:
             return Response({"detail": str(exc)}, status=400)
+        return Response({"bi": projection_data(report)})
+
+
+@extend_schema_view(
+    get=extend_schema(
+        tags=["backstage"],
+        summary="B.I. consumption profiles: counter orders in A/B/C, floor and ceiling",
+        responses={200: OpenApiResponse(description="B.I. consumption profiles report.")},
+    ),
+)
+class BIConsumptionProfilesView(_BIBase):
+    """Perfis A/B/C do balcão, presumidos pela cesta, em três leituras.
+
+    ``weekday`` (0 = segunda) e ``hour_band`` (chave da faixa) recortam; valor
+    fora do vocabulário cai no "todos" — a projection normaliza, como faz com a
+    janela.
+    """
+
+    def get(self, request):
+        raw_weekday = (request.GET.get("weekday") or "").strip()
+        weekday = int(raw_weekday) if raw_weekday.isdigit() else None
+        report = build_bi_consumption_profiles(
+            date_from=_query_date(request, "date_from"),
+            date_to=_query_date(request, "date_to"),
+            weekday=weekday,
+            hour_band=str(request.GET.get("hour_band") or "").strip(),
+        )
         return Response({"bi": projection_data(report)})
 
 

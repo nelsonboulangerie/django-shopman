@@ -41,6 +41,21 @@ class Reading(models.TextChoices):
     HYBRID = "hybrid", "Híbrido"
 
 
+class Beverage(models.TextChoices):
+    """Se o papel é bebida — e de que tipo. Independe da leitura.
+
+    Três perguntas do B.I. precisam disso (strike rate, bebidas por pedido,
+    receita de bebida pronta industrializada), e a resposta não pode vir de
+    nome de categoria hardcoded: é dado do papel, editável no Admin. Café em
+    grão e chá em lata NÃO são bebida aqui — são compra que sai pela porta;
+    o que se conta é o que se bebe na casa.
+    """
+
+    NONE = "", "Não é bebida"
+    PREPARED = "prepared", "Bebida preparada"
+    READY = "ready", "Bebida pronta"
+
+
 class ConsumptionRole(models.Model):
     """Papel de um produto na cesta — o vocabulário da inferência.
 
@@ -65,6 +80,14 @@ class ConsumptionRole(models.Model):
             "Leva: pão, varejo — junto de uma âncora vira 'consumiu e levou'. "
             "Híbrido: croissant, doce, pão japonês — serve aos dois usos, então "
             "não decide sozinho, mas tira a cesta do balde 'sem etiqueta'."
+        ),
+    )
+    beverage = models.CharField(
+        "bebida", max_length=16, choices=Beverage.choices, default=Beverage.NONE, blank=True,
+        help_text=(
+            "Preparada: café, chá, frappé — feita na casa. Pronta: água, "
+            "refrigerante, suco de garrafa. Conta só o que se bebe aqui; café "
+            "em grão e chá em lata ficam como 'não é bebida'."
         ),
     )
     is_active = models.BooleanField("ativo", default=True)
@@ -95,7 +118,15 @@ class ProductConsumptionTag(models.Model):
     mesmo jeito.
     """
 
-    sku = models.CharField("sku", max_length=64, unique=True)
+    sku = models.CharField(
+        "sku", max_length=64, unique=True,
+        help_text=(
+            "SKU do produto. Linha do histórico SEM sku (ex.: os combos do "
+            "Yooga) se etiqueta pelo nome exato, com o prefixo 'nome:' — "
+            "'nome:Combo Cola + Hotdog'. É a mesma chave que o B.I. usa para "
+            "essas linhas."
+        ),
+    )
     role = models.ForeignKey(
         ConsumptionRole, on_delete=models.PROTECT,
         related_name="products", verbose_name="papel",

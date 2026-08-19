@@ -5,7 +5,7 @@ from .bi_view import BIView
 from .blind_prep import BlindPrepCode
 from .cash_register import CashMovement, CashShift, POSTerminal
 from .closing import DayClosing
-from .consumption import ConsumptionRole, ProductConsumptionTag, Reading
+from .consumption import Beverage, ConsumptionRole, ProductConsumptionTag, Reading
 from .day_context import DayContext, HolidayScope
 from .historical_sale import HistoricalSale, HistoricalSaleItem
 from .kds import KDSInstance, KDSTicket
@@ -34,6 +34,7 @@ from .shelf_outage import OutageReason, ShelfOutage
 __all__ = [
     "OperatorAlert",
     "BIView",
+    "Beverage",
     "BlindPrepCode",
     "CashMovement",
     "CashShift",

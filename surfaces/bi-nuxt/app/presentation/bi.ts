@@ -594,3 +594,66 @@ export function changeHabitNotes(habit: ChangeHabitLike): string[] {
   );
   return notes;
 }
+
+// ── Perfis de consumo (BI-CONSUMPTION-PROFILES) ─────────────────────────────
+// O perfil é PRESUMIDO pela cesta e o número honesto é a faixa (piso–teto).
+// Aqui só formatação: a projection manda pedidos, %, centavos e a matriz.
+
+/** 16.7 → "16,7%". Uma casa: é o que a projection já arredondou. */
+export function formatPercent(value: number): string {
+  return `${String(value).replace(".", ",")}%`;
+}
+
+export interface ProfileRangeLike {
+  min_orders: number;
+  max_orders: number;
+  min_share: number;
+  max_share: number;
+}
+
+/** "1.234–1.500 pedidos (16,7–20,1%)"; faixa fechada vira ponto. */
+export function rangeText(range: ProfileRangeLike): string {
+  const orders =
+    range.min_orders === range.max_orders
+      ? `${formatInt(range.min_orders)} ${range.min_orders === 1 ? "pedido" : "pedidos"}`
+      : `${formatInt(range.min_orders)}–${formatInt(range.max_orders)} pedidos`;
+  const share =
+    range.min_share === range.max_share
+      ? formatPercent(range.min_share)
+      : `${String(range.min_share).replace(".", ",")}–${formatPercent(range.max_share)}`;
+  return `${orders} (${share})`;
+}
+
+/** A frase da sensibilidade: quantos pedidos mudam de perfil entre piso e teto. */
+export function sensitivityHeadline(changed: number, share: number, total: number): string {
+  if (!total) return "Sem pedidos de balcão no recorte.";
+  if (!changed) return "Nenhum pedido muda de perfil entre piso e teto.";
+  return `${formatInt(changed)} ${changed === 1 ? "pedido muda" : "pedidos mudam"} de perfil entre piso e teto (${formatPercent(share)} de ${formatInt(total)}).`;
+}
+
+export interface StrikeCellLike {
+  weekday: number;
+  band: string;
+  orders: number;
+  with_beverage: number;
+  rate: number;
+}
+
+/** Matriz dia da semana × faixa a partir das células planas da projection. */
+export function strikeMatrix(
+  cells: readonly StrikeCellLike[],
+  bandKeys: readonly string[],
+): { weekday: number; label: string; cells: (StrikeCellLike | null)[] }[] {
+  return WEEKDAY_LABELS.map((label, weekday) => ({
+    weekday,
+    label,
+    cells: bandKeys.map(
+      (band) => cells.find((c) => c.weekday === weekday && c.band === band) ?? null,
+    ),
+  }));
+}
+
+/** "R$ 4,17 por assento-hora · 24 assentos × 3 h × 26 dias". */
+export function revpashHint(seats: number, hours: number, days: number): string {
+  return `${formatInt(seats)} assentos × ${formatInt(hours)} h × ${formatInt(days)} ${days === 1 ? "dia" : "dias"}`;
+}

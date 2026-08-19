@@ -56,6 +56,19 @@ from shopman.backstage.projections.bi_production import (
     BIProductionPrevious,
     BIProductionReport,
 )
+from shopman.backstage.projections.bi_profiles import (
+    BIConsumptionProfilesReport,
+    BIProfileBand,
+    BIProfileBeverage,
+    BIProfileCategoryRow,
+    BIProfileRange,
+    BIProfileReading,
+    BIProfileRow,
+    BIProfileSensitivity,
+    BIProfilesPrevious,
+    BIRevpashRow,
+    BIStrikeCell,
+)
 from shopman.backstage.projections.bi_sales import (
     BISalesChannelRow,
     BISalesDay,
@@ -100,6 +113,17 @@ CONTRACT_DATACLASSES = (
     ChangeMix,
     DayChangeForecast,
     BIChangeReport,
+    BIProfileReading,
+    BIProfileBand,
+    BIProfileRow,
+    BIProfileRange,
+    BIProfileSensitivity,
+    BIProfileCategoryRow,
+    BIStrikeCell,
+    BIProfileBeverage,
+    BIRevpashRow,
+    BIProfilesPrevious,
+    BIConsumptionProfilesReport,
 )
 
 

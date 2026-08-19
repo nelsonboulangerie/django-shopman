@@ -8,6 +8,7 @@ from .alerts import AlertAckView, AlertListView
 from .bi import (
     BICashView,
     BIChangeView,
+    BIConsumptionProfilesView,
     BICustomersView,
     BIExploreView,
     BIForecastView,
@@ -202,6 +203,11 @@ urlpatterns = [
     path("bi/cash/", BICashView.as_view(), name="api-backstage-bi-cash"),
     path("bi/customers/", BICustomersView.as_view(), name="api-backstage-bi-customers"),
     path("bi/explore/", BIExploreView.as_view(), name="api-backstage-bi-explore"),
+    path(
+        "bi/consumption-profiles/",
+        BIConsumptionProfilesView.as_view(),
+        name="api-backstage-bi-consumption-profiles",
+    ),
     path("bi/forecast/", BIForecastView.as_view(), name="api-backstage-bi-forecast"),
     path("bi/change/", BIChangeView.as_view(), name="api-backstage-bi-change"),
     path("bi/views/", BIViewListView.as_view(), name="api-backstage-bi-views"),
