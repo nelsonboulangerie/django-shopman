@@ -14,7 +14,7 @@ import { ref } from "vue";
 
 import OperatorLock from "../../app/components/OperatorLock.vue";
 
-const BADGE = "a1b2c3d4e5f6a1b2c3d4e5f6"; // 24 hex — o formato de `issue_badge`
+const BADGE = "a1b2c3d4e5f6"; // 12 hex: o formato de `issue_badge`
 
 const unlock = vi.fn();
 const changePin = vi.fn();

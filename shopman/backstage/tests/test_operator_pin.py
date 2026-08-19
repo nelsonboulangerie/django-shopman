@@ -88,7 +88,11 @@ class OperatorBadgeTests(TestCase):
 
     def test_issue_and_resolve_badge(self):
         token = PinCredential.issue_badge(self.op)
-        assert token and len(token) >= 16
+        # Derivado, não um piso escrito à mão: era `>= 16`, sem comentário
+        # justificando o 16, e ele reprovou quando o crachá encolheu para 12 por
+        # causa da LARGURA DA BARRA no papel. Número mágico em teste vira falso
+        # alarme na primeira decisão de verdade.
+        assert token and len(token) == PinCredential.BADGE_BYTES * 2
         # resolves to the user (eligibility checked against the surface perm)
         self.assertEqual(
             resolve_operator_by_badge(token, required_perm="backstage.operate_production"),

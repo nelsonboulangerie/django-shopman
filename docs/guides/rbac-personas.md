@@ -137,12 +137,37 @@ catálogo e milhares de pedidos falsos. Não toca em nenhum dado de negócio.
 ### O crachá NÃO se testa digitando
 
 O leitor é um teclado: ele "digita" o token depressa e termina com Enter. A tela
-só aceita **24 hexadecimais com menos de 120ms entre teclas** — as duas regras
+só aceita **12 hexadecimais com menos de 120ms entre teclas**. As duas regras
 existem para que teclas soltas ao longo do turno não se somem num token falso.
 
 ⚠️ **Consequência: não dá para testar digitando nem colando.** Dedo humano não
 chega a 120ms por tecla, e colar (`Ctrl+V`) não gera evento de tecla nenhum —
 o leitor não vê nada. Quem tentar vai concluir que está quebrado.
+
+### Por que 12 caracteres, e não mais
+
+O comprimento do crachá é o mesmo orçamento que a **largura da barra impressa**, e
+quem manda nesse orçamento é a etiqueta.
+
+Com 24 caracteres, o Code 128 só cabia num crachá tamanho cartão (85,6mm) usando
+barras de **0,25mm** — o piso do padrão. Numa impressora de 300dpi um ponto mede
+0,0847mm, então 0,25mm são **2,95 pontos**: cada barra é arredondada para 3 ou 2
+conforme onde cai na grade. O Code 128 é lido pela RAZÃO entre barra e espaço, e
+esse arredondamento desregula a razão. O símbolo fica perfeito no arquivo e
+ilegível no papel. Foi exatamente o que aconteceu.
+
+Com 12 caracteres a barra sobe para **0,4233mm**, que são 5 pontos exatos a
+300dpi e 10 a 600dpi, numa largura de 79,2mm — praticamente a mesma etiqueta de
+antes, com barra 70% mais grossa.
+
+⚠️ **"Formato mais simples" não resolveria.** Code 39 é menos denso que Code 128:
+o mesmo dado sairia num símbolo ainda mais largo, forçando barra ainda mais fina.
+O caminho é encurtar o dado, não trocar a simbologia.
+
+O que se perde: o token cai de 96 para 48 bits. São 281 trilhões de combinações
+contra um alvo que só vale dentro da loja, é comparado por digest e morre no
+instante em que alguém emite outro. Não há aqui força bruta que justifique gastar
+largura de barra.
 
 **Como testar de verdade:** imprima o crachá em *Operadores → Crachá do
 operador* e passe no leitor. O token de dev é derivado do username, então é

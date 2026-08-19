@@ -76,12 +76,24 @@ def encode_code128_b(data: str) -> str:
     return "".join(bits)
 
 
-#: Dimensão X padrão (largura da barra mais fina). 0,25mm põe o token de 24 caracteres
-#: em ~80mm, que cabe num crachá tamanho cartão (85,6mm) com folga nas bordas. Subir
-#: para 0,33mm daria leitura ainda mais fácil, mas passa de 105mm e só cabe em etiqueta
-#: grande. O piso do padrão é 0,19mm; abaixo disso leitor a laser começa a errar, e
-#: impressora comum não segura o traço.
-DEFAULT_MODULE_MM = 0.25
+#: Dimensão X padrão: a largura da barra mais fina, em milímetros.
+#:
+#: **0,4233mm não é um número bonito, é um número de impressora.** A 300dpi um ponto
+#: mede 0,08466mm, então 0,4233mm são exatamente **5 pontos**; a 600dpi, exatamente
+#: **10**. Barra que mede um número inteiro de pontos sai do papel com a largura que o
+#: código pede.
+#:
+#: O valor anterior era 0,25mm, o piso prático do padrão, e a conta explica o crachá
+#: que o leitor não lia: 0,25 / 0,08466 = **2,95 pontos**. A impressora arredonda cada
+#: barra para 3 ou 2 pontos conforme onde ela cai na grade, e o Code 128 é lido pela
+#: RAZÃO entre barra e espaço. Arredondamento diferente por barra desregula essa razão,
+#: e o leitor recusa um símbolo que, no arquivo, estava perfeito.
+#:
+#: ⚠️ Largura de barra e comprimento do dado são o MESMO orçamento. Este valor só cabe
+#: num crachá tamanho cartão porque o token encolheu para 12 hex (ver
+#: ``PinCredential.issue_badge``): 12 hex a 0,4233mm dão 79,2mm, praticamente a mesma
+#: largura que 24 hex davam a 0,25mm — mesma etiqueta, barra 70% mais grossa.
+DEFAULT_MODULE_MM = 0.4233
 
 
 def code128_svg(
