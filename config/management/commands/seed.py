@@ -2599,6 +2599,33 @@ class Command(BaseCommand):
             )
         self.stdout.write(f"  ✅ {len(INGREDIENT_PROFILES)} insumos (Material)")
 
+        # Equivalências APROXIMADAS: o que se pesa dito na contagem que a bancada
+        # usa. É o par que a ADR-024 §4 nomeia — ovo ≈ 50 g, limão ≈ 100 g — e o
+        # que faz "0,300 kg de OVOS" aparecer na lista de separação como
+        # "≈ 6 ovos". O número é derivado na tela, nunca gravado: corrigir o fator
+        # aqui reprecifica toda a lista sozinho.
+        from shopman.buyman.models import MaterialConversion
+
+        counting_conversions = {
+            "OVOS": ("ovos", Decimal("0.050")),
+            "LIMAO": ("limões", Decimal("0.100")),
+        }
+        for sku, (label, factor) in counting_conversions.items():
+            material = Material.objects.filter(sku=sku).first()
+            if material is None:
+                continue
+            MaterialConversion.objects.update_or_create(
+                material=material,
+                supplier=None,
+                label=label,
+                defaults={
+                    "to_base_factor": factor,
+                    "kind": MaterialConversion.Kind.APPROXIMATE,
+                    "is_active": True,
+                },
+            )
+        self.stdout.write(f"  ✅ {len(counting_conversions)} conversões de contagem")
+
         # Saldo de abertura de insumo no depósito — estoque físico para a produção
         # poder consumir (consume da untangle emite issue sobre estes quants) e para
         # os guardrails de disponibilidade (Buyman WP-B5b) terem o que checar.

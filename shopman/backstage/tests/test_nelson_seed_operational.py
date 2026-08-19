@@ -113,6 +113,16 @@ def test_nelson_seed_populates_production_history_alerts_and_batches(monkeypatch
         for item in RecipeItem.objects.filter(input_sku=sku):
             assert item.unit == "L", f"{sku}: {item.unit}"
             item.full_clean()
+    # A equivalência aproximada do que se pesa e se conta: é ela que faz a lista
+    # de separação dizer "≈ 6 ovos" ao lado de "0,3 kg" (ADR-024 §4).
+    from shopman.buyman.models import MaterialConversion
+
+    ovo = MaterialConversion.objects.get(material__sku="OVOS", label="ovos")
+    assert ovo.is_approximate is True
+    assert ovo.supplier_id is None
+    assert ovo.to_base_factor == Decimal("0.050000")
+    assert MaterialConversion.objects.filter(material__sku="LIMAO").exists()
+
     # Todo input de receita resolve: insumo cru (Material), intermediário (output
     # de outra receita, ex. MASSA-*) ou produto. Sem inputs órfãos pós-rename.
     recipe_inputs = set(RecipeItem.objects.values_list("input_sku", flat=True))
