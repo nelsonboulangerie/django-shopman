@@ -208,17 +208,29 @@ class PinCredential(models.Model):
         if self.pk:
             self.save(update_fields=["badge_hash", "updated_at"])
 
+    #: Bytes sorteados por crachá. 6 bytes = 12 hex = 48 bits.
+    #:
+    #: Eram 12 bytes (24 hex, 96 bits), e o custo apareceu no papel: 24 caracteres em
+    #: Code 128 obrigavam barras de 0,25mm para caber num crachá tamanho cartão, e
+    #: 0,25mm não é múltiplo do ponto da impressora — o símbolo saía distorcido e o
+    #: leitor recusava. Com 12 hex a barra sobe para 0,4233mm (5 pontos exatos a
+    #: 300dpi) na MESMA largura de crachá.
+    #:
+    #: 48 bits são 281 trilhões de combinações, contra um alvo que: só vale dentro da
+    #: loja, é comparado por digest, e morre no instante em que alguém emite outro.
+    #: Não há aqui superfície de força bruta que justifique gastar largura de barra.
+    BADGE_BYTES = 6
+
     @classmethod
     def issue_badge(cls, user) -> str:
         """Mint a fresh random badge token, store its digest, return the raw token.
 
         The caller encodes the returned value as a Code-128 barcode on the badge.
-        24 hex chars (96 bits) — unguessable, and comfortably inside a barcode.
         """
         import secrets
 
         cred, _created = cls.objects.get_or_create(user=user, defaults={"pin_hash": ""})
-        raw = secrets.token_hex(12)
+        raw = secrets.token_hex(cls.BADGE_BYTES)
         cred.set_badge(raw)
         return raw
 

@@ -24,9 +24,19 @@ from shopman.backstage.projections.operator_badge import build_operator_badge
 
 User = get_user_model()
 
-TOKEN = "8b52e12e9827c01382e7b808"
+TOKEN = "8b52e12e9827"  # 12 hex: o que `issue_badge` sorteia
 
-# Vetor de ouro: a saída para TOKEN, conferida contra o `zint` (implementação
+# Entrada do vetor de ouro. NÃO é o `TOKEN` de propósito: ela tem 24 caracteres
+# porque foi ESSA string que se conferiu, símbolo a símbolo, contra o `zint`.
+#
+# O crachá encolheu para 12 caracteres depois (largura de barra no papel), e a
+# tentação era regerar o vetor para o token novo — mas um vetor de ouro gerado
+# pelo próprio código sob teste não prova nada: viraria "meu código concorda
+# comigo". A evidência independente vale pela string que foi verificada, e o
+# comprimento do crachá é outra decisão.
+GOLDEN_INPUT = "8b52e12e9827c01382e7b808"
+
+# Vetor de ouro: a saída para GOLDEN_INPUT, conferida contra o `zint` (implementação
 # independente, símbolo 60 = Code 128 com Set C suprimido — a mesma estratégia daqui).
 # START, dados e dígito verificador bateram símbolo a símbolo em 84 casos. Se este
 # vetor mudar, alguém mexeu na codificação e o crachá impresso para de ser lido.
@@ -40,7 +50,7 @@ GOLDEN = (
 
 class TestCode128:
     def test_golden_vector(self):
-        assert encode_code128_b(TOKEN) == GOLDEN
+        assert encode_code128_b(GOLDEN_INPUT) == GOLDEN
 
     def test_starts_with_set_b_and_ends_with_stop(self):
         bits = encode_code128_b(TOKEN)
@@ -80,12 +90,18 @@ class TestCode128:
     def test_svg_carries_the_quiet_zone(self):
         """Zona muda comida = leitor não acha o começo. É o erro de impressão clássico."""
         svg = code128_svg(TOKEN, module_mm=0.25, quiet_modules=10)
-        assert 'width="79.7500mm"' in svg
+        assert 'width="46.7500mm"' in svg
         # A primeira barra começa depois dos 10 módulos de margem clara.
         assert '<rect x="2.5000"' in svg
 
     def test_width_fits_a_card_sized_badge(self):
-        """24 caracteres a 0,25mm cabem num crachá de 85,6mm. Se passar, não cabe."""
+        """Tem que caber num crachá tamanho cartão (85,6mm). Se passar, não cabe.
+
+        É o guarda que amarra as duas pontas do mesmo orçamento: comprimento do
+        token e largura da barra. Foi ele que reprovou quando a barra subiu para
+        0,4233mm com o token ainda em 24 caracteres — e estava certo, porque
+        135mm não vai no bolso de ninguém.
+        """
         assert code128_width_mm(TOKEN) <= 85.6
 
 
@@ -97,7 +113,7 @@ class TestBadgeProjection:
         assert badge.operator_name == "Ana Costa"
         assert badge.token == TOKEN
         assert badge.barcode_svg.startswith("<svg")
-        assert badge.width_mm == pytest.approx(79.8, abs=0.1)
+        assert badge.width_mm == pytest.approx(79.2, abs=0.1)
 
     def test_falls_back_to_username_when_there_is_no_name(self):
         badge = build_operator_badge(operator_name="  ", operator_username="ana", token=TOKEN)
@@ -245,6 +261,6 @@ def _decode(bits: str) -> str:
 def _token_from_page(html: str) -> str:
     import re
 
-    match = re.search(r"\b[0-9a-f]{24}\b", html)
+    match = re.search(r"\b[0-9a-f]{12}\b", html)
     assert match, "a página deveria mostrar o token uma vez"
     return match.group(0)

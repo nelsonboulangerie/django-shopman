@@ -136,12 +136,12 @@ def test_todos_saem_com_cracha_emitido(elenco):
 
 
 def test_o_cracha_de_dev_tem_o_FORMATO_QUE_A_TELA_ACEITA(elenco):
-    """24 hexadecimais — não um texto bonito.
+    """Hexadecimais, no comprimento que o doorman sorteia.
 
     A primeira versão era `CRACHA-<USUARIO>`, escolhida para ser digitável. O
     servidor resolvia, e ficou provado que resolvia; a TELA descartava calada,
-    porque `isLikelyBadge` exige 24 hex e "CRACHA-FRAN" tem 11 caracteres com
-    hífen. O token nunca virava requisição.
+    porque `isLikelyBadge` exige hexadecimais e "CRACHA-FRAN" tem hífen. O token
+    nunca virava requisição.
 
     Este teste é o par do que vive em `operator-kit/tests/components/
     OperatorLock.test.ts`: lá se prova que a tela descarta o formato errado;
@@ -150,9 +150,14 @@ def test_o_cracha_de_dev_tem_o_FORMATO_QUE_A_TELA_ACEITA(elenco):
     """
     import re
 
+    from shopman.doorman.models import PinCredential
+
+    # O comprimento sai do doorman, não de um número copiado: é o mesmo orçamento
+    # que decide a largura da barra no papel (ver `barcode.DEFAULT_MODULE_MM`).
+    n = PinCredential.BADGE_BYTES * 2
     for username, *_ in setup_operators.CAST:
         token = setup_operators.dev_badge(username)
-        assert re.fullmatch(r"[0-9a-f]{24}", token), f"{username}: {token!r} não passa na tela"
+        assert re.fullmatch(rf"[0-9a-f]{{{n}}}", token), f"{username}: {token!r} não passa na tela"
 
 
 def test_o_cracha_e_estavel_entre_execucoes(elenco):

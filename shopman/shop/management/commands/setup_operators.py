@@ -34,14 +34,14 @@ ADMIN_PASSWORD = "admin"
 def dev_badge(username: str) -> str:
     """O código de barras do crachá de dev — previsível, e no FORMATO da tela.
 
-    ⚠️ 24 hexadecimais, não um texto bonito. A tela de bloqueio valida o formato
-    ANTES de perguntar ao servidor (`isLikelyBadge`, 24 hex), porque é isso que
-    um leitor HID emite — e é o que impede que teclas soltas ao longo do turno
-    se somem num token falso.
+    ⚠️ 12 hexadecimais, não um texto bonito. A tela de bloqueio valida o formato
+    ANTES de perguntar ao servidor (`isLikelyBadge`), porque é isso que um leitor
+    HID emite — e é o que impede que teclas soltas ao longo do turno se somem num
+    token falso.
 
     A primeira versão disto era `CRACHA-<USUARIO>`, escolhida para ser digitável.
     O servidor resolvia, e ficou provado que resolvia; a TELA descartava calada,
-    porque 11 caracteres com hífen não são 24 hex. O token nunca virava
+    porque 11 caracteres com hífen não são hexadecimais. O token nunca virava
     requisição. Provar no servidor não prova o caminho do usuário.
 
     Derivado do username para ser estável entre execuções: o crachá impresso
@@ -49,7 +49,12 @@ def dev_badge(username: str) -> str:
     """
     import hashlib
 
-    return hashlib.sha256(f"shopman-dev-badge:{username}".encode()).hexdigest()[:24]
+    from shopman.doorman.models import PinCredential
+
+    # O comprimento vem do doorman, não de um número escrito aqui: crachá de dev
+    # com tamanho diferente do sorteado seria descartado pela tela sem avisar.
+    tamanho = PinCredential.BADGE_BYTES * 2
+    return hashlib.sha256(f"shopman-dev-badge:{username}".encode()).hexdigest()[:tamanho]
 
 #: username, nome, sobrenome, grupos, é superusuário?, identidades que ele ABSORVE
 #:
@@ -153,7 +158,7 @@ class Command(BaseCommand):
             self.stdout.write(f"    {username}: {dev_badge(username)}")
         self.stdout.write(
             "  ⚠️  Não dá para testar digitando nem colando, e isso é de propósito:\n"
-            "      a tela exige 24 hex com menos de 120ms entre teclas — dedo humano\n"
+            "      a tela exige hexadecimais com menos de 120ms entre teclas: dedo\n"
             "      não chega lá, e colar não gera evento de tecla nenhum. Teste com o\n"
             "      leitor, num crachá impresso."
         )

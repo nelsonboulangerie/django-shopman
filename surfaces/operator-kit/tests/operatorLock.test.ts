@@ -52,12 +52,16 @@ describe("operatorName", () => {
 });
 
 describe("isLikelyBadge", () => {
-  it("recognises a 24-hex badge token, rejects PINs and junk", () => {
-    expect(isLikelyBadge("a1b2c3d4e5f6a1b2c3d4e5f6")).toBe(true);
-    expect(isLikelyBadge("  A1B2C3D4E5F6A1B2C3D4E5F6  ")).toBe(true);
+  it("reconhece o crachá de 12 hex, recusa PIN e lixo", () => {
+    expect(isLikelyBadge("a1b2c3d4e5f6")).toBe(true);
+    expect(isLikelyBadge("  A1B2C3D4E5F6  ")).toBe(true);
     expect(isLikelyBadge("1234")).toBe(false);
     expect(isLikelyBadge("not-hex-zzzz")).toBe(false);
-    expect(isLikelyBadge("a1b2c3")).toBe(false); // too short
+    expect(isLikelyBadge("a1b2c3")).toBe(false); // curto demais
+    // Comprimento antigo (24) também é recusado: o crachá encolheu por causa da
+    // LARGURA DA BARRA no papel, e aceitar os dois deixaria a tela mentir sobre
+    // qual token o leitor consegue ler.
+    expect(isLikelyBadge("a1b2c3d4e5f6a1b2c3d4e5f6")).toBe(false);
   });
 });
 
@@ -89,7 +93,7 @@ describe("pushBadgeKey — a janela de tempo que separa leitor de dedo", () => {
 
   it("a mesma sequência, na velocidade do leitor, fecha um crachá", () => {
     let buffer = "";
-    for (const char of "a1b2c3d4e5f6a1b2c3d4e5f6") {
+    for (const char of "a1b2c3d4e5f6") {
       buffer = pushBadgeKey(buffer, char, fast);
     }
     expect(isLikelyBadge(buffer)).toBe(true);

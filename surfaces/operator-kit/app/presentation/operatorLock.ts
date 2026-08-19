@@ -14,10 +14,24 @@ export function operatorName(session: OperatorSession | null): string {
   return session?.operator?.name || session?.operator?.username || "";
 }
 
-/** Badge tokens are 24 hex chars (doorman ``issue_badge`` = token_hex(12)).
- *  Used to auto-route a scan to the badge unlock without an explicit mode toggle. */
+/**
+ * O crachá tem 12 hexadecimais (doorman `issue_badge` = `token_hex(6)`).
+ *
+ * Serve para rotear a leitura para o destrave por crachá sem o operador escolher
+ * modo nenhum: o leitor "digita" e a tela sabe que aquilo é um crachá.
+ *
+ * ⚠️ Eram 24, e o número encolheu por causa do PAPEL, não do software: 24
+ * caracteres em Code 128 obrigavam barras de 0,25mm para caber num crachá
+ * tamanho cartão, largura que não é múltiplo do ponto da impressora — o símbolo
+ * saía distorcido e leitor nenhum lia. Com 12 a barra dobra de espessura na
+ * mesma etiqueta.
+ *
+ * Este número e o `BADGE_BYTES` do doorman são a MESMA decisão em dois lados:
+ * mexer num sem o outro faz a tela descartar crachá válido, calada, antes de
+ * perguntar ao servidor.
+ */
 export function isLikelyBadge(value: string): boolean {
-  return /^[0-9a-f]{24}$/i.test(value.trim());
+  return /^[0-9a-f]{12}$/i.test(value.trim());
 }
 
 /** Maior intervalo (ms) entre duas teclas que ainda conta como a MESMA passada de
