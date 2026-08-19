@@ -8,7 +8,6 @@ import {
   isCheckoutDateUnavailable,
   parseClosedDateEntries,
   quickCheckoutDateOptions,
-  isCheckoutDateUnavailable,
   isClosedWeekday,
   isCustomCheckoutDate,
   paymentMethodHint,

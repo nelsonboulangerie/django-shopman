@@ -101,8 +101,10 @@ from .operations import (
     POSCashCloseBlockingView,
     POSCashCloseView,
     POSCashDrawerOpenView,
+    POSCashDrawerUnlockView,
     POSCashOpenView,
     POSCashReceiptView,
+    POSCashRefundView,
     POSCashReportView,
     POSChangeRequestCancelView,
     POSChangeRequestServeView,
@@ -304,6 +306,12 @@ urlpatterns = [
     path("pos/cash/movement/", POSMovementView.as_view(), name="api-backstage-pos-cash-movement"),
     path("pos/cash/report/", POSCashReportView.as_view(), name="api-backstage-pos-cash-report"),
     path("pos/cash/drawer-open/", POSCashDrawerOpenView.as_view(), name="api-backstage-pos-cash-drawer-open"),
+    # A trava vive no PDV (é ele que lê a gaveta); o destrave passa aqui para
+    # ficar no livro com quem liberou.
+    path("pos/cash/drawer-unlock/", POSCashDrawerUnlockView.as_view(), name="api-backstage-pos-cash-drawer-unlock"),
+    # Cancelar não é devolver: o dinheiro de venda cancelada sai pela gaveta de
+    # quem devolve, com PIN, e só então Payman e livro registram.
+    path("pos/cash/refund/<str:order_ref>/", POSCashRefundView.as_view(), name="api-backstage-pos-cash-refund"),
     # Pedido de troco: o dinheiro não anda, o troco vem até o balcão. Net zero —
     # nenhuma destas rotas cria movimento nem mexe no esperado do fechamento.
     path(

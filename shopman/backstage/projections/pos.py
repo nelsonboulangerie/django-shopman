@@ -170,6 +170,22 @@ class POSChangeRequestProjection:
 
 
 @dataclass(frozen=True)
+class POSPendingCashRefundProjection:
+    """Um pedido cancelado cujo dinheiro ainda não saiu de nenhuma gaveta.
+
+    Cancelar não é devolver: o gestor cancela às 22h e ninguém abriu gaveta. A
+    pendência fica visível na antesala até alguém com turno aberto entregar o
+    dinheiro ("Devolver"), e só então o Payman e o livro registram a devolução.
+    """
+
+    order_ref: str
+    amount_q: int
+    amount_display: str
+    customer_name: str
+    cancelled_at: str  # ISO datetime, "" quando o pedido não guarda
+
+
+@dataclass(frozen=True)
 class POSCashRuntimeProjection:
     """Active cash runtime resolved for the current operator surface."""
 
@@ -196,6 +212,10 @@ class POSCashRuntimeProjection:
     # turno, não na tela. Uma lista chamada `change_requests` que mostrasse tudo
     # faria o balcão procurar troco para pedido já resolvido.
     pending_change_requests: tuple[POSChangeRequestProjection, ...] = ()
+    # Devoluções em dinheiro que esperam uma gaveta aberta. Aparecem em todo
+    # turno aberto do canal (não são "deste turno": são do caixa), porque quem
+    # estiver com a gaveta aberta é quem vai devolver.
+    pending_cash_refunds: tuple[POSPendingCashRefundProjection, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -795,6 +815,26 @@ def _pos_actions() -> tuple[Action, ...]:
             method="POST",
             href="/api/v1/backstage/pos/cash/drawer-open/",
             payload_schema={"required": ["reason"]},
+            idempotency="none",
+        ),
+        Action(
+            ref="drawer_unlock",
+            kind="mutation",
+            label="Liberar próxima venda com a gaveta aberta",
+            priority="quiet",
+            method="POST",
+            href="/api/v1/backstage/pos/cash/drawer-unlock/",
+            payload_schema={"required": ["manager_approval"], "optional": ["drawer_raw"]},
+            idempotency="none",
+        ),
+        Action(
+            ref="refund_cash",
+            kind="mutation",
+            label="Devolver dinheiro de venda cancelada",
+            priority="quiet",
+            method="POST",
+            href="/api/v1/backstage/pos/cash/refund/{order_ref}/",
+            payload_schema={"path": {"order_ref": "string"}, "required": ["manager_approval"]},
             idempotency="none",
         ),
         Action(
@@ -1398,6 +1438,22 @@ def _cash_runtime_projection(cash_shift, runtime, operator, *, terminal_cash_shi
         status="open",
         can_audit_cash=audita,
         pending_change_requests=_pending_change_requests(cash_shift),
+        pending_cash_refunds=_pending_cash_refunds(cash_shift),
+    )
+
+
+def _pending_cash_refunds(cash_shift) -> tuple[POSPendingCashRefundProjection, ...]:
+    from shopman.shop.services import payment as payment_service
+
+    return tuple(
+        POSPendingCashRefundProjection(
+            order_ref=item.order_ref,
+            amount_q=item.amount_q,
+            amount_display=f"R$ {format_money(item.amount_q)}",
+            customer_name=item.customer_name,
+            cancelled_at=item.cancelled_at,
+        )
+        for item in payment_service.pending_cash_refunds(channel_ref=cash_shift.terminal.channel_ref)
     )
 
 

@@ -150,6 +150,13 @@ class BIProfileBeverage:
     ready_share: float  # % da receita de balcão
     local_orders: int  # pedidos com item de consumo local (âncora)
     per_local_order: str  # bebidas por pedido, nesses pedidos ("segunda rodada")
+    # "Só veio tomar um café": cesta em que TODAS as linhas são bebida. Medido,
+    # não estimado — é a única pergunta de consumo local que a cesta responde
+    # sem proxy.
+    beverage_only_orders: int
+    beverage_only_share: float  # % dos pedidos de balcão do recorte
+    beverage_only_ticket_q: int
+    beverage_only_by_band: tuple[int, ...]  # alinhado a `bands`
     by_weekday_band: tuple[BIStrikeCell, ...]
     by_weekday: tuple[BIStrikeCell, ...]
     by_band: tuple[BIStrikeCell, ...]
@@ -476,6 +483,11 @@ def _beverage(counter, period_counter) -> BIProfileBeverage:
     )
     counter_revenue = sum(b.total_q for b in counter)
 
+    only = [b for b in counter if b.lines and all(line.beverage for line in b.lines)]
+    only_by_band = [0] * (len(HOUR_BANDS) + 1)
+    for basket in only:
+        only_by_band[_band_index(basket.local.hour)] += 1
+
     # "Segunda rodada": entre quem consumiu algo aqui (tem âncora — e a âncora
     # é a mesma em todas as leituras), quantas bebidas por pedido.
     local = [b for b in counter if any(line.reading == rule.ANCHOR for line in b.lines)]
@@ -516,6 +528,10 @@ def _beverage(counter, period_counter) -> BIProfileBeverage:
         ready_share=_share(ready_revenue, counter_revenue),
         local_orders=len(local),
         per_local_order=_ratio(beverages_in_local, len(local)),
+        beverage_only_orders=len(only),
+        beverage_only_share=_share(len(only), len(counter)),
+        beverage_only_ticket_q=sum(b.total_q for b in only) // len(only) if only else 0,
+        beverage_only_by_band=tuple(only_by_band),
         by_weekday_band=tuple(cell(wd, bi) for wd in range(7) for bi in band_indexes),
         by_weekday=tuple(cell(wd, None) for wd in range(7)),
         by_band=tuple(cell(-1, bi) for bi in band_indexes),

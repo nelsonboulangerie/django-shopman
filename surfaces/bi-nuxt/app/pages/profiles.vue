@@ -323,10 +323,15 @@ const tdClass = "whitespace-nowrap py-1.5 pl-2 text-right tabular-nums text-fore
           <p class="mb-3 text-xs text-muted-foreground">
             Bebida é proxy parcial: existe C sem bebida (doce na mesa) e café pra levar infla B/C.
           </p>
-          <div class="mb-3 grid grid-cols-3 gap-2">
+          <div class="mb-3 grid grid-cols-2 gap-2 xl:grid-cols-4">
             <StatTile label="Com bebida" :value="formatPercent(report.beverage.strike_rate)" :hint="`${formatInt(report.beverage.orders_with_beverage)} pedidos`" />
             <StatTile label="Com café/chá preparado" :value="formatPercent(report.beverage.prepared_rate)" />
             <StatTile label="Bebidas por pedido local" :value="formatQty(report.beverage.per_local_order)" :hint="`${formatInt(report.beverage.local_orders)} pedidos com item local`" />
+            <StatTile
+              label="Só bebida, nada mais"
+              :value="formatPercent(report.beverage.beverage_only_share)"
+              :hint="`${formatInt(report.beverage.beverage_only_orders)} pedidos · ticket ${formatMoney(report.beverage.beverage_only_ticket_q)} · medido, não estimado`"
+            />
           </div>
           <p class="mb-1 text-xs font-medium text-muted-foreground">% de pedidos com bebida · dia da semana × faixa (período inteiro)</p>
           <div class="overflow-x-auto">

@@ -236,6 +236,33 @@ export function usePosCashSession({ pos, actions, refresh, action }: CashSession
     });
   }
 
+  // Devolução em dinheiro de venda cancelada. Cancelar não é devolver: o
+  // gestor cancela de noite e ninguém abriu gaveta; a pendência fica aqui até
+  // quem está com a gaveta aberta entregar as notas, com PIN de gerente (dinheiro
+  // sai da gaveta com segunda assinatura, como a sangria). Só então o servidor
+  // grava Payman e livro, juntos.
+  const pendingCashRefunds = computed(
+    () => pos.value?.cash_runtime?.pending_cash_refunds ?? [],
+  );
+
+  function refundCash(payload: {
+    orderRef: string;
+    managerApproval?: { username: string; pin: string } | null;
+  }): Promise<boolean> {
+    const body: Record<string, unknown> = {};
+    if (payload.managerApproval) body.manager_approval = payload.managerApproval;
+    return run(
+      `/api/v1/backstage/pos/cash/refund/${encodeURIComponent(payload.orderRef)}/`,
+      body,
+      "Falha ao devolver o dinheiro.",
+    ).then((ok) => {
+      // A gaveta abre para entregar as notas, e só depois do `ok`: devolução
+      // recusada (PIN errado, já devolvida) não pode abrir a gaveta.
+      if (ok) void drawer.kick("cash_refund");
+      return ok;
+    });
+  }
+
   function cancelChangeRequest(ref: string): Promise<boolean> {
     return run(
       `/api/v1/backstage/pos/cash/change-request/${encodeURIComponent(ref)}/cancel/`,
@@ -264,5 +291,8 @@ export function usePosCashSession({ pos, actions, refresh, action }: CashSession
     requestChange,
     serveChangeRequest,
     cancelChangeRequest,
+    // Devolução em dinheiro de venda cancelada: o gesto físico, com PIN.
+    pendingCashRefunds,
+    refundCash,
   };
 }

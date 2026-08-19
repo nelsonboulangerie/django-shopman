@@ -117,7 +117,7 @@ por padrão para evitar spam; continuam aparecendo em log.
 ## Reconciliação financeira diária
 
 Use após o fechamento do dia para cruzar pedido, `PaymentIntent`,
-`PaymentTransaction` e `DayClosing`:
+`PaymentTransaction`, livro-caixa (`cashman.Entry`) e `DayClosing`:
 
 ```bash
 make reconcile-financial-day date=YYYY-MM-DD dry_run=1
@@ -128,6 +128,14 @@ O comando grava o resumo em `DayClosing.data["financial_reconciliation"]` e as
 divergências em `DayClosing.data["financial_reconciliation_errors"]`. Em
 divergência `error` ou `critical`, cria `OperatorAlert` do tipo
 `payment_reconciliation_failed`.
+
+Dinheiro em espécie deixou de ser invisível: o check `cash_ledger_mismatch`
+exige que o que o Payman capturou (− estornou) em `cash` no dia seja o que
+entrou (− saiu) na gaveta segundo o livro-caixa (`sale`, `cod_settled`,
+`refund`). A divergência traz os dois totais, a diferença e os pedidos que
+não batem. Um estorno de dinheiro feito fora do PDV (cancel pelo gestor,
+devolução parcial) estorna no Payman sem linha `refund` na gaveta e aparece
+aqui: é o sinal para registrar a saída do dinheiro no caixa.
 
 O escopo atual valida o contrato interno. Snapshot real de gateway depende de
 credenciais sandbox/staging e permanece no plano de smoke dos provedores.

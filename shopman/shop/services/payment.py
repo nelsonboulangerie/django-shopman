@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import json
 import logging
+from dataclasses import dataclass
 from datetime import timedelta
 
 from django.conf import settings
@@ -392,14 +393,22 @@ def refund(
     _from_directive: bool = False,
 ) -> None:
     """
-    Refund payment for the order.
+    Refund payment for the order (o estorno que o SISTEMA consegue fazer sozinho).
 
     Sem intent não há o que estornar (pedido ainda não liquidado, COD por
-    acertar, pedido legado): no-op. Com intent, o estorno vale para qualquer
-    método, dinheiro incluído: uma venda em dinheiro do PDV tem intent
-    capturado (``PaymentService.settle``) e o cancel dela grava
-    ``PaymentTransaction(REFUND)`` no Payman, sem adapter (o dinheiro sai da
-    gaveta; o livro-caixa é pergunta do ``cashman``, não daqui).
+    acertar, pedido legado): no-op. Com intent de gateway (pix, cartão), o
+    gateway devolve e o Payman registra. ``external``/pix atestado no balcão
+    não têm gateway: o Payman registra o estorno como fato declarado, como a
+    captura foi.
+
+    ⚠️ **Dinheiro NÃO se estorna aqui.** Cancelar não é devolver: às 22h o
+    gestor cancela e ninguém abriu gaveta nenhuma. Dizer ``REFUND`` nesse
+    instante afirmaria que o dinheiro voltou ao cliente sem ter voltado, e o
+    livro-caixa (cashman) ficaria sem a linha, que é exatamente o que a
+    reconciliação cruzada acusa. O intent em dinheiro fica ``captured`` e o
+    pedido cancelado aparece em ``pending_cash_refunds`` até alguém, com turno
+    aberto, entregar o dinheiro e chamar ``refund_cash`` (Payman + linha
+    ``refund`` no turno, na mesma transação).
     Uses Payman (PaymentService) as idempotency source.
 
     ``amount_q`` limita o estorno (devolução PARCIAL); ``None`` estorna o saldo
@@ -421,7 +430,7 @@ def refund(
     # mista do terminal tem um intent por método, e o cancel dela devolve todos.
     # A fonte é o Payman (livro), não o JSON: pedido antigo sem tenders com
     # intent_ref cai no mesmo laço.
-    intents = _refundable_intents(order, payment_data=payment_data)
+    intents = [pair for pair in _refundable_intents(order, payment_data=payment_data) if pair[0] != "cash"]
     remaining_q = amount_q
     for method, intent_ref in intents:
         if remaining_q is not None and remaining_q <= 0:
@@ -459,6 +468,126 @@ def _refundable_intents(order, *, payment_data: dict) -> list[tuple[str, str]]:
         legacy_ref = payment_data.get("intent_ref")
         return [(str(payment_data.get("method") or "pix"), legacy_ref)] if legacy_ref else []
     return sorted(((i.method, i.ref) for i in intents), key=lambda pair: (pair[0] != "cash", pair[1]))
+
+
+@dataclass(frozen=True)
+class PendingCashRefund:
+    """Um pedido cancelado cujo dinheiro ainda não saiu de nenhuma gaveta."""
+
+    order_ref: str
+    amount_q: int
+    intent_refs: tuple[str, ...]
+    cancelled_at: str  # ISO datetime, "" quando o pedido não guarda
+    customer_name: str
+    channel_ref: str
+
+
+def pending_cash_refunds(*, channel_ref: str | None = None) -> list[PendingCashRefund]:
+    """Pedidos cancelados/devolvidos com dinheiro capturado e ainda não devolvido.
+
+    A pendência NÃO é uma tabela: é derivada de dois fatos que já existem
+    (status do pedido no Orderman, saldo capturado − estornado do intent em
+    dinheiro no Payman). Inventar estado para ela seria o segundo dono da mesma
+    pergunta. Dinheiro só: pix/cartão o gateway já devolveu no cancel.
+    """
+    from shopman.orderman.models import Order
+    from shopman.payman import PaymentService
+    from shopman.payman.models import PaymentIntent
+
+    intents = PaymentIntent.objects.filter(
+        method="cash", gateway="", status__in={"captured", "refunded"}
+    ).order_by("order_ref", "id")
+    by_order: dict[str, list] = {}
+    for intent in intents:
+        by_order.setdefault(intent.order_ref, []).append(intent)
+    if not by_order:
+        return []
+    orders = Order.objects.filter(ref__in=list(by_order), status__in={"cancelled", "returned"})
+    if channel_ref:
+        orders = orders.filter(channel_ref=channel_ref)
+    pending: list[PendingCashRefund] = []
+    for order in orders.order_by("updated_at"):
+        refs = []
+        balance_q = 0
+        for intent in by_order.get(order.ref, []):
+            captured = PaymentService.captured_total(intent.ref)
+            refunded = PaymentService.refunded_total(intent.ref)
+            if captured - refunded > 0:
+                balance_q += captured - refunded
+                refs.append(intent.ref)
+        if balance_q <= 0:
+            continue
+        data = order.data or {}
+        pending.append(
+            PendingCashRefund(
+                order_ref=order.ref,
+                amount_q=balance_q,
+                intent_refs=tuple(refs),
+                cancelled_at=str(data.get("cancelled_at") or ""),
+                customer_name=str(data.get("customer_name") or ""),
+                channel_ref=order.channel_ref,
+            )
+        )
+    return pending
+
+
+def refund_cash(order, *, shift, actor, approved_by=None, reason: str = "cancelamento") -> int:
+    """Devolve o dinheiro de uma venda: Payman e livro-caixa na MESMA transação.
+
+    É o gesto físico: alguém com turno aberto entrega as notas ao cliente. Por
+    isso exige o turno de quem devolve (o dinheiro sai DESTA gaveta, agora) e
+    grava os dois livros juntos: ``PaymentTransaction(REFUND)`` nos intents em
+    dinheiro do pedido e uma linha ``refund`` (efeito negativo) no turno,
+    apontando para a linha ``sale`` original quando é o mesmo livro. Devolve o
+    valor devolvido (zero se não havia saldo em dinheiro a devolver).
+
+    Idempotente: o saldo reembolsável do Payman é a fonte; a segunda chamada
+    não encontra saldo e não grava linha.
+    """
+    from django.db import transaction as db_transaction
+    from shopman.cashman import Entry
+    from shopman.cashman import services as cash_ledger
+    from shopman.payman import PaymentService
+
+    if shift is None or not getattr(shift, "is_open", False):
+        raise ValueError(f"Abra o caixa para devolver o dinheiro da venda {order.ref}.")
+
+    cash_intents = [
+        ref for method, ref in _refundable_intents(order, payment_data=(order.data or {}).get("payment") or {})
+        if method == "cash"
+    ]
+    with db_transaction.atomic():
+        refunded_q = 0
+        refunded_refs = []
+        for intent_ref in cash_intents:
+            balance_q = _payman_refundable_amount(intent_ref) or 0
+            if balance_q <= 0:
+                continue
+            PaymentService.refund(
+                intent_ref,
+                amount_q=balance_q,
+                reason="order_cancelled",
+                gateway_id=f"cash-refund:{order.ref}:{intent_ref}",
+            )
+            refunded_q += balance_q
+            refunded_refs.append(intent_ref)
+        if refunded_q <= 0:
+            return 0
+        original = Entry.objects.filter(kind=Entry.Kind.SALE, order_ref=order.ref).order_by("id").first()
+        cash_ledger.record(
+            "refund",
+            shift=shift,
+            operator=actor,
+            approved_by=approved_by,
+            amount_q=-refunded_q,
+            order_ref=order.ref,
+            payment_ref=refunded_refs[0],
+            parent=original if original is not None and original.shift_id == shift.pk else None,
+            reason=str(reason or "")[:200],
+            payload={"intents_refunded": refunded_refs},
+        )
+    logger.info("payment.refund_cash: refunded %s for order %s in shift %s", refunded_q, order.ref, shift.pk)
+    return refunded_q
 
 
 def _refund_intent(

@@ -32,6 +32,7 @@ Warnings (non-blocking, logged at startup):
   SHOPMAN_W012  Display channel has no valid display.prices_from pointer
   SHOPMAN_W013  Publicly tracked channel takes price from a non-public channel
   SHOPMAN_W014  Active WhatsApp campaign without an approved template (flow ns)
+  SHOPMAN_W015  Mesmo SKU cadastrado como produto vendável e como insumo
 """
 
 from __future__ import annotations
@@ -804,4 +805,42 @@ def check_whatsapp_flow_coverage(app_configs, **kwargs):
             id="SHOPMAN_W014",
         )
     )
+    return warnings
+
+
+@register()
+def check_sku_namespace_collision(app_configs, **kwargs):
+    """Warn when the same SKU exists as sellable Product and as Material (insumo).
+
+    As duas tabelas são únicas cada uma na sua, e o namespace é um só: estoque,
+    ficha técnica e adapters compostos indexam por SKU. Colidiu, o produto ganha
+    e o insumo some em silêncio (ver shopman/shop/services/sku_namespace.py).
+
+    Warning, não Error: colisão preexistente não pode trancar o dono para fora do
+    Admin, que é onde ele conserta. A criação de novas colisões é recusada no
+    pre_save dos dois modelos.
+    """
+    from django.db.utils import OperationalError, ProgrammingError
+
+    warnings = []
+    try:
+        from shopman.shop.services.sku_namespace import find_sku_collisions
+
+        collisions = find_sku_collisions()
+    except (OperationalError, ProgrammingError, ImportError):
+        return warnings  # tables not ready (initial migration) or app absent
+
+    if collisions:
+        warnings.append(
+            Warning(
+                "SKU duplicado entre produto vendável (Offerman) e insumo (Buyman): "
+                f"{', '.join(collisions)}.",
+                hint=(
+                    "Os caminhos compostos resolvem o produto primeiro e o insumo "
+                    "homônimo é ignorado; o ledger de estoque mistura venda e consumo "
+                    "no mesmo SKU. Renomeie um dos dois lados."
+                ),
+                id="SHOPMAN_W015",
+            )
+        )
     return warnings

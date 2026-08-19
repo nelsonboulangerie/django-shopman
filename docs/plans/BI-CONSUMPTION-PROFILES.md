@@ -236,12 +236,20 @@ RevPASH 2025: manhã R$ 17 · almoço R$ 12,5 · tarde R$ 18 · fim de dia R$ 10
 - **No Admin:** peso por papel (lista editável) e por SKU; na tela do SKU, a **dica do histórico**
   (`sku_signal`): vendas de balcão, % com bebida, % sozinho, % em 4+ unidades — para ninguém
   decidir o peso no escuro.
-- **Com os defaults** (híbrido 50), 2025 dá ≈ 24,1 mil pedidos com alguém sentado (**63,8%**),
-  R$ 1,43 mi (67,5% da receita), ≈ 13,7 mil só buscaram (36,2%); por faixa: manhã 72% · almoço
-  64% · tarde 60% · fim de dia 66%. ⚠️ Isso é o prior neutro falando: quase toda cesta tem um
-  híbrido, e híbrido = 50 puxa tudo para cima. O número fica realista quando o dono ajusta os
-  pesos que pesam (croissant, pain au chocolat, madeleine, ciabatta) — e é para isso que a dica
-  existe.
+- **Com os defaults** (híbrido 50), 2025 dava ≈ 63,8% de pedidos com alguém sentado — o prior
+  neutro falando (quase toda cesta tem um híbrido a 50).
+- **O dado inclina os híbridos — `measure_eat_in_weights` (19/08, pedido do dono: "faça uma
+  média, para onde este SKU inclina").** Para cada SKU híbrido mede-se a % das vendas de
+  balcão dele com bebida e compara-se com a média da casa (35%): peso = (P(bebida|SKU) −
+  P(bebida)) / (1 − P(bebida)). Na média → piso 5; 100% → teto 95. ⚠️ A co-ocorrência crua
+  (croissant 41% → peso 41) contaria o café duas vezes e daria 60% de pedidos com alguém
+  sentado, contra os ~38% do estudo do dono; a lift dá **49%**. Âncoras (95) e leva (5) ficam;
+  variante "M"+SKU e gêmeo do cardápio 2027 (CROISSANT ↔ CT) herdam; < 30 vendas fica no
+  papel, declarado. Rodado no staging com `--apply`: 58 pesos (CPQ 37 · FF 29 · DL 26 · PC 23
+  · CN 22 · CM 22 · BH 20 · MD 15 · CT 9 · CI/TB/FE 5…). **2025: ≈ 18,7 mil pedidos com
+  alguém sentado (49,3%), R$ 1,14 mi (53,6% da receita); ≈ 19,2 mil só buscaram (50,7%)**;
+  por faixa: manhã 61% · almoço 48% · tarde 44% · fim de dia 55%. Reproduzível em qualquer
+  ambiente com o histórico carregado.
 
 ### 8.2 Passo 2 — pesos medidos pela comanda (desenhado; depende de dado nativo real)
 

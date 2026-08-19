@@ -47,7 +47,7 @@ Testes passando em 2026-08-13 (`make test`, por bloco):
 | shopman-guestman | `shopman-guestman` | 403 | Estável | CRM, clientes, loyalty, RFM, consent, etiquetas (CustomerTag) |
 | shopman-doorman | `shopman-doorman` | 293 | Estável | Auth OTP, device trust, access links, magic links, passkey (WebAuthn) |
 | shopman-payman | `shopman-payman` | 149 | Estável | Pagamentos, PIX, Stripe, reconciliação cumulativa |
-| shopman-buyman | `shopman-buyman` | 9 | Fase 1 | Compras: Material, Supplier, custo, shelf-life; Fases 2–4 pós-go-live |
+| shopman-buyman | `shopman-buyman` | 21 | Fase 1 | Compras: Material, Supplier, custo, shelf-life; entrada de insumo é manual até a Fase 2; Fases 2–4 pós-go-live |
 | shopman-fiscalman | `shopman-fiscalman` | 22 | S0–S4 | Classificação NFC-e em Product.metadata; resta S5 (NF-e mod. 55) + validação do contador |
 
 **Total cores:** ~2.200 testes. **Framework** (`make test-framework`): ~4.250 testes
@@ -146,6 +146,11 @@ staging).
 - Estoque: hold na criação → deduct na confirmação (gate transacional) → release no cancelamento
 - Produção: receitas → work orders → BOM → consumo de insumos via signal (`craftsman/contrib/stockman`)
 - Compras: materiais/fornecedores (Buyman F1) → disponibilidade de insumo valida produção
+- **Entrada de insumo: manual até a Fase 2** (decisão registrada, não omissão). `Move.Kind.BUY`
+  existe no Stockman e **nada o emite**: hoje insumo entra por seed e ajuste manual, sem
+  procedência — numa suíte ledger-first, é o único estoque sem história de origem. Quem passa a
+  emitir BUY é o recebimento da Fase 3, conforme
+  [BUYMAN-PROCUREMENT-PLAN §Fases](plans/BUYMAN-PROCUREMENT-PLAN.md)
 - Loyalty: acúmulo na confirmação, resgate no checkout
 - Auth: access link WhatsApp-first, SMS fallback, device trust, magic links
 - Fechamento do dia: sobras (hoje via D-1, interino — ver ADR-017/QC-FORNADA), apuração de caixa, reconciliação financeira diária

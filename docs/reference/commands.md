@@ -311,10 +311,24 @@ python manage.py inject_ifood_order
 **Arquivo:** `shopman/backstage/management/commands/reconcile_financial_day.py`
 
 Gera auditoria financeira diária cruzando pedidos, `PaymentIntent`,
-`PaymentTransaction` e `DayClosing`. Quando não está em `--dry-run`, persiste o
-resumo em `DayClosing.data["financial_reconciliation"]` e divergências em
+`PaymentTransaction`, o livro-caixa (`cashman.Entry`) e `DayClosing`. Quando não
+está em `--dry-run`, persiste o resumo em
+`DayClosing.data["financial_reconciliation"]` e divergências em
 `DayClosing.data["financial_reconciliation_errors"]`. Divergência `error` ou
 `critical` cria alerta `payment_reconciliation_failed`.
+
+Os checks por pedido somam os intents liquidados (um por **método** numa venda
+mista do terminal, ADR-022) contra o total selado; intents sem gateway
+(dinheiro, externo, pix/cartão atestados no balcão) passam pelas mesmas
+invariantes que os de gateway. O check `cash_ledger_mismatch` cruza o dinheiro
+em espécie do dia: `Σ capturas − Σ estornos` dos intents `cash` (pelo
+`created_at` da transação) **==** `Σ Entry.amount_q` das linhas `sale`,
+`cod_settled` e `refund` (pelo `at`). Na venda do PDV os dois nascem no mesmo
+`atomic`, então COD conta no dia do **acerto** nos dois livros; `float_in`,
+`cash_in`, `cash_out` e `count` ficam fora (mexem na gaveta, não são
+pagamento). A saída humana ganha a linha `Dinheiro (Payman × livro-caixa)` e o
+resumo persistido o campo `cash_ledger` (ver
+[data-schemas](data-schemas.md#dayclosingdata)).
 
 | Flag | Default | Descrição |
 |------|---------|-----------|
