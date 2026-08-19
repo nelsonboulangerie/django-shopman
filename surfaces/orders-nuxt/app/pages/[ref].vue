@@ -16,7 +16,7 @@ import type { CancellationReason } from "~/types/orders";
 const route = useRoute();
 const orderRef = computed(() => String(route.params.ref || ""));
 
-const { order, pending, error, refresh, busy, confirm, advance, reject, cancel, fetchCancellationReasons, settleCash, requeueFiscal, saveNotes, addComment, courierDispatch, courierCancel, courierQuote } =
+const { order, pending, error, refresh, busy, confirm, advance, reject, cancel, fetchCancellationReasons, settleCash, equipmentBack, requeueFiscal, saveNotes, addComment, courierDispatch, courierCancel, courierQuote } =
   useOrderDetail(orderRef.value);
 
 // Realtime: SSE push (filtrado a este pedido) + poll de 30s + wake-on-visibility.
@@ -59,6 +59,18 @@ const asksChangeBack = computed(() => Boolean(order.value?.change_back_pending))
 const dispatchAsksChange = computed(
   () => order.value?.status === "ready" && (order.value?.change_out_suggested_q ?? 0) > 0,
 );
+// ...ou o canal deixa levar aparelho (maquininha): o despacho oferece.
+const dispatchAsks = computed(
+  () => dispatchAsksChange.value || (order.value?.status === "ready" && (order.value?.equipment_options.length ?? 0) > 0),
+);
+const dispatchEquipment = ref<string[]>([]);
+const settleEquipmentBack = ref(true);
+const asksEquipmentBack = computed(() => Boolean(order.value?.equipment_back_pending));
+function toggleDispatchEquipment(ref_: string) {
+  dispatchEquipment.value = dispatchEquipment.value.includes(ref_)
+    ? dispatchEquipment.value.filter((r) => r !== ref_)
+    : [...dispatchEquipment.value, ref_];
+}
 const reasons = ref<CancellationReason[]>([]);
 const reasonsLoading = ref(false);
 
@@ -70,6 +82,8 @@ async function openDialog(kind: "reject" | "cancel" | "settle" | "dispatch") {
   amount.value = "";
   changeBack.value = order.value?.change_back_pending ? moneyInput(changeBackSuggestionQ(order.value)) : "";
   changeOut.value = moneyInput(order.value?.change_out_suggested_q ?? 0);
+  dispatchEquipment.value = [];
+  settleEquipmentBack.value = true;
   if (kind === "reject" || kind === "cancel") {
     // Pull the order's valid cancellation reasons — a coded list for iFood, [] else.
     reasons.value = [];
@@ -93,17 +107,18 @@ async function submitReason(payload: { reason: string; cancellationCode: string 
 
 async function submitSettle() {
   const back = asksChangeBack.value ? changeBack.value.trim() || "0" : undefined;
-  const ok = await settleCash(amount.value.trim(), back);
+  const ok = await settleCash(amount.value.trim(), back, asksEquipmentBack.value && settleEquipmentBack.value);
   if (ok) dialog.value = "";
 }
 
 function onAdvance() {
-  if (dispatchAsksChange.value) openDialog("dispatch");
+  if (dispatchAsks.value) openDialog("dispatch");
   else advance();
 }
 
-async function submitDispatch(value: string) {
-  const ok = await advance(value.trim() || "0");
+async function submitDispatch(value: string | null) {
+  const changeOut = dispatchAsksChange.value ? (value ?? "").trim() || "0" : undefined;
+  const ok = await advance(changeOut, dispatchEquipment.value);
   if (ok) dialog.value = "";
 }
 
@@ -166,6 +181,9 @@ const fiscalHref = (link: { href?: string; url?: string }) => link.href || link.
         </button>
         <button v-if="order.can_settle_delivery_cash" type="button" :disabled="busy" class="inline-flex items-center gap-1.5 rounded-md border px-3.5 py-2 text-sm font-semibold transition hover:bg-accent disabled:opacity-50" @click="openDialog('settle')">
           <Icon name="lucide:banknote" class="size-4" /> Acerto dinheiro
+        </button>
+        <button v-if="order.equipment_back_pending && !order.can_settle_delivery_cash" type="button" :disabled="busy" class="inline-flex items-center gap-1.5 rounded-md border px-3.5 py-2 text-sm font-semibold transition hover:bg-accent disabled:opacity-50" @click="equipmentBack">
+          <Icon name="lucide:smartphone-nfc" class="size-4" /> Maquininha voltou
         </button>
         <button v-if="order.fiscal_status === 'failed'" type="button" :disabled="busy" class="inline-flex items-center gap-1.5 rounded-md border px-3.5 py-2 text-sm font-semibold transition hover:bg-accent disabled:opacity-50" @click="requeueFiscal">
           <Icon name="lucide:file-text" class="size-4" /> Reprocessar fiscal
@@ -318,6 +336,10 @@ const fiscalHref = (link: { href?: string; url?: string }) => link.href || link.
             aria-label="Troco que voltou"
           />
         </label>
+        <label v-if="asksEquipmentBack" class="flex items-center gap-2 text-sm" data-equipment-back>
+          <input v-model="settleEquipmentBack" type="checkbox" />
+          <span>{{ order?.equipment_label }}. Voltou junto</span>
+        </label>
         <UiDialogFooter>
           <button type="button" class="rounded-md border px-3 py-2 text-sm font-medium transition hover:bg-accent" @click="dialog = ''">Voltar</button>
           <button
@@ -336,10 +358,19 @@ const fiscalHref = (link: { href?: string; url?: string }) => link.href || link.
     <UiDialog :open="dialog === 'dispatch'" @update:open="(v) => { if (!v) dialog = '' }">
       <UiDialogContent class="sm:max-w-md" data-dispatch-dialog>
         <UiDialogHeader>
-          <UiDialogTitle>Troco para o entregador</UiDialogTitle>
-          <UiDialogDescription>{{ order?.change_label }}. O valor sai do seu turno de caixa e volta no acerto.</UiDialogDescription>
+          <UiDialogTitle>{{ dispatchAsksChange ? "Troco para o entregador" : "Saída para entrega" }}</UiDialogTitle>
+          <UiDialogDescription>
+            <template v-if="dispatchAsksChange">{{ order?.change_label }}. O valor sai do seu turno de caixa e volta no acerto.</template>
+            <template v-else>O que sai com o entregador.</template>
+          </UiDialogDescription>
         </UiDialogHeader>
-        <label class="flex items-center gap-2 text-sm">
+        <div v-if="order?.equipment_options.length" class="flex flex-col gap-1.5" data-dispatch-equipment>
+          <label v-for="opt in order.equipment_options" :key="opt.ref" class="flex items-center gap-2 rounded-md border px-3 py-2 text-sm">
+            <input type="checkbox" :checked="dispatchEquipment.includes(opt.ref)" @change="toggleDispatchEquipment(opt.ref)" />
+            <span>Levou a {{ opt.label.toLowerCase() }}</span>
+          </label>
+        </div>
+        <label v-if="dispatchAsksChange" class="flex items-center gap-2 text-sm">
           <span class="text-muted-foreground">R$</span>
           <input
             v-model="changeOut"
@@ -352,14 +383,14 @@ const fiscalHref = (link: { href?: string; url?: string }) => link.href || link.
         </label>
         <UiDialogFooter>
           <button type="button" class="rounded-md border px-3 py-2 text-sm font-medium transition hover:bg-accent" @click="dialog = ''">Voltar</button>
-          <button type="button" :disabled="busy" class="rounded-md border px-3 py-2 text-sm font-medium transition hover:bg-accent disabled:opacity-50" @click="submitDispatch('0')">Saiu sem troco</button>
+          <button v-if="dispatchAsksChange" type="button" :disabled="busy" class="rounded-md border px-3 py-2 text-sm font-medium transition hover:bg-accent disabled:opacity-50" @click="submitDispatch('0')">Saiu sem troco</button>
           <button
             type="button"
             :disabled="busy"
             class="rounded-md border border-transparent bg-primary px-3 py-2 text-sm font-semibold text-primary-foreground transition hover:bg-primary/90 disabled:opacity-50"
             @click="submitDispatch(changeOut)"
           >
-            Levou o troco
+            {{ dispatchAsksChange ? "Levou o troco" : "Saiu para entrega" }}
           </button>
         </UiDialogFooter>
       </UiDialogContent>

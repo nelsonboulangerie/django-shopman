@@ -166,6 +166,7 @@ for key in (
 | `merchant_id` | `string` | `shop/services/ifood_ingest.py` | — | ID do merchant na iFood. Duplicado em `ifood.merchant_id` |
 | `ifood` | `dict` | `shop/services/ifood_ingest.py` | — | Contexto da iFood (só em pedidos ingeridos via `ifood_ingest`): `{order_code, merchant_id, created_at}` |
 | `courier` | `dict` | `CourierDispatchHandler`, `services/courier.apply_status` | `_courier_block` (projection do gestor), webhook Machine (lookup por `data__courier__id_mch`), notificação (`courier_tracking_url`) | Corrida de entrega na logística externa (Machine). Ver detalhamento abaixo |
+| `dispatch` | `dict` | `operator_orders.advance_order` (despacho da entrega da casa), `mark_equipment_returned` / `settle_delivery_cash(equipment_back=True)` | `operator_orders.equipment_custody` / `equipment_out`, card e quadro do gestor (`equipment_*`) | Custódia do **aparelho** que saiu com o entregador (maquininha): `{equipment: ["card_machine"], equipment_out_at, equipment_out_by, equipment_back_at?, equipment_back_by?}`. Refs permitidas vêm de `ChannelConfig.fulfillment.equipment`. Não é dinheiro: fora do livro do `cashman`. "Onde está a maquininha" é derivado (saiu e não voltou) |
 
 ### courier — detalhamento
 

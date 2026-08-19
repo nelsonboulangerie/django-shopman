@@ -31,6 +31,21 @@ export interface AwaitingWorkOrderProjection {
   progress_pct: number;
 }
 
+/** Um aparelho que o entregador pode levar no despacho (ref do canal + rótulo). */
+export interface EquipmentOptionProjection {
+  ref: string;
+  label: string;
+}
+
+/** Onde está o aparelho agora: saiu com o entregador deste pedido e não voltou. */
+export interface EquipmentOutProjection {
+  ref: string;
+  label: string;
+  order_ref: string;
+  customer_name: string;
+  out_at: string;
+}
+
 /** A single order card in the operator queue. */
 export interface OrderCardProjection {
   ref: string;
@@ -81,6 +96,10 @@ export interface OrderCardProjection {
   change_back_pending: boolean;
   change_back_q: number;
   change_label: string;
+  equipment_options: EquipmentOptionProjection[];
+  equipment_out: string[];
+  equipment_label: string;
+  equipment_back_pending: boolean;
 }
 
 /** Expanded detail for a single order (operator side-panel). */
@@ -119,6 +138,10 @@ export interface OperatorOrderProjection {
   change_back_pending: boolean;
   change_back_q: number;
   change_label: string;
+  equipment_options: EquipmentOptionProjection[];
+  equipment_out: string[];
+  equipment_label: string;
+  equipment_back_pending: boolean;
 }
 
 /** Top-level read model for the operator order queue. */
@@ -141,4 +164,5 @@ export interface TwoZoneQueueProjection {
   total_count: number;
   preorders: OrderCardProjection[];
   preorders_count: number;
+  equipment_out: EquipmentOutProjection[];
 }

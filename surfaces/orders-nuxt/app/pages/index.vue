@@ -10,6 +10,7 @@ import {
   changeBackSuggestionQ,
   channelLabel,
   channelOptions,
+  dispatchAsks,
   dispatchAsksChange,
   elapsedLabel,
   flattenZones,
@@ -31,7 +32,7 @@ import {
 import type { OrderCardProjection } from "~/types/orders";
 import type { CancellationReason } from "~/composables/useOrdersBoard";
 
-const { zones, preorders, realtime, pending, error, refresh, isBusy, actionError, clearActionError, confirm, advance, reject, fetchCancellationReasons, settleCash, assign, unassign, confirmMany, advanceMany } = useOrdersBoard();
+const { zones, preorders, realtime, pending, error, refresh, isBusy, actionError, clearActionError, confirm, advance, reject, fetchCancellationReasons, settleCash, equipmentBack, assign, unassign, confirmMany, advanceMany, equipmentOut } = useOrdersBoard();
 
 // Sinal honesto de tempo-real vs poll (indicador de degradação do SSE).
 const realtimeView = computed(() => realtimeIndicator(realtime.value));
@@ -186,17 +187,20 @@ const settleAmount = ref("");
 const settleChangeBack = ref("");
 const settleCard = computed(() => allCards.value.find((c) => c.ref === settleRef.value) ?? null);
 const settleAsksChangeBack = computed(() => Boolean(settleCard.value?.change_back_pending));
+const settleEquipmentBack = ref(true);
+const settleAsksEquipment = computed(() => Boolean(settleCard.value?.equipment_back_pending));
 function openSettle(ref_: string) {
   settleRef.value = ref_;
   settleAmount.value = "";
   const card = allCards.value.find((c) => c.ref === ref_);
   settleChangeBack.value = card?.change_back_pending ? moneyInput(changeBackSuggestionQ(card)) : "";
+  settleEquipmentBack.value = true;
 }
 async function confirmSettle() {
   const ref_ = settleRef.value;
   if (!ref_) return;
   const changeBack = settleAsksChangeBack.value ? settleChangeBack.value.trim() || "0" : undefined;
-  const ok = await settleCash(ref_, settleAmount.value.trim(), changeBack);
+  const ok = await settleCash(ref_, settleAmount.value.trim(), changeBack, settleAsksEquipment.value && settleEquipmentBack.value);
   if (ok) settleRef.value = null;
 }
 
@@ -205,15 +209,26 @@ async function confirmSettle() {
 // operator confirms the amount the courier actually takes (or "sem troco").
 const dispatchRef = ref<string | null>(null);
 const dispatchAmount = ref("");
+// Aparelhos marcados para sair com o entregador (refs do canal, ex. card_machine).
+const dispatchEquipment = ref<string[]>([]);
 const dispatchCard = computed(() => allCards.value.find((c) => c.ref === dispatchRef.value) ?? null);
+const dispatchAsksChangeNow = computed(() => Boolean(dispatchCard.value && dispatchAsksChange(dispatchCard.value)));
 function openDispatch(card: OrderCardProjection) {
   dispatchRef.value = card.ref;
   dispatchAmount.value = moneyInput(card.change_out_suggested_q);
+  dispatchEquipment.value = [];
 }
-async function confirmDispatch(amount: string) {
+function toggleDispatchEquipment(ref_: string) {
+  dispatchEquipment.value = dispatchEquipment.value.includes(ref_)
+    ? dispatchEquipment.value.filter((r) => r !== ref_)
+    : [...dispatchEquipment.value, ref_];
+}
+async function confirmDispatch(amount: string | null) {
   const ref_ = dispatchRef.value;
   if (!ref_) return;
-  const ok = await advance(ref_, amount.trim() || "0");
+  // Sem troco a perguntar, o valor não vai (o servidor só exige quando sugere).
+  const changeOut = dispatchAsksChangeNow.value ? (amount ?? "").trim() || "0" : undefined;
+  const ok = await advance(ref_, changeOut, dispatchEquipment.value);
   if (ok) dispatchRef.value = null;
 }
 
@@ -221,11 +236,12 @@ function onAction(ref_: string, action: AffordanceRef) {
   if (action === "confirm") confirm(ref_);
   else if (action === "advance") {
     const card = allCards.value.find((c) => c.ref === ref_);
-    if (card && dispatchAsksChange(card)) openDispatch(card);
+    if (card && dispatchAsks(card)) openDispatch(card);
     else advance(ref_);
   }
   else if (action === "reject") openReject(ref_);
   else if (action === "settle_cash") openSettle(ref_);
+  else if (action === "equipment_back") equipmentBack(ref_);
 }
 
 // claim/release an order ("estou atendendo").
@@ -264,6 +280,15 @@ function printQueue() {
         aria-label="Buscar por código, cliente ou item (atalho: /)"
         @update:model-value="(v) => (query = v)"
       />
+      <!-- onde está a maquininha: saiu com o entregador e não voltou -->
+      <div v-if="equipmentOut.length" class="flex flex-wrap items-center gap-2 rounded-md border bg-muted/40 px-3 py-2 text-sm" data-equipment-out>
+        <Icon name="lucide:smartphone-nfc" class="size-4 text-muted-foreground" />
+        <span v-for="item in equipmentOut" :key="`${item.ref}:${item.order_ref}`" class="inline-flex items-center gap-1">
+          <span class="font-medium">{{ item.label }}</span>
+          <span class="text-muted-foreground">na rua com o pedido {{ item.order_ref }}<template v-if="item.customer_name"> · {{ item.customer_name }}</template></span>
+        </span>
+      </div>
+
       <div v-if="allCards.length" class="flex flex-wrap items-center gap-1.5">
         <UiFilterChip :active="channel === 'all'" :count="allCards.length" @click="channel = 'all'">
           Todos
@@ -632,13 +657,16 @@ function printQueue() {
     <UiDialog :open="dispatchRef != null" @update:open="(v) => { if (!v) dispatchRef = null }">
       <UiDialogContent class="sm:max-w-sm" data-dispatch-dialog>
         <UiDialogHeader>
-          <UiDialogTitle>Troco para o entregador</UiDialogTitle>
+          <UiDialogTitle>{{ dispatchAsksChangeNow ? "Troco para o entregador" : "Saída para entrega" }}</UiDialogTitle>
           <UiDialogDescription>
-            {{ dispatchCard?.change_label || "Quanto de troco o entregador leva da gaveta?" }} ({{ dispatchRef }}).
-            O valor sai do seu turno de caixa e volta no acerto.
+            <template v-if="dispatchAsksChangeNow">
+              {{ dispatchCard?.change_label || "Quanto de troco o entregador leva da gaveta?" }} ({{ dispatchRef }}).
+              O valor sai do seu turno de caixa e volta no acerto.
+            </template>
+            <template v-else>O que sai com o entregador ({{ dispatchRef }}).</template>
           </UiDialogDescription>
         </UiDialogHeader>
-        <label class="flex items-center gap-2 text-sm">
+        <label v-if="dispatchAsksChangeNow" class="flex items-center gap-2 text-sm">
           <span class="text-muted-foreground">R$</span>
           <input
             v-model="dispatchAmount"
@@ -649,11 +677,22 @@ function printQueue() {
             aria-label="Troco que o entregador leva"
           />
         </label>
+        <!-- aparelho que o canal deixa levar (maquininha): custódia no pedido -->
+        <div v-if="dispatchCard?.equipment_options.length" class="flex flex-col gap-1.5" data-dispatch-equipment>
+          <label
+            v-for="opt in dispatchCard.equipment_options"
+            :key="opt.ref"
+            class="flex items-center gap-2 rounded-md border px-3 py-2 text-sm"
+          >
+            <input type="checkbox" :checked="dispatchEquipment.includes(opt.ref)" @change="toggleDispatchEquipment(opt.ref)" />
+            <span>Levou a {{ opt.label.toLowerCase() }}</span>
+          </label>
+        </div>
         <UiDialogFooter>
           <button type="button" class="rounded-md border px-3 py-2 text-sm font-medium transition hover:bg-accent" @click="dispatchRef = null">Cancelar</button>
-          <button type="button" class="rounded-md border px-3 py-2 text-sm font-medium transition hover:bg-accent" @click="confirmDispatch('0')">Saiu sem troco</button>
+          <button v-if="dispatchAsksChangeNow" type="button" class="rounded-md border px-3 py-2 text-sm font-medium transition hover:bg-accent" @click="confirmDispatch('0')">Saiu sem troco</button>
           <button type="button" class="rounded-md border border-transparent bg-primary px-3 py-2 text-sm font-semibold text-primary-foreground transition hover:bg-primary/90" @click="confirmDispatch(dispatchAmount)">
-            Levou o troco
+            {{ dispatchAsksChangeNow ? "Levou o troco" : "Saiu para entrega" }}
           </button>
         </UiDialogFooter>
       </UiDialogContent>
@@ -685,6 +724,10 @@ function printQueue() {
             class="w-full rounded-md border bg-background p-2.5 text-sm outline-none focus:ring-1 focus:ring-ring"
             aria-label="Troco que voltou"
           />
+        </label>
+        <label v-if="settleAsksEquipment" class="flex items-center gap-2 text-sm" data-equipment-back>
+          <input v-model="settleEquipmentBack" type="checkbox" />
+          <span>{{ settleCard?.equipment_label }}. Voltou junto</span>
         </label>
         <UiDialogFooter>
           <button type="button" class="rounded-md border px-3 py-2 text-sm font-medium transition hover:bg-accent" @click="settleRef = null">Cancelar</button>

@@ -4,6 +4,7 @@ import {
   appendTag,
   bulkableRefs,
   changeBackSuggestionQ,
+  dispatchAsks,
   dispatchAsksChange,
   moneyInput,
   cardAffordances,
@@ -71,6 +72,10 @@ const card = (over: Partial<OrderCardProjection> = {}): OrderCardProjection => (
   change_back_pending: false,
   change_back_q: 0,
   change_label: "",
+  equipment_options: [],
+  equipment_out: [],
+  equipment_label: "",
+  equipment_back_pending: false,
   ...over,
 });
 
@@ -299,6 +304,20 @@ describe("troco da entrega", () => {
     expect(moneyInput(2000)).toBe("20,00");
     expect(moneyInput(505)).toBe("5,05");
     expect(moneyInput(0)).toBe("0,00");
+  });
+  it("o despacho também pergunta quando o canal deixa levar a maquininha", () => {
+    const opt = [{ ref: "card_machine", label: "Maquininha" }];
+    expect(dispatchAsks(card({ next_status: "dispatched", change_out_suggested_q: 0, equipment_options: opt }))).toBe(true);
+    expect(dispatchAsks(card({ next_status: "dispatched", change_out_suggested_q: 0 }))).toBe(false);
+    // mas só o troco é exigido: o lote de avançar não exclui quem só tem maquininha
+    const rows = [card({ ref: "A", can_advance: true, next_status: "dispatched", equipment_options: opt })];
+    expect(bulkableRefs(rows, new Set(["A"]), "advance")).toEqual(["A"]);
+  });
+  it("oferece 'Maquininha voltou' quando saiu e não há acerto em dinheiro para marcar", () => {
+    const refs = cardAffordances(card({ can_advance: false, equipment_back_pending: true })).map((a) => a.ref);
+    expect(refs).toContain("equipment_back");
+    const withSettle = cardAffordances(card({ can_advance: false, equipment_back_pending: true, can_settle_delivery_cash: true })).map((a) => a.ref);
+    expect(withSettle).not.toContain("equipment_back");
   });
   it("despacho que pede troco fica fora do lote de avançar", () => {
     const rows = [

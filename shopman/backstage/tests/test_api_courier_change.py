@@ -142,3 +142,67 @@ def test_sem_pedido_de_troco_o_despacho_segue_direto_e_sem_turno_nao_leva(client
     assert not Entry.objects.filter(kind=Entry.Kind.COURIER_OUT).exists()
     plain.refresh_from_db()
     assert plain.status == "dispatched"
+
+
+def test_a_maquininha_sai_no_despacho_e_volta_no_acerto_ou_no_botao(client, operator):
+    """Custódia do aparelho, não de dinheiro: mora no pedido (``data.dispatch``),
+    o canal diz o que pode sair, o quadro diz onde está, e o acerto (ou o botão)
+    marca a volta."""
+    from shopman.shop.models import Channel
+
+    Channel.objects.create(
+        ref="web", name="Loja", is_active=True,
+        config={"fulfillment": {"equipment": ["card_machine"]}, "payment": {"method": "cash", "timing": "external"}},
+    )
+    client.force_login(operator)
+    cash.open_shift(operator=operator, float_q=10000)
+    _delivery_cash_order("DLV-M1", change_for_q=5000)
+    _delivery_cash_order("DLV-M2")
+
+    card = _card(client, "DLV-M1")
+    assert [o["ref"] for o in card["equipment_options"]] == ["card_machine"]
+    assert (card["equipment_out"], card["equipment_back_pending"]) == ([], False)
+
+    # Aparelho que o canal não prevê: recusado.
+    response = client.post(
+        reverse("api-backstage-order-advance", args=["DLV-M2"]),
+        {"equipment": ["drone"]}, content_type="application/json",
+    )
+    assert response.status_code == 400
+    assert "não previsto" in response.json()["detail"]
+
+    response = client.post(
+        reverse("api-backstage-order-advance", args=["DLV-M1"]),
+        {"change_out": "20,00", "equipment": ["card_machine"]}, content_type="application/json",
+    )
+    assert response.status_code == 200
+    card = _card(client, "DLV-M1")
+    assert (card["equipment_out"], card["equipment_back_pending"], card["equipment_label"]) == (
+        ["card_machine"], True, "Entregador levou maquininha",
+    )
+    board = client.get(reverse("api-backstage-orders")).json()["queue"]
+    assert [(e["ref"], e["order_ref"]) for e in board["equipment_out"]] == [("card_machine", "DLV-M1")]
+    order = Order.objects.get(ref="DLV-M1")
+    assert order.data["dispatch"]["equipment"] == ["card_machine"]
+    assert order.data["dispatch"]["equipment_out_by"] == "marina"
+
+    # O acerto devolve troco E aparelho no mesmo gesto.
+    response = client.post(
+        reverse("api-backstage-order-settle-delivery-cash", args=["DLV-M1"]),
+        {"change_back": "0", "equipment_back": True}, content_type="application/json",
+    )
+    assert response.status_code == 200
+    card = _card(client, "DLV-M1")
+    assert (card["equipment_back_pending"], card["equipment_label"]) == (False, "Maquininha voltou")
+    assert client.get(reverse("api-backstage-orders")).json()["queue"]["equipment_out"] == []
+
+    # Pedido em cartão (sem acerto em dinheiro): o botão "voltou" fecha a custódia.
+    response = client.post(
+        reverse("api-backstage-order-advance", args=["DLV-M2"]), {"equipment": ["card_machine"]}, content_type="application/json",
+    )
+    assert response.status_code == 200
+    response = client.post(reverse("api-backstage-order-equipment-back", args=["DLV-M2"]))
+    assert response.status_code == 200
+    assert response.json()["equipment"] == ["card_machine"]
+    assert client.post(reverse("api-backstage-order-equipment-back", args=["DLV-M2"])).status_code == 400
+    assert client.post(reverse("api-backstage-order-equipment-back", args=["DLV-M1"])).status_code == 400

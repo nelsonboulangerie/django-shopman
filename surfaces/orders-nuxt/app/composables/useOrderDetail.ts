@@ -33,14 +33,23 @@ export function useOrderDetail(orderRef: string) {
   }
 
   const confirm = () => act("confirm");
-  const advance = (changeOut?: string) =>
-    act("advance", changeOut === undefined ? undefined : { change_out: changeOut });
+  const advance = (changeOut?: string, equipment?: string[]) => {
+    const body: Record<string, unknown> = {};
+    if (changeOut !== undefined) body.change_out = changeOut;
+    if (equipment && equipment.length) body.equipment = equipment;
+    return act("advance", Object.keys(body).length ? body : undefined);
+  };
+  const equipmentBack = () => act("equipment-back");
   // Marketplace (iFood) reject/cancel carry the operator-picked code so the backend
   // relays a valid reason to the provider; empty string for other channels.
   const reject = (reason: string, cancellation_code = "") => act("reject", { reason, cancellation_code });
   const cancel = (reason: string, cancellation_code = "") => act("cancel", { reason, cancellation_code });
-  const settleCash = (amount: string, changeBack?: string) =>
-    act("settle-delivery-cash", changeBack === undefined ? { amount } : { amount, change_back: changeBack });
+  const settleCash = (amount: string, changeBack?: string, equipmentBack?: boolean) =>
+    act("settle-delivery-cash", {
+      amount,
+      ...(changeBack === undefined ? {} : { change_back: changeBack }),
+      ...(equipmentBack ? { equipment_back: true } : {}),
+    });
   const requeueFiscal = () => act("requeue-fiscal");
 
   // Valid cancellation reasons for this order: for iFood, the live per-order coded
@@ -88,5 +97,5 @@ export function useOrderDetail(orderRef: string) {
     return ok;
   }
 
-  return { order, pending, error, refresh, busy, confirm, advance, reject, cancel, fetchCancellationReasons, settleCash, requeueFiscal, saveNotes, addComment, courierDispatch, courierCancel, courierQuote };
+  return { order, pending, error, refresh, busy, confirm, advance, reject, cancel, fetchCancellationReasons, settleCash, equipmentBack, requeueFiscal, saveNotes, addComment, courierDispatch, courierCancel, courierQuote };
 }

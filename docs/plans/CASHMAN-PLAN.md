@@ -375,7 +375,10 @@ também fecha o ciclo), `parent` só quando o acerto é no mesmo turno (senão `
 com a sugestão) e no acerto (400), e o gestor pergunta antes (diálogo no despacho e campo no
 acerto); despacho que pede troco fica fora do lote de avançar. Reconciliação: `courier_*` fora
 do `cash_ledger_mismatch` por construção + `warning` `courier_change_unsettled`. A custódia da
-maquininha (`Order.data.courier.equipment`) NÃO entrou neste corte.
+maquininha entrou depois (2026-08-19, mesmo dia): mora em `Order.data.dispatch.equipment` (não em
+`courier`, que é o bloco da corrida externa Machine); o canal diz o que pode sair
+(`fulfillment.equipment`), o acerto ou o botão "Maquininha voltou" fecham, o quadro mostra "na rua".
+O seed traz 2 clientes com conta na casa, acerto em dinheiro, e duas entregas com troco e maquininha.
 
 **O problema (medido no código, 2026-08-19):** a loja coleta o pedido de troco
 no checkout do delivery (`change_for_q`, em `Order.data.payment`, escrito por

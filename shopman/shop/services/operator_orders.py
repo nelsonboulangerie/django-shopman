@@ -203,7 +203,14 @@ def advance_block_reason(order: Order) -> str:
     return advance_block_message(advance_block(order))
 
 
-def advance_order(order: Order, *, actor: str, change_out_q: int | None = None, cash_shift=None) -> str:
+def advance_order(
+    order: Order,
+    *,
+    actor: str,
+    change_out_q: int | None = None,
+    cash_shift=None,
+    equipment: list[str] | None = None,
+) -> str:
     """Advance an order through the operator lifecycle.
 
     No despacho de uma entrega paga em dinheiro, o troco que o entregador leva
@@ -228,9 +235,25 @@ def advance_order(order: Order, *, actor: str, change_out_q: int | None = None, 
             raise ValueError("O troco levado não pode ser negativo.")
         if change_out > 0 and (cash_shift is None or not getattr(cash_shift, "is_open", False)):
             raise ValueError("Abra um turno de caixa para o entregador levar troco da gaveta.")
+        taken = _clean_equipment(order, equipment)
+    else:
+        taken = []
 
     with transaction.atomic():
         _sync_delivery_fulfillment(order, next_status)
+        if taken:
+            # Custódia do aparelho (maquininha): o despacho registra o que saiu;
+            # "onde está agora" é derivado (saiu e ainda não voltou). Não é
+            # dinheiro, então não vai ao livro do caixa.
+            data = dict(order.data or {})
+            data["dispatch"] = {
+                **dict(data.get("dispatch") or {}),
+                "equipment": taken,
+                "equipment_out_at": timezone_now_iso(),
+                "equipment_out_by": actor,
+            }
+            order.data = data
+            order.save(update_fields=["data", "updated_at"])
         order.transition_status(next_status, actor=actor)
         if change_out > 0:
             from shopman.cashman import services as cash_ledger
@@ -273,6 +296,88 @@ class CourierChange:
     def pending(self) -> bool:
         """Saiu e ainda não voltou (nem "voltou zero")."""
         return self.out_q > 0 and self.back_q is None
+
+
+# ── Aparelho que sai com o entregador (maquininha) ─────────────────────────
+
+
+def equipment_options(channel_ref: str) -> list[str]:
+    """Os aparelhos que o canal permite levar no despacho (``fulfillment.equipment``)."""
+    from shopman.shop.config import ChannelConfig
+
+    try:
+        return [str(ref) for ref in (ChannelConfig.for_channel(channel_ref).fulfillment.equipment or [])]
+    except Exception:
+        logger.debug("operator_orders.equipment_options: config indisponível channel=%s", channel_ref, exc_info=True)
+        return []
+
+
+def _clean_equipment(order: Order, equipment) -> list[str]:
+    wanted = [str(ref).strip() for ref in (equipment or []) if str(ref).strip()]
+    if not wanted:
+        return []
+    allowed = equipment_options(order.channel_ref or "")
+    unknown = [ref for ref in wanted if ref not in allowed]
+    if unknown:
+        raise ValueError(f"Aparelho não previsto para este canal: {', '.join(unknown)}.")
+    return list(dict.fromkeys(wanted))
+
+
+@dataclass(frozen=True)
+class EquipmentCustody:
+    """O que saiu com o entregador e se já voltou."""
+
+    equipment: tuple[str, ...] = ()
+    out_at: str = ""
+    out_by: str = ""
+    back_at: str = ""
+    back_by: str = ""
+
+    @property
+    def pending(self) -> bool:
+        return bool(self.equipment) and not self.back_at
+
+
+def equipment_custody(order: Order) -> EquipmentCustody:
+    dispatch = (order.data or {}).get("dispatch") or {}
+    return EquipmentCustody(
+        equipment=tuple(str(ref) for ref in (dispatch.get("equipment") or [])),
+        out_at=str(dispatch.get("equipment_out_at") or ""),
+        out_by=str(dispatch.get("equipment_out_by") or ""),
+        back_at=str(dispatch.get("equipment_back_at") or ""),
+        back_by=str(dispatch.get("equipment_back_by") or ""),
+    )
+
+
+def mark_equipment_returned(order: Order, *, actor: str) -> EquipmentCustody:
+    """O entregador devolveu o aparelho: fecha a custódia no pedido que o levou."""
+    custody = equipment_custody(order)
+    if not custody.equipment:
+        raise ValueError("Este pedido não levou aparelho.")
+    if custody.back_at:
+        raise ValueError("O aparelho deste pedido já voltou.")
+    data = dict(order.data or {})
+    data["dispatch"] = {
+        **dict(data.get("dispatch") or {}),
+        "equipment_back_at": timezone_now_iso(),
+        "equipment_back_by": actor,
+    }
+    order.data = data
+    order.save(update_fields=["data", "updated_at"])
+    order.emit_event(event_type="equipment_returned", actor=actor, payload={"equipment": list(custody.equipment)})
+    return equipment_custody(order)
+
+
+def equipment_out(*, channel_ref: str | None = None) -> list[tuple[str, Order]]:
+    """Onde está cada aparelho agora: ``(ref, pedido)`` dos pedidos que o levaram e ainda não devolveram."""
+    qs = Order.objects.filter(data__dispatch__has_key="equipment").exclude(data__dispatch__has_key="equipment_back_at")
+    if channel_ref:
+        qs = qs.filter(channel_ref=channel_ref)
+    out: list[tuple[str, Order]] = []
+    for order in qs.order_by("-created_at"):
+        for ref in equipment_custody(order).equipment:
+            out.append((ref, order))
+    return out
 
 
 def _change_for_q(order: Order) -> int:
@@ -433,6 +538,7 @@ def settle_delivery_cash(
     actor: str,
     amount_q: int | None = None,
     change_back_q: int | None = None,
+    equipment_back: bool = False,
 ) -> int:
     """O dinheiro da entrega chega ao balcão: acerto no turno de quem RECEBEU.
 
@@ -555,6 +661,8 @@ def settle_delivery_cash(
             actor=actor,
             payload={"method": "cash", "amount_q": amount, "terminal_ref": cash_shift.terminal.ref},
         )
+        if equipment_back and equipment_custody(order).pending:
+            mark_equipment_returned(order, actor=actor)
     logger.info("operator_settle_delivery_cash order=%s shift=%s amount=%s", order.ref, cash_shift.pk, amount)
     return amount
 
