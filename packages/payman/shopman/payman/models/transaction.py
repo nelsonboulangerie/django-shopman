@@ -47,6 +47,10 @@ class PaymentTransaction(models.Model):
     type = models.CharField(max_length=20, choices=Type.choices)
     amount_q = models.BigIntegerField()
     gateway_id = models.CharField(verbose_name="ID do gateway", max_length=200, blank=True, default="")
+    # Por que este dinheiro voltou. Mora na linha, não no JSON do intent: a
+    # linha é imutável, e o motivo de uma devolução tem de ser tão imutável
+    # quanto ela. É a pergunta que auditoria e contador fazem primeiro.
+    reason = models.CharField(verbose_name="motivo", max_length=500, blank=True, default="")
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:

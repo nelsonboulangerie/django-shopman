@@ -221,3 +221,76 @@ class CancelReasonTests(TestCase):
 
         intent.refresh_from_db()
         self.assertEqual(intent.cancel_reason, "fraud_detected")
+
+
+# ---------------------------------------------------------------------------
+# Fix 5 — refund(reason=...) persistido na transação
+# ---------------------------------------------------------------------------
+
+class RefundReasonTests(TestCase):
+    """O motivo do reembolso não pode morar só no log.
+
+    Cancelamento é dinheiro que não entrou; reembolso é dinheiro que SAIU — a
+    operação sobre a qual auditoria e contador perguntam "por quê". O motivo
+    fica na própria linha imutável, ao lado do valor.
+    """
+
+    def _captured(self, ref: str) -> PaymentIntent:
+        intent = _make_intent(ref)
+        PaymentService.authorize(intent.ref)
+        PaymentService.capture(intent.ref)
+        return intent
+
+    def test_refund_reason_persisted_on_transaction(self) -> None:
+        intent = self._captured("REF-RSN-1")
+        txn = PaymentService.refund(intent.ref, amount_q=1000, reason="item danificado")
+
+        txn.refresh_from_db()
+        self.assertEqual(txn.reason, "item danificado")
+
+    def test_refund_without_reason_stores_empty_string(self) -> None:
+        intent = self._captured("REF-RSN-2")
+        txn = PaymentService.refund(intent.ref, amount_q=1000)
+
+        txn.refresh_from_db()
+        self.assertEqual(txn.reason, "")
+
+    def test_each_partial_refund_keeps_its_own_reason(self) -> None:
+        intent = self._captured("REF-RSN-3")
+        PaymentService.refund(intent.ref, amount_q=1000, reason="pão queimado")
+        PaymentService.refund(intent.ref, amount_q=2000, reason="entrega atrasada")
+
+        reasons = list(
+            PaymentTransaction.objects.filter(
+                intent=intent, type=PaymentTransaction.Type.REFUND
+            )
+            .order_by("created_at")
+            .values_list("reason", flat=True)
+        )
+        self.assertEqual(reasons, ["pão queimado", "entrega atrasada"])
+
+    def test_refund_reason_survives_the_immutability_guard(self) -> None:
+        """A linha é imutável, e o motivo com ela: não há caminho para reescrever."""
+        intent = self._captured("REF-RSN-4")
+        txn = PaymentService.refund(intent.ref, amount_q=1000, reason="troco errado")
+
+        with self.assertRaises(ValueError):
+            PaymentTransaction.objects.filter(pk=txn.pk).update(reason="outra história")
+
+        txn.refresh_from_db()
+        self.assertEqual(txn.reason, "troco errado")
+
+    def test_reconciled_refund_records_its_origin(self) -> None:
+        """Reembolso que veio do snapshot do gateway diz de onde veio."""
+        intent = self._captured("REF-RSN-5")
+        PaymentService.reconcile_gateway_status(
+            intent.ref,
+            gateway_status="refunded",
+            amount_q=5000,
+            captured_q=5000,
+            refunded_q=5000,
+            refund_gateway_id="re_rsn_5",
+        )
+
+        txn = PaymentTransaction.objects.get(intent=intent, type=PaymentTransaction.Type.REFUND)
+        self.assertEqual(txn.reason, "gateway_reconciliation")

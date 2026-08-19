@@ -487,7 +487,9 @@ class PaymentService:
         Args:
             ref: Referência do intent
             amount_q: Valor a reembolsar (None = total capturado - já reembolsado)
-            reason: Motivo do reembolso
+            reason: Motivo do reembolso. Fica gravado na própria transação
+                (imutável, como ela): é o "por quê" que auditoria e contador
+                perguntam sobre dinheiro que SAIU.
             gateway_id: ID do refund no gateway
 
         Returns:
@@ -551,6 +553,7 @@ class PaymentService:
             type=PaymentTransaction.Type.REFUND,
             amount_q=refund_amount,
             gateway_id=gateway_id,
+            reason=reason,
         )
 
         # Transition to refunded status (idempotent if already refunded)
@@ -879,6 +882,7 @@ class PaymentService:
                     type=PaymentTransaction.Type.REFUND,
                     amount_q=refund_delta_q,
                     gateway_id=refund_gateway_id or gateway_id,
+                    reason="gateway_reconciliation",
                 )
                 if intent.status != PaymentIntent.Status.REFUNDED:
                     intent.status = PaymentIntent.Status.REFUNDED
@@ -924,6 +928,7 @@ class PaymentService:
                     type=PaymentTransaction.Type.CHARGEBACK,
                     amount_q=chargeback_delta_q,
                     gateway_id=chargeback_gateway_id or gateway_id,
+                    reason="gateway_chargeback",
                 )
                 actions.append("chargeback")
                 changed = True
