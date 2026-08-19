@@ -52,7 +52,7 @@ typecheck e de teste, não de runtime.** Isso reclassifica a migração: não é
 "reescrever o app", é "consertar o contrato de tipos e a estratégia de mock".
 
 > ⚠️ O build passar prova que compila e empacota — **não** prova que as telas
-> renderizam. A prova de tela é a Fase 4 (staging), não este parágrafo.
+> renderizam. A prova de tela é a Fase 2 (staging), não este parágrafo.
 
 ## 3. As quatro categorias de quebra
 
@@ -61,19 +61,60 @@ A quebra parece grande e não é: são 4 causas, e duas delas são de uma linha.
 ### Categoria A — `vi.stubGlobal('$fetch', …)` não intercepta mais
 
 **Impacto:** storefront 5 arquivos / 16 testes · PDV 2 arquivos / 6 testes.
+**Causa confirmada na fonte primária. Correção provada.**
 
-Os testes mockam a global e o código de app chama `$fetch` auto-importado. No
-4.4.5 isso resolvia para `globalThis.$fetch` e o mock pegava. No 4.5 não pega
-mais: a chamada escapa para o `ofetch` real e bate no servidor nitro de teste.
+O changelog do 4.5.0 diz, em uma linha:
+
+> **Auto-import `$fetch` where possible** ([nuxt#35581](https://github.com/nuxt/nuxt/pull/35581))
+> — corrige casos de `$fetch.create` no topo do arquivo sob o formato de saída do Rolldown.
+
+É isso. `$fetch` deixou de ser lido da global e passou a ser **auto-import**. Os
+testes mockam `globalThis.$fetch`; o código de app resolve o binding
+auto-importado. O mock passa ao lado e a chamada vai para o `ofetch` de verdade:
 
 ```
 FetchError: [PUT] "/api/v1/cart/skus/CROISSANT/": 404
   Cannot find any path matching /api/v1/cart/skus/CROISSANT/.
 ```
 
-O sintoma é sempre o mesmo — ou `expected "vi.fn()" to be called once, but got 0
-times`, ou um 404 do roteador. Subir `@nuxt/test-utils` para 4.1.0 **não**
-resolve (testado).
+Subir `@nuxt/test-utils` para 4.1.0 **não** resolve (testado) — não é bug da
+lib, é mudança de onde o símbolo vem.
+
+**A correção é o `mockNuxtImport`**, que é justamente a ferramenta para
+auto-import. Como o valor precisa variar por teste, o espião nasce em
+`vi.hoisted`:
+
+```ts
+// Nuxt 4.5 passou a AUTO-IMPORTAR `$fetch` (nuxt#35581), então `vi.stubGlobal`
+// não intercepta mais.
+const { fetchMock } = vi.hoisted(() => ({ fetchMock: vi.fn() }))
+mockNuxtImport('$fetch', () => fetchMock)
+
+beforeEach(() => { fetchMock.mockReset() })
+
+it('…', async () => {
+  const $fetch = fetchMock.mockResolvedValue({})   // no lugar do vi.stubGlobal
+  // resto do teste intacto
+})
+```
+
+Aplicado em `tests/composables/useFavoritesState.test.ts` como piloto:
+**4/4 passando em `nuxt@4.5.2`**, com 12 linhas adicionadas e 9 removidas. O
+corpo das asserções não muda — só a origem do espião.
+
+#### ⛔ A restrição que define o plano: o padrão **não** é retrocompatível
+
+O mesmo arquivo corrigido, rodado em `4.4.5`:
+
+```
+Error: Cannot find import "$fetch" to mock
+  Plugin: nuxt:vitest:mock-transform
+```
+
+Em 4.4.5 `$fetch` não é auto-import, então não há o que mockar. **Não dá para
+migrar os mocks antes do bump.** Mock e bump têm de entrar juntos, atomicamente,
+por superfície. Isso invalida qualquer plano em que os testes são preparados
+primeiro — inclusive a primeira versão deste documento.
 
 Arquivos: `tests/components/{cartQuantityAction,stockNotifyButton}.test.ts`,
 `tests/composables/{useCartState,useFavoritesState,useReorder}.test.ts` (storefront);
@@ -82,6 +123,7 @@ Arquivos: `tests/components/{cartQuantityAction,stockNotifyButton}.test.ts`,
 ### Categoria B — auto-import some do **tipo** do template
 
 **Impacto:** storefront 16 erros · PDV 9 erros. Só tipo — o build passa.
+**Não é dívida nossa: é regressão conhecida do `nuxt typecheck`, upstream.**
 
 Símbolos usados em `<template>` deixam de existir no tipo da instância:
 
@@ -92,17 +134,32 @@ Símbolos usados em `<template>` deixam de existir no tipo da instância:
 | `orderTrackingRoute` | `app/utils/routes.ts` | 2 (storefront) |
 | `navigateTo` | do próprio Nuxt | 2 storefront + 9 PDV |
 
-Que `navigateTo` — auto-import do Nuxt, não nosso — apareça na lista é o que
-sugere mudança no emissor de tipos do 4.5, não dívida nossa.
+O [nuxt#34562](https://github.com/nuxt/nuxt/issues/34562) descreve exatamente
+isto — inclusive o `colorMode` da Categoria C, no mesmo issue. A causa: o Nuxt 4
+adotou **project references** do TypeScript, e o `nuxt typecheck` roda
+`vue-tsc -b --noEmit` (modo build); em modo build o TS não resolve as declarações
+globais de `.nuxt/types/imports.d.ts` através da fronteira de projeto.
+
+É regressão que vai e volta entre patches (relatada em 4.3.0, 4.3.1 e 4.4.2; o
+nosso 4.4.5 está limpo; o 4.5.2 volta a falhar). **Consequência prática: não
+gastar esforço "consertando" isto no nosso código.** O caminho é acompanhar o
+upstream e, se preciso, um ajuste de `tsconfig`/flag de typecheck — nunca
+espalhar import explícito por 25 sítios para contornar bug de terceiro.
 
 ### Categoria C — deriva de tipo de módulo/lib
 
-**Impacto:** 5 erros no storefront, 1 no PDV. Pontuais, cada um com dono próprio.
+**Impacto:** 5 erros no storefront, 1 no PDV.
 
-- `$colorMode` não existe no tipo (3 storefront + 1 PDV) — `@nuxtjs/color-mode`
-  em `Ui/{Calendar,Datepicker,Sonner}.vue`.
-- `Ui/Nav/Item.vue` — props do `NuxtLink` incompatíveis.
-- `useShopTheme.ts` — `useHead` não aceita mais a forma passada (`UseHeadInput`).
+- **`$colorMode` (3 storefront + 1 PDV)** — mesmo issue #34562 da Categoria B.
+  Não é problema do `@nuxtjs/color-mode`. Some junto quando o upstream resolver.
+- **`useShopTheme.ts` — `useHead`.** Este é real e declarado: as notas do 4.5
+  dizem que o **unhead v3 introduz type-narrowing no `useHead`, "which can be a
+  breaking type change"**. Ajuste nosso, pequeno e legítimo.
+- **`Ui/Nav/Item.vue` — props do `NuxtLink`.** Único erro sem origem confirmada;
+  investigar na Fase 2.
+
+Ou seja: dos 31 erros de tipo entre as duas superfícies, **28 são o issue
+upstream** e **2 são trabalho nosso de verdade**.
 
 ### Categoria D — bug nosso, que o vite 7 engolia
 
@@ -121,8 +178,10 @@ está corrigida neste mesmo commit — ver Fase 0.
 
 ## 4. O plano
 
-O princípio: **nenhuma fase sobe `nuxt` antes das anteriores estarem verdes.** A
-ordem existe para que, quando o bump entrar, ele seja a única variável.
+O princípio: **uma superfície por vez, e dentro dela tudo junto.** Como a
+correção do mock não roda em 4.4.5 (§3, Categoria A), não existe fase de
+preparação — o bump e seus consertos são um commit só, por superfície. A
+granularidade que protege é a superfície, não o tipo de mudança.
 
 ### Fase 0 — a dívida que não depende do Nuxt ✅ (feita neste commit)
 
@@ -130,43 +189,46 @@ Remover o import duplicado em `tests/checkoutFlow.test.ts`. Vale por si: é um
 identificador redeclarado que hoje só não explode por tolerância do bundler.
 Zero risco, zero relação com o bump.
 
-### Fase 1 — spike no `bi-nuxt` (a superfície que já está lá)
+### Fase 1 — decidir o que fazer com a Categoria B (o gate do plano)
 
-`bi-nuxt` **já roda `nuxt@4.5.2` limpo**, com 1 alerta low. É o laboratório
-natural: nenhuma migração para fazer, e o padrão certo já vive lá.
+As duas perguntas que estavam em aberto **já foram respondidas** (§3): a causa da
+Categoria A é o nuxt#35581 e a correção está provada; a Categoria B é o
+nuxt#34562, upstream. Sobra uma decisão, e ela é de política, não de técnica:
 
-Entregar deste spike, como documento curto ou ADR:
+**Aceitamos subir com o `typecheck` vermelho por causa de bug de terceiro, ou
+seguramos a frota em 4.4.5 até o upstream resolver?**
 
-1. **O substituto do `vi.stubGlobal('$fetch')`.** Candidatos a avaliar, não
-   escolha feita: `registerEndpoint` do `@nuxt/test-utils` (mocka no servidor, e
-   é o caminho que a doc empurra), `mockNuxtImport`, ou injeção explícita de
-   `$fetch` nos composables. ⚠️ **Ainda não determinei qual é o correto** — esta
-   é a pergunta central do spike, e chutar aqui seria inventar.
-2. **Se a Categoria B é bug do Nuxt ou mudança intencional.** Ler o changelog do
-   4.5.0/4.5.1 e os issues, e decidir entre esperar correção upstream, declarar
-   os utils explicitamente, ou ajustar o `imports` do `nuxt.config`. ⚠️ Também
-   não determinado.
-3. Confirmar que `bi-nuxt` não tem os sintomas por sorte (pode simplesmente não
-   exercitar os caminhos), rodando os mesmos padrões lá.
+Três saídas, em ordem de preferência:
 
-Sem a Fase 1 respondida, as fases seguintes são chute. **Ela é o gate do plano.**
+1. **Esperar o upstream.** Zero trabalho nosso, zero gambiarra. Custo: a frota
+   fica em 4.4.5 por tempo indeterminado — aceitável, já que a alcançabilidade
+   hoje é nula (§1). Recomendada **se** houver correção à vista no issue.
+2. **Ajustar o typecheck.** O issue aponta o modo build (`vue-tsc -b`) com
+   project references como a causa. Se houver flag ou `tsconfig` que restaure a
+   resolução dos tipos globais sem desligar a checagem, é a saída limpa.
+   **Investigar antes de escolher a 3.**
+3. **Último recurso: import explícito nos 25 sítios.** Espalha ruído pelo código
+   para contornar bug de terceiro, e deixa resíduo quando o upstream consertar.
+   Só com decisão consciente e um `# DEPRECATED` apontando para o issue.
 
-### Fase 2 — Categoria A, ainda em 4.4.5
+⚠️ **Nunca** desligar o `typecheck` no gate das superfícies para fazer passar.
 
-Migrar os 7 arquivos de teste para o padrão escolhido na Fase 1, **sem subir o
-Nuxt**. Se o padrão novo é correto, ele passa nas duas versões — e é exatamente
-isso que torna o bump reversível depois.
+### Fase 2 — o bump, por superfície, **atômico**
 
-Critério: `npm run test` verde em storefront e PDV, ainda em 4.4.5.
+Descoberta que reorganizou este plano: a correção do mock **não roda em 4.4.5**
+(`Cannot find import "$fetch" to mock`). Logo não existe fase de preparação — em
+cada superfície, num único commit, entram juntos:
 
-### Fase 3 — Categorias B e C, ainda em 4.4.5 no que der
+1. `npx nuxt upgrade --dedupe` (o caminho oficial; ver §"caminho de upgrade")
+2. a conversão dos testes da Categoria A para `mockNuxtImport` + `vi.hoisted`
+3. o ajuste do `useHead` (unhead v3) e do `NuxtLink`, se a superfície tiver
+4. o que a Fase 1 decidiu sobre a Categoria B
 
-O que for corrigível sem o bump (Categoria C provavelmente é: atualizar
-`@nuxtjs/color-mode`, ajustar `useHead`, tipar o `NuxtLink`) entra aqui. A
-Categoria B pode depender do bump para ser verificável — nesse caso ela migra
-junto com a Fase 4, e o plano assume isso explicitamente.
+Ordem deliberada, da menor consequência para a maior:
 
-### Fase 4 — o bump, uma superfície por vez
+```
+bi-nuxt (já lá) → operator-kit → hub → marketing → kds → orders → production → pos → storefront
+```
 
 Ordem deliberada, da menor consequência para a maior:
 
@@ -187,7 +249,18 @@ npm run test && npm run typecheck && npm run build
 E, para `pos` e `storefront`, uma passada de tela em staging antes do merge —
 porque o build passar não prova que renderiza (ver §2).
 
-### Fase 5 — fechar a porta
+#### O caminho de upgrade
+
+Use **`npx nuxt upgrade --dedupe`**, não `npm update nuxt`. É o caminho oficial e
+ele limpa `.nuxt` e deduplica a árvore.
+
+Dito isso, medimos os dois: **dão os mesmos 21 erros de tipo no storefront**.
+Então o `--dedupe` não é uma saída mágica — é higiene. Vale saber também que,
+mesmo depois dele, sobra `@nuxt/kit@3.21.8` aninhado sob `@nuxt/test-utils`
+(além do `4.5.2` da raiz). É dependência de ferramenta de teste, não do app, mas
+é o primeiro lugar para olhar se algo estranho aparecer só nos testes.
+
+### Fase 3 — fechar a porta
 
 Com a frota em 4.5.x, os grupos do `.github/dependabot.yml` fazem o resto: o
 grupo `nuxt-framework` passa a trazer os minors sozinho, num PR isolado, e o
@@ -200,6 +273,7 @@ gate das superfícies decide. Major segue fora do automático.
 - [ ] Storefront e PDV conferidos em tela no staging.
 - [ ] Os alertas de `nuxt`/`@nuxt/nitro-server` fechados no Dependabot.
 - [ ] Padrão de mock de `$fetch` documentado, para o próximo teste nascer certo.
+- [ ] Decisão da Fase 1 registrada — inclusive se a escolha foi *esperar*.
 
 ## 6. O que **não** fazer
 
@@ -214,9 +288,22 @@ gate das superfícies decide. Major segue fora do automático.
 
 ## 7. Referências
 
+**Upstream (o que sustenta o diagnóstico):**
+
+- [Nuxt 4.5 — notas de release](https://nuxt.com/blog/v4-5) — Vite 8, Rspack 2,
+  unhead v3 ("type-narrowing for `useHead`, which can be a breaking type change")
+- [nuxt#35581](https://github.com/nuxt/nuxt/pull/35581) — "Auto-import `$fetch`
+  where possible": a causa da Categoria A
+- [nuxt#34562](https://github.com/nuxt/nuxt/issues/34562) — `$route`,
+  `navigateTo` e `colorMode` fora do tipo da instância no typecheck: Categorias
+  B e C
+- [Guia oficial de upgrade](https://nuxt.com/docs/getting-started/upgrade)
+
+**Interno:**
+
 - PR #225 — triagem dos 284 alertas, `constraints.txt`, `dependabot.yml`
 - `.github/dependabot.yml` — o grupo `nuxt-framework` e o porquê dele
 - `@nuxt/nitro-server@4.4.5/dist/index.mjs:213-219` — o guard que faz
   `/__nuxt_island/**` compilar para stub em produção
 - [ADR-016](../decisions/adr-016-sse-first-realtime.md) — SSE, que também vive
-  sobre o Nitro e merece atenção na Fase 4
+  sobre o Nitro e merece atenção na Fase 2
