@@ -11,7 +11,25 @@ EFI authenticates itself to this endpoint in two layers:
    ``SHOPMAN_EFI_WEBHOOK["mtls_header"]``, default ``X-SSL-Client-Verify``)
    to ``SUCCESS``. This is the canonical mechanism supported by EFI.
 
-2. **Shared token (always required).** A secret shared between this service
+2. **IP allowlist (optional, off by default).** EFI documents an IP allowlist
+   as one of its three mechanisms. ``SHOPMAN_EFI_WEBHOOK["ip_allowlist"]``
+   (env ``EFI_WEBHOOK_IP_ALLOWLIST``, comma-separated CIDRs) turns it on.
+
+   **Empty means no enforcement, and empty is the default** — a list nobody
+   configured must never be the reason production stops receiving payment
+   notifications. Configured, it is checked before the token.
+
+   *What is trusted as the source IP:* the **last** entry of
+   ``X-Forwarded-For``, falling back to ``REMOTE_ADDR`` when the header is
+   absent. On DO App Platform this service is not fronted by a proxy of ours:
+   the platform's edge appends the peer address it saw to whatever the caller
+   sent, so the last position is the only one a caller cannot forge (it can
+   prepend as many fake hops as it likes). Add a hop in front of the app and
+   this assumption has to be revisited — the value the app would then read is
+   that hop, not EFI. Rejections log the address that was read, which is how
+   an operator finds out the CIDR list needs the platform's egress range.
+
+3. **Shared token (always required).** A secret shared between this service
    and the EFI dashboard, verified with :func:`hmac.compare_digest`. Accepted
    in the ``X-Efi-Webhook-Token`` header **or** the ``token`` query parameter.
 
@@ -26,14 +44,16 @@ EFI authenticates itself to this endpoint in two layers:
 
    * the Sentry ``before_send`` in ``config/settings.py`` strips the query
      string off ``request.url`` — without it every error event carries the
-     token in plain text (``send_default_pii=False`` does NOT remove it);
+     token in plain text (``send_default_pii=False`` does NOT remove it).
+     It is implemented (``_strip_query_string``) and locked by
+     ``shopman/shop/tests/test_sentry_query_scrubbing.py``;
    * ``EFI_WEBHOOK_TOKEN`` is rotated like any leaked-by-design credential.
      Rotating means re-registering the webhook URL on EFI's side with the new
      value, because the secret IS part of the URL.
 
    Because the deployment has no mTLS proxy in front (DO App Platform serves
    this directly, so layer 1's header never arrives), this token is the
-   endpoint's *only* authentication.
+   endpoint's only authentication whenever the IP allowlist is empty.
 
 Both layers use **the same code path in dev and prod** — there is no
 "skip signature" flag. In local development, a developer must set
@@ -56,6 +76,7 @@ payment intent via :class:`PaymentService` and calls
 from __future__ import annotations
 
 import hmac
+import ipaddress
 import logging
 
 from django.conf import settings
@@ -88,6 +109,9 @@ class EfiPixWebhookView(APIView):
         return Response(status=status.HTTP_200_OK)
 
     def post(self, request: Request) -> Response:
+        if not self._check_source_ip(request):
+            return Response({"error": "Unauthorized"}, status=status.HTTP_401_UNAUTHORIZED)
+
         if not self._check_auth(request):
             return Response({"error": "Unauthorized"}, status=status.HTTP_401_UNAUTHORIZED)
 
@@ -176,6 +200,48 @@ class EfiPixWebhookView(APIView):
             status=response_status,
         )
 
+    def _check_source_ip(self, request: Request) -> bool:
+        """Aplica a allowlist de CIDRs, quando houver uma configurada.
+
+        Lista vazia devolve ``True`` sem olhar nada: ausência de configuração
+        não é motivo para recusar dinheiro. Com lista, o endereço avaliado é o
+        descrito no contrato no topo do módulo (última entrada do
+        ``X-Forwarded-For``, senão ``REMOTE_ADDR``).
+        """
+        allowlist = _get_efi_webhook_setting("ip_allowlist") or ()
+        if not allowlist:
+            return True
+
+        client_ip = _client_ip(request)
+        if not client_ip:
+            logger.warning("EfiPixWebhook: sem IP de origem legível — rejeitando (allowlist ativa)")
+            return False
+
+        try:
+            address = ipaddress.ip_address(client_ip)
+        except ValueError:
+            logger.warning("EfiPixWebhook: IP de origem ilegível (%s) — rejeitando", client_ip)
+            return False
+
+        for entry in allowlist:
+            try:
+                network = ipaddress.ip_network(entry, strict=False)
+            except ValueError:
+                logger.error(
+                    "EfiPixWebhook: CIDR inválido na allowlist (%s) — corrija EFI_WEBHOOK_IP_ALLOWLIST",
+                    entry,
+                )
+                continue
+            if address.version == network.version and address in network:
+                return True
+
+        logger.warning(
+            "EfiPixWebhook: IP %s fora da allowlist %s — rejeitando",
+            client_ip,
+            list(allowlist),
+        )
+        return False
+
     def _check_auth(self, request: Request) -> bool:
         """Authenticate an inbound EFI webhook.
 
@@ -226,6 +292,21 @@ class EfiPixWebhookView(APIView):
             return False
 
         return True
+
+
+def _client_ip(request: Request) -> str:
+    """O endereço de origem em que este endpoint confia.
+
+    Última entrada do ``X-Forwarded-For`` — a que a borda da plataforma
+    acrescentou, e a única que o chamador não consegue forjar (ele só
+    prepende) — com fallback para o ``REMOTE_ADDR`` quando não há header.
+    """
+    forwarded = str(request.META.get("HTTP_X_FORWARDED_FOR") or "").strip()
+    if forwarded:
+        hops = [hop.strip() for hop in forwarded.split(",") if hop.strip()]
+        if hops:
+            return hops[-1]
+    return str(request.META.get("REMOTE_ADDR") or "").strip()
 
 
 def _pix_idempotency_key(*, txid: str, e2e_id: str) -> str:

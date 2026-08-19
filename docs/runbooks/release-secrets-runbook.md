@@ -95,9 +95,18 @@ https://api.<dominio>/api/webhooks/efi/pix/?token=<EFI_WEBHOOK_TOKEN>
 O header `X-Efi-Webhook-Token` continua aceito, para dev local e para um proxy
 futuro que consiga injetá-lo.
 
-Como o deploy não tem proxy mTLS na frente (DO App Platform direto), esse token
-é a autenticação **única** do endpoint — e ele fica gravado no access log do
-provedor por desenho. Duas consequências que NÃO são higiene opcional:
+A terceira camada da Efí, a allowlist de IP, existe no view e é **opt-in**:
+`EFI_WEBHOOK_IP_ALLOWLIST=<CIDRs separados por vírgula>`. Vazia (default) não
+filtra nada — configuração ausente não pode ser o motivo de a loja parar de
+receber pagamento. Antes de ligar, confira nos logs qual endereço o app está
+lendo (o último salto do `X-Forwarded-For`; uma recusa loga o IP visto): atrás
+do proxy da DO ele pode não ser o da Efí, e uma lista errada devolve 401 em
+todo webhook.
+
+Sem a allowlist configurada e sem proxy mTLS na frente (DO App Platform
+direto), esse token é a autenticação **única** do endpoint — e ele fica gravado
+no access log do provedor por desenho. Duas consequências que NÃO são higiene
+opcional:
 
 1. o `before_send` do Sentry (`config/settings.py`) corta a query string de
    `request.url`; sem ele todo evento de erro carregava o segredo em texto puro
