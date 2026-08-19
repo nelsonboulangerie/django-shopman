@@ -259,7 +259,16 @@ def settle_terminal_tenders(order) -> dict[str, str]:
                 method, existing_intent.intent_ref, order.ref,
             )
             continue
-        idempotency_key = f"order-payment:{order.ref}:{method}:{amount_q}:terminal"
+        # Sem o valor na chave. Com ele, um total que mudasse entre duas
+        # tentativas (falha parcial + reedição) gerava chave nova e um SEGUNDO
+        # intent capturado do mesmo método no mesmo pedido — receita dobrada no
+        # Payman com uma gaveta só, e linha imutável que ninguém apaga. Chave
+        # estável por (pedido, método) deixa o `_require_idempotent_match` do
+        # Payman acusar a divergência de valor, que é para isso que ele existe:
+        # o erro sobe, o PDV registra `pos_sale_settlement_failed`, e a venda
+        # fica sem intent — falta que a reconciliação diária aponta e um humano
+        # conserta, ao contrário do dobro.
+        idempotency_key = f"order-payment:{order.ref}:{method}:terminal"
         intent = PaymentService.settle(
             order.ref,
             amount_q,

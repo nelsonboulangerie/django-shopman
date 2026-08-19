@@ -387,3 +387,42 @@ def test_pos_cancel_of_cash_sale_refunds_in_payman(pos_sale, django_capture_on_c
     assert intent.status == PaymentIntent.Status.REFUNDED
     assert intent.transactions.filter(type=PaymentTransaction.Type.REFUND, amount_q=1200).count() == 1
     assert PaymentService.captured_total(ref) - PaymentService.refunded_total(ref) == 0
+
+
+def test_terminal_settle_refuses_a_second_intent_when_the_amount_changed():
+    """Valor fora da chave: valor diferente vira conflito, não receita dobrada.
+
+    Cenário exótico e caro (falha parcial + reedição dos tenders): com o valor
+    na chave nascia um segundo intent CAPTURADO do mesmo método no mesmo
+    pedido — duas receitas para uma gaveta só, em linhas imutáveis. Agora o
+    Payman recusa pela própria chave.
+    """
+    from shopman.payman import PaymentError
+
+    order = _order(
+        "ORD-CASH-REPRICE",
+        payment={
+            "method": "cash",
+            "collection": "terminal",
+            "amount_q": 5000,
+            "tenders": [{"method": "cash", "amount_q": 5000, "collection": "terminal", "status": "received"}],
+        },
+    )
+    payment_service.initiate(order)
+    order.refresh_from_db()
+    first_ref = order.data["payment"]["tenders"][0]["intent_ref"]
+
+    # Os tenders foram reeditados e a venda tenta liquidar de novo, sem o
+    # intent_ref no data (o que faria o caminho de reaproveitamento pegar).
+    order.data["payment"]["tenders"] = [
+        {"method": "cash", "amount_q": 4200, "collection": "terminal", "status": "received"}
+    ]
+    order.data["payment"].pop("intent_ref", None)
+    order.save(update_fields=["data"])
+
+    with pytest.raises(PaymentError) as exc:
+        payment_service.settle_terminal_tenders(order)
+
+    assert exc.value.code == "idempotency_key_conflict"
+    assert _intents(order.ref).count() == 1
+    assert PaymentService.captured_total(first_ref) == 5000
