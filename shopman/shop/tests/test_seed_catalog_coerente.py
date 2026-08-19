@@ -46,7 +46,9 @@ def catalogo(arvore):
         skus.append(primeiro.value)
     # O bundle nasce fora da lista, num update_or_create próprio: ele não tem
     # preço nem ficha de produto, tem componentes.
-    skus.append("COMBO-PETIT-DEJ")
+    # Nascem fora do products_data, num update_or_create próprio: bundle não
+    # tem ficha de produto, tem componentes.
+    skus += ["COMBO-PETIT-DEJ", "PHO4", "BBB2"]
     return skus
 
 
@@ -107,7 +109,9 @@ def test_o_catalogo_usa_os_codigos_reais(catalogo):
     do Yooga media UNIDADE (decisão pendente do dono) e o combo, que é bundle
     sem contrapartida no histórico.
     """
-    permitidos = {"PAO-HOTDOG", "BRIOCHE-BURGER", "COMBO-PETIT-DEJ"}
+    # Sobra um: o combo, que é bundle sem contrapartida no histórico. Os pacotes
+    # de pão saíram desta lista ao virarem bundle sobre PHO e BBB.
+    permitidos = {"COMBO-PETIT-DEJ"}
     inventados = sorted({sku for sku in catalogo if "-" in sku} - permitidos)
     assert not inventados, (
         f"SKU inventado de volta no seed: {inventados}. "
@@ -118,7 +122,9 @@ def test_o_catalogo_usa_os_codigos_reais(catalogo):
 def test_o_bundle_existe_de_verdade(arvore):
     # O catálogo o acrescenta à mão porque ele nasce fora do products_data;
     # se o seed parar de criá-lo, os outros testes passariam por engano.
-    assert 'sku="COMBO-PETIT-DEJ"' in SEED.read_text()
+    fonte = SEED.read_text()
+    for sku in ('"COMBO-PETIT-DEJ"', '"PHO4"', '"BBB2"'):
+        assert f"sku={sku}" in fonte or f"({sku}," in fonte, f"{sku} sumiu do seed"
 
 
 def test_quem_esta_sem_ficha_nasce_despublicado(arvore, catalogo):

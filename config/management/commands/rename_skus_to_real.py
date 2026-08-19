@@ -44,20 +44,23 @@ RENAMES = (
     ("MOCHACCINO", "MC"),                 # Mocaccino — NÃO o MH, que é Mocha
     ("PAIN-CHOCOLAT", "PC"),              # Pain Au Chocolat
     ("PAIN-PERDU", "PPU"),                # Pain Perdu
+    ("PAO-HOTDOG", "PHO4"),               # o pacote de 4; a unidade é o PHO
+    ("BRIOCHE-BURGER", "BBB2"),           # o pacote de 2; a unidade é o BBB
     ("PAO-HAMBURGER", "PH"),              # o Yooga chama de "Hambúrguer Artesanal 100g"
     ("QUEIJO-QUENTE", "QQ"),              # Queijo Quente
     ("TABATIERE", "TB"),                  # Tabatière
 )
 
-# ⚠️ Retidos de propósito: o código casa, mas a UNIDADE mudou. `PHO` era "Pão
-# para Hot Dog — unidade" a R$ 6; no cardápio 2027 é pacote de 4 a R$ 28. `BBB`
-# era unidade a R$ 8; hoje é pacote de 2 a R$ 16. Herdar o código faria o B.I.
-# comparar 6.360 vendas de UNIDADE com vendas de PACOTE — erro de 4×. A decisão
-# pendente é dar código próprio ao pacote (`PHO4`, `BBB2`).
-RETIDOS = {
-    "PAO-HOTDOG": ("PHO", "era unidade (R$ 6), hoje é pacote de 4 (R$ 28)"),
-    "BRIOCHE-BURGER": ("BBB", "era unidade (R$ 8), hoje é pacote de 2 (R$ 16)"),
-}
+# Nada retido. Os dois pacotes estiveram aqui até 19/08, porque herdar `PHO` e
+# `BBB` faria o B.I. comparar venda de UNIDADE com venda de PACOTE. A medição
+# fechou a questão — 99% das vendas do Yooga eram qty=1, e o preço subiu R$ 1
+# por ano sem salto, até R$ 7 e R$ 8, que vezes 4 e vezes 2 dão exatamente os
+# R$ 28 e R$ 16 do cardápio 2027. Eram unidades.
+#
+# Então o pacote não é produto: é BUNDLE sobre a unidade. `PHO` e `BBB` viram
+# os produtos (a fornada produz unidade, o estoque conta unidade), e `PHO4` e
+# `BBB2` são bundles que baixam 4 e 2 do estoque ao vender.
+RETIDOS: dict[str, tuple[str, str]] = {}
 
 # ⚠️ Onde o SKU é `unique`, renomear com os dois valores já no banco estoura a
 # constraint no meio da travessia. Só apareceu num ensaio sobre banco semeado —
