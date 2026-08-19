@@ -14,7 +14,7 @@ from django.db import migrations, models
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('cashman', '0001_initial'),
+        ('cashman', '0002_courier_change'),
         migrations.swappable_dependency(settings.AUTH_USER_MODEL),
     ]
 
