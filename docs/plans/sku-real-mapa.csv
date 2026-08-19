@@ -1,11 +1,11 @@
-﻿#;sku_yooga;produto_yooga;linhas;preco_vigente;preco_12m;categoria;situacao;sku_2027;nota;SEU_SKU_CORRETO
+﻿#;sku_yooga;produto_yooga;linhas;preco_vigente;preco_12m;categoria;situacao;aponta_para;nota;SEU_SKU_CORRETO
 1;MD;Madeleine;30164;6,00;5,00;Pães Finos;confirmado;MADELEINE;;
 2;CT;Croissant Tradicional;21298;13,00;13,00;Pães Finos;confirmado;CROISSANT;;
 3;PC;Pain Au Chocolat;19709;15,00;15,00;Pães Finos;confirmado;PAIN-CHOCOLAT;;
 4;CI;Ciabatta;14570;14,00;13,00;Pães Rústicos;confirmado;CIABATTA;;
 5;CM;Croissant Mini;13195;8,00;8,00;Pães Finos;desdobrar;CROISSANT;confirmado pelo dono;
 6;BCH;Brioche Chocolat;11983;10,00;10,00;Pães Finos;restaurar;;o dono quer de volta no cardápio (18/08);
-7;BBB;Brioche Burger Bun - Unidade;10849;8,00;8,00;Pães Finos;confirmado;BBB (unidade);"a unidade é o produto; o pacote do cardápio 2027 virou bundle sobre ela (PHO4 ×4, BBB2 ×2) — 99% das vendas eram qty=1 e o preço fecha na multiplicação (dono, 19/08)";
+7;BBB;Brioche Burger Bun - Unidade;10849;8,00;8,00;Pães Finos;confirmado;BBB;"a unidade é o produto; o pacote do cardápio 2027 virou bundle sobre ela (PHO4 ×4, BBB2 ×2) — 99% das vendas eram qty=1 e o preço fecha na multiplicação (dono, 19/08)";
 8;CN;Chausson;10711;18,00;16,00;Pães Finos;restaurar;;o dono quer de volta no cardápio (18/08);
 9;TB;Tabatière;9668;6,00;5,00;Pães Rústicos;confirmado;TABATIERE;;
 10;PH;Hambúrguer Artesanal 100g;9034;6,00;5,00;Pães Rústicos;confirmado;PAO-HAMBURGER;o Yooga chama de 'Hambúrguer Artesanal 100g', mas é o PÃO (dono, 17/08);
@@ -20,7 +20,7 @@
 19;HO;Hot Dog Vienna;6591;15,00;14,00;Pães Finos;restaurar;;a casa fazia, então existe (dono, 18/08);
 20;CO;Cornet;6587;10,00;9,00;Pães Finos;confirmado;CORNET;;
 21;BAP;Baguete Lanche;6546;9,00;9,00;Pães Rústicos;restaurar;;a casa fazia, então existe (dono, 18/08);
-22;PHO;Pão Para Hot Dog - Unidade;6360;7,00;6,00;Pães Finos;confirmado;PHO (unidade);"a unidade é o produto; o pacote do cardápio 2027 virou bundle sobre ela (PHO4 ×4, BBB2 ×2) — 99% das vendas eram qty=1 e o preço fecha na multiplicação (dono, 19/08)";
+22;PHO;Pão Para Hot Dog - Unidade;6360;7,00;6,00;Pães Finos;confirmado;PHO;"a unidade é o produto; o pacote do cardápio 2027 virou bundle sobre ela (PHO4 ×4, BBB2 ×2) — 99% das vendas eram qty=1 e o preço fecha na multiplicação (dono, 19/08)";
 23;DL;Deli Milho & Bacon;6029;19,00;17,00;Pães Finos;restaurar;;a casa fazia, então existe (dono, 18/08);
 24;BAX;Italiano Rústico;5998;22,00;20,00;Pães Rústicos;restaurar;;a casa fazia, então existe (dono, 18/08);
 25;COC;Cornet de Chocolate;5886;11,00;10,00;Pães Finos;desdobrar;CORNET;confirmado pelo dono;

@@ -155,6 +155,14 @@ necessários se o §2.2 for adotado — `FD`, `SD`, `FL` e `THG` são justamente
 **F1 — O mapa.** ✅ Fechado (18/08). As 143 linhas de
 [`sku-real-mapa.csv`](sku-real-mapa.csv) trazem preço praticado e destino:
 
+> ⚠️ A coluna **`aponta_para`** (antes `sku_2027`) não é "o SKU do cardápio
+> 2027": ela aponta para a linha-destino, e o destino muda com a `situacao` —
+> em `confirmado` é o produto do cardápio, em `preco` e `canal` é o **SKU-base
+> do Yooga**. Uma sessão irmã tentou usá-la como medida de "identidade
+> pré-rename" e o número nunca zeraria: 43 dos 73 valores são também
+> `sku_yooga`. Coluna cujo sentido depende de outra coluna engana quem lê de
+> fora.
+
 | `situacao` | Linhas | O que acontece |
 |---|---:|---|
 | `preco` | 41 | `M*` era desconto do sistema antigo — qualidade mínima **ou** pão de ontem, sem distinção. Vira modifier sobre o produto-base. |
