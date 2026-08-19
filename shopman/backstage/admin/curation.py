@@ -54,6 +54,7 @@ HIDDEN_SCREENS: tuple[tuple[str, str, str], ...] = (
     ("customer_loyalty", "loyaltytransaction", "inline em Contas de fidelidade"),
     ("backstage", "operationtaskrun", "inline em Execuções de checklist"),
     ("buyman", "suppliermaterialcost", "inline em Insumos e em Fornecedores"),
+    ("buyman", "materialconversion", "inline em Insumos — conversão só faz sentido junto do insumo"),
     ("guestman", "customeraddress", "inline em Clientes"),
     ("guestman", "contactpoint", "inline em Clientes"),
     ("customer_consent", "communicationconsent", "inline em Clientes"),

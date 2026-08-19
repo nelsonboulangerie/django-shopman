@@ -27,6 +27,7 @@ from django.core.management import call_command
 from django.core.management.base import BaseCommand, CommandError
 from django.utils import timezone
 from shopman.craftsman.models import Recipe, RecipeItem, WorkOrder, WorkOrderItem
+from shopman.craftsman.models.recipe import normalize_recipe_item_unit
 from shopman.guestman.models import (
     ContactPoint,
     Customer,
@@ -2525,21 +2526,26 @@ class Command(BaseCommand):
         # - allergens + diet → Product.metadata.allergens/dietary_info (WP-7):
         #   alérgenos = união; vegano só se TODOS vegan; "sem X" se NENHUM tem X.
         # Ref: TACO / USDA simplificado — valores didáticos.
+        #
+        # `density_g_per_ml` é a ponte volume→massa dos líquidos: a ficha fala em
+        # litro (unidade-base do insumo) e a nutrição precisa de grama. Sem ela o
+        # item ficaria de fora da soma — ADR-024 (a ponte é declarada, nunca
+        # deduzida) e shopman/shop/services/nutrition_from_recipe.py.
         INGREDIENT_PROFILES = {
             "FARINHA-T65":  {"label": "Farinha de trigo T65",   "allergens": ["glúten"], "diet": "vegan", "nutrition": {"energy_kcal": 364, "carbohydrates_g": 76, "sugars_g": 0.3, "proteins_g": 10, "total_fat_g": 1.0, "saturated_fat_g": 0.2, "trans_fat_g": 0, "fiber_g": 2.7, "sodium_mg": 2}},
             "FARINHA-T55":  {"label": "Farinha de trigo T55",   "allergens": ["glúten"], "diet": "vegan", "nutrition": {"energy_kcal": 364, "carbohydrates_g": 76, "sugars_g": 0.3, "proteins_g": 10, "total_fat_g": 1.0, "saturated_fat_g": 0.2, "trans_fat_g": 0, "fiber_g": 2.7, "sodium_mg": 2}},
             "FARINHA-T45":  {"label": "Farinha de trigo T45",   "allergens": ["glúten"], "diet": "vegan", "nutrition": {"energy_kcal": 364, "carbohydrates_g": 76, "sugars_g": 0.3, "proteins_g": 10, "total_fat_g": 1.0, "saturated_fat_g": 0.2, "trans_fat_g": 0, "fiber_g": 2.7, "sodium_mg": 2}},
             "FARINHA-INT":  {"label": "Farinha de trigo integral", "allergens": ["glúten"], "diet": "vegan", "nutrition": {"energy_kcal": 340, "carbohydrates_g": 72, "sugars_g": 0.4, "proteins_g": 13, "total_fat_g": 2.5, "saturated_fat_g": 0.4, "trans_fat_g": 0, "fiber_g": 10.7, "sodium_mg": 2}},
             "CENTEIO":      {"label": "Farinha de centeio",     "allergens": ["glúten"], "diet": "vegan", "nutrition": {"energy_kcal": 338, "carbohydrates_g": 76, "sugars_g": 1.0, "proteins_g": 10, "total_fat_g": 1.7, "saturated_fat_g": 0.2, "trans_fat_g": 0, "fiber_g": 15.0, "sodium_mg": 2}},
-            "AGUA-FILTRADA": {"label": "Água filtrada",         "allergens": [], "diet": "vegan", "nutrition": {"energy_kcal": 0,   "carbohydrates_g": 0,  "sugars_g": 0,   "proteins_g": 0,  "total_fat_g": 0,   "saturated_fat_g": 0,   "trans_fat_g": 0, "fiber_g": 0,    "sodium_mg": 0}},
+            "AGUA-FILTRADA": {"label": "Água filtrada",         "allergens": [], "diet": "vegan", "density_g_per_ml": 1.0, "nutrition": {"energy_kcal": 0,   "carbohydrates_g": 0,  "sugars_g": 0,   "proteins_g": 0,  "total_fat_g": 0,   "saturated_fat_g": 0,   "trans_fat_g": 0, "fiber_g": 0,    "sodium_mg": 0}},
             "FERMENTO-NAT": {"label": "Fermento natural (levain)", "allergens": ["glúten"], "diet": "vegan", "nutrition": {"energy_kcal": 220, "carbohydrates_g": 45, "sugars_g": 0.5, "proteins_g": 7,  "total_fat_g": 0.5, "saturated_fat_g": 0.1, "trans_fat_g": 0, "fiber_g": 1.8,  "sodium_mg": 5}},
             "FERMENTO-BIO": {"label": "Fermento biológico",     "allergens": [], "diet": "vegan", "nutrition": {"energy_kcal": 105, "carbohydrates_g": 12, "sugars_g": 0,   "proteins_g": 13, "total_fat_g": 1.5, "saturated_fat_g": 0.2, "trans_fat_g": 0, "fiber_g": 8.1,  "sodium_mg": 30}},
             "SAL":          {"label": "Sal marinho",            "allergens": [], "diet": "vegan", "nutrition": {"energy_kcal": 0,   "carbohydrates_g": 0,  "sugars_g": 0,   "proteins_g": 0,  "total_fat_g": 0,   "saturated_fat_g": 0,   "trans_fat_g": 0, "fiber_g": 0,    "sodium_mg": 38758}},
             "ACUCAR":       {"label": "Açúcar",                 "allergens": [], "diet": "vegan", "nutrition": {"energy_kcal": 387, "carbohydrates_g": 100, "sugars_g": 100, "proteins_g": 0, "total_fat_g": 0,   "saturated_fat_g": 0,   "trans_fat_g": 0, "fiber_g": 0,    "sodium_mg": 1}},
             "MANTEIGA-FR":  {"label": "Manteiga francesa",      "allergens": ["leite"], "diet": "vegetarian", "nutrition": {"energy_kcal": 717, "carbohydrates_g": 0.1, "sugars_g": 0.1, "proteins_g": 0.9, "total_fat_g": 81, "saturated_fat_g": 51,  "trans_fat_g": 3.3, "fiber_g": 0,  "sodium_mg": 11}},
-            "LEITE":        {"label": "Leite integral",         "allergens": ["leite"], "diet": "vegetarian", "nutrition": {"energy_kcal": 61,  "carbohydrates_g": 4.8, "sugars_g": 4.8, "proteins_g": 3.2, "total_fat_g": 3.3, "saturated_fat_g": 1.9, "trans_fat_g": 0.1, "fiber_g": 0,  "sodium_mg": 40}},
+            "LEITE":        {"label": "Leite integral",         "allergens": ["leite"], "diet": "vegetarian", "density_g_per_ml": 1.03, "nutrition": {"energy_kcal": 61,  "carbohydrates_g": 4.8, "sugars_g": 4.8, "proteins_g": 3.2, "total_fat_g": 3.3, "saturated_fat_g": 1.9, "trans_fat_g": 0.1, "fiber_g": 0,  "sodium_mg": 40}},
             "OVOS":         {"label": "Ovos",                   "allergens": ["ovos"], "diet": "vegetarian", "nutrition": {"energy_kcal": 155, "carbohydrates_g": 1.1, "sugars_g": 1.1, "proteins_g": 13,  "total_fat_g": 11,  "saturated_fat_g": 3.3, "trans_fat_g": 0,   "fiber_g": 0,  "sodium_mg": 124}},
-            "AZEITE":       {"label": "Azeite extra virgem",    "allergens": [], "diet": "vegan", "nutrition": {"energy_kcal": 884, "carbohydrates_g": 0,   "sugars_g": 0,   "proteins_g": 0,  "total_fat_g": 100, "saturated_fat_g": 14,  "trans_fat_g": 0,   "fiber_g": 0,  "sodium_mg": 2}},
+            "AZEITE":       {"label": "Azeite extra virgem",    "allergens": [], "diet": "vegan", "density_g_per_ml": 0.91, "nutrition": {"energy_kcal": 884, "carbohydrates_g": 0,   "sugars_g": 0,   "proteins_g": 0,  "total_fat_g": 100, "saturated_fat_g": 14,  "trans_fat_g": 0,   "fiber_g": 0,  "sodium_mg": 2}},
             "MALTE":        {"label": "Malte",                  "allergens": ["glúten"], "diet": "vegan", "nutrition": {"energy_kcal": 360, "carbohydrates_g": 78, "sugars_g": 60,  "proteins_g": 10, "total_fat_g": 1.8, "saturated_fat_g": 0.3, "trans_fat_g": 0,   "fiber_g": 7,  "sodium_mg": 23}},
             "CHOCOLATE-70": {"label": "Chocolate amargo 70%",   "allergens": [], "diet": "vegan", "nutrition": {"energy_kcal": 598, "carbohydrates_g": 46, "sugars_g": 24,  "proteins_g": 7.8, "total_fat_g": 43, "saturated_fat_g": 24,  "trans_fat_g": 0,   "fiber_g": 11, "sodium_mg": 20}},
             "CEBOLA-ROXA":  {"label": "Cebola roxa",            "allergens": [], "diet": "vegan", "nutrition": {"energy_kcal": 40,  "carbohydrates_g": 9,   "sugars_g": 4.2, "proteins_g": 1.1, "total_fat_g": 0.1, "saturated_fat_g": 0,   "trans_fat_g": 0,   "fiber_g": 1.7, "sodium_mg": 4}},
@@ -2593,6 +2599,33 @@ class Command(BaseCommand):
             )
         self.stdout.write(f"  ✅ {len(INGREDIENT_PROFILES)} insumos (Material)")
 
+        # Equivalências APROXIMADAS: o que se pesa dito na contagem que a bancada
+        # usa. É o par que a ADR-024 §4 nomeia — ovo ≈ 50 g, limão ≈ 100 g — e o
+        # que faz "0,300 kg de OVOS" aparecer na lista de separação como
+        # "≈ 6 ovos". O número é derivado na tela, nunca gravado: corrigir o fator
+        # aqui reprecifica toda a lista sozinho.
+        from shopman.buyman.models import MaterialConversion
+
+        counting_conversions = {
+            "OVOS": ("ovos", Decimal("0.050")),
+            "LIMAO": ("limões", Decimal("0.100")),
+        }
+        for sku, (label, factor) in counting_conversions.items():
+            material = Material.objects.filter(sku=sku).first()
+            if material is None:
+                continue
+            MaterialConversion.objects.update_or_create(
+                material=material,
+                supplier=None,
+                label=label,
+                defaults={
+                    "to_base_factor": factor,
+                    "kind": MaterialConversion.Kind.APPROXIMATE,
+                    "is_active": True,
+                },
+            )
+        self.stdout.write(f"  ✅ {len(counting_conversions)} conversões de contagem")
+
         # Saldo de abertura de insumo no depósito — estoque físico para a produção
         # poder consumir (consume da untangle emite issue sobre estes quants) e para
         # os guardrails de disponibilidade (Buyman WP-B5b) terem o que checar.
@@ -2610,18 +2643,16 @@ class Command(BaseCommand):
         def _recipe_item_unit(input_sku: str) -> str:
             """A ficha fala na unidade-base do insumo — explícito, não por default.
 
-            Insumo pesado responde a própria base (hoje, kg em todos). Entrada que
-            não é Material (pré-preparo, produto) fica em kg, que é como a massa é
-            medida.
+            Insumo pesado responde `kg`; líquido responde `l`, que a ficha grafa
+            `L` (`normalize_recipe_item_unit`). Entrada que não é Material
+            (pré-preparo, produto) fica em kg, que é como a massa é medida.
 
-            ⚠️ Líquidos (AGUA-FILTRADA, LEITE, AZEITE) ainda nascem em kg apesar de
-            a base ser `l`: declarar `l` aqui exige `density_g_per_ml` no perfil,
-            senão o item é IGNORADO no cálculo de nutrição (ver
-            `shopman/shop/services/nutrition_from_recipe.py::_item_quantity_grams`).
-            É a Fase 1 de docs/plans/UNIT-CONVERSION-PLAN.md.
+            Os líquidos só puderam falar em litro porque o perfil ganhou
+            `density_g_per_ml`: é ela que leva o item até a nutrição, que conta
+            em grama.
             """
             unit = material_attrs.get(input_sku, ("kg", None))[0]
-            return unit if unit in ("kg", "g") else "kg"
+            return normalize_recipe_item_unit(unit)
 
         for rd in recipes_data:
             product = Product.objects.filter(sku=rd["output_sku"]).first()

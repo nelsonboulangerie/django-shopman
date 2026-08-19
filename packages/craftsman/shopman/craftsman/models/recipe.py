@@ -15,21 +15,17 @@ from django.apps import apps
 from django.core.exceptions import ValidationError
 from django.db import models
 from django.utils.translation import gettext_lazy as _
+from shopman.utils import units
 from shopman.utils.refs import RefField
 
 RECIPE_ITEM_UNIT_VALUES = ["un", "kg", "g", "mg", "L", "ml"]
-RECIPE_ITEM_UNIT_ALIASES = {
-    "un.": "un",
-    "unit": "un",
-    "units": "un",
-    "l": "L",
-    "lt": "L",
-    "lts": "L",
-    "liter": "L",
-    "liters": "L",
-    "litro": "L",
-    "litros": "L",
-}
+
+#: O ``RecipeItem`` guarda o litro como ``"L"`` — é o valor da choice desde o
+#: primeiro dia e o que está no banco. A tabela de física fala ``"l"``
+#: (``shopman.utils.units``). Isto aqui é uma linha de **grafia**, não uma
+#: segunda tabela de conversão: os apelidos ("un.", "litros", …) e a física
+#: moram em um lugar só.
+_CRAFTSMAN_SPELLING = {"l": "L"}
 
 
 class Recipe(models.Model):
@@ -249,10 +245,13 @@ class RecipeItem(models.Model):
 
 
 def normalize_recipe_item_unit(value: str | None) -> str:
-    raw = str(value or "").strip()
-    if not raw:
-        return ""
-    return RECIPE_ITEM_UNIT_ALIASES.get(raw, RECIPE_ITEM_UNIT_ALIASES.get(raw.lower(), raw))
+    """Grafia canônica da unidade da ficha, pela física de ``shopman.utils``.
+
+    Não levanta: unidade que a tabela fechada não reconhece volta como veio, e
+    quem recusa é ``RecipeItem.clean`` — com a mensagem da ficha, no campo certo.
+    """
+    canonical = units.normalize(value)
+    return _CRAFTSMAN_SPELLING.get(canonical, canonical)
 
 
 def _catalog_unit_for_sku(sku: str) -> str:
