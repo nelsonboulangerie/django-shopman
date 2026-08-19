@@ -3,6 +3,7 @@
 from .alerts import OperatorAlert
 from .aliases import AliasStatus, CategoryAlias, PaymentMethodAlias, ProductAlias
 from .bi_alerts import BIAlertEvent, BIAlertRule
+from .bi_scenario import BIScenarioReport
 from .bi_view import BIView
 from .blind_prep import BlindPrepCode
 from .cash_register import CashMovement, CashShift, POSTerminal
@@ -40,6 +41,7 @@ __all__ = [
     "AliasStatus",
     "BIAlertEvent",
     "BIAlertRule",
+    "BIScenarioReport",
     "CategoryAlias",
     "PaymentMethodAlias",
     "ProductAlias",

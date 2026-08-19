@@ -2,8 +2,8 @@
 
 > **Status: 🟢 ETAPA 1 APROVADA em 2026-08-18 ("acato as recomendações") — as três decisões do
 > §6 ficaram como recomendado; ETAPA 2 em andamento: P0 ✅ (#209), P1 ✅ (#211), P2 ✅ (#212),
-> P3 ✅ (#214), P4 ✅ (`feat/bi-cash-canonical`). **v1 da fundação completo**; P5 (NFC-e) espera
-> emissão real; roadmap (§7) desenhado, não implementado.** Frente B, v1. Irmão de
+> P3 ✅ (#214), P4 ✅ (#217). **v1 da fundação completo**; roadmap §7.2 (5 alarmes, #219/#222) e
+> §7.1 (cenários com IA, `feat/bi-scenarios`) entregues; P5 (NFC-e) espera emissão real.** Frente B, v1. Irmão de
 > [BI-PLAN.md](BI-PLAN.md), [BI-INSIGHTS-MAP.md](BI-INSIGHTS-MAP.md),
 > [BI-FORECAST-PLAN.md](BI-FORECAST-PLAN.md) e [BI-QUESTION-CATALOG.md](BI-QUESTION-CATALOG.md).
 > Não depende da consulta de perfis (frente separada); se ela existir quando isto rodar, é só
@@ -536,6 +536,16 @@ perder; dado pessoal fica fora do claro.
 ## 7. Roadmap (desenhado, NÃO implementar)
 
 ### 7.1 Cenários com IA (meia página)
+
+> ✅ **v1 ENTREGUE 2026-08-19** (branch `feat/bi-scenarios`, sobre a dos alarmes): `BIScenarioReport`
+> (migração `0027`; append-only; `inputs` + `inputs_hash`, `scenarios` validados, `raw_text`, modelo,
+> duração, `done|failed`), `bi/scenarios.py` (`gather_inputs` só da camada de leitura — vendas +
+> projeção da semana, ou produção + forno + falta/sobra; **caixa fora**, é auditoria; `build_prompt`
+> com voz de analista; `generate` reusa o transporte do `copy_assist` com a voz do analista no lugar
+> da voz da marca; `parse_response` com pydantic; falha = relatório `failed`, nunca cenário inventado),
+> `GET/POST bi/scenarios/` (409 sem credencial; 400 foco inválido), página `/scenarios` no `bi-nuxt`
+> com botão só quando `configured`, Admin somente leitura. Sem agendamento no v1. O desenho abaixo é
+> o original.
 
 **O que é.** O B.I. lê **só a camada de leitura** (série diária materializada, agregados do
 explorador já calculados — nunca `Order`, nunca `HistoricalSale`), monta um contexto compacto

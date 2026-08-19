@@ -14,6 +14,7 @@ from .bi import (
     BIForecastView,
     BIProductionView,
     BISalesView,
+    BIScenariosView,
     BIViewDetailView,
     BIViewListView,
 )
@@ -214,6 +215,7 @@ urlpatterns = [
     path("bi/change/", BIChangeView.as_view(), name="api-backstage-bi-change"),
     path("bi/views/", BIViewListView.as_view(), name="api-backstage-bi-views"),
     path("bi/views/<int:pk>/", BIViewDetailView.as_view(), name="api-backstage-bi-view"),
+    path("bi/scenarios/", BIScenariosView.as_view(), name="api-backstage-bi-scenarios"),
     path("closing/", DayClosingView.as_view(), name="api-backstage-closing"),
     path(
         "closing/episodes/<int:episode_id>/",

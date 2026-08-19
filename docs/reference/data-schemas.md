@@ -1185,3 +1185,17 @@ Sobrescrito a cada ciclo do `evaluate_bi_alerts`; o disparo propriamente dito é
 | `baseline` | `float \| null` | O esperado (cadência em dias; média do mesmo dia da semana em centavos). |
 | `fired` | `bool` | Passou da régua nesta avaliação (independe do cooldown). |
 | `message` | `str` | A frase que foi (ou seria) para o operador, em pt-BR. |
+
+
+## BIScenarioReport.inputs / .scenarios
+
+`inputs` é o que a IA viu numa rodada (`shopman/backstage/bi/scenarios.py::gather_inputs`): só
+agregados da camada de leitura, com unidade no nome (`_q` = centavos), e o `inputs_hash` (sha256
+do JSON ordenado) para reproduzir a pergunta. Chaves por foco: `sales` → `totals`,
+`previous_period`, `days[]`, `by_channel[]`, `top_products[]`, `orders_by_weekday_mon_first`,
+`orders_by_hour`, `next_week_forecast`; `production` → `days[]`, `oven_time_by_recipe[]`,
+`soldout_days_by_sku`, `leftover_by_sku`, `unavailable_hours_by_sku`. **Nunca** pedido, cliente
+ou apuração de caixa.
+
+`scenarios` é a resposta validada (`ScenarioPayload`): `[{title, proposal, basis[], unknowns[]}]`.
+Resposta fora do contrato não entra aqui: o relatório nasce `failed` com `error` e `raw_text`.

@@ -689,3 +689,31 @@ export function strikeMatrix(
 export function revpashHint(seats: number, hours: number, days: number): string {
   return `${formatInt(seats)} assentos × ${formatInt(hours)} h × ${formatInt(days)} ${days === 1 ? "dia" : "dias"}`;
 }
+
+// ── Cenários com IA ─────────────────────────────────────────────────────────
+
+export interface ScenarioReportLike {
+  generated_at: string;
+  focus_label: string;
+  window_from: string;
+  window_to: string;
+  status: string;
+  duration_ms: number;
+  model: string;
+  scenarios: readonly unknown[];
+}
+
+/** "Vendas · 19/08 14:05 · janela 23/07–19/08" */
+export function scenarioReportHeadline(report: ScenarioReportLike): string {
+  const stamp = new Date(report.generated_at);
+  const when = `${String(stamp.getDate()).padStart(2, "0")}/${String(stamp.getMonth() + 1).padStart(2, "0")} ${String(stamp.getHours()).padStart(2, "0")}:${String(stamp.getMinutes()).padStart(2, "0")}`;
+  return `${report.focus_label} · ${when} · janela ${shortDate(report.window_from)}–${shortDate(report.window_to)}`;
+}
+
+/** Custo e latência declarados na tela: "3 cenários · 12 s · claude-opus-5" ou "falhou". */
+export function scenarioStatusLabel(report: ScenarioReportLike): string {
+  if (report.status !== "done") return "falhou: a IA não respondeu no formato esperado";
+  const seconds = Math.max(1, Math.round(report.duration_ms / 1000));
+  const count = report.scenarios.length;
+  return `${count} cenário${count === 1 ? "" : "s"} · ${seconds} s${report.model ? ` · ${report.model}` : ""}`;
+}

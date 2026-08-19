@@ -35,6 +35,8 @@ import {
   shortDate,
   shortDateWithYear,
   strikeMatrix,
+  scenarioReportHeadline,
+  scenarioStatusLabel,
   sourceConflictLabel,
   sourceLabel,
   sourcesCaption,
@@ -424,5 +426,27 @@ describe("presentation/bi — fontes", () => {
     expect(
       sourceConflictLabel({ date: "2026-08-03", native_orders: 1, historical_dropped: 112, source: "yooga" }),
     ).toBe("03/08: 1 pedido nativo apagou 112 vendas do histórico Yooga nesse dia");
+  });
+});
+
+describe("presentation/bi — cenários com IA", () => {
+  const report = {
+    generated_at: "2026-08-19T14:05:00-03:00",
+    focus_label: "Vendas",
+    window_from: "2026-07-23",
+    window_to: "2026-08-19",
+    status: "done",
+    duration_ms: 11800,
+    model: "claude-opus-5",
+    scenarios: [{}, {}, {}],
+  };
+
+  it("o cabeçalho diz foco, quando e a janela que a IA viu", () => {
+    expect(scenarioReportHeadline(report)).toMatch(/^Vendas · \d{2}\/\d{2} \d{2}:\d{2} · janela 23\/07–19\/08$/);
+  });
+
+  it("custo e latência ficam declarados; falha é falha, não cenário", () => {
+    expect(scenarioStatusLabel(report)).toBe("3 cenários · 12 s · claude-opus-5");
+    expect(scenarioStatusLabel({ ...report, status: "failed", scenarios: [] })).toContain("falhou");
   });
 });

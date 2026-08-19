@@ -81,6 +81,7 @@ class Command(BaseCommand):
                 # …e ajustam a régua dos alarmes do B.I.; o disparo só se lê.
                 *[_perm("backstage", "bialertrule", f"{verb}_bialertrule") for verb in ("view", "add", "change")],
                 _perm("backstage", "bialertevent", "view_bialertevent"),
+                _perm("backstage", "biscenarioreport", "view_biscenarioreport"),
                 # …e curam os de-paras (a máquina propõe, o gestor confirma). Sem
                 # apagar: rejeitar é estado, e a trilha de quem confirmou fica.
                 *[

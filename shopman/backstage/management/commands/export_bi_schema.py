@@ -79,6 +79,12 @@ from shopman.backstage.projections.bi_sales import (
     BISourceConflict,
     BITopSkuRow,
 )
+from shopman.backstage.projections.bi_scenarios import (
+    BIScenario,
+    BIScenarioFocus,
+    BIScenarioReportView,
+    BIScenariosPage,
+)
 
 #: Generated artifact, relative to the repository root (``BASE_DIR``).
 OUTPUT_RELATIVE_PATH = Path("surfaces/bi-nuxt/app/generated/biContract.ts")
@@ -130,6 +136,10 @@ CONTRACT_DATACLASSES = (
     BIProfileEstimate,
     BIProfilesPrevious,
     BIConsumptionProfilesReport,
+    BIScenario,
+    BIScenarioReportView,
+    BIScenarioFocus,
+    BIScenariosPage,
 )
 
 

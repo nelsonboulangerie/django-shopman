@@ -29,6 +29,7 @@ from shopman.backstage.projections.bi_forecast import ForecastError, build_bi_fo
 from shopman.backstage.projections.bi_production import build_bi_production
 from shopman.backstage.projections.bi_profiles import build_bi_consumption_profiles
 from shopman.backstage.projections.bi_sales import build_bi_sales
+from shopman.backstage.projections.bi_scenarios import build_bi_scenarios, report_view
 
 from .permissions import HasBackstagePermission
 from .projections import projection_data
@@ -335,3 +336,46 @@ class BIViewDetailView(_BIBase):
             return Response({"detail": "Cenário não encontrado."}, status=404)
         view.delete()
         return Response({"ok": True})
+
+
+@extend_schema_view(
+    get=extend_schema(
+        tags=["backstage"],
+        summary="B.I. scenarios: AI-proposed scenarios over the read layer (versioned reports)",
+        responses={200: OpenApiResponse(description="Scenario reports and whether generation is configured.")},
+    ),
+    post=extend_schema(
+        tags=["backstage"],
+        summary="B.I. scenarios: generate a new report for a focus (sales | production)",
+        responses={201: OpenApiResponse(description="The new report, done or failed.")},
+    ),
+)
+class BIScenariosView(_BIBase):
+    """Cenários com IA: a IA propõe sobre a camada de leitura; nunca executa.
+
+    O POST é uma rodada síncrona (o provedor demora segundos); a resposta é o
+    relatório versionado, ``done`` ou ``failed`` com o motivo. Sem credencial
+    configurada o GET já diz ``configured=false`` e o POST responde 409 — a
+    tela não oferece o que a API vai recusar.
+    """
+
+    def get(self, request):
+        return Response({"bi": projection_data(build_bi_scenarios())})
+
+    def post(self, request):
+        from shopman.backstage.bi.scenarios import ScenariosNotConfigured, generate
+        from shopman.backstage.models import BIScenarioReport
+
+        focus = str((request.data or {}).get("focus") or "sales").strip()
+        if focus not in BIScenarioReport.Focus.values:
+            return Response({"detail": f"Foco desconhecido: {focus!r}. Existem: sales, production.", "field": "focus"}, status=400)
+        try:
+            report = generate(
+                focus=focus,
+                requested_by=request.user,
+                date_from=_query_date(request, "date_from"),
+                date_to=_query_date(request, "date_to"),
+            )
+        except ScenariosNotConfigured as exc:
+            return Response({"detail": str(exc)}, status=409)
+        return Response({"bi": projection_data(report_view(report))}, status=201)
