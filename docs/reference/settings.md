@@ -250,7 +250,7 @@ Settings flat no `settings.py` do Django (sem dict wrapper).
 | `SHOPMAN_FISCAL_ADAPTER` | str | *(sem default)* | Adapter fiscal. Se ausente, handlers fiscais não são registrados |
 | `SHOPMAN_FOCUS_NFE` | dict | homologação | Configuração do adapter `shopman.shop.adapters.fiscal_focusnfe.FocusNFeBackend` |
 | `SHOPMAN_FISCAL_EMISSION_RESOLVER` | env str | `shopman.shop.fiscal_resolvers.on_request_or_tax_id` | Política de QUANDO emitir NFC-e: caminho(s) pontilhado(s) para `callable(order) -> bool`, vários separados por vírgula = OR. Com adapter fiscal ligado e canal de venda ativo, vazio ou não importável **bloqueia o deploy** (`SHOPMAN_E013`) — silêncio fiscal é o pior modo de falha |
-| `SHOPMAN_FISCAL_REQUIRE_CLASSIFICATION_ON_PUBLISH` | env bool | `false` | Porteiro fiscal do catálogo: publicar vendável em canal de venda exige classificação completa (perfil + NCM; CEST na revenda), em qualquer porta. Desligado no pré-go-live; ligar junto com o adapter fiscal. Ver `manage.py fiscal_audit_catalog` |
+| `SHOPMAN_FISCAL_REQUIRE_CLASSIFICATION_ON_PUBLISH` | env bool | `false` | Porteiro fiscal do catálogo: publicar vendável em canal de venda exige classificação completa (perfil + NCM; CEST na revenda), em qualquer porta. Desligado no pré-go-live; ligar junto com o adapter fiscal. **Não ligue sem o procedimento** — ver "Ligar o porteiro fiscal do catálogo" abaixo |
 | `SHOPMAN_EFI` | dict | sandbox | Configuração Efí PIX (`sandbox`, `client_id`, `client_secret`, `certificate_path`, `pix_key`) |
 | `SHOPMAN_EFI_WEBHOOK` | dict | vazio | Segredo de webhook Efí e header mTLS opcional |
 | `SHOPMAN_STRIPE` | dict | vazio | Configuração Stripe Checkout (`publishable_key`, `secret_key`, `webhook_secret`, `capture_method`, `domain`) |
@@ -273,6 +273,63 @@ canônica. A emissão usa `POST /v2/nfce?ref=...&completa=1`,
 enfileirada quando o pedido carrega `data.fiscal.issue_document=true`.
 
 **Guia:** [lifecycle.md](../guides/lifecycle.md)
+
+### Ligar o porteiro fiscal do catálogo
+
+`SHOPMAN_FISCAL_REQUIRE_CLASSIFICATION_ON_PUBLISH` nasce **desligada** de
+propósito: no pré-go-live o catálogo ainda está sendo classificado com o contador,
+e um porteiro ligado cedo demais recusa `save()` de produto e de item de vitrine em
+**qualquer** porta — Admin, `seed`, sync de catálogo do iFood, script. O preço de
+ligar sem medir não é um erro de validação simpático: é o `seed` quebrando no meio.
+
+Por isso o flip tem pré-requisito, e ele é um comando, não uma impressão:
+
+**1. Meça.** `fiscal_audit_catalog` não depende da chave nem de adapter fiscal, e
+só lê — é seguro rodar em produção a qualquer hora.
+
+```bash
+python manage.py fiscal_audit_catalog          # leitura humana
+python manage.py fiscal_audit_catalog --json   # para script/CI
+```
+
+**2. Zere as faltas.** Cada linha da saída traz SKU, vitrines e o que falta (perfil,
+NCM de 8 dígitos, CEST na revenda). Preencha em **Admin → Produtos → Fiscal**. Se a
+falta é padrão do catálogo e não classificação de produto específico, o lugar é o
+`seed` (`fiscal_metadata_for_sku` em `config/management/commands/seed.py`).
+
+⚠️ **NCM e CEST não se inventam.** São dado do contador; código fiscal chutado numa
+NFC-e autorizada é erro de documento fiscal, não bug de software.
+
+**3. Confirme com o gate.** `--strict` é o pré-requisito formal do flip:
+
+```bash
+python manage.py fiscal_audit_catalog --strict   # exit 0 == pode ligar
+```
+
+Ele sai **1** em duas situações, não uma: quando há vendável publicado incompleto,
+**e** quando não há canal de venda ativo para auditar — auditoria que não varreu
+nada não atesta nada, e um verde colhido contra um banco sem canal configurado seria
+um verde falso. Em JSON a mesma resposta vem em `ready_to_enforce`.
+
+**4. Só então ligue a env var**, junto com o adapter fiscal
+(`SHOPMAN_FISCAL_ADAPTER`) — porteiro ligado sem adapter cobra classificação para
+uma nota que ninguém emite.
+
+```
+SHOPMAN_FISCAL_REQUIRE_CLASSIFICATION_ON_PUBLISH=true
+```
+
+Ligue **em staging primeiro** e rode o `seed` uma vez: o `seed` publica catálogo pelo
+ORM e é o consumidor que mais depressa denuncia uma classificação faltando.
+
+**Estado da medição:** o catálogo do staging foi auditado em 19/08/2026 — 59 de 59
+vendáveis publicados com classificação completa, zero pendências de completude.
+Resta a **correção de perfil** (11 SKUs de revenda com o perfil default), que é
+decisão do contador e não bloqueia o flip. Números e lista em
+[auditoria do catálogo fiscal](../reports/auditoria-catalogo-fiscal-2026-08-19.md).
+
+**Comando:** [fiscal_audit_catalog](commands.md#fiscal_audit_catalog) ·
+**Parametrização:** [fiscal-parametrizacao-nfce.md](fiscal-parametrizacao-nfce.md)
 
 ### Piloto automático de staging
 

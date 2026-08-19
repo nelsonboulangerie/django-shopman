@@ -257,8 +257,19 @@ o que aconteceria ao ligar a chave na virada do go-live.
 
 | Flag | Default | Descrição |
 |------|---------|-----------|
-| `--json` | — | Saída em JSON (canais + lista de incompletos com erros) |
-| `--strict` | — | Exit code 1 quando houver produto incompleto (gate de deploy/CI) |
+| `--json` | — | Saída em JSON: `channels`, `ready_to_enforce` (o veredito) e `incomplete` com os erros |
+| `--strict` | — | Exit code 1 quando o catálogo não estiver pronto (gate de deploy/CI) |
+
+`--strict` é o **pré-requisito documentado** para ligar
+`SHOPMAN_FISCAL_REQUIRE_CLASSIFICATION_ON_PUBLISH`. Ele sai 1 em **duas**
+situações, não uma:
+
+1. há vendável publicado com classificação incompleta; **ou**
+2. não há canal de venda ativo — a auditoria não varreu nada, logo não atesta nada.
+
+A segunda condição existe porque só ela é satisfeita à toa: sem ela, bastaria rodar
+o gate contra um banco sem canal configurado para colher um verde que não significa
+"pronto para emitir". Em JSON, o mesmo veredito é `ready_to_enforce`.
 
 ```bash
 # Leitura humana
@@ -268,7 +279,9 @@ python manage.py fiscal_audit_catalog
 python manage.py fiscal_audit_catalog --strict
 ```
 
-**Veja também:** [parametrização fiscal NFC-e](fiscal-parametrizacao-nfce.md).
+**Veja também:** [procedimento do flip](settings.md#ligar-o-porteiro-fiscal-do-catálogo) ·
+[parametrização fiscal NFC-e](fiscal-parametrizacao-nfce.md) ·
+[auditoria do catálogo (19/08)](../reports/auditoria-catalogo-fiscal-2026-08-19.md).
 
 ---
 
