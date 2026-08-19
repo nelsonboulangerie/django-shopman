@@ -1,122 +1,156 @@
-# ADR-024 — Unidade do insumo: base para receita e estoque, unidade de compra para custo
+# ADR-024 — Conversão de unidade é cidadã de primeira classe: base única, conversões declaradas
 
-**Status:** Proposto (rascunho para decisão do dono, 2026-08-19)
+**Status:** **Aceito na direção** (dono, 2026-08-19). Os XMLs de NF-e de entrada que o dono vai mandar **calibram os defaults, não mudam a decisão**.
 **Data:** 2026-08-19
-**Escopo (se aceito):** `packages/buyman` (`Material.unit`, `SupplierMaterialCost` ganha unidade de compra + fator); `shopman/shop` (custo por unidade-base derivado); `config/management/commands/seed.py` (tabela de unidades); Fase 2 do [BUYMAN-PROCUREMENT-PLAN](../plans/BUYMAN-PROCUREMENT-PLAN.md) (`PurchaseOrder`)
-**Não muda nada hoje:** esta ADR **não** vem com implementação nem com migração. O campo só muda **depois** que o dono responder a pergunta do fim.
+**Escopo:** `packages/buyman` (unidade-base do `Material`, tabela de conversões, unidade de compra no custo); `packages/craftsman` (a ficha fala na base; anotação de preparo derivada); `packages/stockman` (o ledger conta na base); `shopman/backstage` (a anotação na tela de mise-en-place/picking); `config/management/commands/seed.py`
+**Execução:** [UNIT-CONVERSION-PLAN.md](../plans/UNIT-CONVERSION-PLAN.md) — em fases, **nada implementado ainda**
+**Depende de:** [ADR-023](adr-023-cost-live-and-frozen.md) (Aceita, 19/08 — o custo congela); esta ADR decide **em que unidade** ele congela
 **Origem:** auditoria do Buyman (2026-08-18), achado B2
-**19/08/2026:** o dono não bateu o martelo e pediu recomendação fundamentada, com uma restrição dura — *"obrigar o operador a fazer contas no lançamento seria terrível"* — e uma intuição: *"será que analisando algumas NFs de compra descobriríamos?"*. As duas viraram as seções **Evidência** e **Recomendação** abaixo. Status segue **Proposto**.
-**Depende de:** [ADR-023](adr-023-cost-live-and-frozen.md) (Aceito, 19/08) — o custo congela; falta decidir em que unidade ele é expresso antes de escrever o backend.
+
+> Palavras do dono (19/08/2026): *"o processo de conversão de unidades entre (a) o
+> que se compra e o que se conta fácil, do ponto de vista do operador, e (b) o que
+> se usa internamente no sistema, deve ser um cidadão de primeiríssima classe no
+> Django Shopman. Super simples, super robusto, super elegante! Flexível, mas à
+> prova de falhas, sem gambiarra."*
 
 ---
 
 ## Contexto
 
-`Material.unit` (`packages/buyman/shopman/buyman/models/material.py:28`) alimenta
-duas mecânicas com pressões opostas, e por isso serve mal às duas.
+`Material.unit` (`packages/buyman/shopman/buyman/models/material.py:28`) servia dois
+senhores com pressões opostas, e por isso servia mal aos dois.
 
-**1. A receita exige igualdade estrita.** `RecipeItem.clean()`
-(`packages/craftsman/shopman/craftsman/models/recipe.py:231`) recusa unidade
-diferente da do SKU no catálogo — *"a unidade do ingrediente deve coincidir com a
-unidade do SKU cadastrado"*. **Não há conversão, por design.** Insumo em `kg`
-obriga toda ficha técnica a falar em kg (0,5 kg, nunca 500 g).
+**A receita exige igualdade estrita.** `RecipeItem.clean()`
+(`packages/craftsman/shopman/craftsman/models/recipe.py:231`) recusa unidade diferente
+da do SKU no catálogo — *"a unidade do ingrediente deve coincidir com a unidade do SKU
+cadastrado"*. **Não há conversão, por design.**
 
-**2. O custo é centavo inteiro por essa mesma unidade.** `SupplierMaterialCost.cost_q`
-é "custo por unidade do insumo, em centavos" (ADR-002). Insumo em `g` torna
-custos sub-centavo **irrepresentáveis**: canela a R$ 45,00/kg são 4,5
-centavos/g — arredonda para 4 ou 5, erro de ~11% multiplicado por cada grama
-custeado.
+**O custo é centavo inteiro por essa mesma unidade.** `SupplierMaterialCost.cost_q` é
+"custo por unidade do insumo, em centavos" (ADR-002). Unidade fina torna custo
+sub-centavo irrepresentável; unidade grossa torna a ficha técnica fracionária.
 
-Escolher a unidade fina quebra o custo; escolher a grossa quebra a ergonomia da
-ficha técnica. O seed já vive o dilema em silêncio
-(`config/management/commands/seed.py`): farinhas, sal e açúcar em `kg` (custo
-representável, receita fracionária); **CANELA e ALECRIM em `g`** (receita
-ergonômica, custo condenado ao arredondamento).
+A saída não é escolher um dos dois senhores: é **parar de fingir que existe uma
+unidade só**. A padaria já vive com três vocabulários simultâneos — o que ela
+**compra** (saco, caixa, fardo, cartela), o que ela **conta fácil** (ovo, limão,
+pacote) e o que ela **mede na verdade** (kg, l, un). O sistema tem de falar os três e
+saber, sempre, qual é o que vale.
 
-E o silêncio é literal: o seed cria os `RecipeItem` por `objects.create()`, que
-**não chama `clean()`**. Resultado hoje, no banco de desenvolvimento: o `Material`
-CANELA está em `g` e o `RecipeItem` de canela está em `kg` com quantidade
-`0.060` — as duas unidades já discordam, e nada gritou. O guarda existe; ele só
-não é chamado no caminho que popula os dados.
+## Decisão
 
-Falta o eixo que o item master clássico tem exatamente para isso: **unidade de
-compra + fator de conversão**. Ninguém compra grama de farinha: compra-se saco de
-25 kg, e é *nesse* nível que o custo do fornecedor existe no mundo real. A Fase 2
-(`PurchaseOrder`/recebimento) vai precisar da unidade de compra de qualquer
-forma — a linha do pedido é "3 sacos", não "75 kg". Decidir agora evita migrar
-dados de custo duas vezes.
+### 1. Três tipos de conversão — parecem um só e não são
 
-## Decisão proposta
+Tratá-los como a mesma coisa é a origem de toda gambiarra de unidade. Cada um tem
+natureza, dono e lugar diferentes:
 
-1. **`Material.unit` é a unidade-base**, e só isso: a unidade em que a receita
-   escreve e o estoque conta. Uma por insumo, sem conversão, exatamente como
-   `RecipeItem.clean()` já exige.
-2. **O custo ganha o eixo de compra.** `SupplierMaterialCost` passa a guardar:
-   - `purchase_unit` — a unidade em que o fornecedor vende (saco, caixa, kg, l);
-   - `purchase_factor` — quantas unidades-base cabem em uma unidade de compra
-     (decimal; 1 saco = 25 kg);
-   - `cost_q` — centavos **por unidade de compra** (ADR-002 intacto: o que se
-     guarda em dinheiro continua inteiro em centavos, e agora é o número que
-     está na nota do fornecedor).
-3. **Custo por unidade-base é derivado, não guardado**: `cost_q / purchase_factor`
-   calculado em `Decimal`, arredondado **só na ponta**, quando vira dinheiro de
-   verdade (custo de uma fornada, custo de um produto). Assim a canela a
-   R$ 45,00/kg é exata, e o erro de 11% desaparece com o arredondamento
-   intermediário que o causava.
-4. **A unidade-base do insumo passa a ser escolhida pela receita**, não pelo
-   custo — porque o custo deixou de depender dela. Na prática: CANELA e ALECRIM
-   podem seguir em `g`, com custo lançado por kg comprado.
-5. **A Fase 2 herda o eixo pronto**: a linha do `PurchaseOrder` fala em unidade
-   de compra e o recebimento converte para base ao emitir o `Move` de entrada.
+| Tipo | Exemplos | Onde vive | Quem edita | Exata? |
+|---|---|---|---|---|
+| **1. Exata (definicional)** | kg↔g, l↔ml, dz↔un | **tabela fechada em código** | ninguém | sim, por definição |
+| **2. Convencionada (do material)** | saco = 25 kg · caixa = 30 un · fardo = 12 pacotes | banco, por insumo (e, quando muda, por fornecedor) | **o dono, no Admin** | sim, por convenção declarada |
+| **3. Aproximada (equivalência física)** | 1 ovo ≈ 50 g · 1 limão ≈ 100 g | banco, por insumo | **o dono, no Admin** | **não** |
 
-## Consequências
+- **A exata não é dado do usuário.** Constante de física não é configuração: se
+  morasse no banco, alguém poderia salvar "1 kg = 900 g" e o sistema obedeceria em
+  silêncio. Fica em código, sem tela, sem migração de dado, sem discussão.
+- **A convencionada muda, então é editável.** Saco de farinha vira de 25 kg para
+  20 kg quando o moinho quiser; cadastrar embalagem nova não pode exigir deploy.
+- **A aproximada é a única que carrega incerteza**, e por isso não pode dividir a
+  mesma caixinha com as outras duas. É ela que a regra 3 abaixo persegue.
 
-**Positivas**
+Sim, a resposta à pergunta do dono é **tabela editável — mas só para os tipos 2 e 3**.
 
-- Os dois senhores param de brigar: receita manda na unidade-base, fornecedor
-  manda na unidade de compra.
-- O custo passa a ser lançado como está na nota fiscal — menos conta de cabeça
-  no cadastro, menos erro de digitação.
-- Fase 2 nasce sem migração de custo.
+### 2. Quatro regras, e são elas que fazem isto ser robusto em vez de flexível-demais
 
-**Negativas / custos**
+**R1 · Uma unidade-base por insumo: aquela em que o livro conta.**
+A unidade do *momento da verdade* — se o insumo é pesado, `kg`; se é contado, `un`; se
+é medido em volume, `l`. **Estoque e dinheiro vivem sempre na base**, e só nela: um
+`Quant`, um `Move`, um `cost_q`. Nunca duas unidades para o mesmo insumo no ledger.
 
-- Duas colunas novas em `SupplierMaterialCost` e uma migração no Buyman (barato
-  hoje: a tabela é master data pequena, pré-go-live).
-- O cadastro de custo ganha dois campos — mais fricção na tela de quem digita.
-- Fator errado é erro silencioso e caro (custo 25× menor). Pede validação
-  (`purchase_factor > 0`) e um alerta de ordem de grandeza na tela.
+**R2 · Todo o resto é conversão PARA a base, declarada por insumo.**
+O operador digita o que está na nota ("1 saco, R$ 180,00") ou o que é fácil contar
+("2 cartelas"); **a máquina divide**. Jamais o contrário. Conversão é sempre no sentido
+*vocabulário humano → base*, calculada em `Decimal`, arredondada só na ponta em que
+vira dinheiro guardado.
 
-## Alternativas consideradas
+**R3 · Aproximada nunca vira número silencioso.**
+O que atravessou uma equivalência aproximada **carrega o carimbo até a tela**: some o
+`≈`, some a informação. Vale para anotação, planejamento, picking e conferência — não
+para se dissolver num número que parece exato.
 
-- **Guardar custo em milésimos de centavo** (mudar a granularidade de `cost_q`):
-  resolve a representação e não resolve a Fase 2 — continua faltando "saco de
-  25 kg" para a linha do pedido de compra. E rompe ADR-002 sem ganhar o eixo.
-- **Regra de cadastro "insumo sempre na unidade grossa" (kg/l)**: zero código, e
-  era a segunda opção oferecida ao dono. A evidência abaixo mediu o preço dela:
-  27 dos 47 itens de receita ficam abaixo de 1 kg (6 deles abaixo de 0,1 kg,
-  incluindo canela 0,060 e alecrim 0,030), 13 ocorrências mudam de unidade, a
-  água continua sem custo representável, e o operador passa a dividir no
-  lançamento — o que o dono vetou. Segue registrada como a alternativa que a
-  recomendação descarta.
-- **Conversão automática de unidade na receita** (g↔kg): rejeitada por design
-  no Craftsman, e não é o problema — o problema é o custo, não a ficha.
+> **O caso real, e ele existe:** compra-se ovo por unidade (cartela de 30) e
+> consome-se ovo por peso (300 g na massa). A ponte entre os dois lados é
+> necessariamente aproximada. A regra **não** é proibir a ponte — é que ela seja
+> **declarada e visível**:
+> - se a casa **pesa** no recebimento (a balança está ali), o número exato entra no
+>   ledger e a equivalência serve para **conferir** ("30 ovos ≈ 1,5 kg; pesou 1,47 kg");
+> - se a casa **não pesa**, a entrada acontece pela ponte e o lançamento nasce
+>   carimbado (`approximate=true` + o fator usado no `metadata` do `Move`), o saldo
+>   aparece como `≈ 1,5 kg` na tela, e o custo derivado dali é **estimado**, nunca
+>   custo congelado sem aviso (ADR-023: incerteza se registra, não se dissolve).
+>
+> O que fica proibido é a terceira via: converter por baixo do pano e devolver um
+> número liso, do qual ninguém mais consegue perguntar "isso foi pesado ou chutado?".
+
+**R4 · Sem fator declarado, o sistema RECUSA — não adivinha.**
+Faltou a conversão de "cartela" para `un`? O lançamento **para**, com mensagem dizendo
+exatamente o que cadastrar. Nunca "assume 1:1", nunca "chuta 50 g", nunca converte
+"na melhor das hipóteses". É a mesma doutrina do NCM ausente no Fiscalman: o dado que
+falta grita no gesto, não vira default silencioso três telas adiante.
+
+### 3. Os "dois eixos" deixam de ser caso especial
+
+A versão anterior desta ADR propunha `purchase_unit` + `purchase_factor` no custo. Com
+o desenho acima, isso **deixa de ser estrutura especial**: unidade de compra é apenas
+uma **linha da tabela de conversões convencionadas** do insumo, e a linha de custo
+aponta para a conversão que usou em vez de redeclarar unidade. Um mecanismo, não dois.
+
+Consequência prática: quando a Fase 2 do Buyman modelar `PurchaseOrder`, ela não
+inventa eixo nenhum — lê a mesma tabela.
+
+### 4. Requisito de projeto: a anotação de preparo (dono, 19/08)
+
+> *"0.300 de OVOS seria idealmente 300 g de ovos"* … *"é útil, como anotação, qual a
+> quantidade aproximada em unidades, para facilitar a vida do operador que vai fazer o
+> mise-en-place/picking/pesagem"*.
+
+Isto **é requisito, não detalhe**, e cai exatamente na regra 3:
+
+- **A ficha fala na base:** `0,300 kg` de ovo. É o que entra no BOM, no consumo, no
+  custo e no ledger.
+- **A tela de preparo mostra a anotação derivada:** `300 g · ≈ 6 ovos`, calculada na
+  hora a partir do fator aproximado do material (`MiseEnPlaceLineProjection`,
+  `shopman/backstage/projections/production.py`).
+- **A anotação nunca é gravada como verdade.** Corrigiu o fator porque o ovo do
+  fornecedor novo é jumbo (60 g)? Toda lista de picking se atualiza sozinha, sem tocar
+  em ficha nenhuma. Se a anotação fosse persistida, ela seria a quinta cópia de uma
+  verdade que já tem dono — e envelheceria calada.
+
+## Invariantes
+
+- Um insumo, uma unidade-base. `Quant`, `Move` e `cost_q` só existem nela.
+- Conversão exata não é editável; convencionada e aproximada são, e têm autor.
+- Nenhuma conversão é implícita: ou está na tabela fechada, ou está declarada no
+  insumo. Não existe conversão "deduzida".
+- Número que passou por fator aproximado é rotulado até a tela, e não vira custo
+  congelado sem o rótulo.
+- Fator ausente **recusa o gesto**; não existe fallback silencioso.
+
+---
 
 ## Evidência (medida no repositório em 2026-08-19)
 
-### 0. O que a casa já sabe de custo de compra: nada
+É esta seção que sustenta o desenho acima — em particular, por que a unidade-base
+**não pode** ser escolhida para agradar a ficha técnica nem para agradar o custo.
 
-Antes de qualquer conta, o inventário honesto do que existe:
+### 0. O que a casa já sabia de custo de compra: nada
 
-- `SupplierMaterialCost` **não tem uma linha sequer** — o seed cria os 23 `Material`
-  e **nenhum** `Supplier` nem custo (`grep` em `config/management/commands/seed.py`).
+- `SupplierMaterialCost` **não tem uma linha sequer** — o seed cria os 23 `Material` e
+  **nenhum** `Supplier` nem custo.
 - **Não existe ingestão de NF-e de entrada** em lugar nenhum do repositório.
-  `uCom`/`qCom`/`vUnCom` aparecem em um único arquivo, e é de **saída**:
+  `uCom`/`qCom`/`vUnCom` aparecem num único arquivo, e é de **saída**:
   `shopman/shop/adapters/fiscal_focusnfe.py` (emissão da NFC-e).
 
-Ou seja: o **denominador** do erro — o preço — não está no repositório. O que dá
-para medir com rigor é a aritmética do arredondamento e as quantidades reais das
-receitas. É o que segue; a parte que só uma nota fiscal responde está em §4.
+O **denominador** do erro — o preço — não está no repositório. Dá para medir com rigor
+a aritmética do arredondamento e as quantidades reais; o resto está em §4.
 
 ### 1. A lei do arredondamento (aritmética, não opinião)
 
@@ -124,152 +158,129 @@ Custo em centavo inteiro por unidade erra, no máximo, **meio centavo por unidad
 
 > **erro máximo (%) = 50 ÷ (custo em centavos por unidade)**
 
-Daí saem dois limiares duros, que independem de insumo, de fornecedor e de preço:
-
 | Custo por unidade | Erro máximo |
 |---|---|
 | ≥ R$ 0,50 | ≤ 1% |
 | R$ 0,05 | 10% |
-| < R$ 0,01 | **sem representação** — com a `CheckConstraint(cost_q > 0)` recém-criada, não existe valor válido a lançar |
+| < R$ 0,01 | **sem representação** — com a `CheckConstraint(cost_q > 0)`, não existe valor válido a lançar |
 
-O erro cai a zero só quando o preço calha de dar centavo inteiro por unidade
-(canela a R$ 30,00/kg = exatos 3 centavos/g). Isso é sorte, não projeto: muda no
-próximo reajuste.
+O erro cai a zero só quando o preço calha de dar centavo inteiro por unidade (canela a
+R$ 30,00/kg = exatos 3 centavos/g). Sorte, não projeto: muda no próximo reajuste.
 
 ### 2. Insumo a insumo, com as receitas reais do seed
 
-23 materiais: **16 em `kg`, 3 em `l`, 2 em `g`, 2 em `un`**. 18 receitas, 47 itens
-de receita apontando para `Material`. Maior uso por fornada e erro máximo em reais
-(quantidade × meio centavo):
+23 materiais e 18 receitas, 47 itens de ficha apontando para `Material`. Maior uso por
+fornada e erro máximo em reais (quantidade × meio centavo), **se** a base fosse a
+unidade fina:
 
-| Insumo | Unidade | Maior uso por fornada | Erro máx. R$/fornada | Custo/unidade p/ erro ≤1% |
+| Insumo | Base fina hipotética | Maior uso por fornada | Erro máx. R$/fornada | Preço p/ erro ≤1% |
 |---|---|---|---|---|
 | CANELA | `g` | 60 g (recheio-maçã) | R$ 0,30 | **R$ 500,00/kg** |
 | ALECRIM | `g` | 30 g (focaccia) | R$ 0,15 | **R$ 500,00/kg** |
 | FARINHA-T65 | `kg` | 5,000 kg | R$ 0,025 | R$ 0,50/kg |
-| FARINHA-T55 | `kg` | 5,000 kg | R$ 0,025 | R$ 0,50/kg |
-| FARINHA-T45 | `kg` | 4,800 kg | R$ 0,024 | R$ 0,50/kg |
 | AGUA-FILTRADA | `l` | 4,000 l | R$ 0,020 | R$ 0,50/l |
 | MANTEIGA-FR | `kg` | 2,400 kg | R$ 0,012 | R$ 0,50/kg |
-| OVOS | `un` | 1,200 | R$ 0,006 | R$ 0,50/un |
-| … demais 12 em `kg` | `kg` | ≤ 3,800 kg | ≤ R$ 0,019 | R$ 0,50/kg |
-| MALTE | `kg` | 0,020 kg | R$ 0,0001 | R$ 0,50/kg |
+| … demais 15 em `kg` | `kg` | ≤ 4,800 kg | ≤ R$ 0,024 | R$ 0,50/kg |
 
-Leitura: **em `kg` e `l` o erro é ruído** (farinha a R$ 3,50/kg → 0,14%; nenhum
-insumo de padaria custa menos de R$ 0,50 o quilo, então o limiar nunca é cruzado).
-**Em `g` o erro é estrutural**, porque para ficar em 1% a canela precisaria custar
-**R$ 500,00 o quilo**.
+**Os 11% da auditoria se confirmam:** canela a R$ 45,00/kg = 4,5 centavos/g → arredonda
+para 4 → **11,1%**. Na faixa de atacado (R$ 30 a R$ 90/kg), o erro **máximo** vai de 17%
+a 5,5%. Para cair a 1% com base em `g`, o quilo teria de custar **R$ 500,00**.
 
-**A estimativa da auditoria se confirma.** Canela a R$ 45,00/kg = 4,5 centavos/g →
-arredonda para 4 → **erro de 11,1%**, exatamente o que a auditoria estimou. Na faixa
-de atacado (R$ 30 a R$ 90/kg) o erro **máximo** vai de 17% a 5,5%. Em reais é pouco
-(até R$ 0,30 por fornada de recheio), mas é 11% do custo *daquele* ingrediente —
-e esse percentual entra inteiro na margem do produto que o usa e no B.I. que a
-[ADR-023](adr-023-cost-live-and-frozen.md) acabou de mandar congelar.
+**Como o desenho responde:** a base da canela é `kg` — ela é **pesada**, e é isso que a
+R1 pergunta. A ergonomia da ficha ("0,060 kg") não é resolvida mudando a base, e sim
+pela anotação da §4 do desenho ("60 g"); a precisão do custo não é resolvida mudando a
+base, e sim pelo eixo de compra (§3), que é uma linha da tabela de conversões. **A
+tentação que produzia os 11% deixa de existir porque a base parou de ter dois donos.**
 
-**A água é o caso extremo, e é do eixo grosso.** Um litro de água filtrada custa
-fração de centavo: mesmo com `unit = l` não existe `cost_q` válido (o mínimo é 1
-centavo/l, mais que o dobro do real). Sob dois eixos, compra-se o filtro/m³ e o
-fator resolve.
+**A água é o caso extremo, e ele vem do lado grosso:** um litro de água filtrada custa
+fração de centavo — nem a base grossa salva. Sob conversão declarada, compra-se o
+filtro/m³ e o fator resolve.
 
-### 3. Quais fichas técnicas quebram em cada opção
+### 3. Quais fichas técnicas quebram em cada caminho
 
-**Opção B (eixo único, tudo na unidade grossa `kg`/`l`):** dos 47 itens, **6 já
-estão abaixo de 0,1 kg** e passariam a ser escritos assim — MALTE 0,020 · SAL 0,090
-· SAL 0,080 · **CANELA 0,060** · **ALECRIM 0,030** · LIMÃO 0,020 — mais 21 itens
-entre 0,1 e 1 kg. E **13 ocorrências mudariam de unidade** (os itens cujo material
-não está em `kg` hoje: água, leite, azeite, ovos, limão, canela, alecrim).
+- **Base grossa para tudo, sem conversão** (a alternativa descartada): dos 47 itens,
+  **27 ficam abaixo de 1 kg** e **6 abaixo de 0,1 kg** — canela 0,060 · alecrim 0,030 ·
+  malte 0,020 · sal 0,090 e 0,080 · limão 0,020 — e **13 ocorrências mudam de unidade**.
+  A ficha fica ilegível para quem prepara, e é exatamente aí que nasce a gambiarra.
+- **Desenho aceito:** a ficha continua na base **e ganha anotação legível na tela de
+  preparo**. Nenhuma ficha precisa ser reescrita para caber no custo.
 
-**Opção A (dois eixos):** **nenhuma ficha muda.** A unidade-base continua sendo a
-que a receita já usa; o que ganha eixo é a linha de custo.
+### 4. O que uma NF-e de compra responde (a intuição do dono, e ela é melhor do que parece)
 
-**De quebra, um erro que já existe:** os `RecipeItem` do seed nascem com o default
-`kg` (o seed usa `objects.create()`, que não chama `clean()`), então OVOS `1.200` e
-LIMÃO `0.120` — materiais cadastrados em `un` — significam 1,2 **kg** de ovo e 120 **g**
-de limão, não 1,2 ovos. Qualquer das duas opções obriga a arrumar isso; a opção A
-arruma só o cadastro do material, a B arruma cadastro **e** as 13 linhas de receita.
-
-### 4. Onde o operador faz conta (o critério do dono)
-
-Chegou um saco de farinha de 25 kg por R$ 180,00:
-
-| | O que o operador digita | Quem divide |
-|---|---|---|
-| **A — dois eixos** | `saco` · `25` · `R$ 180,00` | o sistema (R$ 7,20/kg, em decimal) |
-| **B — eixo único (kg)** | `R$ 7,20` | **o operador** (180 ÷ 25, de cabeça) |
-
-Canela, caixa de 1 kg por R$ 45,00, insumo em `g`:
-
-| | O que o operador digita | Resultado |
-|---|---|---|
-| **A** | `caixa` · `1000` · `R$ 45,00` | sistema deriva 4,5 centavos/g, exato |
-| **B com `unit=g`** | precisa de centavos **por grama**: 45,00 ÷ 1000 | não cabe em centavo inteiro; ele digita 4 ou 5 e erra 11% |
-| **B com `unit=kg`** | `R$ 45,00` (sem conta) | mas a ficha passa a dizer 0,060 kg de canela |
-
-Os três números da opção A — embalagem, quantidade por embalagem e valor — **estão
-todos impressos na nota e na caixa**. Nenhum exige divisão. O fator, além disso, é
-propriedade da embalagem: digita-se uma vez por (fornecedor, insumo), não a cada
-compra. Pelo critério do dono, **a opção B é a única que obriga o humano a dividir.**
-
-### 5. O que uma NF-e de compra responderia (a intuição do dono, e ela é melhor do que parece)
-
-O item de uma NF-e **já traz os dois eixos, por obrigação legal**:
+O item de uma NF-e **já traz dois eixos, por obrigação legal**:
 
 - `uCom` · `qCom` · `vUnCom` — unidade **comercial**: como o fornecedor vendeu (SC, CX, FD, PC);
 - `uTrib` · `qTrib` · `vUnTrib` — unidade **tributável**: a unidade de referência (KG, L, UN).
 
-Isto é, o **fator** é `qTrib ÷ qCom` e o **custo por unidade-base** é o próprio
-`vUnTrib`. Sob dois eixos, uma futura ingestão de XML preenche os três campos
-**sozinha, sem digitação nenhuma** — o oposto do que o dono teme.
+Ou seja: o **fator convencionado** é `qTrib ÷ qCom` e o **custo por unidade-base** é o
+próprio `vUnTrib`. Uma futura ingestão de XML **preenche a tabela de conversões
+sozinha**, sem digitação — a NF-e é, literalmente, a fonte de dado que a regra R2 quer.
 
 **Experimento barato (o dono providencia os arquivos):** 5 a 10 XMLs de NF-e de
-**entrada** dos fornecedores reais da Nelson (moinho, laticínio, distribuidor de
-secos, hortifrúti), entregues por **arquivo** — dado externo entra por arquivo, é a
-convenção da casa. Extrair por item: `xProd`, `NCM`, `uCom`, `qCom`, `vUnCom`,
-`uTrib`, `qTrib`, `vUnTrib`. Quatro perguntas que 10 notas fecham:
+**entrada** dos fornecedores reais da Nelson (moinho, laticínio, distribuidor de secos,
+hortifrúti), entregues por **arquivo** — dado externo entra por arquivo, é a convenção
+da casa. Extrair por item: `xProd`, `NCM`, `uCom`, `qCom`, `vUnCom`, `uTrib`, `qTrib`,
+`vUnTrib`. Quatro perguntas que 10 notas fecham:
 
-1. **`uCom` ≠ `uTrib` em que fração dos itens?** Alta → o eixo de compra é fato da
-   nota, não invenção nossa, e o fator vem de graça.
-2. **Quais unidades comerciais realmente aparecem** (SC/CX/FD/PC/KG) → dimensiona o
-   vocabulário do campo, em vez de adivinharmos a lista.
-3. **Distribuição de `vUnTrib`**: quantos itens custam menos de R$ 0,50 por unidade-base
-   (erro > 1% no centavo inteiro) e quantos abaixo de R$ 0,05 (> 10%).
-4. **O mesmo insumo chega em mais de uma embalagem?** Se sim, o fator pertence à
-   linha de custo (por fornecedor) e não ao `Material` — que é o que esta proposta
-   já assume.
+1. **`uCom` ≠ `uTrib` em que fração dos itens?** Alta → o fator vem de graça da nota.
+2. **Quais unidades comerciais aparecem** (SC/CX/FD/PC/KG) → dimensiona o vocabulário
+   inicial da tabela, em vez de adivinharmos a lista.
+3. **Distribuição de `vUnTrib`** → quantos insumos custam menos de R$ 0,50 por
+   unidade-base (onde o centavo inteiro erra > 1%).
+4. **O mesmo insumo chega em mais de uma embalagem?** Se sim, a conversão
+   convencionada precisa de escopo por fornecedor — e não só por material.
 
-**O experimento pode derrubar esta ADR**, e é por isso que vale: se (1) der baixo e
-(3) mostrar todo mundo acima de R$ 0,50 por unidade-base, o eixo único basta e a
-recomendação abaixo muda.
+Nenhuma dessas respostas muda a decisão: elas **calibram os defaults** (que unidades
+nascem cadastradas, quais fatores já vêm preenchidos, se o escopo é material ou par
+material-fornecedor).
 
-## Recomendação
+---
 
-**Opção A (dois eixos), pelos três motivos que a evidência sustenta:** é a única
-que nunca pede divisão ao operador (§4, o critério do dono); é a única em que
-nenhuma ficha técnica muda (§3); e é a única que representa canela, alecrim e água
-sem erro (§1–2). O custo de adoção é dois campos a mais na tela de custo — campos
-que são **cópia** da nota, não conta.
+## Consequências
 
-Com a [ADR-023](adr-023-cost-live-and-frozen.md) aceita, a ordem fica: decidir a
-unidade → escrever o backend de custo → congelar o custo no `finish`. Nenhuma
-linha de custo existe ainda, então **agora é o momento mais barato que vai existir**.
+**Positivas**
 
-O experimento das notas (§5) não precisa preceder a decisão: ele **confirma** a
-opção A ou a derruba, e se derrubar, derruba antes de a primeira linha de custo
-ser digitada — nada a migrar de qualquer forma.
+- Um mecanismo em vez de três remendos: unidade de compra, embalagem e equivalência
+  física passam a ser a mesma tabela, com o mesmo teste e a mesma tela.
+- O operador nunca divide: ele copia da nota ou conta o que é fácil contar.
+- A ficha técnica para de brigar com o custo — cada um lê a mesma base por um caminho
+  declarado.
+- O B.I. (ADR-021) e o custo congelado (ADR-023) recebem números com procedência:
+  dá para perguntar de qualquer número se ele passou por aproximação.
 
-## Pergunta ao dono (responda "sim")
+**Negativas / custos**
 
-> **Seguimos com os dois eixos** — a receita continua na unidade que já usa, e o
-> custo passa a ser lançado copiando os três números da nota (embalagem,
-> quantidade por embalagem, valor), com o sistema fazendo toda divisão —
-> **e você nos manda 5 a 10 XMLs de NF-e de entrada dos seus fornecedores para
-> confirmar antes de escrevermos o código?**
+- É estrutura nova no Core (tabela de conversões + carimbo de aproximação), não um
+  campo. O plano de execução existe para que ela entre em fases, cada uma útil sozinha.
+- Fator errado continua sendo erro caro (custo 25× menor); pede validação de
+  positividade e alerta de ordem de grandeza na tela.
+- Regra R4 (recusar sem fator) **vai** parar lançamentos no começo, enquanto a tabela
+  está sendo povoada. É o preço de não ter número inventado no ledger — e a mensagem
+  tem de dizer exatamente o que cadastrar.
+
+## Alternativas descartadas
+
+- **Uma tabela só, com tudo editável (inclusive kg↔g)**: mais "flexível" e frágil —
+  permite declarar física errada, e o erro fica invisível porque parece configuração
+  legítima. A separação em três tipos é justamente o que impede isso.
+- **Regra de cadastro "insumo sempre na unidade grossa" (kg/l)**: zero código, e a
+  §3 mediu o preço: 27 dos 47 itens abaixo de 1 kg, 13 ocorrências mudando de unidade,
+  água ainda sem custo representável, e o operador dividindo no lançamento — o que o
+  dono vetou.
+- **Guardar custo em milésimos de centavo**: resolve a representação, não resolve
+  embalagem nem picking, e rompe ADR-002 sem ganhar nada estrutural.
+- **Conversão automática por heurística** ("se está em g e o insumo é kg, divide por
+  mil na calada"): é a gambiarra que a R4 proíbe. Conversão sem autor é conversão sem
+  responsável.
+- **Duas unidades no estoque** (contar ovo em `un` *e* em `kg`): dois números que
+  discordam e nenhum dono único — o oposto de ledger-first.
 
 ## Referências
 
 - Auditoria do Buyman (2026-08-18), achado B2
+- [ADR-023](adr-023-cost-live-and-frozen.md) — o custo congela; esta ADR diz em que unidade
 - [ADR-002](adr-002-centavos.md) — dinheiro é inteiro em centavos
-- [ADR-023](adr-023-cost-live-and-frozen.md) — que custo é esse que a unidade expressa
-- [BUYMAN-PROCUREMENT-PLAN](../plans/BUYMAN-PROCUREMENT-PLAN.md) — Fases 2–4
-- `packages/craftsman/shopman/craftsman/models/recipe.py` (`RecipeItem.clean`), `packages/buyman/shopman/buyman/models/cost.py`
+- [ADR-021](adr-021-bi-cross-suite-read-layer.md) — o fato tem dono; agregação é leitura
+- [UNIT-CONVERSION-PLAN.md](../plans/UNIT-CONVERSION-PLAN.md) — execução em fases
+- [BUYMAN-PROCUREMENT-PLAN](../plans/BUYMAN-PROCUREMENT-PLAN.md) — Fases 2–4 do Buyman
+- `packages/craftsman/shopman/craftsman/models/recipe.py` (`RecipeItem.clean`), `packages/buyman/shopman/buyman/models/cost.py`, `shopman/backstage/projections/production.py`
