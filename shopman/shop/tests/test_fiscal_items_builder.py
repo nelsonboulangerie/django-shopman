@@ -96,3 +96,55 @@ def test_product_without_ncm_is_terminal_in_the_handler_and_that_is_the_truth(or
     backend = FocusNFeBackend()
     with pytest.raises(DirectiveTerminalError):
         NFCeEmitHandler(backend).handle(message=directive, ctx={})
+
+
+# ── invariante de canal: quem escreve `payment` escreve o valor final ────────
+#
+# Audit do Fiscalman (F7): o adapter deriva `valor_desconto = produtos + frete −
+# pagamento`. Um `payment` defasado não vira erro — vira um desconto que não
+# houve dentro de um XML válido, subdeclarando a venda.
+
+
+@EMIT_ALWAYS
+def test_stale_payment_below_total_does_not_become_a_phantom_discount(order_with_item):
+    from shopman.backstage.models import OperatorAlert
+
+    order_with_item.data = {"payment": {"method": "cash", "amount_q": 700}}
+    order_with_item.save(update_fields=["data"])
+
+    fiscal_service.emit(order_with_item)
+
+    assert not Directive.objects.filter(topic="fiscal.emit_nfce").exists()
+    alert = OperatorAlert.objects.filter(type="fiscal_payment_mismatch").first()
+    assert alert is not None
+    assert order_with_item.ref in alert.message
+
+
+@EMIT_ALWAYS
+def test_mixed_payment_is_measured_by_the_sum_of_its_tenders(order_with_item):
+    order_with_item.data = {
+        "payment": {
+            "method": "mixed",
+            "amount_q": 1000,
+            "tenders": [
+                {"method": "cash", "amount_q": 400},
+                {"method": "pix", "amount_q": 600},
+            ],
+        }
+    }
+    order_with_item.save(update_fields=["data"])
+
+    fiscal_service.emit(order_with_item)
+
+    assert Directive.objects.filter(topic="fiscal.emit_nfce").exists()
+
+
+@EMIT_ALWAYS
+def test_payment_matching_the_total_emits_normally(order_with_item):
+    order_with_item.data = {"payment": {"method": "cash", "amount_q": 1000}}
+    order_with_item.save(update_fields=["data"])
+
+    fiscal_service.emit(order_with_item)
+
+    directive = Directive.objects.get(topic="fiscal.emit_nfce")
+    assert directive.payload["payment"]["amount_q"] == 1000

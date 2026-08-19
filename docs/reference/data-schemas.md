@@ -245,12 +245,23 @@ Classificações: **canonical** = fonte de verdade para decisões; **display** =
 
 **Status de pagamento NÃO está aqui** — consulte sempre `payment_svc.get_payment_status(order)` (canonical source: Payman).
 
+**Invariante de canal — quem escreve `payment` escreve o valor FINAL.** O documento
+fiscal deriva o desconto do que está aqui: o adapter NFC-e calcula
+`valor_desconto = produtos + frete − pagamento`. Um `payment` defasado (menor que
+`order.total_q` depois de uma edição pós-pagamento) não vira erro — vira um
+**desconto que não houve** dentro de um XML válido, subdeclarando a venda. O PDV
+já sela isso em `_reconcile_order_payment_to_total` (`shop/services/pos.py`) e
+todo canal novo (ManyChat, iFood direto) herda a mesma disciplina. Guarda:
+`shop/services/fiscal._payment_below_total` recusa emitir e levanta o alerta
+`fiscal_payment_mismatch` em vez de mandar o documento errado.
+
+
 | Sub-chave | Tipo | Classe | Escrito por | Lido por | Descrição |
 |-----------|------|--------|-------------|----------|-----------|
 | `method` | `string` | **canonical** | CheckoutView → CommitService; POS (`shop/services/pos.py`) | lifecycle, views, handlers | `"pix"`, `"card"`, `"cash"`, `"external"`; `"mixed"` quando o PDV recebe em mais de um meio (ver `tenders`) |
 | `intent_ref` | `string` | **canonical** | `payment.initiate()` | `payment_svc.get_payment_status`, PaymentStatusView, reconciliação financeira | Ref do intent no Payman. Pix/cartão: intent do gateway. `cash`/`external` **com `collection == "terminal"`** (venda do PDV): intent capturado no ato (`PaymentService.settle`, `gateway=""`), gravado depois do total selado (ADR-022). Sem `collection` (loja online) ou `on_delivery` (COD): ausente até o acerto (`settle_delivery_cash` grava). Venda **mista** do PDV não tem `intent_ref` no topo: cada `tenders[].intent_ref` aponta o intent do seu método (pix/cartão dentro de mista nascem `asserted_at_terminal` no `gateway_data`) |
 | `idempotency_key` | `string` | idempotency | `payment.initiate()` | adapters Payman/gateway | Chave da tentativa de pagamento para retry seguro; não é status e não libera fluxo operacional |
-| `amount_q` | `int` | display | `payment.initiate()` | PaymentView, templates | Valor em centavos (referência para UI) |
+| `amount_q` | `int` | **canonical** | `payment.initiate()`, POS (`_reconcile_order_payment_to_total`) | PaymentView, templates, emissão de NFC-e (`shop/services/fiscal`) | Valor em centavos. **Tem de ser o valor final da venda** (ver invariante acima): a NFC-e deriva o desconto dele. Em venda mista quem manda é a soma dos `tenders` |
 | `qr_code` | `string` | display | `payment.initiate()` | PaymentView template | QR code image (data URI) — PIX only |
 | `copy_paste` | `string` | display | `payment.initiate()` | PaymentView template | Brcode PIX copia-e-cola — PIX only |
 | `expires_at` | `string` | display | `payment.initiate()` | PaymentStatusView (expiração) | ISO datetime de expiração do QR — PIX only |
