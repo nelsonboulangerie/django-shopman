@@ -1,8 +1,8 @@
 # BI-DATA-FOUNDATION-PLAN — a fundação de dados do B.I. em três camadas
 
 > **Status: 🟢 ETAPA 1 APROVADA em 2026-08-18 ("acato as recomendações") — as três decisões do
-> §6 ficaram como recomendado; ETAPA 2 em andamento: P0 ✅ (#209), P1 ✅ (`feat/bi-aliases`),
-> próximo P2 (contrato canônico + fontes + leitura).** Frente B, v1. Irmão de
+> §6 ficaram como recomendado; ETAPA 2 em andamento: P0 ✅ (#209), P1 ✅ (#211), P2 ✅
+> (`feat/bi-canonical`); próximo P3 (série diária materializada).** Frente B, v1. Irmão de
 > [BI-PLAN.md](BI-PLAN.md), [BI-INSIGHTS-MAP.md](BI-INSIGHTS-MAP.md),
 > [BI-FORECAST-PLAN.md](BI-FORECAST-PLAN.md) e [BI-QUESTION-CATALOG.md](BI-QUESTION-CATALOG.md).
 > Não depende da consulta de perfis (frente separada); se ela existir quando isto rodar, é só
@@ -400,7 +400,22 @@ primeiro leitor, não antes. Detalhe original do passo abaixo.
 - Aceite: `test_bi_*` verdes sem edição; teste novo prova que `bi_calibrate` e a leitura de
   consumo respondem igual com o de-para vindo da tabela.
 
-**P2 — Leitura pela canônica (nativo entra; 2 PRs).** Prova o padrão de ponta a ponta.
+**P2 — Leitura pela canônica (nativo entra). ✅ ENTREGUE 2026-08-19 (branch `feat/bi-canonical`,
+sobre a do P1).** Como saiu: `bi/canonical.py` (`CanonicalSale`/`CanonicalSaleLine`/
+`CanonicalPayment`, `read_sales(date_from, date_to) → SalesWindow` com `sales`, `native_days`,
+`historical_days`, `source_conflicts`, `cancelled_native`, `lines()` sob demanda), adaptadores
+`bi/sources/orderman.py` (pedido nativo; cancelado contado à parte; parcelas por
+`iter_order_payments`; `change_q`) e `bi/sources/historical.py` (`HistoricalSale`, origem lida do
+campo; forma traduzida pelo vocabulário confirmado ou `raw:`; `is_cash` por parcela; de-para de
+produto confirmado resolve `product_ref`). **As 5 réplicas de "o dia nativo vence" sumiram**
+(`sales_series`, `bi_sales` ×3, `bi_explore` ×2 → um compositor); `bi_change._habit` lê o adaptador
+nativo direto (troco é medição nativa). Guard declarado: `BISalesReport.source_conflicts`
+(dia com < 5 nativos e > 20 históricos descartados) + `sources`; `bi-nuxt/sales.vue` mostra o aviso
+e rotula hora/dia da semana quando somam histórico. Bug de passagem corrigido: `_sales_item_rows`
+rotulava todo histórico como "yooga" (agora vem do campo). ⚠️ Semântica que mudou de propósito:
+"forma conhecida" e "dinheiro" do histórico passam pelo vocabulário confirmado (antes: substring
+"DINHEIRO" em código) — sem `setup_bi_reference`, a fatia de dinheiro é ausência declarada, não zero.
+Detalhe original do passo abaixo.
 - `bi/sources/orderman.py` (mesmo contrato, lendo `Order`/`OrderItem`, `product_ref = sku`
   nativo, `channel_key = channel_ref`, `payment_key` via `iter_order_payments`).
 - `bi/canonical.py` ganha o **compositor**: `sales(window)` aplica **"o dia nativo vence" em UM

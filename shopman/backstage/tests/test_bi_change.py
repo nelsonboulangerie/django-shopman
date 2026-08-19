@@ -17,7 +17,7 @@ from shopman.orderman.models import Order
 
 from shopman.backstage.models import DayContext, HistoricalSale
 from shopman.backstage.projections.bi_change import ForecastError, build_bi_change
-from shopman.backstage.tests.support import historical_batch
+from shopman.backstage.tests.support import historical_batch, install_bi_vocabularies
 
 pytestmark = pytest.mark.django_db
 
@@ -70,7 +70,13 @@ def _history(*, days: int, orders: int = 12, cash: int = 6, change=350) -> None:
 
 
 def _external(*, days: int, orders: int = 12, cash_share: float = 0.5) -> None:
-    """Dois anos de export externo: tem total e forma de pagamento, nunca troco."""
+    """Dois anos de export externo: tem total e forma de pagamento, nunca troco.
+
+    A forma crua só vira "dinheiro" pelo vocabulário confirmado
+    (``PaymentMethodAlias``, instalado pelo seed): sem ele a venda sai com forma
+    desconhecida e a fatia de dinheiro é ausência, não zero.
+    """
+    install_bi_vocabularies()
     tz = timezone.get_current_timezone()
     today = timezone.localdate()
     rows = []

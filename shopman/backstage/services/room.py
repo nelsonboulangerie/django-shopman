@@ -150,6 +150,7 @@ def room_days(date_from: date, date_to: date) -> dict[date, RoomDay]:
     """
     from shopman.orderman.models import Order, Session
 
+    from shopman.backstage.bi.canonical import read_sales
     from shopman.backstage.models import DayContext, SeatingSpot
     from shopman.backstage.projections.bi_explore import _consumption_modes
     from shopman.backstage.services.consumption import DINE_IN, DINE_IN_TAKEAWAY
@@ -168,7 +169,9 @@ def room_days(date_from: date, date_to: date) -> dict[date, RoomDay]:
         return {}
 
     spots = list(SeatingSpot.objects.all())
-    native_modes, _ = _consumption_modes(window)
+    # O salão é do pedido nativo (a comanda só existe no Shopman); a canônica
+    # traz o modo já classificado pela mesma regra que o explorador usa.
+    modes = _consumption_modes(read_sales(date_from, date_to))
     seated = {DINE_IN, DINE_IN_TAKEAWAY}
 
     # Comanda → pedido: o pedido é quem sabe o modo de consumo e o valor; a
@@ -193,7 +196,7 @@ def room_days(date_from: date, date_to: date) -> dict[date, RoomDay]:
         if found is None:
             continue
         order_id, total_q = found
-        if native_modes.get(order_id) not in seated:
+        if modes.get(("shopman", order_id)) not in seated:
             continue
         began = timezone.localtime(opened_at)
         finished = timezone.localtime(committed_at)

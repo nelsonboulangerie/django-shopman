@@ -81,7 +81,15 @@ export interface BISalesPrevious {
   revenue_by_day: number[];
 }
 
-/** BISalesReport(date_from: 'str', date_to: 'str', days: 'tuple[BISalesDay, ...]', by_channel: 'tuple[BISalesChannelRow, ...]', top_skus: 'tuple[BITopSkuRow, ...]', orders_by_hour: 'tuple[int, ...]', orders_by_weekday: 'tuple[int, ...]', orders_total: 'int', revenue_total_q: 'int', average_ticket_q: 'int', cancelled_total: 'int', historical_days: 'int', previous: 'BISalesPrevious') */
+/** Dia em que o nativo venceu e apagou histórico relevante — declarado, não mudo. */
+export interface BISourceConflict {
+  date: string;
+  native_orders: number;
+  historical_dropped: number;
+  source: string;
+}
+
+/** BISalesReport(date_from: 'str', date_to: 'str', days: 'tuple[BISalesDay, ...]', by_channel: 'tuple[BISalesChannelRow, ...]', top_skus: 'tuple[BITopSkuRow, ...]', orders_by_hour: 'tuple[int, ...]', orders_by_weekday: 'tuple[int, ...]', orders_total: 'int', revenue_total_q: 'int', average_ticket_q: 'int', cancelled_total: 'int', historical_days: 'int', sources: 'tuple[str, ...]', source_conflicts: 'tuple[BISourceConflict, ...]', previous: 'BISalesPrevious') */
 export interface BISalesReport {
   date_from: string;
   date_to: string;
@@ -95,6 +103,8 @@ export interface BISalesReport {
   average_ticket_q: number;
   cancelled_total: number;
   historical_days: number;
+  sources: string[];
+  source_conflicts: BISourceConflict[];
   previous: BISalesPrevious;
 }
 

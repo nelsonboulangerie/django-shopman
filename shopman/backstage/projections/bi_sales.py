@@ -1,29 +1,25 @@
 """B.I. de vendas — leitura analítica (ADR-021, BI-PLAN §5/F4 + F6).
 
-Série diária de pedidos/faturamento/ticket, mix por canal, top SKUs e
-distribuição por hora × dia-da-semana. Fontes: ``Order``/``OrderItem`` (os
-donos do fato nativo) e ``HistoricalSale``/``Item`` (histórico externo,
-BI-PLAN §7) — a origem viaja no contrato (``BISalesDay.source``) e a UI
-rotula o trecho histórico; nunca misturados sem rótulo.
+Série diária de pedidos/faturamento/ticket, mix por canal, top produtos e
+distribuição por hora × dia-da-semana. Lê a **camada canônica**
+(``bi/canonical.py``): o pedido nativo e o histórico externo já chegam aqui
+como a mesma coisa, conciliados pela regra "o dia nativo vence", e a origem
+viaja no contrato (``BISalesDay.source``, ``sources``, ``source_conflicts``)
+para a UI rotular o trecho histórico — nunca misturados sem rótulo.
 
-Política de fusão: **o dia nativo vence** — um dia com pedido Shopman lê só
-do Shopman; o histórico preenche os dias em que a suite não existia. Canais
-históricos entram como "yooga · delivery" e "yooga · loja" (delivery é o
-único rótulo confiável do sistema antigo; mesa/balcão nunca viram canal).
-
-Atribuição temporal: ``created_at``/``occurred_at`` em data local. Pedidos
-cancelados/devolvidos ficam FORA do faturamento e são contados à parte (o
-export Yooga só traz vendas autorizadas — cancelado histórico não existe).
+Canais históricos entram como "yooga · delivery" e "yooga · loja" (delivery é
+o único rótulo confiável do sistema antigo; mesa/balcão nunca viram canal).
+Pedidos cancelados/devolvidos ficam FORA do faturamento e são contados à
+parte (o export Yooga só traz vendas autorizadas — cancelado histórico não
+existe).
 """
 
 from __future__ import annotations
 
 from collections import defaultdict
 from dataclasses import dataclass
-from datetime import date, timedelta
+from datetime import date
 from decimal import Decimal
-
-from django.utils import timezone
 
 from .bi_production import _normalize_window, _previous_window, _qty
 
@@ -65,6 +61,21 @@ class BISalesPrevious:
 
 
 @dataclass(frozen=True)
+class BISourceConflict:
+    """Dia em que o nativo venceu e apagou histórico relevante — declarado, não mudo.
+
+    Um pedido de teste num dia antigo apaga ~110 vendas do Yooga daquele dia.
+    A regra é essa de propósito (somar contaria a mesma venda duas vezes); o
+    que não pode é acontecer sem ninguém ver.
+    """
+
+    date: str
+    native_orders: int
+    historical_dropped: int
+    source: str
+
+
+@dataclass(frozen=True)
 class BISalesReport:
     date_from: str
     date_to: str
@@ -78,25 +89,18 @@ class BISalesReport:
     average_ticket_q: int
     cancelled_total: int
     historical_days: int  # dias da janela preenchidos pelo histórico (yooga)
+    sources: tuple[str, ...]  # fontes que entraram na janela — hora e dia da semana as somam
+    source_conflicts: tuple[BISourceConflict, ...]
     previous: BISalesPrevious
 
 
 def build_bi_sales(
     *, date_from: date | None = None, date_to: date | None = None
 ) -> BISalesReport:
-    from shopman.orderman.models import Order, OrderItem
-
-    from shopman.backstage.models import HistoricalSale, HistoricalSaleItem
+    from shopman.backstage.bi.canonical import iter_days, read_sales
 
     date_from, date_to = _normalize_window(date_from, date_to)
-    window = _local_datetime_window(date_from, date_to)
-
-    excluded = (Order.Status.CANCELLED, Order.Status.RETURNED)
-    rows = list(
-        Order.objects.filter(created_at__range=window).values_list(
-            "created_at", "total_q", "channel_ref", "status"
-        )
-    )
+    window = read_sales(date_from, date_to)
 
     day_orders: dict[date, int] = defaultdict(int)
     day_revenue: dict[date, int] = defaultdict(int)
@@ -104,42 +108,16 @@ def build_bi_sales(
     channel_revenue: dict[str, int] = defaultdict(int)
     by_hour = [0] * 24
     by_weekday = [0] * 7
-    cancelled = 0
-    for created_at, total_q, channel_ref, status in rows:
-        if status in excluded:
-            cancelled += 1
-            continue
-        local = timezone.localtime(created_at)
-        day_orders[local.date()] += 1
-        day_revenue[local.date()] += total_q
-        channel_orders[channel_ref] += 1
-        channel_revenue[channel_ref] += total_q
-        by_hour[local.hour] += 1
-        by_weekday[local.weekday()] += 1
-
-    # Histórico preenche só os dias em que o Shopman não vendeu (o dia nativo
-    # vence — nunca somar as duas fontes num mesmo dia).
-    native_days = set(day_orders)
-    historical = HistoricalSale.objects.filter(occurred_at__range=window).values_list(
-        "occurred_at", "total_q", "is_delivery", "source"
-    )
-    hist_days: dict[date, str] = {}
-    for occurred_at, total_q, is_delivery, source in historical:
-        local = timezone.localtime(occurred_at)
-        if local.date() in native_days:
-            continue
-        hist_days.setdefault(local.date(), source)
-        day_orders[local.date()] += 1
-        day_revenue[local.date()] += total_q
-        channel = f"{source} · {'delivery' if is_delivery else 'loja'}"
-        channel_orders[channel] += 1
-        channel_revenue[channel] += total_q
-        by_hour[local.hour] += 1
-        by_weekday[local.weekday()] += 1
+    for sale in window.sales:
+        day_orders[sale.day] += 1
+        day_revenue[sale.day] += sale.total_q
+        channel_orders[sale.channel_key] += 1
+        channel_revenue[sale.channel_key] += sale.total_q
+        by_hour[sale.occurred_at.hour] += 1
+        by_weekday[sale.occurred_at.weekday()] += 1
 
     days = []
-    day = date_from
-    while day <= date_to:
+    for day in iter_days(date_from, date_to):
         orders = day_orders.get(day, 0)
         revenue = day_revenue.get(day, 0)
         days.append(
@@ -148,10 +126,9 @@ def build_bi_sales(
                 orders=orders,
                 revenue_q=revenue,
                 average_ticket_q=revenue // orders if orders else 0,
-                source=hist_days.get(day, "shopman"),
+                source=window.historical_days.get(day, "shopman"),
             )
         )
-        day += timedelta(days=1)
 
     orders_total = sum(day_orders.values())
     revenue_total = sum(day_revenue.values())
@@ -164,63 +141,39 @@ def build_bi_sales(
             BISalesChannelRow(channel_ref=ref, orders=channel_orders[ref], revenue_q=channel_revenue[ref])
             for ref in sorted(channel_orders, key=lambda ref: -channel_revenue[ref])
         ),
-        top_skus=_top_skus(
-            OrderItem,
-            HistoricalSaleItem,
-            window=window,
-            excluded=excluded,
-            native_days=native_days,
-        ),
+        top_skus=_top_skus(window),
         orders_by_hour=tuple(by_hour),
         orders_by_weekday=tuple(by_weekday),
         orders_total=orders_total,
         revenue_total_q=revenue_total,
         average_ticket_q=revenue_total // orders_total if orders_total else 0,
-        cancelled_total=cancelled,
-        historical_days=len(hist_days),
+        cancelled_total=window.cancelled_native,
+        historical_days=len(window.historical_days),
+        sources=window.sources,
+        source_conflicts=tuple(
+            BISourceConflict(
+                date=conflict.day.isoformat(),
+                native_orders=conflict.native_orders,
+                historical_dropped=conflict.historical_dropped,
+                source=conflict.source,
+            )
+            for conflict in window.source_conflicts
+        ),
         previous=_sales_previous(date_from, date_to),
     )
 
 
 def _sales_previous(date_from: date, date_to: date) -> BISalesPrevious:
-    """Totais e série do período anterior, com a MESMA regra de fusão do
-    principal (dia nativo vence) — o teste de consistência compara os dois."""
-    from shopman.orderman.models import Order
-
-    from shopman.backstage.models import HistoricalSale
+    """Totais e série do período anterior, pela MESMA leitura conciliada do
+    principal — o teste de consistência compara os dois."""
+    from shopman.backstage.bi.canonical import iter_days, read_sales
 
     prev_from, prev_to = _previous_window(date_from, date_to)
-    window = _local_datetime_window(prev_from, prev_to)
-    excluded = (Order.Status.CANCELLED, Order.Status.RETURNED)
-
     day_orders: dict[date, int] = defaultdict(int)
     day_revenue: dict[date, int] = defaultdict(int)
-    native = Order.objects.filter(created_at__range=window).values_list(
-        "created_at", "total_q", "status"
-    )
-    for created_at, total_q, status in native:
-        if status in excluded:
-            continue
-        local_day = timezone.localtime(created_at).date()
-        day_orders[local_day] += 1
-        day_revenue[local_day] += total_q
-
-    native_days = set(day_orders)
-    historical = HistoricalSale.objects.filter(occurred_at__range=window).values_list(
-        "occurred_at", "total_q"
-    )
-    for occurred_at, total_q in historical:
-        local_day = timezone.localtime(occurred_at).date()
-        if local_day in native_days:
-            continue
-        day_orders[local_day] += 1
-        day_revenue[local_day] += total_q
-
-    series = []
-    day = prev_from
-    while day <= prev_to:
-        series.append(day_revenue.get(day, 0))
-        day += timedelta(days=1)
+    for sale in read_sales(prev_from, prev_to).sales:
+        day_orders[sale.day] += 1
+        day_revenue[sale.day] += sale.total_q
 
     orders_total = sum(day_orders.values())
     revenue_total = sum(day_revenue.values())
@@ -230,46 +183,24 @@ def _sales_previous(date_from: date, date_to: date) -> BISalesPrevious:
         orders_total=orders_total,
         revenue_total_q=revenue_total,
         average_ticket_q=revenue_total // orders_total if orders_total else 0,
-        revenue_by_day=tuple(series),
+        revenue_by_day=tuple(day_revenue.get(day, 0) for day in iter_days(prev_from, prev_to)),
     )
 
 
-def _top_skus(
-    order_item_model,
-    historical_item_model,
-    *,
-    window,
-    excluded,
-    native_days: set[date],
-    limit: int = 10,
-) -> tuple[BITopSkuRow, ...]:
-    # Chave = sku quando existe; item histórico sem sku agrega pelo nome (7%
-    # do export — produto fora do catálogo atual não pode sumir do ranking).
+def _top_skus(window, *, limit: int = 10) -> tuple[BITopSkuRow, ...]:
+    # A chave é a do produto canônico: catálogo (junta Yooga e nativo quando o
+    # de-para existe), SKU da fonte, ou o nome — 7% do export não tem SKU e
+    # produto fora do catálogo atual não pode sumir do ranking.
     qty_by_key: dict[str, Decimal] = defaultdict(Decimal)
     revenue_by_key: dict[str, int] = defaultdict(int)
     name_by_key: dict[str, str] = {}
     sku_by_key: dict[str, str] = {}
-
-    def _fold(sku: str, name: str, qty, line_total_q: int) -> None:
-        key = sku or f"nome:{name}"
-        qty_by_key[key] += qty
-        revenue_by_key[key] += line_total_q
-        name_by_key[key] = name
-        sku_by_key[key] = sku
-
-    rows = order_item_model.objects.filter(order__created_at__range=window).exclude(
-        order__status__in=excluded
-    ).values_list("sku", "name", "qty", "line_total_q")
-    for sku, name, qty, line_total_q in rows:
-        _fold(sku, name, qty, line_total_q)
-
-    historical = historical_item_model.objects.filter(
-        sale__occurred_at__range=window
-    ).values_list("sale__occurred_at", "sku", "product_name", "qty", "line_total_q")
-    for occurred_at, sku, name, qty, line_total_q in historical:
-        if timezone.localtime(occurred_at).date() in native_days:
-            continue  # o dia nativo vence também no ranking
-        _fold(sku, name, qty, line_total_q)
+    for line in window.lines():
+        key = line.product_key
+        qty_by_key[key] += line.qty
+        revenue_by_key[key] += line.line_total_q
+        name_by_key[key] = line.name
+        sku_by_key[key] = line.product_ref or line.external_sku
 
     top = sorted(revenue_by_key, key=lambda key: -revenue_by_key[key])[:limit]
     return tuple(
@@ -280,14 +211,4 @@ def _top_skus(
             revenue_q=revenue_by_key[key],
         )
         for key in top
-    )
-
-
-def _local_datetime_window(date_from: date, date_to: date):
-    from datetime import datetime, time
-
-    tz = timezone.get_current_timezone()
-    return (
-        datetime.combine(date_from, time.min, tzinfo=tz),
-        datetime.combine(date_to + timedelta(days=1), time.min, tzinfo=tz),
     )

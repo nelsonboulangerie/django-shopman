@@ -68,7 +68,7 @@ from .bi_forecast import (
     build_bi_forecast,
 )
 from .bi_forecast import ForecastError as ForecastError  # horizonte inválido é a mesma borda
-from .sales_series import _is_cash, daily_sales
+from .sales_series import daily_sales
 
 # Até onde recuar atrás da medição de troco. Meio ano é folga generosa sobre as
 # semanas que a casa tem; a régua que manda é o mínimo de dias medidos, não esta.
@@ -292,34 +292,27 @@ def _habit() -> tuple[ChangeHabit | None, ChangeMix | None, str]:
     tem o dado, e completá-lo por estimativa transformaria uma ausência
     declarada num número inventado.
     """
-    from shopman.orderman.models import Order
-
-    from .bi_sales import _local_datetime_window
+    from shopman.backstage.bi.canonical import local_window
+    from shopman.backstage.bi.sources import orderman
 
     until = timezone.localdate() - timedelta(days=1)
     since = until - timedelta(days=HABIT_WINDOW_DAYS)
-    excluded = (Order.Status.CANCELLED, Order.Status.RETURNED)
 
     measured: dict[date, list[int]] = {}
     unmeasured = 0
-    for created_at, status, method, cash_received_q, change_q in Order.objects.filter(
-        created_at__range=_local_datetime_window(since, until)
-    ).values_list(
-        "created_at",
-        "status",
-        "data__payment__method",
-        "data__payment__cash_received_q",
-        "data__payment__change_q",
-    ):
-        if status in excluded or not _is_cash(method, cash_received_q):
+    # O adaptador nativo direto, não a composição: aqui a escolha de fonte é a
+    # pergunta, e passar pela conciliação só traria histórico para descartar.
+    native, _cancelled = orderman.read_sales(local_window(since, until))
+    for sale in native:
+        if not sale.is_cash:
             continue
-        if change_q is None:
+        if sale.change_q is None:
             # Venda em dinheiro sem o valor recebido registrado não é venda sem
             # troco: é venda sem medição. Entrasse como zero, a média cairia e a
             # casa abasteceria menos troco do que precisa — o erro que custa.
             unmeasured += 1
             continue
-        measured.setdefault(timezone.localtime(created_at).date(), []).append(int(change_q))
+        measured.setdefault(sale.day, []).append(sale.change_q)
 
     per_day = [
         sum(changes) / len(changes)

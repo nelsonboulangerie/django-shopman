@@ -39,6 +39,38 @@ export function shortDate(iso: string): string {
   return `${day}/${month}`;
 }
 
+/** Rótulo humano de uma fonte do B.I. ("shopman" é a casa; o resto é histórico). */
+export function sourceLabel(source: string): string {
+  if (source === "shopman") return "Shopman";
+  if (source === "yooga") return "histórico Yooga";
+  if (source === "seed") return "histórico de demonstração";
+  return `histórico ${source}`;
+}
+
+/**
+ * Sob "Pedidos por hora / dia da semana": as duas somam TODAS as fontes da
+ * janela. Sem o rótulo, o gestor leria a soma como Shopman puro.
+ */
+export function sourcesCaption(sources: readonly string[]): string {
+  const historical = sources.filter((s) => s !== "shopman").map(sourceLabel);
+  return historical.length ? ` · inclui ${historical.join(" e ")}` : "";
+}
+
+/**
+ * Um dia em que um pedido nativo (talvez de teste) apagou muito histórico.
+ * A regra "o dia nativo vence" é certa; ficar muda é que não era.
+ */
+export function sourceConflictLabel(conflict: {
+  date: string;
+  native_orders: number;
+  historical_dropped: number;
+  source: string;
+}): string {
+  const native = `${formatInt(conflict.native_orders)} pedido${conflict.native_orders === 1 ? "" : "s"} nativo${conflict.native_orders === 1 ? "" : "s"}`;
+  const dropped = `${formatInt(conflict.historical_dropped)} venda${conflict.historical_dropped === 1 ? "" : "s"}`;
+  return `${shortDate(conflict.date)}: ${native} apagou ${dropped} do ${sourceLabel(conflict.source)} nesse dia`;
+}
+
 /** 0 = segunda (convenção da projection). */
 export const WEEKDAY_LABELS = ["seg", "ter", "qua", "qui", "sex", "sáb", "dom"] as const;
 

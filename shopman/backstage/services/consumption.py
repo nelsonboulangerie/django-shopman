@@ -383,86 +383,94 @@ class Basket:
         return max(weights) / 100
 
 
-def collect_baskets(window) -> tuple[list[Basket], list[Basket]]:
-    """(cestas nativas, cestas históricas) da janela — sem fusão.
+def baskets_for(sales_window) -> list[Basket]:
+    """As cestas de uma janela canônica já conciliada (``bi/canonical.read_sales``).
 
-    Quem lê decide como fundir (``fuse_baskets``: o dia nativo vence). Pedido
-    nativo cancelado/devolvido não entra; pedido sem linha entra com cesta
-    vazia (e sai "sem etiqueta", que é o que ele é).
+    Uma leitura das linhas canônicas, a MESMA resolução de etiqueta para todas:
+    o de-para confirmado traduz o SKU da fonte para o do catálogo, e a etiqueta
+    é procurada primeiro por ele, depois pelo SKU como a fonte escreveu (o
+    ``propose_consumption_tags --include-historical`` grava assim), depois pelo
+    nome (``nome:``) e só então pela categoria — crua no histórico, coleção do
+    catálogo no nativo. Pedido sem linha entra com cesta vazia (e sai "sem
+    etiqueta", que é o que ele é).
     """
-    from django.utils import timezone
-    from shopman.orderman.models import Order, OrderItem
-
-    from shopman.backstage.models import HistoricalSale, HistoricalSaleItem
-
     facts = sku_facts()
     readings = {key: f.reading for key, f in facts.items()}
     beverages = {key: f.beverage for key, f in facts.items()}
     weights = {key: f.weight for key, f in facts.items()}
     rules = category_readings()  # uma consulta, milhares de linhas
 
-    excluded = (Order.Status.CANCELLED, Order.Status.RETURNED)
-    native_lines: dict[int, list[BasketLine]] = defaultdict(list)
-    native_items = OrderItem.objects.filter(order__created_at__range=window).exclude(
-        order__status__in=excluded
-    ).values_list("order_id", "sku", "name", "qty", "line_total_q")
-    categories = _native_categories({sku for _o, sku, *_r in native_items if sku})
-    for order_id, sku, name, qty, line_total_q in native_items:
-        category = categories.get(sku, "")
-        native_lines[order_id].append(BasketLine(
-            key=line_key(sku, name), sku=sku or "", name=name or "", category=category,
-            reading=reading_for(sku, category, readings, name=name, category_rules=rules),
-            beverage=beverage_for(sku, category, beverages, name=name),
-            qty=qty, line_total_q=line_total_q,
-            weight=weight_for(sku, category, weights, name=name, category_rules=rules),
-        ))
-    native = []
-    for order_id, created_at, total_q, channel_ref, data in Order.objects.filter(
-        created_at__range=window
-    ).exclude(status__in=excluded).values_list("id", "created_at", "total_q", "channel_ref", "data"):
-        native.append(Basket(
-            source="shopman", sale_id=order_id, local=timezone.localtime(created_at),
-            total_q=total_q, channel=channel_ref,
-            is_delivery=(data or {}).get("fulfillment_type") == "delivery",
-            lines=tuple(native_lines.get(order_id, ())),
-        ))
+    lines = sales_window.lines()
+    native_skus = {line.product_ref for line in lines if line.source == "shopman" and line.product_ref}
+    native_categories = _native_categories(native_skus)
 
-    historical_lines: dict[int, list[BasketLine]] = defaultdict(list)
-    for sale_id, sku, name, category, qty, line_total_q in HistoricalSaleItem.objects.filter(
-        sale__occurred_at__range=window
-    ).values_list("sale_id", "sku", "product_name", "category", "qty", "line_total_q"):
-        historical_lines[sale_id].append(BasketLine(
-            key=line_key(sku, name), sku=sku or "", name=name or "", category=category or "",
-            reading=reading_for(sku, category, readings, name=name, category_rules=rules),
-            beverage=beverage_for(sku, category, beverages, name=name),
-            qty=qty, line_total_q=line_total_q,
-            weight=weight_for(sku, category, weights, name=name, category_rules=rules),
+    def pick(table: dict, line) -> str | int | None:
+        # Catálogo (via de-para) antes do SKU da fonte; o nome só quando não há SKU.
+        for key in (line.product_ref, line.external_sku):
+            if key and key in table:
+                return table[key]
+        if not line.product_ref and not line.external_sku:
+            return table.get(line_key("", line.name))
+        return None
+
+    by_sale: dict[tuple[str, int], list[BasketLine]] = defaultdict(list)
+    for line in lines:
+        category = line.category or (native_categories.get(line.product_ref, "") if line.source == "shopman" else "")
+        reading = pick(readings, line)
+        if reading is None:
+            reading = _category_match(category, rules)
+        beverage = pick(beverages, line) or _category_match(category, CATEGORY_BEVERAGE) or BEVERAGE_NONE
+        weight = pick(weights, line)
+        if weight is None:
+            weight = DEFAULT_WEIGHT_BY_READING.get(reading) if reading else None
+        by_sale[(line.source, line.sale_key)].append(BasketLine(
+            key=line.product_key, sku=line.product_ref or line.external_sku, name=line.name,
+            category=category, reading=reading, beverage=beverage,
+            qty=line.qty, line_total_q=line.line_total_q, weight=weight,
         ))
-    historical = []
-    # `is_delivery` é o único rótulo de canal confiável do histórico — mesa e
-    # balcão de lá nunca viram verdade (ver docstring de HistoricalSale).
-    for sale_id, occurred_at, total_q, is_delivery, source in HistoricalSale.objects.filter(
-        occurred_at__range=window
-    ).values_list("id", "occurred_at", "total_q", "is_delivery", "source"):
-        historical.append(Basket(
-            source=source, sale_id=sale_id, local=timezone.localtime(occurred_at),
-            total_q=total_q, is_delivery=is_delivery,
-            channel=f"{source} · {'delivery' if is_delivery else 'loja'}",
-            lines=tuple(historical_lines.get(sale_id, ())),
-        ))
+    return [
+        Basket(
+            source=sale.source, sale_id=sale.key, local=sale.occurred_at, total_q=sale.total_q,
+            is_delivery=sale.is_delivery, channel=sale.channel_key,
+            lines=tuple(by_sale.get((sale.source, sale.key), ())),
+        )
+        for sale in sales_window.sales
+    ]
+
+
+def collect_baskets(window) -> tuple[list[Basket], list[Basket]]:
+    """(cestas nativas, cestas históricas) da janela [início, fim) em hora local.
+
+    Lê a camada canônica, que já aplicou "o dia nativo vence": o histórico
+    devolvido aqui é só o dos dias sem pedido Shopman. Quem chama pode juntar
+    as duas listas com ``fuse_baskets`` sem medo de somar a mesma venda duas
+    vezes.
+    """
+    from datetime import timedelta
+
+    from django.utils import timezone
+
+    from shopman.backstage.bi.canonical import read_sales
+
+    start, end = window
+    date_from = timezone.localtime(start).date()
+    date_to = (timezone.localtime(end) - timedelta(seconds=1)).date()
+    baskets = baskets_for(read_sales(date_from, date_to))
+    native = [basket for basket in baskets if basket.source == "shopman"]
+    historical = [basket for basket in baskets if basket.source != "shopman"]
     return native, historical
 
 
 def fuse_baskets(native: Iterable[Basket], historical: Iterable[Basket]) -> list[Basket]:
-    """A política de fusão do B.I.: **o dia nativo vence**.
+    """Junta as duas listas de ``collect_baskets``.
 
-    Um dia com pedido Shopman lê só do Shopman; o histórico preenche os dias em
-    que a suite não existia. É a mesma regra do `bi_sales` — e o teste de
-    conciliação dos perfis cobra que os dois somem o mesmo faturamento.
+    A política de fusão do B.I. — **o dia nativo vence** — tem um dono só, a
+    camada canônica (``bi/canonical.py``), e já foi aplicada quando as cestas
+    chegaram aqui; por isso juntar é seguro. A função fica porque é a frase que
+    os leitores dizem ("funde"), e o teste de conciliação dos perfis cobra que
+    esta leitura e o ``bi_sales`` somem o mesmo faturamento.
     """
-    native = list(native)
-    native_days = {basket.local.date() for basket in native}
-    return native + [b for b in historical if b.local.date() not in native_days]
+    return list(native) + list(historical)
 
 
 def _native_categories(skus: set[str]) -> dict[str, str]:

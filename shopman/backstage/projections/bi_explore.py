@@ -351,45 +351,23 @@ def _dim_key(dim: str, *, local=None, extra=None) -> tuple[str, str]:
 
 
 def _sales_rows(spec, by, by2, date_from, date_to) -> list[BIExploreRow]:
-    from shopman.orderman.models import Order
-
-    from shopman.backstage.models import HistoricalSale
-
-    from .bi_sales import _local_datetime_window
-
-    window = _local_datetime_window(date_from, date_to)
-    excluded = (Order.Status.CANCELLED, Order.Status.RETURNED)
-
-    wants_mode = _wants_consumption(by, by2)
-    native_modes, historical_modes = _consumption_modes(window) if wants_mode else ({}, {})
+    from shopman.backstage.bi.canonical import read_sales
     from shopman.backstage.services.consumption import UNCLASSIFIED
 
-    events: list[tuple] = []  # (local_dt, total_q, channel, source, mode)
-    native_days: set[date] = set()
-    native = Order.objects.filter(created_at__range=window).values_list(
-        "created_at", "total_q", "channel_ref", "status", "id"
-    )
-    for created_at, total_q, channel_ref, status, order_id in native:
-        if status in excluded:
-            continue
-        local = timezone.localtime(created_at)
-        native_days.add(local.date())
-        # Pedido sem linha nenhuma não está no mapa: sai como não classificado,
-        # que é o que ele é.
-        events.append((local, total_q, channel_ref, "shopman",
-                       native_modes.get(order_id, UNCLASSIFIED)))
-    historical = HistoricalSale.objects.filter(occurred_at__range=window).values_list(
-        "occurred_at", "total_q", "is_delivery", "source", "id"
-    )
-    # Rótulo derivado do campo: histórico semeado se anuncia como "seed", nunca
-    # com o nome de um export real que ninguém carregou.
-    for occurred_at, total_q, is_delivery, source, sale_id in historical:
-        local = timezone.localtime(occurred_at)
-        if local.date() in native_days:
-            continue
-        channel = f"{source} · {'delivery' if is_delivery else 'loja'}"
-        events.append((local, total_q, channel, source,
-                       historical_modes.get(sale_id, UNCLASSIFIED)))
+    window = read_sales(date_from, date_to)
+    modes = _consumption_modes(window) if _wants_consumption(by, by2) else {}
+
+    # (local_dt, total_q, canal, fonte, modo) — a conciliação nativo × histórico
+    # já veio feita da camada canônica; aqui só se dobra pelas dimensões.
+    events: list[tuple] = [
+        (
+            sale.occurred_at, sale.total_q, sale.channel_key, sale.source,
+            # Venda sem linha nenhuma não está no mapa: sai como não
+            # classificada, que é o que ela é.
+            modes.get((sale.source, sale.key), UNCLASSIFIED),
+        )
+        for sale in window.sales
+    ]
 
     contexts = _day_contexts(date_from, date_to) if _wants_context(by, by2) else {}
 
@@ -432,33 +410,24 @@ def _sales_rows(spec, by, by2, date_from, date_to) -> list[BIExploreRow]:
 
 
 def _sales_item_rows(spec, by, by2, date_from, date_to) -> list[BIExploreRow]:
-    from shopman.orderman.models import Order, OrderItem
+    from shopman.backstage.bi.canonical import read_sales
+    from shopman.backstage.services.consumption import UNCLASSIFIED
 
-    from shopman.backstage.models import HistoricalSaleItem
-
-    from .bi_sales import _local_datetime_window
-
-    window = _local_datetime_window(date_from, date_to)
-    excluded = (Order.Status.CANCELLED, Order.Status.RETURNED)
-    native_days = {
-        timezone.localtime(dt).date()
-        for dt in Order.objects.filter(created_at__range=window)
-        .exclude(status__in=excluded)
-        .values_list("created_at", flat=True)
-    }
+    window = read_sales(date_from, date_to)
+    sales = window.sales_by_key()
+    modes = _consumption_modes(window) if _wants_consumption(by, by2) else {}
 
     contexts = _day_contexts(date_from, date_to) if _wants_context(by, by2) else {}
 
     qty: dict[tuple, Decimal] = defaultdict(Decimal)
     labels: dict[tuple, tuple[str, str]] = {}
 
-    def fold(local, sku, name, quantity, source, mode):
+    def fold(local, key, name, quantity, source, mode):
         parts = []
         for dim in (by, by2):
             if not dim:
                 parts.append(("", ""))
             elif dim == "sku":
-                key = sku or f"nome:{name}"
                 parts.append((key, name))
             elif dim == "source":
                 parts.append((source, source))
@@ -474,28 +443,18 @@ def _sales_item_rows(spec, by, by2, date_from, date_to) -> list[BIExploreRow]:
         qty[key] += quantity
         labels[key] = (parts[0][1], parts[1][1])
 
-    wants_mode = _wants_consumption(by, by2)
-    native_modes, historical_modes = _consumption_modes(window) if wants_mode else ({}, {})
-    from shopman.backstage.services.consumption import UNCLASSIFIED
-
-    native_items = OrderItem.objects.filter(order__created_at__range=window).exclude(
-        order__status__in=excluded
-    ).values_list("order__created_at", "sku", "name", "qty", "order_id")
-    for created_at, sku, name, quantity, order_id in native_items:
+    for line in window.lines():
+        sale = sales.get((line.source, line.sale_key))
+        if sale is None:
+            continue  # linha de venda que a conciliação deixou fora
         # O modo é da VENDA, não da linha: o item herda o veredito da cesta em
         # que veio. É o que torna "o que o salão come" uma pergunta respondível.
-        fold(timezone.localtime(created_at), sku, name, quantity, "shopman",
-             native_modes.get(order_id, UNCLASSIFIED))
-
-    historical_items = HistoricalSaleItem.objects.filter(
-        sale__occurred_at__range=window
-    ).values_list("sale__occurred_at", "sku", "product_name", "qty", "sale_id")
-    for occurred_at, sku, name, quantity, sale_id in historical_items:
-        local = timezone.localtime(occurred_at)
-        if local.date() in native_days:
-            continue
-        fold(local, sku, name, quantity, "yooga",
-             historical_modes.get(sale_id, UNCLASSIFIED))
+        # A chave do produto é a canônica: catálogo (via de-para) antes do SKU
+        # da fonte, e o nome quando não há SKU — 7% do export.
+        fold(
+            sale.occurred_at, line.product_key, line.name, line.qty, sale.source,
+            modes.get((sale.source, sale.key), UNCLASSIFIED),
+        )
 
     return [
         BIExploreRow(key=k1, label=labels[(k1, k2)][0], key2=k2, label2=labels[(k1, k2)][1], value=float(qty[(k1, k2)]))
@@ -510,22 +469,19 @@ def _wants_consumption(by: str, by2: str) -> bool:
     return "consumption_mode" in (by, by2)
 
 
-def _consumption_modes(window) -> tuple[dict[int, str], dict[int, str]]:
-    """(nativo por order_id, histórico por sale_id) → modo de consumo.
+def _consumption_modes(window) -> dict[tuple[str, int], str]:
+    """{(fonte, chave da venda): modo de consumo} para as vendas conciliadas da janela.
 
-    A cesta é coletada UMA vez (`collect_baskets`: linhas com leitura e bebida
-    resolvidas, nas duas fontes) e a MESMA regra decide sobre as duas — é isso
-    que torna a série de dois anos comparável consigo mesma. Só roda quando a
-    pergunta envolve a dimensão: classificar 380k linhas para responder
-    "faturamento por hora" seria trabalho jogado fora.
+    As cestas vêm da camada canônica (``consumption.baskets_for``: linhas com
+    leitura e bebida resolvidas, nas duas fontes, de-para de produto aplicado) e
+    a MESMA regra decide sobre todas — é isso que torna a série de dois anos
+    comparável consigo mesma. Só roda quando a pergunta envolve a dimensão:
+    classificar 380k linhas para responder "faturamento por hora" seria trabalho
+    jogado fora.
     """
-    from shopman.backstage.services.consumption import collect_baskets
+    from shopman.backstage.services.consumption import baskets_for
 
-    native, historical = collect_baskets(window)
-    return (
-        {basket.sale_id: basket.mode() for basket in native},
-        {basket.sale_id: basket.mode() for basket in historical},
-    )
+    return {(basket.source, basket.sale_id): basket.mode() for basket in baskets_for(window)}
 
 
 def _consumption_part(mode: str) -> tuple[str, str]:
@@ -647,66 +603,26 @@ def _room_rows(spec, by, by2, date_from, date_to) -> list[BIExploreRow]:
 
 
 def _payment_rows(spec, by, by2, date_from, date_to) -> list[BIExploreRow]:
-    """Recebido, pedidos e a receber, por forma de pagamento.
+    """Recebido, pedidos e a receber por forma de pagamento (F1 do QUESTION-CATALOG).
 
-    A fonte é o **pedido**, não o fechamento do dia: assim o recorte existe em
-    todo dia (inclusive nos sem fechamento) e cruza com hora, canal e contexto.
-    A regra de repartição é a mesma que o fechamento usa
-    (``services/payments.iter_order_payments``) — uma pergunta, um dono.
-
-    O histórico externo entra pelo mesmo eixo, com a forma crua normalizada
-    (``bi_payments``) e a mesma fusão "dia nativo vence" das demais famílias de
-    venda: um dia que já tem pedido nativo não recebe linha histórica, senão a
-    mesma venda contaria duas vezes.
+    A canônica já traz cada venda com as suas parcelas (nativo repartido por
+    ``iter_order_payments`` — a mesma regra do fechamento; histórico com a forma
+    crua traduzida pelo vocabulário confirmado, ou o texto original quando não
+    reconhecida). Cobrança pendente só existe no nativo: o export só traz venda
+    concluída, e marcar pendente inventaria dívida.
     """
-    from shopman.orderman.models import Order
+    from shopman.backstage.bi.canonical import read_sales
 
-    from shopman.backstage.models import HistoricalSale
-    from shopman.backstage.services.payments import iter_order_payments
-
-    from .bi_payments import (
-        normalize_historical_payment,
-        payment_method_label,
-        payment_vocabulary,
-    )
-    from .bi_sales import _local_datetime_window
-
-    window = _local_datetime_window(date_from, date_to)
-    excluded = (Order.Status.CANCELLED, Order.Status.RETURNED)
-    vocabulary = payment_vocabulary()  # uma consulta, milhares de vendas
-
+    window = read_sales(date_from, date_to)
     # (local, método, rótulo, valor, pendente, canal, fonte, chave-do-pedido)
-    events: list[tuple] = []
-    native_days: set[date] = set()
-    native = Order.objects.filter(created_at__range=window).values_list(
-        "created_at", "total_q", "channel_ref", "status", "data", "ref"
-    )
-    for created_at, total_q, channel_ref, status, data, ref in native:
-        if status in excluded:
-            continue
-        local = timezone.localtime(created_at)
-        native_days.add(local.date())
-        for entry in iter_order_payments(data, total_q):
-            events.append((
-                local, entry.method, payment_method_label(entry.method),
-                entry.amount_q, entry.pending, channel_ref, "shopman", ref,
-            ))
-
-    historical = HistoricalSale.objects.filter(occurred_at__range=window).values_list(
-        "occurred_at", "total_q", "is_delivery", "source", "payment", "external_id"
-    )
-    for occurred_at, total_q, is_delivery, source, raw_payment, external_id in historical:
-        local = timezone.localtime(occurred_at)
-        if local.date() in native_days:
-            continue
-        method, label = normalize_historical_payment(raw_payment, vocabulary)
-        channel = f"{source} · {'delivery' if is_delivery else 'loja'}"
-        # O histórico não conhece cobrança pendente: o export só traz venda
-        # concluída. Marcar como pendente inventaria dívida que não existe.
-        events.append((
-            local, method, label, total_q, False, channel, source,
-            f"{source}:{external_id}",
-        ))
+    events: list[tuple] = [
+        (
+            sale.occurred_at, payment.method, payment.label, payment.amount_q,
+            payment.pending, sale.channel_key, sale.source, sale.ref,
+        )
+        for sale in window.sales
+        for payment in sale.payments
+    ]
 
     contexts = _day_contexts(date_from, date_to) if _wants_context(by, by2) else {}
 
