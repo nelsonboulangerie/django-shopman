@@ -159,9 +159,11 @@ class POSChangeRequestProjection:
     """
 
     ref: str
-    kind: str
     amount_q: int
     amount_display: str
+    #: As cédulas/moedas pedidas, em centavos, do maior para o menor. Vazio é um
+    #: pedido completo ("me traz R$ 100"): a lista refina, não obriga.
+    denominations: tuple[int, ...]
     note: str
     requested_by: str
     requested_at: str
@@ -928,6 +930,10 @@ def _checkout_contract(
     fiscal_message: str,
 ) -> POSCheckoutContractProjection:
     """Expose the mature POS sale intent as a headless checkout contract."""
+    # Import local: o módulo de services do PDV importa projections em outros
+    # caminhos, e um import de topo aqui fecharia o ciclo.
+    from shopman.backstage.services import pos as pos_service
+
     receipt_modes = (
         POSCheckoutOptionProjection(ref="none", label="Sem comprovante"),
         POSCheckoutOptionProjection(ref="print", label="Imprimir"),
@@ -1261,6 +1267,20 @@ def _checkout_contract(
                 "close_action_ref": "close_cash_shift",
                 "movement_action_ref": "cash_movement",
                 "movement_kinds": ("sangria", "suprimento"),
+                # Os motivos que viram botão na tela. SAÍDA pergunta para onde o
+                # dinheiro foi; ENTRADA não pergunta nada — "entrada de caixa" já
+                # é a resposta inteira, e um campo com uma opção só ensina o
+                # balcão a preencher qualquer coisa para passar. Lista vazia na
+                # entrada é deliberada, e o servidor cobra o motivo só na saída.
+                "movement_reasons": {
+                    "sangria": ("Sangria", "Fornecedor"),
+                    "suprimento": (),
+                },
+                # As cédulas e moedas que o balcão pode pedir como troco. Vem do
+                # servidor para não existirem duas listas: repetir os números em
+                # TypeScript é assinar uma divergência para o dia em que uma
+                # moeda sair de circulação.
+                "change_denominations": pos_service.CHANGE_DENOMINATIONS,
                 "requires_open_shift_for_sale": True,
                 "blocks_close_when_offline_queue_pending": True,
             },
@@ -1374,15 +1394,16 @@ def _pending_change_requests(cash_shift) -> tuple[POSChangeRequestProjection, ..
     return tuple(
         POSChangeRequestProjection(
             ref=str(entry.get("entry_id") or ""),
-            kind=str(entry.get("kind") or ""),
             amount_q=int(entry.get("amount_q") or 0),
-            # Pedido sem valor mostra vazio, não "R$ 0,00": "faltou moeda" é um
-            # pedido inteiro, e um zero na tela pareceria pedido malformado.
+            # Todo pedido tem valor agora, e ele é exato. O guarda do zero fica:
+            # linha antiga do livro (o livro é imutável) ainda pode não ter, e
+            # "R$ 0,00" na tela pareceria pedido malformado.
             amount_display=(
                 f"R$ {format_money(int(entry.get('amount_q') or 0))}"
                 if int(entry.get("amount_q") or 0) > 0
                 else ""
             ),
+            denominations=tuple(int(v) for v in (entry.get("denominations") or [])),
             note=str(entry.get("note") or ""),
             requested_by=str(entry.get("requested_by") or ""),
             requested_at=str(entry.get("requested_at") or ""),

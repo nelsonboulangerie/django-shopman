@@ -41,10 +41,10 @@ import {
   tenderSumQ,
 } from "../app/presentation/payment";
 import {
-  CHANGE_REQUEST_KINDS,
+  changeDenominations,
   canRegisterMovement,
   canRequestChange,
-  changeRequestLabel,
+  parseAmountToQ,
   changeRequestSummary,
   formatOpenedAt,
   formatRequestedAt,
@@ -474,19 +474,27 @@ describe("presentation/cash — blind drawer shaping", () => {
   // O motivo responde PARA ONDE o dinheiro foi (sangria) ou DE ONDE veio
   // (suprimento). Repetir o tipo no campo motivo é o que acontece quando a única
   // saída é digitar com a fila andando.
-  it("offers clickable reasons per movement kind, never repeating the kind", () => {
-    expect(movementReasons("sangria")).toEqual(["Cofre", "Banco", "Fornecedor"]);
-    expect(movementReasons("suprimento")).toEqual(["Reforço de troco", "Cofre", "Banco"]);
-    for (const kind of ["sangria", "suprimento"]) {
-      expect(movementReasons(kind).map((r) => r.toLowerCase())).not.toContain(kind);
-    }
+  // Os motivos vêm do SERVIDOR (capability `cash_management`). Repetir a lista
+  // aqui daria dois donos para a mesma pergunta.
+  const capacidade = {
+    movement_reasons: { sangria: ["Sangria", "Fornecedor"], suprimento: [] },
+  };
+
+  it("offers the saída reasons the server sent", () => {
+    expect(movementReasons(capacidade, "sangria")).toEqual(["Sangria", "Fornecedor"]);
   });
 
-  // Tipo desconhecido cai no campo livre: lista vazia é o sinal para a tela não
-  // esconder a única porta que sobrou.
-  it("returns no canned reasons for an unknown kind", () => {
-    expect(movementReasons("custom")).toEqual([]);
-    expect(movementReasons("")).toEqual([]);
+  // "Entrada de caixa" já é a resposta inteira. Um campo com uma opção só
+  // ensina o balcão a preencher qualquer coisa para passar.
+  it("asks nothing on the entrada side", () => {
+    expect(movementReasons(capacidade, "suprimento")).toEqual([]);
+  });
+
+  // Sem capability (contrato antigo, servidor mudo) a tela cai no campo livre em
+  // vez de esconder a única porta que sobrou.
+  it("falls back to the free field when the server said nothing", () => {
+    expect(movementReasons(null, "sangria")).toEqual([]);
+    expect(movementReasons(capacidade, "custom")).toEqual([]);
   });
 
   // O motivo é exigência da SUPERFÍCIE (o servidor aceita `reason` vazio). Se este
@@ -503,33 +511,58 @@ describe("presentation/cash — blind drawer shaping", () => {
 });
 
 describe("presentation/cash — pedido de troco (o dinheiro não anda)", () => {
-  it("names the three things the counter can ask for, in pt-BR", () => {
-    expect(CHANGE_REQUEST_KINDS.map((k) => k.ref)).toEqual(["coins", "small_bills", "amount"]);
-    expect(changeRequestLabel("coins")).toBe("Moedas");
-    expect(changeRequestLabel("small_bills")).toBe("Notas pequenas");
-    expect(changeRequestLabel("amount")).toBe("Valor");
-    expect(changeRequestLabel("desconhecido")).toBe("desconhecido");
+  const denominacoes = {
+    change_denominations: [
+      { q: 2000, label: "20", shape: "note" as const },
+      { q: 500, label: "5", shape: "note" as const },
+      { q: 50, label: "0,50", shape: "coin" as const },
+    ],
+  };
+
+  // A lista de dinheiro é do servidor. Se ela vivesse aqui, o dia em que uma
+  // moeda saísse de circulação deixaria o pedido falando de dinheiro que não
+  // existe — e ninguém descobriria pela tela.
+  it("reads the denominations from the server, not from a local list", () => {
+    expect(changeDenominations(denominacoes).map((d) => d.q)).toEqual([2000, 500, 50]);
+    expect(changeDenominations(null)).toEqual([]);
   });
 
-  // "Acabou moeda" já é um pedido inteiro; exigir número ali travaria a fila por
-  // um dado que ninguém tem na hora. Já "me traz um valor" sem número não diz
-  // nada a quem vai buscar o troco.
-  it("only the amount request needs a number", () => {
-    expect(canRequestChange("coins", "")).toBe(true);
-    expect(canRequestChange("small_bills", "")).toBe(true);
-    expect(canRequestChange("amount", "")).toBe(false);
-    expect(canRequestChange("amount", "   ")).toBe(false);
-    expect(canRequestChange("amount", "50,00")).toBe(true);
-    expect(canRequestChange("", "50,00")).toBe(false);
+  // Antes havia um pedido "aproximado": quem ia ao cofre lia "moedas", tinha de
+  // adivinhar quanto, e voltava com o que achou.
+  it("always demands a real number — the value IS the request", () => {
+    expect(canRequestChange("")).toBe(false);
+    expect(canRequestChange("   ")).toBe(false);
+    expect(canRequestChange("0")).toBe(false);
+    expect(canRequestChange("abc")).toBe(false);
+    expect(canRequestChange("50,00")).toBe(true);
+    expect(canRequestChange("100")).toBe(true);
   });
 
-  // Um "R$ 0,00" pendurado na linha pareceria pedido malformado — e pedido em
-  // que o balcão não confia é pedido que volta a virar caminhada até o cofre.
-  it("shows the amount only when the request actually named one", () => {
-    const base = { ref: "a1", kind: "coins", amount_q: 0, amount_display: "", note: "", requested_by: "marina", requested_at: "" };
-    expect(changeRequestSummary(base)).toBe("Moedas");
-    expect(changeRequestSummary({ ...base, kind: "amount", amount_q: 5000, amount_display: "R$ 50,00" }))
-      .toBe("Valor · R$ 50,00");
+  it("reads centavos the way the counter types them", () => {
+    expect(parseAmountToQ("100")).toBe(10000);
+    expect(parseAmountToQ("50,50")).toBe(5050);
+    expect(parseAmountToQ("50.50")).toBe(5050);
+    expect(parseAmountToQ("-5")).toBe(0);
+    expect(parseAmountToQ("1,234")).toBe(0);
+  });
+
+  // "R$ 100 em notas de 5 e moedas de 0,50" é uma frase que se diz de verdade.
+  it("summarises what was asked, and in what", () => {
+    const base = {
+      ref: "a1", amount_q: 10000, amount_display: "R$ 100,00",
+      denominations: [500, 50], note: "", requested_by: "marina", requested_at: "",
+    };
+    expect(changeRequestSummary(base, denominacoes)).toBe("R$ 100,00 · em 5, 0,50");
+  });
+
+  // Sem denominação é um pedido INTEIRO, não um pedido pela metade: o gerente
+  // resolve com o que houver no cofre.
+  it("a bare value is a complete request", () => {
+    const base = {
+      ref: "a1", amount_q: 10000, amount_display: "R$ 100,00",
+      denominations: [], note: "", requested_by: "marina", requested_at: "",
+    };
+    expect(changeRequestSummary(base, denominacoes)).toBe("R$ 100,00");
   });
 
   it("formats the request time, falling back gracefully", () => {

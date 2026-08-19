@@ -79,8 +79,26 @@ export interface POSCheckoutSectionProjection {
 // Sub-objetos do mapa `capabilities` do contrato de checkout. Só os campos que a
 // superfície lê são tipados; o index signature preserva as demais chaves (o servidor
 // pode carregar mais) e mantém cada capability atribuível a `Record<string, unknown>`.
+/** Uma cédula ou moeda que o balcão pode pedir como troco. */
+export interface POSChangeDenomination {
+  /** Valor em centavos — é o que viaja na API. */
+  q: number;
+  /** Como se lê no botão: "20", "0,50". */
+  label: string;
+  /** Só o desenho do botão: cédula é retangular, moeda é redonda. */
+  shape: "note" | "coin";
+}
+
 export interface POSCashManagementCapability {
   movement_kinds?: string[];
+  /**
+   * Motivos por tipo de movimento. SAÍDA pergunta para onde o dinheiro foi;
+   * ENTRADA vem com lista vazia de propósito — "entrada de caixa" já é a
+   * resposta inteira. Quem exige o motivo da saída é o servidor.
+   */
+  movement_reasons?: Record<string, string[]>;
+  /** A lista vem do SERVIDOR para não existirem duas listas de dinheiro. */
+  change_denominations?: POSChangeDenomination[];
   requires_open_shift_for_sale?: boolean;
   [key: string]: unknown;
 }
@@ -132,10 +150,11 @@ export interface POSCheckoutContractProjection {
  */
 export interface POSChangeRequestProjection {
   ref: string;
-  kind: "coins" | "small_bills" | "amount" | string;
   amount_q: number;
-  /** Vazio quando o pedido não fala de valor. "R$ 0,00" pareceria pedido quebrado. */
+  /** Vazio só em linha antiga do livro — o livro é imutável e guarda o que já foi. */
   amount_display: string;
+  /** Cédulas/moedas pedidas, em centavos, do maior para o menor. Vazio = "me traz o valor". */
+  denominations: number[];
   note: string;
   requested_by: string;
   requested_at: string;

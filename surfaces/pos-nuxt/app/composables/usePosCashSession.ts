@@ -200,10 +200,12 @@ export function usePosCashSession({ pos, actions, refresh, action }: CashSession
     () => pos.value?.cash_runtime?.pending_change_requests ?? [],
   );
 
-  function requestChange(payload: { kind: string; amount: string; note: string }): Promise<boolean> {
+  function requestChange(
+    payload: { amount: string; denominations: number[]; note: string },
+  ): Promise<boolean> {
     return run(
       actionHref(actions.value, "request_change", "/api/v1/backstage/pos/cash/change-request/"),
-      { kind: payload.kind, amount: payload.amount || "0", note: payload.note },
+      { amount: payload.amount, denominations: payload.denominations, note: payload.note },
       "Falha ao pedir troco.",
     );
   }

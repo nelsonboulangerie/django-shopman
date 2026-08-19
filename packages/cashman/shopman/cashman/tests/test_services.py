@@ -239,9 +239,9 @@ def test_correcao_exige_turno_fechado_motivo_e_valor(shift, operator, manager):
 
 
 def test_pedido_de_troco_dobra_pedido_atendimento_e_cancelamento(shift, operator, manager):
-    a = cash.record(K.CHANGE_REQUESTED, shift=shift, operator=operator, payload={"kind": "coins"})
-    b = cash.record(K.CHANGE_REQUESTED, shift=shift, operator=operator, payload={"kind": "amount", "amount_q": 5000, "note": "notas de 10"})
-    c = cash.record(K.CHANGE_REQUESTED, shift=shift, operator=operator, payload={"kind": "small_bills"})
+    a = cash.record(K.CHANGE_REQUESTED, shift=shift, operator=operator, payload={"amount_q": 2000, "denominations": [50]})
+    b = cash.record(K.CHANGE_REQUESTED, shift=shift, operator=operator, payload={"amount_q": 5000, "denominations": [1000], "note": "notas de 10"})
+    c = cash.record(K.CHANGE_REQUESTED, shift=shift, operator=operator, payload={"amount_q": 8000, "denominations": []})
     cash.record(K.CHANGE_SERVED, shift=shift, operator=operator, approved_by=manager, parent=a)
     cash.record(K.CHANGE_CANCELLED, shift=shift, operator=operator, parent=b)
 
@@ -250,7 +250,10 @@ def test_pedido_de_troco_dobra_pedido_atendimento_e_cancelamento(shift, operator
     assert requests[a.pk]["served_by"] == "pablo"
     assert requests[b.pk]["status"] == "cancelled"
     assert requests[b.pk]["amount_q"] == 5000
+    assert requests[b.pk]["denominations"] == [1000]
     assert requests[b.pk]["note"] == "notas de 10"
+    # Sem denominação é pedido INTEIRO, não pedido pela metade.
+    assert requests[c.pk]["denominations"] == []
     assert requests[c.pk]["status"] == "pending"
     assert requests[c.pk]["requested_by"] == "marina"
     assert cash.balance(shift) == 10000  # net zero: troco não é dinheiro

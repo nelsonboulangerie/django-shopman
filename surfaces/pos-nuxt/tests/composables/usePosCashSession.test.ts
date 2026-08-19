@@ -285,13 +285,15 @@ describe("usePosCashSession — pedido de troco (o dinheiro fica no balcão)", (
   beforeEach(() => vi.mocked(toast.error).mockClear());
   afterEach(() => vi.unstubAllGlobals());
 
-  it("pedir troco envia tipo, valor e observação", async () => {
+  it("pedir troco envia valor, denominações e observação", async () => {
     const { session, actionCall } = makeCashSession();
-    const ok = await session.requestChange({ kind: "coins", amount: "", note: "acabou moeda" });
+    const ok = await session.requestChange({
+      amount: "100,00", denominations: [500, 50], note: "acabou moeda",
+    });
     expect(ok).toBe(true);
     expect(actionCall).toHaveBeenCalledWith(
       "/api/v1/backstage/pos/cash/change-request/",
-      { body: { kind: "coins", amount: "0", note: "acabou moeda" } },
+      { body: { amount: "100,00", denominations: [500, 50], note: "acabou moeda" } },
     );
   });
 
@@ -300,7 +302,7 @@ describe("usePosCashSession — pedido de troco (o dinheiro fica no balcão)", (
       projection: makeProjection({
         cash_runtime: {
           pending_change_requests: [
-            { ref: "a1", kind: "coins", amount_q: 0, amount_display: "", note: "", requested_by: "marina", requested_at: "" },
+            { ref: "a1", amount_q: 10000, amount_display: "R$ 100,00", denominations: [50], note: "", requested_by: "marina", requested_at: "" },
           ],
         } as POSProjection["cash_runtime"],
       }),

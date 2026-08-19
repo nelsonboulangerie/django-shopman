@@ -1701,7 +1701,7 @@ class POSCashDrawerOpenView(APIView):
 @extend_schema_view(
     post=extend_schema(
         tags=["backstage"],
-        summary="Request change (coins / small bills) without leaving the counter",
+        summary="Request change (exact amount, optional denominations) without leaving the counter",
         responses={200: OpenApiResponse(description="Change request registered.")},
     ),
 )
@@ -1723,8 +1723,8 @@ class POSChangeRequestView(APIView):
         try:
             entry = pos_service.request_change(
                 operator=request.user,
-                kind=(request.data.get("kind") or "").strip(),
                 amount_raw=str(request.data.get("amount", "0")),
+                denominations=request.data.get("denominations") or [],
                 note=request.data.get("note") or "",
             )
         except PosIntentError as exc:

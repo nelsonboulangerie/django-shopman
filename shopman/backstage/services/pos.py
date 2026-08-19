@@ -107,6 +107,16 @@ def register_cash_movement(
     if amount_q <= 0:
         raise POSError("Valor inválido.")
 
+    # O motivo da SAÍDA é exigência do servidor, não da tela. Ele era só do
+    # `pos-nuxt`, e um contrato que só a superfície cobra não é contrato: quem
+    # chamasse a API crua lançava sangria sem dizer para onde foi o dinheiro, e
+    # a segunda assinatura ficaria autorizando um vazio. Na ENTRADA não se
+    # pergunta: "entrada de caixa" já é a resposta inteira, e um campo com uma
+    # opção só ensina o balcão a preencher qualquer coisa para passar.
+    reason = str(reason or "").strip()[:120]
+    if api_kind == "sangria" and not reason:
+        raise POSError("Informe o motivo da saída.")
+
     approved_by = None
     if movement_removes_cash(api_kind, amount_q):
         approval = manager_approval or {}
@@ -149,12 +159,58 @@ def register_drawer_opening(*, operator, reason: str = ""):
     return _record("drawer_open", shift=shift, operator=operator, reason=reason)
 
 
-#: O que o balcão pode pedir. Refs em inglês (contrato), rótulo em pt-BR na tela.
-#: `amount` é o pedido que só fala de valor ("me traz uns R$ 50 em troco").
-CHANGE_REQUEST_KINDS = ("coins", "small_bills", "amount")
+#: As cédulas e moedas que o balcão pode pedir, do maior para o menor.
+#:
+#: Não é a lista do dinheiro brasileiro — é a lista do que se PEDE como troco.
+#: R$ 50, R$ 100 e R$ 200 existem e não estão aqui: ninguém pede troco em nota
+#: grande, é o oposto do problema. `shape` só diz o desenho do botão (retangular
+#: para cédula, redondo para moeda), porque é assim que a mão reconhece no
+#: balcão sem ler.
+#:
+#: ⚠️ Esta é a FONTE. A tela recebe a lista pela projection (`cash_management`)
+#: em vez de repetir os números em TypeScript: duas listas viram uma divergência
+#: no dia em que a moeda de R$ 0,25 sair de circulação, e o pedido passaria a
+#: falar de um dinheiro que não existe.
+CHANGE_DENOMINATIONS: tuple[dict, ...] = (
+    {"q": 2000, "label": "20", "shape": "note"},
+    {"q": 1000, "label": "10", "shape": "note"},
+    {"q": 500, "label": "5", "shape": "note"},
+    {"q": 200, "label": "2", "shape": "note"},
+    {"q": 100, "label": "1", "shape": "coin"},
+    {"q": 50, "label": "0,50", "shape": "coin"},
+    {"q": 25, "label": "0,25", "shape": "coin"},
+    {"q": 10, "label": "0,10", "shape": "coin"},
+    {"q": 5, "label": "0,05", "shape": "coin"},
+)
+
+CHANGE_DENOMINATION_VALUES: frozenset[int] = frozenset(d["q"] for d in CHANGE_DENOMINATIONS)
 
 
-def request_change(*, operator, kind: str = "coins", amount_raw="0", note: str = ""):
+def _clean_denominations(raw) -> list[int]:
+    """As cédulas e moedas pedidas, em centavos, do maior para o menor.
+
+    Lista vazia é um pedido completo — "me traz R$ 100" basta, e exigir escolha
+    travaria a fila por um detalhe que o gerente resolve com o que tiver no
+    cofre. O que NÃO se aceita é valor fora da lista: um pedido de R$ 0,03 não
+    é um pedido, é um dedo errado, e ele viajaria calado até o balcão.
+    """
+    if not raw:
+        return []
+    if not isinstance(raw, (list, tuple)):
+        raise POSError("Denominações inválidas.")
+    limpas: set[int] = set()
+    for item in raw:
+        try:
+            valor = int(item)
+        except (TypeError, ValueError):
+            raise POSError("Denominações inválidas.") from None
+        if valor not in CHANGE_DENOMINATION_VALUES:
+            raise POSError("Denominação que não existe no troco.")
+        limpas.add(valor)
+    return sorted(limpas, reverse=True)
+
+
+def request_change(*, operator, amount_raw="0", denominations=None, note: str = ""):
     """O operador PEDE troco (``change_requested``). Ninguém sai do balcão.
 
     Este é o ponto todo da feature: quando falta troco, o operador atravessava a
@@ -170,14 +226,15 @@ def request_change(*, operator, kind: str = "coins", amount_raw="0", note: str =
     valor, o esperado cairia por um dinheiro que nunca saiu e o turno fecharia
     com falta fantasma — foi exatamente o defeito que o PR #178 teve de desfazer.
     """
-    kind = str(kind or "").strip()
-    if kind not in CHANGE_REQUEST_KINDS:
-        raise POSError("Tipo de pedido inválido.")
-    amount_q = max(0, parse_money_to_q(amount_raw))
-    # O pedido "amount" É o valor: sem número ele não diz nada a quem vai trazer.
-    # Nos outros o valor é opcional, porque "faltou moeda" já é um pedido inteiro.
-    if kind == "amount" and amount_q <= 0:
-        raise POSError("Informe o valor aproximado.")
+    amount_q = parse_money_to_q(amount_raw)
+    # O VALOR é o pedido, e é exato. Antes havia um tipo "aproximado" ao lado de
+    # "moedas" e "notas pequenas": quem ia buscar o troco lia "moedas" e tinha de
+    # adivinhar quanto, e voltava com o que achou. Um número redondo pedido de
+    # verdade é o que faz a viagem valer.
+    if amount_q <= 0:
+        raise POSError("Informe o valor do troco.")
+
+    denominations = _clean_denominations(denominations)
     note = str(note or "").strip()[:120]
 
     shift = _open_shift_or_raise(operator)
@@ -185,7 +242,7 @@ def request_change(*, operator, kind: str = "coins", amount_raw="0", note: str =
         "change_requested",
         shift=shift,
         operator=operator,
-        payload={"kind": kind, "amount_q": amount_q, "note": note},
+        payload={"amount_q": amount_q, "denominations": denominations, "note": note},
     )
     _announce_change_request(shift, _change_request(shift, entry.pk))
     return entry
@@ -296,8 +353,8 @@ def _announce_change_request(shift, request: dict) -> None:
         {
             "ref": str(request.get("entry_id") or ""),
             "status": request.get("status", ""),
-            "kind": request.get("kind", ""),
             "amount_q": request.get("amount_q", 0),
+            "denominations": request.get("denominations", []),
             "shift_id": shift.pk,
             "terminal_ref": shift.terminal.ref if shift.terminal_id else "",
             "requested_by": request.get("requested_by", ""),

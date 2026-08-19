@@ -133,10 +133,45 @@ def test_sangria_requires_manager_pin(operator):
     from shopman.shop.services.pos_intent import PosIntentError
 
     cash.open_shift(operator=operator, float_q=1000)
+    # Com motivo preenchido, como a tela envia: o que falta é a SEGUNDA
+    # assinatura, e é ela que o desafio cobra.
     with pytest.raises(PosIntentError) as exc:
-        pos.register_cash_movement(operator=operator, movement_type="sangria", amount_raw="5,00")
+        pos.register_cash_movement(
+            operator=operator, movement_type="sangria", amount_raw="5,00", reason="Sangria"
+        )
     assert exc.value.code == "manager_approval_required"
     assert not Entry.objects.filter(kind=Entry.Kind.CASH_OUT).exists()
+
+
+@pytest.mark.django_db
+def test_saida_sem_motivo_e_recusada_antes_do_pin(operator):
+    """O motivo é do SERVIDOR, não da tela.
+
+    Era exigência só do `pos-nuxt`, e contrato que só a superfície cobra não é
+    contrato: quem chamasse a API crua lançava sangria sem dizer para onde o
+    dinheiro foi, e a segunda assinatura autorizaria um vazio. Reprova ANTES do
+    desafio de PIN de propósito — não se convoca o gerente para descobrir que
+    faltava preencher um campo.
+    """
+    cash.open_shift(operator=operator, float_q=1000)
+    with pytest.raises(POSError, match="motivo da saída"):
+        pos.register_cash_movement(operator=operator, movement_type="sangria", amount_raw="5,00")
+    assert not Entry.objects.filter(kind=Entry.Kind.CASH_OUT).exists()
+
+
+@pytest.mark.django_db
+def test_entrada_nao_pergunta_motivo(operator):
+    """"Entrada de caixa" já é a resposta inteira.
+
+    Um campo com uma opção só ensina o balcão a preencher qualquer coisa para
+    passar, e aí o motivo deixa de significar o que quer que seja.
+    """
+    cash.open_shift(operator=operator, float_q=1000)
+    entry = pos.register_cash_movement(
+        operator=operator, movement_type="suprimento", amount_raw="30,00"
+    )
+    assert entry.kind == Entry.Kind.CASH_IN
+    assert entry.amount_q == 3000
 
 
 @pytest.mark.django_db

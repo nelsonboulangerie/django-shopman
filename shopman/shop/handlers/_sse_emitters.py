@@ -359,8 +359,8 @@ def emit_change_request(payload: dict) -> None:
     entrega é a trilha e o dado — não um recado entregue. Tratar isto como
     notificação faria o balcão esperar por alguém que não foi chamado.
     """
-    # `type` identifica o alerta, como no evento de ``OperatorAlert`` ao lado — o
-    # `kind` do payload é o que o balcão pediu (moeda, nota pequena), outra coisa.
+    # `type` identifica o alerta, como no evento de ``OperatorAlert`` ao lado. O
+    # que o balcão pediu vem em `amount_q` e `denominations`, que é outra coisa.
     _emit_backstage(
         "alerts",
         "backstage-alerts-update",
