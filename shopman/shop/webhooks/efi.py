@@ -19,6 +19,13 @@ EFI authenticates itself to this endpoint in two layers:
    configured must never be the reason production stops receiving payment
    notifications. Configured, it is checked before the token.
 
+   It is still empty, and the recommendation as of 2026-08-19 is to keep it so:
+   EFI notifies from AWS elastic IPs and its two official pages disagree on the
+   value (the current PIX doc publishes one address; the help-center article
+   publishes 28, and is dated 2017). The survey, the trap of the e-mail block on
+   that same page, and the procedure to follow if it is ever switched on live in
+   ``docs/runbooks/release-secrets-runbook.md``, section "Allowlist de IP".
+
    *What is trusted as the source IP:* the **last** entry of
    ``X-Forwarded-For``, falling back to ``REMOTE_ADDR`` when the header is
    absent. On DO App Platform this service is not fronted by a proxy of ours:

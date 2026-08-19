@@ -95,13 +95,84 @@ https://api.<dominio>/api/webhooks/efi/pix/?token=<EFI_WEBHOOK_TOKEN>
 O header `X-Efi-Webhook-Token` continua aceito, para dev local e para um proxy
 futuro que consiga injetá-lo.
 
+⚠️ **A verificar no primeiro cadastro: a Efí acrescenta `/pix` ao fim da URL
+registrada.** A doc de webhooks dela documenta o parâmetro `ignorar=` justamente
+para suprimir esse append (exemplo oficial:
+`https://seu_dominio.com.br/webhook?hmac=xyz&ignorar=`). Como a nossa URL já
+termina em `/pix/`, o append pode entregar num caminho que não existe — e o
+sintoma seria "a Efí não notifica", sem erro do nosso lado. Confirme o caminho
+efetivamente chamado no primeiro webhook real; se o append acontecer, a saída é
+registrar a URL com `&ignorar=` no fim. Consultado em 19/08/2026 em
+[dev.efipay.com.br/docs/api-pix/webhooks](https://dev.efipay.com.br/docs/api-pix/webhooks/).
+
+### Allowlist de IP — pesquisada em 19/08/2026, recomendação: **não ligar**
+
 A terceira camada da Efí, a allowlist de IP, existe no view e é **opt-in**:
-`EFI_WEBHOOK_IP_ALLOWLIST=<CIDRs separados por vírgula>`. Vazia (default) não
-filtra nada — configuração ausente não pode ser o motivo de a loja parar de
-receber pagamento. Antes de ligar, confira nos logs qual endereço o app está
-lendo (o último salto do `X-Forwarded-For`; uma recusa loga o IP visto): atrás
-do proxy da DO ele pode não ser o da Efí, e uma lista errada devolve 401 em
-todo webhook.
+`EFI_WEBHOOK_IP_ALLOWLIST=<CIDRs ou IPs separados por vírgula>`. Vazia (default)
+não filtra nada — configuração ausente não pode ser o motivo de a loja parar de
+receber pagamento.
+
+**A Efí publica endereço, mas não publica uma faixa em que se possa confiar.**
+As duas fontes oficiais discordam entre si:
+
+| Fonte | O que publica | Data |
+|---|---|---|
+| [Webhooks — API Pix](https://dev.efipay.com.br/docs/api-pix/webhooks/) (doc corrente) | **um** endereço: `34.193.116.226`. Sem CIDR, sem lista. | atualizada em 02/06/2026 |
+| [Central de Ajuda — "Quais endereços de IP a Efí utiliza?"](https://sejaefi.com.br/central-de-ajuda/api/quais-enderecos-de-ip-gerencianet-utiliza) | **28** endereços `/32` sob o título "Callbacks" | corpo do artigo datado de **13/02/2017** |
+
+As duas são consistentes no que se sobrepõe (o `34.193.116.226` da doc corrente
+está na lista de 28), mas isso não resolve o problema: são **elastic IPs da AWS**
+(`34.19x.*` e `52.67.*`), a lista completa tem oito anos, e nenhuma das páginas
+promete estabilidade. Uma allowlist montada sobre isso não falha com aviso —
+falha com 401 em todo webhook de pagamento, silenciosamente, no dia em que a Efí
+trocar um EIP. **Allowlist errada é pior que allowlist ausente**, e esta tem
+prazo de validade desconhecido.
+
+⚠️ **Armadilha da Central de Ajuda:** a mesma página tem um segundo bloco,
+"Envio de e-mails", com faixas largas (`54.240.0.0/18` é Amazon SES,
+`199.255.192.0/22`, `199.127.232.0/22`, `177.66.7.0/24`). Copiar a página inteira
+para a allowlist do webhook abriria ~16 mil endereços da SES a troco de nada. Se
+um dia ligar, use **só** o bloco "Callbacks".
+
+⚠️ **Segunda armadilha, nossa:** o IP que o app lê é o último salto do
+`X-Forwarded-For`, e na DO App Platform esse salto pode ser da própria plataforma,
+não da Efí. Antes de ligar qualquer coisa, é preciso **primeiro observar** —
+recusa loga o IP visto, e um webhook real precisa ter chegado para haver o que
+observar. Em 19/08/2026 não havia tráfego de webhook da Efí nos logs do staging,
+ou seja: hoje não temos nem a medição que autorizaria a decisão.
+
+**O que sobra de mitigação real, e é o que está no ar:**
+
+1. o **token na URL** (`?token=`), que é o mecanismo que a Efí de fato oferece —
+   a doc dela chama de hash/HMAC e recomenda usar junto com o IP, nunca em vez de;
+2. o **strip da query string no Sentry** (`_strip_query_string` em
+   `config/settings.py`, travado por
+   `shopman/shop/tests/test_sentry_query_scrubbing.py`), sem o qual o token
+   vazaria em texto puro em todo evento de erro;
+3. a **rotação** do `EFI_WEBHOOK_TOKEN` tratada como credencial vazada por
+   desenho (rotacionar = recadastrar a URL na Efí).
+
+**O que faria diferença de verdade** — e é decisão de infraestrutura, não de
+código: um **proxy mTLS na frente** do app. É o mecanismo canônico da Efí (por
+norma do Banco Central: chave pública da Efí no servidor, handshake em duas
+requisições, TLS 1.2+), é criptográfico em vez de topológico, e não quebra quando
+a AWS troca um IP. O view já sabe consumi-lo: `EFI_MTLS_HEADER`
+(`X-SSL-Client-Verify: SUCCESS`) existe e é lido. Falta o proxy, que a DO App
+Platform servindo direto não nos dá. A Efí publica até um exemplo de nginx
+(`github.com/efipay/mtls-webhook`).
+
+**Se um dia ligar mesmo assim**, o valor documentado hoje seria só o da doc
+corrente, e o procedimento é ligar em **staging** primeiro e observar antes de
+tocar em produção:
+
+```
+EFI_WEBHOOK_IP_ALLOWLIST=34.193.116.226/32
+```
+
+Reconfira o valor na doc da Efí na hora de ligar — este runbook registra o que
+ela dizia em 19/08/2026, e é exatamente esse o dado que envelhece.
+
+### Consequências de o token ser a autenticação única
 
 Sem a allowlist configurada e sem proxy mTLS na frente (DO App Platform
 direto), esse token é a autenticação **única** do endpoint — e ele fica gravado

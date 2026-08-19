@@ -1126,11 +1126,20 @@ SHOPMAN_EFI_WEBHOOK = {
     # and equal to "SUCCESS", the request is treated as pre-authenticated by
     # the proxy. The shared token is still verified as defense-in-depth.
     "mtls_header": os.environ.get("EFI_MTLS_HEADER", "HTTP_X_SSL_CLIENT_VERIFY"),
-    # Optional: CIDRs de onde a EFI notifica (EFI_WEBHOOK_IP_ALLOWLIST, separados
-    # por vírgula — ex.: "34.193.0.0/16,52.5.0.0/16"). VAZIA = sem enforcement,
-    # e é esse o default: uma lista ausente não pode derrubar o webhook de
-    # produção. Configurada, é a terceira camada (a EFI documenta mTLS, allowlist
-    # de IP e hash na URL; sem proxy mTLS na DO, só as duas últimas são nossas).
+    # Optional: IPs/CIDRs de onde a EFI notifica (EFI_WEBHOOK_IP_ALLOWLIST,
+    # separados por vírgula). VAZIA = sem enforcement, e é esse o default: uma
+    # lista ausente não pode derrubar o webhook de produção. Configurada, é a
+    # terceira camada (a EFI documenta mTLS, allowlist de IP e hash na URL; sem
+    # proxy mTLS na DO, só as duas últimas são nossas).
+    #
+    # ⚠️ Deliberadamente SEM exemplo de valor aqui. A EFI notifica de elastic IPs
+    # da AWS e suas duas páginas oficiais discordam (a doc corrente publica um
+    # endereço; a central de ajuda, 28, num artigo datado de 2017). Um exemplo
+    # plausível neste arquivo vira valor copiado, e allowlist errada devolve 401
+    # em todo webhook de pagamento — pior que allowlist ausente. Antes de ligar,
+    # leia o levantamento e o procedimento em
+    # docs/runbooks/release-secrets-runbook.md, seção "Allowlist de IP".
+    #
     # Ver o contrato de o que é confiado como IP de origem em
     # shopman/shop/webhooks/efi.py.
     "ip_allowlist": tuple(
