@@ -404,6 +404,29 @@ class QueryTests(TestCase):
         found = PaymentService.get_active_intent("ORD-Q4")
         self.assertIsNone(found)
 
+    def test_captured_intent_is_not_active(self) -> None:
+        """Dinheiro que já entrou não é cobrança em andamento."""
+        intent = PaymentService.create_intent("ORD-Q5", 5000, "pix", ref="PAY-Q5")
+        PaymentService.authorize(intent.ref)
+        PaymentService.capture(intent.ref)
+
+        self.assertIsNone(PaymentService.get_active_intent("ORD-Q5"))
+
+    def test_get_active_intent_filters_by_method(self) -> None:
+        """Venda mista: o dinheiro liquidou no balcão, o pix ainda está de pé."""
+        PaymentService.settle("ORD-Q6", 2000, "cash", ref="PAY-Q6-CASH")
+        PaymentService.create_intent("ORD-Q6", 3000, "pix", ref="PAY-Q6-PIX")
+
+        self.assertEqual(PaymentService.get_active_intent("ORD-Q6").ref, "PAY-Q6-PIX")
+        self.assertEqual(PaymentService.get_active_intent("ORD-Q6", method="pix").ref, "PAY-Q6-PIX")
+        self.assertIsNone(PaymentService.get_active_intent("ORD-Q6", method="cash"))
+
+    def test_authorized_intent_is_active(self) -> None:
+        intent = PaymentService.create_intent("ORD-Q7", 5000, "card", ref="PAY-Q7")
+        PaymentService.authorize(intent.ref)
+
+        self.assertEqual(PaymentService.get_active_intent("ORD-Q7").ref, "PAY-Q7")
+
 
 class AggregateTests(TestCase):
     def test_captured_total(self) -> None:

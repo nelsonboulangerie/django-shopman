@@ -18,9 +18,11 @@ Lifecycle:
                   → fail
     settle (cash/external) = create_intent + capture, atômico
 
-6 verbs: create_intent, settle, authorize, capture, refund, cancel.
-2 queries: get, get_by_order.
-1 helper: get_active_intent.
+7 verbos: create_intent, settle, authorize, capture, refund, cancel, fail.
+Reconciliação: reconcile_gateway_status (snapshot cumulativo do gateway).
+Consultas: get, get_by_order, get_by_gateway_id, get_active_intent
+(cobrança de pé — pendente ou autorizada, nunca capturada).
+Somas: captured_total, refunded_total, chargeback_total.
 
 Domain Contracts:
 
@@ -35,7 +37,14 @@ Domain Contracts:
         - ``refunded_total(ref)`` is the financial source of truth for how
           much has actually been returned to the customer.
         - Multiple partial refunds are allowed as long as
-          ``captured_total - refunded_total > 0``.
+          ``captured_total - refunded_total - chargeback_total > 0``.
+
+    Chargeback:
+        - Devolução decidida por terceiro (disputa de cartão, MED do Pix).
+          Entra pelo snapshot do gateway (``reconcile_gateway_status``), não
+          por verbo próprio: a loja não decide o fato, só registra.
+        - Não muda o ``status`` do intent — consome saldo devolvível e é
+          contado por ``chargeback_total(ref)``.
 
     Mutation Surface:
         - ``PaymentService`` is the canonical mutation surface. All status
@@ -999,16 +1008,31 @@ class PaymentService:
         return PaymentIntent.objects.filter(order_ref=order_ref)
 
     @classmethod
-    def get_active_intent(cls, order_ref: str) -> PaymentIntent | None:
-        """Retorna o intent não-terminal e não-expirado mais recente para o pedido."""
+    def get_active_intent(cls, order_ref: str, *, method: str | None = None) -> PaymentIntent | None:
+        """A cobrança de pé para o pedido: pendente ou autorizada, não expirada.
+
+        "Ativo" é o dinheiro que ainda se espera, não o que já entrou:
+        ``captured`` fica de fora (ver ``PaymentIntent.ACTIVE_STATUSES``, que
+        não é o complemento de ``TERMINAL_STATUSES``). Quem quer saber se o
+        pedido foi pago pergunta a ``captured_total``.
+
+        Cardinalidade: um pedido pode ter mais de um intent — venda mista cria
+        um por método (``settle_terminal_tenders`` em
+        ``shopman/shop/services/payment.py``), e uma tentativa de pix que falha
+        deixa a geração anterior para trás. Os do terminal nascem capturados e
+        já saem daqui; das gerações queimadas, a mais recente é a cobrança
+        corrente (o orquestrador cancela as anteriores em
+        ``cancel_stale_intents``). Passe ``method`` quando a pergunta for sobre
+        um meio de pagamento específico, ou use ``get_by_order`` para ver todos.
+        """
         now = timezone.now()
-        return (
-            PaymentIntent.objects.filter(order_ref=order_ref)
-            .exclude(status__in=PaymentIntent.TERMINAL_STATUSES)
-            .filter(Q(expires_at__isnull=True) | Q(expires_at__gt=now))
-            .order_by("-created_at")
-            .first()
-        )
+        qs = PaymentIntent.objects.filter(
+            order_ref=order_ref,
+            status__in=PaymentIntent.ACTIVE_STATUSES,
+        ).filter(Q(expires_at__isnull=True) | Q(expires_at__gt=now))
+        if method is not None:
+            qs = qs.filter(method=method)
+        return qs.order_by("-created_at").first()
 
     @classmethod
     def get_by_gateway_id(
