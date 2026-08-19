@@ -63,7 +63,7 @@ CAST: tuple[tuple[str, str, str, tuple[str, ...], bool, tuple[str, ...]], ...] =
     # O dono: audita o dinheiro. Superusuário porque é quem administra o sistema,
     # E no grupo "Dono" porque o grupo não pode nascer vazio — sem ninguém nele,
     # a apuração fica invisível até para quem mandou trancá-la.
-    ("admin", "Dono", "da Casa", ("Dono",), True, ()),
+    ("admin", "Admin", "", ("Dono",), True, ()),
     # O gestor: opera, autoriza exceção, fecha o dia. NÃO audita — ele conta às
     # cegas como todo mundo (ver docs/guides/rbac-personas.md).
     ("joyce", "Joyce", "", ("Gerente",), False, ("marina",)),
