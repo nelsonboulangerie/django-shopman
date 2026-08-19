@@ -473,6 +473,7 @@ class PaymentService:
         amount_q: int | None = None,
         reason: str = "",
         gateway_id: str = "",
+        idempotency_key: str = "",
     ) -> PaymentTransaction:
         """
         Processa reembolso (parcial ou total).
@@ -491,12 +492,19 @@ class PaymentService:
                 (imutável, como ela): é o "por quê" que auditoria e contador
                 perguntam sobre dinheiro que SAIU.
             gateway_id: ID do refund no gateway
+            idempotency_key: Chave estável do chamador para retry seguro.
+                Necessária porque a dedupe por ``gateway_id`` não alcança
+                estorno de DINHEIRO: ele não tem gateway, e dois disparos do
+                mesmo estorno de balcão (retry de rede, duplo clique) criariam
+                duas devoluções enquanto houvesse saldo.
 
         Returns:
-            PaymentTransaction de refund criada
+            PaymentTransaction de refund criada, ou a existente quando a mesma
+            chave/gateway_id é reapresentada.
 
         Raises:
-            PaymentError: INTENT_NOT_FOUND, INVALID_TRANSITION, AMOUNT_EXCEEDS_CAPTURED
+            PaymentError: INTENT_NOT_FOUND, INVALID_TRANSITION,
+                AMOUNT_EXCEEDS_CAPTURED, IDEMPOTENCY_KEY_CONFLICT
         """
         intent = cls._get_for_update(ref)
 
@@ -508,6 +516,15 @@ class PaymentService:
                 type=PaymentTransaction.Type.REFUND, gateway_id=gateway_id
             ).first()
             if existing is not None:
+                return existing
+
+        idempotency_key = (idempotency_key or "").strip()
+        if idempotency_key:
+            existing = PaymentTransaction.objects.filter(
+                type=PaymentTransaction.Type.REFUND, idempotency_key=idempotency_key
+            ).first()
+            if existing is not None:
+                cls._require_idempotent_refund_match(existing, intent=intent, amount_q=amount_q)
                 return existing
 
         if intent.status not in (PaymentIntent.Status.CAPTURED, PaymentIntent.Status.REFUNDED):
@@ -548,13 +565,28 @@ class PaymentService:
                 context={"refund_amount": refund_amount, "available_q": available_q},
             )
 
-        txn = PaymentTransaction.objects.create(
-            intent=intent,
-            type=PaymentTransaction.Type.REFUND,
-            amount_q=refund_amount,
-            gateway_id=gateway_id,
-            reason=reason,
-        )
+        try:
+            txn = PaymentTransaction.objects.create(
+                intent=intent,
+                type=PaymentTransaction.Type.REFUND,
+                amount_q=refund_amount,
+                gateway_id=gateway_id,
+                reason=reason,
+                idempotency_key=idempotency_key,
+            )
+        except IntegrityError:
+            # A constraint parcial única é a rede final: dois estornos com a
+            # mesma chave em intents diferentes (bug do chamador), ou uma
+            # corrida que escapou do lock deste intent.
+            if not idempotency_key:
+                raise
+            existing = PaymentTransaction.objects.filter(
+                type=PaymentTransaction.Type.REFUND, idempotency_key=idempotency_key
+            ).first()
+            if existing is None:
+                raise
+            cls._require_idempotent_refund_match(existing, intent=intent, amount_q=refund_amount)
+            return existing
 
         # Transition to refunded status (idempotent if already refunded)
         if intent.status != PaymentIntent.Status.REFUNDED:
@@ -1191,6 +1223,32 @@ class PaymentService:
                 code="idempotency_key_conflict",
                 message="Chave de idempotência reutilizada com parâmetros diferentes",
                 context={"idempotency_key": intent.idempotency_key, "mismatched": mismatched},
+            )
+
+    @classmethod
+    def _require_idempotent_refund_match(
+        cls,
+        txn: PaymentTransaction,
+        *,
+        intent: PaymentIntent,
+        amount_q: int | None,
+    ) -> None:
+        """Recusa a chave de um estorno reapresentada para OUTRO estorno.
+
+        Mesma postura do ``create_intent``: devolver a transação existente em
+        silêncio quando os parâmetros mudaram mascara o bug do chamador — e
+        aqui o bug é sobre dinheiro que sai.
+        """
+        mismatched: dict[str, dict] = {}
+        if txn.intent_id != intent.pk:
+            mismatched["intent_ref"] = {"expected": intent.ref, "actual": txn.intent.ref}
+        if amount_q is not None and txn.amount_q != int(amount_q):
+            mismatched["amount_q"] = {"expected": int(amount_q), "actual": txn.amount_q}
+        if mismatched:
+            raise PaymentError(
+                code="idempotency_key_conflict",
+                message="Chave de idempotência reutilizada com outro reembolso",
+                context={"idempotency_key": txn.idempotency_key, "mismatched": mismatched},
             )
 
     @classmethod
