@@ -366,3 +366,49 @@ describe("usePosCashSession — pedido de troco (o dinheiro fica no balcão)", (
     for (const caminho of caminhos) expect(caminho).toContain("/cash/change-request/");
   });
 });
+
+describe("usePosCashSession — devolução em dinheiro de venda cancelada (cancelar não é devolver)", () => {
+  beforeEach(() => vi.mocked(toast.error).mockClear());
+  afterEach(() => vi.unstubAllGlobals());
+
+  it("a antesala lê as devoluções pendentes do cash_runtime", () => {
+    const { session } = makeCashSession({
+      projection: makeProjection({
+        cash_runtime: {
+          pending_cash_refunds: [
+            { order_ref: "A01", amount_q: 1200, amount_display: "R$ 12,00", customer_name: "Ana", cancelled_at: "" },
+          ],
+        } as POSProjection["cash_runtime"],
+      }),
+    });
+    expect(session.pendingCashRefunds.value).toHaveLength(1);
+    expect(session.pendingCashRefunds.value[0]!.order_ref).toBe("A01");
+  });
+
+  it("pendentes ausentes viram lista vazia", () => {
+    const { session } = makeCashSession();
+    expect(session.pendingCashRefunds.value).toEqual([]);
+  });
+
+  it("devolver manda o PIN do gerente para a rota do pedido", async () => {
+    const { session, actionCall } = makeCashSession();
+    await session.refundCash({ orderRef: "A01", managerApproval: { username: "pablo", pin: "4321" } });
+    expect(actionCall).toHaveBeenCalledWith(
+      "/api/v1/backstage/pos/cash/refund/A01/",
+      { body: { manager_approval: { username: "pablo", pin: "4321" } } },
+    );
+  });
+
+  it("devolver abre a gaveta: é de onde as notas saem", async () => {
+    const { session, kicks } = makeDrawerSession();
+    await session.refundCash({ orderRef: "A01", managerApproval: { username: "pablo", pin: "4321" } });
+    expect(kicks).toEqual(["cash_refund"]);
+  });
+
+  it("devolução RECUSADA não abre a gaveta", async () => {
+    const actionCall = vi.fn().mockRejectedValue(new Error("recusado"));
+    const { session, kicks } = makeDrawerSession({ actionCall });
+    await session.refundCash({ orderRef: "A01", managerApproval: { username: "pablo", pin: "4321" } });
+    expect(kicks).toEqual([]);
+  });
+});

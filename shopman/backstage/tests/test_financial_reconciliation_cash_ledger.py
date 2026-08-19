@@ -319,15 +319,35 @@ def test_erros_que_se_compensam_no_total_continuam_sendo_erros(counter):
     assert "compensam" in issue.message
 
 
-def test_estorno_fora_do_pdv_sem_linha_na_gaveta_aparece(counter, django_capture_on_commit_callbacks):
-    """Cancel pelo gestor (não pelo PDV) estorna o intent de dinheiro no Payman
-    sem gravar ``refund`` na gaveta: o dinheiro saiu de um livro e ficou no
-    outro. É exatamente o que este check existe para pegar."""
+def test_cancel_pelo_gestor_nao_estorna_dinheiro_e_o_cruzamento_fica_quieto(counter, django_capture_on_commit_callbacks):
+    """Cancelar não é devolver: o cancel pelo gestor (não pelo PDV) deixa o intent
+    de dinheiro capturado e não grava ``refund`` na gaveta. Os dois livros seguem
+    dizendo a mesma coisa (o dinheiro está na casa), o cruzamento fica quieto, e
+    o que existe é a pendência de devolução, visível para quem abrir a gaveta."""
+    from shopman.shop.services import payment as payment_service
+
     result = counter.close(client_request_id="c7", tendered_amount_q=1200)
     order = Order.objects.get(ref=result.order_ref)
     with django_capture_on_commit_callbacks(execute=True):
         operator_orders.cancel_order(order, reason="customer_requested", actor="gestor:pablo")
-    assert PaymentIntent.objects.get(order_ref=order.ref).status == PaymentIntent.Status.REFUNDED
+    assert PaymentIntent.objects.get(order_ref=order.ref).status == PaymentIntent.Status.CAPTURED
+    assert not Entry.objects.filter(kind=Entry.Kind.REFUND).exists()
+
+    report = build_financial_reconciliation(reconciliation_date=_today())
+
+    assert "cash_ledger_mismatch" not in _codes(report)
+    assert [p.order_ref for p in payment_service.pending_cash_refunds(channel_ref="pdv")] == [order.ref]
+
+
+def test_estorno_so_no_payman_sem_linha_na_gaveta_aparece(counter):
+    """Um ``REFUND`` gravado direto no Payman, sem ninguém abrir gaveta (caminho
+    que o ``refund_cash`` existe para impedir): o dinheiro saiu de um livro e
+    ficou no outro. É exatamente o que este check existe para pegar."""
+    result = counter.close(client_request_id="c7", tendered_amount_q=1200)
+    order = Order.objects.get(ref=result.order_ref)
+    intent = PaymentIntent.objects.get(order_ref=order.ref)
+    PaymentService.refund(intent.ref, reason="fora do balcão")
+    assert PaymentIntent.objects.get(pk=intent.pk).status == PaymentIntent.Status.REFUNDED
     assert not Entry.objects.filter(kind=Entry.Kind.REFUND).exists()
 
     report = build_financial_reconciliation(reconciliation_date=_today())

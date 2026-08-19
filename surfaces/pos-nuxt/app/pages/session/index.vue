@@ -41,6 +41,8 @@ const {
   openDrawerWithoutSale,
   probeDrawer,
   pendingChangeRequests,
+  pendingCashRefunds,
+  refundCash,
   requestChange,
   serveChangeRequest,
   cancelChangeRequest,
@@ -131,22 +133,42 @@ watch(movementReasonOther, (typed) => {
 // Um diálogo só para as duas ações, e uma intenção dizendo qual reenviar: com
 // dois diálogos, o PIN digitado num poderia reenviar a ação do outro — e nesse
 // caso a assinatura gravada seria de uma coisa que o gerente não autorizou.
-type ManagerIntent = { action: "movement" } | { action: "serve_change"; ref: string };
+type ManagerIntent =
+  | { action: "movement" }
+  | { action: "serve_change"; ref: string }
+  | { action: "refund_cash"; orderRef: string };
 const managerIntent = ref<ManagerIntent>({ action: "movement" });
 const managerAuthOpen = ref(false);
 watch(managerChallenge, (challenge) => { if (challenge) managerAuthOpen.value = true; });
 
-const managerAuthReasonText = computed(() =>
-  managerIntent.value.action === "serve_change"
-    ? "Atender o pedido abre a gaveta: um gerente precisa autorizar e assinar a troca."
-    : "Retirar dinheiro da gaveta é exceção auditada: um gerente precisa autorizar.",
-);
+const managerAuthReasonText = computed(() => {
+  if (managerIntent.value.action === "serve_change") {
+    return "Atender o pedido abre a gaveta: um gerente precisa autorizar e assinar a troca.";
+  }
+  if (managerIntent.value.action === "refund_cash") {
+    return "Devolver dinheiro de venda cancelada tira dinheiro da gaveta: um gerente precisa autorizar.";
+  }
+  return "Retirar dinheiro da gaveta é exceção auditada: um gerente precisa autorizar.";
+});
 
 function onManagerAuthorize(username: string, pin: string) {
   managerAuthOpen.value = false;
   const intent = managerIntent.value;
   if (intent.action === "serve_change") serveChange(intent.ref, { username, pin });
+  else if (intent.action === "refund_cash") refundPending(intent.orderRef, { username, pin });
   else submitMovement({ username, pin });
+}
+
+// Cancelar não é devolver: a venda cancelada (pelo gestor, de noite) deixa o
+// dinheiro pendente até alguém com a gaveta aberta entregar. O PIN é do gerente
+// porque dinheiro sai da gaveta, como na sangria.
+async function refundPending(orderRef: string, managerApproval: { username: string; pin: string } | null = null) {
+  managerIntent.value = { action: "refund_cash", orderRef };
+  const ok = await refundCash({ orderRef, managerApproval });
+  if (ok) {
+    managerChallenge.value = null;
+    managerAuthOpen.value = false;
+  }
 }
 
 async function submitMovement(managerApproval: { username: string; pin: string } | null = null) {
@@ -385,6 +407,37 @@ async function confirmCloseBlocking() {
                  Antes o operador atravessava a loja até o cofre com dinheiro na
                  mão; agora ele pede, alguém traz, e a troca acontece aqui, à
                  vista das duas pessoas. Trocar não muda o total da gaveta. -->
+            <!-- Cancelar não é devolver. O gestor cancela de noite e ninguém abriu
+                 gaveta: a devolução fica aqui, visível, até quem está com a gaveta
+                 aberta entregar as notas. Só então Payman e livro registram. -->
+            <section v-if="pendingCashRefunds.length" class="grid gap-3 rounded-lg border bg-card p-4">
+              <div class="flex items-center gap-2">
+                <Icon name="lucide:rotate-ccw" class="size-4 text-muted-foreground" />
+                <h2 class="text-base font-semibold">Devoluções em dinheiro pendentes</h2>
+              </div>
+              <ul class="grid gap-2" aria-label="Devoluções em dinheiro pendentes">
+                <li
+                  v-for="refund in pendingCashRefunds"
+                  :key="refund.order_ref"
+                  class="grid gap-2 rounded-md border bg-muted/30 p-3"
+                >
+                  <div class="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
+                    <span class="text-sm font-medium">{{ refund.amount_display }}</span>
+                    <span class="text-xs text-muted-foreground">
+                      pedido {{ refund.order_ref }}<template v-if="refund.customer_name"> · {{ refund.customer_name }}</template>
+                    </span>
+                  </div>
+                  <UiButton size="sm" :disabled="busy" @click="refundPending(refund.order_ref)">
+                    <Icon name="lucide:hand-coins" class="size-4" />
+                    Devolver
+                  </UiButton>
+                </li>
+              </ul>
+              <p class="text-xs text-muted-foreground">
+                O dinheiro sai desta gaveta e fica registrado no turno. Um gerente autoriza com o PIN.
+              </p>
+            </section>
+
             <section class="grid gap-3 rounded-lg border bg-card p-4">
               <div class="flex items-center gap-2">
                 <Icon name="lucide:coins" class="size-4 text-muted-foreground" />
