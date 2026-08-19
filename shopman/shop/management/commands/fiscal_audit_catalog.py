@@ -12,9 +12,14 @@ saber o que aconteceria ao ligar a chave.
 
     python manage.py fiscal_audit_catalog
     python manage.py fiscal_audit_catalog --json     # para script/CI
-    python manage.py fiscal_audit_catalog --strict   # sai 1 se houver incompleto
+    python manage.py fiscal_audit_catalog --strict   # pré-requisito do flip
 
-Saída vazia == catálogo publicado pronto para emitir.
+``--strict`` é o **pré-requisito documentado** para ligar o porteiro
+(procedimento em ``docs/reference/settings.md``, seção "Ligar o porteiro fiscal
+do catálogo"). Por isso ele exige as duas coisas, não uma: nenhum incompleto
+**e** pelo menos um canal de venda ativo. Auditoria que não varreu nada não
+prova nada — sem essa segunda condição bastaria rodar o gate contra um banco sem
+canal configurado para colher um verde que não significa "pronto para emitir".
 """
 
 from __future__ import annotations
@@ -32,7 +37,10 @@ class Command(BaseCommand):
         parser.add_argument(
             "--strict",
             action="store_true",
-            help="exit code 1 quando houver produto incompleto (para gate de deploy/CI)",
+            help=(
+                "exit code 1 quando houver produto incompleto OU quando não houver canal "
+                "de venda ativo para auditar (gate de deploy/CI)"
+            ),
         )
 
     def handle(self, *args, **options):
@@ -43,12 +51,16 @@ class Command(BaseCommand):
 
         channels = sorted(selling_channel_refs())
         rows = incomplete_published_products()
+        # "Pronto para ligar o porteiro" exige ter varrido algo e não ter achado
+        # nada. As duas condições, porque só a segunda é satisfeita à toa.
+        ready = bool(channels) and not rows
 
         if options["json"]:
             self.stdout.write(
                 json.dumps(
                     {
                         "channels": channels,
+                        "ready_to_enforce": ready,
                         "incomplete": [
                             {
                                 "sku": row.sku,
@@ -64,7 +76,14 @@ class Command(BaseCommand):
                 )
             )
         elif not channels:
-            self.stdout.write("Nenhum canal de venda ativo — nada publicado emite nota.")
+            message = (
+                "Nenhum canal de venda ativo — a auditoria não varreu nada, "
+                "logo não atesta nada."
+            )
+            if options["strict"]:
+                self.stderr.write(self.style.ERROR(f"❌ {message}"))
+            else:
+                self.stdout.write(message)
         elif not rows:
             self.stdout.write(
                 self.style.SUCCESS(
@@ -85,5 +104,5 @@ class Command(BaseCommand):
                 "  Classifique em Admin → Produtos → Fiscal (perfil + NCM; CEST na revenda)."
             )
 
-        if options["strict"] and rows:
+        if options["strict"] and not ready:
             raise SystemExit(1)

@@ -71,6 +71,23 @@ def test_publishing_unclassified_product_in_selling_channel_is_refused():
 
 
 @GATE_ON
+def test_refusal_names_what_to_register_and_how_to_see_the_rest():
+    # A recusa chega uma por save(), no meio de um seed ou de um sync — quem a lê
+    # tem N produtos incompletos e a notícia de um só. Sem o ponteiro para a
+    # auditoria, o conserto vira conserta-um-roda-de-novo.
+    listing = _listing()
+    product = _product()
+
+    with pytest.raises(ValidationError) as exc:
+        _publish(listing, product)
+
+    message = str(exc.value)
+    assert "Admin → Produtos → Fiscal" in message
+    assert "NCM" in message and "CEST" in message
+    assert "fiscal_audit_catalog" in message
+
+
+@GATE_ON
 def test_publishing_classified_product_passes():
     listing = _listing()
     product = _product(metadata=COMPLETE)
@@ -233,3 +250,54 @@ def test_audit_command_is_clean_when_every_published_product_is_classified():
     out = StringIO()
     call_command("fiscal_audit_catalog", "--strict", stdout=out)
     assert "classificação fiscal completa" in out.getvalue()
+
+
+def test_audit_command_strict_refuses_to_pass_without_a_selling_channel():
+    # Sem canal de venda ativo a auditoria não varre nada, e "não varri nada"
+    # não é "está pronto". Como o --strict é o pré-requisito documentado do
+    # flip da chave, passar aqui seria um verde falso: bastaria rodar o gate
+    # contra um banco sem canal configurado para "provar" um catálogo pronto.
+    from io import StringIO
+
+    from django.core.management import call_command
+
+    _listing(ref="tv-salao", policy=Channel.CommercePolicy.DISPLAY)
+    _publish(_listing(ref="whatsapp", active=False), _product("PAO-X"))
+
+    err = StringIO()
+    with pytest.raises(SystemExit) as exc:
+        call_command("fiscal_audit_catalog", "--strict", stdout=StringIO(), stderr=err)
+
+    assert exc.value.code == 1
+    assert "Nenhum canal de venda ativo" in err.getvalue()
+
+
+def test_audit_command_without_strict_only_reports_the_absence_of_channels():
+    # Sem --strict o comando é leitura, não gate: informa e sai 0.
+    from io import StringIO
+
+    from django.core.management import call_command
+
+    _listing(ref="tv-salao", policy=Channel.CommercePolicy.DISPLAY)
+
+    out = StringIO()
+    call_command("fiscal_audit_catalog", stdout=out)
+
+    assert "Nenhum canal de venda ativo" in out.getvalue()
+
+
+def test_audit_command_json_carries_the_strict_verdict():
+    # O JSON é o que script/CI lê. Sem o veredito, cada consumidor teria de
+    # reimplementar a regra ("incomplete vazio E channels não vazio").
+    import json
+    from io import StringIO
+
+    from django.core.management import call_command
+
+    listing = _listing()
+    _publish(listing, _product("PAO-OK", metadata=COMPLETE))
+
+    out = StringIO()
+    call_command("fiscal_audit_catalog", "--json", stdout=out)
+
+    assert json.loads(out.getvalue())["ready_to_enforce"] is True
