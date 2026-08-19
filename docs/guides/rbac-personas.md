@@ -126,13 +126,36 @@ qualquer permissão avulsa que alguém tenha dado à mão:
 
 | Usuário | Grupo | Entra com |
 |---|---|---|
-| `admin` | **Dono** (+ superusuário) | senha `admin` e PIN `1234` |
+| `admin` | **Dono** (+ superusuário) | senha `admin`, PIN `1234`, crachá `CRACHA-ADMIN` |
 | `joyce` | **Gerente** | só PIN `1234` |
-| `fran` | **Caixa** (loja) | só PIN `1234` |
-| `diofer` | **Cozinha** (produção) | só PIN `1234` |
+| `fran` | **Caixa** (loja) | PIN `1234`, crachá `CRACHA-FRAN` |
+| `diofer` | **Cozinha** (produção) | PIN `1234`, crachá `CRACHA-DIOFER` |
 
 Serve para **consertar acesso no staging sem rodar o `seed`**, que recriaria
 catálogo e milhares de pedidos falsos. Não toca em nenhum dado de negócio.
+
+### O crachá de dev é digitável
+
+O leitor de crachá é um teclado: ele "digita" o token e termina com Enter. Em
+produção o token é sorteado e só existe impresso. Aqui ele é previsível
+(`CRACHA-<USUARIO>`) porque, senão, testar o leitor exigiria imprimir um crachá
+**antes** de saber se o leitor funciona — foi por isso que a leitura pareceu
+quebrada por muito tempo: a máquina estava pronta e ninguém tinha crachá.
+
+Para testar sem leitor, basta digitar o texto na tela de bloqueio e apertar
+Enter depressa (teclas separadas por mais de meio segundo recomeçam o buffer, de
+propósito, para dedo humano não virar token falso).
+
+### Herança da identidade antiga
+
+O comando **absorve** contas anteriores: `marina` → `joyce`, `ana` → `fran`,
+`joao` → `diofer`. Todo o histórico (turnos, livro-caixa, movimentos de estoque,
+fechamentos) é reatribuído à pessoa nova e a conta antiga é apagada.
+
+Apagar direto jogaria fora o passado; manter as duas deixaria uma conta ativa
+sem grupo, que é acesso que ninguém explica. ⚠️ Isso vale para dev/staging: em
+produção, identidade que operou o caixa **não** se reescreve — o caminho lá é
+desativar a conta, não fundi-la.
 
 O `--yes` é obrigatório porque a senha e o PIN são de desenvolvimento: é uma
 frase que alguém digita de propósito, não algo que um job de release dispare

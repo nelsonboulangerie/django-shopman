@@ -117,3 +117,85 @@ def test_permissao_avulsa_antiga_e_LIMPA(elenco):
     call_command("setup_operators", "--yes", verbosity=0)
 
     assert get_user_model().objects.get(username="joyce").user_permissions.count() == 0
+
+
+# ── Crachá ────────────────────────────────────────────────────────────────
+
+
+def test_todos_saem_com_cracha_emitido(elenco):
+    """A máquina de ler crachá estava pronta; faltava CRACHÁ.
+
+    Sem token emitido, passar o leitor não acha ninguém — e a tela parece
+    quebrada quando o que falta é o cadastro.
+    """
+    from shopman.doorman.models import PinCredential
+
+    for username, user in elenco.items():
+        cred = PinCredential.objects.get(user=user)
+        assert cred.badge_hash, f"{username} sem crachá"
+
+
+def test_o_cracha_de_dev_e_digitavel(elenco):
+    """Previsível de propósito: testar o leitor não pode exigir imprimir antes."""
+    from shopman.backstage.services.operator import resolve_operator_by_badge
+
+    achado = resolve_operator_by_badge(
+        setup_operators.dev_badge("fran"), required_perm="cashman.operate_pos"
+    )
+    assert achado is not None
+    assert achado.username == "fran"
+
+
+def test_cracha_de_outra_pessoa_nao_resolve_para_mim(elenco):
+    from shopman.backstage.services.operator import resolve_operator_by_badge
+
+    achado = resolve_operator_by_badge(
+        setup_operators.dev_badge("diofer"), required_perm="cashman.operate_pos"
+    )
+    # diofer é da Cozinha: o crachá dele existe, mas não abre o PDV.
+    assert achado is None
+
+
+# ── Absorver a identidade antiga ──────────────────────────────────────────
+
+
+@pytest.mark.django_db
+def test_a_gerente_nova_herda_o_historico_da_antiga():
+    """Apagar direto jogaria fora o passado; reatribuir preserva a trilha.
+
+    Turnos, linhas do livro, movimentos de estoque e fechamentos apontam para
+    quem fez. Quem era a gerente continua sendo a gerente.
+    """
+    from shopman.cashman.models import Shift, Terminal
+
+    antiga = get_user_model().objects.create_user(username="marina", password="x", is_staff=True)
+    terminal = Terminal.default()
+    turno = Shift.objects.create(terminal=terminal, operator=antiga)
+
+    call_command("setup_operators", "--yes", verbosity=0)
+
+    turno.refresh_from_db()
+    assert turno.operator.username == "joyce"
+    assert not get_user_model().objects.filter(username="marina").exists()
+
+
+@pytest.mark.django_db
+def test_absorver_e_idempotente():
+    """Rodar de novo não acha ninguém para absorver, e não explode."""
+    antiga = get_user_model().objects.create_user(username="ana", password="x", is_staff=True)
+    assert antiga.pk
+
+    call_command("setup_operators", "--yes", verbosity=0)
+    call_command("setup_operators", "--yes", verbosity=0)
+
+    assert not get_user_model().objects.filter(username="ana").exists()
+    assert get_user_model().objects.filter(username="fran").count() == 1
+
+
+@pytest.mark.django_db
+def test_sem_conta_antiga_nada_acontece():
+    """Banco novo: não há passado para herdar, e o comando roda igual."""
+    call_command("setup_operators", "--yes", verbosity=0)
+
+    assert get_user_model().objects.filter(username="joyce").exists()
+    assert not get_user_model().objects.filter(username="marina").exists()
