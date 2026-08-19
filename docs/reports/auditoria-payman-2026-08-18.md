@@ -45,6 +45,54 @@ Hoje isso é *latente* — verifiquei: **nenhum receiver de sinal do Payman exis
 
 O estado atual é pior que qualquer uma das duas saídas honestas: o relatório diário exibe um zero que se lê como "não houve chargebacks" quando significa "não enxergamos chargebacks". **Decidir:** ou o snapshot ganha `chargeback_q` com a mesma lógica de delta cumulativo do refund (e um issue-code próprio na reconciliação), ou o tipo sai do modelo até existir — vocabulário morto em modelo financeiro é passivo, não reserva.
 
+> **✅ FECHADO (19/08/2026).** Escolhida a primeira saída, em duas metades. A
+> primeira deu ao `reconcile_gateway_status` o parâmetro `chargeback_q`
+> (snapshot cumulativo, monotônico, consumindo saldo devolvível) e o issue-code
+> `intent_has_chargeback` na reconciliação diária. A segunda ligou o gateway ao
+> modelo — abaixo o que foi decidido nela, que é semântica de dinheiro e não
+> deve ser redescoberto.
+>
+> **Cartão (Stripe) — automático.** `shopman/shop/adapters/payment_stripe.py::handle_dispute_event`
+> escuta os cinco `charge.dispute.*` e traduz o **desfecho** para o snapshot:
+>
+> | `Dispute.status` | O que aconteceu com o dinheiro | Vira chargeback? |
+> |---|---|---|
+> | `warning_needs_response`, `warning_under_review`, `warning_closed` | Consulta do emissor; nada se move | Não |
+> | `needs_response`, `under_review` | Retirado, **mas reversível** (`funds_reinstated` devolve se ganharmos) | Não (fica como risco) |
+> | `won`, `prevented` | Devolvido / nunca retirado | Não |
+> | `lost` | Saiu e não volta | **Sim** |
+>
+> A `PaymentTransaction(CHARGEBACK)` nasce só em `lost`, e a razão é o formato
+> do livro: a transação é imutável e o snapshot é monotônico, logo chargeback
+> lançado não tem como ser desfeito — lançar na abertura da disputa deixaria a
+> loja permanentemente mais pobre no livro toda vez que ela **ganhasse**.
+> Enquanto a disputa vive, o valor em risco fica em
+> `gateway_data["disputes"]` (contexto, reversível) e o operador é chamado pelo
+> alerta novo `payment_disputed`, porque a defesa tem prazo. Entrega
+> at-least-once e fora de ordem: estado por id de disputa, status terminal
+> grudento, valor cumulativo das perdidas.
+>
+> **Pix (Efí) — segue manual, e agora está escrito por quê.** A lista
+> documentada de eventos do webhook da Efí (`dev.efipay.com.br`, lida em
+> 19/08/2026) tem `PIX_RECEBIDO`, `PIX_ENVIADO`, `DEVOLUCAO_RECEBIDA`,
+> `DEVOLUCAO_ENVIADA` e os estados do Pix Automático — **nenhum evento de MED
+> nem de relato de infração** —, e a API de gestão de Pix só expõe a devolução
+> que *nós* pedimos (`PUT/GET /v2/pix/:e2eid/devolucao/:id`). Não há caminho
+> automático a implementar: o MED chega ao operador pelo painel/e-mail da Efí e
+> entra pelo mesmo `reconcile_gateway_status(chargeback_q=…)`. Isso está no
+> docstring de `shopman/shop/webhooks/efi.py`, que é onde a próxima pessoa vai
+> procurar. Se a Efí publicar o evento, o destino já existe — o Payman não
+> precisa de nada novo.
+>
+> **O que ainda depende do dono:** ninguém provou o caminho contra o Stripe
+> real. O roteiro de sandbox existe e é curto — cobrar com o cartão de teste
+> `4000000000000259` (nasce contestado como fraude), responder à disputa com
+> `losing_evidence` em `uncategorized_text` para forçar o `lost`, e conferir que
+> o chargeback apareceu no Payman e no relatório do dia; `winning_evidence`
+> fecha como `won` e não pode criar transação nenhuma. Isso é o que separa
+> "provado contra mock" de "provado" — mesma dívida do
+> `make smoke-gateways-sandbox`.
+
 ### P3 · MÉDIA-ALTA — A API do pacote não está montada — e não pode ser montada como está
 
 O `config/urls.py` confirma: as APIs dos cores (incluindo `payman/api/`) **não são montadas no deployment**. São 130 loc de views + serializers + urls mortos em produção. Pior: se alguém montar, a proteção é `IsAuthenticated` puro — **qualquer usuário logado lista todos os intents da loja e filtra por qualquer `order_ref`**, dados de pagamento de qualquer cliente. Não há checagem de operador nem de dono do pedido. Pré-alpha, duas saídas limpas: apagar o pacote `api/` (a superfície real é o backstage, que já expõe o que o operador precisa), ou mantê-lo com permissão de modelo (`payman.view_paymentintent`) + escopo. O meio-termo atual — código de superfície pública sem trava esperando ser plugado — é a definição de brecha em potencial.

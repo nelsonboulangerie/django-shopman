@@ -78,6 +78,37 @@ Downstream
 On successful authentication and payload parse, this view updates the
 payment intent via :class:`PaymentService` and calls
 ``shopman.shop.lifecycle.dispatch(order, "on_paid")``.
+
+MED (devolução especial do Pix) — o que a Efí NÃO manda
+-------------------------------------------------------
+
+O análogo Pix da disputa de cartão é o **MED**: o banco do pagador toma o
+dinheiro de volta por suspeita de fraude, sem a loja decidir nada. No cartão,
+o Stripe anuncia isso em ``charge.dispute.*`` e o adapter traduz para o
+snapshot de chargeback do Payman (ver
+``shopman/shop/adapters/payment_stripe.py::handle_dispute_event``).
+
+**Aqui não há equivalente.** A lista documentada de eventos deste webhook (Efí,
+`dev.efipay.com.br`, lida em 19/08/2026) tem quatro entradas — ``PIX_RECEBIDO``,
+``PIX_ENVIADO``, ``DEVOLUCAO_RECEBIDA``, ``DEVOLUCAO_ENVIADA`` — mais os estados
+do Pix Automático. Nenhuma delas é MED ou relato de infração, e a API de gestão
+de Pix expõe apenas a devolução que **nós** pedimos
+(``PUT``/``GET /v2/pix/:e2eid/devolucao/:id``): não há endpoint de MED nem de
+infração para consultar.
+
+Consequências, escritas para não serem redescobertas:
+
+* **o chargeback de Pix continua entrando por reconciliação manual** — o
+  operador soube pelo painel/e-mail da Efí e lança pelo mesmo
+  ``reconcile_gateway_status(chargeback_q=...)`` que o Stripe usa. Não há
+  caminho automático a implementar enquanto a Efí não publicar o evento;
+* as notificações ``DEVOLUCAO_*`` que ela **manda** também não são consumidas
+  hoje: este view lê só a lista ``pix`` e trata cada item como pagamento
+  recebido (``confirm_pix``). O estorno que a loja pede já é gravado no ato da
+  chamada à API (``adapters/payment_efi.py::refund``), então a notificação
+  seria confirmação, não fonte;
+* se a Efí passar a anunciar MED, o lugar de tratar é aqui, e o destino é o
+  mesmo ``chargeback_q`` — o Payman não precisa de nada novo.
 """
 
 from __future__ import annotations

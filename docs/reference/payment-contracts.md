@@ -46,7 +46,8 @@ pending → authorized → captured → refunded
 | `PaymentService.get_by_gateway_id(gateway_id)` | `PaymentIntent \| None` | Busca por ID externo |
 | `PaymentService.captured_total(ref)` | `int` (centavos) | Total capturado |
 | `PaymentService.refunded_total(ref)` | `int` (centavos) | Total reembolsado |
-| `PaymentService.reconcile_gateway_status(ref, ...)` | `PaymentReconciliationResult` | Aplica snapshot cumulativo do gateway |
+| `PaymentService.chargeback_total(ref)` | `int` (centavos) | Total tomado de volta por terceiro (disputa de cartão, MED do Pix) |
+| `PaymentService.reconcile_gateway_status(ref, ...)` | `PaymentReconciliationResult` | Aplica snapshot cumulativo do gateway (captura, reembolso e chargeback) |
 
 ## PaymentTransaction
 

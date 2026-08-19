@@ -380,6 +380,246 @@ class StripeWebhookTests(WebhookTestBase):
         )
         self.assertEqual(refunds, [400, 600])
 
+    # ── Disputas (chargeback) ─────────────────────────────────
+
+    def _captured_card_intent(self, amount_q: int = 1000):
+        order = _create_order_with_payment("web", "card")
+        intent = _create_card_intent(order)
+        PaymentService.authorize(intent.ref, gateway_id=intent.gateway_id)
+        PaymentService.capture(intent.ref, gateway_id="ch_test_dispute")
+        return order, intent
+
+    def _mock_dispute_event(
+        self,
+        *,
+        event_id: str,
+        event_type: str,
+        stripe_pi_id: str,
+        status: str,
+        amount_q: int,
+        dispute_id: str = "du_test_dispute",
+    ):
+        """Return a Stripe `charge.dispute.*` event."""
+        mock_event = MagicMock()
+        mock_event.id = event_id
+        mock_event.type = event_type
+        dispute = MagicMock()
+        dispute.id = dispute_id
+        dispute.payment_intent = stripe_pi_id
+        dispute.charge = "ch_test_dispute"
+        dispute.status = status
+        dispute.amount = amount_q
+        dispute.currency = "brl"
+        dispute.reason = "fraudulent"
+        dispute.evidence_details.due_by = 1789000000
+        mock_event.data.object = dispute
+        return mock_event
+
+    def _post_dispute(self, events: list) -> list:
+        with patch("shopman.shop.adapters.payment_stripe._get_stripe") as mock_get_stripe:
+            mock_stripe = MagicMock()
+            mock_stripe.Webhook.construct_event.side_effect = events
+            mock_get_stripe.return_value = mock_stripe
+            return [
+                self._post_webhook({"id": event.id, "type": event.type})
+                for event in events
+            ]
+
+    def _chargebacks(self, intent_ref: str) -> list[int]:
+        return list(
+            PaymentTransaction.objects.filter(
+                intent__ref=intent_ref,
+                type=PaymentTransaction.Type.CHARGEBACK,
+            )
+            .order_by("created_at")
+            .values_list("amount_q", flat=True)
+        )
+
+    def test_stripe_dispute_created_registers_risk_without_booking_chargeback(self) -> None:
+        """Disputa aberta é dinheiro em RISCO, não perdido: nada no livro ainda."""
+        _order, intent = self._captured_card_intent()
+
+        responses = self._post_dispute([
+            self._mock_dispute_event(
+                event_id="evt_dispute_created",
+                event_type="charge.dispute.created",
+                stripe_pi_id=intent.gateway_id,
+                status="needs_response",
+                amount_q=1000,
+            ),
+        ])
+
+        self.assertEqual(responses[0].status_code, 200, responses[0].data)
+        self.assertEqual(self._chargebacks(intent.ref), [])
+        self.assertEqual(PaymentService.chargeback_total(intent.ref), 0)
+
+        intent.refresh_from_db()
+        record = intent.gateway_data["disputes"]["du_test_dispute"]
+        self.assertEqual(record["status"], "needs_response")
+        self.assertEqual(record["amount_q"], 1000)
+        self.assertTrue(
+            OperatorAlert.objects.filter(type="payment_disputed", severity="error").exists()
+        )
+
+    def test_stripe_dispute_won_never_becomes_chargeback(self) -> None:
+        """`closed` com status `won` devolve o dinheiro — não é chargeback."""
+        _order, intent = self._captured_card_intent()
+
+        self._post_dispute([
+            self._mock_dispute_event(
+                event_id="evt_dispute_open",
+                event_type="charge.dispute.created",
+                stripe_pi_id=intent.gateway_id,
+                status="needs_response",
+                amount_q=1000,
+            ),
+            self._mock_dispute_event(
+                event_id="evt_dispute_won",
+                event_type="charge.dispute.closed",
+                stripe_pi_id=intent.gateway_id,
+                status="won",
+                amount_q=1000,
+            ),
+        ])
+
+        self.assertEqual(self._chargebacks(intent.ref), [])
+        self.assertEqual(PaymentService.chargeback_total(intent.ref), 0)
+        intent.refresh_from_db()
+        self.assertEqual(intent.gateway_data["disputes"]["du_test_dispute"]["status"], "won")
+
+    def test_stripe_dispute_lost_books_chargeback(self) -> None:
+        """`closed` com status `lost`: o dinheiro saiu e não volta — vira livro."""
+        _order, intent = self._captured_card_intent()
+
+        self._post_dispute([
+            self._mock_dispute_event(
+                event_id="evt_dispute_open",
+                event_type="charge.dispute.created",
+                stripe_pi_id=intent.gateway_id,
+                status="needs_response",
+                amount_q=1000,
+            ),
+            self._mock_dispute_event(
+                event_id="evt_dispute_lost",
+                event_type="charge.dispute.closed",
+                stripe_pi_id=intent.gateway_id,
+                status="lost",
+                amount_q=1000,
+            ),
+        ])
+
+        self.assertEqual(self._chargebacks(intent.ref), [1000])
+        self.assertEqual(PaymentService.chargeback_total(intent.ref), 1000)
+        # Chargeback não é reembolso, e não mexe no status do intent.
+        self.assertEqual(PaymentService.refunded_total(intent.ref), 0)
+        intent.refresh_from_db()
+        self.assertEqual(intent.status, "captured")
+        self.assertTrue(
+            OperatorAlert.objects.filter(type="payment_disputed", severity="critical").exists()
+        )
+
+    def test_stripe_dispute_lost_delivered_twice_books_once(self) -> None:
+        """Entrega at-least-once: o mesmo `lost` reapresentado dá delta zero."""
+        _order, intent = self._captured_card_intent()
+
+        self._post_dispute([
+            self._mock_dispute_event(
+                event_id="evt_dispute_lost_1",
+                event_type="charge.dispute.closed",
+                stripe_pi_id=intent.gateway_id,
+                status="lost",
+                amount_q=1000,
+            ),
+            self._mock_dispute_event(
+                event_id="evt_dispute_lost_2",
+                event_type="charge.dispute.closed",
+                stripe_pi_id=intent.gateway_id,
+                status="lost",
+                amount_q=1000,
+            ),
+        ])
+
+        self.assertEqual(self._chargebacks(intent.ref), [1000])
+
+    def test_stripe_dispute_created_arriving_after_closed_does_not_reopen(self) -> None:
+        """Fora de ordem: `created` atrasado não reabre disputa já encerrada."""
+        _order, intent = self._captured_card_intent()
+
+        self._post_dispute([
+            self._mock_dispute_event(
+                event_id="evt_dispute_lost",
+                event_type="charge.dispute.closed",
+                stripe_pi_id=intent.gateway_id,
+                status="lost",
+                amount_q=1000,
+            ),
+            self._mock_dispute_event(
+                event_id="evt_dispute_created_late",
+                event_type="charge.dispute.created",
+                stripe_pi_id=intent.gateway_id,
+                status="needs_response",
+                amount_q=1000,
+            ),
+        ])
+
+        self.assertEqual(self._chargebacks(intent.ref), [1000])
+        intent.refresh_from_db()
+        self.assertEqual(intent.gateway_data["disputes"]["du_test_dispute"]["status"], "lost")
+
+    def test_stripe_dispute_inquiry_closed_is_not_chargeback(self) -> None:
+        """`warning_closed` é consulta encerrada sem disputa formal: zero."""
+        _order, intent = self._captured_card_intent()
+
+        self._post_dispute([
+            self._mock_dispute_event(
+                event_id="evt_inquiry",
+                event_type="charge.dispute.closed",
+                stripe_pi_id=intent.gateway_id,
+                status="warning_closed",
+                amount_q=1000,
+            ),
+        ])
+
+        self.assertEqual(self._chargebacks(intent.ref), [])
+        self.assertFalse(OperatorAlert.objects.filter(type="payment_disputed").exists())
+
+    def test_stripe_dispute_for_unknown_charge_is_ignored(self) -> None:
+        """Disputa de cobrança que não é nossa não pode derrubar o webhook."""
+        responses = self._post_dispute([
+            self._mock_dispute_event(
+                event_id="evt_dispute_unknown",
+                event_type="charge.dispute.created",
+                stripe_pi_id="pi_not_ours",
+                status="needs_response",
+                amount_q=1000,
+            ),
+        ])
+
+        self.assertEqual(responses[0].status_code, 200, responses[0].data)
+        self.assertEqual(
+            PaymentTransaction.objects.filter(type=PaymentTransaction.Type.CHARGEBACK).count(),
+            0,
+        )
+
+    def test_stripe_dispute_above_capture_alerts_instead_of_booking(self) -> None:
+        """Disputa maior que o capturado é deriva: alerta, e o livro não mente."""
+        _order, intent = self._captured_card_intent()
+
+        self._post_dispute([
+            self._mock_dispute_event(
+                event_id="evt_dispute_oversized",
+                event_type="charge.dispute.closed",
+                stripe_pi_id=intent.gateway_id,
+                status="lost",
+                amount_q=1500,
+            ),
+        ])
+
+        self.assertEqual(self._chargebacks(intent.ref), [])
+        self.assertTrue(
+            OperatorAlert.objects.filter(type="payment_reconciliation_failed").exists()
+        )
+
     # ── Race condition ────────────────────────────────────────
 
     def test_stripe_payment_after_cancel_handled_gracefully(self) -> None:
