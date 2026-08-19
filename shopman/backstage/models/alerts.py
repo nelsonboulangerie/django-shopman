@@ -30,6 +30,10 @@ class OperatorAlert(models.Model):
         ("directive_worker_stale", "Processador de tarefas de fundo parado"),
         ("lifecycle_phase_stuck", "Fase do pedido travada"),
         ("low_rating", "Avaliação baixa recebida"),
+        # Alarmes do B.I. (BIAlertRule): o B.I. avisa quando o que aconteceu foge
+        # do esperado. O aviso chega pelo mesmo bus, com reconhecimento.
+        ("bi_import_silence", "B.I.: importação esperada não chegou"),
+        ("bi_below_baseline", "B.I.: movimento abaixo do esperado"),
     ]
     SEVERITY_CHOICES = [
         ("warning", "Aviso"),

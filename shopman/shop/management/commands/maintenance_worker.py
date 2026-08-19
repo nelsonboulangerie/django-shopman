@@ -57,6 +57,9 @@ MAINTENANCE_COMMANDS = (
     # anteontem recomputados a cada ciclo. Sem isto a projeção leria a tabela
     # de ontem como se fosse de agora — e a tabela só existe para bater.
     "refresh_bi_daily_series",
+    # Com a série do dia em dia, os alarmes do B.I. comparam com o esperado e
+    # avisam quem opera. Depois do refresh de propósito: leem a tabela recém-feita.
+    "evaluate_bi_alerts",
     # Frescor vencido não vira propaganda: announcement pendente além do prazo caduca.
     "expire_stale_announcements",
     # Aprovado com hora marcada sai sozinho quando o relógio chega.

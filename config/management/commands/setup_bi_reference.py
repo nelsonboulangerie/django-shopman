@@ -14,6 +14,7 @@ Este comando faz o recorte: **cinco tabelas de referência, zero movimento.**
 - lugares do salão (o denominador da ociosidade)
 - de-paras de categoria e de forma de pagamento do histórico (os vocabulários
   do B.I., confirmados — mapeamento é dado, não código)
+- os alarmes padrão do B.I. (regras como dado; a de importação nasce desligada)
 
 Nenhuma delas é fato operacional: são cadastro. Reinstalar não reescreve
 passado, não cria venda e não apaga nada — tudo é `update_or_create`, então
@@ -45,6 +46,7 @@ class Command(BaseCommand):
 
     def handle(self, *args, **options):
         from shopman.backstage.models import (
+            BIAlertRule,
             CategoryAlias,
             ConsumptionRole,
             PaymentMethodAlias,
@@ -54,7 +56,7 @@ class Command(BaseCommand):
 
         from .seed import Command as Seed
 
-        models = (ConsumptionRole, ProductConsumptionTag, SeatingSpot, CategoryAlias, PaymentMethodAlias)
+        models = (ConsumptionRole, ProductConsumptionTag, SeatingSpot, CategoryAlias, PaymentMethodAlias, BIAlertRule)
         before = self._counts(*models)
 
         if options["dry_run"]:
@@ -75,6 +77,7 @@ class Command(BaseCommand):
         seed._seed_consumption_tags()
         seed._seed_seating()
         seed._seed_bi_aliases()
+        seed._seed_bi_alert_rules()
 
         after = self._counts(*models)
         self.stdout.write(self.style.SUCCESS("\nInstalado:"))
@@ -89,7 +92,7 @@ class Command(BaseCommand):
                 "confira em Admin → Como vendemos → Etiquetas de consumo."
             ))
 
-    def _counts(self, role_model, tag_model, spot_model, category_model, payment_model) -> dict:
+    def _counts(self, role_model, tag_model, spot_model, category_model, payment_model, alert_model) -> dict:
         return {
             "papéis de consumo": role_model.objects.count(),
             "etiquetas por SKU": tag_model.objects.count(),
@@ -99,6 +102,7 @@ class Command(BaseCommand):
             ).count(),
             "de-paras de categoria": category_model.objects.count(),
             "de-paras de forma de pagamento": payment_model.objects.count(),
+            "alarmes do B.I.": alert_model.objects.count(),
         }
 
     def _report(self, counts: dict, before: dict | None = None) -> None:

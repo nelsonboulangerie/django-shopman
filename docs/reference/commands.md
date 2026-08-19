@@ -24,6 +24,7 @@
 | [`ingest_yooga`](#ingest_yooga) | backstage | B.I. | Aterrissa o export do Yooga em `HistoricalSale`, por lote (hash, validação, uma transação) |
 | [`suggest_aliases`](#suggest_aliases) | backstage | B.I. | Propõe de-paras (produto, categoria, forma de pagamento) a partir do histórico; nunca confirma |
 | [`refresh_bi_daily_series`](#refresh_bi_daily_series) | backstage | B.I. | Recomputa a série diária materializada (últimos dias no worker; `--all` do início) |
+| [`evaluate_bi_alerts`](#evaluate_bi_alerts) | backstage | B.I. | Avalia os alarmes do B.I. (regras no Admin) e avisa o operador quando disparam |
 | [`release-readiness`](#release-readiness) | script | Release | Consolida checks locais e bloqueios externos |
 | [`seed`](#seed) | shop | Seed | Popula banco com dados da Nelson Boulangerie |
 
@@ -507,6 +508,25 @@ python manage.py refresh_bi_daily_series --from 2026-08-01 --to 2026-08-18
 
 Roda sozinho no `maintenance_worker` (ciclo de 300 s), no fim do `ingest_yooga` (`--all`) e no
 fim do `seed`. Recomputável do zero em segundos; nada aqui é fonte de verdade.
+
+### evaluate_bi_alerts
+
+**Propósito:** Avalia cada `BIAlertRule` ativa contra a camada de leitura do B.I.
+(BI-DATA-FOUNDATION-PLAN §7.2) e, quando dispara, cria um `OperatorAlert` (o bus de alertas com
+reconhecimento) + um `BIAlertEvent` (trilha append-only). Respeita o **cooldown** obrigatório
+de cada regra: mede e registra a cada ciclo, mas não avisa de novo antes do silêncio configurado.
+
+**Uso:**
+```bash
+python manage.py evaluate_bi_alerts
+```
+
+**Métricas do v1:** `import_silence` (a origem deveria receber lote concluído a cada N dias e não
+recebeu — lote que falhou não conta) e `daily_revenue_vs_baseline` (faturamento de **ontem** abaixo
+de X% da média do mesmo dia da semana nas últimas N semanas, fora dos dias fechados/atrapalhados;
+com menos de 3 dias parecidos a regra **não opina**). Roda no `maintenance_worker` depois do
+`refresh_bi_daily_series`. As regras padrão vêm do `seed`/`setup_bi_reference` (a de importação
+nasce desligada: o export do Yooga é único até hoje).
 
 ## Wrappers de diagnóstico
 
