@@ -12,11 +12,14 @@ from django.db.models import CharField
 
 
 class FallbackRefField(CharField):
-    """CharField-compatible fallback used when shopman-refs is not installed."""
+    """CharField-compatible fallback used when shopman-refs is not installed.
+
+    Mirrors RefField, including the absence of a db_index default — see the
+    warning in shopman.refs.fields.RefField.
+    """
 
     def __init__(self, ref_type: str | None = None, **kwargs) -> None:
         kwargs.setdefault("max_length", 64)
-        kwargs.setdefault("db_index", True)
         self.ref_type = ref_type
         super().__init__(**kwargs)
 

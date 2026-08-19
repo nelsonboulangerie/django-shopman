@@ -286,7 +286,13 @@ def test_bi_reference_installs_the_three_tables_and_nothing_else():
     # 59 SKUs do cardápio 2027 + 61 SKUs do Yooga ("Pães Finos", 18/08) + 4
     # combos pelo NOME + 70 SKUs do Yooga da segunda rodada (cafés, pratos,
     # pães rústicos, 19/08) — tudo curadoria do dono, nada nasce como proposta.
-    assert ProductConsumptionTag.objects.count() == 59 + 61 + 4 + 70
+    # ⚠️ A soma não é 59+61+4+70. Duas coisas a encolhem, e as duas são certas:
+    # os quatro produtos "do dia" deixaram de existir (viraram coleção rotativa
+    # sobre os reais), e 26 SKUs passaram a ser etiquetados uma vez só — com o
+    # catálogo usando os códigos do Yooga, "CT" no cardápio e "CT" no histórico
+    # são o mesmo produto. Que as duas curadorias CONCORDEM onde se encontram é
+    # o que test_seed_catalog_coerente fixa, lendo o seed como dado.
+    assert ProductConsumptionTag.objects.count() == 164
     assert ProductConsumptionTag.objects.filter(reviewed=False).count() == 0
     assert ProductConsumptionTag.objects.filter(
         sku__startswith="nome:", role__ref="consome-aqui"
@@ -302,7 +308,9 @@ def test_bi_reference_installs_the_three_tables_and_nothing_else():
     assert by_sku["PS"] == by_sku["SS"] == "bebida-preparada"
     assert by_sku["CMO"] == by_sku["PPU"] == "consome-aqui"
     assert by_sku["BAX"] == by_sku["BAP"] == by_sku["PH"] == "leva"
-    assert by_sku["CI"] == by_sku["TB"] == by_sku["FE"] == by_sku["CIABATTA"] == "hibrido"
+    # `CIABATTA` saiu do encadeamento: com o catálogo usando os códigos reais,
+    # ele É o `CI`, e uma etiqueta só cobre os dois.
+    assert by_sku["CI"] == by_sku["TB"] == by_sku["FE"] == "hibrido"
     # 4 mesas internas + 4 externas + 6 lugares de balcão contam no teto; o
     # bistrô (2) e o bancão externo ficam fora, e é justamente por ficarem fora
     # que "bateu no teto" continua sendo um sinal.
@@ -322,7 +330,7 @@ def test_bi_reference_is_idempotent():
 
     _run("setup_bi_reference")
     _run("setup_bi_reference")
-    assert ProductConsumptionTag.objects.count() == 59 + 61 + 4 + 70
+    assert ProductConsumptionTag.objects.count() == 164
     assert SeatingSpot.objects.count() == 17
 
 
@@ -346,10 +354,10 @@ def test_the_seed_is_the_source_and_wins_over_an_admin_edit():
 
     _run("setup_bi_reference")
     leva = ConsumptionRole.objects.get(reading=Reading.TAKEAWAY)
-    ProductConsumptionTag.objects.filter(sku="ESPRESSO").update(role=leva, note="mexi no Admin")
+    ProductConsumptionTag.objects.filter(sku="SS").update(role=leva, note="mexi no Admin")
 
     _run("setup_bi_reference")
-    tag = ProductConsumptionTag.objects.select_related("role").get(sku="ESPRESSO")
+    tag = ProductConsumptionTag.objects.select_related("role").get(sku="SS")
     assert tag.role.reading == Reading.ANCHOR
 
 
@@ -435,3 +443,89 @@ def test_historical_scan_deduplicates_by_sku(roles):
 
     _proposals, uncovered = Command()._historical(set(), set(), [])
     assert uncovered == ["XPTO"], f"SKU repetido na lista: {uncovered}"
+
+
+class TestTaxaDeEntregaMarcaEntrega:
+    """A linha de taxa é sinal de canal — o cabeçalho da venda não sabia disso.
+
+    Medido no histórico real (18/08): 201 vendas tinham taxa de entrega e
+    NENHUMA estava marcada como entrega. Todas caíam na inferência pela cesta e
+    viravam "consumiu aqui" ou "levou".
+    """
+
+    @pytest.mark.django_db
+    def test_venda_com_taxa_vira_entrega(self):
+        from shopman.backstage.bi.ingest.yooga import marcar_entrega_por_taxa
+        from shopman.backstage.models import HistoricalSale, HistoricalSaleItem
+        from shopman.backstage.tests.support import historical_batch
+
+        def venda(external_id, skus):
+            v = HistoricalSale.objects.create(
+                batch=historical_batch("yooga"),
+                source="yooga", external_id=external_id, occurred_at=timezone.now(),
+                total_q=1000, is_delivery=False,
+            )
+            for seq, sku in enumerate(skus, start=1):
+                HistoricalSaleItem.objects.create(
+                    sale=v, seq=seq, product_name=sku, sku=sku,
+                    qty=1, unit_price_q=500, line_total_q=500,
+                )
+            return v
+
+        com_taxa = venda(1, ["CT", "TX"])
+        sem_taxa = venda(2, ["CT"])
+
+        marcadas = marcar_entrega_por_taxa()
+
+        assert marcadas == 1
+        com_taxa.refresh_from_db()
+        sem_taxa.refresh_from_db()
+        assert com_taxa.is_delivery is True
+        assert sem_taxa.is_delivery is False
+
+    @pytest.mark.django_db
+    def test_rodar_de_novo_nao_conta_de_novo(self):
+        # O ingest é completável: roda a cada export novo, sobre o mesmo banco.
+        from shopman.backstage.bi.ingest.yooga import marcar_entrega_por_taxa
+        from shopman.backstage.models import HistoricalSale, HistoricalSaleItem
+        from shopman.backstage.tests.support import historical_batch
+
+        v = HistoricalSale.objects.create(
+            batch=historical_batch("yooga"),
+            source="yooga", external_id=3, occurred_at=timezone.now(),
+            total_q=1000, is_delivery=False,
+        )
+        HistoricalSaleItem.objects.create(
+            sale=v, seq=1, product_name="taxa", sku="TX",
+            qty=1, unit_price_q=500, line_total_q=500,
+        )
+        assert marcar_entrega_por_taxa() == 1
+        assert marcar_entrega_por_taxa() == 0
+
+    @pytest.mark.django_db
+    def test_remarca_sem_precisar_do_arquivo(self):
+        """O conserto tem de alcançar histórico JÁ carregado.
+
+        O ingest exige `--file`, e quem carregou o Yooga meses atrás não tem
+        mais o xlsx no servidor. Sem esta saída, a correção nasceria sem
+        alcançar os 201 registros que a motivaram.
+        """
+        from shopman.backstage.models import HistoricalSale, HistoricalSaleItem
+        from shopman.backstage.tests.support import historical_batch
+
+        venda = HistoricalSale.objects.create(
+            batch=historical_batch("yooga"),
+            source="yooga", external_id=4, occurred_at=timezone.now(),
+            total_q=1000, is_delivery=False,
+        )
+        HistoricalSaleItem.objects.create(
+            sale=venda, seq=1, product_name="Taxa de Entrega", sku="TX",
+            qty=1, unit_price_q=500, line_total_q=500,
+        )
+
+        saida = StringIO()
+        call_command("ingest_yooga", "--delivery-flags-only", stdout=saida)
+
+        venda.refresh_from_db()
+        assert venda.is_delivery is True
+        assert "1 vendas remarcadas" in saida.getvalue()

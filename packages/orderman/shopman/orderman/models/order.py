@@ -6,6 +6,7 @@ import uuid as uuid_lib
 from django.db import models, transaction
 from django.utils import timezone
 from django.utils.translation import gettext_lazy as _
+from shopman.utils.refs import RefField
 
 from .session import DecimalEncoder
 
@@ -338,7 +339,7 @@ class OrderItem(models.Model):
     order = models.ForeignKey(Order, verbose_name=_("pedido"), on_delete=models.CASCADE, related_name="items")
 
     line_id = models.CharField(_("ID da linha"), max_length=64)
-    sku = models.CharField(_("SKU"), max_length=64)
+    sku = RefField(ref_type="SKU", verbose_name=_("SKU"), max_length=64, db_index=False)
     name = models.CharField(_("nome"), max_length=200, blank=True, default="")
 
     qty = models.DecimalField(_("quantidade"), max_digits=12, decimal_places=3)

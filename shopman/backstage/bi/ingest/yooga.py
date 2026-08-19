@@ -46,6 +46,10 @@ from . import AlreadyImported, InvalidExport, sha256_of
 logger = logging.getLogger(__name__)
 
 SOURCE = "yooga"
+
+# A linha de taxa de entrega do Yooga. Não vira produto no Shopman — entrega é
+# modalidade, não item de cardápio —, mas o registro dela é sinal de canal.
+TAXA_SKU = "TX"
 BATCH_SIZE = 1000
 
 # Colunas que o importador LÊ. As demais do export são ignoradas de propósito
@@ -307,6 +311,7 @@ def ingest(
                 summary["items_created"] = _ingest_items(
                     workbook["Itens"], HistoricalSale, HistoricalSaleItem, product_map
                 )
+                remarcadas = marcar_entrega_por_taxa()
                 for field, value in summary.items():
                     setattr(batch, field, value)
                 batch.save(update_fields=list(summary))
@@ -328,9 +333,37 @@ def ingest(
     log(
         f"✅ lote #{batch.pk}: {batch.sales_created} vendas novas, "
         f"{batch.sales_skipped} já existiam ({batch.sales_completed} completadas), "
-        f"{batch.items_created} itens gravados. Total {SOURCE}: {total}."
+        f"{batch.items_created} itens gravados, "
+        f"{remarcadas} marcadas como entrega pela taxa. Total {SOURCE}: {total}."
     )
     return batch
+
+
+def marcar_entrega_por_taxa() -> int:
+    """A taxa de entrega é entrega — e o cabeçalho da venda não dizia isso.
+
+    ``_Sale.is_delivery`` lê origem e forma de pagamento, que é o que o
+    cabeçalho oferece. Só que o Yooga também cobrava a taxa como uma LINHA da
+    venda (``TX``), e medido em 18/08/2026 havia **201 vendas com taxa e
+    nenhuma delas marcada como entrega** — todas caíam na inferência pela
+    cesta, virando "consumiu aqui" ou "levou". Uma taxa cobrada não é ambígua.
+
+    Roda DEPOIS dos itens, de propósito: o sinal está na linha, não no
+    cabeçalho, então não existe enquanto os itens não entraram.
+
+    Idempotente e sem argumentos, para servir também ao conserto de histórico já
+    carregado — quem importou meses atrás não tem mais o xlsx no servidor.
+    """
+    from shopman.backstage.models import HistoricalSale, HistoricalSaleItem
+
+    com_taxa = (
+        HistoricalSaleItem.objects.filter(sku=TAXA_SKU, sale__source=SOURCE)
+        .values_list("sale_id", flat=True)
+        .distinct()
+    )
+    return HistoricalSale.objects.filter(
+        id__in=list(com_taxa), is_delivery=False
+    ).update(is_delivery=True)
 
 
 def _record_failure(batch_model, path: Path, digest: str, imported_by, exc: Exception) -> None:

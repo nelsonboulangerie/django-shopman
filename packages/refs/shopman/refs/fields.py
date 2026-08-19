@@ -12,19 +12,26 @@ class RefField(CharField):
     A CharField with ref-aware defaults and optional RefSourceRegistry integration.
 
     Usage:
-        ref = RefField()                 # identity ref — max_length=64, db_index=True
+        ref = RefField()                 # identity ref — max_length=64
         sku = RefField(ref_type="SKU")   # registers in RefSourceRegistry for cascade ops
 
     Migration impact:
-        RefField() with no ref_type deconstructs as django.db.models.CharField so that
-        converting an existing CharField(max_length=64, db_index=True) produces no
-        migration. RefField(ref_type="SKU") deconstructs as RefField to preserve
-        ref_type in migrations.
+        RefField deconstructs as django.db.models.CharField, so converting an
+        existing CharField produces no migration. ref_type is runtime-only
+        metadata held by RefSourceRegistry, never DB schema.
+
+    ⚠️ No db_index default, deliberately. This class used to default it to True,
+    and that default did not survive a round-trip: deconstruct() masquerades as
+    CharField, which omits db_index when it equals Django's default (False), and
+    Field.clone() — used by makemigrations — rebuilds through __init__, where the
+    True default was reapplied. A field declared db_index=False therefore came
+    back True, and makemigrations kept writing indexes nobody asked for, including
+    duplicates on unique fields. Any index this field needs is declared at the
+    call site or in Meta.indexes, where it is visible.
     """
 
     def __init__(self, ref_type: str | None = None, **kwargs) -> None:
         kwargs.setdefault("max_length", 64)
-        kwargs.setdefault("db_index", True)
         self.ref_type = ref_type
         super().__init__(**kwargs)
 

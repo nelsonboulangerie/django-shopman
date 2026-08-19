@@ -13,6 +13,7 @@ saber da fornada, não da reposição. Ambos são idempotentes via ``notified_at
 from __future__ import annotations
 
 from django.db import models
+from shopman.utils.refs import RefField
 
 
 class StockAlertSubscription(models.Model):
@@ -27,7 +28,7 @@ class StockAlertSubscription(models.Model):
         STOCK_BACK = "stock_back", "voltou ao estoque"
         PRODUCTION_READY = "production_ready", "saiu do forno"
 
-    sku = models.CharField(max_length=64, db_index=True)
+    sku = RefField(ref_type="SKU", max_length=64, db_index=True)
     alert_type = models.CharField(
         verbose_name="tipo de aviso",
         max_length=24,

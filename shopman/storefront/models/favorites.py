@@ -8,11 +8,12 @@ the account axis, not the channel registry. Loose coupling to Guestman via ref.
 from __future__ import annotations
 
 from django.db import models
+from shopman.utils.refs import RefField
 
 
 class CustomerFavorite(models.Model):
     customer_ref = models.CharField(max_length=64, db_index=True)
-    sku = models.CharField(max_length=64)
+    sku = RefField(ref_type="SKU", max_length=64, db_index=False)
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:

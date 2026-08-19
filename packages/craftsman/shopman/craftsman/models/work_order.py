@@ -15,6 +15,7 @@ from django.core.exceptions import ValidationError
 from django.db import models
 from django.utils import timezone
 from django.utils.translation import gettext_lazy as _
+from shopman.utils.refs import RefField
 
 
 class WorkOrder(models.Model):
@@ -52,8 +53,10 @@ class WorkOrder(models.Model):
         related_name="work_orders",
         verbose_name=_("Ficha técnica"),
     )
-    output_sku = models.CharField(
+    output_sku = RefField(
+        ref_type="SKU",
         max_length=100,
+        db_index=False,
         verbose_name=_("Produto"),
         help_text=_("Copiado da Recipe no plan"),
     )

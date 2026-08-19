@@ -23,6 +23,7 @@ dado.
 from __future__ import annotations
 
 from django.db import models
+from shopman.utils.refs import RefField
 
 
 class Reading(models.TextChoices):
@@ -127,8 +128,11 @@ class ProductConsumptionTag(models.Model):
     mesmo jeito.
     """
 
-    sku = models.CharField(
-        "sku", max_length=64, unique=True,
+    # ⚠️ RefField, mas nem todo valor aqui é SKU: as linhas do histórico sem sku
+    # se etiquetam pelo nome, com prefixo 'nome:'. Isso é seguro para o
+    # cascade_rename — ele casa valor exato, e 'nome:…' nunca é um SKU antigo.
+    sku = RefField(
+        ref_type="SKU", verbose_name="sku", max_length=64, unique=True, db_index=False,
         help_text=(
             "SKU do produto. Linha do histórico SEM sku (ex.: os combos do "
             "Yooga) se etiqueta pelo nome exato, com o prefixo 'nome:' — "

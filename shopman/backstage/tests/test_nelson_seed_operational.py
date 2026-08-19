@@ -36,7 +36,7 @@ def test_nelson_seed_populates_production_history_alerts_and_batches(monkeypatch
     from shopman.fiscalman.classification import from_metadata, resolve_fiscal_item
 
     assert not Product.objects.filter(sku__startswith="DEMO-").exists()
-    for sku in ("BAGUETE", "ESPRESSO", "COMBO-PETIT-DEJ"):
+    for sku in ("BF", "SS", "COMBO-PETIT-DEJ"):
         metadata = Product.objects.get(sku=sku).metadata
         fiscal = metadata["fiscal"]
         assert fiscal["profile"] == "own_production"
@@ -47,7 +47,7 @@ def test_nelson_seed_populates_production_history_alerts_and_batches(monkeypatch
         assert resolved["icms_situacao_tributaria"] == "102"
     croissant_history = [
         item
-        for item in OrderItem.objects.filter(sku="CROISSANT").select_related("order")
+        for item in OrderItem.objects.filter(sku="CT").select_related("order")
         if (item.meta or {}).get("source") == "production_demand_history"
     ]
     assert len(croissant_history) >= 4
@@ -122,12 +122,12 @@ def test_nelson_seed_populates_production_history_alerts_and_batches(monkeypatch
     assert Quant.objects.filter(sku="FARINHA-T65", position=warehouse).exists()
     assert stock_service.available("FARINHA-T65", position=warehouse) == Decimal("500")
 
-    suggestions = craft.suggest(date.today() + timedelta(days=1), output_skus=["CROISSANT"])
+    suggestions = craft.suggest(date.today() + timedelta(days=1), output_skus=["CT"])
     assert suggestions
     assert suggestions[0].quantity > 0
 
     assert WorkOrder.objects.filter(source_ref__startswith="seed:production:today:").exists()
-    assert Batch.objects.filter(sku="CROISSANT").exists()
+    assert Batch.objects.filter(sku="CT").exists()
     assert set(Position.objects.filter(ref__in=["massa", "molde", "forno"]).values_list("ref", flat=True)) == {
         "massa",
         "molde",
