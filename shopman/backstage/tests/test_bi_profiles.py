@@ -363,6 +363,23 @@ def test_beverage_measures(week):
 
 
 @pytest.mark.django_db
+def test_beverage_only_is_measured_not_estimated(week):
+    """'Só veio tomar um café': todas as linhas são bebida. Nenhuma na semana base…"""
+    assert week.beverage.beverage_only_orders == 0
+    # …até aparecerem: um espresso sozinho (9h) e café + água (15h); café + pão não conta
+    _sale(_local(2, 9), [("CAFE", "Café", "Cafés", 1, 700)])
+    _sale(_local(2, 15), [("CAFE", "Café", "Cafés", 1, 700), ("AGUA", "Água", "Bebidas", 1, 500)])
+    report = build_bi_consumption_profiles(
+        date_from=timezone.localdate() - timedelta(days=7), date_to=timezone.localdate()
+    )
+    bev = report.beverage
+    assert bev.beverage_only_orders == 2
+    assert bev.beverage_only_share == round(200 / 8, 1)
+    assert bev.beverage_only_ticket_q == (700 + 1200) // 2
+    assert bev.beverage_only_by_band == (1, 0, 1, 0, 0)
+
+
+@pytest.mark.django_db
 def test_revpash_uses_the_declared_denominator(week):
     assert week.seats == REVPASH_SEATS == 24
     assert week.days_with_sales == 3  # três dias de balcão com venda

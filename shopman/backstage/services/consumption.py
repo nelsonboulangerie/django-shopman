@@ -541,3 +541,24 @@ def sku_signal(key: str) -> SkuSignal | None:
         alone_pct=round(100 * sum(1 for s in sales if len(distinct[s]) == 1) / n),
         bulk_pct=round(100 * sum(1 for s in sales if units[s] >= 4) / n),
     )
+
+
+def beverage_rate() -> int:
+    """% das vendas de balcão do histórico com alguma bebida — a média da casa.
+
+    É a base contra a qual um SKU "inclina": co-ocorrência igual à média não
+    diz nada sobre o produto, diz sobre a casa.
+    """
+    from shopman.backstage.models import HistoricalSale, HistoricalSaleItem
+
+    beverages = {k: f.beverage for k, f in sku_facts().items()}
+    total = HistoricalSale.objects.filter(is_delivery=False).count()
+    if not total:
+        return 0
+    with_beverage: set[int] = set()
+    for sale_id, sku, name, category in HistoricalSaleItem.objects.filter(
+        sale__is_delivery=False
+    ).values_list("sale_id", "sku", "product_name", "category"):
+        if beverage_for(sku, category, beverages, name=name):
+            with_beverage.add(sale_id)
+    return round(100 * len(with_beverage) / total)
