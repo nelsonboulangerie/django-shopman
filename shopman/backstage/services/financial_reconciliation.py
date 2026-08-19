@@ -1,4 +1,20 @@
-"""Daily financial reconciliation for operator audits."""
+"""Reconciliação financeira diária para auditoria do operador.
+
+Cruza, num dia local, o pedido (``Order``), o livro de pagamentos (``payman``:
+``PaymentIntent`` + ``PaymentTransaction``), o livro-caixa (``cashman.Entry``)
+e o fechamento (``DayClosing``). Cada check é uma pergunta com um dono:
+
+- o pedido aponta o intent que o pagou? (``Order.data.payment``);
+- o que o Payman diz que liquidou bate com o total selado do pedido, somando
+  os intents do pedido (um por MÉTODO numa venda mista do terminal)?
+- cada intent respeita a própria máquina de estados (captura, estorno, saldo)?
+- o dinheiro que o Payman capturou em espécie é o dinheiro que entrou na
+  gaveta segundo o livro-caixa? (``cash_ledger_mismatch``, ADR-022 §5).
+
+Nenhum check depende de ``intent.gateway``: intents sem gateway (dinheiro,
+cobrança externa, pix/cartão atestados no balcão numa venda mista) passam
+pelas mesmas invariantes de captura/estorno que os de gateway.
+"""
 
 from __future__ import annotations
 
@@ -9,12 +25,22 @@ from typing import Literal
 
 from django.db.models import Q, Sum
 from django.utils import timezone
+from shopman.cashman.models import Entry
 from shopman.orderman.models import Order
 from shopman.payman.models import PaymentIntent, PaymentTransaction
 
 from shopman.backstage.models import DayClosing
 
 Severity = Literal["warning", "error", "critical"]
+
+#: Intent que liquidou: o dinheiro trocou de mãos (e pode já ter voltado).
+_SETTLED_STATUSES = frozenset({PaymentIntent.Status.CAPTURED, PaymentIntent.Status.REFUNDED})
+#: Intent ainda em curso: o valor dele é o que o pedido espera receber.
+_OPEN_STATUSES = frozenset({PaymentIntent.Status.PENDING, PaymentIntent.Status.AUTHORIZED})
+#: Linhas do livro-caixa que são o espelho de um tender em dinheiro do Payman.
+_LEDGER_MONEY_KINDS = (Entry.Kind.SALE, Entry.Kind.COD_SETTLED, Entry.Kind.REFUND)
+#: Quantos pedidos divergentes o issue lista antes de cortar (o resto está no banco).
+_MAX_LISTED_ORDERS = 10
 
 
 @dataclass(frozen=True)
@@ -42,6 +68,46 @@ class FinancialReconciliationIssue:
 
 
 @dataclass(frozen=True)
+class CashLedgerTotals:
+    """Os dois lados do dinheiro em espécie do dia: Payman e livro-caixa.
+
+    Lado Payman: capturas − estornos dos intents ``method=cash``. Lado livro:
+    ``Σ Entry.amount_q`` das linhas ``sale``, ``cod_settled`` e ``refund``
+    (``refund`` já é negativo). Os dois lados têm de bater ao centavo.
+    """
+
+    payman_captured_q: int = 0
+    payman_refunded_q: int = 0
+    ledger_sale_q: int = 0
+    ledger_cod_settled_q: int = 0
+    ledger_refund_q: int = 0
+
+    @property
+    def payman_net_q(self) -> int:
+        return self.payman_captured_q - self.payman_refunded_q
+
+    @property
+    def ledger_net_q(self) -> int:
+        return self.ledger_sale_q + self.ledger_cod_settled_q + self.ledger_refund_q
+
+    @property
+    def difference_q(self) -> int:
+        return self.payman_net_q - self.ledger_net_q
+
+    def as_dict(self) -> dict[str, int]:
+        return {
+            "payman_captured_q": self.payman_captured_q,
+            "payman_refunded_q": self.payman_refunded_q,
+            "payman_net_q": self.payman_net_q,
+            "ledger_sale_q": self.ledger_sale_q,
+            "ledger_cod_settled_q": self.ledger_cod_settled_q,
+            "ledger_refund_q": self.ledger_refund_q,
+            "ledger_net_q": self.ledger_net_q,
+            "difference_q": self.difference_q,
+        }
+
+
+@dataclass(frozen=True)
 class FinancialReconciliationReport:
     date: date
     generated_at: datetime
@@ -56,6 +122,7 @@ class FinancialReconciliationReport:
     by_method: dict[str, int]
     by_gateway: dict[str, int]
     issues: tuple[FinancialReconciliationIssue, ...]
+    cash_ledger: CashLedgerTotals = field(default_factory=CashLedgerTotals)
     day_closing_id: int | None = None
     persisted: bool = False
     alert_created: bool = False
@@ -83,6 +150,7 @@ class FinancialReconciliationReport:
             "net_q": self.net_q,
             "by_method": self.by_method,
             "by_gateway": self.by_gateway,
+            "cash_ledger": self.cash_ledger.as_dict(),
             "issue_counts": self.issue_counts,
             "issues": [issue.as_dict() for issue in self.issues],
             "day_closing_id": self.day_closing_id,
@@ -178,6 +246,13 @@ def build_financial_reconciliation(
             issues=issues,
         )
 
+    # Por pedido, não por intent: a venda mista do terminal tem um intent por
+    # MÉTODO, e o que tem de bater com o total selado é a soma deles.
+    for order_ref, order_intents in intents_by_order.items():
+        order = orders_by_ref.get(order_ref)
+        if order is not None:
+            _check_order_intent_amounts(order=order, order_intents=order_intents, issues=issues)
+
     for intent in intents:
         _check_intent(
             intent=intent,
@@ -186,12 +261,15 @@ def build_financial_reconciliation(
             issues=issues,
         )
 
+    cash_ledger = _check_cash_ledger(reconciliation_date=reconciliation_date, issues=issues)
+
     by_method = Counter(intent.method or "-" for intent in intents)
     # "-" = intent sem gateway: dinheiro/cobrança externa liquidados no balcão
-    # (``PaymentService.settle``, ADR-022). Nenhum check acima depende de
-    # ``intent.gateway``; esses intents passam pelas mesmas invariantes de
-    # captura/estorno que pix/cartão e entram em ``captured_q``/``net_q``.
-    # O cruzamento com o livro-caixa é o check ``cash_ledger_mismatch`` (WP-7).
+    # e pix/cartão atestados numa venda mista (``PaymentService.settle``,
+    # ADR-022). Nenhum check acima depende de ``intent.gateway``; esses intents
+    # passam pelas mesmas invariantes de captura/estorno que os de gateway e
+    # entram em ``captured_q``/``net_q``. O dinheiro ainda é cruzado com o
+    # livro-caixa em ``_check_cash_ledger``.
     by_gateway = Counter(intent.gateway or "-" for intent in intents)
 
     captured_q = sum(row["capture"] for row in daily_totals.values())
@@ -219,6 +297,7 @@ def build_financial_reconciliation(
         by_method=dict(sorted(by_method.items())),
         by_gateway=dict(sorted(by_gateway.items())),
         issues=tuple(issues),
+        cash_ledger=cash_ledger,
         day_closing_id=closing.pk if closing else None,
     )
 
@@ -280,10 +359,11 @@ def _check_order_payment_link(
     payment = _payment_data(order)
     method = str(payment.get("method") or "").strip()
     intent_ref = str(payment.get("intent_ref") or "").strip()
+    referenced = _referenced_intent_refs(payment)
     order_intents = intents_by_order.get(order.ref, [])
 
     if method in {"pix", "card"} and order.status not in (Order.Status.CANCELLED, Order.Status.RETURNED):
-        if not intent_ref and not order_intents:
+        if not referenced and not order_intents:
             issues.append(
                 FinancialReconciliationIssue(
                     code="digital_order_missing_intent",
@@ -294,42 +374,105 @@ def _check_order_payment_link(
                 )
             )
 
-    if intent_ref and intent_ref not in intent_by_ref:
-        issues.append(
-            FinancialReconciliationIssue(
-                code="order_data_intent_not_found",
-                severity="error",
-                message="Order.data.payment.intent_ref aponta para intent inexistente no escopo reconciliado.",
-                order_ref=order.ref,
-                intent_ref=intent_ref,
+    for ref in sorted(referenced):
+        if ref not in intent_by_ref:
+            issues.append(
+                FinancialReconciliationIssue(
+                    code="order_data_intent_not_found",
+                    severity="error",
+                    message="Order.data.payment aponta para intent inexistente no escopo reconciliado.",
+                    order_ref=order.ref,
+                    intent_ref=ref,
+                    context={"where": "intent_ref" if ref == intent_ref else "tenders"},
+                )
             )
-        )
-    elif not intent_ref and order_intents:
+    if not referenced and order_intents:
+        # Venda de um método só grava ``payment.intent_ref``; a mista grava
+        # ``tenders[i].intent_ref`` por método. Sem nenhum dos dois, o pedido
+        # não sabe quem o pagou.
         newest = sorted(order_intents, key=lambda item: item.created_at, reverse=True)[0]
         issues.append(
             FinancialReconciliationIssue(
                 code="order_missing_data_intent_ref",
                 severity="warning",
-                message="Pedido tem PaymentIntent por order_ref, mas Order.data.payment.intent_ref não está preenchido.",
+                message="Pedido tem PaymentIntent por order_ref, mas Order.data.payment não aponta nenhum intent.",
                 order_ref=order.ref,
                 intent_ref=newest.ref,
             )
         )
 
-    positive_balance = [
-        intent for intent in order_intents
-        if intent.status in (PaymentIntent.Status.CAPTURED, PaymentIntent.Status.REFUNDED)
-    ]
-    if len(positive_balance) > 1:
-        issues.append(
-            FinancialReconciliationIssue(
-                code="multiple_captured_intents_for_order",
-                severity="critical",
-                message="Pedido tem mais de um intent capturado/reembolsado.",
-                order_ref=order.ref,
-                context={"intent_count": len(positive_balance)},
+
+def _check_order_intent_amounts(
+    *,
+    order: Order,
+    order_intents: list[PaymentIntent],
+    issues: list[FinancialReconciliationIssue],
+) -> None:
+    """O que o Payman liquidou para o pedido tem de somar o total selado.
+
+    Uma venda mista do terminal tem um intent por MÉTODO (dinheiro + pix
+    atestado, dinheiro + external), cada um com a sua parte: nenhum deles
+    bate sozinho com ``order.total_q``, e é a SOMA dos liquidados que tem de
+    bater. Por isso a comparação é por pedido:
+
+    - com intents liquidados (capturados/reembolsados): ``Σ amount_q`` deles
+      == total; dois liquidados do MESMO método é cobrança em dobro
+      (``multiple_captured_intents_for_order``, crítico);
+    - sem nenhum liquidado: cada intent em curso (pendente/autorizado) tem de
+      valer o total, porque é ele que vai ser capturado;
+    - intent morto (cancelado/falho) não entra: o valor dele não paga nada.
+      O intent obsoleto de um carrinho que mudou antes do pagamento deixa de
+      soar como divergência.
+    """
+    settled = [intent for intent in order_intents if intent.status in _SETTLED_STATUSES]
+    order_total_q = int(order.total_q or 0)
+
+    if settled:
+        settled_q = sum(int(intent.amount_q or 0) for intent in settled)
+        if settled_q != order_total_q:
+            context: dict[str, int | str] = {
+                "order_total_q": order_total_q,
+                "intents_amount_q": settled_q,
+                "intent_count": len(settled),
+            }
+            if len(settled) > 1:
+                context["intent_refs"] = ", ".join(intent.ref for intent in settled)
+            issues.append(
+                FinancialReconciliationIssue(
+                    code="intent_amount_mismatch",
+                    severity="error",
+                    message="Soma dos PaymentIntents liquidados diverge do total selado do pedido.",
+                    order_ref=order.ref,
+                    intent_ref=settled[0].ref if len(settled) == 1 else "",
+                    context=context,
+                )
             )
-        )
+        by_method = Counter(intent.method for intent in settled)
+        for method, count in sorted(by_method.items()):
+            if count > 1:
+                issues.append(
+                    FinancialReconciliationIssue(
+                        code="multiple_captured_intents_for_order",
+                        severity="critical",
+                        message="Pedido tem mais de um intent capturado/reembolsado para o mesmo método.",
+                        order_ref=order.ref,
+                        context={"method": method, "intent_count": count},
+                    )
+                )
+        return
+
+    for intent in order_intents:
+        if intent.status in _OPEN_STATUSES and int(intent.amount_q or 0) != order_total_q:
+            issues.append(
+                FinancialReconciliationIssue(
+                    code="intent_amount_mismatch",
+                    severity="error",
+                    message="Valor do PaymentIntent diverge do total selado do pedido.",
+                    order_ref=order.ref,
+                    intent_ref=intent.ref,
+                    context={"order_total_q": order_total_q, "intent_amount_q": int(intent.amount_q or 0)},
+                )
+            )
 
 
 def _check_intent(
@@ -359,27 +502,19 @@ def _check_intent(
 
     payment = _payment_data(order)
     data_intent_ref = str(payment.get("intent_ref") or "").strip()
-    if data_intent_ref and data_intent_ref != intent.ref and intent.order_ref == order.ref:
+    if (
+        data_intent_ref
+        and intent.order_ref == order.ref
+        and intent.ref not in _referenced_intent_refs(payment)
+    ):
         issues.append(
             FinancialReconciliationIssue(
                 code="order_intent_ref_mismatch",
                 severity="warning",
-                message="Pedido referencia outro intent em Order.data.payment.intent_ref.",
+                message="Pedido referencia outro intent em Order.data.payment.",
                 order_ref=order.ref,
                 intent_ref=intent.ref,
                 context={"data_intent_ref": data_intent_ref},
-            )
-        )
-
-    if intent.amount_q != order.total_q:
-        issues.append(
-            FinancialReconciliationIssue(
-                code="intent_amount_mismatch",
-                severity="error",
-                message="Valor do PaymentIntent diverge do total selado do pedido.",
-                order_ref=order.ref,
-                intent_ref=intent.ref,
-                context={"order_total_q": int(order.total_q or 0), "intent_amount_q": int(intent.amount_q or 0)},
             )
         )
 
@@ -496,6 +631,149 @@ def _check_intent(
                 context={"intent_status": intent.status, "captured_q": captured_q},
             )
         )
+
+
+def _check_cash_ledger(
+    *,
+    reconciliation_date: date,
+    issues: list[FinancialReconciliationIssue],
+) -> CashLedgerTotals:
+    """Cruza o dinheiro em espécie do dia: Payman × livro-caixa.
+
+    Por que este check existe: até a ADR-022 a reconciliação era
+    estruturalmente cega para dinheiro. Estava ancorada no intent de gateway,
+    e dinheiro não tinha intent: a venda em espécie era um JSON no pedido e
+    uma coluna no turno, nada que somasse com nada. Hoje o mesmo fato (uma nota
+    entrou na gaveta) tem DUAS escritas, na mesma transação do banco: o intent
+    ``method=cash`` capturado no Payman (``PaymentService.settle``) e a linha
+    ``sale``/``cod_settled`` no livro do turno (``cashman.Entry``), ligadas por
+    ``payment_ref``. Duas escritas do mesmo fato têm de bater; quando não
+    batem, uma das duas mentiu, ou uma venda entrou num livro sem entrar no
+    outro.
+
+    O que se compara, num dia local:
+
+    - Payman: ``Σ PaymentTransaction(CAPTURE) − Σ PaymentTransaction(REFUND)``
+      dos intents ``method=cash``, com ``created_at`` no dia;
+    - livro: ``Σ Entry.amount_q`` de ``sale``, ``cod_settled`` e ``refund``
+      com ``at`` no dia (``refund`` já é negativo; ``sale`` de pix/cartão/COD
+      vale zero e não pesa).
+
+    Janela: o instante da TRANSAÇÃO de cada lado, não a data do pedido. Na
+    venda do PDV a captura do intent e a linha ``sale`` nascem no mesmo
+    ``atomic`` (``_settle_pos_sale``), então ``PaymentTransaction.created_at``,
+    ``PaymentIntent.captured_at`` e ``Entry.at`` são o mesmo instante; o mesmo
+    vale para o estorno do cancel (``REFUND`` + linha ``refund``) e para o
+    acerto de entrega (``settle`` + ``cod_settled``). Por isso nada fica
+    "no dia errado" de um lado só:
+
+    - COD liquida no ACERTO: no dia da venda a linha ``sale`` vale zero e não
+      há intent de dinheiro; no dia do acerto nascem, juntos, o intent
+      capturado e o ``cod_settled``. Conta no dia do acerto, nos dois livros.
+    - Venda sem turno não existe mais (o PDV recusa antes do commit), então
+      não há venda em dinheiro que tenha intent e não tenha linha. O que
+      sobra para este check pegar é o inverso e o parcial: um estorno de
+      dinheiro feito FORA do PDV (cancel pelo gestor, devolução parcial) grava
+      ``REFUND`` no Payman sem linha ``refund`` na gaveta, e aqui aparece.
+    - ``float_in``, ``cash_in``, ``cash_out``, ``count`` não são pagamento:
+      mexem na gaveta sem tocar no Payman e ficam fora, de propósito.
+
+    Além do total do dia, compara por pedido (``intent.order_ref`` ×
+    ``Entry.order_ref``): dois erros que se compensam no total continuam
+    sendo dois erros, e a lista de pedidos é o que deixa a divergência
+    localizável em vez de ser só um número.
+    """
+    payman_by_order: defaultdict[str, int] = defaultdict(int)
+    payman_captured_q = payman_refunded_q = 0
+    cash_tx = (
+        PaymentTransaction.objects.filter(
+            created_at__date=reconciliation_date,
+            intent__method=PaymentIntent.Method.CASH,
+            type__in=[PaymentTransaction.Type.CAPTURE, PaymentTransaction.Type.REFUND],
+        )
+        .values("intent__order_ref", "type")
+        .annotate(total=Sum("amount_q"))
+    )
+    for row in cash_tx:
+        amount_q = int(row["total"] or 0)
+        order_ref = str(row["intent__order_ref"] or "")
+        if row["type"] == PaymentTransaction.Type.CAPTURE:
+            payman_captured_q += amount_q
+            payman_by_order[order_ref] += amount_q
+        else:
+            payman_refunded_q += amount_q
+            payman_by_order[order_ref] -= amount_q
+
+    ledger_by_order: defaultdict[str, int] = defaultdict(int)
+    ledger_by_kind: dict[str, int] = dict.fromkeys(_LEDGER_MONEY_KINDS, 0)
+    ledger_rows = (
+        Entry.objects.filter(at__date=reconciliation_date, kind__in=_LEDGER_MONEY_KINDS)
+        .values("order_ref", "kind")
+        .annotate(total=Sum("amount_q"))
+    )
+    for row in ledger_rows:
+        amount_q = int(row["total"] or 0)
+        ledger_by_kind[row["kind"]] += amount_q
+        ledger_by_order[str(row["order_ref"] or "")] += amount_q
+
+    totals = CashLedgerTotals(
+        payman_captured_q=payman_captured_q,
+        payman_refunded_q=payman_refunded_q,
+        ledger_sale_q=ledger_by_kind[Entry.Kind.SALE],
+        ledger_cod_settled_q=ledger_by_kind[Entry.Kind.COD_SETTLED],
+        ledger_refund_q=ledger_by_kind[Entry.Kind.REFUND],
+    )
+
+    diverging_orders = sorted(
+        order_ref
+        for order_ref in set(payman_by_order) | set(ledger_by_order)
+        if payman_by_order[order_ref] != ledger_by_order[order_ref]
+    )
+    if totals.difference_q == 0 and not diverging_orders:
+        return totals
+
+    if totals.difference_q == 0:
+        message = (
+            "Dinheiro do dia: os totais do Payman e do livro-caixa batem, "
+            "mas há pedidos que divergem entre si (erros que se compensam)."
+        )
+    else:
+        message = (
+            "Dinheiro do dia diverge entre o Payman (capturas − estornos em dinheiro) "
+            "e o livro-caixa (venda, acerto de entrega, devolução)."
+        )
+    context: dict[str, int | str] = {
+        "payman_cash_q": totals.payman_net_q,
+        "ledger_cash_q": totals.ledger_net_q,
+        "difference_q": totals.difference_q,
+        "order_count": len(diverging_orders),
+    }
+    if diverging_orders:
+        listed = diverging_orders[:_MAX_LISTED_ORDERS]
+        context["orders"] = ", ".join(ref or "(sem pedido)" for ref in listed)
+        if len(diverging_orders) > _MAX_LISTED_ORDERS:
+            context["orders"] += f", … (+{len(diverging_orders) - _MAX_LISTED_ORDERS})"
+    issues.append(
+        FinancialReconciliationIssue(
+            code="cash_ledger_mismatch",
+            severity="error",
+            message=message,
+            context=context,
+        )
+    )
+    return totals
+
+
+def _referenced_intent_refs(payment: dict) -> set[str]:
+    """Os intents que ``Order.data.payment`` aponta: o de cima e os dos tenders."""
+    refs: set[str] = set()
+    top = str(payment.get("intent_ref") or "").strip()
+    if top:
+        refs.add(top)
+    for tender in payment.get("tenders") or []:
+        if isinstance(tender, dict) and tender.get("intent_ref"):
+            refs.add(str(tender["intent_ref"]).strip())
+    return refs
 
 
 def _transaction_totals(rows) -> defaultdict[int, dict[str, int]]:
