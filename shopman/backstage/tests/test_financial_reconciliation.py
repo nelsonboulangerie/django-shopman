@@ -148,6 +148,7 @@ def test_financial_reconciliation_refunded_cash_sale_is_clean():
         "payman_net_q": 0,
         "ledger_sale_q": 1200,
         "ledger_cod_settled_q": 0,
+        "ledger_account_settled_q": 0,
         "ledger_refund_q": -1200,
         "ledger_net_q": 0,
         "difference_q": 0,

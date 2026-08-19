@@ -101,6 +101,40 @@ const drawerHourRows = computed(() =>
         <ChartDivergingBars :points="differenceSeries" :format="formatMoney" />
       </section>
 
+      <!-- Conta do cliente: só quando existe (dado opcional faz a tela crescer).
+           Dívida nova e acerto na janela; saldo em aberto é de HOJE, derivado. -->
+      <section
+        v-if="report.accounts.sales_q || report.accounts.settled_q || report.accounts.open_q"
+        class="rounded-md border border-border bg-card p-3"
+        data-house-accounts
+      >
+        <h2 class="text-lg font-semibold text-foreground">Contas na casa</h2>
+        <p class="mb-3 text-xs text-muted-foreground">Vendas em conta e acertos no período; saldo em aberto é o de hoje</p>
+        <div class="grid gap-3 sm:grid-cols-3">
+          <StatTile label="Vendido em conta" :value="formatMoney(report.accounts.sales_q)" hint="Virou dívida no período" />
+          <StatTile
+            label="Acertado"
+            :value="formatMoney(report.accounts.settled_q)"
+            :hint="`Em dinheiro ${formatMoney(report.accounts.settled_cash_q)}`"
+          />
+          <StatTile
+            label="Em aberto hoje"
+            :value="formatMoney(report.accounts.open_q)"
+            :hint="`${formatInt(report.accounts.open_customers)} ${report.accounts.open_customers === 1 ? 'cliente' : 'clientes'}`"
+          />
+        </div>
+        <ul v-if="report.accounts.top_open.length" class="mt-3 grid gap-1 text-sm">
+          <li
+            v-for="row in report.accounts.top_open"
+            :key="row.customer_name"
+            class="flex items-baseline justify-between border-b border-border py-1 last:border-0"
+          >
+            <span class="text-foreground">{{ row.customer_name }}</span>
+            <span class="tabular-nums text-foreground">{{ formatMoney(row.balance_q) }}</span>
+          </li>
+        </ul>
+      </section>
+
       <div class="grid gap-4 lg:grid-cols-2">
         <section class="rounded-md border border-border bg-card p-3">
           <h2 class="text-lg font-semibold text-foreground">Por operador</h2>

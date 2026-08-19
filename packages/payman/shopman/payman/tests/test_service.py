@@ -508,3 +508,57 @@ class FullLifecycleTests(TestCase):
         result = PaymentService.fail(intent.ref, error_code="card_declined", message="Cartão recusado")
         self.assertEqual(result.status, PaymentIntent.Status.FAILED)
         self.assertEqual(result.gateway_data["error_code"], "card_declined")
+
+
+class AccountTests(TestCase):
+    """``charge_to_account``: a venda em conta nasce autorizada (deve) e vira capturada no acerto (pagou)."""
+
+    def test_charge_to_account_authorizes_without_capturing(self) -> None:
+        intent = PaymentService.charge_to_account("ORD-ACC-1", 3000, customer_ref="cust-ana")
+
+        self.assertEqual(intent.method, PaymentIntent.Method.ACCOUNT)
+        self.assertEqual(intent.status, PaymentIntent.Status.AUTHORIZED)
+        self.assertEqual(intent.gateway, "")
+        self.assertEqual(intent.gateway_data["customer_ref"], "cust-ana")
+        self.assertIsNotNone(intent.authorized_at)
+        self.assertIsNone(intent.captured_at)
+        self.assertEqual(list(intent.transactions.all()), [])
+        self.assertEqual(PaymentService.account_balance_q("cust-ana"), 3000)
+
+    def test_charge_to_account_requires_customer(self) -> None:
+        with self.assertRaises(PaymentError) as ctx:
+            PaymentService.charge_to_account("ORD-ACC-2", 3000, customer_ref="")
+        self.assertEqual(ctx.exception.code, "customer_required")
+
+    def test_settle_refuses_account(self) -> None:
+        with self.assertRaises(PaymentError) as ctx:
+            PaymentService.settle("ORD-ACC-3", 3000, "account")
+        self.assertEqual(ctx.exception.code, "account_is_not_settled_at_sale")
+
+    def test_charge_to_account_is_idempotent_by_key(self) -> None:
+        first = PaymentService.charge_to_account("ORD-ACC-4", 3000, customer_ref="cust-ana", idempotency_key="k4")
+        again = PaymentService.charge_to_account("ORD-ACC-4", 3000, customer_ref="cust-ana", idempotency_key="k4")
+        self.assertEqual(first.ref, again.ref)
+        self.assertEqual(PaymentService.account_balance_q("cust-ana"), 3000)
+
+    def test_balance_is_derived_fifo_and_capture_settles(self) -> None:
+        a = PaymentService.charge_to_account("ORD-ACC-5", 3000, customer_ref="cust-ana")
+        b = PaymentService.charge_to_account("ORD-ACC-6", 1200, customer_ref="cust-ana")
+        PaymentService.charge_to_account("ORD-ACC-7", 500, customer_ref="cust-bia")
+
+        self.assertEqual([i.ref for i in PaymentService.account_open_intents("cust-ana")], [a.ref, b.ref])
+        self.assertEqual(PaymentService.account_balance_q("cust-ana"), 4200)
+        balances = PaymentService.account_balances()
+        self.assertEqual(
+            [(r["customer_ref"], r["balance_q"], r["intents"]) for r in balances],
+            [("cust-ana", 4200, 2), ("cust-bia", 500, 1)],
+        )
+
+        txn = PaymentService.capture(a.ref, gateway_data={"settled_with": "cash", "settled_by": "marina"})
+
+        a.refresh_from_db()
+        self.assertEqual(a.status, PaymentIntent.Status.CAPTURED)
+        self.assertEqual(a.gateway_data, {"customer_ref": "cust-ana", "settled_with": "cash", "settled_by": "marina"})
+        self.assertEqual(txn.amount_q, 3000)
+        self.assertEqual(PaymentService.account_balance_q("cust-ana"), 1200)
+        self.assertEqual([i.ref for i in PaymentService.account_open_intents("cust-ana")], [b.ref])

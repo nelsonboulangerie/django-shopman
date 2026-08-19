@@ -31,7 +31,7 @@ from shopman.utils.contrib.admin_unfold.base import BaseModelAdmin, BaseTabularI
 from taggit.managers import TaggableManager
 from unfold.contrib.filters.admin.dropdown_filters import ChoicesDropdownFilter
 from unfold.decorators import display
-from unfold.widgets import UnfoldAdminRadioSelectWidget, UnfoldAdminTextInputWidget
+from unfold.widgets import UnfoldAdminRadioSelectWidget, UnfoldAdminTextInputWidget, UnfoldBooleanSwitchWidget
 
 # Unregister basic admins
 for model in [Customer, PriceTier, CustomerAddress, ContactPoint, ExternalIdentity]:
@@ -216,8 +216,49 @@ class CommunicationConsentInline(BaseTabularInline):
         return False
 
 
+class CustomerForm(forms.ModelForm):
+    """O form do cliente com a conta na casa como checkbox, não como JSON.
+
+    A elegibilidade mora em ``Customer.metadata.house_account`` (dado contextual,
+    schema em docs/reference/data-schemas.md), desligada por padrão; só o Admin
+    liga. Pedir ao dono que edite JSON para isso seria fazê-lo trabalhar para a
+    tela; o campo lê e escreve a chave preservando o resto do ``metadata``.
+    """
+
+    house_account = forms.BooleanField(
+        label=_("Conta na casa"),
+        required=False,
+        widget=UnfoldBooleanSwitchWidget,
+        help_text=_("O cliente pode comprar \"em conta\" no PDV e acertar por período. Não se divulga; é por cliente."),
+    )
+
+    class Meta:
+        model = Customer
+        fields = "__all__"
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        instance = kwargs.get("instance")
+        if instance is not None:
+            self.fields["house_account"].initial = bool((instance.metadata or {}).get("house_account"))
+
+    def save(self, commit=True):
+        customer = super().save(commit=False)
+        metadata = dict(customer.metadata or {})
+        if self.cleaned_data.get("house_account"):
+            metadata["house_account"] = True
+        else:
+            metadata.pop("house_account", None)
+        customer.metadata = metadata
+        if commit:
+            customer.save()
+            self.save_m2m()
+        return customer
+
+
 @admin.register(Customer)
 class CustomerAdmin(BaseModelAdmin):
+    form = CustomerForm
     # O campo de etiquetas vem do taggit, cujo widget é um campo de texto cru:
     # dentro de um form Unfold ele aparecia com a borda do Django antigo. O taggit
     # continua dono do PARSE (vírgula, aspas, etiqueta nova na hora); troca só o
@@ -288,7 +329,7 @@ class CustomerAdmin(BaseModelAdmin):
             },
         ),
         ("Contato", {"fields": ["email", "phone"]}),
-        ("Segmentação", {"fields": ["price_tier", "tags", "notes"]}),
+        ("Segmentação", {"fields": ["price_tier", "tags", "house_account", "notes"]}),
         (
             "Sistema",
             {

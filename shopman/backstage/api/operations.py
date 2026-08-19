@@ -1888,6 +1888,61 @@ class POSCashRefundView(APIView):
 @extend_schema_view(
     get=extend_schema(
         tags=["backstage"],
+        summary="House accounts — customers with an open balance",
+        responses={200: OpenApiResponse(description="Account balances.")},
+    ),
+)
+class POSAccountBalancesView(APIView):
+    """Quem deve quanto (derivado dos intents ``account`` autorizados). Só leitura."""
+
+    permission_classes = [HasBackstagePermission]
+    required_permission = "cashman.operate_pos"
+
+    def get(self, request):
+        from shopman.backstage.projections.pos import account_balances
+
+        return Response({"accounts": [projection_data(row) for row in account_balances()]})
+
+
+@extend_schema_view(
+    post=extend_schema(
+        tags=["backstage"],
+        summary="Settle (part of) a customer's house account",
+        responses={200: OpenApiResponse(description="Settlement recorded.")},
+    ),
+)
+class POSAccountSettleView(APIView):
+    """O acerto: captura FIFO por venda inteira; em dinheiro, a gaveta aberta recebe."""
+
+    permission_classes = [HasBackstagePermission]
+    required_permission = "cashman.operate_pos"
+
+    def post(self, request, customer_ref: str):
+        body = request.data or {}
+        try:
+            settlement = pos_service.settle_account(
+                operator=request.user,
+                customer_ref=customer_ref,
+                amount_raw=str(body.get("amount", "")),
+                method=str(body.get("method", "")),
+            )
+        except POSError as exc:
+            return Response({"detail": str(exc)}, status=400)
+        return Response(
+            {
+                "ok": True,
+                "customer_ref": settlement.customer_ref,
+                "method": settlement.method,
+                "settled_q": settlement.settled_q,
+                "remaining_q": settlement.remaining_q,
+                "intent_refs": list(settlement.intent_refs),
+            }
+        )
+
+
+@extend_schema_view(
+    get=extend_schema(
+        tags=["backstage"],
         summary="Cash session report — X/Z readings and today's shift history",
         responses={200: OpenApiResponse(description="Cash session report.")},
     ),

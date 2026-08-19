@@ -117,7 +117,7 @@ export interface BICashDay {
   suprimento_q: number;
 }
 
-/** BICashOperatorRow(operator: 'str', shifts: 'int', difference_q: 'int', drawer_openings: 'int', drawer_unlocks: 'int', change_requests: 'int') */
+/** BICashOperatorRow(operator: 'str', shifts: 'int', difference_q: 'int', drawer_openings: 'int', drawer_unlocks: 'int', change_requests: 'int', account_settled_q: 'int' = 0) */
 export interface BICashOperatorRow {
   operator: string;
   shifts: number;
@@ -125,6 +125,7 @@ export interface BICashOperatorRow {
   drawer_openings: number;
   drawer_unlocks: number;
   change_requests: number;
+  account_settled_q: number;
 }
 
 /** Uma hora do dia com atividade de gaveta. Só horas com algo aparecem. */
@@ -149,7 +150,23 @@ export interface BICashPrevious {
   difference_by_day: number[];
 }
 
-/** BICashReport(date_from: 'str', date_to: 'str', days: 'tuple[BICashDay, ...]', by_operator: 'tuple[BICashOperatorRow, ...]', payment_methods: 'tuple[BICashMethodRow, ...]', shifts_total: 'int', difference_total_q: 'int', closings_missing: 'int', previous: 'BICashPrevious', drawer_by_hour: 'tuple[BICashHourRow, ...]') */
+/** BICashAccountRow(customer_name: 'str', balance_q: 'int') */
+export interface BICashAccountRow {
+  customer_name: string;
+  balance_q: number;
+}
+
+/** Conta do cliente na janela: o que virou dívida, o que foi acertado, o que está em aberto hoje. */
+export interface BICashAccounts {
+  sales_q: number;
+  settled_q: number;
+  settled_cash_q: number;
+  open_q: number;
+  open_customers: number;
+  top_open: BICashAccountRow[];
+}
+
+/** BICashReport(date_from: 'str', date_to: 'str', days: 'tuple[BICashDay, ...]', by_operator: 'tuple[BICashOperatorRow, ...]', payment_methods: 'tuple[BICashMethodRow, ...]', shifts_total: 'int', difference_total_q: 'int', closings_missing: 'int', previous: 'BICashPrevious', drawer_by_hour: 'tuple[BICashHourRow, ...]', accounts: 'BICashAccounts' = BICashAccounts(sales_q=0, settled_q=0, settled_cash_q=0, open_q=0, open_customers=0, top_open=())) */
 export interface BICashReport {
   date_from: string;
   date_to: string;
@@ -161,6 +178,7 @@ export interface BICashReport {
   closings_missing: number;
   previous: BICashPrevious;
   drawer_by_hour: BICashHourRow[];
+  accounts: BICashAccounts;
 }
 
 /** BICustomerSegmentRow(segment: 'str', customers: 'int') */

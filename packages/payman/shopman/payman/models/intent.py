@@ -42,6 +42,10 @@ class PaymentIntent(models.Model):
         CASH = "cash", _("Dinheiro")
         CARD = "card", _("Cartão")
         EXTERNAL = "external", _("Externo")
+        # Conta do cliente: a venda aconteceu e a obrigação está reconhecida
+        # (``authorized`` = deve); vira ``captured`` no acerto (= pagou). Sem
+        # gateway; o saldo devedor é derivado (Σ autorizados), nunca tabela.
+        ACCOUNT = "account", _("Em conta")
 
     TRANSITIONS = {
         Status.PENDING: [Status.AUTHORIZED, Status.FAILED, Status.CANCELLED],
@@ -65,7 +69,9 @@ class PaymentIntent(models.Model):
     # maquininha avulsa, marketplace). Não há autorização remota nem
     # webhook: o intent nasce e captura no mesmo gesto, via
     # ``PaymentService.settle``, com ``gateway=""``. Único dono da lista.
-    METHODS_WITHOUT_GATEWAY = frozenset({Method.CASH, Method.EXTERNAL})
+    #: Liquidam/nascem sem gateway. ``account`` entra aqui porque não tem adapter,
+    #: mas NÃO liquida na venda: ``settle`` recusa; o caminho é ``charge_to_account``.
+    METHODS_WITHOUT_GATEWAY = frozenset({Method.CASH, Method.EXTERNAL, Method.ACCOUNT})
 
     STATUS_TIMESTAMP_FIELDS = {
         Status.AUTHORIZED: "authorized_at",

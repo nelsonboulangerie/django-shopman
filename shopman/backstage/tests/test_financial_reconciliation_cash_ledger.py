@@ -264,6 +264,7 @@ def test_cancelamento_devolve_o_dinheiro_nos_dois_livros(counter, django_capture
         "payman_net_q": 0,
         "ledger_sale_q": 1200,
         "ledger_cod_settled_q": 0,
+        "ledger_account_settled_q": 0,
         "ledger_refund_q": -1200,
         "ledger_net_q": 0,
         "difference_q": 0,
@@ -516,3 +517,29 @@ def test_tender_apontando_intent_inexistente_e_erro_localizado():
     issue = _issue(report, "order_data_intent_not_found")
     assert issue.intent_ref == "PAY-NOPE"
     assert issue.context == {"where": "tenders"}
+
+
+def test_acerto_de_conta_em_dinheiro_bate_nos_dois_livros_e_em_pix_nao_entra_em_nenhum(counter):
+    """Venda em conta não é dinheiro (intent autorizado, linha `sale` zero): o
+    cruzamento não vê. O acerto em dinheiro é a nota entrando: captura do intent
+    `account` (`settled_with = cash`) de um lado, `account_settled` do outro."""
+    from shopman.guestman.models import Customer
+
+    from shopman.shop.services import house_account
+
+    Customer.objects.create(ref="CLI-ANA", first_name="Ana", phone="+5543999990001", metadata={"house_account": True})
+    counter.close(client_request_id="a1", payment_method="account", customer_ref="CLI-ANA")
+    counter.close(client_request_id="a2", payment_method="account", customer_ref="CLI-ANA")
+
+    report = build_financial_reconciliation(reconciliation_date=_today())
+    assert "cash_ledger_mismatch" not in _codes(report)
+    assert report.cash_ledger.payman_net_q == 0 == report.cash_ledger.ledger_net_q
+
+    house_account.settle_account("CLI-ANA", 1200, "cash", shift=counter.shift, actor=counter.operator)
+    house_account.settle_account("CLI-ANA", 1200, "pix", actor=counter.operator)
+
+    report = build_financial_reconciliation(reconciliation_date=_today())
+    assert "cash_ledger_mismatch" not in _codes(report)
+    assert report.cash_ledger.payman_captured_q == 1200
+    assert report.cash_ledger.ledger_account_settled_q == 1200
+    assert report.cash_ledger.difference_q == 0

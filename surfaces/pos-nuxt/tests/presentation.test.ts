@@ -313,6 +313,14 @@ describe("presentation/payment — tender math & method affordance", () => {
     expect(injectableMethods(METHODS).map((method) => method.ref)).toEqual(["cash", "pix", "card"]);
   });
 
+  it("offers 'Em conta' only for a customer with a house account", () => {
+    expect(injectableMethods(METHODS, { houseAccount: true }).map((method) => method.ref)).toEqual([
+      "cash", "pix", "card", "account",
+    ]);
+    expect(injectableMethods(METHODS, { houseAccount: false }).map((method) => method.ref)).toEqual(["cash", "pix", "card"]);
+    expect(methodLabel("account", injectableMethods(METHODS, { houseAccount: true }))).toBe("Em conta");
+  });
+
   it("resolves the method label and icon, with fallbacks", () => {
     expect(methodLabel("pix", METHODS)).toBe("PIX");
     expect(methodLabel("unknown", METHODS)).toBe("unknown");

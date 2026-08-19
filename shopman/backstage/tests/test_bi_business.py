@@ -336,3 +336,31 @@ def test_customers_reads_insights_without_recalculating(db):
     segments = {row.segment: row.customers for row in report.segments}
     assert segments == {"champion": 1, "at_risk": 1}
     assert report.new_by_week[-1].new_customers == 2
+
+
+@pytest.mark.django_db
+def test_cash_house_accounts_come_from_payman_and_the_ledger(db):
+    """Conta do cliente no B.I.: dívida nova e acerto na janela (Payman), a parte
+    em dinheiro por operador (livro, `account_settled`), saldo em aberto de hoje."""
+    from shopman.guestman.models import Customer
+    from shopman.payman import PaymentService
+
+    from shopman.shop.services import house_account
+
+    ana = User.objects.create_user("caixa-ana", password="pw", is_staff=True)
+    Customer.objects.create(ref="CLI-1", first_name="Zé", phone="+5543999990001", metadata={"house_account": True})
+    Customer.objects.create(ref="CLI-2", first_name="Lu", phone="+5543999990002", metadata={"house_account": True})
+    shift = cash.open_shift(operator=ana, terminal=Terminal.objects.create(ref="t1"), float_q=0)
+    PaymentService.charge_to_account("ORD-1", 3000, customer_ref="CLI-1")
+    PaymentService.charge_to_account("ORD-2", 2000, customer_ref="CLI-1")
+    PaymentService.charge_to_account("ORD-3", 500, customer_ref="CLI-2")
+    house_account.settle_account("CLI-1", 3000, "cash", shift=shift, actor=ana)
+    house_account.settle_account("CLI-2", 500, "pix", actor=ana)
+
+    report = build_bi_cash()
+    acc = report.accounts
+    assert (acc.sales_q, acc.settled_q, acc.settled_cash_q) == (5500, 3500, 3000)
+    assert (acc.open_q, acc.open_customers) == (2000, 1)
+    assert [(r.customer_name, r.balance_q) for r in acc.top_open] == [("Zé", 2000)]
+    (row,) = report.by_operator
+    assert (row.operator, row.account_settled_q) == ("caixa-ana", 3000)

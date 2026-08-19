@@ -237,8 +237,10 @@ const kitchenNote = computed(() => {
 
 // Payment by injection: methods become "add a tender" buttons; the operator
 // covers the total in any combination of forms. No "mixed" selection.
-const injectableMethods = computed(() => toInjectableMethods(props.paymentMethods));
-const tenderLines = computed(() => props.paymentTenders.map((tender) => tenderLineView(tender, props.paymentMethods)));
+const injectableMethods = computed(() =>
+  toInjectableMethods(props.paymentMethods, { houseAccount: Boolean(props.customerLookup?.house_account) }),
+);
+const tenderLines = computed(() => props.paymentTenders.map((tender) => tenderLineView(tender, injectableMethods.value)));
 const deliveryCollections = computed(() => collectionsForFulfillment(props.paymentCollections, props.fulfillmentType));
 
 // Validar (Odoo's Validate): NO "pay it all" shortcut — the button stays disabled

@@ -62,7 +62,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from django.db import IntegrityError, models, transaction
-from django.db.models import Q
+from django.db.models import Count, Min, Q, Sum
 from django.utils import timezone
 from shopman.payman.exceptions import PaymentError
 from shopman.payman.models.intent import PaymentIntent
@@ -269,6 +269,12 @@ class PaymentService:
                 INVALID_AMOUNT, IDEMPOTENCY_KEY_CONFLICT, INVALID_TRANSITION
                 (chave reutilizada por um intent que já morreu)
         """
+        if method == PaymentIntent.Method.ACCOUNT:
+            raise PaymentError(
+                code="account_is_not_settled_at_sale",
+                message="Venda em conta não liquida na hora: use charge_to_account (autoriza) e capture no acerto.",
+                context={"method": method, "order_ref": order_ref},
+            )
         if method not in PaymentIntent.METHODS_WITHOUT_GATEWAY and not asserted_at_terminal:
             raise PaymentError(
                 code="method_requires_gateway",
@@ -328,6 +334,110 @@ class PaymentService:
         )
 
         return intent
+
+    # ================================================================
+    # Conta do cliente (account)
+    # ================================================================
+
+    @classmethod
+    @transaction.atomic
+    def charge_to_account(
+        cls,
+        order_ref: str,
+        amount_q: int,
+        *,
+        customer_ref: str,
+        currency: str = "BRL",
+        gateway_data: dict | None = None,
+        ref: str | None = None,
+        idempotency_key: str = "",
+    ) -> PaymentIntent:
+        """
+        Venda "em conta": o intent nasce AUTORIZADO (= deve) e só vira capturado no acerto (= pagou).
+
+        É a máquina de estados que o Payman já tem, sem gateway, parando em
+        ``authorized``: a venda aconteceu, a obrigação está reconhecida, o
+        dinheiro ainda não. O saldo devedor do cliente é derivado
+        (``account_balance_q``: Σ dos intents ``account`` autorizados e não
+        capturados, por ``customer_ref``), nunca uma tabela de saldo. O acerto é
+        ``capture`` dos intents mais antigos até o valor (quem orquestra decide o
+        método com que o cliente pagou e grava em ``gateway_data``).
+
+        Quem pode comprar em conta NÃO é pergunta do Payman: é elegibilidade do
+        cliente (guestman), e o orquestrador recusa antes de chegar aqui.
+        """
+        if not str(customer_ref or "").strip():
+            raise PaymentError(
+                code="customer_required",
+                message="Venda em conta exige o cliente identificado.",
+                context={"order_ref": order_ref},
+            )
+        gateway_data = {**dict(gateway_data or {}), "customer_ref": str(customer_ref)}
+        intent = cls.create_intent(
+            order_ref,
+            amount_q,
+            PaymentIntent.Method.ACCOUNT,
+            currency=currency,
+            gateway="",
+            gateway_id="",
+            gateway_data=gateway_data,
+            ref=ref,
+            idempotency_key=idempotency_key,
+        )
+        intent = cls._get_for_update(intent.ref)
+        # Retry com a mesma chave: já está em conta (ou já foi acertada).
+        if intent.status != PaymentIntent.Status.PENDING:
+            return intent
+        cls._require_status(intent, PaymentIntent.Status.PENDING, "charge_to_account")
+        intent.status = PaymentIntent.Status.AUTHORIZED
+        intent.save()
+        cls._announce(
+            payment_authorized,
+            intent=intent,
+            order_ref=intent.order_ref,
+            amount_q=intent.amount_q,
+            method=intent.method,
+        )
+        logger.info(
+            "Intent charged to account",
+            extra={"ref": intent.ref, "order_ref": order_ref, "amount_q": intent.amount_q, "customer_ref": customer_ref},
+        )
+        return intent
+
+    @classmethod
+    def account_open_intents(cls, customer_ref: str):
+        """Os intents ``account`` ainda devidos do cliente, do mais antigo para o mais novo (FIFO do acerto)."""
+        return PaymentIntent.objects.filter(
+            method=PaymentIntent.Method.ACCOUNT,
+            status=PaymentIntent.Status.AUTHORIZED,
+            gateway_data__customer_ref=str(customer_ref),
+        ).order_by("authorized_at", "id")
+
+    @classmethod
+    def account_balance_q(cls, customer_ref: str) -> int:
+        """Saldo devedor do cliente: Σ dos intents ``account`` autorizados e não capturados. Derivado, nunca tabela."""
+        return int(cls.account_open_intents(customer_ref).aggregate(total=Sum("amount_q"))["total"] or 0)
+
+    @classmethod
+    def account_balances(cls) -> list[dict]:
+        """Todos os clientes com saldo em aberto: ``[{customer_ref, balance_q, intents, oldest_at}]``, maior saldo primeiro."""
+        rows = (
+            PaymentIntent.objects.filter(
+                method=PaymentIntent.Method.ACCOUNT, status=PaymentIntent.Status.AUTHORIZED
+            )
+            .values("gateway_data__customer_ref")
+            .annotate(balance_q=Sum("amount_q"), intents=Count("id"), oldest_at=Min("authorized_at"))
+            .order_by("-balance_q")
+        )
+        return [
+            {
+                "customer_ref": str(row["gateway_data__customer_ref"] or ""),
+                "balance_q": int(row["balance_q"] or 0),
+                "intents": int(row["intents"] or 0),
+                "oldest_at": row["oldest_at"],
+            }
+            for row in rows
+        ]
 
     # ================================================================
     # Authorize
@@ -395,6 +505,7 @@ class PaymentService:
         *,
         amount_q: int | None = None,
         gateway_id: str = "",
+        gateway_data: dict | None = None,
     ) -> PaymentTransaction:
         """
         Captura pagamento autorizado (authorized → captured).
@@ -408,6 +519,8 @@ class PaymentService:
             amount_q: Valor a capturar (None = total autorizado).
                       Partial capture: pass a value < intent.amount_q.
             gateway_id: ID da captura no gateway
+            gateway_data: Dados de auditoria a MESCLAR no intent (ex.: com que
+                      método e por quem um intent ``account`` foi acertado)
 
         Returns:
             PaymentTransaction de captura criada
@@ -435,6 +548,8 @@ class PaymentService:
                 context={"capture_amount": capture_amount, "authorized_amount": intent.amount_q},
             )
 
+        if gateway_data:
+            intent.gateway_data = {**(intent.gateway_data or {}), **gateway_data}
         intent.status = PaymentIntent.Status.CAPTURED
         intent.save()
 

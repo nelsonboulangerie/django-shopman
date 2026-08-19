@@ -38,7 +38,7 @@ _SETTLED_STATUSES = frozenset({PaymentIntent.Status.CAPTURED, PaymentIntent.Stat
 #: Intent ainda em curso: o valor dele é o que o pedido espera receber.
 _OPEN_STATUSES = frozenset({PaymentIntent.Status.PENDING, PaymentIntent.Status.AUTHORIZED})
 #: Linhas do livro-caixa que são o espelho de um tender em dinheiro do Payman.
-_LEDGER_MONEY_KINDS = (Entry.Kind.SALE, Entry.Kind.COD_SETTLED, Entry.Kind.REFUND)
+_LEDGER_MONEY_KINDS = (Entry.Kind.SALE, Entry.Kind.COD_SETTLED, Entry.Kind.ACCOUNT_SETTLED, Entry.Kind.REFUND)
 #: Quantos pedidos divergentes o issue lista antes de cortar (o resto está no banco).
 _MAX_LISTED_ORDERS = 10
 
@@ -81,6 +81,9 @@ class CashLedgerTotals:
     ledger_sale_q: int = 0
     ledger_cod_settled_q: int = 0
     ledger_refund_q: int = 0
+    # Acerto de conta do cliente recebido em dinheiro (``account_settled``): no
+    # Payman é a CAPTURA de um intent ``account`` com ``settled_with = cash``.
+    ledger_account_settled_q: int = 0
 
     @property
     def payman_net_q(self) -> int:
@@ -88,7 +91,7 @@ class CashLedgerTotals:
 
     @property
     def ledger_net_q(self) -> int:
-        return self.ledger_sale_q + self.ledger_cod_settled_q + self.ledger_refund_q
+        return self.ledger_sale_q + self.ledger_cod_settled_q + self.ledger_account_settled_q + self.ledger_refund_q
 
     @property
     def difference_q(self) -> int:
@@ -101,6 +104,7 @@ class CashLedgerTotals:
             "payman_net_q": self.payman_net_q,
             "ledger_sale_q": self.ledger_sale_q,
             "ledger_cod_settled_q": self.ledger_cod_settled_q,
+            "ledger_account_settled_q": self.ledger_account_settled_q,
             "ledger_refund_q": self.ledger_refund_q,
             "ledger_net_q": self.ledger_net_q,
             "difference_q": self.difference_q,
@@ -706,10 +710,14 @@ def _check_cash_ledger(
     """
     payman_by_order: defaultdict[str, int] = defaultdict(int)
     payman_captured_q = payman_refunded_q = 0
+    # Dinheiro no Payman: intents ``cash``, mais a captura dos intents ``account``
+    # que o cliente acertou EM DINHEIRO (``gateway_data.settled_with = cash``):
+    # é a nota entrando na gaveta, e do outro lado é a linha ``account_settled``.
     cash_tx = (
         PaymentTransaction.objects.filter(
+            Q(intent__method=PaymentIntent.Method.CASH)
+            | Q(intent__method=PaymentIntent.Method.ACCOUNT, intent__gateway_data__settled_with="cash"),
             created_at__date=reconciliation_date,
-            intent__method=PaymentIntent.Method.CASH,
             type__in=[PaymentTransaction.Type.CAPTURE, PaymentTransaction.Type.REFUND],
         )
         .values("intent__order_ref", "type")
@@ -742,6 +750,7 @@ def _check_cash_ledger(
         payman_refunded_q=payman_refunded_q,
         ledger_sale_q=ledger_by_kind[Entry.Kind.SALE],
         ledger_cod_settled_q=ledger_by_kind[Entry.Kind.COD_SETTLED],
+        ledger_account_settled_q=ledger_by_kind[Entry.Kind.ACCOUNT_SETTLED],
         ledger_refund_q=ledger_by_kind[Entry.Kind.REFUND],
     )
 

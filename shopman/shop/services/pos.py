@@ -238,6 +238,11 @@ def close_sale(
     derive_price_overrides(payload, channel=channel)
     validate_manager_approval(payload, operator_username=operator_username)
     _validate_payment_completion(payload)
+    _require_house_account_if_on_account(
+        payload,
+        payment_method=_normalize_payment_method(payload.get("payment_method") or "cash"),
+        tenders=[t for t in (payload.get("payment_tenders") or []) if isinstance(t, dict)],
+    )
     session = _payload_open_tab_session(channel_ref=channel.ref, payload=payload)
     existing = _existing_sale_by_client_request_id(channel_ref=channel.ref, payload=payload)
     if existing is not None and session is None:
@@ -350,6 +355,7 @@ def review_sale(
         require_complete=False,
     )
     payment_method = _legacy_payment_method(payload, tenders)
+    _require_house_account_if_on_account(payload, payment_method=payment_method, tenders=tenders)
     tender_total_q = sum(_int_q(tender.get("amount_q")) for tender in tenders)
     cash_tender_total_q = sum(
         _int_q(tender.get("amount_q")) for tender in tenders if _is_cash_tender(tender)
@@ -1758,7 +1764,7 @@ def _legacy_payment_method(payload: dict, tenders: list[dict]) -> str:
 
 def _normalize_payment_method(value) -> str:
     method = str(value or "cash").strip().lower() or "cash"
-    if method in {"cash", "pix", "card", "external", "mixed"}:
+    if method in {"cash", "pix", "card", "external", "account", "mixed"}:
         return method
     return "external"
 
@@ -1947,6 +1953,32 @@ def _terminal_cash_amount_q(order: Order) -> int:
     if str(payment.get("method") or "").lower() == "cash" and str(payment.get("collection") or "terminal") == "terminal":
         return int(order.total_q or 0)
     return 0
+
+
+def _require_house_account_if_on_account(payload: dict, *, payment_method: str, tenders: list[dict]) -> None:
+    """Venda "em conta" só para cliente identificado e elegível; recusa ANTES do commit.
+
+    A elegibilidade é do cliente (``Customer.metadata.house_account``, só o
+    Admin liga); aqui é o porteiro. Sem isto, qualquer venda viraria dívida de
+    alguém, e "em conta" é exatamente o método que não se divulga.
+    """
+    on_account = payment_method == "account" or any(
+        str(t.get("method") or "").lower() == "account" for t in tenders
+    )
+    if not on_account:
+        return
+    from shopman.shop.services import house_account
+
+    try:
+        house_account.require_eligible(str(payload.get("customer_ref") or "").strip())
+    except house_account.HouseAccountError as exc:
+        raise PosIntentError(
+            code="house_account_not_eligible",
+            message=str(exc),
+            field="payment_method",
+            focus="payment",
+            recovery="Identifique um cliente com conta na casa ou escolha outro meio de pagamento.",
+        ) from exc
 
 
 def _require_open_shift(payload: dict):
