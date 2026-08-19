@@ -106,7 +106,7 @@ class TestVarreduraDeColisoes:
         _material_behind_the_guard(sku="AGUA", name="Água", unit="l")
 
         messages = check_sku_namespace_collision(None)
-        assert [m.id for m in messages] == ["SHOPMAN_W012"]
+        assert [m.id for m in messages] == ["SHOPMAN_W015"]
         assert "AGUA" in messages[0].msg
 
     def test_system_check_calado_sem_colisao(self):

@@ -27,7 +27,7 @@ Warnings (non-blocking, logged at startup):
   SHOPMAN_W007  Debug OTP exposure explicitly allowed in staging
   SHOPMAN_W010  Machine courier enabled without webhook token (status via polling only)
   SHOPMAN_W011  Piloto automático de staging ligado (pedidos andam sozinhos)
-  SHOPMAN_W012  Mesmo SKU cadastrado como produto vendável e como insumo
+  SHOPMAN_W015  Mesmo SKU cadastrado como produto vendável e como insumo
 """
 
 from __future__ import annotations
@@ -731,7 +731,7 @@ def check_sku_namespace_collision(app_configs, **kwargs):
                     "homônimo é ignorado; o ledger de estoque mistura venda e consumo "
                     "no mesmo SKU. Renomeie um dos dois lados."
                 ),
-                id="SHOPMAN_W012",
+                id="SHOPMAN_W015",
             )
         )
     return warnings

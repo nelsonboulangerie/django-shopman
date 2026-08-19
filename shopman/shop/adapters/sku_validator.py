@@ -12,7 +12,7 @@ banco, e aqui a precedência é do produto. Diferente do catálogo composto, est
 caminho é QUENTE (disponibilidade da loja), então ele não paga uma consulta extra
 por resolução para detectar colisão: quem impede a colisão de nascer é o porteiro
 em shopman/shop/services/sku_namespace.py (pre_save nos dois modelos), e quem
-denuncia a colisão preexistente é o system check SHOPMAN_W012.
+denuncia a colisão preexistente é o system check SHOPMAN_W015.
 """
 
 from __future__ import annotations
