@@ -152,6 +152,10 @@ test-migrations: ## Gate de migrations: nada sem migration + schema limpo do zer
 	@echo "── Migrations gate ──"
 	$(PYTHON) scripts/check_migrations.py $(if $(json),--json,)
 
+test-constraints: ## Gate de pins: o constraints.txt cobre tudo que a imagem instala?
+	@echo "── Constraints gate ──"
+	$(PYTHON) scripts/check_constraints.py
+
 test-runtime-preflight: ## Falha se PostgreSQL/Redis reais não estiverem configurados
 	@echo "── Runtime preflight: PostgreSQL + Redis ──"
 	$(PYTHON) scripts/check_runtime_gate.py

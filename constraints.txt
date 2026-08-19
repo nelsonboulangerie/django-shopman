@@ -25,14 +25,21 @@
 #
 # COMO REGENERAR (depois de subir dependência, e só com a suíte verde)
 #   python -m venv /tmp/v && /tmp/v/bin/pip install ./packages/* ".[dev]"
-#   make test PYTHON=/tmp/v/bin/python
-#   /tmp/v/bin/pip freeze | grep -v '^-e ' > constraints.txt   # e recoloque este cabeçalho
+#   make test PYTHON=/tmp/v/bin/python                     # tem de ficar VERDE
+#   /tmp/v/bin/python scripts/check_constraints.py --write # reescreve, cabeçalho incluso
+#
+# ⚠️ NÃO edite os pins à mão e não gere por `pip freeze`: o freeze despeja o venv
+# inteiro (dev, ferramentas de teste), e o que interessa aqui é só o fecho de
+# RUNTIME — o mesmo conjunto que o Dockerfile instala. O script resolve esse
+# conjunto e é isso que o `make test-constraints` cobra no CI.
 #
 # ⚠️ Constraints CAPA versão, não instala pacote. A lista de dependências continua
-# sendo o pyproject.toml; este arquivo só decide QUAL versão dentro da faixa.
+# sendo o pyproject.toml; este arquivo só decide QUAL versão dentro da faixa. Foi
+# exatamente por aí que o arquivo furou no dia em que nasceu: o `rapidfuzz` entrou
+# como dependência nova, subiu SEM pin, e nada reclamou. Daí o guard.
 
 annotated-types==0.8.0
-anthropic==0.122.0
+anthropic==0.124.0
 anyio==4.14.2
 asgiref==3.12.1
 attrs==26.1.0
@@ -93,6 +100,7 @@ pypng==0.20220715.0
 python-dotenv==1.2.3
 PyYAML==6.0.3
 qrcode==7.4.2
+RapidFuzz==3.14.5
 redis==7.4.1
 referencing==0.37.0
 requests==2.34.2
