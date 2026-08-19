@@ -184,9 +184,26 @@ Três achados que só apareceram ao fechar o mapa:
 **F2 — O mecanismo.** ✅ Feito. SKU no registro de refs, 17 campos no cascade,
 defeito do `db_index` corrigido, cobertura testada.
 
-**F3 — Renomear.** Um comando idempotente sobre `RefBulk.cascade_rename`, com
-`--dry-run` que **executa e desfaz** (o padrão que o `apply_catalog_taxonomy` já
-usa). Um SKU por vez, conferindo entre eles.
+**F3 — Renomear.** ✅ Feito.
+[`rename_skus_to_real`](../../config/management/commands/rename_skus_to_real.py)
+roda sobre o `RefBulk.cascade_rename`, com `--dry-run` que executa e desfaz e
+`--only SKU` para conferir um a um. 25 pares; `PAO-HOTDOG` e `BRIOCHE-BURGER`
+ficam retidos até a decisão do §F1.2.
+
+⚠️ **Colisão em campo único foi o que quase passou.** Um ensaio sobre banco
+semeado derrubou o comando com `IntegrityError`: `ProductConsumptionTag.sku` é
+único, e o `propose_consumption_tags --include-historical` já tinha etiquetado
+os códigos do Yooga. Seis pares afetados. Os testes unitários passavam porque
+criavam um produto por vez — foi o ensaio de ponta a ponta que achou.
+
+A política é explícita por model, porque depende do que a linha significa:
+etiqueta de consumo é **anotação** e funde (a curada vence a proposta; no
+empate sobrevive a do catálogo); produto e insumo são **entidade** e o comando
+recusa, devolvendo a decisão. Campo de SKU único sem política faz o comando
+parar — e um teste garante que nenhum exista.
+
+Verificado em banco semeado: 25 SKUs, 12.834 linhas, 6 anotações fundidas,
+ensaio desfazendo tudo e execução repetida sem efeito.
 
 **F4 — O seed.** `config/management/commands/seed.py` passa a nascer com os
 códigos reais. Sem isto, o próximo `seed --flush` traz os inventados de volta —
