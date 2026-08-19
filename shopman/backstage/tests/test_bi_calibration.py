@@ -489,3 +489,29 @@ class TestTaxaDeEntregaMarcaEntrega:
         )
         assert marcar_entrega_por_taxa() == 1
         assert marcar_entrega_por_taxa() == 0
+
+    @pytest.mark.django_db
+    def test_remarca_sem_precisar_do_arquivo(self):
+        """O conserto tem de alcançar histórico JÁ carregado.
+
+        O ingest exige `--file`, e quem carregou o Yooga meses atrás não tem
+        mais o xlsx no servidor. Sem esta saída, a correção nasceria sem
+        alcançar os 201 registros que a motivaram.
+        """
+        from shopman.backstage.models import HistoricalSale, HistoricalSaleItem
+
+        venda = HistoricalSale.objects.create(
+            source="yooga", external_id=4, occurred_at=timezone.now(),
+            total_q=1000, is_delivery=False,
+        )
+        HistoricalSaleItem.objects.create(
+            sale=venda, seq=1, product_name="Taxa de Entrega", sku="TX",
+            qty=1, unit_price_q=500, line_total_q=500,
+        )
+
+        saida = StringIO()
+        call_command("ingest_yooga", "--delivery-flags-only", stdout=saida)
+
+        venda.refresh_from_db()
+        assert venda.is_delivery is True
+        assert "1 vendas remarcadas" in saida.getvalue()
