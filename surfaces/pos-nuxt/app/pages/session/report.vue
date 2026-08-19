@@ -44,10 +44,11 @@ const { report, pending, accessDenied, refresh } = await useCashReport();
       <section v-if="accessDenied" class="grid gap-2 rounded-lg border bg-card p-4">
         <div class="flex items-center gap-2">
           <Icon name="lucide:lock" class="size-4 text-muted-foreground" />
-          <h2 class="text-base font-semibold">Relatório é de quem opera o PDV</h2>
+          <h2 class="text-base font-semibold">Relatório é de quem audita</h2>
         </div>
         <p class="text-sm text-muted-foreground">
-          Sua conta não tem permissão para operar o PDV. Chame quem cuida do caixa.
+          Esta tela mostra o faturamento do dia. Sua conta opera o caixa, mas não audita — quem vê a
+          apuração é a gestão.
         </p>
         <UiButton variant="outline" size="sm" @click="navigateTo('/session')">Voltar à sessão de caixa</UiButton>
       </section>

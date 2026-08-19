@@ -97,6 +97,26 @@ class Command(BaseCommand):
             "Rules Managers": [
                 shop_rule("manage_rules"),
             ],
+            # Mesmo espírito do grupo acima: um PORTÃO, não uma persona.
+            #
+            # `audit_shift` ("esperado, contado, diferença") existia desde o
+            # começo do caixa e nenhum grupo a concedia — ela só chegava a um
+            # superusuário, ou a quem alguém lembrasse de marcar na mão. Uma
+            # permissão sem lugar onde se conceder é uma permissão que ninguém
+            # administra: some do Admin e reaparece como "por que não consigo
+            # ver isso?" seis meses depois.
+            #
+            # O grupo é DELIBERADAMENTE só o financeiro. Quem audita e também
+            # opera entra em "Dono" **e** "Gerente" — permissões somam, e
+            # separá-las deixa a pergunta "quem vê dinheiro?" com uma resposta
+            # só, legível numa tela do Admin.
+            #
+            # ⚠️ O `Gerente` NÃO entra aqui, e não é esquecimento: ele opera,
+            # autoriza exceção e fecha o turno contando às cegas. Quem sabe o
+            # esperado não conta às cegas — confere um gabarito.
+            "Dono": [
+                shop_cash("audit_shift"),
+            ],
         }
 
         for name, perms in groups.items():

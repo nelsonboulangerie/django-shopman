@@ -172,6 +172,13 @@ export interface POSCashRuntimeProjection {
   blocking_shift_id?: number | null;
   blocking_message?: string;
   can_close_blocking?: boolean;
+  /**
+   * Pode ver a APURAÇÃO (esperado, contado, diferença, faturamento)?
+   *
+   * `false` para quase todo mundo, de propósito — inclusive para o gerente.
+   * Quem sabe o esperado não conta às cegas: confere um gabarito.
+   */
+  can_audit_cash?: boolean;
   /** Só os PENDENTES: atendido e cancelado ficam na trilha do turno, não na tela. */
   pending_change_requests?: POSChangeRequestProjection[];
 }
