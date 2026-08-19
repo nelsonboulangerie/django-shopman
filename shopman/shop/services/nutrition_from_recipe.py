@@ -42,18 +42,9 @@ from typing import Any
 
 from shopman.offerman.models import Product
 from shopman.offerman.nutrition import NUTRIENT_FIELDS, NutritionFacts
+from shopman.utils import units
 
 logger = logging.getLogger(__name__)
-
-MASS_UNIT_TO_GRAMS = {
-    "kg": Decimal("1000"),
-    "g": Decimal("1"),
-    "mg": Decimal("0.001"),
-}
-VOLUME_UNIT_TO_ML = {
-    "L": Decimal("1000"),
-    "ml": Decimal("1"),
-}
 
 
 def fill_nutrition_from_recipe(product: Product) -> bool:
@@ -216,23 +207,33 @@ def _sum_nutrition(items, batch_size: Decimal, product: Product) -> NutritionFac
 
 
 def _item_quantity_grams(item) -> Decimal | None:
+    """Massa em gramas do item da ficha, ou ``None`` quando falta a ponte.
+
+    Peso converte pela física (``shopman.utils.units``). Volume e contagem
+    **não têm** caminho definicional até grama — a ponte é o perfil do insumo
+    (``density_g_per_ml`` / ``unit_weight_g`` em ``RecipeItem.meta``). Sem o
+    perfil, o item fica de fora da soma: melhor rótulo incompleto do que rótulo
+    inventado.
+    """
     unit = str(getattr(item, "unit", "") or "").strip()
     quantity = Decimal(str(item.quantity))
-    if unit in MASS_UNIT_TO_GRAMS:
-        return quantity * MASS_UNIT_TO_GRAMS[unit]
-
     meta = item.meta if isinstance(item.meta, dict) else {}
-    if unit in VOLUME_UNIT_TO_ML:
+    item_dimension = units.dimension(unit)
+
+    if item_dimension == units.MASS:
+        return units.convert(quantity, unit, "g")
+
+    if item_dimension == units.VOLUME:
         density = _positive_decimal(meta.get("density_g_per_ml"))
         if density is None:
             return None
-        return quantity * VOLUME_UNIT_TO_ML[unit] * density
+        return units.convert(quantity, unit, "ml") * density
 
-    if unit == "un":
+    if item_dimension == units.COUNT:
         unit_weight = _positive_decimal(meta.get("unit_weight_g"))
         if unit_weight is None:
             return None
-        return quantity * unit_weight
+        return units.convert(quantity, unit, "un") * unit_weight
 
     return None
 

@@ -154,6 +154,65 @@ class TestFillNutritionFromRecipe:
         assert product.ingredients_text == "Caldo."
         assert not product.nutrition_facts
 
+    def test_volume_unit_with_density_counts_in_the_sum(self):
+        # A ponte volume→massa é a densidade do perfil do insumo (ADR-024): com
+        # ela declarada, o litro entra na conta; é o que destrava líquido na base
+        # `l` (água, leite, azeite do seed).
+        product = _make_product(sku="BEBIDA-D")
+        recipe = Recipe.objects.create(
+            ref="bebida-d-v1",
+            name="Bebida com densidade",
+            output_sku="BEBIDA-D",
+            batch_size=Decimal("10"),
+            is_active=True,
+        )
+        RecipeItem.objects.create(
+            recipe=recipe,
+            input_sku="AZEITE",
+            quantity=Decimal("1"),
+            unit="L",
+            meta={
+                "label": "Azeite",
+                "density_g_per_ml": 0.91,
+                "nutrition": {"energy_kcal": 884},
+            },
+        )
+
+        fill_nutrition_from_recipe(product)
+        product.refresh_from_db()
+
+        # 1 L * 0,91 g/ml = 910 g / 10 un = 91 g por unidade → 884 kcal/100 g.
+        assert product.nutrition_facts["energy_kcal"] == pytest.approx(804.0, abs=2.0)
+
+    def test_count_unit_requires_the_unit_weight_of_the_profile(self):
+        # Contagem→massa também é ponte declarada: sem `unit_weight_g` no perfil,
+        # o item fica de fora em vez de virar palpite.
+        product = _make_product(sku="OVADA")
+        recipe = Recipe.objects.create(
+            ref="ovada-v1",
+            name="Ovada",
+            output_sku="OVADA",
+            batch_size=Decimal("10"),
+            is_active=True,
+        )
+        RecipeItem.objects.create(
+            recipe=recipe,
+            input_sku="OVOS",
+            quantity=Decimal("12"),
+            unit="un",
+            meta={
+                "label": "Ovos",
+                "unit_weight_g": 50,
+                "nutrition": {"energy_kcal": 155},
+            },
+        )
+
+        fill_nutrition_from_recipe(product)
+        product.refresh_from_db()
+
+        # 12 un * 50 g = 600 g / 10 un = 60 g por unidade → 155 kcal/100 g.
+        assert product.nutrition_facts["energy_kcal"] == pytest.approx(93.0, abs=2.0)
+
     def test_ingredients_text_in_decreasing_weight_order(self):
         product = _make_product()
         _make_recipe_with_items()
