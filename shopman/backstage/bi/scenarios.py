@@ -36,7 +36,10 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError
 logger = logging.getLogger(__name__)
 
 DEFAULT_WINDOW_DAYS = 28
-MAX_TOKENS = 1800
+# Teto folgado de propósito: o raciocínio do modelo sai do mesmo orçamento que
+# o texto, e 2–4 cenários em pt-BR passam de 600 tokens só de resposta. Com 1800
+# a primeira rodada real (staging, 19/08/2026) voltou cortada no meio do JSON.
+MAX_TOKENS = 6000
 
 ANALYST_VOICE = (
     "Você é analista de gestão de uma padaria artesanal brasileira. Recebe agregados do "

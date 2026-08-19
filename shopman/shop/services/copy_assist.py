@@ -101,6 +101,14 @@ def suggest(prompt: str, *, max_tokens: int = 400, voice: str = "") -> str:
     except anthropic.APIError as exc:
         raise CopyAssistError(f"O assistente não respondeu: {exc}") from exc
 
+    # Resposta cortada no teto não é resposta: é meia frase, ou meio JSON, que
+    # quem chamou vai ler como se fosse inteira. Os modelos atuais raciocinam
+    # antes de escrever e esse raciocínio sai do MESMO ``max_tokens`` — o teto
+    # precisa ser folgado, e estourá-lo precisa gritar com o motivo certo.
+    if getattr(message, "stop_reason", "") == "max_tokens":
+        raise CopyAssistError(
+            f"O assistente parou no limite de {max_tokens} tokens: resposta cortada."
+        )
     text = "\n".join(
         block.text for block in message.content if getattr(block, "type", "") == "text"
     ).strip()
