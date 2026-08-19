@@ -270,15 +270,27 @@ def settle_terminal_tenders(order) -> dict[str, str]:
         # fica sem intent — falta que a reconciliação diária aponta e um humano
         # conserta, ao contrário do dobro.
         idempotency_key = f"order-payment:{order.ref}:{method}:terminal"
-        intent = PaymentService.settle(
-            order.ref,
-            amount_q,
-            method,
-            currency="BRL",
-            idempotency_key=idempotency_key,
-            gateway_data={"collection": "terminal", "terminal_ref": _terminal_ref(order)},
-            asserted_at_terminal=gateway_method,
-        )
+        if method == "account":
+            # Em conta: a obrigação nasce reconhecida (authorized), não paga. O
+            # cliente já foi validado como elegível antes do commit (close_sale).
+            intent = PaymentService.charge_to_account(
+                order.ref,
+                amount_q,
+                customer_ref=str((order.data or {}).get("customer_ref") or ""),
+                currency="BRL",
+                idempotency_key=idempotency_key,
+                gateway_data={"collection": "terminal", "terminal_ref": _terminal_ref(order)},
+            )
+        else:
+            intent = PaymentService.settle(
+                order.ref,
+                amount_q,
+                method,
+                currency="BRL",
+                idempotency_key=idempotency_key,
+                gateway_data={"collection": "terminal", "terminal_ref": _terminal_ref(order)},
+                asserted_at_terminal=gateway_method,
+            )
         settled[method] = intent.ref
         logger.info(
             "payment.settle_terminal_tenders: %s settled at terminal, intent %s for order %s",
@@ -439,6 +451,9 @@ def refund(
     # mista do terminal tem um intent por método, e o cancel dela devolve todos.
     # A fonte é o Payman (livro), não o JSON: pedido antigo sem tenders com
     # intent_ref cai no mesmo laço.
+    # Venda em conta cancelada: a dívida morre com ela (authorized → cancelled).
+    # Não é estorno (nada foi pago); é o intent deixando de contar no saldo.
+    _cancel_open_account_intents(order)
     intents = [pair for pair in _refundable_intents(order, payment_data=payment_data) if pair[0] != "cash"]
     remaining_q = amount_q
     for method, intent_ref in intents:
@@ -456,6 +471,18 @@ def refund(
         )
         if remaining_q is not None:
             remaining_q -= refunded_q
+
+
+def _cancel_open_account_intents(order) -> None:
+    from shopman.payman import PaymentIntent, PaymentService
+
+    for intent in PaymentService.get_by_order(order.ref).filter(
+        method=PaymentIntent.Method.ACCOUNT, status=PaymentIntent.Status.AUTHORIZED
+    ):
+        try:
+            PaymentService.cancel(intent.ref, reason="order_cancelled")
+        except Exception:
+            logger.warning("payment.refund: account intent %s cancel failed order=%s", intent.ref, order.ref, exc_info=True)
 
 
 def _refundable_intents(order, *, payment_data: dict) -> list[tuple[str, str]]:

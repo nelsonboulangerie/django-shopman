@@ -47,7 +47,7 @@ _ALLOWED_TOP_LEVEL_KEYS = {
     "cash_shift_id",
     "pos_terminal_ref",
 }
-_ALLOWED_PAYMENT_METHODS = {"cash", "pix", "card", "external", "mixed"}
+_ALLOWED_PAYMENT_METHODS = {"cash", "pix", "card", "external", "account", "mixed"}
 _ALLOWED_PAYMENT_COLLECTIONS = {"terminal", "on_delivery"}
 _ALLOWED_RECEIPT_MODES = {"none", "print", "email"}
 

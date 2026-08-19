@@ -69,7 +69,9 @@ class PaymentIntent(models.Model):
     # maquininha avulsa, marketplace). Não há autorização remota nem
     # webhook: o intent nasce e captura no mesmo gesto, via
     # ``PaymentService.settle``, com ``gateway=""``. Único dono da lista.
-    METHODS_WITHOUT_GATEWAY = frozenset({Method.CASH, Method.EXTERNAL})
+    #: Liquidam/nascem sem gateway. ``account`` entra aqui porque não tem adapter,
+    #: mas NÃO liquida na venda: ``settle`` recusa; o caminho é ``charge_to_account``.
+    METHODS_WITHOUT_GATEWAY = frozenset({Method.CASH, Method.EXTERNAL, Method.ACCOUNT})
 
     STATUS_TIMESTAMP_FIELDS = {
         Status.AUTHORIZED: "authorized_at",
