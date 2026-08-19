@@ -277,10 +277,15 @@ def test_bi_reference_installs_the_three_tables_and_nothing_else():
     assert set(ConsumptionRole.objects.values_list("reading", flat=True)) == {
         "anchor", "takeaway", "hybrid"
     }
-    # 59 SKUs do cardápio 2027 + 61 SKUs do Yooga ("Pães Finos", revisados
-    # linha a linha pelo dono em 18/08/2026) + 4 combos do Yooga pelo NOME —
-    # tudo curadoria, nada nasce como proposta.
-    assert ProductConsumptionTag.objects.count() == 59 + 61 + 4
+    # O peso de partida é a vocação em graus: ancora ~1, leva ~0, híbrido no meio.
+    assert dict(ConsumptionRole.objects.values_list("ref", "eat_in_weight")) == {
+        "bebida-preparada": 95, "bebida-pronta": 95, "consome-aqui": 95,
+        "leva": 5, "hibrido": 50,
+    }
+    # 59 SKUs do cardápio 2027 + 61 SKUs do Yooga ("Pães Finos", 18/08) + 4
+    # combos pelo NOME + 70 SKUs do Yooga da segunda rodada (cafés, pratos,
+    # pães rústicos, 19/08) — tudo curadoria do dono, nada nasce como proposta.
+    assert ProductConsumptionTag.objects.count() == 59 + 61 + 4 + 70
     assert ProductConsumptionTag.objects.filter(reviewed=False).count() == 0
     assert ProductConsumptionTag.objects.filter(
         sku__startswith="nome:", role__ref="consome-aqui"
@@ -290,6 +295,13 @@ def test_bi_reference_installs_the_three_tables_and_nothing_else():
     by_sku = dict(ProductConsumptionTag.objects.values_list("sku", "role__ref"))
     assert by_sku["FA"] == by_sku["BBB"] == by_sku["PHO"] == "leva"
     assert by_sku["HO"] == by_sku["CPQ"] == by_sku["CT"] == by_sku["PC"] == "hibrido"
+    # Segunda rodada: café do Yooga é bebida preparada por curadoria; croque é
+    # mesa; pão rústico é leva; ciabatta/tabatière/fendu ficam híbridos como os
+    # gêmeos do cardápio 2027 (histórico e cardápio não discordam).
+    assert by_sku["PS"] == by_sku["SS"] == "bebida-preparada"
+    assert by_sku["CMO"] == by_sku["PPU"] == "consome-aqui"
+    assert by_sku["BAX"] == by_sku["BAP"] == by_sku["PH"] == "leva"
+    assert by_sku["CI"] == by_sku["TB"] == by_sku["FE"] == by_sku["CIABATTA"] == "hibrido"
     # 4 mesas internas + 4 externas + 6 lugares de balcão contam no teto; o
     # bistrô (2) e o bancão externo ficam fora, e é justamente por ficarem fora
     # que "bateu no teto" continua sendo um sinal.
@@ -309,7 +321,7 @@ def test_bi_reference_is_idempotent():
 
     _run("setup_bi_reference")
     _run("setup_bi_reference")
-    assert ProductConsumptionTag.objects.count() == 59 + 61 + 4
+    assert ProductConsumptionTag.objects.count() == 59 + 61 + 4 + 70
     assert SeatingSpot.objects.count() == 17
 
 

@@ -193,6 +193,13 @@ que define; salgado sozinho não ancora**. Efeito 2025: mudam piso→teto **63,6
 vigente A 56,5% · B 12,7% · C 30,8%. A largura que sobra é croissant, pain au chocolat e
 madeleine, híbridos de propósito.
 
+**Segunda rodada (19/08, 70 propostas restantes, também no seed):** cafés/chás do Yooga →
+`bebida-preparada`; croques/queijo quente/jambon/pain perdu → `consome-aqui`; pães rústicos,
+chás Kãnfa e SKUs iFood → `leva`; **ciabatta, tabatière, fendu e mini baguete → `hibrido`**
+(como no cardápio 2027, embora só 14–18% das vendas levem bebida) e mini focaccias → `hibrido`.
+Zero propostas restantes. Efeito 2025: mudam piso→teto **64,9%** (a ciabatta, R$ 171 mil, voltou
+para a classe ambígua); vigente A 56,5% · B 9,8% · C 33,7%.
+
 **Conciliação:** balcão R$ 2.124.088,85 + entrega R$ 178.064,20 = **R$ 2.302.153,05 = `bi_sales`** ✓
 (testado e conferido na aba Vendas). **63,6% dos pedidos mudam de perfil entre piso e teto** — a
 faixa é larga porque "Pães Finos" (55% da receita, 61 SKUs, todos etiquetados híbrido por proposta
@@ -205,3 +212,61 @@ bebida pronta industrializada **2,0%** (ref 0,9–1,4% estimado — água minera
 Strike rate por faixa: manhã 48% · almoço 32% · tarde 31% · fim de dia 44%; sábado 39% (o maior).
 RevPASH 2025: manhã R$ 17 · almoço R$ 12,5 · tarde R$ 18 · fim de dia R$ 10 por assento-hora
 (24 assentos × 282 dias); sábado de manhã R$ 34.
+
+## 8. Da vocação ao peso — a leitura em graus (pedido do dono, 19/08/2026)
+
+> *"No momento estamos muito booleanos. Associar algum peso à vocação do SKU talvez mostre
+> um número mais realista."* — concordo: a faixa piso–teto de ~65% é a regra sendo honesta
+> sobre o que não sabe, não um retrato.
+
+### 8.1 Passo 1 — pesos declarados ✅ (implementado 19/08)
+
+- **Dado, não código:** `ConsumptionRole.eat_in_weight` (default por leitura: consome aqui /
+  bebidas 95 · leva 5 · híbrido 50, editável) e `ProductConsumptionTag.eat_in_weight` (override
+  por SKU, vazio = herda do papel). Migração `backstage 0023`, aditiva. Linha sem etiqueta usa
+  a categoria do histórico → leitura → peso de partida (`DEFAULT_WEIGHT_BY_READING`).
+- **A cesta vale o seu MAIOR peso** (`Basket.eat_in_probability`): P(alguém sentou) = max(peso).
+  Não multiplica — multiplicar suporia independência entre os itens de uma mesma pessoa e "café
+  + croissant" viraria quase certeza por contagem. Com o máximo, o café (95) já disse que alguém
+  sentou; o croissant não muda isso. Entrega = 0; cesta sem peso = fora da conta, declarada.
+- **Na tela:** bloco "Estimativa ponderada: quantos comeram aqui" — ≈ pedidos com alguém sentado
+  (% e receita), ≈ só vieram buscar, pedidos com/sem peso, % que comeu aqui por faixa, delta vs
+  período anterior. Rotulado como esperança sob os pesos vigentes; a faixa piso–teto continua
+  logo abaixo como o que o dado garante.
+- **No Admin:** peso por papel (lista editável) e por SKU; na tela do SKU, a **dica do histórico**
+  (`sku_signal`): vendas de balcão, % com bebida, % sozinho, % em 4+ unidades — para ninguém
+  decidir o peso no escuro.
+- **Com os defaults** (híbrido 50), 2025 dá ≈ 24,1 mil pedidos com alguém sentado (**63,8%**),
+  R$ 1,43 mi (67,5% da receita), ≈ 13,7 mil só buscaram (36,2%); por faixa: manhã 72% · almoço
+  64% · tarde 60% · fim de dia 66%. ⚠️ Isso é o prior neutro falando: quase toda cesta tem um
+  híbrido, e híbrido = 50 puxa tudo para cima. O número fica realista quando o dono ajusta os
+  pesos que pesam (croissant, pain au chocolat, madeleine, ciabatta) — e é para isso que a dica
+  existe.
+
+### 8.2 Passo 2 — pesos medidos pela comanda (desenhado; depende de dado nativo real)
+
+A única coisa que aproxima o número da realidade sem pedir nada ao balcão é um peso **medido**.
+E há um sinal automático que já existe: **a comanda** ("sempre abrimos comanda, ponto").
+`Session.opened_at → committed_at` é o tempo que a venda ficou aberta; comanda de 25 min com
+croissant é alguém sentado, comanda de 90 s com croissant é alguém que levou. É o mesmo sinal
+que o salão (F4) já usa.
+
+Desenho, para quando houver pedidos nativos de verdade (o staging tem ~200 de teste — nada
+a medir):
+
+1. **Limiar "sentou"** sai da própria distribuição das durações de comanda (esperada bimodal:
+   balcão rápido × mesa), não de opinião; aparece na tela junto do número de comandas medidas.
+2. **Peso medido por SKU** = P(comanda acima do limiar | SKU na cesta), calculado sobre o nativo
+   e **proposto** como `eat_in_weight` (como o `propose_consumption_tags` propõe a leitura):
+   campo `weight_source` (declared / measured), `measured_n` (tamanho da base) e data. O dono
+   confirma ou não; peso medido com base pequena aparece como proposta, nunca como fato.
+3. **Vale para trás:** o peso é por produto, e os produtos do Yooga são os mesmos de hoje —
+   o histórico é reponderado sem tocar em nada.
+4. **Onde mora:** um comando `measure_eat_in_weights` (imprime e propõe; não grava sem
+   `--apply`) + a coluna de origem do peso no Admin e na tela ("peso medido em N comandas" vs
+   "peso declarado"). Nenhuma captura nova no PDV; nenhum vínculo comanda↔mesa.
+5. **Ressalva que fica na tela:** a janela é a comanda, não o tempo sentado — inclui o tempo em
+   pé no balcão; é por isso que o limiar vem da distribuição e não de um minuto fixo.
+
+Fora do escopo até lá: modelos com mais features (hora, dia, total), que sem verdade de campo
+seriam só pesos disfarçados.

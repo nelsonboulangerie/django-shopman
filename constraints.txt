@@ -1,0 +1,117 @@
+# constraints.txt — o que a imagem de produção instala, pinado.
+#
+# POR QUE ISTO EXISTE
+# `pyproject.toml` declara FAIXAS (Django>=6.0,<6.1; requests>=2.31,<3.0). Sem um
+# lock, o `pip install` do Dockerfile resolvia no dia do build: o que subia era o
+# que o PyPI tinha naquela manhã, não o que a suíte tinha validado.
+#
+# Isso não era teoria. Na triagem de 2026-08-19, um deploy naquele momento teria
+# instalado 40 pacotes diferentes do ambiente onde o `make test` roda — incluindo
+# cryptography 46→50, Twisted 25→26, autobahn 25→26 e DRF 3.17→3.18. O
+# `sentry-sdk` sequer existia no ambiente de teste, e ia para produção sem nunca
+# ter sido exercitado.
+#
+# O Dependabot não pega isso: ele avalia a FAIXA declarada, então zero alerta
+# nunca foi prova de que a imagem em execução estava limpa.
+#
+# COMO ESTES NÚMEROS FORAM ESCOLHIDOS
+# Não são "o que estava instalado na máquina de alguém". É a resolução que o
+# Dockerfile faria hoje, instalada num venv limpo e submetida à suíte inteira:
+#
+#     make test PYTHON=<venv>/bin/python   →   ✓ Todos os testes passaram
+#
+# 84 pacotes, que é o fecho de runtime — os 13 pacotes locais (shopman-*,
+# django-shopman) não entram: instalam por caminho, versionados pelo próprio repo.
+#
+# COMO REGENERAR (depois de subir dependência, e só com a suíte verde)
+#   python -m venv /tmp/v && /tmp/v/bin/pip install ./packages/* ".[dev]"
+#   make test PYTHON=/tmp/v/bin/python
+#   /tmp/v/bin/pip freeze | grep -v '^-e ' > constraints.txt   # e recoloque este cabeçalho
+#
+# ⚠️ Constraints CAPA versão, não instala pacote. A lista de dependências continua
+# sendo o pyproject.toml; este arquivo só decide QUAL versão dentro da faixa.
+
+annotated-types==0.8.0
+anthropic==0.122.0
+anyio==4.14.2
+asgiref==3.12.1
+attrs==26.1.0
+autobahn==26.7.1
+Automat==25.4.16
+cbor2==5.9.0
+certifi==2026.7.22
+cffi==2.1.1
+charset-normalizer==3.5.1
+constantly==23.10.4
+cryptography==50.0.0
+daphne==4.2.3
+diff-match-patch==20241021
+distro==1.9.0
+Django==6.0.8
+django-csp==4.0
+django-eventstream==5.3.4
+django-filter==25.2
+django-grip==3.5.2
+django-import-export==4.4.1
+django-otp==1.7.0
+django-ratelimit==4.1.0
+django-simple-history==3.13.0
+django-taggit==6.1.0
+django-unfold==0.92.0
+djangorestframework==3.18.0
+docstring_parser==0.18.0
+drf-spectacular==0.30.0
+et_xmlfile==2.0.0
+gripcontrol==4.4.0
+h11==0.16.0
+httpcore==1.0.9
+httpx==0.28.1
+hyperlink==21.0.0
+idna==3.19
+Incremental==24.11.0
+inflection==0.5.1
+jiter==0.16.0
+jsonschema==4.26.0
+jsonschema-specifications==2025.9.1
+MarkupSafe==3.0.3
+msgpack==1.2.1
+openpyxl==3.1.5
+packaging==26.3
+phonenumbers==9.0.37
+pillow==12.3.0
+psycopg==3.3.4
+psycopg-binary==3.3.4
+pubcontrol==3.5.0
+pyasn1==0.6.4
+pyasn1_modules==0.4.2
+pycparser==3.0
+pydantic==2.13.4
+pydantic_core==2.46.4
+PyJWT==2.13.0
+pyOpenSSL==26.4.0
+pypng==0.20220715.0
+python-dotenv==1.2.3
+PyYAML==6.0.3
+qrcode==7.4.2
+redis==7.4.1
+referencing==0.37.0
+requests==2.34.2
+rpds-py==2026.6.3
+sentry-sdk==2.68.0
+service-identity==26.1.0
+six==1.17.0
+sniffio==1.3.1
+sqlparse==0.6.0
+stripe==15.5.1
+tablib==3.10.0
+Twisted==26.4.0
+txaio==26.6.1
+typing_extensions==4.16.0
+typing-inspection==0.4.4
+ujson==5.13.0
+uritemplate==4.2.0
+urllib3==2.7.0
+webauthn==2.8.0
+Werkzeug==3.1.8
+whitenoise==6.12.0
+zope.interface==8.5
