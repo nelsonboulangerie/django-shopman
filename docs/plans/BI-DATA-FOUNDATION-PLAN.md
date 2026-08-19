@@ -1,9 +1,13 @@
 # BI-DATA-FOUNDATION-PLAN — a fundação de dados do B.I. em três camadas
 
-> **Status: 🟢 ETAPA 1 APROVADA em 2026-08-18 ("acato as recomendações") — as três decisões do
-> §6 ficaram como recomendado; ETAPA 2 em andamento: P0 ✅ (#209), P1 ✅ (#211), P2 ✅ (#212),
-> P3 ✅ (#214), P4 ✅ (#217). **v1 da fundação completo**; roadmap §7.2 (5 alarmes, #219/#222) e
-> §7.1 (cenários com IA, `feat/bi-scenarios`) entregues; P5 (NFC-e) espera emissão real.** Frente B, v1. Irmão de
+> **Status: ✅ NO AR NO STAGING (2026-08-19).** Etapa 1 aprovada em 18/08 ("acato as
+> recomendações"; decisões do §6 como recomendado). Etapa 2 inteira no `main` e deployada: P0 #209 ·
+> P1 #211 · P2 #212 · P3 #214 · P4 #217 · alarmes #219/#222 · cenários com IA #224 · hotfix #256
+> (migração `0024`: `.distinct()` sem `.order_by()` prendeu o `release` por uma hora — ver §5.4).
+> Deploy `74a2a366` (migrações `backstage/0024–0031`); `setup_bi_reference`,
+> `refresh_bi_daily_series --all` (947 dias) e `suggest_aliases --source yooga` (229 propostas de
+> produto) rodados; `admin` no grupo "Dono". **Só resta o P5 (NFC-e), à espera de emissão real.**
+> Frente B, v1. Irmão de
 > [BI-PLAN.md](BI-PLAN.md), [BI-INSIGHTS-MAP.md](BI-INSIGHTS-MAP.md),
 > [BI-FORECAST-PLAN.md](BI-FORECAST-PLAN.md) e [BI-QUESTION-CATALOG.md](BI-QUESTION-CATALOG.md).
 > Não depende da consulta de perfis (frente separada); se ela existir quando isto rodar, é só
@@ -503,6 +507,20 @@ deixar meio-caminho: P0 sozinho já é melhor que hoje; P1 sozinho já é melhor
   canônica) — não desta lista.
 
 ---
+
+### 5.4 O que o deploy ensinou (2026-08-19)
+
+- A migração `0024_importbatch` original fazia `values_list("source").distinct()` **sem
+  `.order_by()`**; com `Meta.ordering = ["-occurred_at"]` o DISTINCT virou `(source, occurred_at)`,
+  81 mil "fontes", 81 mil `INSERT`+`UPDATE` numa transação — o job `release` ficou uma hora preso e
+  três deployments (de duas sessões) saíram `ERROR`. Sessões encerradas no Postgres (nada commitado),
+  hotfix #256 com teste de cardinalidade e instantes distintos. Lição da casa: `.order_by()` antes
+  de `.distinct()`/`.annotate()` em model com ordering; teste de migração com timestamps DIFERENTES.
+- O `main` andou debaixo da pilha (#210/#237 perfis, #226 WP-8, #242 cashman `0030`): rebase com
+  renumeração `0024–0029`, `collect_baskets` dos perfis lendo a canônica (menos uma réplica da fusão),
+  `can_audit_cash` único. Snapshot pré-migração: `~/.shopman/staging-shopman-pre-0024-0030-*.dump`.
+- Pós-deploy no staging: alarmes avaliando a cada ciclo (dois disparos legítimos: curadoria 100%
+  pendente antes do `suggest_aliases`; quebra acumulada do `admin` em dado de QA).
 
 ## 6. Decisões do dono (tomadas em 2026-08-18 — as recomendações foram acatadas)
 
