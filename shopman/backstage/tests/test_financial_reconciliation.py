@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from io import StringIO
+from types import SimpleNamespace
 
 import pytest
 from django.contrib.auth.models import User
@@ -209,6 +210,50 @@ def test_financial_reconciliation_flags_chargeback_with_its_own_code():
     assert report.has_errors is True
     assert report.chargeback_q == 1200
     assert report.net_q == 0
+
+
+@pytest.mark.django_db
+def test_financial_reconciliation_sees_chargeback_that_came_from_a_stripe_dispute():
+    """O caminho inteiro: disputa perdida no Stripe → livro do Payman → relatório do dia.
+
+    O teste acima prova o código do relatório com o chargeback posto à mão. Este
+    prova a LIGAÇÃO: quem alimenta o snapshot é o webhook de disputa, e o valor
+    que entra por ali é o mesmo que o relatório desconta do `net_q`.
+    """
+    from shopman.shop.adapters import payment_stripe
+
+    today = timezone.localdate()
+    _order, intent = _paid_order(ref="FIN-DISPUTE")
+    intent.gateway = "stripe"
+    intent.gateway_id = "pi_fin_dispute"
+    intent.save(update_fields=["gateway", "gateway_id"])
+
+    payment_stripe.handle_dispute_event(
+        SimpleNamespace(
+            id="evt_fin_dispute",
+            type="charge.dispute.closed",
+            data=SimpleNamespace(
+                object=SimpleNamespace(
+                    id="du_fin_dispute",
+                    payment_intent="pi_fin_dispute",
+                    charge="ch_fin_dispute",
+                    status="lost",
+                    amount=1200,
+                    currency="brl",
+                    reason="fraudulent",
+                    evidence_details=SimpleNamespace(due_by=1789000000),
+                )
+            ),
+        )
+    )
+
+    DayClosing.objects.create(date=today, closed_by=_user(), data={"items": []})
+    report = build_financial_reconciliation(reconciliation_date=today, require_closing=True)
+
+    assert report.chargeback_q == 1200
+    assert report.net_q == 0
+    assert "intent_has_chargeback" in [issue.code for issue in report.issues]
+    assert OperatorAlert.objects.filter(type="payment_disputed", severity="critical").exists()
 
 
 @pytest.mark.django_db
