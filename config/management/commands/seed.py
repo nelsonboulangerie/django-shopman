@@ -22,11 +22,11 @@ from datetime import date, datetime, time, timedelta
 from decimal import Decimal
 
 from django.conf import settings
-from django.contrib.auth.models import Permission, User
+from django.contrib.auth.models import User
+from django.core.management import call_command
 from django.core.management.base import BaseCommand, CommandError
 from django.utils import timezone
 from shopman.craftsman.models import Recipe, RecipeItem, WorkOrder, WorkOrderItem
-from shopman.doorman.models import PinCredential
 from shopman.guestman.models import (
     ContactPoint,
     Customer,
@@ -83,6 +83,7 @@ from shopman.backstage.services.operations import (
     start_checklist_run,
     supervise_task_run,
 )
+from shopman.shop.management.commands import setup_operators
 from shopman.shop.models import (
     Announcement,
     AnnouncementTemplate,
@@ -630,63 +631,22 @@ class Command(BaseCommand):
             self.stdout.write("  ⏭️  Superuser 'admin' ja existe")
 
     def _seed_operators(self):
-        """Operadores (staff) com PIN para as superfícies operacionais.
+        """Delega ao `setup_operators`: o elenco tem UM dono.
 
-        O gate de operador ativo (``SHOPMAN_REQUIRE_ACTIVE_OPERATOR``, ligado no
-        staging) só destrava uma tela de backstage para um staff que tenha
-        ``PinCredential`` **e** a permissão da superfície (POS/KDS/produção). Sem
-        isto, o backstage nasce inacessível após um ``--flush``.
+        Aqui viviam quatro pessoas com ``user_permissions`` copiadas à mão —
+        ``marina`` tinha sete permissões que imitavam o grupo "Gerente" sem serem
+        ele. Duas listas para a mesma pergunta ("quem pode o quê?") saem de
+        sincronia no primeiro dia em que alguém mexe só numa: mudar o grupo
+        "Gerente" não alcançava ninguém, e a tela de Grupos do Admin mostrava
+        gente sem grupo nenhum operando o sistema inteiro.
 
-        PIN ``1234`` é conveniência de dev/staging — **trocar no go-live** (via
-        Admin ou ``set_operator_pin``). Os operadores nomeados são identidades
-        só-PIN (senha inutilizável): a confiança do dispositivo entra pelo
-        ``admin``; a identidade que opera é estabelecida pelo PIN (Opção C).
+        O comando irmão é idempotente e não toca em dado de negócio, então
+        também serve para consertar acesso no staging **sem** rodar este seed —
+        que recriaria o catálogo e milhares de pedidos falsos.
         """
-        dev_pin = "1234"
-
-        def grant(user, *perms: str) -> None:
-            for perm in perms:
-                app_label, codename = perm.split(".", 1)
-                user.user_permissions.add(
-                    Permission.objects.get(content_type__app_label=app_label, codename=codename)
-                )
-
-        # O superuser 'admin' também opera: como superuser satisfaz qualquer
-        # permissão, um PIN nele destrava toda superfície com a conta que já existe.
-        admin = User.objects.get(username="admin")
-        PinCredential.set_for(admin, dev_pin)
-
-        # Operadores nomeados para o seletor da tela de bloqueio parecer real.
-        operators = [
-            ("ana", "Ana", "Costa", ["cashman.operate_pos", "backstage.operate_kds"]),
-            ("joao", "João", "Silva", ["backstage.operate_kds", "backstage.operate_production"]),
-            (
-                "marina",
-                "Marina",
-                "Dias",
-                [
-                    "cashman.operate_pos",
-                    "backstage.operate_kds",
-                    "backstage.operate_production",
-                    "backstage.perform_closing",
-                    "cashman.adjust_shift",
-                    "cashman.manage_operators",
-                    "shop.manage_orders",
-                ],
-            ),
-        ]
-        for username, first, last, perms in operators:
-            user, _ = User.objects.update_or_create(
-                username=username,
-                defaults={"first_name": first, "last_name": last, "is_staff": True, "is_active": True},
-            )
-            user.set_unusable_password()
-            user.save(update_fields=["password"])
-            user.user_permissions.clear()
-            grant(user, *perms)
-            PinCredential.set_for(user, dev_pin)
-
-        self.stdout.write(f"  ✅ Operadores com PIN {dev_pin}: admin, ana, joão, marina (gerente)")
+        call_command("setup_operators", "--yes", verbosity=0)
+        nomes = ", ".join(u for u, *_ in setup_operators.CAST)
+        self.stdout.write(f"  ✅ Operadores em grupos, PIN {setup_operators.DEV_PIN}: {nomes}")
 
     # ────────────────────────────────────────────────────────────────
     # Flush
