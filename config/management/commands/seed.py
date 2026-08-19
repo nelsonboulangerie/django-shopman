@@ -3176,11 +3176,18 @@ class Command(BaseCommand):
             ("CLI-007", "Padaria", "do Bairro", "business", atacado, "+5543997777777"),
         ]
 
+        # Conta na casa (WP-10 do CASHMAN-PLAN): os dois clientes de negócio que
+        # compram para revender e acertam por período. Só o Admin liga; aqui é o
+        # retrato da Nelson, onde isso já existe de fato.
+        house_accounts = {"CLI-002", "CLI-004"}
+
         customers = {}
         for ref, first, last, ctype, price_tier, phone in customers_data:
             extras = {}
             if ref == "CLI-001":
                 extras["birthday"] = timezone.localdate()
+            if ref in house_accounts:
+                extras["metadata"] = {"house_account": True}
             c, _ = Customer.objects.update_or_create(
                 ref=ref,
                 defaults={
@@ -3278,6 +3285,9 @@ class Command(BaseCommand):
             },
             "handle_label": "Comanda",
             "handle_placeholder": "Ex: 42",
+            # Entrega da casa (pedido por telefone no PDV): o entregador pode sair
+            # com a maquininha; o despacho pergunta e a custódia fica no pedido.
+            "fulfillment": {"equipment": ["card_machine"]},
         }
         _remote_stock = {
             "hold_ttl_minutes": 30,
@@ -3332,7 +3342,7 @@ class Command(BaseCommand):
             ("web", "Loja online", 2, True, {
                 **_remote_config,
                 "short_name": "Site",
-                "fulfillment": {"prep_start": "operator"},
+                "fulfillment": {"prep_start": "operator", "equipment": ["card_machine"]},
             }),
             ("ifood", "iFood", 3, True, {
                 **_marketplace_config,
@@ -5774,6 +5784,9 @@ class Command(BaseCommand):
                     payload={"method": method, "collection": "terminal"},
                     at=order.created_at,
                 )
+            # Ontem também teve venda em conta (Restaurante Sabor da Terra): a
+            # linha `sale` entra com efeito zero e o Payman fica devendo.
+            self._seed_house_account_sales(shift_yesterday, admin, yesterday_open, "yesterday")
             # A sangria sai do que a gaveta TEM: R$ 300 num dia com vendas em
             # dinheiro, R$ 100 quando o histórico do perfil não trouxe venda de
             # ontem no PDV (o livro nunca pode ficar negativo por dado de demo).
@@ -5798,11 +5811,158 @@ class Command(BaseCommand):
             )
 
         # Hoje: turno aberto com fundo de troco.
-        if not cash.open_shift_for(admin) and not cash.open_shift_for_terminal(terminal):
+        today_shift = cash.open_shift_for(admin)
+        if today_shift is None and not cash.open_shift_for_terminal(terminal):
             today_open = timezone.make_aware(datetime.combine(timezone.localdate(), time(8, 45)))
-            cash.open_shift(operator=admin, terminal=terminal, float_q=20000, at=today_open)
+            today_shift = cash.open_shift(operator=admin, terminal=terminal, float_q=20000, at=today_open)
 
         self.stdout.write("  ✅ 2 turnos de caixa (ontem fechado + hoje aberto)")
+
+        if today_shift is not None and today_shift.operator_id == admin.pk:
+            self._seed_house_account_sales(today_shift, admin, today_shift.opened_at, "today")
+            self._seed_house_account_settlement(today_shift, admin)
+            self._seed_courier_change_and_equipment(today_shift, admin)
+
+    def _seed_house_account_sales(self, shift, admin, opened_at, which: str):
+        """Vendas "em conta" no turno: `sale` com efeito zero + intent `account` autorizado (= deve)."""
+        from shopman.cashman import services as cash
+        from shopman.cashman.models import Entry as CashEntry
+        from shopman.payman import PaymentService
+
+        plan = {
+            # (cliente, sku, qtd, hora) — o Restaurante leva baguete e shokupan; o Café, croissant.
+            "yesterday": [("CLI-002", "BF", 10, 7), ("CLI-002", "SK", 4, 7)],
+            "today": [("CLI-002", "BF", 8, 7), ("CLI-004", "CT", 12, 8)],
+        }[which]
+        day = timezone.localtime(opened_at).date()
+        for customer_ref, sku, qty, hour in plan:
+            # Convenção dos refs do seed: o 2º segmento é a data yymmdd.
+            ref = f"CONTA-{day:%y%m%d}-{customer_ref.removeprefix('CLI-')}{sku}"
+            if Order.objects.filter(ref=ref).exists():
+                continue
+            customer = Customer.objects.filter(ref=customer_ref).first()
+            product = Product.objects.filter(sku=sku).first()
+            if customer is None or product is None:
+                continue
+            at = timezone.make_aware(datetime.combine(day, time(hour, 20)))
+            order = self._make_qa_order(
+                ref=ref,
+                channel_ref="pdv",
+                status=Order.Status.COMPLETED,
+                items=[self._qa_line(product, qty)],
+                data={
+                    "customer_ref": customer.ref,
+                    "customer": {"name": customer.name, "phone": customer.phone or ""},
+                    "fulfillment_type": "pickup",
+                    "payment": {"method": "account", "collection": "terminal", "amount_q": product.base_price_q * qty},
+                },
+                minutes_ago=0,
+                handle_ref=customer.phone or "",
+            )
+            Order.objects.filter(pk=order.pk).update(created_at=at, completed_at=at)
+            intent = PaymentService.charge_to_account(
+                order.ref,
+                order.total_q,
+                customer_ref=customer.ref,
+                idempotency_key=f"order-payment:{order.ref}:account:terminal",
+                gateway_data={"collection": "terminal", "terminal_ref": shift.terminal.ref},
+            )
+            PaymentIntent.objects.filter(pk=intent.pk).update(created_at=at, authorized_at=at)
+            data = dict(order.data)
+            data["payment"] = {**data["payment"], "intent_ref": intent.ref, "tenders": [
+                {"method": "account", "amount_q": order.total_q, "collection": "terminal", "status": "received", "intent_ref": intent.ref}
+            ]}
+            Order.objects.filter(pk=order.pk).update(data=data)
+            cash.record(
+                CashEntry.Kind.SALE,
+                shift=shift,
+                operator=admin,
+                amount_q=0,
+                order_ref=order.ref,
+                payment_ref=intent.ref,
+                payload={"method": "account", "collection": "terminal", "intents": {"account": intent.ref}},
+                at=at,
+            )
+
+    def _seed_house_account_settlement(self, shift, admin):
+        """O Restaurante passou hoje e acertou a venda mais antiga em dinheiro; o resto segue em aberto."""
+        from shopman.cashman.models import Entry as CashEntry
+
+        from shopman.shop.services import house_account
+
+        if CashEntry.objects.filter(shift=shift, kind=CashEntry.Kind.ACCOUNT_SETTLED).exists():
+            return
+        from shopman.payman import PaymentService
+
+        oldest = PaymentService.account_open_intents("CLI-002").first()
+        if oldest is None:
+            return
+        try:
+            house_account.settle_account("CLI-002", oldest.amount_q, "cash", shift=shift, actor=admin)
+        except house_account.HouseAccountError as exc:
+            self.stdout.write(f"  ⚠️  acerto de conta não entrou: {exc}")
+
+    def _seed_courier_change_and_equipment(self, shift, admin):
+        """Entregas da casa hoje: uma já acertada (troco voltou, maquininha voltou) e uma na rua.
+
+        - DLV-ACERTADA: 2 croissants (R$ 26), cliente paga com R$ 50: R$ 24 de troco levado,
+          R$ 0 voltou (usou tudo); maquininha foi junto e voltou no acerto.
+        - DLV-NARUA: R$ 74, cliente paga com R$ 100: entregador levou R$ 26 de troco e a
+          maquininha; ainda não voltou — aparece no quadro do gestor.
+        """
+        from shopman.shop.services import operator_orders
+
+        if Order.objects.filter(ref__in=["DLV-ACERTADA", "DLV-NARUA"]).exists():
+            return
+        croissant = Product.objects.filter(sku="CT").first()
+        baguete = Product.objects.filter(sku="BF").first()
+        customer = Customer.objects.filter(ref="CLI-003").first()
+        if croissant is None or baguete is None or customer is None:
+            return
+        base_data = {
+            "customer_ref": customer.ref,
+            "customer": {"name": customer.name, "phone": customer.phone or ""},
+            "fulfillment_type": "delivery",
+            "delivery_address": "Rua das Flores, 120 - Centro",
+        }
+
+        settled = self._make_qa_order(
+            ref="DLV-ACERTADA",
+            channel_ref="web",
+            status=Order.Status.READY,
+            items=[self._qa_line(croissant, 2)],
+            data={**base_data, "payment": {"method": "cash", "collection": "on_delivery", "change_for_q": 5000}},
+            minutes_ago=150,
+            handle_ref=customer.phone or "",
+        )
+        change_out = operator_orders.change_out_suggested_q(settled)
+        operator_orders.advance_order(
+            settled, actor=admin.get_username(), change_out_q=change_out, cash_shift=shift, equipment=["card_machine"]
+        )
+        settled.refresh_from_db()
+        operator_orders.advance_order(settled, actor=admin.get_username())  # entregue
+        settled.refresh_from_db()
+        operator_orders.settle_delivery_cash(
+            settled, cash_shift=shift, actor=admin.get_username(), change_back_q=0, equipment_back=True
+        )
+
+        on_the_road = self._make_qa_order(
+            ref="DLV-NARUA",
+            channel_ref="web",
+            status=Order.Status.READY,
+            items=[self._qa_line(baguete, 3), self._qa_line(croissant, 2)],
+            data={**base_data, "payment": {"method": "cash", "collection": "on_delivery", "change_for_q": 10000}},
+            minutes_ago=25,
+            handle_ref=customer.phone or "",
+        )
+        operator_orders.advance_order(
+            on_the_road,
+            actor=admin.get_username(),
+            change_out_q=operator_orders.change_out_suggested_q(on_the_road),
+            cash_shift=shift,
+            equipment=["card_machine"],
+        )
+        self.stdout.write("  ✅ Conta na casa (2 clientes), acerto em dinheiro, entregas com troco e maquininha")
 
     # ────────────────────────────────────────────────────────────────
     # Operation checklists (abertura, rotina, fechamento)
