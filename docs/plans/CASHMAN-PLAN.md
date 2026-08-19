@@ -296,6 +296,13 @@ grita e o dono decide o que fazer com a contagem que não houve.
 
 ## WP-6: remoções e docs
 
+**Status: ENTREGUE (2026-08-19).** Resíduo de código já tinha saído nos WP-4/5 (o grep do aceite
+só acha migrações, docs de decisão/histórico e nomes legítimos como `POSTerminalComponentProjection`
+e `CashMovementRow`); este corte entrega `docs/guides/cashman.md`, glossário (seção Cashman),
+ADR-021 (inventário com `cashman.Entry`), ADR-022 → Aceito, `CLAUDE.md` (12 apps),
+`POS-CASH-DRAWER-PLAN` → `completed/` (superado no registro). O `HANDOFF-POS-EVENT-LOG.md` já não
+existia no repo (o #198 fechou sem merge). Memória do projeto atualizada.
+
 **Entrega**
 
 - Zero resíduo: `CashShift`, `CashMovement`, `POSTerminal`, `_adopt_orphan_sale`,

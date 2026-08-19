@@ -74,6 +74,7 @@ Guias de domínio seguem a estrutura: Conceitos → Modelos → Serviços → Pr
 | [Guestman](guides/guestman.md) | `shopman.guestman` | Clientes, contatos, grupos, loyalty, consent, RFM |
 | [Doorman](guides/doorman.md) | `shopman.doorman` | Auth OTP, device trust, bridge tokens, magic links |
 | [Payments](guides/payments.md) | `shopman.payman` | Pagamentos, PIX, Stripe, intents, lifecycle |
+| [Caixa](guides/cashman.md) | `shopman.cashman` | Terminal, turno (custódia) e livro-caixa imutável; fechamento cego como lançamento |
 | [Lifecycle](guides/lifecycle.md) | `shopman/shop` | Orquestrador: Lifecycle, Services, Adapters, Rules |
 | [Fechamento do dia](guides/day-closing.md) | `shopman` | Sobras, não vendidos, D-1 em `ontem`, às cegas vs vendas |
 | [WhatsApp Access Link](guides/whatsapp-access-link.md) | auth | Login WhatsApp-first por access link (`NB-XxXx`) |

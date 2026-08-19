@@ -31,7 +31,7 @@ a suite tem **fontes de fato duráveis e bem modeladas** em todos os domínios:
 | `stockman.Move` | ledger de estoque (MAKE, SELL, WASTE…) | imutável por guard (update/delete levantam) |
 | `stockman.Batch` | validade + não conformidade congelada no lote | snapshot (constituição §3.3) |
 | `orderman.Order`/`OrderItem` | vendas: `total_q`, timestamps por status, canal; descontos em `snapshot.pricing` e `OrderItem.meta._disc` | campos selados por `ImmutabilityError` |
-| `backstage.CashShift`/`CashMovement` | caixa: abertura, contagem cega, diferença, sangria/suprimento | fechamento atômico |
+| `cashman.Entry` | livro-caixa do turno: fundo, venda (efeito em dinheiro), acerto de entrega, sangria/suprimento, devolução, troco do entregador, contagem cega como lançamento (ADR-022; substituiu `backstage.CashShift`/`CashMovement` em 2026-08-19) | append-only por guard (update/delete levantam); sinal por tipo em CheckConstraint |
 | `backstage.DayClosing.data` | consolidação diária (produção, qualidade, caixa, reconciliação; write-offs após C4) | `unique(date)`, append-only na prática |
 | `guestman.contrib.insights.CustomerInsight` | RFM/CRM materializado por cliente | recálculo idempotente, `calculation_version` |
 
