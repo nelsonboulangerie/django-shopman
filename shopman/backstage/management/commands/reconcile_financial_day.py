@@ -79,6 +79,13 @@ class Command(BaseCommand):
         )
         self.stdout.write(f"Métodos: {_format_counts(report.by_method)}")
         self.stdout.write(f"Gateways: {_format_counts(report.by_gateway)}")
+        cash = report.cash_ledger
+        self.stdout.write(
+            "Dinheiro (Payman × livro-caixa): "
+            f"payman={cash.payman_net_q}q (captured={cash.payman_captured_q}q refunded={cash.payman_refunded_q}q) "
+            f"ledger={cash.ledger_net_q}q (sale={cash.ledger_sale_q}q cod_settled={cash.ledger_cod_settled_q}q "
+            f"refund={cash.ledger_refund_q}q) diff={cash.difference_q}q"
+        )
         closing = report.day_closing_id or "-"
         self.stdout.write(
             f"DayClosing={closing} persisted={str(report.persisted).lower()} "

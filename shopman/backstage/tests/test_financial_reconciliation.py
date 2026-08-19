@@ -72,10 +72,17 @@ def test_financial_reconciliation_happy_path_persists_to_day_closing():
     assert not OperatorAlert.objects.filter(type="payment_reconciliation_failed").exists()
 
 
-def _settled_cash_order(*, ref: str, status=Order.Status.ACCEPTED, total_q: int = 1200):
-    """Venda de balcão em dinheiro como o PDV a deixa (ADR-022): intent capturado, sem gateway."""
+def _settled_cash_order(*, ref: str, status=Order.Status.ACCEPTED, total_q: int = 1200, shift=None):
+    """Venda de balcão em dinheiro como o PDV a deixa (ADR-022): intent capturado
+    sem gateway E a linha ``sale`` no livro do turno, ligadas por ``payment_ref``."""
+    from shopman.cashman import services as cash
     from shopman.payman import PaymentService
 
+    if shift is None:
+        operator = User.objects.filter(username="finance-cashier").first() or User.objects.create_user(
+            "finance-cashier", password="pw"
+        )
+        shift = cash.open_shift_for(operator) or cash.open_shift(operator=operator, float_q=0)
     intent = PaymentService.settle(ref, total_q, "cash", ref=f"PAY-{ref}")
     order = Order.objects.create(
         ref=ref,
@@ -92,6 +99,7 @@ def _settled_cash_order(*, ref: str, status=Order.Status.ACCEPTED, total_q: int 
             }
         },
     )
+    cash.record("sale", shift=shift, operator=shift.operator, amount_q=total_q, order_ref=ref, payment_ref=intent.ref)
     return order, intent
 
 
@@ -110,16 +118,22 @@ def test_financial_reconciliation_settled_cash_sale_is_clean_and_counted():
     assert report.by_gateway == {"-": 1, "efi": 1}
     assert report.captured_q == 2400
     assert report.net_q == 2400
+    assert report.cash_ledger.payman_net_q == 1200
+    assert report.cash_ledger.ledger_net_q == 1200
 
 
 @pytest.mark.django_db
 def test_financial_reconciliation_refunded_cash_sale_is_clean():
-    """Cancel de venda em dinheiro grava o estorno no Payman: saldo zero, nada a gritar."""
+    """Cancel de venda em dinheiro grava o estorno no Payman E a linha ``refund``
+    na gaveta: saldo zero nos dois livros, nada a gritar."""
+    from shopman.cashman import services as cash
     from shopman.payman import PaymentService
 
     today = timezone.localdate()
     order, intent = _settled_cash_order(ref="FIN-CASH-CANCEL", status=Order.Status.CANCELLED)
     PaymentService.refund(intent.ref, reason="order_cancelled", gateway_id=f"order-refund:{order.ref}")
+    shift = cash.open_shift_for(User.objects.get(username="finance-cashier"))
+    cash.record("refund", shift=shift, operator=shift.operator, amount_q=-1200, order_ref=order.ref, payment_ref=intent.ref)
     DayClosing.objects.create(date=today, closed_by=_user(), data={"items": []})
 
     report = build_financial_reconciliation(reconciliation_date=today, require_closing=True)
@@ -128,6 +142,16 @@ def test_financial_reconciliation_refunded_cash_sale_is_clean():
     assert report.captured_q == 1200
     assert report.refunded_q == 1200
     assert report.net_q == 0
+    assert report.cash_ledger.as_dict() == {
+        "payman_captured_q": 1200,
+        "payman_refunded_q": 1200,
+        "payman_net_q": 0,
+        "ledger_sale_q": 1200,
+        "ledger_cod_settled_q": 0,
+        "ledger_refund_q": -1200,
+        "ledger_net_q": 0,
+        "difference_q": 0,
+    }
 
 
 @pytest.mark.django_db
