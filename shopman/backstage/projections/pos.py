@@ -216,6 +216,9 @@ class POSCashRuntimeProjection:
     # turno aberto do canal (não são "deste turno": são do caixa), porque quem
     # estiver com a gaveta aberta é quem vai devolver.
     pending_cash_refunds: tuple[POSPendingCashRefundProjection, ...] = ()
+    # Contas na casa com saldo em aberto: quem está com a gaveta aberta é quem
+    # recebe o acerto (em dinheiro entra no livro dele; pix/cartão é atestado).
+    account_balances: tuple[POSAccountBalanceProjection, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -245,6 +248,23 @@ class POSCustomerLookupProjection:
     default_address: SavedAddressProjection | None
     saved_addresses: tuple[SavedAddressProjection, ...]
     memory: POSCustomerMemoryProjection
+    # Conta na casa (WP-10): o cliente pode comprar "em conta" (só o Admin liga;
+    # ``Customer.metadata.house_account``) e quanto deve hoje (derivado do Payman).
+    # Sem a flag o PDV nem mostra a opção: dado opcional faz a tela crescer.
+    house_account: bool = False
+    account_balance_q: int = 0
+
+
+@dataclass(frozen=True)
+class POSAccountBalanceProjection:
+    """Um cliente com conta na casa e saldo em aberto (Σ dos intents ``account`` autorizados)."""
+
+    customer_ref: str
+    customer_name: str
+    balance_q: int
+    balance_display: str
+    intents: int
+    oldest_at: str  # ISO; "" quando não há
 
 
 @dataclass(frozen=True)
@@ -571,6 +591,9 @@ def build_pos_customer_lookup(phone: str) -> POSCustomerLookupProjection | None:
     tier_ref = customer.price_tier.ref if getattr(customer, "price_tier_id", None) else ""
     summary = customer_history_summary(customer.ref)
     addresses = customer_context.saved_addresses(customer.ref)
+    from shopman.shop.services import house_account
+
+    eligible = house_account.is_eligible(customer.ref)
     default_address = next((addr for addr in addresses if addr.is_default), addresses[0] if addresses else None)
     saved_addresses = tuple(_saved_address_projection(addr) for addr in addresses)
 
@@ -590,6 +613,8 @@ def build_pos_customer_lookup(phone: str) -> POSCustomerLookupProjection | None:
             favorite_item=dict(summary.get("favorite_item") or {}),
             last_order_items=tuple(dict(item) for item in (summary.get("last_order_items") or ())),
         ),
+        house_account=eligible,
+        account_balance_q=house_account.balance_q(customer.ref) if eligible else 0,
     )
 
 
@@ -835,6 +860,16 @@ def _pos_actions() -> tuple[Action, ...]:
             method="POST",
             href="/api/v1/backstage/pos/cash/refund/{order_ref}/",
             payload_schema={"path": {"order_ref": "string"}, "required": ["manager_approval"]},
+            idempotency="none",
+        ),
+        Action(
+            ref="settle_account",
+            kind="mutation",
+            label="Receber acerto de conta do cliente",
+            priority="quiet",
+            method="POST",
+            href="/api/v1/backstage/pos/accounts/{customer_ref}/settle/",
+            payload_schema={"path": {"customer_ref": "string"}, "required": ["amount", "method"]},
             idempotency="none",
         ),
         Action(
@@ -1439,6 +1474,24 @@ def _cash_runtime_projection(cash_shift, runtime, operator, *, terminal_cash_shi
         can_audit_cash=audita,
         pending_change_requests=_pending_change_requests(cash_shift),
         pending_cash_refunds=_pending_cash_refunds(cash_shift),
+        account_balances=account_balances(),
+    )
+
+
+def account_balances() -> tuple[POSAccountBalanceProjection, ...]:
+    """Clientes com conta na casa e saldo em aberto, maior saldo primeiro."""
+    from shopman.shop.services import house_account
+
+    return tuple(
+        POSAccountBalanceProjection(
+            customer_ref=row.customer_ref,
+            customer_name=row.customer_name,
+            balance_q=row.balance_q,
+            balance_display=f"R$ {format_money(row.balance_q)}",
+            intents=row.intents,
+            oldest_at=row.oldest_at,
+        )
+        for row in house_account.balances()
     )
 
 

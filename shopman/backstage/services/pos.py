@@ -233,6 +233,32 @@ def refund_cash(*, operator, order_ref: str, manager_approval: dict | None = Non
     return refunded_q
 
 
+def settle_account(*, operator, customer_ref: str, amount_raw: str, method: str):
+    """O cliente acertou (parte d)a conta. Em dinheiro, entra no turno ABERTO de quem recebeu.
+
+    Entrada não exige PIN (suprimento também não). O shop captura os intents
+    ``account`` mais antigos inteiros até o valor e, em dinheiro, grava
+    ``account_settled`` no livro na mesma transação; pix/cartão/external são
+    atestados no balcão (``gateway_data.settled_with``).
+    """
+    from shopman.cashman import services as cash
+
+    from shopman.shop.services import house_account
+
+    method = str(method or "").strip().lower()
+    shift = cash.open_shift_for(operator) if method == "cash" else None
+    try:
+        return house_account.settle_account(
+            customer_ref,
+            parse_money_to_q(amount_raw),
+            method,
+            shift=shift,
+            actor=operator,
+        )
+    except house_account.HouseAccountError as exc:
+        raise POSError(str(exc)) from exc
+
+
 #: As cédulas e moedas que o balcão pode pedir, do maior para o menor.
 #:
 #: Não é a lista do dinheiro brasileiro — é a lista do que se PEDE como troco.
