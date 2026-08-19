@@ -142,15 +142,20 @@ class TestIssueBadgeFromAdmin:
         cred.refresh_from_db()
         assert cred.badge_hash, "o crachá foi emitido"
         page = response.content.decode()
-        # A página mostra o token UMA vez...
+        # A página mostra o token (e volta a mostrar dentro da janela)...
         token = _token_from_page(page)
         assert PinCredential.resolve_by_badge(token) == operator
         # ...e o digest guardado nunca é o token em texto.
         assert token not in cred.badge_hash
 
-        # Recarregar não repete a credencial (a sessão foi esvaziada ao mostrar).
+        # Recarregar DENTRO da janela repete o mesmo crachá, de propósito:
+        # impressora que emperra não pode custar uma credencial. Reexibir não é
+        # reemitir — o digest não muda, e quem emitiu já tinha visto o código.
+        # A expiração é coberta em `test_operator_badge_reprint.py`.
         again = client.get(reverse("admin_console_operator_badge"))
-        assert token not in again.content.decode()
+        assert token in again.content.decode()
+        cred.refresh_from_db()
+        assert PinCredential.resolve_by_badge(token) == operator
 
     def test_issuing_again_invalidates_the_previous_badge(self, client):
         manager, operator = self._manager(), self._operator()

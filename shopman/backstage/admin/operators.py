@@ -15,6 +15,7 @@ from __future__ import annotations
 
 from django.contrib import admin, messages
 from django.shortcuts import redirect
+from django.utils import timezone
 from django.utils.html import format_html
 from shopman.doorman.models import PinCredential, PinCredentialError
 from shopman.utils import unfold_badge
@@ -24,6 +25,37 @@ from shopman.backstage.admin_console.operator_badge import BADGE_SESSION_KEY
 from shopman.backstage.services.operator import reset_operator_pin
 
 MANAGE_OPERATORS = "cashman.manage_operators"
+
+
+def registrar_no_historico(request, operador, mensagem: str) -> None:
+    """Deixa no histórico do Admin quem mexeu no crachá de quem, e quando.
+
+    Antes, emitir crachá não deixava rastro NENHUM: um gerente emitia para
+    qualquer pessoa, a qualquer hora, e o único vestígio era o digest mudando
+    em silêncio no banco.
+
+    ⚠️ Isto não IMPEDE a cópia não declarada — quem emite vê o código na tela e
+    uma câmera de celular vence qualquer prazo. O que a trilha faz é DETECTAR:
+    se o crachá de alguém destrava o PDV num dia de folga, existe onde olhar e
+    com o que comparar. Foi o buraco que sobrou depois de cercar o resto.
+
+    Vai para o `LogEntry` do Django, que é o histórico que o próprio Admin já
+    mostra — sem model novo, sem migração, e visível onde alguém procuraria.
+    """
+    from django.contrib.admin.models import CHANGE, LogEntry
+    from django.contrib.contenttypes.models import ContentType
+
+    # `create` direto, não o helper: `log_action` saiu do Django e o substituto
+    # (`log_actions`) mudou de assinatura entre versões. A linha é simples, e
+    # depender dela é mais estável do que perseguir o helper da vez.
+    LogEntry.objects.create(
+        user_id=request.user.pk,
+        content_type=ContentType.objects.get_for_model(operador),
+        object_id=str(operador.pk),
+        object_repr=operador.get_username(),
+        action_flag=CHANGE,
+        change_message=mensagem,
+    )
 
 
 @admin.register(PinCredential)
@@ -120,20 +152,28 @@ class PinCredentialAdmin(ModelAdmin):
         cred = creds[0]
         token = PinCredential.issue_badge(cred.user)
         # O token viaja pela SESSÃO, não pela URL: credencial em querystring vaza para
-        # histórico, log de proxy e ombro alheio. A página o retira ao mostrar.
+        # histórico, log de proxy e ombro alheio.
         request.session[BADGE_SESSION_KEY] = {
             "token": token,
             "name": cred.user.get_full_name().strip(),
             "username": cred.user.get_username(),
+            # Carimbo para a página saber até quando pode REEXIBIR (ver
+            # `operator_badge.py`): impressora que emperra não pode custar um
+            # crachá novo, e reexibir o mesmo token não cria credencial alguma.
+            "issued_at": timezone.now().isoformat(),
         }
+        registrar_no_historico(
+            request, cred.user, "Crachá emitido (o anterior deixou de valer)."
+        )
         return redirect("admin_console_operator_badge")
 
     @admin.action(description="Revogar crachá (crachá perdido)")
     def revoke_badge(self, request, queryset):
         revoked = 0
-        for cred in queryset:
+        for cred in queryset.select_related("user"):
             if cred.badge_hash:
                 cred.clear_badge()
+                registrar_no_historico(request, cred.user, "Crachá revogado.")
                 revoked += 1
         if revoked:
             self.message_user(
