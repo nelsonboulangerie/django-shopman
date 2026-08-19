@@ -168,6 +168,7 @@ def get_sidebar_navigation(request):
         _group("B.I.", "query_stats", [
             _item("Importações", "upload_file", _url("admin:backstage_importbatch_changelist"), permission=_can_view_bi),
             _item("Vendas históricas", "history_edu", _url("admin:backstage_historicalsale_changelist"), permission=_can_view_bi),
+            _item("Vendas por dia", "calendar_month", _url("admin:backstage_dailysalesfact_changelist"), permission=_can_view_bi),
             # A curadoria: o que veio de fora se traduz no vocabulário da casa.
             # A máquina propõe, a pessoa confirma aqui; só o confirmado lê.
             _item("De-para de produtos", "swap_horiz", _url("admin:backstage_productalias_changelist"), permission=_can_view_bi),

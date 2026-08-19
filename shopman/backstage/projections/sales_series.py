@@ -44,9 +44,16 @@ def daily_sales(since: date, until: date) -> dict[date, DailySales]:
     existe.
 
     A conciliação nativo × histórico ("o dia nativo vence") mora na camada
-    canônica (``bi/canonical.py``); aqui só se dobra por dia.
+    canônica (``bi/canonical.py``); aqui só se dobra por dia. Se a série está
+    materializada para a janela inteira (``bi/daily_series``), lê de lá — mesma
+    conta, feita antes; senão calcula ao vivo, que é o mesmo caminho.
     """
     from shopman.backstage.bi.canonical import read_sales
+    from shopman.backstage.bi.daily_series import materialized
+
+    ready = materialized(since, until)
+    if ready is not None:
+        return ready
 
     revenue: dict[date, int] = defaultdict(int)
     orders: dict[date, int] = defaultdict(int)

@@ -23,6 +23,7 @@
 | [`omotenashi_qa`](#omotenashi_qa) | backstage | QA | Lista matriz manual QA Omotenashi com evidências do seed |
 | [`ingest_yooga`](#ingest_yooga) | backstage | B.I. | Aterrissa o export do Yooga em `HistoricalSale`, por lote (hash, validação, uma transação) |
 | [`suggest_aliases`](#suggest_aliases) | backstage | B.I. | Propõe de-paras (produto, categoria, forma de pagamento) a partir do histórico; nunca confirma |
+| [`refresh_bi_daily_series`](#refresh_bi_daily_series) | backstage | B.I. | Recomputa a série diária materializada (últimos dias no worker; `--all` do início) |
 | [`release-readiness`](#release-readiness) | script | Release | Consolida checks locais e bloqueios externos |
 | [`seed`](#seed) | shop | Seed | Popula banco com dados da Nelson Boulangerie |
 
@@ -489,6 +490,23 @@ python manage.py suggest_aliases --source yooga --kind product --min-score 80
 
 As regras **padrão** de categoria (23 trechos) e de forma de pagamento (15) não vêm daqui: vêm
 do `seed` / `setup_bi_reference`, já confirmadas (curadoria do dono).
+
+### refresh_bi_daily_series
+
+**Propósito:** Recomputa `DailySalesFact`, a série diária de vendas **materializada** do B.I.
+(BI-DATA-FOUNDATION-PLAN, P3), a partir da camada canônica. Uma linha por dia coberto —
+dia sem venda entra com zero vendas (presença = cobertura); o leitor (`sales_series.daily_sales`)
+só usa a tabela quando a janela está inteira coberta e cai para o cálculo ao vivo se não.
+
+**Uso:**
+```bash
+python manage.py refresh_bi_daily_series            # últimos 3 dias (o que o worker roda)
+python manage.py refresh_bi_daily_series --all      # zera e recomputa do primeiro dia com venda
+python manage.py refresh_bi_daily_series --from 2026-08-01 --to 2026-08-18
+```
+
+Roda sozinho no `maintenance_worker` (ciclo de 300 s), no fim do `ingest_yooga` (`--all`) e no
+fim do `seed`. Recomputável do zero em segundos; nada aqui é fonte de verdade.
 
 ## Wrappers de diagnóstico
 

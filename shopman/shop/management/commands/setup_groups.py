@@ -77,6 +77,7 @@ class Command(BaseCommand):
                 # se lê no Admin com a mesma persona: trilha, somente leitura.
                 _perm("backstage", "importbatch", "view_importbatch"),
                 _perm("backstage", "historicalsale", "view_historicalsale"),
+                _perm("backstage", "dailysalesfact", "view_dailysalesfact"),
                 # …e curam os de-paras (a máquina propõe, o gestor confirma). Sem
                 # apagar: rejeitar é estado, e a trilha de quem confirmou fica.
                 *[

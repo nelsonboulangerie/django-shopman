@@ -53,6 +53,10 @@ MAINTENANCE_COMMANDS = (
     "detect_operation_episodes",
     # Timer de forno sem Concluir dentro do teto não mede (ADR-021 §4).
     "sweep_stale_oven_runs",
+    # A série diária materializada do B.I. acompanha o dia: hoje, ontem e
+    # anteontem recomputados a cada ciclo. Sem isto a projeção leria a tabela
+    # de ontem como se fosse de agora — e a tabela só existe para bater.
+    "refresh_bi_daily_series",
     # Frescor vencido não vira propaganda: announcement pendente além do prazo caduca.
     "expire_stale_announcements",
     # Aprovado com hora marcada sai sozinho quando o relógio chega.

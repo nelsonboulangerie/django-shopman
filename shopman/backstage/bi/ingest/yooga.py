@@ -317,6 +317,13 @@ def ingest(
     finally:
         workbook.close()
 
+    # O passado mudou; o passado materializado tem de mudar junto — do zero,
+    # porque um export pode trazer dias que a série ainda não conhecia.
+    from shopman.backstage.bi.daily_series import refresh_all
+
+    days = refresh_all()
+    log(f"↻ série diária do B.I. recomputada: {days} dias.")
+
     total = HistoricalSale.objects.filter(source=SOURCE).count()
     log(
         f"✅ lote #{batch.pk}: {batch.sales_created} vendas novas, "

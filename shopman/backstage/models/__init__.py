@@ -7,6 +7,7 @@ from .blind_prep import BlindPrepCode
 from .cash_register import CashMovement, CashShift, POSTerminal
 from .closing import DayClosing
 from .consumption import Beverage, ConsumptionRole, ProductConsumptionTag, Reading
+from .daily_sales import DailySalesFact
 from .day_context import DayContext, HolidayScope
 from .historical_sale import HistoricalSale, HistoricalSaleItem
 from .import_batch import ImportBatch
@@ -45,6 +46,7 @@ __all__ = [
     "CashMovement",
     "CashShift",
     "ConsumptionRole",
+    "DailySalesFact",
     "DayClosing",
     "DayContext",
     "HolidayScope",
