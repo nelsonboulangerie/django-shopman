@@ -219,6 +219,17 @@ def _dimensions_for(spec: MetricSpec, context: tuple[str, ...]) -> tuple[str, ..
     return (*spec.dimensions, *(dim for dim in CONTEXT_DIMENSIONS if dim in context))
 
 
+#: Famílias que são APURAÇÃO, não faturamento: a API só as entrega a quem tem
+#: ``cashman.audit_shift`` (ver ``api/bi.py``); a gramática esconde a métrica.
+AUDIT_ONLY_FAMILIES: frozenset[str] = frozenset({"cash"})
+
+
+def metric_family(metric: str) -> str:
+    """A família de uma métrica, ou "" se ela não existe (a validação diz o resto)."""
+    spec = METRICS.get(metric)
+    return spec.family if spec is not None else ""
+
+
 def metric_options() -> tuple[BIExploreMetricOption, ...]:
     context = available_context_dimensions()
     return tuple(
@@ -826,35 +837,28 @@ def _oven_rows(spec, by, by2, date_from, date_to) -> list[BIExploreRow]:
 
 
 def _cash_rows(spec, by, by2, date_from, date_to) -> list[BIExploreRow]:
-    """Diferença de caixa por dia/operador: a soma de ``count`` + correções de cada turno fechado (livro do ``cashman``)."""
-    from shopman.cashman.models import Shift
+    """Diferença de caixa por dia/operador: ``count`` + correções de cada turno fechado, pelo livro do ``cashman``.
 
-    from .bi_cash import _difference_by_shift
-
-    shifts = list(
-        Shift.objects.filter(
-            status=Shift.Status.CLOSED,
-            closed_at__date__range=(date_from, date_to),
-        ).select_related("operator")
-    )
-    difference_by_shift = _difference_by_shift([shift.pk for shift in shifts])
+    Apuração, não faturamento — a API só entrega esta família a quem tem
+    ``cashman.audit_shift`` (o gate está na view; a gramática esconde a métrica
+    de quem não pode).
+    """
+    from shopman.backstage.bi.sources import cashman
 
     total: dict[tuple, int] = defaultdict(int)
     labels: dict[tuple, tuple[str, str]] = {}
-    for shift in shifts:
-        local = timezone.localtime(shift.closed_at)
+    for shift in cashman.read_closed_shifts(date_from, date_to):
         parts = []
         for dim in (by, by2):
             if not dim:
                 parts.append(("", ""))
             elif dim == "time":
-                iso = local.date().isoformat()
+                iso = shift.closed_at.date().isoformat()
                 parts.append((iso, iso))
             elif dim == "operator":
-                username = shift.operator.get_username()
-                parts.append((username, username))
+                parts.append((shift.operator_key, shift.operator_key))
         key = (parts[0][0], parts[1][0])
-        total[key] += difference_by_shift.get(shift.pk, 0)
+        total[key] += shift.difference_q or 0
         labels[key] = (parts[0][1], parts[1][1])
 
     return [

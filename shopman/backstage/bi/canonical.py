@@ -186,3 +186,33 @@ def iter_days(date_from: date, date_to: date) -> Iterator[date]:
     while day <= date_to:
         yield day
         day += timedelta(days=1)
+
+
+# ── Caixa: o livro do cashman como evento canônico ──────────────────────────
+#
+# O caixa não aterrissa: `cashman.Entry` já é ledger imutável com carimbo do
+# servidor; o adaptador (`bi/sources/cashman.py`) só o traduz. Não há de-para:
+# os tipos são fechados e da própria casa.
+
+
+@dataclass(frozen=True, slots=True)
+class CanonicalCashEvent:
+    key: int  # pk do lançamento
+    shift_key: int
+    operator_key: str  # username de quem agiu
+    approved_by_key: str  # username da segunda assinatura, ou ""
+    kind: str  # Entry.Kind
+    amount_q: int  # efeito no saldo, assinado; 0 quando não mexe em dinheiro
+    at: datetime  # local, aware
+    day: date
+    order_ref: str
+    parent_key: int | None
+
+
+@dataclass(frozen=True, slots=True)
+class CanonicalShift:
+    key: int
+    operator_key: str
+    opened_at: datetime  # local
+    closed_at: datetime | None  # local; None enquanto aberto
+    difference_q: int | None  # Σ count + correções; None enquanto não houve contagem

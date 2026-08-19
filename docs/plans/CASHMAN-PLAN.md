@@ -326,6 +326,13 @@ vendas cash não gera falso positivo.
 
 ## WP-8: a trava da gaveta e o B.I. sobre o livro
 
+> ✅ **A metade "B.I. sobre o livro" foi entregue pela fundação de dados do B.I.**
+> ([BI-DATA-FOUNDATION-PLAN](BI-DATA-FOUNDATION-PLAN.md), P4, branch
+> `feat/bi-cash-canonical`, 2026-08-19): `by_operator` com aberturas/destraves/troco,
+> `drawer_by_hour`, contrato regenerado, `cash.vue`. Com o gate novo do dono: o painel de
+> caixa exige `cashman.audit_shift` além de `view_bi`. A metade "trava da gaveta" (cherry-pick
+> do #198 no PDV) segue neste WP.
+
 **Entrega**
 
 - Cherry-pick da branch do #198: `useCashDrawer.readState`, `useDrawerLock`,
