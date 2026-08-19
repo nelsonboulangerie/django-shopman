@@ -1302,12 +1302,19 @@ def validate_manager_approval(payload: dict, *, operator_username: str) -> None:
     )
 
 
-def validate_manager_override(approval: dict | None, *, operator_username: str, action: str) -> None:
+def validate_manager_override(approval: dict | None, *, operator_username: str, action: str):
     """Gate an exceptional POS operation behind the manager PIN challenge.
 
     Cancelar uma venda fechada é exceção auditada (anti-fraude), não fluxo do
     operador: exige o mesmo desafio de PIN gerencial do desconto acima do teto
     (``cashman.adjust_shift``), sempre — não há limiar.
+
+    Devolve o ``User`` AUTORIZADO, e é ele que vai para o ``approved_by`` da
+    linha do livro. Antes o validador conferia username+PIN+permissão e jogava o
+    User fora; quem persistia era uma segunda consulta pelo mesmo username,
+    exigindo só ``is_active + is_staff`` — sem re-checar ``adjust_shift``.
+    Validar A e persistir B dá o mesmo resultado enquanto os dois momentos ficam
+    na mesma request, e vira buraco pronto no primeiro refactor que os separar.
     """
     approval = approval or {}
     username = str(approval.get("username") or "").strip()
@@ -1320,7 +1327,8 @@ def validate_manager_override(approval: dict | None, *, operator_username: str, 
             focus="approval",
             recovery="Peça a um gerente autorizado para aprovar com o PIN.",
         )
-    if _verify_manager_pin(username, pin) is None:
+    approver = _verify_manager_pin(username, pin)
+    if approver is None:
         raise PosIntentError(
             code="manager_approval_invalid",
             message="Aprovação gerencial inválida.",
@@ -1334,6 +1342,7 @@ def validate_manager_override(approval: dict | None, *, operator_username: str, 
         operator_username,
         username,
     )
+    return approver
 
 
 def _replace_session_ops(session: Session, payload: dict, operator_username: str) -> list[dict]:
@@ -1877,14 +1886,26 @@ def _settle_pos_sale(order: Order, *, shift, operator_username: str) -> dict:
             )
     except Exception:
         # A venda já commitou e o dinheiro já está na gaveta: não há o que
-        # desfazer no pedido. Fica o erro; o cruzamento Payman × livro-caixa
-        # (WP-7) e a leitura Z do turno acusam a venda sem linha.
+        # desfazer no pedido. Fica o erro; quem acusa no dia seguinte está logo
+        # abaixo.
         logger.exception("pos_sale_settlement_failed order=%s", order.ref)
+        # Dois acusadores, e os dois existem: o check `cash_ledger_mismatch` da
+        # reconciliação diária (`backstage/services/financial_reconciliation.py
+        # ::_check_cash_ledger`), que cruza o capturado no Payman com as linhas
+        # do livro nas duas direções, e a leitura Z do turno.
     return {}
 
 
 def _record_sale(order: Order, *, shift, operator, cash_q: int, payment_ref: str, intents: dict) -> None:
-    """A linha ``sale`` da venda no livro do turno; idempotente por (turno, pedido)."""
+    """A linha ``sale`` da venda no livro do turno; idempotente por (turno, pedido).
+
+    Quem GARANTE a unicidade é a ``UniqueConstraint`` parcial do pacote
+    (``cashman_entry_one_sale_per_order_uq``): entre o ``exists()`` e o insert
+    cabe o segundo submit de um retry de rede do PDV. O ``exists()`` fica como
+    fast-path — evita a ida ao banco no caso comum e a exceção no log —, e um
+    ``DUPLICATE_ENTRY`` que escape dele é o mesmo fato: a venda já está no livro,
+    não há nada a fazer nem a avisar.
+    """
     from shopman.cashman import Entry
 
     if Entry.objects.filter(shift=shift, kind=Entry.Kind.SALE, order_ref=order.ref).exists():
@@ -1899,15 +1920,22 @@ def _record_sale(order: Order, *, shift, operator, cash_q: int, payment_ref: str
     if tendered_q > 0:
         payload["received_q"] = tendered_q
         payload["change_q"] = _int_q(payment.get("change_q"))
-    cash_ledger.record(
-        "sale",
-        shift=shift,
-        operator=operator,
-        amount_q=int(cash_q),
-        order_ref=order.ref,
-        payment_ref=str(payment_ref or ""),
-        payload=payload,
-    )
+    from shopman.cashman import CashError
+
+    try:
+        cash_ledger.record(
+            "sale",
+            shift=shift,
+            operator=operator,
+            amount_q=int(cash_q),
+            order_ref=order.ref,
+            payment_ref=str(payment_ref or ""),
+            payload=payload,
+        )
+    except CashError as exc:
+        if exc.code != "DUPLICATE_ENTRY":
+            raise
+        logger.info("pos_sale_already_in_ledger order=%s shift=%s", order.ref, shift.pk)
 
 
 def _terminal_cash_amount_q(order: Order) -> int:

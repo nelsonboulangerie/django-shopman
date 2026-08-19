@@ -221,7 +221,7 @@ def test_pedido_de_outro_turno_nao_e_atendido_daqui(operator, manager):
     other_shift = cash.open_shift(
         operator=other, terminal=Terminal.objects.create(ref="pos-2", label="POS 2"), float_q=0
     )
-    alheio = cash.record(Entry.Kind.CHANGE_REQUESTED, shift=other_shift, operator=other, payload={"kind": "coins"})
+    alheio = cash.record(Entry.Kind.CHANGE_REQUESTED, shift=other_shift, operator=other, payload={"amount_q": 10000})
 
     with pytest.raises(POSError, match="não encontrado"):
         pos_service.serve_change_request(operator=operator, request_ref=str(alheio.pk), manager_approval=_approval())
@@ -445,3 +445,64 @@ def test_o_pedido_anuncia_no_canal_de_alertas(operator, monkeypatch, django_capt
     assert payload["denominations"] == [50]
     assert payload["status"] == "pending"
     assert payload["requested_by"] == "marina"
+
+
+def test_a_segunda_assinatura_e_o_user_que_o_pin_autorizou(operator, manager):
+    """Quem valida é quem persiste: o validador devolve o User autorizado.
+
+    Antes o PIN era conferido num objeto e a assinatura gravada por outro — uma
+    releitura pelo nome digitado, exigindo só `is_active + is_staff`, sem
+    re-checar `cashman.adjust_shift`. Dá o mesmo resultado enquanto os dois
+    momentos moram na mesma request, e é buraco pronto no refactor que os
+    separar.
+    """
+    from shopman.shop.services.pos import validate_manager_override
+
+    autorizado = validate_manager_override(
+        _approval(), operator_username=operator.get_username(), action="cash_change_request_serve"
+    )
+
+    assert autorizado == manager
+    assert autorizado.has_perm("cashman.adjust_shift")
+
+
+def test_o_anuncio_sai_de_quem_ouve_a_linha_entrar_no_livro(operator, monkeypatch, django_capture_on_commit_callbacks):
+    """Gravar direto no livro, sem passar pelo service do balcão, também anuncia.
+
+    O anúncio é consequência do FATO (a linha entrou), não de alguém lembrar de
+    anunciar: quem escreve por outro caminho — um comando, o Admin, um fluxo
+    novo — não precisa saber que existe SSE.
+    """
+    enviados = []
+    monkeypatch.setattr(
+        "shopman.shop.handlers._sse_emitters._publish_backstage",
+        lambda kind, event_type, payload, scope: enviados.append(payload),
+    )
+    shift = cash.open_shift_for(operator)
+
+    with django_capture_on_commit_callbacks(execute=True):
+        entry = cash.record(
+            "change_requested", shift=shift, operator=operator, payload={"amount_q": 5000, "denominations": [1000]}
+        )
+
+    assert enviados, "a linha no livro é o que dispara o anúncio"
+    assert enviados[-1]["ref"] == str(entry.pk)
+    assert enviados[-1]["status"] == "pending"
+    assert enviados[-1]["denominations"] == [1000]
+
+
+def test_atender_o_pedido_anuncia_o_estado_do_PEDIDO_nao_o_do_atendimento(
+    operator, manager, monkeypatch, django_capture_on_commit_callbacks
+):
+    enviados = []
+    entry = pos_service.request_change(operator=operator, amount_raw="50")
+    monkeypatch.setattr(
+        "shopman.shop.handlers._sse_emitters._publish_backstage",
+        lambda kind, event_type, payload, scope: enviados.append(payload),
+    )
+
+    with django_capture_on_commit_callbacks(execute=True):
+        pos_service.serve_change_request(operator=operator, request_ref=str(entry.pk), manager_approval=_approval())
+
+    assert enviados[-1]["ref"] == str(entry.pk)
+    assert enviados[-1]["status"] == "served"

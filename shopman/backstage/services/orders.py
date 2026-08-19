@@ -123,6 +123,7 @@ def settle_delivery_cash(order, *, operator, amount_raw: str = "", actor: str, c
     incluído, e grava ``courier_in`` na mesma transação do ``cod_settled``.
     """
     from shopman.cashman import services as cash
+    from shopman.cashman.exceptions import CashError
 
     from shopman.backstage.services.pos import parse_money_to_q
 
@@ -139,6 +140,11 @@ def settle_delivery_cash(order, *, operator, amount_raw: str = "", actor: str, c
             amount_q=amount_q,
             change_back_q=change_back_q,
         )
+    except CashError as exc:
+        # Dois acertos do mesmo pedido no mesmo turno (duplo toque no gestor) são
+        # recusados pela constraint do livro; a tela merece o 400 com a mensagem
+        # do pacote, não um 500.
+        raise OrderError(exc.message) from exc
     except (ValueError, InvalidTransition) as exc:
         raise OrderError(str(exc)) from exc
 

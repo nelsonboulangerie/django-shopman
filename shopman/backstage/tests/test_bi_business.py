@@ -295,7 +295,7 @@ def test_cash_drawer_behaviour_comes_from_the_ledger(db):
     for _ in range(3):
         cash.record(Entry.Kind.DRAWER_OPEN, shift=shift_a, operator=ana, at=at_10, reason="x")
     cash.record(Entry.Kind.DRAWER_UNLOCK, shift=shift_a, operator=ana, approved_by=manager, at=at_16)
-    cash.record(Entry.Kind.CHANGE_REQUESTED, shift=shift_b, operator=bia, at=at_16, payload={"kind": "coins"})
+    cash.record(Entry.Kind.CHANGE_REQUESTED, shift=shift_b, operator=bia, at=at_16, payload={"amount_q": 10000})
 
     report = build_bi_cash()
 

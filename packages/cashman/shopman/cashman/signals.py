@@ -1,7 +1,11 @@
 """Sinais do Cashman.
 
-O pacote anuncia; quem quer efeito (SSE, alerta, B.I. incremental) escuta. O
-pacote não sabe o que é SSE.
+O pacote anuncia; quem quer efeito escuta. O pacote não sabe o que é SSE.
+
+Quem escuta hoje: o backstage liga ``entry_recorded`` a
+``shopman/backstage/handlers.py::on_entry_for_change_request`` (registro em
+``backstage/apps.py``), que anuncia o pedido de troco no canal ``alerts``.
+``shift_opened`` e ``shift_closed`` ainda não têm ouvinte.
 
     from shopman.cashman.signals import entry_recorded
 

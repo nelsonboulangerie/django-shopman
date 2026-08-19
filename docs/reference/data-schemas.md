@@ -1106,6 +1106,12 @@ coluna**: são `Σ` do livro (`services.expected_before_count/counted/difference
 **não** repete valor. Guarda de imutabilidade igual à do `stockman.Move`
 (`update()`/`delete()` levantam); imutabilidade real no banco não é prometida.
 
+⚠️ **Um pedido entra uma vez por turno, por tipo.** `UniqueConstraint` parcial em
+`(shift, order_ref)` para `sale` e para `cod_settled` (`order_ref` vazio fica de
+fora: não há pedido a que amarrar). Dois submits do mesmo fechamento — retry de
+rede do PDV — dobrariam o esperado do turno, e um `exists()` antes do insert é
+TOCTOU. Quem chama recebe `CashError("DUPLICATE_ENTRY")`, não `IntegrityError`.
+
 | `kind` | `amount_q` | `parent` | payload | Escrito por |
 |--------|-----------|----------|---------|-------------|
 | `float_in` | > 0 | — | — | `services.open_shift` |
@@ -1120,10 +1126,10 @@ coluna**: são `Σ` do livro (`services.expected_before_count/counted/difference
 | `count_correction` | ± (exige `approved_by`) | `count` | — (motivo em `reason`) | `services.correct_count` |
 | `drawer_open` | 0 | — | — (motivo em `reason`) | abertura sem venda: `backstage/services/pos.py::register_drawer_opening` |
 | `drawer_unlock` | 0 (exige `approved_by`) | — | `{drawer_raw}` (o byte que o sensor devolveu, ex. `0x12`) | destrave da trava da gaveta: `backstage/services/pos.py::unlock_drawer` (`POST pos/cash/drawer-unlock/`, PIN de gerente). A trava é do PDV (`useDrawerLock`): recusa INICIAR a próxima venda quando o agente do balcão diz `known: true, open: true`; estado desconhecido nunca trava; sem carência; cada destrave vale UMA venda |
-| `change_requested` | 0 | — | `{amount_q, denominations: [int], note}` | pedido de troco: `backstage/services/pos.py::request_change` |
+| `change_requested` | 0 | — | `{amount_q, denominations: [int], note}` | pedido de troco: `backstage/services/pos.py::request_change`. `amount_q` inteiro > 0 e `denominations` lista de centavos positivos são exigidos pelo próprio `record` (`CashError("INVALID_PAYLOAD")`); QUAIS valores valem é da superfície (ver abaixo) |
 | `change_served` | 0 (exige `approved_by`) | `change_requested` | — | `serve_change_request` (PIN de gerente, `cashman.adjust_shift`) |
 | `change_cancelled` | 0 | `change_requested` | — | `cancel_change_request` |
-| `receipt_result` | 0 | `cash_out`/`cash_in` | `{status: printed\|failed\|skipped, detail}` | comprovante: `record_receipt_result` (só o navegador do balcão sabe se imprimiu; a conferência no Admin lê o ÚLTIMO filho) |
+| `receipt_result` | 0 | `cash_out`/`cash_in` | `{status: printed\|failed\|skipped, detail}` | comprovante: `record_receipt_result` (só o navegador do balcão sabe se imprimiu; a conferência no Admin lê o ÚLTIMO filho). A lista de status é fonte única em `cashman.Entry.RECEIPT_STATUSES`, exigida pelo `record`; o backstage valida antes só para a mensagem |
 | `note` | 0 | — | `{text}` | anotação gerencial em turno fechado |
 
 **Linhas nascidas do backfill** (`backstage/0030_cashman_backfill_and_cut`, WP-5 do CASHMAN-PLAN;
@@ -1138,6 +1144,11 @@ o caixa legado `CashShift`/`CashMovement`/`POSTerminal` entrou no livro uma vez 
 `expected_q` gravado, tipicamente pedido cancelado depois do fechamento) e
 `note.payload = {legacy_shift_id, legacy_status: "open", balance_q}` para turno legado que ainda
 estava aberto no corte (fechado sem contagem).
+
+⚠️ As linhas do backfill nascem de `Entry.objects.create` dentro da migração, não do
+`services.record`, e por isso não passam pela validação de payload acima (o
+`change_requested` legado, por exemplo, não tem `amount_q`). É de propósito: a guarda
+existe para o que se escreve de hoje em diante; o passado entrou como estava.
 
 O estado do pedido de troco é **dobrado** do livro (`services.change_requests`):
 `pending` → `served`/`cancelled` pela primeira resolução com `parent` apontando

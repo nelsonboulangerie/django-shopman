@@ -2,14 +2,19 @@
 
 ``record`` é o ÚNICO escritor de ``Entry`` fora de ``shifts.open_shift`` e
 ``shifts.close_shift`` (que gravam ``float_in`` e ``count``, os dois tipos que
-só existem como parte de abrir e fechar). Toda validação de sinal, ``parent`` e
-segunda assinatura acontece aqui, antes do banco, com mensagem em português;
-o CheckConstraint do model é a rede de baixo.
+só existem como parte de abrir e fechar). Sinal, ``parent`` e segunda assinatura
+são validados aqui, antes do banco, com mensagem em português; o CheckConstraint
+do model é a rede de baixo.
+
+O estado do turno é a exceção deliberada: ele NÃO é validado na instância
+recebida, e sim relido sob ``select_for_update`` na mesma transação que grava
+(ver ``record``). Custódia muda por outra conexão — a do gerente fechando — e
+uma leitura velha aqui é dinheiro entrando depois da contagem.
 """
 
 from __future__ import annotations
 
-from django.db import models, transaction
+from django.db import IntegrityError, models, transaction
 from django.utils import timezone
 from shopman.cashman.exceptions import CashError
 from shopman.cashman.models import Entry, Shift
@@ -47,6 +52,24 @@ def record(
     Levanta ``CashError`` (código legível) antes de tocar no banco quando o
     tipo é desconhecido ou reservado, o sinal não bate, o ``parent`` falta ou
     é do tipo/turno errado, ou a segunda assinatura falta.
+
+    **A custódia é relida do banco, sob lock, antes de gravar.** O ``shift`` que
+    chega é a instância que quem chamou leu ANTES — numa venda, antes até do
+    commit do pedido. Se o status viesse dela, uma venda em voo entraria depois
+    da contagem, num turno já CLOSED: o ``count`` congela "contado − esperado no
+    instante do fechamento", e uma linha posterior faria o livro provar um saldo
+    que a gaveta nunca teve. ``close_shift`` já tranca o turno com
+    ``select_for_update``; sem o mesmo lock aqui os dois caminhos não se
+    serializam. O custo é um ``SELECT … FOR UPDATE`` por lançamento — irrelevante
+    no volume de um balcão, e é ele que faz do fechamento cego uma garantia de
+    construção em vez de disciplina. Provado em
+    ``tests/test_concurrency.py``.
+
+    ⚠️ O que isto NÃO desfaz: a venda recusada aqui já aconteceu no balcão, e o
+    dinheiro está na gaveta depois da contagem. O lançamento tardio é impedido —
+    o buraco vira uma sobra na conferência, que é o que o fechamento cego existe
+    para revelar. Quem cruza os dois livros é o ``cash_ledger_mismatch``
+    (``shopman/backstage/services/financial_reconciliation.py``).
     """
     kind = str(kind or "")
     if kind not in Kind.values:
@@ -57,10 +80,6 @@ def record(
             "Fundo de troco e contagem só nascem ao abrir e fechar o turno.",
             {"kind": kind},
         )
-    if not shift.is_open and kind not in _ALLOWED_ON_CLOSED:
-        raise CashError("SHIFT_NOT_OPEN", "O turno já está fechado.", {"shift_id": shift.pk})
-    if kind == Kind.COUNT_CORRECTION and shift.is_open:
-        raise CashError("SHIFT_NOT_CLOSED", "A correção da contagem é para turno fechado.", {"shift_id": shift.pk})
 
     amount_q = int(amount_q or 0)
     if not Entry.sign_allows(kind, amount_q):
@@ -86,21 +105,98 @@ def record(
     if kind in Entry.APPROVAL_REQUIRED and approved_by is None:
         raise CashError("APPROVAL_REQUIRED", f"{Kind(kind).label} exige a assinatura de quem autorizou.", {"kind": kind})
 
-    entry = Entry.objects.create(
-        shift=shift,
-        operator=operator,
-        approved_by=approved_by,
-        at=at or timezone.now(),
-        kind=kind,
-        amount_q=amount_q,
-        order_ref=str(order_ref or ""),
-        payment_ref=str(payment_ref or ""),
-        parent=parent,
-        reason=str(reason or "").strip()[:200],
-        payload=dict(payload or {}),
-    )
-    transaction.on_commit(lambda: entry_recorded.send(sender=Entry, entry=entry))
+    payload = dict(payload or {})
+    _validate_payload(kind, payload)
+
+    with transaction.atomic():
+        locked = _locked_shift(shift)
+        if not locked.is_open and kind not in _ALLOWED_ON_CLOSED:
+            raise CashError("SHIFT_NOT_OPEN", "O turno já está fechado.", {"shift_id": shift.pk})
+        if kind == Kind.COUNT_CORRECTION and locked.is_open:
+            raise CashError("SHIFT_NOT_CLOSED", "A correção da contagem é para turno fechado.", {"shift_id": shift.pk})
+
+        try:
+            with transaction.atomic():
+                entry = Entry.objects.create(
+                    shift=shift,
+                    operator=operator,
+                    approved_by=approved_by,
+                    at=at or timezone.now(),
+                    kind=kind,
+                    amount_q=amount_q,
+                    order_ref=str(order_ref or ""),
+                    payment_ref=str(payment_ref or ""),
+                    parent=parent,
+                    reason=str(reason or "").strip()[:200],
+                    payload=payload,
+                )
+        except IntegrityError as exc:
+            # Um pedido entra uma vez por turno, por tipo (UniqueConstraint
+            # parcial no model): dois submits do mesmo fechamento dobrariam o
+            # esperado. Quem decide é o banco; a mensagem continua sendo da casa.
+            raise CashError(
+                "DUPLICATE_ENTRY",
+                f"{Kind(kind).label} do pedido {order_ref} já está no livro deste turno.",
+                {"kind": kind, "order_ref": str(order_ref or ""), "shift_id": shift.pk},
+            ) from exc
+        transaction.on_commit(lambda: entry_recorded.send(sender=Entry, entry=entry))
     return entry
+
+
+def _validate_payload(kind: str, payload: dict) -> None:
+    """O payload dos tipos que TÊM schema é conferido pelo único escritor.
+
+    Contrato que só a superfície cobra não é contrato — é a mesma razão pela qual
+    o motivo da sangria é exigido no servidor. Quem chama a API crua (ou um
+    comando, ou o seed) não passa pelo ``backstage``, e um pedido de troco de
+    ``-500`` viajaria calado até a tela de quem vai buscar o dinheiro.
+
+    Só os dois tipos que carregam DECISÃO no payload entram aqui. Os demais
+    guardam contexto livre (``note.text``, ``sale.intents``), e inventar schema
+    para eles seria regra sem defeito para prevenir.
+
+    ⚠️ O que este validador NÃO faz: dizer QUAIS cédulas o balcão pode pedir.
+    Esse catálogo é política da superfície, tem fonte única em
+    ``backstage/services/pos.py::CHANGE_DENOMINATIONS`` e viaja para a tela pela
+    projection; copiá-lo para cá criaria a segunda lista que aquele comentário
+    existe para evitar — e o pacote não pode importar o backstage (ADR-001).
+    Aqui se confere a FORMA: lista de centavos positivos.
+    """
+    if kind == Kind.CHANGE_REQUESTED:
+        amount_q = payload.get("amount_q")
+        if not isinstance(amount_q, int) or isinstance(amount_q, bool) or amount_q <= 0:
+            raise CashError(
+                "INVALID_PAYLOAD",
+                "O pedido de troco precisa do valor pedido, em centavos.",
+                {"kind": kind, "amount_q": amount_q},
+            )
+        denominations = payload.get("denominations") or []
+        if not isinstance(denominations, (list, tuple)) or any(
+            not isinstance(v, int) or isinstance(v, bool) or v <= 0 for v in denominations
+        ):
+            raise CashError(
+                "INVALID_PAYLOAD",
+                "As cédulas e moedas pedidas são uma lista de valores em centavos.",
+                {"kind": kind, "denominations": denominations},
+            )
+        return
+
+    if kind == Kind.RECEIPT_RESULT:
+        status = payload.get("status")
+        if status not in Entry.RECEIPT_STATUSES:
+            raise CashError(
+                "INVALID_PAYLOAD",
+                "O resultado do comprovante é impresso, falhou ou sem impressora.",
+                {"kind": kind, "status": status},
+            )
+
+
+def _locked_shift(shift: Shift) -> Shift:
+    """O turno relido sob ``select_for_update``: só o banco sabe se ele ainda está aberto."""
+    try:
+        return Shift.objects.select_for_update().only("id", "status").get(pk=shift.pk)
+    except Shift.DoesNotExist as exc:
+        raise CashError("SHIFT_NOT_OPEN", "Este turno não existe mais.", {"shift_id": shift.pk}) from exc
 
 
 # ── Leituras: o que o livro prova ─────────────────────────────────────────

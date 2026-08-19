@@ -80,6 +80,7 @@ def perform_day_closing(
                 )
             )
 
+        cash_summary = _cash_shift_summary(closing_date)
         DayClosing.objects.create(
             date=closing_date,
             closed_by=user,
@@ -87,7 +88,7 @@ def perform_day_closing(
                 "items": snapshot,
                 "production_summary": production_summary(closing_date),
                 "pending_production": _pending_production_snapshot(closing_date),
-                "cash_shift_summary": _cash_shift_summary(closing_date),
+                "cash_shift_summary": cash_summary,
                 "reconciliation_errors": _reconciliation_errors(
                     closing_date=closing_date,
                     items=snapshot,
@@ -95,7 +96,49 @@ def perform_day_closing(
             },
         )
 
+    _alert_open_cash_shifts(closing_date, cash_summary.get("open_shifts") or [])
     return closing_date
+
+
+def _alert_open_cash_shifts(closing_date: date, open_shifts: list[dict]) -> None:
+    """Avisa que o dia fechou com caixa aberto, dizendo de quem e em qual balcão.
+
+    O turno esquecido aberto já estava no snapshot (``open_shifts``), gravado no
+    ``DayClosing`` — o dado existia e ninguém era avisado. O gerente fechava o
+    dia e a gaveta continuava sob custódia de alguém que foi embora; a próxima
+    notícia era a contagem do dia seguinte, com o dinheiro de dois dias
+    misturado.
+
+    ⚠️ Avisar não é fechar. O turno segue aberto e o fechamento supervisório
+    continua sendo um gesto humano (``close_blocking_shift``, com contagem):
+    fechar a gaveta de outro por conta de um alerta seria contar dinheiro que
+    ninguém contou.
+
+    ⚠️ Isto NÃO muda a contabilidade do turno que atravessa a meia-noite: ele
+    continua entrando inteiro no dia em que FECHOU (``closed_at__date`` em
+    ``_cash_shift_summary``). O alerta só torna visível o que já acontecia.
+    """
+    if not open_shifts:
+        return
+    from shopman.shop.services import observability
+
+    quem = "; ".join(
+        f"{shift.get('operator') or 'sem operador'} no balcão {shift.get('terminal_ref') or 'sem terminal'}"
+        for shift in open_shifts
+    )
+    observability.create_operator_alert(
+        type="cash_shift_open_at_closing",
+        # Aviso, não erro: nada quebrou e nenhum dinheiro sumiu. É uma gaveta que
+        # ficou sob custódia de alguém que já saiu, e alguém precisa contá-la.
+        severity="warning",
+        message=(
+            f"O dia {closing_date.strftime('%d/%m')} fechou com caixa aberto: {quem}. "
+            "Conte a gaveta e feche o turno."
+        ),
+        dedupe_key=f"cash-open-at-closing:{closing_date.isoformat()}",
+        debounce_minutes=60,
+        open_shift_count=len(open_shifts),
+    )
 
 
 def _parse_qty(raw_qty) -> int:

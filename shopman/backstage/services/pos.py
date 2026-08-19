@@ -119,13 +119,13 @@ def register_cash_movement(
 
     approved_by = None
     if movement_removes_cash(api_kind, amount_q):
-        approval = manager_approval or {}
-        validate_manager_override(
-            approval,
+        # A segunda assinatura do livro é o User que o PIN autorizou, não uma
+        # releitura pelo nome digitado: quem valida é quem persiste.
+        approved_by = validate_manager_override(
+            manager_approval or {},
             operator_username=operator.get_username(),
             action=f"cash_{api_kind}",
         )
-        approved_by = _approver(approval)
 
     kind = MOVEMENT_KIND_BY_API[api_kind]
     signed_q = -amount_q if kind == "cash_out" else amount_q
@@ -177,7 +177,9 @@ def unlock_drawer(*, operator, manager_approval: dict | None = None, drawer_raw:
     from shopman.shop.services.pos import validate_manager_override
 
     shift = _open_shift_or_raise(operator)
-    validate_manager_override(
+    # A segunda assinatura do livro é o User que o PIN autorizou, não uma
+    # releitura pelo nome digitado: quem valida é quem persiste.
+    approved_by = validate_manager_override(
         manager_approval or {},
         operator_username=operator.get_username(),
         action="drawer_unlock",
@@ -190,7 +192,7 @@ def unlock_drawer(*, operator, manager_approval: dict | None = None, drawer_raw:
         "drawer_unlock",
         shift=shift,
         operator=operator,
-        approved_by=_approver(manager_approval or {}),
+        approved_by=approved_by,
         payload=payload,
     )
 
@@ -209,7 +211,7 @@ def refund_cash(*, operator, order_ref: str, manager_approval: dict | None = Non
     from shopman.shop.services.pos import validate_manager_override
 
     shift = _open_shift_or_raise(operator)
-    validate_manager_override(
+    approved_by = validate_manager_override(
         manager_approval or {},
         operator_username=operator.get_username(),
         action="cash_refund",
@@ -223,7 +225,7 @@ def refund_cash(*, operator, order_ref: str, manager_approval: dict | None = Non
         order,
         shift=shift,
         actor=operator,
-        approved_by=_approver(manager_approval or {}),
+        approved_by=approved_by,
         reason="devolução de venda cancelada",
     )
     if refunded_q <= 0:
@@ -310,14 +312,12 @@ def request_change(*, operator, amount_raw="0", denominations=None, note: str = 
     note = str(note or "").strip()[:120]
 
     shift = _open_shift_or_raise(operator)
-    entry = _record(
+    return _record(
         "change_requested",
         shift=shift,
         operator=operator,
         payload={"amount_q": amount_q, "denominations": denominations, "note": note},
     )
-    _announce_change_request(shift, _change_request(shift, entry.pk))
-    return entry
 
 
 def serve_change_request(*, operator, request_ref: str, manager_approval: dict | None = None):
@@ -330,24 +330,21 @@ def serve_change_request(*, operator, request_ref: str, manager_approval: dict |
     """
     from shopman.shop.services.pos import validate_manager_override
 
-    validate_manager_override(
+    approved_by = validate_manager_override(
         manager_approval or {},
         operator_username=operator.get_username(),
         action="cash_change_request_serve",
     )
-    approved_by = _approver(manager_approval or {})
 
     shift = _open_shift_or_raise(operator)
     request = _pending_request(shift, request_ref)
-    entry = _record(
+    return _record(
         "change_served",
         shift=shift,
         operator=operator,
         approved_by=approved_by,
         parent=request,
     )
-    _announce_change_request(shift, _change_request(shift, request.pk))
-    return entry
 
 
 def cancel_change_request(*, operator, request_ref: str):
@@ -359,9 +356,7 @@ def cancel_change_request(*, operator, request_ref: str):
     """
     shift = _open_shift_or_raise(operator)
     request = _pending_request(shift, request_ref)
-    entry = _record("change_cancelled", shift=shift, operator=operator, parent=request)
-    _announce_change_request(shift, _change_request(shift, request.pk))
-    return entry
+    return _record("change_cancelled", shift=shift, operator=operator, parent=request)
 
 
 def pending_change_requests(shift) -> list[dict]:
@@ -394,44 +389,20 @@ def _pending_request(shift, request_ref: str):
     )
     if request is None:
         raise POSError("Pedido de troco não encontrado.")
-    state = _change_request(shift, request.pk)
+    state = change_request_state(shift, request.pk)
     if state.get("status") != "pending":
         raise POSError("Este pedido de troco já foi resolvido.")
     return request
 
 
-def _change_request(shift, entry_id: int) -> dict:
+def change_request_state(shift, entry_id: int) -> dict:
+    """O estado dobrado de UM pedido de troco (pendente, atendido ou cancelado)."""
     from shopman.cashman import services as cash
 
     for request in cash.change_requests(shift):
         if request["entry_id"] == entry_id:
             return request
     return {"entry_id": entry_id}
-
-
-def _announce_change_request(shift, request: dict) -> None:
-    """Anuncia o pedido no canal `alerts` do SSE.
-
-    ⚠️ Isto NÃO substitui o operador chamar em voz alta. Numa padaria pequena
-    ninguém está com a tela de alertas aberta esperando — e hoje as superfícies
-    de operador leem alertas por POLL, não por este canal. O que o registro
-    entrega de verdade é a trilha (quem pediu, o quê, quando) e o dado para o
-    B.I. depois: quantas vezes por dia falta troco, e em qual horário. Prometer
-    recado entregue seria mentira, e mentira de tela vira dinheiro no chão.
-    """
-    from shopman.shop.handlers._sse_emitters import emit_change_request
-
-    emit_change_request(
-        {
-            "ref": str(request.get("entry_id") or ""),
-            "status": request.get("status", ""),
-            "amount_q": request.get("amount_q", 0),
-            "denominations": request.get("denominations", []),
-            "shift_id": shift.pk,
-            "terminal_ref": shift.terminal.ref if shift.terminal_id else "",
-            "requested_by": request.get("requested_by", ""),
-        }
-    )
 
 
 def close_cash_shift(*, operator, closing_amount_raw="0", notes: str = ""):
@@ -532,9 +503,17 @@ def cash_movement_receipt_payload(*, operator, entry_id: int, reprint: bool = Fa
     }
 
 
-#: O que o balcão pode dizer sobre o papel. ``pending`` não entra: é o estado de
-#: quem ainda não disse nada, e "dizer que não disse" seria linha vazia no livro.
-RECEIPT_RESULT_STATUSES = ("printed", "failed", "skipped")
+def _receipt_result_statuses() -> tuple[str, ...]:
+    """O que o balcão pode dizer sobre o papel — a lista é do pacote.
+
+    ``pending`` não entra: é o estado de quem ainda não disse nada, e "dizer que
+    não disse" seria linha vazia no livro. A validação aqui existe para a
+    mensagem ser do dialeto do balcão; quem recusa de verdade é o único escritor
+    (``cashman.services.record``), que lê a MESMA lista.
+    """
+    from shopman.cashman.models import Entry
+
+    return tuple(sorted(Entry.RECEIPT_STATUSES))
 
 
 def record_receipt_result(*, operator, entry_id: int, status: str, detail: str = ""):
@@ -547,8 +526,18 @@ def record_receipt_result(*, operator, entry_id: int, status: str, detail: str =
     Nunca volta atrás de `printed`: se já imprimiu uma vez, imprimiu — um
     resultado posterior não apaga o anterior (livro é livro), e a leitura
     considera o último; por isso, depois de `printed`, não se grava outro.
+
+    ⚠️ **Decisão consciente: aqui a guarda é leitura-e-grava, sem constraint.**
+    Entre o `receipt_result_for` e o `_record` cabe um segundo toque, e dois
+    resultados podem entrar. Diferente da venda (onde a unicidade é
+    `UniqueConstraint` no pacote, porque uma linha a mais dobra o dinheiro
+    esperado do turno), aqui o efeito no saldo é ZERO por construção: o pior caso
+    é uma linha a mais na trilha do papel, e a leitura já é "o último filho
+    vence". Constraint por tipo+pai só para isso seria índice pago para prevenir
+    uma anotação repetida. Se um dia o resultado do papel virar decisão de
+    dinheiro, esta escolha muda junto.
     """
-    if status not in RECEIPT_RESULT_STATUSES:
+    if status not in _receipt_result_statuses():
         raise POSError("Resultado de impressão inválido.")
 
     entry = _movement_entry(operator, entry_id)
@@ -613,14 +602,6 @@ def _record(kind, **kwargs):
         return cash.record(kind, **kwargs)
     except CashError as exc:
         raise POSError(exc.message) from exc
-
-
-def _approver(approval: dict):
-    """O gerente que assinou, como User: o livro guarda a pessoa, não o nome digitado."""
-    from django.contrib.auth import get_user_model
-
-    username = str(approval.get("username") or "").strip()
-    return get_user_model().objects.filter(username=username, is_active=True, is_staff=True).first()
 
 
 def _int_or_none(value) -> int | None:

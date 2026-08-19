@@ -61,7 +61,7 @@ shopman/                Namespace package (PEP 420) — sem __init__.py
     ├── bi/             fundação de dados do B.I. (ingest/ por fonte + ImportBatch; mapping.py sugere de-paras; canônica e adaptadores — BI-DATA-FOUNDATION-PLAN)
     ├── projections/    kds, order_queue, pos, closing, production, dashboard, bi_* (camada de leitura do B.I.)
     ├── services/       operator, closing, production, cash
-    ├── models/         KDSInstance, KDSTicket, DayClosing, OperatorAlert, CashRegister*
+    ├── models/         KDSInstance, KDSTicket, DayClosing, OperatorAlert, POSTab
     ├── admin_console/  telas Admin/Unfold (produção, fechamento)
     ├── middleware.py   OnboardingMiddleware
     ├── urls.py         montado em /api/v1/backstage/ + SSE /events/ (os apps são surfaces/*-nuxt)

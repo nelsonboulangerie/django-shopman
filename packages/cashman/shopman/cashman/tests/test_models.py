@@ -104,6 +104,47 @@ def test_sign_allows_e_a_mesma_tabela_do_check_constraint():
     assert set(Entry.SIGN_BY_KIND) == set(Entry.Kind.values)
 
 
+def test_o_banco_recusa_duas_vendas_do_mesmo_pedido_no_mesmo_turno(operator, terminal):
+    """A idempotência da venda é constraint, não boa vontade de quem chama.
+
+    Dois submits do mesmo fechamento (retry de rede do PDV) dobrariam o dinheiro
+    esperado do turno se a unicidade dependesse de um `exists()` antes do insert.
+    """
+    shift = _shift(operator, terminal)
+    Entry.objects.create(shift=shift, operator=operator, kind=Entry.Kind.SALE, amount_q=1500, order_ref="A01")
+
+    with pytest.raises(IntegrityError), transaction.atomic():
+        Entry.objects.create(shift=shift, operator=operator, kind=Entry.Kind.SALE, amount_q=1500, order_ref="A01")
+
+
+def test_o_banco_recusa_dois_acertos_de_entrega_do_mesmo_pedido_no_mesmo_turno(operator, terminal):
+    shift = _shift(operator, terminal)
+    Entry.objects.create(shift=shift, operator=operator, kind=Entry.Kind.COD_SETTLED, amount_q=1500, order_ref="A01")
+
+    with pytest.raises(IntegrityError), transaction.atomic():
+        Entry.objects.create(shift=shift, operator=operator, kind=Entry.Kind.COD_SETTLED, amount_q=1500, order_ref="A01")
+
+
+def test_a_unicidade_e_por_turno_por_tipo_e_so_com_pedido(operator, manager, terminal):
+    """O que a constraint NÃO proíbe, e por quê.
+
+    - venda sem `order_ref` (não há pedido a que amarrar) repete à vontade;
+    - a devolução do mesmo pedido convive com a venda (tipos diferentes);
+    - o mesmo pedido pode voltar noutro turno (acerto de entrega de ontem).
+    """
+    shift = _shift(operator, terminal)
+    Entry.objects.create(shift=shift, operator=operator, kind=Entry.Kind.SALE, amount_q=1500)
+    Entry.objects.create(shift=shift, operator=operator, kind=Entry.Kind.SALE, amount_q=900)
+    Entry.objects.create(shift=shift, operator=operator, kind=Entry.Kind.SALE, amount_q=1500, order_ref="A01")
+    Entry.objects.create(
+        shift=shift, operator=operator, kind=Entry.Kind.REFUND, amount_q=-1500, order_ref="A01"
+    )
+
+    other_terminal = Terminal.objects.create(ref="pdv-2")
+    other_shift = Shift.objects.create(terminal=other_terminal, operator=manager)
+    Entry.objects.create(shift=other_shift, operator=manager, kind=Entry.Kind.SALE, amount_q=1500, order_ref="A01")
+
+
 def test_um_turno_aberto_por_operador_e_por_terminal(operator, manager, terminal):
     Shift.objects.create(terminal=terminal, operator=operator)
     with pytest.raises(IntegrityError), transaction.atomic():
