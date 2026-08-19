@@ -111,7 +111,37 @@ g.permissions.add(perm_orders, perm_reports)
 python manage.py setup_groups
 ```
 
-O comando recria/atualiza todos os 4 grupos padrão com as permissões corretas. Seguro para rodar múltiplas vezes.
+O comando recria/atualiza todos os grupos padrão com as permissões corretas. Seguro para rodar múltiplas vezes.
+
+---
+
+## O elenco de dev/staging (idempotente)
+
+```bash
+python manage.py setup_operators --yes
+```
+
+Cria/atualiza as pessoas que operam a loja, **ligadas a grupos** — e limpa
+qualquer permissão avulsa que alguém tenha dado à mão:
+
+| Usuário | Grupo | Entra com |
+|---|---|---|
+| `admin` | **Dono** (+ superusuário) | senha `admin` e PIN `1234` |
+| `marina` | **Gerente** | só PIN `1234` |
+| `ana` | **Caixa** (loja) | só PIN `1234` |
+| `joao` | **Cozinha** (produção) | só PIN `1234` |
+
+Serve para **consertar acesso no staging sem rodar o `seed`**, que recriaria
+catálogo e milhares de pedidos falsos. Não toca em nenhum dado de negócio.
+
+O `--yes` é obrigatório porque a senha e o PIN são de desenvolvimento: é uma
+frase que alguém digita de propósito, não algo que um job de release dispare
+sozinho.
+
+⚠️ **Permissão avulsa é apagada.** O grupo passa a ser a única resposta para
+"por que essa pessoa consegue fazer isso?". Antes o `seed` dava sete permissões
+copiadas à mão para a `marina`, que imitavam o "Gerente" sem serem ele — a tela
+de Grupos do Admin mostrava gente sem grupo nenhum operando o sistema inteiro.
 
 ---
 
