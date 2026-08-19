@@ -104,30 +104,33 @@ O produto existe, guarda a história e volta com uma flag, não com um SKU novo.
 É produto de **caixa presente** — vende pouco no balcão por não ser vendido no
 balcão. Volume mede o canal, não a existência. Mesma armadilha do §4.
 
-### 2.2 O "do dia" — recomendação
+### 2.2 O "do dia" — decidido (18/08): vira coleção
 
-O cardápio 2027 colapsou famílias inteiras em produtos rotativos: "Folhado do
-dia", "Salgado do dia", "Focaccia do dia", "Chá Gelado do dia", "Cream Soda do
-dia". É por isso que 29 produtos de alto volume do Yooga não têm par —
-`BCH` Brioche Chocolat (11.983 linhas), `CN` Chausson (10.711), `PR` Pain aux
-Raisins (8.866), `FF` Folhado de Frango (5.387).
+O cardápio 2027 colapsou famílias inteiras em produtos rotativos. **O dono
+adotou a recomendação:** os quatro viram coleção, e o produto por baixo é o real.
 
-**Recomendação: restaurar os SKUs originais e deixar o "do dia" ser uma coleção,
-não um produto.** Quatro razões, e nenhuma é de gosto:
+| Saiu como produto | Virou a coleção | Sobre os produtos |
+|---|---|---|
+| `FD` Focaccia do dia | `focaccia-do-dia` | `FOA` · `CBT` · `FOC` + as três minis |
+| `FL` Folhado do dia | `folhado-do-dia` | `CN` · `BH` · `PR` |
+| `SD` Salgado do dia | `salgado-do-dia` | `DL` · `HO` · `MIHO` · `FF` · `MFF` |
+| `THG` Chá gelado do dia | `cha-gelado-do-dia` | `HI` · `CTV` |
 
-1. **O eixo do B.I. é planejar a produção.** "Folhado do dia" como SKU não
-   responde *qual* folhado assar amanhã — que é a pergunta.
-2. **Fornada precisa de `output_sku` real.** Não existe ficha técnica de "do dia":
-   a `Recipe` produz um pão específico.
-3. **Estoque não distingue.** Um quant de "Folhado do dia" não separa "sobrou
-   frango" de "faltou queijo" — e sobra/falta é medição que já está no ar.
-4. **Preço.** Focaccia Alecrim saía a R$ 28 e a de Cebola/Bacon/Tomilho a R$ 36.
-   Um SKU só não guarda dois preços.
+⚠️ **A membresia não é palpite meu — está na copy que a casa escreveu.** "O
+folhado da fornada: chausson, bichon, pain aux raisins…" nomeia exatamente os
+três; o texto de ingredientes do "Salgado do dia" diz "deli de milho e bacon ou
+salsicha artesanal".
 
-O sistema já tem o mecanismo certo do outro lado: **coleção e listing**. O
-cardápio mostra "Folhado do dia — hoje, de frango"; por baixo, o produto é o
-`FF`. A vitrine fica curta sem que a identidade se perca, e disponibilidade já é
-função do quando ([availability](../guides/lifecycle.md)).
+**O vínculo é secundário.** O produto continua morando na sua categoria:
+Chausson é Finos *e* aparece em "Folhado do dia". Por isso o teste de coerência
+fala em uma categoria por produto, não uma coleção.
+
+`CV` (Cream Soda do dia) **fica como produto**: não há produto real por baixo
+dele. Ali o sabor rotaciona dentro de um preparo só, que é diferente de um
+folhado ser outro produto a cada dia.
+
+As duas receitas que produziam "do dia" passam a produzir o real — `FD` → `FOA`,
+`FL` → `CN`. Era o argumento nº 2 da recomendação, e virou código.
 
 ### 2.3 Os 30 códigos novos
 

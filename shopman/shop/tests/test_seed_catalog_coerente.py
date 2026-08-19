@@ -86,9 +86,10 @@ def test_nenhum_vinculo_de_colecao_repetido(colecoes):
     assert not repetidos, f"produto listado duas vezes na mesma coleção: {repetidos}"
 
 
-def test_um_produto_mora_em_uma_colecao_so(colecoes):
-    # `is_primary=True` é gravado para todo vínculo; dois vínculos primários
-    # para o mesmo produto é ambiguidade que só aparece na vitrine.
+def test_um_produto_mora_em_uma_categoria_so(colecoes):
+    # Vale para as categorias, que são vínculo PRIMÁRIO. As coleções "do dia"
+    # são agrupamento rotativo e entram como secundárias — "Chausson" é Finos e
+    # também é "Folhado do dia", sem ambiguidade.
     dono = {}
     duplos = {}
     for ref, skus in colecoes.items():
@@ -135,3 +136,42 @@ def test_quem_esta_sem_ficha_nasce_despublicado(arvore, catalogo):
 
     fantasmas = sorted(sem_ficha - set(catalogo))
     assert not fantasmas, f"`sem_ficha` cita produto que não existe: {fantasmas}"
+
+
+def _curadoria(nome_da_funcao, marca_de_fim):
+    """SKU → papel, lendo o corpo de uma das funções de curadoria do seed."""
+    import re
+
+    linhas = SEED.read_text().splitlines()
+    i = next(k for k, l in enumerate(linhas) if nome_da_funcao in l)
+    j = next(k for k in range(i + 1, len(linhas)) if marca_de_fim in linhas[k])
+    corpo = "\n".join(linhas[i:j])
+    fora = {}
+    for bloco in re.finditer(r'"([a-z][a-z-]+)": (?:\(|\[)(.*?)(?:\]\)|\])', corpo, re.S):
+        papel = bloco.group(1)
+        for sku in re.findall(r'"((?:nome:)?[A-Z][A-Za-z0-9_ +&-]*)"', bloco.group(2)):
+            fora[sku] = papel
+    return fora
+
+
+def test_as_duas_curadorias_de_consumo_nao_se_contradizem():
+    """Onde cardápio e histórico se encontram, a leitura tem de ser a mesma.
+
+    Elas se encontram desde que o catálogo passou a usar os códigos do Yooga:
+    "CT" no cardápio e "CT" no histórico são o mesmo produto. As duas gravam na
+    mesma linha (`sku` é único), então a segunda a rodar vence — em silêncio.
+    Divergência aqui não daria erro nenhum: daria um número de B.I. diferente
+    dependendo da ordem das funções.
+    """
+    cardapio = _curadoria("def _seed_consumption_tags", "_seed_historical_consumption_tags")
+    historico = _curadoria("def _seed_historical_consumption_tags", "def _seed_seating")
+
+    conflitos = {
+        sku: (cardapio[sku], historico[sku])
+        for sku in set(cardapio) & set(historico)
+        if cardapio[sku] != historico[sku]
+    }
+    assert not conflitos, (
+        f"cardápio e histórico discordam sobre {len(conflitos)} SKU(s): {conflitos}. "
+        "Quem roda por último venceria, sem erro nenhum."
+    )

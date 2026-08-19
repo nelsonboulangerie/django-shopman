@@ -286,7 +286,13 @@ def test_bi_reference_installs_the_three_tables_and_nothing_else():
     # 59 SKUs do cardápio 2027 + 61 SKUs do Yooga ("Pães Finos", 18/08) + 4
     # combos pelo NOME + 70 SKUs do Yooga da segunda rodada (cafés, pratos,
     # pães rústicos, 19/08) — tudo curadoria do dono, nada nasce como proposta.
-    assert ProductConsumptionTag.objects.count() == 59 + 61 + 4 + 70
+    # ⚠️ A soma não é 59+61+4+70. Duas coisas a encolhem, e as duas são certas:
+    # os quatro produtos "do dia" deixaram de existir (viraram coleção rotativa
+    # sobre os reais), e 26 SKUs passaram a ser etiquetados uma vez só — com o
+    # catálogo usando os códigos do Yooga, "CT" no cardápio e "CT" no histórico
+    # são o mesmo produto. Que as duas curadorias CONCORDEM onde se encontram é
+    # o que test_seed_catalog_coerente fixa, lendo o seed como dado.
+    assert ProductConsumptionTag.objects.count() == 164
     assert ProductConsumptionTag.objects.filter(reviewed=False).count() == 0
     assert ProductConsumptionTag.objects.filter(
         sku__startswith="nome:", role__ref="consome-aqui"
@@ -302,7 +308,9 @@ def test_bi_reference_installs_the_three_tables_and_nothing_else():
     assert by_sku["PS"] == by_sku["SS"] == "bebida-preparada"
     assert by_sku["CMO"] == by_sku["PPU"] == "consome-aqui"
     assert by_sku["BAX"] == by_sku["BAP"] == by_sku["PH"] == "leva"
-    assert by_sku["CI"] == by_sku["TB"] == by_sku["FE"] == by_sku["CIABATTA"] == "hibrido"
+    # `CIABATTA` saiu do encadeamento: com o catálogo usando os códigos reais,
+    # ele É o `CI`, e uma etiqueta só cobre os dois.
+    assert by_sku["CI"] == by_sku["TB"] == by_sku["FE"] == "hibrido"
     # 4 mesas internas + 4 externas + 6 lugares de balcão contam no teto; o
     # bistrô (2) e o bancão externo ficam fora, e é justamente por ficarem fora
     # que "bateu no teto" continua sendo um sinal.
@@ -322,7 +330,7 @@ def test_bi_reference_is_idempotent():
 
     _run("setup_bi_reference")
     _run("setup_bi_reference")
-    assert ProductConsumptionTag.objects.count() == 59 + 61 + 4 + 70
+    assert ProductConsumptionTag.objects.count() == 164
     assert SeatingSpot.objects.count() == 17
 
 
