@@ -84,6 +84,25 @@ class AwaitingWorkOrderProjection:
 
 
 @dataclass(frozen=True)
+class EquipmentOptionProjection:
+    """Um aparelho que o entregador pode levar no despacho (ref do canal + rótulo)."""
+
+    ref: str
+    label: str
+
+
+@dataclass(frozen=True)
+class EquipmentOutProjection:
+    """Onde está o aparelho agora: saiu com o entregador deste pedido e não voltou."""
+
+    ref: str
+    label: str
+    order_ref: str
+    customer_name: str
+    out_at: str
+
+
+@dataclass(frozen=True)
 class OrderCardProjection:
     """A single order card in the operator queue."""
 
@@ -156,6 +175,14 @@ class OrderCardProjection:
     change_back_pending: bool = False
     change_back_q: int = 0
     change_label: str = ""
+    # Aparelho que saiu com o entregador (maquininha): custódia no pedido
+    # (``Order.data.dispatch``), não no caixa. ``equipment_options`` é o que o
+    # canal permite levar (o despacho pergunta só quando há opção);
+    # ``equipment_out`` o que saiu; ``equipment_back_pending`` enquanto não voltou.
+    equipment_options: tuple[EquipmentOptionProjection, ...] = ()
+    equipment_out: tuple[str, ...] = ()
+    equipment_label: str = ""
+    equipment_back_pending: bool = False
 
 
 @dataclass(frozen=True)
@@ -206,6 +233,14 @@ class OperatorOrderProjection:
     change_back_pending: bool = False
     change_back_q: int = 0
     change_label: str = ""
+    # Aparelho que saiu com o entregador (maquininha): custódia no pedido
+    # (``Order.data.dispatch``), não no caixa. ``equipment_options`` é o que o
+    # canal permite levar (o despacho pergunta só quando há opção);
+    # ``equipment_out`` o que saiu; ``equipment_back_pending`` enquanto não voltou.
+    equipment_options: tuple[EquipmentOptionProjection, ...] = ()
+    equipment_out: tuple[str, ...] = ()
+    equipment_label: str = ""
+    equipment_back_pending: bool = False
 
 
 @dataclass(frozen=True)
@@ -239,6 +274,9 @@ class TwoZoneQueueProjection:
     # devolve o pedido ao fluxo normal.
     preorders: tuple[OrderCardProjection, ...] = ()
     preorders_count: int = 0
+    # Aparelhos na rua (saíram com o entregador e não voltaram), para o quadro
+    # responder "onde está a maquininha" sem procurar card por card.
+    equipment_out: tuple[EquipmentOutProjection, ...] = ()
 
 
 # ── Builders ───────────────────────────────────────────────────────────
@@ -336,6 +374,7 @@ def build_operator_order(order: Order) -> OperatorOrderProjection:
         kitchen_note_tags=_kitchen_note_tags(),
         courier=_courier_block(order),
         **_courier_change_fields(order),
+        **_equipment_fields(order),
     )
 
 
@@ -513,6 +552,7 @@ def build_two_zone_queue() -> TwoZoneQueueProjection:
     )
 
     return TwoZoneQueueProjection(
+        equipment_out=_equipment_out(),
         intake=intake,
         preparing_count=preparing_count,
         prep=prep,
@@ -665,7 +705,52 @@ def _build_card(
         commitment_date=commitment.isoformat() if commitment else "",
         commitment_date_display=_commitment_date_display(commitment) if is_preorder else "",
         **_courier_change_fields(order, courier_change),
+        **_equipment_fields(order),
     )
+
+
+#: Rótulo pt-BR dos aparelhos (a ref é contrato do canal; o texto é da tela).
+EQUIPMENT_LABELS = {"card_machine": "Maquininha"}
+
+
+def _equipment_label(ref: str) -> str:
+    return EQUIPMENT_LABELS.get(ref, ref)
+
+
+def _equipment_fields(order: Order) -> dict:
+    if not _is_delivery(order):
+        return {}
+    options = tuple(
+        EquipmentOptionProjection(ref=ref, label=_equipment_label(ref))
+        for ref in operator_orders.equipment_options(order.channel_ref or "")
+    )
+    custody = operator_orders.equipment_custody(order)
+    label = ""
+    if custody.equipment:
+        names = ", ".join(_equipment_label(ref) for ref in custody.equipment)
+        label = f"Entregador levou {names.lower()}" if custody.pending else f"{names} voltou"
+    return {
+        "equipment_options": options,
+        "equipment_out": custody.equipment,
+        "equipment_label": label,
+        "equipment_back_pending": custody.pending,
+    }
+
+
+def _equipment_out() -> tuple[EquipmentOutProjection, ...]:
+    rows = []
+    for ref, order in operator_orders.equipment_out():
+        customer = order.data.get("customer", {}) if isinstance(order.data, dict) else {}
+        rows.append(
+            EquipmentOutProjection(
+                ref=ref,
+                label=_equipment_label(ref),
+                order_ref=order.ref,
+                customer_name=str(customer.get("name") or ""),
+                out_at=operator_orders.equipment_custody(order).out_at,
+            )
+        )
+    return tuple(rows)
 
 
 def _courier_change_fields(order: Order, by_order: dict[str, tuple[int, int | None]] | None = None) -> dict:

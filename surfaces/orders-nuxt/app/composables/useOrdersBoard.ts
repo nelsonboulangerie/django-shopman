@@ -28,6 +28,8 @@ export function useOrdersBoard() {
   const totalCount = computed(() => queue.value?.total_count ?? 0);
   // Encomendas confirmadas para datas futuras, agrupadas pela data combinada.
   const preorders = computed<PreorderGroup[]>(() => (queue.value ? preorderGroups(queue.value) : []));
+  // Aparelhos na rua (maquininha): o quadro responde "onde está" sem abrir card.
+  const equipmentOut = computed(() => queue.value?.equipment_out ?? []);
 
   // Realtime + polling (client only). `realtime` diz honestamente ao operador se o board
   // recebe pushes ao vivo (SSE aberto) ou caiu no poll de 30s — a bolinha "ao vivo" só
@@ -132,16 +134,26 @@ export function useOrdersBoard() {
   const confirm = (ref_: string) => act(ref_, "confirm");
   // ``change_out``: troco que o entregador leva da gaveta no despacho (reais);
   // só quando a tela perguntou. O servidor exige o valor quando o pedido pede troco.
-  const advance = (ref_: string, changeOut?: string) =>
-    act(ref_, "advance", changeOut === undefined ? undefined : { change_out: changeOut });
+  const advance = (ref_: string, changeOut?: string, equipment?: string[]) => {
+    const body: Record<string, unknown> = {};
+    if (changeOut !== undefined) body.change_out = changeOut;
+    if (equipment && equipment.length) body.equipment = equipment;
+    return act(ref_, "advance", Object.keys(body).length ? body : undefined);
+  };
+  // A maquininha voltou com o entregador (pedido que a levou no despacho).
+  const equipmentBack = (ref_: string) => act(ref_, "equipment-back");
   // Marketplace (iFood) rejects carry the operator-picked cancellation code so the
   // backend calls requestCancellation with a valid code; empty for other channels.
   const reject = (ref_: string, reason: string, cancellation_code = "") =>
     act(ref_, "reject", { reason, cancellation_code });
   // ``change_back``: o troco que voltou com o entregador (reais, zero vale);
   // obrigatório no servidor quando saiu troco no despacho.
-  const settleCash = (ref_: string, amount: string, changeBack?: string) =>
-    act(ref_, "settle-delivery-cash", changeBack === undefined ? { amount } : { amount, change_back: changeBack });
+  const settleCash = (ref_: string, amount: string, changeBack?: string, equipmentBack?: boolean) =>
+    act(ref_, "settle-delivery-cash", {
+      amount,
+      ...(changeBack === undefined ? {} : { change_back: changeBack }),
+      ...(equipmentBack ? { equipment_back: true } : {}),
+    });
 
   // Valid cancellation reasons for a ref: for iFood, the live per-order list
   // ({code, description}); empty for channels without reason codes.
@@ -186,5 +198,5 @@ export function useOrdersBoard() {
   const confirmMany = (refs: string[]) => actMany(refs, "confirm");
   const advanceMany = (refs: string[]) => actMany(refs, "advance");
 
-  return { queue, zones, totalCount, preorders, realtime, pending, error, refresh, isBusy, actionError, clearActionError, confirm, advance, reject, fetchCancellationReasons, settleCash, assign, unassign, confirmMany, advanceMany };
+  return { queue, zones, totalCount, preorders, realtime, pending, error, refresh, isBusy, actionError, clearActionError, confirm, advance, reject, fetchCancellationReasons, settleCash, equipmentBack, equipmentOut, assign, unassign, confirmMany, advanceMany };
 }

@@ -99,6 +99,11 @@ class ChannelConfig:
         #          logística própria; retirada não entrega)
         # "auto" — pedido delivery marcado "pronto" abre corrida no adapter
         #          courier (SHOPMAN_COURIER_ADAPTER diz QUEM; isto diz SE)
+        equipment: list[str] = field(default_factory=list)
+        # Aparelhos que o entregador da casa pode levar no despacho (refs curtas,
+        # ex. ["card_machine"]). Vazio = o despacho não pergunta. A custódia é
+        # do aparelho, não de dinheiro: mora em Order.data.dispatch.equipment,
+        # e "onde está a maquininha" é derivado (saiu e não voltou).
 
     # ── 4. Estoque ──
 

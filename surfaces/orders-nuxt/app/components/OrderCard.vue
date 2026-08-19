@@ -149,6 +149,16 @@ function buttonClass(priority: string): string {
       <Icon name="lucide:coins" class="size-3.5 shrink-0" />
       <span class="truncate">{{ card.change_label }}</span>
     </p>
+    <!-- aparelho que saiu com o entregador (maquininha): custódia no pedido -->
+    <p
+      v-if="card.equipment_label"
+      class="flex items-center gap-1.5 text-xs text-muted-foreground"
+      :class="{ 'font-medium': card.equipment_back_pending }"
+      data-equipment-label
+    >
+      <Icon name="lucide:smartphone-nfc" class="size-3.5 shrink-0" />
+      <span class="truncate">{{ card.equipment_label }}</span>
+    </p>
 
     <!-- status + payment + total -->
     <div class="flex flex-wrap items-center gap-1.5 text-xs">

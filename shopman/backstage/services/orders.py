@@ -39,7 +39,7 @@ def reject_order(order, *, reason: str, actor: str, rejected_by: str, cancellati
         raise OrderError(str(exc)) from exc
 
 
-def advance_order(order, *, actor: str, operator=None, change_out_raw: str | None = None):
+def advance_order(order, *, actor: str, operator=None, change_out_raw: str | None = None, equipment=None):
     """Avança o pedido; no despacho de entrega em dinheiro, leva o troco da gaveta.
 
     ``change_out_raw`` é o valor que o entregador leva (texto em reais; vazio é
@@ -59,7 +59,9 @@ def advance_order(order, *, actor: str, operator=None, change_out_raw: str | Non
 
         shift = cash.open_shift_for(operator)
     try:
-        return operator_orders.advance_order(order, actor=actor, change_out_q=change_out_q, cash_shift=shift)
+        return operator_orders.advance_order(
+            order, actor=actor, change_out_q=change_out_q, cash_shift=shift, equipment=list(equipment or [])
+        )
     except operator_orders.ChangeOutRequired as exc:
         raise OrderChangeOutRequired(str(exc), suggested_q=exc.suggested_q) from exc
     except (ValueError, InvalidTransition) as exc:
@@ -115,7 +117,9 @@ def cancellation_reasons(order) -> list[dict]:
     ]
 
 
-def settle_delivery_cash(order, *, operator, amount_raw: str = "", actor: str, change_back_raw: str | None = None):
+def settle_delivery_cash(
+    order, *, operator, amount_raw: str = "", actor: str, change_back_raw: str | None = None, equipment_back: bool = False
+):
     """Acerto do dinheiro de entrega: entra no turno ABERTO (``cashman``) de quem recebeu.
 
     ``change_back_raw`` é o troco que voltou com o entregador (texto em reais;
@@ -139,6 +143,7 @@ def settle_delivery_cash(order, *, operator, amount_raw: str = "", actor: str, c
             actor=actor,
             amount_q=amount_q,
             change_back_q=change_back_q,
+            equipment_back=equipment_back,
         )
     except CashError as exc:
         # Dois acertos do mesmo pedido no mesmo turno (duplo toque no gestor) são
@@ -146,6 +151,14 @@ def settle_delivery_cash(order, *, operator, amount_raw: str = "", actor: str, c
         # do pacote, não um 500.
         raise OrderError(exc.message) from exc
     except (ValueError, InvalidTransition) as exc:
+        raise OrderError(str(exc)) from exc
+
+
+def mark_equipment_returned(order, *, actor: str):
+    """O entregador devolveu o aparelho (maquininha) que levou neste pedido."""
+    try:
+        return operator_orders.mark_equipment_returned(order, actor=actor)
+    except ValueError as exc:
         raise OrderError(str(exc)) from exc
 
 

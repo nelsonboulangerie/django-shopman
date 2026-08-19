@@ -951,13 +951,18 @@ class OrderAdvanceView(_OrderActionBase):
         # ``change_out``: troco que o entregador leva da gaveta no despacho de
         # entrega em dinheiro (reais; "0" = levou sem troco). Ausente em pedido
         # que pede troco → 409 com a sugestão, para a tela perguntar.
-        change_out = (request.data or {}).get("change_out")
+        body = request.data or {}
+        change_out = body.get("change_out")
+        equipment = body.get("equipment") or []
+        if not isinstance(equipment, list):
+            equipment = [equipment]
         try:
             orders_service.advance_order(
                 order,
                 actor=_actor(request),
                 operator=request.user,
                 change_out_raw=None if change_out is None else str(change_out),
+                equipment=[str(ref) for ref in equipment],
             )
         except orders_service.OrderChangeOutRequired as exc:
             return Response(
@@ -1086,16 +1091,37 @@ class OrderSettleDeliveryCashView(_OrderActionBase):
             return err
         try:
             change_back = (request.data or {}).get("change_back")
+            equipment_back = str((request.data or {}).get("equipment_back", "")).lower() in {"1", "true", "on", "yes"}
             amount_q = orders_service.settle_delivery_cash(
                 order,
                 operator=request.user,
                 amount_raw=str(request.data.get("amount", "")),
                 actor=_actor(request),
                 change_back_raw=None if change_back is None else str(change_back),
+                equipment_back=equipment_back,
             )
         except OrderError as exc:
             return Response({"detail": str(exc) or "Falha no acerto de dinheiro."}, status=400)
         return Response({"ok": True, "ref": ref, "amount_q": amount_q})
+
+
+@extend_schema_view(
+    post=extend_schema(
+        tags=["backstage"],
+        summary="Courier returned the equipment (card machine) taken at dispatch",
+        responses={200: OpenApiResponse(description="Equipment marked as returned.")},
+    ),
+)
+class OrderEquipmentBackView(_OrderActionBase):
+    def post(self, request, ref: str):
+        order, err = self._get_order(ref)
+        if err:
+            return err
+        try:
+            custody = orders_service.mark_equipment_returned(order, actor=_actor(request))
+        except OrderError as exc:
+            return Response({"detail": str(exc) or "Falha ao registrar a volta do aparelho."}, status=400)
+        return Response({"ok": True, "ref": ref, "equipment": list(custody.equipment), "back_at": custody.back_at})
 
 
 @extend_schema_view(

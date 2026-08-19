@@ -205,7 +205,7 @@ export function preorderGroups(queue: Pick<TwoZoneQueueProjection, "preorders">)
 
 // ── Action affordances ─────────────────────────────────────────────────────
 
-export type AffordanceRef = "confirm" | "advance" | "reject" | "settle_cash";
+export type AffordanceRef = "confirm" | "advance" | "reject" | "settle_cash" | "equipment_back";
 
 export interface Affordance {
   ref: AffordanceRef;
@@ -244,6 +244,11 @@ export function cardAffordances(card: OrderCardProjection): Affordance[] {
   }
   if (card.can_settle_delivery_cash) {
     out.push({ ref: "settle_cash", label: "Acerto dinheiro", icon: "lucide:banknote", priority: "secondary", needsInput: true });
+  }
+  // A maquininha saiu e não voltou; sem acerto em dinheiro para marcar, o card
+  // oferece o gesto sozinho (pedido em cartão, ou acerto já feito sem ela).
+  if (card.equipment_back_pending && !card.can_settle_delivery_cash) {
+    out.push({ ref: "equipment_back", label: "Maquininha voltou", icon: "lucide:smartphone-nfc", priority: "secondary", needsInput: false });
   }
   if (card.can_confirm) {
     out.push({ ref: "reject", label: "Recusar", icon: "lucide:x", priority: "danger", needsInput: true });
@@ -481,6 +486,14 @@ export function bulkableRefs(
  *  valor antes de avançar (o servidor recusa com 409 se ninguém disser). */
 export function dispatchAsksChange(card: Pick<OrderCardProjection, "next_status" | "change_out_suggested_q">): boolean {
   return card.next_status === "dispatched" && card.change_out_suggested_q > 0;
+}
+
+/** O despacho tem o que perguntar: troco sugerido OU aparelho que o canal deixa levar.
+ *  (Só o troco é exigido pelo servidor; a maquininha é oferta do despacho.) */
+export function dispatchAsks(
+  card: Pick<OrderCardProjection, "next_status" | "change_out_suggested_q" | "equipment_options">,
+): boolean {
+  return card.next_status === "dispatched" && (card.change_out_suggested_q > 0 || card.equipment_options.length > 0);
 }
 
 /** Sugestão do que deve ter voltado: o que saiu menos o troco devido ao cliente.
