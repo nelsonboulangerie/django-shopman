@@ -39,11 +39,11 @@ def old_taxonomy(db):
         made[ref] = Collection.objects.create(ref=ref, name=name, sort_order=order)
 
     layout = {
-        "balcao": ["FENDU", "TABATIERE", "MINI-BAGUETE", "PAO-HAMBURGER",
+        "balcao": ["FE", "TB", "MIB", "PH",
                    "BRIOCHE-BURGER", "PAO-HOTDOG", "COMBO-PETIT-DEJ"],
-        "rusticos": ["BAGUETE", "CAMPAGNE"],
-        "finos": ["CROISSANT"],
-        "despensa": ["GELEIA-MINI", "CAFE-GRAO"],
+        "rusticos": ["BF", "CGO"],
+        "finos": ["CT"],
+        "despensa": ["GL", "GR"],
     }
     for ref, skus in layout.items():
         for i, sku in enumerate(skus):
@@ -70,7 +70,7 @@ def _layout():
 def test_the_seven_land_where_the_owner_put_them(old_taxonomy):
     _run()
     layout = _layout()
-    assert {"FENDU", "TABATIERE", "MINI-BAGUETE", "PAO-HAMBURGER"} <= layout["rusticos"]
+    assert {"FE", "TB", "MIB", "PH"} <= layout["rusticos"]
     assert {"BRIOCHE-BURGER", "PAO-HOTDOG"} <= layout["finos"]
     assert layout["combos"] == {"COMBO-PETIT-DEJ"}
 
@@ -91,7 +91,7 @@ def test_balcao_is_retired_and_despensa_becomes_mercearia(old_taxonomy):
 def test_renaming_keeps_the_products_attached(old_taxonomy):
     """Recriar a coleção perderia os vínculos; renomear no lugar preserva."""
     _run()
-    assert _layout()["mercearia"] == {"GELEIA-MINI", "CAFE-GRAO"}
+    assert _layout()["mercearia"] == {"GL", "GR"}
 
 
 @pytest.mark.django_db

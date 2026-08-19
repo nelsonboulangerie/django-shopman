@@ -37,7 +37,7 @@ NEW_COLLECTIONS = (
 MOVES = {
     # Três pães de casca e o pão de hambúrguer, que o dono classificou aqui
     # apesar da massa macia.
-    "rusticos": ("FENDU", "TABATIERE", "MINI-BAGUETE", "PAO-HAMBURGER"),
+    "rusticos": ("FE", "TB", "MIB", "PH"),
     # Buns em pacote, massa enriquecida, na família dos pães japoneses.
     "finos": ("BRIOCHE-BURGER", "PAO-HOTDOG"),
     # Bundle não é categoria de produto.
