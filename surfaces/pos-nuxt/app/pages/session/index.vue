@@ -7,7 +7,7 @@
 // mostra o valor esperado da gaveta — a conferência (esperado vs contado) fica
 // no retaguarda. O fechamento do DIA (sobras/perdas) entra em `/session/closing`.
 import {
-  CHANGE_REQUEST_KINDS,
+  changeDenominations,
   canRegisterMovement,
   canRequestChange,
   changeRequestSummary,
@@ -59,6 +59,10 @@ const screen = computed(() => {
   return sessionScreenState(pos.value.cash_runtime, pos.value.has_open_cash_session);
 });
 const cashRuntime = computed(() => pos.value?.cash_runtime ?? null);
+// A capability é a FONTE dos motivos de movimento e das denominações do troco.
+// Repetir as listas em TypeScript seria assinar uma divergência para o dia em
+// que uma moeda saísse de circulação.
+const cashManagement = computed(() => pos.value?.checkout?.capabilities?.cash_management ?? null);
 const openedAtDisplay = computed(() => formatOpenedAt(cashRuntime.value?.opened_at));
 const salesCount = computed(() => shift.value?.count ?? 0);
 
@@ -82,7 +86,7 @@ const movementAmount = ref("");
 // só, a tela mostraria dois motivos ao mesmo tempo e mandaria um deles calada.
 const movementReasonPick = ref("");
 const movementReasonOther = ref("");
-const movementReasonOptions = computed(() => movementReasons(movementKind.value));
+const movementReasonOptions = computed(() => movementReasons(cashManagement.value, movementKind.value));
 const movementReason = computed(() => movementReasonPick.value || movementReasonOther.value.trim());
 const canSubmitMovement = computed(
   () => canRegisterMovement(movementKind.value, movementAmount.value, movementReason.value),
@@ -159,28 +163,31 @@ async function submitMovement(managerApproval: { username: string; pin: string }
 //
 // ⚠️ Nada disto é movimento de caixa. A troca é net zero (saem R$ 50, entram
 // 5×R$ 10) e o esperado do fechamento não pode sentir nada.
-const changeKind = ref("");
 const changeAmount = ref("");
 const changeNote = ref("");
-const canSubmitChange = computed(() => canRequestChange(changeKind.value, changeAmount.value));
+// As denominações marcadas, em centavos. Ordem de clique não importa: o servidor
+// devolve ordenado do maior para o menor, que é como se conta dinheiro.
+const changeDenominationsPicked = ref<number[]>([]);
+const changeDenominationOptions = computed(() => changeDenominations(cashManagement.value));
+const canSubmitChange = computed(() => canRequestChange(changeAmount.value));
 
-// Trocar de tipo zera o valor: um número herdado de "Valor" viraria um pedido de
-// moedas com quantia que ninguém digitou para ele.
-function pickChangeKind(kind: string) {
-  changeKind.value = kind;
-  changeAmount.value = "";
+function toggleDenomination(q: number) {
+  const atuais = changeDenominationsPicked.value;
+  changeDenominationsPicked.value = atuais.includes(q)
+    ? atuais.filter((v) => v !== q)
+    : [...atuais, q];
 }
 
 async function submitChangeRequest() {
   if (!canSubmitChange.value) return;
   const ok = await requestChange({
-    kind: changeKind.value,
     amount: changeAmount.value,
+    denominations: [...changeDenominationsPicked.value],
     note: changeNote.value,
   });
   if (ok) {
-    changeKind.value = "";
     changeAmount.value = "";
+    changeDenominationsPicked.value = [];
     changeNote.value = "";
   }
 }
@@ -385,7 +392,7 @@ async function confirmCloseBlocking() {
                   class="grid gap-2 rounded-md border bg-muted/30 p-3"
                 >
                   <div class="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
-                    <span class="text-sm font-medium">{{ changeRequestSummary(request) }}</span>
+                    <span class="text-sm font-medium">{{ changeRequestSummary(request, cashManagement) }}</span>
                     <span class="text-xs text-muted-foreground">
                       {{ request.requested_by }}<template v-if="formatRequestedAt(request.requested_at)"> · {{ formatRequestedAt(request.requested_at) }}</template>
                     </span>
@@ -430,30 +437,61 @@ async function confirmCloseBlocking() {
                 Peça o troco em vez de sair do balcão com dinheiro. Um gerente traz e autoriza aqui mesmo.
               </p>
 
+              <!-- O VALOR primeiro, e exato. É a pergunta que quem vai ao cofre
+                   precisa respondida antes de sair andando. -->
+              <label class="grid gap-1.5 text-sm">
+                <span class="font-medium text-muted-foreground">Quanto</span>
+                <UiInput
+                  v-model="changeAmount"
+                  inputmode="decimal"
+                  placeholder="0,00"
+                  class="text-right tabular-nums"
+                  @keydown.enter="submitChangeRequest"
+                />
+              </label>
+
+              <!-- EM QUÊ. Cédula é retangular e verde, moeda é redonda e amarela,
+                   porque é assim que a mão reconhece no balcão sem parar para
+                   ler. Várias podem ser marcadas: "R$ 100 em notas de 5 e moedas
+                   de 0,50" é uma frase que se diz de verdade.
+
+                   Nada aqui é obrigatório: "me traz R$ 100" já é um pedido
+                   inteiro, e o gerente resolve com o que houver no cofre. -->
               <div class="grid gap-1.5">
-                <span id="change-kind-label" class="text-sm font-medium text-muted-foreground">O que falta</span>
-                <div class="grid grid-cols-3 gap-2" role="group" aria-labelledby="change-kind-label">
-                  <UiButton
-                    v-for="option in CHANGE_REQUEST_KINDS"
-                    :key="option.ref"
-                    variant="outline"
-                    size="sm"
-                    :aria-pressed="changeKind === option.ref"
-                    :class="changeKind === option.ref ? 'border-primary bg-primary/5' : ''"
-                    @click="pickChangeKind(option.ref)"
+                <span id="change-denom-label" class="text-sm font-medium text-muted-foreground">
+                  Em quê <span class="font-normal">(opcional)</span>
+                </span>
+                <div class="flex flex-wrap gap-2" role="group" aria-labelledby="change-denom-label">
+                  <button
+                    v-for="denom in changeDenominationOptions"
+                    :key="denom.q"
+                    type="button"
+                    :aria-pressed="changeDenominationsPicked.includes(denom.q)"
+                    :aria-label="`${denom.shape === 'note' ? 'Nota' : 'Moeda'} de ${denom.label}`"
+                    class="inline-flex items-center justify-center border text-sm font-semibold tabular-nums transition-colors disabled:opacity-50"
+                    :class="[
+                      // Cédula é retangular, moeda é redonda — o desenho é a
+                      // informação, e a mão acha antes do olho ler.
+                      denom.shape === 'note' ? 'h-12 rounded-md px-4' : 'size-12 rounded-full',
+                      denom.shape === 'note'
+                        ? 'border-success/40 bg-success/10 text-success'
+                        : 'border-warning/40 bg-warning/10 text-amber-700 dark:text-amber-400',
+                      // Marcado é um ANEL, não um tom mais escuro: sob a luz do
+                      // balcão dois tons da mesma cor viram um só, e o operador
+                      // não saberia dizer o que pediu.
+                      changeDenominationsPicked.includes(denom.q)
+                        ? (denom.shape === 'note' ? 'ring-2 ring-success' : 'ring-2 ring-warning')
+                        : '',
+                    ]"
+                    :disabled="busy"
+                    @click="toggleDenomination(denom.q)"
                   >
-                    {{ option.label }}
-                  </UiButton>
+                    {{ denom.label }}
+                  </button>
                 </div>
               </div>
 
-              <label v-if="changeKind === 'amount'" class="grid gap-1.5 text-sm">
-                <span class="font-medium text-muted-foreground">Valor aproximado</span>
-                <UiInput v-model="changeAmount" inputmode="decimal" placeholder="0,00" @keydown.enter="submitChangeRequest" />
-              </label>
-
               <UiInput
-                v-if="changeKind"
                 v-model="changeNote"
                 aria-label="Observação do pedido"
                 placeholder="Observação (opcional)"
@@ -481,7 +519,7 @@ async function confirmCloseBlocking() {
               <h2 class="text-base font-semibold">Movimento de caixa</h2>
               <div class="grid gap-1.5">
                 <span id="movement-kind-label" class="text-sm font-medium text-muted-foreground">Tipo</span>
-                <div class="grid grid-cols-3 gap-2" role="group" aria-labelledby="movement-kind-label">
+                <div class="grid grid-cols-2 gap-2" role="group" aria-labelledby="movement-kind-label">
                   <UiButton
                     v-for="kind in movementKinds"
                     :key="kind"
@@ -505,11 +543,11 @@ async function confirmCloseBlocking() {
                    tem opções conhecidas. -->
               <div v-if="movementKind" class="grid gap-1.5">
                 <span id="movement-reason-label" class="text-sm font-medium text-muted-foreground">
-                  Motivo (obrigatório)
+                  {{ movementKind === "sangria" ? "Motivo (obrigatório)" : "Observação (opcional)" }}
                 </span>
                 <div
                   v-if="movementReasonOptions.length"
-                  class="grid grid-cols-2 gap-2 sm:grid-cols-4"
+                  class="grid grid-cols-2 gap-2"
                   role="group"
                   aria-labelledby="movement-reason-label"
                 >

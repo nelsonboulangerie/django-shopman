@@ -59,9 +59,14 @@ def entry_detail(entry: Entry) -> str:
         if payload.get("notes"):
             parts.append(str(payload["notes"]))
     elif kind == Entry.Kind.CHANGE_REQUESTED:
-        parts.append(str(payload.get("kind") or ""))
         if payload.get("amount_q"):
             parts.append(f"R$ {format_money(int(payload['amount_q']))}")
+        # As denominações saem em dinheiro, não por rótulo: a tabela de rótulos
+        # é política do PDV e vive no `backstage` — o pacote não a importa, e
+        # `format_money` diz a mesma coisa sem atravessar a fronteira.
+        pedidas = payload.get("denominations") or []
+        if pedidas:
+            parts.append("em " + ", ".join(format_money(int(v)) for v in pedidas))
         if payload.get("note"):
             parts.append(str(payload["note"]))
     elif kind == Entry.Kind.DRAWER_UNLOCK and payload.get("drawer_raw"):

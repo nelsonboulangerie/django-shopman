@@ -160,8 +160,10 @@ def change_requests(shift: Shift) -> list[dict]:
             payload = entry.payload or {}
             by_id[entry.pk] = {
                 "entry_id": entry.pk,
-                "kind": str(payload.get("kind") or ""),
                 "amount_q": int(payload.get("amount_q") or 0),
+                # As cédulas/moedas pedidas, em centavos, do maior para o menor.
+                # Vazio é pedido completo ("me traz R$ 100"); a lista só refina.
+                "denominations": [int(v) for v in (payload.get("denominations") or [])],
                 "note": str(payload.get("note") or ""),
                 "status": "pending",
                 "requested_by": entry.operator.get_username() if entry.operator_id else "",

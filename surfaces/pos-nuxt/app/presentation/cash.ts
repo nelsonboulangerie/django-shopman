@@ -9,6 +9,7 @@
 import type {
   POSCashManagementCapability,
   POSCashRuntimeProjection,
+  POSChangeDenomination,
   POSChangeRequestProjection,
 } from "~/types/pos";
 
@@ -30,43 +31,43 @@ export function movementLabel(kind: string): string {
 }
 
 /**
- * Os motivos comuns de cada tipo, para virarem botão.
+ * Os motivos que viram botão, por tipo de movimento — vindos do SERVIDOR.
  *
- * O motivo é obrigatório e continua sendo — mas exigir DIGITAÇÃO no meio da fila
- * é como se obriga o balcão a escrever "sangria" no campo motivo e seguir a
- * vida: a exigência sobrevive e a informação morre. Com opções para tocar, ele
- * responde a única pergunta que a trilha precisa depois: **para onde foi**
- * (sangria) ou **de onde veio** (suprimento).
+ * O motivo é obrigatório na saída e quem cobra é o servidor. Exigir DIGITAÇÃO
+ * no meio da fila é como se obriga o balcão a escrever "sangria" no campo e
+ * seguir a vida: a exigência sobrevive e a informação morre. Com opções para
+ * tocar, ele responde a única pergunta que a trilha precisa depois: **para onde
+ * foi**.
  *
- * ⚠️ "Troco" NÃO é motivo de sangria, e a ausência é deliberada — há teste que
- * trava. Trocar uma nota não muda o dinheiro que existe na gaveta: saem R$ 50,
- * entram 5×R$ 10, o total é o mesmo. Lançar como sangria derruba o esperado por
- * um dinheiro que nunca saiu, e o turno fecha com falta fantasma se ninguém
- * lembrar do suprimento gêmeo. Gaveta que abre sem mover dinheiro é "abrir sem
- * venda", que já existe e já pede motivo.
+ * ⚠️ A ENTRADA vem com lista vazia, e isso é deliberado: "entrada de caixa" já
+ * é a resposta inteira, e um campo com uma opção só ensina o balcão a preencher
+ * qualquer coisa para passar.
  *
- * Tipo desconhecido devolve lista vazia de propósito: aí a tela cai no campo
- * livre, que é a saída honesta para o que não foi previsto aqui.
+ * ⚠️ "Troco" NÃO é motivo de saída, e a ausência é deliberada — há teste que
+ * trava, no servidor. Trocar uma nota não muda o dinheiro que existe na gaveta:
+ * saem R$ 50, entram 5×R$ 10, o total é o mesmo. Lançar como saída derruba o
+ * esperado por um dinheiro que nunca saiu, e o turno fecha com falta fantasma.
+ * Quem precisa de troco PEDE troco, que é outro fluxo e é net zero.
  */
-const MOVEMENT_REASONS: Record<string, readonly string[]> = {
-  sangria: ["Cofre", "Banco", "Fornecedor"],
-  suprimento: ["Reforço de troco", "Cofre", "Banco"],
-};
-
-export function movementReasons(kind: string): readonly string[] {
-  return MOVEMENT_REASONS[kind] || [];
+export function movementReasons(
+  cashManagement: POSCashManagementCapability | null | undefined,
+  kind: string,
+): readonly string[] {
+  return cashManagement?.movement_reasons?.[kind] || [];
 }
 
 /**
- * Se o movimento pode ser registrado: tipo, valor e motivo, os três presentes.
+ * Se o movimento pode ser registrado.
  *
- * O motivo é exigência da SUPERFÍCIE, não do servidor (`reason` é `blank=True`).
- * Fica aqui, puro, porque é regra de negócio da tela e não detalhe de template:
- * afrouxar isto por engano deixaria passar sangria sem motivo, e sangria sem
- * motivo é exatamente o buraco que o comprovante e o PIN do gerente fecham.
+ * A tela reprova ANTES para o operador não convocar o gerente e só então
+ * descobrir que faltava um campo. O servidor reprova de novo, e é lá que a
+ * regra vale: contrato que só a superfície cobra não é contrato.
+ *
+ * O motivo é exigido só na SAÍDA. Na entrada não há o que perguntar.
  */
 export function canRegisterMovement(kind: string, amount: string, reason: string): boolean {
-  return Boolean(kind && amount.trim() && reason.trim());
+  if (!kind || !amount.trim()) return false;
+  return kind === "sangria" ? Boolean(reason.trim()) : true;
 }
 
 /**
@@ -116,36 +117,63 @@ export function requiresOpenShiftForSale(
 // fala de valor esperado, movimento ou fechamento, e não pode passar a falar:
 // somar um pedido ao caixa inventaria uma diferença que não existe.
 
-/** O que o balcão pode pedir. Ref em inglês (contrato), rótulo pt-BR na tela. */
-export const CHANGE_REQUEST_KINDS = [
-  { ref: "coins", label: "Moedas" },
-  { ref: "small_bills", label: "Notas pequenas" },
-  { ref: "amount", label: "Valor" },
-] as const;
-
-export function changeRequestLabel(kind: string): string {
-  return CHANGE_REQUEST_KINDS.find((k) => k.ref === kind)?.label || kind;
-}
-
 /**
- * Só o pedido por VALOR exige número.
+ * As cédulas e moedas que o balcão pode pedir — vindas do SERVIDOR.
  *
- * "Acabou moeda" já é um pedido inteiro, e exigir um valor ali travaria a fila
- * por um dado que ninguém tem na hora. Já "me traz um valor" sem número não diz
- * nada a quem vai buscar o troco — o servidor recusa, e a tela recusa antes.
+ * Repetir os números aqui seria assinar uma divergência para o dia em que uma
+ * moeda saísse de circulação: o pedido passaria a falar de um dinheiro que não
+ * existe, e ninguém descobriria pela tela.
  */
-export function canRequestChange(kind: string, amount: string): boolean {
-  if (!kind) return false;
-  return kind === "amount" ? Boolean(amount.trim()) : true;
+export function changeDenominations(
+  cashManagement: POSCashManagementCapability | null | undefined,
+): readonly POSChangeDenomination[] {
+  return cashManagement?.change_denominations || [];
 }
 
 /**
- * A linha que o gerente lê antes de assinar: o que foi pedido, e quanto se o
- * pedido falou de valor. Sem sufixo inventado quando não falou.
+ * O valor é sempre exigido, e é EXATO.
+ *
+ * Antes havia um pedido "aproximado" ao lado de "moedas" e "notas pequenas":
+ * quem ia buscar o troco lia "moedas", tinha de adivinhar quanto, e voltava com
+ * o que achou. Um número pedido de verdade é o que faz a viagem valer.
+ *
+ * As denominações NÃO são exigidas: "me traz R$ 100" é um pedido completo, e
+ * travar a fila por um refino que o gerente resolve com o que tem no cofre
+ * seria trocar a fila por nada.
  */
-export function changeRequestSummary(request: POSChangeRequestProjection): string {
-  const label = changeRequestLabel(request.kind);
-  return request.amount_display ? `${label} · ${request.amount_display}` : label;
+export function canRequestChange(amount: string): boolean {
+  return Boolean(amount.trim()) && parseAmountToQ(amount) > 0;
+}
+
+/** "120,50" / "120.50" / "120" → centavos. Ilegível vira 0, e o CTA não arma. */
+export function parseAmountToQ(raw: string): number {
+  const limpo = String(raw ?? "").trim().replace(/\s/g, "").replace(",", ".");
+  if (!/^\d+(\.\d{1,2})?$/.test(limpo)) return 0;
+  return Math.round(Number(limpo) * 100);
+}
+
+/** Como a denominação se lê num resumo de uma linha: "R$ 20", "0,50". */
+export function denominationLabel(
+  cashManagement: POSCashManagementCapability | null | undefined,
+  q: number,
+): string {
+  return changeDenominations(cashManagement).find((d) => d.q === q)?.label || String(q);
+}
+
+/**
+ * A linha que o gerente lê antes de sair para buscar: quanto, e em quê.
+ *
+ * Sem denominação escolhida, o resumo é só o valor — e isso é um pedido
+ * inteiro, não um pedido pela metade.
+ */
+export function changeRequestSummary(
+  request: POSChangeRequestProjection,
+  cashManagement?: POSCashManagementCapability | null,
+): string {
+  const valor = request.amount_display || "";
+  const partes = (request.denominations || []).map((q) => denominationLabel(cashManagement, q));
+  if (!partes.length) return valor;
+  return valor ? `${valor} · em ${partes.join(", ")}` : `em ${partes.join(", ")}`;
 }
 
 /** Format the request timestamp for the pending list (pt-BR, hour and minute). */

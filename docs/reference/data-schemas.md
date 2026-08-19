@@ -1105,7 +1105,7 @@ coluna**: são `Σ` do livro (`services.expected_before_count/counted/difference
 | `count_correction` | ± (exige `approved_by`) | `count` | — (motivo em `reason`) | `services.correct_count` |
 | `drawer_open` | 0 | — | — (motivo em `reason`) | abertura sem venda: `backstage/services/pos.py::register_drawer_opening` |
 | `drawer_unlock` | 0 (exige `approved_by`) | — | `{drawer_raw}` | destrave da trava (WP-8) |
-| `change_requested` | 0 | — | `{kind: coins\|small_bills\|amount, amount_q, note}` | pedido de troco: `backstage/services/pos.py::request_change` |
+| `change_requested` | 0 | — | `{amount_q, denominations: [int], note}` | pedido de troco: `backstage/services/pos.py::request_change` |
 | `change_served` | 0 (exige `approved_by`) | `change_requested` | — | `serve_change_request` (PIN de gerente, `cashman.adjust_shift`) |
 | `change_cancelled` | 0 | `change_requested` | — | `cancel_change_request` |
 | `receipt_result` | 0 | `cash_out`/`cash_in` | `{status: printed\|failed\|skipped, detail}` | comprovante: `record_receipt_result` (só o navegador do balcão sabe se imprimiu; a conferência no Admin lê o ÚLTIMO filho) |
@@ -1115,6 +1115,28 @@ O estado do pedido de troco é **dobrado** do livro (`services.change_requests`)
 `pending` → `served`/`cancelled` pela primeira resolução com `parent` apontando
 para o pedido; só `pending` chega à tela do PDV (`cash_runtime.pending_change_requests`,
 cujo `ref` é o `id` da linha `change_requested` — é por ele que a tela atende e cancela).
+
+### `change_requested.denominations`
+
+As cédulas e moedas pedidas, **em centavos, do maior para o menor**. Lista vazia
+é um pedido completo — "me traz R$ 100" basta, e o gerente resolve com o que
+houver no cofre; a lista só refina ("R$ 100 em notas de 5 e moedas de 0,50").
+
+Os valores aceitos são a lista canônica em
+`backstage/services/pos.py::CHANGE_DENOMINATIONS` — `2000, 1000, 500, 200`
+(cédula) e `100, 50, 25, 10, 5` (moeda). Um valor fora dela é recusado no
+service: um pedido de R$ 0,03 não é um pedido, é um dedo errado, e viajaria
+calado até o balcão. R$ 50, R$ 100 e R$ 200 existem e **não** estão na lista —
+ninguém pede troco em nota grande, é o oposto do problema.
+
+⚠️ A tela recebe a lista pela projection (`capabilities.cash_management.change_denominations`)
+em vez de repetir os números em TypeScript. Duas listas viram uma divergência no
+dia em que uma moeda sair de circulação, e o pedido passaria a falar de um
+dinheiro que não existe.
+
+⚠️ `amount_q` aqui é **payload, nunca saldo**: a linha continua com
+`Entry.amount_q = 0` por CheckConstraint. Trocar dinheiro é net zero, e um valor
+com efeito faria o esperado cair por um dinheiro que nunca saiu.
 
 ⚠️ **A troca é NET ZERO.** Saem R$ 50, entram 5×R$ 10 — o total da gaveta não muda.
 Atender um pedido tem `amount_q = 0` por construção (CheckConstraint do pacote). Lançar
