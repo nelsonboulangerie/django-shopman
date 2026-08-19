@@ -90,7 +90,7 @@ class PaymentService:
     Interface pública para operações de pagamento.
 
     Todas as operações state-changing usam @transaction.atomic + select_for_update().
-    Toda transição emite o signal correspondente.
+    Toda transição anuncia o signal correspondente DEPOIS do COMMIT (``_announce``).
     O core é AGNÓSTICO — não sabe nada sobre gateways (Efi, Stripe, etc.).
     """
 
@@ -301,8 +301,8 @@ class PaymentService:
             gateway_id="",
         )
 
-        payment_captured.send(
-            sender=PaymentService,
+        cls._announce(
+            payment_captured,
             intent=intent,
             order_ref=intent.order_ref,
             amount_q=intent.amount_q,
@@ -358,8 +358,8 @@ class PaymentService:
             intent.gateway_data = {**intent.gateway_data, **gateway_data}
         intent.save()
 
-        payment_authorized.send(
-            sender=PaymentService,
+        cls._announce(
+            payment_authorized,
             intent=intent,
             order_ref=intent.order_ref,
             amount_q=intent.amount_q,
@@ -432,8 +432,8 @@ class PaymentService:
             gateway_id=gateway_id,
         )
 
-        payment_captured.send(
-            sender=PaymentService,
+        cls._announce(
+            payment_captured,
             intent=intent,
             order_ref=intent.order_ref,
             amount_q=capture_amount,
@@ -540,8 +540,8 @@ class PaymentService:
             intent.status = PaymentIntent.Status.REFUNDED
             intent.save()
 
-        payment_refunded.send(
-            sender=PaymentService,
+        cls._announce(
+            payment_refunded,
             intent=intent,
             order_ref=intent.order_ref,
             amount_q=refund_amount,
@@ -588,8 +588,8 @@ class PaymentService:
         intent.cancel_reason = reason
         intent.save()
 
-        payment_cancelled.send(
-            sender=PaymentService,
+        cls._announce(
+            payment_cancelled,
             intent=intent,
             order_ref=intent.order_ref,
         )
@@ -641,8 +641,8 @@ class PaymentService:
             }
         intent.save()
 
-        payment_failed.send(
-            sender=PaymentService,
+        cls._announce(
+            payment_failed,
             intent=intent,
             order_ref=intent.order_ref,
             error_code=error_code,
@@ -721,8 +721,8 @@ class PaymentService:
         if status == "authorized" and intent.status == PaymentIntent.Status.PENDING:
             intent.status = PaymentIntent.Status.AUTHORIZED
             intent.save()
-            payment_authorized.send(
-                sender=PaymentService,
+            cls._announce(
+                payment_authorized,
                 intent=intent,
                 order_ref=intent.order_ref,
                 amount_q=intent.amount_q,
@@ -747,8 +747,8 @@ class PaymentService:
             if intent.status == PaymentIntent.Status.PENDING:
                 intent.status = PaymentIntent.Status.AUTHORIZED
                 intent.save()
-                payment_authorized.send(
-                    sender=PaymentService,
+                cls._announce(
+                    payment_authorized,
                     intent=intent,
                     order_ref=intent.order_ref,
                     amount_q=intent.amount_q,
@@ -779,8 +779,8 @@ class PaymentService:
                     amount_q=snapshot_captured_q,
                     gateway_id=capture_gateway_id or gateway_id,
                 )
-                payment_captured.send(
-                    sender=PaymentService,
+                cls._announce(
+                    payment_captured,
                     intent=intent,
                     order_ref=intent.order_ref,
                     amount_q=snapshot_captured_q,
@@ -834,8 +834,8 @@ class PaymentService:
                 if intent.status != PaymentIntent.Status.REFUNDED:
                     intent.status = PaymentIntent.Status.REFUNDED
                     intent.save()
-                payment_refunded.send(
-                    sender=PaymentService,
+                cls._announce(
+                    payment_refunded,
                     intent=intent,
                     order_ref=intent.order_ref,
                     amount_q=refund_delta_q,
@@ -848,7 +848,7 @@ class PaymentService:
             intent.status = PaymentIntent.Status.CANCELLED
             intent.cancel_reason = "gateway_reconciliation"
             intent.save()
-            payment_cancelled.send(sender=PaymentService, intent=intent, order_ref=intent.order_ref)
+            cls._announce(payment_cancelled, intent=intent, order_ref=intent.order_ref)
             actions.append("cancelled")
             changed = True
 
@@ -860,8 +860,8 @@ class PaymentService:
                 "error_message": "Gateway reportou falha no pagamento",
             }
             intent.save()
-            payment_failed.send(
-                sender=PaymentService,
+            cls._announce(
+                payment_failed,
                 intent=intent,
                 order_ref=intent.order_ref,
                 error_code="gateway_reconciliation",
@@ -964,6 +964,33 @@ class PaymentService:
     # ================================================================
     # Private
     # ================================================================
+
+    @classmethod
+    def _announce(cls, signal, **kwargs) -> None:
+        """Anuncia um fato de pagamento DEPOIS do COMMIT.
+
+        Dentro da transação o anúncio é promessa, não fato: o chamador pode
+        abrir um atomic externo, capturar e falhar depois — é literalmente o
+        que ``_settle_pos_sale`` faz em ``shopman/shop/services/pos.py`` (um
+        ``atomic`` em volta de ``settle_terminal_tenders`` + escrita da venda
+        no livro do turno). Com o ``send`` lá dentro, o rollback desfaz o
+        pagamento e deixa de pé o que o receiver já fez com a notícia de um
+        dinheiro que, para o banco, nunca existiu. Pior: exceção de receiver
+        aborta a própria captura — o rabo abana o cachorro.
+
+        ``on_commit`` inverte as duas coisas: o fato só é anunciado quando é
+        fato, e quem escuta não derruba quem cobra. É o idioma do pacote irmão
+        (``packages/cashman/shopman/cashman/services/ledger.py``). Fora de
+        bloco atômico o Django roda o callback na hora, então chamador
+        não-transacional não muda de comportamento.
+
+        O kwarg ``intent`` é a instância viva, não um retrato do instante do
+        fato: quando um mesmo verbo encadeia transições (o ``reconcile`` que
+        autoriza e captura no mesmo snapshot), o receiver lê o estado FINAL.
+        Quem precisar do estado exato de cada etapa lê ``transaction`` (linha
+        imutável) ou refaz a leitura no banco.
+        """
+        transaction.on_commit(lambda: signal.send(sender=cls, **kwargs))
 
     @classmethod
     def _get_for_update(cls, ref: str) -> PaymentIntent:

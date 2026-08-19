@@ -10,6 +10,23 @@ Uso:
     def on_payment_captured(sender, intent, order_ref, amount_q, **kwargs):
         print(f"Pagamento {intent.ref} capturado: {amount_q}q")
 
+Entrega DEPOIS do COMMIT
+------------------------
+
+Todo anúncio sai por ``transaction.on_commit`` (``PaymentService._announce``):
+o receiver só é chamado quando o dinheiro já é fato no banco, e uma exceção
+dele não derruba a cobrança. Duas consequências para quem escuta:
+
+* dentro de um bloco atômico o receiver roda no fim, fora dele; um rollback
+  descarta o anúncio junto com o pagamento (nada de efeito fantasma);
+* ``intent`` é a instância viva, não um retrato do instante do fato — quando
+  um verbo encadeia transições (``reconcile_gateway_status`` autorizando e
+  capturando no mesmo snapshot) o receiver lê o estado FINAL. Para o valor
+  exato de cada etapa use ``transaction`` (linha imutável) ou releia o banco.
+
+Consumidor real hoje: o fan-out SSE do orquestrador
+(``shopman/shop/handlers/_sse_emitters.py``, ``_on_payment_changed``).
+
 Sinais disponíveis:
     payment_authorized — Intent autorizado (pending → authorized)
     payment_captured   — Intent capturado (authorized → captured)
