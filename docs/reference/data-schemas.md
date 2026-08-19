@@ -1140,3 +1140,24 @@ dinheiro que não existe.
 Atender um pedido tem `amount_q = 0` por construção (CheckConstraint do pacote). Lançar
 isso com valor faria o esperado cair por um dinheiro que nunca saiu, e o turno fecharia
 com falta fantasma (foi o defeito desfeito no PR #178).
+
+## HistoricalSale.metadata
+
+O que o export externo traz e nenhuma coluna de `HistoricalSale` guarda
+(BI-DATA-FOUNDATION-PLAN, P0). Escrito **só** pelo importador da fonte
+(`shopman/backstage/bi/ingest/yooga.py::SaleRow.metadata`); a reimportação de um
+export posterior **completa chaves ausentes e nunca sobrescreve** as presentes.
+Chave ausente = o export não trouxe; nunca se grava vazio.
+
+| Chave | Tipo | Fonte (coluna) | Lido por | Descrição |
+|-------|------|----------------|----------|-----------|
+| `nfce_id` | `int` | Yooga `nfce_id` | ninguém ainda (fonte NFC-e futura, P5) | Id da NFC-e autorizada no sistema antigo. Só quando ≠ 0. |
+| `phone_hash` | `str` (sha256 hex) | Yooga `telefone` | join futuro com `guestman` (perfis) | Hash do E.164 obtido por `shopman.utils.phone.normalize_phone` — o mesmo normalizador do guestman, para o join bater. ⚠️ Pseudonimização, não anonimato: o espaço de números é pequeno; protege da leitura casual, não de força bruta. **Nunca o número em claro.** |
+| `phone_last4` | `str` | Yooga `telefone` | conferência humana | Últimos 4 dígitos do E.164. |
+| `neighborhood` | `str` | Yooga `bairro` | B.I. (entregas por bairro; futuro) | Texto cru. |
+| `address` | `str` | Yooga `endereco` | B.I. (geocodificação; futuro) | Texto cru, até 500 caracteres. |
+| `payment_fee_q` | `int` (centavos) | Yooga `taxa_pagamento` | B.I. ("taxa de cartão por mês", catálogo §4) | Só quando ≠ 0. |
+| `note` | `str` | Yooga `observacao` | auditoria | Observação da venda, até 500 caracteres. |
+
+A proveniência da linha (arquivo, hash, quando, quantas) não mora aqui: mora em
+`HistoricalSale.batch` → `ImportBatch`.

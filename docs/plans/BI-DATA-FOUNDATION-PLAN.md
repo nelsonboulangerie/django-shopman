@@ -1,7 +1,8 @@
 # BI-DATA-FOUNDATION-PLAN — a fundação de dados do B.I. em três camadas
 
-> **Status: 🟡 ETAPA 1 (levantamento) ENTREGUE em 2026-08-18 — aguardando aprovação do dono
-> antes de qualquer implementação.** Frente B, v1. Irmão de
+> **Status: 🟢 ETAPA 1 APROVADA em 2026-08-18 ("acato as recomendações") — as três decisões do
+> §6 ficaram como recomendado; ETAPA 2 em andamento: P0 ✅ entregue (PR de `feat/bi-import-batch`),
+> próximo P1.** Frente B, v1. Irmão de
 > [BI-PLAN.md](BI-PLAN.md), [BI-INSIGHTS-MAP.md](BI-INSIGHTS-MAP.md),
 > [BI-FORECAST-PLAN.md](BI-FORECAST-PLAN.md) e [BI-QUESTION-CATALOG.md](BI-QUESTION-CATALOG.md).
 > Não depende da consulta de perfis (frente separada); se ela existir quando isto rodar, é só
@@ -344,7 +345,14 @@ Nenhuma outra superfície Nuxt chama `bi/*`. Toda leitura entra por um único BF
 
 ### 5.1 Ordem e conteúdo de cada passo
 
-**P0 — Ingestão com lote (Yooga; 1 PR).** Prova a camada 1 na fonte que já existe.
+**P0 — Ingestão com lote (Yooga; 1 PR). ✅ ENTREGUE 2026-08-18 (branch `feat/bi-import-batch`).**
+Prova a camada 1 na fonte que já existe. Como saiu: `backstage.ImportBatch` (migração `0022`,
+lote legado por origem para o que já estava carregado), FK **obrigatória** `HistoricalSale.batch`,
+importador em `shopman/backstage/bi/ingest/yooga.py` (pydantic por linha, uma transação, hash
+recusado só entre lotes concluídos, falha registrada como `failed`), `metadata` com telefone
+hash+últimos 4 / bairro / endereço / taxa / observação, Admin somente leitura no grupo novo
+"B.I." (Importações, Vendas históricas com itens inline), `view_*` para o Gerente,
+`pydantic` declarado no `pyproject`. Detalhe original do passo abaixo.
 - `bi.ImportBatch`: `source`, `file_name`, `file_sha256` (**unique com source**), `imported_at`,
   `imported_by`, `rows_read`, `rows_created`, `rows_skipped`, `status` (`done|failed`),
   `error`, `notes`. Reimportar o mesmo arquivo = recusa declarada (não silêncio, não duplicação).
@@ -449,7 +457,7 @@ deixar meio-caminho: P0 sozinho já é melhor que hoje; P1 sozinho já é melhor
 
 ---
 
-## 6. Decisões para o dono (bloqueiam a Etapa 2)
+## 6. Decisões do dono (tomadas em 2026-08-18 — as recomendações foram acatadas)
 
 **a) Canônica persistida ou canônica como contrato?**
 A missão fala em "modelos unificados para onde todas as fontes convergem". Duas leituras:
@@ -461,19 +469,18 @@ A missão fala em "modelos unificados para onde todas as fontes convergem". Duas
   materialização só na camada de leitura (P3).** Custo: leitura continua percorrendo as fontes
   (hoje já faz, dentro do orçamento). Ganho: nenhuma cópia de ledger; a regra tem um dono; se o
   gatilho de performance disparar, a materialização entra na camada 3 sem mexer na 2.
-  **Recomendo (ii).** Se o dono preferir (i), o P2 ganha um job de sincronização e o plano cresce
-  ~1 PR; o resto não muda.
+  **Decidido: (ii).**
 
 **b) Para onde aponta o de-para de produto?**
 `ProductAlias.product` → `offerman.Product` (identidade do catálogo, sobrevive ao SKU-REAL via
 FK) **ou** um "produto do B.I." próprio (desacoplado do catálogo, com produtos extintos como
-linhas). Recomendo **`offerman.Product`** com `product` **nulo permitido** para produto extinto
+linhas). **Decidido: `offerman.Product`** com `product` **nulo permitido** para produto extinto
 (o alias guarda `external_name` e o B.I. lê pelo nome quando não há FK) — não inventa um segundo
 cadastro de produto. Isso encosta na pergunta 3 do SKU-REAL (Yooga adota código real ou numeração
 nova) — o alias funciona nos dois cenários.
 
 **c) Telefone do cliente no `metadata` do histórico (P0):** guardar mascarado (últimos 4) para
-permitir join futuro com `guestman` por hash, ou não guardar? Recomendo **hash + últimos 4** —
+permitir join futuro com `guestman` por hash, ou não guardar? **Decidido: hash + últimos 4** —
 o join C3 ("bons clientes que nunca voltaram") depende disso e é a pergunta 🔴 mais cara de
 perder; dado pessoal fica fora do claro.
 

@@ -36,6 +36,7 @@ from shopman.backstage.services.consumption import (
     classify_basket,
     sku_readings,
 )
+from shopman.backstage.tests.support import historical_batch
 
 
 @pytest.fixture
@@ -160,7 +161,7 @@ def test_native_sale_gets_its_mode(tagged):
 def test_historical_sale_gets_the_same_rule(tagged):
     """É isto que faz os dois anos comparáveis com o presente."""
     sale = HistoricalSale.objects.create(
-        source="yooga", external_id=1,
+        batch=historical_batch("yooga"), source="yooga", external_id=1,
         occurred_at=timezone.now() - timedelta(days=2), total_q=900,
     )
     HistoricalSaleItem.objects.create(sale=sale, seq=1, product_name="Café", sku="CAFE",
@@ -173,7 +174,7 @@ def test_historical_sale_gets_the_same_rule(tagged):
 @pytest.mark.django_db
 def test_historical_delivery_is_delivery_whatever_the_basket(tagged):
     sale = HistoricalSale.objects.create(
-        source="yooga", external_id=2, is_delivery=True,
+        batch=historical_batch("yooga"), source="yooga", external_id=2, is_delivery=True,
         occurred_at=timezone.now() - timedelta(days=2), total_q=900,
     )
     HistoricalSaleItem.objects.create(sale=sale, seq=1, product_name="Café", sku="CAFE",

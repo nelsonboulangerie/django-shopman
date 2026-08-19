@@ -43,6 +43,7 @@ from shopman.backstage.projections.bi_profiles import (
 from shopman.backstage.projections.bi_sales import build_bi_sales
 from shopman.backstage.services import consumption as rule
 from shopman.backstage.services.hour_bands import HOUR_BANDS, band_for
+from shopman.backstage.tests.support import historical_batch
 
 
 @pytest.fixture
@@ -89,7 +90,7 @@ def _sale(when: datetime, lines, *, is_delivery=False, total_q=None):
     """Venda histórica com linhas ``(sku, name, category, qty, line_total_q)``."""
     lines = list(lines)
     sale = HistoricalSale.objects.create(
-        source="yooga", external_id=next(_seq), occurred_at=when,
+        batch=historical_batch("yooga"), source="yooga", external_id=next(_seq), occurred_at=when,
         total_q=total_q if total_q is not None else sum(line[4] for line in lines),
         is_delivery=is_delivery,
     )

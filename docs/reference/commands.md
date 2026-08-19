@@ -21,6 +21,7 @@
 | [`reconcile_financial_day`](#reconcile_financial_day) | backstage | Operação | Reconcilia pedido, intent, transação e fechamento diário |
 | [`smoke_gateways`](#smoke_gateways) | backstage | Operação | Estressa webhooks/gateways com fixtures locais e matriz sandbox |
 | [`omotenashi_qa`](#omotenashi_qa) | backstage | QA | Lista matriz manual QA Omotenashi com evidências do seed |
+| [`ingest_yooga`](#ingest_yooga) | backstage | B.I. | Aterrissa o export do Yooga em `HistoricalSale`, por lote (hash, validação, uma transação) |
 | [`release-readiness`](#release-readiness) | script | Release | Consolida checks locais e bloqueios externos |
 | [`seed`](#seed) | shop | Seed | Popula banco com dados da Nelson Boulangerie |
 
@@ -436,6 +437,33 @@ Esse alvo é destrutivo para o banco configurado no ambiente porque executa o
 seed com flush. Use-o em ambiente local descartável ou CI.
 
 ---
+
+### ingest_yooga
+
+**Propósito:** Faz o export consolidado do Yooga (xlsx, abas `Vendas`/`Itens`/`Produtos`)
+aterrissar em `HistoricalSale`/`HistoricalSaleItem`, **por lote** (`ImportBatch`).
+
+**Uso:**
+```bash
+python manage.py ingest_yooga --file var/yooga-consolidado.xlsx
+python manage.py ingest_yooga --file var/yooga-consolidado.xlsx --rebuild
+```
+
+**Comportamento (BI-DATA-FOUNDATION-PLAN, P0):**
+- Um `ImportBatch` por arquivo (nome, sha256, contagens). **O mesmo arquivo não entra duas
+  vezes**: hash já concluído nesta origem é recusa declarada (`CommandError`), não silêncio.
+- Validação na fronteira: aba, coluna ou linha inválida é erro com nome da aba e número da
+  linha, **nada é gravado**, e o lote fica registrado como `failed` com o motivo.
+- Uma transação: vendas e itens entram juntos ou não entram.
+- Idempotente e completável: chave natural = `pedido`; um export **novo** insere o que
+  falta, completa `metadata` das vendas que já existiam (nunca sobrescreve) e grava itens só
+  das vendas que ainda não têm.
+- `--rebuild` apaga vendas, itens **e lotes** de `source=yooga` e recarrega do arquivo.
+- Telefone do cliente entra só como hash + últimos 4 (`HistoricalSale.metadata`, ver
+  data-schemas.md).
+
+O arquivo não entra no git (`var/` é gitignored); o comando abre o xlsx em modo somente
+leitura. Lotes e vendas são visíveis no Admin (grupo "B.I."), somente leitura.
 
 ## Wrappers de diagnóstico
 

@@ -26,6 +26,7 @@ from shopman.backstage.models import (
     Reading,
 )
 from shopman.backstage.services.consumption import beverage_rate
+from shopman.backstage.tests.support import historical_batch
 
 
 def test_lift_is_the_pull_above_the_house_average():
@@ -43,7 +44,7 @@ _seq = iter(range(1, 100_000))
 
 def _sale(lines, *, delivery=False, days_ago=3):
     sale = HistoricalSale.objects.create(
-        source="yooga", external_id=next(_seq), is_delivery=delivery,
+        batch=historical_batch("yooga"), source="yooga", external_id=next(_seq), is_delivery=delivery,
         occurred_at=timezone.now() - timedelta(days=days_ago), total_q=1000,
     )
     for seq, (sku, name, category) in enumerate(lines, start=1):

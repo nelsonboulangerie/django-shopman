@@ -27,6 +27,7 @@ from shopman.backstage.models import (
     ProductConsumptionTag,
     Reading,
 )
+from shopman.backstage.tests.support import historical_batch
 
 
 @pytest.fixture
@@ -138,7 +139,7 @@ def history(roles):
         (2, [("CAFE", 1), ("CROISSANT", 1)]),
     ]:
         sale = HistoricalSale.objects.create(
-            source="yooga", external_id=external_id, occurred_at=now,
+            batch=historical_batch("yooga"), source="yooga", external_id=external_id, occurred_at=now,
             total_q=1000, payment="Dinheiro",
         )
         for seq, (sku, qty) in enumerate(items):
@@ -160,7 +161,7 @@ def test_payment_report_counts_the_raw_forms(history):
 @pytest.mark.django_db
 def test_unrecognised_payment_form_is_flagged_with_its_own_words(roles):
     HistoricalSale.objects.create(
-        source="yooga", external_id=9, occurred_at=timezone.now() - timedelta(days=1),
+        batch=historical_batch("yooga"), source="yooga", external_id=9, occurred_at=timezone.now() - timedelta(days=1),
         total_q=500, payment="Fiado do seu Zé",
     )
     output = _run("bi_calibrate")
@@ -190,7 +191,7 @@ def test_the_two_variants_disagree_exactly_where_the_owner_said(history):
 @pytest.mark.django_db
 def test_calibration_without_tags_says_what_to_do_instead_of_showing_zeros(db):
     HistoricalSale.objects.create(
-        source="yooga", external_id=1, occurred_at=timezone.now() - timedelta(days=1),
+        batch=historical_batch("yooga"), source="yooga", external_id=1, occurred_at=timezone.now() - timedelta(days=1),
         total_q=500, payment="PIX",
     )
     output = _run("bi_calibrate")
@@ -215,7 +216,7 @@ def test_seed_does_not_invent_history_where_real_history_exists():
     from config.management.commands.seed import Command
 
     HistoricalSale.objects.create(
-        source="yooga", external_id=1, occurred_at=timezone.now() - timedelta(days=1),
+        batch=historical_batch("yooga"), source="yooga", external_id=1, occurred_at=timezone.now() - timedelta(days=1),
         total_q=1000, payment="PIX",
     )
     created = Command()._seed_long_sales_history({}, days=30)
@@ -230,11 +231,11 @@ def test_a_previously_seeded_environment_cleans_itself_when_real_data_arrives():
     from config.management.commands.seed import Command
 
     HistoricalSale.objects.create(
-        source="seed", external_id=9, occurred_at=timezone.now() - timedelta(days=2),
+        batch=historical_batch("seed"), source="seed", external_id=9, occurred_at=timezone.now() - timedelta(days=2),
         total_q=500, payment="Dinheiro",
     )
     HistoricalSale.objects.create(
-        source="yooga", external_id=1, occurred_at=timezone.now() - timedelta(days=1),
+        batch=historical_batch("yooga"), source="yooga", external_id=1, occurred_at=timezone.now() - timedelta(days=1),
         total_q=1000, payment="PIX",
     )
     Command()._seed_long_sales_history({}, days=30)
@@ -413,7 +414,7 @@ def test_historical_scan_deduplicates_by_sku(roles):
     from shopman.backstage.management.commands.propose_consumption_tags import Command
 
     sale = HistoricalSale.objects.create(
-        source="yooga", external_id=1, occurred_at=timezone.now() - timedelta(days=1),
+        batch=historical_batch("yooga"), source="yooga", external_id=1, occurred_at=timezone.now() - timedelta(days=1),
         total_q=1000, payment="PIX",
     )
     for seq in range(5):

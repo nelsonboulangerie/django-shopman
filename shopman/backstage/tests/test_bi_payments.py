@@ -23,6 +23,7 @@ from shopman.backstage.models import HistoricalSale
 from shopman.backstage.projections.bi_explore import ExploreError, build_bi_explore, validate_config
 from shopman.backstage.projections.bi_payments import normalize_historical_payment
 from shopman.backstage.services.payments import iter_order_payments
+from shopman.backstage.tests.support import historical_batch
 
 
 def _cells(report):
@@ -208,10 +209,10 @@ def test_historical_and_native_share_the_axis_with_native_day_winning(db):
     Order.objects.create(ref="PAY-N", channel_ref="pdv", status=Order.Status.COMPLETED,
                          total_q=1000, data={"payment": {"method": "pix"}})
     # Mesmo dia do nativo: a fusão descarta, senão a venda contaria duas vezes.
-    HistoricalSale.objects.create(source="yooga", external_id=1, occurred_at=today,
+    HistoricalSale.objects.create(batch=historical_batch("yooga"), source="yooga", external_id=1, occurred_at=today,
                                   total_q=7777, payment="Dinheiro")
     # Dia sem nativo: entra, e soma no mesmo balde canônico.
-    HistoricalSale.objects.create(source="yooga", external_id=2,
+    HistoricalSale.objects.create(batch=historical_batch("yooga"), source="yooga", external_id=2,
                                   occurred_at=today - timedelta(days=3),
                                   total_q=500, payment="Dinheiro")
 
@@ -222,7 +223,7 @@ def test_historical_and_native_share_the_axis_with_native_day_winning(db):
 @pytest.mark.django_db
 def test_historical_sale_is_never_marked_as_owed(db):
     """O export só traz venda concluída — marcar pendente inventaria dívida."""
-    HistoricalSale.objects.create(source="yooga", external_id=9,
+    HistoricalSale.objects.create(batch=historical_batch("yooga"), source="yooga", external_id=9,
                                   occurred_at=timezone.now() - timedelta(days=1),
                                   total_q=900, payment="Dinheiro")
     assert build_bi_explore(metric="payment_pending", by="payment_method").rows == ()
