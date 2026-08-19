@@ -965,6 +965,7 @@ def cancel_recent_order(
     actor: str,
     max_age_minutes: int = 5,
     channel_ref: str | None = None,
+    approved_by_username: str = "",
 ) -> None:
     """Cancel the last POS order if it is still inside the operator window.
 
@@ -1008,10 +1009,20 @@ def cancel_recent_order(
         raise ValueError(f"Pedido {order_ref} não pode ser cancelado (status: {order.status})")
     refund_shift = _shift_for_refund(order, actor=actor)
 
+    # No balcão, dentro da janela, o cliente está na frente: cancelar e devolver
+    # são o mesmo gesto. Fora daqui (gestor, de noite) cancelar NÃO devolve: o
+    # dinheiro fica pendente até alguém com turno aberto entregá-lo
+    # (`payment.refund_cash`), e é isso que o livro e o Payman registram.
     with transaction.atomic():
         cancel(order, reason="pos_operator", actor=actor)
         if refund_shift is not None:
-            _record_refund(order, shift=refund_shift, actor=actor)
+            payment_service.refund_cash(
+                order,
+                shift=refund_shift,
+                actor=_user_for_actor(actor) or refund_shift.operator,
+                approved_by=_user_for_actor(approved_by_username) if approved_by_username else None,
+                reason="cancelamento no PDV",
+            )
     logger.info("pos_cancel_last order=%s actor=%s", order_ref, actor)
 
 
@@ -1031,32 +1042,13 @@ def _shift_for_refund(order, *, actor: str):
     return shift
 
 
-def _record_refund(order, *, shift, actor: str) -> None:
-    """Uma linha ``refund`` (efeito = −dinheiro devolvido) na gaveta de quem devolve."""
-    payment = dict((order.data or {}).get("payment") or {})
-    cash_q = _terminal_cash_amount_q(order)
-    if cash_q <= 0:
-        return
-    original = _sale_entry(order)
-    cash_ledger.record(
-        "refund",
-        shift=shift,
-        operator=_user_for_actor(actor) or shift.operator,
-        amount_q=-cash_q,
-        order_ref=order.ref,
-        payment_ref=_cash_intent_ref(payment),
-        parent=original if original is not None and original.shift_id == shift.pk else None,
-        reason="cancelamento no PDV",
-        payload={"method": payment.get("method", ""), "cancel_reason": "pos_operator"},
-    )
-
-
 def reopen_recent_order_for_correction(
     *,
     order_ref: str,
     actor: str,
     reason: str,
     max_age_minutes: int = 5,
+    approved_by_username: str = "",
 ) -> None:
     """Cancel a recent POS order with an explicit correction reason."""
     reason = str(reason or "").strip()
@@ -1066,6 +1058,7 @@ def reopen_recent_order_for_correction(
         order_ref=order_ref,
         actor=actor,
         max_age_minutes=max_age_minutes,
+        approved_by_username=approved_by_username,
     )
     order = Order.objects.filter(ref=order_ref).first()
     if order is None:
@@ -1891,12 +1884,6 @@ def _record_sale(order: Order, *, shift, operator, cash_q: int, payment_ref: str
     )
 
 
-def _sale_entry(order: Order):
-    from shopman.cashman import Entry
-
-    return Entry.objects.filter(kind=Entry.Kind.SALE, order_ref=order.ref).order_by("id").first()
-
-
 def _terminal_cash_amount_q(order: Order) -> int:
     """Quanto dinheiro em espécie desta venda entrou na gaveta (tenders cash no terminal)."""
     payment = dict((order.data or {}).get("payment") or {})
@@ -1906,15 +1893,6 @@ def _terminal_cash_amount_q(order: Order) -> int:
     if str(payment.get("method") or "").lower() == "cash" and str(payment.get("collection") or "terminal") == "terminal":
         return int(order.total_q or 0)
     return 0
-
-
-def _cash_intent_ref(payment: dict) -> str:
-    for tender in payment.get("tenders") or []:
-        if isinstance(tender, dict) and tender.get("method") == "cash" and tender.get("intent_ref"):
-            return str(tender["intent_ref"])
-    if str(payment.get("method") or "") == "cash":
-        return str(payment.get("intent_ref") or "")
-    return ""
 
 
 def _require_open_shift(payload: dict):

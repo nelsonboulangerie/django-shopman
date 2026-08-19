@@ -199,40 +199,63 @@ def test_initiate_cash_at_terminal_skips_cancelled_order():
 
 
 @_MOCK_ADAPTERS
-def test_refund_settled_cash_creates_refund_transaction_without_adapter():
+def test_refund_leaves_cash_alone_because_cancelling_is_not_handing_money_back():
+    """Cancelar não é devolver. O estorno automático do cancel não toca em
+    dinheiro: às 22h o gestor cancela e ninguém abriu gaveta. O intent fica
+    capturado e o pedido cancelado vira devolução pendente."""
     order = _order("ORD-CASH-REFUND", payment={"method": "cash", "collection": "terminal", "amount_q": 5000})
     payment_service.initiate(order)
     order.refresh_from_db()
     ref = order.data["payment"]["intent_ref"]
+    order.status = Order.Status.CANCELLED
+    order.save(update_fields=["status"])
 
     payment_service.refund(order)
 
     intent = PaymentService.get(ref)
-    assert intent.status == PaymentIntent.Status.REFUNDED
-    refunds = intent.transactions.filter(type=PaymentTransaction.Type.REFUND)
-    assert refunds.count() == 1
-    assert refunds.get().amount_q == 5000
-    assert refunds.get().gateway_id == f"order-refund:{order.ref}"
-    assert PaymentService.refunded_total(ref) == 5000
-
-    # Segunda chamada (re-dispatch do on_cancelled): saldo zerado, nada a estornar.
-    payment_service.refund(order)
-    assert refunds.count() == 1
+    assert intent.status == PaymentIntent.Status.CAPTURED
+    assert not intent.transactions.filter(type=PaymentTransaction.Type.REFUND).exists()
+    pending = payment_service.pending_cash_refunds()
+    assert [(p.order_ref, p.amount_q, p.intent_refs) for p in pending] == [("ORD-CASH-REFUND", 5000, (ref,))]
 
 
 @_MOCK_ADAPTERS
-def test_partial_cash_refund_retry_does_not_double_refund():
-    order = _order("ORD-CASH-PARTIAL", payment={"method": "cash", "collection": "terminal", "amount_q": 5000})
+def test_refund_cash_hands_money_back_from_an_open_shift_in_both_books():
+    """A devolução é o gesto físico: turno aberto, Payman e livro na mesma transação; repetir não dobra."""
+    from django.contrib.auth import get_user_model
+    from shopman.cashman import Entry
+    from shopman.cashman import services as cash
+
+    order = _order("ORD-CASH-HANDBACK", payment={"method": "cash", "collection": "terminal", "amount_q": 5000})
     payment_service.initiate(order)
     order.refresh_from_db()
     ref = order.data["payment"]["intent_ref"]
+    order.status = Order.Status.CANCELLED
+    order.save(update_fields=["status"])
+    operator = get_user_model().objects.create_user(username="marina", password="x")
+    shift = cash.open_shift(operator=operator, float_q=10000)
 
-    payment_service.refund(order, amount_q=2000, idempotency_key="return:ORD-CASH-PARTIAL:0")
-    payment_service.refund(order, amount_q=2000, idempotency_key="return:ORD-CASH-PARTIAL:0")
-    payment_service.refund(order, amount_q=1000, idempotency_key="return:ORD-CASH-PARTIAL:1")
+    assert payment_service.refund_cash(order, shift=shift, actor=operator) == 5000
+    assert payment_service.refund_cash(order, shift=shift, actor=operator) == 0
 
-    assert PaymentService.refunded_total(ref) == 3000
-    assert PaymentService.get(ref).transactions.filter(type=PaymentTransaction.Type.REFUND).count() == 2
+    intent = PaymentService.get(ref)
+    assert intent.status == PaymentIntent.Status.REFUNDED
+    assert PaymentService.refunded_total(ref) == 5000
+    assert intent.transactions.filter(type=PaymentTransaction.Type.REFUND).count() == 1
+    (line,) = Entry.objects.filter(kind=Entry.Kind.REFUND)
+    assert line.amount_q == -5000 and line.order_ref == order.ref and line.payment_ref == ref
+    assert cash.balance(shift) == 5000
+    assert payment_service.pending_cash_refunds() == []
+
+
+def test_refund_cash_requires_an_open_shift():
+    from django.contrib.auth import get_user_model
+
+    order = _order("ORD-CASH-NOSHIFT", payment={"method": "cash", "collection": "terminal", "amount_q": 5000})
+    payment_service.initiate(order)
+    operator = get_user_model().objects.create_user(username="marina", password="x")
+    with pytest.raises(ValueError, match="Abra o caixa"):
+        payment_service.refund_cash(order, shift=None, actor=operator)
 
 
 def test_refund_without_intent_is_still_a_noop():

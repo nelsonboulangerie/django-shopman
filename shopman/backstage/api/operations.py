@@ -1837,6 +1837,39 @@ class POSChangeRequestCancelView(APIView):
 
 
 @extend_schema_view(
+    post=extend_schema(
+        tags=["backstage"],
+        summary="Hand back the cash of a cancelled sale from this shift's drawer",
+        responses={200: OpenApiResponse(description="Cash refund recorded.")},
+    ),
+)
+class POSCashRefundView(APIView):
+    """Devolver o dinheiro de uma venda cancelada, pela gaveta de quem devolve.
+
+    Cancelar não é devolver. O cancel pelo gestor (de noite, de casa) deixa a
+    devolução pendente; quem entrega as notas é quem está com a gaveta aberta,
+    e é nesse instante que o Payman e o livro registram, juntos.
+    """
+
+    permission_classes = [HasBackstagePermission]
+    required_permission = "cashman.operate_pos"
+
+    def post(self, request, order_ref: str):
+        try:
+            refunded_q = pos_service.refund_cash(
+                operator=request.user,
+                order_ref=order_ref,
+                manager_approval=request.data.get("manager_approval"),
+            )
+        except PosIntentError as exc:
+            return Response({"detail": exc.message, "error": exc.as_dict()}, status=exc.status)
+        except Exception as exc:
+            logger.debug("pos_cash_refund_failed user=%s", _actor(request), exc_info=True)
+            return Response({"detail": str(exc) or "Falha ao devolver o dinheiro."}, status=400)
+        return Response({"ok": True, "refunded_q": refunded_q})
+
+
+@extend_schema_view(
     get=extend_schema(
         tags=["backstage"],
         summary="Cash session report — X/Z readings and today's shift history",
@@ -2267,16 +2300,19 @@ class POSCancelRecentSaleView(APIView):
                 operator_username=_username(request),
                 action="cancel_recent_sale",
             )
+            approved_by_username = str((request.data.get("manager_approval") or {}).get("username") or "").strip()
             if reason:
                 pos_tabs_service.reopen_recent_order_for_correction(
                     order_ref=order_ref,
                     actor=_actor_pos(request),
                     reason=reason,
+                    approved_by_username=approved_by_username,
                 )
             else:
                 pos_tabs_service.cancel_recent_order(
                     order_ref=order_ref,
                     actor=_actor_pos(request),
+                    approved_by_username=approved_by_username,
                 )
         except PosIntentError as exc:
             return Response({"detail": exc.message, "error": exc.as_dict()}, status=exc.status)

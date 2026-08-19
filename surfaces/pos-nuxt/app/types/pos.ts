@@ -160,6 +160,20 @@ export interface POSChangeRequestProjection {
   requested_at: string;
 }
 
+/**
+ * Um pedido cancelado cujo dinheiro ainda não saiu de nenhuma gaveta.
+ *
+ * Cancelar não é devolver: o gestor cancela às 22h e ninguém abriu gaveta. A
+ * pendência fica na antesala até alguém com turno aberto entregar as notas.
+ */
+export interface POSPendingCashRefundProjection {
+  order_ref: string;
+  amount_q: number;
+  amount_display: string;
+  customer_name: string;
+  cancelled_at: string;
+}
+
 export interface POSCashRuntimeProjection {
   has_open_shift: boolean;
   shift_id: number | null;
@@ -181,6 +195,8 @@ export interface POSCashRuntimeProjection {
   can_audit_cash?: boolean;
   /** Só os PENDENTES: atendido e cancelado ficam na trilha do turno, não na tela. */
   pending_change_requests?: POSChangeRequestProjection[];
+  /** Devoluções em dinheiro de vendas canceladas, à espera de uma gaveta aberta. */
+  pending_cash_refunds?: POSPendingCashRefundProjection[];
 }
 
 export interface POSAddressAutocompleteProjection {

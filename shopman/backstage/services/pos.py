@@ -195,6 +195,42 @@ def unlock_drawer(*, operator, manager_approval: dict | None = None, drawer_raw:
     )
 
 
+def refund_cash(*, operator, order_ref: str, manager_approval: dict | None = None) -> int:
+    """Devolve ao cliente o dinheiro de uma venda cancelada, pela gaveta deste turno.
+
+    Cancelar não é devolver: o cancel (PDV fora da janela, gestor, de noite)
+    deixa o dinheiro pendente; este é o gesto físico, com turno aberto e PIN de
+    gerente (dinheiro sai da gaveta com segunda assinatura, como a sangria). O
+    shop grava o Payman e a linha ``refund`` na mesma transação.
+    """
+    from shopman.orderman.models import Order
+
+    from shopman.shop.services import payment as payment_service
+    from shopman.shop.services.pos import validate_manager_override
+
+    shift = _open_shift_or_raise(operator)
+    validate_manager_override(
+        manager_approval or {},
+        operator_username=operator.get_username(),
+        action="cash_refund",
+    )
+    order = Order.objects.filter(ref=str(order_ref or "").strip()).first()
+    if order is None:
+        raise POSError("Pedido não encontrado.")
+    if order.status not in {Order.Status.CANCELLED, Order.Status.RETURNED}:
+        raise POSError("Só se devolve dinheiro de venda cancelada ou devolvida.")
+    refunded_q = payment_service.refund_cash(
+        order,
+        shift=shift,
+        actor=operator,
+        approved_by=_approver(manager_approval or {}),
+        reason="devolução de venda cancelada",
+    )
+    if refunded_q <= 0:
+        raise POSError("Esta venda não tem dinheiro pendente de devolução.")
+    return refunded_q
+
+
 #: As cédulas e moedas que o balcão pode pedir, do maior para o menor.
 #:
 #: Não é a lista do dinheiro brasileiro — é a lista do que se PEDE como troco.
