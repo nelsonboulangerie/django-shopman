@@ -149,23 +149,37 @@ necessários se o §2.2 for adotado — `FD`, `SD`, `FL` e `THG` são justamente
 
 ## 3. Execução
 
-**F1 — O mapa.** 🟡 [`sku-real-mapa.csv`](sku-real-mapa.csv) traz as 143 linhas
-com preço praticado (últimos 12 meses, histórico até 20/07) e cada uma
-classificada:
+**F1 — O mapa.** ✅ Fechado (18/08). As 143 linhas de
+[`sku-real-mapa.csv`](sku-real-mapa.csv) trazem preço praticado e destino:
 
-| `situacao` | Quantas | O que significa |
+| `situacao` | Linhas | O que acontece |
 |---|---:|---|
-| `confirmado` | 26 | par conferido pelo dono |
-| `desdobrar` | 10 | vira produto próprio (§2.1) |
-| `juntar` | 2 | variante que não vingou, entra no irmão |
-| `CANDIDATO` | 27 | **decisão sua**: par que meu casador perdeu, ou aposentado? |
-| `aposentado?` | 20 | baixo volume, provavelmente fora |
-| `preco` | 41 | `M*` metade do preço — vira modifier, nunca SKU |
-| `canal` | 16 | `IFOOD_*` — vira espelho de canal, nunca SKU |
+| `preco` | 41 | `M*` era desconto do sistema antigo — qualidade mínima **ou** pão de ontem, sem distinção. Vira modifier sobre o produto-base. |
+| `restaurar` | 32 | produto volta ao catálogo com o código real |
+| `confirmado` | 27 | produto do 2027 recebe o código real |
+| `canal` | 16 | `IFOOD_*` associa ao produto-base e ao canal |
+| `revenda?` | 13 | ⚠️ linha Chai Kãnfa — **única decisão aberta** |
+| `desdobrar` | 10 | vira produto próprio, irmão de um do 2027 |
+| `juntar` | 2 | variante que não vingou, some no irmão |
+| `bundle` | 1 | `COMBO` vira bundle na coleção Combos, não SKU |
+| `nao-vem` | 1 | `TX` é taxa de entrega: modalidade, não item de cardápio |
 
-⚠️ Dois candidatos com cara de família perdida: `JO` Caranguejo (4.211 linhas) e
-`MA` Maçã (4.433) parecem ser moldados como os animalzinhos, só que sem o
-prefixo `AN`.
+Três achados que só apareceram ao fechar o mapa:
+
+1. **`MOCHACCINO` recebia dois códigos** — `MC` Mocaccino e `MH` Mocha. São
+   bebidas diferentes; o par por nome é o `MC`, e o Mocha entra como restauração.
+   Achei porque meu primeiro teste de colisão olhava só o lado do destino.
+2. **⚠️ Dois códigos mudam de unidade, e o B.I. não pode comparar os dois lados.**
+   `PHO` era "Pão para Hot Dog — **Unidade**" a R$ 6; no cardápio 2027 é
+   "**pc. 4un.**" a R$ 28. `BBB` era unidade a R$ 8; hoje é "pc. 2un." a R$ 16.
+   Manter o código faz 6.360 vendas históricas de *unidade* virarem base de
+   comparação para vendas de *pacote* — erro de 4×. **Recomendo código próprio
+   para o pacote** (`PHO4`, `BBB2`), preservando `PHO`/`BBB` como a unidade: é a
+   mesma regra que separou o mini do tradicional.
+3. **Três dos 16 `IFOOD_*` são revenda e não podem casar por nome:** mostarda
+   Maille ≠ Mostarda da Casa, geleia St. Dalfour 284g ≠ a mini, refri Wewi ≠ a
+   Soda de Laranja da casa. Casar por nome aqui fundiria produto comprado com
+   produto da casa.
 
 **F2 — O mecanismo.** ✅ Feito. SKU no registro de refs, 17 campos no cascade,
 defeito do `db_index` corrigido, cobertura testada.
