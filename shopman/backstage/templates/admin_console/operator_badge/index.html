@@ -19,7 +19,7 @@
     /* ⚠️ `visibility`, NUNCA `display: none` nos ancestrais.
        A regra anterior era `body > *:not(#badge-print-root) { display: none }`, e
        saía FOLHA EM BRANCO: o crachá mora 18 níveis dentro do body (o chrome do
-       Admin), então ele nunca é filho direto — o `:not()` protegia um seletor que
+       Admin), então ele nunca é filho direto: o `:not()` protegia um seletor que
        não casava com nada, e a linhagem inteira do crachá apagava junto.
        `display: none` tira o ramo da árvore de caixas e descendente nenhum
        consegue voltar; `visibility: hidden` mantém as caixas, e aí o
@@ -57,7 +57,7 @@
     {% if badge %}
       {% component "unfold/components/flex.html" with col=1 class="gap-2 badge-noprint" %}
         {% component "unfold/components/text.html" with class="text-sm text-base-500" %}
-          Emperrou a impressora? Pode recarregar esta página nos próximos {{ minutos_da_janela }} minutos e imprimir de novo — é o mesmo crachá, não um novo. Passado esse prazo, só emitindo outro (o que invalida este).
+          Emperrou a impressora? Pode recarregar esta página nos próximos {{ minutos_da_janela }} minutos e imprimir de novo. É o mesmo crachá, não um novo. Passado esse prazo, só emitindo outro (o que invalida este).
         {% endcomponent %}
         {% component "unfold/components/text.html" with class="text-sm text-base-500" %}
           Largura do código: {{ badge.width_mm }}mm por {{ badge.height_mm }}mm de altura. Confira se cabe na etiqueta antes de imprimir em lote.
@@ -90,7 +90,7 @@
     {% else %}
       {% if expirou %}
         {% component "unfold/components/text.html" with class="text-base-500" %}
-          Passaram-se mais de {{ minutos_da_janela }} minutos desde a emissão, e o código saiu da sessão. O crachá emitido continua VÁLIDO — se ele foi impresso, use-o normalmente. Se a impressão não saiu, emita outro (o anterior deixa de valer).
+          Passaram-se mais de {{ minutos_da_janela }} minutos desde a emissão, e o código saiu da sessão. O crachá emitido continua VÁLIDO: se ele foi impresso, use-o normalmente. Se a impressão não saiu, emita outro (o anterior deixa de valer).
         {% endcomponent %}
       {% else %}
         {% component "unfold/components/text.html" with class="text-base-500" %}
