@@ -6075,24 +6075,75 @@ class Command(BaseCommand):
                               "note": "curadoria do cardápio 2027"},
                 )
 
-        # Os combos do Yooga (jul/24–jul/25): 9 mil linhas sem SKU e sem
-        # categoria, em 5,5 mil vendas — invisíveis à regra até aqui. Entram
-        # pelo NOME (a chave `nome:`) como "consome aqui" — decisão do dono
-        # (18/08). NÃO como bebida: a linha é o combo inteiro (lanche +
-        # refrigerante), e contá-la como bebida pronta jogaria R$ 140 mil de
-        # hotdog na receita de refrigerante. A linha nasce PROPOSTA
-        # (reviewed=False) para ele confirmar no Admin.
-        combos = (
-            "Combo Cola + Hotdog", "Combo Citrus + Hotdog",
-            "Combo Cola + Donut", "Combo Citrus + Donut",
-        )
-        eat_in = roles.get("consome-aqui")
-        if eat_in is not None:
-            for name in combos:
-                ProductConsumptionTag.objects.get_or_create(
-                    sku=f"nome:{name}",
-                    defaults={"role": eat_in, "reviewed": False,
-                              "note": "combo do Yooga sem SKU: lanche + refrigerante, come aqui"},
+        self._seed_historical_consumption_tags(roles)
+
+    def _seed_historical_consumption_tags(self, roles) -> None:
+        """A curadoria dos SKUs do YOOGA — o histórico também tem dono.
+
+        Os dois anos importados usam SKUs do sistema antigo (CT, PC, FA…), que
+        não estão no cardápio 2027. Sem etiqueta própria, cada um cairia na
+        reserva por categoria — e "Pães Finos" (55% da receita, de croissant a
+        pão de forma) é grossa demais para decidir sozinha. O dono revisou os
+        61 SKUs dessa categoria em 18/08/2026, linha a linha, e a decisão vale
+        para qualquer ambiente que carregue o histórico — por isso mora aqui, e
+        não só no banco do staging.
+
+        A regra que ele fixou na revisão: **a bebida no pedido é que define**.
+        Salgado montado (Hot Dog Vienna, Deli, Croissant Presunto, Folhado) NÃO
+        ancora sozinho — é híbrido, como a viennoiserie. O que vira "leva" é o
+        pão de abastecimento: forma, burger bun, pão de hot dog, pita, challah,
+        nanterre, kuro pan (o dado concorda: 63–99% dessas vendas são de 4+
+        unidades, e a bebida acompanha só 17–23% delas).
+
+        Os combos do Yooga (jul/24–jul/25: 9 mil linhas sem SKU e sem
+        categoria, em 5,5 mil vendas) entram pelo NOME (`nome:`) como "consome
+        aqui" — confirmado pelo dono no Admin em 18/08. NÃO como bebida: a
+        linha é o combo inteiro, e contá-la como refrigerante jogaria R$ 140
+        mil de hotdog na receita de bebida pronta.
+        """
+        from shopman.backstage.models import ProductConsumptionTag
+
+        note_a = "pão de levar — revisão do dono 18/08/2026 (Pães Finos do Yooga)"
+        note_h = "híbrido confirmado pelo dono 18/08/2026: a bebida no pedido é que define"
+        historical = {
+            "leva": (note_a, [
+                "FA", "MFA",              # Forma Artesanal - 6 Fatias
+                "BBB", "MBBB", "MBBBG",   # Brioche Burger Bun
+                "PHO", "MPHO", "MIPHO",   # Pão Para Hot Dog
+                "PI", "MPI",              # Pita
+                "CH", "MCH",              # Challah
+                "BN", "MBN",              # Brioche Nanterre
+                "KP", "MKP",              # Kuro Pan
+                "KBB", "MKPB",            # Kuro Pan Burger
+            ]),
+            "hibrido": (note_h, [
+                # viennoiserie e doces
+                "PC", "MPC", "CT", "MCT", "CN", "MD", "MMD", "BH", "MBH",
+                "BCH", "MBCH", "CM", "MCM", "PR", "MPR", "CO", "MCO",
+                "COC", "MCOC", "MA", "MMA", "ME", "MME",
+                # os pães-bicho (melonpan): Coelhinho, Caranguejo, Ursinho, Porquinho
+                "ANC", "JO", "MJO", "ANU", "MANU", "ANP", "MANP",
+                # salgados montados: a bebida define, não o salgado
+                "HO", "MHO", "MIHO", "DL", "MDL", "CPQ", "MCPQ", "FF", "MFF",
+                # os mesmos produtos com SKU do iFood (só entrega; a etiqueta é
+                # coerência, a entrega precede a cesta)
+                "IFOOD_7b8ad920c82b11eea8170d006",
+                "IFOOD_7a2d5980c82b11eead2087b32",
+                "IFOOD_7ee4ad50c82b11eea051db114",
+                "IFOOD_a8feac8b-0c72-43b6-a067-b9e451585762",
+            ]),
+            "consome-aqui": ("combo do Yooga sem SKU: lanche + refrigerante, come aqui — confirmado pelo dono 18/08/2026", [
+                "nome:Combo Cola + Hotdog", "nome:Combo Citrus + Hotdog",
+                "nome:Combo Cola + Donut", "nome:Combo Citrus + Donut",
+            ]),
+        }
+        for role_ref, (note, skus) in historical.items():
+            role = roles.get(role_ref)
+            if role is None:
+                continue
+            for sku in skus:
+                ProductConsumptionTag.objects.update_or_create(
+                    sku=sku, defaults={"role": role, "reviewed": True, "note": note},
                 )
 
     def _seed_seating(self) -> None:
