@@ -1045,6 +1045,16 @@ SHOPMAN_FISCAL_EMISSION_RESOLVER = (
     os.environ.get("SHOPMAN_FISCAL_EMISSION_RESOLVER")
     or "shopman.shop.fiscal_resolvers.on_request_or_tax_id"
 )
+# Porteiro fiscal do catálogo: com isto LIGADO, publicar um vendável num canal de
+# venda exige classificação fiscal completa (perfil + NCM; CEST na revenda) — em
+# QUALQUER porta (admin, seed, sync do iFood, script), porque a guarda é signal.
+# DESLIGADO no pré-go-live: o catálogo ainda está sendo classificado com o
+# contador. Liga na virada, junto com o adapter fiscal.
+# Gate em shopman.shop.handlers.fiscal_gate.
+SHOPMAN_FISCAL_REQUIRE_CLASSIFICATION_ON_PUBLISH = _env_bool(
+    "SHOPMAN_FISCAL_REQUIRE_CLASSIFICATION_ON_PUBLISH", False
+)
+
 SHOPMAN_FOCUS_NFE = {
     "environment": os.environ.get("FOCUS_NFE_ENVIRONMENT", "homologacao").strip().lower() or "homologacao",
     "token": os.environ.get("FOCUS_NFE_TOKEN", ""),
