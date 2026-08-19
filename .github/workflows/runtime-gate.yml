@@ -63,6 +63,15 @@ jobs:
       - name: Migrations apply from an empty database
         run: make test-migrations
 
+      # O `constraints.txt` fixa o que a IMAGEM instala, mas o `make install`
+      # daqui resolve livre — então nada falhava quando os pins envelheciam. E
+      # envelheceram no mesmo dia em que nasceram: o `rapidfuzz` entrou como
+      # dependência de runtime depois deles e subia sem pin, porque constraints
+      # limita versão e não impede instalação. Sem este passo, o drift que o
+      # arquivo existe para matar volta em silêncio, e só o deploy sente.
+      - name: Constraints cover the deploy image
+        run: make test-constraints
+
       - name: Deploy checks
         env:
           DJANGO_DEBUG: "false"
