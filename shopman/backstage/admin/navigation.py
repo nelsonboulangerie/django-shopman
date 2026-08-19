@@ -177,6 +177,7 @@ def get_sidebar_navigation(request):
             # O B.I. avisa: a régua é do gestor, o disparo é trilha.
             _item("Alarmes", "notifications_active", _url("admin:backstage_bialertrule_changelist"), permission=_can_view_bi),
             _item("Disparos de alarme", "campaign", _url("admin:backstage_bialertevent_changelist"), permission=_can_view_bi),
+            _item("Cenários da IA", "auto_awesome", _url("admin:backstage_biscenarioreport_changelist"), permission=_can_view_bi),
         ]),
         # Configuração expande como os outros grupos — o menu tem UM comportamento,
         # não dois. Os subitens são os sete ESCOPOS, não as 33 telas: o Unfold só tem

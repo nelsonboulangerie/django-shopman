@@ -13,7 +13,7 @@ from django.contrib import admin
 from unfold.admin import ModelAdmin
 from unfold.decorators import display
 
-from shopman.backstage.models import BIAlertEvent, BIAlertRule
+from shopman.backstage.models import BIAlertEvent, BIAlertRule, BIScenarioReport
 from shopman.backstage.permissions import can_audit_cash
 
 
@@ -83,6 +83,34 @@ class BIAlertEventAdmin(ModelAdmin):
         if can_audit_cash(request.user):
             return queryset
         return queryset.exclude(rule__metric__in=BIAlertRule.AUDIT_ONLY_METRICS)
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        return False
+
+    def has_delete_permission(self, request, obj=None):
+        return False
+
+
+@admin.register(BIScenarioReport)
+class BIScenarioReportAdmin(ModelAdmin):
+    """O que a IA viu e o que propôs, versionado. Só leitura: relatório que muda depois de lido não vale."""
+
+    list_display = ("generated_at", "focus", "status", "requested_by", "model", "duration_ms", "scenarios_display")
+    list_filter = ("focus", "status")
+    date_hierarchy = "generated_at"
+    ordering = ("-generated_at",)
+    fields = (
+        "generated_at", "requested_by", "focus", "window_from", "window_to", "model", "status",
+        "duration_ms", "inputs_hash", "scenarios", "error", "raw_text", "inputs",
+    )
+    readonly_fields = fields
+
+    @display(description="cenários")
+    def scenarios_display(self, obj):
+        return f"{len(obj.scenarios or [])} cenário(s)" if obj.status == "done" else (obj.error[:80] or "falhou")
 
     def has_add_permission(self, request):
         return False

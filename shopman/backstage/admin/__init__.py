@@ -11,7 +11,11 @@ from shopman.backstage.admin.aliases import (  # noqa: F401
     PaymentMethodAliasAdmin,
     ProductAliasAdmin,
 )
-from shopman.backstage.admin.bi_alerts import BIAlertEventAdmin, BIAlertRuleAdmin  # noqa: F401
+from shopman.backstage.admin.bi_alerts import (  # noqa: F401
+    BIAlertEventAdmin,
+    BIAlertRuleAdmin,
+    BIScenarioReportAdmin,
+)
 from shopman.backstage.admin.closing import DayClosingAdmin  # noqa: F401
 from shopman.backstage.admin.consumption import (  # noqa: F401
     ConsumptionRoleAdmin,

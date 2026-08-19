@@ -490,3 +490,40 @@ export interface BIConsumptionProfilesReport {
   seats_source: string;
   previous: BIProfilesPrevious;
 }
+
+/** BIScenario(title: 'str', proposal: 'str', basis: 'tuple[str, ...]', unknowns: 'tuple[str, ...]') */
+export interface BIScenario {
+  title: string;
+  proposal: string;
+  basis: string[];
+  unknowns: string[];
+}
+
+/** BIScenarioReportView(id: 'int', generated_at: 'str', focus: 'str', focus_label: 'str', window_from: 'str', window_to: 'str', model: 'str', status: 'str', duration_ms: 'int', requested_by: 'str', scenarios: 'tuple[BIScenario, ...]', error: 'str') */
+export interface BIScenarioReportView {
+  id: number;
+  generated_at: string;
+  focus: string;
+  focus_label: string;
+  window_from: string;
+  window_to: string;
+  model: string;
+  status: string;
+  duration_ms: number;
+  requested_by: string;
+  scenarios: BIScenario[];
+  error: string;
+}
+
+/** BIScenarioFocus(key: 'str', label: 'str') */
+export interface BIScenarioFocus {
+  key: string;
+  label: string;
+}
+
+/** BIScenariosPage(configured: 'bool', focuses: 'tuple[BIScenarioFocus, ...]', reports: 'tuple[BIScenarioReportView, ...]') */
+export interface BIScenariosPage {
+  configured: boolean;
+  focuses: BIScenarioFocus[];
+  reports: BIScenarioReportView[];
+}

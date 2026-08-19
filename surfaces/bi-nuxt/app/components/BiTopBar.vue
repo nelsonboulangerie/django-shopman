@@ -20,6 +20,7 @@ const section = computed(() =>
   : route.path.startsWith("/customers") ? "customers"
   : route.path.startsWith("/explore") ? "explore"
   : route.path.startsWith("/profiles") ? "profiles"
+  : route.path.startsWith("/scenarios") ? "scenarios"
   : "production",
 );
 
@@ -30,8 +31,10 @@ const tabs = [
   { to: "/customers", key: "customers", label: "Clientes", icon: "lucide:users" },
   { to: "/profiles", key: "profiles", label: "Perfis", icon: "lucide:armchair" },
   { to: "/explore", key: "explore", label: "Explorar", icon: "lucide:compass" },
-  // Última: as outras abas olham o que aconteceu; esta é a única que projeta.
+  // As outras abas olham o que aconteceu; esta projeta.
   { to: "/forecast", key: "forecast", label: "Projeção", icon: "lucide:telescope" },
+  // Última: a IA propõe cenários sobre os agregados; o gestor decide.
+  { to: "/scenarios", key: "scenarios", label: "Cenários", icon: "lucide:sparkles" },
 ] as const;
 
 const { selection, range, setPreset, applyCustom } = useBiWindow();
