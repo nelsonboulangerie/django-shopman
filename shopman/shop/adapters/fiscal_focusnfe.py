@@ -384,6 +384,19 @@ def _is_delivery_fee_item(item: dict) -> bool:
     return item.get("sku") == "__DELIVERY_FEE__" or meta.get("type") == "delivery_fee"
 
 
+# Campos tributários que o adapter NÃO adivinha. Cada um chega resolvido pelo
+# perfil fiscal do Fiscalman (``resolve_fiscal_item``); ausente, significa que o
+# item não passou pelo dono do schema — e o adapter não é lugar de ter uma
+# segunda opinião fiscal. O adapter já falhava nominalmente por NCM ausente;
+# esta é a mesma doutrina para o resto.
+_REQUIRED_TAX_FIELDS = (
+    ("icms_origem", ("icms_origem", "origem"), "origem do ICMS", "icms_origem"),
+    ("icms_situacao_tributaria", ("icms_situacao_tributaria", "csosn"), "CSOSN", "icms_situacao_tributaria"),
+    ("pis_situacao_tributaria", ("pis_situacao_tributaria",), "CST do PIS", "pis_situacao_tributaria"),
+    ("cofins_situacao_tributaria", ("cofins_situacao_tributaria",), "CST da COFINS", "cofins_situacao_tributaria"),
+)
+
+
 def _map_item(number: int, item: dict, config: dict) -> dict:
     fiscal = dict(item.get("fiscal") or {})
     ncm = _digits(_first(fiscal, "codigo_ncm", "ncm", default=""))
@@ -391,6 +404,15 @@ def _map_item(number: int, item: dict, config: dict) -> dict:
         raise FocusNFePayloadError(
             f"Produto {item.get('sku') or number} sem NCM em metadata.fiscal.ncm."
         )
+
+    taxes = {}
+    for target, aliases, label, key in _REQUIRED_TAX_FIELDS:
+        value = str(_first(fiscal, *aliases, default="") or "").strip()
+        if not value:
+            raise FocusNFePayloadError(
+                f"Produto {item.get('sku') or number} sem {label} em metadata.fiscal.{key}."
+            )
+        taxes[target] = value
 
     raw_qty = Decimal(str(item.get("qty") or 1))
     qty = _decimal(raw_qty, places="0.001")
@@ -416,6 +438,10 @@ def _map_item(number: int, item: dict, config: dict) -> dict:
         "codigo_produto": str(item.get("sku") or number),
         "descricao": str(item.get("name") or item.get("description") or item.get("sku") or number)[:120],
         "codigo_ncm": ncm,
+        # CFOP mantém fallback porque ``default_cfop_nfce`` é configuração
+        # explícita do deployment (``FOCUS_NFE_NFCE_DEFAULT_CFOP``), não palpite
+        # do adapter. O valor em si (5101 × 5102) é pergunta aberta para o
+        # contador.
         "cfop": str(_first(fiscal, "cfop", default=config.get("default_cfop_nfce") or "5102")),
         "unidade_comercial": unit,
         "quantidade_comercial": qty,
@@ -424,10 +450,7 @@ def _map_item(number: int, item: dict, config: dict) -> dict:
         "unidade_tributavel": unit,
         "quantidade_tributavel": qty,
         "valor_unitario_tributavel": unit_price,
-        "icms_origem": str(_first(fiscal, "icms_origem", "origem", default="0")),
-        "icms_situacao_tributaria": str(_first(fiscal, "icms_situacao_tributaria", "csosn", default="102")),
-        "pis_situacao_tributaria": str(_first(fiscal, "pis_situacao_tributaria", default="07")),
-        "cofins_situacao_tributaria": str(_first(fiscal, "cofins_situacao_tributaria", default="07")),
+        **taxes,
     }
 
     optional_map = {
