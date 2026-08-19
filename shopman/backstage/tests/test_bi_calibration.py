@@ -457,9 +457,11 @@ class TestTaxaDeEntregaMarcaEntrega:
     def test_venda_com_taxa_vira_entrega(self):
         from shopman.backstage.bi.ingest.yooga import marcar_entrega_por_taxa
         from shopman.backstage.models import HistoricalSale, HistoricalSaleItem
+        from shopman.backstage.tests.support import historical_batch
 
         def venda(external_id, skus):
             v = HistoricalSale.objects.create(
+                batch=historical_batch("yooga"),
                 source="yooga", external_id=external_id, occurred_at=timezone.now(),
                 total_q=1000, is_delivery=False,
             )
@@ -486,8 +488,10 @@ class TestTaxaDeEntregaMarcaEntrega:
         # O ingest é completável: roda a cada export novo, sobre o mesmo banco.
         from shopman.backstage.bi.ingest.yooga import marcar_entrega_por_taxa
         from shopman.backstage.models import HistoricalSale, HistoricalSaleItem
+        from shopman.backstage.tests.support import historical_batch
 
         v = HistoricalSale.objects.create(
+            batch=historical_batch("yooga"),
             source="yooga", external_id=3, occurred_at=timezone.now(),
             total_q=1000, is_delivery=False,
         )
@@ -507,8 +511,10 @@ class TestTaxaDeEntregaMarcaEntrega:
         alcançar os 201 registros que a motivaram.
         """
         from shopman.backstage.models import HistoricalSale, HistoricalSaleItem
+        from shopman.backstage.tests.support import historical_batch
 
         venda = HistoricalSale.objects.create(
+            batch=historical_batch("yooga"),
             source="yooga", external_id=4, occurred_at=timezone.now(),
             total_q=1000, is_delivery=False,
         )
