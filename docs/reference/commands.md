@@ -17,6 +17,7 @@
 | [`auth_cleanup`](#auth_cleanup) | doorman | Manutenção | Remove tokens/códigos expirados |
 | [`reconcile_payments`](#reconcile_payments) | shop | Operação | Reconcilia pedidos cujo webhook de pagamento pode ter sido perdido |
 | [`diagnose_remote_order`](#diagnose_remote_order) | shop | Operação | Diagnostica pedido remoto preso lendo fontes canônicas |
+| [`fiscal_audit_catalog`](#fiscal_audit_catalog) | shop | Operação | Lista vendáveis publicados sem classificação fiscal completa (NFC-e) |
 | [`inject_ifood_order`](#inject_ifood_order) | shop | Dev | Injeta pedido iFood simulado pela ingestão canônica (apenas DEBUG) |
 | [`reconcile_financial_day`](#reconcile_financial_day) | backstage | Operação | Reconcilia pedido, intent, transação e fechamento diário |
 | [`smoke_gateways`](#smoke_gateways) | backstage | Operação | Estressa webhooks/gateways com fixtures locais e matriz sandbox |
@@ -230,6 +231,40 @@ python manage.py reconcile_payments --since=4h
 ```
 
 **Veja também:** [runbook de pedido pago sem confirmacao](../runbooks/pedido-pago-sem-confirmacao.md).
+
+---
+
+### fiscal_audit_catalog
+
+**App:** `shopman.shop`
+**Arquivo:** `shopman/shop/management/commands/fiscal_audit_catalog.py`
+
+Responde "quais vendáveis publicados estão fiscalmente incompletos?" — a pergunta
+que precisa de resposta **antes** do primeiro dia de emissão obrigatória, e não a
+cada nota recusada pela SEFAZ. Varre os produtos publicados+vendáveis em vitrine
+ativa de canal de venda (`commerce_policy=order`) e valida a classificação pela
+mesma função que o porteiro de publicação e o builder de itens usam
+(`shopman.fiscalman.classification.validate_for_emission`): perfil + NCM de 8
+dígitos, CEST obrigatório na revenda com ST.
+
+Só lê. Não depende de adapter fiscal nem da chave
+`SHOPMAN_FISCAL_REQUIRE_CLASSIFICATION_ON_PUBLISH` — serve justamente para saber
+o que aconteceria ao ligar a chave na virada do go-live.
+
+| Flag | Default | Descrição |
+|------|---------|-----------|
+| `--json` | — | Saída em JSON (canais + lista de incompletos com erros) |
+| `--strict` | — | Exit code 1 quando houver produto incompleto (gate de deploy/CI) |
+
+```bash
+# Leitura humana
+python manage.py fiscal_audit_catalog
+
+# Gate antes de ligar a emissão obrigatória
+python manage.py fiscal_audit_catalog --strict
+```
+
+**Veja também:** [parametrização fiscal NFC-e](fiscal-parametrizacao-nfce.md).
 
 ---
 

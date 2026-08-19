@@ -34,7 +34,7 @@ class FiscalProductAdminForm(ProductAdminForm):
         choices=[(key, profile.name) for key, profile in FISCAL_PROFILES.items()],
         help_text=(
             "Define CFOP/CSOSN/origem/PIS-COFINS na emissão. "
-            "Fabricação própria (5101/102) ou Revenda com ST (5405/500)."
+            "Fabricação própria (5102/102) ou Revenda com ST (5405/500)."
         ),
     )
     fiscal_ncm = forms.CharField(
@@ -72,8 +72,13 @@ class FiscalProductAdminForm(ProductAdminForm):
         )
 
         # Validate only once any fiscal data is present — a product may be saved
-        # without classification yet (pre-go-live); the emission/adapter guards
-        # missing NCM at issue time.
+        # without classification yet (pre-go-live). This form is one door among
+        # many (seed, catalog sync, scripts write Products by ORM), so it is not
+        # where completeness is enforced: the orchestrator's publication gate
+        # (``shopman/shop/handlers/fiscal_gate.py``, off by default until the
+        # go-live) refuses to publish an unclassified sellable on every door, and
+        # the adapter still refuses an item without NCM at issue time
+        # (``shop/adapters/fiscal_focusnfe._map_item``).
         if classification.ncm or classification.cest:
             for message in classification.errors():
                 self.add_error(None, message)

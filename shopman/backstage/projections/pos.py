@@ -1687,15 +1687,17 @@ def _discount_approval_threshold_q() -> int:
 
 
 def _pos_fiscal_toggle_enabled() -> bool:
-    """A loja OFEROU emissão de NFC-e no PDV? (flag de negócio, editável no Admin em
-    ``Shop.defaults['pos']['fiscal_toggle']``). Decisão por-estabelecimento, não por
-    operador. Combina com o adapter pronto para liberar o toggle 'Nota fiscal'."""
-    from shopman.shop.models import Shop
+    """A loja OFERECE emissão de NFC-e no PDV? Flag de negócio por estabelecimento,
+    editável no Admin em ``Shop.defaults['pos']['fiscal_toggle']``.
 
-    shop = Shop.load()
-    defaults = (getattr(shop, "defaults", None) or {}) if shop else {}
-    pos_cfg = defaults.get("pos") if isinstance(defaults, dict) else {}
-    return bool((pos_cfg or {}).get("fiscal_toggle", False))
+    Lê de quem é dono da pergunta (``shop.services.pos.fiscal_toggle_enabled``),
+    pelo mesmo motivo do teto de desconto logo acima: o deploy check
+    ``SHOPMAN_W003`` também pergunta isso, e duas leituras do mesmo dict acabam
+    discordando. Combina com o adapter pronto para liberar o toggle 'Nota fiscal'.
+    """
+    from shopman.shop.services.pos import fiscal_toggle_enabled
+
+    return fiscal_toggle_enabled()
 
 
 def _supports_fiscal_document() -> bool:

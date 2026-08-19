@@ -62,6 +62,7 @@ class FiscalBackend(Protocol):
         customer: dict | None = None,
         payment: dict,
         additional_info: str | None = None,
+        delivery: dict | None = None,
     ) -> FiscalDocumentResult:
         """Emite documento fiscal.
 
@@ -73,6 +74,12 @@ class FiscalBackend(Protocol):
             payment: {method (01=dinheiro, 03=crédito, 04=débito, 05=crédito_loja,
                 15=boleto, 17=pix), amount_q}.
             additional_info: Informações complementares.
+            delivery: Entrega a domicílio — ``{"address": {...}}`` ou ``None`` na
+                retirada. Muda o documento (indPres, destinatário identificado,
+                grupo transportador), não é enfeite: quem implementar o contrato
+                sem este parâmetro quebra na primeira entrega. ``runtime_checkable``
+                NÃO confere assinatura, então a divergência é pega por teste
+                (``shop/tests/test_fiscal_contract.py``).
         """
         ...
 

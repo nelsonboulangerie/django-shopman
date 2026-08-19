@@ -74,6 +74,10 @@ def emit(order) -> None:
     payment = dict(data.get("payment", {}) or {})
     payment.setdefault("amount_q", order.total_q)
 
+    if _payment_below_total(payment, order):
+        _alert_payment_mismatch(order, payment)
+        return
+
     delivery = None
     if data.get("fulfillment_type") == "delivery":
         delivery = {"address": dict(data.get("delivery_address_structured") or {})}
@@ -87,6 +91,60 @@ def emit(order) -> None:
     )
 
     logger.info("fiscal.emit: queued for order %s", order.ref)
+
+
+def _declared_payment_q(payment: dict) -> int:
+    """Total declarado no pagamento, do jeito que o adapter fiscal soma.
+
+    Espelha ``fiscal_focusnfe._payment_total_q``: numa venda mista, quem manda é
+    a soma dos ``tenders`` (o documento diz a verdade sobre o mix); fora dela, o
+    ``amount_q``.
+    """
+    tenders = payment.get("tenders") or []
+    if tenders:
+        return sum(
+            max(0, int(t.get("amount_q") or 0)) for t in tenders if isinstance(t, dict)
+        )
+    return max(0, int(payment.get("amount_q") or 0))
+
+
+def _payment_below_total(payment: dict, order) -> bool:
+    """O pagamento gravado ficou ABAIXO do total do pedido?
+
+    **Invariante de canal: quem escreve ``order.data['payment']`` escreve o valor
+    FINAL.** O adapter deriva ``valor_desconto = produtos + frete − pagamento``,
+    então um ``payment`` defasado (edição pós-pagamento que escape do
+    ``_reconcile_order_payment_to_total`` do PDV) não vira erro: vira um
+    **desconto que não houve** dentro de um XML válido, subdeclarando a venda.
+
+    Só o lado de baixo é guardado aqui. Pagamento ACIMA do total gera
+    ``valor_total > valor_produtos`` sem desconto, e a própria SEFAZ recusa —
+    falha ruidosa não precisa de guarda nossa.
+    """
+    return 0 < _declared_payment_q(payment) < int(order.total_q or 0)
+
+
+def _alert_payment_mismatch(order, payment: dict) -> None:
+    from shopman.shop.services.observability import create_operator_alert
+
+    declared_q = _declared_payment_q(payment)
+    logger.error(
+        "fiscal.emit: pagamento (%s) abaixo do total (%s) em %s — NFC-e não emitida",
+        declared_q, order.total_q, order.ref,
+    )
+    create_operator_alert(
+        type="fiscal_payment_mismatch",
+        severity="critical",
+        message=(
+            f"NFC-e do pedido {order.ref} NÃO foi emitida: o pagamento gravado "
+            f"(R$ {declared_q / 100:.2f}) está abaixo do total do pedido "
+            f"(R$ {int(order.total_q or 0) / 100:.2f}). Emitir assim colocaria no "
+            "documento um desconto que não houve. Acerte o pagamento do pedido e "
+            "emita de novo."
+        ),
+        order_ref=order.ref,
+        dedupe_key=f"fiscal_payment_mismatch:{order.ref}",
+    )
 
 
 def cancel(order) -> None:
@@ -148,15 +206,28 @@ def _build_fiscal_items(order) -> list[dict]:
 
 
 def _products_by_sku(skus: list[str]) -> dict[str, object]:
+    """Produtos por SKU para montar o payload fiscal. A falha de leitura SOBE.
+
+    Engolir a exceção aqui (``except Exception`` → ``{}``) compunha três decisões
+    razoáveis num modo de falha péssimo: um soluço de banco fazia TODOS os itens
+    perderem o metadado fiscal; o adapter, correto, recusava item sem NCM; e o
+    handler classificava essa recusa como **terminal** — nota morta na fila,
+    sem retry, com um diagnóstico ("produto sem NCM") que mentia sobre a causa
+    ("o SELECT falhou").
+
+    São dois fatos diferentes e cada um vai para o seu lado: **NCM ausente no
+    produto** é verdade terminal (o adapter recusa em
+    ``fiscal_focusnfe._map_item``, e o pedido precisa de gente); **catálogo
+    ilegível** é transiente, e quem re-tenta transiente é quem chamou, não este
+    módulo. Como o payload é montado no fechamento do pedido (``fiscal.emit``
+    dentro do ``on_commit`` do lifecycle), deixar subir também garante que
+    nenhuma directive nasça com um retrato falso do catálogo.
+    """
     if not skus:
         return {}
-    try:
-        from shopman.offerman.models import Product
+    from shopman.offerman.models import Product
 
-        return {
-            product.sku: product
-            for product in Product.objects.filter(sku__in=set(skus)).only("sku", "unit", "metadata")
-        }
-    except Exception:
-        logger.debug("fiscal.emit: product metadata lookup failed", exc_info=True)
-        return {}
+    return {
+        product.sku: product
+        for product in Product.objects.filter(sku__in=set(skus)).only("sku", "unit", "metadata")
+    }

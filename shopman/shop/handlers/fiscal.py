@@ -114,15 +114,45 @@ class NFCeEmitHandler:
 
     @staticmethod
     def _record(order, result: FiscalDocumentResult) -> None:
-        order.data["nfce_access_key"] = result.access_key
-        order.data["nfce_number"] = result.document_number
-        order.data["nfce_series"] = result.document_series
-        order.data["nfce_protocol"] = result.protocol_number
-        order.data["nfce_xml_url"] = result.xml_url
-        order.data["nfce_danfe_url"] = result.danfe_url
-        order.data["nfce_qrcode_url"] = result.qrcode_url
-        order.data["nfce_status"] = result.status
-        order.save(update_fields=["data", "updated_at"])
+        """Grava a nota em ``order.data`` relendo a linha SOB LOCK.
+
+        ``order.data`` é um JSON inteiro com muitos donos (pagamento, PDV,
+        lifecycle) e este handler é assíncrono: gravar o dicionário que veio da
+        leitura do início do ``handle`` é last-write-wins sobre tudo que os
+        outros escreveram no meio do caminho. O dispatcher não protege disto —
+        o claim dele é da **directive**, não do pedido
+        (``orderman/dispatch.py::_process_directive``, ``UPDATE ... WHERE
+        status='queued'``); nenhum lock de Order é tomado durante o handle.
+
+        Perder chave aqui é caro de um jeito específico: sumindo o
+        ``nfce_access_key`` sob uma gravação de payment, a nota fica autorizada
+        na SEFAZ sem registro local, o dedupe deixa de ver a nota e só o
+        ``query_status`` do retry a reencontraria — rede por acidente.
+
+        O mesmo padrão dos outros escritores de ``order.data``
+        (``services/pix_confirmation.py``, ``services/operator_orders.py``,
+        ``handlers/returns.py``): reler ``select_for_update`` dentro do
+        ``atomic`` e escrever a partir do valor fresco.
+        """
+        from django.db import transaction
+        from shopman.orderman.models import Order
+
+        with transaction.atomic():
+            locked = Order.objects.select_for_update().get(pk=order.pk)
+            data = dict(locked.data or {})
+            data["nfce_access_key"] = result.access_key
+            data["nfce_number"] = result.document_number
+            data["nfce_series"] = result.document_series
+            data["nfce_protocol"] = result.protocol_number
+            data["nfce_xml_url"] = result.xml_url
+            data["nfce_danfe_url"] = result.danfe_url
+            data["nfce_qrcode_url"] = result.qrcode_url
+            data["nfce_status"] = result.status
+            locked.data = data
+            locked.save(update_fields=["data", "updated_at"])
+
+        # O objeto do chamador segue em uso (guarda de idempotência, logs).
+        order.data = data
 
 
 class NFCeCancelHandler:

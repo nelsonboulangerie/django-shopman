@@ -8,7 +8,6 @@ Errors (block runserver/migrate --deploy in production):
   SHOPMAN_E002  ALLOWED_HOSTS is empty or contains '*'
   SHOPMAN_E003  PIX or CARD payment adapter is missing or payment_mock without explicit staging allowance
   SHOPMAN_E004  A webhook integration has no token configured
-  SHOPMAN_E005  Guestman (Manychat) webhook secret not configured
   SHOPMAN_E006  Shared Redis cache is not configured
   SHOPMAN_E007  Database backend is SQLite in production
   SHOPMAN_E008  Doorman access-link API key is not configured
@@ -16,17 +15,23 @@ Errors (block runserver/migrate --deploy in production):
   SHOPMAN_E010  Debug OTP exposure enabled outside non-production
   SHOPMAN_E011  Machine courier adapter enabled without API credentials
   SHOPMAN_E012  Piloto automático de staging habilitado em produção
+  SHOPMAN_E013  Adapter fiscal + canal de venda ativo sem resolver de emissão que resolva
 
 Warnings (non-blocking, logged at startup):
   SHOPMAN_W001  Database backend is SQLite in local/debug mode
   SHOPMAN_W002  Notification backend is console while DEBUG=False
-  SHOPMAN_W003  No fiscal adapter configured while a fiscal-enabled channel exists
+  SHOPMAN_W003  Store offers NFC-e at the counter but no fiscal adapter is configured
   SHOPMAN_W004  Listing.ref has no matching Channel.ref
   SHOPMAN_W005  OFFERMAN pricing backend not configured
   SHOPMAN_W006  Mock payment adapter explicitly allowed outside DEBUG
   SHOPMAN_W007  Debug OTP exposure explicitly allowed in staging
+  SHOPMAN_W008  iFood webhook token is not configured (integration webhook unauthenticated)
+  SHOPMAN_W009  Manychat webhook secret is not configured
   SHOPMAN_W010  Machine courier enabled without webhook token (status via polling only)
   SHOPMAN_W011  Piloto automático de staging ligado (pedidos andam sozinhos)
+  SHOPMAN_W012  Display channel has no valid display.prices_from pointer
+  SHOPMAN_W013  Publicly tracked channel takes price from a non-public channel
+  SHOPMAN_W014  Active WhatsApp campaign without an approved template (flow ns)
   SHOPMAN_W015  Mesmo SKU cadastrado como produto vendável e como insumo
 """
 
@@ -492,33 +497,137 @@ def check_pricing_backend(app_configs, **kwargs):
 
 @register()
 def check_fiscal_adapter(app_configs, **kwargs):
+    """A loja oferece NFC-e no balcão e não há adapter fiscal configurado.
+
+    O gestor liga "Nota fiscal" no Admin e, sem adapter, **nada acontece**: o
+    toggle nem aparece no PDV (``backstage/projections/pos._supports_fiscal_document``
+    exige os dois) e nenhuma nota sai. Configuração ligada que não faz efeito é o
+    que este aviso existe para tirar do silêncio.
+
+    O predicado é o que a loja realmente usa —
+    ``Shop.defaults["pos"]["fiscal_toggle"]``, pela função dona da pergunta
+    (``shop.services.pos.fiscal_toggle_enabled``). Até 2026-08-19 este check
+    olhava ``Channel.config["fiscal"]["enabled"]``, chave que nenhum código do
+    sistema escreve: o check nunca disparou uma vez.
+
+    Espelho do ``SHOPMAN_E013`` e não redundante com ele: lá o adapter existe e
+    falta a política de emissão (erro, bloqueia deploy); aqui a loja quer emitir
+    e falta o adapter (aviso — pré-go-live é um estado legítimo).
+    """
     warnings = []
-    fiscal_adapter = getattr(settings, "SHOPMAN_FISCAL_ADAPTER", None)
-    if fiscal_adapter:
+    if getattr(settings, "SHOPMAN_FISCAL_ADAPTER", None):
         return warnings
+
+    from django.db.utils import OperationalError, ProgrammingError
+
+    from shopman.shop.services.pos import fiscal_toggle_enabled
+
+    try:
+        offers_fiscal = fiscal_toggle_enabled()
+    except (OperationalError, ProgrammingError):
+        return warnings  # tables not ready (initial migration)
+
+    if offers_fiscal:
+        warnings.append(
+            Warning(
+                "A loja oferece NFC-e no PDV (Shop.defaults['pos']['fiscal_toggle']) "
+                "mas nenhum adapter fiscal está configurado.",
+                hint=(
+                    "O toggle 'Nota fiscal' não aparece no balcão e nenhuma nota é "
+                    "emitida. Defina SHOPMAN_FISCAL_ADAPTER (ex.: "
+                    "shopman.shop.adapters.fiscal_focusnfe.FocusNFeBackend) ou desligue "
+                    "'Emitir nota fiscal' no Admin da loja."
+                ),
+                id="SHOPMAN_W003",
+            )
+        )
+    return warnings
+
+
+@register(deploy=True)
+def check_fiscal_emission_resolver(app_configs, **kwargs):
+    """Adapter fiscal ligado + canal de venda ativo ⇒ resolver de emissão que resolve.
+
+    Silêncio é o pior modo de falha deste domínio. Quem decide SE a nota sai é o
+    resolver (``shop/services/fiscal.emission_resolver``); com o resolver vazio,
+    ou apontando para um caminho que não importa, o motor cai no fallback
+    (opt-in do operador, ``order.data['fiscal']['issue_document']``) e registra
+    um warning no log — e o sistema simplesmente não emite, venda após venda,
+    sem nada na tela de ninguém.
+
+    Erro de deploy, não warning: com emissão obrigatória valendo, cada venda que
+    passa sem nota é passivo fiscal, e o log de um worker não é onde isso se
+    descobre. O espelho deste check é o ``SHOPMAN_W003`` (a loja oferece NFC-e no
+    balcão e não há adapter nenhum).
+    """
+    errors = []
+    if settings.DEBUG:
+        return errors
+    if not getattr(settings, "SHOPMAN_FISCAL_ADAPTER", None):
+        return errors
 
     from django.db.utils import OperationalError, ProgrammingError
 
     from shopman.shop.models import Channel
 
     try:
-        channels = list(Channel.objects.all())
+        selling = Channel.objects.filter(
+            is_active=True, commerce_policy=Channel.CommercePolicy.ORDER
+        ).exists()
     except (OperationalError, ProgrammingError):
-        return warnings  # tables not ready (initial migration)
+        return errors  # tabelas ainda não existem (migração inicial)
+    if not selling:
+        return errors
 
-    for channel in channels:
-        data = channel.config or {}
-        fiscal = data.get("fiscal", {})
-        if fiscal.get("enabled"):
-            warnings.append(
-                Warning(
-                    f"Canal '{channel.ref}' tem fiscal ativo mas nenhum adapter fiscal está configurado.",
-                    hint="Defina SHOPMAN_FISCAL_ADAPTER em settings ou desative fiscal neste canal.",
-                    id="SHOPMAN_W003",
+    raw = getattr(settings, "SHOPMAN_FISCAL_EMISSION_RESOLVER", "") or ""
+    paths = [p.strip() for p in str(raw).split(",") if p.strip()]
+    if not paths:
+        errors.append(
+            Error(
+                "Adapter fiscal configurado e canal de venda ativo, mas "
+                "SHOPMAN_FISCAL_EMISSION_RESOLVER está vazio.",
+                hint=(
+                    "Sem resolver, a NFC-e só sai quando o operador marca 'emitir' no "
+                    "pedido — em silêncio, venda após venda. Aponte a política fiscal "
+                    "do deployment: 'shopman.shop.fiscal_resolvers.always' (toda venda) "
+                    "ou '...on_request_or_tax_id' (pediu ou informou CPF). Exemplos e "
+                    "combinadores em shopman.shop.fiscal_resolvers."
+                ),
+                id="SHOPMAN_E013",
+            )
+        )
+        return errors
+
+    from django.utils.module_loading import import_string
+
+    for path in paths:
+        try:
+            resolver = import_string(path)
+        except ImportError as exc:
+            errors.append(
+                Error(
+                    f"SHOPMAN_FISCAL_EMISSION_RESOLVER aponta para '{path}', que não importa: {exc}.",
+                    hint=(
+                        "O motor engole o erro e cai no fallback (opt-in do operador): "
+                        "a emissão fica silenciosamente desligada. Corrija o caminho ou "
+                        "remova-o da lista."
+                    ),
+                    id="SHOPMAN_E013",
                 )
             )
-
-    return warnings
+            continue
+        if not callable(resolver):
+            errors.append(
+                Error(
+                    f"SHOPMAN_FISCAL_EMISSION_RESOLVER aponta para '{path}', que não é chamável.",
+                    hint=(
+                        "Um resolver é callable(order) -> bool. Fábricas como "
+                        "`channels('pdv')` precisam de um wrapper importável já aplicado."
+                    ),
+                    id="SHOPMAN_E013",
+                )
+            )
+    return errors
 
 
 @register()
@@ -603,7 +712,7 @@ def check_display_channel_price_source(app_configs, **kwargs):
                         "pode anunciar preço que a loja não cobra. Defina "
                         "config.display.prices_from com a ref de um canal de venda."
                     ),
-                    id="SHOPMAN_W008",
+                    id="SHOPMAN_W012",
                 )
             )
             continue
@@ -618,7 +727,7 @@ def check_display_channel_price_source(app_configs, **kwargs):
                         "obrigaria a honrá-lo para qualquer um. Aponte prices_from para o "
                         "canal da loja."
                     ),
-                    id="SHOPMAN_W009",
+                    id="SHOPMAN_W013",
                 )
             )
 
@@ -693,7 +802,7 @@ def check_whatsapp_flow_coverage(app_configs, **kwargs):
                 "aprove na Meta e cole o ns no Admin — `manage.py manychat_flows` lista "
                 "os ns disponíveis."
             ),
-            id="SHOPMAN_W010",
+            id="SHOPMAN_W014",
         )
     )
     return warnings

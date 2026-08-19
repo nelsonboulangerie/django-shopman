@@ -44,13 +44,22 @@ class FiscalProfile:
     product): CFOP, CSOSN, origem, PIS/COFINS CST. CFOP comes in two flavours —
     intrastate and interstate — and the emission layer picks one by the buyer's
     UF (see ``resolve_fiscal_item``).
+
+    **CFOP da fabricação própria = 5102 (interno) / 6102 (interestadual).**
+    Decisão do dono em 2026-08-19. Razão: a Nelson fabrica o que vende mas NÃO é
+    registrada como indústria — 5101 é venda de produção do estabelecimento
+    industrial —, e sob Simples Nacional (CRT-01) o CFOP não altera o imposto,
+    recolhido no DAS. É também o que a parametrização do contador registra
+    ("alimentação em geral, salgados, doces" = comercialização).
+    Referências: ``docs/reference/fiscal-cfop-5101-vs-5102.md`` (decisão) e
+    ``docs/reference/fiscal-parametrizacao-nfce.md`` §2 (parametrização).
     """
 
     key: str
     name: str
     csosn: str             # ICMS situação tributária no Simples (e.g. "102", "500").
-    cfop_internal: str     # Operação interna (mesmo estado), e.g. "5101".
-    cfop_interstate: str   # Operação interestadual, e.g. "6101".
+    cfop_internal: str     # Operação interna (mesmo estado), e.g. "5102".
+    cfop_interstate: str   # Operação interestadual, e.g. "6102".
     icms_origem: str = "0"     # 0 = Nacional.
     pis_cst: str = "99"        # Simples (CRT-01): 99 = outras operações (parametrização do contador).
     cofins_cst: str = "99"
@@ -126,6 +135,28 @@ def from_metadata(metadata: dict | None) -> ProductFiscalClassification:
         cest=str(raw.get("cest") or ""),
         unit=str(raw.get("unit") or raw.get("unidade_comercial") or "UN"),
     )
+
+
+def validate_for_emission(metadata: dict | None) -> list[str]:
+    """Erros que impedem este produto de virar item de documento fiscal.
+
+    Lista vazia == pronto para emitir. Existe para que a pergunta de completude
+    fiscal tenha um dono só, em vez de ser respondida tarde (hoje só o adapter
+    recusa item sem NCM, na emissão — ``shop/adapters/fiscal_focusnfe._map_item``).
+
+    Recebe o **blob** ``Product.metadata``, não o model: o Fiscalman é dono do
+    schema e não importa o Offerman (cores não se importam — a ponte é
+    ``fiscalman/contrib/offerman``). Quem tem o produto na mão passa
+    ``product.metadata``; é o mesmo caminho que :func:`from_metadata` já serve à
+    ponte do admin e ao builder de itens do orquestrador.
+
+    Produto **nunca classificado** responde uma mensagem própria: para quem
+    audita o catálogo, "ninguém preencheu" é um problema diferente (e de outro
+    dono) de "preencheram torto".
+    """
+    if not ((metadata or {}).get("fiscal") or {}):
+        return ["Sem classificação fiscal: defina perfil e NCM em metadata['fiscal']."]
+    return from_metadata(metadata).errors()
 
 
 def to_metadata_fiscal(classification: ProductFiscalClassification) -> dict:

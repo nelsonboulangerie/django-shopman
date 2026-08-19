@@ -1,6 +1,7 @@
 from base64 import b64encode
 from pathlib import Path
 
+import pytest
 from django.test import override_settings
 
 from config import settings as project_settings
@@ -287,3 +288,133 @@ def test_payment_stripe_adapter_requires_credentials_outside_debug():
 )
 def test_real_payment_adapters_accept_complete_gateway_settings():
     assert checks.check_payment_adapters(None) == []
+
+
+# ── fiscal: resolver de emissão (silêncio fiscal é o pior modo de falha) ──────
+
+
+@pytest.fixture
+def selling_channel(db):
+    from shopman.shop.models import Channel
+
+    return Channel.objects.create(
+        ref="pdv", name="PDV", commerce_policy=Channel.CommercePolicy.ORDER
+    )
+
+
+@override_settings(DEBUG=False, SHOPMAN_FISCAL_ADAPTER=None, SHOPMAN_FISCAL_EMISSION_RESOLVER="")
+def test_fiscal_resolver_check_silent_without_fiscal_adapter(selling_channel):
+    assert checks.check_fiscal_emission_resolver(None) == []
+
+
+@override_settings(
+    DEBUG=False,
+    SHOPMAN_FISCAL_ADAPTER="shopman.shop.adapters.fiscal_focusnfe.FocusNFeBackend",
+    SHOPMAN_FISCAL_EMISSION_RESOLVER="",
+)
+def test_fiscal_adapter_with_selling_channel_requires_a_resolver(selling_channel):
+    messages = checks.check_fiscal_emission_resolver(None)
+    assert [m.id for m in messages] == ["SHOPMAN_E013"]
+    from django.core.checks import Error as CheckError
+
+    assert isinstance(messages[0], CheckError)
+
+
+@override_settings(
+    DEBUG=False,
+    SHOPMAN_FISCAL_ADAPTER="shopman.shop.adapters.fiscal_focusnfe.FocusNFeBackend",
+    SHOPMAN_FISCAL_EMISSION_RESOLVER="",
+)
+def test_fiscal_resolver_check_silent_without_active_selling_channel(db):
+    from shopman.shop.models import Channel
+
+    Channel.objects.create(
+        ref="menuboard", name="Menu", commerce_policy=Channel.CommercePolicy.DISPLAY
+    )
+    assert checks.check_fiscal_emission_resolver(None) == []
+
+
+@override_settings(
+    DEBUG=False,
+    SHOPMAN_FISCAL_ADAPTER="shopman.shop.adapters.fiscal_focusnfe.FocusNFeBackend",
+    SHOPMAN_FISCAL_EMISSION_RESOLVER="shopman.shop.fiscal_resolvers.nao_existe",
+)
+def test_fiscal_resolver_that_does_not_import_blocks_deploy(selling_channel):
+    # O motor engole o ImportError e cai no fallback: a emissão fica desligada
+    # em silêncio. É exatamente o modo de falha que o check existe para pegar.
+    messages = checks.check_fiscal_emission_resolver(None)
+    assert [m.id for m in messages] == ["SHOPMAN_E013"]
+
+
+@override_settings(
+    DEBUG=False,
+    SHOPMAN_FISCAL_ADAPTER="shopman.shop.adapters.fiscal_focusnfe.FocusNFeBackend",
+    SHOPMAN_FISCAL_EMISSION_RESOLVER="shopman.shop.fiscal_resolvers.always",
+)
+def test_fiscal_resolver_configured_is_clean(selling_channel):
+    assert checks.check_fiscal_emission_resolver(None) == []
+
+
+@override_settings(
+    DEBUG=False,
+    SHOPMAN_FISCAL_ADAPTER="shopman.shop.adapters.fiscal_focusnfe.FocusNFeBackend",
+    SHOPMAN_FISCAL_EMISSION_RESOLVER=(
+        "shopman.shop.fiscal_resolvers.on_request_or_tax_id,"
+        "shopman.shop.fiscal_resolvers.card_payment"
+    ),
+)
+def test_fiscal_resolver_accepts_the_comma_separated_or_list(selling_channel):
+    assert checks.check_fiscal_emission_resolver(None) == []
+
+
+# ── W003: a loja oferece NFC-e e não há adapter (check que voltou a valer) ────
+#
+# Até 2026-08-19 o predicado era `Channel.config["fiscal"]["enabled"]`, chave que
+# nenhum código do sistema escreve — o check nunca disparou uma vez. O que a
+# loja realmente usa é `Shop.defaults["pos"]["fiscal_toggle"]`.
+
+
+def _shop_with_pos_defaults(pos_cfg: dict):
+    from shopman.shop.models import Shop
+
+    # ``Shop.save`` já limpa o cache do singleton.
+    return Shop.objects.create(name="Nelson", defaults={"pos": pos_cfg})
+
+
+@pytest.fixture
+def store_offering_nfce(db):
+    return _shop_with_pos_defaults({"fiscal_toggle": True})
+
+
+@override_settings(SHOPMAN_FISCAL_ADAPTER=None)
+def test_store_offering_nfce_without_fiscal_adapter_warns(store_offering_nfce):
+    messages = checks.check_fiscal_adapter(None)
+    assert [m.id for m in messages] == ["SHOPMAN_W003"]
+    from django.core.checks import Warning as CheckWarning
+
+    assert isinstance(messages[0], CheckWarning)
+
+
+@override_settings(
+    SHOPMAN_FISCAL_ADAPTER="shopman.shop.adapters.fiscal_focusnfe.FocusNFeBackend"
+)
+def test_store_offering_nfce_with_adapter_is_clean(store_offering_nfce):
+    assert checks.check_fiscal_adapter(None) == []
+
+
+@override_settings(SHOPMAN_FISCAL_ADAPTER=None)
+def test_store_not_offering_nfce_is_clean(db):
+    _shop_with_pos_defaults({})
+
+    assert checks.check_fiscal_adapter(None) == []
+
+
+@override_settings(SHOPMAN_FISCAL_ADAPTER=None)
+def test_channel_config_fiscal_enabled_is_not_the_predicate_anymore(db):
+    # A chave antiga não é escrita por nada no sistema; se alguém a colocar na
+    # mão, ela não ressuscita o check — o predicado é o da loja.
+    from shopman.shop.models import Channel
+
+    Channel.objects.create(ref="pdv", name="PDV", config={"fiscal": {"enabled": True}})
+
+    assert checks.check_fiscal_adapter(None) == []

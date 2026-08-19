@@ -89,6 +89,7 @@ def register_all() -> None:
     _register_staging_autopilot_handler()
     _register_customer_strategies()
     _register_fiscal_handlers()
+    _register_fiscal_publication_gate()
     _register_accounting_handler()
     _register_return_handler()
     _register_fulfillment_handler()
@@ -204,6 +205,19 @@ def _register_fiscal_handlers() -> None:
     from shopman.shop.handlers.fiscal import NFCeCancelHandler, NFCeEmitHandler
     registry.register_directive_handler(NFCeEmitHandler(backend=backend))
     registry.register_directive_handler(NFCeCancelHandler(backend=backend))
+
+
+def _register_fiscal_publication_gate() -> None:
+    """Liga o porteiro fiscal do catálogo (pre_save em Product/ListingItem).
+
+    Os receivers são ligados sempre; quem decide agir é a chave
+    ``SHOPMAN_FISCAL_REQUIRE_CLASSIFICATION_ON_PUBLISH``, lida a cada save. Ligar
+    a conexão pelo settings faria a chave só valer no boot — e o deployment liga
+    a chave junto com o adapter fiscal, não antes.
+    """
+    from shopman.shop.handlers import fiscal_gate
+
+    fiscal_gate.connect()
 
 
 def _register_accounting_handler() -> None:

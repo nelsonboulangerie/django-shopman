@@ -249,6 +249,8 @@ Settings flat no `settings.py` do Django (sem dict wrapper).
 | `SHOPMAN_CARD_ADAPTER` | env str | `shopman.shop.adapters.payment_mock` | Override do adapter cartão; staging real usa `shopman.shop.adapters.payment_stripe` |
 | `SHOPMAN_FISCAL_ADAPTER` | str | *(sem default)* | Adapter fiscal. Se ausente, handlers fiscais não são registrados |
 | `SHOPMAN_FOCUS_NFE` | dict | homologação | Configuração do adapter `shopman.shop.adapters.fiscal_focusnfe.FocusNFeBackend` |
+| `SHOPMAN_FISCAL_EMISSION_RESOLVER` | env str | `shopman.shop.fiscal_resolvers.on_request_or_tax_id` | Política de QUANDO emitir NFC-e: caminho(s) pontilhado(s) para `callable(order) -> bool`, vários separados por vírgula = OR. Com adapter fiscal ligado e canal de venda ativo, vazio ou não importável **bloqueia o deploy** (`SHOPMAN_E013`) — silêncio fiscal é o pior modo de falha |
+| `SHOPMAN_FISCAL_REQUIRE_CLASSIFICATION_ON_PUBLISH` | env bool | `false` | Porteiro fiscal do catálogo: publicar vendável em canal de venda exige classificação completa (perfil + NCM; CEST na revenda), em qualquer porta. Desligado no pré-go-live; ligar junto com o adapter fiscal. Ver `manage.py fiscal_audit_catalog` |
 | `SHOPMAN_EFI` | dict | sandbox | Configuração Efí PIX (`sandbox`, `client_id`, `client_secret`, `certificate_path`, `pix_key`) |
 | `SHOPMAN_EFI_WEBHOOK` | dict | vazio | Segredo de webhook Efí e header mTLS opcional |
 | `SHOPMAN_STRIPE` | dict | vazio | Configuração Stripe Checkout (`publishable_key`, `secret_key`, `webhook_secret`, `capture_method`, `domain`) |

@@ -1047,6 +1047,17 @@ SHOPMAN_FISCAL_EMISSION_RESOLVER = (
     os.environ.get("SHOPMAN_FISCAL_EMISSION_RESOLVER")
     or "shopman.shop.fiscal_resolvers.on_request_or_tax_id"
 )
+# Porteiro fiscal do catálogo: com isto LIGADO, publicar um vendável num canal de
+# venda exige classificação fiscal completa (perfil + NCM; CEST na revenda) — em
+# QUALQUER porta (admin, seed, sync do iFood, script), porque a guarda é signal.
+# DESLIGADO no pré-go-live: o catálogo ainda está sendo classificado com o
+# contador. Liga na virada, junto com o adapter fiscal. Gate em
+# shopman.shop.handlers.fiscal_gate; para ver o estrago antes de ligar,
+# `manage.py fiscal_audit_catalog`.
+SHOPMAN_FISCAL_REQUIRE_CLASSIFICATION_ON_PUBLISH = _env_bool(
+    "SHOPMAN_FISCAL_REQUIRE_CLASSIFICATION_ON_PUBLISH", False
+)
+
 SHOPMAN_FOCUS_NFE = {
     "environment": os.environ.get("FOCUS_NFE_ENVIRONMENT", "homologacao").strip().lower() or "homologacao",
     "token": os.environ.get("FOCUS_NFE_TOKEN", ""),
@@ -1057,6 +1068,9 @@ SHOPMAN_FOCUS_NFE = {
     "presenca_comprador_nfce": os.environ.get("FOCUS_NFE_NFCE_PRESENCA_COMPRADOR", "1"),
     "modalidade_frete_nfce": os.environ.get("FOCUS_NFE_NFCE_MODALIDADE_FRETE", "9"),
     "natureza_operacao": os.environ.get("FOCUS_NFE_NATUREZA_OPERACAO", "VENDA AO CONSUMIDOR"),
+    # CFOP de fabricação própria decidido pelo dono em 2026-08-19 (5102, não 5101:
+    # a Nelson não é registrada como indústria). Mesmo valor do perfil `own_production`
+    # em shopman.fiscalman.classification — docs/reference/fiscal-cfop-5101-vs-5102.md.
     "default_cfop_nfce": os.environ.get("FOCUS_NFE_NFCE_DEFAULT_CFOP", "5102"),
     "timeout": int(os.environ.get("FOCUS_NFE_TIMEOUT", "30")),
     "base_url": os.environ.get("FOCUS_NFE_BASE_URL", ""),

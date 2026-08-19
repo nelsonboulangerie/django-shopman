@@ -1627,6 +1627,32 @@ def discount_approval_threshold_q() -> int:
     return max(0, int(getattr(settings, "SHOPMAN_POS_DISCOUNT_APPROVAL_THRESHOLD_Q", 0) or 0))
 
 
+def fiscal_toggle_enabled() -> bool:
+    """A loja OFERECE emissão de NFC-e no balcão?
+
+    DONO ÚNICO da pergunta. Flag de negócio por estabelecimento, editável no
+    Admin em ``Shop.defaults["pos"]["fiscal_toggle"]`` — ausente = desligado
+    (mesma semântica que o Admin grava: desligar remove a chave).
+
+    Duas coisas leem daqui, e é por isso que ela mora numa função só: a
+    projection do PDV, para decidir se o toggle "Nota fiscal" aparece
+    (``backstage/projections/pos._pos_fiscal_toggle_enabled``), e o deploy check
+    ``SHOPMAN_W003``, para avisar quando a loja oferece NFC-e e não há adapter
+    fiscal configurado — o caso em que o gestor liga o toggle no Admin e nada
+    acontece no balcão, em silêncio.
+    """
+    try:
+        from shopman.shop.models import Shop
+
+        shop = Shop.load()
+        defaults = (getattr(shop, "defaults", None) or {}) if shop else {}
+        pos_cfg = defaults.get("pos") if isinstance(defaults, dict) else {}
+        return bool((pos_cfg or {}).get("fiscal_toggle", False))
+    except Exception:
+        logger.debug("pos_fiscal_toggle_lookup_failed", exc_info=True)
+        return False
+
+
 def _payload_tenders(
     payload: dict,
     *,
