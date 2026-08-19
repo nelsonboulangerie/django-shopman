@@ -361,6 +361,14 @@ vendas cash não gera falso positivo.
 
 ## WP-9: o troco da entrega sai e volta pelo livro
 
+**Status: ENTREGUE (PR aberto em 2026-08-19).** Como ficou: `courier_in` é ≥ 0 (voltou zero
+também fecha o ciclo), `parent` só quando o acerto é no mesmo turno (senão `order_ref` +
+`payload.courier_out_id`), o valor é exigido pelo SERVIDOR no despacho (409 `change_out_required`
+com a sugestão) e no acerto (400), e o gestor pergunta antes (diálogo no despacho e campo no
+acerto); despacho que pede troco fica fora do lote de avançar. Reconciliação: `courier_*` fora
+do `cash_ledger_mismatch` por construção + `warning` `courier_change_unsettled`. A custódia da
+maquininha (`Order.data.courier.equipment`) NÃO entrou neste corte.
+
 **O problema (medido no código, 2026-08-19):** a loja coleta o pedido de troco
 no checkout do delivery (`change_for_q`, em `Order.data.payment`, escrito por
 `storefront/api/views.py` e `intents/checkout.py`) e **ninguém lê depois**: não

@@ -75,6 +75,12 @@ export interface OrderCardProjection {
   is_preorder: boolean;
   commitment_date: string;
   commitment_date_display: string;
+  change_for_q: number;
+  change_out_suggested_q: number;
+  change_out_q: number;
+  change_back_pending: boolean;
+  change_back_q: number;
+  change_label: string;
 }
 
 /** Expanded detail for a single order (operator side-panel). */
@@ -107,6 +113,12 @@ export interface OperatorOrderProjection {
   cancellation_presets: string[];
   kitchen_note_tags: string[];
   courier: Record<string, unknown> | null;
+  change_for_q: number;
+  change_out_suggested_q: number;
+  change_out_q: number;
+  change_back_pending: boolean;
+  change_back_q: number;
+  change_label: string;
 }
 
 /** Top-level read model for the operator order queue. */

@@ -142,6 +142,20 @@ class OrderCardProjection:
     is_preorder: bool = False
     commitment_date: str = ""
     commitment_date_display: str = ""
+    # Troco da entrega (WP-9): o que a loja coletou no checkout e o que o livro
+    # do caixa diz. ``change_for_q`` é com quanto o cliente paga (0 = não disse);
+    # ``change_out_suggested_q`` é o troco que a loja sugere levar
+    # (``change_for − total``, enquanto não acertado); ``change_out_q`` é o que
+    # de fato saiu da gaveta com o entregador (``courier_out``);
+    # ``change_back_pending`` enquanto o acerto não disser quanto voltou;
+    # ``change_back_q`` o que voltou (``courier_in``). ``change_label`` é a frase
+    # pronta para o card/painel, vazia quando não há troco na história.
+    change_for_q: int = 0
+    change_out_suggested_q: int = 0
+    change_out_q: int = 0
+    change_back_pending: bool = False
+    change_back_q: int = 0
+    change_label: str = ""
 
 
 @dataclass(frozen=True)
@@ -178,6 +192,20 @@ class OperatorOrderProjection:
     # Corrida de entrega na logística externa (Machine). None quando não se
     # aplica (retirada, ou canal sem adapter courier e sem corrida registrada).
     courier: dict | None = None
+    # Troco da entrega (WP-9): o que a loja coletou no checkout e o que o livro
+    # do caixa diz. ``change_for_q`` é com quanto o cliente paga (0 = não disse);
+    # ``change_out_suggested_q`` é o troco que a loja sugere levar
+    # (``change_for − total``, enquanto não acertado); ``change_out_q`` é o que
+    # de fato saiu da gaveta com o entregador (``courier_out``);
+    # ``change_back_pending`` enquanto o acerto não disser quanto voltou;
+    # ``change_back_q`` o que voltou (``courier_in``). ``change_label`` é a frase
+    # pronta para o card/painel, vazia quando não há troco na história.
+    change_for_q: int = 0
+    change_out_suggested_q: int = 0
+    change_out_q: int = 0
+    change_back_pending: bool = False
+    change_back_q: int = 0
+    change_label: str = ""
 
 
 @dataclass(frozen=True)
@@ -238,7 +266,8 @@ def build_order_queue(
         filtered = all_orders
         filter_status = "all"
 
-    cards = tuple(_build_card(o) for o in filtered)
+    courier_change = operator_orders.courier_change_by_order([o.ref for o in filtered])
+    cards = tuple(_build_card(o, courier_change=courier_change) for o in filtered)
 
     return OrderQueueProjection(
         orders=cards,
@@ -306,6 +335,7 @@ def build_operator_order(order: Order) -> OperatorOrderProjection:
         cancellation_presets=_cancellation_presets(),
         kitchen_note_tags=_kitchen_note_tags(),
         courier=_courier_block(order),
+        **_courier_change_fields(order),
     )
 
 
@@ -446,6 +476,8 @@ def build_two_zone_queue() -> TwoZoneQueueProjection:
 
     new_orders = [o for o in all_orders if o.status == "new"]
     deadlines = _confirmation_deadlines([o.ref for o in new_orders])
+    # Uma consulta ao livro para todos os cards: o troco que saiu e voltou.
+    courier_change = operator_orders.courier_change_by_order([o.ref for o in all_orders if _is_delivery(o)])
     # Encomenda para data futura não é trabalho do dia — vive no grupo "Agendados",
     # nunca na Entrada/Preparo do dia. Vale para pedido NOVO (ainda a aceitar) e
     # confirmado: o card de encomenda carrega o badge "Agendado · <data>", então
@@ -458,7 +490,7 @@ def build_two_zone_queue() -> TwoZoneQueueProjection:
         if not _is_future_preorder(o)
     )
     prep_orders = [o for o in all_orders if o.status in ("accepted", "preparing")]
-    prep = tuple(_build_card(o) for o in prep_orders if not _is_future_preorder(o))
+    prep = tuple(_build_card(o, courier_change=courier_change) for o in prep_orders if not _is_future_preorder(o))
     # Só estados pré-fulfillment viram "Agendados"; ready/dispatched/delivered
     # seguem nas colunas de expedição mesmo que a data combinada seja futura.
     future_preorders = [
@@ -473,9 +505,11 @@ def build_two_zone_queue() -> TwoZoneQueueProjection:
 
     ready_orders = [o for o in all_orders if o.status == "ready"]
     expedition_pickup = tuple(_build_card(o) for o in ready_orders if not _is_delivery(o))
-    expedition_delivery = tuple(_build_card(o) for o in ready_orders if _is_delivery(o))
+    expedition_delivery = tuple(_build_card(o, courier_change=courier_change) for o in ready_orders if _is_delivery(o))
     expedition_delivery_transit = tuple(
-        _build_card(o) for o in all_orders if o.status in ("dispatched", "delivered")
+        _build_card(o, courier_change=courier_change)
+        for o in all_orders
+        if o.status in ("dispatched", "delivered")
     )
 
     return TwoZoneQueueProjection(
@@ -543,7 +577,11 @@ def _commitment_date_display(commitment) -> str:
     return f"{formats.date_format(commitment, 'D')}, {formats.date_format(commitment, 'd/m')}"
 
 
-def _build_card(order: Order, deadline: tuple[str, str] | None = None) -> OrderCardProjection:
+def _build_card(
+    order: Order,
+    deadline: tuple[str, str] | None = None,
+    courier_change: dict[str, tuple[int, int | None]] | None = None,
+) -> OrderCardProjection:
     now = timezone.now()
     elapsed = (now - order.created_at).total_seconds()
 
@@ -626,7 +664,54 @@ def _build_card(order: Order, deadline: tuple[str, str] | None = None) -> OrderC
         is_preorder=is_preorder,
         commitment_date=commitment.isoformat() if commitment else "",
         commitment_date_display=_commitment_date_display(commitment) if is_preorder else "",
+        **_courier_change_fields(order, courier_change),
     )
+
+
+def _courier_change_fields(order: Order, by_order: dict[str, tuple[int, int | None]] | None = None) -> dict:
+    """Os campos de troco da entrega do card/painel, lidos do pedido e do livro.
+
+    ``by_order`` é o mapa de ``courier_change_by_order`` quando quem chama tem
+    muitos cards (uma consulta); sem ele, consulta só este pedido.
+    """
+    if not _is_delivery(order):
+        return {}
+    payment = order.data.get("payment") or {}
+    if payment.get("method") != "cash" or payment.get("collection") != "on_delivery":
+        return {}
+    if by_order is None:
+        change = operator_orders.courier_change(order)
+        out_q, back_q = change.out_q, change.back_q
+    else:
+        out_q, back_q = by_order.get(order.ref, (0, None))
+    change_for_q = operator_orders._change_for_q(order)
+    suggested_q = operator_orders.change_out_suggested_q(order)
+    pending = out_q > 0 and back_q is None
+    return {
+        "change_for_q": change_for_q,
+        "change_out_suggested_q": suggested_q,
+        "change_out_q": out_q,
+        "change_back_pending": pending,
+        "change_back_q": int(back_q or 0),
+        "change_label": _change_label(change_for_q, suggested_q, out_q, back_q, settled=bool(payment.get("cod_settled_at"))),
+    }
+
+
+def _change_label(change_for_q: int, suggested_q: int, out_q: int, back_q: int | None, *, settled: bool) -> str:
+    """A frase do troco, na ordem em que a história acontece.
+
+    Antes do despacho: o que o cliente disse ("paga com R$ 50, levar R$ 20").
+    Na rua: o que saiu da gaveta. Depois do acerto: o que voltou.
+    """
+    if back_q is not None:
+        return f"Voltou R$ {format_money(back_q)} de troco" if out_q else ""
+    if out_q > 0:
+        return f"Entregador levou R$ {format_money(out_q)} de troco"
+    if settled or not change_for_q:
+        return ""
+    if suggested_q > 0:
+        return f"Cliente paga com R$ {format_money(change_for_q)} · levar R$ {format_money(suggested_q)} de troco"
+    return f"Cliente paga com R$ {format_money(change_for_q)}"
 
 
 def _card_courier_status(order: Order) -> str:

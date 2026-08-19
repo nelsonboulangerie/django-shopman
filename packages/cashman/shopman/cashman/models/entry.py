@@ -48,6 +48,11 @@ class Entry(models.Model):
         # Dinheiro sai
         REFUND = "refund", _("Devolução")
         CASH_OUT = "cash_out", _("Saída de caixa")
+        # Custódia temporária do entregador: o troco sai com ele no despacho e
+        # volta (o que sobrou) no acerto. Não é pagamento; é dinheiro da gaveta
+        # na rua, e o livro precisa saber disso para a contagem não acusar falta.
+        COURIER_OUT = "courier_out", _("Troco levado pelo entregador")
+        COURIER_IN = "courier_in", _("Troco de volta do entregador")
         # Contagem: o ajuste que faz o livro bater com a gaveta
         COUNT = "count", _("Contagem de fechamento")
         COUNT_CORRECTION = "count_correction", _("Correção da contagem")
@@ -63,7 +68,7 @@ class Entry(models.Model):
     #: O sinal que cada tipo admite. É a única tabela; o CheckConstraint e o
     #: service leem daqui. ``"+"`` > 0, ``"-"`` < 0, ``"0"`` = 0, ``"±"`` livre,
     #: ``"+0"`` >= 0 (venda sem dinheiro: pix/cartão passam pelo turno sem tocar
-    #: na gaveta).
+    #: na gaveta; troco de volta zero: o entregador usou tudo, e o acerto diz isso).
     SIGN_BY_KIND: dict[str, str] = {
         Kind.FLOAT_IN: "+",
         Kind.SALE: "+0",
@@ -71,6 +76,8 @@ class Entry(models.Model):
         Kind.CASH_IN: "+",
         Kind.REFUND: "-",
         Kind.CASH_OUT: "-",
+        Kind.COURIER_OUT: "-",
+        Kind.COURIER_IN: "+0",
         Kind.COUNT: "±",
         Kind.COUNT_CORRECTION: "±",
         Kind.DRAWER_OPEN: "0",
@@ -172,8 +179,8 @@ class Entry(models.Model):
             models.CheckConstraint(
                 condition=(
                     models.Q(kind__in=["float_in", "cod_settled", "cash_in"], amount_q__gt=0)
-                    | models.Q(kind="sale", amount_q__gte=0)
-                    | models.Q(kind__in=["refund", "cash_out"], amount_q__lt=0)
+                    | models.Q(kind__in=["sale", "courier_in"], amount_q__gte=0)
+                    | models.Q(kind__in=["refund", "cash_out", "courier_out"], amount_q__lt=0)
                     | models.Q(kind__in=["count", "count_correction"])
                     | models.Q(
                         kind__in=[

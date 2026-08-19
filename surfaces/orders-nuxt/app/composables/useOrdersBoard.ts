@@ -130,12 +130,18 @@ export function useOrdersBoard() {
   }
 
   const confirm = (ref_: string) => act(ref_, "confirm");
-  const advance = (ref_: string) => act(ref_, "advance");
+  // ``change_out``: troco que o entregador leva da gaveta no despacho (reais);
+  // só quando a tela perguntou. O servidor exige o valor quando o pedido pede troco.
+  const advance = (ref_: string, changeOut?: string) =>
+    act(ref_, "advance", changeOut === undefined ? undefined : { change_out: changeOut });
   // Marketplace (iFood) rejects carry the operator-picked cancellation code so the
   // backend calls requestCancellation with a valid code; empty for other channels.
   const reject = (ref_: string, reason: string, cancellation_code = "") =>
     act(ref_, "reject", { reason, cancellation_code });
-  const settleCash = (ref_: string, amount: string) => act(ref_, "settle-delivery-cash", { amount });
+  // ``change_back``: o troco que voltou com o entregador (reais, zero vale);
+  // obrigatório no servidor quando saiu troco no despacho.
+  const settleCash = (ref_: string, amount: string, changeBack?: string) =>
+    act(ref_, "settle-delivery-cash", changeBack === undefined ? { amount } : { amount, change_back: changeBack });
 
   // Valid cancellation reasons for a ref: for iFood, the live per-order list
   // ({code, description}); empty for channels without reason codes.

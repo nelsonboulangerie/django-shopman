@@ -334,3 +334,121 @@ def test_acerto_exige_turno_aberto_e_nao_repete(counter):
     with pytest.raises(ValueError, match="já foi acertado"):
         operator_orders.settle_delivery_cash(order, cash_shift=counter.shift, actor="pos:marina")
     assert Entry.objects.filter(kind=Entry.Kind.COD_SETTLED).count() == 1
+
+
+# ── O troco da entrega sai e volta pelo livro (WP-9) ──────────────────────
+
+
+def _delivery_cash_order(ref: str, *, total_q: int = 3000, change_for_q: int | None = None) -> Order:
+    payment = {
+        "method": "cash",
+        "collection": "on_delivery",
+        "amount_q": total_q,
+        "tenders": [{"method": "cash", "amount_q": total_q, "collection": "on_delivery", "status": "pending"}],
+    }
+    if change_for_q is not None:
+        payment["change_for_q"] = change_for_q
+    return Order.objects.create(
+        ref=ref,
+        channel_ref="pdv",
+        status=Order.Status.READY,
+        total_q=total_q,
+        data={"fulfillment_type": "delivery", "payment": payment},
+    )
+
+
+def test_despacho_com_troco_exige_o_valor_e_grava_courier_out(counter):
+    """O cliente paga R$ 50 num pedido de R$ 30: a loja sugere R$ 20. Avançar sem
+    dizer quanto o entregador leva é recusado (409 na API); com o valor, a linha
+    ``courier_out`` nasce no turno de quem despacha e a gaveta mostra o desfalque."""
+    order = _delivery_cash_order("DLV-1", change_for_q=5000)
+    assert operator_orders.change_out_suggested_q(order) == 2000
+
+    with pytest.raises(operator_orders.ChangeOutRequired) as exc:
+        operator_orders.advance_order(order, actor="marina")
+    assert exc.value.suggested_q == 2000
+    order.refresh_from_db()
+    assert order.status == Order.Status.READY
+
+    status = operator_orders.advance_order(order, actor="marina", change_out_q=2000, cash_shift=counter.shift)
+
+    assert status == Order.Status.DISPATCHED
+    line = Entry.objects.get(kind=Entry.Kind.COURIER_OUT, order_ref="DLV-1")
+    assert (line.amount_q, line.shift_id, line.operator, line.approved_by) == (-2000, counter.shift.pk, counter.operator, None)
+    assert line.payload == {"change_for_q": 5000, "suggested_q": 2000, "dispatched_by": "marina"}
+    assert cash.balance(counter.shift) == 8000
+    change = operator_orders.courier_change(order)
+    assert (change.out_q, change.back_q, change.pending) == (2000, None, True)
+
+
+def test_despacho_sem_troco_nao_pergunta_e_sem_turno_nao_leva(counter):
+    plain = _delivery_cash_order("DLV-2")
+    assert operator_orders.advance_order(plain, actor="marina") == Order.Status.DISPATCHED
+    assert not Entry.objects.filter(kind=Entry.Kind.COURIER_OUT).exists()
+
+    asks = _delivery_cash_order("DLV-3", change_for_q=5000)
+    with pytest.raises(ValueError, match="turno"):
+        operator_orders.advance_order(asks, actor="marina", change_out_q=2000, cash_shift=None)
+    asks.refresh_from_db()
+    assert asks.status == Order.Status.READY
+    # "Levou sem troco" é resposta válida: zero explícito despacha sem linha.
+    assert operator_orders.advance_order(asks, actor="marina", change_out_q=0) == Order.Status.DISPATCHED
+    assert not Entry.objects.filter(kind=Entry.Kind.COURIER_OUT).exists()
+    # Pediu troco abaixo do total (erro de digitação): nada a levar.
+    below = _delivery_cash_order("DLV-4", change_for_q=1000)
+    assert operator_orders.change_out_suggested_q(below) == 0
+
+
+def test_o_entregador_sai_com_vinte_de_dois_pedidos_e_volta_com_cinco(counter):
+    """A fixture do plano: R$ 15 + R$ 5 saem com o entregador (gaveta 100 → 80);
+    o acerto de A devolve R$ 5 de troco e a venda (80 → 80+30+5 = 115); o acerto
+    de B diz que voltou zero (115 → 145). Em cada passo, Σ do livro é a gaveta."""
+    a = _delivery_cash_order("DLV-A", change_for_q=5000)
+    b = _delivery_cash_order("DLV-B", change_for_q=4000)
+    operator_orders.advance_order(a, actor="marina", change_out_q=1500, cash_shift=counter.shift)
+    operator_orders.advance_order(b, actor="marina", change_out_q=500, cash_shift=counter.shift)
+    assert cash.balance(counter.shift) == 8000
+
+    with pytest.raises(ValueError, match="quanto de troco voltou"):
+        operator_orders.settle_delivery_cash(a, cash_shift=counter.shift, actor="marina")
+    with pytest.raises(ValueError, match="maior do que saiu"):
+        operator_orders.settle_delivery_cash(a, cash_shift=counter.shift, actor="marina", change_back_q=1600)
+    a.refresh_from_db()
+    assert not a.data["payment"].get("cod_settled_at")
+
+    operator_orders.settle_delivery_cash(a, cash_shift=counter.shift, actor="marina", change_back_q=500)
+    assert cash.balance(counter.shift) == 11500
+    out_a = Entry.objects.get(kind=Entry.Kind.COURIER_OUT, order_ref="DLV-A")
+    back_a = Entry.objects.get(kind=Entry.Kind.COURIER_IN, order_ref="DLV-A")
+    assert (back_a.amount_q, back_a.parent_id, back_a.payload["courier_out_id"]) == (500, out_a.pk, out_a.pk)
+    assert operator_orders.courier_change(a).back_q == 500
+    assert not operator_orders.courier_change(a).pending
+
+    operator_orders.settle_delivery_cash(b, cash_shift=counter.shift, actor="marina", change_back_q=0)
+    assert cash.balance(counter.shift) == 14500
+    back_b = Entry.objects.get(kind=Entry.Kind.COURIER_IN, order_ref="DLV-B")
+    assert back_b.amount_q == 0
+    assert operator_orders.courier_change(b).back_q == 0
+
+    # Pedido que não levou troco não aceita "voltou".
+    c = _delivery_cash_order("DLV-C")
+    operator_orders.advance_order(c, actor="marina")
+    with pytest.raises(ValueError, match="não levou troco"):
+        operator_orders.settle_delivery_cash(c, cash_shift=counter.shift, actor="marina", change_back_q=100)
+
+
+def test_troco_que_volta_noutro_turno_aponta_o_pedido_mas_nao_o_parent(counter):
+    order = _delivery_cash_order("DLV-X", change_for_q=5000)
+    operator_orders.advance_order(order, actor="marina", change_out_q=2000, cash_shift=counter.shift)
+    cash.close_shift(counter.shift, counted_q=8000, actor=counter.operator)
+    ana = get_user_model().objects.create_user(username="ana", password="x")
+    evening = cash.open_shift(operator=ana, float_q=5000)
+
+    operator_orders.settle_delivery_cash(order, cash_shift=evening, actor="ana", change_back_q=700)
+
+    back = Entry.objects.get(kind=Entry.Kind.COURIER_IN, order_ref="DLV-X")
+    out = Entry.objects.get(kind=Entry.Kind.COURIER_OUT, order_ref="DLV-X")
+    assert (back.shift_id, back.parent_id, back.payload["courier_out_id"]) == (evening.pk, None, out.pk)
+    assert cash.balance(evening) == 5000 + 3000 + 700
+    by_order = operator_orders.courier_change_by_order(["DLV-X", "nunca"])
+    assert by_order == {"DLV-X": (2000, 700)}

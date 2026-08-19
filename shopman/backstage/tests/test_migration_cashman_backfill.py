@@ -26,15 +26,24 @@ from django.db.migrations.executor import MigrationExecutor
 pytestmark = pytest.mark.django_db(transaction=True)
 
 # O estado "antes" precisa enxergar cashman/orderman/auth também: a 0029 não
-# depende deles, e o project_state só carrega o que os alvos alcançam.
-_SHARED = [
-    ("cashman", "0001_initial"),
-    ("orderman", "0003_rotulos_em_portugues"),
-    ("auth", "0012_alter_user_first_name_max_length"),
-    ("contenttypes", "0002_remove_content_type_name"),
-]
-BEFORE = [("backstage", "0029_bi_scenario_report"), *_SHARED]
-AFTER = [("backstage", "0030_cashman_backfill_and_cut"), *_SHARED]
+# depende deles, e o project_state só carrega o que os alvos alcançam. Os alvos
+# desses apps são as FOLHAS atuais (não um número fixo): pinar ``cashman/0001``
+# desfaria migrações posteriores do pacote e deixaria o banco de teste velho
+# para quem roda depois.
+def _shared_targets(executor):
+    return [
+        (app, name)
+        for app in ("cashman", "orderman", "auth", "contenttypes")
+        for name in {node[1] for node in executor.loader.graph.leaf_nodes(app)}
+    ]
+
+
+def _before(executor):
+    return [("backstage", "0029_bi_scenario_report"), *_shared_targets(executor)]
+
+
+def _after(executor):
+    return [("backstage", "0030_cashman_backfill_and_cut"), *_shared_targets(executor)]
 
 T0 = datetime(2026, 8, 10, 8, 0, tzinfo=UTC)
 
@@ -43,8 +52,9 @@ def _at(hours: float):
     return T0 + timedelta(hours=hours)
 
 
-def _migrate(targets):
+def _migrate(pick_targets):
     executor = MigrationExecutor(connection)
+    targets = pick_targets(executor)
     executor.migrate(targets)
     executor.loader.build_graph()
     return executor.loader.project_state(targets).apps
@@ -197,11 +207,11 @@ def _build_legacy(apps, shift_pk_holder):
 
 
 def test_backfill_moves_the_legacy_cash_into_the_ledger_to_the_cent():
-    old_apps = _migrate(BEFORE)
+    old_apps = _migrate(_before)
     pks = {}
     _build_legacy(old_apps, pks)
 
-    new_apps = _migrate(AFTER)
+    new_apps = _migrate(_after)
 
     Terminal = new_apps.get_model("cashman", "Terminal")
     Shift = new_apps.get_model("cashman", "Shift")
