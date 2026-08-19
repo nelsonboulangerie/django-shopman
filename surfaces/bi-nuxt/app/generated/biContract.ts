@@ -414,16 +414,31 @@ export interface BIRevpashRow {
   revpash_q: number;
 }
 
-/** BIProfilesPrevious(date_from: 'str', date_to: 'str', counter_orders: 'int', counter_revenue_q: 'int', rows: 'tuple[BIProfileRow, ...]') */
+/** A leitura em graus: P(alguém sentou) por cesta = maior peso da cesta. */
+export interface BIProfileEstimate {
+  seated_orders: number;
+  seated_share: number;
+  seated_revenue_q: number;
+  seated_revenue_share: number;
+  takeaway_orders: number;
+  takeaway_share: number;
+  weighted_orders: number;
+  unweighted_orders: number;
+  seated_by_band: number[];
+  orders_by_band: number[];
+}
+
+/** BIProfilesPrevious(date_from: 'str', date_to: 'str', counter_orders: 'int', counter_revenue_q: 'int', rows: 'tuple[BIProfileRow, ...]', estimate: 'BIProfileEstimate') */
 export interface BIProfilesPrevious {
   date_from: string;
   date_to: string;
   counter_orders: number;
   counter_revenue_q: number;
   rows: BIProfileRow[];
+  estimate: BIProfileEstimate;
 }
 
-/** BIConsumptionProfilesReport(date_from: 'str', date_to: 'str', weekday: 'int | None', hour_band: 'str', readings: 'tuple[BIProfileReading, ...]', bands: 'tuple[BIProfileBand, ...]', profiles: 'tuple[BIProfileRow, ...]', counter_orders: 'int', counter_revenue_q: 'int', delivery_orders: 'int', delivery_revenue_q: 'int', revenue_total_q: 'int', coverage: 'float', days_with_sales: 'int', sensitivity: 'BIProfileSensitivity', categories: 'tuple[BIProfileCategoryRow, ...]', category_lines_revenue_q: 'int', category_header_gap_q: 'int', beverage: 'BIProfileBeverage', revpash: 'tuple[BIRevpashRow, ...]', seats: 'int', seats_source: 'str', previous: 'BIProfilesPrevious') */
+/** BIConsumptionProfilesReport(date_from: 'str', date_to: 'str', weekday: 'int | None', hour_band: 'str', readings: 'tuple[BIProfileReading, ...]', bands: 'tuple[BIProfileBand, ...]', profiles: 'tuple[BIProfileRow, ...]', counter_orders: 'int', counter_revenue_q: 'int', delivery_orders: 'int', delivery_revenue_q: 'int', revenue_total_q: 'int', coverage: 'float', days_with_sales: 'int', estimate: 'BIProfileEstimate', sensitivity: 'BIProfileSensitivity', categories: 'tuple[BIProfileCategoryRow, ...]', category_lines_revenue_q: 'int', category_header_gap_q: 'int', beverage: 'BIProfileBeverage', revpash: 'tuple[BIRevpashRow, ...]', seats: 'int', seats_source: 'str', previous: 'BIProfilesPrevious') */
 export interface BIConsumptionProfilesReport {
   date_from: string;
   date_to: string;
@@ -439,6 +454,7 @@ export interface BIConsumptionProfilesReport {
   revenue_total_q: number;
   coverage: number;
   days_with_sales: number;
+  estimate: BIProfileEstimate;
   sensitivity: BIProfileSensitivity;
   categories: BIProfileCategoryRow[];
   category_lines_revenue_q: number;

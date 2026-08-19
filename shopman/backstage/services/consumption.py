@@ -101,6 +101,20 @@ CATEGORY_BEVERAGE: tuple[tuple[str, str], ...] = (
     ("refri", BEVERAGE_READY),
 )
 
+# ── Peso de consumo local (BI-CONSUMPTION-PROFILES §8, passo 1) ──────────────
+#
+# A vocação é 0 ou 1 e a classe ambígua explode a faixa piso–teto. O peso é a
+# mesma vocação em graus: P(consumido aqui | o produto está na cesta), de 0 a
+# 100. Mora no PAPEL (default por leitura, editável) e pode ser sobrescrito por
+# SKU. Estes são só a reserva para linha que não tem etiqueta nem papel — a
+# categoria do histórico dá a leitura, e a leitura dá um peso de partida.
+DEFAULT_WEIGHT_BY_READING: dict[str, int] = {
+    ANCHOR: 95,
+    TAKEAWAY_ITEM: 5,
+    HYBRID: 50,
+}
+
+
 # ── Chave da etiqueta ────────────────────────────────────────────────────────
 #
 # A etiqueta é chaveada por SKU. Linha do histórico SEM sku (os combos do
@@ -205,20 +219,41 @@ def _category_match(category: str, table: tuple[tuple[str, str], ...]) -> str | 
     return None
 
 
+def weight_for(
+    sku: str, category: str, sku_weights: dict[str, int], *, name: str = ""
+) -> int | None:
+    """O peso (0–100) de UMA linha: etiqueta/papel primeiro, categoria como reserva.
+
+    ``None`` = linha sem etiqueta e sem categoria conhecida — não entra na
+    estimativa, e a cobertura declara quantas ficaram de fora.
+    """
+    weight = sku_weights.get(line_key(sku or "", name or ""))
+    if weight is not None:
+        return weight
+    reading = _category_match(category, CATEGORY_READING)
+    return DEFAULT_WEIGHT_BY_READING.get(reading) if reading else None
+
+
 class TagFacts(NamedTuple):
     reading: str
     beverage: str
+    weight: int  # peso de consumo local já resolvido: o do SKU, senão o do papel
 
 
 def sku_facts() -> dict[str, TagFacts]:
-    """Chave (SKU ou ``nome:``) → (leitura, bebida). Uma consulta por relatório."""
+    """Chave (SKU ou ``nome:``) → (leitura, bebida, peso). Uma consulta por relatório."""
     from shopman.backstage.models import ProductConsumptionTag
 
     return {
-        sku: TagFacts(reading, beverage or BEVERAGE_NONE)
-        for sku, reading, beverage in ProductConsumptionTag.objects.filter(
+        sku: TagFacts(
+            reading, beverage or BEVERAGE_NONE,
+            sku_weight if sku_weight is not None else role_weight,
+        )
+        for sku, reading, beverage, sku_weight, role_weight in ProductConsumptionTag.objects.filter(
             role__is_active=True
-        ).values_list("sku", "role__reading", "role__beverage")
+        ).values_list(
+            "sku", "role__reading", "role__beverage", "eat_in_weight", "role__eat_in_weight"
+        )
     }
 
 
@@ -311,6 +346,7 @@ class BasketLine:
     beverage: str  # BEVERAGE_NONE | BEVERAGE_PREPARED | BEVERAGE_READY
     qty: Decimal
     line_total_q: int
+    weight: int | None = None  # peso de consumo local (0–100); None = sem dado
 
 
 @dataclass(frozen=True, slots=True)
@@ -331,6 +367,25 @@ class Basket:
             is_delivery=self.is_delivery,
         )
 
+    def eat_in_probability(self) -> float | None:
+        """P(alguém sentou) desta cesta, pelos pesos — a leitura em graus.
+
+        **O item mais "de comer aqui" decide**: a probabilidade é o MAIOR peso da
+        cesta, não o produto dos pesos. Multiplicar suporia independência entre
+        os itens de uma mesma pessoa — e "café + croissant" viraria quase certeza
+        por contagem, não por evidência. Com o máximo, café (95) + croissant (50)
+        dá 95: o café já disse que alguém sentou; o croissant não muda isso.
+
+        Entrega é 0 por definição. Cesta sem nenhuma linha com peso devolve
+        ``None`` — fica fora da estimativa, e a cobertura declara.
+        """
+        if self.is_delivery:
+            return 0.0
+        weights = [line.weight for line in self.lines if line.weight is not None]
+        if not weights:
+            return None
+        return max(weights) / 100
+
 
 def collect_baskets(window) -> tuple[list[Basket], list[Basket]]:
     """(cestas nativas, cestas históricas) da janela — sem fusão.
@@ -347,6 +402,7 @@ def collect_baskets(window) -> tuple[list[Basket], list[Basket]]:
     facts = sku_facts()
     readings = {key: f.reading for key, f in facts.items()}
     beverages = {key: f.beverage for key, f in facts.items()}
+    weights = {key: f.weight for key, f in facts.items()}
 
     excluded = (Order.Status.CANCELLED, Order.Status.RETURNED)
     native_lines: dict[int, list[BasketLine]] = defaultdict(list)
@@ -361,6 +417,7 @@ def collect_baskets(window) -> tuple[list[Basket], list[Basket]]:
             reading=reading_for(sku, category, readings, name=name),
             beverage=beverage_for(sku, category, beverages, name=name),
             qty=qty, line_total_q=line_total_q,
+            weight=weight_for(sku, category, weights, name=name),
         ))
     native = []
     for order_id, created_at, total_q, channel_ref, data in Order.objects.filter(
@@ -382,6 +439,7 @@ def collect_baskets(window) -> tuple[list[Basket], list[Basket]]:
             reading=reading_for(sku, category, readings, name=name),
             beverage=beverage_for(sku, category, beverages, name=name),
             qty=qty, line_total_q=line_total_q,
+            weight=weight_for(sku, category, weights, name=name),
         ))
     historical = []
     # `is_delivery` é o único rótulo de canal confiável do histórico — mesa e
@@ -428,3 +486,58 @@ def _native_categories(skus: set[str]) -> dict[str, str]:
     for sku, name, _order in rows:
         categories.setdefault(sku, name)
     return categories
+
+
+# ── A dica para quem etiqueta: o que o histórico sabe sobre um SKU ───────────
+
+
+class SkuSignal(NamedTuple):
+    sales: int  # vendas de balcão com o SKU
+    with_beverage_pct: int  # % delas com alguma bebida na cesta
+    alone_pct: int  # % em que o SKU era o único produto
+    bulk_pct: int  # % com 4+ unidades do SKU (compra de lote)
+
+
+def sku_signal(key: str) -> SkuSignal | None:
+    """O sinal que o histórico dá sobre um SKU (ou ``nome:<produto>``).
+
+    Não classifica ninguém — é a dica ao lado do campo de peso, para o gestor
+    não decidir no escuro: um produto que em 97% das vendas sai em 4+ unidades
+    e em 17% com bebida é pão de abastecimento, diga o nome o que disser.
+    Só balcão (entrega não tem cesta de salão); só histórico (o nativo ainda é
+    pequeno demais para dizer algo).
+    """
+    from django.db.models import Q
+
+    from shopman.backstage.models import HistoricalSaleItem
+
+    if key.startswith(NAME_KEY):
+        match = Q(sku="", product_name=key[len(NAME_KEY):])
+    else:
+        match = Q(sku=key)
+    sales_with_sku = HistoricalSaleItem.objects.filter(match, sale__is_delivery=False).values("sale_id")
+    rows = HistoricalSaleItem.objects.filter(sale_id__in=sales_with_sku).values_list(
+        "sale_id", "sku", "product_name", "category", "qty"
+    )
+    beverages = {k: f.beverage for k, f in sku_facts().items()}
+    sales: set[int] = set()
+    with_beverage: set[int] = set()
+    units: dict[int, Decimal] = defaultdict(Decimal)
+    distinct: dict[int, set[str]] = defaultdict(set)
+    for sale_id, sku, name, category, qty in rows:
+        sales.add(sale_id)
+        line = line_key(sku, name)
+        distinct[sale_id].add(line)
+        if line == key:
+            units[sale_id] += qty
+        if beverage_for(sku, category, beverages, name=name):
+            with_beverage.add(sale_id)
+    if not sales:
+        return None
+    n = len(sales)
+    return SkuSignal(
+        sales=n,
+        with_beverage_pct=round(100 * len(with_beverage) / n),
+        alone_pct=round(100 * sum(1 for s in sales if len(distinct[s]) == 1) / n),
+        bulk_pct=round(100 * sum(1 for s in sales if units[s] >= 4) / n),
+    )

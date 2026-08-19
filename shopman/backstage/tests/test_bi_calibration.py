@@ -277,6 +277,11 @@ def test_bi_reference_installs_the_three_tables_and_nothing_else():
     assert set(ConsumptionRole.objects.values_list("reading", flat=True)) == {
         "anchor", "takeaway", "hybrid"
     }
+    # O peso de partida é a vocação em graus: ancora ~1, leva ~0, híbrido no meio.
+    assert dict(ConsumptionRole.objects.values_list("ref", "eat_in_weight")) == {
+        "bebida-preparada": 95, "bebida-pronta": 95, "consome-aqui": 95,
+        "leva": 5, "hibrido": 50,
+    }
     # 59 SKUs do cardápio 2027 + 61 SKUs do Yooga ("Pães Finos", 18/08) + 4
     # combos pelo NOME + 70 SKUs do Yooga da segunda rodada (cafés, pratos,
     # pães rústicos, 19/08) — tudo curadoria do dono, nada nasce como proposta.
