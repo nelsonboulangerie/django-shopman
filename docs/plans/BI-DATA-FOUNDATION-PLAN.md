@@ -573,8 +573,11 @@ cooldown, nunca por request de tela.
 > `bi_below_baseline`). **Os dois primeiros alarmes da lista abaixo** (silêncio de importação; dia
 > abaixo do baseline do mesmo dia da semana, fora de dias fechados/atrapalhados, sem opinar com
 > menos de 3 amostras) com regras padrão no `seed`/`setup_bi_reference` — a de importação nasce
-> desligada até haver export recorrente. Os demais (3–5) seguem como candidatos; o desenho
-> abaixo é o original.
+> desligada até haver export recorrente. **Alarmes 3–5 entregues em seguida** (branch
+> `feat/bi-alerts-2`): pedido nativo apagou histórico (lê `DailySalesFact.historical_dropped`),
+> quebra de caixa acumulada por operador (**apuração**: aviso cego ao operador; detalhe só para
+> `cashman.audit_shift`, no Admin também), de-para de produto pendente no último lote. Régua
+> inicial da quebra: R$ 50,00 em 7 dias — ajuste do dono. O desenho abaixo é o original.
 
 **Tabela `bi.AlertRule` (Admin, CRUD de configuração):** `ref`, `label`, `metric` (chave da
 camada de leitura: `daily_revenue`, `daily_orders`, `cash_difference_by_operator`,

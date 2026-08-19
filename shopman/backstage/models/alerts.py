@@ -34,6 +34,9 @@ class OperatorAlert(models.Model):
         # do esperado. O aviso chega pelo mesmo bus, com reconhecimento.
         ("bi_import_silence", "B.I.: importação esperada não chegou"),
         ("bi_below_baseline", "B.I.: movimento abaixo do esperado"),
+        ("bi_source_conflict", "B.I.: pedido nativo apagou histórico"),
+        ("bi_cash_variance", "B.I.: quebra de caixa acumulada passou da régua"),
+        ("bi_curation_pending", "B.I.: de-para de produto pendente"),
     ]
     SEVERITY_CHOICES = [
         ("warning", "Aviso"),

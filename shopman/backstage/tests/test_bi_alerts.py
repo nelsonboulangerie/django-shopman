@@ -160,9 +160,13 @@ def test_seed_installs_the_default_rules_with_the_import_one_switched_off():
     Seed()._seed_bi_alert_rules()
     Seed()._seed_bi_alert_rules()
     rules = {rule.ref: rule for rule in BIAlertRule.objects.all()}
-    assert set(rules) == {"faturamento-abaixo-do-esperado", "importacao-yooga-silenciosa"}
+    assert set(rules) == {
+        "faturamento-abaixo-do-esperado", "importacao-yooga-silenciosa",
+        "pedido-nativo-apagou-historico", "quebra-de-caixa-acumulada", "de-para-de-produto-pendente",
+    }
     assert rules["faturamento-abaixo-do-esperado"].is_active is True
     assert rules["importacao-yooga-silenciosa"].is_active is False
+    assert rules["quebra-de-caixa-acumulada"].metric in BIAlertRule.AUDIT_ONLY_METRICS
     for rule in rules.values():
         rule.full_clean()  # as regras padrão passam pela própria validação
         assert rule.cooldown_minutes >= 60
@@ -177,3 +181,134 @@ def test_rule_validation_demands_what_each_metric_needs(db):
     with pytest.raises(ValidationError):
         BIAlertRule(ref="y", label="y", metric="daily_revenue_vs_baseline", cooldown_minutes=10,
                     threshold_percent=150).full_clean()
+
+
+# ── Alarmes 3–5 ──────────────────────────────────────────────────────────────
+
+
+def _rule(ref, metric, **params):
+    return BIAlertRule.objects.create(
+        ref=ref, label=ref, metric=metric, severity="warning", cooldown_minutes=60, **params,
+    )
+
+
+@pytest.mark.django_db
+def test_native_override_fires_from_the_persisted_guard_or_live():
+    from shopman.orderman.models import Order
+
+    from shopman.backstage.bi.alerts import native_overrides_history
+    from shopman.backstage.bi.canonical import CONFLICT_MIN_HISTORICAL
+    from shopman.backstage.bi.daily_series import refresh
+
+    rule = _rule("guard", BIAlertRule.Metric.NATIVE_OVERRIDES_HISTORY,
+                 lookback_days=7, max_native_orders=5, min_historical_dropped=CONFLICT_MIN_HISTORICAL)
+    # Dia 3: um pedido de teste apaga 25 vendas do Yooga.
+    local = timezone.localtime(timezone.now()).replace(hour=10, minute=0, second=0, microsecond=0)
+    order = Order.objects.create(ref="TESTE", channel_ref="pdv", status=Order.Status.COMPLETED, total_q=100)
+    Order.objects.filter(pk=order.pk).update(created_at=local - timedelta(days=3))
+    for _ in range(25):
+        _sale(3, 700)
+
+    live = native_overrides_history(rule, today=timezone.localdate())
+    assert live.fired is True and live.value == 25.0 and "1 nativo(s) apagaram 25" in live.message
+
+    refresh(_day(6), _day(0))  # com a série materializada, lê o guard persistido
+    persisted = native_overrides_history(rule, today=timezone.localdate())
+    assert persisted.fired is True and persisted.value == 25.0
+
+
+@pytest.mark.django_db
+def test_native_override_stays_quiet_below_the_ruler():
+    from shopman.backstage.bi.alerts import native_overrides_history
+
+    rule = _rule("guard", BIAlertRule.Metric.NATIVE_OVERRIDES_HISTORY,
+                 lookback_days=7, max_native_orders=5, min_historical_dropped=20)
+    _sale(2, 700)
+    reading = native_overrides_history(rule, today=timezone.localdate())
+    assert reading.fired is False and reading.value == 0.0
+
+
+@pytest.mark.django_db
+def test_cash_variance_warns_blind_and_keeps_the_detail_for_auditors():
+    from django.contrib.auth.models import User
+    from shopman.cashman import services as cash
+    from shopman.cashman.models import Terminal
+
+    _rule("caixa", BIAlertRule.Metric.CASH_VARIANCE_BY_OPERATOR, lookback_days=7, threshold_q=5000)
+    ana = User.objects.create_user("caixa-ana", password="pw", is_staff=True)
+    bia = User.objects.create_user("caixa-bia", password="pw", is_staff=True)
+    terminal = Terminal.objects.create(ref="t1", label="Caixa 1")
+    for operator, counted in ((ana, 2000), (bia, 9800)):  # fundo 100: Ana −80,00; Bia −2,00
+        shift = cash.open_shift(operator=operator, terminal=terminal, float_q=10000)
+        cash.close_shift(shift, counted_q=counted, actor=operator)
+
+    summary = evaluate_all()
+    assert summary.fired == 1
+    alert = OperatorAlert.objects.get(type="bi_cash_variance")
+    assert "caixa-ana" not in alert.message and "80,00" not in alert.message  # cego para o operador
+    assert "1 operador(es)" in alert.message
+    event = BIAlertEvent.objects.get()
+    assert "caixa-ana" in event.message and "−R$ 80,00" in event.message  # o detalhe, para quem audita
+    assert "caixa-bia" not in event.message
+
+
+@pytest.mark.django_db
+def test_curation_pending_counts_lines_without_a_confirmed_alias():
+    from decimal import Decimal
+
+    from shopman.offerman.models import Product
+
+    from shopman.backstage.bi.alerts import curation_pending
+    from shopman.backstage.models import HistoricalSaleItem, ProductAlias
+
+    rule = _rule("curadoria", BIAlertRule.Metric.CURATION_PENDING, source="yooga", threshold_percent=20)
+    assert curation_pending(rule).fired is False  # sem lote, nada a curar
+
+    batch = ImportBatch.objects.create(source="yooga", status="done", file_sha256="c" * 64)
+    sale = HistoricalSale.objects.create(batch=batch, source="yooga", external_id=1,
+                                         occurred_at=timezone.now(), total_q=300)
+    for seq, sku in enumerate(("CT", "PC", "BA", ""), start=1):
+        HistoricalSaleItem.objects.create(sale=sale, seq=seq, product_name=f"Produto {seq}", sku=sku,
+                                          qty=Decimal("1"), unit_price_q=100, line_total_q=100)
+    before = curation_pending(rule)
+    assert before.fired is True and before.value == 100.0
+
+    croissant = Product.objects.create(sku="CROISSANT", name="Croissant")
+    ProductAlias.objects.create(source="yooga", external_sku="CT", product=croissant, status="confirmed")
+    ProductAlias.objects.create(source="yooga", external_sku="PC", product=croissant, status="confirmed")
+    ProductAlias.objects.create(source="yooga", external_sku="BA", product=croissant, status="confirmed")
+    ProductAlias.objects.create(source="yooga", external_sku="", external_name="Produto 4", product=croissant)  # proposto: não conta
+    after = curation_pending(rule)
+    assert after.value == 25.0 and after.fired is True  # 1 de 4 (25%) > 20%
+    ProductAlias.objects.filter(external_name="Produto 4").update(status="confirmed")
+    assert curation_pending(rule).fired is False
+
+
+@pytest.mark.django_db
+def test_admin_hides_cash_audit_detail_from_non_auditors(client):
+    from django.contrib.auth.models import Permission, User
+    from django.contrib.contenttypes.models import ContentType
+    from django.urls import reverse
+    from shopman.cashman.models import Shift
+
+    from shopman.shop.models import Shop
+
+    Shop.objects.create(name="Loja")
+    rule = _rule("caixa", BIAlertRule.Metric.CASH_VARIANCE_BY_OPERATOR, lookback_days=7, threshold_q=5000)
+    rule.last_reading = {"value": 1, "baseline": 5000, "fired": True, "message": "caixa-ana: −R$ 80,00"}
+    rule.save()
+    BIAlertEvent.objects.create(rule=rule, severity="warning", value=1, baseline=5000, message="caixa-ana: −R$ 80,00")
+
+    manager = User.objects.create_user("gerente", password="pw", is_staff=True)
+    manager.user_permissions.add(*Permission.objects.filter(codename__in=("view_bialertrule", "view_bialertevent")))
+    client.force_login(manager)
+    rules_page = client.get(reverse("admin:backstage_bialertrule_changelist")).content.decode()
+    assert "caixa-ana" not in rules_page and "só para quem audita" in rules_page
+    events_page = client.get(reverse("admin:backstage_bialertevent_changelist")).content.decode()
+    assert "caixa-ana" not in events_page
+
+    manager.user_permissions.add(Permission.objects.get(
+        content_type=ContentType.objects.get_for_model(Shift), codename="audit_shift"))
+    client.force_login(manager)
+    assert "caixa-ana" in client.get(reverse("admin:backstage_bialertrule_changelist")).content.decode()
+    assert "caixa-ana" in client.get(reverse("admin:backstage_bialertevent_changelist")).content.decode()

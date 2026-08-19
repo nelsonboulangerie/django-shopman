@@ -16,12 +16,22 @@ foge do esperado (BI-DATA-FOUNDATION-PLAN §7.2). Duas peças:
 e atrapalhados (a mesma régua de "dia parecido" que a projeção usa). Sem
 amostra suficiente a regra não opina — ausência declarada, nunca número.
 
-**Duas métricas no v1**, cada uma com os seus parâmetros explícitos (duas
-colunas claras valem mais que um ``threshold`` genérico com unidade):
+**Cinco métricas**, cada uma com os seus parâmetros explícitos (colunas
+claras valem mais que um ``threshold`` genérico com unidade):
 - ``import_silence``: a origem ``source`` deveria receber lote a cada
   ``expected_every_days`` dias e não recebeu — o candidato forte da missão.
 - ``daily_revenue_vs_baseline``: o faturamento de ontem ficou abaixo de
   ``threshold_percent`` % da média do mesmo dia da semana.
+- ``native_overrides_history``: nos últimos ``lookback_days``, um dia com até
+  ``max_native_orders`` pedidos nativos apagou mais de ``min_historical_dropped``
+  vendas históricas (o guard da fusão, persistido em ``DailySalesFact``).
+- ``cash_variance_by_operator``: nos últimos ``lookback_days``, a quebra
+  acumulada de algum operador passou de ``threshold_q`` centavos. ⚠️ É
+  **apuração**: o aviso ao operador não carrega nome nem valor; o detalhe
+  fica no disparo, visível só para quem tem ``cashman.audit_shift``.
+- ``curation_pending``: no último lote concluído de ``source``, mais de
+  ``threshold_percent`` % das linhas não têm de-para de produto confirmado —
+  há curadoria pendente antes de o número ser confiável.
 """
 
 from __future__ import annotations
@@ -36,6 +46,12 @@ class BIAlertRule(models.Model):
     class Metric(models.TextChoices):
         IMPORT_SILENCE = "import_silence", "Importação esperada não chegou"
         DAILY_REVENUE_VS_BASELINE = "daily_revenue_vs_baseline", "Faturamento do dia abaixo do esperado"
+        NATIVE_OVERRIDES_HISTORY = "native_overrides_history", "Pedido nativo apagou histórico"
+        CASH_VARIANCE_BY_OPERATOR = "cash_variance_by_operator", "Quebra de caixa acumulada por operador"
+        CURATION_PENDING = "curation_pending", "De-para de produto pendente"
+
+    #: Métricas que são apuração de caixa: o disparo detalhado só para quem audita.
+    AUDIT_ONLY_METRICS = frozenset({"cash_variance_by_operator"})
 
     ref = models.SlugField("ref", max_length=48, unique=True)
     label = models.CharField("rótulo", max_length=120)
@@ -67,6 +83,22 @@ class BIAlertRule(models.Model):
         "semanas de baseline", default=4,
         help_text="Quantas semanas para trás entram na média do mesmo dia da semana.",
     )
+    # ── parâmetros de native_overrides_history / cash_variance_by_operator / curation_pending ──
+    lookback_days = models.PositiveSmallIntegerField(
+        "olhar para trás (dias)", default=7,
+        help_text="Janela das métricas acumuladas: histórico apagado, quebra de caixa.",
+    )
+    max_native_orders = models.PositiveSmallIntegerField(
+        "até quantos pedidos nativos", null=True, blank=True,
+        help_text="Só para 'pedido nativo apagou histórico': dia com ATÉ isto de pedidos nativos…",
+    )
+    min_historical_dropped = models.PositiveIntegerField(
+        "…que apagou mais de quantas vendas históricas", null=True, blank=True,
+    )
+    threshold_q = models.BigIntegerField(
+        "régua em centavos", null=True, blank=True,
+        help_text="Só para 'quebra de caixa acumulada': |Σ quebra| de um operador na janela acima disto dispara.",
+    )
     # ── o que a última avaliação viu (para o Admin mostrar; o disparo fica no evento) ──
     last_evaluated_at = models.DateTimeField("avaliado em", null=True, blank=True)
     last_fired_at = models.DateTimeField("disparou em", null=True, blank=True)
@@ -96,6 +128,20 @@ class BIAlertRule(models.Model):
                 raise ValidationError({"threshold_percent": "Informe um percentual do esperado entre 1 e 99."})
             if not self.baseline_weeks:
                 raise ValidationError({"baseline_weeks": "Pelo menos uma semana de baseline."})
+        if self.metric == self.Metric.NATIVE_OVERRIDES_HISTORY:
+            if self.max_native_orders is None or not self.min_historical_dropped:
+                raise ValidationError("Diga até quantos pedidos nativos e acima de quantas vendas históricas apagadas.")
+        if self.metric == self.Metric.CASH_VARIANCE_BY_OPERATOR and not self.threshold_q:
+            raise ValidationError({"threshold_q": "Diga a régua da quebra acumulada, em centavos."})
+        if self.metric == self.Metric.CURATION_PENDING:
+            if not self.source:
+                raise ValidationError({"source": "Diga de qual origem conferir o de-para."})
+            if not self.threshold_percent or self.threshold_percent >= 100:
+                raise ValidationError({"threshold_percent": "Informe um percentual de linhas sem de-para entre 1 e 99."})
+        if self.metric in (
+            self.Metric.NATIVE_OVERRIDES_HISTORY, self.Metric.CASH_VARIANCE_BY_OPERATOR,
+        ) and not self.lookback_days:
+            raise ValidationError({"lookback_days": "Pelo menos um dia de janela."})
 
 
 class BIAlertEvent(models.Model):
