@@ -1172,3 +1172,16 @@ Chave ausente = o export não trouxe; nunca se grava vazio.
 
 A proveniência da linha (arquivo, hash, quando, quantas) não mora aqui: mora em
 `HistoricalSale.batch` → `ImportBatch`.
+
+
+## BIAlertRule.last_reading
+
+O que a última avaliação de um alarme do B.I. viu (`shopman/backstage/bi/alerts.py::Reading`).
+Sobrescrito a cada ciclo do `evaluate_bi_alerts`; o disparo propriamente dito é `BIAlertEvent`.
+
+| Chave | Tipo | Descrição |
+|-------|------|-----------|
+| `value` | `float \| null` | O medido (dias desde o último lote; faturamento de ontem em centavos). `null` = a regra não opinou. |
+| `baseline` | `float \| null` | O esperado (cadência em dias; média do mesmo dia da semana em centavos). |
+| `fired` | `bool` | Passou da régua nesta avaliação (independe do cooldown). |
+| `message` | `str` | A frase que foi (ou seria) para o operador, em pt-BR. |

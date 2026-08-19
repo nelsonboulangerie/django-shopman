@@ -78,6 +78,9 @@ class Command(BaseCommand):
                 _perm("backstage", "importbatch", "view_importbatch"),
                 _perm("backstage", "historicalsale", "view_historicalsale"),
                 _perm("backstage", "dailysalesfact", "view_dailysalesfact"),
+                # …e ajustam a régua dos alarmes do B.I.; o disparo só se lê.
+                *[_perm("backstage", "bialertrule", f"{verb}_bialertrule") for verb in ("view", "add", "change")],
+                _perm("backstage", "bialertevent", "view_bialertevent"),
                 # …e curam os de-paras (a máquina propõe, o gestor confirma). Sem
                 # apagar: rejeitar é estado, e a trilha de quem confirmou fica.
                 *[

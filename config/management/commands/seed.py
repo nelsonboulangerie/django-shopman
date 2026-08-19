@@ -5909,6 +5909,7 @@ class Command(BaseCommand):
         self._seed_consumption_tags()
         self._seed_seating()
         self._seed_bi_aliases()
+        self._seed_bi_alert_rules()
         self._seed_business_days(days=days)
         self._seed_shelf_movements(products, vitrine, days=days)
         self._seed_shelf_outages(products, days=days)
@@ -6262,6 +6263,42 @@ class Command(BaseCommand):
                     "note": "vocabulário do histórico Yooga",
                 },
             )
+
+    def _seed_bi_alert_rules(self) -> None:
+        """Os primeiros alarmes do B.I. — regras como dado, editáveis no Admin.
+
+        Duas regras, uma ativa: o faturamento de ontem abaixo de 70% da média
+        do mesmo dia da semana (4 semanas) avisa o operador uma vez por dia. A
+        de importação silenciosa nasce DESLIGADA: o export do Yooga é único até
+        hoje; quando um export passar a ser recorrente, ativa-se e ajusta-se a
+        cadência — a regra existe para o gestor achar, não para disparar à toa.
+        """
+        from shopman.backstage.models import BIAlertRule
+
+        rules = (
+            {
+                "ref": "faturamento-abaixo-do-esperado",
+                "label": "Faturamento do dia abaixo do esperado",
+                "metric": BIAlertRule.Metric.DAILY_REVENUE_VS_BASELINE,
+                "is_active": True,
+                "severity": "warning",
+                "cooldown_minutes": 24 * 60,
+                "threshold_percent": 70,
+                "baseline_weeks": 4,
+            },
+            {
+                "ref": "importacao-yooga-silenciosa",
+                "label": "Importação do Yooga não chegou",
+                "metric": BIAlertRule.Metric.IMPORT_SILENCE,
+                "is_active": False,
+                "severity": "warning",
+                "cooldown_minutes": 24 * 60,
+                "source": "yooga",
+                "expected_every_days": 7,
+            },
+        )
+        for rule in rules:
+            BIAlertRule.objects.update_or_create(ref=rule["ref"], defaults={k: v for k, v in rule.items() if k != "ref"})
 
     def _seed_seating(self) -> None:
         """O salão real da Nelson (informado pelo dono, 17/08).

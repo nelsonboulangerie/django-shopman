@@ -566,6 +566,16 @@ cooldown, nunca por request de tela.
 
 ### 7.2 Alarmes configuráveis (meia página)
 
+> ✅ **v1 ENTREGUE 2026-08-19** (branch `feat/bi-alerts`, sobre a do P4): `BIAlertRule` (regra como
+> dado, Admin no grupo B.I., `cooldown_minutes` obrigatório, parâmetros explícitos por métrica) +
+> `BIAlertEvent` (append-only) + `bi/alerts.py` + `evaluate_bi_alerts` no `maintenance_worker` logo
+> após o `refresh_bi_daily_series`; canal = `OperatorAlert` (tipos novos `bi_import_silence` /
+> `bi_below_baseline`). **Os dois primeiros alarmes da lista abaixo** (silêncio de importação; dia
+> abaixo do baseline do mesmo dia da semana, fora de dias fechados/atrapalhados, sem opinar com
+> menos de 3 amostras) com regras padrão no `seed`/`setup_bi_reference` — a de importação nasce
+> desligada até haver export recorrente. Os demais (3–5) seguem como candidatos; o desenho
+> abaixo é o original.
+
 **Tabela `bi.AlertRule` (Admin, CRUD de configuração):** `ref`, `label`, `metric` (chave da
 camada de leitura: `daily_revenue`, `daily_orders`, `cash_difference_by_operator`,
 `import_batch_age`, `native_day_overrides_history`, `unaliased_lines_share`, `soldout_before`),
