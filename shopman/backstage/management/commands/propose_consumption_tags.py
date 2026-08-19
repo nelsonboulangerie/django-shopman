@@ -73,7 +73,12 @@ class Command(BaseCommand):
         from shopman.backstage.models import ConsumptionRole, ProductConsumptionTag
 
         dry_run = options["dry_run"]
-        roles = {role.reading: role for role in ConsumptionRole.objects.filter(is_active=True)}
+        # Papel por leitura; para bebida do histórico, o papel que DECLARA o
+        # tipo de bebida (bebida-preparada/bebida-pronta) vence o genérico —
+        # é ele que faz o strike rate enxergar a linha.
+        active = list(ConsumptionRole.objects.filter(is_active=True).order_by("-ordering"))
+        roles = {role.reading: role for role in active}
+        beverage_roles = {(role.reading, role.beverage): role for role in active if role.beverage}
         missing = {reading for reading in set(COLLECTION_READING.values()) if reading not in roles}
         if missing:
             self.stderr.write(self.style.ERROR(
@@ -95,7 +100,7 @@ class Command(BaseCommand):
             if sku and reading:
                 by_sku.setdefault(sku, set()).add(reading)
 
-        proposals: list[tuple[str, str, str]] = []
+        proposals: list[tuple[str, str, str, str]] = []
         conflicted: list[str] = []
         for sku, readings in sorted(by_sku.items()):
             if sku in already:
@@ -103,9 +108,9 @@ class Command(BaseCommand):
             if len(readings) > 1:
                 conflicted.append(sku)
                 continue
-            proposals.append((sku, next(iter(readings)), "coleção do catálogo"))
+            proposals.append((sku, next(iter(readings)), "coleção do catálogo", ""))
 
-        proposed_skus = {sku for sku, _r, _s in proposals}
+        proposed_skus = {sku for sku, *_rest in proposals}
         uncovered = sorted(
             sku for sku in Product.objects.values_list("sku", flat=True)
             if sku and sku not in already and sku not in proposed_skus and sku not in conflicted
@@ -116,13 +121,13 @@ class Command(BaseCommand):
             proposals_h, historical_uncovered = self._historical(already, proposed_skus, conflicted)
             proposals.extend(proposals_h)
 
-        for sku, reading, source in proposals:
+        for sku, reading, source, beverage in proposals:
             if dry_run:
                 continue
             ProductConsumptionTag.objects.update_or_create(
                 sku=sku,
                 defaults={
-                    "role": roles[reading],
+                    "role": beverage_roles.get((reading, beverage)) or roles[reading],
                     "note": f"proposto pela {source} — revisar",
                     "reviewed": False,
                 },
@@ -132,8 +137,9 @@ class Command(BaseCommand):
 
     def _historical(self, already, proposed_skus, conflicted):
         from shopman.backstage.models import HistoricalSaleItem
+        from shopman.backstage.services.consumption import CATEGORY_BEVERAGE
 
-        proposals: list[tuple[str, str, str]] = []
+        proposals: list[tuple[str, str, str, str]] = []
         uncovered: set[str] = set()
         seen: dict[str, str] = {}
         # ⚠️ `.order_by()` limpando o ordering do Meta é OBRIGATÓRIO antes do
@@ -155,7 +161,10 @@ class Command(BaseCommand):
             for needle, reading in CATEGORY_READING:
                 if needle in lowered:
                     seen[sku] = reading
-                    proposals.append((sku, reading, "categoria do histórico"))
+                    beverage = next(
+                        (kind for word, kind in CATEGORY_BEVERAGE if word in lowered), ""
+                    )
+                    proposals.append((sku, reading, "categoria do histórico", beverage))
                     break
             else:
                 uncovered.add(sku)
@@ -167,7 +176,7 @@ class Command(BaseCommand):
         labels = dict(Reading.choices)
         verb = "Proporia" if dry_run else "Propostas"
         by_reading: dict[str, int] = {}
-        for _sku, reading, _source in proposals:
+        for _sku, reading, *_rest in proposals:
             by_reading[reading] = by_reading.get(reading, 0) + 1
 
         self.stdout.write(self.style.SUCCESS(f"\n{verb} {len(proposals)} etiquetas:"))

@@ -320,3 +320,132 @@ export interface BIChangeReport {
   mix: ChangeMix | null;
   missing_reason: string;
 }
+
+/** BIProfileReading(key: 'str', label: 'str') */
+export interface BIProfileReading {
+  key: string;
+  label: string;
+}
+
+/** BIProfileBand(key: 'str', label: 'str', title: 'str', start: 'int', end: 'int', hours: 'int') */
+export interface BIProfileBand {
+  key: string;
+  label: string;
+  title: string;
+  start: number;
+  end: number;
+  hours: number;
+}
+
+/** BIProfileRow(reading: 'str', profile: 'str', label: 'str', orders: 'int', orders_share: 'float', revenue_q: 'int', revenue_share: 'float', average_ticket_q: 'int', units_per_order: 'str', distinct_per_order: 'str', orders_by_band: 'tuple[int, ...]', revenue_by_band_q: 'tuple[int, ...]') */
+export interface BIProfileRow {
+  reading: string;
+  profile: string;
+  label: string;
+  orders: number;
+  orders_share: number;
+  revenue_q: number;
+  revenue_share: number;
+  average_ticket_q: number;
+  units_per_order: string;
+  distinct_per_order: string;
+  orders_by_band: number[];
+  revenue_by_band_q: number[];
+}
+
+/** BIProfileRange(profile: 'str', label: 'str', min_orders: 'int', max_orders: 'int', min_share: 'float', max_share: 'float', min_revenue_q: 'int', max_revenue_q: 'int') */
+export interface BIProfileRange {
+  profile: string;
+  label: string;
+  min_orders: number;
+  max_orders: number;
+  min_share: number;
+  max_share: number;
+  min_revenue_q: number;
+  max_revenue_q: number;
+}
+
+/** BIProfileSensitivity(orders_changed: 'int', share_changed: 'float', ranges: 'tuple[BIProfileRange, ...]') */
+export interface BIProfileSensitivity {
+  orders_changed: number;
+  share_changed: number;
+  ranges: BIProfileRange[];
+}
+
+/** BIProfileCategoryRow(category: 'str', revenue_q: 'int', share: 'float', ready_beverage_q: 'int') */
+export interface BIProfileCategoryRow {
+  category: string;
+  revenue_q: number;
+  share: number;
+  ready_beverage_q: number;
+}
+
+/** BIStrikeCell(weekday: 'int', band: 'str', orders: 'int', with_beverage: 'int', rate: 'float') */
+export interface BIStrikeCell {
+  weekday: number;
+  band: string;
+  orders: number;
+  with_beverage: number;
+  rate: number;
+}
+
+/** BIProfileBeverage(orders_with_beverage: 'int', strike_rate: 'float', prepared_rate: 'float', ready_revenue_q: 'int', ready_share: 'float', local_orders: 'int', per_local_order: 'str', by_weekday_band: 'tuple[BIStrikeCell, ...]', by_weekday: 'tuple[BIStrikeCell, ...]', by_band: 'tuple[BIStrikeCell, ...]') */
+export interface BIProfileBeverage {
+  orders_with_beverage: number;
+  strike_rate: number;
+  prepared_rate: number;
+  ready_revenue_q: number;
+  ready_share: number;
+  local_orders: number;
+  per_local_order: string;
+  by_weekday_band: BIStrikeCell[];
+  by_weekday: BIStrikeCell[];
+  by_band: BIStrikeCell[];
+}
+
+/** BIRevpashRow(band: 'str', title: 'str', hours: 'int', revenue_local_q: 'int', days: 'int', seats: 'int', revpash_q: 'int') */
+export interface BIRevpashRow {
+  band: string;
+  title: string;
+  hours: number;
+  revenue_local_q: number;
+  days: number;
+  seats: number;
+  revpash_q: number;
+}
+
+/** BIProfilesPrevious(date_from: 'str', date_to: 'str', counter_orders: 'int', counter_revenue_q: 'int', rows: 'tuple[BIProfileRow, ...]') */
+export interface BIProfilesPrevious {
+  date_from: string;
+  date_to: string;
+  counter_orders: number;
+  counter_revenue_q: number;
+  rows: BIProfileRow[];
+}
+
+/** BIConsumptionProfilesReport(date_from: 'str', date_to: 'str', weekday: 'int | None', hour_band: 'str', readings: 'tuple[BIProfileReading, ...]', bands: 'tuple[BIProfileBand, ...]', profiles: 'tuple[BIProfileRow, ...]', counter_orders: 'int', counter_revenue_q: 'int', delivery_orders: 'int', delivery_revenue_q: 'int', revenue_total_q: 'int', coverage: 'float', days_with_sales: 'int', sensitivity: 'BIProfileSensitivity', categories: 'tuple[BIProfileCategoryRow, ...]', category_lines_revenue_q: 'int', category_header_gap_q: 'int', beverage: 'BIProfileBeverage', revpash: 'tuple[BIRevpashRow, ...]', seats: 'int', seats_source: 'str', previous: 'BIProfilesPrevious') */
+export interface BIConsumptionProfilesReport {
+  date_from: string;
+  date_to: string;
+  weekday: number | null;
+  hour_band: string;
+  readings: BIProfileReading[];
+  bands: BIProfileBand[];
+  profiles: BIProfileRow[];
+  counter_orders: number;
+  counter_revenue_q: number;
+  delivery_orders: number;
+  delivery_revenue_q: number;
+  revenue_total_q: number;
+  coverage: number;
+  days_with_sales: number;
+  sensitivity: BIProfileSensitivity;
+  categories: BIProfileCategoryRow[];
+  category_lines_revenue_q: number;
+  category_header_gap_q: number;
+  beverage: BIProfileBeverage;
+  revpash: BIRevpashRow[];
+  seats: number;
+  seats_source: string;
+  previous: BIProfilesPrevious;
+}

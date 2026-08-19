@@ -22,10 +22,12 @@ from shopman.backstage.models import ConsumptionRole, ProductConsumptionTag
 
 @admin.register(ConsumptionRole)
 class ConsumptionRoleAdmin(ModelAdmin):
-    list_display = ("label", "ref", "hint", "reading_display", "ordering", "is_active")
+    list_display = (
+        "label", "ref", "hint", "reading_display", "beverage_display", "ordering", "is_active",
+    )
     list_editable = ("ordering", "is_active")
     ordering = ("ordering",)
-    fields = ("ref", "label", "hint", "reading", "ordering", "is_active")
+    fields = ("ref", "label", "hint", "reading", "beverage", "ordering", "is_active")
 
     def get_readonly_fields(self, request, obj=None):
         # Etiquetas gravadas apontam para o ref; o rótulo edita à vontade.
@@ -37,6 +39,12 @@ class ConsumptionRoleAdmin(ModelAdmin):
     )
     def reading_display(self, obj):
         return obj.get_reading_display()
+
+    @display(description="bebida")
+    def beverage_display(self, obj):
+        # Bebida é fato à parte da leitura: conta no strike rate e nas bebidas
+        # por pedido, e não muda quem sentou.
+        return obj.get_beverage_display() if obj.beverage else ""
 
     def has_delete_permission(self, request, obj=None):
         # Apagar um papel em uso deixaria produtos sem classificação e mudaria

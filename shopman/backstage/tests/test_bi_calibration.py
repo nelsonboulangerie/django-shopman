@@ -271,9 +271,19 @@ def test_bi_reference_installs_the_three_tables_and_nothing_else():
 
     _run("setup_bi_reference")
 
-    assert ConsumptionRole.objects.count() == 3
-    assert ProductConsumptionTag.objects.count() == 59
+    # Cinco papéis, três leituras: bebida preparada e bebida pronta leem
+    # "consome aqui" e existem porque bebida é fato que o B.I. conta à parte.
+    assert ConsumptionRole.objects.count() == 5
+    assert set(ConsumptionRole.objects.values_list("reading", flat=True)) == {
+        "anchor", "takeaway", "hybrid"
+    }
+    # 59 SKUs curados + 4 combos do Yooga propostos pelo NOME (nascem sem
+    # revisão: quem confirma é o dono, no Admin).
+    assert ProductConsumptionTag.objects.count() == 63
     assert ProductConsumptionTag.objects.filter(reviewed=True).count() == 59
+    assert ProductConsumptionTag.objects.filter(
+        sku__startswith="nome:", reviewed=False, role__ref="consome-aqui"
+    ).count() == 4
     # 4 mesas internas + 4 externas + 6 lugares de balcão contam no teto; o
     # bistrô (2) e o bancão externo ficam fora, e é justamente por ficarem fora
     # que "bateu no teto" continua sendo um sinal.
@@ -293,7 +303,7 @@ def test_bi_reference_is_idempotent():
 
     _run("setup_bi_reference")
     _run("setup_bi_reference")
-    assert ProductConsumptionTag.objects.count() == 59
+    assert ProductConsumptionTag.objects.count() == 63
     assert SeatingSpot.objects.count() == 17
 
 

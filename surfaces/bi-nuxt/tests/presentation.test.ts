@@ -23,13 +23,18 @@ import {
   formatMinutes,
   formatMoney,
   formatMoneyCompact,
+  formatPercent,
   formatQty,
   hourLabel,
   missingLabel,
   rangeLabel,
+  rangeText,
   resolveWindowRange,
+  revpashHint,
+  sensitivityHeadline,
   shortDate,
   shortDateWithYear,
+  strikeMatrix,
 } from "~/presentation/bi";
 
 describe("presentation/bi", () => {
@@ -355,5 +360,47 @@ describe("presentation/bi — projeção", () => {
     expect(cashOrdersNote(41.6, 34, 12)).toBe(
       "42 vendas em dinheiro prováveis: 34% do movimento do dia, que é a fatia dos 12 dias parecidos.",
     );
+  });
+});
+
+describe("presentation/bi — perfis de consumo", () => {
+  it("formata o percentual que a projection já arredondou", () => {
+    expect(formatPercent(16.7)).toBe("16,7%");
+    expect(formatPercent(50)).toBe("50%");
+  });
+
+  it("a faixa piso–teto vira texto, e faixa fechada vira ponto", () => {
+    expect(rangeText({ min_orders: 1234, max_orders: 1500, min_share: 16.7, max_share: 20.1 })).toBe(
+      "1.234–1.500 pedidos (16,7–20,1%)",
+    );
+    expect(rangeText({ min_orders: 7, max_orders: 7, min_share: 3.5, max_share: 3.5 })).toBe(
+      "7 pedidos (3,5%)",
+    );
+    expect(rangeText({ min_orders: 1, max_orders: 1, min_share: 1, max_share: 1 })).toBe("1 pedido (1%)");
+  });
+
+  it("a sensibilidade diz quantos mudam, sem inventar quando não há base", () => {
+    expect(sensitivityHeadline(0, 0, 0)).toBe("Sem pedidos de balcão no recorte.");
+    expect(sensitivityHeadline(0, 0, 10)).toBe("Nenhum pedido muda de perfil entre piso e teto.");
+    expect(sensitivityHeadline(1, 16.7, 6)).toBe(
+      "1 pedido muda de perfil entre piso e teto (16,7% de 6).",
+    );
+  });
+
+  it("a matriz dia × faixa nasce das células planas, na ordem das faixas", () => {
+    const cells = [
+      { weekday: 4, band: "lunch", orders: 10, with_beverage: 4, rate: 40 },
+      { weekday: 4, band: "morning", orders: 5, with_beverage: 1, rate: 20 },
+    ];
+    const matrix = strikeMatrix(cells, ["morning", "lunch"]);
+    expect(matrix).toHaveLength(7);
+    expect(matrix[4]!.label).toBe("sex");
+    expect(matrix[4]!.cells.map((c) => c?.rate ?? null)).toEqual([20, 40]);
+    expect(matrix[0]!.cells).toEqual([null, null]);
+  });
+
+  it("o denominador do RevPASH fica à vista", () => {
+    expect(revpashHint(24, 3, 26)).toBe("24 assentos × 3 h × 26 dias");
+    expect(revpashHint(24, 2, 1)).toBe("24 assentos × 2 h × 1 dia");
   });
 });

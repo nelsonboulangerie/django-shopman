@@ -19,6 +19,7 @@ const section = computed(() =>
   : route.path.startsWith("/cash") ? "cash"
   : route.path.startsWith("/customers") ? "customers"
   : route.path.startsWith("/explore") ? "explore"
+  : route.path.startsWith("/profiles") ? "profiles"
   : "production",
 );
 
@@ -27,6 +28,7 @@ const tabs = [
   { to: "/sales", key: "sales", label: "Vendas", icon: "lucide:shopping-basket" },
   { to: "/cash", key: "cash", label: "Caixa", icon: "lucide:banknote" },
   { to: "/customers", key: "customers", label: "Clientes", icon: "lucide:users" },
+  { to: "/profiles", key: "profiles", label: "Perfis", icon: "lucide:armchair" },
   { to: "/explore", key: "explore", label: "Explorar", icon: "lucide:compass" },
   // Última: as outras abas olham o que aconteceu; esta é a única que projeta.
   { to: "/forecast", key: "forecast", label: "Projeção", icon: "lucide:telescope" },

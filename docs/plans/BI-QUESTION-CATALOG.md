@@ -829,8 +829,11 @@ reescreve o passado** (`active_from`).
 
 ### 8.4 O que NÃO foi feito, e por quê
 
-- **Rodar o F2** — os comandos existem (§5-F2); falta executá-los no staging, que
-  é onde o Yooga está carregado.
+- **Rodar o F2** — ✅ feito em 18/08 sobre uma cópia local do staging, dentro da
+  frente dos perfis de consumo: as variantes viraram as leituras **piso · vigente ·
+  teto** do relatório, e o número está em
+  [BI-CONSUMPTION-PROFILES §7](BI-CONSUMPTION-PROFILES.md) (2025: A 56,5% ·
+  B 10,2% · C 33,2% na leitura vigente; 63,6% dos pedidos mudam entre piso e teto).
 - **Curadoria das etiquetas produto a produto** — é decisão de negócio, não
   trabalho de código. O `propose_consumption_tags` reduz isso a conferir uma
   lista, mas quem confere é gente: o nome engana.

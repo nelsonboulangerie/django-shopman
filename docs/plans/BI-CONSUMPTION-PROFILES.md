@@ -1,0 +1,199 @@
+# BI-CONSUMPTION-PROFILES — quem são os clientes de balcão, em três perfis (Frente A, v1)
+
+> Status: **IMPLEMENTADO em 18/08/2026** (branch `feat/bi-consumption-profiles`, a partir de `origin/main`).
+> Decisões do dono (18/08): faixas por **ocasião** · **24 assentos** no RevPASH · combos do Yooga
+> como **consome-aqui** · **três colunas** (piso · vigente · teto). Ver §6 para o que saiu e §7 para os números.
+> Alvo: staging.
+> Irmão de [BI-QUESTION-CATALOG](BI-QUESTION-CATALOG.md) (F3 = a regra que este plano reaproveita).
+> Não antecipa nada do refactor do B.I. planejado em frente separada.
+
+## 0. A pergunta
+
+Pedidos de **balcão** (delivery e iFood fora), em três perfis:
+
+- **A — Só pra levar** · **B — Consumo local + pra levar** · **C — Só consumo local**
+
+Para cada perfil: nº de pedidos, % dos pedidos, receita, % da receita, ticket médio, itens médios
+por pedido, distribuição por faixa de hora. Recortes: dia da semana × faixa de hora × período.
+Mais quatro consultas sobre a mesma base: receita por categoria (bebidas prontas em destaque),
+strike rate de bebida, bebidas por pedido nos pedidos com item local, RevPASH por faixa.
+
+## 1. Verificação prévia — o que existe (medido no staging em 18/08/2026, leitura pura)
+
+| # | Pergunta | Resposta |
+|---|---|---|
+| 1 | Histórico Yooga tem **linha de item por pedido**? | **Sim.** `HistoricalSale` 81.255 vendas (16/01/2024 → 20/07/2026) · `HistoricalSaleItem` **380.199 linhas**. Só 1 venda sem item. ⚠️ `qty` é sempre 1 (o export abre uma linha por unidade) — "itens por pedido" sai como unidades **e** produtos distintos. |
+| 2 | Campos | `occurred_at` (com hora, UTC → local ok), `is_delivery` (único rótulo de canal confiável), `sku` (vazio em 27.177 linhas), `product_name`, `category` (10 categorias do Yooga), `qty`, `unit_price_q`, `line_total_q`, `total_q` da venda. |
+| 3 | Sinal direto de consumo local? | **Não.** `modality`/`origin`/`table_label` existem crus e estão **declarados não confiáveis** (decisão registrada, não reabrir). Não há outro sinal. |
+| 4 | Trabalho anterior | **Existe e está no `main` (PR #183, F3).** `ConsumptionRole` (3 leituras: `anchor` "Consome aqui" · `takeaway` "Leva" · `hybrid` "Híbrido") + `ProductConsumptionTag` (SKU → papel, **editável no Admin**, 59 curadas pelo dono + 131 propostas no staging) + `classify_basket()` (função pura) + dimensão `consumption_mode` no explorador + `bi_calibrate` (variantes por remapeamento). |
+
+**Vocabulário: o seu `local`/`viagem`/`ambíguo` = o `anchor`/`takeaway`/`hybrid` já curado.**
+Não renomeio nada (rename em massa é hostil a merge; enum em inglês, rótulo em pt-BR já é a
+regra). Os perfis A/B/C são exatamente os modos `takeaway`/`dine_in_takeaway`/`dine_in` que a
+regra vigente já devolve — a sua tabela ("só viagem ± ambíguos → A", etc.) **é a regra que está no
+código**, com o híbrido transparente. O que falta é o relatório, os recortes, as duas leituras
+extremas e as quatro consultas.
+
+### 1.1 Sanidade contra a sua amostra (2025, balcão, 37.833 pedidos)
+
+| Referência da amostra | Medido no histórico | |
+|---|---|---|
+| 37% com bebida | **35,6%** com café/chá/bebida pronta | ✓ |
+| 32% com café/chá preparado | **29,4%** | ✓ |
+| café = 9% da receita | **9,04%** (categoria Cafés) | ✓ |
+| bebida pronta 0,9–1,4% (estimada por diferença) | **1,85%** (categoria Bebidas; água mineral é ~0,7 pp disso) | acima da estimativa — vale a medida real |
+| 3,1 itens distintos/pedido · 20% item único | 4,83 unidades/pedido; 12,3% com uma linha | ⚠️ unidades ≠ distintos; o relatório vai medir os dois |
+
+Retrato do `bi_calibrate` (2025, sem a reserva por categoria): local 19,1% · local+levar 7,1% ·
+levar 59,3% · entrega 6,0% · sem etiqueta 8,6%. Com a reserva por categoria (que o explorador já
+usa) o local sobe para ~23,5%. **A classificação está no rumo da amostra; nada indica etiqueta
+errada.**
+
+### 1.2 Três achados que mudam a resposta (e cabem no plano)
+
+1. **"Combo Cola + Hotdog" e irmãos: 9.255 linhas, R$ 233 mil, em 5.527 vendas (jul/24 → jul/25),
+   sem SKU e sem categoria.** Hoje são invisíveis para a regra → essas vendas saem "sem etiqueta"
+   (~7% do total). São recuperáveis **pelo nome**. Proposta: a etiqueta aceita chave `nome:<produto>`
+   para linha sem SKU (a mesma convenção que o explorador já usa em `_sales_item_rows`), e as quatro
+   entram como **proposta** (`reviewed=False`) para você confirmar no Admin — sugestão: `consome-aqui`
+   (lanche montado + bebida). Se preferir "sem etiqueta", basta não confirmar.
+2. **Não existe "faixa de hora"** no B.I. — só hora cheia. Proposta: faixas fixas de 2h alinhadas ao
+   expediente (**9–11 · 11–13 · 13–15 · 15–17 · 17–19**; fora disso "outros", declarado). Pico real:
+   15–17h = 31,6% dos pedidos de 2025. Constante numa tupla só, trocar é uma linha.
+3. **Assentos: o cadastro do salão soma 22** (4 mesas int. ×2 + 4 ext. ×2 + 6 balcão) **e você disse
+   24.** O RevPASH lê o cadastro (`SeatingSpot`, editável no Admin, "uma pergunta, um dono") e mostra
+   o denominador na tela. Se 24 é o certo, é ajuste de cadastro, não de código — me diga qual mesa
+   tem 4 lugares (ou eu uso 24 e aponto a divergência).
+
+## 2. O que será construído (mínimo que a resposta exige)
+
+### 2.1 Regra — `shopman/backstage/services/consumption.py` (funções puras, portáveis)
+
+- **Três leituras da classe ambígua**, todas remapeando as etiquetas e chamando a **mesma**
+  `classify_basket` (como o `bi_calibrate` já faz — nunca uma segunda regra):
+  - `piso` — híbrido lido como `viagem` (piso de consumo local; A no máximo)
+  - `vigente` — híbrido transparente (a regra do F3; é o que o explorador mostra)
+  - `teto` — híbrido lido como `local` (C no máximo)
+- Perfil = modo: A=`takeaway`, B=`dine_in_takeaway`, C=`dine_in`; `unclassified` e `delivery` seguem
+  como baldes **declarados** (o primeiro é a cobertura; o segundo está fora da pergunta, mas entra
+  na conciliação).
+- Flags derivadas por pedido (`has_local_item`, `has_takeaway_item`, `has_beverage`,
+  `beverage_count`) calculadas na coleta, nunca no template.
+- `reading_for(sku, name, category, …)`: chave `nome:<produto>` como reserva antes da categoria.
+
+### 2.2 Bebida vira **dado**, não string — 1 campo + 2 papéis (migração aditiva no backstage)
+
+Três das quatro consultas extras precisam saber "esta linha é bebida? preparada ou pronta?". Nada
+hardcoded por nome de categoria: `ConsumptionRole` ganha `beverage` (`""` · `prepared` · `ready`),
+visível no Admin. O vocabulário do seed/`setup_bi_reference` ganha `bebida-preparada` e
+`bebida-pronta` (ambos `reading=anchor`, portanto **zero mudança nos perfis** — teste garante) e as
+~30 bebidas da curadoria migram para eles. A reserva por categoria do histórico passa a carregar o
+tipo de bebida junto (`Cafés`/`Festival Chai` → preparada; `Bebidas` → pronta).
+
+### 2.3 Projection — `shopman/backstage/projections/bi_profiles.py` (isolada, sem UI dentro)
+
+`build_bi_consumption_profiles(date_from, date_to, weekday=None, hour_band=None)` → dataclass
+`BIConsumptionProfilesReport`:
+
+- **coleta única** por janela: vendas nativas (dia nativo vence, mesma fusão do `bi_sales`) +
+  históricas, com linhas resolvidas; delivery separado; extraída para `services/consumption.py`
+  (`collect_baskets`) e **reaproveitada** por `bi_explore._consumption_modes` (um dono, dois
+  consumidores).
+- por leitura (piso/vigente/teto) × perfil (A/B/C + sem etiqueta): pedidos, % pedidos, receita,
+  % receita, ticket médio, unidades/pedido, produtos distintos/pedido, distribuição por faixa.
+- **sensibilidade**: % de pedidos que muda de perfil entre piso e teto; a faixa por perfil.
+- **conciliação declarada**: A+B+C+sem etiqueta+entrega = faturamento do período pela leitura atual
+  do `bi_sales` — número mostrado e **testado**; se não bater, o teste quebra.
+- **período anterior** (mesmo padrão F7 do `bi_sales`) para comparar anos/meses.
+- **quatro consultas**: receita por categoria (histórico: `category`; nativo: coleção do produto;
+  bebida pronta destacada; declara a diferença item×cabeçalho — desconto/acréscimo de venda,
+  R$ 39 mil nos 2 anos); strike rate de bebida por dia da semana × faixa; bebidas/pedido nos pedidos
+  com item local; RevPASH por faixa = receita dos pedidos com item local ÷ (assentos oficiais ×
+  horas da faixa × dias com venda no recorte).
+
+### 2.4 API + superfície
+
+- `GET /api/v1/backstage/bi/consumption-profiles/?date_from&date_to&weekday&hour_band` (perm
+  `backstage.view_bi`, mesma base `_BIBase`); contrato regenerado por `export_bi_schema`.
+- `surfaces/bi-nuxt/app/pages/profiles.vue`: seletor de período (o existente), filtros dia da
+  semana e faixa, **piso · vigente · teto lado a lado**, tile de sensibilidade, matriz faixa ×
+  perfil, os quatro blocos extras, linha de conciliação e o aviso "perfil **presumido** pela cesta —
+  regra e etiquetas em Configurações › Como vendemos". Monocromático, cor só funcional; entrada na
+  home do B.I.
+
+### 2.5 Testes
+
+Regra (3 leituras, casos de borda, `nome:`), bebida (flag no papel; perfis inalterados), coleta
+(fusão nativo/histórico igual ao explorador), **conciliação = faturamento do `bi_sales`**, filtros,
+RevPASH (denominador do cadastro), contrato TS sem drift, presentation do bi-nuxt (vitest).
+
+## 3. O que NÃO entra
+
+Captura no PDV · vínculo comanda↔mesa · rename `anchor`→`eat_in` · qualquer refactor do B.I. ·
+mudança em `packages/*` · leitura de `table_label` · materialização (o explorador já varre 380k
+linhas por pedido; medir p95 no staging antes de otimizar).
+
+## 4. Deploy no staging (depois do merge)
+
+`migrate` (campo novo, default vazio) → `setup_bi_reference` (idempotente: papéis novos, bebidas
+reetiquetadas, 4 propostas por nome) → conferir as propostas no Admin (os 4 combos e, se quiser
+estreitar a faixa, as 61 "Pães Finos" híbridas). Nunca `seed`.
+
+## 5. Decisões (respondidas pelo dono em 18/08/2026)
+
+1. **Faixas por ocasião**: Manhã 9–11 · Almoço 11–14 · Tarde 14–17 · Fim de dia 17–19 (+ "fora do
+   expediente", declarado). Fronteiras onde a curva horária de 2025 muda de regime; moram numa tupla
+   (`services/hour_bands.py`). ⚠️ A hora é a do REGISTRO da venda (NFC-e = pagamento): quem almoça às
+   13h e paga às 14h05 cai em "Tarde" — a tela diz isso.
+2. **24 assentos** no RevPASH. Deliberadamente **não** lê o cadastro do salão (`SeatingSpot`, 22): aquele
+   número foi calibrado para "bateu no teto" (o sofá que aperta não conta lá, de propósito); aqui a
+   pergunta é quantos assentos há para render, e o dono respondeu 24. Constante declarada com a fonte
+   na tela (`REVPASH_SEATS`).
+3. **Combos** Cola/Citrus + Hotdog/Donut → `consome-aqui`, pelo NOME (`nome:<produto>`), como
+   **proposta** (`reviewed=False`) para confirmar no Admin. **Não** entram como bebida: a linha é o
+   combo inteiro, e contá-la como refrigerante jogaria R$ 140 mil de hotdog na receita de bebida pronta.
+4. **Três colunas** lado a lado.
+
+## 6. O que foi construído
+
+- `services/consumption.py`: leituras `floor`/`current`/`ceiling` por remapeamento na mesma
+  `classify_basket`; chave `nome:` para linha sem SKU; bebida (`beverage_for`, reserva por categoria
+  `Cafés`→preparada, `Bebidas`→pronta; papel sem tipo de bebida **não veta** a categoria — no staging
+  os cafés do Yooga estão etiquetados "consome aqui" por proposta automática); **coleta única**
+  `collect_baskets` + `fuse_baskets` (dia nativo vence), reaproveitada pelo explorador
+  (`_consumption_modes`) e pelo salão.
+- `services/hour_bands.py`: as faixas por ocasião.
+- `ConsumptionRole.beverage` (`""`/`prepared`/`ready`, migração `backstage 0022`, aditiva) + papéis
+  `bebida-preparada`/`bebida-pronta` (leitura `anchor` — perfis inalterados, testado) no seed e no
+  `setup_bi_reference`; 13 bebidas curadas migram para eles (água → pronta).
+- `projections/bi_profiles.py` → `GET /api/v1/backstage/bi/consumption-profiles/?date_from&date_to&weekday&hour_band`
+  (perm `backstage.view_bi`); contrato TS regenerado.
+- `surfaces/bi-nuxt/app/pages/profiles.vue` (aba **Perfis**): filtros dia da semana × faixa,
+  3 leituras lado a lado, faixa piso–teto + período anterior, conciliação, perfil × faixa, receita por
+  categoria (bebida pronta destacada), bebida no pedido (strike rate dia × faixa, café/chá,
+  bebidas por pedido local), RevPASH por faixa com denominador à vista.
+- `propose_consumption_tags`: para bebida do histórico propõe o papel que declara o tipo de bebida.
+- Testes: `test_bi_profiles.py` (31) + ajustes em `test_bi_calibration.py`; vitest do bi-nuxt;
+  `nuxi typecheck` limpo.
+
+## 7. Medido (cópia local do staging, 2025, balcão = 37.833 pedidos, R$ 2.124.088,85)
+
+| | Piso | **Vigente** | Teto |
+|---|---|---|---|
+| A · só pra levar | 56,5% · R$ 1.126 mil | **56,5%** · ticket R$ 52,67 | 13,8% |
+| B · local + levar | 31,1% | **10,2%** · ticket R$ 82,62 | 32,9% |
+| C · só local | 12,3% | **33,2%** · ticket R$ 53,88 | 53,3% |
+| sem etiqueta | 0,0% (1 pedido) | | |
+
+**Conciliação:** balcão R$ 2.124.088,85 + entrega R$ 178.064,20 = **R$ 2.302.153,05 = `bi_sales`** ✓
+(testado e conferido na aba Vendas). **63,6% dos pedidos mudam de perfil entre piso e teto** — a
+faixa é larga porque "Pães Finos" (55% da receita, 61 SKUs, todos etiquetados híbrido por proposta
+automática) está em quase toda cesta. Revisar essas 61 propostas no Admin (ex.: "Forma Artesanal - 6
+Fatias", R$ 82 mil, é claramente de levar) estreita a faixa sem tocar em código.
+
+**Sanidade contra a amostra:** 35,6% com bebida (ref 37%) · 29,4% com café/chá preparado (ref 32%)
+· café 9,7% da receita por linhas (ref 9%) · 3,1 produtos distintos/pedido no vigente (ref 3,1) ·
+bebida pronta industrializada **2,0%** (ref 0,9–1,4% estimado — água mineral é ~0,7 pp).
+Strike rate por faixa: manhã 48% · almoço 32% · tarde 31% · fim de dia 44%; sábado 39% (o maior).
+RevPASH 2025: manhã R$ 17 · almoço R$ 12,5 · tarde R$ 18 · fim de dia R$ 10 por assento-hora
+(24 assentos × 282 dias); sábado de manhã R$ 34.
