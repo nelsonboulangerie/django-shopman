@@ -79,7 +79,7 @@ Cada fase é útil sozinha e nenhuma exige a seguinte.
   tabela. `RECIPE_ITEM_UNIT_ALIASES` foi apagada; `MASS_UNIT_TO_GRAMS`/`VOLUME_UNIT_TO_ML`
   também.
 
-### Fase 2 — `MaterialConversion` no Buyman (a tabela editável)
+### Fase 2 — `MaterialConversion` no Buyman (a tabela editável) · ✅ concluída
 
 - Campos: `material`, `supplier` (nulo = vale para qualquer fornecedor), `label`
   ("saco 25 kg", "cartela", "ovo"), `to_base_factor` (`Decimal`, > 0), `kind`
@@ -89,6 +89,11 @@ Cada fase é útil sozinha e nenhuma exige a seguinte.
   master primeiro, exatamente como foi a Fase 1 do Buyman.
 - Testes: fator zero/negativo recusado; duas conversões com o mesmo rótulo recusadas;
   `kind=approximate` nunca é lido como exata.
+- **Como ficou:** `packages/buyman/shopman/buyman/models/conversion.py` + migração
+  `0004_materialconversion`. A unicidade precisou de **duas** constraints parciais, não
+  de uma: `NULL` não colide com `NULL` no banco, então sem a segunda (`supplier IS NULL`
+  sobre `material` + `label`) "cartela" sem fornecedor podia entrar duas vezes no mesmo
+  insumo e ninguém saberia qual fator valeu.
 
 ### Fase 3 — o custo lança pela conversão · **é esta que não pode atrasar**
 
@@ -158,7 +163,7 @@ cadastrado.** Todo o resto tolera atraso; dinheiro já digitado, não.
 |---|---|
 | 0 | ficha de insumo pesado bate com a base; líquido em `L` com densidade no perfil; `full_clean()` em cada linha do seed ✅ |
 | 1 | ida e volta sem perda; par sem caminho **levanta** ✅ |
-| 2 | fator ≤ 0 recusado; rótulo duplicado recusado; aproximada não passa por exata |
+| 2 | fator ≤ 0 recusado; rótulo duplicado recusado; aproximada não passa por exata ✅ |
 | 3 | custo por base derivado com precisão; unidade ≠ base sem conversão **recusa** |
 | 4 | anotação derivada muda quando o fator muda, sem tocar na ficha |
 | 5 | `Move` de entrada carrega `converted_via`; saldo aproximado sinalizado |

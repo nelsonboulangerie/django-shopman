@@ -1,16 +1,21 @@
 """
 Unfold-themed admin for Buyman (item master de insumo + fornecedores + custo).
 
-CRUD admins for Material, Supplier and SupplierMaterialCost. Registered when
-'shopman.buyman.contrib.admin_unfold' is in INSTALLED_APPS. Buyman has no core
-admin, so there is nothing to unregister.
+CRUD admins for Material, Supplier, MaterialConversion and
+SupplierMaterialCost. Registered when 'shopman.buyman.contrib.admin_unfold' is
+in INSTALLED_APPS. Buyman has no core admin, so there is nothing to unregister.
 """
 
 from __future__ import annotations
 
 from django.contrib import admin
 from django.utils.translation import gettext_lazy as _
-from shopman.buyman.models import Material, Supplier, SupplierMaterialCost
+from shopman.buyman.models import (
+    Material,
+    MaterialConversion,
+    Supplier,
+    SupplierMaterialCost,
+)
 from shopman.utils.contrib.admin_unfold.badges import unfold_badge
 from shopman.utils.contrib.admin_unfold.base import BaseModelAdmin, BaseTabularInline
 from shopman.utils.monetary import format_money
@@ -35,13 +40,22 @@ class CostOnMaterialInline(BaseTabularInline):
     autocomplete_fields = ("supplier",)
 
 
+class ConversionOnMaterialInline(BaseTabularInline):
+    """Conversões declaradas deste insumo — o que se compra e o que se conta."""
+
+    model = MaterialConversion
+    extra = 0
+    fields = ("label", "to_base_factor", "kind", "supplier", "is_active")
+    autocomplete_fields = ("supplier",)
+
+
 @admin.register(Material)
 class MaterialAdmin(BaseModelAdmin):
     list_display = ("sku", "name", "unit", "shelf_life_display", "is_active")
     list_filter = ("unit", "is_active")
     search_fields = ("sku", "name")
     ordering = ("sku",)
-    inlines = (CostOnMaterialInline,)
+    inlines = (ConversionOnMaterialInline, CostOnMaterialInline)
 
     @display(description=_("Validade"))
     def shelf_life_display(self, obj: Material):
@@ -76,3 +90,26 @@ class SupplierMaterialCostAdmin(BaseModelAdmin):
         if obj.is_preferred:
             return unfold_badge(_("Preferencial"), "green")
         return unfold_badge(_("Alternativo"), "base")
+
+
+@admin.register(MaterialConversion)
+class MaterialConversionAdmin(BaseModelAdmin):
+    list_display = ("material", "label", "factor_display", "scope_display", "is_active")
+    list_filter = ("kind", "is_active")
+    search_fields = ("material__sku", "material__name", "label", "supplier__name")
+    autocomplete_fields = ("material", "supplier")
+    ordering = ("material", "label")
+
+    @display(description=_("Fator"))
+    def factor_display(self, obj: MaterialConversion):
+        # O "≈" é o carimbo da regra R3: número que veio de equivalência
+        # aproximada não circula liso, nem na lista do Admin.
+        prefix = "≈ " if obj.is_approximate else ""
+        unit = obj.material.unit if obj.material_id else ""
+        return f"{prefix}{obj.to_base_factor.normalize():f} {unit}".strip()
+
+    @display(description=_("Escopo"))
+    def scope_display(self, obj: MaterialConversion):
+        if obj.supplier_id:
+            return unfold_badge(obj.supplier.name or obj.supplier.ref, "orange")
+        return unfold_badge(_("Qualquer fornecedor"), "base")
