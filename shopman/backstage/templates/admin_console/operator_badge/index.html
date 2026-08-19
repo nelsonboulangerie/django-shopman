@@ -16,7 +16,16 @@
 {# Fica no bloco da página porque atributo de estilo por elemento é proibido pelo gate. #}
 <style>
   @media print {
-    body > *:not(#badge-print-root) { display: none !important; }
+    /* ⚠️ `visibility`, NUNCA `display: none` nos ancestrais.
+       A regra anterior era `body > *:not(#badge-print-root) { display: none }`, e
+       saía FOLHA EM BRANCO: o crachá mora 18 níveis dentro do body (o chrome do
+       Admin), então ele nunca é filho direto: o `:not()` protegia um seletor que
+       não casava com nada, e a linhagem inteira do crachá apagava junto.
+       `display: none` tira o ramo da árvore de caixas e descendente nenhum
+       consegue voltar; `visibility: hidden` mantém as caixas, e aí o
+       `visibility: visible` do crachá vence. É a diferença entre a folha sair
+       vazia e sair com o código de barras. */
+    body * { visibility: hidden; }
     #badge-print-root, #badge-print-root * { visibility: visible; }
     #badge-print-root { position: absolute; inset: 0; margin: 0; padding: 0; }
     .badge-noprint { display: none !important; }
@@ -48,7 +57,7 @@
     {% if badge %}
       {% component "unfold/components/flex.html" with col=1 class="gap-2 badge-noprint" %}
         {% component "unfold/components/text.html" with class="text-sm text-base-500" %}
-          Este código aparece uma vez só. Imprima agora: depois de sair desta página nem o gerente consegue vê-lo de novo, só emitir outro (o que invalida este).
+          Emperrou a impressora? Pode recarregar esta página nos próximos {{ minutos_da_janela }} minutos e imprimir de novo. É o mesmo crachá, não um novo. Passado esse prazo, só emitindo outro (o que invalida este).
         {% endcomponent %}
         {% component "unfold/components/text.html" with class="text-sm text-base-500" %}
           Largura do código: {{ badge.width_mm }}mm por {{ badge.height_mm }}mm de altura. Confira se cabe na etiqueta antes de imprimir em lote.
@@ -79,9 +88,15 @@
         {% endcomponent %}
       {% endcomponent %}
     {% else %}
-      {% component "unfold/components/text.html" with class="text-base-500" %}
-        Nenhum crachá para mostrar. O código aparece uma vez só, logo depois de emitir: se você recarregou a página, ele já foi embora.
-      {% endcomponent %}
+      {% if expirou %}
+        {% component "unfold/components/text.html" with class="text-base-500" %}
+          Passaram-se mais de {{ minutos_da_janela }} minutos desde a emissão, e o código saiu da sessão. O crachá emitido continua VÁLIDO: se ele foi impresso, use-o normalmente. Se a impressão não saiu, emita outro (o anterior deixa de valer).
+        {% endcomponent %}
+      {% else %}
+        {% component "unfold/components/text.html" with class="text-base-500" %}
+          Nenhum crachá para mostrar. Escolha o operador na lista e emita: o código aparece aqui, pronto para imprimir.
+        {% endcomponent %}
+      {% endif %}
       {% component "unfold/components/flex.html" with class="gap-2" %}
         {% url 'admin:doorman_pincredential_changelist' as operators_url %}
         {% component "unfold/components/button.html" with href=operators_url variant="primary" size="sm" icon="badge" %}
