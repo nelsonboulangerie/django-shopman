@@ -55,11 +55,6 @@ def test_fundo_negativo_e_recusado(operator, terminal):
 # ── Lançar ────────────────────────────────────────────────────────────────
 
 
-@pytest.fixture
-def shift(operator, terminal):
-    return cash.open_shift(operator=operator, terminal=terminal, float_q=10000)
-
-
 def test_venda_em_dinheiro_e_venda_sem_dinheiro(shift, operator):
     cash.record(K.SALE, shift=shift, operator=operator, amount_q=1500, order_ref="A01", payment_ref="pi_1",
                 payload={"received_q": 2000, "change_q": 500, "method": "cash"})
@@ -114,10 +109,86 @@ def test_parent_obrigatorio_e_do_tipo_certo(shift, operator, manager):
 
 def test_parent_de_outro_turno_e_recusado(shift, operator, manager):
     other = cash.open_shift(operator=manager, terminal=Terminal.objects.create(ref="pdv-2"))
-    request = cash.record(K.CHANGE_REQUESTED, shift=other, operator=manager, payload={"kind": "coins"})
+    request = cash.record(K.CHANGE_REQUESTED, shift=other, operator=manager, payload={"amount_q": 10000})
     with pytest.raises(CashError) as exc:
         cash.record(K.CHANGE_SERVED, shift=shift, operator=operator, approved_by=manager, parent=request)
     assert exc.value.code == "PARENT_MISMATCH"
+
+
+def test_a_mesma_venda_duas_vezes_no_turno_e_recusada_com_mensagem_da_casa(shift, operator):
+    """O banco decide, a mensagem continua sendo nossa (a fórmula do `open_shift`).
+
+    Dois submits do mesmo fechamento — retry de rede do PDV — dobrariam o
+    esperado do turno. Quem impede é a `UniqueConstraint` parcial; `record`
+    traduz o `IntegrityError` para o dialeto do balcão.
+    """
+    cash.record(K.SALE, shift=shift, operator=operator, amount_q=1500, order_ref="A01")
+
+    with pytest.raises(CashError) as exc:
+        cash.record(K.SALE, shift=shift, operator=operator, amount_q=1500, order_ref="A01")
+    assert exc.value.code == "DUPLICATE_ENTRY"
+    assert Entry.objects.filter(shift=shift, kind=K.SALE, order_ref="A01").count() == 1
+
+
+def test_o_acerto_de_entrega_tambem_nao_repete(shift, operator):
+    cash.record(K.COD_SETTLED, shift=shift, operator=operator, amount_q=1500, order_ref="A01")
+
+    with pytest.raises(CashError) as exc:
+        cash.record(K.COD_SETTLED, shift=shift, operator=operator, amount_q=1500, order_ref="A01")
+    assert exc.value.code == "DUPLICATE_ENTRY"
+
+
+def test_pedido_de_troco_exige_valor_positivo_no_proprio_livro(shift, operator):
+    """Contrato que só a superfície cobra não é contrato.
+
+    O valor do pedido de troco vive no payload (o lançamento tem efeito zero por
+    construção), mas quem chama a API crua não passa pelo `backstage`. O único
+    escritor do livro valida o que tem schema.
+    """
+    for payload in ({}, {"amount_q": 0}, {"amount_q": -500}, {"amount_q": "cem"}):
+        with pytest.raises(CashError) as exc:
+            cash.record(K.CHANGE_REQUESTED, shift=shift, operator=operator, payload=payload)
+        assert exc.value.code == "INVALID_PAYLOAD"
+
+    entry = cash.record(K.CHANGE_REQUESTED, shift=shift, operator=operator, payload={"amount_q": 10000})
+    assert entry.payload["amount_q"] == 10000
+
+
+def test_denominacao_do_pedido_de_troco_e_lista_de_centavos(shift, operator):
+    """O pacote confere a FORMA (lista de centavos positivos), não o catálogo.
+
+    Quais cédulas o balcão pode pedir é política da superfície e tem fonte única
+    em `backstage/services/pos.py::CHANGE_DENOMINATIONS`, de onde a projection
+    serve a tela; repeti-la aqui criaria a segunda lista que aquele comentário
+    existe para evitar.
+    """
+    with pytest.raises(CashError) as exc:
+        cash.record(
+            K.CHANGE_REQUESTED, shift=shift, operator=operator, payload={"amount_q": 10000, "denominations": "1000"}
+        )
+    assert exc.value.code == "INVALID_PAYLOAD"
+
+    with pytest.raises(CashError):
+        cash.record(
+            K.CHANGE_REQUESTED, shift=shift, operator=operator, payload={"amount_q": 10000, "denominations": [0]}
+        )
+
+    entry = cash.record(
+        K.CHANGE_REQUESTED, shift=shift, operator=operator, payload={"amount_q": 10000, "denominations": [1000, 500]}
+    )
+    assert entry.payload["denominations"] == [1000, 500]
+
+
+def test_resultado_do_comprovante_so_aceita_o_que_o_balcao_pode_dizer(shift, operator, manager):
+    sangria = cash.record(K.CASH_OUT, shift=shift, operator=operator, amount_q=-100, approved_by=manager, reason="x")
+
+    for payload in ({}, {"status": "pending"}, {"status": "quase"}):
+        with pytest.raises(CashError) as exc:
+            cash.record(K.RECEIPT_RESULT, shift=shift, operator=operator, parent=sangria, payload=payload)
+        assert exc.value.code == "INVALID_PAYLOAD"
+
+    entry = cash.record(K.RECEIPT_RESULT, shift=shift, operator=operator, parent=sangria, payload={"status": "failed"})
+    assert entry.payload["status"] == "failed"
 
 
 def test_turno_fechado_so_aceita_correcao_anotacao_e_comprovante(shift, operator, manager):
@@ -260,7 +331,7 @@ def test_pedido_de_troco_dobra_pedido_atendimento_e_cancelamento(shift, operator
 
 
 def test_segunda_resolucao_fica_no_livro_mas_nao_muda_o_estado(shift, operator, manager):
-    a = cash.record(K.CHANGE_REQUESTED, shift=shift, operator=operator, payload={"kind": "coins"})
+    a = cash.record(K.CHANGE_REQUESTED, shift=shift, operator=operator, payload={"amount_q": 10000})
     cash.record(K.CHANGE_SERVED, shift=shift, operator=operator, approved_by=manager, parent=a)
     cash.record(K.CHANGE_CANCELLED, shift=shift, operator=operator, parent=a)
 

@@ -1,5 +1,6 @@
 import pytest
 from django.contrib.auth import get_user_model
+from shopman.cashman import services as cash
 from shopman.cashman.models import Terminal
 
 
@@ -16,3 +17,9 @@ def manager(db):
 @pytest.fixture
 def terminal(db):
     return Terminal.objects.create(ref="pdv-1", label="Balcão")
+
+
+@pytest.fixture
+def shift(operator, terminal):
+    """Um turno aberto com R$ 100 de fundo de troco: o ponto de partida do balcão."""
+    return cash.open_shift(operator=operator, terminal=terminal, float_q=10000)

@@ -20,6 +20,8 @@ class CashError(Exception):
         PARENT_REQUIRED        — o tipo exige o lançamento que ele responde
         PARENT_MISMATCH        — o ``parent`` não é do tipo esperado ou é de outro turno
         APPROVAL_REQUIRED      — o tipo exige segunda assinatura
+        DUPLICATE_ENTRY        — o pedido já tem este lançamento no turno (unicidade do banco)
+        INVALID_PAYLOAD        — o payload do tipo não respeita o schema (valor do troco, resultado do papel)
         IMMUTABLE              — tentativa de editar ou apagar lançamento
     """
 

@@ -90,6 +90,18 @@ class Entry(models.Model):
         Kind.RECEIPT_RESULT: (Kind.CASH_OUT, Kind.CASH_IN),
     }
 
+    #: O que o balcão pode dizer sobre o papel de um comprovante
+    #: (``receipt_result.payload["status"]``).
+    #:
+    #: ``pending`` NÃO entra: é o estado de quem ainda não disse nada, e "dizer
+    #: que não disse" seria linha vazia no livro. A ausência de filho
+    #: ``receipt_result`` já é "sem confirmação".
+    #:
+    #: ⚠️ Esta é a FONTE. O ``backstage`` valida antes, para a mensagem ser do
+    #: dialeto do balcão, mas lê a lista daqui — o schema do payload é do único
+    #: escritor, e duas listas divergiriam no dia em que um estado novo entrasse.
+    RECEIPT_STATUSES: frozenset[str] = frozenset({"printed", "failed", "skipped"})
+
     #: Tipos que exigem a segunda assinatura (``approved_by``): a exceção do
     #: caixa tem sempre duas pessoas, quem faz e quem autoriza.
     APPROVAL_REQUIRED: frozenset[str] = frozenset(
@@ -189,6 +201,27 @@ class Entry(models.Model):
                     )
                 ),
                 name="cashman_entry_sign_by_kind",
+            ),
+            # Um pedido entra UMA vez no livro de um turno, por tipo. Dois
+            # submits do mesmo fechamento (retry de rede do PDV) dobrariam o
+            # dinheiro esperado do turno, e um `exists()` antes do insert é
+            # TOCTOU: entre a leitura e a gravação cabe o segundo submit. A
+            # unicidade é do banco, como a do turno aberto; a mensagem continua
+            # sendo da casa (``services.record`` traduz o IntegrityError).
+            #
+            # `order_ref` vazio fica de fora porque não há pedido a que amarrar
+            # (venda de balcão sem ref), e o par é por TIPO: a devolução do mesmo
+            # pedido convive com a venda, e o mesmo pedido pode voltar noutro
+            # turno (o acerto de entrega de ontem).
+            models.UniqueConstraint(
+                fields=["shift", "order_ref"],
+                condition=models.Q(kind="sale") & ~models.Q(order_ref=""),
+                name="cashman_entry_one_sale_per_order_uq",
+            ),
+            models.UniqueConstraint(
+                fields=["shift", "order_ref"],
+                condition=models.Q(kind="cod_settled") & ~models.Q(order_ref=""),
+                name="cashman_entry_one_cod_settled_per_order_uq",
             ),
         ]
 
