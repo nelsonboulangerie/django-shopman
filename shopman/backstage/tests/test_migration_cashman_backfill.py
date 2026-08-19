@@ -1,9 +1,9 @@
-"""A migração 0024 leva o caixa legado para o livro do cashman ao centavo (WP-5, ADR-022).
+"""A migração 0030 leva o caixa legado para o livro do cashman ao centavo (WP-5, ADR-022).
 
-Roda a migração de verdade (``MigrationExecutor``): volta para 0023, monta o
+Roda a migração de verdade (``MigrationExecutor``): volta para 0029, monta o
 legado como ele existia (terminal, turno fechado com sangria/suprimento/abertura
 de gaveta/pedidos de troco, turno ABERTO no corte, pedidos de cada forma que o
-``close()`` sabia somar) e aplica a 0024. Prova:
+``close()`` sabia somar) e aplica a 0030. Prova:
 
 - ``Σ`` do livro de cada turno == contagem cega (o ``count`` absorve a diferença)
 - uma linha por pedido em dinheiro, pela mesma atribuição do ``close()`` legado
@@ -25,7 +25,7 @@ from django.db.migrations.executor import MigrationExecutor
 
 pytestmark = pytest.mark.django_db(transaction=True)
 
-# O estado "antes" precisa enxergar cashman/orderman/auth também: a 0023 não
+# O estado "antes" precisa enxergar cashman/orderman/auth também: a 0029 não
 # depende deles, e o project_state só carrega o que os alvos alcançam.
 _SHARED = [
     ("cashman", "0001_initial"),
@@ -33,8 +33,8 @@ _SHARED = [
     ("auth", "0012_alter_user_first_name_max_length"),
     ("contenttypes", "0002_remove_content_type_name"),
 ]
-BEFORE = [("backstage", "0023_consumption_eat_in_weight"), *_SHARED]
-AFTER = [("backstage", "0024_cashman_backfill_and_cut"), *_SHARED]
+BEFORE = [("backstage", "0029_bi_scenario_report"), *_SHARED]
+AFTER = [("backstage", "0030_cashman_backfill_and_cut"), *_SHARED]
 
 T0 = datetime(2026, 8, 10, 8, 0, tzinfo=UTC)
 

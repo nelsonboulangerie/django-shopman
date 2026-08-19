@@ -456,7 +456,7 @@ def move_permissions(apps, schema_editor):
 
 class Migration(migrations.Migration):
     dependencies = [
-        ("backstage", "0023_consumption_eat_in_weight"),
+        ("backstage", "0029_bi_scenario_report"),
         ("cashman", "0001_initial"),
         ("orderman", "0003_rotulos_em_portugues"),
         ("contenttypes", "0002_remove_content_type_name"),

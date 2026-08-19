@@ -254,8 +254,8 @@ fora de migrações.
 
 **Entrega (como ficou)**
 
-- **Uma** migração, `backstage/0024_cashman_backfill_and_cut` (depende de
-  `cashman/0001`, `backstage/0023`, `orderman`, `auth`, `contenttypes`): backfill
+- **Uma** migração, `backstage/0030_cashman_backfill_and_cut` (depende de
+  `cashman/0001`, `backstage/0029`, `orderman`, `auth`, `contenttypes`): backfill
   + permissões + `DeleteModel` ×3 na mesma transação. Um corte, uma migração.
 - `POSTerminal` → `Terminal` pelo `ref` (cria o que falta; se o do pacote já
   existe sem `metadata`, herda a configuração do aparelho). `CashShift` → `Shift`

@@ -1123,7 +1123,7 @@ coluna**: são `Σ` do livro (`services.expected_before_count/counted/difference
 | `receipt_result` | 0 | `cash_out`/`cash_in` | `{status: printed\|failed\|skipped, detail}` | comprovante: `record_receipt_result` (só o navegador do balcão sabe se imprimiu; a conferência no Admin lê o ÚLTIMO filho) |
 | `note` | 0 | — | `{text}` | anotação gerencial em turno fechado |
 
-**Linhas nascidas do backfill** (`backstage/0024_cashman_backfill_and_cut`, WP-5 do CASHMAN-PLAN;
+**Linhas nascidas do backfill** (`backstage/0030_cashman_backfill_and_cut`, WP-5 do CASHMAN-PLAN;
 o caixa legado `CashShift`/`CashMovement`/`POSTerminal` entrou no livro uma vez e sumiu): levam
 `payload.legacy = true` (`sale`, `cod_settled`, `drawer_open`) ou chaves `legacy_*`:
 `sale.payload.source` (`method`/`tenders`/`cash_received`; `intents` vazio, `payment_ref` vazio),
