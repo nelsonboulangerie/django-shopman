@@ -269,8 +269,7 @@ class TestDefaultGroupsExist(TestCase):
 
     def test_cashier_group_exists_with_perms(self):
         g = Group.objects.get(name="Caixa")
-        # O caixa é do cashman (ADR-022): a permissão concedida tem de ser a do
-        # content type novo, não a legada ainda declarada em backstage.CashShift.
+        # O caixa é do cashman (ADR-022): a permissão é a do content type do pacote.
         self.assertTrue(self._has_perm(g, "operate_pos", "cashman"))
         self.assertFalse(self._has_perm(g, "operate_pos", "backstage"))
         self.assertTrue(self._has_perm(g, "manage_orders"))

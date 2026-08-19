@@ -60,8 +60,6 @@ from shopman.stockman import stock
 from shopman.stockman.models import Position, PositionKind, StockAlert
 
 from shopman.backstage.models import (
-    CashMovement,
-    CashShift,
     DayClosing,
     DayContext,
     KDSInstance,
@@ -75,7 +73,6 @@ from shopman.backstage.models import (
     OperationTaskTemplate,
     OperatorAlert,
     POSTab,
-    POSTerminal,
 )
 from shopman.backstage.services.operations import (
     complete_checklist_run,
@@ -734,10 +731,6 @@ class Command(BaseCommand):
         hard_delete(CashEntry)
         CashShiftLedger.objects.all().delete()
         CashTerminal.objects.all().delete()
-        # Tabelas legadas do caixa (somem no WP-5 do CASHMAN-PLAN; até lá, limpar).
-        CashMovement.objects.all().delete()
-        CashShift.objects.all().delete()
-        POSTerminal.objects.all().delete()
 
         # Day closing
         DayClosing.objects.all().delete()

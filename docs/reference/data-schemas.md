@@ -1052,8 +1052,7 @@ Registros antigos podem ser uma lista simples de snapshots. Registros novos usam
 
 ## cashman.Terminal.metadata
 
-Configuração por terminal do PDV (`packages/cashman`, `Terminal.metadata`; até o WP-4 do
-CASHMAN-PLAN morava em `backstage.POSTerminal.metadata`, mesma tabela de chaves). Escrita pelo
+Configuração por terminal do PDV (`packages/cashman`, `Terminal.metadata`). Escrita pelo
 Admin do backstage (`shopman/backstage/admin/terminal.py`, que registra por cima do contrib do
 pacote porque hardware é da superfície) e pelo `seed`; lida por
 `shopman/backstage/services/pos_terminal.py::runtime_profile`, que devolve o
@@ -1123,6 +1122,19 @@ coluna**: são `Σ` do livro (`services.expected_before_count/counted/difference
 | `change_cancelled` | 0 | `change_requested` | — | `cancel_change_request` |
 | `receipt_result` | 0 | `cash_out`/`cash_in` | `{status: printed\|failed\|skipped, detail}` | comprovante: `record_receipt_result` (só o navegador do balcão sabe se imprimiu; a conferência no Admin lê o ÚLTIMO filho) |
 | `note` | 0 | — | `{text}` | anotação gerencial em turno fechado |
+
+**Linhas nascidas do backfill** (`backstage/0030_cashman_backfill_and_cut`, WP-5 do CASHMAN-PLAN;
+o caixa legado `CashShift`/`CashMovement`/`POSTerminal` entrou no livro uma vez e sumiu): levam
+`payload.legacy = true` (`sale`, `cod_settled`, `drawer_open`) ou chaves `legacy_*`:
+`sale.payload.source` (`method`/`tenders`/`cash_received`; `intents` vazio, `payment_ref` vazio),
+`cod_settled.payload.settled_by`, `cash_out`/`cash_in` com `{legacy_movement_id, created_by, approved_by}`
+(nomes como o legado guardava; `approved_by` FK só quando o usuário ainda existe),
+`change_requested` com `{legacy_ref, legacy_kind}` (denominações vazias: o legado não tinha),
+`count.payload.legacy = {shift_id, expected_q, difference_q, reproduced_expected_q, booked_q, divergent}`
+(o `count` é `contado − Σ do livro`; `divergent` quando o algoritmo copiado do `close()` não reproduz o
+`expected_q` gravado, tipicamente pedido cancelado depois do fechamento) e
+`note.payload = {legacy_shift_id, legacy_status: "open", balance_q}` para turno legado que ainda
+estava aberto no corte (fechado sem contagem).
 
 O estado do pedido de troco é **dobrado** do livro (`services.change_requests`):
 `pending` → `served`/`cancelled` pela primeira resolução com `parent` apontando

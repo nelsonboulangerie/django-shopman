@@ -250,38 +250,47 @@ fora de migrações.
 
 ## WP-5: backfill e corte
 
-**Entrega**
+**Status: ENTREGUE (PR aberto em 2026-08-19; deploy em janela, ver abaixo).**
 
-- Migração `backstage/0022_cashman_backfill` (depende de `cashman/0001` e do
-  último `backstage`): `RunPython` que, para cada `POSTerminal` → `Terminal`
-  (mesmo `ref`), cada `CashShift` → `Shift` (**mesmo pk**, para preservar
-  `Order.data.pos.cash_shift_id` histórico como leitura), e por turno:
-  `float_in` (`opening_amount_q`), `sale`/`cod_settled` rodando **o algoritmo de
-  `close()` uma última vez** (copiado para dentro da migração; é o único lugar
-  em que ele sobrevive), uma linha por `CashMovement` (`cash_out`/`cash_in`, com
-  `receipt_result` filho quando houver resultado), `count` com
-  `amount_q = blind_closing − expected` para turnos fechados, `drawer_open`/
-  `change_*` das listas do `metadata`. Sem reverse (voltar apagaria a trilha).
-- Migração de **permissões**: `Permission` rows de `backstage.cashshift`
-  (`operate_pos`, `audit_cashshift`, `adjust_cashshift`, `manage_operators`)
-  movidas para o content type `cashman.shift` com os codenames novos, **antes**
-  do `post_migrate` criar duplicatas; grupos mantêm as FKs. Depois do deploy:
-  `setup_groups` (idempotente) como cinto e suspensório.
-- Migração `backstage/0023_drop_cash_models`: `DeleteModel` `CashMovement`,
-  `CashShift`, `POSTerminal`; `POSEvent` **não existe** (o #198 não entrou).
-- **Teste de migração** com fixture realista (turnos fechados com vendas cash
-  tagueadas e não tagueadas, COD, sangria com comprovante, pedidos de troco,
-  aberturas): para todo turno fechado, `Σ` reproduz `expected_amount_q`,
-  `blind_closing_amount_q` e `difference_q` originais **ao centavo** (critério
-  da ADR-011: "dados históricos migram sem alteração financeira"). É o teste
-  que autoriza o deploy.
-- `migrate --noinput` de banco zerado **e** de banco com a fixture; `makemigrations --check`.
+**Entrega (como ficou)**
 
-**Aceite**: os dois `migrate` verdes; teste de `Σ` verde; `showmigrations` mostra
-`cashman 0001` antes de `backstage 0022`.
+- **Uma** migração, `backstage/0030_cashman_backfill_and_cut` (depende de
+  `cashman/0001`, `backstage/0029`, `orderman`, `auth`, `contenttypes`): backfill
+  + permissões + `DeleteModel` ×3 na mesma transação. Um corte, uma migração.
+- `POSTerminal` → `Terminal` pelo `ref` (cria o que falta; se o do pacote já
+  existe sem `metadata`, herda a configuração do aparelho). `CashShift` → `Shift`
+  com **pk novo** (o pacote já tem turnos em staging desde o WP-3/4; o pk legado
+  vai para o payload do `count`/`note`, e `Order.data.pos.cash_shift_id` é
+  etiqueta morta que ninguém lê). Turno legado **aberto** no corte fecha sem
+  contagem e ganha uma linha `note` dizendo isso.
+- Por turno, em ordem cronológica (`at`): `float_in`; `sale`/`cod_settled` uma
+  linha por pedido em dinheiro pelo **algoritmo do `close()` copiado** (adoção de
+  órfãs em memória, sem escrever no pedido; pedido que já tem `sale` no livro
+  novo não entra de novo); `cash_out`/`cash_in` por `CashMovement` com
+  `receipt_result` filho; `drawer_open` e `change_requested`(+`served`/
+  `cancelled` com `parent`) das listas do `metadata`; `count` com
+  `amount_q = contagem cega − Σ do que entrou no livro`. O payload do `count`
+  guarda `expected_q`/`difference_q` legados, o `reproduced_expected_q` do
+  algoritmo e `divergent` (difere quando um pedido foi cancelado DEPOIS do
+  fechamento: o livro é a verdade de hoje, não a foto de ontem).
+- Permissões: `backstage.cashshift.{operate_pos, audit_cashshift,
+  adjust_cashshift, manage_operators}` → `cashman.shift.{operate_pos,
+  audit_shift, adjust_shift, manage_operators}` em grupos e usuários; o content
+  type legado e as permissões dele somem.
+- Código: `shopman/backstage/models/cash_register.py` apagado; `seed` sem o flush
+  legado; docstrings sem `CashShift`.
+- **Teste de migração** (`test_migration_cashman_backfill.py`, `MigrationExecutor`,
+  SQLite e Postgres): `Σ` de cada turno == contagem cega ao centavo; uma linha por
+  pedido em cada forma que o `close()` sabia somar (etiquetado, `tenders`,
+  `cash_received_q`, COD, método); cancelado/depois do fechamento/cartão de fora;
+  já-no-livro não duplica; `parent` de comprovante e troco; permissões movidas;
+  tabelas sumidas. Reverso: `RunPython.noop` (as tabelas voltam vazias; o livro
+  fica). `migrate` de banco zerado e `make test-migrations` verdes.
 
-**Deploy**: uma janela; migrações rodam no `release`; depois `setup_groups`;
-conferir no Admin um turno antigo com a linha do tempo populada.
+**Deploy (janela ~1h, caixa fechado)**: snapshot do banco; `migrate` no release;
+`setup_groups` (idempotente, cinto e suspensório); conferir no Admin um turno
+antigo com a linha do tempo populada. Se houver turno legado aberto, a `note`
+grita e o dono decide o que fazer com a contagem que não houve.
 
 ---
 

@@ -1,7 +1,7 @@
 """Versioned POS sale intent contract.
 
 The POS UI sends an operator intent. This module validates and normalizes that
-intent before the Orderman/CashShift services expand it into domain writes.
+intent before the Orderman/cashman services expand it into domain writes.
 """
 
 from __future__ import annotations

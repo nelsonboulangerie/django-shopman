@@ -1,4 +1,4 @@
-"""Backstage models — KDS, DayClosing, OperatorAlert, CashShift, Operation."""
+"""Backstage models — KDS, DayClosing, OperatorAlert, Operation."""
 
 from .alerts import OperatorAlert
 from .aliases import AliasStatus, CategoryAlias, PaymentMethodAlias, ProductAlias
@@ -6,7 +6,6 @@ from .bi_alerts import BIAlertEvent, BIAlertRule
 from .bi_scenario import BIScenarioReport
 from .bi_view import BIView
 from .blind_prep import BlindPrepCode
-from .cash_register import CashMovement, CashShift, POSTerminal
 from .closing import DayClosing
 from .consumption import Beverage, ConsumptionRole, ProductConsumptionTag, Reading
 from .daily_sales import DailySalesFact
@@ -48,8 +47,6 @@ __all__ = [
     "BIView",
     "Beverage",
     "BlindPrepCode",
-    "CashMovement",
-    "CashShift",
     "ConsumptionRole",
     "DailySalesFact",
     "DayClosing",
@@ -81,5 +78,4 @@ __all__ = [
     "SpotKind",
     "OutageReason",
     "ShelfOutage",
-    "POSTerminal",
 ]

@@ -1,6 +1,6 @@
 # ADR-011 - Formula sem FormulaPlan e caixa como CashShift
 
-**Status:** Aceito; implementado ate WP-8 em 2026-05-11  
+**Status:** Aceito; implementado ate WP-8 em 2026-05-11. **Parte do caixa SUPERADA pela [ADR-022](adr-022-cashman-ledger.md)** (2026-08-19): `CashShift`/`CashMovement`/`POSTerminal` viraram `cashman.Shift`/`Entry`/`Terminal` e foram apagados na migração `backstage/0030`.  
 **Data:** 2026-05-11  
 **Escopo:** Craftsman contrib formula, POS cash domain, DayClosing
 

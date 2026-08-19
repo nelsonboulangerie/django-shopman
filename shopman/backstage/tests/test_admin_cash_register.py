@@ -2,8 +2,6 @@
 
 - ``cashman.Shift`` é a tela de auditoria (readonly, linha do tempo inline).
 - ``cashman.Terminal`` é registrado por cima pelo backstage, com o form da gaveta.
-- Os models legados do caixa (``CashShift``/``CashMovement``/``POSTerminal``)
-  saem do Admin; seguem no banco até o WP-5, sem tela.
 - "Movimentações de caixa" some do menu: a movimentação é linha do turno.
 """
 
