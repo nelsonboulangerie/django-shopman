@@ -337,6 +337,17 @@ def expand_bundle(sku: str, qty: Decimal = Decimal("1")) -> list[dict]:
     return CatalogService.expand(sku, qty)
 
 
+def _componentes_do_bundle(sku: str) -> list[dict]:
+    """Componentes do bundle, ou lista vazia se o SKU for produto simples."""
+    from shopman.offerman.exceptions import CatalogError
+    from shopman.offerman.service import CatalogService
+
+    try:
+        return CatalogService.expand(sku, Decimal("1"))
+    except CatalogError:
+        return []
+
+
 def availability_for_sku(
     sku: str,
     *,
@@ -349,15 +360,44 @@ def availability_for_sku(
         from shopman.shop.adapters import stock as stock_adapter
 
         scope = stock_adapter.get_channel_scope(channel_ref)
-        return _availability_for_sku(
-            sku,
-            target_date=target_date,
-            safety_margin=scope["safety_margin"],
-            allowed_positions=scope["allowed_positions"],
-            excluded_positions=scope.get("excluded_positions"),
-            expiry_margin_days=scope.get("expiry_margin_days", 0),
-            include_nonconforming=scope.get("sells_nonconforming", True),
-        )
+
+        def promessa(um_sku: str) -> dict | None:
+            return _availability_for_sku(
+                um_sku,
+                target_date=target_date,
+                safety_margin=scope["safety_margin"],
+                allowed_positions=scope["allowed_positions"],
+                excluded_positions=scope.get("excluded_positions"),
+                expiry_margin_days=scope.get("expiry_margin_days", 0),
+                include_nonconforming=scope.get("sells_nonconforming", True),
+            )
+
+        # ⚠️ O stockman não sabe o que é bundle — ele conta quant por SKU, e
+        # bundle não tem quant. Sem expandir aqui, TODO bundle lia zero: o combo
+        # só não parecia quebrado porque a política `demand_ok` deixa pedir sem
+        # estoque, o que mascarava o número. Pacote de pão não pode se apoiar
+        # nisso: ele é limitado pelo pão que o compõe, e pão acaba todo dia.
+        componentes = _componentes_do_bundle(sku)
+        if not componentes:
+            return promessa(sku)
+
+        propria = promessa(sku) or {}
+        possiveis: list[Decimal] = []
+        for componente in componentes:
+            parte = promessa(componente["sku"])
+            if parte is None:
+                return None
+            por_pacote = Decimal(str(componente["qty"])) or Decimal("1")
+            possiveis.append(
+                Decimal(str(parte.get("total_promisable", 0))) // por_pacote
+            )
+            propria.setdefault("availability_policy", parte.get("availability_policy"))
+            if parte.get("is_paused"):
+                propria["is_paused"] = True
+            if parte.get("is_planned"):
+                propria["is_planned"] = True
+        propria["total_promisable"] = min(possiveis) if possiveis else Decimal("0")
+        return propria
     except Exception as exc:
         logger.warning("availability_lookup_failed sku=%s channel=%s: %s", sku, channel_ref, exc, exc_info=True)
         return None

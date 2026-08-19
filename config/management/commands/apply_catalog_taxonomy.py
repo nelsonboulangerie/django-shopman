@@ -39,7 +39,7 @@ MOVES = {
     # apesar da massa macia.
     "rusticos": ("FE", "TB", "MIB", "PH"),
     # Buns em pacote, massa enriquecida, na família dos pães japoneses.
-    "finos": ("BRIOCHE-BURGER", "PAO-HOTDOG"),
+    "finos": ("BBB2", "PHO4"),
     # Bundle não é categoria de produto.
     "combos": ("COMBO-PETIT-DEJ",),
 }

@@ -155,6 +155,14 @@ necessários se o §2.2 for adotado — `FD`, `SD`, `FL` e `THG` são justamente
 **F1 — O mapa.** ✅ Fechado (18/08). As 143 linhas de
 [`sku-real-mapa.csv`](sku-real-mapa.csv) trazem preço praticado e destino:
 
+> ⚠️ A coluna **`aponta_para`** (antes `sku_2027`) não é "o SKU do cardápio
+> 2027": ela aponta para a linha-destino, e o destino muda com a `situacao` —
+> em `confirmado` é o produto do cardápio, em `preco` e `canal` é o **SKU-base
+> do Yooga**. Uma sessão irmã tentou usá-la como medida de "identidade
+> pré-rename" e o número nunca zeraria: 43 dos 73 valores são também
+> `sku_yooga`. Coluna cujo sentido depende de outra coluna engana quem lê de
+> fora.
+
 | `situacao` | Linhas | O que acontece |
 |---|---:|---|
 | `preco` | 41 | `M*` era desconto do sistema antigo — qualidade mínima **ou** pão de ontem, sem distinção. Vira modifier sobre o produto-base. |
@@ -265,6 +273,24 @@ python manage.py ifood_retract_renamed_skus --dry-run # confere
 python manage.py ifood_retract_renamed_skus           # limpa o cardápio deles
 python manage.py sync_catalog_ifood --full            # publica os códigos novos
 ```
+
+### 4.1 A limpeza que só pode vir DEPOIS
+
+⚠️ `measure_eat_in_weights` tem um mapa `TWINS` que liga SKU do cardápio 2027 ao
+gêmeo no Yooga (`CROISSANT → CT`). Ele existe porque os dois lados usam códigos
+diferentes para o mesmo pão, e **morre no dia em que o rename rodar** — a partir
+dali cada SKU se mede sozinho, que é melhor.
+
+**Não remova antes.** Medido no staging em 19/08, com o rename ainda por rodar,
+o mapa está entregando peso às 11 chaves: `CROISSANT` 9% herdado do `CT`,
+`FOLHADO-DIA` 29% herdado do `FF`, `CORNET` 10% da média de `CO`+`COC`. Tirá-lo
+antes do rename derruba esses 11 para o piso, em silêncio.
+
+⚠️ **E a lição de como eu errei isso:** removi o mapa depois de conferir contra
+`seed.py` e ver zero ocorrência de `CROISSANT`. O seed é *fixture*; o catálogo
+vivo do staging é outro — 59 produtos com os SKUs longos, editados à mão pelo
+dono, com canonização pendente. Conferir identidade de catálogo contra o seed
+responde a pergunta errada.
 
 ## 5. O que NÃO fazer
 
