@@ -139,6 +139,17 @@ function buttonClass(priority: string): string {
     <!-- items -->
     <p class="line-clamp-2 text-sm text-muted-foreground">{{ card.items_summary }}</p>
 
+    <!-- troco da entrega: o que o cliente disse, o que saiu da gaveta, o que voltou -->
+    <p
+      v-if="card.change_label"
+      class="flex items-center gap-1.5 text-xs text-muted-foreground"
+      :class="{ 'font-medium': card.change_back_pending }"
+      data-change-label
+    >
+      <Icon name="lucide:coins" class="size-3.5 shrink-0" />
+      <span class="truncate">{{ card.change_label }}</span>
+    </p>
+
     <!-- status + payment + total -->
     <div class="flex flex-wrap items-center gap-1.5 text-xs">
       <span class="inline-flex items-center rounded-md border px-2 py-0.5 font-medium" :class="toneBadge(statusTone(card.status))">

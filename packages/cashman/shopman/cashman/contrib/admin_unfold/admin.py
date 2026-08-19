@@ -28,6 +28,8 @@ _KIND_COLORS = {
     Entry.Kind.CASH_IN: "green",
     Entry.Kind.REFUND: "orange",
     Entry.Kind.CASH_OUT: "orange",
+    Entry.Kind.COURIER_OUT: "orange",
+    Entry.Kind.COURIER_IN: "green",
     Entry.Kind.COUNT: "blue",
     Entry.Kind.COUNT_CORRECTION: "blue",
     Entry.Kind.DRAWER_UNLOCK: "yellow",

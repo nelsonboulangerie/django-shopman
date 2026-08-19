@@ -262,6 +262,7 @@ def build_financial_reconciliation(
         )
 
     cash_ledger = _check_cash_ledger(reconciliation_date=reconciliation_date, issues=issues)
+    _check_courier_change(reconciliation_date=reconciliation_date, issues=issues)
 
     by_method = Counter(intent.method or "-" for intent in intents)
     # "-" = intent sem gateway: dinheiro/cobrança externa liquidados no balcão
@@ -782,6 +783,59 @@ def _check_cash_ledger(
         )
     )
     return totals
+
+
+def _check_courier_change(
+    *,
+    reconciliation_date: date,
+    issues: list[FinancialReconciliationIssue],
+) -> None:
+    """Troco que saiu com o entregador e não voltou (nem "voltou zero").
+
+    ``courier_out``/``courier_in`` não são pagamento: são custódia temporária do
+    entregador, e ficam de fora do cruzamento Payman × livro por construção
+    (``_LEDGER_MONEY_KINDS``). O que se confere aqui é o espelho: todo
+    ``courier_out`` até o dia tem de ter o seu ``courier_in`` (o acerto da
+    entrega exige o valor que voltou, zero incluído). Saiu e não voltou é
+    dinheiro da gaveta na rua sem ninguém ter dito o que aconteceu: ``warning``,
+    porque a causa comum é entrega ainda em andamento ou acerto que ficou para
+    amanhã, e o alerta some sozinho quando o acerto acontece.
+    """
+    out_rows = (
+        Entry.objects.filter(kind=Entry.Kind.COURIER_OUT, at__date__lte=reconciliation_date)
+        .values("order_ref")
+        .annotate(total=Sum("amount_q"))
+    )
+    out_by_order = {str(row["order_ref"] or ""): -int(row["total"] or 0) for row in out_rows}
+    if not out_by_order:
+        return
+    back_refs = set(
+        Entry.objects.filter(kind=Entry.Kind.COURIER_IN, order_ref__in=list(out_by_order)).values_list(
+            "order_ref", flat=True
+        )
+    )
+    unsettled = sorted(ref for ref in out_by_order if ref not in back_refs)
+    if not unsettled:
+        return
+    listed = unsettled[:_MAX_LISTED_ORDERS]
+    orders = ", ".join(ref or "(sem pedido)" for ref in listed)
+    if len(unsettled) > _MAX_LISTED_ORDERS:
+        orders += f", … (+{len(unsettled) - _MAX_LISTED_ORDERS})"
+    issues.append(
+        FinancialReconciliationIssue(
+            code="courier_change_unsettled",
+            severity="warning",
+            message=(
+                "Troco levado pelo entregador sem acerto: saiu da gaveta e ninguém disse "
+                "quanto voltou (o acerto da entrega fecha isso, mesmo que tenha voltado zero)."
+            ),
+            context={
+                "order_count": len(unsettled),
+                "courier_out_q": sum(out_by_order[ref] for ref in unsettled),
+                "orders": orders,
+            },
+        )
+    )
 
 
 def _referenced_intent_refs(payment: dict) -> set[str]:

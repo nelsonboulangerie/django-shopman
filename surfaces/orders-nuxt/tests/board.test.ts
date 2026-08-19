@@ -3,6 +3,9 @@ import { describe, expect, it } from "vitest";
 import {
   appendTag,
   bulkableRefs,
+  changeBackSuggestionQ,
+  dispatchAsksChange,
+  moneyInput,
   cardAffordances,
   channelLabel,
   channelOptions,
@@ -62,6 +65,12 @@ const card = (over: Partial<OrderCardProjection> = {}): OrderCardProjection => (
   has_notes: false,
   assigned_operator: "",
   awaiting_work_orders: [],
+  change_for_q: 0,
+  change_out_suggested_q: 0,
+  change_out_q: 0,
+  change_back_pending: false,
+  change_back_q: 0,
+  change_label: "",
   ...over,
 });
 
@@ -272,6 +281,31 @@ describe("nextSort", () => {
     expect(nextSort("arrival")).toBe("urgency");
     expect(nextSort("urgency")).toBe("recent");
     expect(nextSort("recent")).toBe("arrival");
+  });
+});
+
+describe("troco da entrega", () => {
+  it("o despacho pergunta quando o próximo passo é sair e a loja sugere troco", () => {
+    expect(dispatchAsksChange(card({ next_status: "dispatched", change_out_suggested_q: 2000 }))).toBe(true);
+    expect(dispatchAsksChange(card({ next_status: "dispatched", change_out_suggested_q: 0 }))).toBe(false);
+    expect(dispatchAsksChange(card({ next_status: "preparing", change_out_suggested_q: 2000 }))).toBe(false);
+  });
+  it("sugere o que deve ter voltado: saiu menos o troco devido", () => {
+    expect(changeBackSuggestionQ(card({ change_out_q: 2500, change_out_suggested_q: 2000 }))).toBe(500);
+    expect(changeBackSuggestionQ(card({ change_out_q: 2000, change_out_suggested_q: 2000 }))).toBe(0);
+    expect(changeBackSuggestionQ(card({ change_out_q: 1500, change_out_suggested_q: 2000 }))).toBe(0);
+  });
+  it("formata centavos para o campo", () => {
+    expect(moneyInput(2000)).toBe("20,00");
+    expect(moneyInput(505)).toBe("5,05");
+    expect(moneyInput(0)).toBe("0,00");
+  });
+  it("despacho que pede troco fica fora do lote de avançar", () => {
+    const rows = [
+      card({ ref: "A", can_advance: true, next_status: "dispatched", change_out_suggested_q: 2000 }),
+      card({ ref: "B", can_advance: true, next_status: "dispatched", change_out_suggested_q: 0 }),
+    ];
+    expect(bulkableRefs(rows, new Set(["A", "B"]), "advance")).toEqual(["B"]);
   });
 });
 

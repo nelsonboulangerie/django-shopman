@@ -7,12 +7,15 @@ import type { AffordanceRef, FulfillmentFilter, SortKey, ViewMode, ZoneView } fr
 import {
   bulkableRefs,
   cardAffordances,
+  changeBackSuggestionQ,
   channelLabel,
   channelOptions,
+  dispatchAsksChange,
   elapsedLabel,
   flattenZones,
   fulfillmentCounts,
   lucideIcon,
+  moneyInput,
   nextSort,
   realtimeIndicator,
   resolveShortcut,
@@ -176,20 +179,51 @@ async function confirmReject() {
   if (ok) rejectRef.value = null;
 }
 
-// settle-cash dialog (needs an amount).
+// settle-cash dialog (needs an amount; and, when the courier took change from
+// the drawer, how much of it came back — zero included; the server requires it).
 const settleRef = ref<string | null>(null);
 const settleAmount = ref("");
-function openSettle(ref_: string) { settleRef.value = ref_; settleAmount.value = ""; }
+const settleChangeBack = ref("");
+const settleCard = computed(() => allCards.value.find((c) => c.ref === settleRef.value) ?? null);
+const settleAsksChangeBack = computed(() => Boolean(settleCard.value?.change_back_pending));
+function openSettle(ref_: string) {
+  settleRef.value = ref_;
+  settleAmount.value = "";
+  const card = allCards.value.find((c) => c.ref === ref_);
+  settleChangeBack.value = card?.change_back_pending ? moneyInput(changeBackSuggestionQ(card)) : "";
+}
 async function confirmSettle() {
   const ref_ = settleRef.value;
   if (!ref_) return;
-  const ok = await settleCash(ref_, settleAmount.value.trim());
+  const changeBack = settleAsksChangeBack.value ? settleChangeBack.value.trim() || "0" : undefined;
+  const ok = await settleCash(ref_, settleAmount.value.trim(), changeBack);
   if (ok) settleRef.value = null;
+}
+
+// dispatch dialog: the store collected "troco para quanto?" at checkout; leaving
+// for delivery is when that becomes cash out of the drawer (courier_out). The
+// operator confirms the amount the courier actually takes (or "sem troco").
+const dispatchRef = ref<string | null>(null);
+const dispatchAmount = ref("");
+const dispatchCard = computed(() => allCards.value.find((c) => c.ref === dispatchRef.value) ?? null);
+function openDispatch(card: OrderCardProjection) {
+  dispatchRef.value = card.ref;
+  dispatchAmount.value = moneyInput(card.change_out_suggested_q);
+}
+async function confirmDispatch(amount: string) {
+  const ref_ = dispatchRef.value;
+  if (!ref_) return;
+  const ok = await advance(ref_, amount.trim() || "0");
+  if (ok) dispatchRef.value = null;
 }
 
 function onAction(ref_: string, action: AffordanceRef) {
   if (action === "confirm") confirm(ref_);
-  else if (action === "advance") advance(ref_);
+  else if (action === "advance") {
+    const card = allCards.value.find((c) => c.ref === ref_);
+    if (card && dispatchAsksChange(card)) openDispatch(card);
+    else advance(ref_);
+  }
   else if (action === "reject") openReject(ref_);
   else if (action === "settle_cash") openSettle(ref_);
 }
@@ -594,6 +628,37 @@ function printQueue() {
       </UiDialogContent>
     </UiDialog>
 
+    <!-- dispatch dialog: how much change leaves the drawer with the courier -->
+    <UiDialog :open="dispatchRef != null" @update:open="(v) => { if (!v) dispatchRef = null }">
+      <UiDialogContent class="sm:max-w-sm" data-dispatch-dialog>
+        <UiDialogHeader>
+          <UiDialogTitle>Troco para o entregador</UiDialogTitle>
+          <UiDialogDescription>
+            {{ dispatchCard?.change_label || "Quanto de troco o entregador leva da gaveta?" }} ({{ dispatchRef }}).
+            O valor sai do seu turno de caixa e volta no acerto.
+          </UiDialogDescription>
+        </UiDialogHeader>
+        <label class="flex items-center gap-2 text-sm">
+          <span class="text-muted-foreground">R$</span>
+          <input
+            v-model="dispatchAmount"
+            type="text"
+            inputmode="decimal"
+            placeholder="Ex.: 20,00"
+            class="w-full rounded-md border bg-background p-2.5 text-sm outline-none focus:ring-1 focus:ring-ring"
+            aria-label="Troco que o entregador leva"
+          />
+        </label>
+        <UiDialogFooter>
+          <button type="button" class="rounded-md border px-3 py-2 text-sm font-medium transition hover:bg-accent" @click="dispatchRef = null">Cancelar</button>
+          <button type="button" class="rounded-md border px-3 py-2 text-sm font-medium transition hover:bg-accent" @click="confirmDispatch('0')">Saiu sem troco</button>
+          <button type="button" class="rounded-md border border-transparent bg-primary px-3 py-2 text-sm font-semibold text-primary-foreground transition hover:bg-primary/90" @click="confirmDispatch(dispatchAmount)">
+            Levou o troco
+          </button>
+        </UiDialogFooter>
+      </UiDialogContent>
+    </UiDialog>
+
     <!-- settle-cash dialog -->
     <UiDialog :open="settleRef != null" @update:open="(v) => { if (!v) settleRef = null }">
       <UiDialogContent class="sm:max-w-sm">
@@ -609,6 +674,18 @@ function printQueue() {
           class="w-full rounded-md border bg-background p-2.5 text-sm outline-none focus:ring-1 focus:ring-ring"
           aria-label="Valor recebido"
         />
+        <!-- o entregador levou troco da gaveta: quanto voltou (zero vale) -->
+        <label v-if="settleAsksChangeBack" class="flex flex-col gap-1 text-sm" data-change-back>
+          <span class="text-muted-foreground">{{ settleCard?.change_label }}. Quanto voltou?</span>
+          <input
+            v-model="settleChangeBack"
+            type="text"
+            inputmode="decimal"
+            placeholder="0,00"
+            class="w-full rounded-md border bg-background p-2.5 text-sm outline-none focus:ring-1 focus:ring-ring"
+            aria-label="Troco que voltou"
+          />
+        </label>
         <UiDialogFooter>
           <button type="button" class="rounded-md border px-3 py-2 text-sm font-medium transition hover:bg-accent" @click="settleRef = null">Cancelar</button>
           <button type="button" class="rounded-md border border-transparent bg-primary px-3 py-2 text-sm font-semibold text-primary-foreground transition hover:bg-primary/90" @click="confirmSettle">

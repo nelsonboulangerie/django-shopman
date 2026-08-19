@@ -33,12 +33,14 @@ export function useOrderDetail(orderRef: string) {
   }
 
   const confirm = () => act("confirm");
-  const advance = () => act("advance");
+  const advance = (changeOut?: string) =>
+    act("advance", changeOut === undefined ? undefined : { change_out: changeOut });
   // Marketplace (iFood) reject/cancel carry the operator-picked code so the backend
   // relays a valid reason to the provider; empty string for other channels.
   const reject = (reason: string, cancellation_code = "") => act("reject", { reason, cancellation_code });
   const cancel = (reason: string, cancellation_code = "") => act("cancel", { reason, cancellation_code });
-  const settleCash = (amount: string) => act("settle-delivery-cash", { amount });
+  const settleCash = (amount: string, changeBack?: string) =>
+    act("settle-delivery-cash", changeBack === undefined ? { amount } : { amount, change_back: changeBack });
   const requeueFiscal = () => act("requeue-fiscal");
 
   // Valid cancellation reasons for this order: for iFood, the live per-order coded
