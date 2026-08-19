@@ -12,7 +12,6 @@ from io import StringIO
 
 import pytest
 from django.core.management import call_command
-
 from shopman.offerman.models import Product
 from shopman.stockman.models import Position, Quant
 
@@ -98,3 +97,89 @@ class TestExecucao:
         call_command("rename_skus_to_real", stdout=saida)
 
         assert "Nada a renomear" in saida.getvalue()
+
+
+class TestColisaoEmCampoUnico:
+    """O que os testes de um produto por vez não pegavam.
+
+    Só apareceu num ensaio sobre banco semeado: `ProductConsumptionTag.sku` é
+    único, e o `propose_consumption_tags --include-historical` já tinha criado
+    etiqueta para os códigos do Yooga. O rename estourava a constraint no meio
+    da travessia, com seis pares afetados.
+    """
+
+    @pytest.fixture
+    def etiquetas(self, croissant):
+        from shopman.backstage.models import ConsumptionRole, ProductConsumptionTag
+
+        papel = ConsumptionRole.objects.create(ref="hibrido", label="Híbrido", reading="hybrid")
+        return papel, ProductConsumptionTag
+
+    @pytest.mark.django_db
+    def test_anotacao_funde_e_a_curada_sobrevive(self, etiquetas):
+        papel, Tag = etiquetas
+        Tag.objects.create(sku="CROISSANT", role=papel, reviewed=True, note="curada")
+        Tag.objects.create(sku="CT", role=papel, reviewed=False, note="proposta pelo histórico")
+
+        saida = StringIO()
+        call_command("rename_skus_to_real", "--only", "CROISSANT", stdout=saida)
+
+        assert "sobreviveu a curada" in saida.getvalue()
+        sobreviveu = Tag.objects.get(sku="CT")
+        assert sobreviveu.note == "curada"
+        assert Tag.objects.filter(sku="CROISSANT").count() == 0
+
+    @pytest.mark.django_db
+    def test_a_curada_vence_mesmo_vindo_do_historico(self, etiquetas):
+        papel, Tag = etiquetas
+        Tag.objects.create(sku="CROISSANT", role=papel, reviewed=False, note="proposta")
+        Tag.objects.create(sku="CT", role=papel, reviewed=True, note="curada no histórico")
+
+        call_command("rename_skus_to_real", "--only", "CROISSANT", stdout=StringIO())
+
+        assert Tag.objects.get(sku="CT").note == "curada no histórico"
+
+    @pytest.mark.django_db
+    def test_empate_fica_com_a_do_catalogo(self, etiquetas):
+        papel, Tag = etiquetas
+        Tag.objects.create(sku="CROISSANT", role=papel, reviewed=False, note="do catálogo")
+        Tag.objects.create(sku="CT", role=papel, reviewed=False, note="do histórico")
+
+        saida = StringIO()
+        call_command("rename_skus_to_real", "--only", "CROISSANT", stdout=saida)
+
+        assert "sobreviveu a do catálogo" in saida.getvalue()
+        assert Tag.objects.get(sku="CT").note == "do catálogo"
+
+    @pytest.mark.django_db
+    def test_toda_politica_aponta_para_model_que_existe(self):
+        # Política escrita para model que sumiu ou mudou de nome é guardrail
+        # que não guarda nada.
+        from django.apps import apps
+
+        from config.management.commands.rename_skus_to_real import POLITICA_DE_COLISAO
+
+        for label in POLITICA_DE_COLISAO:
+            app_label, model_name = label.split(".", 1)
+            campo = apps.get_model(app_label, model_name)._meta.get_field("sku")
+            assert campo.unique, f"{label}.sku não é único — a política ali é morta"
+
+    @pytest.mark.django_db
+    def test_todo_campo_unico_de_sku_tem_politica(self):
+        # O guardrail do guardrail: campo único novo sem política faria o
+        # comando parar em produção, e é melhor descobrir aqui.
+        from django.apps import apps
+        from shopman.refs.registry import _ref_source_registry
+
+        from config.management.commands.rename_skus_to_real import POLITICA_DE_COLISAO
+
+        sem_politica = []
+        for label, field_name in _ref_source_registry.get_sources_for_type("SKU"):
+            app_label, model_name = label.split(".", 1)
+            if apps.get_model(app_label, model_name)._meta.get_field(field_name).unique:
+                if label not in POLITICA_DE_COLISAO:
+                    sem_politica.append(label)
+        assert not sem_politica, (
+            f"campos de SKU únicos sem política de colisão: {sem_politica}. "
+            "Decida entre 'fundir' e 'recusar' em POLITICA_DE_COLISAO."
+        )

@@ -59,6 +59,26 @@ RETIDOS = {
     "BRIOCHE-BURGER": ("BBB", "era unidade (R$ 8), hoje é pacote de 2 (R$ 16)"),
 }
 
+# ⚠️ Onde o SKU é `unique`, renomear com os dois valores já no banco estoura a
+# constraint no meio da travessia. Só apareceu num ensaio sobre banco semeado —
+# os testes unitários passavam, porque criavam um produto de cada vez.
+#
+# O que fazer depende do que a linha significa, então a política é explícita por
+# model. Model com SKU único e sem política aqui faz o comando parar: prefiro
+# recusar a inventar semântica de merge para tabela que não conheço.
+POLITICA_DE_COLISAO = {
+    # Etiqueta de consumo é ANOTAÇÃO sobre um produto, não o produto. Depois do
+    # rename, a etiqueta de "CROISSANT" e a de "CT" descrevem a mesma coisa — a
+    # segunda nasceu do `propose_consumption_tags --include-historical`, que
+    # etiquetou os códigos do Yooga. Fundir é o certo; a curada vence a proposta.
+    "backstage.ProductConsumptionTag": "fundir",
+    # Produto é ENTIDADE. Fundir apagaria um catálogo inteiro de vínculos,
+    # preços e listagens. Se os dois existem, alguém precisa decidir.
+    "offerman.Product": "recusar",
+    # Insumo idem — e insumo com SKU de produto vendável é sintoma, não acidente.
+    "buyman.Material": "recusar",
+}
+
 
 class Command(BaseCommand):
     help = "Troca os SKUs inventados do catálogo pelos códigos reais do Yooga."
@@ -94,22 +114,19 @@ class Command(BaseCommand):
         feitos: list[tuple[str, str, int]] = []
         pulados: list[str] = []
         avisos: list[str] = []
+        fusoes: list[str] = []
 
         with transaction.atomic():
             for antigo, real in pares:
-                tem_antigo = Product.objects.filter(sku=antigo).exists()
-                tem_real = Product.objects.filter(sku=real).exists()
-
-                if tem_antigo and tem_real:
-                    # Não escolho por você: renomear aqui violaria o unique e,
-                    # pior, fundiria dois produtos que alguém criou separados.
-                    avisos.append(
-                        f"{antigo} e {real} existem os dois — não mexi. Decida qual fica."
-                    )
-                    continue
-                if not tem_antigo:
+                if not Product.objects.filter(sku=antigo).exists():
                     pulados.append(f"{antigo} → {real}")
                     continue
+
+                bloqueios, fundidos = self._resolver_colisoes(antigo, real)
+                if bloqueios:
+                    avisos.extend(bloqueios)
+                    continue
+                fusoes.extend(fundidos)
 
                 linhas = RefBulk.cascade_rename("SKU", antigo, real, actor="rename_skus_to_real")
                 feitos.append((antigo, real, linhas))
@@ -119,9 +136,65 @@ class Command(BaseCommand):
                 # reflete o que a execução faria de verdade.
                 transaction.set_rollback(True)
 
-        self._report(feitos, pulados, avisos, alvo=alvo, dry_run=dry_run)
+        self._report(feitos, pulados, avisos, fusoes, alvo=alvo, dry_run=dry_run)
 
-    def _report(self, feitos, pulados, avisos, *, alvo, dry_run):
+    def _resolver_colisoes(self, antigo: str, real: str) -> tuple[list[str], list[str]]:
+        """Trata todo campo de SKU `unique` onde os dois valores já existem.
+
+        Devolve (bloqueios, fusões). Bloqueio impede o rename daquele par; fusão
+        é o que foi resolvido e vale contar no relatório.
+        """
+        from django.apps import apps
+        from shopman.refs.registry import _ref_source_registry
+
+        bloqueios: list[str] = []
+        fusoes: list[str] = []
+
+        for label, field_name in sorted(_ref_source_registry.get_sources_for_type("SKU")):
+            app_label, model_name = label.split(".", 1)
+            try:
+                Model = apps.get_model(app_label, model_name)
+            except LookupError:
+                continue
+            if not Model._meta.get_field(field_name).unique:
+                continue
+
+            velho = Model.objects.filter(**{field_name: antigo}).first()
+            novo = Model.objects.filter(**{field_name: real}).first()
+            if velho is None or novo is None:
+                continue
+
+            politica = POLITICA_DE_COLISAO.get(label)
+            if politica == "fundir":
+                # Quem sobrevive: a curada vence a proposta. No empate (as duas
+                # curadas, ou nenhuma), sobrevive a do SKU antigo — ela veio da
+                # coleção do catálogo, e a outra, da categoria do histórico.
+                velho_curado = getattr(velho, "reviewed", False)
+                novo_curado = getattr(novo, "reviewed", False)
+                if novo_curado and not velho_curado:
+                    fica, sai, motivo = novo, velho, "sobreviveu a curada"
+                else:
+                    fica, sai, motivo = velho, novo, (
+                        "sobreviveu a curada" if velho_curado else "sobreviveu a do catálogo"
+                    )
+                sai.delete()
+                setattr(fica, field_name, antigo)  # o cascade a leva para `real`
+                fica.save(update_fields=[field_name])
+                fusoes.append(f"{label}: {antigo} + {real} — {motivo}")
+                continue
+
+            bloqueios.append(
+                f"{antigo} e {real} existem os dois em {label} — não mexi. Decida qual fica."
+                if politica == "recusar"
+                else (
+                    f"{label}.{field_name} é único e não tem política de colisão. "
+                    f"Acrescente-a em POLITICA_DE_COLISAO antes de renomear {antigo}."
+                )
+            )
+
+        return bloqueios, fusoes
+
+    def _report(self, feitos, pulados, avisos, fusoes, *, alvo, dry_run):
         verbo = "Faria" if dry_run else "Feito"
         if feitos:
             total = sum(linhas for _a, _r, linhas in feitos)
@@ -132,6 +205,11 @@ class Command(BaseCommand):
                 self.stdout.write(f"  {antigo:<20} → {real:<6} {linhas:>5} linha(s)")
         else:
             self.stdout.write(self.style.SUCCESS("\nNada a renomear."))
+
+        if fusoes:
+            self.stdout.write(f"\n{len(fusoes)} anotação(ões) fundida(s):")
+            for f in fusoes:
+                self.stdout.write(f"  {f}")
 
         if pulados:
             self.stdout.write(f"\n{len(pulados)} já renomeado(s) ou ausente(s) do catálogo:")
