@@ -6,6 +6,11 @@ from shopman.backstage.admin.accounts import (  # noqa: F401
     register_totp_admin,
 )
 from shopman.backstage.admin.alerts import OperatorAlertAdmin  # noqa: F401
+from shopman.backstage.admin.aliases import (  # noqa: F401
+    CategoryAliasAdmin,
+    PaymentMethodAliasAdmin,
+    ProductAliasAdmin,
+)
 from shopman.backstage.admin.closing import DayClosingAdmin  # noqa: F401
 from shopman.backstage.admin.consumption import (  # noqa: F401
     ConsumptionRoleAdmin,

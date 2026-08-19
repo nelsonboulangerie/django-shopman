@@ -23,6 +23,7 @@
 | [`smoke_gateways`](#smoke_gateways) | backstage | Operação | Estressa webhooks/gateways com fixtures locais e matriz sandbox |
 | [`omotenashi_qa`](#omotenashi_qa) | backstage | QA | Lista matriz manual QA Omotenashi com evidências do seed |
 | [`ingest_yooga`](#ingest_yooga) | backstage | B.I. | Aterrissa o export do Yooga em `HistoricalSale`, por lote (hash, validação, uma transação) |
+| [`suggest_aliases`](#suggest_aliases) | backstage | B.I. | Propõe de-paras (produto, categoria, forma de pagamento) a partir do histórico; nunca confirma |
 | [`release-readiness`](#release-readiness) | script | Release | Consolida checks locais e bloqueios externos |
 | [`seed`](#seed) | shop | Seed | Popula banco com dados da Nelson Boulangerie |
 
@@ -499,6 +500,30 @@ python manage.py ingest_yooga --file var/yooga-consolidado.xlsx --rebuild
 
 O arquivo não entra no git (`var/` é gitignored); o comando abre o xlsx em modo somente
 leitura. Lotes e vendas são visíveis no Admin (grupo "B.I."), somente leitura.
+
+### suggest_aliases
+
+**Propósito:** Preenche a fila de curadoria dos de-paras do B.I. (`ProductAlias`,
+`CategoryAlias`, `PaymentMethodAlias`) a partir do histórico carregado. **A máquina propõe, a
+pessoa confirma** (Admin → B.I. → De-paras); só o confirmado entra na leitura.
+
+**Uso:**
+```bash
+python manage.py suggest_aliases --dry-run
+python manage.py suggest_aliases --source yooga --kind product --min-score 80
+```
+
+**Comportamento (BI-DATA-FOUNDATION-PLAN, P1):**
+- Produto: SKU exato do catálogo antes de nome parecido (`rapidfuzz.token_set_ratio` sobre nome
+  normalizado). Abaixo do corte, a linha entra **sem produto**, com o melhor palpite na nota — a
+  fila mostra o que falta mapear. Linha do histórico sem SKU ganha alias pelo nome.
+- Categoria e forma de pagamento: propõe só o valor cru que **nenhum trecho existente casa**, sem
+  significado (a pessoa decide leitura/coleção ou forma canônica ao confirmar).
+- Nunca sobrescreve: chave com alias em qualquer estado (inclusive rejeitado) é pulada.
+- Idempotente; `--dry-run` não grava.
+
+As regras **padrão** de categoria (23 trechos) e de forma de pagamento (15) não vêm daqui: vêm
+do `seed` / `setup_bi_reference`, já confirmadas (curadoria do dono).
 
 ## Wrappers de diagnóstico
 

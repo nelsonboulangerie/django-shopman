@@ -58,7 +58,7 @@ shopman/                Namespace package (PEP 420) — sem __init__.py
 │
 └── backstage/          Superfícies operador HEADLESS + Admin/Unfold (app Django, label="backstage")
     ├── api/            endpoints JSON dos apps operador Nuxt (pos, kds, production, orders, closing, operator)
-    ├── bi/             fundação de dados do B.I. (ingest/ por fonte + ImportBatch; canônica e adaptadores — BI-DATA-FOUNDATION-PLAN)
+    ├── bi/             fundação de dados do B.I. (ingest/ por fonte + ImportBatch; mapping.py sugere de-paras; canônica e adaptadores — BI-DATA-FOUNDATION-PLAN)
     ├── projections/    kds, order_queue, pos, closing, production, dashboard, bi_* (camada de leitura do B.I.)
     ├── services/       operator, closing, production, cash
     ├── models/         KDSInstance, KDSTicket, DayClosing, OperatorAlert, CashRegister*

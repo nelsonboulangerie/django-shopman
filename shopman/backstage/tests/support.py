@@ -21,3 +21,17 @@ def historical_batch(source: str = "yooga") -> ImportBatch:
         defaults={"status": ImportBatch.Status.DONE},
     )
     return batch
+
+
+def install_bi_vocabularies() -> None:
+    """Os de-paras de categoria e de forma de pagamento, como o seed os instala.
+
+    As regras saíram do código e viraram linhas (``CategoryAlias``,
+    ``PaymentMethodAlias``); ``migrate`` cria as tabelas vazias, e é o
+    ``setup_bi_reference``/``seed`` que as enche. Um teste que exercita a
+    leitura de categoria ou de forma de pagamento do histórico chama isto — a
+    mesma lista, um lugar só.
+    """
+    from config.management.commands.seed import Command as Seed
+
+    Seed()._seed_bi_aliases()

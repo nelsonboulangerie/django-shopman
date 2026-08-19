@@ -19,28 +19,6 @@ Duas honestidades que o módulo carrega:
 
 from __future__ import annotations
 
-# Vocabulário do histórico externo → forma canônica da casa. Casamento por
-# substring, na ordem: a primeira que casar vence, então o específico vem antes
-# do genérico ("vale refeição" antes de "vale", "cartão de crédito" antes de
-# "cartão").
-_HISTORICAL_VOCABULARY: tuple[tuple[str, str], ...] = (
-    ("pix", "pix"),
-    ("dinheiro", "cash"),
-    ("especie", "cash"),
-    ("espécie", "cash"),
-    ("credito", "credit"),
-    ("crédito", "credit"),
-    ("debito", "debit"),
-    ("débito", "debit"),
-    ("vale", "voucher"),
-    ("ticket", "voucher"),
-    ("alelo", "voucher"),
-    ("sodexo", "voucher"),
-    ("ifood", "ifood"),
-    ("cartao", "card"),
-    ("cartão", "card"),
-)
-
 _LABELS: dict[str, str] = {
     "cash": "Dinheiro",
     "pix": "PIX",
@@ -57,19 +35,47 @@ UNKNOWN_PREFIX = "raw:"
 """Chave de forma não reconhecida no histórico. O rótulo é o texto original."""
 
 
-def normalize_historical_payment(raw: str | None) -> tuple[str, str]:
+def payment_vocabulary() -> tuple[tuple[str, str], ...]:
+    """(trecho, forma canônica) confirmados, na ordem em que casam.
+
+    O vocabulário do histórico vive em ``PaymentMethodAlias`` (mapeamento é
+    dado, não código): casamento por substring, na ordem — a primeira que casa
+    vence, então o específico vem antes do genérico ("vale refeição" antes de
+    "vale", "cartão de crédito" antes de "cartão"). Só linhas **confirmadas**
+    entram. Uma consulta por leitura; quem varre milhares de vendas carrega
+    uma vez e passa adiante.
+    """
+    from shopman.backstage.models import PaymentMethodAlias
+
+    return tuple(
+        PaymentMethodAlias.objects.confirmed()
+        .exclude(method_key="")
+        .order_by("position", "id")
+        .values_list("pattern", "method_key")
+    )
+
+
+def normalize_historical_payment(
+    raw: str | None,
+    vocabulary: tuple[tuple[str, str], ...] | None = None,
+) -> tuple[str, str]:
     """(chave, rótulo) da forma de pagamento crua de uma venda histórica.
 
     O que o vocabulário conhece vira forma canônica e soma com o nativo. O que
     ele não conhece **não é jogado num balde mudo**: a chave carrega o texto
     original e o rótulo o exibe, para que uma forma que a casa usava e eu não
     previ apareça na tela em vez de sumir dentro de "(outros)".
+
+    ``vocabulary`` vem de ``payment_vocabulary()``; quem chama em laço carrega
+    uma vez. Sem ele, carrega aqui (uma consulta).
     """
     text = (raw or "").strip()
     if not text:
         return "external", payment_method_label("external")
     lowered = text.lower()
-    for needle, method in _HISTORICAL_VOCABULARY:
+    if vocabulary is None:
+        vocabulary = payment_vocabulary()
+    for needle, method in vocabulary:
         if needle in lowered:
             return method, payment_method_label(method)
     return f"{UNKNOWN_PREFIX}{lowered}", text

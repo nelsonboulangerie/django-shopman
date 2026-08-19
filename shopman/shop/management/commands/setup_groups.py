@@ -77,6 +77,13 @@ class Command(BaseCommand):
                 # se lê no Admin com a mesma persona: trilha, somente leitura.
                 _perm("backstage", "importbatch", "view_importbatch"),
                 _perm("backstage", "historicalsale", "view_historicalsale"),
+                # …e curam os de-paras (a máquina propõe, o gestor confirma). Sem
+                # apagar: rejeitar é estado, e a trilha de quem confirmou fica.
+                *[
+                    _perm("backstage", model, f"{verb}_{model}")
+                    for model in ("productalias", "categoryalias", "paymentmethodalias")
+                    for verb in ("view", "add", "change")
+                ],
                 shop_shop("view_reports"),
                 shop_shop("manage_customers"),
                 shop_shop("view_production_suggested"),

@@ -23,7 +23,7 @@ from shopman.backstage.models import HistoricalSale
 from shopman.backstage.projections.bi_explore import ExploreError, build_bi_explore, validate_config
 from shopman.backstage.projections.bi_payments import normalize_historical_payment
 from shopman.backstage.services.payments import iter_order_payments
-from shopman.backstage.tests.support import historical_batch
+from shopman.backstage.tests.support import historical_batch, install_bi_vocabularies
 
 
 def _cells(report):
@@ -178,9 +178,17 @@ def test_method_crossed_with_hour(db):
 
 
 # ── Histórico externo ────────────────────────────────────────────────────────
+# O vocabulário é DADO (``PaymentMethodAlias``), instalado pelo seed /
+# ``setup_bi_reference``; sem ele, forma nenhuma é reconhecida — declarado, não
+# inventado. Estes testes instalam a mesma lista que o comando instala.
 
 
-def test_known_historical_vocabulary_merges_with_native():
+@pytest.fixture
+def vocabulary(db):
+    install_bi_vocabularies()
+
+
+def test_known_historical_vocabulary_merges_with_native(vocabulary):
     assert normalize_historical_payment("Dinheiro")[0] == "cash"
     assert normalize_historical_payment("PIX")[0] == "pix"
     assert normalize_historical_payment("Cartão de Crédito")[0] == "credit"
@@ -189,7 +197,7 @@ def test_known_historical_vocabulary_merges_with_native():
     assert normalize_historical_payment("Vale Refeição")[0] == "voucher"
 
 
-def test_unknown_historical_form_keeps_its_own_words():
+def test_unknown_historical_form_keeps_its_own_words(vocabulary):
     """Balde mudo esconderia uma forma real que a casa usava — e eu não previ."""
     key, label = normalize_historical_payment("Fiado do seu Zé")
     assert key.startswith("raw:")
@@ -197,12 +205,20 @@ def test_unknown_historical_form_keeps_its_own_words():
 
 
 def test_blank_historical_form_is_external_not_a_row_of_its_own():
-    assert normalize_historical_payment("")[0] == "external"
-    assert normalize_historical_payment(None)[0] == "external"
+    # Vazio decide antes de consultar o vocabulário: nem precisa de banco.
+    assert normalize_historical_payment("", vocabulary=())[0] == "external"
+    assert normalize_historical_payment(None, vocabulary=())[0] == "external"
 
 
 @pytest.mark.django_db
-def test_historical_and_native_share_the_axis_with_native_day_winning(db):
+def test_without_installed_vocabulary_nothing_is_recognised():
+    """Sem de-para confirmado, a forma sai como veio — nunca traduzida no chute."""
+    key, label = normalize_historical_payment("Dinheiro")
+    assert key == "raw:dinheiro" and label == "Dinheiro"
+
+
+@pytest.mark.django_db
+def test_historical_and_native_share_the_axis_with_native_day_winning(vocabulary):
     from shopman.orderman.models import Order
 
     today = timezone.localtime(timezone.now())

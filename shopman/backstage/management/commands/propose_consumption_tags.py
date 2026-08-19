@@ -27,7 +27,7 @@ from __future__ import annotations
 from django.core.management.base import BaseCommand
 
 # A tabela mora no service, junto da regra que a usa — uma pergunta, um dono.
-from shopman.backstage.services.consumption import CATEGORY_READING
+from shopman.backstage.services.consumption import category_readings
 
 # Coleção do catálogo → leitura. Visível de propósito: é uma regra de negócio,
 # não um detalhe, e quem discordar tem de conseguir apontar a linha.
@@ -154,11 +154,12 @@ class Command(BaseCommand):
             .values_list("sku", "category")
             .distinct()
         )
+        by_category = category_readings()
         for sku, category in rows:
             if sku in already or sku in proposed_skus or sku in conflicted or sku in seen:
                 continue
             lowered = (category or "").lower()
-            for needle, reading in CATEGORY_READING:
+            for needle, reading in by_category:
                 if needle in lowered:
                     seen[sku] = reading
                     beverage = next(

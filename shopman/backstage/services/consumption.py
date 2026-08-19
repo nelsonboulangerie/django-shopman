@@ -131,43 +131,32 @@ def line_key(sku: str, name: str) -> str:
     return f"{NAME_KEY}{name}" if name else ""
 
 
-CATEGORY_READING: tuple[tuple[str, str], ...] = (
-    # ⚠️ A ORDEM MANDA: a primeira palavra que casar vence. Por isso o
-    # específico vem antes do genérico — "pães finos" antes de "pão", senão
-    # 38.369 linhas de viennoiserie cairiam em "leva".
-    #
-    # As categorias abaixo são as do export real do Yooga, medidas em 18/08
-    # (linhas afetadas entre parênteses), e as leituras são decisão do dono.
-    ("pães finos", "hybrid"),          # 38.369 — viennoiserie serve aos dois usos
-    ("paes finos", "hybrid"),
-    ("sanduíche", "anchor"),           # 907 — tartine é prato montado, come aqui
-    ("sanduiche", "anchor"),
-    ("tartine", "anchor"),
-    ("sobremesa", "anchor"),           # 108 — decisão do dono: consumo local
-    ("pães rústicos", "takeaway"),     # 15.299
-    ("paes rusticos", "takeaway"),
-    ("café", "anchor"),                # 5.211
-    ("cafe", "anchor"),
-    ("bebida", "anchor"),
-    ("suco", "anchor"),
-    ("refri", "anchor"),
-    ("mercearia", "takeaway"),
-    ("chai", "anchor"),                # 290 — "Festival Chai" é bebida (dono, 18/08).
-                                       # Vem DEPOIS de mercearia: a lata de chai
-                                       # da prateleira é compra, não consumo.
-    ("doce", "hybrid"),
-    ("salgado", "hybrid"),
-    ("confeitaria", "hybrid"),
-    ("lanche", "anchor"),              # lanche montado come aqui, como a tartine
-    # Genéricos por último: só pegam o que os específicos não pegaram.
-    ("pão", "takeaway"),
-    ("pao", "takeaway"),
-    ("padaria", "takeaway"),
-)
+def category_readings() -> tuple[tuple[str, str], ...]:
+    """(trecho, leitura) confirmados, na ordem em que casam. Uma consulta por leitura.
+
+    Vive em ``CategoryAlias``, editável no Admin com quem confirmou — mapeamento
+    é dado, não código. Só linhas **confirmadas** com leitura entram: uma
+    sugestão que ninguém viu não muda número nenhum. As regras padrão desta
+    loja moram no seed / ``setup_bi_reference``. Quem classifica em laço carrega
+    uma vez e passa adiante (``category_rules=``); sem passar, carrega aqui.
+    """
+    from shopman.backstage.models import CategoryAlias
+
+    return tuple(
+        CategoryAlias.objects.confirmed()
+        .exclude(reading="")
+        .order_by("position", "id")
+        .values_list("pattern", "reading")
+    )
 
 
 def reading_for(
-    sku: str, category: str, sku_readings: dict[str, str], *, name: str = ""
+    sku: str,
+    category: str,
+    sku_readings: dict[str, str],
+    *,
+    name: str = "",
+    category_rules: tuple[tuple[str, str], ...] | None = None,
 ) -> str | None:
     """A leitura de UMA linha: etiqueta do SKU primeiro, categoria como reserva.
 
@@ -185,7 +174,8 @@ def reading_for(
     etiqueta = sku_readings.get(line_key(sku or "", name or ""))
     if etiqueta is not None:
         return etiqueta
-    return _category_match(category, CATEGORY_READING)
+    rules = category_rules if category_rules is not None else category_readings()
+    return _category_match(category, rules)
 
 
 def beverage_for(
@@ -220,7 +210,12 @@ def _category_match(category: str, table: tuple[tuple[str, str], ...]) -> str | 
 
 
 def weight_for(
-    sku: str, category: str, sku_weights: dict[str, int], *, name: str = ""
+    sku: str,
+    category: str,
+    sku_weights: dict[str, int],
+    *,
+    name: str = "",
+    category_rules: tuple[tuple[str, str], ...] | None = None,
 ) -> int | None:
     """O peso (0–100) de UMA linha: etiqueta/papel primeiro, categoria como reserva.
 
@@ -230,7 +225,8 @@ def weight_for(
     weight = sku_weights.get(line_key(sku or "", name or ""))
     if weight is not None:
         return weight
-    reading = _category_match(category, CATEGORY_READING)
+    rules = category_rules if category_rules is not None else category_readings()
+    reading = _category_match(category, rules)
     return DEFAULT_WEIGHT_BY_READING.get(reading) if reading else None
 
 
@@ -403,6 +399,7 @@ def collect_baskets(window) -> tuple[list[Basket], list[Basket]]:
     readings = {key: f.reading for key, f in facts.items()}
     beverages = {key: f.beverage for key, f in facts.items()}
     weights = {key: f.weight for key, f in facts.items()}
+    rules = category_readings()  # uma consulta, milhares de linhas
 
     excluded = (Order.Status.CANCELLED, Order.Status.RETURNED)
     native_lines: dict[int, list[BasketLine]] = defaultdict(list)
@@ -414,10 +411,10 @@ def collect_baskets(window) -> tuple[list[Basket], list[Basket]]:
         category = categories.get(sku, "")
         native_lines[order_id].append(BasketLine(
             key=line_key(sku, name), sku=sku or "", name=name or "", category=category,
-            reading=reading_for(sku, category, readings, name=name),
+            reading=reading_for(sku, category, readings, name=name, category_rules=rules),
             beverage=beverage_for(sku, category, beverages, name=name),
             qty=qty, line_total_q=line_total_q,
-            weight=weight_for(sku, category, weights, name=name),
+            weight=weight_for(sku, category, weights, name=name, category_rules=rules),
         ))
     native = []
     for order_id, created_at, total_q, channel_ref, data in Order.objects.filter(
@@ -436,10 +433,10 @@ def collect_baskets(window) -> tuple[list[Basket], list[Basket]]:
     ).values_list("sale_id", "sku", "product_name", "category", "qty", "line_total_q"):
         historical_lines[sale_id].append(BasketLine(
             key=line_key(sku, name), sku=sku or "", name=name or "", category=category or "",
-            reading=reading_for(sku, category, readings, name=name),
+            reading=reading_for(sku, category, readings, name=name, category_rules=rules),
             beverage=beverage_for(sku, category, beverages, name=name),
             qty=qty, line_total_q=line_total_q,
-            weight=weight_for(sku, category, weights, name=name),
+            weight=weight_for(sku, category, weights, name=name, category_rules=rules),
         ))
     historical = []
     # `is_delivery` é o único rótulo de canal confiável do histórico — mesa e
