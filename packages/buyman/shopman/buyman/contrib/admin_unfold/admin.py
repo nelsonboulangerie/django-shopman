@@ -28,7 +28,7 @@ class CostOnSupplierInline(BaseTabularInline):
     model = SupplierMaterialCost
     extra = 0
     fields = ("material", "conversion", "cost_q", "is_preferred")
-    autocomplete_fields = ("material", "conversion")
+    autocomplete_fields = ("material",)
 
 
 class CostOnMaterialInline(BaseTabularInline):
@@ -37,7 +37,7 @@ class CostOnMaterialInline(BaseTabularInline):
     model = SupplierMaterialCost
     extra = 0
     fields = ("supplier", "conversion", "cost_q", "is_preferred")
-    autocomplete_fields = ("supplier", "conversion")
+    autocomplete_fields = ("supplier",)
 
 
 class ConversionOnMaterialInline(BaseTabularInline):
@@ -80,7 +80,7 @@ class SupplierMaterialCostAdmin(BaseModelAdmin):
     )
     list_filter = ("is_preferred",)
     search_fields = ("material__sku", "material__name", "supplier__ref", "supplier__name")
-    autocomplete_fields = ("material", "supplier", "conversion")
+    autocomplete_fields = ("material", "supplier")
     ordering = ("material", "supplier")
 
     @display(description=_("Custo da compra"))
