@@ -103,6 +103,16 @@ def test_nelson_seed_populates_production_history_alerts_and_batches(monkeypatch
     for item in RecipeItem.objects.filter(input_sku__in=weighed):
         assert item.unit == weighed[item.input_sku], f"{item.input_sku}: {item.unit}"
         item.full_clean()  # a unidade da ficha bate com a do catálogo
+    # Líquido conta em litro, e a ficha fala a mesma língua — a ficha grafa "L",
+    # a base grafa "l", e a densidade no perfil é a ponte até a grama da nutrição
+    # (ADR-024: a ponte volume→massa é declarada, nunca deduzida).
+    for sku in ("AGUA-FILTRADA", "LEITE", "AZEITE"):
+        material = Material.objects.get(sku=sku)
+        assert material.unit == "l", sku
+        assert Decimal(str(material.metadata["density_g_per_ml"])) > 0, sku
+        for item in RecipeItem.objects.filter(input_sku=sku):
+            assert item.unit == "L", f"{sku}: {item.unit}"
+            item.full_clean()
     # Todo input de receita resolve: insumo cru (Material), intermediário (output
     # de outra receita, ex. MASSA-*) ou produto. Sem inputs órfãos pós-rename.
     recipe_inputs = set(RecipeItem.objects.values_list("input_sku", flat=True))
