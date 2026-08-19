@@ -300,8 +300,9 @@ grita e o dono decide o que fazer com a contagem que não houve.
 só acha migrações, docs de decisão/histórico e nomes legítimos como `POSTerminalComponentProjection`
 e `CashMovementRow`); este corte entrega `docs/guides/cashman.md`, glossário (seção Cashman),
 ADR-021 (inventário com `cashman.Entry`), ADR-022 → Aceito, `CLAUDE.md` (12 apps),
-`POS-CASH-DRAWER-PLAN` → `completed/` (superado no registro). O `HANDOFF-POS-EVENT-LOG.md` já não
-existia no repo (o #198 fechou sem merge). Memória do projeto atualizada.
+`POS-CASH-DRAWER-PLAN` → `completed/` (superado no registro). O `HANDOFF-POS-EVENT-LOG.md` não tinha sido
+commitado (o #198 fechou sem merge); entrou agora em `completed/`, com aviso de superado no
+topo, porque a lição P3 da `CASH-LEDGER-ARCHITECTURE` cita uma seção dele como fonte. Memória do projeto atualizada.
 
 **Entrega**
 
