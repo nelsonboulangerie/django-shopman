@@ -143,7 +143,7 @@ def _curadoria(nome_da_funcao, marca_de_fim):
     import re
 
     linhas = SEED.read_text().splitlines()
-    i = next(k for k, l in enumerate(linhas) if nome_da_funcao in l)
+    i = next(k for k, linha in enumerate(linhas) if nome_da_funcao in linha)
     j = next(k for k in range(i + 1, len(linhas)) if marca_de_fim in linhas[k])
     corpo = "\n".join(linhas[i:j])
     fora = {}
