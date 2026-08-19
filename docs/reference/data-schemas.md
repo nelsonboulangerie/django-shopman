@@ -1052,6 +1052,28 @@ Registros antigos podem ser uma lista simples de snapshots. Registros novos usam
 
 ---
 
+## payman.PaymentIntent.gateway_data
+
+Contexto do intent no gateway (`packages/payman`, `PaymentIntent.gateway_data`). É o
+JSONField que evita coluna nova para dado contextual de pagamento. **O livro continua
+sendo `PaymentTransaction`** — nada aqui é fonte de valor financeiro; o que este dict
+guarda é o "de onde veio" e o "o que está em curso".
+
+| Chave | Tipo | Escrito por | Lido por | Descrição |
+|-------|------|-------------|----------|-----------|
+| `checkout_url`, `checkout_session_id` | `str` | `adapters/payment_stripe.py::create_intent` | storefront (redirect do cartão) | URL hospedada do Stripe Checkout e id da sessão. O `gateway_id` promove de `cs_…` para `pi_…` quando `checkout.session.completed` chega. |
+| `location`, `client_secret` | `str` | `adapters/payment_efi.py::create_intent` | storefront (QR do Pix) | Endereço do QR e payload copia-e-cola da cobrança Efí. |
+| `e2e_id` | `str` | `services/pix_confirmation.py::confirm_pix` | conciliação, suporte | Identificador ponta-a-ponta do Pix que pagou. |
+| `efi_status` | `str` | `adapters/payment_efi.py::capture` | suporte | Último status bruto da cobrança na Efí (ex.: `CONCLUIDA`). |
+| `collection` | `str` | `services/payment.py`, `services/operator_orders.py` | reconciliação financeira, livro-caixa | `terminal` (liquidado no balcão, ADR-022) ou `on_delivery` (COD, acertado na entrega). Ausente na loja online. |
+| `terminal_ref` | `str` | idem | reconciliação, PDV | Terminal onde o dinheiro foi recebido. |
+| `asserted_at_terminal` | `bool` | `PaymentService.settle` (via `services/payment.py::settle_terminal_tenders`) | reconciliação, estorno | `True` quando um método COM gateway (pix, cartão) foi **atestado por gente** no balcão — QR estático, maquininha avulsa numa venda mista. Distingue "capturado pelo gateway" de "afirmado pelo operador", e é o que faz o estorno saber que não há gateway para chamar. |
+| `settled_with`, `settled_by`, `customer_ref` | `str` | `services/house_account.py` | acerto de conta, livro-caixa | Como e por quem a conta em aberto foi acertada, e de qual cliente ela é. |
+| `smoke` | `bool` | `services/gateway_smoke.py` | smoke de gateway | Intent de teste de fumaça; nunca é venda. |
+| **`disputes`** | `dict[str, dict]` | `adapters/payment_stripe.py::handle_dispute_event` | operador (alerta `payment_disputed`), suporte | **Disputas em curso e encerradas, por id do gateway** (`du_…`). Só o desfecho `lost` vira `PaymentTransaction(CHARGEBACK)`; o resto é risco, não livro. Cada valor: `{status, amount_q, currency, reason, charge_id, evidence_due_by, funds_withdrawn, funds_reinstated, last_event, updated_at}`. `status` é o do Stripe (`warning_*`, `needs_response`, `under_review`, `won`, `lost`, `prevented`) e é **grudento quando terminal** — evento fora de ordem não reabre disputa encerrada. Pix não popula: a Efí não publica evento de MED (ver docstring de `shopman/shop/webhooks/efi.py`). |
+
+---
+
 ## cashman.Terminal.metadata
 
 Configuração por terminal do PDV (`packages/cashman`, `Terminal.metadata`). Escrita pelo

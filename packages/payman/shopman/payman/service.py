@@ -876,10 +876,14 @@ class PaymentService:
           (``intent_has_chargeback`` em
           ``shopman/backstage/services/financial_reconciliation.py``).
 
-        Quem alimenta: qualquer chamador do gateway. Hoje nenhum adapter
-        escuta os eventos de disputa (o adapter Stripe trata
-        ``charge.refunded``, não ``charge.dispute.*``); o valor chega por
-        reconciliação manual do operador até que passem a escutar.
+        Quem alimenta: qualquer chamador do gateway. **Cartão** chega sozinho —
+        o orquestrador escuta ``charge.dispute.*`` do Stripe e manda o total
+        cumulativo das disputas PERDIDAS (disputa aberta ainda pode ser ganha, e
+        este snapshot é monotônico: o que entra aqui não sai). **Pix** continua
+        entrando por reconciliação manual do operador, porque a Efí não publica
+        evento de MED — os dois caminhos estão escritos em
+        ``shopman/shop/adapters/payment_stripe.py::handle_dispute_event`` e no
+        docstring de ``shopman/shop/webhooks/efi.py``.
         """
         intent = cls._get_for_update(ref)
         status = cls._normalize_gateway_status(gateway_status)
