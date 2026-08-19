@@ -7,7 +7,6 @@ from unittest.mock import patch
 import pytest
 from django.test import override_settings
 
-
 # Bloco fiscal como o Fiscalman entrega (``resolve_fiscal_item``): o adapter não
 # adivinha campo tributário nenhum — ausente, ele recusa nominalmente.
 FISCAL_OWN_PRODUCTION = {
