@@ -205,9 +205,35 @@ parar — e um teste garante que nenhum exista.
 Verificado em banco semeado: 25 SKUs, 12.834 linhas, 6 anotações fundidas,
 ensaio desfazendo tudo e execução repetida sem efeito.
 
-**F4 — O seed.** `config/management/commands/seed.py` passa a nascer com os
-códigos reais. Sem isto, o próximo `seed --flush` traz os inventados de volta —
-é aqui que a troca vira permanente.
+**F4 — O seed.** ✅ Feito. `seed.py` nasce com os códigos reais: 56 SKUs
+trocados (531 literais, reescritos por `tokenize` — `re.sub` levaria junto o
+`MASSA-CAMPAGNE`, que é insumo), mais os 10 desdobramentos e 31 restaurações.
+O catálogo vai de 59 para 100 produtos.
+
+⚠️ **Os 41 novos nascem despublicados, e é o próprio seed que exige isso.** O
+portão de completude cobra alergênicos, informação nutricional, dieta, porção e
+ingredientes — dado da casa, do tipo que ninguém inventa. Eles existem no
+catálogo com código e preço reais (o mais praticado nos 12 meses até 20/07) e
+entram na vitrine quando a ficha for preenchida: tire o SKU de `sem_ficha` e o
+portão passa a validá-los como todos os outros. `ANP` (porquinho) também nasce
+fora de venda — não está sendo feito.
+
+Coleção, descrição, validade, peso e conservação dos 41 são **proposta**, pelo
+padrão da coleção. Imagem fica vazia de propósito: foto errada é pior que sem
+foto.
+
+Dois efeitos que só apareceram ao rodar:
+
+1. **A curadoria de consumo perdeu 7 etiquetas, e está certo.** `CT`, `PC`,
+   `MD`, `ME`, `CO`, `ANC` e `KP` eram etiquetados duas vezes — uma pelo
+   cardápio, outra pelo histórico do Yooga. Com o código real são o mesmo
+   produto, e uma etiqueta basta. As duas curadorias **concordam** na leitura, e
+   agora um teste garante isso: se divergirem, quem roda por último venceria em
+   silêncio.
+2. **Os rotativos e os reais convivem.** "Folhado do dia" (`FL`) e "Folhado de
+   Frango" (`FF`) existem os dois, assim como as focaccias. Se a recomendação do
+   §2.2 for adotada, os quatro "do dia" (`FD`, `SD`, `FL`, `THG`) saem e viram
+   coleção.
 
 **F5 — O iFood.** Ressincronizar o catálogo e conferir `CatalogSyncState`. É o
 único ponto fora do nosso banco: renomear aqui não renomeia lá.

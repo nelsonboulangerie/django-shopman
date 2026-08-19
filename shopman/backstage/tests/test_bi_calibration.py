@@ -346,10 +346,10 @@ def test_the_seed_is_the_source_and_wins_over_an_admin_edit():
 
     _run("setup_bi_reference")
     leva = ConsumptionRole.objects.get(reading=Reading.TAKEAWAY)
-    ProductConsumptionTag.objects.filter(sku="ESPRESSO").update(role=leva, note="mexi no Admin")
+    ProductConsumptionTag.objects.filter(sku="SS").update(role=leva, note="mexi no Admin")
 
     _run("setup_bi_reference")
-    tag = ProductConsumptionTag.objects.select_related("role").get(sku="ESPRESSO")
+    tag = ProductConsumptionTag.objects.select_related("role").get(sku="SS")
     assert tag.role.reading == Reading.ANCHOR
 
 
