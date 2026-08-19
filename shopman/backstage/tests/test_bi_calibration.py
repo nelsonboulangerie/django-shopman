@@ -369,17 +369,23 @@ def test_the_seed_is_the_source_and_wins_over_an_admin_edit():
         ("Bebidas", "anchor", 11728),
     ],
 )
+@pytest.mark.django_db
 def test_every_real_yooga_category_reads_as_the_owner_decided(category, expected, linhas):
     """As sete categorias que existem de verdade nos dois anos de histórico.
 
     ⚠️ "Pães Finos" é o caso que motivou o teste: a palavra genérica "pão" casa
     com ela e a mandaria para "leva", quando a viennoiserie é híbrida. São 38.369
     linhas — errar aqui inclinaria o retrato inteiro dos dois anos.
-    """
-    from shopman.backstage.services.consumption import CATEGORY_READING
 
+    O vocabulário é dado (``CategoryAlias``), instalado pelo seed: o teste
+    instala a mesma lista e lê pelo mesmo caminho que a projection.
+    """
+    from shopman.backstage.services.consumption import category_readings
+    from shopman.backstage.tests.support import install_bi_vocabularies
+
+    install_bi_vocabularies()
     lowered = category.lower()
-    for needle, reading in CATEGORY_READING:
+    for needle, reading in category_readings():
         if needle in lowered:
             assert reading == expected, (
                 f"{category} ({linhas} linhas) casou '{needle}' → {reading}, "
@@ -389,11 +395,14 @@ def test_every_real_yooga_category_reads_as_the_owner_decided(category, expected
     raise AssertionError(f"{category} ({linhas} linhas) não casa com nenhuma palavra")
 
 
+@pytest.mark.django_db
 def test_the_specific_keyword_beats_the_generic_one():
     """A guarda é a ORDEM: genérico antes de específico apagaria a decisão."""
-    from shopman.backstage.services.consumption import CATEGORY_READING
+    from shopman.backstage.services.consumption import category_readings
+    from shopman.backstage.tests.support import install_bi_vocabularies
 
-    order = [needle for needle, _ in CATEGORY_READING]
+    install_bi_vocabularies()
+    order = [needle for needle, _ in category_readings()]
     for specific, generic in (("pães finos", "pão"), ("pães rústicos", "pão"),
                               ("sanduíche", "pão"), ("mercearia", "pão")):
         assert order.index(specific) < order.index(generic), (

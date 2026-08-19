@@ -172,6 +172,32 @@ def test_historical_sale_gets_the_same_rule(tagged):
 
 
 @pytest.mark.django_db
+def test_historical_line_without_sku_reads_by_category_only_when_the_alias_is_confirmed(tagged):
+    """27 mil linhas do histórico não têm SKU; a categoria é a reserva — e ela é DADO.
+
+    Sem ``CategoryAlias`` confirmado, a linha fica sem leitura e a venda sai
+    "sem etiqueta" (declarado, nunca inventado). Com o vocabulário instalado
+    pelo seed, "Bebidas" ancora e a venda vira consumo local.
+    """
+    from shopman.backstage.tests.support import install_bi_vocabularies
+
+    sale = HistoricalSale.objects.create(
+        batch=historical_batch("yooga"), source="yooga", external_id=1,
+        occurred_at=timezone.now() - timedelta(days=2), total_q=600,
+    )
+    HistoricalSaleItem.objects.create(sale=sale, seq=1, product_name="Coca-Cola 350ml", sku="",
+                                      category="Bebidas", qty=Decimal("1"),
+                                      unit_price_q=600, line_total_q=600)
+
+    before = build_bi_explore(metric="revenue", by="consumption_mode")
+    assert {row.key: row.value for row in before.rows} == {UNCLASSIFIED: 600.0}
+
+    install_bi_vocabularies()
+    after = build_bi_explore(metric="revenue", by="consumption_mode")
+    assert {row.key: row.value for row in after.rows} == {DINE_IN: 600.0}
+
+
+@pytest.mark.django_db
 def test_historical_delivery_is_delivery_whatever_the_basket(tagged):
     sale = HistoricalSale.objects.create(
         batch=historical_batch("yooga"), source="yooga", external_id=2, is_delivery=True,

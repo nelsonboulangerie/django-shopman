@@ -70,6 +70,7 @@ class Command(BaseCommand):
         from shopman.backstage.projections.bi_payments import (
             UNKNOWN_PREFIX,
             normalize_historical_payment,
+            payment_vocabulary,
         )
 
         sales = HistoricalSale.objects.all()
@@ -83,8 +84,9 @@ class Command(BaseCommand):
         amounts: dict[str, int] = defaultdict(int)
         raw_examples: dict[str, str] = {}
         total = 0
+        vocabulary = payment_vocabulary()
         for raw, total_q in sales.values_list("payment", "total_q"):
-            key, label = normalize_historical_payment(raw)
+            key, label = normalize_historical_payment(raw, vocabulary)
             counts[key] += 1
             amounts[key] += total_q or 0
             raw_examples.setdefault(key, label)

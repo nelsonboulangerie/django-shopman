@@ -7,11 +7,13 @@ que se queria instalar. A leitura do B.I. passaria a somar operação real com
 operação inventada, que é exatamente o defeito que a guarda do histórico
 sintético existe para evitar — só que do lado nativo.
 
-Este comando faz o recorte: **três tabelas de referência, zero movimento.**
+Este comando faz o recorte: **cinco tabelas de referência, zero movimento.**
 
 - papéis de consumo (o vocabulário: consome aqui · leva · híbrido)
 - etiquetas por SKU (a curadoria do cardápio, `reviewed=True`)
 - lugares do salão (o denominador da ociosidade)
+- de-paras de categoria e de forma de pagamento do histórico (os vocabulários
+  do B.I., confirmados — mapeamento é dado, não código)
 
 Nenhuma delas é fato operacional: são cadastro. Reinstalar não reescreve
 passado, não cria venda e não apaga nada — tudo é `update_or_create`, então
@@ -30,7 +32,10 @@ from django.core.management.base import BaseCommand
 
 
 class Command(BaseCommand):
-    help = "Instala papéis de consumo, etiquetas por SKU e lugares do salão (sem tocar em operação)."
+    help = (
+        "Instala papéis de consumo, etiquetas por SKU, lugares do salão e os de-paras "
+        "de categoria/forma de pagamento (sem tocar em operação)."
+    )
 
     def add_arguments(self, parser):
         parser.add_argument(
@@ -40,21 +45,24 @@ class Command(BaseCommand):
 
     def handle(self, *args, **options):
         from shopman.backstage.models import (
+            CategoryAlias,
             ConsumptionRole,
+            PaymentMethodAlias,
             ProductConsumptionTag,
             SeatingSpot,
         )
 
         from .seed import Command as Seed
 
-        before = self._counts(ConsumptionRole, ProductConsumptionTag, SeatingSpot)
+        models = (ConsumptionRole, ProductConsumptionTag, SeatingSpot, CategoryAlias, PaymentMethodAlias)
+        before = self._counts(*models)
 
         if options["dry_run"]:
             self.stdout.write("Hoje no banco:")
             self._report(before)
             self.stdout.write(
                 "\n(--dry-run: nada gravado. Sem o --dry-run, o comando instala o "
-                "vocabulário, a curadoria do cardápio e os lugares do salão.)"
+                "vocabulário, a curadoria do cardápio, os lugares do salão e os de-paras.)"
             )
             return
 
@@ -66,8 +74,9 @@ class Command(BaseCommand):
         seed._seed_consumption_roles()
         seed._seed_consumption_tags()
         seed._seed_seating()
+        seed._seed_bi_aliases()
 
-        after = self._counts(ConsumptionRole, ProductConsumptionTag, SeatingSpot)
+        after = self._counts(*models)
         self.stdout.write(self.style.SUCCESS("\nInstalado:"))
         self._report(after, before)
         self.stdout.write(
@@ -80,7 +89,7 @@ class Command(BaseCommand):
                 "confira em Admin → Como vendemos → Etiquetas de consumo."
             ))
 
-    def _counts(self, role_model, tag_model, spot_model) -> dict:
+    def _counts(self, role_model, tag_model, spot_model, category_model, payment_model) -> dict:
         return {
             "papéis de consumo": role_model.objects.count(),
             "etiquetas por SKU": tag_model.objects.count(),
@@ -88,6 +97,8 @@ class Command(BaseCommand):
             "lugares na capacidade oficial": spot_model.objects.filter(
                 counts_in_capacity=True
             ).count(),
+            "de-paras de categoria": category_model.objects.count(),
+            "de-paras de forma de pagamento": payment_model.objects.count(),
         }
 
     def _report(self, counts: dict, before: dict | None = None) -> None:

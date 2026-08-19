@@ -43,7 +43,7 @@ from shopman.backstage.projections.bi_profiles import (
 from shopman.backstage.projections.bi_sales import build_bi_sales
 from shopman.backstage.services import consumption as rule
 from shopman.backstage.services.hour_bands import HOUR_BANDS, band_for
-from shopman.backstage.tests.support import historical_batch
+from shopman.backstage.tests.support import historical_batch, install_bi_vocabularies
 
 
 @pytest.fixture
@@ -178,7 +178,12 @@ def test_a_line_without_sku_finds_its_tag_by_name(tagged):
 
 @pytest.mark.django_db
 def test_category_is_the_fallback_for_beverage_too(tagged):
-    """15 mil linhas de bebida sem SKU: 'Cafés' é preparada, 'Bebidas' é pronta."""
+    """15 mil linhas de bebida sem SKU: 'Cafés' é preparada, 'Bebidas' é pronta.
+
+    A leitura por categoria é DADO (``CategoryAlias``, instalado pelo seed); a
+    bebida por categoria segue em código (``CATEGORY_BEVERAGE``).
+    """
+    install_bi_vocabularies()
     lines = _basket([("", "Espresso Duplo", "Cafés"), ("", "Coca-Cola 350ml", "Bebidas"),
                      ("", "Baguete", "Pães Rústicos")]).lines
     assert [line.beverage for line in lines] == [rule.BEVERAGE_PREPARED, rule.BEVERAGE_READY, ""]
@@ -236,6 +241,7 @@ def test_sku_weight_overrides_the_role_weight(roles):
 
 @pytest.mark.django_db
 def test_category_gives_a_starting_weight_to_lines_without_tag(tagged):
+    install_bi_vocabularies()  # o peso por categoria passa pela leitura, que é dado
     lines = _basket([("", "Espresso Duplo", "Cafés"), ("", "Baguete", "Pães Rústicos"),
                      ("", "Chausson", "Pães Finos"), ("", "Coisa", "")]).lines
     assert [line.weight for line in lines] == [95, 5, 50, None]

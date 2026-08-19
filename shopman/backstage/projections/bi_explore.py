@@ -664,11 +664,16 @@ def _payment_rows(spec, by, by2, date_from, date_to) -> list[BIExploreRow]:
     from shopman.backstage.models import HistoricalSale
     from shopman.backstage.services.payments import iter_order_payments
 
-    from .bi_payments import normalize_historical_payment, payment_method_label
+    from .bi_payments import (
+        normalize_historical_payment,
+        payment_method_label,
+        payment_vocabulary,
+    )
     from .bi_sales import _local_datetime_window
 
     window = _local_datetime_window(date_from, date_to)
     excluded = (Order.Status.CANCELLED, Order.Status.RETURNED)
+    vocabulary = payment_vocabulary()  # uma consulta, milhares de vendas
 
     # (local, método, rótulo, valor, pendente, canal, fonte, chave-do-pedido)
     events: list[tuple] = []
@@ -694,7 +699,7 @@ def _payment_rows(spec, by, by2, date_from, date_to) -> list[BIExploreRow]:
         local = timezone.localtime(occurred_at)
         if local.date() in native_days:
             continue
-        method, label = normalize_historical_payment(raw_payment)
+        method, label = normalize_historical_payment(raw_payment, vocabulary)
         channel = f"{source} · {'delivery' if is_delivery else 'loja'}"
         # O histórico não conhece cobrança pendente: o export só traz venda
         # concluída. Marcar como pendente inventaria dívida que não existe.

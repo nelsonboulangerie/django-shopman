@@ -1,8 +1,8 @@
 # BI-DATA-FOUNDATION-PLAN — a fundação de dados do B.I. em três camadas
 
 > **Status: 🟢 ETAPA 1 APROVADA em 2026-08-18 ("acato as recomendações") — as três decisões do
-> §6 ficaram como recomendado; ETAPA 2 em andamento: P0 ✅ entregue (PR de `feat/bi-import-batch`),
-> próximo P1.** Frente B, v1. Irmão de
+> §6 ficaram como recomendado; ETAPA 2 em andamento: P0 ✅ (#209), P1 ✅ (`feat/bi-aliases`),
+> próximo P2 (contrato canônico + fontes + leitura).** Frente B, v1. Irmão de
 > [BI-PLAN.md](BI-PLAN.md), [BI-INSIGHTS-MAP.md](BI-INSIGHTS-MAP.md),
 > [BI-FORECAST-PLAN.md](BI-FORECAST-PLAN.md) e [BI-QUESTION-CATALOG.md](BI-QUESTION-CATALOG.md).
 > Não depende da consulta de perfis (frente separada); se ela existir quando isto rodar, é só
@@ -368,7 +368,16 @@ hash+últimos 4 / bairro / endereço / taxa / observação, Admin somente leitur
 - **Não muda leitura nenhuma.** Aceite: `ingest_yooga` sobre o mesmo arquivo 2× → 1 lote, 0
   linhas novas na segunda; `make test-backstage`, `make admin`.
 
-**P1 — De-paras como dado + canônica como contrato (Yooga; 2 PRs).** Prova a camada 2.
+**P1 — De-paras como dado (Yooga). ✅ ENTREGUE 2026-08-19 (branch `feat/bi-aliases`, sobre a do P0).**
+Como saiu: `ProductAlias` (por fonte; SKU ou nome → `offerman.Product`, FK nula para extinto),
+`CategoryAlias` e `PaymentMethodAlias` (vocabulários por trecho, em ordem, **independentes de
+fonte**), migração `0023` só de schema; `CATEGORY_READING` e `_HISTORICAL_VOCABULARY` **apagados
+do código** — a leitura carrega `category_readings()`/`payment_vocabulary()` (só `confirmed`); as
+regras padrão moram no `seed._seed_bi_aliases` e no `setup_bi_reference` (convenção da casa:
+referência não vai em migração); `suggest_aliases` (rapidfuzz; nunca confirma, nunca sobrescreve,
+declara o que não achou); Admin de curadoria com ações confirmar/rejeitar que assinam; Gerente
+cura. ⚠️ **O contrato canônico + `bi/sources/yooga.py` passaram para o P2** — nascem junto com o
+primeiro leitor, não antes. Detalhe original do passo abaixo.
 - Tabelas (base abstrata comum com `status`, `score`, `suggested_at`, `confirmed_by`,
   `confirmed_at`, `note`):
   - `ProductAlias(source, external_sku, external_name → product FK null)` — para os 7% sem SKU o

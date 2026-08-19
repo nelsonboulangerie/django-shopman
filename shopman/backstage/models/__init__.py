@@ -1,6 +1,7 @@
 """Backstage models — KDS, DayClosing, OperatorAlert, CashShift, Operation."""
 
 from .alerts import OperatorAlert
+from .aliases import AliasStatus, CategoryAlias, PaymentMethodAlias, ProductAlias
 from .bi_view import BIView
 from .blind_prep import BlindPrepCode
 from .cash_register import CashMovement, CashShift, POSTerminal
@@ -34,6 +35,10 @@ from .shelf_outage import OutageReason, ShelfOutage
 
 __all__ = [
     "OperatorAlert",
+    "AliasStatus",
+    "CategoryAlias",
+    "PaymentMethodAlias",
+    "ProductAlias",
     "BIView",
     "Beverage",
     "BlindPrepCode",

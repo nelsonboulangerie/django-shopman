@@ -5908,6 +5908,7 @@ class Command(BaseCommand):
         self._seed_consumption_roles()
         self._seed_consumption_tags()
         self._seed_seating()
+        self._seed_bi_aliases()
         self._seed_business_days(days=days)
         self._seed_shelf_movements(products, vitrine, days=days)
         self._seed_shelf_outages(products, days=days)
@@ -6169,6 +6170,93 @@ class Command(BaseCommand):
                 ProductConsumptionTag.objects.update_or_create(
                     sku=sku, defaults={"role": role, "reviewed": True, "note": note},
                 )
+
+    def _seed_bi_aliases(self) -> None:
+        """Os vocabulários do B.I. — de-para de categoria e de forma de pagamento.
+
+        Eram tuplas em código (a tabela de categoria do consumo, o vocabulário do
+        histórico em ``bi_payments``); agora são linhas de ``CategoryAlias`` e
+        ``PaymentMethodAlias``, editáveis no Admin. Nascem CONFIRMADAS porque
+        são a curadoria já feita com o dono (17–18/08) — a máquina não decidiu
+        nada aqui. A ordem manda: a primeira que casa vence, então o específico
+        tem posição menor que o genérico ("pães finos" antes de "pão", senão
+        38.369 linhas de viennoiserie cairiam em "leva").
+
+        Só o de-para de PRODUTO fica de fora: ele é por SKU real do Yooga e é
+        sugerido pelo ``suggest_aliases`` a partir do histórico carregado.
+        """
+        from shopman.backstage.models import AliasStatus, CategoryAlias, PaymentMethodAlias
+
+        # As categorias do export real do Yooga (medidas em 18/08, linhas
+        # afetadas entre parênteses); leituras decididas pelo dono.
+        categories = (
+            ("pães finos", "hybrid"),          # 38.369 — viennoiserie serve aos dois usos
+            ("paes finos", "hybrid"),
+            ("sanduíche", "anchor"),           # 907 — tartine é prato montado, come aqui
+            ("sanduiche", "anchor"),
+            ("tartine", "anchor"),
+            ("sobremesa", "anchor"),           # 108 — decisão do dono: consumo local
+            ("pães rústicos", "takeaway"),     # 15.299
+            ("paes rusticos", "takeaway"),
+            ("café", "anchor"),                # 5.211
+            ("cafe", "anchor"),
+            ("bebida", "anchor"),
+            ("suco", "anchor"),
+            ("refri", "anchor"),
+            ("mercearia", "takeaway"),
+            ("chai", "anchor"),                # 290 — "Festival Chai" é bebida (dono, 18/08).
+                                               # Vem DEPOIS de mercearia: a lata de chai
+                                               # da prateleira é compra, não consumo.
+            ("doce", "hybrid"),
+            ("salgado", "hybrid"),
+            ("confeitaria", "hybrid"),
+            ("lanche", "anchor"),              # lanche montado come aqui, como a tartine
+            # Genéricos por último: só pegam o que os específicos não pegaram.
+            ("pão", "takeaway"),
+            ("pao", "takeaway"),
+            ("padaria", "takeaway"),
+        )
+        for position, (pattern, reading) in enumerate(categories, start=1):
+            CategoryAlias.objects.update_or_create(
+                pattern=pattern,
+                defaults={
+                    "position": position * 10,
+                    "reading": reading,
+                    "status": AliasStatus.CONFIRMED,
+                    "note": "curadoria do dono (17–18/08/2026)",
+                },
+            )
+
+        # Forma de pagamento crua do histórico → forma canônica da casa. O
+        # específico antes do genérico: "vale refeição" antes de "vale",
+        # "cartão de crédito" antes de "cartão".
+        payments = (
+            ("pix", "pix"),
+            ("dinheiro", "cash"),
+            ("especie", "cash"),
+            ("espécie", "cash"),
+            ("credito", "credit"),
+            ("crédito", "credit"),
+            ("debito", "debit"),
+            ("débito", "debit"),
+            ("vale", "voucher"),
+            ("ticket", "voucher"),
+            ("alelo", "voucher"),
+            ("sodexo", "voucher"),
+            ("ifood", "ifood"),
+            ("cartao", "card"),
+            ("cartão", "card"),
+        )
+        for position, (pattern, method_key) in enumerate(payments, start=1):
+            PaymentMethodAlias.objects.update_or_create(
+                pattern=pattern,
+                defaults={
+                    "position": position * 10,
+                    "method_key": method_key,
+                    "status": AliasStatus.CONFIRMED,
+                    "note": "vocabulário do histórico Yooga",
+                },
+            )
 
     def _seed_seating(self) -> None:
         """O salão real da Nelson (informado pelo dono, 17/08).
