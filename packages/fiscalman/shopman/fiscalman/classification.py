@@ -128,6 +128,28 @@ def from_metadata(metadata: dict | None) -> ProductFiscalClassification:
     )
 
 
+def validate_for_emission(metadata: dict | None) -> list[str]:
+    """Erros que impedem este produto de virar item de documento fiscal.
+
+    Lista vazia == pronto para emitir. Existe para que a pergunta de completude
+    fiscal tenha um dono só, em vez de ser respondida tarde (hoje só o adapter
+    recusa item sem NCM, na emissão — ``shop/adapters/fiscal_focusnfe._map_item``).
+
+    Recebe o **blob** ``Product.metadata``, não o model: o Fiscalman é dono do
+    schema e não importa o Offerman (cores não se importam — a ponte é
+    ``fiscalman/contrib/offerman``). Quem tem o produto na mão passa
+    ``product.metadata``; é o mesmo caminho que :func:`from_metadata` já serve à
+    ponte do admin e ao builder de itens do orquestrador.
+
+    Produto **nunca classificado** responde uma mensagem própria: para quem
+    audita o catálogo, "ninguém preencheu" é um problema diferente (e de outro
+    dono) de "preencheram torto".
+    """
+    if not ((metadata or {}).get("fiscal") or {}):
+        return ["Sem classificação fiscal: defina perfil e NCM em metadata['fiscal']."]
+    return from_metadata(metadata).errors()
+
+
 def to_metadata_fiscal(classification: ProductFiscalClassification) -> dict:
     """Serialize back to the compact shape stored in ``Product.metadata['fiscal']``."""
     data = {

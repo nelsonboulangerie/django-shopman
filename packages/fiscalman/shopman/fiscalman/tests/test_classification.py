@@ -7,6 +7,7 @@ from shopman.fiscalman.classification import (
     from_metadata,
     resolve_fiscal_item,
     to_metadata_fiscal,
+    validate_for_emission,
 )
 
 
@@ -118,3 +119,30 @@ class TestMetadataRoundTrip:
     def test_to_metadata_omits_empty_cest(self):
         c = ProductFiscalClassification(profile="own_production", ncm="19059010")
         assert "cest" not in to_metadata_fiscal(c)
+
+
+class TestValidateForEmission:
+    """A pergunta 'este produto pode virar item de nota?' com um dono só."""
+
+    def test_complete_own_production_has_no_errors(self):
+        metadata = {"fiscal": {"profile": "own_production", "ncm": "19059010"}}
+        assert validate_for_emission(metadata) == []
+
+    def test_unclassified_product_says_so_instead_of_blaming_the_ncm(self):
+        # "ninguém preencheu" é diagnóstico diferente de "preencheram torto" —
+        # quem audita o catálogo precisa dos dois separados.
+        for metadata in (None, {}, {"fiscal": {}}):
+            errors = validate_for_emission(metadata)
+            assert len(errors) == 1
+            assert "Sem classificação fiscal" in errors[0]
+
+    def test_bad_ncm_reports_the_ncm(self):
+        errors = validate_for_emission({"fiscal": {"profile": "own_production", "ncm": "1905"}})
+        assert errors == ["NCM deve ter 8 dígitos."]
+
+    def test_resale_without_cest_is_incomplete(self):
+        errors = validate_for_emission({"fiscal": {"profile": "resale", "ncm": "22021000"}})
+        assert any("CEST" in e for e in errors)
+
+    def test_reads_legacy_key_like_the_rest_of_the_schema(self):
+        assert validate_for_emission({"fiscal": {"codigo_ncm": "19059010"}}) == []
