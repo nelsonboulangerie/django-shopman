@@ -1373,11 +1373,16 @@ def validate_manager_override(approval: dict | None, *, operator_username: str, 
             focus="approval",
             recovery="Revise o gerente e o PIN.",
         )
+    # Quem assina é o APROVADOR resolvido, não o que veio no corpo: com crachá o
+    # `username` chega vazio, e a linha de auditoria saía `approved_by=` em
+    # branco — justamente a informação pela qual ela existe. Mesmo erro que o
+    # cancelamento tinha ao persistir a assinatura; este ficou no log e passou.
     logger.info(
-        "pos_manager_override action=%s operator=%s approved_by=%s",
+        "pos_manager_override action=%s operator=%s approved_by=%s via=%s",
         action,
         operator_username,
-        username,
+        approver.get_username(),
+        "badge" if badge else "pin",
     )
     return approver
 
