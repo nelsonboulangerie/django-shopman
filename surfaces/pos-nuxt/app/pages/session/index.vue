@@ -17,6 +17,7 @@ import {
   movementReasons,
   sessionScreenState,
 } from "~/presentation/cash";
+import type { ManagerApproval } from "~/composables/usePosCashSession";
 import type { DayClosingResponse } from "~/types/closing";
 
 useHead({ title: "Sessão de caixa · Shopman POS" });
@@ -154,17 +155,29 @@ const managerAuthReasonText = computed(() => {
 });
 
 function onManagerAuthorize(username: string, pin: string) {
+  autorizar({ username, pin });
+}
+
+// O crachá é a MESMA autorização, por outra porta: o servidor resolve a pessoa
+// pelo token, exige a mesma `cashman.adjust_shift` e grava a mesma assinatura em
+// `Entry.approved_by`. É a hora em que o gerente mais aparece no balcão, e era
+// justamente onde o crachá dele não valia.
+function onManagerBadge(badge: string) {
+  autorizar({ badge });
+}
+
+function autorizar(aprovacao: { username?: string; pin?: string; badge?: string }) {
   managerAuthOpen.value = false;
   const intent = managerIntent.value;
-  if (intent.action === "serve_change") serveChange(intent.ref, { username, pin });
-  else if (intent.action === "refund_cash") refundPending(intent.orderRef, { username, pin });
-  else submitMovement({ username, pin });
+  if (intent.action === "serve_change") serveChange(intent.ref, aprovacao);
+  else if (intent.action === "refund_cash") refundPending(intent.orderRef, aprovacao);
+  else submitMovement(aprovacao);
 }
 
 // Cancelar não é devolver: a venda cancelada (pelo gestor, de noite) deixa o
 // dinheiro pendente até alguém com a gaveta aberta entregar. O PIN é do gerente
 // porque dinheiro sai da gaveta, como na sangria.
-async function refundPending(orderRef: string, managerApproval: { username: string; pin: string } | null = null) {
+async function refundPending(orderRef: string, managerApproval: ManagerApproval | null = null) {
   managerIntent.value = { action: "refund_cash", orderRef };
   const ok = await refundCash({ orderRef, managerApproval });
   if (ok) {
@@ -192,7 +205,7 @@ async function submitSettle() {
   if (ok) settleCustomerRef.value = null;
 }
 
-async function submitMovement(managerApproval: { username: string; pin: string } | null = null) {
+async function submitMovement(managerApproval: ManagerApproval | null = null) {
   if (!canSubmitMovement.value) return;
   managerIntent.value = { action: "movement" };
   const ok = await registerCashMovement({
@@ -243,7 +256,7 @@ async function submitChangeRequest() {
   }
 }
 
-async function serveChange(ref_: string, managerApproval: { username: string; pin: string } | null = null) {
+async function serveChange(ref_: string, managerApproval: ManagerApproval | null = null) {
   managerIntent.value = { action: "serve_change", ref: ref_ };
   const ok = await serveChangeRequest({ ref: ref_, managerApproval });
   if (ok) {
@@ -884,6 +897,7 @@ async function confirmCloseBlocking() {
       :busy="busy"
       :error="managerChallenge?.code === 'manager_approval_invalid' ? managerChallenge.message : ''"
       @authorize="onManagerAuthorize"
+      @authorize-badge="onManagerBadge"
     />
   </main>
 </template>

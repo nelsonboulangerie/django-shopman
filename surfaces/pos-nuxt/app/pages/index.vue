@@ -123,6 +123,7 @@ const {
   renameTab,
   openCancelSaleDialog,
   cancelRecentSale,
+  cancelRecentSaleWithBadge,
   drawerLock,
 } = usePosSale({ pos, tabs, actions, refresh, action, apiPath, requestHeaders, ordersUrl });
 
@@ -531,6 +532,7 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onGlobalKeydown));
       :error="drawerLock.managerError.value"
       @update:open="(value) => { if (!value) drawerLock.managerOpen.value = false; }"
       @authorize="drawerLock.unlock"
+      @authorize-badge="drawerLock.unlockWithBadge"
     />
 
     <PosCancelSaleDialog
@@ -540,7 +542,9 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onGlobalKeydown));
       :max-age-minutes="saleCorrection?.max_age_minutes || 0"
       :busy="cancellingSale"
       :error="cancelSaleError"
+      :managers="pos?.managers"
       @confirm="cancelRecentSale"
+      @confirm-badge="cancelRecentSaleWithBadge"
     />
 
     <PosMoveLinesDialog

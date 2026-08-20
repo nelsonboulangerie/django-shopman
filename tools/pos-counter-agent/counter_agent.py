@@ -1120,6 +1120,20 @@ def _escolher_fila(queues: list[str], rotulo: str) -> str:
 # para que a resposta caiba numa linha e o diagnóstico seja do programa, não da
 # pessoa.
 
+def _mascarar(token: str, keep: int = 4) -> str:
+    """As pontas do token: ``FxYA…8eRA``. Igual ao `mask_badge` do servidor.
+
+    O agente não importa código do Django (é stdlib pura, roda sozinho no
+    balcão), então a regra está escrita duas vezes de propósito. O que não pode
+    divergir é o FORMATO: máscaras diferentes nos dois lados não dariam para
+    comparar, que é exatamente para o que elas servem aqui.
+    """
+    token = (token or "").strip()
+    if len(token) <= keep * 2:
+        return token or "(vazio)"
+    return f"{token[:keep]}…{token[-keep:]}"
+
+
 def doctor() -> int:
     """`--doctor`: responde, de uma vez, se este balcão está são."""
     print("\nAgente do balcão — diagnóstico\n")
@@ -1139,6 +1153,13 @@ def doctor() -> int:
         print("\n  Sem config o agente não sobe. Reinstale pelo gestor.\n")
         return 1
     print(f"  config ................... {DEFAULT_CONFIG_PATH}")
+    # ⚠️ O TOKEN é a única falha que produz "token inválido" no PDV, e era a única
+    # coisa que este diagnóstico não olhava: dizia "tudo certo" enquanto o par
+    # estava desencontrado. Mostrar as pontas dá onde comparar com o Admin sem
+    # revelar a credencial — a mesma máscara que a folha do crachá e a tela do
+    # terminal usam (`mask_badge`), para os três serem comparáveis entre si.
+    print(f"  token (pontas) ........... {_mascarar(config.token)}")
+    print("     compare com o Admin: Terminais do PDV → este terminal.")
 
     saude = _wait_until_listening({"port": config.port}, seconds=3)
     if saude is None:
