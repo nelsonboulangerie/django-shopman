@@ -621,7 +621,29 @@ class CounterAgentHandler(BaseHTTPRequestHandler):
             self._reply(404, {"ok": False, "error": "rota desconhecida"})
             return
         probe = probe_queue(self.config.queue)
-        self._reply(200, {**probe, "queue": self.config.queue, "version": VERSION, "build": build_id()})
+        self._reply(
+            200,
+            {
+                **probe,
+                "queue": self.config.queue,
+                "version": VERSION,
+                "build": build_id(),
+                # As pontas do token QUE ESTE PROCESSO ESTÁ USANDO.
+                #
+                # ⚠️ É a única forma de saber isso. O `build` é o sha256 do
+                # `.py`, e reinstalar por cima troca o `agent.json` SEM tocar no
+                # `.py` — então o build continua idêntico enquanto o processo
+                # vivo segue com o token velho carregado na memória. O
+                # `--doctor` lia o token do ARQUIVO e dizia "tudo certo"; quem
+                # responde ao navegador é este processo, e ninguém perguntava a
+                # ele. O PDV levava 401 "token inválido" sem nenhum diagnóstico
+                # capaz de apontar por quê.
+                #
+                # Só as pontas, e o endpoint é loopback: 8 de 43 caracteres não
+                # permitem forjar nada, e sem isto não há como comparar.
+                "token_hint": _mascarar(self.config.token),
+            },
+        )
 
     def _estado_da_gaveta(self) -> dict:
         """A gaveta esta aberta agora? `known: false` quando nao da para saber.
@@ -1158,8 +1180,7 @@ def doctor() -> int:
     # estava desencontrado. Mostrar as pontas dá onde comparar com o Admin sem
     # revelar a credencial — a mesma máscara que a folha do crachá e a tela do
     # terminal usam (`mask_badge`), para os três serem comparáveis entre si.
-    print(f"  token (pontas) ........... {_mascarar(config.token)}")
-    print("     compare com o Admin: Terminais do PDV → este terminal.")
+    print(f"  token no arquivo ......... {_mascarar(config.token)}")
 
     saude = _wait_until_listening({"port": config.port}, seconds=3)
     if saude is None:
@@ -1175,6 +1196,29 @@ def doctor() -> int:
             print(f"       na porta: {_quem_ocupa_a_porta(config.port)}")
             print(f"       derrube:  {_comando_de_parada()}")
             tudo_certo = False
+
+        # ⚠️ O TOKEN DO PROCESSO VIVO, que é quem o navegador interroga.
+        #
+        # Reinstalar troca o `agent.json` sem tocar no `.py`: o `build` fica
+        # idêntico, o arquivo tem o token novo, e o processo que está no ar segue
+        # com o antigo carregado na memória desde que subiu. O diagnóstico dizia
+        # "tudo certo" comparando o arquivo, enquanto o PDV levava 401 do
+        # processo. Reiniciar o serviço é o conserto, e sem esta linha não havia
+        # como chegar a essa conclusão.
+        vivo = str(saude.get("token_hint") or "")
+        if not vivo:
+            print("  token no ar .............. o agente no ar é anterior a este diagnóstico")
+            print("     reinstale pelo gestor para o `--doctor` poder comparar os dois.")
+        else:
+            bate = vivo == _mascarar(config.token)
+            print(f"  token no ar .............. {vivo}" + ("   ✓" if bate else "   ✗ DIFERENTE DO ARQUIVO"))
+            if not bate:
+                print("     ✗ o processo no ar subiu com outro token: por isso o PDV diz")
+                print("       'token inválido' enquanto a linha de comando funciona (ela lê")
+                print("       o arquivo; o navegador fala com o processo).")
+                print(f"       reinicie:  {_comando_de_parada()}")
+                print("       e suba de novo pelo comando do gestor.")
+                tudo_certo = False
 
     if sys.platform.startswith("linux"):
         atual = _servico_ativo(SERVICE_NAME)

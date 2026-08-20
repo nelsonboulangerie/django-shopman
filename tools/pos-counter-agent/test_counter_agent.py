@@ -263,6 +263,45 @@ def test_health_devolve_a_sonda_da_fila(agent):
     assert body["version"] == counter_agent.VERSION
 
 
+def test_health_conta_o_token_QUE_ESTE_PROCESSO_USA(agent):
+    """A única forma de saber com que token o agente no ar está autenticando.
+
+    Reinstalar troca o `agent.json` sem tocar no `.py`: o `build` fica idêntico,
+    o arquivo tem o token novo, e o processo que subiu antes segue com o antigo
+    na memória. O `--doctor` comparava o ARQUIVO e dizia "tudo certo" enquanto o
+    PDV levava 401 do PROCESSO — e a linha de comando funcionava, porque ela lê
+    o arquivo. Sem esta linha não há como chegar a essa conclusão.
+    """
+    base, _ = agent
+    with urllib.request.urlopen(base + "/health", timeout=5) as response:
+        body = json.loads(response.read())
+
+    assert body["token_hint"] == counter_agent._mascarar(TOKEN)
+
+
+def test_health_nao_revela_o_token(agent):
+    """São as PONTAS. O endpoint é loopback e não pede token — de propósito, é
+    leitura —, então o que ele conta precisa ser inútil para forjar."""
+    base, _ = agent
+    with urllib.request.urlopen(base + "/health", timeout=5) as response:
+        body = json.loads(response.read())
+
+    assert TOKEN not in json.dumps(body)
+    assert len(body["token_hint"]) < len(TOKEN)
+
+
+class TestMascara:
+    def test_mostra_as_pontas(self):
+        assert counter_agent._mascarar("FxYAoTLDS4TSblLJm3DhhoxVrqX6Y7Fc7Uac7bm-eRA") == "FxYA…-eRA"
+
+    def test_token_curto_sai_inteiro(self):
+        """Esconder 4 de 6 não protege nada e tira a única utilidade: comparar."""
+        assert counter_agent._mascarar("abc123") == "abc123"
+
+    def test_vazio_diz_que_esta_vazio(self):
+        assert counter_agent._mascarar("") == "(vazio)"
+
+
 # ── Instalação ────────────────────────────────────────────────────────────
 
 
