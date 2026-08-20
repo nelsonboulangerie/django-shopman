@@ -4,19 +4,19 @@
 // and ends with Enter, captured anywhere on the overlay), or pick yourself and
 // type your PIN. The surface permission scopes who appears + who may unlock.
 //
-// A leitura do crachá é do `useBadgeScanner` (captura no documento). O foco fica
-// onde o operador deixou: tocar num nome ou no pad não cega mais o leitor.
+// A identificação (crachá, lista, PIN) mora no `OperatorIdentify`, compartilhado
+// com o diálogo de autorização do gerente. Aqui fica só o que é do BLOQUEIO: a
+// moldura de tela cheia e os dois fluxos de troca de PIN.
 //
 // Two PIN-change flows share this overlay: a FORCED change after a manager reset
 // (must_change — the operator can't operate until they rotate the temp PIN), and
 // a VOLUNTARY "Trocar PIN" from the pad. Both prove the current PIN (the backend
 // authorizes on that), so no manager is needed for a routine change.
-import { appendPinDigit, canSubmitPin } from "../presentation/operatorLock";
 // Import explícito (não auto-import): o POS mantém um lock próprio (usePosOperatorLock)
 // e este overlay é construído SOBRE o composable do kit, independente do app hospedeiro.
 import { useOperatorLock } from "../composables/useOperatorLock";
-import { useBadgeScanner } from "../composables/useBadgeScanner";
 import type { OperatorCard } from "../types/operator";
+import type { IdentifiablePerson } from "./OperatorIdentify.vue";
 
 const props = defineProps<{ perm: string }>();
 
@@ -31,41 +31,29 @@ const {
   busy,
 } = useOperatorLock(props.perm);
 
+// Quem foi escolhido no `OperatorIdentify`. Guardado aqui porque a troca
+// voluntária de PIN precisa saber de QUEM é o PIN que está sendo trocado.
 const picked = ref<OperatorCard | null>(null);
-const pin = ref("");
 const changing = ref(false); // voluntary "Trocar PIN" mode (an operator is picked)
+const identify = ref<{ reset: (keepPicked?: boolean) => void } | null>(null);
 
 onMounted(loadEligible);
 
-function pick(op: OperatorCard) {
-  picked.value = op;
-  pin.value = "";
+async function onPin(payload: { person: IdentifiablePerson | null; username: string; pin: string }) {
+  // A peça compartilhada devolve o mínimo comum (`username`, `name`). Aqui o
+  // bloqueio precisa do ID numérico, então recupera o card completo da lista —
+  // é o que evita a peça ter de conhecer o formato de cada consumidor.
+  const card = eligible.value.find((op) => op.username === payload.username) ?? null;
+  if (!card) return;
+  picked.value = card;
+  const ok = await unlock({ operatorId: card.id, pin: payload.pin });
+  // Recusa apaga o PIN e mantém a pessoa: ela erra o dedo, não a identidade.
+  if (!ok) identify.value?.reset(true);
 }
 
-function press(digit: string) {
-  pin.value = appendPinDigit(pin.value, digit);
+function startChange() {
+  changing.value = true;
 }
-
-function backspace() {
-  pin.value = pin.value.slice(0, -1);
-}
-
-const canSubmit = computed(() =>
-  canSubmitPin(picked.value?.id ?? null, pin.value),
-);
-
-async function submitPin() {
-  if (!canSubmit.value || !picked.value) return;
-  const ok = await unlock({ operatorId: picked.value.id, pin: pin.value });
-  if (!ok) pin.value = "";
-}
-
-// Crachá: vale em qualquer momento da tela de bloqueio, sem depender de onde está o
-// foco. Fica desligado durante a troca de PIN — lá há campos de texto de verdade, e o
-// Enter pertence ao formulário.
-useBadgeScanner((token) => unlock({ badge: token }), {
-  enabled: () => !changing.value && !mustChange.value,
-});
 
 // ── Voluntary change (an operator picked themselves and taps "Trocar PIN") ──
 async function submitVoluntaryChange(payload: {
@@ -76,7 +64,7 @@ async function submitVoluntaryChange(payload: {
   const ok = await changePin({ operatorId: picked.value.id, ...payload });
   if (ok) {
     changing.value = false;
-    pin.value = "";
+    identify.value?.reset(true);
     useSonner.success("PIN atualizado. Entre com o novo PIN.");
   }
 }
@@ -125,89 +113,39 @@ async function submitForcedChange(payload: {
           <h2 class="text-lg font-bold">Identifique-se para operar</h2>
         </div>
 
-        <p class="mb-3 text-sm text-muted-foreground">
-          Passe o crachá no leitor, ou toque no seu nome e digite o PIN.
-        </p>
+        <div
+          v-if="!eligible.length"
+          class="grid place-items-center gap-1.5 rounded-lg border border-dashed py-8 text-center text-muted-foreground"
+        >
+          <Icon name="lucide:user-x" class="size-6" />
+          <p class="text-sm">Nenhum operador habilitado para esta tela.</p>
+        </div>
 
-        <!-- operator picker -->
-        <template v-if="!picked">
-          <div
-            v-if="!eligible.length"
-            class="grid place-items-center gap-1.5 rounded-lg border border-dashed py-8 text-center text-muted-foreground"
-          >
-            <Icon name="lucide:user-x" class="size-6" />
-            <p class="text-sm">Nenhum operador habilitado para esta tela.</p>
-          </div>
-          <div v-else class="grid grid-cols-2 gap-2">
-            <button
-              v-for="op in eligible"
-              :key="op.id"
-              type="button"
-              class="rounded-lg border bg-background px-3 py-3 text-left text-sm font-medium transition hover:bg-accent"
-              @click="pick(op)"
-            >
-              {{ op.name }}
-            </button>
-          </div>
-        </template>
-
-        <!-- PIN pad -->
-        <template v-else>
-          <button
-            type="button"
-            class="mb-2 inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
-            @click="picked = null"
-          >
-            <Icon name="lucide:chevron-left" class="size-4" /> Trocar operador
-          </button>
-          <p class="mb-2 text-sm font-semibold">{{ picked.name }}</p>
-          <div
-            class="mb-3 flex h-10 items-center justify-center rounded-md border bg-background text-3xl tracking-[0.4em] tabular-nums"
-          >
-            {{ "•".repeat(pin.length) || "—" }}
-          </div>
-          <div class="grid grid-cols-3 gap-2">
-            <button
-              v-for="d in ['1', '2', '3', '4', '5', '6', '7', '8', '9']"
-              :key="d"
-              type="button"
-              class="rounded-lg border bg-background py-3 text-lg font-semibold transition hover:bg-accent"
-              @click="press(d)"
-            >
-              {{ d }}
-            </button>
+        <!-- A identificação inteira (crachá, lista, PIN) mora no
+             `OperatorIdentify`, e o diálogo de autorização do gerente usa a
+             MESMA peça. Aqui sobra só o que é do bloqueio: a moldura de tela
+             cheia e os dois fluxos de troca de PIN. -->
+        <OperatorIdentify
+          v-else
+          ref="identify"
+          :people="eligible"
+          :busy="busy"
+          :badge-enabled="!changing && !mustChange"
+          prompt="Quem está operando?"
+          change-label="Trocar operador"
+          @pin="onPin"
+          @badge="(token: string) => unlock({ badge: token })"
+        >
+          <template #footer>
             <button
               type="button"
-              class="rounded-lg border bg-background py-3 text-sm transition hover:bg-accent"
-              @click="backspace"
+              class="inline-flex w-full items-center justify-center gap-1 text-sm text-muted-foreground hover:text-foreground"
+              @click="startChange"
             >
-              <Icon name="lucide:delete" class="mx-auto size-5" />
+              <Icon name="lucide:key-round" class="size-4" /> Trocar meu PIN
             </button>
-            <button
-              type="button"
-              class="rounded-lg border bg-background py-3 text-lg font-semibold transition hover:bg-accent"
-              @click="press('0')"
-            >
-              0
-            </button>
-            <button
-              type="button"
-              :disabled="!canSubmit || busy"
-              class="rounded-lg border border-transparent bg-primary py-3 text-primary-foreground transition hover:bg-primary/90 disabled:opacity-50"
-              @click="submitPin"
-            >
-              <Icon name="lucide:check" class="mx-auto size-5" />
-            </button>
-          </div>
-
-          <button
-            type="button"
-            class="mt-3 inline-flex w-full items-center justify-center gap-1 text-sm text-muted-foreground hover:text-foreground"
-            @click="changing = true"
-          >
-            <Icon name="lucide:key-round" class="size-4" /> Trocar meu PIN
-          </button>
-        </template>
+          </template>
+        </OperatorIdentify>
       </template>
     </div>
   </div>

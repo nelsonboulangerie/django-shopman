@@ -1,12 +1,22 @@
 <script setup lang="ts">
 // Cancelar uma venda fechada é EXCEÇÃO auditada (anti-fraude), não fluxo do
-// operador: confirmação destrutiva + desafio de PIN gerencial num só diálogo —
-// mesma tela focada do PosManagerAuthDialog, com motivo opcional de correção.
+// operador: confirmação destrutiva + desafio gerencial num só diálogo.
+//
+// ⚠️ A identificação vem do `OperatorIdentify` do operator-kit — a MESMA peça da
+// tela de bloqueio e do `PosManagerAuthDialog`. Este era o TERCEIRO componente
+// desenhando lista + teclado por conta própria, e o terceiro em que o crachá do
+// gerente não valia: quem tem o crachá no pescoço digitava o nome à mão.
+//
+// A lista de gerentes é a mesma do `PosManagerAuthDialog`; vazia, cai no campo
+// de nome, que é a única porta quando ninguém foi provisionado.
+import type { POSManagerProjection } from "~/types/pos";
+
 const props = defineProps<{
   open: boolean;
   orderRef: string;
   reason: string;
   maxAgeMinutes?: number;
+  managers?: POSManagerProjection[];
   busy?: boolean;
   error?: string;
 }>();
@@ -15,18 +25,24 @@ const emit = defineEmits<{
   "update:open": [boolean];
   "update:reason": [string];
   confirm: [string, string];
+  confirmBadge: [string];
 }>();
 
-const username = ref("");
-const pin = ref("");
+const identify = ref<{ reset: (keepPicked?: boolean) => void } | null>(null);
+const managers = computed(() => props.managers ?? []);
 
-// Fresh fields each time it opens; clear the PIN when the server rejects it.
-watch(() => props.open, (open) => { if (open) { username.value = ""; pin.value = ""; } });
-watch(() => props.error, (e) => { if (e) pin.value = ""; });
+watch(() => props.open, (open) => {
+  if (open) identify.value?.reset();
+});
 
-function confirm() {
-  if (!username.value.trim() || pin.value.length === 0 || props.busy) return;
-  emit("confirm", username.value.trim(), pin.value);
+function onPin(payload: { username: string; pin: string }) {
+  if (props.busy || !payload.username || !payload.pin) return;
+  emit("confirm", payload.username, payload.pin);
+}
+
+function onBadge(token: string) {
+  if (props.busy) return;
+  emit("confirmBadge", token);
 }
 </script>
 
@@ -51,18 +67,22 @@ function confirm() {
           :model-value="reason"
           placeholder="Motivo do cancelamento (opcional)"
           autocomplete="off"
-          class="h-11 w-full max-w-60 text-center text-base"
+          class="h-11 w-full text-center text-base"
           @update:model-value="(value) => emit('update:reason', String(value))"
         />
-        <UiInput
-          v-model="username"
-          placeholder="Nome do gerente"
-          autocomplete="off"
-          class="h-11 w-full max-w-60 text-center text-base"
+        <OperatorIdentify
+          ref="identify"
+          :people="managers"
+          :busy="busy"
+          :error="error"
+          :badge-enabled="open"
+          allow-typed-name
+          name-label="Nome do gerente"
+          prompt="Quem autoriza?"
+          change-label="Trocar gerente"
+          @pin="onPin"
+          @badge="onBadge"
         />
-        <p v-if="error" class="text-center text-sm font-medium text-destructive" role="alert">{{ error }}</p>
-        <PosPinPad v-model="pin" :disabled="busy" @submit="confirm" />
-        <p class="text-center text-xs text-muted-foreground">Informe o gerente e o PIN, depois confirme.</p>
       </div>
     </UiDialogContent>
   </UiDialog>

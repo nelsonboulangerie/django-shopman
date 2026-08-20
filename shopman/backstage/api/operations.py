@@ -2366,12 +2366,17 @@ class POSCancelRecentSaleView(APIView):
         try:
             # Cancelar venda fechada é exceção auditada: sempre sob PIN de gerente,
             # mesmo dentro da janela otimista do operador.
-            pos_tabs_service.validate_manager_override(
+            aprovador = pos_tabs_service.validate_manager_override(
                 request.data.get("manager_approval"),
                 operator_username=_username(request),
                 action="cancel_recent_sale",
             )
-            approved_by_username = str((request.data.get("manager_approval") or {}).get("username") or "").strip()
+            # Quem assina é quem o VALIDADOR devolveu, não o que veio no corpo.
+            # Reler o payload dava certo enquanto a única porta era username+PIN;
+            # com crachá o username chega vazio e a segunda assinatura sumiria —
+            # exatamente o "validar A e persistir B" que o docstring do validador
+            # descreve como buraco pronto para o primeiro refactor.
+            approved_by_username = aprovador.get_username() if aprovador else ""
             if reason:
                 pos_tabs_service.reopen_recent_order_for_correction(
                     order_ref=order_ref,

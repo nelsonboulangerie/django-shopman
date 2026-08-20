@@ -77,8 +77,14 @@ export function buildUnlockPayload(input: UnlockInput): Record<string, unknown> 
 }
 
 /** Whether the PIN entry is ready to submit (an operator picked + a non-trivial PIN). */
-export function canSubmitPin(operatorId: number | null, pin: string): boolean {
-  return operatorId != null && pin.trim().length >= 4;
+export function canSubmitPin(quem: number | string | null, pin: string): boolean {
+  // `quem` era `operatorId: number`. Virou "identificador de quem", porque a
+  // MESMA peça de identificação serve o operador (id numérico) e o gerente
+  // (username) — e um `number` obrigava o diálogo do gerente a inventar um id
+  // ou a ter um pad próprio, que foi como nasceram os componentes duplicados.
+  if (quem == null) return false;
+  if (typeof quem === "string" && !quem.trim()) return false;
+  return pin.trim().length >= 4;
 }
 
 /** Append a digit to the PIN buffer, capped (keypads shouldn't grow unbounded). */

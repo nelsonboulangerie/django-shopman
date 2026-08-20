@@ -71,8 +71,12 @@
               {{ badge.operator_name }}
             {% endcomponent %}
             <div>{{ badge.barcode_svg|safe }}</div>
+            {# Só as pontas. O crachá fica pendurado à vista do balcão inteiro, e
+               token legível ali é crachá que alguém copia num papel e reproduz
+               depois sem tocar no original. As pontas bastam para reconhecer que
+               é o crachá certo, e que foi reemitido. #}
             {% component "unfold/components/text.html" with class="font-mono text-xs tracking-widest" %}
-              {{ badge.token }}
+              {{ badge.token_masked }}
             {% endcomponent %}
           {% endcomponent %}
         {% endcomponent %}
