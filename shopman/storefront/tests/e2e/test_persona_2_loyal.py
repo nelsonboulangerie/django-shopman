@@ -32,7 +32,10 @@ from . import _journey as J
 
 pytestmark = pytest.mark.django_db
 
-allow_mock_payment = override_settings(SHOPMAN_ALLOW_MOCK_PAYMENT_ADAPTERS=True)
+# O interruptor DA AFORDÂNCIA de teste ("Simular pagamento"), que é pergunta
+# diferente de "este ambiente pode rodar com gateway simulado"
+# (`SHOPMAN_ALLOW_MOCK_PAYMENT_ADAPTERS`). Ver `payment.mock_capture_allowed`.
+allow_mock_payment = override_settings(SHOPMAN_EXPOSE_MOCK_CAPTURE=True)
 
 CROISSANT = "CROIS-01"
 PAO = "PAO-01"

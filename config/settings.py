@@ -979,6 +979,12 @@ SHOPMAN_PAYMENT_ADAPTERS = {
     "external": None,
 }
 SHOPMAN_ALLOW_MOCK_PAYMENT_ADAPTERS = _env_bool("SHOPMAN_ALLOW_MOCK_PAYMENT_ADAPTERS", False)
+# "O cliente pode quitar o próprio pedido com um clique?" — pergunta SEPARADA de
+# "este ambiente pode rodar com gateway simulado?" (a de cima). Enquanto as duas
+# compartilhavam interruptor, a loja pública de staging exibia "Simular pagamento"
+# na tela de Pix de qualquer visitante. Nasce desligado: ligar é decisão de quem
+# conduz uma rodada de testes. Ver `shop/services/payment.py::mock_capture_allowed`.
+SHOPMAN_EXPOSE_MOCK_CAPTURE = _env_bool("SHOPMAN_EXPOSE_MOCK_CAPTURE", False)
 SHOPMAN_MOCK_PIX_AUTO_CONFIRM = _env_bool("SHOPMAN_MOCK_PIX_AUTO_CONFIRM", False)
 SHOPMAN_MOCK_PIX_CONFIRM_DELAY_SECONDS = int(
     os.environ.get("SHOPMAN_MOCK_PIX_CONFIRM_DELAY_SECONDS", "10")

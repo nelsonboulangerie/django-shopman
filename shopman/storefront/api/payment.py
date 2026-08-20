@@ -36,16 +36,19 @@ def _tracking_url(ref: str) -> str:
 PAYMENT_RATE_LIMIT_RETRY_SECONDS = 30
 
 
-def mock_payment_enabled() -> bool:
-    """"Simular pagamento" liberado em DEBUG ou com adapters mock (staging).
+def mock_payment_enabled(method: str | None = None) -> bool:
+    """"Simular pagamento" liberado neste ambiente, para este método?
 
     Delega ao dono da pergunta em ``shop.services.payment`` — o mesmo que a
     projection do acompanhamento consulta para decidir se mostra o botão. Antes
     cada lado tinha a sua fórmula e elas divergiam em staging.
+
+    Sem ``method`` responde só pelo ambiente (porta rápida, antes de ir ao banco);
+    com ``method``, exige também que o gateway daquele método seja o simulado.
     """
     from shopman.shop.services import payment as payment_service
 
-    return payment_service.mock_capture_allowed()
+    return payment_service.mock_capture_allowed(method)
 
 
 def _rate_limited_response() -> Response:
@@ -79,6 +82,14 @@ class OrderPaymentMockConfirmView(APIView):
             order = order_service.get_accessible_order(request, ref)
         except Http404:
             return Response({"detail": "Pedido não encontrado."}, status=404)
+
+        # A porta acima é do ambiente; esta é do MÉTODO. Sem ela, um pedido de
+        # cartão no Stripe test aceitaria captura simulada e gravaria no Payman
+        # um pagamento que o gateway real não tem. Mesmo 404 do gate de ambiente:
+        # a rota simplesmente não existe para este pedido.
+        method = str(((order.data or {}).get("payment") or {}).get("method") or "").lower()
+        if not mock_payment_enabled(method):
+            raise Http404
 
         key = remote_mutations.idempotency_key_from_request(
             request,

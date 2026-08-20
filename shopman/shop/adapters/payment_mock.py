@@ -274,3 +274,35 @@ def get_status(intent_ref: str, **config) -> dict:
             "refunded_q": 0,
             "currency": "",
         }
+
+
+def check_gateway_status(intent_ref: str) -> str:
+    """O "gateway" simulado tem pagamento para este intent? LEITURA, sem efeito.
+
+    Mesmo contrato do ``payment_efi.check_gateway_status``: devolve ``captured``,
+    ``pending``, ``cancelled``, ``not_found`` ou ``error``. Quem pergunta é
+    ``shop.services.payment.verify_gateway_before_timeout_cancel``, antes de
+    auto-cancelar um PIX vencido.
+
+    ``not_found`` e ``error`` são respostas DIFERENTES e não podem ser a mesma:
+    intent que nunca existiu é ausência de pagamento (cancelar é certo), enquanto
+    gateway mudo é incerteza (esperar é certo). Confundir os dois faz a directive
+    de timeout tentar para sempre um pedido que nunca teve cobrança.
+
+    ⚠️ O ponto deste verbo é **não** ser o ``capture()``. O ``capture()`` do mock
+    captura incondicionalmente — é o que se espera de um simulador quando alguém
+    manda capturar de propósito. Mas responder a uma PERGUNTA com ele fazia todo
+    PIX vencido sem pagamento virar "pago". Aqui não há gateway externo, então a
+    única verdade disponível é o estado do próprio intent: ele só está pago se
+    alguém o capturou explicitamente (o botão de simular, ou o auto-confirm).
+    """
+    from shopman.payman import PaymentError, PaymentService
+
+    try:
+        intent = PaymentService.get(intent_ref)
+    except PaymentError:
+        return "not_found"
+
+    if PaymentService.captured_total(intent_ref) > 0:
+        return "captured"
+    return "cancelled" if intent.status == "cancelled" else "pending"
