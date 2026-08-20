@@ -11,6 +11,9 @@ MESMA pessoa contra a mesma credencial, exigem a mesma permissão
 
 from __future__ import annotations
 
+import contextlib
+import logging
+
 import pytest
 from django.contrib.auth import get_user_model
 from django.contrib.auth.models import Permission
@@ -20,6 +23,37 @@ from shopman.doorman.models import PinCredential
 
 from shopman.shop.services.pos import validate_manager_override
 from shopman.shop.services.pos_intent import PosIntentError
+
+LOGGER_POS = "shopman.shop.services.pos"
+
+
+@contextlib.contextmanager
+def _capturando(caplog):
+    """Captura os records mesmo com ``propagate=False`` no logger ``shopman``.
+
+    O `caplog` instala o handler dele na RAIZ, e o `config/settings.py` corta a
+    propagação em `shopman` — então os records param antes e o teste não vê nada
+    (falha como `StopIteration`, que não diz o que aconteceu). Anexar o handler
+    direto no logger captura independente de propagação. Mesma receita de
+    `shop/tests/test_maintenance_worker.py`.
+    """
+    logger = logging.getLogger(LOGGER_POS)
+    with caplog.at_level(logging.INFO, logger=LOGGER_POS):
+        logger.addHandler(caplog.handler)
+        anterior = logger.propagate
+        logger.propagate = False
+        try:
+            yield
+        finally:
+            logger.removeHandler(caplog.handler)
+            logger.propagate = anterior
+
+
+def _linha_de_auditoria(caplog) -> str:
+    linhas = [r.getMessage() for r in caplog.records if "pos_manager_override" in r.getMessage()]
+    assert linhas, "a linha de auditoria não saiu"
+    return linhas[-1]
+
 
 pytestmark = pytest.mark.django_db
 
@@ -98,3 +132,33 @@ def test_cracha_revogado_para_de_autorizar(gerente):
 
     with pytest.raises(PosIntentError):
         validate_manager_override({"badge": token}, operator_username="fran", action="cash_sangria")
+
+
+def test_a_auditoria_registra_QUEM_autorizou_e_por_QUAL_porta(gerente, caplog):
+    """A linha de log existe para responder "quem assinou?", e saía em branco.
+
+    Com crachá o `username` do corpo chega vazio, e o log lia dali em vez de ler
+    o aprovador resolvido. Descoberto lendo a saída de uma verificação no
+    staging: `approved_by=` sem nada depois do sinal de igual.
+    """
+    token = PinCredential.issue_badge(gerente)
+    with _capturando(caplog):
+        validate_manager_override(
+            {"badge": token}, operator_username="fran", action="cash_sangria"
+        )
+
+    linha = _linha_de_auditoria(caplog)
+    assert "approved_by=joyce" in linha
+    # E diz por qual porta: crachá e PIN deixam rastros diferentes numa auditoria.
+    assert "via=badge" in linha
+
+
+def test_a_auditoria_marca_o_PIN_como_pin(gerente, caplog):
+    with _capturando(caplog):
+        validate_manager_override(
+            {"username": "joyce", "pin": "1234"}, operator_username="fran", action="cash_sangria"
+        )
+
+    linha = _linha_de_auditoria(caplog)
+    assert "approved_by=joyce" in linha
+    assert "via=pin" in linha
