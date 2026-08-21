@@ -17,6 +17,7 @@ DEFAULT_RUNTIME_TEST_PATHS = (
     "packages/stockman/shopman/stockman/tests/test_quantity_invariant.py",
     "packages/payman/shopman/payman/tests/test_concurrency.py",
     "packages/craftsman/shopman/craftsman/tests/test_concurrency.py",
+    "shopman/shop/tests/test_concurrent_finish_does_not_double_credit.py",
     "shopman/storefront/tests/test_concurrent_checkout.py",
     "shopman/shop/tests/test_commit_stock_gate.py",
     "shopman/storefront/tests/test_rate_limiting.py",

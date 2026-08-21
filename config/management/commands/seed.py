@@ -26,6 +26,7 @@ from django.contrib.auth.models import User
 from django.core.management import call_command
 from django.core.management.base import BaseCommand, CommandError
 from django.utils import timezone
+from shopman.craftsman import STOCK_CONSUMED_KEY, STOCK_REALIZED_KEY
 from shopman.craftsman.models import Recipe, RecipeItem, WorkOrder, WorkOrderItem
 from shopman.craftsman.models.recipe import normalize_recipe_item_unit
 from shopman.guestman.models import (
@@ -2375,7 +2376,10 @@ class Command(BaseCommand):
                 "ref": "massa-paes-macios",
                 "name": "Massa Pães Macios",
                 "output_sku": "MASSA-PAES-MACIOS",
-                "batch_size": Decimal("10"),
+                # 8,360 kg de insumo (o leite entra por densidade) rendendo 8 kg
+                # de massa: 4,3% de perda de mistura. Era 10, ou seja +19,6% de
+                # massa nascendo do nada — ver `Recipe._validate_mass_balance`.
+                "batch_size": Decimal("8"),
                 "items": [
                     ("FARINHA-T55", Decimal("5.000")),
                     ("LEITE", Decimal("2.000")),
@@ -2389,7 +2393,8 @@ class Command(BaseCommand):
                 "ref": "massa-folhada",
                 "name": "Massa Folhada",
                 "output_sku": "MASSA-FOLHADA",
-                "batch_size": Decimal("10"),
+                # 9,456 kg de insumo → 9 kg de massa (4,8% de perda). Era 10.
+                "batch_size": Decimal("9"),
                 "items": [
                     ("FARINHA-T45", Decimal("4.800")),
                     ("MANTEIGA-FR", Decimal("2.400")),
@@ -2404,7 +2409,9 @@ class Command(BaseCommand):
                 "ref": "massa-brioche",
                 "name": "Massa Brioche",
                 "output_sku": "MASSA-BRIOCHE",
-                "batch_size": Decimal("10"),
+                # 8,040 kg de insumo → 8 kg de massa (0,5% de perda). Era 10,
+                # o pior dos três: +24,4% de massa saindo do nada.
+                "batch_size": Decimal("8"),
                 "items": [
                     ("FARINHA-T45", Decimal("4.000")),
                     ("MANTEIGA-FR", Decimal("2.000")),
@@ -2657,6 +2664,10 @@ class Command(BaseCommand):
             )
         self.stdout.write(f"  ✅ estoque de abertura para {len(INGREDIENT_PROFILES)} insumos")
 
+        def _is_preparation(recipe_ref: str) -> bool:
+            """Pré-preparo (massa, recheio): sai em quilo, não em unidade."""
+            return recipe_ref.startswith(("massa-", "recheio-"))
+
         def _recipe_item_unit(input_sku: str) -> str:
             """A ficha fala na unidade-base do insumo — explícito, não por default.
 
@@ -2687,6 +2698,12 @@ class Command(BaseCommand):
                         "max_started_minutes": self._max_started_minutes_for_recipe(rd["ref"]),
                         "requires_batch_tracking": shelf_life_days is not None,
                         "shelf_life_days": shelf_life_days,
+                        # Pré-preparo não existe no catálogo, então a unidade da
+                        # saída não tem de onde vir sozinha — e adivinhar é o que
+                        # a ADR-024 §R4 proíbe. Declarada aqui, é ela que liga o
+                        # invariante de massa da ficha (`Recipe.clean`) e impede
+                        # que uma massa volte a render mais do que pesa.
+                        **({"output_unit": "kg"} if _is_preparation(rd["ref"]) else {}),
                     },
                 },
             )
@@ -2731,6 +2748,61 @@ class Command(BaseCommand):
             ("madeleine", Decimal("68"), (9, 0), (13, 0)),
         ]
         recipes_by_ref = {r.ref: r for r in Recipe.objects.filter(ref__in=[row[0] for row in production_plan])}
+
+        # ── Mise en place: pré-preparo pronto no depósito ────────────────────
+        #
+        # Dez das dezoito receitas consomem massa ou recheio (baguete, croissant,
+        # ciabatta, campagne, shokupan, kuro-pan, pain au chocolat, animalzinho,
+        # focaccia, folhado), e o seed não estocava NENHUM quilo de massa. O
+        # guardrail de insumo (Buyman WP-B5b, ligado desde o commit 47cc1958)
+        # então reprovava toda fornada dessas dez: o operador abria o modal
+        # "Insumos insuficientes" com o atalho "Concluir mesmo assim" a um toque
+        # e um alerta ``production_stock_short`` de severidade ``error`` era
+        # gravado. Alarme que toca todo dia e está sempre errado vira botão que
+        # o operador aprende a apertar — e no dia em que a manteiga acabar de
+        # verdade ele aperta igual.
+        #
+        # O guardrail estava certo; quem mentia era o seed. Corrigimos aqui, do
+        # lado do dado, e não afrouxando o guardrail (a alternativa de "ignorar
+        # insumo cuja produção está planejada para o mesmo dia" transformaria um
+        # gate de estoque em previsão, e a fornada da tarde deixaria de ser
+        # barrada quando a massa da manhã não saísse).
+        #
+        # A quantidade sai do PRÓPRIO plano do dia, não de um número redondo:
+        # mudar o plano reajusta o mise en place sozinho. Três dias de folga
+        # para a demonstração aguentar refazer fornada sem secar.
+        #
+        # ⚠️ O passo seguinte, que fica para o dono decidir, é o seed PRODUZIR as
+        # massas (WorkOrders de pré-preparo na matriz), em vez de encontrá-las
+        # prontas. Aí o app de produção mostraria as 18 fichas, e não as 11 de
+        # acabado — mudança de narrativa operacional, não de defeito.
+        prep_outputs = {rd["output_sku"] for rd in recipes_data if _is_preparation(rd["ref"])}
+        prep_needs: dict[str, Decimal] = {}
+        for plan_ref, plan_qty, _plan_start, _plan_finish in production_plan:
+            plan_recipe = recipes_by_ref[plan_ref]
+            plan_coefficient = plan_qty / plan_recipe.batch_size
+            for plan_item in plan_recipe.items.filter(is_optional=False):
+                if plan_item.input_sku not in prep_outputs:
+                    continue
+                prep_needs[plan_item.input_sku] = prep_needs.get(
+                    plan_item.input_sku, Decimal("0")
+                ) + plan_item.quantity * plan_coefficient
+
+        PREP_DAYS_OF_COVER = Decimal("3")
+        for prep_sku, per_day in sorted(prep_needs.items()):
+            stock.receive(
+                quantity=(per_day * PREP_DAYS_OF_COVER).quantize(Decimal("0.001")),
+                sku=prep_sku,
+                position=deposito,
+                reason="Mise en place: pré-preparo pronto (seed)",
+                # MAKE e não ADJUST: massa não é saldo de abertura comprado, é
+                # coisa que saiu da masseira. O ledger conta a história certa.
+                kind="make",  # Move.Kind.MAKE
+            )
+        self.stdout.write(
+            f"  ✅ mise en place para {len(prep_needs)} pré-preparos "
+            f"({PREP_DAYS_OF_COVER} dias do plano)"
+        )
 
         def at(day: date, hour_min: tuple[int, int]) -> datetime:
             return datetime.combine(day, time(hour_min[0], hour_min[1]), tzinfo=tz_info)
@@ -2863,6 +2935,26 @@ class Command(BaseCommand):
             work_order.position_ref = position_ref
             work_order.operator_ref = operator_ref
             work_order.meta = {"seed": True, "scope": scope, "_recipe_snapshot": recipe_snapshot(recipe)}
+            if status == WorkOrder.Status.FINISHED:
+                # As DUAS pernas do ledger de estoque, carimbadas na mão.
+                #
+                # O seed grava a fornada FINISHED direto no banco: não passa por
+                # ``CraftExecution.finish``, não emite ``production_changed``, e
+                # portanto nunca escreve o ledger (o estoque vendável do dia vem
+                # pronto de ``_seed_stock``). Sem o carimbo, o
+                # ``sweep_unrealized_production`` lê cada uma dessas fornadas
+                # como "concluída com o ledger aberto" e reexecuta as duas
+                # pernas — o ``maintenance_worker`` roda a cada 5 min, então o
+                # primeiro ciclo depois de um reseed CONSOME os insumos de toda
+                # a história. Aconteceu no staging em 19/08: 280 movimentos de
+                # consumo somando −223,610 kg, 264 deles em dois minutos.
+                #
+                # O carimbo diz a verdade: para esta fornada não há perna
+                # nenhuma a escrever. O piso de data do sweeper é a segunda
+                # trava; esta é a primeira, e é a que fecha a causa.
+                stamped_at = (finish_at or at(target_date, (8, 0))).isoformat()
+                work_order.meta[STOCK_CONSUMED_KEY] = stamped_at
+                work_order.meta[STOCK_REALIZED_KEY] = stamped_at
             work_order.save()
 
             reset_ledger(work_order)

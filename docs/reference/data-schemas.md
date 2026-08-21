@@ -1000,9 +1000,16 @@ Contexto operacional de produção mantido fora do core Craftsman.
 | `formula_basis` | `dict` | `set_planned_quantity` (`shop/services/production.py`) | matriz/auditoria de sugestão | Basis da sugestão aceita (demanda média, committed, margem, `accepted_quantity`). Só quando `source_ref="formula:suggestion"`. |
 | `consolidated_work_order_refs` | `list[string]` | `set_planned_quantity` | auditoria | Refs de WOs planned duplicadas consolidadas nesta. |
 | `_recipe_snapshot` | `dict` | Core (`CraftPlanning.plan`) | Core (`finish`) | BOM congelada no plan — **gerida pelo Core, nunca editar**. |
-| `stock_consumed_at` | `string` (ISO 8601) | `craftsman/contrib/stockman/handlers` (`_handle_finished`) | `sweep_unrealized_production` | Instante em que a perna de INSUMO do ledger fechou. Ausente numa WO `finished` = o consumo não rodou. |
-| `stock_realized_at` | `string` (ISO 8601) | `craftsman/contrib/stockman/handlers` (`_handle_finished`) | `sweep_unrealized_production` | Instante em que a perna de OUTPUT do ledger fechou (realize + write-off de rendimento). Ausente numa WO `finished` = a fornada não entrou no estoque. |
+| `stock_consumed_at` | `string` (ISO 8601) | `craftsman/contrib/stockman/handlers` (`_handle_finished`), `config/.../seed.py` | `sweep_unrealized_production` | Instante em que a perna de INSUMO do ledger fechou. Ausente numa WO `finished` = o consumo não rodou. O `seed` grava `FINISHED` direto no banco (sem passar pelo handler) e por isso **carimba os dois na mão** — sem o carimbo o sweeper reconsumia a história inteira. |
+| `stock_realized_at` | `string` (ISO 8601) | `craftsman/contrib/stockman/handlers` (`_handle_finished`), `config/.../seed.py` | `sweep_unrealized_production` | Instante em que a perna de OUTPUT do ledger fechou (realize + write-off de rendimento). Ausente numa WO `finished` = a fornada não entrou no estoque. |
 
+> **Escrever a perna e carimbar o marcador acontecem sob a MESMA trava**
+> (`_leg_lock`, `select_for_update` na WorkOrder), e o carimbo vem ANTES da
+> escrita, na mesma transação. Ler o marcador fora da trava é atalho, nunca
+> decisão: dois fechamentos simultâneos com a mesma chave de idempotência
+> passavam pela janela entre o COMMIT da WorkOrder e o carimbo e creditavam a
+> vitrine em dobro.
+>
 > **Os dois marcadores acima são o guarda do sweeper, não decoração.**
 > `_handle_finished` **não é idempotente** — o `realize` credita o `actual`
 > cheio, independente do saldo planejado, então re-executar sem consultar o

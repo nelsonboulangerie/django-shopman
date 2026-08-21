@@ -11,6 +11,7 @@ from datetime import date, timedelta
 from decimal import Decimal
 
 from django.core.exceptions import ObjectDoesNotExist
+from django.db import DatabaseError
 from django.utils import timezone
 
 logger = logging.getLogger(__name__)
@@ -247,6 +248,34 @@ def fulfill_hold(hold_id: str, *, qty: Decimal | None = None) -> dict:
             "success": False,
             "error_code": e.code if hasattr(e, "code") else "fulfill_failed",
             "message": str(e),
+        }
+    except DatabaseError as e:
+        # Saldo do sistema ACIMA do físico: o exato caso para o qual o alerta
+        # ``stock_fulfill_failed`` foi escrito ("o estoque do sistema está acima
+        # do físico") — e o único que nunca chegava nele.
+        #
+        # ``Move.save()`` tem um guarda Python que levanta
+        # ``StockError('INSUFFICIENT_QUANTITY')`` quando o saldo fica negativo,
+        # mas ele é CÓDIGO MORTO para o caso negativo: quem estoura primeiro é o
+        # ``CheckConstraint`` ``stk_quant_quantity_non_negative``, no próprio
+        # UPDATE, uma linha antes. O ``IntegrityError`` não é ``StockError``,
+        # atravessava ``fulfill_hold`` e ``stock.fulfill``, e o
+        # ``create_operator_alert(severity="critical")`` nunca executava. Pedido
+        # pago, sem baixa, sem alerta — e o ``sweep_stuck_orders`` re-despachava
+        # a cada 5 min falhando de novo, para sempre.
+        #
+        # ``DatabaseError`` cobre ``IntegrityError`` (é subclasse) e o resto do
+        # que o banco pode recusar aqui. O ``atomic`` de ``StockHolds.fulfill``
+        # já desfez o savepoint quando a exceção chega até este ponto, então
+        # transformar em resultado (e não em exceção) é seguro.
+        logger.error("fulfill_hold: banco recusou a baixa de %s: %s", hold_id, e, exc_info=True)
+        return {
+            "success": False,
+            "error_code": "insufficient_quantity",
+            "message": (
+                "O banco recusou a baixa: o saldo do sistema está acima do "
+                f"físico. ({e})"
+            ),
         }
 
 

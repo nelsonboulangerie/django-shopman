@@ -139,6 +139,40 @@ def test_fulfill_failure_raises_operator_alert(_=None):
     assert ORDER_REF in alert.message
 
 
+def test_fulfill_below_physical_stock_raises_operator_alert(_=None):
+    """O caso que o alerta NOMEIA: saldo do sistema acima do físico.
+
+    O vizinho acima simula corrupção de STATUS do hold (``StockError``, que o
+    adapter já capturava). O drift que o texto do alerta descreve é outro: a
+    vitrine tinha menos do que o hold reservou. Aí quem recusa é o
+    ``CheckConstraint`` ``stk_quant_quantity_non_negative``, com
+    ``IntegrityError`` no UPDATE — antes do guarda Python de ``Move.save()``,
+    que para o caso negativo é código morto. Como ``IntegrityError`` não é
+    ``StockError``, ele atravessava ``fulfill_hold`` inteiro e o
+    ``create_operator_alert(severity="critical")`` NUNCA executava: pedido pago,
+    sem baixa, sem alerta, e o ``sweep_stuck_orders`` re-despachando a cada 5
+    min falhando de novo.
+    """
+    _setup_world(stock_qty=2)
+    _make_session_hold(2)
+    order = _make_order(2)
+    stock_service.hold(order)
+
+    # A vitrine perdeu as unidades por fora (quebra, perda, contagem cega):
+    # o hold segue reservando 2 sobre um saldo que virou 0.
+    quant = Quant.objects.get(sku=SKU, position__ref="vitrine")
+    Move.objects.create(
+        quant=quant, delta=Decimal("-2"), reason="Perda no balcão", kind=Move.Kind.WASTE
+    )
+
+    stock_service.fulfill(order)  # não pode explodir: tem que virar alerta
+
+    alert = OperatorAlert.objects.filter(type="stock_fulfill_failed").first()
+    assert alert is not None
+    assert alert.severity == "critical"
+    assert ORDER_REF in alert.message
+
+
 def test_cancel_after_fulfill_returns_stock_to_ledger(_=None):
     _setup_world(stock_qty=10)
     _make_session_hold(2)
