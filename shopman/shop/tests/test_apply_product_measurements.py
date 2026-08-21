@@ -152,3 +152,41 @@ def test_a_tabela_cobre_o_que_o_pr_280_mudou():
     for sku, valores in MEASUREMENTS.items():
         assert "unit_weight_g" in valores, sku
         assert set(valores) <= {"unit_weight_g", "serves", "approx_dimensions"}, sku
+
+
+def test_acerta_o_contador_de_um_rotulo_manual():
+    """Rótulo manual não é recalculado por nada — o contador ficava na peça velha."""
+    produto = _campagne()
+    produto.nutrition_facts = {
+        "serving_size_g": 100,
+        "servings_per_container": 5,  # descrevia os 500 g de antes
+        "energy_kcal": 235.0,
+        "auto_filled": False,
+    }
+    produto.save(update_fields=["nutrition_facts"])
+
+    _rodar("--apply")
+
+    produto.refresh_from_db()
+    assert produto.unit_weight_g == 300
+    assert produto.nutrition_facts["servings_per_container"] == 3
+    # Só o contador muda: o valor por porção é medido e segue valendo.
+    assert produto.nutrition_facts["energy_kcal"] == 235.0
+    assert produto.nutrition_facts["auto_filled"] is False, "não vira derivado por isso"
+
+
+def test_nao_encosta_no_rotulo_manual_que_ja_esta_certo():
+    produto = _campagne()
+    produto.nutrition_facts = {
+        "serving_size_g": 100,
+        "servings_per_container": 3,
+        "energy_kcal": 235.0,
+        "auto_filled": False,
+    }
+    produto.save(update_fields=["nutrition_facts"])
+
+    saida = _rodar("--apply")
+
+    produto.refresh_from_db()
+    assert produto.nutrition_facts["servings_per_container"] == 3
+    assert "0 rótulo(s)" in saida

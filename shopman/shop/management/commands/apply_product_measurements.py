@@ -21,10 +21,15 @@ Este comando toca **três campos** e nada mais:
 Preço, nome, descrição, estoque, pedido e configuração ficam intocados. Sem
 ``--apply`` ele não grava nada: imprime a tabela do que mudaria e sai.
 
-Depois de gravar, remonta o rótulo dos SKUs alcançados, porque a porção da
-nutrição é rotulada pelo ``unit_weight_g``: mudar o peso sem remontar deixa o
-rótulo descrevendo a peça antiga. Override manual (``auto_filled=False``) é
-respeitado, como no ``fill_nutrition_from_recipe``.
+Depois de gravar, acerta o rótulo dos SKUs alcançados, porque a porção da
+nutrição é rotulada pelo ``unit_weight_g``: mudar o peso sem acertar o rótulo o
+deixa descrevendo a peça antiga.
+
+- Rótulo derivado da ficha → remontado por ``fill_nutrition_from_recipe``.
+- Rótulo **manual** (``auto_filled=False``) → nada o recalcula, então aqui só o
+  contador ``servings_per_container`` é reacertado pelo peso novo. Os valores
+  por porção são medidos e continuam valendo: 100 g de campagne têm as mesmas
+  calorias num pão de 300 g ou de 500 g.
 
 ⚠️ A tabela abaixo é uma CÓPIA do que o `seed` declara, e cópia diverge. O que
 segura as duas juntas é
@@ -64,6 +69,34 @@ MEASUREMENTS: dict[str, dict[str, object]] = {
 }
 
 _METADATA_FIELDS = ("serves", "approx_dimensions")
+
+
+def _corrigir_porcoes_do_rotulo_manual(product) -> bool:
+    """Reacerta ``servings_per_container`` num rótulo escrito à mão.
+
+    Rótulo manual (``auto_filled=False``) não é recalculado por nada, então
+    mudar o peso da peça o deixa descrevendo a peça antiga: o campagne caiu para
+    300 g e seguia anunciando 5 porções de 100 g, ou seja meio quilo de pão.
+
+    Só o CONTADOR muda. Os valores por porção são medidos e continuam válidos —
+    100 g de campagne têm as mesmas calorias num pão de 300 g ou de 500 g.
+    """
+    facts = product.nutrition_facts
+    if not isinstance(facts, dict) or facts.get("auto_filled") is not False:
+        return False
+
+    porcao = facts.get("serving_size_g") or 0
+    peso = product.unit_weight_g or 0
+    if not porcao or not peso:
+        return False
+
+    correto = max(1, round(peso / porcao))
+    if facts.get("servings_per_container") == correto:
+        return False
+
+    product.nutrition_facts = {**facts, "servings_per_container": correto}
+    product.save(update_fields=["nutrition_facts"])
+    return True
 
 
 class Command(BaseCommand):
@@ -149,6 +182,8 @@ class Command(BaseCommand):
             # A porção do rótulo é rotulada pelo peso: sem remontar, ela passa a
             # descrever uma peça que não existe mais.
             if fill_nutrition_from_recipe(product):
+                rotulos += 1
+            elif _corrigir_porcoes_do_rotulo_manual(product):
                 rotulos += 1
 
         self.stdout.write(self.style.SUCCESS(
