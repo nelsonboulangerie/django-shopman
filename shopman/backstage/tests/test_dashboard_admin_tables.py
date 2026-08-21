@@ -1,5 +1,7 @@
 from types import SimpleNamespace
 
+from django.test import RequestFactory
+
 from shopman.backstage.admin import dashboard
 
 
@@ -34,7 +36,9 @@ def test_omotenashi_health_handles_copy_model_errors():
     assert "recent_changes" in health
 
 
-def test_dashboard_callback_populates_context(monkeypatch):
+def test_dashboard_callback_populates_context(monkeypatch, db, django_user_model):
+    """A lista INTEIRA é a do superusuário: os cards agora seguem a permissão de
+    cada tela (quem alcança o quê está em ``test_admin_dashboard_permissions``)."""
     proj = SimpleNamespace(
         kpi_stock_alerts=0,
         kpi_operator_alerts=0,
@@ -46,10 +50,12 @@ def test_dashboard_callback_populates_context(monkeypatch):
         recent_ratings=[],
     )
     monkeypatch.setattr(dashboard, "build_dashboard", lambda: proj)
-    monkeypatch.setattr(dashboard, "reverse", lambda name: f"/{name}/")
     monkeypatch.setattr(dashboard, "_omotenashi_health", lambda: {"active_overrides": 2})
 
-    context = dashboard.dashboard_callback(None, {})
+    request = RequestFactory().get("/admin/")
+    request.user = django_user_model.objects.create_superuser("root-dashboard", password="x")
+
+    context = dashboard.dashboard_callback(request, {})
 
     assert context["kpi_stock_alerts"] == 0
     assert context["table_estoque_baixo"]["rows"] == []
