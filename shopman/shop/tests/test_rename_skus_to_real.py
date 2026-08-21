@@ -83,13 +83,13 @@ class TestExecucao:
         assert Product.objects.filter(sku="CT").exists()
 
     @pytest.mark.django_db
-    def test_retido_recusa_com_motivo(self):
+    def test_sku_fora_do_mapa_recusa(self):
+        # RETIDOS ficou vazio quando os pacotes viraram bundle (19/08). O
+        # caminho de recusa continua valendo para qualquer nome desconhecido.
         erro = StringIO()
-        call_command("rename_skus_to_real", "--only", "PAO-HOTDOG", stderr=erro)
+        call_command("rename_skus_to_real", "--only", "NAO-EXISTE", stderr=erro)
 
-        saida = erro.getvalue()
-        assert "retido" in saida
-        assert "pacote de 4" in saida
+        assert "não está no mapa" in erro.getvalue()
 
     @pytest.mark.django_db
     def test_catalogo_vazio_nao_e_erro(self):

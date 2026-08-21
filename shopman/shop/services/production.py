@@ -360,6 +360,14 @@ def _ensure_stock_ledger_closed(work_order) -> None:
     Os marcadores por perna dizem qual dos dois casos é, e são eles que
     guardam a reexecução (sem guarda, refazer credita a vitrine em dobro).
     No caminho feliz isto é uma consulta e nada mais.
+
+    ⚠️ A leitura daqui é um ATALHO, não a decisão. Ela roda sem trava, e num
+    fechamento simultâneo (dois quiosques, mesma chave de idempotência) pode
+    pegar a fornada no instante entre o COMMIT da WorkOrder e o commit da perna
+    de estoque — foi exatamente assim que 24 madeleines viraram 48. Quem decide
+    de verdade é o ``_leg_lock`` dentro do handler: ele trava a linha, relê o
+    marcador do banco e desiste se a perna já foi escrita. Aqui, na dúvida,
+    chamamos; lá, sob trava, o handler não repete.
     """
     from shopman.craftsman import realize_finished_production, stock_legs_complete
 
@@ -367,7 +375,7 @@ def _ensure_stock_ledger_closed(work_order) -> None:
     if stock_legs_complete(work_order):
         return
     logger.warning(
-        "production.finish: ledger de estoque aberto em %s — fechando agora",
+        "production.finish: ledger de estoque não confirmado em %s — reconferindo sob trava",
         work_order.ref,
     )
     realize_finished_production(work_order)

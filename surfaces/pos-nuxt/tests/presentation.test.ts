@@ -54,7 +54,7 @@ import {
   requiresOpenShiftForSale,
   sessionScreenState,
 } from "../app/presentation/cash";
-import { canAuthorize, managerAuthReason } from "../app/presentation/managerAuth";
+import { managerAuthReason } from "../app/presentation/managerAuth";
 import {
   availableMoveModes,
   buildMovePayload,
@@ -606,12 +606,6 @@ describe("presentation/managerAuth — o que se assina e quem assina", () => {
 
   // Sem username o servidor não sabe contra QUAL credencial validar o PIN, e a
   // assinatura em `approved_by` sairia da pessoa errada.
-  it("blocks the authorization without both an identified manager and a PIN", () => {
-    expect(canAuthorize("marina", "1234")).toBe(true);
-    expect(canAuthorize("", "1234")).toBe(false);
-    expect(canAuthorize("   ", "1234")).toBe(false);
-    expect(canAuthorize("marina", "")).toBe(false);
-  });
 });
 
 describe("presentation/moveLines — move modes, gate & payload", () => {

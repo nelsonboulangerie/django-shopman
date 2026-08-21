@@ -20,6 +20,7 @@ Registered by CraftsmanStockmanConfig.ready().
 from __future__ import annotations
 
 import logging
+from contextlib import contextmanager
 
 from django.dispatch import receiver
 from shopman.craftsman.signals import production_changed
@@ -103,7 +104,11 @@ def _leg_done(work_order, key: str) -> bool:
 
 
 def _stamp_leg(work_order, key: str) -> None:
-    """Carimba a perna concluída, durável, sem tocar em mais nada.
+    """Carimba a perna, durável, sem tocar em mais nada.
+
+    Chamada SEMPRE antes de escrever a perna, e sempre sob o lock de
+    :func:`_leg_lock` — ver o comentário de lá. O carimbo e a escrita da perna
+    ficam na mesma transação: se a perna estourar, o carimbo volta atrás junto.
 
     ``update()`` de propósito: ``save()`` dispararia ``auto_now`` no
     ``updated_at`` (que as telas de operação usam como "mexeu agora") e
@@ -120,6 +125,49 @@ def _stamp_leg(work_order, key: str) -> None:
     meta[key] = timezone.now().isoformat()
     work_order.meta = meta
     WorkOrder.objects.filter(pk=work_order.pk).update(meta=meta)
+
+
+@contextmanager
+def _leg_lock(work_order):
+    """Trava a linha da WorkOrder e devolve o ``meta`` FRESCO do banco.
+
+    O defeito que isto fecha: dois toques simultâneos no FINALIZAR creditavam a
+    vitrine em dobro. O ``production_changed`` sai FORA do ``atomic`` do
+    ``CraftExecution.finish``, e as pernas carimbavam o marcador DEPOIS de
+    escrever — entre o COMMIT da WorkOrder e o carimbo havia uma janela em que
+    ``stock_legs_complete()`` respondia falso. A segunda requisição passava pela
+    idempotência (o core devolve a WO existente), caía em
+    ``_ensure_stock_ledger_closed``, lia o ledger como "aberto" e reexecutava as
+    duas pernas. Medido com dois quiosques reais: 24 madeleines viraram 48 na
+    vitrine, e a farinha baixou 1,0 kg onde a receita pede 0,5.
+
+    O marcador sozinho não bastava porque a leitura e a escrita dele eram dois
+    atos separados. Aqui viram um só: quem chega segundo BLOQUEIA no
+    ``select_for_update`` até o primeiro commitar, e então lê o carimbo já
+    gravado e desiste. Ler o ``meta`` do banco (e não do objeto em memória, que
+    pode ser um snapshot de antes do commit alheio) é parte da trava.
+
+    Uma transação por PERNA, e não uma para as duas, porque a falha típica é
+    parcial: o insumo baixa e o output estoura. Manter as pernas separadas
+    preserva o estado "insumo consumido, vitrine zerada" que o
+    ``sweep_unrealized_production`` sabe consertar sem consumir o insumo de novo.
+
+    Em banco sem ``SELECT FOR UPDATE`` (SQLite de teste local) o lock é no-op —
+    a serialização real vale onde a loja roda, no PostgreSQL.
+    """
+    from django.db import transaction
+    from shopman.craftsman.models import WorkOrder
+
+    with transaction.atomic():
+        fresh = (
+            WorkOrder.objects.select_for_update()
+            .filter(pk=work_order.pk)
+            .values_list("meta", flat=True)
+            .first()
+        )
+        if fresh is not None:
+            work_order.meta = fresh
+        yield
 
 
 def stock_legs_complete(work_order) -> bool:
@@ -536,10 +584,19 @@ def _handle_finished(work_order, product_ref, date):
         return
 
     # Ingredients-out leg — independent of planned-output target_date.
-    if not _leg_done(work_order, STOCK_CONSUMED_KEY):
-        _consume_materials(work_order)
-        _stamp_leg(work_order, STOCK_CONSUMED_KEY)
+    # Carimbo ANTES de escrever, sob o lock: quem chega no meio espera, lê o
+    # carimbo e desiste. Mesma transação, então uma falha desfaz as duas coisas.
+    with _leg_lock(work_order):
+        if not _leg_done(work_order, STOCK_CONSUMED_KEY):
+            _stamp_leg(work_order, STOCK_CONSUMED_KEY)
+            _consume_materials(work_order)
 
+    with _leg_lock(work_order):
+        _realize_output_leg(work_order, product_ref, date)
+
+
+def _realize_output_leg(work_order, product_ref, date):
+    """Perna de SAÍDA: realiza o planejado na vitrine. Roda sob ``_leg_lock``."""
     if _leg_done(work_order, STOCK_REALIZED_KEY):
         return
 
@@ -607,6 +664,10 @@ def _handle_finished(work_order, product_ref, date):
             _stamp_leg(work_order, STOCK_REALIZED_KEY)
             return
 
+        # Carimbo ANTES do realize, pelo mesmo motivo da perna de insumo: a
+        # janela entre escrever e carimbar era o que deixava um segundo
+        # fechamento simultâneo creditar a vitrine de novo.
+        _stamp_leg(work_order, STOCK_REALIZED_KEY)
         StockPlanning.realize(
             product=type("P", (), {"sku": product_ref})(),
             target_date=date,
@@ -626,7 +687,6 @@ def _handle_finished(work_order, product_ref, date):
         )
 
         _write_off_yield_shortfall(work_order, product_ref, date, finished_qty)
-        _stamp_leg(work_order, STOCK_REALIZED_KEY)
     except Exception:
         # "Insumo consumido e NADA realizado" não cabe numa linha de log. Quando
         # esta perna falha a WorkOrder já está FINISHED (o send é pós-commit), a

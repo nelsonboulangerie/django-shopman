@@ -36,14 +36,3 @@ export function managerAuthReason(input: ManagerAuthReasonInput): string {
   return "Esta operação precisa da autorização de um gerente.";
 }
 
-/**
- * Se dá para enviar a autorização: um gerente identificado e algum PIN digitado.
- *
- * O `username` é obrigatório porque o servidor resolve a pessoa por ele e valida
- * o PIN contra a credencial DELA. Sem nome, dois gerentes com o mesmo PIN de
- * quatro dígitos fariam o sistema gravar a assinatura errada em `approved_by` —
- * e a assinatura é o ponto todo da sangria.
- */
-export function canAuthorize(username: string, pin: string): boolean {
-  return Boolean(username.trim()) && pin.length > 0;
-}

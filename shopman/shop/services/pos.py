@@ -1256,6 +1256,34 @@ def _verify_manager_pin(username: str, pin: str):
     return user if credential.verify(pin) else None
 
 
+def _verify_manager_badge(badge: str):
+    """Resolve o gerente pelo CRACHÁ, com a mesma permissão que o PIN exige.
+
+    A sangria e o pedido de troco são a hora em que o gerente mais aparece no
+    balcão, e era justamente onde o crachá não valia: o desafio só aceitava
+    username + PIN, então quem tinha o crachá no pescoço digitava mesmo assim.
+
+    ⚠️ Crachá e PIN são o mesmo nível de prova aqui, e isso é decisão, não
+    descuido. Os dois identificam a MESMA pessoa contra a mesma credencial
+    (`PinCredential`), os dois exigem `cashman.adjust_shift`, e a assinatura que
+    vai para `Entry.approved_by` é a mesma. O crachá é posse, o PIN é
+    conhecimento; num balcão onde o gerente é chamado com a fila andando, exigir
+    os dois trocaria segurança real por atrito — e atrito é o que faz o balcão
+    inventar jeito de não chamar ninguém.
+
+    ⚠️ Resolve pelo `doorman` direto, e não pelo helper equivalente do
+    `backstage`: o `shop` não importa superfície (regra de dependência do
+    projeto, com teste que trava). É a mesma escolha que o `_verify_manager_pin`
+    aqui do lado já fazia, pelo mesmo motivo.
+    """
+    from shopman.doorman.models import PinCredential
+
+    user = PinCredential.resolve_by_badge(badge)
+    if user is None or not user.is_active or not user.is_staff:
+        return None
+    return user if user.has_perm("cashman.adjust_shift") else None
+
+
 def _approval_reasons(payload: dict, *, discount_q: int, threshold_q: int) -> list[str]:
     """Os gatilhos que chamaram o gerente, na ordem em que a tela deve contá-los.
 
@@ -1325,15 +1353,18 @@ def validate_manager_override(approval: dict | None, *, operator_username: str, 
     approval = approval or {}
     username = str(approval.get("username") or "").strip()
     pin = str(approval.get("pin") or "")
-    if not username or not pin:
+    # O crachá é a segunda porta do MESMO desafio. Ver `_verify_manager_badge`.
+    badge = str(approval.get("badge") or "").strip()
+
+    if not badge and (not username or not pin):
         raise PosIntentError(
             code="manager_approval_required",
             message="Esta operação exige aprovação gerencial.",
             field="manager_approval",
             focus="approval",
-            recovery="Peça a um gerente autorizado para aprovar com o PIN.",
+            recovery="Peça a um gerente autorizado para aprovar com o crachá ou o PIN.",
         )
-    approver = _verify_manager_pin(username, pin)
+    approver = _verify_manager_badge(badge) if badge else _verify_manager_pin(username, pin)
     if approver is None:
         raise PosIntentError(
             code="manager_approval_invalid",
@@ -1342,11 +1373,16 @@ def validate_manager_override(approval: dict | None, *, operator_username: str, 
             focus="approval",
             recovery="Revise o gerente e o PIN.",
         )
+    # Quem assina é o APROVADOR resolvido, não o que veio no corpo: com crachá o
+    # `username` chega vazio, e a linha de auditoria saía `approved_by=` em
+    # branco — justamente a informação pela qual ela existe. Mesmo erro que o
+    # cancelamento tinha ao persistir a assinatura; este ficou no log e passou.
     logger.info(
-        "pos_manager_override action=%s operator=%s approved_by=%s",
+        "pos_manager_override action=%s operator=%s approved_by=%s via=%s",
         action,
         operator_username,
-        username,
+        approver.get_username(),
+        "badge" if badge else "pin",
     )
     return approver
 

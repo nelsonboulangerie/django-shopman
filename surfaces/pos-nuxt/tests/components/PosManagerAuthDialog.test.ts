@@ -91,10 +91,13 @@ describe("PosManagerAuthDialog — quem assina vem da lista", () => {
     input!.dispatchEvent(new Event("input"));
     await wrapper.vm.$nextTick();
 
-    await typePin(wrapper, "99");
+    // PIN de 4 dígitos: é o mínimo do servidor (`DOORMAN.PIN_MIN_LENGTH`), e a
+    // peça compartilhada passou a cobrar o mesmo. A regra antiga do diálogo
+    // aceitava qualquer tamanho e mandava o gerente tomar recusa garantida.
+    await typePin(wrapper, "9999");
     await confirmPin(wrapper);
 
-    expect(wrapper.emitted("authorize")?.[0]).toEqual(["marina", "99"]);
+    expect(wrapper.emitted("authorize")?.[0]).toEqual(["marina", "9999"]);
   });
 
   // PIN errado limpa o PIN e SÓ o PIN. Reescolher o próprio nome a cada erro de

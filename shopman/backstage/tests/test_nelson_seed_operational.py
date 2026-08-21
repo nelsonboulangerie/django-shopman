@@ -10,13 +10,15 @@ import pytest
 from django.core.management import call_command
 from django.core.management.base import CommandError
 from django.test import override_settings
-from shopman.craftsman import craft
+from shopman.craftsman import STOCK_CONSUMED_KEY, STOCK_REALIZED_KEY, craft
 from shopman.craftsman.models import Recipe, RecipeItem, WorkOrder
+from shopman.craftsman.models.recipe import _item_mass_in_kg
 from shopman.guestman.models import Customer
 from shopman.offerman.models import Product
 from shopman.orderman.models import IdempotencyKey, Order, OrderItem, Session
 from shopman.payman.models import PaymentIntent
-from shopman.stockman.models import Batch, Position
+from shopman.stockman.models import Batch, Move, Position
+from shopman.utils import units
 
 from shopman.backstage.models import (
     KDSInstance,
@@ -26,6 +28,7 @@ from shopman.backstage.models import (
     POSTab,
 )
 from shopman.backstage.services.omotenashi_qa import build_omotenashi_qa_report
+from shopman.backstage.services.production import check_finish_materials
 
 
 @pytest.mark.django_db
@@ -147,6 +150,67 @@ def test_nelson_seed_populates_production_history_alerts_and_batches(monkeypatch
     assert suggestions[0].quantity > 0
 
     assert WorkOrder.objects.filter(source_ref__startswith="seed:production:today:").exists()
+
+    # Toda fornada que o seed grava como FINISHED tem as duas pernas do ledger
+    # de estoque CARIMBADAS. Ela não passou por ``CraftExecution.finish``, então
+    # não há perna nenhuma a escrever — e sem o carimbo o
+    # ``sweep_unrealized_production`` lê a história inteira como "ledger aberto".
+    # No staging de 19/08 isso reconsumiu −223,610 kg de insumo em dois minutos,
+    # 264 movimentos em dois minutos, sem um único alerta.
+    open_ledger = [
+        wo.ref
+        for wo in WorkOrder.objects.filter(status=WorkOrder.Status.FINISHED)
+        if not (wo.meta or {}).get(STOCK_CONSUMED_KEY)
+        or not (wo.meta or {}).get(STOCK_REALIZED_KEY)
+    ]
+    assert not open_ledger, f"fornadas do seed sem marcador de ledger: {open_ledger[:5]}"
+
+    # E a prova pelo comportamento: o ciclo do ``maintenance_worker`` logo após
+    # um reseed não pode mover um grama de insumo antigo.
+    flour_before = stock_service.available("FARINHA-T65")
+    moves_before = Move.objects.count()
+    call_command("sweep_unrealized_production", "--minutes", "1", stdout=StringIO())
+    assert stock_service.available("FARINHA-T65") == flour_before
+    assert Move.objects.count() == moves_before
+
+    # Mise en place: as dez receitas que consomem massa/recheio precisam achar
+    # o pré-preparo PRONTO. Sem ele o guardrail de insumo (Buyman WP-B5b)
+    # reprovava toda fornada dessas dez, e o operador via "Insumos
+    # insuficientes" com o atalho "Concluir mesmo assim" a um toque, todo dia.
+    # Alarme sempre errado vira botão que se aprende a apertar.
+    for prep_sku in ("MASSA-FOLHADA", "MASSA-BRIOCHE", "MASSA-PAES-MACIOS", "RECHEIO-MACA"):
+        assert stock_service.available(prep_sku) > 0, f"{prep_sku} sem estoque"
+    crying = sorted(
+        {
+            wo.recipe.ref
+            for wo in WorkOrder.objects.filter(
+                source_ref__startswith="seed:production:"
+            ).select_related("recipe")
+            if check_finish_materials(wo)
+        }
+    )
+    assert not crying, f"fornadas do seed com insumo faltando: {crying}"
+
+    # E as fichas fecham a conta de massa: 10 kg de massa não saem de 8,04 kg
+    # de ingredientes. ``Recipe.clean`` recusa daqui em diante; isto confere o
+    # dado que o seed grava.
+    creating_matter = []
+    for sheet in Recipe.objects.all():
+        output_unit = sheet._declared_output_unit()
+        if units.dimension(output_unit) != units.MASS:
+            continue
+        total = Decimal("0")
+        comparable = True
+        for sheet_item in sheet.items.filter(is_optional=False):
+            mass = _item_mass_in_kg(sheet_item)
+            if mass is None:
+                comparable = False
+                break
+            total += mass
+        if comparable and units.convert(sheet.batch_size, output_unit, "kg") > total:
+            creating_matter.append(sheet.ref)
+    assert not creating_matter, f"fichas que criam matéria do nada: {creating_matter}"
+
     assert Batch.objects.filter(sku="CT").exists()
     assert set(Position.objects.filter(ref__in=["massa", "molde", "forno"]).values_list("ref", flat=True)) == {
         "massa",

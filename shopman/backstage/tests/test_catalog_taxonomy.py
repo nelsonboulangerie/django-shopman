@@ -40,7 +40,7 @@ def old_taxonomy(db):
 
     layout = {
         "balcao": ["FE", "TB", "MIB", "PH",
-                   "BRIOCHE-BURGER", "PAO-HOTDOG", "COMBO-PETIT-DEJ"],
+                   "BBB2", "PHO4", "COMBO-PETIT-DEJ"],
         "rusticos": ["BF", "CGO"],
         "finos": ["CT"],
         "despensa": ["GL", "GR"],
@@ -71,7 +71,7 @@ def test_the_seven_land_where_the_owner_put_them(old_taxonomy):
     _run()
     layout = _layout()
     assert {"FE", "TB", "MIB", "PH"} <= layout["rusticos"]
-    assert {"BRIOCHE-BURGER", "PAO-HOTDOG"} <= layout["finos"]
+    assert {"BBB2", "PHO4"} <= layout["finos"]
     assert layout["combos"] == {"COMBO-PETIT-DEJ"}
 
 

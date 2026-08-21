@@ -122,6 +122,73 @@ class Recipe(models.Model):
                     raise ValidationError(
                         {"steps": _("Etapa %(step)s deve ser uma string não vazia.") % {"step": i + 1}}
                     )
+        self._validate_mass_balance()
+
+    def _validate_mass_balance(self) -> None:
+        """Misturar massa não cria matéria.
+
+        Quando a SAÍDA da ficha é medida em massa, ``batch_size`` não pode passar
+        da soma dos insumos: 10 kg de massa não saem de 8,04 kg de ingredientes.
+        Duas fichas do catálogo semeado faziam exatamente isso (brioche +24,4%,
+        pães macios +19,6%, folhada +5,8%), e o efeito não era cosmético: o
+        ``CraftExecution.finish`` escala o BOM por ``quantity / batch_size`` e o
+        handler do ledger usa o MESMO coeficiente, então o sistema debitava ~20%
+        menos insumo do que o padeiro usava, todo dia, e a sugestão de compra
+        nascia curta na mesma proporção.
+
+        Perda é esperada e passa: o forno e a masseira tiram água e deixam massa
+        na bacia. O que a física proíbe é o sinal contrário.
+
+        Só opina quando **dá para comparar**:
+
+        * a unidade da saída precisa estar DECLARADA — do catálogo, quando o SKU
+          é um produto, ou de ``meta["output_unit"]``, para pré-preparo que não
+          existe no catálogo. Deduzir a unidade da saída seria adivinhar, e a
+          ADR-024 §R4 manda recusar em vez de adivinhar;
+        * todo insumo precisa virar massa. Volume vira pela densidade declarada
+          em ``RecipeItem.meta["density_g_per_ml"]`` (a mesma ponte da nutrição);
+          um único insumo em contagem, ou em volume sem densidade, torna a ficha
+          incomparável e o invariante se cala.
+
+        Roda só com ``pk``: no ``create`` os itens ainda não existem, e somar
+        zero insumo reprovaria toda ficha nova.
+        """
+        if not self.pk or self.batch_size is None:
+            return
+
+        output_unit = self._declared_output_unit()
+        if units.dimension(output_unit) != units.MASS:
+            return
+
+        total = Decimal("0")
+        has_items = False
+        for item in self.items.filter(is_optional=False):
+            mass = _item_mass_in_kg(item)
+            if mass is None:
+                return
+            total += mass
+            has_items = True
+        if not has_items:
+            return
+
+        try:
+            batch_kg = units.convert(self.batch_size, output_unit, "kg")
+        except units.UnitError:
+            return
+        if batch_kg > total:
+            raise ValidationError({
+                "batch_size": _(
+                    "O rendimento (%(batch)s kg) é maior que a soma dos insumos "
+                    "(%(total)s kg). Misturar não cria matéria: confira a ficha."
+                ) % {"batch": f"{batch_kg:.3f}", "total": f"{total:.3f}"}
+            })
+
+    def _declared_output_unit(self) -> str:
+        """Unidade em que a saída é medida, declarada — nunca deduzida."""
+        catalog_unit = normalize_recipe_item_unit(_catalog_unit_for_sku(self.output_sku))
+        if catalog_unit:
+            return catalog_unit
+        return normalize_recipe_item_unit((self.meta or {}).get("output_unit"))
 
     def save(self, *args, **kwargs):
         self.full_clean()
@@ -242,6 +309,28 @@ class RecipeItem(models.Model):
     def __str__(self) -> str:
         unit_str = f" {self.unit}" if self.unit else ""
         return f"{self.input_sku} ({self.quantity}{unit_str})"
+
+
+def _item_mass_in_kg(item) -> Decimal | None:
+    """Massa do insumo em kg, ou ``None`` quando não dá para saber.
+
+    Volume atravessa pela densidade declarada no próprio item (ADR-024: a ponte
+    entre dimensões é declarada por insumo). Contagem não atravessa: "6 ovos"
+    só vira grama com um peso por unidade, que é conversão declarada no Buyman.
+    """
+    dimension = units.dimension(item.unit)
+    if dimension == units.MASS:
+        return units.convert(item.quantity, item.unit, "kg")
+    if dimension == units.VOLUME:
+        density = (item.meta or {}).get("density_g_per_ml")
+        try:
+            density = Decimal(str(density))
+        except (TypeError, ArithmeticError, ValueError):
+            return None
+        if density <= 0:
+            return None
+        return units.convert(item.quantity, item.unit, "ml") * density / Decimal("1000")
+    return None
 
 
 def normalize_recipe_item_unit(value: str | None) -> str:
