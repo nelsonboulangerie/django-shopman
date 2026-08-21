@@ -464,7 +464,13 @@ def check_gateway_status(intent_ref: str) -> str:
     """
     Check status directly at the Efi gateway (bypasses DB).
 
-    Used as safety check before cancelling expired intents.
+    Used as safety check before cancelling expired intents — é o verbo de LEITURA
+    que ``shop.services.payment.verify_gateway_before_timeout_cancel`` consulta.
+
+    Devolve ``captured``, ``pending``, ``cancelled``, ``not_found`` ou ``error``.
+    ``not_found`` e ``error`` são respostas diferentes de propósito: intent que
+    nunca existiu é ausência de pagamento (cancelar é certo), gateway mudo é
+    incerteza (esperar é certo).
     """
     from shopman.payman import PaymentError, PaymentService
 
@@ -472,7 +478,7 @@ def check_gateway_status(intent_ref: str) -> str:
         intent = PaymentService.get(intent_ref)
         txid = intent.gateway_id
     except PaymentError:
-        return "error"
+        return "not_found"
 
     try:
         cob = _request("GET", f"/v2/cob/{txid}")

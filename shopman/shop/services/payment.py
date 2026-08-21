@@ -934,15 +934,89 @@ def verify_gateway_before_timeout_cancel(order) -> str:
     if adapter is None:
         return "unpaid"
 
+    # ── A pergunta é de LEITURA, e a resposta não pode ter efeito colateral ──
+    #
+    # Aqui se perguntava com ``adapter.capture()``, e capture é verbo de escrita.
+    # No adapter da Efí ele é "confere no gateway e, se CONCLUIDA, reconcilia" —
+    # inofensivo. No ``payment_mock`` ele captura INCONDICIONALMENTE e devolve
+    # sucesso. Com o mock configurado (que é o caso do staging), todo PIX que
+    # vencia sem ninguém pagar era promovido a "pago" aqui: estoque baixado,
+    # cozinha acionada, cliente avisado. E o gatilho não era nem o worker — era o
+    # próprio cliente recarregando o acompanhamento, que chama
+    # ``resolve_timeouts_if_due`` a cada GET.
+    #
+    # ``check_gateway_status`` é o verbo de leitura, e o docstring dele no adapter
+    # da Efí já dizia para que serve: "safety check before cancelling expired
+    # intents". Ele existia e não estava sendo usado.
+    check_gateway_status = getattr(adapter, "check_gateway_status", None)
+    if check_gateway_status is None:
+        # Adapter sem verbo de leitura não autoriza captura por dedução: inventar
+        # pagamento é pior do que adiar o cancelamento por mais uma rodada.
+        logger.warning(
+            "payment.timeout_gateway_check_unsupported order=%s adapter=%s",
+            order.ref,
+            getattr(adapter, "__name__", adapter),
+        )
+        return "indeterminate"
+
     try:
-        result = adapter.capture(intent_ref)
+        gateway_state = str(check_gateway_status(intent_ref) or "")
     except Exception:
         logger.warning("payment.timeout_gateway_check_failed order=%s", order.ref, exc_info=True)
         return "indeterminate"
 
-    if not result.success:
-        # "error" = transporte/gateway indisponível — estado incerto, adiar.
-        return "indeterminate" if result.error_code == "error" else "unpaid"
+    if gateway_state != "captured":
+        # "pending"/"cancelled": o gateway respondeu e não há pagamento.
+        # "not_found": o intent nunca existiu, então também não há pagamento —
+        # e isto NÃO é incerteza, senão a directive de timeout tenta para sempre
+        # um pedido que nunca teve cobrança.
+        # Qualquer outra coisa ("error", status novo do provedor) é estado
+        # incerto, e incerto espera.
+        return (
+            "unpaid"
+            if gateway_state in {"pending", "cancelled", "not_found"}
+            else "indeterminate"
+        )
+
+    # Só AQUI, já sabendo que o gateway tem captura, é que se escreve.
+    #
+    # E antes de escrever, perguntar se já não está escrito: o Payman admite UMA
+    # captura por intent, então recapturar um intent já reconciliado devolve
+    # ``invalid_transition``. Como o código lia qualquer falha que não fosse
+    # "error" como "não pago", um pedido efetivamente PAGO era cancelado quando
+    # outro caminho reconciliava primeiro. É a mesma perda de dinheiro do cliente
+    # que este módulo existe para impedir, pela porta de trás.
+    from shopman.payman import PaymentError, PaymentService
+
+    try:
+        already_captured_q = PaymentService.captured_total(intent_ref)
+    except PaymentError:
+        already_captured_q = 0
+
+    if already_captured_q > 0:
+        transaction_id = ""
+        captured_amount_q = already_captured_q
+    else:
+        try:
+            result = adapter.capture(intent_ref)
+        except Exception:
+            logger.warning(
+                "payment.timeout_gateway_capture_failed order=%s", order.ref, exc_info=True
+            )
+            return "indeterminate"
+
+        if not result.success:
+            # O gateway disse "captured" e a reconciliação não fechou: divergência
+            # real, que não se resolve cancelando o pedido do cliente.
+            logger.warning(
+                "payment.timeout_gateway_capture_rejected order=%s error=%s",
+                order.ref,
+                result.error_code,
+            )
+            return "indeterminate"
+
+        transaction_id = result.transaction_id
+        captured_amount_q = result.amount_q
 
     # Pagou e o webhook se perdeu: promover ao caminho de pago. SOB LOCK +
     # re-check de captured_at — dois resolvers concorrentes (handler do
@@ -957,7 +1031,7 @@ def verify_gateway_before_timeout_cancel(order) -> str:
         if locked_payment.get("captured_at"):
             order.refresh_from_db()
             return "paid"  # outro resolver já promoveu — não duplicar
-        locked_payment["transaction_id"] = result.transaction_id
+        locked_payment["transaction_id"] = transaction_id
         locked_payment["captured_at"] = timezone.now().isoformat()
         locked_data = dict(locked.data or {})
         locked_data["payment"] = locked_payment
@@ -969,7 +1043,7 @@ def verify_gateway_before_timeout_cancel(order) -> str:
     order.emit_event(
         event_type="payment.captured",
         actor="payment.timeout_gateway_check",
-        payload={"method": "pix", "amount_q": result.amount_q or order.total_q},
+        payload={"method": "pix", "amount_q": captured_amount_q or order.total_q},
     )
 
     from shopman.shop.lifecycle import dispatch
@@ -978,21 +1052,47 @@ def verify_gateway_before_timeout_cancel(order) -> str:
     return "paid"
 
 
-def mock_capture_allowed() -> bool:
-    """A captura simulada está liberada NESTE ambiente?
+def mock_capture_allowed(method: str | None = None) -> bool:
+    """A captura simulada está liberada NESTE ambiente, para ESTE método?
 
-    Dono ÚNICO da pergunta. Ela era respondida em dois lugares com fórmulas
-    diferentes: o endpoint aceitava ``DEBUG or SHOPMAN_ALLOW_MOCK_PAYMENT_ADAPTERS``
-    e a projection do acompanhamento olhava só ``DEBUG``. Em staging
-    (DEBUG=False + adapters mock) isso deixava o botão "Simular pagamento"
-    invisível enquanto o endpoint por trás dele funcionava — o testador não
-    tinha como capturar nada, em Pix ou cartão.
+    Dono ÚNICO da pergunta — o endpoint (``storefront/api/payment.py``) e a
+    projection do acompanhamento (``projections/order_tracking.py``) consultam
+    esta função, e não cada um a sua fórmula.
+
+    ⚠️ **Duas perguntas diferentes, dois interruptores.**
+    ``SHOPMAN_ALLOW_MOCK_PAYMENT_ADAPTERS`` responde "este ambiente pode rodar com
+    gateway simulado?", e existe para o check ``SHOPMAN_E003`` não reprovar o
+    deploy de um staging sem credenciais. Ele **não** pode responder também
+    "o cliente pode quitar o próprio pedido com um clique?" — enquanto respondia,
+    a loja pública de staging (DEBUG=False, ALLOW_MOCK=true) mostrava o botão
+    "Simular pagamento" na tela de Pix de qualquer visitante, e um clique
+    disparava ``on_paid``: estoque baixado, cozinha acionada, produto entregue.
+
+    Por isso a afordância de teste tem interruptor próprio,
+    ``SHOPMAN_EXPOSE_MOCK_CAPTURE``, que nasce desligado. Ligar é decisão
+    consciente de quem conduz uma rodada de testes, e desligar fecha a porta sem
+    tocar em adapter nem arriscar o deploy.
+
+    ⚠️ **E o método importa.** ``mock_confirm`` captura falando direto com o
+    Payman, sem passar pelo adapter — então "simular" um pagamento cujo gateway é
+    REAL grava captura local que o gateway não tem. Num ambiente híbrido (PIX no
+    mock para o roteiro de teste, cartão no Stripe test para valer), o botão no
+    pedido de cartão produziria exatamente essa divergência, destruindo a
+    fidelidade que ir para o gateway real existe para comprar.
+
+    Por isso, com ``method``, a resposta exige também que o adapter DAQUELE método
+    seja o simulado. A regra deriva da configuração em vez de fixar ``"pix"``: no
+    dia em que o PIX apontar para a Efí, o botão some sozinho, sem env nova e sem
+    ninguém lembrar de mudar código.
     """
     from django.conf import settings
 
-    return bool(
-        settings.DEBUG or getattr(settings, "SHOPMAN_ALLOW_MOCK_PAYMENT_ADAPTERS", False)
-    )
+    if not (settings.DEBUG or getattr(settings, "SHOPMAN_EXPOSE_MOCK_CAPTURE", False)):
+        return False
+    if method is None:
+        return True
+    adapters = getattr(settings, "SHOPMAN_PAYMENT_ADAPTERS", {}) or {}
+    return "payment_mock" in str(adapters.get(str(method).lower()) or "")
 
 
 def mock_confirm(order) -> bool:

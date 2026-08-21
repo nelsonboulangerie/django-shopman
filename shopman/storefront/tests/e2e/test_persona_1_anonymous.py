@@ -19,9 +19,12 @@ from . import _journey as J
 pytestmark = pytest.mark.django_db
 
 # pytest-django forces settings.DEBUG=False, which disables the local "simulate
-# payment" action. Staging enables it via this flag; the digital-payment
-# journeys opt in the same way so the mock gateway confirmation is reachable.
-allow_mock_payment = override_settings(SHOPMAN_ALLOW_MOCK_PAYMENT_ADAPTERS=True)
+# payment" action. A jornada precisa dela para alcançar a confirmação do gateway
+# simulado, então pede o interruptor DA AFORDÂNCIA — e não mais o
+# `SHOPMAN_ALLOW_MOCK_PAYMENT_ADAPTERS`, que responde outra pergunta ("este
+# ambiente pode rodar com gateway simulado?"). Enquanto os dois eram o mesmo, a
+# loja pública de staging exibia "Simular pagamento" para qualquer visitante.
+allow_mock_payment = override_settings(SHOPMAN_EXPOSE_MOCK_CAPTURE=True)
 
 SKU = "PAO-FRANCES"
 

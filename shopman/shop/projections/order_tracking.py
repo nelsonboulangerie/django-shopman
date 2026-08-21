@@ -419,13 +419,15 @@ def _can_mock_confirm_payment(order) -> bool:
     autorizado do ``payment_mock`` entra aqui, e é o caso em que o testador
     mais precisa do botão, já que o mock não abre página de gateway).
     """
-    if not payment_service.mock_capture_allowed():
-        return False
     if order.status not in {"new", "accepted"}:
         return False
     payment = (order.data or {}).get("payment") or {}
     method = str(payment.get("method") or "").lower()
     if method not in {"pix", "card"} or not payment.get("intent_ref"):
+        return False
+    # O ambiente E o método: simular captura de um método cujo gateway é real
+    # gravaria no Payman uma captura que o gateway não tem.
+    if not payment_service.mock_capture_allowed(method):
         return False
     status = (payment_status.get_payment_status(order) or "").lower()
     return status not in {"", "unknown", "captured", "paid", "refunded", "cancelled", "failed"}
