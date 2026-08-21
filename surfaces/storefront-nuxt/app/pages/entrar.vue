@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { authErrorView, authStep, otpValidUntilDisplay, resendCooldown, welcomeNameValue, type AuthErrorView } from '~/presentation/auth'
+import { authErrorView, authStep, codeSentPrefix, otpValidUntilDisplay, resendCooldown, welcomeNameValue, type AuthErrorView } from '~/presentation/auth'
 import { authPhonePayload, maskPhoneInput, phoneDisplay, type AuthDeliveryMethod, type AuthPhoneRegion } from '~/utils/authPhone'
 import type { AuthSessionResponse, CopyEntryProjection, HomeResponse } from '~/types/shopman'
 
@@ -105,6 +105,8 @@ const authCopy = computed(() => loginHome.value?.home.auth_copy || null)
 const defaultDdd = computed(() => loginHome.value?.home.public_config?.default_ddd || '')
 // Volta do checkout: o gate manda `next=/finalizar`; o backend usa `/checkout`. Cobre os dois.
 const isCheckoutReturn = computed(() => /checkout|finalizar/.test(nextUrl.value))
+
+const codeSentLine = computed(() => codeSentPrefix(deliveryLabel.value))
 const stepTitle = computed(() => {
   if (step.value === 'phone') return copyTitle(authCopy.value?.phone_heading, 'Entrar')
   if (step.value === 'code') return copyTitle(authCopy.value?.code_heading, 'Informe o código')
@@ -544,7 +546,7 @@ useSeoMeta({
 
         <form v-else-if="step === 'code'" ref="codeForm" class="shop-stack-block" @submit.prevent="verifyCode">
           <p class="shop-body">
-            Código enviado <template v-if="deliveryLabel">por {{ deliveryLabel }} </template>para
+            {{ codeSentLine }}
             <span class="whitespace-nowrap font-semibold tabular-nums">{{ requestedPhoneDisplay }}</span>.
           </p>
 
