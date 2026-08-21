@@ -29,7 +29,22 @@ from shopman.stockman.models import Hold, HoldStatus, Quant
 
 from shopman.shop.management.commands.maintenance_worker import MAINTENANCE_COMMANDS
 
-pytestmark = pytest.mark.django_db
+# ``transaction=True`` não é preferência de estilo: sem ele estes testes só
+# passam em SQLite, e passam pelo motivo errado.
+#
+# `_run_cycle` começa com `close_old_connections()` — higiene obrigatória de um
+# management command em loop, que não tem fronteira de request e por isso nunca
+# recicla sozinho a conexão persistente do Postgres (o porquê está escrito no
+# próprio worker). Num teste `django_db` comum o corpo roda dentro de um bloco
+# atômico, então `get_autocommit()` diverge do configurado e o Django **fecha a
+# conexão** — no Postgres o teste morre com "the connection is closed"; no SQLite
+# em memória o `close()` é um no-op deliberado (fechar destruiria o banco), e o
+# teste sobrevive.
+#
+# Resultado: a suíte ficava verde exatamente porque o banco de teste escondia o
+# comportamento que o worker existe para executar. Sem transação de fora, o ciclo
+# roda como roda em produção.
+pytestmark = pytest.mark.django_db(transaction=True)
 
 WORKER_LOGGER = "shopman.shop.management.commands.maintenance_worker"
 
