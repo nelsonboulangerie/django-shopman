@@ -100,10 +100,19 @@ export function useDrawerLock({ drawer, actions, action }: DrawerLockDeps) {
    * que some), senão o gerente reenvia o mesmo PIN errado para sempre.
    */
   async function unlock(username: string, pin: string): Promise<void> {
+    return autorizar({ username, pin });
+  }
+
+  /** Mesma autorização, pelo crachá. Ver `ManagerApproval` no `usePosCashSession`. */
+  async function unlockWithBadge(badge: string): Promise<void> {
+    return autorizar({ badge });
+  }
+
+  async function autorizar(aprovacao: Record<string, string>): Promise<void> {
     if (busy.value) return;
     busy.value = true;
     try {
-      const body: Record<string, unknown> = { manager_approval: { username, pin } };
+      const body: Record<string, unknown> = { manager_approval: aprovacao };
       if (lastRaw) body.drawer_raw = lastRaw;
       await action.call(
         actionHref(actions.value, "drawer_unlock", "/api/v1/backstage/pos/cash/drawer-unlock/"),
@@ -139,5 +148,5 @@ export function useDrawerLock({ drawer, actions, action }: DrawerLockDeps) {
     if (proceed) await proceed();
   }
 
-  return { open, stillOpen, managerOpen, managerError, busy, guard, recheck, askManager, unlock, dismiss };
+  return { open, stillOpen, managerOpen, managerError, busy, guard, recheck, askManager, unlock, unlockWithBadge, dismiss };
 }

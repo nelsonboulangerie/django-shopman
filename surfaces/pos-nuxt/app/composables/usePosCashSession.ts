@@ -28,6 +28,20 @@ interface CashSessionDeps {
  * devolve `true` no sucesso para a página decidir navegação (ex.: abrir caixa
  * → ir vender). Erros sobem como toast, mesmo dialeto do restante do PDV.
  */
+/**
+ * A autorização do gerente, pelas DUAS portas.
+ *
+ * `{username, pin}` ou `{badge}`: o servidor aceita as duas, resolve a mesma
+ * pessoa, exige a mesma `cashman.adjust_shift` e grava a mesma assinatura em
+ * `Entry.approved_by`. Um tipo só aqui evita que uma das chamadas aceite crachá
+ * e a vizinha não — que é como o crachá acabou faltando na sangria.
+ */
+export interface ManagerApproval {
+  username?: string;
+  pin?: string;
+  badge?: string;
+}
+
 export function usePosCashSession({ pos, actions, refresh, action }: CashSessionDeps) {
   const busy = ref(false);
   // O id do último lançamento (sangria/suprimento) aceito pelo servidor — é
@@ -108,7 +122,7 @@ export function usePosCashSession({ pos, actions, refresh, action }: CashSession
     kind: string;
     amount: string;
     reason: string;
-    managerApproval?: { username: string; pin: string } | null;
+    managerApproval?: ManagerApproval | null;
   }): Promise<boolean> {
     const body: Record<string, unknown> = {
       kind: payload.kind,
@@ -220,7 +234,7 @@ export function usePosCashSession({ pos, actions, refresh, action }: CashSession
    */
   function serveChangeRequest(payload: {
     ref: string;
-    managerApproval?: { username: string; pin: string } | null;
+    managerApproval?: ManagerApproval | null;
   }): Promise<boolean> {
     const body: Record<string, unknown> = {};
     if (payload.managerApproval) body.manager_approval = payload.managerApproval;
@@ -247,7 +261,7 @@ export function usePosCashSession({ pos, actions, refresh, action }: CashSession
 
   function refundCash(payload: {
     orderRef: string;
-    managerApproval?: { username: string; pin: string } | null;
+    managerApproval?: ManagerApproval | null;
   }): Promise<boolean> {
     const body: Record<string, unknown> = {};
     if (payload.managerApproval) body.manager_approval = payload.managerApproval;

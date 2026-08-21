@@ -1326,6 +1326,15 @@ export function usePosSale(deps: PosSaleDeps) {
   }
 
   async function cancelRecentSale(managerUsername: string, managerPin: string) {
+    return cancelarComAprovacao({ username: managerUsername, pin: managerPin });
+  }
+
+  /** Mesma exceção auditada, autorizada pelo crachá em vez do PIN. */
+  async function cancelRecentSaleWithBadge(badge: string) {
+    return cancelarComAprovacao({ badge });
+  }
+
+  async function cancelarComAprovacao(aprovacao: Record<string, string>) {
     if (!result.value) return;
     serverError.value = "";
     cancelSaleError.value = "";
@@ -1338,7 +1347,7 @@ export function usePosSale(deps: PosSaleDeps) {
         {
           body: {
             order_ref: orderRef,
-            manager_approval: { username: managerUsername, pin: managerPin },
+            manager_approval: aprovacao,
             ...(reason ? { reason } : {}),
           },
         },
@@ -1463,5 +1472,6 @@ export function usePosSale(deps: PosSaleDeps) {
     renameTab,
     openCancelSaleDialog,
     cancelRecentSale,
+    cancelRecentSaleWithBadge,
   };
 }

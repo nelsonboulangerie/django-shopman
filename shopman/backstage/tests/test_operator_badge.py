@@ -13,6 +13,7 @@ from django.contrib.auth import get_user_model
 from django.urls import reverse
 from shopman.doorman.models import PinCredential
 
+from shopman.backstage.admin_console.operator_badge import BADGE_SESSION_KEY
 from shopman.backstage.presentation.barcode import (
     _PATTERNS,
     BarcodeError,
@@ -20,7 +21,7 @@ from shopman.backstage.presentation.barcode import (
     code128_width_mm,
     encode_code128_b,
 )
-from shopman.backstage.projections.operator_badge import build_operator_badge
+from shopman.backstage.projections.operator_badge import build_operator_badge, mask_badge
 
 User = get_user_model()
 
@@ -111,7 +112,7 @@ class TestBadgeProjection:
             operator_name="Ana Costa", operator_username="ana", token=TOKEN
         )
         assert badge.operator_name == "Ana Costa"
-        assert badge.token == TOKEN
+        assert badge.token_masked == "8b52…9827"
         assert badge.barcode_svg.startswith("<svg")
         assert badge.width_mm == pytest.approx(79.2, abs=0.1)
 
@@ -157,19 +158,25 @@ class TestIssueBadgeFromAdmin:
 
         cred.refresh_from_db()
         assert cred.badge_hash, "o crachá foi emitido"
-        page = response.content.decode()
-        # A página mostra o token (e volta a mostrar dentro da janela)...
-        token = _token_from_page(page)
+        # O token real vem da SESSÃO, que é de onde a view o lê. Ele não está mais
+        # na página: o crachá fica pendurado à vista do balcão inteiro, e número
+        # legível ali é crachá que alguém copia e reproduz depois sem tocar no
+        # original.
+        token = client.session[BADGE_SESSION_KEY]["token"]
         assert PinCredential.resolve_by_badge(token) == operator
-        # ...e o digest guardado nunca é o token em texto.
-        assert token not in cred.badge_hash
+        assert token not in cred.badge_hash  # o digest nunca é o texto
+
+        page = response.content.decode()
+        assert token not in page, "o token INTEIRO não pode aparecer na folha"
+        assert mask_badge(token) in page, "as pontas aparecem, para reconhecer o crachá"
 
         # Recarregar DENTRO da janela repete o mesmo crachá, de propósito:
         # impressora que emperra não pode custar uma credencial. Reexibir não é
         # reemitir — o digest não muda, e quem emitiu já tinha visto o código.
         # A expiração é coberta em `test_operator_badge_reprint.py`.
-        again = client.get(reverse("admin_console_operator_badge"))
-        assert token in again.content.decode()
+        again = client.get(reverse("admin_console_operator_badge")).content.decode()
+        assert mask_badge(token) in again
+        assert token not in again
         cred.refresh_from_db()
         assert PinCredential.resolve_by_badge(token) == operator
 
@@ -258,9 +265,3 @@ def _decode(bits: str) -> str:
     return "".join(chr(v + 32) for v in data)
 
 
-def _token_from_page(html: str) -> str:
-    import re
-
-    match = re.search(r"\b[0-9a-f]{12}\b", html)
-    assert match, "a página deveria mostrar o token uma vez"
-    return match.group(0)
