@@ -202,7 +202,19 @@ def toggle_notification_consent(
     *,
     ip_address: str = "",
 ) -> set[str]:
-    """Toggle one channel's consent; return the enabled consent channels."""
+    """Toggle one channel's consent; return the enabled consent channels.
+
+    Ao gravar, a tela inteira vira registro: os canais que aparecem desligados
+    passam a ter um opt-out explícito, e não a ausência de registro que tinham
+    antes.
+
+    Isso não é zelo burocrático — é o que faz a tela dizer a verdade. O aviso do
+    próprio pedido tem base legal de execução de contrato e sai por canal sem
+    registro (ver `shop/services/notification.py::_filter_backend_chain`), então
+    um canal "desligado na tela, ausente no banco" seria um botão que mostra
+    "não" e responde "sim". Quem mexeu numa chave viu as quatro; gravar as
+    quatro é registrar o que ela viu e decidiu.
+    """
     from shopman.guestman import ConsentService
 
     if ConsentService.has_consent(customer_ref, channel):
@@ -216,7 +228,162 @@ def toggle_notification_consent(
             ip_address=ip_address,
         )
 
+    known = {consent.channel for consent in ConsentService.get_consents(customer_ref)}
+    for other in NOTIFICATION_CONSENT_CHANNELS:
+        if other in known:
+            continue
+        try:
+            ConsentService.revoke_consent(customer_ref, other)
+        except Exception:
+            logger.warning(
+                "consent: opt-out explícito falhou customer=%s channel=%s",
+                customer_ref, other, exc_info=True,
+            )
+
     return enabled_notification_channels(customer_ref)
+
+
+# ── O rastro que a exclusão tem de alcançar ───────────────────────────
+#
+# O telefone É a identidade desta loja: é o único login. E ele não vive só no
+# Customer — vive em `Order.handle_ref` como coluna de primeira classe e dentro
+# de `Order.data["customer"]`, que o CommitService copia de `session.data` em
+# TODO commit. A anonimização anterior não tinha uma única referência a `Order`
+# ou `Session`: medido no banco do seed em 20/08, 14 pedidos continuavam com o
+# telefone em texto puro depois da exclusão feita pela tela. Quem tivesse acesso
+# ao Admin, ao banco ou a um relatório re-identificava o titular e reconstruía
+# tudo que ele comprou — enquanto a tela afirmava, por escrito e no exato gesto
+# do art. 18 da LGPD, que os dados pessoais tinham sido anonimizados.
+#
+# Estas são as chaves de `Order.data` / `Session.data` que identificam a PESSOA.
+# O que descreve a COMPRA (itens, preços, pagamento, datas, canal) fica: é dele
+# que vivem a obrigação fiscal e o B.I., e ele não diz quem comprou.
+_PII_DATA_KEYS: tuple[str, ...] = (
+    "customer",  # {name, phone, email, cpf, uuid, address}
+    "customer_name",
+    "customer_phone",
+    "delivery_address",
+    "delivery_address_structured",
+    "recipient",  # presente para terceiro: nome e telefone de quem recebe
+    "gift_message",
+    "order_notes",  # texto livre escrito pelo cliente
+)
+
+# Handles que SÃO a pessoa. `pos_tab`, `table` e o código de pedido do iFood
+# identificam a comanda, a mesa ou o pedido — não o titular — e ficam como estão.
+_PERSONAL_HANDLE_TYPES: frozenset[str] = frozenset(
+    {"phone", "customer", "whatsapp", "manychat"}
+)
+
+# Tipo de handle de um pedido cujo titular pediu exclusão. Trocar o TIPO junto
+# com o valor não é cosmético: `customer_orders.customer_identity_filter` casa
+# por (handle_type="phone", handle_ref=<telefone>), então um pedido que ficasse
+# com `handle_type="phone"` voltaria a ser alcançável por quem passasse a usar
+# aquele número depois — inclusive uma pessoa diferente.
+ANONYMIZED_HANDLE_TYPE = "anonymized"
+
+
+def customer_footprint_query(customer_ref: str, phone: str):
+    """A pegada do titular em Order/Session — a MESMA para exportar e para apagar.
+
+    Exportação e exclusão são as duas metades do mesmo direito (art. 18 da LGPD),
+    e discordar de escopo é como a exportação passava a mostrar menos do que a
+    exclusão precisava alcançar: a exportação lia só `data.customer_ref` e perdia
+    o pedido identificado apenas pelo handle de telefone. Uma função só, usada
+    pelos dois lados, torna a divergência impossível.
+    """
+    from django.db.models import Q
+
+    query = Q()
+    if customer_ref:
+        query |= Q(data__customer_ref=customer_ref)
+        query |= Q(data__customer__ref=customer_ref)
+    if phone:
+        query |= Q(handle_type__in=tuple(_PERSONAL_HANDLE_TYPES), handle_ref=phone)
+        query |= Q(data__customer__phone=phone)
+    return query
+
+
+def _customer_orders(customer_ref: str, phone: str):
+    from shopman.orderman.models import Order
+
+    query = customer_footprint_query(customer_ref, phone)
+    if not query.children:
+        return Order.objects.none()
+    return Order.objects.filter(query)
+
+
+def _scrub_pii(payload) -> tuple[dict, bool]:
+    """Devolve (cópia sem as chaves de PII, houve mudança)."""
+    if not isinstance(payload, dict):
+        return payload, False
+    clean = {k: v for k, v in payload.items() if k not in _PII_DATA_KEYS}
+    return clean, len(clean) != len(payload)
+
+
+def _anonymize_order_trail(*, customer_ref: str, phone: str, pseudonym: str) -> dict[str, int]:
+    """Apaga o PII do titular dos pedidos e das sessões dele. Idempotente."""
+    from django.db import IntegrityError
+    from shopman.orderman.models import Order, Session
+
+    counts = {"orders": 0, "sessions": 0}
+
+    for order in _customer_orders(customer_ref, phone).iterator():
+        fields: dict = {}
+
+        data, changed = _scrub_pii(order.data)
+        if changed:
+            fields["data"] = data
+
+        # `snapshot["data"]` é a cópia integral de `session.data` no commit — o
+        # mesmo PII, uma camada abaixo. Sem isto a varredura do banco continuava
+        # achando nome e telefone dentro do retrato selado.
+        snapshot = order.snapshot or {}
+        snap_data, snap_changed = _scrub_pii(snapshot.get("data"))
+        if snap_changed:
+            snapshot = dict(snapshot)
+            snapshot["data"] = snap_data
+            fields["snapshot"] = snapshot
+
+        if order.handle_ref and order.handle_type in _PERSONAL_HANDLE_TYPES:
+            fields["handle_type"] = ANONYMIZED_HANDLE_TYPE
+            fields["handle_ref"] = pseudonym
+
+        if not fields:
+            continue
+
+        # `.update()` e não `save()`: `snapshot` é campo SELADO (`Order.save()`
+        # levanta ImmutabilityError). O selo existe para o conteúdo do pedido não
+        # derivar depois de vendido, e continua valendo — a exclusão pedida pelo
+        # titular é a única exceção legítima, e ela passa por aqui, uma vez, com
+        # o motivo escrito. Nunca afrouxe o selo em `save()` para conseguir isto.
+        Order.objects.filter(pk=order.pk).update(**fields)
+        counts["orders"] += 1
+
+    query = customer_footprint_query(customer_ref, phone)
+    sessions = Session.objects.filter(query) if query.children else Session.objects.none()
+    for session in sessions.iterator():
+        fields = {}
+        data, changed = _scrub_pii(session.data)
+        if changed:
+            fields["data"] = data
+        if session.handle_ref and session.handle_type in _PERSONAL_HANDLE_TYPES:
+            fields["handle_type"] = ANONYMIZED_HANDLE_TYPE
+            fields["handle_ref"] = pseudonym
+        if not fields:
+            continue
+        try:
+            Session.objects.filter(pk=session.pk).update(**fields)
+        except IntegrityError:
+            # Índice único parcial (channel_ref, handle_type, handle_ref) para
+            # sessões abertas: duas sessões abertas do mesmo titular no mesmo
+            # canal colidiriam no pseudônimo comum. O sufixo mantém a exclusão
+            # completa; o agrupamento por titular já vive em `data.customer_ref`.
+            fields["handle_ref"] = f"{pseudonym}-{session.pk}"
+            Session.objects.filter(pk=session.pk).update(**fields)
+        counts["sessions"] += 1
+
+    return counts
 
 
 def export_customer_data(customer) -> dict:
@@ -227,6 +394,11 @@ def export_customer_data(customer) -> dict:
             "last_name": customer.last_name,
             "phone": customer.phone,
             "email": customer.email,
+            # `document` e `metadata` são apagados por `purge_pii` na exclusão e
+            # faltavam aqui: o titular só pode conferir o que a loja guarda dele
+            # se a exportação mostrar tudo que a exclusão alcança.
+            "document": customer.document,
+            "metadata": customer.metadata,
             "birthday": str(customer.birthday) if customer.birthday else None,
             "created_at": customer.created_at.isoformat(),
         },
@@ -246,16 +418,14 @@ def export_customer_data(customer) -> dict:
         ],
     }
 
-    from shopman.orderman.services import CustomerOrderHistoryService
-
-    orders = CustomerOrderHistoryService.list_customer_orders(customer.ref, limit=100)
+    orders = _customer_orders(customer.ref, customer.phone or "").order_by("-created_at")[:200]
     data["orders"] = [
         {
-            "ref": order.order_ref,
+            "ref": order.ref,
             "status": order.status,
-            "total_q": order.total_q,
-            "created_at": order.ordered_at.isoformat(),
-            "items": order.items,
+            "total_q": (order.snapshot or {}).get("pricing", {}).get("total_q", order.total_q),
+            "created_at": order.created_at.isoformat(),
+            "items": list((order.snapshot or {}).get("items", [])),
         }
         for order in orders
     ]
@@ -310,10 +480,24 @@ def export_customer_data(customer) -> dict:
 
 
 def anonymize_customer(customer) -> tuple[str, str]:
-    """Anonymize personal data and return original ref + phone hash."""
+    """Anonymize personal data and return original ref + phone hash.
+
+    Alcança o Customer (campos, ContactPoint, document, metadata, identidades),
+    o User do doorman, o perfil de RFM e — desde a correção do LOTE 6 — o rastro
+    do titular em `Order` e `Session`, que é onde o telefone realmente morava.
+    """
     original_ref = customer.ref
     original_phone = customer.phone or ""
     phone_hash = hashlib.sha256(original_phone.encode()).hexdigest()[:12]
+
+    # O pseudônimo do pedido vem do uuid do Customer, e NÃO do `phone_hash`
+    # acima: sha256 de telefone é reversível por força bruta (o espaço de
+    # números brasileiros cabe num laptop), então gravar esse hash no lugar do
+    # número seria gravar o número com outra roupa. O uuid é aleatório, já
+    # existe, e mantém os pedidos do mesmo titular agrupados para auditoria sem
+    # dizer quem ele é. O `phone_hash` continua sendo só o recibo devolvido à
+    # tela — nunca entra no banco.
+    pseudonym = f"ANON-{customer.uuid.hex[:12]}"
 
     from shopman.guestman import ConsentService
     from shopman.guestman.services import address as address_service
@@ -350,8 +534,48 @@ def anonymize_customer(customer) -> tuple[str, str]:
     try:
         from shopman.doorman.services._user_bridge import forget_customer
 
-        forget_customer(customer.uuid)
+        forget_customer(customer.uuid, phone=original_phone)
     except Exception:
         logger.warning("anonymize: forget_customer falhou customer=%s", original_ref, exc_info=True)
+
+    # O pedido e a sessão — onde o telefone é coluna, não campo derivado.
+    try:
+        counts = _anonymize_order_trail(
+            customer_ref=original_ref,
+            phone=original_phone,
+            pseudonym=pseudonym,
+        )
+        logger.info(
+            "anonymize: rastro apagado customer=%s orders=%s sessions=%s",
+            original_ref, counts["orders"], counts["sessions"],
+        )
+    except Exception:
+        logger.warning("anonymize: rastro de pedidos falhou customer=%s", original_ref, exc_info=True)
+
+    # O perfil de RFM é um retrato comportamental montado para MIRAR a pessoa
+    # (recência, frequência, ticket, segmento). Não tem valor fiscal e não
+    # sobrevive a um pedido de exclusão: sai inteiro. Os números agregados que o
+    # B.I. precisa continuam deriváveis dos pedidos já anonimizados.
+    try:
+        from shopman.guestman import CustomerInsight
+
+        CustomerInsight.objects.filter(customer=customer).delete()
+    except Exception:
+        logger.warning("anonymize: insight delete falhou customer=%s", original_ref, exc_info=True)
+
+    # As superfícies guardam dado do cliente que o shop não pode importar
+    # (`storefront` importa `shop`, nunca o contrário — ADR-001). O anúncio é um
+    # signal porque não precisamos de retorno: quem guarda, apaga.
+    try:
+        from shopman.shop.signals import customer_anonymized
+
+        customer_anonymized.send(
+            sender=None,
+            customer_ref=original_ref,
+            phone=original_phone,
+            pseudonym=pseudonym,
+        )
+    except Exception:
+        logger.warning("anonymize: signal customer_anonymized falhou customer=%s", original_ref, exc_info=True)
 
     return original_ref, phone_hash

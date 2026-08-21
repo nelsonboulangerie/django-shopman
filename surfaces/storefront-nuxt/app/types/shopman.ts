@@ -307,6 +307,7 @@ export interface ShopProjection {
   phone_display: string
   phone_url: string
   email: string
+  document_display: string
   full_address: string
   maps_url: string
   default_city: string

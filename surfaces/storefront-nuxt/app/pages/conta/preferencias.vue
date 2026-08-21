@@ -90,6 +90,15 @@ useSeoMeta({ title: 'Preferências' })
 
         <UiFieldSet class="rounded-lg border bg-card p-4">
           <UiFieldLegend>Notificações</UiFieldLegend>
+          <!-- A tela tem de dizer os TRÊS estados, senão ela mente num deles: o recado
+               sobre o pedido em andamento sai por execução do combinado da compra, e é
+               desligar a chave que o cala. Sem esta linha, quem nunca mexeu aqui vê
+               tudo desligado e recebe mesmo assim. -->
+          <UiFieldDescription class="mb-2">
+            Recados sobre o seu pedido vão pelo canal em que você comprou: eles fazem parte da
+            compra. Estas chaves valem para o resto, e desligar uma delas também cala os recados
+            do pedido por ali.
+          </UiFieldDescription>
           <UiFieldGroup>
             <UiField v-for="pref in summary?.notification_preferences || []" :key="pref.key" orientation="horizontal">
               <UiFieldContent>

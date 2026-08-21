@@ -81,14 +81,20 @@ def get_or_create_user_for_customer(customer: AuthCustomerInfo) -> tuple:
     return user, True
 
 
-def forget_customer(customer_uuid) -> None:
+def forget_customer(customer_uuid, phone: str = "") -> None:
     """Anonimiza o User Django vinculado e revoga os dispositivos confiáveis (LGPD).
 
     O bridge copia first_name/last_name do cliente para o User no login; a
     anonimização precisa alcançá-los, senão o nome sobrevive no auth. Também
-    desativa o login e revoga TrustedDevices. Idempotente e defensivo.
+    desativa o login, revoga TrustedDevices, zera o `metadata` do vínculo e
+    apaga os códigos de verificação emitidos para o telefone.
+
+    ``phone`` é o número original do titular, e vem do chamador porque o código
+    OTP é indexado pelo DESTINO (`target_value`), não pelo cliente: sem ele,
+    quem excluiu a conta agora mesmo deixava o próprio telefone no banco, no
+    código que acabou de usar para provar que era ele. Idempotente e defensivo.
     """
-    from ..models import TrustedDevice
+    from ..models import TrustedDevice, VerificationCode
 
     try:
         link = CustomerUser.objects.select_related("user").get(customer_id=customer_uuid)
@@ -105,8 +111,21 @@ def forget_customer(customer_uuid) -> None:
         user.email = ""
         user.is_active = False
         user.save(update_fields=["first_name", "last_name", "email", "is_active"])
+        # O `metadata` do vínculo guarda o telefone com que a conta nasceu, e a
+        # varredura do banco depois de uma exclusão feita pela tela ainda o
+        # encontrava ali. Nesta loja o telefone É a identidade (é o único
+        # login), então deixá-lo no vínculo é deixar a pessoa identificável.
+        if link.metadata:
+            link.metadata = {}
+            link.save(update_fields=["metadata"])
 
     try:
         TrustedDevice.revoke_all_for("customer", customer_uuid)
     except Exception:
         logger.warning("forget_customer: revogação de devices falhou", exc_info=True)
+
+    if phone:
+        try:
+            VerificationCode.objects.filter(target_value=phone).delete()
+        except Exception:
+            logger.warning("forget_customer: limpeza de códigos OTP falhou", exc_info=True)

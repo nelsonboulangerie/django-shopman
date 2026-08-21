@@ -522,6 +522,7 @@ def _empty_shop() -> ShopProjection:
         phone_display="",
         phone_url="",
         email="",
+        document_display="",
         full_address="",
         maps_url="",
         default_city="",

@@ -228,6 +228,38 @@ def enabled_notification_channels(
     return frozenset(enabled)
 
 
+def revoked_notification_channels(
+    customer_ref: str,
+    channels: tuple[str, ...],
+) -> frozenset[str]:
+    """Return channels the customer explicitly opted OUT of.
+
+    O complemento de `enabled_notification_channels` não é este conjunto: entre
+    os dois existe o canal SEM registro, de quem nunca abriu Preferências. Só
+    esta leitura distingue "a pessoa desligou" de "a pessoa nunca foi
+    perguntada", e é dessa distinção que depende o roteamento do aviso
+    transacional em `shop/services/notification.py`.
+    """
+    try:
+        from shopman.guestman.contrib.consent import ConsentService
+        from shopman.guestman.contrib.consent.models import ConsentStatus
+    except Exception:
+        logger.debug(
+            "customer_context_consent_import_failed customer=%s",
+            customer_ref,
+            exc_info=True,
+        )
+        return frozenset()
+
+    wanted = set(channels)
+    revoked = {
+        consent.channel
+        for consent in ConsentService.get_consents(customer_ref)
+        if consent.channel in wanted and consent.status == ConsentStatus.OPTED_OUT
+    }
+    return frozenset(revoked)
+
+
 def active_preference_keys(customer_ref: str, category: str) -> frozenset[str]:
     """Return active preference keys for a category, degrading to empty."""
     try:

@@ -213,11 +213,37 @@ def _filter_backend_chain(
     """
     Keep notification routing aligned with customer channel preferences.
 
-    If a customer is known, enabled consents define the active channels. A
-    WhatsApp-origin order may still use WhatsApp as the transactional channel
-    for the current order even when persisted consent is absent. Critical
-    updates without any active route are allowed to fail loudly so the handler
-    can retry/escalate instead of creating a silent promise break.
+    Três estados, não dois — e confundir dois deles era o defeito:
+
+    - **opt-in gravado** → o canal vale para tudo;
+    - **opt-out gravado** (``revoked_at`` preenchido) → o canal está PROIBIDO, e
+      nada o traz de volta: nem a origem do pedido, nem a natureza do aviso. Foi
+      a pessoa que desligou o botão que a própria loja ofereceu;
+    - **nenhum registro** (a pessoa nunca passou por Preferências) → o aviso do
+      PRÓPRIO pedido sai, com base legal de execução de contrato (LGPD art. 7º
+      V). "Seu pedido está pronto" não é marketing: é o combinado da compra que
+      ela acabou de fazer, com o telefone que ela mesma deu para isso.
+
+    O que estava errado, e por que os dois lados doíam:
+
+    1. o bypass por origem (``origin == "whatsapp"``) reinstalava o WhatsApp
+       DEPOIS do filtro de consentimento, sem olhar se havia opt-out. Como o
+       login principal da loja é o link de acesso por WhatsApp, todo cliente
+       logado carrega ``origin_channel = "whatsapp"`` — então o botão "receber
+       atualizações por WhatsApp" não desligava nada. Com o ManyChat vivo em
+       produção, isso é o consentimento coletado pela própria tela sendo
+       ignorado, e é assim que um número vira reclamação e bloqueio no WhatsApp
+       Business;
+    2. na outra ponta, o consentimento só nasce em `/conta/preferencias` e nasce
+       DESLIGADO nos quatro canais, e o fluxo de compra não passa por lá. Quem
+       entrava por "Usar outro número" ficava com a cadeia VAZIA e não recebia
+       nada — nem `order_received` — enquanto o acompanhamento promete seis
+       vezes que "avisamos você". Com ``DEBUG=1`` o fallback de console
+       mascarava, então a suíte nunca viu.
+
+    Marketing continua opt-in puro: campanha não passa por aqui, monta público
+    por `ConsentService.get_marketable_customers` (`services/audience.py`), que
+    só devolve quem está ``opted_in``.
     """
     customer_ref = payload.get("customer_ref") or _customer_ref(order)
     if not customer_ref:
@@ -233,12 +259,16 @@ def _filter_backend_chain(
             }
         )
     )
-    enabled_channels = _enabled_notification_channels(customer_ref, available_channels)
-    allowed_channels = set(enabled_channels)
+    revoked_channels = _revoked_notification_channels(customer_ref, available_channels)
 
-    origin = payload.get("origin_channel") or (order.data or {}).get("origin_channel") or ""
-    if origin == "whatsapp":
-        allowed_channels.add("whatsapp")
+    # A regra inteira em uma linha: o aviso do próprio pedido sai por qualquer
+    # canal configurado, MENOS os que o titular revogou. "Ausente" e "revogado"
+    # deixam de ser a mesma coisa — e é `toggle_notification_consent`
+    # (`services/account.py`) que garante que o desligado na tela de
+    # Preferências vire um opt-out gravado, e não uma ausência.
+    allowed_channels = {
+        channel for channel in available_channels if channel not in revoked_channels
+    }
 
     if not allowed_channels and _dev_console_allowed(backend_chain):
         return [backend for backend in backend_chain if backend == "console"]
@@ -442,20 +472,27 @@ def _customer_ref(order) -> str:
     return ""
 
 
-def _enabled_notification_channels(customer_ref: str, channels: tuple[str, ...]) -> frozenset[str]:
+def _revoked_notification_channels(customer_ref: str, channels: tuple[str, ...]) -> frozenset[str]:
+    """Canais que o titular DESLIGOU. Falha de leitura silencia o canal.
+
+    O fallback é o oposto do de `enabled`: se não dá para saber, não manda. Errar
+    para o lado de mandar sobre um opt-out é violar o consentimento; errar para o
+    lado de não mandar é um aviso perdido, e o `requires_active` faz o handler
+    reclamar alto em vez de fingir sucesso.
+    """
     if not channels:
         return frozenset()
     try:
         from shopman.shop.projections import customer_context
 
-        return customer_context.enabled_notification_channels(customer_ref, channels)
+        return customer_context.revoked_notification_channels(customer_ref, channels)
     except Exception:
-        logger.debug(
-            "notification.enabled_channels_failed customer=%s",
+        logger.warning(
+            "notification.revoked_channels_failed customer=%s",
             customer_ref,
             exc_info=True,
         )
-        return frozenset()
+        return frozenset(channels)
 
 
 def _dev_console_allowed(backend_chain: list[str]) -> bool:
