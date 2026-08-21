@@ -37,6 +37,10 @@ const { zones, preorders, realtime, pending, error, refresh, isBusy, actionError
 // Sinal honesto de tempo-real vs poll (indicador de degradação do SSE).
 const realtimeView = computed(() => realtimeIndicator(realtime.value));
 
+// Estação travada pelo servidor: não é falha de leitura, é falta de
+// identificação. O board deixa de desenhar o aviso de erro nesse estado.
+const { denied: stationLocked } = useStationLock();
+
 // ── triage: search + channel filter + sort + view-mode (Arc 1) ──────────────
 // query/channel are transient; sort/view persist per operator (cookie, SSR-safe).
 const query = ref("");
@@ -419,7 +423,12 @@ function printQueue() {
 
     <section class="min-h-0 flex-1 overflow-auto p-3 md:p-4">
       <p v-if="pending && !zones.length" class="text-sm text-muted-foreground">Carregando…</p>
-      <p v-else-if="error" class="rounded-md border border-destructive/30 bg-destructive/5 p-4 text-sm text-destructive dark:text-orange-400">
+      <!-- `!stationLocked`: antes do PIN toda leitura volta 403 `station_locked`
+           e este parágrafo dizia "Falha ao carregar a fila. Reconectando…" —
+           erro de identificação vestido de erro de rede, na abertura de todo
+           turno e a cada auto-lock. Quem fala nesse estado é a identificação
+           que sobe por cima (app.vue), e ela não é uma falha. -->
+      <p v-else-if="error && !stationLocked" class="rounded-md border border-destructive/30 bg-destructive/5 p-4 text-sm text-destructive dark:text-orange-400" data-queue-error>
         Falha ao carregar a fila. Reconectando…
       </p>
 

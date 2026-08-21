@@ -437,9 +437,14 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onGlobalKeydown));
           @request-association="requestTabAssociation('start')"
         />
         <!-- Leitura ainda sem resposta: um aviso calmo, nunca um quadro vazio que
-             finge saber. Se for a estação travada, a identificação já está subindo
-             por cima disto. -->
-        <div v-else-if="!inSaleView" class="grid place-items-center p-8">
+             finge saber.
+             `!locked` porque antes do destravamento por PIN toda leitura volta
+             403 `station_locked`, e este aviso desenhava wifi-off com "Não foi
+             possível ler as comandas agora" — ou seja, mandava chamar suporte de
+             rede na abertura de todo turno e a cada auto-lock. Não é falha de
+             rede: é "você ainda não se identificou", e quem diz isso é a
+             identificação que sobe por cima. -->
+        <div v-else-if="!inSaleView && !locked" class="grid place-items-center p-8" data-tabs-unavailable>
           <p class="flex items-center gap-2 rounded-md border border-dashed px-4 py-6 text-sm text-muted-foreground">
             <Icon :name="pending ? 'line-md:loading-loop' : 'lucide:wifi-off'" class="size-4 shrink-0" />
             {{ pending ? "Carregando as comandas…" : "Não foi possível ler as comandas agora." }}

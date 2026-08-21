@@ -6,7 +6,15 @@
   >
     <slot>
       <template v-for="(input, k) in inputCount" :key="k">
-        <UiPinInputInput :aria-invalid :index="k" />
+        <!-- A reka-ui rotula cada campo como "pin input 1 of 6", em inglês, e
+             era isso que o leitor de tela anunciava para o cliente brasileiro
+             no login. O atributo passado aqui chega por fallthrough e vence o
+             padrão da biblioteca. -->
+        <UiPinInputInput
+          :aria-invalid
+          :index="k"
+          :aria-label="`Dígito ${k + 1} de ${inputCount}`"
+        />
         <template v-if="k < inputCount - 1">
           <span v-if="separator" class="text-muted-foreground">{{ separator }}</span>
         </template>

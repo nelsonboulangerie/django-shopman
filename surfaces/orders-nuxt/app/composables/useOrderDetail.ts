@@ -5,10 +5,18 @@ import type { CancellationReason, OperatorOrderProjection, OrderDetailResponse }
 
 export function useOrderDetail(orderRef: string) {
   const path = `/api/v1/backstage/orders/${encodeURIComponent(orderRef)}/`;
+  // Estação travada: a leitura volta 403 `station_locked` e a tela dizia "Pedido
+  // não encontrado ou falha ao carregar" — o pedido existe, quem não se
+  // identificou é o operador. Erguer a bandeira aqui é o que permite à tela
+  // calar o aviso de erro (mesmo gesto do `usePosTerminal`).
+  const { flagIfStationLocked } = useStationLock();
+
   const { data, pending, error, refresh } = useFetch<OrderDetailResponse>(path, {
     key: `order-detail-${orderRef}`,
     server: true,
   });
+
+  watch(error, (value) => { if (value) flagIfStationLocked(value); }, { immediate: true });
 
   const order = computed<OperatorOrderProjection | null>(() => data.value?.order ?? null);
 

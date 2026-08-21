@@ -14,6 +14,14 @@ export function useOrdersBoard() {
   const config = useRuntimeConfig();
   const path = "/api/v1/backstage/orders/";
 
+  // Antes do destravamento por PIN toda leitura volta 403 `station_locked`, e o
+  // board desenhava "Falha ao carregar a fila. Reconectando…" — a tela mandava
+  // o operador chamar suporte de rede na abertura de todo turno, para um estado
+  // que é só "você ainda não se identificou". O PDV já erguia esta bandeira na
+  // leitura (`usePosTerminal`); o Gestor não erguia em lugar nenhum, e por isso
+  // o `locked` do kit nunca sabia o que o servidor acabou de dizer.
+  const { flagIfStationLocked } = useStationLock();
+
   // useFetch (not useAsyncData) so the SSR payload transfers reliably (POS gotcha).
   const { data, pending, error, refresh } = useFetch<OrderQueueResponse>(path, {
     key: "orders-queue",
@@ -22,6 +30,8 @@ export function useOrdersBoard() {
     // operador (re-fetch da sessão) em vez de deixar "reconectando…" para sempre.
     onResponseError: operatorSessionOnError,
   });
+
+  watch(error, (value) => { if (value) flagIfStationLocked(value); }, { immediate: true });
 
   const queue = computed<TwoZoneQueueProjection | null>(() => data.value?.queue ?? null);
   const zones = computed<ZoneView[]>(() => (queue.value ? zonesView(queue.value) : []));

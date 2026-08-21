@@ -233,6 +233,53 @@ def test_auth_request_code_reports_actual_delivery_method(monkeypatch, client: C
     assert data["delivery_label"] == "SMS"
 
 
+def test_auth_request_code_does_not_invent_a_channel_it_did_not_use(monkeypatch, client: Client):
+    """Canal desconhecido não vira "WhatsApp".
+
+    O rótulo era `"SMS" if método == "sms" else "WhatsApp"`, então console,
+    e-mail e qualquer fallback saíam como WhatsApp e a tela dizia "Código
+    enviado por WhatsApp" para quem pediu SMS. O teste vizinho só olhava a
+    direção `sms → "SMS"`, que a forma velha também acertava. Sem nome para o
+    canal, o rótulo vem vazio e a tela omite a frase, em vez de mentir.
+    """
+    from shopman.storefront.api import auth as auth_api
+
+    def fake_request_code(*, phone, delivery_method, ip_address):
+        return SimpleNamespace(success=True, delivery_method="console")
+
+    monkeypatch.setattr(auth_api, "HAS_AUTH", True)
+    monkeypatch.setattr(auth_api.auth_service, "request_code", fake_request_code)
+
+    response = client.post(
+        "/api/v1/auth/request-code/",
+        data={"target": "43999998888", "delivery_method": "sms"},
+        content_type="application/json",
+    )
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["delivery_method"] == "console"
+    assert data["delivery_label"] == ""
+
+
+def test_auth_request_code_labels_whatsapp_when_whatsapp_was_used(monkeypatch, client: Client):
+    from shopman.storefront.api import auth as auth_api
+
+    def fake_request_code(*, phone, delivery_method, ip_address):
+        return SimpleNamespace(success=True, delivery_method="whatsapp")
+
+    monkeypatch.setattr(auth_api, "HAS_AUTH", True)
+    monkeypatch.setattr(auth_api.auth_service, "request_code", fake_request_code)
+
+    response = client.post(
+        "/api/v1/auth/request-code/",
+        data={"target": "43999998888", "delivery_method": "whatsapp"},
+        content_type="application/json",
+    )
+
+    assert response.json()["delivery_label"] == "WhatsApp"
+
+
 def test_auth_request_code_exposes_debug_otp_in_staging_only_when_enabled(monkeypatch, settings, client: Client):
     from shopman.storefront.api import auth as auth_api
 

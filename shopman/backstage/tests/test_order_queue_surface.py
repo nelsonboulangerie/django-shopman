@@ -6,6 +6,7 @@ from django.test import TestCase
 from django.utils.dateparse import parse_datetime
 from shopman.orderman.models import Order, OrderItem
 
+from shopman.backstage.presentation.status import order_status_label
 from shopman.backstage.projections.order_queue import build_order_card, build_two_zone_queue
 
 
@@ -362,3 +363,165 @@ class OperatorOrderPresetTests(TestCase):
 # As ações do operador (advance/reject/confirm) agora são exercidas no contrato
 # headless em test_api_orders_surface.py; a semântica de lifecycle (new não avança,
 # terminal não avança, reject só em new) é coberta nos testes de shop/operator_orders.
+
+
+class DeliveryAddressReachesTheOperatorTests(TestCase):
+    """Quem despacha precisa saber para onde vai.
+
+    O Gestor não tinha endereço em nenhuma das duas projections nem uma
+    ocorrência de "address" no app inteiro, embora o pedido sempre carregasse o
+    dado (o PDV já o expunha). Os testes vizinhos afirmavam o RECEBIMENTO
+    (retirada × entrega) e paravam ali, que é a asserção mais fraca possível
+    sobre uma entrega: verdadeira com e sem destino.
+    """
+
+    def _delivery(self, ref: str) -> Order:
+        order = _order(ref, "ready", "delivery")
+        order.data = {
+            **order.data,
+            "delivery_address": "Rua das Flores, 123 - Centro - Londrina",
+            "delivery_address_structured": {
+                "route": "Rua das Flores",
+                "street_number": "123",
+                "complement": "apto 42",
+                "delivery_instructions": "Portão azul, interfone 42",
+            },
+        }
+        order.save(update_fields=["data", "updated_at"])
+        return order
+
+    def test_card_carries_address_and_instructions(self) -> None:
+        card = build_order_card(self._delivery("END-1"))
+
+        self.assertEqual(
+            card.delivery_address,
+            "Rua das Flores, 123 - Centro - Londrina - apto 42",
+        )
+        self.assertEqual(card.delivery_instructions, "Portão azul, interfone 42")
+
+    def test_detail_carries_address_and_instructions(self) -> None:
+        from shopman.backstage.projections.order_queue import build_operator_order
+
+        proj = build_operator_order(self._delivery("END-2"))
+
+        self.assertIn("Rua das Flores, 123", proj.delivery_address)
+        self.assertEqual(proj.delivery_instructions, "Portão azul, interfone 42")
+        self.assertEqual(proj.fulfillment_type, "delivery")
+
+    def test_complement_is_not_repeated_when_already_in_the_formatted_text(self) -> None:
+        order = _order("END-3", "ready", "delivery")
+        order.data = {
+            **order.data,
+            "delivery_address": "Rua das Flores, 123, apto 42",
+            "delivery_address_structured": {"complement": "apto 42"},
+        }
+        order.save(update_fields=["data", "updated_at"])
+
+        card = build_order_card(order)
+
+        self.assertEqual(card.delivery_address, "Rua das Flores, 123, apto 42")
+
+    def test_pickup_has_no_address_at_all(self) -> None:
+        # Controle positivo: o cartão existe e é de retirada, então o endereço
+        # vazio é decisão e não uma projection que não montou.
+        card = build_order_card(_order("END-4", "ready", "pickup"))
+
+        self.assertEqual(card.fulfillment_label, "Retirada")
+        self.assertEqual(card.delivery_address, "")
+        self.assertEqual(card.delivery_instructions, "")
+
+
+class FulfillmentLabelIsPortugueseTests(TestCase):
+    """O rótulo de recebimento é TEXTO de tela, e texto de tela é em português.
+
+    Estava `"Delivery" if is_delivery else "Retirada"` — inglês e português no
+    mesmo ternário, em dois lugares. O operador lia "Delivery" no cartão.
+    """
+
+    def test_card_and_detail_say_entrega(self) -> None:
+        from shopman.backstage.projections.order_queue import build_operator_order
+
+        order = _order("PT-1", "ready", "delivery")
+
+        self.assertEqual(build_order_card(order).fulfillment_label, "Entrega")
+        self.assertEqual(build_operator_order(order).fulfillment_label, "Entrega")
+
+    def test_pickup_still_says_retirada(self) -> None:
+        self.assertEqual(build_order_card(_order("PT-2", "ready")).fulfillment_label, "Retirada")
+
+
+class DetailProjectionAnswersWhatIsPossibleTests(TestCase):
+    """O detalhe do pedido oferecia ação inválida em posição primária.
+
+    A tela guardava o "Avançar" com `can_settle_delivery_cash !== undefined`
+    (sempre verdadeiro) e o "Aceitar" com nada, porque a projection do DETALHE
+    nunca respondeu o que é possível. Só o cartão respondia, e o board era o
+    único que perguntava. Agora as duas respondem igual, com o mesmo serviço.
+    """
+
+    def test_new_order_can_be_confirmed_but_not_advanced(self) -> None:
+        from shopman.backstage.projections.order_queue import build_operator_order
+
+        proj = build_operator_order(_order("ACT-1", "new"))
+
+        self.assertTrue(proj.can_confirm)
+        self.assertFalse(proj.can_advance)
+
+    def test_detail_agrees_with_the_card_on_every_active_status(self) -> None:
+        from shopman.backstage.projections.order_queue import build_operator_order
+
+        for i, status in enumerate(["new", "accepted", "preparing", "ready"]):
+            with self.subTest(status=status):
+                order = _order(f"ACT-CARD-{i}", status)
+                card = build_order_card(order)
+                detail = build_operator_order(order)
+
+                self.assertEqual(detail.can_confirm, card.can_confirm)
+                self.assertEqual(detail.can_advance, card.can_advance)
+                self.assertEqual(detail.next_action_label, card.next_action_label)
+                self.assertEqual(detail.advance_block_label, card.advance_block_label)
+                self.assertEqual(detail.advance_block_reason, card.advance_block_reason)
+
+
+class TimelineSpeaksPortugueseTests(TestCase):
+    """O histórico do pedido é tela de operador, e fala português.
+
+    Só `status_changed` e três tipos tinham rótulo; o resto caía num
+    `event.type.replace("_", " ").title()` e o operador lia "Created". Pior: a
+    grafia dominante no banco é `status_change` (sem o "d"), que também não era
+    reconhecida. E, sem detalhe legível, o fallback despejava o payload cru ao
+    lado do evento: `{"from_session": "SESS-..."}` na tela de quem atende.
+    """
+
+    def _with_event(self, ref: str, event_type: str, payload: dict):
+        from shopman.backstage.projections.order_queue import build_operator_order
+
+        order = _order(ref, "new")
+        order.events.create(seq=99, type=event_type, actor="system", payload=payload)
+        return build_operator_order(order).timeline[-1]
+
+    def test_creation_event_is_named_in_portuguese(self) -> None:
+        event = self._with_event("TL-1", "created", {"from_session": "SESS-ABC"})
+
+        self.assertEqual(event.label, "Pedido criado")
+
+    def test_internal_payload_is_not_dumped_next_to_the_event(self) -> None:
+        event = self._with_event("TL-2", "created", {"from_session": "SESS-ABC"})
+
+        self.assertEqual(event.detail, "")
+
+    def test_a_reason_is_still_shown_because_the_operator_reads_it(self) -> None:
+        event = self._with_event("TL-3", "operator_comment", {"note": "Cliente pediu sem cebola"})
+
+        self.assertEqual(event.label, "Comentário")
+        self.assertEqual(event.detail, "Cliente pediu sem cebola")
+
+    def test_both_spellings_of_the_status_event_are_recognised(self) -> None:
+        # `status_changed` vem do model; `status_change` é a grafia da maioria
+        # esmagadora das linhas no banco. Só a primeira era tratada.
+        for i, event_type in enumerate(["status_changed", "status_change"]):
+            with self.subTest(event_type=event_type):
+                event = self._with_event(f"TL-ST-{i}", event_type, {"new_status": "accepted"})
+
+                self.assertEqual(event.label, order_status_label("accepted"))
+                self.assertNotIn("Status", event.label)

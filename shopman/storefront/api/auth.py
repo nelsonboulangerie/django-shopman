@@ -306,8 +306,23 @@ def _normalize_payload_phone(payload: dict) -> str:
     return normalize_phone_input(raw, international=international) or ""
 
 
+# Como cada canal se chama na frase que o cliente lê. Mapa explícito: o que não
+# está aqui NÃO tem nome de canal, e a tela omite o canal em vez de inventar um.
+_DELIVERY_LABELS = {
+    "whatsapp": "WhatsApp",
+    "sms": "SMS",
+    "email": "e-mail",
+}
+
+
 def _delivery_response(delivery_method: str) -> dict:
-    label = "SMS" if delivery_method == "sms" else "WhatsApp"
+    # Era `"SMS" if delivery_method == "sms" else "WhatsApp"`: QUALQUER método
+    # que não fosse exatamente `sms` virava "WhatsApp" — console, e-mail,
+    # fallback. Quem clicava em "Receber por SMS" e caía no fallback lia "Código
+    # enviado por WhatsApp" e ia esperar numa caixa de entrada que nunca ia
+    # tocar. Um `else` que chuta um canal é pior que não dizer canal nenhum:
+    # label vazio manda a tela omitir a frase do canal, o que é verdade.
+    label = _DELIVERY_LABELS.get(str(delivery_method or "").strip().lower(), "")
     doorman = getattr(settings, "DOORMAN", {}) or {}
     chain = doorman.get("DELIVERY_CHAIN", [])
     sender_class = str(doorman.get("MESSAGE_SENDER_CLASS") or "")

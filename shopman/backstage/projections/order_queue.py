@@ -9,7 +9,6 @@ Never imports from ``shopman.backstage.views.*``.
 
 from __future__ import annotations
 
-import json
 import logging
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
@@ -124,6 +123,10 @@ class OrderCardProjection:
     fulfillment_icon: str  # Material Symbol ligature
     fulfillment_label: str
     fulfillment_type: str  # "delivery" | "pickup" — eixo de triagem no board
+    # Para onde vai o pedido. Vazios na retirada. Sem estes dois campos o Gestor
+    # não tinha endereço em tela nenhuma, e quem despacha ficava sem destino.
+    delivery_address: str
+    delivery_instructions: str
     can_confirm: bool
     can_advance: bool
     next_status: str
@@ -197,6 +200,10 @@ class OperatorOrderProjection:
     channel_ref: str
     channel_icon: str
     fulfillment_label: str
+    fulfillment_type: str  # "delivery" | "pickup"
+    # Idem ao cartão: quem abre o detalhe para despachar precisa do endereço.
+    delivery_address: str
+    delivery_instructions: str
     total_display: str
     items: tuple[OrderItemProjection, ...]
     timeline: tuple[TimelineEventProjection, ...]
@@ -204,6 +211,17 @@ class OperatorOrderProjection:
     payment_method: str
     payment_method_label: str
     payment_status: str
+    # As MESMAS respostas que o board usa, calculadas pelo mesmo serviço. O
+    # detalhe não as tinha e a tela chutava: a guarda do "Avançar" era
+    # ``can_settle_delivery_cash !== undefined``, que é sempre verdadeira, e o
+    # "Aceitar" não tinha guarda nenhuma. O operador via os dois botões cheios
+    # num pedido `new` e levava 400 do servidor. Com o board e o detalhe lendo a
+    # mesma fonte, os dois não podem mais discordar sobre o que é possível.
+    can_confirm: bool
+    can_advance: bool
+    next_action_label: str
+    advance_block_label: str
+    advance_block_reason: str
     can_settle_delivery_cash: bool
     fiscal_status_label: str
     fiscal_status: str
@@ -343,6 +361,10 @@ def build_operator_order(order: Order) -> OperatorOrderProjection:
     fiscal_status, fiscal_status_label, fiscal_links = _fiscal_status(order)
 
     recipient = order.data.get("recipient") if isinstance(order.data.get("recipient"), dict) else {}
+    is_delivery = _is_delivery(order)
+    delivery_address, delivery_instructions = _delivery_address(order)
+    bloqueio = operator_orders.advance_block(order)
+    next_status = operator_orders.next_status_for(order) if not bloqueio else ""
 
     return OperatorOrderProjection(
         ref=order.ref,
@@ -352,7 +374,10 @@ def build_operator_order(order: Order) -> OperatorOrderProjection:
         customer_name=customer_name,
         channel_ref=order.channel_ref or "",
         channel_icon=CHANNEL_ICONS.get(order.channel_ref or "", _DEFAULT_CHANNEL_ICON),
-        fulfillment_label="Delivery" if _is_delivery(order) else "Retirada",
+        fulfillment_label=_fulfillment_label(is_delivery),
+        fulfillment_type="delivery" if is_delivery else "pickup",
+        delivery_address=delivery_address,
+        delivery_instructions=delivery_instructions,
         total_display=_money(order.total_q),
         items=items,
         timeline=timeline,
@@ -360,6 +385,11 @@ def build_operator_order(order: Order) -> OperatorOrderProjection:
         payment_method=method,
         payment_method_label=payment_method_label,
         payment_status=payment_status,
+        can_confirm=order.status == "new",
+        can_advance=bool(next_status),
+        next_action_label=_next_label(order),
+        advance_block_label=_advance_block_label(bloqueio),
+        advance_block_reason=operator_orders.advance_block_message(bloqueio),
         can_settle_delivery_cash=_can_settle_delivery_cash(order, payment_data),
         fiscal_status=fiscal_status,
         fiscal_status_label=fiscal_status_label,
@@ -638,7 +668,8 @@ def _build_card(
 
     is_delivery = _is_delivery(order)
     fulfillment_icon = "local_shipping" if is_delivery else "storefront"
-    fulfillment_label = "Delivery" if is_delivery else "Retirada"
+    fulfillment_label = _fulfillment_label(is_delivery)
+    delivery_address, delivery_instructions = _delivery_address(order)
 
     customer_data = order.data.get("customer", {})
     customer_name = _format_customer_display(
@@ -680,6 +711,8 @@ def _build_card(
         fulfillment_icon=fulfillment_icon,
         fulfillment_label=fulfillment_label,
         fulfillment_type="delivery" if is_delivery else "pickup",
+        delivery_address=delivery_address,
+        delivery_instructions=delivery_instructions,
         can_confirm=order.status == "new",
         can_advance=bool(next_status),
         next_status=next_status,
@@ -1059,6 +1092,47 @@ def _is_delivery(order: Order) -> bool:
     return get_fulfillment_type(order) == "delivery"
 
 
+def _fulfillment_label(is_delivery: bool) -> str:
+    """Rótulo do recebimento na tela do operador, em português.
+
+    Estava escrito ``"Delivery" if is_delivery else "Retirada"``, inglês e
+    português no mesmo ternário e em dois lugares — o operador lia "Delivery"
+    no cartão. A convenção do projeto é URL em inglês, TEXTO de tela em
+    português; centralizar aqui impede que as duas cópias voltem a divergir.
+    """
+    return "Entrega" if is_delivery else "Retirada"
+
+
+def _delivery_address(order: Order) -> tuple[str, str]:
+    """Endereço de entrega do pedido: ``(endereço, instruções)``.
+
+    O Gestor é a tela de quem DESPACHA, e não tinha o endereço em lugar nenhum:
+    a projection não trazia o campo e o app não tinha uma ocorrência de
+    "address". O dado sempre existiu em ``Order.data`` (o PDV já o expunha), só
+    não chegava a quem precisa mandar o pedido para algum lugar.
+
+    Devolve ``("", "")`` na retirada, para a tela não ter que decidir nada: se
+    veio vazio, não há endereço a mostrar.
+    """
+    if not _is_delivery(order):
+        return "", ""
+
+    data = order.data or {}
+    structured = data.get("delivery_address_structured")
+    structured = structured if isinstance(structured, dict) else {}
+
+    address = str(data.get("delivery_address") or structured.get("formatted_address") or "").strip()
+    complement = str(structured.get("complement") or "").strip()
+    # O complemento é o que faz o entregador achar a porta (apto, bloco, fundos)
+    # e nem sempre entra no texto formatado do Places. Só anexa quando ainda não
+    # está lá, para não repetir "apto 42" duas vezes na mesma linha.
+    if complement and complement.lower() not in address.lower():
+        address = f"{address} - {complement}" if address else complement
+
+    instructions = str(structured.get("delivery_instructions") or "").strip()
+    return address, instructions
+
+
 def _next_label(order: Order) -> str:
     if order.status == "ready" and _is_delivery(order):
         return READY_DELIVERY_LABEL
@@ -1074,11 +1148,23 @@ def _status_counts(orders: list[Order]) -> dict[str, int]:
     return counts
 
 
+# O histórico é texto de tela, e texto de tela é em português. Sem um rótulo
+# aqui o evento caía num `event.type.replace("_", " ").title()`, e o operador
+# lia "Created" no histórico do pedido dele.
 _EVENT_LABELS = {
     "operator_comment": "Comentário",
     "order_assigned": "Atendimento assumido",
     "order_unassigned": "Atendimento liberado",
+    "created": "Pedido criado",
+    "payment_collected": "Pagamento recebido",
+    "equipment_returned": "Maquininha devolvida",
 }
+
+# Mudança de status, nas duas grafias que existem no banco: o model escreve
+# `status_changed` e o histórico importado escreve `status_change`. Só a
+# primeira era reconhecida, então a esmagadora maioria dos eventos virava
+# "Status Change" no `.title()`.
+_STATUS_EVENT_TYPES = {"status_changed", "status_change"}
 
 
 def _build_timeline(order: Order) -> tuple[TimelineEventProjection, ...]:
@@ -1087,12 +1173,14 @@ def _build_timeline(order: Order) -> tuple[TimelineEventProjection, ...]:
     for event in events:
         payload = event.payload or {}
         new_status = payload.get("new_status", "")
-        if event.type == "status_changed" and new_status:
+        if event.type in _STATUS_EVENT_TYPES and new_status:
             label = order_status_label(new_status)
         elif event.type in _EVENT_LABELS:
             label = _EVENT_LABELS[event.type]
         else:
-            label = event.type.replace("_", " ").title()
+            # Último recurso para um tipo que ninguém rotulou ainda. Continua
+            # feio, mas é o caso raro; o que era comum agora tem nome.
+            label = event.type.replace("_", " ").capitalize()
 
         result.append(
             TimelineEventProjection(
@@ -1119,7 +1207,10 @@ def _event_detail(payload: dict) -> str:
         value = payload.get(key)
         if value:
             return str(value)
-    return json.dumps(payload, ensure_ascii=False, sort_keys=True)
+    # Sem detalhe legível, NENHUM detalhe. O fallback despejava o payload cru ao
+    # lado do evento — `{"from_session": "SESS-V53LZVEYKF3Q"}` na tela de quem
+    # atende o balcão. Chave interna não é informação para o operador.
+    return ""
 
 
 def _money(value_q: int | None) -> str:

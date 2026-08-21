@@ -161,6 +161,9 @@ def test_api_cart_sku_qty_sets_absolute_qty_and_returns_cart_projection(client):
     assert add_data["summary"]["count"] == 2
     assert add_data["cart"]["items_count"] == 2
     assert add_data["cart"]["items"][0]["sku"] == product.sku
+    # A asserção só pelo SKU deixou passar meses de linhas sem nome: ela é
+    # verdadeira tanto com `name="Pão Francês"` quanto com `name=""`.
+    assert add_data["cart"]["items"][0]["name"] == product.name
     cart_checkout = next(action for action in add_data["cart"]["actions"] if action["ref"] == "checkout")
     assert cart_checkout["label"] == "Finalizar pedido"
     assert cart_checkout["href"] == "/finalizar"
@@ -181,6 +184,29 @@ def test_api_cart_sku_qty_sets_absolute_qty_and_returns_cart_projection(client):
     remove_data = remove.json()
     assert remove_data["line"]["qty"] == 0
     assert remove_data["cart"]["is_empty"] is True
+
+
+def test_api_cart_sku_qty_persists_the_product_name_on_the_stored_line(client):
+    """O nome do produto tem que ficar GRAVADO na linha, não só na resposta.
+
+    O `line["name"]` da resposta cai para `intent.product.name` mesmo quando a
+    linha gravada está vazia, então ele não prova nada. Quem lê o nome depois
+    é o `OrderItem`, e dele o Gestor e o KDS: com `SessionItem.name=""` o
+    balcão passa a ler o SKU ("PAO-FRANCES") no lugar de "Pão Francês".
+    """
+    from shopman.orderman.models import SessionItem
+
+    product = _seed_surface(stock_qty=Decimal("10"))
+
+    resp = client.put(
+        f"/api/v1/cart/skus/{product.sku}/",
+        data=json.dumps({"qty": 2}),
+        content_type="application/json",
+    )
+
+    assert resp.status_code == 200
+    stored = list(SessionItem.objects.filter(sku=product.sku).values_list("name", flat=True))
+    assert stored == [product.name]
 
 
 def test_api_cart_sku_qty_stock_error_returns_rich_payload(client):
