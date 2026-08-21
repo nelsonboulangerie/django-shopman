@@ -931,7 +931,7 @@ OMOTENASHI_DEFAULTS: dict[str, dict[str, dict[str, CopyEntry]]] = {
         # A frase é o que o sistema faz desde a correção do LOTE 6: a exclusão
         # alcança o PEDIDO (handle_ref, data e snapshot), não só o cadastro.
         # "Anonimizados conforme a LGPD" era vago o bastante para esconder que
-        # o telefone ficava em 28 pedidos; a frase agora nomeia o que sai.
+        # o telefone ficava nos 29 pedidos do titular; a frase agora nomeia o que sai.
         WILDCARD: {WILDCARD: CopyEntry(message="Esta ação é irreversível. Apagamos seu nome, telefone, e-mail e endereços, inclusive dos pedidos antigos, e você sai da loja neste dispositivo.")},
     },
     "DEVICE_LIST_EMPTY": {

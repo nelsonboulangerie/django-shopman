@@ -2,7 +2,7 @@
 
 O defeito (P0, medido em 20/08 no banco do seed): `anonymize_customer` não tinha
 uma única referência a `Order`, `Session` ou `handle_ref`. Depois de "Excluir
-minha conta" pela tela, 14 pedidos do titular continuavam com o telefone em
+minha conta" pela tela, os 29 pedidos do titular continuavam com o telefone em
 `orderman_order.handle_ref`, em texto puro — e o telefone É a identidade desta
 loja, porque é o único login. Quem tivesse acesso ao Admin, ao banco ou a um
 relatório re-identificava a pessoa e reconstruía tudo que ela comprou.

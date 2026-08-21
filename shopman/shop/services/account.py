@@ -249,10 +249,10 @@ def toggle_notification_consent(
 # Customer — vive em `Order.handle_ref` como coluna de primeira classe e dentro
 # de `Order.data["customer"]`, que o CommitService copia de `session.data` em
 # TODO commit. A anonimização anterior não tinha uma única referência a `Order`
-# ou `Session`: medido no banco do seed em 20/08, 14 pedidos continuavam com o
-# telefone em texto puro depois da exclusão feita pela tela. Quem tivesse acesso
-# ao Admin, ao banco ou a um relatório re-identificava o titular e reconstruía
-# tudo que ele comprou — enquanto a tela afirmava, por escrito e no exato gesto
+# ou `Session`: medido no banco do seed em 20/08, os 29 pedidos de um titular
+# continuavam com o telefone em texto puro depois da exclusão feita pela tela.
+# Quem tivesse acesso ao Admin, ao banco ou a um relatório re-identificava o
+# titular e reconstruía tudo que ele comprou — enquanto a tela afirmava, no gesto
 # do art. 18 da LGPD, que os dados pessoais tinham sido anonimizados.
 #
 # Estas são as chaves de `Order.data` / `Session.data` que identificam a PESSOA.
