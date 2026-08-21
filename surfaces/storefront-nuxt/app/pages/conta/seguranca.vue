@@ -117,7 +117,7 @@ const devicesCopy = computed(() => devicesResponse.value?.copy || {
   revoke_confirm: 'Remover este dispositivo?',
   revoke_all_confirm: 'Remover todos os dispositivos?',
   unknown_label: 'Dispositivo desconhecido',
-  delete_warning: 'Seus dados pessoais serão anonimizados e você sairá da loja neste dispositivo.'
+  delete_warning: 'Apagamos seu nome, telefone, e-mail e endereços, inclusive dos pedidos antigos, e você sai da loja neste dispositivo.'
 })
 
 async function exportData () {
@@ -463,7 +463,7 @@ useSeoMeta({ title: 'Segurança e dados' })
           <UiField orientation="horizontal">
             <UiFieldContent>
               <UiFieldLabel for="delete-account-ack">Entendi o efeito desta ação</UiFieldLabel>
-              <UiFieldDescription>Histórico operacional de pedidos pode permanecer anonimizado para auditoria.</UiFieldDescription>
+              <UiFieldDescription>O histórico da compra continua sem nada que identifique você: itens, valores e datas, por obrigação fiscal.</UiFieldDescription>
             </UiFieldContent>
             <UiCheckbox id="delete-account-ack" v-model="deleteAccountAcknowledged" />
           </UiField>

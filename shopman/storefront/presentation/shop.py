@@ -34,11 +34,26 @@ class ShopProjection:
     phone_display: str
     phone_url: str
     email: str
+    # CNPJ do estabelecimento, já pontuado. O Decreto 7.962/2013 exige que o
+    # comércio eletrônico mostre CNPJ e endereço em local de destaque, e a loja
+    # não mostrava o CNPJ em lugar nenhum. Formatado aqui, como `phone_display`:
+    # `Shop.document` guarda só dígitos porque é o que o emissor da NFC-e lê.
+    document_display: str
     full_address: str
     maps_url: str
     default_city: str
     copyright: str
     social_links: tuple[SocialLinkProjection, ...]
+
+
+def _format_document(raw: str) -> str:
+    """Pontua CNPJ (14 dígitos) ou CPF (11). Devolve como veio se não for nenhum."""
+    digits = "".join(ch for ch in (raw or "") if ch.isdigit())
+    if len(digits) == 14:
+        return f"{digits[:2]}.{digits[2:5]}.{digits[5:8]}/{digits[8:12]}-{digits[12:]}"
+    if len(digits) == 11:
+        return f"{digits[:3]}.{digits[3:6]}.{digits[6:9]}-{digits[9:]}"
+    return (raw or "").strip()
 
 
 def build_shop_projection(shop: Shop) -> ShopProjection:
@@ -75,6 +90,7 @@ def build_shop_projection(shop: Shop) -> ShopProjection:
         phone_display=shop.phone_display,
         phone_url=shop.phone_url,
         email=shop.email,
+        document_display=_format_document(shop.document),
         full_address=shop.full_address,
         maps_url=shop.maps_url,
         default_city=shop.default_city,

@@ -35,3 +35,14 @@ class StorefrontConfig(AppConfig):
             dispatch_uid="storefront.stock_alerts.on_production_finished",
             weak=False,
         )
+
+        # Exclusão de conta (LGPD art. 18): o shop anuncia, a loja apaga o que
+        # é dela. Ver `shopman/shop/signals.py`.
+        from shopman.shop.signals import customer_anonymized
+        from shopman.storefront.handlers import on_customer_anonymized
+
+        customer_anonymized.connect(
+            on_customer_anonymized,
+            dispatch_uid="storefront.privacy.on_customer_anonymized",
+            weak=False,
+        )

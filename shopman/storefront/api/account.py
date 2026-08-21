@@ -766,7 +766,11 @@ def _devices_copy() -> dict:
         "revoke_confirm": message("DEVICE_REVOKE_CONFIRM", "Remover este dispositivo?"),
         "revoke_all_confirm": message("DEVICE_REVOKE_ALL_CONFIRM", "Remover todos os dispositivos?"),
         "unknown_label": title("DEVICE_LIST_UNKNOWN", "Dispositivo desconhecido"),
-        "delete_warning": message("ACCOUNT_DELETE_WARNING", "Seus dados pessoais serão anonimizados e você sairá da loja neste dispositivo."),
+        # A frase promete o que o sistema faz desde a correção do LOTE 6: a
+        # anonimização alcança o PEDIDO (handle_ref, data e snapshot), não só o
+        # cadastro. Antes disso ela era declaração falsa ao titular no gesto do
+        # art. 18 da LGPD, e o telefone continuava nos 29 pedidos do titular.
+        "delete_warning": message("ACCOUNT_DELETE_WARNING", "Apagamos seu nome, telefone, e-mail e endereços, inclusive dos pedidos antigos, e você sai da loja neste dispositivo."),
     }
 
 

@@ -895,7 +895,7 @@ class TestNotificationService:
         assert directive.payload["requires_active_notification"] is True
 
     @pytest.mark.django_db
-    def test_active_notification_without_enabled_channel_fails_loudly(self):
+    def test_active_notification_without_recipient_fails_loudly(self):
         from shopman.shop.services.notification import deliver_order_notification
 
         order = _make_order(data={"customer_ref": "CLI-001"})
@@ -907,8 +907,13 @@ class TestNotificationService:
                 {"order_ref": order.ref, "customer_ref": "CLI-001"},
             )
 
+        # Este teste afirmava "no active notification channel available" e
+        # tratava o silêncio como o comportamento correto — era o defeito
+        # promovido a asserção. Sem consentimento gravado o aviso do próprio
+        # pedido AGORA sai (execução de contrato); o que sobra aqui é o pedido
+        # sem nenhum destinatário, que continua falhando alto.
         assert success is False
-        assert error == "no active notification channel available"
+        assert error == "no active notification recipient available"
 
     @pytest.mark.django_db
     def test_whatsapp_origin_is_transactional_active_channel(self):

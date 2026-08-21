@@ -928,7 +928,11 @@ OMOTENASHI_DEFAULTS: dict[str, dict[str, dict[str, CopyEntry]]] = {
         WILDCARD: {WILDCARD: CopyEntry(message="Controle os dispositivos confiáveis e seus dados pessoais.")},
     },
     "ACCOUNT_DELETE_WARNING": {
-        WILDCARD: {WILDCARD: CopyEntry(message="Esta ação é irreversível. Seus dados pessoais serão anonimizados conforme a LGPD e você sairá da loja neste dispositivo.")},
+        # A frase é o que o sistema faz desde a correção do LOTE 6: a exclusão
+        # alcança o PEDIDO (handle_ref, data e snapshot), não só o cadastro.
+        # "Anonimizados conforme a LGPD" era vago o bastante para esconder que
+        # o telefone ficava nos 29 pedidos do titular; a frase agora nomeia o que sai.
+        WILDCARD: {WILDCARD: CopyEntry(message="Esta ação é irreversível. Apagamos seu nome, telefone, e-mail e endereços, inclusive dos pedidos antigos, e você sai da loja neste dispositivo.")},
     },
     "DEVICE_LIST_EMPTY": {
         WILDCARD: {WILDCARD: CopyEntry(title="Nenhum dispositivo confiável", message="Quando você optar por confiar neste dispositivo no login, ele aparecerá aqui.")},

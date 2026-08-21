@@ -40,6 +40,16 @@ const year = new Date().getFullYear()
         <NuxtLink to="/conta" class="block text-sm opacity-75 underline-offset-2 hover:underline hover:opacity-100">
           Conta e pedidos
         </NuxtLink>
+        <!-- A loja coleta nome, telefone e endereço e não tinha onde dizer o que faz com
+             eles: a varredura de 20/08 não achou "Privacidade", "Termos", "LGPD" nem
+             "CNPJ" em lugar nenhum do site. É exigência do art. 9º da LGPD e do Decreto
+             7.962/2013, e o rodapé é o único lugar que aparece em toda tela. -->
+        <NuxtLink to="/privacy" class="block text-sm opacity-75 underline-offset-2 hover:underline hover:opacity-100">
+          Privacidade
+        </NuxtLink>
+        <NuxtLink to="/terms" class="block text-sm opacity-75 underline-offset-2 hover:underline hover:opacity-100">
+          Termos de uso
+        </NuxtLink>
       </section>
 
       <section class="min-w-0 space-y-2">
@@ -86,7 +96,7 @@ const year = new Date().getFullYear()
     </div>
 
     <div class="border-t border-current/15 py-3 text-center text-xs opacity-70">
-      {{ year }} · {{ shop?.brand_name || 'Shopman' }}<template v-if="shop?.copyright"> · {{ shop.copyright }}</template>
+      {{ year }} · {{ shop?.brand_name || 'Shopman' }}<template v-if="shop?.document_display"> · CNPJ {{ shop.document_display }}</template><template v-if="shop?.copyright"> · {{ shop.copyright }}</template>
     </div>
   </footer>
 </template>

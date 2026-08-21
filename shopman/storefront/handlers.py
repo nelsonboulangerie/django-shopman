@@ -52,3 +52,24 @@ def on_production_finished_for_stock_alerts(
     from django.db import transaction
 
     transaction.on_commit(lambda: stock_alerts.notify_bake_ready(product_ref))
+
+
+def on_customer_anonymized(sender, customer_ref: str = "", phone: str = "", **kwargs) -> None:
+    """Apaga o que a LOJA guarda do titular quando ele pede exclusão.
+
+    O `shop` orquestra a exclusão mas não pode importar `storefront` (a seta de
+    dependência só aponta para ele), então o alcance chega por signal. Duas
+    tabelas moram aqui e as duas ficavam para trás: os favoritos são um retrato
+    de gosto ligado ao `customer_ref`, e o aviso de reposição guarda o TELEFONE
+    em `contact_phone` — inclusive de quem se inscreveu sem conta.
+
+    Sem este receptor, "excluir minha conta" deixava o número de volta na fila
+    do próximo "voltou ao estoque".
+    """
+    from shopman.storefront.models import CustomerFavorite, StockAlertSubscription
+
+    if customer_ref:
+        CustomerFavorite.objects.filter(customer_ref=customer_ref).delete()
+        StockAlertSubscription.objects.filter(customer_ref=customer_ref).delete()
+    if phone:
+        StockAlertSubscription.objects.filter(contact_phone=phone).delete()
