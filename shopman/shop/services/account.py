@@ -479,6 +479,46 @@ def export_customer_data(customer) -> dict:
     return data
 
 
+def _nada_a_apagar(exc: BaseException) -> bool:
+    """A etapa falhou porque não havia nada lá? Então ela não falhou.
+
+    Anonimizar é idempotente de propósito: o operador reexecuta depois de uma
+    falha parcial, e a segunda passada encontra metade das coisas já apagadas.
+    "Não achei o titular" nessa segunda passada é o estado DESEJADO chegando
+    pelo caminho da exceção — contá-lo como falha faria a reexecução nunca
+    convergir, e o alerta crítico gritar para sempre sobre um trabalho que
+    terminou.
+
+    Duas formas da mesma ausência, porque duas camadas a expressam diferente:
+    o `guestman` levanta `CustomerError(CUSTOMER_NOT_FOUND)`, e o ORM levanta
+    `Customer.DoesNotExist` — este último inclusive quando o titular existe mas
+    está inativo, que é exatamente como a anonimização o deixa
+    (`revoke_consent` filtra por `is_active=True`).
+    """
+    from django.core.exceptions import ObjectDoesNotExist
+
+    if isinstance(exc, ObjectDoesNotExist):
+        return True
+    return getattr(exc, "code", None) == "CUSTOMER_NOT_FOUND"
+
+
+class AnonymizationIncomplete(Exception):
+    """A exclusão rodou inteira, mas alguma etapa falhou — e isso NÃO é sucesso.
+
+    A estrutura defensiva de ``anonymize_customer`` está certa: cada etapa é
+    independente, e uma falha não pode impedir as outras de apagarem o que
+    conseguem. O erro era o silêncio depois — a função voltava sem dizer nada e
+    a API respondia ``{"ok": true}``. O titular ouvia que seus dados foram
+    apagados enquanto parte deles continuava no banco.
+
+    ``steps`` nomeia as etapas que falharam, para o operador saber onde olhar.
+    """
+
+    def __init__(self, steps):
+        self.steps = tuple(steps)
+        super().__init__("Exclusão incompleta: " + ", ".join(self.steps))
+
+
 def anonymize_customer(customer) -> tuple[str, str]:
     """Anonymize personal data and return original ref + phone hash.
 
@@ -486,6 +526,7 @@ def anonymize_customer(customer) -> tuple[str, str]:
     o User do doorman, o perfil de RFM e — desde a correção do LOTE 6 — o rastro
     do titular em `Order` e `Session`, que é onde o telefone realmente morava.
     """
+    falhas: list[str] = []
     original_ref = customer.ref
     original_phone = customer.phone or ""
     phone_hash = hashlib.sha256(original_phone.encode()).hexdigest()[:12]
@@ -505,12 +546,16 @@ def anonymize_customer(customer) -> tuple[str, str]:
     for channel in NOTIFICATION_CONSENT_CHANNELS:
         try:
             ConsentService.revoke_consent(original_ref, channel)
-        except Exception:
+        except Exception as exc:
+            if not _nada_a_apagar(exc):
+                falhas.append(f"revogar consentimento ({channel})")
             logger.warning("consent_revoke_failed channel=%s", channel, exc_info=True)
 
     try:
         address_service.delete_all_addresses(original_ref)
-    except Exception:
+    except Exception as exc:
+        if not _nada_a_apagar(exc):
+            falhas.append("apagar endereços")
         logger.warning("address_cleanup_failed customer=%s", original_ref, exc_info=True)
 
     customer.first_name = "Anonimizado"
@@ -529,6 +574,7 @@ def anonymize_customer(customer) -> tuple[str, str]:
 
         customer_service.purge_pii(customer)
     except Exception:
+        falhas.append("purgar PII do cadastro")
         logger.warning("anonymize: purge_pii falhou customer=%s", original_ref, exc_info=True)
 
     try:
@@ -536,6 +582,7 @@ def anonymize_customer(customer) -> tuple[str, str]:
 
         forget_customer(customer.uuid, phone=original_phone)
     except Exception:
+        falhas.append("esquecer o login")
         logger.warning("anonymize: forget_customer falhou customer=%s", original_ref, exc_info=True)
 
     # O pedido e a sessão — onde o telefone é coluna, não campo derivado.
@@ -550,6 +597,7 @@ def anonymize_customer(customer) -> tuple[str, str]:
             original_ref, counts["orders"], counts["sessions"],
         )
     except Exception:
+        falhas.append("apagar o rastro em pedidos e sessões")
         logger.warning("anonymize: rastro de pedidos falhou customer=%s", original_ref, exc_info=True)
 
     # O perfil de RFM é um retrato comportamental montado para MIRAR a pessoa
@@ -561,6 +609,7 @@ def anonymize_customer(customer) -> tuple[str, str]:
 
         CustomerInsight.objects.filter(customer=customer).delete()
     except Exception:
+        falhas.append("apagar o perfil de RFM")
         logger.warning("anonymize: insight delete falhou customer=%s", original_ref, exc_info=True)
 
     # As superfícies guardam dado do cliente que o shop não pode importar
@@ -576,6 +625,25 @@ def anonymize_customer(customer) -> tuple[str, str]:
             pseudonym=pseudonym,
         )
     except Exception:
+        falhas.append("avisar as superfícies")
         logger.warning("anonymize: signal customer_anonymized falhou customer=%s", original_ref, exc_info=True)
+
+    if falhas:
+        # Alerta ANTES de levantar: a exceção sobe para a API e vira resposta de
+        # erro, mas quem tem de agir é a operação — dado de titular que não saiu
+        # do banco é obrigação legal em aberto, não um 500 qualquer.
+        from shopman.shop.services.observability import create_operator_alert
+
+        create_operator_alert(
+            type="account_deletion_incomplete",
+            severity="critical",
+            message=(
+                f"Exclusão de conta incompleta ({original_ref}): "
+                + ", ".join(falhas)
+                + ". Dado pessoal permanece no banco."
+            ),
+            dedupe_key=f"anonymize:{original_ref}",
+        )
+        raise AnonymizationIncomplete(falhas)
 
     return original_ref, phone_hash
