@@ -2546,11 +2546,19 @@ class Command(BaseCommand):
                 "output_sku": "MD",
                 "batch_size": Decimal("24"),
                 "items": [
-                    ("FARINHA-T45", Decimal("0.500")),
-                    ("MANTEIGA-FR", Decimal("0.500")),
-                    ("OVOS", Decimal("0.400")),
-                    ("ACUCAR", Decimal("0.300")),
-                    ("LIMAO", Decimal("0.020")),
+                    # 22 g de massa por madeleine (usual 20-25 g), na proporção
+                    # clássica: farinha ≈ manteiga ≈ ovo, açúcar um pouco abaixo.
+                    # A ficha rendia 72 g por peça — três vezes o normal. Ela
+                    # escapou da primeira varredura de rendimento porque é a única
+                    # de acabado feita direto de matéria-prima, sem passar por um
+                    # `MASSA-*`, e a consulta filtrava pelas linhas de massa.
+                    # Custo por unidade e sugestão de compra saíam 3x acima, no
+                    # produto que é ~11% das unidades vendidas da casa.
+                    ("FARINHA-T45", Decimal("0.150")),
+                    ("MANTEIGA-FR", Decimal("0.140")),
+                    ("OVOS", Decimal("0.130")),
+                    ("ACUCAR", Decimal("0.100")),
+                    ("LIMAO", Decimal("0.008")),
                 ],
             },
         ]
