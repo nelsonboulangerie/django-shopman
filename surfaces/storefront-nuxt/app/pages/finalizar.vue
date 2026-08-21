@@ -269,9 +269,27 @@ const hasReviewWaitlist = computed(() =>
 const confirmItemSummary = computed(() => buildConfirmItemSummary(checkout.value))
 const phoneDisplay = computed(() => displayBrazilianPhone(state.phone || checkout.value?.customer_phone || '', defaultDdd.value))
 const contactComplete = computed(() => buildContactComplete(state, phoneDisplay.value))
-// Nome só vira input com ação deliberada (ou quando ainda não há nome).
-const showNameInput = computed(() => nameEditing.value || !state.name.trim())
+// O campo Nome aparece por ESTADO explícito, nunca por conteúdo.
+//
+// A forma antiga era `nameEditing.value || !state.name.trim()`: para quem chega
+// sem nome, o input abria porque o campo estava vazio, e na PRIMEIRA tecla o
+// `v-model` gravava "T", o `!state.name.trim()` virava false e o `v-if`
+// desmontava o input no meio da digitação. O cartão colapsava para a linha de
+// leitura mostrando só "T", marcado "Feito", sem erro e sem requisição — e no
+// banco `first_name`/`last_name` ficavam vazios. Não era corrida (reproduzido
+// com 40 ms, 150 ms e 400 ms entre teclas): era o próprio desenho, a condição de
+// exibição lendo o conteúdo do campo que ela exibe.
+//
+// Agora `nameEditing` é a única fonte: entra em edição por ação deliberada
+// (`startEditName`) ou pela abertura automática na hidratação quando ainda não
+// há nome, e só SAI em `saveContact()`, que valida antes. Digitar não pode mais
+// fechar o campo, porque digitar não mexe em `nameEditing`.
+const showNameInput = computed(() => nameEditing.value)
 const nameBeforeEdit = ref('')
+// Cancelar só faz sentido quando há um nome anterior para restaurar. Para quem
+// nunca teve nome, "cancelar" fecharia o campo deixando o cadastro vazio, que é
+// exatamente o estado que este conserto existe para impedir.
+const canCancelNameEdit = computed(() => !!nameBeforeEdit.value.trim())
 async function startEditName () {
   nameBeforeEdit.value = state.name
   nameEditing.value = true
@@ -281,6 +299,7 @@ async function startEditName () {
   else el?.querySelector?.('input')?.focus?.()
 }
 function cancelEditName () {
+  if (!canCancelNameEdit.value) return
   state.name = nameBeforeEdit.value
   nameEditing.value = false
 }
@@ -324,7 +343,14 @@ const quickDateOptions = computed(() => {
 const isCustomDate = computed(() => isCustomCheckoutDate(state.delivery_date, quickDateOptions.value))
 const contactState = computed<CheckoutSectionState>(() => {
   if (fieldErrors.value.name || fieldErrors.value.phone) return 'error'
-  if (contactEditing.value || !contactComplete.value) return 'current'
+  // `nameEditing` entra aqui junto com `contactEditing`, e esta é a METADE
+  // decisiva do conserto do campo Nome. A seção só fica expandida em 'current';
+  // com o telefone já preenchido pelo servidor, a PRIMEIRA letra do nome fazia
+  // `contactComplete` virar true, a etapa virava 'done' e a seção inteira
+  // colapsava — levando o input embora no meio da digitação, com o cartão
+  // exibindo "T" e o selo "Feito". Enquanto alguém está digitando o nome, a
+  // etapa é a etapa ATUAL; quem a declara terminada é o `saveContact()`.
+  if (contactEditing.value || nameEditing.value || !contactComplete.value) return 'current'
   return 'done'
 })
 const canContinueWhen = computed(() => {
@@ -423,6 +449,11 @@ watch(() => checkout.value, value => {
   if (!checkoutHydrated && !fulfillments.includes(state.fulfillment_type)) {
     state.fulfillment_type = fulfillments[0] || 'pickup'
   }
+  // Quem chega sem nome já encontra o campo aberto — mas por decisão tomada
+  // AQUI, uma única vez na hidratação, e não por uma condição que volta a ser
+  // avaliada a cada tecla. Só na 1ª: em refreshes seguintes (cupom, fidelidade,
+  // data) a edição em curso é do cliente, e reabrir seria pisar nela.
+  if (!checkoutHydrated && !state.name.trim()) nameEditing.value = true
   checkoutHydrated = true
   reconcileDeliverySlot()
 }, { immediate: true })
@@ -1012,7 +1043,7 @@ useSeoMeta({
                   <div class="flex items-center justify-between gap-2">
                     <UiLabel for="checkout-name">Nome</UiLabel>
                     <UiButton
-                      v-if="nameEditing"
+                      v-if="canCancelNameEdit"
                       variant="ghost"
                       size="sm"
                       icon="lucide:x"

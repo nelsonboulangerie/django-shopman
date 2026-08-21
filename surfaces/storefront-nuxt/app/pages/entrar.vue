@@ -38,7 +38,10 @@ const {
   start: waStart
 } = useWhatsappVerify()
 const codeDigits = ref<number[]>([])
-const deliveryLabel = ref('WhatsApp')
+// Nasce VAZIO de propósito. Assumir 'WhatsApp' antes de o servidor dizer por
+// onde mandou já escrevia o canal errado na tela; quando o rótulo não vem, a
+// frase omite o canal em vez de chutar um.
+const deliveryLabel = ref('')
 const pending = ref(false)
 const error = ref<AuthErrorView | null>(null)
 const trustedDevice = ref(false)
@@ -541,7 +544,7 @@ useSeoMeta({
 
         <form v-else-if="step === 'code'" ref="codeForm" class="shop-stack-block" @submit.prevent="verifyCode">
           <p class="shop-body">
-            Código enviado por {{ deliveryLabel }} para
+            Código enviado <template v-if="deliveryLabel">por {{ deliveryLabel }} </template>para
             <span class="whitespace-nowrap font-semibold tabular-nums">{{ requestedPhoneDisplay }}</span>.
           </p>
 

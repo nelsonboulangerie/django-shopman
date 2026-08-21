@@ -31,6 +31,8 @@ function card(over: Partial<OrderCardProjection> = {}): OrderCardProjection {
     fulfillment_icon: "storefront",
     fulfillment_label: "Retirada",
     fulfillment_type: "pickup",
+    delivery_address: "",
+    delivery_instructions: "",
     can_confirm: false,
     can_advance: true,
     next_status: "preparing",
@@ -55,6 +57,33 @@ const stubs = { Icon: true, NuxtLink: { template: "<a><slot /></a>" } };
 function mountCard(props: Record<string, unknown>) {
   return mount(OrderCard, { props, global: { stubs } });
 }
+
+describe("OrderCard — para onde vai", () => {
+  // O Gestor é a tela de quem DESPACHA e não mostrava endereço em canto nenhum:
+  // a projection não trazia o campo e o app não tinha uma ocorrência de
+  // "address". Quem manda o pedido para a rua ficava sem destino.
+  it("mostra o endereço no cartão de uma entrega", () => {
+    const w = mountCard({
+      card: card({
+        fulfillment_type: "delivery",
+        fulfillment_label: "Entrega",
+        delivery_address: "Rua das Flores, 123 - apto 42",
+      }),
+    });
+
+    expect(w.find("[data-card-address]").exists()).toBe(true);
+    expect(w.text()).toContain("Rua das Flores, 123 - apto 42");
+  });
+
+  it("não desenha linha de endereço numa retirada", () => {
+    // Controle positivo: o cartão renderizou (o cliente está lá), então a
+    // ausência do endereço é uma decisão, não uma tela que não subiu.
+    const w = mountCard({ card: card({ fulfillment_type: "pickup" }) });
+
+    expect(w.text()).toContain("Ana");
+    expect(w.find("[data-card-address]").exists()).toBe(false);
+  });
+});
 
 describe("OrderCard — render", () => {
   it("mostra cliente, itens e total", () => {

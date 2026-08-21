@@ -66,6 +66,8 @@ export interface OrderCardProjection {
   fulfillment_icon: string;
   fulfillment_label: string;
   fulfillment_type: string;
+  delivery_address: string;
+  delivery_instructions: string;
   can_confirm: boolean;
   can_advance: boolean;
   next_status: string;
@@ -112,6 +114,9 @@ export interface OperatorOrderProjection {
   channel_ref: string;
   channel_icon: string;
   fulfillment_label: string;
+  fulfillment_type: string;
+  delivery_address: string;
+  delivery_instructions: string;
   total_display: string;
   items: OrderItemProjection[];
   timeline: TimelineEventProjection[];
@@ -119,6 +124,11 @@ export interface OperatorOrderProjection {
   payment_method: string;
   payment_method_label: string;
   payment_status: string;
+  can_confirm: boolean;
+  can_advance: boolean;
+  next_action_label: string;
+  advance_block_label: string;
+  advance_block_reason: string;
   can_settle_delivery_cash: boolean;
   fiscal_status_label: string;
   fiscal_status: string;

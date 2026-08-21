@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it } from "vitest";
 
 import { installNuxtGlobals } from "../../../operator-kit/tests/support/composableEnv";
+import { useStationLock } from "../../../operator-kit/app/composables/useStationLock";
 import { useOrdersBoard } from "../../app/composables/useOrdersBoard";
 import type { TwoZoneQueueProjection } from "../../app/types/orders";
 
@@ -148,5 +149,32 @@ describe("useOrdersBoard — bulk + reasons", () => {
     expect(await board.fetchCancellationReasons("IFOOD-1")).toEqual([{ code: "1", description: "Sem estoque" }]);
     env.fetchMock.mockRejectedValueOnce(new Error("net"));
     expect(await board.fetchCancellationReasons("IFOOD-2")).toEqual([]);
+  });
+});
+
+describe("useOrdersBoard — estação travada não é falha de leitura", () => {
+  beforeEach(() => env.reset());
+
+  // Antes do destravamento por PIN toda leitura do backstage volta 403
+  // `station_locked`. O board só guardava isso em `error` e a tela desenhava
+  // "Falha ao carregar a fila. Reconectando…", mandando o operador chamar
+  // suporte de rede na abertura de todo turno. O PDV já erguia a bandeira do
+  // cadeado na leitura; o Gestor não erguia em lugar nenhum.
+  //
+  // O harness devolvia `error: ref(null)` fixo, então NENHUM teste de composable
+  // deste repositório exercitava o que a leitura faz com um erro. Por isso a
+  // suíte inteira ficou verde sobre este defeito.
+  const travada = { status: 403, data: { detail: "Estação travada.", error: { code: "station_locked" } } };
+
+  it("ergue a bandeira do cadeado quando a leitura da fila volta 403 station_locked", () => {
+    env.fetchError.value = travada;
+    useOrdersBoard();
+    expect(useStationLock().denied.value).toBe(true);
+  });
+
+  it("não confunde uma falha comum com cadeado", () => {
+    env.fetchError.value = { status: 500, data: { detail: "boom" } };
+    useOrdersBoard();
+    expect(useStationLock().denied.value).toBe(false);
   });
 });

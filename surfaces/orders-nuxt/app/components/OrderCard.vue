@@ -134,6 +134,16 @@ function buttonClass(priority: string): string {
           · <Icon name="lucide:bike" class="size-3.5 shrink-0" /> {{ card.courier_status_label }}
         </span>
       </p>
+      <!-- para onde vai: sem isto o cartão de uma entrega não dizia o destino,
+           e quem despacha precisava abrir o pedido (onde também não estava). -->
+      <p
+        v-if="card.delivery_address"
+        class="mt-0.5 flex items-start gap-1.5 text-xs text-muted-foreground"
+        data-card-address
+      >
+        <Icon name="lucide:map-pin" class="mt-0.5 size-3.5 shrink-0" />
+        <span class="line-clamp-2">{{ card.delivery_address }}</span>
+      </p>
     </div>
 
     <!-- items -->

@@ -122,6 +122,9 @@ async function submitDispatch(value: string | null) {
   if (ok) dialog.value = "";
 }
 
+// Estação travada pelo servidor: não é "pedido não encontrado".
+const { denied: stationLocked } = useStationLock();
+
 const fiscalHref = (link: { href?: string; url?: string }) => link.href || link.url || "#";
 </script>
 
@@ -142,11 +145,17 @@ const fiscalHref = (link: { href?: string; url?: string }) => link.href || link.
     </header>
 
     <p v-if="pending && !order" class="text-sm text-muted-foreground">Carregando…</p>
-    <p v-else-if="error || !order" class="rounded-md border border-destructive/30 bg-destructive/5 p-4 text-sm text-destructive dark:text-orange-400">
+    <!-- `!stationLocked`: com a estação travada a leitura volta 403 e este aviso
+         dizia "Pedido não encontrado", que é falso e assusta. Nesse estado quem
+         fala é a identificação, que sobe por cima. -->
+    <p v-else-if="(error || !order) && !stationLocked" class="rounded-md border border-destructive/30 bg-destructive/5 p-4 text-sm text-destructive dark:text-orange-400" data-order-error>
       Pedido não encontrado ou falha ao carregar.
     </p>
 
-    <template v-else>
+    <!-- `v-else-if="order"` e não `v-else`: com a estação travada suprimimos o
+         aviso de erro, e sem este guard o bloco abaixo passaria a renderizar
+         sem pedido nenhum e estouraria em `order.status`. -->
+    <template v-else-if="order">
       <!-- summary -->
       <section class="flex flex-col gap-3 rounded-lg border bg-card p-4">
         <div class="flex flex-wrap items-center gap-2">
@@ -161,6 +170,15 @@ const fiscalHref = (link: { href?: string; url?: string }) => link.href || link.
         <div class="grid gap-1 text-sm">
           <p class="flex items-center gap-2"><Icon name="lucide:user" class="size-4 text-muted-foreground" /> {{ order.customer_name || "Sem cliente" }}</p>
           <p class="flex items-center gap-2 text-muted-foreground"><Icon name="lucide:package" class="size-4" /> {{ order.fulfillment_label }}</p>
+          <!-- Para onde vai. Quem despacha não tinha o endereço em tela nenhuma
+               do Gestor, embora o pedido sempre o carregasse. -->
+          <p v-if="order.delivery_address" class="flex items-start gap-2" data-order-address>
+            <Icon name="lucide:map-pin" class="mt-0.5 size-4 shrink-0 text-muted-foreground" />
+            <span class="min-w-0">
+              {{ order.delivery_address }}
+              <span v-if="order.delivery_instructions" class="block text-muted-foreground">{{ order.delivery_instructions }}</span>
+            </span>
+          </p>
           <p class="flex items-center gap-2 text-muted-foreground"><Icon name="lucide:wallet" class="size-4" /> {{ order.payment_method_label || "—" }} · {{ order.payment_status || "—" }}</p>
         </div>
 
@@ -171,13 +189,21 @@ const fiscalHref = (link: { href?: string; url?: string }) => link.href || link.
         </div>
       </section>
 
-      <!-- actions -->
+      <!-- actions — as MESMAS regras do board (cardAffordances), lidas da mesma
+           projection. A guarda do "Avançar" era `can_settle_delivery_cash !==
+           undefined`, sempre verdadeira, e o "Aceitar" não tinha guarda: num
+           pedido `new` os dois apareciam cheios e o clique levava 400. Aqui o
+           que decide é o servidor, e quando ele bloqueia o lugar do botão
+           continua ocupado dizendo o motivo, em vez de sumir. -->
       <section class="flex flex-wrap gap-2">
-        <button v-if="order.can_settle_delivery_cash !== undefined && order.status !== 'cancelled'" type="button" :disabled="busy" class="inline-flex items-center gap-1.5 rounded-md border border-transparent bg-primary px-3.5 py-2 text-sm font-semibold text-primary-foreground transition hover:bg-primary/90 disabled:opacity-50" @click="onAdvance">
-          <Icon name="lucide:arrow-right" class="size-4" /> Avançar
-        </button>
-        <button type="button" :disabled="busy" class="inline-flex items-center gap-1.5 rounded-md border px-3.5 py-2 text-sm font-semibold transition hover:bg-accent disabled:opacity-50" @click="confirm">
+        <button v-if="order.can_confirm" type="button" :disabled="busy" class="inline-flex items-center gap-1.5 rounded-md border border-transparent bg-primary px-3.5 py-2 text-sm font-semibold text-primary-foreground transition hover:bg-primary/90 disabled:opacity-50" data-action="confirm" @click="confirm">
           <Icon name="lucide:check" class="size-4" /> Aceitar
+        </button>
+        <button v-else-if="order.can_advance && order.next_action_label" type="button" :disabled="busy" class="inline-flex items-center gap-1.5 rounded-md border border-transparent bg-primary px-3.5 py-2 text-sm font-semibold text-primary-foreground transition hover:bg-primary/90 disabled:opacity-50" data-action="advance" @click="onAdvance">
+          <Icon name="lucide:arrow-right" class="size-4" /> {{ order.next_action_label }}
+        </button>
+        <button v-else-if="order.advance_block_label" type="button" disabled :title="order.advance_block_reason" class="inline-flex cursor-not-allowed items-center gap-1.5 rounded-md border px-3.5 py-2 text-sm font-semibold text-muted-foreground opacity-60" data-action="advance-blocked">
+          <Icon name="lucide:clock" class="size-4" /> {{ order.advance_block_label }}
         </button>
         <button v-if="order.can_settle_delivery_cash" type="button" :disabled="busy" class="inline-flex items-center gap-1.5 rounded-md border px-3.5 py-2 text-sm font-semibold transition hover:bg-accent disabled:opacity-50" @click="openDialog('settle')">
           <Icon name="lucide:banknote" class="size-4" /> Acerto dinheiro
@@ -188,7 +214,9 @@ const fiscalHref = (link: { href?: string; url?: string }) => link.href || link.
         <button v-if="order.fiscal_status === 'failed'" type="button" :disabled="busy" class="inline-flex items-center gap-1.5 rounded-md border px-3.5 py-2 text-sm font-semibold transition hover:bg-accent disabled:opacity-50" @click="requeueFiscal">
           <Icon name="lucide:file-text" class="size-4" /> Reprocessar fiscal
         </button>
-        <button type="button" :disabled="busy" class="inline-flex items-center gap-1.5 rounded-md border border-destructive/40 px-3.5 py-2 text-sm font-semibold text-destructive transition hover:bg-destructive/10 disabled:opacity-50 dark:text-orange-300" @click="openDialog('reject')">
+        <!-- Recusar é a resposta ao pedido que ACABOU de chegar; depois de
+             aceito o gesto certo é Cancelar, que segue sempre disponível. -->
+        <button v-if="order.can_confirm" type="button" :disabled="busy" class="inline-flex items-center gap-1.5 rounded-md border border-destructive/40 px-3.5 py-2 text-sm font-semibold text-destructive transition hover:bg-destructive/10 disabled:opacity-50 dark:text-orange-300" data-action="reject" @click="openDialog('reject')">
           <Icon name="lucide:x" class="size-4" /> Recusar
         </button>
         <button type="button" :disabled="busy" class="inline-flex items-center gap-1.5 rounded-md border px-3.5 py-2 text-sm font-medium text-muted-foreground transition hover:bg-accent disabled:opacity-50" @click="openDialog('cancel')">
