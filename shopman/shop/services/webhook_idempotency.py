@@ -77,13 +77,26 @@ def claim(
             )
         except IdempotencyKey.DoesNotExist:
             try:
-                record = IdempotencyKey.objects.create(
-                    scope=normalized_scope,
-                    key=normalized_key,
-                    status="in_progress",
-                    expires_at=in_progress_expires_at,
-                )
+                # Savepoint PRÓPRIO. Sem ele, este `create()` derruba o guarda
+                # exatamente na corrida que ele existe para tratar: dois envios
+                # simultâneos do mesmo evento, nenhum enxergando a linha do
+                # outro (READ COMMITTED esconde INSERT não commitado). O perdedor
+                # leva `IntegrityError` — o resultado ESPERADO —, e no Postgres
+                # isso aborta a transação inteira, não só a instrução. O `except`
+                # abaixo então tentaria consultar num bloco já envenenado e
+                # estouraria com "current transaction is aborted", trocando um
+                # replay silencioso por um 500. Mesmo idioma de
+                # `shop/services/pos.py::_claim_sale_request`.
+                with transaction.atomic():
+                    record = IdempotencyKey.objects.create(
+                        scope=normalized_scope,
+                        key=normalized_key,
+                        status="in_progress",
+                        expires_at=in_progress_expires_at,
+                    )
             except IntegrityError:
+                # Perdemos a corrida do insert. Por termos bloqueado no índice
+                # único, a vencedora já commitou: a linha existe e é legível.
                 record = IdempotencyKey.objects.select_for_update().get(
                     scope=normalized_scope,
                     key=normalized_key,

@@ -45,6 +45,9 @@ DEFAULT_RUNTIME_TEST_PATHS = (
     # dois pedidos para uma venda não roda em CI nenhum — e este gate
     # existe exatamente para isso, porque reprova qualquer skip.
     "shopman/shop/tests/test_pos_cash_ledger.py",
+    # O claim de webhook só quebra com o abort de transação do Postgres:
+    # em SQLite o IntegrityError não envenena o bloco, e a corrida passa.
+    "shopman/shop/tests/test_webhook_claim_race.py",
     "shopman/storefront/tests/test_rate_limiting.py",
     "shopman/storefront/tests/web/test_order_access_security.py",
     "shopman/shop/tests/test_eventstream_permissions.py",
