@@ -1739,7 +1739,8 @@ class Command(BaseCommand):
                     "Farinha de trigo, farinha de trigo integral, água, fermento natural, farinha de centeio, sal. "
                     "CONTÉM: glúten."
                 ),
-                "nutrition_facts": nutrition(100, 5, 235.0, 46.0, 1.5, 8.3, 1.3, 0.2, 4.0, 390.0),
+                # 3 porções de 100 g, não 5: a peça tem 300 g desde o PR #280.
+                "nutrition_facts": nutrition(100, 3, 235.0, 46.0, 1.5, 8.3, 1.3, 0.2, 4.0, 390.0),
             },
             "CPX": {
                 "ingredients_text": (
@@ -1747,7 +1748,8 @@ class Command(BaseCommand):
                     "castanha de caju, castanha-do-pará, farinha de centeio, sal. "
                     "CONTÉM: glúten e castanhas."
                 ),
-                "nutrition_facts": nutrition(100, 6, 275.0, 48.0, 10.0, 8.0, 5.5, 0.8, 4.2, 340.0),
+                # 5 porções de 100 g para os 500 g medidos pelo dono.
+                "nutrition_facts": nutrition(100, 5, 275.0, 48.0, 10.0, 8.0, 5.5, 0.8, 4.2, 340.0),
             },
             "PH": {
                 "ingredients_text": (
@@ -2081,7 +2083,14 @@ class Command(BaseCommand):
             }
             pack.ingredients_text = base.ingredients_text
             # A tabela é por porção; o pacote só muda quantas porções traz.
-            pack.nutrition_facts = {**(base.nutrition_facts or {}), "servings": quantidade}
+            # ⚠️ A chave é `servings_per_container` — é ela que o PDP lê e mostra
+            # como "Porções por embalagem". Escrever `servings` não dava erro:
+            # gravava uma chave que ninguém lê, o pacote ficava com as porções da
+            # unidade, e o pacote de 4 pães declarava conter um pão.
+            pack.nutrition_facts = {
+                **(base.nutrition_facts or {}),
+                "servings_per_container": quantidade,
+            }
             pack.save(update_fields=["metadata", "ingredients_text", "nutrition_facts"])
             ProductComponent.objects.update_or_create(
                 parent=pack, component=base, defaults={"qty": Decimal(quantidade)}
