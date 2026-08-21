@@ -4,17 +4,24 @@ Um 403 sem código é indistinguível de falta de permissão para a superfície,
 PDV seguia montado com todas as leituras negadas — desenhando um quadro de
 comandas VAZIO, que no balcão se lê como "as comandas sumiram". Com o código, a
 tela sobe a identificação em vez de mentir.
+
+⚠️ Este arquivo descrevia o mundo de DUAS identidades: um usuário de aparelho
+logado, e o operador ativo escrito à mão num dicionário de sessão. Com a D1
+Parte B a estação deixou de ser uma sessão Django — ela é um cookie de confiança
+de dispositivo, e a pessoa é a sessão. O que os três testes guardam continua
+sendo o mesmo: quem está travado ouve ``station_locked``, e quem só não tem
+permissão NÃO ouve, porque PIN nenhum resolveria.
 """
 
 from __future__ import annotations
 
-import pytest
 from django.contrib.auth import get_user_model
 from django.contrib.auth.models import Permission
 from django.contrib.contenttypes.models import ContentType
-from django.test import TestCase, override_settings
+from django.test import TestCase
 from shopman.cashman.models import Shift
 
+from shopman.backstage.tests.support import trust_station
 from shopman.shop.models import Shop
 
 POS_URL = "/api/v1/backstage/pos/"
@@ -25,19 +32,13 @@ def _grant(user, codename: str) -> None:
     user.user_permissions.add(Permission.objects.get(content_type=ct, codename=codename))
 
 
-@override_settings(SHOPMAN_REQUIRE_ACTIVE_OPERATOR=True)
 class StationLockedCodeTests(TestCase):
     def setUp(self) -> None:
         Shop.objects.create(name="Lock Shop", brand_name="Lock")
-        User = get_user_model()
-        self.device_user = User.objects.create_user(
-            username="estacao", password="x", is_staff=True,
-        )
-        _grant(self.device_user, "operate_pos")
-        self.client.force_login(self.device_user)
+        trust_station(self.client, "balcao")
 
-    @pytest.mark.estacao_travada
     def test_locked_station_names_itself(self) -> None:
+        """O balcão de manhã: aparelho reconhecido, ninguém identificado."""
         response = self.client.get(POS_URL)
 
         self.assertEqual(response.status_code, 403)
@@ -49,13 +50,9 @@ class StationLockedCodeTests(TestCase):
 
     def test_missing_permission_is_not_reported_as_locked(self) -> None:
         """Falta de permissão não se resolve com PIN — não pode virar station_locked."""
-        from shopman.backstage.services.operator import ACTIVE_OPERATOR_SESSION_KEY
-
         User = get_user_model()
-        operator = User.objects.create_user(username="sem-pos", password="x", is_staff=True)
-        session = self.client.session
-        session[ACTIVE_OPERATOR_SESSION_KEY] = {"id": operator.pk, "name": operator.username}
-        session.save()
+        sem_pos = User.objects.create_user(username="sem-pos", password="x", is_staff=True)
+        self.client.force_login(sem_pos)
 
         response = self.client.get(POS_URL)
 
@@ -63,13 +60,10 @@ class StationLockedCodeTests(TestCase):
         self.assertNotIn("error", response.json())
 
     def test_unlocked_station_reads_normally(self) -> None:
-        from shopman.backstage.services.operator import ACTIVE_OPERATOR_SESSION_KEY
-
-        session = self.client.session
-        session[ACTIVE_OPERATOR_SESSION_KEY] = {
-            "id": self.device_user.pk, "name": self.device_user.username,
-        }
-        session.save()
+        User = get_user_model()
+        operador = User.objects.create_user(username="joyce", password="x", is_staff=True)
+        _grant(operador, "operate_pos")
+        self.client.force_login(operador)
 
         response = self.client.get(POS_URL)
 

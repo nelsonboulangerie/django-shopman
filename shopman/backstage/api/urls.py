@@ -137,6 +137,7 @@ from .operations import (
     ProductionQCView,
     ProductionReportsView,
     ProductionWeighingView,
+    StationProvisionView,
     WorkOrderAdvanceStepView,
     WorkOrderFinishView,
     WorkOrderOvenArmView,
@@ -172,6 +173,8 @@ urlpatterns = [
     path("operator/lock/", OperatorLockView.as_view(), name="api-backstage-operator-lock"),
     path("operator/pin/change/", OperatorPinChangeView.as_view(), name="api-backstage-operator-pin-change"),
     path("operator/pin/reset/", OperatorPinResetView.as_view(), name="api-backstage-operator-pin-reset"),
+    # Provisionamento da ESTAÇÃO: uma vez por aparelho, por quem gere operadores.
+    path("operator/station/", StationProvisionView.as_view(), name="api-backstage-operator-station"),
     path("production/", ProductionBoardView.as_view(), name="api-backstage-production"),
     path("production/kds/", ProductionKDSView.as_view(), name="api-backstage-production-kds"),
     path("production/qc/", ProductionQCView.as_view(), name="api-backstage-production-qc"),

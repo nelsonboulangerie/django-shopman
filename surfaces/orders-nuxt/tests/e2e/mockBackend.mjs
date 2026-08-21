@@ -6,7 +6,9 @@ import { createServer } from "node:http";
 const port = Number(process.env.MOCK_PORT || 8796);
 
 // Sessão autenticada e destravada → o shell passa dos gates e mostra o board.
-const SESSION = { device_user: "admin", operator: null, require_operator: false, locked: false, pin_must_change: false };
+// Uma identidade: `locked` é literalmente "não há operador", então um mock com
+// `operator: null, locked: false` descreve um estado que o servidor não produz.
+const SESSION = { station: "balcao", operator: { id: 1, username: "admin", name: "Admin" }, locked: false, pin_must_change: false };
 
 const CARD = {
   ref: "WEB-20260625-0007",

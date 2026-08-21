@@ -1,7 +1,7 @@
 <script setup lang="ts">
 // POS shell — com a antesala de sessão (`/session`) o PDV ganhou rotas, e o
-// app.vue afinou para o chrome comum a todas: aviso de conexão, tela de login
-// da estação (sessão de dispositivo), overlay de identificação do operador
+// app.vue afinou para o chrome comum a todas: aviso de conexão, tela de senha
+// (para aparelho que ainda não é estação), overlay de identificação do operador
 // (PIN/crachá) e o auto-lock de kiosk. A venda vive em `pages/index.vue`; a
 // sessão de caixa em `pages/session/`. Cada página lê a Projection via
 // usePosTerminal (useFetch deduplicado — uma busca só por request).
@@ -12,30 +12,48 @@ const { pos, refresh } = await usePosTerminal();
 const { onReconnect } = useConnectivity();
 onReconnect(() => refresh());
 
-// Re-gate global de sessão (kit): um 401 no meio do turno (sessão de dispositivo
-// expirada) sobe a tela de login em vez de o operador bater numa sessão morta.
+// Re-gate global de sessão (kit): um 401 no meio do turno (sessão expirada do
+// lado do Django) sobe a tela de senha em vez de o operador bater numa sessão
+// morta.
 const { expired: sessionExpired, reset: resetSession } = useOperatorSession();
 
 // Identidade do operador (PIN/crachá) pelo LOCK COMPARTILHADO do kit — o MESMO
 // `useOperatorLock` + `<OperatorLock>` dos outros 4 apps de operador.
 const OPERATOR_PERM = "cashman.operate_pos";
-const { locked, authenticated, mustChange, lock } = useOperatorLock(OPERATOR_PERM);
+const { locked, canIdentify, stationRef, mustChange, lock } = useOperatorLock(OPERATOR_PERM);
+
+// Preparar o aparelho: o gestor entra com senha uma vez e diz qual balcão é este.
+// Enquanto ninguém fizer isso, o aparelho não tem antessala — a loja só entra com
+// senha, todo dia. A oferta é dispensável de propósito: no PC pessoal do gestor a
+// resposta certa é "agora não".
+const setupDismissed = ref(false);
+const needsStationSetup = computed(
+  () => canIdentify.value && !locked.value && !stationRef.value && !setupDismissed.value,
+);
 
 // Auto-lock por ociosidade é a única particularidade de kiosk do PDV (os outros apps
 // não auto-travam). Vale em qualquer rota (venda ou antesala).
 usePosAutoLock({ locked, lock, autoLockSeconds: () => pos.value?.auto_lock_seconds ?? 60 });
 
-// A tela de login sobe SÓ quando não há sessão de dispositivo (device_user ausente)
-// ou ela expirou no meio do turno. Estação COM sessão mas sem operador ativo → o
-// `<OperatorLock>` (picker de PIN/crachá), nunca a tela de login (C1-01).
-const needsLogin = computed(() => !authenticated.value || sessionExpired.value);
+// A tela de SENHA sobe só quando o aparelho não é uma estação reconhecida (a
+// antessala respondeu 403), ou quando a sessão expirou no meio do turno. Estação
+// reconhecida e sem ninguém identificado → `<OperatorLock>` (PIN/crachá), nunca
+// a tela de senha: senão a loja pediria credencial de gestor toda manhã.
+const needsLogin = computed(() => !canIdentify.value || sessionExpired.value);
 
-// Login NO PRÓPRIO caixa (sem bounce pro Django admin): usuário+senha → sessão de
-// dispositivo (cookie .<zona>) → recarrega já operando. Uma tela, um submit.
+// Login com SENHA no próprio caixa (sem bounce pro Django admin): é o caminho de
+// quem provisiona a estação e o do aparelho pessoal. Uma tela, um submit.
 const loginUser = ref("");
 const loginPass = ref("");
 const loginPending = ref(false);
 const loginError = ref("");
+// Recarrega depois de virar estação: toda leitura muda de mundo (a antessala
+// passa a existir, o terminal passa a ser este), e reconciliar peça por peça é
+// mais caminho para dar errado do que um reload numa tela que acontece uma vez.
+function reloadIntoStation() {
+  if (import.meta.client) window.location.reload();
+}
+
 async function submitLogin() {
   if (loginPending.value) return;
   loginError.value = "";
@@ -62,7 +80,7 @@ async function submitLogin() {
 
     <!-- Identificação unificada (PIN ou CRACHÁ): o mesmo overlay dos outros 4 apps. -->
     <OperatorLock
-      v-if="authenticated && (locked || mustChange)"
+      v-if="canIdentify && (locked || mustChange)"
       :perm="OPERATOR_PERM"
     />
 
@@ -106,6 +124,12 @@ async function submitLogin() {
         </UiButton>
       </form>
     </div>
+
+    <OperatorStationSetup
+      v-else-if="needsStationSetup"
+      @done="reloadIntoStation"
+      @dismiss="setupDismissed = true"
+    />
 
     <NuxtPage v-else />
 

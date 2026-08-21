@@ -1,5 +1,14 @@
-"""Generic operator session API (operator/session|eligible|unlock|lock) + the
-end-to-end Opção C flow: unlock by PIN/badge → gated action passes → lock → 403.
+"""A antessala: quem sou eu, quem pode entrar, entrar e sair.
+
+``operator/session|eligible|unlock|lock`` do ponto de vista do balcão travado —
+que é o estado em que a loja amanhece. Não há ninguém logado ali: o aparelho é
+reconhecido por confiança de dispositivo, e é ISSO que faz a tela de
+identificação aparecer.
+
+⚠️ Estes testes tinham uma fixture ``device``: um usuário staff logado que
+representava a máquina. Ela morreu com a D1 Parte B, e não por arrumação — era
+ela o buraco. Um aparelho com sessão Django é um aparelho com permissões, e no
+staging essa sessão era o ``admin`` superusuário.
 """
 
 from __future__ import annotations
@@ -8,11 +17,11 @@ import pytest
 from django.contrib.auth import get_user_model
 from django.contrib.auth.models import Permission
 from django.contrib.contenttypes.models import ContentType
-from django.test import override_settings
 from django.urls import reverse
 from shopman.doorman.models import PinCredential
 
 from shopman.backstage.models import DayClosing
+from shopman.backstage.tests.support import trust_station
 
 User = get_user_model()
 
@@ -23,9 +32,9 @@ def _grant(user, codename, app="backstage"):
 
 
 @pytest.fixture
-def device(db):
-    # The shared station session: staff, but NO operator perms of its own.
-    return User.objects.create_user("estacao", password="x", is_staff=True)
+def balcao(client):
+    """O aparelho do balcão: reconhecido, e sem ninguém identificado nele."""
+    return trust_station(client, "balcao")
 
 
 @pytest.fixture
@@ -47,11 +56,12 @@ def operate_production_perm(db):
 
 
 @pytest.mark.django_db
-@pytest.mark.estacao_travada
-def test_session_reports_locked_then_operator(client, device, baker):
-    client.force_login(device)
+def test_session_reports_locked_then_operator(client, balcao, baker):
     body = client.get(reverse("api-backstage-operator-session")).json()
     assert body["locked"] is True and body["operator"] is None
+    # A tela travada precisa saber DE QUE BALCÃO ela é — não com que conta a
+    # máquina entrou, porque não há conta de máquina.
+    assert body["station"] == balcao
     client.post(
         reverse("api-backstage-operator-unlock"),
         {"operator_id": baker.pk, "pin": "4321", "perm": "backstage.operate_production"},
@@ -60,11 +70,12 @@ def test_session_reports_locked_then_operator(client, device, baker):
     body = client.get(reverse("api-backstage-operator-session")).json()
     assert body["locked"] is False
     assert body["operator"]["username"] == "bia"
+    # E a estação continua a mesma: quem entrou foi uma pessoa, não o aparelho.
+    assert body["station"] == balcao
 
 
 @pytest.mark.django_db
-def test_eligible_filters_by_perm_and_validates(client, device, baker):
-    client.force_login(device)
+def test_eligible_filters_by_perm_and_validates(client, balcao, baker):
     ok = client.get(reverse("api-backstage-operator-eligible"), {"perm": "backstage.operate_production"})
     assert ok.status_code == 200
     assert any(o["username"] == "bia" for o in ok.json()["operators"])
@@ -75,12 +86,28 @@ def test_eligible_filters_by_perm_and_validates(client, device, baker):
     assert client.get(reverse("api-backstage-operator-eligible"), {"perm": "evil"}).status_code == 400
 
 
+@pytest.mark.django_db
+def test_a_antessala_nao_atende_aparelho_de_fora(client, baker):
+    """Sem confiança de estação, nem a lista de quem destrava sai.
+
+    É o outro lado da chave da antessala: ela abre pouca coisa, mas quem não a
+    tem não abre nem essa pouca. Senão o seletor de operadores da loja — nomes de
+    quem trabalha ali — responderia para o navegador de qualquer um.
+    """
+    assert client.get(reverse("api-backstage-operator-eligible")).status_code == 403
+    assert client.get(reverse("api-backstage-operator-session")).status_code == 403
+    assert client.post(
+        reverse("api-backstage-operator-unlock"),
+        {"operator_id": baker.pk, "pin": "4321"},
+        content_type="application/json",
+    ).status_code == 403
+
+
 # ── Unlock by PIN / badge ────────────────────────────────────────────────────
 
 
 @pytest.mark.django_db
-def test_unlock_wrong_pin_and_missing_perm(client, device, baker):
-    client.force_login(device)
+def test_unlock_wrong_pin_and_missing_perm(client, balcao, baker):
     bad = client.post(
         reverse("api-backstage-operator-unlock"),
         {"operator_id": baker.pk, "pin": "0000"},
@@ -97,9 +124,8 @@ def test_unlock_wrong_pin_and_missing_perm(client, device, baker):
 
 
 @pytest.mark.django_db
-def test_unlock_by_badge(client, device, baker):
+def test_unlock_by_badge(client, balcao, baker):
     token = PinCredential.issue_badge(baker)
-    client.force_login(device)
     ok = client.post(
         reverse("api-backstage-operator-unlock"),
         {"badge": token, "perm": "backstage.operate_production"},
@@ -109,16 +135,14 @@ def test_unlock_by_badge(client, device, baker):
     assert ok.json()["operator"]["username"] == "bia"
 
 
-# ── End-to-end Opção C (flag ON): unlock → action 200 → lock → 403 ───────────
+# ── O ciclo do dia: destravar → agir → travar ────────────────────────────────
 
 
 @pytest.mark.django_db
-@override_settings(SHOPMAN_REQUIRE_ACTIVE_OPERATOR=True)
-def test_flag_on_unlock_enables_action_lock_blocks_it(client, device, baker, operate_production_perm):
-    client.force_login(device)
+def test_unlock_enables_action_lock_blocks_it(client, balcao, baker, operate_production_perm):
     board = reverse("api-backstage-production")
 
-    # device alone (no operator) → locked
+    # a estação sozinha → travada
     assert client.get(board).status_code == 403
 
     # unlock the baker (has operate_production) → action passes
@@ -132,3 +156,23 @@ def test_flag_on_unlock_enables_action_lock_blocks_it(client, device, baker, ope
     # lock → blocked again
     client.post(reverse("api-backstage-operator-lock"))
     assert client.get(board).status_code == 403
+
+
+@pytest.mark.django_db
+def test_travar_derruba_a_pessoa_e_NAO_a_estacao(client, balcao, baker):
+    """Travar é sair, não desprovisionar.
+
+    Se a trava levasse a estação junto, o balcão sairia do ar ao fim de cada
+    turno e alguém teria de reprovisionar de manhã com senha de gestor. O cookie
+    de confiança não mora na sessão exatamente para sobreviver a isto.
+    """
+    client.post(
+        reverse("api-backstage-operator-unlock"),
+        {"operator_id": baker.pk, "pin": "4321", "perm": "backstage.operate_production"},
+        content_type="application/json",
+    )
+    client.post(reverse("api-backstage-operator-lock"))
+
+    body = client.get(reverse("api-backstage-operator-session")).json()
+    assert body["locked"] is True and body["operator"] is None
+    assert body["station"] == balcao

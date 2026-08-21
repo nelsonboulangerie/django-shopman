@@ -5,17 +5,20 @@ operate, and resolving/verifying a credential (PIN typed, or badge scanned) for 
 given permission. No credential storage lives here — credentials belong to
 doorman. Shared across every operational surface (POS/KDS/orders/production).
 
-Authorization model (OPERATOR-AUTH-PLAN, Opção C): the device holds a Django staff
-session (station trust); the *active operator* — established here by PIN or badge —
-is the identity the API authorization layer checks permissions against and
-attributes actions to. ``perm`` defaults preserve the POS behaviour; the generic
-operator unlock passes the surface's own permission (or ``None`` for identity-only).
+Modelo de autorização (D1-B, 21/08/2026): **uma identidade só**. Quem prova o PIN
+ou passa o crachá vira a sessão (``login``), e é contra essa pessoa que toda
+permissão é conferida. O aparelho é reconhecido por confiança de dispositivo
+(``backstage.station_trust``), que diz de onde a requisição veio e não concede nada.
+
+Existiu aqui um par ``set_active_operator``/``resolve_active_operator_user`` que
+guardava um segundo sujeito num dicionário de sessão, ao lado da conta logada.
+Duas identidades significam que sempre há um caminho que pergunta para a errada —
+foi assim que o balcão logado como ``admin`` deu chave-mestra a quem chegasse.
 """
 
 from __future__ import annotations
 
 from django.contrib.auth import get_user_model
-from django.utils import timezone
 from shopman.doorman.models import PinCredential
 
 User = get_user_model()
@@ -23,50 +26,20 @@ User = get_user_model()
 OPERATE_POS = "cashman.operate_pos"
 ADJUST_SHIFT = "cashman.adjust_shift"
 
-# Server-session key holding the active operator on a (shared) terminal. The
-# device holds a Django staff session (station trust); the *active operator* is
-# the identity established by PIN or badge that the authorization layer (Opção C)
-# checks permissions against. Cleared by auto-lock. Decouples "which device is
-# authenticated" from "who is operating right now".
-ACTIVE_OPERATOR_SESSION_KEY = "active_operator"
-
 
 def operator_card(user) -> dict:
-    """Public projection of an operator (for the lock-screen picker / chip)."""
+    """Projeção pública de um operador — o que a tela pode mostrar dele.
+
+    Sobreviveu à queda da Opção C porque nunca foi parte dela: é o cartão que a
+    antessala usa no seletor de quem destrava e que o PDV usa no chip de quem
+    está operando. O que mudou é de onde vem o argumento — antes, do dicionário
+    de sessão do "operador ativo"; hoje, de ``request.user``, que É o operador.
+    """
     return {
         "id": user.pk,
         "username": user.get_username(),
         "name": user.get_full_name().strip() or user.get_username(),
     }
-
-
-def set_active_operator(request, user) -> dict:
-    """Bind the active operator to the current terminal session."""
-    card = operator_card(user)
-    request.session[ACTIVE_OPERATOR_SESSION_KEY] = {**card, "since": timezone.now().isoformat()}
-    return card
-
-
-def clear_active_operator(request) -> None:
-    """Lock the terminal: drop the active operator from the session."""
-    request.session.pop(ACTIVE_OPERATOR_SESSION_KEY, None)
-
-
-def active_operator(request) -> dict | None:
-    """The active operator card bound to this terminal session, if any."""
-    return request.session.get(ACTIVE_OPERATOR_SESSION_KEY)
-
-
-def resolve_active_operator_user(request):
-    """Load the active operator's User (still active staff), or None.
-
-    Used by the Opção C authorization layer to check permissions against the
-    operator who unlocked the terminal — not the device session user.
-    """
-    card = active_operator(request)
-    if not card or not card.get("id"):
-        return None
-    return User.objects.filter(pk=card["id"], is_active=True, is_staff=True).first()
 
 
 def eligible_operators(*, perm: str = OPERATE_POS):
@@ -153,22 +126,18 @@ def pin_must_change(user) -> bool:
 
 
 def resolve_target_for_pin_change(request, operator_id=None):
-    """Who is having their PIN changed: explicit ``operator_id``, else active operator,
-    else the device session user (personal devices). ``current_pin`` still gates it.
+    """De quem é o PIN que está sendo trocado: o ``operator_id`` explícito, ou quem está logado.
 
-    The explicit id supports the lock-screen forced-change (temp PIN as current),
-    where no operator is active yet. It is not an escalation: the change still
-    requires proving that operator's current PIN.
+    O id explícito atende a troca forçada da tela de identificação (PIN temporário
+    como "atual"), quando ainda não há ninguém logado. Não é escalada: a troca
+    continua exigindo provar o PIN atual daquele operador.
     """
     raw_id = str(operator_id or "").strip()
     if raw_id:
         return User.objects.filter(pk=raw_id, is_active=True, is_staff=True).first()
-    operator = resolve_active_operator_user(request)
-    if operator is not None:
-        return operator
-    device_user = getattr(request, "user", None)
-    if device_user is not None and device_user.is_authenticated and device_user.is_staff:
-        return device_user
+    user = getattr(request, "user", None)
+    if user is not None and user.is_authenticated and user.is_staff:
+        return user
     return None
 
 

@@ -8,33 +8,37 @@ const PERM = "backstage.operate_production";
 describe("useOperatorLock — session derivations", () => {
   beforeEach(() => env.reset());
 
-  it("reads authenticated/locked/operator/mustChange from the session projection", () => {
+  it("lê estação/trava/operador/mustChange da projection da sessão", () => {
     env.fetchData.value = {
-      device_user: "admin",
+      station: "balcao",
       operator: { name: "Nelson" },
-      require_operator: true,
       locked: true,
       pin_must_change: true,
     };
-    const { authenticated, locked, operator, requireOperator, mustChange } = useOperatorLock(PERM);
-    expect(authenticated.value).toBe(true);
+    const { canIdentify, stationRef, locked, operator, mustChange } = useOperatorLock(PERM);
+    expect(canIdentify.value).toBe(true);
+    expect(stationRef.value).toBe("balcao");
     expect(locked.value).toBe(true);
     expect(operator.value?.name).toBe("Nelson");
-    expect(requireOperator.value).toBe(true);
     expect(mustChange.value).toBe(true);
   });
 
-  it("treats a null session (403 = unauthenticated) as not authenticated, not locked", () => {
+  it("sessão nula (403 da antessala) = aparelho desconhecido, e não travado", () => {
+    // A distinção decide QUAL tela sobe: sem antessala, só a senha resolve;
+    // travado, o PIN resolve. Confundir as duas faz a loja pedir credencial de
+    // gestor toda manhã.
     env.fetchData.value = null;
-    const { authenticated, locked, operator } = useOperatorLock(PERM);
-    expect(authenticated.value).toBe(false);
+    const { canIdentify, locked, operator } = useOperatorLock(PERM);
+    expect(canIdentify.value).toBe(false);
     expect(locked.value).toBe(false);
     expect(operator.value).toBeNull();
   });
 
-  it("is not locked when the gate is off, even with nobody operating", () => {
-    env.fetchData.value = { device_user: "admin", operator: null, require_operator: false, locked: true };
-    expect(useOperatorLock(PERM).locked.value).toBe(false);
+  it("estação reconhecida e vazia PODE pedir identificação, e está travada", () => {
+    env.fetchData.value = { station: "balcao", operator: null, locked: true };
+    const { canIdentify, locked } = useOperatorLock(PERM);
+    expect(canIdentify.value).toBe(true);
+    expect(locked.value).toBe(true);
   });
 });
 
@@ -51,7 +55,7 @@ describe("useOperatorLock — cadeado vindo do servidor", () => {
   };
 
   it("um 403 station_locked tranca a tela mesmo com a sessão dizendo destravado", () => {
-    env.fetchData.value = { device_user: "admin", operator: { name: "Nelson" }, locked: false };
+    env.fetchData.value = { station: "balcao", operator: { name: "Nelson" }, locked: false };
     const { locked, flagIfStationLocked } = useOperatorLock(PERM);
     expect(locked.value).toBe(false);
 
@@ -62,7 +66,7 @@ describe("useOperatorLock — cadeado vindo do servidor", () => {
   });
 
   it("403 por falta de permissão NÃO tranca (não se resolve com PIN)", () => {
-    env.fetchData.value = { device_user: "admin", operator: { name: "Nelson" }, locked: false };
+    env.fetchData.value = { station: "balcao", operator: { name: "Nelson" }, locked: false };
     const { locked, flagIfStationLocked } = useOperatorLock(PERM);
 
     expect(flagIfStationLocked({ status: 403, data: { detail: "Operador sem permissão." } })).toBe(false);
@@ -71,7 +75,7 @@ describe("useOperatorLock — cadeado vindo do servidor", () => {
   });
 
   it("o desbloqueio abaixa a bandeira do servidor", async () => {
-    env.fetchData.value = { device_user: "admin", operator: { name: "Nelson" }, locked: false };
+    env.fetchData.value = { station: "balcao", operator: { name: "Nelson" }, locked: false };
     const { locked, flagIfStationLocked, unlock } = useOperatorLock(PERM);
     flagIfStationLocked(lockedError);
     expect(locked.value).toBe(true);
@@ -82,7 +86,7 @@ describe("useOperatorLock — cadeado vindo do servidor", () => {
   });
 
   it("a bandeira é compartilhada entre composables do mesmo app", () => {
-    env.fetchData.value = { device_user: "admin", operator: { name: "Nelson" }, locked: false };
+    env.fetchData.value = { station: "balcao", operator: { name: "Nelson" }, locked: false };
     const leitura = useOperatorLock(PERM);
     const comandos = useOperatorLock(PERM);
 
@@ -96,7 +100,7 @@ describe("useOperatorLock — unlock", () => {
   beforeEach(() => env.reset());
 
   it("unlocks by PIN, refreshes the session AND all board data (frees 403-stuck fetches)", async () => {
-    env.fetchData.value = { device_user: "admin" };
+    env.fetchData.value = { station: "balcao" };
     const { unlock } = useOperatorLock(PERM);
     const ok = await unlock({ operatorId: 3, pin: "1234" });
     expect(ok).toBe(true);
@@ -109,7 +113,7 @@ describe("useOperatorLock — unlock", () => {
   });
 
   it("prefers the badge payload when a badge is scanned", async () => {
-    env.fetchData.value = { device_user: "admin" };
+    env.fetchData.value = { station: "balcao" };
     const { unlock } = useOperatorLock(PERM);
     await unlock({ badge: "abc123", pin: "9999" });
     expect(env.fetchMock).toHaveBeenCalledWith(
@@ -119,7 +123,7 @@ describe("useOperatorLock — unlock", () => {
   });
 
   it("toasts and returns false on a bad identification", async () => {
-    env.fetchData.value = { device_user: "admin" };
+    env.fetchData.value = { station: "balcao" };
     env.fetchMock.mockRejectedValueOnce({ data: { detail: "PIN inválido" } });
     const { unlock } = useOperatorLock(PERM);
     expect(await unlock({ operatorId: 3, pin: "0000" })).toBe(false);
@@ -127,7 +131,7 @@ describe("useOperatorLock — unlock", () => {
   });
 
   it("ignores a concurrent unlock while one is in flight", async () => {
-    env.fetchData.value = { device_user: "admin" };
+    env.fetchData.value = { station: "balcao" };
     let release!: () => void;
     env.fetchMock.mockImplementationOnce(() => new Promise<void>((r) => (release = r)));
     const { unlock, busy } = useOperatorLock(PERM);
@@ -144,7 +148,7 @@ describe("useOperatorLock — lock / changePin / eligible", () => {
   beforeEach(() => env.reset());
 
   it("lock is best-effort (POST then refresh)", async () => {
-    env.fetchData.value = { device_user: "admin" };
+    env.fetchData.value = { station: "balcao" };
     await useOperatorLock(PERM).lock();
     expect(env.fetchMock).toHaveBeenCalledWith(
       "/api/v1/backstage/operator/lock/",
@@ -154,14 +158,14 @@ describe("useOperatorLock — lock / changePin / eligible", () => {
   });
 
   it("changePin succeeds and clears the error", async () => {
-    env.fetchData.value = { device_user: "admin" };
+    env.fetchData.value = { station: "balcao" };
     const { changePin, changeError } = useOperatorLock(PERM);
     expect(await changePin({ currentPin: "1234", newPin: "5678" })).toBe(true);
     expect(changeError.value).toBe("");
   });
 
   it("changePin exposes the server message on failure", async () => {
-    env.fetchData.value = { device_user: "admin" };
+    env.fetchData.value = { station: "balcao" };
     env.fetchMock.mockRejectedValueOnce({ data: { detail: "PIN atual errado" } });
     const { changePin, changeError } = useOperatorLock(PERM);
     expect(await changePin({ currentPin: "0000", newPin: "5678" })).toBe(false);
@@ -169,7 +173,7 @@ describe("useOperatorLock — lock / changePin / eligible", () => {
   });
 
   it("loadEligible falls back to an empty list on error (never throws to the UI)", async () => {
-    env.fetchData.value = { device_user: "admin" };
+    env.fetchData.value = { station: "balcao" };
     env.fetchMock.mockRejectedValueOnce(new Error("down"));
     const { loadEligible, eligible } = useOperatorLock(PERM);
     await loadEligible();

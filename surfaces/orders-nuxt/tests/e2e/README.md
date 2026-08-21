@@ -13,5 +13,5 @@ fila) + o app (build de produção em `baseURL '/'`). `npm run test:e2e`.
 ## Fora daqui (Django real — reviewer local)
 
 - **Login efetivo** + sessão cross-subdomínio `.boulangerie`.
-- **Lock (Opção C)** — PIN/crachá quando `SHOPMAN_REQUIRE_ACTIVE_OPERATOR` está ON.
+- **Trava do operador** — PIN/crachá na antessala de uma estação provisionada.
 - **Ações** (confirmar/avançar/recusar/atribuir) + SSE realtime + catálogo/expositores.

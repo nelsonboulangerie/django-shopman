@@ -5,7 +5,7 @@
 // Gate: `shop.manage_campaigns` — publicar em nome da marca é decisão de
 // marketing, não de quem opera a fila de pedidos.
 const OPERATOR_PERM = "shop.manage_campaigns";
-const { authenticated, locked, mustChange, operator, lock } = useOperatorLock(OPERATOR_PERM);
+const { canIdentify, locked, mustChange, operator, lock } = useOperatorLock(OPERATOR_PERM);
 
 const hubUrl = useRuntimeConfig().public.operatorHubUrl as string;
 
@@ -17,7 +17,7 @@ useHead({ title: "Marketing" });
     <NuxtRouteAnnouncer />
     <!-- Aviso calmo de conexão (kit) — global, só aparece offline. -->
     <OfflineBanner />
-    <div v-if="authenticated" class="sticky top-0 flex h-screen shrink-0 print:hidden">
+    <div v-if="canIdentify" class="sticky top-0 flex h-screen shrink-0 print:hidden">
       <OperatorRail
         app-icon="megaphone"
         app-label="Marketing"
@@ -27,10 +27,10 @@ useHead({ title: "Marketing" });
       />
     </div>
     <div class="flex min-w-0 flex-1 flex-col">
-      <CampaignTopBar v-if="authenticated" />
+      <CampaignTopBar v-if="canIdentify" />
       <NuxtPage />
     </div>
-    <OperatorLogin v-if="!authenticated" />
+    <OperatorLogin v-if="!canIdentify" />
     <OperatorLock v-else-if="locked || mustChange" :perm="OPERATOR_PERM" />
     <UiSonner />
   </div>

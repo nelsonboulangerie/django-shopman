@@ -15,7 +15,7 @@ Não há exceção para "quem abriu": a gaveta não tem dono.
 from __future__ import annotations
 
 from django.contrib.auth import get_user_model
-from django.test import TestCase, override_settings
+from django.test import TestCase
 from rest_framework.test import APIClient
 from shopman.cashman.models import Shift
 
@@ -35,7 +35,6 @@ def _grant(user, model, codename):
     return User.objects.get(pk=user.pk)  # refresca cache de permissão
 
 
-@override_settings(SHOPMAN_REQUIRE_ACTIVE_OPERATOR=False)
 class POSCashClosePolicyTests(TestCase):
     def setUp(self):
         Shop.objects.create(name="Test", brand_name="Test")

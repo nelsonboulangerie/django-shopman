@@ -1,23 +1,23 @@
 """O livro registra a PESSOA, não o computador.
 
-Com ``SHOPMAN_REQUIRE_ACTIVE_OPERATOR`` ligado (o valor do staging vivo), o
-balcão inteiro roda numa sessão da conta do APARELHO — ``admin`` — e quem opera
-se identifica por PIN ou crachá. O gate da API já usava o operador ativo para
-AUTORIZAR; o subsistema de caixa continuava recebendo ``request.user``.
+O balcão rodava numa sessão da conta do APARELHO — ``admin`` — e quem operava se
+identificava por PIN ou crachá num segundo lugar. O gate da API já usava esse
+operador para AUTORIZAR; o subsistema de caixa continuava recebendo
+``request.user``, que era a máquina.
 
 Resultado medido antes do conserto: a Joyce abria o turno, digitava o valor,
 escolhia o motivo e autorizava, e a linha saía ``op=admin appr=joyce``. Além da
 autoria errada, ``Shift.opened_by`` era sempre a mesma conta.
 
+A D1 Parte B tirou o segundo sujeito: quem prova o PIN vira a sessão, então
+``request.user`` é a pessoa e não há mais dois lugares para consultar. Estes
+testes seguem valendo — e é justamente por não olharem o mecanismo, e sim o
+NOME QUE SAI NO LIVRO, que eles atravessaram a troca de desenho inteiros.
+
 ⚠️ A custódia passou a ser da GAVETA em 21/08/2026: não há mais "um turno por
 operador", e o balcão se reveza dentro de um turno só. O que estes testes
 guardam é a AUTORIA de cada lançamento, que é o que sobrevive — e é o único
 lugar onde a pergunta "quem fez isso" tem resposta.
-
-⚠️ Os testes vizinhos (``test_pos_cash_service``, ``test_api_operator_pin``)
-passavam porque rodam com a flag DESLIGADA, onde ``request.user`` É quem opera.
-A asserção que faltava é esta: com a flag ligada, o nome no livro é o do
-operador identificado.
 """
 
 from __future__ import annotations
@@ -26,7 +26,6 @@ import pytest
 from django.contrib.auth import get_user_model
 from django.contrib.auth.models import Permission
 from django.contrib.contenttypes.models import ContentType
-from django.test import override_settings
 from django.urls import reverse
 from shopman.cashman.models import Entry, Shift, Terminal
 from shopman.doorman.models import PinCredential
@@ -57,12 +56,16 @@ def terminal():
 
 
 @pytest.fixture
-def aparelho(client):
-    """A conta do balcão: é ela que tem a sessão do Django, como no staging."""
-    device = get_user_model().objects.create_user("admin", password="x", is_staff=True)
-    device = _grant(device, "operate_pos", "adjust_shift")
-    client.force_login(device)
-    return device
+def balcao(client, terminal):
+    """O balcão: aparelho reconhecido, e NENHUMA sessão.
+
+    Era uma conta staff logada (``admin``) que representava a máquina. Ela some
+    aqui pela mesma razão que sumiu do sistema — uma máquina com sessão é uma
+    máquina com permissões, e era ela quem assinava o livro.
+    """
+    from shopman.backstage.tests.support import trust_station
+
+    return trust_station(client, terminal.ref)
 
 
 @pytest.fixture
@@ -91,8 +94,7 @@ def _identifica(client, operator, pin=PIN_CAIXA):
     return resposta
 
 
-@override_settings(SHOPMAN_REQUIRE_ACTIVE_OPERATOR=True)
-def test_o_turno_nasce_no_nome_de_quem_se_identificou(client, aparelho, joyce, terminal):
+def test_o_turno_nasce_no_nome_de_quem_se_identificou(client, balcao, joyce, terminal):
     _identifica(client, joyce)
 
     resposta = client.post(
@@ -109,8 +111,7 @@ def test_o_turno_nasce_no_nome_de_quem_se_identificou(client, aparelho, joyce, t
     assert float_in.operator == joyce
 
 
-@override_settings(SHOPMAN_REQUIRE_ACTIVE_OPERATOR=True)
-def test_a_sangria_sai_com_quem_fez_e_com_quem_autorizou(client, aparelho, joyce, gerente, terminal):
+def test_a_sangria_sai_com_quem_fez_e_com_quem_autorizou(client, balcao, joyce, gerente, terminal):
     """``op=joyce appr=marina``. Antes saía ``op=admin appr=marina``."""
     _identifica(client, joyce)
     client.post(
@@ -136,8 +137,7 @@ def test_a_sangria_sai_com_quem_fez_e_com_quem_autorizou(client, aparelho, joyce
     assert saida.approved_by == gerente
 
 
-@override_settings(SHOPMAN_REQUIRE_ACTIVE_OPERATOR=True)
-def test_o_balcao_se_reveza_DENTRO_do_mesmo_turno(client, aparelho, joyce, terminal):
+def test_o_balcao_se_reveza_DENTRO_do_mesmo_turno(client, balcao, joyce, terminal):
     """Uma gaveta, um turno, várias mãos — sem fechar e sem contar no meio.
 
     Este teste afirmava o contrário até 21/08/2026: fechava o caixa da Joyce
@@ -182,9 +182,15 @@ def test_o_balcao_se_reveza_DENTRO_do_mesmo_turno(client, aparelho, joyce, termi
     assert entrada.operator == fran
 
 
-@override_settings(SHOPMAN_REQUIRE_ACTIVE_OPERATOR=False)
-def test_sem_a_flag_a_conta_da_sessao_continua_decidindo(client, aparelho, terminal):
-    """A estação pessoal (o PC do gestor) não tem operador ativo, e continua valendo."""
+def test_quem_entra_com_SENHA_tambem_assina_o_proprio_nome(client, joyce, terminal):
+    """A estação pessoal — o PC do gestor — não tem PIN nem crachá, e não precisa.
+
+    Entrar com usuário e senha é identificar-se do mesmo jeito: a sessão é da
+    pessoa, e o livro sai no nome dela. Não existe um caminho "sem operador"
+    onde a conta da máquina volte a assinar, porque não existe conta de máquina.
+    """
+    client.force_login(joyce)
+
     resposta = client.post(
         reverse("api-backstage-pos-cash-open"),
         {"opening_amount": "100,00", "terminal_ref": terminal.ref},
@@ -192,4 +198,4 @@ def test_sem_a_flag_a_conta_da_sessao_continua_decidindo(client, aparelho, termi
     )
 
     assert resposta.status_code == 200, resposta.content
-    assert Shift.objects.get(pk=resposta.json()["shift_id"]).opened_by == aparelho
+    assert Shift.objects.get(pk=resposta.json()["shift_id"]).opened_by == joyce

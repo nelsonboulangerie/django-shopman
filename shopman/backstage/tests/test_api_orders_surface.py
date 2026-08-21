@@ -12,7 +12,6 @@ from __future__ import annotations
 import pytest
 from django.contrib.auth.models import Permission, User
 from django.contrib.contenttypes.models import ContentType
-from django.test import override_settings
 from django.urls import reverse
 from shopman.orderman.models import Directive, Order, OrderItem
 
@@ -219,7 +218,6 @@ def test_reject_conflicts_when_order_was_auto_confirmed(client, operator, order)
 
 
 @pytest.mark.django_db
-@override_settings(SHOPMAN_REQUIRE_ACTIVE_OPERATOR=False)
 def test_save_notes_persists(client, operator, order):
     client.force_login(operator)
     response = client.post(reverse("api-backstage-order-notes", args=[order.ref]), {"notes": "Separar"})
@@ -265,7 +263,6 @@ def test_settle_delivery_cash_rejects_without_open_shift(client, operator):
 
 
 @pytest.mark.django_db
-@override_settings(SHOPMAN_REQUIRE_ACTIVE_OPERATOR=False)
 def test_cancel_endpoint_delivers_operator_reason_to_customer(
     client, operator, django_capture_on_commit_callbacks
 ):
@@ -294,7 +291,6 @@ def test_cancel_endpoint_delivers_operator_reason_to_customer(
 
 
 @pytest.mark.django_db
-@override_settings(SHOPMAN_REQUIRE_ACTIVE_OPERATOR=False)
 def test_cancel_endpoint_without_reason_stays_generic(
     client, operator, django_capture_on_commit_callbacks
 ):

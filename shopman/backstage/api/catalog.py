@@ -24,9 +24,7 @@ from shopman.backstage.services.exceptions import (
 
 
 def _actor(request) -> str:
-    operator = getattr(request, "active_operator_user", None)
-    if operator is not None:
-        return operator.get_username()
+    """Quem agiu = quem está logado. A segunda identidade deixou de existir (D1-B)."""
     user = getattr(request, "user", None)
     return getattr(user, "username", None) or "operator"
 

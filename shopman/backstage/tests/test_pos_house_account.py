@@ -26,11 +26,6 @@ from shopman.shop.services import pos as shop_pos
 pytestmark = pytest.mark.django_db
 
 
-@pytest.fixture(autouse=True)
-def _no_active_operator(settings):
-    settings.SHOPMAN_REQUIRE_ACTIVE_OPERATOR = False
-
-
 @pytest.fixture
 def counter():
     Shop.objects.create(name="Loja", brand_name="Loja")
