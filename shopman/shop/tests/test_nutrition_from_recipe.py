@@ -223,6 +223,113 @@ class TestFillNutritionFromRecipe:
         text = product.ingredients_text
         assert text.index("Farinha") < text.index("Água") < text.index("Sal")
 
+    def test_shared_insumo_across_sub_recipes_is_listed_once(self):
+        # Um acabado que leva massa MAIS recheio expande dois preparos-base que
+        # dividem matéria-prima. A lista legal (RDC 429/2020, IN 75/2020) não
+        # pode repetir ingrediente: as ocorrências somam e a ordem é decrescente
+        # pela massa somada, não pela ordem do BOM.
+        product = _make_product(sku="RECHEADO")
+
+        massa = Recipe.objects.create(
+            ref="massa-teste-v1", name="Massa", output_sku="MASSA-TESTE",
+            batch_size=Decimal("1"), is_active=True,
+        )
+        RecipeItem.objects.create(
+            recipe=massa, input_sku="FARINHA", quantity=Decimal("1.000"),
+            meta={"label": "Farinha de trigo T45"},
+        )
+        RecipeItem.objects.create(
+            recipe=massa, input_sku="MANTEIGA", quantity=Decimal("0.200"),
+            meta={"label": "Manteiga francesa"},
+        )
+
+        recheio = Recipe.objects.create(
+            ref="recheio-teste-v1", name="Recheio", output_sku="RECHEIO-TESTE",
+            batch_size=Decimal("1"), is_active=True,
+        )
+        RecipeItem.objects.create(
+            recipe=recheio, input_sku="ACUCAR", quantity=Decimal("0.300"),
+            meta={"label": "Açúcar"},
+        )
+        RecipeItem.objects.create(
+            recipe=recheio, input_sku="FARINHA", quantity=Decimal("0.100"),
+            meta={"label": "Farinha de trigo T45"},
+        )
+        RecipeItem.objects.create(
+            recipe=recheio, input_sku="MANTEIGA", quantity=Decimal("0.050"),
+            meta={"label": "Manteiga francesa"},
+        )
+
+        acabado = Recipe.objects.create(
+            ref="recheado-v1", name="Recheado", output_sku="RECHEADO",
+            batch_size=Decimal("10"), is_active=True,
+        )
+        RecipeItem.objects.create(
+            recipe=acabado, input_sku="MASSA-TESTE", quantity=Decimal("1.000"),
+        )
+        RecipeItem.objects.create(
+            recipe=acabado, input_sku="RECHEIO-TESTE", quantity=Decimal("0.500"),
+        )
+
+        fill_nutrition_from_recipe(product)
+        product.refresh_from_db()
+
+        # Farinha 1,000 + 0,5*0,100 = 1,050 kg
+        # Manteiga 0,200 + 0,5*0,050 = 0,225 kg
+        # Açúcar   0,5*0,300         = 0,150 kg
+        assert product.ingredients_text == (
+            "Farinha de trigo T45, Manteiga francesa, Açúcar."
+        )
+
+    def test_ordering_is_by_mass_not_by_raw_quantity(self):
+        # A ordem que vem do BOM compara ``quantity`` sem olhar a unidade, então
+        # 900 g pareceria maior que 1 kg. A chave é a massa convertida.
+        product = _make_product(sku="MISTO")
+        recipe = Recipe.objects.create(
+            ref="misto-v1", name="Misto", output_sku="MISTO",
+            batch_size=Decimal("10"), is_active=True,
+        )
+        RecipeItem.objects.create(
+            recipe=recipe, input_sku="AGUA", quantity=Decimal("900"), unit="g",
+            meta={"label": "Água"},
+        )
+        RecipeItem.objects.create(
+            recipe=recipe, input_sku="FARINHA", quantity=Decimal("1"), unit="kg",
+            meta={"label": "Farinha"},
+        )
+
+        fill_nutrition_from_recipe(product)
+        product.refresh_from_db()
+
+        assert product.ingredients_text == "Farinha, Água."
+
+    def test_item_without_grams_bridge_goes_last_but_stays_listed(self):
+        # Contagem sem ``unit_weight_g`` não tem ponte até grama: não dá para
+        # posicionar o item na ordem decrescente. Ele continua no rótulo (omitir
+        # ingrediente é pior), mas no fim, sem deslocar quem tem massa conhecida.
+        product = _make_product(sku="OVADO")
+        recipe = Recipe.objects.create(
+            ref="ovado-v1", name="Ovado", output_sku="OVADO",
+            batch_size=Decimal("10"), is_active=True,
+        )
+        RecipeItem.objects.create(
+            recipe=recipe, input_sku="OVOS", quantity=Decimal("12"), unit="un",
+            meta={"label": "Ovos"},
+        )
+        RecipeItem.objects.create(
+            recipe=recipe, input_sku="FARINHA", quantity=Decimal("1"), unit="kg",
+            meta={"label": "Farinha"},
+        )
+        RecipeItem.objects.create(
+            recipe=recipe, input_sku="SAL", quantity=Decimal("0.010"), unit="kg",
+            meta={"label": "Sal"},
+        )
+
+        fill_nutrition_from_recipe(product)
+        product.refresh_from_db()
+
+        assert product.ingredients_text == "Farinha, Sal, Ovos."
+
     def test_manual_override_is_not_clobbered(self):
         product = _make_product()
         product.nutrition_facts = {

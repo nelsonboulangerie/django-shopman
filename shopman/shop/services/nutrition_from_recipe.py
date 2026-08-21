@@ -120,21 +120,58 @@ def _is_auto_filled(nutrition_facts: dict[str, Any] | None) -> bool:
 
 
 def _build_ingredients_text(items) -> str:
-    """Join RecipeItem labels in decreasing-weight order (already sorted).
+    """Lista legal de ingredientes: cada um uma vez, em ordem decrescente.
 
-    Falls back to ``input_sku`` when the item has no ``meta["label"]``.
+    RDC 429/2020 e IN 75/2020 pedem duas coisas do rótulo: nenhum ingrediente
+    repetido e ordem decrescente de quantidade. A lista crua do BOM não dá
+    nenhuma das duas. Um acabado que leva massa MAIS recheio expande dois
+    preparos-base que dividem matéria-prima, então farinha, ovos e manteiga
+    chegam aqui duas vezes; e a ordem que vem do BOM compara ``quantity`` sem
+    olhar a unidade, então 900 g pareceria maior que 1 kg.
+
+    Por isso a agregação é por ``input_sku`` e a chave de ordenação é a massa
+    em gramas — a mesma conversão que a soma nutricional usa. Empate mantém a
+    ordem em que o ingrediente apareceu na ficha.
+
+    Cai no ``input_sku`` quando o item não tem ``meta["label"]``.
     """
-    names: list[str] = []
-    for item in items:
+    # input_sku -> {"label": str, "grams": Decimal | None, "position": int}
+    aggregated: dict[str, dict[str, Any]] = {}
+
+    for position, item in enumerate(items):
         meta = item.meta if isinstance(item.meta, dict) else {}
-        label = (meta.get("label") or "").strip()
+        label = (meta.get("label") or "").strip() or (item.input_sku or "")
         if not label:
-            label = item.input_sku
-        if label:
-            names.append(label)
-    if not names:
+            continue
+        key = item.input_sku or label
+        grams = _item_quantity_grams(item)
+
+        entry = aggregated.get(key)
+        if entry is None:
+            aggregated[key] = {"label": label, "grams": grams, "position": position}
+            continue
+        if entry["grams"] is None:
+            entry["grams"] = grams
+        elif grams is not None:
+            entry["grams"] += grams
+
+    if not aggregated:
         return ""
-    return ", ".join(names) + "."
+
+    # Sem ponte até grama (volume sem densidade, contagem sem peso unitário)
+    # não há como posicionar o ingrediente na ordem decrescente. Ele continua
+    # no rótulo — omitir ingrediente de uma lista legal é pior que ordená-lo
+    # mal — mas vai para o fim, em ordem de ficha, onde não desloca quem tem
+    # massa conhecida. Note que basta UMA ocorrência conversível para o
+    # ingrediente voltar à ordenação: a soma parcial subestima a massa, o que
+    # ainda diz mais sobre a posição dele do que jogá-lo na cauda.
+    entries = list(aggregated.values())
+    weighed = [e for e in entries if e["grams"] is not None]
+    unweighed = [e for e in entries if e["grams"] is None]
+    weighed.sort(key=lambda e: (-e["grams"], e["position"]))
+    unweighed.sort(key=lambda e: e["position"])
+
+    return ", ".join(e["label"] for e in weighed + unweighed) + "."
 
 
 def _sum_nutrition(items, batch_size: Decimal, product: Product) -> NutritionFacts | None:
