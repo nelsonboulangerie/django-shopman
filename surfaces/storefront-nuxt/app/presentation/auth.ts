@@ -59,6 +59,14 @@ export function resendCooldown (lastSentAtMs: number | null, nowMs: number): Res
   return { ready: false, remainingSeconds: Math.ceil(remainingMs / 1000) }
 }
 
+// A frase inteira sai daqui, montada, e não de pedaços no template: o espaço
+// que separava o canal de "para" ficava em fim de nó de texto e o compilador do
+// Vue o descartava, então a tela dizia "enviado por SMSpara (43) ...".
+export function codeSentPrefix (deliveryLabel: string | null | undefined): string {
+  const canal = (deliveryLabel || '').trim()
+  return canal ? `Código enviado por ${canal} para` : 'Código enviado para'
+}
+
 export function welcomeNameValue (raw: string): string {
   return raw.replace(/\s+/g, ' ').trim()
 }

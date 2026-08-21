@@ -4,6 +4,7 @@
 operator set through the shared session.
 """
 
+import pytest
 from django.contrib.auth import get_user_model
 from django.contrib.auth.models import Permission
 from django.test import TestCase
@@ -65,5 +66,14 @@ class POSOperatorApiTests(TestCase):
 
         lock = self.client.post(LOCK)
         self.assertEqual(lock.status_code, 200)
+
+        # Depois de travar, a estação NÃO lê mais — e isso mudou de verdade.
+        # Este teste afirmava 200 com `operator: null`, que era o mundo de antes
+        # da Opção C: a sessão do aparelho decidia, e travar só apagava um nome
+        # da tela. Agora a permissão é do operador ativo; sem ele não há quem
+        # autorize a leitura, e o gate responde 403 com código estável — que é
+        # exatamente o que faz o PDV subir a tela de identificação em vez de
+        # desenhar um balcão vazio.
         pos2 = self.client.get("/api/v1/backstage/pos/")
-        self.assertIsNone(pos2.json()["operator"])
+        self.assertEqual(pos2.status_code, 403)
+        self.assertEqual(pos2.json()["error"]["code"], "station_locked")

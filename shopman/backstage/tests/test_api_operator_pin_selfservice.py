@@ -8,6 +8,7 @@ The device session is a staff user (station trust); the operator identity is
 established by PIN. Proving the current PIN is the authorization to rotate it.
 """
 
+import pytest
 from django.contrib.auth import get_user_model
 from django.contrib.auth.models import Permission
 from django.test import TestCase, override_settings

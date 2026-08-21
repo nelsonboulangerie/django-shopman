@@ -3,6 +3,7 @@ import {
   RESEND_COOLDOWN_MS,
   authErrorView,
   authStep,
+  codeSentPrefix,
   otpValidUntilDisplay,
   resendCooldown,
   welcomeNameValue
@@ -84,5 +85,18 @@ describe('welcomeNameValue', () => {
 
   it('returns empty for blank input', () => {
     expect(welcomeNameValue('   ')).toBe('')
+  })
+})
+
+describe('codeSentPrefix', () => {
+  it('separa o canal do "para" com um espaço', () => {
+    expect(codeSentPrefix('SMS')).toBe('Código enviado por SMS para')
+    expect(codeSentPrefix('WhatsApp')).toBe('Código enviado por WhatsApp para')
+  })
+
+  it('omite o canal quando o servidor ainda não disse por onde mandou', () => {
+    expect(codeSentPrefix('')).toBe('Código enviado para')
+    expect(codeSentPrefix(null)).toBe('Código enviado para')
+    expect(codeSentPrefix('   ')).toBe('Código enviado para')
   })
 })

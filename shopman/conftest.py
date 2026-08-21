@@ -59,3 +59,20 @@ def _isolate_rules_state():
     _reset_process_state()
     with reg._lock:
         reg._validators[:] = validators_snapshot
+
+
+# A fixture `_identifica_o_operador_da_sessao` viveu aqui entre o T4 e a D1
+# Parte B, e morreu de causa boa.
+#
+# Ela existia porque havia DUAS identidades: `force_login` estabelecia a sessão do
+# APARELHO, e a permissão era conferida contra um "operador ativo" guardado à
+# parte, que o teste nunca criava — 302 testes batiam em 403 `station_locked`.
+# A fixture preenchia esse segundo sujeito.
+#
+# Com a D1 Parte B existe uma identidade só: quem prova o PIN vira a sessão. Então
+# `force_login(alguem)` JÁ é "alguém se identificou", sem ajuda nenhuma do
+# harness, e o marcador `estacao_travada` também perdeu o sentido — estação
+# travada agora é, literalmente, ninguém logado.
+#
+# Uma peça de harness que some porque o desenho ficou mais simples é o melhor
+# tipo de dívida paga.

@@ -2968,7 +2968,14 @@ class Command(BaseCommand):
             ("bichon", Decimal("25"), (8, 0), (11, 0)),
             ("madeleine", Decimal("68"), (9, 0), (13, 0)),
         ]
-        recipes_by_ref = {r.ref: r for r in Recipe.objects.filter(ref__in=[row[0] for row in production_plan])}
+        # O índice carrega o plano E os pré-preparos: desde 21/08 o seed PRODUZ a
+        # massa (fornadas de pré-preparo na matriz), e não só os acabados.
+        _prep_refs = [rd["ref"] for rd in recipes_data if _is_preparation(rd["ref"])]
+        recipes_by_ref = {
+            r.ref: r
+            for r in Recipe.objects.filter(ref__in=[row[0] for row in production_plan] + _prep_refs)
+        }
+        recipe_by_output = {r.output_sku: r for r in recipes_by_ref.values()}
 
         # ── Mise en place: pré-preparo pronto no depósito ────────────────────
         #
@@ -2993,10 +3000,17 @@ class Command(BaseCommand):
         # mudar o plano reajusta o mise en place sozinho. Três dias de folga
         # para a demonstração aguentar refazer fornada sem secar.
         #
-        # ⚠️ O passo seguinte, que fica para o dono decidir, é o seed PRODUZIR as
-        # massas (WorkOrders de pré-preparo na matriz), em vez de encontrá-las
-        # prontas. Aí o app de produção mostraria as 20 fichas, e não as 12 de
-        # acabado — mudança de narrativa operacional, não de defeito.
+        # ✅ Decidido pelo dono em 21/08: o seed PRODUZ as massas. As fornadas de
+        # pré-preparo entram na matriz do dia (abaixo, "Pré-preparo do dia"), e a
+        # tela de Produção passa a mostrar a manhã inteira — a massa antes do pão,
+        # que é a ordem real da padaria.
+        #
+        # Este ``receive`` CONTINUA, e não é redundância: as fornadas FINISHED do
+        # seed carimbam ``STOCK_CONSUMED``/``STOCK_REALIZED`` de propósito e NUNCA
+        # escrevem o ledger (senão o sweeper as reexecuta — incidente de 19/08 no
+        # staging, 280 movimentos de consumo em dois minutos). Quem põe quilo no
+        # depósito é esta linha; quem conta a história é a fornada. Exatamente
+        # como já vale para os 12 acabados, cujo estoque vem de ``_seed_stock``.
         prep_outputs = {rd["output_sku"] for rd in recipes_data if _is_preparation(rd["ref"])}
         prep_needs: dict[str, Decimal] = {}
         for plan_ref, plan_qty, _plan_start, _plan_finish in production_plan:
@@ -3242,6 +3256,44 @@ class Command(BaseCommand):
         wo_count = 0
         history_count = 0
         future_count = 0
+
+        # ── Pré-preparo do dia: a massa sai ANTES do pão ─────────────────────
+        #
+        # Padaria artesanal faz a própria massa; encontrá-la pronta era ficção do
+        # seed. Estas fornadas saem FINISHED e de madrugada, terminando antes de
+        # a primeira fornada de acabado começar (campagne, 3h40) — porque é isso
+        # que a ordem de produção significa: não dá para modelar a baguete com a
+        # massa que ainda está na masseira.
+        #
+        # A quantidade é a MESMA do mise en place (plano do dia × dias de folga),
+        # para a ficha e o depósito contarem o mesmo número. Mudar o plano
+        # reajusta os dois juntos.
+        prep_count = 0
+        for prep_index, (prep_sku, per_day) in enumerate(sorted(prep_needs.items())):
+            prep_recipe = recipe_by_output.get(prep_sku)
+            if prep_recipe is None:
+                # Pré-preparo sem ficha própria não vira fornada — e o mise en
+                # place acima já garantiu o quilo. Silêncio aqui é correto.
+                continue
+            upsert_work_order(
+                scope="today-prep",
+                recipe=prep_recipe,
+                target_date=today,
+                planned_qty=(per_day * PREP_DAYS_OF_COVER).quantize(Decimal("0.001")),
+                status=WorkOrder.Status.FINISHED,
+                started_qty=(per_day * PREP_DAYS_OF_COVER).quantize(Decimal("0.001")),
+                finished_qty=(per_day * PREP_DAYS_OF_COVER).quantize(Decimal("0.001")),
+                # Escalonadas, não empilhadas: a Nelson tem UMA masseira, e nove
+                # massas prontas no mesmo minuto seria uma tela que ninguém
+                # reconhece. 15 min de defasagem entre as batidas, todas
+                # fechando antes das 3h20 — a primeira fornada de acabado
+                # (campagne) começa 3h40, e massa que ainda está na masseira
+                # não vira pão.
+                start_at=at(today, (1, 0)) + timedelta(minutes=10 * prep_index),
+                finish_at=at(today, (1, 50)) + timedelta(minutes=10 * prep_index),
+                operator_ref=["chef:ana", "chef:joao"][prep_index % 2],
+            )
+            prep_count += 1
 
         # Current day: mixed statuses so the matrix is useful immediately.
         for index, (ref, qty, start_hm, finish_hm) in enumerate(production_plan):

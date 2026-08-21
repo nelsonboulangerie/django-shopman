@@ -43,7 +43,19 @@ from config.settings import *  # noqa: E402,F403 — base primeiro, pinos depois
 # ── Flags de comportamento (runtime) ─────────────────────────────────────────
 SHOPMAN_ENVIRONMENT = "development"
 SHOPMAN_EXPOSE_DEBUG_OTP = True
-SHOPMAN_REQUIRE_ACTIVE_OPERATOR = False
+# ⚠️ TRUE, que é o valor do STAGING (.do/app.staging-subdomains.yaml).
+#
+# Ficou `False` até 21/08/2026, e essa linha é a raiz de uma classe inteira de
+# cegueira: a suíte inteira afirmava "tudo bem" sobre um sistema que NÃO é o que
+# está no ar. Foi por essa fresta que um P0 de dinheiro atravessou 7.996 testes
+# verdes até a auditoria adversarial encontrá-lo pela tela.
+#
+# Ligar derrubou 302 testes — não 302 defeitos, mas uma lacuna do harness
+# repetida 302 vezes: eles faziam `force_login` (a sessão do APARELHO) e nunca
+# identificavam a PESSOA, que é o passo que o balcão real faz com PIN ou crachá.
+# Quem fecha essa lacuna é `_identifica_o_operador_da_sessao` em
+# `shopman/conftest.py`.
+SHOPMAN_REQUIRE_ACTIVE_OPERATOR = True
 SHOPMAN_ADMIN_REQUIRE_2FA = False
 SHOPMAN_EMPLOYEE_DISCOUNT_PERCENT = 20
 SHOPMAN_POS_DISCOUNT_APPROVAL_THRESHOLD_Q = 0
