@@ -840,11 +840,11 @@ class Command(BaseCommand):
             ("BF", "Baguette de Tradition", "Pão de tradição francesa e fermentação 100% natural (levain)", 1600, "un", 0, True,
              f"{IMG}/bf.webp", 250, "Congele inteira ou em pedaços. Reaqueça direto do freezer a 200°C por 8min"),
             ("CGO", "Pain de Campagne", "Fermentação natural (levain), trigo 50% integral e centeio orgânico. Fatiado na hora", 2200, "un", 2, True,
-             f"{IMG}/cgr.webp", 500, "Guarde em saco de pano. Dura até 4 dias em temperatura ambiente"),
+             f"{IMG}/cgr.webp", 300, "Guarde em saco de pano. Dura até 4 dias em temperatura ambiente"),
             ("CPX", "Campagne Passas & Castanhas", "Levain, trigo 50% integral e centeio orgânico, passas, castanhas de caju e do Pará", 3300, "un", 3, True,
              f"{IMG}/cpx.webp", 550, "Guarde em saco de pano. Dura até 5 dias em temperatura ambiente"),
             ("CI", "Ciabatta", "Pão aerado, clássico italiano com azeite extra virgem e fermentação 100% natural (levain)", 1800, "un", 0, True,
-             f"{IMG}/ci.webp", 200, "Congele no mesmo dia. Reaqueça a 200°C por 8min"),
+             f"{IMG}/ci.webp", 180, "Congele no mesmo dia. Reaqueça a 200°C por 8min"),
             ("BE", "Baguete Gergelim", "Baguete com fermentação 100% natural (levain), toque de azeite e gergelim", 1800, "un", 0, True,
              f"{IMG}/be.webp", 260, "Congele no mesmo dia. Reaqueça a 200°C por 8min"),
             # ── Padaria · Finos ──
@@ -2486,11 +2486,10 @@ class Command(BaseCommand):
                 "output_sku": "CGO",
                 "batch_size": Decimal("10"),
                 "items": [
-                    # ⚠️ Em aberto: 820 g de massa rendem ~720 g assados, e o
-                    # catálogo promete 500 g. O peso da massa foi mantido por
-                    # decisão explícita (pão de campanha grande), mas os dois
-                    # números nunca foram confrontados entre si.
-                    ("MASSA-CAMPAGNE", Decimal("8.200")),
+                    # 340 g de massa por campagne, para 300 g assados.
+                    # A rodada anterior manteve 820 g supondo pão de campanha
+                    # grande; o pão da casa é bem menor que isso.
+                    ("MASSA-CAMPAGNE", Decimal("3.400")),
                 ],
             },
             {
@@ -2499,10 +2498,8 @@ class Command(BaseCommand):
                 "output_sku": "CI",
                 "batch_size": Decimal("20"),
                 "items": [
-                    # ⚠️ Em aberto: 120 g de massa rendem ~106 g assados, e o
-                    # catálogo promete 200 g. Um dos dois está errado e a
-                    # decisão é do dono — ver campagne, mesmo caso.
-                    ("MASSA-ALTA-HIDRATACAO", Decimal("2.400")),
+                    # 205 g de massa por ciabatta, para 180 g assados.
+                    ("MASSA-ALTA-HIDRATACAO", Decimal("4.100")),
                 ],
             },
             {
