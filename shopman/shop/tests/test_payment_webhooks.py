@@ -860,8 +860,14 @@ class EfiPixWebhookTests(WebhookTestBase):
 
     # ── Race condition ────────────────────────────────────────
 
-    def test_efi_payment_after_cancel_handled_gracefully(self) -> None:
-        """PIX notification for cancelled order → no crash, 200."""
+    def test_efi_payment_after_cancel_refunds_and_alerts(self) -> None:
+        """Pedido cancelado com a cobrança ainda de pé: captura, estorna e alerta.
+
+        Este teste só afirmava "200, sem crash" — e 200 sem crash era
+        exatamente o que o pedido cancelado devolvia enquanto o dinheiro ficava
+        na conta da loja. O que prova o conserto é o LIVRO (capturado e
+        devolvido) e o alerta certo.
+        """
         order = _create_order_with_payment("web", "pix")
         intent = _create_pix_intent(order)
         order.transition_status("cancelled", actor="test")
@@ -877,6 +883,19 @@ class EfiPixWebhookTests(WebhookTestBase):
         }
         resp = self._post(payload)
         self.assertEqual(resp.status_code, 200)
+
+        self.assertEqual(PaymentService.captured_total(intent.ref), 1000)
+        self.assertEqual(PaymentService.refunded_total(intent.ref), 1000)
+        self.assertTrue(
+            OperatorAlert.objects.filter(
+                type="payment_after_cancel", order_ref=order.ref,
+            ).exists()
+        )
+        self.assertFalse(
+            OperatorAlert.objects.filter(
+                type="payment_insufficient", order_ref=order.ref,
+            ).exists()
+        )
 
     # ── Order not found ───────────────────────────────────────
 
@@ -1078,14 +1097,24 @@ class EfiPixWebhookIpAllowlistTests(WebhookTestBase):
 
 
 class PixCaptureSufficiencyTests(WebhookTestBase):
-    """``on_paid`` só dispara quando o capturado cobre ``order.total_q``.
+    """O dinheiro do Pix nunca é engolido, e o alerta nunca mente.
 
-    Mesmo contrato do webhook Stripe (``has_sufficient_captured_payment``).
-    Pagamento parcial registra audit data, cria alerta ``payment_insufficient``
-    e NÃO transiciona o pedido.
+    Três defeitos moravam aqui, e cada um tem o seu caso:
+
+    * captura parcial queimava a cobrança (o Payman admite UMA captura por
+      intent, então o segundo Pix não tinha mais onde entrar);
+    * Pix sem valor era lido como "cobre o total";
+    * sem intent no livro, o pedido era achado por ``icontains`` e a
+      suficiência vinha do valor que o próprio webhook declarava.
     """
 
-    def test_partial_pix_does_not_dispatch_on_paid(self) -> None:
+    def test_partial_pix_does_not_capture_the_charge(self) -> None:
+        """Abaixo do total: nada de captura, e a cobrança segue de pé.
+
+        Capturar R$ 5,00 de uma cobrança de R$ 10,00 mandava o intent para
+        ``captured`` e o Pix que completasse o valor não teria mais onde
+        entrar: o cliente desembolsava R$ 10,00 e o livro registrava R$ 5,00.
+        """
         from shopman.shop.services.pix_confirmation import confirm_pix
 
         order = _create_order_with_payment("web", "pix")  # total_q = 1000
@@ -1095,35 +1124,97 @@ class PixCaptureSufficiencyTests(WebhookTestBase):
             confirm_pix(txid=intent.gateway_id, e2e_id="E_PARTIAL", amount="5.00")
 
         mock_dispatch.assert_not_called()
+        intent.refresh_from_db()
+        self.assertEqual(intent.status, "pending")
+        self.assertEqual(PaymentService.captured_total(intent.ref), 0)
+
         order.refresh_from_db()
         payment_data = order.data["payment"]
         self.assertEqual(payment_data["paid_amount_q"], 500)
         self.assertNotIn("captured_at", payment_data)
-        self.assertTrue(
+
+        alert = OperatorAlert.objects.get(
+            type="payment_insufficient", order_ref=order.ref, acknowledged=False,
+        )
+        self.assertIn("R$ 5,00 de R$ 10,00", alert.message)
+        self.assertIn("Faltam R$ 5,00", alert.message)
+
+    def test_two_partial_pix_complete_the_charge(self) -> None:
+        """Dois Pix parciais SOMAM e capturam a cobrança inteira.
+
+        Este é o caso medido: R$ 1,00 + R$ 8,00 numa cobrança de R$ 9,00. O
+        livro registrava R$ 1,00 e o pedido ficava ``accepted`` para sempre.
+        """
+        from shopman.shop.services.pix_confirmation import confirm_pix
+
+        order = _create_order_with_payment("web", "pix")  # total_q = 1000
+        intent = _create_pix_intent(order)
+
+        with patch("shopman.shop.lifecycle.dispatch") as mock_dispatch:
+            confirm_pix(txid=intent.gateway_id, e2e_id="E_PART_1", amount="4.00")
+            confirm_pix(txid=intent.gateway_id, e2e_id="E_PART_2", amount="6.00")
+
+        mock_dispatch.assert_called_once_with(order, "on_paid")
+        intent.refresh_from_db()
+        self.assertEqual(intent.status, "captured")
+        self.assertEqual(PaymentService.captured_total(intent.ref), 1000)
+
+        order.refresh_from_db()
+        self.assertEqual(order.data["payment"]["paid_amount_q"], 1000)
+        self.assertIn("captured_at", order.data["payment"])
+
+        # O alerta do parcial descrevia um quadro que deixou de existir.
+        self.assertFalse(
             OperatorAlert.objects.filter(
-                type="payment_insufficient",
-                order_ref=order.ref,
-                acknowledged=False,
+                type="payment_insufficient", order_ref=order.ref, acknowledged=False,
             ).exists()
         )
 
-    def test_partial_pix_replay_stays_blocked_without_duplicate_alert(self) -> None:
+    def test_replayed_partial_pix_counts_once(self) -> None:
+        """O MESMO Pix reapresentado não vira dinheiro novo."""
         from shopman.shop.services.pix_confirmation import confirm_pix
 
         order = _create_order_with_payment("web", "pix")
         intent = _create_pix_intent(order)
 
         with patch("shopman.shop.lifecycle.dispatch") as mock_dispatch:
-            confirm_pix(txid=intent.gateway_id, e2e_id="E_PART_1", amount="5.00")
-            confirm_pix(txid=intent.gateway_id, e2e_id="E_PART_2", amount="5.00")
+            confirm_pix(txid=intent.gateway_id, e2e_id="E_PART_SAME", amount="5.00")
+            confirm_pix(txid=intent.gateway_id, e2e_id="E_PART_SAME", amount="5.00")
 
         mock_dispatch.assert_not_called()
+        order.refresh_from_db()
+        self.assertEqual(order.data["payment"]["paid_amount_q"], 500)
+        intent.refresh_from_db()
+        self.assertEqual(intent.status, "pending")
         self.assertEqual(
             OperatorAlert.objects.filter(
                 type="payment_insufficient", order_ref=order.ref,
             ).count(),
             1,
         )
+
+    def test_second_partial_pix_alerts_again_with_the_new_amount(self) -> None:
+        """O debounce de 15 min escondia o segundo Pix parcial.
+
+        O quadro mudou (agora faltam R$ 2,00, não R$ 7,00), e um alerta que
+        descreve o quadro antigo é um alerta errado.
+        """
+        from shopman.shop.services.pix_confirmation import confirm_pix
+
+        order = _create_order_with_payment("web", "pix")
+        intent = _create_pix_intent(order)
+
+        confirm_pix(txid=intent.gateway_id, e2e_id="E_STEP_1", amount="3.00")
+        confirm_pix(txid=intent.gateway_id, e2e_id="E_STEP_2", amount="5.00")
+
+        messages = list(
+            OperatorAlert.objects.filter(
+                type="payment_insufficient", order_ref=order.ref,
+            ).values_list("message", flat=True)
+        )
+        self.assertEqual(len(messages), 2)
+        self.assertTrue(any("R$ 3,00 de R$ 10,00" in m for m in messages))
+        self.assertTrue(any("R$ 8,00 de R$ 10,00" in m for m in messages))
 
     def test_full_pix_dispatches_on_paid_and_records_captured_at(self) -> None:
         from shopman.shop.services.pix_confirmation import confirm_pix
@@ -1143,78 +1234,299 @@ class PixCaptureSufficiencyTests(WebhookTestBase):
             ).exists()
         )
 
-    def test_partial_pix_on_legacy_order_without_intent_does_not_dispatch(self) -> None:
-        """Fallback por scan de Order.data (sem intent no Payman): compara
-        paid_amount_q com total_q diretamente."""
-        from shopman.shop.services.pix_confirmation import confirm_pix
-
-        order = Order.objects.create(
-            ref="PIX-LEGACY-PARTIAL",
-            channel_ref="web",
-            status="accepted",
-            total_q=1000,
-            data={"payment": {"method": "pix", "intent_ref": "legacy-txid_legacy_1"}},
-        )
-
-        with patch("shopman.shop.lifecycle.dispatch") as mock_dispatch:
-            confirm_pix(txid="txid_legacy_1", e2e_id="E_LEG_PART", amount="5.00")
-
-        mock_dispatch.assert_not_called()
-        order.refresh_from_db()
-        self.assertNotIn("captured_at", order.data["payment"])
-        self.assertTrue(
-            OperatorAlert.objects.filter(
-                type="payment_insufficient", order_ref=order.ref,
-            ).exists()
-        )
-
-    def test_pix_without_amount_on_legacy_order_does_not_dispatch(self) -> None:
+    def test_pix_without_amount_never_counts_as_full_payment(self) -> None:
         """Webhook autenticado sem o valor pago não é prova de pagamento.
 
         (Na EFI o campo se chama ``valor``; para dentro ele viaja como
         ``amount``.)
 
-        No ramo legado (sem intent no Payman) o único número disponível é o do
-        próprio webhook. Ausência de valor era lida como "cobre o total" e
-        disparava ``on_paid`` de graça: pedido entregue sem conferir um
-        centavo. Valor ausente é indeterminado, e indeterminado espera.
+        A ausência caía num default igual ao valor da cobrança, então o Pix
+        sem valor capturava o total e despachava ``on_paid``: pedido entregue
+        sem que ninguém conferisse um centavo. Valor ausente é indeterminado,
+        e indeterminado espera.
+        """
+        from shopman.shop.services.pix_confirmation import confirm_pix
+
+        order = _create_order_with_payment("web", "pix")
+        intent = _create_pix_intent(order)
+
+        with patch("shopman.shop.lifecycle.dispatch") as mock_dispatch:
+            confirm_pix(txid=intent.gateway_id, e2e_id="E_NO_AMOUNT", amount="")
+
+        mock_dispatch.assert_not_called()
+        intent.refresh_from_db()
+        self.assertEqual(intent.status, "pending")
+        order.refresh_from_db()
+        self.assertNotIn("captured_at", order.data["payment"])
+
+        alert = OperatorAlert.objects.get(
+            type="payment_reconciliation_failed", order_ref=order.ref,
+        )
+        self.assertIn("sem o valor pago", alert.message)
+
+    # ── txid casado por fragmento ─────────────────────────────
+
+    def test_txid_fragment_never_touches_another_order(self) -> None:
+        """``icontains`` fazia ``"PAY-"`` casar com o pedido de qualquer um.
+
+        Controle positivo junto: o MESMO pedido é encontrado quando o txid é
+        exatamente o ``intent_ref`` gravado nele, então a ausência de efeito
+        no caso do fragmento não é "a busca nunca acha nada".
         """
         from shopman.shop.services.pix_confirmation import confirm_pix
 
         order = Order.objects.create(
-            ref="PIX-LEGACY-NO-AMOUNT",
+            ref="PIX-FRAGMENT",
             channel_ref="web",
             status="accepted",
             total_q=1000,
-            data={"payment": {"method": "pix", "intent_ref": "legacy-txid_legacy_3"}},
+            data={"payment": {"method": "pix", "intent_ref": "PAY-FRAGMENT-1"}},
         )
 
         with patch("shopman.shop.lifecycle.dispatch") as mock_dispatch:
-            confirm_pix(txid="txid_legacy_3", e2e_id="E_LEG_NO_AMOUNT", amount="")
+            confirm_pix(txid="PAY-", e2e_id="E_FRAGMENT", amount="10.00")
 
         mock_dispatch.assert_not_called()
         order.refresh_from_db()
+        self.assertNotIn("paid_amount_q", order.data["payment"])
         self.assertNotIn("captured_at", order.data["payment"])
+        self.assertFalse(OperatorAlert.objects.filter(order_ref=order.ref).exists())
+
+        # Controle positivo: com o valor exato, o pedido É alcançado.
+        with patch("shopman.shop.lifecycle.dispatch") as mock_dispatch:
+            confirm_pix(txid="PAY-FRAGMENT-1", e2e_id="E_EXACT", amount="10.00")
+
+        order.refresh_from_db()
+        self.assertEqual(order.data["payment"]["paid_amount_q"], 1000)
+
+    def test_pix_without_charge_in_the_book_never_confirms_payment(self) -> None:
+        """Sem intent no Payman não há contrapartida: registra e chama gente.
+
+        O valor declarado pelo próprio webhook era aceito como prova de
+        suficiência: gravava ``captured_at`` e despachava ``on_paid``. E como
+        ``captured_at`` é o guard de idempotência, o pagamento de verdade que
+        chegasse depois capturava no Payman e não disparava mais nada.
+        """
+        from shopman.shop.services.pix_confirmation import confirm_pix
+
+        order = Order.objects.create(
+            ref="PIX-NO-CHARGE",
+            channel_ref="web",
+            status="accepted",
+            total_q=1000,
+            data={"payment": {"method": "pix", "intent_ref": "PAY-NO-CHARGE"}},
+        )
+
+        with patch("shopman.shop.lifecycle.dispatch") as mock_dispatch:
+            confirm_pix(txid="PAY-NO-CHARGE", e2e_id="E_NO_CHARGE", amount="10.00")
+
+        mock_dispatch.assert_not_called()
+        order.refresh_from_db()
+        self.assertEqual(order.data["payment"]["paid_amount_q"], 1000)
+        self.assertNotIn("captured_at", order.data["payment"])
+
+        alert = OperatorAlert.objects.get(
+            type="payment_reconciliation_failed", order_ref=order.ref,
+        )
+        self.assertIn("sem cobrança correspondente no livro", alert.message)
+
+
+# ══════════════════════════════════════════════════════════════
+# EFI PIX — as bordas do dinheiro, pelo webhook de verdade
+# ══════════════════════════════════════════════════════════════
+
+
+@override_settings(SHOPMAN_EFI_WEBHOOK=EFI_WEBHOOK_SETTINGS)
+class EfiPixWebhookMoneyTests(WebhookTestBase):
+    """Sem valor, a mais, a menos, com vírgula, replay e depois do cancelamento.
+
+    Cada caso cobra duas coisas: o efeito no Payman (o livro) e um alerta que
+    descreve o que de fato aconteceu. Alerta que descreve outra coisa é metade
+    do defeito.
+    """
+
+    URL = "/api/webhooks/efi/pix/"
+    AUTH_HEADER = {"HTTP_X_EFI_WEBHOOK_TOKEN": "test-efi-token"}
+
+    def _post_pix(self, **pix_item) -> object:
+        return self.client.post(
+            self.URL, {"pix": [pix_item]}, format="json", **self.AUTH_HEADER,
+        )
+
+    def test_webhook_without_valor_captures_nothing(self) -> None:
+        order = _create_order_with_payment("web", "pix")
+        intent = _create_pix_intent(order)
+
+        resp = self._post_pix(txid=intent.gateway_id, endToEndId="E_WH_NO_VALOR")
+
+        self.assertEqual(resp.status_code, 200, resp.data)
+        intent.refresh_from_db()
+        self.assertEqual(intent.status, "pending")
+        self.assertEqual(PaymentService.captured_total(intent.ref), 0)
+        self.assertIn(
+            "sem o valor pago",
+            OperatorAlert.objects.get(
+                type="payment_reconciliation_failed", order_ref=order.ref,
+            ).message,
+        )
+
+    def test_webhook_valor_above_total_captures_the_authorized_amount(self) -> None:
+        """Pix a maior levantava ``capture_exceeds_authorized``.
+
+        O webhook respondia 500, a Efí reentregava, a falha se repetia para
+        sempre e o pedido ficava travado. Captura-se o AUTORIZADO, e a
+        diferença vira tarefa de gente com o valor na mão.
+        """
+        order = _create_order_with_payment("web", "pix")  # total_q = 1000
+        intent = _create_pix_intent(order)
+
+        resp = self._post_pix(
+            txid=intent.gateway_id, endToEndId="E_WH_ABOVE", valor="12.00",
+        )
+
+        self.assertEqual(resp.status_code, 200, resp.data)
+        intent.refresh_from_db()
+        self.assertEqual(intent.status, "captured")
+        self.assertEqual(PaymentService.captured_total(intent.ref), 1000)
+        self.assertEqual(
+            PaymentTransaction.objects.filter(intent=intent, type="capture").count(), 1,
+        )
+        alert = OperatorAlert.objects.get(
+            type="payment_reconciliation_failed", order_ref=order.ref,
+        )
+        self.assertIn("acima do total: R$ 12,00 de R$ 10,00", alert.message)
+        self.assertIn("devolva R$ 2,00", alert.message)
+
+    def test_webhook_valor_below_total_keeps_the_charge_capturable(self) -> None:
+        order = _create_order_with_payment("web", "pix")
+        intent = _create_pix_intent(order)
+
+        resp = self._post_pix(
+            txid=intent.gateway_id, endToEndId="E_WH_BELOW", valor="5.00",
+        )
+
+        self.assertEqual(resp.status_code, 200, resp.data)
+        intent.refresh_from_db()
+        self.assertEqual(intent.status, "pending")
+        order.refresh_from_db()
+        self.assertNotIn("captured_at", order.data["payment"])
+        self.assertIn(
+            "Faltam R$ 5,00",
+            OperatorAlert.objects.get(
+                type="payment_insufficient", order_ref=order.ref,
+            ).message,
+        )
+
+    def test_webhook_valor_with_comma_is_understood(self) -> None:
+        """``"10,00"`` explodia no ``Decimal`` e virava 500 eterno."""
+        order = _create_order_with_payment("web", "pix")
+        intent = _create_pix_intent(order)
+
+        resp = self._post_pix(
+            txid=intent.gateway_id, endToEndId="E_WH_COMMA", valor="10,00",
+        )
+
+        self.assertEqual(resp.status_code, 200, resp.data)
+        intent.refresh_from_db()
+        self.assertEqual(intent.status, "captured")
+        self.assertEqual(PaymentService.captured_total(intent.ref), 1000)
+
+    def test_webhook_replay_does_not_double_the_money(self) -> None:
+        order = _create_order_with_payment("web", "pix")
+        intent = _create_pix_intent(order)
+
+        first = self._post_pix(
+            txid=intent.gateway_id, endToEndId="E_WH_REPLAY", valor="10.00",
+        )
+        second = self._post_pix(
+            txid=intent.gateway_id, endToEndId="E_WH_REPLAY", valor="10.00",
+        )
+
+        self.assertEqual(first.data["processed"], 1)
+        self.assertEqual(second.data["replays"], 1)
+        self.assertEqual(PaymentService.captured_total(intent.ref), 1000)
+        order.refresh_from_db()
+        self.assertEqual(order.data["payment"]["paid_amount_q"], 1000)
+
+    def test_pix_after_cancel_is_booked_refunded_and_alerted(self) -> None:
+        """O dinheiro que cai depois do cancelamento era engolido em silêncio.
+
+        A cobrança cancelada não casava com nenhum ramo de captura, o Payman
+        respondia "não capturado" à checagem seguinte, e o operador recebia um
+        alerta dizendo que o cliente havia pago A MENOS e que "o pedido segue
+        aguardando pagamento" — com o pedido cancelado e o dinheiro parado na
+        conta da loja, sem estorno.
+        """
+        from shopman.shop.services import payment as payment_service
+
+        order = _create_order_with_payment("web", "pix")
+        intent = _create_pix_intent(order)
+        PaymentService.authorize(intent.ref, gateway_id=intent.gateway_id)
+
+        payment_service.cancel(order, reason="order_cancelled")
+        order.transition_status("cancelled", actor="test")
+        intent.refresh_from_db()
+        self.assertEqual(intent.status, "cancelled")
+
+        resp = self._post_pix(
+            txid=intent.gateway_id, endToEndId="E_WH_AFTER_CANCEL", valor="10.00",
+        )
+
+        self.assertEqual(resp.status_code, 200, resp.data)
+
+        # O dinheiro está no livro, e voltou.
+        booked = [
+            i
+            for i in PaymentService.get_by_order(order.ref)
+            if (i.gateway_data or {}).get("booked_by") == "pix_confirmation"
+        ]
+        self.assertEqual(len(booked), 1)
+        self.assertEqual(PaymentService.captured_total(booked[0].ref), 1000)
+        self.assertEqual(PaymentService.refunded_total(booked[0].ref), 1000)
+
+        # O alerta diz o que aconteceu, e o que MENTIA não existe.
         self.assertTrue(
+            OperatorAlert.objects.filter(
+                type="payment_after_cancel", order_ref=order.ref,
+            ).exists()
+        )
+        self.assertFalse(
             OperatorAlert.objects.filter(
                 type="payment_insufficient", order_ref=order.ref,
             ).exists()
         )
 
-    def test_full_pix_on_legacy_order_without_intent_still_dispatches(self) -> None:
-        from shopman.shop.services.pix_confirmation import confirm_pix
+        order.refresh_from_db()
+        self.assertEqual(order.status, "cancelled")
+        self.assertEqual(order.data["payment"]["paid_amount_q"], 1000)
 
-        order = Order.objects.create(
-            ref="PIX-LEGACY-FULL",
-            channel_ref="web",
-            status="accepted",
-            total_q=1000,
-            data={"payment": {"method": "pix", "intent_ref": "legacy-txid_legacy_2"}},
+    def test_pix_on_a_dead_charge_of_a_live_order_is_booked_not_confirmed(self) -> None:
+        """Cobrança morta com pedido vivo: cliente pagou o QR velho, ou pagou duas vezes.
+
+        Máquina nenhuma distingue os dois, e os dois precisam de gente. O que
+        não pode faltar é o dinheiro estar no livro e alguém saber.
+        """
+        order = _create_order_with_payment("web", "pix")
+        intent = _create_pix_intent(order)
+        PaymentService.cancel(intent.ref, reason="superseded_by_captured_payment")
+
+        resp = self._post_pix(
+            txid=intent.gateway_id, endToEndId="E_WH_DEAD_LIVE", valor="10.00",
         )
 
-        with patch("shopman.shop.lifecycle.dispatch") as mock_dispatch:
-            confirm_pix(txid="txid_legacy_2", e2e_id="E_LEG_FULL", amount="10.00")
+        self.assertEqual(resp.status_code, 200, resp.data)
+        booked = [
+            i
+            for i in PaymentService.get_by_order(order.ref)
+            if (i.gateway_data or {}).get("booked_by") == "pix_confirmation"
+        ]
+        self.assertEqual(len(booked), 1)
+        self.assertEqual(PaymentService.captured_total(booked[0].ref), 1000)
+        self.assertEqual(PaymentService.refunded_total(booked[0].ref), 0)
 
-        mock_dispatch.assert_called_once_with(order, "on_paid")
         order.refresh_from_db()
-        self.assertIn("captured_at", order.data["payment"])
+        self.assertNotIn("captured_at", order.data["payment"])
+        alert = OperatorAlert.objects.get(
+            type="payment_reconciliation_failed", order_ref=order.ref,
+        )
+        self.assertIn("cobrança já encerrada (cancelada)", alert.message)

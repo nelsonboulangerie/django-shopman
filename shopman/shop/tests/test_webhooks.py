@@ -36,7 +36,7 @@ class TestWebhookImports:
         webhook_source = inspect.getsource(efi)
         assert "confirm_pix" in webhook_source
 
-        service_source = inspect.getsource(pix_confirmation._apply_order_payment)
+        service_source = inspect.getsource(pix_confirmation)
         assert "dispatch(order" in service_source
         assert "on_paid" in service_source
         assert "on_payment_confirmed" not in service_source
