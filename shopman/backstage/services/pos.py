@@ -43,19 +43,25 @@ def parse_money_to_q(raw) -> int:
 
 
 def open_cash_shift(*, operator, opening_amount_raw="0", terminal_ref: str = ""):
-    """Abre o turno do operador com o fundo de troco; devolve o já aberto se houver.
+    """Abre o turno da GAVETA com o fundo de troco; devolve o já aberto se houver.
 
-    Idempotente de propósito: a tela reenvia "abrir" depois de um refresh, e um
-    segundo turno para a mesma pessoa é o que a constraint do pacote proíbe.
+    ``operator`` fica no turno como ``opened_by`` — quem declarou o fundo, não
+    dono da custódia: o balcão inteiro trabalha nesta mesma gaveta até o fim do
+    expediente, e cada ato leva o nome de quem o fez, no livro.
+
+    Idempotente de propósito: a tela reenvia "abrir" depois de um refresh, e a
+    constraint do pacote proíbe uma segunda custódia na mesma gaveta.
     """
     from shopman.cashman import services as cash
     from shopman.cashman.exceptions import CashError
 
-    existing = cash.open_shift_for(operator)
+    # Idempotência agora é por GAVETA: reenviar "abrir" na mesma gaveta devolve
+    # o turno que já está lá, seja quem for que apertou.
+    terminal = _terminal(terminal_ref)
+    existing = cash.open_shift_for_terminal(terminal)
     if existing:
         return existing
 
-    terminal = _terminal(terminal_ref)
     float_q = max(0, parse_money_to_q(opening_amount_raw))
     try:
         return cash.open_shift(operator=operator, terminal=terminal, float_q=float_q)
@@ -241,12 +247,11 @@ def settle_account(*, operator, customer_ref: str, amount_raw: str, method: str)
     ``account_settled`` no livro na mesma transação; pix/cartão/external são
     atestados no balcão (``gateway_data.settled_with``).
     """
-    from shopman.cashman import services as cash
 
     from shopman.shop.services import house_account
 
     method = str(method or "").strip().lower()
-    shift = cash.open_shift_for(operator) if method == "cash" else None
+    shift = current_shift() if method == "cash" else None
     try:
         return house_account.settle_account(
             customer_ref,
@@ -431,40 +436,32 @@ def change_request_state(shift, entry_id: int) -> dict:
     return {"entry_id": entry_id}
 
 
-def close_cash_shift(*, operator, closing_amount_raw="0", notes: str = ""):
-    """Fechamento cego do turno do operador: a contagem vira o lançamento ``count``."""
-    shift = _open_shift_or_raise(operator)
-    _close(shift, actor=operator, counted_raw=closing_amount_raw, notes=notes)
-    return shift
+def close_cash_shift(*, actor_user, closing_amount_raw="0", notes: str = "", terminal_ref: str = ""):
+    """Fechamento cego da GAVETA no fim do expediente. Um caminho, um dono.
 
+    Existiam dois: este e um ``close_blocking_shift`` "supervisório", que servia
+    para destravar o beco em que a segunda pessoa do balcão caía — terminal com
+    turno aberto de outra pessoa. Esse beco deixou de existir com a custódia na
+    gaveta, e com ele o segundo caminho: fechar o caixa é uma coisa só.
 
-def close_blocking_shift(*, actor_user, shift_id, closing_amount_raw="0", notes: str = ""):
-    """Fechamento cego SUPERVISÓRIO do turno que bloqueia o terminal.
+    **Quem fecha é quem tem ``perform_closing``** (a gerência). Decisão do dono
+    em 21/08/2026: a contagem é cega, então tecnicamente qualquer um poderia
+    contar sem conseguir burlar — mas a responsabilidade começa na gerência. Não
+    há mais exceção para "o dono do turno": a gaveta não tem dono.
 
-    Destrava o beco de UX: quando o terminal tem um turno aberto que não é do
-    operador atual, ele fica preso sem poder vender. Aqui o GERENTE
-    (``perform_closing``) ou o DONO do turno conta a gaveta e fecha o turno
-    bloqueante — liberando o terminal. Operador comum não fecha o caixa de
-    outro (anti-fraude) → POSPermissionError. Quem fechou fica no lançamento
-    ``count`` como quem agiu; o pacote marca ``supervisory`` no payload quando o
-    ator não é o dono.
+    ⚠️ Consequência operacional: sem ninguém da gerência por perto, a gaveta fica
+    aberta e as vendas do dia seguinte caem no turno de ontem. É o mesmo risco
+    que já existe (há turno aberto no staging desde 19/08), agora com uma porta a
+    menos. Afrouxar é uma linha: somar ``can_operate_pos`` ao teste abaixo.
     """
-    from shopman.cashman.models import Shift
-
     from shopman.backstage.permissions import can_close_day
 
-    shift = (
-        Shift.objects.filter(pk=_int_or_none(shift_id), status=Shift.Status.OPEN)
-        .select_related("terminal", "operator")
-        .first()
-    )
+    if not can_close_day(actor_user):
+        raise POSPermissionError("Fechar o caixa é da gerência. Peça a quem fecha o dia.")
+
+    shift = current_shift(terminal_ref)
     if not shift:
-        raise POSError("Turno não encontrado ou já fechado.")
-
-    is_owner = shift.operator_id == getattr(actor_user, "pk", None)
-    if not (can_close_day(actor_user) or is_owner):
-        raise POSPermissionError("Sem permissão para fechar o turno de outro operador.")
-
+        raise POSError("Caixa não aberto.")
     _close(shift, actor=actor_user, counted_raw=closing_amount_raw, notes=notes)
     return shift
 
@@ -477,6 +474,24 @@ def _close(shift, *, actor, counted_raw, notes: str) -> None:
         cash.close_shift(shift, counted_q=parse_money_to_q(counted_raw), actor=actor, notes=str(notes or "").strip())
     except CashError as exc:
         raise POSError(exc.message) from exc
+
+
+def current_shift(terminal_ref: str = ""):
+    """O turno aberto da GAVETA em que se está trabalhando — ou ``None``.
+
+    Dono único da pergunta "qual é o caixa aberto agora". Substituiu
+    ``cash.open_shift_for(operator)``, que perguntava pela PESSOA: num balcão que
+    se reveza, a segunda pessoa do dia não tinha turno seu e o sistema concluía
+    que não havia caixa aberto.
+
+    ⚠️ Sem ``terminal_ref``, ``_terminal()`` devolve o primeiro terminal ativo.
+    Com UMA gaveta isso é exato. Quando a loja tiver balcão + totem, quem chama
+    precisa passar o ref — e é por isso que o parâmetro existe desde já, em vez
+    de um default escondido que só quebraria no dia da segunda gaveta.
+    """
+    from shopman.cashman import services as cash
+
+    return cash.open_shift_for_terminal(_terminal(terminal_ref))
 
 
 def _terminal(terminal_ref: str = ""):
@@ -492,7 +507,7 @@ def _terminal(terminal_ref: str = ""):
     return terminal or Terminal.default()
 
 
-def cash_movement_receipt_payload(*, operator, entry_id: int, reprint: bool = False) -> dict:
+def cash_movement_receipt_payload(*, operator, entry_id: int, reprint: bool = False, terminal_ref: str = "") -> dict:
     """Bytes do comprovante de sangria/suprimento, prontos para o agente do balcão imprimir.
 
     O servidor compõe a partir da linha do livro; a tela só relaia. Devolve
@@ -506,7 +521,7 @@ def cash_movement_receipt_payload(*, operator, entry_id: int, reprint: bool = Fa
     from shopman.backstage.services.receipt_escpos import cash_movement_receipt
     from shopman.backstage.services.receipt_verify import code_for
 
-    entry = _movement_entry(operator, entry_id)
+    entry = _movement_entry(operator, entry_id, terminal_ref)
     code = code_for(entry.pk)
     # A URL sai do host canônico do Admin, não de uma constante inventada.
     #
@@ -542,7 +557,7 @@ def _receipt_result_statuses() -> tuple[str, ...]:
     return tuple(sorted(Entry.RECEIPT_STATUSES))
 
 
-def record_receipt_result(*, operator, entry_id: int, status: str, detail: str = ""):
+def record_receipt_result(*, operator, entry_id: int, status: str, detail: str = "", terminal_ref: str = ""):
     """Grava o que ACONTECEU com o papel (``receipt_result`` apontando para a sangria/suprimento).
 
     ⚠️ Só o balcão sabe se imprimiu — quem manda ao agente é o navegador. Sem
@@ -566,7 +581,7 @@ def record_receipt_result(*, operator, entry_id: int, status: str, detail: str =
     if status not in _receipt_result_statuses():
         raise POSError("Resultado de impressão inválido.")
 
-    entry = _movement_entry(operator, entry_id)
+    entry = _movement_entry(operator, entry_id, terminal_ref)
     last = receipt_result_for(entry)
     if last is not None and (last.payload or {}).get("status") == "printed":
         return last
@@ -587,8 +602,18 @@ def receipt_result_for(entry):
     return entry.children.filter(kind=Entry.Kind.RECEIPT_RESULT).order_by("-at", "-id").first()
 
 
-def _movement_entry(operator, entry_id: int):
-    """A sangria/suprimento pedida, presa aos turnos DO OPERADOR: ninguém tira comprovante do caixa alheio.
+def _movement_entry(operator, entry_id: int, terminal_ref: str = ""):
+    """A sangria/suprimento pedida, presa aos turnos DAQUELA GAVETA.
+
+    A regra continua sendo "ninguém tira comprovante de caixa alheio"; o que
+    mudou é o que *alheio* quer dizer. Era ``shift__operator=operator`` — o
+    turno da pessoa. Num balcão que se reveza dentro de um turno só, isso
+    recusaria a segunda via de uma sangria que a colega lançou meia hora antes,
+    na MESMA gaveta. Alheio agora é outra gaveta: o balcão não imprime o
+    comprovante do totem.
+
+    ``operator`` fica na assinatura porque quem chama já o tem e o gate de
+    permissão é dele; a busca, essa, é pela gaveta.
 
     Não exige turno aberto: o navegador pode confirmar a impressão (ou pedir a
     segunda via) depois de o turno fechar, e o pacote aceita ``receipt_result``
@@ -599,21 +624,19 @@ def _movement_entry(operator, entry_id: int):
     entry = (
         Entry.objects.filter(
             pk=_int_or_none(entry_id),
-            shift__operator=operator,
+            shift__terminal=_terminal(terminal_ref),
             kind__in=list(MOVEMENT_KIND_BY_API.values()),
         )
         .select_related("shift", "shift__terminal", "operator", "approved_by")
         .first()
     )
     if entry is None:
-        raise POSError("Movimento não encontrado neste turno.")
+        raise POSError("Movimento não encontrado nesta gaveta.")
     return entry
 
 
 def _open_shift_or_raise(operator):
-    from shopman.cashman import services as cash
-
-    shift = cash.open_shift_for(operator)
+    shift = current_shift()
     if not shift:
         raise POSError("Caixa não aberto.")
     return shift

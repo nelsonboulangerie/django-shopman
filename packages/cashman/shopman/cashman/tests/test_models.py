@@ -11,7 +11,7 @@ pytestmark = pytest.mark.django_db
 
 
 def _shift(operator, terminal):
-    return Shift.objects.create(terminal=terminal, operator=operator)
+    return Shift.objects.create(terminal=terminal, opened_by=operator)
 
 
 def test_o_lancamento_recusa_editar_e_apagar(operator, terminal):
@@ -143,22 +143,31 @@ def test_a_unicidade_e_por_turno_por_tipo_e_so_com_pedido(operator, manager, ter
     )
 
     other_terminal = Terminal.objects.create(ref="pdv-2")
-    other_shift = Shift.objects.create(terminal=other_terminal, operator=manager)
+    other_shift = Shift.objects.create(terminal=other_terminal, opened_by=manager)
     Entry.objects.create(shift=other_shift, operator=manager, kind=Entry.Kind.SALE, amount_q=1500, order_ref="A01")
 
 
-def test_um_turno_aberto_por_operador_e_por_terminal(operator, manager, terminal):
-    Shift.objects.create(terminal=terminal, operator=operator)
+def test_um_turno_aberto_por_GAVETA_e_nao_por_pessoa(operator, manager, terminal):
+    """A custódia é do terminal. Uma pessoa pode abrir mais de uma gaveta.
+
+    A constraint por operador existiu até 21/08/2026 e era o que empurrava a
+    segunda pessoa do balcão para a antessala: ela achava um turno aberto e
+    recusava, mesmo sendo a MESMA gaveta em que ela ia trabalhar.
+    """
+    Shift.objects.create(terminal=terminal, opened_by=operator)
+
+    # A mesma pessoa abrindo o totem, com o balcão dela já aberto: permitido.
+    Shift.objects.create(terminal=Terminal.objects.create(ref="totem-1"), opened_by=operator)
+
+    # Duas custódias abertas na MESMA gaveta: nunca, nem por outra pessoa.
     with pytest.raises(IntegrityError), transaction.atomic():
-        Shift.objects.create(terminal=Terminal.objects.create(ref="pdv-2"), operator=operator)
-    with pytest.raises(IntegrityError), transaction.atomic():
-        Shift.objects.create(terminal=terminal, operator=manager)
+        Shift.objects.create(terminal=terminal, opened_by=manager)
 
 
-def test_turno_fechado_libera_o_operador_e_o_terminal(operator, terminal):
-    shift = Shift.objects.create(terminal=terminal, operator=operator, status=Shift.Status.CLOSED)
+def test_turno_fechado_libera_a_gaveta(operator, terminal):
+    shift = Shift.objects.create(terminal=terminal, opened_by=operator, status=Shift.Status.CLOSED)
     assert not shift.is_open
-    Shift.objects.create(terminal=terminal, operator=operator)
+    Shift.objects.create(terminal=terminal, opened_by=operator)
 
 
 def test_o_turno_nao_tem_coluna_de_dinheiro():

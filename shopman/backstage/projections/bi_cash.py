@@ -33,6 +33,16 @@ class BICashDay:
 
 @dataclass(frozen=True)
 class BICashOperatorRow:
+    """O que cada pessoa fez, lido do LIVRO — onde cada linha tem dono.
+
+    ``difference_q`` só é preenchido nos turnos em que essa pessoa lançou
+    SOZINHA: a quebra nasce da contagem, é um número por turno, e com várias
+    mãos na mesma gaveta não há conta que a divida. ``shifts`` conta esses
+    turnos de dono provado, não todos em que a pessoa passou — por isso as
+    duas colunas são coerentes entre si, e por isso zero em ``shifts`` com
+    aberturas de gaveta acima de zero é leitura normal, não defeito.
+    """
+
     operator: str
     shifts: int
     difference_q: int
@@ -133,8 +143,13 @@ def build_bi_cash(
         difference_q = shift.difference_q or 0
         day_shifts[day] += 1
         day_difference[day] += difference_q
-        operator_shifts[shift.operator_key] += 1
-        operator_difference[shift.operator_key] += difference_q
+        # A quebra só ganha dono quando o livro prova que uma pessoa lançou
+        # sozinha naquele turno. Turno com várias mãos entra no total do dia e
+        # da gaveta, e em ninguém — ratear inventaria um culpado.
+        sozinho = shift.sole_operator_key
+        if sozinho:
+            operator_shifts[sozinho] += 1
+            operator_difference[sozinho] += difference_q
 
     # Uma passada pelo livro: sangria/suprimento por dia, e o comportamento de
     # gaveta por operador E por hora — "quem" e "quando" são as duas perguntas

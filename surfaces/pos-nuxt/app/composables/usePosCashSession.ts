@@ -104,16 +104,6 @@ export function usePosCashSession({ pos, actions, refresh, action }: CashSession
     );
   }
 
-  // Fecha (contagem cega) o turno que bloqueia o terminal — gerente ou dono.
-  // Destrava o terminal para o operador atual abrir o seu.
-  function closeBlockingShift(payload: { shift_id: number; amount: string; notes: string }): Promise<boolean> {
-    return run(
-      "/api/v1/backstage/pos/cash/close-blocking/",
-      { shift_id: payload.shift_id, closing_amount: payload.amount || "0", notes: payload.notes },
-      "Falha ao fechar o turno.",
-    );
-  }
-
   // Retirada de gaveta (sangria) exige PIN do gerente. Quem
   // decide é o servidor: a tela envia, e só abre o desafio quando ele recusa com
   // `manager_approval_required`. Assim a regra do que precisa de autorização tem
@@ -309,7 +299,6 @@ export function usePosCashSession({ pos, actions, refresh, action }: CashSession
     managerChallenge,
     openCashShift,
     closeCashShift,
-    closeBlockingShift,
     registerCashMovement,
     // Gaveta: a antesala mostra o botão só onde existe caminho de software.
     canOpenDrawer: drawer.canKick,

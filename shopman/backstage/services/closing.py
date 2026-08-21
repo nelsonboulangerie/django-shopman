@@ -388,10 +388,10 @@ def _cash_shift_summary(closing_date: date) -> dict:
 
     closed = (
         Shift.objects.filter(status=Shift.Status.CLOSED, closed_at__date=closing_date)
-        .select_related("terminal", "operator")
+        .select_related("terminal", "opened_by")
         .order_by("closed_at")
     )
-    open_shifts = Shift.objects.filter(status=Shift.Status.OPEN).select_related("terminal", "operator")
+    open_shifts = Shift.objects.filter(status=Shift.Status.OPEN).select_related("terminal", "opened_by")
 
     shift_rows = []
     totals = {
@@ -405,7 +405,7 @@ def _cash_shift_summary(closing_date: date) -> dict:
         row = {
             "id": shift.pk,
             "terminal_ref": shift.terminal.ref,
-            "operator": shift.operator.get_username(),
+            "operator": shift.opened_by.get_username(),
             "opened_at": shift.opened_at.isoformat() if shift.opened_at else "",
             "closed_at": shift.closed_at.isoformat() if shift.closed_at else "",
             "opening_amount_q": float_q,
@@ -423,7 +423,7 @@ def _cash_shift_summary(closing_date: date) -> dict:
             {
                 "id": shift.pk,
                 "terminal_ref": shift.terminal.ref,
-                "operator": shift.operator.get_username(),
+                "operator": shift.opened_by.get_username(),
                 "opened_at": shift.opened_at.isoformat() if shift.opened_at else "",
             }
             for shift in open_shifts

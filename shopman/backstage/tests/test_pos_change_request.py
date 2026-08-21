@@ -24,7 +24,7 @@ from django.contrib.auth.models import Permission
 from django.contrib.contenttypes.models import ContentType
 from django.urls import reverse
 from shopman.cashman import services as cash
-from shopman.cashman.models import Entry, Shift
+from shopman.cashman.models import Entry, Shift, Terminal
 from shopman.doorman.models import PinCredential
 
 from shopman.backstage.projections.pos import build_pos
@@ -62,7 +62,7 @@ def _approval(username: str = "pablo", pin: str = MANAGER_PIN) -> dict:
 
 
 def _requests(operator) -> list[dict]:
-    return cash.change_requests(cash.open_shift_for(operator))
+    return cash.change_requests(cash.open_shift_for_terminal(Terminal.default()))
 
 
 # ── Pedir ─────────────────────────────────────────────────────────────────
@@ -148,7 +148,7 @@ def test_pedido_e_abertura_de_gaveta_convivem_no_mesmo_livro(operator):
     pos_service.register_drawer_opening(operator=operator, reason="Conferência")
     pos_service.request_change(operator=operator, amount_raw="50", denominations=[50])
 
-    shift = cash.open_shift_for(operator)
+    shift = cash.open_shift_for_terminal(Terminal.default())
     kinds = [e.kind for e in cash.timeline(shift)]
     assert kinds == [Entry.Kind.FLOAT_IN, Entry.Kind.DRAWER_OPEN, Entry.Kind.CHANGE_REQUESTED]
 
@@ -238,7 +238,7 @@ def test_atender_pedido_nao_altera_o_saldo_do_livro(operator, manager):
     fantasma — exatamente o defeito que o PR #178 desfez quando "Troco" era
     motivo de sangria. Este teste falha se alguém reintroduzir isso.
     """
-    shift = cash.open_shift_for(operator)
+    shift = cash.open_shift_for_terminal(Terminal.default())
     saldo_antes = cash.balance(shift)
 
     entry = pos_service.request_change(operator=operator, amount_raw="50,00")
@@ -253,7 +253,7 @@ def test_fechamento_cego_nao_sente_o_pedido_de_troco(operator, manager):
     entry = pos_service.request_change(operator=operator, amount_raw="50,00")
     pos_service.serve_change_request(operator=operator, request_ref=str(entry.pk), manager_approval=_approval())
 
-    shift = cash.open_shift_for(operator)
+    shift = cash.open_shift_for_terminal(Terminal.default())
     cash.close_shift(shift, counted_q=10000, actor=operator)
 
     # Fundo 100,00, zero vendas, zero movimentos → esperado 100,00 e sem
@@ -263,7 +263,7 @@ def test_fechamento_cego_nao_sente_o_pedido_de_troco(operator, manager):
 
 
 def test_cancelar_tambem_nao_mexe_no_saldo(operator):
-    shift = cash.open_shift_for(operator)
+    shift = cash.open_shift_for_terminal(Terminal.default())
     entry = pos_service.request_change(operator=operator, amount_raw="50", denominations=[50])
     cancelled = pos_service.cancel_change_request(operator=operator, request_ref=str(entry.pk))
 
@@ -282,7 +282,7 @@ def test_cancelar_tira_o_pedido_da_tela_sem_apagar_a_trilha(operator):
 
     pos_service.cancel_change_request(operator=operator, request_ref=str(entry.pk))
 
-    shift = cash.open_shift_for(operator)
+    shift = cash.open_shift_for_terminal(Terminal.default())
     assert pos_service.pending_change_requests(shift) == []
     pedido = _requests(operator)[0]
     assert pedido["status"] == "cancelled"
@@ -394,7 +394,7 @@ def test_endpoint_de_atender_com_pin_do_gerente_resolve(client, operator, manage
     )
 
     assert response.status_code == 200
-    shift = cash.open_shift_for(operator)
+    shift = cash.open_shift_for_terminal(Terminal.default())
     assert _requests(operator)[0]["status"] == "served"
     # ⚠️ Net zero também pelo endpoint: o saldo do livro não mexeu.
     assert cash.balance(shift) == 10000
@@ -478,7 +478,7 @@ def test_o_anuncio_sai_de_quem_ouve_a_linha_entrar_no_livro(operator, monkeypatc
         "shopman.shop.handlers._sse_emitters._publish_backstage",
         lambda kind, event_type, payload, scope: enviados.append(payload),
     )
-    shift = cash.open_shift_for(operator)
+    shift = cash.open_shift_for_terminal(Terminal.default())
 
     with django_capture_on_commit_callbacks(execute=True):
         entry = cash.record(

@@ -7,6 +7,12 @@ neste turno", e isso se lê de cima para baixo como aconteceu.
 
 ⚠️ Esperado, contado e diferença aparecem AQUI (retaguarda, ``audit_shift``) e
 nunca numa projection de terminal: é o fechamento cego (ADR-011 §4).
+
+⚠️ E "aqui" quer dizer **só para quem audita**. Até 20/08/2026 esta tela também
+abria para ``operate_pos`` — a permissão do caixa —, e o balcão lia o esperado
+antes de contar. Um gabarito na tela ao lado transforma o fechamento cego em
+digitação: era o único controle que pega falta, e ele saía anulado sem deixar
+rastro. O gate agora é ``audit_shift``, e mais nada.
 """
 
 from __future__ import annotations
@@ -37,6 +43,36 @@ _KIND_COLORS = {
 }
 
 
+#: A chave de sessão onde o backstage guarda o operador identificado num terminal
+#: compartilhado. É a mesma string de ``backstage.services.operator``
+#: ``ACTIVE_OPERATOR_SESSION_KEY``; o pacote não importa o backstage (ADR-001),
+#: então ela é repetida aqui e um teste do backstage prova que as duas não
+#: divergiram (``test_cash_audit_policy.py``).
+_ACTIVE_OPERATOR_SESSION_KEY = "active_operator"
+
+
+def _viewer(request):
+    """Quem responde pela tela: o operador identificado no terminal, ou a conta do aparelho.
+
+    Um balcão compartilhado fica logado como a conta do APARELHO — no staging,
+    um superusuário — e o cookie de sessão vale no domínio inteiro: a mesma
+    sessão que identifica a Joyce no PDV abre o Admin na aba ao lado. Gatear só
+    pela conta do aparelho não fecharia nada, porque ``admin`` tem todas as
+    permissões. Quando a estação está identificada, quem decide é o operador,
+    igual ao gate da API (Opção C, ``HasBackstagePermission``).
+    """
+    session = getattr(request, "session", None)
+    card = session.get(_ACTIVE_OPERATOR_SESSION_KEY) if session is not None else None
+    operator_id = (card or {}).get("id") if isinstance(card, dict) else None
+    if operator_id:
+        from django.contrib.auth import get_user_model
+
+        operator = get_user_model().objects.filter(pk=operator_id, is_active=True, is_staff=True).first()
+        if operator is not None:
+            return operator
+    return request.user
+
+
 def _money(amount_q: int) -> str:
     sign = "+" if amount_q > 0 else ("" if amount_q == 0 else "−")
     return f"{sign}R$ {format_money(abs(amount_q))}"
@@ -57,6 +93,9 @@ def entry_detail(entry: Entry) -> str:
             parts.append(f"troco R$ {format_money(int(change))}")
     elif kind == Entry.Kind.COUNT:
         parts.append(f"contado R$ {format_money(int(payload.get('counted_q') or 0))}")
+        # ``supervisory`` saiu com a custódia da gaveta (turno sem dono não tem
+        # substituto). Lançamentos ANTIGOS ainda trazem a chave, e o livro é
+        # imutável: por isso ela continua sendo lida aqui, e só aqui.
         if payload.get("supervisory"):
             parts.append("fechamento supervisório")
         if payload.get("notes"):
@@ -145,8 +184,9 @@ class ShiftAdmin(BaseModelAdmin):
     """Só leitura: o turno nasce e fecha pelo PDV; aqui se confere."""
 
     list_display = (
-        "operator",
+        # A GAVETA primeiro: a custódia é dela, e é assim que se procura um turno.
         "terminal",
+        "opened_by",
         "opened_at",
         "status_badge",
         "expected_display",
@@ -154,12 +194,19 @@ class ShiftAdmin(BaseModelAdmin):
         "difference_display",
     )
     list_filter = ("status", "terminal", "opened_at")
-    # ``operator`` é FK para User: buscar nele direto vira ``operator__icontains``,
+    # ``opened_by`` é FK para User: buscar nele direto vira ``opened_by__icontains``,
     # que o Django recusa em relação e derruba a busca global inteira.
-    search_fields = ("operator__username", "operator__first_name", "operator__last_name", "terminal__ref", "terminal__label")
+    #
+    # ⚠️ Buscar por operador aqui acha só quem ABRIU a gaveta. Quem trabalhou no
+    # turno se procura no LIVRO (``Entry.operator``), porque é lá que a resposta
+    # existe: várias pessoas dividem o mesmo turno.
+    search_fields = (
+        "opened_by__username", "opened_by__first_name", "opened_by__last_name",
+        "terminal__ref", "terminal__label",
+    )
     readonly_fields = (
         "terminal",
-        "operator",
+        "opened_by",
         "opened_at",
         "closed_at",
         "status",
@@ -180,7 +227,7 @@ class ShiftAdmin(BaseModelAdmin):
         return (
             super()
             .get_queryset(request)
-            .select_related("operator", "terminal")
+            .select_related("opened_by", "terminal")
             .annotate(
                 _expected_q=Sum("entries__amount_q", filter=~counting),
                 _difference_q=Sum("entries__amount_q", filter=counting),
@@ -198,7 +245,12 @@ class ShiftAdmin(BaseModelAdmin):
         return False
 
     def has_view_permission(self, request, obj=None):
-        return request.user.has_perm("cashman.operate_pos") or request.user.has_perm("cashman.audit_shift")
+        # Só ``audit_shift``. Quem OPERA o caixa não vê esperado, contado nem
+        # diferença: se visse, contaria conferindo um gabarito e o fechamento
+        # cego não pegaria mais nada. O gerente também não tem a permissão
+        # (``setup_groups`` dá a ele ``operate_pos``/``adjust_shift``), e é de
+        # propósito — ele opera e autoriza exceção; quem audita é outra pessoa.
+        return _viewer(request).has_perm("cashman.audit_shift")
 
     @display(description=_("Status"))
     def status_badge(self, obj):

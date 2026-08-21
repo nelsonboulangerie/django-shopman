@@ -158,7 +158,7 @@ def _grant_pos_perm(user) -> None:
 
 
 def _openings(operator) -> list[Entry]:
-    return list(Entry.objects.filter(shift=cash.open_shift_for(operator), kind=Entry.Kind.DRAWER_OPEN))
+    return list(Entry.objects.filter(shift=cash.open_shift_for_terminal(Terminal.default()), kind=Entry.Kind.DRAWER_OPEN))
 
 
 def test_abrir_sem_venda_deixa_rastro_de_quem_quando_e_por_que(operator):
@@ -198,7 +198,7 @@ def test_abrir_sem_venda_nao_mexe_no_dinheiro_esperado(operator):
     """Abrir a gaveta não é movimento: o fechamento cego não pode sentir isso."""
     pos_service.register_drawer_opening(operator=operator, reason="conferência")
 
-    shift = cash.open_shift_for(operator)
+    shift = cash.open_shift_for_terminal(Terminal.default())
     assert not Entry.objects.filter(shift=shift, kind__in=[Entry.Kind.CASH_OUT, Entry.Kind.CASH_IN]).exists()
     assert cash.balance(shift) == 10000
 

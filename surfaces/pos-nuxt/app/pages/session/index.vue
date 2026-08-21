@@ -34,7 +34,6 @@ const {
   managerChallenge,
   openCashShift,
   closeCashShift,
-  closeBlockingShift,
   registerCashMovement,
   canOpenDrawer,
   drawerUnavailableReason,
@@ -308,24 +307,6 @@ async function confirmClose() {
   }
 }
 
-// Fechamento cego do turno BLOQUEANTE (gerente ou dono destrava o terminal).
-const blockingAmount = ref("");
-const blockingNotes = ref("");
-const confirmingBlocking = ref(false);
-async function confirmCloseBlocking() {
-  const shiftId = cashRuntime.value?.blocking_shift_id;
-  if (!shiftId) return;
-  const ok = await closeBlockingShift({
-    shift_id: shiftId,
-    amount: blockingAmount.value,
-    notes: blockingNotes.value,
-  });
-  confirmingBlocking.value = false;
-  if (ok) {
-    blockingAmount.value = "";
-    blockingNotes.value = "";
-  }
-}
 </script>
 
 <template>
@@ -355,53 +336,8 @@ async function confirmCloseBlocking() {
 
       <div class="flex-1 md:min-h-0 md:overflow-y-auto">
         <div class="mx-auto grid w-full max-w-xl gap-4 p-4 md:py-8">
-          <!-- Terminal ocupado: turno aberto por outro operador -->
-          <section v-if="screen === 'occupied'" class="grid gap-2 rounded-lg border border-warning/40 bg-warning/10 p-4">
-            <div class="flex items-center gap-2">
-              <Icon name="lucide:lock" class="size-4 text-amber-700" />
-              <p class="text-sm font-semibold text-amber-800">Terminal ocupado</p>
-            </div>
-            <p class="text-sm text-amber-800">
-              Turno aberto por <strong>{{ cashRuntime?.blocking_operator_username }}</strong>
-              <template v-if="cashRuntime?.blocking_shift_id"> (turno #{{ cashRuntime.blocking_shift_id }})</template>.
-            </p>
-            <p v-if="cashRuntime?.blocking_message" class="text-xs text-amber-700">{{ cashRuntime.blocking_message }}</p>
-
-            <!-- Gerente ou dono do turno: fecha (contagem cega) e libera o terminal aqui mesmo. -->
-            <template v-if="cashRuntime?.can_close_blocking">
-              <div v-if="!confirmingBlocking" class="mt-1">
-                <UiButton variant="outline" size="sm" class="w-full border-warning/50 text-amber-800 hover:bg-warning/10" :disabled="busy" @click="confirmingBlocking = true">
-                  Fechar turno #{{ cashRuntime.blocking_shift_id }} (contagem cega)
-                </UiButton>
-              </div>
-              <div v-else class="mt-1 grid gap-2 rounded-md border border-warning/40 bg-background p-3">
-                <div class="flex items-start gap-2 text-xs text-muted-foreground">
-                  <Icon name="lucide:eye-off" class="mt-0.5 size-4 shrink-0" />
-                  <span>Contagem cega: conte o dinheiro do caixa e informe o valor. A conferência fica no gestor.</span>
-                </div>
-                <label class="grid gap-1 text-sm">
-                  <span class="font-medium text-muted-foreground">Valor contado</span>
-                  <UiInput v-model="blockingAmount" inputmode="decimal" placeholder="0,00" />
-                </label>
-                <label class="grid gap-1 text-sm">
-                  <span class="font-medium text-muted-foreground">Observações</span>
-                  <UiTextarea v-model="blockingNotes" :rows="2" placeholder="Motivo (turno órfão, troca de operador…)" />
-                </label>
-                <div class="grid grid-cols-2 gap-2">
-                  <UiButton variant="outline" :disabled="busy" @click="confirmingBlocking = false">Cancelar</UiButton>
-                  <UiButton variant="destructive" :disabled="busy" :loading="busy" @click="confirmCloseBlocking">
-                    Fechar e liberar
-                  </UiButton>
-                </div>
-              </div>
-            </template>
-            <p v-else class="text-xs text-muted-foreground">
-              Só o gerente ou o operador dono do turno pode fechá-lo. Chame o gerente ou feche no gestor.
-            </p>
-          </section>
-
           <!-- Caixa fechado: abrir turno -->
-          <section v-else-if="screen === 'closed'" class="grid gap-3 rounded-lg border bg-card p-4">
+          <section v-if="screen === 'closed'" class="grid gap-3 rounded-lg border bg-card p-4">
             <div class="grid gap-1">
               <h2 class="text-base font-semibold">Abrir caixa</h2>
               <p class="text-sm text-muted-foreground">

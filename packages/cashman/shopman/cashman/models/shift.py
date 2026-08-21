@@ -1,4 +1,18 @@
-"""Shift — a custódia: quem responde por qual gaveta, desde quando até quando.
+"""Shift — a custódia da GAVETA: qual gaveta esteve aberta, de quando até quando.
+
+A custódia é do terminal, não da pessoa. Um balcão é uma gaveta com várias mãos:
+o turno abre na abertura da loja e fecha no fim do expediente, e quem opera troca
+quantas vezes for preciso no meio — sem fechar, sem contar, sem ritual.
+
+Quem fez cada coisa não se guarda aqui: se guarda em ``Entry.operator``, uma linha
+por ato. É por isso que este model não precisa saber de gente para responder "quem
+abriu a gaveta às 15h sem venda" — o livro responde melhor, e por lançamento.
+
+O que se perde, e é escolha consciente: quando falta dinheiro, a nota que sumiu
+**não deixa lançamento**. Uma diferença no fechamento não tem um dono; tem a lista
+de quem passou. Custódia por pessoa compraria esse dono ao preço de uma contagem
+cega a cada troca de operador — inviável num balcão onde se revezam várias vezes
+ao dia. Ver ADR-011 (emendada) e a decisão de 21/08/2026.
 
 Este model NÃO tem coluna de dinheiro. Nem fundo de troco, nem contagem, nem
 esperado, nem diferença, nem cache de saldo. Tudo isso é lançamento no livro
@@ -14,8 +28,8 @@ esperado, nem diferença, nem cache de saldo. Tudo isso é lançamento no livro
    pergunta "quanto era para ter" tem uma resposta só: o livro.
 
 O que sobra é o que só uma linha de estado garante: **um turno aberto por
-operador e um por terminal**, por ``UniqueConstraint``. É por isso que o turno
-não é absorvido pelo livro: custódia é estado, história é livro.
+terminal**, por ``UniqueConstraint``. É por isso que o turno não é absorvido pelo
+livro: custódia é estado, história é livro.
 """
 
 from __future__ import annotations
@@ -37,11 +51,15 @@ class Shift(models.Model):
         related_name="shifts",
         verbose_name=_("terminal"),
     )
-    operator = models.ForeignKey(
+    opened_by = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.PROTECT,
-        related_name="shifts",
-        verbose_name=_("operador"),
+        related_name="shifts_opened",
+        verbose_name=_("aberto por"),
+        help_text=_(
+            "Quem abriu a gaveta e declarou o fundo de troco. NÃO é dono da custódia "
+            "nem responde sozinho pela diferença: quem agiu está em cada Entry."
+        ),
     )
     opened_at = models.DateTimeField(_("aberto em"), default=timezone.now)
     closed_at = models.DateTimeField(_("fechado em"), null=True, blank=True)
@@ -59,11 +77,9 @@ class Shift(models.Model):
             ("manage_operators", "Pode gerir operadores (resetar PIN, provisionar)"),
         ]
         constraints = [
-            models.UniqueConstraint(
-                fields=["operator"],
-                condition=models.Q(status="open"),
-                name="cashman_shift_open_operator_uq",
-            ),
+            # Uma gaveta, um turno. NÃO existe "um turno por operador": o balcão
+            # se reveza sem fechar o caixa, e a constraint por pessoa era o que
+            # mandava o segundo operador do dia para a antessala.
             models.UniqueConstraint(
                 fields=["terminal"],
                 condition=models.Q(status="open"),
@@ -76,7 +92,9 @@ class Shift(models.Model):
         ]
 
     def __str__(self) -> str:
-        return f"Caixa {self.operator.get_username()} · {self.opened_at:%d/%m/%Y %H:%M} [{self.get_status_display()}]"
+        # O terminal primeiro: a custódia é da gaveta, e é assim que o gerente a
+        # procura ("o caixa do balcão"), não pelo nome de quem abriu.
+        return f"Caixa {self.terminal} · {self.opened_at:%d/%m/%Y %H:%M} [{self.get_status_display()}]"
 
     @property
     def is_open(self) -> bool:

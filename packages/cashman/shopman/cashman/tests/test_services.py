@@ -31,15 +31,18 @@ def test_abrir_sem_fundo_deixa_o_livro_vazio(operator, terminal):
     assert not cash.timeline(shift).exists()
 
 
-def test_abrir_recusa_operador_ou_terminal_ja_abertos(operator, manager, terminal):
+def test_abrir_recusa_a_GAVETA_ja_aberta_e_so_ela(operator, manager, terminal):
+    """Duas custódias na mesma gaveta, nunca. A mesma pessoa em duas gavetas, sim."""
     cash.open_shift(operator=operator, terminal=terminal)
-    with pytest.raises(CashError) as exc:
-        cash.open_shift(operator=operator, terminal=Terminal.objects.create(ref="pdv-2"))
-    assert exc.value.code == "SHIFT_ALREADY_OPEN"
+
+    # A marina já tem o balcão aberto e abre o totem: permitido.
+    outra = cash.open_shift(operator=operator, terminal=Terminal.objects.create(ref="totem-1"))
+    assert outra.terminal.ref == "totem-1"
+
     with pytest.raises(CashError) as exc:
         cash.open_shift(operator=manager, terminal=terminal)
     assert exc.value.code == "SHIFT_ALREADY_OPEN"
-    assert exc.value.context["operator"] == "marina"
+    assert exc.value.context["opened_by"] == "marina"
 
 
 def test_abrir_sem_terminal_usa_o_default(operator):
@@ -243,7 +246,7 @@ def test_fechamento_cego_e_um_lancamento_de_ajuste(shift, operator, manager):
 
     assert count.kind == K.COUNT
     assert count.amount_q == -10
-    assert count.payload == {"counted_q": 8490, "notes": "ok", "supervisory": False}
+    assert count.payload == {"counted_q": 8490, "notes": "ok"}
     assert cash.expected_before_count(shift) == 8500
     assert cash.counted(shift) == 8490
     assert cash.difference(shift) == -10
@@ -265,10 +268,17 @@ def test_fechar_duas_vezes_e_recusado(shift, operator):
     assert exc.value.code == "SHIFT_NOT_OPEN"
 
 
-def test_fechamento_supervisorio_assina_quem_fechou(shift, operator, manager):
+def test_quem_contou_fica_na_linha_da_contagem(shift, operator, manager):
+    """Fechar o caixa que outra pessoa abriu é o caso NORMAL, não exceção.
+
+    Por isso não há mais marca de "supervisório": quem contou está em
+    ``count.operator``, e quem abriu está no turno. Uma bandeira que subiria
+    quase sempre não informa nada.
+    """
     count = cash.close_shift(shift, counted_q=10000, actor=manager)
     assert count.operator == manager
-    assert count.payload["supervisory"] is True
+    assert "supervisory" not in count.payload
+    assert Shift.objects.get(pk=shift.pk).opened_by == operator
 
 
 def test_fechar_anuncia_shift_closed_no_commit(shift, operator, django_capture_on_commit_callbacks):
@@ -359,14 +369,13 @@ def test_segunda_resolucao_fica_no_livro_mas_nao_muda_o_estado(shift, operator, 
 # ── Consultas de custódia ─────────────────────────────────────────────────
 
 
-def test_open_shift_for_e_is_closed(operator, manager, terminal):
-    assert cash.open_shift_for(operator) is None
+def test_open_shift_for_terminal_e_is_closed(operator, manager, terminal):
+    assert cash.open_shift_for_terminal(terminal) is None
     shift = cash.open_shift(operator=operator, terminal=terminal)
-    assert cash.open_shift_for(operator) == shift
     assert cash.open_shift_for_terminal(terminal) == shift
     assert cash.is_closed(shift.pk) is False
     cash.close_shift(shift, counted_q=0, actor=operator)
-    assert cash.open_shift_for(operator) is None
+    assert cash.open_shift_for_terminal(terminal) is None
     assert cash.is_closed(shift.pk) is True
     assert cash.is_closed("nope") is False
     assert cash.is_closed(999999) is False
@@ -379,11 +388,11 @@ def test_balance_ate_um_lancamento(shift, operator, manager):
     assert cash.balance(shift) == 6500
 
 
-def test_o_operador_do_lancamento_pode_nao_ser_o_do_turno(shift, manager):
-    """Fechamento supervisório e acerto por gerente: quem agiu fica na linha."""
+def test_quem_lancou_nao_precisa_ser_quem_abriu(shift, manager):
+    """O balcão se reveza dentro de UM turno: cada linha diz quem a fez."""
     entry = cash.record(K.NOTE, shift=shift, operator=manager, payload={"text": "x"})
     assert entry.operator == manager
-    assert Shift.objects.get(pk=shift.pk).operator != manager
+    assert Shift.objects.get(pk=shift.pk).opened_by != manager
 
 
 def test_get_user_model_e_o_unico_acoplamento_externo():

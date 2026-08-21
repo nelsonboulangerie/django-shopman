@@ -6116,8 +6116,8 @@ class Command(BaseCommand):
         # PDV de ontem (uma linha `sale` por pedido, efeito em dinheiro só para o
         # que foi pago em espécie), uma sangria autorizada e a contagem cega com
         # R$ 3 a menos. Idempotente: se o turno de ontem já existe, não repete.
-        already = CashmanShift.objects.filter(operator=admin, opened_at=yesterday_open).exists()
-        if not already and not cash.open_shift_for(admin) and not cash.open_shift_for_terminal(terminal):
+        already = CashmanShift.objects.filter(opened_by=admin, opened_at=yesterday_open).exists()
+        if not already and not cash.open_shift_for_terminal(terminal):
             shift_yesterday = cash.open_shift(operator=admin, terminal=terminal, float_q=20000, at=yesterday_open)
             for order in (
                 Order.objects.filter(
@@ -6172,14 +6172,14 @@ class Command(BaseCommand):
             )
 
         # Hoje: turno aberto com fundo de troco.
-        today_shift = cash.open_shift_for(admin)
-        if today_shift is None and not cash.open_shift_for_terminal(terminal):
+        today_shift = cash.open_shift_for_terminal(terminal)
+        if today_shift is None:
             today_open = timezone.make_aware(datetime.combine(timezone.localdate(), time(8, 45)))
             today_shift = cash.open_shift(operator=admin, terminal=terminal, float_q=20000, at=today_open)
 
         self.stdout.write("  ✅ 2 turnos de caixa (ontem fechado + hoje aberto)")
 
-        if today_shift is not None and today_shift.operator_id == admin.pk:
+        if today_shift is not None and today_shift.opened_by_id == admin.pk:
             self._seed_house_account_sales(today_shift, admin, today_shift.opened_at, "today")
             self._seed_house_account_settlement(today_shift, admin)
             self._seed_courier_change_and_equipment(today_shift, admin)
@@ -6266,10 +6266,17 @@ class Command(BaseCommand):
     def _seed_courier_change_and_equipment(self, shift, admin):
         """Entregas da casa hoje: uma já acertada (troco voltou, maquininha voltou) e uma na rua.
 
-        - DLV-ACERTADA: 2 croissants (R$ 26), cliente paga com R$ 50: R$ 24 de troco levado,
-          R$ 0 voltou (usou tudo); maquininha foi junto e voltou no acerto.
+        - DLV-ACERTADA: 2 croissants (R$ 26), cliente paga com R$ 50: R$ 24 de troco levado
+          e os mesmos R$ 24 de volta; maquininha foi junto e voltou no acerto.
         - DLV-NARUA: R$ 74, cliente paga com R$ 100: entregador levou R$ 26 de troco e a
           maquininha; ainda não voltou — aparece no quadro do gestor.
+
+        ⚠️ O troco volta INTEGRAL porque o entregador nunca fica com troco: ele
+        leva os R$ 24, entrega ao cliente e volta com a nota de R$ 50 — R$ 26 de
+        venda e R$ 24 de troco de volta, gaveta +R$ 26. O seed gravava
+        ``change_back_q=0`` ("usou tudo"), e com isso plantava R$ 24 de sobra
+        fantasma no turno de demonstração: quem conferisse o fechamento cego à
+        mão encontraria uma diferença que a casa nunca teve.
         """
         from shopman.shop.services import operator_orders
 
@@ -6304,7 +6311,7 @@ class Command(BaseCommand):
         operator_orders.advance_order(settled, actor=admin.get_username())  # entregue
         settled.refresh_from_db()
         operator_orders.settle_delivery_cash(
-            settled, cash_shift=shift, actor=admin.get_username(), change_back_q=0, equipment_back=True
+            settled, cash_shift=shift, actor=admin.get_username(), change_back_q=change_out, equipment_back=True
         )
 
         on_the_road = self._make_qa_order(
@@ -7050,7 +7057,7 @@ class Command(BaseCommand):
             {
                 "ref": "quebra-de-caixa-acumulada",
                 "label": "Quebra de caixa acumulada por operador",
-                "metric": BIAlertRule.Metric.CASH_VARIANCE_BY_OPERATOR,
+                "metric": BIAlertRule.Metric.CASH_VARIANCE_BY_DRAWER,
                 "is_active": True,
                 "severity": "warning",
                 "cooldown_minutes": 24 * 60,

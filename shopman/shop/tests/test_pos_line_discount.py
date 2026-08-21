@@ -146,12 +146,23 @@ class TestPriceOverrideIntentAndOps:
 
     @pytest.mark.django_db
     def test_override_passes_with_valid_manager_pin(self, monkeypatch) -> None:
-        monkeypatch.setattr(pos_service, "_verify_manager_pin", lambda u, p: object())
+        # O dublê registra COM QUEM o desafio foi feito. Antes ele era
+        # ``lambda u, p``, e por isso a suíte não notou que quem opera não
+        # chegava ao verificador: sem o operador, o gerente que também é caixa
+        # se autorizava.
+        seen: dict = {}
+
+        def _fake(username, pin, *, operator_username=""):
+            seen.update(username=username, pin=pin, operator_username=operator_username)
+            return object()
+
+        monkeypatch.setattr(pos_service, "_verify_manager_pin", _fake)
         payload = {
             "items": [{"sku": "X", "qty": 1, "unit_price_q": 500, "price_overridden": True}],
             "manager_approval": {"username": "gerente", "pin": "1234"},
         }
         pos_service.validate_manager_approval(payload, operator_username="op")  # must not raise
+        assert seen == {"username": "gerente", "pin": "1234", "operator_username": "op"}
 
 
 @pytest.mark.django_db

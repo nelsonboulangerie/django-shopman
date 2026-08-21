@@ -162,3 +162,47 @@ def test_a_auditoria_marca_o_PIN_como_pin(gerente, caplog):
     linha = _linha_de_auditoria(caplog)
     assert "approved_by=joyce" in linha
     assert "via=pin" in linha
+
+
+# ── Ninguém autoriza a si mesmo ──────────────────────────────────────────
+#
+# A segunda assinatura existe para haver DUAS pessoas. A Joyce da fixture é o
+# gerente do seed: tem ``adjust_shift`` E ``operate_pos``, então operava o
+# balcão e assinava a própria exceção — não é aprovação, é um passo a mais no
+# mesmo ato. Os testes acima não pegavam porque todos aprovam com "joyce" sobre
+# um operador "fran"; a fraude mora no caso em que os dois nomes são o mesmo.
+
+
+def test_o_gerente_que_opera_NAO_assina_a_propria_excecao_com_o_pin(gerente):
+    with pytest.raises(PosIntentError) as exc:
+        validate_manager_override(
+            {"username": "joyce", "pin": "1234"}, operator_username="joyce", action="cash_sangria"
+        )
+
+    assert exc.value.code == "manager_approval_invalid"
+
+
+def test_nem_com_o_cracha(gerente):
+    """O crachá é a porta nova, e uma porta nova é onde a fraude antiga volta."""
+    token = PinCredential.issue_badge(gerente)
+
+    with pytest.raises(PosIntentError) as exc:
+        validate_manager_override(
+            {"badge": token}, operator_username="joyce", action="cash_sangria"
+        )
+
+    assert exc.value.code == "manager_approval_invalid"
+
+
+def test_o_prefixo_do_actor_nao_disfarca_o_operador(gerente):
+    """``pos:joyce`` e ``joyce`` são a mesma pessoa.
+
+    O PDV chama o validador ora com o username puro, ora com o actor prefixado
+    (``pos:``/``gestor:``). Comparar as strings cruas deixaria o prefixo virar
+    disfarce: bastaria a chamada que passa o actor para a autoassinatura voltar
+    a passar.
+    """
+    with pytest.raises(PosIntentError):
+        validate_manager_override(
+            {"username": "joyce", "pin": "1234"}, operator_username="pos:joyce", action="cash_sangria"
+        )

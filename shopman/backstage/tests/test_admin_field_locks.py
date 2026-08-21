@@ -21,7 +21,7 @@ from shopman.backstage.models import OperationChecklistRun
 def test_cash_shift_is_locked_in_the_admin():
     """Turno fechado é imutável; correção é lançamento novo (``count_correction``/``note``)."""
     shift_admin = admin.site._registry[Shift]
-    assert set(shift_admin.readonly_fields) >= {"terminal", "operator", "opened_at", "closed_at", "status"}
+    assert set(shift_admin.readonly_fields) >= {"terminal", "opened_by", "opened_at", "closed_at", "status"}
 
 
 def test_operation_task_run_evidence_is_locked():

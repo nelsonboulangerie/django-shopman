@@ -14,7 +14,7 @@ from django.contrib.auth.models import Permission
 from django.contrib.contenttypes.models import ContentType
 from django.urls import reverse
 from shopman.cashman import services as cash
-from shopman.cashman.models import Entry, Shift
+from shopman.cashman.models import Entry, Shift, Terminal
 from shopman.doorman.models import PinCredential
 
 from shopman.backstage.projections.pos import build_pos
@@ -52,7 +52,7 @@ def _approval(username: str = "pablo", pin: str = MANAGER_PIN) -> dict:
 
 
 def _unlocks(operator):
-    return list(Entry.objects.filter(shift=cash.open_shift_for(operator), kind=Entry.Kind.DRAWER_UNLOCK))
+    return list(Entry.objects.filter(shift=cash.open_shift_for_terminal(Terminal.default()), kind=Entry.Kind.DRAWER_UNLOCK))
 
 
 def test_o_destrave_exige_pin_de_gerente(operator):

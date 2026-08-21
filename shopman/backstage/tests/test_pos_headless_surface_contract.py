@@ -139,28 +139,47 @@ class POSHeadlessSurfaceContractTests(TestCase):
         self.assertEqual(checkout["capabilities"]["sale_correction"]["cancel_recent_action_ref"], "cancel_recent_sale")
         self.assertTrue(checkout["capabilities"]["idempotent_replay"]["safe_for_offline_queue"])
 
-    def test_projection_shows_terminal_occupied_when_other_operator_has_shift(self) -> None:
+    def test_o_segundo_operador_do_dia_VENDE_no_turno_que_ja_esta_aberto(self) -> None:
+        """O balcão se reveza sem fechar o caixa. Este teste afirmava o contrário.
+
+        Até 21/08/2026 ele exigia ``terminal_occupied``: a segunda pessoa a assumir
+        a gaveta não achava turno SEU, era barrada, e só passava fechando o turno
+        de quem tinha aberto. Uma contagem cega a cada troca de operador — ritual
+        que a loja não faz. Com a custódia na gaveta, o turno do terminal é o
+        turno de quem está nele, e a troca não pede nada.
+        """
         User = get_user_model()
-        other = User.objects.create_user(username="other-pos-operator", password="x", is_staff=True)
-        _grant_pos_perm(other)
-        cash.close_shift(self.shift, counted_q=0, actor=self.operator)
-        cash.open_shift(operator=other, terminal=self.terminal, float_q=0)
+        outra = User.objects.create_user(username="other-pos-operator", password="x", is_staff=True)
+        _grant_pos_perm(outra)
 
-        payload = projection_data(build_pos(operator=self.operator))
+        # A gaveta segue aberta, aberta por self.operator. Quem chega é a outra.
+        payload = projection_data(build_pos(operator=outra))
 
-        self.assertFalse(payload["has_open_cash_session"])
-        self.assertFalse(payload["cash_runtime"]["has_open_shift"])
-        self.assertEqual(payload["cash_runtime"]["status"], "terminal_occupied")
-        self.assertEqual(payload["cash_runtime"]["blocking_operator_username"], "other-pos-operator")
-        self.assertIn("other-pos-operator", payload["cash_runtime"]["blocking_message"])
+        self.assertTrue(payload["has_open_cash_session"])
+        self.assertTrue(payload["cash_runtime"]["has_open_shift"])
+        self.assertEqual(payload["cash_runtime"]["status"], "open")
+        self.assertEqual(payload["cash_runtime"]["shift_id"], self.shift.pk)
+        # Quem opera AGORA é ela; quem abriu continua registrado no turno.
+        self.assertEqual(payload["cash_runtime"]["operator_username"], "other-pos-operator")
+        self.assertEqual(self.shift.opened_by, self.operator)
+        # E não há bloqueio a exibir: o estado deixou de existir.
+        self.assertEqual(payload["cash_runtime"].get("blocking_message", ""), "")
 
+    def test_abrir_a_MESMA_gaveta_duas_vezes_ainda_e_recusado(self) -> None:
+        """Uma gaveta, um turno — o que continua valendo, e por quê.
+
+        Custódia da gaveta não afrouxa a unicidade: dois turnos abertos no mesmo
+        terminal dariam dois saldos para uma caixa física só.
+        """
         response = self.client.post(
             "/api/v1/backstage/pos/cash/open/",
             {"opening_amount": "0,00", "terminal_ref": self.terminal.ref},
             content_type="application/json",
         )
-        self.assertEqual(response.status_code, 409)
-        self.assertEqual(response.json()["error"]["code"], "cash_terminal_occupied")
+
+        # Idempotente: devolve o turno que já está aberto, não um segundo.
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["shift_id"], self.shift.pk)
 
     def test_api_headless_pos_flow_opens_tab_and_closes_sale(self) -> None:
         opened = self.client.post("/api/v1/backstage/pos/tabs/00001007/open/", {})

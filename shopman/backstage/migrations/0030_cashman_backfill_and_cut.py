@@ -464,6 +464,20 @@ class Migration(migrations.Migration):
         migrations.swappable_dependency(settings.AUTH_USER_MODEL),
     ]
 
+    #: Este backfill escreve ``Shift.operator``, campo que ``cashman/0005``
+    #: renomeia para ``opened_by``. Sem esta aresta, o grafo aceita as duas
+    #: ordens: se o rename vier primeiro, o modelo histórico daqui já veio com
+    #: ``opened_by`` e a criação estoura com "unexpected keyword operator_id".
+    #: A falha só aparece num ``migrate`` de banco ZERADO — nenhuma suíte a pega,
+    #: porque em banco já migrado o backfill não roda de novo.
+    #:
+    #: A aresta vive AQUI, e não como dependência no ``cashman``: o pacote é
+    #: pip-instalável e não pode conhecer o ``backstage`` (backstage ──> cashman,
+    #: nunca o contrário).
+    run_before = [
+        ("cashman", "0005_shift_custody_is_the_drawer"),
+    ]
+
     operations = [
         migrations.RunPython(backfill, migrations.RunPython.noop),
         migrations.RunPython(move_permissions, migrations.RunPython.noop),

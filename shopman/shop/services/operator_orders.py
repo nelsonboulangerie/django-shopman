@@ -286,6 +286,9 @@ class CourierChange:
     o dinheiro da entrega não foi acertado; ``out_q`` é o que de fato saiu com o
     entregador (``courier_out``); ``back_q`` é o que voltou (``courier_in``),
     ``None`` enquanto o acerto não fechou o ciclo.
+
+    O ciclo fecha em ``out_q``: o entregador troca as notas com o cliente e
+    devolve o que levou. ``back_q`` menor do que ``out_q`` é falta, não uso.
     """
 
     suggested_q: int = 0
@@ -551,9 +554,17 @@ def settle_delivery_cash(
       escondida num algoritmo de fechamento e hoje é a linha em si.
 
     Quando o entregador levou troco da gaveta (``courier_out`` no despacho), o
-    acerto fecha o ciclo: ``change_back_q`` é obrigatório (zero vale: usou tudo)
-    e vira ``courier_in`` na mesma transação, apontando para a saída quando é o
-    mesmo turno. Nada de etiqueta de turno no pedido: a atribuição É o lançamento.
+    acerto fecha o ciclo: ``change_back_q`` é obrigatório e vira ``courier_in``
+    na mesma transação, apontando para a saída quando é o mesmo turno. Nada de
+    etiqueta de turno no pedido: a atribuição É o lançamento.
+
+    ⚠️ **O entregador nunca fica com troco: ele só leva e traz.** Numa entrega
+    de R$ 26 paga com nota de R$ 50, saem R$ 24, o cliente recebe esses R$ 24 e
+    o entregador volta com a nota de R$ 50 — R$ 26 de venda (``cod_settled``) e
+    R$ 24 de troco de volta (``courier_in``). O normal é ``change_back_q`` ser
+    o valor INTEGRAL que saiu, e é isso que a tela pré-preenche. Zero continua
+    aceito, mas passou a ser exceção com dono: significa que o dinheiro não
+    voltou, e a contagem cega vai cobrar por ele.
     """
     from django.db import transaction
     from shopman.cashman import services as cash_ledger

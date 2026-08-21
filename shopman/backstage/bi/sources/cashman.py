@@ -55,26 +55,39 @@ def read_closed_shifts(date_from: date, date_to: date) -> list[CanonicalShift]:
     window_from, window_to = local_window(date_from, date_to)
     shifts = list(
         Shift.objects.filter(status=Shift.Status.CLOSED, closed_at__gte=window_from, closed_at__lt=window_to)
-        .values_list("id", "operator__username", "opened_at", "closed_at")
+        .values_list("id", "terminal__ref", "opened_by__username", "opened_at", "closed_at")
     )
     if not shifts:
         return []
+    shift_ids = [pk for pk, *_ in shifts]
     difference = {
         int(row["shift_id"]): int(row["total"] or 0)
         for row in Entry.objects.filter(
-            shift_id__in=[pk for pk, *_ in shifts],
+            shift_id__in=shift_ids,
             kind__in=[Entry.Kind.COUNT, Entry.Kind.COUNT_CORRECTION],
         )
         .values("shift_id")
         .annotate(total=Sum("amount_q"))
     }
+    # Quem AGIU em cada turno, do livro. Uma consulta para todos os turnos da
+    # janela: é o que permite dizer "a quebra é da Joyce" só quando a Joyce foi a
+    # única a lançar — e calar quando não foi.
+    atuantes: dict[int, set[str]] = {}
+    for shift_id, username in (
+        Entry.objects.filter(shift_id__in=shift_ids)
+        .values_list("shift_id", "operator__username")
+        .distinct()
+    ):
+        atuantes.setdefault(int(shift_id), set()).add(username or "sistema")
     return [
         CanonicalShift(
             key=pk,
-            operator_key=operator or "sistema",
+            terminal_key=terminal_ref or "",
+            opened_by_key=opened_by or "sistema",
+            operator_keys=tuple(sorted(atuantes.get(pk, set()))),
             opened_at=timezone.localtime(opened_at),
             closed_at=timezone.localtime(closed_at),
             difference_q=difference.get(pk),
         )
-        for pk, operator, opened_at, closed_at in shifts
+        for pk, terminal_ref, opened_by, opened_at, closed_at in shifts
     ]

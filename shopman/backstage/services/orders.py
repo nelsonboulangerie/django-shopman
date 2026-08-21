@@ -55,9 +55,9 @@ def advance_order(order, *, actor: str, operator=None, change_out_raw: str | Non
         change_out_q = parse_money_to_q(str(change_out_raw))
     shift = None
     if operator is not None and change_out_q:
-        from shopman.cashman import services as cash
+        from shopman.backstage.services import pos as pos_service
 
-        shift = cash.open_shift_for(operator)
+        shift = pos_service.current_shift()
     try:
         return operator_orders.advance_order(
             order, actor=actor, change_out_q=change_out_q, cash_shift=shift, equipment=list(equipment or [])
@@ -126,12 +126,12 @@ def settle_delivery_cash(
     vazio = não informado). O shop exige quando saiu troco no despacho, zero
     incluído, e grava ``courier_in`` na mesma transação do ``cod_settled``.
     """
-    from shopman.cashman import services as cash
     from shopman.cashman.exceptions import CashError
 
+    from shopman.backstage.services import pos as pos_service
     from shopman.backstage.services.pos import parse_money_to_q
 
-    shift = cash.open_shift_for(operator)
+    shift = pos_service.current_shift()
     amount_q = parse_money_to_q(amount_raw) if str(amount_raw or "").strip() else None
     change_back_q = None
     if change_back_raw is not None and str(change_back_raw).strip() != "":

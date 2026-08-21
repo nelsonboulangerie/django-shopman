@@ -137,7 +137,7 @@ def test_qr_do_comprovante_aponta_para_a_pagina(settings, movement):
 
     settings.SHOPMAN_ADMIN_HOST = "admin.exemplo.test"
     payload = cash_movement_receipt_payload(
-        operator=movement.shift.operator, entry_id=movement.pk
+        operator=movement.shift.opened_by, entry_id=movement.pk
     )
 
     import base64
@@ -246,7 +246,7 @@ class TestQRFallback:
         settings.SHOPMAN_OPERATOR_API_HOST = "api.exemplo.test"
 
         payload = cash_movement_receipt_payload(
-            operator=movement.shift.operator, entry_id=movement.pk
+            operator=movement.shift.opened_by, entry_id=movement.pk
         )
 
         import base64
@@ -264,7 +264,7 @@ class TestQRFallback:
         settings.SHOPMAN_OPERATOR_API_HOST = ""
 
         payload = cash_movement_receipt_payload(
-            operator=movement.shift.operator, entry_id=movement.pk
+            operator=movement.shift.opened_by, entry_id=movement.pk
         )
 
         import base64

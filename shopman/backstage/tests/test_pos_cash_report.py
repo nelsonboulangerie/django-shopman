@@ -77,6 +77,20 @@ class POSCashReportTests(TestCase):
         self.client.force_login(self.operator)
         self.terminal = Terminal.default()
         self.manager_approval = _manager_approval()
+        # Fechar a gaveta é da gerência (decisão do dono, 21/08/2026): o caixa
+        # abre e opera, quem conta no fim é quem fecha o dia.
+        self.gerente = User.objects.create_user(username="gerente-z", password="x", is_staff=True)
+        _grant(self.gerente, "operate_pos")
+        from django.contrib.auth.models import Permission
+        from django.contrib.contenttypes.models import ContentType
+
+        from shopman.backstage.models import DayClosing
+
+        ct = ContentType.objects.get_for_model(DayClosing)
+        self.gerente.user_permissions.add(
+            Permission.objects.get(content_type=ct, codename="perform_closing")
+        )
+        self.gerente = User.objects.get(pk=self.gerente.pk)  # refresca cache de permissão
 
     # ── helpers ────────────────────────────────────────────────────────
 
@@ -237,19 +251,31 @@ class POSCashReportTests(TestCase):
         self.assertEqual(report["z_readings"], [])
         self.assertEqual(report["day_totals"]["shifts_count"], 0)
 
-    def test_x_reading_ignores_sales_of_another_shift(self) -> None:
+    def test_x_reading_ignores_sales_of_another_DRAWER(self) -> None:
+        """A leitura X é da gaveta em que se está — o totem não entra no balcão.
+
+        Com duas gavetas abertas, a leitura tem de dizer QUAL. Sem o
+        ``terminal_ref`` a resolução cai no primeiro terminal por ``ref``, e
+        ``pdv-2`` vem antes de ``pdv-main``: o balcão leria o caixa do outro.
+        """
         other_operator = get_user_model().objects.create_user(username="outro-caixa", password="x", is_staff=True)
         other_terminal = Terminal.objects.create(ref="pdv-2", label="PDV 2", channel_ref=self.terminal.channel_ref)
         other_shift = pos_service.open_cash_shift(operator=other_operator, terminal_ref=other_terminal.ref)
         shift = self._open_shift()
         self._sale("POS-OTHER-SHIFT", shift=other_shift, tenders=[("cash", 9900)], operator=other_operator)
 
-        resp = self.client.get(REPORT_URL)
+        resp = self.client.get(REPORT_URL, {"terminal_ref": self.terminal.ref})
 
         x = resp.json()["report"]["x_reading"]
         self.assertEqual(x["shift_id"], shift.pk)
         self.assertEqual(x["sales_count"], 0)
         self.assertEqual(x["sales_by_method"], [])
+
+        # E a leitura da OUTRA gaveta traz a venda dela — mesma requisição, ref
+        # diferente. Sem isto, "ignora a outra" poderia estar apenas quebrado.
+        outro = self.client.get(REPORT_URL, {"terminal_ref": other_terminal.ref}).json()["report"]["x_reading"]
+        self.assertEqual(outro["shift_id"], other_shift.pk)
+        self.assertEqual(outro["sales_count"], 1)
 
     # ── leituras Z (turnos fechados) + histórico ───────────────────────
 
@@ -261,7 +287,7 @@ class POSCashReportTests(TestCase):
         )
         self._sale("POS-Z-CASH", shift=shift, tenders=[("cash", 3000)])
         self._sale("POS-Z-CARD", shift=shift, tenders=[("card", 4500)])
-        pos_service.close_cash_shift(operator=self.operator, closing_amount_raw="63,00", notes="ok")
+        pos_service.close_cash_shift(actor_user=self.gerente, closing_amount_raw="63,00", notes="ok")
 
         resp = self.client.get(REPORT_URL)
 
@@ -293,7 +319,7 @@ class POSCashReportTests(TestCase):
         """O livro PROVA esperado/diferença; o PDV não os serve."""
         shift = self._open_shift(opening="10,00")
         self._sale("POS-Z-BLIND", shift=shift, tenders=[("cash", 2000)])
-        pos_service.close_cash_shift(operator=self.operator, closing_amount_raw="25,00")
+        pos_service.close_cash_shift(actor_user=self.gerente, closing_amount_raw="25,00")
         self.assertEqual(cash.expected_before_count(shift), 3000)  # o livro sabe…
         self.assertEqual(cash.difference(shift), -500)
 

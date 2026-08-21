@@ -164,7 +164,7 @@ def settle_account(
                 cash_ledger.record(
                     "account_settled",
                     shift=shift,
-                    operator=actor if hasattr(actor, "get_username") else shift.operator,
+                    operator=actor if hasattr(actor, "get_username") else shift.opened_by,
                     amount_q=intent.amount_q,
                     order_ref=intent.order_ref,
                     payment_ref=intent.ref,

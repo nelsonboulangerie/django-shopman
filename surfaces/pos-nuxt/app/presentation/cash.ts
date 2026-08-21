@@ -84,19 +84,6 @@ export function formatOpenedAt(raw: string | null | undefined): string {
 }
 
 /**
- * Whether the terminal is held by another operator's open shift — the panel
- * blocks selling and tells the operator to use the right operator or close the
- * shift in the backoffice. Driven by the runtime Projection, never inferred.
- */
-export function isTerminalOccupied(
-  runtime: POSCashRuntimeProjection,
-  hasOpenShift: boolean,
-): boolean {
-  return runtime.status === "terminal_occupied"
-    || (!hasOpenShift && Boolean(runtime.blocking_operator_username));
-}
-
-/**
  * Whether selling requires an open cash shift — the sale screen redirects to
  * the session lobby (`/session`) when there is none. Contract-driven via the
  * checkout capability (absent flag = required, the safe default).
@@ -189,7 +176,12 @@ export function formatRequestedAt(raw: string | null | undefined): string {
 export function sessionScreenState(
   runtime: POSCashRuntimeProjection,
   hasOpenShift: boolean,
-): "occupied" | "open" | "closed" {
-  if (isTerminalOccupied(runtime, hasOpenShift)) return "occupied";
+): "open" | "closed" {
+  // Havia um terceiro estado, `occupied`: a gaveta tinha turno de OUTRA pessoa e
+  // quem chegava ficava preso sem vender. Ele morreu com a custódia da gaveta —
+  // o turno do terminal é o turno de quem está nele, e o balcão se reveza sem
+  // fechar nada. `runtime` fica na assinatura porque a antessala ainda deriva
+  // dela o resto da tela.
+  void runtime;
   return hasOpenShift ? "open" : "closed";
 }

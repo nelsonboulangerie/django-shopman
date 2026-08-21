@@ -295,10 +295,19 @@ describe("troco da entrega", () => {
     expect(dispatchAsksChange(card({ next_status: "dispatched", change_out_suggested_q: 0 }))).toBe(false);
     expect(dispatchAsksChange(card({ next_status: "preparing", change_out_suggested_q: 2000 }))).toBe(false);
   });
-  it("sugere o que deve ter voltado: saiu menos o troco devido", () => {
-    expect(changeBackSuggestionQ(card({ change_out_q: 2500, change_out_suggested_q: 2000 }))).toBe(500);
-    expect(changeBackSuggestionQ(card({ change_out_q: 2000, change_out_suggested_q: 2000 }))).toBe(0);
-    expect(changeBackSuggestionQ(card({ change_out_q: 1500, change_out_suggested_q: 2000 }))).toBe(0);
+  it("sugere de volta o valor INTEGRAL que saiu — o entregador só leva e traz", () => {
+    // A regra da casa é que o entregador nunca fica com troco: ele leva a
+    // reserva da gaveta, entrega o troco ao cliente com a nota que recebeu, e
+    // devolve tudo que está com ele. Então o que volta é o que saiu.
+    //
+    // A fórmula antiga era `saiu − troco devido ao cliente`, que presume o
+    // oposto (o entregador se ressarce do dinheiro do cliente e retém a
+    // diferença). Com ela, cada entrega com troco deixava no livro uma falta do
+    // tamanho exato do troco — que na contagem cega vira SOBRA fantasma, e sobra
+    // recorrente é esconderijo para falta real.
+    expect(changeBackSuggestionQ(card({ change_out_q: 2500, change_out_suggested_q: 2000 }))).toBe(2500);
+    expect(changeBackSuggestionQ(card({ change_out_q: 2000, change_out_suggested_q: 2000 }))).toBe(2000);
+    expect(changeBackSuggestionQ(card({ change_out_q: 0, change_out_suggested_q: 0 }))).toBe(0);
   });
   it("formata centavos para o campo", () => {
     expect(moneyInput(2000)).toBe("20,00");
