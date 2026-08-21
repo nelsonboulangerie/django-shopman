@@ -90,3 +90,130 @@ def test_o_superusuario_ve_sem_grupo_nenhum():
     root = get_user_model().objects.create_superuser(username="root", password="x")
 
     assert can_audit_cash(root)
+
+
+# ── A tela, não só a política ────────────────────────────────────────────────
+#
+# Os testes acima provam quem TEM a permissão. Não provavam quem ALCANÇA a
+# apuração, e por isso a suíte passou verde enquanto o ``ShiftAdmin`` abria
+# `/admin/cashman/shift/` para qualquer um com ``operate_pos`` — a permissão do
+# caixa. O balcão lia "Esperado R$ 286,00" na aba ao lado e digitava R$ 286,00.
+# Daqui para baixo o alvo é a TELA, com controle positivo: o auditor vê o
+# número, e é o mesmo número que o livro prova.
+
+
+@pytest.fixture
+def _loja():
+    """Sem Shop o OnboardingMiddleware desvia todo /admin/ para o cadastro da loja."""
+    from shopman.shop.models import Shop
+
+    return Shop.objects.create(name="Nelson")
+
+
+def _turno_com_venda():
+    """Um turno com R$ 100 de fundo e R$ 186 de venda: esperado R$ 286,00."""
+    from shopman.cashman import services as cash
+    from shopman.cashman.models import Entry, Terminal
+
+    terminal = Terminal.objects.create(ref="balcao-apuracao", label="Balcão")
+    caixa = get_user_model().objects.create_user("joyce-caixa", password="x", is_staff=True)
+    shift = cash.open_shift(operator=caixa, terminal=terminal, float_q=10_000)
+    cash.record(Entry.Kind.SALE, shift=shift, operator=caixa, amount_q=18_600, order_ref="A11")
+    return shift
+
+
+def _usuario(nome: str, *codenames: str):
+    from django.contrib.auth.models import Permission
+    from django.contrib.contenttypes.models import ContentType
+    from shopman.cashman.models import Shift
+
+    user = get_user_model().objects.create_user(nome, password="x", is_staff=True)
+    ct = ContentType.objects.get_for_model(Shift)
+    for codename in codenames:
+        user.user_permissions.add(Permission.objects.get(content_type=ct, codename=codename))
+    return get_user_model().objects.get(pk=user.pk)  # recarrega: cache de permissão
+
+
+def test_a_lista_de_turnos_mostra_a_apuracao_para_quem_audita(client, _loja):
+    """Controle positivo: sem ele, "não contém Esperado" também passa num 404."""
+    _turno_com_venda()
+    client.force_login(_usuario("dono-apuracao", "audit_shift"))
+
+    resposta = client.get("/admin/cashman/shift/")
+
+    assert resposta.status_code == 200
+    corpo = resposta.content.decode()
+    assert "Esperado" in corpo
+    assert "R$ 286,00" in corpo
+
+
+def test_quem_opera_o_caixa_NAO_alcanca_a_apuracao(client, _loja):
+    """O P0: ``operate_pos`` abria esta tela, e com ela o gabarito da contagem."""
+    _turno_com_venda()
+    client.force_login(_usuario("caixa-apuracao", "operate_pos"))
+
+    resposta = client.get("/admin/cashman/shift/")
+
+    assert resposta.status_code == 403
+    assert "R$ 286,00" not in resposta.content.decode()
+
+
+def test_o_gerente_tambem_nao(client, _loja, grupos):
+    """Ele opera e autoriza exceção. Contar às cegas vale para ele igual."""
+    _turno_com_venda()
+    client.force_login(_com_grupo("Gerente", grupos))
+
+    assert client.get("/admin/cashman/shift/").status_code == 403
+
+
+def test_o_menu_nao_oferece_turnos_de_caixa_a_quem_opera(rf, grupos):
+    """Link que responde 403 é porta trancada com placa de aberto."""
+    from shopman.backstage.admin.navigation import get_sidebar_navigation
+
+    def _oferece(user) -> bool:
+        request = rf.get("/admin/")
+        request.user = user
+        for group in get_sidebar_navigation(request):
+            for item in group["items"]:
+                if item["title"] == "Turnos de caixa":
+                    return bool(item["permission"](request))
+        raise AssertionError("o item 'Turnos de caixa' sumiu do menu")
+
+    assert _oferece(_com_grupo("Dono", grupos))
+    assert not _oferece(_com_grupo("Caixa", grupos))
+    assert not _oferece(_com_grupo("Gerente", grupos))
+
+
+def test_o_operador_identificado_decide_e_nao_a_conta_do_aparelho(client, _loja):
+    """O terminal fica logado como ``admin`` (superusuário), e o cookie de
+    sessão vale no domínio inteiro: gatear só pela conta do aparelho não fecha
+    nada, porque ``admin`` tem todas as permissões. Quando a estação está
+    identificada por PIN, quem responde pela tela é o operador."""
+    from shopman.backstage.services.operator import ACTIVE_OPERATOR_SESSION_KEY
+
+    _turno_com_venda()
+    aparelho = get_user_model().objects.create_superuser("admin-terminal", password="x")
+    caixa = _usuario("joyce-identificada", "operate_pos")
+    client.force_login(aparelho)
+
+    # Sem operador identificado, o aparelho superusuário passa (é o dono no PC dele).
+    assert client.get("/admin/cashman/shift/").status_code == 200
+
+    session = client.session
+    session[ACTIVE_OPERATOR_SESSION_KEY] = {"id": caixa.pk, "username": caixa.username, "name": caixa.username}
+    session.save()
+
+    resposta = client.get("/admin/cashman/shift/")
+    assert resposta.status_code == 403
+    assert "R$ 286,00" not in resposta.content.decode()
+
+
+def test_a_chave_do_operador_ativo_e_a_mesma_nos_dois_lados():
+    """O pacote não importa o backstage (ADR-001), então a string é repetida no
+    ``cashman.contrib.admin_unfold``. Repetida sem guarda, ela diverge calada e
+    o gate acima volta a ser decorativo."""
+    from shopman.cashman.contrib.admin_unfold.admin import _ACTIVE_OPERATOR_SESSION_KEY
+
+    from shopman.backstage.services.operator import ACTIVE_OPERATOR_SESSION_KEY
+
+    assert _ACTIVE_OPERATOR_SESSION_KEY == ACTIVE_OPERATOR_SESSION_KEY

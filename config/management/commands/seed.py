@@ -5953,10 +5953,17 @@ class Command(BaseCommand):
     def _seed_courier_change_and_equipment(self, shift, admin):
         """Entregas da casa hoje: uma já acertada (troco voltou, maquininha voltou) e uma na rua.
 
-        - DLV-ACERTADA: 2 croissants (R$ 26), cliente paga com R$ 50: R$ 24 de troco levado,
-          R$ 0 voltou (usou tudo); maquininha foi junto e voltou no acerto.
+        - DLV-ACERTADA: 2 croissants (R$ 26), cliente paga com R$ 50: R$ 24 de troco levado
+          e os mesmos R$ 24 de volta; maquininha foi junto e voltou no acerto.
         - DLV-NARUA: R$ 74, cliente paga com R$ 100: entregador levou R$ 26 de troco e a
           maquininha; ainda não voltou — aparece no quadro do gestor.
+
+        ⚠️ O troco volta INTEGRAL porque o entregador nunca fica com troco: ele
+        leva os R$ 24, entrega ao cliente e volta com a nota de R$ 50 — R$ 26 de
+        venda e R$ 24 de troco de volta, gaveta +R$ 26. O seed gravava
+        ``change_back_q=0`` ("usou tudo"), e com isso plantava R$ 24 de sobra
+        fantasma no turno de demonstração: quem conferisse o fechamento cego à
+        mão encontraria uma diferença que a casa nunca teve.
         """
         from shopman.shop.services import operator_orders
 
@@ -5991,7 +5998,7 @@ class Command(BaseCommand):
         operator_orders.advance_order(settled, actor=admin.get_username())  # entregue
         settled.refresh_from_db()
         operator_orders.settle_delivery_cash(
-            settled, cash_shift=shift, actor=admin.get_username(), change_back_q=0, equipment_back=True
+            settled, cash_shift=shift, actor=admin.get_username(), change_back_q=change_out, equipment_back=True
         )
 
         on_the_road = self._make_qa_order(

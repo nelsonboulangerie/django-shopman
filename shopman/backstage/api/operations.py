@@ -123,6 +123,28 @@ def _actor(request) -> str:
     return getattr(user, "username", None) or "operator"
 
 
+def _cash_operator(request):
+    """O ``User`` que RESPONDE pelo dinheiro nesta request.
+
+    Gêmeo de ``_actor()``, e pela mesma razão: com
+    ``SHOPMAN_REQUIRE_ACTIVE_OPERATOR`` ligado, ``request.user`` é a conta do
+    APARELHO (o balcão inteiro fica logado como ``admin``) e quem opera é o
+    operador identificado por PIN/crachá. Todo o subsistema de caixa recebia
+    ``request.user``, então a Joyce abria o turno, digitava a sangria e
+    escolhia o motivo, e a linha do livro saía ``op=admin``.
+
+    Duas consequências, além da atribuição errada: ``Shift.operator`` era sempre
+    a mesma conta, e aí a ``UniqueConstraint`` "um turno aberto por operador"
+    virava "um por loja" — não existia troca de custódia entre turnos; e a
+    antessala mostrava "Joyce" sobre um turno que era do aparelho.
+
+    ``active_operator_user`` é posto por ``HasBackstagePermission`` só quando a
+    flag está ligada; desligada, a conta da sessão continua decidindo, como
+    sempre.
+    """
+    return getattr(request, "active_operator_user", None) or request.user
+
+
 def _production_actor(request) -> str:
     """Audit attribution for production actions, matching the retired HTMX floor
     (``production:<username>``) so the event trail stays consistent post-cutover."""
@@ -218,7 +240,7 @@ def _open_cash_shift_for_request(request):
     try:
         from shopman.cashman import services as cash
 
-        return cash.open_shift_for(request.user)
+        return cash.open_shift_for(_cash_operator(request))
     except Exception:
         logger.debug("pos_runtime_payload_enrichment_failed user=%s", _actor(request), exc_info=True)
         return None
@@ -291,7 +313,7 @@ class POSView(APIView):
             resolve_active_operator_user,
         )
 
-        pos = build_pos(operator=request.user)
+        pos = build_pos(operator=_cash_operator(request))
         shift = build_pos_shift_summary()
         query = request.query_params.get("q", "")
         tabs = build_pos_tabs(query=query)
@@ -960,7 +982,7 @@ class OrderAdvanceView(_OrderActionBase):
             orders_service.advance_order(
                 order,
                 actor=_actor(request),
-                operator=request.user,
+                operator=_cash_operator(request),
                 change_out_raw=None if change_out is None else str(change_out),
                 equipment=[str(ref) for ref in equipment],
             )
@@ -1094,7 +1116,7 @@ class OrderSettleDeliveryCashView(_OrderActionBase):
             equipment_back = str((request.data or {}).get("equipment_back", "")).lower() in {"1", "true", "on", "yes"}
             amount_q = orders_service.settle_delivery_cash(
                 order,
-                operator=request.user,
+                operator=_cash_operator(request),
                 amount_raw=str(request.data.get("amount", "")),
                 actor=_actor(request),
                 change_back_raw=None if change_back is None else str(change_back),
@@ -1527,7 +1549,7 @@ class POSCashOpenView(APIView):
         amount = request.data.get("opening_amount", "0")
         try:
             session = pos_service.open_cash_shift(
-                operator=request.user,
+                operator=_cash_operator(request),
                 opening_amount_raw=str(amount),
                 terminal_ref=str(request.data.get("terminal_ref") or ""),
             )
@@ -1573,7 +1595,7 @@ class POSCashCloseView(APIView):
         notes = (request.data.get("notes") or "").strip()
         try:
             result = pos_service.close_cash_shift(
-                operator=request.user,
+                operator=_cash_operator(request),
                 closing_amount_raw=str(amount),
                 notes=notes,
             )
@@ -1602,11 +1624,13 @@ class POSCashCloseBlockingView(APIView):
         notes = (request.data.get("notes") or "").strip()
         if not shift_id:
             return Response({"detail": "shift_id é obrigatório."}, status=400)
-        # O subsistema de caixa usa request.user (abrir grava operator=request.user;
-        # a projection checa request.user). Mantém a mesma identidade aqui.
+        # Mesma identidade de todo o subsistema de caixa: o operador ativo
+        # quando a estação é compartilhada, a conta da sessão quando não é
+        # (``_cash_operator``). Abrir o turno grava ``operator`` com ela, e a
+        # projection do terminal procura o turno por ela.
         try:
             result = pos_service.close_blocking_shift(
-                actor_user=request.user,
+                actor_user=_cash_operator(request),
                 shift_id=shift_id,
                 closing_amount_raw=str(amount),
                 notes=notes,
@@ -1641,7 +1665,7 @@ class POSMovementView(APIView):
             return Response({"detail": "kind deve ser 'sangria' ou 'suprimento'."}, status=400)
         try:
             entry = pos_service.register_cash_movement(
-                operator=request.user,
+                operator=_cash_operator(request),
                 movement_type=kind,
                 amount_raw=str(amount),
                 reason=reason,
@@ -1684,7 +1708,7 @@ class POSCashReceiptView(APIView):
         reprint = str(request.query_params.get("reprint") or "").lower() in {"1", "true", "on"}
         try:
             payload = pos_service.cash_movement_receipt_payload(
-                operator=request.user, entry_id=entry_id, reprint=reprint
+                operator=_cash_operator(request), entry_id=entry_id, reprint=reprint
             )
         except PosIntentError as exc:
             return Response({"detail": exc.message, "error": exc.as_dict()}, status=exc.status)
@@ -1696,7 +1720,7 @@ class POSCashReceiptView(APIView):
     def post(self, request, entry_id: int):
         try:
             result = pos_service.record_receipt_result(
-                operator=request.user,
+                operator=_cash_operator(request),
                 entry_id=entry_id,
                 status=(request.data.get("status") or "").strip(),
                 detail=request.data.get("detail") or "",
@@ -1731,7 +1755,7 @@ class POSCashDrawerOpenView(APIView):
     def post(self, request):
         reason = (request.data.get("reason") or "").strip()
         try:
-            pos_service.register_drawer_opening(operator=request.user, reason=reason)
+            pos_service.register_drawer_opening(operator=_cash_operator(request), reason=reason)
         except PosIntentError as exc:
             return Response({"detail": exc.message, "error": exc.as_dict()}, status=exc.status)
         except Exception as exc:
@@ -1763,7 +1787,7 @@ class POSCashDrawerUnlockView(APIView):
     def post(self, request):
         try:
             pos_service.unlock_drawer(
-                operator=request.user,
+                operator=_cash_operator(request),
                 manager_approval=request.data.get("manager_approval"),
                 drawer_raw=str(request.data.get("drawer_raw") or ""),
             )
@@ -1801,7 +1825,7 @@ class POSChangeRequestView(APIView):
     def post(self, request):
         try:
             entry = pos_service.request_change(
-                operator=request.user,
+                operator=_cash_operator(request),
                 amount_raw=str(request.data.get("amount", "0")),
                 denominations=request.data.get("denominations") or [],
                 note=request.data.get("note") or "",
@@ -1836,7 +1860,7 @@ class POSChangeRequestServeView(APIView):
     def post(self, request, request_ref: str):
         try:
             pos_service.serve_change_request(
-                operator=request.user,
+                operator=_cash_operator(request),
                 request_ref=request_ref,
                 manager_approval=request.data.get("manager_approval"),
             )
@@ -1869,7 +1893,7 @@ class POSChangeRequestCancelView(APIView):
 
     def post(self, request, request_ref: str):
         try:
-            pos_service.cancel_change_request(operator=request.user, request_ref=request_ref)
+            pos_service.cancel_change_request(operator=_cash_operator(request), request_ref=request_ref)
         except PosIntentError as exc:
             return Response({"detail": exc.message, "error": exc.as_dict()}, status=exc.status)
         except Exception as exc:
@@ -1899,7 +1923,7 @@ class POSCashRefundView(APIView):
     def post(self, request, order_ref: str):
         try:
             refunded_q = pos_service.refund_cash(
-                operator=request.user,
+                operator=_cash_operator(request),
                 order_ref=order_ref,
                 manager_approval=request.data.get("manager_approval"),
             )
@@ -1947,7 +1971,7 @@ class POSAccountSettleView(APIView):
         body = request.data or {}
         try:
             settlement = pos_service.settle_account(
-                operator=request.user,
+                operator=_cash_operator(request),
                 customer_ref=customer_ref,
                 amount_raw=str(body.get("amount", "")),
                 method=str(body.get("method", "")),
@@ -1996,7 +2020,7 @@ class POSCashReportView(APIView):
     required_permission = "cashman.audit_shift"
 
     def get(self, request):
-        report = build_cash_session_report(operator=request.user)
+        report = build_cash_session_report(operator=_cash_operator(request))
         return Response({"report": projection_data(report)})
 
 
@@ -2004,7 +2028,11 @@ class POSCashReportView(APIView):
 
 
 def _actor_pos(request) -> str:
-    return f"pos:{getattr(request.user, 'username', None) or 'operator'}"
+    # ``_actor`` e não ``request.user``: com a flag do operador ativo ligada,
+    # ``request.user`` é a conta do aparelho. A venda saía com
+    # ``actor="pos:admin"`` e ``operator_username="joyce"`` ao mesmo tempo — a
+    # mesma request afirmando duas autorias.
+    return f"pos:{_actor(request)}"
 
 
 def _username (request) -> str:

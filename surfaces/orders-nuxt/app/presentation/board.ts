@@ -496,12 +496,24 @@ export function dispatchAsks(
   return card.next_status === "dispatched" && (card.change_out_suggested_q > 0 || card.equipment_options.length > 0);
 }
 
-/** Sugestão do que deve ter voltado: o que saiu menos o troco devido ao cliente.
- *  Levou R$ 25 para um troco de R$ 20 → R$ 5 de volta; levou exato → zero. */
+/** Sugestão do que deve ter voltado: TUDO o que saiu.
+ *
+ *  Regra da casa: o entregador nunca fica com troco, ele só leva e traz. Numa
+ *  entrega de R$ 26 paga com nota de R$ 50 ele leva R$ 24 da gaveta, entrega os
+ *  R$ 24 ao cliente e volta com a nota de R$ 50: R$ 26 são a venda
+ *  (`cod_settled`) e R$ 24 são o troco voltando (`courier_in`). O que voltou é
+ *  o valor integral que saiu.
+ *
+ *  ⚠️ Antes daqui saía `change_out_q − change_out_suggested_q`, que é zero no
+ *  caso normal (levou exatamente o troco devido). O livro então registrava
+ *  −24 · +26 · +0 = +2, enquanto a gaveta ganhava R$ 26 de verdade: R$ 24 de
+ *  SOBRA FANTASMA a cada entrega com troco, e sobra fantasma é o esconderijo
+ *  perfeito de uma falta real na contagem cega. O campo continua editável — o
+ *  entregador pode voltar com menos, e aí a diferença tem dono e motivo. */
 export function changeBackSuggestionQ(
-  card: Pick<OrderCardProjection, "change_out_q" | "change_out_suggested_q">,
+  card: Pick<OrderCardProjection, "change_out_q">,
 ): number {
-  return Math.max(0, card.change_out_q - card.change_out_suggested_q);
+  return Math.max(0, card.change_out_q);
 }
 
 /** Centavos → "20,00" (para preencher o campo; o rótulo "R$" fica na tela). */

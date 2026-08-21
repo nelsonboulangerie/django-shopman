@@ -11,6 +11,7 @@ Cancelar grava ``refund`` na gaveta de quem devolve; o acerto de entrega grava
 from __future__ import annotations
 
 import pytest
+from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.test import override_settings
 from shopman.cashman import Entry
@@ -25,6 +26,16 @@ from shopman.shop.services import pos as pos_service
 from shopman.shop.services.pos_intent import PosIntentError
 
 pytestmark = pytest.mark.django_db
+
+# O duplo-submit simultâneo se defende com `select_for_update` numa linha de
+# `IdempotencyKey`, e trava de linha é coisa que só existe em banco de verdade:
+# em SQLite as duas threads se estrangulam com "database table is locked" e o
+# teste falha por limitação do banco, não por defeito do código. Mesmo idioma do
+# `test_directive_dedupe` e dos outros testes de corrida do repositório.
+requires_postgres = pytest.mark.skipif(
+    "sqlite" in settings.DATABASES["default"]["ENGINE"],
+    reason="Requires PostgreSQL for real concurrency testing",
+)
 
 _MOCK_ADAPTERS = override_settings(
     SHOPMAN_PAYMENT_ADAPTERS={
@@ -452,3 +463,140 @@ def test_troco_que_volta_noutro_turno_aponta_o_pedido_mas_nao_o_parent(counter):
     assert cash.balance(evening) == 5000 + 3000 + 700
     by_order = operator_orders.courier_change_by_order(["DLV-X", "nunca"])
     assert by_order == {"DLV-X": (2000, 700)}
+
+
+# ── A venda em voo quando o turno fecha ───────────────────────────────────
+#
+# O PDV valida o turno no começo de ``close_sale``; a linha do livro nasce
+# centenas de milissegundos depois, com o pedido já commitado. Se o gerente
+# fecha o turno nesse intervalo, ``record`` recusa com ``SHIFT_NOT_OPEN`` (de
+# propósito) e o ``atomic`` desfaz junto a liquidação no Payman. Antes disto o
+# ``except Exception`` engolia tudo: a tela imprimia "Pedido criado" e o
+# dinheiro sumia dos DOIS livros, sem uma issue sequer na reconciliação do dia.
+#
+# ⚠️ O vizinho ``test_turno_fechado_tambem_recusa`` afirma o caso fácil (turno
+# já fechado ANTES do começo) e por isso ficou verde o tempo todo. O que faltava
+# é o turno fechando NO MEIO, por outra conexão — que é como acontece.
+
+
+def _close_shift_in_another_connection(shift_pk: int, operator_pk: int, counted_q: int) -> None:
+    """Fecha o turno como o gerente fecha: outra conexão, outra transação."""
+    from django.db import connections
+
+    try:
+        from shopman.cashman.models import Shift
+
+        shift = Shift.objects.get(pk=shift_pk)
+        cash.close_shift(shift, counted_q=counted_q, actor=get_user_model().objects.get(pk=operator_pk))
+    finally:
+        connections.close_all()
+
+
+@pytest.mark.django_db(transaction=True)
+def test_venda_que_chega_depois_do_fechamento_grita_em_vez_de_evaporar(monkeypatch):
+    import threading
+
+    counter = _Counter()
+    settle_original = pos_service.payment_service.settle_terminal_tenders
+    a_caminho = threading.Event()
+    fechado = threading.Event()
+
+    def _settle_com_o_gerente_fechando(order):
+        # Estamos DENTRO do atomic da liquidação, exatamente onde a corrida mora.
+        a_caminho.set()
+        assert fechado.wait(timeout=10)
+        return settle_original(order)
+
+    monkeypatch.setattr(pos_service.payment_service, "settle_terminal_tenders", _settle_com_o_gerente_fechando)
+
+    def _gerente():
+        assert a_caminho.wait(timeout=10)
+        _close_shift_in_another_connection(counter.shift.pk, counter.operator.pk, counted_q=10000)
+        fechado.set()
+
+    gerente = threading.Thread(target=_gerente)
+    gerente.start()
+    try:
+        with pytest.raises(PosIntentError) as exc:
+            counter.close(client_request_id="voo-1", tendered_amount_q=1200)
+    finally:
+        gerente.join(timeout=10)
+
+    # 1. O operador SABE. O erro nomeia o pedido e proíbe refazer a venda.
+    assert exc.value.code == "cash_shift_closed_mid_sale"
+    assert exc.value.status == 409
+    order = Order.objects.get(channel_ref="pdv")
+    assert order.ref in exc.value.message
+    assert "NÃO refaça" in exc.value.recovery
+
+    # 2. A cobrança existe: o dinheiro está na gaveta, o pedido tem de dizer isso.
+    assert PaymentIntent.objects.filter(order_ref=order.ref, status=PaymentIntent.Status.CAPTURED).exists()
+
+    # 3. O turno fechado guarda o rastro, com pedido e valor. Não move saldo (a
+    #    contagem está congelada), mas nomeia o que conferir na gaveta.
+    counter.shift.refresh_from_db()
+    assert not counter.shift.is_open
+    nota = Entry.objects.get(shift=counter.shift, kind=Entry.Kind.NOTE)
+    assert nota.payload["order_ref"] == order.ref
+    assert nota.payload["cash_q"] == 1200
+    assert not counter.sale_lines()
+
+    # 4. E alguém é avisado: ninguém lê o livro de um turno fechado por acaso.
+    from shopman.backstage.models import OperatorAlert
+
+    alerta = OperatorAlert.objects.get(type="cash_sale_after_shift_close")
+    assert (alerta.severity, alerta.order_ref) == ("critical", order.ref)
+
+
+# ── Duplo-submit simultâneo: a chave do cliente tem de valer no banco ─────
+#
+# ``_existing_sale_by_client_request_id`` era read-then-write sem lock, e os ops
+# de troca da comanda eram montados de um estado lido antes. Duas requests com a
+# MESMA chave passavam as duas: carrinho dobrado (R$ 24 numa compra de R$ 12) ou
+# dois pedidos. O vizinho ``test_repetir_a_venda_nao_duplica_a_linha`` repete em
+# SEQUÊNCIA, que sempre funcionou, e por isso não pegava nada.
+
+
+@requires_postgres
+@pytest.mark.django_db(transaction=True)
+def test_dois_submits_simultaneos_com_a_mesma_chave_viram_uma_venda_so():
+    import threading
+
+    from django.db import connections
+
+    counter = _Counter()
+    rodadas = 8
+    for rodada in range(rodadas):
+        chave = f"simultaneo-{rodada}"
+        resultados: list = []
+        erros: list = []
+        largada = threading.Barrier(2)
+
+        # Os argumentos vêm por parâmetro (e não pelo closure) porque a thread
+        # sobrevive à volta do laço: com closure, a rodada seguinte trocaria a
+        # chave debaixo de uma thread ainda viva.
+        def _submete(largada=largada, chave=chave, resultados=resultados, erros=erros):
+            try:
+                largada.wait(timeout=10)
+                resultados.append(counter.close(client_request_id=chave, tendered_amount_q=1200))
+            except Exception as exc:  # o par perdedor pode legitimamente falhar
+                erros.append(exc)
+            finally:
+                connections.close_all()
+
+        threads = [threading.Thread(target=_submete) for _ in range(2)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join(timeout=20)
+
+        assert not erros, f"rodada {rodada}: {erros}"
+        from django.db.models import Q
+
+        pedidos = list(
+            Order.objects.filter(Q(data__client_request_id=chave) | Q(data__pos__client_request_id=chave))
+        )
+        assert len(pedidos) == 1, f"rodada {rodada}: {len(pedidos)} pedidos para uma chave"
+        assert pedidos[0].total_q == 1200, f"rodada {rodada}: carrinho dobrado ({pedidos[0].total_q})"
+        assert {r.order_ref for r in resultados} == {pedidos[0].ref}
+        assert len(Entry.objects.filter(kind=Entry.Kind.SALE, order_ref=pedidos[0].ref)) == 1

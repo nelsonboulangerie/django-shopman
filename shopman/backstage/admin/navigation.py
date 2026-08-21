@@ -151,7 +151,12 @@ def get_sidebar_navigation(request):
             # A movimentação (sangria, suprimento) é linha do turno, não tela: o
             # livro inteiro se lê de dentro do turno, em ordem. Um item próprio
             # seria a mesma pergunta com dois donos.
-            _item("Turnos de caixa", "payments", _url("admin:cashman_shift_changelist"), permission=_can_operate_pos),
+            # ``audit_shift``, não ``operate_pos``: a tela do turno mostra
+            # esperado, contado e diferença, e oferecer o link a quem opera o
+            # caixa é oferecer o gabarito da contagem cega. O gate real está no
+            # ``ShiftAdmin.has_view_permission``; aqui o link acompanha, para
+            # ninguém ver uma porta que responde 403.
+            _item("Turnos de caixa", "payments", _url("admin:cashman_shift_changelist"), permission=_can_audit_shift),
             _item("Fechamentos do dia", "event_available", _url("admin:backstage_dayclosing_changelist"), permission=_can_close_day),
             _item("Execuções de checklist", "checklist", _url("admin:backstage_operationchecklistrun_changelist"), permission=_is_staff),
             _item("Episódios de operação", "report_problem", _url("admin:backstage_operationepisode_changelist"), permission=_can_close_day),

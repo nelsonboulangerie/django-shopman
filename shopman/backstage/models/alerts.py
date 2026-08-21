@@ -32,6 +32,14 @@ class OperatorAlert(models.Model):
         ("lifecycle_phase_stuck", "Fase do pedido travada"),
         ("low_rating", "Avaliação baixa recebida"),
         ("cash_shift_open_at_closing", "Caixa aberto no fechamento do dia"),
+        # A venda foi criada e cobrada, mas o turno fechou entre o commit do
+        # pedido e a linha do livro, e o livro-caixa é append-only num turno
+        # ABERTO: o dinheiro fica sem linha. Nenhum tipo existente serve —
+        # `payment_failed` é cobrança que não passou (esta passou) e
+        # `payment_reconciliation_failed` é divergência achada no dia seguinte.
+        # Este é o aviso do instante, com o pedido no nome, para alguém conferir
+        # a gaveta ANTES de o dinheiro virar diferença anônima.
+        ("cash_sale_after_shift_close", "Venda entrou depois do fechamento do turno"),
         # Alarmes do B.I. (BIAlertRule): o B.I. avisa quando o que aconteceu foge
         # do esperado. O aviso chega pelo mesmo bus, com reconhecimento.
         ("bi_import_silence", "B.I.: importação esperada não chegou"),

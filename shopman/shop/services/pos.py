@@ -243,26 +243,203 @@ def close_sale(
         payment_method=_normalize_payment_method(payload.get("payment_method") or "cash"),
         tenders=[t for t in (payload.get("payment_tenders") or []) if isinstance(t, dict)],
     )
-    session = _payload_open_tab_session(channel_ref=channel.ref, payload=payload)
-    existing = _existing_sale_by_client_request_id(channel_ref=channel.ref, payload=payload)
-    if existing is not None and session is None:
-        return PosSaleResult(order_ref=existing.ref, total_q=existing.total_q, fiscal_hint=_sale_fiscal_hint(existing))
-    # A venda do terminal acontece DENTRO de um turno de caixa: é no livro dele
-    # que a linha `sale` vai nascer. Sem turno aberto não há onde registrar, e
-    # a recusa tem de vir ANTES do commit do pedido, não depois.
-    shift = _require_open_shift(payload)
-    if session is None:
-        if _payload_has_tab_identity(payload):
-            raise ValueError("Abra um POS tab antes de finalizar.")
-        session = _create_direct_checkout_session(
-            channel_ref=channel.ref,
-            payload=payload,
-            operator_username=operator_username,
+    # A partir daqui é uma transação só, e ela existe por causa de um defeito:
+    # ``client_request_id`` era conferido com um SELECT solto e os ops eram
+    # montados de um estado lido antes. Duas requests com a MESMA chave passavam
+    # as duas pelo `existing is None` e reconstruíam a sessão em cima do mesmo
+    # snapshot — carrinho dobrado (R$ 76 numa compra de R$ 38) ou dois pedidos,
+    # 15 vezes em 15 rodadas. A projection publica
+    # ``idempotent_replay: safe_for_offline_queue``, e uma fila offline reenvia
+    # exatamente assim.
+    #
+    # O remédio é o mesmo que o livro-caixa já usa para a venda por pedido:
+    # unicidade no BANCO, não na leitura. ``_claim_sale_request`` trava a linha
+    # única ``(scope, key)`` de ``IdempotencyKey``, e a segunda request só volta
+    # a andar quando a primeira commitou. Ao voltar ela lê o ``order_ref`` NA
+    # PRÓPRIA TRAVA (``_answer_sale_claim`` o escreveu dentro da transação) e
+    # devolve a mesma venda, em vez de criar a segunda.
+    with transaction.atomic():
+        claim = _claim_sale_request(channel_ref=channel.ref, payload=payload)
+        session = _payload_open_tab_session(channel_ref=channel.ref, payload=payload)
+        existing = _claimed_sale(claim) or _existing_sale_by_client_request_id(
+            channel_ref=channel.ref, payload=payload
         )
-        direct_checkout = True
-    else:
-        direct_checkout = False
+        if existing is not None:
+            # Vale com comanda também: ``client_request_id`` identifica ESTE
+            # envio, e o segundo envio do mesmo é replay, não venda nova.
+            # Reancora a resposta: se a trava anterior expirou e esta é nova, ela
+            # nasce sabendo qual venda responde por esta chave.
+            _answer_sale_claim(claim, order_ref=existing.ref)
+            return PosSaleResult(
+                order_ref=existing.ref, total_q=existing.total_q, fiscal_hint=_sale_fiscal_hint(existing)
+            )
+        # A venda do terminal acontece DENTRO de um turno de caixa: é no livro dele
+        # que a linha `sale` vai nascer. Sem turno aberto não há onde registrar, e
+        # a recusa tem de vir ANTES do commit do pedido, não depois.
+        shift = _require_open_shift(payload)
+        if session is None:
+            if _payload_has_tab_identity(payload):
+                raise ValueError("Abra um POS tab antes de finalizar.")
+            session = _create_direct_checkout_session(
+                channel_ref=channel.ref,
+                payload=payload,
+                operator_username=operator_username,
+            )
+            direct_checkout = True
+        else:
+            # A comanda é relida SOB LOCK: os ops de troca (remove_line dos itens
+            # atuais + add_line dos novos) só valem para o estado que travamos.
+            session = _locked_session(session)
+            direct_checkout = False
 
+        result, session, tab_ref = _commit_sale_session(
+            session=session,
+            channel=channel,
+            config=config,
+            payload=payload,
+            actor=actor,
+            operator_username=operator_username,
+            direct_checkout=direct_checkout,
+        )
+        _answer_sale_claim(claim, order_ref=result.order_ref)
+
+    # Fora da transação, e a ordem importa: os callbacks de ``on_commit`` do
+    # lifecycle já rodaram e já reescreveram ``order.data``. Escrever o carimbo
+    # da comanda ANTES deles fazia a reescrita apagar o ``client_request_id``, e
+    # sem essa chave o replay do mesmo envio não encontra a venda — cria a
+    # segunda. Medido: no ``main`` o pedido sai com a chave; com o carimbo dentro
+    # da transação, sai sem.
+    _mark_tab_committed(
+        order_ref=result.order_ref,
+        tab_ref=tab_ref,
+        operator_username=operator_username,
+        session_data=session.data,
+    )
+    # Marcador de transição na trilha da sessão; o mesmo ``session_key`` agora
+    # resolve para o Order, cujo lifecycle é auditado pelo OrderEvent.
+    session.emit_event("sale_committed", actor=operator_username, payload={
+        "order_ref": result.order_ref, "total_q": int(result.total_q),
+    })
+    logger.info("pos_close_tab order=%s tab=%s session=%s total=%s", result.order_ref, tab_ref, session.session_key, result.total_q)
+    order = Order.objects.filter(ref=result.order_ref).first()
+    payment_result = {}
+    if order is not None:
+        order = _reconcile_order_payment_to_total(order)
+        payment_result = _settle_pos_sale(order, shift=shift, operator_username=operator_username)
+    return PosSaleResult(
+        order_ref=result.order_ref,
+        total_q=int(order.total_q if order is not None else result.total_q),
+        fiscal_hint=_sale_fiscal_hint(order),
+        payment=payment_result,
+    )
+
+
+def _locked_session(session: Session) -> Session:
+    """A sessão relida sob ``select_for_update``: quem chegou depois espera aqui."""
+    return Session.objects.select_for_update().get(pk=session.pk)
+
+
+def _sale_claim_scope(channel_ref: str) -> str:
+    return f"pos_sale:{channel_ref}"[:64]
+
+
+def _claim_sale_request(*, channel_ref: str, payload: dict):
+    """Trava a chave do submit no banco, para dois envios simultâneos virarem um.
+
+    Usa a ``IdempotencyKey`` do orderman, que já tem a ``UniqueConstraint``
+    ``(scope, key)`` — o mesmo mecanismo do commit de sessão e do replay de
+    webhook, e por isso nenhuma migração nova. O escopo é o CANAL (e não a
+    sessão, como no commit): duas finalizações de balcão direto nascem em
+    sessões diferentes, então um escopo por sessão não as encontraria.
+
+    Duas coisas acontecem aqui, e as duas importam:
+
+    1. **A espera.** Quem chega segundo não enxerga a linha da primeira (READ
+       COMMITTED esconde INSERT não commitado), tenta inserir a sua e bloqueia
+       no índice único até a transação vencedora terminar. Aí volta, relê SOB
+       LOCK e continua. O ``select_for_update`` sozinho não bastaria: sobre uma
+       linha invisível ele não trava nada.
+    2. **A resposta.** A linha travada é onde o vencedor escreve o ``order_ref``
+       (ver ``_answer_sale_claim``), e é por isso que ela é devolvida em vez de
+       descartada. Perguntar ao pedido no lugar dela não funciona: o
+       ``client_request_id`` só chega em ``order.data`` no ``_mark_tab_committed``,
+       que roda DEPOIS da transação — no instante em que o perdedor desbloqueia,
+       o pedido do vencedor já existe mas ainda está sem a chave. Foi exatamente
+       assim que a primeira versão desta trava serializou direitinho e mesmo
+       assim criou o segundo pedido.
+
+    Sem ``client_request_id`` não há o que travar — a tela sempre manda um, e
+    quem chama a API crua sem chave está dizendo que cada envio é uma venda.
+    """
+    key = _payload_client_request_id(payload)
+    if not key:
+        return None
+    from shopman.orderman.models import IdempotencyKey
+
+    scope = _sale_claim_scope(channel_ref)
+    for _attempt in range(2):
+        claim = IdempotencyKey.objects.select_for_update().filter(scope=scope, key=key).first()
+        if claim is not None:
+            return claim
+        try:
+            # Savepoint próprio: a violação de unicidade é o resultado ESPERADO
+            # do perdedor, e sem ele o erro envenenaria a transação inteira.
+            with transaction.atomic():
+                # Nasce ``in_progress`` e vira ``done`` quando a venda commita —
+                # mesmo ciclo do claim de webhook. O ``expires_at`` é marca de
+                # faxina futura, não semântica: hoje nada recolhe a tabela, e a
+                # trava fica. Se um dia recolher, o replay tardio ainda acha a
+                # venda pelo ``client_request_id`` em ``order.data``.
+                return IdempotencyKey.objects.create(
+                    scope=scope,
+                    key=key,
+                    status="in_progress",
+                    expires_at=timezone.now() + timedelta(days=1),
+                )
+        except IntegrityError:
+            # Perdemos a corrida do insert — e, por termos bloqueado nele, a
+            # vencedora já commitou. A próxima volta do laço enxerga a linha.
+            continue
+    return IdempotencyKey.objects.select_for_update().filter(scope=scope, key=key).first()
+
+
+def _claimed_sale(claim) -> Order | None:
+    """O pedido que a trava aponta, se o envio anterior já virou venda."""
+    if claim is None:
+        return None
+    order_ref = str(((claim.response_body or {}) if isinstance(claim.response_body, dict) else {}).get("order_ref") or "")
+    if not order_ref:
+        return None
+    return Order.objects.filter(ref=order_ref).first()
+
+
+def _answer_sale_claim(claim, *, order_ref: str) -> None:
+    """Escreve o ``order_ref`` na trava, ainda DENTRO da transação da venda.
+
+    É isto que faz o segundo envio devolver a mesma venda em vez de criar outra:
+    quando ele desbloqueia, a linha já traz a resposta. Se a venda falhar, o
+    rollback leva a linha junto e a chave volta a estar livre — que é o certo,
+    porque não houve venda para replicar.
+    """
+    if claim is None:
+        return
+    claim.status = "done"
+    claim.response_code = 200
+    claim.response_body = {"order_ref": order_ref}
+    claim.save(update_fields=["status", "response_code", "response_body"])
+
+
+def _commit_sale_session(
+    *,
+    session: Session,
+    channel: Channel,
+    config: ChannelConfig,
+    payload: dict,
+    actor: str,
+    operator_username: str,
+    direct_checkout: bool,
+):
+    """Troca o conteúdo da sessão pelo carrinho do PDV e a commita. Roda sob a trava."""
     tab_ref = "" if direct_checkout else _session_tab_ref(session)
     tab_display = "" if direct_checkout else _session_tab_display(session)
     fulfillment_type = _payload_fulfillment_type(payload)
@@ -302,29 +479,14 @@ def close_sale(
         ctx={"actor": actor},
         channel_config=config.to_dict(),
     )
-    _mark_tab_committed(
-        order_ref=result.order_ref,
-        tab_ref=tab_ref,
-        operator_username=operator_username,
-        session_data=session.data,
-    )
-    # Transition marker on the session trail; the same session_key now resolves
-    # to the Order, whose own lifecycle is audited by OrderEvent.
-    session.emit_event("sale_committed", actor=operator_username, payload={
-        "order_ref": result.order_ref, "total_q": int(result.total_q),
-    })
-    logger.info("pos_close_tab order=%s tab=%s session=%s total=%s", result.order_ref, tab_ref, session.session_key, result.total_q)
-    order = Order.objects.filter(ref=result.order_ref).first()
-    payment_result = {}
-    if order is not None:
-        order = _reconcile_order_payment_to_total(order)
-        payment_result = _settle_pos_sale(order, shift=shift, operator_username=operator_username)
-    return PosSaleResult(
-        order_ref=result.order_ref,
-        total_q=int(order.total_q if order is not None else result.total_q),
-        fiscal_hint=_sale_fiscal_hint(order),
-        payment=payment_result,
-    )
+    # ⚠️ O carimbo da comanda e o marcador de trilha saíram daqui de propósito —
+    # ver `close_sale`, que os chama DEPOIS de fechar a transação. Escrevê-los
+    # aqui dentro os põe antes dos callbacks de `on_commit` do lifecycle, que
+    # reescrevem `order.data` inteiro a partir do estado que leram e apagam o
+    # `client_request_id`. Sem essa chave o replay não acha a venda e cria a
+    # segunda — exatamente o duplo pedido que o claim de idempotência existe
+    # para impedir.
+    return result, session, tab_ref
 
 
 def review_sale(
@@ -1231,13 +1393,27 @@ def build_session_ops(payload: dict, operator_username: str) -> list[dict]:
     return ops
 
 
-def _verify_manager_pin(username: str, pin: str):
+def _bare_username(value: str) -> str:
+    """O username por trás de um actor: ``"pos:joyce"``, ``"gestor:joyce"`` ou ``"joyce"``."""
+    raw = str(value or "").strip()
+    return raw.split(":", 1)[1] if ":" in raw else raw
+
+
+def _verify_manager_pin(username: str, pin: str, *, operator_username: str = ""):
     """Resolve a manager by username and verify their override PIN.
 
     A short, rate-limited PIN challenge replaces account passwords in the sale
     payload. Reuses doorman's generic ``PinCredential`` (HMAC hash + lockout)
     and the same ``cashman.adjust_shift`` permission the override gates
     require. Returns the authorizing user, or ``None`` if the challenge fails.
+
+    ⚠️ ``operator_username`` é o que faz da segunda assinatura uma SEGUNDA
+    pessoa. Antes bastava ter ``is_staff`` + ``adjust_shift``, e o gerente que
+    também opera o balcão (a Joyce do seed tem os dois) se autorizava: escolhia
+    o próprio nome em "Quem autoriza?", digitava o próprio PIN e a exceção saía
+    com quem faz e quem autoriza sendo a mesma pessoa. Isso não é aprovação, é
+    um passo a mais no mesmo ato — e era exatamente a fraude que o fluxo de
+    exceção do caixa existe para impedir.
     """
     from django.contrib.auth import get_user_model
     from shopman.doorman.models import PinCredential
@@ -1248,6 +1424,10 @@ def _verify_manager_pin(username: str, pin: str):
     except user_model.DoesNotExist:
         return None
     if not user.has_perm("cashman.adjust_shift"):
+        return None
+    operator = _bare_username(operator_username)
+    if operator and _bare_username(username) == operator:
+        logger.warning("pos_manager_self_approval_refused operator=%s", operator)
         return None
     try:
         credential = user.pin_credential
@@ -1291,7 +1471,7 @@ def validate_manager_approval(payload: dict, *, operator_username: str) -> None:
             recovery="Peça a um gerente autorizado para aprovar com o PIN antes de finalizar.",
         )
 
-    if _verify_manager_pin(username, pin) is None:
+    if _verify_manager_pin(username, pin, operator_username=operator_username) is None:
         raise PosIntentError(
             code="manager_approval_invalid",
             message="Aprovação gerencial inválida.",
@@ -1333,7 +1513,7 @@ def validate_manager_override(approval: dict | None, *, operator_username: str, 
             focus="approval",
             recovery="Peça a um gerente autorizado para aprovar com o PIN.",
         )
-    approver = _verify_manager_pin(username, pin)
+    approver = _verify_manager_pin(username, pin, operator_username=operator_username)
     if approver is None:
         raise PosIntentError(
             code="manager_approval_invalid",
@@ -1845,6 +2025,8 @@ def _settle_pos_sale(order: Order, *, shift, operator_username: str) -> dict:
     sozinhos vão ao gateway (rede) fora de transação, como sempre; a linha da
     venda nasce depois, com efeito zero, e leva o intent se o gateway aceitou.
     """
+    from shopman.cashman import CashError
+
     payment = dict((order.data or {}).get("payment") or {})
     method = str(payment.get("method") or "").strip().lower()
     collection = str(payment.get("collection") or "terminal").strip().lower()
@@ -1852,7 +2034,12 @@ def _settle_pos_sale(order: Order, *, shift, operator_username: str) -> dict:
 
     if collection != "terminal":
         # Entrega paga na porta: a venda é deste turno, o dinheiro vem no acerto.
-        _record_sale(order, shift=shift, operator=operator, cash_q=0, payment_ref="", intents={})
+        try:
+            _record_sale(order, shift=shift, operator=operator, cash_q=0, payment_ref="", intents={})
+        except CashError as exc:
+            if exc.code != "SHIFT_NOT_OPEN":
+                raise
+            _settle_after_shift_closed(order, shift=shift, operator=operator, resettle=False)
         return {}
 
     gateway_only = method in {"pix", "card"}
@@ -1874,7 +2061,12 @@ def _settle_pos_sale(order: Order, *, shift, operator_username: str) -> dict:
         order = Order.objects.get(ref=order.ref)
         payment = dict((order.data or {}).get("payment") or {})
         intents = {method: payment["intent_ref"]} if payment.get("intent_ref") else {}
-        _record_sale(order, shift=shift, operator=operator, cash_q=0, payment_ref=intents.get(method, ""), intents=intents)
+        try:
+            _record_sale(order, shift=shift, operator=operator, cash_q=0, payment_ref=intents.get(method, ""), intents=intents)
+        except CashError as exc:
+            if exc.code != "SHIFT_NOT_OPEN":
+                raise
+            _settle_after_shift_closed(order, shift=shift, operator=operator, resettle=False)
         return payment_result or _pos_payment_response(order)
 
     try:
@@ -1890,16 +2082,126 @@ def _settle_pos_sale(order: Order, *, shift, operator_username: str) -> dict:
                 payment_ref=intents.get("cash") or (next(iter(intents.values())) if len(intents) == 1 else ""),
                 intents=intents,
             )
+    except CashError as exc:
+        if exc.code != "SHIFT_NOT_OPEN":
+            raise
+        # O turno fechou ENTRE o começo desta venda e a linha do livro. O
+        # `atomic` acima é o certo (ou o dinheiro consta nos dois livros, ou em
+        # nenhum), mas ele também desfez a liquidação no Payman — e a venda em
+        # si já commitou. Liquidar de novo, sozinho, e deixar a marca de que
+        # este dinheiro existe fora do turno.
+        _settle_after_shift_closed(order, shift=shift, operator=operator)
+    # A venda já commitou e o dinheiro já está na gaveta: não há o que desfazer
+    # no pedido. O acusador do dia seguinte existe (o check `cash_ledger_mismatch`
+    # da reconciliação diária, em
+    # `backstage/services/financial_reconciliation.py::_check_cash_ledger`), mas
+    # "amanhã" não serve para quem está com o cliente na frente: o erro sobe.
     except Exception:
-        # A venda já commitou e o dinheiro já está na gaveta: não há o que
-        # desfazer no pedido. Fica o erro; quem acusa no dia seguinte está logo
-        # abaixo.
         logger.exception("pos_sale_settlement_failed order=%s", order.ref)
-        # Dois acusadores, e os dois existem: o check `cash_ledger_mismatch` da
-        # reconciliação diária (`backstage/services/financial_reconciliation.py
-        # ::_check_cash_ledger`), que cruza o capturado no Payman com as linhas
-        # do livro nas duas direções, e a leitura Z do turno.
+        raise PosIntentError(
+            code="sale_settlement_failed",
+            message=f"Venda {order.ref} criada, mas a cobrança não foi registrada.",
+            field="payment",
+            focus="payment",
+            status=409,
+            recovery="NÃO refaça a venda. Chame o gerente e confira o pedido no gestor antes de continuar.",
+        ) from None
     return {}
+
+
+def _settle_after_shift_closed(order: Order, *, shift, operator, resettle: bool = True) -> None:
+    """Venda que chegou depois do fechamento: liquidar, marcar e gritar.
+
+    Este é o buraco que o ``except Exception`` engolia. A sequência real: o PDV
+    valida o turno no começo de ``close_sale`` e a linha do livro só nasce
+    centenas de milissegundos depois, com o pedido já commitado. Se o gerente
+    fecha o turno nesse intervalo, ``cash_ledger.record`` recusa com
+    ``SHIFT_NOT_OPEN`` (de propósito: o ``count`` congela "contado − esperado no
+    instante do fechamento", e uma linha posterior faria o livro provar um saldo
+    que a gaveta nunca teve) — e antes daqui o pedido saía confirmado na tela,
+    ausente do livro E do Payman, com zero issues na reconciliação do dia.
+
+    O comentário antigo prometia que "vira uma sobra na conferência" e que "dois
+    acusadores existem". As duas afirmações são falsas NESTE caminho: a contagem
+    já foi gravada quando o dinheiro entrou, então não sobra nada para acusar, e
+    a reconciliação não vê divergência porque o Payman também ficou vazio.
+
+    O que fica no lugar:
+
+    - **a cobrança**, liquidada agora numa transação própria: o dinheiro está na
+      gaveta e o pedido tem de dizer que foi pago;
+    - **uma ``note`` no turno fechado** — o único tipo que o livro aceita depois
+      do fechamento junto com a correção da contagem, e é honesto que seja ele:
+      não move saldo (o ``count`` está congelado), só nomeia o pedido, o valor e
+      a hora para quem for conferir a gaveta;
+    - **um alerta crítico**, porque ninguém lê o livro de um turno fechado por
+      acaso;
+    - **o erro na tela do PDV**, levantado por quem chamou.
+    """
+    from shopman.cashman import CashError
+
+    # Relê o pedido: a tentativa que falhou rodou dentro do ``atomic`` desfeito e
+    # deixou ``order.data`` em memória apontando intents que o rollback apagou.
+    # Reaproveitar essa instância faria ``settle_terminal_tenders`` achar que já
+    # liquidou e devolver refs de intents que não existem mais.
+    order = Order.objects.get(ref=order.ref)
+    cash_q = 0
+    intents: dict = {}
+    if resettle:
+        # Só o caminho do terminal precisa: lá a liquidação e a linha do livro
+        # dividiam o mesmo `atomic`, então a recusa do livro desfez a cobrança.
+        # No gateway e na entrega a cobrança acontece fora da transação e já
+        # está de pé.
+        try:
+            with transaction.atomic():
+                intents = payment_service.settle_terminal_tenders(order)
+                fresh = Order.objects.get(ref=order.ref)
+                cash_q = _terminal_cash_amount_q(fresh)
+        except Exception:
+            intents = {}
+            logger.exception("pos_sale_settlement_failed order=%s shift=%s", order.ref, shift.pk)
+
+    try:
+        cash_ledger.record(
+            "note",
+            shift=shift,
+            operator=operator,
+            reason="Venda finalizada depois do fechamento do turno",
+            payload={
+                "text": (
+                    f"Venda {order.ref} finalizada depois do fechamento do turno, "
+                    f"com R$ {format_money(int(cash_q))} em dinheiro sem linha no livro."
+                ),
+                "order_ref": order.ref,
+                "cash_q": int(cash_q),
+                "intents": dict(intents),
+            },
+        )
+    except CashError:
+        logger.exception("pos_sale_after_close_note_failed order=%s shift=%s", order.ref, shift.pk)
+
+    faltante = (
+        f"R$ {format_money(int(cash_q))} em dinheiro ficaram fora do livro"
+        if cash_q > 0
+        else "a venda ficou fora do livro do turno"
+    )
+    message = f"Venda {order.ref} entrou depois do fechamento do turno {shift.pk}: {faltante}. Confira a gaveta."
+    try:
+        from shopman.shop.adapters import alert as alert_adapter
+
+        alert_adapter.create("cash_sale_after_shift_close", "critical", message, order_ref=order.ref)
+    except Exception:
+        logger.exception("pos_sale_after_close_alert_failed order=%s", order.ref)
+
+    logger.error("pos_sale_after_shift_close order=%s shift=%s cash_q=%s", order.ref, shift.pk, cash_q)
+    raise PosIntentError(
+        code="cash_shift_closed_mid_sale",
+        message=message,
+        field="cash_shift_id",
+        focus="cash",
+        status=409,
+        recovery="NÃO refaça a venda: o pedido já existe. Chame o gerente para conferir a gaveta.",
+    )
 
 
 def _record_sale(order: Order, *, shift, operator, cash_q: int, payment_ref: str, intents: dict) -> None:

@@ -446,7 +446,7 @@ def build_pos(*, terminal=None, operator=None) -> POSProjection:
         fiscal_label=fiscal_label,
         fiscal_message=fiscal_message,
         operators=_eligible_operator_cards(),
-        managers=_manager_cards(),
+        managers=_manager_cards(operator),
         auto_lock_seconds=int((getattr(terminal, "metadata", None) or {}).get("auto_lock_seconds", 60)),
         terminal_roll_width_mm=runtime.printer.roll_width_mm,
         terminal_roll_margin_mm=runtime.printer.margin_mm,
@@ -461,8 +461,15 @@ def _eligible_operator_cards() -> tuple[dict, ...]:
     return tuple(operator_card(u) for u in eligible_operators())
 
 
-def _manager_cards() -> tuple[dict, ...]:
+def _manager_cards(operator=None) -> tuple[dict, ...]:
     """Gerentes que podem autorizar exceção, para o diálogo de PIN oferecer a lista.
+
+    ⚠️ Sem ``operator``, a lista mostrava o próprio operador quando ele era
+    gerente. A Joyce (grupo Gerente do seed, tem ``operate_pos`` E
+    ``adjust_shift``) se escolhia em "Quem autoriza?", digitava o próprio PIN e
+    a exceção saía com as duas assinaturas dela. A segunda assinatura existe
+    para haver DUAS pessoas; quem opera não se autoriza. O servidor recusa de
+    qualquer jeito (``_verify_manager_pin``); esta lista só evita oferecer.
 
     Existe porque a tela pedia o nome do gerente DIGITADO, e nome digitado erra: o
     servidor resolve o usuário por ``username`` e valida o PIN contra a credencial
@@ -475,12 +482,14 @@ def _manager_cards() -> tuple[dict, ...]:
     """
     from shopman.backstage.services.operator import ADJUST_SHIFT, eligible_operators
 
+    operator_pk = getattr(operator, "pk", None)
     return tuple(
         {
             "username": user.get_username(),
             "name": user.get_full_name().strip() or user.get_username(),
         }
         for user in eligible_operators(perm=ADJUST_SHIFT)
+        if operator_pk is None or user.pk != operator_pk
     )
 
 
