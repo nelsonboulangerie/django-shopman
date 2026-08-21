@@ -1,6 +1,6 @@
-// TS mirror of the generic operator session API
+// Espelho TS da API de sessão do operador
 // (shopman/backstage/api/operations.py: operator/session|eligible|unlock|lock).
-// Camada 2 da auth (Opção C): quem está operando agora, por PIN ou crachá.
+// UMA identidade: quem prova PIN ou crachá VIRA a sessão, e é dela toda permissão.
 
 export interface OperatorCard {
   id: number;
@@ -9,12 +9,14 @@ export interface OperatorCard {
 }
 
 export interface OperatorSession {
-  require_operator: boolean;
-  device_user: string;
+  // De QUE BALCÃO esta tela é (`Terminal.ref`), ou "" quando o aparelho não é
+  // uma estação reconhecida. Substituiu `device_user`: não há mais conta de
+  // máquina para nomear, e o que a tela precisa saber é de onde ela fala.
+  station: string;
   operator: OperatorCard | null;
   locked: boolean;
-  // O operador ativo recebeu um PIN temporário (reset do gerente) e precisa
-  // trocá-lo antes de operar. O shell força a troca quando true.
+  // O operador recebeu um PIN temporário (reset do gerente) e precisa trocá-lo
+  // antes de operar. O shell força a troca quando true.
   pin_must_change: boolean;
 }
 

@@ -6,7 +6,7 @@
 // lock overlay (Opção C). The overlay covers the OPERATOR screens only — never the
 // PUBLIC customer pickup board (/pickup), which has no auth. Gated OFF → never shows.
 const OPERATOR_PERM = "backstage.operate_kds";
-const { authenticated, locked, mustChange, operator, lock } =
+const { canIdentify, locked, mustChange, operator, lock } =
   useOperatorLock(OPERATOR_PERM);
 
 const route = useRoute();
@@ -27,7 +27,7 @@ useHead({ title: "Shopman KDS" });
     <!-- Telas de operador: rail canônico (kit) + conteúdo. -->
     <div v-else class="flex min-h-screen">
       <div
-        v-if="authenticated"
+        v-if="canIdentify"
         class="sticky top-0 flex h-screen shrink-0 print:hidden"
       >
         <OperatorRail
@@ -52,7 +52,7 @@ useHead({ title: "Shopman KDS" });
         <NuxtPage />
       </div>
     </div>
-    <OperatorLogin v-if="!authenticated && !isCustomerBoard" />
+    <OperatorLogin v-if="!canIdentify && !isCustomerBoard" />
     <OperatorLock
       v-else-if="(locked || mustChange) && !isCustomerBoard"
       :perm="OPERATOR_PERM"
