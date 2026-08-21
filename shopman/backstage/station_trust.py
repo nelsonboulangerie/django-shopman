@@ -28,7 +28,7 @@ duas semanas.
 
 from __future__ import annotations
 
-from shopman.doorman.models.device_trust import SubjectType
+from shopman.doorman.models import SubjectType
 
 #: Quem pode transformar um aparelho em estação confiável. É ato de gestão — quem
 #: provisiona decide que aquele balcão passa a poder pedir identificação — e por
@@ -97,7 +97,7 @@ def revoke(request, response, terminal_ref: str):
     mão — desativar um quiosque que vai sair da loja, por exemplo.
     """
     from shopman.doorman.conf import doorman_settings
-    from shopman.doorman.models.device_trust import TrustedDevice
+    from shopman.doorman.models import TrustedDevice
 
     ref = str(terminal_ref or "").strip()
     nome = f"{doorman_settings.DEVICE_TRUST_STATION_COOKIE_NAME}_{ref}"
