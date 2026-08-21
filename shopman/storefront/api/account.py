@@ -910,7 +910,26 @@ class AccountDeleteView(APIView):
         if not _step_up_is_fresh(request):
             return _step_up_required_response()
 
-        original_ref, phone_hash = account_service.anonymize_customer(customer)
+        try:
+            original_ref, phone_hash = account_service.anonymize_customer(customer)
+        except account_service.AnonymizationIncomplete:
+            # A exclusão rodou inteira e parte dela falhou. Dizer "pronto" aqui
+            # seria a pior resposta possível: o titular sai achando que seus
+            # dados foram apagados, e eles não foram. O alerta crítico já subiu
+            # para a operação (dentro do service); aqui a conta NÃO é
+            # desconectada, porque a sessão é o caminho de volta para tentar de
+            # novo — deslogar transformaria uma falha parcial em falha sem saída.
+            return Response(
+                {
+                    "detail": (
+                        "Não conseguimos concluir a exclusão agora. Parte dos seus dados "
+                        "ainda está conosco, e já avisamos nossa equipe. Tente de novo em "
+                        "alguns minutos."
+                    ),
+                    "error": {"code": "account_deletion_incomplete"},
+                },
+                status=503,
+            )
         if hasattr(request, "session"):
             request.session.flush()
         response = Response({
