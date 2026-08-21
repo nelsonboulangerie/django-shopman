@@ -234,6 +234,7 @@ dados de display (UI) ou audit (rastreabilidade).
   "copy_paste": "00020126...",
   "expires_at": "2026-03-30T10:15:00Z",
   "e2e_id": "E123456789",
+  "pix_receipts": {"E123456789": 2500},
   "paid_amount_q": 2500,
   "captured_at": "2026-03-30T10:12:00Z",
   "client_secret": "pi_xxx_secret_yyy",
@@ -268,7 +269,8 @@ todo canal novo (ManyChat, iFood direto) herda a mesma disciplina. Guarda:
 | `expires_at` | `string` | display | `payment.initiate()` | PaymentStatusView (expiração) | ISO datetime de expiração do QR — PIX only |
 | `client_secret` | `string` | display | `payment.initiate()` | PaymentView template | Stripe PaymentIntent secret — card only |
 | `e2e_id` | `string` | audit + idempotency | `EfiPixWebhookView` | EfiPixWebhookView (deduplicação) | End-to-end ID da transação PIX |
-| `paid_amount_q` | `int` | audit | `EfiPixWebhookView` | — | Valor efetivamente pago pelo cliente |
+| `pix_receipts` | `object` | audit + idempotency | `confirm_pix` | `confirm_pix` (soma dos recebimentos) | Um Pix por chave (`e2e_id`, ou `txid:<txid>` quando o chamador não tem e2e) → centavos. Existe para que dois Pix parciais SOMEM até cobrir a cobrança sem que a reapresentação do mesmo Pix conte duas vezes |
+| `paid_amount_q` | `int` | audit | `confirm_pix` | `confirm_pix` (suficiência do recebido) | Total recebido em Pix para o pedido = soma de `pix_receipts`. **Não é prova de pagamento**: quem diz se a venda está paga é o Payman |
 | `captured_at` | `string` | audit + idempotency | `confirm_pix` / `payment.capture()` / POS | `confirm_pix` (guard de re-dispatch do `on_paid`) | ISO datetime da captura SUFICIENTE (só gravado quando o valor capturado cobre `total_q`; pagamento parcial não grava) |
 | `transaction_id` | `string` | audit | `payment.capture()` | — | Transaction ID do adapter pós-capture |
 | `marked_paid_by` | `string` | legacy audit | endpoint removido | leitura histórica apenas | Campo legado de versões antigas; não é status de pagamento, não deve liberar fluxo operacional e não existe mais como ação de operador |

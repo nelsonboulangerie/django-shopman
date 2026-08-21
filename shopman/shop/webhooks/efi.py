@@ -79,6 +79,16 @@ On successful authentication and payload parse, this view updates the
 payment intent via :class:`PaymentService` and calls
 ``shopman.shop.lifecycle.dispatch(order, "on_paid")``.
 
+O contrato do ``valor`` mora do lado de lá (``services/pix_confirmation``), e
+por um motivo que se paga: **problema de CONTEÚDO nunca levanta**. A Efí só
+reentrega em não-2xx, então uma exceção determinística aqui (valor a mais,
+valor em pt-BR, cobrança já cancelada) não é "vai dar certo na próxima": é a
+mesma falha repetida para sempre, com o pedido travado e o operador sem
+alerta nenhum. Valor ausente, ilegível, a menos ou a maior, cobrança morta e
+pedido desconhecido têm cada um o seu desfecho registrado, e todos respondem
+200. O ``except`` abaixo fica para o que a reentrega CURA: banco fora,
+timeout, falha de infraestrutura.
+
 MED (devolução especial do Pix) — o que a Efí NÃO manda
 -------------------------------------------------------
 
@@ -176,7 +186,9 @@ class EfiPixWebhookView(APIView):
             txid = str(pix_item.get("txid") or "").strip()
             e2e_id = str(pix_item.get("endToEndId") or "").strip()
             # ``valor`` é o nome do campo NA EFI, e ele morre aqui: para
-            # dentro o pagamento viaja como ``amount``.
+            # dentro o pagamento viaja como ``amount``. O que ele significa
+            # (ausente, "8.00", "8,00", acima ou abaixo da cobrança) é
+            # pergunta de quem confirma, não da borda HTTP: um dono só.
             amount = str(pix_item.get("valor") or "").strip()
 
             if not txid:
