@@ -18,6 +18,7 @@ não três meses depois.
 
 from __future__ import annotations
 
+import os
 import re
 import subprocess
 import sys
@@ -93,10 +94,14 @@ def test_runtime_gate_fails_when_a_test_is_skipped():
             cwd=ROOT,
             capture_output=True,
             text=True,
+            # Herda o ambiente inteiro de propósito. Montar um env mínimo à mão
+            # parecia mais limpo e escondia o teste: sem `DJANGO_SECRET_KEY`, o
+            # subprocesso morria no assert de settings antes de chegar ao gate,
+            # e o `returncode == 1` continuava verdadeiro pelo motivo errado —
+            # verde local (onde existe .env) e vermelho no CI (onde não existe).
             env={
+                **os.environ,
                 "SHOPMAN_RUNTIME_TEST_PATHS": str(fixture.relative_to(ROOT)),
-                "PATH": "/usr/bin:/bin",
-                "HOME": str(Path.home()),
                 "DJANGO_SETTINGS_MODULE": "config.settings",
                 "PYTHONPATH": str(ROOT),
             },
