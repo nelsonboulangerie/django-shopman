@@ -28,6 +28,7 @@ from shopman.backstage.admin_console.operator_badge import (
     JANELA_DE_REIMPRESSAO,
     dentro_da_janela,
 )
+from shopman.backstage.projections.operator_badge import mask_badge
 
 pytestmark = pytest.mark.django_db
 
@@ -93,9 +94,11 @@ def test_recarregar_dentro_da_janela_mostra_o_MESMO_cracha(client, gerente, oper
     primeira = client.get(BADGE_URL)
     segunda = client.get(BADGE_URL)
 
-    assert token in primeira.content.decode()
-    # A segunda visita é o ponto todo: antes ela vinha vazia e o crachá se perdia.
-    assert token in segunda.content.decode()
+    # As PONTAS, não o token: a folha nunca mostra o número inteiro. A segunda
+    # visita é o ponto todo — antes ela vinha vazia e o crachá se perdia.
+    assert mask_badge(token) in primeira.content.decode()
+    assert mask_badge(token) in segunda.content.decode()
+    assert token not in segunda.content.decode()
 
 
 def test_reexibir_nao_cria_credencial_nova(client, gerente, operador):
@@ -237,4 +240,7 @@ def test_o_codigo_de_barras_esta_na_pagina(client, gerente, operador):
 
     assert 'id="badge-print-root"' in corpo
     assert "<svg" in corpo
-    assert token in corpo
+    # O código de barras carrega o token inteiro (é o que o leitor lê); o TEXTO
+    # da folha, não.
+    assert mask_badge(token) in corpo
+    assert token not in corpo

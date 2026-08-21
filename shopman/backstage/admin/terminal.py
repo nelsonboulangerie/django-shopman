@@ -21,6 +21,7 @@ from unfold.widgets import (
     UnfoldBooleanSwitchWidget,
 )
 
+from shopman.backstage.projections.operator_badge import mask_badge
 from shopman.backstage.services.pos_hardware import (
     ADAPTER_AGENT,
     ADAPTER_MANUAL,
@@ -112,6 +113,15 @@ class TerminalForm(forms.ModelForm):
             return
         config = CashDrawerConfig.from_terminal(self.instance)
         self.fields["drawer_adapter"].initial = config.adapter if config.declared else ""
+        # ⚠️ As PONTAS do token, ao lado do botão de rotacionar. É o único lugar
+        # do Admin onde dá para comparar com o `--doctor` do balcão — e "token
+        # inválido" no PDV é exatamente um par desencontrado, que sem isto não
+        # tinha como ser diagnosticado de nenhum dos dois lados.
+        if config.token:
+            self.fields["drawer_rotate_token"].help_text += (
+                f" Token atual: {mask_badge(config.token)} "
+                "— confira com `counter-agent --doctor` no balcão."
+            )
         self.fields["counter_agent_url"].initial = config.agent_url
         self.fields["drawer_pulse_pin"].initial = str(config.pulse_pin)
         self.fields["drawer_pulse_on_ms"].initial = config.pulse_on_ms

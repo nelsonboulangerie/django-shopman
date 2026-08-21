@@ -286,13 +286,16 @@ def test_bi_reference_installs_the_three_tables_and_nothing_else():
     # 59 SKUs do cardápio 2027 + 61 SKUs do Yooga ("Pães Finos", 18/08) + 4
     # combos pelo NOME + 70 SKUs do Yooga da segunda rodada (cafés, pratos,
     # pães rústicos, 19/08) — tudo curadoria do dono, nada nasce como proposta.
+    # ⚠️ Os pacotes PHO4/BBB2 entram etiquetados junto da unidade: venda de
+    # bundle grava o SKU do bundle, e sem etiqueta a linha ficaria invisível
+    # para a regra de modo de consumo.
     # ⚠️ A soma não é 59+61+4+70. Duas coisas a encolhem, e as duas são certas:
     # os quatro produtos "do dia" deixaram de existir (viraram coleção rotativa
     # sobre os reais), e 26 SKUs passaram a ser etiquetados uma vez só — com o
     # catálogo usando os códigos do Yooga, "CT" no cardápio e "CT" no histórico
     # são o mesmo produto. Que as duas curadorias CONCORDEM onde se encontram é
     # o que test_seed_catalog_coerente fixa, lendo o seed como dado.
-    assert ProductConsumptionTag.objects.count() == 164
+    assert ProductConsumptionTag.objects.count() == 164  # ver a conta acima
     assert ProductConsumptionTag.objects.filter(reviewed=False).count() == 0
     assert ProductConsumptionTag.objects.filter(
         sku__startswith="nome:", role__ref="consome-aqui"
