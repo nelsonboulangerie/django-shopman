@@ -2441,7 +2441,8 @@ class Command(BaseCommand):
                 "output_sku": "BF",
                 "batch_size": Decimal("25"),
                 "items": [
-                    ("MASSA-LEVAIN-CLARA", Decimal("10.000")),
+                    # 280 g por baguete (tradicional francesa: 250-300 g).
+                    ("MASSA-LEVAIN-CLARA", Decimal("7.000")),
                 ],
             },
             {
@@ -2459,7 +2460,8 @@ class Command(BaseCommand):
                 "output_sku": "CI",
                 "batch_size": Decimal("20"),
                 "items": [
-                    ("MASSA-ALTA-HIDRATACAO", Decimal("7.500")),
+                    # 120 g por ciabatta individual (100-120 g).
+                    ("MASSA-ALTA-HIDRATACAO", Decimal("2.400")),
                 ],
             },
             {
@@ -2468,7 +2470,8 @@ class Command(BaseCommand):
                 "output_sku": "FOA",
                 "batch_size": Decimal("8"),
                 "items": [
-                    ("MASSA-ALTA-HIDRATACAO", Decimal("5.200")),
+                    # 180 g por porção de focaccia (150-200 g).
+                    ("MASSA-ALTA-HIDRATACAO", Decimal("1.440")),
                     ("ALECRIM", Decimal("0.030")),
                 ],
             },
@@ -2487,8 +2490,10 @@ class Command(BaseCommand):
                 "output_sku": "KP",
                 "batch_size": Decimal("8"),
                 "items": [
-                    ("MASSA-PAES-MACIOS", Decimal("4.600")),
-                    ("CHOCOLATE-70", Decimal("0.400")),
+                    # 80 g de massa por pãozinho (70-90 g) e 20 g de chocolate.
+                    # A proporção antiga dava 50 g de chocolate para 575 g de massa.
+                    ("MASSA-PAES-MACIOS", Decimal("0.640")),
+                    ("CHOCOLATE-70", Decimal("0.160")),
                 ],
             },
             {
@@ -2497,7 +2502,8 @@ class Command(BaseCommand):
                 "output_sku": "CT",
                 "batch_size": Decimal("48"),
                 "items": [
-                    ("MASSA-FOLHADA", Decimal("8.500")),
+                    # 70 g por croissant (francês: 60-80 g).
+                    ("MASSA-FOLHADA", Decimal("3.360")),
                 ],
             },
             {
@@ -2506,7 +2512,9 @@ class Command(BaseCommand):
                 "output_sku": "PC",
                 "batch_size": Decimal("36"),
                 "items": [
-                    ("MASSA-FOLHADA", Decimal("6.500")),
+                    # 80 g por pain au chocolat (75-85 g); o chocolate já estava
+                    # certo em 20 g por peça, que são os dois bâtons clássicos.
+                    ("MASSA-FOLHADA", Decimal("2.880")),
                     ("CHOCOLATE-70", Decimal("0.720")),
                 ],
             },
@@ -2516,7 +2524,8 @@ class Command(BaseCommand):
                 "output_sku": "ANC",
                 "batch_size": Decimal("16"),
                 "items": [
-                    ("MASSA-BRIOCHE", Decimal("6.000")),
+                    # 70 g por pãozinho doce de brioche (60-80 g).
+                    ("MASSA-BRIOCHE", Decimal("1.120")),
                 ],
             },
             {
@@ -2525,7 +2534,9 @@ class Command(BaseCommand):
                 "output_sku": "CN",
                 "batch_size": Decimal("12"),
                 "items": [
-                    ("MASSA-FOLHADA", Decimal("4.600")),
+                    # 90 g de massa por chausson (80-110 g); o recheio de maçã
+                    # segue em ~67 g por peça, proporção usual do chausson.
+                    ("MASSA-FOLHADA", Decimal("1.080")),
                     ("RECHEIO-MACA", Decimal("0.810")),
                 ],
             },
