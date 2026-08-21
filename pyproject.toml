@@ -74,6 +74,7 @@ testpaths = ["shopman/shop/tests"]
 # which boots both servers and re-selects with `-m browser`.
 addopts = "-m 'not browser'"
 markers = [
+    "estacao_travada: a sessão NÃO tem operador ativo — o teste é sobre a trava",
     "browser: Playwright browser E2E — requires running Nuxt store + Django API",
 ]
 
