@@ -20,6 +20,7 @@ aparece; sem uma pessoa identificada, nenhuma leitura passa.
 
 from __future__ import annotations
 
+from rest_framework.exceptions import PermissionDenied
 from rest_framework.permissions import BasePermission
 
 from shopman.backstage.station_trust import is_trusted_station
@@ -33,6 +34,19 @@ STATION_LOCKED_CODE = "station_locked"
 
 _MSG_LOCKED = "Estação travada. Identifique-se com PIN ou crachá."
 _MSG_FORBIDDEN = "Acesso restrito a operadores."
+
+
+def _recusa_travada():
+    """Levanta a recusa da estação travada — com código, e sem passar pelo DRF.
+
+    Um gate que só devolve ``False`` deixa o DRF escolher a exceção, e ele
+    escolhe pelo estado da AUTENTICAÇÃO: requisição sem ninguém logado vira
+    ``NotAuthenticated``, com a mensagem genérica de credencial ausente. Só que
+    a estação travada é EXATAMENTE isso — aparelho reconhecido, ninguém logado —
+    então o código que a tela usa para subir a identificação se perdia justo no
+    caso para o qual ele existe. Levantar aqui preserva mensagem e código.
+    """
+    raise PermissionDenied(_MSG_LOCKED, code=STATION_LOCKED_CODE)
 
 
 def _operador(request):
@@ -53,16 +67,12 @@ class IsBackstageOperator(BasePermission):
     """
 
     message = _MSG_FORBIDDEN
-    code = None
 
     def has_permission(self, request, view) -> bool:
-        self.code = None
-        self.message = _MSG_FORBIDDEN
         if _operador(request) is not None:
             return True
         if is_trusted_station(request):
-            self.message = _MSG_LOCKED
-            self.code = STATION_LOCKED_CODE
+            _recusa_travada()
         return False
 
 
@@ -81,16 +91,13 @@ class HasBackstagePermission(BasePermission):
     """
 
     message = _MSG_FORBIDDEN
-    code = None
 
     def has_permission(self, request, view) -> bool:
-        self.code = None
         self.message = _MSG_FORBIDDEN
         operador = _operador(request)
         if operador is None:
             if is_trusted_station(request):
-                self.message = _MSG_LOCKED
-                self.code = STATION_LOCKED_CODE
+                _recusa_travada()
             return False
         perms = _required_codes(getattr(view, "required_permission", None))
         if not all(operador.has_perm(code) for code in perms):

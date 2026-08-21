@@ -26,6 +26,22 @@ User = get_user_model()
 OPERATE_POS = "cashman.operate_pos"
 ADJUST_SHIFT = "cashman.adjust_shift"
 
+
+def operator_card(user) -> dict:
+    """Projeção pública de um operador — o que a tela pode mostrar dele.
+
+    Sobreviveu à queda da Opção C porque nunca foi parte dela: é o cartão que a
+    antessala usa no seletor de quem destrava e que o PDV usa no chip de quem
+    está operando. O que mudou é de onde vem o argumento — antes, do dicionário
+    de sessão do "operador ativo"; hoje, de ``request.user``, que É o operador.
+    """
+    return {
+        "id": user.pk,
+        "username": user.get_username(),
+        "name": user.get_full_name().strip() or user.get_username(),
+    }
+
+
 def eligible_operators(*, perm: str = OPERATE_POS):
     """Active staff users with a credential who may operate the given surface.
 

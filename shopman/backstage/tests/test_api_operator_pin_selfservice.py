@@ -4,16 +4,18 @@ Endpoints under test:
   POST /api/v1/backstage/operator/pin/change/  — self-service, proves current PIN
   POST /api/v1/backstage/operator/pin/reset/   — manager, temp PIN + must_change
 
-The device session is a staff user (station trust); the operator identity is
-established by PIN. Proving the current PIN is the authorization to rotate it.
+Provar o PIN atual É a autorização para trocá-lo: só rotaciona quem já o tem.
+O caminho da manhã acontece com o balcão TRAVADO — ninguém logado, PIN temporário
+como "atual" e o operador nomeado explicitamente —, e por isso o endpoint fica
+atrás do gate da antessala, e não do gate de sessão.
 """
 
-import pytest
 from django.contrib.auth import get_user_model
 from django.contrib.auth.models import Permission
-from django.test import TestCase, override_settings
+from django.test import TestCase
 from shopman.doorman.models import PinCredential
 
+from shopman.backstage.tests.support import trust_station
 from shopman.shop.models import Channel, Shop
 
 User = get_user_model()
@@ -96,9 +98,7 @@ class PinChangeTests(TestCase):
         self.assertFalse(PinCredential.objects.get(user=self.op).must_change)
 
 
-# Reset is gated by the ``manage_operators`` PERMISSION — isolate that here from the
-# Opção C station gate (SHOPMAN_REQUIRE_ACTIVE_OPERATOR), which is exercised elsewhere.
-@override_settings(SHOPMAN_REQUIRE_ACTIVE_OPERATOR=False)
+# O reset é do GERENTE, e o que o guarda é a permissão ``manage_operators``.
 class PinResetTests(TestCase):
     def setUp(self):
         Shop.objects.create(name="Test Shop", brand_name="Test")
@@ -170,12 +170,12 @@ class PinResetTests(TestCase):
 
 
 class PinSessionFlagTests(TestCase):
+    """A antessala precisa saber que o PIN vence ANTES de deixar operar."""
+
     def setUp(self):
         Shop.objects.create(name="Test Shop", brand_name="Test")
         Channel.objects.create(ref="pdv", name="PDV", is_active=True)
-        self.terminal = User.objects.create_user("terminal", password="x", is_staff=True)
-        self.terminal = _grant(self.terminal, "operate_pos")
-        self.client.force_login(self.terminal)
+        trust_station(self.client, "pdv-main")
         self.op = User.objects.create_user("ana", password="x", is_staff=True, first_name="Ana")
         PinCredential.set_for(self.op, "1234", must_change=True)
         self.op = _grant(self.op, "operate_pos")
@@ -191,3 +191,40 @@ class PinSessionFlagTests(TestCase):
         self.assertEqual(resp.status_code, 200)
         self.assertIsNone(resp.json()["operator"])
         self.assertFalse(resp.json()["pin_must_change"])
+
+    def test_troca_forcada_acontece_com_o_balcao_TRAVADO(self):
+        """O PIN temporário se troca antes de haver sessão — e tem de dar certo.
+
+        É a manhã seguinte ao reset do gerente: a Ana chega, o balcão está
+        travado, e a tela de identificação pede o PIN novo. Se este endpoint
+        exigisse sessão, a única forma de sair do PIN temporário seria entrar
+        com ele — e ele é justamente o que não pode operar.
+        """
+        resp = self.client.post(
+            CHANGE,
+            {"operator_id": self.op.pk, "current_pin": "1234", "new_pin": "5678"},
+            content_type="application/json",
+        )
+
+        self.assertEqual(resp.status_code, 200)
+        cred = PinCredential.objects.get(user=self.op)
+        self.assertTrue(cred.verify("5678"))
+        self.assertFalse(cred.must_change)
+
+    def test_aparelho_de_fora_nao_troca_PIN_de_ninguem(self):
+        """Sem confiança de estação, nem com o PIN atual na mão.
+
+        A troca só pede o PIN atual, então um navegador qualquer com um PIN
+        vazado poderia rotacioná-lo e trancar a pessoa para fora. A antessala é
+        o que impede isso de ser feito da rua.
+        """
+        anonimo = self.client_class()
+
+        resp = anonimo.post(
+            CHANGE,
+            {"operator_id": self.op.pk, "current_pin": "1234", "new_pin": "5678"},
+            content_type="application/json",
+        )
+
+        self.assertEqual(resp.status_code, 403)
+        self.assertTrue(PinCredential.objects.get(user=self.op).verify("1234"))

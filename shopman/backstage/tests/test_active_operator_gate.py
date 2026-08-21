@@ -19,6 +19,7 @@ from __future__ import annotations
 import pytest
 from django.contrib.auth import get_user_model
 from django.contrib.auth.models import AnonymousUser, Permission
+from rest_framework.exceptions import PermissionDenied
 from rest_framework.test import APIRequestFactory
 
 from shopman.backstage.api.permissions import (
@@ -71,9 +72,11 @@ def test_quem_esta_logado_SEM_a_permissao_nao_passa(db):
 
     gate = HasBackstagePermission()
 
+    # Recusa por permissão, não por trava: devolve False (o DRF monta o 403
+    # comum) em vez de levantar a recusa com código, que é o que faz a tela
+    # pedir PIN. Pedir PIN aqui não resolveria nada — falta permissão, não
+    # identificação.
     assert gate.has_permission(_req(sem_perm), _View()) is False
-    # Recusa por permissão, não por trava: a tela não deve pedir PIN aqui.
-    assert gate.code != STATION_LOCKED_CODE
 
 
 @pytest.mark.django_db
@@ -111,9 +114,13 @@ def test_ESTACAO_CONFIAVEL_SOZINHA_NAO_AUTORIZA_NADA(db, monkeypatch):
     )
     gate = HasBackstagePermission()
 
-    assert gate.has_permission(_req(estacao="balcao"), _View()) is False
     # E a recusa se identifica, para a tela pedir PIN em vez de desenhar vazio.
-    assert gate.code == STATION_LOCKED_CODE
+    # Ela é LEVANTADA, e não devolvida como `False`: sem ninguém logado o DRF
+    # trocaria a recusa por "credenciais não fornecidas" e o código sumiria —
+    # justamente no caso para o qual o código existe.
+    with pytest.raises(PermissionDenied) as recusa:
+        gate.has_permission(_req(estacao="balcao"), _View())
+    assert recusa.value.detail.code == STATION_LOCKED_CODE
 
 
 @pytest.mark.django_db

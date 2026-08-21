@@ -1,6 +1,8 @@
 """Login de operador NO PRÓPRIO app (operator/login) — sem bounce pro Django admin.
 
-Reusa a auth do Django: usuário+senha → sessão de dispositivo. Só staff entra.
+Reusa a auth do Django: usuário+senha → a sessão DAQUELA PESSOA. Só staff entra.
+Não abre "sessão de aparelho": esse conceito morreu na D1 Parte B, porque um
+aparelho com sessão é um aparelho com permissões.
 """
 
 from unittest.mock import patch
@@ -27,11 +29,13 @@ class OperatorLoginApiTests(TestCase):
         resp = self.client.post(LOGIN, {"username": "ana", "password": "segredo123"})
         self.assertEqual(resp.status_code, 200)
         self.assertTrue(resp.json()["ok"])
-        self.assertEqual(resp.json()["device_user"], "ana")
-        # A sessão foi aberta: /operator/session/ agora responde autenticado.
+        # `operator`, e não `device_user`: quem entrou foi a Ana, não a máquina.
+        self.assertEqual(resp.json()["operator"]["username"], "ana")
+        # A sessão foi aberta, e a antessala já a reconhece como destravada.
         s = self.client.get(SESSION)
         self.assertEqual(s.status_code, 200)
-        self.assertEqual(s.json()["device_user"], "ana")
+        self.assertEqual(s.json()["operator"]["username"], "ana")
+        self.assertFalse(s.json()["locked"])
 
     def test_login_wrong_password_403(self):
         resp = self.client.post(LOGIN, {"username": "ana", "password": "errada"})

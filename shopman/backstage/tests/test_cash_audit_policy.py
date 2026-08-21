@@ -184,36 +184,29 @@ def test_o_menu_nao_oferece_turnos_de_caixa_a_quem_opera(rf, grupos):
     assert not _oferece(_com_grupo("Gerente", grupos))
 
 
-def test_o_operador_identificado_decide_e_nao_a_conta_do_aparelho(client, _loja):
-    """O terminal fica logado como ``admin`` (superusuário), e o cookie de
-    sessão vale no domínio inteiro: gatear só pela conta do aparelho não fecha
-    nada, porque ``admin`` tem todas as permissões. Quando a estação está
-    identificada por PIN, quem responde pela tela é o operador."""
-    from shopman.backstage.services.operator import ACTIVE_OPERATOR_SESSION_KEY
+def test_a_apuracao_nao_vaza_para_quem_esta_no_balcao(client, _loja):
+    """O buraco original, pelo caminho por onde ele se abria: a aba ao lado.
 
+    O cookie de sessão vale em ``.boulangerie.com.br``, então a sessão do balcão
+    abre o Admin em ``admin.boulangerie.com.br``. Enquanto o balcão ficava
+    logado como ``admin`` superusuário, ``is_superuser`` curto-circuitava
+    ``has_perm`` e a apuração — o gabarito que o fechamento cego existe para
+    esconder — aparecia inteira para quem estivesse ali.
+
+    Com uma identidade, quem está no balcão É a Joyce, e a Joyce não audita.
+    Não há mais um segundo sujeito a consultar: o Admin pergunta a
+    ``request.user``, e é a pessoa certa por construção.
+
+    O contrapeso — que a tela CONTINUA aparecendo para quem audita — está em
+    ``test_a_lista_de_turnos_mostra_a_apuracao_para_quem_audita``; sem ele, um
+    gate fechado para todo mundo passaria por aqui.
+    """
     _turno_com_venda()
-    aparelho = get_user_model().objects.create_superuser("admin-terminal", password="x")
     caixa = _usuario("joyce-identificada", "operate_pos")
-    client.force_login(aparelho)
-
-    # Sem operador identificado, o aparelho superusuário passa (é o dono no PC dele).
-    assert client.get("/admin/cashman/shift/").status_code == 200
-
-    session = client.session
-    session[ACTIVE_OPERATOR_SESSION_KEY] = {"id": caixa.pk, "username": caixa.username, "name": caixa.username}
-    session.save()
+    client.force_login(caixa)
 
     resposta = client.get("/admin/cashman/shift/")
+
     assert resposta.status_code == 403
     assert "R$ 286,00" not in resposta.content.decode()
 
-
-def test_a_chave_do_operador_ativo_e_a_mesma_nos_dois_lados():
-    """O pacote não importa o backstage (ADR-001), então a string é repetida no
-    ``cashman.contrib.admin_unfold``. Repetida sem guarda, ela diverge calada e
-    o gate acima volta a ser decorativo."""
-    from shopman.cashman.contrib.admin_unfold.admin import _ACTIVE_OPERATOR_SESSION_KEY
-
-    from shopman.backstage.services.operator import ACTIVE_OPERATOR_SESSION_KEY
-
-    assert _ACTIVE_OPERATOR_SESSION_KEY == ACTIVE_OPERATOR_SESSION_KEY

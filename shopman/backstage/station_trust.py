@@ -36,6 +36,19 @@ from shopman.doorman.models import SubjectType
 PROVISION_PERM = "cashman.manage_operators"
 
 
+def station_cookie_name(terminal_ref: str) -> str:
+    """O nome do cookie de estação daquele terminal — uma pergunta, um dono.
+
+    O ``doorman`` sanitiza o ``ref`` dentro do nome. Montá-lo à mão aqui
+    (``f"{base}_{ref}"``) funcionava por acaso enquanto todo terminal se chamou
+    ``pdv-main``, e erraria no primeiro ref com espaço ou acento — a revogação
+    apagaria um cookie que não existe e o aparelho seguiria confiável.
+    """
+    from shopman.doorman.services.device_trust import DeviceTrustService
+
+    return DeviceTrustService.cookie_name_for(SubjectType.STATION, terminal_ref)
+
+
 def station_ref(request) -> str:
     """O ``Terminal.ref`` da estação confiável desta requisição, ou ``""``.
 
@@ -96,11 +109,10 @@ def revoke(request, response, terminal_ref: str):
     dispositivos vive); isto é o caminho local, para quem está com a máquina na
     mão — desativar um quiosque que vai sair da loja, por exemplo.
     """
-    from shopman.doorman.conf import doorman_settings
     from shopman.doorman.models import TrustedDevice
 
     ref = str(terminal_ref or "").strip()
-    nome = f"{doorman_settings.DEVICE_TRUST_STATION_COOKIE_NAME}_{ref}"
+    nome = station_cookie_name(ref)
     token = request.COOKIES.get(nome)
     if token:
         dispositivo = TrustedDevice.verify_token(token)

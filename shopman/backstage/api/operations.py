@@ -103,6 +103,11 @@ from .projections import projection_data
 
 logger = logging.getLogger(__name__)
 
+#: Backend de sessão de quem se identifica por PIN ou crachá. A loja tem dois
+#: configurados — OTP de telefone (cliente) e senha (staff) — e ``login()`` só
+#: adivinha qual gravar quando foi ele mesmo quem autenticou.
+MODEL_BACKEND = "django.contrib.auth.backends.ModelBackend"
+
 
 def _parse_date(raw: str | None) -> date | None:
     if not raw:
@@ -418,9 +423,14 @@ class OperatorLoginView(APIView):
     """Login de operador NO PRÓPRIO app (sem bounce pro Django admin).
 
     Reusa a auth do Django (mesma credencial do admin): valida usuário+senha e abre a
-    sessão de dispositivo (o cookie é escopado ao domínio de operador pelo middleware).
+    sessão DAQUELA PESSOA (o cookie é escopado ao domínio de operador pelo middleware).
     O front mostra um formulário e já entra — uma tela, um submit, sem sair do app. Só
     concede sessão a staff.
+
+    É o caminho de quem tem senha: quem provisiona a estação, e o operador de um
+    aparelho pessoal. No balcão, o caminho normal é o PIN/crachá — mas a sessão
+    que sai daqui é a mesma coisa, a identidade de uma pessoa. Não existe login
+    "do aparelho": o aparelho é reconhecido por confiança de dispositivo.
 
     Freio contra brute-force de senha staff: limite por-username (ataque a uma conta)
     de 5/min e teto por-IP de 30/min — generoso porque os dispositivos da loja
@@ -431,6 +441,8 @@ class OperatorLoginView(APIView):
 
     def post(self, request):
         from django.contrib.auth import authenticate
+
+        from shopman.backstage.services.operator import operator_card
 
         if getattr(request, "limited", False):
             return Response(
@@ -454,7 +466,9 @@ class OperatorLoginView(APIView):
                 status=403,
             )
         login(request, user)
-        return Response({"ok": True, "device_user": user.get_username()})
+        # `operator`, e não `device_user`: entrar com senha é identificar-se como
+        # aquela pessoa. Não existe mais conta de máquina para nomear aqui.
+        return Response({"ok": True, "operator": operator_card(user)})
 
 
 class OperatorEligibleView(APIView):
@@ -475,9 +489,13 @@ class OperatorUnlockView(APIView):
     """Establish the active operator by PIN (operator_id + pin) or badge (token).
 
     Optional ``perm`` (the surface's capability) restricts who may unlock here.
+
+    Gate de ESTAÇÃO, e não de sessão: é AQUI que o balcão travado cria uma, e
+    exigir sessão para criar sessão é a porta que não abre de manhã. A
+    autorização real deste endpoint não é o gate — é provar o PIN ou o crachá.
     """
 
-    permission_classes = [IsBackstageOperator]
+    permission_classes = [IsTrustedStation]
 
     def post(self, request):
         from django.contrib.auth import get_user_model
@@ -516,7 +534,11 @@ class OperatorUnlockView(APIView):
         # isso é desejável: nada do turno anterior atravessa a troca de operador.
         # A identidade da ESTAÇÃO sobrevive porque não mora na sessão — mora no
         # cookie de confiança de dispositivo, que o ciclo não toca.
-        login(request, operator)
+        # ``backend=`` explícito porque quem provou a identidade foi o PIN/crachá, e
+        # não um backend de autenticação: com dois configurados (OTP de cliente,
+        # senha de staff) o Django não adivinha qual gravar na sessão e levanta
+        # ``ValueError``. Sem isto, o destrave respondia 500 no balcão.
+        login(request, operator, backend=MODEL_BACKEND)
         return Response({"ok": True, "operator": operator_service.operator_card(operator)})
 
 
@@ -1235,16 +1257,16 @@ class OrderNotesView(_OrderActionBase):
 
 
 def _operator_identity(request) -> tuple[int, str]:
-    """The operator to credit a claim to: the active operator (PIN/badge) when
-    present, else the device session user."""
-    from shopman.backstage.services.operator import operator_card
+    """A quem creditar a retirada de um pedido — que é quem está logado.
 
-    card = operator_card(request.user) if request.user.is_authenticated else None
-    if card and card.get("id"):
-        return int(card["id"]), str(card.get("name") or card.get("username") or "operador")
+    Tinha dois caminhos: o "operador ativo" guardado na sessão, e a conta do
+    aparelho como reserva. Com uma identidade, os dois passaram a devolver a
+    mesma pessoa; ficou o que sempre foi a intenção.
+    """
     user = getattr(request, "user", None)
-    name = (user.get_full_name().strip() or user.get_username()) if user else "operador"
-    return (user.pk if user else 0), name
+    if user is None or not user.is_authenticated:
+        return 0, "operador"
+    return user.pk, (user.get_full_name().strip() or user.get_username())
 
 
 class OrderAssignView(_OrderActionBase):
