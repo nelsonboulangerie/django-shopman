@@ -849,13 +849,13 @@ class Command(BaseCommand):
              f"{IMG}/be.webp", 260, "Congele no mesmo dia. Reaqueça a 200°C por 8min"),
             # ── Padaria · Finos ──
             ("CT", "Croissant", "Clássico em pura manteiga. Simples e delicioso. Ótimo com geleias!", 1300, "un", 1, True,
-             f"{IMG}/ct.webp", 80, "Reaqueça no forno a 180°C por 5min para recuperar a crocância"),
+             f"{IMG}/ct.webp", 70, "Reaqueça no forno a 180°C por 5min para recuperar a crocância"),
             ("PC", "Pain au Chocolat", "Croissant recheado com chocolate!", 1500, "un", 1, True,
              f"{IMG}/pc.webp", 90, "Reaqueça no forno a 180°C por 5min. Evite micro-ondas"),
             ("SK", "Shokupan", "Pão de forma japonês super macio, fatias grossas interfolhadas", 2800, "un", 2, True,
              unsplash("photo-1598373182308-3270495d2f58"), 450, "Mantenha em saco plástico fechado. Congela bem por até 30 dias"),
             ("KP", "Kuro Pan", "Pão japonês escuro, macio e levemente adocicado", 2200, "un", 2, True,
-             unsplash("photo-1778472438579-91875c22ae79"), 350, "Mantenha em saco plástico fechado. Congela bem por até 30 dias"),
+             unsplash("photo-1778472438579-91875c22ae79"), 250, "Mantenha em saco plástico fechado. Congela bem por até 30 dias"),
             ("ME", "Melonpan", "Clássico japonês amanteigado com cobertura crocante e levemente doce", 1200, "un", 1, True,
              f"{IMG}/me.webp", 100, "Melhor consumido no dia"),
             ("ANC", "Animalzinho", "O bichinho do dia: pão doce em formato de bicho", 1000, "un", 1, True,
@@ -883,7 +883,7 @@ class Command(BaseCommand):
             ("MS", "Melon Iced Sando", "Sanduíche gelado de frutas com chantilly, no shokupan", 2200, "un", 0, True,
              unsplash("photo-1746632732485-4cb341e4a4aa"), 200, "Conservar refrigerado. Consumir no dia"),
             ("MD", "Madeleine", "Bolinho clássico francês, simples e delicioso", 600, "un", 2, True,
-             f"{IMG}/md.webp", 40, "Conserve em recipiente fechado por até 3 dias"),
+             f"{IMG}/md.webp", 25, "Conserve em recipiente fechado por até 3 dias"),
             ("PU", "Purin à la Mode", "Pudim japonês com chantilly e frutas", 2000, "un", 1, True,
              unsplash("photo-1752245055475-8b7c3b4756ac"), 150, "Conservar refrigerado. Consumir no dia"),
             ("TJ", "Tea Jelly", "Gelatina delicada de chá da casa", 1800, "un", 1, True,
@@ -948,7 +948,7 @@ class Command(BaseCommand):
             ("CTV", "Chá Tônica Frutas Vermelhas", "Chá gelado de frutas vermelhas com tônica", 2600, "un", None, True,
              "", 0, ""),
             ("BH", "Bichon au Citron", "Folhado com creme de limão", 1800, "un", 1, True,
-             "", 150, "Conservar refrigerado. Consumir no dia"),
+             "", 70, "Conservar refrigerado. Consumir no dia"),
             ("MA", "Maçã", "Doce de maçã da casa", 1200, "un", 1, True,
              "", 150, "Conservar refrigerado. Consumir no dia"),
             ("CM", "Croissant Mini", "Croissant menor, a mesma massa folhada", 800, "un", 1, True,
@@ -956,7 +956,7 @@ class Command(BaseCommand):
             ("BCH", "Brioche Chocolat", "Brioche recheado com chocolate", 1000, "un", 1, True,
              "", 90, "Mantenha em saco plástico fechado. Congele por até 30 dias"),
             ("CN", "Chausson", "Folhado recheado, dobrado em meia-lua", 1600, "un", 1, True,
-             "", 120, "Reaqueça no forno a 180°C por 5min para recuperar a crocância"),
+             "", 70, "Reaqueça no forno a 180°C por 5min para recuperar a crocância"),
             ("PR", "Pain aux Raisins", "Folhado em espiral com creme e passas", 1100, "un", 1, True,
              "", 110, "Reaqueça no forno a 180°C por 5min para recuperar a crocância"),
             ("COC", "Cornet de Chocolate", "Cornet recheado com chocolate", 1000, "un", 1, True,
@@ -994,11 +994,11 @@ class Command(BaseCommand):
             ("BEP", "Baguete Gergelim Pequena", "Baguete de gergelim menor, das caixas presente", 900, "un", 0, True,
              "", 120, "Melhor consumido no dia. Congele por até 30 dias"),
             ("FOA", "Focaccia Alecrim", "Focaccia com alecrim e azeite", 2800, "un", 0, True,
-             "", 450, "Melhor consumido no dia. Congele por até 30 dias"),
+             "", 350, "Melhor consumido no dia. Congele por até 30 dias"),
             ("CBT", "Focaccia Cebola, Bacon e Tomilho", "Focaccia com cebola, bacon e tomilho", 3600, "un", 0, True,
-             "", 500, "Melhor consumido no dia. Congele por até 30 dias"),
+             "", 450, "Melhor consumido no dia. Congele por até 30 dias"),
             ("FOC", "Focaccia Cebola Roxa", "Focaccia com cebola roxa", 3600, "un", 0, True,
-             "", 500, "Melhor consumido no dia. Congele por até 30 dias"),
+             "", 450, "Melhor consumido no dia. Congele por até 30 dias"),
             ("MIF", "Mini Focaccia Alecrim", "Focaccia menor, com alecrim", 1300, "un", 0, True,
              "", 180, "Melhor consumido no dia. Congele por até 30 dias"),
             ("MICBT", "Mini Focaccia Cebola, Bacon e Tomilho", "Focaccia menor, com cebola, bacon e tomilho", 1800, "un", 0, True,
@@ -2436,12 +2436,47 @@ class Command(BaseCommand):
                 ],
             },
             {
+                # O animalzinho leva creme, e a ficha não sabia disso: contava só
+                # a massa amanteigada. Recheio que a produção prepara e a ficha
+                # ignora é insumo que ninguém compra — some da sugestão e do
+                # custo por unidade.
+                #
+                # A versão de chocolate (o coelhinho) sai deste mesmo creme, com
+                # chocolate derretido na finalização; segue sem ficha separada
+                # enquanto o plano do dia não distinguir as duas.
+                "ref": "recheio-creme",
+                "name": "Creme de Confeiteiro",
+                "output_sku": "RECHEIO-CREME",
+                "batch_size": Decimal("5"),
+                "items": [
+                    ("LEITE", Decimal("3.400")),
+                    ("ACUCAR", Decimal("0.800")),
+                    ("OVOS", Decimal("0.500")),
+                    ("FARINHA-T45", Decimal("0.300")),
+                    ("MANTEIGA-FR", Decimal("0.100")),
+                ],
+            },
+            {
+                # Recheio do Bichon au Citron, que até aqui era produto de
+                # catálogo sem ficha nenhuma.
+                "ref": "recheio-limao",
+                "name": "Creme de Limão",
+                "output_sku": "RECHEIO-LIMAO",
+                "batch_size": Decimal("3"),
+                "items": [
+                    ("OVOS", Decimal("1.000")),
+                    ("ACUCAR", Decimal("0.950")),
+                    ("LIMAO", Decimal("0.700")),
+                    ("MANTEIGA-FR", Decimal("0.400")),
+                ],
+            },
+            {
                 "ref": "baguete",
                 "name": "Baguette de Tradition",
                 "output_sku": "BF",
                 "batch_size": Decimal("25"),
                 "items": [
-                    # 280 g por baguete (tradicional francesa: 250-300 g).
+                    # 280 g de massa por baguete, para 250 g assados.
                     ("MASSA-LEVAIN-CLARA", Decimal("7.000")),
                 ],
             },
@@ -2451,6 +2486,10 @@ class Command(BaseCommand):
                 "output_sku": "CGO",
                 "batch_size": Decimal("10"),
                 "items": [
+                    # ⚠️ Em aberto: 820 g de massa rendem ~720 g assados, e o
+                    # catálogo promete 500 g. O peso da massa foi mantido por
+                    # decisão explícita (pão de campanha grande), mas os dois
+                    # números nunca foram confrontados entre si.
                     ("MASSA-CAMPAGNE", Decimal("8.200")),
                 ],
             },
@@ -2460,7 +2499,9 @@ class Command(BaseCommand):
                 "output_sku": "CI",
                 "batch_size": Decimal("20"),
                 "items": [
-                    # 120 g por ciabatta individual (100-120 g).
+                    # ⚠️ Em aberto: 120 g de massa rendem ~106 g assados, e o
+                    # catálogo promete 200 g. Um dos dois está errado e a
+                    # decisão é do dono — ver campagne, mesmo caso.
                     ("MASSA-ALTA-HIDRATACAO", Decimal("2.400")),
                 ],
             },
@@ -2470,9 +2511,9 @@ class Command(BaseCommand):
                 "output_sku": "FOA",
                 "batch_size": Decimal("8"),
                 "items": [
-                    # 180 g por porção de focaccia (150-200 g).
-                    ("MASSA-ALTA-HIDRATACAO", Decimal("1.440")),
-                    ("ALECRIM", Decimal("0.030")),
+                    # 398 g de massa por focaccia, para 350 g assados.
+                    ("MASSA-ALTA-HIDRATACAO", Decimal("3.150")),
+                    ("ALECRIM", Decimal("0.032")),
                 ],
             },
             {
@@ -2490,10 +2531,10 @@ class Command(BaseCommand):
                 "output_sku": "KP",
                 "batch_size": Decimal("8"),
                 "items": [
-                    # 80 g de massa por pãozinho (70-90 g) e 20 g de chocolate.
-                    # A proporção antiga dava 50 g de chocolate para 575 g de massa.
-                    ("MASSA-PAES-MACIOS", Decimal("0.640")),
-                    ("CHOCOLATE-70", Decimal("0.160")),
+                    # 240 g de massa + 40 g de chocolate = 280 g crus,
+                    # para 250 g assados.
+                    ("MASSA-PAES-MACIOS", Decimal("1.920")),
+                    ("CHOCOLATE-70", Decimal("0.320")),
                 ],
             },
             {
@@ -2502,8 +2543,8 @@ class Command(BaseCommand):
                 "output_sku": "CT",
                 "batch_size": Decimal("48"),
                 "items": [
-                    # 70 g por croissant (francês: 60-80 g).
-                    ("MASSA-FOLHADA", Decimal("3.360")),
+                    # 80 g de massa por croissant, para 70 g assados.
+                    ("MASSA-FOLHADA", Decimal("3.840")),
                 ],
             },
             {
@@ -2512,8 +2553,8 @@ class Command(BaseCommand):
                 "output_sku": "PC",
                 "batch_size": Decimal("36"),
                 "items": [
-                    # 80 g por pain au chocolat (75-85 g); o chocolate já estava
-                    # certo em 20 g por peça, que são os dois bâtons clássicos.
+                    # 80 g de folhada + 20 g de chocolate (os dois bâtons
+                    # clássicos) = 100 g crus, para 90 g assados.
                     ("MASSA-FOLHADA", Decimal("2.880")),
                     ("CHOCOLATE-70", Decimal("0.720")),
                 ],
@@ -2524,8 +2565,10 @@ class Command(BaseCommand):
                 "output_sku": "ANC",
                 "batch_size": Decimal("16"),
                 "items": [
-                    # 70 g por pãozinho doce de brioche (60-80 g).
-                    ("MASSA-BRIOCHE", Decimal("1.120")),
+                    # 60 g de massa amanteigada + 40 g de creme = 100 g
+                    # crus, para 90 g assados.
+                    ("MASSA-BRIOCHE", Decimal("0.960")),
+                    ("RECHEIO-CREME", Decimal("0.640")),
                 ],
             },
             {
@@ -2534,10 +2577,30 @@ class Command(BaseCommand):
                 "output_sku": "CN",
                 "batch_size": Decimal("12"),
                 "items": [
-                    # 90 g de massa por chausson (80-110 g); o recheio de maçã
-                    # segue em ~67 g por peça, proporção usual do chausson.
-                    ("MASSA-FOLHADA", Decimal("1.080")),
-                    ("RECHEIO-MACA", Decimal("0.810")),
+                    # 60 g de folhada + 20 g de maçã caramelizada = 80 g
+                    # crus, para 70 g assados.
+                    ("MASSA-FOLHADA", Decimal("0.720")),
+                    ("RECHEIO-MACA", Decimal("0.240")),
+                ],
+            },
+            {
+                # O Bichon era produto de catálogo sem ficha: vendido todo dia,
+                # invisível para custo, plano de fornada e sugestão de compra.
+                # Mesma construção do chausson, trocando a maçã pelo creme de
+                # limão.
+                #
+                # ⚠️ Fica de fora do `production_plan` abaixo até alguém tirar a
+                # média diária dos XMLs, como as outras onze. Número inventado
+                # aqui viraria previsão de compra inventada lá.
+                "ref": "bichon",
+                "name": "Bichon au Citron",
+                "output_sku": "BH",
+                "batch_size": Decimal("12"),
+                "items": [
+                    # 60 g de folhada + 20 g de creme de limão = 80 g crus,
+                    # para 70 g assados.
+                    ("MASSA-FOLHADA", Decimal("0.720")),
+                    ("RECHEIO-LIMAO", Decimal("0.240")),
                 ],
             },
             {
@@ -2546,19 +2609,19 @@ class Command(BaseCommand):
                 "output_sku": "MD",
                 "batch_size": Decimal("24"),
                 "items": [
-                    # 22 g de massa por madeleine (usual 20-25 g), na proporção
-                    # clássica: farinha ≈ manteiga ≈ ovo, açúcar um pouco abaixo.
-                    # A ficha rendia 72 g por peça — três vezes o normal. Ela
+                    # 28 g de massa por madeleine, para 25 g assados, na
+                    # proporção clássica: farinha ≈ manteiga ≈ ovo, açúcar um
+                    # pouco abaixo. A ficha rendia 72 g por peça. Ela
                     # escapou da primeira varredura de rendimento porque é a única
                     # de acabado feita direto de matéria-prima, sem passar por um
                     # `MASSA-*`, e a consulta filtrava pelas linhas de massa.
                     # Custo por unidade e sugestão de compra saíam 3x acima, no
                     # produto que é ~11% das unidades vendidas da casa.
-                    ("FARINHA-T45", Decimal("0.150")),
-                    ("MANTEIGA-FR", Decimal("0.140")),
-                    ("OVOS", Decimal("0.130")),
-                    ("ACUCAR", Decimal("0.100")),
-                    ("LIMAO", Decimal("0.008")),
+                    ("FARINHA-T45", Decimal("0.190")),
+                    ("MANTEIGA-FR", Decimal("0.180")),
+                    ("OVOS", Decimal("0.165")),
+                    ("ACUCAR", Decimal("0.127")),
+                    ("LIMAO", Decimal("0.010")),
                 ],
             },
         ]
@@ -2770,16 +2833,16 @@ class Command(BaseCommand):
 
         # ── Mise en place: pré-preparo pronto no depósito ────────────────────
         #
-        # Dez das dezoito receitas consomem massa ou recheio (baguete, croissant,
+        # Onze das vinte receitas consomem massa ou recheio (baguete, croissant,
         # ciabatta, campagne, shokupan, kuro-pan, pain au chocolat, animalzinho,
-        # focaccia, folhado), e o seed não estocava NENHUM quilo de massa. O
-        # guardrail de insumo (Buyman WP-B5b, ligado desde o commit 47cc1958)
-        # então reprovava toda fornada dessas dez: o operador abria o modal
-        # "Insumos insuficientes" com o atalho "Concluir mesmo assim" a um toque
-        # e um alerta ``production_stock_short`` de severidade ``error`` era
-        # gravado. Alarme que toca todo dia e está sempre errado vira botão que
-        # o operador aprende a apertar — e no dia em que a manteiga acabar de
-        # verdade ele aperta igual.
+        # focaccia, folhado, bichon), e o seed não estocava NENHUM quilo de
+        # massa. O guardrail de insumo (Buyman WP-B5b, ligado desde o commit
+        # 47cc1958) então reprovava toda fornada planejada delas: o operador
+        # abria o modal "Insumos insuficientes" com o atalho "Concluir mesmo
+        # assim" a um toque e um alerta ``production_stock_short`` de
+        # severidade ``error`` era gravado. Alarme que toca todo dia e está
+        # sempre errado vira botão que o operador aprende a apertar — e no dia
+        # em que a manteiga acabar de verdade ele aperta igual.
         #
         # O guardrail estava certo; quem mentia era o seed. Corrigimos aqui, do
         # lado do dado, e não afrouxando o guardrail (a alternativa de "ignorar
@@ -2793,7 +2856,7 @@ class Command(BaseCommand):
         #
         # ⚠️ O passo seguinte, que fica para o dono decidir, é o seed PRODUZIR as
         # massas (WorkOrders de pré-preparo na matriz), em vez de encontrá-las
-        # prontas. Aí o app de produção mostraria as 18 fichas, e não as 11 de
+        # prontas. Aí o app de produção mostraria as 20 fichas, e não as 12 de
         # acabado — mudança de narrativa operacional, não de defeito.
         prep_outputs = {rd["output_sku"] for rd in recipes_data if _is_preparation(rd["ref"])}
         prep_needs: dict[str, Decimal] = {}
