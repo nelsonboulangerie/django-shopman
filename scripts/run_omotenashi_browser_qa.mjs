@@ -52,7 +52,7 @@ Opcoes:
   --report=/tmp/browser-report.json       Relatorio JSON de saida
   --chrome-path=/path/to/Chrome           Binario Chrome/Chromium
   --session-cookie=sessionid=...          Cookie admin ja autenticado
-  --strict                                Exit code 1 se houver review/fail
+  --strict                                Exit code 1 se houver review/fail OU check pulado
   --ignore-certificate-errors             Util para staging com certificado local
 
 Sem --matrix, o script executa manage.py omotenashi_qa --json.
@@ -73,10 +73,15 @@ function sleep(ms) {
 }
 
 // Resolve a matrix URL to a navigable http(s) URL, or null when it points at a
-// surface this gate does not serve. Empty URLs (surface base not configured —
-// e.g. POS, whose Nuxt surface is not wired into this gate) and unresolved Django
-// route names ("unresolved:...") become null, so the runner SKIPS them with an
-// explicit notice instead of crashing or scoring a false pass.
+// surface this run does not serve. URLs vazias (base da superfície não
+// configurada) e nomes de rota Django não resolvidos ("unresolved:...") viram
+// null, e o check é PULADO.
+//
+// ⚠️ Pular é um resultado, não um sucesso. Em `--strict` um check pulado
+// REPROVA (ver `main`): enquanto o aviso era só informativo, seis dos onze
+// checks — fila de pedidos, KDS, produção, PDV, fechamento do dia e caixa,
+// exatamente as telas por onde o dinheiro passa — passavam anos sem nenhum
+// browser tocá-las, e o gate ficava verde anunciando "11 checks".
 function resolveNavigable(rawUrl, baseUrl) {
   const raw = String(rawUrl || "").trim();
   if (!raw) return null;
@@ -320,7 +325,14 @@ function buildAuditExpression() {
       clientWidth: document.documentElement.clientWidth,
       bodyWidth: document.body ? document.body.scrollWidth : 0,
       hOverflow: document.documentElement.scrollWidth > document.documentElement.clientWidth + 1,
-      loginPage: /\/login\/?/.test(location.pathname),
+      // Duas formas de "isto é uma tela de entrada". O caminho pega o Admin do
+      // Django (/admin/login/); o campo de senha pega os apps de operador, que
+      // desenham o login DENTRO da própria rota (o PDV faz isso em "/"), onde o
+      // teste por caminho não vê nada. Sem a segunda, um check não-gated podia
+      // auditar uma tela de login e marcar `pass`.
+      loginPage:
+        /\/login\/?/.test(location.pathname) ||
+        Array.from(document.querySelectorAll('input[type="password"]')).some(visible),
       headings,
       errors,
       tinyTargets: controls
@@ -502,7 +514,7 @@ async function runBrowserQa(matrix, options) {
           url: check.url,
           viewport,
           status: "skipped",
-          blockers: ["surface-not-served"],
+          blockers: [String(check.url || "").startsWith("unresolved:") ? "unresolved-route" : "surface-not-served"],
           screenshot: null,
           audit: null,
         });
@@ -516,7 +528,14 @@ async function runBrowserQa(matrix, options) {
         mobile: viewport.width < 700,
       });
       const url = navigable.toString();
-      await client.send("Page.navigate", { url });
+      // ⚠️ O retorno do Page.navigate IMPORTA. Com a superfície fora do ar, o
+      // Chrome desenha a própria página de erro ("não foi possível acessar
+      // este site") — sem overflow, sem controle fora de tela, sem /login — e a
+      // auditoria dava `pass`. Ou seja: derrubar o PDV deixava o gate VERDE nos
+      // três checks de caixa. O `errorText` é a única evidência de que a
+      // navegação sequer chegou ao servidor.
+      const navigation = await client.send("Page.navigate", { url });
+      const navigationError = navigation && navigation.errorText ? String(navigation.errorText) : "";
       await waitForDocument(client);
       await sleep(800);
       await client.send("Runtime.evaluate", {
@@ -538,6 +557,7 @@ async function runBrowserQa(matrix, options) {
       await fs.writeFile(screenshotPath, Buffer.from(screenshot.data, "base64"));
 
       const blockers = [];
+      if (navigationError) blockers.push(`navigation-failed:${navigationError}`);
       // An auth-gated checkpoint (e.g. checkout) is SUPPOSED to land on the login
       // page for an anonymous visitor — that is the expected guardrail, not a
       // regression. We still audit overflow/offscreen/exceptions on that surface.
@@ -602,7 +622,17 @@ async function main() {
   }
   console.log(`screenshots=${options.screenshotsDir}`);
   console.log(`report=${options.reportPath}`);
-  if (options.strict && report.summary.review > 0) {
+  if (options.strict && skipped.length) {
+    // Superfície fora do ar não é "não se aplica": é cobertura que o gate
+    // ANUNCIA e não entrega. Quem quiser rodar sem uma superfície roda sem
+    // --strict; o gate do CI sobe todas e reprova quando alguma não subir.
+    console.error(
+      `omotenashi-browser-qa (strict): ${skipped.length} check(s) sem superfície de pé — ` +
+        skipped.map((item) => `${item.id}[${item.surface || "?"}] ${item.blockers.join(",")}`).join("; ") +
+        "\nSuba a superfície (SHOPMAN_*_BASE_URL) ou rode sem --strict.",
+    );
+  }
+  if (options.strict && (report.summary.review > 0 || skipped.length > 0)) {
     process.exitCode = 1;
   }
 }

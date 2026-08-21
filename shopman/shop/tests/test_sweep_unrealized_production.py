@@ -194,3 +194,53 @@ def test_sweeper_ignores_a_batch_finished_moments_ago(recipe, vitrine, realize_e
     call_command("sweep_unrealized_production", "--minutes", "15")
 
     assert not OperatorAlert.objects.filter(type="stock_discrepancy").exists()
+
+
+def test_sweeper_will_not_reconsume_a_batch_from_last_month(recipe, vitrine):
+    """O piso de data: fornada antiga com ledger aberto NÃO é reprocessada.
+
+    A seleção sem piso lia a história inteira. Os marcadores nasceram em 17/08
+    e a ``craftsman/0005`` carimbou o que existia naquele instante, mas todo
+    caminho que grava ``FINISHED`` direto no banco (o ``seed``) nasce sem eles.
+    Com o ``maintenance_worker`` a cada 5 min, o primeiro ciclo depois de um
+    reseed reconsumia os insumos de cada fornada histórica: no staging de 19/08
+    foram 280 movimentos de "Consumo de produção" somando −223,610 kg, 264
+    deles em dois minutos, e zero alertas.
+
+    O caso é o do ``test_backfill_protects_...`` de cima visto pelo outro lado:
+    lá o backfill carimba e o sweeper respeita o carimbo; aqui NÃO há carimbo
+    nenhum (é o que um reseed produz), e o que segura é o piso.
+    """
+    work_order = _finish_50(recipe)
+    craft.finish(work_order, finished=Decimal("50"), actor="test")
+    flour_before = stock.available(FLOUR)
+
+    # Fornada do mês passado, sem marcador — exatamente o que um reseed grava.
+    WorkOrder.objects.filter(pk=work_order.pk).update(
+        meta={}, finished_at=timezone.now() - timedelta(days=30)
+    )
+
+    call_command("sweep_unrealized_production", "--minutes", "1")
+
+    assert stock.available(FLOUR) == flour_before
+    assert _vitrine_qty(vitrine) == Decimal("50")
+    work_order.refresh_from_db()
+    assert not work_order.meta.get(STOCK_CONSUMED_KEY)  # nem carimbou por cima
+
+
+def test_sweeper_still_reaches_a_batch_from_this_morning(recipe, vitrine, realize_explodes,
+                                                         monkeypatch):
+    """Controle positivo do piso: dentro da janela, o sweeper continua agindo."""
+    work_order = _finish_50(recipe)
+    with pytest.raises(StockError):
+        craft.finish(work_order, finished=Decimal("50"), actor="test")
+    WorkOrder.objects.filter(pk=work_order.pk).update(
+        finished_at=timezone.now() - timedelta(hours=6)
+    )
+
+    monkeypatch.undo()
+    call_command("sweep_unrealized_production", "--minutes", "1")
+
+    work_order.refresh_from_db()
+    assert _vitrine_qty(vitrine) == Decimal("50")
+    assert work_order.meta[STOCK_REALIZED_KEY]

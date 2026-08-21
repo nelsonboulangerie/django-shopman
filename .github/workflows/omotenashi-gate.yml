@@ -61,12 +61,21 @@ jobs:
           python-version: "3.12"
           cache: pip
 
+      # ⚠️ TODAS as superfícies, não só a loja. O gate agora sobe também o Gestor
+      # de Pedidos, o KDS, a Produção e o PDV — sem elas de pé, os seis checks de
+      # operador voltariam a ser pulados, e pular agora REPROVA em --strict.
       - name: Set up Node
         uses: actions/setup-node@v7
         with:
           node-version: "22"
           cache: npm
-          cache-dependency-path: surfaces/storefront-nuxt/package-lock.json
+          cache-dependency-path: |
+            surfaces/operator-kit/package-lock.json
+            surfaces/storefront-nuxt/package-lock.json
+            surfaces/orders-nuxt/package-lock.json
+            surfaces/kds-nuxt/package-lock.json
+            surfaces/production-nuxt/package-lock.json
+            surfaces/pos-nuxt/package-lock.json
 
       - name: Install Chrome
         uses: browser-actions/setup-chrome@v2
@@ -78,9 +87,17 @@ jobs:
       - name: Install Python dependencies
         run: make install
 
-      - name: Install Nuxt store dependencies
+      # A layer primeiro: os apps de operador a estendem, e o build deles resolve
+      # 'vue'/'@vueuse/core' pelo node_modules dela (mesma razão do Surfaces Gate).
+      - name: Install operator-kit layer dependencies
         run: npm ci
-        working-directory: surfaces/storefront-nuxt
+        working-directory: surfaces/operator-kit
+
+      - name: Install surface dependencies
+        run: |
+          for app in storefront-nuxt orders-nuxt kds-nuxt production-nuxt pos-nuxt; do
+            (cd "surfaces/$app" && npm ci)
+          done
 
       - name: Omotenashi browser-QA gate (strict)
         env:
@@ -112,5 +129,77 @@ jobs:
             /tmp/shopman-omotenashi-qa-browser.json
             /tmp/shopman-omotenashi-browser-ci-django.log
             /tmp/shopman-omotenashi-browser-ci-nuxt.log
+          if-no-files-found: warn
+          retention-days: 14
+
+  storefront-e2e:
+    name: Storefront E2E (Playwright)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    # ⚠️ Este alvo existia e não rodava em lugar nenhum. Foi assim que a suíte
+    # ficou navegando /cart, /checkout, /login e /tracking/<ref> — rotas que a
+    # loja Nuxt nunca serviu (ela serve /sacola, /finalizar, /entrar, /pedido/) —
+    # e telas de operador que sumiram no cutover headless. Seis testes davam 404,
+    # e um deles PASSAVA no 404 (afirmava a ausência de um texto que a página de
+    # erro também não tinha). Um E2E que ninguém roda apodrece calado.
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: shopman
+          POSTGRES_USER: shopman
+          POSTGRES_PASSWORD: shopman
+        ports:
+          - "5432:5432"
+        options: >-
+          --health-cmd "pg_isready -U shopman -d shopman"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+
+    env:
+      DATABASE_URL: postgres://shopman:shopman@localhost:5432/shopman
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Set up Node
+        uses: actions/setup-node@v7
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: surfaces/storefront-nuxt/package-lock.json
+
+      - name: Create virtualenv
+        run: python -m venv .venv
+
+      - name: Install Python dependencies
+        run: make install
+
+      - name: Install Nuxt store dependencies
+        run: npm ci
+        working-directory: surfaces/storefront-nuxt
+
+      - name: Storefront E2E
+        env:
+          CI: "true"
+        run: make storefront-e2e
+
+      - name: Upload E2E logs
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: storefront-e2e-logs
+          path: |
+            /tmp/shopman-storefront-e2e-django.log
+            /tmp/shopman-storefront-e2e-nuxt.log
           if-no-files-found: warn
           retention-days: 14

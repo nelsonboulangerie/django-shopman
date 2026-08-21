@@ -26,6 +26,7 @@ from django.contrib.auth.models import User
 from django.core.management import call_command
 from django.core.management.base import BaseCommand, CommandError
 from django.utils import timezone
+from shopman.craftsman import STOCK_CONSUMED_KEY, STOCK_REALIZED_KEY
 from shopman.craftsman.models import Recipe, RecipeItem, WorkOrder, WorkOrderItem
 from shopman.craftsman.models.recipe import normalize_recipe_item_unit
 from shopman.guestman.models import (
@@ -839,22 +840,22 @@ class Command(BaseCommand):
             ("BF", "Baguette de Tradition", "Pão de tradição francesa e fermentação 100% natural (levain)", 1600, "un", 0, True,
              f"{IMG}/bf.webp", 250, "Congele inteira ou em pedaços. Reaqueça direto do freezer a 200°C por 8min"),
             ("CGO", "Pain de Campagne", "Fermentação natural (levain), trigo 50% integral e centeio orgânico. Fatiado na hora", 2200, "un", 2, True,
-             f"{IMG}/cgr.webp", 500, "Guarde em saco de pano. Dura até 4 dias em temperatura ambiente"),
+             f"{IMG}/cgr.webp", 300, "Guarde em saco de pano. Dura até 4 dias em temperatura ambiente"),
             ("CPX", "Campagne Passas & Castanhas", "Levain, trigo 50% integral e centeio orgânico, passas, castanhas de caju e do Pará", 3300, "un", 3, True,
-             f"{IMG}/cpx.webp", 550, "Guarde em saco de pano. Dura até 5 dias em temperatura ambiente"),
+             f"{IMG}/cpx.webp", 500, "Guarde em saco de pano. Dura até 5 dias em temperatura ambiente"),
             ("CI", "Ciabatta", "Pão aerado, clássico italiano com azeite extra virgem e fermentação 100% natural (levain)", 1800, "un", 0, True,
-             f"{IMG}/ci.webp", 200, "Congele no mesmo dia. Reaqueça a 200°C por 8min"),
+             f"{IMG}/ci.webp", 180, "Congele no mesmo dia. Reaqueça a 200°C por 8min"),
             ("BE", "Baguete Gergelim", "Baguete com fermentação 100% natural (levain), toque de azeite e gergelim", 1800, "un", 0, True,
              f"{IMG}/be.webp", 260, "Congele no mesmo dia. Reaqueça a 200°C por 8min"),
             # ── Padaria · Finos ──
             ("CT", "Croissant", "Clássico em pura manteiga. Simples e delicioso. Ótimo com geleias!", 1300, "un", 1, True,
-             f"{IMG}/ct.webp", 80, "Reaqueça no forno a 180°C por 5min para recuperar a crocância"),
+             f"{IMG}/ct.webp", 70, "Reaqueça no forno a 180°C por 5min para recuperar a crocância"),
             ("PC", "Pain au Chocolat", "Croissant recheado com chocolate!", 1500, "un", 1, True,
              f"{IMG}/pc.webp", 90, "Reaqueça no forno a 180°C por 5min. Evite micro-ondas"),
             ("SK", "Shokupan", "Pão de forma japonês super macio, fatias grossas interfolhadas", 2800, "un", 2, True,
              unsplash("photo-1598373182308-3270495d2f58"), 450, "Mantenha em saco plástico fechado. Congela bem por até 30 dias"),
             ("KP", "Kuro Pan", "Pão japonês escuro, macio e levemente adocicado", 2200, "un", 2, True,
-             unsplash("photo-1778472438579-91875c22ae79"), 350, "Mantenha em saco plástico fechado. Congela bem por até 30 dias"),
+             unsplash("photo-1778472438579-91875c22ae79"), 250, "Mantenha em saco plástico fechado. Congela bem por até 30 dias"),
             ("ME", "Melonpan", "Clássico japonês amanteigado com cobertura crocante e levemente doce", 1200, "un", 1, True,
              f"{IMG}/me.webp", 100, "Melhor consumido no dia"),
             ("ANC", "Animalzinho", "O bichinho do dia: pão doce em formato de bicho", 1000, "un", 1, True,
@@ -882,7 +883,7 @@ class Command(BaseCommand):
             ("MS", "Melon Iced Sando", "Sanduíche gelado de frutas com chantilly, no shokupan", 2200, "un", 0, True,
              unsplash("photo-1746632732485-4cb341e4a4aa"), 200, "Conservar refrigerado. Consumir no dia"),
             ("MD", "Madeleine", "Bolinho clássico francês, simples e delicioso", 600, "un", 2, True,
-             f"{IMG}/md.webp", 40, "Conserve em recipiente fechado por até 3 dias"),
+             f"{IMG}/md.webp", 25, "Conserve em recipiente fechado por até 3 dias"),
             ("PU", "Purin à la Mode", "Pudim japonês com chantilly e frutas", 2000, "un", 1, True,
              unsplash("photo-1752245055475-8b7c3b4756ac"), 150, "Conservar refrigerado. Consumir no dia"),
             ("TJ", "Tea Jelly", "Gelatina delicada de chá da casa", 1800, "un", 1, True,
@@ -983,7 +984,7 @@ class Command(BaseCommand):
             ("CTV", "Chá Tônica Frutas Vermelhas", "Chá gelado de frutas vermelhas com tônica", 2900, "un", None, True,
              "", 0, ""),
             ("BH", "Bichon au Citron", "Folhado com creme de limão", 1800, "un", 1, True,
-             "", 150, "Conservar refrigerado. Consumir no dia"),
+             "", 70, "Conservar refrigerado. Consumir no dia"),
             ("MA", "Maçã", "Doce de maçã da casa", 1300, "un", 1, True,
              "", 150, "Conservar refrigerado. Consumir no dia"),
             ("CM", "Croissant Mini", "Croissant menor, a mesma massa folhada", 800, "un", 1, True,
@@ -991,7 +992,7 @@ class Command(BaseCommand):
             ("BCH", "Brioche Chocolat", "Brioche recheado com chocolate", 1000, "un", 1, True,
              "", 90, "Mantenha em saco plástico fechado. Congele por até 30 dias"),
             ("CN", "Chausson", "Folhado recheado, dobrado em meia-lua", 1800, "un", 1, True,
-             "", 120, "Reaqueça no forno a 180°C por 5min para recuperar a crocância"),
+             "", 70, "Reaqueça no forno a 180°C por 5min para recuperar a crocância"),
             ("PR", "Pain aux Raisins", "Folhado em espiral com creme e passas", 1100, "un", 1, True,
              "", 110, "Reaqueça no forno a 180°C por 5min para recuperar a crocância"),
             ("COC", "Cornet de Chocolate", "Cornet recheado com chocolate", 1100, "un", 1, True,
@@ -1017,11 +1018,11 @@ class Command(BaseCommand):
             ("BAX", "Italiano Rústico", "Pão italiano de casca grossa", 2200, "un", 0, True,
              "", 500, "Melhor consumido no dia. Congele por até 30 dias"),
             ("CF", "Baguette Campagne", "Baguete de massa campagne", 1700, "un", 0, True,
-             "", 300, "Melhor consumido no dia. Congele por até 30 dias"),
+             "", 250, "Melhor consumido no dia. Congele por até 30 dias"),
             ("BA", "Bâtard", "Pão rústico curto, casca crocante", 1300, "un", 0, True,
              "", 300, "Melhor consumido no dia. Congele por até 30 dias"),
             ("CGR", "Pain de Campagne Redondo", "Campagne em formato redondo", 1800, "un", 0, True,
-             "", 500, "Melhor consumido no dia. Congele por até 30 dias"),
+             "", 300, "Melhor consumido no dia. Congele por até 30 dias"),
             ("SE", "Vienna", "Pão vienense de massa macia", 1700, "un", 0, True,
              "", 200, "Melhor consumido no dia. Congele por até 30 dias"),
             ("PI", "Pita", "Pão pita, unidade", 400, "un", 0, True,
@@ -1029,11 +1030,11 @@ class Command(BaseCommand):
             ("BEP", "Baguete Gergelim Pequena", "Baguete de gergelim menor, das caixas presente", 900, "un", 0, True,
              "", 120, "Melhor consumido no dia. Congele por até 30 dias"),
             ("FOA", "Focaccia Alecrim", "Focaccia com alecrim e azeite", 3100, "un", 0, True,
-             "", 450, "Melhor consumido no dia. Congele por até 30 dias"),
+             "", 350, "Melhor consumido no dia. Congele por até 30 dias"),
             ("CBT", "Focaccia Cebola, Bacon e Tomilho", "Focaccia com cebola, bacon e tomilho", 4000, "un", 0, True,
-             "", 500, "Melhor consumido no dia. Congele por até 30 dias"),
+             "", 450, "Melhor consumido no dia. Congele por até 30 dias"),
             ("FOC", "Focaccia Cebola Roxa", "Focaccia com cebola roxa", 4000, "un", 0, True,
-             "", 500, "Melhor consumido no dia. Congele por até 30 dias"),
+             "", 450, "Melhor consumido no dia. Congele por até 30 dias"),
             ("MIF", "Mini Focaccia Alecrim", "Focaccia menor, com alecrim", 1300, "un", 0, True,
              "", 180, "Melhor consumido no dia. Congele por até 30 dias"),
             ("MICBT", "Mini Focaccia Cebola, Bacon e Tomilho", "Focaccia menor, com cebola, bacon e tomilho", 1800, "un", 0, True,
@@ -1159,14 +1160,14 @@ class Command(BaseCommand):
             "CGO": {
                 "allergens": ["glúten"],
                 "dietary_info": ["100% vegetal", "sem lactose"],
-                "serves": "3 a 5 pessoas",
-                "approx_dimensions": "aprox. 18 cm de diâmetro",
+                "serves": "2 a 3 pessoas",
+                "approx_dimensions": "aprox. 15 cm de diâmetro x 10 cm de altura",
             },
             "CPX": {
                 "allergens": ["glúten", "castanhas"],
                 "dietary_info": ["100% vegetal", "sem lactose"],
                 "serves": "4 a 6 pessoas",
-                "approx_dimensions": "aprox. 28 x 16 x 10 cm",
+                "approx_dimensions": "aprox. 15 x 15 x 10 cm",
             },
             "CI": {
                 "allergens": ["glúten"],
@@ -2508,7 +2509,10 @@ class Command(BaseCommand):
                 "ref": "massa-paes-macios",
                 "name": "Massa Pães Macios",
                 "output_sku": "MASSA-PAES-MACIOS",
-                "batch_size": Decimal("10"),
+                # 8,360 kg de insumo (o leite entra por densidade) rendendo 8 kg
+                # de massa: 4,3% de perda de mistura. Era 10, ou seja +19,6% de
+                # massa nascendo do nada — ver `Recipe._validate_mass_balance`.
+                "batch_size": Decimal("8"),
                 "items": [
                     ("FARINHA-T55", Decimal("5.000")),
                     ("LEITE", Decimal("2.000")),
@@ -2522,7 +2526,8 @@ class Command(BaseCommand):
                 "ref": "massa-folhada",
                 "name": "Massa Folhada",
                 "output_sku": "MASSA-FOLHADA",
-                "batch_size": Decimal("10"),
+                # 9,456 kg de insumo → 9 kg de massa (4,8% de perda). Era 10.
+                "batch_size": Decimal("9"),
                 "items": [
                     ("FARINHA-T45", Decimal("4.800")),
                     ("MANTEIGA-FR", Decimal("2.400")),
@@ -2537,7 +2542,9 @@ class Command(BaseCommand):
                 "ref": "massa-brioche",
                 "name": "Massa Brioche",
                 "output_sku": "MASSA-BRIOCHE",
-                "batch_size": Decimal("10"),
+                # 8,040 kg de insumo → 8 kg de massa (0,5% de perda). Era 10,
+                # o pior dos três: +24,4% de massa saindo do nada.
+                "batch_size": Decimal("8"),
                 "items": [
                     ("FARINHA-T45", Decimal("4.000")),
                     ("MANTEIGA-FR", Decimal("2.000")),
@@ -2562,12 +2569,48 @@ class Command(BaseCommand):
                 ],
             },
             {
+                # O animalzinho leva creme, e a ficha não sabia disso: contava só
+                # a massa amanteigada. Recheio que a produção prepara e a ficha
+                # ignora é insumo que ninguém compra — some da sugestão e do
+                # custo por unidade.
+                #
+                # A versão de chocolate (o coelhinho) sai deste mesmo creme, com
+                # chocolate derretido na finalização; segue sem ficha separada
+                # enquanto o plano do dia não distinguir as duas.
+                "ref": "recheio-creme",
+                "name": "Creme de Confeiteiro",
+                "output_sku": "RECHEIO-CREME",
+                "batch_size": Decimal("5"),
+                "items": [
+                    ("LEITE", Decimal("3.400")),
+                    ("ACUCAR", Decimal("0.800")),
+                    ("OVOS", Decimal("0.500")),
+                    ("FARINHA-T45", Decimal("0.300")),
+                    ("MANTEIGA-FR", Decimal("0.100")),
+                ],
+            },
+            {
+                # Recheio do Bichon au Citron, que até aqui era produto de
+                # catálogo sem ficha nenhuma.
+                "ref": "recheio-limao",
+                "name": "Creme de Limão",
+                "output_sku": "RECHEIO-LIMAO",
+                "batch_size": Decimal("3"),
+                "items": [
+                    ("OVOS", Decimal("1.000")),
+                    ("ACUCAR", Decimal("0.950")),
+                    ("LIMAO", Decimal("0.700")),
+                    ("MANTEIGA-FR", Decimal("0.400")),
+                ],
+            },
+            {
                 "ref": "baguete",
                 "name": "Baguette de Tradition",
                 "output_sku": "BF",
                 "batch_size": Decimal("25"),
                 "items": [
-                    ("MASSA-LEVAIN-CLARA", Decimal("10.000")),
+                    # 280 g de massa por baguete, para 250 g assados.
+                    ("MASSA-LEVAIN-CLARA", Decimal("7.000")),
                 ],
             },
             {
@@ -2576,7 +2619,10 @@ class Command(BaseCommand):
                 "output_sku": "CGO",
                 "batch_size": Decimal("10"),
                 "items": [
-                    ("MASSA-CAMPAGNE", Decimal("8.200")),
+                    # 340 g de massa por campagne, para 300 g assados.
+                    # A rodada anterior manteve 820 g supondo pão de campanha
+                    # grande; o pão da casa é bem menor que isso.
+                    ("MASSA-CAMPAGNE", Decimal("3.400")),
                 ],
             },
             {
@@ -2585,7 +2631,8 @@ class Command(BaseCommand):
                 "output_sku": "CI",
                 "batch_size": Decimal("20"),
                 "items": [
-                    ("MASSA-ALTA-HIDRATACAO", Decimal("7.500")),
+                    # 205 g de massa por ciabatta, para 180 g assados.
+                    ("MASSA-ALTA-HIDRATACAO", Decimal("4.100")),
                 ],
             },
             {
@@ -2594,8 +2641,9 @@ class Command(BaseCommand):
                 "output_sku": "FOA",
                 "batch_size": Decimal("8"),
                 "items": [
-                    ("MASSA-ALTA-HIDRATACAO", Decimal("5.200")),
-                    ("ALECRIM", Decimal("0.030")),
+                    # 398 g de massa por focaccia, para 350 g assados.
+                    ("MASSA-ALTA-HIDRATACAO", Decimal("3.150")),
+                    ("ALECRIM", Decimal("0.032")),
                 ],
             },
             {
@@ -2613,8 +2661,10 @@ class Command(BaseCommand):
                 "output_sku": "KP",
                 "batch_size": Decimal("8"),
                 "items": [
-                    ("MASSA-PAES-MACIOS", Decimal("4.600")),
-                    ("CHOCOLATE-70", Decimal("0.400")),
+                    # 240 g de massa + 40 g de chocolate = 280 g crus,
+                    # para 250 g assados.
+                    ("MASSA-PAES-MACIOS", Decimal("1.920")),
+                    ("CHOCOLATE-70", Decimal("0.320")),
                 ],
             },
             {
@@ -2623,7 +2673,8 @@ class Command(BaseCommand):
                 "output_sku": "CT",
                 "batch_size": Decimal("48"),
                 "items": [
-                    ("MASSA-FOLHADA", Decimal("8.500")),
+                    # 80 g de massa por croissant, para 70 g assados.
+                    ("MASSA-FOLHADA", Decimal("3.840")),
                 ],
             },
             {
@@ -2632,7 +2683,9 @@ class Command(BaseCommand):
                 "output_sku": "PC",
                 "batch_size": Decimal("36"),
                 "items": [
-                    ("MASSA-FOLHADA", Decimal("6.500")),
+                    # 80 g de folhada + 20 g de chocolate (os dois bâtons
+                    # clássicos) = 100 g crus, para 90 g assados.
+                    ("MASSA-FOLHADA", Decimal("2.880")),
                     ("CHOCOLATE-70", Decimal("0.720")),
                 ],
             },
@@ -2642,7 +2695,10 @@ class Command(BaseCommand):
                 "output_sku": "ANC",
                 "batch_size": Decimal("16"),
                 "items": [
-                    ("MASSA-BRIOCHE", Decimal("6.000")),
+                    # 60 g de massa amanteigada + 40 g de creme = 100 g
+                    # crus, para 90 g assados.
+                    ("MASSA-BRIOCHE", Decimal("0.960")),
+                    ("RECHEIO-CREME", Decimal("0.640")),
                 ],
             },
             {
@@ -2651,8 +2707,26 @@ class Command(BaseCommand):
                 "output_sku": "CN",
                 "batch_size": Decimal("12"),
                 "items": [
-                    ("MASSA-FOLHADA", Decimal("4.600")),
-                    ("RECHEIO-MACA", Decimal("0.810")),
+                    # 60 g de folhada + 20 g de maçã caramelizada = 80 g
+                    # crus, para 70 g assados.
+                    ("MASSA-FOLHADA", Decimal("0.720")),
+                    ("RECHEIO-MACA", Decimal("0.240")),
+                ],
+            },
+            {
+                # O Bichon era produto de catálogo sem ficha: vendido todo dia,
+                # invisível para custo, plano de fornada e sugestão de compra.
+                # Mesma construção do chausson, trocando a maçã pelo creme de
+                # limão.
+                "ref": "bichon",
+                "name": "Bichon au Citron",
+                "output_sku": "BH",
+                "batch_size": Decimal("12"),
+                "items": [
+                    # 60 g de folhada + 20 g de creme de limão = 80 g crus,
+                    # para 70 g assados.
+                    ("MASSA-FOLHADA", Decimal("0.720")),
+                    ("RECHEIO-LIMAO", Decimal("0.240")),
                 ],
             },
             {
@@ -2661,11 +2735,19 @@ class Command(BaseCommand):
                 "output_sku": "MD",
                 "batch_size": Decimal("24"),
                 "items": [
-                    ("FARINHA-T45", Decimal("0.500")),
-                    ("MANTEIGA-FR", Decimal("0.500")),
-                    ("OVOS", Decimal("0.400")),
-                    ("ACUCAR", Decimal("0.300")),
-                    ("LIMAO", Decimal("0.020")),
+                    # 28 g de massa por madeleine, para 25 g assados, na
+                    # proporção clássica: farinha ≈ manteiga ≈ ovo, açúcar um
+                    # pouco abaixo. A ficha rendia 72 g por peça. Ela
+                    # escapou da primeira varredura de rendimento porque é a única
+                    # de acabado feita direto de matéria-prima, sem passar por um
+                    # `MASSA-*`, e a consulta filtrava pelas linhas de massa.
+                    # Custo por unidade e sugestão de compra saíam 3x acima, no
+                    # produto que é ~11% das unidades vendidas da casa.
+                    ("FARINHA-T45", Decimal("0.190")),
+                    ("MANTEIGA-FR", Decimal("0.180")),
+                    ("OVOS", Decimal("0.165")),
+                    ("ACUCAR", Decimal("0.127")),
+                    ("LIMAO", Decimal("0.010")),
                 ],
             },
         ]
@@ -2790,6 +2872,10 @@ class Command(BaseCommand):
             )
         self.stdout.write(f"  ✅ estoque de abertura para {len(INGREDIENT_PROFILES)} insumos")
 
+        def _is_preparation(recipe_ref: str) -> bool:
+            """Pré-preparo (massa, recheio): sai em quilo, não em unidade."""
+            return recipe_ref.startswith(("massa-", "recheio-"))
+
         def _recipe_item_unit(input_sku: str) -> str:
             """A ficha fala na unidade-base do insumo — explícito, não por default.
 
@@ -2820,6 +2906,12 @@ class Command(BaseCommand):
                         "max_started_minutes": self._max_started_minutes_for_recipe(rd["ref"]),
                         "requires_batch_tracking": shelf_life_days is not None,
                         "shelf_life_days": shelf_life_days,
+                        # Pré-preparo não existe no catálogo, então a unidade da
+                        # saída não tem de onde vir sozinha — e adivinhar é o que
+                        # a ADR-024 §R4 proíbe. Declarada aqui, é ela que liga o
+                        # invariante de massa da ficha (`Recipe.clean`) e impede
+                        # que uma massa volte a render mais do que pesa.
+                        **({"output_unit": "kg"} if _is_preparation(rd["ref"]) else {}),
                     },
                 },
             )
@@ -2861,9 +2953,68 @@ class Command(BaseCommand):
             ("animalzinho", Decimal("16"), (5, 30), (8, 30)),
             ("focaccia-dia", Decimal("10"), (7, 0), (10, 0)),
             ("folhado-dia", Decimal("30"), (8, 0), (11, 0)),
+            # O bichon sai junto do chausson, um pouco abaixo em quantidade
+            # (dono: 10 a 20% menos). É o único do plano cuja quantidade não vem
+            # da média dos XMLs — vem do irmão dele.
+            ("bichon", Decimal("25"), (8, 0), (11, 0)),
             ("madeleine", Decimal("68"), (9, 0), (13, 0)),
         ]
         recipes_by_ref = {r.ref: r for r in Recipe.objects.filter(ref__in=[row[0] for row in production_plan])}
+
+        # ── Mise en place: pré-preparo pronto no depósito ────────────────────
+        #
+        # Onze das vinte receitas consomem massa ou recheio (baguete, croissant,
+        # ciabatta, campagne, shokupan, kuro-pan, pain au chocolat, animalzinho,
+        # focaccia, folhado, bichon), e o seed não estocava NENHUM quilo de
+        # massa. O guardrail de insumo (Buyman WP-B5b, ligado desde o commit
+        # 47cc1958) então reprovava toda fornada planejada delas: o operador
+        # abria o modal "Insumos insuficientes" com o atalho "Concluir mesmo
+        # assim" a um toque e um alerta ``production_stock_short`` de
+        # severidade ``error`` era gravado. Alarme que toca todo dia e está
+        # sempre errado vira botão que o operador aprende a apertar — e no dia
+        # em que a manteiga acabar de verdade ele aperta igual.
+        #
+        # O guardrail estava certo; quem mentia era o seed. Corrigimos aqui, do
+        # lado do dado, e não afrouxando o guardrail (a alternativa de "ignorar
+        # insumo cuja produção está planejada para o mesmo dia" transformaria um
+        # gate de estoque em previsão, e a fornada da tarde deixaria de ser
+        # barrada quando a massa da manhã não saísse).
+        #
+        # A quantidade sai do PRÓPRIO plano do dia, não de um número redondo:
+        # mudar o plano reajusta o mise en place sozinho. Três dias de folga
+        # para a demonstração aguentar refazer fornada sem secar.
+        #
+        # ⚠️ O passo seguinte, que fica para o dono decidir, é o seed PRODUZIR as
+        # massas (WorkOrders de pré-preparo na matriz), em vez de encontrá-las
+        # prontas. Aí o app de produção mostraria as 20 fichas, e não as 12 de
+        # acabado — mudança de narrativa operacional, não de defeito.
+        prep_outputs = {rd["output_sku"] for rd in recipes_data if _is_preparation(rd["ref"])}
+        prep_needs: dict[str, Decimal] = {}
+        for plan_ref, plan_qty, _plan_start, _plan_finish in production_plan:
+            plan_recipe = recipes_by_ref[plan_ref]
+            plan_coefficient = plan_qty / plan_recipe.batch_size
+            for plan_item in plan_recipe.items.filter(is_optional=False):
+                if plan_item.input_sku not in prep_outputs:
+                    continue
+                prep_needs[plan_item.input_sku] = prep_needs.get(
+                    plan_item.input_sku, Decimal("0")
+                ) + plan_item.quantity * plan_coefficient
+
+        PREP_DAYS_OF_COVER = Decimal("3")
+        for prep_sku, per_day in sorted(prep_needs.items()):
+            stock.receive(
+                quantity=(per_day * PREP_DAYS_OF_COVER).quantize(Decimal("0.001")),
+                sku=prep_sku,
+                position=deposito,
+                reason="Mise en place: pré-preparo pronto (seed)",
+                # MAKE e não ADJUST: massa não é saldo de abertura comprado, é
+                # coisa que saiu da masseira. O ledger conta a história certa.
+                kind="make",  # Move.Kind.MAKE
+            )
+        self.stdout.write(
+            f"  ✅ mise en place para {len(prep_needs)} pré-preparos "
+            f"({PREP_DAYS_OF_COVER} dias do plano)"
+        )
 
         def at(day: date, hour_min: tuple[int, int]) -> datetime:
             return datetime.combine(day, time(hour_min[0], hour_min[1]), tzinfo=tz_info)
@@ -2996,6 +3147,26 @@ class Command(BaseCommand):
             work_order.position_ref = position_ref
             work_order.operator_ref = operator_ref
             work_order.meta = {"seed": True, "scope": scope, "_recipe_snapshot": recipe_snapshot(recipe)}
+            if status == WorkOrder.Status.FINISHED:
+                # As DUAS pernas do ledger de estoque, carimbadas na mão.
+                #
+                # O seed grava a fornada FINISHED direto no banco: não passa por
+                # ``CraftExecution.finish``, não emite ``production_changed``, e
+                # portanto nunca escreve o ledger (o estoque vendável do dia vem
+                # pronto de ``_seed_stock``). Sem o carimbo, o
+                # ``sweep_unrealized_production`` lê cada uma dessas fornadas
+                # como "concluída com o ledger aberto" e reexecuta as duas
+                # pernas — o ``maintenance_worker`` roda a cada 5 min, então o
+                # primeiro ciclo depois de um reseed CONSOME os insumos de toda
+                # a história. Aconteceu no staging em 19/08: 280 movimentos de
+                # consumo somando −223,610 kg, 264 deles em dois minutos.
+                #
+                # O carimbo diz a verdade: para esta fornada não há perna
+                # nenhuma a escrever. O piso de data do sweeper é a segunda
+                # trava; esta é a primeira, e é a que fecha a causa.
+                stamped_at = (finish_at or at(target_date, (8, 0))).isoformat()
+                work_order.meta[STOCK_CONSUMED_KEY] = stamped_at
+                work_order.meta[STOCK_REALIZED_KEY] = stamped_at
             work_order.save()
 
             reset_ledger(work_order)
