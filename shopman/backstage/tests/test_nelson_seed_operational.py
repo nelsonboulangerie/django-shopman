@@ -151,6 +151,22 @@ def test_nelson_seed_populates_production_history_alerts_and_batches(monkeypatch
 
     assert WorkOrder.objects.filter(source_ref__startswith="seed:production:today:").exists()
 
+    # A MASSA ANTES DO PÃO. O seed produz o pré-preparo desde 21/08 (decisão do
+    # dono): padaria artesanal faz a própria massa, e encontrá-la pronta era
+    # ficção. Duas coisas se guardam aqui, e a segunda é a que já quebrou uma vez:
+    massas = list(WorkOrder.objects.filter(source_ref__startswith="seed:production:today-prep:"))
+    assert massas, "o seed voltou a encontrar a massa pronta em vez de produzi-la"
+
+    acabados = WorkOrder.objects.filter(
+        source_ref__startswith="seed:production:today:", started_at__isnull=False
+    )
+    ultima_massa = max(wo.finished_at for wo in massas)
+    primeiro_pao = min(wo.started_at for wo in acabados)
+    assert ultima_massa <= primeiro_pao, (
+        "massa terminando depois de a primeira fornada começar: não dá para "
+        f"modelar o pão com a massa ainda na masseira ({ultima_massa} > {primeiro_pao})"
+    )
+
     # Toda fornada que o seed grava como FINISHED tem as duas pernas do ledger
     # de estoque CARIMBADAS. Ela não passou por ``CraftExecution.finish``, então
     # não há perna nenhuma a escrever — e sem o carimbo o
