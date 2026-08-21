@@ -7,7 +7,7 @@ doorman. Shared across every operational surface (POS/KDS/orders/production).
 
 Modelo de autorização (D1-B, 21/08/2026): **uma identidade só**. Quem prova o PIN
 ou passa o crachá vira a sessão (``login``), e é contra essa pessoa que toda
-permissão é conferida. O aparelho é reconhecido por confiança de dispositivo
+permissão é conferida. O dispositivo é reconhecido por confiança de dispositivo
 (``backstage.station_trust``), que diz de onde a requisição veio e não concede nada.
 
 Existiu aqui um par ``set_active_operator``/``resolve_active_operator_user`` que

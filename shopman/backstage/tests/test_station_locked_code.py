@@ -5,7 +5,7 @@ PDV seguia montado com todas as leituras negadas — desenhando um quadro de
 comandas VAZIO, que no balcão se lê como "as comandas sumiram". Com o código, a
 tela sobe a identificação em vez de mentir.
 
-⚠️ Este arquivo descrevia o mundo de DUAS identidades: um usuário de aparelho
+⚠️ Este arquivo descrevia o mundo de DUAS identidades: um usuário de dispositivo
 logado, e o operador ativo escrito à mão num dicionário de sessão. Com a D1
 Parte B a estação deixou de ser uma sessão Django — ela é um cookie de confiança
 de dispositivo, e a pessoa é a sessão. O que os três testes guardam continua
@@ -38,7 +38,7 @@ class StationLockedCodeTests(TestCase):
         trust_station(self.client, "balcao")
 
     def test_locked_station_names_itself(self) -> None:
-        """O balcão de manhã: aparelho reconhecido, ninguém identificado."""
+        """O balcão de manhã: dispositivo reconhecido, ninguém identificado."""
         response = self.client.get(POS_URL)
 
         self.assertEqual(response.status_code, 403)

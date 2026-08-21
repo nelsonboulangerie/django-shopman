@@ -1,7 +1,7 @@
 <script setup lang="ts">
-// PREPARAR ESTE APARELHO — a montagem do balcão, uma vez por máquina.
+// PREPARAR ESTE DISPOSITIVO — a montagem do balcão, uma vez por máquina.
 //
-// Aparece para quem gere operadores, logado com senha, num aparelho que ainda não
+// Aparece para quem gere operadores, logado com senha, num dispositivo que ainda não
 // é uma estação. Depois disso o balcão abre sozinho de manhã e pede PIN, e
 // ninguém precisa trazer senha de gestor para a loja abrir.
 //
@@ -33,7 +33,7 @@ async function confirmar() {
         <Icon name="lucide:monitor-check" class="size-7 text-muted-foreground" />
       </div>
       <div class="grid gap-1.5">
-        <h2 class="text-lg font-semibold">Preparar este aparelho</h2>
+        <h2 class="text-lg font-semibold">Preparar este dispositivo</h2>
         <p class="text-sm text-muted-foreground">
           Diga qual balcão é este. Depois disso ele abre sozinho e pede só o PIN de
           quem for operar.

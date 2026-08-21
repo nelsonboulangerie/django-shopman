@@ -34,12 +34,12 @@ export function useOperatorLock(perm: string) {
   const station = useStationLock();
 
   const session = computed<OperatorSession | null>(() => data.value ?? null);
-  // Este aparelho pode PEDIR identificação? Sim quando a antessala respondeu — ou
+  // Este dispositivo pode PEDIR identificação? Sim quando a antessala respondeu — ou
   // seja, quando ele é uma estação reconhecida, ou já tem alguém logado. Quando
   // não é nenhum dos dois o endpoint responde 403 (`data` nulo) e a única saída
   // é a tela de senha.
   //
-  // Era `authenticated`, e media outra coisa: se existia sessão de APARELHO
+  // Era `authenticated`, e media outra coisa: se existia sessão de DISPOSITIVO
   // (`device_user`). Como não há mais conta de máquina, a pergunta que a tela
   // realmente faz é esta — e o nome antigo mandaria pedir senha num balcão que
   // só precisa de PIN.

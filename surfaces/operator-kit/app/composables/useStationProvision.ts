@@ -1,8 +1,8 @@
-// Transformar ESTE aparelho numa estação da loja — o ato de montagem do balcão.
+// Transformar ESTE dispositivo numa estação da loja — o ato de montagem do balcão.
 //
-// Sem ele, nada do resto acontece: um aparelho não provisionado não tem
+// Sem ele, nada do resto acontece: um dispositivo não provisionado não tem
 // antessala, e a única entrada é senha de gestor todo dia. Acontece uma vez por
-// aparelho, com o gestor logado ali, e o cookie responde por ele daí em diante.
+// dispositivo, com o gestor logado ali, e o cookie responde por ele daí em diante.
 //
 // `allowed` é falso quando o servidor recusa a leitura (403): quem não gere
 // operadores não vê a oferta. É de propósito que a tela dependa da resposta do
@@ -45,7 +45,7 @@ export function useStationProvision() {
       station.value = terminalRef;
       return true;
     } catch (err) {
-      error.value = httpErrorMessage(err, "Não foi possível preparar este aparelho.");
+      error.value = httpErrorMessage(err, "Não foi possível preparar este dispositivo.");
       return false;
     } finally {
       busy.value = false;

@@ -166,7 +166,7 @@ for key in (
 | `merchant_id` | `string` | `shop/services/ifood_ingest.py` | — | ID do merchant na iFood. Duplicado em `ifood.merchant_id` |
 | `ifood` | `dict` | `shop/services/ifood_ingest.py` | — | Contexto da iFood (só em pedidos ingeridos via `ifood_ingest`): `{order_code, merchant_id, created_at}` |
 | `courier` | `dict` | `CourierDispatchHandler`, `services/courier.apply_status` | `_courier_block` (projection do gestor), webhook Machine (lookup por `data__courier__id_mch`), notificação (`courier_tracking_url`) | Corrida de entrega na logística externa (Machine). Ver detalhamento abaixo |
-| `dispatch` | `dict` | `operator_orders.advance_order` (despacho da entrega da casa), `mark_equipment_returned` / `settle_delivery_cash(equipment_back=True)` | `operator_orders.equipment_custody` / `equipment_out`, card e quadro do gestor (`equipment_*`) | Custódia do **aparelho** que saiu com o entregador (maquininha): `{equipment: ["card_machine"], equipment_out_at, equipment_out_by, equipment_back_at?, equipment_back_by?}`. Refs permitidas vêm de `ChannelConfig.fulfillment.equipment`. Não é dinheiro: fora do livro do `cashman`. "Onde está a maquininha" é derivado (saiu e não voltou) |
+| `dispatch` | `dict` | `operator_orders.advance_order` (despacho da entrega da casa), `mark_equipment_returned` / `settle_delivery_cash(equipment_back=True)` | `operator_orders.equipment_custody` / `equipment_out`, card e quadro do gestor (`equipment_*`) | Custódia do **dispositivo** que saiu com o entregador (maquininha): `{equipment: ["card_machine"], equipment_out_at, equipment_out_by, equipment_back_at?, equipment_back_by?}`. Refs permitidas vêm de `ChannelConfig.fulfillment.equipment`. Não é dinheiro: fora do livro do `cashman`. "Onde está a maquininha" é derivado (saiu e não voltou) |
 
 ### courier — detalhamento
 
@@ -1099,7 +1099,7 @@ pacote porque hardware é da superfície) e pelo `seed`; lida por
 | `favorite_collection_refs` | `list[str]` | Admin | projection POS | Até 9 coleções fixadas na tela de venda. Aceita o alias legado `favorite_collections`. |
 | `auto_lock_seconds` | `int` | Admin | projection POS | Inatividade até o cadeado do operador. Default 60. |
 | `hardware` | `dict` | Admin, `seed` | `runtime_profile` | Periféricos declarados. Ver abaixo. |
-| `station` | `dict` | Admin | `backstage/station_trust.py` | Que ESPÉCIE de estação é este aparelho. Ver abaixo. |
+| `station` | `dict` | Admin | `backstage/station_trust.py` | Que ESPÉCIE de estação é este dispositivo. Ver abaixo. |
 
 ### station — atendida ou autônoma
 
@@ -1109,7 +1109,7 @@ dele, pelo gate de permissão do backstage. Ausente = **atendida**.
 | Chave | Tipo | Descrição |
 |-------|------|-----------|
 | `mode` | `str` | `attended` (default) ou `autonomous`. Qualquer outro valor cai em `attended`. |
-| `operator` | `str` | Só para `autonomous`: o `username` da conta em cujo nome o aparelho age. |
+| `operator` | `str` | Só para `autonomous`: o `username` da conta em cujo nome o dispositivo age. |
 
 **Atendida** é o balcão: tem gente na frente, e não faz nada sem PIN ou crachá.
 **Autônoma** é o totem: não há quem digite PIN, então ele age em nome próprio, com uma conta
@@ -1117,10 +1117,10 @@ que é dele. O que essa conta pode fazer são as permissões que a loja lhe conc
 conjunto embutido no código, e o gate a trata como trata qualquer operador.
 
 ⚠️ **Tudo aqui falha fechado, e por motivo vivido.** Modo escrito errado, conta ausente,
-conta inativa ou fora da casa → o aparelho volta a ser uma estação atendida, pedindo PIN.
+conta inativa ou fora da casa → o dispositivo volta a ser uma estação atendida, pedindo PIN.
 E conta **superusuária é recusada com log de erro**: `is_superuser` curto-circuita `has_perm`,
 então um totem assim ignoraria qualquer conjunto mínimo — que é literalmente o buraco que a
-D1 Parte B fechou, só que com um aparelho no lugar do `admin`.
+D1 Parte B fechou, só que com um dispositivo no lugar do `admin`.
 
 ### hardware — periféricos declarados
 

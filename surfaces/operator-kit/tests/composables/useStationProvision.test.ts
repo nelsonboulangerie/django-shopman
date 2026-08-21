@@ -58,7 +58,7 @@ describe("useStationProvision — a montagem do balcão", () => {
     expect(env.fetchMock).not.toHaveBeenCalled();
   });
 
-  it("a falha volta como mensagem, e o aparelho segue sem estação", async () => {
+  it("a falha volta como mensagem, e o dispositivo segue sem estação", async () => {
     env.fetchMock.mockRejectedValue({ data: { detail: "Terminal não encontrado." } });
 
     const { provision, station, error, busy } = useStationProvision();

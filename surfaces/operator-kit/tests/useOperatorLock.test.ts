@@ -23,7 +23,7 @@ describe("useOperatorLock — session derivations", () => {
     expect(mustChange.value).toBe(true);
   });
 
-  it("sessão nula (403 da antessala) = aparelho desconhecido, e não travado", () => {
+  it("sessão nula (403 da antessala) = dispositivo desconhecido, e não travado", () => {
     // A distinção decide QUAL tela sobe: sem antessala, só a senha resolve;
     // travado, o PIN resolve. Confundir as duas faz a loja pedir credencial de
     // gestor toda manhã.

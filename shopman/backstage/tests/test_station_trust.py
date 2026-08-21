@@ -41,12 +41,12 @@ def _provisiona(cliente: Client, ref: str) -> str:
     return nome
 
 
-def test_aparelho_novo_nao_e_estacao(client):
+def test_dispositivo_novo_nao_e_estacao(client):
     assert station_trust.station_ref(_req(client)) == ""
     assert station_trust.is_trusted_station(_req(client)) is False
 
 
-def test_provisionado_uma_vez_o_aparelho_se_identifica_sozinho(client):
+def test_provisionado_uma_vez_o_dispositivo_se_identifica_sozinho(client):
     _provisiona(client, "balcao")
 
     assert station_trust.station_ref(_req(client)) == "balcao"
@@ -54,7 +54,7 @@ def test_provisionado_uma_vez_o_aparelho_se_identifica_sozinho(client):
 
 
 def test_um_computador_pode_ser_DUAS_estacoes(client):
-    """Balcão e totem no mesmo aparelho: o nome do cookie carrega o ref.
+    """Balcão e totem no mesmo dispositivo: o nome do cookie carrega o ref.
 
     Com um nome só, provisionar o segundo sobrescreveria o token do primeiro e os
     dois se derrubariam em revezamento — foi o defeito que o quadro de menu já
@@ -110,7 +110,7 @@ def test_revogar_apaga_a_confianca_de_verdade(client):
 
 
 def test_provisionar_duas_vezes_nao_cria_duas_linhas(client):
-    """Idempotente: abrir a tela de novo no mesmo aparelho não polui a auditoria."""
+    """Idempotente: abrir a tela de novo no mesmo dispositivo não polui a auditoria."""
     _provisiona(client, "balcao")
     requisicao = _req(client)
     station_trust.provision(requisicao, _Resposta(), "balcao")
