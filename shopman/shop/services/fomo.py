@@ -35,7 +35,7 @@ def context_for_sku(sku: str, *, channel_ref: str) -> dict:
     return {
         "availability": _availability(sku, channel_ref=channel_ref),
         "production": last_finished_bake(sku),
-        "promotions": _promotions_for_sku(sku),
+        "promotions": _promotions_for_sku(sku, channel_ref=channel_ref),
         "social_proof": social_proof(sku),
         "channel_config": _stock_config(config),
     }
@@ -179,7 +179,7 @@ def sold_today(sku: str) -> int:
 # ── Promoções ────────────────────────────────────────────────────────
 
 
-def _promotions_for_sku(sku: str) -> list[dict]:
+def _promotions_for_sku(sku: str, *, channel_ref: str = "") -> list[dict]:
     """Promoções automáticas ativas que alcançam este SKU incondicionalmente.
 
     Badge de vitrine é promessa: só anuncia o que vale para qualquer visitante,
@@ -187,11 +187,18 @@ def _promotions_for_sku(sku: str) -> list[dict]:
     gastar (``min_order_q``) ou de como vai receber (``fulfillment_types``).
     Promo condicional continua valendo no carrinho, só não vira contagem
     regressiva no card.
+
+    ⚠️ "Qualquer visitante" é sempre visitante DE UM CANAL. A chamada omitia o
+    ``channel_ref``, então o badge anunciava na loja online a relâmpago restrita ao
+    PDV — promessa que a sacola não honra, que é exatamente o que este docstring
+    proíbe. O canal já chegava em ``context_for_sku``; só não descia até aqui.
     """
     from shopman.shop.services import promotions as promotion_service
 
     try:
-        promos = promotion_service.get_active_promotions(timezone.now())
+        promos = promotion_service.get_active_promotions(
+            timezone.now(), channel_ref=channel_ref
+        )
     except Exception:
         logger.debug("fomo.promotions_failed sku=%s", sku, exc_info=True)
         return []

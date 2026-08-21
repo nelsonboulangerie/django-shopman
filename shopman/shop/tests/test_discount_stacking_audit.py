@@ -102,6 +102,70 @@ class DiscountStackingAuditTests(TestCase):
         # 1000→700 (promo)→560 (−20% employee on the reduced price).
         self.assertEqual(unit, 700, f"employee compounded on promo: got {unit}, expected 700")
 
+    # ── HOLE: desconto de valor FIXO substituído deixava valor fantasma ───────
+    def test_employee_beating_a_fixed_coupon_leaves_no_phantom_discount(self) -> None:
+        """Cupom de valor FIXO perdendo para o desconto de funcionário some da tela.
+
+        Este caso faltava na suíte: os testes de "maior desconto ganha" compõem
+        PERCENTUAL × PERCENTUAL, onde ``meta["_disc"]`` sempre existe. O rateio do
+        desconto de PEDIDO era o único que não passava por ``_stamp_disc``, então
+        ``_reverse_prior_pricing`` não achava nada para abater: o funcionário vencia,
+        o preço da linha caía de novo, e o fixo continuava inteiro em
+        ``pricing["discount"]`` E em ``pricing["coupon"]``.
+
+        Duas consequências, ambas de dinheiro: a tela somava um desconto que não
+        existia (recibo e B.I. levavam o fantasma no snapshot), e
+        ``pricing["coupon"]["discount_q"] > 0`` faz o lifecycle CONSUMIR o cupom, de
+        modo que o cliente queimava um cupom de uso único que não lhe deu nada.
+        """
+        from shopman.shop.models import Coupon, Promotion
+
+        now = timezone.now()
+        promo = Promotion.objects.create(
+            ref="fixo-1",
+            name="Fixo R$1",
+            type=Promotion.FIXED,
+            value=100,
+            is_active=True,
+            valid_from=now - timedelta(days=1),
+            valid_until=now + timedelta(days=1),
+        )
+        Coupon.objects.create(code="FIXO", promotion=promo, max_uses=1, is_active=True)
+        cache.clear()
+
+        key = self._open_session()
+        ModifyService.modify_session(
+            session_key=key, channel_ref="web",
+            ops=[
+                {"op": "set_data", "path": "customer", "value": {"price_tier": "staff"}},
+                {"op": "set_data", "path": "coupon_code", "value": "FIXO"},
+            ],
+        )
+        session = ModifyService.modify_session(
+            session_key=key, channel_ref="web",
+            ops=[{"op": "add_line", "sku": self.product.sku, "qty": 1, "unit_price_q": 1000}],
+        )
+
+        pricing = session.pricing or {}
+        line = self._line(session)
+        # Funcionário (20% de R$10 = R$2) vence o fixo (R$1) — sem composição.
+        self.assertEqual(line["unit_price_q"], 800)
+        self.assertEqual(pricing.get("employee_discount", {}).get("total_discount_q"), 200)
+        # O fixo perdeu: não pode sobrar NADA dele na transparência.
+        self.assertEqual(pricing.get("discount", {}).get("total_discount_q"), 0)
+        self.assertEqual(pricing.get("coupon", {}).get("discount_q"), 0)
+        # A soma dos descontos declarados == o que o total de fato caiu.
+        charged = sum(int(i.get("line_total_q", 0)) for i in session.items)
+        self.assertEqual(self._declared_discount_q(pricing), 1000 - charged)
+
+    @staticmethod
+    def _declared_discount_q(pricing: dict) -> int:
+        """Tudo que a tela declara como desconto (``coupon`` é recorte de ``discount``)."""
+        total = int((pricing.get("discount") or {}).get("total_discount_q") or 0)
+        for key in ("lot_discount", "employee_discount", "happy_hour", "loyalty_redeem", "manual_discount"):
+            total += int((pricing.get(key) or {}).get("total_discount_q") or 0)
+        return total
+
     # ── Invariante: cadeia inteira (promo + funcionário + happy hour) = 1 melhor ─
     def test_full_chain_takes_single_best_discount(self) -> None:
         from shopman.shop.models import Promotion

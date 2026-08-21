@@ -312,6 +312,26 @@ def listed_in_channel(product, channel_ref: str, *, fallback_when_listing_missin
     ).exists()
 
 
+def active_promotions(channel_ref: str) -> list[Any]:
+    """Promoções automáticas ativas que alcançam ``channel_ref`` — leitura.
+
+    Existe para a projeção do cardápio pré-carregar o conjunto uma vez (uma query
+    para o menu inteiro em vez de uma por SKU) **sem montar a própria consulta**: a
+    régua de escopo de canal tem um dono só, ``services.promotions``, o mesmo que o
+    ``DiscountModifier`` usa para DECIDIR o desconto. Quando a vitrine tinha a sua
+    query e o carrinho a dele, a loja anunciava promoção de outro canal e a sacola
+    cobrava o preço cheio.
+
+    A presentation não pode importar ``shop.services`` (fronteira read/write, ver
+    ``test_import_boundaries``), então a leitura passa por aqui — que é read-side.
+    """
+    from django.utils import timezone
+
+    from shopman.shop.services import promotions as promotion_service
+
+    return promotion_service.get_active_promotions(timezone.now(), channel_ref=channel_ref)
+
+
 def contextual_price(
     sku: str,
     *,

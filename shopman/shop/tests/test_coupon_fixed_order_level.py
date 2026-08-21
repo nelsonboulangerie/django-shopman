@@ -10,10 +10,12 @@ Cupom/promoção PERCENTUAL continua per-line (uma % é intrinsecamente por unid
 from __future__ import annotations
 
 from datetime import timedelta
+from decimal import Decimal
 
 import pytest
 from django.utils import timezone
 from shopman.offerman.models import Product
+from shopman.utils.monetary import monetary_mult
 
 from shopman.shop.models import Channel, Coupon, Promotion, Shop
 from shopman.shop.services import sessions
@@ -62,14 +64,55 @@ def _order_total_q(session) -> int:
     return sum(int(i.get("line_total_q", 0)) for i in (session.items or []))
 
 
+def _assert_lines_are_coherent(session) -> None:
+    """``qty × unit_price_q == line_total_q`` em toda linha.
+
+    É a única conta que o cliente confere sozinho ("3 × R$ 6,34" tem que dar o total
+    impresso), e os dois campos descem para o payload fiscal. Os rateios de desconto
+    de pedido quebravam a igualdade: piso no unitário, valor exato no total.
+    """
+    for item in session.items or []:
+        qty = Decimal(str(item.get("qty", 0)))
+        expected = monetary_mult(qty, int(item.get("unit_price_q", 0)))
+        assert int(item.get("line_total_q", 0)) == expected, (
+            f"linha {item.get('sku')} incoerente: "
+            f"{item.get('qty')} × {item.get('unit_price_q')} != {item.get('line_total_q')}"
+        )
+
+
 def test_fixed_coupon_discounts_the_order_once_not_per_unit():
-    """6 un × R$15 = R$90; cupom fixo R$5 → total R$85 (não R$60)."""
+    """5 un × R$15 = R$75; cupom fixo R$5 → total R$70 (não R$50)."""
+    _seed(promo_type=Promotion.FIXED, value=500, min_order_q=3000, code="PRIMEIRA")
+    session = _cart_with_coupon(sku="PAO", qty=5, unit_price_q=1500, code="PRIMEIRA")
+
+    assert _order_total_q(session) == 7500 - 500
+    assert session.pricing["coupon"]["discount_q"] == 500
+    assert session.pricing["discount"]["total_discount_q"] == 500
+    _assert_lines_are_coherent(session)
+
+
+def test_fixed_coupon_keeps_the_line_coherent_when_the_split_is_not_exact():
+    """6 un × R$15 e um cupom de R$5: 500/6 = 83,33… centavos por unidade.
+
+    O desconto NÃO é representável — o preço unitário é inteiro em centavos, então
+    o desconto da linha só pode ser múltiplo de 6. A versão anterior fingia que era:
+    tirava 83 do unitário e 500 do total, e a sacola imprimia "6 × R$ 14,17" com
+    total "R$ 85,00" (quem multiplica acha R$ 85,02).
+
+    Agora o rateio entrega o mínimo ACIMA do prometido (84 × 6 = R$ 5,04, porque
+    quem prometeu "R$ 5 de desconto" paga o centavo a mais) e a tela mostra ESSE
+    valor: o registrado em ``pricing`` é o desconto de verdade, nunca o nominal.
+    """
     _seed(promo_type=Promotion.FIXED, value=500, min_order_q=3000, code="PRIMEIRA")
     session = _cart_with_coupon(sku="PAO", qty=6, unit_price_q=1500, code="PRIMEIRA")
 
-    assert _order_total_q(session) == 9000 - 500
-    assert session.pricing["coupon"]["discount_q"] == 500
-    assert session.pricing["discount"]["total_discount_q"] == 500
+    _assert_lines_are_coherent(session)
+    line = session.items[0]
+    assert line["unit_price_q"] == 1500 - 84
+    assert _order_total_q(session) == 9000 - 504
+    # Transparência == cobrança: o que a tela promete é o que o total caiu.
+    assert session.pricing["coupon"]["discount_q"] == 504
+    assert session.pricing["discount"]["total_discount_q"] == 504
 
 
 def test_fixed_coupon_capped_at_order_subtotal():

@@ -75,6 +75,70 @@ class TestPricingNoopModifiers:
         assert "manual_discount" not in session.pricing
 
 
+class TestOrderDiscountSplitKeepsLinesCoherent:
+    """``qty × unit_price_q == line_total_q`` sobrevive ao rateio.
+
+    Os testes vizinhos de rateio só olhavam o TOTAL (resíduo não sumir, débito ==
+    desconto), e por isso os três rateios de pedido puderam conviver com um unitário
+    que não fecha com o total da própria linha: o unitário levava o piso
+    (``share // qty``) e o total levava o valor exato (``line_total - share``).
+    A sacola imprimia "3 × R$ 6,34" com total "R$ 19,00" — e é a única conta que o
+    cliente confere sozinho.
+    """
+
+    @staticmethod
+    def _assert_coherent(session) -> None:
+        from decimal import Decimal
+
+        from shopman.utils.monetary import monetary_mult
+
+        for item in session.items:
+            qty = Decimal(str(item.get("qty", 0)))
+            assert int(item["line_total_q"]) == monetary_mult(qty, int(item["unit_price_q"])), (
+                f"linha {item.get('sku')} incoerente: "
+                f"{item.get('qty')} × {item['unit_price_q']} != {item['line_total_q']}"
+            )
+
+    def test_loyalty_redeem_never_leaves_an_incoherent_line(self):
+        from shopman.shop.modifiers import LoyaltyRedeemModifier
+
+        # 3 × R$ 6,50 = R$ 19,50; resgate de R$ 0,50 → 50/3 não é inteiro.
+        session = _make_session(
+            items=[{"sku": "PAO", "qty": 3, "unit_price_q": 650, "line_total_q": 1950, "meta": {}}],
+            data={"loyalty": {"redeem_points_q": 50}},
+            pricing={},
+        )
+        session.update_items = lambda new: setattr(session, "items", new)
+
+        LoyaltyRedeemModifier().apply(channel=_make_channel(), session=session, ctx={})
+
+        self._assert_coherent(session)
+        applied = int(session.pricing["loyalty_redeem"]["total_discount_q"])
+        # Fica ABAIXO do pedido (48 = 16 × 3): resgate nunca debita mais pontos do
+        # que o cliente pediu, e o debitado é o desconto que ele de fato recebeu.
+        assert applied == 1950 - int(session.items[0]["line_total_q"])
+        assert applied == 48
+        assert session.data["loyalty"]["applied_discount_q"] == applied
+
+    def test_manual_discount_never_leaves_an_incoherent_line(self):
+        from shopman.shop.modifiers import ManualDiscountModifier
+
+        session = _make_session(
+            items=[{"sku": "PAO", "qty": 3, "unit_price_q": 650, "line_total_q": 1950, "meta": {}}],
+            data={"manual_discount": {"discount_q": 50, "reason": "cortesia"}},
+            pricing={},
+        )
+        session.update_items = lambda new: setattr(session, "items", new)
+
+        ManualDiscountModifier().apply(channel=_make_channel(), session=session, ctx={})
+
+        self._assert_coherent(session)
+        applied = int(session.pricing["manual_discount"]["total_discount_q"])
+        # O operador autorizou um TETO de R$ 0,50; o rateio não passa dele.
+        assert applied == 48
+        assert applied == 1950 - int(session.items[0]["line_total_q"])
+
+
 # ─── TimeWindowDiscountModifier (generic Happy Hour) ─────────────────────────
 
 
