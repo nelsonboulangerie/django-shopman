@@ -195,13 +195,11 @@ class POSCashRuntimeProjection:
     terminal_label: str
     operator_username: str
     opened_at: str
+    # Dois valores: "open" e "closed". Houve um terceiro, `terminal_occupied`,
+    # com quatro campos de bloqueio ao lado — de quando a custódia era da pessoa
+    # e a gaveta podia estar "ocupada por outra". Saíram inteiros: com a custódia
+    # na gaveta não há bloqueio a comunicar.
     status: str = "closed"
-    blocking_operator_username: str = ""
-    blocking_shift_id: int | None = None
-    blocking_message: str = ""
-    # O operador atual pode fechar o turno bloqueante daqui (gerente ou o dono)?
-    # Anti-fraude: operador comum não fecha o caixa de outro.
-    can_close_blocking: bool = False
     # O operador atual pode ver a APURAÇÃO (esperado, contado, diferença)?
     #
     # Quem sabe o esperado não conta às cegas: confere um gabarito. O balcão

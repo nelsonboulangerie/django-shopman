@@ -91,14 +91,9 @@ describe("usePosCashSession — sessão de caixa (antesala)", () => {
     expect(actionCall).not.toHaveBeenCalled();
   });
 
-  it("fechar turno bloqueante envia shift_id e contagem cega", async () => {
-    const { session, actionCall } = makeCashSession();
-    await session.closeBlockingShift({ shift_id: 7, amount: "", notes: "turno órfão" });
-    expect(actionCall).toHaveBeenCalledWith(
-      "/api/v1/backstage/pos/cash/close-blocking/",
-      { body: { shift_id: 7, closing_amount: "0", notes: "turno órfão" } },
-    );
-  });
+  // O "fechar turno bloqueante" saiu com a custódia da gaveta: não existe mais
+  // turno de outra pessoa segurando o terminal, então não há o que destravar.
+  // Fechar o caixa é um caminho só (`closeCashShift`), e é da gerência.
 
   it("movimento envia kind/valor/motivo", async () => {
     const { session, actionCall } = makeCashSession();

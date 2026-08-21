@@ -195,10 +195,6 @@ export interface POSCashRuntimeProjection {
   operator_username: string;
   opened_at: string;
   status?: "open" | "closed" | string;
-  blocking_operator_username?: string;
-  blocking_shift_id?: number | null;
-  blocking_message?: string;
-  can_close_blocking?: boolean;
   /**
    * Pode ver a APURAÇÃO (esperado, contado, diferença, faturamento)?
    *

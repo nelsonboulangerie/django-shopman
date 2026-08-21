@@ -299,7 +299,6 @@ export function usePosCashSession({ pos, actions, refresh, action }: CashSession
     managerChallenge,
     openCashShift,
     closeCashShift,
-    closeBlockingShift,
     registerCashMovement,
     // Gaveta: a antesala mostra o botão só onde existe caminho de software.
     canOpenDrawer: drawer.canKick,
