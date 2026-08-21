@@ -20,7 +20,16 @@ const { expired: sessionExpired, reset: resetSession } = useOperatorSession();
 // Identidade do operador (PIN/crachá) pelo LOCK COMPARTILHADO do kit — o MESMO
 // `useOperatorLock` + `<OperatorLock>` dos outros 4 apps de operador.
 const OPERATOR_PERM = "cashman.operate_pos";
-const { locked, canIdentify, mustChange, lock } = useOperatorLock(OPERATOR_PERM);
+const { locked, canIdentify, stationRef, mustChange, lock } = useOperatorLock(OPERATOR_PERM);
+
+// Preparar o aparelho: o gestor entra com senha uma vez e diz qual balcão é este.
+// Enquanto ninguém fizer isso, o aparelho não tem antessala — a loja só entra com
+// senha, todo dia. A oferta é dispensável de propósito: no PC pessoal do gestor a
+// resposta certa é "agora não".
+const setupDismissed = ref(false);
+const needsStationSetup = computed(
+  () => canIdentify.value && !locked.value && !stationRef.value && !setupDismissed.value,
+);
 
 // Auto-lock por ociosidade é a única particularidade de kiosk do PDV (os outros apps
 // não auto-travam). Vale em qualquer rota (venda ou antesala).
@@ -38,6 +47,13 @@ const loginUser = ref("");
 const loginPass = ref("");
 const loginPending = ref(false);
 const loginError = ref("");
+// Recarrega depois de virar estação: toda leitura muda de mundo (a antessala
+// passa a existir, o terminal passa a ser este), e reconciliar peça por peça é
+// mais caminho para dar errado do que um reload numa tela que acontece uma vez.
+function reloadIntoStation() {
+  if (import.meta.client) window.location.reload();
+}
+
 async function submitLogin() {
   if (loginPending.value) return;
   loginError.value = "";
@@ -108,6 +124,12 @@ async function submitLogin() {
         </UiButton>
       </form>
     </div>
+
+    <OperatorStationSetup
+      v-else-if="needsStationSetup"
+      @done="reloadIntoStation"
+      @dismiss="setupDismissed = true"
+    />
 
     <NuxtPage v-else />
 

@@ -50,6 +50,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 from shopman.utils.monetary import format_money
 
+from shopman.backstage import station_trust
 from shopman.backstage.api._production_filters import report_filters
 from shopman.backstage.constants import POS_CHANNEL_REF
 from shopman.backstage.projections.cash_session import build_cash_session_report
@@ -597,12 +598,70 @@ class OperatorPinChangeView(APIView):
         return Response({"ok": True})
 
 
+class StationProvisionView(APIView):
+    """Torna ESTE aparelho uma estação da loja — ou tira essa condição dele.
+
+    É o que faltava para tudo o mais existir: sem provisionamento, nenhum
+    aparelho é reconhecido, o balcão amanhece sem antessala e a única entrada é
+    senha de gestor todo dia. O gate da estação é a chave da antessala; isto é
+    quem entrega a chave.
+
+    O ato é de GESTÃO e acontece UMA vez por aparelho: alguém com
+    ``cashman.manage_operators`` entra com senha naquele balcão e diz "este
+    computador é o pdv-main". A partir daí o cookie HttpOnly durável responde por
+    ele, revogável no Admin (lista de dispositivos) ou aqui mesmo, com a máquina
+    na mão. É o mesmo caminho do quadro de menu, que já roda em produção — nada
+    de token em URL, nada de re-digitar a cada duas semanas.
+
+    ``GET`` responde o que a tela de provisionamento precisa: que estação este
+    aparelho é hoje (``""`` quando nenhuma) e os terminais disponíveis.
+    """
+
+    permission_classes = [HasBackstagePermission]
+    required_permission = station_trust.PROVISION_PERM
+
+    def get(self, request):
+        from shopman.cashman.models import Terminal
+
+        return Response({
+            "station": station_trust.station_ref(request),
+            "terminals": [
+                {"ref": t.ref, "label": t.label or t.ref}
+                for t in Terminal.objects.filter(is_active=True).order_by("ref")
+            ],
+        })
+
+    def post(self, request):
+        from shopman.cashman.models import Terminal
+
+        ref = str((request.data or {}).get("terminal_ref") or "").strip()
+        if not Terminal.objects.filter(ref=ref, is_active=True).exists():
+            # Um ref inexistente gravaria uma confiança que nunca resolve terminal:
+            # o aparelho passaria no gate e cairia no `Terminal.default()`, que é a
+            # gaveta errada. Recusar aqui é mais barato que caçar isso no balcão.
+            return Response(
+                {"detail": "Terminal não encontrado.", "error": {"code": "terminal_unknown"}},
+                status=400,
+            )
+        resposta = Response({"ok": True, "station": ref})
+        station_trust.provision(request, resposta, ref)
+        return resposta
+
+    def delete(self, request):
+        ref = str(request.query_params.get("terminal_ref") or station_trust.station_ref(request)).strip()
+        if not ref:
+            return Response({"detail": "Este aparelho não é uma estação."}, status=400)
+        resposta = Response({"ok": True, "station": ""})
+        station_trust.revoke(request, resposta, ref)
+        return resposta
+
+
 class OperatorPinResetView(APIView):
     """Manager resets an operator's PIN → temp PIN + forced change on first use.
 
-    Gated by ``cashman.manage_operators`` (against the active operator when the
-    Opção C flag is on, else the device user). The temp PIN is returned once — the
-    manager reads it to the operator; only its HMAC digest is stored.
+    Gated by ``cashman.manage_operators``, que é a permissão de gerir operadores —
+    conferida, como todas, contra quem está operando. O PIN temporário volta uma
+    vez só: o gerente o lê para o operador, e só o digest HMAC fica guardado.
     """
 
     permission_classes = [HasBackstagePermission]

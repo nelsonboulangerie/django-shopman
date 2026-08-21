@@ -26,6 +26,19 @@ export interface OperatorEligibleResponse {
   operators: OperatorCard[];
 }
 
+/** Um terminal que este aparelho pode assumir (o `Terminal.ref` e o rótulo). */
+export interface StationTerminal {
+  ref: string;
+  label: string;
+}
+
+/** O que a tela de provisionamento precisa: que estação este aparelho é hoje
+ *  (`""` quando nenhuma), e as opções. */
+export interface StationProvisionState {
+  station: string;
+  terminals: StationTerminal[];
+}
+
 export interface OperatorUnlockResponse {
   ok: boolean;
   operator: OperatorCard;
