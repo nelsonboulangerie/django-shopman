@@ -1,12 +1,12 @@
 """O rótulo manual precisa descrever a peça que está na prateleira.
 
 Um rótulo com ``auto_filled=False`` é escrito à mão e nada o recalcula: mudar o
-peso do produto não o alcança. Então ``serving_size_g × servings_per_container``
-— o que o rótulo diz que a embalagem contém — pode se afastar do
-``unit_weight_g`` sem que ninguém veja, e a tela do cliente segue anunciando uma
-peça que não existe.
+peso do produto não o alcança. Então ``servings_per_container`` — quantas porções
+o rótulo diz que a embalagem traz — pode ficar descrevendo a peça antiga sem que
+nenhum erro apareça, e a tela do cliente segue anunciando um produto que não
+existe.
 
-Foi o que aconteceu duas vezes, e por causas diferentes:
+Foi o que aconteceu, por duas causas diferentes:
 
 - **peso mudou, rótulo não** — o campagne caiu de 500 g para 300 g no PR #280 e
   o rótulo seguiu dizendo 5 porções de 100 g;
@@ -14,8 +14,13 @@ Foi o que aconteceu duas vezes, e por causas diferentes:
   ``servings_per_container``. Ninguém lê ``servings``, então o pacote de 4 pães
   para hot dog herdava "1 porção de 80 g" da unidade e declarava conter um pão.
 
-Este teste é a rede. Tolera 10% (rótulo é aproximação declarada), e carrega uma
-lista curta de pendências conhecidas — que são defeito, não exceção.
+⚠️ **A regra é arredondamento, não tolerância.** ``servings_per_container`` é uma
+CONTAGEM inteira: a baguete de gergelim tem 260 g e a porção é 100 g, então são
+2,6 porções e o rótulo declara 3. Isso está certo. Medir isso como "3 × 100 g =
+300 g, 15% acima dos 260 g" é aplicar uma régua que não existe — foi o erro da
+primeira versão deste teste, e ele acusou cinco produtos saudáveis. O certo é
+``servings_per_container == round(peso / porção)``, que é exatamente a conta que
+o ``apply_product_measurements`` usa para corrigir.
 """
 
 from __future__ import annotations
@@ -26,26 +31,17 @@ from shopman.offerman.models import Product
 
 pytestmark = pytest.mark.django_db
 
-TOLERANCIA = 0.10
 
-# ⚠️ Defeitos ANTERIORES a esta rede, que precisam do número da casa para
-# fechar: em cada um, ou o peso da peça está errado ou a porção do rótulo está.
-# Só o dono sabe qual. Cada linha aqui é uma tarefa, não uma licença — e nada
-# novo pode entrar sem que alguém explique por quê.
-PENDENTES = {
-    "BE": "Baguete Gergelim: peça 260 g, rótulo 3 x 100 g",
-    "CO": "Cornet: peça 120 g, rótulo 1 x 100 g",
-    "MIB": "Mini Baguete: peça 120 g, rótulo 1 x 100 g",
-    "DL": "Deli Milho & Bacon: peça 250 g, rótulo 1 x 180 g",
-    "HO": "Hot Dog Vienna: peça 250 g, rótulo 1 x 180 g",
-}
+def _porcoes_certas(peso: int, porcao: int) -> int:
+    """A mesma conta do comando. Empate em .5 segue o ``round`` do Python."""
+    return max(1, round(peso / porcao))
 
 
-def test_rotulo_manual_descreve_a_peca(monkeypatch):
+def test_rotulo_manual_declara_as_porcoes_da_peca(monkeypatch):
     monkeypatch.setenv("ADMIN_PASSWORD", "Rotulos-2026-Nelson!")
     call_command("seed", verbosity=0)
 
-    divergencias: dict[str, str] = {}
+    erradas: list[str] = []
     conferidos = 0
 
     for product in Product.objects.exclude(nutrition_facts={}).order_by("sku"):
@@ -54,29 +50,22 @@ def test_rotulo_manual_descreve_a_peca(monkeypatch):
             continue  # derivado da ficha; a nutrição já cuida da coerência
         peso = product.unit_weight_g or 0
         porcao = facts.get("serving_size_g") or 0
-        porcoes = facts.get("servings_per_container") or 0
         if not peso or not porcao:
             continue
 
         conferidos += 1
-        declarado = porcao * porcoes
-        if abs(declarado - peso) / peso > TOLERANCIA:
-            divergencias[product.sku] = (
-                f"{product.name}: peça {peso} g, rótulo {porcoes} x {porcao} g = {declarado} g"
+        certo = _porcoes_certas(peso, porcao)
+        declarado = facts.get("servings_per_container")
+        if declarado != certo:
+            erradas.append(
+                f"{product.sku} {product.name}: peça {peso} g ÷ porção {porcao} g "
+                f"= {peso / porcao:.2f} → {certo}, mas o rótulo declara {declarado}"
             )
 
     assert conferidos > 20, "a varredura não encontrou rótulos manuais — o filtro quebrou?"
-
-    novas = {sku: msg for sku, msg in divergencias.items() if sku not in PENDENTES}
-    assert not novas, (
-        "Rótulo manual descrevendo uma peça que não existe:\n  "
-        + "\n  ".join(f"{sku} — {msg}" for sku, msg in sorted(novas.items()))
-    )
-
-    resolvidas = sorted(set(PENDENTES) - set(divergencias))
-    assert not resolvidas, (
-        "Estas pendências foram resolvidas — apague-as de PENDENTES para a rede "
-        f"voltar a guardá-las: {', '.join(resolvidas)}"
+    assert not erradas, (
+        "Rótulo manual declarando um número de porções que não é o da peça:\n  "
+        + "\n  ".join(erradas)
     )
 
 
