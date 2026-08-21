@@ -19,6 +19,12 @@ DEFAULT_RUNTIME_TEST_PATHS = (
     "packages/craftsman/shopman/craftsman/tests/test_concurrency.py",
     "shopman/storefront/tests/test_concurrent_checkout.py",
     "shopman/shop/tests/test_commit_stock_gate.py",
+    # O duplo-submit do PDV se defende com trava de LINHA, e trava de linha
+    # não existe em SQLite: no `test-shop` o caso da corrida é pulado por
+    # `requires_postgres` e some. Sem esta entrada, a única defesa contra
+    # dois pedidos para uma venda não roda em CI nenhum — e este gate
+    # existe exatamente para isso, porque reprova qualquer skip.
+    "shopman/shop/tests/test_pos_cash_ledger.py",
     "shopman/storefront/tests/test_rate_limiting.py",
     "shopman/storefront/tests/web/test_order_access_security.py",
     "shopman/shop/tests/test_eventstream_permissions.py",
