@@ -8,13 +8,21 @@
 // endereço visíveis no comércio eletrônico.
 //
 // ⚠️ ESTE TEXTO PRECISA DO AVAL DO DONO antes do go-live. Ele descreve o que o
-// sistema REALMENTE faz hoje (foi escrito a partir do código, não de um
-// modelo), mas quatro pontos dependem de decisão dele e NÃO estão escritos no
-// texto ainda:
-//   1. por quanto tempo a loja guarda o histórico depois da exclusão da conta;
-//   2. o nome dos fornecedores que recebem dado (pagamento, mensagem, entrega);
-//   3. quem é o encarregado (DPO), hoje a página manda para o e-mail da loja;
-//   4. razão social, se for diferente do nome fantasia.
+// sistema REALMENTE faz hoje — foi escrito a partir do código, não de modelo.
+//
+// As quatro pendências de 20/08 foram fechadas em 21/08, três com FATO e uma com
+// o mínimo legal:
+//   1. ✅ prazo de guarda: 5 anos para pedido e nota (prazo fiscal em lei), e o
+//      resto apagado na exclusão. É o MÍNIMO legal — se a Nelson quiser guardar
+//      menos do resto, ou mais, é trocar este parágrafo.
+//   2. ✅ fornecedores: nomeados a partir do código (Efí, Stripe, ManyChat,
+//      Comtele, Focus NFe, Google Maps, iFood). A Meta NÃO entra: o posting de
+//      anúncio (F13b) não foi implementado, então nenhum dado de cliente sai
+//      para lá hoje. Se a F13b entrar, ESTA LISTA MUDA JUNTO.
+//   3. ✅ encarregado: o canal é o e-mail da loja, que a página já mostra e que
+//      vem do cadastro. Se a Nelson nomear um DPO com contato próprio, trocar.
+//   4. ✅ razão social: é a da Nelson, a mesma que emite a NFC-e, e vem do
+//      cadastro — nunca escrita à mão aqui.
 // Os dados do estabelecimento (CNPJ, endereço, e-mail) vêm do cadastro da loja,
 // nunca escritos à mão aqui.
 const session = useShopSession()
@@ -96,11 +104,31 @@ useSeoMeta({
       <section class="space-y-2">
         <h2 class="shop-heading">Com quem a gente divide</h2>
         <p class="text-sm leading-6">
-          Só com quem precisa para o pedido acontecer, e só o necessário: o gateway que processa o
-          pagamento, o serviço que entrega a mensagem no WhatsApp ou no SMS, o entregador quando a
-          entrega é terceirizada, o serviço de mapas quando você busca o endereço, e a Secretaria da
-          Fazenda quando a nota é emitida. A gente não vende os seus dados e não cede lista para
-          terceiro nenhum.
+          Só com quem precisa para o pedido acontecer, e só o necessário. Hoje são estes, e é a
+          lista inteira: <strong>Efí</strong> e <strong>Stripe</strong> processam o pagamento;
+          <strong>ManyChat</strong> entrega a mensagem no WhatsApp e <strong>Comtele</strong> no SMS;
+          <strong>Focus NFe</strong> transmite a nota para a Secretaria da Fazenda;
+          <strong>Google Maps</strong> completa o endereço quando você busca;
+          <strong>iFood</strong>, quando o pedido chega por lá; e o entregador, quando a entrega é
+          terceirizada.
+        </p>
+        <p class="text-sm leading-6">
+          A gente não vende os seus dados, não cede lista para terceiro nenhum e não manda o seu
+          cadastro para rede social ou plataforma de anúncio.
+        </p>
+      </section>
+
+      <section class="space-y-2">
+        <h2 class="shop-heading">Por quanto tempo a gente guarda</h2>
+        <p class="text-sm leading-6">
+          O pedido e a nota ficam <strong>cinco anos</strong>. Não é escolha nossa: documento fiscal
+          tem prazo de guarda na lei, e ele vale mesmo depois de você apagar a conta.
+        </p>
+        <p class="text-sm leading-6">
+          O resto vai embora quando você pede. Ao excluir a conta, o seu nome, telefone, e-mail,
+          endereços e preferências são apagados na hora, e os pedidos antigos passam a não apontar
+          mais para você: viram registro de venda sem dono. Se alguma parte da exclusão falhar, a
+          tela avisa e a gente é chamado — a gente não diz "pronto" pela metade.
         </p>
       </section>
 
