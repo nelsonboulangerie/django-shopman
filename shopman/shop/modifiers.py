@@ -114,6 +114,27 @@ def _stamp_disc(
     meta["_disc"] = disc
 
 
+def _qty_decimal(item: dict) -> Decimal:
+    """A quantidade da linha como Decimal — sem truncar.
+
+    Era ``int(item.get("qty", 1)) or 1``, e ele erra nos DOIS sentidos no dia em
+    que a Nelson vender pão a quilo: meio quilo vira ``int(0.5) == 0``, o ``or 1``
+    o promove a 1, e o cliente paga o dobro; um quilo e meio vira 1, e a loja
+    perde a metade. Hoje nada é vendido por peso, então o defeito é inócuo — mas
+    é inócuo por acidente do catálogo, não por desenho, e some junto com o
+    catálogo no dia da balança.
+
+    O zero continua virando 1: linha sem quantidade é linha de uma unidade, que
+    é o que o resto do carrinho assume.
+    """
+    bruto = item.get("qty", 1)
+    try:
+        qty = Decimal(str(bruto))
+    except (InvalidOperation, TypeError, ValueError):
+        return Decimal("1")
+    return qty if qty > 0 else Decimal("1")
+
+
 def _list_price_q(item: dict) -> int:
     """Preço de lista (pré-desconto) carimbado; cai no preço atual se ausente."""
     meta = item.get("meta") or {}
@@ -337,11 +358,11 @@ def _apply_flat_best_wins(session, *, percent, disc_type, label, pricing_key) ->
         if my_disc <= _current_disc_q(item):
             continue  # o desconto já na linha vence ou empata — sem composição
         _reverse_prior_pricing(pricing, item)
-        qty = int(item.get("qty", 1)) or 1
+        qty = _qty_decimal(item)
         item["unit_price_q"] = list_q - my_disc
-        item["line_total_q"] = item["unit_price_q"] * qty
+        item["line_total_q"] = monetary_mult(qty, item["unit_price_q"])
         _stamp_disc(item, disc_type, my_disc, label)
-        won_total_q += my_disc * qty
+        won_total_q += monetary_mult(qty, my_disc)
         modified = True
     if modified:
         session.update_items(items)
@@ -409,11 +430,11 @@ class LotDiscountModifier:
             if my_disc <= _current_disc_q(item):
                 continue  # o desconto já na linha vence ou empata
             _reverse_prior_pricing(pricing, item)
-            qty = int(item.get("qty", 1)) or 1
+            qty = _qty_decimal(item)
             item["unit_price_q"] = list_q - my_disc
-            item["line_total_q"] = item["unit_price_q"] * qty
+            item["line_total_q"] = monetary_mult(qty, item["unit_price_q"])
             _stamp_disc(item, "lot_discount", my_disc, _lot_label())
-            won_total_q += my_disc * qty
+            won_total_q += monetary_mult(qty, my_disc)
             modified = True
 
         if modified:
