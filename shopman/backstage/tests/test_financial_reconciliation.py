@@ -7,6 +7,7 @@ import pytest
 from django.contrib.auth.models import User
 from django.core.management import CommandError, call_command
 from django.utils import timezone
+from shopman.cashman.models import Terminal
 from shopman.orderman.models import Order
 from shopman.payman.models import PaymentIntent, PaymentTransaction
 
@@ -83,7 +84,7 @@ def _settled_cash_order(*, ref: str, status=Order.Status.ACCEPTED, total_q: int 
         operator = User.objects.filter(username="finance-cashier").first() or User.objects.create_user(
             "finance-cashier", password="pw"
         )
-        shift = cash.open_shift_for(operator) or cash.open_shift(operator=operator, float_q=0)
+        shift = cash.open_shift_for_terminal(Terminal.default()) or cash.open_shift(operator=operator, float_q=0)
     intent = PaymentService.settle(ref, total_q, "cash", ref=f"PAY-{ref}")
     order = Order.objects.create(
         ref=ref,
@@ -100,7 +101,7 @@ def _settled_cash_order(*, ref: str, status=Order.Status.ACCEPTED, total_q: int 
             }
         },
     )
-    cash.record("sale", shift=shift, operator=shift.operator, amount_q=total_q, order_ref=ref, payment_ref=intent.ref)
+    cash.record("sale", shift=shift, operator=shift.opened_by, amount_q=total_q, order_ref=ref, payment_ref=intent.ref)
     return order, intent
 
 
@@ -133,8 +134,8 @@ def test_financial_reconciliation_refunded_cash_sale_is_clean():
     today = timezone.localdate()
     order, intent = _settled_cash_order(ref="FIN-CASH-CANCEL", status=Order.Status.CANCELLED)
     PaymentService.refund(intent.ref, reason="order_cancelled", gateway_id=f"order-refund:{order.ref}")
-    shift = cash.open_shift_for(User.objects.get(username="finance-cashier"))
-    cash.record("refund", shift=shift, operator=shift.operator, amount_q=-1200, order_ref=order.ref, payment_ref=intent.ref)
+    shift = cash.open_shift_for_terminal(Terminal.default())
+    cash.record("refund", shift=shift, operator=shift.opened_by, amount_q=-1200, order_ref=order.ref, payment_ref=intent.ref)
     DayClosing.objects.create(date=today, closed_by=_user(), data={"items": []})
 
     report = build_financial_reconciliation(reconciliation_date=today, require_closing=True)

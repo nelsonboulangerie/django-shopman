@@ -135,4 +135,4 @@ class POSCommercialCompletionTests(TestCase):
         self.assertEqual(order.events.filter(type="payment_collected").count(), 1)
         # O acerto entra no turno ABERTO de quem recebeu (linha ``cod_settled`` do
         # livro é contrato do shop, WP-3); o turno segue aberto para a próxima venda.
-        self.assertTrue(cash.open_shift_for(self.operator).pk == shift.pk)
+        self.assertTrue(cash.open_shift_for_terminal(Terminal.default()).pk == shift.pk)

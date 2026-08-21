@@ -48,7 +48,6 @@ import {
   changeRequestSummary,
   formatOpenedAt,
   formatRequestedAt,
-  isTerminalOccupied,
   movementLabel,
   movementReasons,
   requiresOpenShiftForSale,
@@ -455,14 +454,6 @@ describe("presentation/cash — blind drawer shaping", () => {
     expect(formatOpenedAt("2026-06-06T13:05:00")).toMatch(/06\/06/);
   });
 
-  it("detects a terminal held by another operator's open shift", () => {
-    const base = { has_open_shift: false, shift_id: null, terminal_ref: "t1", terminal_label: "T1", operator_username: "", opened_at: "" } as POSCashRuntimeProjection;
-    expect(isTerminalOccupied({ ...base, status: "terminal_occupied" }, false)).toBe(true);
-    expect(isTerminalOccupied({ ...base, blocking_operator_username: "ana" }, false)).toBe(true);
-    expect(isTerminalOccupied({ ...base, blocking_operator_username: "ana" }, true)).toBe(false);
-    expect(isTerminalOccupied(base, false)).toBe(false);
-  });
-
   it("requires an open shift for sale unless the contract opts out", () => {
     // Ausência da capability (ou da flag) = exigido — o default seguro.
     expect(requiresOpenShiftForSale(null)).toBe(true);
@@ -474,7 +465,10 @@ describe("presentation/cash — blind drawer shaping", () => {
 
   it("derives the session lobby screen state from the runtime", () => {
     const base = { has_open_shift: false, shift_id: null, terminal_ref: "t1", terminal_label: "T1", operator_username: "", opened_at: "" } as POSCashRuntimeProjection;
-    expect(sessionScreenState({ ...base, status: "terminal_occupied" }, false)).toBe("occupied");
+    // Dois estados, nao tres. `occupied` existia quando a custodia era da
+    // PESSOA: a segunda do balcao achava a gaveta ocupada por outra e ficava
+    // presa sem vender. Com a custodia na gaveta, quem chega trabalha no turno
+    // que ja esta aberto.
     expect(sessionScreenState(base, true)).toBe("open");
     expect(sessionScreenState(base, false)).toBe("closed");
   });

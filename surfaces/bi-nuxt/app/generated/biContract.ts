@@ -117,7 +117,7 @@ export interface BICashDay {
   suprimento_q: number;
 }
 
-/** BICashOperatorRow(operator: 'str', shifts: 'int', difference_q: 'int', drawer_openings: 'int', drawer_unlocks: 'int', change_requests: 'int', account_settled_q: 'int' = 0) */
+/** O que cada pessoa fez, lido do LIVRO — onde cada linha tem dono. */
 export interface BICashOperatorRow {
   operator: string;
   shifts: number;

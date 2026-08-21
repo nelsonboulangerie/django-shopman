@@ -66,9 +66,10 @@ def build_operator_context(request) -> OperatorContext:
 
 
 def _open_cash_shift(user):
-    from shopman.cashman import services as cash
+    """O turno da gaveta, não o "turno do usuário" — que deixou de existir."""
+    from shopman.backstage.services.pos import current_shift
 
-    return cash.open_shift_for(user)
+    return current_shift()
 
 
 def _alert_counts() -> tuple[int, int]:

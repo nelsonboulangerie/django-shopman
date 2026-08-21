@@ -206,12 +206,12 @@ def test_a_gerente_nova_herda_o_historico_da_antiga():
 
     antiga = get_user_model().objects.create_user(username="marina", password="x", is_staff=True)
     terminal = Terminal.default()
-    turno = Shift.objects.create(terminal=terminal, operator=antiga)
+    turno = Shift.objects.create(terminal=terminal, opened_by=antiga)
 
     call_command("setup_operators", "--yes", verbosity=0)
 
     turno.refresh_from_db()
-    assert turno.operator.username == "joyce"
+    assert turno.opened_by.username == "joyce"
     assert not get_user_model().objects.filter(username="marina").exists()
 
 
@@ -261,7 +261,7 @@ def test_anuncia_a_travessia_quando_ela_ACONTECE(capsys):
     from shopman.cashman.models import Entry, Shift, Terminal
 
     antiga = get_user_model().objects.create_user(username="marina", password="x", is_staff=True)
-    turno = Shift.objects.create(terminal=Terminal.default(), operator=antiga)
+    turno = Shift.objects.create(terminal=Terminal.default(), opened_by=antiga)
     Entry.objects.create(shift=turno, operator=antiga, kind=Entry.Kind.DRAWER_OPEN, amount_q=0)
 
     call_command("setup_operators", "--yes")
@@ -277,7 +277,7 @@ def test_o_aviso_sai_DEPOIS_da_pessoa_a_quem_pertence(capsys):
     from shopman.cashman.models import Entry, Shift, Terminal
 
     antiga = get_user_model().objects.create_user(username="marina", password="x", is_staff=True)
-    turno = Shift.objects.create(terminal=Terminal.default(), operator=antiga)
+    turno = Shift.objects.create(terminal=Terminal.default(), opened_by=antiga)
     Entry.objects.create(shift=turno, operator=antiga, kind=Entry.Kind.DRAWER_OPEN, amount_q=0)
 
     call_command("setup_operators", "--yes")

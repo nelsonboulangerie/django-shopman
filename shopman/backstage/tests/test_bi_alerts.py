@@ -229,27 +229,64 @@ def test_native_override_stays_quiet_below_the_ruler():
 
 
 @pytest.mark.django_db
-def test_cash_variance_warns_blind_and_keeps_the_detail_for_auditors():
+def test_cash_variance_e_por_GAVETA_e_o_aviso_continua_cego():
+    """A quebra soma por gaveta, e o operador comum não vê nome nem valor.
+
+    Duas pessoas passaram pela mesma gaveta na janela, então a quebra é dela e
+    de mais ninguém: somar "da Ana" quando a Bia também trabalhou ali seria
+    inventar um culpado — a nota que sumiu não deixa lançamento.
+    """
     from django.contrib.auth.models import User
     from shopman.cashman import services as cash
     from shopman.cashman.models import Terminal
 
-    _rule("caixa", BIAlertRule.Metric.CASH_VARIANCE_BY_OPERATOR, lookback_days=7, threshold_q=5000)
+    _rule("caixa", BIAlertRule.Metric.CASH_VARIANCE_BY_DRAWER, lookback_days=7, threshold_q=5000)
     ana = User.objects.create_user("caixa-ana", password="pw", is_staff=True)
     bia = User.objects.create_user("caixa-bia", password="pw", is_staff=True)
     terminal = Terminal.objects.create(ref="t1", label="Caixa 1")
-    for operator, counted in ((ana, 2000), (bia, 9800)):  # fundo 100: Ana −80,00; Bia −2,00
+    for operator, counted in ((ana, 2000), (bia, 9800)):  # fundo 100: −80,00 e −2,00
         shift = cash.open_shift(operator=operator, terminal=terminal, float_q=10000)
         cash.close_shift(shift, counted_q=counted, actor=operator)
 
     summary = evaluate_all()
+
     assert summary.fired == 1
     alert = OperatorAlert.objects.get(type="bi_cash_variance")
-    assert "caixa-ana" not in alert.message and "80,00" not in alert.message  # cego para o operador
-    assert "1 operador(es)" in alert.message
+    # Cego para o balcão: sem nome, sem valor.
+    assert "caixa-ana" not in alert.message and "82,00" not in alert.message
+    assert "1 gaveta(s)" in alert.message
+    # Para quem audita: a gaveta e o total dela — e NENHUM nome, porque duas
+    # pessoas lançaram ali dentro da janela.
     event = BIAlertEvent.objects.get()
-    assert "caixa-ana" in event.message and "−R$ 80,00" in event.message  # o detalhe, para quem audita
-    assert "caixa-bia" not in event.message
+    assert "t1" in event.message and "−R$ 82,00" in event.message
+    assert "caixa-ana" not in event.message and "caixa-bia" not in event.message
+
+
+@pytest.mark.django_db
+def test_cash_variance_NOMEIA_quando_uma_pessoa_lancou_sozinha():
+    """Quando o livro prova que só uma pessoa mexeu na gaveta, a quebra tem dono.
+
+    É o dia comum de um balcão pequeno, e é a única circunstância em que
+    atribuir é honesto — sem estatística e sem rateio.
+    """
+    from django.contrib.auth.models import User
+    from shopman.cashman import services as cash
+    from shopman.cashman.models import Terminal
+
+    _rule("caixa", BIAlertRule.Metric.CASH_VARIANCE_BY_DRAWER, lookback_days=7, threshold_q=5000)
+    ana = User.objects.create_user("caixa-ana", password="pw", is_staff=True)
+    terminal = Terminal.objects.create(ref="t1", label="Caixa 1")
+    shift = cash.open_shift(operator=ana, terminal=terminal, float_q=10000)
+    cash.close_shift(shift, counted_q=2000, actor=ana)  # −80,00
+
+    summary = evaluate_all()
+
+    assert summary.fired == 1
+    event = BIAlertEvent.objects.get()
+    assert "t1 (caixa-ana)" in event.message and "−R$ 80,00" in event.message
+    # E o aviso do balcão continua cego, mesmo com dono conhecido.
+    alert = OperatorAlert.objects.get(type="bi_cash_variance")
+    assert "caixa-ana" not in alert.message and "80,00" not in alert.message
 
 
 @pytest.mark.django_db
@@ -294,7 +331,7 @@ def test_admin_hides_cash_audit_detail_from_non_auditors(client):
     from shopman.shop.models import Shop
 
     Shop.objects.create(name="Loja")
-    rule = _rule("caixa", BIAlertRule.Metric.CASH_VARIANCE_BY_OPERATOR, lookback_days=7, threshold_q=5000)
+    rule = _rule("caixa", BIAlertRule.Metric.CASH_VARIANCE_BY_DRAWER, lookback_days=7, threshold_q=5000)
     rule.last_reading = {"value": 1, "baseline": 5000, "fired": True, "message": "caixa-ana: −R$ 80,00"}
     rule.save()
     BIAlertEvent.objects.create(rule=rule, severity="warning", value=1, baseline=5000, message="caixa-ana: −R$ 80,00")

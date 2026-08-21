@@ -93,6 +93,9 @@ def entry_detail(entry: Entry) -> str:
             parts.append(f"troco R$ {format_money(int(change))}")
     elif kind == Entry.Kind.COUNT:
         parts.append(f"contado R$ {format_money(int(payload.get('counted_q') or 0))}")
+        # ``supervisory`` saiu com a custódia da gaveta (turno sem dono não tem
+        # substituto). Lançamentos ANTIGOS ainda trazem a chave, e o livro é
+        # imutável: por isso ela continua sendo lida aqui, e só aqui.
         if payload.get("supervisory"):
             parts.append("fechamento supervisório")
         if payload.get("notes"):
@@ -181,8 +184,9 @@ class ShiftAdmin(BaseModelAdmin):
     """Só leitura: o turno nasce e fecha pelo PDV; aqui se confere."""
 
     list_display = (
-        "operator",
+        # A GAVETA primeiro: a custódia é dela, e é assim que se procura um turno.
         "terminal",
+        "opened_by",
         "opened_at",
         "status_badge",
         "expected_display",
@@ -190,12 +194,19 @@ class ShiftAdmin(BaseModelAdmin):
         "difference_display",
     )
     list_filter = ("status", "terminal", "opened_at")
-    # ``operator`` é FK para User: buscar nele direto vira ``operator__icontains``,
+    # ``opened_by`` é FK para User: buscar nele direto vira ``opened_by__icontains``,
     # que o Django recusa em relação e derruba a busca global inteira.
-    search_fields = ("operator__username", "operator__first_name", "operator__last_name", "terminal__ref", "terminal__label")
+    #
+    # ⚠️ Buscar por operador aqui acha só quem ABRIU a gaveta. Quem trabalhou no
+    # turno se procura no LIVRO (``Entry.operator``), porque é lá que a resposta
+    # existe: várias pessoas dividem o mesmo turno.
+    search_fields = (
+        "opened_by__username", "opened_by__first_name", "opened_by__last_name",
+        "terminal__ref", "terminal__label",
+    )
     readonly_fields = (
         "terminal",
-        "operator",
+        "opened_by",
         "opened_at",
         "closed_at",
         "status",
@@ -216,7 +227,7 @@ class ShiftAdmin(BaseModelAdmin):
         return (
             super()
             .get_queryset(request)
-            .select_related("operator", "terminal")
+            .select_related("opened_by", "terminal")
             .annotate(
                 _expected_q=Sum("entries__amount_q", filter=~counting),
                 _difference_q=Sum("entries__amount_q", filter=counting),

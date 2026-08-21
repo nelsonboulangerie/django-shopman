@@ -211,8 +211,29 @@ class CanonicalCashEvent:
 
 @dataclass(frozen=True, slots=True)
 class CanonicalShift:
+    """Uma custódia de GAVETA fechada, com a diferença provada pelo livro.
+
+    Não há ``operator_key``: a custódia é do terminal, e várias pessoas trabalham
+    dentro do mesmo turno. Quem abriu (``opened_by_key``) declarou o fundo; quem
+    agiu está em ``operator_keys``, lido do livro.
+    """
+
     key: int
-    operator_key: str
+    terminal_key: str  # ref da gaveta — é dela a custódia
+    opened_by_key: str  # quem abriu e declarou o fundo de troco
+    operator_keys: tuple[str, ...]  # quem LANÇOU neste turno, do livro, ordenado
     opened_at: datetime  # local
     closed_at: datetime | None  # local; None enquanto aberto
     difference_q: int | None  # Σ count + correções; None enquanto não houve contagem
+
+    @property
+    def sole_operator_key(self) -> str:
+        """O único operador do turno, ou ``""`` quando houve mais de um.
+
+        É a ÚNICA circunstância em que a diferença tem dono. A nota que sumiu não
+        deixa lançamento: com duas pessoas na mesma gaveta, não existe conta que
+        divida a quebra entre elas, e ratear inventaria um culpado. Num balcão
+        pequeno, o dia de uma pessoa só é comum — e nesse dia a atribuição é
+        exata, sem estatística.
+        """
+        return self.operator_keys[0] if len(self.operator_keys) == 1 else ""

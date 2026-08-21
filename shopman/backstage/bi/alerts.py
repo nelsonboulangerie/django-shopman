@@ -71,8 +71,8 @@ def _measure(rule, now) -> Reading:
         return revenue_vs_baseline(rule, today=today)
     if rule.metric == Metric.NATIVE_OVERRIDES_HISTORY:
         return native_overrides_history(rule, today=today)
-    if rule.metric == Metric.CASH_VARIANCE_BY_OPERATOR:
-        return cash_variance_by_operator(rule, today=today)
+    if rule.metric == Metric.CASH_VARIANCE_BY_DRAWER:
+        return cash_variance_by_drawer(rule, today=today)
     if rule.metric == Metric.CURATION_PENDING:
         return curation_pending(rule)
     return Reading(value=None, baseline=None, fired=False, message=f"métrica desconhecida: {rule.metric}")
@@ -106,14 +106,14 @@ _ALERT_TYPE_BY_METRIC = {
     "import_silence": "bi_import_silence",
     "daily_revenue_vs_baseline": "bi_below_baseline",
     "native_overrides_history": "bi_source_conflict",
-    "cash_variance_by_operator": "bi_cash_variance",
+    "cash_variance_by_drawer": "bi_cash_variance",
     "curation_pending": "bi_curation_pending",
 }
 
 #: O que o operador lê quando a métrica é apuração de caixa: nem nome, nem
 #: valor. O detalhe mora no BIAlertEvent, que o Admin só mostra a quem audita.
 _CASH_AUDIT_PUBLIC_MESSAGE = (
-    "quebra de caixa acumulada passou da régua em {count} operador(es) nos últimos {days} dias. "
+    "quebra de caixa acumulada passou da régua em {count} gaveta(s) nos últimos {days} dias. "
     "Detalhe no B.I. › Caixa (quem audita)."
 )
 
@@ -269,35 +269,58 @@ def native_overrides_history(rule, *, today: date) -> Reading:
     )
 
 
-def cash_variance_by_operator(rule, *, today: date) -> Reading:
-    """|Σ quebra| por operador nos turnos fechados da janela, contra a régua em centavos.
+def cash_variance_by_drawer(rule, *, today: date) -> Reading:
+    """|Σ quebra| por GAVETA nos turnos fechados da janela, contra a régua em centavos.
 
-    O valor é a CONTAGEM de operadores acima da régua; o detalhe (quem, quanto)
-    vai na mensagem do disparo — que o Admin só mostra a quem audita.
+    Por gaveta, e não por pessoa, porque a custódia é do terminal: várias pessoas
+    trabalham dentro do mesmo turno e a nota que sumiu não deixa lançamento. Somar
+    a quebra "da Joyce" quando três passaram pela gaveta seria inventar um culpado.
+
+    O nome entra APENAS quando o livro prova que uma pessoa só lançou naquele
+    turno (``sole_operator_key``) — aí a atribuição é exata, sem estatística. Num
+    balcão pequeno esse é o dia comum, então o sinal não se perde.
+
+    O valor é a CONTAGEM de gavetas acima da régua; o detalhe vai na mensagem do
+    disparo, que o Admin só mostra a quem audita.
     """
     from shopman.backstage.bi.sources import cashman
 
     days = int(rule.lookback_days or 7)
     threshold = abs(int(rule.threshold_q or 0))
     since, until = today - timedelta(days=days - 1), today
-    by_operator: dict[str, int] = {}
+    by_drawer: dict[str, int] = {}
+    # Quem estava, por gaveta: vira nome na mensagem quando é uma pessoa só em
+    # TODOS os turnos somados; some quando a janela mistura gente.
+    quem: dict[str, set[str]] = {}
     shifts = 0
     for shift in cashman.read_closed_shifts(since, until):
         shifts += 1
-        by_operator[shift.operator_key] = by_operator.get(shift.operator_key, 0) + (shift.difference_q or 0)
+        gaveta = shift.terminal_key or "—"
+        by_drawer[gaveta] = by_drawer.get(gaveta, 0) + (shift.difference_q or 0)
+        sozinho = shift.sole_operator_key
+        quem.setdefault(gaveta, set()).add(sozinho if sozinho else "")
     if not shifts:
         return Reading(value=None, baseline=float(threshold), fired=False,
                        message=f"nenhum turno fechado nos últimos {days} dias: sem leitura")
-    over = {op: total for op, total in by_operator.items() if abs(total) > threshold}
+    over = {gaveta: total for gaveta, total in by_drawer.items() if abs(total) > threshold}
     if not over:
         return Reading(value=0.0, baseline=float(threshold), fired=False,
-                       message=f"{shifts} turno(s) em {days} dias; nenhum operador acima da régua")
+                       message=f"{shifts} turno(s) em {days} dias; nenhuma gaveta acima da régua")
+
+    def _rotulo(gaveta: str) -> str:
+        nomes = quem.get(gaveta, set())
+        # Um nome só, e nenhum turno compartilhado: a quebra tem dono provado.
+        if len(nomes) == 1 and "" not in nomes:
+            return f"{gaveta} ({next(iter(nomes))})"
+        return gaveta
+
     detail = "; ".join(
-        f"{op}: {'−' if total < 0 else '+'}{_brl(abs(total))}" for op, total in sorted(over.items())
+        f"{_rotulo(gaveta)}: {'−' if total < 0 else '+'}{_brl(abs(total))}"
+        for gaveta, total in sorted(over.items())
     )
     return Reading(
         value=float(len(over)), baseline=float(threshold), fired=True,
-        message=f"{len(over)} operador(es) com quebra acumulada acima de {_brl(threshold)} em {days} dias — {detail}",
+        message=f"{len(over)} gaveta(s) com quebra acumulada acima de {_brl(threshold)} em {days} dias — {detail}",
     )
 
 

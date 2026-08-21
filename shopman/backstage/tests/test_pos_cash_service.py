@@ -12,6 +12,24 @@ from shopman.backstage.services.exceptions import POSError
 
 
 @pytest.fixture
+def gerente(db):
+    """Quem fecha o caixa: `perform_closing`. Decisão do dono (21/08/2026).
+
+    A política vive em test_pos_cash_close_policy.py, provada pela API; aqui a
+    fixture só existe porque fechar deixou de ser coisa do operador.
+    """
+    from django.contrib.auth.models import Permission
+    from django.contrib.contenttypes.models import ContentType
+
+    from shopman.backstage.models import DayClosing
+
+    user = User.objects.create_user(username="gerente-caixa", password="x", is_staff=True)
+    ct = ContentType.objects.get_for_model(DayClosing)
+    user.user_permissions.add(Permission.objects.get(content_type=ct, codename="perform_closing"))
+    return User.objects.get(pk=user.pk)
+
+
+@pytest.fixture
 def operator(db):
     return User.objects.create_user(username="cash-service", password="x", is_staff=True)
 
@@ -70,13 +88,25 @@ def test_open_cash_shift_creates_or_returns_current_shift(operator):
 
 
 @pytest.mark.django_db
-def test_open_cash_shift_blocks_terminal_double_open(operator):
+def test_abrir_a_gaveta_ja_aberta_devolve_o_MESMO_turno(operator):
+    """Antes isto era erro; agora é idempotência — e a diferença importa.
+
+    Com custódia por pessoa, a segunda tentativa vinha de OUTRO operador e tinha
+    de ser recusada, porque o turno era dela. Com a custódia na gaveta, quem
+    chega e aperta "abrir" está pedindo a gaveta que já está aberta: devolver o
+    turno existente é a resposta certa, e é o que a tela precisa depois de um
+    refresh.
+    """
     other = User.objects.create_user(username="other-cash", password="x", is_staff=True)
     terminal = Terminal.default()
-    pos.open_cash_shift(operator=operator, terminal_ref=terminal.ref)
+    primeiro = pos.open_cash_shift(operator=operator, terminal_ref=terminal.ref)
 
-    with pytest.raises(POSError, match="Terminal POS já possui turno aberto"):
-        pos.open_cash_shift(operator=other, terminal_ref=terminal.ref)
+    segundo = pos.open_cash_shift(operator=other, terminal_ref=terminal.ref)
+
+    assert segundo.pk == primeiro.pk
+    assert Shift.objects.count() == 1
+    # E o turno continua no nome de quem realmente abriu a gaveta.
+    assert segundo.opened_by == operator
 
 
 @pytest.mark.django_db
@@ -175,45 +205,44 @@ def test_entrada_nao_pergunta_motivo(operator):
 
 
 @pytest.mark.django_db
-def test_sangria_reduz_o_esperado(operator, manager_approval):
+def test_sangria_reduz_o_esperado(operator, gerente, manager_approval):
     shift = cash.open_shift(operator=operator, float_q=1000)
     pos.register_cash_movement(
         operator=operator, movement_type="sangria", amount_raw="5,00",
         reason="Cofre", manager_approval=manager_approval,
     )
 
-    pos.close_cash_shift(operator=operator, closing_amount_raw="5,00")
+    pos.close_cash_shift(actor_user=gerente, closing_amount_raw="5,00")
     assert cash.expected_before_count(shift) == 500
     assert cash.difference(shift) == 0
 
 
 @pytest.mark.django_db
-def test_close_cash_shift_requires_open_shift(operator):
+def test_close_cash_shift_requires_open_shift(operator, gerente):
     with pytest.raises(POSError, match="Caixa não aberto"):
-        pos.close_cash_shift(operator=operator, closing_amount_raw="0")
+        pos.close_cash_shift(actor_user=gerente, closing_amount_raw="0")
 
 
 @pytest.mark.django_db
-def test_close_cash_shift_closes_and_records_count_with_notes(operator):
+def test_close_cash_shift_closes_and_records_count_with_notes(operator, gerente):
     cash.open_shift(operator=operator, float_q=1000)
 
-    shift = pos.close_cash_shift(operator=operator, closing_amount_raw="10,00", notes="fim do turno")
+    shift = pos.close_cash_shift(actor_user=gerente, closing_amount_raw="10,00", notes="fim do turno")
 
     assert shift.status == Shift.Status.CLOSED
     count = Entry.objects.get(shift=shift, kind=Entry.Kind.COUNT)
     assert count.payload["counted_q"] == 1000
     assert count.payload["notes"] == "fim do turno"
-    assert count.payload["supervisory"] is False
     assert cash.counted(shift) == 1000
     assert cash.difference(shift) == 0
 
 
 @pytest.mark.django_db
-def test_close_cash_shift_rejects_negative_count(operator):
+def test_close_cash_shift_rejects_negative_count(operator, gerente):
     cash.open_shift(operator=operator, float_q=1000)
     with pytest.raises(POSError):
-        pos.close_cash_shift(operator=operator, closing_amount_raw="-10")
-    assert cash.open_shift_for(operator) is not None
+        pos.close_cash_shift(actor_user=gerente, closing_amount_raw="-10")
+    assert cash.open_shift_for_terminal(Terminal.default()) is not None
 
 
 @pytest.mark.django_db
@@ -249,55 +278,3 @@ def test_mixed_tender_change_comes_from_cash_not_electronic():
 
     assert tenders[0]["amount_q"] == 4000  # cash absorve o troco de 10
     assert tenders[1]["amount_q"] == 2000  # pix intocado
-
-
-@pytest.mark.django_db
-def test_close_blocking_shift_owner_can_close(operator):
-    shift = pos.open_cash_shift(operator=operator, opening_amount_raw="50,00")
-    closed = pos.close_blocking_shift(actor_user=operator, shift_id=shift.pk, closing_amount_raw="50,00")
-    assert closed.pk == shift.pk
-    assert closed.status == Shift.Status.CLOSED
-    count = Entry.objects.get(shift=shift, kind=Entry.Kind.COUNT)
-    assert count.payload["supervisory"] is False
-
-
-@pytest.mark.django_db
-def test_close_blocking_shift_manager_can_close_others(operator):
-    from django.contrib.auth.models import Permission
-    from django.contrib.contenttypes.models import ContentType
-
-    from shopman.backstage.models import DayClosing
-
-    shift = pos.open_cash_shift(operator=operator, opening_amount_raw="10,00")
-    manager = User.objects.create_user(username="gerente", password="x", is_staff=True)
-    ct = ContentType.objects.get_for_model(DayClosing)
-    manager.user_permissions.add(Permission.objects.get(content_type=ct, codename="perform_closing"))
-    manager = User.objects.get(pk=manager.pk)  # refresca cache de permissão
-
-    closed = pos.close_blocking_shift(actor_user=manager, shift_id=shift.pk, closing_amount_raw="10,00")
-    assert closed.status == Shift.Status.CLOSED
-    # Fechamento supervisório: quem agiu foi o gerente, e o livro diz isso.
-    count = Entry.objects.get(shift=shift, kind=Entry.Kind.COUNT)
-    assert count.operator == manager
-    assert count.payload["supervisory"] is True
-
-
-@pytest.mark.django_db
-def test_close_blocking_shift_regular_operator_forbidden(operator):
-    from shopman.backstage.services.exceptions import POSPermissionError
-
-    shift = pos.open_cash_shift(operator=operator, opening_amount_raw="10,00")
-    stranger = User.objects.create_user(username="qualquer", password="x", is_staff=True)
-
-    with pytest.raises(POSPermissionError):
-        pos.close_blocking_shift(actor_user=stranger, shift_id=shift.pk, closing_amount_raw="10,00")
-    shift.refresh_from_db()
-    assert shift.status == Shift.Status.OPEN  # nada foi fechado
-
-
-@pytest.mark.django_db
-def test_close_blocking_shift_unknown_shift_errors(operator):
-    with pytest.raises(POSError):
-        pos.close_blocking_shift(actor_user=operator, shift_id=999999, closing_amount_raw="0")
-    with pytest.raises(POSError):
-        pos.close_blocking_shift(actor_user=operator, shift_id="abc", closing_amount_raw="0")

@@ -195,7 +195,7 @@ def operador_logado(client, movimento):
     from shopman.shop.models import Shop
 
     Shop.objects.create(name="Loja")
-    user = movimento.shift.operator
+    user = movimento.shift.opened_by
     _grant(user)
     client.force_login(user)
     return client, movimento
@@ -236,8 +236,14 @@ def test_sem_host_de_admin_o_QR_leva_so_o_codigo(operador_logado, settings):
     assert b"https://" not in papel
 
 
-def test_comprovante_de_movimento_de_OUTRO_turno_e_recusado(operador_logado):
-    """Ninguém tira comprovante do caixa alheio."""
+def test_comprovante_de_movimento_de_OUTRA_GAVETA_e_recusado(operador_logado):
+    """Ninguém tira comprovante de caixa alheio — e alheio é outra GAVETA.
+
+    Era "outro turno", quando o turno era da pessoa. Num balcão que se reveza
+    dentro de um turno só, esse filtro recusaria a segunda via de uma sangria
+    que a colega lançou meia hora antes, na mesma gaveta. O que continua
+    valendo é a fronteira física: o balcão não imprime o papel do totem.
+    """
     from django.contrib.auth import get_user_model
     from django.urls import reverse
 
@@ -246,8 +252,19 @@ def test_comprovante_de_movimento_de_OUTRO_turno_e_recusado(operador_logado):
     outro_shift = cash.open_shift(operator=outro, terminal=Terminal.objects.create(ref="pdv-2"), float_q=0)
     alheio = cash.record(Entry.Kind.CASH_IN, shift=outro_shift, operator=outro, amount_q=100)
 
-    response = client.get(reverse("api-backstage-pos-cash-receipt", args=[alheio.pk]))
+    # Pedido a partir do BALCÃO (pdv-main): o movimento é do pdv-2.
+    response = client.get(
+        reverse("api-backstage-pos-cash-receipt", args=[alheio.pk]),
+        {"terminal_ref": Terminal.default().ref},
+    )
     assert response.status_code == 400
+
+    # E a MESMA gaveta entrega — senão "recusa" poderia ser só quebra.
+    ok = client.get(
+        reverse("api-backstage-pos-cash-receipt", args=[alheio.pk]),
+        {"terminal_ref": "pdv-2"},
+    )
+    assert ok.status_code == 200, ok.content
 
 
 def test_o_balcao_registra_que_imprimiu(operador_logado):

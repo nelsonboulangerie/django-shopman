@@ -22,7 +22,6 @@ from shopman.cashman.services.shifts import (
     correct_count,
     is_closed,
     open_shift,
-    open_shift_for,
     open_shift_for_terminal,
 )
 
@@ -36,7 +35,6 @@ __all__ = [
     "expected_before_count",
     "is_closed",
     "open_shift",
-    "open_shift_for",
     "open_shift_for_terminal",
     "record",
     "timeline",

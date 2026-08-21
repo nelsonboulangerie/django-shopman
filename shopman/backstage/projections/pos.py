@@ -397,14 +397,14 @@ def build_pos(*, terminal=None, operator=None) -> POSProjection:
         .values("ref", "name")
     )
 
-    cash_shift = _active_cash_shift(operator)
-    if terminal is None and cash_shift is not None:
-        terminal = cash_shift.terminal
+    # A GAVETA primeiro, e o turno vem dela. Antes era o contrário — o turno se
+    # resolvia pelo operador e o terminal se deduzia dele —, e era isso que fazia
+    # a segunda pessoa do balcão não achar turno nenhum e cair na antessala.
     if terminal is None:
         from shopman.cashman.models import Terminal
 
         terminal = Terminal.default()
-    terminal_cash_shift = _active_cash_shift_for_terminal(terminal)
+    cash_shift = _active_cash_shift_for_terminal(terminal)
     from shopman.backstage.services.pos_hardware import CashDrawerConfig
     from shopman.backstage.services.pos_terminal import runtime_profile
 
@@ -432,7 +432,6 @@ def build_pos(*, terminal=None, operator=None) -> POSProjection:
             cash_shift,
             runtime,
             operator,
-            terminal_cash_shift=terminal_cash_shift,
         ),
         terminal_ref=runtime.terminal_ref,
         terminal_label=runtime.terminal_label,
@@ -1405,18 +1404,6 @@ def _checkout_contract(
     )
 
 
-def _active_cash_shift(operator):
-    if operator is None:
-        return None
-    try:
-        from shopman.cashman import services as cash
-
-        return cash.open_shift_for(operator)
-    except Exception:
-        logger.debug("pos_active_cash_shift_lookup_failed", exc_info=True)
-        return None
-
-
 def _active_cash_shift_for_terminal(terminal):
     if terminal is None:
         return None
@@ -1429,39 +1416,22 @@ def _active_cash_shift_for_terminal(terminal):
         return None
 
 
-def _cash_runtime_projection(cash_shift, runtime, operator, *, terminal_cash_shift=None) -> POSCashRuntimeProjection:
+def _cash_runtime_projection(cash_shift, runtime, operator) -> POSCashRuntimeProjection:
+    """Dois estados só: a gaveta tem turno aberto, ou não tem.
+
+    Existiu um terceiro, ``terminal_occupied`` — "Terminal aberto por marina" —
+    de quando a custódia era da pessoa: quem chegava depois não achava turno
+    SEU, via a gaveta ocupada por outra, e só passava fechando o caixa dela.
+    Com a custódia na gaveta, o turno do terminal É o turno de quem está nele.
+    Não há bloqueio a exibir, e o revezamento não pede ritual nenhum.
+    """
     from shopman.backstage.permissions import can_audit_cash
 
-    # Resolvido UMA vez, nos três caminhos: o card do relatório não pode aparecer
-    # só porque o turno está fechado, ou só porque o terminal está ocupado.
+    # `can_audit_cash` NÃO é o operador do balcão: esperado e diferença são do
+    # Dono (ver setup_groups). Quem conta às cegas não pode conferir o gabarito.
     audita = bool(operator is not None and can_audit_cash(operator))
 
     if cash_shift is None:
-        if terminal_cash_shift is not None:
-            operator_username = terminal_cash_shift.operator.get_username()
-            # Quem pode fechar o turno bloqueante daqui: gerente (perform_closing)
-            # ou o próprio dono do turno. Operador comum, não (anti-fraude).
-            from shopman.backstage.permissions import can_close_day
-
-            is_owner = (
-                operator is not None
-                and terminal_cash_shift.operator_id == getattr(operator, "pk", None)
-            )
-            can_close_blocking = bool(operator is not None and (can_close_day(operator) or is_owner))
-            return POSCashRuntimeProjection(
-                has_open_shift=False,
-                shift_id=None,
-                terminal_ref=runtime.terminal_ref,
-                terminal_label=runtime.terminal_label,
-                operator_username=getattr(operator, "username", "") if operator is not None else "",
-                opened_at="",
-                status="terminal_occupied",
-                blocking_operator_username=operator_username,
-                blocking_shift_id=terminal_cash_shift.pk,
-                blocking_message=f"Terminal aberto por {operator_username}.",
-                can_close_blocking=can_close_blocking,
-                can_audit_cash=audita,
-            )
         return POSCashRuntimeProjection(
             has_open_shift=False,
             shift_id=None,
@@ -1477,7 +1447,9 @@ def _cash_runtime_projection(cash_shift, runtime, operator, *, terminal_cash_shi
         shift_id=cash_shift.pk,
         terminal_ref=cash_shift.terminal.ref,
         terminal_label=str(cash_shift.terminal),
-        operator_username=cash_shift.operator.get_username(),
+        # Quem está operando AGORA, não quem abriu a gaveta de manhã. O nome de
+        # quem abriu vive em `cash_shift.opened_by` e aparece na auditoria.
+        operator_username=getattr(operator, "username", "") if operator is not None else "",
         opened_at=cash_shift.opened_at.isoformat() if cash_shift.opened_at else "",
         status="open",
         can_audit_cash=audita,

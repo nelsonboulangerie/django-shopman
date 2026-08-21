@@ -194,7 +194,7 @@ export interface POSCashRuntimeProjection {
   terminal_label: string;
   operator_username: string;
   opened_at: string;
-  status?: "open" | "closed" | "terminal_occupied" | string;
+  status?: "open" | "closed" | string;
   blocking_operator_username?: string;
   blocking_shift_id?: number | null;
   blocking_message?: string;

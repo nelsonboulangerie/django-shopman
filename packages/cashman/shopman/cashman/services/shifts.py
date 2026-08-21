@@ -19,12 +19,18 @@ from shopman.cashman.signals import entry_recorded, shift_closed, shift_opened
 Kind = Entry.Kind
 
 
-def open_shift_for(operator) -> Shift | None:
-    return Shift.objects.filter(operator=operator, status=Shift.Status.OPEN).select_related("terminal").first()
-
-
 def open_shift_for_terminal(terminal: Terminal) -> Shift | None:
-    return Shift.objects.filter(terminal=terminal, status=Shift.Status.OPEN).select_related("terminal", "operator").first()
+    """O turno aberto DAQUELA gaveta — a única pergunta que o balcão faz.
+
+    Não existe ``open_shift_for(operator)``: a custódia é do terminal, e perguntar
+    "qual é o turno da Joyce" não tem resposta quando três pessoas dividem a mesma
+    gaveta. Quem quer saber o que a Joyce fez pergunta ao livro (``Entry.operator``).
+    """
+    return (
+        Shift.objects.filter(terminal=terminal, status=Shift.Status.OPEN)
+        .select_related("terminal", "opened_by")
+        .first()
+    )
 
 
 def is_closed(shift_id) -> bool:
@@ -37,10 +43,13 @@ def is_closed(shift_id) -> bool:
 
 
 def open_shift(*, operator, terminal: Terminal | None = None, float_q: int = 0, at=None) -> Shift:
-    """Abre a custódia e lança o fundo de troco.
+    """Abre a custódia da gaveta e lança o fundo de troco.
 
-    Recusa se o operador ou o terminal já têm turno aberto: a unicidade é
-    constraint do banco, mas a mensagem tem de ser da casa, não um
+    Recusa se o TERMINAL já tem turno aberto — e só isso. Que o operador tenha
+    aberto outra gaveta hoje não impede nada: uma pessoa pode abrir o balcão e o
+    totem, e o balcão inteiro se reveza dentro de um turno só.
+
+    A unicidade é constraint do banco, mas a mensagem tem de ser da casa, não um
     ``IntegrityError`` na tela do balcão.
     """
     terminal = terminal or Terminal.default()
@@ -49,22 +58,19 @@ def open_shift(*, operator, terminal: Terminal | None = None, float_q: int = 0, 
         raise CashError("INVALID_AMOUNT", "O fundo de troco não pode ser negativo.", {"float_q": float_q})
 
     with transaction.atomic():
-        existing = open_shift_for(operator)
-        if existing:
-            raise CashError("SHIFT_ALREADY_OPEN", "Este operador já tem um turno aberto.", {"shift_id": existing.pk})
         blocking = open_shift_for_terminal(terminal)
         if blocking:
             raise CashError(
                 "SHIFT_ALREADY_OPEN",
-                "Este terminal já tem um turno aberto.",
-                {"shift_id": blocking.pk, "operator": blocking.operator.get_username()},
+                "Esta gaveta já tem um turno aberto.",
+                {"shift_id": blocking.pk, "opened_by": blocking.opened_by.get_username()},
             )
         try:
-            shift = Shift.objects.create(terminal=terminal, operator=operator, opened_at=at or timezone.now())
+            shift = Shift.objects.create(terminal=terminal, opened_by=operator, opened_at=at or timezone.now())
         except IntegrityError as exc:
             # Duas aberturas no mesmo instante: a constraint decide, e a
             # mensagem continua sendo a nossa.
-            raise CashError("SHIFT_ALREADY_OPEN", "Já existe um turno aberto para este operador ou terminal.") from exc
+            raise CashError("SHIFT_ALREADY_OPEN", "Esta gaveta já tem um turno aberto.") from exc
         transaction.on_commit(lambda: shift_opened.send(sender=Shift, shift=shift))
         # float_q == 0: nada a lançar; o livro começa vazio e o saldo é zero.
         if float_q > 0:
@@ -81,8 +87,11 @@ def close_shift(shift: Shift, *, counted_q: int, actor, notes: str = "", at=None
     ``count.amount_q = contado − saldo``. Depois disto ``Σ`` do livro é o que a
     gaveta tinha de fato; a diferença é o próprio lançamento. O operador nunca
     viu o saldo (é o ponto do fechamento cego); quem vê é a retaguarda, no livro.
-    ``actor`` pode não ser o dono do turno (fechamento supervisório): fica no
-    lançamento como quem agiu, e o payload diz que foi supervisório.
+    Quem contou fica em ``count.operator``. Não há mais marca de "supervisório":
+    com a custódia na gaveta, o turno não tem dono para alguém estar substituindo,
+    e a gerente fechando o caixa que a Joyce abriu é o caso NORMAL, não a exceção.
+    Uma bandeira que sobe quase sempre não informa nada — quem quer saber quem
+    contou lê a linha da contagem, e quem quer saber quem abriu lê o turno.
     """
     counted_q = int(counted_q or 0)
     if counted_q < 0:
@@ -103,7 +112,6 @@ def close_shift(shift: Shift, *, counted_q: int, actor, notes: str = "", at=None
             payload={
                 "counted_q": counted_q,
                 "notes": str(notes or "").strip(),
-                "supervisory": bool(actor is not None and locked.operator_id != getattr(actor, "pk", None)),
             },
         )
         locked.status = Shift.Status.CLOSED

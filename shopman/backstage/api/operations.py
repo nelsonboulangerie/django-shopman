@@ -214,7 +214,7 @@ def _cash_shift_result(shift) -> dict:
     return {
         "id": shift.pk,
         "terminal_ref": shift.terminal.ref,
-        "operator": shift.operator.get_username(),
+        "operator": shift.opened_by.get_username(),
         "status": shift.status,
         "opened_at": shift.opened_at.isoformat() if shift.opened_at else "",
         "closed_at": shift.closed_at.isoformat() if shift.closed_at else "",
@@ -238,9 +238,7 @@ def _pos_payload_with_runtime(request, body: dict) -> dict:
 def _open_cash_shift_for_request(request):
     """O turno ABERTO do operador no ``cashman`` — é o pk dele que vai em ``cash_shift_id``."""
     try:
-        from shopman.cashman import services as cash
-
-        return cash.open_shift_for(_cash_operator(request))
+        return pos_service.current_shift()
     except Exception:
         logger.debug("pos_runtime_payload_enrichment_failed user=%s", _actor(request), exc_info=True)
         return None
@@ -1591,58 +1589,28 @@ class POSCashCloseView(APIView):
     required_permission = "cashman.operate_pos"
 
     def post(self, request):
+        from shopman.backstage.services.exceptions import POSPermissionError
+
         amount = request.data.get("closing_amount", "0")
         notes = (request.data.get("notes") or "").strip()
         try:
             result = pos_service.close_cash_shift(
-                operator=_cash_operator(request),
-                closing_amount_raw=str(amount),
-                notes=notes,
-            )
-        except Exception as exc:
-            logger.debug("pos_cash_shift_close_failed user=%s", _actor(request), exc_info=True)
-            return Response({"detail": str(exc) or "Falha ao fechar caixa."}, status=400)
-        return Response({"ok": True, "result": _cash_shift_result(result) if result else None})
-
-
-class POSCashCloseBlockingView(APIView):
-    """Fecha (contagem cega) o turno que bloqueia o terminal — supervisório.
-
-    Destrava o beco: terminal com turno aberto que não é do operador atual.
-    Gerente (perform_closing) ou o dono do turno fecham daqui; operador comum
-    não (anti-fraude) → 403.
-    """
-
-    permission_classes = [HasBackstagePermission]
-    required_permission = "cashman.operate_pos"
-
-    def post(self, request):
-        from shopman.backstage.services.exceptions import POSPermissionError
-
-        shift_id = request.data.get("shift_id")
-        amount = request.data.get("closing_amount", "0")
-        notes = (request.data.get("notes") or "").strip()
-        if not shift_id:
-            return Response({"detail": "shift_id é obrigatório."}, status=400)
-        # Mesma identidade de todo o subsistema de caixa: o operador ativo
-        # quando a estação é compartilhada, a conta da sessão quando não é
-        # (``_cash_operator``). Abrir o turno grava ``operator`` com ela, e a
-        # projection do terminal procura o turno por ela.
-        try:
-            result = pos_service.close_blocking_shift(
                 actor_user=_cash_operator(request),
-                shift_id=shift_id,
                 closing_amount_raw=str(amount),
                 notes=notes,
+                terminal_ref=str(request.data.get("terminal_ref") or ""),
             )
         except POSPermissionError as exc:
+            # Fechar o caixa é da gerência (decisão de 21/08). O balcão precisa
+            # distinguir "sem permissão" de "falhou" para pedir a gerente em vez
+            # de tentar de novo — por isso o código estável, não só o 400.
             return Response(
                 {"detail": str(exc), "error": {"code": "cash_close_forbidden", "message": str(exc)}},
                 status=403,
             )
         except Exception as exc:
-            logger.debug("pos_cash_close_blocking_failed user=%s", _actor(request), exc_info=True)
-            return Response({"detail": str(exc) or "Falha ao fechar o turno."}, status=400)
+            logger.debug("pos_cash_shift_close_failed user=%s", _actor(request), exc_info=True)
+            return Response({"detail": str(exc) or "Falha ao fechar caixa."}, status=400)
         return Response({"ok": True, "result": _cash_shift_result(result) if result else None})
 
 
@@ -1708,7 +1676,10 @@ class POSCashReceiptView(APIView):
         reprint = str(request.query_params.get("reprint") or "").lower() in {"1", "true", "on"}
         try:
             payload = pos_service.cash_movement_receipt_payload(
-                operator=_cash_operator(request), entry_id=entry_id, reprint=reprint
+                operator=_cash_operator(request),
+                entry_id=entry_id,
+                reprint=reprint,
+                terminal_ref=str(request.query_params.get("terminal_ref") or ""),
             )
         except PosIntentError as exc:
             return Response({"detail": exc.message, "error": exc.as_dict()}, status=exc.status)
@@ -1724,6 +1695,7 @@ class POSCashReceiptView(APIView):
                 entry_id=entry_id,
                 status=(request.data.get("status") or "").strip(),
                 detail=request.data.get("detail") or "",
+                terminal_ref=str(request.data.get("terminal_ref") or ""),
             )
         except PosIntentError as exc:
             return Response({"detail": exc.message, "error": exc.as_dict()}, status=exc.status)
@@ -2020,7 +1992,10 @@ class POSCashReportView(APIView):
     required_permission = "cashman.audit_shift"
 
     def get(self, request):
-        report = build_cash_session_report(operator=_cash_operator(request))
+        report = build_cash_session_report(
+            operator=_cash_operator(request),
+            terminal_ref=str(request.query_params.get("terminal_ref") or ""),
+        )
         return Response({"report": projection_data(report)})
 
 

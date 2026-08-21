@@ -1203,8 +1203,17 @@ def _shift_for_refund(order, *, actor: str):
     """
     if _terminal_cash_amount_q(order) <= 0:
         return None
-    user = _user_for_actor(actor)
-    shift = cash_ledger.open_shift_for(user) if user is not None else None
+    # A gaveta que devolve é a do TERMINAL onde a venda foi feita — não "o turno
+    # de quem está devolvendo", que deixou de existir quando a custódia virou da
+    # gaveta. O `shop` fala com o `cashman` direto: importar o `backstage` daqui
+    # inverteria a regra de dependência (backstage ──> shop, nunca o contrário).
+    from shopman.cashman.models import Terminal
+
+    ref = str(((order.data or {}).get("pos") or {}).get("terminal_ref") or "").strip()
+    terminal = Terminal.objects.filter(ref=ref, is_active=True).first() if ref else None
+    if terminal is None:
+        terminal = Terminal.objects.filter(is_active=True).order_by("ref").first()
+    shift = cash_ledger.open_shift_for_terminal(terminal) if terminal is not None else None
     if shift is None:
         raise ValueError(f"Abra o caixa para devolver o dinheiro da venda {order.ref}.")
     return shift
@@ -2087,7 +2096,7 @@ def _settle_pos_sale(order: Order, *, shift, operator_username: str) -> dict:
     payment = dict((order.data or {}).get("payment") or {})
     method = str(payment.get("method") or "").strip().lower()
     collection = str(payment.get("collection") or "terminal").strip().lower()
-    operator = _user_for_actor(operator_username) or shift.operator
+    operator = _user_for_actor(operator_username) or shift.opened_by
 
     if collection != "terminal":
         # Entrega paga na porta: a venda é deste turno, o dinheiro vem no acerto.
@@ -2347,7 +2356,7 @@ def _require_open_shift(payload: dict):
     shift_id = payload.get("cash_shift_id")
     shift = None
     if shift_id:
-        shift = Shift.objects.filter(pk=shift_id).select_related("terminal", "operator").first()
+        shift = Shift.objects.filter(pk=shift_id).select_related("terminal", "opened_by").first()
     if shift is None or not shift.is_open:
         raise PosIntentError(
             code="cash_shift_required",

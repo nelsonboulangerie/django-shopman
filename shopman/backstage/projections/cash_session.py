@@ -131,24 +131,32 @@ class CashSessionReportProjection:
 # ── Builder ────────────────────────────────────────────────────────────
 
 
-def build_cash_session_report(*, operator) -> CashSessionReportProjection:
-    """Build the X/Z report for today, scoped to the requesting operator's X.
+def build_cash_session_report(*, operator, terminal_ref: str = "") -> CashSessionReportProjection:
+    """Leitura X/Z de hoje. O X é da GAVETA em que se está; o Z, do dia inteiro.
 
-    The X reading belongs to the operator asking (their open shift); the Z list
-    covers every shift closed today, terminal-wide — the shift history the
-    antesala shows. Neither exposes expected/variance (blind count).
+    O X pertencia ao "turno do operador que pergunta". Não existe mais turno de
+    operador: a custódia é do terminal, e a leitura parcial que interessa ao
+    balcão é a da gaveta que está aberta ali. Por isso ``terminal_ref``.
+
+    ⚠️ Sem ``terminal_ref``, cai no primeiro terminal ativo por ``ref`` — exato
+    com uma gaveta só, e ERRADO no dia em que houver balcão + totem. Quem chama
+    de uma superfície de terminal deve passar o ref; foi assim que um teste de
+    dois terminais pegou a troca (``test_x_reading_ignores_sales_of_another_shift``).
+
+    Nem X nem Z expõem esperado ou variância (fechamento cego).
     """
-    from shopman.cashman import services as cash
     from shopman.cashman.models import Shift
+
+    from shopman.backstage.services import pos as pos_service
 
     today = timezone.localdate()
 
-    open_shift = cash.open_shift_for(operator)
+    open_shift = pos_service.current_shift(terminal_ref)
     x_reading = _shift_reading(open_shift) if open_shift else None
 
     closed = (
         Shift.objects.filter(status=Shift.Status.CLOSED, closed_at__date=today)
-        .select_related("terminal", "operator")
+        .select_related("terminal", "opened_by")
         .order_by("closed_at")
     )
     z_readings = tuple(_shift_reading(shift) for shift in closed)
@@ -206,7 +214,7 @@ def _shift_reading(shift) -> ShiftReadingProjection:
         status="open" if is_open else "closed",
         terminal_ref=shift.terminal.ref,
         terminal_label=shift.terminal.label or shift.terminal.ref,
-        operator=shift.operator.get_username(),
+        operator=shift.opened_by.get_username(),
         opened_at=shift.opened_at.isoformat() if shift.opened_at else "",
         closed_at=shift.closed_at.isoformat() if shift.closed_at else "",
         opening_amount_q=opening_amount_q,

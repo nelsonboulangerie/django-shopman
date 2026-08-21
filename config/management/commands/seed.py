@@ -6107,8 +6107,8 @@ class Command(BaseCommand):
         # PDV de ontem (uma linha `sale` por pedido, efeito em dinheiro só para o
         # que foi pago em espécie), uma sangria autorizada e a contagem cega com
         # R$ 3 a menos. Idempotente: se o turno de ontem já existe, não repete.
-        already = CashmanShift.objects.filter(operator=admin, opened_at=yesterday_open).exists()
-        if not already and not cash.open_shift_for(admin) and not cash.open_shift_for_terminal(terminal):
+        already = CashmanShift.objects.filter(opened_by=admin, opened_at=yesterday_open).exists()
+        if not already and not cash.open_shift_for_terminal(terminal):
             shift_yesterday = cash.open_shift(operator=admin, terminal=terminal, float_q=20000, at=yesterday_open)
             for order in (
                 Order.objects.filter(
@@ -6163,14 +6163,14 @@ class Command(BaseCommand):
             )
 
         # Hoje: turno aberto com fundo de troco.
-        today_shift = cash.open_shift_for(admin)
-        if today_shift is None and not cash.open_shift_for_terminal(terminal):
+        today_shift = cash.open_shift_for_terminal(terminal)
+        if today_shift is None:
             today_open = timezone.make_aware(datetime.combine(timezone.localdate(), time(8, 45)))
             today_shift = cash.open_shift(operator=admin, terminal=terminal, float_q=20000, at=today_open)
 
         self.stdout.write("  ✅ 2 turnos de caixa (ontem fechado + hoje aberto)")
 
-        if today_shift is not None and today_shift.operator_id == admin.pk:
+        if today_shift is not None and today_shift.opened_by_id == admin.pk:
             self._seed_house_account_sales(today_shift, admin, today_shift.opened_at, "today")
             self._seed_house_account_settlement(today_shift, admin)
             self._seed_courier_change_and_equipment(today_shift, admin)
@@ -7048,7 +7048,7 @@ class Command(BaseCommand):
             {
                 "ref": "quebra-de-caixa-acumulada",
                 "label": "Quebra de caixa acumulada por operador",
-                "metric": BIAlertRule.Metric.CASH_VARIANCE_BY_OPERATOR,
+                "metric": BIAlertRule.Metric.CASH_VARIANCE_BY_DRAWER,
                 "is_active": True,
                 "severity": "warning",
                 "cooldown_minutes": 24 * 60,

@@ -30,12 +30,25 @@ pytestmark = pytest.mark.django_db(transaction=True)
 # desses apps são as FOLHAS atuais (não um número fixo): pinar ``cashman/0001``
 # desfaria migrações posteriores do pacote e deixaria o banco de teste velho
 # para quem roda depois.
+#
+# ⚠️ O ``cashman`` é a EXCEÇÃO, e é pinado em ``0004``. A ``0005`` renomeia
+# ``Shift.operator`` para ``opened_by`` (a custódia virou da gaveta) e declara,
+# via ``run_before`` na 0030, que só pode rodar DEPOIS do backfill — porque o
+# backfill escreve no campo antigo. Mirar o cashman na folha aqui pediria as
+# duas coisas ao mesmo tempo: 0005 aplicada e 0030 desaplicada. O Django recusa
+# o plano ("forwards and backwards migrations are not supported"), e ele está
+# certo: o mundo desta migração é, por definição, o anterior ao rename.
+_CASHMAN_ANTES_DO_RENAME = "0004_account_settled"
+
+
 def _shared_targets(executor):
-    return [
+    alvos = [("cashman", _CASHMAN_ANTES_DO_RENAME)]
+    alvos += [
         (app, name)
-        for app in ("cashman", "orderman", "auth", "contenttypes")
+        for app in ("orderman", "auth", "contenttypes")
         for name in {node[1] for node in executor.loader.graph.leaf_nodes(app)}
     ]
+    return alvos
 
 
 def _before(executor):

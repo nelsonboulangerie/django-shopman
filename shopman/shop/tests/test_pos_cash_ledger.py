@@ -269,9 +269,22 @@ def test_devolver_por_outro_turno_aponta_a_venda_mas_nao_o_parent(counter, djang
     assert cash.balance(counter.shift) == 11200
 
 
-def test_devolver_dinheiro_sem_turno_aberto_e_recusado_e_o_pedido_fica(counter):
+def test_devolver_dinheiro_com_a_GAVETA_fechada_e_recusado_e_o_pedido_fica(counter):
+    """Dinheiro não sai de gaveta fechada — senão sairia sem linha no livro.
+
+    O teste exigia "operador sem turno", de quando o turno era da pessoa: bastava
+    outro usuário pedir o cancelamento para cair na recusa. Agora a pergunta é
+    sobre a GAVETA, e quem a responde é o estado dela — por isso o turno é
+    fechado aqui antes de tentar. Com a gaveta aberta, qualquer pessoa do balcão
+    devolve, e é assim que o balcão funciona.
+    """
+    from shopman.cashman import services as cash
+    from shopman.cashman.models import Terminal
+
     result = counter.close(client_request_id="c12", tendered_amount_q=1200)
-    get_user_model().objects.create_user(username="sem-turno", password="x")
+    operador = get_user_model().objects.create_user(username="sem-turno", password="x")
+    turno = cash.open_shift_for_terminal(Terminal.default())
+    cash.close_shift(turno, counted_q=0, actor=operador)
 
     with pytest.raises(ValueError, match="Abra o caixa"):
         pos_service.cancel_recent_order(order_ref=result.order_ref, actor="pos:sem-turno")
