@@ -34,6 +34,19 @@ function templateOnly (source: string) {
 const surfaceVueFiles = surfaceRoots.flatMap(collectVueFiles)
 
 describe('surface UX guardrails', () => {
+  it('never leaves a trailing space inside <template>, which the compiler eats', () => {
+    // `por {{ canal }} </template>para` foi ao ar como "por SMSpara": o Vue
+    // descarta o nó de texto SÓ-ESPAÇO na borda dos filhos, e ninguém vê até a
+    // tela. `> ou </template>` tem conteúdo no nó e sobrevive, então o alvo é a
+    // borda colada em `}}` ou em tag, não qualquer espaço. Frase que muda de
+    // forma conforme o dado se monta num transform puro (ver codeSentPrefix).
+    // Lê a fonte crua, não templateOnly(): o regex daquele helper é não-guloso e
+    // para no primeiro </template>, justo o do v-if que carrega o vício.
+    const offenders = surfaceVueFiles
+      .filter(file => /(\}\}|>) +<\/template>|<template[^>]*> +(\{\{|<)/.test(read(file)))
+    expect(offenders).toEqual([])
+  })
+
   it('keeps native controls wrapped behind UI Thing components', () => {
     const offenders = surfaceVueFiles
       .filter(file => /<(button|input|select|textarea)\b/.test(read(file)))
