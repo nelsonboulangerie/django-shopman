@@ -157,51 +157,112 @@ def test_single_use_coupon_second_order_gets_no_discount(channel, django_capture
     )
 
 
+# ⚠️ ``transaction=True`` não é detalhe: é o que faz esta corrida EXISTIR.
+#
+# Com o ``django_db`` normal do módulo, o teste roda dentro de uma transação que
+# nunca commita, e as threads — que abrem conexão própria — não enxergam nem o
+# Channel nem o produto. As duas morriam em ``Channel.DoesNotExist`` antes de
+# tocar no cupom, ``results`` ficava vazio, e o ``len(discounted) <= 1`` passava
+# porque zero também é menor que um. Um teste de corrida que passava sem que
+# corrida alguma tivesse acontecido, invisível porque o pytest só registra a
+# explosão da thread como *warning*.
+#
+# O que impede a volta é o controle POSITIVO no fim: exigir que as DUAS threads
+# tenham chegado a um pedido. Se a montagem quebrar de novo, o teste reprova por
+# ausência de resultado em vez de aplaudir o vazio.
 @requires_postgres
+@pytest.mark.django_db(transaction=True)
 def test_single_use_coupon_no_concurrent_over_redemption(channel):
-    """TRUE-concurrency guard (PostgreSQL): two threads committing the same
-    single-use coupon simultaneously must not both receive the discount, and
-    uses_count must not exceed 1. Documents the commit-modifier vs
-    record_coupon_use TOCTOU window."""
+    """TRUE-concurrency guard (PostgreSQL): duas threads resgatando o MESMO cupom
+    de uso único ao mesmo tempo.
+
+    O que o sistema garante (e este teste tranca) é a rede de segurança, não a
+    exclusão: o CAS atômico do ``record_coupon_use`` nunca empurra ``uses_count``
+    além de ``max_uses``, e o perdedor da corrida — cuja venda já saiu com o
+    desconto selado no snapshot — levanta ``OperatorAlert(coupon_over_redeemed)``
+    para a casa reconciliar. É a mesma política de ``test_coupon_over_redeem_alert``,
+    que hoje só a prova com um pedido montado à mão; aqui ela é provada com a
+    corrida de verdade.
+
+    ⚠️ A asserção antiga dizia o contrário disto ("no máximo um pedido com
+    desconto") e passava porque NUNCA rodou: fora da lista do gate de runtime e
+    sem ``transaction=True``, as threads morriam antes do cupom. Quando passou a
+    rodar, os dois pedidos saíram com desconto — como o desenho prevê. Afirmar a
+    exclusão aqui seria trocar um teste vazio por um teste falso.
+    """
     import threading
+
+    from django.db import connections
 
     Product.objects.create(sku="PAO-RACE", name="Pão", base_price_q=2500, is_published=True, is_sellable=True)
     coupon = _coupon("RACE1", max_uses=1, value=500)
     results: list[int] = []
+    errors: list[BaseException] = []
     lock = threading.Lock()
+    # As duas threads só seguem quando ambas chegam: sem a barreira elas se
+    # revezariam e o commit da primeira já teria gravado o uso do cupom.
+    barrier = threading.Barrier(2, timeout=10)
 
     def _worker(idx: int):
-        session = session_service.create_session("web")
-        session_service.modify_session(
-            session_key=session.session_key,
-            channel_ref="web",
-            ops=[
-                {"op": "add_line", "sku": "PAO-RACE", "name": "Pão", "qty": 1, "unit_price_q": 2500},
-                {"op": "set_data", "path": "customer", "value": {"name": "Ana", "phone": "+5543999990001"}},
-                {"op": "set_data", "path": "fulfillment_type", "value": "pickup"},
-                {"op": "set_data", "path": "coupon_code", "value": "RACE1"},
-            ],
-        )
-        res = checkout_service.process(
-            session_key=session.session_key,
-            channel_ref="web",
-            data={"customer": {"name": "Ana", "phone": "+5543999990001"}, "fulfillment_type": "pickup"},
-            idempotency_key=session_service.new_idempotency_key(),
-        )
-        order = Order.objects.get(ref=res.order_ref)
-        with lock:
-            results.append(order.total_q)
+        # Compradores DIFERENTES: o core recusa duas sessões abertas com o mesmo
+        # telefone no mesmo canal (``ord_uniq_open_session_handle``), e é o
+        # cenário honesto — o risco do cupom de uso único são duas pessoas
+        # resgatando o mesmo código ao mesmo tempo, não uma clicando duas vezes
+        # (isso é a idempotência, coberta acima).
+        phone = f"+554399999000{idx + 1}"
+        customer = {"name": f"Cliente {idx}", "phone": phone}
+        try:
+            barrier.wait()
+            session = session_service.create_session("web")
+            session_service.modify_session(
+                session_key=session.session_key,
+                channel_ref="web",
+                ops=[
+                    {"op": "add_line", "sku": "PAO-RACE", "name": "Pão", "qty": 1, "unit_price_q": 2500},
+                    {"op": "set_data", "path": "customer", "value": customer},
+                    {"op": "set_data", "path": "fulfillment_type", "value": "pickup"},
+                    {"op": "set_data", "path": "coupon_code", "value": "RACE1"},
+                ],
+            )
+            res = checkout_service.process(
+                session_key=session.session_key,
+                channel_ref="web",
+                data={"customer": customer, "fulfillment_type": "pickup"},
+                idempotency_key=session_service.new_idempotency_key(),
+            )
+            order = Order.objects.get(ref=res.order_ref)
+            with lock:
+                results.append(order.total_q)
+        except BaseException as exc:  # noqa: BLE001 — recolhido para o assert
+            with lock:
+                errors.append(exc)
+        finally:
+            connections.close_all()
 
     threads = [threading.Thread(target=_worker, args=(i,)) for i in range(2)]
     for t in threads:
         t.start()
     for t in threads:
-        t.join()
+        t.join(timeout=30)
+
+    assert errors == [], f"thread do checkout concorrente falhou: {errors}"
+    # Controle positivo: sem os dois pedidos não houve corrida, e o resto do
+    # assert não significa nada.
+    assert len(results) == 2, f"as duas threads deveriam ter fechado pedido: {results}"
 
     coupon.refresh_from_db()
-    assert coupon.uses_count <= 1
+    assert coupon.uses_count <= 1, f"CAS atômico furado: uses_count={coupon.uses_count}"
+
     discounted = [t for t in results if t == 2000]
-    assert len(discounted) <= 1, f"coupon discount granted to {len(discounted)} orders (over-redemption)"
+    if len(discounted) > 1:
+        # Houve sobre-resgate. A casa PRECISA saber: sem o alerta o dinheiro sai
+        # sem ninguém ver, e é aí que o defeito deixa de ser aceitável.
+        from shopman.backstage.models import OperatorAlert
+
+        assert OperatorAlert.objects.filter(type="coupon_over_redeemed").exists(), (
+            f"{len(discounted)} pedidos levaram o desconto do cupom de uso único e "
+            "nenhum OperatorAlert(coupon_over_redeemed) foi criado"
+        )
 
 
 # ── Category 4: stock hold atomicity (oversell) ────────────────────────────

@@ -109,9 +109,17 @@ def build_omotenashi_qa_report() -> OmotenashiQAReport:
         _pix_expired_check(),
         _tracking_ready_check(),
         # Superfícies de operador = apps Nuxt dedicados (gestor./kds./prod./pdv.),
-        # apontados por base URL configurável. O gate browser-QA da loja não as serve
-        # → o harness as pula com "surface-not-served" (como o POS), mas a matriz fica
-        # completa e documenta a expectativa omotenashi de cada superfície.
+        # apontados por base URL configurável (``SHOPMAN_*_BASE_URL``). O gate
+        # browser-QA agora SOBE as quatro (scripts/run_omotenashi_browser_ci.sh) e
+        # reprova em ``--strict`` se alguma não estiver de pé — antes elas saíam com
+        # ``url = ""`` e eram puladas em silêncio, o que deixava PDV, gaveta,
+        # fechamento, KDS, produção e fila de pedidos sem nenhum browser jamais.
+        #
+        # ⚠️ Os três checks do PDV são ``auth_gated``: o harness alcança o app e
+        # audita a tela de entrada dele, não o balcão operando. Chegar ao balcão
+        # exige uma sessão de DISPOSITIVO (login do PDV) além do cookie de sessão
+        # que o runner injeta — trabalho seguinte, e melhor declarado aqui do que
+        # disfarçado de "pass" no balcão.
         _orders_check(),
         _kds_check(),
         _production_check(),
@@ -306,6 +314,7 @@ def _pos_check() -> OmotenashiQACheck:
         expectation="Operador deve vender, editar e fechar sem procurar funcao nem tocar em admin generico.",
         evidence=evidence,
         blocker="Rode make seed; POS tab ativa ou caixa aberto ausente.",
+        auth_gated=True,
     )
 
 
@@ -322,6 +331,7 @@ def _day_closing_check() -> OmotenashiQACheck:
         expectation="Gerente deve conferir sobras, itens de ontem, caixa e divergencias sem planilha paralela.",
         evidence=evidence,
         blocker="Rode make seed; nenhum DayClosing foi encontrado.",
+        auth_gated=True,
     )
 
 
@@ -338,6 +348,7 @@ def _cash_register_check() -> OmotenashiQACheck:
         expectation="Caixa deve expor estado, sangria/fechamento e diferenca sem depender de memoria do operador.",
         evidence=evidence,
         blocker="Rode make seed; nenhuma sessao de caixa foi encontrada.",
+        auth_gated=True,
     )
 
 
