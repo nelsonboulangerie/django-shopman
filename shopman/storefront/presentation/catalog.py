@@ -423,7 +423,7 @@ def _build_items(
     # Batch: active automatic promotions once, evaluated per SKU in memory by the
     # pricing backend (via the ``active_promotions`` context key) instead of one
     # Promotion query per SKU.
-    active_promotions = _active_storefront_promotions()
+    active_promotions = _active_storefront_promotions(channel_ref)
 
     # Bundles nao tem quant proprio: sua disponibilidade e o min() dos
     # componentes (o mais escasso limita), senao o card mostraria "Disponivel"
@@ -546,27 +546,24 @@ def _build_items(
     return result
 
 
-def _active_storefront_promotions() -> list[Any]:
+def _active_storefront_promotions(channel_ref: str) -> list[Any]:
     """Load the channel's active automatic promotions once, for the whole batch.
 
-    Same set the pricing backend resolves per SKU (active, in validity window,
-    coupon-less) — loading it once here and passing it through the pricing
-    context collapses one ``Promotion`` (+ coupon) query per SKU into a single
-    query for the whole menu. The evaluation per SKU still runs in the backend,
-    in memory, over these preloaded rows.
+    Same set the CART resolves (``promotion_service.get_active_promotions``):
+    ativa, na janela de validade, sem cupom **e alcançando este canal**. Carregar
+    uma vez aqui e passar pelo contexto de preço colapsa uma query de
+    ``Promotion`` por SKU numa só para o cardápio inteiro; a avaliação por SKU
+    continua no backend, em memória, sobre estas linhas pré-carregadas.
+
+    ⚠️ Esta função montava a própria query e **nunca chamava ``applies_to_channel``**,
+    enquanto o ``DiscountModifier`` (quem decide o desconto) filtrava por canal.
+    Resultado: promoção restrita ao PDV aparecia com selo −30% na loja online e a
+    sacola cobrava o preço cheio — o preço anunciado não era o cobrado, e a guarda
+    de ``expected_total_q`` não pega porque o carrinho está internamente coerente:
+    a mentira acontece uma tela antes. A regra de escopo agora tem **um dono só**
+    (``services.promotions``); duplicar a query aqui é o defeito, não a otimização.
     """
-    from django.utils import timezone
-
-    from shopman.shop.models import Promotion
-
-    now = timezone.now()
-    return list(
-        Promotion.objects.filter(
-            is_active=True,
-            valid_from__lte=now,
-            valid_until__gte=now,
-        ).exclude(coupons__isnull=False)
-    )
+    return catalog_context.active_promotions(channel_ref)
 
 
 def _batch_availability(skus: list[str], channel_ref: str) -> dict[str, dict | None]:

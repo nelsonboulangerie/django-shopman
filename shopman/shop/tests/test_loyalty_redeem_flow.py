@@ -144,6 +144,18 @@ def test_loyalty_remainder_goes_to_last_merch_item_not_fee_line():
     merch_discount = (1000 - session.items[0]["line_total_q"]) + (700 - session.items[1]["line_total_q"])
     assert merch_discount == applied  # desconto real == débito
 
+    # E cada linha continua fechando sozinha. Este teste media só o TOTAL, e por
+    # isso o rateio pôde conviver com um unitário que não bate com o total da
+    # própria linha (piso no unitário, valor exato no total) — a conta que o
+    # cliente confere quando lê "2 × R$ 6,34" no carrinho.
+    from decimal import Decimal
+
+    from shopman.utils.monetary import monetary_mult
+
+    for item in session.items:
+        qty = Decimal(str(item["qty"]))
+        assert item["line_total_q"] == monetary_mult(qty, item["unit_price_q"]), item["sku"]
+
 
 def test_insufficient_points_at_debit_alerts_operator(channel, customer):
     """Saldo abaixo do resgate na hora do débito: terminal + alerta (desconto

@@ -39,19 +39,26 @@ class PromotionPricingBackend:
         best_promo = None
 
         from shopman.shop.models import Promotion
+        from shopman.shop.services import promotions as promotion_service
 
         # Preloaded by the catalog builder (one query for the whole menu) and
         # passed through the context, or resolved here for one-off callers (PDP
         # card, cross-sell) that price a single SKU.
+        #
+        # ⚠️ O fallback montava a própria query e ignorava ``Promotion.channels``,
+        # enquanto o ``DiscountModifier`` (quem decide o desconto na sacola) filtra
+        # por canal. A PDP anunciava assim um desconto restrito a outro canal que o
+        # carrinho não dava. O escopo tem um dono só: ``services.promotions``.
+        # O canal vem do contexto quando o chamador o conhece e, senão, do
+        # ``listing`` — no storefront o listing É o ref do canal (ver
+        # ``get_channel_listing_ref``). Listing que não seja canal falha FECHADO
+        # (promoção escopada não aparece), que é o lado seguro: nunca anunciar o
+        # que a sacola não honra.
         promotions = context.get("active_promotions")
         if promotions is None:
-            now = timezone.now()
-            promotions = list(
-                Promotion.objects.filter(
-                    is_active=True,
-                    valid_from__lte=now,
-                    valid_until__gte=now,
-                ).exclude(coupons__isnull=False)
+            channel_ref = str(context.get("channel_ref") or listing or "")
+            promotions = promotion_service.get_active_promotions(
+                timezone.now(), channel_ref=channel_ref
             )
 
         match_ctx = {
