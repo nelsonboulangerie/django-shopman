@@ -52,18 +52,28 @@ class SubjectType(models.TextChoices):
     com ator/canal/contexto — e por isso o sujeito é textual, não UUID: cliente é
     identificado por UUID, display por ``ref`` de canal.
 
-    ``operator`` NÃO existe aqui. Lembrar o terminal do PDV para não pedir PIN toda
-    hora é feature legítima e sem pedido — §8.3: se a resposta é "não sei", ainda não
-    entra. A forma admite o terceiro valor sem quebra.
+    ``operator`` continua NÃO existindo, e a distinção é o ponto: o terceiro valor
+    é a ESTAÇÃO, não a pessoa. Lembrar quem opera seria lembrar de gente; lembrar a
+    estação é lembrar de um aparelho — o balcão, o totem —, que é justamente o que
+    não muda quando o turno troca.
+
+    ``station`` foi previsto aqui em 21/08/2026 (D1, opção B). O que ele guarda é a
+    resposta para "de que balcão esta requisição veio", e nada além disso: a
+    estação confiável NÃO ganha permissão nenhuma por ser confiável. Quem autoriza
+    é a pessoa que se identifica nela. Uma chave que só abre a antessala.
+
+    ``subject_id`` é o ``ref`` do ``cashman.Terminal``, do mesmo jeito que o
+    ``display`` usa o ``ref`` do canal.
     """
 
     CUSTOMER = "customer", _("cliente")
     DISPLAY = "display", _("quadro")
+    STATION = "station", _("estação")
 
 
 class TrustedDevice(models.Model):
     """
-    Um dispositivo confiável para um sujeito (cliente ou display).
+    Um dispositivo confiável para um sujeito (cliente, quadro ou estação).
 
     Cliente: depois da verificação por OTP, um cookie seguro fica no dispositivo, e
     no acesso seguinte daquele navegador o cliente pula o OTP.

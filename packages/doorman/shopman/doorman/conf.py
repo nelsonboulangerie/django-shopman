@@ -118,6 +118,7 @@ class DoormanSettings:
     # sem atropelar a confiança de cliente do mesmo navegador (um cookie guarda um
     # token só).
     DEVICE_TRUST_DISPLAY_COOKIE_NAME: str = "doorman_dt_display"
+    DEVICE_TRUST_STATION_COOKIE_NAME: str = "doorman_dt_station"
 
     # Access Link email login (one-click login via email)
     ACCESS_LINK_ENABLED: bool = True

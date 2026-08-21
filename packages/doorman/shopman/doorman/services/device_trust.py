@@ -45,13 +45,22 @@ class DeviceTrustService:
         as duas telas se derrubavam em revezamento. Cliente segue com nome único
         de propósito: um navegador é de uma pessoa.
         """
-        if subject_type == SubjectType.DISPLAY:
-            base = doorman_settings.DEVICE_TRUST_DISPLAY_COOKIE_NAME
-            if subject_id is None:
-                return base
-            seguro = re.sub(r"[^A-Za-z0-9_-]", "_", str(subject_id))
-            return f"{base}_{seguro}"
-        return doorman_settings.DEVICE_TRUST_COOKIE_NAME
+        # Quadro e ESTAÇÃO carregam o ``subject_id`` no nome, pela mesma razão: um
+        # computador pode tocar duas TVs, e pode ser provisionado como balcão E
+        # como totem. Com um nome só, autorizar o segundo sobrescrevia o token do
+        # primeiro e os dois se derrubavam em revezamento. Cliente segue com nome
+        # único de propósito: um navegador é de uma pessoa.
+        base_por_sujeito = {
+            SubjectType.DISPLAY: doorman_settings.DEVICE_TRUST_DISPLAY_COOKIE_NAME,
+            SubjectType.STATION: doorman_settings.DEVICE_TRUST_STATION_COOKIE_NAME,
+        }
+        base = base_por_sujeito.get(subject_type)
+        if base is None:
+            return doorman_settings.DEVICE_TRUST_COOKIE_NAME
+        if subject_id is None:
+            return base
+        seguro = re.sub(r"[^A-Za-z0-9_-]", "_", str(subject_id))
+        return f"{base}_{seguro}"
 
     @classmethod
     def check(cls, request: HttpRequest, subject_type: str, subject_id) -> bool:
