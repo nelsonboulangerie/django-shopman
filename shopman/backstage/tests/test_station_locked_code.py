@@ -8,6 +8,7 @@ tela sobe a identificação em vez de mentir.
 
 from __future__ import annotations
 
+import pytest
 from django.contrib.auth import get_user_model
 from django.contrib.auth.models import Permission
 from django.contrib.contenttypes.models import ContentType
@@ -35,6 +36,7 @@ class StationLockedCodeTests(TestCase):
         _grant(self.device_user, "operate_pos")
         self.client.force_login(self.device_user)
 
+    @pytest.mark.estacao_travada
     def test_locked_station_names_itself(self) -> None:
         response = self.client.get(POS_URL)
 

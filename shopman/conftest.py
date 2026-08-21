@@ -59,3 +59,71 @@ def _isolate_rules_state():
     _reset_process_state()
     with reg._lock:
         reg._validators[:] = validators_snapshot
+
+
+@pytest.fixture(autouse=True)
+def _identifica_o_operador_da_sessao(request, monkeypatch):
+    """``force_login`` numa superfície de operador também IDENTIFICA a pessoa.
+
+    Com ``SHOPMAN_REQUIRE_ACTIVE_OPERATOR`` ligado — o valor do staging, e o da
+    suíte desde 21/08/2026 — a sessão do Django é apenas a **estação**: ela diz
+    qual aparelho está falando, não quem está operando. A permissão é avaliada
+    contra o **operador ativo**, estabelecido por PIN ou crachá
+    (``HasBackstagePermission``, Opção C).
+
+    O harness não tinha esse segundo passo. 302 testes chamavam
+    ``client.force_login(alguem)`` e batiam na API, e o gate respondia 403
+    ``station_locked`` — corretíssimo, e inútil como sinal: nenhum deles era
+    sobre a trava. Editar 302 testes para digitar PIN seria ruído; o que faltava
+    era o harness saber que, num balcão, entrar E se identificar são o mesmo
+    gesto.
+
+    Esta fixture NÃO esconde a trava — mas só porque quem a testa sai dela
+    explicitamente, com ``@pytest.mark.estacao_travada``. Sem esse marcador ela
+    seria a própria cegueira que veio remover: o estado TRAVADO é a ausência do
+    operador, e uma fixture que sempre o preenche apagaria o único jeito de
+    provar que a trava existe. Foi o que aconteceu na primeira versão disto —
+    ``test_station_locked_code`` passou a receber 200 onde exige 403.
+
+    O default é o honesto (quem entrou, se identificou); a exceção é declarada.
+    """
+    if request.node.get_closest_marker("estacao_travada"):
+        return
+
+    from django.test import Client
+    from rest_framework.test import APIClient
+
+    from shopman.backstage.services.operator import ACTIVE_OPERATOR_SESSION_KEY
+
+    def _identifica(cliente, user):
+        # Só faz sentido para quem opera: cliente da loja não tem operador ativo,
+        # e marcá-lo como tal seria mentira que um teste de storefront herdaria.
+        if user is None or not getattr(user, "is_staff", False):
+            return
+        sessao = cliente.session
+        sessao[ACTIVE_OPERATOR_SESSION_KEY] = {
+            "id": user.pk,
+            "username": user.get_username(),
+            "name": user.get_full_name().strip() or user.get_username(),
+            "since": "2026-01-01T00:00:00+00:00",  # fixo: data não é o assunto aqui
+        }
+        sessao.save()
+
+    # DUAS portas de entrada, e as duas precisam identificar. O `force_login` do
+    # Django e o `force_authenticate` do DRF fazem a mesma coisa por caminhos
+    # diferentes — o segundo nem passa por autenticação, injeta o usuário direto.
+    # Cobrir só uma deixaria metade da suíte no escuro, que foi o que aconteceu
+    # na primeira tentativa (as APIs de produção continuaram em 403).
+    login_original = Client.force_login
+    auth_original = APIClient.force_authenticate
+
+    def force_login_e_identifica(self, user, backend=None):
+        login_original(self, user, backend=backend)
+        _identifica(self, user)
+
+    def force_authenticate_e_identifica(self, user=None, token=None):
+        auth_original(self, user=user, token=token)
+        _identifica(self, user)
+
+    monkeypatch.setattr(Client, "force_login", force_login_e_identifica)
+    monkeypatch.setattr(APIClient, "force_authenticate", force_authenticate_e_identifica)

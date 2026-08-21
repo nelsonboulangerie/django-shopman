@@ -47,6 +47,7 @@ def operate_production_perm(db):
 
 
 @pytest.mark.django_db
+@pytest.mark.estacao_travada
 def test_session_reports_locked_then_operator(client, device, baker):
     client.force_login(device)
     body = client.get(reverse("api-backstage-operator-session")).json()
