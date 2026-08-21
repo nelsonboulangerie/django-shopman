@@ -842,7 +842,7 @@ class Command(BaseCommand):
             ("CGO", "Pain de Campagne", "Fermentação natural (levain), trigo 50% integral e centeio orgânico. Fatiado na hora", 2200, "un", 2, True,
              f"{IMG}/cgr.webp", 300, "Guarde em saco de pano. Dura até 4 dias em temperatura ambiente"),
             ("CPX", "Campagne Passas & Castanhas", "Levain, trigo 50% integral e centeio orgânico, passas, castanhas de caju e do Pará", 3300, "un", 3, True,
-             f"{IMG}/cpx.webp", 330, "Guarde em saco de pano. Dura até 5 dias em temperatura ambiente"),
+             f"{IMG}/cpx.webp", 500, "Guarde em saco de pano. Dura até 5 dias em temperatura ambiente"),
             ("CI", "Ciabatta", "Pão aerado, clássico italiano com azeite extra virgem e fermentação 100% natural (levain)", 1800, "un", 0, True,
              f"{IMG}/ci.webp", 180, "Congele no mesmo dia. Reaqueça a 200°C por 8min"),
             ("BE", "Baguete Gergelim", "Baguete com fermentação 100% natural (levain), toque de azeite e gergelim", 1800, "un", 0, True,
@@ -1131,7 +1131,7 @@ class Command(BaseCommand):
                 "allergens": ["glúten", "castanhas"],
                 "dietary_info": ["100% vegetal", "sem lactose"],
                 "serves": "4 a 6 pessoas",
-                "approx_dimensions": "aprox. 28 x 16 x 10 cm",
+                "approx_dimensions": "aprox. 15 x 15 x 10 cm",
             },
             "CI": {
                 "allergens": ["glúten"],
