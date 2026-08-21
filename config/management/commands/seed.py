@@ -1124,8 +1124,8 @@ class Command(BaseCommand):
             "CGO": {
                 "allergens": ["glúten"],
                 "dietary_info": ["100% vegetal", "sem lactose"],
-                "serves": "3 a 5 pessoas",
-                "approx_dimensions": "aprox. 18 cm de diâmetro",
+                "serves": "2 a 3 pessoas",
+                "approx_dimensions": "aprox. 15 cm de diâmetro x 10 cm de altura",
             },
             "CPX": {
                 "allergens": ["glúten", "castanhas"],
@@ -2585,10 +2585,6 @@ class Command(BaseCommand):
                 # invisível para custo, plano de fornada e sugestão de compra.
                 # Mesma construção do chausson, trocando a maçã pelo creme de
                 # limão.
-                #
-                # ⚠️ Fica de fora do `production_plan` abaixo até alguém tirar a
-                # média diária dos XMLs, como as outras onze. Número inventado
-                # aqui viraria previsão de compra inventada lá.
                 "ref": "bichon",
                 "name": "Bichon au Citron",
                 "output_sku": "BH",
@@ -2824,6 +2820,10 @@ class Command(BaseCommand):
             ("animalzinho", Decimal("16"), (5, 30), (8, 30)),
             ("focaccia-dia", Decimal("10"), (7, 0), (10, 0)),
             ("folhado-dia", Decimal("30"), (8, 0), (11, 0)),
+            # O bichon sai junto do chausson, um pouco abaixo em quantidade
+            # (dono: 10 a 20% menos). É o único do plano cuja quantidade não vem
+            # da média dos XMLs — vem do irmão dele.
+            ("bichon", Decimal("25"), (8, 0), (11, 0)),
             ("madeleine", Decimal("68"), (9, 0), (13, 0)),
         ]
         recipes_by_ref = {r.ref: r for r in Recipe.objects.filter(ref__in=[row[0] for row in production_plan])}
