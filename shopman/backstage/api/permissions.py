@@ -16,6 +16,14 @@ O aparelho continua sendo reconhecido — mas por CONFIANÇA DE DISPOSITIVO
 (``backstage.station_trust``), que diz de onde a requisição veio e não concede
 nada. Uma chave que só abre a antessala: com ela, a tela de identificação
 aparece; sem uma pessoa identificada, nenhuma leitura passa.
+
+**Duas espécies de estação**, e a segunda não é exceção à regra acima:
+
+* **atendida** — o balcão. Tem gente na frente, e não faz nada sem PIN.
+* **autônoma** — o totem. Não há quem digite PIN, então ela age em NOME PRÓPRIO,
+  com uma conta declarada no ``Terminal.metadata`` e cujas permissões são dados
+  do deployment. Continua valendo que o aparelho não concede nada: quem concede é
+  a conta, e o gate a trata como trata qualquer operador.
 """
 
 from __future__ import annotations
@@ -23,7 +31,7 @@ from __future__ import annotations
 from rest_framework.exceptions import PermissionDenied
 from rest_framework.permissions import BasePermission
 
-from shopman.backstage.station_trust import is_trusted_station
+from shopman.backstage.station_trust import is_trusted_station, station_operator
 
 #: Código estável da recusa por estação sem ninguém identificado. A superfície
 #: REAGE a ele (sobe a tela de identificação) em vez de casar a mensagem em
@@ -50,19 +58,38 @@ def _recusa_travada():
 
 
 def _operador(request):
-    """O operador desta requisição — que é simplesmente quem está logado."""
+    """Quem está operando nesta requisição. Uma pergunta, um dono.
+
+    Em geral é simplesmente quem está logado: a pessoa que provou PIN, crachá ou
+    senha VIROU a sessão. Há um segundo caso, e ele é uma decisão de desenho, não
+    uma exceção: a estação AUTÔNOMA (o totem) não tem ninguém na frente para
+    digitar PIN, então ela age em nome próprio, com uma conta que é dela.
+
+    A conta do totem entra em ``request.user`` — e não num segundo lugar ao lado
+    dele — porque foi a existência de dois sujeitos que abriu o buraco de 20/08:
+    sempre havia um caminho que perguntava para o errado. Aqui a atribuição
+    (``_actor``, ``Entry.operator``) sai certa de graça, e o gate de permissão
+    trata o totem como trata qualquer operador: pelo que a conta dele PODE.
+    """
     user = getattr(request, "user", None)
     if user is not None and user.is_authenticated and user.is_staff:
         return user
+
+    totem = station_operator(request)
+    if totem is not None:
+        # `request.user` é o sujeito que o resto da requisição vai ler. O DRF
+        # aceita a atribuição e propaga para o request do Django.
+        request.user = totem
+        return totem
     return None
 
 
 class IsBackstageOperator(BasePermission):
     """Alguém identificado, e que é da casa.
 
-    Recusa com dois códigos diferentes de propósito: ``station_locked`` quando a
-    requisição vem de uma estação reconhecida mas ninguém se identificou (o
-    balcão de manhã), e a recusa comum quando nem isso. A tela precisa distinguir
+    Recusa de dois jeitos, de propósito: LEVANTA ``station_locked`` quando a
+    requisição vem de uma estação reconhecida e ninguém se identificou (o balcão
+    de manhã), e devolve ``False`` quando nem isso. A tela precisa distinguir
     "peça o PIN" de "você não deveria estar aqui".
     """
 
@@ -122,7 +149,11 @@ class IsTrustedStation(BasePermission):
     message = "Este aparelho não é uma estação da loja."
 
     def has_permission(self, request, view) -> bool:
-        return bool(is_trusted_station(request) or _operador(request) is not None)
+        # `_operador` PRIMEIRO, e a ordem é o bug: com `is_trusted_station` na
+        # frente, o `or` curto-circuita e a estação autônoma nunca resolve a
+        # própria conta — a antessala responderia "travada" a um totem que não
+        # tem quem digite PIN.
+        return bool(_operador(request) is not None or is_trusted_station(request))
 
 
 def _required_codes(perm) -> tuple[str, ...]:

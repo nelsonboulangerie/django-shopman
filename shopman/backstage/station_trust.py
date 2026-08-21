@@ -28,12 +28,29 @@ duas semanas.
 
 from __future__ import annotations
 
+import logging
+
 from shopman.doorman.models import SubjectType
+
+logger = logging.getLogger("shopman.backstage.station_trust")
 
 #: Quem pode transformar um aparelho em estação confiável. É ato de gestão — quem
 #: provisiona decide que aquele balcão passa a poder pedir identificação — e por
 #: isso não é a permissão de operar, é a de gerir operadores.
 PROVISION_PERM = "cashman.manage_operators"
+
+#: Estação ATENDIDA: tem gente na frente, e não faz nada sem PIN ou crachá. É o
+#: balcão, e é o default de qualquer terminal que não diga o contrário.
+ATTENDED = "attended"
+
+#: Estação AUTÔNOMA: o totem. Não há ninguém para digitar PIN, então ela age em
+#: NOME PRÓPRIO — com uma conta de operador que é dela, e cujas permissões são
+#: dados do deployment, não código.
+#:
+#: A diferença com o desenho que a D1-B derrubou é o que a conta pode: aquela era
+#: o ``admin`` superusuário e dava chave-mestra a quem chegasse; esta tem o que a
+#: loja lhe conceder, e recusar superusuário aqui é regra, não recomendação.
+AUTONOMOUS = "autonomous"
 
 
 def station_cookie_name(terminal_ref: str) -> str:
@@ -73,6 +90,72 @@ def station_ref(request) -> str:
 def is_trusted_station(request) -> bool:
     """Esta requisição vem de um aparelho que a loja reconhece?"""
     return bool(station_ref(request))
+
+
+def _station_config(terminal_ref: str) -> dict:
+    """O bloco ``station`` do ``Terminal.metadata`` daquele ref, ou ``{}``."""
+    from shopman.cashman.models import Terminal
+
+    terminal = Terminal.objects.filter(ref=terminal_ref, is_active=True).first()
+    if terminal is None:
+        return {}
+    bloco = (terminal.metadata or {}).get("station")
+    return bloco if isinstance(bloco, dict) else {}
+
+
+def station_mode(request) -> str:
+    """``ATTENDED`` ou ``AUTONOMOUS`` para a estação desta requisição.
+
+    Sem estação, ou com um valor que não reconhecemos, a resposta é ``ATTENDED``.
+    O default fecha a porta: um modo escrito errado no Admin não pode transformar
+    um balcão em aparelho que age sozinho.
+    """
+    ref = station_ref(request)
+    if not ref:
+        return ATTENDED
+    modo = str(_station_config(ref).get("mode") or "").strip().lower()
+    return AUTONOMOUS if modo == AUTONOMOUS else ATTENDED
+
+
+def station_operator(request):
+    """A conta em cujo nome uma estação AUTÔNOMA age, ou ``None``.
+
+    Tudo aqui falha fechado, e cada recusa tem uma razão vivida:
+
+    * estação atendida, ou sem conta declarada → ``None``. O balcão continua
+      pedindo PIN; nenhum aparelho ganha identidade por omissão.
+    * conta inexistente, inativa ou fora da casa → ``None``. Desativar a conta do
+      totem no Admin é como se desliga um totem, e tem de bastar.
+    * conta SUPERUSUÁRIA → ``None``, e um aviso no log. Era exatamente esse o
+      buraco de 20/08: um aparelho logado como ``admin``, ``is_superuser``
+      curto-circuitando ``has_perm``, e o cookie levando a sessão para o Admin na
+      aba ao lado. Um totem com chave-mestra é o mesmo defeito com outro nome.
+
+    O que a conta PODE fazer não se decide aqui: são as permissões que a loja lhe
+    conceder. Enquanto a superfície do totem não existir, ela não precisa de
+    nenhuma — e o gate já a trata como qualquer operador sem permissão.
+    """
+    ref = station_ref(request)
+    if not ref or station_mode(request) != AUTONOMOUS:
+        return None
+    username = str(_station_config(ref).get("operator") or "").strip()
+    if not username:
+        return None
+
+    from django.contrib.auth import get_user_model
+
+    conta = get_user_model().objects.filter(
+        username=username, is_active=True, is_staff=True
+    ).first()
+    if conta is None:
+        return None
+    if conta.is_superuser:
+        logger.error(
+            "Estação autônoma aponta para conta SUPERUSUÁRIA — recusada.",
+            extra={"station": ref, "account": username},
+        )
+        return None
+    return conta
 
 
 def provision(request, response, terminal_ref: str):
