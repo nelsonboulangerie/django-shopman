@@ -7,7 +7,13 @@ por acidente de história e este arquivo — o que tem teste de paridade — nun
 em produção. Ao resetar as migrações isso viraria perda silenciosa de RBAC.
 
 Agora: grupo é dado de deployment, mora aqui, e o release job chama
-`migrate && setup_groups`. Idempotente por construção (`get_or_create` + `add`).
+`migrate && setup_groups`. Idempotente por construção (`get_or_create` + `set`).
+
+E `set`, não `add`: dono também TIRA. Enquanto o loop só somava, permissão retirada
+desta lista seguia concedida no banco para sempre, e como o release job roda a cada
+deploy o desvio se acumulava em silêncio — o mesmo modo de falha do RuleConfig
+("tirar do código não tira do banco"). ⚠️ A contrapartida é que concessão feita à mão
+no Admin é revogada no próximo deploy: uma permissão que deve durar se escreve aqui.
 
 Ver `tests/test_group_permission_parity.py`, que falha se uma permission gateando
 superfície não for concedida a ninguém — o guarda contra "permission existe, e ninguém
@@ -28,6 +34,13 @@ class Command(BaseCommand):
             ct, _ = ContentType.objects.get_or_create(app_label=app_label, model=model)
             p, _ = Permission.objects.get_or_create(content_type=ct, codename=codename)
             return p
+
+        def _nomes(perm_ids):
+            """`app_label.codename` legível, para o log dizer O QUE saiu."""
+            return sorted(
+                f"{p.content_type.app_label}.{p.codename}"
+                for p in Permission.objects.filter(id__in=perm_ids).select_related("content_type")
+            )
 
         def shop_shop(c):
             return _perm("shop", "shop", c)
@@ -221,10 +234,25 @@ class Command(BaseCommand):
 
         for name, perms in groups.items():
             group, created = Group.objects.get_or_create(name=name)
-            for perm in perms:
-                group.permissions.add(perm)
+
+            # `set` faz deste arquivo a fonte da verdade do grupo: o que saiu da
+            # lista sai do banco. Guardamos o antes só para poder DIZER o que
+            # saiu — revogação silenciosa num log de deploy vira o mesmo fantasma
+            # que a contagem errada era.
+            antes = set(group.permissions.values_list("id", flat=True))
+            group.permissions.set(perms)
+            revogadas = _nomes(antes - {p.id for p in perms})
+
             verb = "criado" if created else "atualizado"
-            perm_count = len(perms)
-            self.stdout.write(f"  {name}: {verb} ({perm_count} permissões)")
+            # A contagem sai do BANCO, não da lista pretendida. A lista repete
+            # permissão de propósito (um `_ver("backstage")` inteiro mais os
+            # `view_*` do B.I. nomeados um a um, que documentam a intenção), e
+            # `len(perms)` contava as repetições: o deploy de 22/08/2026 logou
+            # "Gerente: 157" onde o banco tinha 148, e quem fosse conferir na
+            # tela de Grupos do Admin caçava nove permissões que nunca existiram.
+            linha = f"  {name}: {verb} ({group.permissions.count()} permissões)"
+            if revogadas:
+                linha += f" — revogadas: {', '.join(revogadas)}"
+            self.stdout.write(linha)
 
         self.stdout.write(self.style.SUCCESS("setup_groups: OK"))

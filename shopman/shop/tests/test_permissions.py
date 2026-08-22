@@ -13,6 +13,8 @@ Covers:
 
 from __future__ import annotations
 
+import re
+
 from django.contrib.auth import get_user_model
 from django.contrib.auth.models import Group, Permission
 from django.test import Client, TestCase
@@ -316,3 +318,61 @@ class TestSetupGroupsIdempotent(TestCase):
         g = Group.objects.get(name="Caixa")
         self.assertEqual(g.permissions.filter(codename="operate_pos").count(), 1)
         self.assertEqual(g.permissions.filter(codename="manage_orders").count(), 1)
+
+
+class TestSetupGroupsIsSourceOfTruth(TestCase):
+    """O comando é o dono do grupo: o que ele diz bate com o banco, e o que saiu
+    da lista sai do banco.
+
+    Os dois defeitos que estes testes fixam foram vistos no deploy 95492b89
+    (22/08/2026): o log dizia "Gerente: 157 permissões" enquanto o banco tinha
+    148 (a contagem vinha da lista pretendida, que repete entradas), e o loop
+    usava ``add`` — permissão retirada do código seguia concedida para sempre,
+    acumulando a cada deploy porque o release job roda este comando toda vez.
+    """
+
+    def _run(self):
+        from io import StringIO
+
+        from django.core.management import call_command
+
+        out = StringIO()
+        call_command("setup_groups", stdout=out)
+        return out.getvalue()
+
+    def test_reported_count_matches_the_database(self):
+        saida = self._run()
+
+        linhas = re.findall(r"^  (.+?): \w+ \((\d+) permissões\)", saida, re.MULTILINE)
+        self.assertTrue(linhas, f"nenhuma linha de grupo no output:\n{saida}")
+
+        for nome, relatado in linhas:
+            real = Group.objects.get(name=nome).permissions.count()
+            self.assertEqual(
+                int(relatado),
+                real,
+                f"{nome}: o comando relatou {relatado} permissões e o banco tem "
+                f"{real} — a contagem voltou a sair da lista pretendida, que "
+                "repete entradas.",
+            )
+
+    def test_permission_outside_the_list_is_revoked_and_reported(self):
+        self._run()
+        caixa = Group.objects.get(name="Caixa")
+        intruso = Permission.objects.get(
+            content_type__app_label="shop", codename="manage_catalog"
+        )
+        caixa.permissions.add(intruso)
+
+        saida = self._run()
+
+        self.assertNotIn(
+            intruso,
+            list(caixa.permissions.all()),
+            "permissão fora da lista sobreviveu ao comando — o loop voltou a só somar.",
+        )
+        self.assertIn("revogadas: shop.manage_catalog", saida)
+
+    def test_nothing_is_revoked_on_a_clean_rerun(self):
+        self._run()
+        self.assertNotIn("revogadas", self._run())
