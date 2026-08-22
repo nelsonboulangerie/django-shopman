@@ -74,7 +74,7 @@
 
 ## Notas de operação aprendidas (staging)
 
-- **Contexto doctl** de deploy = `shopman-staging-deploy` (único vivo; os outros foram removidos). Prod terá o seu — gerar token e `doctl auth init`.
+- **Contexto doctl** de deploy = `shopman-alpha-deploy` (único vivo; os outros foram removidos). Prod terá o seu — gerar token e `doctl auth init`.
 - **Autodeploy OFF**: push no `main` NÃO deploya; é sempre `create-deployment` manual.
 - **Reseed via job**: console/exec dá 403; reseed roda armando `seed --flush` no job `bootstrap-staging` (POST_DEPLOY) e revertendo o spec depois. Em prod, seed é evento único de bootstrap, não rotina.
 - **Preservar os secrets `EV[...]`** ao editar o spec (usar `apps spec get` como base, nunca o `.do/app.yaml` cru).

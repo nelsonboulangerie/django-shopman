@@ -23,7 +23,7 @@ O **CNPJ emitente** vem automaticamente da config da loja (`Shop.document`, Admi
 Só sobrescrever via `FOCUS_NFE_CNPJ_EMITENTE` se o emitente for diferente do CNPJ da loja.
 
 ### Staging (homologação)
-No DigitalOcean → Apps → `shopman-staging` → Settings → App-Level Environment Variables (Encrypt nos segredos):
+No DigitalOcean → Apps → `shopman-alpha` → Settings → App-Level Environment Variables (Encrypt nos segredos):
 ```
 SHOPMAN_FISCAL_ADAPTER=shopman.shop.adapters.fiscal_focusnfe.FocusNFeBackend
 FOCUS_NFE_TOKEN=<token de homologação>     (Encrypt)

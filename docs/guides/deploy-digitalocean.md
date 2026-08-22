@@ -1,7 +1,7 @@
 # Deploy DigitalOcean
 
 Este guia é o caminho canônico para subir o Shopman na DigitalOcean sem o
-operador chamar Docker manualmente. O alvo inicial é `shopman-staging` na App
+operador chamar Docker manualmente. O alvo atual é `shopman-alpha` na App
 Platform, com web ASGI, worker de diretivas, job de release, PostgreSQL e cache
 Valkey compatível com Redis.
 
@@ -25,9 +25,10 @@ Fontes oficiais usadas para este contrato:
 
 ## Blueprint
 
-O arquivo `.do/app.staging-subdomains.yaml` define o staging por subdomínios
-(ingress host-based: apex→loja Nuxt, `api.`/`admin.`→Django, `pos.`→PDV). Produção
-usa `.do/app.subdomains.yaml` (trocar `STORE_DOMAIN`). Ambos definem:
+O arquivo `.do/app.alpha-subdomains.yaml` registra o alpha tecnico derivado do
+spec vivo (ingress host-based: `alpha.nelsonboulangerie.com.br` → loja Nuxt,
+API/Admin/backstage em `*.boulangerie.com.br`). Produção usa
+`.do/app.subdomains.yaml` (trocar `STORE_DOMAIN`). Ambos definem:
 
 - `web`: Daphne ASGI em `config.asgi:application`;
 - `directive-worker`: `python manage.py process_directives --watch`;
@@ -44,14 +45,15 @@ usa `.do/app.subdomains.yaml` (trocar `STORE_DOMAIN`). Ambos definem:
   e `SHOPMAN_INSTANCE_MODIFIERS`;
 - health checks em `/ready/` e liveness em `/health/`.
 
-O blueprint usa `git.repo_clone_url` público para dispensar autorização manual
-da GitHub App da DigitalOcean no primeiro staging. Enquanto isso estiver assim,
+O blueprint usa `git.repo_clone_url` público. Enquanto isso estiver assim,
 redeploys devem ser acionados explicitamente com
-`doctl --context shopman-staging-deploy apps create-deployment <APP_ID> --wait`
-ou pelo painel. ⚠️ **Nunca** use `doctl apps update --spec` só para subir código:
-esse comando sobrescreve o spec vivo e **apaga toda variável encriptada** que
-exista apenas no painel. `--spec` é exclusivo para mudança de topologia. Para deploy automático por push, autorize a GitHub App da
-DigitalOcean e troque os blocos `git` por `github`.
+`doctl --context shopman-alpha-deploy apps create-deployment <APP_ID> --wait`
+ou pelo painel. ⚠️ **Nunca** use `.do/app.alpha-subdomains.yaml` com
+`doctl apps update --spec` só para subir código: esse comando sobrescreve o spec
+vivo e pode apagar variáveis encriptadas que existem apenas no painel. Para
+mudança futura de topologia, parta de `doctl apps spec get`, preserve os secrets
+e só então aplique o spec vivo editado. Para deploy automático por push,
+autorize a GitHub App da DigitalOcean e troque os blocos `git` por `github`.
 
 O `Dockerfile` já compila CSS e agora roda `collectstatic` no build. O runtime
 serve `/static/` por WhiteNoise, então App Platform não precisa de volume
@@ -88,7 +90,7 @@ ManyChat; o segundo valida webhooks HMAC inbound; o terceiro autentica a criaç�
 servidor-servidor de AccessLinks.
 
 Em planos PostgreSQL pequenos, use pool antes de manter conexões Django
-persistentes. O staging usa o pool `shopman-staging-pool`:
+persistentes. O alpha usa o pool legado de nao-producao `shopman-staging-pool`:
 
 ```env
 DATABASE_URL=${postgres.shopman-staging-pool.DATABASE_URL}
@@ -193,18 +195,18 @@ credenciais, como esperado.
 
 ## Primeiro Deploy
 
-Quando houver token temporário da DigitalOcean, a execução operacional será:
+Para criar um ambiente novo do zero, a execução operacional seria:
 
 ```bash
-doctl auth init --context shopman-staging
-doctl auth switch --context shopman-staging
-doctl projects create --name "Shopman Staging" --purpose "Web Application" --environment Staging
+doctl auth init --context shopman-alpha
+doctl auth switch --context shopman-alpha
+doctl projects create --name "Shopman Alpha" --purpose "Web Application" --environment Staging
 doctl databases create shopman-staging-postgres --engine pg --version 16 --region nyc3 --size db-s-1vcpu-1gb --num-nodes 1 --wait
 doctl databases create shopman-staging-cache --engine valkey --version 8 --region nyc3 --size db-s-1vcpu-1gb --num-nodes 1 --wait
 doctl databases db create <postgres-id> shopman
 doctl databases user create <postgres-id> shopman
-doctl apps spec validate .do/app.staging-subdomains.yaml
-doctl apps create --spec .do/app.staging-subdomains.yaml --project-id <project-id> --wait
+doctl apps spec validate .do/app.alpha-subdomains.yaml
+doctl apps create --spec .do/app.alpha-subdomains.yaml --project-id <project-id> --wait
 ```
 
 O usuário `shopman` precisa ter permissão de criação no schema `public` do banco
@@ -215,17 +217,17 @@ Se o app já existir, **só para subir código novo** (não mexe no spec nem nos
 segredos):
 
 ```bash
-doctl --context shopman-staging-deploy apps create-deployment <app-id> --wait
+doctl --context shopman-alpha-deploy apps create-deployment <app-id> --wait
 ```
 
-Aplicar o spec do repo por cima do app vivo é operação **de topologia**, não de
-deploy, e é destrutiva para segredos:
+Aplicar o spec do repo por cima do app vivo é proibido. Para topologia futura,
+capture o spec vivo e edite esse arquivo capturado:
 
 ```bash
-# ⚠️ SOBRESCREVE o spec inteiro — apaga variáveis encriptadas que só existem no painel.
-# Salve o spec vivo antes e reponha os SECRET pelo painel depois.
 doctl apps spec get <app-id> --format yaml > /tmp/spec-vivo-$(date +%F).yaml  # apps get --format Spec imprime "<nil>"
-doctl apps update <app-id> --spec .do/app.staging-subdomains.yaml --update-sources --wait
+# Edite /tmp/spec-vivo-*.yaml preservando os SECRET/EV[...] existentes.
+# So entao, com revisao explicita:
+doctl apps update <app-id> --spec /tmp/spec-vivo-YYYY-MM-DD.yaml --update-sources --wait
 ```
 
 Depois do deploy:
@@ -296,9 +298,10 @@ Depois do headless (Django não serve mais páginas de cliente), a topologia fin
 desacopla **por domínio**. Blueprints prontos (schema validado com `doctl apps spec
 validate --schema-only`):
 
-- **Staging primeiro** (recomendado): [`.do/app.staging-subdomains.yaml`](../../.do/app.staging-subdomains.yaml)
-  — concreto em `staging.nelsonboulangerie.com.br`, pagamentos MOCK, reusa o Postgres/Valkey
-  de staging. Aplica com `doctl apps update <STAGING_APP_ID> --spec .do/app.staging-subdomains.yaml`.
+- **Alpha primeiro**: [`.do/app.alpha-subdomains.yaml`](../../.do/app.alpha-subdomains.yaml)
+  — referencia o app vivo em `alpha.nelsonboulangerie.com.br`, pagamentos MOCK,
+  reusa o Postgres/Valkey nao-producao. Nao aplicar este arquivo diretamente no
+  app vivo porque secrets foram omitidos.
 - **Produção** (depois de validar): [`.do/app.subdomains.yaml`](../../.do/app.subdomains.yaml)
   — template no apex real (trocar `STORE_DOMAIN`), pagamentos reais + secrets.
 

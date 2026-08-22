@@ -5,7 +5,7 @@
 > (critérios/migrations) e a [GO-LIVE-CREDENTIALS-MATRIX](../plans/GO-LIVE-CREDENTIALS-MATRIX.md)
 > (credenciais por fase + gate do alpha §3).
 >
-> ⚠️ Antes de checar env do staging, ler o estado real: `doctl --context shopman-staging-deploy
+> ⚠️ Antes de checar env do alpha, ler o estado real: `doctl --context shopman-alpha-deploy
 > apps spec get 40b86e35-bafe-4a1a-a1b0-e124d3d9fd0f`.
 
 ## Estado verificado (2026-06-29)

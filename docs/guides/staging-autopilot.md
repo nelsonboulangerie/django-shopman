@@ -58,7 +58,7 @@ os passos com latência de segundos.
 | `SHOPMAN_STAGING_AUTOPILOT_DELAY_SECONDS` | `30` | Espera entre um passo e o outro. |
 | `SHOPMAN_STAGING_AUTOPILOT_CHANNELS` | vazio (= todos) | CSV de `channel_ref`. Preencher deixa os outros canais na mão do operador. |
 
-Já está no `.do/app.staging-subdomains.yaml`. Depois de mudar a flag, **rode o
+Já está no `.do/app.alpha-subdomains.yaml`. Depois de mudar a flag, **rode o
 `seed` de novo** — o horário 24/7 é dado, não código:
 
 ```bash
