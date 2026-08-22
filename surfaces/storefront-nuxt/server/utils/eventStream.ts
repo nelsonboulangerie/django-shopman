@@ -4,6 +4,7 @@ import {
   setResponseStatus,
   type H3Event
 } from 'h3'
+import { resolveDjangoBaseUrl } from './djangoBaseUrl'
 
 // Proxy SSE same-origin genérico (reutilizável cross-surface). O EventSource do
 // app conecta em uma rota /sse/... do BFF e aqui repassamos o cookie de sessão e
@@ -22,13 +23,14 @@ export async function proxyEventStream (
   upstreamPath: string
 ): Promise<ReadableStream<Uint8Array> | string> {
   const config = useRuntimeConfig(event)
+  const djangoBaseUrl = resolveDjangoBaseUrl(config.djangoBaseUrl)
 
   const controller = new AbortController()
   // Cliente fechou o EventSource (troca de página/aba) → aborta o upstream para o
   // Django derrubar a inscrição em vez de deixar uma conexão pendurada.
   event.node.req.on('close', () => controller.abort())
 
-  const target = `${config.djangoBaseUrl}${upstreamPath}`
+  const target = `${djangoBaseUrl}${upstreamPath}`
   const headers: Record<string, string> = { accept: 'text/event-stream' }
 
   const cookie = getRequestHeader(event, 'cookie')
