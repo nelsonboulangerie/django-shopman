@@ -1101,6 +1101,15 @@ pacote porque hardware é da superfície) e pelo `seed`; lida por
 | `hardware` | `dict` | Admin, `seed` | `runtime_profile` | Periféricos declarados. Ver abaixo. |
 | `station` | `dict` | Admin | `backstage/station_trust.py` | Que ESPÉCIE de estação é este dispositivo. Ver abaixo. |
 
+⚠️ **Nada disto é dado de seed, e o `seed --flush` não custa nenhum.** O flush precisa apagar
+`Terminal` (o turno pendura ali por FK), então ele fotografa a config por `ref` e
+`_restore_terminal_config` devolve depois que a fase dinâmica recria o terminal — o mesmo
+idioma que `_relink_bi_aliases` usa para a curadoria de de-paras. A loja vence em tudo que
+declarou; o `seed` só preenche lacuna, e no `hardware` isso é por periférico (a impressora
+cadastrada não é sobrescrita, mas a gaveta do seed entra se não havia nenhuma). Terminal que
+o seed não recria — qualquer `ref` fora do `pdv-main` do `Terminal.default()` — volta pela
+mesma via.
+
 ### station — atendida ou autônoma
 
 Lido por `shopman/backstage/station_trust.py` (`station_mode`, `station_operator`) e, através

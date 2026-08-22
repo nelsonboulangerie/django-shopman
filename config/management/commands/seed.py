@@ -193,6 +193,11 @@ class Command(BaseCommand):
         else:
             self._seed_demo_dynamic(products, customers, channels, positions)
 
+        # DEPOIS da fase dinâmica, de propósito: é `_seed_cash_register` quem recria o
+        # `pdv-main` (via `Terminal.default()`) e declara o hardware da casa. A loja
+        # tem a última palavra sobre a própria config — o seed só preenche lacuna.
+        self._restore_terminal_config()
+
         self.stdout.write(self.style.SUCCESS("\n✅ Seed Nelson completo!\n"))
 
     def _seed_demo_dynamic(self, products, customers, channels, positions):
@@ -749,6 +754,28 @@ class Command(BaseCommand):
 
         hard_delete(CashEntry)
         CashmanShift.objects.all().delete()
+
+        # Terminal é config assinada por gente, como a curadoria de de-paras acima:
+        # que ESPÉCIE de estação é o dispositivo (`station`), o que o PDV mostra
+        # (`default_fulfillment_type`, `favorite_collection_refs`, `auto_lock_seconds`)
+        # e o hardware do balcão. Nada disso é dado de seed. O flush precisa apagar
+        # (o turno pendura aqui por FK), então fotografa por `ref` e
+        # `_restore_terminal_config` devolve depois que o seed recria.
+        #
+        # ⚠️ Sem isto o reseed levava tudo em silêncio: o seed replanta só `hardware`,
+        # e só no `pdv-main` que o `Terminal.default()` recria — um totem some inteiro.
+        # O `station` era o pior, porque volta para ATENDIDA: o totem passa a exigir um
+        # PIN que não há ninguém para digitar, e nada na tela diz por quê.
+        self._terminal_config = {
+            t.ref: {
+                "label": t.label,
+                "channel_ref": t.channel_ref,
+                "location_ref": t.location_ref,
+                "is_active": t.is_active,
+                "metadata": t.metadata or {},
+            }
+            for t in CashTerminal.objects.all()
+        }
         CashTerminal.objects.all().delete()
 
         # Day closing
@@ -7001,6 +7028,45 @@ class Command(BaseCommand):
             relinked += ProductAlias.objects.filter(pk__in=alias_pks).update(product=product_pk)
         note = f" ({extinct} sem produto no catálogo novo: extintos)" if extinct else ""
         self.stdout.write(f"  ✅ {relinked} de-paras de produto religados por SKU ou nome{note}")
+
+    def _restore_terminal_config(self) -> None:
+        """Devolve aos terminais a config que o flush fotografou, e recria os que sumiram.
+
+        Só faz algo depois de um `--flush` (é ele quem fotografa). O seed recria
+        apenas o `pdv-main`, e nele replanta apenas `metadata["hardware"]` — todo o
+        resto da config da loja (`station`, `default_fulfillment_type`,
+        `favorite_collection_refs`, `auto_lock_seconds`) e todo terminal com outro
+        `ref` dependem desta volta para existir.
+
+        Quem vence o quê: a loja vence em tudo que declarou; o seed preenche as
+        lacunas. No `hardware` isso é por periférico — a impressora que a loja
+        cadastrou não é sobrescrita pela do seed, mas a gaveta que o seed declara
+        entra se a loja não tinha nenhuma.
+        """
+        remembered = getattr(self, "_terminal_config", None)
+        if not remembered:
+            return
+        from shopman.cashman.models import Terminal as CashTerminal
+
+        restored = 0
+        recreated = 0
+        for ref, saved in remembered.items():
+            terminal, created = CashTerminal.objects.get_or_create(ref=ref)
+            recreated += created
+            fresh = terminal.metadata or {}
+            metadata = {**fresh, **saved["metadata"]}
+            hardware = {**(fresh.get("hardware") or {}), **(saved["metadata"].get("hardware") or {})}
+            if hardware:
+                metadata["hardware"] = hardware
+            terminal.label = saved["label"]
+            terminal.channel_ref = saved["channel_ref"]
+            terminal.location_ref = saved["location_ref"]
+            terminal.is_active = saved["is_active"]
+            terminal.metadata = metadata
+            terminal.save(update_fields=["label", "channel_ref", "location_ref", "is_active", "metadata"])
+            restored += 1
+        note = f" ({recreated} recriados do zero)" if recreated else ""
+        self.stdout.write(f"  ✅ {restored} terminais com a config da loja de volta{note}")
 
     def _seed_bi_aliases(self) -> None:
         """Os vocabulários do B.I. — de-para de categoria e de forma de pagamento.
