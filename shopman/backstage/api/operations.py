@@ -298,7 +298,7 @@ class POSView(APIView):
         query = request.query_params.get("q", "")
         tabs = build_pos_tabs(query=query)
         # Quem opera é quem está logado — não há mais um cartão de "operador
-        # ativo" na sessão para consultar ao lado da conta do aparelho.
+        # ativo" na sessão para consultar ao lado da conta do dispositivo.
         return Response({
             "pos": projection_data(pos),
             "shift": projection_data(shift),
@@ -429,9 +429,9 @@ class OperatorLoginView(APIView):
     concede sessão a staff.
 
     É o caminho de quem tem senha: quem provisiona a estação, e o operador de um
-    aparelho pessoal. No balcão, o caminho normal é o PIN/crachá — mas a sessão
+    dispositivo pessoal. No balcão, o caminho normal é o PIN/crachá — mas a sessão
     que sai daqui é a mesma coisa, a identidade de uma pessoa. Não existe login
-    "do aparelho": o aparelho é reconhecido por confiança de dispositivo.
+    "do dispositivo": o dispositivo é reconhecido por confiança de dispositivo.
 
     Freio contra brute-force de senha staff: limite por-username (ataque a uma conta)
     de 5/min e teto por-IP de 30/min — generoso porque os dispositivos da loja
@@ -544,10 +544,10 @@ class OperatorUnlockView(APIView):
 
 
 class OperatorLockView(APIView):
-    """Trava a estação: a pessoa sai, o aparelho fica.
+    """Trava a estação: a pessoa sai, o dispositivo fica.
 
     Com uma identidade só, travar é ``logout``. A sessão inteira vai embora —
-    incluindo o que o turno anterior tenha deixado nela — e o aparelho continua
+    incluindo o que o turno anterior tenha deixado nela — e o dispositivo continua
     reconhecido pelo cookie de estação, que é o que faz a tela de identificação
     aparecer em vez de uma tela de login.
     """
@@ -599,14 +599,14 @@ class OperatorPinChangeView(APIView):
 
 
 class StationProvisionView(APIView):
-    """Torna ESTE aparelho uma estação da loja — ou tira essa condição dele.
+    """Torna ESTE dispositivo uma estação da loja — ou tira essa condição dele.
 
     É o que faltava para tudo o mais existir: sem provisionamento, nenhum
-    aparelho é reconhecido, o balcão amanhece sem antessala e a única entrada é
+    dispositivo é reconhecido, o balcão amanhece sem antessala e a única entrada é
     senha de gestor todo dia. O gate da estação é a chave da antessala; isto é
     quem entrega a chave.
 
-    O ato é de GESTÃO e acontece UMA vez por aparelho: alguém com
+    O ato é de GESTÃO e acontece UMA vez por dispositivo: alguém com
     ``cashman.manage_operators`` entra com senha naquele balcão e diz "este
     computador é o pdv-main". A partir daí o cookie HttpOnly durável responde por
     ele, revogável no Admin (lista de dispositivos) ou aqui mesmo, com a máquina
@@ -614,7 +614,7 @@ class StationProvisionView(APIView):
     de token em URL, nada de re-digitar a cada duas semanas.
 
     ``GET`` responde o que a tela de provisionamento precisa: que estação este
-    aparelho é hoje (``""`` quando nenhuma) e os terminais disponíveis.
+    dispositivo é hoje (``""`` quando nenhuma) e os terminais disponíveis.
     """
 
     permission_classes = [HasBackstagePermission]
@@ -637,7 +637,7 @@ class StationProvisionView(APIView):
         ref = str((request.data or {}).get("terminal_ref") or "").strip()
         if not Terminal.objects.filter(ref=ref, is_active=True).exists():
             # Um ref inexistente gravaria uma confiança que nunca resolve terminal:
-            # o aparelho passaria no gate e cairia no `Terminal.default()`, que é a
+            # o dispositivo passaria no gate e cairia no `Terminal.default()`, que é a
             # gaveta errada. Recusar aqui é mais barato que caçar isso no balcão.
             return Response(
                 {"detail": "Terminal não encontrado.", "error": {"code": "terminal_unknown"}},
@@ -650,7 +650,7 @@ class StationProvisionView(APIView):
     def delete(self, request):
         ref = str(request.query_params.get("terminal_ref") or station_trust.station_ref(request)).strip()
         if not ref:
-            return Response({"detail": "Este aparelho não é uma estação."}, status=400)
+            return Response({"detail": "Este dispositivo não é uma estação."}, status=400)
         resposta = Response({"ok": True, "station": ""})
         station_trust.revoke(request, resposta, ref)
         return resposta
@@ -1319,7 +1319,7 @@ def _operator_identity(request) -> tuple[int, str]:
     """A quem creditar a retirada de um pedido — que é quem está logado.
 
     Tinha dois caminhos: o "operador ativo" guardado na sessão, e a conta do
-    aparelho como reserva. Com uma identidade, os dois passaram a devolver a
+    dispositivo como reserva. Com uma identidade, os dois passaram a devolver a
     mesma pessoa; ficou o que sempre foi a intenção.
     """
     user = getattr(request, "user", None)
@@ -2075,7 +2075,7 @@ class POSCashReportView(APIView):
 
 def _actor_pos(request) -> str:
     # ``_actor`` e não ``request.user``: com a flag do operador ativo ligada,
-    # ``request.user`` é a conta do aparelho. A venda saía com
+    # ``request.user`` é a conta do dispositivo. A venda saía com
     # ``actor="pos:admin"`` e ``operator_username="joyce"`` ao mesmo tempo — a
     # mesma request afirmando duas autorias.
     return f"pos:{_actor(request)}"

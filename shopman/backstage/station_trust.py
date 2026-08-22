@@ -3,7 +3,7 @@
 Duas identidades convivem numa superfície de operador, e confundi-las é o defeito
 que a auditoria de 20/08 encontrou:
 
-* a **ESTAÇÃO** é o aparelho: o balcão, o totem. Ela responde "de onde", nunca
+* a **ESTAÇÃO** é o dispositivo: o balcão, o totem. Ela responde "de onde", nunca
   "quem pode". Uma estação confiável não abre caixa, não autoriza sangria e não
   vê apuração — ela só permite que a tela de identificação apareça.
 * o **OPERADOR** é a pessoa, e é dele toda permissão.
@@ -15,13 +15,13 @@ cookie vale em ``.boulangerie.com.br``, a mesma sessão abria o Admin na aba ao
 lado. O buraco não era de permissão mal configurada: era de identidade trocada.
 
 A confiança de dispositivo do ``doorman`` resolve isso porque separa as duas
-coisas fisicamente. O aparelho carrega um cookie HttpOnly durável, revogável por
+coisas fisicamente. O dispositivo carrega um cookie HttpOnly durável, revogável por
 dispositivo no Admin, com ``label``/``ip_address``/``last_used_at`` para
 auditoria. Ninguém digita senha de manhã, e não há credencial em URL nem em
 histórico de navegador.
 
 O provisionamento é o mesmo do quadro de menu (``shop/menuboard_access.py``), que
-já roda em produção: alguém com permissão abre a tela UMA vez naquele aparelho, e
+já roda em produção: alguém com permissão abre a tela UMA vez naquele dispositivo, e
 a resposta grava a confiança. Nada de token em URL, nada de re-digitar a cada
 duas semanas.
 """
@@ -34,7 +34,7 @@ from shopman.doorman.models import SubjectType
 
 logger = logging.getLogger("shopman.backstage.station_trust")
 
-#: Quem pode transformar um aparelho em estação confiável. É ato de gestão — quem
+#: Quem pode transformar um dispositivo em estação confiável. É ato de gestão — quem
 #: provisiona decide que aquele balcão passa a poder pedir identificação — e por
 #: isso não é a permissão de operar, é a de gerir operadores.
 PROVISION_PERM = "cashman.manage_operators"
@@ -59,7 +59,7 @@ def station_cookie_name(terminal_ref: str) -> str:
     O ``doorman`` sanitiza o ``ref`` dentro do nome. Montá-lo à mão aqui
     (``f"{base}_{ref}"``) funcionava por acaso enquanto todo terminal se chamou
     ``pdv-main``, e erraria no primeiro ref com espaço ou acento — a revogação
-    apagaria um cookie que não existe e o aparelho seguiria confiável.
+    apagaria um cookie que não existe e o dispositivo seguiria confiável.
     """
     from shopman.doorman.services.device_trust import DeviceTrustService
 
@@ -88,7 +88,7 @@ def station_ref(request) -> str:
 
 
 def is_trusted_station(request) -> bool:
-    """Esta requisição vem de um aparelho que a loja reconhece?"""
+    """Esta requisição vem de um dispositivo que a loja reconhece?"""
     return bool(station_ref(request))
 
 
@@ -108,7 +108,7 @@ def station_mode(request) -> str:
 
     Sem estação, ou com um valor que não reconhecemos, a resposta é ``ATTENDED``.
     O default fecha a porta: um modo escrito errado no Admin não pode transformar
-    um balcão em aparelho que age sozinho.
+    um balcão em dispositivo que age sozinho.
     """
     ref = station_ref(request)
     if not ref:
@@ -123,11 +123,11 @@ def station_operator(request):
     Tudo aqui falha fechado, e cada recusa tem uma razão vivida:
 
     * estação atendida, ou sem conta declarada → ``None``. O balcão continua
-      pedindo PIN; nenhum aparelho ganha identidade por omissão.
+      pedindo PIN; nenhum dispositivo ganha identidade por omissão.
     * conta inexistente, inativa ou fora da casa → ``None``. Desativar a conta do
       totem no Admin é como se desliga um totem, e tem de bastar.
     * conta SUPERUSUÁRIA → ``None``, e um aviso no log. Era exatamente esse o
-      buraco de 20/08: um aparelho logado como ``admin``, ``is_superuser``
+      buraco de 20/08: um dispositivo logado como ``admin``, ``is_superuser``
       curto-circuitando ``has_perm``, e o cookie levando a sessão para o Admin na
       aba ao lado. Um totem com chave-mestra é o mesmo defeito com outro nome.
 
@@ -159,11 +159,11 @@ def station_operator(request):
 
 
 def provision(request, response, terminal_ref: str):
-    """Torna ESTE aparelho uma estação confiável para ``terminal_ref``.
+    """Torna ESTE dispositivo uma estação confiável para ``terminal_ref``.
 
     Chamado a partir de uma tela que já exigiu ``PROVISION_PERM``: quem provisiona
     está logado e autorizado, e é esse ato — não o cookie — que carrega a decisão.
-    Depois disso o aparelho não precisa mais de ninguém logado para exibir a tela
+    Depois disso o dispositivo não precisa mais de ninguém logado para exibir a tela
     de identificação.
 
     Idempotente: não grava uma segunda linha de ``TrustedDevice`` se a confiança
@@ -186,9 +186,9 @@ def provision(request, response, terminal_ref: str):
 
 
 def revoke(request, response, terminal_ref: str):
-    """Tira a confiança DESTE aparelho para aquele terminal.
+    """Tira a confiança DESTE dispositivo para aquele terminal.
 
-    O aparelho perdido continua revogável pelo Admin (é lá que a lista de
+    O dispositivo perdido continua revogável pelo Admin (é lá que a lista de
     dispositivos vive); isto é o caminho local, para quem está com a máquina na
     mão — desativar um quiosque que vai sair da loja, por exemplo.
     """

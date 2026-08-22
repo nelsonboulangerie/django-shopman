@@ -211,7 +211,7 @@ class PinSessionFlagTests(TestCase):
         self.assertTrue(cred.verify("5678"))
         self.assertFalse(cred.must_change)
 
-    def test_aparelho_de_fora_nao_troca_PIN_de_ninguem(self):
+    def test_dispositivo_de_fora_nao_troca_PIN_de_ninguem(self):
         """Sem confiança de estação, nem com o PIN atual na mão.
 
         A troca só pede o PIN atual, então um navegador qualquer com um PIN

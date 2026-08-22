@@ -1,7 +1,7 @@
 <script setup lang="ts">
 // POS shell — com a antesala de sessão (`/session`) o PDV ganhou rotas, e o
 // app.vue afinou para o chrome comum a todas: aviso de conexão, tela de senha
-// (para aparelho que ainda não é estação), overlay de identificação do operador
+// (para dispositivo que ainda não é estação), overlay de identificação do operador
 // (PIN/crachá) e o auto-lock de kiosk. A venda vive em `pages/index.vue`; a
 // sessão de caixa em `pages/session/`. Cada página lê a Projection via
 // usePosTerminal (useFetch deduplicado — uma busca só por request).
@@ -22,8 +22,8 @@ const { expired: sessionExpired, reset: resetSession } = useOperatorSession();
 const OPERATOR_PERM = "cashman.operate_pos";
 const { locked, canIdentify, stationRef, mustChange, lock } = useOperatorLock(OPERATOR_PERM);
 
-// Preparar o aparelho: o gestor entra com senha uma vez e diz qual balcão é este.
-// Enquanto ninguém fizer isso, o aparelho não tem antessala — a loja só entra com
+// Iniciar o dispositivo: o gestor entra com senha uma vez e diz qual balcão é este.
+// Enquanto ninguém fizer isso, o dispositivo não tem antessala — a loja só entra com
 // senha, todo dia. A oferta é dispensável de propósito: no PC pessoal do gestor a
 // resposta certa é "agora não".
 const setupDismissed = ref(false);
@@ -35,14 +35,14 @@ const needsStationSetup = computed(
 // não auto-travam). Vale em qualquer rota (venda ou antesala).
 usePosAutoLock({ locked, lock, autoLockSeconds: () => pos.value?.auto_lock_seconds ?? 60 });
 
-// A tela de SENHA sobe só quando o aparelho não é uma estação reconhecida (a
+// A tela de SENHA sobe só quando o dispositivo não é uma estação reconhecida (a
 // antessala respondeu 403), ou quando a sessão expirou no meio do turno. Estação
 // reconhecida e sem ninguém identificado → `<OperatorLock>` (PIN/crachá), nunca
 // a tela de senha: senão a loja pediria credencial de gestor toda manhã.
 const needsLogin = computed(() => !canIdentify.value || sessionExpired.value);
 
 // Login com SENHA no próprio caixa (sem bounce pro Django admin): é o caminho de
-// quem provisiona a estação e o do aparelho pessoal. Uma tela, um submit.
+// quem provisiona a estação e o do dispositivo pessoal. Uma tela, um submit.
 const loginUser = ref("");
 const loginPass = ref("");
 const loginPending = ref(false);

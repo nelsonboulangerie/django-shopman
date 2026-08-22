@@ -1,6 +1,6 @@
 """O PDV destrava pela API genérica de operador (``operator/unlock|lock``).
 
-O balcão começa o dia travado: aparelho reconhecido, ninguém identificado. Quem
+O balcão começa o dia travado: dispositivo reconhecido, ninguém identificado. Quem
 digita o PIN VIRA a sessão, e o PDV passa a mostrar essa pessoa — não um
 "operador ativo" guardado ao lado da conta da máquina, que era o desenho
 anterior e a origem do buraco de permissão (D1 Parte B).
@@ -69,7 +69,7 @@ class POSOperatorApiTests(TestCase):
 
         # Depois de travar, a estação NÃO lê mais — e isso mudou de verdade.
         # Este teste afirmava 200 com `operator: null`, que era o mundo de antes
-        # da Opção C: a sessão do aparelho decidia, e travar só apagava um nome
+        # da Opção C: a sessão do dispositivo decidia, e travar só apagava um nome
         # da tela. Agora a permissão é do operador ativo; sem ele não há quem
         # autorize a leitura, e o gate responde 403 com código estável — que é
         # exatamente o que faz o PDV subir a tela de identificação em vez de

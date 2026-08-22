@@ -65,7 +65,7 @@ def _isolate_rules_state():
 # Parte B, e morreu de causa boa.
 #
 # Ela existia porque havia DUAS identidades: `force_login` estabelecia a sessão do
-# APARELHO, e a permissão era conferida contra um "operador ativo" guardado à
+# DISPOSITIVO, e a permissão era conferida contra um "operador ativo" guardado à
 # parte, que o teste nunca criava — 302 testes batiam em 403 `station_locked`.
 # A fixture preenchia esse segundo sujeito.
 #

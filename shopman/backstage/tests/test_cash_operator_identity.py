@@ -1,6 +1,6 @@
 """O livro registra a PESSOA, não o computador.
 
-O balcão rodava numa sessão da conta do APARELHO — ``admin`` — e quem operava se
+O balcão rodava numa sessão da conta do DISPOSITIVO — ``admin`` — e quem operava se
 identificava por PIN ou crachá num segundo lugar. O gate da API já usava esse
 operador para AUTORIZAR; o subsistema de caixa continuava recebendo
 ``request.user``, que era a máquina.
@@ -57,7 +57,7 @@ def terminal():
 
 @pytest.fixture
 def balcao(client, terminal):
-    """O balcão: aparelho reconhecido, e NENHUMA sessão.
+    """O balcão: dispositivo reconhecido, e NENHUMA sessão.
 
     Era uma conta staff logada (``admin``) que representava a máquina. Ela some
     aqui pela mesma razão que sumiu do sistema — uma máquina com sessão é uma
@@ -105,7 +105,7 @@ def test_o_turno_nasce_no_nome_de_quem_se_identificou(client, balcao, joyce, ter
 
     assert resposta.status_code == 200, resposta.content
     shift = Shift.objects.get(pk=resposta.json()["shift_id"])
-    assert shift.opened_by == joyce, "o turno saiu no nome do aparelho"
+    assert shift.opened_by == joyce, "o turno saiu no nome do dispositivo"
     # O fundo de troco é a primeira linha do livro, e ela tem dono também.
     float_in = Entry.objects.get(shift=shift, kind=Entry.Kind.FLOAT_IN)
     assert float_in.operator == joyce
