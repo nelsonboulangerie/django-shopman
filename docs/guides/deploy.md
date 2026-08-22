@@ -1,6 +1,6 @@
 # Deploy
 
-Este guia define o caminho operacional simples para staging/piloto. Docker e
+Este guia define o caminho operacional simples para alpha/piloto. Docker e
 compose ficam encapsulados nos targets `make deploy-*`; o operador nao precisa
 chamar comandos Docker diretamente.
 
@@ -25,8 +25,8 @@ Nao ha `django-redis`, Celery ou broker adicional neste contrato.
   profiles para nao alterar o fluxo de desenvolvimento.
 - `.env.example`: variaveis base. Copie para `.env` e substitua os segredos.
 - `Makefile`: wrappers `deploy-*`.
-- `.do/app.staging-subdomains.yaml`: blueprint DigitalOcean App Platform de staging
-  (ingress por subdomínio), sem segredos. Produção: `.do/app.subdomains.yaml`.
+- `.do/app.alpha-subdomains.yaml`: referencia DigitalOcean App Platform de alpha
+  (ingress por subdomínio), sem valores secretos. Produção: `.do/app.subdomains.yaml`.
 
 ## Comandos
 
