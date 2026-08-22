@@ -22,6 +22,7 @@ operador nao executa Docker diretamente: use os wrappers `make`.
 - [Pedido remoto preso](pedido-remoto-preso.md)
 - [Rollback de deploy quebrado](rollback-de-deploy.md)
 - [Alpha tecnico pronto-para-virar](alpha-technical-readiness.md)
+- [Alpha DigitalOcean - handoff operacional](alpha-digitalocean-handoff.md)
 - [Ativar Focus NFe (NFC-e): homologação → produção](ativar-focus-nfe.md)
 - [Pré-flight de go-live (switches antes do alpha/produção)](go-live-preflight.md)
 

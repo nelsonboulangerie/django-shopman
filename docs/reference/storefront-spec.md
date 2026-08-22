@@ -241,7 +241,7 @@ order_confirmation, account (profile/loyalty), order_history, shop/shop_status, 
 
 ### ✅ Limpezas (WP-10)
 - **`.do/app.yaml`** (staging path-routed) **removido** — staging/prod usam subdomínios
-  (`.do/app.staging-subdomains.yaml` / `.do/app.subdomains.yaml`); docs reconciliados.
+  (`.do/app.alpha-subdomains.yaml` / `.do/app.subdomains.yaml`); docs reconciliados.
 - **`_sse_emitters`** emite canais de cliente (`stock-`/`order-`) sem assinante junto com os do operador
   (`backstage-*`) — **decidido MANTER**: estão entrelaçados; o emit de cliente é no-op inofensivo e
   remover arrisca quebrar o operador.
@@ -263,4 +263,4 @@ order_confirmation, account (profile/loyalty), order_history, shop/shop_status, 
 - Auth: `shopman/storefront/api/auth.py`, `shopman/storefront/identity.py`, `shopman/shop/services/access*.py`,
   `packages/doorman/`.
 - Links de cliente / cutover: `shopman/shop/services/storefront_links.py`,
-  `do../plans/completed/DJANGO-HEADLESS-PLAN.md`, `.do/app.staging-subdomains.yaml`.
+  `do../plans/completed/DJANGO-HEADLESS-PLAN.md`, `.do/app.alpha-subdomains.yaml`.
