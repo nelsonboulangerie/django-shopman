@@ -1,9 +1,11 @@
 <script setup lang="ts">
+import { navigateTo } from '#app'
 import type { CheckoutMutationResponse, CheckoutResponse } from '~/types/shopman'
 import { labelPatchPayload, type AddressSelection, type AddressLabelKey } from '~/presentation/address'
 import { reviewWaitlist } from '~/presentation/cart'
 import { displayBrazilianPhone, normalizeAuthPhone } from '~/utils/authPhone'
 import { buildCheckoutPayload, createCheckoutAttemptKey, type CheckoutFormState } from '~/utils/checkoutPayload'
+import { formatCount } from '~/utils/display'
 import {
   addressSummary as buildAddressSummary,
   availableFulfillmentOptions,
@@ -824,6 +826,14 @@ async function finishAfterCheckout () {
   if (target) await navigateTo(target)
 }
 
+async function goToMenu () {
+  await navigateTo('/menu')
+}
+
+async function goToAuthRoute () {
+  await navigateTo(authRoute.value)
+}
+
 async function submitCheckout () {
   if (!checkout.value || !validate()) return
   submitting.value = true
@@ -1488,7 +1498,7 @@ useSeoMeta({
                       icon="lucide:utensils"
                       size="lg"
                       class="w-full"
-                      @click="navigateTo('/menu')"
+                      @click="goToMenu"
                     >
                       Adicionar itens
                     </UiButton>
@@ -1653,7 +1663,7 @@ useSeoMeta({
               </UiAlertDialogHeader>
               <UiAlertDialogFooter>
                 <UiAlertDialogCancel>{{ checkout.copy.switch_account_keep || 'Manter conta' }}</UiAlertDialogCancel>
-                <UiAlertDialogAction @click="navigateTo(authRoute)">{{ checkout.copy.switch_account_confirm || 'Trocar conta' }}</UiAlertDialogAction>
+                <UiAlertDialogAction @click="goToAuthRoute">{{ checkout.copy.switch_account_confirm || 'Trocar conta' }}</UiAlertDialogAction>
               </UiAlertDialogFooter>
             </UiAlertDialogContent>
           </UiAlertDialog>

@@ -2,7 +2,9 @@
   "name": "hub-nuxt",
   "type": "module",
   "private": true,
-  "engines": { "node": "22.x" },
+  "engines": {
+    "node": "22.x"
+  },
   "scripts": {
     "build": "nuxt build",
     "dev": "nuxt dev --host 127.0.0.1 --port 3001",
@@ -26,7 +28,7 @@
     "@tailwindcss/vite": "^4.3.0",
     "@vueuse/nuxt": "^14.3.0",
     "motion-v": "^2.2.1",
-    "nuxt": "^4.4.5",
+    "nuxt": "^4.5.2",
     "reka-ui": "^2.9.7",
     "tailwind-merge": "^3.6.0",
     "tailwind-variants": "^3.2.2",
@@ -49,5 +51,8 @@
     "typescript": "^6.0.3",
     "vitest": "^4.0.14",
     "vue-tsc": "^3.0.0"
+  },
+  "overrides": {
+    "esbuild": "^0.28.2"
   }
 }

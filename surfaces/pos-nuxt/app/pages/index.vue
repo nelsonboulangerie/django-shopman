@@ -36,6 +36,10 @@ if (
 const OPERATOR_PERM = "cashman.operate_pos";
 const { operator: activeOperator, locked, lock } = useOperatorLock(OPERATOR_PERM);
 
+async function goToCashSession() {
+  await navigateTo("/session");
+}
+
 // Write-side of the open sale: cart draft + every session command.
 const {
   cart,
@@ -240,7 +244,7 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onGlobalKeydown));
       :pending="pending"
       :view="checkoutMode ? 'checkout' : (inSaleView ? 'sale' : 'board')"
       @board="goToTabs"
-      @cash="navigateTo('/session')"
+      @cash="goToCashSession"
       @lock="lock()"
       @refresh="refresh()"
     />

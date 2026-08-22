@@ -1,6 +1,5 @@
 import tailwindcss from "@tailwindcss/vite";
 // https://nuxt.com/docs/api/configuration/nuxt-config
-const isProduction = process.env.NODE_ENV === "production";
 
 export default defineNuxtConfig({
   // Central de Apps: 5º cliente do kit compartilhado (BFF/resiliência/telemetria/DS).
@@ -64,7 +63,7 @@ export default defineNuxtConfig({
   css: ["~/assets/css/tailwind.css"],
 
   app: {
-    baseURL: process.env.NUXT_APP_BASE_URL || (isProduction ? "/central/" : "/"),
+    baseURL: process.env.NUXT_APP_BASE_URL || "/",
     head: {
       htmlAttrs: { lang: "pt-BR" },
       title: "Central de Apps",

@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { tileBadge } from '~/presentation/menu'
 import type { CatalogItemProjection, ProductMutationMeta } from '~/types/shopman'
+import { compactUnitWeightLabel } from '~/utils/display'
 
 const props = defineProps<{
   item: CatalogItemProjection

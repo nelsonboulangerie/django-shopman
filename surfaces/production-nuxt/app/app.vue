@@ -21,6 +21,14 @@ const isKiosk = computed(
 const hubUrl = useRuntimeConfig().public.operatorHubUrl as string;
 
 useHead({ title: "Produção" });
+
+async function goToBoard() {
+  await navigateTo("/board");
+}
+
+async function goToReports() {
+  await navigateTo("/reports");
+}
 </script>
 
 <template>
@@ -51,14 +59,14 @@ useHead({ title: "Produção" });
               icon="tower-control"
               label="Letreiro"
               :active="route.path.startsWith('/board')"
-              @activate="navigateTo('/board')"
+              @activate="goToBoard"
             />
             <RailItem
               v-if="reportsAllowed"
               icon="table-2"
               label="Relatórios"
               :active="route.path.startsWith('/reports')"
-              @activate="navigateTo('/reports')"
+              @activate="goToReports"
             />
           </template>
         </OperatorRail>
