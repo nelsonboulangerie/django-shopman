@@ -1,8 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { mockNuxtImport } from "@nuxt/test-utils/runtime";
 import { toast } from "vue-sonner";
 
 import { makeProjection, makeSale, makeTabPayload } from "./_posSaleHarness";
 
+const { fetchMock } = vi.hoisted(() => ({ fetchMock: vi.fn() }));
+mockNuxtImport("$fetch", () => fetchMock);
 vi.mock("vue-sonner", () => ({ toast: { error: vi.fn(), success: vi.fn() } }));
 
 function freeCartProjection() {
@@ -222,11 +225,9 @@ describe("usePosSale — checkout otimista (sem flash)", () => {
 });
 
 describe("usePosSale — PIX polling pós-venda", () => {
-  const fetchMock = vi.fn();
   beforeEach(() => {
     vi.useFakeTimers();
     fetchMock.mockReset();
-    vi.stubGlobal("$fetch", fetchMock);
   });
   afterEach(() => {
     vi.useRealTimers();

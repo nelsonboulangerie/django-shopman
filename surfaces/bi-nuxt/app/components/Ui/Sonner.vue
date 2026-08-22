@@ -4,7 +4,7 @@
     :visible-toasts="5"
     close-button
     :duration="7000"
-    :theme="$colorMode.value == 'dark' ? 'dark' : 'light'"
+    :theme="sonnerTheme"
     :style="{
       '--normal-bg': 'var(--popover)',
       '--normal-text': 'var(--popover-foreground)',
@@ -23,3 +23,8 @@
     }"
   />
 </template>
+
+<script setup lang="ts">
+const colorMode = useColorMode();
+const sonnerTheme = computed(() => colorMode.value === "dark" ? "dark" : "light");
+</script>

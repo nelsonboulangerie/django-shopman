@@ -9,6 +9,10 @@
 useHead({ title: "Relatório de caixa · Shopman POS" });
 
 const { report, pending, accessDenied, refresh } = await useCashReport();
+
+async function goToCashSession() {
+  await navigateTo("/session");
+}
 </script>
 
 <template>
@@ -19,7 +23,7 @@ const { report, pending, accessDenied, refresh } = await useCashReport();
         size="icon-sm"
         aria-label="Voltar à sessão de caixa"
         title="Sessão de caixa"
-        @click="navigateTo('/session')"
+        @click="goToCashSession"
       >
         <Icon name="lucide:arrow-left" class="size-5" />
       </UiButton>
@@ -50,7 +54,7 @@ const { report, pending, accessDenied, refresh } = await useCashReport();
           Esta tela mostra o faturamento do dia. Sua conta opera o caixa, mas não audita — quem vê a
           apuração é a gestão.
         </p>
-        <UiButton variant="outline" size="sm" @click="navigateTo('/session')">Voltar à sessão de caixa</UiButton>
+        <UiButton variant="outline" size="sm" @click="goToCashSession">Voltar à sessão de caixa</UiButton>
       </section>
 
       <template v-else-if="report">

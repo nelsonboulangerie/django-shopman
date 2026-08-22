@@ -5,6 +5,8 @@ import { nextTick } from 'vue'
 import { mountSuspended, mockNuxtImport } from '@nuxt/test-utils/runtime'
 import StockNotifyButton from '~/components/StockNotifyButton.vue'
 
+const { fetchMock } = vi.hoisted(() => ({ fetchMock: vi.fn() }))
+mockNuxtImport('$fetch', () => fetchMock)
 mockNuxtImport('useSonner', () => {
   const fn: any = () => {}
   fn.success = () => {}
@@ -23,11 +25,11 @@ describe('StockNotifyButton', () => {
   beforeEach(() => {
     document.cookie = 'csrftoken=testtoken'
     vi.unstubAllGlobals()
+    fetchMock.mockReset()
   })
 
   it('shows the calm confirmed state when already subscribed', async () => {
     await setAuthenticated(true)
-    vi.stubGlobal('$fetch', vi.fn())
     const wrapper = await mountSuspended(StockNotifyButton, {
       props: { sku: 'PAO', name: 'Pão', subscribed: true }
     })
@@ -37,8 +39,7 @@ describe('StockNotifyButton', () => {
 
   it('authenticated one-click subscribe hits the notify endpoint and confirms', async () => {
     await setAuthenticated(true)
-    const $fetch = vi.fn().mockResolvedValue({})
-    vi.stubGlobal('$fetch', $fetch)
+    fetchMock.mockResolvedValue({})
     const wrapper = await mountSuspended(StockNotifyButton, {
       props: { sku: 'PAO', name: 'Pão', subscribed: false }
     })
@@ -47,14 +48,13 @@ describe('StockNotifyButton', () => {
     await new Promise(r => setTimeout(r, 0))
     await nextTick()
 
-    expect($fetch).toHaveBeenCalledOnce()
-    expect($fetch.mock.calls[0]?.[0]).toContain('/availability/PAO/notify/')
+    expect(fetchMock).toHaveBeenCalledOnce()
+    expect(fetchMock.mock.calls[0]?.[0]).toContain('/availability/PAO/notify/')
     expect(wrapper.text()).toContain('Avisaremos você') // virou estado confirmado
   })
 
   it('renders the notify affordance with an accessible label when not subscribed', async () => {
     await setAuthenticated(true)
-    vi.stubGlobal('$fetch', vi.fn())
     const wrapper = await mountSuspended(StockNotifyButton, {
       props: { sku: 'PAO', name: 'Pão', pill: true, subscribed: false }
     })

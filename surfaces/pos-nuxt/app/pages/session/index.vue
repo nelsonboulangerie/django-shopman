@@ -85,6 +85,18 @@ async function submitOpen() {
   if (ok) await navigateTo("/");
 }
 
+async function goToSaleBoard() {
+  await navigateTo("/");
+}
+
+async function goToCashReport() {
+  await navigateTo("/session/report");
+}
+
+async function goToDayClosing() {
+  await navigateTo("/session/closing");
+}
+
 // Movimentos de gaveta: sangria (sai) / suprimento (entra).
 //
 // O motivo é obrigatório e vem em BOTÕES, como já acontece na abertura de gaveta
@@ -318,7 +330,7 @@ async function confirmClose() {
       :operator-name="activeOperator?.name || ''"
       :pending="pending"
       view="session"
-      @board="navigateTo('/')"
+      @board="goToSaleBoard"
       @cash="() => {}"
       @lock="lock()"
       @refresh="refresh()"
@@ -367,7 +379,7 @@ async function confirmClose() {
                   <span class="font-medium tabular-nums">{{ salesCount }}</span>
                 </div>
               </div>
-              <UiButton size="lg" @click="navigateTo('/')">
+              <UiButton size="lg" @click="goToSaleBoard">
                 <Icon name="lucide:shopping-basket" class="size-5" />
                 Continuar vendendo
               </UiButton>
@@ -803,7 +815,7 @@ async function confirmClose() {
             <p class="text-sm text-muted-foreground">
               Leitura X do turno aberto, leituras Z dos turnos fechados e o histórico do dia.
             </p>
-            <UiButton variant="outline" @click="navigateTo('/session/report')">
+            <UiButton variant="outline" @click="goToCashReport">
               Ver relatório
             </UiButton>
           </section>
@@ -818,7 +830,7 @@ async function confirmClose() {
               <template v-if="dayClosing.already_closed">{{ dayClosing.existing_closing_display }}</template>
               <template v-else>{{ dayClosing.today_display }} · contagem cega de sobras e perdas.</template>
             </p>
-            <UiButton variant="outline" @click="navigateTo('/session/closing')">
+            <UiButton variant="outline" @click="goToDayClosing">
               {{ dayClosing.already_closed ? "Ver fechamento" : "Fazer o fechamento" }}
             </UiButton>
           </section>

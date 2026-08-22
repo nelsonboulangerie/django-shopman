@@ -3,6 +3,8 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { mockNuxtImport } from '@nuxt/test-utils/runtime'
 
+const { fetchMock } = vi.hoisted(() => ({ fetchMock: vi.fn() }))
+mockNuxtImport('$fetch', () => fetchMock)
 mockNuxtImport('useSonner', () => {
   const fn: any = () => {}
   fn.success = () => {}
@@ -26,23 +28,21 @@ describe('useFavoritesState', () => {
   beforeEach(() => {
     document.cookie = 'csrftoken=testtoken'
     vi.unstubAllGlobals()
+    fetchMock.mockReset()
   })
 
   it('anonymous toggle is a no-op returning null', async () => {
     await authed(false)
-    const $fetch = vi.fn()
-    vi.stubGlobal('$fetch', $fetch)
     const fav = await loadFavorites()
 
     const res = await fav.toggle('CROISSANT', false)
     expect(res).toBeNull()
-    expect($fetch).not.toHaveBeenCalled()
+    expect(fetchMock).not.toHaveBeenCalled()
   })
 
   it('optimistic add flips immediately and bumps version on success', async () => {
     await authed(true)
-    const $fetch = vi.fn().mockResolvedValue({})
-    vi.stubGlobal('$fetch', $fetch)
+    fetchMock.mockResolvedValue({})
     const fav = await loadFavorites()
     const before = fav.version.value
 
@@ -50,13 +50,12 @@ describe('useFavoritesState', () => {
     expect(res).toBe(true)
     expect(fav.isFavorite('BRIOCHE')).toBe(true)
     expect(fav.version.value).toBe(before + 1)
-    expect($fetch.mock.calls[0]?.[1]?.method).toBe('POST')
+    expect(fetchMock.mock.calls[0]?.[1]?.method).toBe('POST')
   })
 
   it('reverts the optimistic flip when the server rejects', async () => {
     await authed(true)
-    const $fetch = vi.fn().mockRejectedValue(Object.assign(new Error('500'), { data: { detail: 'x' } }))
-    vi.stubGlobal('$fetch', $fetch)
+    fetchMock.mockRejectedValue(Object.assign(new Error('500'), { data: { detail: 'x' } }))
     const fav = await loadFavorites()
 
     await expect(fav.toggle('SONHO', false)).rejects.toThrow()
@@ -65,12 +64,11 @@ describe('useFavoritesState', () => {
 
   it('removing a favorite uses DELETE', async () => {
     await authed(true)
-    const $fetch = vi.fn().mockResolvedValue({})
-    vi.stubGlobal('$fetch', $fetch)
+    fetchMock.mockResolvedValue({})
     const fav = await loadFavorites()
 
     await fav.toggle('PAO', true)
     expect(fav.isFavorite('PAO')).toBe(false)
-    expect($fetch.mock.calls[0]?.[1]?.method).toBe('DELETE')
+    expect(fetchMock.mock.calls[0]?.[1]?.method).toBe('DELETE')
   })
 })

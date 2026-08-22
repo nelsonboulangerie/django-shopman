@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import type { AddressListResponse, SavedAddressProjection } from '~/types/shopman'
 import { addressSheetDescription, addressSheetTitle } from '~/presentation/account'
+import { formatCount } from '~/utils/display'
 
 definePageMeta({ middleware: 'account' })
 

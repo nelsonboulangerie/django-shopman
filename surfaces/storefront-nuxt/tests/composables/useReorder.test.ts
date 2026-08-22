@@ -3,7 +3,8 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { mockNuxtImport } from '@nuxt/test-utils/runtime'
 
-const { navigateTo } = vi.hoisted(() => ({ navigateTo: vi.fn() }))
+const { fetchMock, navigateTo } = vi.hoisted(() => ({ fetchMock: vi.fn(), navigateTo: vi.fn() }))
+mockNuxtImport('$fetch', () => fetchMock)
 mockNuxtImport('navigateTo', () => navigateTo)
 mockNuxtImport('useSonner', () => {
   const fn: any = () => {}
@@ -25,12 +26,12 @@ describe('useReorder', () => {
   beforeEach(() => {
     document.cookie = 'csrftoken=testtoken'
     vi.unstubAllGlobals()
+    fetchMock.mockReset()
     navigateTo.mockClear()
   })
 
   it('submit success hydrates the cart, clears conflict and navigates to the bag', async () => {
-    const $fetch = vi.fn().mockResolvedValue({ ok: true, cart: { items: [{ sku: 'X', qty: 1 }], items_count: 1, is_empty: false } })
-    vi.stubGlobal('$fetch', $fetch)
+    fetchMock.mockResolvedValue({ ok: true, cart: { items: [{ sku: 'X', qty: 1 }], items_count: 1, is_empty: false } })
     const reorder = await loadReorder()
 
     const res = await reorder.submit('ORD-9', 'append')
@@ -38,14 +39,13 @@ describe('useReorder', () => {
     expect(reorder.conflict.value).toBeNull()
     expect(navigateTo).toHaveBeenCalledWith('/sacola')
     // idempotency key foi enviada
-    expect($fetch.mock.calls[0]?.[1]?.headers?.['x-idempotency-key']).toBeTruthy()
+    expect(fetchMock.mock.calls[0]?.[1]?.headers?.['x-idempotency-key']).toBeTruthy()
     expect(reorder.pending.value['ORD-9']).toBeUndefined() // limpo no finally
   })
 
   it('409 opens the conflict panel without navigating', async () => {
     const conflictPayload = { unavailable: [{ sku: 'X', name: 'X' }], mode: 'append' }
-    const $fetch = vi.fn().mockRejectedValue(fetchError(409, conflictPayload))
-    vi.stubGlobal('$fetch', $fetch)
+    fetchMock.mockRejectedValue(fetchError(409, conflictPayload))
     const reorder = await loadReorder()
 
     await expect(reorder.submit('ORD-7')).rejects.toThrow()
@@ -55,22 +55,19 @@ describe('useReorder', () => {
   })
 
   it('performAction extracts the order ref from the action href', async () => {
-    const $fetch = vi.fn().mockResolvedValue({ ok: true, cart: { items: [], items_count: 0, is_empty: true } })
-    vi.stubGlobal('$fetch', $fetch)
+    fetchMock.mockResolvedValue({ ok: true, cart: { items: [], items_count: 0, is_empty: true } })
     const reorder = await loadReorder()
 
     await reorder.performAction({ href: '/api/v1/orders/ORD-42/reorder/' } as never, 'replace')
-    expect($fetch.mock.calls[0]?.[0]).toContain('/orders/ORD-42/reorder/')
-    expect($fetch.mock.calls[0]?.[1]?.body).toEqual({ mode: 'replace' })
+    expect(fetchMock.mock.calls[0]?.[0]).toContain('/orders/ORD-42/reorder/')
+    expect(fetchMock.mock.calls[0]?.[1]?.body).toEqual({ mode: 'replace' })
   })
 
   it('performAction is a no-op when the href has no order ref', async () => {
-    const $fetch = vi.fn()
-    vi.stubGlobal('$fetch', $fetch)
     const reorder = await loadReorder()
 
     const res = await reorder.performAction({ href: '/nope/' } as never)
     expect(res).toBeNull()
-    expect($fetch).not.toHaveBeenCalled()
+    expect(fetchMock).not.toHaveBeenCalled()
   })
 })
