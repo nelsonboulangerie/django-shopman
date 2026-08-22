@@ -136,7 +136,17 @@ g.permissions.add(perm_orders, perm_reports)
 python manage.py setup_groups
 ```
 
-O comando recria/atualiza todos os grupos padrão com as permissões corretas. Seguro para rodar múltiplas vezes.
+O comando recria/atualiza todos os grupos padrão com as permissões corretas. Seguro para
+rodar múltiplas vezes — o release job do deploy o chama logo depois do `migrate`.
+
+Ele é a **fonte da verdade** dos seis grupos padrão: usa `permissions.set(...)`, então
+o que sai da lista em `setup_groups.py` sai do banco no deploy seguinte, e as revogações
+aparecem no log da forma `Caixa: atualizado (2 permissões) — revogadas: shop.manage_catalog`.
+
+⚠️ Consequência prática: **permissão marcada à mão** na tela de Grupos do Admin, num
+desses seis, dura até o próximo deploy. Para valer, escreva-a em `setup_groups.py`. Grupo
+customizado (criado fora dessa lista, como o "Supervisor" do exemplo acima) o comando
+não toca.
 
 ---
 
