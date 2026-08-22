@@ -1,4 +1,5 @@
 import type { MenuResponse } from '~/types/shopman'
+import { resolveDjangoBaseUrl } from '../utils/djangoBaseUrl'
 
 // sitemap.xml domain-aware, alimentado pelo catálogo real (Django). Inclui a
 // home, o cardápio, cada coleção estática (/colecao/<ref>) e cada PDP
@@ -6,12 +7,13 @@ import type { MenuResponse } from '~/types/shopman'
 // canonicalizam para /menu (anti-duplicate).
 export default defineEventHandler(async (event) => {
   const config = useRuntimeConfig()
+  const djangoBaseUrl = resolveDjangoBaseUrl(config.djangoBaseUrl)
   const origin = getRequestURL(event).origin
 
   let skus: string[] = []
   let collectionRefs: string[] = []
   try {
-    const menu = await $fetch<MenuResponse>(`${config.djangoBaseUrl}/api/v1/storefront/menu/`)
+    const menu = await $fetch<MenuResponse>(`${djangoBaseUrl}/api/v1/storefront/menu/`)
     const items = menu?.catalog?.items || []
     skus = [...new Set(items.map(item => item.sku).filter(Boolean))]
     // Só coleções ESTÁTICAS viram rota indexável; seções dinâmicas ("Destaques"
