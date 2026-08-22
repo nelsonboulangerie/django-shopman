@@ -200,6 +200,8 @@ class StockPlanning:
             for hold in pool:
                 if transferred >= actual_quantity:
                     break
+                if transferred + hold.quantity > actual_quantity:
+                    continue
                 hold.quant = physical_quant
                 # Start the clock: set expires_at if hold had no timeout
                 # (was a purchase intention against planned stock)

@@ -86,7 +86,7 @@ def test_access_link_metadata_grants_session_order_access(client, channel, custo
         total_q=1000,
         handle_type="marketplace_order",
         handle_ref="",
-        data={},
+        data={"customer_ref": customer.ref},
     )
     _link, raw_token = AccessLink.create_with_token(
         customer_id=customer.uuid,
@@ -102,3 +102,34 @@ def test_access_link_metadata_grants_session_order_access(client, channel, custo
     assert entry.json()["redirect"] == f"/pedido/{order.ref}"
     # The magic link binds order access to the session (store host).
     assert order.ref in client.session.get("shopman_order_access_refs", [])
+
+
+def test_access_link_metadata_cannot_grant_foreign_order(client, channel, customer):
+    foreign = Customer.objects.create(
+        ref="CUS-LINK-FOREIGN",
+        first_name="Outra",
+        phone="+5543999991010",
+    )
+    order = Order.objects.create(
+        ref="ORD-LINK-FOREIGN",
+        channel_ref=channel.ref,
+        status="new",
+        total_q=1000,
+        handle_type="phone",
+        handle_ref=foreign.phone,
+        data={"customer_ref": foreign.ref, "customer": {"ref": foreign.ref, "phone": foreign.phone}},
+    )
+    _link, raw_token = AccessLink.create_with_token(
+        customer_id=customer.uuid,
+        audience=AccessLink.Audience.WEB_GENERAL,
+        source=AccessLink.Source.INTERNAL,
+        expires_at=timezone.now() + timedelta(minutes=5),
+        metadata={"order_ref": order.ref},
+    )
+
+    entry = client.post("/api/v1/auth/access/", {"token": raw_token})
+
+    assert entry.status_code == 200
+    assert entry.json()["redirect"] != f"/pedido/{order.ref}"
+    assert order.ref not in client.session.get("shopman_order_access_refs", [])
+    assert client.get(f"/api/v1/tracking/{order.ref}/").status_code == 404

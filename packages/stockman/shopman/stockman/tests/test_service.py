@@ -535,6 +535,18 @@ class TestStockRealize:
         assert hold.quant == physical
         assert hold.quant.target_date is None
 
+    def test_realize_does_not_materialize_hold_larger_than_short_batch(self, product, vitrine, friday):
+        """A short batch must not bind a hold that exceeds physical quantity."""
+        stock.plan(Decimal('10'), product, friday, reason='Produção')
+        hold_id = stock.hold(Decimal('10'), product, friday)
+
+        physical = stock.realize(product, friday, Decimal('8'), vitrine)
+
+        hold = Hold.objects.get(pk=int(hold_id.split(':')[1]))
+        assert hold.quant != physical
+        assert physical._quantity == Decimal('8')
+        assert physical.held <= physical._quantity
+
     def test_realize_without_plan_raises_error(self, product, vitrine, friday):
         """Realize without existing plan raises QUANT_NOT_FOUND."""
         with pytest.raises(StockError) as exc:

@@ -64,14 +64,13 @@ def kds_setup(db):
 
 
 @pytest.mark.django_db
-def test_index_requires_staff(client, db, kds_setup):
-    # index is staff-gated (IsBackstageOperator); non-staff blocked, staff allowed
+def test_index_requires_operate_kds(client, db, kds_setup):
     customer = User.objects.create_user("cust", password="pw", is_staff=False)
     client.force_login(customer)
     assert client.get(reverse("api-backstage-kds-index")).status_code == 403
     staff = User.objects.create_user("staff-only", password="pw", is_staff=True)
     client.force_login(staff)
-    assert client.get(reverse("api-backstage-kds-index")).status_code == 200
+    assert client.get(reverse("api-backstage-kds-index")).status_code == 403
 
 
 @pytest.mark.django_db

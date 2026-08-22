@@ -48,3 +48,24 @@ def test_extend_refuses_terminal_hold(hold_id):
     assert StockHolds.extend(hold_id, expires_at=None) is False
     hold = Hold.objects.get(pk=int(hold_id.split(":")[1]))
     assert hold.status == HoldStatus.RELEASED
+
+
+def test_retag_reference_refuses_expired_hold(hold_id):
+    hold = Hold.objects.get(pk=int(hold_id.split(":")[1]))
+    hold.expires_at = timezone.now() - timedelta(minutes=1)
+    hold.save(update_fields=["expires_at"])
+
+    assert StockHolds.retag_reference(hold_id, "order:WEB-1") is False
+
+    hold.refresh_from_db()
+    assert hold.metadata.get("reference") != "order:WEB-1"
+
+
+def test_retag_reference_refuses_terminal_hold(hold_id):
+    stock.release(hold_id, reason="teste")
+
+    assert StockHolds.retag_reference(hold_id, "order:WEB-2") is False
+
+    hold = Hold.objects.get(pk=int(hold_id.split(":")[1]))
+    assert hold.status == HoldStatus.RELEASED
+    assert hold.metadata.get("reference") != "order:WEB-2"

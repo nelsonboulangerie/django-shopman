@@ -12,6 +12,8 @@ import pytest
 from django.test import Client
 from django.utils import timezone
 from shopman.doorman.models import AccessLink
+from shopman.guestman.models import Customer
+from shopman.orderman.models import Order
 
 pytestmark = pytest.mark.django_db
 
@@ -28,6 +30,17 @@ class TestAccessLinkExchangeApi:
             expires_at=timezone.now() + timedelta(minutes=minutes),
         )
 
+    def _order(self, channel, customer, *, ref: str):
+        return Order.objects.create(
+            ref=ref,
+            channel_ref=channel.ref,
+            status="new",
+            total_q=1000,
+            handle_type="phone",
+            handle_ref=customer.phone,
+            data={"customer_ref": customer.ref},
+        )
+
     def test_valid_token_creates_session_and_defaults_to_account(self, client: Client, customer):
         _link, raw_token = self._token(customer)
 
@@ -39,7 +52,8 @@ class TestAccessLinkExchangeApi:
         assert body["redirect"] == "/conta"
         assert body["is_authenticated"] is True
 
-    def test_order_metadata_grants_access_and_redirects_to_tracking(self, client: Client, customer):
+    def test_order_metadata_grants_access_and_redirects_to_tracking(self, client: Client, channel, customer):
+        self._order(channel, customer, ref="ORD-NUXT-1")
         _link, raw_token = self._token(customer, metadata={"order_ref": "ORD-NUXT-1"})
 
         response = client.post(self.URL, {"token": raw_token})
@@ -48,16 +62,18 @@ class TestAccessLinkExchangeApi:
         assert response.json()["redirect"] == "/pedido/ORD-NUXT-1"
         assert "ORD-NUXT-1" in client.session.get("shopman_order_access_refs", [])
 
-    def test_payment_action_redirects_to_tracking(self, client: Client, customer):
+    def test_payment_action_redirects_to_tracking(self, client: Client, channel, customer):
         # PAYMENT-TRACKING-MERGE: pagamento é um degrau do acompanhamento, então
         # um magic link de pagamento aterrissa no próprio acompanhamento.
+        self._order(channel, customer, ref="ORD-PAY-1")
         _link, raw_token = self._token(customer, metadata={"order_ref": "ORD-PAY-1", "action": "payment"})
 
         response = client.post(self.URL, {"token": raw_token})
 
         assert response.json()["redirect"] == "/pedido/ORD-PAY-1"
 
-    def test_reorder_action_redirects_to_order_history(self, client: Client, customer):
+    def test_reorder_action_redirects_to_order_history(self, client: Client, channel, customer):
+        self._order(channel, customer, ref="ORD-RE-1")
         _link, raw_token = self._token(customer, metadata={"order_ref": "ORD-RE-1", "action": "reorder"})
 
         response = client.post(self.URL, {"token": raw_token})
@@ -259,6 +275,39 @@ class TestSpentTokenWithLiveSession:
         assert body["already_authenticated"] is True
         assert body["redirect"] == "/oferta/semana"
         assert body["is_authenticated"] is True
+
+    @pytest.mark.django_db
+    def test_the_second_click_never_redirects_to_a_foreign_order(self, client, channel, customer):
+        foreign = Customer.objects.create(
+            ref="CUS-SPENT-FOREIGN",
+            first_name="Outra",
+            phone="+5543999992020",
+        )
+        order = Order.objects.create(
+            ref="ORD-SPENT-FOREIGN",
+            channel_ref=channel.ref,
+            status="new",
+            total_q=1000,
+            handle_type="phone",
+            handle_ref=foreign.phone,
+            data={"customer_ref": foreign.ref},
+        )
+        _link, raw = AccessLink.create_with_token(
+            customer_id=customer.uuid,
+            audience=AccessLink.Audience.WEB_GENERAL,
+            source=AccessLink.Source.INTERNAL,
+            expires_at=timezone.now() + timedelta(hours=2),
+            metadata={"order_ref": order.ref},
+        )
+        first = client.post("/api/v1/auth/access/", {"token": raw})
+        assert first.status_code == 200
+
+        again = client.post("/api/v1/auth/access/", {"token": raw})
+
+        assert again.status_code == 200, again.content
+        assert again.json()["already_authenticated"] is True
+        assert again.json()["redirect"] == "/conta"
+        assert order.ref not in client.session.get("shopman_order_access_refs", [])
 
     @pytest.mark.django_db
     def test_a_spent_token_without_a_session_still_fails(self, client, customer):
