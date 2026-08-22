@@ -16,6 +16,8 @@ Errors (block runserver/migrate --deploy in production):
   SHOPMAN_E011  Machine courier adapter enabled without API credentials
   SHOPMAN_E012  Piloto automático de staging habilitado em produção
   SHOPMAN_E013  Adapter fiscal + canal de venda ativo sem resolver de emissão que resolva
+  SHOPMAN_E014  Operator subdomain zone configured without shared cookie scope
+  SHOPMAN_E015  Captura simulada exposta fora de ambiente não produtivo
 
 Warnings (non-blocking, logged at startup):
   SHOPMAN_W001  Database backend is SQLite in local/debug mode
@@ -33,11 +35,13 @@ Warnings (non-blocking, logged at startup):
   SHOPMAN_W013  Publicly tracked channel takes price from a non-public channel
   SHOPMAN_W014  Active WhatsApp campaign without an approved template (flow ns)
   SHOPMAN_W015  Mesmo SKU cadastrado como produto vendável e como insumo
+  SHOPMAN_W016  Captura simulada exposta em staging técnico
 """
 
 from __future__ import annotations
 
 import os
+from urllib.parse import urlparse
 
 from django.conf import settings
 from django.core.checks import Error, Warning, register
@@ -388,6 +392,77 @@ def check_doorman_access_link_api_key(app_configs, **kwargs):
 
 
 @register(deploy=True)
+def check_operator_cookie_domain(app_configs, **kwargs):
+    """Operator apps published on subdomains need a shared operator cookie scope."""
+    errors = []
+    if settings.DEBUG:
+        return errors
+
+    operator_base_urls = {
+        "SHOPMAN_POS_BASE_URL": getattr(settings, "SHOPMAN_POS_BASE_URL", ""),
+        "SHOPMAN_KDS_BASE_URL": getattr(settings, "SHOPMAN_KDS_BASE_URL", ""),
+        "SHOPMAN_ORDERS_BASE_URL": getattr(settings, "SHOPMAN_ORDERS_BASE_URL", ""),
+        "SHOPMAN_PRODUCTION_BASE_URL": getattr(settings, "SHOPMAN_PRODUCTION_BASE_URL", ""),
+        "SHOPMAN_MARKETING_BASE_URL": getattr(settings, "SHOPMAN_MARKETING_BASE_URL", ""),
+        "SHOPMAN_BI_BASE_URL": getattr(settings, "SHOPMAN_BI_BASE_URL", ""),
+    }
+    configured_urls = {key: value for key, value in operator_base_urls.items() if value}
+    api_host = str(getattr(settings, "SHOPMAN_OPERATOR_API_HOST", "") or "").strip().lower()
+    cookie_domain = str(getattr(settings, "SHOPMAN_OPERATOR_COOKIE_DOMAIN", "") or "").strip().lower()
+
+    if not configured_urls and not api_host and not cookie_domain:
+        return errors
+
+    if configured_urls and not api_host:
+        errors.append(
+            Error(
+                "Superfícies operacionais publicadas sem SHOPMAN_OPERATOR_API_HOST.",
+                hint=(
+                    "Defina SHOPMAN_OPERATOR_API_HOST para o host de API que os apps Nuxt "
+                    "de operador usam como upstream, ex.: api.boulangerie.com.br."
+                ),
+                id="SHOPMAN_E014",
+            )
+        )
+    if (configured_urls or api_host) and not cookie_domain:
+        errors.append(
+            Error(
+                "Zona operacional publicada sem SHOPMAN_OPERATOR_COOKIE_DOMAIN.",
+                hint=(
+                    "Defina SHOPMAN_OPERATOR_COOKIE_DOMAIN com o domínio-pai dos apps "
+                    "operacionais, ex.: .boulangerie.com.br. Sem isso, login/CSRF ficam "
+                    "host-only e quebram ao alternar entre gestor, KDS, PDV e produção."
+                ),
+                id="SHOPMAN_E014",
+            )
+        )
+        return errors
+
+    bare_domain = cookie_domain.lstrip(".")
+    invalid_hosts = []
+    for key, value in configured_urls.items():
+        host = (urlparse(str(value)).hostname or "").lower()
+        if host and host != bare_domain and not host.endswith("." + bare_domain):
+            invalid_hosts.append(f"{key}={host}")
+
+    if api_host and api_host != bare_domain and not api_host.endswith("." + bare_domain):
+        invalid_hosts.append(f"SHOPMAN_OPERATOR_API_HOST={api_host}")
+
+    if invalid_hosts:
+        errors.append(
+            Error(
+                "Host operacional fora de SHOPMAN_OPERATOR_COOKIE_DOMAIN.",
+                hint=(
+                    "Todos os hosts de operador precisam estar sob o domínio-pai do cookie "
+                    f"({cookie_domain}): " + ", ".join(invalid_hosts)
+                ),
+                id="SHOPMAN_E014",
+            )
+        )
+    return errors
+
+
+@register(deploy=True)
 def check_debug_otp_exposure(app_configs, **kwargs):
     messages = []
     if not getattr(settings, "SHOPMAN_EXPOSE_DEBUG_OTP", False):
@@ -452,6 +527,48 @@ def check_staging_autopilot(app_configs, **kwargs):
                     "lado. Remova SHOPMAN_STAGING_AUTOPILOT antes do go-live."
                 ),
                 id="SHOPMAN_W011",
+            )
+        )
+    return messages
+
+
+@register(deploy=True)
+def check_mock_capture_exposure(app_configs, **kwargs):
+    """O botão "Simular pagamento" é ferramenta de teste, não de venda.
+
+    O adapter mock em staging responde "este ambiente usa gateway simulado". Já
+    ``SHOPMAN_EXPOSE_MOCK_CAPTURE`` responde outra pergunta: "o cliente consegue
+    clicar e marcar o pedido como pago?". A segunda só pode existir em staging
+    técnico acompanhado. Em produção, isto seria captura local sem dinheiro no
+    gateway.
+    """
+    messages = []
+    if settings.DEBUG or not getattr(settings, "SHOPMAN_EXPOSE_MOCK_CAPTURE", False):
+        return messages
+
+    environment = str(getattr(settings, "SHOPMAN_ENVIRONMENT", "production")).strip().lower()
+    if environment not in {"development", "dev", "local", "staging"}:
+        messages.append(
+            Error(
+                "SHOPMAN_EXPOSE_MOCK_CAPTURE está habilitado fora de ambiente não produtivo.",
+                hint=(
+                    "Desabilite SHOPMAN_EXPOSE_MOCK_CAPTURE antes de produção. "
+                    "Esse botão captura intents locais do gateway mock e não representa "
+                    "dinheiro recebido no provedor real."
+                ),
+                id="SHOPMAN_E015",
+            )
+        )
+    else:
+        messages.append(
+            Warning(
+                "Captura simulada exposta em ambiente não-DEBUG.",
+                hint=(
+                    "Permitido apenas para rodada acompanhada de alpha/staging técnico. "
+                    "Desligue SHOPMAN_EXPOSE_MOCK_CAPTURE ao encerrar testes humanos e "
+                    "antes de qualquer go-live."
+                ),
+                id="SHOPMAN_W016",
             )
         )
     return messages

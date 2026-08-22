@@ -166,6 +166,8 @@ Use quando quiser uma resposta única antes de avançar para piloto ou release:
 ```bash
 make release-readiness
 make release-readiness json=1
+make alpha-readiness preprod_url=https://staging.example.com
+make production-readiness manual_qa=docs/reports/manual-qa.md preprod_url=https://staging.example.com
 make release-readiness-strict manual_qa=docs/reports/manual-qa.md preprod_url=https://staging.example.com
 ```
 
@@ -173,8 +175,11 @@ make release-readiness-strict manual_qa=docs/reports/manual-qa.md preprod_url=ht
 seed Omotenashi e smoke local de gateways) e separa bloqueios externos reais:
 credenciais sandbox/staging, evidência manual/física e pre-prod. O modo padrão
 retorna sucesso se o local está coerente e reporta `passed_with_external_blockers`.
-`make release-readiness-strict` deve ser usado para release real: nesse modo,
-qualquer bloqueio externo também falha.
+`make alpha-readiness` é o gate de staging técnico para testadores convidados:
+aceita Pix/card mockados quando declarados, mas ainda cobra URL de staging e as
+integrações externas que precisam ser exercitadas. `make production-readiness`
+é o gate de go-live real: qualquer bloqueio externo falha e switches de teste
+como OTP debug, autopilot e captura simulada precisam estar desligados.
 
 ## QA manual Omotenashi
 
