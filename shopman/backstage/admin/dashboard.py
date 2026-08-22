@@ -13,12 +13,11 @@ from __future__ import annotations
 
 import logging
 
-from django.contrib import admin
-from django.contrib.admin.exceptions import NotRegistered
 from django.urls import reverse
 from django.utils.html import format_html
 from shopman.utils import table_badge
 
+from shopman.backstage.admin.gates import can_open_changelist, can_open_view
 from shopman.backstage.projections.dashboard import build_dashboard
 
 logger = logging.getLogger(__name__)
@@ -54,30 +53,16 @@ def _card(label: str, icon: str, url: str) -> dict:
 
 
 def _model_card(request, label: str, icon: str, model) -> dict | None:
-    """Um card por porta que ABRE — e quem responde isso é a própria porta.
-
-    O card não repete a regra do ``ModelAdmin`` com outras palavras: pergunta ao
-    ``ModelAdmin`` se ele abriria para este request. Repetir a regra aqui seria
-    a mesma pergunta com dois donos, e o dono errado ganha calado — foi assim que
-    esta lista passou meses oferecendo "Turnos de caixa" a quem opera o caixa,
-    com o gate real morando em ``ShiftAdmin.has_view_permission``.
-    """
+    """Um card por porta que ABRE — quem responde isso é ``admin.gates``."""
+    if not can_open_changelist(request, model):
+        return None
     opts = model._meta
-    try:
-        model_admin = admin.site.get_model_admin(model)
-    except NotRegistered:
-        logger.warning("dashboard_card_model_nao_registrada", extra={"model": opts.label})
-        return None
-    if not model_admin.has_view_or_change_permission(request):
-        return None
     return _card(label, icon, reverse(f"admin:{opts.app_label}_{opts.model_name}_changelist"))
 
 
 def _view_card(request, label: str, icon: str, url_name: str, view) -> dict | None:
     """Idem para tela custom do Admin: a permissão vem da view, não daqui."""
-    required = view.permission_required
-    required = (required,) if isinstance(required, str) else tuple(required)
-    if not request.user.has_perms(required):
+    if not can_open_view(request, view):
         return None
     return _card(label, icon, reverse(url_name))
 
@@ -120,9 +105,9 @@ def _audit_links(request) -> list[dict]:
         _model_card(request, "Cobranças", "payments", PaymentIntent),
         # ``audit_shift``, não ``operate_pos``: a tela do turno mostra esperado,
         # contado e diferença, e oferecê-la a quem opera o caixa é oferecer o
-        # gabarito da contagem cega. Quem decide é o ``ShiftAdmin`` — inclusive
-        # quando a estação está identificada por PIN e o operador ativo responde
-        # pela tela, e não a conta do aparelho.
+        # gabarito da contagem cega. Quem decide é o ``ShiftAdmin``, e ele
+        # pergunta a ``request.user`` — que com uma identidade só (D1-B) é a
+        # pessoa no balcão, não a conta do aparelho.
         _model_card(request, "Turnos de caixa", "point_of_sale", Shift),
         _model_card(request, "Fechamentos do dia", "event_available", DayClosing),
     ]

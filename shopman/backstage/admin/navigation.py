@@ -14,6 +14,7 @@ from django.urls import reverse
 from django.utils import timezone
 
 from shopman.backstage import permissions
+from shopman.backstage.admin.gates import can_open_changelist, can_open_view
 from shopman.backstage.projections.settings_hub import settings_nav_sections
 from shopman.shop.services import pos_links
 
@@ -52,6 +53,35 @@ def get_sidebar_navigation(request):
     aparecem quando a base URL do deployment está configurada (evita link morto).
     O histórico/CRUD de pedidos segue no grupo "Pedidos".
     """
+    from shopman.buyman.models import Material, Supplier
+    from shopman.cashman.models import Shift
+    from shopman.craftsman.models import Recipe, WorkOrder
+    from shopman.guestman.contrib.loyalty.models import LoyaltyAccount
+    from shopman.guestman.models import Customer
+    from shopman.offerman.models import Collection, Listing, Product
+    from shopman.orderman.models import Directive, Order, Session
+    from shopman.payman.models import PaymentIntent
+    from shopman.stockman.models import Batch, Hold, Move, Quant
+
+    from shopman.backstage.admin_console.cash_receipt import CashReceiptVerifyView
+    from shopman.backstage.admin_console.settings_hub import SettingsHubView
+    from shopman.backstage.models import (
+        BIAlertEvent,
+        BIAlertRule,
+        BIScenarioReport,
+        CategoryAlias,
+        DailySalesFact,
+        DayClosing,
+        HistoricalSale,
+        ImportBatch,
+        OperationChecklistRun,
+        OperationEpisode,
+        OperatorAlert,
+        PaymentMethodAlias,
+        ProductAlias,
+    )
+    from shopman.storefront.models import StockAlertSubscription
+
     live_items = []
     orders_url = _orders_base_url()
     if orders_url:
@@ -107,22 +137,22 @@ def get_sidebar_navigation(request):
         # aplicativos que não existem aqui.
         _group("Aplicativos", "apps", live_items, collapsible=False),
         _group("Catálogo", "store", [
-            _item("Produtos", "bakery_dining", _url("admin:offerman_product_changelist"), permission=_is_staff),
-            _item("Coleções", "category", _url("admin:offerman_collection_changelist"), permission=_is_staff),
-            _item("Vitrines", "shoppingmode", _url("admin:offerman_listing_changelist"), permission=_is_staff),
+            _model_item("Produtos", "bakery_dining", Product),
+            _model_item("Coleções", "category", Collection),
+            _model_item("Vitrines", "shoppingmode", Listing),
         ]),
         _group("Clientes", "people", [
-            _item("Clientes", "person_search", _url("admin:guestman_customer_changelist"), permission=_is_staff),
-            _item("Contas de fidelidade", "loyalty", _url("admin:customer_loyalty_loyaltyaccount_changelist"), permission=_is_staff),
-            _item("Avisos de reposição", "notifications_active", _url("admin:storefront_stockalertsubscription_changelist"), permission=_is_staff),
+            _model_item("Clientes", "person_search", Customer),
+            _model_item("Contas de fidelidade", "loyalty", LoyaltyAccount),
+            _model_item("Avisos de reposição", "notifications_active", StockAlertSubscription),
         ]),
         # O que se fabrica e com o quê. A régua de qualidade e o planejamento do dia
         # são ajuste, não operação: moram na Configuração.
         _group("Produção", "factory", [
-            _item("Fichas técnicas", "menu_book", _url("admin:craftsman_recipe_changelist"), permission=_can_access_production),
-            _item("Ordens de produção", "assignment", _url("admin:craftsman_workorder_changelist"), permission=_can_access_production),
-            _item("Insumos", "grocery", _url("admin:buyman_material_changelist"), permission=_is_staff),
-            _item("Fornecedores", "local_shipping", _url("admin:buyman_supplier_changelist"), permission=_is_staff),
+            _model_item("Fichas técnicas", "menu_book", Recipe),
+            _model_item("Ordens de produção", "assignment", WorkOrder),
+            _model_item("Insumos", "grocery", Material),
+            _model_item("Fornecedores", "local_shipping", Supplier),
             *(
                 [
                     _item(
@@ -137,52 +167,51 @@ def get_sidebar_navigation(request):
             ),
         ]),
         _group("Estoque", "inventory_2", [
-            _item("Saldos", "point_scan", _url("admin:stockman_quant_changelist"), permission=_is_staff),
-            _item("Reservas", "keep", _url("admin:stockman_hold_changelist"), permission=_is_staff),
-            _item("Movimentos", "swap_horiz", _url("admin:stockman_move_changelist"), permission=_is_staff),
-            _item("Lotes", "inventory", _url("admin:stockman_batch_changelist"), permission=_is_staff),
+            _model_item("Saldos", "point_scan", Quant),
+            _model_item("Reservas", "keep", Hold),
+            _model_item("Movimentos", "swap_horiz", Move),
+            _model_item("Lotes", "inventory", Batch),
         ]),
         # Trilha: o que já aconteceu. Nada aqui se opera, tudo aqui se confere.
         _group("Auditoria", "history", [
-            _item("Histórico de pedidos", "receipt_long", _url("admin:orderman_order_changelist"), permission=_can_manage_orders),
-            _item("Sessões de venda", "shopping_bag", _url("admin:orderman_session_changelist"), permission=_can_manage_orders),
-            _item("Ações pendentes", "playlist_add_check", _url("admin:orderman_directive_changelist") + "?status__exact=queued", permission=_can_manage_orders),
-            _item("Cobranças", "credit_card", _url("admin:payman_paymentintent_changelist"), permission=_can_manage_orders),
+            _model_item("Histórico de pedidos", "receipt_long", Order),
+            _model_item("Sessões de venda", "shopping_bag", Session),
+            _model_item("Ações pendentes", "playlist_add_check", Directive, query="?status__exact=queued"),
+            _model_item("Cobranças", "credit_card", PaymentIntent),
             # A movimentação (sangria, suprimento) é linha do turno, não tela: o
             # livro inteiro se lê de dentro do turno, em ordem. Um item próprio
             # seria a mesma pergunta com dois donos.
-            # ``audit_shift``, não ``operate_pos``: a tela do turno mostra
-            # esperado, contado e diferença, e oferecer o link a quem opera o
-            # caixa é oferecer o gabarito da contagem cega. O gate real está no
-            # ``ShiftAdmin.has_view_permission``; aqui o link acompanha, para
-            # ninguém ver uma porta que responde 403.
-            _item("Turnos de caixa", "payments", _url("admin:cashman_shift_changelist"), permission=_can_audit_shift),
-            _item("Fechamentos do dia", "event_available", _url("admin:backstage_dayclosing_changelist"), permission=_can_close_day),
-            _item("Execuções de checklist", "checklist", _url("admin:backstage_operationchecklistrun_changelist"), permission=_is_staff),
-            _item("Episódios de operação", "report_problem", _url("admin:backstage_operationepisode_changelist"), permission=_can_close_day),
+            # Quem decide é o ``ShiftAdmin``, que exige ``audit_shift`` e não
+            # ``operate_pos``: a tela do turno mostra esperado, contado e
+            # diferença, e oferecê-la a quem opera o caixa é entregar o gabarito
+            # da contagem cega.
+            _model_item("Turnos de caixa", "payments", Shift),
+            _model_item("Fechamentos do dia", "event_available", DayClosing),
+            _model_item("Execuções de checklist", "checklist", OperationChecklistRun),
+            _model_item("Episódios de operação", "report_problem", OperationEpisode),
             # Sem esta entrada, a conferência só existiria para quem tem um QR
             # legível na mão — e o comprovante amassado, que é justamente o
             # caso em que alguém quer conferir, não teria porta nenhuma.
-            _item("Conferir comprovante", "qr_code_scanner", _url("admin_console_cash_receipt_lookup"), permission=_can_audit_shift),
-            _item("Alertas do operador", "warning", _url("admin:backstage_operatoralert_changelist"), permission=_can_view_operator_alerts),
+            _view_item("Conferir comprovante", "qr_code_scanner", "admin_console_cash_receipt_lookup", CashReceiptVerifyView),
+            _model_item("Alertas do operador", "warning", OperatorAlert),
         ]),
         # O que entrou de fora no B.I. — trilha, como Auditoria, mas com dono
         # próprio: Auditoria está no teto que ainda se escaneia, e o B.I. vai
         # ganhar mais telas desta família (de-paras, cenários). Nasce aqui para
         # não dividir Auditoria depois. Só quem vê o B.I. vê o que o alimenta.
         _group("B.I.", "query_stats", [
-            _item("Importações", "upload_file", _url("admin:backstage_importbatch_changelist"), permission=_can_view_bi),
-            _item("Vendas históricas", "history_edu", _url("admin:backstage_historicalsale_changelist"), permission=_can_view_bi),
-            _item("Vendas por dia", "calendar_month", _url("admin:backstage_dailysalesfact_changelist"), permission=_can_view_bi),
+            _model_item("Importações", "upload_file", ImportBatch),
+            _model_item("Vendas históricas", "history_edu", HistoricalSale),
+            _model_item("Vendas por dia", "calendar_month", DailySalesFact),
             # A curadoria: o que veio de fora se traduz no vocabulário da casa.
             # A máquina propõe, a pessoa confirma aqui; só o confirmado lê.
-            _item("De-para de produtos", "swap_horiz", _url("admin:backstage_productalias_changelist"), permission=_can_view_bi),
-            _item("De-para de categorias", "category", _url("admin:backstage_categoryalias_changelist"), permission=_can_view_bi),
-            _item("De-para de pagamentos", "payments", _url("admin:backstage_paymentmethodalias_changelist"), permission=_can_view_bi),
+            _model_item("De-para de produtos", "swap_horiz", ProductAlias),
+            _model_item("De-para de categorias", "category", CategoryAlias),
+            _model_item("De-para de pagamentos", "payments", PaymentMethodAlias),
             # O B.I. avisa: a régua é do gestor, o disparo é trilha.
-            _item("Alarmes", "notifications_active", _url("admin:backstage_bialertrule_changelist"), permission=_can_view_bi),
-            _item("Disparos de alarme", "campaign", _url("admin:backstage_bialertevent_changelist"), permission=_can_view_bi),
-            _item("Cenários da IA", "auto_awesome", _url("admin:backstage_biscenarioreport_changelist"), permission=_can_view_bi),
+            _model_item("Alarmes", "notifications_active", BIAlertRule),
+            _model_item("Disparos de alarme", "campaign", BIAlertEvent),
+            _model_item("Cenários da IA", "auto_awesome", BIScenarioReport),
         ]),
         # Configuração expande como os outros grupos — o menu tem UM comportamento,
         # não dois. Os subitens são os sete ESCOPOS, não as 33 telas: o Unfold só tem
@@ -195,11 +224,11 @@ def get_sidebar_navigation(request):
         # da tela em que se está. A lista vem da projection, então escopo novo nasce
         # nos dois lugares de uma vez.
         _group("Configuração", "settings", [
-            _item(
+            _view_item(
                 "Todos os ajustes",
                 "tune",
-                _url("admin_console_settings_hub"),
-                permission=_is_staff,
+                "admin_console_settings_hub",
+                SettingsHubView,
                 active=_exactly(_url("admin_console_settings_hub")),
             ),
             *[
@@ -207,7 +236,7 @@ def get_sidebar_navigation(request):
                     section["title"],
                     section["icon"],
                     reverse("admin_console_settings_scope", args=[section["slug"]]),
-                    permission=_is_staff,
+                    permission=_opens_view(SettingsHubView),
                     # Destaca o escopo TAMBÉM quando se está dentro de uma tela dele:
                     # "Zonas de entrega" é alcançada pela Configuração e não tem item
                     # próprio, então sem isto o menu não acenderia nada e a pessoa
@@ -241,6 +270,43 @@ def _group(title: str, icon: str, items: list[dict], *, collapsible: bool = True
         "collapsible": collapsible,
         "items": items,
     }
+
+
+def _model_item(title: str, icon: str, model, *, query: str = "", badge: str | None = None, badge_variant: str = "primary"):
+    """Item de changelist: a URL e a permissão saem os dois do mesmo model.
+
+    A permissão é a da PORTA (``admin.gates``), não um palpite paralelo. O menu
+    passou meses oferecendo 26 telas à Fran das quais 26 respondiam 403, porque
+    aqui a pergunta era ``is_staff`` e lá era ``view_<model>``.
+    """
+    opts = model._meta
+    return _item(
+        title,
+        icon,
+        _url(f"admin:{opts.app_label}_{opts.model_name}_changelist") + query,
+        permission=_opens(model),
+        badge=badge,
+        badge_variant=badge_variant,
+    )
+
+
+def _view_item(title: str, icon: str, url_name: str, view, *, active=None):
+    """Item de tela custom do Admin: a permissão é a que a própria view declara."""
+    return _item(title, icon, _url(url_name), permission=_opens_view(view), active=active)
+
+
+def _opens(model):
+    def _check(request) -> bool:
+        return can_open_changelist(request, model)
+
+    return _check
+
+
+def _opens_view(view):
+    def _check(request) -> bool:
+        return can_open_view(request, view)
+
+    return _check
 
 
 def _item(
@@ -305,26 +371,12 @@ def _url(name: str) -> str:
     return reverse(name)
 
 
-# Request-oriented adapters over the canonical predicates. The sidebar speaks
-# ``request``; the rules live once in shopman.backstage.permissions.
-def _is_staff(request) -> bool:
-    return permissions.is_staff(request.user)
-
-
-def _is_superuser(request) -> bool:
-    return permissions.is_superuser(request.user)
-
-
+# Adaptadores de ``request`` para os predicados canônicos, e só para os itens que
+# apontam para FORA do Admin (os apps Nuxt): lá a porta é o gate da API, não um
+# ``ModelAdmin``. Tela do Admin não passa por aqui — ela responde por si em
+# ``admin.gates``.
 def _can_manage_orders(request) -> bool:
     return permissions.can_manage_orders(request.user)
-
-
-def _can_access_production(request) -> bool:
-    return permissions.can_access_production(request.user)
-
-
-def _can_view_bi(request) -> bool:
-    return permissions.can_view_bi(request.user)
 
 
 def _can_view_production_reports(request) -> bool:
@@ -345,12 +397,3 @@ def _can_operate_kds(request) -> bool:
 
 def _can_operate_production(request) -> bool:
     return permissions.can_operate_production(request.user)
-
-
-def _can_audit_shift(request) -> bool:
-    """Espelha o gate da própria tela — link que aparece e depois nega é pior que link que falta."""
-    return request.user.has_perm("cashman.audit_shift")
-
-
-def _can_view_operator_alerts(request) -> bool:
-    return permissions.can_view_operator_alerts(request.user)

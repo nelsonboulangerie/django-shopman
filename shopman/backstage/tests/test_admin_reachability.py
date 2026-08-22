@@ -1,15 +1,16 @@
-"""Os cards do dashboard do Admin não podem oferecer porta trancada.
+"""Link oferecido no Admin é porta que abre — no menu e nos cards.
 
-A sidebar já filtra por permissão (``test_cash_audit_policy`` prova para os
-turnos de caixa). Os cards do dashboard não filtravam nada: as três personas
-viam a mesma lista, e para a Fran (Caixa) e a Joyce (Gerente) quase todo card
-respondia 403. Placa de aberto em porta trancada é pior que porta que falta —
-manda a pessoa procurar suporte para um acesso que ela não deveria ter.
+A sidebar e os cards do dashboard existem para levar alguém a uma tela. Enquanto
+eles respondiam a pergunta por conta própria (``is_staff``, na maioria) e a tela
+respondia outra (``view_<model>``), o resultado media assim, com os grupos do
+``setup_groups``: a Fran (Caixa) via 26 itens de menu e 10 cards, e **os 36
+respondiam 403**. Placa de aberto em porta trancada é pior que porta que falta —
+manda a pessoa pedir suporte para um acesso que ela nem deveria ter.
 
-O teste central aqui é o de baixo, ``test_todo_card_oferecido_abre``: ele não
-enumera permissões (isso já tem dono), ele PEDE cada card oferecido e exige 200.
-Com o contrapeso do superusuário, que continua vendo a lista inteira — senão um
-filtro fechado demais passaria verde escondendo tudo de todo mundo.
+O contrato aqui não enumera permissão (isso tem dono: ``admin.gates`` pergunta ao
+``ModelAdmin`` e ao ``permission_required`` da view). Ele PEDE cada link
+oferecido e exige 200. Com o contrapeso do superusuário, que continua vendo tudo
+— senão um filtro fechado demais passaria verde escondendo tudo de todo mundo.
 """
 
 from __future__ import annotations
@@ -20,6 +21,7 @@ from django.contrib.auth.models import Group
 from django.test import RequestFactory
 
 from shopman.backstage.admin.dashboard import dashboard_callback
+from shopman.backstage.admin.navigation import get_sidebar_navigation
 
 pytestmark = pytest.mark.django_db
 
@@ -115,23 +117,44 @@ def test_todo_card_oferecido_abre_para_o_superusuario(client, _loja):
         assert client.get(card["url"]).status_code == 200, card["label"]
 
 
-def test_o_operador_identificado_decide_e_nao_a_conta_do_aparelho(_loja):
-    """A estação fica logada como a conta do APARELHO — no staging, um
-    superusuário. Quando alguém se identifica por PIN, quem responde pela tela é
-    o operador (``ShiftAdmin._viewer``), e o card tem de acompanhar: perguntar à
-    porta é o que faz isso sair de graça."""
-    from shopman.backstage.services.operator import ACTIVE_OPERATOR_SESSION_KEY
+# ── A sidebar ────────────────────────────────────────────────────────────────
 
-    aparelho = get_user_model().objects.create_superuser(username="admin-terminal", password="x")
-    caixa = get_user_model().objects.create_user(username="joyce-identificada", password="x", is_staff=True)
 
+def _itens_de_menu(user) -> list[tuple[str, str]]:
+    """Os itens do menu que este usuário enxerga e que apontam para o Admin.
+
+    Os links para os apps Nuxt (PDV, KDS, Pedidos, Produção) ficam de fora: a
+    porta deles é o gate da API do outro lado, não uma tela daqui.
+    """
     request = RequestFactory().get("/admin/")
-    request.user = aparelho
-    request.session = {}
-    sem_operador = [card["label"] for card in dashboard_callback(request, {})["audit_links"]]
+    request.user = user
+    return [
+        (item["title"], item["link"])
+        for group in get_sidebar_navigation(request)
+        for item in group["items"]
+        if item["link"].startswith("/") and item["permission"](request)
+    ]
 
-    request.session = {ACTIVE_OPERATOR_SESSION_KEY: {"id": caixa.pk, "username": caixa.username, "name": caixa.username}}
-    com_operador = [card["label"] for card in dashboard_callback(request, {})["audit_links"]]
 
-    assert "Turnos de caixa" in sem_operador
-    assert "Turnos de caixa" not in com_operador
+@pytest.mark.parametrize("persona", ["Caixa", "Cozinha", "Gerente", "Dono"])
+def test_todo_item_do_menu_abre(client, _loja, grupos, persona):
+    user = _com_grupo(persona, grupos)
+    client.force_login(user)
+
+    for titulo, link in _itens_de_menu(user):
+        # ``follow``: a lista de ordens de produção redireciona para o dia de
+        # hoje por desenho — 302 aqui é auto-escopo, não porta fechada.
+        resposta = client.get(link, follow=True)
+        assert resposta.status_code == 200, f"{persona} clicou em {titulo} e levou {resposta.status_code}"
+
+
+def test_o_menu_do_superusuario_abre_inteiro(client, _loja):
+    """Controle positivo: um filtro que esconde tudo passaria verde sem isto."""
+    root = get_user_model().objects.create_superuser(username="root-menu", password="x")
+    client.force_login(root)
+
+    itens = _itens_de_menu(root)
+
+    assert len(itens) >= 40, "o menu do dono do sistema encolheu — o filtro está fechado demais"
+    for titulo, link in itens:
+        assert client.get(link, follow=True).status_code == 200, titulo
