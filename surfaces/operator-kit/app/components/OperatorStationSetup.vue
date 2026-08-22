@@ -1,5 +1,5 @@
 <script setup lang="ts">
-// PREPARAR ESTE DISPOSITIVO — a montagem do balcão, uma vez por máquina.
+// INICIAR ESTE DISPOSITIVO — a montagem do balcão, uma vez por máquina.
 //
 // Aparece para quem gere operadores, logado com senha, num dispositivo que ainda não
 // é uma estação. Depois disso o balcão abre sozinho de manhã e pede PIN, e
@@ -33,7 +33,7 @@ async function confirmar() {
         <Icon name="lucide:monitor-check" class="size-7 text-muted-foreground" />
       </div>
       <div class="grid gap-1.5">
-        <h2 class="text-lg font-semibold">Preparar este dispositivo</h2>
+        <h2 class="text-lg font-semibold">Iniciar este dispositivo</h2>
         <p class="text-sm text-muted-foreground">
           Diga qual balcão é este. Depois disso ele abre sozinho e pede só o PIN de
           quem for operar.
@@ -65,7 +65,7 @@ async function confirmar() {
       <div class="grid gap-2">
         <UiButton size="lg" :disabled="busy || !escolhido" @click="confirmar">
           <Icon :name="busy ? 'line-md:loading-loop' : 'lucide:check'" class="size-5" />
-          {{ busy ? "Preparando…" : "É este balcão" }}
+          {{ busy ? "Iniciando…" : "É este balcão" }}
         </UiButton>
         <UiButton variant="ghost" size="lg" :disabled="busy" @click="emit('dismiss')">
           Agora não

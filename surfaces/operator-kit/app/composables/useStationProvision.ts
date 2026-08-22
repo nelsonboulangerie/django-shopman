@@ -45,7 +45,7 @@ export function useStationProvision() {
       station.value = terminalRef;
       return true;
     } catch (err) {
-      error.value = httpErrorMessage(err, "Não foi possível preparar este dispositivo.");
+      error.value = httpErrorMessage(err, "Não foi possível iniciar este dispositivo.");
       return false;
     } finally {
       busy.value = false;

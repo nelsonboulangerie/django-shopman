@@ -22,7 +22,7 @@ const { expired: sessionExpired, reset: resetSession } = useOperatorSession();
 const OPERATOR_PERM = "cashman.operate_pos";
 const { locked, canIdentify, stationRef, mustChange, lock } = useOperatorLock(OPERATOR_PERM);
 
-// Preparar o dispositivo: o gestor entra com senha uma vez e diz qual balcão é este.
+// Iniciar o dispositivo: o gestor entra com senha uma vez e diz qual balcão é este.
 // Enquanto ninguém fizer isso, o dispositivo não tem antessala — a loja só entra com
 // senha, todo dia. A oferta é dispensável de propósito: no PC pessoal do gestor a
 // resposta certa é "agora não".

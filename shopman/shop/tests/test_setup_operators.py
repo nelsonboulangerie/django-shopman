@@ -81,15 +81,59 @@ def test_todos_tem_pin_para_destravar_a_superficie(elenco):
         assert cred.verify(setup_operators.DEV_PIN)
 
 
-def test_admin_entra_com_senha_e_os_outros_so_com_pin(elenco):
-    """Confiança do dispositivo entra pelo `admin`; quem opera se identifica pelo PIN."""
-    assert elenco["admin"].check_password(setup_operators.ADMIN_PASSWORD)
-    assert elenco["admin"].is_superuser
+def test_quem_inicia_dispositivo_tem_senha_e_o_balcao_so_PIN(elenco):
+    """Senha é de quem monta a loja; quem opera se identifica pelo PIN.
 
-    for username in ("joyce", "fran", "diofer"):
+    ⚠️ Este teste afirmava que só o `admin` tinha senha, e essa era a regra até a
+    D1 Parte B. Ela não sobrevive ao desenho novo: um dispositivo cru não tem
+    antessala, então a tela de PIN só existe DEPOIS que alguém o tornou uma
+    estação — e esse alguém precisa entrar de algum jeito. Com senha só no
+    `admin`, o dono era o único capaz de montar um balcão.
+    """
+    for username in ("admin", "joyce"):
+        assert elenco[username].check_password(setup_operators.ADMIN_PASSWORD)
+        assert elenco[username].has_perm("cashman.manage_operators"), (
+            "senha sem `manage_operators` é credencial que não serve para iniciar nada"
+        )
+
+    for username in ("fran", "diofer"):
         assert not elenco[username].has_usable_password()
-        assert not elenco[username].is_superuser
         assert elenco[username].is_staff
+
+    assert elenco["admin"].is_superuser
+    for username in ("joyce", "fran", "diofer"):
+        assert not elenco[username].is_superuser
+
+
+def test_senha_de_VERDADE_sobrevive_a_uma_rodada_do_comando(elenco):
+    """A senha real do gestor não pode voltar para a senha fraca de dev.
+
+    Este comando é de rotina — roda depois de `setup_groups`, ao testar uma
+    permissão, quando alguém perde acesso. Antes ele reescrevia a senha em TODA
+    execução, então no dia em que a Joyce tivesse uma senha de verdade, uma
+    rodada de manutenção a trocaria de volta por `admin`, calada. Quem descobre é
+    ela, na porta, de manhã.
+    """
+    joyce = get_user_model().objects.get(username="joyce")
+    joyce.set_password("uma-senha-de-verdade-do-gestor")
+    joyce.save(update_fields=["password"])
+
+    call_command("setup_operators", "--yes", verbosity=0)
+
+    joyce = get_user_model().objects.get(username="joyce")
+    assert joyce.check_password("uma-senha-de-verdade-do-gestor")
+    assert not joyce.check_password(setup_operators.ADMIN_PASSWORD)
+
+
+def test_conta_so_PIN_nao_ganha_senha_ao_rodar_de_novo(elenco):
+    """O contrapeso: não sobrescrever não pode virar "todo mundo ganha senha".
+
+    Sem isto, um `has_usable_password()` invertido passaria despercebido — e a
+    Fran teria uma credencial que ninguém pediu.
+    """
+    call_command("setup_operators", "--yes", verbosity=0)
+
+    assert not get_user_model().objects.get(username="fran").has_usable_password()
 
 
 def test_rodar_duas_vezes_nao_duplica_nem_acumula(elenco):
