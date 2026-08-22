@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import date, timedelta
+from datetime import date, datetime, time, timedelta
 from decimal import Decimal
 from io import StringIO
 
@@ -10,6 +10,7 @@ import pytest
 from django.core.management import call_command
 from django.core.management.base import CommandError
 from django.test import override_settings
+from django.utils import timezone
 from shopman.craftsman import STOCK_CONSUMED_KEY, STOCK_REALIZED_KEY, craft
 from shopman.craftsman.models import Recipe, RecipeItem, WorkOrder
 from shopman.craftsman.models.recipe import _item_mass_in_kg
@@ -274,6 +275,41 @@ def test_nelson_seed_populates_production_history_alerts_and_batches(monkeypatch
     missing = [check.id for check in qa_report.checks if check.status == "missing"]
     assert qa_report.ready_count == len(qa_report.checks)
     assert not missing
+
+
+@pytest.mark.django_db
+def test_nelson_seed_keeps_the_day_in_order_when_seeded_at_dawn(monkeypatch):
+    """A ordem da padaria não pode depender da hora em que o seed roda.
+
+    O dia do seed mistura horas FIXAS (a tabela do plano: campagne 3h40,
+    baguete 4h00…) com uma hora FLUTUANTE: a fornada travada nasce atrasada em
+    relação ao ``timezone.now()``, senão o alerta ``production_late`` só
+    apareceria se o reseed calhasse na hora certa. Enquanto o pré-preparo teve
+    hora fixa (1h00–3h10), rodar o seed antes das ~5h25 punha a massa
+    terminando DEPOIS de a primeira fornada começar — dia impossível, e um
+    teste que passava ou falhava conforme o relógio (22/08).
+
+    Este teste congela o relógio na faixa que quebrava e cobra as DUAS coisas
+    ao mesmo tempo, porque é a tensão entre elas que causou o defeito: a massa
+    antes do pão E o alerta de atraso aceso.
+    """
+    tz = timezone.get_current_timezone()
+    madrugada = datetime.combine(timezone.localdate(), time(4, 20), tzinfo=tz)
+    monkeypatch.setattr(timezone, "now", lambda: madrugada)
+    monkeypatch.setenv("ADMIN_PASSWORD", "strong-seed-admin-password")
+    call_command("seed", "--flush", stdout=StringIO())
+
+    massas = list(WorkOrder.objects.filter(source_ref__startswith="seed:production:today-prep:"))
+    acabados = WorkOrder.objects.filter(
+        source_ref__startswith="seed:production:today:", started_at__isnull=False
+    )
+    assert massas
+    ultima_massa = max(wo.finished_at for wo in massas)
+    primeiro_pao = min(wo.started_at for wo in acabados)
+    assert ultima_massa <= primeiro_pao, (
+        f"seed de madrugada inverteu a ordem da casa ({ultima_massa} > {primeiro_pao})"
+    )
+    assert OperatorAlert.objects.filter(type="production_late", acknowledged=False).exists()
 
 
 @pytest.mark.django_db
