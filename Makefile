@@ -15,7 +15,7 @@ APP_COMPOSE := $(COMPOSE) --profile app
 RELEASE_COMPOSE := $(COMPOSE) --profile release
 NUXT_DIR := surfaces/storefront-nuxt
 
-.PHONY: surfaces surfaces-types help install test test-refs test-utils test-offerman test-stockman test-craftsman test-orderman test-payman test-guestman test-doorman test-buyman test-cashman test-framework test-counter-agent test-migrations test-runtime-preflight test-runtime load-test storefront-e2e test-coverage lint omotenashi-qa omotenashi-browser-qa omotenashi-browser-ci admin admin-update admin-ui admin-ui-ci admin-ui-maturity admin-ui-strict admin-ui-surfaces admin-ui-test admin-ui-update unfold unfold-ci unfold-maturity unfold-strict unfold-surfaces unfold-update lint-unfold lint-unfold-maturity clean migrate run nuxt dev seed coverage fonts up down logs db-shell diagnose-runtime diagnose-worker diagnose-payments diagnose-webhooks diagnose-health release-readiness release-readiness-strict reconcile-financial-day audit-branches smoke-gateways smoke-gateways-sandbox deploy-env-check deploy-check deploy-build deploy-release deploy-up deploy-down deploy-logs deploy-ps collectstatic
+.PHONY: surfaces surfaces-types help install test test-refs test-utils test-offerman test-stockman test-craftsman test-orderman test-payman test-guestman test-doorman test-buyman test-cashman test-framework test-counter-agent test-migrations test-runtime-preflight test-runtime load-test storefront-e2e test-coverage lint omotenashi-qa omotenashi-browser-qa omotenashi-browser-ci admin admin-update admin-ui admin-ui-ci admin-ui-maturity admin-ui-strict admin-ui-surfaces admin-ui-test admin-ui-update unfold unfold-ci unfold-maturity unfold-strict unfold-surfaces unfold-update lint-unfold lint-unfold-maturity clean migrate run nuxt dev seed coverage fonts up down logs db-shell diagnose-runtime diagnose-worker diagnose-payments diagnose-webhooks diagnose-health release-readiness release-readiness-strict alpha-readiness production-readiness reconcile-financial-day audit-branches smoke-gateways smoke-gateways-sandbox deploy-env-check deploy-check deploy-build deploy-release deploy-up deploy-down deploy-logs deploy-ps collectstatic
 
 help: ## Mostra este help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | \
@@ -245,10 +245,16 @@ audit-branches: ## Lista branches remotos à frente do main e separa entregues d
 	@bash scripts/audit-branches.sh
 
 release-readiness: ## Consolida prontidao local e bloqueios externos de piloto/release
-	$(PYTHON) scripts/check_release_readiness.py $(if $(json),--json,) $(if $(manual_qa),--manual-qa-evidence=$(manual_qa),) $(if $(preprod_url),--preprod-url=$(preprod_url),)
+	$(PYTHON) scripts/check_release_readiness.py $(if $(profile),--profile=$(profile),) $(if $(json),--json,) $(if $(manual_qa),--manual-qa-evidence=$(manual_qa),) $(if $(preprod_url),--preprod-url=$(preprod_url),)
 
 release-readiness-strict: ## Igual ao release-readiness, mas falha em bloqueios externos
-	$(PYTHON) scripts/check_release_readiness.py --strict-external $(if $(json),--json,) $(if $(manual_qa),--manual-qa-evidence=$(manual_qa),) $(if $(preprod_url),--preprod-url=$(preprod_url),)
+	$(PYTHON) scripts/check_release_readiness.py --strict-external $(if $(profile),--profile=$(profile),) $(if $(json),--json,) $(if $(manual_qa),--manual-qa-evidence=$(manual_qa),) $(if $(preprod_url),--preprod-url=$(preprod_url),)
+
+alpha-readiness: ## Gate para alpha tecnico publicavel: aceita mocks explicitos, bloqueia externos relevantes
+	$(PYTHON) scripts/check_release_readiness.py --profile=alpha --strict-external $(if $(json),--json,) $(if $(manual_qa),--manual-qa-evidence=$(manual_qa),) $(if $(preprod_url),--preprod-url=$(preprod_url),)
+
+production-readiness: ## Gate final de go-live: real money, sem mocks/debug/staging
+	$(PYTHON) scripts/check_release_readiness.py --profile=production --strict-external $(if $(json),--json,) $(if $(manual_qa),--manual-qa-evidence=$(manual_qa),) $(if $(preprod_url),--preprod-url=$(preprod_url),)
 
 reconcile-financial-day: ## Reconcilia pedidos, intents, transacoes e fechamento (date=YYYY-MM-DD dry_run=1)
 	$(PYTHON) manage.py reconcile_financial_day $(if $(date),--date=$(date),) $(if $(dry_run),--dry-run,) $(if $(require_closing),--require-closing,)
@@ -360,7 +366,7 @@ lint: admin ## Ruff + Admin/Unfold
 # endereço do checkout parou de avançar sozinho, e nada acusou.
 #
 # Um app por vez, sem `-` no comando: o primeiro que quebrar para a linha.
-SURFACES := storefront-nuxt hub-nuxt pos-nuxt kds-nuxt orders-nuxt production-nuxt marketing-nuxt
+SURFACES := storefront-nuxt hub-nuxt pos-nuxt kds-nuxt orders-nuxt production-nuxt marketing-nuxt bi-nuxt
 
 surfaces: ## Superfícies Nuxt: typecheck + vitest de todos os apps
 	@for app in $(SURFACES); do \
