@@ -20,11 +20,6 @@ from shopman.shop.models import Shop
 pytestmark = pytest.mark.django_db
 
 
-@pytest.fixture(autouse=True)
-def _no_active_operator(settings):
-    settings.SHOPMAN_REQUIRE_ACTIVE_OPERATOR = False
-
-
 @pytest.fixture
 def operator():
     Shop.objects.create(name="Loja")

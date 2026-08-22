@@ -5,7 +5,7 @@ import { isUnauthenticatedError } from "../utils/httpError";
 /**
  * Sessão do operador: re-gate global em 401 (omotenashi de resiliência).
  *
- * Uma sessão de dispositivo pode expirar no meio do turno (cookie `.<zona>` revogado,
+ * A sessão do operador pode expirar no meio do turno (cookie `.<zona>` revogado,
  * timeout do lado do Django). Sem isto, cada gravação (save_tab, close_sale…) falharia
  * silenciosamente com um toast genérico e o operador seguiria batendo numa sessão morta.
  * O transporte de comandos chama `flagIfUnauthenticated(err)` no catch; a shell observa

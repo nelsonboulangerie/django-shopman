@@ -8,7 +8,7 @@ o POS ver a confirmação do PIX chegar sem sair do balcão.
 from __future__ import annotations
 
 from django.contrib.auth import get_user_model
-from django.test import TestCase, override_settings
+from django.test import TestCase
 from rest_framework.test import APIClient
 from shopman.orderman.models import Order
 
@@ -28,7 +28,6 @@ def _grant_pos_perm(user):
     user.user_permissions.add(Permission.objects.get(content_type=ct, codename="operate_pos"))
 
 
-@override_settings(SHOPMAN_REQUIRE_ACTIVE_OPERATOR=False)
 class POSPaymentStatusTests(TestCase):
     def setUp(self):
         Shop.objects.create(name="Test", brand_name="Test")

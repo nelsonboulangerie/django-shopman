@@ -1277,10 +1277,6 @@ SHOPMAN_SURFACE_URLS = {
     if url
 }
 
-# Autorização Opção C: quando ON, as ações de backstage são autorizadas contra o
-# OPERADOR ATIVO (estabelecido por PIN/crachá), não o usuário da sessão do device.
-# Default OFF (a sessão do device decide — comportamento atual). Liga-se junto com a
-# tela de trava/destrava nos apps (WP-AUTH-2c) + a zona de operador no ar.
 # Menuboard é superfície INTERNA (TV na loja), não pública: exige sessão de staff
 # ou token de quiosque na URL (`manage.py menuboard_token <ref>`). O motivo está em
 # shopman/shop/menuboard_access.py — o preço do menuboard vem do PDV, e preço
@@ -1288,10 +1284,6 @@ SHOPMAN_SURFACE_URLS = {
 # default, e reabrir é decisão explícita. O feed XML segue público (Google/Meta
 # precisam buscá-lo).
 SHOPMAN_MENUBOARD_PUBLIC = os.environ.get("SHOPMAN_MENUBOARD_PUBLIC", "false").strip().lower() == "true"
-
-SHOPMAN_REQUIRE_ACTIVE_OPERATOR = (
-    os.environ.get("SHOPMAN_REQUIRE_ACTIVE_OPERATOR", "false").strip().lower() == "true"
-)
 
 # 2FA obrigatório no Admin (django-otp/TOTP) — gated por env. Default OFF para não
 # trancar fora antes do enrollment; ligar (env="true") só depois de cada superuser

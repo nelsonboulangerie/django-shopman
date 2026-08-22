@@ -8,10 +8,12 @@ import { createServer } from "node:http";
 
 const port = Number(process.env.MOCK_PORT || 8798);
 
+// Uma identidade: `locked` é literalmente "não há operador". O mock dizia
+// `operator: null, locked: false` — combinação que o servidor não produz, e que
+// só fazia sentido quando existia um interruptor para desligar o gate.
 const SESSION_AUTHED = {
-  device_user: "admin",
-  operator: null,
-  require_operator: false,
+  station: "balcao",
+  operator: { id: 1, username: "admin", name: "Admin" },
   locked: false,
   pin_must_change: false,
 };

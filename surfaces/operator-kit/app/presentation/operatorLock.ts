@@ -1,13 +1,17 @@
-// Presentation — operator lock (Opção C). Pure transforms over the operator
-// session projection. The barcode badge scanner behaves like a keyboard that
-// types the token fast and ends with Enter; the PIN is typed on an on-screen pad.
-// No network here — the composable owns I/O; this owns shape + the unlock payload.
+// Presentation — a trava do operador. Transforms puros sobre a projection da
+// sessão. O leitor de crachá se comporta como um teclado que digita o token
+// rápido e termina com Enter; o PIN é digitado num pad na tela. Sem rede aqui —
+// o composable é dono do I/O; isto é dono da forma e do payload do destrave.
 import type { OperatorSession } from "../types/operator";
 
-/** The overlay shows only when the gate is on AND nobody is operating. When the
- *  gate is off (SHOPMAN_REQUIRE_ACTIVE_OPERATOR=false) the surface is never locked. */
+/** A trava sobe quando ninguém está operando. Ponto.
+ *
+ * Havia um `require_operator` no meio: um interruptor de servidor que dizia se o
+ * gate estava ligado, e com ele desligado a superfície NUNCA travava. Ele existia
+ * porque as duas identidades conviviam e a segunda era opcional. Não há mais
+ * interruptor: sem alguém identificado, não se opera. */
 export function isLocked(session: OperatorSession | null): boolean {
-  return Boolean(session?.require_operator && session?.locked);
+  return Boolean(session?.locked);
 }
 
 export function operatorName(session: OperatorSession | null): string {

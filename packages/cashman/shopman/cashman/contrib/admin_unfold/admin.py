@@ -43,36 +43,6 @@ _KIND_COLORS = {
 }
 
 
-#: A chave de sessão onde o backstage guarda o operador identificado num terminal
-#: compartilhado. É a mesma string de ``backstage.services.operator``
-#: ``ACTIVE_OPERATOR_SESSION_KEY``; o pacote não importa o backstage (ADR-001),
-#: então ela é repetida aqui e um teste do backstage prova que as duas não
-#: divergiram (``test_cash_audit_policy.py``).
-_ACTIVE_OPERATOR_SESSION_KEY = "active_operator"
-
-
-def _viewer(request):
-    """Quem responde pela tela: o operador identificado no terminal, ou a conta do aparelho.
-
-    Um balcão compartilhado fica logado como a conta do APARELHO — no staging,
-    um superusuário — e o cookie de sessão vale no domínio inteiro: a mesma
-    sessão que identifica a Joyce no PDV abre o Admin na aba ao lado. Gatear só
-    pela conta do aparelho não fecharia nada, porque ``admin`` tem todas as
-    permissões. Quando a estação está identificada, quem decide é o operador,
-    igual ao gate da API (Opção C, ``HasBackstagePermission``).
-    """
-    session = getattr(request, "session", None)
-    card = session.get(_ACTIVE_OPERATOR_SESSION_KEY) if session is not None else None
-    operator_id = (card or {}).get("id") if isinstance(card, dict) else None
-    if operator_id:
-        from django.contrib.auth import get_user_model
-
-        operator = get_user_model().objects.filter(pk=operator_id, is_active=True, is_staff=True).first()
-        if operator is not None:
-            return operator
-    return request.user
-
-
 def _money(amount_q: int) -> str:
     sign = "+" if amount_q > 0 else ("" if amount_q == 0 else "−")
     return f"{sign}R$ {format_money(abs(amount_q))}"
@@ -250,7 +220,8 @@ class ShiftAdmin(BaseModelAdmin):
         # cego não pegaria mais nada. O gerente também não tem a permissão
         # (``setup_groups`` dá a ele ``operate_pos``/``adjust_shift``), e é de
         # propósito — ele opera e autoriza exceção; quem audita é outra pessoa.
-        return _viewer(request).has_perm("cashman.audit_shift")
+        # Uma identidade só (D1-B): quem está logado É quem opera.
+        return request.user.has_perm("cashman.audit_shift")
 
     @display(description=_("Status"))
     def status_badge(self, obj):

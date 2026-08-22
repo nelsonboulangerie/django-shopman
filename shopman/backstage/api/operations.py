@@ -39,6 +39,7 @@ import json
 import logging
 from datetime import date
 
+from django.contrib.auth import login, logout
 from django.core.exceptions import ObjectDoesNotExist
 from django.utils.decorators import method_decorator
 from django_ratelimit.decorators import ratelimit
@@ -49,6 +50,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 from shopman.utils.monetary import format_money
 
+from shopman.backstage import station_trust
 from shopman.backstage.api._production_filters import report_filters
 from shopman.backstage.constants import POS_CHANNEL_REF
 from shopman.backstage.projections.cash_session import build_cash_session_report
@@ -97,10 +99,15 @@ from shopman.shop.services import pos as pos_tabs_service
 from shopman.shop.services.pos import PosRecentSaleNotFound
 from shopman.shop.services.pos_intent import PosIntentError
 
-from .permissions import HasBackstagePermission, IsBackstageOperator
+from .permissions import HasBackstagePermission, IsBackstageOperator, IsTrustedStation
 from .projections import projection_data
 
 logger = logging.getLogger(__name__)
+
+#: Backend de sessão de quem se identifica por PIN ou crachá. A loja tem dois
+#: configurados — OTP de telefone (cliente) e senha (staff) — e ``login()`` só
+#: adivinha qual gravar quando foi ele mesmo quem autenticou.
+MODEL_BACKEND = "django.contrib.auth.backends.ModelBackend"
 
 
 def _parse_date(raw: str | None) -> date | None:
@@ -113,36 +120,15 @@ def _parse_date(raw: str | None) -> date | None:
 
 
 def _actor(request) -> str:
-    # Attribute to the active operator (PIN/badge) when present (Opção C, flag ON);
-    # otherwise the device session user. ``active_operator_user`` is set by the
-    # authorization gate only when SHOPMAN_REQUIRE_ACTIVE_OPERATOR is on.
-    operator = getattr(request, "active_operator_user", None)
-    if operator is not None:
-        return operator.get_username()
+    """O nome de quem agiu — que é simplesmente quem está logado.
+
+    Tinha um ramo a mais: procurava um "operador ativo" guardado na sessão e só
+    caía no usuário da sessão se não achasse. Existiam DUAS identidades, e a
+    função escolhia entre elas. Agora a sessão É do operador (D1-B), então não há
+    escolha a fazer: quem está logado é quem agiu.
+    """
     user = getattr(request, "user", None)
     return getattr(user, "username", None) or "operator"
-
-
-def _cash_operator(request):
-    """O ``User`` que RESPONDE pelo dinheiro nesta request.
-
-    Gêmeo de ``_actor()``, e pela mesma razão: com
-    ``SHOPMAN_REQUIRE_ACTIVE_OPERATOR`` ligado, ``request.user`` é a conta do
-    APARELHO (o balcão inteiro fica logado como ``admin``) e quem opera é o
-    operador identificado por PIN/crachá. Todo o subsistema de caixa recebia
-    ``request.user``, então a Joyce abria o turno, digitava a sangria e
-    escolhia o motivo, e a linha do livro saía ``op=admin``.
-
-    Duas consequências, além da atribuição errada: ``Shift.operator`` era sempre
-    a mesma conta, e aí a ``UniqueConstraint`` "um turno aberto por operador"
-    virava "um por loja" — não existia troca de custódia entre turnos; e a
-    antessala mostrava "Joyce" sobre um turno que era do aparelho.
-
-    ``active_operator_user`` é posto por ``HasBackstagePermission`` só quando a
-    flag está ligada; desligada, a conta da sessão continua decidindo, como
-    sempre.
-    """
-    return getattr(request, "active_operator_user", None) or request.user
 
 
 def _production_actor(request) -> str:
@@ -305,24 +291,20 @@ class POSView(APIView):
     required_permission = "cashman.operate_pos"
 
     def get(self, request):
-        from shopman.backstage.services.operator import (
-            active_operator,
-            pin_must_change,
-            resolve_active_operator_user,
-        )
+        from shopman.backstage.services.operator import operator_card, pin_must_change
 
-        pos = build_pos(operator=_cash_operator(request))
+        pos = build_pos(operator=request.user)
         shift = build_pos_shift_summary()
         query = request.query_params.get("q", "")
         tabs = build_pos_tabs(query=query)
-        operator = active_operator(request)
-        operator_user = resolve_active_operator_user(request) if operator else None
+        # Quem opera é quem está logado — não há mais um cartão de "operador
+        # ativo" na sessão para consultar ao lado da conta do aparelho.
         return Response({
             "pos": projection_data(pos),
             "shift": projection_data(shift),
             "tabs": projection_data(tabs),
-            "operator": operator,
-            "pin_must_change": pin_must_change(operator_user),
+            "operator": operator_card(request.user),
+            "pin_must_change": pin_must_change(request.user),
         })
 
 
@@ -391,27 +373,28 @@ def _validated_unlock_perm(raw) -> tuple[str | None, bool]:
 
 
 class OperatorSessionView(APIView):
-    """Terminal lock state: whether the gate is on and who (if anyone) is operating."""
+    """Estado da antessala: qual estação é esta, e quem (se alguém) está operando.
 
-    permission_classes = [IsBackstageOperator]
+    Gate de ESTAÇÃO, não de sessão: quando o balcão está travado não há ninguém
+    logado, e exigir sessão aqui deixaria a tela sem saber sequer que precisa
+    pedir PIN.
+    """
+
+    permission_classes = [IsTrustedStation]
 
     def get(self, request):
-        from django.conf import settings
+        from shopman.backstage.services.operator import operator_card, pin_must_change
+        from shopman.backstage.station_trust import station_ref
 
-        from shopman.backstage.services.operator import (
-            active_operator,
-            pin_must_change,
-            resolve_active_operator_user,
-        )
-
-        operator = active_operator(request)
-        operator_user = resolve_active_operator_user(request) if operator else None
+        operador = request.user if getattr(request.user, "is_authenticated", False) else None
         return Response({
-            "require_operator": bool(getattr(settings, "SHOPMAN_REQUIRE_ACTIVE_OPERATOR", False)),
-            "device_user": getattr(request.user, "username", ""),
-            "operator": operator,
-            "locked": operator is None,
-            "pin_must_change": pin_must_change(operator_user),
+            # `station` substituiu `device_user`: o que a tela precisa saber é de
+            # QUE BALCÃO ela é, não com que conta a máquina entrou — porque não
+            # há mais conta de máquina.
+            "station": station_ref(request),
+            "operator": operator_card(operador) if operador else None,
+            "locked": operador is None,
+            "pin_must_change": pin_must_change(operador),
         })
 
 
@@ -441,9 +424,14 @@ class OperatorLoginView(APIView):
     """Login de operador NO PRÓPRIO app (sem bounce pro Django admin).
 
     Reusa a auth do Django (mesma credencial do admin): valida usuário+senha e abre a
-    sessão de dispositivo (o cookie é escopado ao domínio de operador pelo middleware).
+    sessão DAQUELA PESSOA (o cookie é escopado ao domínio de operador pelo middleware).
     O front mostra um formulário e já entra — uma tela, um submit, sem sair do app. Só
     concede sessão a staff.
+
+    É o caminho de quem tem senha: quem provisiona a estação, e o operador de um
+    aparelho pessoal. No balcão, o caminho normal é o PIN/crachá — mas a sessão
+    que sai daqui é a mesma coisa, a identidade de uma pessoa. Não existe login
+    "do aparelho": o aparelho é reconhecido por confiança de dispositivo.
 
     Freio contra brute-force de senha staff: limite por-username (ataque a uma conta)
     de 5/min e teto por-IP de 30/min — generoso porque os dispositivos da loja
@@ -453,7 +441,9 @@ class OperatorLoginView(APIView):
     permission_classes = [AllowAny]
 
     def post(self, request):
-        from django.contrib.auth import authenticate, login
+        from django.contrib.auth import authenticate
+
+        from shopman.backstage.services.operator import operator_card
 
         if getattr(request, "limited", False):
             return Response(
@@ -477,13 +467,15 @@ class OperatorLoginView(APIView):
                 status=403,
             )
         login(request, user)
-        return Response({"ok": True, "device_user": user.get_username()})
+        # `operator`, e não `device_user`: entrar com senha é identificar-se como
+        # aquela pessoa. Não existe mais conta de máquina para nomear aqui.
+        return Response({"ok": True, "operator": operator_card(user)})
 
 
 class OperatorEligibleView(APIView):
     """Operators who may unlock this surface (the lock-screen picker)."""
 
-    permission_classes = [IsBackstageOperator]
+    permission_classes = [IsTrustedStation]
 
     def get(self, request):
         from shopman.backstage.services.operator import eligible_operators, operator_card
@@ -498,9 +490,13 @@ class OperatorUnlockView(APIView):
     """Establish the active operator by PIN (operator_id + pin) or badge (token).
 
     Optional ``perm`` (the surface's capability) restricts who may unlock here.
+
+    Gate de ESTAÇÃO, e não de sessão: é AQUI que o balcão travado cria uma, e
+    exigir sessão para criar sessão é a porta que não abre de manhã. A
+    autorização real deste endpoint não é o gate — é provar o PIN ou o crachá.
     """
 
-    permission_classes = [IsBackstageOperator]
+    permission_classes = [IsTrustedStation]
 
     def post(self, request):
         from django.contrib.auth import get_user_model
@@ -530,19 +526,36 @@ class OperatorUnlockView(APIView):
                 {"detail": "Identificação inválida.", "error": {"code": "operator_unlock_invalid"}},
                 status=403,
             )
-        card = operator_service.set_active_operator(request, operator)
-        return Response({"ok": True, "operator": card})
+        # `login()` de verdade, e não um cartão guardado na sessão: a partir daqui
+        # `request.user` É a pessoa, e toda permissão passa a ser dela por
+        # construção. Era a existência de DUAS identidades que abria o buraco —
+        # sempre havia um caminho que perguntava para a errada.
+        #
+        # A chave de sessão cicla no login (Django troca ao mudar de usuário), e
+        # isso é desejável: nada do turno anterior atravessa a troca de operador.
+        # A identidade da ESTAÇÃO sobrevive porque não mora na sessão — mora no
+        # cookie de confiança de dispositivo, que o ciclo não toca.
+        # ``backend=`` explícito porque quem provou a identidade foi o PIN/crachá, e
+        # não um backend de autenticação: com dois configurados (OTP de cliente,
+        # senha de staff) o Django não adivinha qual gravar na sessão e levanta
+        # ``ValueError``. Sem isto, o destrave respondia 500 no balcão.
+        login(request, operator, backend=MODEL_BACKEND)
+        return Response({"ok": True, "operator": operator_service.operator_card(operator)})
 
 
 class OperatorLockView(APIView):
-    """Lock the terminal (drop the active operator)."""
+    """Trava a estação: a pessoa sai, o aparelho fica.
+
+    Com uma identidade só, travar é ``logout``. A sessão inteira vai embora —
+    incluindo o que o turno anterior tenha deixado nela — e o aparelho continua
+    reconhecido pelo cookie de estação, que é o que faz a tela de identificação
+    aparecer em vez de uma tela de login.
+    """
 
     permission_classes = [IsBackstageOperator]
 
     def post(self, request):
-        from shopman.backstage.services import operator as operator_service
-
-        operator_service.clear_active_operator(request)
+        logout(request)
         return Response({"ok": True})
 
 
@@ -555,7 +568,7 @@ class OperatorPinChangeView(APIView):
     "current"). A wrong current PIN counts toward lockout.
     """
 
-    permission_classes = [IsBackstageOperator]
+    permission_classes = [IsTrustedStation]
 
     def post(self, request):
         from shopman.doorman.models import PinCredentialError
@@ -585,12 +598,70 @@ class OperatorPinChangeView(APIView):
         return Response({"ok": True})
 
 
+class StationProvisionView(APIView):
+    """Torna ESTE aparelho uma estação da loja — ou tira essa condição dele.
+
+    É o que faltava para tudo o mais existir: sem provisionamento, nenhum
+    aparelho é reconhecido, o balcão amanhece sem antessala e a única entrada é
+    senha de gestor todo dia. O gate da estação é a chave da antessala; isto é
+    quem entrega a chave.
+
+    O ato é de GESTÃO e acontece UMA vez por aparelho: alguém com
+    ``cashman.manage_operators`` entra com senha naquele balcão e diz "este
+    computador é o pdv-main". A partir daí o cookie HttpOnly durável responde por
+    ele, revogável no Admin (lista de dispositivos) ou aqui mesmo, com a máquina
+    na mão. É o mesmo caminho do quadro de menu, que já roda em produção — nada
+    de token em URL, nada de re-digitar a cada duas semanas.
+
+    ``GET`` responde o que a tela de provisionamento precisa: que estação este
+    aparelho é hoje (``""`` quando nenhuma) e os terminais disponíveis.
+    """
+
+    permission_classes = [HasBackstagePermission]
+    required_permission = station_trust.PROVISION_PERM
+
+    def get(self, request):
+        from shopman.cashman.models import Terminal
+
+        return Response({
+            "station": station_trust.station_ref(request),
+            "terminals": [
+                {"ref": t.ref, "label": t.label or t.ref}
+                for t in Terminal.objects.filter(is_active=True).order_by("ref")
+            ],
+        })
+
+    def post(self, request):
+        from shopman.cashman.models import Terminal
+
+        ref = str((request.data or {}).get("terminal_ref") or "").strip()
+        if not Terminal.objects.filter(ref=ref, is_active=True).exists():
+            # Um ref inexistente gravaria uma confiança que nunca resolve terminal:
+            # o aparelho passaria no gate e cairia no `Terminal.default()`, que é a
+            # gaveta errada. Recusar aqui é mais barato que caçar isso no balcão.
+            return Response(
+                {"detail": "Terminal não encontrado.", "error": {"code": "terminal_unknown"}},
+                status=400,
+            )
+        resposta = Response({"ok": True, "station": ref})
+        station_trust.provision(request, resposta, ref)
+        return resposta
+
+    def delete(self, request):
+        ref = str(request.query_params.get("terminal_ref") or station_trust.station_ref(request)).strip()
+        if not ref:
+            return Response({"detail": "Este aparelho não é uma estação."}, status=400)
+        resposta = Response({"ok": True, "station": ""})
+        station_trust.revoke(request, resposta, ref)
+        return resposta
+
+
 class OperatorPinResetView(APIView):
     """Manager resets an operator's PIN → temp PIN + forced change on first use.
 
-    Gated by ``cashman.manage_operators`` (against the active operator when the
-    Opção C flag is on, else the device user). The temp PIN is returned once — the
-    manager reads it to the operator; only its HMAC digest is stored.
+    Gated by ``cashman.manage_operators``, que é a permissão de gerir operadores —
+    conferida, como todas, contra quem está operando. O PIN temporário volta uma
+    vez só: o gerente o lê para o operador, e só o digest HMAC fica guardado.
     """
 
     permission_classes = [HasBackstagePermission]
@@ -980,7 +1051,7 @@ class OrderAdvanceView(_OrderActionBase):
             orders_service.advance_order(
                 order,
                 actor=_actor(request),
-                operator=_cash_operator(request),
+                operator=request.user,
                 change_out_raw=None if change_out is None else str(change_out),
                 equipment=[str(ref) for ref in equipment],
             )
@@ -1114,7 +1185,7 @@ class OrderSettleDeliveryCashView(_OrderActionBase):
             equipment_back = str((request.data or {}).get("equipment_back", "")).lower() in {"1", "true", "on", "yes"}
             amount_q = orders_service.settle_delivery_cash(
                 order,
-                operator=_cash_operator(request),
+                operator=request.user,
                 amount_raw=str(request.data.get("amount", "")),
                 actor=_actor(request),
                 change_back_raw=None if change_back is None else str(change_back),
@@ -1245,16 +1316,16 @@ class OrderNotesView(_OrderActionBase):
 
 
 def _operator_identity(request) -> tuple[int, str]:
-    """The operator to credit a claim to: the active operator (PIN/badge) when
-    present, else the device session user."""
-    from shopman.backstage.services.operator import active_operator
+    """A quem creditar a retirada de um pedido — que é quem está logado.
 
-    card = active_operator(request)
-    if card and card.get("id"):
-        return int(card["id"]), str(card.get("name") or card.get("username") or "operador")
+    Tinha dois caminhos: o "operador ativo" guardado na sessão, e a conta do
+    aparelho como reserva. Com uma identidade, os dois passaram a devolver a
+    mesma pessoa; ficou o que sempre foi a intenção.
+    """
     user = getattr(request, "user", None)
-    name = (user.get_full_name().strip() or user.get_username()) if user else "operador"
-    return (user.pk if user else 0), name
+    if user is None or not user.is_authenticated:
+        return 0, "operador"
+    return user.pk, (user.get_full_name().strip() or user.get_username())
 
 
 class OrderAssignView(_OrderActionBase):
@@ -1547,7 +1618,7 @@ class POSCashOpenView(APIView):
         amount = request.data.get("opening_amount", "0")
         try:
             session = pos_service.open_cash_shift(
-                operator=_cash_operator(request),
+                operator=request.user,
                 opening_amount_raw=str(amount),
                 terminal_ref=str(request.data.get("terminal_ref") or ""),
             )
@@ -1595,7 +1666,7 @@ class POSCashCloseView(APIView):
         notes = (request.data.get("notes") or "").strip()
         try:
             result = pos_service.close_cash_shift(
-                actor_user=_cash_operator(request),
+                actor_user=request.user,
                 closing_amount_raw=str(amount),
                 notes=notes,
                 terminal_ref=str(request.data.get("terminal_ref") or ""),
@@ -1633,7 +1704,7 @@ class POSMovementView(APIView):
             return Response({"detail": "kind deve ser 'sangria' ou 'suprimento'."}, status=400)
         try:
             entry = pos_service.register_cash_movement(
-                operator=_cash_operator(request),
+                operator=request.user,
                 movement_type=kind,
                 amount_raw=str(amount),
                 reason=reason,
@@ -1676,7 +1747,7 @@ class POSCashReceiptView(APIView):
         reprint = str(request.query_params.get("reprint") or "").lower() in {"1", "true", "on"}
         try:
             payload = pos_service.cash_movement_receipt_payload(
-                operator=_cash_operator(request),
+                operator=request.user,
                 entry_id=entry_id,
                 reprint=reprint,
                 terminal_ref=str(request.query_params.get("terminal_ref") or ""),
@@ -1691,7 +1762,7 @@ class POSCashReceiptView(APIView):
     def post(self, request, entry_id: int):
         try:
             result = pos_service.record_receipt_result(
-                operator=_cash_operator(request),
+                operator=request.user,
                 entry_id=entry_id,
                 status=(request.data.get("status") or "").strip(),
                 detail=request.data.get("detail") or "",
@@ -1727,7 +1798,7 @@ class POSCashDrawerOpenView(APIView):
     def post(self, request):
         reason = (request.data.get("reason") or "").strip()
         try:
-            pos_service.register_drawer_opening(operator=_cash_operator(request), reason=reason)
+            pos_service.register_drawer_opening(operator=request.user, reason=reason)
         except PosIntentError as exc:
             return Response({"detail": exc.message, "error": exc.as_dict()}, status=exc.status)
         except Exception as exc:
@@ -1759,7 +1830,7 @@ class POSCashDrawerUnlockView(APIView):
     def post(self, request):
         try:
             pos_service.unlock_drawer(
-                operator=_cash_operator(request),
+                operator=request.user,
                 manager_approval=request.data.get("manager_approval"),
                 drawer_raw=str(request.data.get("drawer_raw") or ""),
             )
@@ -1797,7 +1868,7 @@ class POSChangeRequestView(APIView):
     def post(self, request):
         try:
             entry = pos_service.request_change(
-                operator=_cash_operator(request),
+                operator=request.user,
                 amount_raw=str(request.data.get("amount", "0")),
                 denominations=request.data.get("denominations") or [],
                 note=request.data.get("note") or "",
@@ -1832,7 +1903,7 @@ class POSChangeRequestServeView(APIView):
     def post(self, request, request_ref: str):
         try:
             pos_service.serve_change_request(
-                operator=_cash_operator(request),
+                operator=request.user,
                 request_ref=request_ref,
                 manager_approval=request.data.get("manager_approval"),
             )
@@ -1865,7 +1936,7 @@ class POSChangeRequestCancelView(APIView):
 
     def post(self, request, request_ref: str):
         try:
-            pos_service.cancel_change_request(operator=_cash_operator(request), request_ref=request_ref)
+            pos_service.cancel_change_request(operator=request.user, request_ref=request_ref)
         except PosIntentError as exc:
             return Response({"detail": exc.message, "error": exc.as_dict()}, status=exc.status)
         except Exception as exc:
@@ -1895,7 +1966,7 @@ class POSCashRefundView(APIView):
     def post(self, request, order_ref: str):
         try:
             refunded_q = pos_service.refund_cash(
-                operator=_cash_operator(request),
+                operator=request.user,
                 order_ref=order_ref,
                 manager_approval=request.data.get("manager_approval"),
             )
@@ -1943,7 +2014,7 @@ class POSAccountSettleView(APIView):
         body = request.data or {}
         try:
             settlement = pos_service.settle_account(
-                operator=_cash_operator(request),
+                operator=request.user,
                 customer_ref=customer_ref,
                 amount_raw=str(body.get("amount", "")),
                 method=str(body.get("method", "")),
@@ -1993,7 +2064,7 @@ class POSCashReportView(APIView):
 
     def get(self, request):
         report = build_cash_session_report(
-            operator=_cash_operator(request),
+            operator=request.user,
             terminal_ref=str(request.query_params.get("terminal_ref") or ""),
         )
         return Response({"report": projection_data(report)})

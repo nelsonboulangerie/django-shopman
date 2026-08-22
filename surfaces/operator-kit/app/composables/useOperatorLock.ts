@@ -1,7 +1,11 @@
-// Operator lock read/write (Opção C, Camada 2). Reads the terminal lock state,
-// lists who may unlock this surface, and unlocks by PIN or badge / locks. All I/O
-// goes through the django proxy (CSRF handled there). The surface's permission is
-// passed so the picker + unlock are scoped to operators who can use THIS app.
+// A trava do operador, leitura e escrita. Lê o estado da antessala, lista quem
+// pode destravar ESTA superfície, destrava por PIN ou crachá, e trava. Todo I/O
+// passa pelo proxy do Django (CSRF resolvido lá). A permissão da superfície vai
+// junto para o seletor e o destrave ficarem restritos a quem pode usar este app.
+//
+// Destravar é `login()` de verdade no servidor, e travar é `logout()`: a pessoa
+// identificada VIRA a sessão. A estação sobrevive aos dois porque não mora na
+// sessão — mora no cookie de confiança de dispositivo.
 import type {
   OperatorCard,
   OperatorEligibleResponse,
@@ -30,9 +34,17 @@ export function useOperatorLock(perm: string) {
   const station = useStationLock();
 
   const session = computed<OperatorSession | null>(() => data.value ?? null);
-  // The device session exists when operator/session returned a device_user; when
-  // unauthenticated the endpoint 403s (data null) → not authenticated → login prompt.
-  const authenticated = computed(() => Boolean(session.value?.device_user));
+  // Este aparelho pode PEDIR identificação? Sim quando a antessala respondeu — ou
+  // seja, quando ele é uma estação reconhecida, ou já tem alguém logado. Quando
+  // não é nenhum dos dois o endpoint responde 403 (`data` nulo) e a única saída
+  // é a tela de senha.
+  //
+  // Era `authenticated`, e media outra coisa: se existia sessão de APARELHO
+  // (`device_user`). Como não há mais conta de máquina, a pergunta que a tela
+  // realmente faz é esta — e o nome antigo mandaria pedir senha num balcão que
+  // só precisa de PIN.
+  const canIdentify = computed(() => session.value !== null);
+  const stationRef = computed(() => session.value?.station ?? "");
   const locked = computed(() => isLocked(session.value) || station.denied.value);
 
   /** Ergue a bandeira do servidor e relê a sessão para reconciliar. */
@@ -44,10 +56,7 @@ export function useOperatorLock(perm: string) {
   const operator = computed<OperatorCard | null>(
     () => session.value?.operator ?? null,
   );
-  const requireOperator = computed(() =>
-    Boolean(session.value?.require_operator),
-  );
-  // O operador ativo foi resetado pelo gerente (PIN temporário) → força a troca.
+  // O operador foi resetado pelo gerente (PIN temporário) → força a troca.
   const mustChange = computed(() => Boolean(session.value?.pin_must_change));
 
   const eligible = ref<OperatorCard[]>([]);
@@ -133,11 +142,11 @@ export function useOperatorLock(perm: string) {
 
   return {
     session,
-    authenticated,
+    canIdentify,
+    stationRef,
     locked,
     flagIfStationLocked,
     operator,
-    requireOperator,
     mustChange,
     eligible,
     loadEligible,

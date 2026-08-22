@@ -1,15 +1,17 @@
-"""POS operator unlock/lock over the GENERIC operator API
-(operator/unlock|lock with perm=operate_pos) — the POS surface migrated to it
-(OPERATOR-AUTH-PLAN WP-AUTH-2c). The POS projection still reflects the active
-operator set through the shared session.
+"""O PDV destrava pela API genérica de operador (``operator/unlock|lock``).
+
+O balcão começa o dia travado: aparelho reconhecido, ninguém identificado. Quem
+digita o PIN VIRA a sessão, e o PDV passa a mostrar essa pessoa — não um
+"operador ativo" guardado ao lado da conta da máquina, que era o desenho
+anterior e a origem do buraco de permissão (D1 Parte B).
 """
 
-import pytest
 from django.contrib.auth import get_user_model
 from django.contrib.auth.models import Permission
 from django.test import TestCase
 from shopman.doorman.models import PinCredential
 
+from shopman.backstage.tests.support import trust_station
 from shopman.shop.models import Channel, Shop
 
 User = get_user_model()
@@ -33,9 +35,7 @@ class POSOperatorApiTests(TestCase):
     def setUp(self):
         Shop.objects.create(name="Test Shop", brand_name="Test")
         Channel.objects.create(ref="pdv", name="PDV", is_active=True)
-        self.terminal_user = User.objects.create_user("terminal", password="x", is_staff=True)
-        self.terminal_user = _grant(self.terminal_user, "operate_pos")
-        self.client.force_login(self.terminal_user)
+        trust_station(self.client, "pdv-main")
         self.op = User.objects.create_user("ana", password="x", is_staff=True, first_name="Ana")
         PinCredential.set_for(self.op, "1234")
         self.op = _grant(self.op, "operate_pos")
@@ -57,7 +57,6 @@ class POSOperatorApiTests(TestCase):
         resp = self.client.post(UNLOCK, {"operator_id": baker.pk, "pin": "5555", "perm": POS_PERM})
         self.assertEqual(resp.status_code, 403)
 
-    @pytest.mark.estacao_travada
     def test_projection_reflects_active_operator_then_lock(self):
         self.client.post(UNLOCK, {"operator_id": self.op.pk, "pin": "1234", "perm": POS_PERM})
         pos = self.client.get("/api/v1/backstage/pos/")

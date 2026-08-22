@@ -8,7 +8,7 @@
 //   · menuboard → cardápio Solari PÚBLICO da loja (GET /storefront/menu, sem auth) —
 //     FORA do rail E FORA do gate (como o /pickup do KDS).
 const OPERATOR_PERM = "backstage.operate_production";
-const { authenticated, locked, mustChange, operator, lock } =
+const { canIdentify, locked, mustChange, operator, lock } =
   useOperatorLock(OPERATOR_PERM);
 const { allowed: reportsAllowed } = useReportsAccess();
 
@@ -33,7 +33,7 @@ useHead({ title: "Produção" });
     <!-- Telas de operador: rail canônico (kit) + conteúdo. -->
     <div v-else class="flex min-h-screen">
       <div
-        v-if="authenticated"
+        v-if="canIdentify"
         class="sticky top-0 flex h-screen shrink-0 print:hidden"
       >
         <OperatorRail
@@ -68,7 +68,7 @@ useHead({ title: "Produção" });
       </div>
     </div>
     <!-- Gate de login/lock: nunca no menuboard público (o painel de operador segue atrás dele). -->
-    <OperatorLogin v-if="!authenticated && !isPublicBoard" />
+    <OperatorLogin v-if="!canIdentify && !isPublicBoard" />
     <OperatorLock
       v-else-if="(locked || mustChange) && !isPublicBoard"
       :perm="OPERATOR_PERM"

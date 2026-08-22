@@ -13,15 +13,15 @@ import {
 import type { OperatorSession } from "../app/types/operator";
 
 const session = (over: Partial<OperatorSession> = {}): OperatorSession => ({
-  require_operator: true,
-  device_user: "estacao",
+  station: "balcao",
   operator: null,
   locked: true,
+  pin_must_change: false,
   ...over,
 });
 
 describe("isLocked", () => {
-  it("locks only when the gate is on AND nobody is operating", () => {
+  it("trava sempre que ninguém está operando", () => {
     expect(isLocked(session())).toBe(true);
     expect(
       isLocked(
@@ -31,9 +31,14 @@ describe("isLocked", () => {
         }),
       ),
     ).toBe(false);
-    // gate off → never locked, regardless of locked flag
-    expect(isLocked(session({ require_operator: false }))).toBe(false);
     expect(isLocked(null)).toBe(false);
+  });
+
+  it("uma estação reconhecida NÃO destrava nada por si", () => {
+    // O interruptor `require_operator` sumiu, e com ele o mundo em que a
+    // superfície nunca travava. Ser o balcão diz de onde a tela fala, não que
+    // alguém está autorizado nela.
+    expect(isLocked(session({ station: "balcao", operator: null }))).toBe(true);
   });
 });
 

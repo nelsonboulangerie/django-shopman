@@ -60,10 +60,10 @@ npm run typecheck
 npm run lint
 ```
 
-O app precisa da sessão de operador: entre pelo formulário do próprio app
-(usuário + senha de uma conta staff com `shop.manage_campaigns`). Com o gate
-`SHOPMAN_REQUIRE_ACTIVE_OPERATOR` ligado, a permissão também precisa estar num
-operador com PIN — senão a tela de destravar não lista ninguém.
+O app precisa de alguém identificado: entre pelo formulário do próprio app
+(usuário + senha de uma conta staff com `shop.manage_campaigns`). Num aparelho
+provisionado como estação, o caminho é o PIN ou o crachá — e a permissão precisa
+estar num operador com credencial, senão a tela de destravar não lista ninguém.
 
 ## Estrutura
 

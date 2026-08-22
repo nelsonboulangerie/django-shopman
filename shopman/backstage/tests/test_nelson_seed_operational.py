@@ -280,9 +280,9 @@ def test_nelson_seed_populates_production_history_alerts_and_batches(monkeypatch
 def test_nelson_seed_provisions_operators_with_pins(monkeypatch):
     """Backstage exige operador ativo: staff + PinCredential + permissão da superfície.
 
-    Com ``SHOPMAN_REQUIRE_ACTIVE_OPERATOR`` ligado (staging), nenhuma tela destrava
-    sem um operador provisionado. O seed provisiona operadores com PIN 1234 para
-    POS/KDS/produção — senão o backstage nasce inacessível após um ``--flush``.
+    Nenhuma tela destrava sem um operador provisionado — a estação sozinha não
+    autoriza nada. O seed provisiona operadores com PIN 1234 para POS/KDS/produção;
+    senão o backstage nasce inacessível após um ``--flush``.
     """
     monkeypatch.setenv("ADMIN_PASSWORD", "strong-seed-admin-password")
     call_command("seed", "--flush", stdout=StringIO())

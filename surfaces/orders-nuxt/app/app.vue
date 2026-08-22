@@ -5,7 +5,7 @@
 // lock overlay (Opção C): when the gate is ON and nobody unlocked, a PIN/badge is
 // required. Gated OFF → never shows.
 const OPERATOR_PERM = "shop.manage_orders";
-const { authenticated, locked, mustChange, operator, lock } = useOperatorLock(OPERATOR_PERM);
+const { canIdentify, locked, mustChange, operator, lock } = useOperatorLock(OPERATOR_PERM);
 
 const hubUrl = useRuntimeConfig().public.operatorHubUrl as string;
 
@@ -19,7 +19,7 @@ useHead({ title: "Gestor de Pedidos" });
     <OfflineBanner />
     <!-- Rail de operador canônico (kit): funções comuns (Central, operador, tema). Fica
          fixo enquanto o conteúdo rola. Colapsado → não renderiza (some de verdade). -->
-    <div v-if="authenticated" class="sticky top-0 flex h-screen shrink-0 print:hidden">
+    <div v-if="canIdentify" class="sticky top-0 flex h-screen shrink-0 print:hidden">
       <OperatorRail
         app-icon="clipboard-list"
         app-label="Gestor"
@@ -30,10 +30,10 @@ useHead({ title: "Gestor de Pedidos" });
     </div>
     <div class="flex min-w-0 flex-1 flex-col">
       <!-- Cabeçalho de seção: controle do rail + nav do Gestor. -->
-      <GestorTopBar v-if="authenticated" />
+      <GestorTopBar v-if="canIdentify" />
       <NuxtPage />
     </div>
-    <OperatorLogin v-if="!authenticated" />
+    <OperatorLogin v-if="!canIdentify" />
     <OperatorLock v-else-if="locked || mustChange" :perm="OPERATOR_PERM" />
     <UiSonner />
   </div>

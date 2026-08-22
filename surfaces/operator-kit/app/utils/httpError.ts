@@ -36,7 +36,7 @@ export function isTransientError(error: unknown): boolean {
 }
 
 /**
- * Autenticação perdida (401): a sessão de dispositivo do operador expirou no meio da
+ * Autenticação perdida (401): a sessão do operador expirou no meio da
  * operação. Distinto de 403 (autenticado, porém proibido — falta de permissão/gate de
  * PIN), que NÃO deve re-gate para login. Consumido pelo `useOperatorSession` para
  * forçar re-autenticação em vez de falhar gravações no vácuo.

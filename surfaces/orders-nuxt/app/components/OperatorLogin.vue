@@ -1,8 +1,13 @@
 <script setup lang="ts">
-// Login front-door (Opção C, Camada 1) — NO PRÓPRIO app, sem bounce pro Django admin.
-// Um formulário: usuário + senha → POST /operator/login/ (reusa a auth do Django,
-// grava o cookie .<zona> que vale em todos os apps de operador) → recarrega já dentro.
-// Uma tela, um submit. (Antes: pular pro admin, logar, voltar, "Já entrei" — um inferno.)
+// Entrada por SENHA — no próprio app, sem bounce pro Django admin. Um formulário:
+// usuário + senha → POST /operator/login/ (reusa a auth do Django, grava o cookie
+// .<zona> que vale em todos os apps de operador) → recarrega já dentro. Uma tela,
+// um submit. (Antes: pular pro admin, logar, voltar, "Já entrei" — um inferno.)
+//
+// A sessão que sai daqui é a DA PESSOA, igual à do PIN: não existe login "do
+// aparelho". Este é o caminho de quem tem senha — quem provisiona a estação, e o
+// aparelho pessoal do gestor. No balcão, quem pede identificação é o
+// <OperatorLock>, com PIN ou crachá.
 const username = ref("");
 const password = ref("");
 const pending = ref(false);

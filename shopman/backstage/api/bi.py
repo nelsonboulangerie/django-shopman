@@ -164,7 +164,7 @@ class BIExploreView(_BIBase):
 
 def _permission_subject(request):
     """Quem responde pela permissão: o operador ativo (Opção C) ou a sessão."""
-    return getattr(request, "active_operator_user", None) or request.user
+    return request.user  # a sessão É do operador (D1-B): não há segunda identidade
 
 
 @extend_schema_view(

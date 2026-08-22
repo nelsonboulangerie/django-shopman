@@ -1099,6 +1099,28 @@ pacote porque hardware é da superfície) e pelo `seed`; lida por
 | `favorite_collection_refs` | `list[str]` | Admin | projection POS | Até 9 coleções fixadas na tela de venda. Aceita o alias legado `favorite_collections`. |
 | `auto_lock_seconds` | `int` | Admin | projection POS | Inatividade até o cadeado do operador. Default 60. |
 | `hardware` | `dict` | Admin, `seed` | `runtime_profile` | Periféricos declarados. Ver abaixo. |
+| `station` | `dict` | Admin | `backstage/station_trust.py` | Que ESPÉCIE de estação é este aparelho. Ver abaixo. |
+
+### station — atendida ou autônoma
+
+Lido por `shopman/backstage/station_trust.py` (`station_mode`, `station_operator`) e, através
+dele, pelo gate de permissão do backstage. Ausente = **atendida**.
+
+| Chave | Tipo | Descrição |
+|-------|------|-----------|
+| `mode` | `str` | `attended` (default) ou `autonomous`. Qualquer outro valor cai em `attended`. |
+| `operator` | `str` | Só para `autonomous`: o `username` da conta em cujo nome o aparelho age. |
+
+**Atendida** é o balcão: tem gente na frente, e não faz nada sem PIN ou crachá.
+**Autônoma** é o totem: não há quem digite PIN, então ele age em nome próprio, com uma conta
+que é dele. O que essa conta pode fazer são as permissões que a loja lhe conceder — não há
+conjunto embutido no código, e o gate a trata como trata qualquer operador.
+
+⚠️ **Tudo aqui falha fechado, e por motivo vivido.** Modo escrito errado, conta ausente,
+conta inativa ou fora da casa → o aparelho volta a ser uma estação atendida, pedindo PIN.
+E conta **superusuária é recusada com log de erro**: `is_superuser` curto-circuita `has_perm`,
+então um totem assim ignoraria qualquer conjunto mínimo — que é literalmente o buraco que a
+D1 Parte B fechou, só que com um aparelho no lugar do `admin`.
 
 ### hardware — periféricos declarados
 

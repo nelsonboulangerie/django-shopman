@@ -35,3 +35,27 @@ def install_bi_vocabularies() -> None:
     from config.management.commands.seed import Command as Seed
 
     Seed()._seed_bi_aliases()
+
+
+def trust_station(client, terminal_ref: str = "balcao") -> str:
+    """Faz deste ``client`` uma ESTAÇÃO reconhecida — e nada além disso.
+
+    É o balcão depois de provisionado: um cookie de confiança de dispositivo,
+    sem ninguém logado. Um teste que quer "a loja de manhã, travada" começa
+    aqui, e a diferença entre isto e ``force_login`` é o assunto inteiro da D1
+    Parte B — a estação abre a antessala, a pessoa abre o resto.
+
+    Devolve o ``terminal_ref`` para o teste conferir o que a tela recebe.
+    """
+    from shopman.doorman.models import SubjectType, TrustedDevice
+
+    from shopman.backstage.station_trust import station_cookie_name
+
+    _, raw_token = TrustedDevice.create_for(
+        subject_type=SubjectType.STATION,
+        subject_id=terminal_ref,
+        user_agent="teste",
+        ip_address="127.0.0.1",
+    )
+    client.cookies[station_cookie_name(terminal_ref)] = raw_token
+    return terminal_ref

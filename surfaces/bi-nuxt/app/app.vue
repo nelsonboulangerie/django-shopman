@@ -5,7 +5,7 @@
 // Gate: `backstage.view_bi` — leitura analítica cross-suite é persona de
 // gestão (ADR-021 §5), não de quem opera o turno.
 const OPERATOR_PERM = "backstage.view_bi";
-const { authenticated, locked, mustChange, operator, lock } = useOperatorLock(OPERATOR_PERM);
+const { canIdentify, locked, mustChange, operator, lock } = useOperatorLock(OPERATOR_PERM);
 
 const hubUrl = useRuntimeConfig().public.operatorHubUrl as string;
 
@@ -17,7 +17,7 @@ useHead({ title: "B.I." });
     <NuxtRouteAnnouncer />
     <!-- Aviso calmo de conexão (kit) — global, só aparece offline. -->
     <OfflineBanner />
-    <div v-if="authenticated" class="sticky top-0 flex h-screen shrink-0 print:hidden">
+    <div v-if="canIdentify" class="sticky top-0 flex h-screen shrink-0 print:hidden">
       <OperatorRail
         app-icon="chart-line"
         app-label="B.I."
@@ -27,10 +27,10 @@ useHead({ title: "B.I." });
       />
     </div>
     <div class="flex min-w-0 flex-1 flex-col">
-      <BiTopBar v-if="authenticated" />
+      <BiTopBar v-if="canIdentify" />
       <NuxtPage />
     </div>
-    <OperatorLogin v-if="!authenticated" />
+    <OperatorLogin v-if="!canIdentify" />
     <OperatorLock v-else-if="locked || mustChange" :perm="OPERATOR_PERM" />
     <UiSonner />
   </div>
