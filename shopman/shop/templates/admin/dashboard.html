@@ -17,27 +17,32 @@
     {# ── ROW 1: Configuração + Auditoria + Textos ───────────────── #}
     <div class="grid grid-cols-1 gap-4 lg:gap-8 lg:grid-cols-3">
 
-        {# Atalhos de configuração #}
-        {% component "unfold/components/card.html" with title="Configuração" %}
-            {% component "unfold/components/flex.html" with col=1 class="gap-3" %}
-                {% for link in config_links %}
-                    {% component "unfold/components/link.html" with href=link.url icon=link.icon %}
-                        {{ link.label }}
-                    {% endcomponent %}
-                {% endfor %}
+        {# Atalhos de configuração. O card só existe se sobrou link: quem não
+           alcança nenhuma dessas telas não ganha uma caixa vazia com título. #}
+        {% if config_links %}
+            {% component "unfold/components/card.html" with title="Configuração" %}
+                {% component "unfold/components/flex.html" with col=1 class="gap-3" %}
+                    {% for link in config_links %}
+                        {% component "unfold/components/link.html" with href=link.url icon=link.icon %}
+                            {{ link.label }}
+                        {% endcomponent %}
+                    {% endfor %}
+                {% endcomponent %}
             {% endcomponent %}
-        {% endcomponent %}
+        {% endif %}
 
         {# Trilhas de auditoria #}
-        {% component "unfold/components/card.html" with title="Auditoria" %}
-            {% component "unfold/components/flex.html" with col=1 class="gap-3" %}
-                {% for link in audit_links %}
-                    {% component "unfold/components/link.html" with href=link.url icon=link.icon %}
-                        {{ link.label }}
-                    {% endcomponent %}
-                {% endfor %}
+        {% if audit_links %}
+            {% component "unfold/components/card.html" with title="Auditoria" %}
+                {% component "unfold/components/flex.html" with col=1 class="gap-3" %}
+                    {% for link in audit_links %}
+                        {% component "unfold/components/link.html" with href=link.url icon=link.icon %}
+                            {{ link.label }}
+                        {% endcomponent %}
+                    {% endfor %}
+                {% endcomponent %}
             {% endcomponent %}
-        {% endcomponent %}
+        {% endif %}
 
         {# Quanto da voz da loja já foi personalizado #}
         {% component "unfold/components/card.html" with title="Textos da interface" %}

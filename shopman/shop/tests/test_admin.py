@@ -862,12 +862,25 @@ class TestBatchAdminExtension:
 
 
 class TestDashboardCallback:
+    """O dashboard fala com um usuário: os cards seguem a permissão de cada tela.
+
+    Aqui o request é do superusuário (vê tudo); quem alcança o quê é assunto de
+    ``shopman/backstage/tests/test_admin_dashboard_permissions.py``.
+    """
+
+    @staticmethod
+    def _request(username="root-admin-dashboard"):
+        from django.contrib.auth import get_user_model
+
+        request = RequestFactory().get("/admin/")
+        request.user = get_user_model().objects.create_superuser(username, password="x")
+        return request
+
     def test_returns_config_audit_and_alerts_context(self, db):
         from shopman.backstage.admin.dashboard import dashboard_callback
 
-        request = RequestFactory().get("/admin/")
         context = {}
-        result = dashboard_callback(request, context)
+        result = dashboard_callback(self._request(), context)
 
         assert "config_links" in result
         assert "audit_links" in result
@@ -881,8 +894,7 @@ class TestDashboardCallback:
         """Operação ao vivo (pedidos, produção) mora nos apps Nuxt, não aqui."""
         from shopman.backstage.admin.dashboard import dashboard_callback
 
-        request = RequestFactory().get("/admin/")
-        result = dashboard_callback(request, {})
+        result = dashboard_callback(self._request("root-no-live"), {})
 
         for gone in (
             "order_summary", "revenue", "production", "chart_pedidos_status",
@@ -894,8 +906,7 @@ class TestDashboardCallback:
     def test_config_links_resolve(self, db):
         from shopman.backstage.admin.dashboard import dashboard_callback
 
-        request = RequestFactory().get("/admin/")
-        result = dashboard_callback(request, {})
+        result = dashboard_callback(self._request("root-links"), {})
 
         for link in result["config_links"] + result["audit_links"]:
             assert link["url"].startswith("/admin/")

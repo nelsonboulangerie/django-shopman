@@ -35,16 +35,41 @@ evidência e auditoria, sem confirmar pedido automaticamente.
 
 ## Grupos padrão
 
-Criados automaticamente por `make migrate`. Nenhum usuário é atribuído por default.
+Criados por `python manage.py setup_groups`. Nenhum usuário é atribuído por default.
 
-| Grupo | Permissões | Persona típica |
+| Grupo | Permissões de AÇÃO | Persona típica |
 |-------|-----------|----------------|
 | **Caixa** | `cashman.operate_pos`, `shop.manage_orders` | Atendente de balcão / PDV |
 | **Cozinha** | `backstage.operate_kds`, `shop.manage_production` | Cozinheiro / preparador |
-| **Gerente** | `shop.manage_orders`, `cashman.operate_pos`, `cashman.adjust_shift`, `cashman.manage_operators`, `backstage.perform_closing`, `backstage.view_production_reports`, `shop.manage_customers` | Gerente de turno |
+| **Gerente** | `shop.manage_orders`, `shop.manage_catalog`, `shop.manage_customers`, `shop.manage_campaigns`, `cashman.operate_pos`, `cashman.adjust_shift`, `cashman.manage_operators`, `backstage.perform_closing`, `backstage.view_bi` | Gerente de turno |
 | **Admin de Catálogo** | `manage_catalog`, `manage_rules` | Responsável por produtos e regras |
 | **Rules Managers** | `manage_rules` | Segurança (WP-GAP-06, sem membros por default) |
 | **Dono** | `cashman.audit_shift` | Quem vê dinheiro. Portão, não persona — some com "Gerente" quando a pessoa faz as duas coisas |
+
+### Ação é uma permissão; ABRIR A TELA é outra
+
+As permissões acima dizem o que a pessoa pode **fazer**. Quem decide se uma tela
+do Admin **abre** é o Django: `/admin/offerman/product/` pede
+`offerman.view_product`, e mais nada. Por muito tempo nenhum grupo concedia esses
+`view_*` — o resultado é que o Admin era, na prática, **só-superusuário**: o menu
+oferecia 26 telas à Fran e as 26 respondiam 403, e `manage_rules` não abria nem a
+lista de regras que ela governa.
+
+Desde 22/08/2026 o `setup_groups` concede os dois lados juntos, e o menu e os
+cards do dashboard perguntam à própria tela antes de oferecê-la
+(`shopman/backstage/admin/gates.py`). O que cada persona alcança na retaguarda:
+
+| Grupo | Lê no Admin | Escreve no Admin |
+|---|---|---|
+| **Caixa** | nada — ela opera no PDV, a retaguarda não é ferramenta dela | — |
+| **Cozinha** | fichas técnicas, ordens, insumos, fornecedores, estoque | — (mexer acontece no app de Produção) |
+| **Gerente** | catálogo, clientes, produção, estoque, pedidos, B.I. e a configuração inteira | catálogo, clientes, promoções, cupons, textos da interface, terminais |
+| **Admin de Catálogo** | catálogo, regras, promoções, cupons | catálogo e regras |
+| **Rules Managers** | regras de preço | regras de preço |
+| **Dono** | turnos de caixa (apuração), cobranças, comprovantes | — |
+
+⚠️ **Dinheiro é do Dono, e o Gerente não vê** — nem a apuração do turno, nem as
+cobranças (Pix/cartão). É a mesma régua do fechamento cego, explicada abaixo.
 
 ---
 
@@ -210,10 +235,20 @@ de Grupos do Admin mostrava gente sem grupo nenhum operando o sistema inteiro.
 
 ### Admin (Unfold)
 
-- `KDSInstanceAdmin`: visível apenas para usuários com `shop.operate_kds`
-- `DayClosingAdmin`: visível apenas para usuários com `shop.perform_closing`
-- `ShiftAdmin` (cashman): visível para usuários com `cashman.operate_pos` ou `cashman.audit_shift`
-- `RuleConfigAdmin`: visível apenas para usuários com `shop.manage_rules` (WP-GAP-06)
+Regra geral: **ver** é a permissão do Django (`view_<model>`); **escrever** é a
+permissão custom quando existe uma. As exceções, que gateiam até o ver:
+
+- `KDSInstanceAdmin`: visível apenas para usuários com `backstage.operate_kds`
+- `DayClosingAdmin`: visível apenas para usuários com `backstage.perform_closing`
+- `POSTabAdmin`: visível apenas para usuários com `cashman.operate_pos`
+- `ShiftAdmin` (cashman): visível apenas para usuários com `cashman.audit_shift` — **não** `operate_pos`: a tela mostra esperado, contado e diferença, que é o gabarito da contagem cega
+- Operadores (`admin_console`): `cashman.manage_operators`
+- `RuleConfigAdmin`: editar exige `shop.manage_rules` (WP-GAP-06); abrir a lista exige `shop.view_ruleconfig`
+
+Menu e dashboard não repetem nenhuma dessas regras: perguntam à própria tela
+(`admin/gates.py`), e um link só aparece se a porta abriria. O contrato está em
+`shopman/backstage/tests/test_admin_reachability.py`, que pede cada link
+oferecido e exige 200.
 
 ---
 

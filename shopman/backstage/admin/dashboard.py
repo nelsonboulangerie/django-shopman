@@ -17,6 +17,7 @@ from django.urls import reverse
 from django.utils.html import format_html
 from shopman.utils import table_badge
 
+from shopman.backstage.admin.gates import can_open_changelist, can_open_view
 from shopman.backstage.projections.dashboard import build_dashboard
 
 logger = logging.getLogger(__name__)
@@ -47,73 +48,70 @@ def _omotenashi_health() -> dict:
     }
 
 
-def _config_links() -> list[dict]:
+def _card(label: str, icon: str, url: str) -> dict:
+    return {"label": label, "url": url, "icon": icon}
+
+
+def _model_card(request, label: str, icon: str, model) -> dict | None:
+    """Um card por porta que ABRE — quem responde isso é ``admin.gates``."""
+    if not can_open_changelist(request, model):
+        return None
+    opts = model._meta
+    return _card(label, icon, reverse(f"admin:{opts.app_label}_{opts.model_name}_changelist"))
+
+
+def _view_card(request, label: str, icon: str, url_name: str, view) -> dict | None:
+    """Idem para tela custom do Admin: a permissão vem da view, não daqui."""
+    if not can_open_view(request, view):
+        return None
+    return _card(label, icon, reverse(url_name))
+
+
+def _config_links(request) -> list[dict]:
     """Os começos de caminho mais frequentes — não um índice do Admin.
 
     O menu já lista tudo; repetir a lista inteira aqui não ajudaria ninguém. Estes
     são os pontos de partida do dia a dia: o que a loja é, o que ela vende, quanto
-    cobra e o que diz.
+    cobra e o que diz — dos quais cada pessoa vê o que de fato alcança.
     """
-    return [
-        {
-            "label": "Loja e contato",
-            "url": reverse("admin:shop_shop_changelist"),
-            "icon": "storefront",
-        },
-        {
-            "label": "Produtos",
-            "url": reverse("admin:offerman_product_changelist"),
-            "icon": "bakery_dining",
-        },
-        {
-            "label": "Regras de preço",
-            "url": reverse("admin:shop_ruleconfig_changelist"),
-            "icon": "rule",
-        },
-        {
-            "label": "Promoções",
-            "url": reverse("admin:shop_promotion_changelist"),
-            "icon": "campaign",
-        },
-        {
-            # A tela própria do catálogo (navegação chave↔tela, PR #110) — não a
-            # changelist crua do model.
-            "label": "Textos da interface",
-            "url": reverse("admin_console_copy_catalog"),
-            "icon": "edit_note",
-        },
-        {
-            "label": "Canais",
-            "url": reverse("admin:shop_channel_changelist"),
-            "icon": "hub",
-        },
+    from shopman.offerman.models import Product
+
+    from shopman.backstage.admin_console.copy_catalog import CopyCatalogView
+    from shopman.shop.models import Channel, Promotion, RuleConfig, Shop
+
+    cards = [
+        _model_card(request, "Loja e contato", "storefront", Shop),
+        _model_card(request, "Produtos", "bakery_dining", Product),
+        _model_card(request, "Regras de preço", "rule", RuleConfig),
+        _model_card(request, "Promoções", "campaign", Promotion),
+        # A tela própria do catálogo (navegação chave↔tela, PR #110) — não a
+        # changelist crua do model.
+        _view_card(request, "Textos da interface", "edit_note", "admin_console_copy_catalog", CopyCatalogView),
+        _model_card(request, "Canais", "hub", Channel),
     ]
+    return [card for card in cards if card is not None]
 
 
-def _audit_links() -> list[dict]:
+def _audit_links(request) -> list[dict]:
     """Trilhas readonly de auditoria (pedidos, cobranças, caixa, fechamentos)."""
-    return [
-        {
-            "label": "Histórico de pedidos",
-            "url": reverse("admin:orderman_order_changelist"),
-            "icon": "receipt_long",
-        },
-        {
-            "label": "Cobranças",
-            "url": reverse("admin:payman_paymentintent_changelist"),
-            "icon": "payments",
-        },
-        {
-            "label": "Turnos de caixa",
-            "url": reverse("admin:cashman_shift_changelist"),
-            "icon": "point_of_sale",
-        },
-        {
-            "label": "Fechamentos do dia",
-            "url": reverse("admin:backstage_dayclosing_changelist"),
-            "icon": "event_available",
-        },
+    from shopman.cashman.models import Shift
+    from shopman.orderman.models import Order
+    from shopman.payman.models import PaymentIntent
+
+    from shopman.backstage.models import DayClosing
+
+    cards = [
+        _model_card(request, "Histórico de pedidos", "receipt_long", Order),
+        _model_card(request, "Cobranças", "payments", PaymentIntent),
+        # ``audit_shift``, não ``operate_pos``: a tela do turno mostra esperado,
+        # contado e diferença, e oferecê-la a quem opera o caixa é oferecer o
+        # gabarito da contagem cega. Quem decide é o ``ShiftAdmin``, e ele
+        # pergunta a ``request.user`` — que com uma identidade só (D1-B) é a
+        # pessoa no balcão, não a conta do aparelho.
+        _model_card(request, "Turnos de caixa", "point_of_sale", Shift),
+        _model_card(request, "Fechamentos do dia", "event_available", DayClosing),
     ]
+    return [card for card in cards if card is not None]
 
 
 # ── Main callback ────────────────────────────────────────────────────
@@ -125,8 +123,8 @@ def dashboard_callback(request, context):
 
     context.update({
         # Config + auditoria
-        "config_links": _config_links(),
-        "audit_links": _audit_links(),
+        "config_links": _config_links(request),
+        "audit_links": _audit_links(request),
         "omotenashi_health": _omotenashi_health(),
         # Atenção (alertas)
         "kpi_stock_alerts": proj.kpi_stock_alerts,
