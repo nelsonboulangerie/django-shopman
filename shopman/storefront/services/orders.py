@@ -17,6 +17,10 @@ def grant_order_access(request, order_ref: str) -> None:
     customer_orders.grant_order_access(request, order_ref)
 
 
+def customer_can_access_order(customer_info, order) -> bool:
+    return customer_orders.customer_can_access_order(customer_info, order)
+
+
 def active_order_count_for_phone(phone: str) -> int:
     return customer_orders.active_order_count_for_phone(phone)
 

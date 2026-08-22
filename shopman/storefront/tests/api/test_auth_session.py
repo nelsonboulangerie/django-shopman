@@ -30,6 +30,11 @@ def _login_as_customer(client: Client, customer: Customer):
     return user
 
 
+def _csrf_headers(client: Client) -> dict[str, str]:
+    response = client.get("/api/v1/storefront/cart/")
+    return {"HTTP_X_CSRFTOKEN": response.cookies["csrftoken"].value}
+
+
 def test_auth_session_returns_anonymous_identity(client: Client):
     response = client.get("/api/v1/auth/session/")
 
@@ -163,6 +168,19 @@ def test_auth_request_code_accepts_json_without_csrf(monkeypatch):
     assert response.json()["ok"] is True
     assert sent["phone"] == "+5543999997777"
     assert sent["delivery_method"] == "whatsapp"
+
+
+def test_session_creating_auth_posts_require_csrf():
+    client = Client(enforce_csrf_checks=True)
+
+    for url, payload in [
+        ("/api/v1/auth/access/", {"token": "raw-token"}),
+        ("/api/v1/auth/device-check/", {"target": "43999998888"}),
+        ("/api/v1/auth/verify-code/", {"target": "43999998888", "code": "123456"}),
+        ("/api/v1/auth/passkey/login/", {"credential": {"id": "cred"}}),
+    ]:
+        response = client.post(url, data=payload, content_type="application/json")
+        assert response.status_code == 403
 
 
 def test_auth_request_code_preserves_brazilian_ddi_without_plus(monkeypatch, client: Client):
@@ -357,6 +375,7 @@ def test_auth_verify_code_accepts_json_and_creates_session_contract(monkeypatch)
         "/api/v1/auth/verify-code/",
         data={"target": "43999998888", "code": "123456"},
         content_type="application/json",
+        **_csrf_headers(client),
     )
 
     assert response.status_code == 200
