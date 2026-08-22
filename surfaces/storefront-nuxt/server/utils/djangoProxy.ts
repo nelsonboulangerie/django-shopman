@@ -9,6 +9,7 @@ import {
 } from 'h3'
 import { withQuery } from 'ufo'
 import { warnOnApiVersionMismatch } from './apiVersion'
+import { resolveDjangoBaseUrl } from './djangoBaseUrl'
 
 const UNSAFE_METHODS = new Set(['POST', 'PUT', 'PATCH', 'DELETE'])
 
@@ -67,14 +68,15 @@ export async function proxyDjangoApi (event: H3Event, path: string) {
 
 export async function proxyDjangoPath (event: H3Event, fullPath: string) {
   const config = useRuntimeConfig(event)
+  const djangoBaseUrl = resolveDjangoBaseUrl(config.djangoBaseUrl)
   const method = event.method || 'GET'
   const isUnsafeMethod = UNSAFE_METHODS.has(method.toUpperCase())
   const normalizedPath = fullPath.endsWith('/') ? fullPath : `${fullPath}/`
   const target = withQuery(
-    `${config.djangoBaseUrl}${normalizedPath}`,
+    `${djangoBaseUrl}${normalizedPath}`,
     getQuery(event)
   )
-  const djangoOrigin = new URL(config.djangoBaseUrl).origin
+  const djangoOrigin = new URL(djangoBaseUrl).origin
 
   const headers: Record<string, string> = {
     accept: getRequestHeader(event, 'accept') || 'application/json'
@@ -97,7 +99,7 @@ export async function proxyDjangoPath (event: H3Event, fullPath: string) {
   else if (clientCsrfHeader) headers['x-csrftoken'] = clientCsrfHeader
 
   if (isUnsafeMethod && !headers['x-csrftoken']) {
-    const csrf = await ensureDjangoCsrfCookie(event, config.djangoBaseUrl, cookie)
+    const csrf = await ensureDjangoCsrfCookie(event, djangoBaseUrl, cookie)
     cookie = csrf.cookie
     if (cookie) headers.cookie = cookie
     if (csrf.token) headers['x-csrftoken'] = csrf.token

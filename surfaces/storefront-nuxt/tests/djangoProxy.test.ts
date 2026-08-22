@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 import { csrfTokenFromCookieHeader, mergeSetCookieIntoCookieHeader } from '../server/utils/djangoProxy'
+import { resolveDjangoBaseUrl } from '../server/utils/djangoBaseUrl'
 
 const proxySource = readFileSync(fileURLToPath(new URL('../server/utils/djangoProxy.ts', import.meta.url)), 'utf8')
 
@@ -24,5 +25,22 @@ describe('Django proxy CSRF transport', () => {
     expect(proxySource).toContain('headers.referer = `${djangoOrigin}/`')
     expect(proxySource).not.toContain("getRequestHeader(event, 'origin')")
     expect(proxySource).not.toContain("getRequestHeader(event, 'referer')")
+  })
+
+  it('rejects a local Django upstream in production', () => {
+    const previous = process.env.SHOPMAN_ENVIRONMENT
+    process.env.SHOPMAN_ENVIRONMENT = 'production'
+    try {
+      try {
+        resolveDjangoBaseUrl('http://127.0.0.1:8000/')
+        throw new Error('expected local upstream to be rejected')
+      } catch (error: any) {
+        expect(error.statusCode).toBe(503)
+      }
+      expect(resolveDjangoBaseUrl('https://api.example.test/')).toBe('https://api.example.test')
+    } finally {
+      if (previous == null) delete process.env.SHOPMAN_ENVIRONMENT
+      else process.env.SHOPMAN_ENVIRONMENT = previous
+    }
   })
 })

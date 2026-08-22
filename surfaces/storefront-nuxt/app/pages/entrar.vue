@@ -87,7 +87,7 @@ const { data: loginHome } = await useFetch<HomeResponse>(apiPath('/api/v1/storef
   key: 'storefront-login-home'
 })
 
-const nextUrl = computed(() => typeof route.query.next === 'string' && route.query.next.startsWith('/') ? route.query.next : '/')
+const nextUrl = computed(() => safeInternalPath(route.query.next))
 // Zero-telefone: por padrão não pedimos número. A identidade é quem ENVIA a mensagem
 // no WhatsApp. O campo só aparece quando o cliente quer usar OUTRO número (via SMS,
 // o único caminho que mira um número digitado). O deep link é pré-aquecido no mount.
