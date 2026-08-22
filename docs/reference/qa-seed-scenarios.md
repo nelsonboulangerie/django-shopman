@@ -54,6 +54,7 @@ filtragem. `QADH-*` carrega `snapshot.source="production_demand_history"`.
 | Identificador | Estado | `target_date` | Âncora do QA |
 |---------------|--------|---------------|--------------|
 | `seed:production:today:<date>:<recipe>` | `planned` / `started` / `finished` (matriz mista, 14 receitas) | hoje | WO em **cada** estado disponível hoje |
+| `seed:production:today-prep:<date>:<massa>` | `finished` (madrugada, escalonadas) | hoje | **A massa antes do pão** — fecham antes de a primeira fornada de acabado começar, em qualquer hora em que o seed rode |
 | `seed:production:qa-stuck:<ontem>:baguete` | `started` (nunca finalizada) | ontem | **Fornada de dia anterior presa** — claramente identificável pelo `source_ref` |
 | `seed:production:future-<1..7>:...` | `planned` (+ `Quant.target_date`) | hoje..+6 | Estoque planejado datado (gate de encomenda do storefront) |
 | `seed:production:history-<1..35>:...` | `finished` | hoje-1..hoje-35 | Histórico de BI / pickup slots / perdas |

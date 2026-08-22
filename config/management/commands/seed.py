@@ -3257,47 +3257,18 @@ class Command(BaseCommand):
         history_count = 0
         future_count = 0
 
-        # ── Pré-preparo do dia: a massa sai ANTES do pão ─────────────────────
+        # ── Cronograma de hoje: uma âncora só para a massa e para o pão ──────
         #
-        # Padaria artesanal faz a própria massa; encontrá-la pronta era ficção do
-        # seed. Estas fornadas saem FINISHED e de madrugada, terminando antes de
-        # a primeira fornada de acabado começar (campagne, 3h40) — porque é isso
-        # que a ordem de produção significa: não dá para modelar a baguete com a
-        # massa que ainda está na masseira.
-        #
-        # A quantidade é a MESMA do mise en place (plano do dia × dias de folga),
-        # para a ficha e o depósito contarem o mesmo número. Mudar o plano
-        # reajusta os dois juntos.
-        prep_count = 0
-        for prep_index, (prep_sku, per_day) in enumerate(sorted(prep_needs.items())):
-            prep_recipe = recipe_by_output.get(prep_sku)
-            if prep_recipe is None:
-                # Pré-preparo sem ficha própria não vira fornada — e o mise en
-                # place acima já garantiu o quilo. Silêncio aqui é correto.
-                continue
-            upsert_work_order(
-                scope="today-prep",
-                recipe=prep_recipe,
-                target_date=today,
-                planned_qty=(per_day * PREP_DAYS_OF_COVER).quantize(Decimal("0.001")),
-                status=WorkOrder.Status.FINISHED,
-                started_qty=(per_day * PREP_DAYS_OF_COVER).quantize(Decimal("0.001")),
-                finished_qty=(per_day * PREP_DAYS_OF_COVER).quantize(Decimal("0.001")),
-                # Escalonadas, não empilhadas: a Nelson tem UMA masseira, e nove
-                # massas prontas no mesmo minuto seria uma tela que ninguém
-                # reconhece. 15 min de defasagem entre as batidas, todas
-                # fechando antes das 3h20 — a primeira fornada de acabado
-                # (campagne) começa 3h40, e massa que ainda está na masseira
-                # não vira pão.
-                start_at=at(today, (1, 0)) + timedelta(minutes=10 * prep_index),
-                finish_at=at(today, (1, 50)) + timedelta(minutes=10 * prep_index),
-                operator_ref=["chef:ana", "chef:joao"][prep_index % 2],
-            )
-            prep_count += 1
-
-        # Current day: mixed statuses so the matrix is useful immediately.
+        # O dia é montado ANTES de gravar qualquer fornada porque os dois blocos
+        # (pré-preparo e acabado) precisam sair do MESMO relógio. Um deles não é
+        # fixo: a fornada travada (índice 2) nasce atrasada em relação ao AGORA,
+        # senão o alerta ``production_late`` só aparece se o seed for rodado na
+        # hora certa do dia. Misturar esse horário flutuante com uma tabela de
+        # horas fixas foi o que inverteu a ordem da padaria de madrugada — com o
+        # seed rodado antes das ~5h25 a massa terminava DEPOIS de a primeira
+        # fornada começar, e o dia ficava impossível (22/08).
+        today_schedule = []
         for index, (ref, qty, start_hm, finish_hm) in enumerate(production_plan):
-            recipe = recipes_by_ref[ref]
             if index in (0, 1, 7, 9):
                 status = WorkOrder.Status.FINISHED
             elif index in (2, 3, 4, 10, 11):
@@ -3315,10 +3286,69 @@ class Command(BaseCommand):
                 finish_at = at(today, finish_hm)
             start_at = at(today, start_hm) if status != WorkOrder.Status.PLANNED else None
             if status == WorkOrder.Status.STARTED and index == 2:
-                start_at = timezone.now() - timedelta(minutes=self._max_started_minutes_for_recipe(ref) + 15)
+                # A fornada travada: começou há mais tempo do que a janela da
+                # ficha permite, medido do agora — é ela que acende o alerta de
+                # atraso na tela de produção logo depois do reseed.
+                start_at = timezone.now() - timedelta(
+                    minutes=self._max_started_minutes_for_recipe(ref) + 15
+                )
+            today_schedule.append((ref, qty, status, started, finished, start_at, finish_at))
+
+        # A primeira fornada de acabado do dia é a âncora do pré-preparo abaixo.
+        first_bake_at = min(row[5] for row in today_schedule if row[5] is not None)
+
+        # ── Pré-preparo do dia: a massa sai ANTES do pão ─────────────────────
+        #
+        # Padaria artesanal faz a própria massa; encontrá-la pronta era ficção do
+        # seed. Estas fornadas saem FINISHED e de madrugada, fechando antes de a
+        # primeira fornada de acabado começar — porque é isso que a ordem de
+        # produção significa: não dá para modelar a baguete com a massa que ainda
+        # está na masseira.
+        #
+        # Os horários são CONTADOS PARA TRÁS a partir de ``first_bake_at``, e não
+        # escritos à mão, justamente para que a ordem valha em qualquer hora em
+        # que o seed rode. Escalonadas, não empilhadas: a Nelson tem UMA
+        # masseira, e nove massas prontas no mesmo minuto seria uma tela que
+        # ninguém reconhece. 10 min de defasagem entre as batidas — no dia
+        # normal (primeira fornada 3h40, campagne) isso dá massas de 1h00 a 3h10,
+        # que é a madrugada real da casa.
+        #
+        # A quantidade é a MESMA do mise en place (plano do dia × dias de folga),
+        # para a ficha e o depósito contarem o mesmo número. Mudar o plano
+        # reajusta os dois juntos.
+        PREP_STAGGER = timedelta(minutes=10)   # defasagem entre batidas (uma masseira)
+        PREP_DURATION = timedelta(minutes=50)  # da mistura ao ponto
+        PREP_REST = timedelta(minutes=30)      # folga até a primeira fornada
+        prep_batches = [
+            (per_day, recipe_by_output[prep_sku])
+            for prep_sku, per_day in sorted(prep_needs.items())
+            # Pré-preparo sem ficha própria não vira fornada — e o mise en
+            # place acima já garantiu o quilo. Silêncio aqui é correto.
+            if prep_sku in recipe_by_output
+        ]
+        last_prep_finish = first_bake_at - PREP_REST
+        prep_count = 0
+        for prep_index, (per_day, prep_recipe) in enumerate(prep_batches):
+            prep_finish_at = last_prep_finish - PREP_STAGGER * (len(prep_batches) - 1 - prep_index)
+            upsert_work_order(
+                scope="today-prep",
+                recipe=prep_recipe,
+                target_date=today,
+                planned_qty=(per_day * PREP_DAYS_OF_COVER).quantize(Decimal("0.001")),
+                status=WorkOrder.Status.FINISHED,
+                started_qty=(per_day * PREP_DAYS_OF_COVER).quantize(Decimal("0.001")),
+                finished_qty=(per_day * PREP_DAYS_OF_COVER).quantize(Decimal("0.001")),
+                start_at=prep_finish_at - PREP_DURATION,
+                finish_at=prep_finish_at,
+                operator_ref=["chef:ana", "chef:joao"][prep_index % 2],
+            )
+            prep_count += 1
+
+        # Current day: mixed statuses so the matrix is useful immediately.
+        for index, (ref, qty, status, started, finished, start_at, finish_at) in enumerate(today_schedule):
             upsert_work_order(
                 scope="today",
-                recipe=recipe,
+                recipe=recipes_by_ref[ref],
                 target_date=today,
                 planned_qty=qty,
                 status=status,
