@@ -58,24 +58,31 @@ def dev_badge(username: str) -> str:
 
 #: username, nome, sobrenome, grupos, é superusuário?, identidades que ele ABSORVE
 #:
+#: ⚠️ **Quem PROVISIONA dispositivo precisa de senha**, e é por isso que o campo
+#: de senha não é o mesmo que "é superusuário". Um dispositivo cru não tem
+#: antessala: a tela de identificação por PIN só existe DEPOIS que alguém o
+#: tornou uma estação, e esse alguém tem de entrar de algum jeito. Enquanto só o
+#: `admin` tinha senha, o dono era o único capaz de montar um balcão.
+#:
 #: Sobrenome vazio é deliberado: são pessoas de verdade da casa, e inventar um
 #: sobrenome seria pior do que deixar em branco. Preencher pelo Admin quando
 #: alguém souber.
 #:
 #: O elenco cobre os papéis que a loja tem de verdade, um por grupo, para que
 #: testar "o que o gerente enxerga" seja entrar como o gerente — e não imaginar.
-CAST: tuple[tuple[str, str, str, tuple[str, ...], bool, tuple[str, ...]], ...] = (
+CAST: tuple[tuple[str, str, str, tuple[str, ...], bool, bool, tuple[str, ...]], ...] = (
     # O dono: audita o dinheiro. Superusuário porque é quem administra o sistema,
     # E no grupo "Dono" porque o grupo não pode nascer vazio — sem ninguém nele,
     # a apuração fica invisível até para quem mandou trancá-la.
-    ("admin", "Admin", "", ("Dono",), True, ()),
+    ("admin", "Admin", "", ("Dono",), True, True, ()),
     # O gestor: opera, autoriza exceção, fecha o dia. NÃO audita — ele conta às
-    # cegas como todo mundo (ver docs/guides/rbac-personas.md).
-    ("joyce", "Joyce", "", ("Gerente",), False, ("marina",)),
+    # cegas como todo mundo (ver docs/guides/rbac-personas.md). Tem SENHA porque
+    # é ele quem inicia os dispositivos da loja (`cashman.manage_operators`).
+    ("joyce", "Joyce", "", ("Gerente",), False, True, ("marina",)),
     # Loja: balcão e PDV.
-    ("fran", "Fran", "", ("Caixa",), False, ("ana",)),
+    ("fran", "Fran", "", ("Caixa",), False, False, ("ana",)),
     # Produção: cozinha e fornadas.
-    ("diofer", "Diofer", "", ("Cozinha",), False, ("joao",)),
+    ("diofer", "Diofer", "", ("Cozinha",), False, False, ("joao",)),
 )
 
 
@@ -106,7 +113,7 @@ class Command(BaseCommand):
         grupos = {g.name: g for g in Group.objects.all()}
 
         with transaction.atomic():
-            for username, first, last, nomes_de_grupo, superuser, absorve in CAST:
+            for username, first, last, nomes_de_grupo, superuser, precisa_de_senha, absorve in CAST:
                 faltando = [n for n in nomes_de_grupo if n not in grupos]
                 if faltando:
                     raise CommandError(
@@ -124,13 +131,7 @@ class Command(BaseCommand):
                     },
                 )
 
-                if superuser:
-                    user.set_password(ADMIN_PASSWORD)
-                else:
-                    # Identidade só-PIN: a confiança do dispositivo entra pelo
-                    # `admin`; quem opera se identifica pelo PIN, não por senha.
-                    user.set_unusable_password()
-                user.save(update_fields=["password"])
+                self._senha(user, username, precisa_de_senha)
 
                 # Permissão avulsa some: o grupo passa a ser a única resposta para
                 # "por que essa pessoa consegue fazer isso?".
@@ -162,6 +163,33 @@ class Command(BaseCommand):
             "      não chega lá, e colar não gera evento de tecla nenhum. Teste com o\n"
             "      leitor, num crachá impresso."
         )
+
+    def _senha(self, user, username: str, precisa_de_senha: bool) -> None:
+        """A senha de dev — e, acima de tudo, o que NÃO fazer com a senha real.
+
+        ⚠️ **Senha usável que já existe nunca é sobrescrita.** Este comando é
+        idempotente e roda depois de `setup_groups`, ao testar permissão, quando
+        alguém perde acesso — e antes ele reescrevia a senha em toda execução.
+        No dia em que o gestor tiver uma senha de verdade, uma rodada de rotina
+        a trocaria de volta pela senha fraca de dev, calada. Quem descobre é a
+        pessoa, na porta, de manhã.
+
+        Quem NÃO precisa de senha fica só-PIN, e isso é desenho: menos credencial
+        no mundo, e a identificação do balcão é o PIN ou o crachá.
+
+        ⚠️ O `user.password` vazio no teste é a parte que não se adivinha:
+        `has_usable_password()` devolve **True** para string vazia (ele só checa
+        se começa com `!`), e conta recém-criada por `update_or_create` nasce com
+        senha vazia. Guardar só por ele fazia TODA conta nova parecer que já
+        tinha senha — ninguém recebia nenhuma, nem o `admin`.
+        """
+        if user.password and user.has_usable_password():
+            return
+        if precisa_de_senha:
+            user.set_password(ADMIN_PASSWORD)
+        else:
+            user.set_unusable_password()
+        user.save(update_fields=["password"])
 
     def _emitir_cracha(self, user, username: str) -> None:
         """Grava o hash do crachá de dev, para a leitura ter o que casar.

@@ -1,8 +1,8 @@
 """Login de operador NO PRÓPRIO app (operator/login) — sem bounce pro Django admin.
 
 Reusa a auth do Django: usuário+senha → a sessão DAQUELA PESSOA. Só staff entra.
-Não abre "sessão de aparelho": esse conceito morreu na D1 Parte B, porque um
-aparelho com sessão é um aparelho com permissões.
+Não abre "sessão de dispositivo": esse conceito morreu na D1 Parte B, porque um
+dispositivo com sessão é um dispositivo com permissões.
 """
 
 from unittest.mock import patch

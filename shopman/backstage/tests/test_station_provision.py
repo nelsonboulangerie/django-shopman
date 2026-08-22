@@ -1,10 +1,10 @@
-"""Como um aparelho VIRA uma estação — e por que isso não pode ser fácil demais.
+"""Como um dispositivo VIRA uma estação — e por que isso não pode ser fácil demais.
 
 Sem este caminho nada do resto existe: o gate da estação é a chave da antessala,
-e isto é quem entrega a chave. Um aparelho não provisionado não tem antessala, o
+e isto é quem entrega a chave. Um dispositivo não provisionado não tem antessala, o
 balcão amanhece pedindo senha de gestor, e a loja não abre com PIN.
 
-O ato é de gestão e acontece uma vez por aparelho: alguém com
+O ato é de gestão e acontece uma vez por dispositivo: alguém com
 ``cashman.manage_operators`` entra com senha ali e diz "este computador é o
 pdv-main". Depois disso, o cookie responde por ele.
 """
@@ -52,7 +52,7 @@ def gerente(terminal):
     return _grant(user, "manage_operators", "operate_pos")
 
 
-def test_o_gerente_transforma_o_aparelho_em_estacao(client, gerente, terminal):
+def test_o_gerente_transforma_o_dispositivo_em_estacao(client, gerente, terminal):
     """O caminho da montagem do balcão, inteiro."""
     client.force_login(gerente)
 
@@ -90,7 +90,7 @@ def test_a_estacao_sobrevive_a_saida_do_gerente(client, gerente, terminal):
 
 
 def test_quem_nao_gere_operadores_nao_provisiona(client, terminal):
-    """Provisionar é decidir que aquele aparelho passa a pedir identificação.
+    """Provisionar é decidir que aquele dispositivo passa a pedir identificação.
 
     Um operador de caixa que pudesse fazê-lo transformaria o próprio celular numa
     estação da loja — e a chave da antessala sairia pela porta no fim do turno.
@@ -111,7 +111,7 @@ def test_quem_nao_gere_operadores_nao_provisiona(client, terminal):
 def test_terminal_desconhecido_e_recusado(client, gerente):
     """Confiança gravada para um ref que não existe passa no gate e lê a gaveta errada.
 
-    O aparelho seria reconhecido, o `Terminal.default()` assumiria, e o balcão
+    O dispositivo seria reconhecido, o `Terminal.default()` assumiria, e o balcão
     estaria operando a gaveta de outro — sem nenhum sintoma até o fechamento.
     """
     client.force_login(gerente)
@@ -154,7 +154,7 @@ def test_revogar_mata_a_confianca_no_banco(client, gerente, terminal):
     """Tirar o cookie não basta: um token copiado antes continuaria valendo.
 
     É o caminho de quem está com a máquina na mão — desativar o quiosque que vai
-    sair da loja. O aparelho perdido continua revogável pelo Admin.
+    sair da loja. O dispositivo perdido continua revogável pelo Admin.
     """
     client.force_login(gerente)
     client.post(STATION_URL, {"terminal_ref": terminal.ref}, content_type="application/json")
@@ -168,7 +168,7 @@ def test_revogar_mata_a_confianca_no_banco(client, gerente, terminal):
 
 
 def test_provisionar_duas_vezes_nao_polui_a_auditoria(client, gerente, terminal):
-    """Abrir a tela de novo no mesmo aparelho não cria um segundo dispositivo."""
+    """Abrir a tela de novo no mesmo dispositivo não cria um segundo dispositivo."""
     client.force_login(gerente)
     client.post(STATION_URL, {"terminal_ref": terminal.ref}, content_type="application/json")
     client.post(STATION_URL, {"terminal_ref": terminal.ref}, content_type="application/json")
@@ -176,7 +176,7 @@ def test_provisionar_duas_vezes_nao_polui_a_auditoria(client, gerente, terminal)
     assert TrustedDevice.objects.filter(subject_type=SubjectType.STATION).count() == 1
 
 
-def test_um_aparelho_ja_provisionado_nao_precisa_de_gerente_para_pedir_PIN(client, terminal):
+def test_um_dispositivo_ja_provisionado_nao_precisa_de_gerente_para_pedir_PIN(client, terminal):
     """O contrapeso do gate: `manage_operators` guarda o PROVISIONAMENTO, não o uso.
 
     Se guardasse o uso, a antessala exigiria gerente e a loja não abriria — que é

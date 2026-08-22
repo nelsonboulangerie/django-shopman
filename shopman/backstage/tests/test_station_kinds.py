@@ -2,7 +2,7 @@
 
 O balcão tem gente na frente e não faz nada sem PIN. O totem não tem — e por isso
 age em NOME PRÓPRIO, com uma conta que é dele. As duas dividem a mesma regra: o
-APARELHO não concede nada; quem concede é a identidade.
+DISPOSITIVO não concede nada; quem concede é a identidade.
 
 ⚠️ A superfície do totem ainda não existe, e este arquivo não a inventa. O que se
 prova aqui é só a camada de identidade — que é o que precisa estar certo ANTES,
@@ -74,7 +74,7 @@ def test_terminal_sem_bloco_de_estacao_e_ATENDIDO(client):
 
 
 def test_modo_escrito_errado_cai_em_ATENDIDA(client):
-    """Config inválida não pode promover um balcão a aparelho que age sozinho."""
+    """Config inválida não pode promover um balcão a dispositivo que age sozinho."""
     _terminal("balcao", mode="autonoma", operator="totem-entrada")  # não é `autonomous`
     _grant(_conta_do_totem(), "operate_pos")
     trust_station(client, "balcao")
@@ -104,7 +104,7 @@ def test_a_estacao_AUTONOMA_age_em_nome_da_PROPRIA_conta(client):
 def test_a_conta_do_totem_so_pode_o_que_lhe_concederam(client):
     """O conjunto mínimo é DADO, não código — e sem concessão o totem não faz nada.
 
-    É a diferença que separa este desenho do anterior: ser o aparelho não dá
+    É a diferença que separa este desenho do anterior: ser o dispositivo não dá
     permissão nenhuma. Enquanto a superfície do totem não existir, a conta dele
     não precisa de permissão alguma, e o gate a trata como qualquer operador sem
     permissão — recusa comum, não `station_locked`, porque PIN não resolveria.
@@ -120,11 +120,11 @@ def test_a_conta_do_totem_so_pode_o_que_lhe_concederam(client):
 
 
 def test_totem_SUPERUSUARIO_e_recusado(client):
-    """O buraco de 20/08 com outro nome: um aparelho com chave-mestra.
+    """O buraco de 20/08 com outro nome: um dispositivo com chave-mestra.
 
     `is_superuser` curto-circuita `has_perm`, então uma conta dessas ignoraria
     qualquer conjunto mínimo que a loja tentasse declarar. A recusa é dura de
-    propósito — o totem volta a ser um aparelho sem identidade.
+    propósito — o totem volta a ser um dispositivo sem identidade.
     """
     _terminal("totem-1", mode=station_trust.AUTONOMOUS, operator="totem-root")
     get_user_model().objects.create_superuser("totem-root", password="x")
@@ -168,7 +168,7 @@ def test_desativar_a_conta_DESLIGA_o_totem(client):
 
 
 def test_a_confianca_de_um_totem_nao_serve_para_o_balcao_do_lado(client):
-    """Cada aparelho carrega o cookie do SEU ref; um não empresta identidade ao outro."""
+    """Cada dispositivo carrega o cookie do SEU ref; um não empresta identidade ao outro."""
     _terminal("totem-1", mode=station_trust.AUTONOMOUS, operator="totem-entrada")
     _terminal("balcao", mode=station_trust.ATTENDED)
     _grant(_conta_do_totem(), "operate_pos")
@@ -185,7 +185,7 @@ def test_a_trilha_sai_no_nome_do_TOTEM(client):
 
     Sem isto, "age em nome próprio" seria só uma permissão a mais, e a linha
     sairia órfã — o mesmo defeito que a Parte B existe para fechar, com um
-    aparelho no lugar do ``admin``.
+    dispositivo no lugar do ``admin``.
 
     O caminho aqui é um pedido, não a gaveta: abrir pedido é o que o dono disse
     que o totem faz. A gaveta segue exigindo ``cashman.operate_pos``, que a conta

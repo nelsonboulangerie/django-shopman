@@ -1,13 +1,13 @@
 """A antessala: quem sou eu, quem pode entrar, entrar e sair.
 
 ``operator/session|eligible|unlock|lock`` do ponto de vista do balcão travado —
-que é o estado em que a loja amanhece. Não há ninguém logado ali: o aparelho é
+que é o estado em que a loja amanhece. Não há ninguém logado ali: o dispositivo é
 reconhecido por confiança de dispositivo, e é ISSO que faz a tela de
 identificação aparecer.
 
 ⚠️ Estes testes tinham uma fixture ``device``: um usuário staff logado que
 representava a máquina. Ela morreu com a D1 Parte B, e não por arrumação — era
-ela o buraco. Um aparelho com sessão Django é um aparelho com permissões, e no
+ela o buraco. Um dispositivo com sessão Django é um dispositivo com permissões, e no
 staging essa sessão era o ``admin`` superusuário.
 """
 
@@ -33,7 +33,7 @@ def _grant(user, codename, app="backstage"):
 
 @pytest.fixture
 def balcao(client):
-    """O aparelho do balcão: reconhecido, e sem ninguém identificado nele."""
+    """O dispositivo do balcão: reconhecido, e sem ninguém identificado nele."""
     return trust_station(client, "balcao")
 
 
@@ -70,7 +70,7 @@ def test_session_reports_locked_then_operator(client, balcao, baker):
     body = client.get(reverse("api-backstage-operator-session")).json()
     assert body["locked"] is False
     assert body["operator"]["username"] == "bia"
-    # E a estação continua a mesma: quem entrou foi uma pessoa, não o aparelho.
+    # E a estação continua a mesma: quem entrou foi uma pessoa, não o dispositivo.
     assert body["station"] == balcao
 
 
@@ -87,7 +87,7 @@ def test_eligible_filters_by_perm_and_validates(client, balcao, baker):
 
 
 @pytest.mark.django_db
-def test_a_antessala_nao_atende_aparelho_de_fora(client, baker):
+def test_a_antessala_nao_atende_dispositivo_de_fora(client, baker):
     """Sem confiança de estação, nem a lista de quem destrava sai.
 
     É o outro lado da chave da antessala: ela abre pouca coisa, mas quem não a

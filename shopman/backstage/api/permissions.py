@@ -2,17 +2,17 @@
 
 **Uma identidade, não duas.** A pessoa que se identificou por PIN ou crachá É a
 sessão: ``request.user`` é o operador, e ``has_perm`` responde direto. Não há
-"conta do aparelho" com permissões próprias para conferir depois.
+"conta do dispositivo" com permissões próprias para conferir depois.
 
 Foi assim que o buraco fechou. Até 21/08/2026 existiam duas identidades — a
-sessão do aparelho (no staging, o ``admin`` superusuário) e o operador ativo
+sessão do dispositivo (no staging, o ``admin`` superusuário) e o operador ativo
 guardado num dicionário de sessão — e a permissão era conferida ora contra uma,
 ora contra a outra. Como ``is_superuser`` curto-circuita ``has_perm``, os caminhos
-que ainda perguntavam ao aparelho davam chave-mestra a quem chegasse no balcão; e
+que ainda perguntavam ao dispositivo davam chave-mestra a quem chegasse no balcão; e
 o cookie de ``.boulangerie.com.br`` levava essa mesma sessão para o Admin na aba
 ao lado.
 
-O aparelho continua sendo reconhecido — mas por CONFIANÇA DE DISPOSITIVO
+O dispositivo continua sendo reconhecido — mas por CONFIANÇA DE DISPOSITIVO
 (``backstage.station_trust``), que diz de onde a requisição veio e não concede
 nada. Uma chave que só abre a antessala: com ela, a tela de identificação
 aparece; sem uma pessoa identificada, nenhuma leitura passa.
@@ -22,7 +22,7 @@ aparece; sem uma pessoa identificada, nenhuma leitura passa.
 * **atendida** — o balcão. Tem gente na frente, e não faz nada sem PIN.
 * **autônoma** — o totem. Não há quem digite PIN, então ela age em NOME PRÓPRIO,
   com uma conta declarada no ``Terminal.metadata`` e cujas permissões são dados
-  do deployment. Continua valendo que o aparelho não concede nada: quem concede é
+  do deployment. Continua valendo que o dispositivo não concede nada: quem concede é
   a conta, e o gate a trata como trata qualquer operador.
 """
 
@@ -50,7 +50,7 @@ def _recusa_travada():
     Um gate que só devolve ``False`` deixa o DRF escolher a exceção, e ele
     escolhe pelo estado da AUTENTICAÇÃO: requisição sem ninguém logado vira
     ``NotAuthenticated``, com a mensagem genérica de credencial ausente. Só que
-    a estação travada é EXATAMENTE isso — aparelho reconhecido, ninguém logado —
+    a estação travada é EXATAMENTE isso — dispositivo reconhecido, ninguém logado —
     então o código que a tela usa para subir a identificação se perdia justo no
     caso para o qual ele existe. Levantar aqui preserva mensagem e código.
     """
@@ -134,7 +134,7 @@ class HasBackstagePermission(BasePermission):
 
 
 class IsTrustedStation(BasePermission):
-    """A requisição vem de um aparelho que a loja reconhece — e só isso.
+    """A requisição vem de um dispositivo que a loja reconhece — e só isso.
 
     É o gate da ANTESSALA: listar quem pode destravar, mostrar o estado da trava,
     receber o PIN. Nada além disso, e nada que mexa em dinheiro, estoque ou
@@ -143,10 +143,10 @@ class IsTrustedStation(BasePermission):
     Precisa existir porque, com uma identidade só, o balcão travado não tem
     ninguém logado: exigir sessão aqui tornaria o destrave inalcançável e a loja
     não abriria de manhã. Quem já está identificado também passa — o operador
-    troca de turno sem o aparelho deixar de ser confiável.
+    troca de turno sem o dispositivo deixar de ser confiável.
     """
 
-    message = "Este aparelho não é uma estação da loja."
+    message = "Este dispositivo não é uma estação da loja."
 
     def has_permission(self, request, view) -> bool:
         # `_operador` PRIMEIRO, e a ordem é o bug: com `is_trusted_station` na

@@ -1,14 +1,14 @@
 """O gate autoriza contra QUEM ESTÁ OPERANDO — e não existe segundo sujeito.
 
 Este arquivo guardava a garantia de não-bypass da "Opção C": havia duas
-identidades (a sessão do aparelho e um operador ativo guardado num dicionário de
+identidades (a sessão do dispositivo e um operador ativo guardado num dicionário de
 sessão), e os testes fixavam que a permissão da primeira não podia vazar para a
 segunda.
 
 Com a D1 Parte B (21/08/2026) o problema deixou de existir por construção: quem
 prova o PIN VIRA a sessão. Não há como um caminho "esquecer" de perguntar ao
 operador, porque não há a quem mais perguntar — e era assim que o buraco nascia,
-num punhado de caminhos que ainda consultavam o aparelho.
+num punhado de caminhos que ainda consultavam o dispositivo.
 
 O que estes testes guardam agora é a fronteira nova: **estação confiável não
 autoriza nada.** Ela diz de onde a requisição veio, e mais nada.
@@ -105,9 +105,9 @@ def test_ninguem_logado_nao_passa(db):
 def test_ESTACAO_CONFIAVEL_SOZINHA_NAO_AUTORIZA_NADA(db, monkeypatch):
     """A fronteira inteira, num teste: a chave abre a antessala, não o cofre.
 
-    É o que separa este desenho do anterior. Antes, ser "o aparelho do balcão"
+    É o que separa este desenho do anterior. Antes, ser "o dispositivo do balcão"
     significava ter uma sessão Django — no staging, a do `admin` superusuário —
-    e portanto TODAS as permissões. Agora ser o aparelho não dá nenhuma.
+    e portanto TODAS as permissões. Agora ser o dispositivo não dá nenhuma.
     """
     monkeypatch.setattr(
         "shopman.backstage.api.permissions.is_trusted_station", lambda request: True
@@ -135,7 +135,7 @@ def test_a_estacao_abre_a_ANTESSALA_e_so(db, monkeypatch):
     )
 
     assert IsTrustedStation().has_permission(_req(estacao="balcao"), _View()) is True
-    # E um aparelho qualquer da rua não entra nem na antessala.
+    # E um dispositivo qualquer da rua não entra nem na antessala.
     monkeypatch.setattr(
         "shopman.backstage.api.permissions.is_trusted_station", lambda request: False
     )
