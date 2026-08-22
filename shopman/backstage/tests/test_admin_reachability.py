@@ -158,3 +158,77 @@ def test_o_menu_do_superusuario_abre_inteiro(client, _loja):
     assert len(itens) >= 40, "o menu do dono do sistema encolheu — o filtro está fechado demais"
     for titulo, link in itens:
         assert client.get(link, follow=True).status_code == 200, titulo
+
+
+# ── Quem alcança o quê, por persona ──────────────────────────────────────────
+#
+# Os testes acima provam o CONTRATO (link oferecido abre). Estes provam a
+# POLÍTICA: o que cada grupo deve alcançar. Sem eles, um filtro que fecha o Admin
+# inteiro passa nos dois — todo mundo com zero link e zero 403.
+
+
+def _titulos(user) -> list[str]:
+    return [titulo for titulo, _ in _itens_de_menu(user)]
+
+
+def test_o_balcao_nao_tem_retaguarda(grupos):
+    """A Fran opera no PDV. O Admin não é ferramenta dela (decisão de 22/08/2026)."""
+    fran = _com_grupo("Caixa", grupos)
+
+    assert _titulos(fran) == []
+    assert _etiquetas(fran) == []
+
+
+def test_a_cozinha_alcanca_o_que_fabrica(grupos):
+    diofer = _com_grupo("Cozinha", grupos)
+
+    assert set(_titulos(diofer)) == {
+        "Fichas técnicas", "Ordens de produção", "Insumos", "Fornecedores",
+        "Saldos", "Reservas", "Movimentos", "Lotes",
+    }
+
+
+def test_o_gerente_alcanca_a_loja(grupos):
+    joyce = _com_grupo("Gerente", grupos)
+    titulos = _titulos(joyce)
+
+    for esperado in ("Produtos", "Clientes", "Histórico de pedidos", "Todos os ajustes", "Importações"):
+        assert esperado in titulos, esperado
+
+
+def test_o_gerente_nao_alcanca_dinheiro(grupos):
+    """A régua do fechamento cego, aplicada à retaguarda: ela opera, o dono confere.
+
+    Cobrança entrou nesta lista por decisão do dono (22/08/2026) — é a mesma
+    pergunta da apuração do turno, só que em Pix e cartão.
+    """
+    joyce = _titulos(_com_grupo("Gerente", grupos))
+    dono = _titulos(_com_grupo("Dono", grupos))
+
+    assert "Cobranças" not in joyce
+    assert "Turnos de caixa" not in joyce
+    assert "Cobranças" in dono
+    assert "Turnos de caixa" in dono
+
+
+def test_quem_governa_a_regra_alcanca_a_lista_de_regras(client, _loja, grupos):
+    """`manage_rules` diz o que a pessoa pode MUDAR; abrir a tela é `view_ruleconfig`.
+
+    Enquanto o grupo tinha só a primeira, o portão de segurança do WP-GAP-06 não
+    abria porta nenhuma: 403 na cara de quem foi posto lá para editar regra.
+    """
+    for grupo in ("Rules Managers", "Admin de Catálogo"):
+        client.force_login(_com_grupo(grupo, grupos))
+        assert client.get("/admin/shop/ruleconfig/").status_code == 200, grupo
+        client.logout()
+
+
+def test_o_gerente_edita_catalogo_e_a_cozinha_nao(client, _loja, grupos):
+    """Ler e escrever são permissões diferentes: sem isto, "alcança" viraria "muda"."""
+    client.force_login(_com_grupo("Gerente", grupos))
+    assert client.get("/admin/offerman/product/add/").status_code == 200
+    client.logout()
+
+    client.force_login(_com_grupo("Cozinha", grupos))
+    assert client.get("/admin/craftsman/recipe/").status_code == 200  # controle positivo: ela LÊ
+    assert client.get("/admin/offerman/product/add/").status_code == 403

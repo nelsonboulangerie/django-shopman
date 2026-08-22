@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import logging
 
+from django.apps import apps
 from django.conf import settings
 from django.urls import reverse
 from django.utils import timezone
@@ -53,34 +54,8 @@ def get_sidebar_navigation(request):
     aparecem quando a base URL do deployment está configurada (evita link morto).
     O histórico/CRUD de pedidos segue no grupo "Pedidos".
     """
-    from shopman.buyman.models import Material, Supplier
-    from shopman.cashman.models import Shift
-    from shopman.craftsman.models import Recipe, WorkOrder
-    from shopman.guestman.contrib.loyalty.models import LoyaltyAccount
-    from shopman.guestman.models import Customer
-    from shopman.offerman.models import Collection, Listing, Product
-    from shopman.orderman.models import Directive, Order, Session
-    from shopman.payman.models import PaymentIntent
-    from shopman.stockman.models import Batch, Hold, Move, Quant
-
     from shopman.backstage.admin_console.cash_receipt import CashReceiptVerifyView
     from shopman.backstage.admin_console.settings_hub import SettingsHubView
-    from shopman.backstage.models import (
-        BIAlertEvent,
-        BIAlertRule,
-        BIScenarioReport,
-        CategoryAlias,
-        DailySalesFact,
-        DayClosing,
-        HistoricalSale,
-        ImportBatch,
-        OperationChecklistRun,
-        OperationEpisode,
-        OperatorAlert,
-        PaymentMethodAlias,
-        ProductAlias,
-    )
-    from shopman.storefront.models import StockAlertSubscription
 
     live_items = []
     orders_url = _orders_base_url()
@@ -137,22 +112,22 @@ def get_sidebar_navigation(request):
         # aplicativos que não existem aqui.
         _group("Aplicativos", "apps", live_items, collapsible=False),
         _group("Catálogo", "store", [
-            _model_item("Produtos", "bakery_dining", Product),
-            _model_item("Coleções", "category", Collection),
-            _model_item("Vitrines", "shoppingmode", Listing),
+            _model_item("Produtos", "bakery_dining", "offerman.Product"),
+            _model_item("Coleções", "category", "offerman.Collection"),
+            _model_item("Vitrines", "shoppingmode", "offerman.Listing"),
         ]),
         _group("Clientes", "people", [
-            _model_item("Clientes", "person_search", Customer),
-            _model_item("Contas de fidelidade", "loyalty", LoyaltyAccount),
-            _model_item("Avisos de reposição", "notifications_active", StockAlertSubscription),
+            _model_item("Clientes", "person_search", "guestman.Customer"),
+            _model_item("Contas de fidelidade", "loyalty", "customer_loyalty.LoyaltyAccount"),
+            _model_item("Avisos de reposição", "notifications_active", "storefront.StockAlertSubscription"),
         ]),
         # O que se fabrica e com o quê. A régua de qualidade e o planejamento do dia
         # são ajuste, não operação: moram na Configuração.
         _group("Produção", "factory", [
-            _model_item("Fichas técnicas", "menu_book", Recipe),
-            _model_item("Ordens de produção", "assignment", WorkOrder),
-            _model_item("Insumos", "grocery", Material),
-            _model_item("Fornecedores", "local_shipping", Supplier),
+            _model_item("Fichas técnicas", "menu_book", "craftsman.Recipe"),
+            _model_item("Ordens de produção", "assignment", "craftsman.WorkOrder"),
+            _model_item("Insumos", "grocery", "buyman.Material"),
+            _model_item("Fornecedores", "local_shipping", "buyman.Supplier"),
             *(
                 [
                     _item(
@@ -167,17 +142,17 @@ def get_sidebar_navigation(request):
             ),
         ]),
         _group("Estoque", "inventory_2", [
-            _model_item("Saldos", "point_scan", Quant),
-            _model_item("Reservas", "keep", Hold),
-            _model_item("Movimentos", "swap_horiz", Move),
-            _model_item("Lotes", "inventory", Batch),
+            _model_item("Saldos", "point_scan", "stockman.Quant"),
+            _model_item("Reservas", "keep", "stockman.Hold"),
+            _model_item("Movimentos", "swap_horiz", "stockman.Move"),
+            _model_item("Lotes", "inventory", "stockman.Batch"),
         ]),
         # Trilha: o que já aconteceu. Nada aqui se opera, tudo aqui se confere.
         _group("Auditoria", "history", [
-            _model_item("Histórico de pedidos", "receipt_long", Order),
-            _model_item("Sessões de venda", "shopping_bag", Session),
-            _model_item("Ações pendentes", "playlist_add_check", Directive, query="?status__exact=queued"),
-            _model_item("Cobranças", "credit_card", PaymentIntent),
+            _model_item("Histórico de pedidos", "receipt_long", "orderman.Order"),
+            _model_item("Sessões de venda", "shopping_bag", "orderman.Session"),
+            _model_item("Ações pendentes", "playlist_add_check", "orderman.Directive", query="?status__exact=queued"),
+            _model_item("Cobranças", "credit_card", "payman.PaymentIntent"),
             # A movimentação (sangria, suprimento) é linha do turno, não tela: o
             # livro inteiro se lê de dentro do turno, em ordem. Um item próprio
             # seria a mesma pergunta com dois donos.
@@ -185,33 +160,33 @@ def get_sidebar_navigation(request):
             # ``operate_pos``: a tela do turno mostra esperado, contado e
             # diferença, e oferecê-la a quem opera o caixa é entregar o gabarito
             # da contagem cega.
-            _model_item("Turnos de caixa", "payments", Shift),
-            _model_item("Fechamentos do dia", "event_available", DayClosing),
-            _model_item("Execuções de checklist", "checklist", OperationChecklistRun),
-            _model_item("Episódios de operação", "report_problem", OperationEpisode),
+            _model_item("Turnos de caixa", "payments", "cashman.Shift"),
+            _model_item("Fechamentos do dia", "event_available", "backstage.DayClosing"),
+            _model_item("Execuções de checklist", "checklist", "backstage.OperationChecklistRun"),
+            _model_item("Episódios de operação", "report_problem", "backstage.OperationEpisode"),
             # Sem esta entrada, a conferência só existiria para quem tem um QR
             # legível na mão — e o comprovante amassado, que é justamente o
             # caso em que alguém quer conferir, não teria porta nenhuma.
             _view_item("Conferir comprovante", "qr_code_scanner", "admin_console_cash_receipt_lookup", CashReceiptVerifyView),
-            _model_item("Alertas do operador", "warning", OperatorAlert),
+            _model_item("Alertas do operador", "warning", "backstage.OperatorAlert"),
         ]),
         # O que entrou de fora no B.I. — trilha, como Auditoria, mas com dono
         # próprio: Auditoria está no teto que ainda se escaneia, e o B.I. vai
         # ganhar mais telas desta família (de-paras, cenários). Nasce aqui para
         # não dividir Auditoria depois. Só quem vê o B.I. vê o que o alimenta.
         _group("B.I.", "query_stats", [
-            _model_item("Importações", "upload_file", ImportBatch),
-            _model_item("Vendas históricas", "history_edu", HistoricalSale),
-            _model_item("Vendas por dia", "calendar_month", DailySalesFact),
+            _model_item("Importações", "upload_file", "backstage.ImportBatch"),
+            _model_item("Vendas históricas", "history_edu", "backstage.HistoricalSale"),
+            _model_item("Vendas por dia", "calendar_month", "backstage.DailySalesFact"),
             # A curadoria: o que veio de fora se traduz no vocabulário da casa.
             # A máquina propõe, a pessoa confirma aqui; só o confirmado lê.
-            _model_item("De-para de produtos", "swap_horiz", ProductAlias),
-            _model_item("De-para de categorias", "category", CategoryAlias),
-            _model_item("De-para de pagamentos", "payments", PaymentMethodAlias),
+            _model_item("De-para de produtos", "swap_horiz", "backstage.ProductAlias"),
+            _model_item("De-para de categorias", "category", "backstage.CategoryAlias"),
+            _model_item("De-para de pagamentos", "payments", "backstage.PaymentMethodAlias"),
             # O B.I. avisa: a régua é do gestor, o disparo é trilha.
-            _model_item("Alarmes", "notifications_active", BIAlertRule),
-            _model_item("Disparos de alarme", "campaign", BIAlertEvent),
-            _model_item("Cenários da IA", "auto_awesome", BIScenarioReport),
+            _model_item("Alarmes", "notifications_active", "backstage.BIAlertRule"),
+            _model_item("Disparos de alarme", "campaign", "backstage.BIAlertEvent"),
+            _model_item("Cenários da IA", "auto_awesome", "backstage.BIScenarioReport"),
         ]),
         # Configuração expande como os outros grupos — o menu tem UM comportamento,
         # não dois. Os subitens são os sete ESCOPOS, não as 33 telas: o Unfold só tem
@@ -272,19 +247,24 @@ def _group(title: str, icon: str, items: list[dict], *, collapsible: bool = True
     }
 
 
-def _model_item(title: str, icon: str, model, *, query: str = "", badge: str | None = None, badge_variant: str = "primary"):
+def _model_item(title: str, icon: str, label: str, *, query: str = "", badge: str | None = None, badge_variant: str = "primary"):
     """Item de changelist: a URL e a permissão saem os dois do mesmo model.
 
     A permissão é a da PORTA (``admin.gates``), não um palpite paralelo. O menu
     passou meses oferecendo 26 telas à Fran das quais 26 respondiam 403, porque
     aqui a pergunta era ``is_staff`` e lá era ``view_<model>``.
+
+    O model chega por ``"app_label.Model"`` e não importado: este menu lista as
+    telas do sistema INTEIRO, e uma delas ("Avisos de reposição") mora no
+    storefront — que o backstage não pode importar. Label errado levanta
+    ``LookupError`` no boot do menu, alto como o ``_url()`` faz com rota.
     """
-    opts = model._meta
+    opts = apps.get_model(label)._meta
     return _item(
         title,
         icon,
         _url(f"admin:{opts.app_label}_{opts.model_name}_changelist") + query,
-        permission=_opens(model),
+        permission=_opens(label),
         badge=badge,
         badge_variant=badge_variant,
     )
@@ -295,9 +275,9 @@ def _view_item(title: str, icon: str, url_name: str, view, *, active=None):
     return _item(title, icon, _url(url_name), permission=_opens_view(view), active=active)
 
 
-def _opens(model):
+def _opens(label: str):
     def _check(request) -> bool:
-        return can_open_changelist(request, model)
+        return can_open_changelist(request, apps.get_model(label))
 
     return _check
 
