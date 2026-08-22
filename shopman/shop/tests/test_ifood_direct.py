@@ -408,6 +408,68 @@ def test_process_events_failed_ingest_not_acked(db, fake_headers):
     mock_ack.assert_not_called()  # failure → leave un-acked for redelivery
 
 
+@override_settings(SHOPMAN_IFOOD=IFOOD_CFG)
+def test_process_events_mixed_batch_acks_only_handled_ids(db, fake_headers, ifood_order):
+    """Lote real pode misturar lixo, evento ignoravel e pedido novo.
+
+    So ackamos o que foi tratado. Evento sem id e PLACED sem orderId precisam
+    voltar pelo iFood, porque nao ha como provar que foram processados.
+    """
+    from shopman.shop.models import Channel
+    from shopman.shop.services import ifood_events
+
+    Channel.objects.get_or_create(ref="ifood", defaults={"name": "iFood", "is_active": True})
+    events = [
+        {"fullCode": "PLACED", "orderId": "sem-event-id"},
+        {"id": "evt-confirmed", "fullCode": "CONFIRMED", "orderId": "o9"},
+        {"id": "evt-no-order", "fullCode": "PLACED", "orderId": ""},
+        {"id": "evt-ok", "fullCode": "PLACED", "orderId": "ifd-order-uuid-1"},
+    ]
+
+    with patch("shopman.shop.services.ifood_orders.fetch_order", return_value=ifood_order):
+        with patch("shopman.shop.services.ifood_events.acknowledge", return_value=True) as mock_ack:
+            summary = ifood_events.process_events(events)
+
+    assert summary == {
+        "polled": 4,
+        "ingested": 1,
+        "deduped": 0,
+        "ignored": 1,
+        "failed": 2,
+        "acked": True,
+    }
+    mock_ack.assert_called_once_with(["evt-confirmed", "evt-ok"])
+
+
+@override_settings(SHOPMAN_IFOOD=IFOOD_CFG)
+def test_process_events_ack_failure_replay_dedupes_without_second_fetch(db, fake_headers, ifood_order):
+    """Se o ack falha depois da ingestao, a reentrega nao pode duplicar pedido."""
+    from shopman.orderman.models import Order
+
+    from shopman.shop.models import Channel
+    from shopman.shop.services import ifood_events
+
+    Channel.objects.get_or_create(ref="ifood", defaults={"name": "iFood", "is_active": True})
+    events = [{"id": "evt-ack-flap", "fullCode": "PLACED", "orderId": "ifd-order-uuid-1"}]
+
+    with patch("shopman.shop.services.ifood_orders.fetch_order", return_value=ifood_order):
+        with patch("shopman.shop.services.ifood_events.acknowledge", return_value=False):
+            first = ifood_events.process_events(events)
+
+    assert first["ingested"] == 1
+    assert first["acked"] is False
+
+    with patch("shopman.shop.services.ifood_orders.fetch_order") as mock_fetch:
+        with patch("shopman.shop.services.ifood_events.acknowledge", return_value=True) as mock_ack:
+            replay = ifood_events.process_events(events)
+
+    assert replay["deduped"] == 1
+    assert replay["ingested"] == 0
+    mock_fetch.assert_not_called()
+    mock_ack.assert_called_once_with(["evt-ack-flap"])
+    assert Order.objects.filter(channel_ref="ifood", external_ref="ifd-order-uuid-1").count() == 1
+
+
 # ── WP-4: status callbacks ───────────────────────────────────────────────────────
 
 

@@ -605,7 +605,9 @@ Saida `FAIL` significa acao operacional pendente. Ver
 **Script:** `scripts/check_release_readiness.py`
 
 Consolida a prontidão de piloto/release em uma saída única. O alvo roda checks
-locais leves e reporta bloqueios externos sem fingir validação real:
+locais leves e reporta bloqueios externos sem fingir validação real. O script
+tem perfis: `pilot` (historico), `alpha` (staging tecnico com mocks
+explicitos) e `production` (go-live real, sem affordances de teste):
 
 - `django check`;
 - migrations pendentes;
@@ -621,6 +623,7 @@ os checks locais passaram. Em modo estrito, bloqueios externos também falham.
 | Variável/flag | Default | Descrição |
 |---------------|---------|-----------|
 | `json=1` / `--json` | — | Imprime JSON auditável |
+| `profile=...` / `--profile=...` | `pilot` | `pilot`, `alpha` ou `production` |
 | `manual_qa=...` / `--manual-qa-evidence=...` | `SHOPMAN_MANUAL_QA_EVIDENCE` | Relatório manual/físico de QA |
 | `preprod_url=...` / `--preprod-url=...` | `SHOPMAN_PREPROD_URL` | URL de staging/pre-prod |
 | `--strict-external` | — | Falha também se gateway/manual/pre-prod estiver bloqueado |
@@ -630,7 +633,11 @@ os checks locais passaram. Em modo estrito, bloqueios externos também falham.
 make release-readiness
 make release-readiness json=1
 
-# Release real: exige credenciais/staging/evidência física
+# Alpha tecnico: aceita Pix/card mockados declarados, mas cobra staging, fiscal/iFood e URL
+make alpha-readiness preprod_url=https://staging.example.com
+
+# Release real: exige credenciais/staging/evidência física e remove switches de teste
+make production-readiness manual_qa=docs/reports/manual-qa.md preprod_url=https://staging.example.com
 make release-readiness-strict manual_qa=docs/reports/manual-qa.md preprod_url=https://staging.example.com
 ```
 

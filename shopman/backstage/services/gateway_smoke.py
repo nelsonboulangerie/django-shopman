@@ -20,7 +20,12 @@ from shopman.payman import PaymentService
 from shopman.payman.models import PaymentTransaction
 
 from shopman.backstage.services.financial_reconciliation import build_financial_reconciliation
-from shopman.backstage.services.integration_readiness import staging_missing
+from shopman.backstage.services.integration_readiness import (
+    efi_pix_readiness,
+    focus_nfe_readiness,
+    staging_missing,
+    stripe_card_readiness,
+)
 from shopman.shop.models import Channel
 from shopman.shop.services import sessions as session_service
 
@@ -146,13 +151,14 @@ def run_gateway_smoke(
     include_sandbox_readiness: bool = True,
     require_sandbox: bool = False,
     rollback: bool = True,
+    readiness_mode: str = "staging",
 ) -> GatewaySmokeReport:
     """Run gateway smoke checks and return a machine-readable report."""
     checks: list[GatewaySmokeCheck] = []
     if include_local:
         checks.extend(_run_local_fixtures(rollback=rollback))
     if include_sandbox_readiness:
-        checks.extend(_sandbox_readiness_checks())
+        checks.extend(_sandbox_readiness_checks(mode=readiness_mode))
     return GatewaySmokeReport(
         generated_at=timezone.now(),
         checks=tuple(checks),
@@ -576,28 +582,28 @@ def _ifood_payload(order_id: str) -> dict:
     }
 
 
-def _sandbox_readiness_checks() -> tuple[GatewaySmokeCheck, ...]:
+def _sandbox_readiness_checks(*, mode: str = "staging") -> tuple[GatewaySmokeCheck, ...]:
     return (
         _credential_check(
             provider="focus_nfe",
             name="homologation_credentials",
-            missing=staging_missing("focus_nfe"),
-            ready_message="Credenciais Focus NFe homologação presentes para NFC-e.",
-            blocked_message="Credenciais Focus NFe homologação ausentes; smoke fiscal real não executado.",
+            missing=_provider_missing("focus_nfe", mode=mode),
+            ready_message=_provider_ready_message("Focus NFe", mode=mode),
+            blocked_message=_provider_blocked_message("Focus NFe", mode=mode),
         ),
         _credential_check(
             provider="efi",
             name="sandbox_credentials",
-            missing=staging_missing("efi_pix"),
-            ready_message="Credenciais EFI sandbox presentes para smoke real.",
-            blocked_message="Credenciais EFI sandbox ausentes; smoke externo não executado.",
+            missing=_provider_missing("efi_pix", mode=mode),
+            ready_message=_provider_ready_message("EFI PIX", mode=mode),
+            blocked_message=_provider_blocked_message("EFI PIX", mode=mode),
         ),
         _credential_check(
             provider="stripe",
             name="sandbox_credentials",
-            missing=staging_missing("stripe_card"),
-            ready_message="Credenciais Stripe test presentes para smoke real.",
-            blocked_message="Credenciais Stripe test ausentes; smoke externo não executado.",
+            missing=_provider_missing("stripe_card", mode=mode),
+            ready_message=_provider_ready_message("Stripe", mode=mode),
+            blocked_message=_provider_blocked_message("Stripe", mode=mode),
         ),
         _credential_check(
             provider="ifood",
@@ -608,6 +614,27 @@ def _sandbox_readiness_checks() -> tuple[GatewaySmokeCheck, ...]:
         ),
         _manychat_readiness_check(),
     )
+
+
+def _provider_missing(provider: str, *, mode: str) -> list[str]:
+    if mode == "staging":
+        return staging_missing(provider)
+    readiness = {
+        "focus_nfe": focus_nfe_readiness,
+        "efi_pix": efi_pix_readiness,
+        "stripe_card": stripe_card_readiness,
+    }[provider](mode="runtime")
+    return list(readiness.missing)
+
+
+def _provider_ready_message(label: str, *, mode: str) -> str:
+    target = "produção/runtime" if mode != "staging" else "sandbox/homologação"
+    return f"Credenciais {label} {target} presentes para smoke real."
+
+
+def _provider_blocked_message(label: str, *, mode: str) -> str:
+    target = "produção/runtime" if mode != "staging" else "sandbox/homologação"
+    return f"Credenciais {label} {target} ausentes; smoke externo não executado."
 
 
 def _credential_check(
@@ -660,9 +687,16 @@ def _manychat_readiness_check() -> GatewaySmokeCheck:
 
 def _missing_ifood_credentials() -> list[str]:
     cfg = getattr(settings, "SHOPMAN_IFOOD", {}) or {}
+    # O caminho primário de produção/staging é polling OAuth
+    # (``ifood_events.poll``), não o webhook legado por token compartilhado.
+    # Sem client_id/client_secret o worker fica ocioso e nenhum evento real entra.
     return [
-        name
-        for name in ("webhook_token", "merchant_id")
+        env_name
+        for name, env_name in (
+            ("client_id", "IFOOD_CLIENT_ID"),
+            ("client_secret", "IFOOD_CLIENT_SECRET"),
+            ("merchant_id", "IFOOD_MERCHANT_ID"),
+        )
         if not str(cfg.get(name) or "").strip()
     ]
 

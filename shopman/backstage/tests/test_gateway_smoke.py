@@ -127,3 +127,82 @@ def test_gateway_smoke_blocks_focus_nfe_production_config_for_staging():
     focus = next(check for check in report.checks if check.provider == "focus_nfe")
     assert focus.status == "blocked_by_credentials"
     assert "FOCUS_NFE_ENVIRONMENT_homologacao" in focus.details["missing"]
+
+
+@pytest.mark.django_db
+@override_settings(SHOPMAN_ENVIRONMENT="production")
+def test_gateway_smoke_runtime_readiness_accepts_production_provider_config(tmp_path, settings):
+    certificate = tmp_path / "efi.pem"
+    certificate.write_text("dummy cert")
+    settings.SHOPMAN_PAYMENT_ADAPTERS = {
+        "pix": "shopman.shop.adapters.payment_efi",
+        "card": "shopman.shop.adapters.payment_stripe",
+        "cash": None,
+        "external": None,
+    }
+    settings.SHOPMAN_FISCAL_ADAPTER = "shopman.shop.adapters.fiscal_focusnfe.FocusNFeBackend"
+    settings.SHOPMAN_FOCUS_NFE = {
+        "environment": "producao",
+        "token": "focus-token",
+        "cnpj_emitente": "12345678000190",
+        "base_url": "https://api.focusnfe.com.br",
+    }
+    settings.SHOPMAN_EFI = {
+        "sandbox": False,
+        "client_id": "efi-client",
+        "client_secret": "efi-secret",
+        "certificate_path": str(certificate),
+        "pix_key": "pix@example.com",
+    }
+    settings.SHOPMAN_EFI_WEBHOOK = {"webhook_token": "efi-webhook-token"}
+    settings.SHOPMAN_STRIPE = {
+        "publishable_key": "pk_live_shopman",
+        "secret_key": "sk_live_shopman",
+        "webhook_secret": "whsec_shopman",
+        "capture_method": "manual",
+        "domain": "https://boulangerie.com.br",
+    }
+
+    report = run_gateway_smoke(
+        include_local=False,
+        include_sandbox_readiness=True,
+        readiness_mode="runtime",
+    )
+
+    by_provider = {check.provider: check for check in report.checks}
+    assert by_provider["focus_nfe"].status == "ready"
+    assert by_provider["efi"].status == "ready"
+    assert by_provider["stripe"].status == "ready"
+
+
+@pytest.mark.django_db
+@override_settings(
+    SHOPMAN_IFOOD={
+        "webhook_token": "legacy-token",
+        "merchant_id": "merchant-abc",
+        "client_id": "",
+        "client_secret": "",
+    },
+)
+def test_gateway_smoke_ifood_readiness_requires_oauth_polling_credentials():
+    report = run_gateway_smoke(include_local=False, include_sandbox_readiness=True)
+
+    ifood = next(check for check in report.checks if check.provider == "ifood")
+    assert ifood.status == "blocked_by_credentials"
+    assert ifood.details["missing"] == ["IFOOD_CLIENT_ID", "IFOOD_CLIENT_SECRET"]
+
+
+@pytest.mark.django_db
+@override_settings(
+    SHOPMAN_IFOOD={
+        "webhook_token": "",
+        "merchant_id": "merchant-abc",
+        "client_id": "client-abc",
+        "client_secret": "secret-abc",
+    },
+)
+def test_gateway_smoke_ifood_readiness_accepts_oauth_polling_credentials():
+    report = run_gateway_smoke(include_local=False, include_sandbox_readiness=True)
+
+    ifood = next(check for check in report.checks if check.provider == "ifood")
+    assert ifood.status == "ready"
