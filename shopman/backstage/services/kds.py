@@ -42,6 +42,7 @@ def mark_ticket_done(*, ticket_pk: int, actor: str):
         raise KDSError(str(exc)) from exc
     if not completed:
         raise KDSError("Ticket não está aberto.")
+    ticket.refresh_from_db()
     return ticket
 
 
@@ -49,6 +50,7 @@ def recall_ticket(*, ticket_pk: int, actor: str):
     ticket = _get_ticket(ticket_pk)
     if not kds_core.reopen_ticket(ticket, actor=actor):
         raise KDSError("Ticket não está concluído.")
+    ticket.refresh_from_db()
     return ticket
 
 
@@ -56,6 +58,7 @@ def acknowledge_ticket(*, ticket_pk: int, actor: str):
     ticket = _get_ticket(ticket_pk)
     if not kds_core.acknowledge_ticket(ticket, actor=actor):
         raise KDSError("Ticket não está cancelado.")
+    ticket.refresh_from_db()
     return ticket
 
 

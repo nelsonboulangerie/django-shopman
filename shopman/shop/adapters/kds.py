@@ -97,19 +97,23 @@ def cancel_open_tickets(order) -> int:
 
 def cancel_open_tickets_for_session(session_key: str) -> int:
     """Cancel all open tickets for a session (comanda descartada sem venda)."""
+    from django.db import transaction
     from django.utils import timezone
 
     from shopman.backstage.models import KDSTicket
 
-    tickets = list(KDSTicket.objects.filter(
-        session_key=session_key, status__in=["pending", "in_progress"]
-    ))
-    cancelled_at = timezone.now()
-    for ticket in tickets:
-        ticket.status = "cancelled"
-        ticket.cancelled_at = cancelled_at
-        ticket.save(update_fields=["status", "cancelled_at"])
-    return len(tickets)
+    with transaction.atomic():
+        tickets = list(
+            KDSTicket.objects
+            .select_for_update()
+            .filter(session_key=session_key, status__in=["pending", "in_progress"])
+        )
+        cancelled_at = timezone.now()
+        for ticket in tickets:
+            ticket.status = "cancelled"
+            ticket.cancelled_at = cancelled_at
+            ticket.save(update_fields=["status", "cancelled_at"])
+        return len(tickets)
 
 
 def get_tickets(order):

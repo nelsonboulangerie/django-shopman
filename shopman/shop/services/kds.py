@@ -353,9 +353,12 @@ def cancel_tickets(order) -> int:
 
     SYNC — tickets must be cancelled immediately when order is cancelled.
     """
+    from django.db import transaction
+
     from shopman.shop.adapters import kds as kds_adapter
 
-    count = kds_adapter.cancel_open_tickets(order)
+    with transaction.atomic():
+        count = kds_adapter.cancel_open_tickets(order)
     if count:
         logger.info("kds.cancel_tickets: cancelled %d tickets for order=%s", count, order.ref)
     return count
@@ -399,7 +402,7 @@ def on_all_tickets_done(order, *, actor: str = "kds.all_done") -> bool:
     return True
 
 
-def _ticket_order(ticket):
+def _ticket_order(ticket, *, for_update: bool = False):
     """Resolve a ticket's ``session_key`` to its committed Order, if any.
 
     A ticket fired from an open comanda (pre-commit) has no Order yet — the
@@ -407,11 +410,22 @@ def _ticket_order(ticket):
     done-loop (advance to PREPARING / READY) is a no-op until then: kitchen
     progress on an open comanda does not move an order that does not exist.
     """
-    return Order.objects.filter(session_key=ticket.session_key).order_by("-id").first()
+    qs = Order.objects.filter(session_key=ticket.session_key).order_by("-id")
+    if for_update:
+        qs = qs.select_for_update()
+    return qs.first()
 
 
 def toggle_ticket_item(ticket, *, index: int, actor: str) -> bool:
     """Toggle a KDS ticket item and start preparation when work begins."""
+    from django.db import transaction
+
+    with transaction.atomic():
+        ticket = _locked_ticket(ticket)
+        return _toggle_ticket_item_locked(ticket, index=index, actor=actor)
+
+
+def _toggle_ticket_item_locked(ticket, *, index: int, actor: str) -> bool:
     if ticket.status not in OPEN_TICKET_STATUSES:
         return False
     if not 0 <= index < len(ticket.items):
@@ -424,7 +438,7 @@ def toggle_ticket_item(ticket, *, index: int, actor: str) -> bool:
 
     ticket.save(update_fields=["items", "status"])
 
-    order = _ticket_order(ticket)
+    order = _ticket_order(ticket, for_update=True)
     if order is not None:
         _ensure_order_preparing_for_work(order, actor=actor)
     return True
@@ -444,9 +458,17 @@ def complete_ticket(ticket, *, actor: str) -> bool:
     ``TicketCompletionBlocked`` com a razão real — são estados distintos e a
     superfície precisa da mensagem certa para cada um.
     """
+    from django.db import transaction
+
+    with transaction.atomic():
+        ticket = _locked_ticket(ticket)
+        return _complete_ticket_locked(ticket, actor=actor)
+
+
+def _complete_ticket_locked(ticket, *, actor: str) -> bool:
     if ticket.status not in OPEN_TICKET_STATUSES:
         return False
-    order = _ticket_order(ticket)
+    order = _ticket_order(ticket, for_update=True)
     if order is not None and order.status in (Order.Status.NEW, Order.Status.ACCEPTED):
         # Gate de pagamento: trabalho físico só começa quando o lifecycle deixa.
         blocked = _advance_to_preparing_block_reason(order, actor=actor)
@@ -473,13 +495,21 @@ def reopen_ticket(ticket, *, actor: str) -> bool:
     of the ticket always lands; the order back-transition only if the lifecycle
     allows it. Returns False if the ticket was not ``done``.
     """
+    from django.db import transaction
+
+    with transaction.atomic():
+        ticket = _locked_ticket(ticket)
+        return _reopen_ticket_locked(ticket, actor=actor)
+
+
+def _reopen_ticket_locked(ticket, *, actor: str) -> bool:
     if ticket.status != "done":
         return False
     ticket.status = "in_progress"
     ticket.completed_at = None
     ticket.save(update_fields=["status", "completed_at"])
 
-    order = _ticket_order(ticket)
+    order = _ticket_order(ticket, for_update=True)
     if (
         order is not None
         and order.status == Order.Status.READY
@@ -496,12 +526,24 @@ def acknowledge_ticket(ticket, *, actor: str) -> bool:
     Não toca no Order (já cancelado); só marca ``acknowledged_at`` para o board
     parar de mostrar. Idempotente. Retorna False se não estiver cancelado.
     """
+    from django.db import transaction
+
+    with transaction.atomic():
+        ticket = _locked_ticket(ticket)
+        return _acknowledge_ticket_locked(ticket, actor=actor)
+
+
+def _acknowledge_ticket_locked(ticket, *, actor: str) -> bool:
     if ticket.status != "cancelled" or ticket.acknowledged_at is not None:
         return False
     ticket.acknowledged_at = timezone.now()
     ticket.save(update_fields=["acknowledged_at"])
     logger.info("kds_ack ticket=%d session=%s actor=%s", ticket.pk, ticket.session_key, actor)
     return True
+
+
+def _locked_ticket(ticket):
+    return ticket.__class__.objects.select_for_update().get(pk=ticket.pk)
 
 
 def expedition_action(order, *, action: str, actor: str) -> str:

@@ -12,6 +12,7 @@ Regressões do audit pré-go-live:
 from __future__ import annotations
 
 import pytest
+from django.utils import timezone
 from shopman.orderman.models import Order
 
 from shopman.backstage.models import KDSInstance, KDSTicket
@@ -160,6 +161,20 @@ def test_bump_of_closed_ticket_returns_false(order):
     ticket = _ticket("lanches", status="cancelled")
 
     assert kds_core.complete_ticket(ticket, actor="kds:op") is False
+
+
+def test_stale_bump_does_not_resurrect_cancelled_ticket(order):
+    ticket = _ticket("lanches")
+    KDSTicket.objects.filter(pk=ticket.pk).update(
+        status="cancelled",
+        cancelled_at=timezone.now(),
+    )
+
+    assert kds_core.complete_ticket(ticket, actor="kds:op") is False
+
+    ticket.refresh_from_db()
+    assert ticket.status == "cancelled"
+    assert ticket.completed_at is None
 
 
 # ── Expedição por order_id: lock + replay idempotente + not-found ──────────

@@ -6,6 +6,7 @@ import logging
 from django.conf import settings
 from django.contrib.auth import logout as django_logout
 from django.utils.decorators import method_decorator
+from django.views.decorators.csrf import csrf_protect
 from django_ratelimit.decorators import ratelimit
 from drf_spectacular.utils import extend_schema, inline_serializer
 from rest_framework import serializers, status
@@ -177,6 +178,28 @@ def _access_link_redirect(metadata: dict | None) -> str:
     return storefront_links.path_account()
 
 
+def _access_link_metadata_for_customer(metadata: dict | None, customer) -> dict | None:
+    if not isinstance(metadata, dict):
+        return metadata
+    order_ref = str(metadata.get("order_ref") or "").strip()
+    if not order_ref:
+        return metadata
+
+    from shopman.storefront.services import orders as order_service
+
+    order = order_service.find_order(order_ref)
+    if order is not None and order_service.customer_can_access_order(customer, order):
+        return metadata
+
+    logger.warning(
+        "access_link_order_grant_denied order=%s customer_uuid=%s",
+        order_ref,
+        getattr(customer, "uuid", None),
+    )
+    return {**metadata, "order_ref": ""}
+
+
+@method_decorator(csrf_protect, name="dispatch")
 @method_decorator(ratelimit(key="user_or_ip", rate="10/m", method="POST", block=False), name="dispatch")
 class AccessLinkExchangeView(APIView):
     """POST /api/v1/auth/access/ — exchange a magic-link token for a session.
@@ -223,10 +246,11 @@ class AccessLinkExchangeView(APIView):
             already = get_authenticated_customer(request)
             if already is not None:
                 logger.info("access_link_exchange_spent_but_session_alive")
+                redirect_metadata = _access_link_metadata_for_customer(metadata, already)
                 return Response({
                     "ok": True,
                     "already_authenticated": True,
-                    "redirect": _access_link_redirect(metadata),
+                    "redirect": _access_link_redirect(redirect_metadata),
                     "identity_strength": identity_strength(request),
                     **_session_payload(already),
                 })
@@ -247,8 +271,9 @@ class AccessLinkExchangeView(APIView):
         if cart_ref and hasattr(request, "session") and not request.session.get("cart_session_key"):
             request.session["cart_session_key"] = cart_ref
 
+        redirect_metadata = _access_link_metadata_for_customer(metadata, result.customer)
         order_ref = str(metadata.get("order_ref") or "") if isinstance(metadata, dict) else ""
-        if order_ref:
+        if order_ref and isinstance(redirect_metadata, dict) and redirect_metadata.get("order_ref") == order_ref:
             from shopman.storefront.services import orders as order_service
 
             order_service.grant_order_access(request, order_ref)
@@ -262,7 +287,7 @@ class AccessLinkExchangeView(APIView):
 
         payload = {
             "ok": True,
-            "redirect": _access_link_redirect(metadata),
+            "redirect": _access_link_redirect(redirect_metadata),
             "identity_strength": identity_strength(request),
             **_session_payload(customer),
         }
@@ -412,6 +437,7 @@ class RequestCodeView(APIView):
         })
 
 
+@method_decorator(csrf_protect, name="dispatch")
 @method_decorator(ratelimit(key="user_or_ip", rate="10/m", method="POST", block=False), name="dispatch")
 class DeviceCheckView(APIView):
     """POST /api/v1/auth/device-check/ — skip OTP when trusted-device cookie is valid."""
@@ -445,6 +471,7 @@ class DeviceCheckView(APIView):
         return Response({"ok": True, "trusted": True, "phone": phone, **_session_payload(customer)})
 
 
+@method_decorator(csrf_protect, name="dispatch")
 @method_decorator(ratelimit(key="user_or_ip", rate="10/m", method="POST", block=False), name="dispatch")
 class VerifyCodeView(APIView):
     """POST /api/v1/auth/verify-code/ — verify OTP and create session as JSON."""
@@ -684,6 +711,8 @@ class PasskeyLoginOptionsView(APIView):
             return Response({"detail": "Não foi possível preparar agora."}, status=503)
 
 
+@method_decorator(csrf_protect, name="dispatch")
+@method_decorator(ratelimit(key="user_or_ip", rate="10/m", method="POST", block=False), name="dispatch")
 class PasskeyLoginView(APIView):
     """POST /api/v1/auth/passkey/login/ — verifica a assinatura e abre a sessão.
 

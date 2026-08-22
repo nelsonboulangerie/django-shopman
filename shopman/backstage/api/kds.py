@@ -26,7 +26,7 @@ from shopman.backstage.projections.kds import (
 from shopman.backstage.services import kds as kds_service
 from shopman.backstage.services.exceptions import KDSError, KDSOrderNotFound, KDSTicketNotFound
 
-from .permissions import HasBackstagePermission, IsBackstageOperator
+from .permissions import HasBackstagePermission
 from .projections import projection_data
 
 logger = logging.getLogger(__name__)
@@ -45,7 +45,7 @@ def _actor(request) -> str:
     ),
 )
 class KDSIndexView(APIView):
-    permission_classes = [IsBackstageOperator]
+    permission_classes = [HasBackstagePermission]
     required_permission = "backstage.operate_kds"
 
     def get(self, request):

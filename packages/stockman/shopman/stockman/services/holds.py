@@ -512,17 +512,18 @@ class StockHolds:
         ownership transfer and its consequences are atomic.
 
         Returns:
-            True if the hold was updated, False if not found.
+            True if the active hold was updated, False if not found, expired,
+            or already terminal.
         """
         pk = _parse_hold_id(hold_id)
-        try:
-            hold = Hold.objects.get(pk=pk)
-        except Hold.DoesNotExist:
-            return False
+        with transaction.atomic():
+            hold = Hold.objects.select_for_update().active().filter(pk=pk).first()
+            if hold is None:
+                return False
 
-        metadata = dict(hold.metadata or {})
-        metadata["reference"] = new_reference
-        metadata.update(extra_metadata)
-        hold.metadata = metadata
-        hold.save(update_fields=["metadata"])
-        return True
+            metadata = dict(hold.metadata or {})
+            metadata["reference"] = new_reference
+            metadata.update(extra_metadata)
+            hold.metadata = metadata
+            hold.save(update_fields=["metadata"])
+            return True
