@@ -156,6 +156,56 @@ def test_access_link_api_key_accepts_configured_secret_outside_debug():
     assert checks.check_doorman_access_link_api_key(None) == []
 
 
+@override_settings(
+    DEBUG=False,
+    SHOPMAN_POS_BASE_URL="https://pdv.boulangerie.com.br",
+    SHOPMAN_KDS_BASE_URL="",
+    SHOPMAN_ORDERS_BASE_URL="",
+    SHOPMAN_PRODUCTION_BASE_URL="",
+    SHOPMAN_MARKETING_BASE_URL="",
+    SHOPMAN_BI_BASE_URL="",
+    SHOPMAN_OPERATOR_API_HOST="",
+    SHOPMAN_OPERATOR_COOKIE_DOMAIN="",
+)
+def test_operator_surface_requires_api_host_and_cookie_domain_outside_debug():
+    errors = checks.check_operator_cookie_domain(None)
+
+    assert [error.id for error in errors] == ["SHOPMAN_E014", "SHOPMAN_E014"]
+
+
+@override_settings(
+    DEBUG=False,
+    SHOPMAN_POS_BASE_URL="https://pdv.boulangerie.com.br",
+    SHOPMAN_KDS_BASE_URL="https://kds.boulangerie.com.br",
+    SHOPMAN_ORDERS_BASE_URL="https://gestor.boulangerie.com.br",
+    SHOPMAN_PRODUCTION_BASE_URL="https://prod.boulangerie.com.br",
+    SHOPMAN_MARKETING_BASE_URL="",
+    SHOPMAN_BI_BASE_URL="",
+    SHOPMAN_OPERATOR_API_HOST="api.boulangerie.com.br",
+    SHOPMAN_OPERATOR_COOKIE_DOMAIN=".boulangerie.com.br",
+)
+def test_operator_surface_accepts_shared_subdomain_cookie_zone():
+    assert checks.check_operator_cookie_domain(None) == []
+
+
+@override_settings(
+    DEBUG=False,
+    SHOPMAN_POS_BASE_URL="https://pdv.evil.example",
+    SHOPMAN_KDS_BASE_URL="",
+    SHOPMAN_ORDERS_BASE_URL="",
+    SHOPMAN_PRODUCTION_BASE_URL="",
+    SHOPMAN_MARKETING_BASE_URL="",
+    SHOPMAN_BI_BASE_URL="",
+    SHOPMAN_OPERATOR_API_HOST="api.boulangerie.com.br",
+    SHOPMAN_OPERATOR_COOKIE_DOMAIN=".boulangerie.com.br",
+)
+def test_operator_surface_rejects_hosts_outside_cookie_domain():
+    errors = checks.check_operator_cookie_domain(None)
+
+    assert [error.id for error in errors] == ["SHOPMAN_E014"]
+    assert "SHOPMAN_POS_BASE_URL=pdv.evil.example" in errors[0].hint
+
+
 @override_settings(DEBUG=False, SHOPMAN_ENVIRONMENT="production", SHOPMAN_EXPOSE_DEBUG_OTP=True)
 def test_debug_otp_exposure_errors_outside_non_production():
     messages = checks.check_debug_otp_exposure(None)
@@ -173,6 +223,25 @@ def test_debug_otp_exposure_warns_for_staging():
 @override_settings(DEBUG=False, SHOPMAN_ENVIRONMENT="production", SHOPMAN_EXPOSE_DEBUG_OTP=False)
 def test_debug_otp_exposure_disabled_is_clean():
     assert checks.check_debug_otp_exposure(None) == []
+
+
+@override_settings(DEBUG=False, SHOPMAN_ENVIRONMENT="production", SHOPMAN_EXPOSE_MOCK_CAPTURE=True)
+def test_mock_capture_exposure_errors_in_production():
+    messages = checks.check_mock_capture_exposure(None)
+
+    assert [message.id for message in messages] == ["SHOPMAN_E015"]
+
+
+@override_settings(DEBUG=False, SHOPMAN_ENVIRONMENT="staging", SHOPMAN_EXPOSE_MOCK_CAPTURE=True)
+def test_mock_capture_exposure_warns_for_staging():
+    messages = checks.check_mock_capture_exposure(None)
+
+    assert [message.id for message in messages] == ["SHOPMAN_W016"]
+
+
+@override_settings(DEBUG=False, SHOPMAN_ENVIRONMENT="production", SHOPMAN_EXPOSE_MOCK_CAPTURE=False)
+def test_mock_capture_exposure_disabled_is_clean():
+    assert checks.check_mock_capture_exposure(None) == []
 
 
 @override_settings(
@@ -288,6 +357,11 @@ def test_payment_stripe_adapter_requires_credentials_outside_debug():
 )
 def test_real_payment_adapters_accept_complete_gateway_settings():
     assert checks.check_payment_adapters(None) == []
+
+
+def test_release_readiness_runs_django_deploy_checks():
+    source = (Path(__file__).resolve().parents[3] / "scripts" / "check_release_readiness.py").read_text()
+    assert 'call_command("check", deploy=True' in source
 
 
 # ── fiscal: resolver de emissão (silêncio fiscal é o pior modo de falha) ──────

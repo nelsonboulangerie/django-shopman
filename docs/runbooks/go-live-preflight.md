@@ -1,11 +1,16 @@
-# Runbook — Pré-flight de go-live (switches a virar antes do alpha/produção)
+# Runbook — Pré-flight de go-live real
 
 > Checklist concreto de "o que lembrar antes de virar a chave", consolidado durante a frente
 > de credenciais (2026-06-29). Complementa o [GO-LIVE-READINESS-PLAN](../plans/GO-LIVE-READINESS-PLAN.md)
 > (critérios/migrations) e a [GO-LIVE-CREDENTIALS-MATRIX](../plans/GO-LIVE-CREDENTIALS-MATRIX.md)
 > (credenciais por fase + gate do alpha §3).
 >
-> ⚠️ Antes de checar env do staging, ler o estado real: `doctl --context shopman-staging-deploy
+> Para alpha tecnico com testadores convidados, Pix/card mockados e botao
+> "Simular pagamento", use primeiro
+> [alpha-technical-readiness](alpha-technical-readiness.md). Este arquivo e o
+> checklist de dinheiro real/producao.
+>
+> ⚠️ Antes de checar env do alpha, ler o estado real: `doctl --context shopman-alpha-deploy
 > apps spec get 40b86e35-bafe-4a1a-a1b0-e124d3d9fd0f`.
 
 ## Estado verificado (2026-06-29)
@@ -13,7 +18,7 @@ Staging já tem **Stripe + Efi (sandbox) + ManyChat + iFood(token) + Doorman** s
 vivo** (cobrança PIX real ATIVA; Checkout Session Stripe real; 5/5 contratos internos; webhooks
 fail-closed). Adapters reais, `DJANGO_DEBUG=false`. **Único gap de pagamento/fiscal: Focus NFe.**
 
-## A virar ANTES DO ALPHA (pagamento real)
+## A virar ANTES DE PRODUCAO (pagamento real)
 
 - [ ] **Focus NFe ligada** — `SHOPMAN_FISCAL_ADAPTER` + `FOCUS_NFE_TOKEN` (homolog→**producao**) +
       `FOCUS_NFE_ENVIRONMENT=producao`. CNPJ vem de `Shop.document` (Admin). Ver
