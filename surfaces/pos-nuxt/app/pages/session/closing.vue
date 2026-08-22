@@ -48,6 +48,10 @@ const canSubmit = computed(
 );
 
 const confirming = ref(false);
+async function goToCashSession() {
+  await navigateTo("/session");
+}
+
 async function confirmSubmit() {
   if (!closing.value || !canSubmit.value) return;
   const ok = await submit(buildQuantitiesPayload(closing.value.items, quantities));
@@ -66,7 +70,7 @@ async function confirmSubmit() {
         size="icon-sm"
         aria-label="Voltar à sessão de caixa"
         title="Sessão de caixa"
-        @click="navigateTo('/session')"
+        @click="goToCashSession"
       >
         <Icon name="lucide:arrow-left" class="size-5" />
       </UiButton>
@@ -86,7 +90,7 @@ async function confirmSubmit() {
         <p class="text-sm text-muted-foreground">
           Sua conta não tem permissão para realizar o fechamento do dia. Chame quem cuida do encerramento.
         </p>
-        <UiButton variant="outline" size="sm" @click="navigateTo('/session')">Voltar à sessão de caixa</UiButton>
+        <UiButton variant="outline" size="sm" @click="goToCashSession">Voltar à sessão de caixa</UiButton>
       </section>
 
       <template v-else-if="closing">

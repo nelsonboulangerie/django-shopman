@@ -6,6 +6,8 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { mockNuxtImport } from '@nuxt/test-utils/runtime'
 import type { ProductMutationMeta, SubstituteProjection } from '~/types/shopman'
 
+const { fetchMock } = vi.hoisted(() => ({ fetchMock: vi.fn() }))
+mockNuxtImport('$fetch', () => fetchMock)
 mockNuxtImport('useSonner', () => {
   const fn: any = () => {}
   fn.success = () => {}
@@ -47,16 +49,16 @@ describe('useCartState', () => {
   beforeEach(() => {
     document.cookie = 'csrftoken=testtoken'
     vi.unstubAllGlobals()
+    fetchMock.mockReset()
   })
 
   it('optimistic update reconciles to server truth on drain', async () => {
-    const $fetch = vi.fn().mockResolvedValue({ cart: serverCart() })
-    vi.stubGlobal('$fetch', $fetch)
+    fetchMock.mockResolvedValue({ cart: serverCart() })
     const store = await loadStore()
 
     const res = await store.setSkuQty(meta, 2)
 
-    expect($fetch).toHaveBeenCalledOnce()
+    expect(fetchMock).toHaveBeenCalledOnce()
     expect(res.cart.items_count).toBe(2)
     expect(store.cart.value.items_count).toBe(2)
     expect(store.cart.value.summary_pending).toBe(false)
@@ -78,11 +80,9 @@ describe('useCartState', () => {
         { sku: 'PAO', name: 'Pão', price_q: 400, can_order: true, target_qty: 2 }
       ]
     }
-    const $fetch = vi
-      .fn()
+    fetchMock
       .mockRejectedValueOnce(fetchError(409, issuePayload))
       .mockResolvedValueOnce({ cart: serverCart({ items: [], items_count: 0, is_empty: true }) })
-    vi.stubGlobal('$fetch', $fetch)
     const store = await loadStore()
 
     await expect(store.setSkuQty(meta, 3)).rejects.toThrow()
@@ -93,7 +93,7 @@ describe('useCartState', () => {
     expect(store.cartIssue.value?.substitutes).toHaveLength(1)
     expect(store.lastError.value).toBe('Croissant esgotou.')
     // Reconciliação passiva (refreshCart) rodou após o erro.
-    expect($fetch).toHaveBeenCalledTimes(2)
+    expect(fetchMock).toHaveBeenCalledTimes(2)
 
     // Um snapshot passivo NÃO pode apagar o aviso de substitutos.
     store.setFromServer(serverCart({ items: [], items_count: 0, is_empty: true }) as never)
@@ -101,11 +101,9 @@ describe('useCartState', () => {
   })
 
   it('429 captures rate-limit recovery with retry-after', async () => {
-    const $fetch = vi
-      .fn()
+    fetchMock
       .mockRejectedValueOnce(fetchError(429, { detail: 'Muitas tentativas.', retry_after_seconds: 12 }))
       .mockResolvedValueOnce({ cart: serverCart() })
-    vi.stubGlobal('$fetch', $fetch)
     const store = await loadStore()
 
     await expect(store.setSkuQty(meta, 2)).rejects.toThrow()
@@ -116,11 +114,9 @@ describe('useCartState', () => {
   })
 
   it('generic failure sets a human fallback error', async () => {
-    const $fetch = vi
-      .fn()
+    fetchMock
       .mockRejectedValueOnce(fetchError(500, {}))
       .mockResolvedValueOnce({ cart: serverCart() })
-    vi.stubGlobal('$fetch', $fetch)
     const store = await loadStore()
 
     await expect(store.setSkuQty(meta, 2)).rejects.toThrow()
@@ -131,12 +127,10 @@ describe('useCartState', () => {
   })
 
   it('retryLastMutation replays the last failed mutation', async () => {
-    const $fetch = vi
-      .fn()
+    fetchMock
       .mockRejectedValueOnce(fetchError(500, {})) // mutação falha
       .mockResolvedValueOnce({ cart: serverCart({ items: [], items_count: 0, is_empty: true }) }) // refresh
       .mockResolvedValueOnce({ cart: serverCart() }) // retry bem-sucedido
-    vi.stubGlobal('$fetch', $fetch)
     const store = await loadStore()
 
     await expect(store.setSkuQty(meta, 2)).rejects.toThrow()
@@ -149,12 +143,10 @@ describe('useCartState', () => {
   })
 
   it('acceptAvailableQty re-submits with the available quantity from a 409', async () => {
-    const $fetch = vi
-      .fn()
+    fetchMock
       .mockRejectedValueOnce(fetchError(409, { error_code: 'insufficient_stock', sku: 'CROISSANT', requested_qty: 5, available_qty: 2 }))
       .mockResolvedValueOnce({ cart: serverCart({ items: [], items_count: 0, is_empty: true }) })
       .mockResolvedValueOnce({ cart: serverCart() })
-    vi.stubGlobal('$fetch', $fetch)
     const store = await loadStore()
 
     await expect(store.setSkuQty(meta, 5)).rejects.toThrow()
@@ -163,20 +155,18 @@ describe('useCartState', () => {
     const res = await store.acceptAvailableQty()
     expect(res?.cart.items_count).toBe(2)
     // A 3ª chamada (retry) mandou qty=2.
-    const lastCall = $fetch.mock.calls.at(-1)
+    const lastCall = fetchMock.mock.calls.at(-1)
     expect(lastCall?.[1]?.body).toEqual({ qty: 2 })
   })
 
   it('addSubstitute swaps the out-of-stock item for an alternative', async () => {
-    const $fetch = vi
-      .fn()
+    fetchMock
       .mockRejectedValueOnce(fetchError(409, {
         error_code: 'insufficient_stock', sku: 'CROISSANT', requested_qty: 2, available_qty: 0,
         substitutes: [{ sku: 'PAO', name: 'Pão', price_q: 400, can_order: true, target_qty: 2 }]
       }))
       .mockResolvedValueOnce({ cart: serverCart({ items: [], items_count: 0, is_empty: true }) })
       .mockResolvedValueOnce({ cart: serverCart({ items: [{ sku: 'PAO', qty: 2 }] }) })
-    vi.stubGlobal('$fetch', $fetch)
     const store = await loadStore()
 
     await expect(store.setSkuQty(meta, 2)).rejects.toThrow()
@@ -186,19 +176,18 @@ describe('useCartState', () => {
     expect(res?.cart.items[0]?.sku).toBe('PAO')
     // O swap zera o aviso ao dar certo.
     expect(store.cartIssue.value).toBeNull()
-    const lastCall = $fetch.mock.calls.at(-1)
+    const lastCall = fetchMock.mock.calls.at(-1)
     expect(lastCall?.[0]).toContain('/cart/skus/PAO/')
     expect(lastCall?.[1]?.body).toEqual({ qty: 2 })
   })
 
   it('serial queue keeps rapid mutations in order and settles on the last truth', async () => {
     const calls: number[] = []
-    const $fetch = vi.fn().mockImplementation((_url: string, opts: any) => {
+    fetchMock.mockImplementation((_url: string, opts: any) => {
       const qty = opts?.body?.qty
       calls.push(qty)
       return Promise.resolve({ cart: serverCart({ items: [{ sku: 'CROISSANT', qty }], items_count: qty }) })
     })
-    vi.stubGlobal('$fetch', $fetch)
     const store = await loadStore()
 
     const p1 = store.setSkuQty(meta, 1)
@@ -211,24 +200,21 @@ describe('useCartState', () => {
   })
 
   it('retries a transient network blip transparently (no error surfaced)', async () => {
-    const $fetch = vi.fn()
+    fetchMock
       .mockRejectedValueOnce(Object.assign(new Error('network'), {})) // sem status = rede
       .mockResolvedValueOnce({ cart: serverCart() })
-    vi.stubGlobal('$fetch', $fetch)
     const store = await loadStore()
 
     const res = await store.setSkuQty(meta, 2)
     expect(res.cart.items_count).toBe(2)
-    expect($fetch).toHaveBeenCalledTimes(2) // 1 falha + 1 retry
+    expect(fetchMock).toHaveBeenCalledTimes(2) // 1 falha + 1 retry
     expect(store.lastError.value).toBeNull() // soluço absorvido, cliente não vê erro
   })
 
   it('dismissCartIssue clears the banner', async () => {
-    const $fetch = vi
-      .fn()
+    fetchMock
       .mockRejectedValueOnce(fetchError(409, { error_code: 'insufficient_stock', sku: 'CROISSANT' }))
       .mockResolvedValueOnce({ cart: serverCart() })
-    vi.stubGlobal('$fetch', $fetch)
     const store = await loadStore()
 
     await expect(store.setSkuQty(meta, 2)).rejects.toThrow()

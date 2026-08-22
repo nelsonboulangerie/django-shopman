@@ -1,15 +1,25 @@
-import { beforeEach, describe, expect, it } from "vitest";
+import { mockNuxtImport } from "@nuxt/test-utils/runtime";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { installNuxtGlobals } from "../support/composableEnv";
 import { useStationProvision } from "../../app/composables/useStationProvision";
 
+const { fetchMock } = vi.hoisted(() => ({
+  fetchMock: vi.fn(),
+}));
+
+mockNuxtImport("$fetch", () => fetchMock);
+
 const env = installNuxtGlobals();
 
 describe("useStationProvision — a montagem do balcão", () => {
-  beforeEach(() => env.reset());
+  beforeEach(() => {
+    env.reset();
+    fetchMock.mockReset().mockResolvedValue({});
+  });
 
   it("lê o estado e as opções de quem pode provisionar", async () => {
-    env.fetchMock.mockResolvedValue({
+    fetchMock.mockResolvedValue({
       station: "",
       terminals: [{ ref: "pdv-main", label: "PDV principal" }],
     });
@@ -27,7 +37,7 @@ describe("useStationProvision — a montagem do balcão", () => {
     // Quem não gere operadores não vê a tela — e a tela não decide isso sozinha,
     // porque a permissão mora no servidor. Adivinhar aqui seria oferecer um botão
     // que responde 403 no toque.
-    env.fetchMock.mockRejectedValue({ statusCode: 403 });
+    fetchMock.mockRejectedValue({ statusCode: 403 });
 
     const { load, allowed, terminals, loaded } = useStationProvision();
     await load();
@@ -38,14 +48,14 @@ describe("useStationProvision — a montagem do balcão", () => {
   });
 
   it("provisiona e passa a se reconhecer como aquela estação", async () => {
-    env.fetchMock.mockResolvedValue({ ok: true, station: "pdv-main" });
+    fetchMock.mockResolvedValue({ ok: true, station: "pdv-main" });
 
     const { provision, station } = useStationProvision();
     const ok = await provision("pdv-main");
 
     expect(ok).toBe(true);
     expect(station.value).toBe("pdv-main");
-    expect(env.fetchMock).toHaveBeenCalledWith(
+    expect(fetchMock).toHaveBeenCalledWith(
       "/api/v1/backstage/operator/station/",
       expect.objectContaining({ method: "POST", body: { terminal_ref: "pdv-main" } }),
     );
@@ -55,11 +65,11 @@ describe("useStationProvision — a montagem do balcão", () => {
     const { provision } = useStationProvision();
 
     expect(await provision("")).toBe(false);
-    expect(env.fetchMock).not.toHaveBeenCalled();
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 
   it("a falha volta como mensagem, e o dispositivo segue sem estação", async () => {
-    env.fetchMock.mockRejectedValue({ data: { detail: "Terminal não encontrado." } });
+    fetchMock.mockRejectedValue({ data: { detail: "Terminal não encontrado." } });
 
     const { provision, station, error, busy } = useStationProvision();
     const ok = await provision("pdv-fantasma");
@@ -73,14 +83,14 @@ describe("useStationProvision — a montagem do balcão", () => {
 
   it("não dispara duas vezes enquanto a primeira não volta", async () => {
     let solta: (v: unknown) => void = () => {};
-    env.fetchMock.mockReturnValue(new Promise((r) => { solta = r; }));
+    fetchMock.mockReturnValue(new Promise((r) => { solta = r; }));
 
     const { provision } = useStationProvision();
     const primeira = provision("pdv-main");
     const segunda = await provision("pdv-main");
 
     expect(segunda).toBe(false);
-    expect(env.fetchMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
     solta({ ok: true });
     await primeira;
   });
@@ -89,12 +99,15 @@ describe("useStationProvision — a montagem do balcão", () => {
 // Guarda de contrato: o caminho é o mesmo que `shopman/backstage/api/urls.py`
 // publica. Uma rota errada aqui só apareceria no balcão, com o gestor na frente.
 describe("useStationProvision — rota", () => {
-  beforeEach(() => env.reset());
+  beforeEach(() => {
+    env.reset();
+    fetchMock.mockReset().mockResolvedValue({});
+  });
 
   it("fala com operator/station/", async () => {
-    env.fetchMock.mockResolvedValue({ station: "", terminals: [] });
+    fetchMock.mockResolvedValue({ station: "", terminals: [] });
     await useStationProvision().load();
 
-    expect(env.fetchMock).toHaveBeenCalledWith("/api/v1/backstage/operator/station/");
+    expect(fetchMock).toHaveBeenCalledWith("/api/v1/backstage/operator/station/");
   });
 });

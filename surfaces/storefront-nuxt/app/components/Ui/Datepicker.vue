@@ -3,7 +3,7 @@
     <VDatePicker
       ref="datepickerRef"
       :trim-weeks="props.trimWeeks || true"
-      :is-dark="$colorMode.value == 'dark'"
+      :is-dark="isDark"
       v-bind="$attrs"
     >
       <template v-for="(_, slot) in $slots" #[slot]="scope">
@@ -19,6 +19,8 @@
   defineOptions({ inheritAttrs: false });
 
   const datepickerRef = useTemplateRef("datepickerRef");
+  const colorMode = useColorMode();
+  const isDark = computed(() => colorMode.value === "dark");
 
   // @ts-expect-error - This is a hacky way to get the props from the Calendar and DatePicker components
   // prettier-ignore

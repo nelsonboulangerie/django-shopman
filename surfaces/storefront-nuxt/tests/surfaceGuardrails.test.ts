@@ -310,7 +310,7 @@ describe('surface UX guardrails', () => {
     // a projection ainda dirige o auth_action (rota de login usada no "Trocar número").
     expect(checkout).toContain("definePageMeta({ middleware: 'account' })")
     expect(checkout).toContain('checkout.value?.auth_action')
-    expect(checkout).toContain('navigateTo(authRoute)')
+    expect(checkout).toContain('navigateTo(authRoute.value)')
     expect(checkoutFlow).toContain("export type CheckoutStep = 'fulfillment' | 'address' | 'when' | 'payment'")
     expect(checkoutFlow).toContain('export function checkoutSteps')
     expect(checkoutFlow).toContain('export function checkoutStepState')
