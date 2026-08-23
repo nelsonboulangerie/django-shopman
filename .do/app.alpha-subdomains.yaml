@@ -1,0 +1,799 @@
+# DigitalOcean App Platform - ALPHA tecnico (spec versionado de referencia).
+#
+# Derivado do spec vivo capturado em
+# ~/Dev/Claude/shopman-alpha-specs-2026-08-22/03-live-spec-final-shopman-alpha.yaml.
+#
+# NAO aplicar este arquivo diretamente com `doctl apps update --spec`: payloads
+# SECRET encriptados foram removidos de proposito. Mudancas de configuracao devem
+# partir de `doctl apps spec get` do app vivo, preservar os secrets e so entao
+# aplicar. Deploy de codigo usa `apps create-deployment`, nao update de spec.
+#
+# App vivo: shopman-alpha / 40b86e35-bafe-4a1a-a1b0-e124d3d9fd0f.
+# Storefront publico de teste: https://alpha.nelsonboulangerie.com.br.
+# Backstage/API/Admin permanecem em *.boulangerie.com.br.
+name: shopman-alpha
+region: nyc
+alerts:
+- rule: DEPLOYMENT_FAILED
+- rule: DOMAIN_FAILED
+domains:
+- domain: alpha.nelsonboulangerie.com.br
+  type: PRIMARY
+  zone: nelsonboulangerie.com.br
+- domain: staging.nelsonboulangerie.com.br
+  type: ALIAS
+  zone: nelsonboulangerie.com.br
+- domain: api.staging.nelsonboulangerie.com.br
+  type: ALIAS
+  zone: nelsonboulangerie.com.br
+- domain: admin.staging.nelsonboulangerie.com.br
+  type: ALIAS
+  zone: nelsonboulangerie.com.br
+- domain: gestor.boulangerie.com.br
+  type: ALIAS
+  zone: boulangerie.com.br
+- domain: kds.boulangerie.com.br
+  type: ALIAS
+  zone: boulangerie.com.br
+- domain: pdv.boulangerie.com.br
+  type: ALIAS
+  zone: boulangerie.com.br
+- domain: prod.boulangerie.com.br
+  type: ALIAS
+  zone: boulangerie.com.br
+- domain: api.boulangerie.com.br
+  type: ALIAS
+  zone: boulangerie.com.br
+- domain: admin.boulangerie.com.br
+  type: ALIAS
+  zone: boulangerie.com.br
+- domain: central.boulangerie.com.br
+  type: ALIAS
+  zone: boulangerie.com.br
+- domain: mkt.boulangerie.com.br
+  type: ALIAS
+  zone: boulangerie.com.br
+- domain: bi.boulangerie.com.br
+  type: ALIAS
+  zone: boulangerie.com.br
+ingress:
+  rules:
+  - component:
+      name: storefront-nuxt
+    match:
+      authority:
+        exact: alpha.nelsonboulangerie.com.br
+      path:
+        prefix: /
+  - component:
+      name: web
+    match:
+      authority:
+        exact: api.staging.nelsonboulangerie.com.br
+      path:
+        prefix: /
+  - component:
+      name: web
+    match:
+      authority:
+        exact: admin.staging.nelsonboulangerie.com.br
+      path:
+        prefix: /
+  - component:
+      name: web
+    match:
+      authority:
+        exact: api.boulangerie.com.br
+      path:
+        prefix: /
+  - component:
+      name: web
+    match:
+      authority:
+        exact: admin.boulangerie.com.br
+      path:
+        prefix: /
+  - component:
+      name: orders-nuxt
+    match:
+      authority:
+        exact: gestor.boulangerie.com.br
+      path:
+        prefix: /
+  - component:
+      name: kds-nuxt
+    match:
+      authority:
+        exact: kds.boulangerie.com.br
+      path:
+        prefix: /
+  - component:
+      name: pos-nuxt
+    match:
+      authority:
+        exact: pdv.boulangerie.com.br
+      path:
+        prefix: /
+  - component:
+      name: production-nuxt
+    match:
+      authority:
+        exact: prod.boulangerie.com.br
+      path:
+        prefix: /
+  - component:
+      name: hub-nuxt
+    match:
+      authority:
+        exact: central.boulangerie.com.br
+      path:
+        prefix: /
+  - component:
+      name: marketing-nuxt
+    match:
+      authority:
+        exact: mkt.boulangerie.com.br
+      path:
+        prefix: /
+  - component:
+      name: bi-nuxt
+    match:
+      authority:
+        exact: bi.boulangerie.com.br
+      path:
+        prefix: /
+  - component:
+      name: storefront-nuxt
+    match:
+      path:
+        prefix: /
+envs:
+- key: DJANGO_SETTINGS_MODULE
+  scope: RUN_TIME
+  value: config.settings
+  type: GENERAL
+- key: DJANGO_DEBUG
+  scope: RUN_TIME
+  value: 'false'
+  type: GENERAL
+- key: DJANGO_ALLOWED_HOSTS
+  scope: RUN_TIME
+  value: api.staging.nelsonboulangerie.com.br,admin.staging.nelsonboulangerie.com.br,api.boulangerie.com.br,admin.boulangerie.com.br
+  type: GENERAL
+- key: CSRF_TRUSTED_ORIGINS
+  scope: RUN_TIME
+  value: https://alpha.nelsonboulangerie.com.br,https://api.staging.nelsonboulangerie.com.br,https://admin.staging.nelsonboulangerie.com.br,https://api.boulangerie.com.br,https://admin.boulangerie.com.br,https://gestor.boulangerie.com.br,https://kds.boulangerie.com.br,https://pdv.boulangerie.com.br,https://prod.boulangerie.com.br,https://mkt.boulangerie.com.br,https://central.boulangerie.com.br,https://bi.boulangerie.com.br
+  type: GENERAL
+- key: DJANGO_TRUST_X_FORWARDED_PROTO
+  scope: RUN_TIME
+  value: 'true'
+  type: GENERAL
+- key: DJANGO_SECURE_SSL_REDIRECT
+  scope: RUN_TIME
+  value: 'true'
+  type: GENERAL
+- key: SHOPMAN_STOREFRONT_BASE_URL
+  scope: RUN_TIME
+  value: https://alpha.nelsonboulangerie.com.br
+  type: GENERAL
+- key: SHOPMAN_DOMAIN
+  scope: RUN_TIME
+  value: https://alpha.nelsonboulangerie.com.br
+  type: GENERAL
+- key: AUTH_DEFAULT_DOMAIN
+  scope: RUN_TIME
+  value: alpha.nelsonboulangerie.com.br
+  type: GENERAL
+- key: SHOPMAN_OPERATOR_API_HOST
+  scope: RUN_TIME
+  value: api.boulangerie.com.br
+  type: GENERAL
+- key: SHOPMAN_ADMIN_HOST
+  scope: RUN_TIME
+  value: admin.boulangerie.com.br
+  type: GENERAL
+- key: SHOPMAN_OPERATOR_COOKIE_DOMAIN
+  scope: RUN_TIME
+  value: .boulangerie.com.br
+  type: GENERAL
+- key: SHOPMAN_REQUIRE_ACTIVE_OPERATOR
+  scope: RUN_TIME
+  value: 'true'
+  type: GENERAL
+- key: SHOPMAN_ORDERS_BASE_URL
+  scope: RUN_TIME
+  value: https://gestor.boulangerie.com.br
+  type: GENERAL
+- key: SHOPMAN_KDS_BASE_URL
+  scope: RUN_TIME
+  value: https://kds.boulangerie.com.br
+  type: GENERAL
+- key: SHOPMAN_POS_BASE_URL
+  scope: RUN_TIME
+  value: https://pdv.boulangerie.com.br
+  type: GENERAL
+- key: SHOPMAN_PRODUCTION_BASE_URL
+  scope: RUN_TIME
+  value: https://prod.boulangerie.com.br
+  type: GENERAL
+- key: SHOPMAN_MARKETING_BASE_URL
+  scope: RUN_TIME
+  value: https://mkt.boulangerie.com.br
+  type: GENERAL
+- key: SHOPMAN_BI_BASE_URL
+  scope: RUN_TIME
+  value: https://bi.boulangerie.com.br
+  type: GENERAL
+- key: WHATSAPP_STOREFRONT_URL
+  scope: RUN_TIME
+  value: https://alpha.nelsonboulangerie.com.br
+  type: GENERAL
+- key: DOORMAN_MESSAGE_SENDER_CLASS
+  scope: RUN_TIME
+  value: shopman.doorman.senders.LogSender
+  type: GENERAL
+- key: DATABASE_URL
+  scope: RUN_TIME
+  value: ${postgres.shopman-staging-pool.DATABASE_URL}
+  type: GENERAL
+- key: DATABASE_CONN_MAX_AGE
+  scope: RUN_TIME
+  value: '60'
+  type: GENERAL
+- key: DATABASE_DISABLE_SERVER_SIDE_CURSORS
+  scope: RUN_TIME
+  value: 'true'
+  type: GENERAL
+- key: REDIS_URL
+  scope: RUN_TIME
+  value: ${cache.REDIS_URL}
+  type: GENERAL
+- key: SHOPMAN_PIX_ADAPTER
+  scope: RUN_TIME
+  value: shopman.shop.adapters.payment_mock
+  type: GENERAL
+- key: SHOPMAN_CARD_ADAPTER
+  scope: RUN_TIME
+  value: shopman.shop.adapters.payment_mock
+  type: GENERAL
+- key: SHOPMAN_ALLOW_MOCK_PAYMENT_ADAPTERS
+  scope: RUN_TIME
+  value: 'true'
+  type: GENERAL
+- key: SHOPMAN_EXPOSE_MOCK_CAPTURE
+  scope: RUN_TIME
+  value: 'true'
+  type: GENERAL
+- key: SHOPMAN_MOCK_PIX_AUTO_CONFIRM
+  scope: RUN_TIME
+  value: 'true'
+  type: GENERAL
+- key: SHOPMAN_MOCK_PIX_CONFIRM_DELAY_SECONDS
+  scope: RUN_TIME
+  value: '8'
+  type: GENERAL
+- key: EFI_SANDBOX
+  scope: RUN_TIME
+  value: 'true'
+  type: GENERAL
+- key: SHOPMAN_FISCAL_EMISSION_RESOLVER
+  scope: RUN_TIME
+  value: shopman.shop.fiscal_resolvers.on_request_or_tax_id,shopman.shop.fiscal_resolvers.eletronic_payment
+  type: GENERAL
+- key: STRIPE_CAPTURE_METHOD
+  scope: RUN_TIME
+  value: manual
+  type: GENERAL
+- key: SHOPMAN_JSON_LOGS
+  scope: RUN_TIME
+  value: 'true'
+  type: GENERAL
+- key: SHOPMAN_CART_MUTATION_PERF_LOG_MS
+  scope: RUN_TIME
+  value: '250'
+  type: GENERAL
+- key: SHOPMAN_ENVIRONMENT
+  scope: RUN_TIME
+  value: staging
+  type: GENERAL
+- key: SHOPMAN_EXPOSE_DEBUG_OTP
+  scope: RUN_TIME
+  value: 'true'
+  type: GENERAL
+- key: DJANGO_SECRET_KEY
+  scope: RUN_TIME
+  type: SECRET
+- key: STRIPE_PUBLISHABLE_KEY
+  scope: RUN_TIME
+  value: pk_test_51PCfiKB1aCshGyJ47ETsNsIXp4JNDztBkPkJhLomQ27OoaHt8KIwnhIqxBp7IhBhK7Ptc6DPtO54qJrcJnMLf3Ag00Geb8OrFK
+  type: GENERAL
+- key: STRIPE_SECRET_KEY
+  scope: RUN_TIME
+  type: SECRET
+- key: STRIPE_WEBHOOK_SECRET
+  scope: RUN_TIME
+  type: SECRET
+- key: EFI_CLIENT_ID
+  scope: RUN_TIME
+  type: SECRET
+- key: EFI_CLIENT_SECRET
+  scope: RUN_TIME
+  type: SECRET
+- key: EFI_PIX_KEY
+  scope: RUN_TIME
+  type: SECRET
+- key: EFI_WEBHOOK_TOKEN
+  scope: RUN_TIME
+  type: SECRET
+- key: EFI_CERTIFICATE_PEM_BASE64
+  scope: RUN_TIME
+  type: SECRET
+- key: COMTELE_API_KEY
+  scope: RUN_TIME
+  type: SECRET
+- key: COMTELE_ROUTE
+  scope: RUN_TIME
+  value: '17'
+  type: GENERAL
+- key: MANYCHAT_API_TOKEN
+  scope: RUN_TIME
+  type: SECRET
+- key: DOORMAN_ACCESS_LINK_API_KEY
+  scope: RUN_TIME
+  type: SECRET
+- key: IFOOD_CLIENT_ID
+  scope: RUN_TIME
+  type: SECRET
+- key: IFOOD_CLIENT_SECRET
+  scope: RUN_TIME
+  type: SECRET
+- key: IFOOD_MERCHANT_ID
+  scope: RUN_TIME
+  value: '2512433'
+  type: GENERAL
+- key: IFOOD_WEBHOOK_TOKEN
+  scope: RUN_TIME
+  type: SECRET
+- key: IFOOD_CANCELLATION_CODE
+  scope: RUN_TIME
+  value: '501'
+  type: GENERAL
+- key: SHOPMAN_LOG_CLIENT_IP
+  scope: RUN_TIME
+  value: 'false'
+  type: GENERAL
+- key: DOORMAN_TRUSTED_PROXY_DEPTH
+  scope: RUN_TIME
+  value: '2'
+  type: GENERAL
+- key: META_PAGE_ID
+  scope: RUN_TIME
+  value: '764222643620409'
+  type: GENERAL
+- key: META_IG_USER_ID
+  scope: RUN_TIME
+  value: '17841400193341623'
+  type: GENERAL
+- key: SHOPMAN_STAGING_AUTOPILOT
+  scope: RUN_TIME
+  value: 'true'
+  type: GENERAL
+- key: AI_ASSIST_API_KEY
+  scope: RUN_TIME
+  type: SECRET
+- key: META_PAGE_ACCESS_TOKEN
+  scope: RUN_TIME
+  type: SECRET
+- key: SHOPMAN_PREPROD_URL
+  scope: RUN_TIME
+  value: https://alpha.nelsonboulangerie.com.br
+  type: GENERAL
+services:
+- alerts:
+  - operator: GREATER_THAN
+    rule: CPU_UTILIZATION
+    value: 80
+    window: FIVE_MINUTES
+  - operator: GREATER_THAN
+    rule: MEM_UTILIZATION
+    value: 85
+    window: FIVE_MINUTES
+  - operator: GREATER_THAN
+    rule: RESTART_COUNT
+    value: 2
+    window: TEN_MINUTES
+  dockerfile_path: Dockerfile
+  git:
+    branch: main
+    repo_clone_url: https://github.com/nelsonboulangerie/django-shopman.git
+  health_check:
+    failure_threshold: 5
+    http_path: /ready/
+    initial_delay_seconds: 30
+    period_seconds: 10
+    success_threshold: 1
+    timeout_seconds: 5
+  http_port: 8000
+  instance_count: 1
+  instance_size_slug: apps-s-1vcpu-1gb
+  liveness_health_check:
+    failure_threshold: 3
+    http_path: /health/
+    initial_delay_seconds: 30
+    period_seconds: 30
+    success_threshold: 1
+    timeout_seconds: 5
+  name: web
+  run_command: daphne -b 0.0.0.0 -p 8000 config.asgi:application
+  source_dir: /
+- alerts:
+  - operator: GREATER_THAN
+    rule: RESTART_COUNT
+    value: 2
+    window: TEN_MINUTES
+  build_command: npm ci && npm run build
+  envs:
+  - key: NUXT_DJANGO_BASE_URL
+    scope: RUN_TIME
+    value: https://api.boulangerie.com.br
+    type: GENERAL
+  - key: NUXT_APP_BASE_URL
+    scope: RUN_TIME
+    value: /
+    type: GENERAL
+  git:
+    branch: main
+    repo_clone_url: https://github.com/nelsonboulangerie/django-shopman.git
+  health_check:
+    failure_threshold: 5
+    http_path: /
+    initial_delay_seconds: 60
+    period_seconds: 15
+    success_threshold: 1
+    timeout_seconds: 20
+  http_port: 3000
+  instance_count: 1
+  instance_size_slug: apps-s-1vcpu-1gb
+  name: storefront-nuxt
+  run_command: node .output/server/index.mjs
+  source_dir: /surfaces/storefront-nuxt
+- alerts:
+  - operator: GREATER_THAN
+    rule: RESTART_COUNT
+    value: 2
+    window: TEN_MINUTES
+  build_command: npm ci && npm run build
+  envs:
+  - key: NUXT_DJANGO_BASE_URL
+    scope: RUN_TIME
+    value: https://api.boulangerie.com.br
+    type: GENERAL
+  - key: NUXT_APP_BASE_URL
+    scope: RUN_TIME
+    value: /
+    type: GENERAL
+  - key: NUXT_PUBLIC_DJANGO_BASE_URL
+    scope: RUN_AND_BUILD_TIME
+    value: https://api.boulangerie.com.br
+    type: GENERAL
+  - key: NUXT_PUBLIC_OPERATOR_HUB_URL
+    scope: RUN_AND_BUILD_TIME
+    value: https://central.boulangerie.com.br
+    type: GENERAL
+  - key: NUXT_PUBLIC_ORDERS_URL
+    scope: RUN_AND_BUILD_TIME
+    value: https://gestor.boulangerie.com.br/
+    type: GENERAL
+  git:
+    branch: main
+    repo_clone_url: https://github.com/nelsonboulangerie/django-shopman.git
+  health_check:
+    failure_threshold: 5
+    http_path: /
+    initial_delay_seconds: 30
+    period_seconds: 10
+    success_threshold: 1
+    timeout_seconds: 5
+  http_port: 3000
+  instance_count: 1
+  instance_size_slug: apps-s-1vcpu-0.5gb
+  name: pos-nuxt
+  run_command: node .output/server/index.mjs
+  source_dir: /surfaces/pos-nuxt
+- alerts:
+  - operator: GREATER_THAN
+    rule: RESTART_COUNT
+    value: 2
+    window: TEN_MINUTES
+  build_command: npm ci && npm run build
+  envs:
+  - key: NUXT_DJANGO_BASE_URL
+    scope: RUN_TIME
+    value: https://api.boulangerie.com.br
+    type: GENERAL
+  - key: NUXT_APP_BASE_URL
+    scope: RUN_TIME
+    value: /
+    type: GENERAL
+  - key: NUXT_PUBLIC_DJANGO_BASE_URL
+    scope: RUN_AND_BUILD_TIME
+    value: https://api.boulangerie.com.br
+    type: GENERAL
+  - key: NUXT_PUBLIC_OPERATOR_HUB_URL
+    scope: RUN_AND_BUILD_TIME
+    value: https://central.boulangerie.com.br
+    type: GENERAL
+  git:
+    branch: main
+    repo_clone_url: https://github.com/nelsonboulangerie/django-shopman.git
+  health_check:
+    failure_threshold: 5
+    http_path: /
+    initial_delay_seconds: 30
+    period_seconds: 10
+    success_threshold: 1
+    timeout_seconds: 5
+  http_port: 3000
+  instance_count: 1
+  instance_size_slug: apps-s-1vcpu-0.5gb
+  name: kds-nuxt
+  run_command: node .output/server/index.mjs
+  source_dir: /surfaces/kds-nuxt
+- alerts:
+  - operator: GREATER_THAN
+    rule: RESTART_COUNT
+    value: 2
+    window: TEN_MINUTES
+  build_command: npm ci && npm run build
+  envs:
+  - key: NUXT_DJANGO_BASE_URL
+    scope: RUN_TIME
+    value: https://api.boulangerie.com.br
+    type: GENERAL
+  - key: NUXT_APP_BASE_URL
+    scope: RUN_TIME
+    value: /
+    type: GENERAL
+  - key: NUXT_PUBLIC_DJANGO_BASE_URL
+    scope: RUN_AND_BUILD_TIME
+    value: https://api.boulangerie.com.br
+    type: GENERAL
+  - key: NUXT_PUBLIC_OPERATOR_HUB_URL
+    scope: RUN_AND_BUILD_TIME
+    value: https://central.boulangerie.com.br
+    type: GENERAL
+  git:
+    branch: main
+    repo_clone_url: https://github.com/nelsonboulangerie/django-shopman.git
+  health_check:
+    failure_threshold: 5
+    http_path: /
+    initial_delay_seconds: 30
+    period_seconds: 10
+    success_threshold: 1
+    timeout_seconds: 5
+  http_port: 3000
+  instance_count: 1
+  instance_size_slug: apps-s-1vcpu-0.5gb
+  name: orders-nuxt
+  run_command: node .output/server/index.mjs
+  source_dir: /surfaces/orders-nuxt
+- alerts:
+  - operator: GREATER_THAN
+    rule: RESTART_COUNT
+    value: 2
+    window: TEN_MINUTES
+  build_command: npm ci && npm run build
+  envs:
+  - key: NUXT_DJANGO_BASE_URL
+    scope: RUN_TIME
+    value: https://api.boulangerie.com.br
+    type: GENERAL
+  - key: NUXT_APP_BASE_URL
+    scope: RUN_TIME
+    value: /
+    type: GENERAL
+  - key: NUXT_PUBLIC_DJANGO_BASE_URL
+    scope: RUN_AND_BUILD_TIME
+    value: https://api.boulangerie.com.br
+    type: GENERAL
+  - key: NUXT_PUBLIC_OPERATOR_HUB_URL
+    scope: RUN_AND_BUILD_TIME
+    value: https://central.boulangerie.com.br
+    type: GENERAL
+  git:
+    branch: main
+    repo_clone_url: https://github.com/nelsonboulangerie/django-shopman.git
+  health_check:
+    failure_threshold: 5
+    http_path: /
+    initial_delay_seconds: 30
+    period_seconds: 10
+    success_threshold: 1
+    timeout_seconds: 5
+  http_port: 3000
+  instance_count: 1
+  instance_size_slug: apps-s-1vcpu-0.5gb
+  name: production-nuxt
+  run_command: node .output/server/index.mjs
+  source_dir: /surfaces/production-nuxt
+- alerts:
+  - operator: GREATER_THAN
+    rule: RESTART_COUNT
+    value: 2
+    window: TEN_MINUTES
+  build_command: npm ci && npm run build
+  envs:
+  - key: NUXT_DJANGO_BASE_URL
+    scope: RUN_TIME
+    value: https://api.boulangerie.com.br
+    type: GENERAL
+  - key: NUXT_APP_BASE_URL
+    scope: RUN_TIME
+    value: /
+    type: GENERAL
+  - key: NUXT_PUBLIC_DJANGO_BASE_URL
+    scope: RUN_AND_BUILD_TIME
+    value: https://api.boulangerie.com.br
+    type: GENERAL
+  git:
+    branch: main
+    repo_clone_url: https://github.com/nelsonboulangerie/django-shopman.git
+  health_check:
+    failure_threshold: 5
+    http_path: /
+    initial_delay_seconds: 30
+    period_seconds: 10
+    success_threshold: 1
+    timeout_seconds: 5
+  http_port: 3000
+  instance_count: 1
+  instance_size_slug: apps-s-1vcpu-0.5gb
+  name: hub-nuxt
+  run_command: node .output/server/index.mjs
+  source_dir: /surfaces/hub-nuxt
+- alerts:
+  - operator: GREATER_THAN
+    rule: RESTART_COUNT
+    value: 2
+    window: TEN_MINUTES
+  build_command: npm ci && npm run build
+  envs:
+  - key: NUXT_DJANGO_BASE_URL
+    scope: RUN_TIME
+    value: https://api.boulangerie.com.br
+    type: GENERAL
+  - key: NUXT_APP_BASE_URL
+    scope: RUN_TIME
+    value: /
+    type: GENERAL
+  - key: NUXT_PUBLIC_DJANGO_BASE_URL
+    scope: RUN_AND_BUILD_TIME
+    value: https://api.boulangerie.com.br
+    type: GENERAL
+  - key: NUXT_PUBLIC_OPERATOR_HUB_URL
+    scope: RUN_AND_BUILD_TIME
+    value: https://central.boulangerie.com.br
+    type: GENERAL
+  git:
+    branch: main
+    repo_clone_url: https://github.com/nelsonboulangerie/django-shopman.git
+  health_check:
+    failure_threshold: 5
+    http_path: /
+    initial_delay_seconds: 30
+    period_seconds: 10
+    success_threshold: 1
+    timeout_seconds: 5
+  http_port: 3000
+  instance_count: 1
+  instance_size_slug: apps-s-1vcpu-0.5gb
+  name: marketing-nuxt
+  run_command: node .output/server/index.mjs
+  source_dir: /surfaces/marketing-nuxt
+- alerts:
+  - operator: GREATER_THAN
+    rule: RESTART_COUNT
+    value: 2
+    window: TEN_MINUTES
+  build_command: npm ci && npm run build
+  envs:
+  - key: NUXT_DJANGO_BASE_URL
+    scope: RUN_TIME
+    value: https://api.boulangerie.com.br
+    type: GENERAL
+  - key: NUXT_APP_BASE_URL
+    scope: RUN_TIME
+    value: /
+    type: GENERAL
+  - key: NUXT_PUBLIC_DJANGO_BASE_URL
+    scope: RUN_AND_BUILD_TIME
+    value: https://api.boulangerie.com.br
+    type: GENERAL
+  - key: NUXT_PUBLIC_OPERATOR_HUB_URL
+    scope: RUN_AND_BUILD_TIME
+    value: https://central.boulangerie.com.br
+    type: GENERAL
+  git:
+    branch: main
+    repo_clone_url: https://github.com/nelsonboulangerie/django-shopman.git
+  health_check:
+    failure_threshold: 5
+    http_path: /
+    initial_delay_seconds: 30
+    period_seconds: 10
+    success_threshold: 1
+    timeout_seconds: 5
+  http_port: 3000
+  instance_count: 1
+  instance_size_slug: apps-s-1vcpu-0.5gb
+  name: bi-nuxt
+  run_command: node .output/server/index.mjs
+  source_dir: /surfaces/bi-nuxt
+workers:
+- alerts:
+  - operator: GREATER_THAN
+    rule: RESTART_COUNT
+    value: 2
+    window: TEN_MINUTES
+  dockerfile_path: Dockerfile
+  git:
+    branch: main
+    repo_clone_url: https://github.com/nelsonboulangerie/django-shopman.git
+  instance_count: 1
+  instance_size_slug: apps-s-1vcpu-0.5gb
+  name: directive-worker
+  run_command: python manage.py process_directives --watch
+  source_dir: /
+- alerts:
+  - operator: GREATER_THAN
+    rule: RESTART_COUNT
+    value: 2
+    window: TEN_MINUTES
+  dockerfile_path: Dockerfile
+  git:
+    branch: main
+    repo_clone_url: https://github.com/nelsonboulangerie/django-shopman.git
+  instance_count: 1
+  instance_size_slug: apps-s-1vcpu-0.5gb
+  name: maintenance-worker
+  run_command: python manage.py maintenance_worker
+  source_dir: /
+- alerts:
+  - operator: GREATER_THAN
+    rule: RESTART_COUNT
+    value: 2
+    window: TEN_MINUTES
+  dockerfile_path: Dockerfile
+  git:
+    branch: main
+    repo_clone_url: https://github.com/nelsonboulangerie/django-shopman.git
+  instance_count: 1
+  instance_size_slug: apps-s-1vcpu-0.5gb
+  name: ifood-poll-worker
+  run_command: python manage.py ifood_poll --watch --interval 30
+  source_dir: /
+jobs:
+- dockerfile_path: Dockerfile
+  git:
+    branch: main
+    repo_clone_url: https://github.com/nelsonboulangerie/django-shopman.git
+  instance_count: 1
+  instance_size_slug: apps-s-1vcpu-0.5gb
+  kind: PRE_DEPLOY
+  name: release
+  run_command: sh -c 'python manage.py check --deploy && python manage.py migrate --noinput && python manage.py setup_groups'
+  source_dir: /
+databases:
+- cluster_name: shopman-staging-postgres
+  db_name: shopman
+  db_user: shopman
+  engine: PG
+  name: postgres
+  production: true
+  version: '16'
+- cluster_name: shopman-staging-cache
+  engine: VALKEY
+  name: cache
+  production: true
+  version: '8'

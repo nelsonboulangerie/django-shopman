@@ -1,8 +1,8 @@
 # DigitalOcean App Platform blueprint — Fase 1 do headless: cutover por SUBDOMÍNIOS.
 #
-# ⚠️ Este é o TEMPLATE de PRODUÇÃO (domínio no apex real). Para validar primeiro em
-#    STAGING use o blueprint concreto já pronto: `.do/app.staging-subdomains.yaml`
-#    (ramo `staging.nelsonboulangerie.com.br`, pagamentos mock, schema validado).
+# ⚠️ Este é o TEMPLATE de PRODUÇÃO (domínio no apex real). Para validar primeiro
+#    em ALPHA use o blueprint de referência `.do/app.alpha-subdomains.yaml`
+#    (loja em `alpha.nelsonboulangerie.com.br`, pagamentos mock).
 #
 # Topologia (desacoplado por domínio — a loja fica no apex `/`):
 #   STORE_DOMAIN            → storefront-nuxt (loja Nuxt)        [apex, PRIMARY]

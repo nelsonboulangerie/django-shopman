@@ -11,7 +11,7 @@ propria.
 
 ## Politica Publica
 
-No staging publico da DigitalOcean, o roteamento e por **subdominio** (host-based
+No alpha publico da DigitalOcean, o roteamento e por **subdominio** (host-based
 ingress), nao mais por prefixo de caminho. O modelo path-routed (`/nuxt`, `/thing`)
 e a superficie `storefront-nuxt` foram **aposentados** no cutover headless.
 
@@ -22,7 +22,7 @@ e a superficie `storefront-nuxt` foram **aposentados** no cutover headless.
 | `admin.` | Django Admin/Unfold | Operador/admin. |
 | `pos.` | `surfaces/pos-nuxt` | PDV. |
 
-Blueprints: `.do/app.staging-subdomains.yaml` (staging) e `.do/app.subdomains.yaml`
+Blueprints: `.do/app.alpha-subdomains.yaml` (alpha) e `.do/app.subdomains.yaml`
 (template de producao). Cada superficie Nuxt serve em `/` no seu host; o BFF proxia
 `/api/v1` → `api.` (ver `server/utils/djangoProxy.ts`). Dev local da loja:
 `cd surfaces/storefront-nuxt && npm run dev` (`http://127.0.0.1:3000/`).
