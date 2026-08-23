@@ -15,8 +15,12 @@
 #      (ex.: `sed -i '' 's/STORE_DOMAIN/nelson.com.br/g' .do/app.subdomains.yaml`).
 #   2. No registrador/zona DNS, aponte o apex + os CNAMEs (api/admin/pos) para o app
 #      (o painel da DO mostra os alvos ao adicionar cada domínio).
-#   3. `doctl apps update <APP_ID> --spec .do/app.subdomains.yaml` (ou crie um app novo).
-#   4. Secrets (DB/Redis/pagamento/ManyChat) entram como variáveis ENCRIPTADAS no painel —
+#   3. Valide o TEMPLATE com `doctl apps spec validate .do/app.subdomains.yaml`.
+#   4. Para app novo, crie a partir do template preenchido. Para app vivo existente,
+#      NAO rode `apps update --spec .do/app.subdomains.yaml`: capture o spec vivo com
+#      `apps spec get`, preserve SECRET/EV[...] e valide com
+#      `doctl apps propose --spec /tmp/spec-vivo.yaml --app <APP_ID>` antes do update.
+#   5. Secrets (DB/Redis/pagamento/ManyChat) entram como variáveis ENCRIPTADAS no painel —
 #      NUNCA neste arquivo. Ver docs/guides/deploy-digitalocean.md.
 #
 # ⚠️ PAGAMENTOS: este blueprint herda os adapters MOCK (verificação). Para PRODUÇÃO,

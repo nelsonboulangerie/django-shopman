@@ -209,6 +209,18 @@ doctl apps spec validate .do/app.alpha-subdomains.yaml
 doctl apps create --spec .do/app.alpha-subdomains.yaml --project-id <project-id> --wait
 ```
 
+`doctl apps spec validate` vale para o template versionado do repo, sem payloads
+`EV[...]`. Nao use esse comando para validar um spec vivo capturado por
+`apps spec get`: ele valida como se fosse app novo e rejeita secrets encrypted.
+Para spec vivo de app existente, valide contra o app alvo:
+
+```bash
+doctl apps propose --spec /tmp/spec-vivo.yaml --app <app-id>
+```
+
+`apps propose --app` preserva a semantica de app existente, aceita `EV[...]` e
+mostra diff/custo antes de qualquer update.
+
 O usuário `shopman` precisa ter permissão de criação no schema `public` do banco
 `shopman`; sem isso o release job passa em `check --deploy`, mas falha em
 `migrate` com `permission denied for schema public`.
@@ -226,6 +238,8 @@ capture o spec vivo e edite esse arquivo capturado:
 ```bash
 doctl apps spec get <app-id> --format yaml > /tmp/spec-vivo-$(date +%F).yaml  # apps get --format Spec imprime "<nil>"
 # Edite /tmp/spec-vivo-*.yaml preservando os SECRET/EV[...] existentes.
+# Valide contra o app existente; spec validate reprova EV[...] de spec vivo.
+doctl apps propose --spec /tmp/spec-vivo-YYYY-MM-DD.yaml --app <app-id>
 # So entao, com revisao explicita:
 doctl apps update <app-id> --spec /tmp/spec-vivo-YYYY-MM-DD.yaml --update-sources --wait
 ```
@@ -336,9 +350,12 @@ no deploy (não crie CNAME manual, causaria conflito). É exatamente o caso de
 
 1. **DNS (só se externo):** aponte o apex + `api`/`admin`/`pos` para o alvo
    `*.ondigitalocean.app` do app (o painel mostra o alvo ao adicionar cada domínio).
-2. **Spec:** troque `STORE_DOMAIN` pelo domínio real em `.do/app.subdomains.yaml`
-   (`sed -i '' 's/STORE_DOMAIN/seudominio.com/g' .do/app.subdomains.yaml`) e aplique
-   (`doctl apps update <APP_ID> --spec .do/app.subdomains.yaml`).
+2. **Spec/template:** troque `STORE_DOMAIN` pelo domínio real em uma cópia de
+   `.do/app.subdomains.yaml` e valide o template com `doctl apps spec validate`.
+   Para app vivo existente, não aplique esse template direto: capture o spec
+   vivo com `apps spec get`, porte apenas os deltas, preserve `SECRET/EV[...]`,
+   valide com `doctl apps propose --spec /tmp/spec-vivo.yaml --app <APP_ID>` e
+   só então faça `apps update` sobre o spec vivo editado.
 3. **Knob único:** `SHOPMAN_STOREFRONT_BASE_URL=https://seudominio.com` (apex) vira **todos**
    os links de cliente (notificações, magic link, "ver site"). `NUXT_DJANGO_BASE_URL` das
    superfícies → `https://api.seudominio.com`; `NUXT_APP_BASE_URL=/` (loja e PDV na raiz).
