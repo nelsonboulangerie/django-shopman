@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { cartHoldBanner, holdBannerVariant, holdCountdown, lineHoldState } from '~/presentation/cart'
 import type { CartItemProjection, CartResponse, ProductMutationMeta } from '~/types/shopman'
+import { formatCount } from '~/utils/display'
 
 const apiPath = useShopmanApiPath()
 const {

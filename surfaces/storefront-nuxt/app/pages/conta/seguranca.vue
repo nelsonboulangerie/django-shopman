@@ -2,6 +2,7 @@
 import type { AccountDeviceProjection, AccountDeviceResponse } from '~/types/shopman'
 import { deviceIcon } from '~/presentation/account'
 import { authPhonePayload } from '~/utils/authPhone'
+import { formatCount } from '~/utils/display'
 
 definePageMeta({ middleware: 'account' })
 

@@ -5,7 +5,7 @@
       ref="calendarRef"
       :attributes="props.attributes"
       :trim-weeks="props.trimWeeks || true"
-      :is-dark="$colorMode.value == 'dark'"
+      :is-dark="isDark"
     >
       <template v-for="(_, slot) in $slots" #[slot]="scope">
         <slot :name="slot" v-bind="scope" />
@@ -195,6 +195,8 @@
   defineOptions({ inheritAttrs: false });
 
   const calendarRef = useTemplateRef("calendarRef");
+  const colorMode = useColorMode();
+  const isDark = computed(() => colorMode.value === "dark");
 
   interface Props extends /* @vue-ignore */ Partial<InstanceType<typeof Calendar>["$props"]> {}
 

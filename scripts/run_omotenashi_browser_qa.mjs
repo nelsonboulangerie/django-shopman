@@ -635,6 +635,7 @@ async function main() {
   if (options.strict && (report.summary.review > 0 || skipped.length > 0)) {
     process.exitCode = 1;
   }
+  process.exit(process.exitCode || 0);
 }
 
 main().catch((err) => {

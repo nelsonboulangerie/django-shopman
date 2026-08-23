@@ -3,6 +3,7 @@ import { tileBadge } from '~/presentation/menu'
 import { crossSellItems, detailDescription, nutritionTable } from '~/presentation/product'
 import { absoluteImage, breadcrumbJsonLd, metaDescription, priceFromQ, productJsonLd } from '~/presentation/seo'
 import type { ProductMutationMeta, ProductResponse } from '~/types/shopman'
+import { compactUnitWeightLabel } from '~/utils/display'
 
 const route = useRoute()
 const apiPath = useShopmanApiPath()

@@ -15,6 +15,10 @@ const isCustomerBoard = computed(() => route.path.startsWith("/pickup"));
 const hubUrl = useRuntimeConfig().public.operatorHubUrl as string;
 
 useHead({ title: "Shopman KDS" });
+
+async function goToStations() {
+  await navigateTo("/");
+}
 </script>
 
 <template>
@@ -43,7 +47,7 @@ useHead({ title: "Shopman KDS" });
               icon="grid-2x2"
               label="Estações"
               :active="route.path === '/'"
-              @activate="navigateTo('/')"
+              @activate="goToStations"
             />
           </template>
         </OperatorRail>

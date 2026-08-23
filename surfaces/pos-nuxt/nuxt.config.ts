@@ -1,6 +1,5 @@
 import tailwindcss from "@tailwindcss/vite";
 // https://nuxt.com/docs/api/configuration/nuxt-config
-const isProduction = process.env.NODE_ENV === "production";
 
 export default defineNuxtConfig({
   // Superfície de operador: herda BFF/resiliência/telemetria/DS do kit compartilhado.
@@ -72,7 +71,7 @@ export default defineNuxtConfig({
   css: ["~/assets/css/tailwind.css"],
 
   app: {
-    baseURL: process.env.NUXT_APP_BASE_URL || (isProduction ? "/pos/" : "/"),
+    baseURL: process.env.NUXT_APP_BASE_URL || "/",
     head: {
       htmlAttrs: { lang: "pt-BR" },
       title: "Shopman POS",

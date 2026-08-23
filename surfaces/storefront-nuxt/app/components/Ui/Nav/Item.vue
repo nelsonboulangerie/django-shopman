@@ -16,7 +16,7 @@
   import type { NuxtLinkProps } from "#app";
 
   const props = defineProps<
-    Omit<NuxtLinkProps, "noPrefetch"> & {
+    Omit<NuxtLinkProps, "custom" | "noPrefetch"> & {
       /** Custom t\class(es) to add to the link. */
       class?: HTMLAttributes["class"];
     }

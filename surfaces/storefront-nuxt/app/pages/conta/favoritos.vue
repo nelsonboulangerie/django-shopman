@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type { FavoritesResponse } from '~/types/shopman'
+import { formatCount } from '~/utils/display'
 
 definePageMeta({ middleware: 'account' })
 

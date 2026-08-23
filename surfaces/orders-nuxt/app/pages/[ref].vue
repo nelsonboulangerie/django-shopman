@@ -139,7 +139,7 @@ const fiscalHref = (link: { href?: string; url?: string }) => link.href || link.
         <p class="text-xs text-muted-foreground">{{ code.prefix }}</p>
         <h1 class="truncate text-3xl font-bold leading-tight tabular-nums">{{ code.code }}</h1>
       </div>
-      <button type="button" class="ml-auto grid size-9 place-items-center rounded-md border text-muted-foreground transition hover:bg-accent" aria-label="Atualizar" @click="$router.go(0)">
+      <button type="button" class="ml-auto grid size-9 place-items-center rounded-md border text-muted-foreground transition hover:bg-accent" aria-label="Atualizar" @click="refresh()">
         <Icon name="lucide:refresh-cw" class="size-4" />
       </button>
     </header>

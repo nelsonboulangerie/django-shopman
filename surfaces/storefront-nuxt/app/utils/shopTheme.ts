@@ -83,6 +83,9 @@ export function shopThemeStyle (shop: ShopProjection | null | undefined): Record
 // Instrument Sans é a `--font-sans` do tema; Fraunces a display dos títulos. A marca
 // não precisa re-injetá-las nem buscá-las externamente — só fontes de tenant DIFERENTES.
 const SELF_HOSTED_FONTS = new Set(['Instrument Sans', 'Fraunces'])
+type ShopFontLink =
+  | { rel: 'preconnect', href: string, crossorigin?: '' | 'anonymous' | 'use-credentials' }
+  | { rel: 'stylesheet', href: string }
 
 /**
  * Família tipográfica da marca para `--font-sans` — só quando o tenant pede uma fonte
@@ -99,7 +102,7 @@ export function shopFontFamily (tokens: ShopDesignTokensProjection | null | unde
 export function shopFontLinks (
   shop: ShopProjection | null | undefined,
   options: { preview?: string | null } = {}
-): Array<Record<string, string>> {
+): ShopFontLink[] {
   if (options.preview === 'neutral') return []
   const tokens = shop?.design_tokens
   if (!tokens) return []
