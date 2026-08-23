@@ -125,6 +125,22 @@ Nao aplicar `.do/app.alpha-subdomains.yaml` diretamente com
 apagar variaveis encrypted que existem so no app vivo. Mudanca futura de config
 deve partir do spec vivo capturado por `apps spec get`, preservando secrets.
 
+Validacao correta:
+
+```bash
+# Template versionado do repo, sem EV[...].
+doctl apps spec validate .do/app.alpha-subdomains.yaml
+
+# Spec vivo capturado do app existente, com SECRET/EV[...] preservados.
+doctl apps propose --spec /tmp/shopman-alpha-live-spec.yaml \
+  --app 40b86e35-bafe-4a1a-a1b0-e124d3d9fd0f
+```
+
+Nao use `doctl apps spec validate /tmp/shopman-alpha-live-spec.yaml` para spec
+vivo: esse comando valida como app novo e rejeita os `EV[...]` encrypted que
+precisam ser preservados no app existente. `apps propose --app` valida contra o
+app alvo e mostra custo/diff antes de qualquer update.
+
 ## Estado atual de variaveis do alpha
 
 ```env
