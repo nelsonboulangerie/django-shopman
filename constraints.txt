@@ -54,7 +54,7 @@ cryptography==50.0.0
 daphne==4.2.3
 diff-match-patch==20241021
 distro==1.9.0
-Django==6.0.8
+Django==6.1
 django-csp==4.0
 django-eventstream==5.3.4
 django-filter==25.2
@@ -64,7 +64,7 @@ django-otp==1.7.0
 django-ratelimit==4.1.0
 django-simple-history==3.13.0
 django-taggit==6.1.0
-django-unfold==0.92.0
+django-unfold==0.104.1
 djangorestframework==3.18.0
 docstring_parser==0.18.0
 drf-spectacular==0.30.0
@@ -93,7 +93,7 @@ pyasn1==0.6.4
 pyasn1_modules==0.4.2
 pycparser==3.0
 pydantic==2.13.4
-pydantic_core==2.46.4
+pydantic_core==2.48.0
 PyJWT==2.13.0
 pyOpenSSL==26.4.0
 pypng==0.20220715.0
@@ -122,4 +122,4 @@ urllib3==2.7.0
 webauthn==2.8.0
 Werkzeug==3.1.8
 whitenoise==6.12.0
-zope.interface==8.5
+zope.interface==8.6
