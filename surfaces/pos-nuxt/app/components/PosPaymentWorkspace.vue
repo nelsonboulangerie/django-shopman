@@ -84,7 +84,7 @@ const props = defineProps<{
   deliveryFeeInput: string;
   orderNotes: string;
   issueFiscalDocument: boolean;
-  receiptMode: string;
+  receiptChannels: string[];
   receiptEmail: string;
   loading: boolean;
   lookupBusy: boolean;
@@ -123,7 +123,7 @@ const emit = defineEmits<{
   "update:deliveryFeeInput": [string];
   "update:orderNotes": [string];
   "update:issueFiscalDocument": [boolean];
-  "update:receiptMode": [string];
+  "update:receiptChannels": [string[]];
   "update:receiptEmail": [string];
   back: [];
   submit: [];
@@ -141,8 +141,7 @@ const interimTotalDisplay = computed(() => formatBRL(cartTotalQ(props.items)));
 // Nota fiscal é SECUNDÁRIA: mora no modal do Cliente (não é botãozão no grid) e só
 // aparece quando a loja ofereceu NFC-e no PDV E o adapter fiscal está configurado.
 const supportsFiscalDocument = computed(() => !!props.checkoutContract?.capabilities?.supports_fiscal_document);
-const receiptModes = computed(() => props.checkoutContract?.receipt_modes || [
-  { ref: "none", label: "Sem comprovante", description: "" },
+const receiptChannelOptions = computed(() => props.checkoutContract?.receipt_channels || [
   { ref: "print", label: "Imprimir", description: "" },
   { ref: "email", label: "E-mail", description: "" },
 ]);
@@ -617,15 +616,15 @@ function onAddressSelected(address: StructuredAddressProjection) {
     :search-busy="searchBusy"
     :lookup-busy="lookupBusy"
     :issue-fiscal-document="issueFiscalDocument"
-    :receipt-mode="receiptMode"
-    :receipt-modes="receiptModes"
+    :receipt-channels="receiptChannels"
+    :receipt-channel-options="receiptChannelOptions"
     :receipt-email="receiptEmail"
     @update:customer-name="$emit('update:customerName', $event)"
     @update:customer-phone="$emit('update:customerPhone', $event)"
     @update:customer-tax-id="$emit('update:customerTaxId', $event)"
     @update:customer-email="$emit('update:customerEmail', $event)"
     @update:issue-fiscal-document="$emit('update:issueFiscalDocument', $event)"
-    @update:receipt-mode="$emit('update:receiptMode', $event)"
+    @update:receipt-channels="$emit('update:receiptChannels', $event)"
     @update:receipt-email="$emit('update:receiptEmail', $event)"
     @search="$emit('search', $event)"
     @select-result="onSelectResult"

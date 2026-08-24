@@ -56,7 +56,7 @@ describe("POS sale intent", () => {
       paymentTenders: [],
       tenderedAmountQ: null,
       issueFiscalDocument: false,
-      receiptMode: "email",
+      receiptChannels: ["email"],
       receiptEmail: "ana@example.com",
       manualDiscount: null,
       managerApproval: null,
@@ -96,7 +96,7 @@ describe("POS sale intent", () => {
       payment_collection: "on_delivery",
       customer_phone: "43999990000",
       customer_tax_id: "12345678901",
-      receipt_mode: "email",
+      receipt_channels: ["email"],
       receipt_email: "ana@example.com",
     });
     expect(payload.items).toEqual([
@@ -290,7 +290,7 @@ function baseIntentState(overrides: Record<string, unknown> = {}) {
     paymentTenders: [],
     tenderedAmountQ: null,
     issueFiscalDocument: false,
-    receiptMode: "none",
+    receiptChannels: [],
     receiptEmail: "",
     manualDiscount: null,
     managerApproval: null,

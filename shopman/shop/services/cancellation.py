@@ -40,9 +40,13 @@ def cancel(
 
     SYNC — transitions status immediately.
     """
-    terminal_statuses = set(getattr(Order, "TERMINAL_STATUSES", ()))
-    terminal_statuses.update({Order.Status.CANCELLED, Order.Status.COMPLETED, Order.Status.RETURNED})
-    if order.status in terminal_statuses or not order.can_transition_to(Order.Status.CANCELLED):
+    # A máquina de estados é a autoridade única: no mapa DEFAULT, completed/
+    # cancelled/returned não transicionam para cancelled — mesmo efeito do
+    # conjunto fixo que morava aqui. A diferença é o canal que DECLARA
+    # completed→cancelled no seu ``lifecycle.transitions`` (o pdv declara: a
+    # venda de balcão fecha no commit, e o desfazer da janela precisa passar).
+    # Um conjunto cravado por cima do mapa fazia a config do canal mentir.
+    if not order.can_transition_to(Order.Status.CANCELLED):
         logger.info(
             "cancellation.cancel: order %s cannot transition from %s to cancelled, skipping",
             order.ref, order.status,

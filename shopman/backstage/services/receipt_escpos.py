@@ -180,3 +180,80 @@ def _qr(data: str, *, module: int = 6) -> bytes:
         + [GS, 0x28, 0x6B, 0x03, 0x00, 0x31, 0x45, 0x31]
         + [GS, 0x28, 0x6B, tamanho % 256, tamanho // 256, 0x31, 0x50, 0x30]
     ) + payload + bytes([GS, 0x28, 0x6B, 0x03, 0x00, 0x31, 0x51, 0x30]) + bytes([ESC, ord("a"), 0])
+
+
+def danfe_nfce(doc, *, reprint: bool = False) -> bytes:
+    """DANFE NFC-e em bobina — a projeção IMPRESSA de ``DanfeDocument``.
+
+    ``doc`` vem de ``shopman.shop.views.fiscal_danfe.build_danfe`` (a MESMA
+    projeção do cupom web): um dado, duas superfícies, zero divergência de
+    leiaute entre a tela e o papel. Só compõe nota EMITIDA — quem chama guarda.
+
+    O leiaute segue o DANFE NFC-e simplificado: emitente, aviso de homologação
+    quando for o caso, itens, totais, chave de acesso em grupos, consumidor e o
+    QR da SEFAZ para conferência.
+    """
+    assert doc.emitted, "danfe_nfce só compõe nota emitida"
+
+    out = bytearray()
+    out += bytes([ESC, ord("@")])
+    out += bytes([ESC, ord("t"), CODE_PAGE])
+
+    out += _centered((doc.shop_name or "NELSON BOULANGERIE").upper())
+    if doc.shop_legal_name:
+        out += _centered(doc.shop_legal_name)
+    if doc.shop_cnpj:
+        out += _centered(f"CNPJ {doc.shop_cnpj}")
+    for pedaco in _wrap(doc.shop_address or "", COLUMNS):
+        if pedaco != "-":
+            out += _centered(pedaco)
+    out += _rule()
+
+    out += _centered("DANFE NFC-e")
+    out += _centered("Documento Auxiliar da Nota Fiscal")
+    out += _centered("de Consumidor Eletronica")
+    if reprint:
+        out += _centered("*** 2a VIA ***")
+    if doc.is_homolog:
+        # Exigência da SEFAZ em homologação: o papel diz que não vale.
+        out += _rule()
+        out += _centered("*** EMITIDA EM HOMOLOGACAO ***")
+        out += _centered("*** SEM VALOR FISCAL ***")
+    out += _rule()
+
+    out += _pair(f"NFC-e n. {doc.number}", f"Serie {doc.series}")
+    out += _line(f"Pedido {doc.order_ref}")
+    out += _rule()
+
+    for item in doc.items:
+        for pedaco in _wrap(f"{item.seq:>3} {item.name}", COLUMNS):
+            out += _line(pedaco)
+        out += _pair(f"    {item.qty} {item.unit} x {item.unit_price_display}", item.total_display)
+    out += _rule()
+
+    out += _pair("QTD. TOTAL DE ITENS", str(doc.item_count))
+    out += _pair("FORMA DE PAGAMENTO", doc.payment_label[: COLUMNS // 2])
+    out += _line("")
+    out += _double(f"TOTAL {doc.total_display}")
+    out += _line("")
+    out += _rule()
+
+    out += _centered("Consulte pela Chave de Acesso em")
+    for pedaco in _wrap("www.fazenda.pr.gov.br/nfce/consulta", COLUMNS):
+        out += _centered(pedaco)
+    for pedaco in _wrap(doc.chave_grouped or doc.key, COLUMNS):
+        out += _centered(pedaco)
+    out += _rule()
+
+    out += _line(f"CONSUMIDOR: {doc.customer_name or 'NAO IDENTIFICADO'}"[:COLUMNS])
+    out += _rule()
+
+    out += _centered("Consulta via leitor de QR Code")
+    if doc.consult_url:
+        out += _qr(doc.consult_url)
+    if doc.protocol:
+        out += _centered(f"Protocolo {doc.protocol}")
+
+    out += bytes([ESC, ord("d"), 4])
+    out += bytes([GS, ord("V"), 1])
+    return bytes(out)

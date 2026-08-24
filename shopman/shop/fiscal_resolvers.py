@@ -99,18 +99,64 @@ def above_amount_q(threshold_q: int):
 # ── forma de pagamento ────────────────────────────────────────────────────────
 
 
+def _payment_methods_present(order) -> set[str]:
+    """Os métodos que de fato compõem o pagamento, lidos das LINHAS (tenders).
+
+    ``payment.method`` é um rótulo agregado — numa venda mista ele colapsa para
+    ``"mixed"`` e esconde o cartão que está lá dentro. As linhas dizem a
+    verdade; o rótulo é o fallback para pedidos sem tenders (canais remotos).
+    """
+    payment = (order.data or {}).get("payment") or {}
+    tenders = payment.get("tenders") or []
+    methods = {
+        str(t.get("method") or "").strip().lower()
+        for t in tenders
+        if isinstance(t, dict) and t.get("amount_q")
+    }
+    methods.discard("")
+    if methods:
+        return methods
+    method = str(payment.get("method") or "").strip().lower()
+    return {method} if method else set()
+
+
 def card_payment(order) -> bool:
     """Emite quando o pagamento é CARTÃO (crédito/débito). Pronto p/ apontar direto."""
-    method = str(((order.data or {}).get("payment") or {}).get("method") or "").lower()
-    return method in {"card", "credit", "debit"}
+    return bool(_payment_methods_present(order) & {"card", "credit", "debit"})
 
 
 def eletronic_payment(order) -> bool:
-    """Emite quando o pagamento é ELETRÔNICO (PIX ou cartão) — deixa rastro, então nota.
-    Dinheiro/externo ficam de fora. Pronto p/ apontar direto (bom em OR com
-    on_request_or_tax_id)."""
-    method = str(((order.data or {}).get("payment") or {}).get("method") or "").lower()
-    return method in {"pix", "card", "credit", "debit"}
+    """Emite quando QUALQUER parte do pagamento é ELETRÔNICA (PIX ou cartão) —
+    deixa rastro, então nota. Lê as linhas do pagamento, então a venda mista
+    (dinheiro + cartão) emite. Dinheiro puro/externo ficam de fora. Pronto p/
+    apontar direto (bom em OR com on_request_or_tax_id)."""
+    return bool(_payment_methods_present(order) & {"pix", "card", "credit", "debit"})
+
+
+def deferred_settlement(order) -> bool:
+    """Emite quando a MERCADORIA sai antes de o dinheiro se liquidar.
+
+    Um conceito só, para os dois jeitos de fiado do balcão:
+    - pagamento na entrega (COD): o tender nasce ``status="pending"`` e o
+      entregador sai com a sacola — a nota tem que ir junto;
+    - conta na casa: método ``account``, o acerto vem depois (dias, semanas).
+
+    Lido dos próprios tenders — dado durável do pedido, não do rótulo do canal.
+    Fallback sem tenders: ``payment.collection == "on_delivery"`` ou método
+    agregado ``account``.
+    """
+    payment = (order.data or {}).get("payment") or {}
+    tenders = payment.get("tenders") or []
+    for t in tenders:
+        if not isinstance(t, dict) or not t.get("amount_q"):
+            continue
+        if str(t.get("status") or "").strip().lower() == "pending":
+            return True
+        if str(t.get("method") or "").strip().lower() == "account":
+            return True
+    if str(payment.get("collection") or "").strip().lower() == "on_delivery":
+        return True
+    return str(payment.get("method") or "").strip().lower() == "account"
 
 
 def payment_methods(*methods: str):

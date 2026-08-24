@@ -82,15 +82,27 @@ def emit(order) -> None:
     if data.get("fulfillment_type") == "delivery":
         delivery = {"address": dict(data.get("delivery_address_structured") or {})}
 
-    directives.queue(
-        FISCAL_EMIT_NFCE, order,
+    # ``create_deduped`` e não ``queue``: a emissão agora tem DOIS gatilhos — o
+    # fechamento da venda (a nota segue o dinheiro/a mercadoria) e o
+    # ``on_completed`` (rede dos canais remotos). O UNIQUE parcial do Core
+    # garante no máximo uma directive viva por pedido; quem chegar segundo vira
+    # dedupe-hit, nunca segunda nota.
+    payload = {"order_ref": order.ref}
+    if order.channel_ref:
+        payload["channel_ref"] = order.channel_ref
+    payload.update(
         items=_build_fiscal_items(order),
         payment=payment,
         customer=data.get("customer", {}),
         delivery=delivery,
     )
-
-    logger.info("fiscal.emit: queued for order %s", order.ref)
+    created = directives.create_deduped(
+        FISCAL_EMIT_NFCE,
+        payload=payload,
+        dedupe_key=f"nfce:{order.ref}",
+    )
+    if created is not None:
+        logger.info("fiscal.emit: queued for order %s", order.ref)
 
 
 def _declared_payment_q(payment: dict) -> int:
@@ -171,6 +183,24 @@ def cancel(order) -> None:
     )
 
     logger.info("fiscal.cancel: queued for order %s", order.ref)
+
+
+def emission_expected(order) -> bool:
+    """Esta venda vai ter NFC-e?
+
+    O balcão precisa oferecer a DANFE, e não pode perguntar isso ao toggle do
+    operador: o ``emission_resolver`` também emite por forma de pagamento, e
+    nota que ninguém pediu continua sendo nota que o cliente pode exigir
+    impressa.
+
+    Nem pode perguntar à Directive: quando a venda fecha, o pedido ainda está em
+    ``new``. A emissão só acontece na conclusão, e a nota não existe no instante
+    da tela de confirmação. O que existe já no fechamento é a *regra* e os dados
+    que ela lê (forma de pagamento, CPF, pedido do operador) — então a pergunta
+    honesta é "vai haver nota?", respondida pelo mesmo resolver que decide, sem
+    cópia da regra no front.
+    """
+    return bool(fiscal_pool.get_backend()) and emission_resolver(order)
 
 
 def _build_fiscal_items(order) -> list[dict]:

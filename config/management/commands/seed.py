@@ -3758,6 +3758,26 @@ class Command(BaseCommand):
             # Entrega da casa (pedido por telefone no PDV): o entregador pode sair
             # com a maquininha; o despacho pergunta e a custódia fica no pedido.
             "fulfillment": {"equipment": ["card_machine"]},
+            # Venda de balcão presencial é um evento já ocorrido, não uma esteira:
+            # o pão saiu pela porta antes do commit. A transição extra
+            # ACCEPTED→COMPLETED autoriza o lifecycle a fechar na hora a venda
+            # sem trabalho de cozinha (system:counter_handoff). Encomenda
+            # agendada, entrega e lanche com receita seguem a esteira normal —
+            # o gate está no lifecycle, aqui é só a permissão da máquina de
+            # estados (assada no snapshot de cada pedido).
+            "lifecycle": {
+                "transitions": {
+                    "new": ["accepted", "cancelled"],
+                    "accepted": ["preparing", "ready", "completed", "cancelled"],
+                    "preparing": ["ready", "cancelled"],
+                    "ready": ["preparing", "dispatched", "completed"],
+                    "dispatched": ["delivered", "returned"],
+                    "delivered": ["completed", "returned"],
+                    "completed": ["returned", "cancelled"],
+                    "cancelled": [],
+                    "returned": [],
+                },
+            },
         }
         _remote_stock = {
             "hold_ttl_minutes": 30,

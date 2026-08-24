@@ -152,7 +152,7 @@ Optional canonical keys:
 - fulfillment: `delivery_date`, `delivery_time_slot`, `delivery_fee_q`,
   `order_notes`.
 - payment: `payment_collection`, `payment_tenders`, `tendered_amount_q`.
-- fiscal/receipt: `issue_fiscal_document`, `receipt_mode`, `receipt_email`.
+- fiscal/receipt: `issue_fiscal_document`, `receipt_channels` (multi: `print`/`email`; vazio = sem comprovante), `receipt_email`.
 - approval: `manual_discount`, `manager_approval`. `manual_discount`
   carries type/value/reason; backend normalizes `discount_q`.
 - runtime: `cash_shift_id`, `pos_terminal_ref` injected by backend API.
@@ -236,7 +236,7 @@ Backend must validate:
   payment warnings instead of blocking checkout entry;
 - cash tendered amount cannot be lower than sale total when provided at
   `close_sale`; `review_sale` returns a warning;
-- receipt email required when `receipt_mode=email`;
+- receipt email required when `email` está em `receipt_channels`;
 - manager approval above discount threshold;
 - fiscal constraints currently unsupported by the POS fiscal pipeline;
 - staging provider readiness: Focus NFe must be homologação, Efí must be

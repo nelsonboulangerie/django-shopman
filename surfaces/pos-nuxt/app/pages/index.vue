@@ -144,6 +144,10 @@ const screenTitle = computed(() => {
   return "Comandas";
 });
 
+// Últimas vendas: a nota autoriza DEPOIS da tela de confirmação passar; o
+// painel é onde imprimir/reenviar/reprocessar moram, a qualquer hora do turno.
+const recentSalesOpen = ref(false);
+
 // D3 receipt print (kiosk window.print): the receipt is already in the DOM
 // (#pos-print-area) when a sale finalizes; @media print shows only it.
 function printReceipt() {
@@ -299,6 +303,16 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onGlobalKeydown));
           @repeat-customer-last-order="repeatCustomerLastOrder"
         />
         <h1 v-else class="min-w-0 truncate text-lg font-semibold leading-tight tracking-tight">{{ screenTitle }}</h1>
+        <UiButton
+          variant="ghost"
+          size="icon-sm"
+          class="ml-auto shrink-0"
+          aria-label="Últimas vendas"
+          title="Últimas vendas (status fiscal, DANFE, reenvio)"
+          @click="recentSalesOpen = true"
+        >
+          <Icon name="lucide:history" class="size-5" />
+        </UiButton>
       </header>
 
       <div class="flex min-h-0 w-full flex-1 flex-col gap-3 px-4 py-3 md:min-h-0 md:overflow-hidden">
@@ -315,7 +329,7 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onGlobalKeydown));
                 Imprimir recibo
               </UiButton>
               <a
-                v-if="result.issueFiscalDocument"
+                v-if="result.fiscalExpected"
                 class="inline-flex h-8 items-center gap-1.5 rounded-md border border-success/40 px-3 text-sm font-medium text-success transition hover:bg-success/10"
                 :href="`${djangoOrigin}/fiscal/danfe/${encodeURIComponent(result.orderRef)}/`"
                 target="_blank" rel="noopener"
@@ -373,7 +387,7 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onGlobalKeydown));
         v-model:delivery-fee-input="cart.deliveryFeeInput"
         v-model:order-notes="cart.orderNotes"
         v-model:issue-fiscal-document="cart.issueFiscalDocument"
-        v-model:receipt-mode="cart.receiptMode"
+        v-model:receipt-channels="cart.receiptChannels"
         v-model:receipt-email="cart.receiptEmail"
         :managers="pos?.managers || []"
         :tab-display="cart.tabDisplay"
@@ -581,5 +595,6 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onGlobalKeydown));
         />
       </div>
     </Teleport>
+    <PosRecentSales v-model:open="recentSalesOpen" :pos="pos" />
   </main>
 </template>

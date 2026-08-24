@@ -86,7 +86,7 @@ export function usePosSale(deps: PosSaleDeps) {
   // a chave física — ou o gancho "abrir ao imprimir" do driver, que só dispara
   // se o operador lembrar de clicar imprimir. Falha silenciosa exatamente no
   // momento em que a mão já está esperando.
-  const drawer = useCashDrawer(pos);
+  const drawer = useCounterAgent(pos);
   // A trava da gaveta: o PDV recusa INICIAR a próxima venda enquanto SABE que a
   // gaveta está aberta. Vive num composable próprio (regras + diálogo); aqui só
   // se decide ONDE ela morde — em `openTab`, o único portão de entrada na venda.
@@ -122,7 +122,7 @@ export function usePosSale(deps: PosSaleDeps) {
   // — reabre o diálogo de autorização com a mensagem, senão o CTA vira "Validar" e
   // reenvia o mesmo PIN errado para sempre (beco sem saída).
   const managerApprovalError = ref("");
-  const result = ref<{ orderRef: string; nextUrl: string; payment: PaymentProofView | null; receipt: PosReceiptSnapshot; issueFiscalDocument: boolean } | null>(null);
+  const result = ref<{ orderRef: string; nextUrl: string; payment: PaymentProofView | null; receipt: PosReceiptSnapshot; fiscalExpected: boolean } | null>(null);
 
   // PIX no PDV: o proof mostra o QR e "aguarde confirmação", mas sem polling o
   // operador nunca via a confirmação chegar (tinha de ir ao gestor). Aqui pollamos
@@ -189,7 +189,7 @@ export function usePosSale(deps: PosSaleDeps) {
     paymentTenders: [] as Array<{ method: string; amount_q: number; collection: PaymentCollection; reference?: string; _virgin?: boolean }>,
     tenderedAmountInput: "",
     issueFiscalDocument: false,
-    receiptMode: "none",
+    receiptChannels: [] as string[],
     receiptEmail: "",
     discountType: "percent" as "percent" | "fixed",
     discountValue: "",
@@ -527,7 +527,7 @@ export function usePosSale(deps: PosSaleDeps) {
     selectedTenderIndex.value = -1;
     cart.tenderedAmountInput = "";
     cart.issueFiscalDocument = false;
-    cart.receiptMode = "none";
+    cart.receiptChannels = [];
     cart.receiptEmail = "";
     cart.discountType = "percent";
     cart.discountValue = "";
@@ -587,7 +587,7 @@ export function usePosSale(deps: PosSaleDeps) {
       selectedTenderIndex.value = -1;
       cart.tenderedAmountInput = payload.tendered_amount_q ? (Number(payload.tendered_amount_q) / 100).toFixed(2).replace(".", ",") : "";
       cart.issueFiscalDocument = !!payload.issue_fiscal_document;
-      cart.receiptMode = payload.receipt_mode || "none";
+      cart.receiptChannels = [...(payload.receipt_channels || [])];
       cart.receiptEmail = payload.receipt_email || "";
       cart.discountType = "percent";
       cart.discountValue = "";
@@ -733,7 +733,7 @@ export function usePosSale(deps: PosSaleDeps) {
       paymentTenders: resolvedPayment.paymentTenders,
       tenderedAmountQ: resolvedPayment.tenderedAmountQ,
       issueFiscalDocument: cart.issueFiscalDocument,
-      receiptMode: cart.receiptMode,
+      receiptChannels: cart.receiptChannels,
       receiptEmail: cart.receiptEmail || cart.customerEmail,
       manualDiscount,
       managerApproval,
@@ -781,6 +781,9 @@ export function usePosSale(deps: PosSaleDeps) {
       cart.customerName = response.customer.name || cart.customerName;
       cart.customerPhone = response.customer.phone || cart.customerPhone;
       cart.customerEmail = response.customer.email || cart.customerEmail;
+      // CPF conhecido entra como DEFAULT; o campo continua editável — o cliente
+      // pode pedir outro CPF nesta venda sem tocar no cadastro.
+      cart.customerTaxId = cart.customerTaxId || response.customer.tax_id || "";
       if (response.customer.is_staff) cart.customerMemoryAction = "";
       if (cart.fulfillmentType === "delivery" && response.customer.default_address && !cart.deliveryAddress.trim()) {
         applySavedAddress(response.customer.default_address);
@@ -816,6 +819,9 @@ export function usePosSale(deps: PosSaleDeps) {
       cart.customerName = response.customer.name || cart.customerName;
       cart.customerPhone = response.customer.phone || cart.customerPhone;
       cart.customerEmail = response.customer.email || cart.customerEmail;
+      // CPF conhecido entra como DEFAULT; o campo continua editável — o cliente
+      // pode pedir outro CPF nesta venda sem tocar no cadastro.
+      cart.customerTaxId = cart.customerTaxId || response.customer.tax_id || "";
       if (cart.fulfillmentType === "delivery" && response.customer.default_address && !cart.deliveryAddress.trim()) {
         applySavedAddress(response.customer.default_address);
       }
@@ -1107,7 +1113,9 @@ export function usePosSale(deps: PosSaleDeps) {
           nextUrl: `${ordersUrl.value.replace(/\/+$/, "")}/${encodeURIComponent(orderRef)}`,
           payment: proof,
           receipt,
-          issueFiscalDocument: cart.issueFiscalDocument,
+          // O botão da DANFE segue a REGRA fiscal, não o toggle: cartão e pix
+          // emitem por forma de pagamento, sem o operador marcar nada.
+          fiscalExpected: !!response.fiscal_expected,
         };
         // PIX pendente → polla até confirmar; outros métodos já saem resolvidos.
         if (proof?.isPix && proof?.hasProof) startPixPolling(orderRef);

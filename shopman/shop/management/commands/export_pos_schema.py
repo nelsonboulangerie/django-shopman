@@ -24,7 +24,7 @@ from django.core.management.base import BaseCommand
 from shopman.shop.services.pos_intent import (
     POS_SALE_INTENT_PAYMENT_COLLECTIONS,
     POS_SALE_INTENT_PAYMENT_METHODS,
-    POS_SALE_INTENT_RECEIPT_MODES,
+    POS_SALE_INTENT_RECEIPT_CHANNELS,
     POS_SALE_INTENT_VERSION,
 )
 
@@ -55,7 +55,7 @@ def render_pos_contract_ts() -> str:
         "",
         _const_array("POS_PAYMENT_METHODS", "PosPaymentMethod", POS_SALE_INTENT_PAYMENT_METHODS),
         _const_array("POS_PAYMENT_COLLECTIONS", "PosPaymentCollection", POS_SALE_INTENT_PAYMENT_COLLECTIONS),
-        _const_array("POS_RECEIPT_MODES", "PosReceiptMode", POS_SALE_INTENT_RECEIPT_MODES),
+        _const_array("POS_RECEIPT_CHANNELS", "PosReceiptChannel", POS_SALE_INTENT_RECEIPT_CHANNELS),
     ]
     return "\n".join(blocks).rstrip() + "\n"
 

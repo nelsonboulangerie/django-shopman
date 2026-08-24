@@ -174,8 +174,13 @@ def requeue_fiscal_emission(order, *, actor: str):
 
     if (order.data or {}).get("nfce_access_key"):
         raise OrderError("NFC-e já autorizada.")
-    if not ((order.data or {}).get("fiscal") or {}).get("issue_document"):
-        raise OrderError("Pedido não solicitou documento fiscal.")
+    # A mesma regra que decide emitir decide o requeue. Perguntar só ao toggle
+    # (``fiscal.issue_document``) deixava irrecuperável a nota de cartão/pix e a
+    # de fiado — casos em que o resolver emite sem o operador marcar nada.
+    # ``emission_resolver`` (não ``emission_expected``): o requeue reergue uma
+    # directive que JÁ existe — a presença do backend é problema do handler.
+    if not fiscal.emission_resolver(order):
+        raise OrderError("A regra fiscal não emite nota para este pedido.")
     if str(order.status) in ("cancelled", "returned"):
         raise OrderError("Pedido cancelado/devolvido não emite NFC-e.")
 

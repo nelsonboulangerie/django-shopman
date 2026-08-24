@@ -1332,6 +1332,9 @@ class TestCancellationService:
         from shopman.shop.services.cancellation import cancel
 
         order = _make_order(status=Order.Status.CANCELLED)
+        # A autoridade é a máquina de estados (mapa DEFAULT: cancelled não
+        # transiciona para cancelled) — o mock responde como ela responderia.
+        order.can_transition_to.return_value = False
 
         result = cancel(order, reason="test")
 
@@ -1344,6 +1347,9 @@ class TestCancellationService:
         from shopman.shop.services.cancellation import cancel
 
         order = _make_order(status=Order.Status.COMPLETED)
+        # Mapa DEFAULT: completed→cancelled não existe. Canal que DECLARA a
+        # transição (pdv, para o desfazer do balcão) responde True e cancela.
+        order.can_transition_to.return_value = False
 
         result = cancel(order, reason="test")
 

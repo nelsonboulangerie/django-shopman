@@ -17,6 +17,7 @@ from shopman.orderman.models import Order
 from shopman.backstage.api.projections import projection_data
 from shopman.backstage.models import POSTab
 from shopman.backstage.projections.pos import build_pos
+from shopman.shop.fiscal import fiscal_pool
 from shopman.shop.models import Channel, Shop
 from shopman.shop.services.pos_intent import POS_SALE_INTENT_VERSION
 
@@ -31,6 +32,27 @@ def _grant_adjust_shift_perm(user) -> None:
     ct = ContentType.objects.get_for_model(Shift)
     perm = Permission.objects.get(content_type=ct, codename="adjust_shift")
     user.user_permissions.add(perm)
+
+
+
+class StubFiscalBackend:
+    """Pool fiscal não-vazio: ``fiscal.emit`` é no-op sem backend, e sem ele o
+    teste mediria a ausência do adapter em vez da regra de emissão."""
+
+    def emit(self, **kwargs):
+        from shopman.fiscalman.contracts import FiscalDocumentResult
+
+        return FiscalDocumentResult(success=True, access_key="stub", status="authorized")
+
+    def query_status(self, *, reference):
+        from shopman.fiscalman.contracts import FiscalDocumentResult
+
+        return FiscalDocumentResult(success=False, status="pending")
+
+    def cancel(self, *, reference, reason):
+        from shopman.fiscalman.contracts import FiscalCancellationResult
+
+        return FiscalCancellationResult(success=True)
 
 
 class POSHeadlessSurfaceContractTests(TestCase):
@@ -105,8 +127,8 @@ class POSHeadlessSurfaceContractTests(TestCase):
         self.assertIn("payment_tenders", checkout["allowed_payload_keys"])
         self.assertIn("manager_approval", checkout["allowed_payload_keys"])
         self.assertEqual(
-            {mode["ref"] for mode in checkout["receipt_modes"]},
-            {"none", "print", "email"},
+            {channel["ref"] for channel in checkout["receipt_channels"]},
+            {"print", "email"},
         )
         field_refs = {field["ref"]: field for field in checkout["fields"]}
         self.assertEqual(field_refs["delivery_address"]["input_type"], "address_autocomplete")
@@ -223,6 +245,72 @@ class POSHeadlessSurfaceContractTests(TestCase):
         self.assertEqual(order.data["payment"]["method"], "cash")
         self.assertEqual(order.data["payment"]["amount_q"], 2600)
         self.assertEqual(order.data["pos"]["client_request_id"], "pos-headless-contract-001")
+
+    @override_settings(
+        SHOPMAN_FISCAL_ADAPTER="shopman.backstage.tests.test_pos_headless_surface_contract.StubFiscalBackend",
+        SHOPMAN_FISCAL_EMISSION_RESOLVER=(
+            "shopman.shop.fiscal_resolvers.on_request_or_tax_id,"
+            "shopman.shop.fiscal_resolvers.eletronic_payment"
+        ),
+    )
+    def test_close_reports_fiscal_expected_for_card_sale_without_the_toggle(self) -> None:
+        """Venda eletrônica emite sem o operador marcar nada — e o balcão precisa saber.
+
+        O botão da DANFE seguia ``issue_fiscal_document`` (a intenção). Com o
+        resolver de produção, cartão e pix emitem por forma de pagamento: a nota
+        nasce sem ninguém marcar nada, e o balcão não tinha como chegar nela.
+        Agora quem responde é a mesma regra que decide emitir.
+        """
+        closed = self._close_sale_for_fiscal(payment_method="card", issue_fiscal_document=False)
+
+        self.assertTrue(closed["fiscal_expected"])
+
+    @override_settings(
+        SHOPMAN_FISCAL_ADAPTER="shopman.backstage.tests.test_pos_headless_surface_contract.StubFiscalBackend",
+        SHOPMAN_FISCAL_EMISSION_RESOLVER=(
+            "shopman.shop.fiscal_resolvers.on_request_or_tax_id,"
+            "shopman.shop.fiscal_resolvers.eletronic_payment"
+        ),
+    )
+    def test_close_reports_no_fiscal_for_cash_sale_without_the_toggle(self) -> None:
+        """Controle positivo: dinheiro sem CPF não emite, e o botão não aparece."""
+        closed = self._close_sale_for_fiscal(payment_method="cash", issue_fiscal_document=False)
+
+        self.assertFalse(closed["fiscal_expected"])
+
+    def _close_sale_for_fiscal(self, *, payment_method: str, issue_fiscal_document: bool) -> dict:
+        # O pool fiscal é um singleton de módulo e cacheia os backends na
+        # primeira chamada. Sem o reset, um teste anterior que rodou com
+        # SHOPMAN_FISCAL_ADAPTER=None deixa a lista vazia em cache e o
+        # override_settings deste teste não tem efeito — falha só na suíte
+        # inteira, nunca sozinho.
+        fiscal_pool.reset()
+        self.addCleanup(fiscal_pool.reset)
+        payload = {
+            "intent_version": POS_SALE_INTENT_VERSION,
+            "items": [
+                {
+                    "sku": "POS-HEADLESS-ITEM",
+                    "name": "Headless Item",
+                    "qty": 1,
+                    "unit_price_q": 1300,
+                }
+            ],
+            "fulfillment_type": "pickup",
+            "payment_method": payment_method,
+            "payment_collection": "terminal",
+            "issue_fiscal_document": issue_fiscal_document,
+            "client_request_id": f"pos-fiscal-{payment_method}-{int(issue_fiscal_document)}",
+        }
+        response = self.client.post(
+            "/api/v1/backstage/pos/sale/close/",
+            data=json.dumps(payload),
+            content_type="application/json",
+        )
+        self.assertEqual(response.status_code, 200)
+        body = response.json()
+        self.assertTrue(body["ok"])
+        return body
 
     def test_api_headless_pos_can_review_and_close_direct_checkout_without_tab(self) -> None:
         payload = {
@@ -364,7 +452,7 @@ class POSHeadlessSurfaceContractTests(TestCase):
             "payment_method": "cash",
             "payment_collection": "terminal",
             "tendered_amount_q": 2000,
-            "receipt_mode": "none",
+            "receipt_channels": [],
             "client_request_id": "pos-headless-review-001",
         }
 

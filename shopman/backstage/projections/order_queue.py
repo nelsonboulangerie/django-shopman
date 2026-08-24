@@ -1000,7 +1000,10 @@ def _fiscal_status(order: Order) -> tuple[str, str, tuple[dict[str, str], ...]]:
     elif data.get("nfce_access_key"):
         status = "authorized"
         label = "NFC-e autorizada"
-    elif not ((data.get("fiscal") or {}).get("issue_document")):
+    elif not _fiscal_emission_expected(order):
+        # A mesma regra que decide emitir decide o rótulo. Perguntar só ao
+        # toggle escondia como "não solicitado" a falha da nota de cartão/pix
+        # e a do fiado — casos em que o resolver emite sem o operador marcar.
         status = "not_requested"
         label = "Fiscal não solicitado"
     else:
@@ -1024,6 +1027,16 @@ def _fiscal_status(order: Order) -> tuple[str, str, tuple[dict[str, str], ...]]:
     if data.get("nfce_qrcode_url"):
         links.append({"label": "QR Code", "url": data["nfce_qrcode_url"]})
     return status, label, tuple(links)
+
+
+def _fiscal_emission_expected(order: Order) -> bool:
+    try:
+        from shopman.shop.services import fiscal as fiscal_service
+
+        return fiscal_service.emission_expected(order)
+    except Exception:
+        logger.debug("orders.fiscal_emission_expected_failed order=%s", order.ref, exc_info=True)
+        return bool(((order.data or {}).get("fiscal") or {}).get("issue_document"))
 
 
 def _latest_fiscal_directive_status(order_ref: str) -> str:

@@ -3,7 +3,7 @@ import { toast } from "vue-sonner";
 import { computed, ref } from "vue";
 
 import type { POSCashDrawerProjection, POSProjection } from "~/types/pos";
-import { useCashDrawer } from "~/composables/useCashDrawer";
+import { useCounterAgent } from "~/composables/useCounterAgent";
 
 import { makeProjection } from "./_posSaleHarness";
 
@@ -24,7 +24,7 @@ function makeDrawer(cash_drawer: POSCashDrawerProjection | null = AGENT) {
   const posValue = ref<POSProjection | null>(
     makeProjection({ cash_drawer: cash_drawer ?? undefined }),
   );
-  return useCashDrawer(computed(() => posValue.value));
+  return useCounterAgent(computed(() => posValue.value));
 }
 
 function stubFetch(impl: (url: string, init?: RequestInit) => unknown) {
@@ -35,7 +35,7 @@ function stubFetch(impl: (url: string, init?: RequestInit) => unknown) {
 
 const okResponse = (body: unknown) => ({ ok: true, status: 200, json: () => Promise.resolve(body) });
 
-describe("useCashDrawer — o caminho físico da gaveta", () => {
+describe("useCounterAgent — o caminho físico da gaveta", () => {
   beforeEach(() => vi.mocked(toast.error).mockClear());
   afterEach(() => vi.unstubAllGlobals());
 
@@ -120,7 +120,7 @@ describe("useCashDrawer — o caminho físico da gaveta", () => {
   });
 });
 
-describe("useCashDrawer — a tela diz por que não dá", () => {
+describe("useCounterAgent — a tela diz por que não dá", () => {
   it("usa o motivo que o servidor mandou", () => {
     const drawer = makeDrawer({
       adapter: "manual", can_kick: false, open_on_cash_sale: false,
@@ -135,7 +135,7 @@ describe("useCashDrawer — a tela diz por que não dá", () => {
   });
 });
 
-describe("useCashDrawer — versão do agente no balcão", () => {
+describe("useCounterAgent — versão do agente no balcão", () => {
   afterEach(() => vi.unstubAllGlobals());
 
   it("a sonda mostra a versão que a estação roda", () => {
@@ -200,7 +200,7 @@ describe("agente velho — o defeito tem que se explicar sozinho", () => {
 
 // ── readState: a gaveta está aberta AGORA? ────────────────────────────────
 
-describe("useCashDrawer — readState nunca chuta", () => {
+describe("useCounterAgent — readState nunca chuta", () => {
   afterEach(() => vi.unstubAllGlobals());
 
   it("lê pelo GET /drawer, sem token, e devolve o que o agente MEDIU", async () => {
