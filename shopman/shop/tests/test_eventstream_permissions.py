@@ -65,15 +65,18 @@ def test_staff_without_the_screen_permission_cannot_read_the_channel():
     assert manager.can_read_channel(staff, "backstage-orders-main") is False
     assert manager.can_read_channel(staff, "backstage-kds-main") is False
     assert manager.can_read_channel(staff, "backstage-production-main") is False
+    assert manager.can_read_channel(staff, "backstage-cash-main") is False
     assert manager.can_read_channel(staff, "backstage-alerts-main") is False
 
 
-def test_kitchen_operator_reads_kds_and_production_but_not_the_cash_alerts():
-    """O vazamento que existia: ``diofer`` da cozinha assinando ``alerts``.
+def test_kitchen_operator_reads_kds_production_and_alerts_but_not_the_cash():
+    """A cozinha vê alerta; dinheiro, não.
 
-    O canal ``alerts`` carrega o pedido de troco do balcão com ``amount_q``,
-    ``denominations``, terminal e quem pediu. A cozinha (Grupo "Cozinha":
-    ``operate_kds`` + ``operate_production``) não opera caixa, e não vê mais.
+    O canal ``cash`` é o que carrega os fatos de caixa do PDV (pedido de troco,
+    devolução, turno) — régua ``operate_pos``, a mesma do ``POSView``. O canal
+    ``alerts`` voltou a carregar só o ``OperatorAlert`` (id/tipo/severidade),
+    então a cozinha (Grupo "Cozinha": ``operate_kds`` + ``operate_production``)
+    volta a poder assiná-lo, como já pode no endpoint de alertas.
     """
     manager = ShopmanChannelManager()
     cozinha = User.objects.create_user(username="diofer", is_staff=True)
@@ -85,8 +88,11 @@ def test_kitchen_operator_reads_kds_and_production_but_not_the_cash_alerts():
     assert manager.can_read_channel(cozinha, "backstage-production-main") is True
     # O painel de retirada do KDS consome o mesmo /sse/orders — ref + status.
     assert manager.can_read_channel(cozinha, "backstage-orders-main") is True
+    # Alerta é o mesmo conteúdo do endpoint que a cozinha já lê por poll.
+    assert manager.can_read_channel(cozinha, "backstage-alerts-main") is True
     # Dinheiro, não.
-    assert manager.can_read_channel(cozinha, "backstage-alerts-main") is False
+    assert manager.can_read_channel(cozinha, "backstage-cash-main") is False
+    assert manager.can_read_channel(cozinha, "backstage-cash-balcao") is False
 
 
 def test_counter_operator_reads_cash_alerts_and_orders_but_not_the_kitchen():
@@ -96,6 +102,8 @@ def test_counter_operator_reads_cash_alerts_and_orders_but_not_the_kitchen():
     caixa = _grant(caixa, "cashman", "shift", "operate_pos")
     caixa = _grant(caixa, "shop", "shop", "manage_orders")
 
+    assert manager.can_read_channel(caixa, "backstage-cash-main") is True
+    assert manager.can_read_channel(caixa, "backstage-cash-balcao") is True
     assert manager.can_read_channel(caixa, "backstage-alerts-main") is True
     assert manager.can_read_channel(caixa, "backstage-orders-main") is True
     assert manager.can_read_channel(caixa, "backstage-kds-main") is False
@@ -106,7 +114,7 @@ def test_superuser_reads_every_mapped_channel():
     manager = ShopmanChannelManager()
     dono = User.objects.create_superuser(username="dono", email="dono@example.invalid", password="x")
 
-    for kind in ("orders", "kds", "production", "alerts"):
+    for kind in ("orders", "kds", "production", "cash", "alerts"):
         assert manager.can_read_channel(dono, f"backstage-{kind}-main") is True, kind
 
 
@@ -123,9 +131,9 @@ def test_unknown_backstage_kind_is_denied_even_for_the_superuser():
     staff = User.objects.create_user(username="staff-tudo", is_staff=True)
     staff = _grant(staff, "cashman", "shift", "operate_pos")
 
-    assert manager.can_read_channel(dono, "backstage-cash-main") is False
+    assert manager.can_read_channel(dono, "backstage-drawer-main") is False
     assert manager.can_read_channel(dono, "backstage-bi-main") is False
-    assert manager.can_read_channel(staff, "backstage-cash-main") is False
+    assert manager.can_read_channel(staff, "backstage-drawer-main") is False
 
 
 def test_order_channels_require_matching_customer_or_staff():
@@ -212,7 +220,15 @@ def test_channel_permissions_mirror_the_views_that_serve_the_same_data():
     assert OrderQueueView.required_permission in rules["orders"]
     assert KDSBoardView.required_permission in rules["kds"]
     assert ProductionBoardView.required_permission in rules["production"]
-    # `alerts` é o caso deliberadamente MAIS restrito que o endpoint homônimo:
-    # o canal carrega o pedido de troco (valor + cédulas), então vale a régua do
-    # caixa, a mesma do PDV. Ver o comentário do mapa em eventstream.py.
-    assert POSView.required_permission in rules["alerts"]
+    # `cash` alimenta a mesma tela que o `POSView` serve — mesma régua.
+    assert rules["cash"] == (POSView.required_permission,)
+    # `alerts` espelha a metade estática de `can_view_operator_alerts` (a régua
+    # do endpoint /api/v1/backstage/alerts/): todo perfil que lê a lista por
+    # permissão nominal também pode assinar o push dela.
+    assert set(rules["alerts"]) == {
+        "shop.manage_orders",
+        "shop.manage_production",
+        "cashman.operate_pos",
+        "backstage.operate_kds",
+        "backstage.operate_production",
+    }
