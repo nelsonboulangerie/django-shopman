@@ -36,7 +36,7 @@ POS_TRANSITIONS = {
     "ready": ["preparing", "dispatched", "completed"],
     "dispatched": ["delivered", "returned"],
     "delivered": ["completed", "returned"],
-    "completed": ["returned"],
+    "completed": ["returned", "cancelled"],
     "cancelled": [],
     "returned": [],
 }
@@ -78,7 +78,7 @@ def _shop_and_channel():
     fiscal_pool.reset()
 
 
-def _counter_order(ref="PDV-TEST-1", *, transitions=POS_TRANSITIONS, data_extra=None):
+def _counter_order(ref="PDV-TEST-1", *, transitions=POS_TRANSITIONS, data_extra=None, status=Order.Status.ACCEPTED):
     data = {
         "origin_channel": "pos",
         "fulfillment_type": "pickup",
@@ -94,7 +94,7 @@ def _counter_order(ref="PDV-TEST-1", *, transitions=POS_TRANSITIONS, data_extra=
         ref=ref,
         channel_ref="pdv",
         session_key=f"sess-{ref}",
-        status=Order.Status.ACCEPTED,
+        status=status,
         total_q=1000,
         data=data,
         snapshot=snapshot,
@@ -147,6 +147,34 @@ def test_fiscal_emission_is_deduped_across_both_triggers():
 
     directives = Directive.objects.filter(topic=FISCAL_EMIT_NFCE, payload__order_ref=order.ref)
     assert directives.count() == 1
+
+
+def test_completed_counter_sale_can_still_be_undone_in_the_window():
+    """O desfazer não morre no commit: completed cancela DENTRO da janela,
+    porque o canal do balcão declarou completed→cancelled."""
+    from shopman.shop.services import pos as pos_service
+
+    order = _counter_order(
+        ref="PDV-TEST-8",
+        status=Order.Status.COMPLETED,
+        data_extra={"payment": {"method": "card", "collection": "terminal", "amount_q": 1000,
+                                "tenders": [{"method": "card", "amount_q": 1000, "status": "received"}]}},
+    )
+
+    pos_service.cancel_recent_order(order_ref=order.ref, actor="op", max_age_minutes=10)
+
+    order.refresh_from_db()
+    assert order.status == Order.Status.CANCELLED
+
+
+def test_completed_sale_without_the_transition_still_refuses_cancel():
+    """Canal sem completed→cancelled continua protegido: o guard segue a máquina."""
+    from shopman.shop.services import pos as pos_service
+
+    order = _counter_order(ref="PDV-TEST-9", transitions=None, status=Order.Status.COMPLETED)
+
+    with pytest.raises(ValueError):
+        pos_service.cancel_recent_order(order_ref=order.ref, actor="op", max_age_minutes=10)
 
 
 def test_customer_holds_the_goods_predicate():

@@ -3773,7 +3773,7 @@ class Command(BaseCommand):
                     "ready": ["preparing", "dispatched", "completed"],
                     "dispatched": ["delivered", "returned"],
                     "delivered": ["completed", "returned"],
-                    "completed": ["returned"],
+                    "completed": ["returned", "cancelled"],
                     "cancelled": [],
                     "returned": [],
                 },

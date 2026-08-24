@@ -1185,7 +1185,18 @@ def cancel_recent_order(
     # "em preparo" (o KDS despacha no próprio fechamento), o que matava o undo
     # para qualquer venda com fire. O cancel já cancela os tickets do KDS e
     # reverte o estoque baixado (_on_cancelled), então a cozinha vê sumir.
-    if order.status not in (Order.Status.NEW, Order.Status.ACCEPTED, Order.Status.PREPARING):
+    #
+    # `completed` também — mas SÓ quando o canal declarou a transição
+    # completed→cancelled no seu lifecycle (o pdv declara): a venda de balcão
+    # presencial FECHA no próprio fechamento (counter_handoff), e sem esta
+    # janela o "desfazer venda" morreria no mesmo commit que a criou. O
+    # _on_cancelled já desfaz tudo, NFC-e autorizada inclusive (fiscal.cancel).
+    allowed = (Order.Status.NEW, Order.Status.ACCEPTED, Order.Status.PREPARING)
+    completed_undo = (
+        order.status == Order.Status.COMPLETED
+        and order.can_transition_to(Order.Status.CANCELLED)
+    )
+    if order.status not in allowed and not completed_undo:
         raise ValueError(f"Pedido {order_ref} não pode ser cancelado (status: {order.status})")
     refund_shift = _shift_for_refund(order, actor=actor)
 
