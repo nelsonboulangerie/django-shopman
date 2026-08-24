@@ -61,6 +61,23 @@ export function allQuantitiesFilled(
   return items.every((item) => /^\d+$/.test((inputs[item.sku] ?? "").trim()));
 }
 
+/**
+ * O primeiro item cuja contagem ainda não vale — é ELE que a dica acusa.
+ *
+ * "Preencha todos os itens" com a tela toda aparentemente preenchida era uma
+ * dica que mandava procurar sem dizer onde: um "1,5" colado deixava o campo
+ * com texto e o CTA travado. A dica agora aponta o item, e o `@input`
+ * sanitizado torna o caso raro — mas colar acontece, e a dica tem de saber
+ * responder.
+ */
+export function firstUnfilledItemName(
+  items: ClosingItemProjection[],
+  inputs: Record<string, string>,
+): string {
+  const pendente = items.find((item) => !/^\d+$/.test((inputs[item.sku] ?? "").trim()));
+  return pendente ? pendente.name || pendente.sku : "";
+}
+
 /** Payload do POST: { sku: "qty" } com tudo validado. */
 export function buildQuantitiesPayload(
   items: ClosingItemProjection[],

@@ -4,6 +4,7 @@ import {
   allQuantitiesFilled,
   buildQuantitiesPayload,
   closingBadge,
+  firstUnfilledItemName,
   pendingStatusDisplay,
   productionRows,
   sanitizeQtyInput,
@@ -62,5 +63,20 @@ describe("presentation/closing — fechamento do dia (contagem cega)", () => {
   it("monta o payload sku→qty normalizado", () => {
     const items = [item("PAO"), item("CROIS")];
     expect(buildQuantitiesPayload(items, { PAO: "02", CROIS: "0" })).toEqual({ PAO: "2", CROIS: "0" });
+  });
+
+  // A dica acusa O ITEM, não "todos": um "1,5" colado deixava a tela
+  // aparentemente preenchida e a dica mandava procurar sem dizer onde.
+  it("aponta o primeiro item cuja contagem não vale", () => {
+    const items = [item("PAO"), item("CROIS")];
+    expect(firstUnfilledItemName(items, { PAO: "2", CROIS: "1,5" })).toBe("CROIS");
+    expect(firstUnfilledItemName(items, { CROIS: "3" })).toBe("PAO");
+    expect(firstUnfilledItemName(items, { PAO: "2", CROIS: "0" })).toBe("");
+    expect(firstUnfilledItemName([], {})).toBe("");
+  });
+
+  it("a dica prefere o nome do item e cai no SKU quando não há nome", () => {
+    const semNome = { ...item("PAO"), name: "" };
+    expect(firstUnfilledItemName([semNome], {})).toBe("PAO");
   });
 });

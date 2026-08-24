@@ -41,15 +41,20 @@ import {
   tenderSumQ,
 } from "../app/presentation/payment";
 import {
-  changeDenominations,
+  amountInputError,
+  amountToQ,
   canRegisterMovement,
   canRequestChange,
-  parseAmountToQ,
+  canSubmitCashAmount,
+  changeDenominations,
   changeRequestSummary,
+  denominationCountTotalQ,
+  formatAmountInput,
   formatOpenedAt,
   formatRequestedAt,
   movementLabel,
   movementReasons,
+  parseAmountToQ,
   requiresOpenShiftForSale,
   sessionScreenState,
 } from "../app/presentation/cash";
@@ -509,6 +514,79 @@ describe("presentation/cash — blind drawer shaping", () => {
     expect(canRegisterMovement("sangria", "   ", "Cofre")).toBe(false);
     expect(canRegisterMovement("sangria", "50", "")).toBe(false);
     expect(canRegisterMovement("sangria", "50", "   ")).toBe(false);
+  });
+
+  // Movimento de zero não move nada; "1,2,3" colado virava "0" no servidor e
+  // entrava calado na trilha. Agora o valor precisa ser legível E positivo.
+  it("rejects a movement whose amount is illegible or zero", () => {
+    expect(canRegisterMovement("sangria", "1,2,3", "Cofre")).toBe(false);
+    expect(canRegisterMovement("sangria", "abc", "Cofre")).toBe(false);
+    expect(canRegisterMovement("sangria", "0", "Cofre")).toBe(false);
+    expect(canRegisterMovement("suprimento", "0,00", "")).toBe(false);
+    expect(canRegisterMovement("suprimento", "25,00", "")).toBe(true);
+  });
+});
+
+describe("presentation/cash — valores explícitos (abrir/fechar caixa)", () => {
+  // "0" e "ilegível" são respostas diferentes: no fechamento, zero é gaveta
+  // esvaziada; ilegível é pergunta sem resposta. `parseAmountToQ` esmaga os
+  // dois em 0 (serve ao troco, que exige positivo); `amountToQ` os separa.
+  it("amountToQ distingue zero de ilegível", () => {
+    expect(amountToQ("120,50")).toBe(12050);
+    expect(amountToQ("120.50")).toBe(12050);
+    expect(amountToQ("0")).toBe(0);
+    expect(amountToQ("0,00")).toBe(0);
+    expect(amountToQ("")).toBeNull();
+    expect(amountToQ("   ")).toBeNull();
+    expect(amountToQ("1,2,3")).toBeNull();
+    expect(amountToQ("abc")).toBeNull();
+    expect(amountToQ("10,555")).toBeNull();
+  });
+
+  it("parseAmountToQ continua esmagando ilegível em 0 (contrato do troco)", () => {
+    expect(parseAmountToQ("120,50")).toBe(12050);
+    expect(parseAmountToQ("abc")).toBe(0);
+  });
+
+  // Campo vazio virava "0" calado no fechar caixa: o turno fechava com uma
+  // contagem que ninguém fez. O CTA só arma com resposta explícita — e zero
+  // digitado É resposta (abrir sem fundo, fechar gaveta esvaziada).
+  it("abrir/fechar exigem valor explícito e legível; zero digitado vale", () => {
+    expect(canSubmitCashAmount("200,00")).toBe(true);
+    expect(canSubmitCashAmount("0")).toBe(true);
+    expect(canSubmitCashAmount("")).toBe(false);
+    expect(canSubmitCashAmount("   ")).toBe(false);
+    expect(canSubmitCashAmount("1,2,3")).toBe(false);
+  });
+
+  // A mensagem inline só aparece quando HÁ texto e ele não é um valor: gritar
+  // antes de a pessoa digitar é validação que atrapalha.
+  it("amountInputError acusa só o texto ilegível", () => {
+    expect(amountInputError("")).toBe("");
+    expect(amountInputError("120,50")).toBe("");
+    expect(amountInputError("0")).toBe("");
+    expect(amountInputError("1,2,3")).not.toBe("");
+    expect(amountInputError("abc")).not.toBe("");
+  });
+
+  it("formatAmountInput devolve o texto que o campo aceita de volta", () => {
+    expect(formatAmountInput(12050)).toBe("120,50");
+    expect(formatAmountInput(20000)).toBe("200,00");
+    expect(formatAmountInput(0)).toBe("0,00");
+    // Ida e volta estável: o que o contador escreve, o CTA aceita.
+    expect(amountToQ(formatAmountInput(12345))).toBe(12345);
+  });
+
+  // O contador de denominações é AJUDA: qty ilegível ou vazia conta zero, e a
+  // soma nunca trava a contagem de quem digita direto.
+  it("denominationCountTotalQ soma qty × denominação, ignorando o ilegível", () => {
+    expect(denominationCountTotalQ({})).toBe(0);
+    expect(denominationCountTotalQ({ 2000: "2", 50: "3" })).toBe(4150);
+    expect(denominationCountTotalQ({ 2000: "", 50: "abc" })).toBe(0);
+    expect(denominationCountTotalQ({ 2000: "0" })).toBe(0);
+    // "12abc" digitado num campo numérico: parseInt lê o prefixo — o campo já
+    // filtra por pattern, isto é só a rede de baixo.
+    expect(denominationCountTotalQ({ 100: "12" })).toBe(1200);
   });
 });
 
