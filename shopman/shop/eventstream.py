@@ -106,26 +106,35 @@ class ShopmanChannelManager(DefaultChannelManager):
 #:                exatamente o que as duas telas já leem por REST.
 #:   kds        → views de KDS (``backstage.operate_kds``).
 #:   production → views de produção (``backstage.operate_production``).
-#:   alerts     → ⚠️ NÃO é ``can_view_operator_alerts`` (a regra do
-#:                ``/api/v1/backstage/alerts/``). Este canal carrega HOJE, além
-#:                do alerta, o pedido de troco do balcão com ``amount_q`` e
-#:                ``denominations`` — dado de caixa que a lista de alertas não
-#:                expõe. Um canal só tem UM gate, então ele vale pelo conteúdo
-#:                mais sensível que trafega nele: o do caixa. Nenhuma superfície
-#:                assina ``/events/alerts/`` hoje (elas leem alerta por poll),
-#:                então isto não fecha porta de ninguém. Quando o pedido de troco
-#:                ganhar canal próprio (``backstage-cash-*``), este volta a
-#:                espelhar ``can_view_operator_alerts``.
+#:   cash       → o PDV (``cashman.operate_pos``, a mesma régua do ``POSView``).
+#:                Pedido de troco, devolução pendente e turno aberto/fechado —
+#:                o push que faz outra estação refazer o fetch da Projection sem
+#:                F5. O corpo é ``kind``+``ref`` (sinal mínimo, ADR-016): valor e
+#:                cédulas ficam onde sempre estiveram, no fetch canônico gateado.
+#:   alerts     → ``can_view_operator_alerts`` na sua metade estática: o canal
+#:                voltou a carregar SÓ o ``OperatorAlert`` (id/tipo/severidade)
+#:                depois que o pedido de troco ganhou o canal ``cash``, então o
+#:                gate volta a ser o da lista de alertas. A metade dinâmica do
+#:                predicado (``resolve_production_access``, acesso por coluna)
+#:                não cabe num mapa de códigos — quem só entra por ela segue no
+#:                poll do endpoint, que já a avalia.
 #:
 #: São os MESMOS códigos que as views declaram em ``required_permission`` e que o
 #: ``HasBackstagePermission`` avalia com ``user.has_perm(code)`` — não uma segunda
 #: régua. Ficam aqui como código, e não como import de
 #: ``shopman.backstage.permissions``, porque ``shop`` não importa superfície fora
 #: de ``adapters/`` (test_architecture / test_import_boundaries), e um seam de
-#: adapter para ler quatro strings seria cerimônia sem consumidor.
+#: adapter para ler cinco strings seria cerimônia sem consumidor.
 _BACKSTAGE_CHANNEL_RULES = {
     "orders": ("shop.manage_orders", "backstage.operate_kds"),
     "kds": ("backstage.operate_kds",),
     "production": ("backstage.operate_production",),
-    "alerts": ("cashman.operate_pos",),
+    "cash": ("cashman.operate_pos",),
+    "alerts": (
+        "shop.manage_orders",
+        "shop.manage_production",
+        "cashman.operate_pos",
+        "backstage.operate_kds",
+        "backstage.operate_production",
+    ),
 }

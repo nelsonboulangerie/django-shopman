@@ -4,7 +4,8 @@ Dois assuntos:
 
 - observar quando um produto deixa (ou volta) de estar disponível para oferecer.
   O que muda essa resposta é estoque ou reserva, então é neles que se escuta;
-- anunciar o pedido de troco do balcão no SSE quando a linha entra no livro.
+- anunciar no canal SSE ``cash`` os fatos de caixa que outra estação do PDV
+  precisa ver sem F5: pedido de troco, devolução entregue, turno aberto/fechado.
 
 Os dois sempre **depois do commit**, para que a leitura enxergue o estado já
 gravado e não o de meio de transação.
@@ -42,42 +43,76 @@ def _observe_after_commit(sku: str) -> None:
 _CHANGE_REQUEST_KINDS = ("change_requested", "change_served", "change_cancelled")
 
 
-def on_entry_for_change_request(sender, entry, **kwargs) -> None:
-    """Anuncia o pedido de troco no canal ``alerts`` quando ele entra no livro.
+def _terminal_ref(shift) -> str:
+    return shift.terminal.ref if shift is not None and shift.terminal_id else ""
+
+
+def on_entry_for_pos_event(sender, entry, **kwargs) -> None:
+    """Anuncia no canal ``cash`` os lançamentos que outra estação precisa ver.
 
     Escuta ``cashman.signals.entry_recorded`` em vez de o service do balcão
     chamar o emissor na mão: o anúncio passa a ser consequência do FATO (a linha
     no livro), não de alguém lembrar de anunciar. Quem gravar o lançamento por
     outro caminho — um comando, o Admin, um fluxo novo — anuncia igual.
 
-    ⚠️ Isto NÃO substitui o operador chamar em voz alta. Numa padaria pequena
-    ninguém está com a tela de alertas aberta esperando — e hoje as superfícies
-    de operador leem alertas por POLL, não por este canal. O que o evento entrega
-    é a trilha (quem pediu, o quê, quando) e o dado para o B.I. depois: quantas
-    vezes por dia falta troco, e em qual horário. Prometer recado entregue seria
-    mentira, e mentira de tela vira dinheiro no chão.
+    Só os lançamentos CROSS-estação anunciam: pedido de troco (pedido/atendido/
+    cancelado, o estado que a outra tela acompanha) e a devolução em dinheiro
+    entregue (some da lista de pendentes de todo mundo). Venda, sangria e
+    suprimento ficam de fora de propósito — são fatos da própria estação, e
+    empurrar um refetch para o balcão inteiro a cada venda seria o poll de volta,
+    só que empurrado.
+
+    O corpo é sinal mínimo (``kind``+``ref``, ADR-016): valor e cédulas moram no
+    fetch canônico da Projection, atrás do mesmo gate ``cashman.operate_pos`` do
+    canal.
+
+    ⚠️ O push NÃO substitui o operador chamar em voz alta: tela fechada não ouve
+    SSE. O que ele elimina é o F5 de quem está com a tela aberta.
     """
-    if entry is None or entry.kind not in _CHANGE_REQUEST_KINDS:
+    if entry is None:
         return
 
-    from shopman.backstage.services.pos import change_request_state
-    from shopman.shop.handlers._sse_emitters import emit_change_request
+    from shopman.shop.handlers._sse_emitters import emit_cash_event
 
-    # Atendimento e cancelamento respondem ao pedido: o que a tela acompanha é
-    # sempre o estado DELE, não o da linha que acabou de entrar.
-    request_id = entry.pk if entry.kind == "change_requested" else entry.parent_id
-    if not request_id:
-        return
-    shift = entry.shift
-    request = change_request_state(shift, request_id)
-    emit_change_request(
-        {
-            "ref": str(request.get("entry_id") or ""),
-            "status": request.get("status", ""),
-            "amount_q": request.get("amount_q", 0),
-            "denominations": request.get("denominations", []),
-            "shift_id": shift.pk,
-            "terminal_ref": shift.terminal.ref if shift.terminal_id else "",
-            "requested_by": request.get("requested_by", ""),
-        }
+    if entry.kind in _CHANGE_REQUEST_KINDS:
+        from shopman.backstage.services.pos import change_request_state
+
+        # Atendimento e cancelamento respondem ao pedido: o que a tela acompanha
+        # é sempre o estado DELE, não o da linha que acabou de entrar.
+        request_id = entry.pk if entry.kind == "change_requested" else entry.parent_id
+        if not request_id:
+            return
+        request = change_request_state(entry.shift, request_id)
+        emit_cash_event(
+            "change_request",
+            {"ref": str(request.get("entry_id") or ""), "status": request.get("status", "")},
+            terminal_ref=_terminal_ref(entry.shift),
+        )
+    elif entry.kind == "refund":
+        emit_cash_event(
+            "refund",
+            {"ref": str(entry.order_ref or "")},
+            terminal_ref=_terminal_ref(entry.shift),
+        )
+
+
+def on_shift_opened(sender, shift, **kwargs) -> None:
+    """Turno aberto: a antesala das outras estações troca de mundo sem F5."""
+    from shopman.shop.handlers._sse_emitters import emit_cash_event
+
+    emit_cash_event(
+        "shift_opened",
+        {"ref": str(shift.pk)},
+        terminal_ref=_terminal_ref(shift),
+    )
+
+
+def on_shift_closed(sender, shift, count=None, **kwargs) -> None:
+    """Turno fechado: quem ficou na tela de venda descobre que o caixa acabou."""
+    from shopman.shop.handlers._sse_emitters import emit_cash_event
+
+    emit_cash_event(
+        "shift_closed",
+        {"ref": str(shift.pk)},
+        terminal_ref=_terminal_ref(shift),
     )

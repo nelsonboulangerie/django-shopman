@@ -51,7 +51,8 @@ Regras do padrão:
 ## Aplicações
 
 - **Já usam:** acompanhamento de pedido (`order-<ref>`), estado de estoque
-  (`stock-`), verificação por WhatsApp (`wa-verify-<token>`).
+  (`stock-`), verificação por WhatsApp (`wa-verify-<token>`), PDV
+  (`backstage-cash-*`: pedido de troco, devolução pendente, turno).
 - **Candidatos a migrar/adotar:** KDS, gestor de pedidos, produção/fornadas,
   qualquer badge/contador que hoje faz poll. Migração incremental — cada tela
   ganha o push mantendo o poll como rede de segurança.

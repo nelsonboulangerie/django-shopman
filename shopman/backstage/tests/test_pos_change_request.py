@@ -418,12 +418,13 @@ def test_endpoint_de_cancelar_resolve(client, operator):
 # ── Aviso ─────────────────────────────────────────────────────────────────
 
 
-def test_o_pedido_anuncia_no_canal_de_alertas(operator, monkeypatch, django_capture_on_commit_callbacks):
-    """O evento é trilha e dado para o B.I., NÃO um recado entregue.
+def test_o_pedido_anuncia_no_canal_de_caixa(operator, monkeypatch, django_capture_on_commit_callbacks):
+    """O evento é um SINAL para as outras estações, não o dado em si.
 
-    As superfícies de operador leem alertas por poll; quem chama o gerente numa
-    padaria pequena continua sendo a voz do operador. O que se prova aqui é que
-    o sinal existe e carrega o suficiente para ser contado depois.
+    O corpo é mínimo (``kind``+``ref``+``status``, ADR-016): quem recebe refaz o
+    fetch canônico da Projection do terminal, onde valor e cédulas moram atrás
+    do mesmo gate ``cashman.operate_pos`` do canal. Valor no push seria uma
+    segunda cópia da verdade, viajando por um caminho que ninguém audita.
 
     O publish é adiado para o COMMIT (ADR-016) — sem o `capture`, o evento nunca
     sairia dentro do teste e o assert seria mentira nas duas direções.
@@ -431,20 +432,23 @@ def test_o_pedido_anuncia_no_canal_de_alertas(operator, monkeypatch, django_capt
     enviados = []
     monkeypatch.setattr(
         "shopman.shop.handlers._sse_emitters._publish_backstage",
-        lambda kind, event_type, payload, scope: enviados.append((kind, event_type, payload)),
+        lambda kind, event_type, payload, scope: enviados.append((kind, event_type, payload, scope)),
     )
 
     with django_capture_on_commit_callbacks(execute=True):
         entry = pos_service.request_change(operator=operator, amount_raw="50", denominations=[50])
 
-    assert enviados, "o pedido de troco precisa deixar sinal no canal de alertas"
-    kind, event_type, payload = enviados[-1]
-    assert (kind, event_type) == ("alerts", "backstage-alerts-update")
-    assert payload["type"] == "change_request"
+    assert enviados, "o pedido de troco precisa deixar sinal no canal de caixa"
+    kind, event_type, payload, scope = enviados[-1]
+    assert (kind, event_type) == ("cash", "backstage-cash-update")
+    assert payload["kind"] == "change_request"
     assert payload["ref"] == str(entry.pk)
-    assert payload["denominations"] == [50]
     assert payload["status"] == "pending"
-    assert payload["requested_by"] == "marina"
+    # Sinal mínimo: nada de valor nem cédulas no push.
+    assert "amount_q" not in payload
+    assert "denominations" not in payload
+    # O escopo é o terminal — endereçável no dia do balcão + totem.
+    assert scope == Terminal.default().ref
 
 
 def test_a_segunda_assinatura_e_o_user_que_o_pin_autorizou(operator, manager):
@@ -486,9 +490,9 @@ def test_o_anuncio_sai_de_quem_ouve_a_linha_entrar_no_livro(operator, monkeypatc
         )
 
     assert enviados, "a linha no livro é o que dispara o anúncio"
+    assert enviados[-1]["kind"] == "change_request"
     assert enviados[-1]["ref"] == str(entry.pk)
     assert enviados[-1]["status"] == "pending"
-    assert enviados[-1]["denominations"] == [1000]
 
 
 def test_atender_o_pedido_anuncia_o_estado_do_PEDIDO_nao_o_do_atendimento(

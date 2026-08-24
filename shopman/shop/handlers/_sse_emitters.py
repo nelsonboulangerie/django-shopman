@@ -270,6 +270,14 @@ def _on_order_changed(sender, order, event_type, actor, **kwargs):
         {"ref": order.ref, "status": order.status, "kind": event_type},
         scope=_scope_for_order(order),
     )
+    if event_type == "status_changed" and order.status in ("cancelled", "returned"):
+        # Cancelar não é devolver: se a venda tinha dinheiro capturado, acabou de
+        # NASCER uma devolução pendente que outra estação precisa ver sem F5. O
+        # evento não confere se havia dinheiro — é sinal, não estado (ADR-016):
+        # o cliente refaz o fetch canônico e a Projection responde a verdade.
+        # Cancelamento é raro; um refetch em vão é mais barato que duplicar aqui
+        # a derivação de ``pending_cash_refunds``.
+        emit_cash_event("refund_pending", {"ref": order.ref})
 
 
 def emit_courier_update(order, payload: dict) -> None:
@@ -350,23 +358,21 @@ def _on_operator_alert_saved(sender, instance, created, **kwargs):
     )
 
 
-def emit_change_request(payload: dict) -> None:
-    """Publica um pedido de troco do balcão no canal ``alerts``.
+def emit_cash_event(kind: str, payload: dict | None = None, *, terminal_ref: str = "") -> None:
+    """Publica um fato de caixa no canal ``cash`` do PDV.
 
-    ⚠️ Honestidade sobre o alcance: as superfícies de operador hoje leem alertas
-    por POLL, e numa padaria pequena ninguém fica com essa tela aberta. Quem
-    avisa o gerente continua sendo o operador, em voz alta. O que este evento
-    entrega é a trilha e o dado — não um recado entregue. Tratar isto como
-    notificação faria o balcão esperar por alguém que não foi chamado.
+    É o push que faz OUTRA estação enxergar sem F5 o pedido de troco, a
+    devolução pendente e o turno aberto/fechado — hoje essas telas só atualizam
+    depois de ação própria ou do botão "Atualizar". O corpo é sinal mínimo
+    (``kind`` + ``ref``, ADR-016): quem recebe refaz o fetch canônico da
+    Projection do terminal, onde valor e cédulas já vivem atrás do gate do PDV.
+
+    O ``scope`` é o ref do terminal (``backstage-cash-<terminal>``): com uma
+    gaveta só o cliente assina o ``main``, mas o dia do balcão + totem já nasce
+    endereçável, como o KDS por estação.
     """
-    # `type` identifica o alerta, como no evento de ``OperatorAlert`` ao lado. O
-    # que o balcão pediu vem em `amount_q` e `denominations`, que é outra coisa.
-    _emit_backstage(
-        "alerts",
-        "backstage-alerts-update",
-        {"type": "change_request", **payload},
-        scope=_default_backstage_scope(),
-    )
+    body = {"kind": kind, **(payload or {})}
+    _emit_backstage("cash", "backstage-cash-update", body, scope=terminal_ref or None)
 
 
 def emit_kds_change(ticket, *, event_type: str = "backstage-kds-update", scope: str | None = None) -> None:
