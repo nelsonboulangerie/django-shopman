@@ -172,6 +172,56 @@ class LoyaltyService:
         return tx
 
     @classmethod
+    def adjust_points(
+        cls,
+        customer_ref: str,
+        points: int,
+        description: str,
+        reference: str = "",
+        created_by: str = "",
+    ) -> LoyaltyTransaction:
+        """
+        Adjust customer points balance by a signed delta.
+
+        Unlike redeem_points, a negative adjustment may take the balance below
+        zero (e.g. revoking an earn after the customer already spent the
+        points). lifetime_points is untouched — it never decreases.
+
+        Args:
+            customer_ref: Customer ref
+            points: Signed delta (positive credits, negative debits, non-zero)
+            description: Reason for the adjustment
+            reference: External reference (order:123)
+            created_by: Who triggered the adjustment
+
+        Returns:
+            Created LoyaltyTransaction
+
+        Raises:
+            CustomerError: If not enrolled or points == 0
+        """
+        if points == 0:
+            raise CustomerError("LOYALTY_INVALID_POINTS", message="Points must be non-zero")
+
+        with transaction.atomic():
+            account = cls._get_active_account_for_update(customer_ref)
+
+            account.points_balance += points
+            account.save(update_fields=["points_balance", "updated_at"])
+
+            tx = LoyaltyTransaction.objects.create(
+                account=account,
+                transaction_type=TransactionType.ADJUST,
+                points=points,
+                balance_after=account.points_balance,
+                description=description,
+                reference=reference,
+                created_by=created_by,
+            )
+
+        return tx
+
+    @classmethod
     def add_stamp(
         cls,
         customer_ref: str,

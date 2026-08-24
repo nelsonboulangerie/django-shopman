@@ -1181,6 +1181,42 @@ class TestLoyaltyService:
 
         assert Directive.objects.count() == 0
 
+    @pytest.mark.django_db
+    def test_revoke_creates_deduped_directive(self):
+        from shopman.shop.services.loyalty import revoke
+
+        order = _make_order(total_q=5000)
+
+        revoke(order, reason="cancelled")
+
+        directive = Directive.objects.last()
+        assert directive is not None
+        assert directive.topic == "loyalty.revoke"
+        assert directive.payload["order_ref"] == "ORD-001"
+        assert directive.payload["reason"] == "cancelled"
+        assert directive.dedupe_key == "loyalty.revoke:ORD-001"
+
+    @pytest.mark.django_db
+    def test_revoke_skips_zero_total(self):
+        from shopman.shop.services.loyalty import revoke
+
+        order = _make_order(total_q=0)
+
+        revoke(order, reason="cancelled")
+
+        assert Directive.objects.count() == 0
+
+    @pytest.mark.django_db
+    def test_revoke_twice_queues_once(self):
+        from shopman.shop.services.loyalty import revoke
+
+        order = _make_order(total_q=5000)
+
+        revoke(order, reason="cancelled")
+        revoke(order, reason="cancelled")
+
+        assert Directive.objects.filter(topic="loyalty.revoke").count() == 1
+
 
 # ══════════════════════════════════════════════════════════════════════
 # services/fiscal.py

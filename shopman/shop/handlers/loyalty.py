@@ -1,5 +1,6 @@
 """
-Loyalty handlers — earn points on completion, redeem points on commit.
+Loyalty handlers — earn points on completion, redeem points on commit,
+revoke earned points on cancellation/return.
 """
 
 from __future__ import annotations
@@ -10,7 +11,7 @@ from shopman.orderman.exceptions import DirectiveTerminalError, DirectiveTransie
 from shopman.orderman.models import Directive
 
 from shopman.shop.adapters import get_adapter
-from shopman.shop.directives import LOYALTY_EARN, LOYALTY_REDEEM
+from shopman.shop.directives import LOYALTY_EARN, LOYALTY_REDEEM, LOYALTY_REVOKE
 
 logger = logging.getLogger(__name__)
 
@@ -33,6 +34,15 @@ class LoyaltyEarnHandler:
             order = Order.objects.get(ref=order_ref)
         except Order.DoesNotExist as exc:
             raise DirectiveTerminalError(f"Order not found: {order_ref}") from exc
+
+        # Um earn atrasado (fila parada, retry com backoff) pode chegar depois do
+        # cancelamento — creditar aqui deixaria pontos de uma venda que não existe,
+        # e o revoke pode já ter passado e concluído que não havia nada a estornar.
+        if order.status in (Order.Status.CANCELLED, Order.Status.RETURNED):
+            logger.info(
+                "loyalty.earn: order %s is %s, skipping credit", order_ref, order.status
+            )
+            return
 
         customer_ref = _customer_ref_for_order(order)
         if not customer_ref:
@@ -124,6 +134,92 @@ class LoyaltyRedeemHandler:
 
         except Exception as exc:
             raise _redeem_directive_error(exc, order_ref=order_ref, points=points) from exc
+
+
+class LoyaltyRevokeHandler:
+    """Reverses earned points on cancellation/return. Topic: loyalty.revoke"""
+
+    topic = LOYALTY_REVOKE
+
+    def handle(self, *, message: Directive, ctx: dict) -> None:
+        from shopman.orderman.models import Order
+
+        payload = message.payload
+        order_ref = payload.get("order_ref")
+        reason = str(payload.get("reason") or "cancelled")
+
+        if not order_ref:
+            raise DirectiveTerminalError("missing order_ref")
+
+        try:
+            order = Order.objects.get(ref=order_ref)
+        except Order.DoesNotExist as exc:
+            raise DirectiveTerminalError(f"Order not found: {order_ref}") from exc
+
+        customer_ref = _customer_ref_for_order(order)
+        if not customer_ref:
+            logger.info("loyalty.revoke: no customer_ref on order %s, skipping", order_ref)
+            return
+
+        try:
+            adapter = get_adapter("customer")
+            reference = f"order:{order.ref}"
+
+            # At-least-once: retry da directive não pode estornar duas vezes.
+            if adapter.has_loyalty_transaction(
+                customer_ref, reference=reference, transaction_type="adjust"
+            ):
+                logger.info("loyalty.revoke: already reversed for %s, skipping", reference)
+                return
+
+            if not adapter.has_loyalty_transaction(
+                customer_ref, reference=reference, transaction_type="earn"
+            ):
+                # Earn ainda em voo? Esperar assentar: ou ele credita (o próximo
+                # retry estorna) ou vê o pedido cancelado e pula (guard do earn).
+                if _live_earn_directive_exists(order_ref):
+                    raise DirectiveTransientError(
+                        f"earn for {order_ref} still queued, retrying later"
+                    )
+                # Nunca creditou (pedido nunca completou, earn pulou, ou terminal).
+                logger.info("loyalty.revoke: nothing earned for %s, skipping", reference)
+                return
+
+            # A transação earn é a fonte da verdade — a taxa (points_per_real)
+            # pode ter mudado entre o crédito e o estorno.
+            points = adapter.get_loyalty_transaction_points(
+                customer_ref, reference=reference, transaction_type="earn"
+            )
+            if points <= 0:
+                logger.info("loyalty.revoke: no positive earn for %s, skipping", reference)
+                return
+
+            reason_label = "devolvido" if reason == "returned" else "cancelado"
+            adapter.adjust_points(
+                customer_ref=customer_ref,
+                points=-points,
+                description=f"Estorno pedido {order.ref} ({reason_label})",
+                reference=reference,
+                created_by="system",
+            )
+
+            logger.info(
+                "loyalty.revoke: -%d points for %s (order %s, %s)",
+                points, customer_ref, order_ref, reason,
+            )
+
+        except DirectiveTransientError:
+            raise
+        except Exception as exc:
+            raise DirectiveTransientError(str(exc)) from exc
+
+
+def _live_earn_directive_exists(order_ref: str) -> bool:
+    return Directive.objects.filter(
+        topic=LOYALTY_EARN,
+        status__in=(Directive.Status.QUEUED, Directive.Status.RUNNING),
+        payload__order_ref=order_ref,
+    ).exists()
 
 
 def _redeem_directive_error(exc: Exception, *, order_ref: str, points: int):

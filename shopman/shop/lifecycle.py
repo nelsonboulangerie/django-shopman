@@ -540,6 +540,9 @@ def _on_cancelled(order, config: ChannelConfig) -> None:
     _release_coupon_use(order)
     _settle_cancelled_payment(order)
     fiscal.cancel(order)
+    # Venda de balcão nasce completed (counter_handoff) e pode ser cancelada na
+    # janela do PIN — os pontos creditados em _on_completed voltam.
+    loyalty.revoke(order, reason="cancelled")
 
     # Rejections already queued `order_rejected` (with the reason) in reject_order;
     # firing `order_cancelled` too would double-notify the customer. All the
@@ -565,10 +568,11 @@ def _settle_cancelled_payment(order) -> None:
 
 
 def _on_returned(order, config: ChannelConfig) -> None:
-    """Order returned: revert stock + refund + cancel fiscal + notify."""
+    """Order returned: revert stock + refund + revoke loyalty + cancel fiscal + notify."""
     stock.revert(order)
     payment.refund(order)
     fiscal.cancel(order)
+    loyalty.revoke(order, reason="returned")
     notification.send(order, "order_returned")
 
 

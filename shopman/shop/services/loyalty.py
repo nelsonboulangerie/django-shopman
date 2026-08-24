@@ -16,6 +16,7 @@ logger = logging.getLogger(__name__)
 
 TOPIC = "loyalty.earn"
 REDEEM_TOPIC = "loyalty.redeem"
+REVOKE_TOPIC = "loyalty.revoke"
 
 
 def redeem(order) -> None:
@@ -64,3 +65,31 @@ def earn(order) -> None:
     )
 
     logger.info("loyalty.earn: queued for order %s", order.ref)
+
+
+def revoke(order, reason: str) -> None:
+    """
+    Schedule loyalty points revocation for a cancelled/returned order.
+
+    Creates a Directive with topic="loyalty.revoke". The handler reverses
+    exactly what the earn transaction credited — if the earn never ran,
+    the revoke is a no-op.
+
+    ASYNC — non-critical, can fail without impacting the cancellation.
+    """
+    if not order.total_q or order.total_q <= 0:
+        return
+
+    from shopman.shop import directives
+
+    created = directives.create_deduped(
+        REVOKE_TOPIC,
+        payload={
+            "order_ref": order.ref,
+            "reason": reason,
+        },
+        dedupe_key=f"loyalty.revoke:{order.ref}",
+    )
+
+    if created is not None:
+        logger.info("loyalty.revoke: queued for order %s (%s)", order.ref, reason)
