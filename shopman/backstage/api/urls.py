@@ -114,6 +114,7 @@ from .operations import (
     POSChangeRequestView,
     POSCloseSaleView,
     POSCustomerLookupView,
+    POSCustomerProfileView,
     POSCustomerResolveView,
     POSCustomerSearchView,
     POSDanfeEscposView,
@@ -367,4 +368,5 @@ urlpatterns = [
     path("pos/customer/lookup/", POSCustomerLookupView.as_view(), name="api-backstage-pos-customer-lookup"),
     path("pos/customer/search/", POSCustomerSearchView.as_view(), name="api-backstage-pos-customer-search"),
     path("pos/customer/resolve/", POSCustomerResolveView.as_view(), name="api-backstage-pos-customer-resolve"),
+    path("pos/customer/<str:ref>/profile/", POSCustomerProfileView.as_view(), name="api-backstage-pos-customer-profile"),
 ]

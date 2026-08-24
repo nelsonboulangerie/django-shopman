@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { toast } from "vue-sonner";
 // Customer picker (spec — Odoo "Choose Customer" clone, redesign 2026-06-10).
 // One SHARED modal for both the comanda header and the payment screen, replacing
 // the two divergent inline dialogs. Picker-first (not form-first), full-screen
@@ -56,6 +57,51 @@ const emit = defineEmits<{
   applyCustomerFavorite: [];
   repeatCustomerLastOrder: [];
 }>();
+
+// ── Preferências persistentes do cliente (painel do balcão) ──────────────────
+// Draft local sincronizado do lookup; salvar é POST parcial no perfil. Os
+// toggles salvam no clique; textos salvam no blur (menos requests, zero botão).
+const apiPathProfile = usePosApiPath();
+const profileSaving = ref(false);
+const profileDraft = reactive({
+  cpf_na_nota: false,
+  email_receipt: false,
+  dietary_restrictions: "",
+  notes: "",
+});
+watch(() => props.customerLookup, (lookup) => {
+  profileDraft.cpf_na_nota = !!lookup?.fiscal_prefs?.cpf_na_nota;
+  profileDraft.email_receipt = !!lookup?.fiscal_prefs?.email_receipt;
+  profileDraft.dietary_restrictions = lookup?.dietary_restrictions || "";
+  profileDraft.notes = lookup?.notes || "";
+}, { immediate: true });
+
+async function saveProfile(body: Record<string, unknown>) {
+  const customerRef = props.customerLookup?.ref;
+  if (!customerRef) return;
+  profileSaving.value = true;
+  try {
+    await $fetch(apiPathProfile(`/api/v1/backstage/pos/customer/${encodeURIComponent(customerRef)}/profile/`), {
+      method: "POST", credentials: "include", body,
+    });
+  } catch {
+    toast.error("Falha ao salvar a preferência do cliente.");
+  } finally {
+    profileSaving.value = false;
+  }
+}
+
+function toggleProfilePref(key: "cpf_na_nota" | "email_receipt") {
+  profileDraft[key] = !profileDraft[key];
+  void saveProfile({ fiscal_prefs: { [key]: profileDraft[key] } });
+}
+
+function saveProfileText() {
+  void saveProfile({
+    dietary_restrictions: profileDraft.dietary_restrictions,
+    notes: profileDraft.notes,
+  });
+}
 
 function toggleReceiptChannel(ref: string) {
   const next = props.receiptChannels.includes(ref)
@@ -126,6 +172,56 @@ function onConclude() {
               <UiButton v-if="memory.last_order_items?.length" type="button" variant="outline" size="xs" @click="$emit('repeatCustomerLastOrder')">
                 <Icon name="lucide:rotate-ccw" class="size-3.5" /> Último pedido
               </UiButton>
+            </div>
+
+            <!-- Alertas do balcão: só existem quando há dado (a tela não cresce à toa).
+                 Restrição alimentar é SEGURANÇA — sempre visível, cor funcional. -->
+            <div v-if="customerLookup?.dietary_restrictions || customerLookup?.is_birthday_today || customerLookup?.is_birthday_month" class="flex flex-wrap items-center gap-2">
+              <span v-if="customerLookup?.dietary_restrictions" class="inline-flex items-center gap-1 rounded-full border border-warning/50 bg-warning/10 px-2 py-0.5 text-xs font-medium text-amber-700 dark:text-amber-400">
+                <Icon name="lucide:triangle-alert" class="size-3.5" /> {{ customerLookup.dietary_restrictions }}
+              </span>
+              <span v-if="customerLookup?.is_birthday_today" class="inline-flex items-center gap-1 rounded-full border border-primary/50 bg-primary/10 px-2 py-0.5 text-xs font-medium text-primary">
+                🎂 Aniversário HOJE{{ customerLookup?.birthday_promo_label ? ` · ${customerLookup.birthday_promo_label}` : "" }}
+              </span>
+              <span v-else-if="customerLookup?.is_birthday_month" class="inline-flex items-center gap-1 rounded-full bg-muted px-2 py-0.5 text-xs font-medium text-muted-foreground">
+                🎂 Aniversariante do mês ({{ customerLookup?.birthday_display }})
+              </span>
+            </div>
+
+            <!-- Preferências PERSISTENTES do cliente: liga E desliga aqui —
+                 "hoje não" é desmarcar na venda; "nunca mais" é desligar AQUI. -->
+            <div v-if="customerLookup?.ref" class="grid gap-2 border-t border-primary/20 pt-3">
+              <p class="text-xs font-medium uppercase tracking-wide text-muted-foreground">Preferências do cliente</p>
+              <div class="grid grid-cols-2 gap-2">
+                <UiButton
+                  type="button" variant="outline" size="sm"
+                  class="justify-between text-xs"
+                  :class="profileDraft.cpf_na_nota ? 'border-primary bg-primary/5' : ''"
+                  :disabled="profileSaving"
+                  @click="toggleProfilePref('cpf_na_nota')"
+                >
+                  CPF na nota por padrão
+                  <Icon :name="profileDraft.cpf_na_nota ? 'lucide:check' : 'lucide:minus'" class="size-3.5" />
+                </UiButton>
+                <UiButton
+                  type="button" variant="outline" size="sm"
+                  class="justify-between text-xs"
+                  :class="profileDraft.email_receipt ? 'border-primary bg-primary/5' : ''"
+                  :disabled="profileSaving"
+                  @click="toggleProfilePref('email_receipt')"
+                >
+                  Nota por e-mail por padrão
+                  <Icon :name="profileDraft.email_receipt ? 'lucide:check' : 'lucide:minus'" class="size-3.5" />
+                </UiButton>
+              </div>
+              <label class="grid gap-1 text-sm">
+                <span class="text-xs font-medium text-muted-foreground">Restrições alimentares</span>
+                <UiInput v-model="profileDraft.dietary_restrictions" placeholder="Ex: alérgico a nozes" @blur="saveProfileText" />
+              </label>
+              <label class="grid gap-1 text-sm">
+                <span class="text-xs font-medium text-muted-foreground">Observações do balcão</span>
+                <UiTextarea v-model="profileDraft.notes" :rows="2" placeholder="Ex: prefere pão bem assado; busca às 17h" @blur="saveProfileText" />
+              </label>
             </div>
           </div>
 

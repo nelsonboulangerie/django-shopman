@@ -274,6 +274,16 @@ export interface POSCustomerLookupProjection {
   tax_id: string;
   /** O cliente já optou antes: pré-marca o checkout (editável por venda). */
   fiscal_prefs: { cpf_na_nota?: boolean; email_receipt?: boolean };
+  /** Observações do balcão — editável no painel do cliente. */
+  notes: string;
+  /** Restrições alimentares — dado de SEGURANÇA: chip de alerta. */
+  dietary_restrictions: string;
+  /** "15/05"; os bools dirigem o chip do mês e o aviso do DIA. */
+  birthday_display: string;
+  is_birthday_today: boolean;
+  is_birthday_month: boolean;
+  /** Promoção de aniversariante ATIVA (Core aplica sozinha no reprice). Vazio = nenhuma. */
+  birthday_promo_label: string;
   /** A faixa de preço do cliente (`PriceTier.ref`) — é ela que decide o preço. */
   price_tier: string;
   is_staff: boolean;

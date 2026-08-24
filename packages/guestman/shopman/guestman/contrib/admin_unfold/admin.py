@@ -231,6 +231,21 @@ class CustomerForm(forms.ModelForm):
         widget=UnfoldBooleanSwitchWidget,
         help_text=_("O cliente pode comprar \"em conta\" no PDV e acertar por período. Não se divulga; é por cliente."),
     )
+    # Preferências fiscais persistentes — mesma chave que o PDV lê/edita
+    # (metadata.fiscal_prefs). O balcão liga/desliga no painel do cliente; aqui
+    # é a paridade de config do cadastro completo.
+    fiscal_cpf_na_nota = forms.BooleanField(
+        label=_("CPF na nota por padrão"),
+        required=False,
+        widget=UnfoldBooleanSwitchWidget,
+        help_text=_("Pré-marca \"emitir nota fiscal\" nas vendas deste cliente no PDV (editável por venda)."),
+    )
+    fiscal_email_receipt = forms.BooleanField(
+        label=_("Nota por e-mail por padrão"),
+        required=False,
+        widget=UnfoldBooleanSwitchWidget,
+        help_text=_("Pré-marca o envio da NFC-e por e-mail nas vendas deste cliente no PDV (editável por venda)."),
+    )
 
     class Meta:
         model = Customer
@@ -240,7 +255,11 @@ class CustomerForm(forms.ModelForm):
         super().__init__(*args, **kwargs)
         instance = kwargs.get("instance")
         if instance is not None:
-            self.fields["house_account"].initial = bool((instance.metadata or {}).get("house_account"))
+            metadata = instance.metadata or {}
+            self.fields["house_account"].initial = bool(metadata.get("house_account"))
+            prefs = metadata.get("fiscal_prefs") or {}
+            self.fields["fiscal_cpf_na_nota"].initial = bool(prefs.get("cpf_na_nota"))
+            self.fields["fiscal_email_receipt"].initial = bool(prefs.get("email_receipt"))
 
     def save(self, commit=True):
         customer = super().save(commit=False)
@@ -249,6 +268,14 @@ class CustomerForm(forms.ModelForm):
             metadata["house_account"] = True
         else:
             metadata.pop("house_account", None)
+        prefs = {
+            "cpf_na_nota": bool(self.cleaned_data.get("fiscal_cpf_na_nota")),
+            "email_receipt": bool(self.cleaned_data.get("fiscal_email_receipt")),
+        }
+        if any(prefs.values()):
+            metadata["fiscal_prefs"] = prefs
+        else:
+            metadata.pop("fiscal_prefs", None)
         customer.metadata = metadata
         if commit:
             customer.save()
@@ -329,7 +356,7 @@ class CustomerAdmin(BaseModelAdmin):
             },
         ),
         ("Contato", {"fields": ["email", "phone"]}),
-        ("Segmentação", {"fields": ["price_tier", "tags", "house_account", "notes"]}),
+        ("Segmentação", {"fields": ["price_tier", "tags", "house_account", "fiscal_cpf_na_nota", "fiscal_email_receipt", "notes"]}),
         (
             "Sistema",
             {

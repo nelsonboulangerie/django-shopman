@@ -791,6 +791,19 @@ export function usePosSale(deps: PosSaleDeps) {
       if (prefs.email_receipt && !cart.receiptChannels.includes("email")) {
         cart.receiptChannels = [...cart.receiptChannels, "email"];
       }
+      // Aniversário HOJE: aviso elegante e discreto ao operador — omotenashi de
+      // balcão. Só promete desconto se uma promoção de aniversariante EXISTE
+      // configurada (o Core a aplica sozinho no reprice); sem promoção, o aviso
+      // é só o parabéns.
+      if (response.customer.is_birthday_today) {
+        const nome = (response.customer.name || "").split(" ")[0] || "o cliente";
+        toast.info(`🎂 Hoje é aniversário de ${nome}!`, {
+          description: response.customer.birthday_promo_label
+            ? `A promoção "${response.customer.birthday_promo_label}" se aplica sozinha na venda.`
+            : "Um parabéns cai bem.",
+          duration: 8000,
+        });
+      }
       if (response.customer.is_staff) cart.customerMemoryAction = "";
       if (cart.fulfillmentType === "delivery" && response.customer.default_address && !cart.deliveryAddress.trim()) {
         applySavedAddress(response.customer.default_address);
@@ -835,6 +848,19 @@ export function usePosSale(deps: PosSaleDeps) {
       if (prefs.cpf_na_nota) cart.issueFiscalDocument = true;
       if (prefs.email_receipt && !cart.receiptChannels.includes("email")) {
         cart.receiptChannels = [...cart.receiptChannels, "email"];
+      }
+      // Aniversário HOJE: aviso elegante e discreto ao operador — omotenashi de
+      // balcão. Só promete desconto se uma promoção de aniversariante EXISTE
+      // configurada (o Core a aplica sozinho no reprice); sem promoção, o aviso
+      // é só o parabéns.
+      if (response.customer.is_birthday_today) {
+        const nome = (response.customer.name || "").split(" ")[0] || "o cliente";
+        toast.info(`🎂 Hoje é aniversário de ${nome}!`, {
+          description: response.customer.birthday_promo_label
+            ? `A promoção "${response.customer.birthday_promo_label}" se aplica sozinha na venda.`
+            : "Um parabéns cai bem.",
+          duration: 8000,
+        });
       }
       if (cart.fulfillmentType === "delivery" && response.customer.default_address && !cart.deliveryAddress.trim()) {
         applySavedAddress(response.customer.default_address);

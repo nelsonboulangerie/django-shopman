@@ -245,6 +245,19 @@ class POSCustomerLookupProjection:
     #: O cliente JÁ optou antes por CPF na nota / nota por e-mail? Pré-marca o
     #: checkout (editável). Chaves: cpf_na_nota, email_receipt.
     fiscal_prefs: dict
+    #: Observações do balcão ("prefere bem assado", "busca às 17h"). Editável no PDV.
+    notes: str
+    #: Restrições alimentares — dado de SEGURANÇA: chip de alerta no balcão.
+    dietary_restrictions: str
+    #: Aniversário: "15/05" para exibir; os bools dirigem o chip do mês e o
+    #: aviso do DIA. A promoção de aniversariante é do Core (Promotion.birthday_only,
+    #: aplicada sozinha no reprice) — aqui é só a consciência do operador.
+    birthday_display: str
+    is_birthday_today: bool
+    is_birthday_month: bool
+    #: Nome da promoção de aniversariante ATIVA, se alguma existir configurada.
+    #: Vazio = nenhuma — e aí o aviso não promete desconto nenhum.
+    birthday_promo_label: str
     #: A faixa de preço do cliente (`PriceTier.ref`). Chamava-se `loyalty_group`, e era o
     #: TERCEIRO nome errado da mesma coisa: fidelidade é o `LoyaltyAccount` (bronze/ouro),
     #: e nada disto tem a ver com ela.
@@ -591,6 +604,52 @@ def build_pos_tabs(
     return tuple(tabs[:limit])
 
 
+def _dietary_restrictions(customer) -> str:
+    """metadata.preferences vem de cadastro/importação como string ou dict — a
+    tela recebe SEMPRE string (dict legado vira "chave: valor" legível)."""
+    raw = (getattr(customer, "metadata", None) or {}).get("preferences")
+    if isinstance(raw, dict):
+        return "; ".join(f"{k}: {v}" for k, v in raw.items() if v)
+    return str(raw or "").strip()
+
+
+def _birthday_projection(customer) -> dict:
+    birthday = getattr(customer, "birthday", None)
+    if not birthday:
+        return {
+            "birthday_display": "", "is_birthday_today": False,
+            "is_birthday_month": False, "birthday_promo_label": "",
+        }
+    today = timezone.localdate()
+    is_today = (birthday.day, birthday.month) == (today.day, today.month)
+    promo_label = ""
+    if is_today:
+        # Só promete o que EXISTE configurado: promoção de aniversariante ativa
+        # no Core (aplicada sozinha no reprice). Sem promoção, o aviso é só o
+        # parabéns — nunca inventar desconto.
+        try:
+            from shopman.shop.models import Promotion
+
+            now = timezone.now()
+            promo = (
+                Promotion.objects.filter(
+                    is_active=True, birthday_only=True,
+                    valid_from__lte=now, valid_until__gte=now,
+                )
+                .order_by("name")
+                .first()
+            )
+            promo_label = promo.name if promo else ""
+        except Exception:
+            logger.debug("pos_lookup_birthday_promo_failed", exc_info=True)
+    return {
+        "birthday_display": birthday.strftime("%d/%m"),
+        "is_birthday_today": is_today,
+        "is_birthday_month": birthday.month == today.month,
+        "birthday_promo_label": promo_label,
+    }
+
+
 def build_pos_customer_lookup(phone: str) -> POSCustomerLookupProjection | None:
     """Resolve POS customer lookup as a headless projection."""
     from shopman.shop.projections import customer_context
@@ -617,6 +676,9 @@ def build_pos_customer_lookup(phone: str) -> POSCustomerLookupProjection | None:
         email=getattr(customer, "email", "") or "",
         tax_id=getattr(customer, "document", "") or "",
         fiscal_prefs=dict((getattr(customer, "metadata", None) or {}).get("fiscal_prefs") or {}),
+        notes=getattr(customer, "notes", "") or "",
+        dietary_restrictions=_dietary_restrictions(customer),
+        **_birthday_projection(customer),
         price_tier=tier_ref,
         is_staff=tier_ref == "staff",
         default_address=_saved_address_projection(default_address) if default_address else None,
