@@ -770,6 +770,77 @@ class POSHeadlessSurfaceContractTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertIsNone(response.json()["customer"])
 
+    def test_api_customer_search_normalizes_formatted_digits(self) -> None:
+        # Telefone e CPF são armazenados só com dígitos: a query FORMATADA
+        # ("111.222.333-44", "(43) 98888-7777") precisa encontrar mesmo assim.
+        Customer.objects.create(
+            ref="CUST-DIGITS-1",
+            first_name="Vera",
+            last_name="Formatada",
+            phone="+5543988887777",
+            document="11122233344",
+        )
+
+        def refs(query: str) -> list[str]:
+            response = self.client.get(
+                "/api/v1/backstage/pos/customer/search/", {"q": query},
+            )
+            self.assertEqual(response.status_code, 200)
+            return [row["ref"] for row in response.json()["results"]]
+
+        self.assertIn("CUST-DIGITS-1", refs("111.222.333-44"))   # CPF com máscara
+        self.assertIn("CUST-DIGITS-1", refs("(43) 98888-7777"))  # telefone formatado
+        # A mescla não duplica quem já saiu na busca crua.
+        self.assertEqual(refs("988887777").count("CUST-DIGITS-1"), 1)
+
+    def test_api_customer_resolve_cpf_only_returns_projection_and_created_flag(self) -> None:
+        # Cliente SÓ com CPF (sem telefone): o re-lookup por telefone devolvia
+        # null e o front descartava o cadastro recém-criado. Agora a resposta
+        # carrega sempre a projeção (chaveada por ref) + o flag `created`.
+        before = Customer.objects.count()
+        created = self.client.post(
+            "/api/v1/backstage/pos/customer/resolve/",
+            {"customer_tax_id": "52998224725"},
+            content_type="application/json",
+        )
+        self.assertEqual(created.status_code, 200)
+        body = created.json()
+        self.assertIsNotNone(body["customer"])
+        self.assertTrue(body["created"])
+        self.assertEqual(body["customer"]["tax_id"], "52998224725")
+        self.assertEqual(Customer.objects.count(), before + 1)
+        ref = body["customer"]["ref"]
+        # Idempotente: o mesmo CPF resolve o MESMO cadastro, agora com created=False.
+        again = self.client.post(
+            "/api/v1/backstage/pos/customer/resolve/",
+            {"customer_tax_id": "529.982.247-25"},
+            content_type="application/json",
+        )
+        self.assertEqual(again.status_code, 200)
+        self.assertEqual(again.json()["customer"]["ref"], ref)
+        self.assertFalse(again.json()["created"])
+        self.assertEqual(Customer.objects.count(), before + 1)
+
+    def test_api_customer_lookup_accepts_ref(self) -> None:
+        customer = Customer.objects.create(
+            ref="CUST-BY-REF",
+            first_name="Noa",
+            last_name="Sem Telefone",
+            document="52998224725",
+        )
+        response = self.client.get(
+            "/api/v1/backstage/pos/customer/lookup/", {"ref": customer.ref},
+        )
+        self.assertEqual(response.status_code, 200)
+        lookup = response.json()["customer"]
+        self.assertEqual(lookup["ref"], customer.ref)
+        self.assertEqual(lookup["tax_id"], "52998224725")
+        # Ref desconhecido → null, nunca 500.
+        missing = self.client.get(
+            "/api/v1/backstage/pos/customer/lookup/", {"ref": "CUST-NAO-EXISTE"},
+        )
+        self.assertIsNone(missing.json()["customer"])
+
     def _create_manager(self, pin: str = "4321"):
         from shopman.doorman.models import PinCredential
 

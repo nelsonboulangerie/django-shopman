@@ -60,6 +60,7 @@ from shopman.backstage.projections.pos import (
     build_open_tab,
     build_pos,
     build_pos_customer_lookup,
+    build_pos_customer_lookup_by_ref,
     build_pos_customer_search,
     build_pos_shift_summary,
     build_pos_tabs,
@@ -2481,7 +2482,7 @@ class POSTabUnfireView(APIView):
 @extend_schema_view(
     get=extend_schema(
         tags=["backstage"],
-        summary="Look up customer by phone",
+        summary="Look up customer by ref or phone",
         responses={200: OpenApiResponse(description="Customer projection or null.")},
     ),
 )
@@ -2490,10 +2491,15 @@ class POSCustomerLookupView(APIView):
     required_permission = "cashman.operate_pos"
 
     def get(self, request):
+        ref = (request.query_params.get("ref") or "").strip()
         phone = (request.query_params.get("phone") or "").strip()
-        if not phone:
+        # `ref` vence: é a chave exata do cadastro (cliente sem telefone existe).
+        if ref:
+            customer = build_pos_customer_lookup_by_ref(ref)
+        elif phone:
+            customer = build_pos_customer_lookup(phone)
+        else:
             return Response({"customer": None})
-        customer = build_pos_customer_lookup(phone)
         if customer is None:
             return Response({"customer": None})
         return Response({"customer": projection_data(customer)})
@@ -2548,9 +2554,15 @@ class POSCustomerResolveView(APIView):
             )
         if not customer:
             return Response({"customer": None})
-        phone = customer.get("phone") or ""
-        lookup = build_pos_customer_lookup(phone) if phone else None
-        return Response({"customer": projection_data(lookup) if lookup else None})
+        # A resposta carrega SEMPRE a projeção do cliente resolvido, chaveada
+        # pelo ref: o re-lookup por telefone devolvia null para cliente sem
+        # telefone (cadastro só com CPF) e o front descartava o cadastro recém-
+        # criado. `created` distingue "achei" de "criei agora" na tela.
+        lookup = build_pos_customer_lookup_by_ref(customer.get("ref") or "")
+        return Response({
+            "customer": projection_data(lookup) if lookup else None,
+            "created": bool(customer.get("created")),
+        })
 
 
 @extend_schema_view(

@@ -10,6 +10,7 @@ Never imports from ``shopman.backstage.views.*``.
 from __future__ import annotations
 
 import logging
+import re
 from dataclasses import dataclass, field
 
 from django.conf import settings
@@ -651,13 +652,36 @@ def _birthday_projection(customer) -> dict:
 
 
 def build_pos_customer_lookup(phone: str) -> POSCustomerLookupProjection | None:
-    """Resolve POS customer lookup as a headless projection."""
-    from shopman.shop.projections import customer_context
+    """Resolve POS customer lookup as a headless projection (keyed by phone)."""
     from shopman.shop.services import pos as pos_service
 
     customer = pos_service.resolve_customer(phone)
     if customer is None:
         return None
+    return _customer_lookup_projection(customer, fallback_phone=phone)
+
+
+def build_pos_customer_lookup_by_ref(ref: str) -> POSCustomerLookupProjection | None:
+    """Same lookup projection, keyed by the customer ``ref``.
+
+    Existe porque cliente sem telefone existe (cadastro só com CPF no balcão) e o
+    lookup por telefone devolvia ``None`` para ele — o front descartava um cliente
+    que o servidor tinha acabado de criar.
+    """
+    ref = (ref or "").strip()
+    if not ref:
+        return None
+    from shopman.guestman.services import customer as customer_service
+
+    customer = customer_service.get(ref)
+    if customer is None:
+        return None
+    return _customer_lookup_projection(customer)
+
+
+def _customer_lookup_projection(customer, fallback_phone: str = "") -> POSCustomerLookupProjection:
+    """Shape the full POS lookup projection for an already-resolved customer."""
+    from shopman.shop.projections import customer_context
 
     name = getattr(customer, "name", "") or f"{getattr(customer, 'first_name', '')} {getattr(customer, 'last_name', '')}".strip()
     tier_ref = customer.price_tier.ref if getattr(customer, "price_tier_id", None) else ""
@@ -672,7 +696,7 @@ def build_pos_customer_lookup(phone: str) -> POSCustomerLookupProjection | None:
     return POSCustomerLookupProjection(
         ref=getattr(customer, "ref", ""),
         name=name,
-        phone=getattr(customer, "phone", "") or phone,
+        phone=getattr(customer, "phone", "") or fallback_phone,
         email=getattr(customer, "email", "") or "",
         tax_id=getattr(customer, "document", "") or "",
         fiscal_prefs=dict((getattr(customer, "metadata", None) or {}).get("fiscal_prefs") or {}),
@@ -704,8 +728,22 @@ def build_pos_customer_search(query: str, limit: int = 8) -> tuple[POSCustomerSe
         return ()
     from shopman.guestman.services import customer as customer_service
 
+    customers = list(customer_service.search(query, limit=limit))
+    # Telefone e CPF são armazenados só com dígitos; a query FORMATADA
+    # ("(43) 99999-0000", "111.222.333-44") não encontra nada por icontains.
+    # Com ≥4 dígitos na query, busca também pela forma só-dígitos e mescla os
+    # resultados sem duplicar.
+    digits = re.sub(r"\D", "", query)
+    if len(digits) >= 4 and digits != query:
+        seen = {customer.pk for customer in customers}
+        for extra in customer_service.search(digits, limit=limit):
+            if extra.pk not in seen:
+                seen.add(extra.pk)
+                customers.append(extra)
+        customers = customers[:limit]
+
     results: list[POSCustomerSearchResult] = []
-    for customer in customer_service.search(query, limit=limit):
+    for customer in customers:
         name = getattr(customer, "name", "") or f"{getattr(customer, 'first_name', '')} {getattr(customer, 'last_name', '')}".strip()
         results.append(POSCustomerSearchResult(
             ref=getattr(customer, "ref", ""),
@@ -985,8 +1023,8 @@ def _pos_actions() -> tuple[Action, ...]:
             label="Buscar cliente",
             priority="quiet",
             method="GET",
-            href="/api/v1/backstage/pos/customer/lookup/?phone={phone}",
-            payload_schema={"query": {"phone": "string"}},
+            href="/api/v1/backstage/pos/customer/lookup/?phone={phone}&ref={ref}",
+            payload_schema={"query": {"phone": "string", "ref": "string"}},
             idempotency="none",
         ),
         Action(
