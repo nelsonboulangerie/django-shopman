@@ -63,6 +63,8 @@ function onRenameKeydown(event: KeyboardEvent) {
 
 // The customer picker is the shared PosCustomerModal (full-screen, picker-first).
 const customerSheetOpen = ref(false);
+// F6 no shell abre o mesmo modal que o chip de cliente abre.
+defineExpose({ openCustomer: () => { customerSheetOpen.value = true; } });
 
 const confirmClear = ref(false);
 function runClear() {

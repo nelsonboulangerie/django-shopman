@@ -5,6 +5,7 @@ import {
   appendPinDigit,
   buildUnlockPayload,
   canSubmitPin,
+  isBadgeBurst,
   isLikelyBadge,
   isLocked,
   operatorName,
@@ -113,6 +114,23 @@ describe("pushBadgeKey — a janela de tempo que separa leitor de dedo", () => {
   it("a borda da janela ainda conta como a mesma passada", () => {
     expect(pushBadgeKey("a", "1", BADGE_MAX_GAP_MS)).toBe("a1");
     expect(pushBadgeKey("a", "1", BADGE_MAX_GAP_MS + 1)).toBe("1");
+  });
+});
+
+describe("isBadgeBurst — o que o scanner consome para não vazar", () => {
+  it("continua uma rajada: já havia buffer e o intervalo coube na janela", () => {
+    expect(isBadgeBurst(1, 10)).toBe(true);
+    expect(isBadgeBurst(11, BADGE_MAX_GAP_MS)).toBe(true);
+  });
+
+  it("a PRIMEIRA tecla nunca é rajada (indistinguível de um dedo)", () => {
+    expect(isBadgeBurst(0, 0)).toBe(false);
+    expect(isBadgeBurst(0, 10)).toBe(false);
+  });
+
+  it("digitação humana (intervalo acima da janela) não é rajada", () => {
+    expect(isBadgeBurst(3, BADGE_MAX_GAP_MS + 1)).toBe(false);
+    expect(isBadgeBurst(1, 400)).toBe(false);
   });
 });
 

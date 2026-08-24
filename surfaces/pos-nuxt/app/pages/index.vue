@@ -2,6 +2,7 @@
 import { resolveAffordance } from "~/presentation/actions";
 import { requiresOpenShiftForSale } from "~/presentation/cash";
 import { rollStyle } from "~/presentation/printGeometry";
+import { globalKeysBlocked } from "~/utils/keyboardGuard";
 // Tela de VENDA — wires the read-side (usePosTerminal) and write-side (usePosSale)
 // composables to the three core screens (PosTabBoard / PosProductGrid /
 // PosPaymentWorkspace). O chrome comum (login, lock, offline) vive no shell
@@ -162,9 +163,13 @@ function printReceipt() {
 useHead({ htmlAttrs: { style: computed(() => rollStyle(pos.value)) } });
 
 // Keyboard and scanner (spec: F2 tab board, F3 product search, F4 checkout/review,
-// Escape backs out of checkout, "/" focuses product search when not editing).
+// F6 customer modal, Enter validates a covered checkout, Escape backs out of
+// checkout, "/" focuses product search when not editing, "?" opens the help).
 const tabBoardRef = ref<{ focus: () => void } | null>(null);
 const productGridRef = ref<{ focusSearch: () => void } | null>(null);
+const tabHeaderRef = ref<{ openCustomer: () => void } | null>(null);
+const paymentWorkspaceRef = ref<{ validate: () => void; openCustomer: () => void } | null>(null);
+const shortcutsHelpOpen = ref(false);
 
 async function gotoTabInput() {
   checkoutMode.value = false;
@@ -181,6 +186,12 @@ async function gotoProductSearch() {
 
 function onGlobalKeydown(event: KeyboardEvent) {
   if (locked.value || !pos.value) return;
+  // Terminal travado ou diálogo aberto: NENHUM atalho global age. A página
+  // continua montada sob o overlay de identificação e sob qualquer diálogo —
+  // sem a guarda, o crachá (token com dígitos) e o PIN do gerente digitados ali
+  // alimentavam o numpad de tender, e Esc/F2/F3/F4 agiam por baixo do modal
+  // (Esc fechava o diálogo E derrubava o checkout).
+  if (globalKeysBlocked()) return;
   const target = event.target as HTMLElement | null;
   const isEditing = !!target
     && (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable);
@@ -225,6 +236,26 @@ function onGlobalKeydown(event: KeyboardEvent) {
       event.preventDefault();
       if (checkoutMode.value) reviewCheckout();
       else if (cart.items.length) prepareCheckout();
+      return;
+    case "F6":
+      event.preventDefault();
+      if (checkoutMode.value) paymentWorkspaceRef.value?.openCustomer();
+      else if (inSaleView.value) tabHeaderRef.value?.openCustomer();
+      return;
+    case "Enter":
+      // Total coberto + review fresca → Enter valida, pelo MESMO caminho do
+      // clique (inclusive a porta da autorização gerencial). Review velha ou
+      // total descoberto seguem no F4/no botão — Enter nunca finaliza no escuro.
+      if (checkoutMode.value && !isEditing && review.value && paymentCovered.value && !busy.value) {
+        event.preventDefault();
+        paymentWorkspaceRef.value?.validate();
+      }
+      return;
+    case "?":
+      if (!isEditing) {
+        event.preventDefault();
+        shortcutsHelpOpen.value = true;
+      }
       return;
     case "/":
       if (!isEditing) {
@@ -279,6 +310,7 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onGlobalKeydown));
         </span>
         <PosTabHeader
           v-if="inSaleView && !checkoutMode"
+          ref="tabHeaderRef"
           v-model:customer-name="cart.customerName"
           v-model:customer-phone="cart.customerPhone"
           v-model:customer-tax-id="cart.customerTaxId"
@@ -307,6 +339,16 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onGlobalKeydown));
           variant="ghost"
           size="icon-sm"
           class="ml-auto shrink-0"
+          aria-label="Atalhos do teclado"
+          title="Atalhos do teclado (?)"
+          @click="shortcutsHelpOpen = true"
+        >
+          <Icon name="lucide:keyboard" class="size-5" />
+        </UiButton>
+        <UiButton
+          variant="ghost"
+          size="icon-sm"
+          class="shrink-0"
           aria-label="Últimas vendas"
           title="Últimas vendas (status fiscal, DANFE, reenvio)"
           @click="recentSalesOpen = true"
@@ -364,6 +406,7 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onGlobalKeydown));
       <div class="flex-1 md:min-h-0 md:overflow-hidden">
       <div v-if="checkoutMode" class="h-full md:overflow-y-auto">
       <PosPaymentWorkspace
+        ref="paymentWorkspaceRef"
         v-model:discount-type="cart.discountType"
         v-model:discount-value="cart.discountValue"
         v-model:discount-reason="cart.discountReason"
@@ -596,5 +639,6 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onGlobalKeydown));
       </div>
     </Teleport>
     <PosRecentSales v-model:open="recentSalesOpen" :pos="pos" />
+    <PosShortcutsHelp v-model:open="shortcutsHelpOpen" />
   </main>
 </template>

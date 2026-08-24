@@ -61,6 +61,20 @@ export function pushBadgeKey(
   return gapMs > maxGapMs ? key : buffer + key;
 }
 
+/** Se a tecla que ACABOU de chegar continua uma rajada de leitor (já havia buffer
+ *  e o intervalo coube na janela), ela é do crachá — o scanner a consome
+ *  (`stopPropagation`) para não vazar aos listeners da tela por baixo (numpad do
+ *  carrinho, atalhos globais). A PRIMEIRA tecla de qualquer rajada é
+ *  indistinguível de um dedo humano e segue o caminho normal — vaza uma tecla,
+ *  nunca o token. Pura como `pushBadgeKey`: o intervalo entra como número. */
+export function isBadgeBurst(
+  bufferLength: number,
+  gapMs: number,
+  maxGapMs: number = BADGE_MAX_GAP_MS,
+): boolean {
+  return bufferLength > 0 && gapMs <= maxGapMs;
+}
+
 export interface UnlockInput {
   operatorId?: number | string | null;
   pin?: string;

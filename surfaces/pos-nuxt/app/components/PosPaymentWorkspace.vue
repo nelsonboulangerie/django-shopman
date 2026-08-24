@@ -289,6 +289,14 @@ function onAddressSelected(address: StructuredAddressProjection) {
   if (address.street_number) emit("update:deliveryStreetNumber", address.street_number);
   if (address.neighborhood) emit("update:deliveryNeighborhood", address.neighborhood);
 }
+
+// Atalhos do shell (pages/index.vue): Enter valida pelo MESMO caminho do clique
+// (passa pela porta da autorização gerencial, nunca por fora dela); F6 abre o
+// modal de cliente deste checkout.
+defineExpose({
+  validate: () => { if (!ctaDisabled.value) onCta(); },
+  openCustomer: () => { customerSheetOpen.value = true; },
+});
 </script>
 
 <template>
@@ -334,6 +342,7 @@ function onAddressSelected(address: StructuredAddressProjection) {
           >
             <Icon name="lucide:user-round" class="size-4 text-muted-foreground" />
             <span class="min-w-0 truncate">{{ customerName || "Cliente" }}</span>
+            <kbd class="rounded border bg-muted px-1.5 py-0.5 font-mono text-[10px] font-medium text-muted-foreground" aria-hidden="true">F6</kbd>
           </button>
           <button
             type="button"
@@ -423,18 +432,20 @@ function onAddressSelected(address: StructuredAddressProjection) {
 
         <!-- Voltar + Validar (rodapé da coluna, copiando o Back + Validate do Odoo) -->
         <div class="mt-auto grid grid-cols-2 gap-1.5 pt-1">
-          <UiButton variant="outline" size="lg" class="h-14 text-base" @click="$emit('back')">
+          <UiButton variant="outline" size="lg" class="h-14 gap-2 text-base" @click="$emit('back')">
             <Icon name="lucide:arrow-left" class="size-5" />
             Voltar
+            <kbd class="rounded border bg-muted px-1.5 py-0.5 font-mono text-[10px] font-medium text-muted-foreground" aria-hidden="true">Esc</kbd>
           </UiButton>
           <UiButton
             size="lg"
-            class="h-14 text-base"
+            class="h-14 gap-2 text-base"
             :disabled="ctaDisabled"
             :loading="loading || needsReview"
             @click="onCta"
           >
             {{ ctaLabel }}
+            <kbd class="rounded border border-primary-foreground/30 bg-transparent px-1.5 py-0.5 font-mono text-[10px] font-medium opacity-80" aria-hidden="true">Enter</kbd>
           </UiButton>
         </div>
       </div>

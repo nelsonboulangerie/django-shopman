@@ -47,6 +47,14 @@ const loginUser = ref("");
 const loginPass = ref("");
 const loginPending = ref(false);
 const loginError = ref("");
+// Foco no "Usuário" assim que a tela de senha aparece (na carga ou quando a
+// sessão expira no meio do turno): a primeira ação é sempre digitar ali.
+const loginUserRef = ref<HTMLInputElement | null>(null);
+watch(needsLogin, async (needs) => {
+  if (!needs || !import.meta.client) return;
+  await nextTick();
+  loginUserRef.value?.focus();
+}, { immediate: true });
 // Recarrega depois de virar estação: toda leitura muda de mundo (a antessala
 // passa a existir, o terminal passa a ser este), e reconciliar peça por peça é
 // mais caminho para dar errado do que um reload numa tela que acontece uma vez.
@@ -97,6 +105,7 @@ async function submitLogin() {
         </div>
         <div class="grid gap-2.5 text-left">
           <input
+            ref="loginUserRef"
             v-model="loginUser"
             type="text"
             autocomplete="username"

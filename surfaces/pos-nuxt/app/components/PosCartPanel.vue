@@ -2,6 +2,7 @@
 import type { POSCartItem } from "~/types/pos";
 import type { ActionAffordance } from "~/presentation/actions";
 import { formatBRL } from "~/utils/posIntent";
+import { globalKeysBlocked } from "~/utils/keyboardGuard";
 import { clampPercent, clampQty, popDigit, pushDigit } from "~/presentation/numpad";
 import { fireBarView, kitchenLineState } from "~/presentation/kitchen";
 import { pruneSelection, selectionView, toggleSelected } from "~/presentation/selection";
@@ -297,8 +298,12 @@ function bump(sku: string, emitName: "increment" | "decrement") {
 }
 
 // Physical keyboard feeds the active line (Odoo-style): select/add a product,
-// then type a number to set its quantity. Ignored while typing in a field.
+// then type a number to set its quantity. Ignored while typing in a field — e
+// DESLIGADO com o terminal travado ou um diálogo aberto (globalKeysBlocked):
+// a página segue montada sob o overlay, e o crachá/PIN digitado ali reescrevia
+// quantidades e salvava no servidor.
 function onWindowKeydown(event: KeyboardEvent) {
+  if (globalKeysBlocked()) return;
   const target = event.target as HTMLElement | null;
   const editing = !!target
     && (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable);
@@ -531,6 +536,7 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onWindowKeydown));
         >
           <Icon name="lucide:credit-card" class="size-6" />
           Pagamento
+          <kbd class="rounded border border-primary-foreground/30 bg-transparent px-1.5 py-0.5 font-mono text-[10px] font-medium opacity-80" aria-hidden="true">F4</kbd>
         </UiButton>
       </div>
       <UiButton
@@ -543,6 +549,7 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onWindowKeydown));
       >
         <Icon name="lucide:credit-card" class="size-5" />
         Pagamento
+        <kbd class="rounded border border-primary-foreground/30 bg-transparent px-1.5 py-0.5 font-mono text-[10px] font-medium opacity-80" aria-hidden="true">F4</kbd>
       </UiButton>
     </div>
   </UiCard>

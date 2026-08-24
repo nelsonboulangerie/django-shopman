@@ -166,4 +166,81 @@ describe("OperatorLock — crachá", () => {
 
     expect(unlock).not.toHaveBeenCalled();
   });
+
+  it("a rajada do leitor não vaza os caracteres aos listeners de baixo", async () => {
+    // O numpad do carrinho (e qualquer atalho global) ouve keydown na janela.
+    // Um crachá com dígitos reescrevia quantidades enquanto identificava. Da
+    // rajada, só a PRIMEIRA tecla pode vazar (indistinguível de um dedo); as
+    // demais são consumidas pelo scanner.
+    await mount();
+    const leaked: string[] = [];
+    const listener = (event: KeyboardEvent) => leaked.push(event.key);
+    window.addEventListener("keydown", listener);
+    try {
+      scan(BADGE);
+    } finally {
+      window.removeEventListener("keydown", listener);
+    }
+
+    expect(unlock).toHaveBeenCalledWith({ badge: BADGE });
+    expect(leaked).toEqual([BADGE[0]]);
+  });
+});
+
+describe("OperatorLock — PIN pelo teclado físico", () => {
+  beforeEach(() => {
+    unlock.mockReset().mockResolvedValue(true);
+    changePin.mockReset();
+    mustChange.value = false;
+    vi.stubGlobal("useSonner", { error: vi.fn(), success: vi.fn() });
+  });
+
+  afterEach(() => {
+    mounted?.unmount();
+    mounted = null;
+    document.body.innerHTML = "";
+    vi.restoreAllMocks();
+  });
+
+  /** Digita como GENTE: intervalo acima da janela do leitor (o relógio é
+   *  falseado, então nada de esperar de verdade). */
+  function typeSlow(keys: string[]) {
+    let clock = Date.now();
+    const spy = vi.spyOn(Date, "now").mockImplementation(() => clock);
+    for (const key of keys) {
+      clock += 400;
+      document.body.dispatchEvent(
+        new KeyboardEvent("keydown", { key, bubbles: true, cancelable: true }),
+      );
+    }
+    spy.mockRestore();
+  }
+
+  it("digitar o PIN e Enter destrava, sem tocar no mouse", async () => {
+    const wrapper = await mount();
+    // Escolhe a Bia na lista (o pad abre para ela).
+    await wrapper.find("button").trigger("click");
+
+    typeSlow(["1", "2", "3", "4", "Enter"]);
+
+    expect(unlock).toHaveBeenCalledWith({ operatorId: 1, pin: "1234" });
+  });
+
+  it("Enter com PIN curto não submete nada", async () => {
+    const wrapper = await mount();
+    await wrapper.find("button").trigger("click");
+
+    typeSlow(["1", "2", "Enter"]);
+
+    expect(unlock).not.toHaveBeenCalled();
+  });
+
+  it("Backspace apaga o último dígito", async () => {
+    const wrapper = await mount();
+    await wrapper.find("button").trigger("click");
+
+    typeSlow(["1", "2", "3", "9", "Backspace", "4", "Enter"]);
+
+    expect(unlock).toHaveBeenCalledWith({ operatorId: 1, pin: "1234" });
+  });
 });

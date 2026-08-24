@@ -106,6 +106,37 @@ function submit() {
   emit("pin", { person: picked.value, username: username.value, pin: pin.value });
 }
 
+// PIN pelo TECLADO FÍSICO: o balcão com teclado não deveria exigir mouse para
+// quatro dígitos. O listener mora no documento enquanto o pad está visível (o
+// componente só existe dentro do overlay/diálogo), roteia 0-9/Backspace/Enter
+// para o buffer e CONSOME a tecla, para ela não vazar aos atalhos da tela por
+// baixo. Não colide com o wedge do crachá: a cadência separa — a rajada do
+// leitor é consumida antes, na fase de captura (useBadgeScanner), e só a
+// primeira tecla dela chega até aqui.
+function onDocumentKeydown(event: KeyboardEvent) {
+  if (!showPad.value || props.busy) return;
+  if (event.ctrlKey || event.metaKey || event.altKey) return;
+  const target = event.target as HTMLElement | null;
+  const editing = !!target
+    && (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable);
+  if (editing) return; // campo de texto de verdade (nome livre): as teclas são dele
+  if (/^[0-9]$/.test(event.key)) {
+    event.preventDefault();
+    event.stopPropagation();
+    press(event.key);
+  } else if (event.key === "Backspace") {
+    event.preventDefault();
+    event.stopPropagation();
+    backspace();
+  } else if (event.key === "Enter" && canSubmit.value) {
+    event.preventDefault();
+    event.stopPropagation();
+    submit();
+  }
+}
+onMounted(() => document.addEventListener("keydown", onDocumentKeydown));
+onBeforeUnmount(() => document.removeEventListener("keydown", onDocumentKeydown));
+
 /** Para o pai limpar entre aberturas sem conhecer o estado interno. */
 function reset(keepPicked = false) {
   pin.value = "";
