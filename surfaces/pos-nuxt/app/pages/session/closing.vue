@@ -25,8 +25,10 @@ import {
   allQuantitiesFilled,
   buildQuantitiesPayload,
   closingBadge,
+  firstUnfilledItemName,
   pendingStatusDisplay,
   productionRows,
+  sanitizeQtyInput,
 } from "~/presentation/closing";
 
 useHead({ title: "Fechamento do dia · Shopman POS" });
@@ -34,6 +36,12 @@ useHead({ title: "Fechamento do dia · Shopman POS" });
 const action = usePosAction();
 const runtimeConfig = useRuntimeConfig();
 const productionUrl = computed(() => String(runtimeConfig.public.productionUrl || ""));
+
+// A projection do PDV entra só pelo `can_audit_cash`: o próximo passo do fim
+// de dia (o relatório) é porta que bate na cara de quem não audita, e a tela
+// não oferece porta que vai bater.
+const { pos } = await usePosTerminal();
+const canAuditCash = computed(() => pos.value?.cash_runtime?.can_audit_cash === true);
 
 const { closing, pending, accessDenied, submitting, submit } = await useDayClosing({ action });
 
@@ -46,10 +54,28 @@ const canSubmit = computed(
   () => !!closing.value && !closing.value.already_closed
     && allQuantitiesFilled(closing.value.items, quantities),
 );
+// A dica acusa O ITEM que falta, não "todos": um "1,5" colado deixava a tela
+// aparentemente preenchida e a dica mandava procurar sem dizer onde.
+const unfilledItemName = computed(
+  () => (closing.value ? firstUnfilledItemName(closing.value.items, quantities) : ""),
+);
+
+// Só dígitos no @input: quantidade é inteira e nunca negativa, e o que não
+// for número não deve nem chegar a morar no campo.
+function setQuantity(sku: string, raw: string) {
+  quantities[sku] = sanitizeQtyInput(raw);
+}
 
 const confirming = ref(false);
+// Fim de dia encadeado: registrado o fechamento, a tela oferece o próximo
+// passo em vez de voltar sozinha ao começo do corredor.
+const justClosedDay = ref(false);
 async function goToCashSession() {
   await navigateTo("/session");
+}
+
+async function goToCashReport() {
+  await navigateTo("/session/report");
 }
 
 async function confirmSubmit() {
@@ -58,6 +84,7 @@ async function confirmSubmit() {
   confirming.value = false;
   if (ok) {
     for (const key of Object.keys(quantities)) quantities[key] = "";
+    justClosedDay.value = true;
   }
 }
 </script>
@@ -99,6 +126,25 @@ async function confirmSubmit() {
           <UiAlertTitle>Dia fechado</UiAlertTitle>
           <UiAlertDescription>{{ closing.existing_closing_display }}</UiAlertDescription>
         </UiAlert>
+
+        <!-- Fim de dia encadeado: registrado o fechamento, o próximo passo vem
+             até a mão. Relatório só para quem audita — porta que bateria na
+             cara não é oferta. -->
+        <section v-if="justClosedDay && closing.already_closed" class="grid gap-2 rounded-lg border bg-card p-4">
+          <p class="text-sm text-muted-foreground">
+            Fechamento registrado. O quadro do dia está logo abaixo.
+          </p>
+          <div class="grid gap-2 sm:grid-cols-2">
+            <UiButton v-if="canAuditCash" variant="outline" @click="goToCashReport">
+              <Icon name="lucide:receipt-text" class="size-4" />
+              Ver relatório de caixa
+            </UiButton>
+            <UiButton variant="outline" @click="goToCashSession">
+              <Icon name="lucide:arrow-left" class="size-4" />
+              Voltar à sessão de caixa
+            </UiButton>
+          </div>
+        </section>
 
         <!-- BLOQUEIO, antes da contagem. Diz QUANTAS ordens faltam e para onde
              ir; não diz SKU nem quantidade, que é o que entregaria a resposta.
@@ -275,13 +321,16 @@ async function confirmSubmit() {
               >
                 {{ closingBadge(item.classification).label }}
               </span>
+              <!-- Só dígitos no @input: o "1,5" colado não chega a morar no
+                   campo, e o CTA não trava por um caractere invisível. -->
               <UiInput
-                v-model="quantities[item.sku]"
+                :model-value="quantities[item.sku]"
                 inputmode="numeric"
                 placeholder="0"
                 class="w-20 text-right tabular-nums"
                 :disabled="closing.already_closed || submitting"
                 :aria-label="`Sobras de ${item.name}`"
+                @update:model-value="setQuantity(item.sku, $event)"
               />
             </div>
           </div>
@@ -292,8 +341,11 @@ async function confirmSubmit() {
                 <Icon name="lucide:clipboard-check" class="size-5" />
                 Registrar contagem final
               </UiButton>
+              <!-- A dica aponta o item, não "todos": procurar um campo vazio
+                   numa lista aparentemente preenchida era a parte difícil. -->
               <p v-if="!canSubmit" class="mt-1.5 text-xs text-muted-foreground">
-                Preencha a contagem de todos os itens para registrar.
+                <template v-if="unfilledItemName">Falta a contagem de {{ unfilledItemName }}.</template>
+                <template v-else>Preencha a contagem de todos os itens para registrar.</template>
               </p>
             </div>
             <div v-else class="mt-1 grid gap-2 rounded-md border border-destructive/40 bg-destructive/5 p-3">
