@@ -242,6 +242,9 @@ class POSCustomerLookupProjection:
     #: operador pode digitar OUTRO na venda (conveniência); o merge no Guestman
     #: é preenche-se-vazio e nunca sobrescreve o cadastro.
     tax_id: str
+    #: O cliente JÁ optou antes por CPF na nota / nota por e-mail? Pré-marca o
+    #: checkout (editável). Chaves: cpf_na_nota, email_receipt.
+    fiscal_prefs: dict
     #: A faixa de preço do cliente (`PriceTier.ref`). Chamava-se `loyalty_group`, e era o
     #: TERCEIRO nome errado da mesma coisa: fidelidade é o `LoyaltyAccount` (bronze/ouro),
     #: e nada disto tem a ver com ela.
@@ -613,6 +616,7 @@ def build_pos_customer_lookup(phone: str) -> POSCustomerLookupProjection | None:
         phone=getattr(customer, "phone", "") or phone,
         email=getattr(customer, "email", "") or "",
         tax_id=getattr(customer, "document", "") or "",
+        fiscal_prefs=dict((getattr(customer, "metadata", None) or {}).get("fiscal_prefs") or {}),
         price_tier=tier_ref,
         is_staff=tier_ref == "staff",
         default_address=_saved_address_projection(default_address) if default_address else None,

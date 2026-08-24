@@ -1401,7 +1401,12 @@ def build_session_ops(payload: dict, operator_username: str) -> list[dict]:
 
     issue_fiscal_document = bool(payload.get("issue_fiscal_document"))
     ops.append({"op": "set_data", "path": "fiscal.issue_document", "value": issue_fiscal_document})
-    if customer_tax_id:
+    # CPF NA NOTA é um PEDIDO, não uma propriedade do cadastro: o documento só
+    # entra no bloco fiscal quando o operador marcou "emitir nota fiscal". Sem o
+    # gate, cliente identificado com CPF no cadastro saía com CPF em TODA nota —
+    # compulsório, sem ninguém pedir. Identidade (customer.tax_id) continua
+    # gravada para o CRM; o fiscal lê só daqui.
+    if issue_fiscal_document and customer_tax_id:
         ops.append({"op": "set_data", "path": "fiscal.tax_id", "value": customer_tax_id})
 
     receipt_channels = list(payload.get("receipt_channels") or [])
@@ -2748,6 +2753,7 @@ def _persist_customer_from_payload(payload: dict, *, operator_username: str) -> 
             _ensure_customer_identifier(customer.ref, "cpf", tax_id)
         if address:
             _ensure_customer_address(address_service, customer.ref, address, structured_address)
+        _remember_fiscal_prefs(customer, payload)
 
         customer.refresh_from_db()
         return {
@@ -2758,6 +2764,33 @@ def _persist_customer_from_payload(payload: dict, *, operator_username: str) -> 
             "email": customer.email,
             "price_tier": customer.price_tier.ref if customer.price_tier_id else "",
         }
+
+
+def _remember_fiscal_prefs(customer, payload: dict) -> None:
+    """O cliente optou uma vez → a próxima venda já vem PRÉ-MARCADA (editável).
+
+    Só grava opt-IN (marcou nesta venda → lembra). Desmarcar numa venda não
+    apaga a preferência: pode ser só "hoje não" — esquecer de verdade é gesto
+    de cadastro (Admin), não efeito colateral de uma venda. O PDV lê isto na
+    lookup projection e pré-seta o toggle fiscal / o canal de e-mail.
+    """
+    wants_fiscal = bool(payload.get("issue_fiscal_document"))
+    wants_email = "email" in (payload.get("receipt_channels") or [])
+    if not (wants_fiscal or wants_email):
+        return
+    metadata = dict(customer.metadata or {})
+    prefs = dict(metadata.get("fiscal_prefs") or {})
+    changed = False
+    if wants_fiscal and not prefs.get("cpf_na_nota"):
+        prefs["cpf_na_nota"] = True
+        changed = True
+    if wants_email and not prefs.get("email_receipt"):
+        prefs["email_receipt"] = True
+        changed = True
+    if changed:
+        metadata["fiscal_prefs"] = prefs
+        customer.metadata = metadata
+        customer.save(update_fields=["metadata", "updated_at"])
 
 
 def _resolve_pos_customer(Customer, *, ref: str, phone: str, tax_id: str, email: str):

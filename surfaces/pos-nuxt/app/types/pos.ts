@@ -272,6 +272,8 @@ export interface POSCustomerLookupProjection {
   email: string;
   /** CPF/CNPJ do cadastro — valor padrão do "CPF na nota"; editável por venda. */
   tax_id: string;
+  /** O cliente já optou antes: pré-marca o checkout (editável por venda). */
+  fiscal_prefs: { cpf_na_nota?: boolean; email_receipt?: boolean };
   /** A faixa de preço do cliente (`PriceTier.ref`) — é ela que decide o preço. */
   price_tier: string;
   is_staff: boolean;

@@ -57,15 +57,14 @@ def always(order) -> bool:
 
 
 def on_request_or_tax_id(order) -> bool:
-    """Emite quando o operador pediu OU o cliente informou CPF/CNPJ ("CPF na nota").
+    """Emite quando houve PEDIDO: o operador marcou, ou um CPF foi pedido na nota.
 
-    É a regra prática de balcão: a maioria não pede nota; quem informa o documento
-    quer a nota — então emite. Exemplo real recomendado para começar.
+    Lê o bloco ``fiscal`` (o pedido desta venda), nunca ``customer.tax_id`` (o
+    cadastro): ter CPF no CRM não é pedir CPF na nota — sem essa distinção,
+    todo cliente identificado saía com o documento em toda nota, compulsório.
     """
-    data = order.data or {}
-    fiscal = data.get("fiscal") or {}
-    customer = data.get("customer") or {}
-    return bool(fiscal.get("issue_document") or (customer.get("tax_id") or "").strip())
+    fiscal = (order.data or {}).get("fiscal") or {}
+    return bool(fiscal.get("issue_document") or str(fiscal.get("tax_id") or "").strip())
 
 
 def channels(*refs: str):

@@ -784,6 +784,13 @@ export function usePosSale(deps: PosSaleDeps) {
       // CPF conhecido entra como DEFAULT; o campo continua editável — o cliente
       // pode pedir outro CPF nesta venda sem tocar no cadastro.
       cart.customerTaxId = cart.customerTaxId || response.customer.tax_id || "";
+      // O cliente que já optou uma vez chega com o checkout PRÉ-MARCADO — e o
+      // operador pode desmarcar nesta venda ("hoje não"): pré-marcar não é impor.
+      const prefs = response.customer.fiscal_prefs || {};
+      if (prefs.cpf_na_nota) cart.issueFiscalDocument = true;
+      if (prefs.email_receipt && !cart.receiptChannels.includes("email")) {
+        cart.receiptChannels = [...cart.receiptChannels, "email"];
+      }
       if (response.customer.is_staff) cart.customerMemoryAction = "";
       if (cart.fulfillmentType === "delivery" && response.customer.default_address && !cart.deliveryAddress.trim()) {
         applySavedAddress(response.customer.default_address);
@@ -822,6 +829,13 @@ export function usePosSale(deps: PosSaleDeps) {
       // CPF conhecido entra como DEFAULT; o campo continua editável — o cliente
       // pode pedir outro CPF nesta venda sem tocar no cadastro.
       cart.customerTaxId = cart.customerTaxId || response.customer.tax_id || "";
+      // O cliente que já optou uma vez chega com o checkout PRÉ-MARCADO — e o
+      // operador pode desmarcar nesta venda ("hoje não"): pré-marcar não é impor.
+      const prefs = response.customer.fiscal_prefs || {};
+      if (prefs.cpf_na_nota) cart.issueFiscalDocument = true;
+      if (prefs.email_receipt && !cart.receiptChannels.includes("email")) {
+        cart.receiptChannels = [...cart.receiptChannels, "email"];
+      }
       if (cart.fulfillmentType === "delivery" && response.customer.default_address && !cart.deliveryAddress.trim()) {
         applySavedAddress(response.customer.default_address);
       }

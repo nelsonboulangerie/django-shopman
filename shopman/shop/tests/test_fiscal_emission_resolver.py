@@ -48,9 +48,12 @@ def test_fallback_without_resolver_uses_issue_document():
 
 @override_settings(SHOPMAN_FISCAL_EMISSION_RESOLVER="shopman.shop.fiscal_resolvers.on_request_or_tax_id")
 def test_default_resolver_is_on_request_or_tax_id():
-    # Padrão do código: emite se pediu OU se há CPF/CNPJ (respeita o toggle do PDV).
+    # Padrão do código: emite quando houve PEDIDO — o toggle, ou CPF pedido NA
+    # NOTA (fiscal.tax_id). CPF no CADASTRO (customer.tax_id) não é pedido:
+    # lê-lo tornava o documento compulsório para cliente identificado.
     assert emission_resolver(_order(fiscal={"issue_document": True})) is True
-    assert emission_resolver(_order(customer={"tax_id": "12345678909"})) is True
+    assert emission_resolver(_order(fiscal={"tax_id": "12345678909"})) is True
+    assert emission_resolver(_order(customer={"tax_id": "12345678909"})) is False
     assert emission_resolver(_order(fiscal={}, customer={})) is False
 
 
@@ -149,7 +152,8 @@ def test_example_always():
 def test_example_on_request_or_tax_id():
     r = fiscal_resolvers.on_request_or_tax_id
     assert r(_order(fiscal={"issue_document": True})) is True
-    assert r(_order(customer={"tax_id": "12345678909"})) is True
+    assert r(_order(fiscal={"tax_id": "12345678909"})) is True
+    assert r(_order(customer={"tax_id": "12345678909"})) is False  # cadastro ≠ pedido
     assert r(_order(fiscal={}, customer={})) is False
 
 
