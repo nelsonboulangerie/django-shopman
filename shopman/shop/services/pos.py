@@ -2655,6 +2655,7 @@ def _sale_fiscal_hint(order: Order | None) -> str:
         if fiscal_service.emission_expected(order):
             return " · Fiscal pendente"
     except Exception:
+        logger.debug("pos_sale_fiscal_hint_failed order=%s", order.ref, exc_info=True)
         if ((order.data or {}).get("fiscal") or {}).get("issue_document"):
             return " · Fiscal pendente"
     return ""
