@@ -633,6 +633,18 @@ Auto-reagendável a cada `Shop.defaults.delivery.courier_poll_seconds` (default
 |-------|------|-------------|----------|
 | `order_ref` | `string` | hooks | LoyaltyEarnHandler |
 
+#### `loyalty.revoke`
+
+| Chave | Tipo | Escrito por | Lido por |
+|-------|------|-------------|----------|
+| `order_ref` | `string` | `services/loyalty.py` (revoke, via `_on_cancelled`/`_on_returned`) | LoyaltyRevokeHandler |
+| `reason` | `string` | idem | LoyaltyRevokeHandler (`cancelled` \| `returned`, só para a descrição da transação) |
+
+Estorna exatamente o que a transação `earn` do pedido creditou (transação
+`adjust` negativa com a mesma `reference="order:{ref}"`). Se o earn nunca
+creditou, é no-op; se o earn ainda está na fila, re-agenda (transient) até o
+earn assentar. `dedupe_key` = `loyalty.revoke:{order_ref}`.
+
 #### `checkout.infer_defaults`
 
 | Chave | Tipo | Escrito por | Lido por |

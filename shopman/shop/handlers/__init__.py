@@ -54,6 +54,7 @@ ALL_HANDLERS = [
     # Loyalty
     "shopman.shop.handlers.loyalty.LoyaltyEarnHandler",
     "shopman.shop.handlers.loyalty.LoyaltyRedeemHandler",
+    "shopman.shop.handlers.loyalty.LoyaltyRevokeHandler",
     # Fiscal (requires SHOPMAN_FISCAL_ADAPTER)
     "shopman.shop.handlers.fiscal.NFCeEmitHandler",
     "shopman.shop.handlers.fiscal.NFCeCancelHandler",
@@ -256,9 +257,14 @@ def _register_courier_handlers() -> None:
 
 
 def _register_loyalty_handler() -> None:
-    from shopman.shop.handlers.loyalty import LoyaltyEarnHandler, LoyaltyRedeemHandler
+    from shopman.shop.handlers.loyalty import (
+        LoyaltyEarnHandler,
+        LoyaltyRedeemHandler,
+        LoyaltyRevokeHandler,
+    )
     registry.register_directive_handler(LoyaltyEarnHandler())
     registry.register_directive_handler(LoyaltyRedeemHandler())
+    registry.register_directive_handler(LoyaltyRevokeHandler())
 
 
 def _register_pricing_modifiers() -> None:

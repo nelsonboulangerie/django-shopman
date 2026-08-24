@@ -389,8 +389,9 @@ class TestNotificationsConformance:
             with patch("shopman.shop.services.kds.cancel_tickets"):
                 with patch("shopman.shop.lifecycle.stock.release"):
                     with patch("shopman.shop.lifecycle.payment.refund"):
-                        with patch("shopman.shop.lifecycle.notification.send") as mock_notify:
-                            dispatch(order, "on_cancelled")
+                        with patch("shopman.shop.lifecycle.loyalty.revoke"):
+                            with patch("shopman.shop.lifecycle.notification.send") as mock_notify:
+                                dispatch(order, "on_cancelled")
 
         mock_notify.assert_called_with(order, "order_cancelled")
 

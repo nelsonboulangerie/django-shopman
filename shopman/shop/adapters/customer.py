@@ -274,6 +274,25 @@ def redeem_points(
     )
 
 
+def adjust_points(
+    customer_ref: str,
+    points: int,
+    description: str,
+    reference: str,
+    created_by: str = "system",
+) -> None:
+    """Ajusta o saldo por um delta com sinal (negativo = estorno)."""
+    from shopman.guestman.contrib.loyalty import LoyaltyService
+
+    LoyaltyService.adjust_points(
+        customer_ref=customer_ref,
+        points=points,
+        description=description,
+        reference=reference,
+        created_by=created_by,
+    )
+
+
 def has_loyalty_transaction(customer_ref: str, *, reference: str, transaction_type: str) -> bool:
     """True se já existe transação com esta referência (guarda de idempotência)."""
     from shopman.guestman.contrib.loyalty.models import LoyaltyTransaction
@@ -283,6 +302,21 @@ def has_loyalty_transaction(customer_ref: str, *, reference: str, transaction_ty
         reference=reference,
         transaction_type=transaction_type,
     ).exists()
+
+
+def get_loyalty_transaction_points(
+    customer_ref: str, *, reference: str, transaction_type: str
+) -> int:
+    """Soma dos pontos das transações com esta referência (0 se não houver)."""
+    from django.db.models import Sum
+    from shopman.guestman.contrib.loyalty.models import LoyaltyTransaction
+
+    total = LoyaltyTransaction.objects.filter(
+        account__customer__ref=customer_ref,
+        reference=reference,
+        transaction_type=transaction_type,
+    ).aggregate(total=Sum("points"))["total"]
+    return int(total or 0)
 
 
 # ── helpers ──────────────────────────────────────────────────────────

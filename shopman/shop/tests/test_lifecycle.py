@@ -726,11 +726,13 @@ class TestOnCompleted:
 class TestOnCancelled:
     @patch("shopman.shop.lifecycle.ChannelConfig")
     @patch("shopman.shop.lifecycle.notification")
+    @patch("shopman.shop.lifecycle.loyalty")
     @patch("shopman.shop.lifecycle.payment")
     @patch("shopman.shop.lifecycle.stock")
     @patch("shopman.shop.services.kds.cancel_tickets")
     def test_cancels_kds_releases_stock_settles_payment_and_notifies(
-        self, mock_kds_cancel, mock_stock, mock_payment, mock_notification, mock_cc,
+        self, mock_kds_cancel, mock_stock, mock_payment, mock_loyalty,
+        mock_notification, mock_cc,
     ):
         mock_cc.for_channel.return_value = _config()
         order = _make_order(data={"cancellation_reason": "customer_requested"})
@@ -739,17 +741,20 @@ class TestOnCancelled:
         mock_stock.release.assert_called_once_with(order)
         mock_payment.cancel.assert_called_once_with(order, reason="customer_requested")
         mock_payment.refund.assert_called_once_with(order)
+        mock_loyalty.revoke.assert_called_once_with(order, reason="cancelled")
         mock_notification.send.assert_called_once_with(order, "order_cancelled")
 
 
 class TestOnReturned:
     @patch("shopman.shop.lifecycle.ChannelConfig")
     @patch("shopman.shop.lifecycle.notification")
+    @patch("shopman.shop.lifecycle.loyalty")
     @patch("shopman.shop.lifecycle.fiscal")
     @patch("shopman.shop.lifecycle.payment")
     @patch("shopman.shop.lifecycle.stock")
     def test_reverts_stock_refunds_cancels_fiscal_notifies(
-        self, mock_stock, mock_payment, mock_fiscal, mock_notification, mock_cc,
+        self, mock_stock, mock_payment, mock_fiscal, mock_loyalty,
+        mock_notification, mock_cc,
     ):
         mock_cc.for_channel.return_value = _config()
         order = _make_order()
@@ -757,6 +762,7 @@ class TestOnReturned:
         mock_stock.revert.assert_called_once_with(order)
         mock_payment.refund.assert_called_once_with(order)
         mock_fiscal.cancel.assert_called_once_with(order)
+        mock_loyalty.revoke.assert_called_once_with(order, reason="returned")
         mock_notification.send.assert_called_once_with(order, "order_returned")
 
 
