@@ -135,6 +135,10 @@ const {
   drawerLock,
 } = usePosSale({ pos, tabs, actions, refresh, action, apiPath, requestHeaders, ordersUrl });
 
+// Tela do cliente (segundo monitor): fontes lidas por getter; publicação e
+// transformação vivem inteiras no <PosDisplayPublisher> (renderless).
+const displaySources = { pos: () => pos.value, items: () => cart.items, review: () => review.value, result: () => result.value, pixStatus: () => pixStatus.value, paymentChangeQ: () => paymentChangeQ.value, checkoutMode: () => checkoutMode.value };
+
 // Kitchen handoff affordances (spec §2.5): the fire/unfire CTAs come from the
 // Projection's Actions (label + enabled), never invented in the screen.
 const fireAction = computed(() => resolveAffordance(actions.value, "fire_tab"));
@@ -727,5 +731,6 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onGlobalKeydown));
     </Teleport>
     <PosRecentSales v-model:open="recentSalesOpen" :pos="pos" />
     <PosShortcutsHelp v-model:open="shortcutsHelpOpen" />
+    <PosDisplayPublisher :sources="displaySources" />
   </main>
 </template>
