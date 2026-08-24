@@ -108,6 +108,19 @@ def test_cliente_que_optou_fica_lembrado_e_pre_marca_a_proxima():
     assert lookup.fiscal_prefs == {"cpf_na_nota": True, "email_receipt": True}
 
 
+def test_consumidor_sem_documento_nao_gera_bloco_destinatario():
+    """Schema da SEFAZ: ``dest``/``enderDest`` sem CPF/CNPJ é XML inválido — o
+    telefone mora DENTRO do enderDest. Sem documento, NENHUM campo sai."""
+    from shopman.shop.adapters.fiscal_focusnfe import _customer_fields
+
+    fields = _customer_fields({"name": "Prova", "phone": "43999881234", "email": "p@x.org"})
+    assert fields == {}
+
+    com_doc = _customer_fields({"name": "Prova", "phone": "43999881234", "tax_id": "52998224725"})
+    assert com_doc["cpf_destinatario"] == "52998224725"
+    assert com_doc["telefone_destinatario"] == "43999881234"
+
+
 def test_desmarcar_numa_venda_nao_apaga_a_preferencia():
     from shopman.guestman.models import Customer
 

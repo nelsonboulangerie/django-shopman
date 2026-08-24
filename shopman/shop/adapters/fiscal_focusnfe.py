@@ -547,14 +547,21 @@ def _customer_fields(customer: dict) -> dict:
         raise FocusNFePayloadError(
             f"CPF/CNPJ do cliente inválido ({tax_id[:4]}…): confira os dígitos."
         )
+    # Sem documento NÃO existe destinatário: o schema da NFe exige CPF/CNPJ/
+    # idEstrangeiro em qualquer bloco `dest`, e o telefone mora DENTRO do
+    # `enderDest` — mandar telefone/e-mail sem documento gera XML inválido
+    # ("Element enderDest: This element is not expected"). Consumidor não
+    # identificado na nota = nenhum campo destinatario_*. O defeito ficou
+    # invisível enquanto o CPF do cadastro entrava compulsório em toda nota.
+    if not tax_id:
+        return {}
     fields = {}
     if len(tax_id) == 11:
         fields["cpf_destinatario"] = tax_id
     elif len(tax_id) == 14:
         fields["cnpj_destinatario"] = tax_id
-    if tax_id:
-        fields["indicador_inscricao_estadual_destinatario"] = "9"
-    if tax_id and customer.get("name"):
+    fields["indicador_inscricao_estadual_destinatario"] = "9"
+    if customer.get("name"):
         fields["nome_destinatario"] = str(customer["name"])[:60]
     if customer.get("email"):
         fields["email_destinatario"] = str(customer["email"])
