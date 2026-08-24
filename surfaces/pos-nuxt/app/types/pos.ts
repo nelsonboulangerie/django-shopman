@@ -394,6 +394,9 @@ export interface POSProjection {
   // do print CSS (80mm). Ver presentation/printGeometry.
   terminal_roll_width_mm: number;
   terminal_roll_margin_mm: number;
+  // Nome fantasia da loja (Shop singleton): a tela do cliente dá as boas-vindas
+  // em nome da LOJA, não do terminal.
+  shop_name: string;
 }
 
 export interface POSShiftSummaryProjection {

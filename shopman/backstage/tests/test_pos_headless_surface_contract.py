@@ -161,6 +161,14 @@ class POSHeadlessSurfaceContractTests(TestCase):
         self.assertEqual(checkout["capabilities"]["sale_correction"]["cancel_recent_action_ref"], "cancel_recent_sale")
         self.assertTrue(checkout["capabilities"]["idempotent_replay"]["safe_for_offline_queue"])
 
+    def test_api_pos_exposes_shop_name_for_customer_display(self) -> None:
+        # A tela do cliente (segundo monitor do balcão) dá as boas-vindas em
+        # nome da LOJA — o nome vem do Shop singleton, nunca digitado na tela.
+        response = self.client.get("/api/v1/backstage/pos/")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["pos"]["shop_name"], "Test Shop")
+
     def test_o_segundo_operador_do_dia_VENDE_no_turno_que_ja_esta_aberto(self) -> None:
         """O balcão se reveza sem fechar o caixa. Este teste afirmava o contrário.
 

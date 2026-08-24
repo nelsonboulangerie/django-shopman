@@ -388,6 +388,9 @@ class POSProjection:
     # Como ESTE balcão abre a gaveta. Vai para a superfície porque quem alcança
     # o agente na loopback é o navegador do balcão, não o servidor.
     cash_drawer: dict = field(default_factory=dict)
+    # Nome fantasia da loja (Shop singleton) — a tela do cliente (segundo
+    # monitor do balcão) dá as boas-vindas em nome da LOJA, não do terminal.
+    shop_name: str = ""
 
 
 # ── Constants ──────────────────────────────────────────────────────────
@@ -482,6 +485,7 @@ def build_pos(*, terminal=None, operator=None) -> POSProjection:
         terminal_roll_width_mm=runtime.printer.roll_width_mm,
         terminal_roll_margin_mm=runtime.printer.margin_mm,
         cash_drawer=CashDrawerConfig.from_terminal(terminal).surface_payload(),
+        shop_name=_shop_name(),
     )
 
 
@@ -1667,6 +1671,18 @@ def _address_autocomplete_capability() -> AddressAutocompleteProjection:
         shop_latitude=lat,
         shop_longitude=lng,
     )
+
+
+def _shop_name() -> str:
+    """Nome fantasia da loja para a tela do cliente; "" quando não há Shop."""
+    try:
+        from shopman.shop.models import Shop
+
+        shop = Shop.load()
+    except Exception:
+        logger.debug("pos_shop_name_lookup_failed", exc_info=True)
+        return ""
+    return shop.name if shop else ""
 
 
 def _shop_coordinates() -> tuple[float | None, float | None]:
