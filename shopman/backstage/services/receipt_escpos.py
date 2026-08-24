@@ -182,6 +182,88 @@ def _qr(data: str, *, module: int = 6) -> bytes:
     ) + payload + bytes([GS, 0x28, 0x6B, 0x03, 0x00, 0x31, 0x51, 0x30]) + bytes([ESC, ord("a"), 0])
 
 
+def sale_receipt(order, *, shop_name: str = "", reprint: bool = False) -> bytes:
+    """Recibo NÃO fiscal da venda de balcão — a projeção impressa do pedido.
+
+    Compõe do que a venda GRAVOU (``Order`` + ``Order.data``), nunca do estado
+    vivo da tela: o recibo é registro do que foi vendido, e por isso reimprime
+    igual amanhã. Pagamentos saem por linha de ``payment.tenders``; "Recebido" e
+    "Troco" só aparecem quando o operador digitou com quanto o cliente pagou
+    (``tendered_q``/``change_q`` são medição — ausência é "não medido", nunca
+    "pagou justo").
+    """
+    from shopman.utils.monetary import format_money
+
+    from shopman.backstage.presentation.status import payment_method_label
+
+    data = order.data or {}
+    out = bytearray()
+    out += bytes([ESC, ord("@")])  # reset: não herda estado do job anterior
+    out += bytes([ESC, ord("t"), CODE_PAGE])
+
+    out += _centered((shop_name or "NELSON BOULANGERIE").upper())
+    out += _centered("Recibo não fiscal")
+    if reprint:
+        # Sem esta marca, dois papéis idênticos circulam e a segunda via passa
+        # por original — mesma regra do comprovante de gaveta.
+        out += _centered("*** 2a VIA ***")
+    out += _rule()
+
+    out += _pair(f"Pedido {order.ref}", _local(order.created_at))
+    tab_display = str(data.get("tab_display") or "")
+    if tab_display:
+        out += _line(f"Comanda #{tab_display}"[:COLUMNS])
+    customer_name = str((data.get("customer") or {}).get("name") or "")
+    if customer_name:
+        out += _line(f"Cliente: {customer_name}"[:COLUMNS])
+    out += _rule()
+
+    for item in order.items.all():
+        for pedaco in _wrap(item.name, COLUMNS):
+            out += _line(pedaco)
+        qty = item.qty.normalize() if hasattr(item.qty, "normalize") else item.qty
+        out += _pair(
+            f"  {qty} x R$ {format_money(int(item.unit_price_q or 0))}",
+            f"R$ {format_money(int(item.line_total_q or 0))}",
+        )
+    out += _rule()
+
+    out += _line("")
+    out += _double(f"TOTAL R$ {format_money(int(order.total_q or 0))}")
+    out += _line("")
+
+    payment = data.get("payment") or {}
+    tenders = [
+        tender
+        for tender in (payment.get("tenders") or [])
+        if isinstance(tender, dict) and tender.get("amount_q")
+    ]
+    if tenders:
+        for tender in tenders:
+            out += _pair(
+                payment_method_label(str(tender.get("method") or ""))[: COLUMNS // 2],
+                f"R$ {format_money(int(tender.get('amount_q') or 0))}",
+            )
+    elif payment.get("method"):
+        out += _pair(
+            payment_method_label(str(payment.get("method")))[: COLUMNS // 2],
+            f"R$ {format_money(int(payment.get('amount_q') or order.total_q or 0))}",
+        )
+    tendered_q = payment.get("tendered_q")
+    change_q = payment.get("change_q")
+    if isinstance(tendered_q, int) and tendered_q > 0:
+        out += _pair("Recebido", f"R$ {format_money(tendered_q)}")
+    if isinstance(change_q, int) and change_q > 0:
+        out += _pair("Troco", f"R$ {format_money(change_q)}")
+    out += _rule()
+
+    out += _centered("Obrigado pela preferência!")
+
+    out += bytes([ESC, ord("d"), 4])
+    out += bytes([GS, ord("V"), 1])  # corte parcial
+    return bytes(out)
+
+
 def danfe_nfce(doc, *, reprint: bool = False) -> bytes:
     """DANFE NFC-e em bobina — a projeção IMPRESSA de ``DanfeDocument``.
 
