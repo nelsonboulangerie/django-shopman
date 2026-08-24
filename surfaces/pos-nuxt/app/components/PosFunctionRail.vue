@@ -51,16 +51,9 @@ const hubUrl = useRuntimeConfig().public.operatorHubUrl as string;
     </template>
 
     <template #status>
-      <PosTerminalHealth
-        v-if="pos"
-        compact
-        :terminal-label="pos.terminal_label"
-        :health-status="pos.terminal_health_status"
-        :components="pos.terminal_components"
-        :fiscal-status="pos.fiscal_status"
-        :fiscal-label="pos.fiscal_label"
-        :fiscal-message="pos.fiscal_message"
-      />
+      <!-- O card recebe a Projection inteira porque ele mesmo sonda o agente do
+           balcão (useAgentHealth) e promove o resultado às linhas. -->
+      <PosTerminalHealth v-if="pos" compact :pos="pos" />
       <RailItem
         icon="refresh-cw"
         label="Atualizar"
