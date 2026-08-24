@@ -315,7 +315,7 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onGlobalKeydown));
                 Imprimir recibo
               </UiButton>
               <a
-                v-if="result.issueFiscalDocument"
+                v-if="result.fiscalExpected"
                 class="inline-flex h-8 items-center gap-1.5 rounded-md border border-success/40 px-3 text-sm font-medium text-success transition hover:bg-success/10"
                 :href="`${djangoOrigin}/fiscal/danfe/${encodeURIComponent(result.orderRef)}/`"
                 target="_blank" rel="noopener"

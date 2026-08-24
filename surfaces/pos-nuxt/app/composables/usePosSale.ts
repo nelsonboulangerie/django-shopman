@@ -122,7 +122,7 @@ export function usePosSale(deps: PosSaleDeps) {
   // — reabre o diálogo de autorização com a mensagem, senão o CTA vira "Validar" e
   // reenvia o mesmo PIN errado para sempre (beco sem saída).
   const managerApprovalError = ref("");
-  const result = ref<{ orderRef: string; nextUrl: string; payment: PaymentProofView | null; receipt: PosReceiptSnapshot; issueFiscalDocument: boolean } | null>(null);
+  const result = ref<{ orderRef: string; nextUrl: string; payment: PaymentProofView | null; receipt: PosReceiptSnapshot; fiscalExpected: boolean } | null>(null);
 
   // PIX no PDV: o proof mostra o QR e "aguarde confirmação", mas sem polling o
   // operador nunca via a confirmação chegar (tinha de ir ao gestor). Aqui pollamos
@@ -1107,7 +1107,9 @@ export function usePosSale(deps: PosSaleDeps) {
           nextUrl: `${ordersUrl.value.replace(/\/+$/, "")}/${encodeURIComponent(orderRef)}`,
           payment: proof,
           receipt,
-          issueFiscalDocument: cart.issueFiscalDocument,
+          // O botão da DANFE segue a REGRA fiscal, não o toggle: cartão e pix
+          // emitem por forma de pagamento, sem o operador marcar nada.
+          fiscalExpected: !!response.fiscal_expected,
         };
         // PIX pendente → polla até confirmar; outros métodos já saem resolvidos.
         if (proof?.isPix && proof?.hasProof) startPixPolling(orderRef);

@@ -95,6 +95,7 @@ from shopman.backstage.services.exceptions import (
     ProductionError,
 )
 from shopman.backstage.services.production import ProductionOrderShortError, ProductionStockShortError
+from shopman.shop.services import fiscal as fiscal_service
 from shopman.shop.services import pos as pos_tabs_service
 from shopman.shop.services.pos import PosRecentSaleNotFound
 from shopman.shop.services.pos_intent import PosIntentError
@@ -2085,6 +2086,18 @@ def _username (request) -> str:
     return _actor(request)
 
 
+def _fiscal_expected(order_ref: str | None) -> bool:
+    """A venda recém-fechada vai ter NFC-e? Quem responde é a regra fiscal."""
+    if not order_ref:
+        return False
+    try:
+        from shopman.orderman.models import Order
+
+        return fiscal_service.emission_expected(Order.objects.get(ref=order_ref))
+    except ObjectDoesNotExist:
+        return False
+
+
 @extend_schema_view(
     post=extend_schema(
         tags=["backstage"],
@@ -2439,11 +2452,13 @@ class POSCloseSaleView(APIView):
             return Response({"detail": exc.message, "error": exc.as_dict()}, status=exc.status)
         except ValueError as exc:
             return Response({"detail": str(exc) or "Falha ao finalizar venda."}, status=422)
+        order_ref = getattr(result, "order_ref", None)
         return Response({
             "ok": True,
-            "order_ref": getattr(result, "order_ref", None),
+            "order_ref": order_ref,
             "tab_ref": getattr(result, "tab_ref", None),
             "payment": getattr(result, "payment", None) or {},
+            "fiscal_expected": _fiscal_expected(order_ref),
         })
 
 

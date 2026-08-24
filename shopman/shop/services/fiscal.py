@@ -173,6 +173,24 @@ def cancel(order) -> None:
     logger.info("fiscal.cancel: queued for order %s", order.ref)
 
 
+def emission_expected(order) -> bool:
+    """Esta venda vai ter NFC-e?
+
+    O balcão precisa oferecer a DANFE, e não pode perguntar isso ao toggle do
+    operador: o ``emission_resolver`` também emite por forma de pagamento, e
+    nota que ninguém pediu continua sendo nota que o cliente pode exigir
+    impressa.
+
+    Nem pode perguntar à Directive: quando a venda fecha, o pedido ainda está em
+    ``new``. A emissão só acontece na conclusão, e a nota não existe no instante
+    da tela de confirmação. O que existe já no fechamento é a *regra* e os dados
+    que ela lê (forma de pagamento, CPF, pedido do operador) — então a pergunta
+    honesta é "vai haver nota?", respondida pelo mesmo resolver que decide, sem
+    cópia da regra no front.
+    """
+    return bool(fiscal_pool.get_backend()) and emission_resolver(order)
+
+
 def _build_fiscal_items(order) -> list[dict]:
     """Build item list for fiscal emission from order items.
 
