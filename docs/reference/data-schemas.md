@@ -153,6 +153,7 @@ for key in (
 | `nfce_xml_url` | `string` | `shop/handlers/fiscal.py` (FocusNFe) | — | URL do XML autorizado |
 | `nfce_status` | `string` | `shop/handlers/fiscal.py` (FocusNFe) | — | Status da emissão (ex.: `autorizado`, `erro`) |
 | `nfce_email_sent_at` | `string` | NFCeEmitHandler (`_send_receipt_email`) | NFCeEmitHandler (idempotência do envio) | ISO datetime de quando o Focus aceitou enviar a nota por e-mail. Só entra quando o provedor aceitou; reenvio manual (Últimas vendas do PDV) não depende dele |
+| `fiscal.tax_id` | `string` | POS checkout (só com `issue_fiscal_document`) | `on_request_or_tax_id`, `_fiscal_customer` (payload da emissão) | CPF/CNPJ **pedido NESTA venda** ("CPF na nota"). ⚠️ Nunca ler `customer.tax_id` para fins fiscais: aquele é cadastro/CRM — usá-lo tornava o CPF compulsório para cliente identificado |
 | `availability_decision` | `dict` | `lifecycle.approve_with_adjustments()`, `lifecycle.approve_order()`, `lifecycle.reject_order()` | `lifecycle.has_availability_approval()`, `lifecycle.ensure_confirmable()`, `services/stock.py` | Decisão do operador sobre disponibilidade: `{approved: bool, decisions: [{sku, original_qty, approved_qty, action}], decided_at, decided_by}`. Guard para confirmação |
 | `cancelled_by` | `string` | `services/cancellation.py` | `hooks._on_cancelled` | Identificador de quem cancelou: `"customer"` ou `"operator:<username>"` |
 | `session_key` | `string` | hooks._on_cancelled | hooks._on_cancelled | Chave de sessão original (referência para release holds) |
@@ -959,6 +960,7 @@ proprios, nao aqui.
 | `seed_persona` | `string` | seed | QA/auditoria | Persona operacional deterministica. Ex: `"low_attention"` |
 | `qa_notes` | `list[string]` | seed | QA/auditoria | Observacoes de teste para simular baixa atencao, recuperacao e suporte |
 | `house_account` | `bool` | **Admin** (checkbox "Conta na casa" no form do cliente, `guestman/contrib/admin_unfold`) | `shop/services/house_account.is_eligible` (porteiro da venda "em conta" no PDV), projection do PDV (`customer lookup.house_account`) | O cliente pode comprar em conta e acertar por período (WP-10 do CASHMAN-PLAN). Desligado por padrão; não se divulga. Ausente = `false` |
+| `fiscal_prefs` | `dict` | `shop/services/pos._remember_fiscal_prefs` (quando cliente identificado OPTA na venda) | POS lookup projection (`fiscal_prefs`) → pré-marca o checkout | `{cpf_na_nota: bool, email_receipt: bool}` — o cliente optou uma vez, a próxima venda vem pré-marcada (editável). Só grava opt-IN; desmarcar numa venda não apaga ("hoje não" ≠ "nunca mais"). Esquecer é gesto de cadastro (Admin) |
 
 ---
 

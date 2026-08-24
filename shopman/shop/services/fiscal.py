@@ -93,7 +93,7 @@ def emit(order) -> None:
     payload.update(
         items=_build_fiscal_items(order),
         payment=payment,
-        customer=data.get("customer", {}),
+        customer=_fiscal_customer(data),
         delivery=delivery,
     )
     created = directives.create_deduped(
@@ -183,6 +183,23 @@ def cancel(order) -> None:
     )
 
     logger.info("fiscal.cancel: queued for order %s", order.ref)
+
+
+def _fiscal_customer(data: dict) -> dict:
+    """O consumidor DA NOTA: identidade do cadastro, documento do PEDIDO.
+
+    O adapter identifica o consumidor por ``tax_id``/``cpf``/``cnpj`` do dict —
+    e esses campos só podem carregar o que foi PEDIDO nesta venda
+    (``fiscal.tax_id``), nunca o documento do CRM. Sem esta separação, cliente
+    identificado com CPF no cadastro saía identificado em toda nota.
+    """
+    customer = dict(data.get("customer") or {})
+    requested = str((data.get("fiscal") or {}).get("tax_id") or "").strip()
+    for key in ("tax_id", "cpf", "cnpj"):
+        customer.pop(key, None)
+    if requested:
+        customer["tax_id"] = requested
+    return customer
 
 
 def emission_expected(order) -> bool:
