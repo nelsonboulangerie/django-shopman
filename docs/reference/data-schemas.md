@@ -644,6 +644,20 @@ Estorna exatamente o que a transação `earn` do pedido creditou (transação
 creditou, é no-op; se o earn ainda está na fila, re-agenda (transient) até o
 earn assentar. `dedupe_key` = `loyalty.revoke:{order_ref}`.
 
+#### `loyalty.restore`
+
+| Chave | Tipo | Escrito por | Lido por |
+|-------|------|-------------|----------|
+| `order_ref` | `string` | `services/loyalty.py` (restore, via `_on_cancelled`/`_on_returned`) | LoyaltyRestoreHandler |
+| `reason` | `string` | idem | LoyaltyRestoreHandler (`cancelled` \| `returned`, só para a descrição da transação) |
+
+Devolve exatamente o que a transação `redeem` do pedido debitou (transação
+`adjust` positiva com `reference="order:{ref}:restore"` — reference própria
+para não colidir com a dedupe do `loyalty.revoke`, que grava `adjust` na
+reference original). Se o redeem nunca debitou, é no-op; se o redeem ainda
+está na fila, re-agenda (transient) até o redeem assentar.
+`dedupe_key` = `loyalty.restore:{order_ref}`.
+
 #### `checkout.infer_defaults`
 
 | Chave | Tipo | Escrito por | Lido por |

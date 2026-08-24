@@ -69,7 +69,10 @@ e o espelho do próprio `loyalty.earn`. Síncrono no lifecycle acoplaria o cance
 - **Devolver pontos resgatados** num pedido cancelado (o espelho do
   `loyalty.redeem`): o cliente pagou parte com pontos e o cancelamento devolve o
   dinheiro mas não os pontos. É o mesmo buraco do outro lado, amarrado à semântica
-  do refund — fica para um WP próprio.
+  do refund — resolvido no
+  [WP-LOYALTY-RESTORE-01](WP-LOYALTY-RESTORE-01-devolucao-do-resgate.md)
+  (Directive `loyalty.restore`, `adjust` positivo com reference própria
+  `order:{ref}:restore` para não colidir com a dedupe deste WP).
 
 ## Testes
 
