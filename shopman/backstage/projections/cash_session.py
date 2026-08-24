@@ -51,6 +51,9 @@ _METHOD_ORDER = ("cash", "pix", "card", "external")
 class MovementRowProjection:
     """A manual drawer movement inside a shift."""
 
+    #: A linha do livro (``cashman.Entry.pk``) — é por ela que a superfície pede
+    #: a segunda via do comprovante (GET ``cash/entry/<id>/receipt/?reprint=1``).
+    entry_id: int
     kind: str  # "sangria" | "suprimento" (vocabulário do balcão; o livro diz cash_out/cash_in)
     kind_label: str  # "Saída de caixa" | "Entrada de caixa"
     amount_q: int  # sempre positivo; a direção vem do `kind`
@@ -188,6 +191,7 @@ def _shift_reading(shift) -> ShiftReadingProjection:
 
     movements = tuple(
         MovementRowProjection(
+            entry_id=e.pk,
             kind=MOVEMENT_API_BY_KIND[e.kind],
             kind_label=str(e.get_kind_display()),
             amount_q=abs(int(e.amount_q)),

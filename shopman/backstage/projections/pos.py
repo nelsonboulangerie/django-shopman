@@ -218,6 +218,13 @@ class POSCashRuntimeProjection:
     # Contas na casa com saldo em aberto: quem está com a gaveta aberta é quem
     # recebe o acerto (em dinheiro entra no livro dele; pix/cartão é atestado).
     account_balances: tuple[POSAccountBalanceProjection, ...] = ()
+    # Sugestão FIXA de fundo de troco para a abertura guiada — config do
+    # terminal (`Terminal.metadata["default_float_q"]`), editável no Admin.
+    # ⚠️ Regime cego: este número é escolha do gestor, NUNCA leitura da gaveta.
+    # Derivá-lo do contado/esperado de fechamentos vazaria o gabarito da
+    # contagem cega para quem conta.
+    default_float_q: int = 0
+    default_float_display: str = ""  # "R$ 200,00"; "" quando não configurado
 
 
 @dataclass(frozen=True)
@@ -455,6 +462,7 @@ def build_pos(*, terminal=None, operator=None) -> POSProjection:
             cash_shift,
             runtime,
             operator,
+            terminal=terminal,
         ),
         terminal_ref=runtime.terminal_ref,
         terminal_label=runtime.terminal_label,
@@ -1529,7 +1537,7 @@ def _active_cash_shift_for_terminal(terminal):
         return None
 
 
-def _cash_runtime_projection(cash_shift, runtime, operator) -> POSCashRuntimeProjection:
+def _cash_runtime_projection(cash_shift, runtime, operator, terminal=None) -> POSCashRuntimeProjection:
     """Dois estados só: a gaveta tem turno aberto, ou não tem.
 
     Existiu um terceiro, ``terminal_occupied`` — "Terminal aberto por marina" —
@@ -1543,6 +1551,7 @@ def _cash_runtime_projection(cash_shift, runtime, operator) -> POSCashRuntimePro
     # `can_audit_cash` NÃO é o operador do balcão: esperado e diferença são do
     # Dono (ver setup_groups). Quem conta às cegas não pode conferir o gabarito.
     audita = bool(operator is not None and can_audit_cash(operator))
+    default_float_q = _default_float_q(terminal)
 
     if cash_shift is None:
         return POSCashRuntimeProjection(
@@ -1554,6 +1563,8 @@ def _cash_runtime_projection(cash_shift, runtime, operator) -> POSCashRuntimePro
             opened_at="",
             status="closed",
             can_audit_cash=audita,
+            default_float_q=default_float_q,
+            default_float_display=f"R$ {format_money(default_float_q)}" if default_float_q else "",
         )
     return POSCashRuntimeProjection(
         has_open_shift=True,
@@ -1569,7 +1580,24 @@ def _cash_runtime_projection(cash_shift, runtime, operator) -> POSCashRuntimePro
         pending_change_requests=_pending_change_requests(cash_shift),
         pending_cash_refunds=_pending_cash_refunds(cash_shift),
         account_balances=account_balances(),
+        default_float_q=default_float_q,
+        default_float_display=f"R$ {format_money(default_float_q)}" if default_float_q else "",
     )
+
+
+def _default_float_q(terminal) -> int:
+    """Fundo de troco sugerido na abertura, escolhido pelo gestor no Admin.
+
+    Lê ``Terminal.metadata["default_float_q"]`` (centavos), mesmo idioma do
+    ``auto_lock_seconds``. Config ilegível vale 0 — sem sugestão, e a antesala
+    segue pedindo o valor digitado. ⚠️ NUNCA calcular a partir do contado ou do
+    esperado de turnos: qualquer derivação vazaria o regime de contagem cega.
+    """
+    try:
+        raw = (getattr(terminal, "metadata", None) or {}).get("default_float_q", 0)
+        return max(0, int(raw))
+    except (TypeError, ValueError):
+        return 0
 
 
 def account_balances() -> tuple[POSAccountBalanceProjection, ...]:
