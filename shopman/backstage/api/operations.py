@@ -271,7 +271,7 @@ def _pos_sale_review_payload(review) -> dict:
         "requires_manager_approval": review.requires_manager_approval,
         "manager_approval_threshold_q": review.manager_approval_threshold_q,
         "approval_reasons": list(review.approval_reasons),
-        "receipt_mode": review.receipt_mode,
+        "receipt_channels": list(review.receipt_channels),
         "issue_fiscal_document": review.issue_fiscal_document,
         "warnings": list(review.warnings),
     }
@@ -1233,6 +1233,97 @@ class OrderRequeueFiscalView(_OrderActionBase):
         except OrderError as exc:
             return Response({"detail": str(exc) or "Falha ao reprocessar fiscal."}, status=400)
         return Response({"ok": True, "ref": ref})
+
+
+@extend_schema_view(
+    get=extend_schema(
+        tags=["backstage"],
+        summary="Recent POS sales with fiscal state (print/resend/requeue home)",
+        responses={200: OpenApiResponse(description="Recent sales list.")},
+    ),
+)
+class POSRecentSalesView(APIView):
+    """Últimas vendas do balcão — a casa da DANFE depois que a tela da venda passou."""
+
+    permission_classes = [HasBackstagePermission]
+    required_permission = "cashman.operate_pos"
+
+    def get(self, request):
+        from shopman.backstage.projections.pos import build_pos_recent_sales
+
+        return Response({"ok": True, **build_pos_recent_sales()})
+
+
+@extend_schema_view(
+    get=extend_schema(
+        tags=["backstage"],
+        summary="DANFE NFC-e bytes (ESC/POS, base64) for the counter agent",
+        responses={200: OpenApiResponse(description="DANFE payload.")},
+    ),
+)
+class POSDanfeEscposView(APIView):
+    """O servidor compõe a DANFE em bobina; o navegador relaia ao agente do balcão."""
+
+    permission_classes = [HasBackstagePermission]
+    required_permission = "cashman.operate_pos"
+
+    def get(self, request, ref: str):
+        import base64
+
+        from shopman.backstage.services.receipt_escpos import danfe_nfce
+        from shopman.shop.views.fiscal_danfe import build_danfe
+
+        doc = build_danfe(ref)
+        if doc is None:
+            return Response({"detail": "Pedido não encontrado."}, status=404)
+        if not doc.emitted:
+            return Response({"detail": "NFC-e ainda não autorizada para este pedido."}, status=409)
+        reprint = str(request.query_params.get("reprint") or "").lower() in {"1", "true", "on"}
+        payload = danfe_nfce(doc, reprint=reprint)
+        return Response({
+            "ok": True,
+            "payload_b64": base64.b64encode(payload).decode("ascii"),
+            "title": f"danfe:{ref}",
+        })
+
+
+@extend_schema_view(
+    post=extend_schema(
+        tags=["backstage"],
+        summary="Resend the NFC-e by email via the fiscal provider",
+        responses={200: OpenApiResponse(description="Email queued at provider.")},
+    ),
+)
+class POSResendFiscalEmailView(APIView):
+    """Reenvio da nota por e-mail — o Focus entrega DANFE + XML; nós só pedimos."""
+
+    permission_classes = [HasBackstagePermission]
+    required_permission = "cashman.operate_pos"
+
+    def post(self, request, ref: str):
+        from shopman.orderman.models import Order
+
+        from shopman.shop.fiscal import fiscal_pool
+
+        order = Order.objects.filter(ref=ref).first()
+        if order is None:
+            return Response({"detail": "Pedido não encontrado."}, status=404)
+        if not (order.data or {}).get("nfce_access_key"):
+            return Response({"detail": "NFC-e ainda não autorizada para este pedido."}, status=409)
+        email = str((request.data or {}).get("email") or "").strip()
+        if not email:
+            data = order.data or {}
+            email = str((data.get("receipt") or {}).get("email") or (data.get("customer") or {}).get("email") or "").strip()
+        if not email:
+            return Response({"detail": "Informe o e-mail de destino.", "field": "email"}, status=400)
+        backend = fiscal_pool.get_backend()
+        send = getattr(backend, "send_email", None)
+        if send is None:
+            return Response({"detail": "Backend fiscal não suporta envio de e-mail."}, status=501)
+        ok, message = send(reference=ref, emails=[email])
+        if not ok:
+            return Response({"detail": message}, status=502)
+        return Response({"ok": True, "detail": message})
 
 
 @extend_schema_view(

@@ -32,7 +32,7 @@ from shopman.shop.projections.types import (
 )
 from shopman.shop.services.pos_intent import (
     POS_SALE_INTENT_PAYLOAD_KEYS,
-    POS_SALE_INTENT_RECEIPT_MODES,
+    POS_SALE_INTENT_RECEIPT_CHANNELS,
     POS_SALE_INTENT_VERSION,
 )
 
@@ -136,7 +136,7 @@ class POSCheckoutContractProjection:
     allowed_payload_keys: tuple[str, ...]
     sections: tuple[POSCheckoutSectionProjection, ...]
     fields: tuple[POSCheckoutFieldProjection, ...]
-    receipt_modes: tuple[POSCheckoutOptionProjection, ...]
+    receipt_channels: tuple[POSCheckoutOptionProjection, ...]
     tender_methods: tuple[POSCheckoutOptionProjection, ...]
     cash_tender_delta_presets_q: tuple[int, ...]
     discount_types: tuple[POSCheckoutOptionProjection, ...]
@@ -238,6 +238,10 @@ class POSCustomerLookupProjection:
     name: str
     phone: str
     email: str
+    #: CPF/CNPJ já conhecido — pré-preenche o "CPF na nota" do checkout. O
+    #: operador pode digitar OUTRO na venda (conveniência); o merge no Guestman
+    #: é preenche-se-vazio e nunca sobrescreve o cadastro.
+    tax_id: str
     #: A faixa de preço do cliente (`PriceTier.ref`). Chamava-se `loyalty_group`, e era o
     #: TERCEIRO nome errado da mesma coisa: fidelidade é o `LoyaltyAccount` (bronze/ouro),
     #: e nada disto tem a ver com ela.
@@ -608,6 +612,7 @@ def build_pos_customer_lookup(phone: str) -> POSCustomerLookupProjection | None:
         name=name,
         phone=getattr(customer, "phone", "") or phone,
         email=getattr(customer, "email", "") or "",
+        tax_id=getattr(customer, "document", "") or "",
         price_tier=tier_ref,
         is_staff=tier_ref == "staff",
         default_address=_saved_address_projection(default_address) if default_address else None,
@@ -785,7 +790,7 @@ def _pos_actions() -> tuple[Action, ...]:
                     "payment_tenders",
                     "tendered_amount_q",
                     "issue_fiscal_document",
-                    "receipt_mode",
+                    "receipt_channels",
                     "receipt_email",
                     "manual_discount",
                     "manager_approval",
@@ -1021,8 +1026,9 @@ def _checkout_contract(
     # caminhos, e um import de topo aqui fecharia o ciclo.
     from shopman.backstage.services import pos as pos_service
 
-    receipt_modes = (
-        POSCheckoutOptionProjection(ref="none", label="Sem comprovante"),
+    # MULTI: imprimir E enviar não competem. "Sem comprovante" não é opção —
+    # é nenhum canal marcado.
+    receipt_channels = (
         POSCheckoutOptionProjection(ref="print", label="Imprimir"),
         POSCheckoutOptionProjection(ref="email", label="Enviar por e-mail"),
     )
@@ -1195,12 +1201,12 @@ def _checkout_contract(
             capability_ref="fiscal_document",
         ),
         POSCheckoutFieldProjection(
-            ref="receipt_mode",
-            payload_key="receipt_mode",
+            ref="receipt_channels",
+            payload_key="receipt_channels",
             section_ref="receipt",
             label="Comprovante",
-            input_type="segmented",
-            options=receipt_modes,
+            input_type="multi_toggle",
+            options=receipt_channels,
         ),
         POSCheckoutFieldProjection(
             ref="receipt_email",
@@ -1208,7 +1214,7 @@ def _checkout_contract(
             section_ref="receipt",
             label="E-mail do comprovante",
             input_type="email",
-            required_when={"receipt_mode": "email"},
+            required_when={"receipt_channels": "email"},
             max_length=180,
         ),
         POSCheckoutFieldProjection(
@@ -1260,7 +1266,7 @@ def _checkout_contract(
             ref="receipt",
             label="Fiscal e comprovante",
             description="Dados opcionais para fiscal e comprovante.",
-            field_refs=("issue_fiscal_document", "receipt_mode", "receipt_email"),
+            field_refs=("issue_fiscal_document", "receipt_channels", "receipt_email"),
         ),
         POSCheckoutSectionProjection(
             ref="approval",
@@ -1274,7 +1280,7 @@ def _checkout_contract(
         allowed_payload_keys=POS_SALE_INTENT_PAYLOAD_KEYS,
         sections=sections,
         fields=fields,
-        receipt_modes=tuple(option for option in receipt_modes if option.ref in POS_SALE_INTENT_RECEIPT_MODES),
+        receipt_channels=tuple(option for option in receipt_channels if option.ref in POS_SALE_INTENT_RECEIPT_CHANNELS),
         tender_methods=tender_methods,
         cash_tender_delta_presets_q=(0, 1000, 2000, 5000, 10000),
         discount_types=(
@@ -1882,7 +1888,7 @@ def build_open_tab(session: Session) -> dict:
         "tendered_amount_q": "",
         "client_request_id": data.get("client_request_id", (data.get("pos") or {}).get("client_request_id", "")),
         "issue_fiscal_document": bool(fiscal.get("issue_document")),
-        "receipt_mode": receipt.get("mode", "none"),
+        "receipt_channels": list(receipt.get("channels") or []),
         "receipt_email": receipt.get("email", ""),
         "discount_type": discount.get("type", "percent"),
         "discount_value": str(discount.get("value", "")) if discount.get("value") else "",
@@ -1956,3 +1962,56 @@ def customer_history_summary(customer_ref: str, *, limit: int = 5) -> dict:
     }
 
     return ("warning", "Fiscal", "adapter customizado")
+
+
+def build_pos_recent_sales(*, limit: int = 20) -> dict:
+    """Últimas vendas do balcão, com o estado FISCAL de cada uma.
+
+    A tela da venda não pode responder "a nota autorizou?" — a emissão é
+    assíncrona e a confirmação some quando a próxima venda começa. Esta lista é
+    a casa disso: status da NFC-e, reimpressão da DANFE, reenvio por e-mail e
+    reprocessamento de falha, para qualquer venda recente, a qualquer hora.
+    Reusa a MESMA projeção fiscal do gestor (``order_queue._fiscal_status``) —
+    um estado, duas superfícies, zero divergência.
+    """
+    from shopman.orderman.models import Order
+
+    from shopman.backstage.projections.order_queue import _fiscal_status
+
+    since = timezone.now() - timezone.timedelta(hours=24)
+    orders = (
+        Order.objects.filter(channel_ref=POS_CHANNEL_REF, created_at__gte=since)
+        .prefetch_related("items")
+        .order_by("-created_at")[: max(1, min(int(limit), 50))]
+    )
+
+    sales = []
+    for order in orders:
+        data = order.data or {}
+        fiscal_status, fiscal_label, fiscal_links = _fiscal_status(order)
+        payment = data.get("payment") or {}
+        methods = [
+            str(t.get("method") or "")
+            for t in (payment.get("tenders") or [])
+            if isinstance(t, dict) and t.get("amount_q")
+        ] or [str(payment.get("method") or "")]
+        receipt = data.get("receipt") or {}
+        sales.append({
+            "order_ref": order.ref,
+            "status": str(order.status),
+            "created_at_display": timezone.localtime(order.created_at).strftime("%H:%M"),
+            "total_display": format_money(int(order.total_q or 0)),
+            "payment_label": " + ".join(payment_method_label(m) for m in methods if m),
+            "customer_name": str((data.get("customer") or {}).get("name") or ""),
+            "fiscal_status": fiscal_status,
+            "fiscal_label": fiscal_label,
+            "fiscal_links": list(fiscal_links),
+            "nfce_number": str(data.get("nfce_number") or ""),
+            "email_sent": bool(data.get("nfce_email_sent_at")),
+            "receipt_email": str(receipt.get("email") or (data.get("customer") or {}).get("email") or ""),
+            # As ações seguem o FATO (a nota), nunca o toggle do operador.
+            "can_print_danfe": bool(data.get("nfce_access_key")),
+            "can_resend_email": bool(data.get("nfce_access_key")),
+            "can_requeue_fiscal": fiscal_status == "failed",
+        })
+    return {"sales": sales}

@@ -83,6 +83,7 @@ class NFCeEmitHandler:
 
         if result.success:
             self._record(order, result)
+            self._send_receipt_email(order)
             return
 
         if result.error_code in _REFERENCE_CONFLICT_CODES:
@@ -108,9 +109,50 @@ class NFCeEmitHandler:
         status = query(reference=order_ref)
         if status.success and status.access_key:
             self._record(order, status)
+            self._send_receipt_email(order)
             logger.info("fiscal.emit: nota existente adotada via consulta order=%s", order_ref)
             return True
         return False
+
+    def _send_receipt_email(self, order) -> None:
+        """Nota autorizada + cliente pediu e-mail → o Focus envia (DANFE + XML).
+
+        Best-effort de propósito: a nota JÁ EXISTE — falha de e-mail não pode
+        derrubar a directive de emissão nem provocar retry que re-POSTaria o
+        ref. O reenvio manual mora nas "Últimas vendas" do PDV. Idempotente por
+        ``nfce_email_sent_at`` (o carimbo só entra quando o Focus aceitou).
+        """
+        send = getattr(self.backend, "send_email", None)
+        if send is None:
+            return
+        data = order.data or {}
+        if data.get("nfce_email_sent_at"):
+            return
+        receipt = data.get("receipt") or {}
+        wants_email = receipt.get("mode") == "email" or "email" in (receipt.get("channels") or [])
+        email = str(receipt.get("email") or (data.get("customer") or {}).get("email") or "").strip()
+        if not (wants_email and email):
+            return
+        try:
+            ok, message = send(reference=order.ref, emails=[email])
+        except Exception:
+            logger.warning("fiscal.email: envio falhou order=%s", order.ref, exc_info=True)
+            return
+        if not ok:
+            logger.warning("fiscal.email: Focus recusou order=%s: %s", order.ref, message)
+            return
+        from django.db import transaction
+        from django.utils import timezone
+        from shopman.orderman.models import Order
+
+        with transaction.atomic():
+            locked = Order.objects.select_for_update().get(pk=order.pk)
+            fresh = dict(locked.data or {})
+            fresh["nfce_email_sent_at"] = timezone.now().isoformat()
+            locked.data = fresh
+            locked.save(update_fields=["data", "updated_at"])
+        order.data = fresh
+        logger.info("fiscal.email: enviado via Focus order=%s", order.ref)
 
     @staticmethod
     def _record(order, result: FiscalDocumentResult) -> None:

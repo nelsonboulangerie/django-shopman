@@ -115,6 +115,39 @@ class FocusNFeBackend:
             return _document_error_result(exc)
         return _document_result(response, config)
 
+    def send_email(self, *, reference: str, emails: list[str]) -> tuple[bool, str]:
+        """Pede ao Focus o envio da nota por e-mail (DANFE + XML).
+
+        ``POST /v2/nfce/{ref}/email`` com ``{"emails": [...]}`` — o campo é
+        LISTA, máx. 10 endereços, e o envio é assíncrono do lado do Focus: o
+        200 significa "vai sair", nunca "chegou". 400 quando a nota ainda não
+        está autorizada. Devolve ``(ok, mensagem-para-humano)``.
+        """
+        config = _get_config()
+        missing = _missing_config(config)
+        if missing:
+            return False, f"Focus NFe sem configuração obrigatória: {', '.join(missing)}"
+
+        cleaned = [str(e or "").strip() for e in emails]
+        cleaned = [e for e in cleaned if e][:10]
+        if not cleaned:
+            return False, "Nenhum e-mail para enviar."
+
+        try:
+            response = _request(
+                "POST",
+                f"/v2/nfce/{quote(reference, safe='')}/email",
+                {"emails": cleaned},
+                config,
+            )
+        except HTTPError as exc:
+            if exc.code == 400:
+                return False, "A NFC-e ainda não está autorizada — reenvie quando autorizar."
+            return False, f"Focus NFe recusou o envio (HTTP {exc.code})."
+        except (URLError, TimeoutError) as exc:
+            return False, f"Focus NFe inacessível: {exc}"
+        return True, str(response.get("mensagem") or "Os e-mails serão enviados em breve.")
+
     def cancel(self, *, reference: str, reason: str) -> FiscalCancellationResult:
         config = _get_config()
         missing = _missing_config(config)
