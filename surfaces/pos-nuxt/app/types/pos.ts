@@ -374,6 +374,9 @@ export interface POSProjection {
   fiscal_status: "ready" | "warning" | "error" | string;
   fiscal_label: string;
   fiscal_message: string;
+  /** A prévia web da DANFE (host do Django) abre para QUEM está logado? O
+   * servidor decide; a tela não renderiza porta que devolve 404. */
+  danfe_preview_allowed: boolean;
   operators: POSOperatorProjection[];
   managers: POSManagerProjection[];
   auto_lock_seconds: number;

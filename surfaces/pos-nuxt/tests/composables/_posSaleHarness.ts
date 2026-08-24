@@ -47,6 +47,7 @@ export function makeProjection(overrides: Partial<POSProjection> = {}): POSProje
     fiscal_status: "ready",
     fiscal_label: "",
     fiscal_message: "",
+    danfe_preview_allowed: false,
     operators: [],
     auto_lock_seconds: 0,
     ...overrides,

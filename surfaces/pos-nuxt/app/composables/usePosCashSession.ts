@@ -158,7 +158,13 @@ export function usePosCashSession({ pos, actions, refresh, action }: CashSession
       outcome = { status: "failed", detail: httpErrorMessage(error, "Falha ao montar o comprovante.") };
     }
     if (outcome.status === "failed") {
-      toast.error(`O comprovante não saiu: ${outcome.detail}`);
+      // Nunca só "indisponível": o operador ganha a saída na mão — reimprimir
+      // agora (o servidor recompõe, já carimbado de 2ª via se for o caso) e a
+      // instrução curta de por onde o defeito costuma entrar.
+      toast.error(`O comprovante não saiu: ${outcome.detail}`, {
+        description: "Se o agente da estação caiu, reinicie-o (e reinicie sempre depois de mudar a configuração do terminal).",
+        action: { label: "Tentar de novo", onClick: () => void printMovementReceipt(entryId) },
+      });
     }
     // Registrar é o ponto todo: sem isto, papel que faltou parece papel que
     // alguém escondeu. Se ESTA chamada falhar, o movimento fica "sem

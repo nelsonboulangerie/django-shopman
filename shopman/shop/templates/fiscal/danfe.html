@@ -7,8 +7,8 @@
   <style>
     /* Cupom DANFE NFC-e — largura de bobina (~80mm), monoespaçado, imprimível.
        Não é a UI transacional (Alpine/HTMX): é um documento fiscal renderizado no
-       servidor, como o menuboard. O botão de impressão é ligado por addEventListener
-       (sem onclick inline). window.print() é API do browser (exceção prevista). */
+       servidor, como o menuboard. O botão de impressão usa Alpine (`@click`,
+       sem onclick inline). window.print() é API do browser (exceção prevista). */
     :root { --ink: #16130f; --dim: #6b6357; --rule: #d9d2c4; --paper: #faf7f0; --warn: #b23b2e; }
     * { box-sizing: border-box; }
     html, body { margin: 0; background: #ece7dc; color: var(--ink); }
