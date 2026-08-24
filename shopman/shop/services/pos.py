@@ -67,7 +67,7 @@ class PosSaleReview:
     change_q: int
     requires_manager_approval: bool
     manager_approval_threshold_q: int
-    receipt_mode: str
+    receipt_channels: tuple[str, ...]
     issue_fiscal_document: bool
     # POR QUE o gerente foi chamado. O servidor conhece os gatilhos
     # (teto de desconto, preço alterado); sem publicá-los
@@ -326,6 +326,18 @@ def close_sale(
     if order is not None:
         order = _reconcile_order_payment_to_total(order)
         payment_result = _settle_pos_sale(order, shift=shift, operator_username=operator_username)
+        # A nota segue o primeiro dos dois fatos: o pagamento se liquidar ou a
+        # mercadoria sair. No balcão os dois acontecem AQUI — a venda direta
+        # fechou paga, a entrega/encomenda sai com a sacola (e a DANFE vai
+        # junto). Para a venda presencial que o lifecycle já concluiu, isto é
+        # dedupe-hit; para as demais, é o gatilho que ``on_completed`` (fim da
+        # jornada) demoraria dias a alcançar. Idempotente e deduplicado no banco.
+        try:
+            from shopman.shop.services import fiscal as fiscal_service
+
+            fiscal_service.emit(order)
+        except Exception:
+            logger.warning("pos_close_fiscal_emit_failed order=%s", result.order_ref, exc_info=True)
     return PosSaleResult(
         order_ref=result.order_ref,
         total_q=int(order.total_q if order is not None else result.total_q),
@@ -619,7 +631,7 @@ def review_sale(
         ),
         requires_manager_approval=bool(approval_reasons),
         manager_approval_threshold_q=threshold_q,
-        receipt_mode=str(payload.get("receipt_mode") or "none").strip() or "none",
+        receipt_channels=tuple(payload.get("receipt_channels") or ()),
         issue_fiscal_document=bool(payload.get("issue_fiscal_document")),
         approval_reasons=tuple(approval_reasons),
         warnings=tuple(warnings),
@@ -1287,7 +1299,7 @@ def build_session_ops(payload: dict, operator_username: str) -> list[dict]:
     customer_phone = str(payload.get("customer_phone", "") or "").strip()
     customer_tax_id = str(payload.get("customer_tax_id", "") or "").strip()
     customer_email = str(payload.get("customer_email", "") or "").strip()
-    if not customer_email and str(payload.get("receipt_mode") or "").strip() == "email":
+    if not customer_email and "email" in (payload.get("receipt_channels") or []):
         customer_email = str(payload.get("receipt_email", "") or "").strip()
     persisted_customer = _persist_customer_from_payload(payload, operator_username=operator_username)
     if persisted_customer:
@@ -1381,9 +1393,9 @@ def build_session_ops(payload: dict, operator_username: str) -> list[dict]:
     if customer_tax_id:
         ops.append({"op": "set_data", "path": "fiscal.tax_id", "value": customer_tax_id})
 
-    receipt_mode = str(payload.get("receipt_mode") or "none").strip() or "none"
+    receipt_channels = list(payload.get("receipt_channels") or [])
     receipt_email = str(payload.get("receipt_email", "") or "").strip()
-    ops.append({"op": "set_data", "path": "receipt.mode", "value": receipt_mode})
+    ops.append({"op": "set_data", "path": "receipt.channels", "value": receipt_channels})
     if receipt_email:
         ops.append({"op": "set_data", "path": "receipt.email", "value": receipt_email})
 
@@ -2583,7 +2595,7 @@ def _mark_tab_committed(
     if fiscal.get("issue_document") or fiscal.get("tax_id"):
         order_data["fiscal"] = fiscal
     receipt = session_data.get("receipt") or {}
-    if receipt.get("email") or receipt.get("mode") not in (None, "", "none"):
+    if receipt.get("email") or receipt.get("channels"):
         order_data["receipt"] = receipt
     manual_discount = session_data.get("manual_discount") or {}
     if manual_discount.get("discount_q"):
@@ -2653,7 +2665,7 @@ def _persist_customer_from_payload(payload: dict, *, operator_username: str) -> 
     phone = _normalize_phone(str(payload.get("customer_phone") or "").strip())
     tax_id = _digits(str(payload.get("customer_tax_id") or "").strip())
     email = str(payload.get("customer_email") or "").strip().lower()
-    if not email and str(payload.get("receipt_mode") or "").strip() == "email":
+    if not email and "email" in (payload.get("receipt_channels") or []):
         email = str(payload.get("receipt_email") or "").strip().lower()
     structured_address = payload.get("delivery_address_structured") if isinstance(payload.get("delivery_address_structured"), dict) else {}
     address = str(payload.get("delivery_address") or structured_address.get("formatted_address") or "").strip()

@@ -417,6 +417,31 @@ def _on_accepted(order, config: ChannelConfig) -> None:
     notification.send(order, "order_accepted")
     if physical_work_dispatched:
         _mark_preparing_after_physical_work_dispatch(order)
+        return
+
+    # Venda de balcão sem trabalho físico: o pão já saiu pela porta. Não há
+    # esteira a percorrer — os cinco estados são um evento só, já ocorrido.
+    # O gate é config-driven: só fecha se o CANAL declarou a transição
+    # ACCEPTED→COMPLETED no seu ``lifecycle.transitions`` (assado no snapshot).
+    # Canais sem essa config nunca entram aqui.
+    if _counter_handoff(order) and order.can_transition_to(Order.Status.COMPLETED):
+        order.transition_status(Order.Status.COMPLETED, actor="system:counter_handoff")
+
+
+def _counter_handoff(order) -> bool:
+    """A mercadoria já está na mão do cliente quando a venda fecha?
+
+    Balcão presencial (PDV, retirada, sem data futura): a venda documenta um
+    fato passado. Encomenda agendada e entrega ficam de fora — essas têm
+    trabalho e trajeto pela frente, e a esteira existe para elas.
+    """
+    data = order.data or {}
+    if data.get("origin_channel") != "pos":
+        return False
+    if (data.get("fulfillment_type") or "pickup") != "pickup":
+        return False
+    commitment = get_commitment_date(order)
+    return not (commitment and commitment > timezone.localdate())
 
 
 def _on_paid(order, config: ChannelConfig) -> None:

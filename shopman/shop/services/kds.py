@@ -68,13 +68,39 @@ def dispatch(order) -> list:
     lines = _order_to_lines(order)
     if not lines:
         return []
-    tickets = fire_lines(session_key=order.session_key, lines=lines)
+    tickets = fire_lines(
+        session_key=order.session_key,
+        lines=lines,
+        prep_only=_customer_holds_the_goods(order),
+    )
     if tickets:
         logger.info("kds.dispatch: %d tickets for order %s", len(tickets), order.ref)
     return tickets
 
 
-def fire_lines(*, session_key: str, lines: list[dict]) -> list:
+def _customer_holds_the_goods(order) -> bool:
+    """Venda de balcão presencial: item de prateleira já saiu pela porta.
+
+    Nessa venda só o que tem RECEITA vai à cozinha (o lanche a montar); o pão
+    pronto não vira ticket de picking — a estação "Encomendas" é para pedido
+    remoto/agendado que alguém precisa separar, não para a sacola que o cliente
+    já está segurando. Sem isto, toda venda de pão criava ticket com som e meta
+    de 5 minutos para uma mercadoria já entregue.
+    """
+    data = order.data or {}
+    if data.get("origin_channel") != "pos":
+        return False
+    if (data.get("fulfillment_type") or "pickup") != "pickup":
+        return False
+    from django.utils import timezone
+
+    from shopman.shop.services.order_helpers import get_commitment_date
+
+    commitment = get_commitment_date(order)
+    return not (commitment and commitment > timezone.localdate())
+
+
+def fire_lines(*, session_key: str, lines: list[dict], prep_only: bool = False) -> list:
     """
     Route the not-yet-fired delta of ``lines`` to KDS instances.
 
@@ -86,6 +112,10 @@ def fire_lines(*, session_key: str, lines: list[dict]) -> list:
     - active Recipe → type "prep"; otherwise "picking"
     - match to KDSInstance by type + collection overlap, preferring a
       collection-specific station over a generic catch-all
+
+    ``prep_only=True`` (venda de balcão presencial): itens sem receita são
+    pulados em silêncio — nem ticket de picking, nem alerta de item sem estação.
+    A mercadoria já está com o cliente; só a cozinha tem trabalho a fazer.
 
     Idempotent per ``line_id``: a line already on a live (non-cancelled) ticket
     is skipped; a cancelled line may re-fire (reprint). Returns created tickets.
@@ -118,10 +148,11 @@ def fire_lines(*, session_key: str, lines: list[dict]) -> list:
             lines=lines,
             get_adapter=get_adapter,
             kds_adapter=kds_adapter,
+            prep_only=prep_only,
         )
 
 
-def _fire_lines_locked(*, session_key: str, lines: list[dict], get_adapter, kds_adapter) -> list:
+def _fire_lines_locked(*, session_key: str, lines: list[dict], get_adapter, kds_adapter, prep_only: bool = False) -> list:
     already_fired = kds_adapter.fired_line_ids_for_session(session_key)
     pending = [
         ln for ln in lines
@@ -166,6 +197,8 @@ def _fire_lines_locked(*, session_key: str, lines: list[dict], get_adapter, kds_
     for item in routable_items:
         sku = item["sku"]
         item_type = "prep" if sku in prep_skus else "picking"
+        if prep_only and item_type != "prep":
+            continue
         col_id = sku_to_collection.get(sku)
 
         matched = _match_instances(

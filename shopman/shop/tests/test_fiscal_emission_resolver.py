@@ -163,3 +163,46 @@ def test_example_above_amount_factory():
     big = fiscal_resolvers.above_amount_q(10000)
     assert big(_order(total_q=10000)) is True
     assert big(_order(total_q=9999)) is False
+
+
+# ── deferred_settlement: a mercadoria sai antes do dinheiro ──────────────────
+
+
+def test_deferred_settlement_cod_pending_tender():
+    o = _order(payment={
+        "method": "cash", "collection": "on_delivery",
+        "tenders": [{"method": "cash", "amount_q": 5000, "status": "pending"}],
+    })
+    assert fiscal_resolvers.deferred_settlement(o) is True
+
+
+def test_deferred_settlement_house_account_tender():
+    o = _order(payment={
+        "method": "account",
+        "tenders": [{"method": "account", "amount_q": 3000, "status": "received"}],
+    })
+    assert fiscal_resolvers.deferred_settlement(o) is True
+
+
+def test_deferred_settlement_counter_cash_is_not_deferred():
+    o = _order(payment={
+        "method": "cash", "collection": "terminal",
+        "tenders": [{"method": "cash", "amount_q": 1000, "status": "received"}],
+    })
+    assert fiscal_resolvers.deferred_settlement(o) is False
+
+
+def test_eletronic_payment_sees_the_card_inside_a_mixed_sale():
+    o = _order(payment={
+        "method": "mixed",
+        "tenders": [
+            {"method": "cash", "amount_q": 500, "status": "received"},
+            {"method": "card", "amount_q": 800, "status": "received"},
+        ],
+    })
+    assert fiscal_resolvers.eletronic_payment(o) is True
+
+
+def test_eletronic_payment_falls_back_to_method_without_tenders():
+    assert fiscal_resolvers.eletronic_payment(_order(payment={"method": "pix"})) is True
+    assert fiscal_resolvers.eletronic_payment(_order(payment={"method": "cash"})) is False
