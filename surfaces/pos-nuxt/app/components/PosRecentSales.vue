@@ -35,6 +35,10 @@ const emit = defineEmits<{ "update:open": [boolean] }>();
 
 const apiPath = usePosApiPath();
 const agent = useCounterAgent(computed(() => props.pos));
+// A bobina só existe onde existe agente; sem ele os botões de impressão
+// esconderiam uma promessa que esta lista não tem como cumprir.
+const canPrintOnAgent = computed(() => agent.canKick.value);
+const djangoOrigin = computed(() => String(useRuntimeConfig().public.djangoPublicBaseUrl || ""));
 
 const sales = ref<RecentSale[]>([]);
 const loading = ref(false);
@@ -70,18 +74,65 @@ watch(() => props.open, (open) => {
 });
 onBeforeUnmount(() => { if (pollTimer) clearInterval(pollTimer); });
 
-async function printDanfe(sale: RecentSale, reprint = false) {
+// O carimbo "2ª via" é do servidor (`danfe_printed_at` em Order.data): esta
+// tela não chuta mais por heurística de venda completa + e-mail enviado.
+async function printDanfe(sale: RecentSale) {
   busyRef.value = sale.order_ref;
   try {
     const response = await $fetch<{ payload_b64: string; title: string }>(
-      apiPath(`/api/v1/backstage/pos/orders/${encodeURIComponent(sale.order_ref)}/danfe-escpos/${reprint ? "?reprint=1" : ""}`),
+      apiPath(`/api/v1/backstage/pos/orders/${encodeURIComponent(sale.order_ref)}/danfe-escpos/`),
       { credentials: "include" },
     );
     const outcome = await agent.print(response.payload_b64, response.title);
     if (outcome.status === "printed") toast.success(`DANFE de ${sale.order_ref} na impressora.`);
-    else toast.error(outcome.detail || "Impressão indisponível nesta estação.");
+    else danfeFallbackToast(sale, outcome.detail || "impressão indisponível nesta estação");
   } catch (error) {
-    toast.error(messageOf(error));
+    danfeFallbackToast(sale, messageOf(error));
+  } finally {
+    busyRef.value = "";
+  }
+}
+
+// Falha nunca termina em "indisponível" seco: quem tem acesso ganha a prévia
+// web como ação alternativa; quem não tem ganha o próximo passo.
+function danfeFallbackToast(sale: RecentSale, reason: string) {
+  if (props.pos?.danfe_preview_allowed && djangoOrigin.value) {
+    toast.error(`A DANFE não saiu na bobina: ${reason}`, {
+      action: {
+        label: "Abrir prévia web",
+        onClick: () => window.open(
+          `${djangoOrigin.value}/fiscal/danfe/${encodeURIComponent(sale.order_ref)}/`,
+          "_blank",
+          "noopener",
+        ),
+      },
+    });
+  } else {
+    toast.error(`A DANFE não saiu na bobina: ${reason}. Confira o agente do balcão na saúde do terminal e tente de novo.`);
+  }
+}
+
+// Recibo não fiscal reimpresso da bobina — o servidor compõe do que a venda
+// gravou e decide sozinho o carimbo de 2ª via (`receipt_printed_at`).
+async function printReceipt(sale: RecentSale) {
+  busyRef.value = sale.order_ref;
+  try {
+    const response = await $fetch<{ payload_b64: string; title: string }>(
+      apiPath(`/api/v1/backstage/pos/orders/${encodeURIComponent(sale.order_ref)}/receipt-escpos/`),
+      { credentials: "include" },
+    );
+    const outcome = await agent.print(response.payload_b64, response.title);
+    if (outcome.status === "printed") {
+      toast.success(`Recibo de ${sale.order_ref} na impressora.`);
+    } else {
+      toast.error(`O recibo não saiu: ${outcome.detail || "impressão indisponível nesta estação"}.`, {
+        action: { label: "Tentar de novo", onClick: () => void printReceipt(sale) },
+      });
+    }
+  } catch (error) {
+    toast.error(`O recibo não saiu: ${messageOf(error)}`, {
+      action: { label: "Tentar de novo", onClick: () => void printReceipt(sale) },
+    });
   } finally {
     busyRef.value = "";
   }
@@ -177,14 +228,26 @@ function fiscalChipClass(status: string): string {
               </span>
             </div>
 
-            <div v-if="sale.can_print_danfe || sale.can_requeue_fiscal" class="mt-2 flex flex-wrap items-center gap-2">
+            <div v-if="canPrintOnAgent || sale.can_print_danfe || sale.can_requeue_fiscal" class="mt-2 flex flex-wrap items-center gap-2">
+              <!-- Recibo não fiscal: qualquer venda reimprime, a qualquer hora.
+                   Só aparece onde há agente; a bobina é o único transporte da
+                   reimpressão (o diálogo do navegador só existe na venda viva). -->
+              <UiButton
+                v-if="canPrintOnAgent"
+                type="button" variant="outline" size="xs" class="gap-1"
+                :disabled="busyRef === sale.order_ref"
+                @click="printReceipt(sale)"
+              >
+                <Icon name="lucide:printer" class="size-3.5" />
+                Recibo
+              </UiButton>
               <UiButton
                 v-if="sale.can_print_danfe"
                 type="button" variant="outline" size="xs" class="gap-1"
                 :disabled="busyRef === sale.order_ref"
-                @click="printDanfe(sale, sale.status === 'completed' && sale.email_sent)"
+                @click="printDanfe(sale)"
               >
-                <Icon name="lucide:printer" class="size-3.5" />
+                <Icon name="lucide:receipt-text" class="size-3.5" />
                 DANFE
               </UiButton>
               <UiButton
@@ -207,6 +270,21 @@ function fiscalChipClass(status: string): string {
                 Reprocessar nota
               </UiButton>
             </div>
+
+            <!-- Consulta pública da nota (Focus/SEFAZ): os links já viajavam na
+                 projection; agora a tela os entrega em vez de engoli-los. -->
+            <p v-if="sale.fiscal_links.length" class="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
+              <span>Consulta da nota:</span>
+              <a
+                v-for="link in sale.fiscal_links"
+                :key="link.url"
+                :href="link.url"
+                target="_blank" rel="noopener"
+                class="underline underline-offset-2 hover:text-foreground"
+              >
+                {{ link.label }}
+              </a>
+            </p>
 
             <div v-if="emailPromptRef === sale.order_ref" class="mt-2 flex items-center gap-2">
               <UiInput

@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { toast } from "vue-sonner";
+
 import { resolveAffordance } from "~/presentation/actions";
 import { requiresOpenShiftForSale } from "~/presentation/cash";
 import { rollStyle } from "~/presentation/printGeometry";
@@ -150,10 +152,81 @@ const screenTitle = computed(() => {
 // painel é onde imprimir/reenviar/reprocessar moram, a qualquer hora do turno.
 const recentSalesOpen = ref(false);
 
-// D3 receipt print (kiosk window.print): the receipt is already in the DOM
-// (#pos-print-area) when a sale finalizes; @media print shows only it.
-function printReceipt() {
-  if (import.meta.client) window.print();
+// Impressão pós-venda: o agente do balcão é o caminho primário (ESC/POS que o
+// SERVIDOR compôs, na bobina), tanto para o recibo quanto para a DANFE — o
+// mesmo transporte e leiaute das Últimas vendas, para o papel sair igual não
+// importa de onde se imprime.
+const agent = useCounterAgent(pos);
+const printingReceipt = ref(false);
+const printingDanfe = ref(false);
+
+async function fetchPrintable(orderRef: string, endpoint: "receipt-escpos" | "danfe-escpos") {
+  return await $fetch<{ payload_b64: string; title: string }>(
+    apiPath(`/api/v1/backstage/pos/orders/${encodeURIComponent(orderRef)}/${endpoint}/`),
+    { credentials: "include" },
+  );
+}
+
+// Recibo da venda: agente primeiro; sem agente (ou com ele caído), o caminho é
+// o D3 de sempre — window.print sobre o #pos-print-area — só que AVISADO. O
+// fallback silencioso fazia o operador achar que a bobina imprimiu.
+async function printReceipt() {
+  if (!import.meta.client || !result.value) return;
+  if (agent.canKick.value) {
+    printingReceipt.value = true;
+    try {
+      const receipt = await fetchPrintable(result.value.orderRef, "receipt-escpos");
+      const outcome = await agent.print(receipt.payload_b64, receipt.title);
+      if (outcome.status === "printed") return;
+      toast.warning(`A impressora do balcão não respondeu: ${outcome.detail || "sem detalhe"}. O recibo saiu pelo diálogo do navegador.`);
+    } catch (error) {
+      toast.warning(`${httpErrorMessage(error, "Falha ao compor o recibo no servidor.")} O recibo saiu pelo diálogo do navegador.`);
+    } finally {
+      printingReceipt.value = false;
+    }
+  }
+  window.print();
+}
+
+// DANFE em bobina, mesma rota das Últimas vendas. A prévia web (host do
+// Django) virou porta secundária: link só para quem o servidor diz que entra.
+function danfePreviewUrl(orderRef: string): string {
+  return `${djangoOrigin.value}/fiscal/danfe/${encodeURIComponent(orderRef)}/`;
+}
+
+async function printDanfe() {
+  if (!import.meta.client || !result.value) return;
+  const orderRef = result.value.orderRef;
+  printingDanfe.value = true;
+  try {
+    const danfe = await fetchPrintable(orderRef, "danfe-escpos");
+    const outcome = await agent.print(danfe.payload_b64, danfe.title);
+    if (outcome.status === "printed") {
+      toast.success("DANFE na impressora.");
+      return;
+    }
+    danfeFallbackToast(orderRef, outcome.detail || "impressão indisponível nesta estação");
+  } catch (error) {
+    // 409 = a emissão é assíncrona e a nota ainda não autorizou.
+    danfeFallbackToast(orderRef, httpErrorMessage(error, "Falha ao compor a DANFE."));
+  } finally {
+    printingDanfe.value = false;
+  }
+}
+
+// Falha nunca termina em "indisponível" seco: quem tem acesso ganha a prévia
+// web como ação; quem não tem ganha o próximo passo.
+function danfeFallbackToast(orderRef: string, reason: string) {
+  if (pos.value?.danfe_preview_allowed && djangoOrigin.value) {
+    toast.error(`A DANFE não saiu na bobina: ${reason}`, {
+      action: {
+        label: "Abrir prévia web",
+        onClick: () => window.open(danfePreviewUrl(orderRef), "_blank", "noopener"),
+      },
+    });
+  } else {
+    toast.error(`A DANFE não saiu na bobina: ${reason}. Reimprima nas últimas vendas quando o agente voltar.`);
+  }
 }
 
 // Geometria do rolo: o terminal declara, o `@page` obedece. Vai no `<html>`
@@ -368,18 +441,29 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onGlobalKeydown));
           <div class="flex flex-col gap-2">
             <PosPaymentResult v-if="result.payment?.hasProof" :proof="result.payment" :status="pixStatus" />
             <div class="flex flex-wrap items-center gap-2">
-              <UiButton variant="outline" size="sm" class="gap-1.5 border-success/40 text-success hover:bg-success/10" @click="printReceipt">
+              <UiButton variant="outline" size="sm" class="gap-1.5 border-success/40 text-success hover:bg-success/10" :disabled="printingReceipt" @click="printReceipt">
                 <Icon name="lucide:printer" class="size-4" />
                 Imprimir recibo
               </UiButton>
-              <a
+              <!-- DANFE na bobina (agente do balcão), o MESMO caminho das
+                   Últimas vendas; a prévia web virou porta secundária e só
+                   aparece para quem o servidor deixa entrar. -->
+              <UiButton
                 v-if="result.fiscalExpected"
-                class="inline-flex h-8 items-center gap-1.5 rounded-md border border-success/40 px-3 text-sm font-medium text-success transition hover:bg-success/10"
-                :href="`${djangoOrigin}/fiscal/danfe/${encodeURIComponent(result.orderRef)}/`"
-                target="_blank" rel="noopener"
+                variant="outline" size="sm" class="gap-1.5 border-success/40 text-success hover:bg-success/10"
+                :disabled="printingDanfe"
+                @click="printDanfe"
               >
                 <Icon name="lucide:receipt-text" class="size-4" />
                 DANFE
+              </UiButton>
+              <a
+                v-if="result.fiscalExpected && pos?.danfe_preview_allowed && djangoOrigin"
+                class="text-xs font-medium text-success underline underline-offset-4"
+                :href="danfePreviewUrl(result.orderRef)"
+                target="_blank" rel="noopener"
+              >
+                Prévia da nota
               </a>
               <a class="font-semibold underline underline-offset-4" :href="result.nextUrl">Abrir no gestor</a>
               <!-- Cancelar é EXCEÇÃO, não fluxo: entrada discreta que abre a

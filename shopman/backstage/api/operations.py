@@ -1263,7 +1263,13 @@ class POSRecentSalesView(APIView):
     ),
 )
 class POSDanfeEscposView(APIView):
-    """O servidor compõe a DANFE em bobina; o navegador relaia ao agente do balcão."""
+    """O servidor compõe a DANFE em bobina; o navegador relaia ao agente do balcão.
+
+    O carimbo "2ª via" é decisão DESTE lado: a primeira composição grava
+    ``danfe_printed_at`` em ``Order.data`` e toda composição seguinte sai
+    carimbada. Antes a tela chutava por heurística (venda completa + e-mail
+    enviado) e errava nos dois sentidos.
+    """
 
     permission_classes = [HasBackstagePermission]
     required_permission = "cashman.operate_pos"
@@ -1279,12 +1285,79 @@ class POSDanfeEscposView(APIView):
             return Response({"detail": "Pedido não encontrado."}, status=404)
         if not doc.emitted:
             return Response({"detail": "NFC-e ainda não autorizada para este pedido."}, status=409)
-        reprint = str(request.query_params.get("reprint") or "").lower() in {"1", "true", "on"}
+        reprint = _stamp_first_print(ref, "danfe_printed_at")
         payload = danfe_nfce(doc, reprint=reprint)
         return Response({
             "ok": True,
             "payload_b64": base64.b64encode(payload).decode("ascii"),
             "title": f"danfe:{ref}",
+            "reprint": reprint,
+        })
+
+
+def _stamp_first_print(order_ref: str, key: str) -> bool:
+    """Registra a primeira composição de um papel e responde "isto é 2ª via?".
+
+    A marca vive em ``Order.data`` (``receipt_printed_at``/``danfe_printed_at``,
+    documentadas em docs/reference/data-schemas.md). Marca na COMPOSIÇÃO, não na
+    confirmação do papel: o que importa é que um papel daquele pedido já saiu
+    para o mundo uma vez — a partir daí, todo seguinte circula como segunda via.
+    """
+    from django.utils import timezone
+    from shopman.orderman.models import Order
+
+    order = Order.objects.filter(ref=order_ref).first()
+    if order is None:
+        return False
+    data = order.data or {}
+    if data.get(key):
+        return True
+    data[key] = timezone.now().isoformat()
+    order.data = data
+    order.save(update_fields=["data", "updated_at"])
+    return False
+
+
+@extend_schema_view(
+    get=extend_schema(
+        tags=["backstage"],
+        summary="Non-fiscal sale receipt bytes (ESC/POS, base64) for the counter agent",
+        responses={200: OpenApiResponse(description="Receipt payload.")},
+    ),
+)
+class POSSaleReceiptEscposView(APIView):
+    """Recibo não fiscal da venda, composto no servidor a partir do que ela gravou.
+
+    Mesmo desenho da DANFE em bobina: o servidor compõe os bytes, o navegador
+    relaia ao agente do balcão. Quando o agente falha, a tela cai no diálogo de
+    impressão do navegador — mas avisando, nunca em silêncio. A decisão de
+    "2ª via" também é daqui (``receipt_printed_at`` em ``Order.data``).
+    """
+
+    permission_classes = [HasBackstagePermission]
+    required_permission = "cashman.operate_pos"
+
+    def get(self, request, ref: str):
+        import base64
+
+        from shopman.orderman.models import Order
+
+        from shopman.shop.models import Shop
+
+        order = Order.objects.filter(ref=ref).prefetch_related("items").first()
+        if order is None:
+            return Response({"detail": "Pedido não encontrado."}, status=404)
+        shop = Shop.objects.first()
+        shop_name = (getattr(shop, "brand_name", "") or getattr(shop, "name", "") or "") if shop else ""
+        reprint = _stamp_first_print(ref, "receipt_printed_at")
+        from shopman.backstage.services.receipt_escpos import sale_receipt
+
+        payload = sale_receipt(order, shop_name=shop_name, reprint=reprint)
+        return Response({
+            "ok": True,
+            "payload_b64": base64.b64encode(payload).decode("ascii"),
+            "title": f"recibo:{ref}",
+            "reprint": reprint,
         })
 
 
