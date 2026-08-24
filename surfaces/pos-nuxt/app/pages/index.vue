@@ -111,6 +111,7 @@ const {
   resolveCustomer,
   customerSearchResults,
   customerSearchBusy,
+  customerResolvedNew,
   searchCustomers,
   selectCustomerResult,
   clearCustomer,
@@ -323,6 +324,7 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onGlobalKeydown));
           :lookup-busy="lookupBusy"
           :search-results="customerSearchResults"
           :search-busy="customerSearchBusy"
+          :customer-resolved-new="customerResolvedNew"
           :loading="busy"
           @rename="renameTab"
           @clear="clearCurrentTab"
@@ -444,6 +446,7 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onGlobalKeydown));
         :customer-lookup="customerLookup"
         :search-results="customerSearchResults"
         :search-busy="customerSearchBusy"
+        :customer-resolved-new="customerResolvedNew"
         :review="review"
         :discount-types="checkoutContract?.discount_types || []"
         :discount-reasons="checkoutContract?.discount_reasons || []"
