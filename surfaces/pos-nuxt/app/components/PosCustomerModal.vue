@@ -16,6 +16,7 @@ import type {
   POSCustomerLookupProjection,
   POSCustomerSearchResult,
 } from "~/types/pos";
+import { cpfTail } from "~/presentation/customerSearch";
 
 const props = withDefaults(defineProps<{
   open: boolean;
@@ -27,6 +28,9 @@ const props = withDefaults(defineProps<{
   searchResults: POSCustomerSearchResult[];
   searchBusy: boolean;
   lookupBusy: boolean;
+  /** O cliente associado foi CRIADO AGORA (resolve just-in-time): a confirmação
+   *  visual distingue "cadastro novo" de "cadastro encontrado". */
+  resolvedNew?: boolean;
   /** Payment context: also show the fiscal/comprovante block. */
   showFiscal?: boolean;
   issueFiscalDocument?: boolean;
@@ -34,6 +38,7 @@ const props = withDefaults(defineProps<{
   receiptChannelOptions?: POSCheckoutOptionProjection[];
   receiptEmail?: string;
 }>(), {
+  resolvedNew: false,
   showFiscal: false,
   issueFiscalDocument: false,
   receiptChannels: () => [],
@@ -127,13 +132,45 @@ function onConclude() {
   emit("resolveCustomer");
   emit("update:open", false);
 }
+
+// ── O cliente em dois Enters (decisões vindas do PosCustomerSearch) ──────────
+// CPF válido sem resultado: o documento entra no campo fiscal e o resolve roda
+// JÁ (get-or-create idempotente) — o cliente novo aparece fixado no topo.
+async function onResolveCpf(cpf: string) {
+  emit("update:customerTaxId", cpf);
+  await nextTick(); // o v-model sobe dois níveis; o resolve lê o cart já atualizado
+  emit("resolveCustomer");
+}
+// Query não-CPF sem resultado: transfere para o campo certo do cadastro novo.
+function onTransfer(payload: { field: "phone" | "name"; value: string }) {
+  if (payload.field === "phone") emit("update:customerPhone", payload.value);
+  else emit("update:customerName", payload.value);
+}
+
+// Foco garantido na BUSCA ao abrir: sem isto o foco inicial do diálogo caía no
+// primeiro focável — "Remover cliente", o pior lugar para um Enter distraído.
+const searchRef = ref<{ focus: () => void; reset: () => void } | null>(null);
+function onOpenAutoFocus(event: Event) {
+  event.preventDefault();
+  void nextTick(() => searchRef.value?.focus());
+}
+
+// Confirmação visual do cadastro criado agora: "Cliente novo · CPF ···789-00".
+const newCustomerNote = computed(() => {
+  if (!props.resolvedNew) return "";
+  const tail = cpfTail(props.customerTaxId);
+  return tail ? `Cliente novo · CPF ${tail}` : "Cliente novo";
+});
 </script>
 
 <template>
   <UiDialog :open="open" @update:open="$emit('update:open', Boolean($event))">
     <!-- Full-screen overlay (Odoo "Choose Customer"): a large panel; the register
          stays dimly visible behind. Neutral tokens, our omotenashi tone. -->
-    <UiDialogContent class="flex h-[90vh] w-[min(60rem,94vw)] max-w-none flex-col gap-0 overflow-hidden rounded-md p-0 sm:max-w-none">
+    <UiDialogContent
+      class="flex h-[90vh] w-[min(60rem,94vw)] max-w-none flex-col gap-0 overflow-hidden rounded-md p-0 sm:max-w-none"
+      @open-auto-focus="onOpenAutoFocus"
+    >
       <UiDialogHeader class="shrink-0 border-b px-6 py-4">
         <UiDialogTitle class="text-lg">Cliente</UiDialogTitle>
         <UiDialogDescription>
@@ -150,6 +187,14 @@ function onConclude() {
                 <p class="flex items-center gap-1.5 text-base font-semibold">
                   <Icon name="lucide:user-check" class="size-4 shrink-0 text-primary" />
                   <span class="truncate">{{ customerName || customerLookup?.name || "Cliente" }}</span>
+                  <span
+                    v-if="newCustomerNote"
+                    class="inline-flex shrink-0 items-center gap-1 rounded-full bg-primary/10 px-2 py-0.5 text-xs font-medium text-primary"
+                    role="status"
+                  >
+                    <Icon name="lucide:sparkles" class="size-3" />
+                    {{ newCustomerNote }}
+                  </span>
                 </p>
                 <p v-if="identityChips.length" class="mt-0.5 truncate text-sm tabular-nums text-muted-foreground">
                   {{ identityChips.join(" · ") }}
@@ -225,8 +270,19 @@ function onConclude() {
             </div>
           </div>
 
-          <!-- 2 · the picker: prominent search + rich results list -->
-          <PosCustomerSearch :results="searchResults" :busy="searchBusy" @search="$emit('search', $event)" @select="onSelect" />
+          <!-- 2 · the picker: prominent search + rich results list.
+               Enter decide (seleciona / cria por CPF / transfere / conclui). -->
+          <PosCustomerSearch
+            ref="searchRef"
+            :results="searchResults"
+            :busy="searchBusy"
+            :has-customer="hasCustomer"
+            @search="$emit('search', $event)"
+            @select="onSelect"
+            @resolve-cpf="onResolveCpf"
+            @transfer="onTransfer"
+            @conclude="onConclude"
+          />
 
           <!-- 3 · create / edit form -->
           <div class="grid gap-3">

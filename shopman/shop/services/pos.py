@@ -2715,6 +2715,7 @@ def _persist_customer_from_payload(payload: dict, *, operator_username: str) -> 
             tax_id=tax_id,
             email=email,
         )
+        created = customer is None
         if customer is None:
             first_name, last_name = _split_name(name)
             fallback = _fallback_customer_name(phone=phone, tax_id=tax_id, email=email)
@@ -2763,6 +2764,8 @@ def _persist_customer_from_payload(payload: dict, *, operator_username: str) -> 
             "tax_id": customer.document,
             "email": customer.email,
             "price_tier": customer.price_tier.ref if customer.price_tier_id else "",
+            # "criei agora" ≠ "achei": a tela distingue o cadastro recém-criado.
+            "created": created,
         }
 
 

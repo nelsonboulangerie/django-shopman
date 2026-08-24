@@ -18,6 +18,8 @@ const props = defineProps<{
   lookupBusy: boolean;
   searchResults: POSCustomerSearchResult[];
   searchBusy: boolean;
+  /** O cliente associado foi criado agora (resolve just-in-time). */
+  customerResolvedNew?: boolean;
   loading: boolean;
 }>();
 
@@ -63,6 +65,16 @@ function onRenameKeydown(event: KeyboardEvent) {
 
 // The customer picker is the shared PosCustomerModal (full-screen, picker-first).
 const customerSheetOpen = ref(false);
+// F6 no shell abre o mesmo modal que o chip de cliente abre.
+defineExpose({ openCustomer: () => { customerSheetOpen.value = true; } });
+// Foco devolvido ao CONTEXTO quando o modal fecha: o diálogo é controlado (sem
+// trigger do reka), então sem isto o foco morria no body.
+const customerChipRef = ref<HTMLButtonElement | null>(null);
+watch(customerSheetOpen, async (open) => {
+  if (open || !import.meta.client) return;
+  await nextTick();
+  customerChipRef.value?.focus();
+});
 
 const confirmClear = ref(false);
 function runClear() {
@@ -104,6 +116,7 @@ function runClear() {
 
     <!-- customer chip -->
     <button
+      ref="customerChipRef"
       type="button"
       class="flex h-9 min-w-0 shrink items-center gap-1.5 rounded-full border border-border px-3 text-sm transition hover:bg-accent"
       aria-haspopup="dialog"
@@ -137,6 +150,7 @@ function runClear() {
       :search-results="searchResults"
       :search-busy="searchBusy"
       :lookup-busy="lookupBusy"
+      :resolved-new="customerResolvedNew"
       @update:customer-name="$emit('update:customerName', $event)"
       @update:customer-phone="$emit('update:customerPhone', $event)"
       @update:customer-tax-id="$emit('update:customerTaxId', $event)"

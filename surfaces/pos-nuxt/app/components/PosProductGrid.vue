@@ -64,7 +64,8 @@ defineExpose({ focusSearch: () => searchInputRef.value?.inputRef?.focus() });
     <div class="flex shrink-0 items-center gap-2">
       <div class="relative flex-1">
         <Icon name="lucide:search" class="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-        <UiInput ref="searchInputRef" v-model="search" class="h-11 pl-9 text-base" type="search" placeholder="Buscar produto por nome ou SKU" autofocus />
+        <UiInput ref="searchInputRef" v-model="search" class="h-11 pl-9 pr-12 text-base" type="search" placeholder="Buscar produto por nome ou SKU" autofocus />
+        <kbd class="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 rounded border bg-muted px-1.5 py-0.5 font-mono text-xs font-medium text-muted-foreground" aria-hidden="true">F3</kbd>
       </div>
       <UiPopover>
         <UiPopoverTrigger as-child>

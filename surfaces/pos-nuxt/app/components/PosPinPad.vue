@@ -24,6 +24,34 @@ function submit() {
   if (props.disabled) return;
   emit("submit");
 }
+
+// PIN pelo TECLADO FÍSICO: enquanto o pad está montado (sempre dentro de um
+// diálogo/overlay), 0-9/Backspace/Enter alimentam o buffer, com stopPropagation
+// para a tecla não vazar aos atalhos da tela por baixo. Não colide com o wedge
+// do crachá: a rajada do leitor é consumida antes, na captura (useBadgeScanner).
+function onDocumentKeydown(event: KeyboardEvent) {
+  if (props.disabled) return;
+  if (event.ctrlKey || event.metaKey || event.altKey) return;
+  const target = event.target as HTMLElement | null;
+  const editing = !!target
+    && (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable);
+  if (editing) return;
+  if (/^[0-9]$/.test(event.key)) {
+    event.preventDefault();
+    event.stopPropagation();
+    press(event.key);
+  } else if (event.key === "Backspace") {
+    event.preventDefault();
+    event.stopPropagation();
+    back();
+  } else if (event.key === "Enter" && props.modelValue.length > 0) {
+    event.preventDefault();
+    event.stopPropagation();
+    submit();
+  }
+}
+onMounted(() => document.addEventListener("keydown", onDocumentKeydown));
+onBeforeUnmount(() => document.removeEventListener("keydown", onDocumentKeydown));
 </script>
 
 <template>

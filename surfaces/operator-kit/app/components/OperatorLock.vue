@@ -82,7 +82,10 @@ async function submitForcedChange(payload: {
 </script>
 
 <template>
+  <!-- `data-operator-lock`: marca DOM estável para as telas por baixo saberem que
+       o terminal está travado (os atalhos globais do PDV se desligam por ela). -->
   <div
+    data-operator-lock
     class="fixed inset-0 z-[100] grid place-items-center bg-background/95 p-4 backdrop-blur-sm"
   >
     <div class="w-full max-w-md rounded-xl border bg-card p-5 shadow-lg">

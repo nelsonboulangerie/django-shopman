@@ -101,3 +101,51 @@ describe("PosCartPanel — interações emitem os comandos certos", () => {
     expect(wrapper.find('[aria-label="Limpar seleção"]').exists()).toBe(true);
   });
 });
+
+describe("PosCartPanel — numpad global desliga sob overlay/diálogo", () => {
+  function pressKey(key: string) {
+    document.body.dispatchEvent(
+      new KeyboardEvent("keydown", { key, bubbles: true, cancelable: true }),
+    );
+  }
+
+  it("digitar um número na janela edita a quantidade da linha ativa (baseline)", async () => {
+    const wrapper = await mountSuspended(PosCartPanel, { props: props() });
+    pressKey("5");
+    await wrapper.vm.$nextTick();
+    // A linha ativa é a última adicionada (CAFE).
+    expect(wrapper.emitted("setQty")?.[0]).toEqual(["CAFE", 5]);
+  });
+
+  it("com um diálogo aberto, o teclado NÃO reescreve o carrinho", async () => {
+    const wrapper = await mountSuspended(PosCartPanel, { props: props() });
+    // Um diálogo qualquer aberto por cima (é assim que o reka-ui marca o DOM).
+    const dialog = document.createElement("div");
+    dialog.setAttribute("role", "dialog");
+    dialog.setAttribute("data-state", "open");
+    document.body.appendChild(dialog);
+    try {
+      pressKey("5");
+      pressKey("Backspace");
+      await wrapper.vm.$nextTick();
+      expect(wrapper.emitted("setQty")).toBeUndefined();
+    } finally {
+      dialog.remove();
+    }
+  });
+
+  it("com o terminal travado (overlay do kit), o crachá não vira quantidade", async () => {
+    const wrapper = await mountSuspended(PosCartPanel, { props: props() });
+    const lock = document.createElement("div");
+    lock.setAttribute("data-operator-lock", "");
+    document.body.appendChild(lock);
+    try {
+      // O token do crachá tem dígitos: era ISTO que reescrevia a linha ativa.
+      for (const char of "a1b2c3d4e5f6") pressKey(char);
+      await wrapper.vm.$nextTick();
+      expect(wrapper.emitted("setQty")).toBeUndefined();
+    } finally {
+      lock.remove();
+    }
+  });
+});

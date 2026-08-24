@@ -24,7 +24,7 @@
 // roda igual no env `nuxt` e no harness `node` dos apps que fazem extends.
 import { onBeforeUnmount, onMounted } from "vue";
 
-import { BADGE_MAX_GAP_MS, isLikelyBadge, pushBadgeKey } from "../presentation/operatorLock";
+import { BADGE_MAX_GAP_MS, isBadgeBurst, isLikelyBadge, pushBadgeKey } from "../presentation/operatorLock";
 
 export interface BadgeScannerOptions {
   /** Enquanto devolver false, o leitor é ignorado (ex.: a tela está trocando o PIN,
@@ -78,6 +78,13 @@ export function useBadgeScanner(
       return;
     }
 
+    // Tecla que CONTINUA uma rajada de leitor é do crachá: consome a propagação
+    // para o caractere não vazar aos listeners da tela por baixo (numpad do
+    // carrinho, atalhos globais). A primeira tecla da rajada é indistinguível
+    // de um dedo e segue normal — vaza uma tecla, nunca o token.
+    if (event.key.length === 1 && isBadgeBurst(buffer.length, gapMs, maxGapMs)) {
+      event.stopPropagation();
+    }
     buffer = pushBadgeKey(buffer, event.key, gapMs, maxGapMs);
     lastAt = now;
   }

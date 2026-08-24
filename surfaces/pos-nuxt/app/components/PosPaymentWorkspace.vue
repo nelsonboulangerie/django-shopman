@@ -50,6 +50,8 @@ const props = defineProps<{
   customerLookup: POSCustomerLookupProjection | null;
   searchResults: POSCustomerSearchResult[];
   searchBusy: boolean;
+  /** O cliente associado foi criado agora (resolve just-in-time). */
+  customerResolvedNew?: boolean;
   review: POSSaleReviewProjection | null;
   discountTypes: POSCheckoutOptionProjection[];
   discountReasons: POSCheckoutOptionProjection[];
@@ -185,8 +187,16 @@ const customerSheetOpen = ref(false);
 function onSelectResult(result: POSCustomerSearchResult) {
   emit("selectResult", result);
 }
-// Reset the shared search when the customer modal reopens fresh.
-watch(customerSheetOpen, (open) => { if (!open) emit("search", ""); });
+// Reset the shared search when the customer modal reopens fresh — e devolve o
+// foco ao botão que o abriu (diálogo controlado: sem isto o foco morre no body).
+const customerButtonRef = ref<HTMLButtonElement | null>(null);
+watch(customerSheetOpen, async (open) => {
+  if (open) return;
+  emit("search", "");
+  if (!import.meta.client) return;
+  await nextTick();
+  customerButtonRef.value?.focus();
+});
 const discountSheetOpen = ref(false);
 
 // The instrument (right zone): the numpad edits the SELECTED tender, so it lights
@@ -289,6 +299,14 @@ function onAddressSelected(address: StructuredAddressProjection) {
   if (address.street_number) emit("update:deliveryStreetNumber", address.street_number);
   if (address.neighborhood) emit("update:deliveryNeighborhood", address.neighborhood);
 }
+
+// Atalhos do shell (pages/index.vue): Enter valida pelo MESMO caminho do clique
+// (passa pela porta da autorização gerencial, nunca por fora dela); F6 abre o
+// modal de cliente deste checkout.
+defineExpose({
+  validate: () => { if (!ctaDisabled.value) onCta(); },
+  openCustomer: () => { customerSheetOpen.value = true; },
+});
 </script>
 
 <template>
@@ -327,6 +345,7 @@ function onAddressSelected(address: StructuredAddressProjection) {
              Cliente + Retirada/Entrega + Desconto + Nota fiscal. -->
         <div class="grid grid-cols-2 gap-1.5">
           <button
+            ref="customerButtonRef"
             type="button"
             class="flex h-11 items-center justify-center gap-2 rounded-md border bg-card px-3 text-sm font-medium transition hover:bg-accent active:translate-y-px"
             :class="customerSet ? 'border-primary bg-primary/5' : ''"
@@ -334,6 +353,7 @@ function onAddressSelected(address: StructuredAddressProjection) {
           >
             <Icon name="lucide:user-round" class="size-4 text-muted-foreground" />
             <span class="min-w-0 truncate">{{ customerName || "Cliente" }}</span>
+            <kbd class="rounded border bg-muted px-1.5 py-0.5 font-mono text-xs font-medium text-muted-foreground" aria-hidden="true">F6</kbd>
           </button>
           <button
             type="button"
@@ -423,18 +443,20 @@ function onAddressSelected(address: StructuredAddressProjection) {
 
         <!-- Voltar + Validar (rodapé da coluna, copiando o Back + Validate do Odoo) -->
         <div class="mt-auto grid grid-cols-2 gap-1.5 pt-1">
-          <UiButton variant="outline" size="lg" class="h-14 text-base" @click="$emit('back')">
+          <UiButton variant="outline" size="lg" class="h-14 gap-2 text-base" @click="$emit('back')">
             <Icon name="lucide:arrow-left" class="size-5" />
             Voltar
+            <kbd class="rounded border bg-muted px-1.5 py-0.5 font-mono text-xs font-medium text-muted-foreground" aria-hidden="true">Esc</kbd>
           </UiButton>
           <UiButton
             size="lg"
-            class="h-14 text-base"
+            class="h-14 gap-2 text-base"
             :disabled="ctaDisabled"
             :loading="loading || needsReview"
             @click="onCta"
           >
             {{ ctaLabel }}
+            <kbd class="rounded border border-primary-foreground/30 bg-transparent px-1.5 py-0.5 font-mono text-xs font-medium opacity-80" aria-hidden="true">Enter</kbd>
           </UiButton>
         </div>
       </div>
@@ -615,6 +637,7 @@ function onAddressSelected(address: StructuredAddressProjection) {
     :search-results="searchResults"
     :search-busy="searchBusy"
     :lookup-busy="lookupBusy"
+    :resolved-new="customerResolvedNew"
     :issue-fiscal-document="issueFiscalDocument"
     :receipt-channels="receiptChannels"
     :receipt-channel-options="receiptChannelOptions"

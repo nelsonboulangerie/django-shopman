@@ -759,16 +759,20 @@ export function usePosSale(deps: PosSaleDeps) {
   }
 
   async function lookupCustomer() {
+    // O ref vence: é a chave exata do cadastro (cliente sem telefone existe, e
+    // dois cadastros podem dividir um telefone de recado). O telefone segue
+    // como fallback do fluxo antigo (digitou o fone no form e pediu lookup).
+    const customerRef = cart.customerRef.trim();
     const phone = cart.customerPhone.trim();
-    if (!phone) return;
+    if (!customerRef && !phone) return;
     lookupBusy.value = true;
     serverError.value = "";
     try {
       const path = concreteActionHref(
         actions.value,
         "customer_lookup",
-        "/api/v1/backstage/pos/customer/lookup/?phone={phone}",
-        { phone },
+        "/api/v1/backstage/pos/customer/lookup/?phone={phone}&ref={ref}",
+        { phone, ref: customerRef },
       );
       const response = await $fetch<POSCustomerLookupResponse>(apiPath(path), {
         method: "GET",
@@ -834,6 +838,8 @@ export function usePosSale(deps: PosSaleDeps) {
         body: { customer_name: name, customer_phone: phone, customer_tax_id: taxId, customer_email: email },
       });
       if (!response.customer) return;
+      // "Criei agora" ≠ "achei": a confirmação visual do modal distingue.
+      customerResolvedNew.value = !!response.created;
       customerLookup.value = response.customer;
       cart.customerRef = response.customer.ref;
       cart.customerName = response.customer.name || cart.customerName;
@@ -877,6 +883,9 @@ export function usePosSale(deps: PosSaleDeps) {
   // and runs the full lookup (memory + saved address).
   const customerSearchResults = ref<POSCustomerSearchResult[]>([]);
   const customerSearchBusy = ref(false);
+  // O cliente associado foi CRIADO agora (resolve just-in-time devolveu
+  // created=true) — a confirmação do modal distingue novo × encontrado.
+  const customerResolvedNew = ref(false);
   async function searchCustomers(query: string) {
     const q = (query || "").trim();
     if (q.length < 2) { customerSearchResults.value = []; return; }
@@ -907,8 +916,10 @@ export function usePosSale(deps: PosSaleDeps) {
     cart.customerEmail = result.email || cart.customerEmail;
     cart.customerTaxId = result.document || cart.customerTaxId;
     customerSearchResults.value = [];
-    // Load memory + saved address for the chosen customer.
-    if (cart.customerPhone.trim()) await lookupCustomer();
+    customerResolvedNew.value = false; // escolhido da lista = cadastro existente
+    // Load memory + saved address for the chosen customer — pelo ref, que é a
+    // chave exata (o gate por telefone deixava cliente sem fone sem memória).
+    await lookupCustomer();
   }
 
   // Disassociate the customer from the tab (Odoo's UNSELECT): drop every customer
@@ -923,6 +934,7 @@ export function usePosSale(deps: PosSaleDeps) {
     cart.customerMemoryAction = "";
     customerLookup.value = null;
     customerSearchResults.value = [];
+    customerResolvedNew.value = false;
   }
 
   function productFromMemoryItem(item: Record<string, unknown>): POSProductProjection | null {
@@ -1502,6 +1514,7 @@ export function usePosSale(deps: PosSaleDeps) {
     resolveCustomer,
     customerSearchResults,
     customerSearchBusy,
+    customerResolvedNew,
     searchCustomers,
     selectCustomerResult,
     clearCustomer,

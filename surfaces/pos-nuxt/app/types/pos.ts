@@ -298,6 +298,8 @@ export interface POSCustomerLookupProjection {
 
 export interface POSCustomerLookupResponse {
   customer: POSCustomerLookupProjection | null;
+  /** Só no resolve: o cadastro foi CRIADO agora (true) ou encontrado (false). */
+  created?: boolean;
 }
 
 export interface POSCustomerSearchResult {

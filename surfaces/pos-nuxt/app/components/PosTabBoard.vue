@@ -72,14 +72,20 @@ defineExpose({ focus: () => inputRef.value?.inputRef?.focus() });
 <template>
   <section class="flex h-full min-h-0 flex-col gap-3">
     <form class="flex shrink-0 gap-2" @submit.prevent="submitInput">
-      <UiInput
-        ref="inputRef"
-        :model-value="modelValue"
-        class="h-11 max-w-xs flex-1 text-base"
-        :maxlength="maxLength"
-        :placeholder="placeholder"
-        @update:model-value="updateInput"
-      />
+      <!-- Autofocus: o board remonta a cada volta (inclusive pós-venda) e a
+           primeira ação do operador é digitar a comanda — o foco já espera lá. -->
+      <div class="relative max-w-xs flex-1">
+        <UiInput
+          ref="inputRef"
+          :model-value="modelValue"
+          class="h-11 pr-12 text-base"
+          :maxlength="maxLength"
+          :placeholder="placeholder"
+          autofocus
+          @update:model-value="updateInput"
+        />
+        <kbd class="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 rounded border bg-muted px-1.5 py-0.5 font-mono text-xs font-medium text-muted-foreground" aria-hidden="true">F2</kbd>
+      </div>
       <UiButton type="submit" size="lg" class="h-11 shrink-0 gap-2" :disabled="busy || !modelValue.trim()">
         <Icon name="lucide:plus" class="size-5" />
         Abrir / nova
