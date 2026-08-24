@@ -145,33 +145,62 @@ export function usePosCashSession({ pos, actions, refresh, action }: CashSession
    * ⚠️ A falha NÃO desfaz o movimento. O dinheiro já saiu e o registro já
    * existe; travar o caixa porque a impressora emperrou seria remédio pior que
    * a doença. O que não pode é a falha passar calada — ela vira registro e
-   * toast, e o papel pode ser reimpresso depois.
+   * toast COM porta de saída: a ação "Tentar de novo" repete a impressão na
+   * hora, pelo mesmo caminho e com as mesmas opções.
    */
-  async function printMovementReceipt(entryId: number | null): Promise<void> {
-    if (!entryId) return;
+  async function printMovementReceipt(
+    entryId: number | null,
+    opts: { reprint?: boolean } = {},
+  ): Promise<boolean> {
+    if (!entryId) return false;
     const base = `/api/v1/backstage/pos/cash/entry/${entryId}/receipt/`;
+    // O terminal na query prende a busca à GAVETA desta superfície — sem ele o
+    // servidor cai no primeiro terminal ativo, exato com uma gaveta e errado
+    // no dia em que houver balcão + totem.
+    const terminalRef = pos.value?.terminal_ref || "";
+    const query = new URLSearchParams();
+    if (terminalRef) query.set("terminal_ref", terminalRef);
+    if (opts.reprint) query.set("reprint", "1");
+    const queryString = query.toString();
+    const getPath = queryString ? `${base}?${queryString}` : base;
     let outcome: PrintOutcome;
     try {
-      const receipt = await action.call<{ payload_b64: string; title: string }>(base, { method: "GET" });
+      const receipt = await action.call<{ payload_b64: string; title: string }>(getPath, { method: "GET" });
       outcome = await drawer.print(receipt.payload_b64, receipt.title);
     } catch (error) {
       outcome = { status: "failed", detail: httpErrorMessage(error, "Falha ao montar o comprovante.") };
     }
     if (outcome.status === "failed") {
-      // Nunca só "indisponível": o operador ganha a saída na mão — reimprimir
-      // agora (o servidor recompõe, já carimbado de 2ª via se for o caso) e a
-      // instrução curta de por onde o defeito costuma entrar.
+      // Nunca só "indisponível": o operador ganha a saída na mão — tentar de
+      // novo agora, com as MESMAS opções (uma segunda via que falhou volta
+      // como segunda via) — e a instrução curta de por onde o defeito costuma
+      // entrar.
       toast.error(`O comprovante não saiu: ${outcome.detail}`, {
         description: "Se o agente da estação caiu, reinicie-o (e reinicie sempre depois de mudar a configuração do terminal).",
-        action: { label: "Tentar de novo", onClick: () => void printMovementReceipt(entryId) },
+        action: { label: "Tentar de novo", onClick: () => void printMovementReceipt(entryId, opts) },
       });
+    } else if (opts.reprint) {
+      toast.success("Segunda via enviada para a impressora.");
     }
     // Registrar é o ponto todo: sem isto, papel que faltou parece papel que
     // alguém escondeu. Se ESTA chamada falhar, o movimento fica "sem
     // confirmação" — honesto, porque é exatamente o que sabemos.
     await action
-      .call(base, { body: { status: outcome.status, detail: outcome.detail } })
+      .call(base, { body: { status: outcome.status, detail: outcome.detail, terminal_ref: terminalRef } })
       .catch(() => {});
+    return outcome.status !== "failed";
+  }
+
+  /**
+   * Segunda via do comprovante de um movimento já lançado, a pedido.
+   *
+   * Mesmo caminho da primeira impressão (GET → agente → registro do
+   * resultado), com `?reprint=1`: o papel sai marcado como segunda via e o
+   * resultado entra na trilha. Não passa por `run()` de propósito —
+   * reimprimir não muda estado de caixa e não pede refresh.
+   */
+  function reprintMovementReceipt(entryId: number): Promise<boolean> {
+    return printMovementReceipt(entryId, { reprint: true });
   }
 
   /**
@@ -306,6 +335,9 @@ export function usePosCashSession({ pos, actions, refresh, action }: CashSession
     openCashShift,
     closeCashShift,
     registerCashMovement,
+    // Segunda via do comprovante de movimento — a porta que a promessa
+    // "pode ser reimpresso depois" não tinha.
+    reprintMovementReceipt,
     // Gaveta: a antesala mostra o botão só onde existe caminho de software.
     canOpenDrawer: drawer.canKick,
     drawerUnavailableReason: drawer.unavailableReason,

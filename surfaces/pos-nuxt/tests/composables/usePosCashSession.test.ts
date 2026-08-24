@@ -198,7 +198,9 @@ describe("usePosCashSession — o comprovante sai sozinho e o resultado é regis
     const servidor: { path: string; body?: Record<string, unknown>; method?: string }[] = [];
     const actionCall = vi.fn((path: string, opts2?: { method?: string; body?: Record<string, unknown> }) => {
       servidor.push({ path, body: opts2?.body, method: opts2?.method });
-      if (path.endsWith("/receipt/") && opts2?.method === "GET") {
+      // `includes`, não `endsWith`: o GET agora carrega query (`terminal_ref`,
+      // e `reprint=1` na segunda via).
+      if (path.includes("/receipt/") && opts2?.method === "GET") {
         return Promise.resolve({ payload_b64: "SEVMTE8=", title: "comprovante:sangria" });
       }
       if (path.includes("/cash/movement/")) {
@@ -265,6 +267,38 @@ describe("usePosCashSession — o comprovante sai sozinho e o resultado é regis
 
     expect(ok).toBe(false);
     expect(agentCalls).toEqual([]);
+  });
+
+  it("a segunda via pede ?reprint=1 na linha do livro, imprime e registra", async () => {
+    // A porta que a promessa "pode ser reimpresso depois" não tinha: o servidor
+    // já aceitava `?reprint=1` e ninguém chamava.
+    const { session, servidor, agentCalls } = makeReceiptSession();
+
+    const ok = await session.reprintMovementReceipt(77);
+    await new Promise((r) => setTimeout(r, 10));
+
+    expect(ok).toBe(true);
+    const pedido = servidor.find((c) => c.method === "GET");
+    expect(pedido?.path).toContain("/cash/entry/77/receipt/");
+    expect(pedido?.path).toContain("reprint=1");
+    // A busca fica presa à GAVETA desta superfície, não ao primeiro terminal.
+    expect(pedido?.path).toContain("terminal_ref=T1");
+    expect(agentCalls.some((u) => u.endsWith("/print"))).toBe(true);
+    const registro = servidor.find((c) => c.path.endsWith("/receipt/") && c.body);
+    expect(registro?.body).toMatchObject({ status: "printed" });
+  });
+
+  it("o toast de falha oferece 'Tentar de novo' — falha sem porta é beco", async () => {
+    // Mesmo dialeto dos comprovantes de venda (PosRecentSales): rótulo e
+    // instrução de reinício do agente vieram do #312; a porta da segunda via
+    // (`reprint`) é daqui — o retry repete as MESMAS opções.
+    const { session } = makeReceiptSession({ agentFails: true });
+    await session.registerCashMovement({ kind: "sangria", amount: "50", reason: "cofre" });
+    await new Promise((r) => setTimeout(r, 10));
+
+    const chamadas = vi.mocked(toast.error).mock.calls;
+    const opcoes = chamadas[chamadas.length - 1]?.[1] as { action?: { label?: unknown } } | undefined;
+    expect(opcoes?.action?.label).toBe("Tentar de novo");
   });
 });
 
