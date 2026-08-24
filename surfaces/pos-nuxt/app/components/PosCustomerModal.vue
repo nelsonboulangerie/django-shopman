@@ -29,14 +29,14 @@ const props = withDefaults(defineProps<{
   /** Payment context: also show the fiscal/comprovante block. */
   showFiscal?: boolean;
   issueFiscalDocument?: boolean;
-  receiptMode?: string;
-  receiptModes?: POSCheckoutOptionProjection[];
+  receiptChannels?: string[];
+  receiptChannelOptions?: POSCheckoutOptionProjection[];
   receiptEmail?: string;
 }>(), {
   showFiscal: false,
   issueFiscalDocument: false,
-  receiptMode: "none",
-  receiptModes: () => [],
+  receiptChannels: () => [],
+  receiptChannelOptions: () => [],
   receiptEmail: "",
 });
 
@@ -47,7 +47,7 @@ const emit = defineEmits<{
   "update:customerTaxId": [string];
   "update:customerEmail": [string];
   "update:issueFiscalDocument": [boolean];
-  "update:receiptMode": [string];
+  "update:receiptChannels": [string[]];
   "update:receiptEmail": [string];
   search: [string];
   selectResult: [POSCustomerSearchResult];
@@ -56,6 +56,13 @@ const emit = defineEmits<{
   applyCustomerFavorite: [];
   repeatCustomerLastOrder: [];
 }>();
+
+function toggleReceiptChannel(ref: string) {
+  const next = props.receiptChannels.includes(ref)
+    ? props.receiptChannels.filter((c) => c !== ref)
+    : [...props.receiptChannels, ref];
+  emit("update:receiptChannels", next);
+}
 
 // A customer is associated when there's a loaded lookup or a name in context.
 const hasCustomer = computed(() => Boolean(props.customerName.trim() || props.customerLookup));
@@ -163,20 +170,23 @@ function onConclude() {
               <span>Emitir nota fiscal</span>
               <Icon :name="issueFiscalDocument ? 'lucide:check' : 'lucide:minus'" class="size-4" />
             </UiButton>
-            <div class="grid grid-cols-3 gap-2">
+            <!-- MULTI: imprimir E enviar não competem. "Sem comprovante" é
+                 nenhum canal marcado, não um terceiro botão. -->
+            <div class="grid grid-cols-2 gap-2">
               <UiButton
-                v-for="mode in receiptModes"
-                :key="mode.ref"
+                v-for="channel in receiptChannelOptions"
+                :key="channel.ref"
                 type="button"
                 variant="outline"
-                class="h-auto justify-center whitespace-normal px-2 py-2 text-xs"
-                :class="receiptMode === mode.ref ? 'border-primary bg-primary/5' : ''"
-                @click="$emit('update:receiptMode', mode.ref)"
+                class="h-auto justify-center gap-1.5 whitespace-normal px-2 py-2 text-xs"
+                :class="receiptChannels.includes(channel.ref) ? 'border-primary bg-primary/5' : ''"
+                @click="toggleReceiptChannel(channel.ref)"
               >
-                {{ mode.label }}
+                <Icon :name="receiptChannels.includes(channel.ref) ? 'lucide:check' : 'lucide:minus'" class="size-3.5" />
+                {{ channel.label }}
               </UiButton>
             </div>
-            <label v-if="receiptMode === 'email'" class="grid gap-1.5 text-sm">
+            <label v-if="receiptChannels.includes('email')" class="grid gap-1.5 text-sm">
               <span class="font-medium text-muted-foreground">E-mail do comprovante</span>
               <UiInput :model-value="receiptEmail" type="email" :placeholder="customerEmail || 'cliente@email.com'" @update:model-value="$emit('update:receiptEmail', String($event || ''))" />
               <span v-if="!receiptEmail.trim() && customerEmail.trim()" class="text-xs text-muted-foreground">

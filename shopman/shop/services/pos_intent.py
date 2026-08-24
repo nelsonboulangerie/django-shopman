@@ -37,7 +37,7 @@ _ALLOWED_TOP_LEVEL_KEYS = {
     "payment_tenders",
     "tendered_amount_q",
     "issue_fiscal_document",
-    "receipt_mode",
+    "receipt_channels",
     "receipt_email",
     "client_request_id",
     "tab_ref",
@@ -49,12 +49,12 @@ _ALLOWED_TOP_LEVEL_KEYS = {
 }
 _ALLOWED_PAYMENT_METHODS = {"cash", "pix", "card", "external", "account", "mixed"}
 _ALLOWED_PAYMENT_COLLECTIONS = {"terminal", "on_delivery"}
-_ALLOWED_RECEIPT_MODES = {"none", "print", "email"}
+_ALLOWED_RECEIPT_CHANNELS = {"print", "email"}
 
 POS_SALE_INTENT_PAYLOAD_KEYS = tuple(sorted(_ALLOWED_TOP_LEVEL_KEYS))
 POS_SALE_INTENT_PAYMENT_METHODS = tuple(sorted(_ALLOWED_PAYMENT_METHODS))
 POS_SALE_INTENT_PAYMENT_COLLECTIONS = tuple(sorted(_ALLOWED_PAYMENT_COLLECTIONS))
-POS_SALE_INTENT_RECEIPT_MODES = tuple(sorted(_ALLOWED_RECEIPT_MODES))
+POS_SALE_INTENT_RECEIPT_CHANNELS = tuple(sorted(_ALLOWED_RECEIPT_CHANNELS))
 
 
 @dataclass(frozen=True)
@@ -195,9 +195,9 @@ def parse_pos_sale_intent(raw: dict, *, for_commit: bool = True) -> PosSaleInten
             focus="delivery_address",
             recovery="Finalize sem taxa, ou finalize sem fiscal e reprocesse no gestor após conferência.",
         )
-    payload["receipt_mode"] = _receipt_mode(payload.get("receipt_mode") or "none")
+    payload["receipt_channels"] = _receipt_channels(payload.get("receipt_channels"))
     payload["receipt_email"] = _emailish(payload.get("receipt_email"), field="receipt_email")
-    if for_commit and payload["receipt_mode"] == "email" and not payload["receipt_email"]:
+    if for_commit and "email" in payload["receipt_channels"] and not payload["receipt_email"]:
         raise PosIntentError(
             code="receipt_email_required",
             message="Informe o e-mail para enviar o comprovante.",
@@ -377,11 +377,24 @@ def _payment_collection(value) -> str:
     return collection
 
 
-def _receipt_mode(value) -> str:
-    mode = str(value or "none").strip().lower()
-    if mode not in _ALLOWED_RECEIPT_MODES:
-        raise PosIntentError("invalid_receipt_mode", "Modo de comprovante inválido.", field="receipt_mode", focus="receipt")
-    return mode
+def _receipt_channels(value) -> list[str]:
+    """Canais do comprovante — MULTI: imprimir E enviar não competem.
+
+    "Sem comprovante" não é um estado: é a lista vazia. Canal desconhecido é
+    recusa, não silêncio ([[feedback_rules_run_as_configured_or_not_at_all]]).
+    """
+    if value in (None, ""):
+        return []
+    if not isinstance(value, (list, tuple)):
+        raise PosIntentError("invalid_receipt_channels", "Canais de comprovante inválidos.", field="receipt_channels", focus="receipt")
+    channels = []
+    for raw in value:
+        channel = str(raw or "").strip().lower()
+        if channel not in _ALLOWED_RECEIPT_CHANNELS:
+            raise PosIntentError("invalid_receipt_channels", "Canais de comprovante inválidos.", field="receipt_channels", focus="receipt")
+        if channel not in channels:
+            channels.append(channel)
+    return channels
 
 
 def _client_request_id(value) -> str:
@@ -460,7 +473,7 @@ __all__ = [
     "POS_SALE_INTENT_PAYLOAD_KEYS",
     "POS_SALE_INTENT_PAYMENT_COLLECTIONS",
     "POS_SALE_INTENT_PAYMENT_METHODS",
-    "POS_SALE_INTENT_RECEIPT_MODES",
+    "POS_SALE_INTENT_RECEIPT_CHANNELS",
     "POS_SALE_INTENT_VERSION",
     "PosIntentError",
     "PosSaleIntent",

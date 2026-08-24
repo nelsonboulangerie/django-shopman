@@ -1,7 +1,7 @@
 import type { ComputedRef } from "vue";
 import { toast } from "vue-sonner";
 
-import type { DrawerState } from "~/composables/useCashDrawer";
+import type { DrawerState } from "~/composables/useCounterAgent";
 import type { Action } from "~/types/pos";
 import { actionHref } from "~/utils/posIntent";
 

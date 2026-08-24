@@ -127,8 +127,8 @@ class POSHeadlessSurfaceContractTests(TestCase):
         self.assertIn("payment_tenders", checkout["allowed_payload_keys"])
         self.assertIn("manager_approval", checkout["allowed_payload_keys"])
         self.assertEqual(
-            {mode["ref"] for mode in checkout["receipt_modes"]},
-            {"none", "print", "email"},
+            {channel["ref"] for channel in checkout["receipt_channels"]},
+            {"print", "email"},
         )
         field_refs = {field["ref"]: field for field in checkout["fields"]}
         self.assertEqual(field_refs["delivery_address"]["input_type"], "address_autocomplete")
@@ -452,7 +452,7 @@ class POSHeadlessSurfaceContractTests(TestCase):
             "payment_method": "cash",
             "payment_collection": "terminal",
             "tendered_amount_q": 2000,
-            "receipt_mode": "none",
+            "receipt_channels": [],
             "client_request_id": "pos-headless-review-001",
         }
 

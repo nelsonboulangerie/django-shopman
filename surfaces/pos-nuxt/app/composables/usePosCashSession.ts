@@ -1,7 +1,7 @@
 import type { ComputedRef } from "vue";
 import { toast } from "vue-sonner";
 
-import type { PrintOutcome } from "~/composables/useCashDrawer";
+import type { PrintOutcome } from "~/composables/useCounterAgent";
 import type { Action, POSCashManagementCapability, POSProjection } from "~/types/pos";
 import { requiresOpenShiftForSale } from "~/presentation/cash";
 import { actionHref } from "~/utils/posIntent";
@@ -51,7 +51,7 @@ export function usePosCashSession({ pos, actions, refresh, action }: CashSession
   // Sangria e suprimento mexem no dinheiro da gaveta e não imprimem nada — por
   // isso o gancho "abrir ao imprimir" do driver nunca serviria aqui. Mesmo
   // caminho da venda em dinheiro: um só, para os quatro momentos.
-  const drawer = useCashDrawer(pos);
+  const drawer = useCounterAgent(pos);
 
   const cashManagement = computed<POSCashManagementCapability | null>(
     () => pos.value?.checkout?.capabilities?.cash_management ?? null,

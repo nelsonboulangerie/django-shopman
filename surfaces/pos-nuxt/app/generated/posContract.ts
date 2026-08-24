@@ -10,5 +10,5 @@ export type PosPaymentMethod = (typeof POS_PAYMENT_METHODS)[number];
 export const POS_PAYMENT_COLLECTIONS = ["on_delivery", "terminal"] as const;
 export type PosPaymentCollection = (typeof POS_PAYMENT_COLLECTIONS)[number];
 
-export const POS_RECEIPT_MODES = ["email", "none", "print"] as const;
-export type PosReceiptMode = (typeof POS_RECEIPT_MODES)[number];
+export const POS_RECEIPT_CHANNELS = ["email", "print"] as const;
+export type PosReceiptChannel = (typeof POS_RECEIPT_CHANNELS)[number];

@@ -221,7 +221,7 @@ class POSTabSessionTests(TestCase):
             "customer_tax_id": "52998224725",
             "tendered_amount_q": 5000,
             "issue_fiscal_document": True,
-            "receipt_mode": "email",
+            "receipt_channels": ["email"],
             "receipt_email": "ana@example.com",
         })
 
@@ -237,7 +237,7 @@ class POSTabSessionTests(TestCase):
         self.assertEqual(order.data["payment"]["method"], "cash")
         self.assertEqual(order.data["payment"]["tendered_q"], 5000)
         self.assertEqual(order.data["fiscal"], {"issue_document": True, "tax_id": "52998224725"})
-        self.assertEqual(order.data["receipt"], {"mode": "email", "email": "ana@example.com"})
+        self.assertEqual(order.data["receipt"], {"channels": ["email"], "email": "ana@example.com"})
 
     def test_closing_tab_can_create_delivery_with_payment_on_delivery(self) -> None:
         opened = build_open_tab(pos_service.open_pos_tab(

@@ -60,7 +60,7 @@ class AgentTooOldError extends Error {
   }
 }
 
-export function useCashDrawer(pos: ComputedRef<POSProjection | null>) {
+export function useCounterAgent(pos: ComputedRef<POSProjection | null>) {
   const config = computed<POSCashDrawerProjection | null>(() => pos.value?.cash_drawer ?? null);
 
   /** Este balcão tem caminho de software? `false` = gaveta de chave. */

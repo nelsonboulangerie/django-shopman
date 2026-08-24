@@ -128,7 +128,7 @@ export interface POSCheckoutContractProjection {
   allowed_payload_keys: string[];
   sections: POSCheckoutSectionProjection[];
   fields: POSCheckoutFieldProjection[];
-  receipt_modes: POSCheckoutOptionProjection[];
+  receipt_channels: POSCheckoutOptionProjection[];
   tender_methods: POSCheckoutOptionProjection[];
   cash_tender_delta_presets_q: number[];
   discount_types: POSCheckoutOptionProjection[];
@@ -270,6 +270,8 @@ export interface POSCustomerLookupProjection {
   name: string;
   phone: string;
   email: string;
+  /** CPF/CNPJ do cadastro — valor padrão do "CPF na nota"; editável por venda. */
+  tax_id: string;
   /** A faixa de preço do cliente (`PriceTier.ref`) — é ela que decide o preço. */
   price_tier: string;
   is_staff: boolean;
@@ -455,7 +457,7 @@ export interface POSTabPayload {
   payment_tenders: POSIntentCartState["paymentTenders"];
   tendered_amount_q: number | string;
   issue_fiscal_document: boolean;
-  receipt_mode: string;
+  receipt_channels: string[];
   receipt_email: string;
   discount_type: string;
   discount_value: string;
@@ -511,7 +513,7 @@ export interface POSIntentCartState {
   paymentTenders: POSPaymentTenderDraft[];
   tenderedAmountQ: number | null;
   issueFiscalDocument: boolean;
-  receiptMode: string;
+  receiptChannels: string[];
   receiptEmail: string;
   manualDiscount: Record<string, unknown> | null;
   managerApproval: Record<string, unknown> | null;
@@ -542,7 +544,7 @@ export interface POSSaleReviewProjection {
   manager_approval_threshold_q: number;
   /** Por que o gerente foi chamado — o diálogo de autorização diz o que assinar. */
   approval_reasons: string[];
-  receipt_mode: string;
+  receipt_channels: string[];
   issue_fiscal_document: boolean;
   warnings: Array<{ code: string; field: string; message: string }>;
 }

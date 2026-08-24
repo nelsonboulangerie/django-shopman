@@ -106,7 +106,7 @@ export function buildPosSaleIntent(
     payment_method: state.paymentMethod,
     payment_collection: state.paymentCollection,
     issue_fiscal_document: state.issueFiscalDocument,
-    receipt_mode: state.receiptMode || "none",
+    receipt_channels: state.receiptChannels || [],
     client_request_id: state.clientRequestId,
   };
 
