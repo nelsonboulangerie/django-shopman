@@ -742,6 +742,7 @@ class TestOnCancelled:
         mock_payment.cancel.assert_called_once_with(order, reason="customer_requested")
         mock_payment.refund.assert_called_once_with(order)
         mock_loyalty.revoke.assert_called_once_with(order, reason="cancelled")
+        mock_loyalty.restore.assert_called_once_with(order, reason="cancelled")
         mock_notification.send.assert_called_once_with(order, "order_cancelled")
 
 
@@ -763,6 +764,7 @@ class TestOnReturned:
         mock_payment.refund.assert_called_once_with(order)
         mock_fiscal.cancel.assert_called_once_with(order)
         mock_loyalty.revoke.assert_called_once_with(order, reason="returned")
+        mock_loyalty.restore.assert_called_once_with(order, reason="returned")
         mock_notification.send.assert_called_once_with(order, "order_returned")
 
 

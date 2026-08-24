@@ -1217,6 +1217,42 @@ class TestLoyaltyService:
 
         assert Directive.objects.filter(topic="loyalty.revoke").count() == 1
 
+    @pytest.mark.django_db
+    def test_restore_creates_deduped_directive(self):
+        from shopman.shop.services.loyalty import restore
+
+        order = _make_order(data={"loyalty": {"applied_discount_q": 40}})
+
+        restore(order, reason="cancelled")
+
+        directive = Directive.objects.last()
+        assert directive is not None
+        assert directive.topic == "loyalty.restore"
+        assert directive.payload["order_ref"] == "ORD-001"
+        assert directive.payload["reason"] == "cancelled"
+        assert directive.dedupe_key == "loyalty.restore:ORD-001"
+
+    @pytest.mark.django_db
+    def test_restore_skips_order_without_redemption(self):
+        from shopman.shop.services.loyalty import restore
+
+        order = _make_order(data={})
+
+        restore(order, reason="cancelled")
+
+        assert Directive.objects.count() == 0
+
+    @pytest.mark.django_db
+    def test_restore_twice_queues_once(self):
+        from shopman.shop.services.loyalty import restore
+
+        order = _make_order(data={"loyalty": {"applied_discount_q": 40}})
+
+        restore(order, reason="cancelled")
+        restore(order, reason="cancelled")
+
+        assert Directive.objects.filter(topic="loyalty.restore").count() == 1
+
 
 # ══════════════════════════════════════════════════════════════════════
 # services/fiscal.py

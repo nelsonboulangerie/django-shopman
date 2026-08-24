@@ -66,6 +66,7 @@ ACCOUNTING_CREATE_PAYABLE = "accounting.create_payable"
 LOYALTY_EARN = "loyalty.earn"
 LOYALTY_REDEEM = "loyalty.redeem"
 LOYALTY_REVOKE = "loyalty.revoke"
+LOYALTY_RESTORE = "loyalty.restore"
 
 # Returns
 RETURN_PROCESS = "return.process"
