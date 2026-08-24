@@ -208,6 +208,14 @@ export interface POSCashRuntimeProjection {
   pending_cash_refunds?: POSPendingCashRefundProjection[];
   /** Contas na casa com saldo em aberto: quem está com a gaveta aberta recebe o acerto. */
   account_balances?: POSAccountBalanceProjection[];
+  /**
+   * Sugestão FIXA de fundo de troco para a abertura guiada (config do
+   * terminal, escolhida pelo gestor no Admin). Nunca derivada do contado ou
+   * do esperado de turnos — o regime de contagem cega não vaza por aqui.
+   */
+  default_float_q?: number;
+  /** "R$ 200,00"; "" quando não configurado. */
+  default_float_display?: string;
 }
 
 export interface POSAddressAutocompleteProjection {
