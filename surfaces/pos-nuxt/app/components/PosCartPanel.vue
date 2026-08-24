@@ -536,7 +536,7 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onWindowKeydown));
         >
           <Icon name="lucide:credit-card" class="size-6" />
           Pagamento
-          <kbd class="rounded border border-primary-foreground/30 bg-transparent px-1.5 py-0.5 font-mono text-[10px] font-medium opacity-80" aria-hidden="true">F4</kbd>
+          <kbd class="rounded border border-primary-foreground/30 bg-transparent px-1.5 py-0.5 font-mono text-xs font-medium opacity-80" aria-hidden="true">F4</kbd>
         </UiButton>
       </div>
       <UiButton
@@ -549,7 +549,7 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onWindowKeydown));
       >
         <Icon name="lucide:credit-card" class="size-5" />
         Pagamento
-        <kbd class="rounded border border-primary-foreground/30 bg-transparent px-1.5 py-0.5 font-mono text-[10px] font-medium opacity-80" aria-hidden="true">F4</kbd>
+        <kbd class="rounded border border-primary-foreground/30 bg-transparent px-1.5 py-0.5 font-mono text-xs font-medium opacity-80" aria-hidden="true">F4</kbd>
       </UiButton>
     </div>
   </UiCard>

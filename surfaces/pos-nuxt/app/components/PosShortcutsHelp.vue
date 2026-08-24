@@ -57,7 +57,7 @@ const groups: Array<{ title: string; items: Array<{ keys: string[]; label: strin
                 <kbd
                   v-for="key in item.keys"
                   :key="key"
-                  class="rounded border bg-muted px-1.5 py-0.5 font-mono text-[11px] font-medium text-muted-foreground"
+                  class="rounded border bg-muted px-1.5 py-0.5 font-mono text-xs font-medium text-muted-foreground"
                 >{{ key }}</kbd>
               </span>
             </li>

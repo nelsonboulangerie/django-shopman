@@ -84,7 +84,7 @@ defineExpose({ focus: () => inputRef.value?.inputRef?.focus() });
           autofocus
           @update:model-value="updateInput"
         />
-        <kbd class="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 rounded border bg-muted px-1.5 py-0.5 font-mono text-[10px] font-medium text-muted-foreground" aria-hidden="true">F2</kbd>
+        <kbd class="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 rounded border bg-muted px-1.5 py-0.5 font-mono text-xs font-medium text-muted-foreground" aria-hidden="true">F2</kbd>
       </div>
       <UiButton type="submit" size="lg" class="h-11 shrink-0 gap-2" :disabled="busy || !modelValue.trim()">
         <Icon name="lucide:plus" class="size-5" />

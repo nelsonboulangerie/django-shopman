@@ -353,7 +353,7 @@ defineExpose({
           >
             <Icon name="lucide:user-round" class="size-4 text-muted-foreground" />
             <span class="min-w-0 truncate">{{ customerName || "Cliente" }}</span>
-            <kbd class="rounded border bg-muted px-1.5 py-0.5 font-mono text-[10px] font-medium text-muted-foreground" aria-hidden="true">F6</kbd>
+            <kbd class="rounded border bg-muted px-1.5 py-0.5 font-mono text-xs font-medium text-muted-foreground" aria-hidden="true">F6</kbd>
           </button>
           <button
             type="button"
@@ -446,7 +446,7 @@ defineExpose({
           <UiButton variant="outline" size="lg" class="h-14 gap-2 text-base" @click="$emit('back')">
             <Icon name="lucide:arrow-left" class="size-5" />
             Voltar
-            <kbd class="rounded border bg-muted px-1.5 py-0.5 font-mono text-[10px] font-medium text-muted-foreground" aria-hidden="true">Esc</kbd>
+            <kbd class="rounded border bg-muted px-1.5 py-0.5 font-mono text-xs font-medium text-muted-foreground" aria-hidden="true">Esc</kbd>
           </UiButton>
           <UiButton
             size="lg"
@@ -456,7 +456,7 @@ defineExpose({
             @click="onCta"
           >
             {{ ctaLabel }}
-            <kbd class="rounded border border-primary-foreground/30 bg-transparent px-1.5 py-0.5 font-mono text-[10px] font-medium opacity-80" aria-hidden="true">Enter</kbd>
+            <kbd class="rounded border border-primary-foreground/30 bg-transparent px-1.5 py-0.5 font-mono text-xs font-medium opacity-80" aria-hidden="true">Enter</kbd>
           </UiButton>
         </div>
       </div>
