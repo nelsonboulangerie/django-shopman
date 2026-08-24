@@ -12,6 +12,12 @@ const { pos, refresh } = await usePosTerminal();
 const { onReconnect } = useConnectivity();
 onReconnect(() => refresh());
 
+// Tempo real entre estações (ADR-016): pedido de troco, devolução pendente e
+// turno aberto/fechado feitos em OUTRA estação chegam por push; no evento,
+// refazemos o fetch canônico da Projection (o mesmo `refresh` deduplicado que
+// todas as páginas leem). Poll calmo de 60s só enquanto o SSE não conecta.
+usePosEvents(() => refresh());
+
 // Re-gate global de sessão (kit): um 401 no meio do turno (sessão expirada do
 // lado do Django) sobe a tela de senha em vez de o operador bater numa sessão
 // morta.

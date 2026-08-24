@@ -20,12 +20,23 @@ export function usePosAction() {
     options: { method?: "GET" | "POST" | "PUT" | "PATCH" | "DELETE"; body?: Record<string, unknown> } = {},
   ): Promise<T> {
     try {
-      return await $fetch<T>(apiPath(path), {
+      // Sem o mapa de rotas tipadas do Nitro: com uma rota literal no server
+      // (/sse/cash), o matcher de tipos do `$fetch` tenta casar `string` contra
+      // cada rota e explode ("excessive stack depth"). O caminho aqui é
+      // dinâmico (vem da Projection), então o contrato de tipo sempre foi do
+      // chamador — o cast só torna isso dito.
+      const request = $fetch as (url: string, opts?: {
+        method?: string;
+        credentials?: RequestCredentials;
+        headers?: Record<string, string>;
+        body?: unknown;
+      }) => Promise<unknown>;
+      return (await request(apiPath(path), {
         method: options.method || "POST",
         credentials: "include",
         headers: csrfHeader(),
         body: options.body,
-      });
+      })) as T;
     } catch (error) {
       // 401 → marca a sessão expirada; re-lança para o tratamento de erro do
       // chamador (serverError/toast) seguir funcionando como sinal secundário.
