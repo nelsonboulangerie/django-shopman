@@ -224,13 +224,22 @@ function onSelectResult(result: POSCustomerSearchResult) {
 }
 // Reset the shared search when the customer modal reopens fresh — e devolve o
 // foco ao botão que o abriu (diálogo controlado: sem isto o foco morre no body).
-const customerButtonRef = ref<HTMLButtonElement | null>(null);
+// O botão do Cliente existe em DOIS lugares que nunca aparecem juntos (o chip,
+// abaixo de `xl`; a coluna de contexto, a partir dele), então o foco não pode
+// morar num `ref` fixo: devolvê-lo ao botão escondido é o mesmo que perdê-lo no
+// body. Procura-se o que está visível na hora.
+function focusCustomerControl() {
+  const candidates = Array.from(
+    document.querySelectorAll<HTMLButtonElement>('[data-context-entry="customer"]'),
+  );
+  (candidates.find((el) => el.offsetParent !== null) || candidates[0])?.focus();
+}
 watch(customerSheetOpen, async (open) => {
   if (open) return;
   emit("search", "");
   if (!import.meta.client) return;
   await nextTick();
-  customerButtonRef.value?.focus();
+  focusCustomerControl();
 });
 const discountSheetOpen = ref(false);
 
@@ -363,9 +372,6 @@ const fulfillmentChipLabel = computed(() => {
   const bairro = props.deliveryNeighborhood.trim() || props.deliveryAddressStructured?.neighborhood?.trim() || "";
   return bairro ? `${base} · ${bairro}` : base;
 });
-const fulfillmentLabel = computed(
-  () => props.fulfillmentOptions.find((option) => option.ref === props.fulfillmentType)?.label || props.fulfillmentType,
-);
 const discountValueNum = computed(
   () => Number(String(props.discountValue).replace(",", ".").replace(/[^0-9.]/g, "")) || 0,
 );
@@ -374,6 +380,64 @@ const discountSummary = computed(() =>
   props.discountType === "fixed" ? `R$ ${props.discountValue}` : `${props.discountValue}%`,
 );
 const customerSet = computed(() => Boolean(props.customerName.trim() || props.customerPhone.trim()));
+
+// OS TRÊS FATOS decididos antes de pagar — cliente, recebimento e desconto —
+// numa lista só, porque a tela os mostra em DUAS formas conforme a largura: uma
+// linha de chips na coluna do instrumento (até `lg`), e as três primeiras
+// entradas da COLUNA DE CONTEXTO a partir de `xl`. Duas marcações para os
+// mesmos três botões seria duplicar rótulo, atalho e regra de "está preenchido";
+// aqui a fonte é uma e cada forma só escolhe as classes.
+const contextEntries = computed(() => {
+  const entries = [
+    {
+      key: "customer",
+      icon: "lucide:user-round",
+      label: "Cliente",
+      value: props.customerName.trim() || props.customerPhone.trim() || "Sem cliente",
+      chip: props.customerName.trim() || "Sem cliente",
+      set: customerSet.value,
+      kbd: "F6",
+      open: () => { customerSheetOpen.value = true; },
+    },
+    {
+      key: "fulfillment",
+      icon: props.fulfillmentType === "delivery" ? "lucide:bike" : "lucide:store",
+      label: "Recebimento",
+      value: fulfillmentChipLabel.value,
+      chip: fulfillmentChipLabel.value,
+      set: props.fulfillmentType === "delivery",
+      kbd: "F7",
+      open: () => { fulfillmentSheetOpen.value = true; },
+    },
+  ];
+  if (props.discountTypes.length) {
+    entries.push({
+      key: "discount",
+      icon: "lucide:tag",
+      label: "Desconto",
+      value: hasDiscount.value ? discountSummary.value : "Sem desconto",
+      chip: hasDiscount.value ? discountSummary.value : "Sem desconto",
+      set: hasDiscount.value,
+      kbd: "F8",
+      open: () => { discountSheetOpen.value = true; },
+    });
+  }
+  return entries;
+});
+
+// O RESUMO DO PEDIDO — o que está sendo cobrado. No checkout o operador via só
+// o total: um número sem os itens que o compõem, justo na hora em que o cliente
+// pergunta "por que deu isso?". Vem do mesmo carrinho da tela de venda; a tela
+// mostra, não recalcula.
+const summaryLines = computed(() =>
+  props.items.map((item) => ({
+    sku: item.sku,
+    name: item.name,
+    qty: item.qty,
+    totalDisplay: formatBRL(item.qty * item.price_q),
+  })),
+);
+const summaryUnits = computed(() => props.items.reduce((sum, item) => sum + item.qty, 0));
 
 // Transparência de desconto no resumo: uma pílula por linha com desconto
 // (automático de pricing ou manual), mesmo idioma da tela do cliente. É o que
@@ -500,11 +564,19 @@ defineExpose({
 
 
 
-    <!-- MAIN — clone Odoo: INSTRUMENTO esquerda, VALOR direita. Colunas
-         RESPONSIVAS (B.1): teto 1+2 (instrumento:valor) → 1+1 → empilha (valor no
-         topo). Grid com nº de colunas por breakpoint; instrumento ocupa sempre 1,
-         valor ocupa o restante. (Sem 1+3 no xl — esparramava o valor.) -->
-    <div class="grid min-h-0 w-full flex-1 grid-cols-1 gap-6 overflow-hidden md:grid-cols-2 lg:grid-cols-3">
+    <!-- MAIN — clone Odoo: INSTRUMENTO esquerda, VALOR no meio, CONTEXTO direita.
+         As colunas laterais têm LARGURA FIXA de 360px, a mesma do painel do
+         carrinho na tela de venda (`md:w-[360px]` em pages/index.vue): a coluna
+         de trabalho era uma fração do grid e dava 435px, um instrumento mais
+         largo aqui do que lá, com a mesma mão fazendo as duas coisas. Largura
+         fixa também é o que faz o teclado não mudar de tamanho conforme a
+         janela — músculo de balcão depende de a tecla estar sempre no mesmo
+         lugar. O VALOR fica com o resto, que é o que deve respirar.
+
+         A terceira coluna aparece a partir de `xl`; abaixo disso os três fatos
+         voltam para a linha de chips dentro do instrumento (mesma lista,
+         `contextEntries`). -->
+    <div class="flex min-h-0 w-full flex-1 flex-col gap-6 overflow-hidden md:flex-row">
 
       <!-- LEFT · coluna de trabalho, agrupada por SEMÂNTICA (Hyper Focus: chrome
            espalhado não responde "qual é a próxima ação"). Quatro seções, na
@@ -516,7 +588,7 @@ defineExpose({
            `overflow-y-auto`: com a nota aberta a coluna pode passar da altura
            da tela num monitor baixo, e conteúdo cortado sem rolagem é conteúdo
            inalcançável. -->
-      <div class="order-2 flex min-h-0 flex-col gap-3 overflow-y-auto md:order-none">
+      <div class="order-2 flex min-h-0 flex-col gap-3 overflow-y-auto md:order-none md:w-[360px] md:shrink-0">
         <!-- PAGAMENTO — o instrumento: métodos (tap = lança o que falta na forma)
              + teclado de valor. Última seção de propósito: desagua no Validar. -->
         <!-- CONTEXTO DA VENDA — quem compra, como recebe, se tem desconto.
@@ -527,38 +599,23 @@ defineExpose({
              baixo da dobra, justo as perguntas que se faz com o cliente na
              frente. Aqui custam 36px e continuam mostrando o ESTADO: ver que é
              entrega não exige abrir nada. -->
-        <div class="flex flex-wrap items-center gap-1.5">
+        <!-- A LINHA DE CHIPS só existe abaixo de `xl`, onde não há coluna de
+             contexto. A partir daí os mesmos três fatos aparecem lá, com espaço
+             para dizer o rótulo junto com o valor. Um botão por fato, nunca dois
+             na mesma tela. -->
+        <div class="flex flex-wrap items-center gap-1.5 xl:hidden">
           <button
-            ref="customerButtonRef"
+            v-for="entry in contextEntries"
+            :key="entry.key"
+            :data-context-entry="entry.key"
             type="button"
             class="flex h-9 min-w-0 flex-1 items-center gap-1.5 rounded-md border px-2.5 text-sm font-medium transition hover:bg-accent active:translate-y-px"
-            :class="customerSet ? 'border-primary bg-primary/5' : 'bg-card text-muted-foreground'"
-            @click="customerSheetOpen = true"
+            :class="entry.set ? 'border-primary bg-primary/5' : 'bg-card text-muted-foreground'"
+            @click="entry.open()"
           >
-            <Icon name="lucide:user-round" class="size-4 shrink-0" />
-            <span class="min-w-0 truncate">{{ customerName || "Sem cliente" }}</span>
-            <kbd class="ml-auto shrink-0 rounded border bg-muted px-1 py-0.5 font-mono text-xs font-medium text-muted-foreground" aria-hidden="true">F6</kbd>
-          </button>
-          <button
-            type="button"
-            class="flex h-9 min-w-0 flex-1 items-center gap-1.5 rounded-md border px-2.5 text-sm font-medium transition hover:bg-accent active:translate-y-px"
-            :class="fulfillmentType === 'delivery' ? 'border-primary bg-primary/5' : 'bg-card text-muted-foreground'"
-            @click="fulfillmentSheetOpen = true"
-          >
-            <Icon :name="fulfillmentType === 'delivery' ? 'lucide:bike' : 'lucide:store'" class="size-4 shrink-0" />
-            <span class="min-w-0 truncate">{{ fulfillmentChipLabel }}</span>
-            <kbd class="ml-auto shrink-0 rounded border bg-muted px-1 py-0.5 font-mono text-xs font-medium text-muted-foreground" aria-hidden="true">F7</kbd>
-          </button>
-          <button
-            v-if="discountTypes.length"
-            type="button"
-            class="flex h-9 min-w-0 flex-1 items-center gap-1.5 rounded-md border px-2.5 text-sm font-medium transition hover:bg-accent active:translate-y-px"
-            :class="hasDiscount ? 'border-primary bg-primary/5' : 'bg-card text-muted-foreground'"
-            @click="discountSheetOpen = true"
-          >
-            <Icon name="lucide:tag" class="size-4 shrink-0" />
-            <span class="min-w-0 truncate">{{ hasDiscount ? discountSummary : "Sem desconto" }}</span>
-            <kbd class="ml-auto shrink-0 rounded border bg-muted px-1 py-0.5 font-mono text-xs font-medium text-muted-foreground" aria-hidden="true">F8</kbd>
+            <Icon :name="entry.icon" class="size-4 shrink-0" />
+            <span class="min-w-0 truncate">{{ entry.chip }}</span>
+            <kbd class="ml-auto shrink-0 rounded border bg-muted px-1 py-0.5 font-mono text-xs font-medium text-muted-foreground" aria-hidden="true">{{ entry.kbd }}</kbd>
           </button>
         </div>
 
@@ -813,16 +870,19 @@ defineExpose({
           Requer autorização do gerente para finalizar.
         </p>
 
-        <!-- Voltar + Validar (rodapé da coluna, copiando o Back + Validate do Odoo) -->
-        <div class="grid grid-cols-2 gap-1.5 pt-1">
-          <UiButton variant="outline" size="lg" class="h-14 gap-2 text-base" @click="$emit('back')">
+        <!-- Voltar + Validar (rodapé da coluna, copiando o Back + Validate do Odoo).
+             Meio a meio dava 177px para cada um, e "Autorizar e validar" — o
+             rótulo do caso que EXIGE leitura, porque chama um gerente — vazava
+             do botão. O Voltar cabe no que ele é; o resto é do Validar. -->
+        <div class="flex gap-1.5 pt-1">
+          <UiButton variant="outline" size="lg" class="h-14 shrink-0 gap-2 px-3 text-sm" title="Voltar para a venda (Esc)" @click="$emit('back')">
             <Icon name="lucide:arrow-left" class="size-5" />
             Voltar
             <kbd class="rounded border bg-muted px-1.5 py-0.5 font-mono text-xs font-medium text-muted-foreground" aria-hidden="true">Esc</kbd>
           </UiButton>
           <UiButton
             size="lg"
-            class="h-14 gap-2 text-base"
+            class="h-14 min-w-0 flex-1 gap-2 text-base"
             :disabled="ctaDisabled"
             :loading="loading || needsReview"
             @click="onCta"
@@ -833,12 +893,15 @@ defineExpose({
         </div>
       </div>
 
-      <!-- RIGHT · VALOR (empilhado: no topo; cresce 1→2 conforme o breakpoint, teto 1+2) -->
-      <div class="order-1 flex min-h-0 flex-col gap-3 py-1 md:order-none lg:col-span-2">
+      <!-- MEIO · VALOR (empilhado: no topo). Fica com a largura que sobra das
+           duas colunas fixas — por isso o total escala com a janela em vez de
+           ter um tamanho só: no `xl` a faixa do meio é a mais estreita das três
+           configurações, e um `text-8xl` ali transbordava. -->
+      <div class="order-1 flex min-h-0 min-w-0 flex-1 flex-col gap-3 py-1 md:order-none">
         <!-- valor gigante (estável = total a cobrar), centrado -->
-        <div class="flex flex-1 flex-col items-center justify-center text-center">
+        <section class="flex flex-1 flex-col items-center justify-center text-center" aria-label="Total a cobrar">
           <p class="text-xs font-medium uppercase tracking-wide text-muted-foreground">Total a cobrar</p>
-          <p class="text-7xl font-bold tabular-nums tracking-tight xl:text-8xl">{{ review ? review.total_display : interimTotalDisplay }}</p>
+          <p class="text-6xl font-bold tabular-nums tracking-tight lg:text-7xl 2xl:text-8xl">{{ review ? review.total_display : interimTotalDisplay }}</p>
           <p v-if="items.length" class="mt-3 flex items-center gap-1.5 text-xs text-muted-foreground">
             <Icon name="lucide:flame" class="size-3.5 shrink-0" :class="firedCount ? 'text-primary' : ''" />
             {{ kitchenNote }}
@@ -855,7 +918,7 @@ defineExpose({
               {{ row.name }} · {{ row.badge }}
             </span>
           </div>
-        </div>
+        </section>
 
         <!-- avisos não-bloqueantes da review (nunca impedem finalizar) -->
         <ul v-if="reviewWarnings.length" class="shrink-0 flex flex-col gap-1.5">
@@ -910,6 +973,83 @@ defineExpose({
             </strong>
           </div>
         </div>
+      </div>
+
+      <!-- DIREITA · CONTEXTO — a coluna que faltava. Medido em 1440×900 antes
+           dela: o bloco do valor ocupava 893×815 para mostrar UM número, e o
+           checkout não dizia em momento nenhum O QUE estava sendo cobrado. O
+           operador saía da tela de venda, onde via a lista, e chegava numa tela
+           onde a lista não existe mais — bem na hora em que o cliente pergunta
+           "por que deu isso?".
+
+           Aqui ficam os três fatos da venda (cliente, recebimento, desconto —
+           os mesmos `contextEntries` dos chips, agora com rótulo) e o RESUMO DO
+           PEDIDO. Largura fixa de 360px, igual à do carrinho na tela de venda:
+           é a mesma lista, no mesmo lugar da tela, com a mesma medida. -->
+      <div class="order-3 hidden min-h-0 w-[360px] shrink-0 flex-col gap-3 overflow-y-auto md:order-none xl:flex">
+        <section class="grid gap-1.5" aria-label="Contexto da venda">
+          <div class="divide-y rounded-md border bg-card">
+            <button
+              v-for="entry in contextEntries"
+              :key="entry.key"
+              :data-context-entry="entry.key"
+              type="button"
+              class="flex h-11 w-full items-center gap-2 px-3 text-left transition first:rounded-t-md last:rounded-b-md hover:bg-accent"
+              @click="entry.open()"
+            >
+              <Icon :name="entry.icon" class="size-4 shrink-0" :class="entry.set ? 'text-primary' : 'text-muted-foreground'" />
+              <span class="shrink-0 text-xs font-medium uppercase tracking-wide text-muted-foreground">{{ entry.label }}</span>
+              <span
+                class="min-w-0 flex-1 truncate text-right text-sm font-medium"
+                :class="entry.set ? 'text-foreground' : 'text-muted-foreground'"
+              >{{ entry.value }}</span>
+              <kbd class="shrink-0 rounded border bg-muted px-1 py-0.5 font-mono text-xs font-medium text-muted-foreground" aria-hidden="true">{{ entry.kbd }}</kbd>
+            </button>
+          </div>
+        </section>
+
+        <!-- RESUMO DO PEDIDO — a lista, e o que a soma dela vira. Sem stepper e
+             sem lixeira: aqui não se edita o pedido (para isso existe o Voltar),
+             só se confere. Rola quando a comanda é grande; subtotal, desconto e
+             taxa ficam colados embaixo, fora da rolagem. -->
+        <section class="flex min-h-0 flex-1 flex-col gap-1.5" aria-label="Resumo do pedido">
+          <h3 class="flex items-baseline gap-2 px-1">
+            <span class="text-xs font-medium uppercase tracking-wide text-muted-foreground">Resumo do pedido</span>
+            <span v-if="summaryUnits" class="ml-auto text-xs tabular-nums text-muted-foreground">
+              {{ summaryUnits }} {{ summaryUnits === 1 ? "item" : "itens" }}
+            </span>
+          </h3>
+
+          <div class="flex min-h-0 flex-1 flex-col rounded-md border bg-card">
+            <ul v-if="summaryLines.length" class="min-h-0 flex-1 divide-y overflow-y-auto">
+              <li v-for="line in summaryLines" :key="line.sku" class="flex items-baseline gap-2 px-3 py-2">
+                <span class="w-6 shrink-0 text-sm font-semibold tabular-nums text-muted-foreground">{{ line.qty }}×</span>
+                <span class="min-w-0 flex-1 truncate text-sm">{{ line.name }}</span>
+                <strong class="shrink-0 text-sm font-semibold tabular-nums">{{ line.totalDisplay }}</strong>
+              </li>
+            </ul>
+            <p v-else class="flex flex-1 items-center justify-center px-3 py-6 text-center text-sm text-muted-foreground">
+              Nada lançado nesta comanda.
+            </p>
+
+            <!-- Só aparece o que EXISTE: subtotal sozinho ao lado de um total
+                 igual a ele é uma linha que não informa nada. -->
+            <dl v-if="review && (review.discount_q > 0 || review.delivery_fee_q > 0)" class="grid gap-1 border-t px-3 py-2 text-sm">
+              <div class="flex items-baseline justify-between gap-2">
+                <dt class="text-muted-foreground">Subtotal</dt>
+                <dd class="tabular-nums">{{ review.subtotal_display }}</dd>
+              </div>
+              <div v-if="review.discount_q > 0" class="flex items-baseline justify-between gap-2 text-primary">
+                <dt>Desconto</dt>
+                <dd class="tabular-nums">−{{ review.discount_display }}</dd>
+              </div>
+              <div v-if="review.delivery_fee_q > 0" class="flex items-baseline justify-between gap-2">
+                <dt class="text-muted-foreground">Taxa de entrega</dt>
+                <dd class="tabular-nums">{{ review.delivery_fee_display }}</dd>
+              </div>
+            </dl>
+          </div>
+        </section>
       </div>
     </div>
 

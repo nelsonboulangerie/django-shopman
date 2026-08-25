@@ -4,6 +4,7 @@ import { mountSuspended } from "@nuxt/test-utils/runtime";
 import PosCartPanel from "~/components/PosCartPanel.vue";
 import type { POSCartItem } from "~/types/pos";
 import type { ActionAffordance } from "~/presentation/actions";
+import { formatBRL } from "~/utils/posIntent";
 
 function affordance(overrides: Partial<ActionAffordance> = {}): ActionAffordance {
   return { ref: "fire_tab", present: true, label: "Enviar à cozinha", priority: "primary", enabled: true, reason: "", href: "/x", ...overrides };
@@ -178,5 +179,62 @@ describe("PosCartPanel — numpad global desliga sob overlay/diálogo", () => {
     } finally {
       lock.remove();
     }
+  });
+});
+
+describe("PosCartPanel — a linha do carrinho", () => {
+  it("cada linha diz o TOTAL dela, não só o unitário", async () => {
+    // Medido na tela antes: o total da linha ficava em texto miúdo, atrás de um
+    // ponto médio, e quebrava para a linha de baixo perdendo o separador. É o
+    // número que o operador confere contra a bandeja; ele ganhou a direita da
+    // primeira faixa.
+    const wrapper = await mountSuspended(PosCartPanel, {
+      props: props({ items: [item({ sku: "CAFE", name: "Café", price_q: 300, qty: 2 })] }),
+    });
+    const totals = wrapper.findAll("strong").map((el) => el.text());
+    expect(totals).toContain(formatBRL(600));
+  });
+
+  it("a quantidade aparece UMA vez — no stepper, não repetida no preço", async () => {
+    // Era "2× R$ 13,00" debaixo do nome E "2" entre o menos e o mais: dois
+    // lugares para um número só, lado a lado. O unitário agora se apresenta
+    // como "cada", e só quando há mais de um.
+    const wrapper = await mountSuspended(PosCartPanel, {
+      props: props({ items: [item({ sku: "CAFE", name: "Café", price_q: 300, qty: 2 })] }),
+    });
+    const text = wrapper.text();
+    expect(text).toContain(`${formatBRL(300)} cada`);
+    expect(text).not.toContain(`2× ${formatBRL(300)}`);
+  });
+
+  it("com uma unidade, o unitário some — ele seria o total dito duas vezes", async () => {
+    const wrapper = await mountSuspended(PosCartPanel, {
+      props: props({ items: [item({ sku: "PAO", name: "Pão", price_q: 500, qty: 1 })] }),
+    });
+    expect(wrapper.text()).not.toContain("cada");
+    expect(wrapper.findAll("strong").map((el) => el.text())).toContain(formatBRL(500));
+  });
+
+  it("preço alterado à mão continua se anunciando mesmo com uma unidade", async () => {
+    // O "cada" some por redundância, não por censura: com o preço sobrescrito
+    // pelo operador, o unitário é justamente o que precisa ser visto.
+    const wrapper = await mountSuspended(PosCartPanel, {
+      props: props({ items: [item({ sku: "PAO", name: "Pão", price_q: 500, qty: 1, price_overridden: true })] }),
+    });
+    expect(wrapper.text()).toContain(`${formatBRL(500)} cada`);
+  });
+
+  it("o nome do produto não divide a linha com os botões — ele tem a faixa de cima inteira", async () => {
+    // O sintoma que abriu a revisão: num painel de 360px o nome recebia 119px e
+    // os controles 152px, e "Croissant Tradicional" truncava. O nome e o total
+    // são irmãos numa faixa; unitário, selos e controles moram na de baixo.
+    const wrapper = await mountSuspended(PosCartPanel, {
+      props: props({ items: [item({ sku: "CROISSANT", name: "Croissant Tradicional", price_q: 1300, qty: 2 })] }),
+    });
+    const line = wrapper.find("li");
+    const band = line.find("div.flex.items-baseline");
+    expect(band.text()).toContain("Croissant Tradicional");
+    expect(band.text()).toContain(formatBRL(2600));
+    expect(band.find("button").exists()).toBe(false);
   });
 });

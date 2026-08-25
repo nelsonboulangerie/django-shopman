@@ -424,17 +424,32 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onWindowKeydown));
         Carrinho vazio
       </p>
       <ul v-else class="grid gap-0.5">
+        <!-- A LINHA DO CARRINHO EM DUAS FAIXAS, e não em três colunas.
+             Medido na tela (painel de 360px, linha útil de 329px): o nome do
+             produto recebia 119px e os botões 152px — a lixeira e o stepper
+             ficavam com MAIS espaço que a mercadoria, o nome truncava em
+             "Croissant Tradici…" e o preço quebrava em duas linhas perdendo o
+             separador. Sessenta pixels de altura para não dizer nem o produto
+             nem quanto ele custa.
+
+             Agora o nome ocupa a faixa de cima inteira e o TOTAL DA LINHA — o
+             número que o operador confere contra a bandeja — fica alinhado à
+             direita, legível. A faixa de baixo carrega o preço unitário, os
+             selos e os controles. Cada número aparece UMA vez: a quantidade
+             mora no stepper (era repetida no "2× R$ 13,00"), o unitário só
+             quando há mais de um (com qty 1, "R$ 15,00 cada" ao lado de
+             "R$ 15,00" é a mesma frase duas vezes). -->
         <li
           v-for="item in items"
           :key="item.sku"
-          class="grid cursor-pointer grid-cols-[auto_1fr_auto] items-center gap-2 rounded-md border border-transparent px-2 py-1 transition"
+          class="grid cursor-pointer grid-cols-[auto_1fr] items-start gap-x-2 rounded-md border border-transparent px-2 py-0.5 transition"
           :class="isSelected(item.sku) ? 'border-primary bg-primary/10' : (activeSku === item.sku ? 'border-primary bg-primary/5' : 'hover:bg-accent/60')"
           :aria-current="activeSku === item.sku ? 'true' : undefined"
           @click="selectLine(item.sku)"
         >
           <button
             type="button"
-            class="grid size-6 shrink-0 place-items-center rounded-md border transition"
+            class="mt-1 grid size-6 shrink-0 place-items-center rounded-md border transition"
             :class="isSelected(item.sku) ? 'border-primary bg-primary text-primary-foreground' : 'border-border text-transparent hover:border-primary/60'"
             :aria-label="`Selecionar ${item.name}`"
             :aria-pressed="isSelected(item.sku)"
@@ -442,79 +457,83 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onWindowKeydown));
           >
             <Icon name="lucide:check" class="size-4" />
           </button>
+
           <div class="min-w-0">
-            <p class="truncate text-sm font-medium leading-tight">{{ item.name }}</p>
-            <p class="text-xs tabular-nums" :class="item.price_overridden ? 'text-primary' : 'text-muted-foreground'">
-              <Icon v-if="item.price_overridden" name="lucide:pencil" class="mr-0.5 inline size-3 align-[-1px]" />{{ item.qty }}× {{ formatBRL(item.price_q) }} · {{ formatBRL(item.qty * item.price_q) }}
-            </p>
+            <!-- faixa 1 — o que é, e quanto custa -->
+            <div class="flex items-baseline gap-2">
+              <p class="min-w-0 flex-1 truncate text-sm font-medium leading-tight">{{ item.name }}</p>
+              <strong class="shrink-0 text-sm font-semibold tabular-nums leading-tight">{{ formatBRL(item.qty * item.price_q) }}</strong>
+            </div>
+
             <p v-if="item.notes" class="flex items-center gap-1 truncate text-xs italic text-muted-foreground">
               <Icon name="lucide:sticky-note" class="size-3 shrink-0" />
               <span class="truncate">{{ item.notes }}</span>
             </p>
-            <!-- OS SELOS EM UMA LINHA SÓ. Eram três blocos empilhados — desconto
-                 automático, desconto manual, estado da cozinha —, cada um
-                 abrindo uma linha nova debaixo do nome. Com dois deles a linha do
-                 carrinho virava seis andares e o nome do produto truncava para
-                 caber, que é exatamente o que ficou horroroso quando os badges de
-                 status entraram. Agora eles fluem lado a lado e quebram só quando
-                 precisam: o nome recupera a largura, e a linha volta a ter altura
-                 de linha. -->
-            <div
-              v-if="pricingDiscountBadge(item) || (item.discount && item.discount.value > 0) || lineKitchenState(item) !== 'unfired'"
-              class="mt-1 flex flex-wrap items-center gap-1"
-            >
-              <span
-                v-if="pricingDiscountBadge(item)"
-                class="inline-flex items-center gap-1 rounded-full bg-primary/10 px-2 py-0.5 text-xs font-medium text-primary"
-                :title="`Desconto automático: ${pricingDiscountBadge(item)}`"
-              >
-                <Icon name="lucide:tags" class="size-3 shrink-0" />
-                {{ pricingDiscountBadge(item) }}
-              </span>
-              <span
-                v-if="item.discount && item.discount.value > 0"
-                class="inline-flex items-center gap-1 rounded-full bg-primary/10 px-2 py-0.5 text-xs font-medium text-primary"
-                :title="`Desconto: ${item.discount.reason}`"
-              >
-                <Icon name="lucide:tag" class="size-3 shrink-0" />
-                −{{ item.discount.value }}%
-              </span>
-              <button
-                v-if="lineKitchenState(item) === 'fired_cancellable'"
-                type="button"
-                class="group inline-flex items-center gap-1 whitespace-nowrap rounded-full bg-muted px-2 py-0.5 text-xs font-medium text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive"
-                :disabled="firing"
-                :aria-label="`${unfireAction.label}: ${item.name}`"
-                @click.stop="$emit('unfire', item.line_id || '')"
-              >
-                <Icon name="lucide:flame" class="size-3 shrink-0 group-hover:hidden" />
-                <Icon name="lucide:x" class="hidden size-3 shrink-0 group-hover:inline" />
-                {{ kitchenBadge(item).label }}
-              </button>
-              <span
-                v-else-if="lineKitchenState(item) === 'fired'"
-                class="inline-flex items-center gap-1 whitespace-nowrap rounded-full px-2 py-0.5 text-xs font-medium"
-                :class="badgeTone(kitchenBadge(item).tone)"
-                aria-live="polite"
-              >
-                <Icon :name="badgeIcon(kitchenBadge(item).tone)" class="size-3 shrink-0" />
-                {{ kitchenBadge(item).label }}
-              </span>
+
+            <!-- faixa 2 — unitário e selos à esquerda, controles à direita -->
+            <div class="flex items-center gap-2">
+              <div class="flex min-w-0 flex-1 flex-wrap items-center gap-1">
+                <span
+                  v-if="item.qty > 1 || item.price_overridden"
+                  class="text-xs tabular-nums"
+                  :class="item.price_overridden ? 'text-primary' : 'text-muted-foreground'"
+                >
+                  <Icon v-if="item.price_overridden" name="lucide:pencil" class="mr-0.5 inline size-3 align-[-1px]" />{{ formatBRL(item.price_q) }} cada
+                </span>
+                <span
+                  v-if="pricingDiscountBadge(item)"
+                  class="inline-flex items-center gap-1 rounded-full bg-primary/10 px-2 py-0.5 text-xs font-medium text-primary"
+                  :title="`Desconto automático: ${pricingDiscountBadge(item)}`"
+                >
+                  <Icon name="lucide:tags" class="size-3 shrink-0" />
+                  {{ pricingDiscountBadge(item) }}
+                </span>
+                <span
+                  v-if="item.discount && item.discount.value > 0"
+                  class="inline-flex items-center gap-1 rounded-full bg-primary/10 px-2 py-0.5 text-xs font-medium text-primary"
+                  :title="`Desconto: ${item.discount.reason}`"
+                >
+                  <Icon name="lucide:tag" class="size-3 shrink-0" />
+                  −{{ item.discount.value }}%
+                </span>
+                <button
+                  v-if="lineKitchenState(item) === 'fired_cancellable'"
+                  type="button"
+                  class="group inline-flex items-center gap-1 whitespace-nowrap rounded-full bg-muted px-2 py-0.5 text-xs font-medium text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive"
+                  :disabled="firing"
+                  :aria-label="`${unfireAction.label}: ${item.name}`"
+                  @click.stop="$emit('unfire', item.line_id || '')"
+                >
+                  <Icon name="lucide:flame" class="size-3 shrink-0 group-hover:hidden" />
+                  <Icon name="lucide:x" class="hidden size-3 shrink-0 group-hover:inline" />
+                  {{ kitchenBadge(item).label }}
+                </button>
+                <span
+                  v-else-if="lineKitchenState(item) === 'fired'"
+                  class="inline-flex items-center gap-1 whitespace-nowrap rounded-full px-2 py-0.5 text-xs font-medium"
+                  :class="badgeTone(kitchenBadge(item).tone)"
+                  aria-live="polite"
+                >
+                  <Icon :name="badgeIcon(kitchenBadge(item).tone)" class="size-3 shrink-0" />
+                  {{ kitchenBadge(item).label }}
+                </span>
+              </div>
+
+              <!-- Alvos de toque de balcão: steppers em icon-sm (36px), e a lixeira
+                   APARTADA deles, para o dedo apressado não remover querendo "menos 1". -->
+              <div class="flex shrink-0 items-center gap-1" @click.stop>
+                <UiButton variant="ghost" size="icon-sm" aria-label="Diminuir" @click="bump(item.sku, 'decrement')">
+                  <Icon name="lucide:minus" class="size-4" />
+                </UiButton>
+                <span class="w-6 text-center text-sm font-semibold tabular-nums">{{ item.qty }}</span>
+                <UiButton variant="ghost" size="icon-sm" aria-label="Aumentar" @click="bump(item.sku, 'increment')">
+                  <Icon name="lucide:plus" class="size-4" />
+                </UiButton>
+                <UiButton variant="ghost" size="icon-sm" class="ml-2" aria-label="Remover" @click="askRemove(item.sku)">
+                  <Icon name="lucide:trash-2" class="size-4 text-destructive" />
+                </UiButton>
+              </div>
             </div>
-          </div>
-          <!-- Alvos de toque de balcão: steppers em icon-sm (36px), e a lixeira
-               APARTADA deles, para o dedo apressado não remover querendo "menos 1". -->
-          <div class="flex items-center gap-1" @click.stop>
-            <UiButton variant="ghost" size="icon-sm" aria-label="Diminuir" @click="bump(item.sku, 'decrement')">
-              <Icon name="lucide:minus" class="size-4" />
-            </UiButton>
-            <span class="w-6 text-center text-sm font-semibold tabular-nums">{{ item.qty }}</span>
-            <UiButton variant="ghost" size="icon-sm" aria-label="Aumentar" @click="bump(item.sku, 'increment')">
-              <Icon name="lucide:plus" class="size-4" />
-            </UiButton>
-            <UiButton variant="ghost" size="icon-sm" class="ml-2" aria-label="Remover" @click="askRemove(item.sku)">
-              <Icon name="lucide:trash-2" class="size-4 text-destructive" />
-            </UiButton>
           </div>
         </li>
       </ul>

@@ -104,14 +104,21 @@ describe("PosPaymentWorkspace — instrumento de pagamento", () => {
 });
 
 describe("PosPaymentWorkspace — seções semânticas da coluna de trabalho", () => {
-  it("a coluna é só INSTRUMENTO: forma de pagamento e nota fiscal", async () => {
-    // Cliente, recebimento e desconto saíram daqui para a barra de contexto do
-    // topo: são fatos da venda, decididos antes e revisados de relance, e aqui
-    // empurravam a Nota fiscal para baixo da dobra — as perguntas que se faz com
-    // o cliente na frente. Odoo e Square fazem o mesmo corte.
+  it("a coluna de trabalho é só INSTRUMENTO: forma de pagamento e nota fiscal", async () => {
+    // Cliente, recebimento e desconto saíram daqui: são fatos da venda,
+    // decididos antes e revisados de relance, e aqui empurravam a Nota fiscal
+    // para baixo da dobra — as perguntas que se faz com o cliente na frente.
+    // Odoo e Square fazem o mesmo corte. Eles agora moram na COLUNA DE CONTEXTO
+    // (uma terceira coluna, a partir de `xl`), então a checagem é por coluna e
+    // não pela tela inteira: o que não pode voltar é o instrumento acumular.
     const wrapper = await mountSuspended(PosPaymentWorkspace, { props: props() });
-    const sections = wrapper.findAll("section[aria-label]").map((s) => s.attributes("aria-label"));
-    expect(sections).toEqual(["Forma de pagamento"]);
+    const instrument = wrapper.find(".order-2");
+    const inInstrument = instrument.findAll("section[aria-label]").map((s) => s.attributes("aria-label"));
+    expect(inInstrument).toEqual(["Forma de pagamento"]);
+
+    const context = wrapper.find(".order-3");
+    const inContext = context.findAll("section[aria-label]").map((s) => s.attributes("aria-label"));
+    expect(inContext).toEqual(["Contexto da venda", "Resumo do pedido"]);
   });
 
   it("o troco-para da entrega mora na forma de pagamento e avisa quando não cobre o total", async () => {
@@ -271,7 +278,98 @@ describe("PosPaymentWorkspace — total interino (sem review)", () => {
     const wrapper = await mountSuspended(PosPaymentWorkspace, {
       props: props({ review: null, paymentTotalQ: 900 }), // itens brutos = 1000
     });
-    expect(wrapper.text()).toContain(formatBRL(900));
-    expect(wrapper.text()).not.toContain(formatBRL(1000));
+    // O que não pode acontecer é o HERO somar os itens por conta própria. O
+    // valor bruto aparecer noutro lugar da tela é legítimo — o resumo do pedido
+    // lista a linha pelo preço dela —, então a negativa é sobre o hero, não
+    // sobre a tela inteira.
+    const hero = wrapper.find('[aria-label="Total a cobrar"]');
+    expect(hero.text()).toContain(formatBRL(900));
+    expect(hero.text()).not.toContain(formatBRL(1000));
+  });
+});
+
+describe("PosPaymentWorkspace — a coluna de contexto", () => {
+  it("o RESUMO DO PEDIDO lista o que está sendo cobrado, item a item", async () => {
+    // O checkout mostrava um total e mais nada. O operador saía da tela de venda,
+    // onde via a lista, e chegava numa tela onde a lista não existe — justo
+    // quando o cliente pergunta "por que deu isso?".
+    const wrapper = await mountSuspended(PosPaymentWorkspace, {
+      props: props({
+        items: [
+          { sku: "CROISSANT", name: "Croissant Tradicional", qty: 2, price_q: 1300, notes: "" },
+          { sku: "PAO", name: "Pão", qty: 1, price_q: 500, notes: "" },
+        ],
+      }),
+    });
+    const summary = wrapper.find('section[aria-label="Resumo do pedido"]');
+    const text = summary.text();
+    expect(text).toContain("Croissant Tradicional");
+    expect(text).toContain(formatBRL(2600));
+    expect(text).toContain("Pão");
+    expect(text).toContain(formatBRL(500));
+    expect(text).toContain("3 itens");
+  });
+
+  it("sem nada lançado, o resumo diz isso em vez de ficar em branco", async () => {
+    const wrapper = await mountSuspended(PosPaymentWorkspace, { props: props({ items: [] }) });
+    expect(wrapper.find('section[aria-label="Resumo do pedido"]').text()).toContain("Nada lançado");
+  });
+
+  it("subtotal, desconto e taxa só aparecem quando existem", async () => {
+    // Subtotal sozinho ao lado de um total igual a ele é uma linha que não
+    // informa nada — a decomposição existe para explicar uma diferença.
+    const plain = await mountSuspended(PosPaymentWorkspace, { props: props() });
+    expect(plain.find('section[aria-label="Resumo do pedido"] dl').exists()).toBe(false);
+
+    const wrapper = await mountSuspended(PosPaymentWorkspace, {
+      props: props({
+        review: review({
+          subtotal_q: 5100,
+          subtotal_display: formatBRL(5100),
+          discount_q: 510,
+          discount_display: formatBRL(510),
+          delivery_fee_q: 800,
+          delivery_fee_display: formatBRL(800),
+          total_q: 5390,
+          total_display: formatBRL(5390),
+        }),
+      }),
+    });
+    const dl = wrapper.find('section[aria-label="Resumo do pedido"] dl');
+    expect(dl.exists()).toBe(true);
+    expect(dl.text()).toContain(formatBRL(5100));
+    expect(dl.text()).toContain(formatBRL(510));
+    expect(dl.text()).toContain(formatBRL(800));
+  });
+
+  it("os três fatos da venda existem UMA vez por largura: chip ou coluna, nunca os dois", async () => {
+    // Mesma lista (`contextEntries`) em duas formas. Se as duas aparecessem
+    // juntas, o operador teria dois botões "Cliente" na mesma tela — por isso a
+    // linha de chips é `xl:hidden` e a coluna é `hidden xl:flex`.
+    const wrapper = await mountSuspended(PosPaymentWorkspace, {
+      props: props({ discountTypes: [{ ref: "percent", label: "Percentual" }] }),
+    });
+    const chips = wrapper.find("div.xl\\:hidden");
+    const column = wrapper.find(".order-3");
+    expect(chips.exists()).toBe(true);
+    expect(column.classes()).toContain("hidden");
+    expect(column.classes()).toContain("xl:flex");
+
+    const keys = column.findAll("[data-context-entry]").map((el) => el.attributes("data-context-entry"));
+    expect(keys).toEqual(["customer", "fulfillment", "discount"]);
+  });
+
+  it("clicar no cliente da coluna abre o mesmo modal que o chip abre", async () => {
+    const wrapper = await mountSuspended(PosPaymentWorkspace, { props: props() });
+    const column = wrapper.find(".order-3");
+    await column.find('[data-context-entry="customer"]').trigger("click");
+    // O diálogo é teleportado para fora do componente (portal do UiDialog), então
+    // quem o vê é o documento, não o wrapper.
+    expect(document.body.textContent).toContain("Busque por nome, telefone, CPF ou e-mail");
+  });
+
+  it("sem tipo de desconto configurado, a entrada de desconto não existe em nenhuma das formas", async () => {
+    const wrapper = await mountSuspended(PosPaymentWorkspace, { props: props({ discountTypes: [] }) });
+    expect(wrapper.findAll('[data-context-entry="discount"]')).toHaveLength(0);
   });
 });
