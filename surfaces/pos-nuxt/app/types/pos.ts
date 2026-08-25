@@ -448,6 +448,10 @@ export interface POSCartItem {
   line_id?: string;
   fired?: boolean;
   discount?: { value: number; reason: string };
+  /** Desconto AUTOMÁTICO de pricing que venceu a linha (lote/liquidação, happy
+   *  hour, funcionário), carimbado pelo kernel e exposto pelo payload da
+   *  comanda. Informativo: o `price_q` da linha já vem reduzido. */
+  pricing_discount?: { type: string; label: string; amount_q: number; percent: number } | null;
   /** Operator overrode the unit price (numpad "Preço"): the kernel freezes it and
    *  the server review requires manager approval. Survives persist→reload. */
   price_overridden?: boolean;

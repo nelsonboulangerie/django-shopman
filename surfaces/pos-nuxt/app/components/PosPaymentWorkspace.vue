@@ -37,6 +37,7 @@ import {
   paymentIcon,
   tenderLineView,
 } from "~/presentation/payment";
+import { saleDiscountBadges } from "~/presentation/lineDiscounts";
 
 const props = defineProps<{
   tabDisplay: string;
@@ -238,6 +239,11 @@ const discountSummary = computed(() =>
   props.discountType === "fixed" ? `R$ ${props.discountValue}` : `${props.discountValue}%`,
 );
 const customerSet = computed(() => Boolean(props.customerName.trim() || props.customerPhone.trim()));
+
+// Transparência de desconto no resumo: uma pílula por linha com desconto
+// (automático de pricing ou manual), mesmo idioma da tela do cliente. É o que
+// explica um total menor que a etiqueta sem o operador ter feito nada.
+const discountBadges = computed(() => saleDiscountBadges(props.items, props.discountReasons));
 
 // Kitchen clarity: tell the operator, unequivocally, what finalizing will do
 // vs what was already fired — so it's never a mystery whether food was sent.
@@ -500,6 +506,18 @@ defineExpose({
             <Icon name="lucide:flame" class="size-3.5 shrink-0" :class="firedCount ? 'text-primary' : ''" />
             {{ kitchenNote }}
           </p>
+          <!-- descontos por linha (lote/happy hour/funcionário/manual): o total
+               menor que a etiqueta se explica aqui, discreto -->
+          <div v-if="discountBadges.length" class="mt-2 flex max-w-xl flex-wrap justify-center gap-1.5">
+            <span
+              v-for="row in discountBadges"
+              :key="row.sku"
+              class="inline-flex items-center gap-1 rounded-full bg-primary/10 px-2 py-0.5 text-xs font-medium text-primary"
+            >
+              <Icon name="lucide:tags" class="size-3" />
+              {{ row.name }} · {{ row.badge }}
+            </span>
+          </div>
         </div>
 
         <!-- avisos não-bloqueantes da review (nunca impedem finalizar) -->

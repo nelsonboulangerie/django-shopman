@@ -1989,6 +1989,40 @@ def _tab_payload_line_discount(item: dict) -> dict | None:
     return {"value": value, "reason": manual.get("reason", "cortesia")}
 
 
+# Descontos AUTOMÁTICOS de pricing que os modifiers carimbam por linha em
+# ``meta._disc`` (mecanismo ``_stamp_disc``). Manual fica de fora (já viaja em
+# ``discount``); cupom/promoção de pedido é order-level, não selo de linha.
+_AUTO_PRICING_DISCOUNT_TYPES = frozenset({"lot_discount", "happy_hour", "employee_discount"})
+
+
+def _tab_payload_pricing_discount(item: dict) -> dict | None:
+    """O desconto automático que venceu a linha (lote, happy hour, funcionário).
+
+    O kernel baixa ``unit_price_q`` e carimba tipo, valor por unidade e RÓTULO
+    de cliente em ``meta._disc`` — mas o PDV não mostrava nada: o operador via
+    R$ 11,05 num produto etiquetado R$ 13,00 sem saber dizer por quê (o caso
+    Batard). ``percent`` sai do preço de lista carimbado (``meta._list_q``);
+    zero quando o percentual não fecha limpo (a tela cai no valor em R$).
+    """
+    meta = item.get("meta") or {}
+    disc = meta.get("_disc") or {}
+    if disc.get("type") not in _AUTO_PRICING_DISCOUNT_TYPES:
+        return None
+    amount_q = _int_q(disc.get("amount_q"))
+    if amount_q <= 0:
+        return None
+    list_q = _int_q(meta.get("_list_q"))
+    percent = 0
+    if list_q > 0 and (amount_q * 100) % list_q == 0:
+        percent = amount_q * 100 // list_q
+    return {
+        "type": str(disc.get("type")),
+        "label": str(disc.get("label") or "Desconto"),
+        "amount_q": amount_q,
+        "percent": percent,
+    }
+
+
 def _manual_discount_originals(session: Session) -> dict[str, int]:
     """Map ``sku -> pre-discount unit price`` for manual per-line discounts.
 
@@ -2059,6 +2093,7 @@ def build_open_tab(session: Session) -> dict:
             "notes": (item.get("meta") or {}).get("notes", ""),
             "fired": item.get("line_id", "") in fired_lines,
             "discount": _tab_payload_line_discount(item),
+            "pricing_discount": _tab_payload_pricing_discount(item),
             "price_overridden": bool((item.get("meta") or {}).get("price_overridden")),
         }
         for item in (session.items or [])

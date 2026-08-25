@@ -6,6 +6,7 @@ import { globalKeysBlocked } from "~/utils/keyboardGuard";
 import { clampPercent, clampQty, popDigit, pushDigit } from "~/presentation/numpad";
 import { fireBarView, kitchenLineState } from "~/presentation/kitchen";
 import { pruneSelection, selectionView, toggleSelected } from "~/presentation/selection";
+import { pricingDiscountBadge } from "~/presentation/lineDiscounts";
 import { toast } from "vue-sonner";
 
 const props = defineProps<{
@@ -431,6 +432,16 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onWindowKeydown));
               <Icon name="lucide:sticky-note" class="size-3 shrink-0" />
               <span class="truncate">{{ item.notes }}</span>
             </p>
+            <!-- Desconto automático de pricing (lote/liquidação, happy hour,
+                 funcionário): o preço da linha JÁ vem reduzido; o badge diz por quê. -->
+            <span
+              v-if="pricingDiscountBadge(item)"
+              class="mt-0.5 inline-flex w-fit items-center gap-1 rounded-full bg-primary/10 px-2 py-0.5 text-xs font-medium text-primary"
+              :title="`Desconto automático: ${pricingDiscountBadge(item)}`"
+            >
+              <Icon name="lucide:tags" class="size-3" />
+              {{ pricingDiscountBadge(item) }}
+            </span>
             <span
               v-if="item.discount && item.discount.value > 0"
               class="mt-0.5 inline-flex w-fit items-center gap-1 rounded-full bg-primary/10 px-2 py-0.5 text-xs font-medium text-primary"
