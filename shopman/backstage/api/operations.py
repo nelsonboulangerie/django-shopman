@@ -273,7 +273,7 @@ def _pos_sale_review_payload(review) -> dict:
         "manager_approval_threshold_q": review.manager_approval_threshold_q,
         "approval_reasons": list(review.approval_reasons),
         "receipt_channels": list(review.receipt_channels),
-        "issue_fiscal_document": review.issue_fiscal_document,
+        "fiscal_tax_id_requested": review.fiscal_tax_id_requested,
         "warnings": list(review.warnings),
         # Entrega: a taxa vem RESOLVIDA (com a origem, para a tela se explicar) e
         # os horários vêm do expediente do dia. A tela pergunta; não inventa.

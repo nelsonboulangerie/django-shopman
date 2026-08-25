@@ -71,7 +71,6 @@ function props(overrides: Record<string, unknown> = {}) {
     deliveryFeeInput: "",
     changeForInput: "",
     orderNotes: "",
-    issueFiscalDocument: false,
     receiptChannels: [],
     receiptEmail: "",
     loading: false,

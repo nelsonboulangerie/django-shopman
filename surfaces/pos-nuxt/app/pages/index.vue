@@ -586,7 +586,6 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onGlobalKeydown));
         :delivery-date-effective="deliveryDateEffective"
         v-model:change-for-input="cart.changeForInput"
         v-model:order-notes="cart.orderNotes"
-        v-model:issue-fiscal-document="cart.issueFiscalDocument"
         v-model:receipt-channels="cart.receiptChannels"
         v-model:receipt-email="cart.receiptEmail"
         :managers="pos?.managers || []"

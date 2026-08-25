@@ -104,7 +104,6 @@ const props = defineProps<{
   /** "Troco para quanto?" do dinheiro na entrega (entrada livre em reais). */
   changeForInput: string;
   orderNotes: string;
-  issueFiscalDocument: boolean;
   receiptChannels: string[];
   receiptEmail: string;
   loading: boolean;
@@ -145,7 +144,6 @@ const emit = defineEmits<{
   "update:deliveryFeeOverride": [boolean];
   "update:changeForInput": [string];
   "update:orderNotes": [string];
-  "update:issueFiscalDocument": [boolean];
   "update:receiptChannels": [string[]];
   "update:receiptEmail": [string];
   back: [];
@@ -265,6 +263,21 @@ const cashSelected = computed(() => props.selectedTenderMethod === "cash");
 const slotPlaceholder = computed(() => {
   if (props.deliverySlots.length) return "A combinar";
   return props.deliverySlotsPending ? "Preencha o endereço" : "Sem janela neste dia";
+});
+
+// O CPF de volta na tela, formatado e por INTEIRO. Mostrar só o rabo do número
+// não responde a pergunta que o cliente faz — ele quer saber se o documento DELE
+// entrou. Quem digitou está com o cliente na frente; esconder metade não protege
+// ninguém e deixa os dois no escuro.
+const taxIdEcho = computed(() => {
+  const digits = props.customerTaxId.replace(/\D/g, "");
+  if (digits.length === 11) {
+    return `Sai na nota: CPF ${digits.slice(0, 3)}.${digits.slice(3, 6)}.${digits.slice(6, 9)}-${digits.slice(9)}`;
+  }
+  if (digits.length === 14) {
+    return `Sai na nota: CNPJ ${digits.slice(0, 2)}.${digits.slice(2, 5)}.${digits.slice(5, 8)}/${digits.slice(8, 12)}-${digits.slice(12)}`;
+  }
+  return "Documento incompleto — a nota sai sem CPF.";
 });
 
 const deliveryFeeNote = computed(() => {
@@ -608,24 +621,14 @@ defineExpose({
              leitura. -->
         <section v-if="supportsFiscalDocument" class="grid gap-1.5" aria-label="Nota e comprovante">
           <h3 class="px-1 text-xs font-medium uppercase tracking-wide text-muted-foreground">Nota e comprovante</h3>
-          <button
-            type="button"
-            class="flex h-11 items-center justify-between gap-2 rounded-md border bg-card px-3 text-sm font-medium transition hover:bg-accent active:translate-y-px"
-            :class="issueFiscalDocument ? 'border-primary bg-primary/5' : ''"
-            :aria-pressed="issueFiscalDocument"
-            @click="$emit('update:issueFiscalDocument', !issueFiscalDocument)"
-          >
-            <span class="flex items-center gap-2">
-              <Icon name="lucide:receipt-text" class="size-4 text-muted-foreground" />
-              Emitir nota fiscal
-            </span>
-            <Icon :name="issueFiscalDocument ? 'lucide:check' : 'lucide:minus'" class="size-4 shrink-0" />
-          </button>
-          <!-- O CPF só aparece com a nota ligada porque é dela que ele é: o
-               documento vale para ESTA venda (`fiscal.tax_id`), não é etiqueta
-               permanente do cadastro. -->
+          <!-- NÃO há toggle "emitir nota". Quem decide é a regra do servidor
+               (forma de pagamento, liquidação diferida, pedido do consumidor) —
+               emitir ou não nunca foi opinião de quem está no caixa. E o toggle
+               não era só ruído de tela: com ele desligado, o CPF digitado não
+               chegava à nota, e ela saía "consumidor não identificado" com o
+               cliente certo de que tinha posto o documento.
+               O balcão pergunta uma coisa só: "CPF na nota?". Digitar É o pedido. -->
           <UiInput
-            v-if="issueFiscalDocument"
             :model-value="customerTaxId"
             inputmode="numeric"
             class="h-11"
@@ -633,6 +636,12 @@ defineExpose({
             aria-label="CPF na nota"
             @update:model-value="$emit('update:customerTaxId', String($event || ''))"
           />
+          <!-- Eco do documento: o operador lê de volta o que vai sair na nota e
+               diz ao cliente. Sem isto, "pôs meu CPF?" não tem resposta na tela. -->
+          <p v-if="customerTaxId.trim()" class="flex items-center gap-1.5 px-1 text-xs text-muted-foreground">
+            <Icon name="lucide:receipt-text" class="size-3.5 shrink-0" />
+            {{ taxIdEcho }}
+          </p>
           <!-- MULTI: imprimir E enviar não competem. "Sem comprovante" é nenhum
                canal marcado, não um terceiro botão. -->
           <div class="grid grid-cols-2 gap-1.5">
@@ -934,7 +943,6 @@ defineExpose({
     :search-busy="searchBusy"
     :lookup-busy="lookupBusy"
     :resolved-new="customerResolvedNew"
-    :issue-fiscal-document="issueFiscalDocument"
     :receipt-channels="receiptChannels"
     :receipt-channel-options="receiptChannelOptions"
     :receipt-email="receiptEmail"
@@ -942,7 +950,6 @@ defineExpose({
     @update:customer-phone="$emit('update:customerPhone', $event)"
     @update:customer-tax-id="$emit('update:customerTaxId', $event)"
     @update:customer-email="$emit('update:customerEmail', $event)"
-    @update:issue-fiscal-document="$emit('update:issueFiscalDocument', $event)"
     @update:receipt-channels="$emit('update:receiptChannels', $event)"
     @update:receipt-email="$emit('update:receiptEmail', $event)"
     @search="$emit('search', $event)"

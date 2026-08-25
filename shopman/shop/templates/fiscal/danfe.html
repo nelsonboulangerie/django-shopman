@@ -132,8 +132,15 @@
 
     <hr class="rule" />
     <div class="center">
+      {# O CPF é o que identifica o consumidor na nota — e é a resposta para
+         "o meu CPF entrou?". Nome só quando houver nome de gente. #}
       <div class="muted" style="font-size:11px">
-        Consumidor: {{ d.customer_name|default:"não identificado" }}
+        {% if d.customer_tax_id_display %}
+          Consumidor: CPF {{ d.customer_tax_id_display }}
+          {% if d.customer_name %}<br />{{ d.customer_name }}{% endif %}
+        {% else %}
+          Consumidor não identificado
+        {% endif %}
       </div>
       {% if d.number %}<div class="muted" style="font-size:11px">NFC-e nº {{ d.number }} · série {{ d.series }}</div>{% endif %}
       {% if d.protocol %}<div class="muted" style="font-size:11px">Protocolo de autorização: {{ d.protocol }}</div>{% endif %}

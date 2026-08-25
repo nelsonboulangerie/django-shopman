@@ -37,7 +37,6 @@ _ALLOWED_TOP_LEVEL_KEYS = {
     "payment_tenders",
     "tendered_amount_q",
     "change_for_q",
-    "issue_fiscal_document",
     "receipt_channels",
     "receipt_email",
     "client_request_id",
@@ -201,7 +200,9 @@ def parse_pos_sale_intent(raw: dict, *, for_commit: bool = True) -> PosSaleInten
         else None
     )
 
-    payload["issue_fiscal_document"] = bool(payload.get("issue_fiscal_document"))
+    # `issue_fiscal_document` SAIU: emitir ou não é decisão da regra
+    # (`SHOPMAN_FISCAL_EMISSION_RESOLVER`), nunca do balcão. O único sinal que
+    # vem daqui é o CPF pedido para esta venda — ver `pos.build_session_ops`.
     # A porta "fiscal com taxa de entrega" mudou de lugar, não de regra: agora
     # que a taxa é RESOLVIDA (e não digitada), só quem resolveu sabe se ela
     # existe. Ela vive em `pos._validate_fiscal_delivery_fee`, junto da

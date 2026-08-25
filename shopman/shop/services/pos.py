@@ -68,7 +68,8 @@ class PosSaleReview:
     requires_manager_approval: bool
     manager_approval_threshold_q: int
     receipt_channels: tuple[str, ...]
-    issue_fiscal_document: bool
+    #: Vai sair nota com CPF? (o consumidor pediu o documento nesta venda)
+    fiscal_tax_id_requested: bool
     # POR QUE o gerente foi chamado. O servidor conhece os gatilhos
     # (teto de desconto, preço alterado); sem publicá-los
     # a tela chutava "descontos acima de R$ X" mesmo quando o gatilho tinha sido
@@ -672,7 +673,7 @@ def review_sale(
         requires_manager_approval=bool(approval_reasons),
         manager_approval_threshold_q=threshold_q,
         receipt_channels=tuple(payload.get("receipt_channels") or ()),
-        issue_fiscal_document=bool(payload.get("issue_fiscal_document")),
+        fiscal_tax_id_requested=bool(str(payload.get("customer_tax_id") or "").strip()),
         approval_reasons=tuple(approval_reasons),
         warnings=tuple(warnings),
         delivery_fee_source=delivery.source,
@@ -1396,6 +1397,11 @@ def build_session_ops(payload: dict, operator_username: str) -> list[dict]:
     customer_name = str(payload.get("customer_name", "") or "").strip()
     customer_phone = str(payload.get("customer_phone", "") or "").strip()
     customer_tax_id = str(payload.get("customer_tax_id", "") or "").strip()
+    # O documento que o OPERADOR digitou nesta venda, antes de qualquer preenchimento
+    # vindo do cadastro. É ele — e só ele — que vira o CPF da nota: ter CPF no CRM
+    # não é pedir CPF na nota, e a linha logo abaixo mistura os dois de propósito
+    # (para o CRM). Guardar aqui é o que mantém as duas perguntas separadas.
+    requested_tax_id = customer_tax_id
     customer_email = str(payload.get("customer_email", "") or "").strip()
     if not customer_email and "email" in (payload.get("receipt_channels") or []):
         customer_email = str(payload.get("receipt_email", "") or "").strip()
@@ -1499,15 +1505,19 @@ def build_session_ops(payload: dict, operator_username: str) -> list[dict]:
     if cash_received_q > 0:
         ops.append({"op": "set_data", "path": "payment.cash_received_q", "value": cash_received_q})
 
-    issue_fiscal_document = bool(payload.get("issue_fiscal_document"))
-    ops.append({"op": "set_data", "path": "fiscal.issue_document", "value": issue_fiscal_document})
-    # CPF NA NOTA é um PEDIDO, não uma propriedade do cadastro: o documento só
-    # entra no bloco fiscal quando o operador marcou "emitir nota fiscal". Sem o
-    # gate, cliente identificado com CPF no cadastro saía com CPF em TODA nota —
-    # compulsório, sem ninguém pedir. Identidade (customer.tax_id) continua
-    # gravada para o CRM; o fiscal lê só daqui.
-    if issue_fiscal_document and customer_tax_id:
-        ops.append({"op": "set_data", "path": "fiscal.tax_id", "value": customer_tax_id})
+    # EMITIR OU NÃO NÃO É ESCOLHA DE QUEM ESTÁ NO CAIXA. Havia um toggle "Emitir
+    # nota fiscal" na tela, e ele não era só ruído: como o CPF só virava
+    # `fiscal.tax_id` quando o toggle estava ligado, um operador que digitava o
+    # CPF com o toggle desligado via a nota sair mesmo assim (o resolver emite
+    # por forma de pagamento) e sair como CONSUMIDOR NÃO IDENTIFICADO. Duas
+    # chaves para uma intenção, discordando em silêncio, com o cliente achando
+    # que tinha CPF na nota.
+    #
+    # Quem decide é a REGRA (`SHOPMAN_FISCAL_EMISSION_RESOLVER`): forma de
+    # pagamento, liquidação diferida, e o pedido do consumidor. O único sinal que
+    # vem do balcão é este: pedir CPF na nota. Digitar o documento É o pedido.
+    if requested_tax_id:
+        ops.append({"op": "set_data", "path": "fiscal.tax_id", "value": requested_tax_id})
 
     receipt_channels = list(payload.get("receipt_channels") or [])
     receipt_email = str(payload.get("receipt_email", "") or "").strip()
@@ -2077,7 +2087,7 @@ def _validate_fiscal_delivery_fee(payload: dict) -> None:
     mora aqui, ao lado da resolução, em vez de olhar para um campo que o PDV
     não preenche mais.
     """
-    if not payload.get("issue_fiscal_document"):
+    if not str(payload.get("customer_tax_id") or "").strip():
         return
     if _resolve_delivery_fee(payload).fee_q <= 0:
         return
@@ -3022,7 +3032,9 @@ def _remember_fiscal_prefs(customer, payload: dict) -> None:
     de cadastro (Admin), não efeito colateral de uma venda. O PDV lê isto na
     lookup projection e pré-seta o toggle fiscal / o canal de e-mail.
     """
-    wants_fiscal = bool(payload.get("issue_fiscal_document"))
+    # "Pediu CPF na nota" agora se lê do próprio documento pedido — não há mais
+    # toggle para marcar, e nunca houve intenção separada dele.
+    wants_fiscal = bool(str(payload.get("customer_tax_id") or "").strip())
     wants_email = "email" in (payload.get("receipt_channels") or [])
     if not (wants_fiscal or wants_email):
         return

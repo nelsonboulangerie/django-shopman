@@ -117,3 +117,41 @@ def test_pagamento_misto_nao_sai_em_ingles_no_documento(db):
         data={"payment": {"method": "mixed"}, "nfce_access_key": "4126079999999900019165001000001234287654321"},
     )
     assert build_danfe("WEB-3").payment_label == "Pagamento misto"
+
+
+def test_o_cpf_pedido_aparece_na_nota_inteiro_e_formatado(db):
+    """Achado do balcão: "coloquei CPF na nota e saiu um número parcial".
+
+    A linha do consumidor mostrava o NOME do cadastro — e o PDV batiza quem só
+    deu CPF como "Cliente Doc 6789" (os quatro últimos dígitos). Quem pediu CPF
+    lia um pedaço do próprio documento onde deveria estar o nome, e não tinha
+    como saber se o CPF entrou na nota. Agora o documento aparece inteiro e
+    formatado, que é a resposta para a pergunta que o cliente faz.
+    """
+    Shop.objects.create(name="Nelson")
+    Order.objects.create(
+        ref="WEB-CPF", channel_ref="pdv", session_key="kcpf", status="completed", total_q=1000,
+        data={
+            "customer": {"name": "Cliente Doc 4725"},   # apelido interno do CRM
+            "fiscal": {"tax_id": "52998224725"},
+            "nfce_access_key": "41260799999999000191650010000012342876543210",
+        },
+    )
+
+    d = build_danfe("WEB-CPF")
+
+    assert d.customer_tax_id_display == "529.982.247-25"
+    assert d.customer_name == ""   # apelido de cadastro não vai para documento
+
+
+def test_sem_documento_a_nota_diz_nao_identificado(db):
+    Shop.objects.create(name="Nelson")
+    Order.objects.create(
+        ref="WEB-SEMCPF", channel_ref="pdv", session_key="ksem", status="completed", total_q=1000,
+        data={"customer": {"name": "Ana Souza"}, "nfce_access_key": "4126079999999900019165001000001234287654321"},
+    )
+
+    d = build_danfe("WEB-SEMCPF")
+
+    assert d.customer_tax_id_display == ""
+    assert d.customer_name == "Ana Souza"   # nome de gente continua valendo

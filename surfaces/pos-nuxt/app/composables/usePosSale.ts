@@ -252,7 +252,6 @@ export function usePosSale(deps: PosSaleDeps) {
     tenderedAmountInput: "",
     /** "Troco para quanto?" do dinheiro na entrega (entrada livre, "50" / "50,00"). */
     changeForInput: "",
-    issueFiscalDocument: false,
     receiptChannels: [] as string[],
     receiptEmail: "",
     discountType: "percent" as "percent" | "fixed",
@@ -660,7 +659,6 @@ export function usePosSale(deps: PosSaleDeps) {
     selectedTenderIndex.value = -1;
     cart.tenderedAmountInput = "";
     cart.changeForInput = "";
-    cart.issueFiscalDocument = false;
     cart.receiptChannels = [];
     cart.receiptEmail = "";
     cart.discountType = "percent";
@@ -724,7 +722,7 @@ export function usePosSale(deps: PosSaleDeps) {
       selectedTenderIndex.value = -1;
       cart.tenderedAmountInput = payload.tendered_amount_q ? (Number(payload.tendered_amount_q) / 100).toFixed(2).replace(".", ",") : "";
       cart.changeForInput = "";
-      cart.issueFiscalDocument = !!payload.issue_fiscal_document;
+      cart.customerTaxId = cart.customerTaxId || String(payload.fiscal_tax_id || "");
       cart.receiptChannels = [...(payload.receipt_channels || [])];
       cart.receiptEmail = payload.receipt_email || "";
       cart.discountType = "percent";
@@ -874,7 +872,6 @@ export function usePosSale(deps: PosSaleDeps) {
       changeForQ: cart.fulfillmentType === "delivery" && cart.paymentCollection === "on_delivery"
         ? moneyInputToQ(cart.changeForInput)
         : 0,
-      issueFiscalDocument: cart.issueFiscalDocument,
       receiptChannels: cart.receiptChannels,
       receiptEmail: cart.receiptEmail || cart.customerEmail,
       manualDiscount,
@@ -933,7 +930,6 @@ export function usePosSale(deps: PosSaleDeps) {
       // O cliente que já optou uma vez chega com o checkout PRÉ-MARCADO — e o
       // operador pode desmarcar nesta venda ("hoje não"): pré-marcar não é impor.
       const prefs = response.customer.fiscal_prefs || {};
-      if (prefs.cpf_na_nota) cart.issueFiscalDocument = true;
       if (prefs.email_receipt && !cart.receiptChannels.includes("email")) {
         cart.receiptChannels = [...cart.receiptChannels, "email"];
       }
@@ -993,7 +989,6 @@ export function usePosSale(deps: PosSaleDeps) {
       // O cliente que já optou uma vez chega com o checkout PRÉ-MARCADO — e o
       // operador pode desmarcar nesta venda ("hoje não"): pré-marcar não é impor.
       const prefs = response.customer.fiscal_prefs || {};
-      if (prefs.cpf_na_nota) cart.issueFiscalDocument = true;
       if (prefs.email_receipt && !cart.receiptChannels.includes("email")) {
         cart.receiptChannels = [...cart.receiptChannels, "email"];
       }

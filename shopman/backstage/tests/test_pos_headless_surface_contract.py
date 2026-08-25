@@ -283,12 +283,12 @@ class POSHeadlessSurfaceContractTests(TestCase):
     def test_close_reports_fiscal_expected_for_card_sale_without_the_toggle(self) -> None:
         """Venda eletrônica emite sem o operador marcar nada — e o balcão precisa saber.
 
-        O botão da DANFE seguia ``issue_fiscal_document`` (a intenção). Com o
+        O botão da DANFE seguia o toggle do operador (a intenção). Com o
         resolver de produção, cartão e pix emitem por forma de pagamento: a nota
         nasce sem ninguém marcar nada, e o balcão não tinha como chegar nela.
         Agora quem responde é a mesma regra que decide emitir.
         """
-        closed = self._close_sale_for_fiscal(payment_method="card", issue_fiscal_document=False)
+        closed = self._close_sale_for_fiscal(payment_method="card")
 
         self.assertTrue(closed["fiscal_expected"])
 
@@ -301,11 +301,11 @@ class POSHeadlessSurfaceContractTests(TestCase):
     )
     def test_close_reports_no_fiscal_for_cash_sale_without_the_toggle(self) -> None:
         """Controle positivo: dinheiro sem CPF não emite, e o botão não aparece."""
-        closed = self._close_sale_for_fiscal(payment_method="cash", issue_fiscal_document=False)
+        closed = self._close_sale_for_fiscal(payment_method="cash")
 
         self.assertFalse(closed["fiscal_expected"])
 
-    def _close_sale_for_fiscal(self, *, payment_method: str, issue_fiscal_document: bool) -> dict:
+    def _close_sale_for_fiscal(self, *, payment_method: str) -> dict:
         # O pool fiscal é um singleton de módulo e cacheia os backends na
         # primeira chamada. Sem o reset, um teste anterior que rodou com
         # SHOPMAN_FISCAL_ADAPTER=None deixa a lista vazia em cache e o
@@ -326,8 +326,7 @@ class POSHeadlessSurfaceContractTests(TestCase):
             "fulfillment_type": "pickup",
             "payment_method": payment_method,
             "payment_collection": "terminal",
-            "issue_fiscal_document": issue_fiscal_document,
-            "client_request_id": f"pos-fiscal-{payment_method}-{int(issue_fiscal_document)}",
+            "client_request_id": f"pos-fiscal-{payment_method}",
         }
         response = self.client.post(
             "/api/v1/backstage/pos/sale/close/",

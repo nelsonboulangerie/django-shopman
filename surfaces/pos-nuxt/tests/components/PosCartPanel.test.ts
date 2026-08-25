@@ -66,11 +66,19 @@ describe("PosCartPanel — interações emitem os comandos certos", () => {
     expect(wrapper.emitted("remove")).toBeUndefined();
   });
 
-  it("'Diminuir' na última unidade de linha NÃO disparada remove direto (Desfazer no toast)", async () => {
+  it("'Diminuir' na última unidade PERGUNTA antes de remover", async () => {
+    // Já removeu direto (com Desfazer no toast) e o balcão discordou: o gesto
+    // que mais remove é zerar a quantidade, e ali ninguém teve intenção de
+    // excluir — o item sumia e o operador procurava um toast que já passou.
     const wrapper = await mountSuspended(PosCartPanel, { props: props() });
-    // PAO é a 1ª linha, qty 1, ainda não foi à cozinha → sem modal, remove já.
     await wrapper.findAll('[aria-label="Diminuir"]')[0]!.trigger("click");
+
     expect(wrapper.emitted("decrement")).toBeUndefined();
+    expect(wrapper.emitted("remove")).toBeUndefined();
+    const confirm = Array.from(document.querySelectorAll("button")).find((b) => b.textContent?.includes("Remover item"));
+    expect(confirm).toBeTruthy();
+    (confirm as HTMLElement).click();
+    await wrapper.vm.$nextTick();
     expect(wrapper.emitted("remove")?.[0]).toEqual(["PAO"]);
   });
 

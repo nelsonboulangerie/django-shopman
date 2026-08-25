@@ -105,7 +105,8 @@ export function buildPosSaleIntent(
     fulfillment_type: state.fulfillmentType,
     payment_method: state.paymentMethod,
     payment_collection: state.paymentCollection,
-    issue_fiscal_document: state.issueFiscalDocument,
+    // Emitir ou não NÃO sobe daqui: é decisão da regra no servidor. O sinal do
+    // balcão é o CPF pedido, que já viaja em `customer_tax_id`.
     receipt_channels: state.receiptChannels || [],
     client_request_id: state.clientRequestId,
   };

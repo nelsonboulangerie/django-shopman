@@ -55,7 +55,7 @@ def test_payload_da_emissao_usa_o_documento_do_pedido():
     assert customer["name"] == "Ana"            # identidade continua
 
 
-def test_sale_ops_gate_cpf_na_nota_pelo_toggle():
+def test_o_cpf_digitado_e_o_pedido_o_do_cadastro_nao():
     from shopman.shop.models import Channel, Shop
 
     Shop.objects.create(name="T", brand_name="T")
@@ -71,14 +71,51 @@ def test_sale_ops_gate_cpf_na_nota_pelo_toggle():
         "payment_collection": "terminal",
         "receipt_channels": [],
     }
-    sem_toggle = build_session_ops({**base, "issue_fiscal_document": False}, "op")
-    com_toggle = build_session_ops({**base, "issue_fiscal_document": True}, "op")
+    # O toggle "Emitir nota fiscal" MORREU: emitir ou não é decisão da regra do
+    # servidor, não de quem está no caixa. E ele era pior que ruído — com o
+    # toggle desligado o CPF digitado não virava `fiscal.tax_id`, a nota saía
+    # assim mesmo (o resolver emite por forma de pagamento) e saía como
+    # CONSUMIDOR NÃO IDENTIFICADO. Agora digitar o documento É o pedido.
+    com_cpf = build_session_ops(base, "op")
+    paths_com = {op.get("path") for op in com_cpf}
+    assert "customer.tax_id" in paths_com      # identidade (CRM)
+    assert "fiscal.tax_id" in paths_com        # e o pedido desta venda
 
-    paths_sem = {op.get("path") for op in sem_toggle}
-    paths_com = {op.get("path") for op in com_toggle}
-    assert "customer.tax_id" in paths_sem      # identidade sempre (CRM)
-    assert "fiscal.tax_id" not in paths_sem    # pedido NÃO — ninguém pediu
-    assert "fiscal.tax_id" in paths_com        # pedido SIM — o toggle é o pedido
+    sem_cpf = build_session_ops({**base, "customer_tax_id": ""}, "op")
+    assert "fiscal.tax_id" not in {op.get("path") for op in sem_cpf}
+
+
+def test_cpf_que_vem_so_do_cadastro_nao_entra_na_nota(db):
+    """A invariante que o #306 estabeleceu, agora sem toggle para protegê-la.
+
+    Cliente com CPF no CRM, venda em que ninguém pediu documento: o balcão manda
+    só o telefone, o servidor completa a identidade pelo cadastro — e essa
+    completação NÃO pode virar pedido. Sem esta separação, todo cliente
+    identificado volta a sair com o documento em toda nota, compulsório.
+    """
+    from shopman.guestman.models import Customer
+
+    from shopman.shop.models import Channel, Shop
+    from shopman.shop.services.pos import build_session_ops
+
+    Shop.objects.create(name="T", brand_name="T")
+    Channel.objects.create(ref="pdv", name="PDV", is_active=True, config={})
+    Customer.objects.create(
+        ref=Customer.generate_ref(), first_name="Rita", last_name="CRM",
+        phone="+5543999990009", document="52998224725",
+    )
+
+    ops = build_session_ops({
+        "items": [{"sku": "X", "name": "X", "qty": 1, "unit_price_q": 100}],
+        "customer_phone": "43999990009",   # só o telefone; ninguém pediu CPF
+        "payment_method": "cash",
+        "payment_collection": "terminal",
+        "receipt_channels": [],
+    }, "op")
+
+    paths = {op.get("path") for op in ops}
+    assert "customer.tax_id" in paths       # o CRM sabe quem é
+    assert "fiscal.tax_id" not in paths     # a nota, não
 
 
 def test_cliente_que_optou_fica_lembrado_e_pre_marca_a_proxima():
@@ -95,7 +132,7 @@ def test_cliente_que_optou_fica_lembrado_e_pre_marca_a_proxima():
         {
             "customer_name": "Ana Prefs",
             "customer_phone": "43999990001",
-            "issue_fiscal_document": True,
+            "customer_tax_id": "52998224725",
             "receipt_channels": ["email"],
             "receipt_email": "ana@example.org",
         },
@@ -131,9 +168,9 @@ def test_desmarcar_numa_venda_nao_apaga_a_preferencia():
     Channel.objects.create(ref="pdv", name="PDV", is_active=True, config={})
 
     base = {"customer_name": "Bia", "customer_phone": "43999990002"}
-    _persist_customer_from_payload({**base, "issue_fiscal_document": True}, operator_username="op")
-    # "hoje não": venda seguinte sem o toggle
-    _persist_customer_from_payload({**base, "issue_fiscal_document": False}, operator_username="op")
+    _persist_customer_from_payload({**base, "customer_tax_id": "52998224725"}, operator_username="op")
+    # "hoje não": venda seguinte sem pedir o documento
+    _persist_customer_from_payload({**base, "customer_tax_id": ""}, operator_username="op")
 
     customer = Customer.objects.get(phone="+5543999990002")
     assert customer.metadata["fiscal_prefs"]["cpf_na_nota"] is True

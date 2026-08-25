@@ -981,7 +981,6 @@ def _pos_actions() -> tuple[Action, ...]:
                     "payment_collection",
                     "payment_tenders",
                     "tendered_amount_q",
-                    "issue_fiscal_document",
                     "receipt_channels",
                     "receipt_email",
                     "manual_discount",
@@ -1391,14 +1390,6 @@ def _checkout_contract(
             capability_ref="cash_change",
         ),
         POSCheckoutFieldProjection(
-            ref="issue_fiscal_document",
-            payload_key="issue_fiscal_document",
-            section_ref="receipt",
-            label="Emitir fiscal",
-            input_type="boolean",
-            capability_ref="fiscal_document",
-        ),
-        POSCheckoutFieldProjection(
             ref="receipt_channels",
             payload_key="receipt_channels",
             section_ref="receipt",
@@ -1464,7 +1455,7 @@ def _checkout_contract(
             ref="receipt",
             label="Fiscal e comprovante",
             description="Dados opcionais para fiscal e comprovante.",
-            field_refs=("issue_fiscal_document", "receipt_channels", "receipt_email"),
+            field_refs=("receipt_channels", "receipt_email"),
         ),
         POSCheckoutSectionProjection(
             ref="approval",
@@ -2062,7 +2053,15 @@ def _tab_payload_line_discount(item: dict) -> dict | None:
 # Descontos AUTOMÁTICOS de pricing que os modifiers carimbam por linha em
 # ``meta._disc`` (mecanismo ``_stamp_disc``). Manual fica de fora (já viaja em
 # ``discount``); cupom/promoção de pedido é order-level, não selo de linha.
-_AUTO_PRICING_DISCOUNT_TYPES = frozenset({"lot_discount", "happy_hour", "employee_discount"})
+#: Descontos que o KERNEL aplicou sozinho — o operador não os escolheu e precisa
+#: saber explicá-los ao cliente. ``promotion`` e ``coupon`` estavam de FORA, e é
+#: por isso que o caso que originou este badge nunca o mostrou: o Batard a R$ 11,05
+#: vem da promoção "Semana do Pão" (`type="promotion"`), não de desconto de lote.
+#: O rótulo sempre esteve no dado (`meta._disc.label`); morria neste filtro.
+#: ``manual`` fica fora de propósito: tem badge próprio, com o motivo digitado.
+_AUTO_PRICING_DISCOUNT_TYPES = frozenset({
+    "lot_discount", "happy_hour", "employee_discount", "promotion", "coupon",
+})
 
 
 def _tab_payload_pricing_discount(item: dict) -> dict | None:
@@ -2199,7 +2198,9 @@ def build_open_tab(session: Session) -> dict:
         "payment_tenders": _tab_payload_payment_tenders(payment),
         "tendered_amount_q": "",
         "client_request_id": data.get("client_request_id", (data.get("pos") or {}).get("client_request_id", "")),
-        "issue_fiscal_document": bool(fiscal.get("issue_document")),
+        # A comanda retomada devolve o CPF PEDIDO, não um toggle: é ele que faz
+        # a nota sair identificada.
+        "fiscal_tax_id": str(fiscal.get("tax_id") or ""),
         "receipt_channels": list(receipt.get("channels") or []),
         "receipt_email": receipt.get("email", ""),
         "discount_type": discount.get("type", "percent"),
