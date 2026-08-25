@@ -96,7 +96,7 @@ function onNewSale() {
       <h2 class="text-3xl font-semibold tracking-tight">{{ title }}</h2>
       <p class="text-sm text-muted-foreground">
         Pedido <span class="font-mono">{{ result.orderRef }}</span>
-        <template v-if="result.receipt.tabDisplay"> · comanda {{ result.receipt.tabDisplay }}</template>
+        <template v-if="result.receipt.tabDisplay"> · Comanda {{ result.receipt.tabDisplay }}</template>
         · {{ result.receipt.totalDisplay }}
       </p>
     </div>
@@ -118,45 +118,12 @@ function onNewSale() {
       class="w-full max-w-md text-left"
     />
 
-    <!-- Verbos secundários — os mesmos handlers de sempre (agente do balcão). -->
-    <div class="flex flex-wrap items-center justify-center gap-2">
-      <UiButton variant="outline" size="sm" class="gap-1.5" :disabled="printingReceipt" @click="emit('printReceipt')">
-        <Icon name="lucide:printer" class="size-4" />
-        Imprimir recibo
-      </UiButton>
-      <UiButton
-        v-if="result.fiscalExpected"
-        variant="outline" size="sm" class="gap-1.5"
-        :disabled="printingDanfe"
-        @click="emit('printDanfe')"
-      >
-        <Icon name="lucide:receipt-text" class="size-4" />
-        DANFE
-      </UiButton>
-      <a
-        v-if="result.fiscalExpected && danfePreviewUrl"
-        class="text-xs font-medium text-muted-foreground underline underline-offset-4 hover:text-foreground"
-        :href="danfePreviewUrl"
-        target="_blank" rel="noopener"
-      >
-        Prévia da nota
-      </a>
-      <a class="text-sm font-medium underline underline-offset-4" :href="result.nextUrl">Abrir no gestor</a>
-      <!-- Cancelar é EXCEÇÃO, não fluxo: entrada discreta que abre a
-           confirmação destrutiva com desafio de PIN gerencial. -->
-      <UiButton
-        v-if="canCancel"
-        variant="ghost"
-        size="sm"
-        class="text-muted-foreground hover:text-destructive"
-        @click="emit('cancelSale')"
-      >
-        Cancelar venda
-      </UiButton>
-    </div>
-
-    <!-- CTA dominante -->
-    <div class="grid justify-items-center gap-2">
+    <!-- Hierarquia única de ações (mesma disciplina do checkout): UM CTA
+         primário; secundárias como botões UNIFORMES do mesmo peso; terciárias
+         discretas porém alinhadas no mesmo grupo — nada de botão e link soltos
+         disputando a mesma linha. Os handlers são os de sempre (agente do balcão). -->
+    <div class="grid justify-items-center gap-3">
+      <!-- CTA dominante -->
       <UiButton size="lg" class="h-14 min-w-64 gap-2 text-base" @click="onNewSale">
         {{ pixPending ? "Nova venda mesmo assim" : "Nova venda" }}
         <kbd class="rounded border border-primary-foreground/30 bg-transparent px-1.5 py-0.5 font-mono text-xs font-medium opacity-80" aria-hidden="true">F2</kbd>
@@ -168,6 +135,54 @@ function onNewSale() {
         O PIX segue aguardando: ao sair, ele vira um aviso no topo até confirmar.
       </p>
       <p v-else-if="enterHint" class="text-xs text-muted-foreground">Enter também avança.</p>
+
+      <!-- Secundárias: mesmo peso, mesmo tamanho -->
+      <div class="flex flex-wrap items-center justify-center gap-2">
+        <UiButton variant="outline" size="sm" class="gap-1.5" :disabled="printingReceipt" @click="emit('printReceipt')">
+          <Icon name="lucide:printer" class="size-4" />
+          Imprimir recibo
+        </UiButton>
+        <UiButton
+          v-if="result.fiscalExpected"
+          variant="outline" size="sm" class="gap-1.5"
+          :disabled="printingDanfe"
+          @click="emit('printDanfe')"
+        >
+          <Icon name="lucide:receipt-text" class="size-4" />
+          DANFE
+        </UiButton>
+        <UiButton variant="outline" size="sm" class="gap-1.5" :href="result.nextUrl">
+          <Icon name="lucide:external-link" class="size-4" />
+          Abrir no gestor
+        </UiButton>
+      </div>
+
+      <!-- Terciárias: discretas, alinhadas num único grupo -->
+      <div class="flex flex-wrap items-center justify-center gap-2">
+        <UiButton
+          v-if="result.fiscalExpected && danfePreviewUrl"
+          variant="ghost"
+          size="sm"
+          class="gap-1.5 text-muted-foreground hover:text-foreground"
+          :href="danfePreviewUrl"
+          target="_blank" rel="noopener"
+        >
+          <Icon name="lucide:eye" class="size-4" />
+          Prévia da nota
+        </UiButton>
+        <!-- Cancelar é EXCEÇÃO, não fluxo: entrada discreta que abre a
+             confirmação destrutiva com desafio de PIN gerencial. -->
+        <UiButton
+          v-if="canCancel"
+          variant="ghost"
+          size="sm"
+          class="gap-1.5 text-muted-foreground hover:text-destructive"
+          @click="emit('cancelSale')"
+        >
+          <Icon name="lucide:undo-2" class="size-4" />
+          Cancelar venda
+        </UiButton>
+      </div>
     </div>
   </section>
 </template>
