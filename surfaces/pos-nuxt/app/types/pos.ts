@@ -543,6 +543,9 @@ export interface POSIntentCartState {
   customerRef: string;
   customerPhone: string;
   customerTaxId: string;
+  /** O CPF PEDIDO para a nota DESTA venda. O cadastro empresta o valor
+   *  inicial; editar aqui não volta para o cadastro. */
+  invoiceTaxId: string;
   customerEmail: string;
   customerMemoryAction: string;
   fulfillmentType: "pickup" | "delivery";

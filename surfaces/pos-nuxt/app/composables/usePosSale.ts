@@ -230,6 +230,9 @@ export function usePosSale(deps: PosSaleDeps) {
     customerRef: "",
     customerPhone: "",
     customerTaxId: "",
+    invoiceTaxId: "",
+    /** "CPF na nota?" — pergunta do cliente, lembrada por `fiscal_prefs`. */
+    wantsCpfOnInvoice: false,
     customerEmail: "",
     customerMemoryAction: "",
     fulfillmentType: "pickup" as FulfillmentType,
@@ -641,6 +644,8 @@ export function usePosSale(deps: PosSaleDeps) {
     cart.customerRef = "";
     cart.customerPhone = "";
     cart.customerTaxId = "";
+    cart.invoiceTaxId = "";
+    cart.wantsCpfOnInvoice = false;
     cart.customerEmail = "";
     cart.customerMemoryAction = "";
     cart.deliveryAddress = "";
@@ -722,7 +727,7 @@ export function usePosSale(deps: PosSaleDeps) {
       selectedTenderIndex.value = -1;
       cart.tenderedAmountInput = payload.tendered_amount_q ? (Number(payload.tendered_amount_q) / 100).toFixed(2).replace(".", ",") : "";
       cart.changeForInput = "";
-      cart.customerTaxId = cart.customerTaxId || String(payload.fiscal_tax_id || "");
+      cart.invoiceTaxId = cart.invoiceTaxId || String(payload.fiscal_tax_id || "");
       cart.receiptChannels = [...(payload.receipt_channels || [])];
       cart.receiptEmail = payload.receipt_email || "";
       cart.discountType = "percent";
@@ -854,6 +859,9 @@ export function usePosSale(deps: PosSaleDeps) {
       customerRef: cart.customerRef,
       customerPhone: cart.customerPhone,
       customerTaxId: cart.customerTaxId,
+      // O switch é que decide se o documento viaja. Desligado, o valor fica
+      // guardado na tela (religar devolve) mas NÃO vai para a nota.
+      invoiceTaxId: cart.wantsCpfOnInvoice ? cart.invoiceTaxId : "",
       customerEmail: cart.customerEmail,
       customerMemoryAction: cart.customerMemoryAction,
       fulfillmentType: cart.fulfillmentType,
@@ -928,8 +936,12 @@ export function usePosSale(deps: PosSaleDeps) {
       // pode pedir outro CPF nesta venda sem tocar no cadastro.
       cart.customerTaxId = cart.customerTaxId || response.customer.tax_id || "";
       // O cliente que já optou uma vez chega com o checkout PRÉ-MARCADO — e o
-      // operador pode desmarcar nesta venda ("hoje não"): pré-marcar não é impor.
+      // operador pode desligar nesta venda ("hoje não"): pré-marcar não é impor.
+      // O CPF do cadastro entra como DEFAULT do campo da nota; o switch é que
+      // decide se ele viaja.
       const prefs = response.customer.fiscal_prefs || {};
+      cart.invoiceTaxId = cart.invoiceTaxId || response.customer.tax_id || "";
+      if (prefs.cpf_na_nota) cart.wantsCpfOnInvoice = true;
       if (prefs.email_receipt && !cart.receiptChannels.includes("email")) {
         cart.receiptChannels = [...cart.receiptChannels, "email"];
       }
@@ -987,8 +999,12 @@ export function usePosSale(deps: PosSaleDeps) {
       // pode pedir outro CPF nesta venda sem tocar no cadastro.
       cart.customerTaxId = cart.customerTaxId || response.customer.tax_id || "";
       // O cliente que já optou uma vez chega com o checkout PRÉ-MARCADO — e o
-      // operador pode desmarcar nesta venda ("hoje não"): pré-marcar não é impor.
+      // operador pode desligar nesta venda ("hoje não"): pré-marcar não é impor.
+      // O CPF do cadastro entra como DEFAULT do campo da nota; o switch é que
+      // decide se ele viaja.
       const prefs = response.customer.fiscal_prefs || {};
+      cart.invoiceTaxId = cart.invoiceTaxId || response.customer.tax_id || "";
+      if (prefs.cpf_na_nota) cart.wantsCpfOnInvoice = true;
       if (prefs.email_receipt && !cart.receiptChannels.includes("email")) {
         cart.receiptChannels = [...cart.receiptChannels, "email"];
       }
@@ -1068,6 +1084,8 @@ export function usePosSale(deps: PosSaleDeps) {
     cart.customerPhone = "";
     cart.customerEmail = "";
     cart.customerTaxId = "";
+    cart.invoiceTaxId = "";
+    cart.wantsCpfOnInvoice = false;
     cart.customerMemoryAction = "";
     customerLookup.value = null;
     customerSearchResults.value = [];
@@ -1308,6 +1326,9 @@ export function usePosSale(deps: PosSaleDeps) {
           // o troco computado voltaria a zero. Uma fonte só: a tela de
           // resultado do operador e a tela do cliente leem daqui.
           changeQ: Math.max(0, paymentChangeQ.value),
+          // Congelado pelo mesmo motivo do troco: o `resetCart` logo abaixo
+          // apaga os canais, e a nota autoriza depois — segundos ou minutos.
+          wantsPrintedInvoice: cart.receiptChannels.includes("print"),
         };
         // PIX pendente → polla até confirmar; outros métodos já saem resolvidos.
         if (proof?.isPix && proof?.hasProof) {

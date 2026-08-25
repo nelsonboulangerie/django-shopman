@@ -969,6 +969,7 @@ def _pos_actions() -> tuple[Action, ...]:
                     "customer_name",
                     "customer_phone",
                     "customer_tax_id",
+                    "fiscal_tax_id",
                     "customer_email",
                     "customer_memory_action",
                     "fulfillment_type",
@@ -1390,6 +1391,18 @@ def _checkout_contract(
             capability_ref="cash_change",
         ),
         POSCheckoutFieldProjection(
+            ref="fiscal_tax_id",
+            payload_key="fiscal_tax_id",
+            section_ref="receipt",
+            # "CPF na nota?" — pergunta do CONSUMIDOR, transmitida pelo operador.
+            # Não confundir com `customer_tax_id`, que é identidade de cadastro:
+            # o cadastro empresta o valor inicial, a edição aqui vale só na venda.
+            label="CPF na nota",
+            input_type="text",
+            max_length=20,
+            capability_ref="fiscal_document",
+        ),
+        POSCheckoutFieldProjection(
             ref="receipt_channels",
             payload_key="receipt_channels",
             section_ref="receipt",
@@ -1455,7 +1468,7 @@ def _checkout_contract(
             ref="receipt",
             label="Fiscal e comprovante",
             description="Dados opcionais para fiscal e comprovante.",
-            field_refs=("receipt_channels", "receipt_email"),
+            field_refs=("fiscal_tax_id", "receipt_channels", "receipt_email"),
         ),
         POSCheckoutSectionProjection(
             ref="approval",

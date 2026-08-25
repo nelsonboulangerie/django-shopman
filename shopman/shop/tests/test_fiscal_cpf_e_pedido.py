@@ -55,7 +55,7 @@ def test_payload_da_emissao_usa_o_documento_do_pedido():
     assert customer["name"] == "Ana"            # identidade continua
 
 
-def test_o_cpf_digitado_e_o_pedido_o_do_cadastro_nao():
+def test_o_cpf_da_nota_tem_campo_proprio_o_do_cadastro_nao_entra():
     from shopman.shop.models import Channel, Shop
 
     Shop.objects.create(name="T", brand_name="T")
@@ -76,12 +76,12 @@ def test_o_cpf_digitado_e_o_pedido_o_do_cadastro_nao():
     # toggle desligado o CPF digitado não virava `fiscal.tax_id`, a nota saía
     # assim mesmo (o resolver emite por forma de pagamento) e saía como
     # CONSUMIDOR NÃO IDENTIFICADO. Agora digitar o documento É o pedido.
-    com_cpf = build_session_ops(base, "op")
+    com_cpf = build_session_ops({**base, "fiscal_tax_id": "52998224725"}, "op")
     paths_com = {op.get("path") for op in com_cpf}
     assert "customer.tax_id" in paths_com      # identidade (CRM)
     assert "fiscal.tax_id" in paths_com        # e o pedido desta venda
 
-    sem_cpf = build_session_ops({**base, "customer_tax_id": ""}, "op")
+    sem_cpf = build_session_ops(base, "op")  # cadastro tem CPF, ninguém pediu
     assert "fiscal.tax_id" not in {op.get("path") for op in sem_cpf}
 
 
@@ -132,7 +132,7 @@ def test_cliente_que_optou_fica_lembrado_e_pre_marca_a_proxima():
         {
             "customer_name": "Ana Prefs",
             "customer_phone": "43999990001",
-            "customer_tax_id": "52998224725",
+            "fiscal_tax_id": "52998224725",
             "receipt_channels": ["email"],
             "receipt_email": "ana@example.org",
         },
@@ -168,9 +168,97 @@ def test_desmarcar_numa_venda_nao_apaga_a_preferencia():
     Channel.objects.create(ref="pdv", name="PDV", is_active=True, config={})
 
     base = {"customer_name": "Bia", "customer_phone": "43999990002"}
-    _persist_customer_from_payload({**base, "customer_tax_id": "52998224725"}, operator_username="op")
+    _persist_customer_from_payload({**base, "fiscal_tax_id": "52998224725"}, operator_username="op")
     # "hoje não": venda seguinte sem pedir o documento
-    _persist_customer_from_payload({**base, "customer_tax_id": ""}, operator_username="op")
+    _persist_customer_from_payload({**base, "fiscal_tax_id": ""}, operator_username="op")
 
     customer = Customer.objects.get(phone="+5543999990002")
     assert customer.metadata["fiscal_prefs"]["cpf_na_nota"] is True
+
+
+def test_cadastro_sem_cpf_APRENDE_o_cpf_pedido_na_nota(db):
+    """Campo vazio aprende; campo preenchido não muda.
+
+    É o que faz o pré-preenchimento existir: o cliente dá o CPF uma vez e na
+    próxima venda ele já vem no campo da nota. Não confundir com sobrescrever —
+    ``_merge_pos_customer_fields`` só completa lacuna.
+    """
+    from shopman.guestman.models import Customer
+
+    from shopman.shop.models import Channel, Shop
+    from shopman.shop.services.pos import _persist_customer_from_payload
+
+    Shop.objects.create(name="T", brand_name="T")
+    Channel.objects.create(ref="pdv", name="PDV", is_active=True, config={})
+    Customer.objects.create(
+        ref=Customer.generate_ref(), first_name="Rita", last_name="Sem Doc",
+        phone="+5543999990011",
+    )
+
+    _persist_customer_from_payload(
+        {"customer_phone": "43999990011", "fiscal_tax_id": "52998224725"},
+        operator_username="op",
+    )
+
+    assert Customer.objects.get(phone="+5543999990011").document == "52998224725"
+
+
+def test_cpf_da_nota_nao_rouba_a_venda_de_quem_ja_foi_identificado(db):
+    """O cliente pede a nota no CPF da esposa; a venda continua sendo dele.
+
+    Com o telefone já identificando alguém, deixar o documento da nota resolver
+    mandaria para a esposa os PONTOS e o histórico, e traria a FAIXA DE PREÇO e
+    as RESTRIÇÕES ALIMENTARES dela para um pedido que não é dela — duas
+    identificações discordando, com a silenciosa vencendo.
+    """
+    from shopman.guestman.models import Customer
+
+    from shopman.shop.models import Channel, Shop
+    from shopman.shop.services.pos import _persist_customer_from_payload
+
+    Shop.objects.create(name="T", brand_name="T")
+    Channel.objects.create(ref="pdv", name="PDV", is_active=True, config={})
+    esposa = Customer.objects.create(
+        ref=Customer.generate_ref(), first_name="Bia", last_name="Esposa",
+        phone="+5543999990022", document="52998224725",
+    )
+    marido = Customer.objects.create(
+        ref=Customer.generate_ref(), first_name="Caio", last_name="Marido",
+        phone="+5543999990033",
+    )
+
+    resolvido = _persist_customer_from_payload(
+        {"customer_phone": "43999990033", "fiscal_tax_id": "52998224725"},
+        operator_username="op",
+    )
+
+    assert resolvido["ref"] == marido.ref
+    assert resolvido["ref"] != esposa.ref
+
+
+def test_sem_ninguem_identificado_o_cpf_da_nota_resolve(db):
+    """A outra metade da regra, e a razão de ela ser condicional.
+
+    Cliente anônimo que só pede "põe no CPF tal": esse documento é a ÚNICA
+    identidade que existe. Ignorá-lo criaria um cadastro duplicado a cada venda
+    de quem só quer nota — que é a maioria delas.
+    """
+    from shopman.guestman.models import Customer
+
+    from shopman.shop.models import Channel, Shop
+    from shopman.shop.services.pos import _persist_customer_from_payload
+
+    Shop.objects.create(name="T", brand_name="T")
+    Channel.objects.create(ref="pdv", name="PDV", is_active=True, config={})
+    ja_existe = Customer.objects.create(
+        ref=Customer.generate_ref(), first_name="Bia", last_name="Cliente",
+        phone="+5543999990044", document="52998224725",
+    )
+
+    resolvido = _persist_customer_from_payload(
+        {"fiscal_tax_id": "52998224725"},   # só o CPF da nota, mais nada
+        operator_username="op",
+    )
+
+    assert resolvido["ref"] == ja_existe.ref
+    assert Customer.objects.count() == 1   # não duplicou

@@ -79,6 +79,9 @@ const props = defineProps<{
   customerName: string;
   customerPhone: string;
   customerTaxId: string;
+  /** O CPF PEDIDO para a nota desta venda (o cadastro empresta o inicial). */
+  invoiceTaxId: string;
+  wantsCpfOnInvoice: boolean;
   customerEmail: string;
   deliveryAddress: string;
   deliveryAddressStructured: StructuredAddressProjection;
@@ -131,6 +134,8 @@ const emit = defineEmits<{
   "update:customerName": [string];
   "update:customerPhone": [string];
   "update:customerTaxId": [string];
+  "update:invoiceTaxId": [string];
+  "update:wantsCpfOnInvoice": [boolean];
   "update:customerEmail": [string];
   "update:deliveryAddress": [string];
   "update:deliveryAddressStructured": [StructuredAddressProjection];
@@ -269,16 +274,56 @@ const slotPlaceholder = computed(() => {
 // não responde a pergunta que o cliente faz — ele quer saber se o documento DELE
 // entrou. Quem digitou está com o cliente na frente; esconder metade não protege
 // ninguém e deixa os dois no escuro.
-const taxIdEcho = computed(() => {
-  const digits = props.customerTaxId.replace(/\D/g, "");
+// O documento se lê pontuado enquanto se digita — é assim que a pessoa CONFERE
+// o próprio CPF, em blocos de três. Cru, "52998224725" obriga a contar dígito a
+// dígito, e ninguém confere o que não consegue ler.
+const invoiceTaxIdMasked = computed(() => {
+  const d = props.invoiceTaxId.replace(/\D/g, "").slice(0, 14);
+  if (d.length <= 11) {
+    return d
+      .replace(/^(\d{3})(\d)/, "$1.$2")
+      .replace(/^(\d{3})\.(\d{3})(\d)/, "$1.$2.$3")
+      .replace(/^(\d{3})\.(\d{3})\.(\d{3})(\d)/, "$1.$2.$3-$4");
+  }
+  return d
+    .replace(/^(\d{2})(\d)/, "$1.$2")
+    .replace(/^(\d{2})\.(\d{3})(\d)/, "$1.$2.$3")
+    .replace(/^(\d{2})\.(\d{3})\.(\d{3})(\d)/, "$1.$2.$3/$4")
+    .replace(/^(\d{2})\.(\d{3})\.(\d{3})\/(\d{4})(\d)/, "$1.$2.$3/$4-$5");
+});
+
+const taxIdEcho = computed<{ ok: boolean; text: string }>(() => {
+  const digits = props.invoiceTaxId.replace(/\D/g, "");
   if (digits.length === 11) {
-    return `Sai na nota: CPF ${digits.slice(0, 3)}.${digits.slice(3, 6)}.${digits.slice(6, 9)}-${digits.slice(9)}`;
+    return { ok: true, text: `Sai na nota: CPF ${digits.slice(0, 3)}.${digits.slice(3, 6)}.${digits.slice(6, 9)}-${digits.slice(9)}` };
   }
   if (digits.length === 14) {
-    return `Sai na nota: CNPJ ${digits.slice(0, 2)}.${digits.slice(2, 5)}.${digits.slice(5, 8)}/${digits.slice(8, 12)}-${digits.slice(12)}`;
+    return { ok: true, text: `Sai na nota: CNPJ ${digits.slice(0, 2)}.${digits.slice(2, 5)}.${digits.slice(5, 8)}/${digits.slice(8, 12)}-${digits.slice(12)}` };
   }
-  return "Documento incompleto — a nota sai sem CPF.";
+  if (!digits) return { ok: false, text: "Digite o documento — sem ele a nota sai sem CPF." };
+  return { ok: false, text: "Documento incompleto — a nota sai sem CPF." };
 });
+
+// "Do cadastro" só se o valor ainda É o do cadastro: assim que o operador troca,
+// o aviso some, porque aí não é mais o documento do cliente que está ali.
+const digitsOf = (value: string) => value.replace(/\D/g, "");
+const taxIdIsFromCadastro = computed(
+  () => !!props.customerLookup?.tax_id && digitsOf(props.invoiceTaxId) === digitsOf(props.customerLookup.tax_id),
+);
+const emailIsFromCadastro = computed(
+  () => !!props.customerEmail.trim() && props.receiptEmail.trim().toLowerCase() === props.customerEmail.trim().toLowerCase(),
+);
+
+// Os canais do comprovante são uma LISTA no contrato; na tela são dois switches.
+// Um estado, duas leituras — nada de segundo lugar guardando a mesma verdade.
+const wantsEmailReceipt = computed(() => props.receiptChannels.includes("email"));
+const wantsPrintedReceipt = computed(() => props.receiptChannels.includes("print"));
+function setReceiptChannel(ref: string, on: boolean) {
+  const next = on
+    ? (props.receiptChannels.includes(ref) ? props.receiptChannels : [...props.receiptChannels, ref])
+    : props.receiptChannels.filter((c) => c !== ref);
+  emit("update:receiptChannels", next);
+}
 
 const deliveryFeeNote = computed(() => {
   if (props.deliveryFeeOverride) return "Valor combinado por você para esta entrega.";
@@ -298,14 +343,6 @@ const deliveryFeeNote = computed(() => {
       return "Preencha o endereço para a loja calcular a taxa.";
   }
 });
-// Canais do comprovante são MULTI (imprimir E enviar): cada toque liga/desliga
-// um. Mesma função do modal do Cliente, porque o estado é o mesmo.
-function toggleReceiptChannel(ref: string) {
-  const next = props.receiptChannels.includes(ref)
-    ? props.receiptChannels.filter((c) => c !== ref)
-    : [...props.receiptChannels, ref];
-  emit("update:receiptChannels", next);
-}
 const numpadActive = computed(() => props.selectedTenderIndex >= 0 && props.selectedTenderIndex < props.paymentTenders.length);
 
 // The adaptive live readout under the hero — one line that carries the state the
@@ -611,67 +648,104 @@ defineExpose({
         </section>
 
         <!-- NOTA E COMPROVANTE — a última pergunta do balcão, no lugar em que ela
-             é feita. O roteiro do operador é "qual a forma de pagamento? vai
-             querer CPF na nota? quer impresso ou por e-mail?": as três perguntas
-             se seguem, então as três respostas ficam à mão. Antes só a primeira
-             estava aqui e as outras duas moravam dentro do modal do Cliente —
-             longe do momento, e num lugar que não se abre para um cliente
-             anônimo, que é justamente quem pede CPF na nota. O modal continua
-             mostrando o mesmo bloco: o estado é um só, com dois lugares de
-             leitura. -->
+             é feita. O roteiro é "qual a forma de pagamento? vai querer CPF na
+             nota? quer impressa ou por e-mail?": três perguntas seguidas, três
+             respostas à mão.
+
+             São TRÊS ESTADOS, não três comandos — por isso switch, e não botão
+             com check. E nenhum deles é "emitir ou não": isso é da regra do
+             servidor. Estes três perguntam o que é do CLIENTE, e o operador só
+             transmite. Cada um nasce da preferência dele (`fiscal_prefs`), e o
+             campo que revela vem pré-preenchido do cadastro — editável, valendo
+             só nesta venda. -->
         <section v-if="supportsFiscalDocument" class="grid gap-1.5" aria-label="Nota e comprovante">
           <h3 class="px-1 text-xs font-medium uppercase tracking-wide text-muted-foreground">Nota e comprovante</h3>
-          <!-- NÃO há toggle "emitir nota". Quem decide é a regra do servidor
-               (forma de pagamento, liquidação diferida, pedido do consumidor) —
-               emitir ou não nunca foi opinião de quem está no caixa. E o toggle
-               não era só ruído de tela: com ele desligado, o CPF digitado não
-               chegava à nota, e ela saía "consumidor não identificado" com o
-               cliente certo de que tinha posto o documento.
-               O balcão pergunta uma coisa só: "CPF na nota?". Digitar É o pedido. -->
-          <UiInput
-            :model-value="customerTaxId"
-            inputmode="numeric"
-            class="h-11"
-            placeholder="CPF na nota (opcional)"
-            aria-label="CPF na nota"
-            @update:model-value="$emit('update:customerTaxId', String($event || ''))"
-          />
-          <!-- Eco do documento: o operador lê de volta o que vai sair na nota e
-               diz ao cliente. Sem isto, "pôs meu CPF?" não tem resposta na tela. -->
-          <p v-if="customerTaxId.trim()" class="flex items-center gap-1.5 px-1 text-xs text-muted-foreground">
-            <Icon name="lucide:receipt-text" class="size-3.5 shrink-0" />
-            {{ taxIdEcho }}
-          </p>
-          <!-- MULTI: imprimir E enviar não competem. "Sem comprovante" é nenhum
-               canal marcado, não um terceiro botão. -->
-          <div class="grid grid-cols-2 gap-1.5">
-            <button
-              v-for="channel in receiptChannelOptions"
-              :key="channel.ref"
-              type="button"
-              class="flex h-11 items-center justify-center gap-1.5 rounded-md border bg-card px-2 text-sm font-medium transition hover:bg-accent active:translate-y-px"
-              :class="receiptChannels.includes(channel.ref) ? 'border-primary bg-primary/5' : ''"
-              :aria-pressed="receiptChannels.includes(channel.ref)"
-              @click="toggleReceiptChannel(channel.ref)"
-            >
-              <Icon :name="receiptChannels.includes(channel.ref) ? 'lucide:check' : 'lucide:minus'" class="size-3.5 shrink-0" />
-              <span class="min-w-0 truncate">{{ channel.label }}</span>
-            </button>
+          <div class="divide-y rounded-md border bg-card">
+
+            <!-- 1 · CPF na nota -->
+            <div class="grid gap-2 p-3">
+              <label class="flex cursor-pointer items-center justify-between gap-3">
+                <span class="flex min-w-0 items-center gap-2 text-sm font-medium">
+                  <Icon name="lucide:receipt-text" class="size-4 shrink-0 text-muted-foreground" />
+                  CPF na nota?
+                </span>
+                <UiSwitch
+                  :model-value="wantsCpfOnInvoice"
+                  aria-label="CPF na nota"
+                  @update:model-value="$emit('update:wantsCpfOnInvoice', $event)"
+                />
+              </label>
+              <template v-if="wantsCpfOnInvoice">
+                <UiInput
+                  :model-value="invoiceTaxIdMasked"
+                  inputmode="numeric"
+                  class="h-11 tabular-nums"
+                  placeholder="000.000.000-00"
+                  aria-label="CPF que sai na nota"
+                  @update:model-value="$emit('update:invoiceTaxId', String($event || ''))"
+                />
+                <!-- Eco do documento: o operador lê de volta o que vai sair e diz
+                     ao cliente. Sem isto, "pôs o meu?" não tem resposta na tela. -->
+                <p class="flex items-center gap-1.5 text-xs" :class="taxIdEcho.ok ? 'text-muted-foreground' : 'text-amber-700 dark:text-amber-400'">
+                  <Icon :name="taxIdEcho.ok ? 'lucide:check' : 'lucide:triangle-alert'" class="size-3.5 shrink-0" />
+                  {{ taxIdEcho.text }}
+                </p>
+                <p v-if="taxIdIsFromCadastro" class="text-xs text-muted-foreground">
+                  Do cadastro. Trocar aqui vale só nesta venda.
+                </p>
+              </template>
+            </div>
+
+            <!-- 2 · Nota por e-mail -->
+            <div class="grid gap-2 p-3">
+              <label class="flex cursor-pointer items-center justify-between gap-3">
+                <span class="flex min-w-0 items-center gap-2 text-sm font-medium">
+                  <Icon name="lucide:mail" class="size-4 shrink-0 text-muted-foreground" />
+                  Enviar nota por e-mail?
+                </span>
+                <UiSwitch
+                  :model-value="wantsEmailReceipt"
+                  aria-label="Enviar nota por e-mail"
+                  @update:model-value="setReceiptChannel('email', $event)"
+                />
+              </label>
+              <template v-if="wantsEmailReceipt">
+                <UiInput
+                  :model-value="receiptEmail"
+                  type="email"
+                  class="h-11"
+                  :placeholder="customerEmail || 'cliente@email.com'"
+                  aria-label="E-mail que recebe a nota"
+                  @update:model-value="$emit('update:receiptEmail', String($event || ''))"
+                />
+                <p v-if="!receiptEmail.trim() && customerEmail.trim()" class="text-xs text-muted-foreground">
+                  Sem preencher, vai para <span class="font-medium text-foreground">{{ customerEmail }}</span>.
+                </p>
+                <p v-else-if="emailIsFromCadastro" class="text-xs text-muted-foreground">
+                  Do cadastro. Trocar aqui vale só nesta venda.
+                </p>
+              </template>
+            </div>
+
+            <!-- 3 · Imprimir. Sem campo: a resposta é a bobina. -->
+            <div class="p-3">
+              <label class="flex cursor-pointer items-center justify-between gap-3">
+                <span class="flex min-w-0 items-center gap-2 text-sm font-medium">
+                  <Icon name="lucide:printer" class="size-4 shrink-0 text-muted-foreground" />
+                  Imprimir nota?
+                </span>
+                <UiSwitch
+                  :model-value="wantsPrintedReceipt"
+                  aria-label="Imprimir nota"
+                  @update:model-value="setReceiptChannel('print', $event)"
+                />
+              </label>
+              <p v-if="wantsPrintedReceipt" class="mt-1.5 text-xs text-muted-foreground">
+                Sai sozinha na bobina assim que a nota autorizar.
+              </p>
+            </div>
+
           </div>
-          <label v-if="receiptChannels.includes('email')" class="grid gap-1 text-sm">
-            <span class="sr-only">E-mail do comprovante</span>
-            <UiInput
-              :model-value="receiptEmail"
-              type="email"
-              class="h-11"
-              :placeholder="customerEmail || 'E-mail do comprovante'"
-              aria-label="E-mail do comprovante"
-              @update:model-value="$emit('update:receiptEmail', String($event || ''))"
-            />
-            <span v-if="!receiptEmail.trim() && customerEmail.trim()" class="px-1 text-xs text-muted-foreground">
-              Sem preencher, enviamos para <span class="font-medium text-foreground">{{ customerEmail }}</span>.
-            </span>
-          </label>
         </section>
 
         <!-- Por que o botão está travado. O aviso do gerente sozinho enganava: com
