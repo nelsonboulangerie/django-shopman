@@ -1139,11 +1139,40 @@ def cancel_fired_pos_tab_lines(
     )
 
 
+# A janela do "desfazer venda" do balcão, em minutos. Uma constante só: a
+# projection anuncia (capabilities + `can_cancel` das últimas vendas) e o
+# cancel impõe — dois números divergindo aqui seriam um botão que promete o
+# que o servidor recusa.
+RECENT_SALE_MAX_AGE_MINUTES = 5
+
+
+def _recent_sale_status_allows_cancel(order) -> bool:
+    """Se o STATUS do pedido ainda admite o desfazer do balcão.
+
+    `preparing` entra (venda com fire nasce em preparo) e `completed` só quando
+    o canal declarou completed→cancelled no lifecycle — os mesmos porquês do
+    `cancel_recent_order`, que usa este mesmo predicado.
+    """
+    allowed = (Order.Status.NEW, Order.Status.ACCEPTED, Order.Status.PREPARING)
+    return order.status in allowed or (
+        order.status == Order.Status.COMPLETED
+        and order.can_transition_to(Order.Status.CANCELLED)
+    )
+
+
+def recent_sale_cancellable(order, *, now=None) -> bool:
+    """A janela do desfazer como PERGUNTA (a projection lista; o cancel impõe)."""
+    now = now or timezone.now()
+    if (now - order.created_at) > timedelta(minutes=RECENT_SALE_MAX_AGE_MINUTES):
+        return False
+    return _recent_sale_status_allows_cancel(order)
+
+
 def cancel_recent_order(
     *,
     order_ref: str,
     actor: str,
-    max_age_minutes: int = 5,
+    max_age_minutes: int = RECENT_SALE_MAX_AGE_MINUTES,
     channel_ref: str | None = None,
     approved_by_username: str = "",
 ) -> None:
@@ -1181,22 +1210,11 @@ def cancel_recent_order(
         raise ValueError(
             f"Pedido {order_ref} criado há mais de {max_age_minutes} minutos — cancelamento não permitido"
         )
-    # `preparing` entra na janela: venda de balcão com item de cozinha nasce
-    # "em preparo" (o KDS despacha no próprio fechamento), o que matava o undo
-    # para qualquer venda com fire. O cancel já cancela os tickets do KDS e
-    # reverte o estoque baixado (_on_cancelled), então a cozinha vê sumir.
-    #
-    # `completed` também — mas SÓ quando o canal declarou a transição
-    # completed→cancelled no seu lifecycle (o pdv declara): a venda de balcão
-    # presencial FECHA no próprio fechamento (counter_handoff), e sem esta
-    # janela o "desfazer venda" morreria no mesmo commit que a criou. O
-    # _on_cancelled já desfaz tudo, NFC-e autorizada inclusive (fiscal.cancel).
-    allowed = (Order.Status.NEW, Order.Status.ACCEPTED, Order.Status.PREPARING)
-    completed_undo = (
-        order.status == Order.Status.COMPLETED
-        and order.can_transition_to(Order.Status.CANCELLED)
-    )
-    if order.status not in allowed and not completed_undo:
+    # Os status admitidos vivem em `_recent_sale_status_allows_cancel` — o
+    # mesmo predicado que a projection usa para anunciar `can_cancel`. O cancel
+    # já cancela os tickets do KDS, reverte estoque e desfaz NFC-e autorizada
+    # (_on_cancelled), então a cozinha vê sumir.
+    if not _recent_sale_status_allows_cancel(order):
         raise ValueError(f"Pedido {order_ref} não pode ser cancelado (status: {order.status})")
     refund_shift = _shift_for_refund(order, actor=actor)
 
@@ -1247,7 +1265,7 @@ def reopen_recent_order_for_correction(
     order_ref: str,
     actor: str,
     reason: str,
-    max_age_minutes: int = 5,
+    max_age_minutes: int = RECENT_SALE_MAX_AGE_MINUTES,
     approved_by_username: str = "",
 ) -> None:
     """Cancel a recent POS order with an explicit correction reason."""

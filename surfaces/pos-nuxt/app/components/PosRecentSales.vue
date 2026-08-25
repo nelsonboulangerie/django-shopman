@@ -25,13 +25,17 @@ interface RecentSale {
   can_print_danfe: boolean;
   can_resend_email: boolean;
   can_requeue_fiscal: boolean;
+  /** Ainda dentro da janela do desfazer (o servidor decide e impõe). */
+  can_cancel: boolean;
 }
 
 const props = defineProps<{
   open: boolean;
   pos: POSProjection | null;
 }>();
-const emit = defineEmits<{ "update:open": [boolean] }>();
+// `cancelled` sobe para a tela de venda limpar o vestígio da mesma venda
+// (tela de resultado, chip de PIX pendente) e recarregar a Projection.
+const emit = defineEmits<{ "update:open": [boolean]; cancelled: [string] }>();
 
 const apiPath = usePosApiPath();
 const agent = useCounterAgent(computed(() => props.pos));
@@ -180,6 +184,57 @@ function messageOf(error: unknown): string {
   return data?.detail || (error instanceof Error ? error.message : "Falha na ação.");
 }
 
+// Cancelar venda DESTA lista: a correção sobrevive à saída da tela de
+// resultado. O mesmo diálogo (PIN/crachá de gerente) e a mesma janela da tela
+// de venda — o servidor valida a janela de novo, sempre.
+const saleCorrection = computed(() => props.pos?.checkout?.capabilities?.sale_correction ?? null);
+const cancelDialogOpen = ref(false);
+const cancelTargetRef = ref("");
+const cancelReason = ref("");
+const cancelBusy = ref(false);
+const cancelError = ref("");
+
+function openCancel(sale: RecentSale) {
+  cancelTargetRef.value = sale.order_ref;
+  cancelReason.value = "";
+  cancelError.value = "";
+  cancelDialogOpen.value = true;
+}
+
+async function submitCancel(aprovacao: Record<string, string>) {
+  const orderRef = cancelTargetRef.value;
+  if (!orderRef || cancelBusy.value) return;
+  cancelBusy.value = true;
+  cancelError.value = "";
+  try {
+    const reason = cancelReason.value.trim();
+    await $fetch(apiPath("/api/v1/backstage/pos/sale/recent/cancel/"), {
+      method: "POST",
+      credentials: "include",
+      body: {
+        order_ref: orderRef,
+        manager_approval: aprovacao,
+        ...(reason ? { reason } : {}),
+      },
+    });
+    cancelDialogOpen.value = false;
+    cancelTargetRef.value = "";
+    cancelReason.value = "";
+    toast.success("Venda cancelada", {
+      description: `O pedido ${orderRef} foi cancelado dentro da janela do operador.`,
+    });
+    emit("cancelled", orderRef);
+    await load();
+  } catch (error) {
+    // O erro fica INLINE no diálogo aberto: toast com o diálogo fechando leria
+    // como sucesso — mesma lição do cancelamento na tela de venda.
+    const failure = (httpError(error).data as { error?: { message?: string; recovery?: string } } | null)?.error;
+    cancelError.value = failure?.recovery || failure?.message || messageOf(error);
+  } finally {
+    cancelBusy.value = false;
+  }
+}
+
 // Cor só funcional (design neutro de operador): o chip fiscal informa estado.
 function fiscalChipClass(status: string): string {
   if (status === "authorized") return "bg-success/10 text-success border-success/30";
@@ -228,7 +283,7 @@ function fiscalChipClass(status: string): string {
               </span>
             </div>
 
-            <div v-if="canPrintOnAgent || sale.can_print_danfe || sale.can_requeue_fiscal" class="mt-2 flex flex-wrap items-center gap-2">
+            <div v-if="canPrintOnAgent || sale.can_print_danfe || sale.can_requeue_fiscal || sale.can_cancel" class="mt-2 flex flex-wrap items-center gap-2">
               <!-- Recibo não fiscal: qualquer venda reimprime, a qualquer hora.
                    Só aparece onde há agente; a bobina é o único transporte da
                    reimpressão (o diálogo do navegador só existe na venda viva). -->
@@ -269,6 +324,18 @@ function fiscalChipClass(status: string): string {
                 <Icon name="lucide:rotate-ccw" class="size-3.5" />
                 Reprocessar nota
               </UiButton>
+              <!-- Desfazer dentro da janela: exceção auditada, sempre com o
+                   desafio gerencial do mesmo diálogo da tela de venda. -->
+              <UiButton
+                v-if="sale.can_cancel"
+                type="button" variant="outline" size="xs"
+                class="gap-1 border-destructive/40 text-destructive hover:bg-destructive/10"
+                :disabled="busyRef === sale.order_ref || cancelBusy"
+                @click="openCancel(sale)"
+              >
+                <Icon name="lucide:undo-2" class="size-3.5" />
+                Cancelar venda
+              </UiButton>
             </div>
 
             <!-- Consulta pública da nota (Focus/SEFAZ): os links já viajavam na
@@ -307,4 +374,18 @@ function fiscalChipClass(status: string): string {
       </div>
     </UiSheetContent>
   </UiSheet>
+
+  <!-- Confirmação destrutiva + desafio gerencial — o MESMO diálogo da tela de
+       venda; a janela anunciada é a do contrato e o servidor a valida de novo. -->
+  <PosCancelSaleDialog
+    v-model:open="cancelDialogOpen"
+    v-model:reason="cancelReason"
+    :order-ref="cancelTargetRef"
+    :max-age-minutes="saleCorrection?.max_age_minutes || 0"
+    :busy="cancelBusy"
+    :error="cancelError"
+    :managers="pos?.managers"
+    @confirm="(username, pin) => submitCancel({ username, pin })"
+    @confirm-badge="(badge) => submitCancel({ badge })"
+  />
 </template>
