@@ -559,6 +559,13 @@ export function usePosSale(deps: PosSaleDeps) {
     existing.qty = qty;
   }
 
+  // Observação da linha (Odoo Note): o autosave persiste e o fire leva ao KDS.
+  function setLineNotes(sku: string, notes: string) {
+    const item = cart.items.find((entry) => entry.sku === sku);
+    if (!item) return;
+    item.notes = notes;
+  }
+
   // "Desfazer" da remoção direta: devolve a linha como estava (qty, desconto,
   // observação). Idempotente: se a linha voltou por outro caminho, não duplica.
   function restoreItem(item: POSCartItem) {
@@ -1619,6 +1626,7 @@ export function usePosSale(deps: PosSaleDeps) {
     addProduct,
     setQty,
     restoreItem,
+    setLineNotes,
     setLineDiscount,
     setLinePrice,
     sanitizeTabRef,

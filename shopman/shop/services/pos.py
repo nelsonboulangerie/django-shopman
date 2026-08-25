@@ -1367,6 +1367,11 @@ def build_session_ops(payload: dict, operator_username: str) -> list[dict]:
 
     fulfillment_type = _payload_fulfillment_type(payload)
     ops.append({"op": "set_data", "path": "fulfillment_type", "value": fulfillment_type})
+    # Observações do pedido valem para QUALQUER recebimento (retirada incluída):
+    # ficavam presas ao bloco de entrega e a venda de balcão as perdia.
+    order_notes = str(payload.get("order_notes") or "").strip()
+    if order_notes:
+        ops.append({"op": "set_data", "path": "order_notes", "value": order_notes})
     if fulfillment_type == "delivery":
         _append_delivery_ops(ops, payload)
         delivery_fee_q = _int_q(payload.get("delivery_fee_q"))
@@ -2509,9 +2514,6 @@ def _append_delivery_ops(ops: list[dict], payload: dict) -> None:
     delivery_time_slot = str(payload.get("delivery_time_slot") or "").strip()
     if delivery_time_slot:
         ops.append({"op": "set_data", "path": "delivery_time_slot", "value": delivery_time_slot})
-    order_notes = str(payload.get("order_notes") or "").strip()
-    if order_notes:
-        ops.append({"op": "set_data", "path": "order_notes", "value": order_notes})
     try:
         delivery_fee_q = int(payload.get("delivery_fee_q") or 0)
     except (TypeError, ValueError):

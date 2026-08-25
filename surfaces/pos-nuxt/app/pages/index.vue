@@ -106,6 +106,7 @@ const {
   addProduct,
   setQty,
   restoreItem,
+  setLineNotes,
   setLineDiscount,
   setLinePrice,
   requestTabAssociation,
@@ -686,6 +687,7 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onGlobalKeydown));
             @remove="(sku) => setQty(sku, 0)"
             @restore="restoreItem"
             @set-qty="(sku, qty) => setQty(sku, qty)"
+            @set-notes="setLineNotes"
             @set-discount="setLineDiscount"
             @set-price="setLinePrice"
             @prepare="prepareCheckout"

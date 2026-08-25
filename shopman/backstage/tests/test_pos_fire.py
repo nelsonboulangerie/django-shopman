@@ -50,6 +50,54 @@ class POSFireTabTests(TestCase):
         )
         return Session.objects.get(session_key=skey)
 
+    def test_line_notes_and_order_notes_reach_the_kds_ticket(self) -> None:
+        """A observação da linha (POS 'Obs.') e a do pedido chegam à cozinha.
+
+        O PDV agora edita ``items[].notes`` e ``order_notes``; o caminho até o
+        KDS já existia (meta.notes → fire lines → ticket → projection) e este
+        teste o trava de ponta a ponta.
+        """
+        opened = build_open_tab(pos_service.open_pos_tab(
+            channel_ref="pdv", tab_ref="2001",
+            actor="pos:alice", operator_username="alice",
+        ))
+        skey = opened["tab_session_key"]
+        pos_service.save_pos_tab(
+            channel_ref="pdv",
+            payload={
+                "items": [
+                    {
+                        "sku": "FIRE-A", "name": "Fire A", "qty": 1,
+                        "unit_price_q": 1000, "notes": "sem cebola",
+                    },
+                ],
+                "order_notes": "cliente com pressa",
+                "payment_method": "cash",
+                "manual_discount": None,
+                "tab_ref": "2001",
+                "tab_session_key": skey,
+            },
+            actor="pos:alice", operator_username="alice",
+        )
+        # O payload da comanda devolve a observação para a tela do PDV.
+        session = Session.objects.get(session_key=skey)
+        payload = build_open_tab(session)
+        self.assertEqual(payload["items"][0]["notes"], "sem cebola")
+        self.assertEqual(payload["order_notes"], "cliente com pressa")
+
+        pos_service.fire_pos_tab(
+            channel_ref="pdv", session_key=skey,
+            actor="pos:alice", operator_username="alice",
+        )
+        ticket = KDSTicket.objects.get(session_key=skey)
+        self.assertEqual(ticket.items[0]["notes"], "sem cebola")
+
+        from shopman.backstage.projections.kds import build_kds_ticket
+
+        projection = build_kds_ticket(ticket.pk)
+        self.assertEqual(projection.items[0].notes, "sem cebola")
+        self.assertEqual(projection.customer_note, "cliente com pressa")
+
     def test_fire_whole_tab_creates_tickets_and_marks_fired(self) -> None:
         session = self._open_tab_with_two_items()
         line_ids = {it["line_id"] for it in session.items}

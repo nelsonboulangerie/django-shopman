@@ -641,11 +641,14 @@ defineExpose({
               <span class="font-medium text-muted-foreground">Horário combinado</span>
               <UiInput :model-value="deliveryTimeSlot" placeholder="Ex: 14:00-14:30" @update:model-value="$emit('update:deliveryTimeSlot', String($event || ''))" />
             </label>
-            <label class="grid gap-1 text-sm">
-              <span class="font-medium text-muted-foreground">Observações</span>
-              <UiTextarea :model-value="orderNotes" :rows="2" placeholder="Complemento, referência, instruções" @update:model-value="$emit('update:orderNotes', String($event || ''))" />
-            </label>
           </div>
+
+          <!-- Observações do pedido valem para RETIRADA também (não só entrega):
+               o dado sempre viajou no intent; só a tela o escondia. -->
+          <label class="grid gap-1 text-sm">
+            <span class="font-medium text-muted-foreground">Observações</span>
+            <UiTextarea :model-value="orderNotes" :rows="2" placeholder="Instruções do pedido, referência, recado" @update:model-value="$emit('update:orderNotes', String($event || ''))" />
+          </label>
 
         </div>
       <UiDialogFooter>

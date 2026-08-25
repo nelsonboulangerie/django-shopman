@@ -28,6 +28,8 @@ const emit = defineEmits<{
   /** "Desfazer" do toast de remoção: devolve a linha exatamente como estava. */
   restore: [POSCartItem];
   setQty: [string, number];
+  /** Observação da linha (padrão Odoo Note): viaja no intent e chega ao KDS. */
+  setNotes: [string, string];
   setDiscount: [string, number, string];
   /** Operator unit-price override (numpad "Preço"); gated by manager approval. */
   setPrice: [string, number];
@@ -160,6 +162,21 @@ function selectLine(sku: string) {
 
 function setMode(mode: "qty" | "disc" | "price") {
   numpadMode.value = mode;
+}
+
+// Observação da linha (Odoo Note): diálogo simples de texto para a linha ativa.
+// O dado já existia (POSCartItem.notes, intent, KDS) — só faltava quem editasse.
+const noteDialog = ref<{ sku: string; name: string; text: string } | null>(null);
+function openNoteDialog() {
+  const item = activeItem.value;
+  if (!item) return;
+  noteDialog.value = { sku: item.sku, name: item.name, text: item.notes || "" };
+}
+function saveNote() {
+  const dialog = noteDialog.value;
+  noteDialog.value = null;
+  if (!dialog) return;
+  emit("setNotes", dialog.sku, dialog.text.trim());
 }
 
 // Remoção de linha em dois pesos: rascunho ainda não disparado à cozinha sai
@@ -410,6 +427,10 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onWindowKeydown));
             <p class="text-xs tabular-nums" :class="item.price_overridden ? 'text-primary' : 'text-muted-foreground'">
               <Icon v-if="item.price_overridden" name="lucide:pencil" class="mr-0.5 inline size-3 align-[-1px]" />{{ item.qty }}× {{ formatBRL(item.price_q) }} · {{ formatBRL(item.qty * item.price_q) }}
             </p>
+            <p v-if="item.notes" class="flex items-center gap-1 truncate text-xs italic text-muted-foreground">
+              <Icon name="lucide:sticky-note" class="size-3 shrink-0" />
+              <span class="truncate">{{ item.notes }}</span>
+            </p>
             <span
               v-if="item.discount && item.discount.value > 0"
               class="mt-0.5 inline-flex w-fit items-center gap-1 rounded-full bg-primary/10 px-2 py-0.5 text-xs font-medium text-primary"
@@ -501,6 +522,15 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onWindowKeydown));
           @click="setMode('price')"
         >
           Preço
+        </button>
+        <button
+          type="button"
+          class="flex-1 rounded-md border py-1.5 text-sm font-medium transition"
+          :class="activeItem?.notes ? 'border-primary bg-primary/5' : 'hover:bg-accent'"
+          :disabled="!activeItem"
+          @click="openNoteDialog"
+        >
+          Obs.
         </button>
       </div>
       <p v-else class="px-1 text-xs font-medium text-muted-foreground">
@@ -598,6 +628,26 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onWindowKeydown));
       </UiButton>
     </div>
   </UiCard>
+
+  <UiDialog :open="!!noteDialog" @update:open="(value) => { if (!value) noteDialog = null; }">
+    <UiDialogContent class="sm:max-w-sm">
+      <UiDialogHeader>
+        <UiDialogTitle>Observação · {{ noteDialog?.name }}</UiDialogTitle>
+        <UiDialogDescription>A observação sai junto com o item para a cozinha.</UiDialogDescription>
+      </UiDialogHeader>
+      <UiTextarea
+        v-if="noteDialog"
+        v-model="noteDialog.text"
+        :rows="3"
+        placeholder="Ex: sem cebola, bem passado"
+        autofocus
+      />
+      <UiDialogFooter class="gap-2">
+        <UiButton variant="outline" @click="noteDialog = null">Cancelar</UiButton>
+        <UiButton @click="saveNote">Salvar observação</UiButton>
+      </UiDialogFooter>
+    </UiDialogContent>
+  </UiDialog>
 
   <UiDialog :open="!!confirmAction" @update:open="(value) => { if (!value) cancelConfirm(); }">
     <UiDialogContent class="sm:max-w-sm">
