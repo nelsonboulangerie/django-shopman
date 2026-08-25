@@ -6,7 +6,7 @@ import { globalKeysBlocked } from "~/utils/keyboardGuard";
 import { clampPercent, clampQty, popDigit, pushDigit } from "~/presentation/numpad";
 import { fireBarView, kitchenBadge, kitchenLineState } from "~/presentation/kitchen";
 import { pruneSelection, selectionView, toggleSelected } from "~/presentation/selection";
-import { lineListTotalDisplay, lineTotalQ, manualDiscountBadgeView, pricingDiscountBadge, unitChargedQ } from "~/presentation/lineDiscounts";
+import { lineDiscountBadge, lineListTotalDisplay, lineTotalQ, unitChargedQ } from "~/presentation/lineDiscounts";
 import { cartNetTotalQ } from "~/presentation/receipt";
 import { toast } from "vue-sonner";
 
@@ -117,11 +117,10 @@ function badgeIcon(tone: "neutral" | "success" | "destructive"): string {
 // tela: linha de R$ 10,20 e Total parcial de R$ 9,18, um debaixo do outro.
 const totalDisplay = computed(() => formatBRL(cartNetTotalQ(props.items)));
 
-/** O selo do desconto manual da linha — inclui se ele venceu o automático.
- *  Usa `reasonOptions`, que já normaliza a lista do servidor e cai nos motivos
- *  padrão: o selo tem que dizer "Cortesia", não o ref cru. */
-function manualBadge(item: POSCartItem) {
-  return manualDiscountBadgeView(item, reasonOptions.value);
+/** O selo do desconto que venceu a linha. Usa `reasonOptions`, que normaliza a
+ *  lista do servidor e cai nos motivos padrão: o selo diz "Cortesia", não o ref. */
+function discountBadge(item: POSCartItem) {
+  return lineDiscountBadge(item, reasonOptions.value);
 }
 // Numpad targets the selected line. Three modes (Odoo's Qty/%/Price): "qty"
 // (integer, first digit replaces), "disc" (percent), "price" (unit-price override
@@ -517,29 +516,21 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onWindowKeydown));
                  quebra é a FILA de selos, nunca a palavra dentro do selo. Some
                  por inteiro quando não há nada a dizer, que é o caso comum. -->
             <div
-              v-if="pricingDiscountBadge(item) || (item.discount && item.discount.value > 0) || lineKitchenState(item) !== 'unfired'"
+              v-if="discountBadge(item) || lineKitchenState(item) !== 'unfired'"
               class="mb-0.5 flex flex-wrap items-center gap-1"
             >
+              <!-- UM selo de desconto: o VENCEDOR. Só um desconto vale por item
+                   ("maior ganha"), então dois selos na linha eram dois preços
+                   sugeridos para uma coisa que tem um preço só. Quem foi
+                   descartado avisa por toast no momento do pedido, não morando
+                   riscado aqui para sempre. -->
               <span
-                v-if="pricingDiscountBadge(item)"
+                v-if="discountBadge(item)"
                 class="inline-flex shrink-0 items-center gap-1 whitespace-nowrap rounded-full bg-primary/10 px-2 py-0.5 text-xs font-medium text-primary"
-                :title="`Desconto automático: ${pricingDiscountBadge(item)}`"
-              >
-                <Icon name="lucide:tags" class="size-3 shrink-0" />
-                {{ pricingDiscountBadge(item) }}
-              </span>
-              <!-- O manual, dizendo se VALEU. Perdido, ele vai riscado e em tom
-                   neutro: quem digitou a cortesia precisa ver que ela não pegou. -->
-              <span
-                v-if="manualBadge(item)"
-                class="inline-flex shrink-0 items-center gap-1 whitespace-nowrap rounded-full px-2 py-0.5 text-xs font-medium"
-                :class="manualBadge(item)!.applied
-                  ? 'bg-primary/10 text-primary'
-                  : 'bg-muted text-muted-foreground line-through decoration-muted-foreground/60'"
-                :title="manualBadge(item)!.title"
+                :title="`Desconto aplicado: ${discountBadge(item)}`"
               >
                 <Icon name="lucide:tag" class="size-3 shrink-0" />
-                {{ manualBadge(item)!.label }}
+                {{ discountBadge(item) }}
               </span>
               <button
                 v-if="lineKitchenState(item) === 'fired_cancellable'"

@@ -261,9 +261,11 @@ describe("PosCartPanel — transparência de desconto na linha", () => {
     expect(wrapper.find("span.line-through").exists()).toBe(false);
   });
 
-  it("o desconto manual que PERDEU aparece riscado, dizendo por quê", async () => {
-    // "Maior desconto ganha, um por item": a cortesia de 10% não vale numa linha
-    // que já levou 15%. O operador digitou aquilo e precisa ver que não pegou.
+  it("UM selo de desconto por linha: o vencedor, e só ele", async () => {
+    // "Maior desconto ganha, um por item". Dois selos na linha eram dois preços
+    // sugeridos para uma coisa que tem um preço só. Com automático e manual
+    // pedidos ao mesmo tempo, quem aparece é o automático — foi ele que mexeu no
+    // preço. O descarte do outro se diz por toast, no momento do pedido.
     const wrapper = await mountSuspended(PosCartPanel, {
       props: props({
         items: [item({
@@ -273,13 +275,13 @@ describe("PosCartPanel — transparência de desconto na linha", () => {
         })],
       }),
     });
-    const manual = wrapper.findAll("span[title]").find((el) => el.text().includes("Cortesia"));
-    expect(manual).toBeTruthy();
-    expect(manual!.classes()).toContain("line-through");
-    expect(manual!.attributes("title")).toContain("Semana do Pão");
+    const badges = wrapper.findAll("span[title^='Desconto aplicado']");
+    expect(badges).toHaveLength(1);
+    expect(badges[0]!.text()).toContain("Semana do Pão");
+    expect(wrapper.text()).not.toContain("Cortesia");
   });
 
-  it("o desconto manual que GANHOU aparece normal", async () => {
+  it("sem automático, o selo é o manual — com o motivo por extenso", async () => {
     const wrapper = await mountSuspended(PosCartPanel, {
       props: props({
         items: [item({
@@ -288,8 +290,9 @@ describe("PosCartPanel — transparência de desconto na linha", () => {
         })],
       }),
     });
-    const manual = wrapper.findAll("span[title]").find((el) => el.text().includes("Cortesia"));
-    expect(manual!.classes()).not.toContain("line-through");
+    const badges = wrapper.findAll("span[title^='Desconto aplicado']");
+    expect(badges).toHaveLength(1);
+    expect(badges[0]!.text()).toContain("Cortesia −10%");
   });
 
   it("o Total parcial é a soma exata das linhas", async () => {

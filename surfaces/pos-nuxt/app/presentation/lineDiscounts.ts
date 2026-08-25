@@ -36,37 +36,25 @@ export function manualDiscountLabel(
   return `${label} −${pct}%`;
 }
 
-export interface ManualDiscountBadgeView {
-  label: string;
-  /** O desconto que o operador pediu VALEU nesta linha? */
-  applied: boolean;
-  title: string;
+/** O desconto manual desta linha foi DESCARTADO pelo servidor?
+ *
+ *  A política é "maior desconto ganha, um por item": uma cortesia de 10% numa
+ *  linha que já levou "Semana do Pão −15%" não vale. Quem decide é o carimbo do
+ *  servidor — `pricing_discount` só existe quando um desconto AUTOMÁTICO venceu
+ *  a linha (o tipo "manual" fica fora daquele conjunto). Logo, automático
+ *  presente + manual pedido ⇒ o manual perdeu.
+ *
+ *  Isto NÃO vira selo na linha: a linha mostra só o vencedor. Vira o aviso do
+ *  MOMENTO em que o operador pede o desconto — feedback onde a ação acontece,
+ *  em vez de um selo riscado morando ali para sempre.
+ */
+export function manualDiscountWasOverridden(item: POSCartItem): boolean {
+  return Boolean(item.discount?.value && item.pricing_discount?.label);
 }
 
-/** O selo do desconto MANUAL, dizendo se ele valeu.
- *
- *  A política é "maior desconto ganha, um por item": um manual de 10% numa linha
- *  que já levou "Semana do Pão −15%" é DESCARTADO pelo servidor. A tela mostrava
- *  os dois selos com o mesmo peso, como se os dois tivessem sido aplicados — e o
- *  operador que digitou a cortesia não tinha como saber que ela não valeu.
- *
- *  Quem decide é o carimbo do servidor: `pricing_discount` só existe quando um
- *  desconto AUTOMÁTICO venceu a linha (o tipo "manual" fica fora daquele
- *  conjunto). Logo, automático presente ⇒ o manual perdeu.
- */
-export function manualDiscountBadgeView(
-  item: POSCartItem,
-  reasons: readonly DiscountReasonOption[] = [],
-): ManualDiscountBadgeView | null {
-  const label = manualDiscountLabel(item, reasons);
-  if (!label) return null;
-  const winner = item.pricing_discount?.label || "";
-  if (!winner) return { label, applied: true, title: `Desconto aplicado: ${label}` };
-  return {
-    label,
-    applied: false,
-    title: `Não aplicado — "${winner}" é maior, e só um desconto vale por item.`,
-  };
+/** O rótulo do desconto que VENCEU a linha, para o aviso. "" quando não há. */
+export function winningDiscountLabel(item: POSCartItem): string {
+  return item.pricing_discount?.label || "";
 }
 
 /** O badge da linha: o desconto automático vence a exibição (é o que mexeu no preço). */
