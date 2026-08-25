@@ -179,22 +179,6 @@ const screenTitle = computed(() => {
   return "Comandas";
 });
 
-// Rótulos da barra de contexto do checkout. Vivem aqui porque os chips vivem
-// aqui; o estado é o mesmo `cart` que o workspace lê — uma fonte, duas leituras.
-const contextFulfillmentLabel = computed(() => {
-  const option = (pos.value?.fulfillment_options || []).find((o) => o.ref === cart.fulfillmentType);
-  const base = option?.label || cart.fulfillmentType;
-  // Na entrega, o bairro diz mais que a palavra "entrega" — é o que o operador
-  // confere de relance quando o cliente muda de ideia no meio do pagamento.
-  const bairro = cart.deliveryNeighborhood.trim() || cart.deliveryAddressStructured?.neighborhood?.trim() || "";
-  return cart.fulfillmentType === "delivery" && bairro ? `${base} · ${bairro}` : base;
-});
-const contextDiscountLabel = computed(() => {
-  const value = Number(String(cart.discountValue).replace(",", ".").replace(/[^0-9.]/g, "")) || 0;
-  if (value <= 0) return "";
-  return cart.discountType === "fixed" ? `R$ ${cart.discountValue}` : `${cart.discountValue}%`;
-});
-
 // Últimas vendas: a nota autoriza DEPOIS da tela de confirmação passar; o
 // painel é onde imprimir/reenviar/reprocessar moram, a qualquer hora do turno.
 const recentSalesOpen = ref(false);
@@ -346,6 +330,8 @@ const paymentWorkspaceRef = ref<{
   openCustomer: () => void;
   openFulfillment: () => void;
   openDiscount: () => void;
+  pressMethodKey: (letter: string) => boolean;
+  toggleCpfOnInvoice: () => void;
 } | null>(null);
 const shortcutsHelpOpen = ref(false);
 
@@ -442,6 +428,21 @@ function onGlobalKeydown(event: KeyboardEvent) {
     }
   }
 
+  // LETRA no checkout = forma de pagamento (D/P/C, derivadas do contrato). É o
+  // gesto de TODA venda e era o único do checkout que ainda exigia o mouse. As
+  // letras estão livres aqui: o search-as-you-type é da tela de VENDA, e sob
+  // campo de texto o `isEditing` acima já cala tudo isto.
+  if (
+    checkoutMode.value && !isEditing
+    && !event.metaKey && !event.ctrlKey && !event.altKey
+    && /^[a-zA-Z]$/.test(event.key)
+  ) {
+    if (paymentWorkspaceRef.value?.pressMethodKey(event.key.toUpperCase())) {
+      event.preventDefault();
+      return;
+    }
+  }
+
   // Search-as-you-type (Odoo): na tela de venda, uma LETRA digitada fora de
   // input começa a busca de produto com aquele caractere (dígitos seguem
   // editando a linha ativa — comportamento do numpad do carrinho).
@@ -479,6 +480,23 @@ function onGlobalKeydown(event: KeyboardEvent) {
       event.preventDefault();
       if (checkoutMode.value) paymentWorkspaceRef.value?.openCustomer();
       else if (inSaleView.value) tabHeaderRef.value?.openCustomer();
+      return;
+    // F7/F8 completam o trio do contexto da venda, ao lado do F6 do cliente —
+    // os três chips da linha de contexto do checkout, na mesma ordem.
+    case "F7":
+      if (!checkoutMode.value) return;
+      event.preventDefault();
+      paymentWorkspaceRef.value?.openFulfillment();
+      return;
+    case "F8":
+      if (!checkoutMode.value) return;
+      event.preventDefault();
+      paymentWorkspaceRef.value?.openDiscount();
+      return;
+    case "F9":
+      if (!checkoutMode.value) return;
+      event.preventDefault();
+      paymentWorkspaceRef.value?.toggleCpfOnInvoice();
       return;
     case "Enter":
       // Total coberto + review fresca → Enter valida, pelo MESMO caminho do
@@ -573,49 +591,6 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onGlobalKeydown));
           @apply-customer-favorite="applyCustomerFavorite"
           @repeat-customer-last-order="repeatCustomerLastOrder"
         />
-        <!-- BARRA DE CONTEXTO DO CHECKOUT — quem compra, como recebe, se tem
-             desconto. Três FATOS da venda, decididos antes e revisados de
-             relance; não são instrumento, e por isso saíram da coluna de
-             trabalho (onde empurravam a Nota fiscal para baixo da dobra).
-             Ficam aqui, no mesmo lugar em que o `PosTabHeader` já mostra o
-             cliente na tela de venda: um fato, um endereço, não importa a tela.
-             Odoo e Square também tiram isto do pagamento; a diferença é que
-             aqui o ESTADO continua visível — ver que é entrega não exige abrir
-             nada. Os diálogos seguem no workspace; só o gatilho subiu. -->
-        <div v-if="checkoutMode && !result" class="flex min-w-0 flex-1 items-center gap-1.5">
-          <h1 class="shrink-0 truncate text-lg font-semibold leading-tight tracking-tight">{{ screenTitle }}</h1>
-          <div class="flex min-w-0 items-center gap-1.5 overflow-x-auto">
-            <button
-              type="button"
-              class="flex h-9 shrink-0 items-center gap-1.5 rounded-md border px-2.5 text-sm font-medium transition hover:bg-accent active:translate-y-px"
-              :class="cart.customerName.trim() ? 'border-primary bg-primary/5' : 'bg-card text-muted-foreground'"
-              @click="paymentWorkspaceRef?.openCustomer()"
-            >
-              <Icon name="lucide:user-round" class="size-4 shrink-0" />
-              <span class="max-w-40 truncate">{{ cart.customerName.trim() || "Sem cliente" }}</span>
-              <kbd class="rounded border bg-muted px-1 py-0.5 font-mono text-xs font-medium text-muted-foreground" aria-hidden="true">F6</kbd>
-            </button>
-            <button
-              type="button"
-              class="flex h-9 shrink-0 items-center gap-1.5 rounded-md border px-2.5 text-sm font-medium transition hover:bg-accent active:translate-y-px"
-              :class="cart.fulfillmentType === 'delivery' ? 'border-primary bg-primary/5' : 'bg-card text-muted-foreground'"
-              @click="paymentWorkspaceRef?.openFulfillment()"
-            >
-              <Icon :name="cart.fulfillmentType === 'delivery' ? 'lucide:bike' : 'lucide:store'" class="size-4 shrink-0" />
-              <span class="max-w-48 truncate">{{ contextFulfillmentLabel }}</span>
-            </button>
-            <button
-              v-if="(pos?.checkout?.discount_types || []).length"
-              type="button"
-              class="flex h-9 shrink-0 items-center gap-1.5 rounded-md border px-2.5 text-sm font-medium transition hover:bg-accent active:translate-y-px"
-              :class="contextDiscountLabel ? 'border-primary bg-primary/5' : 'bg-card text-muted-foreground'"
-              @click="paymentWorkspaceRef?.openDiscount()"
-            >
-              <Icon name="lucide:tag" class="size-4 shrink-0" />
-              <span class="max-w-32 truncate">{{ contextDiscountLabel || "Sem desconto" }}</span>
-            </button>
-          </div>
-        </div>
         <h1 v-else class="min-w-0 truncate text-lg font-semibold leading-tight tracking-tight">{{ screenTitle }}</h1>
         <!-- PIX pendente que saiu da tela de resultado: chip compacto, com o
              polling seguindo por baixo até resolver/expirar (aí vira toast). -->
