@@ -20,6 +20,10 @@ const props = defineProps<{
   searchBusy: boolean;
   /** O cliente associado foi criado agora (resolve just-in-time). */
   customerResolvedNew?: boolean;
+  /** Como o cliente recebe: decidido na abertura, revisto de relance aqui. */
+  fulfillmentType: "pickup" | "delivery";
+  /** O rótulo já resolvido ("Entrega · Centro"), que a página monta. */
+  fulfillmentLabel: string;
   loading: boolean;
 }>();
 
@@ -37,6 +41,7 @@ const emit = defineEmits<{
   selectResult: [POSCustomerSearchResult];
   applyCustomerFavorite: [];
   repeatCustomerLastOrder: [];
+  openFulfillment: [];
 }>();
 
 const renaming = ref(false);
@@ -125,6 +130,22 @@ function runClear() {
       <Icon name="lucide:user-round" class="size-4 shrink-0 text-muted-foreground" />
       <span v-if="customerName" class="min-w-0 max-w-40 truncate font-medium">{{ customerName }}</span>
       <span v-else class="shrink-0 text-muted-foreground">Adicionar cliente</span>
+    </button>
+
+    <!-- RECEBIMENTO — irmão do chip de cliente. Os dois são fatos do PEDIDO,
+         decididos na abertura do atendimento e revistos de relance daqui em
+         diante. Na barra eles são LEITURA com porta de saída; o lugar onde se
+         decide é o começo do fluxo, não esta barra. -->
+    <button
+      v-if="hasOpenTab"
+      type="button"
+      class="flex h-9 min-w-0 shrink items-center gap-1.5 rounded-full border px-3 text-sm transition hover:bg-accent"
+      :class="fulfillmentType === 'delivery' ? 'border-primary bg-primary/5' : 'border-border'"
+      aria-haspopup="dialog"
+      @click="$emit('openFulfillment')"
+    >
+      <Icon :name="fulfillmentType === 'delivery' ? 'lucide:bike' : 'lucide:store'" class="size-4 shrink-0 text-muted-foreground" />
+      <span class="min-w-0 max-w-48 truncate font-medium">{{ fulfillmentLabel }}</span>
     </button>
 
     <!-- release tab (pushed to the right of the context bar) -->

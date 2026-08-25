@@ -246,17 +246,6 @@ const discountSheetOpen = ref(false);
 // Foco automático no modal de Recebimento: com entrega selecionada, quem recebe
 // o foco é a busca de endereço (o campo que o operador veio preencher) — tanto
 // na abertura do modal quanto ao alternar retirada→entrega com ele aberto.
-const addressAutocompleteRef = ref<{ focus: () => void } | null>(null);
-function onFulfillmentOpenAutoFocus(event: Event) {
-  if (props.fulfillmentType !== "delivery") return; // retirada: foco padrão do diálogo
-  event.preventDefault();
-  void nextTick(() => addressAutocompleteRef.value?.focus());
-}
-watch(() => props.fulfillmentType, async (type) => {
-  if (!fulfillmentSheetOpen.value || type !== "delivery" || !import.meta.client) return;
-  await nextTick();
-  addressAutocompleteRef.value?.focus();
-});
 
 // The instrument (right zone): the numpad edits the SELECTED tender, so it lights
 // up once a tender exists; cédulas are the cash nuance, offered only when the
@@ -275,11 +264,6 @@ const cashSelected = computed(() => props.selectedTenderMethod === "cash");
 // "Sem janela neste dia" é um FATO; "ainda não sei" é outra coisa. Dizer o
 // primeiro enquanto a resposta não chegou fazia a tela mentir para o operador
 // justo no formulário que ele acabara de abrir.
-const slotPlaceholder = computed(() => {
-  if (props.deliverySlots.length) return "A combinar";
-  return props.deliverySlotsPending ? "Preencha o endereço" : "Sem janela neste dia";
-});
-
 // O CPF de volta na tela, formatado e por INTEIRO. Mostrar só o rabo do número
 // não responde a pergunta que o cliente faz — ele quer saber se o documento DELE
 // entrou. Quem digitou está com o cliente na frente; esconder metade não protege
@@ -287,6 +271,9 @@ const slotPlaceholder = computed(() => {
 // O documento se lê pontuado enquanto se digita — é assim que a pessoa CONFERE
 // o próprio CPF, em blocos de três. Cru, "52998224725" obriga a contar dígito a
 // dígito, e ninguém confere o que não consegue ler.
+// O teclado só vale quando há uma linha de pagamento selecionada para editar.
+const numpadActive = computed(() => props.selectedTenderIndex >= 0 && props.selectedTenderIndex < props.paymentTenders.length);
+
 const invoiceTaxIdMasked = computed(() => {
   const d = props.invoiceTaxId.replace(/\D/g, "").slice(0, 14);
   if (d.length <= 11) {
@@ -334,26 +321,6 @@ function setReceiptChannel(ref: string, on: boolean) {
     : props.receiptChannels.filter((c) => c !== ref);
   emit("update:receiptChannels", next);
 }
-
-const deliveryFeeNote = computed(() => {
-  if (props.deliveryFeeOverride) return "Valor combinado por você para esta entrega.";
-  const km = props.deliveryDistanceKm;
-  switch (props.deliveryFeeSource) {
-    case "zone":
-      return "Tabela do bairro/CEP deste endereço.";
-    case "distance":
-      return km == null ? "Pela distância até o endereço." : `Pela distância até o endereço (${km} km).`;
-    case "default":
-      return "Taxa padrão da loja: não deu para medir a distância deste endereço.";
-    case "blocked":
-      return "Este endereço está fora da área de entrega.";
-    case "manual":
-      return "Valor combinado para esta entrega.";
-    default:
-      return "Preencha o endereço para a loja calcular a taxa.";
-  }
-});
-const numpadActive = computed(() => props.selectedTenderIndex >= 0 && props.selectedTenderIndex < props.paymentTenders.length);
 
 // The adaptive live readout under the hero — one line that carries the state the
 // operator needs right now, so the big number stays the (stable) sale total.
@@ -517,13 +484,6 @@ function onManagerAuthorize(username: string, pin: string) {
   emit("update:managerPin", pin);
   managerAuthOpen.value = false;
   emit("submit");
-}
-
-function onAddressSelected(address: StructuredAddressProjection) {
-  emit("update:deliveryAddressStructured", address);
-  if (address.route) emit("update:deliveryAddress", address.route);
-  if (address.street_number) emit("update:deliveryStreetNumber", address.street_number);
-  if (address.neighborhood) emit("update:deliveryNeighborhood", address.neighborhood);
 }
 
 // Atalhos do shell (pages/index.vue): Enter valida pelo MESMO caminho do clique
@@ -1055,144 +1015,45 @@ defineExpose({
 
   </section>
 
-  <!-- MODAL: Recebimento (retirada / entrega) -->
-  <UiDialog v-model:open="fulfillmentSheetOpen">
-    <UiDialogContent class="max-h-[85vh] overflow-y-auto sm:max-w-lg" @open-auto-focus="onFulfillmentOpenAutoFocus">
-      <UiDialogHeader>
-        <UiDialogTitle>Recebimento</UiDialogTitle>
-        <UiDialogDescription>Como o cliente recebe o pedido.</UiDialogDescription>
-      </UiDialogHeader>
-      <div class="grid gap-4">
-        <div class="grid grid-cols-2 gap-2">
-            <UiButton
-              v-for="option in fulfillmentOptions"
-              :key="option.ref"
-              variant="outline"
-              class="h-auto justify-start whitespace-normal px-3 py-2 text-left"
-              :class="fulfillmentType === option.ref ? 'border-primary bg-primary/5' : ''"
-              @click="$emit('update:fulfillmentType', option.ref)"
-            >
-              <span>
-                <span class="block text-sm font-semibold">{{ option.label }}</span>
-                <span class="block text-xs opacity-80">{{ option.description }}</span>
-              </span>
-            </UiButton>
-          </div>
-
-          <div v-if="fulfillmentType === 'delivery'" class="grid gap-3">
-            <div v-if="savedAddresses.length" class="flex flex-wrap gap-2">
-              <UiButton
-                v-for="address in savedAddresses"
-                :key="address.id"
-                type="button"
-                variant="outline"
-                size="sm"
-                class="h-auto justify-start whitespace-normal px-2 py-1 text-left"
-                @click="$emit('pickSavedAddress', address)"
-              >
-                <span class="max-w-48 truncate">{{ address.label || address.formatted_address }}</span>
-              </UiButton>
-            </div>
-            <label class="grid gap-1 text-sm">
-              <span class="font-medium text-muted-foreground">Endereço</span>
-              <PosAddressAutocomplete
-                ref="addressAutocompleteRef"
-                :model-value="deliveryAddress"
-                :capability="addressAutocomplete"
-                @update:model-value="$emit('update:deliveryAddress', String($event || ''))"
-                @selected="onAddressSelected"
-              />
-            </label>
-            <div class="grid gap-2 sm:grid-cols-2">
-              <label class="grid gap-1 text-sm">
-                <span class="font-medium text-muted-foreground">Número</span>
-                <UiInput :model-value="deliveryStreetNumber" placeholder="123" @update:model-value="$emit('update:deliveryStreetNumber', String($event || ''))" />
-              </label>
-              <label class="grid gap-1 text-sm">
-                <span class="font-medium text-muted-foreground">Bairro</span>
-                <UiInput :model-value="deliveryNeighborhood" placeholder="Centro" @update:model-value="$emit('update:deliveryNeighborhood', String($event || ''))" />
-              </label>
-            </div>
-            <div class="grid gap-2 sm:grid-cols-2">
-              <label class="grid gap-1 text-sm">
-                <span class="font-medium text-muted-foreground">Complemento</span>
-                <UiInput :model-value="deliveryComplement" placeholder="Apto, bloco" @update:model-value="$emit('update:deliveryComplement', String($event || ''))" />
-              </label>
-              <label class="grid gap-1 text-sm">
-                <span class="font-medium text-muted-foreground">Instruções</span>
-                <UiInput :model-value="deliveryInstructions" placeholder="Portaria, referência" @update:model-value="$emit('update:deliveryInstructions', String($event || ''))" />
-              </label>
-            </div>
-            <!-- QUANDO — data e janela. A data nasce em HOJE (o hoje do servidor,
-                 não o do tablet) e o horário deixa de ser texto solto: as janelas
-                 de meia hora vêm do EXPEDIENTE daquele dia. Digitar "14:00-14:30"
-                 num dia em que a casa fecha às 11h era uma promessa que ninguém
-                 podia cumprir, e a tela não tinha como saber. -->
-            <div class="grid gap-2 sm:grid-cols-2">
-              <label class="grid gap-1 text-sm">
-                <span class="font-medium text-muted-foreground">Data</span>
-                <UiInput
-                  :model-value="deliveryDateEffective"
-                  type="date"
-                  @update:model-value="$emit('update:deliveryDate', String($event || ''))"
-                />
-              </label>
-              <label class="grid gap-1 text-sm">
-                <span class="font-medium text-muted-foreground">Horário combinado</span>
-                <select
-                  :value="deliveryTimeSlot"
-                  class="h-9 rounded-md border bg-background px-3 text-sm"
-                  :disabled="!deliverySlots.length"
-                  @change="$emit('update:deliveryTimeSlot', ($event.target as HTMLSelectElement).value)"
-                >
-                  <option value="">{{ slotPlaceholder }}</option>
-                  <option v-for="slot in deliverySlots" :key="slot.ref" :value="slot.ref">{{ slot.label }}</option>
-                </select>
-              </label>
-            </div>
-
-            <!-- QUANTO — a taxa é RESOLVIDA pelo endereço (zona de CEP, faixa de
-                 distância, frete grátis por valor), o mesmo motor da loja. Era um
-                 campo livre, e campo livre é um segundo dono do preço: duas vendas
-                 do mesmo endereço saíam diferentes conforme quem estava no caixa.
-                 A digitação continua existindo como EXCEÇÃO declarada. -->
-            <div class="grid gap-1.5 rounded-md border bg-card p-3 text-sm">
-              <div class="flex items-center justify-between gap-2">
-                <span class="font-medium text-muted-foreground">Taxa de entrega</span>
-                <strong class="tabular-nums">{{ deliveryFeeOverride ? "—" : formatBRL(deliveryFeeQ) }}</strong>
-              </div>
-              <p class="text-xs text-muted-foreground">{{ deliveryFeeNote }}</p>
-              <button
-                type="button"
-                class="justify-self-start text-xs font-medium text-muted-foreground underline underline-offset-2 hover:text-foreground"
-                @click="$emit('update:deliveryFeeOverride', !deliveryFeeOverride)"
-              >
-                {{ deliveryFeeOverride ? "Usar a taxa da loja" : "Combinar outro valor" }}
-              </button>
-              <UiInput
-                v-if="deliveryFeeOverride"
-                :model-value="deliveryFeeOverrideInput"
-                inputmode="decimal"
-                placeholder="0,00"
-                aria-label="Taxa combinada com o cliente"
-                @update:model-value="$emit('update:deliveryFeeOverrideInput', String($event || ''))"
-              />
-            </div>
-          </div>
-
-          <!-- Observações do pedido valem para RETIRADA também (não só entrega):
-               o dado sempre viajou no intent; só a tela o escondia. -->
-          <label class="grid gap-1 text-sm">
-            <span class="font-medium text-muted-foreground">Observações</span>
-            <UiTextarea :model-value="orderNotes" :rows="2" placeholder="Instruções do pedido, referência, recado" @update:model-value="$emit('update:orderNotes', String($event || ''))" />
-          </label>
-
-        </div>
-      <UiDialogFooter>
-        <UiButton class="w-full" @click="fulfillmentSheetOpen = false">Concluir</UiButton>
-      </UiDialogFooter>
-    </UiDialogContent>
-  </UiDialog>
+  <!-- RECEBIMENTO — a mesma caixa que a abertura da comanda usa. O checkout
+       agora REVÊ o que foi decidido no começo do atendimento, em vez de ser o
+       único lugar onde a pergunta existe. -->
+  <PosFulfillmentModal
+    v-model:open="fulfillmentSheetOpen"
+    :fulfillment-options="fulfillmentOptions"
+    :fulfillment-type="fulfillmentType"
+    :saved-addresses="savedAddresses"
+    :address-autocomplete="addressAutocomplete"
+    :delivery-address="deliveryAddress"
+    :delivery-street-number="deliveryStreetNumber"
+    :delivery-neighborhood="deliveryNeighborhood"
+    :delivery-complement="deliveryComplement"
+    :delivery-instructions="deliveryInstructions"
+    :delivery-date="deliveryDate"
+    :delivery-date-effective="deliveryDateEffective"
+    :delivery-time-slot="deliveryTimeSlot"
+    :delivery-slots="deliverySlots"
+    :delivery-slots-pending="deliverySlotsPending"
+    :delivery-fee-override="deliveryFeeOverride"
+    :delivery-fee-override-input="deliveryFeeOverrideInput"
+    :delivery-fee-q="deliveryFeeQ"
+    :delivery-fee-source="deliveryFeeSource"
+    :delivery-distance-km="deliveryDistanceKm"
+    :order-notes="orderNotes"
+    @update:fulfillment-type="$emit('update:fulfillmentType', $event)"
+    @update:delivery-address="$emit('update:deliveryAddress', $event)"
+    @update:delivery-address-structured="$emit('update:deliveryAddressStructured', $event)"
+    @update:delivery-street-number="$emit('update:deliveryStreetNumber', $event)"
+    @update:delivery-neighborhood="$emit('update:deliveryNeighborhood', $event)"
+    @update:delivery-complement="$emit('update:deliveryComplement', $event)"
+    @update:delivery-instructions="$emit('update:deliveryInstructions', $event)"
+    @update:delivery-date="$emit('update:deliveryDate', $event)"
+    @update:delivery-time-slot="$emit('update:deliveryTimeSlot', $event)"
+    @update:delivery-fee-override="$emit('update:deliveryFeeOverride', $event)"
+    @update:delivery-fee-override-input="$emit('update:deliveryFeeOverrideInput', $event)"
+    @update:order-notes="$emit('update:orderNotes', $event)"
+    @pick-saved-address="$emit('pickSavedAddress', $event)"
+  />
 
   <!-- Cliente & fiscal — shared full-screen picker (showFiscal rides the receipt) -->
   <PosCustomerModal

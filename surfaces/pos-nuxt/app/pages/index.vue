@@ -325,6 +325,22 @@ useHead({ htmlAttrs: { style: computed(() => rollStyle(pos.value)) } });
 const tabBoardRef = ref<{ focus: () => void } | null>(null);
 const productGridRef = ref<{ focusSearch: (seed?: string) => void } | null>(null);
 const tabHeaderRef = ref<{ openCustomer: () => void } | null>(null);
+
+// O Recebimento agora é perguntado na TELA DE VENDA (chip da barra e abertura da
+// comanda), não só no checkout. O estado mora aqui porque as duas superfícies
+// abrem a MESMA caixa — o checkout tem o seu próprio, para o F7 continuar
+// funcionando lá dentro sem passar por cima desta.
+const fulfillmentSheetOpen = ref(false);
+
+// O rótulo do chip: com entrega, o BAIRRO diz mais que a palavra "entrega" — é o
+// que o operador confere de relance quando o cliente muda de ideia no meio.
+const fulfillmentChipLabel = computed(() => {
+  const base = pos.value?.fulfillment_options.find((o) => o.ref === cart.fulfillmentType)?.label
+    || (cart.fulfillmentType === "delivery" ? "Entrega" : "Retirada");
+  if (cart.fulfillmentType !== "delivery") return base;
+  const bairro = cart.deliveryNeighborhood.trim() || cart.deliveryAddressStructured?.neighborhood?.trim() || "";
+  return bairro ? `${base} · ${bairro}` : base;
+});
 const paymentWorkspaceRef = ref<{
   validate: () => void;
   openCustomer: () => void;
@@ -580,6 +596,8 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onGlobalKeydown));
           :search-results="customerSearchResults"
           :search-busy="customerSearchBusy"
           :customer-resolved-new="customerResolvedNew"
+          :fulfillment-type="cart.fulfillmentType"
+          :fulfillment-label="fulfillmentChipLabel"
           :loading="busy"
           @rename="renameTab"
           @clear="clearCurrentTab"
@@ -590,6 +608,7 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onGlobalKeydown));
           @select-result="selectCustomerResult"
           @apply-customer-favorite="applyCustomerFavorite"
           @repeat-customer-last-order="repeatCustomerLastOrder"
+          @open-fulfillment="fulfillmentSheetOpen = true"
         />
         <h1 v-else class="min-w-0 truncate text-lg font-semibold leading-tight tracking-tight">{{ screenTitle }}</h1>
         <!-- PIX pendente que saiu da tela de resultado: chip compacto, com o
@@ -816,6 +835,36 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onGlobalKeydown));
           />
         </div>
     </aside>
+
+    <!-- RECEBIMENTO na tela de venda. É fato do PEDIDO, não do pagamento:
+         entrega acrescenta taxa e depende de endereço, e perguntar isso só no
+         checkout faz o total dar um pulo na última tela. Mesma caixa que o
+         checkout abre — o operador não reaprende nada. -->
+    <PosFulfillmentModal
+      v-model:open="fulfillmentSheetOpen"
+      v-model:fulfillment-type="cart.fulfillmentType"
+      v-model:delivery-address="cart.deliveryAddress"
+      v-model:delivery-address-structured="cart.deliveryAddressStructured"
+      v-model:delivery-street-number="cart.deliveryStreetNumber"
+      v-model:delivery-neighborhood="cart.deliveryNeighborhood"
+      v-model:delivery-complement="cart.deliveryComplement"
+      v-model:delivery-instructions="cart.deliveryInstructions"
+      v-model:delivery-date="cart.deliveryDate"
+      v-model:delivery-time-slot="cart.deliveryTimeSlot"
+      v-model:delivery-fee-override="cart.deliveryFeeOverride"
+      v-model:delivery-fee-override-input="cart.deliveryFeeOverrideInput"
+      v-model:order-notes="cart.orderNotes"
+      :fulfillment-options="pos?.fulfillment_options || []"
+      :saved-addresses="customerLookup?.saved_addresses || []"
+      :address-autocomplete="addressAutocomplete"
+      :delivery-date-effective="deliveryDateEffective"
+      :delivery-slots="deliverySlots"
+      :delivery-slots-pending="deliverySlotsPending"
+      :delivery-fee-q="deliveryFeeQ"
+      :delivery-fee-source="deliveryFeeSource"
+      :delivery-distance-km="deliveryDistanceKm"
+      @pick-saved-address="applySavedAddress"
+    />
 
     <PosTabPickerDialog
       v-model:open="tabDialogOpen"
