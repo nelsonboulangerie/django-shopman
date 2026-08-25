@@ -90,7 +90,7 @@ function confirmTyped() {
               @update:model-value="updateValue"
             />
             <UiButton type="submit" :disabled="busy || !modelValue.trim()">
-              Abrir / nova
+              Abrir comanda
             </UiButton>
           </div>
         </label>
@@ -116,7 +116,7 @@ function confirmTyped() {
             <span v-if="tab.item_count" class="text-xs font-semibold tabular-nums">
               {{ tab.item_count }} · {{ tab.total_display }}
             </span>
-            <span v-if="hasDraft && !canAssociate(tab)" class="text-xs text-amber-700">
+            <span v-if="hasDraft && !canAssociate(tab)" class="text-xs text-amber-700 dark:text-amber-400">
               Abra separadamente para evitar mistura de pedidos.
             </span>
           </button>

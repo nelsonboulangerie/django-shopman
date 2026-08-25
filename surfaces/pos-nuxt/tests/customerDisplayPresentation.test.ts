@@ -8,8 +8,8 @@ import {
   displayItemView,
   displayPhase,
   firstName,
-  itemDiscountLabel,
 } from "~/presentation/customerDisplay";
+import { lineDiscountBadge, pricingDiscountBadge, saleDiscountBadges } from "~/presentation/lineDiscounts";
 import type { PaymentProofView } from "~/presentation/payment";
 import { cartNetTotalQ, type PosReceiptSnapshot } from "~/presentation/receipt";
 import type { POSCartItem, POSCheckoutOptionProjection, POSSaleReviewProjection } from "~/types/pos";
@@ -94,21 +94,55 @@ describe("firstName — o obrigado chama pelo primeiro nome", () => {
   });
 });
 
-describe("itemDiscountLabel — o preço nunca muda calado", () => {
+describe("lineDiscountBadge — o preço nunca muda calado", () => {
   it("usa o rótulo do contrato quando o motivo é conhecido", () => {
     const it_ = item({ discount: { value: 15, reason: "liquidacao" } });
-    expect(itemDiscountLabel(it_, REASONS)).toBe("Liquidação −15%");
+    expect(lineDiscountBadge(it_, REASONS)).toBe("Liquidação −15%");
   });
   it("mostra o motivo cru quando o contrato não o conhece", () => {
     const it_ = item({ discount: { value: 10, reason: "Happy hour" } });
-    expect(itemDiscountLabel(it_, REASONS)).toBe("Happy hour −10%");
+    expect(lineDiscountBadge(it_, REASONS)).toBe("Happy hour −10%");
   });
   it("sem motivo, ainda nomeia: 'Desconto'", () => {
     const it_ = item({ discount: { value: 5, reason: "" } });
-    expect(itemDiscountLabel(it_, REASONS)).toBe("Desconto −5%");
+    expect(lineDiscountBadge(it_, REASONS)).toBe("Desconto −5%");
   });
   it("sem desconto, sem rótulo", () => {
-    expect(itemDiscountLabel(item(), REASONS)).toBe("");
+    expect(lineDiscountBadge(item(), REASONS)).toBe("");
+  });
+});
+
+describe("pricingDiscountBadge — o caso Batard (R$ 13,00 → R$ 11,05)", () => {
+  it("desconto de lote com percentual limpo: 'Liquidação −15%'", () => {
+    const it_ = item({
+      price_q: 1105,
+      pricing_discount: { type: "lot_discount", label: "Liquidação", amount_q: 195, percent: 15 },
+    });
+    expect(pricingDiscountBadge(it_)).toBe("Liquidação −15%");
+  });
+  it("sem percentual limpo, cai no valor em R$", () => {
+    const it_ = item({
+      pricing_discount: { type: "happy_hour", label: "Happy hour", amount_q: 33, percent: 0 },
+    });
+    expect(pricingDiscountBadge(it_)).toBe(`Happy hour −${formatBRL(33)}`);
+  });
+  it("o automático vence a exibição sobre o manual (é o que mexeu no preço)", () => {
+    const it_ = item({
+      discount: { value: 5, reason: "cortesia" },
+      pricing_discount: { type: "employee_discount", label: "Funcionário", amount_q: 100, percent: 20 },
+    });
+    expect(lineDiscountBadge(it_, REASONS)).toBe("Funcionário −20%");
+  });
+  it("saleDiscountBadges lista só as linhas com desconto, com nome", () => {
+    const rows = saleDiscountBadges([
+      item({ sku: "BATARD", name: "Batard", pricing_discount: { type: "lot_discount", label: "Liquidação", amount_q: 195, percent: 15 } }),
+      item({ sku: "CAFE", name: "Café" }),
+      item({ sku: "PAO", name: "Pão", discount: { value: 10, reason: "cortesia" } }),
+    ], REASONS);
+    expect(rows).toEqual([
+      { sku: "BATARD", name: "Batard", badge: "Liquidação −15%" },
+      { sku: "PAO", name: "Pão", badge: "Cortesia −10%" },
+    ]);
   });
 });
 

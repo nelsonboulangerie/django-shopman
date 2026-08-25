@@ -50,7 +50,7 @@ type StatusMeta = {
 
 const STATUS_META: Record<string, StatusMeta> = {
   ready: { label: "OK", dot: "bg-success", text: "text-success", badge: "success" },
-  warning: { label: "Atenção", dot: "bg-warning", text: "text-amber-700", badge: "warning" },
+  warning: { label: "Atenção", dot: "bg-warning", text: "text-amber-700 dark:text-amber-400", badge: "warning" },
   error: { label: "Erro", dot: "bg-destructive", text: "text-destructive", badge: "destructive" },
   // Periférico que a loja não instalou: aparece na lista como ausente, em tom
   // neutro, e NÃO acende o badge geral. Só falha o que existe.

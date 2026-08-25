@@ -33,7 +33,7 @@ const printedAt = computed(() => new Date(props.receipt.printedAtMs).toLocaleStr
     <div v-if="receipt.tabDisplay" class="flex justify-between"><span>Comanda</span><span>#{{ receipt.tabDisplay }}</span></div>
     <div class="flex justify-between"><span>Data</span><span>{{ printedAt }}</span></div>
     <div v-if="receipt.customerName" class="flex justify-between"><span>Cliente</span><span>{{ receipt.customerName }}</span></div>
-    <div class="flex justify-between"><span>Entrega</span><span>{{ receipt.fulfillmentLabel }}</span></div>
+    <div class="flex justify-between"><span>Recebimento</span><span>{{ receipt.fulfillmentLabel }}</span></div>
     <hr class="my-2 border-t border-dashed border-black/40" />
     <table class="w-full">
       <tbody>

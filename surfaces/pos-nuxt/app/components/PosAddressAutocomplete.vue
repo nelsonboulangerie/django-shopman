@@ -132,6 +132,6 @@ onBeforeUnmount(() => {
       <Icon v-if="isLoading" name="lucide:loader-circle" class="absolute right-3 top-1/2 size-4 -translate-y-1/2 animate-spin text-muted-foreground" />
     </div>
     <p v-if="!isAvailable" class="text-xs text-muted-foreground">Digite o endereço manualmente.</p>
-    <p v-else-if="error" class="text-xs text-amber-700">{{ error }}</p>
+    <p v-else-if="error" class="text-xs text-amber-700 dark:text-amber-400">{{ error }}</p>
   </div>
 </template>

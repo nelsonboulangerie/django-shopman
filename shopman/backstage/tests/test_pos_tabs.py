@@ -109,6 +109,52 @@ class POSTabSessionTests(TestCase):
         self.assertEqual(Session.objects.filter(channel_ref="pdv", state="open").count(), 1)
         self.assertEqual(int(session.items[0]["qty"]), 2)
 
+    def test_open_tab_exposes_the_pricing_discount_stamped_on_the_line(self) -> None:
+        """Transparência do desconto automático (o caso Batard 13,00 → 11,05).
+
+        Os modifiers de pricing carimbam o desconto vencedor em ``meta._disc``
+        (mecanismo ``_stamp_disc``: tipo, valor por unidade e rótulo) e o preço
+        de lista em ``meta._list_q``. O payload da comanda expõe isso como
+        ``pricing_discount`` para o PDV rotular a linha; o desconto MANUAL não
+        entra aqui (já viaja em ``discount``).
+        """
+        opened = build_open_tab(pos_service.open_pos_tab(
+            channel_ref="pdv", tab_ref="1007",
+            actor="pos:alice", operator_username="alice",
+        ))
+        skey = opened["tab_session_key"]
+        pos_service.save_pos_tab(
+            channel_ref="pdv",
+            payload=_payload(sku="BATARD", name="Batard", tab_session_key=skey),
+            actor="pos:alice", operator_username="alice",
+        )
+        session = Session.objects.get(session_key=skey)
+        items = session.items
+        # O carimbo durável dos modifiers (fonte: shopman/shop/modifiers.py).
+        items[0]["meta"] = {
+            **(items[0].get("meta") or {}),
+            "_list_q": 1300,
+            "_disc": {"type": "lot_discount", "amount_q": 195, "label": "Liquidação"},
+        }
+        items[0]["unit_price_q"] = 1105
+        session.update_items(items)
+
+        payload = build_open_tab(Session.objects.get(session_key=skey))
+        self.assertEqual(payload["items"][0]["pricing_discount"], {
+            "type": "lot_discount",
+            "label": "Liquidação",
+            "amount_q": 195,
+            "percent": 15,
+        })
+
+        # Desconto manual continua fora do pricing_discount.
+        items = Session.objects.get(session_key=skey).items
+        items[0]["meta"]["_disc"] = {"type": "manual", "amount_q": 100, "label": "Cortesia"}
+        session = Session.objects.get(session_key=skey)
+        session.update_items(items)
+        payload = build_open_tab(Session.objects.get(session_key=skey))
+        self.assertIsNone(payload["items"][0]["pricing_discount"])
+
     def test_reopening_in_use_tab_loads_existing_cart(self) -> None:
         opened = build_open_tab(pos_service.open_pos_tab(
             channel_ref="pdv",

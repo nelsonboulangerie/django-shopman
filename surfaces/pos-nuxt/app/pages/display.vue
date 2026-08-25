@@ -7,7 +7,7 @@
 // URL em inglês (/display); todo o texto em pt-BR.
 import type { CustomerDisplayPhase } from "~/types/customerDisplay";
 
-useHead({ title: "Tela do cliente · Shopman POS" });
+useHead({ title: "Tela do cliente · PDV" });
 
 const { snapshot } = useCustomerDisplayConsumer();
 

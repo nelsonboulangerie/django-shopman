@@ -228,6 +228,16 @@
   }
 }
 
+/* Tile de produto sem foto: o matiz vem por custom properties (presentation/
+   catalog decide a cor, o tema decide o par claro/escuro). O gradiente claro
+   fixo de antes estourava no dark mode. */
+.pos-tile-fallback {
+  background: linear-gradient(135deg, var(--tile-from), var(--tile-to));
+}
+.dark .pos-tile-fallback {
+  background: linear-gradient(135deg, var(--tile-from-dark), var(--tile-to-dark));
+}
+
 /* ───────────────────────────────────────────────────────────────────────────
    POS receipt print (spec §D3 — kiosk window.print)
 

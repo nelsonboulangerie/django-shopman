@@ -957,7 +957,7 @@ class DayClosingView(APIView):
         """
         quantities = request.data.get("quantities", {}) if hasattr(request, "data") else {}
         if not isinstance(quantities, dict):
-            return Response({"detail": "quantities must be an object."}, status=400)
+            return Response({"detail": "Envie as quantidades como um objeto (sku: quantidade)."}, status=400)
 
         closing = build_day_closing()
         if closing.already_closed:
@@ -1213,7 +1213,7 @@ class OrderEquipmentBackView(_OrderActionBase):
         try:
             custody = orders_service.mark_equipment_returned(order, actor=_actor(request))
         except OrderError as exc:
-            return Response({"detail": str(exc) or "Falha ao registrar a volta do aparelho."}, status=400)
+            return Response({"detail": str(exc) or "Falha ao registrar a volta da maquininha."}, status=400)
         return Response({"ok": True, "ref": ref, "equipment": list(custody.equipment), "back_at": custody.back_at})
 
 

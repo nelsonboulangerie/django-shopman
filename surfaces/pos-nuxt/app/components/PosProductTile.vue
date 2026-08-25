@@ -42,11 +42,11 @@ const fallbackMonogram = computed(() => productMonogram(props.product));
       />
       <div
         v-else
-        class="grid size-full place-items-center"
+        class="pos-tile-fallback grid size-full place-items-center"
         :style="fallbackStyle"
         aria-hidden="true"
       >
-        <span class="text-4xl font-black tabular-nums text-black/15">{{ fallbackMonogram }}</span>
+        <span class="text-4xl font-black tabular-nums text-foreground/15">{{ fallbackMonogram }}</span>
       </div>
 
       <UiBadge
@@ -55,6 +55,14 @@ const fallbackMonogram = computed(() => productMonogram(props.product));
       >
         {{ qty }}x
       </UiBadge>
+      <!-- Esgotado: selo por cima da imagem; o tile fica visível porém inerte
+           (sumir da grade faria o operador procurar um botão que "sumiu"). -->
+      <span
+        v-if="disabled"
+        class="absolute inset-x-0 bottom-0 bg-foreground/70 py-0.5 text-center text-xs font-semibold uppercase tracking-wide text-background"
+      >
+        Esgotado
+      </span>
     </div>
 
     <div class="grid gap-0.5 px-2.5 py-1.5">

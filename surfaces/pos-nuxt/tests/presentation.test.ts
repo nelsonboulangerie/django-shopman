@@ -16,15 +16,16 @@ import type {
 import { findAction, hasAction, resolveAffordance } from "../app/presentation/actions";
 import {
   filterProducts,
+  normalizeSearchText,
   orderCollections,
   productFallbackHue,
   productFallbackStyle,
   productMonogram,
 } from "../app/presentation/catalog";
-import { countOpenTabs, filterTabs, sanitizeTabRef, sortTabs, tabCardView } from "../app/presentation/tabBoard";
+import { countOpenTabs, filterTabs, filterTabsByQuery, sanitizeTabRef, sortTabs, tabCardView } from "../app/presentation/tabBoard";
+import { nextFreeNumericTabRef } from "../app/utils/posTabLifecycle";
 import { clampPercent, clampQty, popDigit, pushDigit } from "../app/presentation/numpad";
 import {
-  cashDeltaPresets,
   cashNotesQ,
   cashTenderSumQ,
   collectionsForFulfillment,
@@ -233,10 +234,42 @@ describe("presentation/catalog — grid shaping", () => {
     expect(filterProducts(products, {}).length).toBe(3);
   });
 
+  it("acha produto sem acento e prioriza início de palavra", () => {
+    const products = [
+      product({ sku: "TRUFA-PAPAIA", name: "Trufa de Papaia", collection_ref: "doces" }),
+      product({ sku: "PAO-QUEIJO", name: "Pão de Queijo", collection_ref: "paes" }),
+      product({ sku: "CAFE", name: "Café", collection_ref: "bebidas" }),
+    ];
+    // "pao" (sem acento) acha "Pão de Queijo"
+    expect(filterProducts(products, { query: "pao" }).map((p) => p.sku)).toEqual(["PAO-QUEIJO"]);
+    // "que" bate no início da palavra "Queijo"
+    expect(filterProducts(products, { query: "que" }).map((p) => p.sku)).toEqual(["PAO-QUEIJO"]);
+    // "pa": início de palavra ("Pão", "Papaia") vence quem só CONTÉM ("truPA" não existe,
+    // mas "Trufa de Papaia" também tem palavra começando com "pa") — ambos aparecem,
+    // com word-start primeiro na ordem original filtrada
+    expect(filterProducts(products, { query: "pa" }).map((p) => p.sku)).toEqual([
+      "TRUFA-PAPAIA",
+      "PAO-QUEIJO",
+    ]);
+    // match só no MEIO da palavra vem depois do match em início de palavra
+    const mixed = [
+      product({ sku: "COMPADRE", name: "Compadre", collection_ref: "doces" }),
+      product({ sku: "PAO-FORMA", name: "Pão de Forma", collection_ref: "paes" }),
+    ];
+    expect(filterProducts(mixed, { query: "pa" }).map((p) => p.sku)).toEqual([
+      "PAO-FORMA",
+      "COMPADRE",
+    ]);
+    expect(normalizeSearchText("Pão de Açúcar")).toBe("pao de acucar");
+  });
+
   it("derives a deterministic, calm fallback visual", () => {
     const p = product({ sku: "X", name: "Bolo", collection_ref: "doces" });
     expect(productFallbackHue(p)).toBe(productFallbackHue(p));
-    expect(productFallbackStyle(p).background).toContain("linear-gradient");
+    // Par claro + par escuro como custom properties: o CSS escolhe pelo tema.
+    const style = productFallbackStyle(p);
+    expect(style["--tile-from"]).toContain("hsl(");
+    expect(style["--tile-to-dark"]).toContain("hsl(");
     expect(productMonogram(p)).toBe("B");
     expect(productMonogram(product({ sku: "Y", name: "" }))).toBe("·");
   });
@@ -273,10 +306,29 @@ describe("presentation/tabBoard — board shaping", () => {
     });
 
     const free = tabCardView(tabs[0]!);
-    expect(free).toMatchObject({ isFree: true, pendingKitchen: false, summary: "Comanda livre", identity: "—", selected: false });
+    expect(free).toMatchObject({ isFree: true, pendingKitchen: false, summary: "Comanda livre", identity: "Livre", selected: false });
 
     const fired = tabCardView(tabs[2]!);
     expect(fired).toMatchObject({ isUnpaid: true, pendingKitchen: false, summary: "1 item · R$ 8,00" });
+  });
+
+  it("filtra os cards pelo que o operador digita (nome/ref, sem acento)", () => {
+    expect(filterTabsByQuery(tabs, "ana").map((t) => t.ref)).toEqual(["00001001"]);
+    expect(filterTabsByQuery(tabs, "Anã").map((t) => t.ref)).toEqual(["00001001"]);
+    expect(filterTabsByQuery(tabs, "1002").map((t) => t.ref)).toEqual(["00001002"]);
+    expect(filterTabsByQuery(tabs, "").length).toBe(3);
+    expect(filterTabsByQuery(tabs, "zzz")).toEqual([]);
+  });
+
+  it("aponta a próxima comanda numérica livre, com o padding do contrato", () => {
+    // 1001 e 1002 em uso; 1003 livre → a próxima livre é a 1003.
+    expect(nextFreeNumericTabRef(tabs, 8)).toBe("00001003");
+    // Todas em uso → a seguinte à maior (nova).
+    const allBusy = tabs.map((t) => ({ ...t, state: "in_use" }));
+    expect(nextFreeNumericTabRef(allBusy, 8)).toBe("00001004");
+    // Sem comanda numérica nenhuma → começa do 1.
+    expect(nextFreeNumericTabRef([{ ref: "mesa-vip", state: "in_use" }], 4)).toBe("0001");
+    expect(nextFreeNumericTabRef([], 0)).toBe("1");
   });
 
   it("sanitizes a tab ref to the channel's allowed shape", () => {
@@ -327,7 +379,9 @@ describe("presentation/payment — tender math & method affordance", () => {
 
   it("resolves the method label and icon, with fallbacks", () => {
     expect(methodLabel("pix", METHODS)).toBe("PIX");
-    expect(methodLabel("unknown", METHODS)).toBe("unknown");
+    // Ref cru nunca chega à tela: fallback pt-BR digno.
+    expect(methodLabel("external", METHODS)).toBe("Outro meio");
+    expect(methodLabel("unknown", METHODS)).toBe("Outro meio");
     expect(paymentIcon("cash")).toBe("lucide:banknote");
     expect(paymentIcon("weird")).toBe("lucide:wallet");
   });
@@ -373,15 +427,13 @@ describe("presentation/payment — tender math & method affordance", () => {
     });
   });
 
-  it("sources cash quick-add presets from the contract, falling back when absent", () => {
+  it("o trilho de cédulas vem do contrato; sem contrato, as notas BR padrão", () => {
     const contract = { cash_tender_delta_presets_q: [0, 1000, 5000] } as POSCheckoutContractProjection;
-    expect(cashDeltaPresets(contract)).toEqual([0, 1000, 5000]);
-    expect(cashDeltaPresets(null)).toEqual([1000, 5000, 10000]);
-    expect(cashDeltaPresets({ cash_tender_delta_presets_q: [] } as unknown as POSCheckoutContractProjection)).toEqual([1000, 5000, 10000]);
-  });
-
-  it("offers the main BR cash notes (R$2..R$100) for accumulation", () => {
+    // Valores não-positivos do contrato não viram cédula.
+    expect(cashNotesQ(contract)).toEqual([1000, 5000]);
+    expect(cashNotesQ(null)).toEqual([200, 500, 1000, 2000, 5000, 10000]);
     expect(cashNotesQ()).toEqual([200, 500, 1000, 2000, 5000, 10000]);
+    expect(cashNotesQ({ cash_tender_delta_presets_q: [] } as unknown as POSCheckoutContractProjection)).toEqual([200, 500, 1000, 2000, 5000, 10000]);
   });
 
   it("filters payment collections by fulfillment type", () => {

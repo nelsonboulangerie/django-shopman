@@ -11,7 +11,7 @@ import { globalKeysBlocked } from "~/utils/keyboardGuard";
 // PosPaymentWorkspace). O chrome comum (login, lock, offline) vive no shell
 // (app.vue); a sessão de caixa (abrir/fechar/movimentos) vive na antesala
 // (`/session`) — sem turno aberto, esta página manda o operador pra lá.
-useHead({ title: "Shopman POS" });
+useHead({ title: "PDV" });
 
 const apiPath = usePosApiPath();
 const action = usePosAction();
@@ -63,6 +63,7 @@ const {
   pixStatus,
   checkoutMode,
   moveDialogOpen,
+  movePreparing,
   review,
   customerLookup,
   tabDialogOpen,
@@ -75,6 +76,7 @@ const {
   tabMaxLength,
   tabPlaceholder,
   tabDisallowedChars,
+  tabZeroPadTo,
   tabDraftTargetStates,
   tabRequiredForCart,
   addressAutocomplete,
@@ -105,6 +107,8 @@ const {
   productQty,
   addProduct,
   setQty,
+  restoreItem,
+  setLineNotes,
   setLineDiscount,
   setLinePrice,
   requestTabAssociation,
@@ -261,7 +265,7 @@ useHead({ htmlAttrs: { style: computed(() => rollStyle(pos.value)) } });
 // F6 customer modal, Enter validates a covered checkout, Escape backs out of
 // checkout, "/" focuses product search when not editing, "?" opens the help).
 const tabBoardRef = ref<{ focus: () => void } | null>(null);
-const productGridRef = ref<{ focusSearch: () => void } | null>(null);
+const productGridRef = ref<{ focusSearch: (seed?: string) => void } | null>(null);
 const tabHeaderRef = ref<{ openCustomer: () => void } | null>(null);
 const paymentWorkspaceRef = ref<{ validate: () => void; openCustomer: () => void } | null>(null);
 const shortcutsHelpOpen = ref(false);
@@ -352,6 +356,19 @@ function onGlobalKeydown(event: KeyboardEvent) {
     }
   }
 
+  // Search-as-you-type (Odoo): na tela de venda, uma LETRA digitada fora de
+  // input começa a busca de produto com aquele caractere (dígitos seguem
+  // editando a linha ativa — comportamento do numpad do carrinho).
+  if (
+    inSaleView.value && !checkoutMode.value && !isEditing
+    && !event.metaKey && !event.ctrlKey && !event.altKey
+    && event.key.length === 1 && /\p{L}/u.test(event.key)
+  ) {
+    event.preventDefault();
+    productGridRef.value?.focusSearch(event.key);
+    return;
+  }
+
   switch (event.key) {
     case "Escape":
       if (checkoutMode.value) {
@@ -430,7 +447,7 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onGlobalKeydown));
           size="icon-sm"
           class="-ml-1 shrink-0"
           :aria-label="checkoutMode ? 'Voltar à comanda' : 'Voltar para comandas'"
-          :title="checkoutMode ? 'Voltar à comanda' : 'Comandas'"
+          :title="checkoutMode ? 'Voltar à comanda' : 'Voltar para comandas'"
           @click="checkoutMode ? (checkoutMode = false) : goToTabs()"
         >
           <Icon name="lucide:arrow-left" class="size-5" />
@@ -615,6 +632,7 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onGlobalKeydown));
           :max-length="tabMaxLength"
           :placeholder="tabPlaceholder"
           :disallowed-chars="tabDisallowedChars"
+          :zero-pad-to="tabZeroPadTo"
           @open="openTab"
           @request-association="requestTabAssociation('start')"
         />
@@ -670,7 +688,9 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onGlobalKeydown));
             @increment="(sku) => setQty(sku, productQty(sku) + 1)"
             @decrement="(sku) => setQty(sku, productQty(sku) - 1)"
             @remove="(sku) => setQty(sku, 0)"
+            @restore="restoreItem"
             @set-qty="(sku, qty) => setQty(sku, qty)"
+            @set-notes="setLineNotes"
             @set-discount="setLineDiscount"
             @set-price="setLinePrice"
             @prepare="prepareCheckout"
@@ -742,6 +762,7 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onGlobalKeydown));
       :other-tabs="otherOpenTabs"
       :capability="tabManipulation"
       :busy="busy"
+      :preparing="movePreparing"
       @submit="submitMove"
     />
 

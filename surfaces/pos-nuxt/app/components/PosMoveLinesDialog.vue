@@ -24,6 +24,8 @@ const props = defineProps<{
   /** `tab_manipulation` capability — drives the offered modes + price note. */
   capability: unknown;
   busy: boolean;
+  /** Fase de preparo (persist + reload dos line_ids): o diálogo já abriu. */
+  preparing?: boolean;
 }>();
 
 const emit = defineEmits<{
@@ -44,7 +46,10 @@ const targetSessionKey = ref("");
 watch(() => props.open, (isOpen) => {
   if (!isOpen) return;
   mode.value = modes.value[0]?.ref ?? "split";
-  selected.value = new Set(props.items.map(moveLineId));
+  // Seleção começa VAZIA: dividir a conta é escolher O QUE SAI — nascer com
+  // tudo marcado invertia o gesto (desmarcar o que fica) e um Enter apressado
+  // movia a comanda inteira.
+  selected.value = new Set();
   splitRef.value = props.suggestedSplitRef;
   targetSessionKey.value = defaultMoveTarget(props.otherTabs);
 });
@@ -106,7 +111,13 @@ function submit() {
         Move todos os itens desta comanda para a comanda escolhida e libera esta.
       </p>
 
-      <div v-if="needsSelection" class="grid max-h-56 gap-1 overflow-y-auto">
+      <!-- Preparo em curso: o diálogo abre na hora e o servidor renova os
+           line_ids por baixo — sem isto o botão 'Mover itens' parecia morto. -->
+      <p v-if="preparing" class="flex items-center gap-2 rounded-md border border-dashed p-3 text-sm text-muted-foreground">
+        <Icon name="line-md:loading-loop" class="size-4 shrink-0" />
+        Preparando a comanda…
+      </p>
+      <div v-else-if="needsSelection" class="grid max-h-56 gap-1 overflow-y-auto">
         <label
           v-for="line in lineViews"
           :key="line.id"

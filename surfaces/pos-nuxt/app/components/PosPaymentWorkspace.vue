@@ -31,12 +31,14 @@ import type {
 } from "~/types/pos";
 import { formatBRL } from "~/utils/posIntent";
 import {
+  cashNotesQ as contractCashNotesQ,
   collectionsForFulfillment,
   injectableMethods as toInjectableMethods,
   nonCashExcessQ,
   paymentIcon,
   tenderLineView,
 } from "~/presentation/payment";
+import { saleDiscountBadges } from "~/presentation/lineDiscounts";
 
 const props = defineProps<{
   tabDisplay: string;
@@ -211,10 +213,10 @@ const discountSheetOpen = ref(false);
 // selected tender is cash. BR notes (2/5/10/20/50/100) — the first tap after
 // selecting a tender SETS (the customer handed R$50), then accumulates.
 const digitKeys = ["1", "2", "3", "4", "5", "6", "7", "8", "9"];
-// Full BR cédulas (2/5/10/20/50/100) — the bills the customer hands over; each tap
-// ADDS to the selected cash tender (first tap after a fresh/auto value replaces,
-// then accumulates). Shown only when paying in cash.
-const cashNotesQ = [200, 500, 1000, 2000, 5000, 10000];
+// Cédulas que o cliente entrega — vêm do CONTRATO (cash_tender_delta_presets_q),
+// com as notas BR como fallback; cada toque SOMA na linha de dinheiro
+// selecionada (o primeiro toque sobre valor automático substitui).
+const cashNotesQ = computed(() => contractCashNotesQ(props.checkoutContract));
 const cashSelected = computed(() => props.selectedTenderMethod === "cash");
 const numpadActive = computed(() => props.selectedTenderIndex >= 0 && props.selectedTenderIndex < props.paymentTenders.length);
 
@@ -238,6 +240,11 @@ const discountSummary = computed(() =>
   props.discountType === "fixed" ? `R$ ${props.discountValue}` : `${props.discountValue}%`,
 );
 const customerSet = computed(() => Boolean(props.customerName.trim() || props.customerPhone.trim()));
+
+// Transparência de desconto no resumo: uma pílula por linha com desconto
+// (automático de pricing ou manual), mesmo idioma da tela do cliente. É o que
+// explica um total menor que a etiqueta sem o operador ter feito nada.
+const discountBadges = computed(() => saleDiscountBadges(props.items, props.discountReasons));
 
 // Kitchen clarity: tell the operator, unequivocally, what finalizing will do
 // vs what was already fired — so it's never a mystery whether food was sent.
@@ -439,7 +446,13 @@ defineExpose({
           </div>
           <!-- cédula rail — 4ª coluna (mesma largura das colunas do teclado);
                verde dinheiro + ícone de nota -->
-          <div v-if="cashSelected" class="grid flex-1 basis-0 grid-rows-6 gap-1.5" role="group" aria-label="Cédulas recebidas">
+          <div
+            v-if="cashSelected"
+            class="grid flex-1 basis-0 gap-1.5"
+            :style="{ gridTemplateRows: `repeat(${cashNotesQ.length}, minmax(0, 1fr))` }"
+            role="group"
+            aria-label="Cédulas recebidas"
+          >
             <button
               v-for="note in cashNotesQ"
               :key="note"
@@ -466,7 +479,7 @@ defineExpose({
         <!-- manager approval: when the review demands it, "Autorizar e validar"
              opens a dedicated PIN authorization screen (PosManagerAuthDialog) -->
         <p v-else-if="needsAuth" class="flex items-center gap-1.5 px-1 text-xs text-muted-foreground">
-          <Icon name="lucide:shield-check" class="size-3.5 shrink-0 text-amber-600" />
+          <Icon name="lucide:shield-check" class="size-3.5 shrink-0 text-amber-600 dark:text-amber-400" />
           Requer autorização do gerente para finalizar.
         </p>
 
@@ -500,6 +513,18 @@ defineExpose({
             <Icon name="lucide:flame" class="size-3.5 shrink-0" :class="firedCount ? 'text-primary' : ''" />
             {{ kitchenNote }}
           </p>
+          <!-- descontos por linha (lote/happy hour/funcionário/manual): o total
+               menor que a etiqueta se explica aqui, discreto -->
+          <div v-if="discountBadges.length" class="mt-2 flex max-w-xl flex-wrap justify-center gap-1.5">
+            <span
+              v-for="row in discountBadges"
+              :key="row.sku"
+              class="inline-flex items-center gap-1 rounded-full bg-primary/10 px-2 py-0.5 text-xs font-medium text-primary"
+            >
+              <Icon name="lucide:tags" class="size-3" />
+              {{ row.name }} · {{ row.badge }}
+            </span>
+          </div>
         </div>
 
         <!-- avisos não-bloqueantes da review (nunca impedem finalizar) -->
@@ -560,11 +585,11 @@ defineExpose({
 
   </section>
 
-  <!-- MODAL: Entrega / Retirada -->
+  <!-- MODAL: Recebimento (retirada / entrega) -->
   <UiDialog v-model:open="fulfillmentSheetOpen">
     <UiDialogContent class="max-h-[85vh] overflow-y-auto sm:max-w-lg">
       <UiDialogHeader>
-        <UiDialogTitle>Entrega</UiDialogTitle>
+        <UiDialogTitle>Recebimento</UiDialogTitle>
         <UiDialogDescription>Como o cliente recebe o pedido.</UiDialogDescription>
       </UiDialogHeader>
       <div class="grid gap-4">
@@ -641,11 +666,14 @@ defineExpose({
               <span class="font-medium text-muted-foreground">Horário combinado</span>
               <UiInput :model-value="deliveryTimeSlot" placeholder="Ex: 14:00-14:30" @update:model-value="$emit('update:deliveryTimeSlot', String($event || ''))" />
             </label>
-            <label class="grid gap-1 text-sm">
-              <span class="font-medium text-muted-foreground">Observações</span>
-              <UiTextarea :model-value="orderNotes" :rows="2" placeholder="Complemento, referência, instruções" @update:model-value="$emit('update:orderNotes', String($event || ''))" />
-            </label>
           </div>
+
+          <!-- Observações do pedido valem para RETIRADA também (não só entrega):
+               o dado sempre viajou no intent; só a tela o escondia. -->
+          <label class="grid gap-1 text-sm">
+            <span class="font-medium text-muted-foreground">Observações</span>
+            <UiTextarea :model-value="orderNotes" :rows="2" placeholder="Instruções do pedido, referência, recado" @update:model-value="$emit('update:orderNotes', String($event || ''))" />
+          </label>
 
         </div>
       <UiDialogFooter>

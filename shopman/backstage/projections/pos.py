@@ -53,6 +53,10 @@ class POSProductProjection:
     price_display: str
     collection_ref: str
     image_url: str = ""
+    # Esgotado de verdade no escopo do canal do PDV (stockman, leitura em lote).
+    # O tile fica visível porém inerte com o selo "Esgotado" — sumir o produto
+    # da grade faria o operador procurar um botão que "sumiu".
+    sold_out: bool = False
 
 
 @dataclass(frozen=True)
@@ -777,7 +781,7 @@ def build_pos_customer_search(query: str, limit: int = 8) -> tuple[POSCustomerSe
 
 def _load_products() -> list[POSProductProjection]:
     """Load products with prices for the POS grid."""
-    products: list[POSProductProjection] = []
+    entries: list[tuple[Product, int]] = []
 
     try:
         from shopman.offerman.models import ListingItem
@@ -795,15 +799,21 @@ def _load_products() -> list[POSProductProjection]:
         for li in items:
             p = li.product
             price_q = li.price_q if li.price_q else p.base_price_q
-            products.append(_product_projection(p, price_q))
+            entries.append((p, price_q))
     except Exception:
         logger.exception("pos_load_products_listing_failed")
 
-    if not products:
-        for p in Product.objects.filter(is_published=True, is_sellable=True).order_by("name"):
-            products.append(_product_projection(p, p.base_price_q))
+    if not entries:
+        entries = [
+            (p, p.base_price_q)
+            for p in Product.objects.filter(is_published=True, is_sellable=True).order_by("name")
+        ]
 
-    return products
+    sold_out = _sold_out_skus([p.sku for p, _ in entries])
+    return [
+        _product_projection(p, price_q, sold_out=p.sku in sold_out)
+        for p, price_q in entries
+    ]
 
 
 def _payment_methods() -> tuple[POSPaymentMethodProjection, ...]:
@@ -1210,7 +1220,7 @@ def _checkout_contract(
             ref="fulfillment_type",
             payload_key="fulfillment_type",
             section_ref="fulfillment",
-            label="Fulfillment",
+            label="Recebimento",
             input_type="segmented",
             required=True,
             options=tuple(
@@ -1404,7 +1414,10 @@ def _checkout_contract(
         fields=fields,
         receipt_channels=tuple(option for option in receipt_channels if option.ref in POS_SALE_INTENT_RECEIPT_CHANNELS),
         tender_methods=tender_methods,
-        cash_tender_delta_presets_q=(0, 1000, 2000, 5000, 10000),
+        # As cédulas BR que o cliente entrega no balcão — o trilho de dinheiro do
+        # checkout consome daqui (config-driven; a tela só cai no default local
+        # quando o contrato não manda nada).
+        cash_tender_delta_presets_q=(200, 500, 1000, 2000, 5000, 10000),
         discount_types=(
             POSCheckoutOptionProjection(ref="percent", label="Percentual"),
             POSCheckoutOptionProjection(ref="fixed", label="Valor fixo"),
@@ -1723,7 +1736,7 @@ def _saved_address_projection(addr) -> SavedAddressProjection:
     )
 
 
-def _product_projection(product: Product, price_q: int) -> POSProductProjection:
+def _product_projection(product: Product, price_q: int, *, sold_out: bool = False) -> POSProductProjection:
     ci = (
         product.collection_items
         .filter(is_primary=True)
@@ -1738,7 +1751,43 @@ def _product_projection(product: Product, price_q: int) -> POSProductProjection:
         price_display=f"R$ {format_money(price_q)}",
         collection_ref=ci.collection.ref if ci else "",
         image_url=product.image_url or "",
+        sold_out=sold_out,
     )
+
+
+def _sold_out_skus(skus: list[str]) -> set[str]:
+    """SKUs esgotados no escopo do canal do PDV — a MESMA leitura em lote que o
+    storefront usa (``catalog_context.availability_for_skus`` → stockman), uma
+    query para a grade inteira. Silencioso quando o stockman não responde: a
+    grade do balcão nunca quebra por causa de um selo.
+    """
+    if not skus:
+        return set()
+    try:
+        from decimal import Decimal
+
+        from shopman.shop.projections.catalog_context import (
+            availability_for_skus,
+            basic_availability,
+        )
+
+        avail_map = availability_for_skus(skus, channel_ref=POS_CHANNEL_REF)
+        sold_out: set[str] = set()
+        for sku in skus:
+            raw = avail_map.get(sku)
+            # SKU sem rastreio de estoque não é esgotado: o zero dele é ausência
+            # de dado, não vitrine vazia — o selo só afirma o que o stockman mede.
+            if not raw or not raw.get("is_tracked"):
+                continue
+            resolved = basic_availability(
+                raw, is_sellable=True, low_stock_threshold=Decimal("0"),
+            )
+            if resolved.status == "unavailable":
+                sold_out.add(sku)
+        return sold_out
+    except Exception:
+        logger.exception("pos_sold_out_lookup_failed")
+        return set()
 
 
 def _tab_projection(*, ref: str, session: Session | None, display_ref: str = "") -> POSTabProjection:
@@ -1904,14 +1953,15 @@ def _fiscal_runtime() -> tuple[str, str, str]:
     """Return a compact fiscal health tuple for the POS terminal bar."""
     adapter_path = getattr(settings, "SHOPMAN_FISCAL_ADAPTER", None)
     if not adapter_path:
-        return ("warning", "Fiscal", "sem adapter")
+        # A dica chega crua à tela do operador: sem jargão de infraestrutura.
+        return ("warning", "Fiscal", "emissão fiscal não configurada")
 
     if "fiscal_focusnfe.FocusNFeBackend" in str(adapter_path):
         readiness = focus_nfe_readiness(mode="runtime")
         return (readiness.status, readiness.label, readiness.message)
 
     # Adapter fiscal desconhecido: informar, nunca quebrar a projection do POS.
-    return ("warning", "Fiscal", "adapter sem verificação de prontidão")
+    return ("warning", "Fiscal", "emissão fiscal sem verificação automática")
 
 
 # ── Open-comanda read-model ──────────────────────────────────────────────
@@ -1941,6 +1991,40 @@ def _tab_payload_line_discount(item: dict) -> dict | None:
     if not value:
         return None
     return {"value": value, "reason": manual.get("reason", "cortesia")}
+
+
+# Descontos AUTOMÁTICOS de pricing que os modifiers carimbam por linha em
+# ``meta._disc`` (mecanismo ``_stamp_disc``). Manual fica de fora (já viaja em
+# ``discount``); cupom/promoção de pedido é order-level, não selo de linha.
+_AUTO_PRICING_DISCOUNT_TYPES = frozenset({"lot_discount", "happy_hour", "employee_discount"})
+
+
+def _tab_payload_pricing_discount(item: dict) -> dict | None:
+    """O desconto automático que venceu a linha (lote, happy hour, funcionário).
+
+    O kernel baixa ``unit_price_q`` e carimba tipo, valor por unidade e RÓTULO
+    de cliente em ``meta._disc`` — mas o PDV não mostrava nada: o operador via
+    R$ 11,05 num produto etiquetado R$ 13,00 sem saber dizer por quê (o caso
+    Batard). ``percent`` sai do preço de lista carimbado (``meta._list_q``);
+    zero quando o percentual não fecha limpo (a tela cai no valor em R$).
+    """
+    meta = item.get("meta") or {}
+    disc = meta.get("_disc") or {}
+    if disc.get("type") not in _AUTO_PRICING_DISCOUNT_TYPES:
+        return None
+    amount_q = _int_q(disc.get("amount_q"))
+    if amount_q <= 0:
+        return None
+    list_q = _int_q(meta.get("_list_q"))
+    percent = 0
+    if list_q > 0 and (amount_q * 100) % list_q == 0:
+        percent = amount_q * 100 // list_q
+    return {
+        "type": str(disc.get("type")),
+        "label": str(disc.get("label") or "Desconto"),
+        "amount_q": amount_q,
+        "percent": percent,
+    }
 
 
 def _manual_discount_originals(session: Session) -> dict[str, int]:
@@ -2013,6 +2097,7 @@ def build_open_tab(session: Session) -> dict:
             "notes": (item.get("meta") or {}).get("notes", ""),
             "fired": item.get("line_id", "") in fired_lines,
             "discount": _tab_payload_line_discount(item),
+            "pricing_discount": _tab_payload_pricing_discount(item),
             "price_overridden": bool((item.get("meta") or {}).get("price_overridden")),
         }
         for item in (session.items or [])

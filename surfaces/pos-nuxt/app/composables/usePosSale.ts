@@ -37,6 +37,7 @@ import {
 } from "~/presentation/payment";
 import {
   draftAssociationTargetStates,
+  numericRefsZeroPaddedTo,
   requiresOpenTabForCart,
   requiresTabBeforeSave,
   tabRefDisallowedChars,
@@ -212,6 +213,9 @@ export function usePosSale(deps: PosSaleDeps) {
   // sale workspace. "Comandas" returns to the Tabs screen with the tab still open.
   const showTabs = ref(true);
   const moveDialogOpen = ref(false);
+  // O diálogo de mover abre imediatamente; isto marca a fase de preparo
+  // (persist + reload dos line_ids) para o spinner interno do diálogo.
+  const movePreparing = ref(false);
   const review = ref<POSSaleReviewProjection | null>(null);
   const customerLookup = ref<POSCustomerLookupProjection | null>(null);
   const tabDialogOpen = ref(false);
@@ -267,6 +271,7 @@ export function usePosSale(deps: PosSaleDeps) {
   const tabMaxLength = computed(() => tabRefMaxLength(checkoutCapabilities.value));
   const tabPlaceholder = computed(() => tabRefPlaceholder(checkoutCapabilities.value));
   const tabDisallowedChars = computed(() => tabRefDisallowedChars(checkoutCapabilities.value));
+  const tabZeroPadTo = computed(() => numericRefsZeroPaddedTo(checkoutCapabilities.value));
   const tabDraftTargetStates = computed(() => draftAssociationTargetStates(checkoutCapabilities.value));
   const tabRequiredForCart = computed(() => requiresOpenTabForCart(checkoutCapabilities.value));
   const tabRequiredForSave = computed(() => requiresTabBeforeSave(checkoutCapabilities.value));
@@ -559,6 +564,22 @@ export function usePosSale(deps: PosSaleDeps) {
     existing.qty = qty;
   }
 
+  // Observação da linha (Odoo Note): o autosave persiste e o fire leva ao KDS.
+  function setLineNotes(sku: string, notes: string) {
+    const item = cart.items.find((entry) => entry.sku === sku);
+    if (!item) return;
+    item.notes = notes;
+  }
+
+  // "Desfazer" da remoção direta: devolve a linha como estava (qty, desconto,
+  // observação). Idempotente: se a linha voltou por outro caminho, não duplica.
+  function restoreItem(item: POSCartItem) {
+    if (!canUseCart.value) return;
+    if (cart.items.some((entry) => entry.sku === item.sku)) return;
+    review.value = null;
+    cart.items.push({ ...item });
+  }
+
   function setLineDiscount(sku: string, value: number, reason: string) {
     const item = cart.items.find((entry) => entry.sku === sku);
     if (!item) return;
@@ -739,7 +760,7 @@ export function usePosSale(deps: PosSaleDeps) {
       tabInput.value = "";
       await refresh();
     } catch (error) {
-      serverError.value = httpErrorMessage(error, "Falha ao abrir comanda.");
+      serverError.value = httpErrorMessage(error, "Não foi possível abrir a comanda. Confira a referência ou escolha uma no quadro.");
     } finally {
       busy.value = false;
     }
@@ -1127,7 +1148,7 @@ export function usePosSale(deps: PosSaleDeps) {
     try {
       await persistTab();
     } catch (error) {
-      serverError.value = httpErrorMessage(error, "Falha ao salvar comanda.");
+      serverError.value = httpErrorMessage(error, "Não foi possível salvar a comanda. Os itens seguem na tela; confira a conexão e tente de novo.");
     } finally {
       saving.value = false;
     }
@@ -1286,7 +1307,7 @@ export function usePosSale(deps: PosSaleDeps) {
         cart.managerPin = "";
         managerApprovalError.value = failure.recovery || failure.message || "Aprovação gerencial inválida.";
       } else {
-        serverError.value = httpErrorMessage(error, "Falha ao finalizar venda.");
+        serverError.value = httpErrorMessage(error, "Não foi possível finalizar a venda. O pedido não foi fechado; revise o pagamento e valide de novo.");
       }
     } finally {
       busy.value = false;
@@ -1324,16 +1345,21 @@ export function usePosSale(deps: PosSaleDeps) {
 
   async function openMoveDialog() {
     if (!hasOpenTab.value || !cart.items.length) return;
-    // Persist + reload so the lines carry server line_ids the move op needs.
+    // O diálogo abre JÁ, com spinner interno — os dois round-trips (persist +
+    // reload, que renovam os line_ids que o move exige) rodam por baixo. Antes
+    // eles vinham ANTES do diálogo e o botão parecia morto por um segundo.
     serverError.value = "";
+    moveDialogOpen.value = true;
+    movePreparing.value = true;
     busy.value = true;
     try {
       await persistTab();
       await reloadCurrentTab();
-      moveDialogOpen.value = true;
     } catch (error) {
+      moveDialogOpen.value = false;
       serverError.value = httpErrorMessage(error, "Falha ao preparar a comanda para mover itens.");
     } finally {
+      movePreparing.value = false;
       busy.value = false;
     }
   }
@@ -1560,6 +1586,7 @@ export function usePosSale(deps: PosSaleDeps) {
     checkoutMode,
     showTabs,
     moveDialogOpen,
+    movePreparing,
     review,
     customerLookup,
     tabDialogOpen,
@@ -1575,6 +1602,7 @@ export function usePosSale(deps: PosSaleDeps) {
     tabMaxLength,
     tabPlaceholder,
     tabDisallowedChars,
+    tabZeroPadTo,
     tabDraftTargetStates,
     tabRequiredForCart,
     tabRequiredForSave,
@@ -1609,6 +1637,8 @@ export function usePosSale(deps: PosSaleDeps) {
     productQty,
     addProduct,
     setQty,
+    restoreItem,
+    setLineNotes,
     setLineDiscount,
     setLinePrice,
     sanitizeTabRef,

@@ -1,7 +1,7 @@
 <script setup lang="ts">
 // Sale Workspace · product grid (spec §2.2) — image-forward grade + rail de
 // categorias. Consumes the catalog Projection through `presentation/catalog`
-// (favourite-ordered categories, name/SKU filter); price and availability are
+// (favourite-ordered categories, name/code filter); price and availability are
 // sealed in the Projection (price_display) and only rendered. Search and
 // the active collection are grid-local presentation state. Emits `add`; the
 // shell resolves the session command.
@@ -55,8 +55,14 @@ function productQty(sku: string): number {
 }
 
 // F3 focuses the search field (the shell owns the shortcut, the grid the field).
+// `seed` é o search-as-you-type: uma letra digitada fora de input começa uma
+// busca NOVA com aquele caractere (as teclas seguintes já caem no campo focado).
 const searchInputRef = ref<{ inputRef?: HTMLInputElement } | null>(null);
-defineExpose({ focusSearch: () => searchInputRef.value?.inputRef?.focus() });
+function focusSearch(seed?: string) {
+  if (seed !== undefined) search.value = seed;
+  searchInputRef.value?.inputRef?.focus();
+}
+defineExpose({ focusSearch });
 </script>
 
 <template>
@@ -64,7 +70,7 @@ defineExpose({ focusSearch: () => searchInputRef.value?.inputRef?.focus() });
     <div class="flex shrink-0 items-center gap-2">
       <div class="relative flex-1">
         <Icon name="lucide:search" class="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-        <UiInput ref="searchInputRef" v-model="search" class="h-11 pl-9 pr-12 text-base" type="search" placeholder="Buscar produto por nome ou SKU" autofocus />
+        <UiInput ref="searchInputRef" v-model="search" class="h-11 pl-9 pr-12 text-base" type="search" placeholder="Buscar produto por nome ou código" autofocus />
         <kbd class="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 rounded border bg-muted px-1.5 py-0.5 font-mono text-xs font-medium text-muted-foreground" aria-hidden="true">F3</kbd>
       </div>
       <UiPopover>
@@ -113,7 +119,9 @@ defineExpose({ focusSearch: () => searchInputRef.value?.inputRef?.focus() });
     </div>
 
     <div class="-mx-1 px-1 md:min-h-0 md:flex-1 md:overflow-y-auto">
-      <div v-if="pending" class="grid gap-2.5" :class="densityCols">
+      <!-- Skeleton só no PRIMEIRO carregamento: um refresh de fundo com a grade
+           já populada não pisca 12 tiles pulsando em cima do catálogo. -->
+      <div v-if="pending && !products.length" class="grid gap-2.5" :class="densityCols">
         <div v-for="idx in 12" :key="idx" class="aspect-[4/3] animate-pulse rounded-md border bg-muted" />
       </div>
       <div v-else-if="!filteredProducts.length" class="rounded-md border border-dashed p-8 text-center text-muted-foreground">
@@ -125,6 +133,7 @@ defineExpose({ focusSearch: () => searchInputRef.value?.inputRef?.focus() });
           :key="product.sku"
           :product="product"
           :qty="productQty(product.sku)"
+          :disabled="product.sold_out"
           @add="emit('add', $event)"
         />
       </div>

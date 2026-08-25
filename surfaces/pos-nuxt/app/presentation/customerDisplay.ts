@@ -18,6 +18,7 @@ import type {
   CustomerDisplaySnapshot,
   PosDisplayResult,
 } from "~/types/customerDisplay";
+import { lineDiscountBadge } from "~/presentation/lineDiscounts";
 import { cartNetTotalQ, receiptLineTotalQ } from "~/presentation/receipt";
 import { formatBRL } from "~/utils/posIntent";
 
@@ -38,18 +39,6 @@ export function firstName(fullName: string): string {
   return (fullName || "").trim().split(/\s+/)[0] || "";
 }
 
-/** Rótulo do desconto da linha: "Cortesia −10%". "" quando não há desconto. */
-export function itemDiscountLabel(
-  item: POSCartItem,
-  reasons: POSCheckoutOptionProjection[],
-): string {
-  const pct = item.discount?.value || 0;
-  if (pct <= 0) return "";
-  const reasonRef = item.discount?.reason || "";
-  const label = reasons.find((option) => option.ref === reasonRef)?.label || reasonRef || "Desconto";
-  return `${label} −${pct}%`;
-}
-
 /** Linha pronta para o cliente ler: nome, qtd, unitário e total líquido. */
 export function displayItemView(
   item: POSCartItem,
@@ -66,7 +55,7 @@ export function displayItemView(
     qty: item.qty,
     unitDisplay: formatBRL(item.price_q),
     totalDisplay: formatBRL(netQ),
-    discountLabel: itemDiscountLabel(item, reasons),
+    discountLabel: lineDiscountBadge(item, reasons),
   };
 }
 

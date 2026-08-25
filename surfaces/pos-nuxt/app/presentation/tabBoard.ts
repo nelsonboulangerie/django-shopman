@@ -6,8 +6,23 @@
 // the shape the board renders. No availability or price arithmetic.
 
 import type { POSTabProjection } from "~/types/pos";
+import { normalizeSearchText } from "~/presentation/catalog";
 
 export type TabFilter = "all" | "in_use";
+
+/**
+ * Filtro do board pelo campo de referência: o que o operador digita ali também
+ * FILTRA os cards (nome do cliente ou ref, sem exigir acento) — antes o filtro
+ * rico só existia dentro do seletor de comandas.
+ */
+export function filterTabsByQuery(tabs: POSTabProjection[], query: string): POSTabProjection[] {
+  const normalized = normalizeSearchText((query || "").trim());
+  if (!normalized) return tabs;
+  return tabs.filter((tab) =>
+    [tab.display_ref, tab.ref, tab.customer_name]
+      .some((value) => normalizeSearchText(String(value || "")).includes(normalized)),
+  );
+}
 
 /** Open tabs first, then by display ref (numeric-aware, pt-BR). */
 export function sortTabs(tabs: POSTabProjection[]): POSTabProjection[] {
@@ -37,7 +52,7 @@ export interface TabCardView {
   /** Has items but nothing sent to the kitchen yet — a quiet "a enviar" cue. */
   pendingKitchen: boolean;
   statusLabel: string;
-  /** Customer name, falling back to an items preview, then an em dash. */
+  /** Customer name, falling back to an items preview, then "Livre". */
   identity: string;
   /** Line summary: item count + total, or the free-tab affordance. */
   summary: string;
@@ -75,7 +90,7 @@ export function tabCardView(tab: POSTabProjection, selectedRef = ""): TabCardVie
     isUnpaid: Boolean(tab.fired),
     pendingKitchen: hasItems && !tab.fired,
     statusLabel: tab.status_label,
-    identity: tab.customer_name || tab.items_preview || "—",
+    identity: tab.customer_name || tab.items_preview || "Livre",
     summary: hasItems
       ? `${tab.item_count} ${tab.item_count === 1 ? "item" : "itens"} · ${tab.total_display}`
       : "Comanda livre",

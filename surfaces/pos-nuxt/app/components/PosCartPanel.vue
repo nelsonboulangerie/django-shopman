@@ -6,6 +6,8 @@ import { globalKeysBlocked } from "~/utils/keyboardGuard";
 import { clampPercent, clampQty, popDigit, pushDigit } from "~/presentation/numpad";
 import { fireBarView, kitchenLineState } from "~/presentation/kitchen";
 import { pruneSelection, selectionView, toggleSelected } from "~/presentation/selection";
+import { pricingDiscountBadge } from "~/presentation/lineDiscounts";
+import { toast } from "vue-sonner";
 
 const props = defineProps<{
   items: POSCartItem[];
@@ -24,7 +26,11 @@ const emit = defineEmits<{
   increment: [string];
   decrement: [string];
   remove: [string];
+  /** "Desfazer" do toast de remoção: devolve a linha exatamente como estava. */
+  restore: [POSCartItem];
   setQty: [string, number];
+  /** Observação da linha (padrão Odoo Note): viaja no intent e chega ao KDS. */
+  setNotes: [string, string];
   setDiscount: [string, number, string];
   /** Operator unit-price override (numpad "Preço"); gated by manager approval. */
   setPrice: [string, number];
@@ -67,9 +73,13 @@ function batchUnfire() {
   if (selection.value.canUnfire) emit("unfireLines", selection.value.skus);
   clearSelection();
 }
+// Remover o LOTE é gesto largo: confirma antes (a seleção pode ter linha já
+// enviada à cozinha e o operador pode ter marcado a mais).
 function batchRemove() {
-  selection.value.skus.forEach((sku) => emit("remove", sku));
-  clearSelection();
+  const skus = selection.value.skus;
+  if (!skus.length) return;
+  const hasFired = skus.some((sku) => props.items.find((item) => item.sku === sku)?.fired);
+  confirmAction.value = { kind: "batch", skus, hasFired };
 }
 
 // Kitchen handoff (spec §2.5): the fire bar and per-line state are shaped from
@@ -155,11 +165,57 @@ function setMode(mode: "qty" | "disc" | "price") {
   numpadMode.value = mode;
 }
 
-// Removing a line requires a confirmation modal naming the irreversible effect.
-const confirmAction = ref<{ sku: string; name: string } | null>(null);
+// Observação da linha (Odoo Note): diálogo simples de texto para a linha ativa.
+// O dado já existia (POSCartItem.notes, intent, KDS) — só faltava quem editasse.
+const noteDialog = ref<{ sku: string; name: string; text: string } | null>(null);
+function openNoteDialog() {
+  const item = activeItem.value;
+  if (!item) return;
+  noteDialog.value = { sku: item.sku, name: item.name, text: item.notes || "" };
+}
+function saveNote() {
+  const dialog = noteDialog.value;
+  noteDialog.value = null;
+  if (!dialog) return;
+  emit("setNotes", dialog.sku, dialog.text.trim());
+}
+
+// Remoção de linha em dois pesos: rascunho ainda não disparado à cozinha sai
+// DIRETO, com "Desfazer" no toast (é recuperável, modal aqui era atrito);
+// linha já disparada e o lote da seleção pedem confirmação, porque desfazer
+// esses envolve a cozinha, não só a tela.
+const confirmAction = ref<
+  | { kind: "line"; sku: string; name: string }
+  | { kind: "batch"; skus: string[]; hasFired: boolean }
+  | null
+>(null);
+const confirmTitle = computed(() => {
+  const action = confirmAction.value;
+  if (!action) return "";
+  if (action.kind === "batch") {
+    return action.skus.length === 1 ? "Remover o item selecionado?" : `Remover ${action.skus.length} itens selecionados?`;
+  }
+  return "Remover item enviado à cozinha?";
+});
+const confirmCta = computed(() =>
+  confirmAction.value?.kind === "batch" && confirmAction.value.skus.length > 1 ? "Remover itens" : "Remover item",
+);
 function askRemove(sku: string) {
   const item = props.items.find((entry) => entry.sku === sku);
-  confirmAction.value = { sku, name: item?.name || "item" };
+  if (!item) return;
+  if (!item.fired) {
+    removeWithUndo(item);
+    return;
+  }
+  confirmAction.value = { kind: "line", sku, name: item.name || "item" };
+}
+function removeWithUndo(item: POSCartItem) {
+  const snapshot: POSCartItem = { ...item };
+  if (selectedSku.value === item.sku) selectedSku.value = "";
+  emit("remove", item.sku);
+  toast(`${snapshot.name} removido.`, {
+    action: { label: "Desfazer", onClick: () => emit("restore", snapshot) },
+  });
 }
 function cancelConfirm() {
   confirmAction.value = null;
@@ -168,6 +224,11 @@ function runConfirm() {
   const action = confirmAction.value;
   confirmAction.value = null;
   if (!action) return;
+  if (action.kind === "batch") {
+    action.skus.forEach((sku) => emit("remove", sku));
+    clearSelection();
+    return;
+  }
   if (selectedSku.value === action.sku) selectedSku.value = "";
   emit("remove", action.sku);
 }
@@ -329,7 +390,7 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onWindowKeydown));
       <div class="grid gap-1">
         <p class="text-base font-semibold">Abra uma comanda</p>
         <p class="text-sm text-muted-foreground">
-          O carrinho do POS fica recuperável somente depois de associado a uma comanda.
+          Escolha uma comanda para este atendimento não se perder.
         </p>
       </div>
       <UiButton type="button" :disabled="loading" @click="$emit('requestTab')">
@@ -367,6 +428,20 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onWindowKeydown));
             <p class="text-xs tabular-nums" :class="item.price_overridden ? 'text-primary' : 'text-muted-foreground'">
               <Icon v-if="item.price_overridden" name="lucide:pencil" class="mr-0.5 inline size-3 align-[-1px]" />{{ item.qty }}× {{ formatBRL(item.price_q) }} · {{ formatBRL(item.qty * item.price_q) }}
             </p>
+            <p v-if="item.notes" class="flex items-center gap-1 truncate text-xs italic text-muted-foreground">
+              <Icon name="lucide:sticky-note" class="size-3 shrink-0" />
+              <span class="truncate">{{ item.notes }}</span>
+            </p>
+            <!-- Desconto automático de pricing (lote/liquidação, happy hour,
+                 funcionário): o preço da linha JÁ vem reduzido; o badge diz por quê. -->
+            <span
+              v-if="pricingDiscountBadge(item)"
+              class="mt-0.5 inline-flex w-fit items-center gap-1 rounded-full bg-primary/10 px-2 py-0.5 text-xs font-medium text-primary"
+              :title="`Desconto automático: ${pricingDiscountBadge(item)}`"
+            >
+              <Icon name="lucide:tags" class="size-3" />
+              {{ pricingDiscountBadge(item) }}
+            </span>
             <span
               v-if="item.discount && item.discount.value > 0"
               class="mt-0.5 inline-flex w-fit items-center gap-1 rounded-full bg-primary/10 px-2 py-0.5 text-xs font-medium text-primary"
@@ -395,16 +470,18 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onWindowKeydown));
               Na cozinha
             </span>
           </div>
+          <!-- Alvos de toque de balcão: steppers em icon-sm (36px), e a lixeira
+               APARTADA deles, para o dedo apressado não remover querendo "menos 1". -->
           <div class="flex items-center gap-1" @click.stop>
-            <UiButton variant="ghost" size="icon-xs" aria-label="Diminuir" @click="bump(item.sku, 'decrement')">
-              <Icon name="lucide:minus" class="size-3.5" />
+            <UiButton variant="ghost" size="icon-sm" aria-label="Diminuir" @click="bump(item.sku, 'decrement')">
+              <Icon name="lucide:minus" class="size-4" />
             </UiButton>
             <span class="w-6 text-center text-sm font-semibold tabular-nums">{{ item.qty }}</span>
-            <UiButton variant="ghost" size="icon-xs" aria-label="Aumentar" @click="bump(item.sku, 'increment')">
-              <Icon name="lucide:plus" class="size-3.5" />
+            <UiButton variant="ghost" size="icon-sm" aria-label="Aumentar" @click="bump(item.sku, 'increment')">
+              <Icon name="lucide:plus" class="size-4" />
             </UiButton>
-            <UiButton variant="ghost" size="icon-xs" aria-label="Remover" @click="askRemove(item.sku)">
-              <Icon name="lucide:trash-2" class="size-3.5 text-destructive" />
+            <UiButton variant="ghost" size="icon-sm" class="ml-2" aria-label="Remover" @click="askRemove(item.sku)">
+              <Icon name="lucide:trash-2" class="size-4 text-destructive" />
             </UiButton>
           </div>
         </li>
@@ -456,6 +533,15 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onWindowKeydown));
           @click="setMode('price')"
         >
           Preço
+        </button>
+        <button
+          type="button"
+          class="flex-1 rounded-md border py-1.5 text-sm font-medium transition"
+          :class="activeItem?.notes ? 'border-primary bg-primary/5' : 'hover:bg-accent'"
+          :disabled="!activeItem"
+          @click="openNoteDialog"
+        >
+          Obs.
         </button>
       </div>
       <p v-else class="px-1 text-xs font-medium text-muted-foreground">
@@ -554,17 +640,42 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onWindowKeydown));
     </div>
   </UiCard>
 
+  <UiDialog :open="!!noteDialog" @update:open="(value) => { if (!value) noteDialog = null; }">
+    <UiDialogContent class="sm:max-w-sm">
+      <UiDialogHeader>
+        <UiDialogTitle>Observação · {{ noteDialog?.name }}</UiDialogTitle>
+        <UiDialogDescription>A observação sai junto com o item para a cozinha.</UiDialogDescription>
+      </UiDialogHeader>
+      <UiTextarea
+        v-if="noteDialog"
+        v-model="noteDialog.text"
+        :rows="3"
+        placeholder="Ex: sem cebola, bem passado"
+        autofocus
+      />
+      <UiDialogFooter class="gap-2">
+        <UiButton variant="outline" @click="noteDialog = null">Cancelar</UiButton>
+        <UiButton @click="saveNote">Salvar observação</UiButton>
+      </UiDialogFooter>
+    </UiDialogContent>
+  </UiDialog>
+
   <UiDialog :open="!!confirmAction" @update:open="(value) => { if (!value) cancelConfirm(); }">
     <UiDialogContent class="sm:max-w-sm">
       <UiDialogHeader>
-        <UiDialogTitle>Remover item?</UiDialogTitle>
-        <UiDialogDescription>
-          Remover <strong>{{ confirmAction?.name }}</strong> do pedido? A ação não pode ser desfeita.
+        <UiDialogTitle>{{ confirmTitle }}</UiDialogTitle>
+        <UiDialogDescription v-if="confirmAction?.kind === 'line'">
+          <strong>{{ confirmAction.name }}</strong> já foi enviado à cozinha. Remover tira a linha do pedido; avise o preparo se necessário.
+        </UiDialogDescription>
+        <UiDialogDescription v-else-if="confirmAction?.kind === 'batch'">
+          {{ confirmAction.hasFired
+            ? "As linhas selecionadas saem do pedido, inclusive as que já foram à cozinha."
+            : "As linhas selecionadas saem do pedido." }}
         </UiDialogDescription>
       </UiDialogHeader>
       <UiDialogFooter class="gap-2">
         <UiButton variant="outline" @click="cancelConfirm">Cancelar</UiButton>
-        <UiButton variant="destructive" @click="runConfirm">Remover item</UiButton>
+        <UiButton variant="destructive" @click="runConfirm">{{ confirmCta }}</UiButton>
       </UiDialogFooter>
     </UiDialogContent>
   </UiDialog>

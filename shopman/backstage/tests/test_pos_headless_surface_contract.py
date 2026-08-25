@@ -92,6 +92,25 @@ class POSHeadlessSurfaceContractTests(TestCase):
         self.terminal = Terminal.default()
         self.shift = cash.open_shift(operator=self.operator, terminal=self.terminal, float_q=0)
 
+    def test_products_expose_sold_out_from_stock_scope(self) -> None:
+        """Esgotado de verdade (SKU rastreado, zero promissível) vira selo no tile.
+
+        Mesmo seam de leitura em lote do storefront (stockman via
+        catalog_context) — sem quant o produto segue disponível (não rastreado
+        não é esgotado).
+        """
+        from shopman.stockman.models import Position, Quant
+
+        # Sem rastreio de estoque: disponível (sold_out False).
+        payload = self.client.get("/api/v1/backstage/pos/").json()
+        self.assertFalse(payload["pos"]["products"][0]["sold_out"])
+
+        # SKU rastreado com saldo zero e sem produção planejada: esgotado.
+        vitrine = Position.objects.create(ref="vitrine", name="Vitrine", is_saleable=True)
+        Quant.objects.create(sku="POS-HEADLESS-ITEM", position=vitrine)
+        payload = self.client.get("/api/v1/backstage/pos/").json()
+        self.assertTrue(payload["pos"]["products"][0]["sold_out"])
+
     def test_api_pos_payload_matches_projection_builder(self) -> None:
         response = self.client.get("/api/v1/backstage/pos/")
 
