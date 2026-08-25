@@ -43,6 +43,7 @@ jobs:
           - kds-nuxt
           - orders-nuxt
           - production-nuxt
+          - purchase-nuxt
           - hub-nuxt
           - marketing-nuxt
           - bi-nuxt

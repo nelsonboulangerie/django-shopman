@@ -102,6 +102,11 @@ def can_operate_production(user) -> bool:
     return is_superuser(user) or user.has_perm("backstage.operate_production")
 
 
+def can_operate_purchase(user) -> bool:
+    """Gate do app Compras (``compras.``): reposição, custos e recebimento."""
+    return is_superuser(user) or user.has_perm("backstage.operate_purchase")
+
+
 def can_manage_campaigns(user) -> bool:
     """Gate do app Campanha (marketing operacional).
 
@@ -120,4 +125,5 @@ def can_view_operator_alerts(user) -> bool:
         or can_operate_pos(user)
         or can_operate_kds(user)
         or can_operate_production(user)
+        or can_operate_purchase(user)
     )

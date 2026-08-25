@@ -366,7 +366,7 @@ lint: admin ## Ruff + Admin/Unfold
 # endereço do checkout parou de avançar sozinho, e nada acusou.
 #
 # Um app por vez, sem `-` no comando: o primeiro que quebrar para a linha.
-SURFACES := storefront-nuxt hub-nuxt pos-nuxt kds-nuxt orders-nuxt production-nuxt marketing-nuxt bi-nuxt
+SURFACES := storefront-nuxt hub-nuxt pos-nuxt kds-nuxt orders-nuxt production-nuxt purchase-nuxt marketing-nuxt bi-nuxt
 
 surfaces: ## Superfícies Nuxt: typecheck + vitest de todos os apps
 	@for app in $(SURFACES); do \

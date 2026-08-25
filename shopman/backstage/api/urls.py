@@ -152,6 +152,15 @@ from .operations import (
     WorkOrderStartView,
     WorkOrderVoidView,
 )
+from .purchase import (
+    PurchaseBoardView,
+    PurchaseConfirmReceiptView,
+    PurchaseCostView,
+    PurchaseRejectReceiptView,
+    PurchaseRequestApproveView,
+    PurchaseRequestSendView,
+    PurchaseScanInvoiceView,
+)
 from .telemetry import ClientErrorView
 
 urlpatterns = [
@@ -209,6 +218,34 @@ urlpatterns = [
         "production/weighing/blind-map/",
         ProductionBlindMapView.as_view(),
         name="api-backstage-production-blind-map",
+    ),
+    # Compras — recebimento/reposição sobre Buyman + Stockman.
+    path("buyman/", PurchaseBoardView.as_view(), name="api-backstage-buyman"),
+    path(
+        "buyman/receipts/scan-invoice/",
+        PurchaseScanInvoiceView.as_view(),
+        name="api-backstage-buyman-scan-invoice",
+    ),
+    path(
+        "buyman/receipts/confirm/",
+        PurchaseConfirmReceiptView.as_view(),
+        name="api-backstage-buyman-confirm-receipt",
+    ),
+    path(
+        "buyman/receipts/reject/",
+        PurchaseRejectReceiptView.as_view(),
+        name="api-backstage-buyman-reject-receipt",
+    ),
+    path("buyman/costs/", PurchaseCostView.as_view(), name="api-backstage-buyman-costs"),
+    path(
+        "buyman/requests/<str:material_sku>/approve/",
+        PurchaseRequestApproveView.as_view(),
+        name="api-backstage-buyman-request-approve",
+    ),
+    path(
+        "buyman/requests/<str:material_sku>/send/",
+        PurchaseRequestSendView.as_view(),
+        name="api-backstage-buyman-request-send",
     ),
     # B.I. — persona gestor (perm fina backstage.view_bi, ADR-021)
     path("bi/production/", BIProductionView.as_view(), name="api-backstage-bi-production"),

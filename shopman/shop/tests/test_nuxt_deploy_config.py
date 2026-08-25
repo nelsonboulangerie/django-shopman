@@ -13,6 +13,7 @@ SURFACES = (
     "kds-nuxt",
     "orders-nuxt",
     "production-nuxt",
+    "purchase-nuxt",
     "marketing-nuxt",
     "bi-nuxt",
 )
@@ -55,3 +56,12 @@ def test_make_surfaces_includes_all_nuxt_apps():
     line = next(line for line in source.splitlines() if line.startswith("SURFACES :="))
     for surface in SURFACES:
         assert surface in line
+
+
+def test_alpha_app_platform_spec_routes_all_nuxt_apps():
+    source = (ROOT / ".do" / "app.alpha-subdomains.yaml").read_text()
+    for surface in SURFACES:
+        assert f"name: {surface}" in source
+        assert f"source_dir: /surfaces/{surface}" in source
+    assert "compras.boulangerie.com.br" in source
+    assert "SHOPMAN_PURCHASE_BASE_URL" in source

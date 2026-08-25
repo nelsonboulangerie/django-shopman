@@ -21,6 +21,18 @@ def send(recipient: str, template: str, context: dict | None = None, **config) -
         lines.append(f"Pedido: *{order_ref}*")
     if status:
         lines.append(f"Status: {status}")
+    if ctx.get("purchase_ref"):
+        lines.append(f"Compra: *{ctx['purchase_ref']}*")
+    if ctx.get("receipt_ref"):
+        lines.append(f"Recebimento: *{ctx['receipt_ref']}*")
+    if ctx.get("supplier_name"):
+        lines.append(f"Fornecedor: {ctx['supplier_name']}")
+    if ctx.get("document_ref"):
+        lines.append(f"Documento: {ctx['document_ref']}")
+    if ctx.get("reason"):
+        lines.append(f"Motivo: {ctx['reason']}")
+    if ctx.get("lines_text"):
+        lines.append(str(ctx["lines_text"]))
     for key in ("customer_name", "total_display", "eta_display"):
         if ctx.get(key):
             lines.append(f"{key}: {ctx[key]}")
