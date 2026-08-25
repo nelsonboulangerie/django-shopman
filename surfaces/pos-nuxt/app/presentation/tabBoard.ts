@@ -6,8 +6,23 @@
 // the shape the board renders. No availability or price arithmetic.
 
 import type { POSTabProjection } from "~/types/pos";
+import { normalizeSearchText } from "~/presentation/catalog";
 
 export type TabFilter = "all" | "in_use";
+
+/**
+ * Filtro do board pelo campo de referência: o que o operador digita ali também
+ * FILTRA os cards (nome do cliente ou ref, sem exigir acento) — antes o filtro
+ * rico só existia dentro do seletor de comandas.
+ */
+export function filterTabsByQuery(tabs: POSTabProjection[], query: string): POSTabProjection[] {
+  const normalized = normalizeSearchText((query || "").trim());
+  if (!normalized) return tabs;
+  return tabs.filter((tab) =>
+    [tab.display_ref, tab.ref, tab.customer_name]
+      .some((value) => normalizeSearchText(String(value || "")).includes(normalized)),
+  );
+}
 
 /** Open tabs first, then by display ref (numeric-aware, pt-BR). */
 export function sortTabs(tabs: POSTabProjection[]): POSTabProjection[] {

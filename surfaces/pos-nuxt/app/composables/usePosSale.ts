@@ -37,6 +37,7 @@ import {
 } from "~/presentation/payment";
 import {
   draftAssociationTargetStates,
+  numericRefsZeroPaddedTo,
   requiresOpenTabForCart,
   requiresTabBeforeSave,
   tabRefDisallowedChars,
@@ -267,6 +268,7 @@ export function usePosSale(deps: PosSaleDeps) {
   const tabMaxLength = computed(() => tabRefMaxLength(checkoutCapabilities.value));
   const tabPlaceholder = computed(() => tabRefPlaceholder(checkoutCapabilities.value));
   const tabDisallowedChars = computed(() => tabRefDisallowedChars(checkoutCapabilities.value));
+  const tabZeroPadTo = computed(() => numericRefsZeroPaddedTo(checkoutCapabilities.value));
   const tabDraftTargetStates = computed(() => draftAssociationTargetStates(checkoutCapabilities.value));
   const tabRequiredForCart = computed(() => requiresOpenTabForCart(checkoutCapabilities.value));
   const tabRequiredForSave = computed(() => requiresTabBeforeSave(checkoutCapabilities.value));
@@ -1591,6 +1593,7 @@ export function usePosSale(deps: PosSaleDeps) {
     tabMaxLength,
     tabPlaceholder,
     tabDisallowedChars,
+    tabZeroPadTo,
     tabDraftTargetStates,
     tabRequiredForCart,
     tabRequiredForSave,

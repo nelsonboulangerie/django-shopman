@@ -75,6 +75,7 @@ const {
   tabMaxLength,
   tabPlaceholder,
   tabDisallowedChars,
+  tabZeroPadTo,
   tabDraftTargetStates,
   tabRequiredForCart,
   addressAutocomplete,
@@ -630,6 +631,7 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onGlobalKeydown));
           :max-length="tabMaxLength"
           :placeholder="tabPlaceholder"
           :disallowed-chars="tabDisallowedChars"
+          :zero-pad-to="tabZeroPadTo"
           @open="openTab"
           @request-association="requestTabAssociation('start')"
         />

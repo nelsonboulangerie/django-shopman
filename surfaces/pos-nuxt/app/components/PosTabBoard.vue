@@ -5,7 +5,8 @@
 // and emits intent; it owns no orchestration. `move_lines` is Arc 4 — here the
 // board only lists, selects and opens.
 import type { POSTabProjection } from "~/types/pos";
-import { countOpenTabs, filterTabs, sanitizeTabRef, sortTabs, tabCardView, type TabCardView, type TabFilter } from "~/presentation/tabBoard";
+import { countOpenTabs, filterTabs, filterTabsByQuery, sanitizeTabRef, sortTabs, tabCardView, type TabCardView, type TabFilter } from "~/presentation/tabBoard";
+import { nextFreeNumericTabRef } from "~/utils/posTabLifecycle";
 
 const props = defineProps<{
   tabs: POSTabProjection[];
@@ -18,6 +19,8 @@ const props = defineProps<{
   maxLength: number;
   placeholder: string;
   disallowedChars: string[];
+  /** Padding do contrato para refs numéricas (`numeric_refs_zero_padded_to`). */
+  zeroPadTo: number;
 }>();
 
 const emit = defineEmits<{
@@ -32,9 +35,21 @@ const tabView = ref<"grid" | "list">("grid");
 
 const ordered = computed(() => sortTabs(props.tabs));
 const openCount = computed(() => countOpenTabs(props.tabs));
+// O input de referência também FILTRA os cards enquanto digita (nome/ref).
+const queried = computed(() => filterTabsByQuery(ordered.value, props.modelValue));
 const cards = computed(() =>
-  filterTabs(ordered.value, tabFilter.value).map((tab) => ({ tab, view: tabCardView(tab, props.selectedTabRef) })),
+  filterTabs(queried.value, tabFilter.value).map((tab) => ({ tab, view: tabCardView(tab, props.selectedTabRef) })),
 );
+// A próxima comanda numérica livre — um toque abre sem digitar nada.
+const nextFreeRef = computed(() => nextFreeNumericTabRef(props.tabs, props.zeroPadTo));
+const nextFreeDisplay = computed(() => nextFreeRef.value.replace(/^0+/, "") || "0");
+function openNextFree() {
+  if (!nextFreeRef.value) return;
+  const existing = props.tabs.find((tab) => tab.ref === nextFreeRef.value);
+  if (existing) activateTab(existing);
+  else if (props.hasDraft) emit("requestAssociation");
+  else emit("open", nextFreeRef.value);
+}
 
 // Board color = a traffic-light semantic (Pablo, 2026-06-10): cor só onde tem
 // significado. Selecionada vence (a venda ativa); depois "não pago" (âmbar =
@@ -56,6 +71,12 @@ function updateInput(value: unknown) {
 
 function submitInput() {
   if (!props.modelValue.trim()) return;
+  // Enter com UM único card filtrado abre exatamente aquele card — digitou
+  // "ana" e só a comanda da Ana sobrou, Enter é ela.
+  if (queried.value.length === 1) {
+    activateTab(queried.value[0]!);
+    return;
+  }
   emit("open", props.modelValue);
 }
 
@@ -88,7 +109,19 @@ defineExpose({ focus: () => inputRef.value?.inputRef?.focus() });
       </div>
       <UiButton type="submit" size="lg" class="h-11 shrink-0 gap-2" :disabled="busy || !modelValue.trim()">
         <Icon name="lucide:plus" class="size-5" />
-        Abrir / nova
+        Abrir comanda
+      </UiButton>
+      <UiButton
+        type="button"
+        size="lg"
+        variant="outline"
+        class="h-11 shrink-0 gap-2"
+        :disabled="busy"
+        :title="`Abrir a comanda ${nextFreeDisplay}`"
+        @click="openNextFree"
+      >
+        <Icon name="lucide:arrow-right-circle" class="size-5" />
+        Próxima livre · #{{ nextFreeDisplay }}
       </UiButton>
     </form>
     <div v-if="tabs.length" class="flex shrink-0 flex-wrap items-center gap-2">
@@ -136,6 +169,9 @@ defineExpose({ focus: () => inputRef.value?.inputRef?.focus() });
 
     <p v-if="!tabs.length" class="rounded-md border border-dashed p-8 text-center text-sm text-muted-foreground">
       Nenhuma comanda ainda. Digite uma referência acima para abrir a primeira.
+    </p>
+    <p v-else-if="!cards.length && modelValue.trim()" class="rounded-md border border-dashed p-4 text-center text-sm text-muted-foreground">
+      Nenhuma comanda combina com "{{ modelValue.trim() }}". Enter abre uma nova com essa referência.
     </p>
     <p v-else-if="!cards.length" class="rounded-md border border-dashed p-4 text-center text-sm text-muted-foreground">
       Nenhuma comanda em uso agora.

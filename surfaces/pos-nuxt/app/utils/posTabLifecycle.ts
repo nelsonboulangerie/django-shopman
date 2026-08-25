@@ -47,3 +47,28 @@ export function draftAssociationTargetStates(capabilities: Record<string, unknow
   const states = tabLifecycle(capabilities).draft_association_target_states;
   return Array.isArray(states) && states.length ? states.map(String) : ["empty"];
 }
+
+export function numericRefsZeroPaddedTo(capabilities: Record<string, unknown> | null | undefined): number {
+  const value = tabLifecycle(capabilities).numeric_refs_zero_padded_to;
+  return Number.isInteger(value) && Number(value) > 0 ? Number(value) : 0;
+}
+
+/**
+ * A "próxima livre" do board: a MENOR comanda numérica existente que não está
+ * em uso; sem nenhuma livre, a próxima depois da maior (abre uma nova). O ref
+ * devolvido segue o padding do contrato (`numeric_refs_zero_padded_to`), o
+ * mesmo que o servidor normaliza ao abrir.
+ */
+export function nextFreeNumericTabRef(
+  tabs: Array<{ ref: string; state: string }>,
+  zeroPadTo = 0,
+): string {
+  const numeric = tabs
+    .map((tab) => ({ tab, n: /^\d+$/.test(String(tab.ref || "").trim()) ? Number.parseInt(tab.ref, 10) : Number.NaN }))
+    .filter((entry) => Number.isFinite(entry.n))
+    .sort((a, b) => a.n - b.n);
+  const free = numeric.find((entry) => entry.tab.state !== "in_use");
+  const n = free ? free.n : (numeric.length ? numeric[numeric.length - 1]!.n + 1 : 1);
+  const raw = String(n);
+  return zeroPadTo > 0 ? raw.padStart(zeroPadTo, "0") : raw;
+}

@@ -22,7 +22,8 @@ import {
   productFallbackStyle,
   productMonogram,
 } from "../app/presentation/catalog";
-import { countOpenTabs, filterTabs, sanitizeTabRef, sortTabs, tabCardView } from "../app/presentation/tabBoard";
+import { countOpenTabs, filterTabs, filterTabsByQuery, sanitizeTabRef, sortTabs, tabCardView } from "../app/presentation/tabBoard";
+import { nextFreeNumericTabRef } from "../app/utils/posTabLifecycle";
 import { clampPercent, clampQty, popDigit, pushDigit } from "../app/presentation/numpad";
 import {
   cashDeltaPresets,
@@ -307,6 +308,25 @@ describe("presentation/tabBoard — board shaping", () => {
 
     const fired = tabCardView(tabs[2]!);
     expect(fired).toMatchObject({ isUnpaid: true, pendingKitchen: false, summary: "1 item · R$ 8,00" });
+  });
+
+  it("filtra os cards pelo que o operador digita (nome/ref, sem acento)", () => {
+    expect(filterTabsByQuery(tabs, "ana").map((t) => t.ref)).toEqual(["00001001"]);
+    expect(filterTabsByQuery(tabs, "Anã").map((t) => t.ref)).toEqual(["00001001"]);
+    expect(filterTabsByQuery(tabs, "1002").map((t) => t.ref)).toEqual(["00001002"]);
+    expect(filterTabsByQuery(tabs, "").length).toBe(3);
+    expect(filterTabsByQuery(tabs, "zzz")).toEqual([]);
+  });
+
+  it("aponta a próxima comanda numérica livre, com o padding do contrato", () => {
+    // 1001 e 1002 em uso; 1003 livre → a próxima livre é a 1003.
+    expect(nextFreeNumericTabRef(tabs, 8)).toBe("00001003");
+    // Todas em uso → a seguinte à maior (nova).
+    const allBusy = tabs.map((t) => ({ ...t, state: "in_use" }));
+    expect(nextFreeNumericTabRef(allBusy, 8)).toBe("00001004");
+    // Sem comanda numérica nenhuma → começa do 1.
+    expect(nextFreeNumericTabRef([{ ref: "mesa-vip", state: "in_use" }], 4)).toBe("0001");
+    expect(nextFreeNumericTabRef([], 0)).toBe("1");
   });
 
   it("sanitizes a tab ref to the channel's allowed shape", () => {
