@@ -213,6 +213,9 @@ export function usePosSale(deps: PosSaleDeps) {
   // sale workspace. "Comandas" returns to the Tabs screen with the tab still open.
   const showTabs = ref(true);
   const moveDialogOpen = ref(false);
+  // O diálogo de mover abre imediatamente; isto marca a fase de preparo
+  // (persist + reload dos line_ids) para o spinner interno do diálogo.
+  const movePreparing = ref(false);
   const review = ref<POSSaleReviewProjection | null>(null);
   const customerLookup = ref<POSCustomerLookupProjection | null>(null);
   const tabDialogOpen = ref(false);
@@ -1342,16 +1345,21 @@ export function usePosSale(deps: PosSaleDeps) {
 
   async function openMoveDialog() {
     if (!hasOpenTab.value || !cart.items.length) return;
-    // Persist + reload so the lines carry server line_ids the move op needs.
+    // O diálogo abre JÁ, com spinner interno — os dois round-trips (persist +
+    // reload, que renovam os line_ids que o move exige) rodam por baixo. Antes
+    // eles vinham ANTES do diálogo e o botão parecia morto por um segundo.
     serverError.value = "";
+    moveDialogOpen.value = true;
+    movePreparing.value = true;
     busy.value = true;
     try {
       await persistTab();
       await reloadCurrentTab();
-      moveDialogOpen.value = true;
     } catch (error) {
+      moveDialogOpen.value = false;
       serverError.value = httpErrorMessage(error, "Falha ao preparar a comanda para mover itens.");
     } finally {
+      movePreparing.value = false;
       busy.value = false;
     }
   }
@@ -1578,6 +1586,7 @@ export function usePosSale(deps: PosSaleDeps) {
     checkoutMode,
     showTabs,
     moveDialogOpen,
+    movePreparing,
     review,
     customerLookup,
     tabDialogOpen,

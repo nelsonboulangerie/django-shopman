@@ -63,6 +63,7 @@ const {
   pixStatus,
   checkoutMode,
   moveDialogOpen,
+  movePreparing,
   review,
   customerLookup,
   tabDialogOpen,
@@ -761,6 +762,7 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onGlobalKeydown));
       :other-tabs="otherOpenTabs"
       :capability="tabManipulation"
       :busy="busy"
+      :preparing="movePreparing"
       @submit="submitMove"
     />
 
