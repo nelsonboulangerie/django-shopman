@@ -266,7 +266,10 @@ describe("presentation/catalog — grid shaping", () => {
   it("derives a deterministic, calm fallback visual", () => {
     const p = product({ sku: "X", name: "Bolo", collection_ref: "doces" });
     expect(productFallbackHue(p)).toBe(productFallbackHue(p));
-    expect(productFallbackStyle(p).background).toContain("linear-gradient");
+    // Par claro + par escuro como custom properties: o CSS escolhe pelo tema.
+    const style = productFallbackStyle(p);
+    expect(style["--tile-from"]).toContain("hsl(");
+    expect(style["--tile-to-dark"]).toContain("hsl(");
     expect(productMonogram(p)).toBe("B");
     expect(productMonogram(product({ sku: "Y", name: "" }))).toBe("·");
   });

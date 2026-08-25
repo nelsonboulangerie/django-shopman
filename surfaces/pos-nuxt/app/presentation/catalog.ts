@@ -81,10 +81,19 @@ export function productFallbackHue(product: POSProductProjection): number {
   return hash;
 }
 
-export function productFallbackStyle(product: POSProductProjection): { background: string } {
+/**
+ * O visual do tile sem foto sai como custom properties (par claro + par
+ * escuro); quem escolhe o par é o CSS (`.pos-tile-fallback` × `.dark`) — o
+ * gradiente claro fixo estourava no dark mode.
+ */
+export function productFallbackStyle(product: POSProductProjection): Record<string, string> {
   const hue = productFallbackHue(product);
+  const hueTo = (hue + 24) % 360;
   return {
-    background: `linear-gradient(135deg, hsl(${hue} 42% 92%), hsl(${(hue + 24) % 360} 38% 85%))`,
+    "--tile-from": `hsl(${hue} 42% 92%)`,
+    "--tile-to": `hsl(${hueTo} 38% 85%)`,
+    "--tile-from-dark": `hsl(${hue} 24% 26%)`,
+    "--tile-to-dark": `hsl(${hueTo} 22% 20%)`,
   };
 }
 

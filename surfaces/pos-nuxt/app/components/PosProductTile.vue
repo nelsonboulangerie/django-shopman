@@ -42,11 +42,11 @@ const fallbackMonogram = computed(() => productMonogram(props.product));
       />
       <div
         v-else
-        class="grid size-full place-items-center"
+        class="pos-tile-fallback grid size-full place-items-center"
         :style="fallbackStyle"
         aria-hidden="true"
       >
-        <span class="text-4xl font-black tabular-nums text-black/15">{{ fallbackMonogram }}</span>
+        <span class="text-4xl font-black tabular-nums text-foreground/15">{{ fallbackMonogram }}</span>
       </div>
 
       <UiBadge

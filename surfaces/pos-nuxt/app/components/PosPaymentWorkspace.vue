@@ -479,7 +479,7 @@ defineExpose({
         <!-- manager approval: when the review demands it, "Autorizar e validar"
              opens a dedicated PIN authorization screen (PosManagerAuthDialog) -->
         <p v-else-if="needsAuth" class="flex items-center gap-1.5 px-1 text-xs text-muted-foreground">
-          <Icon name="lucide:shield-check" class="size-3.5 shrink-0 text-amber-600" />
+          <Icon name="lucide:shield-check" class="size-3.5 shrink-0 text-amber-600 dark:text-amber-400" />
           Requer autorização do gerente para finalizar.
         </p>
 
