@@ -120,11 +120,13 @@ describe("PosPaymentWorkspace — seções semânticas da coluna de trabalho", (
       }),
     });
     const receiving = wrapper.find('section[aria-label="Recebimento"]');
-    expect(receiving.text()).toContain("Troco para quanto?");
+    // Rótulo diz o MOMENTO: "troco" sozinho confundia com o troco do numpad,
+    // que é dinheiro na mão agora — este é o pagamento na porta, depois.
+    expect(receiving.text()).toContain("Com quanto vai pagar na porta?");
     expect(receiving.text()).toContain("Menor que o total");
     // Na retirada o campo não existe.
     const pickup = await mountSuspended(PosPaymentWorkspace, { props: props() });
-    expect(pickup.text()).not.toContain("Troco para quanto?");
+    expect(pickup.text()).not.toContain("Com quanto vai pagar na porta?");
   });
 });
 

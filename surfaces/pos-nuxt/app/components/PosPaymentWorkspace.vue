@@ -539,20 +539,29 @@ defineExpose({
             </button>
           </div>
 
-          <!-- "Troco para quanto?" — dinheiro na porta (COD): a chave canônica
-               payment.change_for_q, a mesma do checkout da loja; o despacho a lê
-               para sugerir quanto de troco o entregador leva. Opcional. -->
+          <!-- Dinheiro NA PORTA (COD). Chamava-se "Troco para quanto?" e confundia
+               com o TROCO do numpad, ali embaixo — dois campos falando "troco" no
+               mesmo checkout. São momentos diferentes: o do numpad é dinheiro que
+               já está na mão AGORA; este é com quanto o cliente vai pagar DEPOIS,
+               na porta, e por isso não há tender no terminal para calcular nada.
+               O número também não é para a tela: `payment.change_for_q` vira
+               `change_out_suggested_q` e depois a linha `courier_out` no livro do
+               caixa — é assim que o entregador sai com troco separado e
+               registrado. O rótulo agora diz o momento; a legenda, a consequência. -->
           <label v-if="onDeliveryCash" class="grid gap-1 text-sm">
-            <span class="font-medium text-muted-foreground">Troco para quanto?</span>
+            <span class="font-medium text-muted-foreground">Com quanto vai pagar na porta?</span>
             <UiInput
               :model-value="changeForInput"
               inputmode="decimal"
-              placeholder="Com quanto o cliente paga na porta (opcional)"
+              placeholder="Opcional"
               @update:model-value="$emit('update:changeForInput', String($event || ''))"
             />
             <span v-if="changeForShortfall > 0" class="flex items-center gap-1.5 text-xs text-amber-700 dark:text-amber-400">
               <Icon name="lucide:triangle-alert" class="size-3.5 shrink-0" />
               Menor que o total: faltam {{ formatBRL(changeForShortfall) }}.
+            </span>
+            <span v-else-if="changeForInput.trim()" class="px-1 text-xs text-muted-foreground">
+              O entregador sai com o troco separado.
             </span>
           </label>
         </section>
@@ -647,10 +656,9 @@ defineExpose({
           </div>
         </section>
 
-        <!-- NOTA E COMPROVANTE — a última pergunta do balcão, no lugar em que ela
-             é feita. O roteiro é "qual a forma de pagamento? vai querer CPF na
-             nota? quer impressa ou por e-mail?": três perguntas seguidas, três
-             respostas à mão.
+        <!-- NOTA FISCAL — a última pergunta do balcão, no lugar em que ela é
+             feita, e na ordem em que se fala: "CPF na nota? Impressa? Por
+             e-mail?".
 
              São TRÊS ESTADOS, não três comandos — por isso switch, e não botão
              com check. E nenhum deles é "emitir ou não": isso é da regra do
@@ -658,8 +666,8 @@ defineExpose({
              transmite. Cada um nasce da preferência dele (`fiscal_prefs`), e o
              campo que revela vem pré-preenchido do cadastro — editável, valendo
              só nesta venda. -->
-        <section v-if="supportsFiscalDocument" class="grid gap-1.5" aria-label="Nota e comprovante">
-          <h3 class="px-1 text-xs font-medium uppercase tracking-wide text-muted-foreground">Nota e comprovante</h3>
+        <section v-if="supportsFiscalDocument" class="grid gap-1.5" aria-label="Nota fiscal">
+          <h3 class="px-1 text-xs font-medium uppercase tracking-wide text-muted-foreground">Nota fiscal</h3>
           <div class="divide-y rounded-md border bg-card">
 
             <!-- 1 · CPF na nota -->
@@ -696,16 +704,34 @@ defineExpose({
               </template>
             </div>
 
-            <!-- 2 · Nota por e-mail -->
+            <!-- 2 · Impressa. Sem campo: a resposta é a bobina. -->
+            <div class="p-3">
+              <label class="flex cursor-pointer items-center justify-between gap-3">
+                <span class="flex min-w-0 items-center gap-2 text-sm font-medium">
+                  <Icon name="lucide:printer" class="size-4 shrink-0 text-muted-foreground" />
+                  Impressa?
+                </span>
+                <UiSwitch
+                  :model-value="wantsPrintedReceipt"
+                  aria-label="Nota impressa"
+                  @update:model-value="setReceiptChannel('print', $event)"
+                />
+              </label>
+              <p v-if="wantsPrintedReceipt" class="mt-1.5 text-xs text-muted-foreground">
+                Sai sozinha na bobina assim que a nota autorizar.
+              </p>
+            </div>
+
+            <!-- 3 · Por e-mail -->
             <div class="grid gap-2 p-3">
               <label class="flex cursor-pointer items-center justify-between gap-3">
                 <span class="flex min-w-0 items-center gap-2 text-sm font-medium">
                   <Icon name="lucide:mail" class="size-4 shrink-0 text-muted-foreground" />
-                  Enviar nota por e-mail?
+                  Por e-mail?
                 </span>
                 <UiSwitch
                   :model-value="wantsEmailReceipt"
-                  aria-label="Enviar nota por e-mail"
+                  aria-label="Nota por e-mail"
                   @update:model-value="setReceiptChannel('email', $event)"
                 />
               </label>
@@ -725,24 +751,6 @@ defineExpose({
                   Do cadastro. Trocar aqui vale só nesta venda.
                 </p>
               </template>
-            </div>
-
-            <!-- 3 · Imprimir. Sem campo: a resposta é a bobina. -->
-            <div class="p-3">
-              <label class="flex cursor-pointer items-center justify-between gap-3">
-                <span class="flex min-w-0 items-center gap-2 text-sm font-medium">
-                  <Icon name="lucide:printer" class="size-4 shrink-0 text-muted-foreground" />
-                  Imprimir nota?
-                </span>
-                <UiSwitch
-                  :model-value="wantsPrintedReceipt"
-                  aria-label="Imprimir nota"
-                  @update:model-value="setReceiptChannel('print', $event)"
-                />
-              </label>
-              <p v-if="wantsPrintedReceipt" class="mt-1.5 text-xs text-muted-foreground">
-                Sai sozinha na bobina assim que a nota autorizar.
-              </p>
             </div>
 
           </div>
