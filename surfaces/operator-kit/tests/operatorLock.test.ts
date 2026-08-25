@@ -1,15 +1,20 @@
 import { describe, expect, it } from "vitest";
 
 import {
-  BADGE_MAX_GAP_MS,
+  type CapturedKey,
+  MACHINE_MEDIAN_MAX_MS,
+  PIN_MAX_DIGITS,
   appendPinDigit,
+  backspaceCapture,
   buildUnlockPayload,
   canSubmitPin,
-  isBadgeBurst,
+  captureKey,
+  capturedPin,
+  isCaptureKey,
   isLikelyBadge,
   isLocked,
   operatorName,
-  pushBadgeKey,
+  resolveEnter,
 } from "../app/presentation/operatorLock";
 import type { OperatorSession } from "../app/types/operator";
 
@@ -71,66 +76,139 @@ describe("isLikelyBadge", () => {
   });
 });
 
-describe("pushBadgeKey — a janela de tempo que separa leitor de dedo", () => {
-  const fast = 10; // um HID emite ~10-30ms por caractere
-  const human = 400;
+// ── A captura unificada: um buffer, decisão no Enter ────────────────────────
 
-  it("acumula teclas rápidas na mesma passada", () => {
-    let buffer = "";
-    for (const char of "a1b2") buffer = pushBadgeKey(buffer, char, fast);
-    expect(buffer).toBe("a1b2");
-  });
+const BADGE = "a1b2c3d4e5f6";
 
-  it("recomeça quando o intervalo passa da janela", () => {
-    // Teclas soltas ao longo do turno não podem se somar num token falso.
-    let buffer = pushBadgeKey("", "a", 0);
-    buffer = pushBadgeKey(buffer, "1", human);
-    expect(buffer).toBe("1");
-  });
+/** Monta um buffer digitando `chars` com o MESMO intervalo entre todas. */
+function typed(
+  chars: string,
+  gapMs: number,
+  pinEligible = true,
+  base: readonly CapturedKey[] = [],
+): readonly CapturedKey[] {
+  let keys = base;
+  for (const char of chars) {
+    keys = captureKey(keys, char, keys.length === 0 ? 0 : gapMs, pinEligible);
+  }
+  return keys;
+}
 
-  it("uma digitação humana inteira nunca fecha um crachá", () => {
-    let buffer = "";
-    for (const char of "a1b2c3d4e5f6a1b2c3d4e5f6") {
-      buffer = pushBadgeKey(buffer, char, human);
-    }
-    expect(buffer).toBe("6"); // sempre reiniciando: sobra só a última tecla
-    expect(isLikelyBadge(buffer)).toBe(false);
-  });
+const MACHINE = 15; // um HID emite ~10-30ms por caractere
+const FAST_HUMAN = 80; // digitador ágil: 60-110ms
+const SLOW_HUMAN = 250;
 
-  it("a mesma sequência, na velocidade do leitor, fecha um crachá", () => {
-    let buffer = "";
-    for (const char of "a1b2c3d4e5f6") {
-      buffer = pushBadgeKey(buffer, char, fast);
-    }
-    expect(isLikelyBadge(buffer)).toBe(true);
-  });
-
-  it("ignora teclas que não são conteúdo", () => {
-    expect(pushBadgeKey("a1", "Shift", 0)).toBe("a1");
-    expect(pushBadgeKey("a1", "ArrowLeft", 0)).toBe("a1");
-    expect(pushBadgeKey("a1", "Enter", 0)).toBe("a1");
-  });
-
-  it("a borda da janela ainda conta como a mesma passada", () => {
-    expect(pushBadgeKey("a", "1", BADGE_MAX_GAP_MS)).toBe("a1");
-    expect(pushBadgeKey("a", "1", BADGE_MAX_GAP_MS + 1)).toBe("1");
+describe("isCaptureKey — o que entra no buffer", () => {
+  it("aceita dígito e hex, recusa o resto", () => {
+    expect(isCaptureKey("7")).toBe(true);
+    expect(isCaptureKey("a")).toBe(true);
+    expect(isCaptureKey("F")).toBe(true);
+    expect(isCaptureKey("x")).toBe(false);
+    expect(isCaptureKey(" ")).toBe(false);
+    expect(isCaptureKey("Shift")).toBe(false);
+    expect(isCaptureKey("Enter")).toBe(false);
+    expect(isCaptureKey("ArrowLeft")).toBe(false);
   });
 });
 
-describe("isBadgeBurst — o que o scanner consome para não vazar", () => {
-  it("continua uma rajada: já havia buffer e o intervalo coube na janela", () => {
-    expect(isBadgeBurst(1, 10)).toBe(true);
-    expect(isBadgeBurst(11, BADGE_MAX_GAP_MS)).toBe(true);
+describe("captureKey / capturedPin — toda entrada entra na hora", () => {
+  it("nenhum dígito é descartado na chegada, seja qual for a cadência", () => {
+    expect(capturedPin(typed("1234", MACHINE))).toBe("1234");
+    expect(capturedPin(typed("1234", FAST_HUMAN))).toBe("1234");
+    expect(capturedPin(typed("1234", SLOW_HUMAN))).toBe("1234");
   });
 
-  it("a PRIMEIRA tecla nunca é rajada (indistinguível de um dedo)", () => {
-    expect(isBadgeBurst(0, 0)).toBe(false);
-    expect(isBadgeBurst(0, 10)).toBe(false);
+  it("letra de crachá fica no buffer sem virar bolinha de PIN", () => {
+    const keys = typed("a1b2", MACHINE);
+    expect(keys.map((k) => k.char).join("")).toBe("a1b2");
+    expect(capturedPin(keys)).toBe("12");
   });
 
-  it("digitação humana (intervalo acima da janela) não é rajada", () => {
-    expect(isBadgeBurst(3, BADGE_MAX_GAP_MS + 1)).toBe(false);
-    expect(isBadgeBurst(1, 400)).toBe(false);
+  it("dígito fora do pad (ou dentro de um campo de texto) não vira PIN", () => {
+    expect(capturedPin(typed("1234", FAST_HUMAN, false))).toBe("");
+  });
+
+  it("o PIN visível para no teto; o buffer segue aceitando", () => {
+    const keys = typed("123456789", FAST_HUMAN);
+    expect(capturedPin(keys)).toHaveLength(PIN_MAX_DIGITS);
+    expect(keys).toHaveLength(9);
+  });
+
+  it("tecla que não é conteúdo não entra", () => {
+    expect(captureKey([], "Shift", 0, true)).toHaveLength(0);
+    expect(captureKey([], "x", 0, true)).toHaveLength(0);
+  });
+});
+
+describe("backspaceCapture", () => {
+  it("remove o último dígito visível", () => {
+    expect(capturedPin(backspaceCapture(typed("1234", FAST_HUMAN)))).toBe("123");
+  });
+
+  it("leva junto o que chegou depois dele (letra invisível não sobra atrás)", () => {
+    const keys = typed("ab", MACHINE, true, typed("12", FAST_HUMAN));
+    expect(capturedPin(backspaceCapture(keys))).toBe("1");
+  });
+
+  it("sem dígito visível, não mexe", () => {
+    const keys = typed("ab", MACHINE);
+    expect(backspaceCapture(keys)).toEqual(keys);
+  });
+});
+
+describe("resolveEnter — a decisão crachá×gente fica para o Enter", () => {
+  it("rajada de leitor (cadência de máquina) fecha o crachá", () => {
+    const resolved = resolveEnter(typed(BADGE, MACHINE), MACHINE);
+    expect(resolved).toMatchObject({ kind: "badge", token: BADGE });
+  });
+
+  it("digitador RÁPIDO (60-110ms) nunca é classificado como crachá", () => {
+    // O achado do balcão: 60-110ms é cadência normal de digitador ágil. Era
+    // exatamente essa faixa que caía na janela antiga e perdia dígito.
+    for (const gap of [60, 80, 110]) {
+      expect(resolveEnter(typed(BADGE, gap), gap)).toEqual({ kind: "human" });
+    }
+  });
+
+  it("digitador lento é gente, óbvio", () => {
+    expect(resolveEnter(typed(BADGE, SLOW_HUMAN), SLOW_HUMAN)).toEqual({ kind: "human" });
+  });
+
+  it("menos teclas que um crachá é gente", () => {
+    expect(resolveEnter(typed("1234", MACHINE), MACHINE)).toEqual({ kind: "human" });
+  });
+
+  it("rajada de crachá NO MEIO da digitação do PIN: token sai, PIN fica", () => {
+    // A pessoa digitou dois dígitos, o leitor cuspiu o token por cima.
+    const keys = typed(BADGE, MACHINE, true, typed("12", FAST_HUMAN));
+    const resolved = resolveEnter(keys, MACHINE);
+    expect(resolved).toMatchObject({ kind: "badge", token: BADGE });
+    if (resolved.kind === "badge") {
+      // Os dígitos do token que chegaram a virar bolinha somem; os da pessoa ficam.
+      expect(capturedPin(resolved.keys)).toBe("12");
+    }
+  });
+
+  it("cliques em sequência rápida nunca fecham crachá, nem com 12 dígitos", () => {
+    // Toque de dedo no pad entra com o relógio de verdade (~150ms+): mesmo um
+    // token só-de-dígitos (possível em `token_hex`) não fecha por clique.
+    const keys = typed("123456789012", 150);
+    expect(resolveEnter(keys, 150)).toEqual({ kind: "human" });
+  });
+
+  it("um soluço de USB no meio da rajada não derruba a leitura (mediana)", () => {
+    let keys = typed(BADGE.slice(0, 6), MACHINE);
+    keys = captureKey(keys, BADGE[6]!, 90, true); // o agendador engasgou UMA vez
+    keys = typed(BADGE.slice(7), MACHINE, true, keys);
+    const resolved = resolveEnter(keys, MACHINE);
+    expect(resolved).toMatchObject({ kind: "badge", token: BADGE });
+  });
+
+  it("Enter atrasado depois de um rabo de máquina pesa contra o crachá, mas um só não vira o jogo", () => {
+    // A mediana absorve UM intervalo fora da curva — seja soluço de USB, seja o
+    // Enter chegando tarde. O que decide é o corpo da passada.
+    const resolved = resolveEnter(typed(BADGE, MACHINE), MACHINE_MEDIAN_MAX_MS * 10);
+    expect(resolved).toMatchObject({ kind: "badge", token: BADGE });
   });
 });
 

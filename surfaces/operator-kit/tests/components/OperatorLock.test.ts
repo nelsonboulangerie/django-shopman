@@ -167,11 +167,11 @@ describe("OperatorLock — crachá", () => {
     expect(unlock).not.toHaveBeenCalled();
   });
 
-  it("a rajada do leitor não vaza os caracteres aos listeners de baixo", async () => {
+  it("a rajada do leitor não vaza NENHUM caractere aos listeners de baixo", async () => {
     // O numpad do carrinho (e qualquer atalho global) ouve keydown na janela.
-    // Um crachá com dígitos reescrevia quantidades enquanto identificava. Da
-    // rajada, só a PRIMEIRA tecla pode vazar (indistinguível de um dedo); as
-    // demais são consumidas pelo scanner.
+    // Um crachá com dígitos reescrevia quantidades enquanto identificava. A tela
+    // de identificação é modal: toda tecla que a captura aceita é consumida —
+    // nem a primeira vaza.
     await mount();
     const leaked: string[] = [];
     const listener = (event: KeyboardEvent) => leaked.push(event.key);
@@ -183,7 +183,7 @@ describe("OperatorLock — crachá", () => {
     }
 
     expect(unlock).toHaveBeenCalledWith({ badge: BADGE });
-    expect(leaked).toEqual([BADGE[0]]);
+    expect(leaked).toEqual([]);
   });
 });
 
@@ -202,19 +202,20 @@ describe("OperatorLock — PIN pelo teclado físico", () => {
     vi.restoreAllMocks();
   });
 
-  /** Digita como GENTE: intervalo acima da janela do leitor (o relógio é
-   *  falseado, então nada de esperar de verdade). */
-  function typeSlow(keys: string[]) {
+  /** Digita com o relógio falseado, num intervalo fixo entre as teclas —
+   *  serve para gente lenta (400ms) e para o digitador ágil (60-110ms). */
+  function typeAt(gapMs: number, keys: string[]) {
     let clock = Date.now();
     const spy = vi.spyOn(Date, "now").mockImplementation(() => clock);
     for (const key of keys) {
-      clock += 400;
+      clock += gapMs;
       document.body.dispatchEvent(
         new KeyboardEvent("keydown", { key, bubbles: true, cancelable: true }),
       );
     }
     spy.mockRestore();
   }
+  const typeSlow = (keys: string[]) => typeAt(400, keys);
 
   it("digitar o PIN e Enter destrava, sem tocar no mouse", async () => {
     const wrapper = await mount();
@@ -224,6 +225,37 @@ describe("OperatorLock — PIN pelo teclado físico", () => {
     typeSlow(["1", "2", "3", "4", "Enter"]);
 
     expect(unlock).toHaveBeenCalledWith({ operatorId: 1, pin: "1234" });
+  });
+
+  it("digitador RÁPIDO (60-110ms entre teclas) não perde dígito nenhum", async () => {
+    // O achado do balcão: digitar o PIN "um pouquinho mais rápido" engolia
+    // dígitos, porque a cadência de um dedo ágil caía na janela que separava
+    // leitor de gente. A decisão agora é no Enter — dedo nunca é máquina.
+    for (const gapMs of [60, 80, 110]) {
+      unlock.mockClear();
+      const wrapper = await mount();
+      await wrapper.find("button").trigger("click");
+
+      typeAt(gapMs, ["1", "2", "3", "4", "Enter"]);
+
+      expect(unlock, `cadência de ${gapMs}ms`).toHaveBeenCalledWith({
+        operatorId: 1,
+        pin: "1234",
+      });
+      wrapper.unmount();
+      mounted = null;
+      document.body.innerHTML = "";
+    }
+  });
+
+  it("rajada de crachá NO MEIO da digitação do PIN destrava pelo crachá", async () => {
+    const wrapper = await mount();
+    await wrapper.find("button").trigger("click");
+
+    typeAt(80, ["1", "2"]); // a pessoa começou o PIN…
+    scan(BADGE); // …e passou o crachá no leitor no meio do caminho
+
+    expect(unlock).toHaveBeenCalledWith({ badge: BADGE });
   });
 
   it("Enter com PIN curto não submete nada", async () => {
@@ -240,6 +272,22 @@ describe("OperatorLock — PIN pelo teclado físico", () => {
     await wrapper.find("button").trigger("click");
 
     typeSlow(["1", "2", "3", "9", "Backspace", "4", "Enter"]);
+
+    expect(unlock).toHaveBeenCalledWith({ operatorId: 1, pin: "1234" });
+  });
+
+  it("tocar os botões do pad em sequência rápida registra todos os dígitos", async () => {
+    // Clique entra no MESMO buffer que o teclado, direto — sem depender de foco
+    // e sem desabilitar durante verificação (só o CONFIRMAR trava com busy).
+    const wrapper = await mount();
+    await wrapper.find("button").trigger("click"); // Bia
+
+    const digits = wrapper
+      .findAll("button")
+      .filter((b) => ["1", "2", "3", "4"].includes(b.text()));
+    for (const button of digits) await button.trigger("click");
+    const confirm = wrapper.find('button[aria-label="Confirmar"]');
+    await confirm.trigger("click");
 
     expect(unlock).toHaveBeenCalledWith({ operatorId: 1, pin: "1234" });
   });
