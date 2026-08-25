@@ -48,8 +48,21 @@ export function injectableMethods(
   return options.houseAccount ? [...base, ACCOUNT_METHOD] : base;
 }
 
+// Fallback pt-BR quando o contrato não conhece o ref — o operador nunca deve
+// ler um ref cru tipo "external" numa linha de pagamento.
+const METHOD_LABEL_FALLBACKS: Record<string, string> = {
+  cash: "Dinheiro",
+  pix: "Pix",
+  card: "Cartão",
+  mixed: "Misto",
+  external: "Outro meio",
+  account: "Em conta",
+};
+
 export function methodLabel(ref: string, methods: POSPaymentMethodProjection[]): string {
-  return methods.find((method) => method.ref === ref)?.label || ref;
+  return methods.find((method) => method.ref === ref)?.label
+    || METHOD_LABEL_FALLBACKS[ref]
+    || "Outro meio";
 }
 
 export function tenderSumQ(tenders: POSPaymentTenderDraft[]): number {

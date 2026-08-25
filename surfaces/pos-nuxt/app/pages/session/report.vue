@@ -6,7 +6,7 @@
 // BLIND: o PDV nunca mostra o valor ESPERADO da gaveta nem a variância — a
 // conferência (esperado vs contado) é da retaguarda. Impressão térmica fica
 // fora (capítulo NFC-e).
-useHead({ title: "Relatório de caixa · Shopman POS" });
+useHead({ title: "Relatório de caixa · PDV" });
 
 const action = usePosAction();
 // A projection do terminal entra por dois motivos: o `terminal_ref` prende a

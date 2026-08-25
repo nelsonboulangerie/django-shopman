@@ -390,7 +390,7 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onWindowKeydown));
       <div class="grid gap-1">
         <p class="text-base font-semibold">Abra uma comanda</p>
         <p class="text-sm text-muted-foreground">
-          O carrinho do POS fica recuperável somente depois de associado a uma comanda.
+          Escolha uma comanda para este atendimento não se perder.
         </p>
       </div>
       <UiButton type="button" :disabled="loading" @click="$emit('requestTab')">

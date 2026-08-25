@@ -52,7 +52,7 @@ export interface TabCardView {
   /** Has items but nothing sent to the kitchen yet — a quiet "a enviar" cue. */
   pendingKitchen: boolean;
   statusLabel: string;
-  /** Customer name, falling back to an items preview, then an em dash. */
+  /** Customer name, falling back to an items preview, then "Livre". */
   identity: string;
   /** Line summary: item count + total, or the free-tab affordance. */
   summary: string;
@@ -90,7 +90,7 @@ export function tabCardView(tab: POSTabProjection, selectedRef = ""): TabCardVie
     isUnpaid: Boolean(tab.fired),
     pendingKitchen: hasItems && !tab.fired,
     statusLabel: tab.status_label,
-    identity: tab.customer_name || tab.items_preview || "—",
+    identity: tab.customer_name || tab.items_preview || "Livre",
     summary: hasItems
       ? `${tab.item_count} ${tab.item_count === 1 ? "item" : "itens"} · ${tab.total_display}`
       : "Comanda livre",

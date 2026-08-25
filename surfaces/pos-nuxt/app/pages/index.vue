@@ -11,7 +11,7 @@ import { globalKeysBlocked } from "~/utils/keyboardGuard";
 // PosPaymentWorkspace). O chrome comum (login, lock, offline) vive no shell
 // (app.vue); a sessão de caixa (abrir/fechar/movimentos) vive na antesala
 // (`/session`) — sem turno aberto, esta página manda o operador pra lá.
-useHead({ title: "Shopman POS" });
+useHead({ title: "PDV" });
 
 const apiPath = usePosApiPath();
 const action = usePosAction();
@@ -447,7 +447,7 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onGlobalKeydown));
           size="icon-sm"
           class="-ml-1 shrink-0"
           :aria-label="checkoutMode ? 'Voltar à comanda' : 'Voltar para comandas'"
-          :title="checkoutMode ? 'Voltar à comanda' : 'Comandas'"
+          :title="checkoutMode ? 'Voltar à comanda' : 'Voltar para comandas'"
           @click="checkoutMode ? (checkoutMode = false) : goToTabs()"
         >
           <Icon name="lucide:arrow-left" class="size-5" />

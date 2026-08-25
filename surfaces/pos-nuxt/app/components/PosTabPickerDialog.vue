@@ -90,7 +90,7 @@ function confirmTyped() {
               @update:model-value="updateValue"
             />
             <UiButton type="submit" :disabled="busy || !modelValue.trim()">
-              Abrir / nova
+              Abrir comanda
             </UiButton>
           </div>
         </label>

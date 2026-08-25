@@ -1,7 +1,7 @@
 <script setup lang="ts">
 // Sale Workspace · product grid (spec §2.2) — image-forward grade + rail de
 // categorias. Consumes the catalog Projection through `presentation/catalog`
-// (favourite-ordered categories, name/SKU filter); price and availability are
+// (favourite-ordered categories, name/code filter); price and availability are
 // sealed in the Projection (price_display) and only rendered. Search and
 // the active collection are grid-local presentation state. Emits `add`; the
 // shell resolves the session command.
@@ -70,7 +70,7 @@ defineExpose({ focusSearch });
     <div class="flex shrink-0 items-center gap-2">
       <div class="relative flex-1">
         <Icon name="lucide:search" class="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-        <UiInput ref="searchInputRef" v-model="search" class="h-11 pl-9 pr-12 text-base" type="search" placeholder="Buscar produto por nome ou SKU" autofocus />
+        <UiInput ref="searchInputRef" v-model="search" class="h-11 pl-9 pr-12 text-base" type="search" placeholder="Buscar produto por nome ou código" autofocus />
         <kbd class="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 rounded border bg-muted px-1.5 py-0.5 font-mono text-xs font-medium text-muted-foreground" aria-hidden="true">F3</kbd>
       </div>
       <UiPopover>

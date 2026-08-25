@@ -589,7 +589,7 @@ defineExpose({
   <UiDialog v-model:open="fulfillmentSheetOpen">
     <UiDialogContent class="max-h-[85vh] overflow-y-auto sm:max-w-lg">
       <UiDialogHeader>
-        <UiDialogTitle>Entrega</UiDialogTitle>
+        <UiDialogTitle>Recebimento</UiDialogTitle>
         <UiDialogDescription>Como o cliente recebe o pedido.</UiDialogDescription>
       </UiDialogHeader>
       <div class="grid gap-4">

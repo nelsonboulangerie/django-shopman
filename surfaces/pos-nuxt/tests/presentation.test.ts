@@ -306,7 +306,7 @@ describe("presentation/tabBoard — board shaping", () => {
     });
 
     const free = tabCardView(tabs[0]!);
-    expect(free).toMatchObject({ isFree: true, pendingKitchen: false, summary: "Comanda livre", identity: "—", selected: false });
+    expect(free).toMatchObject({ isFree: true, pendingKitchen: false, summary: "Comanda livre", identity: "Livre", selected: false });
 
     const fired = tabCardView(tabs[2]!);
     expect(fired).toMatchObject({ isUnpaid: true, pendingKitchen: false, summary: "1 item · R$ 8,00" });
@@ -379,7 +379,9 @@ describe("presentation/payment — tender math & method affordance", () => {
 
   it("resolves the method label and icon, with fallbacks", () => {
     expect(methodLabel("pix", METHODS)).toBe("PIX");
-    expect(methodLabel("unknown", METHODS)).toBe("unknown");
+    // Ref cru nunca chega à tela: fallback pt-BR digno.
+    expect(methodLabel("external", METHODS)).toBe("Outro meio");
+    expect(methodLabel("unknown", METHODS)).toBe("Outro meio");
     expect(paymentIcon("cash")).toBe("lucide:banknote");
     expect(paymentIcon("weird")).toBe("lucide:wallet");
   });
