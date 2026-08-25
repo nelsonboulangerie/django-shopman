@@ -155,7 +155,7 @@ def settle_delivery_cash(
 
 
 def mark_equipment_returned(order, *, actor: str):
-    """O entregador devolveu o aparelho (maquininha) que levou neste pedido."""
+    """O entregador devolveu a maquininha que levou neste pedido."""
     try:
         return operator_orders.mark_equipment_returned(order, actor=actor)
     except ValueError as exc:

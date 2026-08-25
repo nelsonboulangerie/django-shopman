@@ -1220,7 +1220,7 @@ def _checkout_contract(
             ref="fulfillment_type",
             payload_key="fulfillment_type",
             section_ref="fulfillment",
-            label="Fulfillment",
+            label="Recebimento",
             input_type="segmented",
             required=True,
             options=tuple(
@@ -1953,14 +1953,15 @@ def _fiscal_runtime() -> tuple[str, str, str]:
     """Return a compact fiscal health tuple for the POS terminal bar."""
     adapter_path = getattr(settings, "SHOPMAN_FISCAL_ADAPTER", None)
     if not adapter_path:
-        return ("warning", "Fiscal", "sem adapter")
+        # A dica chega crua à tela do operador: sem jargão de infraestrutura.
+        return ("warning", "Fiscal", "emissão fiscal não configurada")
 
     if "fiscal_focusnfe.FocusNFeBackend" in str(adapter_path):
         readiness = focus_nfe_readiness(mode="runtime")
         return (readiness.status, readiness.label, readiness.message)
 
     # Adapter fiscal desconhecido: informar, nunca quebrar a projection do POS.
-    return ("warning", "Fiscal", "adapter sem verificação de prontidão")
+    return ("warning", "Fiscal", "emissão fiscal sem verificação automática")
 
 
 # ── Open-comanda read-model ──────────────────────────────────────────────

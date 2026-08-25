@@ -585,7 +585,7 @@ defineExpose({
 
   </section>
 
-  <!-- MODAL: Entrega / Retirada -->
+  <!-- MODAL: Recebimento (retirada / entrega) -->
   <UiDialog v-model:open="fulfillmentSheetOpen">
     <UiDialogContent class="max-h-[85vh] overflow-y-auto sm:max-w-lg">
       <UiDialogHeader>

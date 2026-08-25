@@ -760,7 +760,7 @@ export function usePosSale(deps: PosSaleDeps) {
       tabInput.value = "";
       await refresh();
     } catch (error) {
-      serverError.value = httpErrorMessage(error, "Falha ao abrir comanda.");
+      serverError.value = httpErrorMessage(error, "Não foi possível abrir a comanda. Confira a referência ou escolha uma no quadro.");
     } finally {
       busy.value = false;
     }
@@ -1148,7 +1148,7 @@ export function usePosSale(deps: PosSaleDeps) {
     try {
       await persistTab();
     } catch (error) {
-      serverError.value = httpErrorMessage(error, "Falha ao salvar comanda.");
+      serverError.value = httpErrorMessage(error, "Não foi possível salvar a comanda. Os itens seguem na tela; confira a conexão e tente de novo.");
     } finally {
       saving.value = false;
     }
@@ -1307,7 +1307,7 @@ export function usePosSale(deps: PosSaleDeps) {
         cart.managerPin = "";
         managerApprovalError.value = failure.recovery || failure.message || "Aprovação gerencial inválida.";
       } else {
-        serverError.value = httpErrorMessage(error, "Falha ao finalizar venda.");
+        serverError.value = httpErrorMessage(error, "Não foi possível finalizar a venda. O pedido não foi fechado; revise o pagamento e valide de novo.");
       }
     } finally {
       busy.value = false;
