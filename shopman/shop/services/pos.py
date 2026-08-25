@@ -563,6 +563,18 @@ def review_sale(
             "field": "tendered_amount_q",
             "message": "Valor recebido em dinheiro menor que o total da venda.",
         })
+    # "Troco para" menor que o total não paga a entrega: avisa na revisão (não
+    # bloqueia — o combinado da porta pode mudar; quem manda é o operador).
+    change_for_q = _int_q(payload.get("change_for_q"))
+    if payment_collection == "on_delivery" and 0 < change_for_q < total_q:
+        warnings.append({
+            "code": "change_for_below_total",
+            "field": "change_for_q",
+            "message": (
+                f"Troco para R$ {format_money(change_for_q)} é menor que o total "
+                f"de R$ {format_money(total_q)}. Confira o combinado com o cliente."
+            ),
+        })
     if payment_method == "mixed" and total_q > 0 and tender_total_q <= 0:
         warnings.append({
             "code": "payment_tenders_required",
@@ -1416,6 +1428,12 @@ def build_session_ops(payload: dict, operator_username: str) -> list[dict]:
         tendered_q = int(tendered_amount_q)
         ops.append({"op": "set_data", "path": "payment.tendered_q", "value": tendered_q})
         ops.append({"op": "set_data", "path": "payment.change_q", "value": max(0, tendered_q - total_q)})
+    # "Troco para quanto?" do dinheiro NA ENTREGA — a chave canônica que o
+    # despacho já lê (operator_orders.change_out_suggested_q → courier_out no
+    # livro do caixa) e o card do gestor exibe. O intent só a mantém no COD.
+    change_for_q = _int_q(payload.get("change_for_q"))
+    if payment_collection == "on_delivery" and change_for_q > 0:
+        ops.append({"op": "set_data", "path": "payment.change_for_q", "value": change_for_q})
     if tenders:
         ops.append({"op": "set_data", "path": "payment.tenders", "value": tenders})
     cash_received_q = _cash_received_q(tenders)

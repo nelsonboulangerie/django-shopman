@@ -76,7 +76,7 @@ describe("PosSaleResult — o palco pós-venda", () => {
     const wrapper = await mountSuspended(PosSaleResult, {
       props: props({ result: result({ receipt: { ...result().receipt, customerName: "Maria da Silva" } }) }),
     });
-    expect(wrapper.text()).toContain("Venda concluída · obrigado, Maria!");
+    expect(wrapper.text()).toContain("Venda concluída. Obrigado, Maria!");
   });
 
   it("pagamento exato: contagem visível e cancelável por qualquer toque", async () => {

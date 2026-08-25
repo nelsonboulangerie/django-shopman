@@ -43,8 +43,8 @@ function cardProof(): PaymentProofView {
 }
 
 describe("saleResultTitle — o obrigado é nominal quando há cliente", () => {
-  it("com cliente vinculado, chama pelo primeiro nome", () => {
-    expect(saleResultTitle("Maria da Silva")).toBe("Venda concluída · obrigado, Maria!");
+  it("com cliente vinculado, chama pelo primeiro nome (frase completa, com ponto)", () => {
+    expect(saleResultTitle("Maria da Silva")).toBe("Venda concluída. Obrigado, Maria!");
   });
   it("sem cliente, a confirmação seca", () => {
     expect(saleResultTitle("")).toBe("Venda concluída");

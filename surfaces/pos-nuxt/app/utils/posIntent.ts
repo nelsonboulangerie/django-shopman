@@ -139,6 +139,15 @@ export function buildPosSaleIntent(
   ) {
     payload.tendered_amount_q = state.tenderedAmountQ;
   }
+  // "Troco para quanto?" só existe no dinheiro NA ENTREGA (COD) — fora dele o
+  // servidor descarta; aqui nem viaja.
+  if (
+    state.fulfillmentType === "delivery"
+    && state.paymentCollection === "on_delivery"
+    && state.changeForQ > 0
+  ) {
+    payload.change_for_q = state.changeForQ;
+  }
   if (state.receiptEmail.trim()) payload.receipt_email = state.receiptEmail.trim();
   if (state.manualDiscount) payload.manual_discount = state.manualDiscount;
   if (state.managerApproval) payload.manager_approval = state.managerApproval;

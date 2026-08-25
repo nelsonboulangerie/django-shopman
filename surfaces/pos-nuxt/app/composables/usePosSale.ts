@@ -247,6 +247,8 @@ export function usePosSale(deps: PosSaleDeps) {
     paymentCollection: "terminal" as PaymentCollection,
     paymentTenders: [] as Array<{ method: string; amount_q: number; collection: PaymentCollection; reference?: string; _virgin?: boolean }>,
     tenderedAmountInput: "",
+    /** "Troco para quanto?" do dinheiro na entrega (entrada livre, "50" / "50,00"). */
+    changeForInput: "",
     issueFiscalDocument: false,
     receiptChannels: [] as string[],
     receiptEmail: "",
@@ -628,6 +630,7 @@ export function usePosSale(deps: PosSaleDeps) {
     cart.paymentTenders = [];
     selectedTenderIndex.value = -1;
     cart.tenderedAmountInput = "";
+    cart.changeForInput = "";
     cart.issueFiscalDocument = false;
     cart.receiptChannels = [];
     cart.receiptEmail = "";
@@ -688,6 +691,7 @@ export function usePosSale(deps: PosSaleDeps) {
       cart.paymentTenders = [];
       selectedTenderIndex.value = -1;
       cart.tenderedAmountInput = payload.tendered_amount_q ? (Number(payload.tendered_amount_q) / 100).toFixed(2).replace(".", ",") : "";
+      cart.changeForInput = "";
       cart.issueFiscalDocument = !!payload.issue_fiscal_document;
       cart.receiptChannels = [...(payload.receipt_channels || [])];
       cart.receiptEmail = payload.receipt_email || "";
@@ -835,6 +839,9 @@ export function usePosSale(deps: PosSaleDeps) {
       paymentCollection: cart.paymentCollection,
       paymentTenders: resolvedPayment.paymentTenders,
       tenderedAmountQ: resolvedPayment.tenderedAmountQ,
+      changeForQ: cart.fulfillmentType === "delivery" && cart.paymentCollection === "on_delivery"
+        ? moneyInputToQ(cart.changeForInput)
+        : 0,
       issueFiscalDocument: cart.issueFiscalDocument,
       receiptChannels: cart.receiptChannels,
       receiptEmail: cart.receiptEmail || cart.customerEmail,

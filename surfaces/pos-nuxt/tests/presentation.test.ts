@@ -15,6 +15,7 @@ import type {
 } from "../app/types/pos";
 import { findAction, hasAction, resolveAffordance } from "../app/presentation/actions";
 import {
+  enterTargetProduct,
   filterProducts,
   normalizeSearchText,
   orderCollections,
@@ -28,6 +29,7 @@ import { clampPercent, clampQty, popDigit, pushDigit } from "../app/presentation
 import {
   cashNotesQ,
   cashTenderSumQ,
+  changeForShortfallQ,
   collectionsForFulfillment,
   injectableMethods,
   isPaymentCovered,
@@ -263,6 +265,25 @@ describe("presentation/catalog — grid shaping", () => {
     expect(normalizeSearchText("Pão de Açúcar")).toBe("pao de acucar");
   });
 
+  it("Enter na busca mira o primeiro resultado DISPONÍVEL (esgotado pula)", () => {
+    const products = [
+      product({ sku: "PAO-FRANCES", name: "Pão Francês", sold_out: true }),
+      product({ sku: "PAO-QUEIJO", name: "Pão de Queijo" }),
+      product({ sku: "PAO-FORMA", name: "Pão de Forma" }),
+    ];
+    // O primeiro da ordem está esgotado: Enter adiciona o próximo disponível.
+    expect(enterTargetProduct(products, "pao")?.sku).toBe("PAO-QUEIJO");
+    // Um único resultado disponível → é ele.
+    expect(enterTargetProduct([product({ sku: "CAFE", name: "Café" })], "cafe")?.sku).toBe("CAFE");
+    // Único resultado, mas esgotado → nada a adicionar.
+    expect(enterTargetProduct([product({ sku: "CAFE", name: "Café", sold_out: true })], "cafe")).toBeNull();
+    // Busca vazia não decide: Enter não adiciona o primeiro produto da grade.
+    expect(enterTargetProduct(products, "")).toBeNull();
+    expect(enterTargetProduct(products, "   ")).toBeNull();
+    // Sem resultado algum → nada.
+    expect(enterTargetProduct([], "xyz")).toBeNull();
+  });
+
   it("derives a deterministic, calm fallback visual", () => {
     const p = product({ sku: "X", name: "Bolo", collection_ref: "doces" });
     expect(productFallbackHue(p)).toBe(productFallbackHue(p));
@@ -415,6 +436,16 @@ describe("presentation/payment — tender math & method affordance", () => {
     expect(paymentChangeQ(tenders, 4200)).toBe(1000);
     expect(nonCashExcessQ(tenders, 4200)).toBe(0);
     expect(cashTenderSumQ(tenders)).toBe(1000);
+  });
+
+  it("aponta a falta quando o troco-para da entrega não cobre o total", () => {
+    // Pedido de R$ 42,00; cliente diz que paga com R$ 40,00 → faltam R$ 2,00.
+    expect(changeForShortfallQ(4000, 4200)).toBe(200);
+    // Cobriu (ou sobrou): nada a avisar.
+    expect(changeForShortfallQ(4200, 4200)).toBe(0);
+    expect(changeForShortfallQ(5000, 4200)).toBe(0);
+    // Opcional: vazio/zero não avisa.
+    expect(changeForShortfallQ(0, 4200)).toBe(0);
   });
 
   it("shapes a tender line view", () => {

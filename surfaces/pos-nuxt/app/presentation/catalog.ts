@@ -68,6 +68,20 @@ export function filterProducts(
 }
 
 /**
+ * O produto que o Enter adiciona a partir da busca: o PRIMEIRO resultado
+ * DISPONÍVEL na ordem do filtro (esgotado não entra na comanda — pula). Com um
+ * único resultado disponível, é ele. Busca vazia não decide nada: Enter só age
+ * sobre uma busca digitada (senão adicionaria o primeiro produto da grade).
+ */
+export function enterTargetProduct(
+  filtered: POSProductProjection[],
+  query: string,
+): POSProductProjection | null {
+  if (!(query || "").trim()) return null;
+  return filtered.find((product) => !product.sold_out) ?? null;
+}
+
+/**
  * Deterministic, calm hue for products without a photo — derived from the
  * collection ref so a whole collection shares a family tint (Odoo-style colour
  * coding), kept low-saturation so the grid stays calm, not marketing.

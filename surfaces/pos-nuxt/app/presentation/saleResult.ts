@@ -36,10 +36,11 @@ export interface SaleResultAdvanceInputs {
   pixStatus: PixPollStatus;
 }
 
-/** Com cliente vinculado o obrigado é nominal; sem, a confirmação seca. */
+/** Com cliente vinculado o obrigado é nominal (frase completa, com ponto e
+ *  maiúscula); sem, a confirmação seca. */
 export function saleResultTitle(customerName: string): string {
   const nome = firstName(customerName);
-  return nome ? `Venda concluída · obrigado, ${nome}!` : "Venda concluída";
+  return nome ? `Venda concluída. Obrigado, ${nome}!` : "Venda concluída";
 }
 
 /** PIX com prova na tela e confirmação ainda não chegada (polling vivo). */

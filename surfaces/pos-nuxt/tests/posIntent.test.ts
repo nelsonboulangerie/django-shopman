@@ -55,6 +55,7 @@ describe("POS sale intent", () => {
       paymentCollection: "on_delivery",
       paymentTenders: [],
       tenderedAmountQ: null,
+      changeForQ: 0,
       issueFiscalDocument: false,
       receiptChannels: ["email"],
       receiptEmail: "ana@example.com",
@@ -174,6 +175,33 @@ describe("POS sale intent", () => {
     }))).toMatchObject({ tendered_amount_q: 2000 });
   });
 
+  it("envia o troco-para só no dinheiro NA ENTREGA (COD)", () => {
+    // Entrega + receber na entrega + valor → viaja na chave canônica.
+    expect(buildPosSaleIntent(baseIntentState({
+      fulfillmentType: "delivery",
+      deliveryAddress: "Rua A, 10",
+      paymentMethod: "cash",
+      paymentCollection: "on_delivery",
+      changeForQ: 5000,
+    }))).toMatchObject({ change_for_q: 5000 });
+
+    // Recebimento no terminal: o troco é tendered/change; change_for não viaja.
+    expect(buildPosSaleIntent(baseIntentState({
+      paymentMethod: "cash",
+      paymentCollection: "terminal",
+      changeForQ: 5000,
+    }))).not.toHaveProperty("change_for_q");
+
+    // Campo opcional: zero não viaja.
+    expect(buildPosSaleIntent(baseIntentState({
+      fulfillmentType: "delivery",
+      deliveryAddress: "Rua A, 10",
+      paymentMethod: "cash",
+      paymentCollection: "on_delivery",
+      changeForQ: 0,
+    }))).not.toHaveProperty("change_for_q");
+  });
+
   it("serializes manual discount as a canonical intent for backend review", () => {
     expect(buildPosSaleIntent(baseIntentState({
       manualDiscount: { type: "percent", value: "10", reason: "fidelidade" },
@@ -289,6 +317,7 @@ function baseIntentState(overrides: Record<string, unknown> = {}) {
     paymentCollection: "terminal",
     paymentTenders: [],
     tenderedAmountQ: null,
+    changeForQ: 0,
     issueFiscalDocument: false,
     receiptChannels: [],
     receiptEmail: "",

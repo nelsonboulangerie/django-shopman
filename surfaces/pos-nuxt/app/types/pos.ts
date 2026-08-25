@@ -546,6 +546,8 @@ export interface POSIntentCartState {
   paymentCollection: PosPaymentCollection;
   paymentTenders: POSPaymentTenderDraft[];
   tenderedAmountQ: number | null;
+  /** "Troco para quanto?" do dinheiro na entrega, em centavos (0 = não informado). */
+  changeForQ: number;
   issueFiscalDocument: boolean;
   receiptChannels: string[];
   receiptEmail: string;
