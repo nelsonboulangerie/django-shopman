@@ -133,6 +133,7 @@ defineExpose({ focusSearch });
           :key="product.sku"
           :product="product"
           :qty="productQty(product.sku)"
+          :disabled="product.sold_out"
           @add="emit('add', $event)"
         />
       </div>

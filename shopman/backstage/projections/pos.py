@@ -53,6 +53,10 @@ class POSProductProjection:
     price_display: str
     collection_ref: str
     image_url: str = ""
+    # Esgotado de verdade no escopo do canal do PDV (stockman, leitura em lote).
+    # O tile fica visível porém inerte com o selo "Esgotado" — sumir o produto
+    # da grade faria o operador procurar um botão que "sumiu".
+    sold_out: bool = False
 
 
 @dataclass(frozen=True)
@@ -777,7 +781,7 @@ def build_pos_customer_search(query: str, limit: int = 8) -> tuple[POSCustomerSe
 
 def _load_products() -> list[POSProductProjection]:
     """Load products with prices for the POS grid."""
-    products: list[POSProductProjection] = []
+    entries: list[tuple[Product, int]] = []
 
     try:
         from shopman.offerman.models import ListingItem
@@ -795,15 +799,21 @@ def _load_products() -> list[POSProductProjection]:
         for li in items:
             p = li.product
             price_q = li.price_q if li.price_q else p.base_price_q
-            products.append(_product_projection(p, price_q))
+            entries.append((p, price_q))
     except Exception:
         logger.exception("pos_load_products_listing_failed")
 
-    if not products:
-        for p in Product.objects.filter(is_published=True, is_sellable=True).order_by("name"):
-            products.append(_product_projection(p, p.base_price_q))
+    if not entries:
+        entries = [
+            (p, p.base_price_q)
+            for p in Product.objects.filter(is_published=True, is_sellable=True).order_by("name")
+        ]
 
-    return products
+    sold_out = _sold_out_skus([p.sku for p, _ in entries])
+    return [
+        _product_projection(p, price_q, sold_out=p.sku in sold_out)
+        for p, price_q in entries
+    ]
 
 
 def _payment_methods() -> tuple[POSPaymentMethodProjection, ...]:
@@ -1723,7 +1733,7 @@ def _saved_address_projection(addr) -> SavedAddressProjection:
     )
 
 
-def _product_projection(product: Product, price_q: int) -> POSProductProjection:
+def _product_projection(product: Product, price_q: int, *, sold_out: bool = False) -> POSProductProjection:
     ci = (
         product.collection_items
         .filter(is_primary=True)
@@ -1738,7 +1748,43 @@ def _product_projection(product: Product, price_q: int) -> POSProductProjection:
         price_display=f"R$ {format_money(price_q)}",
         collection_ref=ci.collection.ref if ci else "",
         image_url=product.image_url or "",
+        sold_out=sold_out,
     )
+
+
+def _sold_out_skus(skus: list[str]) -> set[str]:
+    """SKUs esgotados no escopo do canal do PDV — a MESMA leitura em lote que o
+    storefront usa (``catalog_context.availability_for_skus`` → stockman), uma
+    query para a grade inteira. Silencioso quando o stockman não responde: a
+    grade do balcão nunca quebra por causa de um selo.
+    """
+    if not skus:
+        return set()
+    try:
+        from decimal import Decimal
+
+        from shopman.shop.projections.catalog_context import (
+            availability_for_skus,
+            basic_availability,
+        )
+
+        avail_map = availability_for_skus(skus, channel_ref=POS_CHANNEL_REF)
+        sold_out: set[str] = set()
+        for sku in skus:
+            raw = avail_map.get(sku)
+            # SKU sem rastreio de estoque não é esgotado: o zero dele é ausência
+            # de dado, não vitrine vazia — o selo só afirma o que o stockman mede.
+            if not raw or not raw.get("is_tracked"):
+                continue
+            resolved = basic_availability(
+                raw, is_sellable=True, low_stock_threshold=Decimal("0"),
+            )
+            if resolved.status == "unavailable":
+                sold_out.add(sku)
+        return sold_out
+    except Exception:
+        logger.exception("pos_sold_out_lookup_failed")
+        return set()
 
 
 def _tab_projection(*, ref: str, session: Session | None, display_ref: str = "") -> POSTabProjection:

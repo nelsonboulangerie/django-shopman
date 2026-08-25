@@ -55,6 +55,14 @@ const fallbackMonogram = computed(() => productMonogram(props.product));
       >
         {{ qty }}x
       </UiBadge>
+      <!-- Esgotado: selo por cima da imagem; o tile fica visível porém inerte
+           (sumir da grade faria o operador procurar um botão que "sumiu"). -->
+      <span
+        v-if="disabled"
+        class="absolute inset-x-0 bottom-0 bg-foreground/70 py-0.5 text-center text-xs font-semibold uppercase tracking-wide text-background"
+      >
+        Esgotado
+      </span>
     </div>
 
     <div class="grid gap-0.5 px-2.5 py-1.5">

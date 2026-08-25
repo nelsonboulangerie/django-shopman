@@ -21,6 +21,8 @@ export interface POSProductProjection {
   price_display: string;
   collection_ref: string;
   image_url: string;
+  /** Esgotado no escopo do canal do PDV: tile visível porém inerte. */
+  sold_out?: boolean;
 }
 
 export interface POSCollectionProjection {
