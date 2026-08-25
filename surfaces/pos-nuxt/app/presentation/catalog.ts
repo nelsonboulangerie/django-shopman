@@ -20,19 +20,51 @@ export function orderCollections(
   });
 }
 
-/** Filter the grid by active collection and a free-text query (name or SKU). */
+/**
+ * Normalização de busca: minúsculas SEM diacríticos, para "pao" achar
+ * "Pão de Queijo" — o operador digita rápido e sem acento no balcão.
+ */
+export function normalizeSearchText(value: string): string {
+  return (value || "")
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "");
+}
+
+/** O match começa no início de alguma palavra do texto? ("que" em "pão de queijo") */
+function matchesWordStart(normalizedText: string, normalizedQuery: string): boolean {
+  if (normalizedText.startsWith(normalizedQuery)) return true;
+  return normalizedText.includes(` ${normalizedQuery}`);
+}
+
+/**
+ * Filter the grid by active collection and a free-text query (name or product
+ * code), accent-insensitive. Matches at the START of a word rank first — typing
+ * "pa" should surface "Pão…" before anything that merely contains "pa".
+ */
 export function filterProducts(
   products: POSProductProjection[],
   options: { collectionRef?: string; query?: string } = {},
 ): POSProductProjection[] {
   const collectionRef = options.collectionRef || "";
-  const normalized = (options.query || "").trim().toLowerCase();
-  return products.filter((product) => {
-    if (collectionRef && product.collection_ref !== collectionRef) return false;
-    if (!normalized) return true;
-    return product.name.toLowerCase().includes(normalized)
-      || product.sku.toLowerCase().includes(normalized);
-  });
+  const normalized = normalizeSearchText((options.query || "").trim());
+  const wordStart: POSProductProjection[] = [];
+  const contains: POSProductProjection[] = [];
+  for (const product of products) {
+    if (collectionRef && product.collection_ref !== collectionRef) continue;
+    if (!normalized) {
+      wordStart.push(product);
+      continue;
+    }
+    const name = normalizeSearchText(product.name);
+    const sku = normalizeSearchText(product.sku);
+    if (matchesWordStart(name, normalized) || sku.startsWith(normalized)) {
+      wordStart.push(product);
+    } else if (name.includes(normalized) || sku.includes(normalized)) {
+      contains.push(product);
+    }
+  }
+  return wordStart.concat(contains);
 }
 
 /**

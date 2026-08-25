@@ -16,6 +16,7 @@ import type {
 import { findAction, hasAction, resolveAffordance } from "../app/presentation/actions";
 import {
   filterProducts,
+  normalizeSearchText,
   orderCollections,
   productFallbackHue,
   productFallbackStyle,
@@ -231,6 +232,35 @@ describe("presentation/catalog — grid shaping", () => {
     expect(filterProducts(products, { query: "cafe" }).map((p) => p.sku)).toEqual(["CAFE"]);
     expect(filterProducts(products, { query: "croiss" }).map((p) => p.sku)).toEqual(["CROISSANT"]);
     expect(filterProducts(products, {}).length).toBe(3);
+  });
+
+  it("acha produto sem acento e prioriza início de palavra", () => {
+    const products = [
+      product({ sku: "TRUFA-PAPAIA", name: "Trufa de Papaia", collection_ref: "doces" }),
+      product({ sku: "PAO-QUEIJO", name: "Pão de Queijo", collection_ref: "paes" }),
+      product({ sku: "CAFE", name: "Café", collection_ref: "bebidas" }),
+    ];
+    // "pao" (sem acento) acha "Pão de Queijo"
+    expect(filterProducts(products, { query: "pao" }).map((p) => p.sku)).toEqual(["PAO-QUEIJO"]);
+    // "que" bate no início da palavra "Queijo"
+    expect(filterProducts(products, { query: "que" }).map((p) => p.sku)).toEqual(["PAO-QUEIJO"]);
+    // "pa": início de palavra ("Pão", "Papaia") vence quem só CONTÉM ("truPA" não existe,
+    // mas "Trufa de Papaia" também tem palavra começando com "pa") — ambos aparecem,
+    // com word-start primeiro na ordem original filtrada
+    expect(filterProducts(products, { query: "pa" }).map((p) => p.sku)).toEqual([
+      "TRUFA-PAPAIA",
+      "PAO-QUEIJO",
+    ]);
+    // match só no MEIO da palavra vem depois do match em início de palavra
+    const mixed = [
+      product({ sku: "COMPADRE", name: "Compadre", collection_ref: "doces" }),
+      product({ sku: "PAO-FORMA", name: "Pão de Forma", collection_ref: "paes" }),
+    ];
+    expect(filterProducts(mixed, { query: "pa" }).map((p) => p.sku)).toEqual([
+      "PAO-FORMA",
+      "COMPADRE",
+    ]);
+    expect(normalizeSearchText("Pão de Açúcar")).toBe("pao de acucar");
   });
 
   it("derives a deterministic, calm fallback visual", () => {

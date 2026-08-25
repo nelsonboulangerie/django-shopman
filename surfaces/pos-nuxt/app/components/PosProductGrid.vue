@@ -55,8 +55,14 @@ function productQty(sku: string): number {
 }
 
 // F3 focuses the search field (the shell owns the shortcut, the grid the field).
+// `seed` é o search-as-you-type: uma letra digitada fora de input começa uma
+// busca NOVA com aquele caractere (as teclas seguintes já caem no campo focado).
 const searchInputRef = ref<{ inputRef?: HTMLInputElement } | null>(null);
-defineExpose({ focusSearch: () => searchInputRef.value?.inputRef?.focus() });
+function focusSearch(seed?: string) {
+  if (seed !== undefined) search.value = seed;
+  searchInputRef.value?.inputRef?.focus();
+}
+defineExpose({ focusSearch });
 </script>
 
 <template>
@@ -113,7 +119,9 @@ defineExpose({ focusSearch: () => searchInputRef.value?.inputRef?.focus() });
     </div>
 
     <div class="-mx-1 px-1 md:min-h-0 md:flex-1 md:overflow-y-auto">
-      <div v-if="pending" class="grid gap-2.5" :class="densityCols">
+      <!-- Skeleton só no PRIMEIRO carregamento: um refresh de fundo com a grade
+           já populada não pisca 12 tiles pulsando em cima do catálogo. -->
+      <div v-if="pending && !products.length" class="grid gap-2.5" :class="densityCols">
         <div v-for="idx in 12" :key="idx" class="aspect-[4/3] animate-pulse rounded-md border bg-muted" />
       </div>
       <div v-else-if="!filteredProducts.length" class="rounded-md border border-dashed p-8 text-center text-muted-foreground">
