@@ -129,6 +129,13 @@ async function goToDayClosing() {
   await navigateTo("/session/closing");
 }
 
+// Tela do cliente: segunda janela do MESMO navegador, para arrastar ao monitor
+// virado ao cliente. Janela nomeada de propósito — clicar de novo reaproveita a
+// existente em vez de empilhar outra.
+function openCustomerDisplay() {
+  if (import.meta.client) window.open("/display", "pos-customer-display");
+}
+
 // Movimentos de gaveta: sangria (sai) / suprimento (entra).
 //
 // O motivo é obrigatório e vem em BOTÕES, como já acontece na abertura de gaveta
@@ -403,6 +410,19 @@ async function confirmClose() {
           {{ pos.terminal_label || "Terminal" }}
           <template v-if="screen === 'open'"> · {{ activeOperator?.name || cashRuntime?.operator_username }}</template>
         </span>
+        <!-- Tela do cliente: abre a janela do segundo monitor. Discreto de
+             propósito — é gesto de preparação da estação, não de venda. -->
+        <UiButton
+          variant="ghost"
+          size="icon-sm"
+          class="shrink-0"
+          :class="pos ? '' : 'ml-auto'"
+          aria-label="Abrir tela do cliente"
+          title="Tela do cliente (nova janela, para o segundo monitor)"
+          @click="openCustomerDisplay"
+        >
+          <Icon name="lucide:monitor" class="size-5" />
+        </UiButton>
       </header>
 
       <div class="flex-1 md:min-h-0 md:overflow-y-auto">

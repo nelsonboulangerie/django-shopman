@@ -12,11 +12,20 @@ const { pos, refresh } = await usePosTerminal();
 const { onReconnect } = useConnectivity();
 onReconnect(() => refresh());
 
+// A tela do cliente (`/display`) é OUTRA janela do mesmo navegador, virada para
+// quem compra: nada do chrome de operador sobe nela. Em especial o auto-lock —
+// travar é logout no SERVIDOR, e a janela do display (que ninguém toca) o
+// dispararia sozinha, derrubando o operador da estação no meio da venda.
+const route = useRoute();
+const isCustomerDisplay = computed(() => route.path === "/display");
+
 // Tempo real entre estações (ADR-016): pedido de troco, devolução pendente e
 // turno aberto/fechado feitos em OUTRA estação chegam por push; no evento,
 // refazemos o fetch canônico da Projection (o mesmo `refresh` deduplicado que
 // todas as páginas leem). Poll calmo de 60s só enquanto o SSE não conecta.
-usePosEvents(() => refresh());
+// Não na tela do cliente: ela consome só o BroadcastChannel da estação — SSE e
+// poll ali seriam uma conexão e um refetch a mais sem ninguém para ler.
+if (route.path !== "/display") usePosEvents(() => refresh());
 
 // Re-gate global de sessão (kit): um 401 no meio do turno (sessão expirada do
 // lado do Django) sobe a tela de senha em vez de o operador bater numa sessão
@@ -34,18 +43,24 @@ const { locked, canIdentify, stationRef, mustChange, lock } = useOperatorLock(OP
 // resposta certa é "agora não".
 const setupDismissed = ref(false);
 const needsStationSetup = computed(
-  () => canIdentify.value && !locked.value && !stationRef.value && !setupDismissed.value,
+  () => canIdentify.value && !locked.value && !stationRef.value && !setupDismissed.value && !isCustomerDisplay.value,
 );
 
 // Auto-lock por ociosidade é a única particularidade de kiosk do PDV (os outros apps
-// não auto-travam). Vale em qualquer rota (venda ou antesala).
-usePosAutoLock({ locked, lock, autoLockSeconds: () => pos.value?.auto_lock_seconds ?? 60 });
+// não auto-travam). Vale em qualquer rota (venda ou antesala) — MENOS na tela do
+// cliente: `0` desliga o timer (ver isIdleBeyond) na janela que ninguém toca.
+usePosAutoLock({
+  locked,
+  lock,
+  autoLockSeconds: () => (isCustomerDisplay.value ? 0 : pos.value?.auto_lock_seconds ?? 60),
+});
 
 // A tela de SENHA sobe só quando o dispositivo não é uma estação reconhecida (a
 // antessala respondeu 403), ou quando a sessão expirou no meio do turno. Estação
 // reconhecida e sem ninguém identificado → `<OperatorLock>` (PIN/crachá), nunca
 // a tela de senha: senão a loja pediria credencial de gestor toda manhã.
-const needsLogin = computed(() => !canIdentify.value || sessionExpired.value);
+// Na tela do cliente, nunca: formulário de login na parede não identifica ninguém.
+const needsLogin = computed(() => !isCustomerDisplay.value && (!canIdentify.value || sessionExpired.value));
 
 // Login com SENHA no próprio caixa (sem bounce pro Django admin): é o caminho de
 // quem provisiona a estação e o do dispositivo pessoal. Uma tela, um submit.
@@ -92,9 +107,10 @@ async function submitLogin() {
     <!-- Aviso calmo de conexão (kit): fixed no topo, só aparece offline. -->
     <OfflineBanner />
 
-    <!-- Identificação unificada (PIN ou CRACHÁ): o mesmo overlay dos outros 4 apps. -->
+    <!-- Identificação unificada (PIN ou CRACHÁ): o mesmo overlay dos outros 4 apps.
+         Nunca na tela do cliente: o overlay cobriria a parede que o cliente vê. -->
     <OperatorLock
-      v-if="canIdentify && (locked || mustChange)"
+      v-if="!isCustomerDisplay && canIdentify && (locked || mustChange)"
       :perm="OPERATOR_PERM"
     />
 
