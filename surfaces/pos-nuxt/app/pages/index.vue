@@ -105,6 +105,7 @@ const {
   productQty,
   addProduct,
   setQty,
+  restoreItem,
   setLineDiscount,
   setLinePrice,
   requestTabAssociation,
@@ -261,7 +262,7 @@ useHead({ htmlAttrs: { style: computed(() => rollStyle(pos.value)) } });
 // F6 customer modal, Enter validates a covered checkout, Escape backs out of
 // checkout, "/" focuses product search when not editing, "?" opens the help).
 const tabBoardRef = ref<{ focus: () => void } | null>(null);
-const productGridRef = ref<{ focusSearch: () => void } | null>(null);
+const productGridRef = ref<{ focusSearch: (seed?: string) => void } | null>(null);
 const tabHeaderRef = ref<{ openCustomer: () => void } | null>(null);
 const paymentWorkspaceRef = ref<{ validate: () => void; openCustomer: () => void } | null>(null);
 const shortcutsHelpOpen = ref(false);
@@ -350,6 +351,19 @@ function onGlobalKeydown(event: KeyboardEvent) {
       tenderBackspace();
       return;
     }
+  }
+
+  // Search-as-you-type (Odoo): na tela de venda, uma LETRA digitada fora de
+  // input começa a busca de produto com aquele caractere (dígitos seguem
+  // editando a linha ativa — comportamento do numpad do carrinho).
+  if (
+    inSaleView.value && !checkoutMode.value && !isEditing
+    && !event.metaKey && !event.ctrlKey && !event.altKey
+    && event.key.length === 1 && /\p{L}/u.test(event.key)
+  ) {
+    event.preventDefault();
+    productGridRef.value?.focusSearch(event.key);
+    return;
   }
 
   switch (event.key) {
@@ -670,6 +684,7 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onGlobalKeydown));
             @increment="(sku) => setQty(sku, productQty(sku) + 1)"
             @decrement="(sku) => setQty(sku, productQty(sku) - 1)"
             @remove="(sku) => setQty(sku, 0)"
+            @restore="restoreItem"
             @set-qty="(sku, qty) => setQty(sku, qty)"
             @set-discount="setLineDiscount"
             @set-price="setLinePrice"

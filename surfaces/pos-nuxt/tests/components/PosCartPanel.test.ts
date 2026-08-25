@@ -66,16 +66,39 @@ describe("PosCartPanel — interações emitem os comandos certos", () => {
     expect(wrapper.emitted("remove")).toBeUndefined();
   });
 
-  it("'Diminuir' na última unidade pede confirmação e só então emite remove", async () => {
+  it("'Diminuir' na última unidade de linha NÃO disparada remove direto (Desfazer no toast)", async () => {
     const wrapper = await mountSuspended(PosCartPanel, { props: props() });
-    // PAO é a 1ª linha, qty 1 → abre o modal de confirmação (teleported ao body).
+    // PAO é a 1ª linha, qty 1, ainda não foi à cozinha → sem modal, remove já.
     await wrapper.findAll('[aria-label="Diminuir"]')[0]!.trigger("click");
     expect(wrapper.emitted("decrement")).toBeUndefined();
+    expect(wrapper.emitted("remove")?.[0]).toEqual(["PAO"]);
+  });
+
+  it("linha JÁ disparada à cozinha pede confirmação antes de remover", async () => {
+    const wrapper = await mountSuspended(PosCartPanel, {
+      props: props({ items: [item({ sku: "PAO", name: "Pão", fired: true, line_id: "l1" })] }),
+    });
+    await wrapper.find('[aria-label="Remover"]').trigger("click");
+    expect(wrapper.emitted("remove")).toBeUndefined();
     const confirm = Array.from(document.querySelectorAll("button")).find((b) => b.textContent?.includes("Remover item"));
     expect(confirm).toBeTruthy();
     (confirm as HTMLElement).click();
     await wrapper.vm.$nextTick();
     expect(wrapper.emitted("remove")?.[0]).toEqual(["PAO"]);
+  });
+
+  it("'Remover' da barra de lote pede confirmação e remove a seleção inteira", async () => {
+    const wrapper = await mountSuspended(PosCartPanel, { props: props() });
+    await wrapper.find('[aria-label="Selecionar Pão"]').trigger("click");
+    await wrapper.find('[aria-label="Selecionar Café"]').trigger("click");
+    const batchRemove = wrapper.findAll("button").find((b) => b.text().trim() === "Remover");
+    await batchRemove!.trigger("click");
+    expect(wrapper.emitted("remove")).toBeUndefined();
+    const confirm = Array.from(document.querySelectorAll("button")).find((b) => b.textContent?.includes("Remover itens"));
+    expect(confirm).toBeTruthy();
+    (confirm as HTMLElement).click();
+    await wrapper.vm.$nextTick();
+    expect(wrapper.emitted("remove")?.length).toBe(2);
   });
 
   it("'Pagamento' emite prepare", async () => {

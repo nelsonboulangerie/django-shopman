@@ -559,6 +559,15 @@ export function usePosSale(deps: PosSaleDeps) {
     existing.qty = qty;
   }
 
+  // "Desfazer" da remoção direta: devolve a linha como estava (qty, desconto,
+  // observação). Idempotente: se a linha voltou por outro caminho, não duplica.
+  function restoreItem(item: POSCartItem) {
+    if (!canUseCart.value) return;
+    if (cart.items.some((entry) => entry.sku === item.sku)) return;
+    review.value = null;
+    cart.items.push({ ...item });
+  }
+
   function setLineDiscount(sku: string, value: number, reason: string) {
     const item = cart.items.find((entry) => entry.sku === sku);
     if (!item) return;
@@ -1609,6 +1618,7 @@ export function usePosSale(deps: PosSaleDeps) {
     productQty,
     addProduct,
     setQty,
+    restoreItem,
     setLineDiscount,
     setLinePrice,
     sanitizeTabRef,
