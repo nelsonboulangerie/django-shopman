@@ -97,13 +97,13 @@ async function printDanfe(sale: RecentSale) {
   }
 }
 
-// Falha nunca termina em "indisponível" seco: quem tem acesso ganha a prévia
-// web como ação alternativa; quem não tem ganha o próximo passo.
+// Falha nunca termina em "indisponível" seco: quem tem acesso ganha a nota na
+// tela como ação alternativa; quem não tem ganha o próximo passo.
 function danfeFallbackToast(sale: RecentSale, reason: string) {
-  if (props.pos?.danfe_preview_allowed && djangoOrigin.value) {
+  if (props.pos?.danfe_screen_allowed && djangoOrigin.value) {
     toast.error(`A DANFE não saiu na bobina: ${reason}`, {
       action: {
-        label: "Abrir prévia web",
+        label: "Ver a nota na tela",
         onClick: () => window.open(
           `${djangoOrigin.value}/fiscal/danfe/${encodeURIComponent(sale.order_ref)}/`,
           "_blank",

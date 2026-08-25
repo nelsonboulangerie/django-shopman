@@ -372,10 +372,11 @@ class POSProjection:
     fiscal_status: str
     fiscal_label: str
     fiscal_message: str
-    # A prévia web da DANFE (host do Django) é gated a staff; um link que
+    # A nota aberta na TELA (host do Django) é gated a staff; um link que
     # devolve 404 para o operador não é um link, é uma armadilha. A tela só
-    # renderiza a porta quando ela abre para QUEM está logado.
-    danfe_preview_allowed: bool = False
+    # renderiza a porta quando ela abre para QUEM está logado. É consulta: a via
+    # do cliente sai na bobina, e essa não depende deste gate.
+    danfe_screen_allowed: bool = False
     operators: tuple[dict, ...] = ()
     # Quem pode AUTORIZAR exceção (sangria, desconto acima do teto). Conjunto
     # diferente de `operators`: operar o PDV e assinar uma exceção são duas
@@ -482,7 +483,7 @@ def build_pos(*, terminal=None, operator=None) -> POSProjection:
         fiscal_status=fiscal_status,
         fiscal_label=fiscal_label,
         fiscal_message=fiscal_message,
-        danfe_preview_allowed=bool(getattr(operator, "is_staff", False)),
+        danfe_screen_allowed=bool(getattr(operator, "is_staff", False)),
         operators=_eligible_operator_cards(),
         managers=_manager_cards(operator),
         auto_lock_seconds=int((getattr(terminal, "metadata", None) or {}).get("auto_lock_seconds", 60)),

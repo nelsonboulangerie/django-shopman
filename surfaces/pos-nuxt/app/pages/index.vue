@@ -213,9 +213,9 @@ async function printReceipt() {
   window.print();
 }
 
-// DANFE em bobina, mesma rota das Últimas vendas. A prévia web (host do
-// Django) virou porta secundária: link só para quem o servidor diz que entra.
-function danfePreviewUrl(orderRef: string): string {
+// A nota aberta na tela (host do Django): a mesma DANFE da bobina, em formato de
+// leitura. Porta secundária — link só para quem o servidor diz que entra.
+function danfeScreenUrl(orderRef: string): string {
   return `${djangoOrigin.value}/fiscal/danfe/${encodeURIComponent(orderRef)}/`;
 }
 
@@ -239,14 +239,14 @@ async function printDanfe() {
   }
 }
 
-// Falha nunca termina em "indisponível" seco: quem tem acesso ganha a prévia
-// web como ação; quem não tem ganha o próximo passo.
+// Falha nunca termina em "indisponível" seco: quem tem acesso ganha a nota na
+// tela como ação; quem não tem ganha o próximo passo.
 function danfeFallbackToast(orderRef: string, reason: string) {
-  if (pos.value?.danfe_preview_allowed && djangoOrigin.value) {
+  if (pos.value?.danfe_screen_allowed && djangoOrigin.value) {
     toast.error(`A DANFE não saiu na bobina: ${reason}`, {
       action: {
-        label: "Abrir prévia web",
-        onClick: () => window.open(danfePreviewUrl(orderRef), "_blank", "noopener"),
+        label: "Ver a nota na tela",
+        onClick: () => window.open(danfeScreenUrl(orderRef), "_blank", "noopener"),
       },
     });
   } else {
@@ -284,10 +284,10 @@ async function startNextSale() {
   tabBoardRef.value?.focus();
 }
 
-// Prévia web da DANFE na tela de resultado: só para quem o servidor deixa.
-const resultDanfePreviewUrl = computed(() =>
-  result.value && pos.value?.danfe_preview_allowed && djangoOrigin.value
-    ? danfePreviewUrl(result.value.orderRef)
+// "Ver a nota" na tela de resultado: só para quem o servidor deixa.
+const resultDanfeScreenUrl = computed(() =>
+  result.value && pos.value?.danfe_screen_allowed && djangoOrigin.value
+    ? danfeScreenUrl(result.value.orderRef)
     : "",
 );
 
@@ -537,7 +537,7 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onGlobalKeydown));
           :result="result"
           :pix-status="pixStatus"
           :can-cancel="canCancelRecentSale"
-          :danfe-preview-url="resultDanfePreviewUrl"
+          :danfe-screen-url="resultDanfeScreenUrl"
           :printing-receipt="printingReceipt"
           :printing-danfe="printingDanfe"
           @new-sale="startNextSale"
