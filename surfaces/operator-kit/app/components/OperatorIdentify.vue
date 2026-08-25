@@ -85,7 +85,27 @@ const { pin, pressDigit, backspace, clear } = useIdentityCapture({
   canSubmitEnter: () => canSubmit.value && !props.busy,
   onBadge: (token) => emit("badge", token),
   onSubmit: () => submit(),
+  onDigitPick: (digit) => pickByNumber(digit),
 });
+
+// A lista é numerada: "2" escolhe o segundo. Antes só o dedo escolhia, e num
+// balcão com teclado (ou com o kiosk sem mouse à mão) trocar de operador
+// obrigava a mirar num alvo — a única etapa da identificação que ainda pedia
+// ponteiro, já que o PIN e o crachá são teclado puro. Nove é o teto porque é
+// até onde uma tecla única alcança; do décimo em diante o toque continua sendo
+// o caminho, sem número prometendo atalho que não existe.
+const MAX_NUMBERED = 9;
+const numberedCount = computed(() => Math.min(props.people.length, MAX_NUMBERED));
+
+/** Escolha pelo número, SEM limpar o buffer de captura — o dígito pode ser a
+ *  primeira tecla de um crachá, e o token tem de chegar inteiro ao Enter. */
+function pickByNumber(digit: string) {
+  const index = Number(digit) - 1;
+  if (index < 0 || index >= numberedCount.value) return;
+  const person = props.people[index];
+  if (!person) return;
+  picked.value = person;
+}
 
 // Recusa apaga só o PIN: quem foi escolhido continua escolhido, senão a pessoa
 // reescolheria o próprio nome a cada dedo errado no teclado.
@@ -124,15 +144,24 @@ defineExpose({ reset });
       <p class="text-center text-sm text-muted-foreground">{{ prompt }}</p>
       <div class="grid grid-cols-2 gap-2" role="group" :aria-label="prompt">
         <button
-          v-for="person in people"
+          v-for="(person, index) in people"
           :key="person.username"
           type="button"
-          class="touch-manipulation select-none rounded-lg border bg-background px-3 py-3 text-left text-sm font-medium transition hover:bg-accent"
+          class="flex touch-manipulation select-none items-center gap-2 rounded-lg border bg-background px-3 py-3 text-left text-sm font-medium transition hover:bg-accent"
+          :aria-keyshortcuts="index < numberedCount ? String(index + 1) : undefined"
           @click="pick(person)"
         >
-          {{ person.name }}
+          <kbd
+            v-if="index < numberedCount"
+            class="shrink-0 rounded border bg-muted px-1.5 py-0.5 font-mono text-xs font-medium text-muted-foreground"
+            aria-hidden="true"
+          >{{ index + 1 }}</kbd>
+          <span class="min-w-0 truncate">{{ person.name }}</span>
         </button>
       </div>
+      <p v-if="numberedCount" class="text-center text-xs text-muted-foreground">
+        Digite o número para escolher{{ badgeEnabled !== false ? ", ou passe o crachá" : "" }}.
+      </p>
       <p v-if="error && !showPad" class="text-center text-sm font-medium text-destructive" role="alert">
         {{ error }}
       </p>
