@@ -355,12 +355,14 @@ defineExpose({
 
 <template>
   <section class="flex h-full min-h-0 flex-col gap-3">
-    <!-- Payment screen — clone fiel do Odoo POS (desktop-first). INSTRUMENTO à
-         ESQUERDA (lista de métodos + botões de função empilhados acima do numpad +
-         numpad 4×4 com coluna de +N + Voltar/Validar no rodapé da coluna); VALOR
-         gigante à DIREITA (total estável, centrado) + linhas de pagamento +
-         troco/restante. Os botões de função (Cliente/Retirada/Desconto/Nota) ficam
-         logo acima do numpad, como o Odoo empilha conforme as opções ativas. -->
+    <!-- Payment screen (desktop-first, base Odoo POS). Coluna de TRABALHO à
+         ESQUERDA em três seções nomeadas — Venda (cliente, desconto),
+         Recebimento (retirada/entrega, onde recebe, troco da porta) e
+         Pagamento (métodos + numpad com cédulas), com Voltar/Validar no rodapé;
+         VALOR gigante à DIREITA (total estável, centrado) + linhas de pagamento
+         + troco/restante. -->
+
+
 
     <!-- MAIN — clone Odoo: INSTRUMENTO esquerda, VALOR direita. Colunas
          RESPONSIVAS (B.1): teto 1+2 (instrumento:valor) → 1+1 → empilha (valor no
@@ -368,89 +370,108 @@ defineExpose({
          valor ocupa o restante. (Sem 1+3 no xl — esparramava o valor.) -->
     <div class="grid min-h-0 w-full flex-1 grid-cols-1 gap-6 overflow-hidden md:grid-cols-2 lg:grid-cols-3">
 
-      <!-- LEFT · INSTRUMENTO (empilhado: vai abaixo do valor) -->
-      <div class="order-2 flex min-h-0 flex-col gap-2 md:order-none">
-        <!-- payment methods (tap = lança o que falta na forma) -->
-        <div class="flex flex-col gap-1.5">
-          <button
-            v-for="method in injectableMethods"
-            :key="method.ref"
-            type="button"
-            class="flex h-11 items-center gap-3 rounded-md border bg-card px-3 text-left text-sm font-medium transition hover:border-primary/50 hover:bg-accent active:translate-y-px"
-            :class="method.ref === selectedTenderMethod ? 'border-primary bg-primary/5' : ''"
-            @click="$emit('addTender', method.ref)"
-          >
-            <Icon :name="paymentIcon(method.ref)" class="size-5 shrink-0 text-muted-foreground" />
-            <span class="flex-1">{{ method.label }}</span>
-          </button>
-        </div>
+      <!-- LEFT · coluna de trabalho, agrupada por SEMÂNTICA (Hyper Focus: chrome
+           espalhado não responde "qual é a próxima ação"). Três seções nomeadas:
+           VENDA (contexto do pedido: cliente, desconto — nota fiscal e
+           comprovante moram no modal do Cliente, decisão da reforma), depois
+           RECEBIMENTO (retirada/entrega, onde se recebe, troco da porta), e por
+           fim PAGAMENTO (métodos + teclado), colada no Validar porque é o ato
+           final. Botões do mesmo grupo têm o mesmo peso. -->
+      <div class="order-2 flex min-h-0 flex-col gap-3 md:order-none">
+        <!-- VENDA — quem compra e a que preço -->
+        <section class="grid gap-1.5" aria-label="Venda">
+          <h3 class="px-1 text-xs font-medium uppercase tracking-wide text-muted-foreground">Venda</h3>
+          <div class="grid grid-cols-2 gap-1.5">
+            <button
+              ref="customerButtonRef"
+              type="button"
+              class="flex h-11 items-center justify-center gap-2 rounded-md border bg-card px-3 text-sm font-medium transition hover:bg-accent active:translate-y-px"
+              :class="customerSet ? 'border-primary bg-primary/5' : ''"
+              @click="customerSheetOpen = true"
+            >
+              <Icon name="lucide:user-round" class="size-4 text-muted-foreground" />
+              <span class="min-w-0 truncate">{{ customerName || "Cliente" }}</span>
+              <kbd class="rounded border bg-muted px-1.5 py-0.5 font-mono text-xs font-medium text-muted-foreground" aria-hidden="true">F6</kbd>
+            </button>
+            <!-- 'Nota fiscal' e 'comprovante' NÃO ganham botão aqui: são secundários,
+                 dentro do modal do Cliente (abre pelo botão acima), e só quando
+                 habilitados no contrato. -->
+            <button
+              v-if="discountTypes.length"
+              type="button"
+              class="flex h-11 items-center justify-center gap-2 rounded-md border bg-card px-3 text-sm font-medium transition hover:bg-accent active:translate-y-px"
+              :class="hasDiscount ? 'border-primary bg-primary/5' : ''"
+              @click="discountSheetOpen = true"
+            >
+              <Icon name="lucide:tag" class="size-4" :class="hasDiscount ? 'text-foreground' : 'text-muted-foreground'" />
+              <span class="min-w-0 truncate">{{ hasDiscount ? `Desconto ${discountSummary}` : "Desconto" }}</span>
+            </button>
+          </div>
+        </section>
 
-        <!-- função: empilhados acima do numpad (Odoo reflui conforme as opções).
-             Cliente + Retirada/Entrega + Desconto + Nota fiscal. -->
-        <div class="grid grid-cols-2 gap-1.5">
-          <button
-            ref="customerButtonRef"
-            type="button"
-            class="flex h-11 items-center justify-center gap-2 rounded-md border bg-card px-3 text-sm font-medium transition hover:bg-accent active:translate-y-px"
-            :class="customerSet ? 'border-primary bg-primary/5' : ''"
-            @click="customerSheetOpen = true"
-          >
-            <Icon name="lucide:user-round" class="size-4 text-muted-foreground" />
-            <span class="min-w-0 truncate">{{ customerName || "Cliente" }}</span>
-            <kbd class="rounded border bg-muted px-1.5 py-0.5 font-mono text-xs font-medium text-muted-foreground" aria-hidden="true">F6</kbd>
-          </button>
-          <button
-            type="button"
-            class="flex h-11 items-center justify-center gap-2 rounded-md border bg-card px-3 text-sm font-medium transition hover:bg-accent active:translate-y-px"
-            @click="fulfillmentSheetOpen = true"
-          >
-            <Icon :name="fulfillmentType === 'delivery' ? 'lucide:bike' : 'lucide:store'" class="size-4 text-muted-foreground" />
-            <span class="min-w-0 truncate">{{ fulfillmentLabel }}</span>
-          </button>
-          <button
-            v-if="discountTypes.length"
-            type="button"
-            class="flex h-11 items-center justify-center gap-2 rounded-md border bg-card px-3 text-sm font-medium transition hover:bg-accent active:translate-y-px"
-            :class="hasDiscount ? 'border-primary bg-primary/5' : ''"
-            @click="discountSheetOpen = true"
-          >
-            <Icon name="lucide:tag" class="size-4" :class="hasDiscount ? 'text-foreground' : 'text-muted-foreground'" />
-            <span class="min-w-0 truncate">{{ hasDiscount ? `Desconto ${discountSummary}` : "Desconto" }}</span>
-          </button>
-          <!-- 'Nota fiscal' NÃO fica aqui como botão principal: é secundária, dentro do
-               modal do Cliente (abre pelo botão 'Cliente'), e só quando habilitada. -->
-          <button
-            v-for="collection in (deliveryCollections.length > 1 ? deliveryCollections : [])"
-            :key="collection.ref"
-            type="button"
-            class="flex h-11 items-center justify-center gap-2 rounded-md border bg-card px-3 text-sm font-medium transition hover:bg-accent active:translate-y-px"
-            :class="paymentCollection === collection.ref ? 'border-primary bg-primary/5' : ''"
-            @click="$emit('update:paymentCollection', collection.ref)"
-          >
-            <span class="min-w-0 truncate">{{ collection.label }}</span>
-          </button>
-        </div>
+        <!-- RECEBIMENTO — como o pedido chega e onde o dinheiro é recebido -->
+        <section class="grid gap-1.5" aria-label="Recebimento">
+          <h3 class="px-1 text-xs font-medium uppercase tracking-wide text-muted-foreground">Recebimento</h3>
+          <div class="grid grid-cols-2 gap-1.5">
+            <button
+              type="button"
+              class="col-span-2 flex h-11 items-center justify-center gap-2 rounded-md border bg-card px-3 text-sm font-medium transition hover:bg-accent active:translate-y-px"
+              @click="fulfillmentSheetOpen = true"
+            >
+              <Icon :name="fulfillmentType === 'delivery' ? 'lucide:bike' : 'lucide:store'" class="size-4 text-muted-foreground" />
+              <span class="min-w-0 truncate">{{ fulfillmentLabel }}</span>
+            </button>
+            <button
+              v-for="collection in (deliveryCollections.length > 1 ? deliveryCollections : [])"
+              :key="collection.ref"
+              type="button"
+              class="flex h-11 items-center justify-center gap-2 rounded-md border bg-card px-3 text-sm font-medium transition hover:bg-accent active:translate-y-px"
+              :class="paymentCollection === collection.ref ? 'border-primary bg-primary/5' : ''"
+              @click="$emit('update:paymentCollection', collection.ref)"
+            >
+              <span class="min-w-0 truncate">{{ collection.label }}</span>
+            </button>
+          </div>
 
-        <!-- "Troco para quanto?" — dinheiro na porta (COD): a chave canônica
-             payment.change_for_q, a mesma do checkout da loja; o despacho a lê
-             para sugerir quanto de troco o entregador leva. Opcional. -->
-        <label v-if="onDeliveryCash" class="grid gap-1 text-sm">
-          <span class="font-medium text-muted-foreground">Troco para quanto?</span>
-          <UiInput
-            :model-value="changeForInput"
-            inputmode="decimal"
-            placeholder="Com quanto o cliente paga na porta (opcional)"
-            @update:model-value="$emit('update:changeForInput', String($event || ''))"
-          />
-          <span v-if="changeForShortfall > 0" class="flex items-center gap-1.5 text-xs text-amber-700 dark:text-amber-400">
-            <Icon name="lucide:triangle-alert" class="size-3.5 shrink-0" />
-            Menor que o total: faltam {{ formatBRL(changeForShortfall) }}.
-          </span>
-        </label>
+          <!-- "Troco para quanto?" — dinheiro na porta (COD): a chave canônica
+               payment.change_for_q, a mesma do checkout da loja; o despacho a lê
+               para sugerir quanto de troco o entregador leva. Opcional. -->
+          <label v-if="onDeliveryCash" class="grid gap-1 text-sm">
+            <span class="font-medium text-muted-foreground">Troco para quanto?</span>
+            <UiInput
+              :model-value="changeForInput"
+              inputmode="decimal"
+              placeholder="Com quanto o cliente paga na porta (opcional)"
+              @update:model-value="$emit('update:changeForInput', String($event || ''))"
+            />
+            <span v-if="changeForShortfall > 0" class="flex items-center gap-1.5 text-xs text-amber-700 dark:text-amber-400">
+              <Icon name="lucide:triangle-alert" class="size-3.5 shrink-0" />
+              Menor que o total: faltam {{ formatBRL(changeForShortfall) }}.
+            </span>
+          </label>
+        </section>
 
-        <!-- numpad (dígitos: entrada decimal, vírgula nos centavos) + trilho de
-             cédulas à direita (só dinheiro: as 6 notas BR que o cliente entrega) -->
-        <div class="flex gap-1.5">
+        <!-- PAGAMENTO — o instrumento: métodos (tap = lança o que falta na forma)
+             + teclado de valor. Última seção de propósito: desagua no Validar. -->
+        <section class="mt-auto grid gap-1.5" aria-label="Pagamento">
+          <h3 class="px-1 text-xs font-medium uppercase tracking-wide text-muted-foreground">Pagamento</h3>
+          <div class="flex flex-col gap-1.5">
+            <button
+              v-for="method in injectableMethods"
+              :key="method.ref"
+              type="button"
+              class="flex h-11 items-center gap-3 rounded-md border bg-card px-3 text-left text-sm font-medium transition hover:border-primary/50 hover:bg-accent active:translate-y-px"
+              :class="method.ref === selectedTenderMethod ? 'border-primary bg-primary/5' : ''"
+              @click="$emit('addTender', method.ref)"
+            >
+              <Icon :name="paymentIcon(method.ref)" class="size-5 shrink-0 text-muted-foreground" />
+              <span class="flex-1">{{ method.label }}</span>
+            </button>
+          </div>
+
+          <!-- numpad (dígitos: entrada decimal, vírgula nos centavos) + trilho de
+               cédulas à direita (só dinheiro: as 6 notas BR que o cliente entrega) -->
+          <div class="flex gap-1.5">
           <div class="grid grid-cols-3 gap-1.5" :class="cashSelected ? 'flex-[3] basis-0' : 'flex-1'" role="group" aria-label="Teclado de valor">
             <button
               v-for="digit in digitKeys"
@@ -517,7 +538,8 @@ defineExpose({
               {{ note / 100 }}
             </button>
           </div>
-        </div>
+          </div>
+        </section>
 
         <!-- Por que o botão está travado. O aviso do gerente sozinho enganava: com
              o botão desabilitado por falta de forma de pagamento, o único texto na
@@ -535,7 +557,7 @@ defineExpose({
         </p>
 
         <!-- Voltar + Validar (rodapé da coluna, copiando o Back + Validate do Odoo) -->
-        <div class="mt-auto grid grid-cols-2 gap-1.5 pt-1">
+        <div class="grid grid-cols-2 gap-1.5 pt-1">
           <UiButton variant="outline" size="lg" class="h-14 gap-2 text-base" @click="$emit('back')">
             <Icon name="lucide:arrow-left" class="size-5" />
             Voltar

@@ -104,6 +104,31 @@ describe("PosPaymentWorkspace — instrumento de pagamento", () => {
   });
 });
 
+describe("PosPaymentWorkspace — seções semânticas da coluna de trabalho", () => {
+  it("agrupa em Venda / Recebimento / Pagamento, nesta ordem", async () => {
+    const wrapper = await mountSuspended(PosPaymentWorkspace, { props: props() });
+    const sections = wrapper.findAll("section[aria-label]").map((s) => s.attributes("aria-label"));
+    expect(sections).toEqual(["Venda", "Recebimento", "Pagamento"]);
+  });
+
+  it("o troco-para da entrega mora no Recebimento e avisa quando não cobre o total", async () => {
+    const wrapper = await mountSuspended(PosPaymentWorkspace, {
+      props: props({
+        fulfillmentType: "delivery",
+        paymentCollection: "on_delivery",
+        changeForInput: "5,00",
+        paymentTotalQ: 1000,
+      }),
+    });
+    const receiving = wrapper.find('section[aria-label="Recebimento"]');
+    expect(receiving.text()).toContain("Troco para quanto?");
+    expect(receiving.text()).toContain("Menor que o total");
+    // Na retirada o campo não existe.
+    const pickup = await mountSuspended(PosPaymentWorkspace, { props: props() });
+    expect(pickup.text()).not.toContain("Troco para quanto?");
+  });
+});
+
 describe("PosPaymentWorkspace — leitura viva (Restante/Troco)", () => {
   it("mostra 'Restante' enquanto não cobre", async () => {
     const wrapper = await mountSuspended(PosPaymentWorkspace, {
@@ -215,7 +240,7 @@ describe("PosPaymentWorkspace — Exato e Limpar na coluna do numpad", () => {
 
   it("Exato emite tenderExact quando há linha selecionada", async () => {
     const wrapper = await mountSuspended(PosPaymentWorkspace, { props: props(cashSelected) });
-    const exact = wrapper.find('[aria-label="Valor exato do restante"]');
+    const exact = wrapper.find('[aria-label="Exato: a linha assume o restante"]');
     expect(exact.attributes("disabled")).toBeUndefined();
     await exact.trigger("click");
     expect(wrapper.emitted("tenderExact")).toHaveLength(1);
@@ -223,15 +248,15 @@ describe("PosPaymentWorkspace — Exato e Limpar na coluna do numpad", () => {
 
   it("Limpar emite tenderClear quando há linha selecionada", async () => {
     const wrapper = await mountSuspended(PosPaymentWorkspace, { props: props(cashSelected) });
-    const clear = wrapper.find('[aria-label="Limpar o valor da linha"]');
+    const clear = wrapper.find('[aria-label="Limpar: zera o valor da linha"]');
     await clear.trigger("click");
     expect(wrapper.emitted("tenderClear")).toHaveLength(1);
   });
 
   it("sem linha selecionada, Exato e Limpar ficam desabilitados", async () => {
     const wrapper = await mountSuspended(PosPaymentWorkspace, { props: props({ selectedTenderIndex: -1 }) });
-    expect(wrapper.find('[aria-label="Valor exato do restante"]').attributes("disabled")).toBeDefined();
-    expect(wrapper.find('[aria-label="Limpar o valor da linha"]').attributes("disabled")).toBeDefined();
+    expect(wrapper.find('[aria-label="Exato: a linha assume o restante"]').attributes("disabled")).toBeDefined();
+    expect(wrapper.find('[aria-label="Limpar: zera o valor da linha"]').attributes("disabled")).toBeDefined();
   });
 });
 
