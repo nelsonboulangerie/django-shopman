@@ -13,6 +13,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ref } from "vue";
 
 import OperatorLock from "../../app/components/OperatorLock.vue";
+import { PICK_QUIET_MS } from "../../app/composables/useIdentityCapture";
 
 const BADGE = "a1b2c3d4e5f6"; // 12 hex: o formato de `issue_badge`
 
@@ -274,6 +275,50 @@ describe("OperatorLock — PIN pelo teclado físico", () => {
     typeSlow(["1", "2", "3", "9", "Backspace", "4", "Enter"]);
 
     expect(unlock).toHaveBeenCalledWith({ operatorId: 1, pin: "1234" });
+  });
+
+  /** O silêncio que a escolha por número espera (`PICK_QUIET_MS` + folga). É
+   *  tempo de relógio de verdade: o que se está provando aqui é justamente que
+   *  a decisão espera o mundo, não que um timer foi agendado. */
+  const quiet = () => new Promise((resolve) => setTimeout(resolve, PICK_QUIET_MS + 40));
+
+  it("o número ao lado do nome escolhe a pessoa, sem mouse", async () => {
+    // A lista era o único passo da identificação que ainda pedia ponteiro: PIN e
+    // crachá são teclado puro, e para dizer QUEM era preciso mirar num alvo.
+    await mount();
+
+    typeSlow(["2"]); // Davi Sousa é o segundo
+    await quiet();
+    typeSlow(["1", "2", "3", "4", "Enter"]);
+
+    expect(unlock).toHaveBeenCalledWith({ operatorId: 2, pin: "1234" });
+  });
+
+  it("número fora da lista não escolhe ninguém", async () => {
+    const wrapper = await mount();
+
+    typeSlow(["7"]); // só há duas pessoas
+    await quiet();
+
+    // Sem escolha não há pad, e o Enter não tem o que submeter.
+    expect(wrapper.find('button[aria-label="Confirmar"]').exists()).toBe(false);
+    typeSlow(["1", "2", "3", "4", "Enter"]);
+    expect(unlock).not.toHaveBeenCalled();
+  });
+
+  it("crachá que começa com dígito destrava pelo crachá, e não escolhe ninguém no caminho", async () => {
+    // O token é hexadecimal: mais da metade dos crachás começa com um dígito,
+    // que é exatamente a tecla que agora escolhe gente. A rajada cancela a
+    // escolha (a segunda tecla chega em milissegundos) e o token vence inteiro.
+    // Se isto quebrar, metade dos crachás da casa abre o pad de um operador
+    // aleatório em vez de destravar.
+    await mount();
+
+    scan("1a2b3c4d5e6f");
+    await quiet();
+
+    expect(unlock).toHaveBeenCalledWith({ badge: "1a2b3c4d5e6f" });
+    expect(unlock).toHaveBeenCalledTimes(1);
   });
 
   it("tocar os botões do pad em sequência rápida registra todos os dígitos", async () => {

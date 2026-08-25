@@ -60,13 +60,43 @@ export interface IdentityCaptureOptions {
   onBadge: (token: string) => unknown;
   /** Enter humano com PIN pronto. */
   onSubmit: () => void;
+  /** Dígito digitado ANTES de haver pad na tela — a lista de gente ainda está
+   *  aberta, e ali "2" quer dizer "sou o segundo da lista". Opcional: só quem
+   *  mostra lista numerada passa.
+   *
+   *  Só dispara depois de `PICK_QUIET_MS` de SILÊNCIO, e é esse silêncio que
+   *  separa o dedo do leitor. O token do crachá é hexadecimal, então mais da
+   *  metade dos crachás começa com um dígito — sem a espera, uma passada
+   *  escolheria uma pessoa na primeira tecla e o resto do token viraria PIN
+   *  (com a leitura por crachá desligada, esse PIN chegava a ser SUBMETIDO).
+   *  A primeira tecla de uma rajada não se distingue olhando para trás: não há
+   *  nada antes dela. Olhando para a frente, sim — o leitor entrega a segunda
+   *  em ~10-30ms, e quem escolheu alguém na tela leva muito mais que isso para
+   *  ir ao pad. Qualquer tecla dentro da janela cancela, e cancelar não faz
+   *  nada: o atalho simplesmente não age, e a tela fica como estava. */
+  onDigitPick?: (digit: string) => void;
 }
+
+/** Silêncio que prova que o dígito veio de um dedo, não de um leitor. Folgado
+ *  dos dois lados: rajada de HID nunca chega perto (10-30ms entre teclas), e
+ *  ninguém escolhe um nome e começa a digitar o PIN em menos de um décimo de
+ *  segundo — entre as duas coisas há uma decisão. */
+export const PICK_QUIET_MS = 120;
 
 export function useIdentityCapture(options: IdentityCaptureOptions) {
   const badgeEnabled = options.badgeEnabled ?? (() => true);
 
   const keys = shallowRef<readonly CapturedKey[]>([]);
   let lastAt = 0;
+  let pickTimer: ReturnType<typeof setTimeout> | null = null;
+
+  /** Desarma a escolha por número em curso. Chamado por QUALQUER outra entrada:
+   *  se veio mais alguma coisa, aquilo era uma rajada, não um dedo. */
+  function cancelPick(): void {
+    if (pickTimer === null) return;
+    clearTimeout(pickTimer);
+    pickTimer = null;
+  }
 
   /** O PIN visível, derivado do buffer — a tela reflete cada entrada na hora. */
   const pin = computed(() => capturedPin(keys.value));
@@ -88,6 +118,7 @@ export function useIdentityCapture(options: IdentityCaptureOptions) {
   }
 
   function clear(): void {
+    cancelPick();
     keys.value = [];
     lastAt = 0;
   }
@@ -104,10 +135,25 @@ export function useIdentityCapture(options: IdentityCaptureOptions) {
     // Atalho com modificador é comando do sistema, não identificação.
     if (event.ctrlKey || event.metaKey || event.altKey) return;
     const editing = isEditingTarget(event.target);
+    // Backspace e Enter também quebram o silêncio: o que vinha antes deles não
+    // era um dedo escolhendo um nome.
+    if (event.key === "Backspace" || event.key === "Enter") cancelPick();
 
     if (isCaptureKey(event.key)) {
       const toPin = options.padVisible() && !editing;
       feed(event.key, toPin);
+      // Sem pad na tela o dígito PODE ser escolha de pessoa — ou a primeira
+      // tecla de um crachá. Quem decide é o silêncio depois dele. O buffer já
+      // recebeu a tecla acima e continua intocado nos dois casos: se for
+      // crachá, o token fecha normalmente no Enter.
+      cancelPick();
+      if (!toPin && !editing && options.onDigitPick && /^[0-9]$/.test(event.key)) {
+        const digit = event.key;
+        pickTimer = setTimeout(() => {
+          pickTimer = null;
+          options.onDigitPick?.(digit);
+        }, PICK_QUIET_MS);
+      }
       if (!editing) {
         // Consumida: a tela de identificação é modal, nada vaza para baixo.
         event.stopPropagation();

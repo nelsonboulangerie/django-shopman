@@ -74,6 +74,18 @@ function onSearchEnter() {
   search.value = "";
   searchInputRef.value?.inputRef?.focus();
 }
+
+// Esc na busca: limpa E DEVOLVE O TECLADO. O foco aqui deixou de ser primordial
+// quando a tela passou a capturar digitação globalmente — uma letra fora de
+// campo já começa uma busca nova (`focusSearch(seed)`). Preso no campo, porém, o
+// teclado fica sequestrado: os dígitos viram texto de busca em vez de alimentar
+// o numpad da linha, que é o instrumento do balcão. Então Esc desfaz a busca e
+// sai. (O `type="search"` do browser limpa sozinho, mas mantém o foco — e era
+// justamente o foco o problema.)
+function onSearchEscape() {
+  search.value = "";
+  searchInputRef.value?.inputRef?.blur();
+}
 </script>
 
 <template>
@@ -81,7 +93,7 @@ function onSearchEnter() {
     <div class="flex shrink-0 items-center gap-2">
       <div class="relative flex-1">
         <Icon name="lucide:search" class="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-        <UiInput ref="searchInputRef" v-model="search" class="h-11 pl-9 pr-12 text-base" type="search" placeholder="Buscar produto por nome ou código" autofocus @keydown.enter.prevent="onSearchEnter" />
+        <UiInput ref="searchInputRef" v-model="search" class="h-11 pl-9 pr-12 text-base" type="search" placeholder="Buscar produto por nome ou código" autofocus @keydown.enter.prevent="onSearchEnter" @keydown.esc.prevent="onSearchEscape" />
         <kbd class="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 rounded border bg-muted px-1.5 py-0.5 font-mono text-xs font-medium text-muted-foreground" aria-hidden="true">F3</kbd>
       </div>
       <UiPopover>
