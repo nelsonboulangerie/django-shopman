@@ -26,7 +26,6 @@ import { countOpenTabs, filterTabs, filterTabsByQuery, sanitizeTabRef, sortTabs,
 import { nextFreeNumericTabRef } from "../app/utils/posTabLifecycle";
 import { clampPercent, clampQty, popDigit, pushDigit } from "../app/presentation/numpad";
 import {
-  cashDeltaPresets,
   cashNotesQ,
   cashTenderSumQ,
   collectionsForFulfillment,
@@ -423,15 +422,13 @@ describe("presentation/payment — tender math & method affordance", () => {
     });
   });
 
-  it("sources cash quick-add presets from the contract, falling back when absent", () => {
+  it("o trilho de cédulas vem do contrato; sem contrato, as notas BR padrão", () => {
     const contract = { cash_tender_delta_presets_q: [0, 1000, 5000] } as POSCheckoutContractProjection;
-    expect(cashDeltaPresets(contract)).toEqual([0, 1000, 5000]);
-    expect(cashDeltaPresets(null)).toEqual([1000, 5000, 10000]);
-    expect(cashDeltaPresets({ cash_tender_delta_presets_q: [] } as unknown as POSCheckoutContractProjection)).toEqual([1000, 5000, 10000]);
-  });
-
-  it("offers the main BR cash notes (R$2..R$100) for accumulation", () => {
+    // Valores não-positivos do contrato não viram cédula.
+    expect(cashNotesQ(contract)).toEqual([1000, 5000]);
+    expect(cashNotesQ(null)).toEqual([200, 500, 1000, 2000, 5000, 10000]);
     expect(cashNotesQ()).toEqual([200, 500, 1000, 2000, 5000, 10000]);
+    expect(cashNotesQ({ cash_tender_delta_presets_q: [] } as unknown as POSCheckoutContractProjection)).toEqual([200, 500, 1000, 2000, 5000, 10000]);
   });
 
   it("filters payment collections by fulfillment type", () => {

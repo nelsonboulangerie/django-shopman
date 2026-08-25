@@ -114,26 +114,21 @@ export function tenderLineView(
   };
 }
 
-/**
- * Cash quick-add deltas (+R$10/50/100…) sourced from the contract; falls back to
- * a sensible BR set only if the channel omits them. The presets are policy and
- * live in the Projection, never hardcoded in the screen.
- */
-export function cashDeltaPresets(contract: POSCheckoutContractProjection | null): number[] {
-  const presets = contract?.cash_tender_delta_presets_q;
-  return Array.isArray(presets) && presets.length ? presets : [1000, 5000, 10000];
-}
-
-// The Brazilian cash notes, in cents — currency presentation, the same category
-// as formatBRL (the surface formats BRL throughout). These are the bills the
-// customer hands over: tapping a note ADDS it to the received amount (Odoo's
-// +10/+20/+50 pattern), so two R$50 notes = two taps; "Limpar" resets. (A
-// per-deployment denomination set in the channel contract is the eventual
-// config-driven home, mirroring cash_tender_delta_presets_q.)
+// The Brazilian cash notes, in cents — the fallback when the channel contract
+// does not carry a denomination set. These are the bills the customer hands
+// over: tapping a note ADDS it to the received amount (Odoo's +10/+20/+50
+// pattern), so two R$50 notes = two taps; "Limpar" resets.
 const BRL_CASH_NOTES_Q = [200, 500, 1000, 2000, 5000, 10000];
 
-export function cashNotesQ(): number[] {
-  return BRL_CASH_NOTES_Q;
+/**
+ * O trilho de cédulas do checkout, vindo do CONTRATO
+ * (`cash_tender_delta_presets_q`, só valores positivos) — policy mora na
+ * Projection, nunca na tela. Sem contrato (ou vazio), as cédulas BR padrão.
+ */
+export function cashNotesQ(contract: POSCheckoutContractProjection | null = null): number[] {
+  const presets = contract?.cash_tender_delta_presets_q;
+  const positive = Array.isArray(presets) ? presets.filter((value) => Number.isFinite(value) && value > 0) : [];
+  return positive.length ? positive : BRL_CASH_NOTES_Q;
 }
 
 /** Collections offered for the current fulfillment type (e.g. on-delivery vs terminal). */

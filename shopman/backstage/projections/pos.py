@@ -1414,7 +1414,10 @@ def _checkout_contract(
         fields=fields,
         receipt_channels=tuple(option for option in receipt_channels if option.ref in POS_SALE_INTENT_RECEIPT_CHANNELS),
         tender_methods=tender_methods,
-        cash_tender_delta_presets_q=(0, 1000, 2000, 5000, 10000),
+        # As cédulas BR que o cliente entrega no balcão — o trilho de dinheiro do
+        # checkout consome daqui (config-driven; a tela só cai no default local
+        # quando o contrato não manda nada).
+        cash_tender_delta_presets_q=(200, 500, 1000, 2000, 5000, 10000),
         discount_types=(
             POSCheckoutOptionProjection(ref="percent", label="Percentual"),
             POSCheckoutOptionProjection(ref="fixed", label="Valor fixo"),

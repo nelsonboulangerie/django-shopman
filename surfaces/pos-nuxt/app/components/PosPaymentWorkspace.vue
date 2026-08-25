@@ -31,6 +31,7 @@ import type {
 } from "~/types/pos";
 import { formatBRL } from "~/utils/posIntent";
 import {
+  cashNotesQ as contractCashNotesQ,
   collectionsForFulfillment,
   injectableMethods as toInjectableMethods,
   nonCashExcessQ,
@@ -212,10 +213,10 @@ const discountSheetOpen = ref(false);
 // selected tender is cash. BR notes (2/5/10/20/50/100) — the first tap after
 // selecting a tender SETS (the customer handed R$50), then accumulates.
 const digitKeys = ["1", "2", "3", "4", "5", "6", "7", "8", "9"];
-// Full BR cédulas (2/5/10/20/50/100) — the bills the customer hands over; each tap
-// ADDS to the selected cash tender (first tap after a fresh/auto value replaces,
-// then accumulates). Shown only when paying in cash.
-const cashNotesQ = [200, 500, 1000, 2000, 5000, 10000];
+// Cédulas que o cliente entrega — vêm do CONTRATO (cash_tender_delta_presets_q),
+// com as notas BR como fallback; cada toque SOMA na linha de dinheiro
+// selecionada (o primeiro toque sobre valor automático substitui).
+const cashNotesQ = computed(() => contractCashNotesQ(props.checkoutContract));
 const cashSelected = computed(() => props.selectedTenderMethod === "cash");
 const numpadActive = computed(() => props.selectedTenderIndex >= 0 && props.selectedTenderIndex < props.paymentTenders.length);
 
@@ -445,7 +446,13 @@ defineExpose({
           </div>
           <!-- cédula rail — 4ª coluna (mesma largura das colunas do teclado);
                verde dinheiro + ícone de nota -->
-          <div v-if="cashSelected" class="grid flex-1 basis-0 grid-rows-6 gap-1.5" role="group" aria-label="Cédulas recebidas">
+          <div
+            v-if="cashSelected"
+            class="grid flex-1 basis-0 gap-1.5"
+            :style="{ gridTemplateRows: `repeat(${cashNotesQ.length}, minmax(0, 1fr))` }"
+            role="group"
+            aria-label="Cédulas recebidas"
+          >
             <button
               v-for="note in cashNotesQ"
               :key="note"
