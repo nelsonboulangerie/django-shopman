@@ -10,11 +10,13 @@ from __future__ import annotations
 
 import base64
 import json
+from datetime import timedelta
 
 from django.contrib.auth import get_user_model
 from django.contrib.auth.models import Permission
 from django.contrib.contenttypes.models import ContentType
 from django.test import TestCase
+from django.utils import timezone
 from shopman.cashman.models import Shift
 from shopman.orderman.models import Order
 
@@ -119,6 +121,50 @@ class POSRecentSalesFiscalTests(TestCase):
         self.assertEqual(failed["fiscal_status"], "failed")
         self.assertFalse(failed["can_print_danfe"])
         self.assertTrue(failed["can_requeue_fiscal"])
+
+    def test_recent_sales_flag_the_undo_window(self) -> None:
+        """`can_cancel` segue o MESMO predicado do cancel (janela + status).
+
+        A ação nas Últimas vendas só aparece para venda ainda cancelável: fresca
+        e num status que admite o desfazer — inclusive `completed` quando o
+        lifecycle baked declara completed→cancelled (o pdv declara).
+        """
+        self._order("PDV-RS-W1", nfce=False)
+        Order.objects.filter(ref="PDV-RS-W1").update(status=Order.Status.NEW)
+
+        self._order("PDV-RS-W2", nfce=False)
+        Order.objects.filter(ref="PDV-RS-W2").update(
+            snapshot={
+                "items": [],
+                "lifecycle": {"transitions": {"completed": ["cancelled"]}},
+            },
+        )
+
+        # Fresca porém COMPLETED sem a transição declarada: o cancel recusaria.
+        self._order("PDV-RS-W3", nfce=False)
+
+        # Fora da janela: fresca no status certo não basta, a idade manda.
+        self._order("PDV-RS-W4", nfce=False)
+        Order.objects.filter(ref="PDV-RS-W4").update(
+            status=Order.Status.NEW,
+            created_at=timezone.now() - timedelta(minutes=10),
+        )
+
+        from shopman.shop.fiscal import fiscal_pool
+
+        fiscal_pool.reset()
+        self.addCleanup(fiscal_pool.reset)
+        with self.settings(
+            SHOPMAN_FISCAL_ADAPTER="shopman.backstage.tests.test_pos_recent_sales_fiscal.StubFiscalBackend",
+        ):
+            response = self.client.get("/api/v1/backstage/pos/recent-sales/")
+
+        self.assertEqual(response.status_code, 200)
+        sales = {s["order_ref"]: s for s in response.json()["sales"]}
+        self.assertTrue(sales["PDV-RS-W1"]["can_cancel"])
+        self.assertTrue(sales["PDV-RS-W2"]["can_cancel"])
+        self.assertFalse(sales["PDV-RS-W3"]["can_cancel"])
+        self.assertFalse(sales["PDV-RS-W4"]["can_cancel"])
 
     def test_danfe_escpos_returns_printable_bytes(self) -> None:
         self._order("PDV-RS-3", nfce=True)

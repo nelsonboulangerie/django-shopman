@@ -8,12 +8,13 @@ import type { PaymentProofView } from "~/presentation/payment";
 
 // `status` = estado do polling PIX vindo do composable: 'polling' (aguardando),
 // 'paid' (confirmado), 'expired' (desistiu — terminal/timeout). Cartão/dinheiro
-// não pollam → 'idle'.
-const props = defineProps<{ proof: PaymentProofView; status?: "idle" | "polling" | "paid" | "expired" }>();
+// não pollam → 'idle'. `large` = palco da tela de resultado: QR maior, para o
+// cliente escanear de longe.
+const props = defineProps<{ proof: PaymentProofView; status?: "idle" | "polling" | "paid" | "expired"; large?: boolean }>();
 
 const TONE_CLASS: Record<PaymentProofView["tone"], string> = {
   info: "border-info/30 bg-info/10 text-info",
-  warning: "border-warning/30 bg-warning/10 text-amber-800",
+  warning: "border-warning/30 bg-warning/10 text-amber-800 dark:text-amber-300",
   success: "border-success/30 bg-success/10 text-success",
   danger: "border-destructive/40 bg-destructive/5 text-destructive",
   neutral: "border bg-muted/40",
@@ -67,7 +68,8 @@ async function copyCode() {
         v-if="proof.qrCodeSrc"
         :src="proof.qrCodeSrc"
         alt="QR Code PIX"
-        class="mx-auto size-44 rounded-md border bg-white p-2"
+        class="mx-auto rounded-md border bg-white p-2"
+        :class="large ? 'size-64' : 'size-44'"
       >
       <div v-if="proof.copyPaste" class="grid gap-1.5">
         <p class="break-all rounded-md border bg-background/70 px-2.5 py-2 font-mono text-xs">{{ proof.copyPaste }}</p>

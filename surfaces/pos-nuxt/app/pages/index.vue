@@ -4,6 +4,7 @@ import { toast } from "vue-sonner";
 import { resolveAffordance } from "~/presentation/actions";
 import { requiresOpenShiftForSale } from "~/presentation/cash";
 import { rollStyle } from "~/presentation/printGeometry";
+import { enterAdvances } from "~/presentation/saleResult";
 import { globalKeysBlocked } from "~/utils/keyboardGuard";
 // Tela de VENDA — wires the read-side (usePosTerminal) and write-side (usePosSale)
 // composables to the three core screens (PosTabBoard / PosProductGrid /
@@ -55,10 +56,10 @@ const {
   cancelSaleReason,
   cancelSaleDialogOpen,
   cancelSaleError,
-  saleCancelled,
   lookupBusy,
   managerApprovalError,
   result,
+  pendingPixOrderRef,
   pixStatus,
   checkoutMode,
   moveDialogOpen,
@@ -81,6 +82,7 @@ const {
   inSaleView,
   hasDraftWithoutTab,
   canUseCart,
+  paymentTotalQ,
   paymentRemainingQ,
   paymentChangeQ,
   paymentCovered,
@@ -122,6 +124,8 @@ const {
   prepareCheckout,
   reviewCheckout,
   submitSale,
+  dismissResult,
+  onExternalSaleCancelled,
   clearCurrentTab,
   openMoveDialog,
   submitMove,
@@ -136,8 +140,20 @@ const {
 } = usePosSale({ pos, tabs, actions, refresh, action, apiPath, requestHeaders, ordersUrl });
 
 // Tela do cliente (segundo monitor): fontes lidas por getter; publicação e
-// transformação vivem inteiras no <PosDisplayPublisher> (renderless).
-const displaySources = { pos: () => pos.value, items: () => cart.items, review: () => review.value, result: () => result.value, pixStatus: () => pixStatus.value, paymentChangeQ: () => paymentChangeQ.value, checkoutMode: () => checkoutMode.value };
+// transformação vivem inteiras no <PosDisplayPublisher> (renderless). O troco
+// congelado já viaja dentro do `result` (`changeQ`).
+const displaySources = { pos: () => pos.value, items: () => cart.items, review: () => review.value, result: () => result.value, pixStatus: () => pixStatus.value, checkoutMode: () => checkoutMode.value };
+
+// Auto-lock ciente do pagamento: o shell (app.vue) lê este sinal e ADIA o lock
+// de ociosidade enquanto o checkout está aberto ou um PIX segue aguardando —
+// travar no meio do pagamento derrubava o operador com o cliente na frente.
+const paymentHold = useState("pos-payment-hold", () => false);
+watchEffect(() => {
+  paymentHold.value = checkoutMode.value || pixStatus.value === "polling";
+});
+onBeforeUnmount(() => {
+  paymentHold.value = false;
+});
 
 // Kitchen handoff affordances (spec §2.5): the fire/unfire CTAs come from the
 // Projection's Actions (label + enabled), never invented in the screen.
@@ -147,6 +163,7 @@ const unfireAction = computed(() => resolveAffordance(actions.value, "unfire_tab
 // Top context bar title (unified layout language, Arc 5): one band names the
 // current work-area screen across Board / Sale / Payment.
 const screenTitle = computed(() => {
+  if (result.value) return "Venda concluída";
   if (checkoutMode.value) return cart.tabDisplay ? `Pagamento · #${cart.tabDisplay}` : "Pagamento";
   if (inSaleView.value) return cart.tabDisplay || "Venda";
   return "Comandas";
@@ -255,6 +272,21 @@ async function gotoTabInput() {
   tabBoardRef.value?.focus();
 }
 
+// Sai da tela de resultado para o quadro de comandas — o CTA "Nova venda", o
+// F2 e o Enter passam todos por aqui (PIX pendente vira chip no composable).
+async function startNextSale() {
+  dismissResult();
+  await nextTick();
+  tabBoardRef.value?.focus();
+}
+
+// Prévia web da DANFE na tela de resultado: só para quem o servidor deixa.
+const resultDanfePreviewUrl = computed(() =>
+  result.value && pos.value?.danfe_preview_allowed && djangoOrigin.value
+    ? danfePreviewUrl(result.value.orderRef)
+    : "",
+);
+
 async function gotoProductSearch() {
   if (!canUseCart.value) return;
   checkoutMode.value = false;
@@ -273,6 +305,31 @@ function onGlobalKeydown(event: KeyboardEvent) {
   const target = event.target as HTMLElement | null;
   const isEditing = !!target
     && (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable);
+
+  // TELA DE RESULTADO: F2 avança sempre (gesto explícito); Enter só quando não
+  // há troco pendente de confirmação nem PIX aguardando (o Enter que validou a
+  // venda não pode engolir a tela do troco). Os demais atalhos não agem — a
+  // tela por baixo (board) não é o que o operador vê.
+  if (result.value) {
+    if (event.key === "F2") {
+      event.preventDefault();
+      startNextSale();
+      return;
+    }
+    if (
+      event.key === "Enter" && !isEditing
+      && enterAdvances({ changeQ: result.value.changeQ, payment: result.value.payment, pixStatus: pixStatus.value })
+    ) {
+      event.preventDefault();
+      startNextSale();
+      return;
+    }
+    if (event.key === "?" && !isEditing) {
+      event.preventDefault();
+      shortcutsHelpOpen.value = true;
+    }
+    return;
+  }
 
   // On the payment screen, the physical keyboard drives the value numpad of the
   // SELECTED tender (like the order screen's numpad): digits type, comma/period
@@ -414,6 +471,17 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onGlobalKeydown));
           @repeat-customer-last-order="repeatCustomerLastOrder"
         />
         <h1 v-else class="min-w-0 truncate text-lg font-semibold leading-tight tracking-tight">{{ screenTitle }}</h1>
+        <!-- PIX pendente que saiu da tela de resultado: chip compacto, com o
+             polling seguindo por baixo até resolver/expirar (aí vira toast). -->
+        <span
+          v-if="pendingPixOrderRef"
+          class="inline-flex shrink-0 items-center gap-1.5 rounded-md border border-info/40 bg-info/10 px-2 py-1 text-xs font-medium text-info"
+          role="status"
+          :title="`PIX do pedido ${pendingPixOrderRef} aguardando confirmação`"
+        >
+          <Icon name="lucide:loader-circle" class="size-3.5 animate-spin motion-reduce:animate-none" />
+          PIX aguardando · <span class="font-mono">{{ pendingPixOrderRef }}</span>
+        </span>
         <UiButton
           variant="ghost"
           size="icon-sm"
@@ -437,64 +505,25 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onGlobalKeydown));
       </header>
 
       <div class="flex min-h-0 w-full flex-1 flex-col gap-3 px-4 py-3 md:min-h-0 md:overflow-hidden">
-      <div class="grid shrink-0 gap-3 empty:hidden">
-      <UiAlert v-if="result" class="border-success/30 bg-success/10 text-success">
-        <Icon name="lucide:circle-check" class="size-4" />
-        <UiAlertTitle>Pedido criado: {{ result.orderRef }}</UiAlertTitle>
-        <UiAlertDescription>
-          <div class="flex flex-col gap-2">
-            <PosPaymentResult v-if="result.payment?.hasProof" :proof="result.payment" :status="pixStatus" />
-            <div class="flex flex-wrap items-center gap-2">
-              <UiButton variant="outline" size="sm" class="gap-1.5 border-success/40 text-success hover:bg-success/10" :disabled="printingReceipt" @click="printReceipt">
-                <Icon name="lucide:printer" class="size-4" />
-                Imprimir recibo
-              </UiButton>
-              <!-- DANFE na bobina (agente do balcão), o MESMO caminho das
-                   Últimas vendas; a prévia web virou porta secundária e só
-                   aparece para quem o servidor deixa entrar. -->
-              <UiButton
-                v-if="result.fiscalExpected"
-                variant="outline" size="sm" class="gap-1.5 border-success/40 text-success hover:bg-success/10"
-                :disabled="printingDanfe"
-                @click="printDanfe"
-              >
-                <Icon name="lucide:receipt-text" class="size-4" />
-                DANFE
-              </UiButton>
-              <a
-                v-if="result.fiscalExpected && pos?.danfe_preview_allowed && djangoOrigin"
-                class="text-xs font-medium text-success underline underline-offset-4"
-                :href="danfePreviewUrl(result.orderRef)"
-                target="_blank" rel="noopener"
-              >
-                Prévia da nota
-              </a>
-              <a class="font-semibold underline underline-offset-4" :href="result.nextUrl">Abrir no gestor</a>
-              <!-- Cancelar é EXCEÇÃO, não fluxo: entrada discreta que abre a
-                   confirmação destrutiva com desafio de PIN gerencial. -->
-              <UiButton
-                v-if="canCancelRecentSale"
-                variant="ghost"
-                size="sm"
-                class="ml-auto text-muted-foreground hover:text-destructive"
-                @click="openCancelSaleDialog"
-              >
-                Cancelar venda
-              </UiButton>
-            </div>
-          </div>
-        </UiAlertDescription>
-      </UiAlert>
-
-      <UiAlert v-if="saleCancelled" class="border-warning/30 bg-warning/10 text-amber-800">
-        <Icon name="lucide:circle-check" class="size-4" />
-        <UiAlertTitle>Venda cancelada</UiAlertTitle>
-        <UiAlertDescription>O pedido foi cancelado dentro da janela do operador.</UiAlertDescription>
-      </UiAlert>
+      <div class="flex-1 md:min-h-0 md:overflow-hidden">
+      <!-- TELA DE RESULTADO — substitui o banner de antes: tela cheia no fluxo
+           de venda, com o troco congelado como herói e "Nova venda" dominante. -->
+      <div v-if="result" class="h-full md:overflow-y-auto">
+        <PosSaleResult
+          :result="result"
+          :pix-status="pixStatus"
+          :can-cancel="canCancelRecentSale"
+          :danfe-preview-url="resultDanfePreviewUrl"
+          :printing-receipt="printingReceipt"
+          :printing-danfe="printingDanfe"
+          @new-sale="startNextSale"
+          @print-receipt="printReceipt"
+          @print-danfe="printDanfe"
+          @cancel-sale="openCancelSaleDialog"
+        />
       </div>
 
-      <div class="flex-1 md:min-h-0 md:overflow-hidden">
-      <div v-if="checkoutMode" class="h-full md:overflow-y-auto">
+      <div v-else-if="checkoutMode" class="h-full md:overflow-y-auto">
       <PosPaymentWorkspace
         ref="paymentWorkspaceRef"
         v-model:discount-type="cart.discountType"
@@ -541,6 +570,7 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onGlobalKeydown));
         :payment-tenders="cart.paymentTenders"
         :selected-tender-index="selectedTenderIndex"
         :selected-tender-method="selectedTenderMethod"
+        :payment-total-q="paymentTotalQ"
         :payment-remaining-q="paymentRemainingQ"
         :payment-change-q="paymentChangeQ"
         :payment-covered="paymentCovered"
@@ -729,7 +759,7 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onGlobalKeydown));
         />
       </div>
     </Teleport>
-    <PosRecentSales v-model:open="recentSalesOpen" :pos="pos" />
+    <PosRecentSales v-model:open="recentSalesOpen" :pos="pos" @cancelled="onExternalSaleCancelled" />
     <PosShortcutsHelp v-model:open="shortcutsHelpOpen" />
     <PosDisplayPublisher :sources="displaySources" />
   </main>

@@ -1146,6 +1146,7 @@ def _checkout_contract(
     # Import local: o módulo de services do PDV importa projections em outros
     # caminhos, e um import de topo aqui fecharia o ciclo.
     from shopman.backstage.services import pos as pos_service
+    from shopman.shop.services.pos import RECENT_SALE_MAX_AGE_MINUTES
 
     # MULTI: imprimir E enviar não competem. "Sem comprovante" não é opção —
     # é nenhum canal marcado.
@@ -1500,7 +1501,9 @@ def _checkout_contract(
             },
             "sale_correction": {
                 "cancel_recent_action_ref": "cancel_recent_sale",
-                "max_age_minutes": 5,
+                # A MESMA janela que o cancel impõe (shop/services/pos.py):
+                # anunciar outro número seria prometer o que o servidor recusa.
+                "max_age_minutes": RECENT_SALE_MAX_AGE_MINUTES,
                 "supports_reason": True,
                 "requires_manager_approval": True,
                 # "preparing" incluso: venda de balcão com fire nasce em preparo.
@@ -2128,6 +2131,7 @@ def build_pos_recent_sales(*, limit: int = 20) -> dict:
     from shopman.orderman.models import Order
 
     from shopman.backstage.projections.order_queue import _fiscal_status
+    from shopman.shop.services.pos import recent_sale_cancellable
 
     since = timezone.now() - timezone.timedelta(hours=24)
     orders = (
@@ -2164,5 +2168,9 @@ def build_pos_recent_sales(*, limit: int = 20) -> dict:
             "can_print_danfe": bool(data.get("nfce_access_key")),
             "can_resend_email": bool(data.get("nfce_access_key")),
             "can_requeue_fiscal": fiscal_status == "failed",
+            # A correção sobrevive à saída da tela de resultado: a lista anuncia
+            # o desfazer para a venda ainda DENTRO da janela — o mesmo predicado
+            # que o cancel impõe (`recent_sale_cancellable`).
+            "can_cancel": recent_sale_cancellable(order),
         })
     return {"sales": sales}

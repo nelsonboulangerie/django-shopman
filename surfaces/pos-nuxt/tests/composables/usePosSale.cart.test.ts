@@ -1,9 +1,10 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { nextTick } from "vue";
+import { toast } from "vue-sonner";
 
 import { makeProjection, makeSale, makeTabPayload } from "./_posSaleHarness";
 
-vi.mock("vue-sonner", () => ({ toast: { error: vi.fn(), success: vi.fn() } }));
+vi.mock("vue-sonner", () => ({ toast: { error: vi.fn(), success: vi.fn(), info: vi.fn(), warning: vi.fn() } }));
 
 function freeCartProjection() {
   return makeProjection({
@@ -305,7 +306,7 @@ describe("usePosSale — comandos de sessão (path + body + flags)", () => {
     await h.sale.cancelRecentSale("gerente", "4321");
     expect(actionCall.mock.calls.some((c) => String(c[0]).includes("/recent/cancel/"))).toBe(false);
 
-    h.sale.result.value = { orderRef: "PED-7", nextUrl: "", payment: null, receipt: {} as never, issueFiscalDocument: false };
+    h.sale.result.value = { orderRef: "PED-7", nextUrl: "", payment: null, receipt: {} as never, fiscalExpected: false, changeQ: 0 };
     h.sale.cancelSaleReason.value = "cliente desistiu";
     h.sale.cancelSaleDialogOpen.value = true;
     await h.sale.cancelRecentSale("gerente", "4321");
@@ -315,7 +316,8 @@ describe("usePosSale — comandos de sessão (path + body + flags)", () => {
       reason: "cliente desistiu",
       manager_approval: { username: "gerente", pin: "4321" },
     });
-    expect(h.sale.saleCancelled.value).toBe(true);
+    // O banner fixo morreu: a confirmação é um toast padrão de sucesso.
+    expect(vi.mocked(toast.success)).toHaveBeenCalledWith("Venda cancelada", expect.anything());
     expect(h.sale.result.value).toBeNull();
     expect(h.sale.cancelSaleDialogOpen.value).toBe(false);
     h.handles.dispose();
@@ -334,14 +336,15 @@ describe("usePosSale — comandos de sessão (path + body + flags)", () => {
       return {};
     });
     const h = makeSale({ projection: freeCartProjection(), actionCall: rejectingCall });
-    h.sale.result.value = { orderRef: "PED-8", nextUrl: "", payment: null, receipt: {} as never, issueFiscalDocument: false };
+    h.sale.result.value = { orderRef: "PED-8", nextUrl: "", payment: null, receipt: {} as never, fiscalExpected: false, changeQ: 0 };
     h.sale.cancelSaleDialogOpen.value = true;
+    vi.mocked(toast.success).mockClear();
 
     await h.sale.cancelRecentSale("gerente", "0000");
 
     expect(h.sale.cancelSaleDialogOpen.value).toBe(true);
     expect(h.sale.cancelSaleError.value).toBe("Revise o gerente e o PIN.");
-    expect(h.sale.saleCancelled.value).toBe(false);
+    expect(vi.mocked(toast.success)).not.toHaveBeenCalled();
     expect(h.sale.result.value?.orderRef).toBe("PED-8"); // venda continua de pé
     h.handles.dispose();
   });
@@ -354,14 +357,15 @@ describe("usePosSale — comandos de sessão (path + body + flags)", () => {
       return {};
     });
     const h = makeSale({ projection: freeCartProjection(), actionCall: rejectingCall });
-    h.sale.result.value = { orderRef: "PED-9", nextUrl: "", payment: null, receipt: {} as never, issueFiscalDocument: false };
+    h.sale.result.value = { orderRef: "PED-9", nextUrl: "", payment: null, receipt: {} as never, fiscalExpected: false, changeQ: 0 };
     h.sale.cancelSaleDialogOpen.value = true;
+    vi.mocked(toast.success).mockClear();
 
     await h.sale.cancelRecentSale("gerente", "4321");
 
     expect(h.sale.cancelSaleDialogOpen.value).toBe(true); // não fecha fingindo sucesso
     expect(h.sale.cancelSaleError.value).toContain("não pode ser cancelado");
-    expect(h.sale.saleCancelled.value).toBe(false);
+    expect(vi.mocked(toast.success)).not.toHaveBeenCalled();
     h.handles.dispose();
   });
 

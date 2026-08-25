@@ -48,6 +48,8 @@ export interface CustomerDisplaySnapshot {
 export interface PosDisplayResult {
   payment: PaymentProofView | null;
   receipt: PosReceiptSnapshot;
+  /** Troco congelado no fechamento (o cart reseta logo depois), em centavos. */
+  changeQ: number;
 }
 
 /**
@@ -62,6 +64,5 @@ export interface PosDisplaySources {
   review: () => POSSaleReviewProjection | null;
   result: () => PosDisplayResult | null;
   pixStatus: () => "idle" | "polling" | "paid" | "expired";
-  paymentChangeQ: () => number;
   checkoutMode: () => boolean;
 }

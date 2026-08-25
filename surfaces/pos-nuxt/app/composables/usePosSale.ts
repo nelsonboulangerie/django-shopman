@@ -32,7 +32,6 @@ import { sanitizeTabRef as sanitizeTabRefShape, sortTabs } from "~/presentation/
 import {
   isPaymentCovered,
   paymentChangeQ as computeChangeQ,
-  type PaymentProofView,
   paymentProofView,
   paymentRemainingQ as computeRemainingQ,
 } from "~/presentation/payment";
@@ -44,7 +43,8 @@ import {
   tabRefMaxLength,
   tabRefPlaceholder,
 } from "~/utils/posTabLifecycle";
-import type { PosReceiptSnapshot } from "~/presentation/receipt";
+import { cartNetTotalQ, type PosReceiptSnapshot } from "~/presentation/receipt";
+import type { PosSaleResultSnapshot } from "~/presentation/saleResult";
 import { toast } from "vue-sonner";
 
 type FulfillmentType = "pickup" | "delivery";
@@ -108,7 +108,6 @@ export function usePosSale(deps: PosSaleDeps) {
   const cancelSaleReason = ref("");
   const cancelSaleDialogOpen = ref(false);
   const cancelSaleError = ref("");
-  const saleCancelled = ref(false);
   const lookupBusy = ref(false);
   const serverError = ref("");
   // Errors surface as a dismissible floating toast (UI Thing Sonner), not an
@@ -122,7 +121,11 @@ export function usePosSale(deps: PosSaleDeps) {
   // — reabre o diálogo de autorização com a mensagem, senão o CTA vira "Validar" e
   // reenvia o mesmo PIN errado para sempre (beco sem saída).
   const managerApprovalError = ref("");
-  const result = ref<{ orderRef: string; nextUrl: string; payment: PaymentProofView | null; receipt: PosReceiptSnapshot; fiscalExpected: boolean } | null>(null);
+  // O resultado da venda fechada — a TELA DE RESULTADO fica de pé enquanto ele
+  // existe. `changeQ` é o troco CONGELADO no instante do fechamento (o cart
+  // reseta logo depois e o troco computado voltaria a zero): uma fonte só para
+  // o palco do operador e a tela do cliente.
+  const result = ref<PosSaleResultSnapshot | null>(null);
 
   // PIX no PDV: o proof mostra o QR e "aguarde confirmação", mas sem polling o
   // operador nunca via a confirmação chegar (tinha de ir ao gestor). Aqui pollamos
@@ -130,12 +133,18 @@ export function usePosSale(deps: PosSaleDeps) {
   // ('polling'|'paid'|'expired') para a UI nunca girar "aguardando…" no vácuo: ao
   // desistir (terminal/timeout) a tela acusa honestamente ([[feedback_transparent_timeouts]]).
   const pixStatus = ref<"idle" | "polling" | "paid" | "expired">("idle");
+  // De qual pedido é o polling atual — o chip pendente compara com ele.
+  const pixOrderRef = ref("");
+  // Sair da tela de resultado com o PIX ainda aguardando NÃO descarta a prova:
+  // o pedido vira um chip compacto no header e o polling segue até resolver.
+  const pendingPixOrderRef = ref("");
   let pixPollTimer: ReturnType<typeof setInterval> | null = null;
   function stopPixPolling() {
     if (pixPollTimer) { clearInterval(pixPollTimer); pixPollTimer = null; }
   }
   function startPixPolling(orderRef: string) {
     stopPixPolling();
+    pixOrderRef.value = orderRef;
     pixStatus.value = "polling";
     let attempts = 0;
     pixPollTimer = setInterval(async () => {
@@ -150,6 +159,52 @@ export function usePosSale(deps: PosSaleDeps) {
         else if (status?.is_terminal) { pixStatus.value = "expired"; stopPixPolling(); } // cancelado/expirado
       } catch { /* falha transiente de rede — segue tentando */ }
     }, 2500);
+  }
+
+  // O chip pendente resolve em voz alta, nunca em silêncio: confirmou → toast
+  // de sucesso; desistimos (expirado/cancelado) → aviso honesto com o próximo
+  // passo. Em ambos, o chip sai do header.
+  watch(pixStatus, (status) => {
+    if (!pendingPixOrderRef.value || pixOrderRef.value !== pendingPixOrderRef.value) return;
+    if (status === "paid") {
+      toast.success(`PIX do pedido ${pendingPixOrderRef.value} confirmado.`);
+      pendingPixOrderRef.value = "";
+    } else if (status === "expired") {
+      toast.warning(`Não confirmamos o PIX do pedido ${pendingPixOrderRef.value}. Confira no gestor ou gere um novo pagamento.`);
+      pendingPixOrderRef.value = "";
+    }
+  });
+
+  /**
+   * Fecha a tela de resultado (CTA "Nova venda", F2, Enter). PIX ainda
+   * aguardando não é descartado: vira o chip pendente no header e o polling
+   * continua até resolver/expirar. Sem prova pendente, o polling encerra.
+   */
+  function dismissResult() {
+    if (!result.value) return;
+    const proof = result.value.payment;
+    const pixStillPending = Boolean(proof?.isPix && proof?.hasProof) && pixStatus.value === "polling";
+    if (pixStillPending) {
+      pendingPixOrderRef.value = result.value.orderRef;
+    } else if (!pendingPixOrderRef.value) {
+      stopPixPolling();
+      pixStatus.value = "idle";
+    }
+    result.value = null;
+  }
+
+  /**
+   * Uma venda cancelada FORA da tela de resultado (Últimas vendas): se era a
+   * venda em cena — palco, chip ou polling — o vestígio dela sai junto.
+   */
+  function onExternalSaleCancelled(orderRef: string) {
+    if (pendingPixOrderRef.value === orderRef) pendingPixOrderRef.value = "";
+    if (pixOrderRef.value === orderRef) {
+      stopPixPolling();
+      pixStatus.value = "idle";
+    }
+    if (result.value?.orderRef === orderRef) result.value = null;
+    void refresh();
   }
 
   const checkoutMode = ref(false);
@@ -232,7 +287,25 @@ export function usePosSale(deps: PosSaleDeps) {
 
   // Payment by injection (Odoo-style): the operator adds tender lines in any form;
   // the method is derived (no "mixed" selection). Finalize is gated until covered.
-  const paymentTotalQ = computed(() => review.value?.total_q || cartTotalQ(cart.items));
+  //
+  // Total interino: enquanto a review não chega (debounce de 450ms + round-trip),
+  // o total NÃO cai no bruto do carrinho — cair no bruto fazia o `addTender`
+  // lançar a linha acima do total real e o hero saltar. A ordem é: review viva →
+  // último total de review desta sessão de checkout (mudou desconto/entrega e a
+  // review foi invalidada) → estimativa líquida local (a mesma conta do "Total
+  // parcial" do carrinho, descontos de linha aplicados).
+  const lastReviewTotalQ = ref(0);
+  watch(review, (value) => {
+    if (value) lastReviewTotalQ.value = value.total_q;
+  });
+  watch(checkoutMode, (open) => {
+    // Fora do checkout o carrinho volta a mudar (itens novos): o total retido
+    // ficaria mentindo — zera e a próxima entrada recomeça do zero.
+    if (!open) lastReviewTotalQ.value = 0;
+  });
+  const paymentTotalQ = computed(
+    () => review.value?.total_q ?? (lastReviewTotalQ.value || cartNetTotalQ(cart.items)),
+  );
   const paymentRemainingQ = computed(() => computeRemainingQ(cart.paymentTenders, paymentTotalQ.value));
   const paymentChangeQ = computed(() => computeChangeQ(cart.paymentTenders, paymentTotalQ.value));
   const paymentCovered = computed(() => isPaymentCovered(cart.paymentTenders, paymentTotalQ.value));
@@ -261,7 +334,13 @@ export function usePosSale(deps: PosSaleDeps) {
 
   function addTender(method: string) {
     const amountQ = Math.max(0, paymentRemainingQ.value);
-    if (amountQ <= 0) return;
+    if (amountQ <= 0) {
+      // Tocar num método com o total já coberto era silêncio absoluto — o
+      // operador tocava de novo achando que o botão quebrou. Diz o porquê e o
+      // próximo passo.
+      toast.info("Total já coberto. Remova uma forma para trocar.");
+      return;
+    }
     cart.paymentTenders.push({ method, amount_q: amountQ, collection: cart.paymentCollection, _virgin: true });
     selectedTenderIndex.value = cart.paymentTenders.length - 1;
     tenderEntry.value = null;
@@ -448,7 +527,9 @@ export function usePosSale(deps: PosSaleDeps) {
       requestTabAssociation("cart");
       return;
     }
-    result.value = null;
+    // Lançar item é sair da tela de resultado: pelo mesmo caminho do CTA
+    // (PIX aguardando vira chip, nunca é descartado calado).
+    dismissResult();
     review.value = null;
     checkoutMode.value = false;
     const existing = cart.items.find((item) => item.sku === product.sku);
@@ -617,7 +698,6 @@ export function usePosSale(deps: PosSaleDeps) {
     options: { preserveDraft?: boolean; drawerChecked?: boolean } = {},
   ) {
     if (busy.value) return; // guarda de reentrância
-    stopPixPolling(); // saiu da tela de resultado → encerra o polling da venda anterior
     const tabRef = sanitizeTabRef(typeof tab === "string" ? tab : tab.ref);
     if (!tabRef) return;
     if (hasDraftWithoutTab.value && !options.preserveDraft) {
@@ -634,7 +714,9 @@ export function usePosSale(deps: PosSaleDeps) {
       return;
     }
     serverError.value = "";
-    result.value = null;
+    // Abrir comanda com a tela de resultado ainda de pé é sair dela: passa pelo
+    // mesmo caminho do CTA (PIX aguardando vira chip, nunca é descartado).
+    dismissResult();
     busy.value = true;
     try {
       const path = concreteActionHref(
@@ -1079,7 +1161,7 @@ export function usePosSale(deps: PosSaleDeps) {
   async function prepareCheckout() {
     if (!cart.items.length) return;
     serverError.value = "";
-    result.value = null;
+    dismissResult();
     busy.value = true;
     // Otimista: o shell de pagamento abre JÁ (total interino, review por baixo) em
     // vez de segurar o operador na tela de venda durante os round-trips de
@@ -1105,7 +1187,7 @@ export function usePosSale(deps: PosSaleDeps) {
     if (busy.value) return; // guarda de reentrância
     if (!cart.items.length) return;
     serverError.value = "";
-    result.value = null;
+    dismissResult();
     busy.value = true;
     try {
       await reviewSale();
@@ -1118,9 +1200,7 @@ export function usePosSale(deps: PosSaleDeps) {
 
   async function submitSale() {
     if (busy.value) return; // guarda de reentrância: duplo-toque não dispara 2 close_sale
-    stopPixPolling(); // nova finalização → encerra polling de uma venda anterior
     if (!cart.items.length) return;
-    saleCancelled.value = false;
     if (!checkoutMode.value) {
       await prepareCheckout();
       return;
@@ -1168,10 +1248,26 @@ export function usePosSale(deps: PosSaleDeps) {
           // O botão da DANFE segue a REGRA fiscal, não o toggle: cartão e pix
           // emitem por forma de pagamento, sem o operador marcar nada.
           fiscalExpected: !!response.fiscal_expected,
+          // Troco congelado AGORA — o resetCart logo abaixo apaga os tenders e
+          // o troco computado voltaria a zero. Uma fonte só: a tela de
+          // resultado do operador e a tela do cliente leem daqui.
+          changeQ: Math.max(0, paymentChangeQ.value),
         };
         // PIX pendente → polla até confirmar; outros métodos já saem resolvidos.
-        if (proof?.isPix && proof?.hasProof) startPixPolling(orderRef);
-        else pixStatus.value = "idle";
+        if (proof?.isPix && proof?.hasProof) {
+          if (pendingPixOrderRef.value) {
+            // Um só polling por estação: a prova anterior ainda pendente não
+            // pode ser abandonada calada — acusa e aponta o gestor.
+            toast.warning(`Não confirmamos o PIX do pedido ${pendingPixOrderRef.value}. Confira no gestor ou gere um novo pagamento.`);
+            pendingPixOrderRef.value = "";
+          }
+          startPixPolling(orderRef);
+        } else if (!pendingPixOrderRef.value) {
+          // Sem prova nova e sem chip pendente: nada a pollar. (Com chip, o
+          // polling da venda anterior segue vivo até resolver/expirar.)
+          stopPixPolling();
+          pixStatus.value = "idle";
+        }
         // Entrou dinheiro na gaveta → ela precisa abrir para sair troco. Lido
         // do snapshot congelado, não do cart, que a linha abaixo já zerou.
         // Sem await: a venda terminou, e a tela não espera o spooler.
@@ -1415,7 +1511,17 @@ export function usePosSale(deps: PosSaleDeps) {
       result.value = null;
       cancelSaleReason.value = "";
       cancelSaleDialogOpen.value = false;
-      saleCancelled.value = true;
+      // A venda cancelada não deixa polling nem chip para trás.
+      if (pendingPixOrderRef.value === orderRef) pendingPixOrderRef.value = "";
+      if (pixOrderRef.value === orderRef) {
+        stopPixPolling();
+        pixStatus.value = "idle";
+      }
+      // Confirmação como toast padrão de sucesso — o banner fixo de antes nunca
+      // expirava e ficava na tela até a próxima venda.
+      toast.success("Venda cancelada", {
+        description: "O pedido foi cancelado dentro da janela do operador.",
+      });
       await refresh();
     } catch (error) {
       // QUALQUER falha fica inline no diálogo (aberto): um toast passageiro com o
@@ -1446,11 +1552,11 @@ export function usePosSale(deps: PosSaleDeps) {
     cancelSaleReason,
     cancelSaleDialogOpen,
     cancelSaleError,
-    saleCancelled,
     lookupBusy,
     serverError,
     managerApprovalError,
     result,
+    pendingPixOrderRef,
     checkoutMode,
     showTabs,
     moveDialogOpen,
@@ -1524,6 +1630,8 @@ export function usePosSale(deps: PosSaleDeps) {
     prepareCheckout,
     reviewCheckout,
     submitSale,
+    dismissResult,
+    onExternalSaleCancelled,
     clearCurrentTab,
     openMoveDialog,
     submitMove,

@@ -52,6 +52,7 @@ function props(overrides: Record<string, unknown> = {}) {
     paymentTenders: [],
     selectedTenderIndex: -1,
     selectedTenderMethod: "",
+    paymentTotalQ: 1000,
     paymentRemainingQ: 1000,
     paymentChangeQ: 0,
     paymentCovered: false,
@@ -201,5 +202,44 @@ describe("PosPaymentWorkspace — numpad edita o tender selecionado", () => {
       props: props({ paymentTenders: [{ method: "cash", amount_q: 1000, collection: "terminal" }], selectedTenderIndex: 0, selectedTenderMethod: "cash" }),
     });
     expect(cash.find('[aria-label="Cédulas recebidas"]').exists()).toBe(true);
+  });
+});
+
+describe("PosPaymentWorkspace — Exato e Limpar na coluna do numpad", () => {
+  const cashSelected = {
+    paymentTenders: [{ method: "cash", amount_q: 400, collection: "terminal" }],
+    selectedTenderIndex: 0,
+    selectedTenderMethod: "cash",
+  };
+
+  it("Exato emite tenderExact quando há linha selecionada", async () => {
+    const wrapper = await mountSuspended(PosPaymentWorkspace, { props: props(cashSelected) });
+    const exact = wrapper.find('[aria-label="Valor exato do restante"]');
+    expect(exact.attributes("disabled")).toBeUndefined();
+    await exact.trigger("click");
+    expect(wrapper.emitted("tenderExact")).toHaveLength(1);
+  });
+
+  it("Limpar emite tenderClear quando há linha selecionada", async () => {
+    const wrapper = await mountSuspended(PosPaymentWorkspace, { props: props(cashSelected) });
+    const clear = wrapper.find('[aria-label="Limpar o valor da linha"]');
+    await clear.trigger("click");
+    expect(wrapper.emitted("tenderClear")).toHaveLength(1);
+  });
+
+  it("sem linha selecionada, Exato e Limpar ficam desabilitados", async () => {
+    const wrapper = await mountSuspended(PosPaymentWorkspace, { props: props({ selectedTenderIndex: -1 }) });
+    expect(wrapper.find('[aria-label="Valor exato do restante"]').attributes("disabled")).toBeDefined();
+    expect(wrapper.find('[aria-label="Limpar o valor da linha"]').attributes("disabled")).toBeDefined();
+  });
+});
+
+describe("PosPaymentWorkspace — total interino (sem review)", () => {
+  it("o hero usa o paymentTotalQ do composable, não o bruto dos itens", async () => {
+    const wrapper = await mountSuspended(PosPaymentWorkspace, {
+      props: props({ review: null, paymentTotalQ: 900 }), // itens brutos = 1000
+    });
+    expect(wrapper.text()).toContain(formatBRL(900));
+    expect(wrapper.text()).not.toContain(formatBRL(1000));
   });
 });

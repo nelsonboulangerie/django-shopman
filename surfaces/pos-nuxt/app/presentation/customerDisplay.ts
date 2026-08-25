@@ -18,7 +18,7 @@ import type {
   CustomerDisplaySnapshot,
   PosDisplayResult,
 } from "~/types/customerDisplay";
-import { receiptLineTotalQ } from "~/presentation/receipt";
+import { cartNetTotalQ, receiptLineTotalQ } from "~/presentation/receipt";
 import { formatBRL } from "~/utils/posIntent";
 
 export interface CustomerDisplayInputs {
@@ -26,10 +26,9 @@ export interface CustomerDisplayInputs {
   checkoutMode: boolean;
   items: POSCartItem[];
   review: POSSaleReviewProjection | null;
+  /** O troco congelado do fechamento viaja DENTRO dele (`result.changeQ`). */
   result: PosDisplayResult | null;
   pixStatus: "idle" | "polling" | "paid" | "expired";
-  /** Troco congelado no instante do fechamento (o cart reseta logo depois). */
-  resultChangeQ: number;
   /** Opções do contrato de checkout, para trocar ref de motivo por rótulo. */
   discountReasons: POSCheckoutOptionProjection[];
 }
@@ -69,22 +68,6 @@ export function displayItemView(
     totalDisplay: formatBRL(netQ),
     discountLabel: itemDiscountLabel(item, reasons),
   };
-}
-
-/**
- * Total interino da venda em centavos — a MESMA estimativa local da tela de
- * venda (descontos de linha aplicados). O review, quando existe, prevalece.
- */
-export function displayItemsTotalQ(items: POSCartItem[]): number {
-  return items.reduce(
-    (sum, item) => sum + receiptLineTotalQ({
-      name: item.name,
-      qty: item.qty,
-      price_q: item.price_q,
-      discountPct: item.discount?.value || 0,
-    }),
-    0,
-  );
 }
 
 /**
@@ -132,8 +115,10 @@ export function buildCustomerDisplaySnapshot(
   if (phase === "sale" || (phase === "payment" && !inputs.result)) {
     snapshot.items = inputs.items.map((item) => displayItemView(item, inputs.discountReasons));
     snapshot.itemCount = inputs.items.reduce((sum, item) => sum + item.qty, 0);
+    // A MESMA estimativa local da tela de venda (`cartNetTotalQ`, descontos de
+    // linha aplicados). O review, quando existe, prevalece.
     snapshot.totalDisplay = inputs.review?.total_display
-      || formatBRL(displayItemsTotalQ(inputs.items));
+      || formatBRL(cartNetTotalQ(inputs.items));
     snapshot.discountDisplay = inputs.review && inputs.review.discount_q > 0
       ? inputs.review.discount_display
       : "";
@@ -153,7 +138,7 @@ export function buildCustomerDisplaySnapshot(
 
   if (phase === "result" && inputs.result) {
     snapshot.totalDisplay = inputs.result.receipt.totalDisplay;
-    snapshot.changeDisplay = inputs.resultChangeQ > 0 ? formatBRL(inputs.resultChangeQ) : "";
+    snapshot.changeDisplay = inputs.result.changeQ > 0 ? formatBRL(inputs.result.changeQ) : "";
     snapshot.customerFirstName = firstName(inputs.result.receipt.customerName);
     snapshot.orderRef = inputs.result.receipt.orderRef;
   }

@@ -31,6 +31,13 @@ const groups: Array<{ title: string; items: Array<{ keys: string[]; label: strin
       { keys: ["Enter"], label: "Validar a venda (com o total coberto)" },
     ],
   },
+  {
+    title: "Na venda concluída",
+    items: [
+      { keys: ["F2"], label: "Nova venda (sempre)" },
+      { keys: ["Enter"], label: "Nova venda (sem troco a conferir nem PIX aguardando)" },
+    ],
+  },
 ];
 </script>
 

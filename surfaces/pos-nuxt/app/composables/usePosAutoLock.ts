@@ -15,6 +15,12 @@ export function usePosAutoLock(opts: {
   locked: Ref<boolean>;
   lock: () => void | Promise<void>;
   autoLockSeconds: () => number;
+  /**
+   * Adiamento ciente do PAGAMENTO: enquanto retorna true (checkout aberto,
+   * PIX aguardando confirmação), o relógio de ociosidade não anda — travar no
+   * meio do pagamento derrubava o operador com o cliente na frente.
+   */
+  holdWhen?: () => boolean;
 }) {
   let lastActivity = Date.now();
   let cleanup: (() => void) | null = null;
@@ -31,6 +37,12 @@ export function usePosAutoLock(opts: {
     const events: Array<keyof WindowEventMap> = ["pointerdown", "keydown", "wheel", "pointermove"];
     events.forEach((e) => window.addEventListener(e, markActivity, { passive: true }));
     const id = window.setInterval(() => {
+      if (opts.holdWhen?.()) {
+        // Pagamento em curso: reancora a atividade — ao terminar, o operador
+        // ganha a janela inteira de novo em vez de travar no tick seguinte.
+        lastActivity = Date.now();
+        return;
+      }
       if (!opts.locked.value && isIdleBeyond(lastActivity, Date.now(), opts.autoLockSeconds() ?? 60)) {
         lastActivity = Date.now(); // evita reentrância enquanto o lock propaga
         opts.lock();
