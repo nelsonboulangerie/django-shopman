@@ -3,8 +3,8 @@ import { shouldPollTick, type PosRealtimeState } from "~/presentation/events";
 /**
  * Tempo real entre estações do PDV: SSE push + poll de fallback + wake.
  *
- * EventSource same-origin no BFF (/sse/cash → proxy do eventstream do Django,
- * canal `backstage-cash-main`). O canal anuncia o que OUTRA estação fez e esta
+ * EventSource same-origin no BFF: /sse/cash (canal `backstage-cash-main`) e
+ * /sse/tabs (canal `backstage-tabs-main`, a cozinha mexendo numa comanda). O canal anuncia o que OUTRA estação fez e esta
  * precisa ver sem F5: pedido de troco (pedido/atendido/cancelado), devolução
  * pendente/entregue, turno aberto/fechado. Todo evento dispara o MESMO
  * `onPush` — o refetch da Projection do terminal, que é o fetch canônico onde
@@ -20,23 +20,41 @@ export function usePosEvents(onPush: () => void, opts?: { pollMs?: number }) {
   const config = useRuntimeConfig();
   const realtime = ref<PosRealtimeState>("polling");
   let pollTimer: ReturnType<typeof setInterval> | null = null;
-  let source: EventSource | null = null;
+  let sources: EventSource[] = [];
+
+  /** Os canais que o balcão assina, e o evento nomeado de cada um. Dois streams
+   *  porque são duas PERMISSÕES e dois assuntos — não porque a tela precise
+   *  distinguir: os dois desembocam no mesmo refetch. */
+  const CHANNELS: Array<{ path: string; event: string }> = [
+    { path: "/sse/cash", event: "backstage-cash-update" },
+    // A cozinha mexeu numa comanda deste balcão: o selo "Na cozinha" da linha
+    // vira "Pronto" ou "Cancelado" sem ninguém apertar "Atualizar".
+    { path: "/sse/tabs", event: "backstage-tabs-update" },
+  ];
 
   function connectSse() {
-    if (source) return;
-    const url = ssePath("/sse/cash", config.app.baseURL);
-    try {
-      realtime.value = "connecting";
-      source = new EventSource(url, { withCredentials: true });
-      // django-eventstream empurra eventos nomeados; qualquer um = refetch.
-      const onEvent = () => onPush();
-      ["message", "backstage-cash-update"].forEach((name) => source!.addEventListener(name, onEvent));
-      source.onopen = () => { realtime.value = "live"; };
-      source.onerror = () => { realtime.value = "polling"; };
-    } catch {
-      source = null;
-      realtime.value = "polling";
+    if (sources.length) return;
+    realtime.value = "connecting";
+    for (const channel of CHANNELS) {
+      try {
+        const source = new EventSource(ssePath(channel.path, config.app.baseURL), { withCredentials: true });
+        // django-eventstream empurra eventos nomeados; qualquer um = refetch.
+        const onEvent = () => onPush();
+        ["message", channel.event].forEach((name) => source.addEventListener(name, onEvent));
+        // Um stream vivo já tira a tela do poll; o outro caindo não a devolve
+        // para lá, senão o canal saudável passaria a refazer fetch de graça.
+        source.onopen = () => { realtime.value = "live"; };
+        source.onerror = () => { if (!sources.some((s) => s.readyState === EventSource.OPEN)) realtime.value = "polling"; };
+        sources.push(source);
+      } catch {
+        realtime.value = "polling";
+      }
     }
+  }
+
+  function closeSse() {
+    sources.forEach((source) => source.close());
+    sources = [];
   }
 
   const onVisible = () => {
@@ -44,9 +62,8 @@ export function usePosEvents(onPush: () => void, opts?: { pollMs?: number }) {
     onPush();
     // Stream fechado de vez (ex.: conexão recusada antes do login)? Tenta de
     // novo — a sessão pode ter nascido desde então.
-    if (source && source.readyState === EventSource.CLOSED) {
-      source.close();
-      source = null;
+    if (sources.length && sources.every((s) => s.readyState === EventSource.CLOSED)) {
+      closeSse();
     }
     connectSse();
   };
@@ -61,7 +78,7 @@ export function usePosEvents(onPush: () => void, opts?: { pollMs?: number }) {
   });
   onBeforeUnmount(() => {
     if (pollTimer) clearInterval(pollTimer);
-    if (source) { source.close(); source = null; }
+    closeSse();
     document.removeEventListener("visibilitychange", onVisible);
     window.removeEventListener("online", onVisible);
   });

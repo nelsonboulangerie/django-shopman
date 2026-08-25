@@ -398,6 +398,18 @@ def emit_kds_change(ticket, *, event_type: str = "backstage-kds-update", scope: 
         "count_active": _active_kds_count(ticket.kds_instance_id),
     }
     _emit_backstage("kds", event_type, payload, scope=scope or station_ref)
+    # O MESMO fato, contado ao balcão — no canal dele e sem nada da cozinha
+    # junto. O PDV mostra "Na cozinha" na linha disparada, e esse selo ficava
+    # congelado: o ticket virava "Pronto" ou "Cancelado" e o operador só
+    # descobria clicando em "Atualizar". Aqui vai só a chave da comanda; quem
+    # recebe refaz o fetch canônico da Projection, que já é filtrada pelo gate
+    # do balcão (ADR-016 — o push é sinal, o fetch é a verdade).
+    if ticket.session_key:
+        _emit_backstage(
+            "tabs",
+            "backstage-tabs-update",
+            {"kind": "kitchen", "session_key": ticket.session_key},
+        )
 
 
 def _track_kds_ticket_state(sender, instance, **kwargs):

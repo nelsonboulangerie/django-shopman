@@ -4,7 +4,7 @@ import type { ActionAffordance } from "~/presentation/actions";
 import { formatBRL } from "~/utils/posIntent";
 import { globalKeysBlocked } from "~/utils/keyboardGuard";
 import { clampPercent, clampQty, popDigit, pushDigit } from "~/presentation/numpad";
-import { fireBarView, kitchenLineState } from "~/presentation/kitchen";
+import { fireBarView, kitchenBadge, kitchenLineState } from "~/presentation/kitchen";
 import { pruneSelection, selectionView, toggleSelected } from "~/presentation/selection";
 import { pricingDiscountBadge } from "~/presentation/lineDiscounts";
 import { toast } from "vue-sonner";
@@ -93,6 +93,20 @@ const fireBar = computed(() => fireBarView({
 function lineKitchenState(item: POSCartItem) {
   return kitchenLineState(item, { canUnfire: props.unfireAction.present });
 }
+
+// Cor só onde tem significado (PDV neutro): pronto é verde, cancelado é
+// vermelho, o resto é cinza como toda a tela.
+function badgeTone(tone: "neutral" | "success" | "destructive"): string {
+  if (tone === "success") return "bg-success/10 text-success";
+  if (tone === "destructive") return "bg-destructive/10 text-destructive";
+  return "bg-muted text-muted-foreground";
+}
+function badgeIcon(tone: "neutral" | "success" | "destructive"): string {
+  if (tone === "success") return "lucide:check";
+  if (tone === "destructive") return "lucide:x";
+  return "lucide:flame";
+}
+
 
 // Interim local total — reflects per-line manual discount as an estimate so the
 // operator sees the discount land. Backend review remains the authoritative total.
@@ -460,14 +474,16 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onWindowKeydown));
             >
               <Icon name="lucide:flame" class="size-3 group-hover:hidden" />
               <Icon name="lucide:x" class="hidden size-3 group-hover:inline" />
-              Na cozinha
+              {{ kitchenBadge(item).label }}
             </button>
             <span
               v-else-if="lineKitchenState(item) === 'fired'"
-              class="mt-0.5 inline-flex shrink-0 items-center gap-1 whitespace-nowrap rounded-full bg-muted px-2 py-0.5 text-xs font-medium text-muted-foreground"
+              class="mt-0.5 inline-flex shrink-0 items-center gap-1 whitespace-nowrap rounded-full px-2 py-0.5 text-xs font-medium"
+              :class="badgeTone(kitchenBadge(item).tone)"
+              aria-live="polite"
             >
-              <Icon name="lucide:flame" class="size-3" />
-              Na cozinha
+              <Icon :name="badgeIcon(kitchenBadge(item).tone)" class="size-3" />
+              {{ kitchenBadge(item).label }}
             </span>
           </div>
           <!-- Alvos de toque de balcão: steppers em icon-sm (36px), e a lixeira

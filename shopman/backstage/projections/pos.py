@@ -504,6 +504,43 @@ def build_pos(*, terminal=None, operator=None) -> POSProjection:
     )
 
 
+def _kitchen_status_by_sku(session_key: str) -> dict[str, str]:
+    """Em que pé a COZINHA está, por SKU desta comanda.
+
+    O balcão marcava a linha disparada com um selo fixo, "Na cozinha", e ele
+    ficava lá até a venda fechar: o ticket virava "Pronto" ou era cancelado e o
+    operador só descobria clicando em "Atualizar" — ou não descobria.
+
+    O ticket do KDS não carrega `line_id` (ele nasce com uma lista de itens), e
+    inventar essa costura agora seria mudar o KDS para uma pergunta do PDV. O que
+    o balcão precisa saber cabe no SKU: "o pão que eu mandei já está pronto?".
+
+    Quando o mesmo SKU aparece em mais de um ticket (estações diferentes), vence o
+    MENOS avançado — uma linha só está pronta quando toda a cozinha terminou com
+    ela. Cancelado é exceção e vence tudo: é o único estado que pede ação de quem
+    está no caixa.
+    """
+    if not session_key:
+        return {}
+    from shopman.backstage.models import KDSTicket
+
+    rank = {"cancelled": 0, "pending": 1, "in_progress": 2, "done": 3}
+    out: dict[str, str] = {}
+    tickets = KDSTicket.objects.filter(session_key=session_key).only("status", "items")
+    for ticket in tickets:
+        status = ticket.status
+        if status not in rank:
+            continue
+        for entry in ticket.items or []:
+            sku = str((entry or {}).get("sku") or "")
+            if not sku:
+                continue
+            current = out.get(sku)
+            if current is None or rank[status] < rank[current]:
+                out[sku] = status
+    return out
+
+
 def _delivery_today():
     """Hoje pelo relógio da LOJA. Um tablet com fuso errado agenda para ontem."""
     from django.utils import timezone
@@ -2115,6 +2152,7 @@ def build_open_tab(session: Session) -> dict:
     tab_ref = str(data.get("tab_ref") or session.handle_ref or "")
     tab_display = str(data.get("tab_display") or "") or _display_ref(tab_ref)
     fired_lines = set(data.get("fired_lines") or [])
+    kitchen_by_sku = _kitchen_status_by_sku(session.session_key)
     manual_originals = _manual_discount_originals(session)
     items = [
         {
@@ -2125,6 +2163,7 @@ def build_open_tab(session: Session) -> dict:
             "qty": int(item.get("qty", 1)),
             "notes": (item.get("meta") or {}).get("notes", ""),
             "fired": item.get("line_id", "") in fired_lines,
+            "kitchen_status": kitchen_by_sku.get(item["sku"], ""),
             "discount": _tab_payload_line_discount(item),
             "pricing_discount": _tab_payload_pricing_discount(item),
             "price_overridden": bool((item.get("meta") or {}).get("price_overridden")),

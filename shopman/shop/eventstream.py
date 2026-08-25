@@ -130,6 +130,14 @@ _BACKSTAGE_CHANNEL_RULES = {
     "kds": ("backstage.operate_kds",),
     "production": ("backstage.operate_production",),
     "cash": ("cashman.operate_pos",),
+    # O balcão precisa saber que a COZINHA mexeu numa comanda dele (o badge "Na
+    # cozinha" vira "Pronto", "Cancelado"). Assinar o canal `kds` resolveria o
+    # push e abriria demais: ali trafega o board inteiro da cozinha, e quem opera
+    # o caixa não tem `operate_kds`. Então existe um canal próprio, com a
+    # permissão do PDV, carregando SINAL MÍNIMO — a chave da comanda e mais nada.
+    # Quem recebe refaz o fetch canônico da Projection do terminal, que já é
+    # filtrada pelo gate do balcão (ADR-016).
+    "tabs": ("cashman.operate_pos",),
     "alerts": (
         "shop.manage_orders",
         "shop.manage_production",
