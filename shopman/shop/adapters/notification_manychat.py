@@ -87,6 +87,15 @@ MESSAGE_TEMPLATES: dict[str, str] = {
     "production_ready": (
         "Saiu do forno agora: {product_name}! {cta} {action_url}"
     ),
+    "purchase_request": (
+        "Olá! Pedido de compra {purchase_ref} da {shop_name}: "
+        "{material_name} {purchase_qty_display}. "
+        "Confirme disponibilidade, prazo e valor final."
+    ),
+    "purchase_receipt_rejected": (
+        "Devolução {receipt_ref} registrada para {supplier_name}. "
+        "Motivo: {reason}"
+    ),
     # Campanha: o corpo ja vem pronto do AnnouncementTemplate (com as variaveis
     # resolvidas), entao o template daqui e so o envelope.
     "announcement_published": "{body}\n\n{cta} {action_url}",

@@ -41,6 +41,9 @@ domains:
 - domain: prod.boulangerie.com.br
   type: ALIAS
   zone: boulangerie.com.br
+- domain: compras.boulangerie.com.br
+  type: ALIAS
+  zone: boulangerie.com.br
 - domain: api.boulangerie.com.br
   type: ALIAS
   zone: boulangerie.com.br
@@ -122,6 +125,13 @@ ingress:
       path:
         prefix: /
   - component:
+      name: purchase-nuxt
+    match:
+      authority:
+        exact: compras.boulangerie.com.br
+      path:
+        prefix: /
+  - component:
       name: hub-nuxt
     match:
       authority:
@@ -162,7 +172,7 @@ envs:
   type: GENERAL
 - key: CSRF_TRUSTED_ORIGINS
   scope: RUN_TIME
-  value: https://alpha.nelsonboulangerie.com.br,https://api.staging.nelsonboulangerie.com.br,https://admin.staging.nelsonboulangerie.com.br,https://api.boulangerie.com.br,https://admin.boulangerie.com.br,https://gestor.boulangerie.com.br,https://kds.boulangerie.com.br,https://pdv.boulangerie.com.br,https://prod.boulangerie.com.br,https://mkt.boulangerie.com.br,https://central.boulangerie.com.br,https://bi.boulangerie.com.br
+  value: https://alpha.nelsonboulangerie.com.br,https://api.staging.nelsonboulangerie.com.br,https://admin.staging.nelsonboulangerie.com.br,https://api.boulangerie.com.br,https://admin.boulangerie.com.br,https://gestor.boulangerie.com.br,https://kds.boulangerie.com.br,https://pdv.boulangerie.com.br,https://prod.boulangerie.com.br,https://compras.boulangerie.com.br,https://mkt.boulangerie.com.br,https://central.boulangerie.com.br,https://bi.boulangerie.com.br
   type: GENERAL
 - key: DJANGO_TRUST_X_FORWARDED_PROTO
   scope: RUN_TIME
@@ -215,6 +225,10 @@ envs:
 - key: SHOPMAN_PRODUCTION_BASE_URL
   scope: RUN_TIME
   value: https://prod.boulangerie.com.br
+  type: GENERAL
+- key: SHOPMAN_PURCHASE_BASE_URL
+  scope: RUN_TIME
+  value: https://compras.boulangerie.com.br
   type: GENERAL
 - key: SHOPMAN_MARKETING_BASE_URL
   scope: RUN_TIME
@@ -617,6 +631,45 @@ services:
   name: production-nuxt
   run_command: node .output/server/index.mjs
   source_dir: /surfaces/production-nuxt
+- alerts:
+  - operator: GREATER_THAN
+    rule: RESTART_COUNT
+    value: 2
+    window: TEN_MINUTES
+  build_command: npm ci && npm run build
+  envs:
+  - key: NUXT_DJANGO_BASE_URL
+    scope: RUN_TIME
+    value: https://api.boulangerie.com.br
+    type: GENERAL
+  - key: NUXT_APP_BASE_URL
+    scope: RUN_TIME
+    value: /
+    type: GENERAL
+  - key: NUXT_PUBLIC_DJANGO_BASE_URL
+    scope: RUN_AND_BUILD_TIME
+    value: https://api.boulangerie.com.br
+    type: GENERAL
+  - key: NUXT_PUBLIC_OPERATOR_HUB_URL
+    scope: RUN_AND_BUILD_TIME
+    value: https://central.boulangerie.com.br
+    type: GENERAL
+  git:
+    branch: main
+    repo_clone_url: https://github.com/nelsonboulangerie/django-shopman.git
+  health_check:
+    failure_threshold: 5
+    http_path: /
+    initial_delay_seconds: 30
+    period_seconds: 10
+    success_threshold: 1
+    timeout_seconds: 5
+  http_port: 3000
+  instance_count: 1
+  instance_size_slug: apps-s-1vcpu-0.5gb
+  name: purchase-nuxt
+  run_command: node .output/server/index.mjs
+  source_dir: /surfaces/purchase-nuxt
 - alerts:
   - operator: GREATER_THAN
     rule: RESTART_COUNT

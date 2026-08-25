@@ -290,6 +290,7 @@ class TestDefaultGroupsExist(TestCase):
         self.assertTrue(self._has_perm(g, "manage_operators", "cashman"))
         self.assertTrue(self._has_perm(g, "perform_closing"))
         self.assertTrue(self._has_perm(g, "operate_production"))
+        self.assertTrue(self._has_perm(g, "operate_purchase"))
         self.assertTrue(self._has_perm(g, "view_reports"))
         self.assertTrue(self._has_perm(g, "manage_customers"))
 

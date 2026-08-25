@@ -327,6 +327,7 @@ EXCEPTION_SURFACES: tuple[Surface, ...] = (
             ROOT / "shopman/backstage/projections/closing.py",
             ROOT / "shopman/backstage/projections/cash_session.py",
             ROOT / "shopman/backstage/projections/production.py",
+            ROOT / "shopman/backstage/projections/purchase.py",
             ROOT / "shopman/backstage/projections/marketing.py",
             ROOT / "shopman/backstage/projections/bi_production.py",
             ROOT / "shopman/backstage/projections/bi_sales.py",
@@ -342,8 +343,8 @@ EXCEPTION_SURFACES: tuple[Surface, ...] = (
         ),
         exception_reason=(
             "Order queue + KDS + catalog-matrix + feeds + day-closing + cash-session + "
-            "production + campaign projections feed dedicated headless Nuxt operator apps "
-            "(gestor./kds./pdv./prod./mkt. via api/v1/backstage/*), not Admin/Unfold "
+            "production + purchase + campaign projections feed dedicated headless Nuxt operator apps "
+            "(gestor./kds./pdv./prod./compras./mkt. via api/v1/backstage/*), not Admin/Unfold "
             "pages (OPERATOR-APPS-PLAN Fase 2; CROSS-CHANNEL-CATALOG-HUB-PLAN Frente 3; "
             "ADMIN-ROLE-PLAN WP-ADM-3/WP-ADM-4/WP-ADM-7d — config de rule/capability fica no "
             "Admin/Unfold, a matriz operacional no Gestor, o fechamento do dia e os relatórios "

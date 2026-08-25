@@ -47,6 +47,11 @@ def _production_base_url() -> str:
     return (getattr(settings, "SHOPMAN_PRODUCTION_BASE_URL", "") or "").rstrip("/")
 
 
+def _purchase_base_url() -> str:
+    """Base absoluta do Compras (surfaces/purchase-nuxt). Vazio ⇒ oculto."""
+    return (getattr(settings, "SHOPMAN_PURCHASE_BASE_URL", "") or "").rstrip("/")
+
+
 def get_sidebar_navigation(request):
     """Return the canonical Admin sidebar for this Shopman installation.
 
@@ -99,6 +104,9 @@ def get_sidebar_navigation(request):
                 badge_variant="info",
             )
         )
+    purchase_url = _purchase_base_url()
+    if purchase_url:
+        live_items.append(_item("Compras", "package_check", purchase_url, permission=_can_operate_purchase))
     return [
         # O alarme não tem item no menu: a home do Admin já mostra os alertas numa
         # seção, com severidade, mensagem e pedido. Um link destacado aqui era a
@@ -377,3 +385,7 @@ def _can_operate_kds(request) -> bool:
 
 def _can_operate_production(request) -> bool:
     return permissions.can_operate_production(request.user)
+
+
+def _can_operate_purchase(request) -> bool:
+    return permissions.can_operate_purchase(request.user)

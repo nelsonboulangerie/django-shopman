@@ -108,13 +108,29 @@ class NotificationSendHandler:
         else:
             template = context.get("template") or event
 
-        recipient = getattr(settings, "SHOPMAN_OPERATOR_EMAIL", None) or getattr(
+        fallback_recipient = getattr(settings, "SHOPMAN_OPERATOR_EMAIL", None) or getattr(
             settings, "DEFAULT_FROM_EMAIL", "admin@shopman.local"
         )
+        recipient = str(payload.get("recipient") or fallback_recipient)
+        recipients = payload.get("recipients") if isinstance(payload.get("recipients"), dict) else {}
 
         result = None
-        for backend_name in ["email", "console"]:
-            result = notify(event=template, recipient=recipient, context=context, backend=backend_name)
+        from shopman.shop.notifications import get_backend as _get_backend
+
+        for backend_name in _system_backends(payload):
+            backend_recipient = str(recipients.get(backend_name) or recipient or "").strip()
+            if not backend_recipient:
+                continue
+
+            backend_module = _get_backend(backend_name)
+            if backend_module and hasattr(backend_module, "is_available"):
+                if not backend_module.is_available(backend_recipient):
+                    logger.debug(
+                        "notification.system: backend=%s not configured, skipping",
+                        backend_name,
+                    )
+                    continue
+            result = notify(event=template, recipient=backend_recipient, context=context, backend=backend_name)
             if result.success:
                 return
 
@@ -125,6 +141,16 @@ class NotificationSendHandler:
             raise DirectiveTerminalError((result.error if result else "unknown")[:500])
 
         raise DirectiveTransientError((result.error if result else "unknown")[:500])
+
+
+def _system_backends(payload: dict) -> list[str]:
+    raw = payload.get("backends") or ["email", "console"]
+    if isinstance(raw, str):
+        raw = [item.strip() for item in raw.split(",")]
+    if not isinstance(raw, list):
+        return ["email", "console"]
+    backends = [str(item).strip() for item in raw if str(item).strip()]
+    return backends or ["email", "console"]
 
 
 __all__ = ["NotificationSendHandler"]

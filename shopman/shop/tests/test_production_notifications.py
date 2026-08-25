@@ -9,6 +9,7 @@ ativa (directive de sistema, email→console com retry) é opt-in via
 from __future__ import annotations
 
 from datetime import date, timedelta
+from types import SimpleNamespace
 
 import pytest
 from django.utils import timezone
@@ -139,6 +140,46 @@ class TestSystemNotificationDelivery:
         )
         # Não deve levantar: email falha sem SMTP e console absorve.
         NotificationSendHandler().handle(message=directive, ctx={})
+
+    def test_handler_routes_system_event_to_explicit_supplier_recipient(self, monkeypatch):
+        from shopman.shop.handlers.notification import NotificationSendHandler
+
+        calls = []
+
+        def fake_notify(*, event, recipient, context, backend):
+            calls.append({
+                "event": event,
+                "recipient": recipient,
+                "context": context,
+                "backend": backend,
+            })
+            return SimpleNamespace(success=True, error=None)
+
+        monkeypatch.setattr("shopman.shop.handlers.notification.notify", fake_notify)
+        directive = Directive.objects.create(
+            topic=NOTIFICATION_SEND,
+            payload={
+                "event": "purchase_request",
+                "recipient": "compras@moinho.example",
+                "backends": ["email"],
+                "context": {
+                    "supplier_name": "Moinho São Paulo",
+                    "material_name": "Farinha T65",
+                    "purchase_qty_display": "3 saco 25 kg",
+                },
+            },
+        )
+
+        NotificationSendHandler().handle(message=directive, ctx={})
+
+        assert calls == [
+            {
+                "event": "purchase_request",
+                "recipient": "compras@moinho.example",
+                "backend": "email",
+                "context": directive.payload["context"],
+            }
+        ]
 
 
 class TestHeartbeatNotifies:

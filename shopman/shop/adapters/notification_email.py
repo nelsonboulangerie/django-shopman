@@ -36,6 +36,8 @@ SUBJECT_TEMPLATES: dict[str, str] = {
     "stock_arrived": "Boa notícia: {product_name} chegou",
     "production_ready": "Saiu do forno agora: {product_name}",
     "announcement_published": "Novidade na padaria",
+    "purchase_request": "Pedido de compra {purchase_ref} — {shop_name}",
+    "purchase_receipt_rejected": "Devolução de recebimento {receipt_ref} — {shop_name}",
 }
 
 BODY_TEMPLATES: dict[str, str] = {
@@ -127,6 +129,22 @@ BODY_TEMPLATES: dict[str, str] = {
         "{cta} {action_url}\n"
     ),
     "announcement_published": "{body}\n\n{cta} {action_url}\n",
+    "purchase_request": (
+        "Olá, {supplier_name}.\n\n"
+        "Segue pedido de compra da {shop_name}.\n\n"
+        "{lines_text}\n\n"
+        "Total estimado: {estimated_total}\n"
+        "Entrega desejada: {requested_delivery_label}\n"
+        "{operator_note}"
+        "Por favor confirme disponibilidade, prazo e valor final.\n"
+    ),
+    "purchase_receipt_rejected": (
+        "Recebimento recusado/devolvido.\n\n"
+        "Fornecedor: {supplier_name}\n"
+        "Documento: {document_ref}\n"
+        "Motivo: {reason}\n\n"
+        "{lines_text}\n"
+    ),
 }
 
 

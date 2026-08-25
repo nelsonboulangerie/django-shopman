@@ -69,6 +69,8 @@ PARITY_TABLE: list[tuple[str, set[str]]] = [
     ("backstage.operate_kds", {"Cozinha"}),
     # permissions.can_operate_production (dedicated floor app gate)
     ("backstage.operate_production", {"Cozinha", "Gerente"}),
+    # permissions.can_operate_purchase (dedicated purchase/receipt app gate)
+    ("backstage.operate_purchase", {"Gerente"}),
     # permissions.can_manage_orders (orders API + sidebar)
     ("shop.manage_orders", {"Caixa", "Gerente"}),
     # permissions.can_access_production / can_view_production_reports (full

@@ -116,6 +116,7 @@ def test_menu_makes_sense_without_any_operator_app_configured():
         SHOPMAN_POS_BASE_URL="",
         SHOPMAN_KDS_BASE_URL="",
         SHOPMAN_PRODUCTION_BASE_URL="",
+        SHOPMAN_PURCHASE_BASE_URL="",
     ):
         groups = get_sidebar_navigation(_superuser_request())
 
@@ -147,13 +148,14 @@ def test_apps_group_holds_only_actual_apps():
         SHOPMAN_POS_BASE_URL="https://pos.example.com",
         SHOPMAN_KDS_BASE_URL="https://kds.example.com",
         SHOPMAN_PRODUCTION_BASE_URL="https://prod.example.com",
+        SHOPMAN_PURCHASE_BASE_URL="https://compras.example.com",
     ):
         groups = get_sidebar_navigation(_superuser_request())
 
     apps_group = next(g for g in groups if g["title"] == "Aplicativos")
     titles = [item["title"] for item in apps_group["items"]]
 
-    assert titles == ["Pedidos", "Fechamento", "PDV", "KDS", "Produção ao vivo"]
+    assert titles == ["Pedidos", "Fechamento", "PDV", "KDS", "Produção ao vivo", "Compras"]
     assert "Alertas ativos" not in titles, "o alarme não é um aplicativo"
     for item in apps_group["items"]:
         assert item["link"].startswith("https://"), (

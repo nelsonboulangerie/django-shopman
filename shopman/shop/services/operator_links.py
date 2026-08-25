@@ -6,6 +6,7 @@ subdomínio, conversando com o Django via ``api/v1/backstage/*``:
   · Gestor de Pedidos → ``surfaces/orders-nuxt``      (``gestor.``)
   · KDS               → ``surfaces/kds-nuxt``          (``kds.``)
   · Produção          → ``surfaces/production-nuxt``    (``prod.``)
+  · Compras           → ``surfaces/purchase-nuxt``      (``compras.``)
 
 Como a loja do cliente e o POS, o Django só APONTA para esses apps, atrás de uma
 única base configurável por deployment (``settings.SHOPMAN_*_BASE_URL``). Quando a
@@ -67,3 +68,15 @@ def production_base_url() -> str:
 def production_url(path: str = "/") -> str:
     """URL absoluta da Produção (chão ao vivo), ou "" quando não está conectada."""
     return _url(production_base_url(), path)
+
+
+# ── Compras (purchase-nuxt) ─────────────────────────────────────────
+
+
+def purchase_base_url() -> str:
+    return _base("SHOPMAN_PURCHASE_BASE_URL")
+
+
+def purchase_url(path: str = "/") -> str:
+    """URL absoluta do Compras, ou "" quando não está conectado."""
+    return _url(purchase_base_url(), path)

@@ -45,6 +45,11 @@ MESSAGE_TEMPLATES: dict[str, str] = {
     "stock_arrived": "{product_name} chegou!{reserve_note}{deadline_note} {cta} {action_url}",
     "production_ready": "Saiu do forno agora: {product_name}! {cta} {action_url}",
     "announcement_published": "{body} {cta} {action_url}",
+    "purchase_request": (
+        "Pedido {purchase_ref}: {material_name} {purchase_qty_display}. "
+        "Confirme disponibilidade e prazo. {shop_name}"
+    ),
+    "purchase_receipt_rejected": "Devolução {receipt_ref}: {supplier_name}. Motivo: {reason}",
 }
 
 _COMTELE_SEND_URL = "https://api.comtele.com.br/messages/sms/send"

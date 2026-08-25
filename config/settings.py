@@ -142,7 +142,7 @@ if DEBUG:
         "https://*.ngrok.app",
         "https://*.trycloudflare.com",
         # Nuxt dev surfaces (contíguo): storefront :3000 · central :3001 · pos :3002
-        # · kds :3003 · gestor :3004 · Produção :3005.
+        # · kds :3003 · gestor :3004 · Produção :3005 · Compras :3008.
         "http://localhost:3000",
         "http://127.0.0.1:3000",
         "http://localhost:3001",
@@ -155,6 +155,8 @@ if DEBUG:
         "http://127.0.0.1:3004",
         "http://localhost:3005",
         "http://127.0.0.1:3005",
+        "http://localhost:3008",
+        "http://127.0.0.1:3008",
     ]
 
 SHOPMAN_INSTANCE_APPS = _csv_env_list("SHOPMAN_INSTANCE_APPS")
@@ -1231,6 +1233,12 @@ SHOPMAN_BI_BASE_URL = (
     os.environ.get("SHOPMAN_BI_BASE_URL") or ""
 ).strip().rstrip("/")
 
+# Base URL pública do Compras (surfaces/purchase-nuxt) — app Nuxt dedicado,
+# publicado em `compras.`. Vazio ⇒ o tile/link some, sem rota morta.
+SHOPMAN_PURCHASE_BASE_URL = (
+    os.environ.get("SHOPMAN_PURCHASE_BASE_URL") or ""
+).strip().rstrip("/")
+
 # Zona de operador (OPERATOR-AUTH-PLAN, Opção A) — login único + sessão Django
 # escopada a um domínio-pai SEPARADO da loja pública. Os apps de operador
 # (gestor./kds./pdv./prod.) moram nesse domínio e proxeiam para o alias de API
@@ -1272,6 +1280,7 @@ SHOPMAN_SURFACE_URLS = {
         "production": SHOPMAN_PRODUCTION_BASE_URL,
         "marketing": SHOPMAN_MARKETING_BASE_URL,
         "bi": SHOPMAN_BI_BASE_URL,
+        "purchase": SHOPMAN_PURCHASE_BASE_URL,
         "loja": SHOPMAN_STOREFRONT_BASE_URL,
     }.items()
     if url
