@@ -5,6 +5,8 @@
 // esperado da gaveta nem a variância — a conferência é da retaguarda.
 
 export interface CashMovementRow {
+  /** A linha do livro — é por ela que se pede a segunda via do comprovante. */
+  entry_id: number;
   kind: "sangria" | "suprimento" | string;
   kind_label: string;
   amount_q: number;

@@ -187,6 +187,23 @@ class POSCashReportTests(TestCase):
         # Turno aberto: contagem ainda não existe.
         self.assertIsNone(x["counted_amount_q"])
 
+    def test_movements_carry_the_ledger_entry_id_for_reprint(self) -> None:
+        """A segunda via do comprovante sai da LINHA do livro.
+
+        O botão "Imprimir de novo" da lista de movimentos chama
+        ``cash/entry/<id>/receipt/?reprint=1`` — sem o ``entry_id`` na leitura,
+        a tela não teria como pedir o papel de um movimento já lançado.
+        """
+        shift = self._open_shift()
+        entry = pos_service.register_cash_movement(
+            operator=self.operator, movement_type="suprimento", amount_raw="10,00", reason="reforço",
+        )
+        self.assertIsNotNone(shift)
+
+        x = self.client.get(REPORT_URL).json()["report"]["x_reading"]
+
+        self.assertEqual([m["entry_id"] for m in x["movements"]], [entry.pk])
+
     def test_mixed_tender_sale_splits_by_method_from_payman(self) -> None:
         """Venda mista: uma linha, dois intents; cada método com o seu valor, contado uma vez."""
         shift = self._open_shift()

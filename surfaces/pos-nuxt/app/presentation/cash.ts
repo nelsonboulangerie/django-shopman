@@ -66,8 +66,35 @@ export function movementReasons(
  * O motivo é exigido só na SAÍDA. Na entrada não há o que perguntar.
  */
 export function canRegisterMovement(kind: string, amount: string, reason: string): boolean {
-  if (!kind || !amount.trim()) return false;
+  // Movimento de zero não move nada: o valor precisa ser legível E positivo.
+  // Antes bastava "não vazio", e um "1,2,3" colado virava "0" no servidor.
+  const amountQ = amountToQ(amount);
+  if (!kind || amountQ === null || amountQ <= 0) return false;
   return kind === "sangria" ? Boolean(reason.trim()) : true;
+}
+
+/**
+ * Abertura e fechamento exigem um valor EXPLÍCITO e legível — zero incluso.
+ *
+ * Zero é resposta de verdade nas duas pontas: abrir sem fundo de troco e
+ * fechar uma gaveta esvaziada acontecem. O que não pode é campo vazio virar
+ * "0" calado (era o defeito do fechar caixa): vazio não é contagem, é
+ * pergunta sem resposta.
+ */
+export function canSubmitCashAmount(raw: string): boolean {
+  return amountToQ(raw) !== null;
+}
+
+/**
+ * A mensagem inline de valor ilegível — "" quando não há o que acusar.
+ *
+ * Vazio não acusa nada: o CTA desarmado já diz que falta responder, e gritar
+ * antes de a pessoa digitar é validação que atrapalha. A mensagem só aparece
+ * quando existe texto e ele não é um valor.
+ */
+export function amountInputError(raw: string): string {
+  if (!String(raw ?? "").trim()) return "";
+  return amountToQ(raw) === null ? "Valor ilegível. Use números, como 25,00." : "";
 }
 
 /**
@@ -134,9 +161,42 @@ export function canRequestChange(amount: string): boolean {
 
 /** "120,50" / "120.50" / "120" → centavos. Ilegível vira 0, e o CTA não arma. */
 export function parseAmountToQ(raw: string): number {
+  return amountToQ(raw) ?? 0;
+}
+
+/**
+ * "120,50" / "120.50" / "120" → centavos; `null` quando NÃO é um valor.
+ *
+ * O `null` existe porque "0" e "ilegível" são respostas diferentes: no
+ * fechamento, zero é uma contagem (gaveta esvaziada) e ilegível é falta de
+ * resposta. `parseAmountToQ` esmaga os dois em 0 — serve ao pedido de troco,
+ * que só aceita valor positivo, e não serve à contagem.
+ */
+export function amountToQ(raw: string): number | null {
   const limpo = String(raw ?? "").trim().replace(/\s/g, "").replace(",", ".");
-  if (!/^\d+(\.\d{1,2})?$/.test(limpo)) return 0;
+  if (!/^\d+(\.\d{1,2})?$/.test(limpo)) return null;
   return Math.round(Number(limpo) * 100);
+}
+
+/** Centavos → o texto que um campo de valor aceita de volta: 12050 → "120,50". */
+export function formatAmountInput(q: number): string {
+  return (Math.max(0, Math.round(q)) / 100).toFixed(2).replace(".", ",");
+}
+
+/**
+ * Soma do contador de denominações: quantidade × cédula/moeda, em centavos.
+ *
+ * As chaves são o `q` da denominação; os valores, a quantidade digitada.
+ * Quantidade ilegível ou vazia conta como zero — o contador é AJUDA para
+ * quem conta nota por nota, nunca um segundo lugar onde a contagem trava.
+ */
+export function denominationCountTotalQ(counts: Record<number | string, string>): number {
+  let total = 0;
+  for (const [q, qty] of Object.entries(counts)) {
+    const n = Number.parseInt(String(qty ?? "").trim(), 10);
+    if (Number.isFinite(n) && n > 0) total += Number(q) * n;
+  }
+  return total;
 }
 
 /** Como a denominação se lê num resumo de uma linha: "R$ 20", "0,50". */

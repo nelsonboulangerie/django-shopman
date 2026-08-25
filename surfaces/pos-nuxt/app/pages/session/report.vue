@@ -8,7 +8,29 @@
 // fora (capítulo NFC-e).
 useHead({ title: "Relatório de caixa · Shopman POS" });
 
-const { report, pending, accessDenied, refresh } = await useCashReport();
+const action = usePosAction();
+// A projection do terminal entra por dois motivos: o `terminal_ref` prende a
+// leitura X à GAVETA desta superfície (sem ele o servidor cai no primeiro
+// terminal ativo), e o write-side da sessão dá a porta da segunda via do
+// comprovante de movimento.
+const { pos, actions, refresh: refreshPos } = await usePosTerminal();
+const { report, pending, accessDenied, refresh } = await useCashReport({
+  terminalRef: () => pos.value?.terminal_ref || "",
+});
+const { busy, canOpenDrawer, reprintMovementReceipt } = usePosCashSession({
+  pos,
+  actions,
+  refresh: refreshPos,
+  action,
+});
+
+// A segunda via só é oferecida onde existe caminho de impressão (agente do
+// balcão). Num terminal sem agente o botão seria porta que bate na cara.
+const canReprint = computed(() => canOpenDrawer.value === true);
+
+function reprint(entryId: number) {
+  void reprintMovementReceipt(entryId);
+}
 
 async function goToCashSession() {
   await navigateTo("/session");
@@ -59,14 +81,20 @@ async function goToCashSession() {
 
       <template v-else-if="report">
         <!-- Leitura X: parcial do turno aberto do operador. -->
-        <PosCashReadingCard v-if="report.x_reading" :reading="report.x_reading" />
+        <PosCashReadingCard
+          v-if="report.x_reading"
+          :reading="report.x_reading"
+          :can-reprint="canReprint"
+          :busy="busy"
+          @reprint="reprint"
+        />
         <section v-else class="grid gap-2 rounded-lg border bg-card p-4">
           <div class="flex items-center gap-2">
             <Icon name="lucide:receipt-text" class="size-4 text-muted-foreground" />
             <h2 class="text-base font-semibold">Leitura X</h2>
           </div>
           <p class="text-sm text-muted-foreground">
-            Sem turno aberto para esta conta. Abra o caixa na sessão para acompanhar a parcial do turno.
+            Sem turno aberto neste terminal. Abra o caixa na sessão para acompanhar a parcial do turno.
           </p>
         </section>
 
@@ -76,6 +104,9 @@ async function goToCashSession() {
             v-for="reading in report.z_readings"
             :key="reading.shift_id"
             :reading="reading"
+            :can-reprint="canReprint"
+            :busy="busy"
+            @reprint="reprint"
           />
         </template>
         <section v-else class="grid gap-2 rounded-lg border bg-card p-4">

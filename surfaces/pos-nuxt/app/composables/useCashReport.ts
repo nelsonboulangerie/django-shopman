@@ -9,11 +9,19 @@ import type { CashSessionReportResponse } from "~/types/cashReport";
  * audita — nem o gerente. 401/403 viram `accessDenied` e a página explica em
  * vez de quebrar.
  */
-export async function useCashReport() {
+export async function useCashReport(options: { terminalRef?: () => string } = {}) {
   const requestHeaders = import.meta.server ? useRequestHeaders(["cookie"]) : undefined;
 
+  // O X é da GAVETA desta superfície: sem `terminal_ref` o servidor cai no
+  // primeiro terminal ativo — exato com uma gaveta só, e errado no dia em que
+  // houver balcão + totem (a projection documenta o defeito; a query o fecha).
   const { data, pending, error, refresh } = await useFetch<CashSessionReportResponse>(
-    "/api/v1/backstage/pos/cash/report/",
+    () => {
+      const terminalRef = options.terminalRef?.() || "";
+      return terminalRef
+        ? `/api/v1/backstage/pos/cash/report/?terminal_ref=${encodeURIComponent(terminalRef)}`
+        : "/api/v1/backstage/pos/cash/report/";
+    },
     { key: "cash-session-report", credentials: "include", headers: requestHeaders },
   );
 

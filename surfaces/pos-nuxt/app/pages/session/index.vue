@@ -6,11 +6,17 @@
 // turno, o CTA "Continuar vendendo" leva de volta. BLIND: a antesala nunca
 // mostra o valor esperado da gaveta — a conferência (esperado vs contado) fica
 // no retaguarda. O fechamento do DIA (sobras/perdas) entra em `/session/closing`.
+import { toast } from "vue-sonner";
+
 import {
-  changeDenominations,
+  amountInputError,
+  amountToQ,
   canRegisterMovement,
   canRequestChange,
+  canSubmitCashAmount,
+  changeDenominations,
   changeRequestSummary,
+  formatAmountInput,
   formatOpenedAt,
   formatRequestedAt,
   movementLabel,
@@ -78,11 +84,37 @@ const cashManagement = computed(() => pos.value?.checkout?.capabilities?.cash_ma
 const openedAtDisplay = computed(() => formatOpenedAt(cashRuntime.value?.opened_at));
 const salesCount = computed(() => shift.value?.count ?? 0);
 
-// Abrir caixa → direto para a venda (o motivo de estar na antesala acabou).
+// ABERTURA GUIADA (pedido do dono): a antesala conduz. O campo de valor já
+// nasce focado, o placeholder sugere o fundo de troco que o GESTOR configurou
+// no terminal, e Enter abre e segue para a venda. A sugestão é config fixa
+// (`cash_runtime.default_float_q`) — nunca o contado de turnos, que vazaria o
+// regime de contagem cega.
 const openingAmount = ref("");
+const openingError = computed(() => amountInputError(openingAmount.value));
+const canOpen = computed(() => canSubmitCashAmount(openingAmount.value));
+const floatSuggestionQ = computed(() => cashRuntime.value?.default_float_q || 0);
+const floatSuggestionDisplay = computed(() => cashRuntime.value?.default_float_display || "");
+const openingPlaceholder = computed(
+  () => (floatSuggestionQ.value > 0 ? formatAmountInput(floatSuggestionQ.value) : "0,00"),
+);
+// A sugestão preenche a um toque, mas nunca sozinha: abrir o caixa com um
+// número que ninguém digitou nem tocou seria default disfarçado de resposta.
+function useFloatSuggestion() {
+  if (floatSuggestionQ.value > 0) openingAmount.value = formatAmountInput(floatSuggestionQ.value);
+}
+// Contador por denominação (opcional) — o mesmo da contagem do fechamento.
+const openingCounter = ref(false);
+
 async function submitOpen() {
+  const floatQ = amountToQ(openingAmount.value);
+  if (floatQ === null) return;
   const ok = await openCashShift(openingAmount.value);
-  if (ok) await navigateTo("/");
+  if (ok) {
+    // O toast repete o VALOR: é a última chance de pegar um dígito errado
+    // antes de ele virar diferença no fechamento.
+    toast.success(`Caixa aberto · fundo R$ ${formatAmountInput(floatQ)}`);
+    await navigateTo("/");
+  }
 }
 
 async function goToSaleBoard() {
@@ -106,6 +138,10 @@ async function goToDayClosing() {
 // a conferência vai perguntar depois — para onde o dinheiro foi.
 const movementKind = ref("");
 const movementAmount = ref("");
+const movementError = computed(() => amountInputError(movementAmount.value));
+// Escolher o tipo leva o foco direto ao valor: o toque no botão já respondeu a
+// primeira pergunta, e a mão não deveria precisar de um segundo alvo.
+const movementAmountField = useTemplateRef<{ inputRef: HTMLInputElement | null }>("movementAmountField");
 // Escolhido e digitado são campos SEPARADOS, e um limpa o outro no ato: com um
 // só, a tela mostraria dois motivos ao mesmo tempo e mandaria um deles calada.
 const movementReasonPick = ref("");
@@ -121,6 +157,7 @@ const canSubmitMovement = computed(
 function pickMovementKind(kind: string) {
   movementKind.value = kind;
   clearMovementReason();
+  void nextTick(() => movementAmountField.value?.inputRef?.focus());
 }
 
 function pickMovementReason(reason: string) {
@@ -307,15 +344,37 @@ async function testDrawer() {
 }
 
 // Fechar caixa (contagem cega) — destrutivo, exige confirmação explícita.
+//
+// O CTA só arma com um valor LEGÍVEL (zero incluso: gaveta esvaziada é
+// contagem de verdade). Campo vazio virava "0" calado — o turno fechava com
+// uma contagem que ninguém fez. E a confirmação ECOA o valor: é a última
+// leitura antes de ele virar a única verdade do operador no livro.
 const closingAmount = ref("");
 const closingNotes = ref("");
+const closingError = computed(() => amountInputError(closingAmount.value));
+const canClose = computed(() => canSubmitCashAmount(closingAmount.value));
+const closingEchoDisplay = computed(() => {
+  const q = amountToQ(closingAmount.value);
+  return q === null ? "" : formatAmountInput(q);
+});
+// Contador por denominação (opcional): qtd × cédula/moeda, soma ao vivo
+// preenchendo o campo — para quem conta nota por nota.
+const closingCounter = ref(false);
 const confirmingClose = ref(false);
+// O fim de dia se ENCADEIA: fechado o caixa, a antesala oferece o próximo
+// passo (fechamento do dia, se pendente e permitido) em vez de deixar o
+// operador adivinhar que existem mais duas telas.
+const justClosedShift = ref(false);
 async function confirmClose() {
+  if (!canClose.value) return;
   const ok = await closeCashShift({ amount: closingAmount.value, notes: closingNotes.value });
   confirmingClose.value = false;
   if (ok) {
     closingAmount.value = "";
     closingNotes.value = "";
+    closingPanel.value = false;
+    closingCounter.value = false;
+    justClosedShift.value = true;
   }
 }
 
@@ -348,6 +407,34 @@ async function confirmClose() {
 
       <div class="flex-1 md:min-h-0 md:overflow-y-auto">
         <div class="mx-auto grid w-full max-w-xl gap-4 p-4 md:py-8">
+          <!-- FIM DE DIA ENCADEADO: fechado o caixa, o próximo passo vem até a
+               mão — o fechamento do dia (se pendente e o operador puder) e, na
+               falta dele, o relatório (se auditar). Três telas que não se
+               falavam viravam três lembranças; agora são um corredor. -->
+          <section
+            v-if="screen === 'closed' && justClosedShift"
+            class="grid gap-3 rounded-lg border border-success/30 bg-success/10 p-4"
+          >
+            <div class="flex items-center gap-2">
+              <Icon name="lucide:circle-check" class="size-4 text-success" />
+              <h2 class="text-base font-semibold">Caixa fechado</h2>
+            </div>
+            <p class="text-sm text-muted-foreground">
+              A contagem ficou registrada no turno. A conferência é da retaguarda.
+            </p>
+            <template v-if="dayClosing && !dayClosing.already_closed">
+              <p class="text-sm text-muted-foreground">O fechamento do dia ainda está pendente.</p>
+              <UiButton @click="goToDayClosing">
+                <Icon name="lucide:clipboard-check" class="size-5" />
+                Fazer o fechamento do dia agora
+              </UiButton>
+            </template>
+            <UiButton v-else-if="canAuditCash" variant="outline" @click="goToCashReport">
+              <Icon name="lucide:receipt-text" class="size-4" />
+              Ver relatório de caixa
+            </UiButton>
+          </section>
+
           <!-- Caixa fechado: abrir turno -->
           <section v-if="screen === 'closed'" class="grid gap-3 rounded-lg border bg-card p-4">
             <div class="grid gap-1">
@@ -358,9 +445,43 @@ async function confirmClose() {
             </div>
             <label class="grid gap-1 text-sm">
               <span class="font-medium text-muted-foreground">Valor de abertura</span>
-              <UiInput v-model="openingAmount" inputmode="decimal" placeholder="0,00" @keydown.enter="submitOpen" />
+              <!-- Abertura guiada: o campo nasce focado e Enter abre — a
+                   antesala conduz, o operador só responde quanto tem na mão. -->
+              <UiInput
+                v-model="openingAmount"
+                inputmode="decimal"
+                autofocus
+                :placeholder="openingPlaceholder"
+                :aria-invalid="openingError ? 'true' : undefined"
+                @keydown.enter="submitOpen"
+              />
             </label>
-            <UiButton size="lg" :disabled="busy" :loading="busy" @click="submitOpen">
+            <p v-if="openingError" class="text-xs text-destructive">{{ openingError }}</p>
+            <button
+              v-if="floatSuggestionDisplay && !openingAmount"
+              type="button"
+              class="justify-self-start text-xs text-muted-foreground underline underline-offset-4"
+              @click="useFloatSuggestion"
+            >
+              Usar o fundo sugerido: {{ floatSuggestionDisplay }}
+            </button>
+            <UiButton
+              v-if="!openingCounter"
+              variant="ghost"
+              size="sm"
+              class="justify-self-start"
+              @click="openingCounter = true"
+            >
+              <Icon name="lucide:calculator" class="size-4" />
+              Contar por cédulas e moedas
+            </UiButton>
+            <PosDenominationCounter
+              v-if="openingCounter"
+              :denominations="changeDenominationOptions"
+              :disabled="busy"
+              @total-q="openingAmount = formatAmountInput($event)"
+            />
+            <UiButton size="lg" :disabled="busy || !canOpen" :loading="busy" @click="submitOpen">
               <Icon name="lucide:wallet" class="size-5" />
               Abrir caixa e vender
             </UiButton>
@@ -640,8 +761,15 @@ async function confirmClose() {
               </div>
               <label class="grid gap-1.5 text-sm">
                 <span class="font-medium text-muted-foreground">Valor</span>
-                <UiInput v-model="movementAmount" inputmode="decimal" placeholder="0,00" />
+                <UiInput
+                  ref="movementAmountField"
+                  v-model="movementAmount"
+                  inputmode="decimal"
+                  placeholder="0,00"
+                  :aria-invalid="movementError ? 'true' : undefined"
+                />
               </label>
+              <p v-if="movementError" class="text-xs text-destructive">{{ movementError }}</p>
 
               <!-- Motivo obrigatório, em botões. O digitado fica como saída para o
                    que não estava previsto, e é o único caminho quando o tipo não
@@ -777,19 +905,50 @@ async function confirmClose() {
               </div>
               <label class="grid gap-1 text-sm">
                 <span class="font-medium text-muted-foreground">Valor contado</span>
-                <UiInput v-model="closingAmount" inputmode="decimal" placeholder="0,00" />
+                <!-- Nasce focado: expandir o painel já foi a decisão, contar é
+                     o próximo gesto. -->
+                <UiInput
+                  v-model="closingAmount"
+                  inputmode="decimal"
+                  autofocus
+                  placeholder="0,00"
+                  :aria-invalid="closingError ? 'true' : undefined"
+                />
               </label>
+              <p v-if="closingError" class="text-xs text-destructive">{{ closingError }}</p>
+              <UiButton
+                v-if="!closingCounter"
+                variant="ghost"
+                size="sm"
+                class="justify-self-start"
+                @click="closingCounter = true"
+              >
+                <Icon name="lucide:calculator" class="size-4" />
+                Contar por cédulas e moedas
+              </UiButton>
+              <PosDenominationCounter
+                v-if="closingCounter"
+                :denominations="changeDenominationOptions"
+                :disabled="busy"
+                @total-q="closingAmount = formatAmountInput($event)"
+              />
               <label class="grid gap-1 text-sm">
                 <span class="font-medium text-muted-foreground">Observações</span>
                 <UiTextarea v-model="closingNotes" :rows="2" placeholder="Conferência, divergências" />
               </label>
               <div v-if="!confirmingClose">
-                <UiButton variant="destructive" class="w-full" :disabled="busy" @click="confirmingClose = true">
+                <!-- Só arma com um valor legível — vazio virava "0" calado, e o
+                     turno fechava com uma contagem que ninguém fez. -->
+                <UiButton variant="destructive" class="w-full" :disabled="busy || !canClose" @click="confirmingClose = true">
                   Fechar caixa
                 </UiButton>
               </div>
               <div v-else class="grid gap-2 rounded-md border border-destructive/40 bg-destructive/5 p-3">
-                <p class="text-sm font-medium">Confirmar fechamento do caixa? Esta ação encerra o turno.</p>
+                <!-- O eco do valor: a última leitura antes de a contagem virar
+                     a única palavra do operador no livro. -->
+                <p class="text-sm font-medium">
+                  Confirmar fechamento do caixa? Contado: R$ {{ closingEchoDisplay }}. Esta ação encerra o turno.
+                </p>
                 <div class="grid grid-cols-2 gap-2">
                   <UiButton variant="outline" :disabled="busy" @click="confirmingClose = false">Cancelar</UiButton>
                   <UiButton variant="destructive" :disabled="busy" :loading="busy" @click="confirmClose">

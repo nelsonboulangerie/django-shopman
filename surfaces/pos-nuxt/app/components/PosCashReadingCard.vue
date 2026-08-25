@@ -5,7 +5,16 @@
 import { movementFlow, readingTitle, shiftPeriodDisplay, signedMovementDisplay } from "~/presentation/cashReport";
 import type { ShiftReading } from "~/types/cashReport";
 
-const props = defineProps<{ reading: ShiftReading }>();
+const props = defineProps<{
+  reading: ShiftReading;
+  /** A porta da segunda via existe? Quem a abre é a página (write-side). */
+  canReprint?: boolean;
+  busy?: boolean;
+}>();
+
+// A segunda via é pedida pela LINHA do livro — a página chama o endpoint com
+// `?reprint=1` e o papel sai marcado como segunda via.
+const emit = defineEmits<{ reprint: [entryId: number] }>();
 
 const period = computed(() => shiftPeriodDisplay(props.reading));
 const isOpen = computed(() => props.reading.status === "open");
@@ -83,10 +92,13 @@ const isOpen = computed(() => props.reading.status === "open");
               <th class="py-1.5 pr-3 font-medium">Tipo</th>
               <th class="py-1.5 pr-3 font-medium">Motivo</th>
               <th class="py-1.5 font-medium">Valor</th>
+              <th v-if="props.canReprint" class="py-1.5 pl-3">
+                <span class="sr-only">Comprovante</span>
+              </th>
             </tr>
           </thead>
           <tbody>
-            <tr v-for="movement in reading.movements" :key="movement.created_at + movement.kind" class="border-b border-border/60 last:border-0">
+            <tr v-for="movement in reading.movements" :key="movement.entry_id" class="border-b border-border/60 last:border-0">
               <td class="py-1.5 pr-3 font-medium">{{ movement.kind_label }}</td>
               <td class="py-1.5 pr-3 text-muted-foreground">{{ movement.reason || "Sem motivo informado" }}</td>
               <td
@@ -94,6 +106,18 @@ const isOpen = computed(() => props.reading.status === "open");
                 :class="movementFlow(movement) === 'out' ? 'text-destructive' : 'text-success'"
               >
                 {{ signedMovementDisplay(movement) }}
+              </td>
+              <td v-if="props.canReprint" class="py-1.5 pl-3 text-right">
+                <UiButton
+                  variant="ghost"
+                  size="sm"
+                  :disabled="props.busy"
+                  :aria-label="`Imprimir segunda via do comprovante de ${movement.kind_label.toLowerCase()}`"
+                  @click="emit('reprint', movement.entry_id)"
+                >
+                  <Icon name="lucide:printer" class="size-4" />
+                  Segunda via
+                </UiButton>
               </td>
             </tr>
           </tbody>
