@@ -88,6 +88,12 @@ const {
   paymentRemainingQ,
   paymentChangeQ,
   paymentCovered,
+  deliveryFeeQ,
+  deliveryFeeSource,
+  deliveryDistanceKm,
+  deliverySlots,
+  deliverySlotsPending,
+  deliveryDateEffective,
   selectedTenderMethod,
   tabDialogTitle,
   tabDialogDescription,
@@ -570,7 +576,14 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onGlobalKeydown));
         v-model:delivery-instructions="cart.deliveryInstructions"
         v-model:delivery-date="cart.deliveryDate"
         v-model:delivery-time-slot="cart.deliveryTimeSlot"
-        v-model:delivery-fee-input="cart.deliveryFeeInput"
+        v-model:delivery-fee-override-input="cart.deliveryFeeOverrideInput"
+        v-model:delivery-fee-override="cart.deliveryFeeOverride"
+        :delivery-fee-q="deliveryFeeQ"
+        :delivery-fee-source="deliveryFeeSource"
+        :delivery-distance-km="deliveryDistanceKm"
+        :delivery-slots="deliverySlots"
+        :delivery-slots-pending="deliverySlotsPending"
+        :delivery-date-effective="deliveryDateEffective"
         v-model:change-for-input="cart.changeForInput"
         v-model:order-notes="cart.orderNotes"
         v-model:issue-fiscal-document="cart.issueFiscalDocument"

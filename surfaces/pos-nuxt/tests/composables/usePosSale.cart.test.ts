@@ -242,7 +242,8 @@ describe("usePosSale — intent (currentIntentState via saveTab)", () => {
       fulfillmentType: "delivery",
       deliveryAddress: "Rua A",
       deliveryStreetNumber: "100",
-      deliveryFeeInput: "5,00",
+      deliveryFeeOverride: true,
+      deliveryFeeOverrideInput: "5,00",
       discountType: "fixed",
       discountValue: "2,50",
       discountReason: "cliente fiel",
@@ -257,7 +258,9 @@ describe("usePosSale — intent (currentIntentState via saveTab)", () => {
     const saveCall = actionCall.mock.calls.find((c) => String(c[0]).includes("/tabs/save/"))!;
     const body = saveCall[1]!.body as Record<string, any>;
     expect(body.fulfillment_type).toBe("delivery");
-    expect(body.delivery_fee_q).toBe(500);
+    // A taxa é resolvida no servidor; o que sobe é a EXCEÇÃO declarada.
+    expect(body.delivery_fee_q).toBeUndefined();
+    expect(body.delivery_fee_override_q).toBe(500);
     expect(body.manual_discount).toEqual({ type: "fixed", value: 2.5, reason: "cliente fiel" });
     expect(body.manager_approval).toEqual({ username: "gerente", pin: "9999" });
     expect(body.customer_name).toBe("Ana");

@@ -88,7 +88,19 @@ const props = defineProps<{
   deliveryInstructions: string;
   deliveryDate: string;
   deliveryTimeSlot: string;
-  deliveryFeeInput: string;
+  /** A exceção da taxa, quando o operador a assume (ligada por `deliveryFeeOverride`). */
+  deliveryFeeOverrideInput: string;
+  deliveryFeeOverride: boolean;
+  /** A taxa RESOLVIDA pelo servidor, e de onde ela veio. A tela mostra; não decide. */
+  deliveryFeeQ: number;
+  deliveryFeeSource: string;
+  deliveryDistanceKm: number | null;
+  /** Janelas de meia hora do expediente do dia escolhido. */
+  deliverySlots: Array<{ ref: string; label: string }>;
+  /** Ainda não há resposta sobre as janelas (a review está a caminho). */
+  deliverySlotsPending: boolean;
+  /** A data que vale — a escolhida, ou o hoje que o servidor devolveu. */
+  deliveryDateEffective: string;
   /** "Troco para quanto?" do dinheiro na entrega (entrada livre em reais). */
   changeForInput: string;
   orderNotes: string;
@@ -129,7 +141,8 @@ const emit = defineEmits<{
   "update:deliveryInstructions": [string];
   "update:deliveryDate": [string];
   "update:deliveryTimeSlot": [string];
-  "update:deliveryFeeInput": [string];
+  "update:deliveryFeeOverrideInput": [string];
+  "update:deliveryFeeOverride": [boolean];
   "update:changeForInput": [string];
   "update:orderNotes": [string];
   "update:issueFiscalDocument": [boolean];
@@ -242,6 +255,36 @@ const digitKeys = ["1", "2", "3", "4", "5", "6", "7", "8", "9"];
 // selecionada (o primeiro toque sobre valor automático substitui).
 const cashNotesQ = computed(() => contractCashNotesQ(props.checkoutContract));
 const cashSelected = computed(() => props.selectedTenderMethod === "cash");
+
+// De onde a taxa saiu, em português de balcão. Quem cobra é a loja; a frase
+// existe para o operador saber DIZER isso ao cliente, em vez de repetir um
+// número que ele não sabe justificar.
+// "Sem janela neste dia" é um FATO; "ainda não sei" é outra coisa. Dizer o
+// primeiro enquanto a resposta não chegou fazia a tela mentir para o operador
+// justo no formulário que ele acabara de abrir.
+const slotPlaceholder = computed(() => {
+  if (props.deliverySlots.length) return "A combinar";
+  return props.deliverySlotsPending ? "Preencha o endereço" : "Sem janela neste dia";
+});
+
+const deliveryFeeNote = computed(() => {
+  if (props.deliveryFeeOverride) return "Valor combinado por você para esta entrega.";
+  const km = props.deliveryDistanceKm;
+  switch (props.deliveryFeeSource) {
+    case "zone":
+      return "Tabela do bairro/CEP deste endereço.";
+    case "distance":
+      return km == null ? "Pela distância até o endereço." : `Pela distância até o endereço (${km} km).`;
+    case "default":
+      return "Taxa padrão da loja: não deu para medir a distância deste endereço.";
+    case "blocked":
+      return "Este endereço está fora da área de entrega.";
+    case "manual":
+      return "Valor combinado para esta entrega.";
+    default:
+      return "Preencha o endereço para a loja calcular a taxa.";
+  }
+});
 // Canais do comprovante são MULTI (imprimir E enviar): cada toque liga/desliga
 // um. Mesma função do modal do Cliente, porque o estado é o mesmo.
 function toggleReceiptChannel(ref: string) {
@@ -807,20 +850,61 @@ defineExpose({
                 <UiInput :model-value="deliveryInstructions" placeholder="Portaria, referência" @update:model-value="$emit('update:deliveryInstructions', String($event || ''))" />
               </label>
             </div>
+            <!-- QUANDO — data e janela. A data nasce em HOJE (o hoje do servidor,
+                 não o do tablet) e o horário deixa de ser texto solto: as janelas
+                 de meia hora vêm do EXPEDIENTE daquele dia. Digitar "14:00-14:30"
+                 num dia em que a casa fecha às 11h era uma promessa que ninguém
+                 podia cumprir, e a tela não tinha como saber. -->
             <div class="grid gap-2 sm:grid-cols-2">
               <label class="grid gap-1 text-sm">
                 <span class="font-medium text-muted-foreground">Data</span>
-                <UiInput :model-value="deliveryDate" type="date" @update:model-value="$emit('update:deliveryDate', String($event || ''))" />
+                <UiInput
+                  :model-value="deliveryDateEffective"
+                  type="date"
+                  @update:model-value="$emit('update:deliveryDate', String($event || ''))"
+                />
               </label>
               <label class="grid gap-1 text-sm">
-                <span class="font-medium text-muted-foreground">Taxa</span>
-                <UiInput :model-value="deliveryFeeInput" inputmode="decimal" placeholder="0,00" @update:model-value="$emit('update:deliveryFeeInput', String($event || ''))" />
+                <span class="font-medium text-muted-foreground">Horário combinado</span>
+                <select
+                  :value="deliveryTimeSlot"
+                  class="h-9 rounded-md border bg-background px-3 text-sm"
+                  :disabled="!deliverySlots.length"
+                  @change="$emit('update:deliveryTimeSlot', ($event.target as HTMLSelectElement).value)"
+                >
+                  <option value="">{{ slotPlaceholder }}</option>
+                  <option v-for="slot in deliverySlots" :key="slot.ref" :value="slot.ref">{{ slot.label }}</option>
+                </select>
               </label>
             </div>
-            <label class="grid gap-1 text-sm">
-              <span class="font-medium text-muted-foreground">Horário combinado</span>
-              <UiInput :model-value="deliveryTimeSlot" placeholder="Ex: 14:00-14:30" @update:model-value="$emit('update:deliveryTimeSlot', String($event || ''))" />
-            </label>
+
+            <!-- QUANTO — a taxa é RESOLVIDA pelo endereço (zona de CEP, faixa de
+                 distância, frete grátis por valor), o mesmo motor da loja. Era um
+                 campo livre, e campo livre é um segundo dono do preço: duas vendas
+                 do mesmo endereço saíam diferentes conforme quem estava no caixa.
+                 A digitação continua existindo como EXCEÇÃO declarada. -->
+            <div class="grid gap-1.5 rounded-md border bg-card p-3 text-sm">
+              <div class="flex items-center justify-between gap-2">
+                <span class="font-medium text-muted-foreground">Taxa de entrega</span>
+                <strong class="tabular-nums">{{ deliveryFeeOverride ? "—" : formatBRL(deliveryFeeQ) }}</strong>
+              </div>
+              <p class="text-xs text-muted-foreground">{{ deliveryFeeNote }}</p>
+              <button
+                type="button"
+                class="justify-self-start text-xs font-medium text-muted-foreground underline underline-offset-2 hover:text-foreground"
+                @click="$emit('update:deliveryFeeOverride', !deliveryFeeOverride)"
+              >
+                {{ deliveryFeeOverride ? "Usar a taxa da loja" : "Combinar outro valor" }}
+              </button>
+              <UiInput
+                v-if="deliveryFeeOverride"
+                :model-value="deliveryFeeOverrideInput"
+                inputmode="decimal"
+                placeholder="0,00"
+                aria-label="Taxa combinada com o cliente"
+                @update:model-value="$emit('update:deliveryFeeOverrideInput', String($event || ''))"
+              />
+            </div>
           </div>
 
           <!-- Observações do pedido valem para RETIRADA também (não só entrega):

@@ -230,6 +230,70 @@ def available_dates(*, max_count: int = 3, horizon_days: int = 30, now: datetime
     return out
 
 
+#: De quanto em quanto tempo o balcão combina uma entrega. Meia hora é a menor
+#: promessa que a casa consegue cumprir com um entregador só, e é a granularidade
+#: que o dono pediu — mais fino vira compromisso que a rua não honra.
+DELIVERY_SLOT_MINUTES = 30
+
+#: Antecedência mínima entre AGORA e o começo do primeiro horário combinável.
+#: Sem ela o balcão ofereceria "13:00" às 12:58 e o pedido nasceria atrasado.
+DELIVERY_SLOT_LEAD_MINUTES = 30
+
+
+def delivery_slots_for(
+    day: date,
+    *,
+    now: datetime | None = None,
+    shop=None,
+) -> list[dict]:
+    """As janelas de meia hora combináveis para entregar em ``day``.
+
+    Fatia o EXPEDIENTE do dia (``selling_hours_for`` — a mesma fonte que a loja e
+    o gestor leem) em intervalos de ``DELIVERY_SLOT_MINUTES``. Para HOJE, corta o
+    que já passou e mais ``DELIVERY_SLOT_LEAD_MINUTES`` de antecedência: horário
+    que não dá para cumprir não é oferta, é promessa quebrada no ato.
+
+    Devolve ``[{"ref": "14:00-14:30", "label": "14:00 às 14:30"}, …]``. Lista
+    vazia significa "não há janela neste dia" — dia fechado, feriado, ou o
+    expediente de hoje já acabou. Quem consome decide o que dizer; aqui não se
+    inventa expediente (é a mesma promessa de ``selling_hours_for``).
+
+    O ``ref`` é o próprio par de horas porque ele já é estável e legível: vai
+    para ``Order.data["delivery_time_slot"]``, e um pedido antigo continua se
+    explicando sozinho mesmo que o expediente da casa mude depois.
+    """
+    window = selling_hours_for(day, shop=shop)
+    if window is None or not is_open_on(day, shop=shop):
+        return []
+    opens_at, closes_at = window
+
+    shop = _load_shop(shop)
+    base = now or timezone.now()
+    local = _localtime_for_shop(base, shop) if shop else base
+    today = local.date() if isinstance(local, datetime) else local
+    earliest: time | None = None
+    if day == today and isinstance(local, datetime):
+        cutoff = local + timedelta(minutes=DELIVERY_SLOT_LEAD_MINUTES)
+        earliest = cutoff.time() if cutoff.date() == day else None
+        if cutoff.date() > day:
+            return []  # a antecedência já empurrou para depois da meia-noite
+
+    slots: list[dict] = []
+    cursor = datetime.combine(day, opens_at)
+    end = datetime.combine(day, closes_at)
+    step = timedelta(minutes=DELIVERY_SLOT_MINUTES)
+    while cursor + step <= end:
+        starts = cursor.time()
+        finishes = (cursor + step).time()
+        if earliest is None or starts >= earliest:
+            slots.append({
+                "ref": f"{_fmt_hhmm(starts)}-{_fmt_hhmm(finishes)}",
+                "label": f"{_fmt_hhmm(starts)} às {_fmt_hhmm(finishes)}",
+            })
+        cursor += step
+    return slots
+
+
 def closed_date_for(day: date, closed_dates: list | tuple | None) -> tuple[bool, str, str]:
     """Return whether ``day`` is covered by a closure exception."""
     for entry in closed_dates or []:
