@@ -6,7 +6,7 @@ import { makeProjection, makeSale, makeTabPayload } from "./_posSaleHarness";
 
 const { fetchMock } = vi.hoisted(() => ({ fetchMock: vi.fn() }));
 mockNuxtImport("$fetch", () => fetchMock);
-vi.mock("vue-sonner", () => ({ toast: { error: vi.fn(), success: vi.fn() } }));
+vi.mock("vue-sonner", () => ({ toast: { error: vi.fn(), success: vi.fn(), info: vi.fn(), warning: vi.fn() } }));
 
 function freeCartProjection() {
   return makeProjection({
@@ -121,6 +121,30 @@ describe("usePosSale — submitSale (fluxo em etapas)", () => {
     await h.sale.submitSale(); // prepara
     await h.sale.submitSale(); // fecha
     expect(h.sale.result.value?.nextUrl).toBe("http://gestor.test/PED-1");
+    h.handles.dispose();
+  });
+
+  it("congela o troco no result — o resetCart apagaria o troco computado", async () => {
+    const actionCall = saleRouter(null);
+    const h = saleReadyForCheckout(actionCall);
+    await h.sale.submitSale(); // prepara (review R$ 10,00)
+    h.sale.tenderAdd(2000); // cliente entregou R$ 20,00 em dinheiro
+    expect(h.sale.paymentChangeQ.value).toBe(1000);
+
+    await h.sale.submitSale(); // fecha
+
+    expect(h.sale.result.value?.changeQ).toBe(1000); // congelado no commit
+    expect(h.sale.paymentChangeQ.value).toBe(0); // o cart já resetou por baixo
+    h.handles.dispose();
+  });
+
+  it("venda exata não inventa troco no result", async () => {
+    const actionCall = saleRouter(null);
+    const h = saleReadyForCheckout(actionCall);
+    await h.sale.submitSale();
+    h.sale.tenderAdd(1000); // exato
+    await h.sale.submitSale();
+    expect(h.sale.result.value?.changeQ).toBe(0);
     h.handles.dispose();
   });
 });
@@ -285,6 +309,57 @@ describe("usePosSale — PIX polling pós-venda", () => {
     // 241 tentativas a 2,5s → passa do teto de 240 e desiste.
     await vi.advanceTimersByTimeAsync(241 * 2500);
     expect(h.sale.pixStatus.value).toBe("expired");
+    h.handles.dispose();
+  });
+
+  it("sair da tela de resultado com PIX aguardando vira chip e o polling SEGUE", async () => {
+    fetchMock.mockResolvedValue({}); // nunca resolve neste teste
+    const actionCall = saleRouter(pixProof);
+    const h = saleReadyForCheckout(actionCall);
+    await h.sale.submitSale();
+    await h.sale.submitSale();
+    expect(h.sale.pixStatus.value).toBe("polling");
+
+    h.sale.dismissResult(); // toque explícito no CTA
+
+    expect(h.sale.result.value).toBeNull();
+    expect(h.sale.pendingPixOrderRef.value).toBe("PED-1"); // prova não descartada
+    const before = fetchMock.mock.calls.length;
+    await vi.advanceTimersByTimeAsync(2500);
+    expect(fetchMock.mock.calls.length).toBeGreaterThan(before); // polling vivo
+    h.handles.dispose();
+  });
+
+  it("o chip pendente resolve em voz alta: confirmou → toast e chip sai", async () => {
+    fetchMock.mockResolvedValue({ is_paid: true });
+    const actionCall = saleRouter(pixProof);
+    const h = saleReadyForCheckout(actionCall);
+    await h.sale.submitSale();
+    await h.sale.submitSale();
+    h.sale.dismissResult();
+    vi.mocked(toast.success).mockClear();
+
+    await vi.advanceTimersByTimeAsync(2500);
+
+    expect(h.sale.pixStatus.value).toBe("paid");
+    expect(h.sale.pendingPixOrderRef.value).toBe("");
+    expect(vi.mocked(toast.success)).toHaveBeenCalledWith("PIX do pedido PED-1 confirmado.");
+    h.handles.dispose();
+  });
+
+  it("dismissResult sem PIX pendente encerra o polling e volta a 'idle'", async () => {
+    fetchMock.mockResolvedValue({ is_paid: true });
+    const actionCall = saleRouter(pixProof);
+    const h = saleReadyForCheckout(actionCall);
+    await h.sale.submitSale();
+    await h.sale.submitSale();
+    await vi.advanceTimersByTimeAsync(2500); // confirma antes de sair
+    expect(h.sale.pixStatus.value).toBe("paid");
+
+    h.sale.dismissResult();
+
+    expect(h.sale.pendingPixOrderRef.value).toBe(""); // nada pendente
+    expect(h.sale.pixStatus.value).toBe("idle");
     h.handles.dispose();
   });
 

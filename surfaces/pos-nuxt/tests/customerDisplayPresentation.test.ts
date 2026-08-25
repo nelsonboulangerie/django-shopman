@@ -6,13 +6,12 @@ import {
   buildCustomerDisplaySnapshot,
   type CustomerDisplayInputs,
   displayItemView,
-  displayItemsTotalQ,
   displayPhase,
   firstName,
   itemDiscountLabel,
 } from "~/presentation/customerDisplay";
 import type { PaymentProofView } from "~/presentation/payment";
-import type { PosReceiptSnapshot } from "~/presentation/receipt";
+import { cartNetTotalQ, type PosReceiptSnapshot } from "~/presentation/receipt";
 import type { POSCartItem, POSCheckoutOptionProjection, POSSaleReviewProjection } from "~/types/pos";
 import { formatBRL } from "~/utils/posIntent";
 
@@ -67,6 +66,11 @@ function pixProof(overrides: Partial<PaymentProofView> = {}): PaymentProofView {
   };
 }
 
+/** Resultado congelado do fechamento — o troco (`changeQ`) viaja dentro dele. */
+function res(payment: PaymentProofView | null, receiptSnap: PosReceiptSnapshot, changeQ = 0) {
+  return { payment, receipt: receiptSnap, changeQ };
+}
+
 function inputs(overrides: Partial<CustomerDisplayInputs> = {}): CustomerDisplayInputs {
   return {
     shopName: "Nelson Boulangerie",
@@ -75,7 +79,6 @@ function inputs(overrides: Partial<CustomerDisplayInputs> = {}): CustomerDisplay
     review: null,
     result: null,
     pixStatus: "idle",
-    resultChangeQ: 0,
     discountReasons: REASONS,
     ...overrides,
   };
@@ -120,13 +123,13 @@ describe("displayItemView — a linha que o cliente lê", () => {
   });
 });
 
-describe("displayItemsTotalQ — a mesma estimativa da tela de venda", () => {
+describe("cartNetTotalQ — a mesma estimativa da tela de venda", () => {
   it("soma as linhas líquidas", () => {
     const items = [
       item({ qty: 2, price_q: 500 }),
       item({ sku: "CAFE", qty: 1, price_q: 300, discount: { value: 10, reason: "cortesia" } }),
     ];
-    expect(displayItemsTotalQ(items)).toBe(1000 + 270);
+    expect(cartNetTotalQ(items)).toBe(1000 + 270);
   });
 });
 
@@ -141,19 +144,19 @@ describe("displayPhase — as transições que o cliente acompanha", () => {
     expect(displayPhase(inputs({ checkoutMode: true, items: [item()] }))).toBe("payment");
   });
   it("fechou em dinheiro: resultado direto (troco e obrigado)", () => {
-    const result = { payment: null, receipt: receipt() };
+    const result = res(null, receipt());
     expect(displayPhase(inputs({ result }))).toBe("result");
   });
   it("fechou em PIX: SEGUE em pagamento enquanto o QR aguarda", () => {
-    const result = { payment: pixProof(), receipt: receipt() };
+    const result = res(pixProof(), receipt());
     expect(displayPhase(inputs({ result, pixStatus: "polling" }))).toBe("payment");
   });
   it("PIX confirmado: vira resultado", () => {
-    const result = { payment: pixProof(), receipt: receipt() };
+    const result = res(pixProof(), receipt());
     expect(displayPhase(inputs({ result, pixStatus: "paid" }))).toBe("result");
   });
   it("PIX expirado: continua em pagamento (o atendente resolve na frente do cliente)", () => {
-    const result = { payment: pixProof(), receipt: receipt() };
+    const result = res(pixProof(), receipt());
     expect(displayPhase(inputs({ result, pixStatus: "expired" }))).toBe("payment");
   });
   it("a próxima venda derruba o resultado: comanda nova com itens volta a 'sale'", () => {
@@ -205,7 +208,7 @@ describe("buildCustomerDisplaySnapshot — o que viaja para a parede", () => {
 
   it("PIX aguardando: QR grande + total do gateway", () => {
     const snap = buildCustomerDisplaySnapshot(inputs({
-      result: { payment: pixProof({ amountDisplay: "R$ 42,00" }), receipt: receipt() },
+      result: res(pixProof({ amountDisplay: "R$ 42,00" }), receipt()),
       pixStatus: "polling",
     }));
     expect(snap.phase).toBe("payment");
@@ -215,7 +218,7 @@ describe("buildCustomerDisplaySnapshot — o que viaja para a parede", () => {
 
   it("PIX expirado: o estado é honesto", () => {
     const snap = buildCustomerDisplaySnapshot(inputs({
-      result: { payment: pixProof(), receipt: receipt() },
+      result: res(pixProof(), receipt()),
       pixStatus: "expired",
     }));
     expect(snap.pix?.status).toBe("expired");
@@ -223,8 +226,7 @@ describe("buildCustomerDisplaySnapshot — o que viaja para a parede", () => {
 
   it("resultado em dinheiro: troco congelado em destaque + obrigado com nome", () => {
     const snap = buildCustomerDisplaySnapshot(inputs({
-      result: { payment: null, receipt: receipt({ customerName: "Maria da Silva", orderRef: "PDV-042" }) },
-      resultChangeQ: 3370,
+      result: res(null, receipt({ customerName: "Maria da Silva", orderRef: "PDV-042" }), 3370),
     }));
     expect(snap.phase).toBe("result");
     expect(snap.changeDisplay).toBe(formatBRL(3370));
@@ -234,8 +236,7 @@ describe("buildCustomerDisplaySnapshot — o que viaja para a parede", () => {
 
   it("sem troco e sem cliente: obrigado simples, sem campos fantasmas", () => {
     const snap = buildCustomerDisplaySnapshot(inputs({
-      result: { payment: null, receipt: receipt() },
-      resultChangeQ: 0,
+      result: res(null, receipt()),
     }));
     expect(snap.changeDisplay).toBe("");
     expect(snap.customerFirstName).toBe("");

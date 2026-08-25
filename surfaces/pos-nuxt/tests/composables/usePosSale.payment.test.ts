@@ -1,9 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { nextTick } from "vue";
+import { toast } from "vue-sonner";
 
 import { makeProjection, makeSale } from "./_posSaleHarness";
 
 // O toast é efeito colateral do watcher de serverError — silenciamos.
-vi.mock("vue-sonner", () => ({ toast: { error: vi.fn(), success: vi.fn() } }));
+vi.mock("vue-sonner", () => ({ toast: { error: vi.fn(), success: vi.fn(), info: vi.fn(), warning: vi.fn() } }));
 
 // Projeção que dispensa comanda p/ usar o carrinho, isolando a matemática do
 // pagamento (sem o gate de associação de comanda no caminho).
@@ -44,11 +46,13 @@ describe("usePosSale — tenders (injeção de pagamento estilo Odoo)", () => {
     expect(sale.paymentRemainingQ.value).toBe(0);
   });
 
-  it("não adiciona tender quando o restante já é zero", () => {
+  it("não adiciona tender quando o restante já é zero — e DIZ o porquê", () => {
     const { sale } = h;
     sale.addTender("pix"); // cobre os R$ 10,00
-    sale.addTender("cash"); // restante 0 → no-op
+    vi.mocked(toast.info).mockClear();
+    sale.addTender("cash"); // restante 0 → no-op com micro-feedback
     expect(sale.cart.paymentTenders).toHaveLength(1);
+    expect(vi.mocked(toast.info)).toHaveBeenCalledWith("Total já coberto. Remova uma forma para trocar.");
   });
 
   it("numpad soma reais primeiro; a vírgula troca p/ centavos (≤2 casas)", () => {
@@ -137,5 +141,37 @@ describe("usePosSale — tenders (injeção de pagamento estilo Odoo)", () => {
     expect(sale.selectedTenderMethod.value).toBe("pix");
     sale.selectedTenderIndex.value = -1;
     expect(sale.selectedTenderMethod.value).toBe("");
+  });
+});
+
+describe("usePosSale — total interino do pagamento (nunca o bruto)", () => {
+  it("sem review, o total aplica os descontos de linha (estimativa líquida)", () => {
+    const h = saleWithTotal1000();
+    h.sale.setLineDiscount("PAO", 10, "cortesia"); // 2 × 500 − 2 × 50
+    expect(h.sale.paymentTotalQ.value).toBe(900);
+    h.handles.dispose();
+  });
+
+  it("review invalidada DURANTE o checkout retém o último total revisado", async () => {
+    const h = saleWithTotal1000();
+    h.sale.checkoutMode.value = true;
+    h.sale.review.value = { total_q: 850, total_display: "R$ 8,50" } as never;
+    await nextTick(); // o watcher retém o total revisado
+    h.sale.review.value = null; // desconto/entrega mudou → auto re-review em trânsito
+    await nextTick();
+    expect(h.sale.paymentTotalQ.value).toBe(850); // retido, não caiu no bruto
+    h.handles.dispose();
+  });
+
+  it("sair do checkout zera a retenção (o carrinho volta a mandar)", async () => {
+    const h = saleWithTotal1000();
+    h.sale.checkoutMode.value = true;
+    h.sale.review.value = { total_q: 850, total_display: "R$ 8,50" } as never;
+    await nextTick();
+    h.sale.review.value = null;
+    h.sale.checkoutMode.value = false; // voltou à venda: itens podem mudar
+    await nextTick();
+    expect(h.sale.paymentTotalQ.value).toBe(1000); // estimativa local de novo
+    h.handles.dispose();
   });
 });

@@ -4,7 +4,7 @@
 // frozen record of what was sold — never recomputed from live state. Formatting
 // only; no policy. The print transport (kiosk window.print → ESC-POS / network
 // ePOS on real hardware) is validated separately on a device.
-import type { POSPaymentMethodProjection } from "~/types/pos";
+import type { POSCartItem, POSPaymentMethodProjection } from "~/types/pos";
 import { formatBRL } from "~/utils/posIntent";
 import { methodLabel } from "~/presentation/payment";
 
@@ -46,6 +46,24 @@ export function receiptLineTotalQ(item: PosReceiptItem): number {
   if (!item.discountPct) return gross;
   const perUnit = Math.min(item.price_q, Math.round((item.price_q * item.discountPct) / 100));
   return Math.max(0, gross - perUnit * item.qty);
+}
+
+/**
+ * Total líquido local do carrinho VIVO (descontos de linha aplicados) — a mesma
+ * conta do "Total parcial" do painel da comanda e da tela do cliente. Dona
+ * única da linha: `receiptLineTotalQ`. Estimativa de UX; a review do
+ * orquestrador continua sendo o total autoritativo.
+ */
+export function cartNetTotalQ(items: POSCartItem[]): number {
+  return items.reduce(
+    (sum, item) => sum + receiptLineTotalQ({
+      name: item.name,
+      qty: item.qty,
+      price_q: item.price_q,
+      discountPct: item.discount?.value || 0,
+    }),
+    0,
+  );
 }
 
 export function receiptLines(snap: PosReceiptSnapshot): ReceiptLineView[] {

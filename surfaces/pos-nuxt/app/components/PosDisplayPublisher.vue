@@ -5,7 +5,11 @@
 // BroadcastChannel. Autocontido de propósito: a integração na tela de venda é
 // uma const + uma linha de template, para não disputar `pages/index.vue` com
 // outras frentes. Não renderiza nada.
-import { computed, ref, watch } from "vue";
+//
+// O troco do fechamento já chega CONGELADO dentro do `result` (`changeQ`,
+// capturado pelo usePosSale no instante do commit): operador, display e recibo
+// leem da mesma fonte — este publicador não precisa congelar nada por conta.
+import { computed } from "vue";
 
 import type { PosDisplaySources } from "~/types/customerDisplay";
 import { buildCustomerDisplaySnapshot } from "~/presentation/customerDisplay";
@@ -15,18 +19,6 @@ const props = defineProps<{ sources: PosDisplaySources }>();
 // Getters estáveis: lidos uma vez; a reatividade vem do que eles LEEM.
 const s = props.sources;
 
-// O troco é congelado NO INSTANTE em que o resultado nasce (flush sync): logo
-// depois o submitSale reseta o cart e o troco computado volta a zero — sem a
-// captura síncrona, o cliente nunca veria o troco dele na tela.
-const resultChangeQ = ref(0);
-watch(
-  () => s.result(),
-  (result) => {
-    resultChangeQ.value = result ? Math.max(0, s.paymentChangeQ()) : 0;
-  },
-  { flush: "sync" },
-);
-
 const snapshot = computed(() => buildCustomerDisplaySnapshot({
   shopName: s.pos()?.shop_name || "",
   checkoutMode: s.checkoutMode(),
@@ -34,7 +26,6 @@ const snapshot = computed(() => buildCustomerDisplaySnapshot({
   review: s.review(),
   result: s.result(),
   pixStatus: s.pixStatus(),
-  resultChangeQ: resultChangeQ.value,
   discountReasons: s.pos()?.checkout?.discount_reasons || [],
 }));
 
