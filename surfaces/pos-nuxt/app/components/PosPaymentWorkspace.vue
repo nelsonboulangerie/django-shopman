@@ -331,14 +331,6 @@ const payState = computed<"idle" | "short" | "change" | "ready">(() => {
   return "idle";
 });
 
-// No chip, o BAIRRO diz mais que a palavra "entrega" — é o que o operador
-// confere de relance quando o cliente muda de ideia no meio do pagamento.
-const fulfillmentChipLabel = computed(() => {
-  const base = props.fulfillmentOptions.find((o) => o.ref === props.fulfillmentType)?.label || props.fulfillmentType;
-  if (props.fulfillmentType !== "delivery") return base;
-  const bairro = props.deliveryNeighborhood.trim() || props.deliveryAddressStructured?.neighborhood?.trim() || "";
-  return bairro ? `${base} · ${bairro}` : base;
-});
 const discountValueNum = computed(
   () => Number(String(props.discountValue).replace(",", ".").replace(/[^0-9.]/g, "")) || 0,
 );
@@ -346,51 +338,6 @@ const hasDiscount = computed(() => discountValueNum.value > 0);
 const discountSummary = computed(() =>
   props.discountType === "fixed" ? `R$ ${props.discountValue}` : `${props.discountValue}%`,
 );
-const customerSet = computed(() => Boolean(props.customerName.trim() || props.customerPhone.trim()));
-
-// OS TRÊS FATOS decididos antes de pagar — cliente, recebimento e desconto —
-// numa lista só, porque a tela os mostra em DUAS formas conforme a largura: uma
-// linha de chips na coluna do instrumento (até `lg`), e as três primeiras
-// entradas da COLUNA DE CONTEXTO a partir de `xl`. Duas marcações para os
-// mesmos três botões seria duplicar rótulo, atalho e regra de "está preenchido";
-// aqui a fonte é uma e cada forma só escolhe as classes.
-const contextEntries = computed(() => {
-  const entries = [
-    {
-      key: "customer",
-      icon: "lucide:user-round",
-      label: "Cliente",
-      value: props.customerName.trim() || props.customerPhone.trim() || "Sem cliente",
-      chip: props.customerName.trim() || "Sem cliente",
-      set: customerSet.value,
-      kbd: "F6",
-      open: () => { customerSheetOpen.value = true; },
-    },
-    {
-      key: "fulfillment",
-      icon: props.fulfillmentType === "delivery" ? "lucide:bike" : "lucide:store",
-      label: "Recebimento",
-      value: fulfillmentChipLabel.value,
-      chip: fulfillmentChipLabel.value,
-      set: props.fulfillmentType === "delivery",
-      kbd: "F7",
-      open: () => { fulfillmentSheetOpen.value = true; },
-    },
-  ];
-  if (props.discountTypes.length) {
-    entries.push({
-      key: "discount",
-      icon: "lucide:tag",
-      label: "Desconto",
-      value: hasDiscount.value ? discountSummary.value : "Sem desconto",
-      chip: hasDiscount.value ? discountSummary.value : "Sem desconto",
-      set: hasDiscount.value,
-      kbd: "F8",
-      open: () => { discountSheetOpen.value = true; },
-    });
-  }
-  return entries;
-});
 
 // O RESUMO DO PEDIDO — o que está sendo cobrado. No checkout o operador via só
 // o total: um número sem os itens que o compõem, justo na hora em que o cliente
@@ -533,9 +480,11 @@ defineExpose({
          janela — músculo de balcão depende de a tecla estar sempre no mesmo
          lugar. O VALOR fica com o resto, que é o que deve respirar.
 
-         A terceira coluna aparece a partir de `xl`; abaixo disso os três fatos
-         voltam para a linha de chips dentro do instrumento (mesma lista,
-         `contextEntries`). -->
+         A terceira coluna aparece a partir de `xl` e carrega o RESUMO DO PEDIDO.
+         Cliente e recebimento saíram daqui: são fatos do PEDIDO, decididos na
+         abertura do atendimento, e agora moram na barra do topo, que segue
+         visível durante o checkout. Perguntar de novo aqui era ter o mesmo botão
+         em dois lugares da mesma tela. -->
     <div class="flex min-h-0 w-full flex-1 flex-col gap-6 overflow-hidden md:flex-row">
 
       <!-- LEFT · coluna de trabalho, agrupada por SEMÂNTICA (Hyper Focus: chrome
@@ -559,28 +508,27 @@ defineExpose({
              baixo da dobra, justo as perguntas que se faz com o cliente na
              frente. Aqui custam 36px e continuam mostrando o ESTADO: ver que é
              entrega não exige abrir nada. -->
-        <!-- A LINHA DE CHIPS só existe abaixo de `xl`, onde não há coluna de
-             contexto. A partir daí os mesmos três fatos aparecem lá, com espaço
-             para dizer o rótulo junto com o valor. Um botão por fato, nunca dois
-             na mesma tela. -->
-        <div class="flex flex-wrap items-center gap-1.5 xl:hidden">
-          <button
-            v-for="entry in contextEntries"
-            :key="entry.key"
-            :data-context-entry="entry.key"
-            type="button"
-            class="flex h-9 min-w-0 flex-1 items-center gap-1.5 rounded-md border px-2.5 text-sm font-medium transition hover:bg-accent active:translate-y-px"
-            :class="entry.set ? 'border-primary bg-primary/5' : 'bg-card text-muted-foreground'"
-            @click="entry.open()"
-          >
-            <Icon :name="entry.icon" class="size-4 shrink-0" />
-            <span class="min-w-0 truncate">{{ entry.chip }}</span>
-            <kbd class="ml-auto shrink-0 rounded border bg-muted px-1 py-0.5 font-mono text-xs font-medium text-muted-foreground" aria-hidden="true">{{ entry.kbd }}</kbd>
-          </button>
-        </div>
-
         <section class="mt-auto grid gap-1.5" aria-label="Forma de pagamento">
           <h3 class="px-1 text-xs font-medium uppercase tracking-wide text-muted-foreground">Forma de pagamento</h3>
+
+          <!-- DESCONTO — vizinho do pagamento, não do cliente. Ele é uma operação
+               sobre o VALOR que está sendo cobrado, e é aqui que o gerente é
+               chamado para autorizá-lo.
+               Fica ACIMA das formas, e não colado no "Exato"/"Limpar": aqueles
+               dois agem sobre a LINHA DE PAGAMENTO selecionada, e este age sobre
+               a VENDA. Três botões lado a lado com dois sujeitos diferentes é o
+               clique errado do balcão cheio. -->
+          <button
+            v-if="discountTypes.length"
+            type="button"
+            class="flex h-11 items-center gap-2 rounded-md border px-3 text-sm font-medium transition hover:bg-accent active:translate-y-px"
+            :class="hasDiscount ? 'border-primary bg-primary/5' : 'bg-card text-muted-foreground'"
+            @click="discountSheetOpen = true"
+          >
+            <Icon name="lucide:tag" class="size-4 shrink-0" />
+            <span class="min-w-0 truncate">{{ hasDiscount ? `Desconto ${discountSummary}` : "Sem desconto" }}</span>
+            <kbd class="ml-auto shrink-0 rounded border bg-muted px-1 py-0.5 font-mono text-xs font-medium text-muted-foreground" aria-hidden="true">F8</kbd>
+          </button>
           <!-- ONDE o dinheiro é recebido é FORMA DE PAGAMENTO, não contexto da
                venda: veio da seção "Recebimento", que subiu inteira para a barra
                de contexto. Só aparece quando há mais de uma opção. -->
@@ -947,27 +895,6 @@ defineExpose({
            PEDIDO. Largura fixa de 360px, igual à do carrinho na tela de venda:
            é a mesma lista, no mesmo lugar da tela, com a mesma medida. -->
       <div class="order-3 hidden min-h-0 w-[360px] shrink-0 flex-col gap-3 overflow-y-auto md:order-none xl:flex">
-        <section class="grid gap-1.5" aria-label="Contexto da venda">
-          <div class="divide-y rounded-md border bg-card">
-            <button
-              v-for="entry in contextEntries"
-              :key="entry.key"
-              :data-context-entry="entry.key"
-              type="button"
-              class="flex h-11 w-full items-center gap-2 px-3 text-left transition first:rounded-t-md last:rounded-b-md hover:bg-accent"
-              @click="entry.open()"
-            >
-              <Icon :name="entry.icon" class="size-4 shrink-0" :class="entry.set ? 'text-primary' : 'text-muted-foreground'" />
-              <span class="shrink-0 text-xs font-medium uppercase tracking-wide text-muted-foreground">{{ entry.label }}</span>
-              <span
-                class="min-w-0 flex-1 truncate text-right text-sm font-medium"
-                :class="entry.set ? 'text-foreground' : 'text-muted-foreground'"
-              >{{ entry.value }}</span>
-              <kbd class="shrink-0 rounded border bg-muted px-1 py-0.5 font-mono text-xs font-medium text-muted-foreground" aria-hidden="true">{{ entry.kbd }}</kbd>
-            </button>
-          </div>
-        </section>
-
         <!-- RESUMO DO PEDIDO — a lista, e o que a soma dela vira. Sem stepper e
              sem lixeira: aqui não se edita o pedido (para isso existe o Voltar),
              só se confere. Rola quando a comanda é grande; subtotal, desconto e

@@ -20,6 +20,9 @@ const props = defineProps<{
   searchBusy: boolean;
   /** O cliente associado foi criado agora (resolve just-in-time). */
   customerResolvedNew?: boolean;
+  /** No checkout a barra vira só LEITURA dos fatos do pedido: liberar a comanda
+   *  e renomeá-la no meio de um pagamento é ação que não pertence ali. */
+  readOnly?: boolean;
   /** Como o cliente recebe: decidido na abertura, revisto de relance aqui. */
   fulfillmentType: "pickup" | "delivery";
   /** O rótulo já resolvido ("Entrega · Centro"), que a página monta. */
@@ -42,6 +45,10 @@ const emit = defineEmits<{
   applyCustomerFavorite: [];
   repeatCustomerLastOrder: [];
   openFulfillment: [];
+  /** Só em `readOnly` (checkout): quem tem o modal do cliente ali é a tela de
+   *  pagamento — a dela carrega a parte fiscal. Dois modais de Cliente na mesma
+   *  tela seria a duplicação que esta barra veio justamente desfazer. */
+  openCustomer: [];
 }>();
 
 const renaming = ref(false);
@@ -107,7 +114,7 @@ function runClear() {
       </UiButton>
     </div>
     <button
-      v-else-if="hasOpenTab && canRename"
+      v-else-if="hasOpenTab && canRename && !readOnly"
       type="button"
       class="group flex min-w-0 items-center gap-1.5"
       aria-label="Renomear comanda"
@@ -125,7 +132,7 @@ function runClear() {
       type="button"
       class="flex h-9 min-w-0 shrink items-center gap-1.5 rounded-full border border-border px-3 text-sm transition hover:bg-accent"
       aria-haspopup="dialog"
-      @click="customerSheetOpen = true"
+      @click="readOnly ? $emit('openCustomer') : (customerSheetOpen = true)"
     >
       <Icon name="lucide:user-round" class="size-4 shrink-0 text-muted-foreground" />
       <span v-if="customerName" class="min-w-0 max-w-40 truncate font-medium">{{ customerName }}</span>
@@ -150,7 +157,7 @@ function runClear() {
 
     <!-- release tab (pushed to the right of the context bar) -->
     <UiButton
-      v-if="hasOpenTab"
+      v-if="hasOpenTab && !readOnly"
       variant="ghost"
       size="icon-sm"
       class="ml-auto shrink-0 text-muted-foreground"

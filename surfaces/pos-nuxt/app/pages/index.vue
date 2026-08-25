@@ -354,6 +354,13 @@ const showFulfillmentPrompt = computed(() =>
   && cart.items.length === 0
   && fulfillmentAskedFor.value !== cart.tabSessionKey,
 );
+// O chip da barra abre a caixa de quem é dono dela na tela atual: no checkout, a
+// da tela de pagamento (mesmo componente, outro estado) — assim F7 e o chip
+// nunca abrem duas caixas diferentes.
+function openFulfillmentHere() {
+  if (checkoutMode.value) paymentWorkspaceRef.value?.openFulfillment();
+  else fulfillmentSheetOpen.value = true;
+}
 function markFulfillmentAsked() {
   fulfillmentAskedFor.value = cart.tabSessionKey || "-";
 }
@@ -548,10 +555,11 @@ function onGlobalKeydown(event: KeyboardEvent) {
       return;
     // F7/F8 completam o trio do contexto da venda, ao lado do F6 do cliente —
     // os três chips da linha de contexto do checkout, na mesma ordem.
+    // F7 vale na venda TAMBÉM: recebimento deixou de ser assunto do checkout.
     case "F7":
-      if (!checkoutMode.value) return;
+      if (!inSaleView.value) return;
       event.preventDefault();
-      paymentWorkspaceRef.value?.openFulfillment();
+      openFulfillmentHere();
       return;
     case "F8":
       if (!checkoutMode.value) return;
@@ -629,8 +637,12 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onGlobalKeydown));
         >
           <Icon name="lucide:cloud-off" class="size-3.5" /> Não salvo
         </span>
+        <!-- A BARRA CARREGA OS FATOS DO PEDIDO — cliente e recebimento — e segue
+             carregando durante o checkout. Antes ela sumia ali, e a informação
+             tinha de ser reconstruída dentro da coluna de trabalho do pagamento;
+             agora ela acompanha a venda inteira, do primeiro item ao troco. -->
         <PosTabHeader
-          v-if="inSaleView && !checkoutMode"
+          v-if="inSaleView"
           ref="tabHeaderRef"
           v-model:customer-name="cart.customerName"
           v-model:customer-phone="cart.customerPhone"
@@ -645,6 +657,7 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onGlobalKeydown));
           :search-results="customerSearchResults"
           :search-busy="customerSearchBusy"
           :customer-resolved-new="customerResolvedNew"
+          :read-only="checkoutMode"
           :fulfillment-type="cart.fulfillmentType"
           :fulfillment-label="fulfillmentChipLabel"
           :loading="busy"
@@ -657,7 +670,8 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onGlobalKeydown));
           @select-result="selectCustomerResult"
           @apply-customer-favorite="applyCustomerFavorite"
           @repeat-customer-last-order="repeatCustomerLastOrder"
-          @open-fulfillment="fulfillmentSheetOpen = true"
+          @open-fulfillment="openFulfillmentHere"
+          @open-customer="paymentWorkspaceRef?.openCustomer()"
         />
         <h1 v-else class="min-w-0 truncate text-lg font-semibold leading-tight tracking-tight">{{ screenTitle }}</h1>
         <!-- PIX pendente que saiu da tela de resultado: chip compacto, com o
