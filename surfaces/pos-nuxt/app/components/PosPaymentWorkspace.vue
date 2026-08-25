@@ -208,6 +208,21 @@ watch(customerSheetOpen, async (open) => {
 });
 const discountSheetOpen = ref(false);
 
+// Foco automático no modal de Recebimento: com entrega selecionada, quem recebe
+// o foco é a busca de endereço (o campo que o operador veio preencher) — tanto
+// na abertura do modal quanto ao alternar retirada→entrega com ele aberto.
+const addressAutocompleteRef = ref<{ focus: () => void } | null>(null);
+function onFulfillmentOpenAutoFocus(event: Event) {
+  if (props.fulfillmentType !== "delivery") return; // retirada: foco padrão do diálogo
+  event.preventDefault();
+  void nextTick(() => addressAutocompleteRef.value?.focus());
+}
+watch(() => props.fulfillmentType, async (type) => {
+  if (!fulfillmentSheetOpen.value || type !== "delivery" || !import.meta.client) return;
+  await nextTick();
+  addressAutocompleteRef.value?.focus();
+});
+
 // The instrument (right zone): the numpad edits the SELECTED tender, so it lights
 // up once a tender exists; cédulas are the cash nuance, offered only when the
 // selected tender is cash. BR notes (2/5/10/20/50/100) — the first tap after
@@ -587,7 +602,7 @@ defineExpose({
 
   <!-- MODAL: Recebimento (retirada / entrega) -->
   <UiDialog v-model:open="fulfillmentSheetOpen">
-    <UiDialogContent class="max-h-[85vh] overflow-y-auto sm:max-w-lg">
+    <UiDialogContent class="max-h-[85vh] overflow-y-auto sm:max-w-lg" @open-auto-focus="onFulfillmentOpenAutoFocus">
       <UiDialogHeader>
         <UiDialogTitle>Recebimento</UiDialogTitle>
         <UiDialogDescription>Como o cliente recebe o pedido.</UiDialogDescription>
@@ -626,6 +641,7 @@ defineExpose({
             <label class="grid gap-1 text-sm">
               <span class="font-medium text-muted-foreground">Endereço</span>
               <PosAddressAutocomplete
+                ref="addressAutocompleteRef"
                 :model-value="deliveryAddress"
                 :capability="addressAutocomplete"
                 @update:model-value="$emit('update:deliveryAddress', String($event || ''))"
