@@ -453,9 +453,17 @@ function onAddressSelected(address: StructuredAddressProjection) {
 // Atalhos do shell (pages/index.vue): Enter valida pelo MESMO caminho do clique
 // (passa pela porta da autorização gerencial, nunca por fora dela); F6 abre o
 // modal de cliente deste checkout.
+// A BARRA DE CONTEXTO (topo, em `pages/index.vue`) é quem abre estes três agora.
+// Eles saíram da coluna de trabalho porque não são instrumento: quem compra,
+// como recebe e se tem desconto são fatos da VENDA, decididos antes, revisados
+// de relance. Ficavam aqui empurrando a Nota fiscal para baixo da dobra — as
+// perguntas que se faz com o cliente na frente. Os diálogos continuam morando
+// neste componente (é ele que tem o estado); só o gatilho subiu.
 defineExpose({
   validate: () => { if (!ctaDisabled.value) onCta(); },
   openCustomer: () => { customerSheetOpen.value = true; },
+  openFulfillment: () => { fulfillmentSheetOpen.value = true; },
+  openDiscount: () => { discountSheetOpen.value = true; },
 });
 </script>
 
@@ -487,48 +495,16 @@ defineExpose({
            da tela num monitor baixo, e conteúdo cortado sem rolagem é conteúdo
            inalcançável. -->
       <div class="order-2 flex min-h-0 flex-col gap-3 overflow-y-auto md:order-none">
-        <!-- VENDA — quem compra e a que preço -->
-        <section class="grid gap-1.5" aria-label="Venda">
-          <h3 class="px-1 text-xs font-medium uppercase tracking-wide text-muted-foreground">Venda</h3>
-          <div class="grid grid-cols-2 gap-1.5">
+        <!-- PAGAMENTO — o instrumento: métodos (tap = lança o que falta na forma)
+             + teclado de valor. Última seção de propósito: desagua no Validar. -->
+        <section class="mt-auto grid gap-1.5" aria-label="Forma de pagamento">
+          <h3 class="px-1 text-xs font-medium uppercase tracking-wide text-muted-foreground">Forma de pagamento</h3>
+          <!-- ONDE o dinheiro é recebido é FORMA DE PAGAMENTO, não contexto da
+               venda: veio da seção "Recebimento", que subiu inteira para a barra
+               de contexto. Só aparece quando há mais de uma opção. -->
+          <div v-if="deliveryCollections.length > 1" class="grid grid-cols-2 gap-1.5">
             <button
-              ref="customerButtonRef"
-              type="button"
-              class="flex h-11 items-center justify-center gap-2 rounded-md border bg-card px-3 text-sm font-medium transition hover:bg-accent active:translate-y-px"
-              :class="customerSet ? 'border-primary bg-primary/5' : ''"
-              @click="customerSheetOpen = true"
-            >
-              <Icon name="lucide:user-round" class="size-4 text-muted-foreground" />
-              <span class="min-w-0 truncate">{{ customerName || "Cliente" }}</span>
-              <kbd class="rounded border bg-muted px-1.5 py-0.5 font-mono text-xs font-medium text-muted-foreground" aria-hidden="true">F6</kbd>
-            </button>
-            <button
-              v-if="discountTypes.length"
-              type="button"
-              class="flex h-11 items-center justify-center gap-2 rounded-md border bg-card px-3 text-sm font-medium transition hover:bg-accent active:translate-y-px"
-              :class="hasDiscount ? 'border-primary bg-primary/5' : ''"
-              @click="discountSheetOpen = true"
-            >
-              <Icon name="lucide:tag" class="size-4" :class="hasDiscount ? 'text-foreground' : 'text-muted-foreground'" />
-              <span class="min-w-0 truncate">{{ hasDiscount ? `Desconto ${discountSummary}` : "Desconto" }}</span>
-            </button>
-          </div>
-        </section>
-
-        <!-- RECEBIMENTO — como o pedido chega e onde o dinheiro é recebido -->
-        <section class="grid gap-1.5" aria-label="Recebimento">
-          <h3 class="px-1 text-xs font-medium uppercase tracking-wide text-muted-foreground">Recebimento</h3>
-          <div class="grid grid-cols-2 gap-1.5">
-            <button
-              type="button"
-              class="col-span-2 flex h-11 items-center justify-center gap-2 rounded-md border bg-card px-3 text-sm font-medium transition hover:bg-accent active:translate-y-px"
-              @click="fulfillmentSheetOpen = true"
-            >
-              <Icon :name="fulfillmentType === 'delivery' ? 'lucide:bike' : 'lucide:store'" class="size-4 text-muted-foreground" />
-              <span class="min-w-0 truncate">{{ fulfillmentLabel }}</span>
-            </button>
-            <button
-              v-for="collection in (deliveryCollections.length > 1 ? deliveryCollections : [])"
+              v-for="collection in deliveryCollections"
               :key="collection.ref"
               type="button"
               class="flex h-11 items-center justify-center gap-2 rounded-md border bg-card px-3 text-sm font-medium transition hover:bg-accent active:translate-y-px"
@@ -564,12 +540,7 @@ defineExpose({
               O entregador sai com o troco separado.
             </span>
           </label>
-        </section>
 
-        <!-- PAGAMENTO — o instrumento: métodos (tap = lança o que falta na forma)
-             + teclado de valor. Última seção de propósito: desagua no Validar. -->
-        <section class="mt-auto grid gap-1.5" aria-label="Pagamento">
-          <h3 class="px-1 text-xs font-medium uppercase tracking-wide text-muted-foreground">Pagamento</h3>
           <div class="flex flex-col gap-1.5">
             <button
               v-for="method in injectableMethods"

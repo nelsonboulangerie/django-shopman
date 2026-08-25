@@ -104,13 +104,17 @@ describe("PosPaymentWorkspace — instrumento de pagamento", () => {
 });
 
 describe("PosPaymentWorkspace — seções semânticas da coluna de trabalho", () => {
-  it("agrupa em Venda / Recebimento / Pagamento, nesta ordem", async () => {
+  it("a coluna é só INSTRUMENTO: forma de pagamento e nota fiscal", async () => {
+    // Cliente, recebimento e desconto saíram daqui para a barra de contexto do
+    // topo: são fatos da venda, decididos antes e revisados de relance, e aqui
+    // empurravam a Nota fiscal para baixo da dobra — as perguntas que se faz com
+    // o cliente na frente. Odoo e Square fazem o mesmo corte.
     const wrapper = await mountSuspended(PosPaymentWorkspace, { props: props() });
     const sections = wrapper.findAll("section[aria-label]").map((s) => s.attributes("aria-label"));
-    expect(sections).toEqual(["Venda", "Recebimento", "Pagamento"]);
+    expect(sections).toEqual(["Forma de pagamento"]);
   });
 
-  it("o troco-para da entrega mora no Recebimento e avisa quando não cobre o total", async () => {
+  it("o troco-para da entrega mora na forma de pagamento e avisa quando não cobre o total", async () => {
     const wrapper = await mountSuspended(PosPaymentWorkspace, {
       props: props({
         fulfillmentType: "delivery",
@@ -119,7 +123,8 @@ describe("PosPaymentWorkspace — seções semânticas da coluna de trabalho", (
         paymentTotalQ: 1000,
       }),
     });
-    const receiving = wrapper.find('section[aria-label="Recebimento"]');
+    // ONDE se recebe é forma de pagamento, não contexto da venda.
+    const receiving = wrapper.find('section[aria-label="Forma de pagamento"]');
     // Rótulo diz o MOMENTO: "troco" sozinho confundia com o troco do numpad,
     // que é dinheiro na mão agora — este é o pagamento na porta, depois.
     expect(receiving.text()).toContain("Com quanto vai pagar na porta?");
