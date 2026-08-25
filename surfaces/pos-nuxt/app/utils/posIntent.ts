@@ -126,7 +126,13 @@ export function buildPosSaleIntent(
     };
     if (state.deliveryDate.trim()) payload.delivery_date = state.deliveryDate.trim();
     if (state.deliveryTimeSlot.trim()) payload.delivery_time_slot = state.deliveryTimeSlot.trim();
-    payload.delivery_fee_q = Math.max(0, state.deliveryFeeQ || 0);
+    // A TAXA não viaja daqui. Quem a resolve é o motor de entrega do servidor
+    // (zona de CEP → faixa de distância → frete grátis por valor), o mesmo que a
+    // loja usa. O que sobe é só a EXCEÇÃO que o operador assumiu — e ela só
+    // existe quando ele a declara: `null` significa "resolva", nunca "zero".
+    if (state.deliveryFeeOverrideQ !== null) {
+      payload.delivery_fee_override_q = Math.max(0, state.deliveryFeeOverrideQ);
+    }
   }
 
   if (state.orderNotes.trim()) payload.order_notes = state.orderNotes.trim();

@@ -275,6 +275,12 @@ def _pos_sale_review_payload(review) -> dict:
         "receipt_channels": list(review.receipt_channels),
         "issue_fiscal_document": review.issue_fiscal_document,
         "warnings": list(review.warnings),
+        # Entrega: a taxa vem RESOLVIDA (com a origem, para a tela se explicar) e
+        # os horários vêm do expediente do dia. A tela pergunta; não inventa.
+        "delivery_fee_source": review.delivery_fee_source,
+        "delivery_distance_km": review.delivery_distance_km,
+        "delivery_date": review.delivery_date,
+        "delivery_slots": list(review.delivery_slots),
     }
 
 

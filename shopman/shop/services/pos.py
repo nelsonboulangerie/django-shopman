@@ -75,6 +75,18 @@ class PosSaleReview:
     # outro, e o gerente autorizava sem saber o que estava autorizando.
     approval_reasons: tuple[str, ...] = ()
     warnings: tuple[dict, ...] = ()
+    # ENTREGA — o que a tela precisa para PERGUNTAR, em vez de pedir que o
+    # operador invente. A taxa vem resolvida (ver `_resolve_delivery_fee`); os
+    # horários são as janelas de meia hora que o expediente do dia comporta.
+    #: "" · "zone" · "distance" · "default" · "manual" · "blocked"
+    delivery_fee_source: str = ""
+    delivery_distance_km: float | None = None
+    #: A data que o servidor usou — em branco no pedido, é HOJE (o relógio da
+    #: loja, não o do dispositivo do balcão).
+    delivery_date: str = ""
+    #: ``({"ref": "14:00-14:30", "label": "14:00 às 14:30"}, …)``. Vazio = não há
+    #: janela combinável nesse dia (fechado, feriado, ou o expediente já acabou).
+    delivery_slots: tuple[dict, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -237,6 +249,7 @@ def close_sale(
     channel, config = _channel_and_config(channel_ref)
     derive_price_overrides(payload, channel=channel)
     validate_manager_approval(payload, operator_username=operator_username)
+    _validate_fiscal_delivery_fee(payload)
     _validate_payment_completion(payload)
     _require_house_account_if_on_account(
         payload,
@@ -519,7 +532,9 @@ def review_sale(
     payment_collection = _payload_payment_collection(payload, fulfillment_type)
     subtotal_q = _payload_subtotal_q(payload)
     discount_q = _payload_discount_q(payload)
-    delivery_fee_q = _payload_delivery_fee_q(payload)
+    delivery = _resolve_delivery_fee(payload)
+    delivery_fee_q = delivery.fee_q
+    delivery_day, delivery_slots = _delivery_review_context(payload)
     total_q = _payload_total_q(payload)
     tenders = _payload_tenders(
         payload,
@@ -537,6 +552,19 @@ def review_sale(
     tendered_amount_q = _int_q(payload.get("tendered_amount_q"))
     threshold_q = discount_approval_threshold_q()
     warnings: list[dict] = []
+    # Fora da área é fato do ENDEREÇO, e o balcão precisa saber antes de
+    # prometer a entrega — não bloqueia (o combinado da porta é do operador),
+    # mas nunca acontece calado.
+    if delivery.blocked:
+        distancia = f" ({delivery.distance_km:g} km)" if delivery.distance_km is not None else ""
+        warnings.append({
+            "code": "delivery_out_of_area",
+            "field": "delivery_address",
+            "message": (
+                f"Este endereço está fora da área de entrega{distancia}. "
+                "Confira o combinado antes de finalizar."
+            ),
+        })
     # Excesso que NÃO é dinheiro não vira troco (ver `change_q`); avisa para o
     # operador corrigir a linha antes de finalizar, em vez de descobrir depois.
     non_cash_excess_q = max(0, tender_total_q - total_q) - min(
@@ -647,7 +675,36 @@ def review_sale(
         issue_fiscal_document=bool(payload.get("issue_fiscal_document")),
         approval_reasons=tuple(approval_reasons),
         warnings=tuple(warnings),
+        delivery_fee_source=delivery.source,
+        delivery_distance_km=delivery.distance_km,
+        delivery_date=delivery_day.isoformat() if delivery_day else "",
+        delivery_slots=delivery_slots,
     )
+
+
+def _delivery_review_context(payload: dict):
+    """A data e as janelas que a tela vai oferecer para esta entrega.
+
+    Data em branco no pedido é HOJE — e hoje é o dia da LOJA, lido do relógio do
+    servidor. Deixar o dispositivo do balcão decidir parecia inofensivo até se
+    lembrar de que um tablet com fuso errado agenda a entrega para ontem.
+    """
+    from datetime import date as _date
+
+    from shopman.shop.services import business_calendar
+
+    if _payload_fulfillment_type(payload) != "delivery":
+        return None, ()
+
+    raw = str(payload.get("delivery_date") or "").strip()
+    if raw:
+        try:
+            day = _date.fromisoformat(raw)
+        except ValueError:
+            return None, ()
+    else:
+        day = timezone.localdate()
+    return day, tuple(business_calendar.delivery_slots_for(day))
 
 
 def open_pos_tab(
@@ -1386,7 +1443,9 @@ def build_session_ops(payload: dict, operator_username: str) -> list[dict]:
         ops.append({"op": "set_data", "path": "order_notes", "value": order_notes})
     if fulfillment_type == "delivery":
         _append_delivery_ops(ops, payload)
-        delivery_fee_q = _int_q(payload.get("delivery_fee_q"))
+        # A LINHA é a cobrança (``Order.total_q`` é a soma das linhas), então ela
+        # nasce da taxa RESOLVIDA — a mesma que a review mostrou ao operador.
+        delivery_fee_q = _payload_delivery_fee_q(payload)
         if delivery_fee_q > 0:
             ops.append({
                 "op": "add_line",
@@ -1699,6 +1758,7 @@ def _replace_session_ops(session: Session, payload: dict, operator_username: str
         {"op": "set_data", "path": "delivery_date", "value": ""},
         {"op": "set_data", "path": "delivery_time_slot", "value": ""},
         {"op": "set_data", "path": "delivery_fee_q", "value": 0},
+        {"op": "set_data", "path": "delivery_fee_override_q", "value": None},
         {"op": "set_data", "path": "order_notes", "value": ""},
     ])
     add_ops = build_session_ops(payload, operator_username)
@@ -1898,11 +1958,136 @@ def _decimal_discount_value(value) -> Decimal:
     return max(Decimal("0"), parsed)
 
 
-def _payload_delivery_fee_q(payload: dict) -> int:
-    try:
-        return max(0, int(payload.get("delivery_fee_q", 0) or 0))
-    except (TypeError, ValueError):
+@dataclass(frozen=True)
+class DeliveryFeeResolution:
+    """A taxa de entrega desta venda, e de onde ela veio."""
+
+    fee_q: int
+    #: "" (endereço ainda em branco) · "zone" · "distance" · "default" ·
+    #: "manual" (exceção digitada pelo operador) · "blocked" (fora da área).
+    source: str = ""
+    distance_km: float | None = None
+    blocked: bool = False
+
+
+#: Onde a resolução fica guardada DENTRO do payload. O payload atravessa a
+#: review e o commit sendo lido várias vezes, e resolver de novo custaria
+#: consulta ao banco e — no pior caso — uma chamada de geocodificação por
+#: leitura. Mesma técnica do `derive_price_overrides`, que também escreve no
+#: payload em vez de devolver um segundo dado para alguém carregar.
+_DELIVERY_FEE_RESOLUTION_KEY = "_resolved_delivery_fee"
+
+
+def _resolve_delivery_fee(payload: dict) -> DeliveryFeeResolution:
+    """A taxa vem do MOTOR (zona/faixa), não da digitação do operador.
+
+    O balcão digitava a taxa num campo livre, e um número digitado é um segundo
+    dono do preço: a zona de CEP, a faixa de distância e o frete grátis acima de
+    um valor — tudo configurado no Admin e tudo já aplicado na loja — passavam
+    ao largo. Duas vendas do mesmo endereço saíam com taxas diferentes conforme
+    quem estava no caixa.
+
+    Agora é o mesmo caminho da loja: ``DeliveryFeeModifier._resolve`` (zona de
+    exceção → faixa de distância → taxa-padrão) sobre o endereço estruturado que
+    o PDV já captura, com a renúncia de frete grátis por valor de compra por
+    cima. Um motor, duas superfícies.
+
+    Resta UMA porta para a digitação, e ela é explícita: ``delivery_fee_override_q``
+    é a exceção que o operador assume (combinado de porta, cortesia). Ela nunca
+    acontece por omissão — o campo em branco não vira zero, vira "resolva".
+    """
+    cached = payload.get(_DELIVERY_FEE_RESOLUTION_KEY)
+    if isinstance(cached, DeliveryFeeResolution):
+        return cached
+
+    resolution = _compute_delivery_fee(payload)
+    payload[_DELIVERY_FEE_RESOLUTION_KEY] = resolution
+    return resolution
+
+
+def _compute_delivery_fee(payload: dict) -> DeliveryFeeResolution:
+    if _payload_fulfillment_type(payload) != "delivery":
+        return DeliveryFeeResolution(fee_q=0)
+
+    override = payload.get("delivery_fee_override_q")
+    if override not in (None, ""):
+        return DeliveryFeeResolution(fee_q=max(0, _int_q(override)), source="manual")
+
+    address = payload.get("delivery_address_structured")
+    address = address if isinstance(address, dict) else {}
+    postal_code = str(address.get("postal_code") or "").strip()
+    neighborhood = str(address.get("neighborhood") or "").strip()
+    lat, lng = address.get("latitude"), address.get("longitude")
+    if not postal_code and not neighborhood and lat in (None, "") and lng in (None, ""):
+        # Endereço ainda em branco: não há o que resolver, e zero aqui é
+        # "pendente", não "grátis" — quem lê distingue pelo `source` vazio.
+        return DeliveryFeeResolution(fee_q=0)
+
+    from shopman.shop.modifiers import DeliveryFeeModifier
+
+    base_fee_q, distance_km, blocked = DeliveryFeeModifier._resolve(
+        postal_code, neighborhood, lat, lng, address_text=_delivery_address_text(payload, address)
+    )
+    if blocked:
+        return DeliveryFeeResolution(fee_q=0, source="blocked", distance_km=distance_km, blocked=True)
+
+    source = "zone" if postal_code or neighborhood else "distance"
+    if distance_km is None and not (postal_code or neighborhood):
+        source = "default"
+    fee_q = _waive_delivery_fee_if_due(base_fee_q, _payload_subtotal_q(payload) - _payload_discount_q(payload))
+    return DeliveryFeeResolution(fee_q=fee_q, source=source, distance_km=distance_km)
+
+
+def _delivery_address_text(payload: dict, address: dict) -> str:
+    return str(
+        address.get("formatted_address")
+        or payload.get("delivery_address")
+        or ""
+    ).strip()
+
+
+def _waive_delivery_fee_if_due(base_fee_q: int, merchandise_q: int) -> int:
+    """Frete grátis acima de um valor — o limiar permanente da loja.
+
+    A promoção `free_delivery` (que depende de cupom e de canal) fica de fora de
+    propósito: ela mora na sessão, é reavaliada no kernel, e trazê-la para cá
+    criaria a segunda opinião que este trabalho está justamente removendo. O que
+    entra aqui é a política que não depende de contexto nenhum.
+    """
+    if base_fee_q <= 0:
+        return base_fee_q
+    from shopman.shop.projections.cart import shop_rule_q
+
+    free_above_q = shop_rule_q("free_delivery_above_q")
+    if free_above_q and merchandise_q >= free_above_q:
         return 0
+    return base_fee_q
+
+
+def _payload_delivery_fee_q(payload: dict) -> int:
+    return _resolve_delivery_fee(payload).fee_q
+
+
+def _validate_fiscal_delivery_fee(payload: dict) -> None:
+    """Nota fiscal + taxa de entrega ainda pede conferência no gestor.
+
+    A regra é a de sempre; mudou o lugar. Enquanto a taxa era digitada, o
+    parser do intent conseguia vê-la sem tocar no banco. Agora ela é RESOLVIDA
+    pelo motor de entrega, e só quem resolveu sabe se existe — então a porta
+    mora aqui, ao lado da resolução, em vez de olhar para um campo que o PDV
+    não preenche mais.
+    """
+    if not payload.get("issue_fiscal_document"):
+        return
+    if _resolve_delivery_fee(payload).fee_q <= 0:
+        return
+    raise PosIntentError(
+        code="fiscal_delivery_fee_pending",
+        message="Fiscal com taxa de entrega ainda exige revisão no gestor.",
+        field="delivery_fee_q",
+        focus="delivery_address",
+        recovery="Finalize sem taxa, ou finalize sem fiscal e reprocesse no gestor após conferência.",
+    )
 
 
 def _validate_payment_completion(payload: dict) -> None:
@@ -2549,12 +2734,17 @@ def _append_delivery_ops(ops: list[dict], payload: dict) -> None:
     delivery_time_slot = str(payload.get("delivery_time_slot") or "").strip()
     if delivery_time_slot:
         ops.append({"op": "set_data", "path": "delivery_time_slot", "value": delivery_time_slot})
-    try:
-        delivery_fee_q = int(payload.get("delivery_fee_q") or 0)
-    except (TypeError, ValueError):
-        delivery_fee_q = 0
+    # A taxa gravada é a RESOLVIDA (a mesma que a review mostrou e que entrou no
+    # total), nunca um número solto do payload.
+    delivery_fee_q = _payload_delivery_fee_q(payload)
     if delivery_fee_q > 0:
         ops.append({"op": "set_data", "path": "delivery_fee_q", "value": delivery_fee_q})
+    # A exceção fica guardada por SI, ao lado da taxa que ela produziu: sem isso
+    # o rascunho retomado perderia o combinado e voltaria à tabela da loja em
+    # silêncio, cobrando do cliente um valor diferente do que foi prometido.
+    override = payload.get("delivery_fee_override_q")
+    if override not in (None, ""):
+        ops.append({"op": "set_data", "path": "delivery_fee_override_q", "value": max(0, _int_q(override))})
 
 
 def _payload_tab_session_key(payload: dict) -> str:
@@ -2659,7 +2849,7 @@ def _mark_tab_committed(
         pos_data["client_request_id"] = client_request_id
         order_data["pos"] = pos_data
     if order_data.get("fulfillment_type") != "delivery":
-        for key in ("delivery_address", "delivery_address_structured", "delivery_date", "delivery_time_slot", "delivery_fee_q"):
+        for key in ("delivery_address", "delivery_address_structured", "delivery_date", "delivery_time_slot", "delivery_fee_q", "delivery_fee_override_q"):
             order_data.pop(key, None)
 
     fiscal = session_data.get("fiscal") or {}

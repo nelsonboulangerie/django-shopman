@@ -390,6 +390,11 @@ export interface POSProjection {
    * decide; a tela não renderiza porta que devolve 404. É consulta — a via do
    * cliente sai na bobina, e essa não depende deste gate. */
   danfe_screen_allowed: boolean;
+  /** Hoje pelo relógio da LOJA — o padrão da data de entrega. */
+  delivery_today: string;
+  /** As janelas de hoje, para o formulário abrir já respondendo. A review
+   * assume quando o operador escolhe OUTRA data. */
+  delivery_slots_today: Array<{ ref: string; label: string }>;
   operators: POSOperatorProjection[];
   managers: POSManagerProjection[];
   auto_lock_seconds: number;
@@ -485,7 +490,7 @@ export interface POSTabPayload {
   delivery_address_structured: StructuredAddressProjection;
   delivery_date: string;
   delivery_time_slot: string;
-  delivery_fee_q: number;
+  delivery_fee_override_q: number | null;
   order_notes: string;
   payment_method: string;
   payment_collection: PosPaymentCollection;
@@ -541,7 +546,10 @@ export interface POSIntentCartState {
   deliveryInstructions: string;
   deliveryDate: string;
   deliveryTimeSlot: string;
-  deliveryFeeQ: number;
+  /** A EXCEÇÃO que o operador assume (combinado de porta, cortesia). `null` =
+   * sem exceção, e aí quem responde pela taxa é o motor de entrega no servidor.
+   * Nunca 0 por omissão: ausente significa "resolva", não "cobre zero". */
+  deliveryFeeOverrideQ: number | null;
   orderNotes: string;
   paymentMethod: string;
   paymentCollection: PosPaymentCollection;
@@ -584,6 +592,14 @@ export interface POSSaleReviewProjection {
   receipt_channels: string[];
   issue_fiscal_document: boolean;
   warnings: Array<{ code: string; field: string; message: string }>;
+  /** De onde a taxa saiu: "" (endereço em branco) · "zone" · "distance" ·
+   * "default" · "manual" (exceção do operador) · "blocked" (fora da área). */
+  delivery_fee_source: string;
+  delivery_distance_km: number | null;
+  /** A data que o servidor usou — em branco no pedido, é hoje pelo relógio da loja. */
+  delivery_date: string;
+  /** Janelas de meia hora do expediente daquele dia. Vazio = não há janela. */
+  delivery_slots: Array<{ ref: string; label: string }>;
 }
 
 export interface POSSaleReviewResponse {

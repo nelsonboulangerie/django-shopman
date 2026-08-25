@@ -377,6 +377,14 @@ class POSProjection:
     # renderiza a porta quando ela abre para QUEM está logado. É consulta: a via
     # do cliente sai na bobina, e essa não depende deste gate.
     danfe_screen_allowed: bool = False
+    # ENTREGA, estado inicial. A review responde pela data ESCOLHIDA, mas ela só
+    # existe depois que há endereço — e a tela precisa abrir o formulário já
+    # dizendo "hoje" e já mostrando as janelas de hoje. Sem isto o operador
+    # encontrava um campo de data vazio e um horário "sem janela" que era só
+    # ausência de resposta se passando por fato. Mesma fonte da review
+    # (`business_calendar`), dois momentos.
+    delivery_today: str = ""
+    delivery_slots_today: tuple[dict, ...] = ()
     operators: tuple[dict, ...] = ()
     # Quem pode AUTORIZAR exceção (sangria, desconto acima do teto). Conjunto
     # diferente de `operators`: operar o PDV e assinar uma exceção são duas
@@ -484,6 +492,8 @@ def build_pos(*, terminal=None, operator=None) -> POSProjection:
         fiscal_label=fiscal_label,
         fiscal_message=fiscal_message,
         danfe_screen_allowed=bool(getattr(operator, "is_staff", False)),
+        delivery_today=_delivery_today().isoformat(),
+        delivery_slots_today=tuple(_delivery_slots_today()),
         operators=_eligible_operator_cards(),
         managers=_manager_cards(operator),
         auto_lock_seconds=int((getattr(terminal, "metadata", None) or {}).get("auto_lock_seconds", 60)),
@@ -492,6 +502,19 @@ def build_pos(*, terminal=None, operator=None) -> POSProjection:
         cash_drawer=CashDrawerConfig.from_terminal(terminal).surface_payload(),
         shop_name=_shop_name(),
     )
+
+
+def _delivery_today():
+    """Hoje pelo relógio da LOJA. Um tablet com fuso errado agenda para ontem."""
+    from django.utils import timezone
+
+    return timezone.localdate()
+
+
+def _delivery_slots_today() -> list[dict]:
+    from shopman.shop.services import business_calendar
+
+    return business_calendar.delivery_slots_for(_delivery_today())
 
 
 def _eligible_operator_cards() -> tuple[dict, ...]:
@@ -916,7 +939,7 @@ def _pos_actions() -> tuple[Action, ...]:
                     "delivery_address_structured",
                     "delivery_date",
                     "delivery_time_slot",
-                    "delivery_fee_q",
+                    "delivery_fee_override_q",
                     "order_notes",
                     "payment_collection",
                     "payment_tenders",
@@ -1262,18 +1285,23 @@ def _checkout_contract(
             ref="delivery_time_slot",
             payload_key="delivery_time_slot",
             section_ref="fulfillment",
+            # Deixou de ser texto solto: as janelas de meia hora vêm do
+            # expediente do dia, na review (`delivery_slots`). "Ex: 14:00-14:30"
+            # como placeholder convidava a inventar um horário que a casa não
+            # tinha como cumprir.
             label="Horário combinado",
-            input_type="text",
-            placeholder="Ex: 14:00-14:30",
+            input_type="select",
             max_length=80,
         ),
         POSCheckoutFieldProjection(
-            ref="delivery_fee_q",
-            payload_key="delivery_fee_q",
+            ref="delivery_fee_override_q",
+            payload_key="delivery_fee_override_q",
             section_ref="fulfillment",
-            label="Taxa de entrega",
+            # A taxa NÃO é mais pedida ao operador: quem a resolve é o motor de
+            # entrega (zona/faixa), e a review a devolve pronta. O que fica aqui
+            # é a EXCEÇÃO — opcional por definição, nunca `required_when`.
+            label="Taxa combinada (exceção)",
             input_type="money_q",
-            required_when={"fulfillment_type": "delivery"},
         ),
         POSCheckoutFieldProjection(
             ref="order_notes",
@@ -1385,7 +1413,7 @@ def _checkout_contract(
                 "delivery_address_structured",
                 "delivery_date",
                 "delivery_time_slot",
-                "delivery_fee_q",
+                "delivery_fee_override_q",
                 "order_notes",
             ),
         ),
@@ -2122,7 +2150,10 @@ def build_open_tab(session: Session) -> dict:
         "delivery_address_structured": data.get("delivery_address_structured", {}),
         "delivery_date": data.get("delivery_date", ""),
         "delivery_time_slot": data.get("delivery_time_slot", ""),
-        "delivery_fee_q": data.get("delivery_fee_q", 0),
+        # Retomar a comanda devolve a EXCEÇÃO que o operador tinha combinado
+        # (`None` = sem exceção); a taxa em si a review resolve de novo, pelo
+        # endereço — e ela pode ter mudado desde que o rascunho foi salvo.
+        "delivery_fee_override_q": data.get("delivery_fee_override_q"),
         "order_notes": data.get("order_notes", ""),
         "payment_method": payment.get("method", "cash"),
         "payment_collection": payment.get("collection", "terminal"),

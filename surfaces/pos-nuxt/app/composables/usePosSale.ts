@@ -241,7 +241,10 @@ export function usePosSale(deps: PosSaleDeps) {
     deliveryInstructions: "",
     deliveryDate: "",
     deliveryTimeSlot: "",
-    deliveryFeeInput: "",
+    // A EXCEÇÃO da taxa, quando o operador a assume. Vazio = sem exceção, e a
+    // taxa é a que o servidor resolveu pelo endereço.
+    deliveryFeeOverrideInput: "",
+    deliveryFeeOverride: false,
     orderNotes: "",
     paymentMethod: "",
     paymentCollection: "terminal" as PaymentCollection,
@@ -290,7 +293,31 @@ export function usePosSale(deps: PosSaleDeps) {
   }
   const hasDraftWithoutTab = computed(() => !hasOpenTab.value && cart.items.length > 0);
   const canUseCart = computed(() => !tabRequiredForCart.value || hasOpenTab.value);
-  const deliveryFeeQ = computed(() => moneyInputToQ(cart.deliveryFeeInput));
+  // A taxa EXIBIDA vem da review (o servidor resolveu pelo endereço); a exceção
+  // digitada só existe quando o operador a liga. Uma pergunta, um dono.
+  const deliveryFeeOverrideQ = computed<number | null>(
+    () => (cart.deliveryFeeOverride ? moneyInputToQ(cart.deliveryFeeOverrideInput) : null),
+  );
+  const deliveryFeeQ = computed(() => review.value?.delivery_fee_q ?? 0);
+  const deliveryFeeSource = computed(() => review.value?.delivery_fee_source ?? "");
+  const deliveryDistanceKm = computed(() => review.value?.delivery_distance_km ?? null);
+  // A data que vale: a escolhida, a que a review usou, ou o HOJE da loja. O
+  // último termo é o que faz o formulário abrir já respondendo — a review só
+  // existe depois que há endereço, e até lá o campo ficava vazio, que é
+  // exatamente o defeito que o dono apontou.
+  const deliveryDateEffective = computed(
+    () => cart.deliveryDate || review.value?.delivery_date || pos.value?.delivery_today || "",
+  );
+  // As janelas do dia escolhido. Sem review (endereço em branco), as de HOJE
+  // servem enquanto a data for hoje — e nunca se diz "sem janela" só porque a
+  // resposta ainda não chegou: ausência de resposta não é fato.
+  const deliverySlots = computed(() => {
+    if (review.value) return review.value.delivery_slots ?? [];
+    const today = pos.value?.delivery_today || "";
+    if (today && deliveryDateEffective.value === today) return pos.value?.delivery_slots_today ?? [];
+    return [];
+  });
+  const deliverySlotsPending = computed(() => !review.value && !deliverySlots.value.length);
 
   // Payment by injection (Odoo-style): the operator adds tender lines in any form;
   // the method is derived (no "mixed" selection). Finalize is gated until covered.
@@ -519,7 +546,8 @@ export function usePosSale(deps: PosSaleDeps) {
     cart.deliveryInstructions,
     cart.deliveryDate,
     cart.deliveryTimeSlot,
-    cart.deliveryFeeInput,
+    cart.deliveryFeeOverrideInput,
+    cart.deliveryFeeOverride,
     cart.discountType,
     cart.discountValue,
     cart.discountReason,
@@ -624,7 +652,8 @@ export function usePosSale(deps: PosSaleDeps) {
     cart.deliveryInstructions = "";
     cart.deliveryDate = "";
     cart.deliveryTimeSlot = "";
-    cart.deliveryFeeInput = "";
+    cart.deliveryFeeOverrideInput = "";
+    cart.deliveryFeeOverride = false;
     cart.orderNotes = "";
     cart.paymentCollection = "terminal";
     cart.paymentTenders = [];
@@ -678,7 +707,10 @@ export function usePosSale(deps: PosSaleDeps) {
     cart.deliveryInstructions = payload.delivery_address_structured?.delivery_instructions || payload.delivery_address_structured?.reference || "";
     cart.deliveryDate = payload.delivery_date || "";
     cart.deliveryTimeSlot = payload.delivery_time_slot || "";
-    cart.deliveryFeeInput = payload.delivery_fee_q ? (Number(payload.delivery_fee_q) / 100).toFixed(2).replace(".", ",") : "";
+    cart.deliveryFeeOverride = payload.delivery_fee_override_q != null;
+    cart.deliveryFeeOverrideInput = payload.delivery_fee_override_q != null
+      ? (Number(payload.delivery_fee_override_q) / 100).toFixed(2).replace(".", ",")
+      : "";
     cart.orderNotes = payload.order_notes || "";
     // preserveCheckout: o operador pode JÁ estar lançando o pagamento (método,
     // tenders, valor recebido) enquanto a comanda recarrega por baixo do shell —
@@ -833,7 +865,7 @@ export function usePosSale(deps: PosSaleDeps) {
       deliveryInstructions: cart.deliveryInstructions,
       deliveryDate: cart.deliveryDate,
       deliveryTimeSlot: cart.deliveryTimeSlot,
-      deliveryFeeQ: deliveryFeeQ.value,
+      deliveryFeeOverrideQ: deliveryFeeOverrideQ.value,
       orderNotes: cart.orderNotes,
       paymentMethod: resolvedPayment.paymentMethod,
       paymentCollection: cart.paymentCollection,
@@ -1141,7 +1173,8 @@ export function usePosSale(deps: PosSaleDeps) {
     cart.deliveryInstructions,
     cart.deliveryDate,
     cart.deliveryTimeSlot,
-    cart.deliveryFeeInput,
+    cart.deliveryFeeOverrideInput,
+    cart.deliveryFeeOverride,
     cart.orderNotes,
   ], () => scheduleAutosave(), { deep: true });
 
@@ -1624,6 +1657,13 @@ export function usePosSale(deps: PosSaleDeps) {
     paymentRemainingQ,
     paymentChangeQ,
     paymentCovered,
+    // entrega — o que o servidor respondeu, para a tela PERGUNTAR em vez de pedir
+    deliveryFeeQ,
+    deliveryFeeSource,
+    deliveryDistanceKm,
+    deliverySlots,
+    deliverySlotsPending,
+    deliveryDateEffective,
     selectedTenderMethod,
     tabDialogTitle,
     tabDialogDescription,

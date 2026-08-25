@@ -122,7 +122,7 @@ export function makeTabPayload(overrides: Record<string, unknown> = {}) {
     delivery_address_structured: {},
     delivery_date: "",
     delivery_time_slot: "",
-    delivery_fee_q: 0,
+    delivery_fee_override_q: null,
     order_notes: "",
     payment_method: "",
     payment_collection: "terminal",

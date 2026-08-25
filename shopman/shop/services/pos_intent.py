@@ -30,7 +30,7 @@ _ALLOWED_TOP_LEVEL_KEYS = {
     "delivery_address_structured",
     "delivery_date",
     "delivery_time_slot",
-    "delivery_fee_q",
+    "delivery_fee_override_q",
     "order_notes",
     "payment_method",
     "payment_collection",
@@ -159,7 +159,13 @@ def parse_pos_sale_intent(raw: dict, *, for_commit: bool = True) -> PosSaleInten
     payload["delivery_time_slot"] = _text(payload.get("delivery_time_slot"), limit=80)
     payload["delivery_date"] = _text(payload.get("delivery_date"), limit=32)
     payload["order_notes"] = _text(payload.get("order_notes"), limit=500)
-    payload["delivery_fee_q"] = _nonnegative_int(payload.get("delivery_fee_q"), "delivery_fee_q")
+    # A taxa NÃO vem daqui: quem a resolve é o motor de entrega (zona/faixa),
+    # em `pos._resolve_delivery_fee`. O que atravessa o intent é só a EXCEÇÃO
+    # que o operador assume — e ela é opcional de verdade: ausente significa
+    # "resolva", nunca "cobre zero".
+    payload["delivery_fee_override_q"] = _optional_nonnegative_int(
+        payload.get("delivery_fee_override_q"), "delivery_fee_override_q"
+    )
     payload["delivery_address_structured"] = _structured_address(payload.get("delivery_address_structured"))
     if for_commit and fulfillment_type == "delivery" and not payload["delivery_address"]:
         raise PosIntentError(
@@ -196,14 +202,10 @@ def parse_pos_sale_intent(raw: dict, *, for_commit: bool = True) -> PosSaleInten
     )
 
     payload["issue_fiscal_document"] = bool(payload.get("issue_fiscal_document"))
-    if for_commit and payload["issue_fiscal_document"] and payload["delivery_fee_q"] > 0:
-        raise PosIntentError(
-            code="fiscal_delivery_fee_pending",
-            message="Fiscal com taxa de entrega ainda exige revisão no gestor.",
-            field="delivery_fee_q",
-            focus="delivery_address",
-            recovery="Finalize sem taxa, ou finalize sem fiscal e reprocesse no gestor após conferência.",
-        )
+    # A porta "fiscal com taxa de entrega" mudou de lugar, não de regra: agora
+    # que a taxa é RESOLVIDA (e não digitada), só quem resolveu sabe se ela
+    # existe. Ela vive em `pos._validate_fiscal_delivery_fee`, junto da
+    # resolução — aqui não há como saber.
     payload["receipt_channels"] = _receipt_channels(payload.get("receipt_channels"))
     payload["receipt_email"] = _emailish(payload.get("receipt_email"), field="receipt_email")
     if for_commit and "email" in payload["receipt_channels"] and not payload["receipt_email"]:
