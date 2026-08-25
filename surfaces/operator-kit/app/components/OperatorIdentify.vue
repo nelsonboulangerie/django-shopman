@@ -14,8 +14,8 @@
 // O que MUDA entre os dois usos é a moldura (tela cheia × diálogo), quem pode
 // aparecer, e o que acontece no sucesso. Nada disso é identificação, então nada
 // disso mora aqui: o componente emite `pin` ou `badge` e quem chamou decide.
-import { appendPinDigit, canSubmitPin } from "../presentation/operatorLock";
-import { useBadgeScanner } from "../composables/useBadgeScanner";
+import { canSubmitPin } from "../presentation/operatorLock";
+import { useIdentityCapture } from "../composables/useIdentityCapture";
 
 /** O mínimo que serve para escolher alguém. `OperatorCard` e o gerente do PDV cabem. */
 export interface IdentifiablePerson {
@@ -64,7 +64,6 @@ const emit = defineEmits<{
 
 const picked = ref<IdentifiablePerson | null>(null);
 const typedName = ref("");
-const pin = ref("");
 
 const hasList = computed(() => props.people.length > 0);
 const username = computed(() => (picked.value?.username ?? typedName.value).trim());
@@ -72,33 +71,34 @@ const username = computed(() => (picked.value?.username ?? typedName.value).trim
 const showPad = computed(() => !hasList.value || picked.value !== null);
 const canSubmit = computed(() => canSubmitPin(username.value || null, pin.value));
 
-// O crachá vale em QUALQUER momento desta tela, sem depender de onde está o foco
-// — quem captura é o documento. Tocar num nome ou no pad não cega o leitor, que
-// era o defeito da versão com campo escondido.
-useBadgeScanner((token) => emit("badge", token), {
-  enabled: () => props.badgeEnabled !== false && !props.busy,
+// UM caminho de captura para tudo: crachá, teclado físico e botões do pad
+// alimentam o mesmo buffer, na hora — dígito nenhum se perde por cadência, e a
+// decisão crachá×PIN fica para o Enter (`resolveEnter`). O crachá vale em
+// QUALQUER momento desta tela, sem depender de onde está o foco — quem captura
+// é o documento; tocar num nome ou no pad não cega o leitor. `busy` nunca
+// bloqueia a DIGITAÇÃO (bloquear submissão não pode custar dígito): ele só
+// segura o Enter-submete e a resolução de crachá (autorizar duas vezes pelo
+// mesmo gesto).
+const { pin, pressDigit, backspace, clear } = useIdentityCapture({
+  padVisible: () => showPad.value,
+  badgeEnabled: () => props.badgeEnabled !== false && !props.busy,
+  canSubmitEnter: () => canSubmit.value && !props.busy,
+  onBadge: (token) => emit("badge", token),
+  onSubmit: () => submit(),
 });
 
 // Recusa apaga só o PIN: quem foi escolhido continua escolhido, senão a pessoa
 // reescolheria o próprio nome a cada dedo errado no teclado.
-watch(() => props.error, (e) => { if (e) pin.value = ""; });
+watch(() => props.error, (e) => { if (e) clear(); });
 
 function pick(person: IdentifiablePerson) {
   picked.value = person;
-  pin.value = "";
+  clear();
 }
 
 function unpick() {
   picked.value = null;
-  pin.value = "";
-}
-
-function press(digit: string) {
-  pin.value = appendPinDigit(pin.value, digit);
-}
-
-function backspace() {
-  pin.value = pin.value.slice(0, -1);
+  clear();
 }
 
 function submit() {
@@ -106,40 +106,9 @@ function submit() {
   emit("pin", { person: picked.value, username: username.value, pin: pin.value });
 }
 
-// PIN pelo TECLADO FÍSICO: o balcão com teclado não deveria exigir mouse para
-// quatro dígitos. O listener mora no documento enquanto o pad está visível (o
-// componente só existe dentro do overlay/diálogo), roteia 0-9/Backspace/Enter
-// para o buffer e CONSOME a tecla, para ela não vazar aos atalhos da tela por
-// baixo. Não colide com o wedge do crachá: a cadência separa — a rajada do
-// leitor é consumida antes, na fase de captura (useBadgeScanner), e só a
-// primeira tecla dela chega até aqui.
-function onDocumentKeydown(event: KeyboardEvent) {
-  if (!showPad.value || props.busy) return;
-  if (event.ctrlKey || event.metaKey || event.altKey) return;
-  const target = event.target as HTMLElement | null;
-  const editing = !!target
-    && (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable);
-  if (editing) return; // campo de texto de verdade (nome livre): as teclas são dele
-  if (/^[0-9]$/.test(event.key)) {
-    event.preventDefault();
-    event.stopPropagation();
-    press(event.key);
-  } else if (event.key === "Backspace") {
-    event.preventDefault();
-    event.stopPropagation();
-    backspace();
-  } else if (event.key === "Enter" && canSubmit.value) {
-    event.preventDefault();
-    event.stopPropagation();
-    submit();
-  }
-}
-onMounted(() => document.addEventListener("keydown", onDocumentKeydown));
-onBeforeUnmount(() => document.removeEventListener("keydown", onDocumentKeydown));
-
 /** Para o pai limpar entre aberturas sem conhecer o estado interno. */
 function reset(keepPicked = false) {
-  pin.value = "";
+  clear();
   if (keepPicked) return;
   picked.value = null;
   typedName.value = "";
@@ -158,7 +127,7 @@ defineExpose({ reset });
           v-for="person in people"
           :key="person.username"
           type="button"
-          class="rounded-lg border bg-background px-3 py-3 text-left text-sm font-medium transition hover:bg-accent"
+          class="touch-manipulation select-none rounded-lg border bg-background px-3 py-3 text-left text-sm font-medium transition hover:bg-accent"
           @click="pick(person)"
         >
           {{ person.name }}
@@ -197,32 +166,39 @@ defineExpose({ reset });
 
       <div
         class="flex h-10 items-center justify-center rounded-md border bg-background text-3xl tracking-[0.4em] tabular-nums"
+        aria-live="polite"
+        :aria-label="`${pin.length} dígitos`"
       >
         {{ "•".repeat(pin.length) || "—" }}
       </div>
 
+      <!-- `touch-manipulation` desliga o double-tap-zoom do browser nos botões:
+           sem ele, dois toques rápidos no mesmo dígito viram gesto de zoom e o
+           clique some — o pad tem que aguentar dedo apressado. Digitar nunca
+           desabilita (nem durante verificação): só o CONFIRMAR trava, porque
+           o que não pode duplicar é a submissão, não o dígito. -->
       <div class="grid grid-cols-3 gap-2">
         <button
           v-for="d in ['1', '2', '3', '4', '5', '6', '7', '8', '9']"
           :key="d"
           type="button"
-          class="rounded-lg border bg-background py-3 text-lg font-semibold transition hover:bg-accent"
-          @click="press(d)"
+          class="touch-manipulation select-none rounded-lg border bg-background py-3 text-lg font-semibold transition hover:bg-accent"
+          @click="pressDigit(d)"
         >
           {{ d }}
         </button>
         <button
           type="button"
           aria-label="Apagar"
-          class="rounded-lg border bg-background py-3 text-sm transition hover:bg-accent"
+          class="touch-manipulation select-none rounded-lg border bg-background py-3 text-sm transition hover:bg-accent"
           @click="backspace"
         >
           <Icon name="lucide:delete" class="mx-auto size-5" />
         </button>
         <button
           type="button"
-          class="rounded-lg border bg-background py-3 text-lg font-semibold transition hover:bg-accent"
-          @click="press('0')"
+          class="touch-manipulation select-none rounded-lg border bg-background py-3 text-lg font-semibold transition hover:bg-accent"
+          @click="pressDigit('0')"
         >
           0
         </button>
@@ -230,7 +206,7 @@ defineExpose({ reset });
           type="button"
           aria-label="Confirmar"
           :disabled="!canSubmit || busy"
-          class="rounded-lg border border-transparent bg-primary py-3 text-primary-foreground transition hover:bg-primary/90 disabled:opacity-50"
+          class="touch-manipulation select-none rounded-lg border border-transparent bg-primary py-3 text-primary-foreground transition hover:bg-primary/90 disabled:opacity-50"
           @click="submit"
         >
           <Icon name="lucide:check" class="mx-auto size-5" />
