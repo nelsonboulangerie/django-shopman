@@ -2141,6 +2141,27 @@ def _tab_line_display_price_q(item: dict, manual_originals: dict[str, int]) -> i
     return int(item.get("unit_price_q", 0))
 
 
+def _tab_line_list_price_q(item: dict, manual_originals: dict[str, int]) -> int:
+    """Preço de ETIQUETA da linha, por unidade, antes de qualquer desconto.
+
+    Não confundir com ``price_q``: aquele é o número de RESTAURAÇÃO (pré-desconto
+    manual, para o carrinho reenviar o descritor sem aplicá-lo duas vezes — bug
+    B1-3) e, por acidente de história, era também o único número que a tela
+    tinha para mostrar. Com desconto manual na linha, ``qty × price_q`` é o que
+    o cliente NÃO paga.
+
+    A etiqueta é a que o kernel carimbou (``meta._list_q``); sem carimbo, ela se
+    reconstrói somando o desconto automático por unidade ao preço pré-manual —
+    que é exatamente o que aquele desconto tirou.
+    """
+    stamped = _int_q((item.get("meta") or {}).get("_list_q"))
+    if stamped > 0:
+        return stamped
+    pre_manual = _tab_line_display_price_q(item, manual_originals)
+    auto = _tab_payload_pricing_discount(item) or {}
+    return pre_manual + _int_q(auto.get("amount_q"))
+
+
 def _tab_payload_payment_tenders(payment: dict) -> list[dict]:
     tenders = payment.get("tenders")
     if not isinstance(tenders, list) or not tenders:
@@ -2180,6 +2201,9 @@ def build_open_tab(session: Session) -> dict:
             "kitchen_status": kitchen_by_sku.get(item["sku"], ""),
             "discount": _tab_payload_line_discount(item),
             "pricing_discount": _tab_payload_pricing_discount(item),
+            "list_price_q": _tab_line_list_price_q(item, manual_originals),
+            "charged_price_q": _int_q(item.get("unit_price_q", 0)),
+            "line_total_q": _int_q(item.get("unit_price_q", 0)) * int(item.get("qty", 1)),
             "price_overridden": bool((item.get("meta") or {}).get("price_overridden")),
         }
         for item in (session.items or [])

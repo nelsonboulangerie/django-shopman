@@ -901,7 +901,7 @@ describe("presentation/kitchen — fire-to-kitchen shaping", () => {
       hasOpenTab: true,
       busy: false,
     });
-    expect(allFired.label).toBe("Tudo na cozinha");
+    expect(allFired.label).toBe("Enviado");
     expect(allFired.allFired).toBe(true);
     expect(allFired.disabled).toBe(true); // nothing left to fire
 

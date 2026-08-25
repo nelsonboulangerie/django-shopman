@@ -463,6 +463,15 @@ export interface POSCartItem {
    *  hour, funcionário), carimbado pelo kernel e exposto pelo payload da
    *  comanda. Informativo: o `price_q` da linha já vem reduzido. */
   pricing_discount?: { type: string; label: string; amount_q: number; percent: number } | null;
+  /** Preço de ETIQUETA por unidade, antes de qualquer desconto. Igual a
+   *  `charged_price_q` quando não houve desconto nenhum. */
+  list_price_q?: number;
+  /** O que se COBRA por unidade, depois de todos os descontos (automático e
+   *  manual). ⚠️ Não é `price_q`: aquele é o número de restauração — pré-desconto
+   *  manual — e com desconto na linha ele é MAIOR do que o cliente paga. */
+  charged_price_q?: number;
+  /** `charged_price_q × qty`, somado pelo servidor. É o total da linha. */
+  line_total_q?: number;
   /** Operator overrode the unit price (numpad "Preço"): the kernel freezes it and
    *  the server review requires manager approval. Survives persist→reload. */
   price_overridden?: boolean;

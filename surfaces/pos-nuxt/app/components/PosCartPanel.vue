@@ -6,7 +6,7 @@ import { globalKeysBlocked } from "~/utils/keyboardGuard";
 import { clampPercent, clampQty, popDigit, pushDigit } from "~/presentation/numpad";
 import { fireBarView, kitchenBadge, kitchenLineState } from "~/presentation/kitchen";
 import { pruneSelection, selectionView, toggleSelected } from "~/presentation/selection";
-import { pricingDiscountBadge } from "~/presentation/lineDiscounts";
+import { lineListTotalDisplay, lineTotalQ, pricingDiscountBadge, unitChargedQ } from "~/presentation/lineDiscounts";
 import { toast } from "vue-sonner";
 
 const props = defineProps<{
@@ -462,7 +462,11 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onWindowKeydown));
             <!-- faixa 1 — o que é, e quanto custa -->
             <div class="flex items-baseline gap-2">
               <p class="min-w-0 flex-1 truncate text-sm font-medium leading-tight">{{ item.name }}</p>
-              <strong class="shrink-0 text-sm font-semibold tabular-nums leading-tight">{{ formatBRL(item.qty * item.price_q) }}</strong>
+              <span
+                v-if="lineListTotalDisplay(item)"
+                class="shrink-0 text-xs tabular-nums text-muted-foreground line-through"
+              >{{ lineListTotalDisplay(item) }}</span>
+              <strong class="shrink-0 text-sm font-semibold tabular-nums leading-tight">{{ formatBRL(lineTotalQ(item)) }}</strong>
             </div>
 
             <p v-if="item.notes" class="flex items-center gap-1 truncate text-xs italic text-muted-foreground">
@@ -470,54 +474,16 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onWindowKeydown));
               <span class="truncate">{{ item.notes }}</span>
             </p>
 
-            <!-- faixa 2 — unitário e selos à esquerda, controles à direita -->
+            <!-- faixa 2 — unitário à esquerda, controles à direita -->
             <div class="flex items-center gap-2">
-              <div class="flex min-w-0 flex-1 flex-wrap items-center gap-1">
-                <span
-                  v-if="item.qty > 1 || item.price_overridden"
-                  class="text-xs tabular-nums"
-                  :class="item.price_overridden ? 'text-primary' : 'text-muted-foreground'"
-                >
-                  <Icon v-if="item.price_overridden" name="lucide:pencil" class="mr-0.5 inline size-3 align-[-1px]" />{{ formatBRL(item.price_q) }} cada
-                </span>
-                <span
-                  v-if="pricingDiscountBadge(item)"
-                  class="inline-flex items-center gap-1 rounded-full bg-primary/10 px-2 py-0.5 text-xs font-medium text-primary"
-                  :title="`Desconto automático: ${pricingDiscountBadge(item)}`"
-                >
-                  <Icon name="lucide:tags" class="size-3 shrink-0" />
-                  {{ pricingDiscountBadge(item) }}
-                </span>
-                <span
-                  v-if="item.discount && item.discount.value > 0"
-                  class="inline-flex items-center gap-1 rounded-full bg-primary/10 px-2 py-0.5 text-xs font-medium text-primary"
-                  :title="`Desconto: ${item.discount.reason}`"
-                >
-                  <Icon name="lucide:tag" class="size-3 shrink-0" />
-                  −{{ item.discount.value }}%
-                </span>
-                <button
-                  v-if="lineKitchenState(item) === 'fired_cancellable'"
-                  type="button"
-                  class="group inline-flex items-center gap-1 whitespace-nowrap rounded-full bg-muted px-2 py-0.5 text-xs font-medium text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive"
-                  :disabled="firing"
-                  :aria-label="`${unfireAction.label}: ${item.name}`"
-                  @click.stop="$emit('unfire', item.line_id || '')"
-                >
-                  <Icon name="lucide:flame" class="size-3 shrink-0 group-hover:hidden" />
-                  <Icon name="lucide:x" class="hidden size-3 shrink-0 group-hover:inline" />
-                  {{ kitchenBadge(item).label }}
-                </button>
-                <span
-                  v-else-if="lineKitchenState(item) === 'fired'"
-                  class="inline-flex items-center gap-1 whitespace-nowrap rounded-full px-2 py-0.5 text-xs font-medium"
-                  :class="badgeTone(kitchenBadge(item).tone)"
-                  aria-live="polite"
-                >
-                  <Icon :name="badgeIcon(kitchenBadge(item).tone)" class="size-3 shrink-0" />
-                  {{ kitchenBadge(item).label }}
-                </span>
-              </div>
+              <span
+                v-if="item.qty > 1 || item.price_overridden"
+                class="min-w-0 flex-1 truncate text-xs tabular-nums"
+                :class="item.price_overridden ? 'text-primary' : 'text-muted-foreground'"
+              >
+                <Icon v-if="item.price_overridden" name="lucide:pencil" class="mr-0.5 inline size-3 align-[-1px]" />{{ formatBRL(unitChargedQ(item)) }} cada
+              </span>
+              <span v-else class="flex-1" />
 
               <!-- Alvos de toque de balcão: steppers em icon-sm (36px), e a lixeira
                    APARTADA deles, para o dedo apressado não remover querendo "menos 1". -->
@@ -533,6 +499,56 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onWindowKeydown));
                   <Icon name="lucide:trash-2" class="size-4 text-destructive" />
                 </UiButton>
               </div>
+            </div>
+
+            <!-- faixa 3 — OS SELOS, com a largura inteira da linha. Dividir a
+                 faixa com o stepper deixava ~145px para um selo como "Hora da
+                 Xepa −25%", e a pílula quebrava DENTRO de si mesma: quatro
+                 andares de texto num formato que é redondo justamente porque
+                 pressupõe uma linha. Cada selo é `whitespace-nowrap` — quem
+                 quebra é a FILA de selos, nunca a palavra dentro do selo. Some
+                 por inteiro quando não há nada a dizer, que é o caso comum. -->
+            <div
+              v-if="pricingDiscountBadge(item) || (item.discount && item.discount.value > 0) || lineKitchenState(item) !== 'unfired'"
+              class="mb-0.5 flex flex-wrap items-center gap-1"
+            >
+              <span
+                v-if="pricingDiscountBadge(item)"
+                class="inline-flex shrink-0 items-center gap-1 whitespace-nowrap rounded-full bg-primary/10 px-2 py-0.5 text-xs font-medium text-primary"
+                :title="`Desconto automático: ${pricingDiscountBadge(item)}`"
+              >
+                <Icon name="lucide:tags" class="size-3 shrink-0" />
+                {{ pricingDiscountBadge(item) }}
+              </span>
+              <span
+                v-if="item.discount && item.discount.value > 0"
+                class="inline-flex shrink-0 items-center gap-1 whitespace-nowrap rounded-full bg-primary/10 px-2 py-0.5 text-xs font-medium text-primary"
+                :title="`Desconto: ${item.discount.reason}`"
+              >
+                <Icon name="lucide:tag" class="size-3 shrink-0" />
+                {{ item.discount.reason || "Desconto" }} −{{ item.discount.value }}%
+              </span>
+              <button
+                v-if="lineKitchenState(item) === 'fired_cancellable'"
+                type="button"
+                class="group inline-flex shrink-0 items-center gap-1 whitespace-nowrap rounded-full bg-muted px-2 py-0.5 text-xs font-medium text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive"
+                :disabled="firing"
+                :aria-label="`${unfireAction.label}: ${item.name}`"
+                @click.stop="$emit('unfire', item.line_id || '')"
+              >
+                <Icon name="lucide:flame" class="size-3 shrink-0 group-hover:hidden" />
+                <Icon name="lucide:x" class="hidden size-3 shrink-0 group-hover:inline" />
+                {{ kitchenBadge(item).label }}
+              </button>
+              <span
+                v-else-if="lineKitchenState(item) === 'fired'"
+                class="inline-flex shrink-0 items-center gap-1 whitespace-nowrap rounded-full px-2 py-0.5 text-xs font-medium"
+                :class="badgeTone(kitchenBadge(item).tone)"
+                aria-live="polite"
+              >
+                <Icon :name="badgeIcon(kitchenBadge(item).tone)" class="size-3 shrink-0" />
+                {{ kitchenBadge(item).label }}
+              </span>
             </div>
           </div>
         </li>

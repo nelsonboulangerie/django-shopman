@@ -38,6 +38,39 @@ export function lineDiscountBadge(
   return pricingDiscountBadge(item) || manualDiscountLabel(item, reasons);
 }
 
+/** O total da LINHA — o que se cobra por ela. O servidor soma; aqui só se lê.
+ *
+ *  ⚠️ `qty × price_q` NÃO é isto. `price_q` é o preço de RESTAURAÇÃO (pré-desconto
+ *  manual), e com desconto na linha ele é maior do que o cliente paga — a linha
+ *  mostrava um total que não fechava com o "Total parcial" logo abaixo dela.
+ *  O fallback só existe para payload velho em cache.
+ */
+export function lineTotalQ(item: POSCartItem): number {
+  if (typeof item.line_total_q === "number") return item.line_total_q;
+  if (typeof item.charged_price_q === "number") return item.charged_price_q * item.qty;
+  return item.price_q * item.qty;
+}
+
+/** O que se cobra por UNIDADE. Mesma armadilha do total: `price_q` é restauração. */
+export function unitChargedQ(item: POSCartItem): number {
+  if (typeof item.charged_price_q === "number") return item.charged_price_q;
+  return item.price_q;
+}
+
+/** A etiqueta RISCADA da linha: o total que ela teria sem desconto nenhum.
+ *  "" quando não há diferença — riscar um número igual ao cobrado é ruído. */
+export function lineListTotalDisplay(item: POSCartItem): string {
+  const list = typeof item.list_price_q === "number" ? item.list_price_q * item.qty : 0;
+  if (!list || list <= lineTotalQ(item)) return "";
+  return formatBRL(list);
+}
+
+/** Quanto esta linha economizou, em centavos. 0 quando não houve desconto. */
+export function lineSavingsQ(item: POSCartItem): number {
+  const list = typeof item.list_price_q === "number" ? item.list_price_q * item.qty : 0;
+  return Math.max(0, list - lineTotalQ(item));
+}
+
 export interface SaleDiscountBadge {
   sku: string;
   name: string;
