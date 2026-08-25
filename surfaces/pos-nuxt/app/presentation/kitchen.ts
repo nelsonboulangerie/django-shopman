@@ -36,10 +36,41 @@ export type KitchenLineState = "unfired" | "fired" | "fired_cancellable";
  * Per-line kitchen state. A fired line is cancellable only when the channel
  * offers unfire AND the line carries a server `line_id` to target; otherwise it
  * shows as a non-interactive "in the kitchen" marker.
+ *
+ * Uma linha que a cozinha já ENCERROU (pronta ou cancelada) deixa de ser
+ * cancelável: desfazer o envio de algo que já saiu do fogão não é um gesto de
+ * tela, é uma conversa com quem está lá dentro.
  */
 export function kitchenLineState(item: POSCartItem, options: { canUnfire: boolean }): KitchenLineState {
   if (!item.fired) return "unfired";
-  return options.canUnfire && Boolean(item.line_id) ? "fired_cancellable" : "fired";
+  const settled = item.kitchen_status === "done" || item.kitchen_status === "cancelled";
+  return options.canUnfire && Boolean(item.line_id) && !settled ? "fired_cancellable" : "fired";
+}
+
+/** O que o selo da linha DIZ, e a cor funcional que ele merece.
+ *
+ * "Na cozinha" era selo fixo: o ticket virava pronto (ou era cancelado) e o
+ * balcão continuava anunciando o estado do minuto do disparo. O texto agora seg
+ * o ticket, e só duas situações ganham cor — pronto (verde, é dinheiro na mão do
+ * cliente) e cancelado (vermelho, exige ação de quem está no caixa). Em
+ * andamento é neutro, como o resto do PDV.
+ */
+export interface KitchenBadgeView {
+  label: string;
+  tone: "neutral" | "success" | "destructive";
+}
+
+export function kitchenBadge(item: POSCartItem): KitchenBadgeView {
+  switch (item.kitchen_status) {
+    case "done":
+      return { label: "Pronto", tone: "success" };
+    case "cancelled":
+      return { label: "Cancelado na cozinha", tone: "destructive" };
+    case "in_progress":
+      return { label: "Preparando", tone: "neutral" };
+    default:
+      return { label: "Na cozinha", tone: "neutral" };
+  }
 }
 
 const ALL_FIRED_LABEL = "Tudo na cozinha";

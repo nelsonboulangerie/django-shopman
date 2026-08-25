@@ -78,6 +78,7 @@ import {
   allLinesFired,
   fireBarView,
   firedCount,
+  kitchenBadge,
   kitchenLineState,
   unfiredCount,
 } from "../app/presentation/kitchen";
@@ -856,6 +857,33 @@ describe("presentation/kitchen — fire-to-kitchen shaping", () => {
     // Fired but no unfire affordance, or no line_id to target → non-interactive.
     expect(kitchenLineState(cartItem({ sku: "A", fired: true, line_id: "L1" }), { canUnfire: false })).toBe("fired");
     expect(kitchenLineState(cartItem({ sku: "A", fired: true }), { canUnfire: true })).toBe("fired");
+  });
+
+  it("linha que a cozinha já encerrou não oferece mais desfazer o envio", () => {
+    // Desfazer o envio de algo que já saiu do fogão não é gesto de tela: é
+    // conversa com quem está lá dentro. Oferecer o botão convidava o operador a
+    // "cancelar" um prato pronto e achar que o cancelamento chegou.
+    const pronto = cartItem({ sku: "A", fired: true, line_id: "L1", kitchen_status: "done" });
+    const cancelado = cartItem({ sku: "A", fired: true, line_id: "L1", kitchen_status: "cancelled" });
+    const preparando = cartItem({ sku: "A", fired: true, line_id: "L1", kitchen_status: "in_progress" });
+
+    expect(kitchenLineState(pronto, { canUnfire: true })).toBe("fired");
+    expect(kitchenLineState(cancelado, { canUnfire: true })).toBe("fired");
+    expect(kitchenLineState(preparando, { canUnfire: true })).toBe("fired_cancellable");
+  });
+
+  it("o selo da linha segue o ticket, e a cor só aparece onde tem significado", () => {
+    // "Na cozinha" era selo FIXO: o ticket virava pronto (ou era cancelado) e o
+    // balcão seguia anunciando o estado do minuto do disparo.
+    expect(kitchenBadge(cartItem({ sku: "A", fired: true }))).toEqual({ label: "Na cozinha", tone: "neutral" });
+    expect(kitchenBadge(cartItem({ sku: "A", fired: true, kitchen_status: "pending" })))
+      .toEqual({ label: "Na cozinha", tone: "neutral" });
+    expect(kitchenBadge(cartItem({ sku: "A", fired: true, kitchen_status: "in_progress" })))
+      .toEqual({ label: "Preparando", tone: "neutral" });
+    expect(kitchenBadge(cartItem({ sku: "A", fired: true, kitchen_status: "done" })))
+      .toEqual({ label: "Pronto", tone: "success" });
+    expect(kitchenBadge(cartItem({ sku: "A", fired: true, kitchen_status: "cancelled" })))
+      .toEqual({ label: "Cancelado na cozinha", tone: "destructive" });
   });
 
   it("shapes the fire bar: Action label + delta, all-fired state, disabled logic", () => {

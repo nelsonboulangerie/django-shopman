@@ -79,8 +79,15 @@ def test_cancel_tickets_emits_kds_status_update(monkeypatch, kds_ticket):
 
 @pytest.mark.django_db
 def test_kds_ticket_items_change_emits_update(monkeypatch, kds_ticket):
+    # Só o canal da COZINHA: o mesmo fato também é anunciado ao balcão (canal
+    # `tabs`, sinal mínimo, ver test_pos_kitchen_status), e este teste é sobre o
+    # que a cozinha recebe.
     calls = []
-    monkeypatch.setattr(_sse_emitters, "_emit_backstage", lambda kind, event_type, payload, **kwargs: calls.append(event_type))
+    monkeypatch.setattr(
+        _sse_emitters,
+        "_emit_backstage",
+        lambda kind, event_type, payload, **kwargs: calls.append(event_type) if kind == "kds" else None,
+    )
 
     kds_ticket.items = [{"sku": "P1", "name": "Produto", "qty": 1, "checked": True}]
     kds_ticket.save(update_fields=["items"])
@@ -94,6 +101,8 @@ def test_kds_multi_instance_scopes_events_per_station(monkeypatch):
     captured: list[tuple[str, str]] = []
 
     def fake_emit(kind, event_type, payload, *, scope=None):
+        if kind != "kds":  # o aviso ao balcão não carrega estação (nem deve)
+            return
         captured.append((scope or "main", payload["kds_instance_ref"]))
 
     monkeypatch.setattr(_sse_emitters, "_emit_backstage", fake_emit)
