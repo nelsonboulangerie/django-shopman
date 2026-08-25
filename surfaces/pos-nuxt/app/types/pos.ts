@@ -470,8 +470,6 @@ export interface POSCartItem {
    *  manual). ⚠️ Não é `price_q`: aquele é o número de restauração — pré-desconto
    *  manual — e com desconto na linha ele é MAIOR do que o cliente paga. */
   charged_price_q?: number;
-  /** `charged_price_q × qty`, somado pelo servidor. É o total da linha. */
-  line_total_q?: number;
   /** Operator overrode the unit price (numpad "Preço"): the kernel freezes it and
    *  the server review requires manager approval. Survives persist→reload. */
   price_overridden?: boolean;

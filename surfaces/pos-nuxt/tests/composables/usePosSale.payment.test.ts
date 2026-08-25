@@ -145,10 +145,16 @@ describe("usePosSale — tenders (injeção de pagamento estilo Odoo)", () => {
 });
 
 describe("usePosSale — total interino do pagamento (nunca o bruto)", () => {
-  it("sem review, o total aplica os descontos de linha (estimativa líquida)", () => {
+  it("sem review, o total NÃO antecipa o desconto que o servidor ainda não aplicou", () => {
+    // Pedir 10% na linha não muda o total na hora: o autosave persiste, o
+    // servidor decide (a política é "maior desconto ganha, um por item") e o
+    // preço cobrado volta no payload. Antecipar aqui era a tela discordar do
+    // servidor em dinheiro, na frente do cliente — a linha dizia R$ 9,00 e o
+    // Total parcial R$ 8,10 na mesma tela. Segundos de defasagem custam menos
+    // que um número que o servidor vai desmentir.
     const h = saleWithTotal1000();
-    h.sale.setLineDiscount("PAO", 10, "cortesia"); // 2 × 500 − 2 × 50
-    expect(h.sale.paymentTotalQ.value).toBe(900);
+    h.sale.setLineDiscount("PAO", 10, "cortesia");
+    expect(h.sale.paymentTotalQ.value).toBe(1000);
     h.handles.dispose();
   });
 

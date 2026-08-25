@@ -18,8 +18,8 @@ import type {
   CustomerDisplaySnapshot,
   PosDisplayResult,
 } from "~/types/customerDisplay";
-import { lineDiscountBadge } from "~/presentation/lineDiscounts";
-import { cartNetTotalQ, receiptLineTotalQ } from "~/presentation/receipt";
+import { lineDiscountBadge, lineTotalQ, unitChargedQ } from "~/presentation/lineDiscounts";
+import { cartNetTotalQ } from "~/presentation/receipt";
 import { formatBRL } from "~/utils/posIntent";
 
 export interface CustomerDisplayInputs {
@@ -44,17 +44,14 @@ export function displayItemView(
   item: POSCartItem,
   reasons: POSCheckoutOptionProjection[],
 ): CustomerDisplayItem {
-  const netQ = receiptLineTotalQ({
-    name: item.name,
-    qty: item.qty,
-    price_q: item.price_q,
-    discountPct: item.discount?.value || 0,
-  });
+  // Mesma regra da linha do carrinho: preço do servidor, quantidade da tela.
+  // O cliente lê esta tela em voz alta com o operador — os dois números têm que
+  // ser o mesmo número.
   return {
     name: item.name,
     qty: item.qty,
-    unitDisplay: formatBRL(item.price_q),
-    totalDisplay: formatBRL(netQ),
+    unitDisplay: formatBRL(unitChargedQ(item)),
+    totalDisplay: formatBRL(lineTotalQ(item)),
     discountLabel: lineDiscountBadge(item, reasons),
   };
 }
@@ -104,8 +101,8 @@ export function buildCustomerDisplaySnapshot(
   if (phase === "sale" || (phase === "payment" && !inputs.result)) {
     snapshot.items = inputs.items.map((item) => displayItemView(item, inputs.discountReasons));
     snapshot.itemCount = inputs.items.reduce((sum, item) => sum + item.qty, 0);
-    // A MESMA estimativa local da tela de venda (`cartNetTotalQ`, descontos de
-    // linha aplicados). O review, quando existe, prevalece.
+    // A MESMA soma da tela de venda (`cartNetTotalQ`). O review, quando existe,
+    // prevalece.
     snapshot.totalDisplay = inputs.review?.total_display
       || formatBRL(cartNetTotalQ(inputs.items));
     snapshot.discountDisplay = inputs.review && inputs.review.discount_q > 0

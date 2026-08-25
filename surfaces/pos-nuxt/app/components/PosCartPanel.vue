@@ -6,7 +6,8 @@ import { globalKeysBlocked } from "~/utils/keyboardGuard";
 import { clampPercent, clampQty, popDigit, pushDigit } from "~/presentation/numpad";
 import { fireBarView, kitchenBadge, kitchenLineState } from "~/presentation/kitchen";
 import { pruneSelection, selectionView, toggleSelected } from "~/presentation/selection";
-import { lineListTotalDisplay, lineTotalQ, pricingDiscountBadge, unitChargedQ } from "~/presentation/lineDiscounts";
+import { lineListTotalDisplay, lineTotalQ, manualDiscountBadgeView, pricingDiscountBadge, unitChargedQ } from "~/presentation/lineDiscounts";
+import { cartNetTotalQ } from "~/presentation/receipt";
 import { toast } from "vue-sonner";
 
 const props = defineProps<{
@@ -108,13 +109,20 @@ function badgeIcon(tone: "neutral" | "success" | "destructive"): string {
 }
 
 
-// Interim local total — reflects per-line manual discount as an estimate so the
-// operator sees the discount land. Backend review remains the authoritative total.
-const totalDisplay = computed(() => formatBRL(props.items.reduce((sum, item) => {
-  const gross = item.price_q * item.qty;
-  const perUnit = item.discount?.value ? Math.min(item.price_q, Math.round(item.price_q * item.discount.value / 100)) : 0;
-  return sum + Math.max(0, gross - perUnit * item.qty);
-}, 0)));
+// O "Total parcial" — a MESMA soma da tela do cliente e do total interino do
+// pagamento, por `cartNetTotalQ`. Esta conta estava escrita à mão aqui, uma
+// TERCEIRA cópia dela (as outras em `receipt.ts` e `customerDisplay.ts`), e as
+// três aplicavam por conta própria o percentual de desconto da linha — que o
+// servidor descarta quando um desconto automático maior já ganhou. Resultado na
+// tela: linha de R$ 10,20 e Total parcial de R$ 9,18, um debaixo do outro.
+const totalDisplay = computed(() => formatBRL(cartNetTotalQ(props.items)));
+
+/** O selo do desconto manual da linha — inclui se ele venceu o automático.
+ *  Usa `reasonOptions`, que já normaliza a lista do servidor e cai nos motivos
+ *  padrão: o selo tem que dizer "Cortesia", não o ref cru. */
+function manualBadge(item: POSCartItem) {
+  return manualDiscountBadgeView(item, reasonOptions.value);
+}
 // Numpad targets the selected line. Three modes (Odoo's Qty/%/Price): "qty"
 // (integer, first digit replaces), "disc" (percent), "price" (unit-price override
 // — decimal entry, reais first, comma → centavos; flips manager approval on).
@@ -520,13 +528,18 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onWindowKeydown));
                 <Icon name="lucide:tags" class="size-3 shrink-0" />
                 {{ pricingDiscountBadge(item) }}
               </span>
+              <!-- O manual, dizendo se VALEU. Perdido, ele vai riscado e em tom
+                   neutro: quem digitou a cortesia precisa ver que ela não pegou. -->
               <span
-                v-if="item.discount && item.discount.value > 0"
-                class="inline-flex shrink-0 items-center gap-1 whitespace-nowrap rounded-full bg-primary/10 px-2 py-0.5 text-xs font-medium text-primary"
-                :title="`Desconto: ${item.discount.reason}`"
+                v-if="manualBadge(item)"
+                class="inline-flex shrink-0 items-center gap-1 whitespace-nowrap rounded-full px-2 py-0.5 text-xs font-medium"
+                :class="manualBadge(item)!.applied
+                  ? 'bg-primary/10 text-primary'
+                  : 'bg-muted text-muted-foreground line-through decoration-muted-foreground/60'"
+                :title="manualBadge(item)!.title"
               >
                 <Icon name="lucide:tag" class="size-3 shrink-0" />
-                {{ item.discount.reason || "Desconto" }} −{{ item.discount.value }}%
+                {{ manualBadge(item)!.label }}
               </span>
               <button
                 v-if="lineKitchenState(item) === 'fired_cancellable'"

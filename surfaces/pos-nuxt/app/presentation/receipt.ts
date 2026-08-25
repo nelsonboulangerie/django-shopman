@@ -6,6 +6,7 @@
 // ePOS on real hardware) is validated separately on a device.
 import type { POSCartItem, POSPaymentMethodProjection } from "~/types/pos";
 import { formatBRL } from "~/utils/posIntent";
+import { lineTotalQ } from "~/presentation/lineDiscounts";
 import { methodLabel } from "~/presentation/payment";
 
 export interface PosReceiptItem {
@@ -49,21 +50,24 @@ export function receiptLineTotalQ(item: PosReceiptItem): number {
 }
 
 /**
- * Total líquido local do carrinho VIVO (descontos de linha aplicados) — a mesma
- * conta do "Total parcial" do painel da comanda e da tela do cliente. Dona
- * única da linha: `receiptLineTotalQ`. Estimativa de UX; a review do
- * orquestrador continua sendo o total autoritativo.
+ * Total do carrinho VIVO — o "Total parcial" do painel da comanda e da tela do
+ * cliente. Soma as linhas por `lineTotalQ`: preço unitário do SERVIDOR × a
+ * quantidade da tela.
+ *
+ * ⚠️ Ele NÃO aplica mais o percentual de desconto da linha por conta própria.
+ * Isso era a tela calculando dinheiro, e calculando DIFERENTE do servidor: a
+ * política é "maior desconto ganha, um por item" (`modifiers.py`), então um
+ * desconto manual menor que o automático é DESCARTADO lá — e aplicado aqui.
+ * Foi assim que a Tabatière com "Hora da Xepa −25%" e "cortesia −10%" exibiu
+ * linha de R$ 9,00 e Total parcial de R$ 8,10 na mesma tela, com
+ * `pricing.discount.items` vazio no banco provando que os 10% nunca valeram.
+ *
+ * Somar `charged_price_q` mantém a resposta instantânea ao toque e devolve a
+ * invariante que faltava: as linhas somam exatamente o total. A review do
+ * orquestrador segue sendo a autoridade final.
  */
 export function cartNetTotalQ(items: POSCartItem[]): number {
-  return items.reduce(
-    (sum, item) => sum + receiptLineTotalQ({
-      name: item.name,
-      qty: item.qty,
-      price_q: item.price_q,
-      discountPct: item.discount?.value || 0,
-    }),
-    0,
-  );
+  return items.reduce((sum, item) => sum + lineTotalQ(item), 0);
 }
 
 export function receiptLines(snap: PosReceiptSnapshot): ReceiptLineView[] {

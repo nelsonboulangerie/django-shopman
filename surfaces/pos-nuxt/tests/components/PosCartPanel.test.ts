@@ -238,3 +238,70 @@ describe("PosCartPanel — a linha do carrinho", () => {
     expect(band.find("button").exists()).toBe(false);
   });
 });
+
+describe("PosCartPanel — transparência de desconto na linha", () => {
+  it("risca a etiqueta ao lado do que se cobra", async () => {
+    const wrapper = await mountSuspended(PosCartPanel, {
+      props: props({
+        items: [item({ sku: "TAB", name: "Tabatière", qty: 2, price_q: 510, charged_price_q: 510, list_price_q: 600 })],
+      }),
+    });
+    const struck = wrapper.find("span.line-through");
+    expect(struck.exists()).toBe(true);
+    expect(struck.text()).toBe(formatBRL(1200));
+    expect(wrapper.findAll("strong").map((el) => el.text())).toContain(formatBRL(1020));
+  });
+
+  it("sem diferença, não risca nada — riscar um número igual é ruído", async () => {
+    const wrapper = await mountSuspended(PosCartPanel, {
+      props: props({
+        items: [item({ sku: "PAO", name: "Pão", qty: 1, price_q: 500, charged_price_q: 500, list_price_q: 500 })],
+      }),
+    });
+    expect(wrapper.find("span.line-through").exists()).toBe(false);
+  });
+
+  it("o desconto manual que PERDEU aparece riscado, dizendo por quê", async () => {
+    // "Maior desconto ganha, um por item": a cortesia de 10% não vale numa linha
+    // que já levou 15%. O operador digitou aquilo e precisa ver que não pegou.
+    const wrapper = await mountSuspended(PosCartPanel, {
+      props: props({
+        items: [item({
+          sku: "TAB", name: "Tabatière", qty: 2, price_q: 510, charged_price_q: 510, list_price_q: 600,
+          discount: { value: 10, reason: "cortesia" },
+          pricing_discount: { type: "promotion", label: "Semana do Pão", amount_q: 90, percent: 15 },
+        })],
+      }),
+    });
+    const manual = wrapper.findAll("span[title]").find((el) => el.text().includes("Cortesia"));
+    expect(manual).toBeTruthy();
+    expect(manual!.classes()).toContain("line-through");
+    expect(manual!.attributes("title")).toContain("Semana do Pão");
+  });
+
+  it("o desconto manual que GANHOU aparece normal", async () => {
+    const wrapper = await mountSuspended(PosCartPanel, {
+      props: props({
+        items: [item({
+          sku: "PAO", name: "Pão", qty: 1, price_q: 500, charged_price_q: 450, list_price_q: 500,
+          discount: { value: 10, reason: "cortesia" },
+        })],
+      }),
+    });
+    const manual = wrapper.findAll("span[title]").find((el) => el.text().includes("Cortesia"));
+    expect(manual!.classes()).not.toContain("line-through");
+  });
+
+  it("o Total parcial é a soma exata das linhas", async () => {
+    // A invariante que o operador confere na frente do cliente.
+    const wrapper = await mountSuspended(PosCartPanel, {
+      props: props({
+        items: [
+          item({ sku: "TAB", name: "Tabatière", qty: 2, price_q: 510, charged_price_q: 510, list_price_q: 600, discount: { value: 10, reason: "cortesia" }, pricing_discount: { type: "promotion", label: "Semana do Pão", amount_q: 90, percent: 15 } }),
+          item({ sku: "PAO", name: "Pão", qty: 1, price_q: 500, charged_price_q: 500, list_price_q: 500 }),
+        ],
+      }),
+    });
+    expect(wrapper.text()).toContain(formatBRL(1020 + 500));
+  });
+});

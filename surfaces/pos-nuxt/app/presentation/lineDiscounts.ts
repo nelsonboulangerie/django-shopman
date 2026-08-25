@@ -7,7 +7,7 @@
 // quando o percentual não fecha limpo. É o mesmo idioma visual da tela do
 // cliente (/display), que delega para cá — preço nunca muda calado.
 
-import type { POSCartItem, POSCheckoutOptionProjection } from "~/types/pos";
+import type { POSCartItem } from "~/types/pos";
 import { formatBRL } from "~/utils/posIntent";
 
 /** "Liquidação −15%" (ou "Liquidação −R$ 1,95"). "" quando não há desconto automático. */
@@ -18,10 +18,16 @@ export function pricingDiscountBadge(item: POSCartItem): string {
   return disc.percent > 0 ? `${label} −${disc.percent}%` : `${label} −${formatBRL(disc.amount_q)}`;
 }
 
+/** A lista de motivos que estas funções realmente usam: um `ref` e um rótulo.
+ *  Mais estreita que a projection de opções do checkout de propósito — o painel do
+ *  carrinho normaliza a lista do servidor e cai nos motivos padrão, que não têm
+ *  `description`, e exigir o campo forçaria inventar um vazio só para o tipo. */
+export type DiscountReasonOption = { ref: string; label?: string };
+
 /** Rótulo do desconto MANUAL da linha: "Cortesia −10%". "" quando não há. */
 export function manualDiscountLabel(
   item: POSCartItem,
-  reasons: POSCheckoutOptionProjection[],
+  reasons: readonly DiscountReasonOption[],
 ): string {
   const pct = item.discount?.value || 0;
   if (pct <= 0) return "";
@@ -30,25 +36,61 @@ export function manualDiscountLabel(
   return `${label} −${pct}%`;
 }
 
+export interface ManualDiscountBadgeView {
+  label: string;
+  /** O desconto que o operador pediu VALEU nesta linha? */
+  applied: boolean;
+  title: string;
+}
+
+/** O selo do desconto MANUAL, dizendo se ele valeu.
+ *
+ *  A política é "maior desconto ganha, um por item": um manual de 10% numa linha
+ *  que já levou "Semana do Pão −15%" é DESCARTADO pelo servidor. A tela mostrava
+ *  os dois selos com o mesmo peso, como se os dois tivessem sido aplicados — e o
+ *  operador que digitou a cortesia não tinha como saber que ela não valeu.
+ *
+ *  Quem decide é o carimbo do servidor: `pricing_discount` só existe quando um
+ *  desconto AUTOMÁTICO venceu a linha (o tipo "manual" fica fora daquele
+ *  conjunto). Logo, automático presente ⇒ o manual perdeu.
+ */
+export function manualDiscountBadgeView(
+  item: POSCartItem,
+  reasons: readonly DiscountReasonOption[] = [],
+): ManualDiscountBadgeView | null {
+  const label = manualDiscountLabel(item, reasons);
+  if (!label) return null;
+  const winner = item.pricing_discount?.label || "";
+  if (!winner) return { label, applied: true, title: `Desconto aplicado: ${label}` };
+  return {
+    label,
+    applied: false,
+    title: `Não aplicado — "${winner}" é maior, e só um desconto vale por item.`,
+  };
+}
+
 /** O badge da linha: o desconto automático vence a exibição (é o que mexeu no preço). */
 export function lineDiscountBadge(
   item: POSCartItem,
-  reasons: POSCheckoutOptionProjection[] = [],
+  reasons: readonly DiscountReasonOption[] = [],
 ): string {
   return pricingDiscountBadge(item) || manualDiscountLabel(item, reasons);
 }
 
-/** O total da LINHA — o que se cobra por ela. O servidor soma; aqui só se lê.
+/** O total da LINHA: preço unitário do SERVIDOR × a quantidade da TELA.
  *
- *  ⚠️ `qty × price_q` NÃO é isto. `price_q` é o preço de RESTAURAÇÃO (pré-desconto
- *  manual), e com desconto na linha ele é maior do que o cliente paga — a linha
- *  mostrava um total que não fechava com o "Total parcial" logo abaixo dela.
- *  O fallback só existe para payload velho em cache.
+ *  ⚠️ `qty × price_q` não serve: `price_q` é o preço de RESTAURAÇÃO
+ *  (pré-desconto manual), maior do que o cliente paga.
+ *
+ *  ⚠️ E o servidor NÃO manda o total da linha pronto, embora seja trivial para
+ *  ele: a quantidade muda de forma otimista no cliente e só depois vai ao
+ *  servidor, então entre o "+" e a resposta um total vindo pronto fica
+ *  congelado — cheguei a ver na tela um item com qty 123 exibindo o total de 2.
+ *  A divisão honesta é esta: o PREÇO é política (servidor), a QUANTIDADE é o que
+ *  o dedo acabou de fazer (tela). Multiplicar os dois não é calcular política.
  */
 export function lineTotalQ(item: POSCartItem): number {
-  if (typeof item.line_total_q === "number") return item.line_total_q;
-  if (typeof item.charged_price_q === "number") return item.charged_price_q * item.qty;
-  return item.price_q * item.qty;
+  return unitChargedQ(item) * item.qty;
 }
 
 /** O que se cobra por UNIDADE. Mesma armadilha do total: `price_q` é restauração. */
@@ -60,15 +102,19 @@ export function unitChargedQ(item: POSCartItem): number {
 /** A etiqueta RISCADA da linha: o total que ela teria sem desconto nenhum.
  *  "" quando não há diferença — riscar um número igual ao cobrado é ruído. */
 export function lineListTotalDisplay(item: POSCartItem): string {
-  const list = typeof item.list_price_q === "number" ? item.list_price_q * item.qty : 0;
+  const list = lineListTotalQ(item);
   if (!list || list <= lineTotalQ(item)) return "";
   return formatBRL(list);
 }
 
+/** O total de etiqueta da linha, em centavos. 0 quando o servidor não disse. */
+export function lineListTotalQ(item: POSCartItem): number {
+  return typeof item.list_price_q === "number" ? item.list_price_q * item.qty : 0;
+}
+
 /** Quanto esta linha economizou, em centavos. 0 quando não houve desconto. */
 export function lineSavingsQ(item: POSCartItem): number {
-  const list = typeof item.list_price_q === "number" ? item.list_price_q * item.qty : 0;
-  return Math.max(0, list - lineTotalQ(item));
+  return Math.max(0, lineListTotalQ(item) - lineTotalQ(item));
 }
 
 export interface SaleDiscountBadge {
@@ -80,7 +126,7 @@ export interface SaleDiscountBadge {
 /** Uma linha por item com desconto (automático ou manual) — o resumo do checkout. */
 export function saleDiscountBadges(
   items: POSCartItem[],
-  reasons: POSCheckoutOptionProjection[] = [],
+  reasons: readonly DiscountReasonOption[] = [],
 ): SaleDiscountBadge[] {
   const rows: SaleDiscountBadge[] = [];
   for (const item of items) {

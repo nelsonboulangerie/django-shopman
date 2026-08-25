@@ -2203,7 +2203,6 @@ def build_open_tab(session: Session) -> dict:
             "pricing_discount": _tab_payload_pricing_discount(item),
             "list_price_q": _tab_line_list_price_q(item, manual_originals),
             "charged_price_q": _int_q(item.get("unit_price_q", 0)),
-            "line_total_q": _int_q(item.get("unit_price_q", 0)) * int(item.get("qty", 1)),
             "price_overridden": bool((item.get("meta") or {}).get("price_overridden")),
         }
         for item in (session.items or [])
