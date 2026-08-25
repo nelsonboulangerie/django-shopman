@@ -332,6 +332,55 @@ const tabHeaderRef = ref<{ openCustomer: () => void } | null>(null);
 // funcionando lá dentro sem passar por cima desta.
 const fulfillmentSheetOpen = ref(false);
 
+// A PRIMEIRA PERGUNTA DO ATENDIMENTO — "é pra comer aqui ou pra levar?".
+//
+// Recebimento decide taxa, janela de horário e endereço, e decide também se vale
+// a pena pedir o telefone. Perguntado no fim, tudo isso chega depois de o preço
+// já ter sido dito em voz alta.
+//
+// NÃO é modal, de propósito. A venda dominante no balcão é anônima, à vista e de
+// retirada; um diálogo que se dispensa em 80% dos atendimentos ensina o operador
+// a fechar sem ler, e aí ele para de capturar nos 20% que importam — custa tempo
+// E não captura. Aqui a resposta padrão está visível e a um toque, então
+// "dispensar" é aceitar o padrão, que é uma resposta honesta.
+//
+// Some sozinha no primeiro item lançado: quem começou a vender já respondeu
+// "retirada" com o corpo.
+const fulfillmentAskedFor = ref("");
+const showFulfillmentPrompt = computed(() =>
+  inSaleView.value
+  && !checkoutMode.value
+  && hasOpenTab.value
+  && cart.items.length === 0
+  && fulfillmentAskedFor.value !== cart.tabSessionKey,
+);
+function markFulfillmentAsked() {
+  fulfillmentAskedFor.value = cart.tabSessionKey || "-";
+}
+function answerPickup() {
+  cart.fulfillmentType = "pickup";
+  markFulfillmentAsked();
+}
+function answerDelivery() {
+  cart.fulfillmentType = "delivery";
+  markFulfillmentAsked();
+  fulfillmentSheetOpen.value = true;
+}
+// Lançou item sem responder: o padrão valeu, e a faixa não volta nesta comanda.
+watch(() => cart.items.length, (count) => {
+  if (count > 0 && showFulfillmentPrompt.value) markFulfillmentAsked();
+});
+// ENTREGA identifica o cliente. Num pedido que sai da loja o telefone é praxe —
+// é por ele que se liga quando o entregador não acha o portão —, e a faixa de
+// preço do cadastro precisa valer ANTES de o primeiro item ser lançado, não
+// depois. Só é oferecido: fechar o diálogo segue sendo uma resposta.
+watch(fulfillmentSheetOpen, (open, wasOpen) => {
+  if (open || !wasOpen) return;
+  if (cart.fulfillmentType !== "delivery") return;
+  if (cart.customerName.trim() || cart.customerPhone.trim()) return;
+  void nextTick(() => tabHeaderRef.value?.openCustomer());
+});
+
 // O rótulo do chip: com entrega, o BAIRRO diz mais que a palavra "entrega" — é o
 // que o operador confere de relance quando o cliente muda de ideia no meio.
 const fulfillmentChipLabel = computed(() => {
@@ -785,16 +834,48 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onGlobalKeydown));
 
         <!-- SALE VIEW · product grid (the ticket/comanda is a full-height sibling
              of the work column, so it reaches the top edge like the rail) -->
-        <PosProductGrid
-          v-else
-          ref="productGridRef"
-          :products="pos?.products || []"
-          :collections="pos?.collections || []"
-          :favorite-refs="pos?.favorite_collection_refs || []"
-          :cart-items="cart.items"
-          :pending="pending"
-          @add="addProduct"
-        />
+        <div v-else class="flex h-full min-h-0 flex-col gap-3">
+          <!-- A primeira pergunta do atendimento. Retirada já vem escolhida e
+               grande: no balcão ela é a resposta quase sempre, e o toque que a
+               confirma é o mesmo que seguiria para o produto. -->
+          <div
+            v-if="showFulfillmentPrompt"
+            class="flex shrink-0 flex-wrap items-center gap-2 rounded-md border bg-card px-3 py-2"
+          >
+            <span class="text-sm font-medium">Como o cliente recebe?</span>
+            <div class="flex flex-1 flex-wrap items-center gap-2">
+              <UiButton size="sm" class="h-9 gap-1.5" @click="answerPickup">
+                <Icon name="lucide:store" class="size-4" />
+                Retirada · Balcão
+              </UiButton>
+              <UiButton variant="outline" size="sm" class="h-9 gap-1.5" @click="answerDelivery">
+                <Icon name="lucide:bike" class="size-4" />
+                Entrega
+              </UiButton>
+            </div>
+            <UiButton
+              variant="ghost"
+              size="icon-sm"
+              class="shrink-0"
+              aria-label="Deixar como retirada"
+              title="Deixar como retirada"
+              @click="markFulfillmentAsked"
+            >
+              <Icon name="lucide:x" class="size-4" />
+            </UiButton>
+          </div>
+
+          <PosProductGrid
+            ref="productGridRef"
+            class="min-h-0 flex-1"
+            :products="pos?.products || []"
+            :collections="pos?.collections || []"
+            :favorite-refs="pos?.favorite_collection_refs || []"
+            :cart-items="cart.items"
+            :pending="pending"
+            @add="addProduct"
+          />
+        </div>
       </div>
       </div>
       </div>
