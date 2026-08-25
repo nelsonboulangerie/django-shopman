@@ -15,6 +15,7 @@ import type {
 } from "../app/types/pos";
 import { findAction, hasAction, resolveAffordance } from "../app/presentation/actions";
 import {
+  enterTargetProduct,
   filterProducts,
   normalizeSearchText,
   orderCollections,
@@ -261,6 +262,25 @@ describe("presentation/catalog — grid shaping", () => {
       "COMPADRE",
     ]);
     expect(normalizeSearchText("Pão de Açúcar")).toBe("pao de acucar");
+  });
+
+  it("Enter na busca mira o primeiro resultado DISPONÍVEL (esgotado pula)", () => {
+    const products = [
+      product({ sku: "PAO-FRANCES", name: "Pão Francês", sold_out: true }),
+      product({ sku: "PAO-QUEIJO", name: "Pão de Queijo" }),
+      product({ sku: "PAO-FORMA", name: "Pão de Forma" }),
+    ];
+    // O primeiro da ordem está esgotado: Enter adiciona o próximo disponível.
+    expect(enterTargetProduct(products, "pao")?.sku).toBe("PAO-QUEIJO");
+    // Um único resultado disponível → é ele.
+    expect(enterTargetProduct([product({ sku: "CAFE", name: "Café" })], "cafe")?.sku).toBe("CAFE");
+    // Único resultado, mas esgotado → nada a adicionar.
+    expect(enterTargetProduct([product({ sku: "CAFE", name: "Café", sold_out: true })], "cafe")).toBeNull();
+    // Busca vazia não decide: Enter não adiciona o primeiro produto da grade.
+    expect(enterTargetProduct(products, "")).toBeNull();
+    expect(enterTargetProduct(products, "   ")).toBeNull();
+    // Sem resultado algum → nada.
+    expect(enterTargetProduct([], "xyz")).toBeNull();
   });
 
   it("derives a deterministic, calm fallback visual", () => {
