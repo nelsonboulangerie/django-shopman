@@ -1,14 +1,17 @@
-{% load static %}<!doctype html>
+<!doctype html>
 <html lang="pt-BR">
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>DANFE NFC-e · {{ d.order_ref }}</title>
   <style>
-    /* Cupom DANFE NFC-e — largura de bobina (~80mm), monoespaçado, imprimível.
-       Não é a UI transacional (Alpine/HTMX): é um documento fiscal renderizado no
-       servidor, como o menuboard. O botão de impressão usa Alpine (`@click`,
-       sem onclick inline). window.print() é API do browser (exceção prevista). */
+    /* A NOTA NA TELA — o mesmo DANFE NFC-e, no formato de leitura.
+       Há um documento só, e duas maneiras de olhar para ele: a BOBINA, que sai
+       em ESC/POS pelo agente do terminal (`danfe_nfce()`) e é a via conforme que
+       vai para o cliente, e ESTA PÁGINA, que é consulta de balcão e de escritório
+       — abrir, conferir, ler a chave. Os dois nascem do mesmo `build_danfe`.
+       Não é a UI transacional (Alpine/HTMX): é um documento renderizado no
+       servidor, como o menuboard. Sem JS nenhum: nada aqui é interativo. */
     :root { --ink: #16130f; --dim: #6b6357; --rule: #d9d2c4; --paper: #faf7f0; --warn: #b23b2e; }
     * { box-sizing: border-box; }
     html, body { margin: 0; background: #ece7dc; color: var(--ink); }
@@ -42,17 +45,17 @@
     }
     .empty { text-align: center; color: var(--dim); padding: 20px 0; }
     .toolbar { max-width: 320px; margin: 0 auto 12px; display: flex; justify-content: flex-end; gap: 8px; }
-    .print-btn {
-      font: inherit; font-size: 12px; cursor: pointer; border: 1px solid var(--rule); background: #fff;
+    .link-btn {
+      font: inherit; font-size: 12px; border: 1px solid var(--rule); background: #fff;
       color: var(--ink); padding: 7px 14px; border-radius: 6px; text-decoration: none; display: inline-flex; align-items: center;
     }
-    .print-btn:hover { background: var(--paper); }
-    .print-btn.primary { border-color: #1f7a4d; background: #1f7a4d; color: #fff; font-weight: 700; }
-    .print-btn.primary:hover { background: #1a6a43; }
-    .preview-note {
+    .link-btn:hover { background: var(--paper); }
+    .screen-note {
       margin: 0 0 12px; padding: 7px 10px; text-align: center; font-size: 10.5px; line-height: 1.35;
       color: var(--dim); background: #6b63570f; border-radius: 4px;
     }
+    /* Impressão pelo menu do navegador continua legível — a página não oferece o
+       caminho, mas não é hostil a quem o tomar por conta própria. */
     @media print {
       body { background: #fff; padding: 0; }
       .toolbar { display: none; }
@@ -61,18 +64,16 @@
   </style>
 </head>
 <body>
-  <div class="toolbar" x-data>
+  <div class="toolbar">
     {% if d.danfe_url %}
-    <!-- O DANFE oficial é o que o Focus/SEFAZ entregam — ação primária quando existe. -->
-    <a class="print-btn primary" href="{{ d.danfe_url }}" target="_blank" rel="noopener">📄 DANFE oficial (Focus)</a>
+    <!-- A via do provedor, para o contador: mesma nota, hospedada pelo Focus. -->
+    <a class="link-btn" href="{{ d.danfe_url }}" target="_blank" rel="noopener">📄 Ver no Focus</a>
     {% endif %}
-    <button type="button" class="print-btn" @click="window.print()">🖨 Imprimir prévia</button>
   </div>
 
   <div class="cupom">
-    {% if d.danfe_url %}
-    <p class="preview-note">Prévia interna. O documento oficial é o <strong>DANFE do Focus/SEFAZ</strong> (botão acima).</p>
-    {% endif %}
+    {# Esta página não imprime: A4 não é DANFE. Ver o docstring de DanfeView. #}
+    <p class="screen-note">Consulta na tela. A via do cliente sai na bobina, pelo terminal.</p>
     {% if d.is_homolog %}
     <p class="homolog">EMITIDA EM AMBIENTE DE HOMOLOGAÇÃO<br />SEM VALOR FISCAL</p>
     {% endif %}
@@ -148,11 +149,5 @@
     {% endif %}
   </div>
 
-  {% comment %}
-    Servido por nós: ver shopman/shop/static/shop/vendor/README.md. O corpo do
-    cupom é renderizado pelo servidor, então sem este script a prévia continua
-    legível e imprimível pelo menu do navegador — só o botão para de funcionar.
-  {% endcomment %}
-  <script src="{% static 'shop/vendor/alpine-3.14.1.min.js' %}" defer></script>
 </body>
 </html>

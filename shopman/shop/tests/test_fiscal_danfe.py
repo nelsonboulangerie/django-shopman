@@ -86,3 +86,34 @@ def test_view_404_unknown_order(client, db):
     staff = User.objects.create_user("op2", password="pw", is_staff=True)
     client.force_login(staff)
     assert client.get("/fiscal/danfe/GHOST/").status_code == 404
+
+
+def test_a_pagina_nao_oferece_impressao_nem_se_chama_previa(client, emitted_order):
+    """Um documento, dois modos de olhar — e só um deles imprime.
+
+    A tela oferecia "Imprimir prévia" e se declarava "Prévia interna", com o
+    DANFE do Focus como "oficial". Aquilo descrevia um mundo em que não havia
+    saída conforme nossa; agora há: a bobina em ESC/POS, composta do MESMO
+    `build_danfe`. Sobraram duas leituras da mesma nota (tela e provedor) e
+    nenhuma promessa de que o A4 do escritório seja um DANFE.
+    """
+    staff = User.objects.create_user("op3", password="pw", is_staff=True)
+    client.force_login(staff)
+    body = client.get("/fiscal/danfe/WEB-1/").content.decode()
+
+    assert "prévia" not in body.lower()
+    assert "window.print" not in body
+    assert "oficial" not in body.lower()
+    # A via do provedor continua alcançável — é a do contador.
+    assert "Ver no Focus" in body
+    assert "A via do cliente sai na bobina" in body
+
+
+def test_pagamento_misto_nao_sai_em_ingles_no_documento(db):
+    """O rótulo é lido pela tela E pela bobina; `.title()` punha "Mixed" nas duas."""
+    Shop.objects.create(name="Nelson")
+    Order.objects.create(
+        ref="WEB-3", channel_ref="web", session_key="k3", status="completed", total_q=500,
+        data={"payment": {"method": "mixed"}, "nfce_access_key": "4126079999999900019165001000001234287654321"},
+    )
+    assert build_danfe("WEB-3").payment_label == "Pagamento misto"

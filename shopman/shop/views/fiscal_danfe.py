@@ -1,12 +1,25 @@
 """
-DANFE NFC-e — documento fiscal de operador (o "lampejo" do cupom), renderizado no servidor.
+DANFE NFC-e na TELA — a nota aberta para consulta, renderizada no servidor.
 
 Monta o DANFE (Documento Auxiliar da NFC-e) a partir do resultado guardado em
-``order.data`` (chave, protocolo, QR, itens) + os dados do emitente (``Shop``) e o
-renderiza como cupom imprimível. Não é um read-model multi-superfície (por isso não vive
-em ``shop/projections/``): é um documento com um único consumidor — este template — e por
-isso formata dinheiro/aparência aqui, no lado da apresentação. Gated a staff. Em
-HOMOLOGAÇÃO o cupom carimba "SEM VALOR FISCAL" (obrigatório).
+``order.data`` (chave, protocolo, QR, itens) + os dados do emitente (``Shop``).
+
+**Há um documento só, e duas maneiras de olhar para ele.** A via que vai para o
+cliente é a BOBINA, composta em ESC/POS por ``backstage.services.receipt_escpos
+.danfe_nfce()`` e impressa pelo agente do terminal — é ela que tem largura,
+chave agrupada, QR da SEFAZ e o carimbo de homologação no formato conforme. Esta
+página é a mesma nota em formato de leitura: abrir, conferir, ler a chave, e (com
+o link do provedor) alcançar a via hospedada pelo Focus, que é a do contador.
+
+Enquanto não havia saída conforme, esta tela se anunciava como "prévia interna" e
+oferecia um botão de imprimir. As duas coisas saíram: A4 não é DANFE, e a
+hierarquia "prévia × oficial" descrevia um mundo com duas notas que nunca
+existiu. Quem imprime é o terminal.
+
+Não é um read-model multi-superfície (por isso não vive em ``shop/projections/``):
+é um documento com um único consumidor — este template — e por isso formata
+dinheiro/aparência aqui, no lado da apresentação. Gated a staff. Em HOMOLOGAÇÃO
+carimba "SEM VALOR FISCAL" (obrigatório), igual à bobina.
 """
 
 from __future__ import annotations
@@ -58,6 +71,10 @@ _PAYMENT_LABELS = {
     "debit": "Cartão de débito",
     "cash": "Dinheiro",
     "external": "Pago no canal",
+    # Faltavam, e o fallback `.title()` punha "Mixed" e "Account" — em inglês,
+    # num documento fiscal, na tela e na bobina (as duas leem este mesmo rótulo).
+    "mixed": "Pagamento misto",
+    "account": "Conta da casa",
 }
 
 
@@ -185,7 +202,7 @@ def build_danfe(order_ref: str) -> DanfeDocument | None:
 
 
 class DanfeView(LoginRequiredMixin, View):
-    """Cupom DANFE NFC-e de um pedido (staff), imprimível."""
+    """A nota de um pedido aberta na tela (staff). Consulta, não impressão."""
 
     def get(self, request, ref: str):
         if not request.user.is_staff:

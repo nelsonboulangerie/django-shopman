@@ -22,8 +22,8 @@ const props = defineProps<{
   result: PosSaleResultSnapshot;
   pixStatus: PixPollStatus;
   canCancel: boolean;
-  /** Prévia web da DANFE ("" = sem acesso; o botão da bobina independe disto). */
-  danfePreviewUrl: string;
+  /** A nota aberta na tela ("" = sem acesso; a bobina independe disto). */
+  danfeScreenUrl: string;
   printingReceipt: boolean;
   printingDanfe: boolean;
 }>();
@@ -160,15 +160,15 @@ function onNewSale() {
       <!-- Terciárias: discretas, alinhadas num único grupo -->
       <div class="flex flex-wrap items-center justify-center gap-2">
         <UiButton
-          v-if="result.fiscalExpected && danfePreviewUrl"
+          v-if="result.fiscalExpected && danfeScreenUrl"
           variant="ghost"
           size="sm"
           class="gap-1.5 text-muted-foreground hover:text-foreground"
-          :href="danfePreviewUrl"
+          :href="danfeScreenUrl"
           target="_blank" rel="noopener"
         >
           <Icon name="lucide:eye" class="size-4" />
-          Prévia da nota
+          Ver a nota
         </UiButton>
         <!-- Cancelar é EXCEÇÃO, não fluxo: entrada discreta que abre a
              confirmação destrutiva com desafio de PIN gerencial. -->

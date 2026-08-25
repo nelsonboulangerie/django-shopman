@@ -53,7 +53,7 @@ function props(overrides: Record<string, unknown> = {}) {
     result: result(),
     pixStatus: "idle" as const,
     canCancel: true,
-    danfePreviewUrl: "",
+    danfeScreenUrl: "",
     printingReceipt: false,
     printingDanfe: false,
     ...overrides,
