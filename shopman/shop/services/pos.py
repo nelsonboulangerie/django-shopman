@@ -2120,6 +2120,11 @@ def _reconcile_order_payment_to_total(order: Order) -> Order:
     if original_amount_q != final_total_q:
         payment["pos_reconciled_from_amount_q"] = original_amount_q
 
+    # O dinheiro em mão ANTES do acerto: é ele que vira `tendered_q`. Depois do
+    # `_reconcile_tenders_to_total` a linha de dinheiro já está líquida (o que
+    # sobra na gaveta), e a diferença entre os dois é o troco que o operador
+    # devolveu — o único lugar onde esse fato ainda existe.
+    cash_handed_q = _cash_received_q(tenders) if tenders else 0
     if tenders:
         _reconcile_tenders_to_total(tenders, final_total_q)
         payment["tenders"] = tenders
@@ -2129,9 +2134,21 @@ def _reconcile_order_payment_to_total(order: Order) -> Order:
         else:
             payment.pop("cash_received_q", None)
 
-    tendered_q = _int_q(payment.get("tendered_q"))
-    if tendered_q > 0:
-        payment["change_q"] = max(0, tendered_q - final_total_q)
+    # `tendered_q` = dinheiro que veio na mão; `change_q` = o que voltou pro
+    # cliente. Numa venda MISTA o troco sai da nota em dinheiro (cartão captura
+    # o valor inteiro), então o troco é o que a linha de dinheiro perdeu no
+    # acerto — nunca `tendered − total`, que daria zero e apagaria o troco do
+    # registro. Em dinheiro puro as duas contas coincidem, porque ali a parcela
+    # em dinheiro É o total.
+    cash_settled_q = _cash_received_q(tenders) if tenders else final_total_q
+    tendered_q = max(_int_q(payment.get("tendered_q")), cash_handed_q)
+    if tendered_q > cash_settled_q:
+        payment["tendered_q"] = tendered_q
+        payment["change_q"] = max(0, tendered_q - cash_settled_q)
+    elif _int_q(payment.get("tendered_q")) > 0:
+        # Acerto para CIMA (o total selado subiu): não houve troco, e o valor
+        # em mão não é mais o que a venda cobrou — o registro não inventa nada.
+        payment["change_q"] = 0
 
     data["payment"] = payment
     order.data = data
