@@ -151,6 +151,35 @@ def test_venda_mista_e_uma_linha_com_o_dinheiro_e_todos_os_intents(counter):
     assert cash.balance(counter.shift) == 10500
 
 
+def test_venda_mista_com_nota_maior_registra_o_troco_que_o_operador_devolveu(counter):
+    """Cartão R$ 7 + nota de R$ 20 por R$ 12: entram R$ 5, voltam R$ 15 de troco.
+
+    O acerto abate o excedente da linha de dinheiro (é dela que sai o troco), e
+    era só isso que sobrava: o pedido guardava `cash 500` e mais nada. A tela
+    prometia troco, o registro não sabia de troco nenhum — recibo, gestor e
+    leitura do turno mostravam uma venda de R$ 5 sem devolução. Agora o valor em
+    mão e o troco ficam gravados, e a gaveta segue com o EFEITO LÍQUIDO.
+    """
+    result = counter.close(
+        client_request_id="c3b",
+        payment_tenders=[
+            {"method": "external", "amount_q": 700, "collection": "terminal"},
+            {"method": "cash", "amount_q": 2000, "collection": "terminal"},
+        ],
+    )
+
+    payment = Order.objects.get(ref=result.order_ref).data["payment"]
+    assert payment["tendered_q"] == 2000
+    assert payment["change_q"] == 1500
+    assert payment["cash_received_q"] == 500
+
+    (line,) = counter.sale_lines()
+    assert line.amount_q == 500
+    assert line.payload["received_q"] == 2000
+    assert line.payload["change_q"] == 1500
+    assert cash.balance(counter.shift) == 10500
+
+
 def test_pix_numa_venda_mista_e_atestado_no_balcao(counter):
     """Pix dentro de mista não passa por gateway (QR estático): o intent nasce
     atestado, e a reconciliação vê que foi o balcão, não o gateway."""

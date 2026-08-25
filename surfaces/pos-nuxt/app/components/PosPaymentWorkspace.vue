@@ -167,11 +167,16 @@ const approvalBlocking = computed(() =>
 const managerThresholdQ = computed(() => props.review?.manager_approval_threshold_q || 0);
 // Avisos não-bloqueantes da review (disponibilidade no balcão, pagamento): o
 // operador VÊ a ressalva antes de finalizar; nunca bloqueiam a venda.
-// O aviso "valor recebido em dinheiro não informado" só faz sentido DEPOIS que o
-// operador escolheu dinheiro — o backend assume `cash` por padrão quando nada foi
-// escolhido, então na 1ª abertura do checkout ele disparava prematuramente (antes
-// de qualquer ação). Suprimido enquanto não há tender de dinheiro em jogo.
-const hasCashTender = computed(() => props.paymentTenders.some((t) => t.method === "cash"));
+// O aviso "valor recebido em dinheiro não informado" NÃO cabe nesta tela.
+// Ele nasce de uma review tirada antes de existir qualquer forma de pagamento
+// (sem tender o servidor assume `cash`), e a review só é refeita quando o
+// CARRINHO muda — mexer nas linhas de pagamento não a renova. Resultado: a
+// frase ficava congelada ao lado de um "TROCO R$ 30,00" vivo, dizendo que o
+// fechamento assumiria valor exato. E em pagamento misto era pior, porque não
+// havia gesto capaz de calá-la. Quem responde "quanto entrou na mão" aqui é a
+// linha de dinheiro, e quanto volta está no RESTANTE/TROCO logo abaixo — este
+// aviso só teria dono numa superfície sem tenders. O contrato do servidor fica
+// como está (outros consumidores da review continuam recebendo o código).
 // Excedente em cartão/Pix é erro de digitação, e o operador precisa vê-lo NA HORA
 // em que digita — a review só é refeita quando o carrinho muda, então o aviso do
 // servidor chegaria tarde. Mesma conta dos dois lados (`nonCashExcessQ`), sobre
@@ -179,9 +184,9 @@ const hasCashTender = computed(() => props.paymentTenders.some((t) => t.method =
 // digital virar "excedente" por meio segundo).
 const nonCashExcess = computed(() => nonCashExcessQ(props.paymentTenders, props.paymentTotalQ));
 const reviewWarnings = computed(() => {
-  const fromServer = (props.review?.warnings ?? []).filter((w) =>
-    w.code === "cash_tendered_amount_blank" ? hasCashTender.value : true,
-  ).filter((w) => w.code !== "tender_overpaid_non_cash");
+  const fromServer = (props.review?.warnings ?? []).filter(
+    (w) => w.code !== "cash_tendered_amount_blank" && w.code !== "tender_overpaid_non_cash",
+  );
   if (nonCashExcess.value <= 0) return fromServer;
   return [
     {
@@ -237,6 +242,14 @@ const digitKeys = ["1", "2", "3", "4", "5", "6", "7", "8", "9"];
 // selecionada (o primeiro toque sobre valor automático substitui).
 const cashNotesQ = computed(() => contractCashNotesQ(props.checkoutContract));
 const cashSelected = computed(() => props.selectedTenderMethod === "cash");
+// Canais do comprovante são MULTI (imprimir E enviar): cada toque liga/desliga
+// um. Mesma função do modal do Cliente, porque o estado é o mesmo.
+function toggleReceiptChannel(ref: string) {
+  const next = props.receiptChannels.includes(ref)
+    ? props.receiptChannels.filter((c) => c !== ref)
+    : [...props.receiptChannels, ref];
+  emit("update:receiptChannels", next);
+}
 const numpadActive = computed(() => props.selectedTenderIndex >= 0 && props.selectedTenderIndex < props.paymentTenders.length);
 
 // The adaptive live readout under the hero — one line that carries the state the
@@ -371,13 +384,16 @@ defineExpose({
     <div class="grid min-h-0 w-full flex-1 grid-cols-1 gap-6 overflow-hidden md:grid-cols-2 lg:grid-cols-3">
 
       <!-- LEFT · coluna de trabalho, agrupada por SEMÂNTICA (Hyper Focus: chrome
-           espalhado não responde "qual é a próxima ação"). Três seções nomeadas:
-           VENDA (contexto do pedido: cliente, desconto — nota fiscal e
-           comprovante moram no modal do Cliente, decisão da reforma), depois
-           RECEBIMENTO (retirada/entrega, onde se recebe, troco da porta), e por
-           fim PAGAMENTO (métodos + teclado), colada no Validar porque é o ato
-           final. Botões do mesmo grupo têm o mesmo peso. -->
-      <div class="order-2 flex min-h-0 flex-col gap-3 md:order-none">
+           espalhado não responde "qual é a próxima ação"). Quatro seções, na
+           ORDEM DA CONVERSA do balcão: VENDA (quem compra e a que preço),
+           RECEBIMENTO (retirada/entrega, onde se recebe, troco da porta),
+           PAGAMENTO (métodos + teclado) e NOTA E COMPROVANTE — que é a última
+           pergunta que o operador faz, e por isso a última seção, colada no
+           Validar. Botões do mesmo grupo têm o mesmo peso.
+           `overflow-y-auto`: com a nota aberta a coluna pode passar da altura
+           da tela num monitor baixo, e conteúdo cortado sem rolagem é conteúdo
+           inalcançável. -->
+      <div class="order-2 flex min-h-0 flex-col gap-3 overflow-y-auto md:order-none">
         <!-- VENDA — quem compra e a que preço -->
         <section class="grid gap-1.5" aria-label="Venda">
           <h3 class="px-1 text-xs font-medium uppercase tracking-wide text-muted-foreground">Venda</h3>
@@ -393,9 +409,6 @@ defineExpose({
               <span class="min-w-0 truncate">{{ customerName || "Cliente" }}</span>
               <kbd class="rounded border bg-muted px-1.5 py-0.5 font-mono text-xs font-medium text-muted-foreground" aria-hidden="true">F6</kbd>
             </button>
-            <!-- 'Nota fiscal' e 'comprovante' NÃO ganham botão aqui: são secundários,
-                 dentro do modal do Cliente (abre pelo botão acima), e só quando
-                 habilitados no contrato. -->
             <button
               v-if="discountTypes.length"
               type="button"
@@ -539,6 +552,74 @@ defineExpose({
             </button>
           </div>
           </div>
+        </section>
+
+        <!-- NOTA E COMPROVANTE — a última pergunta do balcão, no lugar em que ela
+             é feita. O roteiro do operador é "qual a forma de pagamento? vai
+             querer CPF na nota? quer impresso ou por e-mail?": as três perguntas
+             se seguem, então as três respostas ficam à mão. Antes só a primeira
+             estava aqui e as outras duas moravam dentro do modal do Cliente —
+             longe do momento, e num lugar que não se abre para um cliente
+             anônimo, que é justamente quem pede CPF na nota. O modal continua
+             mostrando o mesmo bloco: o estado é um só, com dois lugares de
+             leitura. -->
+        <section v-if="supportsFiscalDocument" class="grid gap-1.5" aria-label="Nota e comprovante">
+          <h3 class="px-1 text-xs font-medium uppercase tracking-wide text-muted-foreground">Nota e comprovante</h3>
+          <button
+            type="button"
+            class="flex h-11 items-center justify-between gap-2 rounded-md border bg-card px-3 text-sm font-medium transition hover:bg-accent active:translate-y-px"
+            :class="issueFiscalDocument ? 'border-primary bg-primary/5' : ''"
+            :aria-pressed="issueFiscalDocument"
+            @click="$emit('update:issueFiscalDocument', !issueFiscalDocument)"
+          >
+            <span class="flex items-center gap-2">
+              <Icon name="lucide:receipt-text" class="size-4 text-muted-foreground" />
+              Emitir nota fiscal
+            </span>
+            <Icon :name="issueFiscalDocument ? 'lucide:check' : 'lucide:minus'" class="size-4 shrink-0" />
+          </button>
+          <!-- O CPF só aparece com a nota ligada porque é dela que ele é: o
+               documento vale para ESTA venda (`fiscal.tax_id`), não é etiqueta
+               permanente do cadastro. -->
+          <UiInput
+            v-if="issueFiscalDocument"
+            :model-value="customerTaxId"
+            inputmode="numeric"
+            class="h-11"
+            placeholder="CPF na nota (opcional)"
+            aria-label="CPF na nota"
+            @update:model-value="$emit('update:customerTaxId', String($event || ''))"
+          />
+          <!-- MULTI: imprimir E enviar não competem. "Sem comprovante" é nenhum
+               canal marcado, não um terceiro botão. -->
+          <div class="grid grid-cols-2 gap-1.5">
+            <button
+              v-for="channel in receiptChannelOptions"
+              :key="channel.ref"
+              type="button"
+              class="flex h-11 items-center justify-center gap-1.5 rounded-md border bg-card px-2 text-sm font-medium transition hover:bg-accent active:translate-y-px"
+              :class="receiptChannels.includes(channel.ref) ? 'border-primary bg-primary/5' : ''"
+              :aria-pressed="receiptChannels.includes(channel.ref)"
+              @click="toggleReceiptChannel(channel.ref)"
+            >
+              <Icon :name="receiptChannels.includes(channel.ref) ? 'lucide:check' : 'lucide:minus'" class="size-3.5 shrink-0" />
+              <span class="min-w-0 truncate">{{ channel.label }}</span>
+            </button>
+          </div>
+          <label v-if="receiptChannels.includes('email')" class="grid gap-1 text-sm">
+            <span class="sr-only">E-mail do comprovante</span>
+            <UiInput
+              :model-value="receiptEmail"
+              type="email"
+              class="h-11"
+              :placeholder="customerEmail || 'E-mail do comprovante'"
+              aria-label="E-mail do comprovante"
+              @update:model-value="$emit('update:receiptEmail', String($event || ''))"
+            />
+            <span v-if="!receiptEmail.trim() && customerEmail.trim()" class="px-1 text-xs text-muted-foreground">
+              Sem preencher, enviamos para <span class="font-medium text-foreground">{{ customerEmail }}</span>.
+            </span>
+          </label>
         </section>
 
         <!-- Por que o botão está travado. O aviso do gerente sozinho enganava: com
