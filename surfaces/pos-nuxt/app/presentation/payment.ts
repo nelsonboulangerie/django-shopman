@@ -106,6 +106,17 @@ export function isPaymentCovered(tenders: POSPaymentTenderDraft[], totalQ: numbe
   return tenders.length > 0 && paymentRemainingQ(tenders, totalQ) <= 0;
 }
 
+/**
+ * "Troco para quanto?" do dinheiro na entrega: quanto FALTA para o combinado da
+ * porta cobrir o total (>0 = o cliente disse um valor menor que o pedido —
+ * aviso na tela, nunca bloqueio; o servidor manda o mesmo na review). O campo
+ * é opcional: vazio/zero não avisa nada.
+ */
+export function changeForShortfallQ(changeForQ: number, totalQ: number): number {
+  if (!changeForQ || changeForQ <= 0) return 0;
+  return Math.max(0, totalQ - changeForQ);
+}
+
 export interface TenderLineView {
   method: string;
   label: string;

@@ -564,6 +564,7 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onGlobalKeydown));
         v-model:delivery-date="cart.deliveryDate"
         v-model:delivery-time-slot="cart.deliveryTimeSlot"
         v-model:delivery-fee-input="cart.deliveryFeeInput"
+        v-model:change-for-input="cart.changeForInput"
         v-model:order-notes="cart.orderNotes"
         v-model:issue-fiscal-document="cart.issueFiscalDocument"
         v-model:receipt-channels="cart.receiptChannels"

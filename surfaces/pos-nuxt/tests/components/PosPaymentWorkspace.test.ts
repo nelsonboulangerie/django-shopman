@@ -69,6 +69,7 @@ function props(overrides: Record<string, unknown> = {}) {
     deliveryDate: "",
     deliveryTimeSlot: "",
     deliveryFeeInput: "",
+    changeForInput: "",
     orderNotes: "",
     issueFiscalDocument: false,
     receiptChannels: [],

@@ -29,9 +29,10 @@ import type {
   SavedAddressProjection,
   StructuredAddressProjection,
 } from "~/types/pos";
-import { formatBRL } from "~/utils/posIntent";
+import { formatBRL, moneyInputToQ } from "~/utils/posIntent";
 import {
   cashNotesQ as contractCashNotesQ,
+  changeForShortfallQ,
   collectionsForFulfillment,
   injectableMethods as toInjectableMethods,
   nonCashExcessQ,
@@ -88,6 +89,8 @@ const props = defineProps<{
   deliveryDate: string;
   deliveryTimeSlot: string;
   deliveryFeeInput: string;
+  /** "Troco para quanto?" do dinheiro na entrega (entrada livre em reais). */
+  changeForInput: string;
   orderNotes: string;
   issueFiscalDocument: boolean;
   receiptChannels: string[];
@@ -127,6 +130,7 @@ const emit = defineEmits<{
   "update:deliveryDate": [string];
   "update:deliveryTimeSlot": [string];
   "update:deliveryFeeInput": [string];
+  "update:changeForInput": [string];
   "update:orderNotes": [string];
   "update:issueFiscalDocument": [boolean];
   "update:receiptChannels": [string[]];
@@ -281,6 +285,17 @@ const injectableMethods = computed(() =>
 const tenderLines = computed(() => props.paymentTenders.map((tender) => tenderLineView(tender, injectableMethods.value)));
 const deliveryCollections = computed(() => collectionsForFulfillment(props.paymentCollections, props.fulfillmentType));
 
+// "Troco para quanto?" só existe no dinheiro NA ENTREGA. O aviso (< total) é o
+// mesmo da review do servidor; aqui aparece NA DIGITAÇÃO, sem esperar round-trip.
+const onDeliveryCash = computed(
+  () => props.fulfillmentType === "delivery" && props.paymentCollection === "on_delivery",
+);
+const changeForShortfall = computed(() =>
+  onDeliveryCash.value
+    ? changeForShortfallQ(moneyInputToQ(props.changeForInput), props.paymentTotalQ)
+    : 0,
+);
+
 // Validar (Odoo's Validate): NO "pay it all" shortcut — the button stays disabled
 // until a payment form is consciously chosen and covers the total. This prevents
 // the impulse to finalize a sale without paying attention to the method.
@@ -415,6 +430,23 @@ defineExpose({
             <span class="min-w-0 truncate">{{ collection.label }}</span>
           </button>
         </div>
+
+        <!-- "Troco para quanto?" — dinheiro na porta (COD): a chave canônica
+             payment.change_for_q, a mesma do checkout da loja; o despacho a lê
+             para sugerir quanto de troco o entregador leva. Opcional. -->
+        <label v-if="onDeliveryCash" class="grid gap-1 text-sm">
+          <span class="font-medium text-muted-foreground">Troco para quanto?</span>
+          <UiInput
+            :model-value="changeForInput"
+            inputmode="decimal"
+            placeholder="Com quanto o cliente paga na porta (opcional)"
+            @update:model-value="$emit('update:changeForInput', String($event || ''))"
+          />
+          <span v-if="changeForShortfall > 0" class="flex items-center gap-1.5 text-xs text-amber-700 dark:text-amber-400">
+            <Icon name="lucide:triangle-alert" class="size-3.5 shrink-0" />
+            Menor que o total: faltam {{ formatBRL(changeForShortfall) }}.
+          </span>
+        </label>
 
         <!-- numpad (dígitos: entrada decimal, vírgula nos centavos) + trilho de
              cédulas à direita (só dinheiro: as 6 notas BR que o cliente entrega) -->

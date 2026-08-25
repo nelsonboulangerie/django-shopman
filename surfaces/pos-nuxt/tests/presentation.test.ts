@@ -29,6 +29,7 @@ import { clampPercent, clampQty, popDigit, pushDigit } from "../app/presentation
 import {
   cashNotesQ,
   cashTenderSumQ,
+  changeForShortfallQ,
   collectionsForFulfillment,
   injectableMethods,
   isPaymentCovered,
@@ -435,6 +436,16 @@ describe("presentation/payment — tender math & method affordance", () => {
     expect(paymentChangeQ(tenders, 4200)).toBe(1000);
     expect(nonCashExcessQ(tenders, 4200)).toBe(0);
     expect(cashTenderSumQ(tenders)).toBe(1000);
+  });
+
+  it("aponta a falta quando o troco-para da entrega não cobre o total", () => {
+    // Pedido de R$ 42,00; cliente diz que paga com R$ 40,00 → faltam R$ 2,00.
+    expect(changeForShortfallQ(4000, 4200)).toBe(200);
+    // Cobriu (ou sobrou): nada a avisar.
+    expect(changeForShortfallQ(4200, 4200)).toBe(0);
+    expect(changeForShortfallQ(5000, 4200)).toBe(0);
+    // Opcional: vazio/zero não avisa.
+    expect(changeForShortfallQ(0, 4200)).toBe(0);
   });
 
   it("shapes a tender line view", () => {
