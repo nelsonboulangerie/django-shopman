@@ -40,7 +40,12 @@ import {
   paymentIcon,
   tenderLineView,
 } from "~/presentation/payment";
-import { saleDiscountBadges } from "~/presentation/lineDiscounts";
+import {
+  lineDiscountBadge,
+  lineListTotalDisplay,
+  lineSavingsQ,
+  lineTotalQ,
+} from "~/presentation/lineDiscounts";
 
 const props = defineProps<{
   tabDisplay: string;
@@ -348,15 +353,16 @@ const summaryLines = computed(() =>
     sku: item.sku,
     name: item.name,
     qty: item.qty,
-    totalDisplay: formatBRL(item.qty * item.price_q),
+    totalDisplay: formatBRL(lineTotalQ(item)),
+    /** A etiqueta riscada, quando o que se cobra é menor. "" quando não há. */
+    listDisplay: lineListTotalDisplay(item),
+    /** POR QUE está mais barato — o desconto que venceu a linha. */
+    discountLabel: lineDiscountBadge(item, props.discountReasons),
   })),
 );
 const summaryUnits = computed(() => props.items.reduce((sum, item) => sum + item.qty, 0));
-
-// Transparência de desconto no resumo: uma pílula por linha com desconto
-// (automático de pricing ou manual), mesmo idioma da tela do cliente. É o que
-// explica um total menor que a etiqueta sem o operador ter feito nada.
-const discountBadges = computed(() => saleDiscountBadges(props.items, props.discountReasons));
+/** Quanto a venda inteira economizou em relação à etiqueta. 0 quando nada. */
+const summarySavingsQ = computed(() => props.items.reduce((sum, item) => sum + lineSavingsQ(item), 0));
 
 // Kitchen clarity: tell the operator, unequivocally, what finalizing will do
 // vs what was already fired — so it's never a mystery whether food was sent.
@@ -814,18 +820,6 @@ defineExpose({
             <Icon name="lucide:flame" class="size-3.5 shrink-0" :class="firedCount ? 'text-primary' : ''" />
             {{ kitchenNote }}
           </p>
-          <!-- descontos por linha (lote/happy hour/funcionário/manual): o total
-               menor que a etiqueta se explica aqui, discreto -->
-          <div v-if="discountBadges.length" class="mt-2 flex max-w-xl flex-wrap justify-center gap-1.5">
-            <span
-              v-for="row in discountBadges"
-              :key="row.sku"
-              class="inline-flex items-center gap-1 rounded-full bg-primary/10 px-2 py-0.5 text-xs font-medium text-primary"
-            >
-              <Icon name="lucide:tags" class="size-3" />
-              {{ row.name }} · {{ row.badge }}
-            </span>
-          </div>
         </section>
 
         <!-- avisos não-bloqueantes da review (nunca impedem finalizar) -->
@@ -909,10 +903,23 @@ defineExpose({
 
           <div class="flex min-h-0 flex-1 flex-col rounded-md border bg-card">
             <ul v-if="summaryLines.length" class="min-h-0 flex-1 divide-y overflow-y-auto">
-              <li v-for="line in summaryLines" :key="line.sku" class="flex items-baseline gap-2 px-3 py-2">
-                <span class="w-6 shrink-0 text-sm font-semibold tabular-nums text-muted-foreground">{{ line.qty }}×</span>
-                <span class="min-w-0 flex-1 truncate text-sm">{{ line.name }}</span>
-                <strong class="shrink-0 text-sm font-semibold tabular-nums">{{ line.totalDisplay }}</strong>
+              <li v-for="line in summaryLines" :key="line.sku" class="px-3 py-2">
+                <div class="flex items-baseline gap-2">
+                  <span class="w-6 shrink-0 text-sm font-semibold tabular-nums text-muted-foreground">{{ line.qty }}×</span>
+                  <span class="min-w-0 flex-1 truncate text-sm">{{ line.name }}</span>
+                  <span
+                    v-if="line.listDisplay"
+                    class="shrink-0 text-xs tabular-nums text-muted-foreground line-through"
+                  >{{ line.listDisplay }}</span>
+                  <strong class="shrink-0 text-sm font-semibold tabular-nums">{{ line.totalDisplay }}</strong>
+                </div>
+                <!-- POR QUE está mais barato. Riscar o preço sem dizer o motivo
+                     transfere para o operador a pergunta que o cliente acabou de
+                     fazer. É o mesmo idioma do resumo da loja. -->
+                <p v-if="line.discountLabel" class="mt-0.5 flex items-center gap-1 pl-8 text-xs text-primary">
+                  <Icon name="lucide:tag" class="size-3 shrink-0" />
+                  {{ line.discountLabel }}
+                </p>
               </li>
             </ul>
             <p v-else class="flex flex-1 items-center justify-center px-3 py-6 text-center text-sm text-muted-foreground">
@@ -921,19 +928,31 @@ defineExpose({
 
             <!-- Só aparece o que EXISTE: subtotal sozinho ao lado de um total
                  igual a ele é uma linha que não informa nada. -->
-            <dl v-if="review && (review.discount_q > 0 || review.delivery_fee_q > 0)" class="grid gap-1 border-t px-3 py-2 text-sm">
-              <div class="flex items-baseline justify-between gap-2">
-                <dt class="text-muted-foreground">Subtotal</dt>
-                <dd class="tabular-nums">{{ review.subtotal_display }}</dd>
+            <dl
+              v-if="summarySavingsQ > 0 || (review && (review.discount_q > 0 || review.delivery_fee_q > 0))"
+              class="grid gap-1 border-t px-3 py-2 text-sm"
+            >
+              <!-- "Você economizou" fecha a conta que as linhas riscadas abrem.
+                   Sai do MESMO lugar de onde saem os riscos (etiqueta − cobrado),
+                   então os dois nunca podem discordar. -->
+              <div v-if="summarySavingsQ > 0" class="flex items-baseline justify-between gap-2 text-primary">
+                <dt class="font-medium">Economia nos itens</dt>
+                <dd class="tabular-nums font-semibold">−{{ formatBRL(summarySavingsQ) }}</dd>
               </div>
-              <div v-if="review.discount_q > 0" class="flex items-baseline justify-between gap-2 text-primary">
-                <dt>Desconto</dt>
-                <dd class="tabular-nums">−{{ review.discount_display }}</dd>
-              </div>
-              <div v-if="review.delivery_fee_q > 0" class="flex items-baseline justify-between gap-2">
-                <dt class="text-muted-foreground">Taxa de entrega</dt>
-                <dd class="tabular-nums">{{ review.delivery_fee_display }}</dd>
-              </div>
+              <template v-if="review">
+                <div v-if="review.discount_q > 0 || review.delivery_fee_q > 0" class="flex items-baseline justify-between gap-2">
+                  <dt class="text-muted-foreground">Subtotal</dt>
+                  <dd class="tabular-nums">{{ review.subtotal_display }}</dd>
+                </div>
+                <div v-if="review.discount_q > 0" class="flex items-baseline justify-between gap-2 text-primary">
+                  <dt>Desconto na venda</dt>
+                  <dd class="tabular-nums">−{{ review.discount_display }}</dd>
+                </div>
+                <div v-if="review.delivery_fee_q > 0" class="flex items-baseline justify-between gap-2">
+                  <dt class="text-muted-foreground">Taxa de entrega</dt>
+                  <dd class="tabular-nums">{{ review.delivery_fee_display }}</dd>
+                </div>
+              </template>
             </dl>
           </div>
         </section>

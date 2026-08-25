@@ -370,3 +370,56 @@ describe("PosPaymentWorkspace — a coluna de contexto", () => {
     expect(wrapper.text()).not.toContain("Sem desconto");
   });
 });
+
+describe("PosPaymentWorkspace — o resumo diz o preço normal, o cobrado e o porquê", () => {
+  const discounted = () => ({
+    sku: "TAB",
+    name: "Tabatière",
+    qty: 2,
+    price_q: 510,
+    charged_price_q: 510,
+    list_price_q: 600,
+    notes: "",
+    pricing_discount: { type: "promotion", label: "Semana do Pão", amount_q: 90, percent: 15 },
+  });
+
+  it("risca a etiqueta, mostra o cobrado e diz o motivo — como no resumo da loja", async () => {
+    const wrapper = await mountSuspended(PosPaymentWorkspace, { props: props({ items: [discounted()] }) });
+    const summary = wrapper.find('section[aria-label="Resumo do pedido"]');
+    expect(summary.find("span.line-through").text()).toBe(formatBRL(1200));
+    expect(summary.text()).toContain(formatBRL(1020));
+    expect(summary.text()).toContain("Semana do Pão −15%");
+  });
+
+  it("a economia dos itens fecha com os riscos — mesma fonte, nunca discordam", async () => {
+    const wrapper = await mountSuspended(PosPaymentWorkspace, { props: props({ items: [discounted()] }) });
+    const summary = wrapper.find('section[aria-label="Resumo do pedido"]');
+    // 2 × (6,00 − 5,10) = 1,80
+    expect(summary.text()).toContain("Economia nos itens");
+    expect(summary.text()).toContain(formatBRL(180));
+  });
+
+  it("sem desconto nenhum, nada de riscos nem de linha de economia", async () => {
+    const wrapper = await mountSuspended(PosPaymentWorkspace, {
+      props: props({ items: [{ sku: "PAO", name: "Pão", qty: 1, price_q: 500, charged_price_q: 500, list_price_q: 500, notes: "" }] }),
+    });
+    const summary = wrapper.find('section[aria-label="Resumo do pedido"]');
+    expect(summary.find("span.line-through").exists()).toBe(false);
+    expect(summary.text()).not.toContain("Economia nos itens");
+  });
+
+  it("o desconto DA VENDA é uma linha à parte do desconto dos itens", async () => {
+    // São dois fatos diferentes: um é a etiqueta que já vinha mais barata, o
+    // outro é o abatimento que o operador pediu sobre o pedido inteiro. Somá-los
+    // numa linha só esconde qual dos dois precisa de autorização.
+    const wrapper = await mountSuspended(PosPaymentWorkspace, {
+      props: props({
+        items: [discounted()],
+        review: review({ subtotal_q: 1020, subtotal_display: formatBRL(1020), discount_q: 102, discount_display: formatBRL(102) }),
+      }),
+    });
+    const dl = wrapper.find('section[aria-label="Resumo do pedido"] dl');
+    expect(dl.text()).toContain("Economia nos itens");
+    expect(dl.text()).toContain("Desconto na venda");
+  });
+});
