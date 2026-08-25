@@ -49,10 +49,14 @@ const needsStationSetup = computed(
 // Auto-lock por ociosidade é a única particularidade de kiosk do PDV (os outros apps
 // não auto-travam). Vale em qualquer rota (venda ou antesala) — MENOS na tela do
 // cliente: `0` desliga o timer (ver isIdleBeyond) na janela que ninguém toca.
+// `holdWhen`: a tela de venda liga este sinal enquanto há pagamento em curso
+// (checkout aberto ou PIX aguardando) — o PDV não trava no meio do gesto.
+const paymentHold = useState("pos-payment-hold", () => false);
 usePosAutoLock({
   locked,
   lock,
   autoLockSeconds: () => (isCustomerDisplay.value ? 0 : pos.value?.auto_lock_seconds ?? 60),
+  holdWhen: () => paymentHold.value,
 });
 
 // A tela de SENHA sobe só quando o dispositivo não é uma estação reconhecida (a

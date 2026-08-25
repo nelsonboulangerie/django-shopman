@@ -29,7 +29,7 @@ import type {
   SavedAddressProjection,
   StructuredAddressProjection,
 } from "~/types/pos";
-import { cartTotalQ, formatBRL } from "~/utils/posIntent";
+import { formatBRL } from "~/utils/posIntent";
 import {
   collectionsForFulfillment,
   injectableMethods as toInjectableMethods,
@@ -68,6 +68,8 @@ const props = defineProps<{
   paymentTenders: POSPaymentTenderDraft[];
   selectedTenderIndex: number;
   selectedTenderMethod: string;
+  /** Total a cobrar (review viva → total retido → estimativa líquida local). */
+  paymentTotalQ: number;
   paymentRemainingQ: number;
   paymentChangeQ: number;
   paymentCovered: boolean;
@@ -139,7 +141,10 @@ const emit = defineEmits<{
   pickSavedAddress: [SavedAddressProjection];
 }>();
 
-const interimTotalDisplay = computed(() => formatBRL(cartTotalQ(props.items)));
+// Total interino enquanto a review não chega: o MESMO `paymentTotalQ` do
+// composable (líquido, com o último total de review retido) — nunca o bruto do
+// carrinho, que fazia o hero saltar durante o debounce da review.
+const interimTotalDisplay = computed(() => formatBRL(props.paymentTotalQ));
 // Nota fiscal é SECUNDÁRIA: mora no modal do Cliente (não é botãozão no grid) e só
 // aparece quando a loja ofereceu NFC-e no PDV E o adapter fiscal está configurado.
 const supportsFiscalDocument = computed(() => !!props.checkoutContract?.capabilities?.supports_fiscal_document);
@@ -163,8 +168,10 @@ const managerThresholdQ = computed(() => props.review?.manager_approval_threshol
 const hasCashTender = computed(() => props.paymentTenders.some((t) => t.method === "cash"));
 // Excedente em cartão/Pix é erro de digitação, e o operador precisa vê-lo NA HORA
 // em que digita — a review só é refeita quando o carrinho muda, então o aviso do
-// servidor chegaria tarde. Mesma conta dos dois lados (`nonCashExcessQ`).
-const nonCashExcess = computed(() => nonCashExcessQ(props.paymentTenders, props.review?.total_q ?? 0));
+// servidor chegaria tarde. Mesma conta dos dois lados (`nonCashExcessQ`), sobre
+// o `paymentTotalQ` (com a review em trânsito, o total 0 fazia toda linha
+// digital virar "excedente" por meio segundo).
+const nonCashExcess = computed(() => nonCashExcessQ(props.paymentTenders, props.paymentTotalQ));
 const reviewWarnings = computed(() => {
   const fromServer = (props.review?.warnings ?? []).filter((w) =>
     w.code === "cash_tendered_amount_blank" ? hasCashTender.value : true,
@@ -406,6 +413,28 @@ defineExpose({
             <button type="button" class="grid place-items-center rounded-md border bg-card h-14 text-xl font-semibold tabular-nums transition hover:bg-accent active:translate-y-px disabled:opacity-40" :disabled="!numpadActive" aria-label="Dígito 0" @click="$emit('tenderDigit', '0')">0</button>
             <button type="button" class="grid place-items-center rounded-md border border-destructive/25 bg-destructive/5 h-14 text-destructive transition hover:bg-destructive/10 active:translate-y-px disabled:opacity-40" :disabled="!numpadActive" aria-label="Apagar" @click="$emit('tenderBackspace')">
               <Icon name="lucide:delete" class="size-5" />
+            </button>
+            <!-- Exato: a linha selecionada assume o que as OUTRAS deixam devendo
+                 (venda coberta, troco zero). Limpar: zera a linha para digitar. -->
+            <button
+              type="button"
+              class="col-span-2 flex h-11 items-center justify-center gap-1.5 rounded-md border bg-card text-sm font-semibold transition hover:bg-accent active:translate-y-px disabled:opacity-40"
+              :disabled="!numpadActive"
+              aria-label="Valor exato do restante"
+              @click="$emit('tenderExact')"
+            >
+              <Icon name="lucide:equal" class="size-4 shrink-0 text-muted-foreground" />
+              Exato
+            </button>
+            <button
+              type="button"
+              class="flex h-11 items-center justify-center gap-1.5 rounded-md border bg-card text-sm font-semibold transition hover:bg-accent active:translate-y-px disabled:opacity-40"
+              :disabled="!numpadActive"
+              aria-label="Limpar o valor da linha"
+              @click="$emit('tenderClear')"
+            >
+              <Icon name="lucide:eraser" class="size-4 shrink-0 text-muted-foreground" />
+              Limpar
             </button>
           </div>
           <!-- cédula rail — 4ª coluna (mesma largura das colunas do teclado);
