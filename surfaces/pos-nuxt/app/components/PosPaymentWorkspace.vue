@@ -465,26 +465,30 @@ defineExpose({
             </button>
             <button type="button" class="grid place-items-center rounded-md border bg-card h-14 text-xl font-semibold transition hover:bg-accent active:translate-y-px disabled:opacity-40" :disabled="!numpadActive" aria-label="Vírgula (centavos)" @click="$emit('tenderComma')">,</button>
             <button type="button" class="grid place-items-center rounded-md border bg-card h-14 text-xl font-semibold tabular-nums transition hover:bg-accent active:translate-y-px disabled:opacity-40" :disabled="!numpadActive" aria-label="Dígito 0" @click="$emit('tenderDigit', '0')">0</button>
-            <button type="button" class="grid place-items-center rounded-md border border-destructive/25 bg-destructive/5 h-14 text-destructive transition hover:bg-destructive/10 active:translate-y-px disabled:opacity-40" :disabled="!numpadActive" aria-label="Apagar" @click="$emit('tenderBackspace')">
+            <button type="button" class="grid place-items-center rounded-md border border-destructive/25 bg-destructive/5 h-14 text-destructive transition hover:bg-destructive/10 active:translate-y-px disabled:opacity-40" :disabled="!numpadActive" aria-label="Apagar um dígito" title="Apaga o último dígito do valor (Backspace)" @click="$emit('tenderBackspace')">
               <Icon name="lucide:delete" class="size-5" />
             </button>
             <!-- Exato: a linha selecionada assume o que as OUTRAS deixam devendo
-                 (venda coberta, troco zero). Limpar: zera a linha para digitar. -->
+                 (venda coberta, troco zero) — tecla '='. Limpar (C): zera a linha
+                 inteira para digitar; o Backspace apaga um dígito por vez. -->
             <button
               type="button"
               class="col-span-2 flex h-11 items-center justify-center gap-1.5 rounded-md border bg-card text-sm font-semibold transition hover:bg-accent active:translate-y-px disabled:opacity-40"
               :disabled="!numpadActive"
-              aria-label="Valor exato do restante"
+              aria-label="Exato: a linha assume o restante"
+              title="A forma selecionada assume o que falta para cobrir o total (=)"
               @click="$emit('tenderExact')"
             >
               <Icon name="lucide:equal" class="size-4 shrink-0 text-muted-foreground" />
               Exato
+              <kbd class="rounded border bg-muted px-1.5 py-0.5 font-mono text-xs font-medium text-muted-foreground" aria-hidden="true">=</kbd>
             </button>
             <button
               type="button"
               class="flex h-11 items-center justify-center gap-1.5 rounded-md border bg-card text-sm font-semibold transition hover:bg-accent active:translate-y-px disabled:opacity-40"
               :disabled="!numpadActive"
-              aria-label="Limpar o valor da linha"
+              aria-label="Limpar: zera o valor da linha"
+              title="Zera o valor da linha inteira (o Backspace apaga um dígito)"
               @click="$emit('tenderClear')"
             >
               <Icon name="lucide:eraser" class="size-4 shrink-0 text-muted-foreground" />

@@ -354,6 +354,13 @@ function onGlobalKeydown(event: KeyboardEvent) {
       tenderBackspace();
       return;
     }
+    // "=" é o Exato do teclado físico: a linha selecionada assume o que as
+    // outras deixam devendo (total coberto, troco zero) — o mesmo botão da tela.
+    if (event.key === "=") {
+      event.preventDefault();
+      tenderExact();
+      return;
+    }
   }
 
   // Search-as-you-type (Odoo): na tela de venda, uma LETRA digitada fora de

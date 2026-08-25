@@ -28,6 +28,8 @@ const groups: Array<{ title: string; items: Array<{ keys: string[]; label: strin
     title: "No pagamento",
     items: [
       { keys: ["0–9", ","], label: "Valor da forma selecionada (vírgula = centavos)" },
+      { keys: ["="], label: "Exato: a forma selecionada assume o restante" },
+      { keys: ["Backspace"], label: "Apagar um dígito do valor (Limpar, na tela, zera a linha)" },
       { keys: ["Enter"], label: "Validar a venda (com o total coberto)" },
     ],
   },
