@@ -9,6 +9,7 @@ from __future__ import annotations
 import hashlib
 import logging
 import re
+import unicodedata
 from dataclasses import dataclass
 from datetime import timedelta
 from decimal import ROUND_CEILING, ROUND_HALF_UP, Decimal, InvalidOperation
@@ -81,18 +82,27 @@ def scan_invoice(qr_payload: str) -> tuple[dict[str, Any], str]:
         supplier_ref = str(draft.get("supplierRef", draft.get("supplier_ref", "")) or "")
     else:
         supplier_ref = _supplier_ref_from_invoice_key(access_key)
+    supplier_created = False
+    note = str(draft.get("note") or "") or f"NF {access_key}"
+    if not supplier_ref:
+        supplier_ref, supplier_created = _register_supplier_from_issuer(draft.get("issuer") or {})
+        if supplier_ref:
+            note = note.replace(" - fornecedor nao cadastrado", "")
     active_receipt = {
         "mode": "invoice",
         "supplierRef": supplier_ref,
         "invoiceInput": qr_payload,
-        "note": draft.get("note") or f"NF {access_key}",
+        "note": note,
         "lines": draft.get("lines") or (),
     }
-    message = (
-        "NF lida. Revise os itens antes de confirmar."
-        if draft.get("lines")
-        else "Chave da NF lida. Itens não vieram do provedor fiscal; lance ou importe as linhas para conferir."
-    )
+    if draft.get("lines"):
+        message = (
+            "NF lida e fornecedor cadastrado da nota. Revise os itens antes de confirmar."
+            if supplier_created
+            else "NF lida. Revise os itens antes de confirmar."
+        )
+    else:
+        message = "Chave da NF lida. Itens não vieram do provedor fiscal; lance ou importe as linhas para conferir."
     return build_purchase(active_receipt=active_receipt), message
 
 
@@ -695,6 +705,56 @@ def _invoice_reader_draft(*, access_key: str, qr_payload: str) -> dict[str, Any]
     except Exception:
         logger.warning("purchase.invoice_reader_failed path=%s", path, exc_info=True)
         return {}
+
+
+_SUPPLIER_REF_STOPWORDS = {
+    "ATACADISTA", "ATACADO", "ALIMENTICIO", "ALIMENTICIOS", "ALIMENTOS", "CIA", "COMERCIAL",
+    "COMERCIO", "DA", "DAS", "DE", "DISTRIBUICAO", "DISTRIBUIDORA", "DO", "DOS", "E", "EIRELI",
+    "EM", "EPP", "EXPORTACAO", "IMPORTACAO", "INDUSTRIA", "INDUSTRIAL", "LTDA", "ME", "MEI",
+    "PRODUTO", "PRODUTOS", "SA", "VAREJO",
+}
+
+
+def _supplier_ref_from_name(name: str) -> str:
+    ascii_name = unicodedata.normalize("NFKD", name).encode("ascii", "ignore").decode("ascii")
+    tokens = [token for token in re.split(r"[^A-Za-z0-9]+", ascii_name.upper()) if token]
+    core = [token for token in tokens if token not in _SUPPLIER_REF_STOPWORDS] or tokens
+    slug = "-".join(core[:2])[:40].strip("-")
+    return f"SUP-{slug}" if slug else ""
+
+
+def _register_supplier_from_issuer(issuer: dict[str, Any]) -> tuple[str, bool]:
+    """Resolve (ou cadastre) o fornecedor pelo emitente da NF. Retorna (ref, criado)."""
+    Supplier = apps.get_model("buyman", "Supplier")
+    document = re.sub(r"\D", "", str(issuer.get("document") or ""))
+    name = str(issuer.get("name") or "").strip()
+    if not document or not name:
+        return "", False
+    for supplier in Supplier.objects.all().only("ref", "document"):
+        if re.sub(r"\D", "", supplier.document or "") == document:
+            return supplier.ref, False
+    base = _supplier_ref_from_name(str(issuer.get("tradeName") or "").strip() or name)
+    if not base:
+        return "", False
+    ref = base
+    suffix = 2
+    while Supplier.objects.filter(ref=ref).exists():
+        ref = f"{base}-{suffix}"
+        suffix += 1
+    document_text = (
+        f"{document[0:2]}.{document[2:5]}.{document[5:8]}/{document[8:12]}-{document[12:14]}"
+        if len(document) == 14
+        else document
+    )
+    Supplier.objects.create(
+        ref=ref,
+        name=name,
+        document=document_text,
+        phone=str(issuer.get("phone") or "").strip()[:32],
+        metadata={"purchase": {"created_from": "nfe_scan"}},
+    )
+    logger.info("purchase.supplier_autocreated ref=%s document=%s", ref, document)
+    return ref, True
 
 
 def _supplier_ref_from_invoice_key(access_key: str) -> str:
