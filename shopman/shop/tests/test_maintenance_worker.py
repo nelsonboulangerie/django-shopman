@@ -301,6 +301,9 @@ def test_once_runs_one_cycle_in_order_and_never_sleeps():
         call("dispatch_due_announcements"),
         call("arm_scheduled_campaigns"),
         call("reconcile_payments"),
+        # Depois dos pagamentos sararem: o dia de ontem reconcilia inteiro e
+        # divergência vira OperatorAlert (dedupe/debounce no serviço).
+        call("reconcile_financial_day"),
         call("sweep_stuck_orders"),
         # O mesmo resgate do lado da produção: fornada concluída cujo ledger
         # de estoque não fechou volta a ser realizada.
