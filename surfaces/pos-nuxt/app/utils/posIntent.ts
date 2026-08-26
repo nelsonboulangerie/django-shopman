@@ -96,6 +96,11 @@ export function buildPosSaleIntent(
       name: item.name,
       qty: item.qty,
       unit_price_q: item.price_q,
+      // A ETIQUETA viaja junto porque a review precisa dela para aplicar a mesma
+      // regra do kernel ("maior desconto ganha"): sem saber o preço de tabela,
+      // ela media o desconto manual da linha contra o preço já descontado e
+      // prometia abatimento que a venda não dava.
+      ...(typeof item.list_price_q === "number" ? { list_price_q: item.list_price_q } : {}),
       notes: item.notes,
       ...(item.price_overridden ? { price_overridden: true } : {}),
       ...(item.discount && item.discount.value > 0

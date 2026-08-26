@@ -528,6 +528,8 @@ def review_sale(
     session = _payload_open_tab_session(channel_ref=channel.ref, payload=payload)
     if session is None and _payload_has_tab_identity(payload):
         raise ValueError("Abra um POS tab antes de finalizar.")
+    # A etiqueta que o KERNEL carimbou vale mais que a que o cliente mandou.
+    _stamp_list_prices_from_session(payload, session)
 
     fulfillment_type = _payload_fulfillment_type(payload)
     payment_collection = _payload_payment_collection(payload, fulfillment_type)
@@ -1828,8 +1830,51 @@ def _normalize_line_discount(raw) -> dict:
     return {"type": "percent", "value": value, "reason": reason}
 
 
+def _stamp_list_prices_from_session(payload: dict, session) -> None:
+    """Carimba no payload o preço de ETIQUETA que a sessão guarda, por SKU.
+
+    O ``meta._list_q`` é escrito pelos modifiers de pricing e é a mesma fonte que
+    o "maior desconto ganha" consulta. Vindo da sessão, não do navegador, a
+    review mede o desconto de linha contra o mesmo número que o kernel — e o
+    campo do intent fica sendo só o fallback da venda sem comanda.
+    """
+    if session is None:
+        return
+    list_by_sku: dict[str, int] = {}
+    for item in (session.items or []):
+        sku = str(item.get("sku") or "")
+        list_q = _int_q((item.get("meta") or {}).get("_list_q"))
+        if sku and list_q > 0:
+            list_by_sku[sku] = list_q
+    if not list_by_sku:
+        return
+    for item in payload.get("items", []):
+        list_q = list_by_sku.get(str(item.get("sku") or ""))
+        if list_q:
+            item["list_price_q"] = list_q
+
+
 def _payload_line_discounts_q(payload: dict) -> int:
-    """Sum per-line manual discounts (percent, per unit, clamped) for preview/gate."""
+    """Quanto os descontos manuais de LINHA tiram do subtotal — pela regra do kernel.
+
+    A política é "maior desconto ganha, um por item" (``DiscountModifier``): o
+    manual da linha é medido contra o preço de ETIQUETA e só vale se for MAIOR
+    que o desconto automático que já venceu aquela linha; vencendo, ele
+    SUBSTITUI o automático, não se soma a ele.
+
+    Esta função media o mesmo número duas vezes errado. Contava o percentual
+    sobre o preço JÁ descontado (não sobre a etiqueta) e contava SEMPRE, mesmo
+    quando o kernel ia descartar o manual. O efeito na tela: uma cortesia de 10%
+    numa Tabatière que já levava "Semana do Pão −15%" prometia R$ 1,02 de
+    desconto que a venda não dava. Provado numa venda real (PDV-260826-V03): o
+    checkout exibiu total R$ 44,78 e TROCO R$ 25,22, o pedido selou R$ 45,80 e
+    registrou troco R$ 24,20 — o operador devolveria R$ 1,02 a mais do que a
+    gaveta contava, em toda venda com desconto de linha perdedor.
+
+    O subtotal da review é a soma dos ``unit_price_q`` (já pós-automático), então
+    o que este desconto ainda tira é só a DIFERENÇA entre o manual e o automático
+    que ele substitui — zero quando perde.
+    """
     total = 0
     for item in payload.get("items", []):
         line_discount = _normalize_line_discount(item.get("discount"))
@@ -1840,8 +1885,16 @@ def _payload_line_discounts_q(payload: dict) -> int:
             qty = int(item.get("qty", 1))
         except (TypeError, ValueError):
             continue
-        per_unit = min(int(round(unit_price_q * line_discount["value"] / 100)), unit_price_q)
-        total += max(0, per_unit) * max(0, qty)
+        # Sem etiqueta declarada, a linha não tem desconto automático a bater:
+        # etiqueta e preço cobrado são o mesmo número.
+        list_price_q = _int_q(item.get("list_price_q")) or unit_price_q
+        auto_per_unit = max(0, list_price_q - unit_price_q)
+        manual_per_unit = min(
+            int(round(list_price_q * line_discount["value"] / 100)),
+            list_price_q,
+        )
+        gain_per_unit = max(0, manual_per_unit - auto_per_unit)
+        total += min(gain_per_unit, unit_price_q) * max(0, qty)
     return total
 
 

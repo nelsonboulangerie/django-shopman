@@ -277,6 +277,14 @@ def _items(raw, *, for_commit: bool) -> list[dict]:
             "unit_price_q": unit_price_q,
             "notes": _text(item.get("notes"), limit=280),
         }
+        # Preço de ETIQUETA da linha. A review precisa dele para medir o desconto
+        # manual como o kernel mede — contra a tabela, e só valendo se ganhar do
+        # automático. É ADVISORY: quando há comanda, o servidor sobrescreve pelo
+        # que a sessão carimbou (``_stamp_list_prices_from_session``), e quem
+        # cobra de verdade é o kernel no fechamento.
+        list_price_q = _optional_nonnegative_int(item.get("list_price_q"), f"items.{idx}.list_price_q")
+        if list_price_q:
+            entry["list_price_q"] = list_price_q
         if item.get("price_overridden"):
             # Advisory UI hint that the operator fixed this line's price. It is
             # NOT trusted: the POS service re-derives ``price_overridden`` from the
