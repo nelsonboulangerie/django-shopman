@@ -61,6 +61,17 @@ jobs:
           assert len(sellable) >= 10, f"quase tudo esgotado: {len(sellable)} vendáveis"
           EOF
 
+      - name: O checkout está alcançável pelo BFF
+        run: |
+          # POST vazio não cria nada: 400 (validação do Django) = caminho vivo;
+          # 404 = allowlist do BFF engoliu a rota raiz — a regressão de 22-26/08
+          # que deixou a loja 4 dias sem conseguir criar pedido.
+          code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 20 \
+            -X POST -H 'Content-Type: application/json' -d '{}' \
+            https://alpha.nelsonboulangerie.com.br/api/v1/checkout/)
+          echo "POST /api/v1/checkout/ => $code"
+          test "$code" != "404"
+
       - name: A loja renderiza (SSR)
         run: |
           curl -s --max-time 30 https://alpha.nelsonboulangerie.com.br/ -o home.html
