@@ -230,3 +230,32 @@ export function paymentProofView(
     hasProof: Boolean(qrSrc || copyPaste || checkoutUrl),
   };
 }
+
+
+/** A TECLA de cada forma de pagamento — a primeira letra do rótulo, derivada do
+ *  CONTRATO e não fixa no código: a casa pode renomear "Dinheiro" ou ganhar uma
+ *  forma nova sem que a tela invente atalho errado.
+ *
+ *  Colisão não vira surpresa: quem chegar primeiro fica com a letra, e o segundo
+ *  simplesmente não tem atalho (melhor sem tecla do que com uma que dispara a
+ *  linha errada com o cliente na frente). Acento é normalizado — "Cartão" começa
+ *  com C, e o teclado do balcão não tem "Ç" fácil.
+ */
+export function methodShortcuts(
+  methods: POSPaymentMethodProjection[],
+): Record<string, string> {
+  const taken = new Set<string>();
+  const out: Record<string, string> = {};
+  for (const method of methods) {
+    const letter = (method.label || method.ref)
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .trim()
+      .charAt(0)
+      .toUpperCase();
+    if (!/^[A-Z]$/.test(letter) || taken.has(letter)) continue;
+    taken.add(letter);
+    out[method.ref] = letter;
+  }
+  return out;
+}

@@ -36,6 +36,7 @@ import {
   methodLabel,
   nonCashExcessQ,
   paymentChangeQ,
+  methodShortcuts,
   paymentIcon,
   paymentProofView,
   paymentRemainingQ,
@@ -1003,5 +1004,29 @@ describe("troco não é sangria", () => {
 
   it("o ajuste não existe mais e não devolve motivo nenhum", () => {
     expect(movementReasons("ajuste")).toEqual([]);
+  });
+});
+
+
+describe("atalhos das formas de pagamento", () => {
+  const m = (ref: string, label: string) => ({ ref, label }) as never;
+
+  it("a tecla é a inicial do RÓTULO, vinda do contrato", () => {
+    // Derivado, não fixo no código: a casa renomeia "Dinheiro" ou ganha uma
+    // forma nova e o atalho acompanha, em vez de disparar a linha errada.
+    expect(methodShortcuts([m("cash", "Dinheiro"), m("pix", "Pix"), m("card", "Cartão")]))
+      .toEqual({ cash: "D", pix: "P", card: "C" });
+  });
+
+  it("acento não atrapalha — 'Cartão' é C", () => {
+    expect(methodShortcuts([m("card", "Cartão")])).toEqual({ card: "C" });
+  });
+
+  it("colisão deixa o segundo SEM atalho, nunca com o do vizinho", () => {
+    // Melhor sem tecla do que com uma que lança a forma errada com o cliente na
+    // frente. Quem chega primeiro fica com a letra.
+    const keys = methodShortcuts([m("cash", "Dinheiro"), m("debit", "Débito")]);
+    expect(keys).toEqual({ cash: "D" });
+    expect(keys.debit).toBeUndefined();
   });
 });

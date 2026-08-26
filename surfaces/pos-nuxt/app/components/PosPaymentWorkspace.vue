@@ -35,6 +35,7 @@ import {
   changeForShortfallQ,
   collectionsForFulfillment,
   injectableMethods as toInjectableMethods,
+  methodShortcuts,
   nonCashExcessQ,
   paymentIcon,
   tenderLineView,
@@ -354,6 +355,14 @@ const payState = computed<"idle" | "short" | "change" | "ready">(() => {
   return "idle";
 });
 
+// No chip, o BAIRRO diz mais que a palavra "entrega" — é o que o operador
+// confere de relance quando o cliente muda de ideia no meio do pagamento.
+const fulfillmentChipLabel = computed(() => {
+  const base = props.fulfillmentOptions.find((o) => o.ref === props.fulfillmentType)?.label || props.fulfillmentType;
+  if (props.fulfillmentType !== "delivery") return base;
+  const bairro = props.deliveryNeighborhood.trim() || props.deliveryAddressStructured?.neighborhood?.trim() || "";
+  return bairro ? `${base} · ${bairro}` : base;
+});
 const fulfillmentLabel = computed(
   () => props.fulfillmentOptions.find((option) => option.ref === props.fulfillmentType)?.label || props.fulfillmentType,
 );
@@ -388,6 +397,9 @@ const kitchenNote = computed(() => {
 const injectableMethods = computed(() =>
   toInjectableMethods(props.paymentMethods, { houseAccount: Boolean(props.customerLookup?.house_account) }),
 );
+// D/P/C — a tecla de cada forma, derivada do rótulo do contrato. Escolher a
+// forma é o gesto de TODA venda; era o único do checkout que exigia o mouse.
+const methodKeys = computed(() => methodShortcuts(injectableMethods.value));
 const tenderLines = computed(() => props.paymentTenders.map((tender) => tenderLineView(tender, injectableMethods.value)));
 const deliveryCollections = computed(() => collectionsForFulfillment(props.paymentCollections, props.fulfillmentType));
 
@@ -453,9 +465,27 @@ function onAddressSelected(address: StructuredAddressProjection) {
 // Atalhos do shell (pages/index.vue): Enter valida pelo MESMO caminho do clique
 // (passa pela porta da autorização gerencial, nunca por fora dela); F6 abre o
 // modal de cliente deste checkout.
+// A BARRA DE CONTEXTO (topo, em `pages/index.vue`) é quem abre estes três agora.
+// Eles saíram da coluna de trabalho porque não são instrumento: quem compra,
+// como recebe e se tem desconto são fatos da VENDA, decididos antes, revisados
+// de relance. Ficavam aqui empurrando a Nota fiscal para baixo da dobra — as
+// perguntas que se faz com o cliente na frente. Os diálogos continuam morando
+// neste componente (é ele que tem o estado); só o gatilho subiu.
 defineExpose({
   validate: () => { if (!ctaDisabled.value) onCta(); },
   openCustomer: () => { customerSheetOpen.value = true; },
+  openFulfillment: () => { fulfillmentSheetOpen.value = true; },
+  openDiscount: () => { discountSheetOpen.value = true; },
+  /** Uma letra digitada no checkout lança a forma correspondente. Devolve se
+   *  achou dono — o shell só consome a tecla quando ela virou ação. */
+  /** F9 liga/desliga "CPF na nota?" — a pergunta fiscal mais feita no balcão. */
+  toggleCpfOnInvoice: () => { emit("update:wantsCpfOnInvoice", !props.wantsCpfOnInvoice); },
+  pressMethodKey: (letter: string) => {
+    const ref = Object.keys(methodKeys.value).find((key) => methodKeys.value[key] === letter);
+    if (!ref) return false;
+    emit("addTender", ref);
+    return true;
+  },
 });
 </script>
 
@@ -487,48 +517,59 @@ defineExpose({
            da tela num monitor baixo, e conteúdo cortado sem rolagem é conteúdo
            inalcançável. -->
       <div class="order-2 flex min-h-0 flex-col gap-3 overflow-y-auto md:order-none">
-        <!-- VENDA — quem compra e a que preço -->
-        <section class="grid gap-1.5" aria-label="Venda">
-          <h3 class="px-1 text-xs font-medium uppercase tracking-wide text-muted-foreground">Venda</h3>
-          <div class="grid grid-cols-2 gap-1.5">
-            <button
-              ref="customerButtonRef"
-              type="button"
-              class="flex h-11 items-center justify-center gap-2 rounded-md border bg-card px-3 text-sm font-medium transition hover:bg-accent active:translate-y-px"
-              :class="customerSet ? 'border-primary bg-primary/5' : ''"
-              @click="customerSheetOpen = true"
-            >
-              <Icon name="lucide:user-round" class="size-4 text-muted-foreground" />
-              <span class="min-w-0 truncate">{{ customerName || "Cliente" }}</span>
-              <kbd class="rounded border bg-muted px-1.5 py-0.5 font-mono text-xs font-medium text-muted-foreground" aria-hidden="true">F6</kbd>
-            </button>
-            <button
-              v-if="discountTypes.length"
-              type="button"
-              class="flex h-11 items-center justify-center gap-2 rounded-md border bg-card px-3 text-sm font-medium transition hover:bg-accent active:translate-y-px"
-              :class="hasDiscount ? 'border-primary bg-primary/5' : ''"
-              @click="discountSheetOpen = true"
-            >
-              <Icon name="lucide:tag" class="size-4" :class="hasDiscount ? 'text-foreground' : 'text-muted-foreground'" />
-              <span class="min-w-0 truncate">{{ hasDiscount ? `Desconto ${discountSummary}` : "Desconto" }}</span>
-            </button>
-          </div>
-        </section>
+        <!-- PAGAMENTO — o instrumento: métodos (tap = lança o que falta na forma)
+             + teclado de valor. Última seção de propósito: desagua no Validar. -->
+        <!-- CONTEXTO DA VENDA — quem compra, como recebe, se tem desconto.
+             UMA LINHA de chips, não duas seções com cabeçalho. Os três são
+             fatos decididos antes e revisados de relance; ocupavam 132px no topo
+             da coluna em TODA venda, sendo que a esmagadora maioria é sem
+             cliente, sem desconto e retirada — e empurravam a Nota fiscal para
+             baixo da dobra, justo as perguntas que se faz com o cliente na
+             frente. Aqui custam 36px e continuam mostrando o ESTADO: ver que é
+             entrega não exige abrir nada. -->
+        <div class="flex flex-wrap items-center gap-1.5">
+          <button
+            ref="customerButtonRef"
+            type="button"
+            class="flex h-9 min-w-0 flex-1 items-center gap-1.5 rounded-md border px-2.5 text-sm font-medium transition hover:bg-accent active:translate-y-px"
+            :class="customerSet ? 'border-primary bg-primary/5' : 'bg-card text-muted-foreground'"
+            @click="customerSheetOpen = true"
+          >
+            <Icon name="lucide:user-round" class="size-4 shrink-0" />
+            <span class="min-w-0 truncate">{{ customerName || "Sem cliente" }}</span>
+            <kbd class="ml-auto shrink-0 rounded border bg-muted px-1 py-0.5 font-mono text-xs font-medium text-muted-foreground" aria-hidden="true">F6</kbd>
+          </button>
+          <button
+            type="button"
+            class="flex h-9 min-w-0 flex-1 items-center gap-1.5 rounded-md border px-2.5 text-sm font-medium transition hover:bg-accent active:translate-y-px"
+            :class="fulfillmentType === 'delivery' ? 'border-primary bg-primary/5' : 'bg-card text-muted-foreground'"
+            @click="fulfillmentSheetOpen = true"
+          >
+            <Icon :name="fulfillmentType === 'delivery' ? 'lucide:bike' : 'lucide:store'" class="size-4 shrink-0" />
+            <span class="min-w-0 truncate">{{ fulfillmentChipLabel }}</span>
+            <kbd class="ml-auto shrink-0 rounded border bg-muted px-1 py-0.5 font-mono text-xs font-medium text-muted-foreground" aria-hidden="true">F7</kbd>
+          </button>
+          <button
+            v-if="discountTypes.length"
+            type="button"
+            class="flex h-9 min-w-0 flex-1 items-center gap-1.5 rounded-md border px-2.5 text-sm font-medium transition hover:bg-accent active:translate-y-px"
+            :class="hasDiscount ? 'border-primary bg-primary/5' : 'bg-card text-muted-foreground'"
+            @click="discountSheetOpen = true"
+          >
+            <Icon name="lucide:tag" class="size-4 shrink-0" />
+            <span class="min-w-0 truncate">{{ hasDiscount ? discountSummary : "Sem desconto" }}</span>
+            <kbd class="ml-auto shrink-0 rounded border bg-muted px-1 py-0.5 font-mono text-xs font-medium text-muted-foreground" aria-hidden="true">F8</kbd>
+          </button>
+        </div>
 
-        <!-- RECEBIMENTO — como o pedido chega e onde o dinheiro é recebido -->
-        <section class="grid gap-1.5" aria-label="Recebimento">
-          <h3 class="px-1 text-xs font-medium uppercase tracking-wide text-muted-foreground">Recebimento</h3>
-          <div class="grid grid-cols-2 gap-1.5">
+        <section class="mt-auto grid gap-1.5" aria-label="Forma de pagamento">
+          <h3 class="px-1 text-xs font-medium uppercase tracking-wide text-muted-foreground">Forma de pagamento</h3>
+          <!-- ONDE o dinheiro é recebido é FORMA DE PAGAMENTO, não contexto da
+               venda: veio da seção "Recebimento", que subiu inteira para a barra
+               de contexto. Só aparece quando há mais de uma opção. -->
+          <div v-if="deliveryCollections.length > 1" class="grid grid-cols-2 gap-1.5">
             <button
-              type="button"
-              class="col-span-2 flex h-11 items-center justify-center gap-2 rounded-md border bg-card px-3 text-sm font-medium transition hover:bg-accent active:translate-y-px"
-              @click="fulfillmentSheetOpen = true"
-            >
-              <Icon :name="fulfillmentType === 'delivery' ? 'lucide:bike' : 'lucide:store'" class="size-4 text-muted-foreground" />
-              <span class="min-w-0 truncate">{{ fulfillmentLabel }}</span>
-            </button>
-            <button
-              v-for="collection in (deliveryCollections.length > 1 ? deliveryCollections : [])"
+              v-for="collection in deliveryCollections"
               :key="collection.ref"
               type="button"
               class="flex h-11 items-center justify-center gap-2 rounded-md border bg-card px-3 text-sm font-medium transition hover:bg-accent active:translate-y-px"
@@ -564,12 +605,7 @@ defineExpose({
               O entregador sai com o troco separado.
             </span>
           </label>
-        </section>
 
-        <!-- PAGAMENTO — o instrumento: métodos (tap = lança o que falta na forma)
-             + teclado de valor. Última seção de propósito: desagua no Validar. -->
-        <section class="mt-auto grid gap-1.5" aria-label="Pagamento">
-          <h3 class="px-1 text-xs font-medium uppercase tracking-wide text-muted-foreground">Pagamento</h3>
           <div class="flex flex-col gap-1.5">
             <button
               v-for="method in injectableMethods"
@@ -581,6 +617,11 @@ defineExpose({
             >
               <Icon :name="paymentIcon(method.ref)" class="size-5 shrink-0 text-muted-foreground" />
               <span class="flex-1">{{ method.label }}</span>
+              <kbd
+                v-if="methodKeys[method.ref]"
+                class="shrink-0 rounded border bg-muted px-1.5 py-0.5 font-mono text-xs font-medium text-muted-foreground"
+                aria-hidden="true"
+              >{{ methodKeys[method.ref] }}</kbd>
             </button>
           </div>
 
@@ -592,16 +633,16 @@ defineExpose({
               v-for="digit in digitKeys"
               :key="digit"
               type="button"
-              class="grid place-items-center rounded-md border bg-card h-14 text-xl font-semibold tabular-nums transition hover:bg-accent active:translate-y-px disabled:opacity-40"
+              class="grid place-items-center rounded-md border bg-card h-11 text-xl font-semibold tabular-nums transition hover:bg-accent active:translate-y-px disabled:opacity-40"
               :disabled="!numpadActive"
               :aria-label="`Dígito ${digit}`"
               @click="$emit('tenderDigit', digit)"
             >
               {{ digit }}
             </button>
-            <button type="button" class="grid place-items-center rounded-md border bg-card h-14 text-xl font-semibold transition hover:bg-accent active:translate-y-px disabled:opacity-40" :disabled="!numpadActive" aria-label="Vírgula (centavos)" @click="$emit('tenderComma')">,</button>
-            <button type="button" class="grid place-items-center rounded-md border bg-card h-14 text-xl font-semibold tabular-nums transition hover:bg-accent active:translate-y-px disabled:opacity-40" :disabled="!numpadActive" aria-label="Dígito 0" @click="$emit('tenderDigit', '0')">0</button>
-            <button type="button" class="grid place-items-center rounded-md border border-destructive/25 bg-destructive/5 h-14 text-destructive transition hover:bg-destructive/10 active:translate-y-px disabled:opacity-40" :disabled="!numpadActive" aria-label="Apagar um dígito" title="Apaga o último dígito do valor (Backspace)" @click="$emit('tenderBackspace')">
+            <button type="button" class="grid place-items-center rounded-md border bg-card h-11 text-xl font-semibold transition hover:bg-accent active:translate-y-px disabled:opacity-40" :disabled="!numpadActive" aria-label="Vírgula (centavos)" @click="$emit('tenderComma')">,</button>
+            <button type="button" class="grid place-items-center rounded-md border bg-card h-11 text-xl font-semibold tabular-nums transition hover:bg-accent active:translate-y-px disabled:opacity-40" :disabled="!numpadActive" aria-label="Dígito 0" @click="$emit('tenderDigit', '0')">0</button>
+            <button type="button" class="grid place-items-center rounded-md border border-destructive/25 bg-destructive/5 h-11 text-destructive transition hover:bg-destructive/10 active:translate-y-px disabled:opacity-40" :disabled="!numpadActive" aria-label="Apagar um dígito" title="Apaga o último dígito do valor (Backspace)" @click="$emit('tenderBackspace')">
               <Icon name="lucide:delete" class="size-5" />
             </button>
             <!-- Exato: a linha selecionada assume o que as OUTRAS deixam devendo
@@ -677,6 +718,7 @@ defineExpose({
                   <Icon name="lucide:receipt-text" class="size-4 shrink-0 text-muted-foreground" />
                   CPF na nota?
                 </span>
+                <kbd class="ml-auto shrink-0 rounded border bg-muted px-1 py-0.5 font-mono text-xs font-medium text-muted-foreground" aria-hidden="true">F9</kbd>
                 <UiSwitch
                   :model-value="wantsCpfOnInvoice"
                   aria-label="CPF na nota"

@@ -325,7 +325,14 @@ useHead({ htmlAttrs: { style: computed(() => rollStyle(pos.value)) } });
 const tabBoardRef = ref<{ focus: () => void } | null>(null);
 const productGridRef = ref<{ focusSearch: (seed?: string) => void } | null>(null);
 const tabHeaderRef = ref<{ openCustomer: () => void } | null>(null);
-const paymentWorkspaceRef = ref<{ validate: () => void; openCustomer: () => void } | null>(null);
+const paymentWorkspaceRef = ref<{
+  validate: () => void;
+  openCustomer: () => void;
+  openFulfillment: () => void;
+  openDiscount: () => void;
+  pressMethodKey: (letter: string) => boolean;
+  toggleCpfOnInvoice: () => void;
+} | null>(null);
 const shortcutsHelpOpen = ref(false);
 
 async function gotoTabInput() {
@@ -421,6 +428,21 @@ function onGlobalKeydown(event: KeyboardEvent) {
     }
   }
 
+  // LETRA no checkout = forma de pagamento (D/P/C, derivadas do contrato). É o
+  // gesto de TODA venda e era o único do checkout que ainda exigia o mouse. As
+  // letras estão livres aqui: o search-as-you-type é da tela de VENDA, e sob
+  // campo de texto o `isEditing` acima já cala tudo isto.
+  if (
+    checkoutMode.value && !isEditing
+    && !event.metaKey && !event.ctrlKey && !event.altKey
+    && /^[a-zA-Z]$/.test(event.key)
+  ) {
+    if (paymentWorkspaceRef.value?.pressMethodKey(event.key.toUpperCase())) {
+      event.preventDefault();
+      return;
+    }
+  }
+
   // Search-as-you-type (Odoo): na tela de venda, uma LETRA digitada fora de
   // input começa a busca de produto com aquele caractere (dígitos seguem
   // editando a linha ativa — comportamento do numpad do carrinho).
@@ -458,6 +480,23 @@ function onGlobalKeydown(event: KeyboardEvent) {
       event.preventDefault();
       if (checkoutMode.value) paymentWorkspaceRef.value?.openCustomer();
       else if (inSaleView.value) tabHeaderRef.value?.openCustomer();
+      return;
+    // F7/F8 completam o trio do contexto da venda, ao lado do F6 do cliente —
+    // os três chips da linha de contexto do checkout, na mesma ordem.
+    case "F7":
+      if (!checkoutMode.value) return;
+      event.preventDefault();
+      paymentWorkspaceRef.value?.openFulfillment();
+      return;
+    case "F8":
+      if (!checkoutMode.value) return;
+      event.preventDefault();
+      paymentWorkspaceRef.value?.openDiscount();
+      return;
+    case "F9":
+      if (!checkoutMode.value) return;
+      event.preventDefault();
+      paymentWorkspaceRef.value?.toggleCpfOnInvoice();
       return;
     case "Enter":
       // Total coberto + review fresca → Enter valida, pelo MESMO caminho do

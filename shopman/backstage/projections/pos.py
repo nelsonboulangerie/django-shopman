@@ -1170,7 +1170,9 @@ def _pos_actions() -> tuple[Action, ...]:
         Action(
             ref="move_tab_lines",
             kind="mutation",
-            label="Mover itens (transferir/dividir/juntar)",
+            # "Transferir" — o verbo do balcão. O parêntese explicativo era
+            # legenda de documentação num botão; ícone e prática ensinam melhor.
+            label="Transferir",
             priority="quiet",
             method="POST",
             href="/api/v1/backstage/pos/tabs/move-lines/",
@@ -1182,7 +1184,7 @@ def _pos_actions() -> tuple[Action, ...]:
         Action(
             ref="fire_tab",
             kind="mutation",
-            label="Enviar itens",
+            label="Enviar",
             priority="normal",
             method="POST",
             href="/api/v1/backstage/pos/tabs/fire/",

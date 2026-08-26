@@ -88,7 +88,7 @@ function submit() {
   <UiDialog :open="open" @update:open="$emit('update:open', Boolean($event))">
     <UiDialogContent class="sm:max-w-md">
       <UiDialogHeader>
-        <UiDialogTitle>Mover itens · #{{ tabDisplay || "comanda" }}</UiDialogTitle>
+        <UiDialogTitle>Transferir · #{{ tabDisplay || "comanda" }}</UiDialogTitle>
         <UiDialogDescription v-if="showPriceNote">
           O preço de cada item é mantido como foi cobrado nesta comanda.
         </UiDialogDescription>
@@ -112,7 +112,7 @@ function submit() {
       </p>
 
       <!-- Preparo em curso: o diálogo abre na hora e o servidor renova os
-           line_ids por baixo — sem isto o botão 'Mover itens' parecia morto. -->
+           line_ids por baixo — sem isto o botão 'Transferir' parecia morto. -->
       <p v-if="preparing" class="flex items-center gap-2 rounded-md border border-dashed p-3 text-sm text-muted-foreground">
         <Icon name="line-md:loading-loop" class="size-4 shrink-0" />
         Preparando a comanda…

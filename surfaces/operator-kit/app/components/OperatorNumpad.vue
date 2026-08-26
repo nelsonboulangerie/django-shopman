@@ -20,8 +20,15 @@ const emit = defineEmits<{
 
 const keys = ["1", "2", "3", "4", "5", "6", "7", "8", "9"];
 const cellBase = "rounded-md border bg-card font-semibold tabular-nums transition hover:bg-accent active:translate-y-px disabled:cursor-not-allowed disabled:opacity-40";
-const cell = computed(() => (props.compact ? `${cellBase} py-1.5 text-base` : `${cellBase} py-2.5 text-lg`));
-const cellSm = computed(() => (props.compact ? "rounded-md border bg-card py-1.5 text-sm font-medium transition hover:bg-accent active:translate-y-px disabled:cursor-not-allowed disabled:opacity-40" : "rounded-md border bg-card py-2.5 text-sm font-medium transition hover:bg-accent active:translate-y-px disabled:cursor-not-allowed disabled:opacity-40"));
+// ALTURA FIXA no degrau "campo·botão" da escala (h-11 = 44px), em vez de padding
+// solto. O `compact` rendia ~38px — fora da escala e apertado para dedo — e o
+// numpad do checkout usava h-14 (56px), 47% maior. Dois teclados de dígito na
+// mesma casa, com regras diferentes: o operador reaprendia o alvo ao trocar de
+// tela. 44px é o mesmo degrau dos campos e dos métodos de pagamento, sobe o
+// pequeno e desce o grande.
+const cell = computed(() => (props.compact ? `${cellBase} h-11 text-base` : `${cellBase} py-2.5 text-lg`));
+const cellSmBase = "rounded-md border bg-card text-sm font-medium transition hover:bg-accent active:translate-y-px disabled:cursor-not-allowed disabled:opacity-40";
+const cellSm = computed(() => (props.compact ? `${cellSmBase} h-11` : `${cellSmBase} py-2.5`));
 </script>
 
 <template>
