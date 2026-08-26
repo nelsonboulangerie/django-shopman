@@ -94,7 +94,10 @@ class TestFinishWorkOrderStockIntegration:
 
         # Exactly the finished quantity is saleable — not double-received.
         saleable = Quant.objects.get(
-            sku=croissant.sku, position=position_loja, target_date=None, batch="",
+            sku=croissant.sku,
+            position=position_loja,
+            target_date=None,
+            batch=f"{croissant.sku}-{today:%Y%m%d}",
         )
         assert saleable.quantity == Decimal("18")
 
@@ -131,7 +134,10 @@ class TestFinishWorkOrderStockIntegration:
         craft.finish(wo, finished=18, actor="test")
 
         saleable = Quant.objects.get(
-            sku=croissant.sku, position=vitrine, target_date=None, batch="",
+            sku=croissant.sku,
+            position=vitrine,
+            target_date=None,
+            batch=f"{croissant.sku}-{today:%Y%m%d}",
         )
         assert saleable.quantity == Decimal("18")
         assert not Quant.objects.filter(

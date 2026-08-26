@@ -15,6 +15,7 @@ from django.db.models import Q
 from django.utils import timezone
 from shopman.stockman.conf import stockman_settings
 from shopman.stockman.exceptions import StockError
+from shopman.stockman.models.batch import Batch
 from shopman.stockman.models.enums import HoldStatus
 from shopman.stockman.models.hold import Hold
 from shopman.stockman.models.move import Move
@@ -120,12 +121,35 @@ class StockPlanning:
         with transaction.atomic():
             locked_quant = Quant.objects.select_for_update().get(pk=quant.pk)
 
-            # Get or create physical quant
+            # Cada realize credita o LOTE do dia da fornada, não um acumulador
+            # eterno sem lote. A validade de quant sem data é julgada pelo
+            # created_at do quant — um físico único por posição envelhece uma
+            # vez e engole toda fornada nova para sempre (ficou invisível no
+            # alpha em 26/08/2026). Com o lote diário, a validade é do lote:
+            # Batch.expiry_date deriva da shelf-life e a fornada esquecida de
+            # ontem, expedida hoje, envelhece pela data em que foi assada.
+            batch_ref = f"{sku}-{target_date:%Y%m%d}"
+            shelflife = getattr(product, 'shelf_life_days', None)
+            if shelflife is None:
+                from shopman.stockman.shelflife import shelf_life_days_for
+                shelflife = shelf_life_days_for(sku)
+            Batch.objects.get_or_create(
+                ref=batch_ref,
+                defaults={
+                    'sku': sku,
+                    'production_date': target_date,
+                    'expiry_date': (
+                        target_date + timedelta(days=shelflife)
+                        if shelflife is not None else None
+                    ),
+                },
+            )
+
             physical_quant, _ = Quant.objects.get_or_create(
                 sku=sku,
                 position=to_position,
                 target_date=None,
-                batch='',
+                batch=batch_ref,
                 defaults={'metadata': {}}
             )
 
