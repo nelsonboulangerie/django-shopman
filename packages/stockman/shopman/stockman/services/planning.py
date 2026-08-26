@@ -83,7 +83,8 @@ class StockPlanning:
     def realize(cls, product, target_date, actual_quantity,
                 to_position, from_position=None, from_batch='',
                 user=None,
-                reason='Produção realizada', kind=Move.Kind.MAKE):
+                reason='Produção realizada', kind=Move.Kind.MAKE,
+                to_batch=''):
         """
         Realize production (planned -> physical).
 
@@ -121,14 +122,19 @@ class StockPlanning:
         with transaction.atomic():
             locked_quant = Quant.objects.select_for_update().get(pk=quant.pk)
 
-            # Cada realize credita o LOTE do dia da fornada, não um acumulador
-            # eterno sem lote. A validade de quant sem data é julgada pelo
-            # created_at do quant — um físico único por posição envelhece uma
-            # vez e engole toda fornada nova para sempre (ficou invisível no
-            # alpha em 26/08/2026). Com o lote diário, a validade é do lote:
-            # Batch.expiry_date deriva da shelf-life e a fornada esquecida de
+            # Cada realize credita um LOTE datado, não um acumulador eterno sem
+            # lote. A validade de quant sem data é julgada pelo created_at do
+            # quant — um físico único por posição envelhece uma vez e engole
+            # toda fornada nova para sempre (ficou invisível no alpha em
+            # 26/08/2026). Com o lote, a validade é da fornada: a esquecida de
             # ontem, expedida hoje, envelhece pela data em que foi assada.
-            batch_ref = f"{sku}-{target_date:%Y%m%d}"
+            #
+            # ``to_batch`` é o lote nomeado pela partição de qualidade
+            # (ADR-017); sem ele, o lote do dia. Nos dois casos o Batch ganha
+            # produção+validade — e NUNCA sobrescreve fatos congelados pela
+            # inspeção (get_or_create): o desconto gravado no fechamento é
+            # imutável aqui.
+            batch_ref = to_batch or f"{sku}-{target_date:%Y%m%d}"
             shelflife = getattr(product, 'shelf_life_days', None)
             if shelflife is None:
                 from shopman.stockman.shelflife import shelf_life_days_for

@@ -151,6 +151,114 @@ class TestFinishWorkOrderStockIntegration:
         assert positive_moves.first().kind == Move.Kind.MAKE
 
 
+class TestFinishPartitionLots:
+    """A partição de qualidade (ADR-017) chega ao ESTOQUE, não só à rastreabilidade.
+
+    Antes, as linhas de OUTPUT carregavam ``batch_ref`` e os ``Batch`` de
+    qualidade eram gravados — mas o realize creditava tudo num quant sem lote.
+    O elo quebrado: hold → quant.batch → ``percent_for_lot`` nunca encontrava o
+    lote com desconto, e a xepa automática ficava inerte.
+    """
+
+    def _arrange(self, ingredient, position_producao, today):
+        stock.receive(
+            quantity=Decimal("10"),
+            sku=ingredient.sku,
+            position=position_producao,
+            target_date=today,
+            reason="Ingredient stock",
+        )
+
+    def test_partition_groups_become_separate_lots_in_stock(
+        self, recipe, ingredient, croissant, position_producao, position_loja, today,
+    ):
+        self._arrange(ingredient, position_producao, today)
+        wo = craft.plan(recipe, quantity=Decimal("20"), date=today)
+
+        ref_a = f"{croissant.sku}-{today:%Y%m%d}-{wo.pk}"
+        ref_b = f"{ref_a}-2"
+        craft.finish(
+            wo,
+            finished=[
+                {"item_ref": croissant.sku, "quantity": "15",
+                 "quality_grade_ref": "padrao", "batch_ref": ref_a},
+                {"item_ref": croissant.sku, "quantity": "3",
+                 "quality_grade_ref": "desconto", "batch_ref": ref_b},
+            ],
+            actor="test",
+        )
+
+        lot_a = Quant.objects.get(
+            sku=croissant.sku, position=position_loja, target_date=None, batch=ref_a,
+        )
+        lot_b = Quant.objects.get(
+            sku=croissant.sku, position=position_loja, target_date=None, batch=ref_b,
+        )
+        assert lot_a.quantity == Decimal("15")
+        assert lot_b.quantity == Decimal("3")
+        # Nada cai no lote diário genérico quando a partição nomeia os lotes.
+        assert not Quant.objects.filter(
+            sku=croissant.sku, batch=f"{croissant.sku}-{today:%Y%m%d}",
+        ).exists()
+
+    def test_partition_lots_get_validity_even_without_tracking_flag(
+        self, recipe, ingredient, croissant, position_producao, position_loja, today,
+    ):
+        """Todo lote que vira estoque ganha produção+validade — a fornada
+        esquecida expedida tarde envelhece pelo lote, com ou sem
+        ``requires_batch_tracking`` na receita."""
+        from shopman.stockman.models import Batch
+
+        self._arrange(ingredient, position_producao, today)
+        wo = craft.plan(recipe, quantity=Decimal("20"), date=today)
+        ref = f"{croissant.sku}-{today:%Y%m%d}-{wo.pk}"
+        craft.finish(
+            wo,
+            finished=[{"item_ref": croissant.sku, "quantity": "18",
+                       "quality_grade_ref": "padrao", "batch_ref": ref}],
+            actor="test",
+        )
+
+        lot = Batch.objects.get(ref=ref)
+        assert lot.sku == croissant.sku
+        assert lot.production_date == today
+        # croissant fixture: shelf_life_days=0 → vale só no dia.
+        assert lot.expiry_date == today
+
+    def test_discounted_lot_prices_from_its_batch(
+        self, recipe, ingredient, croissant, position_producao, position_loja, today,
+    ):
+        """O elo completo: o quant carrega o lote, e o lote carrega o desconto
+        congelado — ``percent_for_lot`` resolve o percentual da xepa."""
+        from shopman.stockman.models import Batch
+
+        from shopman.shop.services.lot_pricing import percent_for_lot
+
+        self._arrange(ingredient, position_producao, today)
+        wo = craft.plan(recipe, quantity=Decimal("20"), date=today)
+        ref = f"{croissant.sku}-{today:%Y%m%d}-{wo.pk}"
+        # A rastreabilidade congela o desconto no lote (aqui simulada; na
+        # superfície é o _record_batch_traceability do fechamento).
+        Batch.objects.create(
+            ref=ref, sku=croissant.sku, production_date=today,
+            expiry_date=today, nonconformity_percent=40,
+            nonconformity_reason="Assou demais",
+        )
+        craft.finish(
+            wo,
+            finished=[{"item_ref": croissant.sku, "quantity": "18",
+                       "quality_grade_ref": "desconto", "batch_ref": ref}],
+            actor="test",
+        )
+
+        quant = Quant.objects.get(
+            sku=croissant.sku, position=position_loja, target_date=None, batch=ref,
+        )
+        assert quant.quantity == Decimal("18")
+        assert percent_for_lot(quant.batch) == 40
+
+
+
 # =============================================================================
 # production_changed signal → Stockman handlers
 # =============================================================================
