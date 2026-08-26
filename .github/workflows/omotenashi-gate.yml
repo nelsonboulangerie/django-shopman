@@ -119,6 +119,26 @@ jobs:
         timeout-minutes: 5
         run: make release-readiness
 
+      # ── Seed re-entrante provado no MESMO Postgres ────────────────────
+      # O staging quebrou (19-22/08/2026) num `seed --flush` que encontrou
+      # curadoria pré-existente: ProductAlias CONFIRMADO com FK PROTECT para o
+      # catálogo + config de terminal escrita por gente. ProtectedError no
+      # meio, sem transação — banco pela metade. O CI nunca viu porque só
+      # rodava seed em banco recém-criado, a única condição em que o flush não
+      # encontra linha hostil. Aqui o banco já foi semeado E navegado pelo
+      # gate acima; plantamos a curadoria hostil e rodamos o seed DE NOVO. As
+      # linhas plantadas espelham os contratos dos testes
+      # test_seed_flush_keeps_alias_curation.py / _keeps_terminal_config.py —
+      # mas contra o Postgres real do job, e a curadoria tem de SOBREVIVER.
+      - name: Seed re-entrante — plantar curadoria hostil
+        run: .venv/bin/python scripts/check_seed_reentrancy.py plant
+
+      - name: Seed re-entrante — segunda passada no mesmo Postgres
+        run: .venv/bin/python manage.py seed --flush
+
+      - name: Seed re-entrante — a curadoria sobreviveu
+        run: .venv/bin/python scripts/check_seed_reentrancy.py assert
+
       - name: Upload Omotenashi QA evidence
         if: always()
         uses: actions/upload-artifact@v7
@@ -129,6 +149,82 @@ jobs:
             /tmp/shopman-omotenashi-qa-browser.json
             /tmp/shopman-omotenashi-browser-ci-django.log
             /tmp/shopman-omotenashi-browser-ci-nuxt.log
+          if-no-files-found: warn
+          retention-days: 14
+
+  # "DEBUG local não prova CSP": o settings relaxa o script-src com
+  # 'unsafe-inline' em DEBUG, então inline que passa na máquina de dev (e nos
+  # outros jobs, que rodam DJANGO_DEBUG=true) é BLOQUEADO em produção — e as
+  # telas Django-rendered do Admin/Unfold são as expostas. Este job sobe o
+  # Django com DJANGO_DEBUG=false + o mesmo formato de env do `check --deploy`
+  # do Runtime Gate (o bloco vive em scripts/run_admin_csp_gate.sh, overridável
+  # por env) e navega o Admin logado com Playwright, reprovando em QUALQUER
+  # violação de CSP fora da lista de dívida (hoje VAZIA: auditoria de 26/08
+  # encontrou as telas navegadas limpas) e conferindo, tela a tela, que o
+  # header não traz 'unsafe-inline' no script-src.
+  admin-csp:
+    name: Admin CSP (production settings)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: shopman
+          POSTGRES_USER: shopman
+          POSTGRES_PASSWORD: shopman
+        ports:
+          - "5432:5432"
+        options: >-
+          --health-cmd "pg_isready -U shopman -d shopman"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+      # Fora de DEBUG o cache LocMem reprova no system check
+      # (django_ratelimit.E003 exige cache compartilhado) — o servidor nem sobe
+      # sem um Redis de verdade, exatamente como no deploy.
+      redis:
+        image: redis:7-alpine
+        ports:
+          - "6379:6379"
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+
+    env:
+      DATABASE_URL: postgres://shopman:shopman@localhost:5432/shopman
+      REDIS_URL: redis://localhost:6379/0
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Create virtualenv
+        run: python -m venv .venv
+
+      - name: Install Python dependencies
+        run: make install
+
+      - name: Admin CSP gate (DEBUG=false + Playwright)
+        env:
+          CI: "true"
+        run: make admin-csp-gate
+
+      - name: Upload server log
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: admin-csp-django-log
+          path: /tmp/shopman-admin-csp-django.log
           if-no-files-found: warn
           retention-days: 14
 
