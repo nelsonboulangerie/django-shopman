@@ -39,6 +39,10 @@ export interface CatalogItemProjection {
   is_favorite: boolean
   // Avisos de preferência alimentar (WP-5), ex.: "Contém glúten". Vazio sem conflito.
   dietary_warnings: string[]
+  // Apresentação da coleção primária (Collection.metadata): cor hex da paleta NB
+  // e nome de ícone Lucide — vestem o card-fallback de produto sem foto.
+  category_color: string | null
+  category_icon: string | null
 }
 
 export interface CatalogSectionProjection {
@@ -156,6 +160,10 @@ export interface ProductDetailProjection {
   breadcrumb_category: CategoryProjection | null
   cross_sell: CatalogItemProjection[]
   cross_sell_heading: string
+  // Apresentação da coleção primária (Collection.metadata): cor hex da paleta NB
+  // e nome de ícone Lucide — vestem o hero-fallback da PDP sem foto.
+  category_color: string | null
+  category_icon: string | null
 }
 
 export interface MinimumOrderProgressProjection {

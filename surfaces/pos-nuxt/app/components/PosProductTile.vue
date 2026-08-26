@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import type { POSProductProjection } from "~/types/pos";
-import { productFallbackStyle, productMonogram } from "~/presentation/catalog";
+import { productFallbackIcon, productFallbackStyle } from "~/presentation/catalog";
 
 const props = defineProps<{
   product: POSProductProjection;
@@ -14,10 +14,10 @@ defineEmits<{
 
 const hasImage = computed(() => Boolean(props.product.image_url?.trim()));
 
-// Calm, deterministic fallback for products without a photo — derived from the
-// collection ref so a whole collection shares a family tint (presentation/catalog).
+// Fallback de produto sem foto: fundo na cor da coleção primária + ícone
+// Lucide genérico da categoria + SKU (presentation/catalog).
 const fallbackStyle = computed(() => productFallbackStyle(props.product));
-const fallbackMonogram = computed(() => productMonogram(props.product));
+const fallbackIcon = computed(() => productFallbackIcon(props.product));
 </script>
 
 <template>
@@ -46,7 +46,10 @@ const fallbackMonogram = computed(() => productMonogram(props.product));
         :style="fallbackStyle"
         aria-hidden="true"
       >
-        <span class="text-4xl font-black tabular-nums text-foreground/15">{{ fallbackMonogram }}</span>
+        <div class="flex flex-col items-center gap-1">
+          <Icon :name="fallbackIcon" class="size-8" />
+          <span class="font-mono text-xs uppercase tracking-widest opacity-80">{{ product.sku }}</span>
+        </div>
       </div>
 
       <UiBadge

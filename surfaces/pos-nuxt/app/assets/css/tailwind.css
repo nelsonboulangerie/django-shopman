@@ -228,14 +228,18 @@
   }
 }
 
-/* Tile de produto sem foto: o matiz vem por custom properties (presentation/
-   catalog decide a cor, o tema decide o par claro/escuro). O gradiente claro
-   fixo de antes estourava no dark mode. */
+/* Tile de produto sem foto: --tile-color é a cor da coleção primária
+   (Collection.metadata via Projection, presentation/catalog decide se sai).
+   Os tints derivam por color-mix sobre --background/--foreground, então
+   acompanham a polaridade do tema nos dois modos. Sem cor configurada, o
+   fallback do var() cai em --muted-foreground = par neutro calmo. */
 .pos-tile-fallback {
-  background: linear-gradient(135deg, var(--tile-from), var(--tile-to));
+  background-color: color-mix(in srgb, var(--tile-color, var(--muted-foreground)) 12%, var(--background));
+  color: color-mix(in srgb, var(--tile-color, var(--muted-foreground)) 78%, var(--foreground));
 }
 .dark .pos-tile-fallback {
-  background: linear-gradient(135deg, var(--tile-from-dark), var(--tile-to-dark));
+  background-color: color-mix(in srgb, var(--tile-color, var(--muted-foreground)) 22%, var(--background));
+  color: color-mix(in srgb, var(--tile-color, var(--muted-foreground)) 50%, var(--foreground));
 }
 
 /* ───────────────────────────────────────────────────────────────────────────

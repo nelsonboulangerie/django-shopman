@@ -19,9 +19,8 @@ import {
   filterProducts,
   normalizeSearchText,
   orderCollections,
-  productFallbackHue,
+  productFallbackIcon,
   productFallbackStyle,
-  productMonogram,
 } from "../app/presentation/catalog";
 import { countOpenTabs, filterTabs, filterTabsByQuery, sanitizeTabRef, sortTabs, tabCardView } from "../app/presentation/tabBoard";
 import { nextFreeNumericTabRef } from "../app/utils/posTabLifecycle";
@@ -148,6 +147,8 @@ function product(overrides: Partial<POSProductProjection> & { sku: string }): PO
     price_q: 0,
     price_display: "",
     collection_ref: "",
+    collection_color: "",
+    collection_icon: "",
     
     image_url: "",
     ...overrides,
@@ -286,15 +287,21 @@ describe("presentation/catalog — grid shaping", () => {
     expect(enterTargetProduct([], "xyz")).toBeNull();
   });
 
-  it("derives a deterministic, calm fallback visual", () => {
-    const p = product({ sku: "X", name: "Bolo", collection_ref: "doces" });
-    expect(productFallbackHue(p)).toBe(productFallbackHue(p));
-    // Par claro + par escuro como custom properties: o CSS escolhe pelo tema.
-    const style = productFallbackStyle(p);
-    expect(style["--tile-from"]).toContain("hsl(");
-    expect(style["--tile-to-dark"]).toContain("hsl(");
-    expect(productMonogram(p)).toBe("B");
-    expect(productMonogram(product({ sku: "Y", name: "" }))).toBe("·");
+  it("o tile sem foto veste cor e ícone da coleção primária", () => {
+    const p = product({
+      sku: "BF",
+      name: "Baguette",
+      collection_ref: "rusticos",
+      collection_color: "#B49B7F",
+      collection_icon: "wheat",
+    });
+    // A cor sai como custom property; os tints (claro/escuro) são do CSS.
+    expect(productFallbackStyle(p)).toEqual({ "--tile-color": "#B49B7F" });
+    expect(productFallbackIcon(p)).toBe("lucide:wheat");
+    // Sem configuração: nenhuma property (o CSS cai no par neutro) e ícone calmo.
+    const bare = product({ sku: "Y", name: "" });
+    expect(productFallbackStyle(bare)).toEqual({});
+    expect(productFallbackIcon(bare)).toBe("lucide:package");
   });
 });
 

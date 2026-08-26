@@ -111,6 +111,32 @@ class POSHeadlessSurfaceContractTests(TestCase):
         payload = self.client.get("/api/v1/backstage/pos/").json()
         self.assertTrue(payload["pos"]["products"][0]["sold_out"])
 
+    def test_products_expose_primary_collection_color_and_icon(self) -> None:
+        """Cor (hex NB) e ícone (Lucide) da coleção primária vestem o tile sem
+        foto (fundo tintado + ícone + SKU). Produto sem coleção primária expõe
+        as chaves vazias — a grade cai no fallback neutro."""
+        from shopman.offerman.models import Collection, CollectionItem
+
+        payload = self.client.get("/api/v1/backstage/pos/").json()
+        self.assertEqual(payload["pos"]["products"][0]["collection_color"], "")
+        self.assertEqual(payload["pos"]["products"][0]["collection_icon"], "")
+
+        rusticos = Collection.objects.create(
+            ref="rusticos",
+            name="Rústicos",
+            is_active=True,
+            metadata={"color": "#B49B7F", "icon": "wheat"},
+        )
+        CollectionItem.objects.create(
+            collection=rusticos,
+            product=Product.objects.get(sku="POS-HEADLESS-ITEM"),
+            is_primary=True,
+        )
+        payload = self.client.get("/api/v1/backstage/pos/").json()
+        self.assertEqual(payload["pos"]["products"][0]["collection_ref"], "rusticos")
+        self.assertEqual(payload["pos"]["products"][0]["collection_color"], "#B49B7F")
+        self.assertEqual(payload["pos"]["products"][0]["collection_icon"], "wheat")
+
     def test_api_pos_payload_matches_projection_builder(self) -> None:
         response = self.client.get("/api/v1/backstage/pos/")
 

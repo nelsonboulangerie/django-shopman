@@ -60,9 +60,14 @@ const badge = computed(() => tileBadge(props.item))
             class="size-full object-cover"
             :class="item.availability === 'unavailable' ? 'shop-photo-unavailable' : ''"
           >
-          <div v-else class="flex size-full items-center justify-center text-muted-foreground">
-            <Icon name="lucide:croissant" class="size-6" />
-          </div>
+          <ProductImageFallback
+            v-else
+            :color="item.category_color"
+            :icon="item.category_icon"
+            :sku="item.sku"
+            fallback-icon="lucide:croissant"
+            icon-class="size-6"
+          />
         </div>
       </div>
       <!-- Indisponível: etiqueta de VIDRO translúcida em tokens da marca (cream + marrom),

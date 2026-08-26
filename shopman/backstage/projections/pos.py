@@ -52,6 +52,11 @@ class POSProductProjection:
     price_q: int
     price_display: str
     collection_ref: str
+    # Apresentação da coleção primária (Collection.metadata): cor hex da paleta
+    # NB e nome de ícone Lucide — vestem o tile sem foto (fundo tintado + ícone
+    # + SKU). Vazio quando a coleção não define a chave.
+    collection_color: str = ""
+    collection_icon: str = ""
     image_url: str = ""
     # Esgotado de verdade no escopo do canal do PDV (stockman, leitura em lote).
     # O tile fica visível porém inerte com o selo "Esgotado" — sumir o produto
@@ -844,6 +849,14 @@ def _load_products() -> list[POSProductProjection]:
     """Load products with prices for the POS grid."""
     entries: list[tuple[Product, int]] = []
 
+    # A coleção primária (ref + metadata cor/ícone do tile) vem prefetchada
+    # para a grade inteira — sem isso, `_product_projection` custa uma query
+    # de CollectionItem por produto.
+    from django.db.models import Prefetch
+    from shopman.offerman.models import CollectionItem
+
+    primary_items = CollectionItem.objects.filter(is_primary=True).select_related("collection")
+
     try:
         from shopman.offerman.models import ListingItem
 
@@ -855,6 +868,13 @@ def _load_products() -> list[POSProductProjection]:
                 is_sellable=True,
             )
             .select_related("product")
+            .prefetch_related(
+                Prefetch(
+                    "product__collection_items",
+                    queryset=primary_items,
+                    to_attr="primary_collection_items",
+                )
+            )
             .order_by("product__name")
         )
         for li in items:
@@ -867,7 +887,15 @@ def _load_products() -> list[POSProductProjection]:
     if not entries:
         entries = [
             (p, p.base_price_q)
-            for p in Product.objects.filter(is_published=True, is_sellable=True).order_by("name")
+            for p in Product.objects.filter(is_published=True, is_sellable=True)
+            .prefetch_related(
+                Prefetch(
+                    "collection_items",
+                    queryset=primary_items,
+                    to_attr="primary_collection_items",
+                )
+            )
+            .order_by("name")
         ]
 
     sold_out = _sold_out_skus([p.sku for p, _ in entries])
@@ -1809,19 +1837,27 @@ def _saved_address_projection(addr) -> SavedAddressProjection:
 
 
 def _product_projection(product: Product, price_q: int, *, sold_out: bool = False) -> POSProductProjection:
-    ci = (
-        product.collection_items
-        .filter(is_primary=True)
-        .select_related("collection")
-        .first()
-    )
+    prefetched = getattr(product, "primary_collection_items", None)
+    if prefetched is None:
+        ci = (
+            product.collection_items
+            .filter(is_primary=True)
+            .select_related("collection")
+            .first()
+        )
+    else:
+        ci = prefetched[0] if prefetched else None
+    collection = ci.collection if ci else None
+    meta = collection.metadata if collection and isinstance(collection.metadata, dict) else {}
 
     return POSProductProjection(
         sku=product.sku,
         name=product.name,
         price_q=price_q,
         price_display=f"R$ {format_money(price_q)}",
-        collection_ref=ci.collection.ref if ci else "",
+        collection_ref=collection.ref if collection else "",
+        collection_color=str(meta.get("color") or ""),
+        collection_icon=str(meta.get("icon") or ""),
         image_url=product.image_url or "",
         sold_out=sold_out,
     )

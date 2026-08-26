@@ -116,6 +116,32 @@ class TestBuildProductDetailShape:
         assert proj.breadcrumb_category.icon
         assert proj.breadcrumb_category.url == "/menu#paes"
 
+    def test_pdp_exposes_primary_collection_color_and_icon(
+        self, listing, collection, product,
+    ):
+        """Cor + ícone da coleção PRIMÁRIA vestem o hero-fallback da PDP sem foto."""
+        from shopman.offerman.models import CollectionItem
+
+        collection.metadata = {"color": "#B49B7F", "icon": "wheat"}
+        collection.save()
+        CollectionItem.objects.create(
+            collection=collection, product=product, sort_order=1, is_primary=True,
+        )
+        _publish_on_listing(listing, product)
+        proj = build_product_detail(sku=product.sku, channel_ref="web")
+        assert proj is not None
+        assert proj.category_color == "#B49B7F"
+        assert proj.category_icon == "wheat"
+
+    def test_pdp_without_primary_collection_has_no_category_dressing(
+        self, listing, collection, collection_item, product,
+    ):
+        _publish_on_listing(listing, product)
+        proj = build_product_detail(sku=product.sku, channel_ref="web")
+        assert proj is not None
+        assert proj.category_color is None
+        assert proj.category_icon is None
+
 
 # ──────────────────────────────────────────────────────────────────────
 # Availability

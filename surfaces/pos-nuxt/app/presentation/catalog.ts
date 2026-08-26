@@ -82,35 +82,23 @@ export function enterTargetProduct(
 }
 
 /**
- * Deterministic, calm hue for products without a photo — derived from the
- * collection ref so a whole collection shares a family tint (Odoo-style colour
- * coding), kept low-saturation so the grid stays calm, not marketing.
+ * O tile sem foto veste a cor da coleção primária (`collection_color`, hex NB
+ * de `Collection.metadata` via Projection) como custom property; o CSS deriva
+ * os tints por `color-mix` sobre `--background`/`--foreground` (regra
+ * `.pos-tile-fallback` × `.dark`), acompanhando a polaridade do tema. Sem cor
+ * configurada não sai property nenhuma — o CSS cai no par neutro do tema.
  */
-export function productFallbackHue(product: POSProductProjection): number {
-  const seed = product.collection_ref || product.sku || product.name;
-  let hash = 0;
-  for (let i = 0; i < seed.length; i += 1) {
-    hash = (hash * 31 + seed.charCodeAt(i)) % 360;
-  }
-  return hash;
+export function productFallbackStyle(product: POSProductProjection): Record<string, string> {
+  const color = (product.collection_color || "").trim();
+  return color ? { "--tile-color": color } : {};
 }
 
 /**
- * O visual do tile sem foto sai como custom properties (par claro + par
- * escuro); quem escolhe o par é o CSS (`.pos-tile-fallback` × `.dark`) — o
- * gradiente claro fixo estourava no dark mode.
+ * Ícone Lucide genérico da coleção primária (`collection_icon`, de
+ * `Collection.metadata`). Sem ícone configurado, um pacote neutro — calmo,
+ * sem fingir saber o que o produto é.
  */
-export function productFallbackStyle(product: POSProductProjection): Record<string, string> {
-  const hue = productFallbackHue(product);
-  const hueTo = (hue + 24) % 360;
-  return {
-    "--tile-from": `hsl(${hue} 42% 92%)`,
-    "--tile-to": `hsl(${hueTo} 38% 85%)`,
-    "--tile-from-dark": `hsl(${hue} 24% 26%)`,
-    "--tile-to-dark": `hsl(${hueTo} 22% 20%)`,
-  };
-}
-
-export function productMonogram(product: POSProductProjection): string {
-  return (product.name?.trim()?.[0] || "·").toUpperCase();
+export function productFallbackIcon(product: POSProductProjection): string {
+  const icon = (product.collection_icon || "").trim();
+  return icon ? `lucide:${icon}` : "lucide:package";
 }

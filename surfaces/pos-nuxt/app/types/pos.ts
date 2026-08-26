@@ -19,7 +19,11 @@ export interface POSProductProjection {
   name: string;
   price_q: number;
   price_display: string;
-  collection_ref: string;
+  collection_ref: string
+  // Apresentação da coleção primária (Collection.metadata): cor hex da paleta
+  // NB e nome de ícone Lucide — vestem o tile sem foto. Vazio sem configuração.
+  collection_color: string
+  collection_icon: string;
   image_url: string;
   /** Esgotado no escopo do canal do PDV: tile visível porém inerte. */
   sold_out?: boolean;
