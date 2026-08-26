@@ -808,12 +808,7 @@ export function usePurchaseDesk() {
     const status = purchaseRequestStatus(sku);
     if (status === "sent") return;
     if (!requireBackend("enviar o pedido ao fornecedor")) return;
-    await runBackendAction(async () => {
-      if (status === "review") {
-        await api.approveRequest({ materialSku: sku });
-      }
-      return api.sendRequest({ materialSku: sku });
-    });
+    await runBackendAction(() => api.sendRequest({ materialSku: sku }));
   }
 
   async function setPreferredCost(costId: string) {
