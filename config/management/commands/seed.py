@@ -1874,25 +1874,25 @@ class Command(BaseCommand):
                 "ingredients_text": (
                     "Infusão do blend Camille da casa."
                 ),
-                "nutrition_facts": nutrition(400, 2, 2.0, 0.4, 0.0, 0.0, 0.0, 0.0, 0.0, 2.0),
+                "nutrition_facts": nutrition(200, 2, 2.0, 0.4, 0.0, 0.0, 0.0, 0.0, 0.0, 2.0),
             },
             "THR": {
                 "ingredients_text": (
                     "Infusão do blend Rouge da casa."
                 ),
-                "nutrition_facts": nutrition(400, 2, 2.0, 0.4, 0.0, 0.0, 0.0, 0.0, 0.0, 2.0),
+                "nutrition_facts": nutrition(200, 2, 2.0, 0.4, 0.0, 0.0, 0.0, 0.0, 0.0, 2.0),
             },
             "THS": {
                 "ingredients_text": (
                     "Infusão do blend Sophie da casa."
                 ),
-                "nutrition_facts": nutrition(400, 2, 2.0, 0.4, 0.0, 0.0, 0.0, 0.0, 0.0, 2.0),
+                "nutrition_facts": nutrition(200, 2, 2.0, 0.4, 0.0, 0.0, 0.0, 0.0, 0.0, 2.0),
             },
             "THB": {
                 "ingredients_text": (
                     "Infusão do blend Bleu da casa."
                 ),
-                "nutrition_facts": nutrition(400, 2, 2.0, 0.4, 0.0, 0.0, 0.0, 0.0, 0.0, 2.0),
+                "nutrition_facts": nutrition(200, 2, 2.0, 0.4, 0.0, 0.0, 0.0, 0.0, 0.0, 2.0),
             },
             "HI": {
                 "ingredients_text": (
