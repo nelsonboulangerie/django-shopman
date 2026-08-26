@@ -99,8 +99,9 @@ def canonical_catalog(db):
         ListingItem,
         Product,
     )
-    from shopman.shop.models import Shop
     from shopman.stockman.models import Position, PositionKind, Quant
+
+    from shopman.shop.models import Shop
 
     Shop.load() or Shop.objects.create(name="Padaria Contrato")
     vitrine, _ = Position.objects.get_or_create(
