@@ -56,6 +56,13 @@ export function coverageDays(material: Pick<Material, "stockOnHand" | "dailyUse"
   return material.stockOnHand / material.dailyUse;
 }
 
+// O limiar vem do servidor (prazo do fornecedor + revisão + segurança, política
+// no Admin); 3 é só o fallback do modo demonstração, sem backend.
+export function replenishAtDays(material: Pick<Material, "replenishAtDays">): number {
+  const days = material.replenishAtDays ?? 0;
+  return Number.isFinite(days) && days > 0 ? days : 3;
+}
+
 export function coverageLabel(days: number): string {
   if (!Number.isFinite(days)) return "sem consumo";
   if (days < 1) return "< 1 dia";
@@ -217,7 +224,7 @@ export function materialIssues(
   if (!material.isActive) {
     issues.push({ key: "inactive-material", label: "Inativo", tone: "watch" });
   }
-  if (days <= 3 || material.stockOnHand < material.minStock) {
+  if (days <= replenishAtDays(material) || material.stockOnHand < material.minStock) {
     issues.push({ key: "low-stock", label: "Reposição", tone: "urgent" });
   }
   if (!preferred) {

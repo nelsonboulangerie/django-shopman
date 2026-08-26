@@ -10,7 +10,8 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass
 from datetime import timedelta
-from decimal import Decimal, InvalidOperation
+from decimal import ROUND_CEILING, Decimal, InvalidOperation
+from statistics import median
 from typing import Any
 
 from django.apps import apps
@@ -34,6 +35,9 @@ class MaterialProjection:
     dailyUse: float
     minStock: float
     recipes: tuple[str, ...]
+    leadTimeDays: float
+    replenishAtDays: float
+    suggestedQty: float
 
 
 @dataclass(frozen=True)
@@ -115,10 +119,12 @@ def build_purchase(*, active_receipt: dict[str, Any] | None = None) -> PurchaseP
     skus = [material.sku for material in material_rows]
     supplier_refs = [supplier.ref for supplier in supplier_rows]
 
+    policy = _purchase_policy()
     stock_on_hand = _stock_on_hand_map(skus)
-    daily_use = _daily_use_map(skus)
+    daily_use = _daily_use_map(skus, days=policy["consumption_window_days"])
     recipes = _recipes_map(skus)
     last_delivery = _last_delivery_map(supplier_refs)
+    lead_times = _lead_time_map(skus, policy=policy)
 
     suppliers = tuple(_supplier_projection(supplier, last_delivery.get(supplier.ref, "")) for supplier in supplier_rows)
     materials = tuple(
@@ -127,6 +133,8 @@ def build_purchase(*, active_receipt: dict[str, Any] | None = None) -> PurchaseP
             stock_on_hand=stock_on_hand.get(material.sku, Decimal("0")),
             daily_use=daily_use.get(material.sku, Decimal("0")),
             recipes=recipes.get(material.sku, ()),
+            lead_time_days=lead_times.get(material.sku, Decimal(policy["min_lead_time_days"])),
+            policy=policy,
         )
         for material in material_rows
     )
@@ -175,11 +183,27 @@ def build_purchase(*, active_receipt: dict[str, Any] | None = None) -> PurchaseP
     )
 
 
-def _material_projection(material, *, stock_on_hand: Decimal, daily_use: Decimal, recipes: tuple[str, ...]) -> MaterialProjection:
+def _material_projection(
+    material,
+    *,
+    stock_on_hand: Decimal,
+    daily_use: Decimal,
+    recipes: tuple[str, ...],
+    lead_time_days: Decimal,
+    policy: dict[str, int],
+) -> MaterialProjection:
     meta = _purchase_meta(material)
+    replenish_at = lead_time_days + Decimal(policy["review_period_days"]) + Decimal(policy["safety_days"])
     min_stock = _meta_decimal(meta, "min_stock", "minStock", default=None)
     if min_stock is None:
-        min_stock = daily_use * Decimal("3") if daily_use > 0 else Decimal("0")
+        min_stock = daily_use * replenish_at if daily_use > 0 else Decimal("0")
+    suggested = _suggested_qty(
+        stock_on_hand=stock_on_hand,
+        daily_use=daily_use,
+        min_stock=min_stock,
+        replenish_at=replenish_at,
+        shelf_life_days=material.shelf_life_days,
+    )
     category = _meta_str(meta, "category") or "Insumos"
     return MaterialProjection(
         sku=material.sku,
@@ -192,7 +216,31 @@ def _material_projection(material, *, stock_on_hand: Decimal, daily_use: Decimal
         dailyUse=_number(daily_use),
         minStock=_number(min_stock),
         recipes=recipes,
+        leadTimeDays=_number(lead_time_days),
+        replenishAtDays=_number(replenish_at),
+        suggestedQty=_number(suggested),
     )
+
+
+def _suggested_qty(
+    *,
+    stock_on_hand: Decimal,
+    daily_use: Decimal,
+    min_stock: Decimal,
+    replenish_at: Decimal,
+    shelf_life_days: int | None,
+) -> Decimal:
+    """Quantidade a repor: cobre o ciclo prazo+revisão+segurança, sem passar da validade."""
+    target = max(min_stock, daily_use * replenish_at)
+    need = target - stock_on_hand
+    if need <= 0:
+        return Decimal("0")
+    if shelf_life_days and daily_use > 0:
+        consumable = daily_use * Decimal(shelf_life_days) - stock_on_hand
+        if consumable <= 0:
+            return Decimal("0")
+        need = min(need, consumable)
+    return need.to_integral_value(rounding=ROUND_CEILING)
 
 
 def _supplier_projection(supplier, last_delivery_at: str) -> SupplierProjection:
@@ -263,6 +311,89 @@ def _stock_on_hand_map(skus: list[str]) -> dict[str, Decimal]:
     except Exception:
         logger.debug("purchase.stock_service_unavailable", exc_info=True)
         return {sku: Decimal("0") for sku in skus}
+
+
+PURCHASE_POLICY_DEFAULTS = {
+    "consumption_window_days": 14,
+    "review_period_days": 3,
+    "safety_days": 2,
+    "min_lead_time_days": 1,
+    "lead_time_history_days": 120,
+    "lead_time_max_days": 45,
+}
+
+
+def _purchase_policy() -> dict[str, int]:
+    """Política de reposição: Shop.defaults['purchase'] (Admin) sobre os defaults acima."""
+    minimums = {"consumption_window_days": 1, "lead_time_history_days": 1, "lead_time_max_days": 1}
+    policy = dict(PURCHASE_POLICY_DEFAULTS)
+    try:
+        Shop = apps.get_model("shop", "Shop")
+        configured = (getattr(Shop.load(), "defaults", None) or {}).get("purchase") or {}
+        for key in policy:
+            value = configured.get(key)
+            if value is not None:
+                policy[key] = max(minimums.get(key, 0), int(value))
+    except Exception:
+        logger.debug("purchase.policy_load_failed", exc_info=True)
+    return policy
+
+
+def _lead_time_map(skus: list[str], *, policy: dict[str, int]) -> dict[str, Decimal]:
+    """Prazo de entrega por insumo: mediana do histórico real (pedido enviado →
+    primeira entrada `buy`); sem histórico, o prazo cadastrado no fornecedor
+    preferencial; sem ambos, o mínimo da política."""
+    floor = Decimal(policy["min_lead_time_days"])
+    result = dict.fromkeys(skus, floor)
+    if not skus:
+        return result
+    try:
+        SupplierMaterialCost = apps.get_model("buyman", "SupplierMaterialCost")
+        for cost in SupplierMaterialCost.objects.filter(
+            material__sku__in=skus, is_preferred=True,
+        ).select_related("material", "supplier"):
+            declared = _meta_decimal(_purchase_meta(cost.supplier), "lead_time_days", "leadTimeDays", default=None)
+            if declared and declared > 0:
+                result[cost.material.sku] = max(declared, floor)
+    except Exception:
+        logger.debug("purchase.lead_time_declared_failed", exc_info=True)
+    try:
+        from shopman.shop.directives import NOTIFICATION_SEND
+
+        Directive = apps.get_model("orderman", "Directive")
+        Move = apps.get_model("stockman", "Move")
+        since = timezone.now() - timedelta(days=policy["lead_time_history_days"])
+        requests: dict[str, list[Any]] = {}
+        rows = Directive.objects.filter(
+            topic=NOTIFICATION_SEND, created_at__gte=since, payload__event="purchase_request",
+        ).values_list("payload", "created_at")
+        for payload, created_at in rows:
+            sku = str(((payload or {}).get("context") or {}).get("material_sku") or "")
+            if sku in result:
+                requests.setdefault(sku, []).append(created_at)
+        if requests:
+            buys: dict[str, list[Any]] = {}
+            buy_rows = Move.objects.filter(
+                quant__sku__in=list(requests), delta__gt=0, kind="buy", timestamp__gte=since,
+            ).values_list("quant__sku", "timestamp")
+            for sku, timestamp in buy_rows:
+                buys.setdefault(sku, []).append(timestamp)
+            cap = policy["lead_time_max_days"]
+            for sku, sent_times in requests.items():
+                samples: list[float] = []
+                deliveries = sorted(buys.get(sku, ()))
+                for sent in sorted(sent_times):
+                    arrival = next((ts for ts in deliveries if ts >= sent), None)
+                    if arrival is None:
+                        continue
+                    days = (arrival - sent).total_seconds() / 86400
+                    if 0 < days <= cap:
+                        samples.append(days)
+                if samples:
+                    result[sku] = max(Decimal(str(round(median(samples), 1))), floor)
+    except Exception:
+        logger.debug("purchase.lead_time_history_failed", exc_info=True)
+    return result
 
 
 def _daily_use_map(skus: list[str], *, days: int = 14) -> dict[str, Decimal]:

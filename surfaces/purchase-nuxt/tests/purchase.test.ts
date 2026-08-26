@@ -143,6 +143,16 @@ describe("purchase presentation", () => {
     expect(issues.map((issue) => issue.key)).toContain("missing-preferred");
   });
 
+  it("usa o limiar de reposicao do servidor (prazo do fornecedor) em vez de horizonte fixo", () => {
+    // 80 em estoque a 20/dia = 4 dias de cobertura: acima do fallback de 3 dias,
+    // mas dentro do limiar de 6 dias que o servidor calculou para este fornecedor.
+    const slowSupplier = { ...farinha, stockOnHand: 80, dailyUse: 20, minStock: 0, replenishAtDays: 6 };
+    const fastSupplier = { ...farinha, stockOnHand: 80, dailyUse: 20, minStock: 0, replenishAtDays: 2 };
+
+    expect(materialIssues(slowSupplier, [], conversions).map((issue) => issue.key)).toContain("low-stock");
+    expect(materialIssues(fastSupplier, [], conversions).map((issue) => issue.key)).not.toContain("low-stock");
+  });
+
   it("extrai a chave de acesso da NF a partir de QR code, codigo de barras ou texto colado", () => {
     const key = "41260812345678000190550010000012341000123459";
 

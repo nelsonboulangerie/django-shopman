@@ -21,6 +21,9 @@ export interface Material {
   dailyUse: number;
   minStock: number;
   recipes: string[];
+  leadTimeDays?: number;
+  replenishAtDays?: number;
+  suggestedQty?: number;
 }
 
 export interface Supplier {
