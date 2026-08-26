@@ -186,13 +186,13 @@ def test_as_duas_curadorias_de_consumo_nao_se_contradizem():
 def test_produto_sem_foto_e_decisao_nao_esquecimento(arvore):
     """Foto vazia no seed é uma DECISÃO por produto, nunca item esquecido.
 
-    Só o formato próprio da casa (bicho moldado, espiral, deli) fica sem foto,
-    porque não existe placeholder honesto — foto errada é pior que sem foto — e
+    Só o Porquinho fica sem foto — o acervo da casa (nb-catalog, loja/ e
+    img/products/) não tem registro dele, e foto errada é pior que sem foto;
     o card de categoria (cor + ícone + SKU) cobre a vitrine. Todo o resto tem
-    foto da casa (nb-catalog) ou Unsplash conferido a olho. Um produto novo que
-    entrar sem foto tem que passar por aqui, de propósito.
+    foto da casa ou Unsplash conferido a olho. Um produto novo que entrar sem
+    foto tem que passar por aqui, de propósito.
     """
-    decididos_sem_foto = {"PR", "ANU", "ANP", "JO", "DL"}
+    decididos_sem_foto = {"ANP"}
     vazios = set()
     for elemento in _no_da_atribuicao(arvore, "products_data").elts:
         imagem = elemento.elts[7]
