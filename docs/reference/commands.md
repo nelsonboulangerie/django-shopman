@@ -10,6 +10,7 @@
 |---------|-----|-----------|-----------|
 | [`release_expired_holds`](#release_expired_holds) | stockman | Manutenção | Libera holds expirados |
 | [`sweep_orphan_holds`](#sweep_orphan_holds) | shop | Manutenção | Libera holds indefinidos órfãos (sem sessão viva ou com data passada) |
+| [`sweep_dead_production_stock`](#sweep_dead_production_stock) | shop | Manutenção | Zera pelo ledger o resíduo de processo (target vencida) de WOs mortas |
 | [`load_crafting_demo`](#load_crafting_demo) | craftsman | Seed | Carrega dados demo de produção |
 | [`process_directives`](#process_directives) | orderman | Worker | Processa fila de directives |
 | [`cleanup_idempotency_keys`](#cleanup_idempotency_keys) | orderman | Manutenção | Remove chaves de idempotência antigas |
@@ -74,6 +75,31 @@ Roda no ciclo do `maintenance_worker`, entre `cleanup_stale_sessions` e `cleanup
 ```bash
 python manage.py sweep_orphan_holds --dry-run
 python manage.py sweep_orphan_holds
+```
+
+---
+
+### sweep_dead_production_stock
+
+**App:** `shopman.shop`
+**Arquivo:** `shopman/shop/management/commands/sweep_dead_production_stock.py`
+
+Zera pelo ledger (`stock.adjust`, nunca delete) quants em posição de PROCESSO (ou lote
+`started`) com `target_date` vencida cuja WorkOrder está MORTA — void com o ajuste do handler
+falho, ou quant órfão sem WO. Esse resíduo conta como `in_production` no `total_promisable`
+(estoque fantasma prometido ao cliente até a shelf-life vencer). A janela é "WO morta", nunca
+idade: quant de WO viva (planned/started) é matéria de finish tardio e quem cobra é o alerta
+`production_unfinished`; quant de WO `finished` com o ledger aberto é território do
+`sweep_unrealized_production`; quant com hold ativo espera os liberadores de hold. Roda no
+ciclo do `maintenance_worker`, logo depois do `sweep_unrealized_production`.
+
+| Flag | Default | Descrição |
+|------|---------|-----------|
+| `--dry-run` | — | Lista os quants que seriam zerados sem escrever no ledger |
+
+```bash
+python manage.py sweep_dead_production_stock --dry-run
+python manage.py sweep_dead_production_stock
 ```
 
 ---

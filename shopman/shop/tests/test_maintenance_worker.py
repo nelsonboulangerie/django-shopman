@@ -147,6 +147,48 @@ def test_cycle_removes_stale_planning_quants():
     assert Quant.objects.filter(pk=planned.pk).exists()
 
 
+def test_cycle_zeroes_dead_production_residue():
+    from shopman.craftsman.contrib.stockman.handlers import STARTED_BATCH
+    from shopman.craftsman.models import Recipe, WorkOrder
+    from shopman.stockman.models import Position, PositionKind
+
+    producao = Position.objects.create(
+        ref="producao-mw", name="Produção", kind=PositionKind.PROCESS, is_saleable=False
+    )
+    recipe = Recipe.objects.create(
+        ref="rc-mw-dead", name="Pão", output_sku="PAO-MW-DEAD", batch_size=Decimal("1")
+    )
+    yesterday = date.today() - timedelta(days=1)
+    # WO morta (void sem o ajuste do handler) deixou resíduo started de ontem…
+    dead = Quant.objects.create(
+        sku="PAO-MW-DEAD", position=producao, target_date=yesterday,
+        batch=STARTED_BATCH, _quantity=Decimal("7"),
+    )
+    WorkOrder.objects.create(
+        recipe=recipe, output_sku="PAO-MW-DEAD", quantity=Decimal("7"),
+        status=WorkOrder.Status.VOID, target_date=yesterday,
+    )
+    # …e a WO ainda viva de ontem segue intocável (finish tardio possível).
+    live = Quant.objects.create(
+        sku="PAO-MW-LIVE", position=producao, target_date=yesterday,
+        batch=STARTED_BATCH, _quantity=Decimal("4"),
+    )
+    live_recipe = Recipe.objects.create(
+        ref="rc-mw-live", name="Broa", output_sku="PAO-MW-LIVE", batch_size=Decimal("1")
+    )
+    WorkOrder.objects.create(
+        recipe=live_recipe, output_sku="PAO-MW-LIVE", quantity=Decimal("4"),
+        status=WorkOrder.Status.STARTED, target_date=yesterday,
+    )
+
+    _run_once()
+
+    dead.refresh_from_db()
+    live.refresh_from_db()
+    assert dead.quantity == 0
+    assert live.quantity == Decimal("4")
+
+
 def test_cycle_rescues_paid_order_with_lost_webhook():
     # PIX capturado no Payman, mas o webhook nunca chegou: o pedido ficou em NEW.
     # O marcador on_commit=done mantém o sweep_stuck_orders fora do caminho —
@@ -308,6 +350,9 @@ def test_once_runs_one_cycle_in_order_and_never_sleeps():
         # O mesmo resgate do lado da produção: fornada concluída cujo ledger
         # de estoque não fechou volta a ser realizada.
         call("sweep_unrealized_production"),
+        # Depois do resgate: resíduo de processo de WO morta é zerado pelo
+        # ledger — só quando nenhuma WO viva nem ledger aberto o reivindica.
+        call("sweep_dead_production_stock"),
         call("check_directive_health"),
     ]
 
