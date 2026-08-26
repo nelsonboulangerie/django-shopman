@@ -25,6 +25,9 @@ from django.db.models import Q
 logger = logging.getLogger(__name__)
 
 INVOICE_PRODUCT_MAP_KEYS = ("invoice_product_map", "nfe_product_map", "invoiceProducts", "nfeProducts")
+# Fuzzy nunca preenche materialSku: vira sugestão visível que o operador aceita
+# ou troca na tela. Por isso é seguro nascer ligado.
+DEFAULT_FUZZY_MATCH_MIN_SCORE = 87
 MATERIAL_CODE_KEYS = ("invoice_codes", "nfe_codes", "supplier_codes", "barcodes", "gtins", "invoice_names")
 BASE_UNIT_ALIASES = {
     "KG": "kg",
@@ -217,12 +220,15 @@ def _extract_proc_nfe_xml(response: Any, *, access_key: str = "") -> str | None:
 
 def _receipt_line_from_item(item: NFeItem, *, index: int, supplier: Any | None) -> dict[str, Any]:
     material, mapping = _material_for_item(item, supplier=supplier)
+    suggestion = None if material else _material_suggestion(item.name)
     conversion = _conversion_for_item(item, material=material, supplier=supplier, mapping=mapping)
     requires_conversion = _requires_conversion(item, material=material, conversion=conversion)
     total_value = item.total_value if item.total_value > 0 else item.quantity * item.unit_value
     return {
         "id": f"nfe-{item.number or index}",
         "materialSku": material.sku if material else "",
+        "suggestedMaterialSku": suggestion[0].sku if suggestion else "",
+        "suggestionScore": suggestion[1] if suggestion else 0,
         "conversionId": str(conversion.pk) if conversion else None,
         "requiresConversion": requires_conversion,
         "purchaseQty": _decimal_text(item.quantity),
@@ -268,10 +274,6 @@ def _material_for_item(item: NFeItem, *, supplier: Any | None) -> tuple[Any | No
     exact_name = _material_by_exact_name(item.name)
     if exact_name:
         return exact_name, mapping
-
-    fuzzy = _material_by_fuzzy_name(item.name)
-    if fuzzy:
-        return fuzzy, mapping
 
     return None, mapping
 
@@ -440,10 +442,11 @@ def _material_by_metadata(item: NFeItem, *, supplier: Any | None) -> Any | None:
     return None
 
 
-def _material_by_fuzzy_name(name: str) -> Any | None:
-    score = _fuzzy_match_min_score()
+def _material_suggestion(name: str) -> tuple[Any, int] | None:
+    """Fuzzy match the NF item name into a visible suggestion, never a fill."""
+    min_score = _fuzzy_match_min_score()
     normalized = _normalize_text(name)
-    if score <= 0 or not normalized:
+    if min_score <= 0 or not normalized:
         return None
     try:
         from rapidfuzz import fuzz, process
@@ -456,10 +459,12 @@ def _material_by_fuzzy_name(name: str) -> Any | None:
         for material in Material.objects.filter(is_active=True).only("sku", "name")
     }
     match = process.extractOne(normalized, choices.keys(), scorer=fuzz.WRatio)
-    if not match or match[1] < score:
+    if not match or match[1] < min_score:
         return None
-    logger.info("purchase_nfe.fuzzy_material_match score=%s material=%s", match[1], choices[match[0]].sku)
-    return choices[match[0]]
+    material = choices[match[0]]
+    score = int(round(match[1]))
+    logger.info("purchase_nfe.fuzzy_material_suggestion score=%s material=%s", score, material.sku)
+    return material, score
 
 
 def _material_invoice_tokens(material: Any, *, supplier: Any | None) -> list[str]:
@@ -799,6 +804,8 @@ def _first_mapping_value(mapping: dict[str, Any], *keys: str) -> Any:
 
 def _fuzzy_match_min_score() -> int:
     config = _get_config()
+    if "fuzzy_match_min_score" not in config:
+        return DEFAULT_FUZZY_MATCH_MIN_SCORE
     try:
         return int(config.get("fuzzy_match_min_score") or 0)
     except (TypeError, ValueError):

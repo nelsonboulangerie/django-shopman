@@ -6,6 +6,7 @@ import type {
   MaterialTone,
   ReceiptLine,
   ReceiptLinePreview,
+  ReceiptLineSuggestion,
   ReceiptMode,
   ReceiptWarning,
   QuotePreview,
@@ -128,6 +129,17 @@ export function receiptBaseQty(line: ReceiptLine, conversion: MaterialConversion
   return line.purchaseQty * factor;
 }
 
+export function receiptLineSuggestion(line: ReceiptLine, materials: Material[]): ReceiptLineSuggestion | null {
+  const sku = line.suggestedMaterialSku ?? "";
+  if (line.materialSku || !sku) return null;
+  const material = materials.find((item) => item.sku === sku);
+  return {
+    sku,
+    name: material?.name ?? sku,
+    scorePercent: Math.round(line.suggestionScore ?? 0),
+  };
+}
+
 export function receiptLineWarnings(
   line: ReceiptLine,
   mode: ReceiptMode,
@@ -135,7 +147,11 @@ export function receiptLineWarnings(
   conversion: MaterialConversion | null,
 ): ReceiptWarning[] {
   const warnings: ReceiptWarning[] = [];
-  if (!material) return [{ key: "missing-material", label: "Definir insumo", tone: "block" }];
+  if (!material) {
+    return line.suggestedMaterialSku ?
+        [{ key: "confirm-suggestion", label: "Confirmar sugestão de insumo", tone: "block" }]
+      : [{ key: "missing-material", label: "Definir insumo", tone: "block" }];
+  }
   if (!Number.isFinite(line.purchaseQty) || line.purchaseQty <= 0) {
     warnings.push({ key: "invalid-qty", label: "Quantidade precisa ser maior que zero", tone: "block" });
   }
@@ -190,6 +206,7 @@ export function receiptLinePreview(
     baseCostQ: baseQty > 0 ? Math.round(totalCostQ / baseQty) : 0,
     totalCostQ,
     approximate: conversion?.kind === "approximate",
+    suggestion: receiptLineSuggestion(line, materials),
     warnings: receiptLineWarnings(line, mode, matchedMaterial, conversion),
   };
 }

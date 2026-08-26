@@ -10,6 +10,7 @@ import {
   parseInvoiceAccessKey,
   quotePreview,
   receiptLinePreview,
+  receiptLineSuggestion,
   supplierCostRows,
 } from "~/presentation/purchase";
 
@@ -221,6 +222,60 @@ describe("purchase presentation", () => {
       label: "Definir insumo",
       tone: "block",
     });
+    expect(preview?.suggestion).toBeNull();
+  });
+
+  it("mostra sugestão fuzzy como sugestão e segue bloqueando até o operador decidir", () => {
+    const line: ReceiptLine = {
+      id: "nfe-1",
+      materialSku: "",
+      suggestedMaterialSku: "FARINHA-T65",
+      suggestionScore: 90,
+      conversionId: null,
+      requiresConversion: true,
+      purchaseQty: 2,
+      costInput: "360,00",
+      expiryDate: "",
+      lineNote: "Definir insumo. NF: FARINHA DE TRIGO T65 SACO 25KG.",
+      checked: false,
+    };
+
+    const preview = receiptLinePreview(line, "invoice", [farinha], conversions);
+
+    expect(preview?.line.materialSku).toBe("");
+    expect(preview?.suggestion).toEqual({
+      sku: "FARINHA-T65",
+      name: "Farinha T65",
+      scorePercent: 90,
+    });
+    expect(preview?.warnings).toContainEqual({
+      key: "confirm-suggestion",
+      label: "Confirmar sugestão de insumo",
+      tone: "block",
+    });
+    expect(preview?.warnings.map((warning) => warning.key)).not.toContain("missing-material");
+  });
+
+  it("some com a sugestão e libera o bloqueio quando o operador aceita ou troca o insumo", () => {
+    const accepted: ReceiptLine = {
+      id: "nfe-1",
+      materialSku: "FARINHA-T65",
+      suggestedMaterialSku: "FARINHA-T65",
+      suggestionScore: 90,
+      conversionId: "saco-25",
+      purchaseQty: 2,
+      costInput: "360,00",
+      expiryDate: "2027-02-25",
+      lineNote: "",
+      checked: false,
+    };
+
+    expect(receiptLineSuggestion(accepted, [farinha])).toBeNull();
+
+    const preview = receiptLinePreview(accepted, "invoice", [farinha], conversions);
+    expect(preview?.suggestion).toBeNull();
+    expect(preview?.warnings.map((warning) => warning.key)).not.toContain("confirm-suggestion");
+    expect(preview?.warnings.map((warning) => warning.key)).not.toContain("missing-material");
   });
 
   it("bloqueia linha importada que ainda precisa de conversao", () => {
