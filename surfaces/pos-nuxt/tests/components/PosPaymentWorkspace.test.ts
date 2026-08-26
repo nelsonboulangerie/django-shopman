@@ -395,7 +395,7 @@ describe("PosPaymentWorkspace — o resumo diz o preço normal, o cobrado e o po
     const wrapper = await mountSuspended(PosPaymentWorkspace, { props: props({ items: [discounted()] }) });
     const summary = wrapper.find('section[aria-label="Resumo do pedido"]');
     // 2 × (6,00 − 5,10) = 1,80
-    expect(summary.text()).toContain("Economia nos itens");
+    expect(summary.text()).toContain("Desconto nos itens");
     expect(summary.text()).toContain(formatBRL(180));
   });
 
@@ -405,13 +405,14 @@ describe("PosPaymentWorkspace — o resumo diz o preço normal, o cobrado e o po
     });
     const summary = wrapper.find('section[aria-label="Resumo do pedido"]');
     expect(summary.find("span.line-through").exists()).toBe(false);
-    expect(summary.text()).not.toContain("Economia nos itens");
+    expect(summary.text()).not.toContain("Desconto nos itens");
   });
 
   it("o desconto DA VENDA é uma linha à parte do desconto dos itens", async () => {
     // São dois fatos diferentes: um é a etiqueta que já vinha mais barata, o
     // outro é o abatimento que o operador pediu sobre o pedido inteiro. Somá-los
-    // numa linha só esconde qual dos dois precisa de autorização.
+    // numa linha só esconde qual dos dois precisa de autorização — mas a palavra
+    // é a mesma nos dois: desconto.
     const wrapper = await mountSuspended(PosPaymentWorkspace, {
       props: props({
         items: [discounted()],
@@ -419,7 +420,7 @@ describe("PosPaymentWorkspace — o resumo diz o preço normal, o cobrado e o po
       }),
     });
     const dl = wrapper.find('section[aria-label="Resumo do pedido"] dl');
-    expect(dl.text()).toContain("Economia nos itens");
-    expect(dl.text()).toContain("Desconto na venda");
+    expect(dl.text()).toContain("Desconto nos itens");
+    expect(dl.text()).toContain("Desconto no pedido");
   });
 });

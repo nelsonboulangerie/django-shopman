@@ -486,7 +486,11 @@ defineExpose({
          janela — músculo de balcão depende de a tecla estar sempre no mesmo
          lugar. O VALOR fica com o resto, que é o que deve respirar.
 
-         A terceira coluna aparece a partir de `xl` e carrega o RESUMO DO PEDIDO.
+         A terceira coluna aparece a partir de `lg` e carrega o RESUMO DO PEDIDO.
+         Ela ficava em `xl`, e abaixo de 1280px o resumo SUMIA — justo a coluna
+         que existe para dizer o que está sendo cobrado. Quem encolhe agora é o
+         número do meio, que é grande por ênfase e não por necessidade: ele
+         também aparece nas linhas de pagamento e no botão de validar.
          Cliente e recebimento saíram daqui: são fatos do PEDIDO, decididos na
          abertura do atendimento, e agora moram na barra do topo, que segue
          visível durante o checkout. Perguntar de novo aqui era ter o mesmo botão
@@ -815,7 +819,7 @@ defineExpose({
         <!-- valor gigante (estável = total a cobrar), centrado -->
         <section class="flex flex-1 flex-col items-center justify-center text-center" aria-label="Total a cobrar">
           <p class="text-xs font-medium uppercase tracking-wide text-muted-foreground">Total a cobrar</p>
-          <p class="text-6xl font-bold tabular-nums tracking-tight lg:text-7xl 2xl:text-8xl">{{ review ? review.total_display : interimTotalDisplay }}</p>
+          <p class="text-4xl font-bold tabular-nums tracking-tight xl:text-6xl 2xl:text-8xl">{{ review ? review.total_display : interimTotalDisplay }}</p>
           <p v-if="items.length" class="mt-3 flex items-center gap-1.5 text-xs text-muted-foreground">
             <Icon name="lucide:flame" class="size-3.5 shrink-0" :class="firedCount ? 'text-primary' : ''" />
             {{ kitchenNote }}
@@ -888,7 +892,7 @@ defineExpose({
            os mesmos `contextEntries` dos chips, agora com rótulo) e o RESUMO DO
            PEDIDO. Largura fixa de 360px, igual à do carrinho na tela de venda:
            é a mesma lista, no mesmo lugar da tela, com a mesma medida. -->
-      <div class="order-3 hidden min-h-0 w-[360px] shrink-0 flex-col gap-3 overflow-y-auto md:order-none xl:flex">
+      <div class="order-3 hidden min-h-0 w-[360px] shrink-0 flex-col gap-3 overflow-y-auto md:order-none lg:flex">
         <!-- RESUMO DO PEDIDO — a lista, e o que a soma dela vira. Sem stepper e
              sem lixeira: aqui não se edita o pedido (para isso existe o Voltar),
              só se confere. Rola quando a comanda é grande; subtotal, desconto e
@@ -932,11 +936,12 @@ defineExpose({
               v-if="summarySavingsQ > 0 || (review && (review.discount_q > 0 || review.delivery_fee_q > 0))"
               class="grid gap-1 border-t px-3 py-2 text-sm"
             >
-              <!-- "Você economizou" fecha a conta que as linhas riscadas abrem.
-                   Sai do MESMO lugar de onde saem os riscos (etiqueta − cobrado),
-                   então os dois nunca podem discordar. -->
+              <!-- Duas linhas porque são dois fatos — a etiqueta que já vinha
+                   mais barata, e o abatimento pedido sobre o pedido inteiro —,
+                   mas ditas com a MESMA palavra: desconto. "Economia" era um
+                   segundo vocabulário para a mesma coisa. -->
               <div v-if="summarySavingsQ > 0" class="flex items-baseline justify-between gap-2 text-primary">
-                <dt class="font-medium">Economia nos itens</dt>
+                <dt class="font-medium">Desconto nos itens</dt>
                 <dd class="tabular-nums font-semibold">−{{ formatBRL(summarySavingsQ) }}</dd>
               </div>
               <template v-if="review">
@@ -945,7 +950,7 @@ defineExpose({
                   <dd class="tabular-nums">{{ review.subtotal_display }}</dd>
                 </div>
                 <div v-if="review.discount_q > 0" class="flex items-baseline justify-between gap-2 text-primary">
-                  <dt>Desconto na venda</dt>
+                  <dt>Desconto no pedido</dt>
                   <dd class="tabular-nums">−{{ review.discount_display }}</dd>
                 </div>
                 <div v-if="review.delivery_fee_q > 0" class="flex items-baseline justify-between gap-2">
