@@ -259,11 +259,11 @@ describe("purchase presentation", () => {
   });
 
   it("declara paths BFF estaveis para wiring com Buyman", () => {
-    expect(PURCHASE_API_BASE).toBe("/api/v1/backstage/buyman/");
-    expect(PURCHASE_API_ENDPOINTS.projection).toBe("/api/v1/backstage/buyman/");
-    expect(PURCHASE_API_ENDPOINTS.confirmReceipt).toBe("/api/v1/backstage/buyman/receipts/confirm/");
+    expect(PURCHASE_API_BASE).toBe("/api/v1/backstage/purchase/");
+    expect(PURCHASE_API_ENDPOINTS.projection).toBe("/api/v1/backstage/purchase/");
+    expect(PURCHASE_API_ENDPOINTS.confirmReceipt).toBe("/api/v1/backstage/purchase/receipts/confirm/");
     expect(PURCHASE_API_ENDPOINTS.requestApprove("FARINHA T65")).toBe(
-      "/api/v1/backstage/buyman/requests/FARINHA%20T65/approve/",
+      "/api/v1/backstage/purchase/requests/FARINHA%20T65/approve/",
     );
   });
 });

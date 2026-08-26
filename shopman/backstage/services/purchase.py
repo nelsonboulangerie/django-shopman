@@ -251,7 +251,7 @@ def reject_receipt(payload: dict[str, Any], *, user) -> tuple[dict[str, Any], st
     return build_purchase(), f"Devolução registrada ({receipt_ref})."
 
 
-def upsert_cost(payload: dict[str, Any]) -> dict[str, Any]:
+def upsert_cost(payload: dict[str, Any], *, user=None) -> dict[str, Any]:
     """Create/update a supplier cost from the Base > Custos form."""
     Material = apps.get_model("buyman", "Material")
     Supplier = apps.get_model("buyman", "Supplier")
@@ -281,6 +281,18 @@ def upsert_cost(payload: dict[str, Any]) -> dict[str, Any]:
         conversion=conversion,
         cost_q=cost_q,
         make_preferred=bool(payload.get("makePreferred") or payload.get("make_preferred")),
+    )
+    # Custo de fornecedor é dado de dinheiro: quem alterou fica no log
+    # estruturado (o modelo não tem trilha própria — decisão adiada com o
+    # ADR-023, custo vivo × congelado).
+    logger.info(
+        "purchase.cost_upserted",
+        extra={
+            "material": material.sku,
+            "supplier": supplier.ref,
+            "cost_q": cost_q,
+            "user": getattr(user, "username", "") or "anon",
+        },
     )
     return build_purchase()
 

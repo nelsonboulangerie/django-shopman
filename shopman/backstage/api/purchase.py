@@ -22,13 +22,14 @@ def _purchase_response(projection, *, message: str = "") -> Response:
 
 
 def _error_response(exc: PurchaseError) -> Response:
-    payload = {
-        "detail": str(exc),
-        "error": {
-            "code": exc.code,
-            "field": exc.field,
-        },
-    }
+    # Dialeto canônico {detail, field, errors} (docs/reference/errors.md) +
+    # `error.code` como superset estável, no molde do PDV. `field` mora no
+    # topo — era aninhado em `error`, um terceiro formato que nenhuma
+    # superfície esperava.
+    payload: dict = {"detail": str(exc), "error": {"code": exc.code}}
+    if exc.field:
+        payload["field"] = exc.field
+        payload["errors"] = {exc.field: [str(exc)]}
     return Response(payload, status=exc.status_code)
 
 
@@ -107,7 +108,7 @@ class PurchaseCostView(APIView):
     )
     def post(self, request):
         try:
-            projection = purchase_service.upsert_cost(dict(request.data or {}))
+            projection = purchase_service.upsert_cost(dict(request.data or {}), user=request.user)
         except PurchaseError as exc:
             return _error_response(exc)
         return _purchase_response(projection, message="Custo salvo.")

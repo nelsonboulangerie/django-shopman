@@ -1,4 +1,4 @@
-"""Compras surface contract (GET/POST api/v1/backstage/buyman/*).
+"""Compras surface contract (GET/POST api/v1/backstage/purchase/*).
 
 The Nuxt app consumes a Backstage projection. Writes compose Buyman and
 Stockman without adding domain rules to Core.
@@ -81,7 +81,7 @@ def conversion(material, supplier):
 def test_purchase_board_requires_operate_purchase(client, material):
     bare = User.objects.create_user("bare-purchase", password="pw", is_staff=True)
     client.force_login(bare)
-    assert client.get(reverse("api-backstage-buyman")).status_code == 403
+    assert client.get(reverse("api-backstage-purchase")).status_code == 403
 
 
 @pytest.mark.django_db
@@ -99,7 +99,7 @@ def test_purchase_board_returns_composed_projection(client, purchase_operator, m
     )
 
     client.force_login(purchase_operator)
-    response = client.get(reverse("api-backstage-buyman"))
+    response = client.get(reverse("api-backstage-purchase"))
 
     assert response.status_code == 200
     purchase = response.json()["purchase"]
@@ -115,7 +115,7 @@ def test_purchase_board_returns_composed_projection(client, purchase_operator, m
 def test_scan_invoice_validates_key_and_resolves_supplier(client, purchase_operator, supplier):
     client.force_login(purchase_operator)
     response = client.post(
-        reverse("api-backstage-buyman-scan-invoice"),
+        reverse("api-backstage-purchase-scan-invoice"),
         data={"qrPayload": f"https://fazenda.example/qrcode?p={VALID_ACCESS_KEY}|2|1"},
         content_type="application/json",
     )
@@ -182,7 +182,7 @@ def test_scan_invoice_uses_configured_nfe_reader(
         SHOPMAN_PURCHASE_NFE={"xml_dir": str(tmp_path)},
     ):
         response = client.post(
-            reverse("api-backstage-buyman-scan-invoice"),
+            reverse("api-backstage-purchase-scan-invoice"),
             data={"qrPayload": VALID_ACCESS_KEY},
             content_type="application/json",
         )
@@ -206,7 +206,7 @@ def test_confirm_receipt_writes_buy_move_batch_and_cost(
 ):
     client.force_login(purchase_operator)
     response = client.post(
-        reverse("api-backstage-buyman-confirm-receipt"),
+        reverse("api-backstage-purchase-confirm-receipt"),
         data={
             "mode": "invoice",
             "supplierRef": supplier.ref,
@@ -255,7 +255,7 @@ def test_confirm_receipt_blocks_imported_line_that_requires_conversion(
 ):
     client.force_login(purchase_operator)
     response = client.post(
-        reverse("api-backstage-buyman-confirm-receipt"),
+        reverse("api-backstage-purchase-confirm-receipt"),
         data={
             "mode": "invoice",
             "supplierRef": supplier.ref,
@@ -287,7 +287,7 @@ def test_confirm_receipt_blocks_imported_line_that_requires_conversion(
 def test_reject_receipt_records_notification_without_stock_move(client, purchase_operator, material, supplier, conversion):
     client.force_login(purchase_operator)
     response = client.post(
-        reverse("api-backstage-buyman-reject-receipt"),
+        reverse("api-backstage-purchase-reject-receipt"),
         data={
             "mode": "invoice",
             "supplierRef": supplier.ref,
@@ -329,7 +329,7 @@ def test_upsert_cost_and_request_status_actions(client, purchase_operator, mater
     supplier.save(update_fields=["email", "metadata", "updated_at"])
 
     cost_response = client.post(
-        reverse("api-backstage-buyman-costs"),
+        reverse("api-backstage-purchase-costs"),
         data={
             "materialSku": material.sku,
             "supplierRef": supplier.ref,
@@ -342,11 +342,11 @@ def test_upsert_cost_and_request_status_actions(client, purchase_operator, mater
     assert cost_response.status_code == 200
     assert SupplierMaterialCost.objects.get(material=material, supplier=supplier).is_preferred is True
 
-    approve = client.post(reverse("api-backstage-buyman-request-approve", args=[material.sku]))
+    approve = client.post(reverse("api-backstage-purchase-request-approve", args=[material.sku]))
     assert approve.status_code == 200
     assert approve.json()["purchase"]["purchaseRequestStatuses"][material.sku] == "approved"
 
-    sent = client.post(reverse("api-backstage-buyman-request-send", args=[material.sku]))
+    sent = client.post(reverse("api-backstage-purchase-request-send", args=[material.sku]))
     assert sent.status_code == 200
     material.refresh_from_db()
     assert material.metadata["purchase"]["request_status"] == "sent"
@@ -373,7 +373,7 @@ def test_send_purchase_request_requires_supplier_contact(client, purchase_operat
         is_preferred=True,
     )
 
-    response = client.post(reverse("api-backstage-buyman-request-send", args=[material.sku]))
+    response = client.post(reverse("api-backstage-purchase-request-send", args=[material.sku]))
 
     assert response.status_code == 400
     assert response.json()["error"]["code"] == "supplier_contact_missing"

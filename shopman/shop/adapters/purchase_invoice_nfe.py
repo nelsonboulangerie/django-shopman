@@ -7,16 +7,17 @@ Backstage purchase receipt draft. Buyman/Stockman/Craftsman stay agnostic.
 from __future__ import annotations
 
 import base64
-import gzip
 import logging
 import re
 import unicodedata
+import zlib
 from dataclasses import dataclass
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from typing import Any
 from xml.etree import ElementTree as ET
 
+from defusedxml.ElementTree import fromstring as defused_fromstring
 from django.apps import apps
 from django.conf import settings
 from django.db.models import Q
@@ -572,6 +573,12 @@ def _response_status(response: Any) -> str:
     return ""
 
 
+# O docZip vem do provedor fiscal, mas continua entrada externa: sem teto, um
+# gzip malicioso de poucos KB infla para GB e derruba o worker na descompressão.
+# 20MB cobre qualquer NF-e real com folga enorme.
+MAX_DOC_XML_BYTES = 20 * 1024 * 1024
+
+
 def _decode_doc_zip(doc_zip: Any) -> str:
     raw = getattr(doc_zip, "valueOf_", None)
     if raw is None:
@@ -581,8 +588,16 @@ def _decode_doc_zip(doc_zip: Any) -> str:
     try:
         payload = base64.b64decode(re.sub(r"\s+", "", _decode_text(raw)))
         try:
-            payload = gzip.decompress(payload)
-        except OSError:
+            # wbits=31 = gzip; decompressobj com max_length aplica o teto SEM
+            # materializar o payload inflado inteiro (gzip.decompress não tem
+            # limite e alocaria tudo antes de qualquer checagem).
+            inflater = zlib.decompressobj(31)
+            inflated = inflater.decompress(payload, MAX_DOC_XML_BYTES + 1)
+            if len(inflated) > MAX_DOC_XML_BYTES:
+                logger.warning("purchase_nfe.doczip_too_large")
+                return ""
+            payload = inflated
+        except zlib.error:
             pass
         return payload.decode("utf-8", errors="replace")
     except Exception:
@@ -598,8 +613,11 @@ def _looks_like_full_nfe_xml(xml: str, *, access_key: str = "") -> bool:
 
 def _xml_root(xml: str | bytes) -> ET.Element:
     try:
-        return ET.fromstring(xml)
-    except ET.ParseError as exc:
+        # defusedxml: recusa DTD/entidades (XXE, billion laughs) em vez de
+        # depender do comportamento do expat do runtime. Os ataques chegam como
+        # DefusedXmlException (subclasse de ValueError).
+        return defused_fromstring(xml)
+    except (ET.ParseError, ValueError) as exc:
         raise ValueError("XML de NF-e invalido.") from exc
 
 
