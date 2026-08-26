@@ -536,7 +536,7 @@ defineExpose({
             @click="discountSheetOpen = true"
           >
             <Icon name="lucide:tag" class="size-4 shrink-0" />
-            <span class="min-w-0 truncate">{{ hasDiscount ? `Desconto ${discountSummary}` : "Sem desconto" }}</span>
+            <span class="min-w-0 truncate">{{ hasDiscount ? `Desconto no pedido ${discountSummary}` : "Desconto no pedido" }}</span>
             <kbd class="ml-auto shrink-0 rounded border bg-muted px-1 py-0.5 font-mono text-xs font-medium text-muted-foreground" aria-hidden="true">F8</kbd>
           </button>
           <!-- ONDE o dinheiro é recebido é FORMA DE PAGAMENTO, não contexto da
@@ -936,10 +936,21 @@ defineExpose({
               v-if="summarySavingsQ > 0 || (review && (review.discount_q > 0 || review.delivery_fee_q > 0))"
               class="grid gap-1 border-t px-3 py-2 text-sm"
             >
-              <!-- Duas linhas porque são dois fatos — a etiqueta que já vinha
-                   mais barata, e o abatimento pedido sobre o pedido inteiro —,
-                   mas ditas com a MESMA palavra: desconto. "Economia" era um
-                   segundo vocabulário para a mesma coisa. -->
+              <!-- Duas linhas porque são dois fatos, e cada uma diz DE QUEM é o
+                   desconto:
+
+                   · "nos itens" é o que já veio na etiqueta (promoção, xepa,
+                     lote) — informativo, explica a diferença entre o preço de
+                     tabela e o subtotal;
+                   · "do operador" é `review.discount_q`, que soma o desconto de
+                     LINHA e o do PEDIDO — é ele que sai do subtotal e chega no
+                     total, e é ele que chama gerente.
+
+                   ⚠️ Esta linha chamava-se "Desconto no pedido" e mentia: com uma
+                   cortesia de 10% numa LINHA, a tela mostrava "Sem desconto" no
+                   botão (que controla só o desconto do pedido) e "Desconto no
+                   pedido −R$ 1,02" logo ao lado. Duas frases, o mesmo nome, dois
+                   escopos. O botão agora também diz o seu escopo. -->
               <div v-if="summarySavingsQ > 0" class="flex items-baseline justify-between gap-2 text-primary">
                 <dt class="font-medium">Desconto nos itens</dt>
                 <dd class="tabular-nums font-semibold">−{{ formatBRL(summarySavingsQ) }}</dd>
@@ -950,7 +961,7 @@ defineExpose({
                   <dd class="tabular-nums">{{ review.subtotal_display }}</dd>
                 </div>
                 <div v-if="review.discount_q > 0" class="flex items-baseline justify-between gap-2 text-primary">
-                  <dt>Desconto no pedido</dt>
+                  <dt>Desconto do operador</dt>
                   <dd class="tabular-nums">−{{ review.discount_display }}</dd>
                 </div>
                 <div v-if="review.delivery_fee_q > 0" class="flex items-baseline justify-between gap-2">

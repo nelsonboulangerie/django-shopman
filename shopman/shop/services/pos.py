@@ -63,7 +63,7 @@ class PosSaleReview:
     payment_collection: str
     tender_total_q: int
     tender_count: int
-    tendered_amount_q: int
+    tendered_q: int
     change_q: int
     requires_manager_approval: bool
     manager_approval_threshold_q: int
@@ -550,7 +550,7 @@ def review_sale(
     cash_tender_total_q = sum(
         _int_q(tender.get("amount_q")) for tender in tenders if _is_cash_tender(tender)
     )
-    tendered_amount_q = _int_q(payload.get("tendered_amount_q"))
+    tendered_q = _int_q(payload.get("tendered_q"))
     threshold_q = discount_approval_threshold_q()
     warnings: list[dict] = []
     # Fora da área é fato do ENDEREÇO, e o balcão precisa saber antes de
@@ -580,16 +580,16 @@ def review_sale(
                 "Não há troco para cartão ou Pix; ajuste o valor da linha."
             ),
         })
-    if payment_method == "cash" and payment_collection == "terminal" and tendered_amount_q <= 0:
+    if payment_method == "cash" and payment_collection == "terminal" and tendered_q <= 0:
         warnings.append({
             "code": "cash_tendered_amount_blank",
-            "field": "tendered_amount_q",
+            "field": "tendered_q",
             "message": "Valor recebido em dinheiro não informado; o fechamento assumirá valor exato.",
         })
-    if payment_method == "cash" and payment_collection == "terminal" and 0 < tendered_amount_q < total_q:
+    if payment_method == "cash" and payment_collection == "terminal" and 0 < tendered_q < total_q:
         warnings.append({
             "code": "cash_tendered_amount_too_low",
-            "field": "tendered_amount_q",
+            "field": "tendered_q",
             "message": "Valor recebido em dinheiro menor que o total da venda.",
         })
     # "Troco para" menor que o total não paga a entrega: avisa na revisão (não
@@ -659,7 +659,7 @@ def review_sale(
         payment_collection=payment_collection,
         tender_total_q=tender_total_q,
         tender_count=len(tenders),
-        tendered_amount_q=tendered_amount_q,
+        tendered_q=tendered_q,
         # Troco só sai da gaveta, então só o DINHEIRO recebido a mais vira troco.
         # No misto, o excedente é limitado à parcela em espécie: um cartão digitado
         # a mais não é troco (a maquininha cobra o que foi passado), e tratá-lo como
@@ -668,7 +668,7 @@ def review_sale(
         change_q=(
             min(max(0, tender_total_q - total_q), cash_tender_total_q)
             if payment_method == "mixed"
-            else (max(0, tendered_amount_q - total_q) if tendered_amount_q else 0)
+            else (max(0, tendered_q - total_q) if tendered_q else 0)
         ),
         requires_manager_approval=bool(approval_reasons),
         manager_approval_threshold_q=threshold_q,
@@ -1488,9 +1488,9 @@ def build_session_ops(payload: dict, operator_username: str) -> list[dict]:
     ops.append({"op": "set_data", "path": "payment.collection", "value": payment_collection})
     ops.append({"op": "set_data", "path": "payment.amount_q", "value": total_q})
 
-    tendered_amount_q = payload.get("tendered_amount_q")
-    if tendered_amount_q and payment_method == "cash":
-        tendered_q = int(tendered_amount_q)
+    tendered_q = payload.get("tendered_q")
+    if tendered_q and payment_method == "cash":
+        tendered_q = int(tendered_q)
         ops.append({"op": "set_data", "path": "payment.tendered_q", "value": tendered_q})
         ops.append({"op": "set_data", "path": "payment.change_q", "value": max(0, tendered_q - total_q)})
     # "Troco para quanto?" do dinheiro NA ENTREGA — a chave canônica que o
@@ -2112,12 +2112,12 @@ def _validate_payment_completion(payload: dict) -> None:
         require_complete=True,
     )
     payment_method = _legacy_payment_method(payload, tenders)
-    tendered_q = _int_q(payload.get("tendered_amount_q"))
+    tendered_q = _int_q(payload.get("tendered_q"))
     if payment_method == "cash" and payment_collection == "terminal" and tendered_q and tendered_q < total_q:
         raise PosIntentError(
             code="cash_tendered_amount_too_low",
             message="Valor recebido em dinheiro menor que o total da venda.",
-            field="tendered_amount_q",
+            field="tendered_q",
             focus="payment",
             recovery="Informe o valor recebido ou use dinheiro exato.",
         )

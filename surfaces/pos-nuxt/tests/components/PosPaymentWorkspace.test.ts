@@ -362,12 +362,12 @@ describe("PosPaymentWorkspace — a coluna de contexto", () => {
       props: props({ discountTypes: [{ ref: "percent", label: "Percentual" }] }),
     });
     const payment = wrapper.find('section[aria-label="Forma de pagamento"]');
-    expect(payment.text()).toContain("Sem desconto");
+    expect(payment.text()).toContain("Desconto no pedido");
   });
 
   it("sem tipo de desconto configurado, a entrada de desconto não existe em nenhuma das formas", async () => {
     const wrapper = await mountSuspended(PosPaymentWorkspace, { props: props({ discountTypes: [] }) });
-    expect(wrapper.text()).not.toContain("Sem desconto");
+    expect(wrapper.text()).not.toContain("Desconto no pedido");
   });
 });
 
@@ -421,6 +421,6 @@ describe("PosPaymentWorkspace — o resumo diz o preço normal, o cobrado e o po
     });
     const dl = wrapper.find('section[aria-label="Resumo do pedido"] dl');
     expect(dl.text()).toContain("Desconto nos itens");
-    expect(dl.text()).toContain("Desconto no pedido");
+    expect(dl.text()).toContain("Desconto do operador");
   });
 });

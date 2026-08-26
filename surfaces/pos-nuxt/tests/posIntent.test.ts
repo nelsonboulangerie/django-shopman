@@ -55,7 +55,7 @@ describe("POS sale intent", () => {
       paymentMethod: "cash",
       paymentCollection: "on_delivery",
       paymentTenders: [],
-      tenderedAmountQ: null,
+      tenderedQ: null,
       changeForQ: 0,
       receiptChannels: ["email"],
       receiptEmail: "ana@example.com",
@@ -141,7 +141,7 @@ describe("POS sale intent", () => {
     const simple = buildPosSaleIntent(baseIntentState({
       paymentMethod: "cash",
       paymentTenders: [staleTender],
-      tenderedAmountQ: null,
+      tenderedQ: null,
     }));
 
     expect(simple).not.toHaveProperty("payment_tenders");
@@ -149,7 +149,7 @@ describe("POS sale intent", () => {
     const mixed = buildPosSaleIntent(baseIntentState({
       paymentMethod: "mixed",
       paymentTenders: [staleTender],
-      tenderedAmountQ: null,
+      tenderedQ: null,
     }));
 
     expect(mixed.payment_tenders).toEqual([staleTender]);
@@ -159,20 +159,20 @@ describe("POS sale intent", () => {
     expect(buildPosSaleIntent(baseIntentState({
       paymentMethod: "pix",
       paymentCollection: "terminal",
-      tenderedAmountQ: 2000,
-    }))).not.toHaveProperty("tendered_amount_q");
+      tenderedQ: 2000,
+    }))).not.toHaveProperty("tendered_q");
 
     expect(buildPosSaleIntent(baseIntentState({
       paymentMethod: "cash",
       paymentCollection: "on_delivery",
-      tenderedAmountQ: 2000,
-    }))).not.toHaveProperty("tendered_amount_q");
+      tenderedQ: 2000,
+    }))).not.toHaveProperty("tendered_q");
 
     expect(buildPosSaleIntent(baseIntentState({
       paymentMethod: "cash",
       paymentCollection: "terminal",
-      tenderedAmountQ: 2000,
-    }))).toMatchObject({ tendered_amount_q: 2000 });
+      tenderedQ: 2000,
+    }))).toMatchObject({ tendered_q: 2000 });
   });
 
   it("envia o troco-para só no dinheiro NA ENTREGA (COD)", () => {
@@ -317,7 +317,7 @@ function baseIntentState(overrides: Record<string, unknown> = {}) {
     paymentMethod: "cash",
     paymentCollection: "terminal",
     paymentTenders: [],
-    tenderedAmountQ: null,
+    tenderedQ: null,
     changeForQ: 0,
     receiptChannels: [],
     receiptEmail: "",
@@ -338,12 +338,12 @@ describe("resolvePayment (injeção de tenders → contrato)", () => {
     const r = resolvePayment([t("cash", 5000)], 4300);
     expect(r.paymentMethod).toBe("cash");
     expect(r.paymentTenders).toEqual([]);
-    expect(r.tenderedAmountQ).toBe(5000);
+    expect(r.tenderedQ).toBe(5000);
   });
 
   it("dinheiro único exato também usa o caminho de caixa", () => {
     const r = resolvePayment([t("cash", 4300)], 4300);
-    expect(r.tenderedAmountQ).toBe(4300);
+    expect(r.tenderedQ).toBe(4300);
     expect(r.paymentTenders).toEqual([]);
   });
 
@@ -351,14 +351,14 @@ describe("resolvePayment (injeção de tenders → contrato)", () => {
     const r = resolvePayment([t("card", 4300)], 4300);
     expect(r.paymentMethod).toBe("card");
     expect(r.paymentTenders).toEqual([]);
-    expect(r.tenderedAmountQ).toBeNull();
+    expect(r.tenderedQ).toBeNull();
   });
 
   it("split deriva 'mixed' e envia as linhas", () => {
     const r = resolvePayment([t("card", 3000), t("cash", 1300)], 4300);
     expect(r.paymentMethod).toBe("mixed");
     expect(r.paymentTenders).toHaveLength(2);
-    expect(r.tenderedAmountQ).toBeNull();
+    expect(r.tenderedQ).toBeNull();
   });
 
   it("sem tenders não resolve método", () => {

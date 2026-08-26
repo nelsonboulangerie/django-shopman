@@ -106,7 +106,7 @@ def test_venda_so_dinheiro_com_troco_bate_nos_dois_livros(counter):
     counter.close(
         client_request_id="c1",
         payment_tenders=[{"method": "cash", "amount_q": 2000, "collection": "terminal"}],
-        tendered_amount_q=2000,
+        tendered_q=2000,
     )
     DayClosing.objects.create(date=_today(), closed_by=counter.operator, data={"items": []})
 
@@ -248,7 +248,7 @@ def test_troco_do_entregador_fica_fora_do_cruzamento_e_ganha_o_seu_espelho(count
 def test_cancelamento_devolve_o_dinheiro_nos_dois_livros(counter, django_capture_on_commit_callbacks):
     """Cancel no PDV: ``REFUND`` no Payman e linha ``refund`` na gaveta, mesmo
     instante. Capturado 12, devolvido 12; gaveta +12 −12. Nada a gritar."""
-    result = counter.close(client_request_id="c4", tendered_amount_q=1200)
+    result = counter.close(client_request_id="c4", tendered_q=1200)
     with django_capture_on_commit_callbacks(execute=True):
         pos_service.cancel_recent_order(order_ref=result.order_ref, actor="pos:marina")
     assert Order.objects.get(ref=result.order_ref).status == Order.Status.CANCELLED
@@ -301,7 +301,7 @@ def test_cancelamento_de_venda_mista_devolve_so_o_dinheiro_da_gaveta(counter, dj
 def test_intent_de_dinheiro_sem_linha_no_livro_e_divergencia(counter):
     """Intent cash capturado sem a linha ``sale``: a gaveta não sabe desse
     dinheiro. O issue traz os dois números, a diferença e o pedido."""
-    counter.close(client_request_id="c6", tendered_amount_q=1200)  # limpa: 12 nos dois
+    counter.close(client_request_id="c6", tendered_q=1200)  # limpa: 12 nos dois
     PaymentService.settle("ORD-GHOST", 2500, "cash", ref="PAY-GHOST")
     Order.objects.create(
         ref="ORD-GHOST",
@@ -365,7 +365,7 @@ def test_cancel_pelo_gestor_nao_estorna_dinheiro_e_o_cruzamento_fica_quieto(coun
     o que existe é a pendência de devolução, visível para quem abrir a gaveta."""
     from shopman.shop.services import payment as payment_service
 
-    result = counter.close(client_request_id="c7", tendered_amount_q=1200)
+    result = counter.close(client_request_id="c7", tendered_q=1200)
     order = Order.objects.get(ref=result.order_ref)
     with django_capture_on_commit_callbacks(execute=True):
         operator_orders.cancel_order(order, reason="customer_requested", actor="gestor:pablo")
@@ -382,7 +382,7 @@ def test_estorno_so_no_payman_sem_linha_na_gaveta_aparece(counter):
     """Um ``REFUND`` gravado direto no Payman, sem ninguém abrir gaveta (caminho
     que o ``refund_cash`` existe para impedir): o dinheiro saiu de um livro e
     ficou no outro. É exatamente o que este check existe para pegar."""
-    result = counter.close(client_request_id="c7", tendered_amount_q=1200)
+    result = counter.close(client_request_id="c7", tendered_q=1200)
     order = Order.objects.get(ref=result.order_ref)
     intent = PaymentIntent.objects.get(order_ref=order.ref)
     PaymentService.refund(intent.ref, reason="fora do balcão")

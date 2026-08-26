@@ -203,7 +203,7 @@ class POSTabSessionTests(TestCase):
         ))
 
         self.assertEqual(loaded["payment_tenders"], [])
-        self.assertEqual(loaded["tendered_amount_q"], "")
+        self.assertEqual(loaded["tendered_q"], "")
 
     def test_saving_tab_allows_incomplete_mixed_payment_draft(self) -> None:
         opened = build_open_tab(pos_service.open_pos_tab(
@@ -265,7 +265,7 @@ class POSTabSessionTests(TestCase):
         payload.update({
             "cash_shift_id": self.shift.pk,
             "fiscal_tax_id": "52998224725",
-            "tendered_amount_q": 5000,
+            "tendered_q": 5000,
             "receipt_channels": ["email"],
             "receipt_email": "ana@example.com",
         })

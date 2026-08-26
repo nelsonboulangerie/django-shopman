@@ -738,7 +738,7 @@ export function usePosSale(deps: PosSaleDeps) {
       // Spec: do not replay saved/default tender lines as operator payment input.
       cart.paymentTenders = [];
       selectedTenderIndex.value = -1;
-      cart.tenderedAmountInput = payload.tendered_amount_q ? (Number(payload.tendered_amount_q) / 100).toFixed(2).replace(".", ",") : "";
+      cart.tenderedAmountInput = payload.tendered_q ? (Number(payload.tendered_q) / 100).toFixed(2).replace(".", ",") : "";
       cart.changeForInput = "";
       cart.invoiceTaxId = cart.invoiceTaxId || String(payload.fiscal_tax_id || "");
       cart.receiptChannels = [...(payload.receipt_channels || [])];
@@ -889,7 +889,7 @@ export function usePosSale(deps: PosSaleDeps) {
       paymentMethod: resolvedPayment.paymentMethod,
       paymentCollection: cart.paymentCollection,
       paymentTenders: resolvedPayment.paymentTenders,
-      tenderedAmountQ: resolvedPayment.tenderedAmountQ,
+      tenderedQ: resolvedPayment.tenderedQ,
       changeForQ: cart.fulfillmentType === "delivery" && cart.paymentCollection === "on_delivery"
         ? moneyInputToQ(cart.changeForInput)
         : 0,

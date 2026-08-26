@@ -36,7 +36,7 @@ _ALLOWED_TOP_LEVEL_KEYS = {
     "payment_method",
     "payment_collection",
     "payment_tenders",
-    "tendered_amount_q",
+    "tendered_q",
     "change_for_q",
     "receipt_channels",
     "receipt_email",
@@ -191,10 +191,10 @@ def parse_pos_sale_intent(raw: dict, *, for_commit: bool = True) -> PosSaleInten
     payload["payment_method"] = payment_method
     payload["payment_collection"] = payment_collection
     payload["payment_tenders"] = _tenders(payload.get("payment_tenders"))
-    payload["tendered_amount_q"] = _optional_nonnegative_int(payload.get("tendered_amount_q"), "tendered_amount_q")
+    payload["tendered_q"] = _optional_nonnegative_int(payload.get("tendered_q"), "tendered_q")
     # "Troco para quanto?" do pagamento na entrega — a MESMA chave canônica do
     # checkout da loja (payment.change_for_q). Só faz sentido no COD: fora dele
-    # o valor é descartado (recebimento no terminal tem tendered_amount_q).
+    # o valor é descartado (recebimento no terminal tem tendered_q).
     payload["change_for_q"] = (
         _optional_nonnegative_int(payload.get("change_for_q"), "change_for_q")
         if payment_collection == "on_delivery"

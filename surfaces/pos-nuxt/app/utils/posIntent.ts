@@ -28,14 +28,14 @@ export function qToMoneyInput(amountQ: number): string {
 export interface ResolvedPayment {
   paymentMethod: string;
   paymentTenders: POSPaymentTenderDraft[];
-  tenderedAmountQ: number | null;
+  tenderedQ: number | null;
 }
 
 /**
  * Map operator-injected tender lines onto the backend payment contract (Odoo-style:
  * no "mixed" selection — you inject amounts in different forms; the method is derived).
  * - A single cash tender covering the total → single-cash path, so overpayment becomes
- *   change (tendered_amount_q). The backend rejects overpay inside the tenders list, so
+ *   change (tendered_q). The backend rejects overpay inside the tenders list, so
  *   cash change only exists for a lone cash payment.
  * - A single non-cash tender → just the method; the backend builds the tender from the
  *   total (no need to replay a tender line — and the spec forbids replaying saved ones).
@@ -45,9 +45,9 @@ export function resolvePayment(tenders: POSPaymentTenderDraft[], totalQ: number)
   const only = tenders.length === 1 ? tenders[0] : undefined;
   if (only) {
     if (only.method === "cash" && only.amount_q >= totalQ) {
-      return { paymentMethod: "cash", paymentTenders: [], tenderedAmountQ: only.amount_q };
+      return { paymentMethod: "cash", paymentTenders: [], tenderedQ: only.amount_q };
     }
-    return { paymentMethod: only.method, paymentTenders: [], tenderedAmountQ: null };
+    return { paymentMethod: only.method, paymentTenders: [], tenderedQ: null };
   }
   if (tenders.length >= 2) {
     // Strip internal fields (e.g. `_virgin`) — the intent carries only the contract shape.
@@ -57,9 +57,9 @@ export function resolvePayment(tenders: POSPaymentTenderDraft[], totalQ: number)
       collection: t.collection,
       ...(t.reference ? { reference: t.reference } : {}),
     }));
-    return { paymentMethod: "mixed", paymentTenders: clean, tenderedAmountQ: null };
+    return { paymentMethod: "mixed", paymentTenders: clean, tenderedQ: null };
   }
-  return { paymentMethod: "", paymentTenders: [], tenderedAmountQ: null };
+  return { paymentMethod: "", paymentTenders: [], tenderedQ: null };
 }
 
 export function actionHref(
@@ -145,10 +145,10 @@ export function buildPosSaleIntent(
   if (
     state.paymentMethod === "cash"
     && state.paymentCollection === "terminal"
-    && state.tenderedAmountQ !== null
-    && state.tenderedAmountQ > 0
+    && state.tenderedQ !== null
+    && state.tenderedQ > 0
   ) {
-    payload.tendered_amount_q = state.tenderedAmountQ;
+    payload.tendered_q = state.tenderedQ;
   }
   // "Troco para quanto?" só existe no dinheiro NA ENTREGA (COD) — fora dele o
   // servidor descarta; aqui nem viaja.

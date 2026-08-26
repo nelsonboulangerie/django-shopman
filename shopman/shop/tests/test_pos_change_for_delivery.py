@@ -107,7 +107,7 @@ def test_troco_para_fora_do_cod_e_descartado_pelo_intent(counter):
             client_request_id="cf-3",
             payment_collection="terminal",
             change_for_q=5000,
-            tendered_amount_q=5000,
+            tendered_q=5000,
         ),
     )
     order = Order.objects.get(ref=result.order_ref)
