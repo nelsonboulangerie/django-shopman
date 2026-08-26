@@ -48,7 +48,7 @@ def catalogo(arvore):
     # preço nem ficha de produto, tem componentes.
     # Nascem fora do products_data, num update_or_create próprio: bundle não
     # tem ficha de produto, tem componentes.
-    skus += ["COMBO-PETIT-DEJ", "PHO4", "BBB2"]
+    skus += ["COMBO-PETIT-DEJ", "PHO4", "BBB2", "PI4"]
     return skus
 
 
@@ -181,3 +181,62 @@ def test_as_duas_curadorias_de_consumo_nao_se_contradizem():
         f"cardápio e histórico discordam sobre {len(conflitos)} SKU(s): {conflitos}. "
         "Quem roda por último venceria, sem erro nenhum."
     )
+
+
+def test_produto_sem_foto_e_decisao_nao_esquecimento(arvore):
+    """Foto vazia no seed é uma DECISÃO por produto, nunca item esquecido.
+
+    Só o Porquinho fica sem foto — o acervo da casa (nb-catalog, loja/ e
+    img/products/) não tem registro dele, e foto errada é pior que sem foto;
+    o card de categoria (cor + ícone + SKU) cobre a vitrine. Todo o resto tem
+    foto da casa ou Unsplash conferido a olho. Um produto novo que entrar sem
+    foto tem que passar por aqui, de propósito.
+    """
+    decididos_sem_foto = {"ANP"}
+    vazios = set()
+    for elemento in _no_da_atribuicao(arvore, "products_data").elts:
+        imagem = elemento.elts[7]
+        if isinstance(imagem, ast.Constant) and imagem.value == "":
+            vazios.add(elemento.elts[0].value)
+    assert vazios == decididos_sem_foto, (
+        f"sem foto no seed: {sorted(vazios)}; decididos: {sorted(decididos_sem_foto)}. "
+        "Foto nova resolve; sem foto de propósito, registre aqui e no comentário do seed."
+    )
+
+
+def test_toda_categoria_tem_cor_e_icone(arvore):
+    """Cor (paleta NB) e ícone (Lucide) são parte do contrato da categoria.
+
+    É o que veste o card-fallback de produto sem foto e os chips de categoria
+    nas superfícies. Categoria sem os dois quebra o fallback em silêncio.
+    """
+    import re
+
+    hexa = re.compile(r"^#[0-9A-Fa-f]{6}$")
+
+    fixas = {}
+    for node in ast.walk(arvore):
+        if (
+            isinstance(node, ast.Tuple)
+            and len(node.elts) == 4
+            and all(isinstance(e, ast.Constant) for e in node.elts)
+            and isinstance(node.elts[2].value, str)
+            and node.elts[2].value.startswith("#")
+        ):
+            ref, _nome, cor, icone = (e.value for e in node.elts)
+            fixas[ref] = (cor, icone)
+
+    esperadas = {
+        "bebidas-quentes", "bebidas-geladas", "torneira", "rusticos", "finos",
+        "salgados", "doces", "combos", "mercearia",
+    }
+    assert esperadas <= set(fixas), (
+        f"categorias sem (cor, ícone): {sorted(esperadas - set(fixas))}"
+    )
+    for ref, (cor, icone) in fixas.items():
+        assert hexa.match(cor), f"{ref}: cor `{cor}` não é hex #RRGGBB"
+        assert icone.strip(), f"{ref}: ícone vazio"
+
+    for ref, _nome, cor, icone, _skus in _atribuicao(arvore, "colecoes_do_dia"):
+        assert hexa.match(cor), f"{ref}: cor `{cor}` não é hex #RRGGBB"
+        assert icone.strip(), f"{ref}: ícone vazio"

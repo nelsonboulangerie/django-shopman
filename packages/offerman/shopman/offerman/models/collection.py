@@ -38,6 +38,11 @@ class Collection(models.Model):
     sort_order = models.IntegerField(default=0, verbose_name=_("ordem"))
     is_active = models.BooleanField(default=True, verbose_name=_("ativo"))
 
+    # Apresentação e extensão sem migração (mesmo padrão de ``Product.metadata``).
+    # Chaves em uso: ``color`` (hex da categoria, paleta da marca) e ``icon``
+    # (nome Lucide) — é o que veste o card de produto sem foto nas superfícies.
+    metadata = models.JSONField(default=dict, blank=True, verbose_name=_("metadados"))
+
     # Smart collection: quando ``rule`` está preenchida, a membership é COMPUTADA
     # a partir de atributos do produto (estilo smart collection do Shopify) em vez
     # de ``CollectionItem`` explícitos. Vazia (default) = coleção manual.

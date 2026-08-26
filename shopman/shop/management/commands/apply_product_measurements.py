@@ -47,7 +47,9 @@ from shopman.shop.services.nutrition_from_recipe import fill_nutrition_from_reci
 
 # Medidas conferidas com o dono em 21/08/2026 e corrigidas no PR #280: a ficha
 # passou a falar em massa CRUA e o catálogo em peça ASSADA, com ~12% de perda no
-# forno entre as duas.
+# forno entre as duas. Em 26/08 o dono pesou a massa crua peça a peça
+# (PESO_MASSA_CRUA_G no seed) e seis valores assados foram recalibrados a
+# partir dela — estimativas de ~12%, a conferir na balança com a peça pronta.
 MEASUREMENTS: dict[str, dict[str, object]] = {
     "CGO": {
         "unit_weight_g": 300,
@@ -56,16 +58,16 @@ MEASUREMENTS: dict[str, dict[str, object]] = {
     },
     "CPX": {"unit_weight_g": 500, "approx_dimensions": "aprox. 15 x 15 x 10 cm"},
     "CGR": {"unit_weight_g": 300},
-    "CF": {"unit_weight_g": 250},
+    "CF": {"unit_weight_g": 265},
     "CI": {"unit_weight_g": 180},
     "CT": {"unit_weight_g": 70},
     "KP": {"unit_weight_g": 250},
     "MD": {"unit_weight_g": 25},
-    "BH": {"unit_weight_g": 70},
-    "CN": {"unit_weight_g": 70},
-    "FOA": {"unit_weight_g": 350},
-    "CBT": {"unit_weight_g": 450},
-    "FOC": {"unit_weight_g": 450},
+    "BH": {"unit_weight_g": 90},
+    "CN": {"unit_weight_g": 72},
+    "FOA": {"unit_weight_g": 370},
+    "CBT": {"unit_weight_g": 600},
+    "FOC": {"unit_weight_g": 475},
 }
 
 _METADATA_FIELDS = ("serves", "approx_dimensions")

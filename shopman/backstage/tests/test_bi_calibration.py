@@ -291,11 +291,13 @@ def test_bi_reference_installs_the_three_tables_and_nothing_else():
     # para a regra de modo de consumo.
     # ⚠️ A soma não é 59+61+4+70. Duas coisas a encolhem, e as duas são certas:
     # os quatro produtos "do dia" deixaram de existir (viraram coleção rotativa
-    # sobre os reais), e 26 SKUs passaram a ser etiquetados uma vez só — com o
+    # sobre os reais), e 27 SKUs passaram a ser etiquetados uma vez só — com o
     # catálogo usando os códigos do Yooga, "CT" no cardápio e "CT" no histórico
-    # são o mesmo produto. Que as duas curadorias CONCORDEM onde se encontram é
-    # o que test_seed_catalog_coerente fixa, lendo o seed como dado.
-    assert ProductConsumptionTag.objects.count() == 164  # ver a conta acima
+    # são o mesmo produto (o 27º chegou em 26/08, quando SK morreu fundido no
+    # FA: Shokupan e Forma Artesanal sempre foram um produto). Que as duas
+    # curadorias CONCORDEM onde se encontram é o que test_seed_catalog_coerente
+    # fixa, lendo o seed como dado.
+    assert ProductConsumptionTag.objects.count() == 163  # ver a conta acima
     assert ProductConsumptionTag.objects.filter(reviewed=False).count() == 0
     assert ProductConsumptionTag.objects.filter(
         sku__startswith="nome:", role__ref="consome-aqui"
@@ -333,7 +335,7 @@ def test_bi_reference_is_idempotent():
 
     _run("setup_bi_reference")
     _run("setup_bi_reference")
-    assert ProductConsumptionTag.objects.count() == 164
+    assert ProductConsumptionTag.objects.count() == 163
     assert SeatingSpot.objects.count() == 17
 
 
