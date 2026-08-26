@@ -48,7 +48,9 @@ from shopman.shop.models import (
     ShopOrdering,
     ShopPos,
     ShopProduction,
+    ShopPurchase,
 )
+from shopman.shop.purchase_policy import POLICY_MINIMUMS, PurchasePolicy
 
 logger = logging.getLogger(__name__)
 
@@ -150,6 +152,17 @@ def _reais_to_q(value) -> int:
         return 0
     return int((Decimal(value) * 100).to_integral_value())
 
+
+# Shop.defaults["purchase"] — política de reposição editada como campos tipados
+# (dias inteiros; a dataclass PurchasePolicy é a fonte dos defaults).
+DEFAULTS_PURCHASE_FIELDS = (
+    ("defaults_purchase_consumption_window_days", "consumption_window_days"),
+    ("defaults_purchase_review_period_days", "review_period_days"),
+    ("defaults_purchase_safety_days", "safety_days"),
+    ("defaults_purchase_min_lead_time_days", "min_lead_time_days"),
+    ("defaults_purchase_lead_time_history_days", "lead_time_history_days"),
+    ("defaults_purchase_lead_time_max_days", "lead_time_max_days"),
+)
 
 # Shop.defaults["rules"] policies edited as typed Reais fields → stored as cents.
 DEFAULTS_RULE_Q_FIELDS = (
@@ -368,6 +381,49 @@ def _defaults_form_fields() -> dict[str, forms.Field]:
             min_value=1,
             widget=UnfoldAdminIntegerFieldWidget,
             help_text=tier_help[name],
+        )
+    purchase_labels = {
+        "consumption_window_days": "Janela de consumo (dias)",
+        "review_period_days": "Período de revisão (dias)",
+        "safety_days": "Margem de segurança (dias)",
+        "min_lead_time_days": "Prazo mínimo de entrega (dias)",
+        "lead_time_history_days": "Histórico de prazo de entrega (dias)",
+        "lead_time_max_days": "Teto do prazo de entrega (dias)",
+    }
+    purchase_help = {
+        "consumption_window_days": (
+            "Dias de movimento do estoque usados para calcular o consumo médio "
+            "diário de cada insumo."
+        ),
+        "review_period_days": (
+            "De quantos em quantos dias as compras são revisadas. Entra no limiar "
+            "de reposição e na quantidade sugerida."
+        ),
+        "safety_days": (
+            "Dias extras de consumo cobertos pela sugestão, como folga contra "
+            "atraso e pico. 0 desliga a folga."
+        ),
+        "min_lead_time_days": (
+            "Piso do prazo quando o insumo não tem histórico de entrega nem prazo "
+            "cadastrado no fornecedor."
+        ),
+        "lead_time_history_days": (
+            "Janela do histórico pedido → entrega usada para calcular o prazo "
+            "real de cada insumo (mediana)."
+        ),
+        "lead_time_max_days": (
+            "Entregas que demoraram mais que isso são descartadas como ruído no "
+            "cálculo do prazo."
+        ),
+    }
+    for field_name, key in DEFAULTS_PURCHASE_FIELDS:
+        fields[field_name] = forms.IntegerField(
+            label=purchase_labels[key],
+            required=False,
+            min_value=POLICY_MINIMUMS[key],
+            max_value=365,
+            widget=UnfoldAdminIntegerFieldWidget,
+            help_text=purchase_help[key] + " Em branco = padrão do sistema.",
         )
     return fields
 
@@ -799,6 +855,11 @@ class ShopForm(forms.ModelForm):
             for name in DEFAULTS_LOYALTY_TIERS:
                 self.fields[_defaults_loyalty_tier_field(name)].initial = tier_by_name.get(name)
 
+        if self._has(DEFAULTS_PURCHASE_FIELDS[0][0]):
+            purchase_policy = PurchasePolicy.from_defaults(defaults)
+            for field_name, key in DEFAULTS_PURCHASE_FIELDS:
+                self.fields[field_name].initial = getattr(purchase_policy, key)
+
         pickup_slots = defaults.get("pickup_slots") if isinstance(defaults.get("pickup_slots"), list) else []
         for index, slot in enumerate(pickup_slots[:DEFAULTS_PICKUP_SLOT_ROWS], start=1):
             if not isinstance(slot, dict):
@@ -904,6 +965,15 @@ class ShopForm(forms.ModelForm):
                 else:
                     previous_threshold = threshold
                     previous_label = TIER_LABELS[name]
+
+        if self._has("defaults_purchase_lead_time_max_days"):
+            floor = cleaned_data.get("defaults_purchase_min_lead_time_days")
+            ceiling = cleaned_data.get("defaults_purchase_lead_time_max_days")
+            if floor is not None and ceiling is not None and ceiling < floor:
+                self.add_error(
+                    "defaults_purchase_lead_time_max_days",
+                    "O teto do prazo de entrega precisa ser maior ou igual ao prazo mínimo.",
+                )
 
     def _existing_extra_pickup_slots(self) -> list[dict]:
         pickup_slots = _shop_defaults(self.instance).get("pickup_slots")
@@ -1151,6 +1221,15 @@ class ShopForm(forms.ModelForm):
             loyalty["tiers"] = tiers
             defaults["loyalty"] = loyalty
 
+        if self._has(DEFAULTS_PURCHASE_FIELDS[0][0]):
+            purchase_cfg = defaults.get("purchase") if isinstance(defaults.get("purchase"), dict) else {}
+            purchase_cfg = dict(purchase_cfg)
+            fallback = PurchasePolicy()
+            for field_name, key in DEFAULTS_PURCHASE_FIELDS:
+                value = self.cleaned_data.get(field_name)
+                purchase_cfg[key] = int(value) if value is not None else getattr(fallback, key)
+            defaults["purchase"] = purchase_cfg
+
         return defaults
 
 
@@ -1350,6 +1429,23 @@ _LOYALTY_FIELDSETS = (
             "Os limiares definem quando o cliente sobe de nível — Bronze é o nível inicial "
             "(a partir de 0 pontos) e cada nível seguinte exige mais pontos acumulados. "
             "A meta de carimbos vale para novas contas."
+        ),
+    }),
+)
+
+_PURCHASE_FIELDSETS = (
+    ("Compras", {
+        "fields": (
+            ("defaults_purchase_consumption_window_days", "defaults_purchase_review_period_days"),
+            ("defaults_purchase_safety_days", "defaults_purchase_min_lead_time_days"),
+            ("defaults_purchase_lead_time_history_days", "defaults_purchase_lead_time_max_days"),
+        ),
+        "description": (
+            "Política de reposição do app Compras. A sugestão de compra cobre o "
+            "ciclo prazo de entrega + revisão + segurança, com o consumo médio "
+            "lido do estoque. O prazo por insumo vem da mediana das entregas "
+            "reais; sem histórico, vale o prazo cadastrado no fornecedor "
+            "preferencial e, sem ambos, o prazo mínimo."
         ),
     }),
 )
@@ -1635,6 +1731,12 @@ class ShopProductionAdmin(_ShopSingletonAdmin):
 class ShopLoyaltyAdmin(_ShopSingletonAdmin):
     form = _section_form(_LOYALTY_FIELDSETS)
     fieldsets = _LOYALTY_FIELDSETS
+
+
+@admin.register(ShopPurchase)
+class ShopPurchaseAdmin(_ShopSingletonAdmin):
+    form = _section_form(_PURCHASE_FIELDSETS)
+    fieldsets = _PURCHASE_FIELDSETS
 
 
 @admin.register(ShopPos)

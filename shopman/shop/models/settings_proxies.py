@@ -50,6 +50,14 @@ class ShopLoyalty(Shop):
         verbose_name_plural = "Fidelidade"
 
 
+class ShopPurchase(Shop):
+    class Meta:
+        proxy = True
+        app_label = "shop"
+        verbose_name = "Compras"
+        verbose_name_plural = "Compras"
+
+
 class ShopPos(Shop):
     class Meta:
         proxy = True

@@ -126,6 +126,7 @@ SETTINGS_MAP: tuple[SettingsGroup, ...] = (
         icon="factory",
         entries=(
             _model("Produção", "shop_shopproduction", "Como o dia de produção é planejado e conferido.", "manufacturing"),
+            _model("Compras", "shop_shoppurchase", "Como a reposição de insumos é calculada: consumo, prazos e segurança.", "shopping_cart"),
             _model("Defeitos de fornada", "shop_qualitydefect", "Os problemas que o padeiro pode apontar ao avaliar um lote.", "report"),
             _model("Graus de qualidade", "shop_qualitygrade", "As notas de qualidade e o desconto que cada uma aplica.", "grade"),
             _model("Motivos de episódio", "backstage_operationepisodekind", "As explicações que o operador pode dar quando algo sai do previsto.", "help_center"),
