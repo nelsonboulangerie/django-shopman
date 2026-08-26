@@ -33,8 +33,15 @@ Nunca renomeie/remova num único deploy. Quebre em fases, cada uma é um deploy:
 3. **Migrate reads/writes** — todo o código passa a usar só o novo. O antigo
    fica órfão mas presente.
 4. **Contract** — no deploy **seguinte**, remova o antigo (campo + código).
-   Janela de transição de referência: 1 sprint, com `# DEPRECATED(remove in
-   v{version})` marcando o que sai.
+   Janela de transição de referência: 1 sprint, com `# DEPRECATED(remove by
+   YYYY-MM-DD)` marcando o que sai (formato único do gate — ADR-015).
+
+> **Enforcement na CI (ADR-015):** pós `go-live-v1`, migração nova com
+> `RemoveField`/`DeleteModel`/`RenameField`/`RenameModel`/`AlterField` só passa
+> no `make test-migrations` com o marcador
+> `# expand-contract: <fase> — <link do plano>` no próprio arquivo
+> (`<fase>` ∈ expand/backfill/migrate/contract). Editar/remover migration
+> existente reprova o gate append-only do Runtime Gate.
 
 ### Exemplo A — renomear um campo de model
 

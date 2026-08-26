@@ -86,7 +86,7 @@ Cada WP abaixo é auto-contido, commitável e validável com `make test` / `make
   pré-deploy (backup, testar migration em staging, rollback); feature-flag para rollout gradual.
 - **WP-A3 · `docs/decisions/adr-015-backward-compat-policy-post-prod.md`** — formaliza a virada:
   pós go-live, aliases temporários permitidos em janela explícita (1 sprint) com
-  `# DEPRECATED(remove in v{x})`; migrations append-only (nunca editar migration aplicada em prod).
+  `# DEPRECATED(remove by YYYY-MM-DD)`; migrations append-only (nunca editar migration aplicada em prod).
   *(O WP-GAP-07 chamava de "adr-011", mas 011 já é `formula-and-cashshift`; o número livre é 015.)*
 - **WP-A4 · Atualizar `CLAUDE.md`** — substituir parcialmente "zero residuals/zero backward-compat":
   regra nova vale **a partir do go-live**, apontando para o ADR-015. Hoje (pré-prod) as regras

@@ -50,6 +50,23 @@ jobs:
       - name: Migrations are committed
         run: .venv/bin/python manage.py makemigrations --check --dry-run
 
+      # A política ADR-015 arma pela EXISTÊNCIA da tag go-live-v1 — mas o
+      # checkout do CI é raso e sem tags, então sem este fetch os checks
+      # ficariam num "pré-go-live" eterno mesmo depois do go-live. Antes da
+      # tag existir o fetch falha de propósito e o `||` registra o estado real.
+      - name: Fetch da tag go-live-v1 (arma a politica ADR-015)
+        run: |
+          git fetch --force --depth=1 origin tag go-live-v1 || echo "pré-go-live: tag go-live-v1 ausente no remoto"
+
+      # ADR-015 como máquina: pós-tag, (1) o diff do PR/merge group só pode
+      # ADICIONAR arquivos em */migrations/ e (2) todo marcador DEPRECATED
+      # precisa do prazo "remove by YYYY-MM-DD" válido e não vencido. Pré-tag:
+      # no-op verde com uma linha de log. O terceiro check da política
+      # (operação destrutiva exige marcador expand-contract) roda dentro do
+      # `make test-migrations` logo abaixo.
+      - name: "ADR-015: migrations append-only + DEPRECATED com prazo"
+        run: .venv/bin/python scripts/check_adr015.py
+
       # `makemigrations --check` valida o GRAFO; ele não prova que as migrações
       # APLICAM em ordem sobre um banco vazio. A distinção não é teórica: duas
       # colisões de número aconteceram em 18/08, e o que provou nas duas vezes

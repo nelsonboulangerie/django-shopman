@@ -45,8 +45,15 @@ aplicado). Antes disso, as regras atuais do `CLAUDE.md` seguem valendo.
 A partir do go-live, aliases/compat temporários são **permitidos** durante uma
 janela de transição explícita (referência: 1 sprint), com:
 
-- marcador no código `# DEPRECATED(remove in v{version})` e
+- marcador no código `# DEPRECATED(remove by YYYY-MM-DD)` e
 - TODO rastreável com prazo de remoção.
+
+> **Atualização (2026-08-26):** o marcador é **por data**, não por versão. O
+> projeto não versiona releases semânticas (o `version` do `pyproject.toml` é
+> estático em `0.1.0`; deploy é contínuo), então `remove in v{version}` era um
+> prazo que nunca chegava. O formato único aceito pelo gate é
+> `# DEPRECATED(remove by YYYY-MM-DD)` — data vencida ou marcador fora desse
+> formato reprovam a CI pós-go-live.
 
 Isso habilita o padrão **expand-contract** para renames sem downtime (adicionar
 o novo → backfill → migrar leituras/escritas → remover o antigo no deploy
@@ -66,6 +73,33 @@ limpo do zero + grafo consistente em todo deploy. A partir do go-live ganha o
 replay de baseline (`SHOPMAN_MIGRATIONS_BASELINE`) — validar que o dado real
 sobrevive ao upgrade.
 
+## Enforcement
+
+A política não é prosa: três checks na CI armam-se pela **existência da tag
+`go-live-v1`** (antes dela, cada um é no-op verde com a linha de log
+"pré-go-live: política ADR-015 inativa"). O job *Quality + deploy contract* do
+Runtime Gate faz `git fetch` explícito da tag antes de rodá-los, porque o
+checkout do runner é raso e sem tags.
+
+1. **Migrations append-only** — [`scripts/check_adr015.py`](../../scripts/check_adr015.py)
+   reprova o PR (ou merge group) cujo diff contra a base **modifica ou remove**
+   arquivo existente em `*/migrations/`; só adição passa. Correção de migration
+   aplicada é migration nova.
+2. **Operação destrutiva exige marcador expand-contract** — dentro do
+   [`scripts/check_migrations.py`](../../scripts/check_migrations.py)
+   (`make test-migrations`, check `migrations.expand_contract`): migração
+   adicionada **depois da tag** contendo `RemoveField`, `DeleteModel`,
+   `RenameField`, `RenameModel` ou `AlterField` precisa declarar no próprio
+   arquivo `# expand-contract: <fase> — <link do plano>`, com `<fase>` em
+   {expand, backfill, migrate, contract} e o link apontando o plano/PR que
+   agenda a fase contract ([production-upgrades.md](../guides/production-upgrades.md)).
+3. **DEPRECATED com prazo** — o mesmo `check_adr015.py` varre os marcadores
+   `# DEPRECATED(remove by YYYY-MM-DD)` no código rastreado e reprova prazo
+   vencido ou marcador fora do formato.
+
+Testes dos três caminhos: `shopman/shop/tests/test_adr015_gate.py`. Para
+simular a política localmente sem tag: `SHOPMAN_ADR015_FORCE=1` (ou `0`).
+
 ## Consequências
 
 - Refactor pós-prod fica mais caro e mais disciplinado — é o preço de ter dado
@@ -73,8 +107,8 @@ sobrevive ao upgrade.
 - Agentes futuros precisam saber que "zero backward-compat" foi **superado** no
   go-live; por isso o `CLAUDE.md` aponta para esta ADR.
 - A janela de transição precisa de disciplina de remoção: alias sem prazo vira
-  dívida permanente. O marcador `# DEPRECATED(remove in v{version})` é
-  obrigatório, não decorativo.
+  dívida permanente. O marcador `# DEPRECATED(remove by YYYY-MM-DD)` é
+  obrigatório, não decorativo — e o gate da CI reprova prazo vencido.
 
 ## Referências
 

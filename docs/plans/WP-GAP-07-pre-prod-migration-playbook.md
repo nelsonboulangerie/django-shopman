@@ -69,7 +69,7 @@ Executar este WP quando:
   - Rollback procedure por tipo de mudança.
   - Feature flag pattern para rollout gradual de comportamento novo.
 - Atualização de `CLAUDE.md`:
-  - Nova regra: "a partir do go-live, backward-compat aliases são permitidos durante janela de transição explícita (1 sprint), com `# DEPRECATED(remove in v{version})` no código".
+  - Nova regra: "a partir do go-live, backward-compat aliases são permitidos durante janela de transição explícita (1 sprint), com `# DEPRECATED(remove by YYYY-MM-DD)` no código".
   - Nova regra: "migrations são append-only; nunca editar migration já aplicada em produção".
 
 ### Código
