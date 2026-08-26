@@ -6,6 +6,7 @@ Stockman without adding domain rules to Core.
 
 from __future__ import annotations
 
+import logging
 from decimal import Decimal
 
 import pytest
@@ -24,6 +25,34 @@ from shopman.backstage.models import DayClosing
 from shopman.shop.directives import NOTIFICATION_SEND
 
 VALID_ACCESS_KEY = "41260812345678000190550010000012341000123459"
+
+
+def _nfe_reader_xml() -> str:
+    return f"""<?xml version="1.0" encoding="UTF-8"?>
+<nfeProc xmlns="http://www.portalfiscal.inf.br/nfe" versao="4.00">
+  <NFe>
+    <infNFe Id="NFe{VALID_ACCESS_KEY}" versao="4.00">
+      <ide><serie>1</serie><nNF>1234</nNF><dhEmi>2026-08-25T09:00:00-03:00</dhEmi></ide>
+      <emit><CNPJ>12345678000190</CNPJ><xNome>Moinho Sao Paulo</xNome></emit>
+      <dest><CNPJ>99999999000191</CNPJ><xNome>Nelson Boulangerie</xNome></dest>
+      <det nItem="1">
+        <prod>
+          <cProd>FAR-25</cProd>
+          <xProd>FARINHA T65 25KG</xProd>
+          <NCM>11010010</NCM>
+          <CFOP>5102</CFOP>
+          <uCom>SC</uCom>
+          <qCom>2.0000</qCom>
+          <vUnCom>180.0000000000</vUnCom>
+          <vProd>360.00</vProd>
+        </prod>
+      </det>
+      <total><ICMSTot><vNF>360.00</vNF></ICMSTot></total>
+    </infNFe>
+  </NFe>
+  <protNFe versao="4.00"><infProt><chNFe>{VALID_ACCESS_KEY}</chNFe><cStat>100</cStat></infProt></protNFe>
+</nfeProc>
+"""
 
 
 def _operate_purchase_perm() -> Permission:
@@ -149,32 +178,7 @@ def test_scan_invoice_uses_configured_nfe_reader(
         }
     }
     supplier.save(update_fields=["metadata"])
-    xml = f"""<?xml version="1.0" encoding="UTF-8"?>
-<nfeProc xmlns="http://www.portalfiscal.inf.br/nfe" versao="4.00">
-  <NFe>
-    <infNFe Id="NFe{VALID_ACCESS_KEY}" versao="4.00">
-      <ide><serie>1</serie><nNF>1234</nNF><dhEmi>2026-08-25T09:00:00-03:00</dhEmi></ide>
-      <emit><CNPJ>12345678000190</CNPJ><xNome>Moinho Sao Paulo</xNome></emit>
-      <dest><CNPJ>99999999000191</CNPJ><xNome>Nelson Boulangerie</xNome></dest>
-      <det nItem="1">
-        <prod>
-          <cProd>FAR-25</cProd>
-          <xProd>FARINHA T65 25KG</xProd>
-          <NCM>11010010</NCM>
-          <CFOP>5102</CFOP>
-          <uCom>SC</uCom>
-          <qCom>2.0000</qCom>
-          <vUnCom>180.0000000000</vUnCom>
-          <vProd>360.00</vProd>
-        </prod>
-      </det>
-      <total><ICMSTot><vNF>360.00</vNF></ICMSTot></total>
-    </infNFe>
-  </NFe>
-  <protNFe versao="4.00"><infProt><chNFe>{VALID_ACCESS_KEY}</chNFe><cStat>100</cStat></infProt></protNFe>
-</nfeProc>
-"""
-    (tmp_path / f"{VALID_ACCESS_KEY}.xml").write_text(xml, encoding="utf-8")
+    (tmp_path / f"{VALID_ACCESS_KEY}.xml").write_text(_nfe_reader_xml(), encoding="utf-8")
 
     client.force_login(purchase_operator)
     with override_settings(
@@ -193,6 +197,8 @@ def test_scan_invoice_uses_configured_nfe_reader(
     assert receipt["lines"][0]["materialSku"] == material.sku
     assert receipt["lines"][0]["conversionId"] == str(conversion.pk)
     assert receipt["lines"][0]["requiresConversion"] is False
+    assert receipt["lines"][0]["invoiceProductCode"] == "FAR-25"
+    assert receipt["lines"][0]["invoiceEan"] == ""
 
 
 @pytest.mark.django_db
@@ -281,6 +287,205 @@ def test_confirm_receipt_blocks_imported_line_that_requires_conversion(
     assert response.status_code == 400
     assert response.json()["error"]["code"] == "conversion_required"
     assert Move.objects.count() == 0
+
+
+@pytest.mark.django_db
+def test_confirm_receipt_learns_invoice_product_map_for_the_next_scan(
+    tmp_path,
+    client,
+    purchase_operator,
+    material,
+    supplier,
+    conversion,
+    position,
+):
+    (tmp_path / f"{VALID_ACCESS_KEY}.xml").write_text(_nfe_reader_xml(), encoding="utf-8")
+    client.force_login(purchase_operator)
+    nfe_settings = {
+        "SHOPMAN_PURCHASE_INVOICE_READER": "shopman.shop.adapters.purchase_invoice_nfe.read_invoice",
+        "SHOPMAN_PURCHASE_NFE": {"xml_dir": str(tmp_path)},
+    }
+
+    with override_settings(**nfe_settings):
+        first_scan = client.post(
+            reverse("api-backstage-purchase-scan-invoice"),
+            data={"qrPayload": VALID_ACCESS_KEY},
+            content_type="application/json",
+        )
+    first_line = first_scan.json()["purchase"]["activeReceipt"]["lines"][0]
+    assert first_line["materialSku"] == ""
+    assert first_line["invoiceProductCode"] == "FAR-25"
+
+    confirm = client.post(
+        reverse("api-backstage-purchase-confirm-receipt"),
+        data={
+            "mode": "invoice",
+            "supplierRef": supplier.ref,
+            "invoiceAccessKey": VALID_ACCESS_KEY,
+            "note": "NF conferida",
+            "lines": [
+                {
+                    "id": first_line["id"],
+                    "materialSku": material.sku,
+                    "conversionId": str(conversion.pk),
+                    "purchaseQty": 2,
+                    "costInput": "360,00",
+                    "expiryDate": "2027-02-25",
+                    "lineNote": first_line["lineNote"],
+                    "invoiceProductCode": first_line["invoiceProductCode"],
+                    "invoiceEan": first_line["invoiceEan"],
+                    "checked": True,
+                }
+            ],
+        },
+        content_type="application/json",
+    )
+
+    assert confirm.status_code == 200
+    supplier.refresh_from_db()
+    assert supplier.metadata["purchase"]["invoice_product_map"] == {
+        "FAR-25": {"materialSku": material.sku, "conversionLabel": conversion.label}
+    }
+    assert supplier.metadata["purchase"]["lead_time_days"] == 2
+
+    with override_settings(**nfe_settings):
+        second_scan = client.post(
+            reverse("api-backstage-purchase-scan-invoice"),
+            data={"qrPayload": VALID_ACCESS_KEY},
+            content_type="application/json",
+        )
+    line = second_scan.json()["purchase"]["activeReceipt"]["lines"][0]
+    assert line["materialSku"] == material.sku
+    assert line["conversionId"] == str(conversion.pk)
+    assert line["requiresConversion"] is False
+
+
+@pytest.mark.django_db
+def test_confirm_receipt_replaces_divergent_map_entry_and_logs(
+    caplog,
+    client,
+    purchase_operator,
+    material,
+    supplier,
+    conversion,
+    position,
+):
+    supplier.metadata = {
+        "purchase": {
+            "lead_time_days": 2,
+            "invoice_product_map": {
+                "FAR-25": {"materialSku": "MANTEIGA-TOURAGE", "conversionLabel": "caixa 10 kg"},
+                "ACU-01": "ACUCAR-CRISTAL",
+            },
+        }
+    }
+    supplier.save(update_fields=["metadata", "updated_at"])
+    client.force_login(purchase_operator)
+
+    # O logger "shopman" tem propagate=False (config/settings.py): o handler do
+    # caplog fica na raiz e nunca veria o warning. Anexar direto no logger do
+    # service captura independente de propagação.
+    service_logger = logging.getLogger("shopman.backstage.services.purchase")
+    service_logger.addHandler(caplog.handler)
+    try:
+        with caplog.at_level(logging.WARNING, logger="shopman.backstage.services.purchase"):
+            response = client.post(
+                reverse("api-backstage-purchase-confirm-receipt"),
+                data={
+                    "mode": "invoice",
+                    "supplierRef": supplier.ref,
+                    "invoiceAccessKey": VALID_ACCESS_KEY,
+                    "note": "Operador corrigiu o insumo da linha",
+                    "lines": [
+                        {
+                            "id": "nfe-1",
+                            "materialSku": material.sku,
+                            "conversionId": str(conversion.pk),
+                            "purchaseQty": 2,
+                            "costInput": "360,00",
+                            "expiryDate": "2027-02-25",
+                            "lineNote": "",
+                            "invoiceProductCode": "FAR-25",
+                            "checked": True,
+                        }
+                    ],
+                },
+                content_type="application/json",
+            )
+    finally:
+        service_logger.removeHandler(caplog.handler)
+
+    assert response.status_code == 200
+    supplier.refresh_from_db()
+    mapping = supplier.metadata["purchase"]["invoice_product_map"]
+    assert mapping["FAR-25"] == {"materialSku": material.sku, "conversionLabel": conversion.label}
+    assert mapping["ACU-01"] == "ACUCAR-CRISTAL"
+    assert supplier.metadata["purchase"]["lead_time_days"] == 2
+    assert "purchase.invoice_product_map_overwrite" in caplog.text
+
+
+@pytest.mark.django_db
+def test_confirm_receipt_without_invoice_context_learns_nothing(
+    client,
+    purchase_operator,
+    material,
+    supplier,
+    conversion,
+    position,
+):
+    client.force_login(purchase_operator)
+
+    manual = client.post(
+        reverse("api-backstage-purchase-confirm-receipt"),
+        data={
+            "mode": "manual",
+            "supplierRef": supplier.ref,
+            "invoiceAccessKey": None,
+            "note": "Romaneio em papel conferido na entrega",
+            "lines": [
+                {
+                    "id": "manual-1",
+                    "materialSku": material.sku,
+                    "conversionId": str(conversion.pk),
+                    "purchaseQty": 1,
+                    "costInput": "180,00",
+                    "expiryDate": "2027-02-25",
+                    "lineNote": "",
+                    "invoiceProductCode": "FAR-25",
+                    "checked": True,
+                }
+            ],
+        },
+        content_type="application/json",
+    )
+    assert manual.status_code == 200
+
+    invoice_without_code = client.post(
+        reverse("api-backstage-purchase-confirm-receipt"),
+        data={
+            "mode": "invoice",
+            "supplierRef": supplier.ref,
+            "invoiceAccessKey": VALID_ACCESS_KEY,
+            "note": "Linha adicionada à mão na conferência",
+            "lines": [
+                {
+                    "id": "extra-1",
+                    "materialSku": material.sku,
+                    "conversionId": str(conversion.pk),
+                    "purchaseQty": 1,
+                    "costInput": "180,00",
+                    "expiryDate": "2027-02-25",
+                    "lineNote": "",
+                    "checked": True,
+                }
+            ],
+        },
+        content_type="application/json",
+    )
+    assert invoice_without_code.status_code == 200
+
+    supplier.refresh_from_db()
+    assert "invoice_product_map" not in supplier.metadata.get("purchase", {})
 
 
 @pytest.mark.django_db

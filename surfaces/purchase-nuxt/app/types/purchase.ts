@@ -118,6 +118,8 @@ export interface ReceiptLine {
   costInput: string;
   expiryDate: string;
   lineNote: string;
+  invoiceProductCode?: string;
+  invoiceEan?: string;
   checked: boolean;
 }
 

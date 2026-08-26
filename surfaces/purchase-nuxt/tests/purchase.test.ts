@@ -196,6 +196,8 @@ describe("purchase presentation", () => {
       costInput: "360,00",
       expiryDate: "",
       lineNote: "Definir insumo. NF: QUEIJO ARTESANAL; unidade PC.",
+      invoiceProductCode: "QJO-ART",
+      invoiceEan: "7891234567895",
       checked: false,
     };
 
@@ -209,6 +211,11 @@ describe("purchase presentation", () => {
       },
       totalCostQ: 36000,
     });
+    // O confirm devolve a linha como veio do scan: o código da NF e o EAN
+    // precisam sobreviver à camada de apresentação para o Django aprender o
+    // mapeamento do fornecedor.
+    expect(preview?.line.invoiceProductCode).toBe("QJO-ART");
+    expect(preview?.line.invoiceEan).toBe("7891234567895");
     expect(preview?.warnings).toContainEqual({
       key: "missing-material",
       label: "Definir insumo",

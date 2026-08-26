@@ -291,6 +291,8 @@ function receiptLineCopy(lines: ReceiptLine[]): ReceiptLine[] {
     costInput: line.costInput ?? "",
     expiryDate: line.expiryDate ?? "",
     lineNote: line.lineNote ?? "",
+    invoiceProductCode: line.invoiceProductCode ?? "",
+    invoiceEan: line.invoiceEan ?? "",
     checked: Boolean(line.checked),
     purchaseQty: Number(line.purchaseQty) || 0,
   }));
