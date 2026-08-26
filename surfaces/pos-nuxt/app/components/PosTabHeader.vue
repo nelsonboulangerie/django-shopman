@@ -20,6 +20,13 @@ const props = defineProps<{
   searchBusy: boolean;
   /** O cliente associado foi criado agora (resolve just-in-time). */
   customerResolvedNew?: boolean;
+  /** No checkout a barra vira só LEITURA dos fatos do pedido: liberar a comanda
+   *  e renomeá-la no meio de um pagamento é ação que não pertence ali. */
+  readOnly?: boolean;
+  /** Como o cliente recebe: decidido na abertura, revisto de relance aqui. */
+  fulfillmentType: "pickup" | "delivery";
+  /** O rótulo já resolvido ("Entrega · Centro"), que a página monta. */
+  fulfillmentLabel: string;
   loading: boolean;
 }>();
 
@@ -37,6 +44,11 @@ const emit = defineEmits<{
   selectResult: [POSCustomerSearchResult];
   applyCustomerFavorite: [];
   repeatCustomerLastOrder: [];
+  openFulfillment: [];
+  /** Só em `readOnly` (checkout): quem tem o modal do cliente ali é a tela de
+   *  pagamento — a dela carrega a parte fiscal. Dois modais de Cliente na mesma
+   *  tela seria a duplicação que esta barra veio justamente desfazer. */
+  openCustomer: [];
 }>();
 
 const renaming = ref(false);
@@ -102,7 +114,7 @@ function runClear() {
       </UiButton>
     </div>
     <button
-      v-else-if="hasOpenTab && canRename"
+      v-else-if="hasOpenTab && canRename && !readOnly"
       type="button"
       class="group flex min-w-0 items-center gap-1.5"
       aria-label="Renomear comanda"
@@ -120,16 +132,32 @@ function runClear() {
       type="button"
       class="flex h-9 min-w-0 shrink items-center gap-1.5 rounded-full border border-border px-3 text-sm transition hover:bg-accent"
       aria-haspopup="dialog"
-      @click="customerSheetOpen = true"
+      @click="readOnly ? $emit('openCustomer') : (customerSheetOpen = true)"
     >
       <Icon name="lucide:user-round" class="size-4 shrink-0 text-muted-foreground" />
       <span v-if="customerName" class="min-w-0 max-w-40 truncate font-medium">{{ customerName }}</span>
       <span v-else class="shrink-0 text-muted-foreground">Adicionar cliente</span>
     </button>
 
+    <!-- RECEBIMENTO — irmão do chip de cliente. Os dois são fatos do PEDIDO,
+         decididos na abertura do atendimento e revistos de relance daqui em
+         diante. Na barra eles são LEITURA com porta de saída; o lugar onde se
+         decide é o começo do fluxo, não esta barra. -->
+    <button
+      v-if="hasOpenTab"
+      type="button"
+      class="flex h-9 min-w-0 shrink items-center gap-1.5 rounded-full border px-3 text-sm transition hover:bg-accent"
+      :class="fulfillmentType === 'delivery' ? 'border-primary bg-primary/5' : 'border-border'"
+      aria-haspopup="dialog"
+      @click="$emit('openFulfillment')"
+    >
+      <Icon :name="fulfillmentType === 'delivery' ? 'lucide:bike' : 'lucide:store'" class="size-4 shrink-0 text-muted-foreground" />
+      <span class="min-w-0 max-w-48 truncate font-medium">{{ fulfillmentLabel }}</span>
+    </button>
+
     <!-- release tab (pushed to the right of the context bar) -->
     <UiButton
-      v-if="hasOpenTab"
+      v-if="hasOpenTab && !readOnly"
       variant="ghost"
       size="icon-sm"
       class="ml-auto shrink-0 text-muted-foreground"

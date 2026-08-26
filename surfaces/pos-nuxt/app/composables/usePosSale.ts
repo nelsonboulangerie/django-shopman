@@ -45,6 +45,7 @@ import {
   tabRefPlaceholder,
 } from "~/utils/posTabLifecycle";
 import { cartNetTotalQ, type PosReceiptSnapshot } from "~/presentation/receipt";
+import { manualDiscountWasOverridden, winningDiscountLabel } from "~/presentation/lineDiscounts";
 import type { PosSaleResultSnapshot } from "~/presentation/saleResult";
 import { toast } from "vue-sonner";
 
@@ -616,8 +617,20 @@ export function usePosSale(deps: PosSaleDeps) {
     const item = cart.items.find((entry) => entry.sku === sku);
     if (!item) return;
     review.value = null;
-    if (value > 0) item.discount = { value, reason };
-    else delete item.discount;
+    if (value > 0) {
+      item.discount = { value, reason };
+      // "Maior desconto ganha, um por item": o servidor DESCARTA um manual menor
+      // que o automático que já venceu a linha. Sem aviso, o operador digitava a
+      // cortesia, o preço não mudava e ele não tinha como saber por quê. A linha
+      // mostra só o vencedor; o descarte se diz aqui, no momento do pedido.
+      if (manualDiscountWasOverridden(item)) {
+        toast.info(
+          `Desconto não aplicado em ${item.name}: "${winningDiscountLabel(item)}" é maior, e só um desconto vale por item.`,
+        );
+      }
+    } else {
+      delete item.discount;
+    }
   }
 
   // Operator unit-price override (numpad "Preço"): set the line's price and flag

@@ -40,7 +40,12 @@ import {
   paymentIcon,
   tenderLineView,
 } from "~/presentation/payment";
-import { saleDiscountBadges } from "~/presentation/lineDiscounts";
+import {
+  lineDiscountBadge,
+  lineListTotalDisplay,
+  lineSavingsQ,
+  lineTotalQ,
+} from "~/presentation/lineDiscounts";
 
 const props = defineProps<{
   tabDisplay: string;
@@ -224,30 +229,28 @@ function onSelectResult(result: POSCustomerSearchResult) {
 }
 // Reset the shared search when the customer modal reopens fresh — e devolve o
 // foco ao botão que o abriu (diálogo controlado: sem isto o foco morre no body).
-const customerButtonRef = ref<HTMLButtonElement | null>(null);
+// O botão do Cliente existe em DOIS lugares que nunca aparecem juntos (o chip,
+// abaixo de `xl`; a coluna de contexto, a partir dele), então o foco não pode
+// morar num `ref` fixo: devolvê-lo ao botão escondido é o mesmo que perdê-lo no
+// body. Procura-se o que está visível na hora.
+function focusCustomerControl() {
+  const candidates = Array.from(
+    document.querySelectorAll<HTMLButtonElement>('[data-context-entry="customer"]'),
+  );
+  (candidates.find((el) => el.offsetParent !== null) || candidates[0])?.focus();
+}
 watch(customerSheetOpen, async (open) => {
   if (open) return;
   emit("search", "");
   if (!import.meta.client) return;
   await nextTick();
-  customerButtonRef.value?.focus();
+  focusCustomerControl();
 });
 const discountSheetOpen = ref(false);
 
 // Foco automático no modal de Recebimento: com entrega selecionada, quem recebe
 // o foco é a busca de endereço (o campo que o operador veio preencher) — tanto
 // na abertura do modal quanto ao alternar retirada→entrega com ele aberto.
-const addressAutocompleteRef = ref<{ focus: () => void } | null>(null);
-function onFulfillmentOpenAutoFocus(event: Event) {
-  if (props.fulfillmentType !== "delivery") return; // retirada: foco padrão do diálogo
-  event.preventDefault();
-  void nextTick(() => addressAutocompleteRef.value?.focus());
-}
-watch(() => props.fulfillmentType, async (type) => {
-  if (!fulfillmentSheetOpen.value || type !== "delivery" || !import.meta.client) return;
-  await nextTick();
-  addressAutocompleteRef.value?.focus();
-});
 
 // The instrument (right zone): the numpad edits the SELECTED tender, so it lights
 // up once a tender exists; cédulas are the cash nuance, offered only when the
@@ -266,11 +269,6 @@ const cashSelected = computed(() => props.selectedTenderMethod === "cash");
 // "Sem janela neste dia" é um FATO; "ainda não sei" é outra coisa. Dizer o
 // primeiro enquanto a resposta não chegou fazia a tela mentir para o operador
 // justo no formulário que ele acabara de abrir.
-const slotPlaceholder = computed(() => {
-  if (props.deliverySlots.length) return "A combinar";
-  return props.deliverySlotsPending ? "Preencha o endereço" : "Sem janela neste dia";
-});
-
 // O CPF de volta na tela, formatado e por INTEIRO. Mostrar só o rabo do número
 // não responde a pergunta que o cliente faz — ele quer saber se o documento DELE
 // entrou. Quem digitou está com o cliente na frente; esconder metade não protege
@@ -278,6 +276,9 @@ const slotPlaceholder = computed(() => {
 // O documento se lê pontuado enquanto se digita — é assim que a pessoa CONFERE
 // o próprio CPF, em blocos de três. Cru, "52998224725" obriga a contar dígito a
 // dígito, e ninguém confere o que não consegue ler.
+// O teclado só vale quando há uma linha de pagamento selecionada para editar.
+const numpadActive = computed(() => props.selectedTenderIndex >= 0 && props.selectedTenderIndex < props.paymentTenders.length);
+
 const invoiceTaxIdMasked = computed(() => {
   const d = props.invoiceTaxId.replace(/\D/g, "").slice(0, 14);
   if (d.length <= 11) {
@@ -326,26 +327,6 @@ function setReceiptChannel(ref: string, on: boolean) {
   emit("update:receiptChannels", next);
 }
 
-const deliveryFeeNote = computed(() => {
-  if (props.deliveryFeeOverride) return "Valor combinado por você para esta entrega.";
-  const km = props.deliveryDistanceKm;
-  switch (props.deliveryFeeSource) {
-    case "zone":
-      return "Tabela do bairro/CEP deste endereço.";
-    case "distance":
-      return km == null ? "Pela distância até o endereço." : `Pela distância até o endereço (${km} km).`;
-    case "default":
-      return "Taxa padrão da loja: não deu para medir a distância deste endereço.";
-    case "blocked":
-      return "Este endereço está fora da área de entrega.";
-    case "manual":
-      return "Valor combinado para esta entrega.";
-    default:
-      return "Preencha o endereço para a loja calcular a taxa.";
-  }
-});
-const numpadActive = computed(() => props.selectedTenderIndex >= 0 && props.selectedTenderIndex < props.paymentTenders.length);
-
 // The adaptive live readout under the hero — one line that carries the state the
 // operator needs right now, so the big number stays the (stable) sale total.
 const payState = computed<"idle" | "short" | "change" | "ready">(() => {
@@ -355,17 +336,6 @@ const payState = computed<"idle" | "short" | "change" | "ready">(() => {
   return "idle";
 });
 
-// No chip, o BAIRRO diz mais que a palavra "entrega" — é o que o operador
-// confere de relance quando o cliente muda de ideia no meio do pagamento.
-const fulfillmentChipLabel = computed(() => {
-  const base = props.fulfillmentOptions.find((o) => o.ref === props.fulfillmentType)?.label || props.fulfillmentType;
-  if (props.fulfillmentType !== "delivery") return base;
-  const bairro = props.deliveryNeighborhood.trim() || props.deliveryAddressStructured?.neighborhood?.trim() || "";
-  return bairro ? `${base} · ${bairro}` : base;
-});
-const fulfillmentLabel = computed(
-  () => props.fulfillmentOptions.find((option) => option.ref === props.fulfillmentType)?.label || props.fulfillmentType,
-);
 const discountValueNum = computed(
   () => Number(String(props.discountValue).replace(",", ".").replace(/[^0-9.]/g, "")) || 0,
 );
@@ -373,12 +343,26 @@ const hasDiscount = computed(() => discountValueNum.value > 0);
 const discountSummary = computed(() =>
   props.discountType === "fixed" ? `R$ ${props.discountValue}` : `${props.discountValue}%`,
 );
-const customerSet = computed(() => Boolean(props.customerName.trim() || props.customerPhone.trim()));
 
-// Transparência de desconto no resumo: uma pílula por linha com desconto
-// (automático de pricing ou manual), mesmo idioma da tela do cliente. É o que
-// explica um total menor que a etiqueta sem o operador ter feito nada.
-const discountBadges = computed(() => saleDiscountBadges(props.items, props.discountReasons));
+// O RESUMO DO PEDIDO — o que está sendo cobrado. No checkout o operador via só
+// o total: um número sem os itens que o compõem, justo na hora em que o cliente
+// pergunta "por que deu isso?". Vem do mesmo carrinho da tela de venda; a tela
+// mostra, não recalcula.
+const summaryLines = computed(() =>
+  props.items.map((item) => ({
+    sku: item.sku,
+    name: item.name,
+    qty: item.qty,
+    totalDisplay: formatBRL(lineTotalQ(item)),
+    /** A etiqueta riscada, quando o que se cobra é menor. "" quando não há. */
+    listDisplay: lineListTotalDisplay(item),
+    /** POR QUE está mais barato — o desconto que venceu a linha. */
+    discountLabel: lineDiscountBadge(item, props.discountReasons),
+  })),
+);
+const summaryUnits = computed(() => props.items.reduce((sum, item) => sum + item.qty, 0));
+/** Quanto a venda inteira economizou em relação à etiqueta. 0 quando nada. */
+const summarySavingsQ = computed(() => props.items.reduce((sum, item) => sum + lineSavingsQ(item), 0));
 
 // Kitchen clarity: tell the operator, unequivocally, what finalizing will do
 // vs what was already fired — so it's never a mystery whether food was sent.
@@ -455,13 +439,6 @@ function onManagerAuthorize(username: string, pin: string) {
   emit("submit");
 }
 
-function onAddressSelected(address: StructuredAddressProjection) {
-  emit("update:deliveryAddressStructured", address);
-  if (address.route) emit("update:deliveryAddress", address.route);
-  if (address.street_number) emit("update:deliveryStreetNumber", address.street_number);
-  if (address.neighborhood) emit("update:deliveryNeighborhood", address.neighborhood);
-}
-
 // Atalhos do shell (pages/index.vue): Enter valida pelo MESMO caminho do clique
 // (passa pela porta da autorização gerencial, nunca por fora dela); F6 abre o
 // modal de cliente deste checkout.
@@ -500,11 +477,21 @@ defineExpose({
 
 
 
-    <!-- MAIN — clone Odoo: INSTRUMENTO esquerda, VALOR direita. Colunas
-         RESPONSIVAS (B.1): teto 1+2 (instrumento:valor) → 1+1 → empilha (valor no
-         topo). Grid com nº de colunas por breakpoint; instrumento ocupa sempre 1,
-         valor ocupa o restante. (Sem 1+3 no xl — esparramava o valor.) -->
-    <div class="grid min-h-0 w-full flex-1 grid-cols-1 gap-6 overflow-hidden md:grid-cols-2 lg:grid-cols-3">
+    <!-- MAIN — clone Odoo: INSTRUMENTO esquerda, VALOR no meio, CONTEXTO direita.
+         As colunas laterais têm LARGURA FIXA de 360px, a mesma do painel do
+         carrinho na tela de venda (`md:w-[360px]` em pages/index.vue): a coluna
+         de trabalho era uma fração do grid e dava 435px, um instrumento mais
+         largo aqui do que lá, com a mesma mão fazendo as duas coisas. Largura
+         fixa também é o que faz o teclado não mudar de tamanho conforme a
+         janela — músculo de balcão depende de a tecla estar sempre no mesmo
+         lugar. O VALOR fica com o resto, que é o que deve respirar.
+
+         A terceira coluna aparece a partir de `xl` e carrega o RESUMO DO PEDIDO.
+         Cliente e recebimento saíram daqui: são fatos do PEDIDO, decididos na
+         abertura do atendimento, e agora moram na barra do topo, que segue
+         visível durante o checkout. Perguntar de novo aqui era ter o mesmo botão
+         em dois lugares da mesma tela. -->
+    <div class="flex min-h-0 w-full flex-1 flex-col gap-6 overflow-hidden md:flex-row">
 
       <!-- LEFT · coluna de trabalho, agrupada por SEMÂNTICA (Hyper Focus: chrome
            espalhado não responde "qual é a próxima ação"). Quatro seções, na
@@ -516,7 +503,7 @@ defineExpose({
            `overflow-y-auto`: com a nota aberta a coluna pode passar da altura
            da tela num monitor baixo, e conteúdo cortado sem rolagem é conteúdo
            inalcançável. -->
-      <div class="order-2 flex min-h-0 flex-col gap-3 overflow-y-auto md:order-none">
+      <div class="order-2 flex min-h-0 flex-col gap-3 overflow-y-auto md:order-none md:w-[360px] md:shrink-0">
         <!-- PAGAMENTO — o instrumento: métodos (tap = lança o que falta na forma)
              + teclado de valor. Última seção de propósito: desagua no Validar. -->
         <!-- CONTEXTO DA VENDA — quem compra, como recebe, se tem desconto.
@@ -527,43 +514,27 @@ defineExpose({
              baixo da dobra, justo as perguntas que se faz com o cliente na
              frente. Aqui custam 36px e continuam mostrando o ESTADO: ver que é
              entrega não exige abrir nada. -->
-        <div class="flex flex-wrap items-center gap-1.5">
-          <button
-            ref="customerButtonRef"
-            type="button"
-            class="flex h-9 min-w-0 flex-1 items-center gap-1.5 rounded-md border px-2.5 text-sm font-medium transition hover:bg-accent active:translate-y-px"
-            :class="customerSet ? 'border-primary bg-primary/5' : 'bg-card text-muted-foreground'"
-            @click="customerSheetOpen = true"
-          >
-            <Icon name="lucide:user-round" class="size-4 shrink-0" />
-            <span class="min-w-0 truncate">{{ customerName || "Sem cliente" }}</span>
-            <kbd class="ml-auto shrink-0 rounded border bg-muted px-1 py-0.5 font-mono text-xs font-medium text-muted-foreground" aria-hidden="true">F6</kbd>
-          </button>
-          <button
-            type="button"
-            class="flex h-9 min-w-0 flex-1 items-center gap-1.5 rounded-md border px-2.5 text-sm font-medium transition hover:bg-accent active:translate-y-px"
-            :class="fulfillmentType === 'delivery' ? 'border-primary bg-primary/5' : 'bg-card text-muted-foreground'"
-            @click="fulfillmentSheetOpen = true"
-          >
-            <Icon :name="fulfillmentType === 'delivery' ? 'lucide:bike' : 'lucide:store'" class="size-4 shrink-0" />
-            <span class="min-w-0 truncate">{{ fulfillmentChipLabel }}</span>
-            <kbd class="ml-auto shrink-0 rounded border bg-muted px-1 py-0.5 font-mono text-xs font-medium text-muted-foreground" aria-hidden="true">F7</kbd>
-          </button>
+        <section class="mt-auto grid gap-1.5" aria-label="Forma de pagamento">
+          <h3 class="px-1 text-xs font-medium uppercase tracking-wide text-muted-foreground">Forma de pagamento</h3>
+
+          <!-- DESCONTO — vizinho do pagamento, não do cliente. Ele é uma operação
+               sobre o VALOR que está sendo cobrado, e é aqui que o gerente é
+               chamado para autorizá-lo.
+               Fica ACIMA das formas, e não colado no "Exato"/"Limpar": aqueles
+               dois agem sobre a LINHA DE PAGAMENTO selecionada, e este age sobre
+               a VENDA. Três botões lado a lado com dois sujeitos diferentes é o
+               clique errado do balcão cheio. -->
           <button
             v-if="discountTypes.length"
             type="button"
-            class="flex h-9 min-w-0 flex-1 items-center gap-1.5 rounded-md border px-2.5 text-sm font-medium transition hover:bg-accent active:translate-y-px"
+            class="flex h-11 items-center gap-2 rounded-md border px-3 text-sm font-medium transition hover:bg-accent active:translate-y-px"
             :class="hasDiscount ? 'border-primary bg-primary/5' : 'bg-card text-muted-foreground'"
             @click="discountSheetOpen = true"
           >
             <Icon name="lucide:tag" class="size-4 shrink-0" />
-            <span class="min-w-0 truncate">{{ hasDiscount ? discountSummary : "Sem desconto" }}</span>
+            <span class="min-w-0 truncate">{{ hasDiscount ? `Desconto ${discountSummary}` : "Sem desconto" }}</span>
             <kbd class="ml-auto shrink-0 rounded border bg-muted px-1 py-0.5 font-mono text-xs font-medium text-muted-foreground" aria-hidden="true">F8</kbd>
           </button>
-        </div>
-
-        <section class="mt-auto grid gap-1.5" aria-label="Forma de pagamento">
-          <h3 class="px-1 text-xs font-medium uppercase tracking-wide text-muted-foreground">Forma de pagamento</h3>
           <!-- ONDE o dinheiro é recebido é FORMA DE PAGAMENTO, não contexto da
                venda: veio da seção "Recebimento", que subiu inteira para a barra
                de contexto. Só aparece quando há mais de uma opção. -->
@@ -813,16 +784,19 @@ defineExpose({
           Requer autorização do gerente para finalizar.
         </p>
 
-        <!-- Voltar + Validar (rodapé da coluna, copiando o Back + Validate do Odoo) -->
-        <div class="grid grid-cols-2 gap-1.5 pt-1">
-          <UiButton variant="outline" size="lg" class="h-14 gap-2 text-base" @click="$emit('back')">
+        <!-- Voltar + Validar (rodapé da coluna, copiando o Back + Validate do Odoo).
+             Meio a meio dava 177px para cada um, e "Autorizar e validar" — o
+             rótulo do caso que EXIGE leitura, porque chama um gerente — vazava
+             do botão. O Voltar cabe no que ele é; o resto é do Validar. -->
+        <div class="flex gap-1.5 pt-1">
+          <UiButton variant="outline" size="lg" class="h-14 shrink-0 gap-2 px-3 text-sm" title="Voltar para a venda (Esc)" @click="$emit('back')">
             <Icon name="lucide:arrow-left" class="size-5" />
             Voltar
             <kbd class="rounded border bg-muted px-1.5 py-0.5 font-mono text-xs font-medium text-muted-foreground" aria-hidden="true">Esc</kbd>
           </UiButton>
           <UiButton
             size="lg"
-            class="h-14 gap-2 text-base"
+            class="h-14 min-w-0 flex-1 gap-2 text-base"
             :disabled="ctaDisabled"
             :loading="loading || needsReview"
             @click="onCta"
@@ -833,29 +807,20 @@ defineExpose({
         </div>
       </div>
 
-      <!-- RIGHT · VALOR (empilhado: no topo; cresce 1→2 conforme o breakpoint, teto 1+2) -->
-      <div class="order-1 flex min-h-0 flex-col gap-3 py-1 md:order-none lg:col-span-2">
+      <!-- MEIO · VALOR (empilhado: no topo). Fica com a largura que sobra das
+           duas colunas fixas — por isso o total escala com a janela em vez de
+           ter um tamanho só: no `xl` a faixa do meio é a mais estreita das três
+           configurações, e um `text-8xl` ali transbordava. -->
+      <div class="order-1 flex min-h-0 min-w-0 flex-1 flex-col gap-3 py-1 md:order-none">
         <!-- valor gigante (estável = total a cobrar), centrado -->
-        <div class="flex flex-1 flex-col items-center justify-center text-center">
+        <section class="flex flex-1 flex-col items-center justify-center text-center" aria-label="Total a cobrar">
           <p class="text-xs font-medium uppercase tracking-wide text-muted-foreground">Total a cobrar</p>
-          <p class="text-7xl font-bold tabular-nums tracking-tight xl:text-8xl">{{ review ? review.total_display : interimTotalDisplay }}</p>
+          <p class="text-6xl font-bold tabular-nums tracking-tight lg:text-7xl 2xl:text-8xl">{{ review ? review.total_display : interimTotalDisplay }}</p>
           <p v-if="items.length" class="mt-3 flex items-center gap-1.5 text-xs text-muted-foreground">
             <Icon name="lucide:flame" class="size-3.5 shrink-0" :class="firedCount ? 'text-primary' : ''" />
             {{ kitchenNote }}
           </p>
-          <!-- descontos por linha (lote/happy hour/funcionário/manual): o total
-               menor que a etiqueta se explica aqui, discreto -->
-          <div v-if="discountBadges.length" class="mt-2 flex max-w-xl flex-wrap justify-center gap-1.5">
-            <span
-              v-for="row in discountBadges"
-              :key="row.sku"
-              class="inline-flex items-center gap-1 rounded-full bg-primary/10 px-2 py-0.5 text-xs font-medium text-primary"
-            >
-              <Icon name="lucide:tags" class="size-3" />
-              {{ row.name }} · {{ row.badge }}
-            </span>
-          </div>
-        </div>
+        </section>
 
         <!-- avisos não-bloqueantes da review (nunca impedem finalizar) -->
         <ul v-if="reviewWarnings.length" class="shrink-0 flex flex-col gap-1.5">
@@ -911,148 +876,130 @@ defineExpose({
           </div>
         </div>
       </div>
+
+      <!-- DIREITA · CONTEXTO — a coluna que faltava. Medido em 1440×900 antes
+           dela: o bloco do valor ocupava 893×815 para mostrar UM número, e o
+           checkout não dizia em momento nenhum O QUE estava sendo cobrado. O
+           operador saía da tela de venda, onde via a lista, e chegava numa tela
+           onde a lista não existe mais — bem na hora em que o cliente pergunta
+           "por que deu isso?".
+
+           Aqui ficam os três fatos da venda (cliente, recebimento, desconto —
+           os mesmos `contextEntries` dos chips, agora com rótulo) e o RESUMO DO
+           PEDIDO. Largura fixa de 360px, igual à do carrinho na tela de venda:
+           é a mesma lista, no mesmo lugar da tela, com a mesma medida. -->
+      <div class="order-3 hidden min-h-0 w-[360px] shrink-0 flex-col gap-3 overflow-y-auto md:order-none xl:flex">
+        <!-- RESUMO DO PEDIDO — a lista, e o que a soma dela vira. Sem stepper e
+             sem lixeira: aqui não se edita o pedido (para isso existe o Voltar),
+             só se confere. Rola quando a comanda é grande; subtotal, desconto e
+             taxa ficam colados embaixo, fora da rolagem. -->
+        <section class="flex min-h-0 flex-1 flex-col gap-1.5" aria-label="Resumo do pedido">
+          <h3 class="flex items-baseline gap-2 px-1">
+            <span class="text-xs font-medium uppercase tracking-wide text-muted-foreground">Resumo do pedido</span>
+            <span v-if="summaryUnits" class="ml-auto text-xs tabular-nums text-muted-foreground">
+              {{ summaryUnits }} {{ summaryUnits === 1 ? "item" : "itens" }}
+            </span>
+          </h3>
+
+          <div class="flex min-h-0 flex-1 flex-col rounded-md border bg-card">
+            <ul v-if="summaryLines.length" class="min-h-0 flex-1 divide-y overflow-y-auto">
+              <li v-for="line in summaryLines" :key="line.sku" class="px-3 py-2">
+                <div class="flex items-baseline gap-2">
+                  <span class="w-6 shrink-0 text-sm font-semibold tabular-nums text-muted-foreground">{{ line.qty }}×</span>
+                  <span class="min-w-0 flex-1 truncate text-sm">{{ line.name }}</span>
+                  <span
+                    v-if="line.listDisplay"
+                    class="shrink-0 text-xs tabular-nums text-muted-foreground line-through"
+                  >{{ line.listDisplay }}</span>
+                  <strong class="shrink-0 text-sm font-semibold tabular-nums">{{ line.totalDisplay }}</strong>
+                </div>
+                <!-- POR QUE está mais barato. Riscar o preço sem dizer o motivo
+                     transfere para o operador a pergunta que o cliente acabou de
+                     fazer. É o mesmo idioma do resumo da loja. -->
+                <p v-if="line.discountLabel" class="mt-0.5 flex items-center gap-1 pl-8 text-xs text-primary">
+                  <Icon name="lucide:tag" class="size-3 shrink-0" />
+                  {{ line.discountLabel }}
+                </p>
+              </li>
+            </ul>
+            <p v-else class="flex flex-1 items-center justify-center px-3 py-6 text-center text-sm text-muted-foreground">
+              Nada lançado nesta comanda.
+            </p>
+
+            <!-- Só aparece o que EXISTE: subtotal sozinho ao lado de um total
+                 igual a ele é uma linha que não informa nada. -->
+            <dl
+              v-if="summarySavingsQ > 0 || (review && (review.discount_q > 0 || review.delivery_fee_q > 0))"
+              class="grid gap-1 border-t px-3 py-2 text-sm"
+            >
+              <!-- "Você economizou" fecha a conta que as linhas riscadas abrem.
+                   Sai do MESMO lugar de onde saem os riscos (etiqueta − cobrado),
+                   então os dois nunca podem discordar. -->
+              <div v-if="summarySavingsQ > 0" class="flex items-baseline justify-between gap-2 text-primary">
+                <dt class="font-medium">Economia nos itens</dt>
+                <dd class="tabular-nums font-semibold">−{{ formatBRL(summarySavingsQ) }}</dd>
+              </div>
+              <template v-if="review">
+                <div v-if="review.discount_q > 0 || review.delivery_fee_q > 0" class="flex items-baseline justify-between gap-2">
+                  <dt class="text-muted-foreground">Subtotal</dt>
+                  <dd class="tabular-nums">{{ review.subtotal_display }}</dd>
+                </div>
+                <div v-if="review.discount_q > 0" class="flex items-baseline justify-between gap-2 text-primary">
+                  <dt>Desconto na venda</dt>
+                  <dd class="tabular-nums">−{{ review.discount_display }}</dd>
+                </div>
+                <div v-if="review.delivery_fee_q > 0" class="flex items-baseline justify-between gap-2">
+                  <dt class="text-muted-foreground">Taxa de entrega</dt>
+                  <dd class="tabular-nums">{{ review.delivery_fee_display }}</dd>
+                </div>
+              </template>
+            </dl>
+          </div>
+        </section>
+      </div>
     </div>
 
   </section>
 
-  <!-- MODAL: Recebimento (retirada / entrega) -->
-  <UiDialog v-model:open="fulfillmentSheetOpen">
-    <UiDialogContent class="max-h-[85vh] overflow-y-auto sm:max-w-lg" @open-auto-focus="onFulfillmentOpenAutoFocus">
-      <UiDialogHeader>
-        <UiDialogTitle>Recebimento</UiDialogTitle>
-        <UiDialogDescription>Como o cliente recebe o pedido.</UiDialogDescription>
-      </UiDialogHeader>
-      <div class="grid gap-4">
-        <div class="grid grid-cols-2 gap-2">
-            <UiButton
-              v-for="option in fulfillmentOptions"
-              :key="option.ref"
-              variant="outline"
-              class="h-auto justify-start whitespace-normal px-3 py-2 text-left"
-              :class="fulfillmentType === option.ref ? 'border-primary bg-primary/5' : ''"
-              @click="$emit('update:fulfillmentType', option.ref)"
-            >
-              <span>
-                <span class="block text-sm font-semibold">{{ option.label }}</span>
-                <span class="block text-xs opacity-80">{{ option.description }}</span>
-              </span>
-            </UiButton>
-          </div>
-
-          <div v-if="fulfillmentType === 'delivery'" class="grid gap-3">
-            <div v-if="savedAddresses.length" class="flex flex-wrap gap-2">
-              <UiButton
-                v-for="address in savedAddresses"
-                :key="address.id"
-                type="button"
-                variant="outline"
-                size="sm"
-                class="h-auto justify-start whitespace-normal px-2 py-1 text-left"
-                @click="$emit('pickSavedAddress', address)"
-              >
-                <span class="max-w-48 truncate">{{ address.label || address.formatted_address }}</span>
-              </UiButton>
-            </div>
-            <label class="grid gap-1 text-sm">
-              <span class="font-medium text-muted-foreground">Endereço</span>
-              <PosAddressAutocomplete
-                ref="addressAutocompleteRef"
-                :model-value="deliveryAddress"
-                :capability="addressAutocomplete"
-                @update:model-value="$emit('update:deliveryAddress', String($event || ''))"
-                @selected="onAddressSelected"
-              />
-            </label>
-            <div class="grid gap-2 sm:grid-cols-2">
-              <label class="grid gap-1 text-sm">
-                <span class="font-medium text-muted-foreground">Número</span>
-                <UiInput :model-value="deliveryStreetNumber" placeholder="123" @update:model-value="$emit('update:deliveryStreetNumber', String($event || ''))" />
-              </label>
-              <label class="grid gap-1 text-sm">
-                <span class="font-medium text-muted-foreground">Bairro</span>
-                <UiInput :model-value="deliveryNeighborhood" placeholder="Centro" @update:model-value="$emit('update:deliveryNeighborhood', String($event || ''))" />
-              </label>
-            </div>
-            <div class="grid gap-2 sm:grid-cols-2">
-              <label class="grid gap-1 text-sm">
-                <span class="font-medium text-muted-foreground">Complemento</span>
-                <UiInput :model-value="deliveryComplement" placeholder="Apto, bloco" @update:model-value="$emit('update:deliveryComplement', String($event || ''))" />
-              </label>
-              <label class="grid gap-1 text-sm">
-                <span class="font-medium text-muted-foreground">Instruções</span>
-                <UiInput :model-value="deliveryInstructions" placeholder="Portaria, referência" @update:model-value="$emit('update:deliveryInstructions', String($event || ''))" />
-              </label>
-            </div>
-            <!-- QUANDO — data e janela. A data nasce em HOJE (o hoje do servidor,
-                 não o do tablet) e o horário deixa de ser texto solto: as janelas
-                 de meia hora vêm do EXPEDIENTE daquele dia. Digitar "14:00-14:30"
-                 num dia em que a casa fecha às 11h era uma promessa que ninguém
-                 podia cumprir, e a tela não tinha como saber. -->
-            <div class="grid gap-2 sm:grid-cols-2">
-              <label class="grid gap-1 text-sm">
-                <span class="font-medium text-muted-foreground">Data</span>
-                <UiInput
-                  :model-value="deliveryDateEffective"
-                  type="date"
-                  @update:model-value="$emit('update:deliveryDate', String($event || ''))"
-                />
-              </label>
-              <label class="grid gap-1 text-sm">
-                <span class="font-medium text-muted-foreground">Horário combinado</span>
-                <select
-                  :value="deliveryTimeSlot"
-                  class="h-9 rounded-md border bg-background px-3 text-sm"
-                  :disabled="!deliverySlots.length"
-                  @change="$emit('update:deliveryTimeSlot', ($event.target as HTMLSelectElement).value)"
-                >
-                  <option value="">{{ slotPlaceholder }}</option>
-                  <option v-for="slot in deliverySlots" :key="slot.ref" :value="slot.ref">{{ slot.label }}</option>
-                </select>
-              </label>
-            </div>
-
-            <!-- QUANTO — a taxa é RESOLVIDA pelo endereço (zona de CEP, faixa de
-                 distância, frete grátis por valor), o mesmo motor da loja. Era um
-                 campo livre, e campo livre é um segundo dono do preço: duas vendas
-                 do mesmo endereço saíam diferentes conforme quem estava no caixa.
-                 A digitação continua existindo como EXCEÇÃO declarada. -->
-            <div class="grid gap-1.5 rounded-md border bg-card p-3 text-sm">
-              <div class="flex items-center justify-between gap-2">
-                <span class="font-medium text-muted-foreground">Taxa de entrega</span>
-                <strong class="tabular-nums">{{ deliveryFeeOverride ? "—" : formatBRL(deliveryFeeQ) }}</strong>
-              </div>
-              <p class="text-xs text-muted-foreground">{{ deliveryFeeNote }}</p>
-              <button
-                type="button"
-                class="justify-self-start text-xs font-medium text-muted-foreground underline underline-offset-2 hover:text-foreground"
-                @click="$emit('update:deliveryFeeOverride', !deliveryFeeOverride)"
-              >
-                {{ deliveryFeeOverride ? "Usar a taxa da loja" : "Combinar outro valor" }}
-              </button>
-              <UiInput
-                v-if="deliveryFeeOverride"
-                :model-value="deliveryFeeOverrideInput"
-                inputmode="decimal"
-                placeholder="0,00"
-                aria-label="Taxa combinada com o cliente"
-                @update:model-value="$emit('update:deliveryFeeOverrideInput', String($event || ''))"
-              />
-            </div>
-          </div>
-
-          <!-- Observações do pedido valem para RETIRADA também (não só entrega):
-               o dado sempre viajou no intent; só a tela o escondia. -->
-          <label class="grid gap-1 text-sm">
-            <span class="font-medium text-muted-foreground">Observações</span>
-            <UiTextarea :model-value="orderNotes" :rows="2" placeholder="Instruções do pedido, referência, recado" @update:model-value="$emit('update:orderNotes', String($event || ''))" />
-          </label>
-
-        </div>
-      <UiDialogFooter>
-        <UiButton class="w-full" @click="fulfillmentSheetOpen = false">Concluir</UiButton>
-      </UiDialogFooter>
-    </UiDialogContent>
-  </UiDialog>
+  <!-- RECEBIMENTO — a mesma caixa que a abertura da comanda usa. O checkout
+       agora REVÊ o que foi decidido no começo do atendimento, em vez de ser o
+       único lugar onde a pergunta existe. -->
+  <PosFulfillmentModal
+    v-model:open="fulfillmentSheetOpen"
+    :fulfillment-options="fulfillmentOptions"
+    :fulfillment-type="fulfillmentType"
+    :saved-addresses="savedAddresses"
+    :address-autocomplete="addressAutocomplete"
+    :delivery-address="deliveryAddress"
+    :delivery-street-number="deliveryStreetNumber"
+    :delivery-neighborhood="deliveryNeighborhood"
+    :delivery-complement="deliveryComplement"
+    :delivery-instructions="deliveryInstructions"
+    :delivery-date="deliveryDate"
+    :delivery-date-effective="deliveryDateEffective"
+    :delivery-time-slot="deliveryTimeSlot"
+    :delivery-slots="deliverySlots"
+    :delivery-slots-pending="deliverySlotsPending"
+    :delivery-fee-override="deliveryFeeOverride"
+    :delivery-fee-override-input="deliveryFeeOverrideInput"
+    :delivery-fee-q="deliveryFeeQ"
+    :delivery-fee-source="deliveryFeeSource"
+    :delivery-distance-km="deliveryDistanceKm"
+    :order-notes="orderNotes"
+    @update:fulfillment-type="$emit('update:fulfillmentType', $event)"
+    @update:delivery-address="$emit('update:deliveryAddress', $event)"
+    @update:delivery-address-structured="$emit('update:deliveryAddressStructured', $event)"
+    @update:delivery-street-number="$emit('update:deliveryStreetNumber', $event)"
+    @update:delivery-neighborhood="$emit('update:deliveryNeighborhood', $event)"
+    @update:delivery-complement="$emit('update:deliveryComplement', $event)"
+    @update:delivery-instructions="$emit('update:deliveryInstructions', $event)"
+    @update:delivery-date="$emit('update:deliveryDate', $event)"
+    @update:delivery-time-slot="$emit('update:deliveryTimeSlot', $event)"
+    @update:delivery-fee-override="$emit('update:deliveryFeeOverride', $event)"
+    @update:delivery-fee-override-input="$emit('update:deliveryFeeOverrideInput', $event)"
+    @update:order-notes="$emit('update:orderNotes', $event)"
+    @pick-saved-address="$emit('pickSavedAddress', $event)"
+  />
 
   <!-- Cliente & fiscal — shared full-screen picker (showFiscal rides the receipt) -->
   <PosCustomerModal

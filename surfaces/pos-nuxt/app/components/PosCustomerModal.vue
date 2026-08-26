@@ -162,21 +162,23 @@ const newCustomerNote = computed(() => {
 
 <template>
   <UiDialog :open="open" @update:open="$emit('update:open', Boolean($event))">
-    <!-- Full-screen overlay (Odoo "Choose Customer"): a large panel; the register
-         stays dimly visible behind. Neutral tokens, our omotenashi tone. -->
-    <UiDialogContent
-      class="flex h-[90vh] w-[min(60rem,94vw)] max-w-none flex-col gap-0 overflow-hidden rounded-md p-0 sm:max-w-none"
-      @open-auto-focus="onOpenAutoFocus"
-    >
-      <UiDialogHeader class="shrink-0 border-b px-6 py-4">
-        <UiDialogTitle class="text-lg">Cliente</UiDialogTitle>
+    <!-- MESMA CAIXA dos irmãos (Recebimento, Desconto): `max-h-[85vh]
+         overflow-y-auto sm:max-w-lg`, cabeçalho padrão, altura pelo conteúdo.
+         Era um painel fixo de 90vh × 60rem — sempre com a altura inteira da tela
+         mesmo com três campos dentro, e um conteúdo de 42rem centrado num painel
+         de 60rem, gerando faixas vazias dos dois lados. Três perguntas feitas na
+         mesma sequência do balcão não podem chegar em três formatos diferentes:
+         o operador reaprende a tela a cada uma. -->
+    <UiDialogContent class="max-h-[85vh] overflow-y-auto sm:max-w-lg" @open-auto-focus="onOpenAutoFocus">
+      <UiDialogHeader>
+        <UiDialogTitle>Cliente</UiDialogTitle>
         <UiDialogDescription>
           Busque por nome, telefone, CPF ou e-mail — selecione um cadastro ou crie um novo.
         </UiDialogDescription>
       </UiDialogHeader>
 
-      <div class="min-h-0 flex-1 overflow-y-auto px-6 py-5">
-        <div class="mx-auto grid max-w-2xl gap-5">
+      <div>
+        <div class="grid gap-5">
           <!-- 1 · associated customer (Odoo's pinned-and-highlighted) + Remover -->
           <div v-if="hasCustomer" class="grid gap-3 rounded-md border border-primary bg-primary/5 p-4">
             <div class="flex items-start justify-between gap-3">
@@ -340,7 +342,7 @@ const newCustomerNote = computed(() => {
         </div>
       </div>
 
-      <UiDialogFooter class="shrink-0 border-t px-6 py-4">
+      <UiDialogFooter>
         <UiButton class="w-full" @click="onConclude">Concluir</UiButton>
       </UiDialogFooter>
     </UiDialogContent>

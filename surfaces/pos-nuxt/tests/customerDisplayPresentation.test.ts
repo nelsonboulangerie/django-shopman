@@ -9,7 +9,7 @@ import {
   displayPhase,
   firstName,
 } from "~/presentation/customerDisplay";
-import { lineDiscountBadge, pricingDiscountBadge, saleDiscountBadges } from "~/presentation/lineDiscounts";
+import { lineDiscountBadge, lineTotalQ, pricingDiscountBadge, saleDiscountBadges } from "~/presentation/lineDiscounts";
 import type { PaymentProofView } from "~/presentation/payment";
 import { cartNetTotalQ, type PosReceiptSnapshot } from "~/presentation/receipt";
 import type { POSCartItem, POSCheckoutOptionProjection, POSSaleReviewProjection } from "~/types/pos";
@@ -147,23 +147,49 @@ describe("pricingDiscountBadge — o caso Batard (R$ 13,00 → R$ 11,05)", () =>
 });
 
 describe("displayItemView — a linha que o cliente lê", () => {
-  it("formata unitário e total líquido (desconto de linha aplicado)", () => {
-    const view = displayItemView(item({ qty: 2, price_q: 500, discount: { value: 10, reason: "cortesia" } }), REASONS);
+  it("mostra o preço que o SERVIDOR cobra, não o desconto aplicado aqui", () => {
+    // Antes, esta linha aplicava os 10% por conta própria e dava R$ 9,00. Mas a
+    // política é "maior desconto ganha, um por item" (`modifiers.py`): um manual
+    // menor que o automático é DESCARTADO no servidor. A tela do cliente e a do
+    // operador são lidas em voz alta juntas — não podem discordar. O selo segue
+    // anunciando o pedido do operador; o NÚMERO é o do servidor.
+    const view = displayItemView(
+      item({ qty: 2, price_q: 500, charged_price_q: 450, discount: { value: 10, reason: "cortesia" } }),
+      REASONS,
+    );
     expect(view.qty).toBe(2);
-    expect(view.unitDisplay).toBe(formatBRL(500));
-    // 2 × 500 − 2 × 50 = 900
+    expect(view.unitDisplay).toBe(formatBRL(450));
     expect(view.totalDisplay).toBe(formatBRL(900));
     expect(view.discountLabel).toBe("Cortesia −10%");
   });
+
+  it("sem `charged_price_q` no payload, cai no preço da linha — nunca em conta própria", () => {
+    const view = displayItemView(item({ qty: 2, price_q: 500, discount: { value: 10, reason: "cortesia" } }), REASONS);
+    expect(view.totalDisplay).toBe(formatBRL(1000));
+  });
 });
 
-describe("cartNetTotalQ — a mesma estimativa da tela de venda", () => {
-  it("soma as linhas líquidas", () => {
+describe("cartNetTotalQ — a mesma soma da tela de venda", () => {
+  it("soma o preço COBRADO de cada linha, e as linhas fecham com o total", () => {
+    // A invariante que faltava: o operador confere linha a linha na frente do
+    // cliente, e a soma tem que bater com o número embaixo. Enquanto a tela
+    // aplicava desconto por conta própria, a Tabatière exibia linha de R$ 9,00 e
+    // Total parcial de R$ 8,10 ao mesmo tempo.
     const items = [
-      item({ qty: 2, price_q: 500 }),
-      item({ sku: "CAFE", qty: 1, price_q: 300, discount: { value: 10, reason: "cortesia" } }),
+      item({ qty: 2, price_q: 500, charged_price_q: 500 }),
+      item({ sku: "CAFE", qty: 1, price_q: 300, charged_price_q: 270, discount: { value: 10, reason: "cortesia" } }),
     ];
     expect(cartNetTotalQ(items)).toBe(1000 + 270);
+    expect(cartNetTotalQ(items)).toBe(items.reduce((sum, i) => sum + lineTotalQ(i), 0));
+  });
+
+  it("desconto que o servidor descartou NÃO derruba o total", () => {
+    // Xepa −25% já baixou o unitário para 450; a cortesia de 10% perde o
+    // "maior ganha" e some. A tela não pode ser a única a achar que ela valeu.
+    const items = [
+      item({ qty: 2, price_q: 450, charged_price_q: 450, discount: { value: 10, reason: "cortesia" } }),
+    ];
+    expect(cartNetTotalQ(items)).toBe(900);
   });
 });
 

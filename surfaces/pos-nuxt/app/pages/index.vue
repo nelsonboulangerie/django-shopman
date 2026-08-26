@@ -325,6 +325,78 @@ useHead({ htmlAttrs: { style: computed(() => rollStyle(pos.value)) } });
 const tabBoardRef = ref<{ focus: () => void } | null>(null);
 const productGridRef = ref<{ focusSearch: (seed?: string) => void } | null>(null);
 const tabHeaderRef = ref<{ openCustomer: () => void } | null>(null);
+
+// O Recebimento agora é perguntado na TELA DE VENDA (chip da barra e abertura da
+// comanda), não só no checkout. O estado mora aqui porque as duas superfícies
+// abrem a MESMA caixa — o checkout tem o seu próprio, para o F7 continuar
+// funcionando lá dentro sem passar por cima desta.
+const fulfillmentSheetOpen = ref(false);
+
+// A PRIMEIRA PERGUNTA DO ATENDIMENTO — "é pra comer aqui ou pra levar?".
+//
+// Recebimento decide taxa, janela de horário e endereço, e decide também se vale
+// a pena pedir o telefone. Perguntado no fim, tudo isso chega depois de o preço
+// já ter sido dito em voz alta.
+//
+// NÃO é modal, de propósito. A venda dominante no balcão é anônima, à vista e de
+// retirada; um diálogo que se dispensa em 80% dos atendimentos ensina o operador
+// a fechar sem ler, e aí ele para de capturar nos 20% que importam — custa tempo
+// E não captura. Aqui a resposta padrão está visível e a um toque, então
+// "dispensar" é aceitar o padrão, que é uma resposta honesta.
+//
+// Some sozinha no primeiro item lançado: quem começou a vender já respondeu
+// "retirada" com o corpo.
+const fulfillmentAskedFor = ref("");
+const showFulfillmentPrompt = computed(() =>
+  inSaleView.value
+  && !checkoutMode.value
+  && hasOpenTab.value
+  && cart.items.length === 0
+  && fulfillmentAskedFor.value !== cart.tabSessionKey,
+);
+// O chip da barra abre a caixa de quem é dono dela na tela atual: no checkout, a
+// da tela de pagamento (mesmo componente, outro estado) — assim F7 e o chip
+// nunca abrem duas caixas diferentes.
+function openFulfillmentHere() {
+  if (checkoutMode.value) paymentWorkspaceRef.value?.openFulfillment();
+  else fulfillmentSheetOpen.value = true;
+}
+function markFulfillmentAsked() {
+  fulfillmentAskedFor.value = cart.tabSessionKey || "-";
+}
+function answerPickup() {
+  cart.fulfillmentType = "pickup";
+  markFulfillmentAsked();
+}
+function answerDelivery() {
+  cart.fulfillmentType = "delivery";
+  markFulfillmentAsked();
+  fulfillmentSheetOpen.value = true;
+}
+// Lançou item sem responder: o padrão valeu, e a faixa não volta nesta comanda.
+watch(() => cart.items.length, (count) => {
+  if (count > 0 && showFulfillmentPrompt.value) markFulfillmentAsked();
+});
+// ENTREGA identifica o cliente. Num pedido que sai da loja o telefone é praxe —
+// é por ele que se liga quando o entregador não acha o portão —, e a faixa de
+// preço do cadastro precisa valer ANTES de o primeiro item ser lançado, não
+// depois. Só é oferecido: fechar o diálogo segue sendo uma resposta.
+watch(fulfillmentSheetOpen, (open, wasOpen) => {
+  if (open || !wasOpen) return;
+  if (cart.fulfillmentType !== "delivery") return;
+  if (cart.customerName.trim() || cart.customerPhone.trim()) return;
+  void nextTick(() => tabHeaderRef.value?.openCustomer());
+});
+
+// O rótulo do chip: com entrega, o BAIRRO diz mais que a palavra "entrega" — é o
+// que o operador confere de relance quando o cliente muda de ideia no meio.
+const fulfillmentChipLabel = computed(() => {
+  const base = pos.value?.fulfillment_options.find((o) => o.ref === cart.fulfillmentType)?.label
+    || (cart.fulfillmentType === "delivery" ? "Entrega" : "Retirada");
+  if (cart.fulfillmentType !== "delivery") return base;
+  const bairro = cart.deliveryNeighborhood.trim() || cart.deliveryAddressStructured?.neighborhood?.trim() || "";
+  return bairro ? `${base} · ${bairro}` : base;
+});
 const paymentWorkspaceRef = ref<{
   validate: () => void;
   openCustomer: () => void;
@@ -483,10 +555,11 @@ function onGlobalKeydown(event: KeyboardEvent) {
       return;
     // F7/F8 completam o trio do contexto da venda, ao lado do F6 do cliente —
     // os três chips da linha de contexto do checkout, na mesma ordem.
+    // F7 vale na venda TAMBÉM: recebimento deixou de ser assunto do checkout.
     case "F7":
-      if (!checkoutMode.value) return;
+      if (!inSaleView.value) return;
       event.preventDefault();
-      paymentWorkspaceRef.value?.openFulfillment();
+      openFulfillmentHere();
       return;
     case "F8":
       if (!checkoutMode.value) return;
@@ -564,8 +637,12 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onGlobalKeydown));
         >
           <Icon name="lucide:cloud-off" class="size-3.5" /> Não salvo
         </span>
+        <!-- A BARRA CARREGA OS FATOS DO PEDIDO — cliente e recebimento — e segue
+             carregando durante o checkout. Antes ela sumia ali, e a informação
+             tinha de ser reconstruída dentro da coluna de trabalho do pagamento;
+             agora ela acompanha a venda inteira, do primeiro item ao troco. -->
         <PosTabHeader
-          v-if="inSaleView && !checkoutMode"
+          v-if="inSaleView"
           ref="tabHeaderRef"
           v-model:customer-name="cart.customerName"
           v-model:customer-phone="cart.customerPhone"
@@ -580,6 +657,9 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onGlobalKeydown));
           :search-results="customerSearchResults"
           :search-busy="customerSearchBusy"
           :customer-resolved-new="customerResolvedNew"
+          :read-only="checkoutMode"
+          :fulfillment-type="cart.fulfillmentType"
+          :fulfillment-label="fulfillmentChipLabel"
           :loading="busy"
           @rename="renameTab"
           @clear="clearCurrentTab"
@@ -590,6 +670,8 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onGlobalKeydown));
           @select-result="selectCustomerResult"
           @apply-customer-favorite="applyCustomerFavorite"
           @repeat-customer-last-order="repeatCustomerLastOrder"
+          @open-fulfillment="openFulfillmentHere"
+          @open-customer="paymentWorkspaceRef?.openCustomer()"
         />
         <h1 v-else class="min-w-0 truncate text-lg font-semibold leading-tight tracking-tight">{{ screenTitle }}</h1>
         <!-- PIX pendente que saiu da tela de resultado: chip compacto, com o
@@ -766,16 +848,48 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onGlobalKeydown));
 
         <!-- SALE VIEW · product grid (the ticket/comanda is a full-height sibling
              of the work column, so it reaches the top edge like the rail) -->
-        <PosProductGrid
-          v-else
-          ref="productGridRef"
-          :products="pos?.products || []"
-          :collections="pos?.collections || []"
-          :favorite-refs="pos?.favorite_collection_refs || []"
-          :cart-items="cart.items"
-          :pending="pending"
-          @add="addProduct"
-        />
+        <div v-else class="flex h-full min-h-0 flex-col gap-3">
+          <!-- A primeira pergunta do atendimento. Retirada já vem escolhida e
+               grande: no balcão ela é a resposta quase sempre, e o toque que a
+               confirma é o mesmo que seguiria para o produto. -->
+          <div
+            v-if="showFulfillmentPrompt"
+            class="flex shrink-0 flex-wrap items-center gap-2 rounded-md border bg-card px-3 py-2"
+          >
+            <span class="text-sm font-medium">Como o cliente recebe?</span>
+            <div class="flex flex-1 flex-wrap items-center gap-2">
+              <UiButton size="sm" class="h-9 gap-1.5" @click="answerPickup">
+                <Icon name="lucide:store" class="size-4" />
+                Retirada · Balcão
+              </UiButton>
+              <UiButton variant="outline" size="sm" class="h-9 gap-1.5" @click="answerDelivery">
+                <Icon name="lucide:bike" class="size-4" />
+                Entrega
+              </UiButton>
+            </div>
+            <UiButton
+              variant="ghost"
+              size="icon-sm"
+              class="shrink-0"
+              aria-label="Deixar como retirada"
+              title="Deixar como retirada"
+              @click="markFulfillmentAsked"
+            >
+              <Icon name="lucide:x" class="size-4" />
+            </UiButton>
+          </div>
+
+          <PosProductGrid
+            ref="productGridRef"
+            class="min-h-0 flex-1"
+            :products="pos?.products || []"
+            :collections="pos?.collections || []"
+            :favorite-refs="pos?.favorite_collection_refs || []"
+            :cart-items="cart.items"
+            :pending="pending"
+            @add="addProduct"
+          />
+        </div>
       </div>
       </div>
       </div>
@@ -816,6 +930,36 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onGlobalKeydown));
           />
         </div>
     </aside>
+
+    <!-- RECEBIMENTO na tela de venda. É fato do PEDIDO, não do pagamento:
+         entrega acrescenta taxa e depende de endereço, e perguntar isso só no
+         checkout faz o total dar um pulo na última tela. Mesma caixa que o
+         checkout abre — o operador não reaprende nada. -->
+    <PosFulfillmentModal
+      v-model:open="fulfillmentSheetOpen"
+      v-model:fulfillment-type="cart.fulfillmentType"
+      v-model:delivery-address="cart.deliveryAddress"
+      v-model:delivery-address-structured="cart.deliveryAddressStructured"
+      v-model:delivery-street-number="cart.deliveryStreetNumber"
+      v-model:delivery-neighborhood="cart.deliveryNeighborhood"
+      v-model:delivery-complement="cart.deliveryComplement"
+      v-model:delivery-instructions="cart.deliveryInstructions"
+      v-model:delivery-date="cart.deliveryDate"
+      v-model:delivery-time-slot="cart.deliveryTimeSlot"
+      v-model:delivery-fee-override="cart.deliveryFeeOverride"
+      v-model:delivery-fee-override-input="cart.deliveryFeeOverrideInput"
+      v-model:order-notes="cart.orderNotes"
+      :fulfillment-options="pos?.fulfillment_options || []"
+      :saved-addresses="customerLookup?.saved_addresses || []"
+      :address-autocomplete="addressAutocomplete"
+      :delivery-date-effective="deliveryDateEffective"
+      :delivery-slots="deliverySlots"
+      :delivery-slots-pending="deliverySlotsPending"
+      :delivery-fee-q="deliveryFeeQ"
+      :delivery-fee-source="deliveryFeeSource"
+      :delivery-distance-km="deliveryDistanceKm"
+      @pick-saved-address="applySavedAddress"
+    />
 
     <PosTabPickerDialog
       v-model:open="tabDialogOpen"

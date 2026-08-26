@@ -73,7 +73,10 @@ export function kitchenBadge(item: POSCartItem): KitchenBadgeView {
   }
 }
 
-const ALL_FIRED_LABEL = "Tudo na cozinha";
+// Estado, não relatório: com tudo disparado o botão está desabilitado, e o que
+// ele precisa dizer é o que aconteceu com estes itens — "Enviado". "Tudo na
+// cozinha" descrevia o LUGAR onde as coisas estão, que é assunto do KDS.
+const ALL_FIRED_LABEL = "Enviado";
 
 export interface FireBarView {
   /** The channel offers fire, the tab is open, and there are lines. */
