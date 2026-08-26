@@ -1,0 +1,168 @@
+name: Deploy Images
+
+# Builda as imagens do deployment no Actions e publica no DOCR
+# (registry.digitalocean.com/nelsonboulangerie/shopman, tags por componente).
+# O App Platform assina cada tag com deploy_on_push: publicar a tag nova É o
+# deploy — a fila compartilhada de builders da DO sai da equação, e o build é
+# SELETIVO: só o que o push tocou rebuilda (a mudança de 1 surface builda 1
+# imagem). Serialização por construção: concurrency sem cancel — dois merges
+# seguidos publicam em ordem, nunca em corrida.
+
+"on":
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+    inputs:
+      components:
+        description: "Componentes (csv) ou 'all'"
+        default: "all"
+        required: false
+
+concurrency:
+  group: deploy-images
+  cancel-in-progress: false
+
+env:
+  REGISTRY: registry.digitalocean.com
+  IMAGE: registry.digitalocean.com/nelsonboulangerie/shopman
+
+jobs:
+  changes:
+    name: O que mudou
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      matrix: ${{ steps.matrix.outputs.matrix }}
+      any: ${{ steps.matrix.outputs.any }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Detect changed paths
+        id: filter
+        uses: dorny/paths-filter@v3
+        with:
+          filters: |
+            web:
+              - "packages/**"
+              - "shopman/**"
+              - "config/**"
+              - "tools/**"
+              - "manage.py"
+              - "pyproject.toml"
+              - "constraints.txt"
+              - "Dockerfile"
+            kit:
+              - "surfaces/operator-kit/**"
+              - "surfaces/Dockerfile.surface"
+            storefront-nuxt:
+              - "surfaces/storefront-nuxt/**"
+              - "surfaces/Dockerfile.surface"
+            pos-nuxt:
+              - "surfaces/pos-nuxt/**"
+            kds-nuxt:
+              - "surfaces/kds-nuxt/**"
+            orders-nuxt:
+              - "surfaces/orders-nuxt/**"
+            production-nuxt:
+              - "surfaces/production-nuxt/**"
+            hub-nuxt:
+              - "surfaces/hub-nuxt/**"
+            marketing-nuxt:
+              - "surfaces/marketing-nuxt/**"
+            bi-nuxt:
+              - "surfaces/bi-nuxt/**"
+            purchase-nuxt:
+              - "surfaces/purchase-nuxt/**"
+
+      - name: Build matrix
+        id: matrix
+        env:
+          DISPATCH_COMPONENTS: ${{ github.event.inputs.components }}
+          FILTER_JSON: ${{ toJSON(steps.filter.outputs) }}
+        run: |
+          python3 - <<'EOF' >> "$GITHUB_OUTPUT"
+          import json, os
+
+          SURFACES = [
+              "storefront-nuxt", "pos-nuxt", "kds-nuxt", "orders-nuxt",
+              "production-nuxt", "hub-nuxt", "marketing-nuxt", "bi-nuxt",
+              "purchase-nuxt",
+          ]
+          filters = json.loads(os.environ.get("FILTER_JSON") or "{}")
+          asked = (os.environ.get("DISPATCH_COMPONENTS") or "").strip()
+
+          if asked:
+              names = (
+                  ["web", *SURFACES] if asked == "all"
+                  else [c.strip() for c in asked.split(",") if c.strip()]
+              )
+          else:
+              names = []
+              if filters.get("web") == "true":
+                  names.append("web")
+              # operator-kit é layer compartilhada: mudou, TODA surface de
+              # operador rebuilda (o storefront tem filtro próprio).
+              kit = filters.get("kit") == "true"
+              for surface in SURFACES:
+                  if kit or filters.get(surface) == "true":
+                      names.append(surface)
+
+          include = []
+          for name in dict.fromkeys(names):
+              if name == "web":
+                  include.append({
+                      "name": "web",
+                      "dockerfile": "Dockerfile",
+                      "surface": "",
+                      "tag": "web",
+                  })
+              else:
+                  include.append({
+                      "name": name,
+                      "dockerfile": "surfaces/Dockerfile.surface",
+                      "surface": name,
+                      "tag": name.removesuffix("-nuxt"),
+                  })
+
+          print("matrix=" + json.dumps({"include": include}))
+          print("any=" + ("true" if include else "false"))
+          EOF
+
+  build-push:
+    name: ${{ matrix.name }}
+    needs: changes
+    if: needs.changes.outputs.any == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.changes.outputs.matrix) }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login no DOCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ secrets.DIGITALOCEAN_ACCESS_TOKEN }}
+          password: ${{ secrets.DIGITALOCEAN_ACCESS_TOKEN }}
+
+      - name: Build e push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ${{ matrix.dockerfile }}
+          build-args: |
+            SURFACE=${{ matrix.surface }}
+          push: true
+          tags: |
+            ${{ env.IMAGE }}:${{ matrix.tag }}
+            ${{ env.IMAGE }}:${{ matrix.tag }}-${{ github.sha }}
+          cache-from: type=gha,scope=${{ matrix.name }}
+          cache-to: type=gha,scope=${{ matrix.name }},mode=max
