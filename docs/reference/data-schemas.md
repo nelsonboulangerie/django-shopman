@@ -1006,6 +1006,20 @@ Contexto de venda/operacao do produto fora do schema estrutural do Offerman
 
 ---
 
+## Collection.metadata
+
+Apresentação padrão da categoria, consumida pelas superfícies (card de produto
+sem foto e chips de categoria).
+
+**Campo**: `Collection.metadata` (JSONField, `shopman/offerman/models/collection.py`).
+
+| Chave | Tipo | Escrito por | Lido por | Descrição |
+|-------|------|-------------|----------|-----------|
+| `color` | `str` hex | seed/admin (Offerman) | projections de catálogo → superfícies Nuxt | Cor da categoria na paleta NB do brand sheet. Fundo do card-fallback de produto sem foto; tints derivam na superfície (`color-mix`). |
+| `icon` | `str` | seed/admin (Offerman) | projections de catálogo → superfícies Nuxt | Nome de ícone Lucide (set que as superfícies já carregam via `@nuxt/icon`). Ícone genérico do card-fallback, acima do SKU. |
+
+---
+
 ## Regras de Governança
 
 1. **Toda nova chave** em qualquer JSONField deve ser adicionada a este documento antes do merge.
