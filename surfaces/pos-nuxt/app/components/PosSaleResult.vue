@@ -148,8 +148,8 @@ function onNewSale() {
           :disabled="printingDanfe"
           @click="emit('printDanfe')"
         >
-          <Icon name="lucide:receipt-text" class="size-4" />
-          DANFE
+          <Icon name="lucide:printer" class="size-4" />
+          Imprimir DANFE
         </UiButton>
         <UiButton variant="outline" size="sm" class="gap-1.5" :href="result.nextUrl">
           <Icon name="lucide:external-link" class="size-4" />

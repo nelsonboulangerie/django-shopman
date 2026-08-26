@@ -327,7 +327,15 @@ def danfe_nfce(doc, *, reprint: bool = False) -> bytes:
         out += _centered(pedaco)
     out += _rule()
 
-    out += _line(f"CONSUMIDOR: {doc.customer_name or 'NAO IDENTIFICADO'}"[:COLUMNS])
+    # Quem identifica o consumidor na nota é o CPF, não o nome — e é ele a
+    # resposta para "o meu documento entrou?". Nome entra em seguida, e só
+    # quando é nome de gente (o apelido interno "Cliente Doc 6789" fica no CRM).
+    if doc.customer_tax_id_display:
+        out += _line(f"CONSUMIDOR CPF {doc.customer_tax_id_display}"[:COLUMNS])
+        if doc.customer_name:
+            out += _line(doc.customer_name[:COLUMNS])
+    else:
+        out += _line("CONSUMIDOR NAO IDENTIFICADO")
     out += _rule()
 
     out += _centered("Consulta via leitor de QR Code")

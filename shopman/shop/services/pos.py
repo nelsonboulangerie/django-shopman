@@ -68,7 +68,8 @@ class PosSaleReview:
     requires_manager_approval: bool
     manager_approval_threshold_q: int
     receipt_channels: tuple[str, ...]
-    issue_fiscal_document: bool
+    #: Vai sair nota com CPF? (o consumidor pediu o documento nesta venda)
+    fiscal_tax_id_requested: bool
     # POR QUE o gerente foi chamado. O servidor conhece os gatilhos
     # (teto de desconto, preço alterado); sem publicá-los
     # a tela chutava "descontos acima de R$ X" mesmo quando o gatilho tinha sido
@@ -672,7 +673,7 @@ def review_sale(
         requires_manager_approval=bool(approval_reasons),
         manager_approval_threshold_q=threshold_q,
         receipt_channels=tuple(payload.get("receipt_channels") or ()),
-        issue_fiscal_document=bool(payload.get("issue_fiscal_document")),
+        fiscal_tax_id_requested=bool(str(payload.get("fiscal_tax_id") or "").strip()),
         approval_reasons=tuple(approval_reasons),
         warnings=tuple(warnings),
         delivery_fee_source=delivery.source,
@@ -1396,9 +1397,14 @@ def build_session_ops(payload: dict, operator_username: str) -> list[dict]:
     customer_name = str(payload.get("customer_name", "") or "").strip()
     customer_phone = str(payload.get("customer_phone", "") or "").strip()
     customer_tax_id = str(payload.get("customer_tax_id", "") or "").strip()
+    # O CPF PEDIDO para esta nota. Campo próprio, e não o do cadastro: ter CPF no
+    # CRM não é pedir CPF na nota, e o checkout pode pedir OUTRO documento (o do
+    # marido, o da empresa) sem que isso vire identidade de ninguém.
+    requested_tax_id = str(payload.get("fiscal_tax_id", "") or "").strip()
+    # `customer.email` é o e-mail DO CLIENTE; o endereço para onde ESTA nota vai
+    # mora em `receipt.email` e não sobe para cá (o cliente pode pedir que vá para
+    # outro endereço, e isso não o redefine).
     customer_email = str(payload.get("customer_email", "") or "").strip()
-    if not customer_email and "email" in (payload.get("receipt_channels") or []):
-        customer_email = str(payload.get("receipt_email", "") or "").strip()
     persisted_customer = _persist_customer_from_payload(payload, operator_username=operator_username)
     if persisted_customer:
         customer_name = customer_name or persisted_customer.get("name", "")
@@ -1499,15 +1505,19 @@ def build_session_ops(payload: dict, operator_username: str) -> list[dict]:
     if cash_received_q > 0:
         ops.append({"op": "set_data", "path": "payment.cash_received_q", "value": cash_received_q})
 
-    issue_fiscal_document = bool(payload.get("issue_fiscal_document"))
-    ops.append({"op": "set_data", "path": "fiscal.issue_document", "value": issue_fiscal_document})
-    # CPF NA NOTA é um PEDIDO, não uma propriedade do cadastro: o documento só
-    # entra no bloco fiscal quando o operador marcou "emitir nota fiscal". Sem o
-    # gate, cliente identificado com CPF no cadastro saía com CPF em TODA nota —
-    # compulsório, sem ninguém pedir. Identidade (customer.tax_id) continua
-    # gravada para o CRM; o fiscal lê só daqui.
-    if issue_fiscal_document and customer_tax_id:
-        ops.append({"op": "set_data", "path": "fiscal.tax_id", "value": customer_tax_id})
+    # EMITIR OU NÃO NÃO É ESCOLHA DE QUEM ESTÁ NO CAIXA. Havia um toggle "Emitir
+    # nota fiscal" na tela, e ele não era só ruído: como o CPF só virava
+    # `fiscal.tax_id` quando o toggle estava ligado, um operador que digitava o
+    # CPF com o toggle desligado via a nota sair mesmo assim (o resolver emite
+    # por forma de pagamento) e sair como CONSUMIDOR NÃO IDENTIFICADO. Duas
+    # chaves para uma intenção, discordando em silêncio, com o cliente achando
+    # que tinha CPF na nota.
+    #
+    # Quem decide é a REGRA (`SHOPMAN_FISCAL_EMISSION_RESOLVER`): forma de
+    # pagamento, liquidação diferida, e o pedido do consumidor. O único sinal que
+    # vem do balcão é este: pedir CPF na nota. Digitar o documento É o pedido.
+    if requested_tax_id:
+        ops.append({"op": "set_data", "path": "fiscal.tax_id", "value": requested_tax_id})
 
     receipt_channels = list(payload.get("receipt_channels") or [])
     receipt_email = str(payload.get("receipt_email", "") or "").strip()
@@ -2077,7 +2087,7 @@ def _validate_fiscal_delivery_fee(payload: dict) -> None:
     mora aqui, ao lado da resolução, em vez de olhar para um campo que o PDV
     não preenche mais.
     """
-    if not payload.get("issue_fiscal_document"):
+    if not str(payload.get("fiscal_tax_id") or "").strip():
         return
     if _resolve_delivery_fee(payload).fee_q <= 0:
         return
@@ -2934,15 +2944,20 @@ def _persist_customer_from_payload(payload: dict, *, operator_username: str) -> 
     """Resolve/create/update a Guestman customer from any POS customer data."""
     name = str(payload.get("customer_name") or "").strip()
     phone = _normalize_phone(str(payload.get("customer_phone") or "").strip())
+    # IDENTIDADE — com o que se ACHA o cliente.
     tax_id = _digits(str(payload.get("customer_tax_id") or "").strip())
     email = str(payload.get("customer_email") or "").strip().lower()
-    if not email and "email" in (payload.get("receipt_channels") or []):
-        email = str(payload.get("receipt_email") or "").strip().lower()
+    # LACUNA — campo vazio no cadastro aprende; campo preenchido nunca muda
+    # (``_merge_pos_customer_fields`` só completa). É o que faz o CPF do cliente
+    # entrar uma vez e voltar pré-preenchido na próxima venda, sem que uma
+    # edição pontual no checkout reescreva o cadastro de ninguém.
+    fill_tax_id = tax_id or _digits(str(payload.get("fiscal_tax_id") or "").strip())
+    fill_email = email or str(payload.get("receipt_email") or "").strip().lower()
     structured_address = payload.get("delivery_address_structured") if isinstance(payload.get("delivery_address_structured"), dict) else {}
     address = str(payload.get("delivery_address") or structured_address.get("formatted_address") or "").strip()
     raw_ref = str(payload.get("customer_ref") or "").strip()
 
-    if not any((raw_ref, name, phone, tax_id, email, address)):
+    if not any((raw_ref, name, phone, fill_tax_id, fill_email, address)):
         return {}
 
     try:
@@ -2952,25 +2967,41 @@ def _persist_customer_from_payload(payload: dict, *, operator_username: str) -> 
         logger.warning("pos_customer_persist_skipped_guestman_unavailable")
         return {}
 
+    # O CPF PEDIDO PARA A NOTA só identifica quando não há mais nada.
+    #
+    # Se o operador já disse de quem é a venda (ref, telefone, e-mail do
+    # cadastro), o documento da nota é FISCAL e mais nada: o cliente pode pedir a
+    # nota no CPF da esposa, e deixar isso decidir o dono da venda mandaria para
+    # ela os PONTOS de fidelidade, o HISTÓRICO, e — pior — traria a FAIXA DE
+    # PREÇO e as RESTRIÇÕES ALIMENTARES dela para um pedido que não é dela. Duas
+    # identificações discordando, com a silenciosa vencendo.
+    #
+    # Mas quando ninguém foi identificado, esse CPF é a única identidade que
+    # existe, e ignorá-lo criaria um cliente DUPLICADO a cada venda de quem só
+    # pede nota — que é a maioria. Aí ele resolve normalmente, igual ao
+    # auto-cadastro por CPF que a busca de cliente já faz.
+    identified = bool(raw_ref or phone or tax_id or email)
+    resolve_tax_id = tax_id if identified else fill_tax_id
+
     with transaction.atomic():
         customer = _resolve_pos_customer(
             Customer,
             ref=raw_ref,
             phone=phone,
-            tax_id=tax_id,
+            tax_id=resolve_tax_id,
             email=email,
         )
         created = customer is None
         if customer is None:
             first_name, last_name = _split_name(name)
-            fallback = _fallback_customer_name(phone=phone, tax_id=tax_id, email=email)
+            fallback = _fallback_customer_name(phone=phone, tax_id=fill_tax_id, email=fill_email)
             customer = Customer.objects.create(
                 ref=Customer.generate_ref(),
                 first_name=first_name or fallback[0],
                 last_name=last_name or fallback[1],
                 phone=phone,
-                email=email,
-                document=tax_id,
+                email=fill_email,
+                document=fill_tax_id,
                 source_system="pdv",
                 created_by=operator_username,
                 metadata={
@@ -2986,17 +3017,17 @@ def _persist_customer_from_payload(payload: dict, *, operator_username: str) -> 
                 customer,
                 name=name,
                 phone=phone,
-                tax_id=tax_id,
-                email=email,
+                tax_id=fill_tax_id,
+                email=fill_email,
                 operator_username=operator_username,
             )
 
         if phone:
             _ensure_contact_point(ContactPoint, customer, ContactPoint.Type.PHONE, phone)
-        if email:
-            _ensure_contact_point(ContactPoint, customer, ContactPoint.Type.EMAIL, email)
-        if tax_id:
-            _ensure_customer_identifier(customer.ref, "cpf", tax_id)
+        if fill_email:
+            _ensure_contact_point(ContactPoint, customer, ContactPoint.Type.EMAIL, fill_email)
+        if fill_tax_id:
+            _ensure_customer_identifier(customer.ref, "cpf", fill_tax_id)
         if address:
             _ensure_customer_address(address_service, customer.ref, address, structured_address)
         _remember_fiscal_prefs(customer, payload)
@@ -3022,7 +3053,8 @@ def _remember_fiscal_prefs(customer, payload: dict) -> None:
     de cadastro (Admin), não efeito colateral de uma venda. O PDV lê isto na
     lookup projection e pré-seta o toggle fiscal / o canal de e-mail.
     """
-    wants_fiscal = bool(payload.get("issue_fiscal_document"))
+    # A preferência lembrada é sobre a NOTA, então lê o campo da nota.
+    wants_fiscal = bool(str(payload.get("fiscal_tax_id") or "").strip())
     wants_email = "email" in (payload.get("receipt_channels") or [])
     if not (wants_fiscal or wants_email):
         return

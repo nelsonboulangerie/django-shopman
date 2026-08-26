@@ -87,7 +87,11 @@ export function tabCardView(tab: POSTabProjection, selectedRef = ""): TabCardVie
     displayRef: tab.display_ref,
     isInUse,
     isFree: !hasItems,
-    isUnpaid: Boolean(tab.fired),
+    // Comanda SEM item não pode estar "não paga": o selo saía junto com "Livre"
+    // no mesmo cartão (comanda que disparou à cozinha e depois perdeu as linhas
+    // mantém `fired_lines` no dado). A linha de baixo já guardava por `hasItems`;
+    // esta esquecia.
+    isUnpaid: hasItems && Boolean(tab.fired),
     pendingKitchen: hasItems && !tab.fired,
     statusLabel: tab.status_label,
     identity: tab.customer_name || tab.items_preview || "Livre",

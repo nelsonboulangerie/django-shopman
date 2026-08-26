@@ -105,7 +105,8 @@ export function buildPosSaleIntent(
     fulfillment_type: state.fulfillmentType,
     payment_method: state.paymentMethod,
     payment_collection: state.paymentCollection,
-    issue_fiscal_document: state.issueFiscalDocument,
+    // Emitir ou não NÃO sobe daqui: é decisão da regra no servidor. O sinal do
+    // balcão é o CPF pedido, que já viaja em `customer_tax_id`.
     receipt_channels: state.receiptChannels || [],
     client_request_id: state.clientRequestId,
   };
@@ -114,6 +115,10 @@ export function buildPosSaleIntent(
   if (state.customerRef.trim()) payload.customer_ref = state.customerRef.trim();
   if (state.customerPhone.trim()) payload.customer_phone = state.customerPhone.replace(/\D/g, "");
   if (state.customerTaxId.trim()) payload.customer_tax_id = state.customerTaxId.replace(/\D/g, "");
+  // O CPF da NOTA viaja em campo próprio: pedir documento na nota não é
+  // cadastrar documento de cliente, e o checkout pode pedir outro (o do marido,
+  // o da empresa) sem redefinir a identidade de ninguém.
+  if (state.invoiceTaxId.trim()) payload.fiscal_tax_id = state.invoiceTaxId.replace(/\D/g, "");
   if (state.customerEmail.trim()) payload.customer_email = state.customerEmail.trim();
   if (state.customerMemoryAction.trim()) payload.customer_memory_action = state.customerMemoryAction.trim();
 

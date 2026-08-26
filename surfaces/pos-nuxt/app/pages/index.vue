@@ -225,6 +225,58 @@ function danfeScreenUrl(orderRef: string): string {
   return `${djangoOrigin.value}/fiscal/danfe/${encodeURIComponent(orderRef)}/`;
 }
 
+// IMPRESSÃO AUTOMÁTICA — o switch "Imprimir nota?" promete bobina sem clique, e
+// esta é a parte que cumpre. Não dá para imprimir no fechamento: a NFC-e é
+// assíncrona e no instante da tela de confirmação ela ainda não autorizou (o
+// endpoint responde 409 até lá). Então a tela espera a nota ficar pronta.
+//
+// Espera com fim: ~90s (30 tentativas de 3s). Nota que demora mais que isso não
+// vai aparecer enquanto o cliente está no balcão, e insistir para sempre
+// deixaria um timer vivo atrás de cada venda. Quando desiste, não desiste
+// calado — cai no MESMO aviso do caminho manual, que já diz o próximo passo
+// (reimprimir nas Últimas vendas).
+const AUTO_PRINT_TRIES = 30;
+const AUTO_PRINT_INTERVAL_MS = 3000;
+let autoPrintTimer: ReturnType<typeof setTimeout> | null = null;
+
+function stopAutoPrint() {
+  if (autoPrintTimer) clearTimeout(autoPrintTimer);
+  autoPrintTimer = null;
+}
+
+async function autoPrintDanfe(orderRef: string, tries = 0) {
+  if (!import.meta.client) return;
+  // Saiu da tela de resultado (nova venda) — a promessa era daquela venda, mas
+  // a impressão segue: quem pediu papel quer papel, esteja o operador onde
+  // estiver. Só paramos se a página inteira sair.
+  try {
+    const danfe = await fetchPrintable(orderRef, "danfe-escpos");
+    const outcome = await agent.print(danfe.payload_b64, danfe.title);
+    if (outcome.status === "printed") {
+      toast.success("DANFE impressa.");
+      return;
+    }
+    danfeFallbackToast(orderRef, outcome.detail || "impressão indisponível nesta estação");
+  } catch {
+    // 409 enquanto a SEFAZ não autoriza: tentar de novo é o comportamento certo.
+    if (tries + 1 < AUTO_PRINT_TRIES) {
+      autoPrintTimer = setTimeout(() => autoPrintDanfe(orderRef, tries + 1), AUTO_PRINT_INTERVAL_MS);
+      return;
+    }
+    danfeFallbackToast(orderRef, "a nota demorou mais que o esperado para autorizar");
+  }
+}
+
+// A venda fechou pedindo papel: começa a esperar a nota. Sem nota esperada
+// (dinheiro sem CPF, por exemplo) não há o que imprimir — e prometer papel ali
+// seria mentir duas vezes.
+watch(result, (snapshot) => {
+  stopAutoPrint();
+  if (!snapshot?.wantsPrintedInvoice || !snapshot.fiscalExpected) return;
+  autoPrintDanfe(snapshot.orderRef);
+});
+onBeforeUnmount(stopAutoPrint);
+
 async function printDanfe() {
   if (!import.meta.client || !result.value) return;
   const orderRef = result.value.orderRef;
@@ -567,6 +619,8 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onGlobalKeydown));
         v-model:customer-name="cart.customerName"
         v-model:customer-phone="cart.customerPhone"
         v-model:customer-tax-id="cart.customerTaxId"
+        v-model:invoice-tax-id="cart.invoiceTaxId"
+        v-model:wants-cpf-on-invoice="cart.wantsCpfOnInvoice"
         v-model:customer-email="cart.customerEmail"
         v-model:delivery-address="cart.deliveryAddress"
         v-model:delivery-address-structured="cart.deliveryAddressStructured"
@@ -586,7 +640,6 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onGlobalKeydown));
         :delivery-date-effective="deliveryDateEffective"
         v-model:change-for-input="cart.changeForInput"
         v-model:order-notes="cart.orderNotes"
-        v-model:issue-fiscal-document="cart.issueFiscalDocument"
         v-model:receipt-channels="cart.receiptChannels"
         v-model:receipt-email="cart.receiptEmail"
         :managers="pos?.managers || []"

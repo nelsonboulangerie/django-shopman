@@ -501,7 +501,8 @@ export interface POSTabPayload {
   payment_collection: PosPaymentCollection;
   payment_tenders: POSIntentCartState["paymentTenders"];
   tendered_amount_q: number | string;
-  issue_fiscal_document: boolean;
+  /** O CPF PEDIDO nesta venda (o que sai na nota), devolvido ao retomar a comanda. */
+  fiscal_tax_id: string;
   receipt_channels: string[];
   receipt_email: string;
   discount_type: string;
@@ -542,6 +543,9 @@ export interface POSIntentCartState {
   customerRef: string;
   customerPhone: string;
   customerTaxId: string;
+  /** O CPF PEDIDO para a nota DESTA venda. O cadastro empresta o valor
+   *  inicial; editar aqui não volta para o cadastro. */
+  invoiceTaxId: string;
   customerEmail: string;
   customerMemoryAction: string;
   fulfillmentType: "pickup" | "delivery";
@@ -562,7 +566,6 @@ export interface POSIntentCartState {
   tenderedAmountQ: number | null;
   /** "Troco para quanto?" do dinheiro na entrega, em centavos (0 = não informado). */
   changeForQ: number;
-  issueFiscalDocument: boolean;
   receiptChannels: string[];
   receiptEmail: string;
   manualDiscount: Record<string, unknown> | null;
@@ -595,7 +598,8 @@ export interface POSSaleReviewProjection {
   /** Por que o gerente foi chamado — o diálogo de autorização diz o que assinar. */
   approval_reasons: string[];
   receipt_channels: string[];
-  issue_fiscal_document: boolean;
+  /** Vai sair nota com CPF? (o consumidor pediu o documento nesta venda) */
+  fiscal_tax_id_requested: boolean;
   warnings: Array<{ code: string; field: string; message: string }>;
   /** De onde a taxa saiu: "" (endereço em branco) · "zone" · "distance" ·
    * "default" · "manual" (exceção do operador) · "blocked" (fora da área). */

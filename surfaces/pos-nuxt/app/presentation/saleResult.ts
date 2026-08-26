@@ -27,6 +27,9 @@ export interface PosSaleResultSnapshot {
   receipt: PosReceiptSnapshot;
   fiscalExpected: boolean;
   changeQ: number;
+  /** O cliente pediu a nota IMPRESSA? Congelado aqui porque o carrinho já
+   *  zerou quando a nota autoriza — e é dela que a impressão automática vive. */
+  wantsPrintedInvoice: boolean;
 }
 
 export interface SaleResultAdvanceInputs {

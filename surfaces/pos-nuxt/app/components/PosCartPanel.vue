@@ -194,12 +194,13 @@ function saveNote() {
   emit("setNotes", dialog.sku, dialog.text.trim());
 }
 
-// Remoção de linha em dois pesos: rascunho ainda não disparado à cozinha sai
-// DIRETO, com "Desfazer" no toast (é recuperável, modal aqui era atrito);
-// linha já disparada e o lote da seleção pedem confirmação, porque desfazer
-// esses envolve a cozinha, não só a tela.
+// Remover item PERGUNTA, sempre. Já foi "direto com Desfazer", e o balcão
+// discordou: o gesto que mais remove é o backspace zerando a quantidade, e ali
+// ninguém teve intenção de excluir — o item sumia e o operador ficava
+// procurando um toast que já tinha passado. Um modal custa um toque; recontar o
+// pedido do cliente custa a venda.
 const confirmAction = ref<
-  | { kind: "line"; sku: string; name: string }
+  | { kind: "line"; sku: string; name: string; fired: boolean }
   | { kind: "batch"; skus: string[]; hasFired: boolean }
   | null
 >(null);
@@ -209,7 +210,8 @@ const confirmTitle = computed(() => {
   if (action.kind === "batch") {
     return action.skus.length === 1 ? "Remover o item selecionado?" : `Remover ${action.skus.length} itens selecionados?`;
   }
-  return "Remover item enviado à cozinha?";
+  // Item já na cozinha é outra conversa: sair da tela não o tira do fogão.
+  return action.fired ? "Remover item enviado à cozinha?" : `Remover ${action.name}?`;
 });
 const confirmCta = computed(() =>
   confirmAction.value?.kind === "batch" && confirmAction.value.skus.length > 1 ? "Remover itens" : "Remover item",
@@ -217,12 +219,15 @@ const confirmCta = computed(() =>
 function askRemove(sku: string) {
   const item = props.items.find((entry) => entry.sku === sku);
   if (!item) return;
-  if (!item.fired) {
-    removeWithUndo(item);
-    return;
-  }
-  confirmAction.value = { kind: "line", sku, name: item.name || "item" };
+  confirmAction.value = {
+    kind: "line",
+    sku,
+    name: item.name || "item",
+    fired: Boolean(item.fired),
+  };
 }
+/** O "Desfazer" continua existindo depois do SIM: confirmar não torna o engano
+ *  impossível, só deliberado. */
 function removeWithUndo(item: POSCartItem) {
   const snapshot: POSCartItem = { ...item };
   if (selectedSku.value === item.sku) selectedSku.value = "";
@@ -243,8 +248,8 @@ function runConfirm() {
     clearSelection();
     return;
   }
-  if (selectedSku.value === action.sku) selectedSku.value = "";
-  emit("remove", action.sku);
+  const item = props.items.find((entry) => entry.sku === action.sku);
+  if (item) removeWithUndo(item);
 }
 
 function commitQty() {
@@ -680,8 +685,11 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onWindowKeydown));
     <UiDialogContent class="sm:max-w-sm">
       <UiDialogHeader>
         <UiDialogTitle>{{ confirmTitle }}</UiDialogTitle>
-        <UiDialogDescription v-if="confirmAction?.kind === 'line'">
+        <UiDialogDescription v-if="confirmAction?.kind === 'line' && confirmAction.fired">
           <strong>{{ confirmAction.name }}</strong> já foi enviado à cozinha. Remover tira a linha do pedido; avise o preparo se necessário.
+        </UiDialogDescription>
+        <UiDialogDescription v-else-if="confirmAction?.kind === 'line'">
+          A linha sai do pedido. Dá para desfazer logo depois.
         </UiDialogDescription>
         <UiDialogDescription v-else-if="confirmAction?.kind === 'batch'">
           {{ confirmAction.hasFired

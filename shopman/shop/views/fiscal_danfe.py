@@ -118,11 +118,40 @@ class DanfeDocument:
 
     # consumidor
     customer_name: str = ""
+    #: O documento QUE SAIU NA NOTA, formatado. Vazio = consumidor não
+    #: identificado — e aí a tela diz isso, em vez de fabricar um nome.
+    customer_tax_id_display: str = ""
 
     # QR + links
     qr_svg: str = ""
     danfe_url: str = ""
     consult_url: str = ""
+
+
+def _format_tax_id(value: str) -> str:
+    digits = "".join(ch for ch in str(value or "") if ch.isdigit())
+    if len(digits) == 11:
+        return f"{digits[:3]}.{digits[3:6]}.{digits[6:9]}-{digits[9:]}"
+    if len(digits) == 14:
+        return f"{digits[:2]}.{digits[2:5]}.{digits[5:8]}/{digits[8:12]}-{digits[12:]}"
+    return ""
+
+
+def _consumer_name(data: dict) -> str:
+    """O nome do consumidor — ou nada, nunca um nome fabricado.
+
+    O PDV batiza um cliente que só deu CPF como "Cliente Doc 6789" (os quatro
+    últimos dígitos), para o CRM ter o que listar. Esse apelido interno estava
+    vazando para a linha do consumidor no documento: quem pediu CPF na nota lia
+    um pedaço do próprio número onde deveria estar o nome — e não tinha como
+    saber se o CPF entrou. Nome de fachada não vai para documento: aqui, ou há
+    nome de gente, ou o documento fala pelo CPF.
+    """
+    name = str((data.get("customer") or {}).get("name") or "").strip()
+    lowered = name.lower()
+    if not name or lowered == "cliente" or lowered.startswith("cliente doc "):
+        return ""
+    return name
 
 
 def _shop_address(shop) -> str:
@@ -194,7 +223,8 @@ def build_danfe(order_ref: str) -> DanfeDocument | None:
         item_count=len(items),
         total_display=_money(order.total_q),
         payment_label=payment_label,
-        customer_name=str((data.get("customer") or {}).get("name") or ""),
+        customer_name=_consumer_name(data),
+        customer_tax_id_display=_format_tax_id(str((data.get("fiscal") or {}).get("tax_id") or "")),
         qr_svg=_qr_svg(qr_content),
         danfe_url=str(data.get("nfce_danfe_url") or ""),
         consult_url=qr_content,

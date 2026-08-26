@@ -33,14 +33,12 @@ const props = withDefaults(defineProps<{
   resolvedNew?: boolean;
   /** Payment context: also show the fiscal/comprovante block. */
   showFiscal?: boolean;
-  issueFiscalDocument?: boolean;
   receiptChannels?: string[];
   receiptChannelOptions?: POSCheckoutOptionProjection[];
   receiptEmail?: string;
 }>(), {
   resolvedNew: false,
   showFiscal: false,
-  issueFiscalDocument: false,
   receiptChannels: () => [],
   receiptChannelOptions: () => [],
   receiptEmail: "",
@@ -52,7 +50,6 @@ const emit = defineEmits<{
   "update:customerPhone": [string];
   "update:customerTaxId": [string];
   "update:customerEmail": [string];
-  "update:issueFiscalDocument": [boolean];
   "update:receiptChannels": [string[]];
   "update:receiptEmail": [string];
   search: [string];
@@ -309,19 +306,13 @@ const newCustomerNote = computed(() => {
             </div>
           </div>
 
-          <!-- payment context only: fiscal + comprovante (rides with the customer) -->
+          <!-- payment context only: comprovante (rides with the customer).
+               O toggle "Emitir nota fiscal" saiu daqui e do checkout: emitir ou
+               não é decisão da REGRA no servidor, nunca de quem está no caixa. O
+               pedido do consumidor é o CPF, e ele mora no campo de identidade
+               acima — um número, uma intenção. -->
           <div v-if="showFiscal" class="grid gap-3 border-t pt-4">
-            <p class="text-xs font-medium uppercase tracking-wide text-muted-foreground">Fiscal e comprovante</p>
-            <UiButton
-              type="button"
-              variant="outline"
-              class="justify-between"
-              :class="issueFiscalDocument ? 'border-primary bg-primary/5' : ''"
-              @click="$emit('update:issueFiscalDocument', !issueFiscalDocument)"
-            >
-              <span>Emitir nota fiscal</span>
-              <Icon :name="issueFiscalDocument ? 'lucide:check' : 'lucide:minus'" class="size-4" />
-            </UiButton>
+            <p class="text-xs font-medium uppercase tracking-wide text-muted-foreground">Comprovante</p>
             <!-- MULTI: imprimir E enviar não competem. "Sem comprovante" é
                  nenhum canal marcado, não um terceiro botão. -->
             <div class="grid grid-cols-2 gap-2">

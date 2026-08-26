@@ -23,6 +23,7 @@ _ALLOWED_TOP_LEVEL_KEYS = {
     "customer_ref",
     "customer_phone",
     "customer_tax_id",
+    "fiscal_tax_id",
     "customer_email",
     "customer_memory_action",
     "fulfillment_type",
@@ -37,7 +38,6 @@ _ALLOWED_TOP_LEVEL_KEYS = {
     "payment_tenders",
     "tendered_amount_q",
     "change_for_q",
-    "issue_fiscal_document",
     "receipt_channels",
     "receipt_email",
     "client_request_id",
@@ -201,7 +201,28 @@ def parse_pos_sale_intent(raw: dict, *, for_commit: bool = True) -> PosSaleInten
         else None
     )
 
-    payload["issue_fiscal_document"] = bool(payload.get("issue_fiscal_document"))
+    # DUAS perguntas, dois campos. `customer_tax_id` é IDENTIDADE (o documento do
+    # cadastro, editado no painel do cliente); `fiscal_tax_id` é o CPF PEDIDO
+    # nesta venda, que o checkout pergunta e que sai na nota. O cadastro só
+    # empresta o valor inicial ao segundo — editar no checkout não volta para o
+    # cadastro, nem quando o campo de lá está vazio.
+    #
+    # Emitir ou não continua fora daqui: é decisão da regra
+    # (`SHOPMAN_FISCAL_EMISSION_RESOLVER`), nunca do balcão.
+    payload["fiscal_tax_id"] = _text(payload.get("fiscal_tax_id"), limit=20)
+    if payload["fiscal_tax_id"]:
+        from shopman.utils.documents import is_valid_tax_id
+
+        digits = "".join(ch for ch in payload["fiscal_tax_id"] if ch.isdigit())
+        if not is_valid_tax_id(digits):
+            raise PosIntentError(
+                code="invalid_fiscal_tax_id",
+                message="CPF/CNPJ da nota inválido: confira os dígitos.",
+                field="fiscal_tax_id",
+                focus="receipt",
+                recovery="Corrija o documento ou desligue \"CPF na nota\".",
+            )
+        payload["fiscal_tax_id"] = digits
     # A porta "fiscal com taxa de entrega" mudou de lugar, não de regra: agora
     # que a taxa é RESOLVIDA (e não digitada), só quem resolveu sabe se ela
     # existe. Ela vive em `pos._validate_fiscal_delivery_fee`, junto da
