@@ -86,7 +86,10 @@ def test_nelson_seed_populates_production_history_alerts_and_batches(monkeypatch
     # prefixo INS-), com unit + shelf-life. Os input_sku das receitas resolvem.
     from shopman.buyman.models import Material
 
-    assert Material.objects.count() == 23
+    # 23 da fundação + 33 da Seção 2b (salgados, montados e bebidas — dono,
+    # 26/08): queijos, presuntos, salsicha Vienna, frango, milho, bacon, café
+    # em grão, blends de chá, tônica, folhas da salada…
+    assert Material.objects.count() == 56
     farinha = Material.objects.get(sku="FARINHA-T65")
     assert (farinha.unit, farinha.shelf_life_days) == ("kg", 180)
     assert farinha.metadata["allergens"] == ["glúten"]
@@ -144,7 +147,13 @@ def test_nelson_seed_populates_production_history_alerts_and_batches(monkeypatch
 
     warehouse = Position.objects.get(ref="deposito")
     assert Quant.objects.filter(sku="FARINHA-T65", position=warehouse).exists()
-    assert stock_service.available("FARINHA-T65", position=warehouse) == Decimal("500")
+    # O saldo de abertura não é mais um 500 chapado: deriva do plano do dia ×
+    # cobertura de compra e chega em SACAS fechadas de 25 kg (dono, 26/08).
+    # O invariante é o mecanismo, não o número — o número muda com o plano.
+    farinha_abertura = stock_service.available("FARINHA-T65", position=warehouse)
+    assert farinha_abertura > 0
+    assert farinha_abertura % Decimal("25") == 0, "farinha entra em saca fechada de 25 kg"
+    assert farinha_abertura <= Decimal("625"), "teto de um pedido: 25 sacas"
 
     suggestions = craft.suggest(date.today() + timedelta(days=1), output_skus=["CT"])
     assert suggestions
@@ -195,7 +204,7 @@ def test_nelson_seed_populates_production_history_alerts_and_batches(monkeypatch
     # reprovava toda fornada dessas dez, e o operador via "Insumos
     # insuficientes" com o atalho "Concluir mesmo assim" a um toque, todo dia.
     # Alarme sempre errado vira botão que se aprende a apertar.
-    for prep_sku in ("MASSA-FOLHADA", "MASSA-BRIOCHE", "MASSA-PAES-MACIOS", "RECHEIO-MACA"):
+    for prep_sku in ("MASSA-CROISSANT", "MASSA-BRIOCHE", "MASSA-FORMA", "RECHEIO-MACA"):
         assert stock_service.available(prep_sku) > 0, f"{prep_sku} sem estoque"
     crying = sorted(
         {

@@ -37,7 +37,7 @@ class TestBlindPrepCode:
         today = date.today()
         first = blind_prep_code("massa-brioche", today)
         blind_prep_code("massa-campagne", today)  # preparo novo no meio da manhã
-        blind_prep_code("massa-folhada", today)
+        blind_prep_code("massa-croissant", today)
         assert blind_prep_code("massa-brioche", today) == first
 
     def test_first_eight_are_strict_letters_and_digits_unique(self):
