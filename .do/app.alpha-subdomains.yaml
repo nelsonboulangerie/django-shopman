@@ -230,6 +230,10 @@ envs:
   scope: RUN_TIME
   value: https://compras.boulangerie.com.br
   type: GENERAL
+- key: SHOPMAN_PURCHASE_INVOICE_READER
+  scope: RUN_TIME
+  value: shopman.shop.adapters.purchase_invoice_nfe.read_invoice
+  type: GENERAL
 - key: SHOPMAN_MARKETING_BASE_URL
   scope: RUN_TIME
   value: https://mkt.boulangerie.com.br

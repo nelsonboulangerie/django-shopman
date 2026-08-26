@@ -77,7 +77,10 @@ def scan_invoice(qr_payload: str) -> tuple[dict[str, Any], str]:
         )
 
     draft = _invoice_reader_draft(access_key=access_key, qr_payload=qr_payload)
-    supplier_ref = draft.get("supplierRef") or _supplier_ref_from_invoice_key(access_key)
+    if "supplierRef" in draft or "supplier_ref" in draft:
+        supplier_ref = str(draft.get("supplierRef", draft.get("supplier_ref", "")) or "")
+    else:
+        supplier_ref = _supplier_ref_from_invoice_key(access_key)
     active_receipt = {
         "mode": "invoice",
         "supplierRef": supplier_ref,
@@ -574,6 +577,12 @@ def _resolve_receipt_line(raw: dict[str, Any], *, index: int, supplier) -> Resol
         supplier=supplier,
         field=f"lines.{index}.conversionId",
     )
+    if bool(raw.get("requiresConversion") or raw.get("requires_conversion")) and conversion is None:
+        raise PurchaseError(
+            "Defina a conversão da unidade de compra antes de confirmar a entrada.",
+            code="conversion_required",
+            field=f"lines.{index}.conversionId",
+        )
     factor = Decimal(conversion.to_base_factor) if conversion else Decimal("1")
     base_qty = purchase_qty * factor
 
@@ -682,8 +691,7 @@ def _supplier_ref_from_invoice_key(access_key: str) -> str:
     for supplier in Supplier.objects.filter(is_active=True).only("ref", "document"):
         if re.sub(r"\D", "", supplier.document or "") == issuer_cnpj:
             return supplier.ref
-    first = Supplier.objects.filter(is_active=True).order_by("name", "ref").first()
-    return first.ref if first else ""
+    return ""
 
 
 def _invoice_key_candidates(raw: str) -> list[str]:

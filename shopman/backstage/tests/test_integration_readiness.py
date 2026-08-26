@@ -8,6 +8,7 @@ from shopman.backstage.services.integration_readiness import (
     build_provider_readiness,
     efi_pix_readiness,
     focus_nfe_readiness,
+    purchase_nfe_readiness,
     stripe_card_readiness,
 )
 
@@ -96,6 +97,43 @@ def test_efi_and_stripe_staging_readiness_accepts_sandbox_adapters(tmp_path):
     ):
         assert efi_pix_readiness(mode="staging").status == "ready"
         assert stripe_card_readiness(mode="staging").status == "ready"
+
+
+def test_purchase_nfe_readiness_reports_missing_reader_and_certificate():
+    with override_settings(
+        SHOPMAN_PURCHASE_INVOICE_READER="",
+        SHOPMAN_PURCHASE_NFE={
+            "environment": "homologacao",
+            "recipient_document": "",
+            "certificate_path": "",
+            "certificate_pfx_base64": "",
+        },
+        SHOPMAN_FOCUS_NFE={"cnpj_emitente": ""},
+    ):
+        readiness = purchase_nfe_readiness(mode="staging")
+
+    assert readiness.status == "warning"
+    assert "SHOPMAN_PURCHASE_INVOICE_READER" in readiness.missing
+    assert "PURCHASE_NFE_CERTIFICATE_PATH_or_PURCHASE_NFE_CERTIFICATE_PFX_BASE64" in readiness.missing
+
+
+def test_purchase_nfe_readiness_accepts_xml_reader_configuration(tmp_path):
+    certificate = tmp_path / "nelson-a1.pfx"
+    certificate.write_text("dummy pfx")
+
+    with override_settings(
+        SHOPMAN_PURCHASE_INVOICE_READER="shopman.shop.adapters.purchase_invoice_nfe.read_invoice",
+        SHOPMAN_PURCHASE_NFE={
+            "environment": "producao",
+            "recipient_document": "12.345.678/0001-90",
+            "certificate_path": str(certificate),
+            "certificate_pfx_base64": "",
+        },
+    ):
+        readiness = purchase_nfe_readiness(mode="staging")
+
+    assert readiness.status == "ready"
+    assert readiness.missing == ()
 
 
 @override_settings(

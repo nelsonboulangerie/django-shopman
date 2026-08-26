@@ -213,10 +213,46 @@ def stripe_card_readiness(*, mode: ReadinessMode = "runtime") -> ProviderReadine
     )
 
 
+def purchase_nfe_readiness(*, mode: ReadinessMode = "runtime") -> ProviderReadiness:
+    config = dict(getattr(settings, "SHOPMAN_PURCHASE_NFE", {}) or {})
+    reader_path = getattr(settings, "SHOPMAN_PURCHASE_INVOICE_READER", "")
+    environment = _normalized_environment(config.get("environment") or "homologacao")
+    missing: list[str] = []
+
+    if not _path_contains(reader_path, "shopman.shop.adapters.purchase_invoice_nfe.read_invoice"):
+        missing.append("SHOPMAN_PURCHASE_INVOICE_READER")
+    if not _purchase_nfe_recipient_document(config):
+        missing.append("PURCHASE_NFE_RECIPIENT_DOCUMENT_or_FOCUS_NFE_CNPJ_EMITENTE_or_Shop.document")
+    cert_path = str(config.get("certificate_path") or "").strip()
+    cert_pfx = str(config.get("certificate_pfx_base64") or "").strip()
+    if not cert_path and not cert_pfx:
+        missing.append("PURCHASE_NFE_CERTIFICATE_PATH_or_PURCHASE_NFE_CERTIFICATE_PFX_BASE64")
+    if cert_path and not Path(cert_path).exists():
+        missing.append("PURCHASE_NFE_CERTIFICATE_PATH_exists")
+
+    issues = tuple(missing)
+    status = _status(missing=missing, unsafe=[])
+    return ProviderReadiness(
+        provider="purchase_nfe",
+        label="Compra NF-e / Distribuição DF-e",
+        kind="fiscal_purchase_nfe",
+        environment=environment,
+        status=status,
+        message=_readiness_message(
+            status=status,
+            environment=environment,
+            ready="Leitor de NF-e de compra configurado.",
+            missing=issues,
+        ),
+        missing=issues,
+    )
+
+
 def staging_missing(provider: str) -> list[str]:
     readiness = {
         "focus_nfe": focus_nfe_readiness,
         "efi_pix": efi_pix_readiness,
+        "purchase_nfe": purchase_nfe_readiness,
         "stripe_card": stripe_card_readiness,
     }[provider](mode="staging")
     return list(readiness.missing)
@@ -275,6 +311,17 @@ def _focus_cnpj_emitente(config: dict) -> str:
     configured = _digits(config.get("cnpj_emitente"))
     if configured:
         return configured
+    return _digits(_shop_document())
+
+
+def _purchase_nfe_recipient_document(config: dict) -> str:
+    configured = _digits(config.get("recipient_document"))
+    if configured:
+        return configured
+    focus = dict(getattr(settings, "SHOPMAN_FOCUS_NFE", {}) or {})
+    focus_document = _digits(focus.get("cnpj_emitente"))
+    if focus_document:
+        return focus_document
     return _digits(_shop_document())
 
 

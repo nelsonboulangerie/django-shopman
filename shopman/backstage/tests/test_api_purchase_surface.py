@@ -11,6 +11,7 @@ from decimal import Decimal
 import pytest
 from django.contrib.auth.models import Permission, User
 from django.contrib.contenttypes.models import ContentType
+from django.test import override_settings
 from django.urls import reverse
 from shopman.buyman.models import Material, MaterialConversion, Supplier, SupplierMaterialCost
 from shopman.craftsman.models import Recipe, RecipeItem
@@ -129,6 +130,72 @@ def test_scan_invoice_validates_key_and_resolves_supplier(client, purchase_opera
 
 
 @pytest.mark.django_db
+def test_scan_invoice_uses_configured_nfe_reader(
+    tmp_path,
+    client,
+    purchase_operator,
+    material,
+    supplier,
+    conversion,
+):
+    supplier.metadata = {
+        "purchase": {
+            "invoice_product_map": {
+                "FAR-25": {
+                    "materialSku": material.sku,
+                    "conversionLabel": conversion.label,
+                }
+            }
+        }
+    }
+    supplier.save(update_fields=["metadata"])
+    xml = f"""<?xml version="1.0" encoding="UTF-8"?>
+<nfeProc xmlns="http://www.portalfiscal.inf.br/nfe" versao="4.00">
+  <NFe>
+    <infNFe Id="NFe{VALID_ACCESS_KEY}" versao="4.00">
+      <ide><serie>1</serie><nNF>1234</nNF><dhEmi>2026-08-25T09:00:00-03:00</dhEmi></ide>
+      <emit><CNPJ>12345678000190</CNPJ><xNome>Moinho Sao Paulo</xNome></emit>
+      <dest><CNPJ>99999999000191</CNPJ><xNome>Nelson Boulangerie</xNome></dest>
+      <det nItem="1">
+        <prod>
+          <cProd>FAR-25</cProd>
+          <xProd>FARINHA T65 25KG</xProd>
+          <NCM>11010010</NCM>
+          <CFOP>5102</CFOP>
+          <uCom>SC</uCom>
+          <qCom>2.0000</qCom>
+          <vUnCom>180.0000000000</vUnCom>
+          <vProd>360.00</vProd>
+        </prod>
+      </det>
+      <total><ICMSTot><vNF>360.00</vNF></ICMSTot></total>
+    </infNFe>
+  </NFe>
+  <protNFe versao="4.00"><infProt><chNFe>{VALID_ACCESS_KEY}</chNFe><cStat>100</cStat></infProt></protNFe>
+</nfeProc>
+"""
+    (tmp_path / f"{VALID_ACCESS_KEY}.xml").write_text(xml, encoding="utf-8")
+
+    client.force_login(purchase_operator)
+    with override_settings(
+        SHOPMAN_PURCHASE_INVOICE_READER="shopman.shop.adapters.purchase_invoice_nfe.read_invoice",
+        SHOPMAN_PURCHASE_NFE={"xml_dir": str(tmp_path)},
+    ):
+        response = client.post(
+            reverse("api-backstage-buyman-scan-invoice"),
+            data={"qrPayload": VALID_ACCESS_KEY},
+            content_type="application/json",
+        )
+
+    assert response.status_code == 200
+    receipt = response.json()["purchase"]["activeReceipt"]
+    assert receipt["supplierRef"] == supplier.ref
+    assert receipt["lines"][0]["materialSku"] == material.sku
+    assert receipt["lines"][0]["conversionId"] == str(conversion.pk)
+    assert receipt["lines"][0]["requiresConversion"] is False
+
+
+@pytest.mark.django_db
 def test_confirm_receipt_writes_buy_move_batch_and_cost(
     client,
     purchase_operator,
@@ -177,6 +244,43 @@ def test_confirm_receipt_writes_buy_move_batch_and_cost(
     assert cost.cost_q == 18000
     assert cost.is_preferred is True
     assert cost.cost_per_base_unit_q == 720
+
+
+@pytest.mark.django_db
+def test_confirm_receipt_blocks_imported_line_that_requires_conversion(
+    client,
+    purchase_operator,
+    material,
+    supplier,
+):
+    client.force_login(purchase_operator)
+    response = client.post(
+        reverse("api-backstage-buyman-confirm-receipt"),
+        data={
+            "mode": "invoice",
+            "supplierRef": supplier.ref,
+            "invoiceAccessKey": VALID_ACCESS_KEY,
+            "note": "NF lida",
+            "lines": [
+                {
+                    "id": "line-farinha",
+                    "materialSku": material.sku,
+                    "conversionId": None,
+                    "requiresConversion": True,
+                    "purchaseQty": 2,
+                    "costInput": "360,00",
+                    "expiryDate": "2027-02-25",
+                    "lineNote": "Definir conversao antes de confirmar.",
+                    "checked": True,
+                }
+            ],
+        },
+        content_type="application/json",
+    )
+
+    assert response.status_code == 400
+    assert response.json()["error"]["code"] == "conversion_required"
+    assert Move.objects.count() == 0
 
 
 @pytest.mark.django_db

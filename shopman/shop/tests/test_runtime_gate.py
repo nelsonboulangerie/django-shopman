@@ -27,7 +27,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[3]
 
 #: Diretórios que não são código do projeto (venv, builds, worktrees aninhadas).
-_IGNORED_PARTS = {".git", ".venv", "node_modules", "build", "dist", ".claude", "__pycache__"}
+_IGNORED_PARTS = {".git", ".venv", "node_modules", "build", "dist", ".claude", ".codex", "__pycache__"}
 
 #: O marcador canônico: `requires_postgres = pytest.mark.skipif("sqlite" in ...)`.
 _MARKER = re.compile(r"^\s*requires_postgres\s*=\s*pytest\.mark\.skipif", re.MULTILINE)

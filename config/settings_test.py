@@ -177,6 +177,18 @@ SHOPMAN_FOCUS_NFE.update(  # noqa: F405
     timeout=30,
     base_url="",
 )
+SHOPMAN_PURCHASE_INVOICE_READER = ""  # noqa: F405
+SHOPMAN_PURCHASE_NFE.update(  # noqa: F405
+    environment="homologacao",
+    uf="41",
+    recipient_document="",
+    certificate_path="",
+    certificate_pfx_base64="",
+    certificate_password="",
+    auto_manifest_ciencia=False,
+    xml_dir="",
+    fuzzy_match_min_score=0,
+)
 
 # ── Doorman (chaves env-derivadas; o resto do dict fica como no base) ────────
 DOORMAN.update(  # noqa: F405

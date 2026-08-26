@@ -113,6 +113,7 @@ export interface ReceiptLine {
   id: string;
   materialSku: string;
   conversionId: string | null;
+  requiresConversion?: boolean;
   purchaseQty: number;
   costInput: string;
   expiryDate: string;
@@ -133,7 +134,14 @@ export interface ReceiptLinePreview {
 }
 
 export interface ReceiptWarning {
-  key: "missing-cost" | "missing-expiry" | "approximate-conversion" | "manual-source" | "invalid-qty";
+  key:
+    | "missing-material"
+    | "missing-conversion"
+    | "missing-cost"
+    | "missing-expiry"
+    | "approximate-conversion"
+    | "manual-source"
+    | "invalid-qty";
   label: string;
   tone: ReceiptWarningTone;
 }
