@@ -66,6 +66,14 @@ MAINTENANCE_COMMANDS = (
     "dispatch_due_announcements",
     "arm_scheduled_campaigns",
     "reconcile_payments",
+    # Depois dos pagamentos sararem: o dia de ONTEM reconcilia inteiro
+    # (pedidos × intents × transações × DayClosing) e divergência vira
+    # OperatorAlert com dedupe/debounce próprios. Re-rodar a cada ciclo é
+    # deliberado: webhook tardio de pagamento muda o retrato do dia, e o
+    # DayClosing guarda sempre o último. Divergência aberta loga o
+    # CommandError do comando a cada ciclo — barulho honesto, some quando
+    # o operador resolve.
+    "reconcile_financial_day",
     "sweep_stuck_orders",
     # O mesmo resgate, do lado da produção: fornada concluída cujo ledger de
     # estoque não fechou (queda no meio do handler) volta a ser realizada.
