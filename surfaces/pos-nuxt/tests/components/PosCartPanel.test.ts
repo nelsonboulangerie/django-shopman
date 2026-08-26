@@ -261,27 +261,26 @@ describe("PosCartPanel — transparência de desconto na linha", () => {
     expect(wrapper.find("span.line-through").exists()).toBe(false);
   });
 
-  it("UM selo de desconto por linha: o vencedor, e só ele", async () => {
-    // "Maior desconto ganha, um por item". Dois selos na linha eram dois preços
-    // sugeridos para uma coisa que tem um preço só. Com automático e manual
-    // pedidos ao mesmo tempo, quem aparece é o automático — foi ele que mexeu no
-    // preço. O descarte do outro se diz por toast, no momento do pedido.
+  it("o desconto se anuncia pelo preço RISCADO, não por um selo", async () => {
+    // O selo com o nome da promoção e a etiqueta riscada diziam a mesma coisa —
+    // "estava mais caro" — e o selo custava uma faixa inteira da linha. Nesta
+    // lista o operador confere o que lançou; o POR QUÊ é pergunta de cliente, e
+    // vive no resumo do checkout, no recibo e no `title` daqui.
     const wrapper = await mountSuspended(PosCartPanel, {
       props: props({
         items: [item({
           sku: "TAB", name: "Tabatière", qty: 2, price_q: 510, charged_price_q: 510, list_price_q: 600,
-          discount: { value: 10, reason: "cortesia" },
           pricing_discount: { type: "promotion", label: "Semana do Pão", amount_q: 90, percent: 15 },
         })],
       }),
     });
-    const badges = wrapper.findAll("span[title^='Desconto aplicado']");
-    expect(badges).toHaveLength(1);
-    expect(badges[0]!.text()).toContain("Semana do Pão");
-    expect(wrapper.text()).not.toContain("Cortesia");
+    expect(wrapper.findAll("span[title^='Desconto aplicado']")).toHaveLength(0);
+    const struck = wrapper.find("span.line-through");
+    expect(struck.text()).toBe(formatBRL(1200));
+    expect(struck.attributes("title")).toContain("Semana do Pão −15%");
   });
 
-  it("sem automático, o selo é o manual — com o motivo por extenso", async () => {
+  it("o motivo do desconto manual também chega pelo title do riscado", async () => {
     const wrapper = await mountSuspended(PosCartPanel, {
       props: props({
         items: [item({
@@ -290,9 +289,7 @@ describe("PosCartPanel — transparência de desconto na linha", () => {
         })],
       }),
     });
-    const badges = wrapper.findAll("span[title^='Desconto aplicado']");
-    expect(badges).toHaveLength(1);
-    expect(badges[0]!.text()).toContain("Cortesia −10%");
+    expect(wrapper.find("span.line-through").attributes("title")).toContain("Cortesia −10%");
   });
 
   it("o Total parcial é a soma exata das linhas", async () => {
