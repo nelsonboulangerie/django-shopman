@@ -43,7 +43,9 @@ These tests require RUNNING servers. They are NOT collected by `make test`
 
 from __future__ import annotations
 
+import json
 import re
+from urllib.parse import urlparse
 
 import pytest
 from django.urls import reverse
@@ -269,6 +271,229 @@ class TestOperator:
         # Anonymous lands on (or is redirected to) the login flow.
         assert "/admin/login/" in page.url or response.status in (302, 403), (
             f"{url_name} serviu conteúdo para visitante anônimo (url={page.url})"
+        )
+
+
+# ---------------------------------------------------------------------------
+# Travessia viva cliente → operador (furo nº 3 da auditoria de 26/08)
+# ---------------------------------------------------------------------------
+
+#: Telefone de teste (BR: DDD 43 + celular). Número que o seed não usa: na 1ª
+#: rodada o OTP CRIA o cliente (passo de boas-vindas incluso); em reruns contra
+#: o mesmo banco o cliente já existe e o fluxo segue direto — os dois caminhos
+#: são cobertos pelo teste.
+LIVE_ORDER_PHONE = "43991840001"
+LIVE_ORDER_NAME = "Cliente E2E"
+
+
+def _is_checkout_url(url: str) -> bool:
+    """O PATH é o checkout — imune ao ``?next=/finalizar`` da tela de login."""
+    return urlparse(url).path == storefront_links.path_checkout()
+
+
+def _authenticate_via_debug_otp(page) -> None:
+    """Entra pela UI de /entrar usando o código OTP de teste.
+
+    Em DEBUG o backend devolve ``debug_otp_code`` no request-code e a tela
+    renderiza o alerta "Ambiente de teste" com o botão "Usar código de teste"
+    (que preenche os 6 dígitos; o watcher confirma sozinho). É o MESMO caminho
+    que um cliente real percorre — só a leitura do SMS é substituída pelo
+    código exposto na própria tela.
+    """
+    expect(page.get_by_role("button", name="Usar outro número")).to_be_visible()
+    page.get_by_role("button", name="Usar outro número").click()
+    page.locator("#login-phone").fill(LIVE_ORDER_PHONE)
+    page.locator("form:has(#login-phone) button[type='submit']").click()
+
+    debug_alert = page.locator("[data-testid='debug-otp-alert']")
+    expect(debug_alert, (
+        "O alerta do OTP de teste não apareceu — o gate exige DJANGO_DEBUG=true "
+        "(o request-code só devolve debug_otp_code com o debug OTP exposto)."
+    )).to_be_visible(timeout=15_000)
+    page.get_by_role("button", name="Usar código de teste").click()
+
+    # Cliente novo cai no passo de boas-vindas (nome); recorrente vai direto.
+    # O momento de celebração leva ~1,4s antes do redirect para o `next`.
+    # ⚠️ Comparar pelo PATH, nunca por substring da URL: a página de login é
+    # `/entrar?next=/finalizar`, e um `"/finalizar" in page.url` "chega" ao
+    # checkout ainda na porta.
+    for _ in range(60):
+        if _is_checkout_url(page.url):
+            return
+        welcome = page.locator("[data-login-welcome]")
+        if welcome.count():
+            page.locator("#welcome-name").fill(LIVE_ORDER_NAME)
+            welcome.locator("button[type='submit']").click()
+            page.wait_for_url(_is_checkout_url, timeout=15_000)
+            return
+        page.wait_for_timeout(300)
+    raise AssertionError(f"Login não chegou ao checkout (url={page.url})")
+
+
+def _ensure_contact_saved(page) -> None:
+    """Se o cartão de contato abriu em edição (cliente sem nome), completa-o."""
+    name_input = page.locator("#checkout-name")
+    if name_input.count() and name_input.first.is_visible():
+        if not (name_input.first.input_value() or "").strip():
+            name_input.first.fill(LIVE_ORDER_NAME)
+        page.get_by_role("button", name="Salvar contato").click()
+
+
+def _ensure_pickup_slot_selected(page) -> None:
+    """Garante data + horário utilizáveis no passo "Quando".
+
+    ⚠️ hora fixa + ``now()``: rodando à noite, os slots de HOJE já passaram
+    todos — aí o teste muda para a próxima data disponível (opção que a
+    projection sempre oferece) em vez de reprovar por horário de parede.
+    """
+    when = page.locator("[data-checkout-step='when']")
+    # O passo precisa estar EXPANDIDO (é o ativo após o "Continuar" da retirada):
+    # as datas rápidas sempre existem nele, então elas são o sinal de renderizado.
+    expect(when.locator("[role='radio'][id^='checkout-date-']").first).to_be_visible(
+        timeout=15_000
+    )
+    slot_radios = when.locator("[role='radio'][id^='checkout-slot-']")
+    if not slot_radios.count():
+        return  # canal sem slots de retirada: só a data (default já hidratado)
+
+    def checked_and_enabled() -> bool:
+        checked = when.locator("[role='radio'][id^='checkout-slot-'][aria-checked='true']")
+        return bool(checked.count()) and checked.first.is_enabled()
+
+    if not checked_and_enabled():
+        date_radios = when.locator("[role='radio'][id^='checkout-date-']")
+        if date_radios.count() > 1:
+            date_radios.last.click()
+        enabled_slot = when.locator(
+            "[role='radio'][id^='checkout-slot-']:not([data-disabled])"
+        ).first
+        expect(enabled_slot).to_be_visible(timeout=15_000)
+        enabled_slot.click()
+
+
+class TestLiveOrderCrossing:
+    """Um pedido NASCE pela UI e aparece do lado do operador.
+
+    O furo que isto fecha: a suíte parava no auth-gate (test_04) e usava
+    pedidos do SEED para tracking/pagamento — nenhum pedido atravessava vivo
+    menu → PDP → sacola → OTP → checkout → fila do operador. Aqui o cliente é
+    o Playwright clicando na loja Nuxt; a VERIFICAÇÃO do outro lado é a API
+    crua do backstage (contrato independe da superfície), com a sessão de
+    operador que o test_09 já usa.
+
+    Confirmação otimista: o pedido web auto-confirma via directive worker, que
+    NÃO roda neste gate — então o pedido é conferido no estado que o commit
+    deixa (``new``; ``accepted`` tolerado caso um worker exista no ambiente).
+    Pagamento PIX é ``post_commit``: o pedido fecha antes de pagar, e o Pix
+    (mock em DEBUG) é um degrau do acompanhamento — nada a pagar aqui.
+    """
+
+    def test_11_live_pickup_order_reaches_operator_queue(
+        self, playwright, page, store_base_url, operator_base_url, operator_session
+    ):
+        # Viewport alto o bastante para o checkout inteiro caber sem rolagem.
+        # Não é cosmético: a status bar do ShopHeader colapsa com `scrollY > 8`
+        # animando `max-height` — quando um clique deixa a rolagem exatamente no
+        # limiar, colapsar muda a altura da página, o scroll volta, a barra
+        # reexpande… um laço de reflow que balança a página ~1px para sempre e
+        # reprova o teste de estabilidade do Playwright. Com tudo em vista,
+        # `scrollY` fica em 0 e o laço nunca arma.
+        page.set_viewport_size({"width": 1280, "height": 3200})
+
+        # ── Cliente: menu → PDP → sacola ─────────────────────────────
+        sku = _seeded_sku(page, store_base_url)
+        assert sku, "Seeded menu should expose at least one product SKU"
+        page.goto(
+            f"{store_base_url}{storefront_links.path_product(sku)}", wait_until="networkidle"
+        )
+        product_name = page.locator("h1").first.inner_text().strip()
+        assert product_name, "PDP should name the product"
+        page.get_by_role("button", name=ADD_TO_CART).first.click()
+        page.wait_for_timeout(600)
+
+        # ── Identificação: o auth-gate do checkout é a PORTA, não o fim ──
+        page.goto(f"{store_base_url}{storefront_links.path_checkout()}")
+        page.wait_for_url(re.compile(re.escape(storefront_links.path_login())), timeout=15_000)
+        _authenticate_via_debug_otp(page)
+
+        # ── Checkout: retirada → quando → pagamento → revisão ────────
+        expect(page.locator("[data-checkout-step='fulfillment']")).to_be_visible(
+            timeout=15_000
+        )
+        _ensure_contact_saved(page)
+        pickup = page.locator("label[for='checkout-fulfillment-pickup']")
+        assert pickup.count(), "Canal web semeado deve oferecer retirada"
+        pickup.click()
+        page.locator("[data-checkout-step='fulfillment']").get_by_role(
+            "button", name="Continuar"
+        ).click()
+
+        _ensure_pickup_slot_selected(page)
+        when_continue = page.locator("[data-checkout-step='when']").get_by_role(
+            "button", name="Continuar"
+        )
+        expect(when_continue).to_be_enabled(timeout=15_000)
+        when_continue.click()
+
+        pix = page.locator("label[for='checkout-payment-pix']")
+        if pix.count():
+            pix.click()
+        page.locator("[data-checkout-step='payment']").get_by_role(
+            "button", name="Revisar pedido"
+        ).click()
+
+        sheet = page.get_by_role("dialog").filter(has_text="Revise seu pedido")
+        expect(sheet).to_be_visible(timeout=15_000)
+        sheet.get_by_role(
+            "button", name=re.compile(r"enviar|confirmar", re.IGNORECASE)
+        ).last.click()
+
+        # O commit redireciona para o acompanhamento do pedido recém-criado.
+        page.wait_for_url(re.compile(r"/pedido/"), timeout=30_000)
+        match = re.search(r"/pedido/([^/?#]+)", page.url)
+        assert match, f"URL de acompanhamento sem ref de pedido: {page.url}"
+        order_ref = match.group(1)
+
+        # ── Operador: o MESMO pedido na fila do backstage ────────────
+        # Contexto de API ISOLADO com o cookie explícito do operador. Não dá
+        # para usar o jar do navegador: a página de acompanhamento continua
+        # aberta e viva (SSE + fetches), e as respostas dela re-gravam o
+        # `sessionid` do CLIENTE no jar entre uma chamada e outra — a segunda
+        # chamada sairia com a sessão errada e tomaria 403.
+        cookie = operator_session(page.context)
+        api = playwright.request.new_context(
+            extra_http_headers={"Cookie": f"{cookie['name']}={cookie['value']}"}
+        )
+        try:
+            queue_response = api.get(f"{operator_base_url}{reverse('api-backstage-orders')}")
+            assert queue_response.status == 200, (
+                f"Fila do operador respondeu {queue_response.status}"
+            )
+            assert order_ref in json.dumps(queue_response.json()), (
+                f"Pedido {order_ref} criado pela loja não apareceu na fila do operador"
+            )
+
+            detail_response = api.get(
+                f"{operator_base_url}"
+                f"{reverse('api-backstage-order-detail', kwargs={'ref': order_ref})}"
+            )
+            assert detail_response.status == 200, (
+                f"Detalhe do pedido respondeu {detail_response.status}"
+            )
+            order = detail_response.json()["order"]
+        finally:
+            api.dispose()
+        assert order["ref"] == order_ref
+        assert order["channel_ref"] == "web"
+        assert order["fulfillment_type"] == "pickup"
+        # Estado que o COMMIT deixa: `new` (auto-confirmação é do worker, que
+        # este gate não sobe). `accepted` tolerado se um worker confirmar antes.
+        assert order["status"] in {"new", "accepted"}, (
+            f"Pedido nasceu em estado inesperado: {order['status']}"
+        )
+        item_names = " · ".join(item.get("name", "") for item in order["items"])
+        assert product_name in item_names, (
+            f"Item da PDP ({product_name!r}) não está no pedido do operador ({item_names!r})"
         )
 
 
