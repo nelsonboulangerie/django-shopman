@@ -18,6 +18,14 @@ RUN addgroup --system shopman \
     && rm -rf /var/lib/apt/lists/*
 
 COPY pyproject.toml constraints.txt README.md manage.py ./
+
+# As dependências pinadas instalam ANTES de copiar o código: qualquer mudança
+# de código invalidava a layer do pip e reinstalava as 99 dependências a cada
+# deploy ("No cached layer found", medido em 26/08/2026). Com o lock instalado
+# primeiro, a layer pesada só refaz quando o constraints.txt mudar.
+RUN python -m pip install --upgrade pip \
+    && python -m pip install -r constraints.txt
+
 COPY config ./config
 COPY packages ./packages
 COPY shopman ./shopman
@@ -29,8 +37,9 @@ COPY tools ./tools
 # `-c constraints.txt` fixa a versão de cada dependência transitiva no conjunto
 # que a suíte validou. Sem ele, a resolução acontecia no dia do build e a imagem
 # podia subir com pacotes que nenhum teste tinha visto. Ver constraints.txt.
-RUN python -m pip install --upgrade pip \
-    && python -m pip install -c constraints.txt \
+# Com o lock já instalado acima, este passo resolve rápido e só materializa os
+# pacotes locais — e ainda pega qualquer dependência nova que falte no lock.
+RUN python -m pip install -c constraints.txt \
         ./packages/refs \
         ./packages/utils \
         ./packages/offerman \

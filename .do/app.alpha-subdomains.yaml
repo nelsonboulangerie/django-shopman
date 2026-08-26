@@ -449,7 +449,7 @@ services:
     rule: RESTART_COUNT
     value: 2
     window: TEN_MINUTES
-  build_command: npm ci && npm run build
+  build_command: npm run build
   envs:
   - key: NUXT_DJANGO_BASE_URL
     scope: RUN_TIME
@@ -480,7 +480,7 @@ services:
     rule: RESTART_COUNT
     value: 2
     window: TEN_MINUTES
-  build_command: npm ci && npm run build
+  build_command: npm run build
   envs:
   - key: NUXT_DJANGO_BASE_URL
     scope: RUN_TIME
@@ -523,7 +523,7 @@ services:
     rule: RESTART_COUNT
     value: 2
     window: TEN_MINUTES
-  build_command: npm ci && npm run build
+  build_command: npm run build
   envs:
   - key: NUXT_DJANGO_BASE_URL
     scope: RUN_TIME
@@ -562,7 +562,7 @@ services:
     rule: RESTART_COUNT
     value: 2
     window: TEN_MINUTES
-  build_command: npm ci && npm run build
+  build_command: npm run build
   envs:
   - key: NUXT_DJANGO_BASE_URL
     scope: RUN_TIME
@@ -601,7 +601,7 @@ services:
     rule: RESTART_COUNT
     value: 2
     window: TEN_MINUTES
-  build_command: npm ci && npm run build
+  build_command: npm run build
   envs:
   - key: NUXT_DJANGO_BASE_URL
     scope: RUN_TIME
@@ -640,7 +640,7 @@ services:
     rule: RESTART_COUNT
     value: 2
     window: TEN_MINUTES
-  build_command: npm ci && npm run build
+  build_command: npm run build
   envs:
   - key: NUXT_DJANGO_BASE_URL
     scope: RUN_TIME
@@ -687,7 +687,7 @@ services:
     rule: RESTART_COUNT
     value: 2
     window: TEN_MINUTES
-  build_command: npm ci && npm run build
+  build_command: npm run build
   envs:
   - key: NUXT_DJANGO_BASE_URL
     scope: RUN_TIME
@@ -722,7 +722,7 @@ services:
     rule: RESTART_COUNT
     value: 2
     window: TEN_MINUTES
-  build_command: npm ci && npm run build
+  build_command: npm run build
   envs:
   - key: NUXT_DJANGO_BASE_URL
     scope: RUN_TIME
@@ -761,7 +761,7 @@ services:
     rule: RESTART_COUNT
     value: 2
     window: TEN_MINUTES
-  build_command: npm ci && npm run build
+  build_command: npm run build
   envs:
   - key: NUXT_DJANGO_BASE_URL
     scope: RUN_TIME
