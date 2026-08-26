@@ -1,0 +1,74 @@
+name: Alpha Smoke
+
+# O único guardrail que enxerga o ALPHA VIVO. Os gates de CI provam o código
+# contra banco fresco; a classe de quebra que chegou à tela em 26/08 (dado
+# envelhecido, insumo zerado, config de ambiente) só aparece no ambiente real.
+# O health check do Nuxt responde 200 com a tela vazia — este smoke pergunta
+# o que o cliente perguntaria: tem cardápio? tem produto disponível? a loja
+# renderiza? Ver docs/plans e a auditoria de prontidão de 26/08/2026.
+
+"on":
+  schedule:
+    # A cada 15 minutos. Quebrou → o workflow fica vermelho e o GitHub avisa.
+    - cron: "*/15 * * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: alpha-smoke
+  cancel-in-progress: true
+
+jobs:
+  smoke:
+    name: Alpha responde como loja
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: API pronta (/ready/)
+        run: |
+          code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 20 \
+            https://api.staging.nelsonboulangerie.com.br/ready/)
+          echo "/ready/ => $code"
+          test "$code" = "200"
+
+      - name: Cardápio tem produto e tem disponibilidade
+        run: |
+          curl -s --max-time 30 -H 'Accept: application/json' \
+            https://api.staging.nelsonboulangerie.com.br/api/v1/storefront/menu/ \
+            -o menu.json
+          python3 - <<'EOF'
+          import json
+
+          def walk(node):
+              if isinstance(node, dict):
+                  yield node
+                  for value in node.values():
+                      yield from walk(value)
+              elif isinstance(node, list):
+                  for value in node:
+                      yield from walk(value)
+
+          data = json.load(open("menu.json"))
+          products = [n for n in walk(data) if isinstance(n, dict) and "sku" in n]
+          skus = {p["sku"] for p in products}
+          sellable = {
+              p["sku"] for p in products
+              if p.get("availability") in ("available", "low_stock", "planned_ok")
+          }
+          print(f"skus no cardápio: {len(skus)}; com disponibilidade: {len(sellable)}")
+          # Cardápio raso ou tudo esgotado é exatamente o sintoma que este
+          # smoke existe para acusar — antes do cliente.
+          assert len(skus) >= 50, f"cardápio raso: {len(skus)} skus"
+          assert len(sellable) >= 10, f"quase tudo esgotado: {len(sellable)} vendáveis"
+          EOF
+
+      - name: A loja renderiza (SSR)
+        run: |
+          curl -s --max-time 30 https://alpha.nelsonboulangerie.com.br/ -o home.html
+          code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 30 \
+            https://alpha.nelsonboulangerie.com.br/)
+          bytes=$(wc -c < home.html)
+          echo "home => $code ($bytes bytes)"
+          test "$code" = "200"
+          # Página em branco também responde 200 — o tamanho denuncia.
+          test "$bytes" -gt 20000
+          grep -qi "nelson" home.html
