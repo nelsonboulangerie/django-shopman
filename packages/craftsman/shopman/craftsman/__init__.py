@@ -44,6 +44,7 @@ def __getattr__(name):
         "stock_legs_complete",
         "STOCK_CONSUMED_KEY",
         "STOCK_REALIZED_KEY",
+        "STARTED_BATCH",
     ):
         # API de recuperação da ponte craftsman→stockman. O `finish` emite o
         # signal FORA do atomic, então uma queda no meio do handler deixa a
@@ -66,5 +67,6 @@ __all__ = [
     "stock_legs_complete",
     "STOCK_CONSUMED_KEY",
     "STOCK_REALIZED_KEY",
+    "STARTED_BATCH",
 ]
 __version__ = "0.3.0"

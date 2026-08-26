@@ -13,6 +13,7 @@ manutenção num loop (default: a cada 5 minutos):
   reconcile_payments        — PIX pago com webhook perdido é resgatado
   sweep_stuck_orders        — fase de lifecycle perdida (crash pós-commit) é re-despachada
   sweep_unrealized_production — fornada concluída sem o ledger de estoque fechado é re-realizada
+  sweep_dead_production_stock — resíduo de processo de WO morta é zerado pelo ledger
   check_directive_health    — failed/backlog/heartbeat da fila viram OperatorAlert (ADR-003)
 
 Cada tarefa é isolada: uma falha loga e NUNCA derruba o ciclo das demais.
@@ -70,6 +71,10 @@ MAINTENANCE_COMMANDS = (
     # O mesmo resgate, do lado da produção: fornada concluída cujo ledger de
     # estoque não fechou (queda no meio do handler) volta a ser realizada.
     "sweep_unrealized_production",
+    # DEPOIS do resgate acima, de propósito: o resíduo de processo de uma WO
+    # morta (void com ajuste falho, quant órfão) é zerado pelo ledger — mas só
+    # quando nenhuma WO viva nem ledger aberto ainda reivindica o quant.
+    "sweep_dead_production_stock",
     # Por último: as checagens veem o estado PÓS-remediação do ciclo (menos flap).
     "check_directive_health",
 )
