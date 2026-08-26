@@ -155,6 +155,40 @@ def test_read_invoice_uses_configured_xml_directory(tmp_path, supplier, material
     assert draft["lines"][0]["conversionId"] == str(conversion.pk)
 
 
+@pytest.mark.django_db
+def test_download_builds_mde_with_dist_dfe_schema_version(monkeypatch):
+    captured: dict[str, object] = {}
+
+    class FakeMDe:
+        def __init__(self, transmissao, **kwargs):
+            captured.update(kwargs)
+
+        def consultar_distribuicao(self, recipient, chave):
+            captured["chave"] = chave
+            return _nfe_xml(access_key=chave)
+
+    import erpbrasil.assinatura.certificado as certificado_module
+    import erpbrasil.edoc.mde as mde_module
+
+    monkeypatch.setattr(mde_module, "MDe", FakeMDe)
+    monkeypatch.setattr(mde_module, "TransmissaoMDE", lambda certificate: certificate)
+    monkeypatch.setattr(certificado_module, "Certificado", lambda source, password: object())
+
+    config = {
+        "recipient_document": "99999999000191",
+        "certificate_pfx_base64": base64.b64encode(b"pfx-bytes").decode("ascii"),
+        "certificate_password": "x",
+        "uf": "41",
+        "environment": "producao",
+    }
+    with override_settings(SHOPMAN_PURCHASE_NFE=config):
+        draft = read_invoice(access_key=VALID_ACCESS_KEY, qr_payload=VALID_ACCESS_KEY)
+
+    assert captured["versao"] == "1.01"
+    assert captured["chave"] == VALID_ACCESS_KEY
+    assert draft["lines"]
+
+
 def test_extract_proc_nfe_xml_from_distribution_doczip():
     class DocZip:
         schema = "procNFe_v4.00.xsd"

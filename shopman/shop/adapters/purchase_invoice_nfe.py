@@ -159,6 +159,9 @@ def _download_nfe_xml(access_key: str, config: dict[str, Any]) -> str:
         uf=int(str(config.get("uf") or access_key[:2] or "41")),
         ambiente=_erpbrasil_environment(config),
         mod=_document_model(access_key),
+        # O schema distDFeInt do Ambiente Nacional aceita somente versao 1.01;
+        # o default herdado de NFe ("4.00") faz a SEFAZ rejeitar com cStat 239.
+        versao="1.01",
     )
     response = mde.consultar_distribuicao(recipient_document, chave=access_key)
     xml = _extract_proc_nfe_xml(response, access_key=access_key)
