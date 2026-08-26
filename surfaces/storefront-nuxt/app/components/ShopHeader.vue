@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { headerCollapsed } from '~/presentation/scroll'
+
 const session = useShopSession()
 const route = useRoute()
 const { cart } = useCartState()
@@ -49,14 +51,16 @@ function toggleMenu () {
   menuOpen.value = !menuOpen.value
 }
 
-// Status bar colapsa ao rolar (deixa só navbar + linha dourada). Position-based:
-// colapsa fora do topo, reexpande ao voltar. O scrollover superior acompanha a cor
-// dinamicamente (plugin overscroll), então navbar e borda nunca destoam.
+// Status bar colapsa ao rolar (deixa só navbar + linha dourada). Position-based
+// com histerese (headerCollapsed): colapsar muda a altura da página, e limiar
+// único entrava em laço de reflow quando a rolagem parava exatamente nele. O
+// scrollover superior acompanha a cor dinamicamente (plugin overscroll), então
+// navbar e borda nunca destoam.
 const scrolled = ref(false)
 // Síncrono (sem rAF): o iOS PAUSA o requestAnimationFrame durante o scroll, então a
 // status bar não colapsava no iPhone. Ler scrollY é barato, não causa thrash.
 function onScroll () {
-  scrolled.value = window.scrollY > 8
+  scrolled.value = headerCollapsed(scrolled.value, window.scrollY)
 }
 // Topo do chrome sticky: 6.25rem (status+navbar) no topo · 4rem (só navbar) ao rolar.
 // Alinha o painel do menu à base da navbar nos dois estados.
