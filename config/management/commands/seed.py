@@ -949,11 +949,18 @@ class Command(BaseCommand):
              unsplash("photo-1484723091739-30a097e8f929"), 180, "Servir quente, imediatamente"),
             ("MS", "Melon Iced Sando", "Sanduíche gelado de frutas com chantilly, no shokupan", 2200, "un", 0, True,
              unsplash("photo-1746632732485-4cb341e4a4aa"), 200, "Conservar refrigerado. Consumir no dia"),
-            ("MD", "Madeleine", "Bolinho clássico francês, simples e delicioso", 600, "un", 0, True,
+            ("MD", "Madeleine", "Bolinho clássico francês, simples e delicioso", 600, "un", 1, True,
              f"{IMG}/md.webp", 25, "Conserve em recipiente fechado por até 3 dias"),
-            ("PU", "Purin à la Mode", "Pudim japonês com chantilly e frutas", 2000, "un", 0, True,
+            # Purin e Tea Jelly são produtos novos em desenvolvimento; validade
+            # 3 dias é a estimativa segura do dono (26/08). Não são pão: não
+            # perdem frescor nem preço com o dia — o lote vive os 3 dias a
+            # preço cheio e só sai como perda_vencido no fechamento, como
+            # qualquer produto normal. (O mecanismo já é este: o destino do
+            # lote é decidido pela validade; desconto de véspera é marcação
+            # explícita, nunca automática.)
+            ("PU", "Purin à la Mode", "Pudim japonês com chantilly e frutas", 2000, "un", 3, True,
              unsplash("photo-1752245055475-8b7c3b4756ac"), 150, "Conservar refrigerado. Consumir no dia"),
-            ("TJ", "Tea Jelly", "Gelatina delicada de chá da casa", 1800, "un", 0, True,
+            ("TJ", "Tea Jelly", "Gelatina delicada de chá da casa", 1800, "un", 3, True,
              unsplash("photo-1745236549258-a76c271299f7"), 150, "Conservar refrigerado. Consumir em até 2 dias"),
             # ── Mercearia (preços provisórios — metadata.price_tbd) ──
             ("MT", "Mostarda da Casa", "Mostarda artesanal feita na casa", 1800, "un", 30, True,
