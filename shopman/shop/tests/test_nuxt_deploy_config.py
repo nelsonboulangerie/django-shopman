@@ -59,9 +59,31 @@ def test_make_surfaces_includes_all_nuxt_apps():
 
 
 def test_alpha_app_platform_spec_routes_all_nuxt_apps():
-    source = (ROOT / ".do" / "app.alpha-subdomains.yaml").read_text()
+    """Cada superfície Nuxt é um service do spec servido pela IMAGEM certa.
+
+    Desde 26/08 o deploy é por imagem do DOCR (deploy-images.yml), não por
+    buildpack com ``source_dir``: o contrato que este teste trava é que toda
+    superfície tem seu service apontando para ``shopman:<tag do componente>``
+    com ``deploy_on_push`` ligado — a tag móvel é o que faz o push do Actions
+    VIRAR o deploy. Superfície nova esquecida no spec reprova aqui.
+    """
+    import yaml
+
+    spec = yaml.safe_load((ROOT / ".do" / "app.alpha-subdomains.yaml").read_text())
+    services = {svc["name"]: svc for svc in spec.get("services") or []}
     for surface in SURFACES:
-        assert f"name: {surface}" in source
-        assert f"source_dir: /surfaces/{surface}" in source
+        assert surface in services, f"{surface} sem service no spec do alpha"
+        image = services[surface].get("image") or {}
+        assert image.get("registry_type") == "DOCR", f"{surface} não deploya por imagem do DOCR"
+        assert image.get("repository") == "shopman", f"{surface} fora do repositório shopman"
+        expected_tag = surface.removesuffix("-nuxt")
+        assert image.get("tag") == expected_tag, (
+            f"{surface} com tag {image.get('tag')!r}; o deploy-images.yml publica {expected_tag!r}"
+        )
+        assert (image.get("deploy_on_push") or {}).get("enabled") is True, (
+            f"{surface} sem deploy_on_push — o push do Actions não viraria deploy"
+        )
+
+    source = (ROOT / ".do" / "app.alpha-subdomains.yaml").read_text()
     assert "compras.boulangerie.com.br" in source
     assert "SHOPMAN_PURCHASE_BASE_URL" in source
