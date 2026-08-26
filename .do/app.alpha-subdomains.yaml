@@ -658,6 +658,14 @@ services:
     scope: RUN_AND_BUILD_TIME
     value: https://central.boulangerie.com.br
     type: GENERAL
+  - key: NUXT_PUBLIC_ORDERS_URL
+    scope: RUN_AND_BUILD_TIME
+    value: https://gestor.boulangerie.com.br/
+    type: GENERAL
+  - key: NUXT_PUBLIC_PRODUCTION_URL
+    scope: RUN_AND_BUILD_TIME
+    value: https://prod.boulangerie.com.br/
+    type: GENERAL
   git:
     branch: main
     repo_clone_url: https://github.com/nelsonboulangerie/django-shopman.git
