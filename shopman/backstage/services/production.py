@@ -793,7 +793,12 @@ def _record_batch_traceability(*, work_order_id) -> None:
                 defaults["nonconformity_reason"] = (
                     defect_labels.get(line.quality_defect_ref) or grade_label
                 )
-            Batch.objects.get_or_create(ref=line.batch_ref, defaults=defaults)
+            # update_or_create, não get_or_create: a ponte de estoque roda
+            # ANTES (signal síncrono dentro do craft.finish) e já cria o lote
+            # com produção+validade — o fato de qualidade precisa pousar por
+            # cima. O congelamento continua: só o fechamento escreve aqui, e
+            # ninguém reescreve depois.
+            Batch.objects.update_or_create(ref=line.batch_ref, defaults=defaults)
     except Exception as exc:
         logger.warning(
             "production_batch_traceability_failed work_order_id=%s", work_order_id, exc_info=True

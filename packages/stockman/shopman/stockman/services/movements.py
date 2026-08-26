@@ -39,6 +39,34 @@ class StockMovements:
         if quantity <= 0:
             raise StockError('INVALID_QUANTITY', requested=quantity)
 
+        # Entrada FÍSICA de perecível sem lote explícito ganha o lote do dia.
+        # A validade de quant sem data é julgada pelo created_at do quant, e o
+        # get_or_create abaixo reusa o mesmo quant para sempre — a reposição de
+        # balcão de um perecível caía num acumulador que envelhece uma vez e
+        # esconde toda reposição nova (a mesma armadilha do realize, corrigida
+        # no lote diário). Não-perecível fica como era: sem shelf-life, quant
+        # sem data é sempre válido e não há o que envelhecer.
+        if target_date is None and not batch:
+            from shopman.stockman.shelflife import shelf_life_days_for
+
+            shelflife = shelf_life_days_for(sku)
+            if shelflife is not None:
+                from datetime import timedelta
+
+                from django.utils import timezone
+                from shopman.stockman.models.batch import Batch
+
+                received_on = timezone.localdate()
+                batch = f"{sku}-{received_on:%Y%m%d}"
+                Batch.objects.get_or_create(
+                    ref=batch,
+                    defaults={
+                        'sku': sku,
+                        'production_date': received_on,
+                        'expiry_date': received_on + timedelta(days=shelflife),
+                    },
+                )
+
         with transaction.atomic():
             quant, created = Quant.objects.get_or_create(
                 sku=sku,

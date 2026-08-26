@@ -664,25 +664,56 @@ def _realize_output_leg(work_order, product_ref, date):
             _stamp_leg(work_order, STOCK_REALIZED_KEY)
             return
 
+        # A partição de qualidade (ADR-017) nomeia os lotes da fornada nas
+        # linhas de OUTPUT — e o estoque deve carregá-los: é o quant.batch que
+        # liga o hold ao lote com desconto congelado (lot_pricing). Sem linhas
+        # (finish escalar, dado legado) ou com soma divergente do finished,
+        # tudo cai no lote diário — nunca se perde fornada por partição torta.
+        from shopman.craftsman.models import WorkOrderItem
+
+        partition_lines = list(
+            WorkOrderItem.objects.filter(
+                work_order=work_order,
+                kind=WorkOrderItem.Kind.OUTPUT,
+                item_ref=product_ref,
+            ).exclude(batch_ref="")
+        )
+        if partition_lines and sum(
+            line.quantity for line in partition_lines
+        ) == finished_qty:
+            legs = [(line.quantity, line.batch_ref) for line in partition_lines]
+        else:
+            if partition_lines:
+                logger.warning(
+                    "Partition lines of %s do not sum to finished_qty=%s — "
+                    "realizing into the daily lot instead",
+                    work_order.ref,
+                    finished_qty,
+                )
+            legs = [(finished_qty, "")]
+
         # Carimbo ANTES do realize, pelo mesmo motivo da perna de insumo: a
         # janela entre escrever e carimbar era o que deixava um segundo
         # fechamento simultâneo creditar a vitrine de novo.
         _stamp_leg(work_order, STOCK_REALIZED_KEY)
-        StockPlanning.realize(
-            product=type("P", (), {"sku": product_ref})(),
-            target_date=date,
-            actual_quantity=finished_qty,
-            to_position=to_position,
-            from_position=from_position,
-            from_batch=from_batch,
-            reason=f"Produção concluída: {work_order.ref}",
-        )
+        for leg_qty, leg_batch in legs:
+            StockPlanning.realize(
+                product=type("P", (), {"sku": product_ref})(),
+                target_date=date,
+                actual_quantity=leg_qty,
+                to_position=to_position,
+                from_position=from_position,
+                from_batch=from_batch,
+                reason=f"Produção concluída: {work_order.ref}",
+                to_batch=leg_batch,
+            )
         logger.info(
-            "Production realized: sku=%s qty=%s %s → %s (WO %s)",
+            "Production realized: sku=%s qty=%s %s → %s em %s lote(s) (WO %s)",
             product_ref,
             finished_qty,
             work_order.position_ref or "(default)",
             to_position.ref,
+            len(legs),
             work_order.ref,
         )
 
