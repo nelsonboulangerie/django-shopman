@@ -4,6 +4,7 @@ import { toast } from "vue-sonner";
 import { resolveAffordance } from "~/presentation/actions";
 import { requiresOpenShiftForSale } from "~/presentation/cash";
 import { rollStyle } from "~/presentation/printGeometry";
+import { askedMarkFor, shouldAskFulfillment } from "~/presentation/fulfillmentPrompt";
 import { enterAdvances } from "~/presentation/saleResult";
 import { globalKeysBlocked } from "~/utils/keyboardGuard";
 // Tela de VENDA — wires the read-side (usePosTerminal) and write-side (usePosSale)
@@ -347,13 +348,14 @@ const fulfillmentSheetOpen = ref(false);
 // Some sozinha no primeiro item lançado: quem começou a vender já respondeu
 // "retirada" com o corpo.
 const fulfillmentAskedFor = ref("");
-const showFulfillmentPrompt = computed(() =>
-  inSaleView.value
-  && !checkoutMode.value
-  && hasOpenTab.value
-  && cart.items.length === 0
-  && fulfillmentAskedFor.value !== cart.tabSessionKey,
-);
+const showFulfillmentPrompt = computed(() => shouldAskFulfillment({
+  inSaleView: inSaleView.value,
+  checkoutMode: checkoutMode.value,
+  hasOpenTab: hasOpenTab.value,
+  itemCount: cart.items.length,
+  askedFor: fulfillmentAskedFor.value,
+  tabSessionKey: cart.tabSessionKey,
+}));
 // O chip da barra abre a caixa de quem é dono dela na tela atual: no checkout, a
 // da tela de pagamento (mesmo componente, outro estado) — assim F7 e o chip
 // nunca abrem duas caixas diferentes.
@@ -362,7 +364,7 @@ function openFulfillmentHere() {
   else fulfillmentSheetOpen.value = true;
 }
 function markFulfillmentAsked() {
-  fulfillmentAskedFor.value = cart.tabSessionKey || "-";
+  fulfillmentAskedFor.value = askedMarkFor(cart.tabSessionKey);
 }
 function answerPickup() {
   cart.fulfillmentType = "pickup";

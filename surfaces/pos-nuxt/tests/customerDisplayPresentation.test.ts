@@ -9,7 +9,7 @@ import {
   displayPhase,
   firstName,
 } from "~/presentation/customerDisplay";
-import { lineDiscountBadge, lineTotalQ, pricingDiscountBadge, saleDiscountBadges } from "~/presentation/lineDiscounts";
+import { lineDiscountBadge, lineTotalQ, pricingDiscountBadge } from "~/presentation/lineDiscounts";
 import type { PaymentProofView } from "~/presentation/payment";
 import { cartNetTotalQ, type PosReceiptSnapshot } from "~/presentation/receipt";
 import type { POSCartItem, POSCheckoutOptionProjection, POSSaleReviewProjection } from "~/types/pos";
@@ -132,17 +132,6 @@ describe("pricingDiscountBadge — o caso Batard (R$ 13,00 → R$ 11,05)", () =>
       pricing_discount: { type: "employee_discount", label: "Funcionário", amount_q: 100, percent: 20 },
     });
     expect(lineDiscountBadge(it_, REASONS)).toBe("Funcionário −20%");
-  });
-  it("saleDiscountBadges lista só as linhas com desconto, com nome", () => {
-    const rows = saleDiscountBadges([
-      item({ sku: "BATARD", name: "Batard", pricing_discount: { type: "lot_discount", label: "Liquidação", amount_q: 195, percent: 15 } }),
-      item({ sku: "CAFE", name: "Café" }),
-      item({ sku: "PAO", name: "Pão", discount: { value: 10, reason: "cortesia" } }),
-    ], REASONS);
-    expect(rows).toEqual([
-      { sku: "BATARD", name: "Batard", badge: "Liquidação −15%" },
-      { sku: "PAO", name: "Pão", badge: "Cortesia −10%" },
-    ]);
   });
 });
 

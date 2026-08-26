@@ -104,22 +104,3 @@ export function lineListTotalQ(item: POSCartItem): number {
 export function lineSavingsQ(item: POSCartItem): number {
   return Math.max(0, lineListTotalQ(item) - lineTotalQ(item));
 }
-
-export interface SaleDiscountBadge {
-  sku: string;
-  name: string;
-  badge: string;
-}
-
-/** Uma linha por item com desconto (automático ou manual) — o resumo do checkout. */
-export function saleDiscountBadges(
-  items: POSCartItem[],
-  reasons: readonly DiscountReasonOption[] = [],
-): SaleDiscountBadge[] {
-  const rows: SaleDiscountBadge[] = [];
-  for (const item of items) {
-    const badge = lineDiscountBadge(item, reasons);
-    if (badge) rows.push({ sku: item.sku, name: item.name, badge });
-  }
-  return rows;
-}
