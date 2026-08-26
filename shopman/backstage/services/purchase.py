@@ -25,6 +25,7 @@ from django.utils.dateparse import parse_date
 from django.utils.module_loading import import_string
 
 from shopman.backstage.projections.purchase import build_purchase
+from shopman.shop.adapters.purchase_invoice_nfe import INVOICE_PRODUCT_MAP_KEYS
 
 logger = logging.getLogger(__name__)
 
@@ -50,6 +51,7 @@ class ResolvedReceiptLine:
     unit_cost_q: int
     expiry_date: Any | None
     note: str
+    invoice_product_code: str
     checked: bool
 
 
@@ -190,6 +192,8 @@ def confirm_receipt(payload: dict[str, Any], *, user) -> dict[str, Any]:
                     make_preferred=False,
                     prefer_if_missing=True,
                 )
+        if mode == "invoice":
+            _learn_invoice_product_map(supplier=supplier, lines=lines)
 
     return build_purchase()
 
@@ -635,6 +639,7 @@ def _resolve_receipt_line(raw: dict[str, Any], *, index: int, supplier) -> Resol
         unit_cost_q=unit_cost_q,
         expiry_date=expiry_date,
         note=note,
+        invoice_product_code=str(raw.get("invoiceProductCode") or raw.get("invoice_product_code") or "").strip(),
         checked=True,
     )
 
@@ -683,6 +688,78 @@ def _upsert_supplier_cost(*, material, supplier, conversion, cost_q: int, make_p
         cost.save()
     except ValidationError as exc:
         raise PurchaseError(str(exc), code="cost_validation_failed", field="costInput") from exc
+
+
+def _learn_invoice_product_map(*, supplier, lines: list[ResolvedReceiptLine]) -> None:
+    """Persist operator-confirmed NF line → material pairs on the supplier.
+
+    The scan adapter resolves future invoices from
+    ``Supplier.metadata.purchase.invoice_product_map`` (see
+    docs/reference/data-schemas.md); confirming a receipt is the only writer.
+    A divergent existing entry is replaced — the operator's confirmation is the
+    freshest truth — but never silently: the swap goes to the structured log.
+    """
+    learned = {
+        line.invoice_product_code: {
+            "materialSku": line.material.sku,
+            "conversionLabel": line.conversion.label if line.conversion else "",
+        }
+        for line in lines
+        if line.invoice_product_code
+    }
+    if not learned:
+        return
+
+    metadata = dict(supplier.metadata or {})
+    purchase = dict(metadata.get("purchase") or {})
+    mapping = dict(_current_invoice_product_map(metadata, purchase))
+    changed = False
+    for code, entry in learned.items():
+        current = mapping.get(code)
+        if current == entry:
+            continue
+        current_sku = _mapped_material_sku(current)
+        if current_sku and current_sku != entry["materialSku"]:
+            logger.warning(
+                "purchase.invoice_product_map_overwrite",
+                extra={
+                    "supplier": supplier.ref,
+                    "invoice_product_code": code,
+                    "old_material": current_sku,
+                    "new_material": entry["materialSku"],
+                },
+            )
+        mapping[code] = entry
+        changed = True
+    if not changed:
+        return
+
+    purchase["invoice_product_map"] = mapping
+    metadata["purchase"] = purchase
+    supplier.metadata = metadata
+    supplier.save(update_fields=["metadata", "updated_at"])
+
+
+def _current_invoice_product_map(metadata: dict[str, Any], purchase: dict[str, Any]) -> dict[str, Any]:
+    # Mesma ordem de resolução do adapter (escopo purchase antes da raiz,
+    # aliases em INVOICE_PRODUCT_MAP_KEYS): aprender por cima do mapa que o
+    # scan realmente lê, senão um mapa manual sob alias ficaria sombreado.
+    for scope in (purchase, metadata):
+        for key in INVOICE_PRODUCT_MAP_KEYS:
+            value = scope.get(key)
+            if isinstance(value, dict):
+                return value
+    return {}
+
+
+def _mapped_material_sku(entry: Any) -> str:
+    if isinstance(entry, str | int):
+        return str(entry).strip()
+    if isinstance(entry, dict):
+        for key in ("materialSku", "material_sku", "sku", "material"):
+            if entry.get(key):
+                return str(entry[key]).strip()
+    return ""
 
 
 def _default_receive_position():

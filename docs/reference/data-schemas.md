@@ -1324,3 +1324,46 @@ ou apuração de caixa.
 
 `scenarios` é a resposta validada (`ScenarioPayload`): `[{title, proposal, basis[], unknowns[]}]`.
 Resposta fora do contrato não entra aqui: o relatório nasce `failed` com `error` e `raw_text`.
+
+
+## buyman.Supplier.metadata
+
+Preferências de compra do fornecedor, sob o escopo `purchase` (as chaves de
+contato/rota — `order_channel`, `order_email`, `lead_time_days` etc. — são lidas
+por `backstage/services/purchase.py` e pela projection; entram pelo Admin, sem
+escritor no código).
+
+### `purchase.invoice_product_map`
+
+O de-para aprendido entre o item da NF-e do fornecedor e o insumo da casa.
+
+```json
+{
+  "purchase": {
+    "invoice_product_map": {
+      "<cProd da NF>": {"materialSku": "FARINHA-T65", "conversionLabel": "saco 25 kg"}
+    }
+  }
+}
+```
+
+| Chave | Tipo | Escrito por | Lido por |
+|-------|------|-------------|----------|
+| `invoice_product_map.<cProd>` | `{materialSku: str, conversionLabel: str}` | `backstage/services/purchase.py::confirm_receipt` (toda linha de entrada com NF confirmada com insumo definido e `invoiceProductCode` presente) | `shop/adapters/purchase_invoice_nfe.py` (scan da NF: resolve `materialSku` e a conversão pelo `label`) |
+
+- A chave do mapa é o `cProd` do item na NF (o adapter também tenta EAN e
+  nome, mas o confirm grava só por `cProd`). `conversionLabel` vazio = linha
+  confirmada sem conversão.
+- O adapter aceita aliases legados (`nfe_product_map`, `invoiceProducts`,
+  `nfeProducts`, no escopo `purchase` ou na raiz — `INVOICE_PRODUCT_MAP_KEYS`)
+  e valores string (`"<cProd>": "<sku>"`); o aprendizado semeia o mapa novo a
+  partir do primeiro alias que o scan resolveria, para não sombrear mapa
+  manual, e grava sempre no caminho canônico acima.
+- Entrada divergente (mesmo `cProd` apontando para outro insumo) é
+  substituída — a confirmação do operador é a verdade mais fresca — com
+  `warning` estruturado `purchase.invoice_product_map_overwrite`.
+
+O lado do insumo (`buyman.Material.metadata`) tem as chaves de leitura do mesmo
+scan (`invoice_codes`, `gtins` e afins em `MATERIAL_CODE_KEYS`) e o estado do
+pedido de reposição (`purchase.request_status*`, escrito por
+`set_purchase_request_status`).

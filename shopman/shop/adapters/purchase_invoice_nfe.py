@@ -229,6 +229,8 @@ def _receipt_line_from_item(item: NFeItem, *, index: int, supplier: Any | None) 
         "costInput": _money_text(total_value),
         "expiryDate": item.expiry_date,
         "lineNote": _line_note(item, material=material, requires_conversion=requires_conversion),
+        "invoiceProductCode": item.product_code,
+        "invoiceEan": item.ean,
         "checked": False,
     }
 

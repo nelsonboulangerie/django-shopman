@@ -17,7 +17,14 @@ from shopman.shop.adapters.purchase_invoice_nfe import (
 VALID_ACCESS_KEY = "41260812345678000190550010000012341000123459"
 
 
-def _nfe_xml(*, access_key: str = VALID_ACCESS_KEY, product_code: str = "FAR-25", product_name: str = "FARINHA T65 25KG", unit: str = "SC") -> str:
+def _nfe_xml(
+    *,
+    access_key: str = VALID_ACCESS_KEY,
+    product_code: str = "FAR-25",
+    product_name: str = "FARINHA T65 25KG",
+    unit: str = "SC",
+    ean: str = "SEM GTIN",
+) -> str:
     return f"""<?xml version="1.0" encoding="UTF-8"?>
 <nfeProc xmlns="http://www.portalfiscal.inf.br/nfe" versao="4.00">
   <NFe>
@@ -40,7 +47,7 @@ def _nfe_xml(*, access_key: str = VALID_ACCESS_KEY, product_code: str = "FAR-25"
       <det nItem="1">
         <prod>
           <cProd>{product_code}</cProd>
-          <cEAN>SEM GTIN</cEAN>
+          <cEAN>{ean}</cEAN>
           <xProd>{product_name}</xProd>
           <NCM>11010010</NCM>
           <CFOP>5102</CFOP>
@@ -123,6 +130,8 @@ def test_parse_nfe_xml_to_receipt_draft_maps_supplier_material_and_conversion(su
             "costInput": "360,00",
             "expiryDate": "",
             "lineNote": "NF: FARINHA T65 25KG; cod FAR-25; unidade SC; NCM 11010010; CFOP 5102.",
+            "invoiceProductCode": "FAR-25",
+            "invoiceEan": "",
             "checked": False,
         }
     ]
@@ -131,7 +140,7 @@ def test_parse_nfe_xml_to_receipt_draft_maps_supplier_material_and_conversion(su
 @pytest.mark.django_db
 def test_parse_nfe_xml_keeps_unmapped_item_visible_and_blocked(supplier):
     draft = parse_nfe_xml_to_purchase_draft(
-        _nfe_xml(product_code="QJO-ART", product_name="QUEIJO ARTESANAL MEIA CURA", unit="PC"),
+        _nfe_xml(product_code="QJO-ART", product_name="QUEIJO ARTESANAL MEIA CURA", unit="PC", ean="7891234567895"),
         access_key=VALID_ACCESS_KEY,
     )
 
@@ -141,6 +150,8 @@ def test_parse_nfe_xml_keeps_unmapped_item_visible_and_blocked(supplier):
     assert line["conversionId"] is None
     assert line["requiresConversion"] is True
     assert line["lineNote"].startswith("Definir insumo. NF: QUEIJO ARTESANAL")
+    assert line["invoiceProductCode"] == "QJO-ART"
+    assert line["invoiceEan"] == "7891234567895"
 
 
 @pytest.mark.django_db
