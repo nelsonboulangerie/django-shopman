@@ -166,3 +166,9 @@ jobs:
             ${{ env.IMAGE }}:${{ matrix.tag }}-${{ github.sha }}
           cache-from: type=gha,scope=${{ matrix.name }}
           cache-to: type=gha,scope=${{ matrix.name }},mode=max
+          # Sem provenance/SBOM: o buildx v6 embrulha a tag num índice OCI de
+          # attestation, e o App Platform espera manifest de imagem puro — a
+          # tag apontava para 4 kB de attestation e a imagem real (centenas de
+          # MB) ficava sem tag. Visto no primeiro push, 26/08.
+          provenance: false
+          sbom: false
