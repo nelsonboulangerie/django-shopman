@@ -112,7 +112,15 @@ def canonical_catalog(db):
             "is_saleable": True,
         },
     )
-    collection = Collection.objects.create(ref="paes", name="Pães", is_active=True)
+    # A coleção canônica carrega cor e ícone (Collection.metadata), como as do
+    # seed: é o que veste o card de produto sem foto, e sem isso o contrato
+    # provaria que as chaves existem sem provar que chegam preenchidas ao FE.
+    collection = Collection.objects.create(
+        ref="paes",
+        name="Pães",
+        is_active=True,
+        metadata={"color": "#B49B7F", "icon": "wheat"},
+    )
     listing = Listing.objects.create(ref="web", name="Loja", is_active=True)
 
     def add_product(sku: str, name: str, price_q: int, *, qty: Decimal | None):
