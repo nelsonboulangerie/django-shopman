@@ -144,7 +144,13 @@ def test_nelson_seed_populates_production_history_alerts_and_batches(monkeypatch
 
     warehouse = Position.objects.get(ref="deposito")
     assert Quant.objects.filter(sku="FARINHA-T65", position=warehouse).exists()
-    assert stock_service.available("FARINHA-T65", position=warehouse) == Decimal("500")
+    # O saldo de abertura não é mais um 500 chapado: deriva do plano do dia ×
+    # cobertura de compra e chega em SACAS fechadas de 25 kg (dono, 26/08).
+    # O invariante é o mecanismo, não o número — o número muda com o plano.
+    farinha_abertura = stock_service.available("FARINHA-T65", position=warehouse)
+    assert farinha_abertura > 0
+    assert farinha_abertura % Decimal("25") == 0, "farinha entra em saca fechada de 25 kg"
+    assert farinha_abertura <= Decimal("625"), "teto de um pedido: 25 sacas"
 
     suggestions = craft.suggest(date.today() + timedelta(days=1), output_skus=["CT"])
     assert suggestions

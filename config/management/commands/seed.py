@@ -19,7 +19,7 @@ import os
 import random
 import uuid
 from datetime import date, datetime, time, timedelta
-from decimal import Decimal
+from decimal import ROUND_CEILING, Decimal
 
 from django.conf import settings
 from django.contrib.auth.models import User
@@ -2955,19 +2955,10 @@ class Command(BaseCommand):
             )
         self.stdout.write(f"  ✅ {len(counting_conversions)} conversões de contagem")
 
-        # Saldo de abertura de insumo no depósito — estoque físico para a produção
-        # poder consumir (consume da untangle emite issue sobre estes quants) e para
-        # os guardrails de disponibilidade (Buyman WP-B5b) terem o que checar.
-        # kind default (ADJUST = saldo de abertura), igual ao estoque de produto.
+        # O saldo de abertura de insumo entra DEPOIS do mise en place (abaixo):
+        # ele deriva do plano do dia expandido pelas fichas, que ainda não
+        # existem neste ponto do método.
         deposito = Position.objects.filter(ref="deposito").first()
-        for sku in INGREDIENT_PROFILES:
-            stock.receive(
-                quantity=Decimal("500"),
-                sku=sku,
-                position=deposito,
-                reason="Saldo de abertura de insumo (seed)",
-            )
-        self.stdout.write(f"  ✅ estoque de abertura para {len(INGREDIENT_PROFILES)} insumos")
 
         def _is_preparation(recipe_ref: str) -> bool:
             """Pré-preparo (massa, recheio): sai em quilo, não em unidade."""
@@ -3125,6 +3116,93 @@ class Command(BaseCommand):
         self.stdout.write(
             f"  ✅ mise en place para {len(prep_needs)} pré-preparos "
             f"({PREP_DAYS_OF_COVER} dias do plano)"
+        )
+
+        # ── Saldo de abertura de insumo: a despensa como a casa compra ──────
+        #
+        # Era um 500 chapado para TODO insumo — 500 kg de alecrim, 500 kg de
+        # fermento com validade de 7 dias, 500 L de leite — o oposto de
+        # verossímil, e um número que ninguém rejuvenesce porque ninguém
+        # acredita nele. Agora o saldo deriva do PRÓPRIO plano do dia, na mesma
+        # lógica do mise en place: consumo diário de cada insumo (fichas dos
+        # acabados + pré-preparos expandidos pela ficha da massa) × a cobertura
+        # de compra real da casa (dono, 26/08): fresco dura ~1 semana na
+        # geladeira e é comprado assim (teto na validade); seco chega para 15 a
+        # 30 dias (usamos 21). O arredondamento é o da embalagem que entra pela
+        # porta: farinha em sacas de 25 kg (pedidos de 15 a 25 sacas — teto de
+        # um pedido), açúcar em sacos de 5 kg, sal em saquinhos de 1 kg.
+        #
+        # Insumo que nenhuma ficha usa ainda (gergelim, canela… — fichas chegam
+        # na Seção 2) abre com um piso de prateleira, marcado estimativa.
+        # kind default (ADJUST = saldo de abertura), igual ao estoque de produto.
+        raw_daily: dict[str, Decimal] = {}
+
+        def _acumula_insumos(recipe: Recipe, per_day_output: Decimal) -> None:
+            """`per_day_output` na unidade da ficha: un de acabado, kg de massa."""
+            coefficient = per_day_output / recipe.batch_size
+            for item in recipe.items.filter(is_optional=False):
+                if item.input_sku in prep_outputs:
+                    _acumula_insumos(recipe_by_output[item.input_sku], item.quantity * coefficient)
+                elif item.input_sku in INGREDIENT_PROFILES:
+                    raw_daily[item.input_sku] = (
+                        raw_daily.get(item.input_sku, Decimal("0"))
+                        + item.quantity * coefficient
+                    )
+
+        for plan_ref, plan_qty, _plan_start, _plan_finish in production_plan:
+            _acumula_insumos(recipes_by_ref[plan_ref], plan_qty)
+
+        # Embalagem de compra (kg por volume fechado) e teto de pedido da farinha.
+        PACOTE_KG = {
+            "FARINHA-T65": 25, "FARINHA-T55": 25, "FARINHA-T45": 25,
+            "FARINHA-INT": 25, "CENTEIO": 25,
+            "ACUCAR": 5, "SAL": 1,
+        }
+        TETO_SACAS_POR_PEDIDO = 25  # dono, 26/08: pedidos de 15 a 25 sacas
+        # Fresco é ritmo de compra, não só validade: a manteiga aguenta 60 dias
+        # no frio, mas entra na compra semanal dos frescos — sem isto o cálculo
+        # abriria com 90 kg de manteiga francesa (3 semanas de viennoiserie).
+        FRESCOS_SEMANAIS = {"MANTEIGA-FR"}
+        # Piso para especiaria é outro: 5 kg de canela não é despensa, é atacado.
+        PISO_ESPECIARIA_KG = {"CANELA": Decimal("0.5"), "ALECRIM": Decimal("0.5")}
+
+        def _cobertura_dias(sku: str, shelf_days: int | None) -> Decimal:
+            if sku in FRESCOS_SEMANAIS:
+                return Decimal("7")
+            if shelf_days is not None and shelf_days <= 30:
+                return Decimal(min(7, shelf_days))
+            return Decimal("21")
+
+        abertura: dict[str, Decimal] = {}
+        for sku in INGREDIENT_PROFILES:
+            _unit, shelf = material_attrs.get(sku, ("un", None))
+            fresco = sku in FRESCOS_SEMANAIS or (shelf is not None and shelf <= 30)
+            demanda = raw_daily.get(sku, Decimal("0")) * _cobertura_dias(sku, shelf)
+            # Piso de prateleira para quem ainda não tem ficha que o consuma
+            # (estimativa — a Seção 2 dá ficha a todos e a demanda assume).
+            piso = PISO_ESPECIARIA_KG.get(sku) or (Decimal("2") if fresco else Decimal("5"))
+            quantidade = max(demanda, piso)
+            pacote = PACOTE_KG.get(sku)
+            if pacote:
+                volumes = (quantidade / pacote).to_integral_value(rounding=ROUND_CEILING)
+                if pacote == 25:
+                    volumes = min(volumes, TETO_SACAS_POR_PEDIDO)
+                quantidade = volumes * pacote
+            else:
+                quantidade = quantidade.quantize(Decimal("0.1"), rounding=ROUND_CEILING)
+            abertura[sku] = quantidade
+            stock.receive(
+                quantity=quantidade,
+                sku=sku,
+                position=deposito,
+                reason="Saldo de abertura de insumo (seed)",
+            )
+        maiores = ", ".join(
+            f"{sku} {qty}" for sku, qty in sorted(abertura.items(), key=lambda kv: -kv[1])[:4]
+        )
+        self.stdout.write(
+            f"  ✅ saldo de abertura dimensionado para {len(abertura)} insumos "
+            f"(fichas × cobertura de compra; maiores: {maiores})"
         )
 
         def at(day: date, hour_min: tuple[int, int]) -> datetime:
