@@ -23,6 +23,7 @@ from .settings_proxies import (
     ShopOrdering,
     ShopPos,
     ShopProduction,
+    ShopPurchase,
 )
 from .shop import NotificationTemplate, Shop
 from .user_notification import NotificationCategory, UserNotification
@@ -46,6 +47,7 @@ __all__ = [
     "ShopMenu",
     "ShopOrdering",
     "ShopLoyalty",
+    "ShopPurchase",
     "ShopPos",
     "ShopProduction",
     "ShopIntegrations",

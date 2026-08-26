@@ -8,12 +8,14 @@ import pytest
 from django.apps import apps
 
 from shopman.backstage.projections.purchase import (
-    PURCHASE_POLICY_DEFAULTS,
     _lead_time_map,
     _purchase_policy,
     _suggested_qty,
     build_purchase,
 )
+from shopman.shop.purchase_policy import PurchasePolicy
+
+POLICY_DEFAULTS = PurchasePolicy().to_dict()
 
 
 @pytest.fixture
@@ -35,7 +37,7 @@ def supplier(db):
 
 @pytest.mark.django_db
 def test_policy_defaults_and_admin_override():
-    assert _purchase_policy() == PURCHASE_POLICY_DEFAULTS
+    assert _purchase_policy() == POLICY_DEFAULTS
 
     Shop = apps.get_model("shop", "Shop")
     shop = Shop.load() or Shop.objects.create(name="Loja Teste")
@@ -45,7 +47,7 @@ def test_policy_defaults_and_admin_override():
     policy = _purchase_policy()
     assert policy["review_period_days"] == 5
     assert policy["safety_days"] == 0
-    assert policy["consumption_window_days"] == PURCHASE_POLICY_DEFAULTS["consumption_window_days"]
+    assert policy["consumption_window_days"] == POLICY_DEFAULTS["consumption_window_days"]
 
 
 @pytest.mark.django_db
@@ -53,16 +55,16 @@ def test_lead_time_falls_back_to_preferred_supplier_declared_days(material, supp
     SupplierMaterialCost = apps.get_model("buyman", "SupplierMaterialCost")
     SupplierMaterialCost.objects.create(material=material, supplier=supplier, cost_q=1000, is_preferred=True)
 
-    lead = _lead_time_map([material.sku], policy=dict(PURCHASE_POLICY_DEFAULTS))
+    lead = _lead_time_map([material.sku], policy=dict(POLICY_DEFAULTS))
 
     assert lead[material.sku] == Decimal("6")
 
 
 @pytest.mark.django_db
 def test_lead_time_floor_without_history_or_declared(material):
-    lead = _lead_time_map([material.sku], policy=dict(PURCHASE_POLICY_DEFAULTS))
+    lead = _lead_time_map([material.sku], policy=dict(POLICY_DEFAULTS))
 
-    assert lead[material.sku] == Decimal(PURCHASE_POLICY_DEFAULTS["min_lead_time_days"])
+    assert lead[material.sku] == Decimal(POLICY_DEFAULTS["min_lead_time_days"])
 
 
 def test_suggested_qty_covers_cycle_and_respects_shelf_life():
@@ -100,6 +102,6 @@ def test_projection_exposes_replenishment_fields(material, supplier):
     projected = next(item for item in build_purchase().materials if item.sku == material.sku)
 
     assert projected.leadTimeDays == 6
-    expected_threshold = 6 + PURCHASE_POLICY_DEFAULTS["review_period_days"] + PURCHASE_POLICY_DEFAULTS["safety_days"]
+    expected_threshold = 6 + POLICY_DEFAULTS["review_period_days"] + POLICY_DEFAULTS["safety_days"]
     assert projected.replenishAtDays == expected_threshold
     assert projected.suggestedQty == 0

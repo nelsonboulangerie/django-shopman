@@ -18,6 +18,8 @@ from django.apps import apps
 from django.db.models import Sum
 from django.utils import timezone
 
+from shopman.shop.purchase_policy import PurchasePolicy, resolve_purchase_policy
+
 logger = logging.getLogger(__name__)
 
 REQUEST_STATUSES = {"review", "approved", "sent"}
@@ -313,30 +315,14 @@ def _stock_on_hand_map(skus: list[str]) -> dict[str, Decimal]:
         return {sku: Decimal("0") for sku in skus}
 
 
-PURCHASE_POLICY_DEFAULTS = {
-    "consumption_window_days": 14,
-    "review_period_days": 3,
-    "safety_days": 2,
-    "min_lead_time_days": 1,
-    "lead_time_history_days": 120,
-    "lead_time_max_days": 45,
-}
-
-
 def _purchase_policy() -> dict[str, int]:
-    """Política de reposição: Shop.defaults['purchase'] (Admin) sobre os defaults acima."""
-    minimums = {"consumption_window_days": 1, "lead_time_history_days": 1, "lead_time_max_days": 1}
-    policy = dict(PURCHASE_POLICY_DEFAULTS)
+    """Política de reposição: Shop.defaults['purchase'] (Admin) sobre os defaults
+    tipados (``PurchasePolicy``, shopman/shop/purchase_policy.py)."""
     try:
-        Shop = apps.get_model("shop", "Shop")
-        configured = (getattr(Shop.load(), "defaults", None) or {}).get("purchase") or {}
-        for key in policy:
-            value = configured.get(key)
-            if value is not None:
-                policy[key] = max(minimums.get(key, 0), int(value))
+        return resolve_purchase_policy().to_dict()
     except Exception:
         logger.debug("purchase.policy_load_failed", exc_info=True)
-    return policy
+        return PurchasePolicy().to_dict()
 
 
 def _lead_time_map(skus: list[str], *, policy: dict[str, int]) -> dict[str, Decimal]:

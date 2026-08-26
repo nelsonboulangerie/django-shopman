@@ -383,6 +383,82 @@ class TestShopAdminLoyaltyDefaults:
         assert "defaults_loyalty_tier_gold_threshold" in form.errors
 
 
+class TestShopAdminPurchaseDefaults:
+    """Política de reposição de Compras editável como campos estruturados no ShopForm."""
+
+    def test_change_page_uses_structured_purchase_fields(self, db, admin_user, shop):
+        client = Client()
+        client.force_login(admin_user)
+        resp = client.get(reverse("admin:shop_shoppurchase_change", args=[shop.pk]))
+        assert resp.status_code == 200
+        assert b'name="defaults_purchase_consumption_window_days"' in resp.content
+        assert b'name="defaults_purchase_review_period_days"' in resp.content
+        assert b'name="defaults_purchase_safety_days"' in resp.content
+        assert b'name="defaults_purchase_min_lead_time_days"' in resp.content
+        assert b'name="defaults_purchase_lead_time_history_days"' in resp.content
+        assert b'name="defaults_purchase_lead_time_max_days"' in resp.content
+
+    def test_initial_reflects_existing_purchase_block(self, shop):
+        from shopman.shop.admin.shop import ShopForm
+
+        shop.defaults = {"purchase": {"review_period_days": 5, "safety_days": 0}}
+        shop.save(update_fields=["defaults"])
+
+        form = ShopForm(instance=shop)
+        assert form.fields["defaults_purchase_review_period_days"].initial == 5
+        assert form.fields["defaults_purchase_safety_days"].initial == 0
+        # Chave ausente no bloco mostra o default efetivo (dataclass).
+        assert form.fields["defaults_purchase_consumption_window_days"].initial == 14
+        assert form.fields["defaults_purchase_lead_time_history_days"].initial == 120
+
+    def test_form_saves_purchase_from_structured_fields(self, shop):
+        from shopman.shop.admin.shop import ShopForm
+
+        data = _shop_form_data(shop)
+        data["defaults_purchase_consumption_window_days"] = "21"
+        data["defaults_purchase_review_period_days"] = "7"
+        data["defaults_purchase_safety_days"] = "0"
+        data["defaults_purchase_min_lead_time_days"] = "2"
+        data["defaults_purchase_lead_time_history_days"] = "90"
+        data["defaults_purchase_lead_time_max_days"] = "30"
+
+        form = ShopForm(data=data, instance=shop)
+        assert form.is_valid(), form.errors
+        saved = form.save()
+
+        assert saved.defaults["purchase"] == {
+            "consumption_window_days": 21,
+            "review_period_days": 7,
+            "safety_days": 0,
+            "min_lead_time_days": 2,
+            "lead_time_history_days": 90,
+            "lead_time_max_days": 30,
+        }
+
+    def test_lead_time_ceiling_below_floor_rejected(self, shop):
+        from shopman.shop.admin.shop import ShopForm
+
+        data = _shop_form_data(shop)
+        data["defaults_purchase_min_lead_time_days"] = "10"
+        data["defaults_purchase_lead_time_max_days"] = "5"  # teto abaixo do piso → erro
+
+        form = ShopForm(data=data, instance=shop)
+        assert not form.is_valid()
+        assert "defaults_purchase_lead_time_max_days" in form.errors
+
+    def test_projection_reads_saved_policy(self, shop):
+        from shopman.backstage.projections.purchase import _purchase_policy
+        from shopman.shop.admin.shop import ShopForm
+
+        data = _shop_form_data(shop)
+        data["defaults_purchase_review_period_days"] = "6"
+        form = ShopForm(data=data, instance=shop)
+        assert form.is_valid(), form.errors
+        form.save()
+
+        assert _purchase_policy()["review_period_days"] == 6
+
+
 class TestGuestmanLoyaltyAdminUnfold:
     """WP-4 — admins guestman config-adjacentes ficam em Unfold (guarda)."""
 
@@ -731,11 +807,12 @@ class TestProxyPagesIsolation:
             ShopOrdering,
             ShopPos,
             ShopProduction,
+            ShopPurchase,
         )
 
         for model in (
             ShopAppearance, ShopOperation, ShopMenu, ShopOrdering,
-            ShopLoyalty, ShopPos, ShopProduction, ShopIntegrations,
+            ShopLoyalty, ShopPurchase, ShopPos, ShopProduction, ShopIntegrations,
         ):
             assert model in admin.site._registry
 

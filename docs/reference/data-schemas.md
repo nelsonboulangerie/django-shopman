@@ -867,9 +867,10 @@ no admin). O frete grátis global é avaliado por cima da taxa da zona.
 ### Reposição de Compras — `Shop.defaults["purchase"]`
 
 Política do cálculo de reposição do app Compras, fora do schema do `ChannelConfig`
-(`_safe_init` filtra). Lida por `_purchase_policy()` em
-`shopman/backstage/projections/purchase.py` (defaults de código em
-`PURCHASE_POLICY_DEFAULTS`); chave ausente = default. O prazo de entrega por insumo
+(`_safe_init` filtra). Source-of-truth tipado em `shopman/shop/purchase_policy.py`
+(`PurchasePolicy`, dataclass-driven), editável no ShopAdmin (página "Compras");
+lida por `_purchase_policy()` em `shopman/backstage/projections/purchase.py`;
+chave ausente = default. O prazo de entrega por insumo
 NÃO é chave de política: é computado da mediana do histórico real (Directive
 `purchase_request` → primeiro move `buy` do SKU), com fallback no
 `lead_time_days` do fornecedor preferencial e piso em `min_lead_time_days`.
