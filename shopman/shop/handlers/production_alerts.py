@@ -13,6 +13,14 @@ from shopman.shop.production_config import ProductionConfig
 
 logger = logging.getLogger(__name__)
 
+# Marcador durável em ``WorkOrder.meta`` (mesmo padrão dos carimbos
+# ``stock_consumed_at``/``stock_realized_at`` da ponte craftsman→stockman):
+# uma WO iniciada cuja data passou gera UM alerta, para sempre. Dedup por
+# janela (12h, como os demais alertas) re-alertaria a mesma fornada todo
+# turno até alguém agir — a WO fica ``started`` até o operador decidir, e a
+# decisão (concluir tarde ou cancelar) é dele, não do relógio.
+UNFINISHED_ALERTED_KEY = "unfinished_alerted_at"
+
 
 def connect() -> None:
     """Connect production alert receivers to Craftsman lifecycle signals."""
@@ -62,7 +70,8 @@ class ProductionLateCheckHandler:
     """Heartbeat de alertas de produção. Topic: production.late_check
 
     Auto-reagendável: roda as varreduras (started além da janela, planned
-    esquecida) e reenfileira a si mesmo no cadence do ``ProductionConfig``,
+    esquecida, started com a data vencida sem conclusão) e reenfileira a si
+    mesmo no cadence do ``ProductionConfig``,
     zerando ``attempts`` — um heartbeat perpétuo nunca esgota retries. Falha
     transitória segue o retry/backoff padrão do worker; se o heartbeat morrer
     (max attempts), o próximo ``production_changed`` rearma.
@@ -91,9 +100,13 @@ class ProductionLateCheckHandler:
 
         late = check_late_started_orders()
         forgotten = check_forgotten_planned_orders()
-        if late or forgotten:
+        unfinished = check_unfinished_started_orders()
+        if late or forgotten or unfinished:
             logger.info(
-                "production.late_check: %d atrasada(s), %d esquecida(s)", late, forgotten
+                "production.late_check: %d atrasada(s), %d esquecida(s), %d sem conclusão",
+                late,
+                forgotten,
+                unfinished,
             )
 
         message.status = "queued"
@@ -219,6 +232,82 @@ def check_forgotten_planned_orders(*, today=None) -> int:
         )
         created += 1
     return created
+
+
+def check_unfinished_started_orders(*, today=None) -> int:
+    """Create ONE alert per started work order whose target date has passed.
+
+    O trio de estagnação: ``production_late`` cobre a fornada que passou da
+    janela de MINUTOS no mesmo dia; ``production_forgotten`` cobre a planejada
+    cuja data passou sem nunca iniciar; este cobre a INICIADA cuja data passou
+    sem conclusão. É o caso que promete estoque fantasma — o quant
+    ``batch='started'`` conta como ``in_production`` no ``total_promisable``
+    até a shelf-life vencer, e nenhuma varredura automática pode zerá-lo
+    enquanto a WO vive (concluir tarde precisa do quant lá). Só o operador
+    resolve: concluir com a quantidade real (a expedição aceita fornada de
+    ontem) ou cancelar, o que dispara a baixa via ``production_changed``.
+
+    Idempotente por WO via marcador ``unfinished_alerted_at`` em
+    ``WorkOrder.meta`` — ver o comentário do :data:`UNFINISHED_ALERTED_KEY`.
+    """
+    from shopman.craftsman.models import WorkOrder
+
+    today = today or timezone.localdate()
+    qs = (
+        WorkOrder.objects.filter(status=WorkOrder.Status.STARTED, target_date__lt=today)
+        .exclude(meta__has_key=UNFINISHED_ALERTED_KEY)
+        .select_related("recipe")
+    )
+
+    created = 0
+    for work_order in qs:
+        if _recent_exists("production_unfinished", work_order.ref):
+            # Guarda de corrida entre dois heartbeats: o marcador é gravado
+            # depois do alerta, então a janela curta ainda pede dedup.
+            _stamp_meta(work_order, UNFINISHED_ALERTED_KEY)
+            continue
+        message = (
+            f"Produção {work_order.ref} ({work_order.output_sku}) iniciada para "
+            f"{work_order.target_date:%d/%m} nunca foi concluída. Conclua com a "
+            f"quantidade real ou cancele para liberar o estoque em produção."
+        )
+        alert_adapter.create(
+            "production_unfinished",
+            "warning",
+            message,
+            order_ref=work_order.ref,
+        )
+        _stamp_meta(work_order, UNFINISHED_ALERTED_KEY)
+        _notify_operator(
+            "production_unfinished",
+            severity="warning",
+            context={
+                "message": message,
+                "work_order_ref": work_order.ref,
+                "output_sku": work_order.output_sku,
+                "target_date": work_order.target_date.isoformat(),
+            },
+        )
+        created += 1
+    return created
+
+
+def _stamp_meta(work_order, key: str) -> None:
+    """Carimba ``WorkOrder.meta[key]`` durável, sem tocar em mais nada.
+
+    ``update()`` de propósito, como ``_stamp_leg`` na ponte craftsman→stockman:
+    ``save()`` dispararia ``auto_now`` no ``updated_at`` (que as telas de
+    operação leem como "mexeu agora") e reescreveria o objeto inteiro por cima
+    de quem estiver editando o meta em paralelo.
+    """
+    from shopman.craftsman.models import WorkOrder
+
+    meta = dict(work_order.meta or {})
+    if meta.get(key):
+        return
+    meta[key] = timezone.now().isoformat()
+    work_order.meta = meta
+    WorkOrder.objects.filter(pk=work_order.pk).update(meta=meta)
 
 
 def create_batch_traceability_alert(*, work_order_ref: str, output_sku: str, error: str) -> None:

@@ -1036,6 +1036,7 @@ Contexto operacional de produção mantido fora do core Craftsman.
 | `_recipe_snapshot` | `dict` | Core (`CraftPlanning.plan`) | Core (`finish`) | BOM congelada no plan — **gerida pelo Core, nunca editar**. |
 | `stock_consumed_at` | `string` (ISO 8601) | `craftsman/contrib/stockman/handlers` (`_handle_finished`), `config/.../seed.py` | `sweep_unrealized_production` | Instante em que a perna de INSUMO do ledger fechou. Ausente numa WO `finished` = o consumo não rodou. O `seed` grava `FINISHED` direto no banco (sem passar pelo handler) e por isso **carimba os dois na mão** — sem o carimbo o sweeper reconsumia a história inteira. |
 | `stock_realized_at` | `string` (ISO 8601) | `craftsman/contrib/stockman/handlers` (`_handle_finished`), `config/.../seed.py` | `sweep_unrealized_production` | Instante em que a perna de OUTPUT do ledger fechou (realize + write-off de rendimento). Ausente numa WO `finished` = a fornada não entrou no estoque. |
+| `unfinished_alerted_at` | `string` (ISO 8601) | `shop/handlers/production_alerts.py` (`check_unfinished_started_orders`) | idem (guarda de idempotência) | Carimbo do alerta `production_unfinished`: WO `started` com `target_date` vencida alerta UMA vez por WO (o operador decide: concluir tarde ou void) — dedup por janela re-alertaria todo turno até alguém agir. |
 
 > **Escrever a perna e carimbar o marcador acontecem sob a MESMA trava**
 > (`_leg_lock`, `select_for_update` na WorkOrder), e o carimbo vem ANTES da

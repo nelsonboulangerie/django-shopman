@@ -20,8 +20,10 @@ from shopman.orderman.models import Directive
 from shopman.backstage.models import OperatorAlert
 from shopman.shop.directives import PRODUCTION_LATE_CHECK
 from shopman.shop.handlers.production_alerts import (
+    UNFINISHED_ALERTED_KEY,
     ProductionLateCheckHandler,
     check_forgotten_planned_orders,
+    check_unfinished_started_orders,
     ensure_late_check_scheduled,
 )
 from shopman.shop.models import Shop
@@ -104,6 +106,50 @@ class TestForgottenPlanned:
         assert check_forgotten_planned_orders() == 0
 
 
+# ── check_unfinished_started_orders ──
+
+
+class TestUnfinishedStarted:
+    def test_started_with_past_target_creates_alert(self, recipe):
+        wo = craft.plan(recipe, 10, date=date.today() - timedelta(days=2))
+        craft.start(wo, quantity=10)
+        assert check_unfinished_started_orders() == 1
+        alert = OperatorAlert.objects.get(type="production_unfinished")
+        assert wo.ref in alert.message
+        assert alert.severity == "warning"
+
+    def test_alerts_once_per_wo_via_meta_marker(self, recipe):
+        """Um alerta por WO, PARA SEMPRE — não por janela de dedup.
+
+        Apagar os alertas simula a janela de 12h vencida: um dedup por janela
+        re-alertaria; o marcador durável em ``WorkOrder.meta`` não.
+        """
+        wo = craft.plan(recipe, 10, date=date.today() - timedelta(days=1))
+        craft.start(wo, quantity=10)
+        assert check_unfinished_started_orders() == 1
+        assert check_unfinished_started_orders() == 0
+
+        wo.refresh_from_db()
+        assert wo.meta[UNFINISHED_ALERTED_KEY]
+
+        OperatorAlert.objects.all().delete()
+        assert check_unfinished_started_orders() == 0
+
+    def test_started_for_today_is_not_stale(self, recipe):
+        wo = craft.plan(recipe, 10, date=date.today())
+        craft.start(wo, quantity=10)
+        assert check_unfinished_started_orders() == 0
+
+    def test_planned_orders_belong_to_forgotten_check(self, recipe):
+        craft.plan(recipe, 10, date=date.today() - timedelta(days=1))
+        assert check_unfinished_started_orders() == 0
+
+    def test_started_without_target_date_is_skipped(self, recipe):
+        wo = craft.plan(recipe, 10)
+        craft.start(wo, quantity=10)
+        assert check_unfinished_started_orders() == 0
+
+
 # ── ProductionLateCheckHandler ──
 
 
@@ -123,6 +169,9 @@ class TestLateCheckHandler:
         )
         # WO planned esquecida (ontem)
         craft.plan(recipe, 5, date=date.today() - timedelta(days=1))
+        # WO started de ontem sem conclusão (started_at recente → não é "late")
+        wo_stale = craft.plan(recipe, 8, date=date.today() - timedelta(days=1))
+        craft.start(wo_stale, quantity=8)
         Directive.objects.all().delete()  # limpa heartbeats armados pelos plans
 
         directive = _make_directive(attempts=3)
@@ -130,6 +179,7 @@ class TestLateCheckHandler:
 
         assert OperatorAlert.objects.filter(type="production_late").count() == 1
         assert OperatorAlert.objects.filter(type="production_forgotten").count() == 1
+        assert OperatorAlert.objects.filter(type="production_unfinished").count() == 1
 
         directive.refresh_from_db()
         assert directive.status == "queued"
