@@ -15,4 +15,14 @@ describe('storefront security boundaries', () => {
     expect(isStorefrontApiPathAllowed('backstage/orders/')).toBe(false)
     expect(isStorefrontApiPathAllowed('/backstage/kds/')).toBe(false)
   })
+
+  it('allows the ROOT endpoint of each allowed prefix (Nitro drops the trailing slash)', () => {
+    // O catch-all entrega `/api/v1/checkout/` como `checkout` — foi o 404
+    // silencioso do "Enviar pedido" (POST /api/v1/checkout/, o commit da loja).
+    expect(isStorefrontApiPathAllowed('checkout')).toBe(true)
+    expect(isStorefrontApiPathAllowed('cart')).toBe(true)
+    // Prefixo parcial NÃO é raiz: continua bloqueado.
+    expect(isStorefrontApiPathAllowed('checkoutX')).toBe(false)
+    expect(isStorefrontApiPathAllowed('backstage')).toBe(false)
+  })
 })
