@@ -100,6 +100,33 @@ jobs:
       # E semeado — `omotenashi.seed` é bloqueante e exige os 11 cenários
       # canônicos. Ele vive no Omotenashi Gate, logo depois do seed.
 
+  # O gate canônico do Admin/Unfold (CLAUDE.md trata como lei) só existia como
+  # alvo local — agente que não roda `make admin` mergeava dívida em silêncio.
+  # Aqui ele passa a rodar em todo PR e na fila de merge.
+  admin-gate:
+    name: Admin/Unfold gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Create virtualenv
+        run: python -m venv .venv
+
+      - name: Install dependencies
+        run: make install
+
+      - name: Admin canonical gate + Admin/Unfold tests
+        run: make admin
+
   # ⚠️ A suíte roda em MATRIZ, em job próprio. Antes vivia dentro do `quality`,
   # encadeando 13 alvos: ~1 min de cores + ~12 de framework, um esperando o
   # outro — e o gate inteiro levava 18 min. Em paralelo o relógio passa a ser o

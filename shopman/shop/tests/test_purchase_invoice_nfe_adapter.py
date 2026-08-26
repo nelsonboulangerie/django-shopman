@@ -172,3 +172,40 @@ def test_extract_proc_nfe_xml_from_distribution_doczip():
         resposta = Resposta()
 
     assert _extract_proc_nfe_xml(Retorno(), access_key=VALID_ACCESS_KEY) == _nfe_xml()
+
+
+def test_xml_root_refuses_dtd_and_entities():
+    """XXE/billion-laughs chegam como DTD — o parser recusa em vez de expandir."""
+    from shopman.shop.adapters.purchase_invoice_nfe import _xml_root
+
+    hostile = (
+        '<?xml version="1.0"?>'
+        '<!DOCTYPE nfeProc [<!ENTITY x "AAAA"><!ENTITY y "&x;&x;&x;&x;">]>'
+        "<nfeProc>&y;</nfeProc>"
+    )
+    with pytest.raises(ValueError):
+        _xml_root(hostile)
+
+
+def test_doczip_over_the_cap_is_refused():
+    """Bomba de descompressão: gzip pequeno que infla além do teto vira draft vazio."""
+    from shopman.shop.adapters.purchase_invoice_nfe import (
+        MAX_DOC_XML_BYTES,
+        _decode_doc_zip,
+    )
+
+    class DocZip:
+        valueOf_ = base64.b64encode(
+            gzip.compress(b"A" * (MAX_DOC_XML_BYTES + 1024))
+        ).decode("ascii")
+
+    assert _decode_doc_zip(DocZip()) == ""
+
+
+def test_doczip_within_the_cap_still_decodes():
+    from shopman.shop.adapters.purchase_invoice_nfe import _decode_doc_zip
+
+    class DocZip:
+        valueOf_ = base64.b64encode(gzip.compress(b"<NFe>ok</NFe>")).decode("ascii")
+
+    assert _decode_doc_zip(DocZip()) == "<NFe>ok</NFe>"

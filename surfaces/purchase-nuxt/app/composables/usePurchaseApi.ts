@@ -8,7 +8,7 @@ import type {
   PurchaseScanInvoicePayload,
 } from "~/types/purchase";
 
-export const PURCHASE_API_BASE = "/api/v1/backstage/buyman/";
+export const PURCHASE_API_BASE = "/api/v1/backstage/purchase/";
 
 export const PURCHASE_API_ENDPOINTS = {
   projection: PURCHASE_API_BASE,

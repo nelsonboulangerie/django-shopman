@@ -2,7 +2,7 @@
 
 Nuxt operator surface for Shopman Buyman.
 
-This surface consumes the Backstage projection at `/api/v1/backstage/buyman/`
+This surface consumes the Backstage projection at `/api/v1/backstage/purchase/`
 and writes through the same BFF proxy pattern used by the other operator apps.
 The canonical Buyman/Stockman/Craftsman packages stay agnostic; orchestration
 lives in Backstage.
@@ -29,13 +29,13 @@ API; write actions are blocked outside an authenticated backend session.
 
 Endpoints:
 
-- `GET /api/v1/backstage/buyman/` -> `{ purchase }` projection.
-- `POST /api/v1/backstage/buyman/receipts/scan-invoice/` -> validate QR/barcode/chave NF and create a receipt draft.
-- `POST /api/v1/backstage/buyman/receipts/confirm/` -> confirm stock entry with conversions, validity, costs, and BUY ledger moves.
-- `POST /api/v1/backstage/buyman/receipts/reject/` -> record a supplier delivery refusal/return as an internal `notification.send`, without stock movement.
-- `POST /api/v1/backstage/buyman/requests/<material_sku>/approve/` -> approve a purchase request.
-- `POST /api/v1/backstage/buyman/requests/<material_sku>/send/` -> queue `notification.send` to the supplier channel and mark the request as sent.
-- `POST /api/v1/backstage/buyman/costs/` -> record an observed cost/conversion from an operational flow.
+- `GET /api/v1/backstage/purchase/` -> `{ purchase }` projection.
+- `POST /api/v1/backstage/purchase/receipts/scan-invoice/` -> validate QR/barcode/chave NF and create a receipt draft.
+- `POST /api/v1/backstage/purchase/receipts/confirm/` -> confirm stock entry with conversions, validity, costs, and BUY ledger moves.
+- `POST /api/v1/backstage/purchase/receipts/reject/` -> record a supplier delivery refusal/return as an internal `notification.send`, without stock movement.
+- `POST /api/v1/backstage/purchase/requests/<material_sku>/approve/` -> approve a purchase request.
+- `POST /api/v1/backstage/purchase/requests/<material_sku>/send/` -> queue `notification.send` to the supplier channel and mark the request as sent.
+- `POST /api/v1/backstage/purchase/costs/` -> record an observed cost/conversion from an operational flow.
 
 Supplier dispatch uses Buyman data without extending Core: `Supplier.email`,
 `Supplier.phone`, or `Supplier.metadata.purchase.contact`. A supplier can set
