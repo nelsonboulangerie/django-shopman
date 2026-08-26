@@ -864,6 +864,31 @@ gate de commit. Editáveis tipados em Reais no ShopAdmin (`shop/admin/shop.py`).
 A taxa de entrega por região segue nas **Zonas de Entrega** (`DeliveryZone`, inline
 no admin). O frete grátis global é avaliado por cima da taxa da zona.
 
+### Reposição de Compras — `Shop.defaults["purchase"]`
+
+Política do cálculo de reposição do app Compras, fora do schema do `ChannelConfig`
+(`_safe_init` filtra). Lida por `_purchase_policy()` em
+`shopman/backstage/projections/purchase.py` (defaults de código em
+`PURCHASE_POLICY_DEFAULTS`); chave ausente = default. O prazo de entrega por insumo
+NÃO é chave de política: é computado da mediana do histórico real (Directive
+`purchase_request` → primeiro move `buy` do SKU), com fallback no
+`lead_time_days` do fornecedor preferencial e piso em `min_lead_time_days`.
+
+| Chave | Tipo | Descrição |
+|-------|------|-----------|
+| `purchase.consumption_window_days` | `int` | Janela do consumo médio diário lido do ledger do Stockman. Default `14` |
+| `purchase.review_period_days` | `int` | Cadência de revisão de compras (dias entre pedidos). Entra no limiar de reposição e no alvo de quantidade. Default `3` |
+| `purchase.safety_days` | `int` | Margem de segurança em dias de consumo. Default `2` |
+| `purchase.min_lead_time_days` | `int` | Piso do prazo de entrega quando não há histórico nem cadastro. Default `1` |
+| `purchase.lead_time_history_days` | `int` | Janela do histórico pedido→entrega usada na mediana. Default `120` |
+| `purchase.lead_time_max_days` | `int` | Amostras acima disso são descartadas como ruído. Default `45` |
+
+Derivados por insumo (expostos na projection `materials`): `leadTimeDays`,
+`replenishAtDays` (= lead + revisão + segurança; limiar do selo "Reposição" e
+default do estoque mínimo) e `suggestedQty` (= alvo − estoque, com teto na
+validade: nunca sugerir mais do que `dailyUse × shelfLifeDays`). O pedido ao
+fornecedor de um clique usa `suggestedQty` como fonte única.
+
 ### Fidelidade — `Shop.defaults["loyalty"]`
 
 Política do programa de fidelidade, fora do schema do `ChannelConfig` (`_safe_init`

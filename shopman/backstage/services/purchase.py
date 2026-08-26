@@ -441,11 +441,9 @@ def _supplier_dispatch_route(supplier) -> tuple[str, str, list[str]]:
 
 def _purchase_request_snapshot(material, cost) -> dict[str, str]:
     projected = next((item for item in build_purchase().materials if item.sku == material.sku), None)
-    stock_on_hand = Decimal(str(projected.stockOnHand if projected else 0))
-    daily_use = Decimal(str(projected.dailyUse if projected else 0))
-    min_stock = Decimal(str(projected.minStock if projected else 0))
-    target = max(min_stock * Decimal("2"), daily_use * Decimal("7"))
-    suggested_base_qty = (target - stock_on_hand).to_integral_value(rounding=ROUND_CEILING)
+    suggested_base_qty = Decimal(str(projected.suggestedQty if projected else 0)).to_integral_value(
+        rounding=ROUND_CEILING
+    )
     if suggested_base_qty <= 0:
         raise PurchaseError(
             "Este insumo não tem reposição sugerida agora.",
