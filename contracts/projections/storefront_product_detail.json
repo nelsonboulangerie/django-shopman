@@ -12,6 +12,8 @@
     "url": "/menu#paes"
   },
   "can_add_to_cart": true,
+  "category_color": "#B49B7F",
+  "category_icon": "wheat",
   "components": [],
   "conservation": null,
   "cross_sell": [],

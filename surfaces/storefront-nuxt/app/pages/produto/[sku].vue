@@ -141,8 +141,14 @@ useHead({
                 :class="product.availability === 'unavailable' ? 'shop-photo-unavailable' : ''"
                 fetchpriority="high"
               >
-              <div v-else class="flex aspect-[4/3] w-full items-center justify-center bg-muted text-muted-foreground">
-                <Icon name="lucide:croissant" class="size-10" />
+              <div v-else class="aspect-[4/3] w-full">
+                <ProductImageFallback
+                  :color="product.category_color"
+                  :icon="product.category_icon"
+                  :sku="product.sku"
+                  fallback-icon="lucide:croissant"
+                  icon-class="size-10"
+                />
               </div>
               <!-- Indisponível: etiqueta de VIDRO translúcida em tokens da marca (cream +
                    marrom), harmonizando com a sépia, consistente com os cards. -->

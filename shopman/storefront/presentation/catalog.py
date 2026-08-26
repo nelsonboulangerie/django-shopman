@@ -124,6 +124,13 @@ class CatalogItemProjection:
     # Allergens from product.metadata["allergens"] — search/index data only.
     allergens: tuple[str, ...] = field(default_factory=tuple)
 
+    # Apresentação da coleção PRIMÁRIA (Collection.metadata): cor hex da paleta
+    # NB e nome de ícone Lucide. Vestem o card-fallback de produto sem foto
+    # (fundo tintado + ícone + SKU). None quando o produto não tem coleção
+    # primária ou a coleção não define a chave.
+    category_color: str | None = None
+    category_icon: str | None = None
+
 
 @dataclass(frozen=True)
 class CatalogSectionProjection:
@@ -414,6 +421,9 @@ def _build_items(
     # Batch: collections per SKU (used as `category` and for pricing context).
     sku_collections = catalog_context.collection_refs_by_sku(skus)
 
+    # Batch: primary collection per SKU (category_color/category_icon).
+    primary_by_sku = catalog_context.primary_collection_by_sku(skus)
+
     # Batch: listing prices.
     price_map = catalog_context.listing_price_map(skus, channel_ref)
 
@@ -496,6 +506,9 @@ def _build_items(
                     except (TypeError, ValueError):
                         available_qty = None
 
+        primary = primary_by_sku.get(p.sku)
+        primary_meta = primary.metadata if primary and isinstance(primary.metadata, dict) else {}
+
         meta = p.metadata if isinstance(p.metadata, dict) else {}
         dietary = meta.get("dietary_info") or []
         if not isinstance(dietary, list):
@@ -541,6 +554,8 @@ def _build_items(
                     active_food_prefs, dietary_info=dietary, allergens=allergens
                 ),
                 allergens=allergens,
+                category_color=str(primary_meta.get("color") or "") or None,
+                category_icon=str(primary_meta.get("icon") or "") or None,
             ),
         )
     return result

@@ -42,6 +42,8 @@ function item (overrides: Partial<CatalogItemProjection> = {}): CatalogItemProje
     qty_in_cart: 0,
     available_qty: null,
     allergens: [],
+    category_color: null,
+    category_icon: null,
     ...overrides
   }
 }

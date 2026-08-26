@@ -541,6 +541,19 @@
     filter: sepia(1) saturate(1.4) brightness(0.92) contrast(1.02);
     opacity: 0.95;
   }
+  /* Card-fallback de produto sem foto: tints derivados da cor da categoria
+     primária (--category-color, hex NB vindo de Collection.metadata via
+     projection). color-mix com os pares neutros --background/--foreground
+     acompanha a polaridade do tema: tint claro + texto escurecido no light,
+     tint escuro + texto clareado no dark. */
+  .shop-category-tint {
+    background-color: color-mix(in srgb, var(--category-color) 16%, var(--background));
+    color: color-mix(in srgb, var(--category-color) 84%, var(--foreground));
+  }
+  .dark .shop-category-tint {
+    background-color: color-mix(in srgb, var(--category-color) 28%, var(--background));
+    color: color-mix(in srgb, var(--category-color) 52%, var(--foreground));
+  }
 }
 
 @utility no-scrollbar {

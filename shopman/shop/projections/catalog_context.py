@@ -185,6 +185,26 @@ def primary_collection_id_by_sku(skus: list[str]) -> dict[str, int]:
     return result
 
 
+def primary_collection_by_sku(skus: list[str]) -> dict:
+    """Coleção primária (``CollectionItem.is_primary``) por SKU, em lote.
+
+    Devolve o objeto ``Collection`` inteiro — quem projeta escolhe o que expor
+    (ref, name, ``metadata["color"]``/``metadata["icon"]``). SKU sem coleção
+    primária fica fora do dict.
+    """
+    from shopman.offerman.models import CollectionItem
+
+    result: dict = {}
+    if not skus:
+        return result
+    for item in CollectionItem.objects.filter(
+        product__sku__in=skus,
+        is_primary=True,
+    ).select_related("collection", "product"):
+        result[item.product.sku] = item.collection
+    return result
+
+
 def breadcrumb_collection(product):
     from shopman.offerman.models import CollectionItem
 

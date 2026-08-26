@@ -186,6 +186,12 @@ class ProductDetailProjection:
     cross_sell: tuple[CatalogItemProjection, ...] = ()
     cross_sell_heading: str = ""
 
+    # Apresentação da coleção PRIMÁRIA (Collection.metadata): cor hex da paleta
+    # NB e nome de ícone Lucide, para o hero-fallback da PDP sem foto (fundo
+    # tintado + ícone + SKU). None sem coleção primária ou sem a chave.
+    category_color: str | None = None
+    category_icon: str | None = None
+
 
 # ──────────────────────────────────────────────────────────────────────
 # Builder
@@ -297,6 +303,8 @@ def build_product_detail(
     ingredients_text = (product.ingredients_text or "").strip() or None
     nutrition = _nutrition(product)
     breadcrumb_category = _breadcrumb_category(product)
+    primary = catalog_context.primary_collection_by_sku([product.sku]).get(product.sku)
+    primary_meta = primary.metadata if primary and isinstance(primary.metadata, dict) else {}
     seo_description = _seo_description(
         product,
         allergen=allergen,
@@ -360,6 +368,8 @@ def build_product_detail(
         breadcrumb_category=breadcrumb_category,
         cross_sell=cross_sell,
         cross_sell_heading=_cross_sell_heading(),
+        category_color=str(primary_meta.get("color") or "") or None,
+        category_icon=str(primary_meta.get("icon") or "") or None,
     )
 
 

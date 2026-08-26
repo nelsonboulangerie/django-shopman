@@ -497,3 +497,58 @@ class TestAvailabilityNotifiability:
             channel,
         )
         assert item.is_notifiable is False
+
+
+# ──────────────────────────────────────────────────────────────────────
+# Category presentation (Collection.metadata → card-fallback sem foto)
+# ──────────────────────────────────────────────────────────────────────
+
+
+class TestCategoryPresentation:
+    """``category_color``/``category_icon`` vêm da coleção PRIMÁRIA do produto.
+
+    É o contrato do card-fallback de produto sem foto (fundo na cor da
+    categoria + ícone Lucide + SKU). Coleção não-primária não veste o card.
+    """
+
+    def test_item_exposes_primary_collection_color_and_icon(
+        self, listing, collection, product,
+    ):
+        collection.metadata = {"color": "#B49B7F", "icon": "wheat"}
+        collection.save()
+        CollectionItem.objects.create(
+            collection=collection, product=product, sort_order=1, is_primary=True,
+        )
+        _publish_on_listing(listing, product)
+        proj = build_catalog(channel_ref="web")
+        item = _find_item(proj, product.sku)
+        assert item is not None
+        assert item.category_color == "#B49B7F"
+        assert item.category_icon == "wheat"
+
+    def test_non_primary_collection_does_not_dress_the_card(
+        self, listing, collection, collection_item, product,
+    ):
+        # A fixture ``collection_item`` NÃO é primária: mesmo com metadata na
+        # coleção, o card não herda cor/ícone de uma membership secundária.
+        collection.metadata = {"color": "#B49B7F", "icon": "wheat"}
+        collection.save()
+        _publish_on_listing(listing, product)
+        proj = build_catalog(channel_ref="web")
+        item = _find_item(proj, product.sku)
+        assert item is not None
+        assert item.category_color is None
+        assert item.category_icon is None
+
+    def test_primary_collection_without_metadata_yields_none(
+        self, listing, collection, product,
+    ):
+        CollectionItem.objects.create(
+            collection=collection, product=product, sort_order=1, is_primary=True,
+        )
+        _publish_on_listing(listing, product)
+        proj = build_catalog(channel_ref="web")
+        item = _find_item(proj, product.sku)
+        assert item is not None
+        assert item.category_color is None
+        assert item.category_icon is None
