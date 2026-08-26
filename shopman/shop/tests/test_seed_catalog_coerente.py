@@ -48,7 +48,7 @@ def catalogo(arvore):
     # preço nem ficha de produto, tem componentes.
     # Nascem fora do products_data, num update_or_create próprio: bundle não
     # tem ficha de produto, tem componentes.
-    skus += ["COMBO-PETIT-DEJ", "PHO4", "BBB2"]
+    skus += ["COMBO-PETIT-DEJ", "PHO4", "BBB2", "PI4"]
     return skus
 
 

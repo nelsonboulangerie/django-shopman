@@ -97,6 +97,25 @@ from shopman.shop.models import (
 from shopman.shop.services.dietary_from_recipe import aggregate_dietary_from_recipe
 from shopman.shop.services.nutrition_from_recipe import fill_nutrition_from_recipe
 
+# Peso CRU por unidade, em gramas, pesado pelo dono (26/08/2026). É o dado das
+# FICHAS: a receita fala em massa crua; o catálogo mostra a peça assada (~12%
+# de perda, convenção da reconciliação de 21/08 — os pesos do products_data
+# são estimativas derivadas daqui, "a conferir no mundo real"). As fichas das
+# restaurações (Seção 2 do plano de qualidade do seed) nascem destes números;
+# as quatro que já existiam (shokupan, focaccia-dia, folhado-dia, bichon)
+# foram recalibradas com eles.
+#   HO/MIHO: só a massa — a salsicha entra como insumo próprio na ficha.
+#   KBB: o dono ainda não pesou; estimado pela família do BBB.
+PESO_MASSA_CRUA_G = {
+    "FA": 400, "BAP": 260, "BAX": 480, "CF": 300, "BA": 320, "CGR": 340,
+    "PI": 30, "BEP": 170,
+    "FOA": 420, "CBT": 680, "FOC": 540, "MIF": 110, "MICBT": 180, "MIFOC": 160,
+    "CM": 36, "CN": 82, "PR": 68, "BCH": 42, "COC": 60,
+    "CH": 300, "BN": 240, "ANU": 110, "ANP": 110, "MBBBG": 32,
+    "BH": 100, "MA": 110, "CPQ": 90, "FF": 130, "MFF": 80,
+    "HO": 60, "MIHO": 40, "DL": 100, "JO": 40,
+}
+
 
 class Command(BaseCommand):
     help = "Popula o banco com dados de produção da Nelson Boulangerie"
@@ -869,9 +888,9 @@ class Command(BaseCommand):
             # ── Padaria · Rústicos ──
             ("BF", "Baguette de Tradition", "Pão de tradição francesa e fermentação 100% natural (levain)", 1600, "un", 0, True,
              f"{IMG}/bf.webp", 250, "Congele inteira ou em pedaços. Reaqueça direto do freezer a 200°C por 8min"),
-            ("CGO", "Pain de Campagne", "Fermentação natural (levain), trigo 50% integral e centeio orgânico. Fatiado na hora", 2200, "un", 2, True,
+            ("CGO", "Pain de Campagne", "Fermentação natural (levain), trigo 50% integral e centeio orgânico. Fatiado na hora", 2200, "un", 0, True,
              f"{IMG}/cgr.webp", 300, "Guarde em saco de pano. Dura até 4 dias em temperatura ambiente"),
-            ("CPX", "Campagne Passas & Castanhas", "Levain, trigo 50% integral e centeio orgânico, passas, castanhas de caju e do Pará", 3300, "un", 3, True,
+            ("CPX", "Campagne Passas & Castanhas", "Levain, trigo 50% integral e centeio orgânico, passas, castanhas de caju e do Pará", 3300, "un", 0, True,
              f"{IMG}/cpx.webp", 500, "Guarde em saco de pano. Dura até 5 dias em temperatura ambiente"),
             ("CI", "Ciabatta", "Pão aerado, clássico italiano com azeite extra virgem e fermentação 100% natural (levain)", 1800, "un", 0, True,
              f"{IMG}/ci.webp", 180, "Congele no mesmo dia. Reaqueça a 200°C por 8min"),
@@ -887,19 +906,19 @@ class Command(BaseCommand):
             ("PH", "Pão de Hambúrguer", "Pão de tradição francesa e fermentação 100% natural (levain)", 600, "un", 0, True,
              f"{IMG}/ph.webp", 100, "Melhor consumido no dia. Congele por até 30 dias"),
             # ── Padaria · Finos ──
-            ("CT", "Croissant", "Clássico em pura manteiga. Simples e delicioso. Ótimo com geleias!", 1300, "un", 1, True,
+            ("CT", "Croissant", "Clássico em pura manteiga. Simples e delicioso. Ótimo com geleias!", 1300, "un", 0, True,
              f"{IMG}/ct.webp", 70, "Reaqueça no forno a 180°C por 5min para recuperar a crocância"),
-            ("PC", "Pain au Chocolat", "Croissant recheado com chocolate!", 1500, "un", 1, True,
+            ("PC", "Pain au Chocolat", "Croissant recheado com chocolate!", 1500, "un", 0, True,
              f"{IMG}/pc.webp", 90, "Reaqueça no forno a 180°C por 5min. Evite micro-ondas"),
-            ("SK", "Shokupan", "Pão de forma japonês super macio, fatias grossas interfolhadas", 2800, "un", 2, True,
-             unsplash("photo-1598373182308-3270495d2f58"), 450, "Mantenha em saco plástico fechado. Congela bem por até 30 dias"),
-            ("KP", "Kuro Pan", "Pão japonês escuro, macio e levemente adocicado", 2200, "un", 2, True,
+            ("FA", "Shokupan", "Pão de forma japonês super macio, fatias grossas interfolhadas", 2800, "un", 1, True,
+             f"{ACERVO}/fa.jpg", 350, "Mantenha em saco plástico fechado. Congela bem por até 30 dias"),
+            ("KP", "Kuro Pan", "Pão japonês escuro, macio e levemente adocicado", 2200, "un", 1, True,
              unsplash("photo-1778472438579-91875c22ae79"), 250, "Mantenha em saco plástico fechado. Congela bem por até 30 dias"),
-            ("ME", "Melonpan", "Clássico japonês amanteigado com cobertura crocante e levemente doce", 1200, "un", 1, True,
+            ("ME", "Melonpan", "Clássico japonês amanteigado com cobertura crocante e levemente doce", 1200, "un", 0, True,
              f"{IMG}/me.webp", 100, "Melhor consumido no dia"),
-            ("ANC", "Animalzinho", "O bichinho do dia: pão doce em formato de bicho", 1000, "un", 1, True,
+            ("ANC", "Animalzinho", "O bichinho do dia: pão doce em formato de bicho", 1000, "un", 0, True,
              f"{ACERVO}/anc.jpg", 90, "Melhor consumido no dia"),
-            ("CO", "Cornet", "Pão amanteigado em formato de cone, recheio do dia", 1200, "un", 1, True,
+            ("CO", "Cornet", "Pão amanteigado em formato de cone, recheio do dia", 1200, "un", 0, True,
              f"{IMG}/co.webp", 120, "Melhor consumido no dia. Reaqueça a 180°C por 5min"),
             # ⚠️ O que a fornada produz é a UNIDADE. O pacote é apresentação de
             # venda, e por isso é bundle (abaixo), não produto próprio: assim a
@@ -930,11 +949,11 @@ class Command(BaseCommand):
              unsplash("photo-1484723091739-30a097e8f929"), 180, "Servir quente, imediatamente"),
             ("MS", "Melon Iced Sando", "Sanduíche gelado de frutas com chantilly, no shokupan", 2200, "un", 0, True,
              unsplash("photo-1746632732485-4cb341e4a4aa"), 200, "Conservar refrigerado. Consumir no dia"),
-            ("MD", "Madeleine", "Bolinho clássico francês, simples e delicioso", 600, "un", 2, True,
+            ("MD", "Madeleine", "Bolinho clássico francês, simples e delicioso", 600, "un", 0, True,
              f"{IMG}/md.webp", 25, "Conserve em recipiente fechado por até 3 dias"),
-            ("PU", "Purin à la Mode", "Pudim japonês com chantilly e frutas", 2000, "un", 1, True,
+            ("PU", "Purin à la Mode", "Pudim japonês com chantilly e frutas", 2000, "un", 0, True,
              unsplash("photo-1752245055475-8b7c3b4756ac"), 150, "Conservar refrigerado. Consumir no dia"),
-            ("TJ", "Tea Jelly", "Gelatina delicada de chá da casa", 1800, "un", 1, True,
+            ("TJ", "Tea Jelly", "Gelatina delicada de chá da casa", 1800, "un", 0, True,
              unsplash("photo-1745236549258-a76c271299f7"), 150, "Conservar refrigerado. Consumir em até 2 dias"),
             # ── Mercearia (preços provisórios — metadata.price_tbd) ──
             ("MT", "Mostarda da Casa", "Mostarda artesanal feita na casa", 1800, "un", 30, True,
@@ -1020,78 +1039,79 @@ class Command(BaseCommand):
              unsplash("photo-1499638673689-79a0b5115d87"), 300, ""),
             ("CTV", "Chá Tônica Frutas Vermelhas", "Chá gelado de frutas vermelhas com tônica", 2900, "un", None, True,
              unsplash("photo-1594579629306-07af17998d4a"), 300, ""),
-            ("BH", "Bichon au Citron", "Folhado com creme de limão", 1800, "un", 1, True,
-             f"{ACERVO}/bh.jpg", 70, "Conservar refrigerado. Consumir no dia"),
-            ("MA", "Maçã", "Doce de maçã da casa", 1300, "un", 1, True,
-             f"{ACERVO}/ma.jpg", 150, "Conservar refrigerado. Consumir no dia"),
-            ("CM", "Croissant Mini", "Croissant menor, a mesma massa folhada", 800, "un", 1, True,
-             f"{ACERVO}/cm.jpg", 45, "Reaqueça no forno a 180°C por 5min para recuperar a crocância"),
-            ("BCH", "Brioche Chocolat", "Brioche recheado com chocolate", 1000, "un", 1, True,
-             f"{ACERVO}/bch.jpg", 90, "Mantenha em saco plástico fechado. Congele por até 30 dias"),
-            ("CN", "Chausson", "Folhado recheado, dobrado em meia-lua", 1800, "un", 1, True,
-             f"{IMG}/cn.webp", 70, "Reaqueça no forno a 180°C por 5min para recuperar a crocância"),
-            ("PR", "Pain aux Raisins", "Folhado em espiral com creme e passas", 1100, "un", 1, True,
-             f"{ACERVO}/pr.jpg", 110, "Reaqueça no forno a 180°C por 5min para recuperar a crocância"),
-            ("COC", "Cornet de Chocolate", "Cornet recheado com chocolate", 1100, "un", 1, True,
-             f"{IMG}/co.webp", 90, "Mantenha em saco plástico fechado. Congele por até 30 dias"),
+            ("BH", "Bichon au Citron", "Folhado com creme de limão", 1800, "un", 0, True,
+             f"{ACERVO}/bh.jpg", 90, "Conservar refrigerado. Consumir no dia"),
+            ("MA", "Maçã", "Doce de maçã da casa", 1300, "un", 0, True,
+             f"{ACERVO}/ma.jpg", 95, "Conservar refrigerado. Consumir no dia"),
+            ("CM", "Croissant Mini", "Croissant menor, a mesma massa folhada", 800, "un", 0, True,
+             f"{ACERVO}/cm.jpg", 32, "Reaqueça no forno a 180°C por 5min para recuperar a crocância"),
+            ("BCH", "Brioche Chocolat", "Brioche recheado com chocolate", 1000, "un", 0, True,
+             f"{ACERVO}/bch.jpg", 37, "Mantenha em saco plástico fechado. Congele por até 30 dias"),
+            ("CN", "Chausson", "Folhado recheado, dobrado em meia-lua", 1800, "un", 0, True,
+             f"{IMG}/cn.webp", 72, "Reaqueça no forno a 180°C por 5min para recuperar a crocância"),
+            ("PR", "Pain aux Raisins", "Folhado em espiral com creme e passas", 1100, "un", 0, True,
+             f"{ACERVO}/pr.jpg", 60, "Reaqueça no forno a 180°C por 5min para recuperar a crocância"),
+            ("COC", "Cornet de Chocolate", "Cornet recheado com chocolate", 1100, "un", 0, True,
+             f"{IMG}/co.webp", 53, "Mantenha em saco plástico fechado. Congele por até 30 dias"),
             ("CH", "Challah", "Pão trançado de massa enriquecida", 1800, "un", 1, True,
-             f"{ACERVO}/ch.jpg", 400, "Mantenha em saco plástico fechado. Congele por até 30 dias"),
+             f"{ACERVO}/ch.jpg", 265, "Mantenha em saco plástico fechado. Congele por até 30 dias"),
             ("BN", "Brioche Nanterre", "Brioche em forma, massa amanteigada", 2200, "un", 1, True,
-             f"{ACERVO}/bn.jpg", 400, "Mantenha em saco plástico fechado. Congele por até 30 dias"),
-            ("ANU", "Ursinho", "Doce moldado em ursinho, recheio de creme", 1400, "un", 1, True,
-             f"{ACERVO}/an.jpg", 120, "Mantenha em saco plástico fechado. Congele por até 30 dias"),
+             f"{ACERVO}/bn.jpg", 210, "Mantenha em saco plástico fechado. Congele por até 30 dias"),
+            ("ANU", "Ursinho", "Doce moldado em ursinho, recheio de creme", 1400, "un", 0, True,
+             f"{ACERVO}/an.jpg", 95, "Mantenha em saco plástico fechado. Congele por até 30 dias"),
             # Não está sendo feito no momento (dono, 18/08). Nasce fora de venda:
             # o produto existe, guarda a história, e volta com uma flag.
-            ("ANP", "Porquinho", "Doce moldado em porquinho, recheio de creme", 1400, "un", 1, False,
-             "", 120, "Mantenha em saco plástico fechado. Congele por até 30 dias"),
+            ("ANP", "Porquinho", "Doce moldado em porquinho, recheio de creme", 1400, "un", 0, False,
+             "", 95, "Mantenha em saco plástico fechado. Congele por até 30 dias"),
             ("KBB", "Kuro Pan Burger", "Kuro Pan em formato de bun para hambúrguer", 800, "un", 1, True,
              unsplash("photo-1587606381527-172f6d902ada"), 90, "Mantenha em saco plástico fechado. Congele por até 30 dias"),
             ("MBBBG", "Mini Brioche Burger Bun com gergelim", "Bun de brioche menor, com gergelim", 500, "un", 1, True,
-             f"{IMG}/bbb.webp", 45, "Mantenha em saco plástico fechado. Congele por até 30 dias"),
-            ("FA", "Forma Artesanal (6 fatias)", "Pão de forma artesanal, fatiado", 1800, "un", 0, True,
-             f"{ACERVO}/fa.jpg", 400, "Melhor consumido no dia. Congele por até 30 dias"),
+             f"{IMG}/bbb.webp", 28, "Mantenha em saco plástico fechado. Congele por até 30 dias"),
             ("BAP", "Baguete Lanche", "Baguete no tamanho de lanche", 900, "un", 0, True,
-             f"{IMG}/bap.webp", 150, "Melhor consumido no dia. Congele por até 30 dias"),
+             f"{IMG}/bap.webp", 230, "Melhor consumido no dia. Congele por até 30 dias"),
             ("BAX", "Italiano Rústico", "Pão italiano de casca grossa", 2200, "un", 0, True,
-             f"{ACERVO}/bax.jpg", 500, "Melhor consumido no dia. Congele por até 30 dias"),
+             f"{ACERVO}/bax.jpg", 420, "Melhor consumido no dia. Congele por até 30 dias"),
             ("CF", "Baguette Campagne", "Baguete de massa campagne", 1700, "un", 0, True,
-             f"{ACERVO}/cf.jpg", 250, "Melhor consumido no dia. Congele por até 30 dias"),
+             f"{ACERVO}/cf.jpg", 265, "Melhor consumido no dia. Congele por até 30 dias"),
             ("BA", "Bâtard", "Pão rústico curto, casca crocante", 1300, "un", 0, True,
-             f"{ACERVO}/ba.jpg", 300, "Melhor consumido no dia. Congele por até 30 dias"),
+             f"{ACERVO}/ba.jpg", 280, "Melhor consumido no dia. Congele por até 30 dias"),
             ("CGR", "Pain de Campagne Redondo", "Campagne em formato redondo", 1800, "un", 0, True,
              f"{IMG}/cgr.webp", 300, "Melhor consumido no dia. Congele por até 30 dias"),
-            ("SE", "Vienna", "Pão vienense de massa macia", 1700, "un", 0, True,
-             unsplash("photo-1508616185939-efe767994166"), 200, "Melhor consumido no dia. Congele por até 30 dias"),
-            ("PI", "Pita", "Pão pita, unidade", 400, "un", 0, True,
-             unsplash("photo-1521791697570-e1f13d0b81d0"), 80, "Melhor consumido no dia. Congele por até 30 dias"),
+            # Vienna é CAFÉ GELADO (dono, 26/08) — a curadoria histórica já o
+            # marcava "bebida-preparada" (categoria "Cafés" no Yooga); a
+            # restauração é que o tinha lido como pão.
+            ("SE", "Vienna", "Café gelado da casa", 1700, "un", None, True,
+             unsplash("photo-1517701604599-bb29b565090c"), 300, ""),
+            ("PI", "Pita", "Pão pita, unidade", 400, "un", 1, True,
+             unsplash("photo-1521791697570-e1f13d0b81d0"), 25, "Melhor consumido no dia. Congele por até 30 dias"),
             ("BEP", "Baguete Gergelim Pequena", "Baguete de gergelim menor, das caixas presente", 900, "un", 0, True,
-             f"{IMG}/be.webp", 120, "Melhor consumido no dia. Congele por até 30 dias"),
+             f"{IMG}/be.webp", 150, "Melhor consumido no dia. Congele por até 30 dias"),
             ("FOA", "Focaccia Alecrim", "Focaccia com alecrim e azeite", 3100, "un", 0, True,
-             f"{IMG}/foa.webp", 350, "Melhor consumido no dia. Congele por até 30 dias"),
+             f"{IMG}/foa.webp", 370, "Melhor consumido no dia. Congele por até 30 dias"),
             ("CBT", "Focaccia Cebola, Bacon e Tomilho", "Focaccia com cebola, bacon e tomilho", 4000, "un", 0, True,
-             f"{ACERVO}/cbt.jpg", 450, "Melhor consumido no dia. Congele por até 30 dias"),
+             f"{ACERVO}/cbt.jpg", 600, "Melhor consumido no dia. Congele por até 30 dias"),
             ("FOC", "Focaccia Cebola Roxa", "Focaccia com cebola roxa", 4000, "un", 0, True,
-             f"{ACERVO}/foc.jpg", 450, "Melhor consumido no dia. Congele por até 30 dias"),
+             f"{ACERVO}/foc.jpg", 475, "Melhor consumido no dia. Congele por até 30 dias"),
             ("MIF", "Mini Focaccia Alecrim", "Focaccia menor, com alecrim", 1300, "un", 0, True,
-             f"{ACERVO}/mif.jpg", 180, "Melhor consumido no dia. Congele por até 30 dias"),
+             f"{ACERVO}/mif.jpg", 95, "Melhor consumido no dia. Congele por até 30 dias"),
             ("MICBT", "Mini Focaccia Cebola, Bacon e Tomilho", "Focaccia menor, com cebola, bacon e tomilho", 1800, "un", 0, True,
-             f"{ACERVO}/micbt.jpg", 200, "Melhor consumido no dia. Congele por até 30 dias"),
+             f"{ACERVO}/micbt.jpg", 160, "Melhor consumido no dia. Congele por até 30 dias"),
             ("MIFOC", "Mini Focaccia Cebola Roxa", "Focaccia menor, com cebola roxa", 1800, "un", 0, True,
-             f"{ACERVO}/mifoc.jpg", 200, "Melhor consumido no dia. Congele por até 30 dias"),
+             f"{ACERVO}/mifoc.jpg", 140, "Melhor consumido no dia. Congele por até 30 dias"),
             ("CPQ", "Croissant Presunto e Queijo", "Croissant recheado com presunto e queijo", 1500, "un", 0, True,
-             f"{ACERVO}/cpq.jpg", 140, "Servir quente, imediatamente"),
+             f"{ACERVO}/cpq.jpg", 80, "Servir quente, imediatamente"),
             ("FF", "Folhado de Frango", "Folhado recheado com frango", 2000, "un", 0, True,
-             f"{ACERVO}/ff.jpg", 180, "Servir quente, imediatamente"),
+             f"{ACERVO}/ff.jpg", 115, "Servir quente, imediatamente"),
             ("MFF", "Mini Folhado de Frango", "Folhado de frango menor", 900, "un", 0, True,
-             f"{ACERVO}/ff.jpg", 90, "Servir quente, imediatamente"),
+             f"{ACERVO}/ff.jpg", 70, "Servir quente, imediatamente"),
             ("HO", "Hot Dog Vienna", "Cachorro-quente no pão vienense", 1500, "un", 0, True,
-             f"{IMG}/ho.webp", 250, "Servir quente, imediatamente"),
+             f"{IMG}/ho.webp", 100, "Servir quente, imediatamente"),
             ("MIHO", "Mini Hot Dog Vienna", "Cachorro-quente menor", 700, "un", 0, True,
-             f"{IMG}/ho.webp", 130, "Servir quente, imediatamente"),
+             f"{IMG}/ho.webp", 55, "Servir quente, imediatamente"),
             ("DL", "Deli Milho & Bacon", "Pão recheado com milho e bacon", 1900, "un", 0, True,
-             f"{ACERVO}/dl.jpg", 250, "Servir quente, imediatamente"),
+             f"{ACERVO}/dl.jpg", 90, "Servir quente, imediatamente"),
             ("JO", "Caranguejo", "Salgado moldado em caranguejo", 1800, "un", 0, True,
-             f"{ACERVO}/jo.jpg", 180, "Servir quente, imediatamente"),
+             f"{ACERVO}/jo.jpg", 35, "Servir quente, imediatamente"),
         ]
 
         # Keywords by product (for find_alternatives and search)
@@ -1132,10 +1152,11 @@ class Command(BaseCommand):
             "THB": ["cha", "blend", "bule", "bebida", "quente"],
             "CE": ["cafe", "sorvete", "gelado", "bebida", "frio"],
             "FP": ["cafe", "frappe", "gelado", "batido", "bebida", "frio"],
+            "SE": ["cafe", "vienna", "gelado", "bebida", "frio"],
             "AG": ["agua", "mineral", "bebida", "frio"],
             "CV": ["soda", "torneira", "artesanal", "bebida", "frio", "do-dia"],
             "SO": ["soda", "laranja", "torneira", "artesanal", "bebida", "frio"],
-            "SK": ["pao", "forma", "japones", "macio", "fatiado", "shokupan"],
+            "FA": ["pao", "forma", "japones", "macio", "fatiado", "shokupan", "artesanal"],
             "KP": ["pao", "japones", "escuro", "macio"],
             "ANC": ["pao-doce", "bichinho", "criancas", "do-dia"],
             "CCOM": ["lanche", "sanduiche", "frances", "ovo", "queijo", "gratinado"],
@@ -1368,7 +1389,7 @@ class Command(BaseCommand):
                 "serves": "4 a 6 pessoas",
                 "approx_dimensions": "aprox. 24 x 18 x 4 cm",
             },
-            "SK": {
+            "FA": {
                 "allergens": ["glúten", "leite"],
                 "dietary_info": ["vegetariano"],
                 "serves": "6 fatias grossas",
@@ -1545,7 +1566,7 @@ class Command(BaseCommand):
         # atual é não-ST (perfil own_production → CFOP 5102/CSOSN 102, sem CEST).
         breads = {
             "BF", "BE", "MIB", "FE", "TB",
-            "CGO", "CPX", "CI", "SK", "KP", "PH", "BBB", "PHO",
+            "CGO", "CPX", "CI", "FA", "KP", "PH", "BBB", "PHO",
             "FOA", "CBT", "FOC", "MIF", "MICBT", "MIFOC",  # focaccia é pão
         }
         fiscal_ncm_by_sku = {
@@ -1560,6 +1581,7 @@ class Command(BaseCommand):
             "MC": "21011200",
             "CE": "21011200",
             "FP": "21011200",
+            "SE": "21011200",
             "THC": "09024000",
             "THR": "09024000",
             "THS": "09024000",
@@ -1626,8 +1648,8 @@ class Command(BaseCommand):
             "NAMAS_P50", "SOFIA_P50", "VITAL_P50",
             "SL", "CL", "CQ", "MH", "MA", "CM", "BCH", "CN", "BH", "PR", "FOA",
             "DL", "HO", "HI", "CTV",
-            "COC", "CH", "BN", "ANU", "ANP", "KBB", "MBBBG", "FA", "BAP",
-            "BAX", "CF", "BA", "CGR", "SE", "PI", "BEP", "CBT", "FOC",
+            "COC", "CH", "BN", "ANU", "ANP", "KBB", "MBBBG", "BAP",
+            "BAX", "CF", "BA", "CGR", "SE", "PI", "PI4", "BEP", "CBT", "FOC",
             "MIF", "MICBT", "MIFOC", "CPQ", "FF", "MFF", "MIHO", "JO",
         }
 
@@ -1701,7 +1723,7 @@ class Command(BaseCommand):
             # bebidas preparadas na hora
             "SS", "CD", "PS", "MC",
             "THC", "THR", "THS", "THB",
-            "CE", "FP",
+            "CE", "FP", "SE",
             "CV", "SO", "AG",
             # montados na hora
             "CMO", "CMA", "CCOM",
@@ -2091,6 +2113,8 @@ class Command(BaseCommand):
              ("4 unidades", "aprox. 16 x 5 x 4 cm cada")),
             ("BBB2", "Brioche Burger Bun (pc. 2un.)", "BBB", 2, 1600,
              ("2 unidades", "aprox. 10 cm de diâmetro cada")),
+            ("PI4", "Pita (pc. 4un.)", "PI", 4, 1600,
+             ("4 unidades", "aprox. 12 cm de diâmetro cada")),
         ):
             base = products[componente]
             pack, _ = Product.objects.update_or_create(
@@ -2101,7 +2125,9 @@ class Command(BaseCommand):
                     "base_price_q": preco,
                     "unit": "un",
                     "shelf_life_days": base.shelf_life_days,
-                    "is_published": True,
+                    # O pacote segue a unidade: PI ainda não tem ficha, então
+                    # PI4 nasce despublicado junto (portão de completude).
+                    "is_published": base.is_published,
                     "is_sellable": True,
                     # A do pão, não a do combo: pacote não pode estar mais
                     # disponível que a unidade que o compõe.
@@ -2234,7 +2260,7 @@ class Command(BaseCommand):
             ],
             "bebidas-geladas": ["CE", "FP", "AG",
                 # voltaram do Yooga (18/08)
-                "HI", "CTV",
+                "HI", "CTV", "SE",
                 # ⚠️ Chai tem duas naturezas, e o mapa as confundia: a BEBIDA é
                 # preparo nosso e mora aqui; a FOLHA embalada é revenda e mora
                 # na mercearia. "Vendemos os pouches e latinhas com o chá seco
@@ -2249,13 +2275,13 @@ class Command(BaseCommand):
                 "BF", "CGO", "CPX", "CI",
                 "BE",
                 # voltaram do Yooga (18/08)
-                "FA", "BAP", "BAX", "CF", "BA", "CGR", "SE", "PI", "BEP", "FOA", "CBT", "FOC", "MIF", "MICBT", "MIFOC",
+                "BAP", "BAX", "CF", "BA", "CGR", "PI", "PI4", "BEP", "FOA", "CBT", "FOC", "MIF", "MICBT", "MIFOC",
             ],
             "finos": [
                 # Vindos da extinta "balcao" (17/08): buns em pacote, massa
                 # enriquecida, na mesma família dos pães japoneses daqui.
                 "BBB", "PHO", "PHO4", "BBB2",
-                "CT", "PC", "SK",
+                "CT", "PC", "FA",
                 "KP", "ME", "ANC", "CO",
                 # voltaram do Yooga (18/08)
                 "CM", "BCH", "CN", "PR", "COC", "CH", "BN", "ANU", "ANP", "KBB", "MBBBG",
@@ -2349,7 +2375,7 @@ class Command(BaseCommand):
         # o `total_promisable` vai a zero e o pacote deixa de poder ser montado
         # do próprio pão. A unidade segue vendável e some das vitrines de
         # cliente; no PDV ela fica, porque no balcão alguém pede um pão só.
-        so_no_balcao = {"PHO", "BBB"}
+        so_no_balcao = {"PHO", "BBB", "PI"}
 
         for listing_obj in [pdv, ifood, web]:
             ListingItem.objects.filter(listing=listing_obj).delete()
@@ -2428,7 +2454,7 @@ class Command(BaseCommand):
             # Finos
             "CT": 42,
             "PC": 36,
-            "SK": 18,
+            "FA": 18,
             "KP": 8,
             "ME": 11,
             "ANC": 16,
@@ -2703,18 +2729,20 @@ class Command(BaseCommand):
                 "output_sku": "FOA",
                 "batch_size": Decimal("8"),
                 "items": [
-                    # 398 g de massa por focaccia, para 350 g assados.
-                    ("MASSA-ALTA-HIDRATACAO", Decimal("3.150")),
+                    # 416 g de massa + 4 g de alecrim = 420 g crus por focaccia
+                    # (dono, 26/08), para ~370 g assados.
+                    ("MASSA-ALTA-HIDRATACAO", Decimal("3.328")),
                     ("ALECRIM", Decimal("0.032")),
                 ],
             },
             {
                 "ref": "shokupan",
                 "name": "Shokupan",
-                "output_sku": "SK",
+                "output_sku": "FA",
                 "batch_size": Decimal("12"),
                 "items": [
-                    ("MASSA-PAES-MACIOS", Decimal("6.400")),
+                    # 400 g de massa crua por pão (dono, 26/08), ~350 g assados.
+                    ("MASSA-PAES-MACIOS", Decimal("4.800")),
                 ],
             },
             {
@@ -2769,9 +2797,9 @@ class Command(BaseCommand):
                 "output_sku": "CN",
                 "batch_size": Decimal("12"),
                 "items": [
-                    # 60 g de folhada + 20 g de maçã caramelizada = 80 g
-                    # crus, para 70 g assados.
-                    ("MASSA-FOLHADA", Decimal("0.720")),
+                    # 62 g de folhada + 20 g de maçã caramelizada = 82 g
+                    # crus (dono, 26/08), para ~72 g assados.
+                    ("MASSA-FOLHADA", Decimal("0.744")),
                     ("RECHEIO-MACA", Decimal("0.240")),
                 ],
             },
@@ -2785,9 +2813,9 @@ class Command(BaseCommand):
                 "output_sku": "BH",
                 "batch_size": Decimal("12"),
                 "items": [
-                    # 60 g de folhada + 20 g de creme de limão = 80 g crus,
-                    # para 70 g assados.
-                    ("MASSA-FOLHADA", Decimal("0.720")),
+                    # 80 g de folhada + 20 g de creme de limão = 100 g crus
+                    # (dono, 26/08), para ~90 g assados.
+                    ("MASSA-FOLHADA", Decimal("0.960")),
                     ("RECHEIO-LIMAO", Decimal("0.240")),
                 ],
             },
@@ -4698,7 +4726,7 @@ class Command(BaseCommand):
             "BF": weeks(22),
             "CGO": weeks(16),
             "CI": weeks(24),
-            "SK": weeks(18),
+            "FA": weeks(18),
             "KP": weeks(8),
             "CT": weeks(42),
             "PC": weeks(36),
@@ -4893,7 +4921,7 @@ class Command(BaseCommand):
 
         croissant = pick("CT", "BF")
         baguete = pick("BF", "CT")
-        pain = pick("PC", "SK", "CT")
+        pain = pick("PC", "FA", "CT")
 
         web = channels["web"].ref
         pdv = channels["pdv"].ref
@@ -5299,7 +5327,7 @@ class Command(BaseCommand):
             ("FE", 15),
             ("CT", 15),
             ("PC", 12),
-            ("SK", 6),
+            ("FA", 6),
             ("FOA", 4),
             ("CI", 8),
         ]
@@ -6347,7 +6375,7 @@ class Command(BaseCommand):
 
         plan = {
             # (cliente, sku, qtd, hora) — o Restaurante leva baguete e shokupan; o Café, croissant.
-            "yesterday": [("CLI-002", "BF", 10, 7), ("CLI-002", "SK", 4, 7)],
+            "yesterday": [("CLI-002", "BF", 10, 7), ("CLI-002", "FA", 4, 7)],
             "today": [("CLI-002", "BF", 8, 7), ("CLI-004", "CT", 12, 8)],
         }[which]
         day = timezone.localtime(opened_at).date()
@@ -6909,7 +6937,7 @@ class Command(BaseCommand):
                 "CPX", "THL", "CX",
                 "KP", "LN",
                 "MT", "PH", "PHO", "PHO4", "BBB2",
-                "QC", "QP", "SK",
+                "QC", "QP", "FA",
             ],
             "hibrido": [
                 "ANC", "CI", "CO",
