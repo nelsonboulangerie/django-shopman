@@ -331,6 +331,7 @@ export function usePurchaseDesk() {
   const receiptLines = useState<ReceiptLine[]>("purchase-receipt-lines", () => copy(INVOICE_RECEIPT_LINES));
   const receiptConfirmedAt = useState<string | null>("purchase-receipt-confirmed-at", () => null);
   const receiptRejectedAt = useState<string | null>("purchase-receipt-rejected-at", () => null);
+  const receiptHydrated = useState("purchase-receipt-hydrated", () => false);
   const purchaseRequestStatuses = useState<Record<string, PurchaseRequestStatus>>(
     "purchase-request-statuses",
     () => ({}),
@@ -589,26 +590,34 @@ export function usePurchaseDesk() {
     });
   }
 
-  function applyProjection(next: PurchaseProjection) {
+  // O rascunho do recibo é estado do cliente: o GET base devolve um
+  // activeReceipt default (o servidor não persiste rascunho), então só o
+  // primeiro carregamento e as ações que falam do recibo (scan/confirmar/
+  // recusar) podem sobrescrevê-lo — senão qualquer refresh apaga as linhas
+  // que o operador acabou de receber ou digitar.
+  function applyProjection(next: PurchaseProjection, options: { receipt?: boolean } = {}) {
     materials.value = copy(next.materials);
     suppliers.value = copy(next.suppliers);
     conversions.value = copy(next.conversions);
     costs.value = copy(next.costs);
     purchaseRequestStatuses.value = { ...next.purchaseRequestStatuses };
-    receiptMode.value = next.activeReceipt.mode;
-    receiptSupplierRef.value = next.activeReceipt.supplierRef || "";
-    invoiceInput.value = next.activeReceipt.invoiceInput || "";
-    receiptNote.value = next.activeReceipt.note || "";
-    receiptLines.value = receiptLineCopy(next.activeReceipt.lines ?? []);
-    receiptConfirmedAt.value = null;
-    receiptRejectedAt.value = null;
+    if (options.receipt) {
+      receiptMode.value = next.activeReceipt.mode;
+      receiptSupplierRef.value = next.activeReceipt.supplierRef || "";
+      invoiceInput.value = next.activeReceipt.invoiceInput || "";
+      receiptNote.value = next.activeReceipt.note || "";
+      receiptLines.value = receiptLineCopy(next.activeReceipt.lines ?? []);
+      receiptConfirmedAt.value = null;
+      receiptRejectedAt.value = null;
+      receiptHydrated.value = true;
+    }
     normalizeSelections();
   }
 
   watch(
     () => data.value?.purchase,
     (next) => {
-      if (next) applyProjection(next);
+      if (next) applyProjection(next, { receipt: !receiptHydrated.value });
     },
     { immediate: true },
   );
@@ -630,13 +639,16 @@ export function usePurchaseDesk() {
     return false;
   }
 
-  async function runBackendAction(request: () => Promise<PurchaseActionResponse>): Promise<boolean> {
+  async function runBackendAction(
+    request: () => Promise<PurchaseActionResponse>,
+    options: { receipt?: boolean } = {},
+  ): Promise<boolean> {
     if (actionPending.value) return false;
     actionPending.value = true;
     actionError.value = "";
     try {
       const response = await request();
-      if (response.purchase) applyProjection(response.purchase);
+      if (response.purchase) applyProjection(response.purchase, options);
       if (response.message) useSonner.success(response.message);
       await refresh();
       return true;
@@ -763,20 +775,22 @@ export function usePurchaseDesk() {
       useSonner.error(actionError.value);
       return;
     }
-    await runBackendAction(() => api.scanInvoice({ qrPayload: invoiceInput.value }));
+    await runBackendAction(() => api.scanInvoice({ qrPayload: invoiceInput.value }), { receipt: true });
   }
 
   async function confirmReceipt() {
     if (!receiptReady.value) return;
     if (!requireBackend("confirmar a entrada no estoque")) return;
-    const ok = await runBackendAction(() =>
-      api.confirmReceipt({
-        mode: receiptMode.value,
-        supplierRef: receiptSupplierRef.value,
-        invoiceAccessKey: invoiceStatus.value.accessKey,
-        note: receiptNote.value,
-        lines: receiptLines.value,
-      }),
+    const ok = await runBackendAction(
+      () =>
+        api.confirmReceipt({
+          mode: receiptMode.value,
+          supplierRef: receiptSupplierRef.value,
+          invoiceAccessKey: invoiceStatus.value.accessKey,
+          note: receiptNote.value,
+          lines: receiptLines.value,
+        }),
+      { receipt: true },
     );
     if (ok) receiptConfirmedAt.value = todayStamp();
   }
@@ -788,14 +802,16 @@ export function usePurchaseDesk() {
       useSonner.error(actionError.value);
       return;
     }
-    const ok = await runBackendAction(() =>
-      api.rejectReceipt({
-        mode: receiptMode.value,
-        supplierRef: receiptSupplierRef.value,
-        invoiceAccessKey: invoiceStatus.value.accessKey,
-        note: receiptNote.value,
-        lines: receiptLines.value,
-      }),
+    const ok = await runBackendAction(
+      () =>
+        api.rejectReceipt({
+          mode: receiptMode.value,
+          supplierRef: receiptSupplierRef.value,
+          invoiceAccessKey: invoiceStatus.value.accessKey,
+          note: receiptNote.value,
+          lines: receiptLines.value,
+        }),
+      { receipt: true },
     );
     if (ok) receiptRejectedAt.value = todayStamp();
   }
