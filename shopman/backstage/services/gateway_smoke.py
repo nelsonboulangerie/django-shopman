@@ -23,6 +23,7 @@ from shopman.backstage.services.financial_reconciliation import build_financial_
 from shopman.backstage.services.integration_readiness import (
     efi_pix_readiness,
     focus_nfe_readiness,
+    purchase_nfe_readiness,
     staging_missing,
     stripe_card_readiness,
 )
@@ -592,6 +593,13 @@ def _sandbox_readiness_checks(*, mode: str = "staging") -> tuple[GatewaySmokeChe
             blocked_message=_provider_blocked_message("Focus NFe", mode=mode),
         ),
         _credential_check(
+            provider="purchase_nfe",
+            name="distribution_credentials",
+            missing=_provider_missing("purchase_nfe", mode=mode),
+            ready_message=_provider_ready_message("Compra NF-e", mode=mode),
+            blocked_message=_provider_blocked_message("Compra NF-e", mode=mode),
+        ),
+        _credential_check(
             provider="efi",
             name="sandbox_credentials",
             missing=_provider_missing("efi_pix", mode=mode),
@@ -622,6 +630,7 @@ def _provider_missing(provider: str, *, mode: str) -> list[str]:
     readiness = {
         "focus_nfe": focus_nfe_readiness,
         "efi_pix": efi_pix_readiness,
+        "purchase_nfe": purchase_nfe_readiness,
         "stripe_card": stripe_card_readiness,
     }[provider](mode="runtime")
     return list(readiness.missing)

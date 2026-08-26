@@ -135,9 +135,12 @@ export function receiptLineWarnings(
   conversion: MaterialConversion | null,
 ): ReceiptWarning[] {
   const warnings: ReceiptWarning[] = [];
-  if (!material) return [{ key: "invalid-qty", label: "Insumo não encontrado", tone: "block" }];
+  if (!material) return [{ key: "missing-material", label: "Definir insumo", tone: "block" }];
   if (!Number.isFinite(line.purchaseQty) || line.purchaseQty <= 0) {
     warnings.push({ key: "invalid-qty", label: "Quantidade precisa ser maior que zero", tone: "block" });
+  }
+  if (line.requiresConversion && !conversion) {
+    warnings.push({ key: "missing-conversion", label: "Definir conversão", tone: "block" });
   }
   if (parseMoneyInput(line.costInput) <= 0) {
     warnings.push({ key: "missing-cost", label: "Conferir valor", tone: "watch" });
@@ -160,8 +163,19 @@ export function receiptLinePreview(
   materials: Material[],
   conversions: MaterialConversion[],
 ): ReceiptLinePreview | null {
-  const material = materials.find((item) => item.sku === line.materialSku);
-  if (!material) return null;
+  const matchedMaterial = materials.find((item) => item.sku === line.materialSku);
+  const material = matchedMaterial ?? {
+    sku: line.materialSku || "",
+    name: line.materialSku || "Definir insumo",
+    unit: "un",
+    shelfLifeDays: null,
+    isActive: false,
+    category: "Importado da NF",
+    stockOnHand: 0,
+    dailyUse: 0,
+    minStock: 0,
+    recipes: [],
+  } satisfies Material;
   const conversion = line.conversionId ?
     conversions.find((item) => item.id === line.conversionId) ?? null
   : null;
@@ -176,7 +190,7 @@ export function receiptLinePreview(
     baseCostQ: baseQty > 0 ? Math.round(totalCostQ / baseQty) : 0,
     totalCostQ,
     approximate: conversion?.kind === "approximate",
-    warnings: receiptLineWarnings(line, mode, material, conversion),
+    warnings: receiptLineWarnings(line, mode, matchedMaterial, conversion),
   };
 }
 

@@ -1083,6 +1083,22 @@ SHOPMAN_FOCUS_NFE = {
     "timeout": int(os.environ.get("FOCUS_NFE_TIMEOUT", "30")),
     "base_url": os.environ.get("FOCUS_NFE_BASE_URL", ""),
 }
+SHOPMAN_PURCHASE_INVOICE_READER = os.environ.get("SHOPMAN_PURCHASE_INVOICE_READER", "").strip()
+SHOPMAN_PURCHASE_NFE = {
+    "environment": os.environ.get("PURCHASE_NFE_ENVIRONMENT", SHOPMAN_FOCUS_NFE["environment"]).strip().lower()
+    or SHOPMAN_FOCUS_NFE["environment"],
+    "uf": os.environ.get("PURCHASE_NFE_UF", "41").strip() or "41",
+    "recipient_document": os.environ.get(
+        "PURCHASE_NFE_RECIPIENT_DOCUMENT",
+        os.environ.get("FOCUS_NFE_CNPJ_EMITENTE", ""),
+    ).strip(),
+    "certificate_path": os.environ.get("PURCHASE_NFE_CERTIFICATE_PATH", "").strip(),
+    "certificate_pfx_base64": os.environ.get("PURCHASE_NFE_CERTIFICATE_PFX_BASE64", "").strip(),
+    "certificate_password": os.environ.get("PURCHASE_NFE_CERTIFICATE_PASSWORD", ""),
+    "auto_manifest_ciencia": _env_bool("PURCHASE_NFE_AUTO_MANIFEST_CIENCIA", False),
+    "xml_dir": os.environ.get("PURCHASE_NFE_XML_DIR", "").strip(),
+    "fuzzy_match_min_score": int(os.environ.get("PURCHASE_NFE_FUZZY_MATCH_MIN_SCORE", "0") or 0),
+}
 # Desconto manual no PDV acima deste valor (centavos) exige aprovação gerencial
 # por PIN. Default R$ 5,00 (500q) — política definida pelo Pablo (2026-07-13,
 # Questão 2 do QA exploratório do backstage). Overrides de preço exigem

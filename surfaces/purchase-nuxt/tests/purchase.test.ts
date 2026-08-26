@@ -186,6 +186,58 @@ describe("purchase presentation", () => {
     );
   });
 
+  it("mantem item importado sem insumo visivel e bloqueado", () => {
+    const line: ReceiptLine = {
+      id: "nfe-1",
+      materialSku: "",
+      conversionId: null,
+      requiresConversion: true,
+      purchaseQty: 2,
+      costInput: "360,00",
+      expiryDate: "",
+      lineNote: "Definir insumo. NF: QUEIJO ARTESANAL; unidade PC.",
+      checked: false,
+    };
+
+    const preview = receiptLinePreview(line, "invoice", [farinha], conversions);
+
+    expect(preview).toMatchObject({
+      material: {
+        sku: "",
+        name: "Definir insumo",
+        category: "Importado da NF",
+      },
+      totalCostQ: 36000,
+    });
+    expect(preview?.warnings).toContainEqual({
+      key: "missing-material",
+      label: "Definir insumo",
+      tone: "block",
+    });
+  });
+
+  it("bloqueia linha importada que ainda precisa de conversao", () => {
+    const line: ReceiptLine = {
+      id: "nfe-2",
+      materialSku: "FARINHA-T65",
+      conversionId: null,
+      requiresConversion: true,
+      purchaseQty: 2,
+      costInput: "360,00",
+      expiryDate: "2027-02-25",
+      lineNote: "Definir conversao antes de confirmar. NF: FARINHA T65 25KG.",
+      checked: true,
+    };
+
+    const preview = receiptLinePreview(line, "invoice", [farinha], conversions);
+
+    expect(preview?.warnings).toContainEqual({
+      key: "missing-conversion",
+      label: "Definir conversão",
+      tone: "block",
+    });
+  });
+
   it("bloqueia recebimento de perecivel sem validade", () => {
     const line: ReceiptLine = {
       id: "line-2",

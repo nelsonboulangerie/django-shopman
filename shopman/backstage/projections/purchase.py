@@ -76,6 +76,7 @@ class ReceiptLineProjection:
     id: str
     materialSku: str
     conversionId: str | None
+    requiresConversion: bool
     purchaseQty: float
     costInput: str
     expiryDate: str
@@ -212,9 +213,15 @@ def _supplier_projection(supplier, last_delivery_at: str) -> SupplierProjection:
 
 def _active_receipt(active_receipt: dict[str, Any] | None, *, default_supplier_ref: str) -> ActiveReceiptProjection:
     data = dict(active_receipt or {})
+    if active_receipt is None:
+        supplier_ref = default_supplier_ref
+    elif "supplierRef" in data or "supplier_ref" in data:
+        supplier_ref = str(data.get("supplierRef", data.get("supplier_ref", "")) or "")
+    else:
+        supplier_ref = default_supplier_ref
     return ActiveReceiptProjection(
         mode=str(data.get("mode") or "invoice"),
-        supplierRef=str(data.get("supplierRef") or data.get("supplier_ref") or default_supplier_ref),
+        supplierRef=supplier_ref,
         invoiceInput=str(data.get("invoiceInput") or data.get("invoice_input") or ""),
         note=str(data.get("note") or ""),
         lines=tuple(_receipt_line_projection(line) for line in data.get("lines") or ()),
@@ -230,6 +237,7 @@ def _receipt_line_projection(line: dict[str, Any]) -> ReceiptLineProjection:
             if line.get("conversionId") or line.get("conversion_id")
             else None
         ),
+        requiresConversion=bool(line.get("requiresConversion") or line.get("requires_conversion")),
         purchaseQty=_number(_decimal(line.get("purchaseQty", line.get("purchase_qty", 0)))),
         costInput=str(line.get("costInput") or line.get("cost_input") or ""),
         expiryDate=str(line.get("expiryDate") or line.get("expiry_date") or ""),

@@ -36,6 +36,7 @@ dependencies = [
     "django-unfold>=0.92,<0.93",
     "django-otp>=1.7,<2.0",
     "daphne>=4.2,<5.0",
+    "erpbrasil.edoc>=3.1,<4.0",
     "psycopg[binary]>=3.2,<4.0",
     "python-dotenv>=1.0,<2.0",
     "redis>=5.1,<8.0",

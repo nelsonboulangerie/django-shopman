@@ -89,7 +89,7 @@ def test_gateway_smoke_sandbox_required_blocks_without_credentials():
 
     data = json.loads(stdout.getvalue())
     assert data["status"] == "blocked_by_credentials"
-    assert data["counts"]["blocked_by_credentials"] == 5
+    assert data["counts"]["blocked_by_credentials"] == 6
     assert all(check["scope"] == "sandbox_readiness" for check in data["checks"])
 
 

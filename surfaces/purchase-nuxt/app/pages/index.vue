@@ -54,6 +54,7 @@ const {
   receiptBlockers,
   receiptWatchWarnings,
   receiptDocumentBlockers,
+  receiptSupplierBlockers,
   receiptCheckedCount,
   receiptTotalCostQ,
   receiptHasRejectionReason,
@@ -125,7 +126,9 @@ const invoiceShortKey = computed(() =>
   : "—",
 );
 
-const receiptTotalBlockers = computed(() => receiptBlockers.value.length + receiptDocumentBlockers.value.length);
+const receiptTotalBlockers = computed(
+  () => receiptBlockers.value.length + receiptDocumentBlockers.value.length + receiptSupplierBlockers.value.length,
+);
 const purchaseTotalQ = computed(() =>
   reorderRows.value.reduce((total, row) => total + (row.estimatedCostQ ?? 0), 0),
 );
@@ -614,6 +617,7 @@ onBeforeUnmount(stopInvoiceScanner);
               <label class="block text-sm font-medium">
                 Fornecedor
                 <select :value="receiptSupplierRef" class="mt-1 h-10 w-full rounded-md border border-border bg-background px-3 text-sm" @change="onReceiptSupplierChange">
+                  <option value="">Definir fornecedor</option>
                   <option v-for="supplier in suppliers" :key="supplier.ref" :value="supplier.ref">{{ supplier.name }}</option>
                 </select>
               </label>
@@ -641,6 +645,7 @@ onBeforeUnmount(stopInvoiceScanner);
           <div class="grid gap-3 p-3 lg:hidden">
             <article v-for="preview in receiptLinePreviews" :key="`card-${preview.line.id}`" class="rounded-md border border-border bg-background p-3">
               <select :value="preview.line.materialSku" class="h-11 w-full rounded-md border border-border bg-card px-3 text-sm font-medium" @change="onReceiptMaterialChange(preview.line.id, $event)">
+                <option value="">Definir insumo</option>
                 <option v-for="material in materials" :key="material.sku" :value="material.sku">{{ material.name }}</option>
               </select>
               <div class="mt-3 grid grid-cols-2 gap-2">
@@ -683,6 +688,7 @@ onBeforeUnmount(stopInvoiceScanner);
                 <tr v-for="preview in receiptLinePreviews" :key="preview.line.id" class="align-top hover:bg-accent/60">
                   <td class="min-w-56 px-3 py-3">
                     <select :value="preview.line.materialSku" class="h-10 w-full rounded-md border border-border bg-background px-2 text-sm font-medium" @change="onReceiptMaterialChange(preview.line.id, $event)">
+                      <option value="">Definir insumo</option>
                       <option v-for="material in materials" :key="material.sku" :value="material.sku">{{ material.name }}</option>
                     </select>
                     <p class="mt-1 text-xs text-muted-foreground">{{ preview.material.sku }} · base {{ preview.material.unit }}</p>
@@ -743,8 +749,9 @@ onBeforeUnmount(stopInvoiceScanner);
           <textarea v-model="receiptNote" rows="3" class="mt-1 w-full resize-none rounded-md border border-border bg-background px-3 py-2 text-sm" placeholder="Avaria, falta, devolução, observação na NF/CT-e" />
         </label>
 
-        <div v-if="receiptDocumentBlockers.length || receiptBlockers.length || receiptWatchWarnings.length" class="mt-4 space-y-2">
+        <div v-if="receiptDocumentBlockers.length || receiptSupplierBlockers.length || receiptBlockers.length || receiptWatchWarnings.length" class="mt-4 space-y-2">
           <div v-for="blocker in receiptDocumentBlockers" :key="blocker" class="rounded-md border border-destructive/30 bg-destructive/10 p-2 text-sm text-destructive">{{ blocker }}</div>
+          <div v-for="blocker in receiptSupplierBlockers" :key="blocker" class="rounded-md border border-destructive/30 bg-destructive/10 p-2 text-sm text-destructive">{{ blocker }}</div>
           <div v-for="(warning, index) in receiptBlockers" :key="`block-${warning.key}-${index}`" class="rounded-md border p-2 text-sm" :class="receiptWarningClasses[warning.tone]">{{ warning.label }}</div>
           <div v-for="(warning, index) in receiptWatchWarnings" :key="`watch-${warning.key}-${index}`" class="rounded-md border p-2 text-sm" :class="receiptWarningClasses[warning.tone]">{{ warning.label }}</div>
         </div>

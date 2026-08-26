@@ -437,6 +437,7 @@ export function usePurchaseDesk() {
   const receiptDocumentBlockers = computed(() =>
     receiptMode.value === "invoice" && !invoiceStatus.value.valid ? ["Ler QR, código de barras ou chave da NF"] : [],
   );
+  const receiptSupplierBlockers = computed(() => (receiptSupplierRef.value ? [] : ["Definir fornecedor"]));
   const receiptCheckedCount = computed(() => receiptLinePreviews.value.filter((preview) => preview.line.checked).length);
   const receiptTotalCostQ = computed(() =>
     receiptLinePreviews.value.reduce((total, preview) => total + preview.totalCostQ, 0),
@@ -448,6 +449,7 @@ export function usePurchaseDesk() {
     () =>
       receiptLinePreviews.value.length > 0 &&
       receiptDocumentBlockers.value.length === 0 &&
+      receiptSupplierBlockers.value.length === 0 &&
       receiptBlockers.value.length === 0 &&
       receiptCheckedCount.value === receiptLinePreviews.value.length,
   );
@@ -546,7 +548,7 @@ export function usePurchaseDesk() {
     if (!suppliers.value.some((supplier) => supplier.ref === noteSupplierRef.value)) {
       noteSupplierRef.value = firstSupplierRef;
     }
-    if (!suppliers.value.some((supplier) => supplier.ref === receiptSupplierRef.value)) {
+    if (receiptSupplierRef.value && !suppliers.value.some((supplier) => supplier.ref === receiptSupplierRef.value)) {
       receiptSupplierRef.value = firstSupplierRef;
     }
     if (
@@ -567,7 +569,7 @@ export function usePurchaseDesk() {
         )?.id ?? "";
     }
     receiptLines.value = receiptLines.value.map((line) => {
-      const materialSku = materials.value.some((material) => material.sku === line.materialSku) ?
+      const materialSku = !line.materialSku || materials.value.some((material) => material.sku === line.materialSku) ?
         line.materialSku
       : firstMaterialSku;
       const conversionAllowed =
@@ -594,7 +596,7 @@ export function usePurchaseDesk() {
     costs.value = copy(next.costs);
     purchaseRequestStatuses.value = { ...next.purchaseRequestStatuses };
     receiptMode.value = next.activeReceipt.mode;
-    receiptSupplierRef.value = next.activeReceipt.supplierRef || suppliers.value[0]?.ref || "";
+    receiptSupplierRef.value = next.activeReceipt.supplierRef || "";
     invoiceInput.value = next.activeReceipt.invoiceInput || "";
     receiptNote.value = next.activeReceipt.note || "";
     receiptLines.value = receiptLineCopy(next.activeReceipt.lines ?? []);
@@ -891,6 +893,7 @@ export function usePurchaseDesk() {
     receiptBlockers,
     receiptWatchWarnings,
     receiptDocumentBlockers,
+    receiptSupplierBlockers,
     receiptCheckedCount,
     receiptTotalCostQ,
     receiptHasRejectionReason,

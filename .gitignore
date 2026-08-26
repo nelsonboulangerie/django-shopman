@@ -18,6 +18,7 @@ htmlcov/
 .venv/
 venv/
 .claude/
+.codex/
 .secrets/
 node_modules/
 shopman/static/storefront/css/output.css
