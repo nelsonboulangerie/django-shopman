@@ -86,7 +86,10 @@ def test_nelson_seed_populates_production_history_alerts_and_batches(monkeypatch
     # prefixo INS-), com unit + shelf-life. Os input_sku das receitas resolvem.
     from shopman.buyman.models import Material
 
-    assert Material.objects.count() == 23
+    # 23 da fundação + 33 da Seção 2b (salgados, montados e bebidas — dono,
+    # 26/08): queijos, presuntos, salsicha Vienna, frango, milho, bacon, café
+    # em grão, blends de chá, tônica, folhas da salada…
+    assert Material.objects.count() == 56
     farinha = Material.objects.get(sku="FARINHA-T65")
     assert (farinha.unit, farinha.shelf_life_days) == ("kg", 180)
     assert farinha.metadata["allergens"] == ["glúten"]
@@ -201,7 +204,7 @@ def test_nelson_seed_populates_production_history_alerts_and_batches(monkeypatch
     # reprovava toda fornada dessas dez, e o operador via "Insumos
     # insuficientes" com o atalho "Concluir mesmo assim" a um toque, todo dia.
     # Alarme sempre errado vira botão que se aprende a apertar.
-    for prep_sku in ("MASSA-FOLHADA", "MASSA-BRIOCHE", "MASSA-PAES-MACIOS", "RECHEIO-MACA"):
+    for prep_sku in ("MASSA-CROISSANT", "MASSA-BRIOCHE", "MASSA-FORMA", "RECHEIO-MACA"):
         assert stock_service.available(prep_sku) > 0, f"{prep_sku} sem estoque"
     crying = sorted(
         {

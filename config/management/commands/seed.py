@@ -2561,9 +2561,9 @@ class Command(BaseCommand):
 
         recipes_data = [
             {
-                "ref": "massa-levain-clara",
-                "name": "Massa Levain Clara",
-                "output_sku": "MASSA-LEVAIN-CLARA",
+                "ref": "massa-tradicao",
+                "name": "Massa Tradição",
+                "output_sku": "MASSA-TRADICAO",
                 "batch_size": Decimal("10"),
                 "items": [
                     ("FARINHA-T65", Decimal("5.000")),
@@ -2588,9 +2588,9 @@ class Command(BaseCommand):
                 ],
             },
             {
-                "ref": "massa-alta-hidratacao",
-                "name": "Massa Alta Hidratação",
-                "output_sku": "MASSA-ALTA-HIDRATACAO",
+                "ref": "massa-ciabatta",
+                "name": "Massa Ciabatta",
+                "output_sku": "MASSA-CIABATTA",
                 "batch_size": Decimal("10"),
                 "items": [
                     ("FARINHA-T55", Decimal("5.000")),
@@ -2601,9 +2601,9 @@ class Command(BaseCommand):
                 ],
             },
             {
-                "ref": "massa-paes-macios",
-                "name": "Massa Pães Macios",
-                "output_sku": "MASSA-PAES-MACIOS",
+                "ref": "massa-forma",
+                "name": "Massa Forma",
+                "output_sku": "MASSA-FORMA",
                 # 8,360 kg de insumo (o leite entra por densidade) rendendo 8 kg
                 # de massa: 4,3% de perda de mistura. Era 10, ou seja +19,6% de
                 # massa nascendo do nada — ver `Recipe._validate_mass_balance`.
@@ -2618,9 +2618,9 @@ class Command(BaseCommand):
                 ],
             },
             {
-                "ref": "massa-folhada",
-                "name": "Massa Folhada",
-                "output_sku": "MASSA-FOLHADA",
+                "ref": "massa-croissant",
+                "name": "Massa Croissant",
+                "output_sku": "MASSA-CROISSANT",
                 # 9,456 kg de insumo → 9 kg de massa (4,8% de perda). Era 10.
                 "batch_size": Decimal("9"),
                 "items": [
@@ -2653,7 +2653,7 @@ class Command(BaseCommand):
                 # Preparo-base não-massa: a produção real tem recheios, cremes
                 # e infusões prontos ANTES da montagem — não só massas.
                 "ref": "recheio-maca",
-                "name": "Recheio de Maçã",
+                "name": "Recheio de Maçã & Canela",
                 "output_sku": "RECHEIO-MACA",
                 "batch_size": Decimal("5"),
                 "items": [
@@ -2672,9 +2672,9 @@ class Command(BaseCommand):
                 # A versão de chocolate (o coelhinho) sai deste mesmo creme, com
                 # chocolate derretido na finalização; segue sem ficha separada
                 # enquanto o plano do dia não distinguir as duas.
-                "ref": "recheio-creme",
-                "name": "Creme de Confeiteiro",
-                "output_sku": "RECHEIO-CREME",
+                "ref": "creme-baunilha",
+                "name": "Creme de Baunilha",
+                "output_sku": "CREME-BAUNILHA",
                 "batch_size": Decimal("5"),
                 "items": [
                     ("LEITE", Decimal("3.400")),
@@ -2687,9 +2687,9 @@ class Command(BaseCommand):
             {
                 # Recheio do Bichon au Citron, que até aqui era produto de
                 # catálogo sem ficha nenhuma.
-                "ref": "recheio-limao",
-                "name": "Creme de Limão",
-                "output_sku": "RECHEIO-LIMAO",
+                "ref": "creme-limao",
+                "name": "Creme de Limão Siciliano",
+                "output_sku": "CREME-LIMAO",
                 "batch_size": Decimal("3"),
                 "items": [
                     ("OVOS", Decimal("1.000")),
@@ -2705,7 +2705,7 @@ class Command(BaseCommand):
                 "batch_size": Decimal("25"),
                 "items": [
                     # 280 g de massa por baguete, para 250 g assados.
-                    ("MASSA-LEVAIN-CLARA", Decimal("7.000")),
+                    ("MASSA-TRADICAO", Decimal("7.000")),
                 ],
             },
             {
@@ -2727,7 +2727,7 @@ class Command(BaseCommand):
                 "batch_size": Decimal("20"),
                 "items": [
                     # 205 g de massa por ciabatta, para 180 g assados.
-                    ("MASSA-ALTA-HIDRATACAO", Decimal("4.100")),
+                    ("MASSA-CIABATTA", Decimal("4.100")),
                 ],
             },
             {
@@ -2736,10 +2736,11 @@ class Command(BaseCommand):
                 "output_sku": "FOA",
                 "batch_size": Decimal("8"),
                 "items": [
-                    # 416 g de massa + 4 g de alecrim = 420 g crus por focaccia
-                    # (dono, 26/08), para ~370 g assados.
-                    ("MASSA-ALTA-HIDRATACAO", Decimal("3.328")),
+                    # 414 g de massa + 4 g de alecrim + 2 g de sal grosso =
+                    # 420 g crus por focaccia (dono, 26/08), ~370 g assados.
+                    ("MASSA-CIABATTA", Decimal("3.312")),
                     ("ALECRIM", Decimal("0.032")),
+                    ("SAL-GROSSO", Decimal("0.016")),
                 ],
             },
             {
@@ -2749,7 +2750,7 @@ class Command(BaseCommand):
                 "batch_size": Decimal("12"),
                 "items": [
                     # 400 g de massa crua por pão (dono, 26/08), ~350 g assados.
-                    ("MASSA-PAES-MACIOS", Decimal("4.800")),
+                    ("MASSA-FORMA", Decimal("4.800")),
                 ],
             },
             {
@@ -2760,7 +2761,7 @@ class Command(BaseCommand):
                 "items": [
                     # 240 g de massa + 40 g de chocolate = 280 g crus,
                     # para 250 g assados.
-                    ("MASSA-PAES-MACIOS", Decimal("1.920")),
+                    ("MASSA-FORMA", Decimal("1.920")),
                     ("CHOCOLATE-70", Decimal("0.320")),
                 ],
             },
@@ -2771,7 +2772,7 @@ class Command(BaseCommand):
                 "batch_size": Decimal("48"),
                 "items": [
                     # 80 g de massa por croissant, para 70 g assados.
-                    ("MASSA-FOLHADA", Decimal("3.840")),
+                    ("MASSA-CROISSANT", Decimal("3.840")),
                 ],
             },
             {
@@ -2780,10 +2781,10 @@ class Command(BaseCommand):
                 "output_sku": "PC",
                 "batch_size": Decimal("36"),
                 "items": [
-                    # 80 g de folhada + 20 g de chocolate (os dois bâtons
+                    # 80 g de folhada + 20 g de bâton (os dois bâtons
                     # clássicos) = 100 g crus, para 90 g assados.
-                    ("MASSA-FOLHADA", Decimal("2.880")),
-                    ("CHOCOLATE-70", Decimal("0.720")),
+                    ("MASSA-CROISSANT", Decimal("2.880")),
+                    ("BATON-CHOCOLATE", Decimal("0.720")),
                 ],
             },
             {
@@ -2795,7 +2796,7 @@ class Command(BaseCommand):
                     # 60 g de massa amanteigada + 40 g de creme = 100 g
                     # crus, para 90 g assados.
                     ("MASSA-BRIOCHE", Decimal("0.960")),
-                    ("RECHEIO-CREME", Decimal("0.640")),
+                    ("CREME-BAUNILHA", Decimal("0.640")),
                 ],
             },
             {
@@ -2806,7 +2807,7 @@ class Command(BaseCommand):
                 "items": [
                     # 62 g de folhada + 20 g de maçã caramelizada = 82 g
                     # crus (dono, 26/08), para ~72 g assados.
-                    ("MASSA-FOLHADA", Decimal("0.744")),
+                    ("MASSA-CROISSANT", Decimal("0.744")),
                     ("RECHEIO-MACA", Decimal("0.240")),
                 ],
             },
@@ -2822,8 +2823,8 @@ class Command(BaseCommand):
                 "items": [
                     # 80 g de folhada + 20 g de creme de limão = 100 g crus
                     # (dono, 26/08), para ~90 g assados.
-                    ("MASSA-FOLHADA", Decimal("0.960")),
-                    ("RECHEIO-LIMAO", Decimal("0.240")),
+                    ("MASSA-CROISSANT", Decimal("0.960")),
+                    ("CREME-LIMAO", Decimal("0.240")),
                 ],
             },
             {
@@ -2845,6 +2846,717 @@ class Command(BaseCommand):
                     ("OVOS", Decimal("0.165")),
                     ("ACUCAR", Decimal("0.127")),
                     ("LIMAO", Decimal("0.010")),
+                ],
+            },
+            # ══ Seção 2b (dono, 26/08) — pré-preparos novos ══════════════════
+            # Composições marcadas "proposta" são ponto de partida para a
+            # bancada corrigir; os CRUS por unidade são a pesagem do dono.
+            {
+                # A "massa de Butter" da casa: família do hot dog, deli, cornet
+                # e — por ora — da challah (dono: "tem sido feita na butter").
+                # Composição proposta (batch 8,5 kg, ~4% de perda de mistura).
+                "ref": "massa-butter",
+                "name": "Massa Butter",
+                "output_sku": "MASSA-BUTTER",
+                "batch_size": Decimal("8.5"),
+                "items": [
+                    ("FARINHA-T55", Decimal("5.000")),
+                    ("LEITE", Decimal("1.600")),
+                    ("MANTEIGA-FR", Decimal("1.200")),
+                    ("OVOS", Decimal("0.400")),
+                    ("ACUCAR", Decimal("0.400")),
+                    ("FERMENTO-BIO", Decimal("0.150")),
+                    ("SAL", Decimal("0.100")),
+                ],
+            },
+            {
+                # Pita tem massa própria (dono, 26/08). Composição proposta.
+                "ref": "massa-pita",
+                "name": "Massa Pita",
+                "output_sku": "MASSA-PITA",
+                "batch_size": Decimal("8.2"),
+                "items": [
+                    ("FARINHA-T65", Decimal("5.000")),
+                    ("AGUA-FILTRADA", Decimal("3.000")),
+                    ("AZEITE", Decimal("0.150")),
+                    ("FERMENTO-BIO", Decimal("0.100")),
+                    ("SAL", Decimal("0.100")),
+                    ("ACUCAR", Decimal("0.050")),
+                ],
+            },
+            {
+                # Cozido perde água: 4,08 kg de insumo para 3,2 kg de recheio.
+                "ref": "recheio-frango",
+                "name": "Recheio de Frango",
+                "output_sku": "RECHEIO-FRANGO",
+                "batch_size": Decimal("3.2"),
+                "items": [
+                    ("FRANGO", Decimal("3.600")),
+                    ("CEBOLA-ROXA", Decimal("0.300")),
+                    ("AZEITE", Decimal("0.150")),
+                    ("SAL", Decimal("0.040")),
+                ],
+            },
+            {
+                "ref": "recheio-cebola-bacon-tomilho",
+                "name": "Recheio de Cebola, Bacon e Tomilho",
+                "output_sku": "RECHEIO-CEBOLA-BACON-TOMILHO",
+                "batch_size": Decimal("2.7"),
+                "items": [
+                    ("CEBOLA-ROXA", Decimal("1.800")),
+                    ("BACON", Decimal("1.000")),
+                    ("TOMILHO", Decimal("0.060")),
+                    ("AZEITE", Decimal("0.150")),
+                ],
+            },
+            {
+                "ref": "recheio-cebola-azapas",
+                "name": "Recheio de Cebola Roxa & Azapas",
+                "output_sku": "RECHEIO-CEBOLA-AZAPAS",
+                "batch_size": Decimal("2.8"),
+                "items": [
+                    ("CEBOLA-ROXA", Decimal("2.200")),
+                    ("AZEITONA", Decimal("0.700")),
+                    ("AZEITE", Decimal("0.150")),
+                ],
+            },
+            {
+                "ref": "molho-bechamel",
+                "name": "Béchamel",
+                "output_sku": "MOLHO-BECHAMEL",
+                "batch_size": Decimal("2.9"),
+                "items": [
+                    ("LEITE", Decimal("2.600")),
+                    ("MANTEIGA-FR", Decimal("0.200")),
+                    ("FARINHA-T55", Decimal("0.200")),
+                    ("SAL", Decimal("0.020")),
+                ],
+            },
+            {
+                "ref": "creme-chocolate",
+                "name": "Creme de Chocolate",
+                "output_sku": "CREME-CHOCOLATE",
+                "batch_size": Decimal("2.9"),
+                "items": [
+                    ("LEITE", Decimal("1.500")),
+                    ("CHOCOLATE-70", Decimal("1.200")),
+                    ("ACUCAR", Decimal("0.200")),
+                    ("MANTEIGA-FR", Decimal("0.150")),
+                ],
+            },
+            {
+                # A base do pain perdu ("Creme de leite e ovos" — dono, 26/08).
+                "ref": "creme-leite-ovos",
+                "name": "Creme de Leite e Ovos",
+                "output_sku": "CREME-LEITE-OVOS",
+                "batch_size": Decimal("2"),
+                "items": [
+                    ("CREME-DE-LEITE", Decimal("0.800")),
+                    ("LEITE", Decimal("0.600")),
+                    ("OVOS", Decimal("0.500")),
+                    ("ACUCAR", Decimal("0.150")),
+                ],
+            },
+            {
+                "ref": "salada-da-casa",
+                "name": "Salada da Casa",
+                "output_sku": "SALADA-DA-CASA",
+                "batch_size": Decimal("1.8"),
+                "items": [
+                    ("ALFACE-AMERICANA", Decimal("0.700")),
+                    ("ALFACE-ROXA", Decimal("0.400")),
+                    ("RUCULA", Decimal("0.300")),
+                    ("TOMATE-CEREJA", Decimal("0.500")),
+                ],
+            },
+            {
+                # A mostarda é a DA CASA (produto MT) — ficha consome produto.
+                "ref": "vinagrete-frances",
+                "name": "Vinagrete à Francesa",
+                "output_sku": "VINAGRETE-FRANCES",
+                "batch_size": Decimal("0.9"),
+                "items": [
+                    ("AZEITE", Decimal("0.700")),
+                    ("MT", Decimal("0.100")),
+                    ("LIMAO", Decimal("0.150")),
+                    ("SAL", Decimal("0.010")),
+                    ("ACUCAR", Decimal("0.020")),
+                ],
+            },
+            # ══ Seção 2b — fichas dos assados restaurados (crus do dono) ═════
+            {
+                "ref": "baguete-lanche",
+                "name": "Baguete Lanche",
+                "output_sku": "BAP",
+                "batch_size": Decimal("12"),
+                "items": [("MASSA-TRADICAO", Decimal("3.120"))],  # 260 g/un
+            },
+            {
+                "ref": "batard",
+                "name": "Bâtard",
+                "output_sku": "BA",
+                "batch_size": Decimal("10"),
+                "items": [("MASSA-TRADICAO", Decimal("3.200"))],  # 320 g/un
+            },
+            {
+                "ref": "baguete-gergelim-pequena",
+                "name": "Baguete Gergelim Pequena",
+                "output_sku": "BEP",
+                "batch_size": Decimal("12"),
+                "items": [
+                    ("MASSA-TRADICAO", Decimal("1.980")),  # 165 g/un
+                    ("GERGELIM", Decimal("0.060")),        # 5 g/un
+                ],
+            },
+            {
+                # Tradição, não ciabatta (dono, 26/08 — pergunta 2).
+                "ref": "italiano-rustico",
+                "name": "Italiano Rústico",
+                "output_sku": "BAX",
+                "batch_size": Decimal("8"),
+                "items": [("MASSA-TRADICAO", Decimal("3.840"))],  # 480 g/un
+            },
+            {
+                "ref": "baguette-campagne",
+                "name": "Baguette Campagne",
+                "output_sku": "CF",
+                "batch_size": Decimal("12"),
+                "items": [("MASSA-CAMPAGNE", Decimal("3.600"))],  # 300 g/un
+            },
+            {
+                "ref": "campagne-redondo",
+                "name": "Pain de Campagne Redondo",
+                "output_sku": "CGR",
+                "batch_size": Decimal("10"),
+                "items": [("MASSA-CAMPAGNE", Decimal("3.400"))],  # 340 g/un
+            },
+            {
+                "ref": "pita",
+                "name": "Pita",
+                "output_sku": "PI",
+                "batch_size": Decimal("24"),
+                "items": [("MASSA-PITA", Decimal("0.720"))],  # 30 g/un
+            },
+            {
+                "ref": "focaccia-cebola-bacon-tomilho",
+                "name": "Focaccia Cebola, Bacon e Tomilho",
+                "output_sku": "CBT",
+                "batch_size": Decimal("6"),
+                "items": [
+                    ("MASSA-CIABATTA", Decimal("3.600")),                  # 600 g/un
+                    ("RECHEIO-CEBOLA-BACON-TOMILHO", Decimal("0.480")),   # 80 g/un
+                ],
+            },
+            {
+                "ref": "focaccia-cebola-roxa",
+                "name": "Focaccia Cebola Roxa",
+                "output_sku": "FOC",
+                "batch_size": Decimal("6"),
+                "items": [
+                    ("MASSA-CIABATTA", Decimal("2.970")),          # 495 g/un
+                    ("RECHEIO-CEBOLA-AZAPAS", Decimal("0.270")),   # 45 g/un
+                ],
+            },
+            {
+                "ref": "mini-focaccia-alecrim",
+                "name": "Mini Focaccia Alecrim",
+                "output_sku": "MIF",
+                "batch_size": Decimal("12"),
+                "items": [
+                    ("MASSA-CIABATTA", Decimal("1.260")),  # 105 g/un
+                    ("ALECRIM", Decimal("0.048")),         # 4 g/un
+                    ("SAL-GROSSO", Decimal("0.012")),      # 1 g/un
+                ],
+            },
+            {
+                "ref": "mini-focaccia-cebola-bacon-tomilho",
+                "name": "Mini Focaccia Cebola, Bacon e Tomilho",
+                "output_sku": "MICBT",
+                "batch_size": Decimal("12"),
+                "items": [
+                    ("MASSA-CIABATTA", Decimal("1.896")),                 # 158 g/un
+                    ("RECHEIO-CEBOLA-BACON-TOMILHO", Decimal("0.264")),   # 22 g/un
+                ],
+            },
+            {
+                "ref": "mini-focaccia-cebola-roxa",
+                "name": "Mini Focaccia Cebola Roxa",
+                "output_sku": "MIFOC",
+                "batch_size": Decimal("12"),
+                "items": [
+                    ("MASSA-CIABATTA", Decimal("1.752")),          # 146 g/un
+                    ("RECHEIO-CEBOLA-AZAPAS", Decimal("0.168")),   # 14 g/un
+                ],
+            },
+            {
+                "ref": "croissant-mini",
+                "name": "Croissant Mini",
+                "output_sku": "CM",
+                "batch_size": Decimal("24"),
+                "items": [("MASSA-CROISSANT", Decimal("0.864"))],  # 36 g/un
+            },
+            {
+                "ref": "pain-aux-raisins",
+                "name": "Pain aux Raisins",
+                "output_sku": "PR",
+                "batch_size": Decimal("12"),
+                "items": [
+                    ("MASSA-CROISSANT", Decimal("0.480")),   # 40 g/un
+                    ("CREME-BAUNILHA", Decimal("0.216")),    # 18 g/un
+                    ("PASSAS", Decimal("0.120")),            # 10 g/un
+                ],
+            },
+            {
+                "ref": "maca",
+                "name": "Maçã",
+                "output_sku": "MA",
+                "batch_size": Decimal("12"),
+                "items": [
+                    ("MASSA-CROISSANT", Decimal("0.960")),  # 80 g/un
+                    ("RECHEIO-MACA", Decimal("0.360")),     # 30 g/un
+                ],
+            },
+            {
+                # Minas padrão + presunto DEFUMADO (Strass) — dono, 26/08 (P3).
+                "ref": "croissant-presunto-queijo",
+                "name": "Croissant Presunto e Queijo",
+                "output_sku": "CPQ",
+                "batch_size": Decimal("12"),
+                "items": [
+                    ("MASSA-CROISSANT", Decimal("0.720")),        # 60 g/un
+                    ("PRESUNTO-DEFUMADO", Decimal("0.180")),      # 15 g/un
+                    ("QUEIJO-MINAS-PADRAO", Decimal("0.180")),    # 15 g/un
+                ],
+            },
+            {
+                "ref": "folhado-frango",
+                "name": "Folhado de Frango",
+                "output_sku": "FF",
+                "batch_size": Decimal("12"),
+                "items": [
+                    ("MASSA-CROISSANT", Decimal("1.140")),   # 95 g/un
+                    ("RECHEIO-FRANGO", Decimal("0.420")),    # 35 g/un
+                ],
+            },
+            {
+                "ref": "mini-folhado-frango",
+                "name": "Mini Folhado de Frango",
+                "output_sku": "MFF",
+                "batch_size": Decimal("12"),
+                "items": [
+                    ("MASSA-CROISSANT", Decimal("0.696")),   # 58 g/un
+                    ("RECHEIO-FRANGO", Decimal("0.264")),    # 22 g/un
+                ],
+            },
+            {
+                "ref": "caranguejo",
+                "name": "Caranguejo",
+                "output_sku": "JO",
+                "batch_size": Decimal("16"),
+                "items": [
+                    ("MASSA-FORMA", Decimal("0.608")),  # 38 g/un
+                    ("GERGELIM", Decimal("0.032")),     # 2 g/un
+                ],
+            },
+            {
+                # 90 g crus (estimativa aceita pelo dono — pergunta 4), na
+                # proporção massa:chocolate do Kuro Pan. Massa Kuropan própria
+                # (com yudane) fica para a leva 2c, com a composição do dono.
+                "ref": "kuro-pan-burger",
+                "name": "Kuro Pan Burger",
+                "output_sku": "KBB",
+                "batch_size": Decimal("12"),
+                "items": [
+                    ("MASSA-FORMA", Decimal("0.924")),    # 77 g/un
+                    ("CHOCOLATE-70", Decimal("0.156")),   # 13 g/un
+                ],
+            },
+            {
+                "ref": "brioche-nanterre",
+                "name": "Brioche Nanterre",
+                "output_sku": "BN",
+                "batch_size": Decimal("8"),
+                "items": [("MASSA-BRIOCHE", Decimal("1.920"))],  # 240 g/un
+            },
+            {
+                "ref": "brioche-chocolat",
+                "name": "Brioche Chocolat",
+                "output_sku": "BCH",
+                "batch_size": Decimal("24"),
+                "items": [
+                    ("MASSA-BRIOCHE", Decimal("0.816")),      # 34 g/un
+                    ("GOTAS-CHOCOLATE", Decimal("0.192")),    # 8 g/un
+                ],
+            },
+            {
+                "ref": "mini-brioche-bun-gergelim",
+                "name": "Mini Brioche Burger Bun com gergelim",
+                "output_sku": "MBBBG",
+                "batch_size": Decimal("24"),
+                "items": [
+                    ("MASSA-BRIOCHE", Decimal("0.720")),  # 30 g/un
+                    ("GERGELIM", Decimal("0.048")),       # 2 g/un
+                ],
+            },
+            {
+                "ref": "ursinho",
+                "name": "Ursinho",
+                "output_sku": "ANU",
+                "batch_size": Decimal("12"),
+                "items": [
+                    ("MASSA-BRIOCHE", Decimal("0.960")),    # 80 g/un
+                    ("CREME-BAUNILHA", Decimal("0.360")),   # 30 g/un
+                ],
+            },
+            {
+                "ref": "porquinho",
+                "name": "Porquinho",
+                "output_sku": "ANP",
+                "batch_size": Decimal("12"),
+                "items": [
+                    ("MASSA-BRIOCHE", Decimal("0.960")),    # 80 g/un
+                    ("CREME-BAUNILHA", Decimal("0.360")),   # 30 g/un
+                ],
+            },
+            {
+                # "No momento, tem sido feita na massa de Butter" (dono, 26/08).
+                "ref": "challah",
+                "name": "Challah",
+                "output_sku": "CH",
+                "batch_size": Decimal("8"),
+                "items": [("MASSA-BUTTER", Decimal("2.400"))],  # 300 g/un
+            },
+            {
+                # 60 g de butter + 50 g de salsicha Vienna (Strass) — dono.
+                "ref": "hot-dog-vienna",
+                "name": "Hot Dog Vienna",
+                "output_sku": "HO",
+                "batch_size": Decimal("12"),
+                "items": [
+                    ("MASSA-BUTTER", Decimal("0.720")),       # 60 g/un
+                    ("SALSICHA-VIENNA", Decimal("0.600")),    # 50 g/un
+                ],
+            },
+            {
+                # A mini leva MEIA salsicha (a mesma, cortada — dono, P6).
+                "ref": "mini-hot-dog-vienna",
+                "name": "Mini Hot Dog Vienna",
+                "output_sku": "MIHO",
+                "batch_size": Decimal("12"),
+                "items": [
+                    ("MASSA-BUTTER", Decimal("0.480")),       # 40 g/un
+                    ("SALSICHA-VIENNA", Decimal("0.300")),    # 25 g/un
+                ],
+            },
+            {
+                "ref": "deli-milho-bacon",
+                "name": "Deli Milho & Bacon",
+                "output_sku": "DL",
+                "batch_size": Decimal("12"),
+                "items": [
+                    ("MASSA-BUTTER", Decimal("0.840")),      # 70 g/un
+                    ("MILHO-VERDE", Decimal("0.240")),       # 20 g/un
+                    ("BACON", Decimal("0.120")),             # 10 g/un
+                    ("SALSINHA-DESID", Decimal("0.012")),    # 1 g/un
+                ],
+            },
+            {
+                "ref": "cornet-chocolate",
+                "name": "Cornet de Chocolate",
+                "output_sku": "COC",
+                "batch_size": Decimal("12"),
+                "items": [
+                    ("MASSA-BUTTER", Decimal("0.576")),      # 48 g/un
+                    ("CREME-CHOCOLATE", Decimal("0.144")),   # 12 g/un
+                ],
+            },
+            # ══ Seção 2b — fichas de MONTAGEM (is_active=False) ══════════════
+            # Dão custo, insumo e rótulo; não são fornada. A convenção dos
+            # croques é do dono (P7): monsieur vai salada, madame vai ovo,
+            # complet vai salada e ovo. Consumo automático na VENDA de item
+            # made-to-order é mecanismo da Fase 2 do Buyman — a ficha nasce
+            # pronta para ele.
+            {
+                "ref": "queijo-quente",
+                "name": "Queijo-Quente",
+                "output_sku": "QQ",
+                "batch_size": Decimal("1"),
+                "is_active": False,
+                "items": [
+                    ("FA", Decimal("0.110")),
+                    ("QUEIJO-PRATO", Decimal("0.040")),
+                    ("REQUEIJAO-CORTE", Decimal("0.030")),
+                    ("QUEIJO-PARMESAO", Decimal("0.015")),
+                    ("MANTEIGA-FR", Decimal("0.010")),
+                ],
+            },
+            {
+                "ref": "croque-monsieur",
+                "name": "Croque Monsieur",
+                "output_sku": "CMO",
+                "batch_size": Decimal("1"),
+                "is_active": False,
+                "items": [
+                    ("FA", Decimal("0.110")),
+                    ("PRESUNTO-CASA", Decimal("0.040")),
+                    ("QUEIJO-GRUYERE", Decimal("0.060")),
+                    ("MOLHO-BECHAMEL", Decimal("0.030")),
+                    ("SALADA-DA-CASA", Decimal("0.060")),
+                    ("VINAGRETE-FRANCES", Decimal("0.010")),
+                ],
+            },
+            {
+                "ref": "croque-madame",
+                "name": "Croque Madame",
+                "output_sku": "CMA",
+                "batch_size": Decimal("1"),
+                "is_active": False,
+                "items": [
+                    ("FA", Decimal("0.110")),
+                    ("PRESUNTO-CASA", Decimal("0.040")),
+                    ("QUEIJO-GRUYERE", Decimal("0.060")),
+                    ("MOLHO-BECHAMEL", Decimal("0.030")),
+                    ("OVOS", Decimal("0.050")),
+                ],
+            },
+            {
+                "ref": "croque-complet",
+                "name": "Croque Complet",
+                "output_sku": "CCOM",
+                "batch_size": Decimal("1"),
+                "is_active": False,
+                "items": [
+                    ("FA", Decimal("0.110")),
+                    ("PRESUNTO-CASA", Decimal("0.040")),
+                    ("QUEIJO-GRUYERE", Decimal("0.060")),
+                    ("MOLHO-BECHAMEL", Decimal("0.030")),
+                    ("OVOS", Decimal("0.050")),
+                    ("SALADA-DA-CASA", Decimal("0.060")),
+                    ("VINAGRETE-FRANCES", Decimal("0.010")),
+                ],
+            },
+            {
+                # O presunto aqui é o DA CASA (jambon blanc).
+                "ref": "jambon-beurre",
+                "name": "Jambon-Beurre",
+                "output_sku": "JB",
+                "batch_size": Decimal("1"),
+                "is_active": False,
+                "items": [
+                    ("BF", Decimal("0.125")),   # meia baguette
+                    ("MANTEIGA-FR", Decimal("0.020")),
+                    ("PRESUNTO-CASA", Decimal("0.070")),
+                ],
+            },
+            {
+                "ref": "pain-grille",
+                "name": "Pain Grillé",
+                "output_sku": "PG",
+                "batch_size": Decimal("1"),
+                "is_active": False,
+                "items": [
+                    ("CGO", Decimal("0.120")),  # fatia grossa de campagne
+                    ("MANTEIGA-FR", Decimal("0.015")),
+                ],
+            },
+            {
+                # "1 BN rende, em tese, 8. Nosso pain perdu é pequeno mesmo"
+                # (dono, 26/08): a fatia é 1/8 do Nanterre assado (~26 g).
+                "ref": "pain-perdu",
+                "name": "Pain Perdu",
+                "output_sku": "PPU",
+                "batch_size": Decimal("1"),
+                "is_active": False,
+                "items": [
+                    ("BN", Decimal("0.026")),
+                    ("CREME-LEITE-OVOS", Decimal("0.060")),
+                    ("ACUCAR", Decimal("0.010")),
+                    ("MANTEIGA-FR", Decimal("0.010")),
+                    ("CANELA", Decimal("0.001")),
+                ],
+            },
+            # ══ Seção 2b — fichas de BEBIDA (is_active=False) ════════════════
+            {
+                "ref": "espresso",
+                "name": "Espresso",
+                "output_sku": "SS",
+                "batch_size": Decimal("1"),
+                "is_active": False,
+                "items": [("CAFE-GRAO", Decimal("0.018"))],
+            },
+            {
+                "ref": "espresso-macchiato",
+                "name": "Espresso Macchiato",
+                "output_sku": "SL",
+                "batch_size": Decimal("1"),
+                "is_active": False,
+                "items": [
+                    ("CAFE-GRAO", Decimal("0.018")),
+                    ("LEITE", Decimal("0.020")),
+                ],
+            },
+            {
+                "ref": "cafe-coado",
+                "name": "Café Coado",
+                "output_sku": "CD",
+                "batch_size": Decimal("1"),
+                "is_active": False,
+                "items": [
+                    ("CAFE-GRAO", Decimal("0.015")),
+                    ("AGUA-FILTRADA", Decimal("0.200")),
+                ],
+            },
+            {
+                "ref": "cappuccino",
+                "name": "Cappuccino",
+                "output_sku": "PS",
+                "batch_size": Decimal("1"),
+                "is_active": False,
+                "items": [
+                    ("CAFE-GRAO", Decimal("0.018")),
+                    ("LEITE", Decimal("0.150")),
+                ],
+            },
+            {
+                "ref": "mochaccino",
+                "name": "Mochaccino",
+                "output_sku": "MC",
+                "batch_size": Decimal("1"),
+                "is_active": False,
+                "items": [
+                    ("CAFE-GRAO", Decimal("0.018")),
+                    ("LEITE", Decimal("0.150")),
+                    ("CHOCOLATE-70", Decimal("0.020")),
+                ],
+            },
+            {
+                "ref": "mocha",
+                "name": "Mocha",
+                "output_sku": "MH",
+                "batch_size": Decimal("1"),
+                "is_active": False,
+                "items": [
+                    ("CAFE-GRAO", Decimal("0.018")),
+                    ("LEITE", Decimal("0.180")),
+                    ("CHOCOLATE-70", Decimal("0.025")),
+                ],
+            },
+            {
+                "ref": "caffe-latte",
+                "name": "Caffè Latte",
+                "output_sku": "CL",
+                "batch_size": Decimal("1"),
+                "is_active": False,
+                "items": [
+                    ("CAFE-GRAO", Decimal("0.018")),
+                    ("LEITE", Decimal("0.220")),
+                ],
+            },
+            {
+                "ref": "chocolate-quente",
+                "name": "Chocolate Quente",
+                "output_sku": "CQ",
+                "batch_size": Decimal("1"),
+                "is_active": False,
+                "items": [
+                    ("LEITE", Decimal("0.220")),
+                    ("CHOCOLATE-70", Decimal("0.030")),
+                ],
+            },
+            {
+                "ref": "cha-camille",
+                "name": "Chá Camille",
+                "output_sku": "THC",
+                "batch_size": Decimal("1"),
+                "is_active": False,
+                "items": [
+                    ("CHA-CAMILLE", Decimal("0.008")),
+                    ("AGUA-FILTRADA", Decimal("0.400")),
+                ],
+            },
+            {
+                "ref": "cha-rouge",
+                "name": "Chá Rouge",
+                "output_sku": "THR",
+                "batch_size": Decimal("1"),
+                "is_active": False,
+                "items": [
+                    ("CHA-ROUGE", Decimal("0.008")),
+                    ("AGUA-FILTRADA", Decimal("0.400")),
+                ],
+            },
+            {
+                "ref": "cha-sophie",
+                "name": "Chá Sophie",
+                "output_sku": "THS",
+                "batch_size": Decimal("1"),
+                "is_active": False,
+                "items": [
+                    ("CHA-SOPHIE", Decimal("0.008")),
+                    ("AGUA-FILTRADA", Decimal("0.400")),
+                ],
+            },
+            {
+                "ref": "cha-bleu",
+                "name": "Chá Bleu",
+                "output_sku": "THB",
+                "batch_size": Decimal("1"),
+                "is_active": False,
+                "items": [
+                    ("CHA-BLEU", Decimal("0.008")),
+                    ("AGUA-FILTRADA", Decimal("0.400")),
+                ],
+            },
+            {
+                "ref": "cha-hibisco",
+                "name": "Chá Hibisco",
+                "output_sku": "HI",
+                "batch_size": Decimal("1"),
+                "is_active": False,
+                "items": [
+                    ("CHA-HIBISCO", Decimal("0.008")),
+                    ("ACUCAR", Decimal("0.015")),
+                    ("AGUA-FILTRADA", Decimal("0.300")),
+                ],
+            },
+            {
+                "ref": "soft-chai-citrico",
+                "name": "Soft Chai Cítrico",
+                "output_sku": "CHAI_A",
+                "batch_size": Decimal("1"),
+                "is_active": False,
+                "items": [
+                    ("CHA-CHAI", Decimal("0.008")),
+                    ("LIMAO", Decimal("0.020")),
+                    ("ACUCAR", Decimal("0.015")),
+                    ("AGUA-FILTRADA", Decimal("0.250")),
+                ],
+            },
+            {
+                # ⚠️ Composição proposta — a pergunta 9 (como é o Vienna
+                # gelado?) segue aberta com o dono.
+                "ref": "vienna-gelado",
+                "name": "Vienna",
+                "output_sku": "SE",
+                "batch_size": Decimal("1"),
+                "is_active": False,
+                "items": [
+                    ("CAFE-GRAO", Decimal("0.018")),
+                    ("LEITE", Decimal("0.050")),
+                    ("AGUA-FILTRADA", Decimal("0.200")),
+                ],
+            },
+            {
+                # A tônica comprada É insumo da bebida da casa (dono, P10) —
+                # diferente da tônica de REVENDA, que o cardápio cortou.
+                "ref": "cha-tonica-frutas-vermelhas",
+                "name": "Chá Tônica Frutas Vermelhas",
+                "output_sku": "CTV",
+                "batch_size": Decimal("1"),
+                "is_active": False,
+                "items": [
+                    ("CHA-FRUTAS-VERMELHAS", Decimal("0.008")),
+                    ("TONICA", Decimal("1")),
                 ],
             },
         ]
@@ -2878,12 +3590,49 @@ class Command(BaseCommand):
             "MALTE":        {"label": "Malte",                  "allergens": ["glúten"], "diet": "vegan", "nutrition": {"energy_kcal": 360, "carbohydrates_g": 78, "sugars_g": 60,  "proteins_g": 10, "total_fat_g": 1.8, "saturated_fat_g": 0.3, "trans_fat_g": 0,   "fiber_g": 7,  "sodium_mg": 23}},
             "CHOCOLATE-70": {"label": "Chocolate amargo 70%",   "allergens": [], "diet": "vegan", "nutrition": {"energy_kcal": 598, "carbohydrates_g": 46, "sugars_g": 24,  "proteins_g": 7.8, "total_fat_g": 43, "saturated_fat_g": 24,  "trans_fat_g": 0,   "fiber_g": 11, "sodium_mg": 20}},
             "CEBOLA-ROXA":  {"label": "Cebola roxa",            "allergens": [], "diet": "vegan", "nutrition": {"energy_kcal": 40,  "carbohydrates_g": 9,   "sugars_g": 4.2, "proteins_g": 1.1, "total_fat_g": 0.1, "saturated_fat_g": 0,   "trans_fat_g": 0,   "fiber_g": 1.7, "sodium_mg": 4}},
-            "AZEITONA":     {"label": "Azeitonas pretas",       "allergens": [], "diet": "vegan", "nutrition": {"energy_kcal": 115, "carbohydrates_g": 6.3, "sugars_g": 0,   "proteins_g": 0.8, "total_fat_g": 10.7, "saturated_fat_g": 1.4, "trans_fat_g": 0,  "fiber_g": 3.2, "sodium_mg": 735}},
+            "AZEITONA":     {"label": "Azeitona azapa",       "allergens": [], "diet": "vegan", "nutrition": {"energy_kcal": 115, "carbohydrates_g": 6.3, "sugars_g": 0,   "proteins_g": 0.8, "total_fat_g": 10.7, "saturated_fat_g": 1.4, "trans_fat_g": 0,  "fiber_g": 3.2, "sodium_mg": 735}},
             "ALECRIM":      {"label": "Alecrim",                "allergens": [], "diet": "vegan", "nutrition": {"energy_kcal": 131, "carbohydrates_g": 21, "sugars_g": 0,   "proteins_g": 3.3, "total_fat_g": 5.9, "saturated_fat_g": 2.8, "trans_fat_g": 0,   "fiber_g": 14, "sodium_mg": 26}},
             "GERGELIM":     {"label": "Gergelim",               "allergens": ["gergelim"], "diet": "vegan", "nutrition": {"energy_kcal": 573, "carbohydrates_g": 23, "sugars_g": 0.3, "proteins_g": 18,  "total_fat_g": 50, "saturated_fat_g": 7,   "trans_fat_g": 0,   "fiber_g": 12, "sodium_mg": 11}},
             "MACA":         {"label": "Maçã",                   "allergens": [], "diet": "vegan", "nutrition": {"energy_kcal": 52,  "carbohydrates_g": 14, "sugars_g": 10,  "proteins_g": 0.3, "total_fat_g": 0.2, "saturated_fat_g": 0,   "trans_fat_g": 0,   "fiber_g": 2.4, "sodium_mg": 1}},
             "CANELA":       {"label": "Canela",                 "allergens": [], "diet": "vegan", "nutrition": {"energy_kcal": 247, "carbohydrates_g": 81, "sugars_g": 2.2, "proteins_g": 4,   "total_fat_g": 1.2, "saturated_fat_g": 0.3, "trans_fat_g": 0,   "fiber_g": 53, "sodium_mg": 10}},
-            "LIMAO":        {"label": "Limão",                  "allergens": [], "diet": "vegan", "nutrition": {"energy_kcal": 29,  "carbohydrates_g": 9,  "sugars_g": 2.5, "proteins_g": 1.1, "total_fat_g": 0.3, "saturated_fat_g": 0,   "trans_fat_g": 0,   "fiber_g": 2.8, "sodium_mg": 2}},
+            "LIMAO":        {"label": "Limão siciliano",                  "allergens": [], "diet": "vegan", "nutrition": {"energy_kcal": 29,  "carbohydrates_g": 9,  "sugars_g": 2.5, "proteins_g": 1.1, "total_fat_g": 0.3, "saturated_fat_g": 0,   "trans_fat_g": 0,   "fiber_g": 2.8, "sodium_mg": 2}},
+            # ── Seção 2b (dono, 26/08): insumos dos salgados, montados e bebidas ──
+            # Fornecedores reais na Seção 3: Deleite, President, JR Ovos, São
+            # Martinho, Strass, Embramex, France Panificação, Paullinia, Luglio,
+            # Alto Alegre. Nutrição: TACO/USDA simplificado, valores didáticos.
+            "PRESUNTO-CASA": {"label": "Presunto da casa (jambon blanc)", "allergens": [], "diet": "animal", "nutrition": {"energy_kcal": 145, "carbohydrates_g": 1.5, "sugars_g": 1.0, "proteins_g": 21, "total_fat_g": 6, "saturated_fat_g": 2.1, "trans_fat_g": 0, "fiber_g": 0, "sodium_mg": 1200}},
+            "PRESUNTO-DEFUMADO": {"label": "Presunto defumado", "allergens": [], "diet": "animal", "nutrition": {"energy_kcal": 160, "carbohydrates_g": 1.5, "sugars_g": 1.0, "proteins_g": 20, "total_fat_g": 8, "saturated_fat_g": 2.8, "trans_fat_g": 0, "fiber_g": 0, "sodium_mg": 1300}},
+            "QUEIJO-MINAS-PADRAO": {"label": "Queijo minas padrão", "allergens": ["leite"], "diet": "vegetarian", "nutrition": {"energy_kcal": 320, "carbohydrates_g": 3.0, "sugars_g": 1.5, "proteins_g": 21, "total_fat_g": 25, "saturated_fat_g": 15, "trans_fat_g": 0, "fiber_g": 0, "sodium_mg": 580}},
+            "QUEIJO-COLONIAL": {"label": "Queijo colonial", "allergens": ["leite"], "diet": "vegetarian", "nutrition": {"energy_kcal": 360, "carbohydrates_g": 2.5, "sugars_g": 1.0, "proteins_g": 24, "total_fat_g": 29, "saturated_fat_g": 18, "trans_fat_g": 0, "fiber_g": 0, "sodium_mg": 620}},
+            "QUEIJO-PRATO": {"label": "Queijo prato", "allergens": ["leite"], "diet": "vegetarian", "nutrition": {"energy_kcal": 360, "carbohydrates_g": 1.9, "sugars_g": 1.0, "proteins_g": 23, "total_fat_g": 29, "saturated_fat_g": 17, "trans_fat_g": 0, "fiber_g": 0, "sodium_mg": 580}},
+            "QUEIJO-PARMESAO": {"label": "Queijo parmesão", "allergens": ["leite"], "diet": "vegetarian", "nutrition": {"energy_kcal": 453, "carbohydrates_g": 1.7, "sugars_g": 0.8, "proteins_g": 36, "total_fat_g": 34, "saturated_fat_g": 20, "trans_fat_g": 0, "fiber_g": 0, "sodium_mg": 1200}},
+            "QUEIJO-GRUYERE": {"label": "Queijo gruyère", "allergens": ["leite"], "diet": "vegetarian", "nutrition": {"energy_kcal": 413, "carbohydrates_g": 0.4, "sugars_g": 0.4, "proteins_g": 30, "total_fat_g": 32, "saturated_fat_g": 19, "trans_fat_g": 0, "fiber_g": 0, "sodium_mg": 714}},
+            "REQUEIJAO-CORTE": {"label": "Requeijão de corte artesanal", "allergens": ["leite"], "diet": "vegetarian", "nutrition": {"energy_kcal": 260, "carbohydrates_g": 3.0, "sugars_g": 2.5, "proteins_g": 12, "total_fat_g": 22, "saturated_fat_g": 14, "trans_fat_g": 0, "fiber_g": 0, "sodium_mg": 520}},
+            "SALSICHA-VIENNA": {"label": "Salsicha vienna artesanal", "allergens": [], "diet": "animal", "nutrition": {"energy_kcal": 290, "carbohydrates_g": 2.5, "sugars_g": 1.0, "proteins_g": 13, "total_fat_g": 25, "saturated_fat_g": 9, "trans_fat_g": 0, "fiber_g": 0, "sodium_mg": 1050}},
+            "FRANGO": {"label": "Frango (sobrecoxa desossada)", "allergens": [], "diet": "animal", "nutrition": {"energy_kcal": 165, "carbohydrates_g": 0, "sugars_g": 0, "proteins_g": 26, "total_fat_g": 6.5, "saturated_fat_g": 1.8, "trans_fat_g": 0, "fiber_g": 0, "sodium_mg": 85}},
+            "MILHO-VERDE": {"label": "Milho verde em conserva", "allergens": [], "diet": "vegan", "nutrition": {"energy_kcal": 98, "carbohydrates_g": 17, "sugars_g": 3.0, "proteins_g": 3.2, "total_fat_g": 2.4, "saturated_fat_g": 0.4, "trans_fat_g": 0, "fiber_g": 4.6, "sodium_mg": 230}},
+            "BACON": {"label": "Bacon fatiado fino", "allergens": [], "diet": "animal", "nutrition": {"energy_kcal": 541, "carbohydrates_g": 1.4, "sugars_g": 0, "proteins_g": 37, "total_fat_g": 42, "saturated_fat_g": 14, "trans_fat_g": 0, "fiber_g": 0, "sodium_mg": 1717}},
+            "SALSINHA-DESID": {"label": "Salsinha desidratada", "allergens": [], "diet": "vegan", "nutrition": {"energy_kcal": 292, "carbohydrates_g": 51, "sugars_g": 7.3, "proteins_g": 27, "total_fat_g": 5.5, "saturated_fat_g": 1.4, "trans_fat_g": 0, "fiber_g": 30, "sodium_mg": 452}},
+            "TOMILHO": {"label": "Tomilho fresco", "allergens": [], "diet": "vegan", "nutrition": {"energy_kcal": 101, "carbohydrates_g": 24, "sugars_g": 0, "proteins_g": 5.6, "total_fat_g": 1.7, "saturated_fat_g": 0.5, "trans_fat_g": 0, "fiber_g": 14, "sodium_mg": 9}},
+            "PASSAS": {"label": "Uvas-passas", "allergens": [], "diet": "vegan", "nutrition": {"energy_kcal": 299, "carbohydrates_g": 79, "sugars_g": 59, "proteins_g": 3.1, "total_fat_g": 0.5, "saturated_fat_g": 0.1, "trans_fat_g": 0, "fiber_g": 3.7, "sodium_mg": 11}},
+            "GOTAS-CHOCOLATE": {"label": "Gotas de chocolate", "allergens": [], "diet": "vegan", "nutrition": {"energy_kcal": 480, "carbohydrates_g": 60, "sugars_g": 47, "proteins_g": 4.2, "total_fat_g": 24, "saturated_fat_g": 14, "trans_fat_g": 0, "fiber_g": 6, "sodium_mg": 11}},
+            "BATON-CHOCOLATE": {"label": "Bâton de chocolate meio amargo", "allergens": [], "diet": "vegan", "nutrition": {"energy_kcal": 540, "carbohydrates_g": 57, "sugars_g": 45, "proteins_g": 5.0, "total_fat_g": 32, "saturated_fat_g": 19, "trans_fat_g": 0, "fiber_g": 7, "sodium_mg": 15}},
+            "BAUNILHA": {"label": "Baunilha (fava/pasta)", "allergens": [], "diet": "vegan", "nutrition": {"energy_kcal": 288, "carbohydrates_g": 13, "sugars_g": 13, "proteins_g": 0.1, "total_fat_g": 0.1, "saturated_fat_g": 0, "trans_fat_g": 0, "fiber_g": 0, "sodium_mg": 9}},
+            "CREME-DE-LEITE": {"label": "Creme de leite fresco", "allergens": ["leite"], "diet": "vegetarian", "density_g_per_ml": 1.01, "nutrition": {"energy_kcal": 292, "carbohydrates_g": 3.7, "sugars_g": 3.0, "proteins_g": 2.6, "total_fat_g": 30, "saturated_fat_g": 19, "trans_fat_g": 0, "fiber_g": 0, "sodium_mg": 27}},
+            "CAFE-GRAO": {"label": "Café em grão da casa", "allergens": [], "diet": "vegan", "nutrition": {"energy_kcal": 2, "carbohydrates_g": 0, "sugars_g": 0, "proteins_g": 0.3, "total_fat_g": 0, "saturated_fat_g": 0, "trans_fat_g": 0, "fiber_g": 0, "sodium_mg": 2}},
+            "CHA-CAMILLE": {"label": "Blend Camille (folhas)", "allergens": [], "diet": "vegan", "nutrition": {"energy_kcal": 1, "carbohydrates_g": 0.2, "sugars_g": 0, "proteins_g": 0, "total_fat_g": 0, "saturated_fat_g": 0, "trans_fat_g": 0, "fiber_g": 0, "sodium_mg": 1}},
+            "CHA-ROUGE": {"label": "Blend Rouge (folhas)", "allergens": [], "diet": "vegan", "nutrition": {"energy_kcal": 1, "carbohydrates_g": 0.2, "sugars_g": 0, "proteins_g": 0, "total_fat_g": 0, "saturated_fat_g": 0, "trans_fat_g": 0, "fiber_g": 0, "sodium_mg": 1}},
+            "CHA-SOPHIE": {"label": "Blend Sophie (folhas)", "allergens": [], "diet": "vegan", "nutrition": {"energy_kcal": 1, "carbohydrates_g": 0.2, "sugars_g": 0, "proteins_g": 0, "total_fat_g": 0, "saturated_fat_g": 0, "trans_fat_g": 0, "fiber_g": 0, "sodium_mg": 1}},
+            "CHA-BLEU": {"label": "Blend Bleu (folhas)", "allergens": [], "diet": "vegan", "nutrition": {"energy_kcal": 1, "carbohydrates_g": 0.2, "sugars_g": 0, "proteins_g": 0, "total_fat_g": 0, "saturated_fat_g": 0, "trans_fat_g": 0, "fiber_g": 0, "sodium_mg": 1}},
+            "CHA-HIBISCO": {"label": "Blend hibisco (folhas)", "allergens": [], "diet": "vegan", "nutrition": {"energy_kcal": 1, "carbohydrates_g": 0.2, "sugars_g": 0, "proteins_g": 0, "total_fat_g": 0, "saturated_fat_g": 0, "trans_fat_g": 0, "fiber_g": 0, "sodium_mg": 1}},
+            "CHA-CHAI": {"label": "Blend chai (folhas)", "allergens": [], "diet": "vegan", "nutrition": {"energy_kcal": 1, "carbohydrates_g": 0.2, "sugars_g": 0, "proteins_g": 0, "total_fat_g": 0, "saturated_fat_g": 0, "trans_fat_g": 0, "fiber_g": 0, "sodium_mg": 1}},
+            "CHA-FRUTAS-VERMELHAS": {"label": "Blend frutas vermelhas (folhas)", "allergens": [], "diet": "vegan", "nutrition": {"energy_kcal": 1, "carbohydrates_g": 0.2, "sugars_g": 0, "proteins_g": 0, "total_fat_g": 0, "saturated_fat_g": 0, "trans_fat_g": 0, "fiber_g": 0, "sodium_mg": 1}},
+            "TONICA": {"label": "Água tônica", "allergens": [], "diet": "vegan", "density_g_per_ml": 1.0, "nutrition": {"energy_kcal": 34, "carbohydrates_g": 8.8, "sugars_g": 8.8, "proteins_g": 0, "total_fat_g": 0, "saturated_fat_g": 0, "trans_fat_g": 0, "fiber_g": 0, "sodium_mg": 12}},
+            "SAL-GROSSO": {"label": "Sal grosso", "allergens": [], "diet": "vegan", "nutrition": {"energy_kcal": 0, "carbohydrates_g": 0, "sugars_g": 0, "proteins_g": 0, "total_fat_g": 0, "saturated_fat_g": 0, "trans_fat_g": 0, "fiber_g": 0, "sodium_mg": 38758}},
+            "ALFACE-AMERICANA": {"label": "Alface americana", "allergens": [], "diet": "vegan", "nutrition": {"energy_kcal": 14, "carbohydrates_g": 3.0, "sugars_g": 2.0, "proteins_g": 0.9, "total_fat_g": 0.1, "saturated_fat_g": 0, "trans_fat_g": 0, "fiber_g": 1.2, "sodium_mg": 10}},
+            "ALFACE-ROXA": {"label": "Alface roxa", "allergens": [], "diet": "vegan", "nutrition": {"energy_kcal": 16, "carbohydrates_g": 3.3, "sugars_g": 1.9, "proteins_g": 1.3, "total_fat_g": 0.2, "saturated_fat_g": 0, "trans_fat_g": 0, "fiber_g": 1.9, "sodium_mg": 25}},
+            "RUCULA": {"label": "Rúcula", "allergens": [], "diet": "vegan", "nutrition": {"energy_kcal": 25, "carbohydrates_g": 3.7, "sugars_g": 2.1, "proteins_g": 2.6, "total_fat_g": 0.7, "saturated_fat_g": 0.1, "trans_fat_g": 0, "fiber_g": 1.6, "sodium_mg": 27}},
+            "TOMATE-CEREJA": {"label": "Tomatinho cereja", "allergens": [], "diet": "vegan", "nutrition": {"energy_kcal": 18, "carbohydrates_g": 3.9, "sugars_g": 2.6, "proteins_g": 0.9, "total_fat_g": 0.2, "saturated_fat_g": 0, "trans_fat_g": 0, "fiber_g": 1.2, "sodium_mg": 5}},
         }
 
         # Buyman Material master — os insumos viram Material first-class (sku sem
@@ -2914,6 +3663,24 @@ class Command(BaseCommand):
             "CHOCOLATE-70": ("kg", 365), "AZEITONA": ("kg", 180),
             "CEBOLA-ROXA": ("kg", 30), "MACA": ("kg", 30), "LIMAO": ("kg", 21),
             "CANELA": ("kg", 365), "ALECRIM": ("kg", 14),
+            # Seção 2b (dono, 26/08)
+            "PRESUNTO-CASA": ("kg", 30), "PRESUNTO-DEFUMADO": ("kg", 30),
+            "QUEIJO-MINAS-PADRAO": ("kg", 30), "QUEIJO-COLONIAL": ("kg", 30),
+            "QUEIJO-PRATO": ("kg", 30), "QUEIJO-PARMESAO": ("kg", 180),
+            "QUEIJO-GRUYERE": ("kg", 60), "REQUEIJAO-CORTE": ("kg", 30),
+            "SALSICHA-VIENNA": ("kg", 20), "FRANGO": ("kg", 3),
+            "MILHO-VERDE": ("kg", 365), "BACON": ("kg", 15),
+            "SALSINHA-DESID": ("kg", 365), "TOMILHO": ("kg", 14),
+            "PASSAS": ("kg", 365), "GOTAS-CHOCOLATE": ("kg", 365),
+            "BATON-CHOCOLATE": ("kg", 365), "BAUNILHA": ("kg", 365),
+            "CREME-DE-LEITE": ("l", 10), "CAFE-GRAO": ("kg", 90),
+            "CHA-CAMILLE": ("kg", 365), "CHA-ROUGE": ("kg", 365),
+            "CHA-SOPHIE": ("kg", 365), "CHA-BLEU": ("kg", 365),
+            "CHA-HIBISCO": ("kg", 365), "CHA-CHAI": ("kg", 365),
+            "CHA-FRUTAS-VERMELHAS": ("kg", 365),
+            "TONICA": ("un", 365), "SAL-GROSSO": ("kg", None),
+            "ALFACE-AMERICANA": ("kg", 5), "ALFACE-ROXA": ("kg", 5),
+            "RUCULA": ("kg", 5), "TOMATE-CEREJA": ("kg", 7),
         }
         for sku, profile in INGREDIENT_PROFILES.items():
             unit, shelf = material_attrs.get(sku, ("un", None))
@@ -2938,6 +3705,9 @@ class Command(BaseCommand):
         counting_conversions = {
             "OVOS": ("ovos", Decimal("0.050")),
             "LIMAO": ("limões", Decimal("0.100")),
+            # 50 g/un (dono, 26/08). A mini do hot dog é a MESMA salsicha
+            # cortada ao meio — meio insumo, nunca um SKU próprio.
+            "SALSICHA-VIENNA": ("salsichas", Decimal("0.050")),
         }
         for sku, (label, factor) in counting_conversions.items():
             material = Material.objects.filter(sku=sku).first()
@@ -2961,8 +3731,10 @@ class Command(BaseCommand):
         deposito = Position.objects.filter(ref="deposito").first()
 
         def _is_preparation(recipe_ref: str) -> bool:
-            """Pré-preparo (massa, recheio): sai em quilo, não em unidade."""
-            return recipe_ref.startswith(("massa-", "recheio-"))
+            """Pré-preparo (massa, recheio, creme, molho…): sai em quilo, não em unidade."""
+            return recipe_ref.startswith(
+                ("massa-", "recheio-", "creme-", "molho-", "salada-", "vinagrete-")
+            )
 
         def _recipe_item_unit(input_sku: str) -> str:
             """A ficha fala na unidade-base do insumo — explícito, não por default.
@@ -2988,7 +3760,10 @@ class Command(BaseCommand):
                     "output_sku": rd["output_sku"],
                     "batch_size": rd["batch_size"],
                     "steps": self._production_steps_for_recipe(rd["ref"]),
-                    "is_active": True,
+                    # Ficha de MONTAGEM/BEBIDA nasce inativa: dá custo, insumo
+                    # e rótulo, mas não é fornada — `craft.suggest` considera
+                    # toda ficha ativa, e croque não entra em plano de forno.
+                    "is_active": rd.get("is_active", True),
                     "meta": {
                         "capacity_per_day": int(rd["batch_size"] * Decimal("3")),
                         "max_started_minutes": self._max_started_minutes_for_recipe(rd["ref"]),
