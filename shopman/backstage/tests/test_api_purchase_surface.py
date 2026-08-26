@@ -9,6 +9,7 @@ from __future__ import annotations
 from decimal import Decimal
 
 import pytest
+from django.apps import apps
 from django.contrib.auth.models import Permission, User
 from django.contrib.contenttypes.models import ContentType
 from django.test import override_settings
@@ -193,6 +194,68 @@ def test_scan_invoice_uses_configured_nfe_reader(
     assert receipt["lines"][0]["materialSku"] == material.sku
     assert receipt["lines"][0]["conversionId"] == str(conversion.pk)
     assert receipt["lines"][0]["requiresConversion"] is False
+
+
+@pytest.mark.django_db
+def test_scan_invoice_registers_unknown_supplier_from_issuer(tmp_path, client, purchase_operator):
+    xml = f"""<?xml version="1.0" encoding="UTF-8"?>
+<nfeProc xmlns="http://www.portalfiscal.inf.br/nfe" versao="4.00">
+  <NFe>
+    <infNFe Id="NFe{VALID_ACCESS_KEY}" versao="4.00">
+      <ide><serie>1</serie><nNF>2271</nNF><dhEmi>2026-08-11T09:00:00-03:00</dhEmi></ide>
+      <emit>
+        <CNPJ>84290690000228</CNPJ>
+        <xNome>INDUSTRIA E COMERCIO DE PRODUTOS ALIMENTICIOS TAMURA LTDA</xNome>
+        <enderEmit><fone>4333221100</fone></enderEmit>
+      </emit>
+      <dest><CNPJ>99999999000191</CNPJ><xNome>Nelson Boulangerie</xNome></dest>
+      <det nItem="1">
+        <prod>
+          <cProd>PRD00015</cProd>
+          <xProd>B2B Cafe Tamura Chocomelo Torra Media 500g</xProd>
+          <NCM>09012100</NCM>
+          <CFOP>5101</CFOP>
+          <uCom>1UN</uCom>
+          <qCom>10.0000</qCom>
+          <vUnCom>59.2500000000</vUnCom>
+          <vProd>592.50</vProd>
+        </prod>
+      </det>
+      <total><ICMSTot><vNF>614.58</vNF></ICMSTot></total>
+    </infNFe>
+  </NFe>
+  <protNFe versao="4.00"><infProt><chNFe>{VALID_ACCESS_KEY}</chNFe><cStat>100</cStat></infProt></protNFe>
+</nfeProc>
+"""
+    (tmp_path / f"{VALID_ACCESS_KEY}.xml").write_text(xml, encoding="utf-8")
+
+    client.force_login(purchase_operator)
+    with override_settings(
+        SHOPMAN_PURCHASE_INVOICE_READER="shopman.shop.adapters.purchase_invoice_nfe.read_invoice",
+        SHOPMAN_PURCHASE_NFE={"xml_dir": str(tmp_path)},
+    ):
+        response = client.post(
+            reverse("api-backstage-purchase-scan-invoice"),
+            data={"qrPayload": VALID_ACCESS_KEY},
+            content_type="application/json",
+        )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert "fornecedor cadastrado" in body["message"].lower()
+    receipt = body["purchase"]["activeReceipt"]
+    assert receipt["supplierRef"] == "SUP-TAMURA"
+    assert "fornecedor nao cadastrado" not in receipt["note"]
+    assert receipt["lines"][0]["materialSku"] == ""
+
+    Supplier = apps.get_model("buyman", "Supplier")
+    created = Supplier.objects.get(ref="SUP-TAMURA")
+    assert created.document == "84.290.690/0002-28"
+    assert created.name.startswith("INDUSTRIA E COMERCIO")
+    assert created.phone == "4333221100"
+    assert created.is_active is True
+    supplier_refs = [supplier["ref"] for supplier in body["purchase"]["suppliers"]]
+    assert "SUP-TAMURA" in supplier_refs
 
 
 @pytest.mark.django_db

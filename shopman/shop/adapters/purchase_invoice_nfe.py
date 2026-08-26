@@ -136,6 +136,12 @@ def parse_nfe_xml_to_purchase_draft(xml: str | bytes, *, access_key: str = "") -
         "supplierRef": supplier.ref if supplier else "",
         "note": " - ".join(note_parts),
         "lines": lines,
+        "issuer": {
+            "document": issuer_document,
+            "name": issuer_name,
+            "tradeName": _text(issuer, "xFant"),
+            "phone": _text(_find_child(issuer, "enderEmit"), "fone"),
+        },
     }
 
 
