@@ -14,6 +14,15 @@ Checks executed today (pre go-live):
 3. ``migrate --check`` against that fresh database — the graph is fully applied
    and internally consistent (no missing dependency, no unapplied leftover).
 
+From go-live onward (the ``go-live-v1`` tag exists — ADR-015) one more check
+arms itself:
+
+4. Every migration file added AFTER the tag that contains a destructive
+   operation (``RemoveField``, ``DeleteModel``, ``RenameField``,
+   ``RenameModel``, ``AlterField``) must carry an explicit expand-contract
+   marker — ``# expand-contract: <fase> — <link do plano>``. Before the tag
+   this check is an honest no-op (skipped, not silently passed).
+
 Reserved for go-live (WP-GAP-07): replaying a real production *baseline*
 snapshot and validating data survives the upgrade. That step needs a snapshot
 to exist, so it stays a documented, skipped slot until then — see
@@ -40,6 +49,10 @@ from typing import Literal
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
+if str(ROOT / "scripts") not in sys.path:
+    sys.path.insert(0, str(ROOT / "scripts"))
+
+import check_adr015  # noqa: E402 — ADR-015 helpers (tag detection, destructive-op scan)
 
 Status = Literal["passed", "failed", "skipped"]
 
@@ -271,13 +284,58 @@ def _baseline_replay() -> MigrationCheck:
     )
 
 
+def _expand_contract_markers() -> MigrationCheck:
+    """ADR-015: post-tag migrations with destructive ops need the marker.
+
+    Armed by the existence of the ``go-live-v1`` tag. Before that it is an
+    honest, explicitly skipped slot — pre-go-live the policy is inactive.
+    """
+    check_id = "migrations.expand_contract"
+    title = "Destructive migrations carry the expand-contract marker (ADR-015)"
+    if not check_adr015.go_live_active(ROOT):
+        return MigrationCheck(
+            id=check_id,
+            title=title,
+            status="skipped",
+            message="pré-go-live: política ADR-015 inativa (tag go-live-v1 ausente).",
+        )
+    try:
+        violations = check_adr015.expand_contract_violations(ROOT)
+    except RuntimeError as exc:
+        return MigrationCheck(
+            id=check_id,
+            title=title,
+            status="failed",
+            message=f"Não foi possível comparar com a baseline da tag: {exc}",
+        )
+    if violations:
+        return MigrationCheck(
+            id=check_id,
+            title=title,
+            status="failed",
+            message=check_adr015.EXPAND_CONTRACT_HOWTO,
+            details={
+                "violations": [
+                    {"migration": path, "operations": ops} for path, ops in violations
+                ]
+            },
+        )
+    return MigrationCheck(
+        id=check_id,
+        title=title,
+        status="passed",
+        message="Nenhuma migração pós-tag com operação destrutiva sem marcador expand-contract.",
+    )
+
+
 def build_report() -> MigrationReport:
     setup_django()
     with _suppress_logs():
         committed = _no_uncommitted_migrations()
         build, graph = _clean_schema_build()
+        expand_contract = _expand_contract_markers()
         baseline = _baseline_replay()
-    return MigrationReport(checks=(committed, build, graph, baseline))
+    return MigrationReport(checks=(committed, build, graph, expand_contract, baseline))
 
 
 def print_human(report: MigrationReport) -> None:
