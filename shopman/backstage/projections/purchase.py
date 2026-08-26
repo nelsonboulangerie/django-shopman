@@ -75,6 +75,8 @@ class SupplierMaterialCostProjection:
 class ReceiptLineProjection:
     id: str
     materialSku: str
+    suggestedMaterialSku: str
+    suggestionScore: int
     conversionId: str | None
     requiresConversion: bool
     purchaseQty: float
@@ -232,6 +234,8 @@ def _receipt_line_projection(line: dict[str, Any]) -> ReceiptLineProjection:
     return ReceiptLineProjection(
         id=str(line.get("id") or ""),
         materialSku=str(line.get("materialSku") or line.get("material_sku") or ""),
+        suggestedMaterialSku=str(line.get("suggestedMaterialSku") or line.get("suggested_material_sku") or ""),
+        suggestionScore=int(_decimal(line.get("suggestionScore", line.get("suggestion_score", 0)) or 0)),
         conversionId=(
             str(line.get("conversionId") or line.get("conversion_id"))
             if line.get("conversionId") or line.get("conversion_id")

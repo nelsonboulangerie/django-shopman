@@ -112,6 +112,8 @@ export interface QuotePreview {
 export interface ReceiptLine {
   id: string;
   materialSku: string;
+  suggestedMaterialSku?: string;
+  suggestionScore?: number;
   conversionId: string | null;
   requiresConversion?: boolean;
   purchaseQty: number;
@@ -119,6 +121,12 @@ export interface ReceiptLine {
   expiryDate: string;
   lineNote: string;
   checked: boolean;
+}
+
+export interface ReceiptLineSuggestion {
+  sku: string;
+  name: string;
+  scorePercent: number;
 }
 
 export interface ReceiptLinePreview {
@@ -130,12 +138,14 @@ export interface ReceiptLinePreview {
   baseCostQ: number;
   totalCostQ: number;
   approximate: boolean;
+  suggestion: ReceiptLineSuggestion | null;
   warnings: ReceiptWarning[];
 }
 
 export interface ReceiptWarning {
   key:
     | "missing-material"
+    | "confirm-suggestion"
     | "missing-conversion"
     | "missing-cost"
     | "missing-expiry"

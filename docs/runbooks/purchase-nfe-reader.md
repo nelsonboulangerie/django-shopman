@@ -29,7 +29,7 @@ Alternativas:
 PURCHASE_NFE_CERTIFICATE_PFX_BASE64=...
 PURCHASE_NFE_XML_DIR=/app/private/nfe-xml
 PURCHASE_NFE_AUTO_MANIFEST_CIENCIA=false
-PURCHASE_NFE_FUZZY_MATCH_MIN_SCORE=0
+PURCHASE_NFE_FUZZY_MATCH_MIN_SCORE=87
 ```
 
 `PURCHASE_NFE_XML_DIR` e util para alpha/local: se existir um arquivo
@@ -72,7 +72,12 @@ Quando faltar mapeamento:
 - fornecedor sem CNPJ cadastrado fica vazio e bloqueia a confirmacao;
 - item sem insumo fica visivel como `Definir insumo`;
 - unidade de compra sem conversao fica com `requiresConversion=true`;
-- fuzzy matching fica desligado por padrao (`PURCHASE_NFE_FUZZY_MATCH_MIN_SCORE=0`).
+- fuzzy matching pelo nome vira **sugestao visivel**, nunca preenchimento:
+  a linha sai com `materialSku` vazio, `suggestedMaterialSku` com o insumo
+  candidato e `suggestionScore` (0-100). O purchase-nuxt mostra a sugestao com
+  badge e acao de aceitar/trocar, e a linha segue bloqueando a confirmacao ate
+  o operador decidir. O limiar padrao e 87
+  (`PURCHASE_NFE_FUZZY_MATCH_MIN_SCORE`); `0` desliga a sugestao.
 
 ## Operacao fiscal
 

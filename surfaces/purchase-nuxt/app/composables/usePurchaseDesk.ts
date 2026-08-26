@@ -288,6 +288,8 @@ function receiptLineCopy(lines: ReceiptLine[]): ReceiptLine[] {
   return lines.map((line) => ({
     ...line,
     conversionId: line.conversionId ?? null,
+    suggestedMaterialSku: line.suggestedMaterialSku ?? "",
+    suggestionScore: Number(line.suggestionScore) || 0,
     costInput: line.costInput ?? "",
     expiryDate: line.expiryDate ?? "",
     lineNote: line.lineNote ?? "",
@@ -745,6 +747,12 @@ export function usePurchaseDesk() {
     });
   }
 
+  function acceptReceiptLineSuggestion(lineId: string) {
+    const line = receiptLines.value.find((item) => item.id === lineId);
+    if (!line?.suggestedMaterialSku) return;
+    setReceiptLineMaterial(lineId, line.suggestedMaterialSku);
+  }
+
   function addReceiptLine() {
     const materialSku = materials.value[0]?.sku ?? "";
     const conversionId = defaultReceiptConversionId(materialSku);
@@ -926,6 +934,7 @@ export function usePurchaseDesk() {
     setReceiptMode,
     setReceiptSupplier,
     setReceiptLineMaterial,
+    acceptReceiptLineSuggestion,
     updateReceiptLine,
     addReceiptLine,
     removeReceiptLine,

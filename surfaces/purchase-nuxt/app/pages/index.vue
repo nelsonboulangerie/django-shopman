@@ -73,6 +73,7 @@ const {
   setReceiptMode,
   setReceiptSupplier,
   setReceiptLineMaterial,
+  acceptReceiptLineSuggestion,
   addReceiptLine,
   removeReceiptLine,
   readInvoice,
@@ -648,6 +649,19 @@ onBeforeUnmount(stopInvoiceScanner);
                 <option value="">Definir insumo</option>
                 <option v-for="material in materials" :key="material.sku" :value="material.sku">{{ material.name }}</option>
               </select>
+              <div v-if="preview.suggestion" class="mt-2 rounded-md border border-warning/30 bg-warning/10 p-2">
+                <p class="flex items-center gap-1.5 text-xs font-medium text-warning">
+                  <Icon name="lucide:sparkles" class="size-3.5" />
+                  Sugestão: {{ preview.suggestion.name }} ({{ preview.suggestion.scorePercent }}% parecido)
+                </p>
+                <div class="mt-2 flex flex-wrap items-center gap-2">
+                  <button type="button" class="inline-flex h-9 items-center gap-1.5 rounded-md bg-primary px-3 text-xs font-semibold text-primary-foreground" @click="acceptReceiptLineSuggestion(preview.line.id)">
+                    <Icon name="lucide:check" class="size-3.5" />
+                    Usar sugestão
+                  </button>
+                  <span class="text-xs text-muted-foreground">ou escolha outro insumo acima</span>
+                </div>
+              </div>
               <div class="mt-3 grid grid-cols-2 gap-2">
                 <select v-model="preview.line.conversionId" class="h-11 rounded-md border border-border bg-card px-3 text-sm">
                   <option :value="null">Unidade-base</option>
@@ -691,6 +705,19 @@ onBeforeUnmount(stopInvoiceScanner);
                       <option value="">Definir insumo</option>
                       <option v-for="material in materials" :key="material.sku" :value="material.sku">{{ material.name }}</option>
                     </select>
+                    <div v-if="preview.suggestion" class="mt-2 rounded-md border border-warning/30 bg-warning/10 p-2">
+                      <p class="flex items-center gap-1.5 text-xs font-medium text-warning">
+                        <Icon name="lucide:sparkles" class="size-3.5" />
+                        Sugestão: {{ preview.suggestion.name }} ({{ preview.suggestion.scorePercent }}% parecido)
+                      </p>
+                      <div class="mt-2 flex flex-wrap items-center gap-2">
+                        <button type="button" class="inline-flex h-8 items-center gap-1.5 rounded-md bg-primary px-2.5 text-xs font-semibold text-primary-foreground" @click="acceptReceiptLineSuggestion(preview.line.id)">
+                          <Icon name="lucide:check" class="size-3.5" />
+                          Usar sugestão
+                        </button>
+                        <span class="text-xs text-muted-foreground">ou escolha outro insumo acima</span>
+                      </div>
+                    </div>
                     <p class="mt-1 text-xs text-muted-foreground">{{ preview.material.sku }} · base {{ preview.material.unit }}</p>
                   </td>
                   <td class="min-w-44 px-3 py-3">

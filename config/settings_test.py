@@ -187,7 +187,7 @@ SHOPMAN_PURCHASE_NFE.update(  # noqa: F405
     certificate_password="",
     auto_manifest_ciencia=False,
     xml_dir="",
-    fuzzy_match_min_score=0,
+    fuzzy_match_min_score=87,
 )
 
 # ── Doorman (chaves env-derivadas; o resto do dict fica como no base) ────────

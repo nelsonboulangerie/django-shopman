@@ -1097,7 +1097,9 @@ SHOPMAN_PURCHASE_NFE = {
     "certificate_password": os.environ.get("PURCHASE_NFE_CERTIFICATE_PASSWORD", ""),
     "auto_manifest_ciencia": _env_bool("PURCHASE_NFE_AUTO_MANIFEST_CIENCIA", False),
     "xml_dir": os.environ.get("PURCHASE_NFE_XML_DIR", "").strip(),
-    "fuzzy_match_min_score": int(os.environ.get("PURCHASE_NFE_FUZZY_MATCH_MIN_SCORE", "0") or 0),
+    # Fuzzy só gera sugestão visível na linha (nunca preenche materialSku);
+    # 0 desliga.
+    "fuzzy_match_min_score": int(os.environ.get("PURCHASE_NFE_FUZZY_MATCH_MIN_SCORE", "87") or 0),
 }
 # Desconto manual no PDV acima deste valor (centavos) exige aprovação gerencial
 # por PIN. Default R$ 5,00 (500q) — política definida pelo Pablo (2026-07-13,

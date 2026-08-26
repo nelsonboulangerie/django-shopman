@@ -117,6 +117,8 @@ def test_parse_nfe_xml_to_receipt_draft_maps_supplier_material_and_conversion(su
         {
             "id": "nfe-1",
             "materialSku": material.sku,
+            "suggestedMaterialSku": "",
+            "suggestionScore": 0,
             "conversionId": str(conversion.pk),
             "requiresConversion": False,
             "purchaseQty": "2",
@@ -138,9 +140,75 @@ def test_parse_nfe_xml_keeps_unmapped_item_visible_and_blocked(supplier):
     line = draft["lines"][0]
     assert draft["supplierRef"] == supplier.ref
     assert line["materialSku"] == ""
+    assert line["suggestedMaterialSku"] == ""
+    assert line["suggestionScore"] == 0
     assert line["conversionId"] is None
     assert line["requiresConversion"] is True
     assert line["lineNote"].startswith("Definir insumo. NF: QUEIJO ARTESANAL")
+
+
+@pytest.mark.django_db
+def test_parse_nfe_xml_turns_fuzzy_match_into_visible_suggestion(supplier):
+    Material.objects.create(sku="FARINHA-TRIGO-T65", name="Farinha de trigo T65", unit="kg")
+
+    draft = parse_nfe_xml_to_purchase_draft(
+        _nfe_xml(product_code="FT65-SC", product_name="FARINHA DE TRIGO T65 SACO 25KG"),
+        access_key=VALID_ACCESS_KEY,
+    )
+
+    line = draft["lines"][0]
+    assert line["materialSku"] == ""
+    assert line["suggestedMaterialSku"] == "FARINHA-TRIGO-T65"
+    assert line["suggestionScore"] >= 87
+    assert line["conversionId"] is None
+    assert line["lineNote"].startswith("Definir insumo. NF: FARINHA DE TRIGO T65 SACO 25KG")
+
+
+@pytest.mark.django_db
+def test_fuzzy_suggestion_respects_explicit_zero_threshold(supplier):
+    Material.objects.create(sku="FARINHA-TRIGO-T65", name="Farinha de trigo T65", unit="kg")
+
+    with override_settings(SHOPMAN_PURCHASE_NFE={"fuzzy_match_min_score": 0}):
+        draft = parse_nfe_xml_to_purchase_draft(
+            _nfe_xml(product_code="FT65-SC", product_name="FARINHA DE TRIGO T65 SACO 25KG"),
+            access_key=VALID_ACCESS_KEY,
+        )
+
+    line = draft["lines"][0]
+    assert line["materialSku"] == ""
+    assert line["suggestedMaterialSku"] == ""
+    assert line["suggestionScore"] == 0
+
+
+@pytest.mark.django_db
+def test_fuzzy_suggestion_defaults_on_when_config_omits_threshold(supplier):
+    Material.objects.create(sku="FARINHA-TRIGO-T65", name="Farinha de trigo T65", unit="kg")
+
+    with override_settings(SHOPMAN_PURCHASE_NFE={}):
+        draft = parse_nfe_xml_to_purchase_draft(
+            _nfe_xml(product_code="FT65-SC", product_name="FARINHA DE TRIGO T65 SACO 25KG"),
+            access_key=VALID_ACCESS_KEY,
+        )
+
+    line = draft["lines"][0]
+    assert line["materialSku"] == ""
+    assert line["suggestedMaterialSku"] == "FARINHA-TRIGO-T65"
+    assert line["suggestionScore"] >= 87
+
+
+@pytest.mark.django_db
+def test_exact_name_match_still_fills_material_without_suggestion(supplier):
+    material = Material.objects.create(sku="FARINHA-TRIGO-T65", name="Farinha de trigo T65", unit="kg")
+
+    draft = parse_nfe_xml_to_purchase_draft(
+        _nfe_xml(product_code="FT65-SC", product_name="FARINHA DE TRIGO T65"),
+        access_key=VALID_ACCESS_KEY,
+    )
+
+    line = draft["lines"][0]
+    assert line["materialSku"] == material.sku
+    assert line["suggestedMaterialSku"] == ""
+    assert line["suggestionScore"] == 0
 
 
 @pytest.mark.django_db
