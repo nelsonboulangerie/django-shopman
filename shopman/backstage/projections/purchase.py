@@ -40,6 +40,7 @@ class MaterialProjection:
     leadTimeDays: float
     replenishAtDays: float
     suggestedQty: float
+    stockIsApproximate: bool
 
 
 @dataclass(frozen=True)
@@ -150,6 +151,7 @@ def build_purchase(*, active_receipt: dict[str, Any] | None = None) -> PurchaseP
     recipes = _recipes_map(skus)
     last_delivery = _last_delivery_map(supplier_refs)
     lead_times = _lead_time_map(skus, policy=policy)
+    approximate_stock = _approximate_stock_skus(material_rows, policy=policy)
 
     suppliers = tuple(_supplier_projection(supplier, last_delivery.get(supplier.ref, "")) for supplier in supplier_rows)
     materials = tuple(
@@ -159,6 +161,7 @@ def build_purchase(*, active_receipt: dict[str, Any] | None = None) -> PurchaseP
             daily_use=daily_use.get(material.sku, Decimal("0")),
             recipes=recipes.get(material.sku, ()),
             lead_time_days=lead_times.get(material.sku, Decimal(policy["min_lead_time_days"])),
+            stock_is_approximate=material.sku in approximate_stock,
             policy=policy,
         )
         for material in material_rows
@@ -215,6 +218,7 @@ def _material_projection(
     daily_use: Decimal,
     recipes: tuple[str, ...],
     lead_time_days: Decimal,
+    stock_is_approximate: bool,
     policy: dict[str, int],
 ) -> MaterialProjection:
     meta = _purchase_meta(material)
@@ -244,7 +248,51 @@ def _material_projection(
         leadTimeDays=_number(lead_time_days),
         replenishAtDays=_number(replenish_at),
         suggestedQty=_number(suggested),
+        stockIsApproximate=stock_is_approximate,
     )
+
+
+def _approximate_stock_skus(material_rows: list[Any], *, policy: dict[str, int]) -> set[str]:
+    """Insumos cujo saldo atravessou uma ponte aproximada e ainda carrega o ``≈``.
+
+    O carimbo está no `Move` (``metadata.converted_via.approximate``, gravado no
+    recebimento); aqui ele vira a pergunta que a tela faz: *dá para confiar neste
+    número como medido?* A R3 da ADR-024 diz que a incerteza acompanha o número
+    até a tela — some o ``≈``, some a informação.
+
+    **A janela erra de propósito para o lado seguro.** Saber quando a entrada
+    aproximada de fato saiu do estoque exigiria rastrear lote a lote; em vez
+    disso vale a validade do insumo (depois dela aquele lote não está mais lá) e,
+    quando não há validade, a janela de consumo da política. O resultado é que o
+    ``≈`` às vezes fica um pouco mais do que precisava — e isso é o erro certo a
+    cometer: marcar de menos esconderia a incerteza, que é o oposto do que a
+    regra existe para fazer.
+    """
+    skus = [material.sku for material in material_rows]
+    if not skus:
+        return set()
+    try:
+        Move = apps.get_model("stockman", "Move")
+        window = {
+            material.sku: material.shelf_life_days or policy["consumption_window_days"]
+            for material in material_rows
+        }
+        oldest = timezone.now() - timedelta(days=max(window.values()))
+        rows = Move.objects.filter(
+            quant__sku__in=skus,
+            delta__gt=0,
+            timestamp__gte=oldest,
+            metadata__converted_via__approximate=True,
+        ).values_list("quant__sku", "timestamp")
+        now = timezone.now()
+        return {
+            sku
+            for sku, timestamp in rows
+            if (now - timestamp).days <= window.get(sku, policy["consumption_window_days"])
+        }
+    except Exception:
+        logger.debug("purchase.approximate_stock_failed", exc_info=True)
+        return set()
 
 
 def _suggested_qty(

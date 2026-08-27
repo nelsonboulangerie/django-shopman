@@ -1,7 +1,6 @@
 # UNIT-CONVERSION-PLAN — conversão de unidade como cidadã de primeira classe
 
-> **Status:** 🟢 Fases 0 a 4 e **6 implementadas**; a Fase 5 (carimbo `converted_via`
-> no `Move`) segue aberta.
+> **Status:** 🟢 **Todas as fases (0 a 6) implementadas.**
 > Decisão que o rege:
 > [ADR-024](../decisions/adr-024-material-unit-base-and-purchase.md) (Aceita na
 > direção, dono, 19/08/2026) e [ADR-023](../decisions/adr-023-cost-live-and-frozen.md)
@@ -142,21 +141,28 @@ Cada fase é útil sozinha e nenhuma exige a seguinte.
   Anotação nunca trava a lista: unidade que não alcança a base devolve `""` em vez de
   erro.
 
-### Fase 5 — a entrada carimbada (recebimento) · ⏳ aberta
+### Fase 5 — a entrada carimbada (recebimento) · ✅ concluída
 
-> **Por que não entrou com as Fases 1–4:** depende da Fase 3 do
-> [BUYMAN-PROCUREMENT-PLAN](BUYMAN-PROCUREMENT-PLAN.md) — hoje `Move.Kind.BUY` não tem
-> emissor nenhum, então o carimbo não teria onde ser posto. É também aqui que entra a
-> recusa por **rótulo não cadastrado** (R4 com "cadastre a conversão X"), porque é o
-> recebimento quem digita rótulo.
+> **O que a destravou:** `Move.Kind.BUY` finalmente ganhou emissor (recebimento do
+> Buyman), e a Fase 6 encheu a tabela de conversões de gente de verdade — sem entrada
+> convertida, não havia o que carimbar.
 
-- O recebimento converte para a base pela conversão declarada e grava
-  `Move.metadata["converted_via"] = {"label", "factor", "approximate"}` — o JSONField já
-  existe, o Core não muda de forma.
-- Saldo que passou por aproximação aparece como `≈` na tela; o custo derivado dali é
-  **estimado** e nunca vira custo congelado sem o rótulo (ADR-023).
-- Casa com a **Fase 3 do BUYMAN-PROCUREMENT-PLAN** (recebimento → `stock.receive` com
-  `kind=BUY`), que é quando `Move.Kind.BUY` finalmente ganha um emissor.
+- O recebimento grava `Move.metadata["converted_via"] = {"label", "factor",
+  "approximate"}` — JSONField que já existia, Core sem mudança de forma. As três chaves
+  viajam **num objeto só**: rótulo sem fator não deixa refazer a conta, e fator sem o
+  `approximate` não diz se a conta era exata. Entrada na própria unidade-base **não
+  carimba nada** — uma chave com `null` fingiria que houve ponte.
+- Saldo que passou por aproximação aparece com `≈` na tela
+  (`MaterialProjection.stockIsApproximate` → `formatStockOnHand`), e o insumo ganha a
+  pendência "Saldo estimado". O custo derivado dali já era marcado desde a Fase 3.
+- **A janela erra de propósito para o lado seguro:** saber quando a entrada aproximada
+  de fato saiu do estoque exigiria rastrear lote a lote; vale a validade do insumo e,
+  sem ela, a janela de consumo da política. O `≈` às vezes fica um pouco mais do que
+  precisava — marcar de menos esconderia a incerteza, que é o oposto da regra.
+- A recusa por **rótulo não cadastrado** que esta fase devia trazer acabou entrando com
+  a Fase 6, e melhor do que o previsto: além de recusar dizendo o que cadastrar, o
+  recebimento agora **deixa cadastrar ali mesmo**
+  (`POST /api/v1/backstage/purchase/conversions/`, com autor).
 
 ### Fase 6 — a NF-e de entrada preenche a tabela sozinha · ✅ concluída
 
@@ -203,7 +209,7 @@ Cada fase é útil sozinha e nenhuma exige a seguinte.
 ```
 Fase 0 (dado) ─┬─► Fase 1 (física em utils) ─► Fase 2 (tabela) ─┬─► Fase 3 (custo) ─► Fase 6 (NF-e) ✅
                │                                                └─► Fase 4 (anotação)
-               └─────────────────────────────────────────────────► Fase 5 (recebimento, com Buyman F3)
+               └─────────────────────────────────────────────────► Fase 5 (recebimento, com Buyman F3) ✅
 ```
 
 Regra de ouro da ordem: **a Fase 3 tem de acontecer antes de existir custo real
@@ -227,7 +233,7 @@ com a tabela ainda vazia.)
 | 2 | fator ≤ 0 recusado; rótulo duplicado recusado; aproximada não passa por exata ✅ |
 | 3 | custo por base derivado com precisão; conversão incoerente (outro insumo / outro fornecedor / inativa) **recusa** ✅ |
 | 4 | anotação derivada muda quando o fator muda, sem tocar na ficha ✅ |
-| 5 | `Move` de entrada carrega `converted_via`; saldo aproximado sinalizado |
+| 5 | `Move` de entrada carrega `converted_via` (as três chaves juntas); entrada na base **não** carimba; saldo que atravessou ponte aproximada volta com `≈` na projection e na tela ✅ |
 | 6 | XML com eixos divergentes vira sugestão de conversão **sem gravar nada**; eixos coerentes não sugerem; `qCom` zerado não divide por zero; nota que não decide **recusa dizendo o que cadastrar**; endpoint cria a linha com autor e recusa fator ≤ 0 e rótulo duplicado ✅ |
 
 ## Referências
