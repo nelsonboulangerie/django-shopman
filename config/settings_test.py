@@ -105,7 +105,7 @@ SHOPMAN_WHATSAPP.update(  # noqa: F405
 )
 SHOPMAN_WA_VERIFY.update(  # noqa: F405
     number="",
-    access_message_template="Meu código de acesso é {code}",
+    access_message_template="#menu {code}",
 )
 SHOPMAN_SMS.update(  # noqa: F405
     api_key="",

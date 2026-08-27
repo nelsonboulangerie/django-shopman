@@ -533,6 +533,8 @@ describe('surface UX guardrails', () => {
     const authPresentation = read('app/presentation/auth.ts')
 
     expect(login).toContain("apiPath('/api/v1/storefront/home/')")
+    expect(login).toContain('lazy: true')
+    expect(login).toContain('server: false')
     expect(login).toContain('home.auth_copy')
     expect(login).toContain('home.public_config.whatsapp_url')
     expect(login).toContain('const isCheckoutReturn')
@@ -556,6 +558,11 @@ describe('surface UX guardrails', () => {
     expect(login).toContain(':deep-link="waDeepLink"')
     expect(login).toContain("requestCode('sms', $event)")
     expect(login).toContain('class="w-full justify-center"')
+    expect(login).toContain('Não consigo usar WhatsApp')
+    expect(login).not.toContain('Entrar com o rosto ou a digital')
+    expect(login).not.toContain('passkeySignIn')
+    expect(read('app/components/WhatsappVerifyPanel.vue')).toContain('Preparando WhatsApp')
+    expect(read('app/components/WhatsappVerifyPanel.vue')).toContain(':aria-busy="isStarting && !canOpenWhatsApp"')
     expect(login).toContain('<UiFieldLabel for="trusted-device" class="w-full">')
     expect(login).not.toContain('<UiButtonGroup')
     expect(login).not.toContain('max-w-xl')
@@ -611,6 +618,21 @@ describe('surface UX guardrails', () => {
     // Device trust e ajuda continuam server-driven/editorial.
     expect(login).toContain('device_trust_prompt')
     expect(login).toContain('data-login-support')
+  })
+
+  it('keeps auth routes independent from the shell home projection on SSR', () => {
+    const app = read('app/app.vue')
+    const access = read('app/pages/a.vue')
+
+    expect(app).toContain('const shellHomeEnabled')
+    expect(app).toContain("!['/entrar', '/a'].includes(route.path)")
+    expect(app).toContain('immediate: shellHomeEnabled.value')
+    expect(app).toContain('server: shellHomeEnabled.value')
+    expect(access).toContain('isInAppBrowser()')
+    expect(access).toContain('systemBrowserUrl(window.location.href)')
+    expect(access).toContain('data-access-browser-handoff')
+    expect(access).toContain('Abrir no meu navegador')
+    expect(access).toContain('Continuar por aqui')
   })
 
   it('uses scaffolded UI Thing components for OTP, empty states and structured fields', () => {

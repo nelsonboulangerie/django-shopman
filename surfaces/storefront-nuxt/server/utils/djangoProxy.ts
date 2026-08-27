@@ -3,6 +3,7 @@ import {
   getQuery,
   getRequestHeader,
   readRawBody,
+  setResponseHeader,
   setResponseStatus,
   splitCookiesString,
   type H3Event
@@ -12,6 +13,10 @@ import { warnOnApiVersionMismatch } from './apiVersion'
 import { resolveDjangoBaseUrl } from './djangoBaseUrl'
 
 const UNSAFE_METHODS = new Set(['POST', 'PUT', 'PATCH', 'DELETE'])
+
+function shouldSanitizeHtmlError (status: number, contentType: string | null, path: string): boolean {
+  return status >= 400 && /^text\/html\b/i.test(contentType || '') && path.startsWith('/api/')
+}
 
 export function csrfTokenFromCookieHeader (cookie: string | undefined): string {
   return cookie
@@ -128,12 +133,17 @@ export async function proxyDjangoPath (event: H3Event, fullPath: string) {
     }
   }
 
+  setResponseStatus(event, response.status)
   const contentTypeResponse = response.headers.get('content-type')
-  if (contentTypeResponse) appendResponseHeader(event, 'content-type', contentTypeResponse)
+  if (shouldSanitizeHtmlError(response.status, contentTypeResponse, normalizedPath)) {
+    setResponseHeader(event, 'content-type', 'application/json; charset=utf-8')
+    return { detail: 'Não foi possível responder agora.' }
+  }
+
+  if (contentTypeResponse) setResponseHeader(event, 'content-type', contentTypeResponse)
 
   const contentDisposition = response.headers.get('content-disposition')
   if (contentDisposition) appendResponseHeader(event, 'content-disposition', contentDisposition)
 
-  setResponseStatus(event, response.status)
   return response._data
 }

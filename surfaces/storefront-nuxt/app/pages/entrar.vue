@@ -22,7 +22,6 @@ interface VerifyResponse extends AuthSessionResponse {
 const route = useRoute()
 const apiPath = useShopmanApiPath()
 const csrfHeaders = useShopmanCsrfHeaders()
-const requestHeaders = import.meta.server ? useRequestHeaders(['cookie']) : undefined
 const session = useShopSession()
 const phone = ref('')
 const phoneRegion = ref<AuthPhoneRegion>('BR')
@@ -55,22 +54,6 @@ const welcomeName = ref('')
 const lastSentAtMs = ref<number | null>(null)
 const lastDeliveryMethod = ref<AuthDeliveryMethod>('whatsapp')
 
-// Passkey: para quem já ativou, é o caminho mais curto que existe — um toque, sem esperar
-// mensagem. Aparece ANTES do WhatsApp por isso, e só quando o aparelho tem autenticador
-// próprio: oferecer "entre com o rosto" onde não há leitor seria prometer o que a tela não
-// entrega.
-const { signIn: passkeySignIn, busy: passkeyBusy, error: passkeyError } = usePasskey()
-const passkeyReady = ref(false)
-onMounted(async () => {
-  const { passkeyIsQuick } = usePasskey()
-  passkeyReady.value = await passkeyIsQuick()
-})
-
-async function enterWithPasskey () {
-  if (await passkeySignIn()) {
-    await navigateTo(nextUrl.value || '/conta')
-  }
-}
 const codeExpiresAt = ref('')
 // Momento de feedback antes do redirect: aparelho reconhecido ou código confirmado.
 const moment = ref<'none' | 'recognized' | 'confirmed'>('none')
@@ -81,10 +64,11 @@ const phoneForm = ref<HTMLFormElement | null>(null)
 const codeForm = ref<HTMLFormElement | null>(null)
 const welcomeForm = ref<HTMLFormElement | null>(null)
 
-const { data: loginHome } = await useFetch<HomeResponse>(apiPath('/api/v1/storefront/home/'), {
+const { data: loginHome } = useFetch<HomeResponse>(apiPath('/api/v1/storefront/home/'), {
   credentials: 'include',
-  headers: requestHeaders,
-  key: 'storefront-login-home'
+  key: 'storefront-login-home',
+  lazy: true,
+  server: false
 })
 
 const nextUrl = computed(() => safeInternalPath(route.query.next))
@@ -124,10 +108,10 @@ const stepDescription = computed(() => {
 })
 // Lampejo (o que vai acontecer), reasseguro (sem senha) e intro do envio manual: alimentam
 // o WhatsappVerifyPanel (configuráveis no Admin). O login em si é pelo access link.
-const waGlimpse = computed(() => copyMessage(authCopy.value?.wa_glimpse, 'Envie a mensagem pronta e receba um link para entrar.'))
-const waNoPasswordNote = computed(() => copyMessage(authCopy.value?.no_password_note, 'É prático e seguro, e não exige senha.'))
-const waManualTitle = computed(() => copyTitle(authCopy.value?.wa_manual_title, 'Quer fazer você mesmo?'))
-const waManualIntro = computed(() => copyMessage(authCopy.value?.wa_manual_intro, 'Envie o código abaixo diretamente para o nosso WhatsApp'))
+const waGlimpse = computed(() => copyMessage(authCopy.value?.wa_glimpse, 'Abra o WhatsApp e envie a mensagem pronta. A gente responde com seu link de entrada.'))
+const waNoPasswordNote = computed(() => copyMessage(authCopy.value?.no_password_note, 'Sem senha, email ou cadastro.'))
+const waManualTitle = computed(() => copyTitle(authCopy.value?.wa_manual_title, 'WhatsApp não abriu?'))
+const waManualIntro = computed(() => copyMessage(authCopy.value?.wa_manual_intro, 'Copie este código e mande para o nosso WhatsApp'))
 const supportUrl = computed(() => withWhatsAppText(
   loginHome.value?.home.public_config.whatsapp_url || '',
   isCheckoutReturn.value ? 'Quero finalizar meu pedido' : 'Quero entrar na loja'
@@ -444,27 +428,6 @@ useSeoMeta({
         <div v-if="step === 'phone'" class="shop-stack-block">
           <!-- Zero-telefone, uma tela: a identidade é quem ENVIA a mensagem no WhatsApp.
                Bloco 1 abre o app com a mensagem pronta; "OU"; bloco 2 é o envio manual. -->
-          <!-- Quem já ativou entra aqui, num toque. Quem não ativou não vê nada: o botão só
-               existe se o aparelho tiver autenticador próprio. -->
-          <div v-if="passkeyReady" class="shop-stack-block">
-            <UiButton
-              type="button"
-              size="lg"
-              icon="lucide:scan-face"
-              class="w-full justify-center"
-              :loading="passkeyBusy"
-              @click="enterWithPasskey"
-            >
-              Entrar com o rosto ou a digital
-            </UiButton>
-            <p v-if="passkeyError" class="shop-caption text-muted-foreground">{{ passkeyError }}</p>
-            <div class="flex items-center gap-3" aria-hidden="true">
-              <span class="h-px flex-1 bg-border" />
-              <span class="shop-meta uppercase tracking-widest">ou</span>
-              <span class="h-px flex-1 bg-border" />
-            </div>
-          </div>
-
           <WhatsappVerifyPanel
             :deep-link="waDeepLink"
             :code="waCode"
@@ -489,7 +452,7 @@ useSeoMeta({
             icon="lucide:smartphone"
             @click="revealPhone = true"
           >
-            Usar outro número
+            Não consigo usar WhatsApp
           </UiButton>
 
           <form v-else ref="phoneForm" class="shop-stack-block rounded-lg border bg-card p-4" @submit.prevent="requestCode('sms', $event)">

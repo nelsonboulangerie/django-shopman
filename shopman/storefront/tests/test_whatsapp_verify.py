@@ -39,6 +39,7 @@ def test_start_returns_code_and_deep_link(client: Client):
     assert body["code"].startswith("NB-")
     assert body["wa_number"] == "554333231997"
     assert "wa.me/554333231997" in body["deep_link"]
+    assert "%23menu%20" in body["deep_link"]
     # O código vai pré-preenchido na mensagem (é o que o ManyChat casa no fluxo do site).
     assert body["code"] in body["deep_link"]
 

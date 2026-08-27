@@ -58,6 +58,22 @@ def extract_code(raw: str) -> str:
     return match.group(0) if match else norm
 
 
+def contains_code(raw: str) -> bool:
+    """True quando a mensagem contém um código de estado com o prefixo configurado.
+
+    Isso deixa o ManyChat simples: ele pode repassar ``last_input_text`` sempre. Uma
+    entrada orgânica como ``#menu`` não vira tentativa de handoff expirada; já
+    ``#menu NB-ABCD23`` continua consumindo o contexto do site.
+    """
+    norm = _normalize(raw)
+    prefix = _normalize(_prefix())
+    if not norm:
+        return False
+    if not prefix:
+        return True
+    return bool(re.search(re.escape(prefix) + f"[{re.escape(_ALPHABET)}]+", norm))
+
+
 def pop_state(code: str) -> dict | None:
     """Consome (uso único) o contexto de um código. Aceita o código puro ou a mensagem
     inteira (extrai o código). ``None`` se inválido/expirado."""

@@ -51,7 +51,7 @@ def _safe_next(raw: str) -> str:
 def _access_message_text(code: str) -> str:
     """Mensagem pré-preenchida do botão do site. O código NB-XxXx é a parte que o
     ManyChat casa (gatilho/regex); o texto ao redor é configurável e cosmético."""
-    template = str(_config().get("access_message_template") or "Meu código de acesso é {code}")
+    template = str(_config().get("access_message_template") or "#menu {code}")
     try:
         return template.format(code=code)
     except (KeyError, IndexError, ValueError):

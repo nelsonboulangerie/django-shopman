@@ -373,11 +373,13 @@ class TestAccessLinkCreateViewEdges:
 
         assert response.status_code == 200
         data = json.loads(response.content)
-        assert sorted(data) == ["access_url", "expires_at", "token"]
+        assert sorted(data) == ["access_url", "expires_at", "has_context", "token"]
+        assert data["has_context"] is False
         # Store-domain entry link; the destination rides in the token metadata,
         # never as a `next` query param (no open-redirect surface).
         assert "/a?t=" in data["access_url"]
         assert "next=" not in data["access_url"]
+        assert data["has_context"] is False
 
         from shopman.doorman.models import AccessLink
         link = AccessLink.get_by_token(data["token"])

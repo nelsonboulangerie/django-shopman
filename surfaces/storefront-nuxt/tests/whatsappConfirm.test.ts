@@ -85,6 +85,56 @@ describe('useWhatsAppConfirm', () => {
   })
 })
 
+describe('useWhatsappVerify', () => {
+  let fetched: { url: string, body: unknown } | null = null
+
+  beforeEach(() => {
+    fetched = null
+    Object.assign(globalThis, {
+      ref,
+      useShopmanApiPath: () => (p: string) => p,
+      useShopmanCsrfHeaders: () => async () => ({}),
+      $fetch: vi.fn(async (url: string, opts: { body?: unknown }) => {
+        fetched = { url, body: opts?.body }
+        return { code: 'NB-ABC123', deep_link: 'https://wa.me/5543999?text=NB-ABC123', wa_number: '5543999' }
+      })
+    })
+  })
+
+  it('usa o endpoint canônico do start leve de WhatsApp', async () => {
+    const { useWhatsappVerify } = await import('../app/composables/useWhatsappVerify')
+
+    const verify = useWhatsappVerify()
+    await verify.start('/finalizar')
+
+    expect(fetched?.url).toBe('/api/v1/auth/whatsapp/start/')
+    expect(fetched?.body).toEqual({ next: '/finalizar' })
+    expect(verify.code.value).toBe('NB-ABC123')
+  })
+
+  it('mostra estado de preparo enquanto o link do WhatsApp nasce', async () => {
+    let resolveFetch!: (value: { code: string, deep_link: string, wa_number: string }) => void
+    Object.assign(globalThis, {
+      $fetch: vi.fn((url: string, opts: { body?: unknown }) => {
+        fetched = { url, body: opts?.body }
+        return new Promise<{ code: string, deep_link: string, wa_number: string }>(resolve => {
+          resolveFetch = resolve
+        })
+      })
+    })
+    const { useWhatsappVerify } = await import('../app/composables/useWhatsappVerify')
+
+    const verify = useWhatsappVerify()
+    const pendingStart = verify.start('/finalizar')
+
+    expect(verify.status.value).toBe('loading')
+    await Promise.resolve()
+    resolveFetch({ code: 'NB-ABC123', deep_link: 'https://wa.me/5543999?text=NB-ABC123', wa_number: '5543999' })
+    await pendingStart
+    expect(verify.status.value).toBe('ready')
+  })
+})
+
 describe('o degrau aparece no checkout, e só nessa combinação', () => {
   const page = source('app/pages/finalizar.vue')
 

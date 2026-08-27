@@ -108,6 +108,20 @@ describe('proxyDjangoPath — transporte do BFF', () => {
     expect(data).toEqual({ error_code: 'insufficient_stock' })
   })
 
+  it('não repassa HTML de debug do Django quando uma API JSON falha', async () => {
+    ;($fetch.raw as any).mockResolvedValueOnce(upstream(500, '<html>SECRET_DEBUG_PAGE</html>', {
+      'content-type': 'text/html; charset=utf-8'
+    }))
+    const { event, res } = makeEvent({ method: 'GET', path: '/api/v1/storefront/home/' })
+
+    const data = await proxyDjangoPath(event, '/api/v1/storefront/home')
+
+    expect(res.statusCode).toBe(500)
+    expect(res.getHeader('content-type')).toBe('application/json; charset=utf-8')
+    expect(data).toEqual({ detail: 'Não foi possível responder agora.' })
+    expect(JSON.stringify(data)).not.toContain('SECRET_DEBUG_PAGE')
+  })
+
   it('repassa set-cookie (split) e content-type da resposta upstream', async () => {
     ;($fetch.raw as any).mockResolvedValueOnce(upstream(200, { ok: true }, {
       'set-cookie': 'sessionid=new; Path=/, csrftoken=fresh; Path=/',

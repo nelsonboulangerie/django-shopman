@@ -32,6 +32,9 @@ const props = withDefaults(defineProps<{
 const emit = defineEmits<{ regenerate: [] }>()
 
 const codeCopied = ref(false)
+const isStarting = computed(() => props.status === 'idle' || props.status === 'loading')
+const canOpenWhatsApp = computed(() => !!props.deepLink)
+const ctaText = computed(() => canOpenWhatsApp.value ? props.ctaLabel : 'Preparando WhatsApp')
 // 554333231997 → "(43) 3323-1997"; chat "cru" (sem mensagem) para o envio manual.
 const waNumberDisplay = computed(() => props.waNumber ? phoneDisplay(`+${props.waNumber}`) : '')
 const chatLink = computed(() => props.waNumber ? `https://wa.me/${props.waNumber}` : '')
@@ -66,7 +69,11 @@ async function copyCode () {
     <template v-else>
       <!-- Bloco 1 — a ação: abrir o WhatsApp com a mensagem pronta e enviar. O lampejo
            lidera (o que vai acontecer); o rodapé reassegura (prático, seguro, sem senha). -->
-      <div class="rounded-lg border bg-bottomnav p-4 shop-stack-block" data-login-whatsapp-open>
+      <div
+        class="rounded-lg border bg-bottomnav p-4 shop-stack-block"
+        data-login-whatsapp-open
+        :aria-busy="isStarting && !canOpenWhatsApp"
+      >
         <p v-if="glimpse" class="shop-item-title text-center text-balance" data-login-whatsapp-glimpse>{{ glimpse }}</p>
         <UiButton
           :href="deepLink || undefined"
@@ -75,9 +82,10 @@ async function copyCode () {
           size="lg"
           icon="lucide:message-circle"
           class="w-full justify-center"
-          :disabled="!deepLink"
+          :loading="isStarting && !canOpenWhatsApp"
+          :disabled="!canOpenWhatsApp"
         >
-          {{ ctaLabel }}
+          {{ ctaText }}
         </UiButton>
         <p v-if="noPasswordNote" class="shop-meta text-center" data-login-whatsapp-note>{{ noPasswordNote }}</p>
       </div>
