@@ -72,15 +72,18 @@ O prefixo do código (`NB-`) e o TTL (30 min) são do doorman
 
 ## Configuração do Flow no ManyChat (a parte "F3")
 
-1. **Trigger** — um *Keyword* "message contains" que case o site **e** a entrada
-   orgânica. Robusto (evite casar texto comum):
-   - `NB-` — o prefixo distintivo do código do site (o deep link sempre injeta).
-   - `#menu` — entrada orgânica divulgável para abrir o cardápio.
+1. **Triggers** — dois *Keywords* de WhatsApp, ambos apontando para a mesma automação
+   `Shopman - Gerar link de acesso`:
+   - `#menu` — trigger principal. Use "contains" (ou "starts with", se disponível)
+     para cobrir a entrada orgânica (`#menu`) e o deep link do site (`#menu NB-XxXx`).
+   - `NB-` — trigger de resgate, para o caso de o cliente enviar só o código ou o
+     `#menu` não ser preservado pelo aplicativo.
 
    O trigger **não é a fronteira de segurança** — o Django é o portão (código no
-   cache, single-use, TTL, rate-limit; a identidade é o número da Meta). Guarde a
-   resposta do create numa condição `access_url != empty` antes de responder, para um
-   trigger espúrio nunca mandar um botão quebrado.
+   cache, single-use, TTL, rate-limit; a identidade é o número da Meta). Não crie um
+   trigger "com sacola" e outro "sem sacola": o ManyChat não decide isso. Ele só manda
+   a mensagem recebida; o backend responde `has_context`, e a automação condiciona a
+   copy depois.
 2. **External Request** (Dev Tools, plano Pro):
    - Method: `POST`
    - URL: `https://api.<seu-domínio>/api/auth/access/create/`
@@ -88,27 +91,43 @@ O prefixo do código (`NB-`) e o TTL (30 min) são do doorman
    - Body (JSON):
      ```json
      {
-       "customer_id": "{{subscriber_id ou o id do seu customer}}",
-       "access_code": "{{last_input_text}}",
+       "subscriber": {
+         "id": "{{Subscriber ID}}",
+         "whatsapp_id": "{{WhatsApp ID}}",
+         "first_name": "{{First Name}}",
+         "last_name": "{{Last Name}}"
+       },
+       "access_code": "{{Last Text Input}}",
        "next": "/menu"
      }
      ```
-     `access_code` = a mensagem inteira que o cliente enviou (System Field "Last Text
-     Input"). **Não precisa de regex no ManyChat** — o Django extrai o `NB-XxXx` do
-     texto quando ele existe. Se a mensagem for só `#menu`, o backend trata como login
-     orgânico e usa `next: "/menu"`; não marca sacola expirada. Se vier `NB-*`, o destino
-     guardado no código ganha do fallback `/menu`.
+     `access_code` = a mensagem inteira que o cliente enviou. Selecione **Last Text
+     Input** pelo seletor de variáveis do ManyChat; não digite um placeholder manual
+     se ele não aparece naquele contexto. **Não precisa de regex no ManyChat** — o Django
+     extrai o `NB-XxXx` do texto quando ele existe. Se a mensagem for só `#menu`, o
+     backend trata como login orgânico e usa `next: "/menu"`; não marca sacola expirada.
+     Se vier `NB-*`, o destino guardado no código ganha do fallback `/menu`.
+
+     Se o Keyword Trigger não expuser o Last Text Input no External Request, use uma
+     automação ponte via Default Reply/Last Text Input para capturar a mensagem e
+     chamar o mesmo flow. Sem a mensagem inteira, o backend ainda consegue logar pelo
+     WhatsApp, mas não consegue recuperar a sacola anônima do site.
 3. **Resposta ao cliente** — mapeie `access_url` e `has_context` da resposta em custom
    fields do ManyChat, por exemplo `shopman_access_url` e `shopman_has_context`. O
    ManyChat não precisa olhar para o texto enviado pelo cliente:
    - `shopman_access_url` vazio: não mostre botão de loja. Copy: `Não consegui gerar seu
      link agora. Toque em tentar novamente ou envie uma mensagem por aqui que vamos
-     ajudar.` Tag/ação: abrir atendimento. Opcionalmente ofereça um botão/quick reply
-     `Tentar novamente` que retorna ao External Request.
+     ajudar.` Ações: tag `shopman_login_access_url_failed`, marcar conversa como aberta,
+     atribuir ao atendimento e notificar os assignees. Opcionalmente ofereça um
+     botão/quick reply `Tentar novamente` que retorna ao External Request.
    - `shopman_has_context = true`: copy `Pronto. Toque para continuar seu pedido.`
      Botão `Continuar pedido`, URL `shopman_access_url`.
    - `shopman_has_context = false`: copy `Pronto. Toque para entrar na loja.` Botão
      `Ver cardápio`, URL `shopman_access_url`.
+
+   `has_context` é um booleano JSON (`true`/`false`, minúsculo e sem aspas). Na UI do
+   ManyChat ele pode aparecer como `True/False`; use uma condição de booleano ("is true")
+   em vez de comparar texto com `"True"`.
 
    Ao tocar, a loja abre em `/a?t=<token>`, troca o token, loga e cai no destino
    (cardápio/checkout/conta) já com a sacola quando havia contexto. Se o código do site
