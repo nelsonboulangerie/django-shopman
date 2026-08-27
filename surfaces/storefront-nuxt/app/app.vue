@@ -6,15 +6,19 @@ const session = useShopSession()
 const { setFromServer, refreshCart } = useCartState()
 const { watchConnectivity } = useConnectivity()
 const requestHeaders = import.meta.server ? useRequestHeaders(['cookie']) : undefined
+const route = useRoute()
+const shellHomeEnabled = computed(() => !['/entrar', '/a'].includes(route.path))
 
 // Reconexão / retorno de foco reconcilia o carrinho (a fonte de verdade que muda
 // fora da aba). Falha silenciosa aqui é aceitável: é reconciliação de fundo.
 watchConnectivity(() => { void refreshCart().catch(() => null) })
 
-const { data: shellHome } = await useFetch<HomeResponse>(apiPath('/api/v1/storefront/home/'), {
+const { data: shellHome, refresh: refreshShellHome } = await useFetch<HomeResponse>(apiPath('/api/v1/storefront/home/'), {
   credentials: 'include',
   headers: requestHeaders,
-  key: 'shopman-shell-home'
+  key: 'shopman-shell-home',
+  immediate: shellHomeEnabled.value,
+  server: shellHomeEnabled.value
 })
 
 watch(() => shellHome.value, value => {
@@ -22,12 +26,15 @@ watch(() => shellHome.value, value => {
   setFromServer(value?.cart)
 }, { immediate: true })
 
+watch(shellHomeEnabled, enabled => {
+  if (enabled && !shellHome.value) void refreshShellHome()
+})
+
 useShopTheme(session.shop)
 
 // theme-color (tint da barra do iOS/Safari no topo) = burgundy escuro (tom do header e
 // da status bar), pra o topo ficar consistente. A BASE é preta (canvas do <html>).
 // ?theme=neutral mantém o preview neutro.
-const route = useRoute()
 const themeColor = computed(() => {
   const value = route.query.theme
   const previewNeutral = (Array.isArray(value) ? value[0] : value) === 'neutral'

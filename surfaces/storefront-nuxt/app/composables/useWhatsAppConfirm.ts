@@ -6,8 +6,9 @@
 //
 // Não há mecanismo novo aqui. `POST /api/v1/auth/whatsapp/start/` já existe e é o login por
 // WhatsApp da loja: guarda a sacola e o destino sob um código `NB-XxXx` e devolve o `wa.me`
-// pré-preenchido. O ManyChat casa o código, cria o access link, e o resgate confia no
-// aparelho (`source=manychat`) — então a confirmação vale para sempre naquele celular.
+// pré-preenchido. O ManyChat casa `#menu`, envia a mensagem inteira ao backend, cria o
+// access link, e o resgate confia no aparelho (`source=manychat`) — então a confirmação
+// vale para sempre naquele celular.
 //
 // Por isso a sacola não se perde: ela viaja no código, e o resgate a adota.
 

@@ -24,12 +24,19 @@ const session = useShopSession()
 
 const token = computed(() => String(route.query.t || '').trim())
 const failed = ref(false)
+const exchanging = ref(false)
+const browserHandoff = ref(false)
+const browserHandoffManual = ref(false)
+const browserHandoffFailed = ref(false)
+let browserHandoffTimer: ReturnType<typeof setTimeout> | null = null
 
-onMounted(async () => {
+async function exchangeToken () {
   if (!token.value) {
     failed.value = true
     return
   }
+  browserHandoff.value = false
+  exchanging.value = true
 
   // ⚠️ Tira o token da barra de endereço antes de qualquer coisa. Ele é um crachá: deixá-lo
   // ali o deixa no histórico do navegador, na barra do navegador embutido do WhatsApp e em
@@ -54,7 +61,42 @@ onMounted(async () => {
     // ele sabe se existe sessão no cookie — numa carga nova o estado daqui nasce vazio.
     // Cair aqui é falha de verdade: token inválido e ninguém identificado.
     failed.value = true
+  } finally {
+    exchanging.value = false
   }
+}
+
+function tryOpenSystemBrowser () {
+  browserHandoff.value = true
+  browserHandoffManual.value = false
+  browserHandoffFailed.value = false
+  try {
+    window.location.href = systemBrowserUrl(window.location.href)
+    browserHandoffTimer = setTimeout(() => { browserHandoffManual.value = true }, 1200)
+  } catch {
+    browserHandoffFailed.value = true
+  }
+}
+
+onMounted(async () => {
+  if (!token.value) {
+    failed.value = true
+    return
+  }
+
+  // Link vindo do ManyChat costuma abrir no navegador embutido do WhatsApp. O melhor lugar
+  // para tentar atravessar é ANTES de consumir o token, porque o navegador externo precisa
+  // abrir esta mesma URL e fazer o exchange no pote de cookie dele.
+  if (isInAppBrowser()) {
+    tryOpenSystemBrowser()
+    return
+  }
+
+  await exchangeToken()
+})
+
+onBeforeUnmount(() => {
+  if (browserHandoffTimer) clearTimeout(browserHandoffTimer)
 })
 
 useSeoMeta({
@@ -66,7 +108,43 @@ useSeoMeta({
 <template>
   <main class="shop-section">
     <div class="shop-container max-w-md shop-stack-block">
-      <template v-if="!failed">
+      <template v-if="browserHandoff">
+        <div class="flex flex-col items-center gap-4 py-12 text-center" data-access-browser-handoff>
+          <Icon name="lucide:external-link" :size="32" class="text-muted-foreground" />
+          <div class="shop-stack-micro">
+            <h1 class="shop-heading">Abrindo no seu navegador</h1>
+            <p class="shop-body text-muted-foreground">
+              Assim sua entrada fica salva no navegador que você usa todo dia.
+            </p>
+          </div>
+
+          <div class="grid w-full gap-2">
+            <UiButton type="button" icon="lucide:external-link" class="w-full justify-center" @click="tryOpenSystemBrowser">
+              Abrir no meu navegador
+            </UiButton>
+            <UiButton
+              type="button"
+              variant="ghost"
+              icon="lucide:message-circle"
+              class="w-full justify-center"
+              :loading="exchanging"
+              @click="exchangeToken"
+            >
+              Continuar por aqui
+            </UiButton>
+          </div>
+
+          <p v-if="browserHandoffManual" class="shop-caption text-muted-foreground">
+            Não abriu? Toque nos três pontinhos aqui em cima e escolha
+            <strong>Abrir no navegador</strong>.
+          </p>
+          <p v-if="browserHandoffFailed" class="shop-caption text-muted-foreground">
+            Não conseguimos abrir automaticamente. Você pode continuar por aqui.
+          </p>
+        </div>
+      </template>
+
+      <template v-else-if="!failed">
         <div class="flex flex-col items-center gap-4 py-12 text-center">
           <Icon name="lucide:loader-circle" :size="32" class="animate-spin text-muted-foreground" />
           <p class="shop-body text-muted-foreground">Entrando na sua conta…</p>

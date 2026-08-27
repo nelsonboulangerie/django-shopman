@@ -1,10 +1,11 @@
 interface StartResponse {
   code: string
+  message?: string
   deep_link: string
   wa_number: string
 }
 
-export type WhatsappStartStatus = 'idle' | 'ready' | 'error'
+export type WhatsappStartStatus = 'idle' | 'loading' | 'ready' | 'error'
 
 /**
  * Login por WhatsApp (fluxo access-link): o `start` leve guarda o contexto do site
@@ -17,19 +18,22 @@ export function useWhatsappVerify () {
   const csrfHeaders = useShopmanCsrfHeaders()
 
   const code = ref('')
+  const message = ref('')
   const deepLink = ref('')
   const waNumber = ref('')
   const status = ref<WhatsappStartStatus>('idle')
 
   async function start (next = '') {
+    status.value = 'loading'
     try {
-      const res = await $fetch<StartResponse>(apiPath('/api/auth/whatsapp/start/'), {
+      const res = await $fetch<StartResponse>(apiPath('/api/v1/auth/whatsapp/start/'), {
         method: 'POST',
         headers: await csrfHeaders(),
         credentials: 'include',
         body: { next }
       })
       code.value = res.code
+      message.value = res.message || (res.code ? `#menu ${res.code}` : '')
       deepLink.value = res.deep_link
       waNumber.value = res.wa_number
       status.value = 'ready'
@@ -38,5 +42,5 @@ export function useWhatsappVerify () {
     }
   }
 
-  return { code, deepLink, waNumber, status, start }
+  return { code, message, deepLink, waNumber, status, start }
 }

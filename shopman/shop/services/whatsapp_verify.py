@@ -3,9 +3,10 @@
 O botão do site traz o cliente para o fluxo de access link do doorman: guardamos o
 contexto ({cart_session_key, next}) sob um código ``NB-XxXx`` de uso único no cache e
 devolvemos um deep link ``wa.me`` já preenchido. O cliente envia a mensagem; o ManyChat
-casa o código e cria o access link (``AccessLinkCreateView``), que loga a sessão e adota
-a sacola. A identidade é o número que ENVIA a mensagem (zero-telefone) — sem handshake,
-sem bind de sessão, sem polling/SSE. Ver ACCESS-LINK-UNIFICATION-PLAN.md.
+casa a intenção ``#menu`` e cria o access link (``AccessLinkCreateView``), que loga a
+sessão e adota a sacola quando a mensagem também traz um código ``NB-*``. A identidade é
+o número que ENVIA a mensagem (zero-telefone) — sem handshake, sem bind de sessão, sem
+polling/SSE. Ver ACCESS-LINK-UNIFICATION-PLAN.md.
 """
 
 from __future__ import annotations
@@ -49,13 +50,16 @@ def _safe_next(raw: str) -> str:
 
 
 def _access_message_text(code: str) -> str:
-    """Mensagem pré-preenchida do botão do site. O código NB-XxXx é a parte que o
-    ManyChat casa (gatilho/regex); o texto ao redor é configurável e cosmético."""
-    template = str(_config().get("access_message_template") or "Meu código de acesso é {code}")
+    """Mensagem pré-preenchida do botão do site.
+
+    ``#menu`` é o gatilho público no ManyChat. O ``NB-XxXx`` é payload técnico para
+    recuperar contexto, não um segundo gatilho operacional.
+    """
+    template = str(_config().get("access_message_template") or "#menu {code}")
     try:
         return template.format(code=code)
     except (KeyError, IndexError, ValueError):
-        return code
+        return f"#menu {code}"
 
 
 def _access_deep_link(code: str) -> str:
@@ -89,4 +93,9 @@ def start_access_link(*, cart_session_key: str = "", next_path: str = "") -> dic
         bool(cart_session_key),
         bool(safe_next),
     )
-    return {"code": code, "deep_link": _access_deep_link(code), "wa_number": _wa_number()}
+    return {
+        "code": code,
+        "message": _access_message_text(code),
+        "deep_link": _access_deep_link(code),
+        "wa_number": _wa_number(),
+    }

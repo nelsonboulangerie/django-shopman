@@ -508,7 +508,7 @@ SHOPMAN_WA_VERIFY = {
     "number": os.environ.get("SHOPMAN_WHATSAPP_VERIFY_NUMBER", "").strip(),
     # Mensagem pré-preenchida do botão do site ({code} = o NB-XxXx que o ManyChat casa).
     "access_message_template": os.environ.get(
-        "SHOPMAN_WA_ACCESS_MESSAGE_TEMPLATE", "Meu código de acesso é {code}"
+        "SHOPMAN_WA_ACCESS_MESSAGE_TEMPLATE", "#menu {code}"
     ),
 }
 

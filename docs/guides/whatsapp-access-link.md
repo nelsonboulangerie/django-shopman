@@ -7,11 +7,11 @@ segue como fallback. Substitui o antigo reverse-OTP (ver
 
 ## A ideia
 
-Não precisamos de OTP. Quem manda a palavra-chave no WhatsApp da loja já recebe, pelo
-ManyChat + doorman, um **access link** seguro e entra logado. O botão do site só **traz
-o cliente para esse mesmo fluxo**: ele pré-preenche a mensagem com um código `NB-XxXx`
-que carrega **contexto** (a sacola anônima + o destino), não credencial. A identidade é
-o **número que envia a mensagem** (zero-telefone); o código nunca autentica ninguém.
+Não precisamos de OTP. O caminho mais divulgado pode ser o mais simples: quem manda
+`#menu` no WhatsApp recebe um **access link** seguro para entrar e ver o cardápio. Quando
+o cliente vem do site com sacola/destino, o botão pré-preenche `#menu NB-XxXx`: o código
+carrega **contexto** (a sacola anônima + o destino), não credencial. A identidade é o
+**número que envia a mensagem** (zero-telefone); o código nunca autentica ninguém.
 
 Quem não usa WhatsApp cai no **fallback SMS** (Comtele), o fluxo OTP clássico
 (`RequestCodeView` + `DELIVERY_CHAIN`).
@@ -21,11 +21,11 @@ Quem não usa WhatsApp cai no **fallback SMS** (Comtele), o fluxo OTP clássico
 ```
 1. Site → POST /api/v1/auth/whatsapp/start/         → { code: "NB-XxXx", deep_link, wa_number }
    (guarda {cart_session_key, next} sob o código, no cache, uso único, TTL 30min)
-2. Cliente toca "Entrar pelo WhatsApp" → wa.me abre a mensagem pronta → envia
+2. Cliente toca "Entrar pelo WhatsApp" → wa.me abre `#menu NB-XxXx` → envia
 3. ManyChat (Flow) → POST /api/auth/access/create/  (S2S, API key)
-   body: { customer_id/subscriber, access_code: "<a mensagem inteira>" }
+   body: { customer_id/subscriber, access_code: "<a mensagem inteira>", next: "/menu" }
    → o create extrai o NB-XxXx, resolve o contexto e dobra na metadata do token
-   → responde { access_url: ".../a?t=<token>", token, expires_at }
+   → responde { access_url: ".../a?t=<token>", has_context: true|false, token, expires_at }
 4. ManyChat responde ao cliente com um botão apontando para access_url
 5. Cliente toca → /a?t=<token> → POST /api/v1/auth/access/  (exchange)
    → loga a sessão + adota a sacola (cart_session_key) + redireciona (metadata.next)
@@ -51,7 +51,7 @@ O `create` autentica com a `DOORMAN_ACCESS_LINK_API_KEY` (header `Authorization:
 # WhatsApp da loja (E.164 só dígitos). Vazio = usa Shop.phone
 SHOPMAN_WHATSAPP_VERIFY_NUMBER=554333231997
 # Mensagem pré-preenchida do botão (opcional; {code} é o NB-XxXx). Default abaixo.
-SHOPMAN_WA_ACCESS_MESSAGE_TEMPLATE=Meu código de acesso é {code}
+SHOPMAN_WA_ACCESS_MESSAGE_TEMPLATE=#menu {code}
 
 # Chave server-to-server do create. OBRIGATÓRIA fora de DEBUG.
 DOORMAN_ACCESS_LINK_API_KEY=<segredo forte>
@@ -72,15 +72,18 @@ O prefixo do código (`NB-`) e o TTL (30 min) são do doorman
 
 ## Configuração do Flow no ManyChat (a parte "F3")
 
-1. **Trigger** — um *Keyword* "message contains" que case o site **e** a entrada
-   orgânica. Robusto (evite casar texto comum):
-   - `NB-` — o prefixo distintivo do código do site (o deep link sempre injeta).
-   - opcionalmente a frase da entrada orgânica que você adotar (ex.: `menu`).
+1. **Trigger** — um *Keyword* de WhatsApp apontando para a automação
+   `Shopman - Gerar link de acesso`:
+   - `#menu` — use "contains" (ou "starts with", se disponível) para cobrir a
+     entrada orgânica (`#menu`) e o deep link/fallback manual do site (`#menu NB-XxXx`).
 
    O trigger **não é a fronteira de segurança** — o Django é o portão (código no
-   cache, single-use, TTL, rate-limit; a identidade é o número da Meta). Guarde a
-   resposta do create numa condição `access_url != empty` antes de responder, para um
-   trigger espúrio nunca mandar um botão quebrado.
+   cache, single-use, TTL, rate-limit; a identidade é o número da Meta). Não crie um
+   trigger "com sacola" e outro "sem sacola": o ManyChat não decide isso. Ele só manda
+   a mensagem recebida; o backend responde `has_context`, e a automação condiciona a
+   copy depois. Também não use `NB-` como gatilho: `NB-*` é payload técnico de contexto,
+   não intenção do cliente. O fallback manual da loja deve copiar a mensagem completa
+   `#menu NB-XxXx`, nunca só o código.
 2. **External Request** (Dev Tools, plano Pro):
    - Method: `POST`
    - URL: `https://api.<seu-domínio>/api/auth/access/create/`
@@ -88,17 +91,47 @@ O prefixo do código (`NB-`) e o TTL (30 min) são do doorman
    - Body (JSON):
      ```json
      {
-       "customer_id": "{{subscriber_id ou o id do seu customer}}",
-       "access_code": "{{last_input_text}}"
+       "subscriber": {
+         "id": "{{Subscriber ID}}",
+         "whatsapp_id": "{{WhatsApp ID}}",
+         "first_name": "{{First Name}}",
+         "last_name": "{{Last Name}}"
+       },
+       "access_code": "{{Last Text Input}}",
+       "next": "/menu"
      }
      ```
-     `access_code` = a mensagem inteira que o cliente enviou (System Field "Last Text
-     Input"). **Não precisa de regex no ManyChat** — o Django extrai o `NB-XxXx` do
-     texto. Se o código for inválido/expirado, o create **degrada com graça**: gera o
-     link genérico (fallback `/account`) e marca `handoff_expired` (ver abaixo).
-3. **Resposta ao cliente** — mapeie o `access_url` da resposta num custom field e use
-   como **URL do botão** ("Entrar na loja"). Ao tocar, a loja abre em `/a?t=<token>`,
-   troca o token, loga e cai no destino (checkout/conta) já com a sacola.
+     `access_code` = a mensagem inteira que o cliente enviou. Selecione **Last Text
+     Input** pelo seletor de variáveis do ManyChat; não digite um placeholder manual
+     se ele não aparece naquele contexto. **Não precisa de regex no ManyChat** — o Django
+     extrai o `NB-XxXx` do texto quando ele existe. Se a mensagem for só `#menu`, o
+     backend trata como login orgânico e usa `next: "/menu"`; não marca sacola expirada.
+     Se vier `NB-*`, o destino guardado no código ganha do fallback `/menu`.
+
+     Se o Keyword Trigger não expuser o Last Text Input no External Request, use uma
+     automação ponte via Default Reply/Last Text Input para capturar a mensagem e
+     chamar o mesmo flow. Sem a mensagem inteira, o backend ainda consegue logar pelo
+     WhatsApp, mas não consegue recuperar a sacola anônima do site.
+3. **Resposta ao cliente** — mapeie `access_url` e `has_context` da resposta em custom
+   fields do ManyChat, por exemplo `shopman_access_url` e `shopman_has_context`. O
+   ManyChat não precisa olhar para o texto enviado pelo cliente:
+   - `shopman_access_url` vazio: não mostre botão de loja. Copy: `Não consegui gerar seu
+     link agora. Toque em tentar novamente ou envie uma mensagem por aqui que vamos
+     ajudar.` Ações: tag `shopman_login_access_url_failed`, marcar conversa como aberta,
+     atribuir ao atendimento e notificar os assignees. Opcionalmente ofereça um
+     botão/quick reply `Tentar novamente` que retorna ao External Request.
+   - `shopman_has_context = true`: copy `Pronto. Toque para continuar seu pedido.`
+     Botão `Continuar pedido`, URL `shopman_access_url`.
+   - `shopman_has_context = false`: copy `Pronto. Toque para entrar na loja.` Botão
+     `Ver cardápio`, URL `shopman_access_url`.
+
+   `has_context` é um booleano JSON (`true`/`false`, minúsculo e sem aspas). Na UI do
+   ManyChat ele pode aparecer como `True/False`; use uma condição de booleano ("is true")
+   em vez de comparar texto com `"True"`.
+
+   Ao tocar, a loja abre em `/a?t=<token>`, troca o token, loga e cai no destino
+   (cardápio/checkout/conta) já com a sacola quando havia contexto. Se o código do site
+   expirou, o link ainda entra, mas a loja avisa que a sacola não veio desta vez.
 
 > Quando `access_url` volta preenchido, o login está pronto. O botão é o único passo
 > do lado do cliente; sem SSE/polling.
@@ -117,7 +150,7 @@ frequência.
 
 Primário da `DELIVERY_CHAIN` em produção (`["sms", "email"]`). Para ativar em
 staging/alpha, configure `COMTELE_API_KEY` e `COMTELE_ROUTE` — o `ComteleSMSSender` sai
-do estado inerte. Na tela, "Usar outro número" revela o campo e usa o fluxo clássico:
+do estado inerte. Na tela, `Não consigo usar WhatsApp` revela o campo e usa o fluxo clássico:
 
 ```
 POST /api/v1/auth/request-code/  { "phone": "+55...", "delivery_method": "sms" }
@@ -144,7 +177,7 @@ Uma tela só (`app/pages/entrar.vue`), WhatsApp como caminho primário:
 
 - **`app/components/WhatsappVerifyPanel.vue`** — Bloco 1: lampejo do que vai acontecer +
   botão deep link (`wa.me`, `<a href>` pré-aquecido). Divisor "ou". Bloco 2: envio manual
-  (código + copiar + abrir chat cru). "Usar outro número" (SMS) abaixo. Copy vem por
+  (código + copiar + abrir chat cru). `Não consigo usar WhatsApp` (SMS) abaixo. Copy vem por
   props, configurável no Admin (`LOGIN_WA_*`).
 - **`app/composables/useWhatsappVerify.ts`** — `start(next)` leve: devolve
   `{code, deepLink, waNumber, status}`. Sem polling/SSE/resume.
@@ -171,9 +204,10 @@ no modo dev.
 3. **Storefront (Nuxt)** — `NUXT_DJANGO_BASE_URL=http://127.0.0.1:8000 npm run dev` (ou
    `node .output/server/index.mjs` num build). Abra `/entrar` no celular via o túnel.
 4. **ManyChat** — no External Request, aponte para `https://<tunnel-django>/api/auth/access/create/`
-   com `access_code: {{last_input_text}}`.
+   com `access_code: {{Last Text Input}}` (selecionado pela UI do ManyChat) e
+   `next: "/menu"`.
 5. **Fluxo de teste**: no celular, adicione um item em estoque → checkout → "Entrar pelo
-   WhatsApp" → o WhatsApp abre com `Meu código de acesso é NB-XXXX` → envie → o Flow chama
+   WhatsApp" → o WhatsApp abre com `#menu NB-XXXX` → envie → o Flow chama
    o `create` → toque no botão que ele devolve → você volta logado, com a sacola, no checkout.
 
 > Quick tunnels trocam de URL a cada `make run` (reaponte o ManyChat **e**

@@ -232,9 +232,29 @@ class TestAccessLinkCreateAuth:
             headers={"HTTP_X_API_KEY": TEST_API_KEY},
         )
         assert response.status_code == 200
-        link = AccessLink.get_by_token(json.loads(response.content)["token"])
+        data = json.loads(response.content)
+        assert data["has_context"] is True
+        link = AccessLink.get_by_token(data["token"])
         assert link.metadata.get("cart_session_key") == "sk_site"
         assert link.metadata.get("next") == "/checkout"
+
+    @override_settings(DOORMAN={"ACCESS_LINK_API_KEY": TEST_API_KEY})
+    def test_code_next_overrides_menu_fallback(self, customer):
+        """ManyChat pode mandar next=/menu como fallback; o código do site ganha."""
+        from shopman.doorman.models import AccessLink
+        from shopman.doorman.services.link_state import store_state
+
+        code = store_state({"cart_session_key": "sk_site", "next": "/finalizar"})
+        response = self._post_create(
+            {"customer_id": str(customer.uuid), "access_code": f"#menu {code}", "next": "/menu"},
+            headers={"HTTP_X_API_KEY": TEST_API_KEY},
+        )
+        assert response.status_code == 200
+        data = json.loads(response.content)
+        assert data["has_context"] is True
+        link = AccessLink.get_by_token(data["token"])
+        assert link.metadata.get("cart_session_key") == "sk_site"
+        assert link.metadata.get("next") == "/finalizar"
 
     @override_settings(DOORMAN={"ACCESS_LINK_API_KEY": TEST_API_KEY})
     def test_code_extracted_from_full_whatsapp_message(self, customer):
@@ -248,7 +268,9 @@ class TestAccessLinkCreateAuth:
             headers={"HTTP_X_API_KEY": TEST_API_KEY},
         )
         assert response.status_code == 200
-        link = AccessLink.get_by_token(json.loads(response.content)["token"])
+        data = json.loads(response.content)
+        assert data["has_context"] is True
+        link = AccessLink.get_by_token(data["token"])
         assert link.metadata.get("cart_session_key") == "sk_msg"
 
     @override_settings(DOORMAN={"ACCESS_LINK_API_KEY": TEST_API_KEY})
@@ -261,7 +283,9 @@ class TestAccessLinkCreateAuth:
             headers={"HTTP_X_API_KEY": TEST_API_KEY},
         )
         assert response.status_code == 200
-        link = AccessLink.get_by_token(json.loads(response.content)["token"])
+        data = json.loads(response.content)
+        assert data["has_context"] is True
+        link = AccessLink.get_by_token(data["token"])
         assert "cart_session_key" not in (link.metadata or {})
 
     @override_settings(DOORMAN={"ACCESS_LINK_API_KEY": TEST_API_KEY})
@@ -274,7 +298,9 @@ class TestAccessLinkCreateAuth:
             {"customer_id": str(customer.uuid), "access_code": "NB-NOPE00"},
             headers={"HTTP_X_API_KEY": TEST_API_KEY},
         )
-        link = AccessLink.get_by_token(json.loads(response.content)["token"])
+        data = json.loads(response.content)
+        assert data["has_context"] is True
+        link = AccessLink.get_by_token(data["token"])
         assert link.metadata.get("handoff_expired") is True
 
     @override_settings(DOORMAN={"ACCESS_LINK_API_KEY": TEST_API_KEY})
@@ -286,7 +312,25 @@ class TestAccessLinkCreateAuth:
             {"customer_id": str(customer.uuid)},
             headers={"HTTP_X_API_KEY": TEST_API_KEY},
         )
-        link = AccessLink.get_by_token(json.loads(response.content)["token"])
+        data = json.loads(response.content)
+        assert data["has_context"] is False
+        link = AccessLink.get_by_token(data["token"])
+        assert "handoff_expired" not in (link.metadata or {})
+
+    @override_settings(DOORMAN={"ACCESS_LINK_API_KEY": TEST_API_KEY})
+    def test_menu_keyword_is_organic_login_not_expired_handoff(self, customer):
+        """#menu puro loga via WhatsApp, mas não tentou carregar sacola do site."""
+        from shopman.doorman.models import AccessLink
+
+        response = self._post_create(
+            {"customer_id": str(customer.uuid), "access_code": "#menu", "next": "/menu"},
+            headers={"HTTP_X_API_KEY": TEST_API_KEY},
+        )
+        assert response.status_code == 200
+        data = json.loads(response.content)
+        assert data["has_context"] is False
+        link = AccessLink.get_by_token(data["token"])
+        assert link.metadata.get("next") == "/menu"
         assert "handoff_expired" not in (link.metadata or {})
 
 
