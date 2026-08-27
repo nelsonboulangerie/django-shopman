@@ -4,6 +4,7 @@ import {
   buildSectionsBySku,
   primarySectionBySku,
   searchPanelView,
+  type SearchListOption,
   uniqueItemsBySku
 } from '~/presentation/menu'
 import type { MenuResponse } from '~/types/shopman'
@@ -64,12 +65,27 @@ function toggleChip (key: string) {
   void navigateTo(menuTargetFor([...baseFilters.value, key]))
 }
 
-function goToSection (ref: string) {
-  void navigateTo(`/menu?secao=${encodeURIComponent(ref)}`)
+function collectionTargetFor (option: SearchListOption): string {
+  const ref = encodeURIComponent(option.value)
+  return option.section && !option.section.is_dynamic ? `/colecao/${ref}` : `/menu?secao=${ref}`
+}
+
+function activateChip (option: SearchListOption) {
+  if (option.kind === 'collection') {
+    void navigateTo(collectionTargetFor(option))
+    return
+  }
+  toggleChip(option.key)
+}
+
+function chipApplied (option: SearchListOption): boolean {
+  return option.kind !== 'collection' && isFilterApplied(option.key)
 }
 
 onMounted(() => {
-  document.getElementById('busca-input')?.focus()
+  if (window.matchMedia('(pointer: fine)').matches) {
+    document.getElementById('busca-input')?.focus()
+  }
 })
 
 useSeoMeta({
@@ -84,7 +100,7 @@ useCanonical()
 <template>
   <main class="min-w-0 pb-6">
     <h1 class="sr-only">Buscar no cardápio</h1>
-    <div class="shop-searchbar sticky top-16 z-30 bg-background shadow-sm" data-busca-bar>
+    <div class="shop-searchbar z-30 bg-background shadow-sm md:sticky md:top-16" data-busca-bar>
       <div class="shop-container flex items-center gap-2 py-2">
         <UiButton
           variant="ghost"
@@ -161,9 +177,9 @@ useCanonical()
             <UiButton
               v-for="option in panel.collections"
               :key="option.key"
+              :to="collectionTargetFor(option)"
               variant="ghost"
               class="shop-gold-hover h-auto w-full justify-start gap-3 rounded-none border-b px-1 py-3 font-normal last:border-b-0"
-              @click="goToSection(option.value)"
             >
               <Icon :name="option.icon" class="size-4 text-muted-foreground" :class="option.icon === 'lucide:heart' ? 'text-foreground' : ''" />
               <span class="min-w-0 flex-1 truncate text-left shop-body">{{ option.label }}</span>
@@ -178,11 +194,11 @@ useCanonical()
             <UiButton
               v-for="chip in panel.chips"
               :key="chip.key"
-              :variant="isFilterApplied(chip.key) ? 'default' : 'outline'"
+              :variant="chipApplied(chip) ? 'default' : 'outline'"
               size="sm"
               class="h-8 rounded-full px-3"
-              :aria-pressed="isFilterApplied(chip.key)"
-              @click="toggleChip(chip.key)"
+              :aria-pressed="chip.kind === 'collection' ? undefined : chipApplied(chip)"
+              @click="activateChip(chip)"
             >
               <Icon v-if="chip.icon === 'lucide:heart'" name="lucide:heart" class="mr-1 size-3.5" />
               {{ chip.label }}

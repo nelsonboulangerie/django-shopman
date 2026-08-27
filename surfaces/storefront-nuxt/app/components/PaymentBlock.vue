@@ -112,11 +112,18 @@ async function copyPix () {
       </div>
 
       <!-- Ambiente de teste: captura por gateway simulado (DEBUG/staging). -->
-      <div v-if="podeSimular" class="shop-stack-tight rounded-lg border border-dashed bg-muted/40 p-4">
-        <p class="shop-meta">Ambiente de teste · captura por gateway simulado</p>
+      <div v-if="podeSimular" class="shop-stack-tight rounded-lg border border-cta bg-cta/10 p-4">
+        <div class="flex items-start gap-3">
+          <Icon name="lucide:flask-conical" :size="22" class="mt-0.5 shrink-0 text-cta" />
+          <div class="min-w-0">
+            <p class="shop-item-title font-semibold text-foreground">Pagamento de teste</p>
+            <p class="shop-meta">Use este botão para confirmar o pagamento neste ambiente de teste.</p>
+          </div>
+        </div>
         <UiButton
-          variant="outline"
-          class="w-full"
+          variant="default"
+          size="lg"
+          class="w-full justify-center bg-cta text-cta-foreground hover:bg-cta/90 hover:text-cta-foreground"
           icon="lucide:flask-conical"
           :loading="mockPending"
           @click="emit('mock-confirm')"

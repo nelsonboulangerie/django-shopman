@@ -8,6 +8,7 @@ import type { CatalogItemProjection } from '~/types/shopman'
 const props = defineProps<{
   // A página esconde a prateleira quando há filtro ativo.
   active?: boolean
+  hideDietaryWarnings?: boolean
 }>()
 
 const apiPath = useShopmanApiPath()
@@ -31,7 +32,11 @@ watch(isAuthenticated, load, { immediate: import.meta.client })
 // Recarrega após cada mutação CONFIRMADA pelo servidor (evita o race do otimista).
 watch(version, () => { if (isAuthenticated.value) load() })
 
-const visible = computed(() => props.active !== false && items.value.length > 0)
+const visibleItems = computed(() => props.hideDietaryWarnings
+  ? items.value.filter(item => (item.dietary_warnings || []).length === 0)
+  : items.value
+)
+const visible = computed(() => props.active !== false && visibleItems.value.length > 0)
 </script>
 
 <template>
@@ -39,7 +44,7 @@ const visible = computed(() => props.active !== false && items.value.length > 0)
     <h2 class="shop-heading font-display">Seus favoritos</h2>
     <div class="grid grid-cols-1 gap-x-8 md:grid-cols-2 xl:grid-cols-3">
       <ProductListItem
-        v-for="item in items"
+        v-for="item in visibleItems"
         :key="`fav-${item.sku}`"
         :item="item"
         framed

@@ -1,4 +1,5 @@
 import type { HomeNoticeProjection, OmotenashiProjection, OpeningHoursEntry, PublicConfigProjection, ShopProjection, ShopStatusProjection } from '~/types/shopman'
+import { NELSON_FALLBACK_SHOP } from '~/utils/nelsonFallback'
 
 interface ShopSessionState {
   customerName: string | null
@@ -40,7 +41,7 @@ function emptyState (): ShopSessionState {
     requiresWelcome: false,
     welcomeSuggestedName: null,
     lastOrderRef: null,
-    shop: null,
+    shop: NELSON_FALLBACK_SHOP,
     shopStatus: null,
     homeNotices: [],
     openingHours: [],

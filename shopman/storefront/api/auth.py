@@ -175,7 +175,7 @@ def _access_link_redirect(metadata: dict | None) -> str:
     next_path = str(meta.get("next") or "")
     if next_path.startswith("/") and not next_path.startswith("//"):
         return next_path
-    return storefront_links.path_account()
+    return storefront_links.path_home()
 
 
 def _access_link_metadata_for_customer(metadata: dict | None, customer) -> dict | None:
@@ -227,7 +227,7 @@ class AccessLinkExchangeView(APIView):
             return Response({"detail": "Link inválido."}, status=status.HTTP_400_BAD_REQUEST)
 
         if not HAS_AUTH:
-            return Response({"ok": True, "redirect": storefront_links.path_account(), **_session_payload(None)})
+            return Response({"ok": True, "redirect": storefront_links.path_home(), **_session_payload(None)})
 
         metadata = access_service.token_metadata(token)
         # Antes do resgate: depois dele o token está gasto e a origem já não se lê.

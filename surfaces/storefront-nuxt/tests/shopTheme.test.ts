@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { shopFontFamily, shopFontLinks, shopThemeCss, shopThemeStyle, tokenVars } from '../app/utils/shopTheme'
+import { NELSON_FALLBACK_SHOP } from '../app/utils/nelsonFallback'
 import type { ShopProjection } from '../app/types/shopman'
 
 function shop (design_tokens: ShopProjection['design_tokens']): ShopProjection {
@@ -38,6 +39,14 @@ const BRAND = {
 }
 
 describe('shop theme — marca como override das variáveis reais', () => {
+  it('o fallback runtime ja nasce vestido como Nelson', () => {
+    const css = shopThemeCss(NELSON_FALLBACK_SHOP)
+    expect(NELSON_FALLBACK_SHOP.brand_name).toBe('Nelson Boulangerie')
+    expect(css).toContain('--primary: rgb(124 58 64);')
+    expect(css).toContain('--shop-header: rgb(124 58 64);')
+    expect(css).toContain('--shop-cta: rgb(139 107 46);')
+  })
+
   it('mapeia design_tokens para as variáveis CSS que os componentes consomem (rgb)', () => {
     expect(shopThemeStyle(shop(BRAND))).toMatchObject({
       '--background': 'rgb(244 235 215)',

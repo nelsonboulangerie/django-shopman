@@ -110,6 +110,25 @@ watch(useLoyalty, async (enabled) => {
 const submitting = ref(false)
 const serverError = ref('')
 const fieldErrors = ref<Record<string, string>>({})
+
+function clearFieldError (key: string) {
+  if (!fieldErrors.value[key]) return
+  const { [key]: _removed, ...rest } = fieldErrors.value
+  fieldErrors.value = rest
+}
+
+function clearFieldErrors (keys: string[]) {
+  let next = fieldErrors.value
+  let changed = false
+  for (const key of keys) {
+    if (!next[key]) continue
+    const { [key]: _removed, ...rest } = next
+    next = rest
+    changed = true
+  }
+  if (changed) fieldErrors.value = next
+}
+
 // Dica de encomenda quando o dia escolhido está fechado (backend: preorder_hint).
 // Aditivo: acompanha o erro do campo de data, não muda o roteamento do fieldError.
 const deliveryDateHint = ref('')
@@ -136,6 +155,15 @@ const datePopoverOpen = ref(false)
 const notesOpen = ref(false)
 // Desligar o toggle é o dismiss: descarta a observação para não enviá-la oculta.
 watch(notesOpen, (open) => { if (!open) state.notes = '' })
+watch(() => state.name, value => {
+  if (value.trim()) clearFieldError('name')
+})
+watch(() => state.phone, value => {
+  if (value.trim()) clearFieldError('phone')
+})
+watch(() => state.payment_method, value => {
+  if (value) clearFieldError('payment_method')
+})
 
 // Presente (GIFT-UX). Em ENTREGA: destinatário + mensagem + ocultar valores.
 // Em RETIRADA: "embalar para presente" — só mensagem + ocultar valores (o
@@ -151,7 +179,15 @@ watch(() => state.is_gift, (on) => {
     state.recipient_phone = ''
     state.gift_message = ''
     state.gift_hide_values = false
+    clearFieldErrors(['recipient_name', 'recipient_phone'])
   }
+})
+watch(() => state.recipient_name, value => {
+  if (value.trim()) clearFieldError('recipient_name')
+})
+watch(() => state.recipient_phone, value => {
+  const local = normalizeAuthPhone(value, 'BR', defaultDdd.value).replace(/^\+55/, '')
+  if (local.length >= 10) clearFieldError('recipient_phone')
 })
 // Resumo do presente para o passo de confirmação.
 const giftSummary = computed(() => {
@@ -194,26 +230,39 @@ const cart = computed(() => checkout.value?.cart)
 // o desconto no resumo (o `cart` daqui vem do payload do checkout, não do cart state).
 const coupon = ref('')
 const couponPending = ref(false)
+const couponIssue = ref('')
 // Cupom: mesmo toggle-card dos demais campos. Desligar limpa o código digitado.
 const couponOpen = ref(false)
 watch(couponOpen, (open) => {
-  if (!open) { coupon.value = ''; return }
+  if (!open) {
+    coupon.value = ''
+    couponIssue.value = ''
+    return
+  }
   // Ao abrir o toggle, foca o campo do cupom (pós-render).
   void nextTick(() => { (document.getElementById('checkout-coupon-input') as HTMLInputElement | null)?.focus() })
+})
+watch(coupon, () => {
+  if (couponIssue.value) couponIssue.value = ''
 })
 async function submitCoupon () {
   if (!coupon.value.trim() || couponPending.value) return
   couponPending.value = true
+  couponIssue.value = ''
   try {
     await applyCoupon(coupon.value.trim())
     coupon.value = ''
     await refresh()
+  } catch (e) {
+    couponIssue.value = errorDetail(e, 'Cupom inválido ou indisponível.')
+    if (import.meta.client) useSonner.error(couponIssue.value)
   } finally {
     couponPending.value = false
   }
 }
 async function dropCoupon () {
   couponPending.value = true
+  couponIssue.value = ''
   try {
     await removeCoupon()
     await refresh()
@@ -407,6 +456,8 @@ function pickDeliveryDate (value: string) {
   if (!date) return
   chosenDate.value = date
   state.delivery_date = value
+  clearFieldError('delivery_date')
+  deliveryDateHint.value = ''
   datePopoverOpen.value = false
 }
 
@@ -541,6 +592,8 @@ watch(chosenDate, value => {
   const nextValue = localDateValue(value)
   if (isCheckoutDateUnavailable(nextValue, dateBounds.value, closedDateEntries.value, closedWeekdays.value)) return
   state.delivery_date = nextValue
+  clearFieldError('delivery_date')
+  deliveryDateHint.value = ''
   datePopoverOpen.value = false
 })
 
@@ -548,7 +601,12 @@ watch(slots, () => {
   reconcileDeliverySlot()
 })
 
+watch(() => state.delivery_time_slot, value => {
+  if (value && selectedSlot.value?.enabled) clearFieldError('delivery_time_slot')
+})
+
 watch(() => state.fulfillment_type, () => {
+  clearFieldErrors(['fulfillment_type', 'delivery_address'])
   reconcileDeliverySlot()
 })
 
@@ -1384,17 +1442,21 @@ useSeoMeta({
                   </UiFieldContent>
                   <UiSwitch id="checkout-coupon-toggle" :model-value="couponSwitchOn" @update:model-value="onCouponToggle" />
                 </UiField>
-                <div v-if="couponOpen && !cart?.coupon_code" class="flex items-center gap-2 px-4 pb-4">
-                  <UiInput
-                    id="checkout-coupon-input"
-                    v-model="coupon"
-                    placeholder="Código do cupom"
-                    autocomplete="off"
-                    class="min-w-0 flex-1 bg-background"
-                    @click.stop
-                    @keyup.enter="submitCoupon"
-                  />
-                  <UiButton variant="outline" :loading="couponPending" :disabled="!coupon.trim()" @click.prevent="submitCoupon">Aplicar</UiButton>
+                <div v-if="couponOpen && !cart?.coupon_code" class="px-4 pb-4" @click.stop>
+                  <div class="flex items-center gap-2">
+                    <UiInput
+                      id="checkout-coupon-input"
+                      v-model="coupon"
+                      placeholder="Código do cupom"
+                      autocomplete="off"
+                      class="min-w-0 flex-1 bg-background"
+                      :aria-invalid="!!couponIssue"
+                      :aria-describedby="couponIssue ? 'checkout-coupon-error' : undefined"
+                      @keyup.enter="submitCoupon"
+                    />
+                    <UiButton variant="outline" :loading="couponPending" :disabled="!coupon.trim()" @click.prevent="submitCoupon">Aplicar</UiButton>
+                  </div>
+                  <UiFieldError v-if="couponIssue" id="checkout-coupon-error" class="mt-2" :errors="couponIssue" />
                 </div>
               </UiFieldLabel>
 

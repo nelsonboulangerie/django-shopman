@@ -115,8 +115,8 @@ async function copyMessage () {
         </div>
         <UiButton
           type="button"
-          variant="outline"
-          class="w-full justify-center"
+          variant="default"
+          class="w-full justify-center bg-cta text-cta-foreground hover:bg-cta/90 hover:text-cta-foreground"
           :icon="codeCopied ? 'lucide:check' : 'lucide:copy'"
           @click="copyMessage"
         >
@@ -126,9 +126,9 @@ async function copyMessage () {
           :href="chatLink || undefined"
           target="_blank"
           rel="noopener"
-          variant="outline"
+          variant="default"
           icon="lucide:message-circle"
-          class="w-full justify-center"
+          class="w-full justify-center bg-cta text-cta-foreground hover:bg-cta/90 hover:text-cta-foreground"
           :disabled="!chatLink"
         >
           Abrir WhatsApp

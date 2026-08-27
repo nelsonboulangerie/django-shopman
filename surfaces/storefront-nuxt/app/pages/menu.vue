@@ -423,7 +423,7 @@ useHead({
             </div>
 
             <!-- "Seus favoritos": prateleira pessoal no topo, só logado e sem filtro ativo. -->
-            <MenuFavoritesShelf :active="!hasAppliedFilters" />
+            <MenuFavoritesShelf :active="!hasAppliedFilters" :hide-dietary-warnings="dietaryFilterOn" />
 
             <div v-if="activeSections.length" class="shop-stack-section">
               <div

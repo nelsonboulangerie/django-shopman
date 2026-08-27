@@ -302,7 +302,7 @@ export function checkoutStepErrorKeys (step: CheckoutStep): string[] {
   if (step === 'fulfillment') return ['fulfillment_type']
   if (step === 'address') return ['delivery_address', 'street_number', 'saved_address_id']
   if (step === 'when') return ['delivery_date', 'delivery_time_slot']
-  return ['payment_method']
+  return ['payment_method', 'recipient_name', 'recipient_phone']
 }
 
 export function checkoutStepHasError (step: CheckoutStep, fieldErrors: Record<string, string>): boolean {

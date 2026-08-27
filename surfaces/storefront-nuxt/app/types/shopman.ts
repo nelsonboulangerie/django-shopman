@@ -293,6 +293,13 @@ export interface ShopDesignTokensProjection {
   header_foreground?: string
   footer?: string
   footer_foreground?: string
+  help?: string
+  help_foreground?: string
+  ink?: string
+  ink_foreground?: string
+  bottomnav?: string
+  cta?: string
+  cta_foreground?: string
   background_hex?: string
   theme_hex?: string
   heading_font?: string
