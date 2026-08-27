@@ -102,7 +102,7 @@ def test_venda_em_dinheiro_grava_uma_linha_com_o_efeito_na_gaveta(counter):
     result = counter.close(
         client_request_id="c1",
         payment_tenders=[{"method": "cash", "amount_q": 2000, "collection": "terminal"}],
-        tendered_amount_q=2000,
+        tendered_q=2000,
     )
 
     (line,) = counter.sale_lines()
@@ -216,8 +216,8 @@ def test_entrega_paga_na_porta_e_venda_deste_turno_sem_dinheiro_ainda(counter):
 
 
 def test_repetir_a_venda_nao_duplica_a_linha(counter):
-    first = counter.close(client_request_id="c6", tendered_amount_q=1200)
-    second = counter.close(client_request_id="c6", tendered_amount_q=1200)
+    first = counter.close(client_request_id="c6", tendered_q=1200)
+    second = counter.close(client_request_id="c6", tendered_q=1200)
 
     assert first.order_ref == second.order_ref
     assert len(counter.sale_lines()) == 1
@@ -263,7 +263,7 @@ def test_o_pedido_nao_carrega_etiqueta_de_turno(counter):
 
 
 def test_cancelar_venda_em_dinheiro_grava_refund_na_gaveta_de_quem_devolve(counter, django_capture_on_commit_callbacks):
-    result = counter.close(client_request_id="c10", tendered_amount_q=1200)
+    result = counter.close(client_request_id="c10", tendered_q=1200)
     (sale_line,) = counter.sale_lines()
 
     with django_capture_on_commit_callbacks(execute=True):
@@ -282,7 +282,7 @@ def test_cancelar_venda_em_dinheiro_grava_refund_na_gaveta_de_quem_devolve(count
 def test_devolver_por_outro_turno_aponta_a_venda_mas_nao_o_parent(counter, django_capture_on_commit_callbacks):
     """Quem devolve tem outro turno: o dinheiro sai DESSA gaveta; ``parent`` só
     liga linhas do mesmo livro, então fica vazio e o ``order_ref`` liga as duas."""
-    result = counter.close(client_request_id="c11", tendered_amount_q=1200)
+    result = counter.close(client_request_id="c11", tendered_q=1200)
     manager = get_user_model().objects.create_user(username="pablo", password="x")
     from shopman.cashman import Terminal
 
@@ -310,7 +310,7 @@ def test_devolver_dinheiro_com_a_GAVETA_fechada_e_recusado_e_o_pedido_fica(count
     from shopman.cashman import services as cash
     from shopman.cashman.models import Terminal
 
-    result = counter.close(client_request_id="c12", tendered_amount_q=1200)
+    result = counter.close(client_request_id="c12", tendered_q=1200)
     operador = get_user_model().objects.create_user(username="sem-turno", password="x")
     turno = cash.open_shift_for_terminal(Terminal.default())
     cash.close_shift(turno, counted_q=0, actor=operador)
@@ -560,7 +560,7 @@ def test_venda_que_chega_depois_do_fechamento_grita_em_vez_de_evaporar(monkeypat
     gerente.start()
     try:
         with pytest.raises(PosIntentError) as exc:
-            counter.close(client_request_id="voo-1", tendered_amount_q=1200)
+            counter.close(client_request_id="voo-1", tendered_q=1200)
     finally:
         gerente.join(timeout=10)
 
@@ -620,7 +620,7 @@ def test_dois_submits_simultaneos_com_a_mesma_chave_viram_uma_venda_so():
         def _submete(largada=largada, chave=chave, resultados=resultados, erros=erros):
             try:
                 largada.wait(timeout=10)
-                resultados.append(counter.close(client_request_id=chave, tendered_amount_q=1200))
+                resultados.append(counter.close(client_request_id=chave, tendered_q=1200))
             except Exception as exc:  # o par perdedor pode legitimamente falhar
                 erros.append(exc)
             finally:

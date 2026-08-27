@@ -192,7 +192,7 @@ class POSFireTabTests(TestCase):
                 "fulfillment_type": "pickup",
                 "payment_method": "cash",
                 "payment_collection": "terminal",
-                "tendered_amount_q": 2000,
+                "tendered_q": 2000,
                 "client_request_id": "pos-fire-then-close-001",
             },
             actor="pos:alice", operator_username="alice",

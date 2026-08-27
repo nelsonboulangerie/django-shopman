@@ -1009,7 +1009,7 @@ def _pos_actions() -> tuple[Action, ...]:
                     "order_notes",
                     "payment_collection",
                     "payment_tenders",
-                    "tendered_amount_q",
+                    "tendered_q",
                     "receipt_channels",
                     "receipt_email",
                     "manual_discount",
@@ -1412,8 +1412,8 @@ def _checkout_contract(
             capability_ref="split_payment",
         ),
         POSCheckoutFieldProjection(
-            ref="tendered_amount_q",
-            payload_key="tendered_amount_q",
+            ref="tendered_q",
+            payload_key="tendered_q",
             section_ref="payment",
             label="Valor recebido",
             input_type="money_q",
@@ -1492,7 +1492,7 @@ def _checkout_contract(
             ref="payment",
             label="Pagamento",
             description="Recebimento no terminal, na entrega, dinheiro e pagamentos divididos.",
-            field_refs=("payment_method", "payment_collection", "payment_tenders", "tendered_amount_q"),
+            field_refs=("payment_method", "payment_collection", "payment_tenders", "tendered_q"),
         ),
         POSCheckoutSectionProjection(
             ref="receipt",
@@ -2270,7 +2270,7 @@ def build_open_tab(session: Session) -> dict:
         "payment_method": payment.get("method", "cash"),
         "payment_collection": payment.get("collection", "terminal"),
         "payment_tenders": _tab_payload_payment_tenders(payment),
-        "tendered_amount_q": "",
+        "tendered_q": "",
         "client_request_id": data.get("client_request_id", (data.get("pos") or {}).get("client_request_id", "")),
         # A comanda retomada devolve o CPF PEDIDO, não um toggle: é ele que faz
         # a nota sair identificada.

@@ -331,7 +331,7 @@ def test_pos_cash_sale_with_change_settles_the_tender_not_the_bill(pos_sale):
     result = pos_sale.close(
         client_request_id="pos:cash-change",
         payment_tenders=[{"method": "cash", "amount_q": 2000, "collection": "terminal"}],
-        tendered_amount_q=2000,
+        tendered_q=2000,
     )
 
     order = Order.objects.get(ref=result.order_ref)
@@ -349,8 +349,8 @@ def test_pos_cash_sale_with_change_settles_the_tender_not_the_bill(pos_sale):
 
 
 def test_pos_cash_sale_repeat_request_keeps_single_intent(pos_sale):
-    first = pos_sale.close(client_request_id="pos:cash-idem", tendered_amount_q=1200)
-    second = pos_sale.close(client_request_id="pos:cash-idem", tendered_amount_q=1200)
+    first = pos_sale.close(client_request_id="pos:cash-idem", tendered_q=1200)
+    second = pos_sale.close(client_request_id="pos:cash-idem", tendered_q=1200)
 
     assert second.order_ref == first.order_ref
     assert _intents(first.order_ref).count() == 1
@@ -397,7 +397,7 @@ def test_pos_cash_on_delivery_does_not_settle(pos_sale):
 @_MOCK_ADAPTERS
 def test_pos_cancel_of_cash_sale_refunds_in_payman(pos_sale, django_capture_on_commit_callbacks):
     """Cancelar a venda em dinheiro grava o estorno no Payman (o ``on_cancelled`` roda o refund)."""
-    result = pos_sale.close(client_request_id="pos:cash-cancel", tendered_amount_q=1200)
+    result = pos_sale.close(client_request_id="pos:cash-cancel", tendered_q=1200)
     order = Order.objects.get(ref=result.order_ref)
     ref = order.data["payment"]["intent_ref"]
 

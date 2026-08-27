@@ -469,9 +469,16 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onWindowKeydown));
             <!-- faixa 1 — o que é, e quanto custa -->
             <div class="flex items-baseline gap-2">
               <p class="min-w-0 flex-1 truncate text-sm font-medium leading-tight">{{ item.name }}</p>
+              <!-- A ETIQUETA RISCADA é o marcador de desconto desta lista, e o
+                   selo com o NOME da promoção saiu daqui. Os dois diziam a mesma
+                   coisa — "estava mais caro" — e o selo custava uma faixa
+                   inteira (82px por linha contra 60px). Nesta lista o operador
+                   confere o que ele lançou; o POR QUÊ é pergunta de cliente, e
+                   ela tem lugar: o resumo do checkout, o recibo e este `title`. -->
               <span
                 v-if="lineListTotalDisplay(item)"
                 class="shrink-0 text-xs tabular-nums text-muted-foreground line-through"
+                :title="discountBadge(item) ? `Preço de tabela — ${discountBadge(item)}` : 'Preço de tabela'"
               >{{ lineListTotalDisplay(item) }}</span>
               <strong class="shrink-0 text-sm font-semibold tabular-nums leading-tight">{{ formatBRL(lineTotalQ(item)) }}</strong>
             </div>
@@ -516,22 +523,9 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onWindowKeydown));
                  quebra é a FILA de selos, nunca a palavra dentro do selo. Some
                  por inteiro quando não há nada a dizer, que é o caso comum. -->
             <div
-              v-if="discountBadge(item) || lineKitchenState(item) !== 'unfired'"
+              v-if="lineKitchenState(item) !== 'unfired'"
               class="mb-0.5 flex flex-wrap items-center gap-1"
             >
-              <!-- UM selo de desconto: o VENCEDOR. Só um desconto vale por item
-                   ("maior ganha"), então dois selos na linha eram dois preços
-                   sugeridos para uma coisa que tem um preço só. Quem foi
-                   descartado avisa por toast no momento do pedido, não morando
-                   riscado aqui para sempre. -->
-              <span
-                v-if="discountBadge(item)"
-                class="inline-flex shrink-0 items-center gap-1 whitespace-nowrap rounded-full bg-primary/10 px-2 py-0.5 text-xs font-medium text-primary"
-                :title="`Desconto aplicado: ${discountBadge(item)}`"
-              >
-                <Icon name="lucide:tag" class="size-3 shrink-0" />
-                {{ discountBadge(item) }}
-              </span>
               <button
                 v-if="lineKitchenState(item) === 'fired_cancellable'"
                 type="button"

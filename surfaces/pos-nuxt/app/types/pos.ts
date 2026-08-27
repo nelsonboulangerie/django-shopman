@@ -511,7 +511,7 @@ export interface POSTabPayload {
   payment_method: string;
   payment_collection: PosPaymentCollection;
   payment_tenders: POSIntentCartState["paymentTenders"];
-  tendered_amount_q: number | string;
+  tendered_q: number | string;
   /** O CPF PEDIDO nesta venda (o que sai na nota), devolvido ao retomar a comanda. */
   fiscal_tax_id: string;
   receipt_channels: string[];
@@ -574,7 +574,7 @@ export interface POSIntentCartState {
   paymentMethod: string;
   paymentCollection: PosPaymentCollection;
   paymentTenders: POSPaymentTenderDraft[];
-  tenderedAmountQ: number | null;
+  tenderedQ: number | null;
   /** "Troco para quanto?" do dinheiro na entrega, em centavos (0 = não informado). */
   changeForQ: number;
   receiptChannels: string[];
@@ -600,7 +600,7 @@ export interface POSSaleReviewProjection {
   tender_total_q: number;
   tender_total_display: string;
   tender_count: number;
-  tendered_amount_q: number;
+  tendered_q: number;
   tendered_amount_display: string;
   change_q: number;
   change_display: string;

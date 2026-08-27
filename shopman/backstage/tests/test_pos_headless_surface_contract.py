@@ -180,7 +180,7 @@ class POSHeadlessSurfaceContractTests(TestCase):
         self.assertEqual(field_refs["delivery_address"]["capability_ref"], "delivery_address_autocomplete")
         self.assertEqual(field_refs["delivery_address"]["required_when"], {"fulfillment_type": "delivery"})
         self.assertEqual(
-            field_refs["tendered_amount_q"]["required_when"],
+            field_refs["tendered_q"]["required_when"],
             {"payment_method": "cash", "payment_collection": "terminal"},
         )
         self.assertTrue(checkout["capabilities"]["supports_split_payment"])
@@ -503,7 +503,7 @@ class POSHeadlessSurfaceContractTests(TestCase):
             "fulfillment_type": "pickup",
             "payment_method": "cash",
             "payment_collection": "terminal",
-            "tendered_amount_q": 2000,
+            "tendered_q": 2000,
             "receipt_channels": [],
             "client_request_id": "pos-headless-review-001",
         }

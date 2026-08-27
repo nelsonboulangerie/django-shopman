@@ -63,7 +63,7 @@ class PosSaleReview:
     payment_collection: str
     tender_total_q: int
     tender_count: int
-    tendered_amount_q: int
+    tendered_q: int
     change_q: int
     requires_manager_approval: bool
     manager_approval_threshold_q: int
@@ -249,6 +249,17 @@ def close_sale(
     payload = parse_pos_sale_intent(payload, for_commit=True).payload
     channel, config = _channel_and_config(channel_ref)
     derive_price_overrides(payload, channel=channel)
+    # A etiqueta que o KERNEL carimbou vale mais que a que o cliente mandou, e o
+    # GATE precisa dela tanto quanto a review: sem carimbo, ``_payload_discount_q``
+    # media o desconto de linha contra o preco JA descontado. Duas consequencias,
+    # as duas ruins. A conta inflada podia exigir gerente logo depois de uma review
+    # que dissera que nao precisava; e, num controle ANTI-FRAUDE, quem decidia o
+    # limiar passava a ser a etiqueta declarada pelo navegador. O carimbo tem de
+    # vir antes de ``validate_manager_approval`` e antes da taxa de entrega, que
+    # tambem le a mesma soma para dispensar o frete.
+    _stamp_list_prices_from_session(
+        payload, _payload_open_tab_session(channel_ref=channel.ref, payload=payload)
+    )
     validate_manager_approval(payload, operator_username=operator_username)
     _validate_fiscal_delivery_fee(payload)
     _validate_payment_completion(payload)
@@ -528,6 +539,8 @@ def review_sale(
     session = _payload_open_tab_session(channel_ref=channel.ref, payload=payload)
     if session is None and _payload_has_tab_identity(payload):
         raise ValueError("Abra um POS tab antes de finalizar.")
+    # A etiqueta que o KERNEL carimbou vale mais que a que o cliente mandou.
+    _stamp_list_prices_from_session(payload, session)
 
     fulfillment_type = _payload_fulfillment_type(payload)
     payment_collection = _payload_payment_collection(payload, fulfillment_type)
@@ -550,7 +563,7 @@ def review_sale(
     cash_tender_total_q = sum(
         _int_q(tender.get("amount_q")) for tender in tenders if _is_cash_tender(tender)
     )
-    tendered_amount_q = _int_q(payload.get("tendered_amount_q"))
+    tendered_q = _int_q(payload.get("tendered_q"))
     threshold_q = discount_approval_threshold_q()
     warnings: list[dict] = []
     # Fora da área é fato do ENDEREÇO, e o balcão precisa saber antes de
@@ -580,16 +593,16 @@ def review_sale(
                 "Não há troco para cartão ou Pix; ajuste o valor da linha."
             ),
         })
-    if payment_method == "cash" and payment_collection == "terminal" and tendered_amount_q <= 0:
+    if payment_method == "cash" and payment_collection == "terminal" and tendered_q <= 0:
         warnings.append({
             "code": "cash_tendered_amount_blank",
-            "field": "tendered_amount_q",
+            "field": "tendered_q",
             "message": "Valor recebido em dinheiro não informado; o fechamento assumirá valor exato.",
         })
-    if payment_method == "cash" and payment_collection == "terminal" and 0 < tendered_amount_q < total_q:
+    if payment_method == "cash" and payment_collection == "terminal" and 0 < tendered_q < total_q:
         warnings.append({
             "code": "cash_tendered_amount_too_low",
-            "field": "tendered_amount_q",
+            "field": "tendered_q",
             "message": "Valor recebido em dinheiro menor que o total da venda.",
         })
     # "Troco para" menor que o total não paga a entrega: avisa na revisão (não
@@ -659,7 +672,7 @@ def review_sale(
         payment_collection=payment_collection,
         tender_total_q=tender_total_q,
         tender_count=len(tenders),
-        tendered_amount_q=tendered_amount_q,
+        tendered_q=tendered_q,
         # Troco só sai da gaveta, então só o DINHEIRO recebido a mais vira troco.
         # No misto, o excedente é limitado à parcela em espécie: um cartão digitado
         # a mais não é troco (a maquininha cobra o que foi passado), e tratá-lo como
@@ -668,7 +681,7 @@ def review_sale(
         change_q=(
             min(max(0, tender_total_q - total_q), cash_tender_total_q)
             if payment_method == "mixed"
-            else (max(0, tendered_amount_q - total_q) if tendered_amount_q else 0)
+            else (max(0, tendered_q - total_q) if tendered_q else 0)
         ),
         requires_manager_approval=bool(approval_reasons),
         manager_approval_threshold_q=threshold_q,
@@ -1488,9 +1501,9 @@ def build_session_ops(payload: dict, operator_username: str) -> list[dict]:
     ops.append({"op": "set_data", "path": "payment.collection", "value": payment_collection})
     ops.append({"op": "set_data", "path": "payment.amount_q", "value": total_q})
 
-    tendered_amount_q = payload.get("tendered_amount_q")
-    if tendered_amount_q and payment_method == "cash":
-        tendered_q = int(tendered_amount_q)
+    tendered_q = payload.get("tendered_q")
+    if tendered_q and payment_method == "cash":
+        tendered_q = int(tendered_q)
         ops.append({"op": "set_data", "path": "payment.tendered_q", "value": tendered_q})
         ops.append({"op": "set_data", "path": "payment.change_q", "value": max(0, tendered_q - total_q)})
     # "Troco para quanto?" do dinheiro NA ENTREGA — a chave canônica que o
@@ -1828,8 +1841,51 @@ def _normalize_line_discount(raw) -> dict:
     return {"type": "percent", "value": value, "reason": reason}
 
 
+def _stamp_list_prices_from_session(payload: dict, session) -> None:
+    """Carimba no payload o preço de ETIQUETA que a sessão guarda, por SKU.
+
+    O ``meta._list_q`` é escrito pelos modifiers de pricing e é a mesma fonte que
+    o "maior desconto ganha" consulta. Vindo da sessão, não do navegador, a
+    review mede o desconto de linha contra o mesmo número que o kernel — e o
+    campo do intent fica sendo só o fallback da venda sem comanda.
+    """
+    if session is None:
+        return
+    list_by_sku: dict[str, int] = {}
+    for item in (session.items or []):
+        sku = str(item.get("sku") or "")
+        list_q = _int_q((item.get("meta") or {}).get("_list_q"))
+        if sku and list_q > 0:
+            list_by_sku[sku] = list_q
+    if not list_by_sku:
+        return
+    for item in payload.get("items", []):
+        list_q = list_by_sku.get(str(item.get("sku") or ""))
+        if list_q:
+            item["list_price_q"] = list_q
+
+
 def _payload_line_discounts_q(payload: dict) -> int:
-    """Sum per-line manual discounts (percent, per unit, clamped) for preview/gate."""
+    """Quanto os descontos manuais de LINHA tiram do subtotal — pela regra do kernel.
+
+    A política é "maior desconto ganha, um por item" (``DiscountModifier``): o
+    manual da linha é medido contra o preço de ETIQUETA e só vale se for MAIOR
+    que o desconto automático que já venceu aquela linha; vencendo, ele
+    SUBSTITUI o automático, não se soma a ele.
+
+    Esta função media o mesmo número duas vezes errado. Contava o percentual
+    sobre o preço JÁ descontado (não sobre a etiqueta) e contava SEMPRE, mesmo
+    quando o kernel ia descartar o manual. O efeito na tela: uma cortesia de 10%
+    numa Tabatière que já levava "Semana do Pão −15%" prometia R$ 1,02 de
+    desconto que a venda não dava. Provado numa venda real (PDV-260826-V03): o
+    checkout exibiu total R$ 44,78 e TROCO R$ 25,22, o pedido selou R$ 45,80 e
+    registrou troco R$ 24,20 — o operador devolveria R$ 1,02 a mais do que a
+    gaveta contava, em toda venda com desconto de linha perdedor.
+
+    O subtotal da review é a soma dos ``unit_price_q`` (já pós-automático), então
+    o que este desconto ainda tira é só a DIFERENÇA entre o manual e o automático
+    que ele substitui — zero quando perde.
+    """
     total = 0
     for item in payload.get("items", []):
         line_discount = _normalize_line_discount(item.get("discount"))
@@ -1840,8 +1896,16 @@ def _payload_line_discounts_q(payload: dict) -> int:
             qty = int(item.get("qty", 1))
         except (TypeError, ValueError):
             continue
-        per_unit = min(int(round(unit_price_q * line_discount["value"] / 100)), unit_price_q)
-        total += max(0, per_unit) * max(0, qty)
+        # Sem etiqueta declarada, a linha não tem desconto automático a bater:
+        # etiqueta e preço cobrado são o mesmo número.
+        list_price_q = _int_q(item.get("list_price_q")) or unit_price_q
+        auto_per_unit = max(0, list_price_q - unit_price_q)
+        manual_per_unit = min(
+            int(round(list_price_q * line_discount["value"] / 100)),
+            list_price_q,
+        )
+        gain_per_unit = max(0, manual_per_unit - auto_per_unit)
+        total += min(gain_per_unit, unit_price_q) * max(0, qty)
     return total
 
 
@@ -2112,12 +2176,12 @@ def _validate_payment_completion(payload: dict) -> None:
         require_complete=True,
     )
     payment_method = _legacy_payment_method(payload, tenders)
-    tendered_q = _int_q(payload.get("tendered_amount_q"))
+    tendered_q = _int_q(payload.get("tendered_q"))
     if payment_method == "cash" and payment_collection == "terminal" and tendered_q and tendered_q < total_q:
         raise PosIntentError(
             code="cash_tendered_amount_too_low",
             message="Valor recebido em dinheiro menor que o total da venda.",
-            field="tendered_amount_q",
+            field="tendered_q",
             focus="payment",
             recovery="Informe o valor recebido ou use dinheiro exato.",
         )

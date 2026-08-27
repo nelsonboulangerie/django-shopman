@@ -127,7 +127,7 @@ export function makeTabPayload(overrides: Record<string, unknown> = {}) {
     payment_method: "",
     payment_collection: "terminal",
     payment_tenders: [],
-    tendered_amount_q: 0,
+    tendered_q: 0,
     fiscal_tax_id: "",
     receipt_channels: [],
     receipt_email: "",

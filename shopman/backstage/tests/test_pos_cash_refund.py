@@ -64,7 +64,7 @@ def _sell(counter, ref: str) -> Order:
             "items": [{"sku": "PAO", "name": "Pão", "qty": 1, "unit_price_q": 1200}],
             "customer_name": "Cliente",
             "payment_method": "cash",
-            "tendered_amount_q": 1200,
+            "tendered_q": 1200,
             "client_request_id": ref,
             "cash_shift_id": counter["shift"].pk,
         },

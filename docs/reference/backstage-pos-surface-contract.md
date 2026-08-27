@@ -151,7 +151,7 @@ Optional canonical keys:
   `customer_tax_id`, `customer_email`, `customer_memory_action`.
 - fulfillment: `delivery_date`, `delivery_time_slot`, `delivery_fee_q`,
   `order_notes`.
-- payment: `payment_collection`, `payment_tenders`, `tendered_amount_q`.
+- payment: `payment_collection`, `payment_tenders`, `tendered_q`.
 - fiscal/receipt: `issue_fiscal_document`, `receipt_channels` (multi: `print`/`email`; vazio = sem comprovante), `receipt_email`.
 - approval: `manual_discount`, `manager_approval`. `manual_discount`
   carries type/value/reason; backend normalizes `discount_q`.
