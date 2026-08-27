@@ -41,6 +41,7 @@ install: ## Instala deps + apps da suite em modo editável
 		"pytest-timeout>=2.3,<3.0" \
 		"pytest-playwright>=0.5,<0.8" \
 		"ruff>=0.15,<1.0" \
+		"pytest-xdist>=3.6,<4.0" \
 		phonenumbers pytest pytest-django pytest-cov
 	# Instala cada app em modo editável
 	$(PYTHON) -m pip install -e packages/refs
@@ -122,12 +123,45 @@ test-framework: test-shop test-storefront test-backstage ## Testes do framework 
 	@echo "✓ Framework passou"
 
 # Os três apps separados existem para a MATRIZ do CI: rodavam em série num alvo
-# só, e o relógio era a soma. Medido (local): shop 64s, storefront 20s,
-# backstage 244s. Em paralelo o gate passa a esperar só o backstage.
+# só, e o relógio era a soma. Em paralelo o gate passa a esperar só o backstage.
 #
-# ⚠️ O backstage é 74% do tempo, e ~100s dele são SETE testes que chamam o
-# `seed` (dois anos de histórico, ~10s cada). É ali que está o próximo ganho —
-# dividir mais os arquivos só embaralharia sem tirar o peso do lugar.
+# ⚠️ O backstage é o gargalo do CI inteiro, e a medição diz exatamente onde.
+# Rodada 33054774968: o passo de pytest levou 19min04s contra 4min do segundo
+# colocado. Rodando local com `--durations=50` (922s, 2.278 testes) o perfil é
+# brutalmente desigual:
+#
+#   * 14 testes  → 569s (61,7% do relógio). TODOS chamam o `seed`.
+#   * 2.264 testes → 353s (0,156s cada). Perfeitamente saudáveis.
+#   * o 15º mais lento cai para 4,8s — o penhasco é vertical.
+#
+# Não é suíte lenta: são 14 chamadas de `seed` (dois anos de histórico, 25s a
+# 75s cada) empilhadas em série. O custo fixo NÃO é culpado — criar o banco e
+# aplicar as migrações inteiras custa 4,3s, e a coleta dos 2.278 testes, 1,1s.
+# Por isso `--no-migrations`/`--reuse-db` foram descartados: economizariam
+# segundos e comprariam risco (a garantia de que o grafo aplica num banco zerado
+# é do `make test-migrations`, não daqui).
+#
+# O que sobra é distribuir o trabalho: `-n auto` (pytest-xdist) dá um banco de
+# teste por worker e espalha os 14 pesados. No CI (runner dedicado, 4 vCPU) o
+# passo de pytest caiu de 19min04s para 8min00s — 2,38x. Local (4P+4E), 922s
+# → 451s.
+#
+# Determinismo: três rodadas seguidas em paralelo deram o MESMO resultado da
+# rodada em série (2.256 passed, 22 skipped, 24 subtests). Nenhum teste
+# dependente de ordem apareceu — o `shopman/conftest.py` já isola o estado de
+# processo que vazava entre testes, e worker em processo separado ajuda em vez
+# de atrapalhar. ⚠️ O relógio LOCAL não serve de medida: a máquina de dev roda
+# várias sessões juntas e a mesma configuração deu 451s, 1181s e 1830s nas três
+# rodadas, com resultado idêntico. Para medir, use o CI.
+# ⚠️ `--dist loadfile` foi MEDIDO e é pior (690s): prende os 4 testes de
+# `test_nelson_seed_operational.py` no mesmo worker e o arquivo vira o caminho
+# crítico. A distribuição por teste (padrão do `-n`) é a que equilibra.
+#
+# 🔭 Próximo ganho, se um dia doer de novo: os testes que só LEEM o catálogo
+# semeado (`test_manual_labels_match_piece_weight`, `test_apply_product_
+# measurements_matches_seed`, `test_seed_forecast_history`) poderiam dividir UM
+# seed em vez de pagar um cada. Os de `--flush`/idempotência não podem — semear
+# do zero é literalmente o que eles provam.
 test-shop: ## Orquestrador
 	@echo "── Shop ──"
 	$(PYTHON) -m pytest shopman/shop/tests -x -q
@@ -138,7 +172,7 @@ test-storefront: ## Loja (API headless)
 
 test-backstage: ## Operador (POS, KDS, produção, caixa, B.I.)
 	@echo "── Backstage ──"
-	$(PYTHON) -m pytest shopman/backstage/tests -x -q
+	$(PYTHON) -m pytest shopman/backstage/tests -x -q -n auto
 
 # O agente do balcão vive fora de `shopman/` (é programa de OUTRA máquina), então
 # ficava de fora da suíte — justo o processo que roda sozinho no balcão, sem
