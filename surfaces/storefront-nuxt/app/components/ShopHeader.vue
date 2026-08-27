@@ -249,13 +249,13 @@ onBeforeUnmount(() => {
               :href="shop.maps_url"
               target="_blank"
               rel="noopener"
-              class="flex items-start gap-3 text-sm text-foreground transition hover:text-primary"
+              class="shop-gold-hover flex min-h-11 items-center gap-3 rounded-md px-2 py-2 text-sm text-foreground transition"
               @click="closeMenu"
             >
-              <Icon name="lucide:map-pin" class="mt-0.5 size-5 shrink-0 text-muted-foreground" />
+              <Icon name="lucide:map-pin" class="size-5 shrink-0 text-muted-foreground" />
               <span class="min-w-0">
                 <span v-for="line in addressLinesValue" :key="line" class="block leading-5">{{ line }}</span>
-                <span class="mt-0.5 block text-xs text-primary">Como chegar</span>
+                <span class="mt-1 inline-flex min-h-6 items-center text-sm font-semibold text-primary">Como chegar</span>
               </span>
             </a>
 

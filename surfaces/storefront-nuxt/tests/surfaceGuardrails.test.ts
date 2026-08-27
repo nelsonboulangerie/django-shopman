@@ -139,7 +139,7 @@ describe('surface UX guardrails', () => {
     expect(searchPage).toContain('data-busca-filter-chips')
     expect(searchPage).toContain('data-busca-results')
     expect(searchPage).toContain('<ProductListItem')
-    expect(searchPage).toContain(":aria-pressed=\"isFilterApplied(chip.key)\"")
+    expect(searchPage).toContain(':aria-pressed="chip.kind === \'collection\' ? undefined : chipApplied(chip)"')
     // Overlay de busca (mesma tela) reusa a mesma experiência/projeção da página.
     const overlay = read('app/components/SearchOverlay.vue')
     expect(overlay).toContain('useSearchOverlay')
@@ -755,6 +755,48 @@ describe('surface UX guardrails', () => {
     expect(checkout).toContain('onCouponToggle')
     expect(checkout).toContain('await applyCoupon(coupon.value.trim())')
     expect(checkout).toContain('await refresh()')
+    expect(checkout).toContain('couponIssue')
+    expect(checkout).toContain(':aria-invalid="!!couponIssue"')
+    expect(checkout).toContain('id="checkout-coupon-error"')
+  })
+
+  it('keeps alpha-test search discoveries canonized in the UI source', () => {
+    const search = read('app/pages/busca.vue')
+    const overlay = read('app/components/SearchOverlay.vue')
+
+    expect(search).toContain('function collectionTargetFor')
+    expect(search).toContain('`/colecao/${ref}`')
+    expect(search).toContain("matchMedia('(pointer: fine)')")
+    expect(search).toContain('md:sticky md:top-16')
+    expect(overlay).toContain(':placeholder="open ?')
+    expect(overlay).toContain('v-if="open" class="min-h-0 flex-1 overflow-y-auto"')
+    expect(overlay).toContain(':to="collectionTargetFor(option)"')
+  })
+
+  it('keeps alpha-test tap targets and test CTAs visibly actionable', () => {
+    const header = read('app/components/ShopHeader.vue')
+    const loginWhatsapp = read('app/components/WhatsappVerifyPanel.vue')
+    const payment = read('app/components/PaymentBlock.vue')
+    const accessBridge = read('app/pages/a.vue')
+
+    expect(header).toContain('flex min-h-11 items-center gap-3')
+    expect(header).toContain('inline-flex min-h-6 items-center text-sm font-semibold')
+    expect(loginWhatsapp).toContain('bg-cta text-cta-foreground')
+    expect(payment).toContain('Pagamento de teste')
+    expect(payment).toContain('size="lg"')
+    expect(accessBridge).toContain("response.redirect || '/'")
+  })
+
+  it('keeps preference and unavailable-item fixes wired into storefront pages', () => {
+    const menu = read('app/pages/menu.vue')
+    const favorites = read('app/components/MenuFavoritesShelf.vue')
+    const product = read('app/pages/produto/[sku].vue')
+
+    expect(menu).toContain(':hide-dietary-warnings="dietaryFilterOn"')
+    expect(favorites).toContain('visibleItems')
+    expect(favorites).toContain('(item.dietary_warnings || []).length === 0')
+    expect(product).toContain('unavailableReason')
+    expect(product).toContain(':add-label="product.can_add_to_cart ?')
   })
 
   it('keeps account logic in the pure presentation layer and guards every sub-page', () => {

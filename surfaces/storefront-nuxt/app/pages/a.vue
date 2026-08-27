@@ -50,7 +50,7 @@ async function exchangeToken () {
     // Sacola não veio (handoff expirou): aviso gentil que sobrevive à navegação (Sonner
     // vive no layout). O login segue normal; só comunicamos a sacola ausente.
     if (response.handoff_expired && response.notice) useSonner(response.notice)
-    await navigateTo(response.redirect || '/conta')
+    await navigateTo(response.redirect || '/')
   } catch {
     // O reclique é respondido pelo SERVIDOR (200 com `already_authenticated`), porque só
     // ele sabe se existe sessão no cookie — numa carga nova o estado daqui nasce vazio.

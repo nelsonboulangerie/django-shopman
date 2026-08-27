@@ -41,7 +41,7 @@ class TestAccessLinkExchangeApi:
             data={"customer_ref": customer.ref},
         )
 
-    def test_valid_token_creates_session_and_defaults_to_account(self, client: Client, customer):
+    def test_valid_token_creates_session_and_defaults_to_home(self, client: Client, customer):
         _link, raw_token = self._token(customer)
 
         response = client.post(self.URL, {"token": raw_token})
@@ -49,7 +49,7 @@ class TestAccessLinkExchangeApi:
         assert response.status_code == 200
         assert client.session.get("_auth_user_id") is not None
         body = response.json()
-        assert body["redirect"] == "/conta"
+        assert body["redirect"] == "/"
         assert body["is_authenticated"] is True
 
     def test_order_metadata_grants_access_and_redirects_to_tracking(self, client: Client, channel, customer):
@@ -306,7 +306,7 @@ class TestSpentTokenWithLiveSession:
 
         assert again.status_code == 200, again.content
         assert again.json()["already_authenticated"] is True
-        assert again.json()["redirect"] == "/conta"
+        assert again.json()["redirect"] == "/"
         assert order.ref not in client.session.get("shopman_order_access_refs", [])
 
     @pytest.mark.django_db

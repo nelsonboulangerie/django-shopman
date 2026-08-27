@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type { HomeResponse } from '~/types/shopman'
+import { NELSON_FALLBACK_SHOP } from '~/utils/nelsonFallback'
 
 const apiPath = useShopmanApiPath()
 const session = useShopSession()
@@ -50,7 +51,7 @@ const hideFooter = computed(() => route.path.startsWith('/finalizar'))
 
 // SEO global: nome do site = marca server-driven (tenant-neutral, não theming).
 // titleTemplate evita duplicar a marca na home (onde o título JÁ é a marca).
-const brandName = computed(() => session.shop.value?.brand_name || 'Shopman')
+const brandName = computed(() => session.shop.value?.brand_name || NELSON_FALLBACK_SHOP.brand_name)
 useHead({
   titleTemplate: title => (title && title !== brandName.value ? `${title} | ${brandName.value}` : brandName.value)
 })

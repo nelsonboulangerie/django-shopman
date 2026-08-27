@@ -24,6 +24,12 @@ function home (authenticated: boolean) {
 describe('useShopSession', () => {
   beforeEach(async () => { await loadSession() })
 
+  it('starts with the Nelson brand fallback before the API responds', async () => {
+    const s = await loadSession()
+    expect(s.shop.value?.brand_name).toBe('Nelson Boulangerie')
+    expect(s.shop.value?.design_tokens?.cta).toBe('139 107 46')
+  })
+
   it('hydrates an authenticated customer from home', async () => {
     const s = await loadSession()
     s.setFromHome(home(true))

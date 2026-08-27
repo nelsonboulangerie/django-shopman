@@ -3,6 +3,7 @@ import {
   buildSectionsBySku,
   primarySectionBySku,
   searchPanelView,
+  type SearchListOption,
   uniqueItemsBySku
 } from '~/presentation/menu'
 import type { MenuResponse } from '~/types/shopman'
@@ -74,9 +75,9 @@ const panel = computed(() => searchPanelView({
 }))
 const resultItems = computed(() => panel.value.products.map(option => option.item).filter(item => item != null))
 
-function goToSection (ref: string) {
-  closeSearch()
-  void navigateTo(`/menu?secao=${encodeURIComponent(ref)}`)
+function collectionTargetFor (option: SearchListOption): string {
+  const ref = encodeURIComponent(option.value)
+  return option.section && !option.section.is_dynamic ? `/colecao/${ref}` : `/menu?secao=${ref}`
 }
 function clearQuery () {
   query.value = ''
@@ -87,11 +88,14 @@ function clearQuery () {
 <template>
   <Teleport to="body">
     <!-- Sempre no DOM; escondido por opacidade (não display:none) p/ o input continuar
-         focável e o iOS abrir o teclado quando o gatilho foca dentro do gesto. -->
+         focável e o iOS abrir o teclado quando o gatilho foca dentro do gesto.
+         Quando fechado, os labels/placeholder e a listagem saem do caminho para
+         não duplicar controles da página /busca. -->
     <div
       class="fixed inset-0 z-50 flex flex-col bg-background transition-opacity duration-200"
       :class="open ? 'opacity-100' : 'pointer-events-none opacity-0'"
       :aria-hidden="!open"
+      :data-state="open ? 'open' : 'closed'"
       data-search-overlay
     >
       <div class="shop-searchbar shrink-0 shadow-sm">
@@ -100,7 +104,8 @@ function clearQuery () {
             variant="ghost"
             size="icon"
             icon="lucide:arrow-left"
-            aria-label="Fechar busca"
+            :aria-label="open ? 'Fechar busca' : undefined"
+            :tabindex="open ? undefined : -1"
             class="shrink-0 rounded-full"
             @click="closeSearch"
           />
@@ -112,7 +117,9 @@ function clearQuery () {
               id="overlay-search-input"
               v-model="query"
               type="search"
-              placeholder="Buscar no cardápio"
+              :placeholder="open ? 'Buscar no cardápio' : ''"
+              :aria-label="open ? 'Buscar no cardápio' : undefined"
+              :tabindex="open ? undefined : -1"
               autocomplete="off"
               class="min-w-0 flex-1 rounded-none border-0 bg-transparent shadow-none focus-visible:ring-0 dark:bg-transparent"
             />
@@ -121,6 +128,7 @@ function clearQuery () {
                 size="icon-xs"
                 icon="lucide:x"
                 aria-label="Limpar busca"
+                :tabindex="open ? undefined : -1"
                 @click="clearQuery"
               />
             </UiInputGroupAddon>
@@ -128,7 +136,7 @@ function clearQuery () {
         </div>
       </div>
 
-      <div class="min-h-0 flex-1 overflow-y-auto">
+      <div v-if="open" class="min-h-0 flex-1 overflow-y-auto">
         <div class="shop-container shop-stack-block pb-[calc(2rem+env(safe-area-inset-bottom,0px))] pt-4">
           <div v-if="pending" class="space-y-2">
             <UiSkeleton v-for="n in 6" :key="n" class="h-10 rounded-lg" />
@@ -151,9 +159,10 @@ function clearQuery () {
                 <UiButton
                   v-for="option in panel.collections"
                   :key="option.key"
+                  :to="collectionTargetFor(option)"
                   variant="ghost"
                   class="shop-gold-hover h-auto w-full justify-start gap-3 rounded-none border-b px-1 py-3 font-normal last:border-b-0"
-                  @click="goToSection(option.value)"
+                  @click="closeSearch"
                 >
                   <Icon :name="option.icon" class="size-4 text-muted-foreground" :class="option.icon === 'lucide:heart' ? 'text-foreground' : ''" />
                   <span class="min-w-0 flex-1 truncate text-left shop-body">{{ option.label }}</span>

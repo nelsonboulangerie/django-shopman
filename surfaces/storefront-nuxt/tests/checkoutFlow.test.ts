@@ -73,6 +73,13 @@ describe('checkout flow view model', () => {
       fieldErrors: { delivery_time_slot: 'Escolha um horário.' }
     })).toBe('error')
 
+    expect(checkoutStepState({
+      step: 'payment',
+      steps: ['fulfillment', 'when', 'payment'],
+      activeStep: 'payment',
+      fieldErrors: { recipient_phone: 'Telefone do destinatário inválido.' }
+    })).toBe('error')
+
     expect(checkoutStepForField('saved_address_id')).toBe('address')
     expect(checkoutStepForField('payment_method')).toBe('payment')
   })

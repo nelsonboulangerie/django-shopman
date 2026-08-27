@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { NELSON_FALLBACK_SHOP } from '~/utils/nelsonFallback'
+
 const session = useShopSession()
 
 const shop = computed(() => session.shop.value)
@@ -12,9 +14,9 @@ const year = new Date().getFullYear()
   <footer class="shop-footer shop-bottom-safe">
     <div class="shop-container grid gap-6 py-8 sm:grid-cols-2 lg:grid-cols-4">
       <section class="min-w-0 space-y-2">
-        <p class="text-base font-semibold">{{ shop?.brand_name || 'Shopman' }}</p>
+        <p class="text-base font-semibold">{{ shop?.brand_name || NELSON_FALLBACK_SHOP.brand_name }}</p>
         <p class="text-sm leading-6 opacity-75">
-          {{ shop?.description || shop?.tagline || 'Compra rápida e acompanhada.' }}
+          {{ shop?.description || shop?.tagline || NELSON_FALLBACK_SHOP.description }}
         </p>
       </section>
 
@@ -96,7 +98,7 @@ const year = new Date().getFullYear()
     </div>
 
     <div class="border-t border-current/15 py-3 text-center text-xs opacity-70">
-      {{ year }} · {{ shop?.brand_name || 'Shopman' }}<template v-if="shop?.document_display"> · CNPJ {{ shop.document_display }}</template><template v-if="shop?.copyright"> · {{ shop.copyright }}</template>
+      {{ year }} · {{ shop?.brand_name || NELSON_FALLBACK_SHOP.brand_name }}<template v-if="shop?.document_display"> · CNPJ {{ shop.document_display }}</template><template v-if="shop?.copyright"> · {{ shop.copyright }}</template>
     </div>
   </footer>
 </template>

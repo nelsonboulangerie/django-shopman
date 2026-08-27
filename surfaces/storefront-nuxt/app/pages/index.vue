@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { absoluteImage, bakeryJsonLd } from '~/presentation/seo'
 import type { HomeResponse, Action } from '~/types/shopman'
+import { NELSON_FALLBACK_SHOP } from '~/utils/nelsonFallback'
 
 const apiPath = useShopmanApiPath()
 const session = useShopSession()
@@ -105,7 +106,7 @@ const homeDescription = computed(() =>
   sectionsCopy.value?.how_it_works_meta_description.message
   || home.value?.shop.description
   || home.value?.shop.tagline
-  || 'Storefront Shopman'
+  || NELSON_FALLBACK_SHOP.description
 )
 const homeOgImage = computed(() => absoluteImage(
   requestUrl.origin,
@@ -113,15 +114,15 @@ const homeOgImage = computed(() => absoluteImage(
 ))
 
 useSeoMeta({
-  title: () => home.value?.shop.brand_name || 'Shopman',
+  title: () => home.value?.shop.brand_name || NELSON_FALLBACK_SHOP.brand_name,
   description: () => homeDescription.value,
-  ogTitle: () => home.value?.shop.brand_name || 'Shopman',
+  ogTitle: () => home.value?.shop.brand_name || NELSON_FALLBACK_SHOP.brand_name,
   ogDescription: () => homeDescription.value,
   ogType: 'website',
   ogUrl: () => canonicalUrl.value,
   ogImage: () => homeOgImage.value || undefined,
   twitterCard: 'summary_large_image',
-  twitterTitle: () => home.value?.shop.brand_name || 'Shopman',
+  twitterTitle: () => home.value?.shop.brand_name || NELSON_FALLBACK_SHOP.brand_name,
   twitterDescription: () => homeDescription.value,
   twitterImage: () => homeOgImage.value || undefined
 })

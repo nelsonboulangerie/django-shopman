@@ -99,7 +99,7 @@ useSeoMeta({
 </script>
 
 <template>
-  <main class="shop-section pt-0">
+  <main class="shop-section pb-36 pt-0 md:pb-0">
     <div class="shop-breadcrumb-bar mb-4">
       <div class="shop-container py-2">
         <UiBreadcrumbs

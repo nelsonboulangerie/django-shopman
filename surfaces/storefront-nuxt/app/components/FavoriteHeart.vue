@@ -8,6 +8,7 @@ const props = defineProps<{
 }>()
 
 const { isFavorite, toggle, isAuthenticated } = useFavoritesState()
+const route = useRoute()
 const submitting = ref(false)
 
 const active = computed(() => isFavorite(props.sku, props.initial ?? false))
@@ -15,7 +16,8 @@ const active = computed(() => isFavorite(props.sku, props.initial ?? false))
 async function onClick () {
   if (!isAuthenticated.value) {
     if (import.meta.client) useSonner('Entre para salvar seus favoritos.')
-    await navigateTo('/entrar')
+    const next = route.fullPath && route.path !== '/entrar' ? `?next=${encodeURIComponent(route.fullPath)}` : ''
+    await navigateTo(`/entrar${next}`)
     return
   }
   if (submitting.value) return
