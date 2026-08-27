@@ -488,7 +488,12 @@ def _conversion_label(item: NFeItem, *, factor: Decimal, material: Any, package:
     """
     word = _purchase_unit_word(item.unit) or _normalize_text(item.unit)
     size = package or f"{_pt_number(factor)} {material.unit}"
-    return f"{word} {size}".strip()[:60]
+    label = f"{word} {size}".strip()[:60]
+    # Primeira letra maiúscula: o rótulo é um nome que aparece sozinho na tela
+    # ("Caixa 5 kg"), não um pedaço de frase. `capitalize()` não serve porque
+    # rebaixaria o resto — "Caixa 5 KG" viraria "Caixa 5 kg" por acidente aqui,
+    # mas "PCT 500G" perderia a grafia que o operador reconhece.
+    return label[:1].upper() + label[1:]
 
 
 def _conversion_suggestion_data(suggestion: ConversionSuggestion | None) -> dict[str, Any] | None:

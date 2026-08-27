@@ -991,7 +991,7 @@ def test_scan_invoice_carries_the_conversion_the_note_suggests(tmp_path, client,
     assert line["invoiceUnit"] == "UN"
     assert line["requiresConversion"] is True
     assert line["conversionSuggestion"] == {
-        "label": "un 500 g",
+        "label": "Un 500 g",
         "factor": "0.5",
         "kind": "conventional",
         "source": "invoice-tax-pair",
@@ -1109,7 +1109,7 @@ def test_declare_conversion_derives_the_factor_from_the_invoice_axes(client, pur
 
     assert response.status_code == 200
     conversion = MaterialConversion.objects.get()
-    assert conversion.label == "caixa 5 kg"
+    assert conversion.label == "Caixa 5 kg"
     assert conversion.to_base_factor == Decimal("5.000000")
     assert conversion.kind == MaterialConversion.Kind.CONVENTIONAL
     assert conversion.created_by == purchase_operator

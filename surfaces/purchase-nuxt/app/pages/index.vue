@@ -5,6 +5,7 @@ import type {
   MaterialTone,
   PurchaseBaseView,
   PurchaseRequestStatus,
+  ReceiptLinePreview,
   ReceiptMode,
   ReceiptWarningTone,
   SupplierMaterialCost,
@@ -15,6 +16,7 @@ import {
   formatMoney,
   formatQty,
   formatStockOnHand,
+  receiptSettledSummary,
   isApproximateCost,
   purchaseUnitLabel,
 } from "~/presentation/purchase";
@@ -211,10 +213,6 @@ function onReceiptSupplierChange(event: Event) {
   setReceiptSupplier((event.target as HTMLSelectElement).value);
 }
 
-function onReceiptMaterialChange(lineId: string, event: Event) {
-  setReceiptLineMaterial(lineId, (event.target as HTMLSelectElement).value);
-}
-
 function stopInvoiceScanner(resetAccepted = true) {
   scannerControls?.stop();
   scannerControls = null;
@@ -338,6 +336,28 @@ async function readInvoiceImage(event: Event) {
   } catch {
     scannerError.value = "Não consegui ler a foto. Use uma imagem nítida do QR/código de barras ou digite a chave.";
   }
+}
+
+// Linha conferida recolhe: numa nota de dez itens, formulario aberto de quem ja
+// decidiu so atrapalha quem procura o que falta. Estado de TELA, e nao do
+// recebimento — por isso vive aqui e nao na projection.
+const expandedLines = ref(new Set<string>());
+
+function isCompact(preview: ReceiptLinePreview): boolean {
+  return preview.line.checked && !expandedLines.value.has(preview.line.id);
+}
+
+function expandReceiptLine(lineId: string) {
+  expandedLines.value = new Set(expandedLines.value).add(lineId);
+}
+
+function setReceiptLineChecked(lineId: string, checked: boolean) {
+  updateReceiptLine(lineId, { checked });
+  if (!checked) return;
+  // Conferir recolhe na hora, mesmo que o operador tenha aberto a linha antes.
+  const next = new Set(expandedLines.value);
+  next.delete(lineId);
+  expandedLines.value = next;
 }
 
 // Um aviso do MESMO tipo repetido em oito linhas vira oito pílulas iguais no
@@ -575,12 +595,14 @@ onBeforeUnmount(stopInvoiceScanner);
               <p class="text-xs font-medium text-muted-foreground">Compras</p>
               <h1 class="mt-1 text-xl font-semibold">Receber materiais</h1>
             </div>
-            <div class="inline-flex rounded-md bg-muted p-1">
-              <button type="button" class="inline-flex h-9 items-center gap-2 rounded-md px-3 text-sm transition" :class="receiptMode === 'invoice' ? 'bg-card font-semibold shadow-sm' : 'text-muted-foreground hover:bg-card/60'" @click="setReceiptMode('invoice')">
+            <!-- No celular o par ocupa a linha inteira: dois botões encolhidos
+                 num canto ficam pequenos para o dedo e desalinhados com o resto. -->
+            <div class="flex w-full rounded-md bg-muted p-1 sm:inline-flex sm:w-auto">
+              <button type="button" class="inline-flex h-10 flex-1 items-center justify-center gap-2 rounded-md px-3 text-sm transition sm:flex-none" :class="receiptMode === 'invoice' ? 'bg-card font-semibold shadow-sm' : 'text-muted-foreground hover:bg-card/60'" @click="setReceiptMode('invoice')">
                 <Icon name="lucide:scan-line" class="size-4" />
                 Com NF
               </button>
-              <button type="button" class="inline-flex h-9 items-center gap-2 rounded-md px-3 text-sm transition" :class="receiptMode === 'manual' ? 'bg-card font-semibold shadow-sm' : 'text-muted-foreground hover:bg-card/60'" @click="setReceiptMode('manual')">
+              <button type="button" class="inline-flex h-10 flex-1 items-center justify-center gap-2 rounded-md px-3 text-sm transition sm:flex-none" :class="receiptMode === 'manual' ? 'bg-card font-semibold shadow-sm' : 'text-muted-foreground hover:bg-card/60'" @click="setReceiptMode('manual')">
                 <Icon name="lucide:clipboard-pen-line" class="size-4" />
                 Sem NF
               </button>
@@ -676,9 +698,31 @@ onBeforeUnmount(stopInvoiceScanner);
               v-for="preview in receiptLinePreviews"
               :key="preview.line.id"
               :data-receipt-line="preview.line.id"
-              class="min-w-0 scroll-mt-4 rounded-md border bg-background p-3"
-              :class="preview.nextStep ? 'border-warning/40' : 'border-border'"
+              class="min-w-0 scroll-mt-4 rounded-md border p-3 transition-colors"
+              :class="
+                preview.nextStep ? 'border-warning/40 bg-background'
+                : preview.line.checked ? 'border-success/40 bg-success/5'
+                : 'border-border bg-background'
+              "
             >
+              <!-- Conferido: a linha recolhe para uma frase, e "Editar" a abre
+                   de volta inteira. -->
+              <div v-if="isCompact(preview)" class="flex items-start justify-between gap-3">
+                <div class="min-w-0">
+                  <p class="flex items-center gap-1.5 text-sm font-medium">
+                    <Icon name="lucide:circle-check-big" class="size-4 shrink-0 text-success" />
+                    <span class="truncate">{{ preview.line.invoiceDescription || preview.material.name }}</span>
+                  </p>
+                  <p class="mt-0.5 truncate text-xs text-muted-foreground">{{ receiptSettledSummary(preview) }}</p>
+                  <p v-if="preview.line.lineNote" class="mt-0.5 truncate text-xs text-warning">{{ preview.line.lineNote }}</p>
+                </div>
+                <button type="button" class="inline-flex h-9 shrink-0 items-center gap-1.5 rounded-md border border-border bg-card px-3 text-xs font-medium hover:bg-accent" @click="expandReceiptLine(preview.line.id)">
+                  <Icon name="lucide:pencil" class="size-3.5" />
+                  Editar
+                </button>
+              </div>
+
+              <template v-else>
               <!-- 1. O que a NOTA diz. É a âncora: sem isto o operador vê uma
                    fila de 'Definir insumo' e não sabe qual linha do papel é. -->
               <header class="flex flex-wrap items-start justify-between gap-2">
@@ -709,28 +753,31 @@ onBeforeUnmount(stopInvoiceScanner);
                    num card de atenção: a proposta fica colada ao campo de que
                    ela fala, em vez de flutuar como uma caixa à parte que o
                    operador precisa relacionar de cabeça. -->
-              <div class="mt-3" :class="preview.suggestion ? 'rounded-md border border-warning/40 bg-warning/10 p-2' : ''">
-                <p v-if="preview.suggestion" class="mb-2 flex items-center gap-1.5 text-xs font-semibold text-warning">
-                  <Icon name="lucide:sparkles" class="size-3.5" />
-                  Confirme a sugestão
-                </p>
+              <ReceiptField
+                class="mt-3"
+                :attention="Boolean(preview.suggestion) || (!preview.line.materialSku && !preview.suggestion)"
+                :title="preview.suggestion ? 'Confirme a sugestão' : 'Escolha o insumo desta linha'"
+                :icon="preview.suggestion ? 'lucide:sparkles' : 'lucide:package-search'"
+              >
                 <label class="block text-xs font-medium text-muted-foreground">
                   Insumo
-                  <select :value="preview.line.materialSku" class="mt-1 h-11 w-full rounded-md border border-border bg-card px-3 text-sm font-medium text-foreground" @change="onReceiptMaterialChange(preview.line.id, $event)">
-                    <option value="">Escolher insumo</option>
-                    <option v-for="material in materials" :key="material.sku" :value="material.sku">{{ material.name }}</option>
-                  </select>
+                  <MaterialPicker
+                    class="mt-1"
+                    :materials="materials"
+                    :model-value="preview.line.materialSku"
+                    @update:model-value="setReceiptLineMaterial(preview.line.id, $event)"
+                  />
                 </label>
                 <template v-if="preview.suggestion">
                   <p class="mt-2 text-xs text-muted-foreground">
                     Parece <span class="font-medium text-foreground">{{ preview.suggestion.name }}</span> ({{ preview.suggestion.scorePercent }}% parecido)
                   </p>
-                  <button type="button" class="mt-2 inline-flex h-9 items-center gap-1.5 rounded-md bg-primary px-3 text-xs font-semibold text-primary-foreground" @click="acceptReceiptLineSuggestion(preview.line.id)">
+                  <button type="button" class="mt-2 inline-flex h-11 w-full items-center justify-center gap-1.5 rounded-md bg-primary px-3 text-sm font-semibold text-primary-foreground sm:w-auto" @click="acceptReceiptLineSuggestion(preview.line.id)">
                     <Icon name="lucide:check" class="size-3.5" />
                     É este
                   </button>
                 </template>
-              </div>
+              </ReceiptField>
 
               <!-- 3. Só depois do insumo: quanto isso vale na unidade dele.
                    Pedir conversão antes de saber o insumo é pedir o impossível
@@ -747,52 +794,82 @@ onBeforeUnmount(stopInvoiceScanner);
                 />
               </div>
 
-              <!-- 4. Os números, cada um com nome. Eram três caixas mudas. -->
-              <div class="mt-3 grid gap-2 sm:grid-cols-3">
+              <!-- 4. Quanto e quanto custou. O custo por unidade-base mora COM o
+                   valor, porque é dele que ele deriva — estava misturado com o
+                   que entra no estoque, que é outra pergunta. -->
+              <div class="mt-3 grid gap-3 sm:grid-cols-2">
                 <label class="block text-xs font-medium text-muted-foreground">
                   Quantidade{{ preview.purchaseUnitLabel ? ` (${preview.purchaseUnitLabel})` : "" }}
                   <input v-model.number="preview.line.purchaseQty" type="number" min="0" step="0.01" class="mt-1 h-11 w-full rounded-md border border-border bg-card px-3 text-sm tabular-nums text-foreground" />
                 </label>
                 <label class="block text-xs font-medium text-muted-foreground">
-                  Validade
-                  <input v-model="preview.line.expiryDate" type="date" class="mt-1 h-11 w-full rounded-md border border-border bg-card px-3 text-sm text-foreground" />
-                  <span v-if="preview.line.expiryFromInvoice" class="mt-1 block text-xs font-normal text-muted-foreground">Veio na nota</span>
-                </label>
-                <label class="block text-xs font-medium text-muted-foreground">
                   Valor total (R$)
                   <input v-model="preview.line.costInput" inputmode="decimal" class="mt-1 h-11 w-full rounded-md border border-border bg-card px-3 text-sm tabular-nums text-foreground" placeholder="0,00" />
+                  <span v-if="preview.baseQtyKnown && preview.baseCostQ > 0" class="mt-1 block text-xs font-normal text-muted-foreground">
+                    {{ formatMoney(preview.baseCostQ) }} por {{ preview.material.unit }}
+                  </span>
                 </label>
               </div>
 
-              <!-- 5. O que entra no estoque. -->
-              <div class="mt-3 rounded-md border border-border bg-card px-3 py-2 text-sm">
+              <!-- 5. De onde veio e até quando vale. Os dois saem do mesmo grupo
+                   `rastro` da NF-e e respondem à mesma pergunta. -->
+              <ReceiptField
+                class="mt-3"
+                :attention="preview.needsExpiry"
+                title="Informe a validade"
+                icon="lucide:calendar-clock"
+              >
+                <div class="grid gap-3 sm:grid-cols-2">
+                  <label class="block text-xs font-medium text-muted-foreground">
+                    Validade
+                    <input v-model="preview.line.expiryDate" type="date" class="mt-1 h-11 w-full rounded-md border border-border bg-card px-3 text-sm text-foreground" />
+                    <span v-if="preview.line.expiryFromInvoice" class="mt-1 block text-xs font-normal text-muted-foreground">Veio na nota</span>
+                    <span v-else-if="preview.needsExpiry" class="mt-1 block text-xs font-normal text-muted-foreground">A nota não informou. Olhe na embalagem.</span>
+                  </label>
+                  <label class="block text-xs font-medium text-muted-foreground">
+                    Lote do fornecedor
+                    <input v-model="preview.line.invoiceLot" class="mt-1 h-11 w-full rounded-md border border-border bg-card px-3 text-sm text-foreground" placeholder="Opcional" />
+                    <span v-if="preview.line.invoiceLot" class="mt-1 block text-xs font-normal text-muted-foreground">É por ele que um recall chama.</span>
+                  </label>
+                </div>
+              </ReceiptField>
+
+              <!-- 6. O que entra no estoque, e a consequência disso. Uma coisa
+                   por linha: eram três semânticas numa frase só. -->
+              <div class="mt-3 rounded-md border border-border bg-card px-3 py-2">
                 <template v-if="preview.baseQtyKnown && preview.line.materialSku">
-                  <p class="font-semibold tabular-nums">Entra {{ formatQty(preview.baseQty, preview.material.unit) }}</p>
-                  <p class="text-xs text-muted-foreground">
-                    {{ formatMoney(preview.baseCostQ) }} / {{ preview.material.unit }} · estoque depois: {{ formatQty(stockAfterReceipt(preview.material.sku), preview.material.unit) }}
+                  <p class="text-lg font-semibold tabular-nums">Entra {{ formatQty(preview.baseQty, preview.material.unit) }}</p>
+                  <p class="mt-0.5 text-xs text-muted-foreground">
+                    Estoque depois: {{ formatQty(stockAfterReceipt(preview.material.sku), preview.material.unit) }}
                   </p>
                 </template>
                 <p v-else class="text-sm text-muted-foreground">A entrada aparece aqui quando o insumo e a embalagem estiverem definidos.</p>
               </div>
 
-              <div class="mt-3 flex flex-wrap items-center gap-2">
-                <label class="inline-flex h-11 items-center gap-2 rounded-md border px-3 text-sm font-medium" :class="preview.line.checked ? 'border-success/30 bg-success/10 text-success' : 'border-border'">
-                  <input v-model="preview.line.checked" type="checkbox" class="form-checkbox rounded border-border text-primary" />
-                  Conferido
-                </label>
-                <!-- `basis-full` e nao `min-w-40`: uma largura minima fixa aqui vira o
-                     min-content do card, e o card inteiro passa a ser mais largo que a
-                     tela do celular — corte que o `overflow-x-hidden` do main escondia
-                     em vez de mostrar. No telefone a ocorrencia desce para a propria
-                     linha; a partir de sm ela divide a linha com o "Conferido". -->
-                <input v-model="preview.line.lineNote" class="h-11 w-full basis-full rounded-md border border-border bg-card px-3 text-sm sm:w-auto sm:flex-1 sm:basis-0" placeholder="Ocorrência: avaria, falta, ressalva" />
-              </div>
+              <!-- Conferir é o gesto que FECHA a linha, e por isso ele tem o
+                   tamanho de um gesto: largura inteira no celular, com o estado
+                   dito por um ícone e pela cor do card, não por uma caixinha. -->
+              <label
+                class="mt-3 flex h-12 w-full cursor-pointer items-center gap-2.5 rounded-md border px-3 text-sm font-medium transition-colors"
+                :class="preview.line.checked ? 'border-success/40 bg-success/10 text-success' : 'border-border bg-card hover:bg-accent'"
+              >
+                <input
+                  :checked="preview.line.checked"
+                  type="checkbox"
+                  class="sr-only"
+                  @change="setReceiptLineChecked(preview.line.id, ($event.target as HTMLInputElement).checked)"
+                />
+                <Icon :name="preview.line.checked ? 'lucide:circle-check-big' : 'lucide:circle'" class="size-5 shrink-0" />
+                {{ preview.line.checked ? "Conferido" : "Marcar como conferido" }}
+              </label>
+              <input v-model="preview.line.lineNote" class="mt-2 h-11 w-full rounded-md border border-border bg-card px-3 text-sm" placeholder="Ocorrência: avaria, falta, ressalva" />
 
               <div v-if="preview.warnings.length > 1 || preview.warnings.some((warning) => warning.tone === 'watch')" class="mt-2 flex flex-wrap gap-1.5">
                 <span v-for="warning in preview.warnings.filter((item) => item.label !== preview.nextStep)" :key="`${preview.line.id}-${warning.key}`" class="rounded-md border px-2 py-0.5 text-xs font-medium" :class="receiptWarningClasses[warning.tone]">
                   {{ warning.label }}
                 </span>
               </div>
+              </template>
             </article>
           </div>
         </section>

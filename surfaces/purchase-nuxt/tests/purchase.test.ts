@@ -6,7 +6,9 @@ import {
 } from "~/composables/usePurchaseApi";
 import {
   costPerBaseUnitQ,
+  formatMoney,
   formatStockOnHand,
+  receiptSettledSummary,
   materialIssues,
   parseInvoiceAccessKey,
   quotePreview,
@@ -595,6 +597,52 @@ describe("purchase presentation", () => {
     expect(preview?.nextStep).toBe("Escolha o insumo desta linha");
     // A ocorrencia e do operador e nasce vazia.
     expect(preview?.line.lineNote).toBe("");
+  });
+
+  it("a linha conferida cabe numa frase, para poder recolher", () => {
+    // Numa nota de dez itens, formulario aberto de quem ja decidiu so atrapalha
+    // quem procura o que falta. O resumo tem de bastar para a conferencia de olho.
+    const line: ReceiptLine = {
+      id: "nfe-1",
+      materialSku: "FARINHA-T65",
+      conversionId: "saco-25",
+      requiresConversion: false,
+      purchaseQty: 4,
+      costInput: "730,00",
+      expiryDate: "2027-02-25",
+      lineNote: "",
+      invoiceDescription: "FARINHA TRIGO T65 ESPECIAL SC 25KG",
+      invoiceQty: 4,
+      invoiceUnit: "SC",
+      checked: true,
+    };
+
+    const preview = receiptLinePreview(line, "invoice", [farinha], conversions);
+
+    // `formatMoney` para montar a expectativa: o Intl usa espaco NAO-QUEBRAVEL
+    // entre "R$" e o numero, e comparar com um espaco comum falha exibindo duas
+    // strings visualmente identicas — meia hora de caca ao fantasma.
+    expect(receiptSettledSummary(preview!)).toBe(`4 × saco 25 kg = 100 kg · ${formatMoney(73000)}`);
+  });
+
+  it("entrada na propria unidade-base nao repete a unidade no resumo", () => {
+    const line: ReceiptLine = {
+      id: "line-sal",
+      materialSku: "FARINHA-T65",
+      conversionId: null,
+      requiresConversion: false,
+      purchaseQty: 12,
+      costInput: "",
+      expiryDate: "",
+      lineNote: "",
+      checked: true,
+    };
+
+    const preview = receiptLinePreview(line, "manual", [farinha], []);
+
+    // Sem conversao e sem valor, o resumo e so a quantidade — nada de "= 12 kg"
+    // repetindo o que ja foi dito, nem um "R$ 0,00" que ninguem digitou.
+    expect(receiptSettledSummary(preview!)).toBe("12 × kg");
   });
 
   it("declara paths BFF estaveis para wiring com Buyman", () => {

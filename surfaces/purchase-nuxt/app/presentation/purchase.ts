@@ -228,7 +228,13 @@ export function receiptNextStep(warnings: ReceiptWarning[]): string {
 }
 
 /** Bloqueios que o card do próprio campo já anuncia — o topo não os repete. */
-const FIELD_LEVEL_BLOCKERS = new Set(["confirm-suggestion", "confirm-conversion", "missing-conversion"]);
+const FIELD_LEVEL_BLOCKERS = new Set([
+  "confirm-suggestion",
+  "missing-material",
+  "confirm-conversion",
+  "missing-conversion",
+  "missing-expiry",
+]);
 
 export function receiptNextStepIsOnField(warnings: ReceiptWarning[]): boolean {
   const blocker = warnings.find((warning) => warning.tone === "block");
@@ -315,6 +321,24 @@ export function receiptLineWarnings(
   return warnings;
 }
 
+/**
+ * A linha conferida em uma frase: "4 × Saco 25 kg = 100 kg · R$ 730,00".
+ *
+ * É o que sobra visível quando o item recolhe. Tem de bastar para a conferência
+ * de olho — numa nota de dez itens, quem já decidiu não quer rolar por dez
+ * formulários abertos para achar o que ainda falta.
+ */
+export function receiptSettledSummary(preview: ReceiptLinePreview): string {
+  const parts: string[] = [];
+  const unit = preview.purchaseUnitLabel;
+  parts.push(unit ? `${quantityFormatter.format(preview.line.purchaseQty)} × ${unit}` : formatQty(preview.line.purchaseQty, preview.material.unit));
+  if (preview.baseQtyKnown && preview.purchaseUnitLabel !== preview.material.unit) {
+    parts.push(`= ${formatQty(preview.baseQty, preview.material.unit)}`);
+  }
+  const settled = parts.join(" ");
+  return preview.totalCostQ > 0 ? `${settled} · ${formatMoney(preview.totalCostQ)}` : settled;
+}
+
 export function receiptLinePreview(
   line: ReceiptLine,
   mode: ReceiptMode,
@@ -355,6 +379,7 @@ export function receiptLinePreview(
     invoiceSummary: receiptInvoiceSummary(line),
     nextStep: receiptNextStep(warnings),
     nextStepIsOnField: receiptNextStepIsOnField(warnings),
+    needsExpiry: Boolean(matchedMaterial && matchedMaterial.shelfLifeDays !== null && !line.expiryDate),
     conversionSuggestion: receiptConversionSuggestion(line),
     invoiceAxes: receiptInvoiceAxes(line),
     conversionDiverges: receiptConversionDiverges(line, conversion),

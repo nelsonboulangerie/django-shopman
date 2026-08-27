@@ -76,32 +76,22 @@ function submitDeclare() {
 </script>
 
 <template>
-  <div
-    :class="
-      deciding ?
-        diverging ? 'rounded-md border border-destructive/40 bg-destructive/10 p-3'
-        : 'rounded-md border border-warning/40 bg-warning/10 p-3'
-      : ''
-    "
+  <ReceiptField
+    :attention="deciding"
+    :wrong="diverging"
+    :title="diverging ? 'A nota discorda desta conta' : 'Confirme a conta desta entrega'"
+    :icon="diverging ? 'lucide:triangle-alert' : 'lucide:calculator'"
   >
-    <p
-      v-if="deciding"
-      class="flex items-center gap-1.5 text-xs font-semibold"
-      :class="diverging ? 'text-destructive' : 'text-warning'"
-    >
-      <Icon :name="diverging ? 'lucide:triangle-alert' : 'lucide:calculator'" class="size-3.5" />
-      {{ diverging ? "A nota discorda desta conta" : "Confirme a conta desta entrega" }}
-    </p>
 
     <!-- A CONTA, e não o fator: quem recebe confere um resultado. -->
-    <div v-if="deciding && proposal" class="mt-2 rounded-md bg-card px-3 py-2">
+    <div v-if="deciding && proposal" class="rounded-md bg-card px-3 py-2">
       <p class="text-sm text-muted-foreground">{{ proposal.line }}</p>
       <p class="mt-0.5 text-lg font-semibold tabular-nums">= {{ proposal.total }}</p>
     </div>
 
     <!-- Sem fator ainda (o insumo só foi escolhido agora): a nota já dá o total,
          e é isso que se mostra. O fator quem calcula é o servidor, ao aceitar. -->
-    <div v-else-if="deciding && preview.invoiceAxes" class="mt-2 rounded-md bg-card px-3 py-2">
+    <div v-else-if="deciding && preview.invoiceAxes" class="rounded-md bg-card px-3 py-2">
       <p class="text-sm text-muted-foreground">A nota diz</p>
       <p class="mt-0.5 text-lg font-semibold tabular-nums">{{ preview.invoiceAxes }}</p>
     </div>
@@ -110,11 +100,11 @@ function submitDeclare() {
       {{ proposal ? provenance : "Falta dizer quanto pesa cada uma para o estoque contar certo." }}
     </p>
 
-    <div v-if="deciding && (proposal || preview.invoiceAxes)" class="mt-3 flex flex-wrap items-center gap-2">
+    <div v-if="deciding && (proposal || preview.invoiceAxes)" class="mt-3 flex flex-col gap-2 sm:flex-row sm:items-center">
       <button
         type="button"
         :disabled="pending"
-        class="inline-flex h-11 items-center gap-1.5 rounded-md bg-primary px-4 text-sm font-semibold text-primary-foreground disabled:opacity-50"
+        class="inline-flex h-11 w-full items-center justify-center gap-1.5 rounded-md bg-primary px-4 text-sm font-semibold text-primary-foreground disabled:opacity-50 sm:w-auto"
         @click="proposal ? emit('accept') : emit('acceptAxes')"
       >
         <Icon name="lucide:check" class="size-4" />
@@ -122,7 +112,7 @@ function submitDeclare() {
       </button>
       <button
         type="button"
-        class="inline-flex h-11 items-center rounded-md border border-border bg-card px-4 text-sm font-medium hover:bg-accent"
+        class="inline-flex h-11 w-full items-center justify-center rounded-md border border-border bg-card px-4 text-sm font-medium hover:bg-accent sm:w-auto"
         @click="choosing = true"
       >
         Não é assim
@@ -130,16 +120,16 @@ function submitDeclare() {
     </div>
 
     <!-- Nem proposta nem eixos: a nota não respondeu, e a tela diz o que fazer. -->
-    <div v-else-if="deciding" class="mt-2">
+    <div v-else-if="deciding">
       <p class="text-sm text-muted-foreground">
         A nota não diz quanto vale cada {{ preview.line.invoiceUnit || "embalagem" }} em {{ preview.material.unit }}.
       </p>
-      <div class="mt-3 flex flex-wrap items-center gap-2">
-        <button type="button" class="inline-flex h-11 items-center gap-1.5 rounded-md bg-primary px-4 text-sm font-semibold text-primary-foreground" @click="openDeclare">
+      <div class="mt-3 flex flex-col gap-2 sm:flex-row sm:items-center">
+        <button type="button" class="inline-flex h-11 w-full items-center justify-center gap-1.5 rounded-md bg-primary px-4 text-sm font-semibold text-primary-foreground sm:w-auto" @click="openDeclare">
           <Icon name="lucide:plus" class="size-4" />
           Cadastrar embalagem
         </button>
-        <button v-if="conversions.length" type="button" class="inline-flex h-11 items-center rounded-md border border-border bg-card px-4 text-sm font-medium hover:bg-accent" @click="choosing = true">
+        <button v-if="conversions.length" type="button" class="inline-flex h-11 w-full items-center justify-center rounded-md border border-border bg-card px-4 text-sm font-medium hover:bg-accent sm:w-auto" @click="choosing = true">
           Escolher uma já cadastrada
         </button>
       </div>
@@ -161,7 +151,7 @@ function submitDeclare() {
           <option v-for="conversion in conversions" :key="conversion.id" :value="conversion.id">{{ conversion.label }}</option>
         </select>
       </label>
-      <div class="mt-2 flex flex-wrap items-center gap-2">
+      <div class="mt-2 flex flex-col gap-2 sm:flex-row sm:items-center">
         <button type="button" class="inline-flex h-9 items-center gap-1.5 rounded-md border border-border bg-card px-3 text-xs font-medium hover:bg-accent" @click="openDeclare">
           <Icon name="lucide:plus" class="size-3.5" />
           Cadastrar embalagem
@@ -198,20 +188,20 @@ function submitDeclare() {
           <option value="approximate">Aproximado — é uma estimativa</option>
         </select>
       </label>
-      <div class="flex flex-wrap items-center gap-2 pt-1">
+      <div class="flex flex-col gap-2 pt-1 sm:flex-row sm:items-center">
         <button
           type="button"
           :disabled="!canSave || pending"
-          class="inline-flex h-11 items-center gap-1.5 rounded-md bg-primary px-4 text-sm font-semibold text-primary-foreground disabled:opacity-50"
+          class="inline-flex h-11 w-full items-center justify-center gap-1.5 rounded-md bg-primary px-4 text-sm font-semibold text-primary-foreground disabled:opacity-50 sm:w-auto"
           @click="submitDeclare"
         >
           <Icon name="lucide:check" class="size-4" />
           Salvar
         </button>
-        <button type="button" class="inline-flex h-11 items-center rounded-md border border-border px-4 text-sm font-medium hover:bg-accent" @click="declaring = false">
+        <button type="button" class="inline-flex h-11 w-full items-center justify-center rounded-md border border-border px-4 text-sm font-medium hover:bg-accent sm:w-auto" @click="declaring = false">
           Cancelar
         </button>
       </div>
     </div>
-  </div>
+  </ReceiptField>
 </template>

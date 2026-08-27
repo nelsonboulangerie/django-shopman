@@ -195,6 +195,8 @@ export interface ReceiptLinePreview {
   // O gesto pendente ja esta escrito no card do proprio campo (insumo ou
   // embalagem), entao o aviso do topo da linha se cala para nao repetir.
   nextStepIsOnField: boolean;
+  // Pereciveis nao entram no estoque sem validade — e a nota nem sempre a traz.
+  needsExpiry: boolean;
   conversionSuggestion: ReceiptConversionSuggestion | null;
   // A nota traz os dois eixos e a linha ainda espera conversao: da para propor
   // "usar o que a NF diz" mesmo sem o fator calculado aqui.

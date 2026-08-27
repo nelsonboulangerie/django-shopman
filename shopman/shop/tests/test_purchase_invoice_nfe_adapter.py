@@ -460,7 +460,7 @@ def test_commercial_and_tax_axes_derive_a_conversion_suggestion(supplier, fermen
     assert line["conversionId"] is None
     assert line["requiresConversion"] is True
     assert line["conversionSuggestion"] == {
-        "label": "un 500 g",
+        "label": "Un 500 g",
         "factor": "0.5",
         "kind": "conventional",
         "source": "invoice-tax-pair",
@@ -547,7 +547,7 @@ def test_description_grams_are_the_secondary_signal(supplier, fermento):
     suggestion = draft["lines"][0]["conversionSuggestion"]
     assert suggestion["source"] == "product-description"
     assert suggestion["factor"] == "0.5"
-    assert suggestion["label"] == "un 500 g"
+    assert suggestion["label"] == "Un 500 g"
     assert suggestion["note"] == "A descrição da NF diz 500 g, então 1 UN = 0,5 kg."
 
 
@@ -578,7 +578,7 @@ def test_note_that_contradicts_the_declared_conversion_shows_the_divergence(supp
     assert line["conversionId"] == str(conversion.pk)
     assert line["requiresConversion"] is False
     assert line["conversionSuggestion"]["factor"] == "20"
-    assert line["conversionSuggestion"]["label"] == "saco 20 kg"
+    assert line["conversionSuggestion"]["label"] == "Saco 20 kg"
 
 
 @pytest.mark.django_db
@@ -624,7 +624,7 @@ def test_real_lactalis_invoice_line_from_the_owner_qa(supplier):
 
 @pytest.mark.django_db
 def test_invoice_axes_derive_the_conversion_once_a_material_exists(supplier):
-    """O mesmo item, agora com insumo: o par da nota vira "caixa 5 kg"."""
+    """O mesmo item, agora com insumo: o par da nota vira "Caixa 5 kg"."""
     from shopman.shop.adapters.purchase_invoice_nfe import conversion_from_invoice_axes
 
     manteiga = Material.objects.create(sku="MANTEIGA-FR", name="Manteiga francesa", unit="kg")
@@ -639,7 +639,7 @@ def test_invoice_axes_derive_the_conversion_once_a_material_exists(supplier):
     )
 
     assert suggestion is not None
-    assert suggestion.label == "caixa 5 kg"
+    assert suggestion.label == "Caixa 5 kg"
     assert suggestion.factor == Decimal("5")
     assert suggestion.source == "invoice-tax-pair"
     assert suggestion.note == "A NF diz 7 CX = 35 KG, então 1 CX = 5 kg."
