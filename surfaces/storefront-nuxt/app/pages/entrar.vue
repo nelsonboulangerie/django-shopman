@@ -94,6 +94,13 @@ const authCopy = computed(() => loginHome.value?.home.auth_copy || null)
 const defaultDdd = computed(() => loginHome.value?.home.public_config?.default_ddd || '')
 // Volta do checkout: o gate manda `next=/finalizar`; o backend usa `/checkout`. Cobre os dois.
 const isCheckoutReturn = computed(() => /checkout|finalizar/.test(nextUrl.value))
+// Omotenashi aqui precisa ser factual: `next=/finalizar` não prova que existe sacola.
+// Só a projeção canônica do carrinho autoriza copy de "sacola guardada".
+const cartHasItems = computed(() => {
+  const cart = loginHome.value?.cart
+  return Boolean(cart && cart.items_count > 0 && !cart.is_empty)
+})
+const isCheckoutReturnWithCart = computed(() => isCheckoutReturn.value && cartHasItems.value)
 
 const codeSentLine = computed(() => codeSentPrefix(deliveryLabel.value))
 const stepTitle = computed(() => {
@@ -103,9 +110,10 @@ const stepTitle = computed(() => {
 })
 const stepDescription = computed(() => {
   if (step.value === 'phone') {
-    // Vindo do checkout: a sacola é o que importa dizer, no subtítulo. No login comum o
-    // subtítulo fica vazio — quem lidera é o lampejo dentro da caixa (com mais ênfase).
-    if (isCheckoutReturn.value) return copyMessage(authCopy.value?.wa_cart_kept, 'Sua sacola está guardada.')
+    // Vindo do checkout com sacola real: a sacola é o que importa dizer. Sem itens,
+    // a copy fica neutra; origem/rota não pode virar contexto inventado.
+    if (isCheckoutReturnWithCart.value) return copyMessage(authCopy.value?.wa_cart_kept, 'Sua sacola está guardada.')
+    if (isCheckoutReturn.value) return copyMessage(authCopy.value?.phone_subtitle, 'Sem senha, rápido e seguro.')
     return ''
   }
   if (step.value === 'code') return copyMessage(authCopy.value?.code_help, 'Você pode colar o código. Ao completar, a confirmação é automática.')
@@ -119,7 +127,7 @@ const waManualTitle = computed(() => copyTitle(authCopy.value?.wa_manual_title, 
 const waManualIntro = computed(() => copyMessage(authCopy.value?.wa_manual_intro, 'Copie esta mensagem e mande para o nosso WhatsApp'))
 const supportUrl = computed(() => withWhatsAppText(
   loginHome.value?.home.public_config.whatsapp_url || '',
-  isCheckoutReturn.value ? 'Quero finalizar meu pedido' : 'Quero entrar na loja'
+  isCheckoutReturnWithCart.value ? 'Quero finalizar meu pedido' : 'Quero entrar na loja'
 ))
 // "O código não chegou?" só cabe no passo de código (SMS). No WhatsApp/telefone não
 // há código enviado ao cliente — ele é quem manda o token —, então o convite à ajuda
