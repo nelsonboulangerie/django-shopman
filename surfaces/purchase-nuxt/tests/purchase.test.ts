@@ -4,9 +4,11 @@ import {
   PURCHASE_API_ENDPOINTS,
   PURCHASE_API_BASE,
 } from "~/composables/usePurchaseApi";
+import { filterOptions } from "../../operator-kit/app/presentation/searchSelect";
 import {
   costPerBaseUnitQ,
   materialIssues,
+  materialSearchOptions,
   parseInvoiceAccessKey,
   quotePreview,
   receiptLinePreview,
@@ -85,6 +87,57 @@ const conversions: MaterialConversion[] = [
     isActive: true,
   },
 ];
+
+// A busca de insumo do recebimento: são ~57 insumos no alpha e o operador acha o
+// certo com o fornecedor esperando. O filtro genérico é da operator-kit
+// (`tests/searchSelect.test.ts` de lá); aqui provamos o DE-PARA do domínio — que
+// o insumo vira opção com o SKU buscável — e a dupla funcionando junta.
+describe("materialSearchOptions", () => {
+  const acucar: Material = { ...farinha, sku: "ACUCAR-CRISTAL", name: "Açúcar Cristal" };
+  const options = materialSearchOptions([farinha, ovos, acucar]);
+
+  it("o SKU é a identidade que volta para o setReceiptLineMaterial", () => {
+    expect(options.map((option) => option.value)).toEqual(["FARINHA-T65", "OVOS", "ACUCAR-CRISTAL"]);
+  });
+
+  it("o nome do insumo é o que o operador lê", () => {
+    expect(options[0]).toMatchObject({ label: "Farinha T65" });
+  });
+
+  it("a dica carrega SKU e unidade-base: confere de relance e entra na busca", () => {
+    expect(options[0]!.hint).toBe("FARINHA-T65 · kg");
+  });
+
+  it("preserva a ordem do catálogo", () => {
+    expect(options).toHaveLength(3);
+    expect(options[2]!.label).toBe("Açúcar Cristal");
+  });
+
+  it("busca por nome parcial", () => {
+    expect(filterOptions(options, "fari").map((option) => option.value)).toEqual(["FARINHA-T65"]);
+  });
+
+  it("busca por SKU, inteiro ou em pedaço", () => {
+    expect(filterOptions(options, "ACUCAR-CRISTAL").map((option) => option.value)).toEqual([
+      "ACUCAR-CRISTAL",
+    ]);
+    expect(filterOptions(options, "t65").map((option) => option.value)).toEqual(["FARINHA-T65"]);
+  });
+
+  it("busca ignora acento e caixa — ninguém digita cedilha no balcão", () => {
+    expect(filterOptions(options, "acucar").map((option) => option.value)).toEqual(["ACUCAR-CRISTAL"]);
+    expect(filterOptions(options, "AÇÚCAR").map((option) => option.value)).toEqual(["ACUCAR-CRISTAL"]);
+    expect(filterOptions(options, "oVoS").map((option) => option.value)).toEqual(["OVOS"]);
+  });
+
+  it("insumo que não existe devolve lista vazia, e a tela avisa", () => {
+    expect(filterOptions(options, "chocolate")).toEqual([]);
+  });
+
+  it("catálogo vazio não quebra o campo", () => {
+    expect(materialSearchOptions([])).toEqual([]);
+  });
+});
 
 describe("purchase presentation", () => {
   it("deriva custo por unidade-base a partir da unidade de compra", () => {

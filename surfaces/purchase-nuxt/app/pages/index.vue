@@ -16,6 +16,7 @@ import {
   formatMoney,
   formatQty,
   isApproximateCost,
+  materialSearchOptions,
   purchaseUnitLabel,
 } from "~/presentation/purchase";
 
@@ -204,9 +205,9 @@ function onReceiptSupplierChange(event: Event) {
   setReceiptSupplier((event.target as HTMLSelectElement).value);
 }
 
-function onReceiptMaterialChange(lineId: string, event: Event) {
-  setReceiptLineMaterial(lineId, (event.target as HTMLSelectElement).value);
-}
+// Uma lista de opções para todas as linhas: os insumos são os mesmos, e o campo
+// de busca de cada linha filtra por conta própria.
+const materialOptions = computed(() => materialSearchOptions(materials.value));
 
 function stopInvoiceScanner(resetAccepted = true) {
   scannerControls?.stop();
@@ -645,10 +646,15 @@ onBeforeUnmount(stopInvoiceScanner);
 
           <div class="grid gap-3 p-3 lg:hidden">
             <article v-for="preview in receiptLinePreviews" :key="`card-${preview.line.id}`" class="rounded-md border border-border bg-background p-3">
-              <select :value="preview.line.materialSku" class="h-11 w-full rounded-md border border-border bg-card px-3 text-sm font-medium" @change="onReceiptMaterialChange(preview.line.id, $event)">
-                <option value="">Definir insumo</option>
-                <option v-for="material in materials" :key="material.sku" :value="material.sku">{{ material.name }}</option>
-              </select>
+              <SearchSelect
+                :model-value="preview.line.materialSku"
+                :options="materialOptions"
+                placeholder="Definir insumo"
+                aria-label="Insumo da linha"
+                input-class="h-11 bg-card"
+                empty-text="Nenhum insumo com esse nome ou SKU"
+                @update:model-value="setReceiptLineMaterial(preview.line.id, $event)"
+              />
               <div v-if="preview.suggestion" class="mt-2 rounded-md border border-warning/30 bg-warning/10 p-2">
                 <p class="flex items-center gap-1.5 text-xs font-medium text-warning">
                   <Icon name="lucide:sparkles" class="size-3.5" />
@@ -701,10 +707,15 @@ onBeforeUnmount(stopInvoiceScanner);
               <tbody class="divide-y divide-border">
                 <tr v-for="preview in receiptLinePreviews" :key="preview.line.id" class="align-top hover:bg-accent/60">
                   <td class="min-w-56 px-3 py-3">
-                    <select :value="preview.line.materialSku" class="h-10 w-full rounded-md border border-border bg-background px-2 text-sm font-medium" @change="onReceiptMaterialChange(preview.line.id, $event)">
-                      <option value="">Definir insumo</option>
-                      <option v-for="material in materials" :key="material.sku" :value="material.sku">{{ material.name }}</option>
-                    </select>
+                    <SearchSelect
+                      :model-value="preview.line.materialSku"
+                      :options="materialOptions"
+                      placeholder="Definir insumo"
+                      aria-label="Insumo da linha"
+                      input-class="h-10 bg-background"
+                      empty-text="Nenhum insumo com esse nome ou SKU"
+                      @update:model-value="setReceiptLineMaterial(preview.line.id, $event)"
+                    />
                     <div v-if="preview.suggestion" class="mt-2 rounded-md border border-warning/30 bg-warning/10 p-2">
                       <p class="flex items-center gap-1.5 text-xs font-medium text-warning">
                         <Icon name="lucide:sparkles" class="size-3.5" />

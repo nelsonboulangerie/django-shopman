@@ -1,3 +1,4 @@
+import type { SearchSelectOption } from "../../../operator-kit/app/types/searchSelect";
 import type {
   EnrichedMaterial,
   Material,
@@ -50,6 +51,20 @@ export function formatQty(value: number, unit: string): string {
 export function formatFactor(value: number, unit: string, approximate = false): string {
   const prefix = approximate ? "≈ " : "";
   return `${prefix}${quantityFormatter.format(value)} ${unit}`;
+}
+
+/**
+ * Insumos como opções do campo de busca do recebimento. O SKU vai na dica: ele
+ * aparece sob o nome na lista E entra na busca, então quem decorou o código do
+ * insumo chega nele tão rápido quanto quem lembra do nome. A unidade-base vem
+ * junto porque é o que confirma, de relance, que é o insumo certo.
+ */
+export function materialSearchOptions(materials: Material[]): SearchSelectOption[] {
+  return materials.map((material) => ({
+    value: material.sku,
+    label: material.name,
+    hint: `${material.sku} · ${material.unit}`,
+  }));
 }
 
 export function coverageDays(material: Pick<Material, "stockOnHand" | "dailyUse">): number {
