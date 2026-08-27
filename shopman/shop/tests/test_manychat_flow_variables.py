@@ -161,7 +161,7 @@ def test_an_unknown_quantity_says_nothing(calls, with_flow):
 #: template renderiza vazio para metade das pessoas.
 SHARED_FIELDS = {
     "customer_name", "product_name", "product_sku", "available_qty",
-    "product_image_url",
+    "availability_phrase", "product_image_url",
 }
 
 
@@ -195,6 +195,7 @@ def test_the_campaign_path_sends_the_shared_fields(db, monkeypatch):
         "body": "Saiu do forno",
         "variables": {
             "product_name": "Baguete", "product_sku": "BAGUETE", "available_qty": "12",
+            "availability_phrase": "Neste momento ainda temos 12 unidades.",
             "product_image_url": "https://cdn.example/baguete.jpg",
         },
     }
@@ -208,6 +209,7 @@ def test_the_campaign_path_sends_the_shared_fields(db, monkeypatch):
     assert SHARED_FIELDS <= set(seen[0]), SHARED_FIELDS - set(seen[0])
     assert seen[0]["customer_name"] == "Pablo"
     assert seen[0]["available_qty"] == "12"
+    assert seen[0]["availability_phrase"] == "Neste momento ainda temos 12 unidades."
 
 
 def test_the_photo_url_must_be_absolute(db, settings):

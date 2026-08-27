@@ -13,10 +13,10 @@
 O codigo ja sabe registrar e disparar o aviso, mas o lado ManyChat ainda precisa de um fluxo publicado que:
 
 1. receba/atualize o contato com WhatsApp valido;
-2. exponha campos customizados para `product_name`, `product_sku`, `product_image_url`, `available_qty` e `action_url`;
+2. exponha campos customizados para `product_name`, `product_sku`, `product_image_url`, `available_qty`, `availability_phrase` e `action_url`;
 3. espelhe `WhatsApp ID` em um Custom User Field pesquisavel e exponha seu field id em `MANYCHAT_WHATSAPP_ID_FIELD_ID`;
 4. envie a mensagem `stock_arrived`/`production_ready` para o subscriber resolvido;
-5. use o `action_url` do Shopman como CTA para o produto;
+5. use `https://alpha.nelsonboulangerie.com.br/produto/{{product_sku}}` no CTA do template aprovado, porque o ManyChat só aceita variável no final da URL; em flows sem essa limitação, `action_url` continua sendo o link pronto do Shopman;
 6. trate falha de subscriber inexistente ou fora da janela de conversa como erro observavel.
 
 ## Abordagem robusta proposta

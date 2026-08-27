@@ -36,6 +36,7 @@ from shopman.shop.models import (
 )
 from shopman.shop.services import audience as audience_service
 from shopman.shop.services import campaign_schedule
+from shopman.shop.services.availability_copy import availability_phrase
 
 logger = logging.getLogger(__name__)
 
@@ -431,8 +432,8 @@ def test_fields(*, sku: str = "", name: str = "") -> dict:
     """As variáveis que o template aprovado espera, com valores reais quando houver.
 
     `available_qty` sai da disponibilidade de VERDADE: número inventado validaria a
-    fiação e mentiria sobre o conteúdo. Vazio quando não dá para saber — a mensagem então
-    sai sem número, que é honesto.
+    fiação e mentiria sobre o conteúdo. `availability_phrase` é a frase pronta:
+    usa o número quando há contagem confiável e uma frase neutra quando não há.
     """
     sku = (sku or "").strip()
     fields = {
@@ -440,6 +441,7 @@ def test_fields(*, sku: str = "", name: str = "") -> dict:
         "product_name": "",
         "product_sku": sku,
         "available_qty": "",
+        "availability_phrase": availability_phrase(None),
         "product_image_url": "",
         "link": "",
     }
@@ -455,6 +457,7 @@ def test_fields(*, sku: str = "", name: str = "") -> dict:
 
         qty = _available_qty(sku)
         fields["available_qty"] = str(qty) if qty else ""
+        fields["availability_phrase"] = availability_phrase(qty)
     except Exception:
         logger.warning("campaign.test_qty_failed sku=%s", sku, exc_info=True)
 
@@ -498,7 +501,10 @@ def preview(
         # no aparelho antes de o aparelho existir.
         "fields": {
             key: variables[key]
-            for key in ("customer_name", "product_name", "product_sku", "available_qty")
+            for key in (
+                "customer_name", "product_name", "product_sku",
+                "available_qty", "availability_phrase",
+            )
             if key in variables
         },
         "ai_writes": bool(use_ai),
@@ -648,6 +654,10 @@ def resolve_variables(context: dict, *, promotion_ref: str = "") -> dict:
         #: essa contagem não interessa a quem recebe, e oferecê-la só criaria a chance de
         #: anunciar um número que já não é verdade.
         "available_qty": str(context.get("available_qty", "") or ""),
+        #: Frase inteira para WhatsApp aprovado. O ManyChat não deve montar
+        #: "temos {{available_qty}} unidades" porque o campo pode ser vazio quando
+        #: o backend não tem uma contagem honesta.
+        "availability_phrase": availability_phrase(context.get("available_qty")),
         #: Foto do produto, absoluta. O prefixo `product_` é namespacing: o campo vive no
         #: perfil do assinante no ManyChat, ao lado de tudo o que já existe lá, e
         #: `image_url` solto colidiria com qualquer outra imagem que a conta use.
@@ -680,8 +690,8 @@ def available_variables() -> tuple[str, ...]:
     """Nomes válidos num template — documentação viva para o Admin."""
     return (
         "product_name", "product_sku", "price", "hashtags", "link",
-        "available_qty", "product_image_url", "time", "store_name", "quality",
-        "customer_name",
+        "available_qty", "availability_phrase", "product_image_url", "time",
+        "store_name", "quality", "customer_name",
     )
 
 

@@ -108,6 +108,25 @@ O prefixo do código (`NB-`) e o TTL (30 min) são do doorman
      espelho para descobrir o `subscriber_id` sem depender do campo sistêmico
      `phone`.
 
+     Para templates aprovados de "Me avise"/fornada, o Shopman grava campos
+     customizados antes de disparar o flow: `product_name`, `product_sku`,
+     `product_image_url`, `available_qty`, `availability_phrase` e `action_url`.
+     Como o botão do WhatsApp no ManyChat só aceita variável no final da URL, use
+     `https://alpha.nelsonboulangerie.com.br/produto/{{product_sku}}` no CTA.
+     No corpo do template, prefira `{{availability_phrase}}` a montar
+     `{{available_qty}} unidades` dentro do ManyChat.
+
+     Copy recomendada para o template aprovado:
+
+     ```text
+     Olha só: *{{product_name}}* acabou de sair do forno! {{availability_phrase}}
+     Toque para garantir seu pedido.
+     ```
+
+     CTA recomendado: `Quero garantir`. Evite `Reserva para mim` enquanto o
+     clique só abre a página do produto; reserva, no Shopman, acontece depois da
+     ação de compra/checkout.
+
      `access_code` = a mensagem inteira que o cliente enviou. Selecione **Last Text
      Input** pelo seletor de variáveis do ManyChat; não digite um placeholder manual
      se ele não aparece naquele contexto. **Não precisa de regex no ManyChat** — o Django
