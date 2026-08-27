@@ -57,6 +57,7 @@ dev = [
     "pytest-django",
     "pytest-timeout>=2.3,<3.0",
     "pytest-cov",
+    "pytest-xdist>=3.6,<4.0",
     "ruff>=0.15,<1.0",
     "locust>=2.24,<3.0",
 ]
