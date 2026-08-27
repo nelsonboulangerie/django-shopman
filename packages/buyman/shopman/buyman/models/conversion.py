@@ -1,3 +1,4 @@
+from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.db import models
 from django.utils.translation import gettext_lazy as _
@@ -30,6 +31,11 @@ class MaterialConversion(models.Model):
     da equivalência aproximada, que é do insumo, não de quem vende. Quando o
     mesmo insumo chega em embalagens diferentes por fornecedor, a linha ganha
     dono.
+
+    ``created_by`` existe porque a ADR-024 diz que estas duas espécies "têm
+    autor", e porque o recebimento passou a ser um lugar onde elas nascem: um
+    fator errado muda estoque e dinheiro de toda compra seguinte, então tem de
+    dar para perguntar quem declarou.
     """
 
     class Kind(models.TextChoices):
@@ -68,6 +74,11 @@ class MaterialConversion(models.Model):
         ),
     )
     is_active = models.BooleanField(default=True, db_index=True, verbose_name=_("Ativa"))
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="+", verbose_name=_("Declarada por"),
+        help_text=_("Quem declarou o fator. Vazio nas linhas anteriores ao registro de autoria."),
+    )
     created_at = models.DateTimeField(auto_now_add=True, verbose_name=_("Criada em"))
     updated_at = models.DateTimeField(auto_now=True, verbose_name=_("Atualizada em"))
 

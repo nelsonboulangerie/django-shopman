@@ -12,7 +12,6 @@ import type {
 import {
   costPerBaseUnitQ,
   coverageLabel,
-  formatFactor,
   formatMoney,
   formatQty,
   isApproximateCost,
@@ -74,6 +73,9 @@ const {
   setReceiptSupplier,
   setReceiptLineMaterial,
   acceptReceiptLineSuggestion,
+  acceptReceiptLineConversion,
+  declareReceiptLineConversion,
+  updateReceiptLine,
   addReceiptLine,
   removeReceiptLine,
   readInvoice,
@@ -336,7 +338,7 @@ async function readInvoiceImage(event: Event) {
 function stockAfterReceipt(sku: string): number {
   const material = materials.value.find((item) => item.sku === sku);
   const incomingQty = receiptLinePreviews.value
-    .filter((item) => item.material.sku === sku)
+    .filter((item) => item.material.sku === sku && item.baseQtyKnown)
     .reduce((total, item) => total + item.baseQty, 0);
   return (material?.stockOnHand ?? 0) + incomingQty;
 }
@@ -662,18 +664,25 @@ onBeforeUnmount(stopInvoiceScanner);
                   <span class="text-xs text-muted-foreground">ou escolha outro insumo acima</span>
                 </div>
               </div>
+              <div class="mt-3">
+                <ReceiptConversion
+                  :preview="preview"
+                  :conversions="receiptConversionsFor(preview.line.materialSku)"
+                  :pending="actionPending"
+                  @select="updateReceiptLine(preview.line.id, { conversionId: $event })"
+                  @accept="acceptReceiptLineConversion(preview.line.id)"
+                  @declare="declareReceiptLineConversion(preview.line.id, $event)"
+                />
+              </div>
               <div class="mt-3 grid grid-cols-2 gap-2">
-                <select v-model="preview.line.conversionId" class="h-11 rounded-md border border-border bg-card px-3 text-sm">
-                  <option :value="null">Unidade-base</option>
-                  <option v-for="conversion in receiptConversionsFor(preview.line.materialSku)" :key="conversion.id" :value="conversion.id">{{ conversion.label }}</option>
-                </select>
                 <input v-model.number="preview.line.purchaseQty" type="number" min="0" step="0.01" class="h-11 rounded-md border border-border bg-card px-3 text-sm tabular-nums" />
                 <input v-model="preview.line.expiryDate" type="date" class="h-11 rounded-md border border-border bg-card px-3 text-sm" />
                 <input v-model="preview.line.costInput" inputmode="decimal" class="h-11 rounded-md border border-border bg-card px-3 text-sm tabular-nums" placeholder="0,00" />
               </div>
               <div class="mt-3 rounded-md border border-border bg-card p-2 text-sm">
-                <p class="font-semibold tabular-nums">{{ formatQty(preview.baseQty, preview.material.unit) }}</p>
-                <p class="text-xs text-muted-foreground">{{ formatMoney(preview.baseCostQ) }} / {{ preview.material.unit }} · após {{ formatQty(stockAfterReceipt(preview.material.sku), preview.material.unit) }}</p>
+                <p v-if="preview.baseQtyKnown" class="font-semibold tabular-nums">{{ formatQty(preview.baseQty, preview.material.unit) }}</p>
+                <p v-else class="font-semibold text-muted-foreground">Aguardando a conversão</p>
+                <p v-if="preview.baseQtyKnown" class="text-xs text-muted-foreground">{{ formatMoney(preview.baseCostQ) }} / {{ preview.material.unit }} · após {{ formatQty(stockAfterReceipt(preview.material.sku), preview.material.unit) }}</p>
               </div>
               <textarea v-model="preview.line.lineNote" rows="2" class="mt-3 w-full resize-none rounded-md border border-border bg-card px-3 py-2 text-sm" placeholder="Ocorrência: parcial, avaria, ressalva" />
               <div class="mt-3 flex items-center justify-between gap-2">
@@ -720,20 +729,26 @@ onBeforeUnmount(stopInvoiceScanner);
                     </div>
                     <p class="mt-1 text-xs text-muted-foreground">{{ preview.material.sku }} · base {{ preview.material.unit }}</p>
                   </td>
-                  <td class="min-w-44 px-3 py-3">
-                    <select v-model="preview.line.conversionId" class="h-10 w-full rounded-md border border-border bg-background px-2 text-sm">
-                      <option :value="null">Unidade-base</option>
-                      <option v-for="conversion in receiptConversionsFor(preview.line.materialSku)" :key="conversion.id" :value="conversion.id">{{ conversion.label }}</option>
-                    </select>
-                    <p class="mt-1 text-xs text-muted-foreground">{{ formatFactor(preview.conversion?.toBaseFactor ?? 1, preview.material.unit, preview.approximate) }}</p>
+                  <td class="min-w-56 px-3 py-3">
+                    <ReceiptConversion
+                      :preview="preview"
+                      :conversions="receiptConversionsFor(preview.line.materialSku)"
+                      :pending="actionPending"
+                      @select="updateReceiptLine(preview.line.id, { conversionId: $event })"
+                      @accept="acceptReceiptLineConversion(preview.line.id)"
+                      @declare="declareReceiptLineConversion(preview.line.id, $event)"
+                    />
                   </td>
                   <td class="min-w-28 px-3 py-3"><input v-model.number="preview.line.purchaseQty" type="number" min="0" step="0.01" class="h-10 w-full rounded-md border border-border bg-background px-2 text-sm tabular-nums" /></td>
                   <td class="min-w-40 px-3 py-3"><input v-model="preview.line.expiryDate" type="date" class="h-10 w-full rounded-md border border-border bg-background px-2 text-sm" /></td>
                   <td class="min-w-32 px-3 py-3"><input v-model="preview.line.costInput" inputmode="decimal" class="h-10 w-full rounded-md border border-border bg-background px-2 text-sm tabular-nums" placeholder="0,00" /></td>
                   <td class="min-w-44 px-3 py-3">
-                    <p class="font-semibold tabular-nums">{{ formatQty(preview.baseQty, preview.material.unit) }}</p>
-                    <p class="text-xs text-muted-foreground">{{ formatMoney(preview.baseCostQ) }} / {{ preview.material.unit }}</p>
-                    <p class="text-xs text-muted-foreground">Após: {{ formatQty(stockAfterReceipt(preview.material.sku), preview.material.unit) }}</p>
+                    <template v-if="preview.baseQtyKnown">
+                      <p class="font-semibold tabular-nums">{{ formatQty(preview.baseQty, preview.material.unit) }}</p>
+                      <p class="text-xs text-muted-foreground">{{ formatMoney(preview.baseCostQ) }} / {{ preview.material.unit }}</p>
+                      <p class="text-xs text-muted-foreground">Após: {{ formatQty(stockAfterReceipt(preview.material.sku), preview.material.unit) }}</p>
+                    </template>
+                    <p v-else class="font-semibold text-muted-foreground">Aguardando a conversão</p>
                   </td>
                   <td class="min-w-52 px-3 py-3">
                     <label class="inline-flex h-9 items-center gap-2 rounded-md border border-border px-2.5 text-sm font-medium">

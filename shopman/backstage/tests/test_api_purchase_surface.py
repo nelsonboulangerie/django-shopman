@@ -774,3 +774,219 @@ def test_scan_invoice_registers_new_supplier_when_the_name_is_ambiguous(
     for ref in ("france-panificacao-a", "france-panificacao-b"):
         assert Supplier.objects.get(ref=ref).document == ""
     assert Supplier.objects.filter(document="11.222.333/0001-81").count() == 1
+
+
+@pytest.mark.django_db
+def test_declare_conversion_requires_operate_purchase(client, material):
+    bare = User.objects.create_user("bare-conversion", password="pw", is_staff=True)
+    client.force_login(bare)
+
+    response = client.post(
+        reverse("api-backstage-purchase-conversions"),
+        {"materialSku": material.sku, "label": "pacote 500 g", "factor": "0.5"},
+        content_type="application/json",
+    )
+
+    assert response.status_code == 403
+    assert MaterialConversion.objects.count() == 0
+
+
+@pytest.mark.django_db
+def test_declare_conversion_creates_the_row_with_its_author(client, purchase_operator, material, supplier):
+    """O gesto que faltava: a embalagem nova nasce no recebimento, assinada."""
+    client.force_login(purchase_operator)
+
+    response = client.post(
+        reverse("api-backstage-purchase-conversions"),
+        {
+            "materialSku": material.sku,
+            "supplierRef": supplier.ref,
+            "label": "pacote 500 g",
+            "factor": "0.5",
+            "kind": "conventional",
+        },
+        content_type="application/json",
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    conversion = MaterialConversion.objects.get()
+    assert body["conversionId"] == str(conversion.pk)
+    assert body["message"] == "Conversão salva: 1 pacote 500 g = 0,5 kg."
+    assert conversion.material == material
+    assert conversion.supplier == supplier
+    assert conversion.to_base_factor == Decimal("0.500000")
+    assert conversion.created_by == purchase_operator
+    # A projection já volta com a conversão, para a linha poder selecioná-la.
+    assert body["purchase"]["conversions"][0]["id"] == str(conversion.pk)
+
+
+@pytest.mark.django_db
+def test_declare_conversion_without_supplier_serves_every_supplier(client, purchase_operator, material):
+    client.force_login(purchase_operator)
+
+    response = client.post(
+        reverse("api-backstage-purchase-conversions"),
+        {"materialSku": material.sku, "label": "cartela", "factor": "1.5", "kind": "approximate"},
+        content_type="application/json",
+    )
+
+    assert response.status_code == 200
+    conversion = MaterialConversion.objects.get()
+    assert conversion.supplier is None
+    assert conversion.is_approximate is True
+    assert response.json()["message"].endswith("(aproximada).")
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("factor", ["0", "-2", "", "abc"])
+def test_declare_conversion_refuses_a_factor_that_is_not_positive(client, purchase_operator, material, factor):
+    client.force_login(purchase_operator)
+
+    response = client.post(
+        reverse("api-backstage-purchase-conversions"),
+        {"materialSku": material.sku, "label": "saco", "factor": factor},
+        content_type="application/json",
+    )
+
+    assert response.status_code == 400
+    assert response.json()["error"]["code"] == "conversion_factor_invalid"
+    assert response.json()["field"] == "factor"
+    assert MaterialConversion.objects.count() == 0
+
+
+@pytest.mark.django_db
+def test_declare_conversion_refuses_a_duplicate_label(client, purchase_operator, material, supplier, conversion):
+    client.force_login(purchase_operator)
+
+    response = client.post(
+        reverse("api-backstage-purchase-conversions"),
+        {
+            "materialSku": material.sku,
+            "supplierRef": supplier.ref,
+            "label": conversion.label,
+            "factor": "20",
+        },
+        content_type="application/json",
+    )
+
+    assert response.status_code == 400
+    assert response.json()["error"]["code"] == "conversion_validation_failed"
+    assert "Edite a existente" in response.json()["detail"]
+    assert MaterialConversion.objects.count() == 1
+    conversion.refresh_from_db()
+    assert conversion.to_base_factor == Decimal("25.000000")
+
+
+@pytest.mark.django_db
+def test_declaring_the_same_conversion_twice_returns_the_one_that_exists(
+    client, purchase_operator, material, supplier, conversion,
+):
+    """Segundo clique — ou segundo operador lendo a mesma nota — não vira erro."""
+    client.force_login(purchase_operator)
+
+    response = client.post(
+        reverse("api-backstage-purchase-conversions"),
+        {
+            "materialSku": material.sku,
+            "supplierRef": supplier.ref,
+            "label": conversion.label,
+            "factor": "25",
+            "kind": "conventional",
+        },
+        content_type="application/json",
+    )
+
+    assert response.status_code == 200
+    assert response.json()["conversionId"] == str(conversion.pk)
+    assert response.json()["message"] == "Conversão já cadastrada: saco 25 kg."
+    assert MaterialConversion.objects.count() == 1
+
+
+@pytest.mark.django_db
+def test_declare_conversion_points_a_factor_error_at_the_factor_field(client, purchase_operator, material):
+    """Fator com casas demais é erro DO FATOR — a tela precisa destacar o campo certo."""
+    client.force_login(purchase_operator)
+
+    response = client.post(
+        reverse("api-backstage-purchase-conversions"),
+        {"materialSku": material.sku, "label": "saco", "factor": "0.12345678901"},
+        content_type="application/json",
+    )
+
+    assert response.status_code == 400
+    assert response.json()["field"] == "factor"
+    assert MaterialConversion.objects.count() == 0
+
+
+@pytest.mark.django_db
+def test_declare_conversion_refuses_a_blank_label(client, purchase_operator, material):
+    client.force_login(purchase_operator)
+
+    response = client.post(
+        reverse("api-backstage-purchase-conversions"),
+        {"materialSku": material.sku, "label": "   ", "factor": "0.5"},
+        content_type="application/json",
+    )
+
+    assert response.status_code == 400
+    assert response.json()["error"]["code"] == "conversion_label_required"
+
+
+@pytest.mark.django_db
+def test_scan_invoice_carries_the_conversion_the_note_suggests(tmp_path, client, purchase_operator, supplier):
+    """Ponta a ponta: o caso do fermento chega na tela como sugestão, não como erro mudo."""
+    Material.objects.create(
+        sku="FERMENTO-BIO",
+        name="Fermento biologico",
+        unit="kg",
+        metadata={"purchase": {"invoice_codes": ["FERM-500"]}},
+    )
+    client.force_login(purchase_operator)
+
+    xml = _nfe_reader_xml().replace(
+        """          <cProd>FAR-25</cProd>
+          <xProd>FARINHA T65 25KG</xProd>
+          <NCM>11010010</NCM>
+          <CFOP>5102</CFOP>
+          <uCom>SC</uCom>
+          <qCom>2.0000</qCom>
+          <vUnCom>180.0000000000</vUnCom>
+          <vProd>360.00</vProd>""",
+        """          <cProd>FERM-500</cProd>
+          <xProd>FERM BIOL FRESCO MAURI 500G</xProd>
+          <NCM>21021000</NCM>
+          <CFOP>5102</CFOP>
+          <uCom>UN</uCom>
+          <qCom>10.0000</qCom>
+          <vUnCom>6.0000000000</vUnCom>
+          <uTrib>KG</uTrib>
+          <qTrib>5.0000</qTrib>
+          <vUnTrib>12.0000000000</vUnTrib>
+          <vProd>60.00</vProd>""",
+    )
+
+    (tmp_path / f"{VALID_ACCESS_KEY}.xml").write_text(xml, encoding="utf-8")
+    with override_settings(
+        SHOPMAN_PURCHASE_INVOICE_READER="shopman.shop.adapters.purchase_invoice_nfe.read_invoice",
+        SHOPMAN_PURCHASE_NFE={"xml_dir": str(tmp_path)},
+    ):
+        response = client.post(
+            reverse("api-backstage-purchase-scan-invoice"),
+            {"qrPayload": VALID_ACCESS_KEY},
+            content_type="application/json",
+        )
+
+    assert response.status_code == 200
+    line = response.json()["purchase"]["activeReceipt"]["lines"][0]
+    assert line["materialSku"] == "FERMENTO-BIO"
+    assert line["purchaseQty"] == 10.0
+    assert line["invoiceUnit"] == "UN"
+    assert line["requiresConversion"] is True
+    assert line["conversionSuggestion"] == {
+        "label": "un 500 g",
+        "factor": "0.5",
+        "kind": "conventional",
+        "source": "invoice-tax-pair",
+        "note": "A NF diz 10 UN = 5 KG (12,00 por KG), então 1 UN = 0,5 kg.",
+    }

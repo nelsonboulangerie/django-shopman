@@ -71,7 +71,8 @@ Quando faltar mapeamento:
 
 - fornecedor sem CNPJ cadastrado fica vazio e bloqueia a confirmacao;
 - item sem insumo fica visivel como `Definir insumo`;
-- unidade de compra sem conversao fica com `requiresConversion=true`;
+- unidade de compra sem conversao fica com `requiresConversion=true`, e com
+  `conversionSuggestion` preenchida quando a nota responde (secao seguinte);
 - matching pelo nome vira **sugestao visivel**, nunca preenchimento:
   a linha sai com `materialSku` vazio, `suggestedMaterialSku` com o insumo
   candidato e `suggestionScore` (0-100). O purchase-nuxt mostra a sugestao com
@@ -82,6 +83,76 @@ Quando faltar mapeamento:
   "AZEITE DE OLIVA EXTRA VIRGEM ANDORINHA VD 500ML" sugere "Azeite extra
   virgem". O WRatio do rapidfuzz fica de reforco para nomes de varios tokens.
   Limiar padrao 87 (`PURCHASE_NFE_FUZZY_MATCH_MIN_SCORE`); `0` desliga.
+
+## Os dois eixos do item, e por que eles importam
+
+Todo item de NF-e traz **dois pares**, por obrigacao legal:
+
+| Par | Campos | O que e |
+|---|---|---|
+| comercial | `uCom` · `qCom` · `vUnCom` | como o fornecedor vendeu: "10 UN" |
+| tributavel | `uTrib` · `qTrib` · `vUnTrib` | a unidade fiscal de referencia: "5 KG" |
+
+O adapter le os dois **como blocos**: sem par comercial utilizavel (`uCom` vazio
+ou `qCom` <= 0), o item inteiro passa a ser lido pelo tributavel. Nunca a
+unidade de um com a quantidade do outro — foi esse cruzamento que fez uma nota
+de 10 unidades de fermento entrar como 10 kg no QA de 27/08/2026.
+
+A quantidade da linha sai assim:
+
+- **conversao declarada** (`saco 25 kg`): fica a quantidade comercial (2 sacos);
+  quem multiplica e a conversao, no recebimento;
+- **unidade que a fisica alcanca** (nota em `G`, insumo em `kg`): converte na
+  hora, via `shopman.utils.units`. E conversao definicional (ADR-024, tipo 1):
+  nao pede tabela, nao pede autor, nao trava;
+- **nem uma nem outra** ("10 UN" de insumo pesado em `kg`): fica na unidade
+  comercial e a linha **trava** ate alguem declarar o fator (regra R4).
+
+### A conversao que a nota sugere
+
+Quando a linha trava, o adapter procura o fator na propria nota e devolve
+`conversionSuggestion` — `{label, factor, kind, source, note}`:
+
+- `source=invoice-tax-pair`: `fator = qTrib / qCom`, com o par tributavel levado
+  a unidade-base. E **declaracao fiscal do emissor**, entao e a fonte primaria;
+- `source=product-description`: a gramatura embutida no `xProd`
+  ("FERM BIOL FRESCO MAURI 500G"). Texto livre, sinal **secundario**: so entra
+  quando o par tributavel nao decide.
+
+Ler o par tributavel **nao fere a R4**: a regra proibe inventar fator, nao
+proibe ler o que o emissor declarou. Nada e gravado — a linha continua
+bloqueando a confirmacao ate o operador aceitar ou declarar outra, no mesmo
+molde da sugestao de insumo.
+
+Quando a nota **discorda** de uma conversao ja escolhida (saco declarado de
+25 kg, nota dizendo 20), a sugestao vem junto com a conversao e a tela mostra a
+divergencia como **aviso** — nao trava, mas nao passa calada. E o alerta de
+ordem de grandeza da ADR-024.
+
+### Declarar conversao sem sair do recebimento
+
+`POST /api/v1/backstage/purchase/conversions/`, permissao
+`backstage.operate_purchase`:
+
+```json
+{
+  "materialSku": "FERMENTO-BIO",
+  "supplierRef": "SUP-MAURI",
+  "label": "pacote 500 g",
+  "factor": "0.5",
+  "kind": "conventional"
+}
+```
+
+`supplierRef` vazio = conversao vale para qualquer fornecedor. A resposta traz
+`conversionId`, que a linha travada seleciona. A linha grava `created_by`: fator
+errado muda estoque e dinheiro de toda compra seguinte, entao tem de dar para
+perguntar quem declarou. Correcao e exclusao continuam no Admin.
+
+Recusas: `conversion_factor_invalid` (fator <= 0 ou nao numerico),
+`conversion_label_required`, `conversion_label_too_long`,
+`conversion_kind_invalid`, `conversion_validation_failed` (rotulo ja existe no
+insumo/fornecedor).
 
 ## Operacao fiscal
 

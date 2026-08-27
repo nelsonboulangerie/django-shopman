@@ -78,6 +78,23 @@ class SupplierMaterialCostProjection:
 
 
 @dataclass(frozen=True)
+class ReceiptConversionSuggestionProjection:
+    """O fator que a NF permite propor, e de onde ele saiu.
+
+    ``factor`` viaja como **texto** de propósito: ele volta para o servidor no
+    gesto de declarar a conversão, e ``MaterialConversion.to_base_factor`` tem
+    seis casas. Passar por ``float`` aqui seria perder precisão de um número que
+    multiplica estoque e dinheiro.
+    """
+
+    label: str
+    factor: str
+    kind: str
+    source: str
+    note: str
+
+
+@dataclass(frozen=True)
 class ReceiptLineProjection:
     id: str
     materialSku: str
@@ -85,10 +102,12 @@ class ReceiptLineProjection:
     suggestionScore: int
     conversionId: str | None
     requiresConversion: bool
+    conversionSuggestion: ReceiptConversionSuggestionProjection | None
     purchaseQty: float
     costInput: str
     expiryDate: str
     lineNote: str
+    invoiceUnit: str
     invoiceProductCode: str
     invoiceEan: str
     checked: bool
@@ -294,13 +313,33 @@ def _receipt_line_projection(line: dict[str, Any]) -> ReceiptLineProjection:
             else None
         ),
         requiresConversion=bool(line.get("requiresConversion") or line.get("requires_conversion")),
+        conversionSuggestion=_conversion_suggestion_projection(
+            line.get("conversionSuggestion") or line.get("conversion_suggestion"),
+        ),
         purchaseQty=_number(_decimal(line.get("purchaseQty", line.get("purchase_qty", 0)))),
         costInput=str(line.get("costInput") or line.get("cost_input") or ""),
         expiryDate=str(line.get("expiryDate") or line.get("expiry_date") or ""),
         lineNote=str(line.get("lineNote") or line.get("line_note") or line.get("note") or ""),
+        invoiceUnit=str(line.get("invoiceUnit") or line.get("invoice_unit") or ""),
         invoiceProductCode=str(line.get("invoiceProductCode") or line.get("invoice_product_code") or ""),
         invoiceEan=str(line.get("invoiceEan") or line.get("invoice_ean") or ""),
         checked=bool(line.get("checked")),
+    )
+
+
+def _conversion_suggestion_projection(raw: Any) -> ReceiptConversionSuggestionProjection | None:
+    if not isinstance(raw, dict):
+        return None
+    factor = _decimal(raw.get("factor"))
+    label = str(raw.get("label") or "").strip()
+    if not label or factor <= 0:
+        return None
+    return ReceiptConversionSuggestionProjection(
+        label=label,
+        factor=str(factor),
+        kind=str(raw.get("kind") or "conventional"),
+        source=str(raw.get("source") or ""),
+        note=str(raw.get("note") or ""),
     )
 
 

@@ -5,6 +5,7 @@ import type {
   PurchaseActionResponse,
   PurchaseProjection,
   PurchaseResponse,
+  ConversionKind,
   Material,
   MaterialConversion,
   ReceiptLine,
@@ -73,6 +74,21 @@ const MATERIALS: Material[] = [
     dailyUse: 2.4,
     minStock: 8,
     recipes: ["Levain", "Pain de campagne"],
+  },
+  {
+    // Pesado em kg e comprado em pacote, e sem conversao cadastrada: e o estado
+    // que a linha do recebimento precisa saber mostrar, e o que o QA de 27/08
+    // encontrou quebrado (10 unidades lidas como 10 kg).
+    sku: "FERMENTO-BIO",
+    name: "Fermento biológico",
+    unit: "kg",
+    shelfLifeDays: 45,
+    isActive: true,
+    category: "Fermentação",
+    stockOnHand: 2.5,
+    dailyUse: 0.6,
+    minStock: 2,
+    recipes: ["Brioche", "Croissant"],
   },
   {
     sku: "SAL",
@@ -253,6 +269,26 @@ const INVOICE_RECEIPT_LINES: ReceiptLine[] = [
     costInput: "96,00",
     expiryDate: "2026-09-10",
     lineNote: "",
+    checked: false,
+  },
+  {
+    id: "receipt-fermento",
+    materialSku: "FERMENTO-BIO",
+    conversionId: null,
+    requiresConversion: true,
+    conversionSuggestion: {
+      label: "un 500 g",
+      factor: "0.5",
+      kind: "conventional",
+      source: "invoice-tax-pair",
+      note: "A NF diz 10 UN = 5 KG (12,00 por KG), então 1 UN = 0,5 kg.",
+    },
+    purchaseQty: 10,
+    costInput: "60,00",
+    expiryDate: "2026-10-05",
+    lineNote: "Confirmar a conversao sugerida (un 500 g). NF: FERM BIOL FRESCO MAURI 500G; unidade UN; tributavel 5 KG.",
+    invoiceUnit: "UN",
+    invoiceProductCode: "FERM-500",
     checked: false,
   },
 ];
@@ -643,11 +679,14 @@ export function usePurchaseDesk() {
     return false;
   }
 
+  // Devolve a resposta em vez de um booleano porque uma das ações precisa de um
+  // dado dela: declarar conversão volta com o `conversionId` que a linha travada
+  // vai selecionar. `null` continua sendo o "não deu" dos usos que só testam.
   async function runBackendAction(
     request: () => Promise<PurchaseActionResponse>,
     options: { receipt?: boolean } = {},
-  ): Promise<boolean> {
-    if (actionPending.value) return false;
+  ): Promise<PurchaseActionResponse | null> {
+    if (actionPending.value) return null;
     actionPending.value = true;
     actionError.value = "";
     try {
@@ -655,13 +694,13 @@ export function usePurchaseDesk() {
       if (response.purchase) applyProjection(response.purchase, options);
       if (response.message) useSonner.success(response.message);
       await refresh();
-      return true;
+      return response;
     } catch (err) {
       const message = httpErrorMessage(err, "Falha na ação. Tente de novo.");
       actionError.value = message;
       useSonner.error(message);
       await refresh();
-      return false;
+      return null;
     } finally {
       actionPending.value = false;
     }
@@ -753,6 +792,46 @@ export function usePurchaseDesk() {
     const line = receiptLines.value.find((item) => item.id === lineId);
     if (!line?.suggestedMaterialSku) return;
     setReceiptLineMaterial(lineId, line.suggestedMaterialSku);
+  }
+
+  /**
+   * Declara a conversão e já a coloca na linha que estava travada.
+   *
+   * Um clique quando vem da sugestão da NF; o mesmo caminho quando o operador
+   * digita a embalagem que a nota não soube contar. A conversão nasce no
+   * servidor (com autor), volta na projection, e a linha passa a apontar para
+   * ela — a entrada segue sem ninguém sair da tela para o Admin.
+   */
+  async function declareReceiptLineConversion(
+    lineId: string,
+    input: { label: string; factor: string; kind: ConversionKind },
+  ): Promise<boolean> {
+    const line = receiptLines.value.find((item) => item.id === lineId);
+    if (!line?.materialSku) return false;
+    if (!requireBackend("cadastrar a conversão")) return false;
+    const response = await runBackendAction(() =>
+      api.declareConversion({
+        materialSku: line.materialSku,
+        supplierRef: receiptSupplierRef.value,
+        label: input.label.trim(),
+        factor: input.factor,
+        kind: input.kind,
+      }),
+    );
+    if (!response?.conversionId) return false;
+    updateReceiptLine(lineId, { conversionId: response.conversionId, requiresConversion: false });
+    return true;
+  }
+
+  /** Aceitar a conversão que a NF propôs, sem redigitar nada. */
+  async function acceptReceiptLineConversion(lineId: string): Promise<boolean> {
+    const suggestion = receiptLines.value.find((item) => item.id === lineId)?.conversionSuggestion;
+    if (!suggestion) return false;
+    return declareReceiptLineConversion(lineId, {
+      label: suggestion.label,
+      factor: suggestion.factor,
+      kind: suggestion.kind,
+    });
   }
 
   function addReceiptLine() {
@@ -937,6 +1016,8 @@ export function usePurchaseDesk() {
     setReceiptSupplier,
     setReceiptLineMaterial,
     acceptReceiptLineSuggestion,
+    acceptReceiptLineConversion,
+    declareReceiptLineConversion,
     updateReceiptLine,
     addReceiptLine,
     removeReceiptLine,

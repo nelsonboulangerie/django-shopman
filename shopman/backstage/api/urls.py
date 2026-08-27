@@ -155,6 +155,7 @@ from .operations import (
 from .purchase import (
     PurchaseBoardView,
     PurchaseConfirmReceiptView,
+    PurchaseConversionView,
     PurchaseCostView,
     PurchaseRejectReceiptView,
     PurchaseRequestApproveView,
@@ -237,6 +238,11 @@ urlpatterns = [
         name="api-backstage-purchase-reject-receipt",
     ),
     path("purchase/costs/", PurchaseCostView.as_view(), name="api-backstage-purchase-costs"),
+    path(
+        "purchase/conversions/",
+        PurchaseConversionView.as_view(),
+        name="api-backstage-purchase-conversions",
+    ),
     path(
         "purchase/requests/<str:material_sku>/approve/",
         PurchaseRequestApproveView.as_view(),

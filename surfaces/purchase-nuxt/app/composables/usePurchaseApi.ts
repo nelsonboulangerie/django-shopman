@@ -1,5 +1,6 @@
 import type {
   PurchaseActionResponse,
+  PurchaseConversionDeclarePayload,
   PurchaseCostUpsertPayload,
   PurchaseReceiptConfirmPayload,
   PurchaseReceiptRejectPayload,
@@ -16,6 +17,7 @@ export const PURCHASE_API_ENDPOINTS = {
   confirmReceipt: `${PURCHASE_API_BASE}receipts/confirm/`,
   rejectReceipt: `${PURCHASE_API_BASE}receipts/reject/`,
   upsertCost: `${PURCHASE_API_BASE}costs/`,
+  declareConversion: `${PURCHASE_API_BASE}conversions/`,
   requestApprove: (materialSku: string) =>
     `${PURCHASE_API_BASE}requests/${encodeURIComponent(materialSku)}/approve/`,
   requestSend: (materialSku: string) =>
@@ -77,6 +79,14 @@ export function usePurchaseApi() {
     });
   }
 
+  async function declareConversion(payload: PurchaseConversionDeclarePayload) {
+    return $fetch<PurchaseActionResponse>(PURCHASE_API_ENDPOINTS.declareConversion, {
+      ...fetchOptions(),
+      method: "POST",
+      body: payload,
+    });
+  }
+
   async function upsertCost(payload: PurchaseCostUpsertPayload) {
     return $fetch<PurchaseActionResponse>(PURCHASE_API_ENDPOINTS.upsertCost, {
       ...fetchOptions(),
@@ -94,5 +104,6 @@ export function usePurchaseApi() {
     approveRequest,
     sendRequest,
     upsertCost,
+    declareConversion,
   };
 }
