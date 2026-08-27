@@ -4,12 +4,13 @@ import type { WhatsappStartStatus } from '~/composables/useWhatsappVerify'
 
 // Painel APRESENTACIONAL do login por WhatsApp (fluxo access-link), em uma tela só: o
 // start leve vive no pai (entrar.vue) e pré-aquece o deep link. Dois blocos: (1) abrir e
-// enviar num toque; "OU"; (2) envio manual do código, caso o WhatsApp não abra sozinho.
+// enviar num toque; "OU"; (2) envio manual da mensagem, caso o WhatsApp não abra sozinho.
 // O login em si acontece pelo access link que o ManyChat devolve — a aba só instrui.
 // Copy vem por props (configurável no Admin via OMOTENASHI_DEFAULTS).
 const props = withDefaults(defineProps<{
   deepLink?: string
   code?: string
+  message?: string
   waNumber?: string
   status?: WhatsappStartStatus
   glimpse?: string
@@ -20,12 +21,13 @@ const props = withDefaults(defineProps<{
 }>(), {
   deepLink: '',
   code: '',
+  message: '',
   waNumber: '',
   status: 'idle',
   glimpse: '',
   noPasswordNote: '',
   manualTitle: 'Quer fazer você mesmo?',
-  manualIntro: 'Envie o código abaixo diretamente para o nosso WhatsApp',
+  manualIntro: 'Envie esta mensagem diretamente para o nosso WhatsApp',
   ctaLabel: 'Entrar pelo WhatsApp'
 })
 
@@ -35,19 +37,20 @@ const codeCopied = ref(false)
 const isStarting = computed(() => props.status === 'idle' || props.status === 'loading')
 const canOpenWhatsApp = computed(() => !!props.deepLink)
 const ctaText = computed(() => canOpenWhatsApp.value ? props.ctaLabel : 'Preparando WhatsApp')
+const manualMessage = computed(() => props.message || (props.code ? `#menu ${props.code}` : ''))
 // 554333231997 → "(43) 3323-1997"; chat "cru" (sem mensagem) para o envio manual.
 const waNumberDisplay = computed(() => props.waNumber ? phoneDisplay(`+${props.waNumber}`) : '')
 const chatLink = computed(() => props.waNumber ? `https://wa.me/${props.waNumber}` : '')
 
-async function copyCode () {
-  if (!import.meta.client || !props.code) return
+async function copyMessage () {
+  if (!import.meta.client || !manualMessage.value) return
   try {
-    await navigator.clipboard.writeText(props.code)
+    await navigator.clipboard.writeText(manualMessage.value)
     codeCopied.value = true
-    useSonner.success('Código copiado. Envie no nosso WhatsApp.')
+    useSonner.success('Mensagem copiada. Envie no nosso WhatsApp.')
     setTimeout(() => { codeCopied.value = false }, 2500)
   } catch {
-    // Clipboard indisponível: o código continua visível para digitar.
+    // Clipboard indisponível: a mensagem continua visível para digitar.
   }
 }
 </script>
@@ -91,15 +94,15 @@ async function copyCode () {
       </div>
 
       <!-- Divisor: a alternativa manual, para quando o app não abre sozinho. -->
-      <div v-if="code" class="flex items-center gap-3" aria-hidden="true" data-login-whatsapp-or>
+      <div v-if="manualMessage" class="flex items-center gap-3" aria-hidden="true" data-login-whatsapp-or>
         <span class="h-px flex-1 bg-border" />
         <span class="shop-meta uppercase tracking-widest">ou</span>
         <span class="h-px flex-1 bg-border" />
       </div>
 
       <!-- Bloco 2 — envio manual (alternativa): título com peso de seção + subtítulo,
-           código discreto + copiar + abrir chat cru. -->
-      <div v-if="code" class="rounded-lg border bg-card p-4 shop-stack-block" data-login-whatsapp-manual>
+           mensagem discreta + copiar + abrir chat cru. -->
+      <div v-if="manualMessage" class="rounded-lg border bg-card p-4 shop-stack-block" data-login-whatsapp-manual>
         <div class="shop-stack-micro text-center">
           <p v-if="manualTitle" class="shop-item-title" data-login-whatsapp-manual-title>{{ manualTitle }}</p>
           <p class="shop-meta">
@@ -108,16 +111,16 @@ async function copyCode () {
           </p>
         </div>
         <div class="rounded-md bg-background py-2 text-center font-mono text-base tracking-wider text-muted-foreground">
-          {{ code }}
+          {{ manualMessage }}
         </div>
         <UiButton
           type="button"
           variant="outline"
           class="w-full justify-center"
           :icon="codeCopied ? 'lucide:check' : 'lucide:copy'"
-          @click="copyCode"
+          @click="copyMessage"
         >
-          {{ codeCopied ? 'Código copiado' : 'Copiar código' }}
+          {{ codeCopied ? 'Mensagem copiada' : 'Copiar mensagem' }}
         </UiButton>
         <UiButton
           :href="chatLink || undefined"

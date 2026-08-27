@@ -72,18 +72,18 @@ O prefixo do código (`NB-`) e o TTL (30 min) são do doorman
 
 ## Configuração do Flow no ManyChat (a parte "F3")
 
-1. **Triggers** — dois *Keywords* de WhatsApp, ambos apontando para a mesma automação
+1. **Trigger** — um *Keyword* de WhatsApp apontando para a automação
    `Shopman - Gerar link de acesso`:
-   - `#menu` — trigger principal. Use "contains" (ou "starts with", se disponível)
-     para cobrir a entrada orgânica (`#menu`) e o deep link do site (`#menu NB-XxXx`).
-   - `NB-` — trigger de resgate, para o caso de o cliente enviar só o código ou o
-     `#menu` não ser preservado pelo aplicativo.
+   - `#menu` — use "contains" (ou "starts with", se disponível) para cobrir a
+     entrada orgânica (`#menu`) e o deep link/fallback manual do site (`#menu NB-XxXx`).
 
    O trigger **não é a fronteira de segurança** — o Django é o portão (código no
    cache, single-use, TTL, rate-limit; a identidade é o número da Meta). Não crie um
    trigger "com sacola" e outro "sem sacola": o ManyChat não decide isso. Ele só manda
    a mensagem recebida; o backend responde `has_context`, e a automação condiciona a
-   copy depois.
+   copy depois. Também não use `NB-` como gatilho: `NB-*` é payload técnico de contexto,
+   não intenção do cliente. O fallback manual da loja deve copiar a mensagem completa
+   `#menu NB-XxXx`, nunca só o código.
 2. **External Request** (Dev Tools, plano Pro):
    - Method: `POST`
    - URL: `https://api.<seu-domínio>/api/auth/access/create/`
@@ -204,7 +204,8 @@ no modo dev.
 3. **Storefront (Nuxt)** — `NUXT_DJANGO_BASE_URL=http://127.0.0.1:8000 npm run dev` (ou
    `node .output/server/index.mjs` num build). Abra `/entrar` no celular via o túnel.
 4. **ManyChat** — no External Request, aponte para `https://<tunnel-django>/api/auth/access/create/`
-   com `access_code: {{last_input_text}}` e `next: "/menu"`.
+   com `access_code: {{Last Text Input}}` (selecionado pela UI do ManyChat) e
+   `next: "/menu"`.
 5. **Fluxo de teste**: no celular, adicione um item em estoque → checkout → "Entrar pelo
    WhatsApp" → o WhatsApp abre com `#menu NB-XXXX` → envie → o Flow chama
    o `create` → toque no botão que ele devolve → você volta logado, com a sacola, no checkout.

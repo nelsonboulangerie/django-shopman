@@ -1,5 +1,6 @@
 interface StartResponse {
   code: string
+  message?: string
   deep_link: string
   wa_number: string
 }
@@ -17,6 +18,7 @@ export function useWhatsappVerify () {
   const csrfHeaders = useShopmanCsrfHeaders()
 
   const code = ref('')
+  const message = ref('')
   const deepLink = ref('')
   const waNumber = ref('')
   const status = ref<WhatsappStartStatus>('idle')
@@ -31,6 +33,7 @@ export function useWhatsappVerify () {
         body: { next }
       })
       code.value = res.code
+      message.value = res.message || (res.code ? `#menu ${res.code}` : '')
       deepLink.value = res.deep_link
       waNumber.value = res.wa_number
       status.value = 'ready'
@@ -39,5 +42,5 @@ export function useWhatsappVerify () {
     }
   }
 
-  return { code, deepLink, waNumber, status, start }
+  return { code, message, deepLink, waNumber, status, start }
 }

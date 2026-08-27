@@ -96,7 +96,12 @@ describe('useWhatsappVerify', () => {
       useShopmanCsrfHeaders: () => async () => ({}),
       $fetch: vi.fn(async (url: string, opts: { body?: unknown }) => {
         fetched = { url, body: opts?.body }
-        return { code: 'NB-ABC123', deep_link: 'https://wa.me/5543999?text=NB-ABC123', wa_number: '5543999' }
+        return {
+          code: 'NB-ABC123',
+          message: '#menu NB-ABC123',
+          deep_link: 'https://wa.me/5543999?text=%23menu%20NB-ABC123',
+          wa_number: '5543999'
+        }
       })
     })
   })
@@ -110,14 +115,15 @@ describe('useWhatsappVerify', () => {
     expect(fetched?.url).toBe('/api/v1/auth/whatsapp/start/')
     expect(fetched?.body).toEqual({ next: '/finalizar' })
     expect(verify.code.value).toBe('NB-ABC123')
+    expect(verify.message.value).toBe('#menu NB-ABC123')
   })
 
   it('mostra estado de preparo enquanto o link do WhatsApp nasce', async () => {
-    let resolveFetch!: (value: { code: string, deep_link: string, wa_number: string }) => void
+    let resolveFetch!: (value: { code: string, message?: string, deep_link: string, wa_number: string }) => void
     Object.assign(globalThis, {
       $fetch: vi.fn((url: string, opts: { body?: unknown }) => {
         fetched = { url, body: opts?.body }
-        return new Promise<{ code: string, deep_link: string, wa_number: string }>(resolve => {
+        return new Promise<{ code: string, message?: string, deep_link: string, wa_number: string }>(resolve => {
           resolveFetch = resolve
         })
       })
@@ -129,9 +135,10 @@ describe('useWhatsappVerify', () => {
 
     expect(verify.status.value).toBe('loading')
     await Promise.resolve()
-    resolveFetch({ code: 'NB-ABC123', deep_link: 'https://wa.me/5543999?text=NB-ABC123', wa_number: '5543999' })
+    resolveFetch({ code: 'NB-ABC123', deep_link: 'https://wa.me/5543999?text=%23menu%20NB-ABC123', wa_number: '5543999' })
     await pendingStart
     expect(verify.status.value).toBe('ready')
+    expect(verify.message.value).toBe('#menu NB-ABC123')
   })
 })
 

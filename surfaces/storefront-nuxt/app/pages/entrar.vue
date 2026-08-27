@@ -31,6 +31,7 @@ const requestedPhone = ref('')
 // pelo access link que o ManyChat devolve; a aba original só instrui. Ver useWhatsappVerify.
 const {
   code: waCode,
+  message: waMessage,
   deepLink: waDeepLink,
   waNumber: waNumber,
   status: waStatus,
@@ -108,10 +109,10 @@ const stepDescription = computed(() => {
 })
 // Lampejo (o que vai acontecer), reasseguro (sem senha) e intro do envio manual: alimentam
 // o WhatsappVerifyPanel (configuráveis no Admin). O login em si é pelo access link.
-const waGlimpse = computed(() => copyMessage(authCopy.value?.wa_glimpse, 'Abra o WhatsApp e envie a mensagem pronta. A gente responde com seu link de entrada.'))
+const waGlimpse = computed(() => copyMessage(authCopy.value?.wa_glimpse, 'Abra o WhatsApp e envie a mensagem pronta. Respondemos com seu link de entrada.'))
 const waNoPasswordNote = computed(() => copyMessage(authCopy.value?.no_password_note, 'Sem senha, email ou cadastro.'))
 const waManualTitle = computed(() => copyTitle(authCopy.value?.wa_manual_title, 'WhatsApp não abriu?'))
-const waManualIntro = computed(() => copyMessage(authCopy.value?.wa_manual_intro, 'Copie este código e mande para o nosso WhatsApp'))
+const waManualIntro = computed(() => copyMessage(authCopy.value?.wa_manual_intro, 'Copie esta mensagem e mande para o nosso WhatsApp'))
 const supportUrl = computed(() => withWhatsAppText(
   loginHome.value?.home.public_config.whatsapp_url || '',
   isCheckoutReturn.value ? 'Quero finalizar meu pedido' : 'Quero entrar na loja'
@@ -431,6 +432,7 @@ useSeoMeta({
           <WhatsappVerifyPanel
             :deep-link="waDeepLink"
             :code="waCode"
+            :message="waMessage"
             :wa-number="waNumber"
             :status="waStatus"
             :glimpse="waGlimpse"
