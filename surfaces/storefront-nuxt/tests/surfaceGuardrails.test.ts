@@ -438,7 +438,9 @@ describe('surface UX guardrails', () => {
     expect(header).toContain('cartPulse')
     // Logo centralizado: sacola (badge) sempre visível à direita — não mais só no desktop.
     expect(header).toContain('lucide:shopping-bag')
-    expect(header).toContain('<header class="shop-header-bar sticky top-0 z-40">')
+    // Sticky no topo. A classe segue numa tag multi-linha porque o header também
+    // desliza (transition-transform) — o invariante é sticky/top-0/z-40, não o formato.
+    expect(header).toContain('class="shop-header-bar sticky top-0 z-40')
     // Barra utilitária: horário + ligar em 1 toque (omotenashi).
     expect(header).toContain('lucide:clock')
     expect(header).toContain('lucide:phone')
