@@ -306,6 +306,13 @@ def test_confirm_receipt_writes_buy_move_batch_and_cost(
     assert move.metadata["purchase_supplier_ref"] == supplier.ref
     assert move.metadata["purchase_line_note"] == "Recebimento parcial; 1 saco avariado devolvido."
     assert move.metadata["purchase_unit_cost_q"] == 18000
+    # Fase 5: a ponte que a quantidade atravessou fica carimbada no proprio
+    # lancamento — as tres chaves juntas, para a conta poder ser refeita depois.
+    assert move.metadata["converted_via"] == {
+        "label": "saco 25 kg",
+        "factor": "25.000000",
+        "approximate": False,
+    }
     batch = Batch.objects.get(sku=material.sku, expiry_date="2027-02-25")
     assert "Recebimento parcial" in batch.notes
 
@@ -990,3 +997,85 @@ def test_scan_invoice_carries_the_conversion_the_note_suggests(tmp_path, client,
         "source": "invoice-tax-pair",
         "note": "A NF diz 10 UN = 5 KG (12,00 por KG), então 1 UN = 0,5 kg.",
     }
+
+
+@pytest.mark.django_db
+def test_receipt_in_the_base_unit_stamps_no_bridge(client, purchase_operator, supplier, position):
+    """Sem conversao no meio nao ha ponte a registrar — e uma chave `null` fingiria que ha."""
+    sal = Material.objects.create(sku="SAL", name="Sal marinho", unit="kg")
+    client.force_login(purchase_operator)
+
+    response = client.post(
+        reverse("api-backstage-purchase-confirm-receipt"),
+        data={
+            "mode": "manual",
+            "supplierRef": supplier.ref,
+            "note": "Romaneio",
+            "lines": [
+                {
+                    "id": "line-sal",
+                    "materialSku": sal.sku,
+                    "conversionId": None,
+                    "purchaseQty": 3,
+                    "costInput": "9,00",
+                    "checked": True,
+                }
+            ],
+        },
+        content_type="application/json",
+    )
+
+    assert response.status_code == 200
+    move = Move.objects.get(quant__sku=sal.sku)
+    assert "converted_via" not in move.metadata
+
+
+@pytest.mark.django_db
+def test_stock_that_crossed_an_approximate_bridge_carries_the_tilde(
+    client, purchase_operator, material, supplier, position,
+):
+    """R3 da ADR-024: a incerteza acompanha o numero ate a tela."""
+    ovos = Material.objects.create(sku="OVOS", name="Ovos", unit="kg", shelf_life_days=21)
+    cartela = MaterialConversion.objects.create(
+        material=ovos,
+        supplier=supplier,
+        label="cartela",
+        to_base_factor=Decimal("1.5"),
+        kind=MaterialConversion.Kind.APPROXIMATE,
+    )
+    client.force_login(purchase_operator)
+
+    confirm = client.post(
+        reverse("api-backstage-purchase-confirm-receipt"),
+        data={
+            "mode": "manual",
+            "supplierRef": supplier.ref,
+            "note": "Romaneio",
+            "lines": [
+                {
+                    "id": "line-ovos",
+                    "materialSku": ovos.sku,
+                    "conversionId": str(cartela.pk),
+                    "purchaseQty": 2,
+                    "costInput": "48,00",
+                    "expiryDate": "2026-09-30",
+                    "checked": True,
+                }
+            ],
+        },
+        content_type="application/json",
+    )
+    assert confirm.status_code == 200
+
+    move = Move.objects.get(quant__sku=ovos.sku)
+    assert move.metadata["converted_via"] == {
+        "label": "cartela",
+        "factor": "1.500000",
+        "approximate": True,
+    }
+
+    board = client.get(reverse("api-backstage-purchase"))
+    rows = {row["sku"]: row for row in board.json()["purchase"]["materials"]}
+    assert rows["OVOS"]["stockIsApproximate"] is True
+    # O insumo que entrou na propria base nao ganha enfeite: numero exato e exato.
+    assert rows["FARINHA-T65"]["stockIsApproximate"] is False

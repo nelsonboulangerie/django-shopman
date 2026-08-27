@@ -14,6 +14,7 @@ import {
   coverageLabel,
   formatMoney,
   formatQty,
+  formatStockOnHand,
   isApproximateCost,
   purchaseUnitLabel,
 } from "~/presentation/purchase";
@@ -857,7 +858,7 @@ onBeforeUnmount(stopInvoiceScanner);
                     <button type="button" class="text-left font-semibold hover:underline" @click="selectMaterial(material.sku)">{{ material.name }}</button>
                     <p class="text-xs text-muted-foreground">{{ material.category }} · {{ material.recipes.join(", ") }}</p>
                   </td>
-                  <td class="px-3 py-2 tabular-nums">{{ formatQty(material.stockOnHand, material.unit) }}</td>
+                  <td class="px-3 py-2 tabular-nums">{{ formatStockOnHand(material) }}</td>
                   <td class="px-3 py-2 tabular-nums">{{ coverageLabel(material.coverageDays) }}</td>
                   <td class="px-3 py-2 tabular-nums">{{ formatMoney(material.preferredBaseCostQ) }} / {{ material.unit }}</td>
                   <td class="px-3 py-2">

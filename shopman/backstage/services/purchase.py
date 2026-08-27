@@ -175,13 +175,11 @@ def confirm_receipt(payload: dict[str, Any], *, user) -> dict[str, Any]:
                 purchase_line_note=line.note,
                 purchase_line_id=line.line_id,
                 purchase_material_sku=line.material.sku,
-                purchase_conversion_id=str(line.conversion.pk) if line.conversion else "",
-                purchase_conversion_label=line.conversion.label if line.conversion else "",
-                purchase_conversion_approximate=bool(line.conversion and line.conversion.is_approximate),
                 purchase_qty=str(line.purchase_qty),
                 purchase_base_qty=str(line.base_qty),
                 purchase_total_cost_q=line.total_cost_q,
                 purchase_unit_cost_q=line.unit_cost_q,
+                **_converted_via(line),
             )
             if line.total_cost_q > 0:
                 _upsert_supplier_cost(
@@ -789,6 +787,32 @@ def _resolve_conversion(raw_id: Any, *, material, supplier, field: str):
     if not conversion.is_active:
         raise PurchaseError("Conversão inativa.", code="conversion_inactive", field=field)
     return conversion
+
+
+def _converted_via(line: ResolvedReceiptLine) -> dict[str, Any]:
+    """O carimbo da ponte que a quantidade atravessou — ou nada, se não houve ponte.
+
+    ``Move.metadata["converted_via"]`` é o que a Fase 5 do UNIT-CONVERSION-PLAN
+    pede, e existe para uma pergunta poder ser feita depois: *este saldo foi
+    medido ou foi convertido?* Sem o carimbo, 5 kg que vieram de "10 pacotes ≈
+    500 g" ficam indistinguíveis de 5 kg pesados na balança — que é exatamente o
+    que a R3 da ADR-024 proíbe ("some o ``≈``, some a informação").
+
+    As três chaves viajam JUNTAS, num objeto só, porque separadas elas podiam
+    aparecer pela metade: rótulo sem fator não permite refazer a conta, e fator
+    sem o ``approximate`` não diz se a conta era exata. Entrada na própria
+    unidade-base não carimba nada — não houve conversão para registrar, e uma
+    chave com ``null`` fingiria que houve.
+    """
+    if line.conversion is None:
+        return {}
+    return {
+        "converted_via": {
+            "label": line.conversion.label,
+            "factor": str(line.conversion.to_base_factor),
+            "approximate": bool(line.conversion.is_approximate),
+        }
+    }
 
 
 def _upsert_supplier_cost(*, material, supplier, conversion, cost_q: int, make_preferred: bool, prefer_if_missing: bool = False) -> None:

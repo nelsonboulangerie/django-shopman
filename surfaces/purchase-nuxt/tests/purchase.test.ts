@@ -6,6 +6,7 @@ import {
 } from "~/composables/usePurchaseApi";
 import {
   costPerBaseUnitQ,
+  formatStockOnHand,
   materialIssues,
   parseInvoiceAccessKey,
   quotePreview,
@@ -515,6 +516,24 @@ describe("purchase presentation", () => {
       label: "Definir conversão",
       tone: "block",
     });
+  });
+
+  it("saldo que atravessou ponte aproximada carrega o ≈ ate a tela", () => {
+    // R3 da ADR-024: 1,5 kg vindos de "30 ovos ≈ 50 g" nao sao o mesmo numero
+    // que 1,5 kg pesados, e a tela e o ultimo lugar onde da para dizer isso.
+    const estimado = { ...ovos, stockIsApproximate: true };
+
+    expect(formatStockOnHand(estimado)).toBe("≈ 16 kg");
+    expect(materialIssues(estimado, [], [])).toContainEqual({
+      key: "approximate-stock",
+      label: "Saldo estimado",
+      tone: "watch",
+    });
+  });
+
+  it("numero exato nao ganha enfeite", () => {
+    expect(formatStockOnHand(farinha)).toBe("80 kg");
+    expect(materialIssues(farinha, [], []).map((issue) => issue.key)).not.toContain("approximate-stock");
   });
 
   it("declara paths BFF estaveis para wiring com Buyman", () => {

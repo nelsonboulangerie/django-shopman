@@ -154,6 +154,25 @@ Recusas: `conversion_factor_invalid` (fator <= 0 ou nao numerico),
 `conversion_kind_invalid`, `conversion_validation_failed` (rotulo ja existe no
 insumo/fornecedor).
 
+### O carimbo da conversao no lancamento
+
+Toda entrada que atravessa uma conversao grava, no proprio `Move`:
+
+```json
+{"converted_via": {"label": "un 500 g", "factor": "0.500000", "approximate": false}}
+```
+
+As tres chaves viajam juntas: rotulo sem fator nao deixa refazer a conta, e fator
+sem o `approximate` nao diz se a conta era exata. Entrada na propria unidade-base
+**nao carimba nada** — nao houve ponte, e uma chave com `null` fingiria que houve.
+
+Saldo que atravessou ponte **aproximada** volta na projection com
+`stockIsApproximate: true` e aparece como `≈ 1,5 kg` na tela, com a pendencia
+"Saldo estimado" no insumo (ADR-024, R3: some o `≈`, some a informacao). A janela
+que decide ate quando o `≈` vale e a validade do insumo — sem ela, a janela de
+consumo da politica — e erra **de proposito para o lado seguro**: marcar de menos
+esconderia a incerteza.
+
 ## Operacao fiscal
 
 A tela publica da SEFAZ/PR serve para conferencia humana e normalmente envolve

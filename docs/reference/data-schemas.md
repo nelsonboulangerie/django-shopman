@@ -1422,3 +1422,30 @@ O lado do insumo (`buyman.Material.metadata`) tem as chaves de leitura do mesmo
 scan (`invoice_codes`, `gtins` e afins em `MATERIAL_CODE_KEYS`) e o estado do
 pedido de reposição (`purchase.request_status*`, escrito por
 `set_purchase_request_status`).
+
+### `stockman.Move.metadata` — o recebimento de Compras
+
+Escrito por `backstage/services/purchase.py::confirm_receipt`, que repassa tudo
+como `**metadata` para `stock.receive`. São chaves **planas** de procedência —
+quem confirmou, de qual NF, com que preço — mais **uma** estruturada:
+
+| Chave | Tipo | O que é |
+|-------|------|---------|
+| `purchase_supplier_ref` · `purchase_supplier_name` | `str` | fornecedor da entrada (o `ref` é lido por `projections/purchase.py::_last_delivery_map`) |
+| `purchase_receipt_mode` | `"invoice" \| "manual"` | com ou sem documento fiscal |
+| `purchase_invoice_access_key` | `str` | chave de 44 dígitos da NF-e (vazio no modo manual) |
+| `purchase_receipt_note` · `purchase_line_note` | `str` | ressalva geral e ocorrência da linha |
+| `purchase_line_id` · `purchase_material_sku` | `str` | rastro da linha do rascunho |
+| `purchase_qty` · `purchase_base_qty` | `str` (Decimal) | quantidade **na unidade de compra** e **na unidade-base** — é o par que prova a conversão |
+| `purchase_total_cost_q` · `purchase_unit_cost_q` | `int` (centavos) | valor da linha e custo por unidade de compra |
+| `converted_via` | `{label: str, factor: str, approximate: bool}` | **a ponte que a quantidade atravessou** — ver abaixo |
+
+`converted_via` só existe quando houve conversão: entrada na própria unidade-base
+não carimba nada, porque não houve ponte, e uma chave com `null` fingiria que
+houve. As três subchaves viajam **num objeto só** de propósito — rótulo sem fator
+não deixa refazer a conta, e fator sem o `approximate` não diz se a conta era
+exata. É o carimbo da Fase 5 do
+[UNIT-CONVERSION-PLAN](../plans/UNIT-CONVERSION-PLAN.md), e existe para uma
+pergunta poder ser feita depois: *este saldo foi medido ou foi convertido?*
+(ADR-024, R3). `projections/purchase.py::_approximate_stock_skus` lê
+`converted_via.approximate` para pôr o `≈` no saldo.

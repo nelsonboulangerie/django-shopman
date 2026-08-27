@@ -52,6 +52,9 @@ const MATERIALS: Material[] = [
     recipes: ["Croissant", "Pain au chocolat"],
   },
   {
+    // Comprado por cartela e contado em kg: a ponte e aproximada, e o saldo
+    // carrega o "≈" por causa disso (ADR-024, R3).
+    stockIsApproximate: true,
     sku: "OVOS",
     name: "Ovos",
     unit: "kg",

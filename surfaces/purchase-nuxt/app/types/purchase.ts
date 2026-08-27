@@ -29,6 +29,9 @@ export interface Material {
   leadTimeDays?: number;
   replenishAtDays?: number;
   suggestedQty?: number;
+  // O saldo atravessou uma ponte aproximada e carrega o "≈" ate a tela
+  // (ADR-024, R3). Vem do carimbo `converted_via.approximate` no Move.
+  stockIsApproximate?: boolean;
 }
 
 export interface Supplier {
@@ -83,7 +86,13 @@ export interface PurchaseResponse {
 }
 
 export interface MaterialIssue {
-  key: "missing-preferred" | "low-stock" | "approximate-cost" | "inactive-material" | "no-conversion";
+  key:
+    | "missing-preferred"
+    | "low-stock"
+    | "approximate-cost"
+    | "approximate-stock"
+    | "inactive-material"
+    | "no-conversion";
   label: string;
   tone: MaterialTone;
 }

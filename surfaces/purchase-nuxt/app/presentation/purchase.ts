@@ -48,6 +48,18 @@ export function formatQty(value: number, unit: string): string {
   return `${quantityFormatter.format(value)} ${unit}`;
 }
 
+/**
+ * O saldo do insumo, com o "≈" quando ele atravessou uma ponte aproximada.
+ *
+ * ADR-024, R3: "some o ≈, some a informação". Um saldo de 1,5 kg que veio de
+ * "30 ovos ≈ 50 g cada" não é o mesmo número que 1,5 kg pesados na balança, e a
+ * tela é o último lugar onde ainda dá para dizer isso.
+ */
+export function formatStockOnHand(material: Pick<Material, "stockOnHand" | "unit" | "stockIsApproximate">): string {
+  const quantity = formatQty(material.stockOnHand, material.unit);
+  return material.stockIsApproximate ? `≈ ${quantity}` : quantity;
+}
+
 export function formatFactor(value: number, unit: string, approximate = false): string {
   const prefix = approximate ? "≈ " : "";
   return `${prefix}${quantityFormatter.format(value)} ${unit}`;
@@ -297,6 +309,9 @@ export function materialIssues(
   }
   if (preferred && isApproximateCost(preferred, conversions)) {
     issues.push({ key: "approximate-cost", label: "Custo estimado", tone: "watch" });
+  }
+  if (material.stockIsApproximate) {
+    issues.push({ key: "approximate-stock", label: "Saldo estimado", tone: "watch" });
   }
   if (!activeConversions.length && materialCosts.some((cost) => cost.conversionId)) {
     issues.push({ key: "no-conversion", label: "Conversão inativa", tone: "watch" });
