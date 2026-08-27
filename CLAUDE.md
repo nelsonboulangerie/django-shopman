@@ -188,6 +188,11 @@ Cores nunca se importam. Para causar efeito em outro app, a **interação decide
   - ⚠️ O **texto** da tela continua em português. Isto é sobre o caminho na URL, não sobre a copy.
   - Subdomínio é **hostname**, não URL: `gestor.`, `pdv.`, `central.` seguem como estão — mexer ali é DNS.
 - **Chaves de projection em inglês**: contratos de projection (ex.: order-queue) usam chaves em inglês, mudança BE+FE atômica — PR #67.
+- **Identificador em inglês — com três exceções que são regra, não julgamento.** A convenção é sobre o **nome no código**, e estas três não são descuido:
+  - **`cpf`, `cnpj`, `cep` ficam em português.** São nome próprio de documento brasileiro, como `IBAN` ou `ZIP`. `is_valid_cpf` é o nome certo; "traduzir" produziria um nome que não existe.
+  - **Prosa fica em português** — docstring, comentário, mensagem ao operador, cópia de tela. A regra vale para identificador, não para a língua da casa.
+  - **Campo de API de terceiro fica como o terceiro chama, e morre na porta de entrada.** O `valor` da Efí é o caso canônico: sobrevive em `pix_item["valor"]` porque é o contrato deles, e para dentro do sistema vira `amount`. Renomear no meio esconde de que lado do contrato você está.
+  - ⚠️ Pendência conhecida: o `MovementType` do caixa (`SANGRIA`/`SUPRIMENTO`/`AJUSTE`) segue em português. Não é esquecimento — o valor está gravado no banco, sai no comprovante impresso e é o que o operador fala. Converter é coerente (a casa já fez isso com *comanda* na tela / `POSTab` no código), mas é WP próprio, com migração.
 - **Dialeto canônico de erro**: toda resposta de erro JSON das APIs fala `{detail, field, errors}` (via `EXCEPTION_HANDLER` DRF em `shopman/shop/api_errors.py`). Ver [docs/reference/errors.md](docs/reference/errors.md).
 - **Frontend: HTMX ↔ servidor, Alpine.js ↔ DOM**:
   - **HTMX**: toda comunicação com servidor (GET, POST, polling, swaps). Incluindo `hx-on::before-request`/`after-request` para estados visuais de loading atrelados a requests.
