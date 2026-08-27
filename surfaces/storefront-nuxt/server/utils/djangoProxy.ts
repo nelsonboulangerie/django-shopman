@@ -42,6 +42,11 @@ export function mergeSetCookieIntoCookieHeader (cookie: string | undefined, setC
 }
 
 export function storefrontSetCookieHeader (setCookie: string): string {
+  // Customer storefront cookies are host-only by project contract. The upstream
+  // Django request may be served through an API/operator alias; when the Nuxt BFF
+  // relays that cookie to the public store host, preserving Domain would either
+  // make the browser reject it or broaden the customer's session incorrectly.
+  // Keep Path/SameSite/Secure/HttpOnly exactly as Django emitted them.
   return setCookie
     .split(';')
     .filter(part => !/^\s*domain=/i.test(part))

@@ -38,7 +38,7 @@ def test_home_projection_keeps_operational_status_single_sourced(rf):
     assert status_label.startswith("Aberto" if payload["shop_status"]["is_open"] else "Fechado")
 
 
-def test_home_projection_promotes_whatsapp_origin_as_contract_notice(rf):
+def test_home_projection_does_not_promote_whatsapp_origin_without_cart(rf):
     from shopman.shop.models import Shop
     from shopman.storefront.api.projections import projection_data
     from shopman.storefront.presentation.home import build_home
@@ -51,6 +51,32 @@ def test_home_projection_promotes_whatsapp_origin_as_contract_notice(rf):
     payload = projection_data(build_home(request))
     notices = {notice["ref"]: notice for notice in payload["notices"]}
 
+    assert "origin_whatsapp" not in notices
+
+
+def test_home_projection_promotes_whatsapp_origin_only_with_real_cart(rf):
+    from shopman.orderman.models import Session
+
+    from shopman.shop.models import Shop
+    from shopman.storefront.api.projections import projection_data
+    from shopman.storefront.constants import STOREFRONT_CHANNEL_REF
+    from shopman.storefront.presentation.home import build_home
+
+    Shop.load() or Shop.objects.create(name="Test Padaria")
+    cart = Session.objects.create(
+        session_key="home-cart-whatsapp",
+        channel_ref=STOREFRONT_CHANNEL_REF,
+        state="open",
+        items=[{"line_id": "L1", "sku": "PAO-FRANCES", "qty": 1, "unit_price_q": 100}],
+    )
+
+    request = rf.get("/api/v1/storefront/home/")
+    request.session = {"origin_channel": "whatsapp", "cart_session_key": cart.session_key}
+
+    payload = projection_data(build_home(request))
+    notices = {notice["ref"]: notice for notice in payload["notices"]}
+
     assert notices["origin_whatsapp"]["priority"] == "contextual"
     assert notices["origin_whatsapp"]["tone"] == "info"
+    assert notices["origin_whatsapp"]["title"] == "Sua sacola está aqui"
     assert notices["origin_whatsapp"]["actions"][0]["href"] == "/finalizar"

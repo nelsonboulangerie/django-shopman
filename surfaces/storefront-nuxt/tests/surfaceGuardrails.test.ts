@@ -620,6 +620,20 @@ describe('surface UX guardrails', () => {
     expect(login).toContain('data-login-support')
   })
 
+  it('keeps passkey opt-in out of shopping flows and copy-neutral in security', () => {
+    const checkout = read('app/pages/finalizar.vue')
+    const account = read('app/pages/conta/index.vue')
+    const security = read('app/pages/conta/seguranca.vue')
+    const passkey = read('app/composables/usePasskey.ts')
+
+    expect(surfaceVueFiles).not.toContain('app/components/PasskeyInviteCard.vue')
+    expect(checkout).not.toContain('PasskeyInviteCard')
+    expect(account).not.toContain('PasskeyInviteCard')
+    expect(security).toContain('Entrar com uma chave deste aparelho')
+    expect(security).toContain('lucide:key-round')
+    expect(`${security}\n${passkey}`).not.toMatch(/rosto|digital|scan-face/i)
+  })
+
   it('keeps auth routes themed without letting shell home clobber auth/cart state', () => {
     const app = read('app/app.vue')
     const access = read('app/pages/a.vue')

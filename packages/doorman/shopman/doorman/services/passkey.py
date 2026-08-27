@@ -150,11 +150,10 @@ def registration_options(request, *, customer_id, display_name: str, user_name: 
         user_display_name=display_name,
         authenticator_selection=AuthenticatorSelectionCriteria(
             # `required` é o que faz a credencial ser DESCOBERÍVEL: o navegador a oferece sem
-            # a pessoa digitar telefone nenhum. É a diferença entre "entre com o rosto" e
-            # "digite quem você é e depois use o rosto".
+            # a pessoa digitar telefone nenhum.
             resident_key=ResidentKeyRequirement.REQUIRED,
-            # Exigir verificação de usuário = rosto/digital/PIN, não só presença. Sem isto,
-            # um aparelho destravado na mão de outra pessoa entraria.
+            # Exigir verificação de usuário = confirmação local do aparelho, não só presença.
+            # Sem isto, um aparelho destravado na mão de outra pessoa entraria.
             user_verification=UserVerificationRequirement.REQUIRED,
         ),
         # Impede cadastrar DUAS credenciais do mesmo aparelho: o navegador vê que já existe e

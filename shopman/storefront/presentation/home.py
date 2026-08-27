@@ -183,7 +183,7 @@ class HomeProjection:
     public_config: PublicConfigProjection
 
 
-def build_home(request: HttpRequest) -> HomeProjection:
+def build_home(request: HttpRequest, *, cart_has_items: bool | None = None) -> HomeProjection:
     from shopman.shop.models import Shop
     from shopman.shop.omotenashi import OmotenashiContext
 
@@ -241,10 +241,16 @@ def build_home(request: HttpRequest) -> HomeProjection:
         default_ddd=get_default_ddd(),
     )
 
+    notice_cart_has_items = (
+        bool(cart_has_items)
+        if cart_has_items is not None
+        else origin_channel == "whatsapp" and _request_cart_has_items(request)
+    )
     notices = _home_notices(
         shop_status=shop_status,
         omotenashi=omotenashi,
         origin_channel=origin_channel,
+        cart_has_items=notice_cart_has_items,
         whatsapp_url=public_config.whatsapp_url,
     )
 
@@ -271,6 +277,7 @@ def _home_notices(
     shop_status: ShopStatusProjection,
     omotenashi: OmotenashiProjection,
     origin_channel: str | None,
+    cart_has_items: bool,
     whatsapp_url: str,
 ) -> tuple[HomeNoticeProjection, ...]:
     notices: list[HomeNoticeProjection] = []
@@ -319,18 +326,18 @@ def _home_notices(
             actions=tuple(actions),
         ))
 
-    if origin_channel == "whatsapp":
+    if origin_channel == "whatsapp" and cart_has_items:
         notices.append(HomeNoticeProjection(
             ref="origin_whatsapp",
             tone="info",
-            title="Você veio do WhatsApp",
-            message="Seu pedido pode continuar por aqui, com a sacola e o acompanhamento atualizados.",
+            title="Sua sacola está aqui",
+            message="Você entrou pelo WhatsApp e pode finalizar por aqui.",
             priority="contextual",
             actions=(
                 Action(
                     ref="continue_checkout",
                     kind="link",
-                    label="Continuar pedido",
+                    label="Finalizar pedido",
                     href="/finalizar",
                     priority="primary",
                 ),
@@ -338,6 +345,21 @@ def _home_notices(
         ))
 
     return tuple(notices)
+
+
+def _request_cart_has_items(request: HttpRequest) -> bool:
+    try:
+        session = getattr(request, "session", None)
+        session_key = str(session.get("cart_session_key") or "") if session is not None else ""
+        if not session_key:
+            return False
+        from shopman.shop.projections import cart as cart_data
+
+        cart = cart_data.build_cart(session_key, STOREFRONT_CHANNEL_REF)
+        return bool(cart.count > 0 and not cart.is_empty)
+    except Exception:
+        logger.debug("home.cart_context_unavailable", exc_info=True)
+        return False
 
 
 def _home_actions(last_order_ref: str | None) -> tuple[Action, ...]:

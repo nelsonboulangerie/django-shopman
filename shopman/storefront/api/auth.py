@@ -612,11 +612,11 @@ class BrowserHandoffView(APIView):
             )
         return Response({"url": url, "expires_in_minutes": self.HANDOFF_TTL_MINUTES})
 
-# ── Passkey: entrar com o rosto, sem código nenhum ───────────────────
+# ── Passkey: acesso rápido do aparelho, sem código nenhum ────────────
 #
 # ⚠️ A regra de segurança que decide o desenho: **cadastrar passkey exige identidade FORTE**.
 # Uma sessão que só conhece o número (chegou por link de campanha, e mensagem se encaminha)
-# não pode gravar uma credencial na conta de alguém — seria alguém cadastrando o PRÓPRIO rosto
+# não pode gravar uma credencial na conta de alguém — seria alguém cadastrando a própria chave
 # no acesso de outra pessoa, e para sempre. Então cadastro pede confirmação antes; entrar, não.
 
 
@@ -694,7 +694,7 @@ class PasskeyLoginOptionsView(APIView):
     """POST /api/v1/auth/passkey/login/options/ — desafio de login, sem pedir telefone.
 
     Sem `allowCredentials`: o navegador oferece as credenciais que ELE tem para o nosso
-    domínio. É isso que faz "entrar com o rosto" não precisar de identificação antes.
+    domínio. É isso que faz o acesso rápido não precisar de identificação antes.
     """
 
     permission_classes = [AllowAny]
@@ -717,7 +717,7 @@ class PasskeyLoginView(APIView):
     """POST /api/v1/auth/passkey/login/ — verifica a assinatura e abre a sessão.
 
     A sessão nasce com identidade FORTE: a credencial só assina para o nosso domínio (imune a
-    phishing) e exigimos rosto/digital/PIN. Não há nada a reduzir nem a confirmar depois.
+    phishing) e exigimos verificação local do aparelho. Não há nada a reduzir nem a confirmar depois.
     """
 
     permission_classes = [AllowAny]

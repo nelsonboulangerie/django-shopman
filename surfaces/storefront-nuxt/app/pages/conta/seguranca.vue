@@ -44,8 +44,8 @@ const accountDevices = computed(() => devicesResponse.value?.devices || [])
 // ── Acesso rápido (passkey) ─────────────────────────────────────────
 //
 // Fica ACIMA dos dispositivos confiáveis porque é a credencial mais forte que a pessoa tem: o
-// aparelho confiável dispensa o código, a passkey dispensa a espera. E é a única lista aqui em
-// que "remover" tem consequência boa e imediata — o aparelho perdido para de entrar.
+// aparelho confiável dispensa o código, a passkey dispensa a espera. O cadastro é opt-in nesta
+// página porque capacidade do aparelho é contexto, não promessa no checkout.
 type PasskeyRow = {
   credential_id: string
   label: string
@@ -82,9 +82,9 @@ onMounted(async () => {
   passkeyBlocked.value = passkeyBlockedReason()
   passkeyReady.value = await passkeyIsQuick()
   if (!passkeyBlocked.value && !passkeyReady.value) {
-    // Navegador e endereço servem, mas o aparelho não tem leitor (desktop sem biometria).
+    // Navegador e endereço servem, mas o aparelho não oferece um autenticador local rápido.
     // Dizer isso é melhor que sumir: a pessoa entende que o recurso existe e não é para ali.
-    passkeyBlocked.value = 'Este aparelho não tem leitor de rosto ou digital.'
+    passkeyBlocked.value = 'Este aparelho não oferece acesso rápido pela chave do próprio dispositivo.'
   }
   await loadPasskeys()
 })
@@ -290,14 +290,14 @@ useSeoMeta({ title: 'Segurança e dados' })
           <div>
             <h2 class="shop-heading">Acesso rápido</h2>
             <p class="shop-muted">
-              Entrar com o rosto ou a digital deste aparelho, sem código e sem esperar mensagem.
+              Entrar com uma chave deste aparelho, sem código e sem esperar mensagem.
             </p>
           </div>
           <UiButton
             v-if="!passkeysPending && passkeyReady"
             variant="outline"
             size="sm"
-            icon="lucide:scan-face"
+            icon="lucide:key-round"
             :loading="passkeyBusy"
             @click="addPasskey"
           >
@@ -342,7 +342,7 @@ useSeoMeta({ title: 'Segurança e dados' })
 
         <UiEmpty v-else-if="!passkeys.length" class="border">
           <UiEmptyMedia variant="icon">
-            <Icon name="lucide:scan-face" />
+            <Icon name="lucide:key-round" />
           </UiEmptyMedia>
           <UiEmptyHeader>
             <UiEmptyTitle>Você ainda não ativou</UiEmptyTitle>
@@ -356,7 +356,7 @@ useSeoMeta({ title: 'Segurança e dados' })
         <UiItemGroup v-else class="gap-3">
           <UiItem v-for="row in passkeys" :key="row.credential_id" variant="outline" class="bg-card">
             <UiItemMedia variant="icon" class="size-10 rounded-md">
-              <Icon name="lucide:scan-face" />
+              <Icon name="lucide:key-round" />
             </UiItemMedia>
             <UiItemContent>
               <UiItemTitle>{{ row.label }}</UiItemTitle>

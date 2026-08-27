@@ -239,10 +239,11 @@ class StorefrontHomeView(APIView):
     authentication_classes = []
 
     def get(self, request):
-        home = build_home(request=request)
+        cart = build_cart(request=request, channel_ref=STOREFRONT_CHANNEL_REF)
+        home = build_home(request=request, cart_has_items=cart.items_count > 0 and not cart.is_empty)
         return Response({
             "home": projection_data(home),
-            "cart": _cart_payload(request),
+            "cart": projection_data(cart),
         })
 
 
