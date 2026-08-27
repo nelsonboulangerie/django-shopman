@@ -52,6 +52,7 @@ class ResolvedReceiptLine:
     expiry_date: Any | None
     note: str
     invoice_product_code: str
+    invoice_lot: str
     checked: bool
 
 
@@ -346,6 +347,20 @@ def declare_conversion(payload: dict[str, Any], *, user=None) -> tuple[dict[str,
         supplier = Supplier.objects.filter(ref=supplier_ref).first()
         if not supplier:
             raise PurchaseError("Fornecedor não encontrado.", code="supplier_not_found", field="supplierRef")
+
+    # A nota sabe o fator, mas só depois de existir insumo: "7 CX = 35 KG" só
+    # vira "1 caixa = 5 kg" quando há uma unidade-base para converter PARA. Na
+    # nota real o item chega como "MANTEIGA S/SAL CX 5 KG PRESIDENT TEU" e não
+    # casa com nenhum insumo, então a sugestão do scan sai vazia — e o operador
+    # que escolhe a manteiga na mão caía num cadastro manual que a nota já
+    # respondia. Aqui o par volta e o servidor deriva, com a mesma física.
+    derived = _conversion_from_invoice_axes(payload, material=material)
+    if derived is not None:
+        payload = {
+            "label": payload.get("label") or derived.label,
+            "factor": payload.get("factor") or derived.factor,
+            "kind": payload.get("kind") or derived.kind,
+        }
 
     label = str(payload.get("label") or "").strip()
     if not label:
@@ -757,6 +772,7 @@ def _resolve_receipt_line(raw: dict[str, Any], *, index: int, supplier) -> Resol
         expiry_date=expiry_date,
         note=note,
         invoice_product_code=str(raw.get("invoiceProductCode") or raw.get("invoice_product_code") or "").strip(),
+        invoice_lot=str(raw.get("invoiceLot") or raw.get("invoice_lot") or "").strip(),
         checked=True,
     )
 
@@ -787,6 +803,28 @@ def _resolve_conversion(raw_id: Any, *, material, supplier, field: str):
     if not conversion.is_active:
         raise PurchaseError("Conversão inativa.", code="conversion_inactive", field=field)
     return conversion
+
+
+def _conversion_from_invoice_axes(payload: dict[str, Any], *, material):
+    """Deriva rótulo e fator do par da NF, quando o gesto mandou o par."""
+    if payload.get("factor") and payload.get("label"):
+        return None
+    quantity = _decimal(payload.get("invoiceQty") or payload.get("invoice_qty"))
+    tax_quantity = _decimal(payload.get("invoiceTaxQty") or payload.get("invoice_tax_qty"))
+    unit = str(payload.get("invoiceUnit") or payload.get("invoice_unit") or "").strip()
+    tax_unit = str(payload.get("invoiceTaxUnit") or payload.get("invoice_tax_unit") or "").strip()
+    if quantity <= 0 or not unit:
+        return None
+    from shopman.shop.adapters.purchase_invoice_nfe import conversion_from_invoice_axes
+
+    return conversion_from_invoice_axes(
+        material=material,
+        quantity=quantity,
+        unit=unit,
+        tax_quantity=tax_quantity,
+        tax_unit=tax_unit,
+        name=str(payload.get("invoiceDescription") or payload.get("invoice_description") or ""),
+    )
 
 
 def _converted_via(line: ResolvedReceiptLine) -> dict[str, Any]:
@@ -1115,7 +1153,22 @@ def _manual_source_ref(*, supplier_ref: str, note: str) -> str:
 
 
 def _batch_ref(*, source_ref: str, line: ResolvedReceiptLine) -> str:
+    """A referência do lote — a do FORNECEDOR quando a nota informa.
+
+    Num recall, quem chama o lote é quem fabricou: o aviso diz "lote L2408A",
+    não o código que a nossa entrada inventou. Guardar o número da nota é o que
+    torna a pergunta "esse lote entrou aqui?" respondível em segundos.
+
+    O SKU entra na frente porque o número do fornecedor só é único dentro do
+    produto dele: dois insumos diferentes podem chegar com "L2408A" no mesmo
+    dia, e o lote é chave global no Stockman. Sem lote na nota — o caso comum,
+    porque ``rastro`` é opcional — vale o código derivado de sempre.
+    """
     sku = re.sub(r"[^A-Z0-9]+", "", line.material.sku.upper())[:18] or "SKU"
+    if line.invoice_lot:
+        lot = re.sub(r"[^A-Z0-9]+", "", line.invoice_lot.upper())[:20]
+        if lot:
+            return f"{sku}-L{lot}"[:50]
     source = re.sub(r"[^A-Z0-9]+", "", source_ref.upper())[-10:] or "REC"
     seed = f"{source_ref}:{line.line_id}:{line.material.sku}:{line.expiry_date}"
     digest = hashlib.sha1(seed.encode("utf-8")).hexdigest()[:8].upper()

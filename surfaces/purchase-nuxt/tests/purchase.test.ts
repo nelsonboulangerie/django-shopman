@@ -6,7 +6,9 @@ import {
 } from "~/composables/usePurchaseApi";
 import {
   costPerBaseUnitQ,
+  formatMoney,
   formatStockOnHand,
+  receiptSettledSummary,
   materialIssues,
   parseInvoiceAccessKey,
   quotePreview,
@@ -245,7 +247,7 @@ describe("purchase presentation", () => {
     expect(preview?.line.invoiceEan).toBe("7891234567895");
     expect(preview?.warnings).toContainEqual({
       key: "missing-material",
-      label: "Definir insumo",
+      label: "Escolha o insumo desta linha",
       tone: "block",
     });
     expect(preview?.suggestion).toBeNull();
@@ -276,7 +278,7 @@ describe("purchase presentation", () => {
     });
     expect(preview?.warnings).toContainEqual({
       key: "confirm-suggestion",
-      label: "Confirmar sugestão de insumo",
+      label: "Confirme o insumo sugerido",
       tone: "block",
     });
     expect(preview?.warnings.map((warning) => warning.key)).not.toContain("missing-material");
@@ -321,7 +323,7 @@ describe("purchase presentation", () => {
 
     expect(preview?.warnings).toContainEqual({
       key: "missing-conversion",
-      label: "Definir conversão",
+      label: "Cadastre a conversão da embalagem",
       tone: "block",
     });
   });
@@ -341,7 +343,7 @@ describe("purchase presentation", () => {
 
     expect(preview?.warnings).toContainEqual({
       key: "missing-expiry",
-      label: "Informar validade",
+      label: "Informe a validade",
       tone: "block",
     });
   });
@@ -380,7 +382,7 @@ describe("purchase presentation", () => {
     expect(preview?.baseCostQ).toBe(0);
     expect(preview?.warnings).toContainEqual({
       key: "confirm-conversion",
-      label: "Confirmar conversão da NF",
+      label: "Confirme a conversão que a NF sugere",
       tone: "block",
     });
     expect(preview?.warnings.map((warning) => warning.key)).not.toContain("missing-conversion");
@@ -513,7 +515,7 @@ describe("purchase presentation", () => {
     expect(preview?.conversionSuggestion).toBeNull();
     expect(preview?.warnings).toContainEqual({
       key: "missing-conversion",
-      label: "Definir conversão",
+      label: "Cadastre a conversão da embalagem",
       tone: "block",
     });
   });
@@ -534,6 +536,113 @@ describe("purchase presentation", () => {
   it("numero exato nao ganha enfeite", () => {
     expect(formatStockOnHand(farinha)).toBe("80 kg");
     expect(materialIssues(farinha, [], []).map((issue) => issue.key)).not.toContain("approximate-stock");
+  });
+
+  it("a quantidade sempre diz de QUE unidade se trata — '4 o que?'", () => {
+    const semInsumo: ReceiptLine = {
+      id: "nfe-1",
+      materialSku: "",
+      suggestedMaterialSku: "FARINHA-T65",
+      suggestionScore: 100,
+      conversionId: null,
+      requiresConversion: true,
+      purchaseQty: 4,
+      costInput: "730,00",
+      expiryDate: "",
+      lineNote: "",
+      invoiceDescription: "FARINHA TRIGO T65 ESPECIAL SC 25KG",
+      invoiceQty: 4,
+      invoiceUnit: "SC",
+      invoiceTaxQty: 100,
+      invoiceTaxUnit: "KG",
+      checked: false,
+    };
+
+    // Sem insumo ainda: a NOTA responde. Nunca "kg" — 4 sacos nao sao 4 kg.
+    expect(receiptLinePreview(semInsumo, "invoice", [farinha], [])?.purchaseUnitLabel).toBe("SC");
+
+    // Insumo aceito, conversao ainda pendente: continua sendo a unidade da nota.
+    const comInsumo = { ...semInsumo, materialSku: "FARINHA-T65" };
+    expect(receiptLinePreview(comInsumo, "invoice", [farinha], [])?.purchaseUnitLabel).toBe("SC");
+
+    // Conversao escolhida: passa a valer o vocabulario em que o operador conta.
+    const resolvido = { ...comInsumo, conversionId: "saco-25", requiresConversion: false };
+    expect(receiptLinePreview(resolvido, "invoice", [farinha], conversions)?.purchaseUnitLabel).toBe("saco 25 kg");
+  });
+
+  it("a linha carrega o que a NF diz, para o operador saber qual item e", () => {
+    const line: ReceiptLine = {
+      id: "nfe-1",
+      materialSku: "",
+      conversionId: null,
+      requiresConversion: true,
+      purchaseQty: 4,
+      costInput: "730,00",
+      expiryDate: "",
+      lineNote: "",
+      invoiceDescription: "FARINHA TRIGO T65 ESPECIAL SC 25KG",
+      invoiceQty: 4,
+      invoiceUnit: "SC",
+      invoiceTaxQty: 100,
+      invoiceTaxUnit: "KG",
+      invoiceProductCode: "7891",
+      checked: false,
+    };
+
+    const preview = receiptLinePreview(line, "invoice", [farinha], []);
+
+    expect(preview?.invoiceSummary).toBe("4 SC · 100 KG na NF · cód 7891");
+    // Uma instrucao por linha, na propria linha: o painel listava dez pilulas
+    // iguais sem dizer de qual item.
+    expect(preview?.nextStep).toBe("Escolha o insumo desta linha");
+    // A ocorrencia e do operador e nasce vazia.
+    expect(preview?.line.lineNote).toBe("");
+  });
+
+  it("a linha conferida cabe numa frase, para poder recolher", () => {
+    // Numa nota de dez itens, formulario aberto de quem ja decidiu so atrapalha
+    // quem procura o que falta. O resumo tem de bastar para a conferencia de olho.
+    const line: ReceiptLine = {
+      id: "nfe-1",
+      materialSku: "FARINHA-T65",
+      conversionId: "saco-25",
+      requiresConversion: false,
+      purchaseQty: 4,
+      costInput: "730,00",
+      expiryDate: "2027-02-25",
+      lineNote: "",
+      invoiceDescription: "FARINHA TRIGO T65 ESPECIAL SC 25KG",
+      invoiceQty: 4,
+      invoiceUnit: "SC",
+      checked: true,
+    };
+
+    const preview = receiptLinePreview(line, "invoice", [farinha], conversions);
+
+    // `formatMoney` para montar a expectativa: o Intl usa espaco NAO-QUEBRAVEL
+    // entre "R$" e o numero, e comparar com um espaco comum falha exibindo duas
+    // strings visualmente identicas — meia hora de caca ao fantasma.
+    expect(receiptSettledSummary(preview!)).toBe(`4 × saco 25 kg = 100 kg · ${formatMoney(73000)}`);
+  });
+
+  it("entrada na propria unidade-base nao repete a unidade no resumo", () => {
+    const line: ReceiptLine = {
+      id: "line-sal",
+      materialSku: "FARINHA-T65",
+      conversionId: null,
+      requiresConversion: false,
+      purchaseQty: 12,
+      costInput: "",
+      expiryDate: "",
+      lineNote: "",
+      checked: true,
+    };
+
+    const preview = receiptLinePreview(line, "manual", [farinha], []);
+
+    // Sem conversao e sem valor, o resumo e so a quantidade — nada de "= 12 kg"
+    // repetindo o que ja foi dito, nem um "R$ 0,00" que ninguem digitou.
+    expect(receiptSettledSummary(preview!)).toBe("12 × kg");
   });
 
   it("declara paths BFF estaveis para wiring com Buyman", () => {

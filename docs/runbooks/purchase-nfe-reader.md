@@ -108,6 +108,39 @@ A quantidade da linha sai assim:
 - **nem uma nem outra** ("10 UN" de insumo pesado em `kg`): fica na unidade
   comercial e a linha **trava** ate alguem declarar o fator (regra R4).
 
+### O que a linha carrega para a tela
+
+A linha do rascunho leva o item da nota como DADO, e nao como texto solto:
+`invoiceDescription`, `invoiceQty`/`invoiceUnit`, `invoiceTaxQty`/`invoiceTaxUnit`
+(so quando o eixo tributavel diz algo diferente do comercial) e `invoiceTotal`.
+
+`lineNote` e a **ocorrencia do operador** (avaria, falta, ressalva) e nasce
+vazia. Ate 27/08/2026 os dois dividiam a mesma caixa: a descricao da NF era
+despejada dentro do textarea rotulado "Ocorrencia", entao o operador tinha de
+apagar o texto da nota para escrever o dele — e, pior, a unica pista sobre que
+item era aquele ficava no ultimo campo da linha, que no celular nem aparecia.
+
+### Validade e lote — a nota tem, quando o emissor preenche
+
+O grupo `rastro` do item traz `nLote`, `dVal` e `dFab`, e o adapter le os dois
+primeiros: `expiryDate` (+ `expiryFromInvoice`, para a tela dizer que veio da
+nota e nao da mao de alguem) e `invoiceLot`.
+
+**O grupo e OPCIONAL** na NF-e — obrigatorio so para algumas categorias — entao
+boa parte das notas de insumo chega sem ele e a validade segue sendo digitada
+na conferencia. A nota real da Lactalis (27/08) nao trazia.
+
+Quando o item tem **varios lotes**, vale o que **vence antes** — nao o primeiro
+do XML, porque a ordem em que o emissor escreveu nao e informacao. Numero e data
+saem do MESMO grupo: o lote "L2408A" com a validade de outro lote seria
+rastreabilidade falsa, pior que nenhuma.
+
+O `Batch` do Stockman passa a nascer com o lote do FORNECEDOR quando ele existe
+(`<SKU>-L<nLote>`), porque num recall quem chama o lote e quem fabricou. O SKU
+vai na frente porque o numero do fornecedor so e unico dentro do produto dele, e
+o lote e chave global no Stockman. Sem lote na nota, vale o codigo derivado de
+sempre (`BUY-<origem>-<SKU>-<hash>`).
+
 ### A conversao que a nota sugere
 
 Quando a linha trava, o adapter procura o fator na propria nota e devolve
@@ -129,6 +162,15 @@ Quando a nota **discorda** de uma conversao ja escolhida (saco declarado de
 divergencia como **aviso** — nao trava, mas nao passa calada. E o alerta de
 ordem de grandeza da ADR-024.
 
+**Quando o insumo so e escolhido depois.** Numa nota real o item chega como
+"MANTEIGA S/SAL CX 5 KG PRESIDENT TEU" e nao casa com "Manteiga francesa" do
+cadastro. Sem insumo nao ha unidade-base para converter PARA, entao o scan nao
+consegue calcular o fator e `conversionSuggestion` sai vazia. A linha continua
+carregando os dois eixos, e a tela oferece **"Usar o que a NF diz"**: o par
+volta ao servidor, que deriva com a mesma fisica do adapter
+(`conversion_from_invoice_axes`). A fisica fica num lugar so — uma copia no
+navegador seria a segunda tabela de conversao que a ADR-024 existe para impedir.
+
 ### Declarar conversao sem sair do recebimento
 
 `POST /api/v1/backstage/purchase/conversions/`, permissao
@@ -143,6 +185,11 @@ ordem de grandeza da ADR-024.
   "kind": "conventional"
 }
 ```
+
+Em vez de `label` + `factor`, o gesto pode mandar o **par da nota** — `invoiceQty`,
+`invoiceUnit`, `invoiceTaxQty`, `invoiceTaxUnit` (e `invoiceDescription`, que
+melhora o rotulo com a gramatura) — e o servidor deriva os dois. Se a fisica nao
+alcancar a base (massa para contagem), nada e derivado e a recusa da R4 vale.
 
 `supplierRef` vazio = conversao vale para qualquer fornecedor. A resposta traz
 `conversionId`, que a linha travada seleciona. A linha grava `created_by`: fator

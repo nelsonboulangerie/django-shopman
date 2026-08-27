@@ -30,6 +30,7 @@ def _nfe_xml(
     tax_quantity: str = "50.0000",
     tax_unit_value: str = "7.2000000000",
     ean: str = "SEM GTIN",
+    rastro: str = "",
 ) -> str:
     """NF-e de entrada com os DOIS eixos, que e como a nota real chega.
 
@@ -73,7 +74,7 @@ def _nfe_xml(
           <uCom>{unit}</uCom>
           <qCom>{quantity}</qCom>
           <vUnCom>{unit_value}</vUnCom>{tax_block}
-          <vProd>{total}</vProd>
+          <vProd>{total}</vProd>{rastro}
         </prod>
       </det>
       <total>
@@ -151,11 +152,16 @@ def test_parse_nfe_xml_to_receipt_draft_maps_supplier_material_and_conversion(su
             "purchaseQty": "2",
             "costInput": "360,00",
             "expiryDate": "",
-            "lineNote": (
-                "NF: FARINHA T65 25KG; cod FAR-25; unidade SC; tributavel 50 KG; "
-                "NCM 11010010; CFOP 5102."
-            ),
+            "expiryFromInvoice": False,
+            "invoiceLot": "",
+            # A ocorrencia nasce VAZIA: e o campo do operador, nao o despejo da NF.
+            "lineNote": "",
+            "invoiceDescription": "FARINHA T65 25KG",
+            "invoiceQty": "2",
             "invoiceUnit": "SC",
+            "invoiceTaxQty": "50",
+            "invoiceTaxUnit": "KG",
+            "invoiceTotal": "360,00",
             "invoiceProductCode": "FAR-25",
             "invoiceEan": "",
             "checked": False,
@@ -177,7 +183,8 @@ def test_parse_nfe_xml_keeps_unmapped_item_visible_and_blocked(supplier):
     assert line["suggestionScore"] == 0
     assert line["conversionId"] is None
     assert line["requiresConversion"] is True
-    assert line["lineNote"].startswith("Definir insumo. NF: QUEIJO ARTESANAL")
+    assert line["lineNote"] == ""
+    assert line["invoiceDescription"] == "QUEIJO ARTESANAL MEIA CURA"
     assert line["invoiceProductCode"] == "QJO-ART"
     assert line["invoiceEan"] == "7891234567895"
 
@@ -196,7 +203,7 @@ def test_parse_nfe_xml_turns_fuzzy_match_into_visible_suggestion(supplier):
     assert line["suggestedMaterialSku"] == "FARINHA-TRIGO-T65"
     assert line["suggestionScore"] >= 87
     assert line["conversionId"] is None
-    assert line["lineNote"].startswith("Definir insumo. NF: FARINHA DE TRIGO T65 SACO 25KG")
+    assert line["invoiceDescription"] == "FARINHA DE TRIGO T65 SACO 25KG"
 
 
 @pytest.mark.django_db
@@ -453,13 +460,16 @@ def test_commercial_and_tax_axes_derive_a_conversion_suggestion(supplier, fermen
     assert line["conversionId"] is None
     assert line["requiresConversion"] is True
     assert line["conversionSuggestion"] == {
-        "label": "un 500 g",
+        "label": "Un 500 g",
         "factor": "0.5",
         "kind": "conventional",
         "source": "invoice-tax-pair",
         "note": "A NF diz 10 UN = 5 KG (12,00 por KG), então 1 UN = 0,5 kg.",
     }
-    assert line["lineNote"].startswith("Confirmar a conversao sugerida (un 500 g).")
+    # A linha carrega o que a NF diz, para a tela poder ancorar o item.
+    assert line["invoiceDescription"] == "FERM BIOL FRESCO MAURI 500G"
+    assert (line["invoiceQty"], line["invoiceUnit"]) == ("10", "UN")
+    assert (line["invoiceTaxQty"], line["invoiceTaxUnit"]) == ("5", "KG")
     # A nota SUGERE, o dono confirma: nada entrou na tabela.
     assert MaterialConversion.objects.count() == 0
 
@@ -513,7 +523,9 @@ def test_note_without_a_usable_pair_refuses_and_says_what_to_register(supplier, 
     assert line["materialSku"] == material.sku
     assert line["requiresConversion"] is True
     assert line["conversionSuggestion"] is None
-    assert line["lineNote"].startswith("Cadastrar a conversao de CX para kg antes de confirmar.")
+    assert (line["invoiceQty"], line["invoiceUnit"]) == ("3", "CX")
+    # Sem par tributavel util, nao ha o que mostrar do outro eixo.
+    assert (line["invoiceTaxQty"], line["invoiceTaxUnit"]) == ("", "")
 
 
 @pytest.mark.django_db
@@ -535,7 +547,7 @@ def test_description_grams_are_the_secondary_signal(supplier, fermento):
     suggestion = draft["lines"][0]["conversionSuggestion"]
     assert suggestion["source"] == "product-description"
     assert suggestion["factor"] == "0.5"
-    assert suggestion["label"] == "un 500 g"
+    assert suggestion["label"] == "Un 500 g"
     assert suggestion["note"] == "A descrição da NF diz 500 g, então 1 UN = 0,5 kg."
 
 
@@ -566,4 +578,134 @@ def test_note_that_contradicts_the_declared_conversion_shows_the_divergence(supp
     assert line["conversionId"] == str(conversion.pk)
     assert line["requiresConversion"] is False
     assert line["conversionSuggestion"]["factor"] == "20"
-    assert line["conversionSuggestion"]["label"] == "saco 20 kg"
+    assert line["conversionSuggestion"]["label"] == "Saco 20 kg"
+
+
+@pytest.mark.django_db
+def test_real_lactalis_invoice_line_from_the_owner_qa(supplier):
+    """Regressao com a linha REAL da nota que o dono mandou (QA de 27/08/2026).
+
+    Identificadores da padaria e a chave estao trocados; o que importa para a
+    calibracao veio da nota como esta: a descricao do emissor, o vocabulario de
+    embalagem (``CX``) e os dois eixos (7 CX / 35 KG). Foi este item que mostrou
+    o buraco que faltava: "MANTEIGA S/SAL CX 5 KG PRESIDENT TEU" nao casa com
+    "Manteiga francesa" do cadastro, entao o scan nao tem insumo — e sem insumo
+    nao ha unidade-base para o fator existir. A linha tem de sair carregando os
+    dois eixos, para o operador poder escolher o insumo e o servidor derivar
+    "1 caixa = 5 kg" depois (ver o teste do endpoint no backstage).
+    """
+    draft = parse_nfe_xml_to_purchase_draft(
+        _nfe_xml(
+            product_code="610402075",
+            product_name="MANTEIGA S/SAL CX 5 KG PRESIDENT TEU",
+            unit="CX",
+            quantity="7.0000",
+            unit_value="219.100000",
+            total="1533.70",
+            tax_unit="KG",
+            tax_quantity="35.0000",
+            tax_unit_value="43.8200000",
+            ean="7891097101342",
+        ),
+        access_key=VALID_ACCESS_KEY,
+    )
+
+    line = draft["lines"][0]
+    assert line["invoiceDescription"] == "MANTEIGA S/SAL CX 5 KG PRESIDENT TEU"
+    assert (line["invoiceQty"], line["invoiceUnit"]) == ("7", "CX")
+    assert (line["invoiceTaxQty"], line["invoiceTaxUnit"]) == ("35", "KG")
+    assert line["purchaseQty"] == "7"
+    assert line["invoiceTotal"] == "1533,70"
+    # Sem insumo casado, a linha trava — e trava carregando o que precisa para
+    # ser destravada num gesto, em vez de mandar o operador para o Admin.
+    assert line["materialSku"] == ""
+    assert line["requiresConversion"] is True
+
+
+@pytest.mark.django_db
+def test_invoice_axes_derive_the_conversion_once_a_material_exists(supplier):
+    """O mesmo item, agora com insumo: o par da nota vira "Caixa 5 kg"."""
+    from shopman.shop.adapters.purchase_invoice_nfe import conversion_from_invoice_axes
+
+    manteiga = Material.objects.create(sku="MANTEIGA-FR", name="Manteiga francesa", unit="kg")
+
+    suggestion = conversion_from_invoice_axes(
+        material=manteiga,
+        quantity=Decimal("7"),
+        unit="CX",
+        tax_quantity=Decimal("35"),
+        tax_unit="KG",
+        name="MANTEIGA S/SAL CX 5 KG PRESIDENT TEU",
+    )
+
+    assert suggestion is not None
+    assert suggestion.label == "Caixa 5 kg"
+    assert suggestion.factor == Decimal("5")
+    assert suggestion.source == "invoice-tax-pair"
+    assert suggestion.note == "A NF diz 7 CX = 35 KG, então 1 CX = 5 kg."
+
+
+def _rastro(*lots: tuple[str, str]) -> str:
+    """Grupo `rastro` da NF-e: pares (numero do lote, validade)."""
+    return "".join(
+        f"""
+          <rastro><nLote>{lot}</nLote><qLote>1.0000</qLote><dVal>{expiry}</dVal></rastro>"""
+        for lot, expiry in lots
+    )
+
+
+@pytest.mark.django_db
+def test_invoice_lot_and_expiry_come_from_the_note(supplier, material):
+    """Validade e lote existem na NF-e (`rastro`) e nao precisam ser digitados."""
+    draft = parse_nfe_xml_to_purchase_draft(
+        _nfe_xml(rastro=_rastro(("L2408A", "2027-02-25"))),
+        access_key=VALID_ACCESS_KEY,
+    )
+
+    line = draft["lines"][0]
+    assert line["expiryDate"] == "2027-02-25"
+    assert line["expiryFromInvoice"] is True
+    assert line["invoiceLot"] == "L2408A"
+
+
+@pytest.mark.django_db
+def test_several_lots_keep_the_one_that_expires_first(supplier, material):
+    """Manda a validade mais CURTA, nao a primeira do XML.
+
+    A ordem em que o emissor escreveu os lotes nao e informacao. Quem governa o
+    que entra e o que vence antes — e o numero do lote tem de sair do MESMO
+    grupo, senao a rastreabilidade fica falsa.
+    """
+    draft = parse_nfe_xml_to_purchase_draft(
+        _nfe_xml(rastro=_rastro(("L-TARDE", "2027-06-30"), ("L-CEDO", "2027-02-25"), ("L-MEIO", "2027-04-10"))),
+        access_key=VALID_ACCESS_KEY,
+    )
+
+    line = draft["lines"][0]
+    assert line["expiryDate"] == "2027-02-25"
+    assert line["invoiceLot"] == "L-CEDO"
+
+
+@pytest.mark.django_db
+def test_lot_without_expiry_still_travels(supplier, material):
+    """`rastro` so com numero de lote ainda vale pela rastreabilidade."""
+    draft = parse_nfe_xml_to_purchase_draft(
+        _nfe_xml(rastro="\n          <rastro><nLote>L2408A</nLote><qLote>1.0000</qLote></rastro>"),
+        access_key=VALID_ACCESS_KEY,
+    )
+
+    line = draft["lines"][0]
+    assert line["expiryDate"] == ""
+    assert line["expiryFromInvoice"] is False
+    assert line["invoiceLot"] == "L2408A"
+
+
+@pytest.mark.django_db
+def test_note_without_rastro_leaves_expiry_to_the_operator(supplier, material):
+    """O caso comum: `rastro` e opcional, e a nota da Lactalis nao trazia."""
+    draft = parse_nfe_xml_to_purchase_draft(_nfe_xml(), access_key=VALID_ACCESS_KEY)
+
+    line = draft["lines"][0]
+    assert line["expiryDate"] == ""
+    assert line["expiryFromInvoice"] is False
+    assert line["invoiceLot"] == ""
