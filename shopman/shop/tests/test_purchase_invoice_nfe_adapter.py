@@ -176,6 +176,70 @@ def test_parse_nfe_xml_turns_fuzzy_match_into_visible_suggestion(supplier):
 
 
 @pytest.mark.django_db
+def test_material_name_inside_long_distributor_description_is_suggested(supplier):
+    """O caso real que o WRatio puro deixava passar: nome + marca + embalagem.
+
+    "AZEITE DE OLIVA EXTRA VIRGEM ANDORINHA VD 500ML" contra "Azeite extra
+    virgem" pontua 85,5 no WRatio (redutor de comprimento) — abaixo de 87.
+    A cobertura de tokens reconhece o insumo contido na descrição.
+    """
+    Material.objects.create(sku="AZEITE", name="Azeite extra virgem", unit="l")
+
+    draft = parse_nfe_xml_to_purchase_draft(
+        _nfe_xml(product_code="AZ-500", product_name="AZEITE DE OLIVA EXTRA VIRGEM ANDORINHA VD 500ML", unit="UN"),
+        access_key=VALID_ACCESS_KEY,
+    )
+
+    line = draft["lines"][0]
+    assert line["materialSku"] == ""
+    assert line["suggestedMaterialSku"] == "AZEITE"
+    assert line["suggestionScore"] == 100
+
+
+@pytest.mark.django_db
+def test_distributor_abbreviations_still_reach_the_suggestion(supplier):
+    Material.objects.create(sku="FERMENTO-BIO", name="Fermento biológico", unit="g")
+
+    draft = parse_nfe_xml_to_purchase_draft(
+        _nfe_xml(product_code="FERM-500", product_name="FERM BIOL SECO INST FLEISCHMANN 500G", unit="UN"),
+        access_key=VALID_ACCESS_KEY,
+    )
+
+    line = draft["lines"][0]
+    assert line["materialSku"] == ""
+    assert line["suggestedMaterialSku"] == "FERMENTO-BIO"
+    assert line["suggestionScore"] == 100
+
+
+@pytest.mark.django_db
+def test_single_token_material_never_matches_by_character_overlap(supplier):
+    Material.objects.create(sku="SAL", name="Sal", unit="kg")
+
+    draft = parse_nfe_xml_to_purchase_draft(
+        _nfe_xml(product_code="SGD-50", product_name="SALGADINHO DE MILHO 50G", unit="UN"),
+        access_key=VALID_ACCESS_KEY,
+    )
+
+    line = draft["lines"][0]
+    assert line["materialSku"] == ""
+    assert line["suggestedMaterialSku"] == ""
+    assert line["suggestionScore"] == 0
+
+
+@pytest.mark.django_db
+def test_tie_between_generic_and_specific_material_prefers_the_specific(supplier):
+    Material.objects.create(sku="AZEITE-COMUM", name="Azeite", unit="l")
+    Material.objects.create(sku="AZEITE-EV", name="Azeite extra virgem", unit="l")
+
+    draft = parse_nfe_xml_to_purchase_draft(
+        _nfe_xml(product_code="AZ-500", product_name="AZEITE DE OLIVA EXTRA VIRGEM 500ML", unit="UN"),
+        access_key=VALID_ACCESS_KEY,
+    )
+
+    assert draft["lines"][0]["suggestedMaterialSku"] == "AZEITE-EV"
+
+
+@pytest.mark.django_db
 def test_fuzzy_suggestion_respects_explicit_zero_threshold(supplier):
     Material.objects.create(sku="FARINHA-TRIGO-T65", name="Farinha de trigo T65", unit="kg")
 
