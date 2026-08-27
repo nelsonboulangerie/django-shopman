@@ -1,7 +1,7 @@
 # UNIT-CONVERSION-PLAN — conversão de unidade como cidadã de primeira classe
 
-> **Status:** 🟢 Fases 0 a 4 **implementadas**; Fases 5 e 6 seguem abertas (dependem,
-> respectivamente, do recebimento do Buyman e dos XMLs de NF-e do dono).
+> **Status:** 🟢 Fases 0 a 4 e **6 implementadas**; a Fase 5 (carimbo `converted_via`
+> no `Move`) segue aberta.
 > Decisão que o rege:
 > [ADR-024](../decisions/adr-024-material-unit-base-and-purchase.md) (Aceita na
 > direção, dono, 19/08/2026) e [ADR-023](../decisions/adr-023-cost-live-and-frozen.md)
@@ -158,24 +158,50 @@ Cada fase é útil sozinha e nenhuma exige a seguinte.
 - Casa com a **Fase 3 do BUYMAN-PROCUREMENT-PLAN** (recebimento → `stock.receive` com
   `kind=BUY`), que é quando `Move.Kind.BUY` finalmente ganha um emissor.
 
-### Fase 6 — a NF-e de entrada preenche a tabela sozinha · ⏳ aberta
+### Fase 6 — a NF-e de entrada preenche a tabela sozinha · ✅ concluída
 
-> **Por que não entrou com as Fases 1–4:** depende dos 5 a 10 XMLs de NF-e de entrada
-> que o dono ainda vai providenciar (ADR-024 §Evidência 4). Sem eles, o vocabulário de
-> `uCom` seria adivinhado — que é exatamente o que esta frente inteira existe para não
-> fazer.
+> **O que a destravou:** o QA do dono no alpha (27/08/2026) mostrou o defeito em
+> produção — uma nota de fermento fresco Mauri com **10 unidades** entrou na tela como
+> **10 kg**. O adapter lia `uCom or uTrib` campo a campo, então conseguia colar a
+> quantidade comercial (10) na unidade-base do insumo (kg) sem fator nenhum no meio.
+> O dado que responde à pergunta já vinha na nota e estava sendo jogado fora.
 
-- Ingestão de XML **por arquivo** (dado externo entra por arquivo — convenção da casa):
-  `uCom`/`qCom`/`vUnCom` + `uTrib`/`qTrib`/`vUnTrib` viram, respectivamente, a linha de
-  conversão (`fator = qTrib ÷ qCom`) e o custo por unidade-base (`vUnTrib`).
-- **Curadoria do dono**: nada entra sem revisão; a nota **sugere**, o dono confirma.
-- Depende das Fases 2 e 3 e do experimento das 5–10 notas descrito na
-  [ADR-024 §Evidência 4](../decisions/adr-024-material-unit-base-and-purchase.md).
+- `uCom`/`qCom`/`vUnCom` e `uTrib`/`qTrib`/`vUnTrib` passam a ser lidos como **dois
+  eixos inteiros** (`NFeItem`), nunca metade de um com metade do outro. Sem par
+  comercial utilizável, o item degrada para o tributável **como bloco**.
+- O fator sai da nota: `fator = qTrib ÷ qCom`, com o par tributável levado à
+  unidade-base pela física fechada (`shopman.utils.units`). Sinal **secundário**: a
+  gramatura embutida no `xProd` ("FERM BIOL FRESCO MAURI 500G"), usada só quando o par
+  tributável não decide — texto livre do emissor não é declaração fiscal.
+- **Curadoria, como planejado:** nada entra sozinho. A conversão viaja na linha como
+  `conversionSuggestion` (rótulo, fator, tipo, procedência e a frase que explica de
+  onde saiu), a linha **continua bloqueando a confirmação**, e o operador aceita num
+  clique ou declara outra. Mesma língua da sugestão de insumo (PR #354).
+- **Ler o par tributável não fere a R4.** A R4 proíbe **inventar** fator; aqui o
+  sistema lê o que o emissor declarou. O que continua recusando é a nota que não
+  responde: aí a linha para com a mensagem dizendo qual conversão cadastrar.
+- **Física deixou de pedir declaração.** Nota em `G` para insumo em `kg` converte
+  sozinha (conversão do tipo 1 da ADR-024) em vez de travar pedindo uma
+  `MaterialConversion` — exigir que alguém declarasse kg↔g era pedir declaração de
+  física.
+- **Alerta de ordem de grandeza** (ADR-024, §Consequências): quando a nota discorda da
+  conversão já escolhida ("saco 25 kg" declarado, nota dizendo 20), a divergência
+  aparece como aviso — não trava, mas não passa calada.
+- **O gesto que faltava:** `POST /api/v1/backstage/purchase/conversions/` declara a
+  conversão sem sair do recebimento (`declare_conversion`), com autor
+  (`MaterialConversion.created_by`, campo novo). Até aqui o operador só podia
+  **escolher** entre conversões já cadastradas, e cadastrar era coisa do Admin — uma
+  embalagem nova parava a entrada com o entregador esperando.
+- **Calibração ainda pendente:** o vocabulário de `uCom` (`PURCHASE_UNIT_WORDS`) e o
+  regex de gramatura foram escritos contra a estrutura obrigatória da NF-e e o caso
+  real do fermento, não contra as 5–10 notas da [ADR-024
+  §Evidência 4](../decisions/adr-024-material-unit-base-and-purchase.md). Elas
+  continuam valendo — o que muda com elas é o vocabulário inicial, não o mecanismo.
 
 ## Ordem recomendada
 
 ```
-Fase 0 (dado) ─┬─► Fase 1 (física em utils) ─► Fase 2 (tabela) ─┬─► Fase 3 (custo) ─► Fase 6 (NF-e)
+Fase 0 (dado) ─┬─► Fase 1 (física em utils) ─► Fase 2 (tabela) ─┬─► Fase 3 (custo) ─► Fase 6 (NF-e) ✅
                │                                                └─► Fase 4 (anotação)
                └─────────────────────────────────────────────────► Fase 5 (recebimento, com Buyman F3)
 ```
@@ -202,7 +228,7 @@ com a tabela ainda vazia.)
 | 3 | custo por base derivado com precisão; conversão incoerente (outro insumo / outro fornecedor / inativa) **recusa** ✅ |
 | 4 | anotação derivada muda quando o fator muda, sem tocar na ficha ✅ |
 | 5 | `Move` de entrada carrega `converted_via`; saldo aproximado sinalizado |
-| 6 | XML de exemplo vira sugestão de conversão + custo, sem gravar sozinho |
+| 6 | XML com eixos divergentes vira sugestão de conversão **sem gravar nada**; eixos coerentes não sugerem; `qCom` zerado não divide por zero; nota que não decide **recusa dizendo o que cadastrar**; endpoint cria a linha com autor e recusa fator ≤ 0 e rótulo duplicado ✅ |
 
 ## Referências
 

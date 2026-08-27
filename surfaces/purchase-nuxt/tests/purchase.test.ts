@@ -40,6 +40,21 @@ const ovos: Material = {
   recipes: ["Brioche"],
 };
 
+// Insumo pesado em kg e comprado em pacote: e nesse par que os dois eixos da
+// NF-e brigam, e onde 10 unidades viravam 10 kg.
+const fermento: Material = {
+  sku: "FERMENTO-BIO",
+  name: "Fermento biológico",
+  unit: "kg",
+  shelfLifeDays: null,
+  isActive: true,
+  category: "Fermentos",
+  stockOnHand: 3,
+  dailyUse: 0.6,
+  minStock: 2,
+  recipes: ["Brioche"],
+};
+
 const suppliers: Supplier[] = [
   {
     ref: "SUP-MOINHO",
@@ -330,10 +345,183 @@ describe("purchase presentation", () => {
     });
   });
 
+  it("trata a conversao da NF como sugestao: bloqueia ate o operador decidir", () => {
+    // O caso do dono: 10 UNIDADES de fermento com base kg. A linha vem com a
+    // quantidade comercial e o fator que a NF declarou, e NAO se confirma
+    // sozinha — mas agora o bloqueio vem com o gesto do lado.
+    const line: ReceiptLine = {
+      id: "nfe-1",
+      materialSku: "FERMENTO-BIO",
+      conversionId: null,
+      requiresConversion: true,
+      conversionSuggestion: {
+        label: "un 500 g",
+        factor: "0.5",
+        kind: "conventional",
+        source: "invoice-tax-pair",
+        note: "A NF diz 10 UN = 5 KG, então 1 UN = 0,5 kg.",
+      },
+      purchaseQty: 10,
+      costInput: "60,00",
+      expiryDate: "",
+      lineNote: "Confirmar a conversao sugerida (un 500 g). NF: FERM BIOL FRESCO MAURI 500G.",
+      invoiceUnit: "UN",
+      checked: true,
+    };
+
+    const preview = receiptLinePreview(line, "invoice", [fermento], []);
+
+    expect(preview?.conversionSuggestion?.label).toBe("un 500 g");
+    expect(preview?.conversionDiverges).toBe(false);
+    // O total na unidade-base NAO e conhecido ainda: imprimir "10 kg" ao lado do
+    // bloqueio seria repetir na tela exatamente o numero que o dono reportou.
+    expect(preview?.baseQtyKnown).toBe(false);
+    expect(preview?.baseCostQ).toBe(0);
+    expect(preview?.warnings).toContainEqual({
+      key: "confirm-conversion",
+      label: "Confirmar conversão da NF",
+      tone: "block",
+    });
+    expect(preview?.warnings.map((warning) => warning.key)).not.toContain("missing-conversion");
+  });
+
+  it("libera a linha assim que a conversao declarada entra", () => {
+    const declared: MaterialConversion = {
+      id: "pacote-500",
+      materialSku: "FERMENTO-BIO",
+      supplierRef: "SUP-MOINHO",
+      label: "un 500 g",
+      toBaseFactor: 0.5,
+      kind: "conventional",
+      isActive: true,
+    };
+    const line: ReceiptLine = {
+      id: "nfe-1",
+      materialSku: "FERMENTO-BIO",
+      conversionId: "pacote-500",
+      requiresConversion: false,
+      purchaseQty: 10,
+      costInput: "60,00",
+      expiryDate: "",
+      lineNote: "",
+      checked: true,
+    };
+
+    const preview = receiptLinePreview(line, "invoice", [fermento], [declared]);
+
+    // 10 pacotes viram 5 kg — o numero que o dono viu errado como "10 kg".
+    expect(preview?.baseQty).toBe(5);
+    expect(preview?.baseQtyKnown).toBe(true);
+    expect(preview?.purchaseUnitLabel).toBe("un 500 g");
+    expect(preview?.warnings.map((warning) => warning.key)).not.toContain("confirm-conversion");
+    expect(preview?.warnings.map((warning) => warning.key)).not.toContain("missing-conversion");
+  });
+
+  it("avisa quando a NF discorda da conversao ja escolhida, sem travar a entrada", () => {
+    const line: ReceiptLine = {
+      id: "nfe-1",
+      materialSku: "FARINHA-T65",
+      conversionId: "saco-25",
+      requiresConversion: false,
+      conversionSuggestion: {
+        label: "saco 20 kg",
+        factor: "20",
+        kind: "conventional",
+        source: "invoice-tax-pair",
+        note: "A NF diz 2 SC = 40 KG, então 1 SC = 20 kg.",
+      },
+      purchaseQty: 2,
+      costInput: "360,00",
+      expiryDate: "2027-02-25",
+      lineNote: "",
+      checked: true,
+    };
+
+    const preview = receiptLinePreview(line, "invoice", [farinha], conversions);
+
+    expect(preview?.conversionDiverges).toBe(true);
+    expect(preview?.warnings).toContainEqual({
+      key: "diverging-conversion",
+      label: "NF diverge da conversão",
+      tone: "watch",
+    });
+    expect(preview?.warnings.filter((warning) => warning.tone === "block")).toHaveLength(0);
+  });
+
+  it("aceitar a conversao sugerida nao vira acusacao de divergencia contra ela mesma", () => {
+    // Aceitar cria a conversao e a seleciona SEM novo scan, entao a sugestao
+    // continua na linha — concordando. Comparar os fatores é o que impede o
+    // gesto de terminar acusando divergencia consigo mesmo.
+    const declared: MaterialConversion = {
+      id: "un-500",
+      materialSku: "FERMENTO-BIO",
+      supplierRef: "SUP-MOINHO",
+      label: "un 500 g",
+      toBaseFactor: 0.5,
+      kind: "conventional",
+      isActive: true,
+    };
+    const line: ReceiptLine = {
+      id: "nfe-1",
+      materialSku: "FERMENTO-BIO",
+      conversionId: "un-500",
+      requiresConversion: false,
+      conversionSuggestion: {
+        label: "un 500 g",
+        factor: "0.500000",
+        kind: "conventional",
+        source: "invoice-tax-pair",
+        note: "A NF diz 10 UN = 5 KG, então 1 UN = 0,5 kg.",
+      },
+      purchaseQty: 10,
+      costInput: "60,00",
+      expiryDate: "",
+      lineNote: "",
+      checked: true,
+    };
+
+    const preview = receiptLinePreview(line, "invoice", [fermento], [declared]);
+
+    expect(preview?.conversionDiverges).toBe(false);
+    expect(preview?.baseQty).toBe(5);
+    expect(preview?.warnings.map((warning) => warning.key)).not.toContain("diverging-conversion");
+  });
+
+  it("ignora sugestao de conversao com fator invalido", () => {
+    const line: ReceiptLine = {
+      id: "nfe-1",
+      materialSku: "FERMENTO-BIO",
+      conversionId: null,
+      requiresConversion: true,
+      conversionSuggestion: {
+        label: "un",
+        factor: "0",
+        kind: "conventional",
+        source: "invoice-tax-pair",
+        note: "",
+      },
+      purchaseQty: 10,
+      costInput: "60,00",
+      expiryDate: "",
+      lineNote: "",
+      checked: true,
+    };
+
+    const preview = receiptLinePreview(line, "invoice", [fermento], []);
+
+    expect(preview?.conversionSuggestion).toBeNull();
+    expect(preview?.warnings).toContainEqual({
+      key: "missing-conversion",
+      label: "Definir conversão",
+      tone: "block",
+    });
+  });
+
   it("declara paths BFF estaveis para wiring com Buyman", () => {
     expect(PURCHASE_API_BASE).toBe("/api/v1/backstage/purchase/");
     expect(PURCHASE_API_ENDPOINTS.projection).toBe("/api/v1/backstage/purchase/");
     expect(PURCHASE_API_ENDPOINTS.confirmReceipt).toBe("/api/v1/backstage/purchase/receipts/confirm/");
+    expect(PURCHASE_API_ENDPOINTS.declareConversion).toBe("/api/v1/backstage/purchase/conversions/");
     expect(PURCHASE_API_ENDPOINTS.requestApprove("FARINHA T65")).toBe(
       "/api/v1/backstage/purchase/requests/FARINHA%20T65/approve/",
     );

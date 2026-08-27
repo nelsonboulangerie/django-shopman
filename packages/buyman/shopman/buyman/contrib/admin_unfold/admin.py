@@ -109,6 +109,14 @@ class MaterialConversionAdmin(BaseModelAdmin):
     search_fields = ("material__sku", "material__name", "label", "supplier__name")
     autocomplete_fields = ("material", "supplier")
     ordering = ("material", "label")
+    # Autoria se registra, não se escolhe: um campo editável aqui deixaria
+    # reatribuir quem declarou o fator, que é justamente o que ele responde.
+    readonly_fields = ("created_by",)
+
+    def save_model(self, request, obj, form, change):
+        if not change and obj.created_by_id is None:
+            obj.created_by = request.user
+        super().save_model(request, obj, form, change)
 
     @display(description=_("Fator"))
     def factor_display(self, obj: MaterialConversion):

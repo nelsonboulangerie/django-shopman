@@ -311,6 +311,127 @@ def upsert_cost(payload: dict[str, Any], *, user=None) -> dict[str, Any]:
     return build_purchase()
 
 
+#: Rótulo de conversão cabe em 60 caracteres (``MaterialConversion.label``).
+CONVERSION_LABEL_MAX = 60
+
+
+def declare_conversion(payload: dict[str, Any], *, user=None) -> tuple[dict[str, Any], str, str]:
+    """Declara uma conversão de unidade sem sair do recebimento.
+
+    O buraco que isto fecha: até aqui o operador só podia ESCOLHER entre as
+    conversões já cadastradas, e cadastrar era coisa do Admin. Uma nota com uma
+    embalagem nova — o caso normal, não o raro — parava a entrada e mandava o
+    operador para outra tela, no meio da conferência, com o entregador esperando.
+
+    O que **não** muda: a R4 continua valendo, porque continua sendo uma pessoa
+    declarando o fator. A NF sugere (``conversionSuggestion``); quem assina é
+    quem está com a nota na mão, e a linha guarda o autor.
+    """
+    Material = apps.get_model("buyman", "Material")
+    Supplier = apps.get_model("buyman", "Supplier")
+    MaterialConversion = apps.get_model("buyman", "MaterialConversion")
+
+    material_sku = str(payload.get("materialSku") or payload.get("material_sku") or "").strip()
+    material = Material.objects.filter(sku=material_sku).first()
+    if not material:
+        raise PurchaseError("Insumo não encontrado.", code="material_not_found", field="materialSku")
+    if not material.is_active:
+        raise PurchaseError(
+            "Insumo inativo não recebe conversão nova.",
+            code="material_inactive",
+            field="materialSku",
+        )
+
+    supplier_ref = str(payload.get("supplierRef") or payload.get("supplier_ref") or "").strip()
+    supplier = None
+    if supplier_ref:
+        supplier = Supplier.objects.filter(ref=supplier_ref).first()
+        if not supplier:
+            raise PurchaseError("Fornecedor não encontrado.", code="supplier_not_found", field="supplierRef")
+
+    label = str(payload.get("label") or "").strip()
+    if not label:
+        raise PurchaseError(
+            "Dê um nome à embalagem: 'saco 25 kg', 'pacote 500 g', 'cartela'.",
+            code="conversion_label_required",
+            field="label",
+        )
+    if len(label) > CONVERSION_LABEL_MAX:
+        raise PurchaseError(
+            f"O rótulo da conversão cabe em {CONVERSION_LABEL_MAX} caracteres.",
+            code="conversion_label_too_long",
+            field="label",
+        )
+
+    factor = _decimal(payload.get("factor"))
+    if factor <= 0:
+        raise PurchaseError(
+            f"O fator precisa ser maior que zero: quanto vale UM {label} em {material.unit}.",
+            code="conversion_factor_invalid",
+            field="factor",
+        )
+
+    kind = str(payload.get("kind") or MaterialConversion.Kind.CONVENTIONAL).strip()
+    if kind not in set(MaterialConversion.Kind.values):
+        raise PurchaseError(
+            "Tipo de conversão inválido.",
+            code="conversion_kind_invalid",
+            field="kind",
+        )
+
+    # Declarar duas vezes a MESMA coisa não é conflito, é o segundo clique — ou
+    # dois operadores lendo a mesma nota. Devolver a linha que já existe evita
+    # um "Edite a existente" incompreensível diante de um formulário idêntico.
+    # Rótulo igual com fator DIFERENTE continua recusado: aí é conflito de
+    # verdade, e quem decide qual vale é o Admin.
+    existing = MaterialConversion.objects.filter(
+        material=material, supplier=supplier, label=label,
+    ).first()
+    if existing is not None and existing.to_base_factor == factor and existing.kind == kind:
+        if not existing.is_active:
+            existing.is_active = True
+            existing.save(update_fields=["is_active", "updated_at"])
+        return build_purchase(), f"Conversão já cadastrada: {label}.", str(existing.pk)
+
+    conversion = MaterialConversion(
+        material=material,
+        supplier=supplier,
+        label=label,
+        to_base_factor=factor,
+        kind=kind,
+        created_by=user if getattr(user, "is_authenticated", False) else None,
+    )
+    try:
+        # `full_clean` roda as UniqueConstraint parciais (rótulo repetido no
+        # insumo/fornecedor) além do `clean` do modelo — a recusa vem com a
+        # mensagem que o próprio Core escreveu, e não com uma cópia daqui.
+        conversion.full_clean()
+        conversion.save()
+    except ValidationError as exc:
+        errors = getattr(exc, "message_dict", None) or {}
+        # Apontar para o campo que o Core reclamou, e não sempre para o rótulo:
+        # fator com casas demais chegava rotulado como erro de nome, e a tela
+        # destacava o campo errado.
+        field = "factor" if "to_base_factor" in errors else "label"
+        raise PurchaseError(
+            "; ".join(message for messages in errors.values() for message in messages) or str(exc),
+            code="conversion_validation_failed",
+            field=field,
+        ) from exc
+
+    logger.info(
+        "purchase.conversion_declared material=%s supplier=%s label=%s factor=%s kind=%s",
+        material.sku,
+        supplier.ref if supplier else "",
+        label,
+        factor,
+        kind,
+    )
+    approximate = " (aproximada)" if conversion.is_approximate else ""
+    message = f"Conversão salva: 1 {label} = {_format_decimal(factor)} {material.unit}{approximate}."
+    return build_purchase(), message, str(conversion.pk)
+
+
 def set_purchase_request_status(material_sku: str, status: str, *, user=None) -> dict[str, Any]:
     """Persist the operator-side status for a replenishment decision."""
     if status not in {"approved", "sent"}:

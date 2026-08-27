@@ -9,6 +9,11 @@ export type ConversionKind = "conventional" | "approximate";
 export type MaterialTone = "ok" | "watch" | "urgent";
 export type ReceiptMode = "invoice" | "manual";
 export type ReceiptWarningTone = "ok" | "watch" | "block";
+// De onde a NF tirou o fator. `invoice-tax-pair` e o par tributavel do proprio
+// item (declaracao fiscal); `product-description` e a gramatura embutida no
+// nome, sinal secundario. A tela diz qual foi — a procedencia e parte da
+// informacao, nao enfeite.
+export type ConversionSuggestionSource = "invoice-tax-pair" | "product-description";
 
 export interface Material {
   sku: string;
@@ -112,6 +117,17 @@ export interface QuotePreview {
   approximate: boolean;
 }
 
+export interface ReceiptConversionSuggestion {
+  label: string;
+  // Texto, e nao numero: o fator volta ao servidor no gesto de declarar, e o
+  // campo tem seis casas decimais. Passar por `number` perderia precisao de um
+  // valor que multiplica estoque e dinheiro.
+  factor: string;
+  kind: ConversionKind;
+  source: ConversionSuggestionSource;
+  note: string;
+}
+
 export interface ReceiptLine {
   id: string;
   materialSku: string;
@@ -119,10 +135,12 @@ export interface ReceiptLine {
   suggestionScore?: number;
   conversionId: string | null;
   requiresConversion?: boolean;
+  conversionSuggestion?: ReceiptConversionSuggestion | null;
   purchaseQty: number;
   costInput: string;
   expiryDate: string;
   lineNote: string;
+  invoiceUnit?: string;
   invoiceProductCode?: string;
   invoiceEan?: string;
   checked: boolean;
@@ -140,10 +158,17 @@ export interface ReceiptLinePreview {
   conversion: MaterialConversion | null;
   purchaseUnitLabel: string;
   baseQty: number;
+  // A quantidade na unidade-base so e CONHECIDA quando a conversao esta
+  // resolvida. Enquanto nao esta, `baseQty` e o produto por fator 1 — que e
+  // justamente o numero errado do QA ("10 unidades" lidas como "10 kg"). A tela
+  // le esta flag para nao imprimir um total que ninguem apurou ainda.
+  baseQtyKnown: boolean;
   baseCostQ: number;
   totalCostQ: number;
   approximate: boolean;
   suggestion: ReceiptLineSuggestion | null;
+  conversionSuggestion: ReceiptConversionSuggestion | null;
+  conversionDiverges: boolean;
   warnings: ReceiptWarning[];
 }
 
@@ -151,6 +176,8 @@ export interface ReceiptWarning {
   key:
     | "missing-material"
     | "confirm-suggestion"
+    | "confirm-conversion"
+    | "diverging-conversion"
     | "missing-conversion"
     | "missing-cost"
     | "missing-expiry"
@@ -185,6 +212,14 @@ export interface PurchaseRequestActionPayload {
   materialSku: string;
 }
 
+export interface PurchaseConversionDeclarePayload {
+  materialSku: string;
+  supplierRef: string;
+  label: string;
+  factor: string;
+  kind: ConversionKind;
+}
+
 export interface PurchaseCostUpsertPayload {
   materialSku: string;
   supplierRef: string;
@@ -197,4 +232,7 @@ export interface PurchaseActionResponse {
   ok: boolean;
   purchase?: PurchaseProjection;
   message?: string;
+  // Só a rota de declarar conversão devolve: é por ele que a linha que estava
+  // travada seleciona a conversão recém-criada, sem procurar por rótulo.
+  conversionId?: string;
 }

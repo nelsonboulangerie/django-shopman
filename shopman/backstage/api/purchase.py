@@ -114,6 +114,44 @@ class PurchaseCostView(APIView):
         return _purchase_response(projection, message="Custo salvo.")
 
 
+class PurchaseConversionView(APIView):
+    """Declarar uma conversão de unidade sem sair do recebimento.
+
+    **Por que é permissão de operador de compras, e não do gestor.** A tentação
+    é tratar isto como cadastro mestre — e é, em parte: o fator multiplica
+    estoque e dinheiro de toda compra seguinte. Mas o gesto aqui não INVENTA
+    número: ele transcreve o que a nota declarou (``conversionSuggestion`` vem
+    do par tributável da própria NF-e) com a nota na mão, no momento em que a
+    embalagem nova aparece. Exigir o gestor devolveria exatamente o impasse que
+    esta rota existe para desfazer — a entrada parada esperando alguém que não
+    está no balcão às cinco da manhã.
+
+    É o oposto do gesto da contagem de insumos, que sobrepõe o livro sem
+    documento nenhum por trás e por isso é restrito. A conversão fica auditável
+    pelo outro lado: a linha guarda ``created_by``, e o Admin continua sendo
+    onde ela é corrigida.
+    """
+
+    permission_classes = [HasBackstagePermission]
+    required_permission = "backstage.operate_purchase"
+
+    @extend_schema(
+        tags=["backstage"],
+        summary="Declare a material unit conversion from the receipt flow",
+        responses={200: OpenApiResponse(description="Conversion declared and projection refreshed.")},
+    )
+    def post(self, request):
+        try:
+            projection, message, conversion_id = purchase_service.declare_conversion(
+                dict(request.data or {}), user=request.user,
+            )
+        except PurchaseError as exc:
+            return _error_response(exc)
+        response = _purchase_response(projection, message=message)
+        response.data["conversionId"] = conversion_id
+        return response
+
+
 class PurchaseRequestApproveView(APIView):
     permission_classes = [HasBackstagePermission]
     required_permission = "backstage.operate_purchase"

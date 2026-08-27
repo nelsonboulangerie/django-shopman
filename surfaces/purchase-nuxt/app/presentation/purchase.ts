@@ -4,6 +4,7 @@ import type {
   MaterialConversion,
   MaterialIssue,
   MaterialTone,
+  ReceiptConversionSuggestion,
   ReceiptLine,
   ReceiptLinePreview,
   ReceiptLineSuggestion,
@@ -147,6 +148,40 @@ export function receiptLineSuggestion(line: ReceiptLine, materials: Material[]):
   };
 }
 
+export function receiptConversionSuggestion(line: ReceiptLine): ReceiptConversionSuggestion | null {
+  const suggestion = line.conversionSuggestion;
+  if (!suggestion?.label) return null;
+  const factor = Number(suggestion.factor);
+  return Number.isFinite(factor) && factor > 0 ? suggestion : null;
+}
+
+/**
+ * A NF discorda da conversão que a linha já usa.
+ *
+ * Compara os FATORES em vez de confiar na simples presença da sugestão. O
+ * servidor de fato cala a sugestão quando os dois batem — mas só no momento do
+ * scan, e a linha muda depois disso: aceitar a conversão sugerida cria a
+ * conversão e a seleciona sem um novo scan, e aí a sugestão continua na linha
+ * concordando com ela. Sem a comparação, o gesto de aceitar terminava
+ * acusando divergência consigo mesmo.
+ *
+ * É o alerta de ordem de grandeza da ADR-024: saco declarado de 25 kg com nota
+ * dizendo 20 é erro de 20% no custo e no estoque, e passa liso se ninguém
+ * perguntar.
+ */
+export function receiptConversionDiverges(
+  line: ReceiptLine,
+  conversion: MaterialConversion | null,
+): boolean {
+  const suggestion = receiptConversionSuggestion(line);
+  if (!conversion || !suggestion) return false;
+  const suggested = Number(suggestion.factor);
+  const chosen = conversion.toBaseFactor;
+  if (!Number.isFinite(chosen) || chosen <= 0) return false;
+  // Mesma tolerância relativa do servidor: 0,5 e 0,500000 são o mesmo fator.
+  return Math.abs(chosen - suggested) > Math.max(chosen, suggested) * 0.001;
+}
+
 export function receiptLineWarnings(
   line: ReceiptLine,
   mode: ReceiptMode,
@@ -163,7 +198,16 @@ export function receiptLineWarnings(
     warnings.push({ key: "invalid-qty", label: "Quantidade precisa ser maior que zero", tone: "block" });
   }
   if (line.requiresConversion && !conversion) {
-    warnings.push({ key: "missing-conversion", label: "Definir conversão", tone: "block" });
+    // A NF sabe o fator: a linha continua bloqueando, mas o bloqueio agora tem
+    // um gesto do lado — aceitar o que a nota diz — em vez de só uma acusação.
+    warnings.push(
+      receiptConversionSuggestion(line) ?
+        { key: "confirm-conversion", label: "Confirmar conversão da NF", tone: "block" }
+      : { key: "missing-conversion", label: "Definir conversão", tone: "block" },
+    );
+  }
+  if (receiptConversionDiverges(line, conversion)) {
+    warnings.push({ key: "diverging-conversion", label: "NF diverge da conversão", tone: "watch" });
   }
   if (parseMoneyInput(line.costInput) <= 0) {
     warnings.push({ key: "missing-cost", label: "Conferir valor", tone: "watch" });
@@ -203,6 +247,7 @@ export function receiptLinePreview(
     conversions.find((item) => item.id === line.conversionId) ?? null
   : null;
   const baseQty = receiptBaseQty(line, conversion);
+  const baseQtyKnown = Boolean(conversion) || !line.requiresConversion;
   const totalCostQ = parseMoneyInput(line.costInput);
   return {
     line,
@@ -210,10 +255,13 @@ export function receiptLinePreview(
     conversion,
     purchaseUnitLabel: conversion?.label ?? material.unit,
     baseQty,
-    baseCostQ: baseQty > 0 ? Math.round(totalCostQ / baseQty) : 0,
+    baseQtyKnown,
+    baseCostQ: baseQtyKnown && baseQty > 0 ? Math.round(totalCostQ / baseQty) : 0,
     totalCostQ,
     approximate: conversion?.kind === "approximate",
     suggestion: receiptLineSuggestion(line, materials),
+    conversionSuggestion: receiptConversionSuggestion(line),
+    conversionDiverges: receiptConversionDiverges(line, conversion),
     warnings: receiptLineWarnings(line, mode, matchedMaterial, conversion),
   };
 }

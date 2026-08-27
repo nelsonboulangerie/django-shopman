@@ -23,8 +23,27 @@ def _nfe_xml(
     product_code: str = "FAR-25",
     product_name: str = "FARINHA T65 25KG",
     unit: str = "SC",
+    quantity: str = "2.0000",
+    unit_value: str = "180.0000000000",
+    total: str = "360.00",
+    tax_unit: str | None = "KG",
+    tax_quantity: str = "50.0000",
+    tax_unit_value: str = "7.2000000000",
     ean: str = "SEM GTIN",
 ) -> str:
+    """NF-e de entrada com os DOIS eixos, que e como a nota real chega.
+
+    ``tax_unit=None`` remove o par tributavel inteiro — nota degradada, para
+    provar que a leitura nao passa a depender dele.
+    """
+    tax_block = (
+        ""
+        if tax_unit is None
+        else f"""
+          <uTrib>{tax_unit}</uTrib>
+          <qTrib>{tax_quantity}</qTrib>
+          <vUnTrib>{tax_unit_value}</vUnTrib>"""
+    )
     return f"""<?xml version="1.0" encoding="UTF-8"?>
 <nfeProc xmlns="http://www.portalfiscal.inf.br/nfe" versao="4.00">
   <NFe>
@@ -52,14 +71,14 @@ def _nfe_xml(
           <NCM>11010010</NCM>
           <CFOP>5102</CFOP>
           <uCom>{unit}</uCom>
-          <qCom>2.0000</qCom>
-          <vUnCom>180.0000000000</vUnCom>
-          <vProd>360.00</vProd>
+          <qCom>{quantity}</qCom>
+          <vUnCom>{unit_value}</vUnCom>{tax_block}
+          <vProd>{total}</vProd>
         </prod>
       </det>
       <total>
         <ICMSTot>
-          <vNF>360.00</vNF>
+          <vNF>{total}</vNF>
         </ICMSTot>
       </total>
     </infNFe>
@@ -128,10 +147,15 @@ def test_parse_nfe_xml_to_receipt_draft_maps_supplier_material_and_conversion(su
             "suggestionScore": 0,
             "conversionId": str(conversion.pk),
             "requiresConversion": False,
+            "conversionSuggestion": None,
             "purchaseQty": "2",
             "costInput": "360,00",
             "expiryDate": "",
-            "lineNote": "NF: FARINHA T65 25KG; cod FAR-25; unidade SC; NCM 11010010; CFOP 5102.",
+            "lineNote": (
+                "NF: FARINHA T65 25KG; cod FAR-25; unidade SC; tributavel 50 KG; "
+                "NCM 11010010; CFOP 5102."
+            ),
+            "invoiceUnit": "SC",
             "invoiceProductCode": "FAR-25",
             "invoiceEan": "",
             "checked": False,
@@ -386,3 +410,160 @@ def test_doczip_within_the_cap_still_decodes():
         valueOf_ = base64.b64encode(gzip.compress(b"<NFe>ok</NFe>")).decode("ascii")
 
     assert _decode_doc_zip(DocZip()) == "<NFe>ok</NFe>"
+
+
+@pytest.fixture
+def fermento(db):
+    """Insumo pesado em kg — e comprado em pacote. E onde os dois eixos brigam."""
+    return Material.objects.create(
+        sku="FERMENTO-BIO",
+        name="Fermento biologico",
+        unit="kg",
+        metadata={"purchase": {"invoice_codes": ["FERM-500"]}},
+    )
+
+
+@pytest.mark.django_db
+def test_commercial_and_tax_axes_derive_a_conversion_suggestion(supplier, fermento):
+    """O caso do dono (QA no alpha, 27/08): 10 UNIDADES viravam 10 kg.
+
+    A nota traz os dois eixos — 10 UN no comercial, 5 KG no tributavel — e o
+    fator convencionado sai da divisao: 1 UN = 0,5 kg. O adapter propoe, mostra
+    de onde tirou, e nao grava nada.
+    """
+    draft = parse_nfe_xml_to_purchase_draft(
+        _nfe_xml(
+            product_code="FERM-500",
+            product_name="FERM BIOL FRESCO MAURI 500G",
+            unit="UN",
+            quantity="10.0000",
+            unit_value="6.0000000000",
+            total="60.00",
+            tax_unit="KG",
+            tax_quantity="5.0000",
+            tax_unit_value="12.0000000000",
+        ),
+        access_key=VALID_ACCESS_KEY,
+    )
+
+    line = draft["lines"][0]
+    assert line["materialSku"] == fermento.sku
+    # A quantidade continua sendo a comercial: 10 pacotes, nao 10 kg.
+    assert line["purchaseQty"] == "10"
+    assert line["conversionId"] is None
+    assert line["requiresConversion"] is True
+    assert line["conversionSuggestion"] == {
+        "label": "un 500 g",
+        "factor": "0.5",
+        "kind": "conventional",
+        "source": "invoice-tax-pair",
+        "note": "A NF diz 10 UN = 5 KG (12,00 por KG), então 1 UN = 0,5 kg.",
+    }
+    assert line["lineNote"].startswith("Confirmar a conversao sugerida (un 500 g).")
+    # A nota SUGERE, o dono confirma: nada entrou na tabela.
+    assert MaterialConversion.objects.count() == 0
+
+
+@pytest.mark.django_db
+def test_coherent_axes_suggest_nothing(supplier, material):
+    """Nota cujos dois eixos dizem a mesma coisa nao tem fator a propor."""
+    draft = parse_nfe_xml_to_purchase_draft(
+        _nfe_xml(
+            product_code="FAR-25",
+            product_name="FARINHA T65",
+            unit="KG",
+            quantity="25.0000",
+            tax_unit="KG",
+            tax_quantity="25.0000",
+        ),
+        access_key=VALID_ACCESS_KEY,
+    )
+
+    line = draft["lines"][0]
+    assert line["materialSku"] == material.sku
+    assert line["purchaseQty"] == "25"
+    assert line["requiresConversion"] is False
+    assert line["conversionSuggestion"] is None
+
+
+@pytest.mark.django_db
+def test_zero_commercial_quantity_falls_back_to_the_whole_tax_axis(supplier, material):
+    """Eixo comercial zerado nao divide por zero: o item passa a ler o outro par INTEIRO."""
+    draft = parse_nfe_xml_to_purchase_draft(
+        _nfe_xml(unit="SC", quantity="0.0000", tax_unit="KG", tax_quantity="50.0000"),
+        access_key=VALID_ACCESS_KEY,
+    )
+
+    line = draft["lines"][0]
+    assert line["invoiceUnit"] == "KG"
+    assert line["purchaseQty"] == "50"
+    assert line["requiresConversion"] is False
+    assert line["conversionSuggestion"] is None
+
+
+@pytest.mark.django_db
+def test_note_without_a_usable_pair_refuses_and_says_what_to_register(supplier, material):
+    """R4: sem fator declarado o sistema RECUSA — e a recusa diz o que cadastrar."""
+    draft = parse_nfe_xml_to_purchase_draft(
+        _nfe_xml(product_name="FARINHA T65 ESPECIAL", unit="CX", quantity="3.0000", tax_unit=None),
+        access_key=VALID_ACCESS_KEY,
+    )
+
+    line = draft["lines"][0]
+    assert line["materialSku"] == material.sku
+    assert line["requiresConversion"] is True
+    assert line["conversionSuggestion"] is None
+    assert line["lineNote"].startswith("Cadastrar a conversao de CX para kg antes de confirmar.")
+
+
+@pytest.mark.django_db
+def test_description_grams_are_the_secondary_signal(supplier, fermento):
+    """Par tributavel inutil (repete o comercial) — a gramatura do xProd responde."""
+    draft = parse_nfe_xml_to_purchase_draft(
+        _nfe_xml(
+            product_code="FERM-500",
+            product_name="FERM BIOL FRESCO MAURI 500G",
+            unit="UN",
+            quantity="10.0000",
+            tax_unit="UN",
+            tax_quantity="10.0000",
+            tax_unit_value="0",
+        ),
+        access_key=VALID_ACCESS_KEY,
+    )
+
+    suggestion = draft["lines"][0]["conversionSuggestion"]
+    assert suggestion["source"] == "product-description"
+    assert suggestion["factor"] == "0.5"
+    assert suggestion["label"] == "un 500 g"
+    assert suggestion["note"] == "A descrição da NF diz 500 g, então 1 UN = 0,5 kg."
+
+
+@pytest.mark.django_db
+def test_invoice_unit_the_physics_reaches_converts_the_quantity(supplier, material):
+    """kg↔g e fisica, nao convencao: converte sozinho e nao pede conversao a ninguem."""
+    draft = parse_nfe_xml_to_purchase_draft(
+        _nfe_xml(product_name="FARINHA T65", unit="G", quantity="5000.0000", tax_unit="KG", tax_quantity="5.0000"),
+        access_key=VALID_ACCESS_KEY,
+    )
+
+    line = draft["lines"][0]
+    assert line["purchaseQty"] == "5"
+    assert line["requiresConversion"] is False
+    assert line["conversionId"] is None
+    assert line["conversionSuggestion"] is None
+
+
+@pytest.mark.django_db
+def test_note_that_contradicts_the_declared_conversion_shows_the_divergence(supplier, material, conversion):
+    """Saco declarado de 25 kg, nota dizendo 20: o alerta de ordem de grandeza da ADR-024."""
+    draft = parse_nfe_xml_to_purchase_draft(
+        _nfe_xml(unit="SC", quantity="2.0000", tax_unit="KG", tax_quantity="40.0000"),
+        access_key=VALID_ACCESS_KEY,
+    )
+
+    line = draft["lines"][0]
+    assert line["conversionId"] == str(conversion.pk)
+    assert line["requiresConversion"] is False
+    assert line["conversionSuggestion"]["factor"] == "20"
+    assert line["conversionSuggestion"]["label"] == "saco 20 kg"

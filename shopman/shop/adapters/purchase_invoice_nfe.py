@@ -21,6 +21,7 @@ from defusedxml.ElementTree import fromstring as defused_fromstring
 from django.apps import apps
 from django.conf import settings
 from django.db.models import Q
+from shopman.utils import units
 
 logger = logging.getLogger(__name__)
 
@@ -74,6 +75,19 @@ class PurchaseInvoiceUnavailable(RuntimeError):
 
 @dataclass(frozen=True)
 class NFeItem:
+    """Um item da NF-e — e ele tem **dois** eixos, por obrigação legal.
+
+    O par **comercial** (``uCom``/``qCom``/``vUnCom``) é como o fornecedor
+    vendeu: "10 UN". O par **tributável** (``uTrib``/``qTrib``/``vUnTrib``) é a
+    unidade fiscal de referência do mesmo item: "5 KG". Ler um número de um par
+    e a unidade do outro é o erro que esta classe existe para tornar impossível
+    — cada eixo vem inteiro, ou não vem (ver :func:`_item_from_det`).
+
+    É também daqui que sai o fator convencionado de graça: ``qTrib ÷ qCom``
+    (ADR-024, §Evidência 4). Ler o que o emissor declarou não é heurística —
+    a R4 proíbe **inventar** fator, não proíbe ler a nota.
+    """
+
     number: str
     product_code: str
     ean: str
@@ -81,10 +95,42 @@ class NFeItem:
     unit: str
     quantity: Decimal
     unit_value: Decimal
+    tax_unit: str
+    tax_quantity: Decimal
+    tax_unit_value: Decimal
     total_value: Decimal
     ncm: str
     cfop: str
     expiry_date: str
+
+
+@dataclass(frozen=True)
+class ConversionSuggestion:
+    """Conversão que a nota permite propor — proposta, nunca gravada.
+
+    Mesma língua da sugestão de insumo (PR #354): a máquina mostra o que
+    encontrou e de onde tirou; quem decide é o operador, e a linha continua
+    bloqueada até ele decidir.
+    """
+
+    label: str
+    factor: Decimal
+    kind: str
+    source: str
+    note: str
+
+
+#: De onde a sugestão de conversão saiu — a nota declara, ou a descrição conta.
+CONVERSION_FROM_TAX_PAIR = "invoice-tax-pair"
+CONVERSION_FROM_DESCRIPTION = "product-description"
+
+#: Gramatura embutida na descrição ("FERM BIOL FRESCO MAURI 500G"). É sinal
+#: SECUNDÁRIO: texto livre do emissor, não declaração fiscal. Só vira sugestão
+#: quando o par tributável não resolve, e mesmo assim o operador confirma.
+_PACKAGE_SIZE_RE = re.compile(
+    r"(?<![\w,.])(\d{1,5}(?:[.,]\d{1,3})?)\s*(KG|MG|ML|LT|G|L)(?![A-Z0-9])",
+    re.IGNORECASE,
+)
 
 
 def read_invoice(*, access_key: str, qr_payload: str) -> dict[str, Any]:
@@ -222,6 +268,8 @@ def _receipt_line_from_item(item: NFeItem, *, index: int, supplier: Any | None) 
     material, mapping = _material_for_item(item, supplier=supplier)
     suggestion = None if material else _material_suggestion(item.name)
     conversion = _conversion_for_item(item, material=material, supplier=supplier, mapping=mapping)
+    quantity = _line_quantity(item, material=material, conversion=conversion)
+    conversion_suggestion = _conversion_suggestion(item, material=material, conversion=conversion)
     requires_conversion = _requires_conversion(item, material=material, conversion=conversion)
     total_value = item.total_value if item.total_value > 0 else item.quantity * item.unit_value
     return {
@@ -231,27 +279,228 @@ def _receipt_line_from_item(item: NFeItem, *, index: int, supplier: Any | None) 
         "suggestionScore": suggestion[1] if suggestion else 0,
         "conversionId": str(conversion.pk) if conversion else None,
         "requiresConversion": requires_conversion,
-        "purchaseQty": _decimal_text(item.quantity),
+        "conversionSuggestion": _conversion_suggestion_data(conversion_suggestion),
+        "purchaseQty": _decimal_text(quantity),
         "costInput": _money_text(total_value),
         "expiryDate": item.expiry_date,
-        "lineNote": _line_note(item, material=material, requires_conversion=requires_conversion),
+        "lineNote": _line_note(
+            item,
+            material=material,
+            requires_conversion=requires_conversion,
+            conversion_suggestion=conversion_suggestion,
+        ),
+        "invoiceUnit": item.unit,
         "invoiceProductCode": item.product_code,
         "invoiceEan": item.ean,
         "checked": False,
     }
 
 
+def _line_quantity(item: NFeItem, *, material: Any | None, conversion: Any | None) -> Decimal:
+    """A quantidade da linha, na unidade em que a linha vai ser lida.
+
+    Três casos, e é a diferença entre eles que a linha antiga apagava:
+
+    - **conversão declarada** ("saco 25 kg"): a quantidade segue sendo a
+      comercial (2 sacos). É a conversão que multiplica, no recebimento;
+    - **unidade da nota alcança a base por física** (nota em ``G``, insumo em
+      ``kg``): converte aqui mesmo. Isso é conversão do tipo 1 da ADR-024 —
+      definicional, fechada em código, sem autor e sem tabela. Exigir uma
+      ``MaterialConversion`` para kg↔g seria pedir que alguém declarasse física;
+    - **nem uma nem outra** ("10 UN" de um insumo pesado em ``kg``): a
+      quantidade fica como veio, **na unidade comercial**, e a linha trava até
+      alguém declarar o fator (R4). O que não acontece mais é o número comercial
+      ser lido como se já estivesse na base.
+    """
+    if conversion is not None or material is None:
+        return item.quantity
+    converted = _to_base(item.quantity, item.unit, material)
+    return converted if converted is not None else item.quantity
+
+
+def _conversion_suggestion(
+    item: NFeItem,
+    *,
+    material: Any | None,
+    conversion: Any | None,
+) -> ConversionSuggestion | None:
+    """O fator que a nota permite propor — ou ``None``, e aí vale a R4.
+
+    Sem insumo não há base para converter, então não há o que propor: a linha já
+    está bloqueada esperando o insumo. Com conversão declarada, a sugestão só
+    aparece quando a nota **discorda** dela — é o alerta de ordem de grandeza que
+    a ADR-024 pede, e não vira ruído quando os dois concordam.
+    """
+    if material is None:
+        return None
+    if _to_base(item.quantity, item.unit, material) is not None:
+        # A física já resolve (ver `_line_quantity`): não há embalagem no meio.
+        return None
+
+    suggestion = _suggestion_from_tax_pair(item, material=material) or _suggestion_from_description(
+        item, material=material,
+    )
+    if suggestion is None:
+        return None
+    if conversion is not None and _same_factor(Decimal(conversion.to_base_factor), suggestion.factor):
+        return None
+    return suggestion
+
+
+def _suggestion_from_tax_pair(item: NFeItem, *, material: Any) -> ConversionSuggestion | None:
+    """``fator = qTrib ÷ qCom``, com o par tributável levado à unidade-base."""
+    if item.quantity <= 0 or item.tax_quantity <= 0 or not item.tax_unit:
+        return None
+    tax_in_base = _to_base(item.tax_quantity, item.tax_unit, material)
+    if tax_in_base is None or tax_in_base <= 0:
+        return None
+    factor = tax_in_base / item.quantity
+    if factor <= 0:
+        return None
+    package = _package_size_text(item, material=material, factor=factor)
+    note = f"A NF diz {_pt_number(item.quantity)} {item.unit} = {_pt_number(item.tax_quantity)} {item.tax_unit}"
+    if item.tax_unit_value > 0:
+        note = f"{note} ({_money_text(item.tax_unit_value)} por {item.tax_unit})"
+    return ConversionSuggestion(
+        label=_conversion_label(item, factor=factor, material=material, package=package),
+        factor=factor,
+        kind="conventional",
+        source=CONVERSION_FROM_TAX_PAIR,
+        note=f"{note}, então 1 {item.unit} = {_pt_number(factor)} {material.unit}.",
+    )
+
+
+def _suggestion_from_description(item: NFeItem, *, material: Any) -> ConversionSuggestion | None:
+    """A gramatura de dentro do ``xProd`` — sinal secundário, e assumido como tal.
+
+    "FERM BIOL FRESCO MAURI 500G" carrega o tamanho da embalagem no nome. É texto
+    livre do emissor, não declaração fiscal, por isso só entra quando o par
+    tributável não resolveu — e entra do mesmo jeito que tudo nesta frente entra:
+    como proposta visível que o operador confirma.
+    """
+    size = _package_size(item.name)
+    if size is None:
+        return None
+    quantity, unit = size
+    factor = _to_base(quantity, unit, material)
+    if factor is None or factor <= 0:
+        return None
+    package = f"{_pt_number(quantity)} {unit.lower()}"
+    return ConversionSuggestion(
+        label=_conversion_label(item, factor=factor, material=material, package=package),
+        factor=factor,
+        kind="conventional",
+        source=CONVERSION_FROM_DESCRIPTION,
+        note=(
+            f"A descrição da NF diz {package}, então 1 {item.unit or 'embalagem'} = "
+            f"{_pt_number(factor)} {material.unit}."
+        ),
+    )
+
+
+def _package_size(name: str) -> tuple[Decimal, str] | None:
+    """Última gramatura da descrição — a embalagem costuma fechar o nome."""
+    matches = _PACKAGE_SIZE_RE.findall(str(name or ""))
+    if not matches:
+        return None
+    raw_quantity, raw_unit = matches[-1]
+    quantity = _decimal(raw_quantity)
+    if quantity <= 0:
+        return None
+    return quantity, raw_unit.upper()
+
+
+def _package_size_text(item: NFeItem, *, material: Any, factor: Decimal) -> str:
+    """"500 g" em vez de "0,5 kg" — mas só quando a descrição CONFIRMA o fator."""
+    size = _package_size(item.name)
+    if size is None:
+        return ""
+    quantity, unit = size
+    in_base = _to_base(quantity, unit, material)
+    if in_base is None or not _same_factor(in_base, factor):
+        return ""
+    return f"{_pt_number(quantity)} {unit.lower()}"
+
+
+def _conversion_label(item: NFeItem, *, factor: Decimal, material: Any, package: str) -> str:
+    """Rótulo no vocabulário da nota: "saco 25 kg", "cx 12 un", "un 500 g".
+
+    É proposta de nome, e o operador edita antes de salvar — por isso o palpite
+    fica no vocabulário do emissor em vez de inventar substantivo.
+    """
+    word = _purchase_unit_word(item.unit) or _normalize_text(item.unit)
+    size = package or f"{_pt_number(factor)} {material.unit}"
+    return f"{word} {size}".strip()[:60]
+
+
+def _conversion_suggestion_data(suggestion: ConversionSuggestion | None) -> dict[str, Any] | None:
+    if suggestion is None:
+        return None
+    return {
+        "label": suggestion.label,
+        "factor": _decimal_text(suggestion.factor),
+        "kind": suggestion.kind,
+        "source": suggestion.source,
+        "note": suggestion.note,
+    }
+
+
+def _to_base(quantity: Decimal, unit: str, material: Any) -> Decimal | None:
+    """A quantidade na unidade-base do insumo, quando a física alcança — senão ``None``.
+
+    Recusar é a resposta certa: entre massa e contagem não existe caminho
+    definicional, e inventar um é exatamente o que a R4 proíbe.
+    """
+    canonical = _canonical_unit(unit)
+    base = str(getattr(material, "unit", "") or "")
+    if not canonical or not base:
+        return None
+    try:
+        return units.convert(quantity, canonical, base)
+    except units.UnitError:
+        return None
+
+
+def _same_factor(first: Decimal, second: Decimal) -> bool:
+    """Mesmo fator a menos de arredondamento de casas — 0,5 e 0,500000 são um só."""
+    if first <= 0 or second <= 0:
+        return False
+    return abs(first - second) <= max(first, second) * Decimal("0.001")
+
+
 def _item_from_det(det: ET.Element, *, index: int) -> NFeItem:
+    """Lê os DOIS eixos do item — cada um inteiro, ou nenhum.
+
+    O ``or`` que existia aqui (``uCom or uTrib``, ``qCom or qTrib``) escolhia
+    campo a campo, e por isso conseguia devolver a unidade de um par com a
+    quantidade do outro. Era esse o defeito que trouxe "10 UNIDADES de fermento"
+    como "10 kg": o número comercial colado na unidade-base do insumo, sem fator
+    nenhum no meio. Cada par degrada como bloco.
+    """
     prod = _find_child(det, "prod")
     rastro = _find_desc(prod, "rastro")
+
+    tax_unit = _text(prod, "uTrib")
+    tax_quantity = _decimal(_text(prod, "qTrib"))
+    tax_unit_value = _decimal(_text(prod, "vUnTrib"))
+
+    unit = _text(prod, "uCom")
+    quantity = _decimal(_text(prod, "qCom"))
+    unit_value = _decimal(_text(prod, "vUnCom"))
+    if not unit or quantity <= 0:
+        unit, quantity, unit_value = tax_unit, tax_quantity, tax_unit_value
+
     return NFeItem(
         number=str(det.attrib.get("nItem") or index),
         product_code=_text(prod, "cProd"),
         ean=_valid_gtin(_text(prod, "cEAN") or _text(prod, "cEANTrib") or _text(prod, "cBarra")),
         name=_text(prod, "xProd"),
-        unit=_text(prod, "uCom") or _text(prod, "uTrib"),
-        quantity=_decimal(_text(prod, "qCom") or _text(prod, "qTrib")),
-        unit_value=_decimal(_text(prod, "vUnCom") or _text(prod, "vUnTrib")),
+        unit=unit,
+        quantity=quantity,
+        unit_value=unit_value,
+        tax_unit=tax_unit,
+        tax_quantity=tax_quantity,
+        tax_unit_value=tax_unit_value,
         total_value=_decimal(_text(prod, "vProd")),
         ncm=_text(prod, "NCM"),
         cfop=_text(prod, "CFOP"),
@@ -291,7 +540,9 @@ def _conversion_for_item(
     mapped = _mapped_conversion(mapping, material=material, supplier=supplier)
     if mapped:
         return mapped
-    if _unit_matches_material(item.unit, material):
+    if _to_base(item.quantity, item.unit, material) is not None:
+        # A nota já fala uma unidade que a física leva à base (a própria base, ou
+        # kg↔g / l↔ml). Não há embalagem para converter, então não se procura uma.
         return None
     text_match = _conversion_by_text(item, material=material, supplier=supplier)
     if text_match:
@@ -360,10 +611,18 @@ def _requires_conversion(item: NFeItem, *, material: Any | None, conversion: Any
         return False
     if material is None:
         return bool(item.unit and _canonical_unit(item.unit) is None)
-    return not _unit_matches_material(item.unit, material)
+    # Alcançar a base pela física basta (`_line_quantity` já converteu). O que
+    # trava é o vocabulário de embalagem sem fator declarado.
+    return _to_base(item.quantity, item.unit, material) is None
 
 
-def _line_note(item: NFeItem, *, material: Any | None, requires_conversion: bool) -> str:
+def _line_note(
+    item: NFeItem,
+    *,
+    material: Any | None,
+    requires_conversion: bool,
+    conversion_suggestion: ConversionSuggestion | None = None,
+) -> str:
     details = [f"NF: {item.name}" if item.name else "NF: item sem descricao"]
     if item.product_code:
         details.append(f"cod {item.product_code}")
@@ -371,16 +630,42 @@ def _line_note(item: NFeItem, *, material: Any | None, requires_conversion: bool
         details.append(f"EAN {item.ean}")
     if item.unit:
         details.append(f"unidade {item.unit}")
+    if item.tax_unit and not _same_axis(item):
+        details.append(f"tributavel {_decimal_text(item.tax_quantity)} {item.tax_unit}")
     if item.ncm:
         details.append(f"NCM {item.ncm}")
     if item.cfop:
         details.append(f"CFOP {item.cfop}")
-    prefix = ""
-    if material is None:
-        prefix = "Definir insumo. "
-    elif requires_conversion:
-        prefix = "Definir conversao antes de confirmar. "
+    prefix = _line_note_prefix(
+        item,
+        material=material,
+        requires_conversion=requires_conversion,
+        conversion_suggestion=conversion_suggestion,
+    )
     return f"{prefix}{'; '.join(details)}."
+
+
+def _line_note_prefix(
+    item: NFeItem,
+    *,
+    material: Any | None,
+    requires_conversion: bool,
+    conversion_suggestion: ConversionSuggestion | None,
+) -> str:
+    """A recusa da R4 tem de dizer o que cadastrar, não só que parou."""
+    if material is None:
+        return "Definir insumo. "
+    if not requires_conversion:
+        return ""
+    if conversion_suggestion is not None:
+        return f"Confirmar a conversao sugerida ({conversion_suggestion.label}). "
+    unit = item.unit or "a unidade da NF"
+    return f"Cadastrar a conversao de {unit} para {material.unit} antes de confirmar. "
+
+
+def _same_axis(item: NFeItem) -> bool:
+    """``True`` quando comercial e tributável dizem a mesma coisa — nada a contar."""
+    return _normalize_key(item.unit) == _normalize_key(item.tax_unit) and item.quantity == item.tax_quantity
 
 
 def _supplier_mapping_entry(item: NFeItem, *, supplier: Any | None) -> Any | None:
@@ -773,6 +1058,11 @@ def _decimal_text(value: Decimal) -> str:
     return format(normalized, "f").rstrip("0").rstrip(".")
 
 
+def _pt_number(value: Decimal) -> str:
+    """Numero como se escreve na tela em pt-BR: 0,5 e nao 0.5."""
+    return _decimal_text(value).replace(".", ",")
+
+
 def _money_text(value: Decimal) -> str:
     if value <= 0:
         return ""
@@ -790,11 +1080,6 @@ def _normalize_text(value: Any) -> str:
 
 def _canonical_unit(value: str) -> str | None:
     return BASE_UNIT_ALIASES.get(_normalize_key(value).upper())
-
-
-def _unit_matches_material(value: str, material: Any) -> bool:
-    canonical = _canonical_unit(value)
-    return bool(canonical and canonical == str(getattr(material, "unit", "")))
 
 
 def _purchase_unit_word(value: str) -> str:
