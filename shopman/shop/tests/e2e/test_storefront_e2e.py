@@ -391,14 +391,12 @@ class TestLiveOrderCrossing:
     def test_11_live_pickup_order_reaches_operator_queue(
         self, playwright, page, store_base_url, operator_base_url, operator_session
     ):
-        # Viewport alto o bastante para o checkout inteiro caber sem rolagem.
-        # Não é cosmético: a status bar do ShopHeader colapsa com `scrollY > 8`
-        # animando `max-height` — quando um clique deixa a rolagem exatamente no
-        # limiar, colapsar muda a altura da página, o scroll volta, a barra
-        # reexpande… um laço de reflow que balança a página ~1px para sempre e
-        # reprova o teste de estabilidade do Playwright. Com tudo em vista,
-        # `scrollY` fica em 0 e o laço nunca arma.
-        page.set_viewport_size({"width": 1280, "height": 3200})
+        # Viewport de desktop comum. A altura artificial que existia aqui era
+        # contorno para o tremor do ShopHeader (colapsar a status bar mudava a
+        # altura da página, o browser corrigia o scroll e a barra oscilava). O
+        # header agora tem altura constante no fluxo e desliza com translate, o
+        # que tira a realimentação — então o teste volta a rolar como um cliente.
+        page.set_viewport_size({"width": 1280, "height": 900})
 
         # ── Cliente: menu → PDP → sacola ─────────────────────────────
         sku = _seeded_sku(page, store_base_url)

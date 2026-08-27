@@ -51,9 +51,10 @@ function toggleMenu () {
   menuOpen.value = !menuOpen.value
 }
 
-// Status bar colapsa ao rolar (deixa só navbar + linha dourada). Position-based
-// com histerese (headerCollapsed): colapsar muda a altura da página, e limiar
-// único entrava em laço de reflow quando a rolagem parava exatamente nele. O
+// Status bar colapsa ao rolar (deixa só navbar + linha dourada). O header mantém
+// altura constante no fluxo e desliza com translateY: mudar a altura fazia o
+// browser corrigir o scroll sozinho (clamp e scroll anchoring), o que
+// realimentava o handler e fazia a barra tremer para sempre — ver scroll.ts. O
 // scrollover superior acompanha a cor dinamicamente (plugin overscroll), então
 // navbar e borda nunca destoam.
 const scrolled = ref(false)
@@ -95,13 +96,14 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <header class="shop-header-bar sticky top-0 z-40">
-    <!-- Barra de status: horário/status (esq) · telefone (dir). Colapsa ao rolar
-         (deixa só navbar + linha dourada); reexpande no topo. -->
-    <div
-      class="overflow-hidden bg-ink text-ink-foreground transition-[max-height] duration-200 ease-out"
-      :style="{ maxHeight: scrolled ? '0px' : '2.25rem' }"
-    >
+  <header
+    class="shop-header-bar sticky top-0 z-40 transition-transform duration-200 ease-out"
+    :class="scrolled ? '-translate-y-9' : ''"
+  >
+    <!-- Barra de status: horário/status (esq) · telefone (dir). Ao rolar, o header
+         inteiro desliza 2.25rem para cima e ela sai da tela por cima da navbar;
+         reexpande no topo. Ela ocupa a mesma altura no fluxo nos dois estados. -->
+    <div class="bg-ink text-ink-foreground" :aria-hidden="scrolled ? 'true' : undefined">
       <div class="shop-container flex h-9 items-center justify-between gap-3 text-sm">
         <span class="flex min-w-0 items-center gap-2 opacity-90">
           <Icon name="lucide:clock" class="size-3.5 shrink-0" />
