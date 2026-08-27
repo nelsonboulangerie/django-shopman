@@ -443,28 +443,64 @@ def _material_by_metadata(item: NFeItem, *, supplier: Any | None) -> Any | None:
 
 
 def _material_suggestion(name: str) -> tuple[Any, int] | None:
-    """Fuzzy match the NF item name into a visible suggestion, never a fill."""
+    """Fuzzy match the NF item name into a visible suggestion, never a fill.
+
+    O nome de item de NF real é "nome do insumo + marca + embalagem"
+    ("AZEITE DE OLIVA EXTRA VIRGEM ANDORINHA VD 500ML"). O WRatio penaliza a
+    diferença de comprimento e TETA em 85,5 exatamente nesse caso — abaixo do
+    limiar. Por isso a pontuação principal é cobertura de tokens: se todo token
+    significativo do insumo aparece na descrição da NF (exato, ou por prefixo
+    para abreviação de distribuidor: FERM~fermento, BIOL~biologico), vale 100.
+    O WRatio fica de reforço para nomes de vários tokens; nome de UM token só
+    ("Sal") nunca pontua por WRatio, senão SALGADINHO sugeriria Sal.
+    """
     min_score = _fuzzy_match_min_score()
     normalized = _normalize_text(name)
     if min_score <= 0 or not normalized:
         return None
     try:
-        from rapidfuzz import fuzz, process
+        from rapidfuzz import fuzz
     except ImportError:  # pragma: no cover - optional runtime guard.
         return None
 
+    item_tokens = set(normalized.split())
+    best: tuple[float, int, Any] | None = None
     Material = apps.get_model("buyman", "Material")
-    choices = {
-        _normalize_text(material.name): material
-        for material in Material.objects.filter(is_active=True).only("sku", "name")
-    }
-    match = process.extractOne(normalized, choices.keys(), scorer=fuzz.WRatio)
-    if not match or match[1] < min_score:
+    for material in Material.objects.filter(is_active=True).only("sku", "name"):
+        material_name = _normalize_text(material.name)
+        tokens = [token for token in material_name.split() if len(token) > 2 or token.isdigit()]
+        if not tokens:
+            continue
+        covered = sum(1 for token in tokens if _token_in_item(token, item_tokens))
+        if covered == len(tokens):
+            score = 100.0
+        elif len(tokens) == 1:
+            continue
+        else:
+            score = float(fuzz.WRatio(normalized, material_name))
+        if score < min_score:
+            continue
+        # Empate em 100 (ex.: "Azeite" e "Azeite extra virgem"): vence quem
+        # cobre mais tokens — a evidência mais específica.
+        if best is None or (score, covered) > (best[0], best[1]):
+            best = (score, covered, material)
+    if best is None:
         return None
-    material = choices[match[0]]
-    score = int(round(match[1]))
-    logger.info("purchase_nfe.fuzzy_material_suggestion score=%s material=%s", score, material.sku)
-    return material, score
+    score, _, material = best
+    rounded = int(round(score))
+    logger.info("purchase_nfe.fuzzy_material_suggestion score=%s material=%s", rounded, material.sku)
+    return material, rounded
+
+
+def _token_in_item(token: str, item_tokens: set[str]) -> bool:
+    if token in item_tokens:
+        return True
+    if len(token) < 4:
+        return False
+    return any(
+        len(item_token) >= 4 and (item_token.startswith(token) or token.startswith(item_token))
+        for item_token in item_tokens
+    )
 
 
 def _material_invoice_tokens(material: Any, *, supplier: Any | None) -> list[str]:

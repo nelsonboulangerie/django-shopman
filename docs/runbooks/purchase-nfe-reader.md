@@ -72,12 +72,16 @@ Quando faltar mapeamento:
 - fornecedor sem CNPJ cadastrado fica vazio e bloqueia a confirmacao;
 - item sem insumo fica visivel como `Definir insumo`;
 - unidade de compra sem conversao fica com `requiresConversion=true`;
-- fuzzy matching pelo nome vira **sugestao visivel**, nunca preenchimento:
+- matching pelo nome vira **sugestao visivel**, nunca preenchimento:
   a linha sai com `materialSku` vazio, `suggestedMaterialSku` com o insumo
   candidato e `suggestionScore` (0-100). O purchase-nuxt mostra a sugestao com
   badge e acao de aceitar/trocar, e a linha segue bloqueando a confirmacao ate
-  o operador decidir. O limiar padrao e 87
-  (`PURCHASE_NFE_FUZZY_MATCH_MIN_SCORE`); `0` desliga a sugestao.
+  o operador decidir. A pontuacao principal e **cobertura de tokens**: se todo
+  token significativo do nome do insumo aparece na descricao da NF (exato, ou
+  por prefixo para abreviacao de distribuidor: FERM~fermento), vale 100 —
+  "AZEITE DE OLIVA EXTRA VIRGEM ANDORINHA VD 500ML" sugere "Azeite extra
+  virgem". O WRatio do rapidfuzz fica de reforco para nomes de varios tokens.
+  Limiar padrao 87 (`PURCHASE_NFE_FUZZY_MATCH_MIN_SCORE`); `0` desliga.
 
 ## Operacao fiscal
 
