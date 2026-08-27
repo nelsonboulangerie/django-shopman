@@ -155,7 +155,11 @@ jobs:
   tests:
     name: Testes
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    # ⚠️ O relógio do step precisa de folga sobre a suíte mais lenta: em
+    # 27/08 o test-backstage passou VERDE em 20min04s e o timeout de 20 min
+    # derrubou o job — suíte verde virou check vermelho e a fila de merge
+    # expulsou PR inocente (#361). O job cobre install (~3 min) + step.
+    timeout-minutes: 35
     strategy:
       # `fail-fast: false` de propósito: quando duas frentes quebram, quero ver
       # as duas no mesmo relatório. Parar na primeira esconde a segunda e custa
@@ -181,7 +185,7 @@ jobs:
         run: make install
 
       - name: ${{ matrix.suite }}
-        timeout-minutes: 20
+        timeout-minutes: 30
         run: make ${{ matrix.suite }}
 
   docker-image:
@@ -221,7 +225,10 @@ jobs:
     # ⚠️ SEM `needs: quality`. Não depende do resultado dos testes — é
     # checagem independente. Encadear empurrava ~5 min para o fim do caminho
     # crítico sem proteger nada: se os testes quebram, o PR reprova igual.
-    timeout-minutes: 20
+    #
+    # O timeout do JOB precisa exceder o do step (25 min abaixo) — com 20 o
+    # job matava antes e os 25 do step eram letra morta.
+    timeout-minutes: 30
 
     services:
       postgres:
