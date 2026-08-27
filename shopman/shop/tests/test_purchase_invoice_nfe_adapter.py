@@ -30,6 +30,7 @@ def _nfe_xml(
     tax_quantity: str = "50.0000",
     tax_unit_value: str = "7.2000000000",
     ean: str = "SEM GTIN",
+    rastro: str = "",
 ) -> str:
     """NF-e de entrada com os DOIS eixos, que e como a nota real chega.
 
@@ -73,7 +74,7 @@ def _nfe_xml(
           <uCom>{unit}</uCom>
           <qCom>{quantity}</qCom>
           <vUnCom>{unit_value}</vUnCom>{tax_block}
-          <vProd>{total}</vProd>
+          <vProd>{total}</vProd>{rastro}
         </prod>
       </det>
       <total>
@@ -151,6 +152,8 @@ def test_parse_nfe_xml_to_receipt_draft_maps_supplier_material_and_conversion(su
             "purchaseQty": "2",
             "costInput": "360,00",
             "expiryDate": "",
+            "expiryFromInvoice": False,
+            "invoiceLot": "",
             # A ocorrencia nasce VAZIA: e o campo do operador, nao o despejo da NF.
             "lineNote": "",
             "invoiceDescription": "FARINHA T65 25KG",
@@ -640,3 +643,69 @@ def test_invoice_axes_derive_the_conversion_once_a_material_exists(supplier):
     assert suggestion.factor == Decimal("5")
     assert suggestion.source == "invoice-tax-pair"
     assert suggestion.note == "A NF diz 7 CX = 35 KG, então 1 CX = 5 kg."
+
+
+def _rastro(*lots: tuple[str, str]) -> str:
+    """Grupo `rastro` da NF-e: pares (numero do lote, validade)."""
+    return "".join(
+        f"""
+          <rastro><nLote>{lot}</nLote><qLote>1.0000</qLote><dVal>{expiry}</dVal></rastro>"""
+        for lot, expiry in lots
+    )
+
+
+@pytest.mark.django_db
+def test_invoice_lot_and_expiry_come_from_the_note(supplier, material):
+    """Validade e lote existem na NF-e (`rastro`) e nao precisam ser digitados."""
+    draft = parse_nfe_xml_to_purchase_draft(
+        _nfe_xml(rastro=_rastro(("L2408A", "2027-02-25"))),
+        access_key=VALID_ACCESS_KEY,
+    )
+
+    line = draft["lines"][0]
+    assert line["expiryDate"] == "2027-02-25"
+    assert line["expiryFromInvoice"] is True
+    assert line["invoiceLot"] == "L2408A"
+
+
+@pytest.mark.django_db
+def test_several_lots_keep_the_one_that_expires_first(supplier, material):
+    """Manda a validade mais CURTA, nao a primeira do XML.
+
+    A ordem em que o emissor escreveu os lotes nao e informacao. Quem governa o
+    que entra e o que vence antes — e o numero do lote tem de sair do MESMO
+    grupo, senao a rastreabilidade fica falsa.
+    """
+    draft = parse_nfe_xml_to_purchase_draft(
+        _nfe_xml(rastro=_rastro(("L-TARDE", "2027-06-30"), ("L-CEDO", "2027-02-25"), ("L-MEIO", "2027-04-10"))),
+        access_key=VALID_ACCESS_KEY,
+    )
+
+    line = draft["lines"][0]
+    assert line["expiryDate"] == "2027-02-25"
+    assert line["invoiceLot"] == "L-CEDO"
+
+
+@pytest.mark.django_db
+def test_lot_without_expiry_still_travels(supplier, material):
+    """`rastro` so com numero de lote ainda vale pela rastreabilidade."""
+    draft = parse_nfe_xml_to_purchase_draft(
+        _nfe_xml(rastro="\n          <rastro><nLote>L2408A</nLote><qLote>1.0000</qLote></rastro>"),
+        access_key=VALID_ACCESS_KEY,
+    )
+
+    line = draft["lines"][0]
+    assert line["expiryDate"] == ""
+    assert line["expiryFromInvoice"] is False
+    assert line["invoiceLot"] == "L2408A"
+
+
+@pytest.mark.django_db
+def test_note_without_rastro_leaves_expiry_to_the_operator(supplier, material):
+    """O caso comum: `rastro` e opcional, e a nota da Lactalis nao trazia."""
+    draft = parse_nfe_xml_to_purchase_draft(_nfe_xml(), access_key=VALID_ACCESS_KEY)
+
+    line = draft["lines"][0]
+    assert line["expiryDate"] == ""
+    assert line["expiryFromInvoice"] is False
+    assert line["invoiceLot"] == ""

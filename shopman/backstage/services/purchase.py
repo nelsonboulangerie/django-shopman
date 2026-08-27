@@ -52,6 +52,7 @@ class ResolvedReceiptLine:
     expiry_date: Any | None
     note: str
     invoice_product_code: str
+    invoice_lot: str
     checked: bool
 
 
@@ -771,6 +772,7 @@ def _resolve_receipt_line(raw: dict[str, Any], *, index: int, supplier) -> Resol
         expiry_date=expiry_date,
         note=note,
         invoice_product_code=str(raw.get("invoiceProductCode") or raw.get("invoice_product_code") or "").strip(),
+        invoice_lot=str(raw.get("invoiceLot") or raw.get("invoice_lot") or "").strip(),
         checked=True,
     )
 
@@ -1151,7 +1153,22 @@ def _manual_source_ref(*, supplier_ref: str, note: str) -> str:
 
 
 def _batch_ref(*, source_ref: str, line: ResolvedReceiptLine) -> str:
+    """A referência do lote — a do FORNECEDOR quando a nota informa.
+
+    Num recall, quem chama o lote é quem fabricou: o aviso diz "lote L2408A",
+    não o código que a nossa entrada inventou. Guardar o número da nota é o que
+    torna a pergunta "esse lote entrou aqui?" respondível em segundos.
+
+    O SKU entra na frente porque o número do fornecedor só é único dentro do
+    produto dele: dois insumos diferentes podem chegar com "L2408A" no mesmo
+    dia, e o lote é chave global no Stockman. Sem lote na nota — o caso comum,
+    porque ``rastro`` é opcional — vale o código derivado de sempre.
+    """
     sku = re.sub(r"[^A-Z0-9]+", "", line.material.sku.upper())[:18] or "SKU"
+    if line.invoice_lot:
+        lot = re.sub(r"[^A-Z0-9]+", "", line.invoice_lot.upper())[:20]
+        if lot:
+            return f"{sku}-L{lot}"[:50]
     source = re.sub(r"[^A-Z0-9]+", "", source_ref.upper())[-10:] or "REC"
     seed = f"{source_ref}:{line.line_id}:{line.material.sku}:{line.expiry_date}"
     digest = hashlib.sha1(seed.encode("utf-8")).hexdigest()[:8].upper()

@@ -1138,3 +1138,77 @@ def test_invoice_axes_that_cannot_reach_the_base_still_refuse(client, purchase_o
     assert response.status_code == 400
     assert response.json()["error"]["code"] == "conversion_label_required"
     assert MaterialConversion.objects.count() == 0
+
+
+@pytest.mark.django_db
+def test_supplier_lot_from_the_note_becomes_the_stock_batch(
+    client, purchase_operator, material, supplier, conversion, position,
+):
+    """Num recall, quem chama o lote e o fornecedor: "lote L2408A", nao o
+    codigo que a nossa entrada inventou. Guardar o numero da nota e o que torna
+    "esse lote entrou aqui?" uma pergunta respondivel em segundos.
+    """
+    client.force_login(purchase_operator)
+
+    response = client.post(
+        reverse("api-backstage-purchase-confirm-receipt"),
+        data={
+            "mode": "invoice",
+            "supplierRef": supplier.ref,
+            "invoiceAccessKey": VALID_ACCESS_KEY,
+            "note": "",
+            "lines": [
+                {
+                    "id": "line-farinha",
+                    "materialSku": material.sku,
+                    "conversionId": str(conversion.pk),
+                    "purchaseQty": 2,
+                    "costInput": "360,00",
+                    "expiryDate": "2027-02-25",
+                    "invoiceLot": "L2408A",
+                    "checked": True,
+                }
+            ],
+        },
+        content_type="application/json",
+    )
+
+    assert response.status_code == 200
+    batch = Batch.objects.get(sku=material.sku)
+    assert batch.ref == "FARINHAT65-LL2408A"
+    assert str(batch.expiry_date) == "2027-02-25"
+    assert batch.supplier == supplier.name
+
+
+@pytest.mark.django_db
+def test_receipt_without_a_supplier_lot_keeps_the_derived_batch_ref(
+    client, purchase_operator, material, supplier, conversion, position,
+):
+    """`rastro` e opcional: sem lote na nota, vale o codigo derivado de sempre."""
+    client.force_login(purchase_operator)
+
+    response = client.post(
+        reverse("api-backstage-purchase-confirm-receipt"),
+        data={
+            "mode": "invoice",
+            "supplierRef": supplier.ref,
+            "invoiceAccessKey": VALID_ACCESS_KEY,
+            "note": "",
+            "lines": [
+                {
+                    "id": "line-farinha",
+                    "materialSku": material.sku,
+                    "conversionId": str(conversion.pk),
+                    "purchaseQty": 2,
+                    "costInput": "360,00",
+                    "expiryDate": "2027-02-25",
+                    "checked": True,
+                }
+            ],
+        },
+        content_type="application/json",
+    )
+
+    assert response.status_code == 200
+    batch = Batch.objects.get(sku=material.sku)
+    assert batch.ref.startswith("BUY-")

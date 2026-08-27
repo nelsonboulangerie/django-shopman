@@ -210,6 +210,7 @@ export function receiptInvoiceSummary(line: ReceiptLine): string {
   if (taxQty > 0 && line.invoiceTaxUnit) {
     parts.push(`${quantityFormatter.format(taxQty)} ${line.invoiceTaxUnit} na NF`);
   }
+  if (line.invoiceLot) parts.push(`lote ${line.invoiceLot}`);
   if (line.invoiceProductCode) parts.push(`cód ${line.invoiceProductCode}`);
   return parts.join(" · ");
 }

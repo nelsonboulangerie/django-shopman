@@ -756,6 +756,7 @@ onBeforeUnmount(stopInvoiceScanner);
                 <label class="block text-xs font-medium text-muted-foreground">
                   Validade
                   <input v-model="preview.line.expiryDate" type="date" class="mt-1 h-11 w-full rounded-md border border-border bg-card px-3 text-sm text-foreground" />
+                  <span v-if="preview.line.expiryFromInvoice" class="mt-1 block text-xs font-normal text-muted-foreground">Veio na nota</span>
                 </label>
                 <label class="block text-xs font-medium text-muted-foreground">
                   Valor total (R$)

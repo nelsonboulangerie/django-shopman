@@ -148,6 +148,10 @@ export interface ReceiptLine {
   purchaseQty: number;
   costInput: string;
   expiryDate: string;
+  // A validade veio do grupo `rastro` da NF-e, nao da mao do operador.
+  expiryFromInvoice?: boolean;
+  // Numero do lote do FORNECEDOR (`nLote`). E ele que um recall chama.
+  invoiceLot?: string;
   // A OCORRENCIA do operador (avaria, falta, ressalva). Nasce vazia: o que a
   // nota diz mora nos campos `invoice*` abaixo.
   lineNote: string;

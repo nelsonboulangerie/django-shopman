@@ -120,6 +120,27 @@ despejada dentro do textarea rotulado "Ocorrencia", entao o operador tinha de
 apagar o texto da nota para escrever o dele — e, pior, a unica pista sobre que
 item era aquele ficava no ultimo campo da linha, que no celular nem aparecia.
 
+### Validade e lote — a nota tem, quando o emissor preenche
+
+O grupo `rastro` do item traz `nLote`, `dVal` e `dFab`, e o adapter le os dois
+primeiros: `expiryDate` (+ `expiryFromInvoice`, para a tela dizer que veio da
+nota e nao da mao de alguem) e `invoiceLot`.
+
+**O grupo e OPCIONAL** na NF-e — obrigatorio so para algumas categorias — entao
+boa parte das notas de insumo chega sem ele e a validade segue sendo digitada
+na conferencia. A nota real da Lactalis (27/08) nao trazia.
+
+Quando o item tem **varios lotes**, vale o que **vence antes** — nao o primeiro
+do XML, porque a ordem em que o emissor escreveu nao e informacao. Numero e data
+saem do MESMO grupo: o lote "L2408A" com a validade de outro lote seria
+rastreabilidade falsa, pior que nenhuma.
+
+O `Batch` do Stockman passa a nascer com o lote do FORNECEDOR quando ele existe
+(`<SKU>-L<nLote>`), porque num recall quem chama o lote e quem fabricou. O SKU
+vai na frente porque o numero do fornecedor so e unico dentro do produto dele, e
+o lote e chave global no Stockman. Sem lote na nota, vale o codigo derivado de
+sempre (`BUY-<origem>-<SKU>-<hash>`).
+
 ### A conversao que a nota sugere
 
 Quando a linha trava, o adapter procura o fator na propria nota e devolve

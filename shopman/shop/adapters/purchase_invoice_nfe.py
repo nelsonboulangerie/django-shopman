@@ -102,6 +102,7 @@ class NFeItem:
     ncm: str
     cfop: str
     expiry_date: str
+    lot: str
 
 
 @dataclass(frozen=True)
@@ -293,6 +294,11 @@ def _receipt_line_from_item(item: NFeItem, *, index: int, supplier: Any | None) 
         "purchaseQty": _decimal_text(quantity),
         "costInput": _money_text(total_value),
         "expiryDate": item.expiry_date,
+        # Validade que veio da NOTA não é a mesma coisa que validade digitada:
+        # a tela diz de onde ela saiu, para ninguém a reconferir à toa nem
+        # confiar demais numa que o operador chutou.
+        "expiryFromInvoice": bool(item.expiry_date),
+        "invoiceLot": item.lot,
         # `lineNote` é a OCORRÊNCIA do operador (avaria, falta, ressalva), e por
         # isso nasce vazia. O que a nota diz vai nos campos `invoice*`: eram a
         # mesma caixa, e o operador tinha de apagar a descrição da NF para
@@ -392,7 +398,7 @@ def conversion_from_invoice_axes(
         number="", product_code="", ean="", name=name,
         unit=unit, quantity=quantity, unit_value=Decimal("0"),
         tax_unit=tax_unit, tax_quantity=tax_quantity, tax_unit_value=Decimal("0"),
-        total_value=Decimal("0"), ncm="", cfop="", expiry_date="",
+        total_value=Decimal("0"), ncm="", cfop="", expiry_date="", lot="",
     )
     return _suggestion_from_tax_pair(item, material=material) or _suggestion_from_description(
         item, material=material,
@@ -530,7 +536,7 @@ def _item_from_det(det: ET.Element, *, index: int) -> NFeItem:
     nenhum no meio. Cada par degrada como bloco.
     """
     prod = _find_child(det, "prod")
-    rastro = _find_desc(prod, "rastro")
+    expiry, lot = _shortest_lot(prod)
 
     tax_unit = _text(prod, "uTrib")
     tax_quantity = _decimal(_text(prod, "qTrib"))
@@ -556,8 +562,36 @@ def _item_from_det(det: ET.Element, *, index: int) -> NFeItem:
         total_value=_decimal(_text(prod, "vProd")),
         ncm=_text(prod, "NCM"),
         cfop=_text(prod, "CFOP"),
-        expiry_date=_date_text(_text(rastro, "dVal")),
+        expiry_date=expiry,
+        lot=lot,
     )
+
+
+def _shortest_lot(prod: ET.Element | None) -> tuple[str, str]:
+    """O lote que a nota informa, e a validade dele — o que vence antes.
+
+    O grupo ``rastro`` é **opcional** na NF-e (obrigatório só para algumas
+    categorias), então boa parte das notas de insumo chega sem ele e a validade
+    segue sendo digitada na conferência. Quando vem, pode vir repetido: um item
+    carrega vários lotes, cada um com sua ``dVal`` e seu ``nLote``.
+
+    Vale o que **vence antes**, e não o primeiro do XML: quem manda no lote que
+    entra é a validade mais curta, e a ordem em que o emissor resolveu escrever
+    não é informação. Data e número saem do MESMO grupo — o lote "L2408A" com a
+    validade de outro lote seria rastreabilidade falsa, pior que nenhuma.
+    """
+    lots = [
+        (text, _text(rastro, "nLote").strip())
+        for rastro in _find_children(prod, "rastro")
+        if (text := _date_text(_text(rastro, "dVal")))
+    ]
+    if lots:
+        return min(lots, key=lambda pair: pair[0])
+    # Sem validade declarada, um lote sozinho ainda vale pela rastreabilidade.
+    for rastro in _find_children(prod, "rastro"):
+        if lot := _text(rastro, "nLote").strip():
+            return "", lot
+    return "", ""
 
 
 def _material_for_item(item: NFeItem, *, supplier: Any | None) -> tuple[Any | None, Any | None]:

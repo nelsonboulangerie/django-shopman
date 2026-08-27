@@ -107,6 +107,8 @@ class ReceiptLineProjection:
     purchaseQty: float
     costInput: str
     expiryDate: str
+    expiryFromInvoice: bool
+    invoiceLot: str
     lineNote: str
     invoiceDescription: str
     invoiceQty: float
@@ -372,6 +374,8 @@ def _receipt_line_projection(line: dict[str, Any]) -> ReceiptLineProjection:
         purchaseQty=_number(_decimal(line.get("purchaseQty", line.get("purchase_qty", 0)))),
         costInput=str(line.get("costInput") or line.get("cost_input") or ""),
         expiryDate=str(line.get("expiryDate") or line.get("expiry_date") or ""),
+        expiryFromInvoice=bool(line.get("expiryFromInvoice") or line.get("expiry_from_invoice")),
+        invoiceLot=str(line.get("invoiceLot") or line.get("invoice_lot") or ""),
         lineNote=str(line.get("lineNote") or line.get("line_note") or line.get("note") or ""),
         invoiceDescription=str(line.get("invoiceDescription") or line.get("invoice_description") or ""),
         invoiceQty=_number(_decimal(line.get("invoiceQty", line.get("invoice_qty", 0)))),
