@@ -478,6 +478,18 @@ export function usePurchaseDesk() {
   const receiptLineWarnings = computed(() => receiptLinePreviews.value.flatMap((preview) => preview.warnings));
   const receiptBlockers = computed(() => receiptLineWarnings.value.filter((warning) => warning.tone === "block"));
   const receiptWatchWarnings = computed(() => receiptLineWarnings.value.filter((warning) => warning.tone === "watch"));
+  // O painel listava as pendências ACHATADAS — dez pílulas "Definir insumo"
+  // iguais, sem dizer de qual item, e a lista ficava inútil justamente quando
+  // era mais necessária (nota grande). Uma linha por item, com nome e gesto.
+  const receiptPendingLines = computed(() =>
+    receiptLinePreviews.value
+      .filter((preview) => preview.nextStep)
+      .map((preview) => ({
+        id: preview.line.id,
+        label: preview.line.invoiceDescription || preview.material.name || "Item sem descrição",
+        step: preview.nextStep,
+      })),
+  );
   const receiptDocumentBlockers = computed(() =>
     receiptMode.value === "invoice" && !invoiceStatus.value.valid ? ["Ler QR, código de barras ou chave da NF"] : [],
   );
@@ -826,6 +838,34 @@ export function usePurchaseDesk() {
     return true;
   }
 
+  /**
+   * Aceitar o par que a NF declara, deixando o servidor derivar o fator.
+   *
+   * É o caminho da nota real: o item chega como "MANTEIGA S/SAL CX 5 KG
+   * PRESIDENT TEU", não casa com insumo nenhum, e por isso o scan não pôde
+   * calcular a conversão — sem insumo não há unidade-base para converter PARA.
+   * Escolhido o insumo, "7 CX = 35 KG" volta ao servidor e vira "1 caixa 5 kg".
+   */
+  async function acceptReceiptLineInvoiceAxes(lineId: string): Promise<boolean> {
+    const line = receiptLines.value.find((item) => item.id === lineId);
+    if (!line?.materialSku) return false;
+    if (!requireBackend("cadastrar a conversão")) return false;
+    const response = await runBackendAction(() =>
+      api.declareConversion({
+        materialSku: line.materialSku,
+        supplierRef: receiptSupplierRef.value,
+        invoiceQty: line.invoiceQty,
+        invoiceUnit: line.invoiceUnit,
+        invoiceTaxQty: line.invoiceTaxQty,
+        invoiceTaxUnit: line.invoiceTaxUnit,
+        invoiceDescription: line.invoiceDescription,
+      }),
+    );
+    if (!response?.conversionId) return false;
+    updateReceiptLine(lineId, { conversionId: response.conversionId, requiresConversion: false });
+    return true;
+  }
+
   /** Aceitar a conversão que a NF propôs, sem redigitar nada. */
   async function acceptReceiptLineConversion(lineId: string): Promise<boolean> {
     const suggestion = receiptLines.value.find((item) => item.id === lineId)?.conversionSuggestion;
@@ -995,6 +1035,7 @@ export function usePurchaseDesk() {
     receiptLinePreviews,
     receiptBlockers,
     receiptWatchWarnings,
+    receiptPendingLines,
     receiptDocumentBlockers,
     receiptSupplierBlockers,
     receiptCheckedCount,
@@ -1020,6 +1061,7 @@ export function usePurchaseDesk() {
     setReceiptLineMaterial,
     acceptReceiptLineSuggestion,
     acceptReceiptLineConversion,
+    acceptReceiptLineInvoiceAxes,
     declareReceiptLineConversion,
     updateReceiptLine,
     addReceiptLine,

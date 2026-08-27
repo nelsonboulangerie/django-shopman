@@ -347,6 +347,20 @@ def declare_conversion(payload: dict[str, Any], *, user=None) -> tuple[dict[str,
         if not supplier:
             raise PurchaseError("Fornecedor não encontrado.", code="supplier_not_found", field="supplierRef")
 
+    # A nota sabe o fator, mas só depois de existir insumo: "7 CX = 35 KG" só
+    # vira "1 caixa = 5 kg" quando há uma unidade-base para converter PARA. Na
+    # nota real o item chega como "MANTEIGA S/SAL CX 5 KG PRESIDENT TEU" e não
+    # casa com nenhum insumo, então a sugestão do scan sai vazia — e o operador
+    # que escolhe a manteiga na mão caía num cadastro manual que a nota já
+    # respondia. Aqui o par volta e o servidor deriva, com a mesma física.
+    derived = _conversion_from_invoice_axes(payload, material=material)
+    if derived is not None:
+        payload = {
+            "label": payload.get("label") or derived.label,
+            "factor": payload.get("factor") or derived.factor,
+            "kind": payload.get("kind") or derived.kind,
+        }
+
     label = str(payload.get("label") or "").strip()
     if not label:
         raise PurchaseError(
@@ -787,6 +801,28 @@ def _resolve_conversion(raw_id: Any, *, material, supplier, field: str):
     if not conversion.is_active:
         raise PurchaseError("Conversão inativa.", code="conversion_inactive", field=field)
     return conversion
+
+
+def _conversion_from_invoice_axes(payload: dict[str, Any], *, material):
+    """Deriva rótulo e fator do par da NF, quando o gesto mandou o par."""
+    if payload.get("factor") and payload.get("label"):
+        return None
+    quantity = _decimal(payload.get("invoiceQty") or payload.get("invoice_qty"))
+    tax_quantity = _decimal(payload.get("invoiceTaxQty") or payload.get("invoice_tax_qty"))
+    unit = str(payload.get("invoiceUnit") or payload.get("invoice_unit") or "").strip()
+    tax_unit = str(payload.get("invoiceTaxUnit") or payload.get("invoice_tax_unit") or "").strip()
+    if quantity <= 0 or not unit:
+        return None
+    from shopman.shop.adapters.purchase_invoice_nfe import conversion_from_invoice_axes
+
+    return conversion_from_invoice_axes(
+        material=material,
+        quantity=quantity,
+        unit=unit,
+        tax_quantity=tax_quantity,
+        tax_unit=tax_unit,
+        name=str(payload.get("invoiceDescription") or payload.get("invoice_description") or ""),
+    )
 
 
 def _converted_via(line: ResolvedReceiptLine) -> dict[str, Any]:

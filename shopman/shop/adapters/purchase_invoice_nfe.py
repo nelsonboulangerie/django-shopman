@@ -269,7 +269,17 @@ def _receipt_line_from_item(item: NFeItem, *, index: int, supplier: Any | None) 
     suggestion = None if material else _material_suggestion(item.name)
     conversion = _conversion_for_item(item, material=material, supplier=supplier, mapping=mapping)
     quantity = _line_quantity(item, material=material, conversion=conversion)
-    conversion_suggestion = _conversion_suggestion(item, material=material, conversion=conversion)
+    # A conversão é calculada contra o insumo SUGERIDO quando não há um
+    # resolvido. Sem isso, aceitar a sugestão de insumo deixava a linha sem
+    # conversão sugerida — o operador confirmava "é farinha" e caía num
+    # "cadastre a conversão" que a nota já sabia responder (4 SC = 100 KG).
+    # Propor contra o sugerido é seguro porque as duas coisas continuam sendo
+    # propostas: quem aceita as duas é a mesma pessoa, no mesmo gesto.
+    conversion_suggestion = _conversion_suggestion(
+        item,
+        material=material or (suggestion[0] if suggestion else None),
+        conversion=conversion,
+    )
     requires_conversion = _requires_conversion(item, material=material, conversion=conversion)
     total_value = item.total_value if item.total_value > 0 else item.quantity * item.unit_value
     return {
@@ -283,13 +293,23 @@ def _receipt_line_from_item(item: NFeItem, *, index: int, supplier: Any | None) 
         "purchaseQty": _decimal_text(quantity),
         "costInput": _money_text(total_value),
         "expiryDate": item.expiry_date,
-        "lineNote": _line_note(
-            item,
-            material=material,
-            requires_conversion=requires_conversion,
-            conversion_suggestion=conversion_suggestion,
-        ),
+        # `lineNote` é a OCORRÊNCIA do operador (avaria, falta, ressalva), e por
+        # isso nasce vazia. O que a nota diz vai nos campos `invoice*`: eram a
+        # mesma caixa, e o operador tinha de apagar a descrição da NF para
+        # escrever a dele — além de a descrição só aparecer dentro de um
+        # textarea rotulado "Ocorrência", que é o último lugar onde alguém
+        # procura saber que item é aquele.
+        "lineNote": "",
+        "invoiceDescription": item.name,
+        "invoiceQty": _decimal_text(item.quantity),
         "invoiceUnit": item.unit,
+        # O eixo tributável só vira texto na tela quando ele DIZ algo diferente
+        # do comercial. "4 SC · 4 SC tributável" é ruído; "4 SC · 100 KG" é a
+        # informação que explica a conversão. Nota sem par tributável não mostra
+        # eixo nenhum — melhor calar do que exibir um zero que parece dado.
+        "invoiceTaxQty": _decimal_text(item.tax_quantity) if _tax_axis_adds_info(item) else "",
+        "invoiceTaxUnit": item.tax_unit if _tax_axis_adds_info(item) else "",
+        "invoiceTotal": _money_text(total_value),
         "invoiceProductCode": item.product_code,
         "invoiceEan": item.ean,
         "checked": False,
@@ -345,6 +365,38 @@ def _conversion_suggestion(
     if conversion is not None and _same_factor(Decimal(conversion.to_base_factor), suggestion.factor):
         return None
     return suggestion
+
+
+def conversion_from_invoice_axes(
+    *,
+    material: Any,
+    quantity: Decimal,
+    unit: str,
+    tax_quantity: Decimal,
+    tax_unit: str,
+    name: str = "",
+) -> ConversionSuggestion | None:
+    """A conversão que os dois eixos de um item permitem propor, dado o insumo.
+
+    Existe como função pública porque o insumo nem sempre é conhecido no
+    momento do scan: numa nota real o item chega como "MANTEIGA S/SAL CX 5 KG
+    PRESIDENT TEU" e não casa com "Manteiga francesa" do cadastro. O operador
+    escolhe o insumo DEPOIS — e é só aí que "7 CX = 35 KG" pode virar "1 caixa
+    = 5 kg", porque só aí existe uma unidade-base para converter PARA.
+
+    Quem chama é o recebimento (``declare_conversion``), não o front: a física
+    mora num lugar só (:mod:`shopman.utils.units`), e uma cópia no navegador
+    seria a segunda tabela de conversão que a ADR-024 existe para impedir.
+    """
+    item = NFeItem(
+        number="", product_code="", ean="", name=name,
+        unit=unit, quantity=quantity, unit_value=Decimal("0"),
+        tax_unit=tax_unit, tax_quantity=tax_quantity, tax_unit_value=Decimal("0"),
+        total_value=Decimal("0"), ncm="", cfop="", expiry_date="",
+    )
+    return _suggestion_from_tax_pair(item, material=material) or _suggestion_from_description(
+        item, material=material,
+    )
 
 
 def _suggestion_from_tax_pair(item: NFeItem, *, material: Any) -> ConversionSuggestion | None:
@@ -616,56 +668,12 @@ def _requires_conversion(item: NFeItem, *, material: Any | None, conversion: Any
     return _to_base(item.quantity, item.unit, material) is None
 
 
-def _line_note(
-    item: NFeItem,
-    *,
-    material: Any | None,
-    requires_conversion: bool,
-    conversion_suggestion: ConversionSuggestion | None = None,
-) -> str:
-    details = [f"NF: {item.name}" if item.name else "NF: item sem descricao"]
-    if item.product_code:
-        details.append(f"cod {item.product_code}")
-    if item.ean:
-        details.append(f"EAN {item.ean}")
-    if item.unit:
-        details.append(f"unidade {item.unit}")
-    if item.tax_unit and not _same_axis(item):
-        details.append(f"tributavel {_decimal_text(item.tax_quantity)} {item.tax_unit}")
-    if item.ncm:
-        details.append(f"NCM {item.ncm}")
-    if item.cfop:
-        details.append(f"CFOP {item.cfop}")
-    prefix = _line_note_prefix(
-        item,
-        material=material,
-        requires_conversion=requires_conversion,
-        conversion_suggestion=conversion_suggestion,
-    )
-    return f"{prefix}{'; '.join(details)}."
-
-
-def _line_note_prefix(
-    item: NFeItem,
-    *,
-    material: Any | None,
-    requires_conversion: bool,
-    conversion_suggestion: ConversionSuggestion | None,
-) -> str:
-    """A recusa da R4 tem de dizer o que cadastrar, não só que parou."""
-    if material is None:
-        return "Definir insumo. "
-    if not requires_conversion:
-        return ""
-    if conversion_suggestion is not None:
-        return f"Confirmar a conversao sugerida ({conversion_suggestion.label}). "
-    unit = item.unit or "a unidade da NF"
-    return f"Cadastrar a conversao de {unit} para {material.unit} antes de confirmar. "
-
-
-def _same_axis(item: NFeItem) -> bool:
-    """``True`` quando comercial e tributável dizem a mesma coisa — nada a contar."""
-    return _normalize_key(item.unit) == _normalize_key(item.tax_unit) and item.quantity == item.tax_quantity
+def _tax_axis_adds_info(item: NFeItem) -> bool:
+    """O eixo tributável tem algo a dizer que o comercial já não disse?"""
+    if item.tax_quantity <= 0 or not item.tax_unit:
+        return False
+    same = _normalize_key(item.unit) == _normalize_key(item.tax_unit) and item.quantity == item.tax_quantity
+    return not same
 
 
 def _supplier_mapping_entry(item: NFeItem, *, supplier: Any | None) -> Any | None:

@@ -194,6 +194,84 @@ export function receiptConversionDiverges(
   return Math.abs(chosen - suggested) > Math.max(chosen, suggested) * 0.001;
 }
 
+/**
+ * O que a nota diz sobre este item, em uma linha.
+ *
+ * É a âncora do card: sem ela o operador vê uma fila de "Definir insumo" e não
+ * tem como saber qual linha do papel está olhando. Os dois eixos aparecem lado
+ * a lado quando divergem ("4 SC · 100 KG na NF"), porque é essa divergência que
+ * explica de onde a conversão sugerida saiu.
+ */
+export function receiptInvoiceSummary(line: ReceiptLine): string {
+  const parts: string[] = [];
+  const qty = line.invoiceQty ?? 0;
+  if (qty > 0 && line.invoiceUnit) parts.push(`${quantityFormatter.format(qty)} ${line.invoiceUnit}`);
+  const taxQty = line.invoiceTaxQty ?? 0;
+  if (taxQty > 0 && line.invoiceTaxUnit) {
+    parts.push(`${quantityFormatter.format(taxQty)} ${line.invoiceTaxUnit} na NF`);
+  }
+  if (line.invoiceProductCode) parts.push(`cód ${line.invoiceProductCode}`);
+  return parts.join(" · ");
+}
+
+/**
+ * A frase do que fazer AGORA nesta linha — uma só, a mais urgente.
+ *
+ * O painel de bloqueios listava dez pílulas iguais ("Definir insumo",
+ * "Definir insumo", …) sem dizer de qual item, e o card não dizia nada. Uma
+ * instrução por linha, na própria linha, é o que responde "o que eu faço?".
+ */
+export function receiptNextStep(warnings: ReceiptWarning[]): string {
+  const blocker = warnings.find((warning) => warning.tone === "block");
+  return blocker?.label ?? "";
+}
+
+/** Bloqueios que o card do próprio campo já anuncia — o topo não os repete. */
+const FIELD_LEVEL_BLOCKERS = new Set(["confirm-suggestion", "confirm-conversion", "missing-conversion"]);
+
+export function receiptNextStepIsOnField(warnings: ReceiptWarning[]): boolean {
+  const blocker = warnings.find((warning) => warning.tone === "block");
+  return Boolean(blocker && FIELD_LEVEL_BLOCKERS.has(blocker.key));
+}
+
+/**
+ * Em que unidade está a quantidade desta linha — "4 o quê?".
+ *
+ * A resposta nunca é "não sei": a nota já diz `4 SC` antes de qualquer insumo
+ * estar escolhido. A ordem é a da certeza:
+ *
+ * 1. **conversão escolhida** → o rótulo dela ("saco 25 kg"), que é o vocabulário
+ *    em que o operador está contando;
+ * 2. **conversão ainda pendente, ou insumo ainda indefinido** → a unidade da
+ *    NOTA. Dizer "kg" aqui seria repetir no rótulo o mesmo erro que esta frente
+ *    existe para corrigir — 4 sacos não são 4 kg;
+ * 3. **entrada na própria base** (ou lançamento à mão) → a unidade do insumo.
+ */
+export function receiptPurchaseUnitLabel(
+  line: ReceiptLine,
+  material: Material | undefined,
+  conversion: MaterialConversion | null,
+): string {
+  if (conversion) return conversion.label;
+  if ((line.requiresConversion || !material) && line.invoiceUnit) return line.invoiceUnit;
+  return material?.unit ?? line.invoiceUnit ?? "";
+}
+
+/**
+ * Os dois eixos da nota, quando eles bastam para propor uma conversão.
+ *
+ * "7 CX = 35 KG" é o que a NF diz — e é dito sem precisar do insumo. O fator
+ * ("1 caixa = 5 kg") já precisa da unidade-base, e por isso é o servidor que o
+ * calcula: a física vive em `shopman.utils.units` e uma segunda cópia aqui
+ * seria exatamente a tabela paralela que a ADR-024 proíbe.
+ */
+export function receiptInvoiceAxes(line: ReceiptLine): string {
+  const qty = line.invoiceQty ?? 0;
+  const taxQty = line.invoiceTaxQty ?? 0;
+  if (qty <= 0 || taxQty <= 0 || !line.invoiceUnit || !line.invoiceTaxUnit) return "";
+  return `${quantityFormatter.format(qty)} ${line.invoiceUnit} = ${quantityFormatter.format(taxQty)} ${line.invoiceTaxUnit}`;
+}
+
 export function receiptLineWarnings(
   line: ReceiptLine,
   mode: ReceiptMode,
@@ -203,19 +281,19 @@ export function receiptLineWarnings(
   const warnings: ReceiptWarning[] = [];
   if (!material) {
     return line.suggestedMaterialSku ?
-        [{ key: "confirm-suggestion", label: "Confirmar sugestão de insumo", tone: "block" }]
-      : [{ key: "missing-material", label: "Definir insumo", tone: "block" }];
+        [{ key: "confirm-suggestion", label: "Confirme o insumo sugerido", tone: "block" }]
+      : [{ key: "missing-material", label: "Escolha o insumo desta linha", tone: "block" }];
   }
   if (!Number.isFinite(line.purchaseQty) || line.purchaseQty <= 0) {
-    warnings.push({ key: "invalid-qty", label: "Quantidade precisa ser maior que zero", tone: "block" });
+    warnings.push({ key: "invalid-qty", label: "Informe a quantidade recebida", tone: "block" });
   }
   if (line.requiresConversion && !conversion) {
     // A NF sabe o fator: a linha continua bloqueando, mas o bloqueio agora tem
     // um gesto do lado — aceitar o que a nota diz — em vez de só uma acusação.
     warnings.push(
       receiptConversionSuggestion(line) ?
-        { key: "confirm-conversion", label: "Confirmar conversão da NF", tone: "block" }
-      : { key: "missing-conversion", label: "Definir conversão", tone: "block" },
+        { key: "confirm-conversion", label: "Confirme a conversão que a NF sugere", tone: "block" }
+      : { key: "missing-conversion", label: "Cadastre a conversão da embalagem", tone: "block" },
     );
   }
   if (receiptConversionDiverges(line, conversion)) {
@@ -225,7 +303,7 @@ export function receiptLineWarnings(
     warnings.push({ key: "missing-cost", label: "Conferir valor", tone: "watch" });
   }
   if (material.shelfLifeDays !== null && !line.expiryDate) {
-    warnings.push({ key: "missing-expiry", label: "Informar validade", tone: "block" });
+    warnings.push({ key: "missing-expiry", label: "Informe a validade", tone: "block" });
   }
   if (conversion?.kind === "approximate") {
     warnings.push({ key: "approximate-conversion", label: "Conversão estimada", tone: "watch" });
@@ -261,20 +339,25 @@ export function receiptLinePreview(
   const baseQty = receiptBaseQty(line, conversion);
   const baseQtyKnown = Boolean(conversion) || !line.requiresConversion;
   const totalCostQ = parseMoneyInput(line.costInput);
+  const warnings = receiptLineWarnings(line, mode, matchedMaterial, conversion);
   return {
     line,
     material,
     conversion,
-    purchaseUnitLabel: conversion?.label ?? material.unit,
+    purchaseUnitLabel: receiptPurchaseUnitLabel(line, matchedMaterial, conversion),
     baseQty,
     baseQtyKnown,
     baseCostQ: baseQtyKnown && baseQty > 0 ? Math.round(totalCostQ / baseQty) : 0,
     totalCostQ,
     approximate: conversion?.kind === "approximate",
     suggestion: receiptLineSuggestion(line, materials),
+    invoiceSummary: receiptInvoiceSummary(line),
+    nextStep: receiptNextStep(warnings),
+    nextStepIsOnField: receiptNextStepIsOnField(warnings),
     conversionSuggestion: receiptConversionSuggestion(line),
+    invoiceAxes: receiptInvoiceAxes(line),
     conversionDiverges: receiptConversionDiverges(line, conversion),
-    warnings: receiptLineWarnings(line, mode, matchedMaterial, conversion),
+    warnings,
   };
 }
 

@@ -1079,3 +1079,62 @@ def test_stock_that_crossed_an_approximate_bridge_carries_the_tilde(
     assert rows["OVOS"]["stockIsApproximate"] is True
     # O insumo que entrou na propria base nao ganha enfeite: numero exato e exato.
     assert rows["FARINHA-T65"]["stockIsApproximate"] is False
+
+
+@pytest.mark.django_db
+def test_declare_conversion_derives_the_factor_from_the_invoice_axes(client, purchase_operator, supplier):
+    """O caminho da nota real: o insumo so e escolhido DEPOIS do scan.
+
+    "MANTEIGA S/SAL CX 5 KG PRESIDENT TEU" nao casa com "Manteiga francesa" do
+    cadastro, entao o scan nao pode calcular a conversao — sem insumo nao ha
+    unidade-base para converter PARA. Escolhido o insumo, o par da nota volta e
+    o servidor deriva, com a mesma fisica do adapter.
+    """
+    manteiga = Material.objects.create(sku="MANTEIGA-FR", name="Manteiga francesa", unit="kg")
+    client.force_login(purchase_operator)
+
+    response = client.post(
+        reverse("api-backstage-purchase-conversions"),
+        {
+            "materialSku": manteiga.sku,
+            "supplierRef": supplier.ref,
+            "invoiceQty": "7",
+            "invoiceUnit": "CX",
+            "invoiceTaxQty": "35",
+            "invoiceTaxUnit": "KG",
+            "invoiceDescription": "MANTEIGA S/SAL CX 5 KG PRESIDENT TEU",
+        },
+        content_type="application/json",
+    )
+
+    assert response.status_code == 200
+    conversion = MaterialConversion.objects.get()
+    assert conversion.label == "caixa 5 kg"
+    assert conversion.to_base_factor == Decimal("5.000000")
+    assert conversion.kind == MaterialConversion.Kind.CONVENTIONAL
+    assert conversion.created_by == purchase_operator
+    assert response.json()["conversionId"] == str(conversion.pk)
+
+
+@pytest.mark.django_db
+def test_invoice_axes_that_cannot_reach_the_base_still_refuse(client, purchase_operator, supplier):
+    """R4 intacta: entre massa e contagem nao existe caminho, e o gesto para."""
+    contados = Material.objects.create(sku="GUARDANAPO", name="Guardanapo", unit="un")
+    client.force_login(purchase_operator)
+
+    response = client.post(
+        reverse("api-backstage-purchase-conversions"),
+        {
+            "materialSku": contados.sku,
+            "supplierRef": supplier.ref,
+            "invoiceQty": "7",
+            "invoiceUnit": "CX",
+            "invoiceTaxQty": "35",
+            "invoiceTaxUnit": "KG",
+        },
+        content_type="application/json",
+    )
+
+    assert response.status_code == 400
+    assert response.json()["error"]["code"] == "conversion_label_required"
+    assert MaterialConversion.objects.count() == 0

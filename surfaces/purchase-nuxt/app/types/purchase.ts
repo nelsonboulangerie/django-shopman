@@ -148,8 +148,15 @@ export interface ReceiptLine {
   purchaseQty: number;
   costInput: string;
   expiryDate: string;
+  // A OCORRENCIA do operador (avaria, falta, ressalva). Nasce vazia: o que a
+  // nota diz mora nos campos `invoice*` abaixo.
   lineNote: string;
+  invoiceDescription?: string;
+  invoiceQty?: number;
   invoiceUnit?: string;
+  invoiceTaxQty?: number;
+  invoiceTaxUnit?: string;
+  invoiceTotal?: string;
   invoiceProductCode?: string;
   invoiceEan?: string;
   checked: boolean;
@@ -176,7 +183,18 @@ export interface ReceiptLinePreview {
   totalCostQ: number;
   approximate: boolean;
   suggestion: ReceiptLineSuggestion | null;
+  // O que a nota diz, em uma linha — a ancora do card. Vazio quando a entrada
+  // e manual (sem NF), e ai o card nao finge ter documento.
+  invoiceSummary: string;
+  // A frase do que fazer AGORA nesta linha. Uma so, a mais urgente.
+  nextStep: string;
+  // O gesto pendente ja esta escrito no card do proprio campo (insumo ou
+  // embalagem), entao o aviso do topo da linha se cala para nao repetir.
+  nextStepIsOnField: boolean;
   conversionSuggestion: ReceiptConversionSuggestion | null;
+  // A nota traz os dois eixos e a linha ainda espera conversao: da para propor
+  // "usar o que a NF diz" mesmo sem o fator calculado aqui.
+  invoiceAxes: string;
   conversionDiverges: boolean;
   warnings: ReceiptWarning[];
 }
@@ -224,9 +242,17 @@ export interface PurchaseRequestActionPayload {
 export interface PurchaseConversionDeclarePayload {
   materialSku: string;
   supplierRef: string;
-  label: string;
-  factor: string;
-  kind: ConversionKind;
+  label?: string;
+  factor?: string;
+  kind?: ConversionKind;
+  // Alternativa a label+factor: manda o PAR da nota e o servidor deriva. A
+  // fisica mora no Python; uma copia aqui seria a segunda tabela de conversao
+  // que a ADR-024 existe para impedir.
+  invoiceQty?: number;
+  invoiceUnit?: string;
+  invoiceTaxQty?: number;
+  invoiceTaxUnit?: string;
+  invoiceDescription?: string;
 }
 
 export interface PurchaseCostUpsertPayload {

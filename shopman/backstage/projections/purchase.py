@@ -108,7 +108,12 @@ class ReceiptLineProjection:
     costInput: str
     expiryDate: str
     lineNote: str
+    invoiceDescription: str
+    invoiceQty: float
     invoiceUnit: str
+    invoiceTaxQty: float
+    invoiceTaxUnit: str
+    invoiceTotal: str
     invoiceProductCode: str
     invoiceEan: str
     checked: bool
@@ -368,7 +373,12 @@ def _receipt_line_projection(line: dict[str, Any]) -> ReceiptLineProjection:
         costInput=str(line.get("costInput") or line.get("cost_input") or ""),
         expiryDate=str(line.get("expiryDate") or line.get("expiry_date") or ""),
         lineNote=str(line.get("lineNote") or line.get("line_note") or line.get("note") or ""),
+        invoiceDescription=str(line.get("invoiceDescription") or line.get("invoice_description") or ""),
+        invoiceQty=_number(_decimal(line.get("invoiceQty", line.get("invoice_qty", 0)))),
         invoiceUnit=str(line.get("invoiceUnit") or line.get("invoice_unit") or ""),
+        invoiceTaxQty=_number(_decimal(line.get("invoiceTaxQty", line.get("invoice_tax_qty", 0)))),
+        invoiceTaxUnit=str(line.get("invoiceTaxUnit") or line.get("invoice_tax_unit") or ""),
+        invoiceTotal=str(line.get("invoiceTotal") or line.get("invoice_total") or ""),
         invoiceProductCode=str(line.get("invoiceProductCode") or line.get("invoice_product_code") or ""),
         invoiceEan=str(line.get("invoiceEan") or line.get("invoice_ean") or ""),
         checked=bool(line.get("checked")),
