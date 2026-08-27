@@ -648,3 +648,129 @@ def test_send_purchase_request_requires_supplier_contact(client, purchase_operat
     material.refresh_from_db()
     assert material.metadata["purchase"].get("request_status") != "sent"
     assert not Directive.objects.filter(topic=NOTIFICATION_SEND, payload__event="purchase_request").exists()
+
+
+def _nfe_issuer_xml(cnpj: str, nome: str) -> str:
+    """NF mínima de um emitente qualquer, para exercitar o cadastro de fornecedor."""
+    return f"""<?xml version="1.0" encoding="UTF-8"?>
+<nfeProc xmlns="http://www.portalfiscal.inf.br/nfe" versao="4.00">
+  <NFe>
+    <infNFe Id="NFe{VALID_ACCESS_KEY}" versao="4.00">
+      <ide><serie>1</serie><nNF>3310</nNF><dhEmi>2026-08-27T09:00:00-03:00</dhEmi></ide>
+      <emit>
+        <CNPJ>{cnpj}</CNPJ>
+        <xNome>{nome}</xNome>
+        <enderEmit><fone>4333445566</fone></enderEmit>
+      </emit>
+      <dest><CNPJ>99999999000191</CNPJ><xNome>Nelson Boulangerie</xNome></dest>
+      <det nItem="1">
+        <prod>
+          <cProd>PRD00099</cProd>
+          <xProd>Farinha de trigo tipo 1 saco 25kg</xProd>
+          <NCM>11010010</NCM>
+          <CFOP>5101</CFOP>
+          <uCom>SC</uCom>
+          <qCom>4.0000</qCom>
+          <vUnCom>150.0000000000</vUnCom>
+          <vProd>600.00</vProd>
+        </prod>
+      </det>
+      <total><ICMSTot><vNF>600.00</vNF></ICMSTot></total>
+    </infNFe>
+  </NFe>
+  <protNFe versao="4.00"><infProt><chNFe>{VALID_ACCESS_KEY}</chNFe><cStat>100</cStat></infProt></protNFe>
+</nfeProc>
+"""
+
+
+def _scan(client, tmp_path, xml):
+    (tmp_path / f"{VALID_ACCESS_KEY}.xml").write_text(xml, encoding="utf-8")
+    with override_settings(
+        SHOPMAN_PURCHASE_INVOICE_READER="shopman.shop.adapters.purchase_invoice_nfe.read_invoice",
+        SHOPMAN_PURCHASE_NFE={"xml_dir": str(tmp_path)},
+    ):
+        return client.post(
+            reverse("api-backstage-purchase-scan-invoice"),
+            data={"qrPayload": VALID_ACCESS_KEY},
+            content_type="application/json",
+        )
+
+
+@pytest.mark.django_db
+def test_scan_invoice_adopts_supplier_the_owner_already_registered_by_name(
+    tmp_path, client, purchase_operator
+):
+    """A NF traz a razão social; o dono cadastrou o nome de boca. É a MESMA casa.
+
+    Sem isto, a primeira nota de um fornecedor já cadastrado cria um segundo
+    cadastro e o histórico de custo nasce partido em dois.
+    """
+    Supplier = apps.get_model("buyman", "Supplier")
+    existente = Supplier.objects.create(
+        ref="france-panificacao", name="France Panificação", is_active=True
+    )
+    assert existente.document == ""
+
+    client.force_login(purchase_operator)
+    response = _scan(
+        client, tmp_path, _nfe_issuer_xml("11222333000181", "FRANCE PANIFICACAO LTDA")
+    )
+
+    assert response.status_code == 200
+    receipt = response.json()["purchase"]["activeReceipt"]
+    assert receipt["supplierRef"] == "france-panificacao"
+
+    existente.refresh_from_db()
+    assert existente.document == "11.222.333/0001-81"
+    assert existente.phone == "4333445566"
+    assert existente.metadata["purchase"]["document_learned_from"] == "nfe_scan"
+    # o que importa: UM fornecedor para a empresa, não dois
+    assert Supplier.objects.filter(name__icontains="FRANCE").count() == 1
+
+
+@pytest.mark.django_db
+def test_scan_invoice_never_overwrites_a_supplier_that_already_has_another_cnpj(
+    tmp_path, client, purchase_operator
+):
+    """Nome parecido não vence CNPJ conhecido — senão a nota de uma filial
+    sequestraria o cadastro da outra."""
+    Supplier = apps.get_model("buyman", "Supplier")
+    outro = Supplier.objects.create(
+        ref="france-panificacao",
+        name="France Panificação",
+        document="99.888.777/0001-66",
+        is_active=True,
+    )
+
+    client.force_login(purchase_operator)
+    response = _scan(
+        client, tmp_path, _nfe_issuer_xml("11222333000181", "FRANCE PANIFICACAO LTDA")
+    )
+
+    assert response.status_code == 200
+    outro.refresh_from_db()
+    assert outro.document == "99.888.777/0001-66"
+    assert Supplier.objects.filter(document="11.222.333/0001-81").exclude(pk=outro.pk).exists()
+
+
+@pytest.mark.django_db
+def test_scan_invoice_registers_new_supplier_when_the_name_is_ambiguous(
+    tmp_path, client, purchase_operator
+):
+    """Dois candidatos com a mesma chave de nome = ambiguidade. Cadastra novo em
+    vez de adivinhar qual dos dois é o emitente."""
+    Supplier = apps.get_model("buyman", "Supplier")
+    Supplier.objects.create(ref="france-panificacao-a", name="France Panificação", is_active=True)
+    Supplier.objects.create(
+        ref="france-panificacao-b", name="FRANCE PANIFICACAO ME", is_active=True
+    )
+
+    client.force_login(purchase_operator)
+    response = _scan(
+        client, tmp_path, _nfe_issuer_xml("11222333000181", "FRANCE PANIFICACAO LTDA")
+    )
+
+    assert response.status_code == 200
+    for ref in ("france-panificacao-a", "france-panificacao-b"):
+        assert Supplier.objects.get(ref=ref).document == ""
+    assert Supplier.objects.filter(document="11.222.333/0001-81").count() == 1
