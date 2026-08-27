@@ -224,6 +224,7 @@ MANYCHAT_API_TOKEN=<token outbound da API ManyChat>
 MANYCHAT_WEBHOOK_SECRET=<segredo HMAC inbound>
 MANYCHAT_OTP_FLOW_NS=<flow namespace do OTP, quando aplicavel>
 MANYCHAT_SUBSCRIBER_RESOLVER=shopman.guestman.contrib.manychat.resolver.ManychatSubscriberResolver.resolve
+MANYCHAT_WHATSAPP_ID_FIELD_ID=<id do campo espelho WhatsApp ID no ManyChat>
 DOORMAN_ACCESS_LINK_API_KEY=<mesmo segredo core acima>
 ```
 
@@ -231,6 +232,7 @@ Nao confunda:
 
 - `MANYCHAT_API_TOKEN`: autentica chamadas Shopman -> ManyChat.
 - `MANYCHAT_WEBHOOK_SECRET`: valida chamadas ManyChat -> Shopman.
+- `MANYCHAT_WHATSAPP_ID_FIELD_ID`: permite resolver subscriber por `WhatsApp ID`, sem depender do campo sistêmico `phone`.
 - `DOORMAN_ACCESS_LINK_API_KEY`: autentica criacao server-to-server de access links.
 
 ## 8. Ativar gateways reais

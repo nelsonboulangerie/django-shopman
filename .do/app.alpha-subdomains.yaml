@@ -343,6 +343,10 @@ envs:
 - key: MANYCHAT_API_TOKEN
   scope: RUN_TIME
   type: SECRET
+- key: MANYCHAT_WHATSAPP_ID_FIELD_ID
+  scope: RUN_TIME
+  value: ''
+  type: GENERAL
 - key: DOORMAN_ACCESS_LINK_API_KEY
   scope: RUN_TIME
   type: SECRET

@@ -87,10 +87,12 @@ SHOPMAN_MACHINE_ALLOW_IN_DEBUG = False
 # ── Credenciais externas: SEMPRE vazias na suíte (adapters inertes/no-op) ────
 MANYCHAT_API_TOKEN = ""
 MANYCHAT_WEBHOOK_SECRET = ""
+MANYCHAT_WHATSAPP_ID_FIELD_ID = ""
 SHOPMAN_MANYCHAT.update(  # noqa: F405
     api_token="",
     base_url="https://api.manychat.com/fb",
     timeout=15,
+    whatsapp_id_field_id="",
     resolver="shopman.guestman.contrib.manychat.resolver.ManychatSubscriberResolver.resolve",
 )
 SHOPMAN_WHATSAPP.update(  # noqa: F405
