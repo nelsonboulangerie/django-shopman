@@ -8,10 +8,16 @@ from rest_framework.views import APIView
 
 from shopman.backstage.api.projections import projection_data
 from shopman.backstage.projections.purchase import build_purchase
+from shopman.backstage.projections.purchase_count import build_purchase_count
 from shopman.backstage.services import purchase as purchase_service
+from shopman.backstage.services import purchase_count as purchase_count_service
 from shopman.backstage.services.purchase import PurchaseError
 
 from .permissions import HasBackstagePermission
+
+# Contagem é auditoria de estoque: além de operar Compras, só quem tem o papel
+# de dono/gestor com `audit_stock` enxerga e ajusta o saldo dos insumos.
+PURCHASE_COUNT_PERMISSIONS = ("backstage.operate_purchase", "backstage.audit_stock")
 
 
 def _purchase_response(projection, *, message: str = "") -> Response:
@@ -150,6 +156,36 @@ class PurchaseConversionView(APIView):
         response = _purchase_response(projection, message=message)
         response.data["conversionId"] = conversion_id
         return response
+
+
+class PurchaseCountView(APIView):
+    permission_classes = [HasBackstagePermission]
+    required_permission = PURCHASE_COUNT_PERMISSIONS
+
+    @extend_schema(
+        tags=["backstage"],
+        summary="Stock count board (raw ledger position per material)",
+        responses={200: OpenApiResponse(description="Materials with current ledger quantity for physical counting.")},
+    )
+    def get(self, request):
+        return Response({"count": projection_data(build_purchase_count())})
+
+
+class PurchaseCountConfirmView(APIView):
+    permission_classes = [HasBackstagePermission]
+    required_permission = PURCHASE_COUNT_PERMISSIONS
+
+    @extend_schema(
+        tags=["backstage"],
+        summary="Confirm a physical stock count into Stockman adjustments",
+        responses={200: OpenApiResponse(description="Divergences written as ADJUST moves; count refreshed.")},
+    )
+    def post(self, request):
+        try:
+            projection, message = purchase_count_service.submit_count(dict(request.data or {}), user=request.user)
+        except PurchaseError as exc:
+            return _error_response(exc)
+        return Response({"ok": True, "count": projection_data(projection), "message": message})
 
 
 class PurchaseRequestApproveView(APIView):

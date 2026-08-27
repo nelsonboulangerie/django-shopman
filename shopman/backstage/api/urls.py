@@ -157,6 +157,8 @@ from .purchase import (
     PurchaseConfirmReceiptView,
     PurchaseConversionView,
     PurchaseCostView,
+    PurchaseCountConfirmView,
+    PurchaseCountView,
     PurchaseRejectReceiptView,
     PurchaseRequestApproveView,
     PurchaseRequestSendView,
@@ -238,6 +240,13 @@ urlpatterns = [
         name="api-backstage-purchase-reject-receipt",
     ),
     path("purchase/costs/", PurchaseCostView.as_view(), name="api-backstage-purchase-costs"),
+    # Contagem de insumos — auditoria de estoque, restrita a gestor/dono.
+    path("purchase/count/", PurchaseCountView.as_view(), name="api-backstage-purchase-count"),
+    path(
+        "purchase/count/confirm/",
+        PurchaseCountConfirmView.as_view(),
+        name="api-backstage-purchase-count-confirm",
+    ),
     path(
         "purchase/conversions/",
         PurchaseConversionView.as_view(),

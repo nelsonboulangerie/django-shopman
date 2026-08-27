@@ -71,6 +71,9 @@ PARITY_TABLE: list[tuple[str, set[str]]] = [
     ("backstage.operate_production", {"Cozinha", "Gerente"}),
     # permissions.can_operate_purchase (dedicated purchase/receipt app gate)
     ("backstage.operate_purchase", {"Gerente"}),
+    # api/purchase.py::PURCHASE_COUNT_PERMISSIONS (stock count = audit, same
+    # ruler as cashman.audit_shift: it belongs to Dono, never to Gerente)
+    ("backstage.audit_stock", {"Dono"}),
     # permissions.can_manage_orders (orders API + sidebar)
     ("shop.manage_orders", {"Caixa", "Gerente"}),
     # permissions.can_access_production / can_view_production_reports (full

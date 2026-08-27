@@ -1,4 +1,7 @@
 import type {
+  CountItem,
+  CountRow,
+  CountSummary,
   EnrichedMaterial,
   Material,
   MaterialConversion,
@@ -447,6 +450,70 @@ export function enrichMaterial(
     tone: materialTone(material, issues),
     issues,
   };
+}
+
+// Contagem aceita o teclado da casa ("1.250,5" ou "12,5") e o do sistema
+// ("12.5"): vírgula presente decide a notação. Vazio = linha não contada.
+export function parseQtyInput(value: string): number | null {
+  const text = value.trim().replace(/\s/g, "");
+  if (!text) return null;
+  const normalized = text.includes(",") ? text.replace(/\./g, "").replace(",", ".") : text;
+  const parsed = Number(normalized);
+  if (!Number.isFinite(parsed) || parsed < 0) return null;
+  return Math.round(parsed * 1000) / 1000;
+}
+
+export function countRow(item: CountItem, input: string, reason: string): CountRow {
+  const counted = parseQtyInput(input);
+  const diff = counted === null ? 0 : Math.round((counted - item.systemQty) * 1000) / 1000;
+  const divergent = counted !== null && diff !== 0;
+  return {
+    item,
+    input,
+    reason,
+    counted,
+    diff,
+    divergent,
+    missingReason: divergent && !reason.trim(),
+  };
+}
+
+export function countRows(
+  items: CountItem[],
+  inputs: Record<string, string>,
+  reasons: Record<string, string>,
+): CountRow[] {
+  return items.map((item) => countRow(item, inputs[item.sku] ?? "", reasons[item.sku] ?? ""));
+}
+
+export function countSummary(rows: CountRow[]): CountSummary {
+  const filled = rows.filter((row) => row.counted !== null);
+  const divergent = filled.filter((row) => row.divergent);
+  const missingReason = divergent.filter((row) => row.missingReason);
+  return {
+    filled: filled.length,
+    divergent: divergent.length,
+    missingReason: missingReason.length,
+    ready: filled.length > 0 && missingReason.length === 0,
+  };
+}
+
+export function countConfirmPayload(rows: CountRow[]) {
+  return {
+    counts: rows
+      .filter((row) => row.counted !== null)
+      .map((row) => ({
+        materialSku: row.item.sku,
+        countedQty: row.counted as number,
+        reason: row.reason.trim(),
+      })),
+  };
+}
+
+export function formatQtyDiff(diff: number, unit: string): string {
+  if (diff === 0) return "—";
+  const sign = diff > 0 ? "+" : "−";
+  return `${sign}${quantityFormatter.format(Math.abs(diff))} ${unit}`;
 }
 
 export function supplierCostRows(

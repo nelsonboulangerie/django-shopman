@@ -6,6 +6,7 @@ import type {
   PurchaseProjection,
   PurchaseResponse,
   ConversionKind,
+  CountItem,
   Material,
   MaterialConversion,
   ReceiptLine,
@@ -17,6 +18,9 @@ import type {
 import { PURCHASE_API_ENDPOINTS, usePurchaseApi } from "~/composables/usePurchaseApi";
 import {
   costPerBaseUnitQ,
+  countConfirmPayload,
+  countRows,
+  countSummary,
   enrichMaterial,
   invoiceProbe,
   isApproximateCost,
@@ -384,6 +388,16 @@ export function usePurchaseDesk() {
   const suppliers = useState<Supplier[]>("purchase-suppliers", () => copy(SUPPLIERS));
   const conversions = useState<MaterialConversion[]>("purchase-conversions", () => copy(CONVERSIONS));
   const costs = useState<SupplierMaterialCost[]>("purchase-costs", () => copy(COSTS));
+  // Contagem: a posição vem CRUA do ledger (endpoint próprio, restrito ao
+  // gestor/dono) — o stockOnHand do board desconta hold e lote vencido e não
+  // bateria com o ajuste lançado.
+  const countItems = useState<CountItem[]>("purchase-count-items", () => []);
+  const countInputs = useState<Record<string, string>>("purchase-count-inputs", () => ({}));
+  const countReasons = useState<Record<string, string>>("purchase-count-reasons", () => ({}));
+  const countLoaded = useState("purchase-count-loaded", () => false);
+  const countForbidden = useState("purchase-count-forbidden", () => false);
+  const countConfirmedAt = useState<string | null>("purchase-count-confirmed-at", () => null);
+  const countPending = ref(false);
   const api = usePurchaseApi();
   const actionPending = ref(false);
   const actionError = ref("");
@@ -948,6 +962,108 @@ export function usePurchaseDesk() {
     if (ok) receiptRejectedAt.value = todayStamp();
   }
 
+  // ── Contagem de insumos (auditoria de estoque, gestor/dono) ──────────────
+
+  const countBoardItems = computed<CountItem[]>(() => {
+    if (countLoaded.value) return countItems.value;
+    // Modo demonstração (sem backend): a lista dos insumos serve de amostra,
+    // mas nada se lança — confirmar exige backend.
+    if (readonlyFallback.value) {
+      return materials.value.map((material) => ({
+        sku: material.sku,
+        name: material.name,
+        unit: material.unit,
+        category: material.category,
+        isActive: material.isActive,
+        systemQty: material.stockOnHand,
+      }));
+    }
+    return [];
+  });
+
+  const countBoardRows = computed(() => countRows(countBoardItems.value, countInputs.value, countReasons.value));
+
+  const countFilteredRows = computed(() => {
+    const term = query.value.trim().toLowerCase();
+    if (!term) return countBoardRows.value;
+    return countBoardRows.value.filter(
+      (row) =>
+        row.item.name.toLowerCase().includes(term) ||
+        row.item.sku.toLowerCase().includes(term) ||
+        row.item.category.toLowerCase().includes(term),
+    );
+  });
+
+  const countDivergentRows = computed(() => countBoardRows.value.filter((row) => row.divergent));
+  const countTotals = computed(() => countSummary(countBoardRows.value));
+  const countReady = computed(() => backendReady.value && !countForbidden.value && countTotals.value.ready);
+
+  async function loadCount() {
+    if (countPending.value) return;
+    countPending.value = true;
+    try {
+      const response = await api.fetchCount();
+      countItems.value = response.count.items.map((item) => ({ ...item }));
+      countLoaded.value = true;
+      countForbidden.value = false;
+    } catch (err) {
+      countForbidden.value = httpError(err).status === 403;
+    } finally {
+      countPending.value = false;
+    }
+  }
+
+  watch(
+    [view, baseView, backendReady],
+    ([currentView, currentBase, ready]) => {
+      if (currentView === "base" && currentBase === "count" && ready && !countLoaded.value) {
+        void loadCount();
+      }
+    },
+    { immediate: true },
+  );
+
+  function setCountInput(sku: string, value: string) {
+    countConfirmedAt.value = null;
+    countInputs.value = { ...countInputs.value, [sku]: value };
+  }
+
+  function setCountReason(sku: string, value: string) {
+    countReasons.value = { ...countReasons.value, [sku]: value };
+  }
+
+  function resetCount() {
+    countInputs.value = {};
+    countReasons.value = {};
+  }
+
+  async function confirmCount(): Promise<boolean> {
+    if (!countReady.value || actionPending.value) return false;
+    if (!requireBackend("lançar os ajustes da contagem")) return false;
+    actionPending.value = true;
+    actionError.value = "";
+    try {
+      const response = await api.confirmCount(countConfirmPayload(countBoardRows.value));
+      if (response.count) {
+        countItems.value = response.count.items.map((item) => ({ ...item }));
+        countLoaded.value = true;
+      }
+      if (response.message) useSonner.success(response.message);
+      resetCount();
+      countConfirmedAt.value = todayStamp();
+      // O board também muda de figura: o estoque disponível acompanha o ajuste.
+      await refresh();
+      return true;
+    } catch (err) {
+      const message = httpErrorMessage(err, "Falha na ação. Tente de novo.");
+      actionError.value = message;
+      useSonner.error(message);
+      return false;
+    } finally {
+      actionPending.value = false;
+    }
+  }
+
   function purchaseRequestStatus(sku: string): PurchaseRequestStatus {
     return purchaseRequestStatuses.value[sku] ?? "review";
   }
@@ -1069,6 +1185,20 @@ export function usePurchaseDesk() {
     readInvoice,
     confirmReceipt,
     rejectReceipt,
+    countBoardRows,
+    countFilteredRows,
+    countDivergentRows,
+    countTotals,
+    countReady,
+    countPending,
+    countLoaded,
+    countForbidden,
+    countConfirmedAt,
+    loadCount,
+    setCountInput,
+    setCountReason,
+    resetCount,
+    confirmCount,
     purchaseRequestStatus,
     sendPurchaseRequest,
     setPreferredCost,
