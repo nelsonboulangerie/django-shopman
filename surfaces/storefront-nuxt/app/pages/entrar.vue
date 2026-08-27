@@ -72,6 +72,10 @@ const { data: loginHome } = useFetch<HomeResponse>(apiPath('/api/v1/storefront/h
   server: false
 })
 
+watch(() => loginHome.value, value => {
+  session.setFromHome(value?.home, { preserveAuthenticated: true })
+}, { immediate: true })
+
 const nextUrl = computed(() => safeInternalPath(route.query.next))
 // Zero-telefone: por padrão não pedimos número. A identidade é quem ENVIA a mensagem
 // no WhatsApp. O campo só aparece quando o cliente quer usar OUTRO número (via SMS,

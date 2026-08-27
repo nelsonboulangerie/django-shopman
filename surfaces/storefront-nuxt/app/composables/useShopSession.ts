@@ -60,17 +60,23 @@ export function useShopSession () {
     opening_hours?: OpeningHoursEntry[]
     last_order_ref: string | null
     public_config?: PublicConfigProjection
-  } | null | undefined) {
+  } | null | undefined, options?: { preserveAuthenticated?: boolean }) {
     if (!home) return
     const homeAuthenticated = home.omotenashi.audience !== 'anon'
+    const preserveAuthenticated = !!options?.preserveAuthenticated && state.value.isAuthenticated && !homeAuthenticated
+    const keepIdentity = homeAuthenticated || preserveAuthenticated
     state.value = {
       ...state.value,
-      customerName: homeAuthenticated ? cleanOptionalText(home.omotenashi.customer_name) : null,
-      customerPhone: homeAuthenticated ? state.value.customerPhone : null,
-      isAuthenticated: homeAuthenticated,
-      requiresWelcome: homeAuthenticated ? state.value.requiresWelcome : false,
-      welcomeSuggestedName: homeAuthenticated ? state.value.welcomeSuggestedName : null,
-      lastOrderRef: homeAuthenticated ? home.last_order_ref : null,
+      customerName: homeAuthenticated
+        ? cleanOptionalText(home.omotenashi.customer_name)
+        : preserveAuthenticated ? state.value.customerName : null,
+      customerPhone: keepIdentity ? state.value.customerPhone : null,
+      isAuthenticated: keepIdentity,
+      requiresWelcome: keepIdentity ? state.value.requiresWelcome : false,
+      welcomeSuggestedName: keepIdentity ? state.value.welcomeSuggestedName : null,
+      lastOrderRef: homeAuthenticated
+        ? home.last_order_ref
+        : preserveAuthenticated ? state.value.lastOrderRef : null,
       shop: home.shop,
       shopStatus: home.shop_status,
       homeNotices: home.notices || [],

@@ -41,6 +41,13 @@ export function mergeSetCookieIntoCookieHeader (cookie: string | undefined, setC
   return Array.from(next.entries()).map(([cookieName, cookieValue]) => `${cookieName}=${cookieValue}`).join('; ')
 }
 
+export function storefrontSetCookieHeader (setCookie: string): string {
+  return setCookie
+    .split(';')
+    .filter(part => !/^\s*domain=/i.test(part))
+    .join(';')
+}
+
 async function ensureDjangoCsrfCookie (event: H3Event, djangoBaseUrl: string, cookie: string | undefined): Promise<{ cookie: string | undefined, token: string }> {
   let token = csrfTokenFromCookieHeader(cookie)
   if (token) return { cookie, token: decodeURIComponent(token) }
@@ -58,7 +65,7 @@ async function ensureDjangoCsrfCookie (event: H3Event, djangoBaseUrl: string, co
   const setCookie = response.headers.get('set-cookie')
   if (setCookie) {
     for (const cookieHeader of splitCookiesString(setCookie)) {
-      appendResponseHeader(event, 'set-cookie', cookieHeader)
+      appendResponseHeader(event, 'set-cookie', storefrontSetCookieHeader(cookieHeader))
       mergedCookie = mergeSetCookieIntoCookieHeader(mergedCookie, cookieHeader)
     }
   }
@@ -129,7 +136,7 @@ export async function proxyDjangoPath (event: H3Event, fullPath: string) {
   const setCookie = response.headers.get('set-cookie')
   if (setCookie) {
     for (const cookieHeader of splitCookiesString(setCookie)) {
-      appendResponseHeader(event, 'set-cookie', cookieHeader)
+      appendResponseHeader(event, 'set-cookie', storefrontSetCookieHeader(cookieHeader))
     }
   }
 
