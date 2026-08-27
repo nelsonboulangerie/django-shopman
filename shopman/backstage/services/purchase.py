@@ -790,12 +790,64 @@ _SUPPLIER_REF_STOPWORDS = {
 }
 
 
-def _supplier_ref_from_name(name: str) -> str:
+def _supplier_name_key(name: str) -> str:
+    """Reduz uma razão social ao núcleo que identifica a empresa.
+
+    ``ESPACO GASTRONOMICO IMPORTADORA LTDA`` e ``Espaço Gastronômico`` são a
+    mesma casa escrita de dois jeitos: a NF traz a razão social completa, o
+    cadastro do dono traz o nome de boca. Tirar acento, caixa, pontuação e as
+    palavras de forma jurídica (LTDA, ME, COMERCIO…) faz as duas colapsarem na
+    mesma chave.
+    """
     ascii_name = unicodedata.normalize("NFKD", name).encode("ascii", "ignore").decode("ascii")
     tokens = [token for token in re.split(r"[^A-Za-z0-9]+", ascii_name.upper()) if token]
     core = [token for token in tokens if token not in _SUPPLIER_REF_STOPWORDS] or tokens
-    slug = "-".join(core[:2])[:40].strip("-")
+    return "-".join(core[:2])[:40].strip("-")
+
+
+def _supplier_ref_from_name(name: str) -> str:
+    slug = _supplier_name_key(name)
     return f"SUP-{slug}" if slug else ""
+
+
+def _adopt_supplier_by_name(issuer_names: list[str], document_text: str, phone: str) -> str:
+    """Encontra um fornecedor JÁ cadastrado, ainda sem CNPJ, que seja este emitente.
+
+    Sem isto, o primeiro escaneamento de NF de um fornecedor que o dono já
+    cadastrou pelo nome cria um segundo cadastro para a mesma empresa, e o
+    histórico de custo nasce partido em dois. O casamento por CNPJ (acima) não
+    alcança esse caso justamente porque o cadastro do dono não tem CNPJ.
+
+    Só adota quem tem ``document`` VAZIO — nunca sobrescreve um CNPJ já
+    conhecido — e só quando a chave de nome aponta para UM único candidato:
+    empate é ambiguidade, e ambiguidade cadastra novo em vez de adivinhar.
+    """
+    Supplier = apps.get_model("buyman", "Supplier")
+    chaves = {_supplier_name_key(n) for n in issuer_names if n}
+    chaves.discard("")
+    if not chaves:
+        return ""
+    candidatos = [
+        supplier
+        for supplier in Supplier.objects.filter(is_active=True).only("ref", "name", "document", "phone", "metadata")
+        if not re.sub(r"\D", "", supplier.document or "") and _supplier_name_key(supplier.name) in chaves
+    ]
+    if len(candidatos) != 1:
+        return ""
+    supplier = candidatos[0]
+    supplier.document = document_text
+    if phone and not (supplier.phone or "").strip():
+        supplier.phone = phone
+    metadata = dict(supplier.metadata or {})
+    purchase = dict(metadata.get("purchase") or {})
+    purchase["document_learned_from"] = "nfe_scan"
+    metadata["purchase"] = purchase
+    supplier.metadata = metadata
+    supplier.save(update_fields=["document", "phone", "metadata", "updated_at"])
+    logger.info(
+        "purchase.supplier_adopted_by_name ref=%s document=%s", supplier.ref, document_text
+    )
+    return supplier.ref
 
 
 def _register_supplier_from_issuer(issuer: dict[str, Any]) -> tuple[str, bool]:
@@ -808,7 +860,17 @@ def _register_supplier_from_issuer(issuer: dict[str, Any]) -> tuple[str, bool]:
     for supplier in Supplier.objects.all().only("ref", "document"):
         if re.sub(r"\D", "", supplier.document or "") == document:
             return supplier.ref, False
-    base = _supplier_ref_from_name(str(issuer.get("tradeName") or "").strip() or name)
+    trade_name = str(issuer.get("tradeName") or "").strip()
+    phone = str(issuer.get("phone") or "").strip()[:32]
+    document_text = (
+        f"{document[0:2]}.{document[2:5]}.{document[5:8]}/{document[8:12]}-{document[12:14]}"
+        if len(document) == 14
+        else document
+    )
+    adotado = _adopt_supplier_by_name([trade_name, name], document_text, phone)
+    if adotado:
+        return adotado, False
+    base = _supplier_ref_from_name(trade_name or name)
     if not base:
         return "", False
     ref = base
@@ -816,16 +878,11 @@ def _register_supplier_from_issuer(issuer: dict[str, Any]) -> tuple[str, bool]:
     while Supplier.objects.filter(ref=ref).exists():
         ref = f"{base}-{suffix}"
         suffix += 1
-    document_text = (
-        f"{document[0:2]}.{document[2:5]}.{document[5:8]}/{document[8:12]}-{document[12:14]}"
-        if len(document) == 14
-        else document
-    )
     Supplier.objects.create(
         ref=ref,
         name=name,
         document=document_text,
-        phone=str(issuer.get("phone") or "").strip()[:32],
+        phone=phone,
         metadata={"purchase": {"created_from": "nfe_scan"}},
     )
     logger.info("purchase.supplier_autocreated ref=%s document=%s", ref, document)
