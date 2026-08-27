@@ -7,7 +7,8 @@ const { setFromServer, refreshCart } = useCartState()
 const { watchConnectivity } = useConnectivity()
 const requestHeaders = import.meta.server ? useRequestHeaders(['cookie']) : undefined
 const route = useRoute()
-const shellHomeEnabled = computed(() => !['/entrar', '/a'].includes(route.path))
+const AUTH_SHELL_ROUTES = new Set(['/entrar', '/a'])
+const authShellRoute = computed(() => AUTH_SHELL_ROUTES.has(route.path))
 
 // Reconexão / retorno de foco reconcilia o carrinho (a fonte de verdade que muda
 // fora da aba). Falha silenciosa aqui é aceitável: é reconciliação de fundo.
@@ -17,17 +18,18 @@ const { data: shellHome, refresh: refreshShellHome } = await useFetch<HomeRespon
   credentials: 'include',
   headers: requestHeaders,
   key: 'shopman-shell-home',
-  immediate: shellHomeEnabled.value,
-  server: shellHomeEnabled.value
+  immediate: true,
+  server: true
 })
 
 watch(() => shellHome.value, value => {
-  session.setFromHome(value?.home)
-  setFromServer(value?.cart)
+  const authRoute = authShellRoute.value
+  session.setFromHome(value?.home, { preserveAuthenticated: authRoute })
+  if (!authRoute) setFromServer(value?.cart)
 }, { immediate: true })
 
-watch(shellHomeEnabled, enabled => {
-  if (enabled && !shellHome.value) void refreshShellHome()
+watch(authShellRoute, (isAuthRoute, wasAuthRoute) => {
+  if (!isAuthRoute && wasAuthRoute) void refreshShellHome()
 })
 
 useShopTheme(session.shop)

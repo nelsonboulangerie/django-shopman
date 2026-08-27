@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
-import { csrfTokenFromCookieHeader, mergeSetCookieIntoCookieHeader } from '../server/utils/djangoProxy'
+import { csrfTokenFromCookieHeader, mergeSetCookieIntoCookieHeader, storefrontSetCookieHeader } from '../server/utils/djangoProxy'
 import { resolveDjangoBaseUrl } from '../server/utils/djangoBaseUrl'
 
 const proxySource = readFileSync(fileURLToPath(new URL('../server/utils/djangoProxy.ts', import.meta.url)), 'utf8')
@@ -18,6 +18,13 @@ describe('Django proxy CSRF transport', () => {
     const cookie = 'csrftoken=old-token'
 
     expect(mergeSetCookieIntoCookieHeader(cookie, 'sessionid=abc.def=ghi==; Path=/; HttpOnly')).toBe('csrftoken=old-token; sessionid=abc.def=ghi==')
+  })
+
+  it('emits storefront cookies as host-only cookies', () => {
+    expect(storefrontSetCookieHeader('sessionid=s1; Domain=.boulangerie.com.br; Path=/; SameSite=Lax; Secure; HttpOnly'))
+      .toBe('sessionid=s1; Path=/; SameSite=Lax; Secure; HttpOnly')
+    expect(storefrontSetCookieHeader('csrftoken=t1; domain=.boulangerie.com.br; Path=/; SameSite=Lax; Secure'))
+      .toBe('csrftoken=t1; Path=/; SameSite=Lax; Secure')
   })
 
   it('normalizes unsafe request origin to the Django backend origin', () => {

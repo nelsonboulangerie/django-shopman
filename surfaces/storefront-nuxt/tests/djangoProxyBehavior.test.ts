@@ -122,9 +122,9 @@ describe('proxyDjangoPath — transporte do BFF', () => {
     expect(JSON.stringify(data)).not.toContain('SECRET_DEBUG_PAGE')
   })
 
-  it('repassa set-cookie (split) e content-type da resposta upstream', async () => {
+  it('repassa set-cookie host-only (split) e content-type da resposta upstream', async () => {
     ;($fetch.raw as any).mockResolvedValueOnce(upstream(200, { ok: true }, {
-      'set-cookie': 'sessionid=new; Path=/, csrftoken=fresh; Path=/',
+      'set-cookie': 'sessionid=new; Domain=.boulangerie.com.br; Path=/, csrftoken=fresh; Domain=.boulangerie.com.br; Path=/',
       'content-type': 'application/json'
     }))
     const { event, res } = makeEvent({ method: 'GET', path: '/api/v1/storefront/home/' })
@@ -136,6 +136,7 @@ describe('proxyDjangoPath — transporte do BFF', () => {
     expect(setCookies).toHaveLength(2) // splitCookiesString separou os dois cookies
     expect(setCookies.some(c => c.startsWith('sessionid=new'))).toBe(true)
     expect(setCookies.some(c => c.startsWith('csrftoken=fresh'))).toBe(true)
+    expect(setCookies.every(c => !/;\s*domain=/i.test(c))).toBe(true)
   })
 
   it('faz o handshake de CSRF quando falta token em método unsafe', async () => {
@@ -143,7 +144,7 @@ describe('proxyDjangoPath — transporte do BFF', () => {
     ;($fetch.raw as any)
       .mockResolvedValueOnce(upstream(200, {}, { 'set-cookie': 'csrftoken=seeded; Path=/' }))
       .mockResolvedValueOnce(upstream(200, { ok: true }))
-    const { event } = makeEvent({
+    const { event, res } = makeEvent({
       method: 'POST',
       path: '/api/v1/cart/coupon/',
       headers: { 'content-type': 'application/json' }, // sem cookie → precisa semear
@@ -155,6 +156,9 @@ describe('proxyDjangoPath — transporte do BFF', () => {
     expect((($fetch.raw as any).mock.calls as RawCall['options'][][]).length).toBe(2)
     const seedUrl = ($fetch.raw as any).mock.calls[0][0]
     expect(seedUrl).toContain('/api/v1/storefront/cart/')
+    const rawSetCookies = res.getHeader('set-cookie')
+    const setCookies = Array.isArray(rawSetCookies) ? rawSetCookies : [String(rawSetCookies)]
+    expect(setCookies.every(c => !/;\s*domain=/i.test(c))).toBe(true)
     const mutationHeaders = ($fetch.raw as any).mock.calls[1][1].headers
     expect(mutationHeaders['x-csrftoken']).toBe('seeded')
   })

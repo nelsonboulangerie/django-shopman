@@ -43,6 +43,16 @@ describe('useShopSession', () => {
     expect(s.shop.value?.name).toBe('Nelson')
   })
 
+  it('can preserve an auth session when a late anon home response only hydrates shop metadata', async () => {
+    const s = await loadSession()
+    s.setFromAuthSession({ is_authenticated: true, customer_name: 'Bruno', customer_phone: '43999' })
+    s.setFromHome(home(false), { preserveAuthenticated: true })
+    expect(s.isAuthenticated.value).toBe(true)
+    expect(s.customerName.value).toBe('Bruno')
+    expect(s.customerPhone.value).toBe('43999')
+    expect(s.shop.value?.name).toBe('Nelson')
+  })
+
   it('sanitizes the literal string "null" to a real null name', async () => {
     const s = await loadSession()
     s.setFromAuthSession({ is_authenticated: true, customer_name: 'null', customer_phone: '  ' })

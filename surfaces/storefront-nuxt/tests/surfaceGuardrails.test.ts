@@ -620,19 +620,25 @@ describe('surface UX guardrails', () => {
     expect(login).toContain('data-login-support')
   })
 
-  it('keeps auth routes independent from the shell home projection on SSR', () => {
+  it('keeps auth routes themed without letting shell home clobber auth/cart state', () => {
     const app = read('app/app.vue')
     const access = read('app/pages/a.vue')
+    const session = read('app/composables/useShopSession.ts')
 
-    expect(app).toContain('const shellHomeEnabled')
-    expect(app).toContain("!['/entrar', '/a'].includes(route.path)")
-    expect(app).toContain('immediate: shellHomeEnabled.value')
-    expect(app).toContain('server: shellHomeEnabled.value')
-    expect(access).toContain('isInAppBrowser()')
-    expect(access).toContain('systemBrowserUrl(window.location.href)')
-    expect(access).toContain('data-access-browser-handoff')
-    expect(access).toContain('Abrir no meu navegador')
-    expect(access).toContain('Continuar por aqui')
+    expect(app).toContain('const AUTH_SHELL_ROUTES')
+    expect(app).toContain('const authShellRoute')
+    expect(app).toContain("new Set(['/entrar', '/a'])")
+    expect(app).toContain('AUTH_SHELL_ROUTES.has(route.path)')
+    expect(app).toContain('immediate: true')
+    expect(app).toContain('server: true')
+    expect(app).toContain('preserveAuthenticated: authRoute')
+    expect(app).toContain('if (!authRoute) setFromServer(value?.cart)')
+    expect(session).toContain('preserveAuthenticated')
+    expect(access).toContain('await exchangeToken()')
+    expect(access).not.toContain('isInAppBrowser()')
+    expect(access).not.toContain('systemBrowserUrl(window.location.href)')
+    expect(access).not.toContain('data-access-browser-handoff')
+    expect(access).not.toContain('Abrir no meu navegador')
   })
 
   it('uses scaffolded UI Thing components for OTP, empty states and structured fields', () => {

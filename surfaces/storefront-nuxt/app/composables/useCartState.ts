@@ -258,7 +258,7 @@ export function useCartState () {
     })
     // Reconciliação passiva (revert do otimista no catch, poll de holds): preserva
     // cartIssue para o banner de substitutos não sumir enquanto o cliente decide.
-    setCartProjection(response.cart)
+    if (queueDepth === 0) setCartProjection(response.cart)
     return response.cart
   }
 
