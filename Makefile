@@ -142,11 +142,17 @@ test-framework: test-shop test-storefront test-backstage ## Testes do framework 
 # é do `make test-migrations`, não daqui).
 #
 # O que sobra é distribuir o trabalho: `-n auto` (pytest-xdist) dá um banco de
-# teste por worker e espalha os 14 pesados. Medido local (4P+4E): 922s → 451s,
-# 2,04x. Três rodadas seguidas deram o MESMO resultado (2.256 passed, 22
-# skipped, 24 subtests) — nenhum teste dependente de ordem apareceu. O relógio
-# local, esse, oscila muito (a máquina de dev roda outras sessões junto); o
-# número que vale é o do CI, em runner dedicado.
+# teste por worker e espalha os 14 pesados. No CI (runner dedicado, 4 vCPU) o
+# passo de pytest caiu de 19min04s para 8min00s — 2,38x. Local (4P+4E), 922s
+# → 451s.
+#
+# Determinismo: três rodadas seguidas em paralelo deram o MESMO resultado da
+# rodada em série (2.256 passed, 22 skipped, 24 subtests). Nenhum teste
+# dependente de ordem apareceu — o `shopman/conftest.py` já isola o estado de
+# processo que vazava entre testes, e worker em processo separado ajuda em vez
+# de atrapalhar. ⚠️ O relógio LOCAL não serve de medida: a máquina de dev roda
+# várias sessões juntas e a mesma configuração deu 451s, 1181s e 1830s nas três
+# rodadas, com resultado idêntico. Para medir, use o CI.
 # ⚠️ `--dist loadfile` foi MEDIDO e é pior (690s): prende os 4 testes de
 # `test_nelson_seed_operational.py` no mesmo worker e o arquivo vira o caminho
 # crítico. A distribuição por teste (padrão do `-n`) é a que equilibra.
