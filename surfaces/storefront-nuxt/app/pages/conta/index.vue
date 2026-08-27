@@ -84,10 +84,8 @@ useSeoMeta({ title: () => summary.value?.copy.page_title || 'Minha Conta' })
         <UiButton variant="ghost" size="sm" icon="lucide:log-out" @click="logoutOpen = true">Sair</UiButton>
       </header>
 
-      <!-- Convite do acesso rápido e travessia de navegador: os dois se decidem sozinhos e
-           só aparecem quando fazem sentido (ver os componentes). Aqui é o lugar natural — a
-           conta é onde quem volta passa. -->
-      <PasskeyInviteCard :identified="session.isAuthenticated.value" />
+      <!-- Travessia de navegador: só aparece quando o browser embutido atrapalha uma pessoa
+           já identificada. Acesso rápido fica opt-in em Segurança, não como convite no fluxo. -->
       <BrowserHandoffCard :identified="session.isAuthenticated.value" />
 
       <UiAlertDialog v-model:open="logoutOpen">

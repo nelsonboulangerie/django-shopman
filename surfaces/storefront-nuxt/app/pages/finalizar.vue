@@ -1031,13 +1031,6 @@ useSeoMeta({
                Ele tem condição própria — navegador embutido + já identificada. -->
           <BrowserHandoffCard :identified="checkout.is_authenticated" />
 
-          <!-- O convite da passkey. Ele se decide sozinho: só num aparelho com autenticador
-               próprio, só para quem já está reconhecida, só se ainda não ativou e só se não
-               recusou antes. Fica DEPOIS da travessia de propósito — cadastrar credencial
-               dentro do navegador embutido do WhatsApp é irregular; no navegador de verdade,
-               não é. -->
-          <PasskeyInviteCard :identified="checkout.is_authenticated" />
-
           <div data-checkout-progress-stack>
             <CheckoutProgressSection
               title="Contato"

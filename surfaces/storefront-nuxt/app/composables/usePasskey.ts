@@ -1,4 +1,4 @@
-// Passkey: entrar com o rosto ou a digital, sem código nenhum.
+// Passkey: acesso rápido do aparelho, sem código nenhum.
 //
 // Este arquivo é, quase inteiro, TRADUÇÃO. O servidor fala JSON (base64url, porque JSON não
 // tem bytes) e o `navigator.credentials` fala `ArrayBuffer`. É aqui que WebAuthn mais escorrega:
@@ -80,11 +80,11 @@ export function passkeySupported(): boolean {
 }
 
 /**
- * ⚠️ Este aparelho tem autenticador PRÓPRIO (Face ID, Touch ID, Windows Hello)?
+ * ⚠️ Este aparelho tem autenticador PRÓPRIO?
  *
- * `passkeySupported` só diz que a API existe — num desktop sem biometria ela existe e o fluxo
- * cai em "use seu celular via QR", que é ótimo mas é outra conversa. Convidar alguém a "entrar
- * com o rosto" num computador sem leitor seria prometer o que a tela não entrega.
+ * `passkeySupported` só diz que a API existe. Num desktop, isso pode acabar em fluxo externo,
+ * PIN do sistema ou QR; a loja só deve oferecer como atalho quando o navegador afirma que há
+ * autenticador de plataforma verificável.
  */
 export async function passkeyIsQuick(): Promise<boolean> {
   if (!passkeySupported()) return false
@@ -176,7 +176,7 @@ export function usePasskey() {
         publicKey: asCredentialOptions(options)
       }) as PublicKeyCredential | null
       if (!created) {
-        // Cancelou o Face ID: não é erro, é uma escolha. Sem mensagem vermelha.
+        // Cancelou a confirmação do aparelho: não é erro, é uma escolha.
         return false
       }
       await $fetch(apiPath('/api/v1/auth/passkey/register/'), {
