@@ -368,6 +368,7 @@ Settings flat usados pela integração ManyChat:
 | `MANYCHAT_API_TOKEN` | str | `""` | Token da API ManyChat para chamadas outbound Shopman -> ManyChat. Não autentica chamadas inbound do ManyChat |
 | `MANYCHAT_WEBHOOK_SECRET` | str | `""` | Segredo HMAC para webhooks inbound do ManyChat. Não envia mensagens outbound |
 | `MANYCHAT_SUBSCRIBER_RESOLVER` | str | `shopman.guestman.contrib.manychat.resolver.ManychatSubscriberResolver.resolve` | Callable para resolver telefone/customer em subscriber_id ManyChat |
+| `MANYCHAT_WHATSAPP_ID_FIELD_ID` | str | `""` | ID do Custom User Field que espelha `WhatsApp ID`; usado antes de `phone` para localizar subscribers WhatsApp-only |
 | `MANYCHAT_API_BASE` | str | `https://api.manychat.com/fb` | Base URL da API ManyChat |
 | `MANYCHAT_API_TIMEOUT` | int | `15` | Timeout em segundos das chamadas ManyChat |
 | `SHOPMAN_MANYCHAT` | dict | derivado das envs acima | Configuração canônica consumida por `notification_manychat` e `otp_manychat` |

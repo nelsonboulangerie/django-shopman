@@ -101,6 +101,13 @@ O prefixo do código (`NB-`) e o TTL (30 min) são do doorman
        "next": "/menu"
      }
      ```
+     Além de mandar `{{WhatsApp ID}}` no payload, crie um Custom User Field
+     pesquisável no ManyChat (ex.: `shopman_whatsapp_id`) e grave nele o mesmo
+     `{{WhatsApp ID}}`. Configure o ID desse campo em
+     `MANYCHAT_WHATSAPP_ID_FIELD_ID`; notificações como "Me avise" usam esse
+     espelho para descobrir o `subscriber_id` sem depender do campo sistêmico
+     `phone`.
+
      `access_code` = a mensagem inteira que o cliente enviou. Selecione **Last Text
      Input** pelo seletor de variáveis do ManyChat; não digite um placeholder manual
      se ele não aparece naquele contexto. **Não precisa de regex no ManyChat** — o Django

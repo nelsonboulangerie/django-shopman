@@ -9,6 +9,7 @@ Covers (SPEC-004 acceptance criteria):
 - Retorno None quando customer não encontrado
 - Retorno None quando customer existe mas sem MANYCHAT identifier
 - Retorno None quando customer inativo
+- Fallback por campo espelho de WhatsApp ID antes do campo sistêmico phone
 """
 
 from __future__ import annotations
@@ -191,6 +192,51 @@ class TestResolveByPhone:
         assert query == {"phone": ["+5543999880000"]}
         assert "field" not in query
         assert "value" not in query
+
+    @override_settings(
+        MANYCHAT_API_TOKEN="test-token",
+        MANYCHAT_WHATSAPP_ID_FIELD_ID="14436572",
+    )
+    def test_phone_prefers_mirrored_whatsapp_id_before_system_phone(self):
+        """WhatsApp-only contacts can be found by mirrored WhatsApp ID."""
+        captured = []
+
+        def fake_urlopen(request, timeout):
+            captured.append({
+                "url": request.full_url,
+                "method": request.get_method(),
+                "timeout": timeout,
+            })
+            if len(captured) == 1:
+                return _FakeManychatResponse({
+                    "status": "success",
+                    "data": [],
+                })
+            return _FakeManychatResponse({
+                "status": "success",
+                "data": [{"id": 456789123}],
+            })
+
+        with patch(
+            "shopman.guestman.contrib.manychat.resolver.urlopen",
+            side_effect=fake_urlopen,
+        ):
+            result = ManychatSubscriberResolver.resolve("+5543984049009")
+
+        assert result == 456789123
+        assert len(captured) == 2
+        first = urlparse(captured[0]["url"])
+        second = urlparse(captured[1]["url"])
+        assert first.path.endswith("/fb/subscriber/findByCustomField")
+        assert second.path.endswith("/fb/subscriber/findByCustomField")
+        assert parse_qs(first.query) == {
+            "field_id": ["14436572"],
+            "field_value": ["+5543984049009"],
+        }
+        assert parse_qs(second.query) == {
+            "field_id": ["14436572"],
+            "field_value": ["5543984049009"],
+        }
 
     @override_settings(MANYCHAT_API_TOKEN="test-token")
     def test_unknown_phone_creates_whatsapp_subscriber(self):

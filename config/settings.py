@@ -457,6 +457,7 @@ STRIPE_SECRET_KEY = os.environ.get("STRIPE_SECRET_KEY", "")
 # ── Manychat (WhatsApp via ManyChat) ────────────────────────────────
 MANYCHAT_API_TOKEN = os.environ.get("MANYCHAT_API_TOKEN", "")
 MANYCHAT_WEBHOOK_SECRET = os.environ.get("MANYCHAT_WEBHOOK_SECRET", "")
+MANYCHAT_WHATSAPP_ID_FIELD_ID = os.environ.get("MANYCHAT_WHATSAPP_ID_FIELD_ID", "")
 MANYCHAT_FLOW_MAP = {
     # Mapeia eventos de notificação → ManyChat flow namespace.
     # Se vazio, ManychatBackend envia mensagem texto direta (sem flow).
@@ -472,6 +473,7 @@ SHOPMAN_MANYCHAT = {
     "api_token": MANYCHAT_API_TOKEN,
     "base_url": os.environ.get("MANYCHAT_API_BASE", "https://api.manychat.com/fb"),
     "timeout": MANYCHAT_API_TIMEOUT,
+    "whatsapp_id_field_id": MANYCHAT_WHATSAPP_ID_FIELD_ID,
     "resolver": os.environ.get(
         "MANYCHAT_SUBSCRIBER_RESOLVER",
         "shopman.guestman.contrib.manychat.resolver.ManychatSubscriberResolver.resolve",

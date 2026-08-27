@@ -7,8 +7,9 @@ em Manychat subscriber_id para envio de mensagens outbound.
 Estratégia de resolução (em ordem):
 1. Numérico direto → subscriber_id
 2. DB: CustomerIdentifier(MANYCHAT) via phone/email/ref
-3. API fallback: GET /fb/subscriber/findBySystemField (phone)
-4. API bootstrap: POST /fb/subscriber/createSubscriber (whatsapp_phone)
+3. API fallback: GET /fb/subscriber/findByCustomField (WhatsApp ID espelhado)
+4. API fallback: GET /fb/subscriber/findBySystemField (phone)
+5. API bootstrap: POST /fb/subscriber/createSubscriber (whatsapp_phone)
    → persiste como CustomerIdentifier para próximas chamadas quando houver customer
 """
 
@@ -102,10 +103,13 @@ class ManychatSubscriberResolver:
             if subscriber_id is not None:
                 return subscriber_id
 
-        # API fallback: lookup subscriber by phone, then create a WhatsApp
-        # contact when the phone is not yet known to ManyChat.
+        # API fallback: lookup subscriber by the mirrored WhatsApp ID before
+        # the system phone. WhatsApp-only contacts often do not have ManyChat's
+        # generic `phone` field populated, but they do have a WhatsApp ID.
         if recipient.startswith("+"):
-            subscriber_id = cls._lookup_by_phone_api(recipient)
+            subscriber_id = cls._lookup_by_whatsapp_id_custom_field_api(recipient)
+            if subscriber_id is None:
+                subscriber_id = cls._lookup_by_phone_api(recipient)
             if subscriber_id is None:
                 subscriber_id = cls._create_whatsapp_subscriber_api(recipient)
             if subscriber_id is not None and customer:
@@ -173,6 +177,82 @@ class ManychatSubscriberResolver:
             return int(ident.identifier_value)
         except (CustomerIdentifier.DoesNotExist, ValueError):
             return None
+
+    @classmethod
+    def _lookup_by_whatsapp_id_custom_field_api(cls, whatsapp_id: str) -> int | None:
+        """Consulta ManyChat por um campo espelho do WhatsApp ID.
+
+        ManyChat guarda WhatsApp ID como identificador do canal, mas nem sempre
+        esse valor aparece no campo sistêmico ``phone``. Para lookup confiável,
+        o bot deve espelhar o WhatsApp ID em um Custom User Field e configurar
+        ``MANYCHAT_WHATSAPP_ID_FIELD_ID`` com o ID desse campo.
+        """
+        from django.conf import settings
+
+        api_token = getattr(settings, "MANYCHAT_API_TOKEN", "")
+        mc_config = getattr(settings, "SHOPMAN_MANYCHAT", {}) or {}
+        field_id = str(
+            getattr(settings, "MANYCHAT_WHATSAPP_ID_FIELD_ID", "")
+            or mc_config.get("whatsapp_id_field_id")
+            or ""
+        ).strip()
+        if not api_token or not field_id:
+            return None
+
+        for lookup_value in _lookup_phone_values(whatsapp_id):
+            url = (
+                f"{_API_BASE}/subscriber/findByCustomField"
+                f"?{urlencode({'field_id': field_id, 'field_value': lookup_value})}"
+            )
+            request = Request(url, headers={
+                "Authorization": f"Bearer {api_token}",
+                "Accept": "application/json",
+            })
+
+            try:
+                with urlopen(request, timeout=_API_TIMEOUT) as response:
+                    data = json.loads(response.read().decode("utf-8"))
+                    if data.get("status") == "success":
+                        subscriber_id = _subscriber_id(data)
+                        if subscriber_id:
+                            logger.info(
+                                "Manychat resolver: found subscriber %s for WhatsApp ID %s "
+                                "via custom field",
+                                subscriber_id, whatsapp_id[:8],
+                            )
+                            return subscriber_id
+                        logger.info(
+                            "Manychat resolver: no subscriber found for WhatsApp ID %s via custom field",
+                            whatsapp_id[:8],
+                        )
+                    else:
+                        logger.warning(
+                            "Manychat resolver: WhatsApp ID lookup failed for %s: %s",
+                            whatsapp_id[:8],
+                            _manychat_failure_message(data),
+                        )
+            except HTTPError as e:
+                error_body = _read_http_error_body(e)
+                if e.code == 404:
+                    logger.debug(
+                        "Manychat resolver: subscriber not found for WhatsApp ID %s",
+                        whatsapp_id[:8],
+                    )
+                else:
+                    logger.warning(
+                        "Manychat resolver: API error %d for WhatsApp ID %s: %s",
+                        e.code,
+                        whatsapp_id[:8],
+                        error_body,
+                    )
+            except (URLError, ValueError, Exception):
+                logger.debug(
+                    "Manychat resolver: WhatsApp ID API call failed for %s",
+                    whatsapp_id[:8],
+                    exc_info=True,
+                )
+
+        return None
 
     @classmethod
     def _lookup_by_phone_api(cls, phone: str) -> int | None:

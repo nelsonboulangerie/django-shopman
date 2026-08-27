@@ -115,6 +115,7 @@ STRIPE_SECRET_KEY=<sandbox>
 STRIPE_WEBHOOK_SECRET=<sandbox>
 MANYCHAT_API_TOKEN=<sandbox/staging>
 MANYCHAT_SUBSCRIBER_RESOLVER=shopman.guestman.contrib.manychat.resolver.ManychatSubscriberResolver.resolve
+MANYCHAT_WHATSAPP_ID_FIELD_ID=<id do campo espelho WhatsApp ID no ManyChat>
 IFOOD_MERCHANT_ID=<sandbox/staging>
 ```
 
@@ -174,6 +175,9 @@ Payload minimo para WhatsApp:
 
 `whatsapp_id` e obrigatorio para AccessLink originado de WhatsApp. Alias como
 `phone` nao sao aceitos nesse contrato para evitar autenticar o cliente errado.
+Para notificacoes outbound, espelhe esse mesmo `whatsapp_id` em um Custom User
+Field pesquisavel e configure `MANYCHAT_WHATSAPP_ID_FIELD_ID`; o lookup de
+subscriber usa esse campo antes do `phone` generico do ManyChat.
 
 ### Login web via WhatsApp
 
