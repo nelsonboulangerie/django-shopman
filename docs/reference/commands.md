@@ -29,6 +29,7 @@
 | [`evaluate_bi_alerts`](#evaluate_bi_alerts) | backstage | B.I. | Avalia os alarmes do B.I. (regras no Admin) e avisa o operador quando disparam |
 | [`release-readiness`](#release-readiness) | script | Release | Consolida checks locais e bloqueios externos |
 | [`seed`](#seed) | shop | Seed | Popula banco com dados da Nelson Boulangerie |
+| [`refresh_seed_dates`](#refresh_seed_dates) | config | Seed | Re-ancora um banco SEMEADO em hoje (QA; recusa produção) |
 
 ---
 
@@ -56,6 +57,28 @@ python manage.py release_expired_holds
 **Recomendação:** Executar via cron a cada 5–15 minutos.
 
 ---
+
+
+### refresh_seed_dates
+
+Re-ancora um banco **semeado** em hoje, sem reseed e sem tocar na história —
+o antídoto para o ambiente de QA envelhecido (26/08: alpha com insumo zerado,
+409 `material_shortage` em todo finish, nenhuma fornada do dia).
+
+```bash
+python manage.py refresh_seed_dates            # só mostra o que faria
+python manage.py refresh_seed_dates --apply    # executa
+```
+
+Uma âncora de relógio (`timezone.localdate()`), lida uma vez. Repõe **até o
+alvo, só o delta**: despensa de insumos (`material_opening_targets()`, a mesma
+fonte do seed), mise en place, vitrine e lotes de "sobra de ontem"; avança
+feriados que ficaram no passado; cancela (VOID) fornadas planejadas
+seed/refresh que apodreceram e planta o horizonte planejado de hoje a +7 no
+`PRODUCTION_PLAN` calibrado, com `production_changed` para os dias futuros
+virarem estoque planejado. **Não** apaga história, **não** recria a narrativa
+demo do dia e **recusa `SHOPMAN_ENVIRONMENT=production` sem flag de override**.
+Idempotente: a segunda passada no mesmo dia responde "Nada a fazer".
 
 ### sweep_orphan_holds
 
