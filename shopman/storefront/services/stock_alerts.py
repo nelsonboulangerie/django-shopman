@@ -211,6 +211,7 @@ def _deliver(
     from shopman.shop.config import ChannelConfig
     from shopman.shop.notifications import notify
     from shopman.shop.services import storefront_links
+    from shopman.shop.services.availability_copy import availability_phrase
 
     # subscribe() stores contact_phone = phone OR the customer's phone, so a
     # bare customer_ref without phone has no reachable recipient.
@@ -248,6 +249,10 @@ def _deliver(
                 # Vazio quando o canal não sabe contar (`available_qty=None`): a
                 # mensagem então não fala em número, em vez de inventar um.
                 "available_qty": "" if available_qty is None else str(available_qty),
+                # Frase pronta para template aprovado do WhatsApp. O ManyChat não
+                # deve montar gramática com pedaços soltos: campo vazio ou valor
+                # antigo no perfil do assinante vira FOMO falso.
+                "availability_phrase": availability_phrase(available_qty),
                 "cta": "Garanta o seu:",
                 "action_url": storefront_links.product_url(sub.sku),
             },

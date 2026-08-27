@@ -18,8 +18,8 @@ pytestmark = pytest.mark.django_db
 PHONE = "+5543999990001"
 
 
-def _state(can_add: bool):
-    return MagicMock(can_add_to_cart=can_add)
+def _state(can_add: bool, available_qty: int | None = None):
+    return MagicMock(can_add_to_cart=can_add, available_qty=available_qty)
 
 
 def _publish(sku="SKU-NOTIFY"):
@@ -64,6 +64,41 @@ def test_notify_sends_and_marks_when_available():
     assert nf.call_args.kwargs["recipient"] == PHONE
     sub.refresh_from_db()
     assert sub.notified_at is not None
+
+
+def test_notify_context_includes_truthful_availability_phrase():
+    stock_alerts.subscribe("SKU-1", phone=PHONE, alert_type="production_ready")
+    with (
+        patch("shopman.storefront.services.sku_state.resolve", return_value=_state(True, available_qty=12)),
+        patch("shopman.shop.notifications.notify", return_value=MagicMock(success=True)) as nf,
+    ):
+        notified = stock_alerts.notify_bake_ready("SKU-1")
+
+    assert notified == 1
+    assert nf.call_args.kwargs["event"] == "production_ready"
+    context = nf.call_args.kwargs["context"]
+    assert context["available_qty"] == "12"
+    assert context["availability_phrase"] == "Neste momento ainda temos 12 unidades."
+
+
+def test_notify_context_uses_neutral_phrase_when_quantity_is_unknown():
+    stock_alerts.subscribe("SKU-1", phone=PHONE, alert_type="production_ready")
+    with (
+        patch("shopman.storefront.services.sku_state.resolve", return_value=_state(True)),
+        patch("shopman.shop.notifications.notify", return_value=MagicMock(success=True)) as nf,
+    ):
+        notified = stock_alerts.notify_bake_ready("SKU-1")
+
+    assert notified == 1
+    context = nf.call_args.kwargs["context"]
+    assert context["available_qty"] == ""
+    assert context["availability_phrase"] == "Já está disponível para pedido."
+
+
+def test_availability_phrase_uses_singular_for_one_unit():
+    from shopman.shop.services.availability_copy import availability_phrase
+
+    assert availability_phrase(1) == "Neste momento ainda temos 1 unidade."
 
 
 def test_notify_skips_when_still_unavailable():

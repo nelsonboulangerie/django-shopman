@@ -311,15 +311,18 @@ class AnnouncementTemplate(models.Model):
 | `{{hashtags}}` | `metadata["social"]["hashtags"]` | "#croissant #fresquinho" |
 | `{{link}}` | Deep link storefront | `https://nelson.boulangerie/produto/croissant-tradicional` |
 | `{{available_qty}}` | `Quant.available` — quantas há AGORA | "5" |
+| `{{availability_phrase}}` | frase pronta do backend; usa `available_qty` quando confiável e fallback neutro quando não há contagem | "Neste momento ainda temos 5 unidades." |
 | `{{customer_name}}` | primeiro nome de quem recebe | "Pablo" |
 | `{{product_sku}}` | `sku`, sufixo que o botão gruda no fim do link | "BAGUETE" |
 | `{{product_image_url}}` | foto do produto, **absoluta** (a Meta busca do lado dela) | `https://…/bf.jpg` |
-
-⚠️ Não existe variável de "quantas saíram na fornada": essa contagem não interessa a quem
-recebe, e oferecê-la só criaria a chance de anunciar um número que já não é verdade.
 | `{{time}}` | `now()` formatado | "10h15" |
 | `{{store_name}}` | `Shop.brand_name` | "Nelson Boulangerie" |
 | `{{quality}}` | `WorkOrder.meta["quality"]` | "excelente" |
+
+⚠️ Não existe variável de "quantas saíram na fornada": essa contagem não interessa a quem
+recebe, e oferecê-la só criaria a chance de anunciar um número que já não é verdade.
+Em template aprovado do WhatsApp, prefira `{{availability_phrase}}` a montar
+`{{available_qty}} unidades` dentro do ManyChat.
 
 ### 3.3 Announcement
 
