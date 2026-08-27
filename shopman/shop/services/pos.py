@@ -249,6 +249,17 @@ def close_sale(
     payload = parse_pos_sale_intent(payload, for_commit=True).payload
     channel, config = _channel_and_config(channel_ref)
     derive_price_overrides(payload, channel=channel)
+    # A etiqueta que o KERNEL carimbou vale mais que a que o cliente mandou, e o
+    # GATE precisa dela tanto quanto a review: sem carimbo, ``_payload_discount_q``
+    # media o desconto de linha contra o preco JA descontado. Duas consequencias,
+    # as duas ruins. A conta inflada podia exigir gerente logo depois de uma review
+    # que dissera que nao precisava; e, num controle ANTI-FRAUDE, quem decidia o
+    # limiar passava a ser a etiqueta declarada pelo navegador. O carimbo tem de
+    # vir antes de ``validate_manager_approval`` e antes da taxa de entrega, que
+    # tambem le a mesma soma para dispensar o frete.
+    _stamp_list_prices_from_session(
+        payload, _payload_open_tab_session(channel_ref=channel.ref, payload=payload)
+    )
     validate_manager_approval(payload, operator_username=operator_username)
     _validate_fiscal_delivery_fee(payload)
     _validate_payment_completion(payload)
