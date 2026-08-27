@@ -811,7 +811,7 @@ OMOTENASHI_DEFAULTS: dict[str, dict[str, dict[str, CopyEntry]]] = {
         WILDCARD: {WILDCARD: CopyEntry(title="Quer fazer você mesmo?")},
     },
     "LOGIN_WA_MANUAL_INTRO": {
-        WILDCARD: {WILDCARD: CopyEntry(message="Envie o código abaixo diretamente para o nosso WhatsApp")},
+        WILDCARD: {WILDCARD: CopyEntry(message="Envie esta mensagem diretamente para o nosso WhatsApp")},
     },
     # Handoff do site expirou: entrou logado, mas a sacola não veio (link do WhatsApp venceu).
     # Aviso gentil, com caminho de volta, sem culpar o cliente.
