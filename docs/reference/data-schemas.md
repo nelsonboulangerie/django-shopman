@@ -1046,6 +1046,21 @@ sem foto e chips de categoria).
 
 ---
 
+## buyman.Material.metadata
+
+Perfil do insumo (nutrição TACO/USDA por 100 g, alergênicos, `diet`,
+`density_g_per_ml` para líquidos — escritos pelo seed a partir de
+`INGREDIENT_PROFILES`) mais o vínculo comercial:
+
+| Chave | Tipo | Escrito por | Lido por | Descrição |
+|-------|------|-------------|----------|-----------|
+| `supplier` | `str` ref | seed/admin (Buyman) | telas de compra/custo | Fornecedor preferencial (`Supplier.ref`) — dado real do dono (26/08). Preço NÃO mora aqui: custo por par é `SupplierMaterialCost`, aguardando a revisão de preços. |
+| `brand` | `str` | seed/admin (Buyman) | telas de compra | Marca praticada (ex.: "Foricher", "President"). |
+| `alt_suppliers` | `list[str]` | seed/admin (Buyman) | telas de compra | Fornecedores alternativos (ex.: Anaconda para as farinhas Embramex). |
+| `supplier_note` | `str` | seed | telas de compra | Nota quando não há fornecedor (ex.: "produção própria (jambon blanc da casa)"). |
+
+---
+
 ## Regras de Governança
 
 1. **Toda nova chave** em qualquer JSONField deve ser adicionada a este documento antes do merge.

@@ -97,6 +97,126 @@ from shopman.shop.models import (
 from shopman.shop.services.dietary_from_recipe import aggregate_dietary_from_recipe
 from shopman.shop.services.nutrition_from_recipe import fill_nutrition_from_recipe
 
+# Prefixos que marcam pré-preparo (saída em kg): fonte única — _is_preparation
+# do seed e as funções de alvo abaixo leem daqui.
+PREP_PREFIXES = ("massa-", "recheio-", "creme-", "molho-", "salada-", "vinagrete-")
+
+# O plano de produção do dia — calibrado com as médias diárias REAIS dos XMLs
+# de NFC-e (jun/2019 + jun/2021; sex/sáb ×1,25 aplicado na criação das WOs).
+# Ver docs/reports/seed_calibration_2026-07-24.md. Módulo, e não local, porque
+# o `refresh_seed_dates` re-ancora o dia a partir do MESMO plano.
+PRODUCTION_PLAN = [
+    # recipe_ref, base_qty, start, finish
+    ("baguete", Decimal("22"), (4, 0), (6, 0)),
+    ("campagne", Decimal("16"), (3, 40), (8, 0)),
+    ("ciabatta", Decimal("24"), (5, 0), (7, 0)),
+    ("shokupan", Decimal("18"), (5, 10), (7, 30)),
+    ("kuro-pan", Decimal("8"), (5, 20), (8, 0)),
+    ("croissant", Decimal("42"), (5, 0), (7, 30)),
+    ("pain-chocolat", Decimal("36"), (5, 30), (8, 0)),
+    ("animalzinho", Decimal("16"), (5, 30), (8, 30)),
+    ("focaccia-dia", Decimal("10"), (7, 0), (10, 0)),
+    ("folhado-dia", Decimal("30"), (8, 0), (11, 0)),
+    # O bichon sai junto do chausson, um pouco abaixo em quantidade
+    # (dono: 10 a 20% menos). É o único do plano cuja quantidade não vem
+    # da média dos XMLs — vem do irmão dele.
+    ("bichon", Decimal("25"), (8, 0), (11, 0)),
+    ("madeleine", Decimal("68"), (9, 0), (13, 0)),
+]
+
+PREP_DAYS_OF_COVER = Decimal("3")
+
+# Cobertura de compra da casa (dono, 26/08): embalagem que entra pela porta e
+# teto de um pedido de farinha; fresco é ritmo de compra, não só validade.
+PACOTE_KG = {
+    "FARINHA-T65": 25, "FARINHA-T55": 25, "FARINHA-T45": 25,
+    "FARINHA-INT": 25, "CENTEIO": 25,
+    "ACUCAR": 5, "SAL": 1,
+}
+TETO_SACAS_POR_PEDIDO = 25  # dono, 26/08: pedidos de 15 a 25 sacas
+FRESCOS_SEMANAIS = {"MANTEIGA-FR"}
+PISO_ESPECIARIA_KG = {"CANELA": Decimal("0.5"), "ALECRIM": Decimal("0.5")}
+
+
+def _recipe_maps():
+    """Mapas de ficha lidos do BANCO — servem seed (pós-criação) e refresh."""
+    from shopman.craftsman.models import Recipe
+
+    recipes = {r.ref: r for r in Recipe.objects.all()}
+    by_output = {r.output_sku: r for r in recipes.values()}
+    prep_outputs = {
+        r.output_sku for r in recipes.values() if r.ref.startswith(PREP_PREFIXES)
+    }
+    return recipes, by_output, prep_outputs
+
+
+def prep_daily_needs() -> dict[str, Decimal]:
+    """Kg/dia de CADA pré-preparo que o plano consome — a árvore inteira:
+    a massa que o plano consome consome levain/yudane/autolizada por baixo."""
+    recipes, by_output, prep_outputs = _recipe_maps()
+    needs: dict[str, Decimal] = {}
+
+    def walk(recipe, out_qty: Decimal) -> None:
+        coefficient = out_qty / recipe.batch_size
+        for item in recipe.items.filter(is_optional=False):
+            if item.input_sku not in prep_outputs:
+                continue
+            needs[item.input_sku] = needs.get(item.input_sku, Decimal("0")) + item.quantity * coefficient
+            walk(by_output[item.input_sku], item.quantity * coefficient)
+
+    for plan_ref, plan_qty, _start, _finish in PRODUCTION_PLAN:
+        if plan_ref in recipes:
+            walk(recipes[plan_ref], plan_qty)
+    return needs
+
+
+def material_opening_targets() -> dict[str, Decimal]:
+    """Alvo de despensa por insumo: demanda diária das fichas × cobertura de
+    compra da casa, arredondado à embalagem real. É o número que o seed grava
+    na abertura e que o `refresh_seed_dates` repõe num banco envelhecido."""
+    from shopman.buyman.models import Material
+
+    recipes, by_output, prep_outputs = _recipe_maps()
+    materials = {m.sku: m for m in Material.objects.all()}
+    daily: dict[str, Decimal] = {}
+
+    def walk(recipe, out_qty: Decimal) -> None:
+        coefficient = out_qty / recipe.batch_size
+        for item in recipe.items.filter(is_optional=False):
+            if item.input_sku in prep_outputs:
+                walk(by_output[item.input_sku], item.quantity * coefficient)
+            elif item.input_sku in materials:
+                daily[item.input_sku] = daily.get(item.input_sku, Decimal("0")) + item.quantity * coefficient
+
+    for plan_ref, plan_qty, _start, _finish in PRODUCTION_PLAN:
+        if plan_ref in recipes:
+            walk(recipes[plan_ref], plan_qty)
+
+    targets: dict[str, Decimal] = {}
+    for sku, material in materials.items():
+        shelf = material.shelf_life_days
+        fresco = sku in FRESCOS_SEMANAIS or (shelf is not None and shelf <= 30)
+        if sku in FRESCOS_SEMANAIS:
+            dias = Decimal("7")
+        elif shelf is not None and shelf <= 30:
+            dias = Decimal(min(7, shelf))
+        else:
+            dias = Decimal("21")
+        demanda = daily.get(sku, Decimal("0")) * dias
+        piso = PISO_ESPECIARIA_KG.get(sku) or (Decimal("2") if fresco else Decimal("5"))
+        quantidade = max(demanda, piso)
+        pacote = PACOTE_KG.get(sku)
+        if pacote:
+            volumes = (quantidade / pacote).to_integral_value(rounding=ROUND_CEILING)
+            if pacote == 25:
+                volumes = min(volumes, TETO_SACAS_POR_PEDIDO)
+            quantidade = volumes * pacote
+        else:
+            quantidade = quantidade.quantize(Decimal("0.1"), rounding=ROUND_CEILING)
+        targets[sku] = quantidade
+    return targets
+
+
 # Peso CRU por unidade, em gramas, pesado pelo dono (26/08/2026). É o dado das
 # FICHAS: a receita fala em massa crua; o catálogo mostra a peça assada (~12%
 # de perda, convenção da reconciliação de 21/08 — os pesos do products_data
@@ -2560,15 +2680,49 @@ class Command(BaseCommand):
         self.stdout.write("  📋 Receitas...")
 
         recipes_data = [
+            # ── Bases (dono, 26/08: "Levain, Pasta Autolizada, Yudane" são
+            # pré-preparos de verdade). Composições PROPOSTAS para a bancada.
+            {
+                # Alimentação 1:1:1 sobre a cultura (FERMENTO-NAT).
+                "ref": "creme-levain",
+                "name": "Levain",
+                "output_sku": "LEVAIN",
+                "batch_size": Decimal("5"),
+                "items": [
+                    ("FERMENTO-NAT", Decimal("1.700")),
+                    ("FARINHA-T65", Decimal("1.700")),
+                    ("AGUA-FILTRADA", Decimal("1.700")),
+                ],
+            },
+            {
+                "ref": "massa-pasta-autolizada",
+                "name": "Pasta Autolizada",
+                "output_sku": "PASTA-AUTOLIZADA",
+                "batch_size": Decimal("8.4"),
+                "items": [
+                    ("FARINHA-T65", Decimal("5.000")),
+                    ("AGUA-FILTRADA", Decimal("3.500")),
+                ],
+            },
+            {
+                # Farinha escaldada 1:1 — é o que faz Forma e Kuropan macios.
+                "ref": "massa-yudane",
+                "name": "Yudane",
+                "output_sku": "YUDANE",
+                "batch_size": Decimal("1.9"),
+                "items": [
+                    ("FARINHA-T55", Decimal("1.000")),
+                    ("AGUA-FILTRADA", Decimal("1.000")),
+                ],
+            },
             {
                 "ref": "massa-tradicao",
                 "name": "Massa Tradição",
                 "output_sku": "MASSA-TRADICAO",
                 "batch_size": Decimal("10"),
                 "items": [
-                    ("FARINHA-T65", Decimal("5.000")),
-                    ("AGUA-FILTRADA", Decimal("3.500")),
-                    ("FERMENTO-NAT", Decimal("1.500")),
+                    ("PASTA-AUTOLIZADA", Decimal("8.400")),
+                    ("LEVAIN", Decimal("1.500")),
                     ("SAL", Decimal("0.100")),
                     ("MALTE", Decimal("0.020")),
                 ],
@@ -2583,7 +2737,7 @@ class Command(BaseCommand):
                     ("FARINHA-INT", Decimal("2.500")),
                     ("CENTEIO", Decimal("0.600")),
                     ("AGUA-FILTRADA", Decimal("3.500")),
-                    ("FERMENTO-NAT", Decimal("1.500")),
+                    ("LEVAIN", Decimal("1.500")),
                     ("SAL", Decimal("0.100")),
                 ],
             },
@@ -2595,7 +2749,7 @@ class Command(BaseCommand):
                 "items": [
                     ("FARINHA-T55", Decimal("5.000")),
                     ("AGUA-FILTRADA", Decimal("4.000")),
-                    ("FERMENTO-NAT", Decimal("1.500")),
+                    ("LEVAIN", Decimal("1.500")),
                     ("AZEITE", Decimal("0.250")),
                     ("SAL", Decimal("0.100")),
                 ],
@@ -2607,10 +2761,12 @@ class Command(BaseCommand):
                 # 8,360 kg de insumo (o leite entra por densidade) rendendo 8 kg
                 # de massa: 4,3% de perda de mistura. Era 10, ou seja +19,6% de
                 # massa nascendo do nada — ver `Recipe._validate_mass_balance`.
-                "batch_size": Decimal("8"),
+                "batch_size": Decimal("8.2"),
                 "items": [
-                    ("FARINHA-T55", Decimal("5.000")),
-                    ("LEITE", Decimal("2.000")),
+                    # Com yudane (dono, 26/08) — proposta de bancada.
+                    ("FARINHA-T55", Decimal("4.400")),
+                    ("YUDANE", Decimal("1.000")),
+                    ("LEITE", Decimal("1.800")),
                     ("MANTEIGA-FR", Decimal("0.700")),
                     ("ACUCAR", Decimal("0.350")),
                     ("FERMENTO-BIO", Decimal("0.150")),
@@ -2647,6 +2803,53 @@ class Command(BaseCommand):
                     ("ACUCAR", Decimal("0.600")),
                     ("FERMENTO-BIO", Decimal("0.160")),
                     ("SAL", Decimal("0.080")),
+                ],
+            },
+            {
+                # Massa Kuropan própria (dono, 26/08) — o chocolate mora NA
+                # massa, com yudane. Composição proposta.
+                "ref": "massa-kuropan",
+                "name": "Massa Kuropan",
+                "output_sku": "MASSA-KUROPAN",
+                "batch_size": Decimal("8.2"),
+                "items": [
+                    ("FARINHA-T55", Decimal("4.200")),
+                    ("YUDANE", Decimal("1.000")),
+                    ("LEITE", Decimal("1.800")),
+                    ("MANTEIGA-FR", Decimal("0.600")),
+                    ("ACUCAR", Decimal("0.400")),
+                    ("CHOCOLATE-70", Decimal("0.400")),
+                    ("FERMENTO-BIO", Decimal("0.150")),
+                    ("SAL", Decimal("0.100")),
+                ],
+            },
+            {
+                # Folhado SEM fermento (dono: Croissant e Folhado são massas
+                # distintas) — chausson, bichon, maçã e folhados salgados.
+                "ref": "massa-folhado",
+                "name": "Massa Folhado",
+                "output_sku": "MASSA-FOLHADO",
+                "batch_size": Decimal("9.5"),
+                "items": [
+                    ("FARINHA-T45", Decimal("4.800")),
+                    ("MANTEIGA-FR", Decimal("3.200")),
+                    ("AGUA-FILTRADA", Decimal("1.800")),
+                    ("SAL", Decimal("0.090")),
+                ],
+            },
+            {
+                # A madeleine vira massa nomeada (dono: Madeleine é uma das
+                # massas dos Finos) — proporções da ficha calibrada de antes.
+                "ref": "massa-madeleine",
+                "name": "Massa Madeleine",
+                "output_sku": "MASSA-MADELEINE",
+                "batch_size": Decimal("4.9"),
+                "items": [
+                    ("FARINHA-T45", Decimal("1.414")),
+                    ("MANTEIGA-FR", Decimal("1.339")),
+                    ("OVOS", Decimal("1.228")),
+                    ("ACUCAR", Decimal("0.945")),
+                    ("LIMAO", Decimal("0.074")),
                 ],
             },
             {
@@ -2759,10 +2962,9 @@ class Command(BaseCommand):
                 "output_sku": "KP",
                 "batch_size": Decimal("8"),
                 "items": [
-                    # 240 g de massa + 40 g de chocolate = 280 g crus,
+                    # 280 g de Massa Kuropan crus (o chocolate mora na massa),
                     # para 250 g assados.
-                    ("MASSA-FORMA", Decimal("1.920")),
-                    ("CHOCOLATE-70", Decimal("0.320")),
+                    ("MASSA-KUROPAN", Decimal("2.240")),
                 ],
             },
             {
@@ -2807,7 +3009,7 @@ class Command(BaseCommand):
                 "items": [
                     # 62 g de folhada + 20 g de maçã caramelizada = 82 g
                     # crus (dono, 26/08), para ~72 g assados.
-                    ("MASSA-CROISSANT", Decimal("0.744")),
+                    ("MASSA-FOLHADO", Decimal("0.744")),
                     ("RECHEIO-MACA", Decimal("0.240")),
                 ],
             },
@@ -2823,7 +3025,7 @@ class Command(BaseCommand):
                 "items": [
                     # 80 g de folhada + 20 g de creme de limão = 100 g crus
                     # (dono, 26/08), para ~90 g assados.
-                    ("MASSA-CROISSANT", Decimal("0.960")),
+                    ("MASSA-FOLHADO", Decimal("0.960")),
                     ("CREME-LIMAO", Decimal("0.240")),
                 ],
             },
@@ -2833,19 +3035,9 @@ class Command(BaseCommand):
                 "output_sku": "MD",
                 "batch_size": Decimal("24"),
                 "items": [
-                    # 28 g de massa por madeleine, para 25 g assados, na
-                    # proporção clássica: farinha ≈ manteiga ≈ ovo, açúcar um
-                    # pouco abaixo. A ficha rendia 72 g por peça. Ela
-                    # escapou da primeira varredura de rendimento porque é a única
-                    # de acabado feita direto de matéria-prima, sem passar por um
-                    # `MASSA-*`, e a consulta filtrava pelas linhas de massa.
-                    # Custo por unidade e sugestão de compra saíam 3x acima, no
-                    # produto que é ~11% das unidades vendidas da casa.
-                    ("FARINHA-T45", Decimal("0.190")),
-                    ("MANTEIGA-FR", Decimal("0.180")),
-                    ("OVOS", Decimal("0.165")),
-                    ("ACUCAR", Decimal("0.127")),
-                    ("LIMAO", Decimal("0.010")),
+                    # 28 g de Massa Madeleine por peça, para 25 g assados —
+                    # a massa virou pré-preparo nomeado (dono, 26/08).
+                    ("MASSA-MADELEINE", Decimal("0.672")),
                 ],
             },
             # ══ Seção 2b (dono, 26/08) — pré-preparos novos ══════════════════
@@ -3112,8 +3304,8 @@ class Command(BaseCommand):
                 "output_sku": "MA",
                 "batch_size": Decimal("12"),
                 "items": [
-                    ("MASSA-CROISSANT", Decimal("0.960")),  # 80 g/un
-                    ("RECHEIO-MACA", Decimal("0.360")),     # 30 g/un
+                    ("MASSA-FOLHADO", Decimal("0.960")),  # 80 g/un
+                    ("RECHEIO-MACA", Decimal("0.360")),   # 30 g/un
                 ],
             },
             {
@@ -3134,7 +3326,7 @@ class Command(BaseCommand):
                 "output_sku": "FF",
                 "batch_size": Decimal("12"),
                 "items": [
-                    ("MASSA-CROISSANT", Decimal("1.140")),   # 95 g/un
+                    ("MASSA-FOLHADO", Decimal("1.140")),   # 95 g/un
                     ("RECHEIO-FRANGO", Decimal("0.420")),    # 35 g/un
                 ],
             },
@@ -3144,7 +3336,7 @@ class Command(BaseCommand):
                 "output_sku": "MFF",
                 "batch_size": Decimal("12"),
                 "items": [
-                    ("MASSA-CROISSANT", Decimal("0.696")),   # 58 g/un
+                    ("MASSA-FOLHADO", Decimal("0.696")),   # 58 g/un
                     ("RECHEIO-FRANGO", Decimal("0.264")),    # 22 g/un
                 ],
             },
@@ -3167,8 +3359,7 @@ class Command(BaseCommand):
                 "output_sku": "KBB",
                 "batch_size": Decimal("12"),
                 "items": [
-                    ("MASSA-FORMA", Decimal("0.924")),    # 77 g/un
-                    ("CHOCOLATE-70", Decimal("0.156")),   # 13 g/un
+                    ("MASSA-KUROPAN", Decimal("1.080")),  # 90 g/un
                 ],
             },
             {
@@ -3644,7 +3835,48 @@ class Command(BaseCommand):
         # massa é AGUA-FILTRADA porque AGUA já é a garrafa de água mineral que se
         # vende no balcão. Nomes iguais fariam a venda e o consumo dividirem o
         # mesmo quant no ledger — ver shopman/shop/services/sku_namespace.py.
-        from shopman.buyman.models import Material
+        from shopman.buyman.models import Material, Supplier
+
+        # ── Fornecedores reais da casa (dono, 26/08) ─────────────────────────
+        # Sem preço: custo por par (SupplierMaterialCost) espera a revisão de
+        # preços/custos — cadastrar custo inventado alimentaria o custeio com
+        # mentira. O vínculo insumo→fornecedor vai em Material.metadata
+        # (supplier/brand/alt_suppliers — ver docs/reference/data-schemas.md).
+        SUPPLIERS = {
+            "deleite": "Deleite",
+            "president": "President",
+            "jr-ovos": "JR Ovos",
+            "sao-martinho": "São Martinho",
+            "strass": "Strass",
+            "embramex": "Embramex",
+            "france-panificacao": "France Panificação",
+            "paullinia": "Paullinia",
+            "anaconda": "Anaconda",
+            "espaco-gastronomico": "Espaço Gastronômico",
+            "alto-alegre": "Alto Alegre",
+        }
+        for ref, nome in SUPPLIERS.items():
+            Supplier.objects.update_or_create(ref=ref, defaults={"name": nome, "is_active": True})
+        self.stdout.write(f"  ✅ {len(SUPPLIERS)} fornecedores")
+
+        # insumo → (fornecedor, marca, alternativos). O que não está aqui ou é
+        # produção própria ou o dono ainda não declarou fornecedor.
+        SUPPLIER_BY_MATERIAL = {
+            "LEITE": ("deleite", "Leite A integral Deleite", []),
+            "MANTEIGA-FR": ("president", "President", []),
+            "OVOS": ("jr-ovos", "JR Ovos", []),
+            "BACON": ("sao-martinho", "São Martinho", []),
+            "SALSICHA-VIENNA": ("strass", "Strass", []),
+            "PRESUNTO-DEFUMADO": ("strass", "Strass", []),
+            "FARINHA-T65": ("embramex", "Novara/Pasini", ["anaconda"]),
+            "FARINHA-T55": ("embramex", "Novara/Pasini", ["anaconda"]),
+            "FARINHA-T45": ("france-panificacao", "Foricher", []),
+            "FARINHA-INT": ("paullinia", "Integral orgânica Paullinia", []),
+            "CENTEIO": ("paullinia", "Centeio orgânico Paullinia", []),
+            "AZEITE": ("espaco-gastronomico", "Luglio", []),
+            "ACUCAR": ("alto-alegre", "Cristal/Refinado Alto Alegre", []),
+            # SAL: sem marca fixa (dono) — sem vínculo de propósito.
+        }
 
         # A unidade aqui é a UNIDADE-BASE: aquela em que o livro conta o insumo no
         # momento da verdade (ADR-024 §Regra 1). Ovo e limão entram por peso porque
@@ -3684,13 +3916,23 @@ class Command(BaseCommand):
         }
         for sku, profile in INGREDIENT_PROFILES.items():
             unit, shelf = material_attrs.get(sku, ("un", None))
+            metadata = {k: v for k, v in profile.items() if k != "label"}
+            fornecedor = SUPPLIER_BY_MATERIAL.get(sku)
+            if fornecedor:
+                supplier_ref, marca, alternativos = fornecedor
+                metadata["supplier"] = supplier_ref
+                metadata["brand"] = marca
+                if alternativos:
+                    metadata["alt_suppliers"] = alternativos
+            elif sku == "PRESUNTO-CASA":
+                metadata["supplier_note"] = "produção própria (jambon blanc da casa)"
             Material.objects.update_or_create(
                 sku=sku,
                 defaults={
                     "name": profile.get("label", sku),
                     "unit": unit,
                     "shelf_life_days": shelf,
-                    "metadata": {k: v for k, v in profile.items() if k != "label"},
+                    "metadata": metadata,
                 },
             )
         self.stdout.write(f"  ✅ {len(INGREDIENT_PROFILES)} insumos (Material)")
@@ -3732,9 +3974,7 @@ class Command(BaseCommand):
 
         def _is_preparation(recipe_ref: str) -> bool:
             """Pré-preparo (massa, recheio, creme, molho…): sai em quilo, não em unidade."""
-            return recipe_ref.startswith(
-                ("massa-", "recheio-", "creme-", "molho-", "salada-", "vinagrete-")
-            )
+            return recipe_ref.startswith(PREP_PREFIXES)
 
         def _recipe_item_unit(input_sku: str) -> str:
             """A ficha fala na unidade-base do insumo — explícito, não por default.
@@ -3800,28 +4040,9 @@ class Command(BaseCommand):
         today = timezone.localdate()
         tz_info = timezone.get_current_timezone()
 
-        # base_qty = média diária REAL dos XMLs de NFC-e (jun/2019 + jun/2021);
-        # sex/sáb ganham 1.25 abaixo (XMLs: sábado +24%). Madeleine é o campeão
-        # absoluto (~11% das unidades da casa). Ver
-        # docs/reports/seed_calibration_2026-07-24.md.
-        production_plan = [
-            # recipe_ref, base_qty, start, finish
-            ("baguete", Decimal("22"), (4, 0), (6, 0)),
-            ("campagne", Decimal("16"), (3, 40), (8, 0)),
-            ("ciabatta", Decimal("24"), (5, 0), (7, 0)),
-            ("shokupan", Decimal("18"), (5, 10), (7, 30)),
-            ("kuro-pan", Decimal("8"), (5, 20), (8, 0)),
-            ("croissant", Decimal("42"), (5, 0), (7, 30)),
-            ("pain-chocolat", Decimal("36"), (5, 30), (8, 0)),
-            ("animalzinho", Decimal("16"), (5, 30), (8, 30)),
-            ("focaccia-dia", Decimal("10"), (7, 0), (10, 0)),
-            ("folhado-dia", Decimal("30"), (8, 0), (11, 0)),
-            # O bichon sai junto do chausson, um pouco abaixo em quantidade
-            # (dono: 10 a 20% menos). É o único do plano cuja quantidade não vem
-            # da média dos XMLs — vem do irmão dele.
-            ("bichon", Decimal("25"), (8, 0), (11, 0)),
-            ("madeleine", Decimal("68"), (9, 0), (13, 0)),
-        ]
+        # O plano vive no módulo (PRODUCTION_PLAN): o refresh_seed_dates
+        # re-ancora o dia a partir do MESMO plano — fonte única.
+        production_plan = PRODUCTION_PLAN
         # O índice carrega o plano E os pré-preparos: desde 21/08 o seed PRODUZ a
         # massa (fornadas de pré-preparo na matriz), e não só os acabados.
         _prep_refs = [rd["ref"] for rd in recipes_data if _is_preparation(rd["ref"])]
@@ -3865,22 +4086,12 @@ class Command(BaseCommand):
         # staging, 280 movimentos de consumo em dois minutos). Quem põe quilo no
         # depósito é esta linha; quem conta a história é a fornada. Exatamente
         # como já vale para os 12 acabados, cujo estoque vem de ``_seed_stock``.
-        prep_outputs = {rd["output_sku"] for rd in recipes_data if _is_preparation(rd["ref"])}
-        prep_needs: dict[str, Decimal] = {}
-        for plan_ref, plan_qty, _plan_start, _plan_finish in production_plan:
-            plan_recipe = recipes_by_ref[plan_ref]
-            plan_coefficient = plan_qty / plan_recipe.batch_size
-            for plan_item in plan_recipe.items.filter(is_optional=False):
-                if plan_item.input_sku not in prep_outputs:
-                    continue
-                prep_needs[plan_item.input_sku] = prep_needs.get(
-                    plan_item.input_sku, Decimal("0")
-                ) + plan_item.quantity * plan_coefficient
-
-        PREP_DAYS_OF_COVER = Decimal("3")
+        # Kg/dia de cada pré-preparo, árvore inteira — fonte única no módulo,
+        # compartilhada com o refresh_seed_dates.
+        prep_needs = prep_daily_needs()
         for prep_sku, per_day in sorted(prep_needs.items()):
             stock.receive(
-                quantity=(per_day * PREP_DAYS_OF_COVER).quantize(Decimal("0.001")),
+                quantity=(per_day * PREP_DAYS_OF_COVER).quantize(Decimal("0.001"), rounding=ROUND_CEILING),
                 sku=prep_sku,
                 position=deposito,
                 reason="Mise en place: pré-preparo pronto (seed)",
@@ -3895,77 +4106,18 @@ class Command(BaseCommand):
 
         # ── Saldo de abertura de insumo: a despensa como a casa compra ──────
         #
-        # Era um 500 chapado para TODO insumo — 500 kg de alecrim, 500 kg de
-        # fermento com validade de 7 dias, 500 L de leite — o oposto de
-        # verossímil, e um número que ninguém rejuvenesce porque ninguém
-        # acredita nele. Agora o saldo deriva do PRÓPRIO plano do dia, na mesma
-        # lógica do mise en place: consumo diário de cada insumo (fichas dos
-        # acabados + pré-preparos expandidos pela ficha da massa) × a cobertura
-        # de compra real da casa (dono, 26/08): fresco dura ~1 semana na
-        # geladeira e é comprado assim (teto na validade); seco chega para 15 a
-        # 30 dias (usamos 21). O arredondamento é o da embalagem que entra pela
-        # porta: farinha em sacas de 25 kg (pedidos de 15 a 25 sacas — teto de
-        # um pedido), açúcar em sacos de 5 kg, sal em saquinhos de 1 kg.
-        #
-        # Insumo que nenhuma ficha usa ainda (gergelim, canela… — fichas chegam
-        # na Seção 2) abre com um piso de prateleira, marcado estimativa.
+        # Era um 500 chapado para TODO insumo — o oposto de verossímil, e um
+        # número que ninguém rejuvenesce porque ninguém acredita nele. O alvo
+        # agora vem de material_opening_targets() (módulo): demanda diária das
+        # fichas (árvore inteira) × cobertura de compra real da casa (dono,
+        # 26/08 — fresco ~1 semana com teto na validade, seco ~3 semanas),
+        # arredondado à embalagem que entra pela porta (farinha em sacas de
+        # 25 kg com teto de um pedido, açúcar 5 kg, sal 1 kg; piso de
+        # prateleira para insumo ainda sem ficha). O refresh_seed_dates repõe
+        # ao MESMO alvo num banco envelhecido — fonte única.
         # kind default (ADJUST = saldo de abertura), igual ao estoque de produto.
-        raw_daily: dict[str, Decimal] = {}
-
-        def _acumula_insumos(recipe: Recipe, per_day_output: Decimal) -> None:
-            """`per_day_output` na unidade da ficha: un de acabado, kg de massa."""
-            coefficient = per_day_output / recipe.batch_size
-            for item in recipe.items.filter(is_optional=False):
-                if item.input_sku in prep_outputs:
-                    _acumula_insumos(recipe_by_output[item.input_sku], item.quantity * coefficient)
-                elif item.input_sku in INGREDIENT_PROFILES:
-                    raw_daily[item.input_sku] = (
-                        raw_daily.get(item.input_sku, Decimal("0"))
-                        + item.quantity * coefficient
-                    )
-
-        for plan_ref, plan_qty, _plan_start, _plan_finish in production_plan:
-            _acumula_insumos(recipes_by_ref[plan_ref], plan_qty)
-
-        # Embalagem de compra (kg por volume fechado) e teto de pedido da farinha.
-        PACOTE_KG = {
-            "FARINHA-T65": 25, "FARINHA-T55": 25, "FARINHA-T45": 25,
-            "FARINHA-INT": 25, "CENTEIO": 25,
-            "ACUCAR": 5, "SAL": 1,
-        }
-        TETO_SACAS_POR_PEDIDO = 25  # dono, 26/08: pedidos de 15 a 25 sacas
-        # Fresco é ritmo de compra, não só validade: a manteiga aguenta 60 dias
-        # no frio, mas entra na compra semanal dos frescos — sem isto o cálculo
-        # abriria com 90 kg de manteiga francesa (3 semanas de viennoiserie).
-        FRESCOS_SEMANAIS = {"MANTEIGA-FR"}
-        # Piso para especiaria é outro: 5 kg de canela não é despensa, é atacado.
-        PISO_ESPECIARIA_KG = {"CANELA": Decimal("0.5"), "ALECRIM": Decimal("0.5")}
-
-        def _cobertura_dias(sku: str, shelf_days: int | None) -> Decimal:
-            if sku in FRESCOS_SEMANAIS:
-                return Decimal("7")
-            if shelf_days is not None and shelf_days <= 30:
-                return Decimal(min(7, shelf_days))
-            return Decimal("21")
-
-        abertura: dict[str, Decimal] = {}
-        for sku in INGREDIENT_PROFILES:
-            _unit, shelf = material_attrs.get(sku, ("un", None))
-            fresco = sku in FRESCOS_SEMANAIS or (shelf is not None and shelf <= 30)
-            demanda = raw_daily.get(sku, Decimal("0")) * _cobertura_dias(sku, shelf)
-            # Piso de prateleira para quem ainda não tem ficha que o consuma
-            # (estimativa — a Seção 2 dá ficha a todos e a demanda assume).
-            piso = PISO_ESPECIARIA_KG.get(sku) or (Decimal("2") if fresco else Decimal("5"))
-            quantidade = max(demanda, piso)
-            pacote = PACOTE_KG.get(sku)
-            if pacote:
-                volumes = (quantidade / pacote).to_integral_value(rounding=ROUND_CEILING)
-                if pacote == 25:
-                    volumes = min(volumes, TETO_SACAS_POR_PEDIDO)
-                quantidade = volumes * pacote
-            else:
-                quantidade = quantidade.quantize(Decimal("0.1"), rounding=ROUND_CEILING)
-            abertura[sku] = quantidade
+        abertura = material_opening_targets()
+        for sku, quantidade in abertura.items():
             stock.receive(
                 quantity=quantidade,
                 sku=sku,
@@ -4275,10 +4427,10 @@ class Command(BaseCommand):
                 scope="today-prep",
                 recipe=prep_recipe,
                 target_date=today,
-                planned_qty=(per_day * PREP_DAYS_OF_COVER).quantize(Decimal("0.001")),
+                planned_qty=(per_day * PREP_DAYS_OF_COVER).quantize(Decimal("0.001"), rounding=ROUND_CEILING),
                 status=WorkOrder.Status.FINISHED,
-                started_qty=(per_day * PREP_DAYS_OF_COVER).quantize(Decimal("0.001")),
-                finished_qty=(per_day * PREP_DAYS_OF_COVER).quantize(Decimal("0.001")),
+                started_qty=(per_day * PREP_DAYS_OF_COVER).quantize(Decimal("0.001"), rounding=ROUND_CEILING),
+                finished_qty=(per_day * PREP_DAYS_OF_COVER).quantize(Decimal("0.001"), rounding=ROUND_CEILING),
                 start_at=prep_finish_at - PREP_DURATION,
                 finish_at=prep_finish_at,
                 operator_ref=["chef:ana", "chef:joao"][prep_index % 2],
