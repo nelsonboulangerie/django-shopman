@@ -100,8 +100,7 @@ def _resolve_lines(payload: dict[str, Any]) -> list[ResolvedCountLine]:
 
 def _apply_count(line: ResolvedCountLine, *, user) -> bool:
     """Leva o saldo do SKU ao contado. Retorna True quando lançou ajuste."""
-    from shopman.stockman import stock
-    from shopman.stockman.models.move import Move
+    from shopman.stockman import Move, stock
 
     sku = line.material.sku
     quants = list(
