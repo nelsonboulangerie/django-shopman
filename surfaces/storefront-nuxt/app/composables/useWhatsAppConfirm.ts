@@ -15,6 +15,7 @@
 export function useWhatsAppConfirm() {
   const apiPath = useShopmanApiPath()
   const csrfHeaders = useShopmanCsrfHeaders()
+  const { settleCart } = useCartState()
 
   const starting = ref(false)
   const failed = ref(false)
@@ -28,7 +29,8 @@ export function useWhatsAppConfirm() {
     starting.value = true
     failed.value = false
     try {
-      const response = await $fetch<{ deep_link: string }>(
+      const cart = await settleCart().catch(() => null)
+      const response = await $fetch<{ deep_link: string, has_context?: boolean, has_cart_context?: boolean }>(
         apiPath('/api/v1/auth/whatsapp/start/'),
         {
           method: 'POST',
@@ -37,6 +39,12 @@ export function useWhatsAppConfirm() {
           body: { next }
         }
       )
+      const cartNeedsContext = Boolean(cart && cart.items_count > 0 && !cart.is_empty)
+      const hasCartContext = Boolean(response?.has_cart_context || response?.has_context)
+      if (cartNeedsContext && !hasCartContext) {
+        failed.value = true
+        return
+      }
       if (!response?.deep_link) {
         failed.value = true
         return

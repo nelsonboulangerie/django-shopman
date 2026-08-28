@@ -50,6 +50,10 @@ class AccessLinkCreateView(View):
     {
         "access_url": "https://.../a/?t=...&next=...",
         "has_context": true,
+        "has_cart_context": true,
+        "handoff_attempted": true,
+        "handoff_expired": false,
+        "access_flow": "cart_handoff",
         "token": "...",
         "expires_at": "..."
     }
@@ -104,13 +108,13 @@ class AccessLinkCreateView(View):
         # ``#menu`` puro é login orgânico pelo WhatsApp: não tenta handoff e não dispara aviso
         # de sacola expirada. ``next`` passa por safe_redirect_url; o resto (ex.:
         # cart_session_key) viaja opaco.
-        has_context = False
-        access_code = data.get("access_code")
+        handoff_attempted = False
+        access_code = self._access_code_from_payload(data)
         if access_code:
             from ..services.link_state import contains_code, pop_state
 
             if contains_code(str(access_code)):
-                has_context = True
+                handoff_attempted = True
                 state = pop_state(str(access_code))
                 if isinstance(state, dict):
                     for key, value in state.items():
@@ -125,6 +129,8 @@ class AccessLinkCreateView(View):
                     # para o exchange avisar que a sacola não veio (omotenashi: nunca sumir com
                     # a sacola em silêncio). O login em si nunca falha por isso.
                     metadata["handoff_expired"] = True
+
+        has_cart_context = bool(metadata.get("cart_session_key"))
 
         result = AccessLinkService.create_token(
             customer=customer,
@@ -141,7 +147,11 @@ class AccessLinkCreateView(View):
 
         response_data = {
             "access_url": self._build_access_url(result.token),
-            "has_context": has_context,
+            "has_context": has_cart_context,
+            "has_cart_context": has_cart_context,
+            "handoff_attempted": handoff_attempted,
+            "handoff_expired": bool(metadata.get("handoff_expired")),
+            "access_flow": "cart_handoff" if has_cart_context else "menu",
             "token": result.token,
             "expires_at": result.expires_at,
         }
@@ -156,6 +166,32 @@ class AccessLinkCreateView(View):
     def _build_access_url(token: str | None) -> str:
         base = (get_doorman_settings().ACCESS_LINK_ENTRY_URL or "").rstrip("/")
         return f"{base}/a?{urlencode({'t': token})}"
+
+    @staticmethod
+    def _access_code_from_payload(data: dict) -> str:
+        fields = (
+            "access_code",
+            "state_code",
+            "code",
+            "last_input_text",
+            "last_text_input",
+            "message",
+            "text",
+        )
+        for field in fields:
+            value = data.get(field)
+            if value:
+                return str(value)
+
+        for container_name in ("metadata", "custom_fields", "fields"):
+            container = data.get(container_name)
+            if not isinstance(container, dict):
+                continue
+            for field in fields:
+                value = container.get(field)
+                if value:
+                    return str(value)
+        return ""
 
     @classmethod
     def _resolve_customer(cls, data: dict, resolver):

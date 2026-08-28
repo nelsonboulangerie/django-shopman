@@ -49,6 +49,10 @@ def _safe_next(raw: str) -> str:
     return ""
 
 
+def _is_checkout_next(path: str) -> bool:
+    return bool(re.search(r"/(?:checkout|finalizar)(?:/|$)", path))
+
+
 def _access_message_text(code: str) -> str:
     """Mensagem pré-preenchida do botão do site.
 
@@ -84,18 +88,21 @@ def start_access_link(*, cart_session_key: str = "", next_path: str = "") -> dic
     if cart_session_key:
         state["cart_session_key"] = str(cart_session_key)
     safe_next = _safe_next(next_path)
-    if safe_next:
+    if safe_next and (cart_session_key or not _is_checkout_next(safe_next)):
         state["next"] = safe_next
 
     code = store_state(state)
+    has_cart_context = bool(cart_session_key)
     logger.info(
         "wa_access.start code_issued has_cart=%s has_next=%s",
-        bool(cart_session_key),
-        bool(safe_next),
+        has_cart_context,
+        bool(state.get("next")),
     )
     return {
         "code": code,
         "message": _access_message_text(code),
         "deep_link": _access_deep_link(code),
         "wa_number": _wa_number(),
+        "has_context": has_cart_context,
+        "has_cart_context": has_cart_context,
     }

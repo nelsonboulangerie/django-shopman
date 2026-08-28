@@ -36,7 +36,7 @@ const emit = defineEmits<{ regenerate: [] }>()
 const codeCopied = ref(false)
 const isStarting = computed(() => props.status === 'idle' || props.status === 'loading')
 const canOpenWhatsApp = computed(() => !!props.deepLink)
-const ctaText = computed(() => canOpenWhatsApp.value ? props.ctaLabel : 'Preparando WhatsApp')
+const ctaText = computed(() => canOpenWhatsApp.value ? props.ctaLabel : 'Gerando link')
 const manualMessage = computed(() => props.message || (props.code ? `#menu ${props.code}` : ''))
 // 554333231997 → "(43) 3323-1997"; chat "cru" (sem mensagem) para o envio manual.
 const waNumberDisplay = computed(() => props.waNumber ? phoneDisplay(`+${props.waNumber}`) : '')
@@ -60,8 +60,8 @@ async function copyMessage () {
     <template v-if="status === 'error'">
       <div class="rounded-lg border bg-bottomnav p-4 shop-stack-block">
         <UiAlert variant="destructive">
-          <UiAlertTitle>Não deu para iniciar pelo WhatsApp</UiAlertTitle>
-          <UiAlertDescription>Tente de novo ou receba um código por SMS.</UiAlertDescription>
+          <UiAlertTitle>Não consegui gerar seu link agora</UiAlertTitle>
+          <UiAlertDescription>Tente novamente ou use o SMS.</UiAlertDescription>
         </UiAlert>
         <UiButton type="button" size="lg" icon="lucide:rotate-cw" class="w-full justify-center" @click="emit('regenerate')">
           Tentar de novo

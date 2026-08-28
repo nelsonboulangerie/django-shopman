@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { isInAppBrowser, systemBrowserUrl } from '~/composables/useBrowserHandoff'
+
 // Magic-link bridge: the customer arrives from a notification at `/a?t=<token>`.
 // We exchange the token through the BFF (`/api/auth/access/`), so the session
 // cookie is set on the store host, then navigate to the backend-derived
@@ -25,6 +27,32 @@ const session = useShopSession()
 const token = computed(() => String(route.query.t || '').trim())
 const failed = ref(false)
 const exchanging = ref(false)
+const crossingToSystemBrowser = ref(false)
+const bridgeMessage = computed(() => crossingToSystemBrowser.value
+  ? 'Abrindo no seu navegador…'
+  : 'Entrando na sua conta…'
+)
+
+async function trySystemBrowserHandoff (redirect: string) {
+  if (!import.meta.client || !isInAppBrowser()) return false
+  try {
+    const handoff = await $fetch<{ url: string }>(apiPath('/api/v1/auth/handoff/'), {
+      method: 'POST',
+      headers: await csrfHeaders(),
+      credentials: 'include',
+      body: { next: redirect }
+    })
+    if (!handoff?.url) return false
+    crossingToSystemBrowser.value = true
+    window.location.href = systemBrowserUrl(handoff.url)
+    window.setTimeout(() => {
+      void navigateTo(redirect)
+    }, 1600)
+    return true
+  } catch {
+    return false
+  }
+}
 
 async function exchangeToken () {
   if (!token.value) {
@@ -50,7 +78,9 @@ async function exchangeToken () {
     // Sacola não veio (handoff expirou): aviso gentil que sobrevive à navegação (Sonner
     // vive no layout). O login segue normal; só comunicamos a sacola ausente.
     if (response.handoff_expired && response.notice) useSonner(response.notice)
-    await navigateTo(response.redirect || '/')
+    const redirect = response.redirect || '/'
+    if (await trySystemBrowserHandoff(redirect)) return
+    await navigateTo(redirect)
   } catch {
     // O reclique é respondido pelo SERVIDOR (200 com `already_authenticated`), porque só
     // ele sabe se existe sessão no cookie — numa carga nova o estado daqui nasce vazio.
@@ -67,9 +97,9 @@ onMounted(async () => {
     return
   }
 
-  // O link do ManyChat pode abrir no WebView do WhatsApp. Ainda assim, consumir o
-  // token aqui é mais robusto do que tentar handoff automático para outro app antes
-  // do login: o handoff é dependente de navegador/OS e pode virar loop.
+  // O link do ManyChat pode abrir no WebView do WhatsApp. Primeiro consumimos o
+  // token, para a sessão/sacola nascerem; só depois tentamos atravessar para o
+  // navegador do sistema com um handoff curto.
   await exchangeToken()
 })
 
@@ -85,7 +115,7 @@ useSeoMeta({
       <template v-if="!failed">
         <div class="flex flex-col items-center gap-4 py-12 text-center">
           <Icon name="lucide:loader-circle" :size="32" class="animate-spin text-muted-foreground" />
-          <p class="shop-body text-muted-foreground">Entrando na sua conta…</p>
+          <p class="shop-body text-muted-foreground">{{ bridgeMessage }}</p>
         </div>
       </template>
 

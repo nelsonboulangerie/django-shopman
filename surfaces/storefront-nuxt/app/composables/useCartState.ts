@@ -187,6 +187,13 @@ function enqueueMutation<T> (run: () => Promise<T>): Promise<T> {
   return result
 }
 
+async function waitForPendingMutations () {
+  while (queueDepth > 0) {
+    await mutationChain.catch(() => undefined)
+    await Promise.resolve()
+  }
+}
+
 export function useCartState () {
   const cart = useState<CartProjection>('storefront-cart', emptyCart)
   const pendingCountBySku = useState<Record<string, number>>('storefront-cart-pending', () => ({}))
@@ -260,6 +267,11 @@ export function useCartState () {
     // cartIssue para o banner de substitutos não sumir enquanto o cliente decide.
     if (queueDepth === 0) setCartProjection(response.cart)
     return response.cart
+  }
+
+  async function settleCart () {
+    await waitForPendingMutations()
+    return refreshCart()
   }
 
   async function setSkuQty (meta: ProductMutationMeta, qty: number): Promise<CartMutationResponse> {
@@ -384,6 +396,7 @@ export function useCartState () {
     setFromServer,
     clearCart,
     refreshCart,
+    settleCart,
     qtyForSku,
     isPending,
     setSkuQty,

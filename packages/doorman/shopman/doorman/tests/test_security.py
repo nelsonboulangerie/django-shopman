@@ -234,6 +234,8 @@ class TestAccessLinkCreateAuth:
         assert response.status_code == 200
         data = json.loads(response.content)
         assert data["has_context"] is True
+        assert data["has_cart_context"] is True
+        assert data["access_flow"] == "cart_handoff"
         link = AccessLink.get_by_token(data["token"])
         assert link.metadata.get("cart_session_key") == "sk_site"
         assert link.metadata.get("next") == "/checkout"
@@ -252,6 +254,8 @@ class TestAccessLinkCreateAuth:
         assert response.status_code == 200
         data = json.loads(response.content)
         assert data["has_context"] is True
+        assert data["has_cart_context"] is True
+        assert data["access_flow"] == "cart_handoff"
         link = AccessLink.get_by_token(data["token"])
         assert link.metadata.get("cart_session_key") == "sk_site"
         assert link.metadata.get("next") == "/finalizar"
@@ -270,8 +274,28 @@ class TestAccessLinkCreateAuth:
         assert response.status_code == 200
         data = json.loads(response.content)
         assert data["has_context"] is True
+        assert data["has_cart_context"] is True
         link = AccessLink.get_by_token(data["token"])
         assert link.metadata.get("cart_session_key") == "sk_msg"
+
+    @override_settings(DOORMAN={"ACCESS_LINK_API_KEY": TEST_API_KEY})
+    def test_code_can_arrive_in_manychat_alias_fields(self, customer):
+        """O External Request pode chamar o texto por outro nome; o código ainda é o mesmo."""
+        from shopman.doorman.models import AccessLink
+        from shopman.doorman.services.link_state import store_state
+
+        code = store_state({"cart_session_key": "sk_alias"})
+        response = self._post_create(
+            {"customer_id": str(customer.uuid), "last_input_text": f"#menu {code}"},
+            headers={"HTTP_X_API_KEY": TEST_API_KEY},
+        )
+
+        assert response.status_code == 200
+        data = json.loads(response.content)
+        assert data["has_context"] is True
+        assert data["has_cart_context"] is True
+        link = AccessLink.get_by_token(data["token"])
+        assert link.metadata.get("cart_session_key") == "sk_alias"
 
     @override_settings(DOORMAN={"ACCESS_LINK_API_KEY": TEST_API_KEY})
     def test_invalid_code_degrades_without_failing(self, customer):
@@ -284,7 +308,11 @@ class TestAccessLinkCreateAuth:
         )
         assert response.status_code == 200
         data = json.loads(response.content)
-        assert data["has_context"] is True
+        assert data["has_context"] is False
+        assert data["has_cart_context"] is False
+        assert data["access_flow"] == "menu"
+        assert data["handoff_attempted"] is True
+        assert data["handoff_expired"] is True
         link = AccessLink.get_by_token(data["token"])
         assert "cart_session_key" not in (link.metadata or {})
 
@@ -299,7 +327,10 @@ class TestAccessLinkCreateAuth:
             headers={"HTTP_X_API_KEY": TEST_API_KEY},
         )
         data = json.loads(response.content)
-        assert data["has_context"] is True
+        assert data["has_context"] is False
+        assert data["has_cart_context"] is False
+        assert data["handoff_attempted"] is True
+        assert data["handoff_expired"] is True
         link = AccessLink.get_by_token(data["token"])
         assert link.metadata.get("handoff_expired") is True
 
@@ -314,6 +345,9 @@ class TestAccessLinkCreateAuth:
         )
         data = json.loads(response.content)
         assert data["has_context"] is False
+        assert data["has_cart_context"] is False
+        assert data["access_flow"] == "menu"
+        assert data["handoff_attempted"] is False
         link = AccessLink.get_by_token(data["token"])
         assert "handoff_expired" not in (link.metadata or {})
 
@@ -329,6 +363,8 @@ class TestAccessLinkCreateAuth:
         assert response.status_code == 200
         data = json.loads(response.content)
         assert data["has_context"] is False
+        assert data["has_cart_context"] is False
+        assert data["handoff_attempted"] is False
         link = AccessLink.get_by_token(data["token"])
         assert link.metadata.get("next") == "/menu"
         assert "handoff_expired" not in (link.metadata or {})

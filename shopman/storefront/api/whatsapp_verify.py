@@ -10,6 +10,8 @@ docs/guides/whatsapp-access-link.md.
 
 from __future__ import annotations
 
+import logging
+
 from django.utils.decorators import method_decorator
 from django_ratelimit.decorators import ratelimit
 from drf_spectacular.utils import extend_schema
@@ -19,6 +21,8 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from shopman.shop.services import whatsapp_verify as wa
+
+logger = logging.getLogger(__name__)
 
 
 @method_decorator(
@@ -46,7 +50,13 @@ class WhatsAppVerifyStartView(APIView):
         next_path = str((payload or {}).get("next") or "").strip()
         cart_key = ""
         if hasattr(request, "session"):
-            cart_key = str(request.session.get("cart_session_key") or "")
+            try:
+                from shopman.storefront.cart import CartService
+
+                if CartService.has_items(request):
+                    cart_key = str(request.session.get("cart_session_key") or "")
+            except Exception:
+                logger.warning("wa_access.start_cart_context_check_failed", exc_info=True)
 
         result = wa.start_access_link(cart_session_key=cart_key, next_path=next_path)
         return Response(result)
