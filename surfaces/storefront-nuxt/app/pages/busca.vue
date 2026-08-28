@@ -2,6 +2,7 @@
 import {
   appliedFilterChips,
   buildSectionsBySku,
+  collectionTargetForSearchOption,
   primarySectionBySku,
   searchPanelView,
   type SearchListOption,
@@ -25,7 +26,11 @@ function parseFilters (raw: unknown): string[] {
   return String(raw || '').split(',').map(part => part.trim()).filter(Boolean)
 }
 
-const query = ref('')
+function queryText (raw: unknown): string {
+  return Array.isArray(raw) ? String(raw[0] || '').trim() : String(raw || '').trim()
+}
+
+const query = ref(queryText(route.query.q))
 const baseFilters = ref<string[]>(parseFilters(route.query.filtro))
 
 const catalog = computed(() => data.value?.catalog || null)
@@ -65,14 +70,9 @@ function toggleChip (key: string) {
   void navigateTo(menuTargetFor([...baseFilters.value, key]))
 }
 
-function collectionTargetFor (option: SearchListOption): string {
-  const ref = encodeURIComponent(option.value)
-  return option.section && !option.section.is_dynamic ? `/colecao/${ref}` : `/menu?secao=${ref}`
-}
-
 function activateChip (option: SearchListOption) {
   if (option.kind === 'collection') {
-    void navigateTo(collectionTargetFor(option))
+    void navigateTo(collectionTargetForSearchOption(option))
     return
   }
   toggleChip(option.key)
@@ -81,6 +81,23 @@ function activateChip (option: SearchListOption) {
 function chipApplied (option: SearchListOption): boolean {
   return option.kind !== 'collection' && isFilterApplied(option.key)
 }
+
+watch(() => route.query.q, raw => {
+  const next = queryText(raw)
+  if (next !== query.value) query.value = next
+})
+
+watch(query, value => {
+  const nextSearch = value.trim()
+  if (queryText(route.query.q) === nextSearch) return
+  const nextQuery = { ...route.query }
+  if (nextSearch) {
+    nextQuery.q = nextSearch
+  } else {
+    delete nextQuery.q
+  }
+  void router.replace({ query: nextQuery })
+})
 
 onMounted(() => {
   if (window.matchMedia('(pointer: fine)').matches) {
@@ -107,7 +124,7 @@ useCanonical()
           size="icon"
           icon="lucide:arrow-left"
           aria-label="Voltar ao cardápio"
-          class="shrink-0 rounded-full"
+          class="min-h-11 min-w-11 shrink-0 rounded-full"
           :to="menuTargetFor(baseFilters)"
         />
         <UiInputGroup class="min-w-0 flex-1 rounded-full bg-white text-foreground">
@@ -120,7 +137,7 @@ useCanonical()
             type="search"
             placeholder="Buscar no cardápio"
             autocomplete="off"
-            class="flex-1 rounded-none border-0 bg-transparent shadow-none focus-visible:ring-0 dark:bg-transparent"
+            class="h-11 flex-1 rounded-none border-0 bg-transparent shadow-none focus-visible:ring-0 dark:bg-transparent"
           />
           <UiInputGroupAddon v-if="query" align="inline-end">
             <UiInputGroupButton
@@ -158,7 +175,7 @@ useCanonical()
               :key="chip.key"
               variant="default"
               size="sm"
-              class="h-8 rounded-full px-3"
+              class="min-h-11 rounded-full px-3"
               :aria-label="`Remover filtro ${chip.label}`"
               @click="toggleChip(chip.key)"
             >
@@ -166,7 +183,7 @@ useCanonical()
               <Icon name="lucide:x" class="ml-1 size-3.5" />
             </UiButton>
           </div>
-          <UiButton variant="outline" size="sm" class="mt-3 h-8 rounded-full px-3" :to="menuTargetFor(baseFilters)">
+          <UiButton variant="outline" size="sm" class="mt-3 min-h-11 rounded-full px-3" :to="menuTargetFor(baseFilters)">
             Ver resultados no cardápio
           </UiButton>
         </div>
@@ -177,7 +194,7 @@ useCanonical()
             <UiButton
               v-for="option in panel.collections"
               :key="option.key"
-              :to="collectionTargetFor(option)"
+              :to="collectionTargetForSearchOption(option)"
               variant="ghost"
               class="shop-gold-hover h-auto w-full justify-start gap-3 rounded-none border-b px-1 py-3 font-normal last:border-b-0"
             >
@@ -196,7 +213,7 @@ useCanonical()
               :key="chip.key"
               :variant="chipApplied(chip) ? 'default' : 'outline'"
               size="sm"
-              class="h-8 rounded-full px-3"
+              class="min-h-11 rounded-full px-3"
               :aria-pressed="chip.kind === 'collection' ? undefined : chipApplied(chip)"
               @click="activateChip(chip)"
             >
@@ -214,6 +231,7 @@ useCanonical()
               v-for="item in resultItems"
               :key="item!.sku"
               :item="item!"
+              framed
               class="border-b"
             />
           </div>

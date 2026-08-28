@@ -197,6 +197,20 @@ describe('surface UX guardrails', () => {
     expect(menu).not.toContain('sections.value.filter(section => section.ref === activeSection.value)')
   })
 
+  it('keeps collection pages from dead-ending after the product list', () => {
+    const collection = read('app/pages/colecao/[ref].vue')
+
+    expect(collection).toContain('useSearchOverlay()')
+    expect(collection).toContain('data-collection-end-actions')
+    expect(collection).toContain('rounded-lg border bg-card p-4')
+    expect(collection).toContain('Ainda procurando algo?')
+    expect(collection).toContain('Ver cardápio completo')
+    expect(collection).toContain('Buscar no cardápio')
+    expect(collection).toContain('to="/menu"')
+    expect(collection).toContain('@click="openSearch()"')
+    expect(collection).toContain('class="min-h-11 justify-center"')
+  })
+
   it('renders the menu product grid once instead of duplicating it in hidden tab panels', () => {
     const menu = read('app/pages/menu.vue')
 
@@ -767,14 +781,28 @@ describe('surface UX guardrails', () => {
   it('keeps alpha-test search discoveries canonized in the UI source', () => {
     const search = read('app/pages/busca.vue')
     const overlay = read('app/components/SearchOverlay.vue')
+    const menu = read('app/pages/menu.vue')
 
-    expect(search).toContain('function collectionTargetFor')
-    expect(search).toContain('`/colecao/${ref}`')
+    expect(search).toContain('collectionTargetForSearchOption')
+    expect(menu).toContain('resolveSectionRefFromParam')
+    expect(menu).toContain('dynamicCollectionPublicSlug')
+    expect(menu).toContain('watch(() => route.query.secao, applyRouteSection)')
+    expect(menu).toContain('class="min-h-11 min-w-11 shrink-0 rounded-full"')
     expect(search).toContain("matchMedia('(pointer: fine)')")
     expect(search).toContain('md:sticky md:top-16')
+    expect(search).toContain('class="h-11 flex-1 rounded-none border-0 bg-transparent shadow-none focus-visible:ring-0 dark:bg-transparent"')
+    expect(search).toContain('class="min-h-11 rounded-full px-3"')
+    expect(search).toContain('<ProductListItem')
+    expect(search).toContain('framed')
     expect(overlay).toContain(':placeholder="open ?')
     expect(overlay).toContain('v-if="open" class="min-h-0 flex-1 overflow-y-auto"')
-    expect(overlay).toContain(':to="collectionTargetFor(option)"')
+    expect(overlay).toContain('data-search-filter-chips')
+    expect(overlay).toContain(':to="collectionTargetForSearchOption(option)"')
+    expect(overlay.indexOf('data-search-filter-chips')).toBeLessThan(overlay.indexOf('data-search-results'))
+    expect(overlay).toContain('class="h-11 min-w-0 flex-1 rounded-none border-0 bg-transparent shadow-none focus-visible:ring-0 dark:bg-transparent"')
+    expect(overlay).toContain('class="min-h-11 rounded-full px-3"')
+    expect(overlay).toContain('<ProductListItem')
+    expect(overlay).toContain('framed')
   })
 
   it('keeps alpha-test tap targets and test CTAs visibly actionable', () => {

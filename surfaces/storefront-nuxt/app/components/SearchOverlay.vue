@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import {
   buildSectionsBySku,
+  collectionTargetForSearchOption,
   primarySectionBySku,
   searchPanelView,
   type SearchListOption,
@@ -75,10 +76,18 @@ const panel = computed(() => searchPanelView({
 }))
 const resultItems = computed(() => panel.value.products.map(option => option.item).filter(item => item != null))
 
-function collectionTargetFor (option: SearchListOption): string {
-  const ref = encodeURIComponent(option.value)
-  return option.section && !option.section.is_dynamic ? `/colecao/${ref}` : `/menu?secao=${ref}`
+function menuTargetFor (keys: string[]): string {
+  return keys.length ? `/menu?filtro=${encodeURIComponent(keys.join(','))}` : '/menu'
 }
+
+function activateChip (option: SearchListOption) {
+  if (option.kind === 'collection') {
+    void navigateTo(collectionTargetForSearchOption(option))
+    return
+  }
+  void navigateTo(menuTargetFor([option.key]))
+}
+
 function clearQuery () {
   query.value = ''
   searchInputEl()?.focus()
@@ -106,7 +115,7 @@ function clearQuery () {
             icon="lucide:arrow-left"
             :aria-label="open ? 'Fechar busca' : undefined"
             :tabindex="open ? undefined : -1"
-            class="shrink-0 rounded-full"
+            class="min-h-11 min-w-11 shrink-0 rounded-full"
             @click="closeSearch"
           />
           <UiInputGroup class="min-w-0 flex-1 rounded-full bg-white text-foreground">
@@ -121,7 +130,7 @@ function clearQuery () {
               :aria-label="open ? 'Buscar no cardápio' : undefined"
               :tabindex="open ? undefined : -1"
               autocomplete="off"
-              class="min-w-0 flex-1 rounded-none border-0 bg-transparent shadow-none focus-visible:ring-0 dark:bg-transparent"
+              class="h-11 min-w-0 flex-1 rounded-none border-0 bg-transparent shadow-none focus-visible:ring-0 dark:bg-transparent"
             />
             <UiInputGroupAddon v-if="query" align="inline-end">
               <UiInputGroupButton
@@ -159,7 +168,7 @@ function clearQuery () {
                 <UiButton
                   v-for="option in panel.collections"
                   :key="option.key"
-                  :to="collectionTargetFor(option)"
+                  :to="collectionTargetForSearchOption(option)"
                   variant="ghost"
                   class="shop-gold-hover h-auto w-full justify-start gap-3 rounded-none border-b px-1 py-3 font-normal last:border-b-0"
                   @click="closeSearch"
@@ -171,6 +180,24 @@ function clearQuery () {
               </div>
             </div>
 
+            <div v-if="panel.chips.length" data-search-filter-chips>
+              <p class="shop-kicker">Filtre por</p>
+              <div class="mt-2 flex flex-wrap gap-2">
+                <UiButton
+                  v-for="chip in panel.chips"
+                  :key="chip.key"
+                  variant="outline"
+                  size="sm"
+                  class="min-h-11 rounded-full px-3"
+                  @click="activateChip(chip)"
+                >
+                  <Icon v-if="chip.icon === 'lucide:heart'" name="lucide:heart" class="mr-1 size-3.5" />
+                  {{ chip.label }}
+                  <span v-if="chip.count != null" class="ml-1 text-xs tabular-nums opacity-60">{{ chip.count }}</span>
+                </UiButton>
+              </div>
+            </div>
+
             <div v-if="resultItems.length" data-search-results>
               <p class="shop-kicker">Produtos</p>
               <div class="mt-1 grid grid-cols-1 gap-x-8 md:grid-cols-2">
@@ -178,12 +205,13 @@ function clearQuery () {
                   v-for="item in resultItems"
                   :key="item!.sku"
                   :item="item!"
+                  framed
                   class="border-b"
                 />
               </div>
             </div>
 
-            <UiEmpty v-if="normalizedQuery && !resultItems.length" class="border">
+            <UiEmpty v-if="normalizedQuery && !panel.chips.length && !resultItems.length" class="border">
               <UiEmptyMedia variant="icon">
                 <Icon name="lucide:search-x" />
               </UiEmptyMedia>

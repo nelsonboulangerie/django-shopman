@@ -2,7 +2,10 @@
 import {
   FILTERED_SECTION_VALUE,
   buildSectionsBySku,
+  collectionDisplayLabel,
+  dynamicCollectionPublicSlug,
   filteredSections,
+  resolveSectionRefFromParam,
   uniqueItemsBySku
 } from '~/presentation/menu'
 import { collectionJsonLd } from '~/presentation/seo'
@@ -11,6 +14,7 @@ import type { MenuResponse } from '~/types/shopman'
 const apiPath = useShopmanApiPath()
 const { setFromServer } = useCartState()
 const { openSearch } = useSearchOverlay()
+const router = useRouter()
 const { data, pending, error, refresh } = await useFetch<MenuResponse>(apiPath('/api/v1/storefront/menu/'), {
   credentials: 'include'
 })
@@ -57,7 +61,7 @@ const sectionOptions = computed(() => {
   const source = (hasAppliedFilters.value || dietaryFilterOn.value) ? activeSections.value : sections.value
   return source.map(section => ({
     ref: section.ref,
-    label: section.label,
+    label: collectionDisplayLabel(section),
     count: uniqueItemsBySku([...section.items]).length,
     isFavorite: !!favoriteRef.value && [section.ref, section.category?.ref, section.dynamic_ref].includes(favoriteRef.value)
   }))
@@ -139,7 +143,7 @@ function scrollToSection (ref: string) {
 }
 
 function selectSection (value: string | number | undefined) {
-  const ref = String(value || 'all')
+  const ref = resolveSectionRefFromParam(String(value || 'all'), sections.value)
   if (ref === 'clear-filter') {
     clearMenuFilters()
     return
@@ -239,6 +243,20 @@ function queueActiveSectionSync () {
   })
 }
 
+function routeQueryText (raw: unknown): string {
+  return Array.isArray(raw) ? String(raw[0] || '').trim() : String(raw || '').trim()
+}
+
+function applyRouteSection (raw: unknown) {
+  const secao = routeQueryText(raw)
+  if (!secao) return
+  const publicSlug = dynamicCollectionPublicSlug(secao)
+  if (publicSlug && secao !== publicSlug) {
+    void router.replace({ query: { ...route.query, secao: publicSlug } })
+  }
+  void nextTick(() => selectSection(secao))
+}
+
 watch(sectionOptions, options => {
   if (
     activeSection.value !== 'all' &&
@@ -257,14 +275,15 @@ onMounted(() => {
     appliedFilterKeys.value = filtro
     activeSection.value = FILTERED_SECTION_VALUE
   }
-  const secao = String(route.query.secao || '')
-  if (secao) void nextTick(() => selectSection(secao))
+  applyRouteSection(route.query.secao)
   updatePillRailTailWidth()
   window.addEventListener('scroll', queueActiveSectionSync, { passive: true })
   window.addEventListener('resize', updatePillRailTailWidth, { passive: true })
   window.addEventListener('resize', queueActiveSectionSync, { passive: true })
   queueActiveSectionSync()
 })
+
+watch(() => route.query.secao, applyRouteSection)
 
 onBeforeUnmount(() => {
   window.removeEventListener('scroll', queueActiveSectionSync)
@@ -310,7 +329,7 @@ useHead({
             size="icon"
             icon="lucide:search"
             aria-label="Buscar no cardápio"
-            class="shrink-0 rounded-full"
+            class="min-h-11 min-w-11 shrink-0 rounded-full"
             @click="openSearch()"
           />
           <UiTabs v-model="activeSection" class="min-w-0 flex-1" @update:model-value="selectSection">
