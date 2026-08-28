@@ -856,7 +856,8 @@ class TestNotificationService:
     def test_send_creates_directive(self):
         from shopman.shop.services.notification import send
 
-        order = _make_order()
+        # Destinatário presente: o skip do F2 (pedido sem contato) não se aplica.
+        order = _make_order(data={"customer_phone": "+5543999999999"})
 
         send(order, "order_accepted")
 
@@ -872,7 +873,7 @@ class TestNotificationService:
     def test_send_includes_origin_channel(self):
         from shopman.shop.services.notification import send
 
-        order = _make_order(data={"origin_channel": "whatsapp"})
+        order = _make_order(data={"origin_channel": "whatsapp", "customer_phone": "+5543999999999"})
 
         send(order, "order_accepted")
 
@@ -883,7 +884,7 @@ class TestNotificationService:
     def test_send_dedupes_same_order_template(self):
         from shopman.shop.services.notification import send
 
-        order = _make_order()
+        order = _make_order(data={"customer_phone": "+5543999999999"})
 
         send(order, "order_ready")
         send(order, "order_ready")
@@ -893,6 +894,37 @@ class TestNotificationService:
         directive = directives.get()
         assert directive.payload["template"] == "order_ready"
         assert directive.payload["requires_active_notification"] is True
+
+    @pytest.mark.django_db
+    def test_send_queues_even_without_recipient_data(self):
+        """F2 (contrato): o send SEMPRE enfileira — a Directive canônica existe.
+
+        O defeito real (alerta notification_failed) mora na escalada do
+        handler, que trata "sem destinatario" como condicao permanente e
+        silenciosa; a emissao nao e o lugar do conserto.
+        """
+        from shopman.shop.services.notification import send
+
+        order = _make_order(data={"origin_channel": "pos"})
+
+        send(order, "order_cancelled")
+
+        directives = Directive.objects.filter(topic="notification.send")
+        assert directives.count() == 1
+        assert directives.get().payload["template"] == "order_cancelled"
+
+    @pytest.mark.django_db
+    def test_send_queues_pos_with_customer(self):
+        """Venda de balcao COM cliente cadastrado segue notificando."""
+        from shopman.shop.services.notification import send
+
+        order = _make_order(data={"origin_channel": "pos", "customer_phone": "+5543999999999"})
+
+        send(order, "order_cancelled")
+
+        directives = Directive.objects.filter(topic="notification.send")
+        assert directives.count() == 1
+        assert directives.get().payload["template"] == "order_cancelled"
 
     @pytest.mark.django_db
     def test_active_notification_without_recipient_fails_loudly(self):
@@ -1015,6 +1047,84 @@ class TestNotificationSendHandler:
 
         without_reason = _build_context(order, {"order_ref": "ORD-001"}, "order_cancelled")
         assert without_reason["reason_note"] == ""
+
+    @pytest.mark.django_db
+    def test_no_recipient_failure_is_silent_no_alert(self):
+        """F2: sem destinatário é condição permanente — o handler não retenta
+        nem grita o alerta notification_failed (venda de balcão sem cliente é
+        esperado, não anomalia). A Directive já foi emitida pelo contrato.
+        """
+        from unittest.mock import patch
+
+        from shopman.orderman.models import Directive, Order
+
+        from shopman.shop.handlers.notification import NotificationSendHandler
+
+        Order.objects.create(
+            ref="ORD-001",
+            channel_ref="web",
+            session_key="session-ORD-001",
+            status="new",
+            total_q=1500,
+            data={"origin_channel": "pos"},
+        )
+        directive = Directive.objects.create(
+            topic="notification.send",
+            dedupe_key="notification.send:ORD-001:order_cancelled",
+            payload={"order_ref": "ORD-001", "template": "order_cancelled"},
+        )
+        with (
+            patch(
+                "shopman.shop.handlers.notification.notification_svc.deliver_order_notification",
+                return_value=(False, "no active notification recipient available"),
+            ) as mock_deliver,
+            patch.object(NotificationSendHandler, "_escalate") as mock_escalate,
+        ):
+            NotificationSendHandler().handle(message=directive, ctx={})
+
+        mock_deliver.assert_called_once()
+        mock_escalate.assert_not_called()
+
+    @pytest.mark.django_db
+    def test_real_backend_failure_still_escalates(self):
+        """Falha REAL de backend continua esgotando tentativas e criando o
+        alerta — o silêncio do F2 é só para a condição permanente sem
+        destinatário/canal, não para qualquer erro.
+        """
+        from unittest.mock import patch
+
+        import pytest
+        from shopman.orderman.exceptions import DirectiveTerminalError
+        from shopman.orderman.models import Directive, Order
+
+        from shopman.shop.handlers.notification import NotificationSendHandler
+
+        Order.objects.create(
+            ref="ORD-001",
+            channel_ref="web",
+            session_key="session-ORD-001",
+            status="new",
+            total_q=1500,
+            data={"customer_phone": "+5543999999999"},
+        )
+        directive = Directive.objects.create(
+            topic="notification.send",
+            dedupe_key="notification.send:ORD-001:order_cancelled",
+            payload={"order_ref": "ORD-001", "template": "order_cancelled"},
+            attempts=5,
+        )
+        with (
+            patch(
+                "shopman.shop.handlers.notification.notification_svc.deliver_order_notification",
+                return_value=(False, "gateway timeout"),
+            ) as mock_deliver,
+            patch.object(NotificationSendHandler, "_escalate") as mock_escalate,
+        ):
+            with pytest.raises(DirectiveTerminalError):
+                NotificationSendHandler().handle(message=directive, ctx={})
+
+        mock_deliver.assert_called_once()
+        mock_escalate.assert_called_once()
 
 
 # ══════════════════════════════════════════════════════════════════════

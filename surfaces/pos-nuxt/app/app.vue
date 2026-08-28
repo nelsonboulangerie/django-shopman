@@ -25,7 +25,7 @@ const isCustomerDisplay = computed(() => route.path === "/display");
 // todas as páginas leem). Poll calmo de 60s só enquanto o SSE não conecta.
 // Não na tela do cliente: ela consome só o BroadcastChannel da estação — SSE e
 // poll ali seriam uma conexão e um refetch a mais sem ninguém para ler.
-if (route.path !== "/display") usePosEvents(() => refresh());
+
 
 // Re-gate global de sessão (kit): um 401 no meio do turno (sessão expirada do
 // lado do Django) sobe a tela de senha em vez de o operador bater numa sessão
@@ -36,6 +36,19 @@ const { expired: sessionExpired, reset: resetSession } = useOperatorSession();
 // `useOperatorLock` + `<OperatorLock>` dos outros 4 apps de operador.
 const OPERATOR_PERM = "cashman.operate_pos";
 const { locked, canIdentify, stationRef, mustChange, lock } = useOperatorLock(OPERATOR_PERM);
+
+// Tempo real entre estações (ADR-016): pedido de troco, devolução pendente e
+// turno aberto/fechado feitos em OUTRA estação chegam por push; no evento,
+// refazemos o fetch canônico da Projection (o mesmo refresh deduplicado que
+// todas as páginas leem). Poll calmo de 60s só enquanto o SSE não conecta.
+// Não na tela do cliente: ela consome só o BroadcastChannel da estação — SSE e
+// poll ali seriam uma conexão e um refetch a mais sem ninguém para ler.
+// O SSE só conecta com a estação identificada e desbloqueada (F3): no gate
+// (login/lock) os canais são negados e o EventSource entraria no ciclo de
+// reconexão com 400 — quem garante a tela ali é o poll de fallback.
+if (route.path !== "/display") {
+  usePosEvents(() => refresh(), { enabled: () => canIdentify.value && !locked.value });
+}
 
 // Iniciar o dispositivo: o gestor entra com senha uma vez e diz qual balcão é este.
 // Enquanto ninguém fizer isso, o dispositivo não tem antessala — a loja só entra com

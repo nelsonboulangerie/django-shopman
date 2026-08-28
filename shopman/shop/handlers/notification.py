@@ -67,6 +67,17 @@ class NotificationSendHandler:
         if success:
             return
 
+        # F2: "sem destinatário/canal" é condição PERMANENTE — retry não
+        # resolve e alertar é ruído (venda de balcão sem cliente, pedido sem
+        # canal ativo). A Directive segue existindo (contrato canônico de
+        # notificação intocado); o silêncio mora aqui, na escalada, não na
+        # emissão.
+        if last_error in (
+            "no active notification recipient available",
+            "no active notification channel available",
+        ):
+            return
+
         # Todos os backends falharam — escalate if exhausted, then raise
         exhausted = message.attempts >= 5
         if exhausted:

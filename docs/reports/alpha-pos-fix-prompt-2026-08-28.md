@@ -86,3 +86,19 @@ curl -s -b /tmp/j -X POST https://pdv.boulangerie.com.br/api/v1/backstage/pos/sa
 
 - Scripts e screenshots da revisão: `/tmp/dsh-pos-alpha/` (harness Playwright, logs, PNGs: login, lock, board, grid, pagamento, resultado, KDS, central, sessão).
 - Alpha vivo: `https://pdv.boulangerie.com.br` (operadores dev: `admin`/`admin`, PIN `1234`; `joyce` (gerente), `fran` (caixa), `diofer` (cozinha)).
+
+---
+
+## Status (aplicado em 2026-08-28, branch `claude/alpha-pos-fixes`, PR #???)
+
+Todas as pendências foram implementadas e testadas pelo agente de revisão (branch `claude/alpha-pos-fixes`, PR #389):
+
+- **F1** (P2): `_stamp_list_prices_from_session` agora carimba `unit_price_q` (fallback: `meta._list_q` → `unit_price_q` da sessão) e a review/close ganharam `_ensure_resolved_prices` (erro claro `price_not_resolved` quando não há preço possível). Testes: `test_review_without_declared_prices_uses_session_prices`, `test_review_without_session_and_prices_fails_loudly`.
+- **F4** (P3): `build_session_ops` grava `meta._list_q` na linha da comanda. Teste: `test_saving_tab_stamps_list_price_on_session_lines`.
+- **F2** (P2): a Directive canônica continua sendo emitida para todo cancelamento (contrato intocado); o silêncio mora na ESCALADA — o handler trata "sem destinatário/canal" como condição permanente e não cria mais o alerta `notification_failed` falso. Testes: `test_send_queues_even_without_recipient_data`, `test_no_recipient_failure_is_silent_no_alert`, `test_real_backend_failure_still_escalates`.
+- **F3** (P3): o BFF já não repassa `Last-Event-ID: "error"` (fix do Gestor, PR #386) e o PDV agora só conecta SSE com a estação identificada e desbloqueada (`enabled` em `usePosEvents` + `app.vue`). Teste: `shouldConnectSse` (posEvents.test.ts).
+- **F5** (P3): `OfflineBanner` só renderiza após o mount — fim do "Hydration completed but contains mismatches" em todas as superfícies.
+- **F6** (P3): validado — a UI já mostra mensagem calma ("A gaveta não abriu: O agente da estação não está rodando."); sem mudança de código.
+
+Validação: 373 testes POS (backstage+shop) + 127 (notification/tabs) + vitest pos-nuxt 21 (alvo) e operator-kit 165 verdes; as únicas falhas de suíte são pré-existentes de infra de teste (`Cannot find import "$fetch" to mock` — reproduzidas em origin/main).
+

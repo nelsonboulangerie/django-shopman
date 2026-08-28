@@ -14,3 +14,13 @@ export type PosRealtimeState = "connecting" | "live" | "polling";
 export function shouldPollTick(state: PosRealtimeState): boolean {
   return state !== "live";
 }
+
+/**
+ * O SSE so faz sentido com a estacao identificada e desbloqueada: no gate
+ * (login/lock) os canais sao negados e o EventSource entra no ciclo de
+ * reconexao com 400. Enquanto desabilitado, o poll de fallback segue sendo a
+ * fonte calma da tela.
+ */
+export function shouldConnectSse(enabled: boolean | undefined): boolean {
+  return enabled !== false;
+}
