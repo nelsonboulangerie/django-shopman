@@ -30,6 +30,7 @@
 | [`release-readiness`](#release-readiness) | script | Release | Consolida checks locais e bloqueios externos |
 | [`seed`](#seed) | shop | Seed | Popula banco com dados da Nelson Boulangerie |
 | [`refresh_seed_dates`](#refresh_seed_dates) | config | Seed | Re-ancora um banco SEMEADO em hoje (QA; recusa produção) |
+| [`qa_scenarios`](#qa_scenarios) | config | Seed | Arma cenários de vitrine (esgotado, pausado, previsto) num banco SEMEADO, sem reseed |
 
 ---
 
@@ -79,6 +80,41 @@ seed/refresh que apodreceram e planta o horizonte planejado de hoje a +7 no
 virarem estoque planejado. **Não** apaga história, **não** recria a narrativa
 demo do dia e **recusa `SHOPMAN_ENVIRONMENT=production` sem flag de override**.
 Idempotente: a segunda passada no mesmo dia responde "Nada a fazer".
+
+### qa_scenarios
+
+Arma os estados de **disponibilidade da vitrine** num banco já semeado, para QA
+manual. O perfil `qa` do `seed` já nasce com eles, mas chegar lá custa
+`seed --flush`; e o alpha roda o perfil `demo`, em que todo produto tem estoque
+— então o "Avise-me" não tinha como aparecer na tela para ser testado.
+
+```bash
+python manage.py qa_scenarios                     # relatório (não escreve)
+python manage.py qa_scenarios --arm               # arma todos os cenários
+python manage.py qa_scenarios --arm sold_out      # arma só um
+python manage.py qa_scenarios --arm sold_out=BF   # ... num SKU escolhido
+python manage.py qa_scenarios --restock BF        # repõe → dispara o "Avise-me"
+python manage.py qa_scenarios --reset             # devolve tudo ao alvo do seed
+```
+
+| Estado | Como | O que aparece na loja |
+|--------|------|-----------------------|
+| `sold_out` | sem pronto, sem plano | "Indisponível" + sino **"Avise quando voltar"** |
+| `low_stock` | 2 prontos (limiar 5) | badge "Últimas unidades", ainda vende |
+| `planned` | sem pronto hoje, fornada amanhã | indisponível hoje, orderável ao escolher data futura |
+| `paused` | `Product.is_sellable=False` | aparece, não vende, **sem** sino |
+| `paused_channel` | `ListingItem.is_sellable=False` na vitrine `web` | pausado só na loja; segue vendável no PDV |
+
+Os estados são armados pela **mesma função** que o perfil `qa` usa
+(`seed.apply_storefront_state`) — o cenário testado à mão é o cenário que a
+suíte afirma. O relatório fecha toda execução, com a coluna "amanhã" separando
+`sold_out` de `planned` (os dois são `unavailable` com zero pronto) e a lista de
+avisos pendentes com telefone mascarado.
+
+⚠️ `--restock` é um `Move` de entrada de verdade, igual ao que a fornada faz:
+**quem estiver inscrito recebe a mensagem no telefone que informou**. É esse o
+teste; só não use com número de terceiro. Recusa
+`SHOPMAN_ENVIRONMENT=production` sem flag de override.
 
 ### sweep_orphan_holds
 
