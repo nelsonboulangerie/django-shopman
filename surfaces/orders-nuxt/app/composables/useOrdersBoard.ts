@@ -67,10 +67,18 @@ export function useOrdersBoard() {
     }
   }
 
+  // SSE conecta só depois do primeiro fetch do board (sessão/canal prontos):
+  // conectar antes disparava um 400 no /sse/orders a cada load.
+  function connectWhenReady() {
+    if (source) return;
+    if (!pending.value && !error.value) { connectSse(); return; }
+    watch([pending, error], ([p, e]) => { if (!p && !e) connectSse(); }, { once: true });
+  }
+
   const onVisible = () => { if (document.visibilityState === "visible") refresh(); };
   onMounted(() => {
     pollTimer = setInterval(() => refresh(), 30_000);
-    connectSse();
+    connectWhenReady();
     // Voltou à aba / reconectou: refetch imediato (o poll de 30s é longo demais
     // para um pedido iFood novo esperar quando o tablet acabou de acordar).
     document.addEventListener("visibilitychange", onVisible);
