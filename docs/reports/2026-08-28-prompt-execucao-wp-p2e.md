@@ -42,3 +42,16 @@ Você é um agente de código no repositório Django Shopman (/Users/pablovalent
 ## 5. Entregáveis
 1. Commits por fase (F1, F2, F3) com testes verdes.
 2. Resumo: o que mudou por camada, testes rodados, validação no alpha (evidências), pendências (ex.: template ManyChat a ativar em homologação).
+
+
+## 6. RECON pré-execução (28/08 — sessão de execução bloqueada por sandbox read-only; leitura feita, zero escrita)
+
+- origin/main hoje = 602870058 (Merge PR #383). .venv = Python 3.12.5.
+
+- Mecanismo que JÁ existe (base para o WP): planning.py StockPlanning.realize() seta expires_at no hold planejado no sinal de materialização (gancho pronto p/ abrir a janela); holds.py policy demand_ok cria hold quant=None; holds metadata.planned=True + expires_at=None = fermata; availability.py classify_planned_hold_for_session_sku() (is_awaiting/is_ready/deadline/planned_for) e decide() — o beco (max 0 sem hold planejado → not approved → has_unavailable → bloqueia Finalizar) mora em decide(); ChannelConfig.Stock.planned_hold_ttl_hours=48; CART_WAITLIST_NOTICE/CART_WAITLIST_PLANNED_DATE e has_awaiting/has_ready_for_confirmation_items JÁ registrados em copy/usage_map; handlers/production_alerts.py é o padrão de listener do signal production_changed (ações planned/started via services/production.py) — o handler waitlist deve seguir esse padrão.
+
+- Arquivos-alvo confirmados (WP §7): stockman holds.py/availability.py; shop services availability/stock/notification; adapters notification_manychat (+4); projections order_tracking; backstage projections order_queue; storefront api/tracking + presentation/order_tracking; Nuxt storefront-nuxt (pages, components, presentation/cart.ts, tests); omotenashi copy/usage_map. NÃO existem test_waitlist_*.py; NÃO existe waitlist_state em data-schemas (chaves novas: Session.data/Order.data waitlist_state e waitlist; Directive.payload topics waitlist.confirm / waitlist.timeout).
+
+- Nota F1: stepper/copy de fila e o 'Só temos 0' ficam em presentation/cart.py + Nuxt cart; admissão até capacidade planejada em availability.decide()/check() e holds._find_quant_for_hold (admitir quant planejado/expected além de ready_physical, respeitando margem e outros holds; 409 honesto via StockError/reason_code).
+
+- Nota F2: materialização = listener production_changed (started/finished) → waitlist.open_window() servindo N primeiras reservas FCFS (created_at dos holds metadata.planned); confirmação = template ManyChat + fallback SMS + Order.data.waitlist_state; POST /api/v1/orders/{ref}/waitlist-confirm/ em storefront/api/tracking.py; cobrança na confirmação reusando payment-timeout; liberação → serve_next + OperatorAlert (waitlist_released/waitlist_confirm_window) + evento no board (order_queue.py); copy WAITLIST_* novas; template ManyChat = texto + marca HOMOLOGAÇÃO (não é código).
