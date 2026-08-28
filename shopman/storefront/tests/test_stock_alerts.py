@@ -181,6 +181,7 @@ def test_endpoint_404_for_unknown_sku(client):
 
 def test_anonymous_session_marker_only_counts_while_subscription_is_pending(rf):
     from django.contrib.sessions.middleware import SessionMiddleware
+
     from shopman.storefront.presentation.catalog import _notify_subscribed_skus
 
     sub = stock_alerts.subscribe("SKU-PENDING-MARK", phone=PHONE)
