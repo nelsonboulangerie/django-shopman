@@ -194,7 +194,7 @@ describe('cart presentation — planned hold', () => {
     const tomorrow = '2026-07-18'
     const awaiting = line({ is_awaiting_confirmation: true, planned_for_date: today, planned_for_notice: 'Previsto para hoje' })
 
-    // Sem data escolhida (sacola) e pedido para HOJE → fila da fornada do dia.
+    // Sem data escolhida (sacola) e pedido para HOJE → fila de espera da produção.
     expect(reviewWaitlist(awaiting, '', today)).toEqual({ notice: 'Previsto para hoje' })
     expect(reviewWaitlist(awaiting, today, today)).toEqual({ notice: 'Previsto para hoje' })
     // Pedido AGENDADO para outra data: não há fila (a reserva nasce na data

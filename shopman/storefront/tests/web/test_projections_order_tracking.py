@@ -26,6 +26,31 @@ from shopman.storefront.presentation.types import OrderProgressStepProjection
 pytestmark = pytest.mark.django_db
 
 
+def _attach_pending_planned_hold(order, *, sku: str, target_date=None):
+    from decimal import Decimal
+
+    from django.utils import timezone
+    from shopman.stockman import Hold, HoldStatus
+
+    planned_for = target_date or timezone.localdate()
+    hold = Hold.objects.create(
+        sku=sku,
+        quant=None,
+        quantity=Decimal("1"),
+        target_date=planned_for,
+        status=HoldStatus.PENDING,
+        expires_at=None,
+        metadata={"planned": True, "reference": f"order:{order.ref}", "priority": 0},
+    )
+    data = dict(order.data or {})
+    data["hold_ids"] = [{"sku": sku, "hold_id": hold.hold_id, "qty": 1}]
+    data.setdefault("fulfillment_type", "pickup")
+    data.setdefault("delivery_date", planned_for.isoformat())
+    order.data = data
+    order.save(update_fields=["data"])
+    return hold
+
+
 # ──────────────────────────────────────────────────────────────────────
 # Encomenda (WP-D) — pedido com data futura
 # ──────────────────────────────────────────────────────────────────────
@@ -107,6 +132,65 @@ class TestPreorderTracking:
         # Sem pagamento confirmado, a promise continua sendo o pagamento.
         assert proj.promise.state == "payment_pix_ready"
         assert proj.is_preorder is True
+        assert proj.promise.fulfillment_wait_kind == "preorder"
+        assert proj.promise.message == (
+            "Pague com o Pix abaixo para confirmar sua encomenda para amanhã · A partir das 09h."
+        )
+        assert "fila de espera" not in proj.promise.message.lower()
+
+    def test_unpaid_card_preorder_keeps_encomenda_copy(self, order_with_payment):
+        from datetime import timedelta
+
+        from django.utils import timezone as _tz
+        from shopman.orderman.models import Order as _Order
+
+        data = dict(order_with_payment.data or {})
+        data.update({
+            "delivery_date": (_tz.localdate() + timedelta(days=1)).isoformat(),
+            "delivery_time_slot": "slot-09",
+            "payment": {
+                "method": "card",
+                "checkout_url": "https://pay.example/checkout",
+            },
+        })
+        _Order.objects.filter(pk=order_with_payment.pk).update(status="accepted", data=data)
+        order_with_payment.refresh_from_db()
+
+        proj = build_order_tracking(order_with_payment)
+
+        assert proj.promise.state == "payment_card_ready"
+        assert proj.is_preorder is True
+        assert proj.promise.fulfillment_wait_kind == "preorder"
+        assert proj.promise.message == (
+            "Finalize no ambiente seguro para garantir sua encomenda para amanhã · A partir das 09h."
+        )
+        assert "fila de espera" not in proj.promise.message.lower()
+
+    def test_pix_preorder_without_code_keeps_encomenda_copy(self, order_with_payment):
+        from datetime import timedelta
+
+        from django.utils import timezone as _tz
+        from shopman.orderman.models import Order as _Order
+
+        data = dict(order_with_payment.data or {})
+        data.update({
+            "delivery_date": (_tz.localdate() + timedelta(days=1)).isoformat(),
+            "delivery_time_slot": "slot-09",
+            "payment": {"method": "pix"},
+        })
+        _Order.objects.filter(pk=order_with_payment.pk).update(status="accepted", data=data)
+        order_with_payment.refresh_from_db()
+
+        proj = build_order_tracking(order_with_payment)
+
+        assert proj.promise.state == "payment_preparing"
+        assert proj.is_preorder is True
+        assert proj.promise.fulfillment_wait_kind == "preorder"
+        assert proj.promise.title == "Gerando seu Pix"
+        assert proj.promise.message == (
+            "Estamos gerando o Pix da sua encomenda. O código aparece aqui em instantes."
+        )
+        assert "reserva" not in proj.promise.message.lower()
 
 
 # ──────────────────────────────────────────────────────────────────────
@@ -502,6 +586,10 @@ class TestStatusColours:
         assert proj.copy.page_kicker == "Acompanhamento"
         assert proj.copy.support_label == "Ajuda"
         assert proj.copy.progress_heading == "Etapas do pedido"
+        assert proj.copy.pix_pending_note == "O prazo para pagar começa quando o código aparecer."
+        assert proj.copy.pix_auto_update_note == (
+            "Quando o Pix for confirmado, atualizamos esta tela automaticamente."
+        )
         # O painel mostra a mensagem do estado + a linha "Próximo passo" (a ação
         # segue como botão, "Atualizado agora" segue standalone).
         assert proj.promise.message == "Está esperando por você no balcão."
@@ -697,6 +785,28 @@ class TestStatusColours:
         assert proj.promise.state == "payment_pix_ready"
         assert proj.promise.deadline_kind == "payment"
         assert proj.promise.deadline_at == proj.payment_expires_at
+        assert proj.promise.message == (
+            "Pague com o Pix abaixo. A confirmação do Pix é automática; acompanhe os próximos passos por aqui."
+        )
+        assert "estabelecimento" not in proj.promise.message.lower()
+        assert "pedido aceito" not in proj.promise.message.lower()
+        assert "preparar" not in proj.promise.message.lower()
+        assert "depois do pagamento" not in proj.promise.message.lower()
+
+    def test_waitlisted_pix_ready_requires_payment_to_confirm_queue(self, order_with_payment, product):
+        from django.utils import timezone
+
+        _attach_pending_planned_hold(order_with_payment, sku=product.sku)
+        order_with_payment.refresh_from_db()
+
+        proj = build_order_tracking(order_with_payment)
+
+        assert proj.promise.state == "payment_pix_ready"
+        assert proj.promise.fulfillment_wait_kind == "planned_batch"
+        assert proj.promise.fulfillment_wait_until == timezone.localdate().isoformat()
+        assert proj.promise.message == "Pague com o Pix abaixo para confirmar sua reserva na fila de espera."
+        assert "use o código" not in proj.promise.message.lower()
+        assert "preparar" not in proj.promise.message.lower()
 
     def test_expired_auto_confirm_countdown_is_not_rendered(self, order, channel):
         from django.utils import timezone
@@ -948,12 +1058,79 @@ class TestStatusColours:
         assert proj.promise.requires_active_notification is True
         assert proj.promise.notification_topic == "payment_requested"
         assert proj.promise.actions[0].ref == "copy_pix"
-        assert proj.promise.actions[0].label == "Copiar código PIX"
+        assert proj.promise.actions[0].label == "Copiar código Pix"
         assert proj.promise.actions[0].href == ""
         assert proj.promise.payment_method == "pix"
         assert proj.promise.pix_copy_paste == order_with_payment.data["payment"]["pix_code"]
-        assert "código" in proj.promise.message.lower()
+        assert proj.promise.message == (
+            "Pedido aceito. Pague com o Pix abaixo. A confirmação do Pix é automática; "
+            "acompanhe os próximos passos por aqui."
+        )
+        assert "preparar" not in proj.promise.message.lower()
+        assert "estabelecimento" not in proj.promise.message.lower()
         assert "cancela automaticamente" in proj.promise.footnote.lower()
+
+    def test_accepted_pix_without_code_says_generating_code(self, order_with_payment):
+        order_with_payment.data["payment"] = {"method": "pix"}
+        order_with_payment.save(update_fields=["data"])
+        order_with_payment.transition_status("accepted", actor="test")
+        order_with_payment.refresh_from_db()
+
+        proj = build_order_tracking(order_with_payment)
+
+        assert proj.promise.state == "payment_preparing"
+        assert proj.promise.title == "Gerando seu Pix"
+        assert proj.promise.message == "Pedido aceito. O código Pix aparece aqui em instantes."
+        assert "preparando" not in proj.promise.title.lower()
+
+    def test_waitlisted_pix_without_code_says_generating_reservation_pix(
+        self, order_with_payment, product,
+    ):
+        order_with_payment.data["payment"] = {"method": "pix"}
+        order_with_payment.save(update_fields=["data"])
+        order_with_payment.transition_status("accepted", actor="test")
+        _attach_pending_planned_hold(order_with_payment, sku=product.sku)
+        order_with_payment.refresh_from_db()
+
+        proj = build_order_tracking(order_with_payment)
+
+        assert proj.promise.state == "payment_preparing"
+        assert proj.promise.fulfillment_wait_kind == "planned_batch"
+        assert proj.promise.title == "Gerando seu Pix"
+        assert proj.promise.message == (
+            "Estamos gerando o Pix da sua reserva. O código aparece aqui em instantes."
+        )
+
+    def test_new_card_checkout_describes_authorization_without_store_confirmation(self, order_with_payment):
+        order_with_payment.data["payment"] = {
+            "method": "card",
+            "checkout_url": "https://pay.example/checkout",
+        }
+        order_with_payment.save(update_fields=["data"])
+
+        proj = build_order_tracking(order_with_payment)
+
+        assert proj.promise.state == "payment_card_ready"
+        assert proj.promise.message == (
+            "Finalize no ambiente seguro para autorizar o cartão e acompanhar o pedido por aqui."
+        )
+        assert "preparar" not in proj.promise.message.lower()
+        assert "confirmação do estabelecimento" not in proj.promise.message.lower()
+
+    def test_accepted_card_checkout_does_not_promise_immediate_preparation(self, order_with_payment):
+        order_with_payment.data["payment"] = {
+            "method": "card",
+            "checkout_url": "https://pay.example/checkout",
+        }
+        order_with_payment.save(update_fields=["data"])
+        order_with_payment.transition_status("accepted", actor="test")
+        order_with_payment.refresh_from_db()
+
+        proj = build_order_tracking(order_with_payment)
+
+        assert proj.promise.state == "payment_card_ready"
+        assert proj.promise.message == "Finalize no ambiente seguro para seguir com o pedido aceito."
+        assert "preparar" not in proj.promise.message.lower()
 
     def test_authorized_card_is_internal_not_surface_payment_action(self, order_with_payment):
         from shopman.orderman.models import Order as _Order
@@ -982,7 +1159,126 @@ class TestStatusColours:
         assert proj.status_label == "Pagamento autorizado"
         assert proj.promise.state == "payment_authorized"
         assert proj.promise.actions == ()
+        assert proj.promise.message == (
+            "Cartão autorizado. Pedido aceito; acompanhe o andamento por aqui."
+        )
+        assert "finalizando" not in proj.promise.message.lower()
+        assert "confirmado" not in proj.promise.message.lower()
         assert "Aguardando pagamento" not in {proj.status_label, proj.payment_status_label}
+
+    def test_authorized_card_order_new_does_not_wait_for_store_confirmation_copy(self, order_with_payment):
+        from shopman.payman import PaymentService
+
+        intent = PaymentService.create_intent(
+            order_ref=order_with_payment.ref,
+            amount_q=order_with_payment.total_q,
+            method="card",
+        )
+        order_with_payment.data["payment"] = {
+            "method": "card",
+            "intent_ref": intent.ref,
+            "amount_q": order_with_payment.total_q,
+        }
+        order_with_payment.save(update_fields=["data"])
+        PaymentService.authorize(intent.ref)
+        order_with_payment.refresh_from_db()
+
+        proj = build_order_tracking(order_with_payment)
+
+        assert proj.promise.state == "payment_authorized"
+        assert proj.promise.message == (
+            "Cartão autorizado. Acompanhe o pedido por aqui."
+        )
+        assert "finalizando" not in proj.promise.message.lower()
+        assert "confirmado" not in proj.promise.message.lower()
+        assert "confirmação do estabelecimento" not in proj.promise.message.lower()
+
+    def test_authorized_card_waitlist_does_not_claim_availability_or_store_confirmation(
+        self, order_with_payment, product,
+    ):
+        from django.utils import timezone
+        from shopman.payman import PaymentService
+
+        intent = PaymentService.create_intent(
+            order_ref=order_with_payment.ref,
+            amount_q=order_with_payment.total_q,
+            method="card",
+        )
+        order_with_payment.data["payment"] = {
+            "method": "card",
+            "intent_ref": intent.ref,
+            "amount_q": order_with_payment.total_q,
+        }
+        order_with_payment.save(update_fields=["data"])
+        _attach_pending_planned_hold(order_with_payment, sku=product.sku)
+        PaymentService.authorize(intent.ref)
+        order_with_payment.refresh_from_db()
+
+        proj = build_order_tracking(order_with_payment)
+
+        assert proj.promise.state == "payment_authorized"
+        assert proj.promise.fulfillment_wait_kind == "planned_batch"
+        assert proj.promise.fulfillment_wait_until == timezone.localdate().isoformat()
+        assert proj.promise.message == "Sua reserva está na fila de espera."
+        assert "disponibilidade" not in proj.promise.message.lower()
+        assert "confirmação do estabelecimento" not in proj.promise.message.lower()
+
+    def test_authorized_card_accepted_waitlist_does_not_wait_for_store_confirmation(
+        self, order_with_payment, product,
+    ):
+        from django.utils import timezone
+        from shopman.orderman.models import Order as _Order
+        from shopman.payman import PaymentService
+
+        intent = PaymentService.create_intent(
+            order_ref=order_with_payment.ref,
+            amount_q=order_with_payment.total_q,
+            method="card",
+        )
+        order_with_payment.data["payment"] = {
+            "method": "card",
+            "intent_ref": intent.ref,
+            "amount_q": order_with_payment.total_q,
+        }
+        order_with_payment.save(update_fields=["data"])
+        _attach_pending_planned_hold(order_with_payment, sku=product.sku)
+        PaymentService.authorize(intent.ref)
+        _Order.objects.filter(pk=order_with_payment.pk).update(status="accepted")
+        order_with_payment.refresh_from_db()
+
+        proj = build_order_tracking(order_with_payment)
+
+        assert proj.promise.state == "payment_authorized"
+        assert proj.promise.fulfillment_wait_kind == "planned_batch"
+        assert proj.promise.fulfillment_wait_until == timezone.localdate().isoformat()
+        assert proj.promise.message == "Sua reserva está na fila de espera. Avisamos quando estiver pronto."
+        assert "confirmação do estabelecimento" not in proj.promise.message.lower()
+
+    def test_paid_waitlisted_order_stays_in_waitlist_not_immediate_preparation(
+        self, order_with_payment, product,
+    ):
+        from django.utils import timezone
+        from shopman.payman import PaymentService
+
+        intent = PaymentService.create_intent(
+            order_ref=order_with_payment.ref,
+            amount_q=order_with_payment.total_q,
+            method="pix",
+        )
+        order_with_payment.data["payment"]["intent_ref"] = intent.ref
+        order_with_payment.save(update_fields=["data"])
+        _attach_pending_planned_hold(order_with_payment, sku=product.sku)
+        PaymentService.authorize(intent.ref)
+        PaymentService.capture(intent.ref)
+        order_with_payment.refresh_from_db()
+
+        proj = build_order_tracking(order_with_payment)
+
+        assert proj.promise.state == "payment_confirmed"
+        assert proj.promise.fulfillment_wait_kind == "planned_batch"
+        assert proj.promise.fulfillment_wait_until == timezone.localdate().isoformat()
+        assert proj.promise.message == "Sua reserva está na fila de espera. Avisamos quando estiver pronto."
+        assert "começar o preparo" not in proj.promise.message.lower()
 
     def test_eta_uses_preparing_timestamp_not_order_creation(self, order):
         from django.utils import timezone
