@@ -398,8 +398,13 @@ def availability_for_sku(
         from shopman.stockman.services.availability import availability_for_sku as _availability_for_sku
 
         from shopman.shop.adapters import stock as stock_adapter
+        from shopman.shop.services import waitlist
 
         scope = stock_adapter.get_channel_scope(channel_ref)
+        if target_date is None:
+            # Fila de espera (WP-P2E): o cardápio promete até o horizonte do
+            # canal. Fila desligada = horizonte é hoje = leitura de sempre.
+            target_date = waitlist.promise_horizon(channel_ref)
 
         def promessa(um_sku: str) -> dict | None:
             return _availability_for_sku(
@@ -450,10 +455,12 @@ def availability_for_skus(skus: list[str], *, channel_ref: str) -> dict[str, dic
         from shopman.stockman.services.availability import availability_for_skus as _availability_for_skus
 
         from shopman.shop.adapters import stock as stock_adapter
+        from shopman.shop.services import waitlist
 
         scope = stock_adapter.get_channel_scope(channel_ref)
         return _availability_for_skus(
             skus,
+            target_date=waitlist.promise_horizon(channel_ref),
             safety_margin=scope["safety_margin"],
             allowed_positions=scope["allowed_positions"],
             excluded_positions=scope.get("excluded_positions"),

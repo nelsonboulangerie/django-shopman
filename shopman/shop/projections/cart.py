@@ -341,10 +341,14 @@ def _availability(
 
         from shopman.shop.adapters import stock as stock_adapter
         from shopman.shop.services import availability as availability_service
+        from shopman.shop.services import waitlist
 
         scope = stock_adapter.get_channel_scope(channel_ref)
         avail_map = availability_for_skus(
             skus,
+            # Fila de espera (WP-P2E): a sacola lê no HORIZONTE de promessa do
+            # canal. Desligada, o horizonte é hoje — a leitura é a de sempre.
+            target_date=waitlist.promise_horizon(channel_ref),
             safety_margin=scope["safety_margin"],
             allowed_positions=scope["allowed_positions"],
             excluded_positions=scope.get("excluded_positions"),
@@ -448,12 +452,23 @@ def _line_availability(
     if avail.get("availability_policy") == "demand_ok" and not avail.get("is_paused", False):
         return True, None
 
+    if avail.get("is_paused", False):
+        # Pausado é decisão do operador, não escassez: nem o próprio hold da
+        # sessão reabre a linha.
+        return False, 0
+
     own_hold = int(own_holds.get(sku, Decimal("0")))
-    ready_physical = int(avail.get("ready_physical", 0) or 0)
-    held_ready = int(avail.get("held_ready", 0) or 0)
-    margin = int(avail.get("safety_margin", 0) or 0)
-    other_holds = max(0, held_ready - own_hold)
-    max_orderable = max(0, ready_physical - other_holds - margin)
+    promisable = avail.get("total_promisable")
+    if promisable is None:
+        return True, None
+    # ``total_promisable`` já é a promessa da POLÍTICA (``stock_only`` →
+    # só o pronto; ``planned_ok`` → pronto + em produção + fornada
+    # planejada dentro do horizonte) e já desconta margem e holds — o da
+    # própria sessão inclusive, por isso ele volta somado. Ler
+    # ``ready_physical`` aqui era contar só a prateleira, e a linha em fila
+    # nascia com máximo 0: o stepper travava no "+" e o checkout bloqueava
+    # junto do selo que prometia a fornada (WP-P2E F1).
+    max_orderable = max(0, int(Decimal(str(promisable))) + own_hold)
     return max_orderable >= qty, max_orderable
 
 
