@@ -470,11 +470,11 @@ useSeoMeta({
                   data-cancellation-info
                 >
                   <p v-if="tracking.cancellation_reason">
-                    <span class="font-medium">{{ tracking.copy.cancelled_reason_title }}:</span>
+                    <span class="font-semibold">{{ tracking.copy.cancelled_reason_title }}:</span>
                     {{ tracking.cancellation_reason }}
                   </p>
                   <p v-if="tracking.refund_status_label">
-                    <span class="font-medium">{{ tracking.copy.refund_title }}:</span>
+                    <span class="font-semibold">{{ tracking.copy.refund_title }}:</span>
                     {{ tracking.refund_status_label }}
                   </p>
                 </div>
