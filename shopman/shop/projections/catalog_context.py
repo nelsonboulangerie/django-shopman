@@ -302,6 +302,39 @@ def listing_price_for_product(product, listing_ref: str) -> int | None:
     return listing_price_map([product.sku], listing_ref, only_published=True, only_sellable=False).get(product.sku)
 
 
+def listing_sellable_map(
+    skus: list[str],
+    listing_ref: str,
+    *,
+    only_published: bool = True,
+) -> dict[str, bool]:
+    """Channel-level sellability by SKU for an active listing.
+
+    Product-level ``is_sellable`` is not enough for storefront cards: a SKU can
+    stay published in a channel while the operator pauses only that surface.
+    Missing rows are intentionally omitted so ad-hoc callers can preserve their
+    existing fallback behavior.
+    """
+    from shopman.offerman.models import ListingItem
+
+    if not skus or not listing_ref:
+        return {}
+
+    filters: dict[str, Any] = {
+        "listing__ref": listing_ref,
+        "listing__is_active": True,
+        "product__sku__in": skus,
+    }
+    if only_published:
+        filters["is_published"] = True
+
+    result: dict[str, bool] = {}
+    for row in ListingItem.objects.filter(**filters).values("product__sku", "is_sellable"):
+        sku = row["product__sku"]
+        result[sku] = result.get(sku, False) or bool(row["is_sellable"])
+    return result
+
+
 def price_q_for_product(product, *, listing_ref: str | None) -> int | None:
     """List price (``_q`` cents) for a product on a channel listing.
 

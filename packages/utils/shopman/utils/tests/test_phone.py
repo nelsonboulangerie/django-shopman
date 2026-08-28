@@ -34,6 +34,12 @@ class TestNormalizePhoneBrazilian:
         """+554330281234 stays the same."""
         assert normalize_phone("+554330281234") == "+554330281234"
 
+    def test_legacy_mobile_8_digit_local_gets_ninth_digit(self):
+        """43 9840-4900 → +5543998404900."""
+        assert normalize_phone("43 9840-4900") == "+5543998404900"
+        assert normalize_phone("+55 (43) 9840-4900") == "+5543998404900"
+        assert normalize_phone("+55 (043) 9840-4900") == "+5543998404900"
+
     def test_sao_paulo_mobile(self):
         """11999887766 → +5511999887766"""
         assert normalize_phone("11999887766") == "+5511999887766"

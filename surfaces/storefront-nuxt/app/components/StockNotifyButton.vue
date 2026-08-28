@@ -26,7 +26,8 @@ const subscribedLabel = computed(() => props.name ? `Avisaremos você quando ${p
 
 const apiPath = useShopmanApiPath()
 const csrfHeaders = useShopmanCsrfHeaders()
-const { isAuthenticated } = useShopSession()
+const { isAuthenticated, publicConfig } = useShopSession()
+const defaultDdd = computed(() => publicConfig.value?.default_ddd || '')
 
 const submitting = ref(false)
 const isSubscribed = ref(!!props.subscribed)
@@ -68,7 +69,7 @@ function onAuthenticatedClick () {
 }
 
 function onAnonymousSubmit () {
-  const normalized = normalizeAuthPhone(phoneInput.value, 'BR')
+  const normalized = normalizeAuthPhone(phoneInput.value, 'BR', defaultDdd.value)
   if (!normalized) {
     phoneError.value = 'Informe um telefone com DDD.'
     return

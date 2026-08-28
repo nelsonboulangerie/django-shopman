@@ -37,6 +37,30 @@ def _is_phone_brazilian(digits: str) -> bool:
     return digits[2] == "9"
 
 
+def _is_legacy_brazilian_mobile_national(digits: str) -> bool:
+    """
+    Detect Brazilian mobile in the pre-9th-digit shape: DDD + 8 digits.
+
+    Landlines keep their 8-digit local number, but an 8-digit local number
+    starting with 9 is a legacy mobile identity and must be repaired before it
+    is used as a WhatsApp recipient.
+    """
+    if len(digits) != 10:
+        return False
+    try:
+        if int(digits[:2]) < _MIN_BR_DDD:
+            return False
+    except ValueError:
+        return False
+    return digits[2] == "9"
+
+
+def _repair_legacy_brazilian_mobile_national(digits: str) -> str:
+    if _is_legacy_brazilian_mobile_national(digits):
+        return f"{digits[:2]}9{digits[2:]}"
+    return digits
+
+
 def _prepare_phone_digits_for_parse(
     digits: str,
     *,
@@ -56,7 +80,14 @@ def _prepare_phone_digits_for_parse(
 
     # Brazilian iOS/autofill sometimes stores +55 0DD ...
     if has_plus and digits.startswith("550") and len(digits) in (13, 14):
-        return f"55{digits[3:]}", True
+        return f"55{_repair_legacy_brazilian_mobile_national(digits[3:])}", True
+
+    if has_plus and digits.startswith("55") and len(digits) in (12, 13):
+        national = digits[2:]
+        if len(national) == 10:
+            repaired = _repair_legacy_brazilian_mobile_national(national)
+            if repaired != national:
+                return f"55{repaired}", True
 
     # A bare 55DD... value in a Brazilian field is DDI 55, not DDD 55.
     # libphonenumber.parse("5543984049009", "BR") otherwise interprets the
@@ -65,12 +96,18 @@ def _prepare_phone_digits_for_parse(
         national = digits[2:]
         if national.startswith("0") and len(national) in (11, 12):
             national = national[1:]
+        national = _repair_legacy_brazilian_mobile_national(national)
         if len(national) in (10, 11):
             return f"55{national}", True
 
     # National trunk prefix: 0DD + number.
     if not has_plus and digits.startswith("0") and len(digits) in (11, 12):
-        return digits[1:], False
+        return _repair_legacy_brazilian_mobile_national(digits[1:]), False
+
+    if not has_plus:
+        repaired = _repair_legacy_brazilian_mobile_national(digits)
+        if repaired != digits:
+            return repaired, False
 
     return digits, has_plus
 

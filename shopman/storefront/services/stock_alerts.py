@@ -51,6 +51,28 @@ def subscribed_skus(*, customer=None, phone: str = "") -> set[str]:
     )
 
 
+def has_pending_for(*, sku: str, customer=None, phone: str = "", alert_type: str = "") -> bool:
+    """True when this customer/contact still has a pending alert for ``sku``."""
+    from django.db.models import Q
+
+    from shopman.storefront.models import StockAlertSubscription
+
+    customer_ref = (getattr(customer, "ref", "") or "").strip()
+    contact = (phone or getattr(customer, "phone", "") or "").strip()
+    if not sku or (not customer_ref and not contact):
+        return False
+
+    qs = StockAlertSubscription.objects.filter(sku=sku, notified_at__isnull=True)
+    if alert_type:
+        qs = qs.filter(alert_type=alert_type)
+    cond = Q()
+    if customer_ref:
+        cond |= Q(customer_ref=customer_ref)
+    if contact:
+        cond |= Q(contact_phone=contact)
+    return qs.filter(cond).exists()
+
+
 def subscribe(
     sku: str,
     *,

@@ -32,32 +32,34 @@ function productRoute (sku: string) {
     </div>
     <UiScrollArea>
       <div class="flex w-max min-w-full gap-3 pb-2">
-        <div class="shop-photo-frame shop-photo-frame-sm w-44 shrink-0 self-start drop-shadow-md">
-        <UiItem variant="outline" size="sm" class="w-full items-stretch gap-3 rounded-none border-0 bg-card p-3">
-          <UiItemHeader>
-            <NuxtLink
-              :to="productRoute(upsell.sku)"
-              class="block w-full rounded-md"
-              :aria-label="`Ver detalhes de ${upsell.name}`"
-            >
-              <UiItemMedia v-if="upsell.image_url" variant="image" class="aspect-[4/3] h-auto w-full rounded-md">
-                <img :src="upsell.image_url" :alt="upsell.name" loading="lazy" decoding="async">
-              </UiItemMedia>
-              <UiItemMedia v-else variant="icon" class="aspect-[4/3] h-auto w-full rounded-md">
-                <Icon name="lucide:image" />
-              </UiItemMedia>
-            </NuxtLink>
-          </UiItemHeader>
-          <UiItemContent class="min-w-0">
-            <UiItemTitle class="w-full truncate">{{ upsell.name }}</UiItemTitle>
-            <UiItemDescription class="line-clamp-1">{{ upsell.price_display }}</UiItemDescription>
-          </UiItemContent>
-          <UiItemFooter class="w-full">
-            <div class="w-full [&>button]:w-full">
-              <CartQuantityAction :meta="meta" :qty="qty" compact add-label="Adicionar" />
-            </div>
-          </UiItemFooter>
-        </UiItem>
+        <div class="w-44 shrink-0 self-start drop-shadow-md">
+          <div class="shop-photo-frame shop-photo-frame-sm">
+            <UiItem variant="outline" size="sm" class="w-full items-stretch gap-3 rounded-none border-0 bg-card p-3">
+              <UiItemHeader>
+                <NuxtLink
+                  :to="productRoute(upsell.sku)"
+                  class="block w-full rounded-none"
+                  :aria-label="`Ver detalhes de ${upsell.name}`"
+                >
+                  <UiItemMedia v-if="upsell.image_url" variant="image" class="aspect-[4/3] h-auto w-full rounded-none">
+                    <img :src="upsell.image_url" :alt="upsell.name" loading="lazy" decoding="async">
+                  </UiItemMedia>
+                  <UiItemMedia v-else variant="icon" class="aspect-[4/3] h-auto w-full rounded-none">
+                    <Icon name="lucide:image" />
+                  </UiItemMedia>
+                </NuxtLink>
+              </UiItemHeader>
+              <UiItemContent class="min-w-0">
+                <UiItemTitle class="w-full truncate">{{ upsell.name }}</UiItemTitle>
+                <UiItemDescription class="line-clamp-1">{{ upsell.price_display }}</UiItemDescription>
+              </UiItemContent>
+              <UiItemFooter class="w-full">
+                <div class="w-full [&>button]:w-full">
+                  <CartQuantityAction :meta="meta" :qty="qty" compact add-label="Adicionar" />
+                </div>
+              </UiItemFooter>
+            </UiItem>
+          </div>
         </div>
       </div>
     </UiScrollArea>

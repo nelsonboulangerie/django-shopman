@@ -3,11 +3,14 @@ import { tileBadge } from '~/presentation/menu'
 import type { CatalogItemProjection, ProductMutationMeta } from '~/types/shopman'
 import { compactUnitWeightLabel } from '~/utils/display'
 
-const props = defineProps<{
+const props = withDefaults(defineProps<{
   item: CatalogItemProjection
-  // Moldura vintage na miniatura (ligada no cardápio; desligada na busca).
+  // Moldura vintage na miniatura. Chamadores podem desligar explicitamente quando
+  // a foto não for tratada como foto de produto.
   framed?: boolean
-}>()
+}>(), {
+  framed: true
+})
 
 const { qtyForSku } = useCartState()
 const meta = computed<ProductMutationMeta>(() => ({
@@ -22,7 +25,7 @@ const badge = computed(() => tileBadge(props.item))
 </script>
 
 <template>
-  <article class="relative flex min-w-0 items-stretch gap-3 py-3" data-product-list-item>
+  <article class="group/product-list relative flex min-w-0 items-stretch gap-3 py-3" data-product-list-item>
     <NuxtLink
       :to="`/produto/${encodeURIComponent(item.sku)}`"
       class="absolute inset-0 z-0 rounded-md"
@@ -43,41 +46,53 @@ const badge = computed(() => tileBadge(props.item))
       </p>
     </div>
 
-    <div class="pointer-events-none relative shrink-0 self-start">
-      <div :class="framed ? 'shop-photo-frame shop-photo-frame-sm drop-shadow-md' : ''">
-        <div
-          class="size-28 overflow-hidden bg-muted"
-          :class="framed ? 'shop-photo-mat-sm' : 'rounded-lg'"
-        >
-          <!-- A sépia (indisponível) vai SÓ na foto, nunca no <div> com a moldura —
-               senão o filtro amarela a borda branca. -->
-          <img
-            v-if="item.image_url"
-            :src="item.image_url"
-            :alt="item.name"
-            loading="lazy"
-            decoding="async"
-            class="size-full object-cover"
-            :class="item.availability === 'unavailable' ? 'shop-photo-unavailable' : ''"
-          >
-          <ProductImageFallback
-            v-else
-            :color="item.category_color"
-            :icon="item.category_icon"
-            :sku="item.sku"
-            fallback-icon="lucide:croissant"
-            icon-class="size-6"
-          />
+    <div class="pointer-events-none relative shrink-0 self-start" :class="framed ? 'shop-photo-outset-sm' : ''">
+      <div :class="framed ? 'drop-shadow-md transition-transform duration-200 group-hover/product-list:-rotate-1 motion-reduce:group-hover/product-list:rotate-0' : ''">
+        <div :class="framed ? 'shop-photo-frame shop-photo-frame-sm' : ''">
+          <div :class="framed ? 'shop-photo-outset-mat-sm' : ''">
+            <div
+              class="size-28 overflow-hidden bg-muted"
+              :class="framed ? '' : 'rounded-lg'"
+            >
+              <!-- A sépia (indisponível) vai SÓ na foto, nunca no <div> com a moldura —
+                   senão o filtro amarela a borda branca. -->
+              <img
+                v-if="item.image_url"
+                :src="item.image_url"
+                :alt="item.name"
+                loading="lazy"
+                decoding="async"
+                class="size-full object-cover"
+                :class="item.availability === 'unavailable' ? 'shop-photo-unavailable' : ''"
+              >
+              <ProductImageFallback
+                v-else
+                :color="item.category_color"
+                :icon="item.category_icon"
+                :sku="item.sku"
+                fallback-icon="lucide:croissant"
+                icon-class="size-6"
+              />
+            </div>
+          </div>
         </div>
       </div>
       <!-- Indisponível: etiqueta de VIDRO translúcida em tokens da marca (cream + marrom),
            harmonizando com a foto em sépia. Centralizada no topo, descolada da borda. -->
-      <div v-if="item.availability === 'unavailable'" class="absolute inset-x-0 top-3 z-10 flex justify-center">
+      <div
+        v-if="item.availability === 'unavailable'"
+        class="absolute z-10 flex justify-center"
+        :class="framed ? 'shop-photo-control-top-sm' : 'inset-x-0 top-3'"
+      >
         <UiBadge class="max-w-full border-transparent bg-background/75 font-normal text-foreground shadow-sm backdrop-blur-sm">Indisponível</UiBadge>
       </div>
       <!-- Notificável: pill "Me avise"/"Anotado" ocupa TODA a largura da foto (centrado),
            no rodapé — sem extravasar. -->
-      <div v-if="item.is_notifiable" class="pointer-events-auto absolute inset-x-1 bottom-1 z-10">
+      <div
+        v-if="item.is_notifiable"
+        class="pointer-events-auto absolute z-10"
+        :class="framed ? 'shop-photo-control-pill-sm' : 'inset-x-1 bottom-1'"
+      >
         <StockNotifyButton
           :sku="item.sku"
           :name="item.name"
@@ -86,7 +101,11 @@ const badge = computed(() => tileBadge(props.item))
         />
       </div>
       <!-- Disponível: "+"/pílula de quantidade na quina. -->
-      <div v-else-if="item.availability !== 'unavailable'" class="pointer-events-auto absolute bottom-1 right-1 z-10">
+      <div
+        v-else-if="item.availability !== 'unavailable'"
+        class="pointer-events-auto absolute z-10"
+        :class="framed ? 'shop-photo-control-bottom-sm' : 'bottom-1 right-1'"
+      >
         <CartQuantityAction
           :meta="meta"
           :qty="currentQty"

@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import json
 import logging
+from functools import lru_cache
 from typing import TYPE_CHECKING
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlencode
@@ -64,10 +65,65 @@ def _manychat_failure_message(data: dict) -> str:
 
 
 def _lookup_phone_values(phone: str) -> tuple[str, ...]:
-    digits = phone.lstrip("+")
-    if digits and digits != phone:
-        return phone, digits
-    return (phone,)
+    values: list[str] = []
+
+    def add(value: str) -> None:
+        value = (value or "").strip()
+        if value and value not in values:
+            values.append(value)
+        digits = value.lstrip("+")
+        if digits and digits != value and digits not in values:
+            values.append(digits)
+
+    add(phone)
+    try:
+        from shopman.utils.phone import normalize_phone
+
+        add(normalize_phone(phone))
+    except Exception:
+        logger.debug("Manychat resolver: phone variant normalization failed", exc_info=True)
+    return tuple(values)
+
+
+def _canonical_phone(phone: str) -> str:
+    try:
+        from shopman.utils.phone import normalize_phone
+
+        return normalize_phone(phone) or phone
+    except Exception:
+        logger.debug("Manychat resolver: phone normalization failed", exc_info=True)
+        return phone
+
+
+@lru_cache(maxsize=16)
+def _custom_field_name_by_id(api_token: str, field_id: str) -> str:
+    if not api_token or not field_id:
+        return ""
+    request = Request(f"{_API_BASE}/page/getCustomFields", headers={
+        "Authorization": f"Bearer {api_token}",
+        "Accept": "application/json",
+    })
+    try:
+        with urlopen(request, timeout=_API_TIMEOUT) as response:
+            data = json.loads(response.read().decode("utf-8"))
+            if data.get("status") != "success":
+                logger.warning(
+                    "Manychat resolver: custom fields lookup failed: %s",
+                    _manychat_failure_message(data),
+                )
+                return ""
+            for field in data.get("data") or []:
+                if str(field.get("id")) == str(field_id):
+                    return str(field.get("name") or "").strip()
+    except HTTPError as e:
+        logger.warning(
+            "Manychat resolver: custom fields HTTP error %d: %s",
+            e.code,
+            _read_http_error_body(e),
+        )
+    except (URLError, ValueError, Exception):
+        logger.debug("Manychat resolver: custom fields lookup failed", exc_info=True)
+    return ""
 
 
 class ManychatSubscriberResolver:
@@ -92,15 +148,25 @@ class ManychatSubscriberResolver:
         Returns:
             Manychat subscriber_id (int) ou None se não encontrado.
         """
+        recipient = (recipient or "").strip()
+        if not recipient:
+            return None
         if recipient.isdigit():
             return int(recipient)
+        original_recipient = recipient
+        if recipient.startswith("+"):
+            recipient = _canonical_phone(recipient)
 
         customer = cls._find_customer(recipient)
+        if customer is None and original_recipient != recipient:
+            customer = cls._find_customer(original_recipient)
 
         # Fast path: customer exists and has MANYCHAT identifier
         if customer:
             subscriber_id = cls._get_manychat_id(customer)
             if subscriber_id is not None:
+                if recipient.startswith("+"):
+                    cls._mirror_whatsapp_id_custom_field_api(subscriber_id, recipient)
                 return subscriber_id
 
         # API fallback: lookup subscriber by the mirrored WhatsApp ID before
@@ -110,6 +176,8 @@ class ManychatSubscriberResolver:
             subscriber_id = cls._lookup_by_whatsapp_id_custom_field_api(recipient)
             if subscriber_id is None:
                 subscriber_id = cls._lookup_by_phone_api(recipient)
+                if subscriber_id is not None:
+                    cls._mirror_whatsapp_id_custom_field_api(subscriber_id, recipient)
             if subscriber_id is None:
                 subscriber_id = cls._create_whatsapp_subscriber_api(recipient)
             if subscriber_id is not None and customer:
@@ -352,6 +420,7 @@ class ManychatSubscriberResolver:
                             subscriber_id,
                             phone[:8],
                         )
+                        cls._mirror_whatsapp_id_custom_field_api(subscriber_id, phone)
                         return subscriber_id
                     logger.warning(
                         "Manychat resolver: createSubscriber returned no id for phone %s",
@@ -378,6 +447,73 @@ class ManychatSubscriberResolver:
             )
 
         return None
+
+    @classmethod
+    def _mirror_whatsapp_id_custom_field_api(cls, subscriber_id: int, phone: str) -> bool:
+        """Persist WhatsApp ID into the configured custom field for future lookup."""
+        from django.conf import settings
+
+        api_token = getattr(settings, "MANYCHAT_API_TOKEN", "")
+        mc_config = getattr(settings, "SHOPMAN_MANYCHAT", {}) or {}
+        field_name = str(
+            getattr(settings, "MANYCHAT_WHATSAPP_ID_FIELD_NAME", "")
+            or mc_config.get("whatsapp_id_field_name")
+            or ""
+        ).strip()
+        field_id = str(
+            getattr(settings, "MANYCHAT_WHATSAPP_ID_FIELD_ID", "")
+            or mc_config.get("whatsapp_id_field_id")
+            or ""
+        ).strip()
+        if not field_name and field_id:
+            field_name = _custom_field_name_by_id(api_token, field_id)
+        if not api_token or not field_name:
+            return False
+
+        payload = {
+            "subscriber_id": str(subscriber_id),
+            "field_name": field_name,
+            "field_value": _canonical_phone(phone).lstrip("+"),
+        }
+        request = Request(
+            f"{_API_BASE}/subscriber/setCustomFieldByName",
+            data=json.dumps(payload).encode("utf-8"),
+            headers={
+                "Authorization": f"Bearer {api_token}",
+                "Content-Type": "application/json",
+                "Accept": "application/json",
+            },
+            method="POST",
+        )
+
+        try:
+            with urlopen(request, timeout=_API_TIMEOUT) as response:
+                data = json.loads(response.read().decode("utf-8"))
+                if data.get("status") == "success":
+                    logger.info(
+                        "Manychat resolver: mirrored WhatsApp ID for subscriber %s",
+                        subscriber_id,
+                    )
+                    return True
+                logger.warning(
+                    "Manychat resolver: WhatsApp ID mirror failed for subscriber %s: %s",
+                    subscriber_id,
+                    _manychat_failure_message(data),
+                )
+        except HTTPError as e:
+            logger.warning(
+                "Manychat resolver: WhatsApp ID mirror HTTP error %d for subscriber %s: %s",
+                e.code,
+                subscriber_id,
+                _read_http_error_body(e),
+            )
+        except (URLError, ValueError, Exception):
+            logger.debug(
+                "Manychat resolver: WhatsApp ID mirror call failed for subscriber %s",
+                subscriber_id,
+                exc_info=True,
+            )
+        return False
 
     @classmethod
     def _persist_manychat_id(cls, customer: Customer, subscriber_id: int) -> None:

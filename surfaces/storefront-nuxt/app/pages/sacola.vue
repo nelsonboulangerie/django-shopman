@@ -199,17 +199,22 @@ useSeoMeta({
                 class="flex gap-3 border-b py-3"
                 data-cart-line-item
               >
-                <div class="size-20 shrink-0 overflow-hidden rounded-lg bg-muted" :class="!line.is_available && !holdFor(line) ? 'opacity-60 grayscale' : ''">
-                  <img
-                    v-if="line.image_url"
-                    :src="line.image_url"
-                    :alt="line.name"
-                    loading="lazy"
-                    decoding="async"
-                    class="size-full object-cover"
-                  >
-                  <div v-else class="flex size-full items-center justify-center text-muted-foreground">
-                    <Icon name="lucide:croissant" class="size-5" />
+                <div class="size-24 shrink-0 self-start drop-shadow-sm transition-transform duration-200 hover:-rotate-1 motion-reduce:hover:rotate-0">
+                  <div class="shop-photo-frame shop-photo-frame-sm size-full">
+                    <div class="shop-photo-mat-sm size-full overflow-hidden bg-muted">
+                      <img
+                        v-if="line.image_url"
+                        :src="line.image_url"
+                        :alt="line.name"
+                        loading="lazy"
+                        decoding="async"
+                        class="size-full object-cover"
+                        :class="!line.is_available && !holdFor(line) ? 'shop-photo-unavailable' : ''"
+                      >
+                      <div v-else class="flex size-full items-center justify-center text-muted-foreground" :class="!line.is_available && !holdFor(line) ? 'opacity-60' : ''">
+                        <Icon name="lucide:croissant" class="size-5" />
+                      </div>
+                    </div>
                   </div>
                 </div>
 

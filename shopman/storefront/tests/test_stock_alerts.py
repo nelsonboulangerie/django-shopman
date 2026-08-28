@@ -8,6 +8,7 @@ from __future__ import annotations
 from unittest.mock import MagicMock, patch
 
 import pytest
+from django.utils import timezone
 from shopman.offerman.models import Product
 
 from shopman.storefront.models import StockAlertSubscription
@@ -151,6 +152,22 @@ def test_endpoint_anonymous_subscribes(client):
     assert StockAlertSubscription.objects.filter(sku=p.sku, notified_at__isnull=True).exists()
 
 
+def test_endpoint_repairs_legacy_mobile_and_persists_pending_session_marker(client):
+    p = _publish(sku="SKU-LEGACY-PHONE")
+    resp = client.post(f"/api/v1/availability/{p.sku}/notify/", {"phone": "(43) 9840-4900"})
+    assert resp.status_code == 200
+    sub = StockAlertSubscription.objects.get(sku=p.sku)
+    assert sub.contact_phone == "+5543998404900"
+    assert client.session.get("stock_alert_subscriptions") == [
+        {
+            "sku": p.sku,
+            "alert_type": StockAlertSubscription.AlertType.STOCK_BACK,
+            "contact_phone": "+5543998404900",
+        }
+    ]
+    assert "stock_alert_skus" not in client.session
+
+
 def test_endpoint_requires_phone_when_anonymous(client):
     p = _publish()
     resp = client.post(f"/api/v1/availability/{p.sku}/notify/", {})
@@ -160,6 +177,31 @@ def test_endpoint_requires_phone_when_anonymous(client):
 def test_endpoint_404_for_unknown_sku(client):
     resp = client.post("/api/v1/availability/NOPE/notify/", {"phone": PHONE})
     assert resp.status_code == 404
+
+
+def test_anonymous_session_marker_only_counts_while_subscription_is_pending(rf):
+    from django.contrib.sessions.middleware import SessionMiddleware
+
+    from shopman.storefront.presentation.catalog import _notify_subscribed_skus
+
+    sub = stock_alerts.subscribe("SKU-PENDING-MARK", phone=PHONE)
+    request = rf.get("/")
+    SessionMiddleware(lambda request: None).process_request(request)
+    request.session["stock_alert_skus"] = ["SKU-LEGACY-MARK"]
+    request.session["stock_alert_subscriptions"] = [
+        {
+            "sku": "SKU-PENDING-MARK",
+            "alert_type": StockAlertSubscription.AlertType.STOCK_BACK,
+            "contact_phone": PHONE,
+        }
+    ]
+
+    assert _notify_subscribed_skus(request) == {"SKU-PENDING-MARK"}
+
+    sub.notified_at = timezone.now()
+    sub.save(update_fields=["notified_at"])
+
+    assert _notify_subscribed_skus(request) == set()
 
 
 # ── trigger (Move receiver) ─────────────────────────────────────────
