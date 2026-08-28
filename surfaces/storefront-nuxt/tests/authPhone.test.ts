@@ -6,6 +6,7 @@ describe('auth phone payload', () => {
     expect(normalizeAuthPhone('43 98404-9009', 'BR')).toBe('+5543984049009')
     expect(normalizeAuthPhone('(043) 98404-9009', 'BR')).toBe('+5543984049009')
     expect(normalizeAuthPhone('+55 (43) 98404-9009', 'BR')).toBe('+5543984049009')
+    expect(normalizeAuthPhone('(43) 9840-4900', 'BR')).toBe('+5543998404900')
   })
 
   it('preserves explicit international numbers', () => {
@@ -57,6 +58,11 @@ describe('default DDD (Shop.default_ddd) — S2/S4', () => {
   it('assumes the default DDD when a BR number has none (9-digit mobile)', () => {
     expect(normalizeAuthPhone('98404-9009', 'BR', '43')).toBe('+5543984049009')
     expect(normalizeAuthPhone('984049009', 'BR', '43')).toBe('+5543984049009')
+  })
+
+  it('repairs DDD-less legacy mobile with the default DDD', () => {
+    expect(normalizeAuthPhone('9840-4900', 'BR', '43')).toBe('+5543998404900')
+    expect(displayBrazilianPhone('9840-4900', '43')).toBe('(43) 99840-4900')
   })
 
   it('assumes the default DDD for an 8-digit landline', () => {

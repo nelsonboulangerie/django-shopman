@@ -138,15 +138,21 @@ class StockAlertSubscribeView(APIView):
                 {"detail": "Não foi possível registrar o aviso."},
                 status=status.HTTP_400_BAD_REQUEST,
             )
-        # Persiste o estado do sino p/ anônimo: marca o SKU na sessão Django (a mesma
-        # que serve o cardápio/PDP). Logado persiste via customer_ref na projeção.
+        # Persiste o estado do sino p/ anônimo com contato + SKU. O marcador
+        # legado guardava só o SKU e ficava preso depois que o aviso era enviado.
         session = getattr(request, "session", None)
         if session is not None:
-            marked = session.get("stock_alert_skus")
+            session.pop("stock_alert_skus", None)
+            marked = session.get("stock_alert_subscriptions")
             marked = list(marked) if isinstance(marked, (list, tuple)) else []
-            if sku not in marked:
-                marked.append(sku)
-                session["stock_alert_skus"] = marked
+            marker = {
+                "sku": sub.sku,
+                "alert_type": sub.alert_type,
+                "contact_phone": sub.contact_phone,
+            }
+            if marker not in marked:
+                marked.append(marker)
+                session["stock_alert_subscriptions"] = marked
         return Response({"ok": True})
 
 

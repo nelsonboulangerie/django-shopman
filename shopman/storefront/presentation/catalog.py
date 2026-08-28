@@ -427,6 +427,10 @@ def _build_items(
     # Batch: listing prices.
     price_map = catalog_context.listing_price_map(skus, channel_ref)
 
+    # Batch: channel-level commercial state. Product.is_sellable is global; a
+    # ListingItem can pause only the web surface while keeping the card visible.
+    listing_sellable = catalog_context.listing_sellable_map(skus, channel_ref)
+
     # Batch: availability for the storefront scope.
     avail_map = _batch_availability(skus, channel_ref)
 
@@ -477,9 +481,10 @@ def _build_items(
         effective_q = price.final_unit_price_q
 
         raw_avail = avail_map.get(p.sku)
+        effective_is_sellable = p.is_sellable and listing_sellable.get(p.sku, True)
         availability = _resolve_availability(
             raw_avail,
-            is_sellable=p.is_sellable,
+            is_sellable=effective_is_sellable,
             low_stock_threshold=low_stock_threshold,
         )
         avail_label = availability_label(availability)
@@ -491,9 +496,9 @@ def _build_items(
         # Pausado = decisão do operador: produto publicado (aparece no cardápio)
         # mas não vendável, ou stock marcado como pausado. Distingue-se do esgotado
         # honesto (que habilita "Me avise"). Espelha catalog_context (`or not is_sellable`).
-        is_paused = (not p.is_sellable) or bool(raw_avail and raw_avail.get("is_paused"))
+        is_paused = (not effective_is_sellable) or bool(raw_avail and raw_avail.get("is_paused"))
         is_notifiable = (
-            availability == Availability.UNAVAILABLE and p.is_sellable and not is_paused
+            availability == Availability.UNAVAILABLE and effective_is_sellable and not is_paused
         )
         available_qty: int | None = None
         if raw_avail is not None and not raw_avail.get("is_paused", False):
@@ -738,8 +743,8 @@ def _favorite_skus(request: HttpRequest | None) -> set[str]:
 def _notify_subscribed_skus(request: HttpRequest | None) -> set[str]:
     """SKUs com 'Me avise' já pedido por este viewer — persiste o estado do sino.
 
-    Logado: por customer_ref/telefone da conta. Anônimo: SKUs gravados na sessão
-    Django pelo endpoint de inscrição (mesma sessão que serve o cardápio).
+    Logado: por customer_ref/telefone da conta. Anônimo: contato + SKU gravados
+    na sessão, sempre revalidados contra assinaturas pendentes.
     """
     if request is None:
         return set()
@@ -752,9 +757,16 @@ def _notify_subscribed_skus(request: HttpRequest | None) -> set[str]:
         if customer is not None:
             skus |= stock_alerts.subscribed_skus(customer=customer)
         session = getattr(request, "session", None)
-        session_skus = session.get("stock_alert_skus") if session is not None else None
-        if isinstance(session_skus, (list, tuple, set)):
-            skus |= {str(s) for s in session_skus}
+        session_marks = session.get("stock_alert_subscriptions") if session is not None else None
+        if isinstance(session_marks, (list, tuple)):
+            for mark in session_marks:
+                if not isinstance(mark, dict):
+                    continue
+                sku = str(mark.get("sku") or "").strip()
+                phone = str(mark.get("contact_phone") or "").strip()
+                alert_type = str(mark.get("alert_type") or "").strip()
+                if stock_alerts.has_pending_for(sku=sku, phone=phone, alert_type=alert_type):
+                    skus.add(sku)
         return skus
     except Exception:
         logger.debug("catalog._notify_subscribed_skus failed", exc_info=True)

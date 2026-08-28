@@ -21,7 +21,10 @@ from urllib.parse import parse_qs, urlparse
 import pytest
 from django.test import override_settings
 from shopman.guestman.contrib.identifiers.models import CustomerIdentifier, IdentifierType
-from shopman.guestman.contrib.manychat.resolver import ManychatSubscriberResolver
+from shopman.guestman.contrib.manychat.resolver import (
+    ManychatSubscriberResolver,
+    _custom_field_name_by_id,
+)
 from shopman.guestman.models import Customer
 
 # ═══════════════════════════════════════════════════════════════════
@@ -153,6 +156,41 @@ class TestResolveByPhone:
         result = ManychatSubscriberResolver.resolve("+5543999887766")
         assert result == 987654321
 
+    @override_settings(
+        MANYCHAT_API_TOKEN="test-token",
+        MANYCHAT_WHATSAPP_ID_FIELD_NAME="whatsapp_id",
+    )
+    def test_phone_resolved_from_db_also_mirrors_whatsapp_id(self, customer_with_manychat):
+        """Existing CustomerIdentifier(MANYCHAT) subscribers get lookup mirror backfilled."""
+        captured = []
+
+        def fake_urlopen(request, timeout):
+            captured.append({
+                "url": request.full_url,
+                "method": request.get_method(),
+                "body": json.loads(request.data.decode("utf-8")),
+                "timeout": timeout,
+            })
+            return _FakeManychatResponse({"status": "success", "data": {}})
+
+        with patch(
+            "shopman.guestman.contrib.manychat.resolver.urlopen",
+            side_effect=fake_urlopen,
+        ):
+            result = ManychatSubscriberResolver.resolve("+5543999887766")
+
+        assert result == 987654321
+        assert captured == [{
+            "url": "https://api.manychat.com/fb/subscriber/setCustomFieldByName",
+            "method": "POST",
+            "body": {
+                "subscriber_id": "987654321",
+                "field_name": "whatsapp_id",
+                "field_value": "5543999887766",
+            },
+            "timeout": 10,
+        }]
+
     def test_phone_not_found_returns_none(self):
         """Unknown phone should return None."""
         result = ManychatSubscriberResolver.resolve("+5543000000000")
@@ -238,6 +276,43 @@ class TestResolveByPhone:
             "field_value": ["5543984049009"],
         }
 
+    @override_settings(
+        MANYCHAT_API_TOKEN="test-token",
+        MANYCHAT_WHATSAPP_ID_FIELD_ID="14436572",
+    )
+    def test_legacy_mobile_is_repaired_before_whatsapp_id_lookup(self):
+        """Legacy BR mobile shape resolves against the current WhatsApp ID."""
+        captured = []
+
+        def fake_urlopen(request, timeout):
+            captured.append({
+                "url": request.full_url,
+                "method": request.get_method(),
+                "timeout": timeout,
+            })
+            query = parse_qs(urlparse(request.full_url).query)
+            if query.get("field_value") == ["5543998404900"]:
+                return _FakeManychatResponse({
+                    "status": "success",
+                    "data": [{"id": 456789123}],
+                })
+            return _FakeManychatResponse({"status": "success", "data": []})
+
+        with patch(
+            "shopman.guestman.contrib.manychat.resolver.urlopen",
+            side_effect=fake_urlopen,
+        ):
+            result = ManychatSubscriberResolver.resolve("+554398404900")
+
+        assert result == 456789123
+        looked_up_values = [
+            parse_qs(urlparse(call["url"]).query).get("field_value", [""])[0]
+            for call in captured
+            if call["url"].endswith("findByCustomField")
+            or "/subscriber/findByCustomField?" in call["url"]
+        ]
+        assert "5543998404900" in looked_up_values
+
     @override_settings(MANYCHAT_API_TOKEN="test-token")
     def test_unknown_phone_creates_whatsapp_subscriber(self):
         """Unknown WhatsApp contacts are bootstrapped via createSubscriber."""
@@ -279,6 +354,57 @@ class TestResolveByPhone:
         assert captured[2]["url"].endswith("/fb/subscriber/createSubscriber")
         assert captured[2]["body"] == {
             "whatsapp_phone": "+5543984049009",
+        }
+
+    @override_settings(
+        MANYCHAT_API_TOKEN="test-token",
+        MANYCHAT_WHATSAPP_ID_FIELD_ID="14436572",
+    )
+    def test_created_whatsapp_subscriber_gets_mirrored_whatsapp_id(self):
+        """New anonymous WhatsApp contacts get the lookup mirror populated."""
+        _custom_field_name_by_id.cache_clear()
+        captured = []
+
+        def fake_urlopen(request, timeout):
+            captured.append({
+                "url": request.full_url,
+                "method": request.get_method(),
+                "body": (
+                    json.loads(request.data.decode("utf-8"))
+                    if getattr(request, "data", None)
+                    else None
+                ),
+                "timeout": timeout,
+            })
+            if request.full_url.endswith("/page/getCustomFields"):
+                return _FakeManychatResponse({
+                    "status": "success",
+                    "data": [{"id": 14436572, "name": "w18335622_whatsapp_id"}],
+                })
+            if request.full_url.endswith("/subscriber/createSubscriber"):
+                return _FakeManychatResponse({
+                    "status": "success",
+                    "data": {"id": 987123},
+                })
+            if request.full_url.endswith("/subscriber/setCustomFieldByName"):
+                return _FakeManychatResponse({"status": "success", "data": {}})
+            return _FakeManychatResponse({"status": "success", "data": []})
+
+        with patch(
+            "shopman.guestman.contrib.manychat.resolver.urlopen",
+            side_effect=fake_urlopen,
+        ):
+            result = ManychatSubscriberResolver.resolve("+5543984049009")
+
+        assert result == 987123
+        mirror_body = next(
+            call["body"] for call in captured
+            if call["url"].endswith("/subscriber/setCustomFieldByName")
+        )
+        assert mirror_body == {
+            "subscriber_id": "987123",
+            "field_name": "w18335622_whatsapp_id",
+            "field_value": "5543984049009",
         }
 
 

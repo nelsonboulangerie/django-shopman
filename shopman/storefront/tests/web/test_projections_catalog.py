@@ -498,6 +498,29 @@ class TestAvailabilityNotifiability:
         )
         assert item.is_notifiable is False
 
+    def test_listing_paused_is_unavailable_even_with_stock(self, channel, listing):
+        product = self._product("NOTIF-LISTING-PA")
+        ListingItem.objects.create(
+            listing=listing,
+            product=product,
+            price_q=product.base_price_q,
+            is_published=True,
+            is_sellable=False,
+        )
+        item = self._build(
+            product.sku,
+            {
+                "availability_policy": "planned_ok",
+                "total_promisable": Decimal("50"),
+                "is_planned": False,
+            },
+            channel,
+        )
+        assert item.availability == Availability.UNAVAILABLE
+        assert item.can_add_to_cart is False
+        assert item.is_paused is True
+        assert item.is_notifiable is False
+
 
 # ──────────────────────────────────────────────────────────────────────
 # Category presentation (Collection.metadata → card-fallback sem foto)
