@@ -940,6 +940,21 @@ describe('surface UX guardrails', () => {
     expect(home).toContain("rel: 'canonical'")
   })
 
+  it('keeps block-level badges out of <p> (hydration-safe content model)', () => {
+    // `<p>` é conteúdo de fraseado: um `<div>` (ex.: UiBadge) dentro de `<p>` é
+    // HTML inválido — o parser do browser auto-fecha o `<p>` no bloco e o vdom
+    // do Vue espera o aninhado → hydration mismatch (revisão alpha 28/08, O7,
+    // /conta/enderecos, badge "Padrão" em endereço default). O alvo para o
+    // guardrail é o bloco dentro do `<p>` (lookahead temperado para não cruzar
+    // o `</p>` e dar falso positivo em `<p>…</p><div>`).
+    const blockInP = /<p\b[^>]*>(?:(?!<\/p>)[\s\S])*<(?:div|UiBadge)\b/
+    const offenders = surfaceVueFiles
+      .filter(file => blockInP.test(read(file)))
+      .map(file => relative(root, join(root, file)))
+
+    expect(offenders).toEqual([])
+  })
+
   it('keeps badges discreet and reserves success tone for explicit alerts', () => {
     const offenders = surfaceVueFiles
       .filter(file => /<UiBadge[^>]*variant="success"/.test(read(file)))
