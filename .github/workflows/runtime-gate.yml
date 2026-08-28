@@ -6,10 +6,13 @@ name: Runtime Gate
   # Sem este gatilho os checks obrigatórios nunca rodam no merge group
   # e a fila trava para sempre, esperando algo que não vai acontecer.
   merge_group:
-  push:
-    branches:
-      - main
-      - master
+  # Sem gatilho de `push` no main: a fila de merge já testou EXATAMENTE a árvore
+  # que pousa, e a proteção do branch não deixa nada chegar por fora (force-push
+  # bloqueado, enforce_admins ligado, checks obrigatórios exigidos). Rodar de novo
+  # depois do merge era a terceira passagem da mesma suíte no mesmo código:
+  # gastava runner e disputava fila com os PRs de verdade, sem provar nada.
+  # ⚠️ Vale para os GATES. O `deploy-images.yml` mantém `push: main` de propósito:
+  # lá o push É o deploy (publica a tag no DOCR).
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.head_ref || github.ref_name }}
