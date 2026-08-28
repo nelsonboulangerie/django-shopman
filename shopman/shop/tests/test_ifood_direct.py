@@ -833,3 +833,73 @@ def test_status_handler_skips_callback_for_ifood_cancelled():
             sender=None, order=order, event_type="status_changed", actor="system:ifood"
         )
     DirectiveMock.objects.create.assert_not_called()
+
+
+def test_action_for_status_maps_lifecycle():
+    """Cada status interno dispara a ação correta no iFood (P1-D)."""
+    from shopman.shop.services import ifood_callbacks
+
+    assert ifood_callbacks.action_for_status("accepted") == "confirm"
+    assert ifood_callbacks.action_for_status("ready") == "readyToPickup"
+    assert ifood_callbacks.action_for_status("dispatched") == "dispatch"
+    assert ifood_callbacks.action_for_status("cancelled") == "requestCancellation"
+    assert ifood_callbacks.action_for_status("new") is None
+
+
+def test_resolve_cancellation_code_reason_mapping_and_fallback():
+    """Motivo do Gestor → cancellationCode configurado; sem mapeamento, default."""
+    from shopman.shop.services import ifood_callbacks
+
+    with override_settings(SHOPMAN_IFOOD={
+        **IFOOD_CFG,
+        "cancellation_reason_codes": {"Item indisponível no momento": "300"},
+        "cancellation_default_code": "999",
+    }):
+        assert ifood_callbacks.resolve_cancellation_code("Item indisponível no momento") == "300"
+        assert ifood_callbacks.resolve_cancellation_code("Fora do horário de atendimento") == "999"
+        assert ifood_callbacks.resolve_cancellation_code("") == "999"
+
+
+def test_send_for_status_cancellation_uses_resolved_code():
+    """requestCancellation leva o code resolvido do motivo (não o default cego)."""
+    from shopman.shop.services import ifood_callbacks
+
+    with override_settings(SHOPMAN_IFOOD={
+        **IFOOD_CFG,
+        "cancellation_reason_codes": {"Sem um dos ingredientes hoje": "301"},
+        "cancellation_default_code": "999",
+    }):
+        with patch.object(ifood_callbacks, "request_cancellation") as rc:
+            sent = ifood_callbacks.send_for_status(
+                "ifd-uuid",
+                "cancelled",
+                cancellation_reason="Sem um dos ingredientes hoje",
+            )
+        assert sent is True
+        rc.assert_called_once_with(
+            "ifd-uuid", code="301", description="Sem um dos ingredientes hoje"
+        )
+
+
+def test_status_handler_enqueues_confirm_callback():
+    """Aceite de pedido iFood enfileira o callback confirm (P1-D)."""
+    from shopman.shop.handlers import ifood_status
+
+    order = MagicMock()
+    order.channel_ref = "ifood"
+    order.status = "accepted"
+    order.data = {}
+    order.external_ref = "ifd-uuid"
+    order.ref = "WEB-IFD-2"
+    with (
+        patch("shopman.shop.handlers.ifood_status.Directive") as D,
+        patch("shopman.shop.directives.create_deduped", return_value=object()) as cd,
+    ):
+        D.objects.filter.return_value.exists.return_value = False
+        ifood_status.on_order_status_changed(
+            sender=None, order=order, event_type="status_changed", actor="admin"
+        )
+    cd.assert_called_once()
+    payload = cd.call_args.kwargs["payload"]
+    assert payload["status"] == "accepted"
+    assert payload["ifood_order_id"] == "ifd-uuid"
