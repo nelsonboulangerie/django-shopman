@@ -95,6 +95,7 @@ python manage.py qa_scenarios --arm sold_out      # arma só um
 python manage.py qa_scenarios --arm sold_out=BF   # ... num SKU escolhido
 python manage.py qa_scenarios --restock BF        # repõe → dispara o "Avise-me"
 python manage.py qa_scenarios --reset             # devolve tudo ao alvo do seed
+python manage.py qa_scenarios --reset BF          # ... incluindo um SKU pausado à mão
 ```
 
 | Estado | Como | O que aparece na loja |
@@ -107,9 +108,12 @@ python manage.py qa_scenarios --reset             # devolve tudo ao alvo do seed
 
 Os estados são armados pela **mesma função** que o perfil `qa` usa
 (`seed.apply_storefront_state`) — o cenário testado à mão é o cenário que a
-suíte afirma. O relatório fecha toda execução, com a coluna "amanhã" separando
-`sold_out` de `planned` (os dois são `unavailable` com zero pronto) e a lista de
-avisos pendentes com telefone mascarado.
+suíte afirma. O relatório fecha toda execução — sobre os SKUs padrão **e** sobre o que aquela
+execução mirou —, com a coluna "amanhã" separando `sold_out` de `planned` (os
+dois são `unavailable` com zero pronto) e a lista de avisos pendentes com
+telefone mascarado. O `--reset` reencontra sozinho todo SKU que o comando já
+mexeu (rastro no `reason` do `Move`); só a **pausa** precisa do SKU nomeado,
+porque pausar não gera movimento de estoque.
 
 ⚠️ `--restock` é um `Move` de entrada de verdade, igual ao que a fornada faz:
 **quem estiver inscrito recebe a mensagem no telefone que informou**. É esse o

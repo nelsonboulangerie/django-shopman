@@ -7,6 +7,7 @@ pela projeção do cardápio, não pelo estoque cru.
 """
 from __future__ import annotations
 
+from io import StringIO
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -21,6 +22,8 @@ from shopman.storefront.services import stock_alerts
 pytestmark = pytest.mark.django_db
 
 PHONE = "+5543999990001"
+#: Um SKU que NÃO é alvo padrão de nenhum cenário — o caso do `--arm estado=SKU`.
+FORA_DA_LISTA = "BF"
 
 
 @pytest.fixture
@@ -40,7 +43,7 @@ def cenario(db, listing, vitrine):
     from shopman.stockman import stock
 
     produtos = {}
-    for sku in sorted(set(DEFAULT_SKUS.values())):
+    for sku in sorted(set(DEFAULT_SKUS.values()) | {FORA_DA_LISTA}):
         produto = Product.objects.create(
             sku=sku, name=f"Produto {sku}", base_price_q=1000,
             is_published=True, is_sellable=True,
@@ -58,7 +61,7 @@ def _items():
     return {
         item.sku: item
         for item in build_catalog_items_for_skus(
-            sorted(set(DEFAULT_SKUS.values())), channel_ref="web"
+            sorted(set(DEFAULT_SKUS.values()) | {FORA_DA_LISTA}), channel_ref="web"
         )
     }
 
@@ -145,7 +148,7 @@ def test_restock_refuses_a_non_positive_quantity(cenario):
 
 def test_reset_puts_every_sku_back_on_sale(cenario):
     call_command("qa_scenarios", arm=[])
-    call_command("qa_scenarios", reset=True)
+    call_command("qa_scenarios", reset=[])
 
     items = _items()
     assert items[DEFAULT_SKUS["paused"]].is_paused is False
@@ -161,3 +164,39 @@ def test_refuses_to_run_in_production(cenario, settings):
     settings.SHOPMAN_ENVIRONMENT = "production"
     with pytest.raises(CommandError, match="Recusando qa_scenarios em produção"):
         call_command("qa_scenarios", arm=[])
+
+
+# ── o relatório fecha sobre o que ESTA execução mirou ────────────────
+
+
+def test_report_covers_the_sku_you_armed(cenario):
+    out = StringIO()
+    call_command("qa_scenarios", arm=[f"sold_out={FORA_DA_LISTA}"], stdout=out)
+
+    linhas = out.getvalue().splitlines()
+    alvo = [ln for ln in linhas if ln.strip().startswith(FORA_DA_LISTA)]
+    # Armar num SKU escolhido e receber um relatório que não o menciona é pior
+    # que não relatar nada.
+    assert alvo, out.getvalue()
+    assert "sold_out" in alvo[-1]
+    # O SKU padrão que perdeu o posto continua na lista, sem rótulo de cenário.
+    padrao = [ln for ln in linhas if ln.strip().startswith(DEFAULT_SKUS["sold_out"])]
+    assert padrao and "sold_out" not in padrao[-1]
+
+
+def test_reset_finds_a_sku_armed_in_an_earlier_run(cenario):
+    call_command("qa_scenarios", arm=[f"sold_out={FORA_DA_LISTA}"])
+    assert _items()[FORA_DA_LISTA].is_notifiable is True
+
+    # `--reset` sem argumento: o SKU vem do rastro que o comando deixou no
+    # ledger, não da memória desta sessão.
+    call_command("qa_scenarios", reset=[])
+    assert _items()[FORA_DA_LISTA].can_add_to_cart is True
+
+
+def test_reset_accepts_a_named_sku_for_a_pause(cenario):
+    # Pausa não gera movimento de estoque, então o ledger não a reencontra:
+    # é o caso em que o SKU precisa ser nomeado no reset.
+    call_command("qa_scenarios", arm=[f"paused={FORA_DA_LISTA}"])
+    call_command("qa_scenarios", reset=[FORA_DA_LISTA])
+    assert Product.objects.get(sku=FORA_DA_LISTA).is_sellable is True

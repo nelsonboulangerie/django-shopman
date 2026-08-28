@@ -92,6 +92,7 @@ python manage.py qa_scenarios --arm               # arma todos os cenários
 python manage.py qa_scenarios --arm sold_out=BF   # esgota a baguete, e só ela
 python manage.py qa_scenarios --restock BF        # repõe → dispara o "Avise-me"
 python manage.py qa_scenarios --reset             # devolve tudo ao alvo do seed
+python manage.py qa_scenarios --reset BF          # ... incluindo um SKU pausado à mão
 ```
 
 O comando e o perfil `qa` armam os estados pela **mesma função**

@@ -8,6 +8,7 @@ Usage::
     python manage.py qa_scenarios --arm sold_out=BF   # ... num SKU escolhido
     python manage.py qa_scenarios --restock BF        # repõe → dispara o "Avise-me"
     python manage.py qa_scenarios --reset             # devolve tudo ao alvo do seed
+    python manage.py qa_scenarios --reset BF          # ... incluindo um SKU pausado à mão
 
 **Por que este comando existe.** O perfil ``qa`` do ``seed`` já nasce com um SKU
 em cada estado da vitrine (esgotado, últimas unidades, previsto, pausado), mas
@@ -72,6 +73,10 @@ FALLBACK_RESTOCK_QTY = 10
 
 STOREFRONT_LISTING_REF = "web"
 
+#: Assinatura deixada no `reason` de todo movimento deste comando. É por ela que
+#: o `--reset` reencontra um SKU armado em outra sessão.
+MOVE_REASON_TAG = "Cenário QA"
+
 
 def _mask(phone: str) -> str:
     """Telefone no relatório vira os 4 últimos dígitos — o resto não é da conta
@@ -100,8 +105,14 @@ class Command(BaseCommand):
         )
         parser.add_argument(
             "--reset",
-            action="store_true",
-            help="Desarma: religa a venda e repõe a vitrine até o alvo do seed.",
+            nargs="*",
+            metavar="SKU",
+            help=(
+                "Desarma: religa a venda e repõe a vitrine até o alvo do seed. "
+                "Sem argumento cobre os SKUs padrão + todo SKU que este comando "
+                "já mexeu; nomeie o SKU quando ele foi PAUSADO à mão (pausa não "
+                "deixa rastro no estoque)."
+            ),
         )
 
     def handle(self, *args, **options):
@@ -123,8 +134,14 @@ class Command(BaseCommand):
         restock = options.get("restock")
         reset = options.get("reset")
 
-        if reset:
-            self._reset()
+        # O que ESTA execução mirou. O relatório fecha sobre isto somado aos
+        # SKUs padrão: armar um cenário num SKU escolhido e receber de volta um
+        # relatório que não o menciona é pior que não relatar nada.
+        self.session_states: dict[str, str] = {}
+        self.touched: set[str] = set()
+
+        if reset is not None:
+            self._reset(reset)
         if arm is not None:
             self._arm(arm)
         if restock:
@@ -170,9 +187,11 @@ class Command(BaseCommand):
                 sku,
                 vitrine=self.vitrine,
                 listing_ref=STOREFRONT_LISTING_REF,
-                reason_prefix="Cenário QA",
+                reason_prefix=MOVE_REASON_TAG,
             )
             self.stdout.write(f"  ✅ {state}: {sku}")
+        self.session_states.update(targets)
+        self.touched.update(targets.values())
 
     def _restock(self, raw: str) -> None:
         from shopman.stockman import stock
@@ -188,6 +207,7 @@ class Command(BaseCommand):
         if qty <= 0:
             raise CommandError("A reposição precisa ser maior que zero.")
 
+        self.touched.add(sku)
         pendentes_antes = self._pending(sku)
         self.stdout.write(
             self.style.MIGRATE_HEADING(f"📦 Repondo {sku} na vitrine: +{qty}")
@@ -196,7 +216,7 @@ class Command(BaseCommand):
             quantity=qty,
             sku=sku,
             position=self.vitrine,
-            reason="Cenário QA: reposição manual (gatilho do aviso)",
+            reason=f"{MOVE_REASON_TAG}: reposição manual (gatilho do aviso)",
         )
         # O envio é agendado em `transaction.on_commit` dentro do receive, então
         # já aconteceu quando a linha abaixo roda: a diferença de pendentes é o
@@ -207,11 +227,13 @@ class Command(BaseCommand):
         else:
             self.stdout.write("  🔕 ninguém estava inscrito neste SKU")
 
-    def _reset(self) -> None:
+    def _reset(self, extra: list[str] | None = None) -> None:
         from shopman.offerman.models import ListingItem, Product
         from shopman.stockman import stock
 
-        skus = sorted(set(DEFAULT_SKUS.values()))
+        skus = sorted(set(DEFAULT_SKUS.values()) | self._previously_touched() | {
+            s.strip().upper() for s in (extra or []) if s.strip()
+        })
         self.stdout.write(self.style.MIGRATE_HEADING("🧹 Desarmando cenários..."))
 
         religados = Product.objects.filter(sku__in=skus, is_sellable=False).update(is_sellable=True)
@@ -233,15 +255,31 @@ class Command(BaseCommand):
                 quantity=delta,
                 sku=sku,
                 position=self.vitrine,
-                reason="Cenário QA: vitrine de volta ao alvo do seed",
+                reason=f"{MOVE_REASON_TAG}: vitrine de volta ao alvo do seed",
             )
             self.stdout.write(f"  ✅ vitrine {sku}: {atual} → {alvo}")
 
+        self.touched.update(skus)
         # O estoque PLANEJADO de amanhã (cenário `planned`) fica: é indistinguível
         # de uma fornada real já planejada, e sobra de plano não atrapalha nenhum
         # outro teste — só deixa o produto orderável para amanhã, como qualquer
         # produto normal da casa.
         self.stdout.write("  ℹ️  plano de amanhã preservado (não dá para distinguir do plano real)")
+
+    def _previously_touched(self) -> set[str]:
+        """SKUs que ESTE comando já mexeu, lidos do ledger.
+
+        O rastro sobrevive à sessão: quem armou `sold_out=BF` ontem consegue
+        desarmar hoje sem lembrar do SKU. Só alcança o que passou pelo estoque —
+        pausa não gera movimento, e por isso `--reset` aceita SKU nomeado.
+        """
+        from shopman.stockman.models import Move
+
+        return set(
+            Move.objects.filter(reason__contains=MOVE_REASON_TAG)
+            .values_list("quant__sku", flat=True)
+            .distinct()
+        )
 
     # ── relatório ────────────────────────────────────────────────────────
 
@@ -259,10 +297,16 @@ class Command(BaseCommand):
         from shopman.storefront.models import StockAlertSubscription
         from shopman.storefront.presentation.catalog import build_catalog_items_for_skus
 
-        skus = sorted(set(DEFAULT_SKUS.values()))
-        por_sku = {s: [] for s in skus}
-        for state, sku in DEFAULT_SKUS.items():
-            por_sku[sku].append(state)
+        # Mapa do relatório: o padrão, sobrescrito pelo que ESTA execução mirou.
+        # Um SKU padrão que perdeu o posto continua na lista (ele pode ter ficado
+        # armado de uma execução anterior), só que sem rótulo de cenário.
+        mapa = {**DEFAULT_SKUS, **self.session_states}
+        por_sku: dict[str, list[str]] = {}
+        for state, sku in mapa.items():
+            por_sku.setdefault(sku, []).append(state)
+        for sku in set(DEFAULT_SKUS.values()) | self.touched:
+            por_sku.setdefault(sku, [])
+        skus = sorted(por_sku)
 
         items = {
             item.sku: item
@@ -282,7 +326,9 @@ class Command(BaseCommand):
         for sku in skus:
             item = items.get(sku)
             if item is None:
-                self.stdout.write(f"  {sku:<6} {'/'.join(por_sku[sku]):<15} (fora do cardápio web)")
+                self.stdout.write(
+                f"  {sku:<6} {('/'.join(por_sku[sku]) or '—'):<15} (fora do cardápio web)"
+            )
                 continue
             qty = "—" if item.available_qty is None else str(item.available_qty)
             planejado = stock.available(sku, target_date=amanha, position=self.vitrine)
@@ -295,7 +341,7 @@ class Command(BaseCommand):
             else:
                 sino = "não"
             self.stdout.write(
-                f"  {sku:<6} {'/'.join(por_sku[sku]):<15} {item.availability.value:<14} "
+                f"  {sku:<6} {('/'.join(por_sku[sku]) or '—'):<15} {item.availability.value:<14} "
                 f"{qty:>6} {planejado:>7}  {sino}"
             )
 
