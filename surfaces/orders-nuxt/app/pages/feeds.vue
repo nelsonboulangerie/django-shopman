@@ -12,8 +12,11 @@ const allCollections = computed<CollectionOptionProjection[]>(() => board.value?
 const loading = computed(() => pending.value && !board.value);
 
 // saída servida pelo Django (menuboard/feed), não pelo host do Gestor.
-const djangoBase = useRuntimeConfig().public.djangoBaseUrl as string;
+const runtimeConfig = useRuntimeConfig();
+const djangoBase = runtimeConfig.public.djangoBaseUrl as string;
 const outputHref = (sc: FeedProjection) => `${djangoBase}${sc.output_path}`;
+// o Admin é porta humana e tem host próprio — não é a mesma base da saída.
+const adminBase = runtimeConfig.public.adminBaseUrl as string;
 
 function toggleActive(sc: FeedProjection) {
   setActive(sc.ref, !sc.is_active);
@@ -54,7 +57,7 @@ useHead({ title: "Feeds · Gestor" });
         </p>
         <!-- criar/configurar a fundo (novo feed, opções) é no Admin -->
         <a
-          :href="`${djangoBase}/admin/shop/feed/`" target="_blank" rel="noopener"
+          :href="`${adminBase}/admin/shop/feed/`" target="_blank" rel="noopener"
           class="inline-flex h-9 items-center gap-1.5 rounded-md border px-3 text-sm font-medium text-muted-foreground transition hover:bg-accent hover:text-foreground"
           title="Criar / configurar feeds no Admin"
         >
