@@ -51,7 +51,7 @@ Transições: fermata → confirming (sinal materialização, FCFS, N vagas) · 
 - Alerta loja: OperatorAlert (tipo waitlist_released / waitlist_confirm_window) + SSE board.
 
 ## 9. Config e copy
-- Shop.defaults.waitlist: confirmation_minutes (ex. 15), release_policy (serve_next|shelf), charge_at (confirmation).
+- Shop.defaults.waitlist: confirmation_minutes (ex. 15), release_policy (serve_next — fila tem preferência; loja/gôndola por último), charge_at (confirmation), price_frozen (true — preço congelado na reserva).
 - Omotenashi: WAITLIST_CONFIRM_TITLE/MESSAGE/CTA, WAITLIST_RELEASED_CUSTOMER, WAITLIST_RELEASED_STORE, WAITLIST_EXHAUSTED (409 honesto).
 - ManyChat: template "{order_ref} — sua fornada saiu! Confirme em {minutes} min: {link}" (com fallback SMS).
 
@@ -76,8 +76,10 @@ Login SMS debug (43 99999-9999 / Usar código de teste) → item com lote e máx
 - F2 (o mecanismo): fermata + confirmação ativa + timeout + FCFS + nunca-silencioso (cliente e Gestor) + template ManyChat.
 - F3: nuances de pagamento (captura em lote, re-tentativas, relatório de fila).
 
-## 14. Decisões em aberto (dono)
-1. Pagamento padrão: cobrar na confirmação para todos (recomendado) — confirma?
-2. Liberação expirada: servir próximo da fila automaticamente vs pausar para a loja decidir (gôndola)?
-3. Preço congelado na reserva: confirma?
-4. F1 primeiro (desbloquear P2-E já) e F2 na sequência — ou F1+F2 juntos?
+## 14. Decisões resolvidas (dono, 28/08/2026)
+1. Pagamento: cobrar NA CONFIRMAÇÃO para todos (Pix QR na hora + payment-timeout; cartão autorizar→capturar). APROVADO.
+2. Liberação expirada: servir AUTOMATICAMENTE o próximo da fila (FCFS); loja/gôndola só quando não há fila. APROVADO (release_policy=serve_next).
+3. Preço: CONGELADO na reserva. APROVADO.
+4. Fases: executar F1+F2+F3, ordem a critério do executor (recomendado F1 → F2 → F3). APROVADO.
+
+> Execução: nova sessão dedicada (prompt em docs/reports/2026-08-28-prompt-execucao-wp-p2e.md).
