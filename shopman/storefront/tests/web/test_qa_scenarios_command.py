@@ -138,6 +138,11 @@ def test_restock_fires_the_pending_alert(cenario, django_capture_on_commit_callb
     assert _items()[sku].can_add_to_cart is True
 
 
+def test_restock_refuses_a_sku_outside_the_catalog(cenario):
+    with pytest.raises(CommandError, match="não existe no catálogo"):
+        call_command("qa_scenarios", restock="NAO-EXISTE")
+
+
 def test_restock_refuses_a_non_positive_quantity(cenario):
     with pytest.raises(CommandError, match="maior que zero"):
         call_command("qa_scenarios", restock=f"{DEFAULT_SKUS['sold_out']}:0")

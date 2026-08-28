@@ -194,10 +194,13 @@ class Command(BaseCommand):
         self.touched.update(targets.values())
 
     def _restock(self, raw: str) -> None:
+        from shopman.offerman.models import Product
         from shopman.stockman import stock
 
         sku, _, qty_raw = raw.partition(":")
         sku = sku.strip().upper()
+        if not Product.objects.filter(sku=sku).exists():
+            raise CommandError(f"SKU '{sku}' não existe no catálogo.")
         try:
             qty = Decimal(qty_raw.strip()) if qty_raw.strip() else None
         except ArithmeticError as exc:
