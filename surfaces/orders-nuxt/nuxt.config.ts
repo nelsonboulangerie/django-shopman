@@ -17,6 +17,15 @@ export default defineNuxtConfig({
       // e o bundle serve o fallback 127.0.0.1 — links quebrados no ar, 28/08.
       djangoBaseUrl:
         process.env.NUXT_PUBLIC_DJANGO_BASE_URL || process.env.NUXT_DJANGO_BASE_URL || "http://127.0.0.1:8000",
+      // A porta HUMANA do Admin tem host próprio (admin.<zona>), canonizado em
+      // 15/08. O api.<zona>/admin segue vivo porque o BFF pega CSRF nele, mas isso
+      // é mecanismo: link em que o operador CLICA vai para a porta humana. Sem a
+      // env (dev), cai na base do Django, onde os dois são o mesmo 127.0.0.1:8000.
+      adminBaseUrl:
+        process.env.NUXT_PUBLIC_ADMIN_BASE_URL ||
+        process.env.NUXT_PUBLIC_DJANGO_BASE_URL ||
+        process.env.NUXT_DJANGO_BASE_URL ||
+        "http://127.0.0.1:8000",
     },
   },
 

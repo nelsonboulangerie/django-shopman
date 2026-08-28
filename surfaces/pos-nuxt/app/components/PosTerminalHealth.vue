@@ -33,12 +33,13 @@ const rows = computed(() =>
 const overall = computed(() => meta(terminalOverallStatus(rows.value)));
 const agentDown = computed(() => probe.value?.ok === false);
 
-// A tela de configuração do terminal no gestor: é lá que mora o download do
-// agente e a config da estação. Gated pelo mesmo acesso do host do Django.
-const djangoOrigin = computed(() => String(useRuntimeConfig().public.djangoBaseUrl || ""));
+// A tela de configuração do terminal no Admin: é lá que mora o download do
+// agente e a config da estação. Porta HUMANA do Admin (host próprio), não a base
+// da API — quem clica aqui é o operador.
+const adminOrigin = computed(() => String(useRuntimeConfig().public.adminBaseUrl || ""));
 const terminalAdminUrl = computed(() => {
-  if (!djangoOrigin.value || !props.pos.danfe_screen_allowed) return "";
-  return `${djangoOrigin.value}/admin/pos/terminal/${encodeURIComponent(props.pos.terminal_ref)}/agent/`;
+  if (!adminOrigin.value || !props.pos.danfe_screen_allowed) return "";
+  return `${adminOrigin.value}/admin/pos/terminal/${encodeURIComponent(props.pos.terminal_ref)}/agent/`;
 });
 
 type StatusMeta = {
