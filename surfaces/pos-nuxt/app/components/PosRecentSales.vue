@@ -42,7 +42,7 @@ const agent = useCounterAgent(computed(() => props.pos));
 // A bobina só existe onde existe agente; sem ele os botões de impressão
 // esconderiam uma promessa que esta lista não tem como cumprir.
 const canPrintOnAgent = computed(() => agent.canKick.value);
-const djangoOrigin = computed(() => String(useRuntimeConfig().public.djangoPublicBaseUrl || ""));
+const djangoOrigin = computed(() => String(useRuntimeConfig().public.djangoBaseUrl || ""));
 
 const sales = ref<RecentSale[]>([]);
 const loading = ref(false);

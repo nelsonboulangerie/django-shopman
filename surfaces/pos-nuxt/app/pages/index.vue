@@ -20,7 +20,7 @@ const runtimeConfig = useRuntimeConfig();
 // The Django admin (login) lives on its own operator host (api.<zona>), a different
 // subdomain from the POS — so the DANFE link must be ABSOLUTE to that host, not
 // relative to the POS origin.
-const djangoOrigin = computed(() => String(runtimeConfig.public.djangoPublicBaseUrl || ""));
+const djangoOrigin = computed(() => String(runtimeConfig.public.djangoBaseUrl || ""));
 // Gestor de Pedidos (orders-nuxt) — destino do link pós-venda "Abrir no gestor".
 const ordersUrl = computed(() => String(runtimeConfig.public.ordersUrl || ""));
 const requestHeaders = import.meta.server ? useRequestHeaders(["cookie"]) : undefined;

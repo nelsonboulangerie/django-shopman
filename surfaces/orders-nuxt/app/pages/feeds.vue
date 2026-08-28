@@ -12,7 +12,7 @@ const allCollections = computed<CollectionOptionProjection[]>(() => board.value?
 const loading = computed(() => pending.value && !board.value);
 
 // saída servida pelo Django (menuboard/feed), não pelo host do Gestor.
-const djangoBase = useRuntimeConfig().public.djangoPublicBaseUrl as string;
+const djangoBase = useRuntimeConfig().public.djangoBaseUrl as string;
 const outputHref = (sc: FeedProjection) => `${djangoBase}${sc.output_path}`;
 
 function toggleActive(sc: FeedProjection) {

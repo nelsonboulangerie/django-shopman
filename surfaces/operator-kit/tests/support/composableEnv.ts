@@ -71,7 +71,7 @@ export function installNuxtGlobals(): ComposableEnv {
     refreshNuxtData: vi.fn(),
     clientErrorReport: vi.fn(),
     adaptivePoll: vi.fn(),
-    runtimeConfig: { app: { baseURL: "/" }, public: { djangoPublicBaseUrl: "" } },
+    runtimeConfig: { app: { baseURL: "/" }, public: { djangoBaseUrl: "" } },
     states: new Map(),
     reset() {
       env.fetchData.value = null;

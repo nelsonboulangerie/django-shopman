@@ -35,7 +35,7 @@ const agentDown = computed(() => probe.value?.ok === false);
 
 // A tela de configuração do terminal no gestor: é lá que mora o download do
 // agente e a config da estação. Gated pelo mesmo acesso do host do Django.
-const djangoOrigin = computed(() => String(useRuntimeConfig().public.djangoPublicBaseUrl || ""));
+const djangoOrigin = computed(() => String(useRuntimeConfig().public.djangoBaseUrl || ""));
 const terminalAdminUrl = computed(() => {
   if (!djangoOrigin.value || !props.pos.danfe_screen_allowed) return "";
   return `${djangoOrigin.value}/admin/pos/terminal/${encodeURIComponent(props.pos.terminal_ref)}/agent/`;
