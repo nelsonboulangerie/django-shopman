@@ -99,3 +99,38 @@
 - WEB-260828-E86: cliente cancelou ('Cancelar pedido?' -> 'Sim, cancelar') -> tracking 'Cancelado - Pedido cancelado.' + Repetir pedido/Ajuda; Gestor registrou 'customer.self_cancel · Novo -> Cancelado' e Pix refunded.
 - Janela: cancelamento do cliente so enquanto pagamento nao capturado (dialogo avisa; apos captura, sumiu o botao e o caminho e 'Ajuda'/WhatsApp).
 - Tracking anonimo: 'Nao encontramos este pedido - entre com seu telefone' (privacidade ok).
+
+## 10. Correcao do diagnostico do P1 (28/08, pos-execucao)
+
+O P1 da matriz (linha 26: "Feeds vaza URLs de dev") foi diagnosticado no prompt
+`2026-08-28-prompt-p1e-do.md` como "falta a env `NUXT_PUBLIC_DJANGO_BASE_URL` no
+spec vivo do orders-nuxt; aplicar e rebuildar". **Esse diagnostico estava errado**,
+e o plano dele seria um no-op.
+
+A env ja estava no spec vivo, com escopo `RUN_AND_BUILD_TIME` e valor
+`https://api.boulangerie.com.br` — em 8 componentes, orders-nuxt e bi-nuxt
+inclusive. Nenhuma mudanca de spec era necessaria.
+
+A causa real: o Nuxt deriva o nome da env **da chave** do `runtimeConfig`. A chave
+era `public.djangoPublicBaseUrl`, que so escutaria
+`NUXT_PUBLIC_DJANGO_PUBLIC_BASE_URL`. Chave desconhecida o Nuxt ignora em silencio,
+e o bundle servia o fallback de dev.
+
+Prova, na mesma pagina do alpha, mesmo container, mesmo escopo de env:
+`operatorHubUrl` (chave que casa com `NUXT_PUBLIC_OPERATOR_HUB_URL`) vinha com o
+valor da env; `djangoPublicBaseUrl` vinha `http://127.0.0.1:8000`. Uma aplicou, a
+outra nao — o que descarta imagem velha, spec desatualizado e necessidade de
+rebuild.
+
+O escopo `RUN_AND_BUILD_TIME` tambem nao era a rede de seguranca que parecia: os
+componentes sao imagem DOCR, o App Platform nao builda nada, e o
+`deploy-images.yml` passa so `SURFACE=` como build-arg. O valor publico sempre
+chega por override de runtime.
+
+Corrigido no PR #383, renomeando a chave para `public.djangoBaseUrl` nas 7
+superficies. Sem tocar no spec do App Platform.
+
+**Achado adjacente, nao corrigido:** `pos-nuxt` nao tem `NUXT_PUBLIC_PRODUCTION_URL`
+no spec vivo nem no espelho `.do/app.alpha-subdomains.yaml`, entao o link "resolver
+na producao" da tela de fechamento sai como `http://127.0.0.1:3005/` no alpha. Essa
+chave mapeia certo — e gap de spec, nao de codigo.

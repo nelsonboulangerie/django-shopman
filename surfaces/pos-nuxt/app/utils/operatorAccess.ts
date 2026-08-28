@@ -28,10 +28,10 @@ export function isOperatorAccessError(error: unknown): boolean {
 }
 
 export function buildAdminLoginUrl(options: {
-  djangoPublicBaseUrl: string;
+  djangoBaseUrl: string;
   nextPath?: string;
 }): string {
-  const baseUrl = String(options.djangoPublicBaseUrl || "").replace(/\/+$/, "");
+  const baseUrl = String(options.djangoBaseUrl || "").replace(/\/+$/, "");
   const nextPath = options.nextPath?.trim() || "/pos/";
   const normalizedNext = nextPath.startsWith("/") ? nextPath : `/${nextPath}`;
   return `${baseUrl}/admin/login/?next=${encodeURIComponent(normalizedNext)}`;

@@ -262,17 +262,17 @@ describe("operator access", () => {
 
   it("builds an admin login URL without taking ownership of credentials", () => {
     expect(buildAdminLoginUrl({
-      djangoPublicBaseUrl: "https://shop.example.com/",
+      djangoBaseUrl: "https://shop.example.com/",
       nextPath: "/pos/",
     })).toBe("https://shop.example.com/admin/login/?next=%2Fpos%2F");
 
     expect(buildAdminLoginUrl({
-      djangoPublicBaseUrl: "http://127.0.0.1:8000",
+      djangoBaseUrl: "http://127.0.0.1:8000",
       nextPath: "pos/",
     })).toBe("http://127.0.0.1:8000/admin/login/?next=%2Fpos%2F");
 
     expect(buildAdminLoginUrl({
-      djangoPublicBaseUrl: "http://127.0.0.1:8000",
+      djangoBaseUrl: "http://127.0.0.1:8000",
       nextPath: "/admin/",
     })).toBe("http://127.0.0.1:8000/admin/login/?next=%2Fadmin%2F");
   });

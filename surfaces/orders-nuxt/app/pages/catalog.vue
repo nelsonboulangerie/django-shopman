@@ -205,7 +205,7 @@ function toggleProductPublish(row: CatalogRowProjection) {
 const menuOpen = ref<string | null>(null);
 
 // host do Django (não o do Gestor) — usado nos deep-links de saída dos feeds.
-const djangoBase = useRuntimeConfig().public.djangoPublicBaseUrl as string;
+const djangoBase = useRuntimeConfig().public.djangoBaseUrl as string;
 
 // ── cell pause/resume + inline reprice ─────────────────────────────────────────
 // A pausa por célula vale para canal (vende) e feed (só exibe). No feed o backend
