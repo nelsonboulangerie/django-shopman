@@ -1,5 +1,5 @@
 export const PURCHASE_VIEWS = ["panel", "buy", "receive", "base"] as const;
-export const PURCHASE_BASE_VIEWS = ["materials", "suppliers", "costs"] as const;
+export const PURCHASE_BASE_VIEWS = ["materials", "suppliers", "costs", "count"] as const;
 
 export type PurchaseView = (typeof PURCHASE_VIEWS)[number];
 export type PurchaseBaseView = (typeof PURCHASE_BASE_VIEWS)[number];
@@ -276,4 +276,54 @@ export interface PurchaseActionResponse {
   // Só a rota de declarar conversão devolve: é por ele que a linha que estava
   // travada seleciona a conversão recém-criada, sem procurar por rótulo.
   conversionId?: string;
+}
+
+export interface CountItem {
+  sku: string;
+  name: string;
+  unit: MaterialUnit;
+  category: string;
+  isActive: boolean;
+  systemQty: number;
+}
+
+export interface PurchaseCountProjection {
+  items: CountItem[];
+}
+
+export interface PurchaseCountResponse {
+  count: PurchaseCountProjection;
+}
+
+export interface CountLinePayload {
+  materialSku: string;
+  countedQty: number;
+  reason: string;
+}
+
+export interface PurchaseCountConfirmPayload {
+  counts: CountLinePayload[];
+}
+
+export interface PurchaseCountActionResponse {
+  ok: boolean;
+  count?: PurchaseCountProjection;
+  message?: string;
+}
+
+export interface CountRow {
+  item: CountItem;
+  input: string;
+  reason: string;
+  counted: number | null;
+  diff: number;
+  divergent: boolean;
+  missingReason: boolean;
+}
+
+export interface CountSummary {
+  filled: number;
+  divergent: number;
+  missingReason: number;
+  ready: boolean;
 }

@@ -33,6 +33,7 @@ class DayClosing(models.Model):
             ("view_dayclosing_management", "Pode ver agregados gerenciais do fechamento"),
             ("operate_production", "Pode operar a produção (chão + planejamento) no app dedicado"),
             ("operate_purchase", "Pode operar compras e recebimento de insumos no app dedicado"),
+            ("audit_stock", "Pode auditar e ajustar o estoque de insumos (contagem no Compras)"),
             ("view_bi", "Pode ver o B.I. (leitura analítica cross-suite)"),
         ]
 

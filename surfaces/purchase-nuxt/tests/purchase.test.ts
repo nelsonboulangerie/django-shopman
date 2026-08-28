@@ -1,16 +1,22 @@
 import { describe, expect, it } from "vitest";
-import type { Material, MaterialConversion, ReceiptLine, Supplier, SupplierMaterialCost } from "~/types/purchase";
+import type { CountItem, Material, MaterialConversion, ReceiptLine, Supplier, SupplierMaterialCost } from "~/types/purchase";
 import {
   PURCHASE_API_ENDPOINTS,
   PURCHASE_API_BASE,
 } from "~/composables/usePurchaseApi";
 import {
   costPerBaseUnitQ,
+  countConfirmPayload,
+  countRow,
+  countRows,
+  countSummary,
   formatMoney,
+  formatQtyDiff,
   formatStockOnHand,
   receiptSettledSummary,
   materialIssues,
   parseInvoiceAccessKey,
+  parseQtyInput,
   quotePreview,
   receiptLinePreview,
   receiptLineSuggestion,
@@ -653,5 +659,86 @@ describe("purchase presentation", () => {
     expect(PURCHASE_API_ENDPOINTS.requestApprove("FARINHA T65")).toBe(
       "/api/v1/backstage/purchase/requests/FARINHA%20T65/approve/",
     );
+    expect(PURCHASE_API_ENDPOINTS.count).toBe("/api/v1/backstage/purchase/count/");
+    expect(PURCHASE_API_ENDPOINTS.countConfirm).toBe("/api/v1/backstage/purchase/count/confirm/");
+  });
+});
+
+describe("contagem de insumos", () => {
+  const farinhaCount: CountItem = {
+    sku: "FARINHA-T65",
+    name: "Farinha T65",
+    unit: "kg",
+    category: "Farinhas",
+    isActive: true,
+    systemQty: 12,
+  };
+
+  const ovosCount: CountItem = {
+    sku: "OVOS",
+    name: "Ovos",
+    unit: "kg",
+    category: "Frescos",
+    isActive: true,
+    systemQty: 16,
+  };
+
+  it("aceita o teclado da casa e o do sistema no contado", () => {
+    expect(parseQtyInput("12,5")).toBe(12.5);
+    expect(parseQtyInput("1.250,5")).toBe(1250.5);
+    expect(parseQtyInput("12.5")).toBe(12.5);
+    expect(parseQtyInput("12")).toBe(12);
+    expect(parseQtyInput("")).toBeNull();
+    expect(parseQtyInput("abc")).toBeNull();
+    expect(parseQtyInput("-3")).toBeNull();
+  });
+
+  it("linha sem contado nao diverge; divergencia sem motivo fica marcada", () => {
+    expect(countRow(farinhaCount, "", "").divergent).toBe(false);
+    expect(countRow(farinhaCount, "12", "").divergent).toBe(false);
+
+    const shortage = countRow(farinhaCount, "10,5", "");
+    expect(shortage.diff).toBe(-1.5);
+    expect(shortage.divergent).toBe(true);
+    expect(shortage.missingReason).toBe(true);
+
+    const justified = countRow(farinhaCount, "10,5", "Quebra na produção");
+    expect(justified.missingReason).toBe(false);
+  });
+
+  it("resumo so libera com algo contado e toda divergencia justificada", () => {
+    const empty = countSummary(countRows([farinhaCount, ovosCount], {}, {}));
+    expect(empty.ready).toBe(false);
+
+    const pendingReason = countSummary(
+      countRows([farinhaCount, ovosCount], { "FARINHA-T65": "10" }, {}),
+    );
+    expect(pendingReason).toEqual({ filled: 1, divergent: 1, missingReason: 1, ready: false });
+
+    const ready = countSummary(
+      countRows(
+        [farinhaCount, ovosCount],
+        { "FARINHA-T65": "10", OVOS: "16" },
+        { "FARINHA-T65": "Quebra na produção" },
+      ),
+    );
+    expect(ready).toEqual({ filled: 2, divergent: 1, missingReason: 0, ready: true });
+  });
+
+  it("payload leva so as linhas contadas, com quantidade numerica", () => {
+    const rows = countRows(
+      [farinhaCount, ovosCount],
+      { "FARINHA-T65": "10,5" },
+      { "FARINHA-T65": "  Quebra na produção  " },
+    );
+    expect(countConfirmPayload(rows)).toEqual({
+      counts: [{ materialSku: "FARINHA-T65", countedQty: 10.5, reason: "Quebra na produção" }],
+    });
+  });
+
+  it("formata a diferenca com sinal e unidade", () => {
+    expect(formatQtyDiff(-1.5, "kg")).toBe("−1,5 kg");
+    expect(formatQtyDiff(2, "un")).toBe("+2 un");
+    expect(formatQtyDiff(0, "kg")).toBe("—");
   });
 });

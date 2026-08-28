@@ -15,6 +15,7 @@ import {
   coverageLabel,
   formatMoney,
   formatQty,
+  formatQtyDiff,
   formatStockOnHand,
   receiptSettledSummary,
   isApproximateCost,
@@ -85,6 +86,17 @@ const {
   readInvoice,
   confirmReceipt,
   rejectReceipt,
+  countFilteredRows,
+  countDivergentRows,
+  countTotals,
+  countReady,
+  countPending,
+  countForbidden,
+  countConfirmedAt,
+  setCountInput,
+  setCountReason,
+  resetCount,
+  confirmCount,
   purchaseRequestStatus,
   sendPurchaseRequest,
   setPreferredCost,
@@ -125,7 +137,19 @@ const baseTabs: { key: PurchaseBaseView; label: string; icon: string }[] = [
   { key: "materials", label: "Insumos", icon: "lucide:package-search" },
   { key: "suppliers", label: "Fornecedores", icon: "lucide:truck" },
   { key: "costs", label: "Custos", icon: "lucide:calculator" },
+  { key: "count", label: "Contagem", icon: "lucide:clipboard-check" },
 ];
+
+const countConfirmOpen = ref(false);
+
+function openCountConfirm() {
+  if (countReady.value) countConfirmOpen.value = true;
+}
+
+async function submitCount() {
+  const ok = await confirmCount();
+  if (ok) countConfirmOpen.value = false;
+}
 
 const invoiceShortKey = computed(() =>
   invoiceStatus.value.accessKey ?
@@ -1042,7 +1066,7 @@ onBeforeUnmount(stopInvoiceScanner);
         </aside>
       </section>
 
-      <section v-else class="grid gap-4 xl:grid-cols-[24rem_minmax(0,1fr)]">
+      <section v-else-if="baseView === 'costs'" class="grid gap-4 xl:grid-cols-[24rem_minmax(0,1fr)]">
         <aside class="rounded-md border border-border bg-card p-4">
           <h1 class="text-lg font-semibold">Lançar custo</h1>
           <div class="mt-3 space-y-3">
@@ -1105,7 +1129,144 @@ onBeforeUnmount(stopInvoiceScanner);
           </div>
         </div>
       </section>
+
+      <section v-else class="space-y-4">
+        <div v-if="countForbidden" class="rounded-md border border-border bg-card p-8 text-center">
+          <Icon name="lucide:lock" class="mx-auto size-6 text-muted-foreground" />
+          <h2 class="mt-3 text-lg font-semibold">Contagem restrita ao gestor</h2>
+          <p class="mx-auto mt-1 max-w-md text-sm text-muted-foreground">
+            Auditar e ajustar o estoque de insumos pede a permissão de auditoria. Entre com o operador do gestor para contar.
+          </p>
+        </div>
+
+        <div v-else class="rounded-md border border-border bg-card">
+          <div class="flex flex-wrap items-center gap-3 border-b border-border p-3">
+            <label class="relative min-w-64 flex-1">
+              <Icon name="lucide:search" class="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+              <input v-model="query" type="search" placeholder="Buscar insumo" class="h-10 w-full rounded-md border border-border bg-background pl-9 pr-3 text-sm" />
+            </label>
+            <p class="text-sm text-muted-foreground">Informe o que contou no físico. Divergência pede motivo e vira ajuste no estoque.</p>
+          </div>
+          <div class="overflow-x-auto">
+            <table class="min-w-full divide-y divide-border text-sm">
+              <thead class="bg-muted text-left text-xs font-medium text-muted-foreground">
+                <tr><th class="px-3 py-2">Insumo</th><th class="px-3 py-2">Sistema</th><th class="px-3 py-2">Contado</th><th class="px-3 py-2">Diferença</th><th class="px-3 py-2">Motivo</th></tr>
+              </thead>
+              <tbody class="divide-y divide-border">
+                <tr v-for="row in countFilteredRows" :key="row.item.sku" class="hover:bg-accent/70">
+                  <td class="px-3 py-2">
+                    <p class="font-semibold">{{ row.item.name }}</p>
+                    <p class="font-mono text-xs text-muted-foreground">{{ row.item.sku }} · {{ row.item.category }}</p>
+                  </td>
+                  <td class="px-3 py-2 tabular-nums">{{ formatQty(row.item.systemQty, row.item.unit) }}</td>
+                  <td class="px-3 py-2">
+                    <input
+                      :value="row.input"
+                      type="text"
+                      inputmode="decimal"
+                      :placeholder="`0 ${row.item.unit}`"
+                      :aria-label="`Quantidade contada de ${row.item.name}`"
+                      class="h-10 w-28 rounded-md border border-border bg-background px-3 text-sm tabular-nums"
+                      @input="setCountInput(row.item.sku, ($event.target as HTMLInputElement).value)"
+                    />
+                  </td>
+                  <td class="px-3 py-2">
+                    <span
+                      v-if="row.counted !== null"
+                      class="rounded-md border px-2 py-1 text-xs font-medium tabular-nums"
+                      :class="
+                        row.divergent ?
+                          (row.diff < 0 ? 'border-destructive/30 bg-destructive/10 text-destructive' : 'border-warning/30 bg-warning/10 text-warning')
+                        : 'border-success/25 bg-success/10 text-success'
+                      "
+                    >
+                      {{ row.divergent ? formatQtyDiff(row.diff, row.item.unit) : "Confere" }}
+                    </span>
+                    <span v-else class="text-xs text-muted-foreground">—</span>
+                  </td>
+                  <td class="px-3 py-2">
+                    <input
+                      v-if="row.divergent"
+                      :value="row.reason"
+                      type="text"
+                      placeholder="Por que divergiu?"
+                      :aria-label="`Motivo da divergência de ${row.item.name}`"
+                      class="h-10 w-56 rounded-md border bg-background px-3 text-sm"
+                      :class="row.missingReason ? 'border-destructive/50' : 'border-border'"
+                      @input="setCountReason(row.item.sku, ($event.target as HTMLInputElement).value)"
+                    />
+                    <span v-else class="text-xs text-muted-foreground">—</span>
+                  </td>
+                </tr>
+                <tr v-if="!countFilteredRows.length">
+                  <td colspan="5" class="px-3 py-8 text-center text-sm text-muted-foreground">
+                    {{ countPending ? "Carregando posições do estoque..." : "Nenhum insumo para contar." }}
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="flex flex-wrap items-center justify-between gap-3 border-t border-border p-3">
+            <div class="text-sm text-muted-foreground">
+              <span class="tabular-nums">{{ countTotals.filled }}</span> contado(s) ·
+              <span class="tabular-nums">{{ countTotals.divergent }}</span> divergência(s)
+              <span v-if="countTotals.missingReason" class="text-destructive"> · {{ countTotals.missingReason }} sem motivo</span>
+              <span v-if="countConfirmedAt" class="text-success"> · Última contagem lançada {{ countConfirmedAt }}</span>
+            </div>
+            <div class="flex items-center gap-2">
+              <button type="button" class="h-10 rounded-md border border-border px-3 text-sm font-medium hover:bg-accent disabled:opacity-50" :disabled="actionPending || !countTotals.filled" @click="resetCount">
+                Limpar
+              </button>
+              <button type="button" class="h-10 rounded-md bg-primary px-3 text-sm font-medium text-primary-foreground disabled:opacity-50" :disabled="actionPending || countPending || !countReady" @click="openCountConfirm">
+                Lançar contagem
+              </button>
+            </div>
+          </div>
+        </div>
+      </section>
     </section>
+
+    <div v-if="countConfirmOpen" class="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4" role="dialog" aria-modal="true" aria-label="Confirmar contagem">
+      <div class="w-full max-w-lg rounded-md border border-border bg-card p-4 shadow-lg">
+        <div class="flex items-start gap-3">
+          <Icon name="lucide:clipboard-check" class="mt-0.5 size-5 text-muted-foreground" />
+          <div>
+            <h2 class="text-lg font-semibold">Lançar a contagem no estoque?</h2>
+            <p class="mt-1 text-sm text-muted-foreground">
+              Cada divergência vira um ajuste definitivo no livro de estoque, registrado com o seu usuário e o motivo informado.
+            </p>
+          </div>
+        </div>
+        <div v-if="countDivergentRows.length" class="mt-4 max-h-64 space-y-2 overflow-y-auto">
+          <div v-for="row in countDivergentRows" :key="row.item.sku" class="rounded-md border border-border bg-background p-2 text-sm">
+            <div class="flex items-center justify-between gap-2">
+              <p class="font-medium">{{ row.item.name }}</p>
+              <span class="font-semibold tabular-nums" :class="row.diff < 0 ? 'text-destructive' : 'text-warning'">{{ formatQtyDiff(row.diff, row.item.unit) }}</span>
+            </div>
+            <p class="text-xs text-muted-foreground tabular-nums">{{ formatQty(row.item.systemQty, row.item.unit) }} no sistema · {{ formatQty(row.counted ?? 0, row.item.unit) }} contado</p>
+            <p class="mt-1 text-xs">{{ row.reason }}</p>
+          </div>
+        </div>
+        <p v-else class="mt-4 rounded-md border border-success/25 bg-success/10 p-2 text-sm text-success">
+          Sem divergência: a contagem confirma o saldo do sistema e nenhum ajuste será lançado.
+        </p>
+        <div class="mt-4 flex items-center justify-end gap-2">
+          <button type="button" class="h-10 rounded-md border border-border px-3 text-sm font-medium hover:bg-accent" :disabled="actionPending" @click="countConfirmOpen = false">
+            Voltar
+          </button>
+          <button
+            type="button"
+            class="inline-flex h-10 items-center gap-2 rounded-md px-3 text-sm font-medium disabled:opacity-50"
+            :class="countDivergentRows.length ? 'border border-destructive/30 text-destructive hover:bg-destructive/10' : 'bg-primary text-primary-foreground'"
+            :disabled="actionPending"
+            @click="submitCount"
+          >
+            <Icon :name="actionPending ? 'lucide:loader-circle' : 'lucide:check'" class="size-4" :class="actionPending ? 'animate-spin' : ''" />
+            Confirmar ajustes
+          </button>
+        </div>
+      </div>
+    </div>
 
     <div v-if="scannerOpen" class="fixed inset-0 z-50 flex flex-col bg-black p-3 text-white md:p-6" role="dialog" aria-modal="true" aria-label="Escanear NF">
       <div class="flex items-center justify-between gap-3 pb-3">

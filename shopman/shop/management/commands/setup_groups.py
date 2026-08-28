@@ -226,6 +226,11 @@ class Command(BaseCommand):
             # esperado não conta às cegas — confere um gabarito.
             "Dono": [
                 shop_cash("audit_shift"),
+                # Contagem de insumos no Compras: comparar o saldo do ledger com
+                # o físico e lançar ajuste é a mesma régua do audit_shift —
+                # auditoria é de quem responde pelo resultado. A tela exige
+                # também `operate_purchase`, que o dono soma via "Gerente".
+                shop_dclo("audit_stock"),
                 # Cobrança é dinheiro, e dinheiro é deste portão: Pix, cartão e o
                 # que a maquininha respondeu se conferem aqui, não na tela de quem
                 # opera o balcão (decisão do dono, 22/08/2026).
