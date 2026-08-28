@@ -9,6 +9,7 @@ from shopman.backstage.models import POSTab
 from shopman.backstage.projections.pos import build_open_tab, build_pos_tabs
 from shopman.shop.models import Channel, Shop
 from shopman.shop.services import pos as pos_service
+from shopman.shop.services.pos_intent import PosIntentError
 
 
 def _grant_pos_perm(user):
@@ -108,6 +109,63 @@ class POSTabSessionTests(TestCase):
         session = Session.objects.get(session_key=saved.session_key)
         self.assertEqual(Session.objects.filter(channel_ref="pdv", state="open").count(), 1)
         self.assertEqual(int(session.items[0]["qty"]), 2)
+
+    def test_saving_tab_stamps_list_price_on_session_lines(self) -> None:
+        """F4: a linha da comanda carrega a etiqueta (meta._list_q).
+
+        Sem o carimbo na sessao, a review fica sem regua para o "maior
+        desconto ganha" e sem preco para devolver quando o payload omite
+        unit_price_q.
+        """
+        opened = build_open_tab(pos_service.open_pos_tab(
+            channel_ref="pdv", tab_ref="1007",
+            actor="pos:alice", operator_username="alice",
+        ))
+        skey = opened["tab_session_key"]
+        pos_service.save_pos_tab(
+            channel_ref="pdv",
+            payload=_payload(qty=2, tab_session_key=skey),
+            actor="pos:alice", operator_username="alice",
+        )
+        session = Session.objects.get(session_key=skey)
+        self.assertEqual((session.items[0].get("meta") or {}).get("_list_q"), 1000)
+
+    def test_review_without_declared_prices_uses_session_prices(self) -> None:
+        """F1: review com item sem unit_price_q usa o preco da sessao.
+
+        A revisao nao pode devolver total 0 (e troco do valor inteiro
+        entregue) quando o payload omite o preco — o carimbo da sessao cobre.
+        """
+        opened = build_open_tab(pos_service.open_pos_tab(
+            channel_ref="pdv", tab_ref="1007",
+            actor="pos:alice", operator_username="alice",
+        ))
+        skey = opened["tab_session_key"]
+        pos_service.save_pos_tab(
+            channel_ref="pdv",
+            payload=_payload(qty=2, tab_session_key=skey),
+            actor="pos:alice", operator_username="alice",
+        )
+        payload = _payload(qty=2, tab_session_key=skey)
+        payload["items"] = [{"sku": "POS-TAB-ITEM", "name": "Tab Item", "qty": 2}]
+        payload["payment_tenders"] = [{"method": "cash", "amount_q": 2000}]
+        payload["tendered_q"] = 2000
+        review = pos_service.review_sale(
+            channel_ref="pdv", payload=payload, operator_username="alice",
+        )
+        self.assertEqual(review.subtotal_q, 2000)
+        self.assertEqual(review.total_q, 2000)
+        self.assertEqual(review.change_q, 0)
+
+    def test_review_without_session_and_prices_fails_loudly(self) -> None:
+        """F1: sem sessao e sem preco declarado, a review recusa com clareza."""
+        payload = _payload(tab_ref="", tab_session_key="")
+        payload["items"] = [{"sku": "POS-TAB-ITEM", "name": "Tab Item", "qty": 1}]
+        with self.assertRaises(PosIntentError) as ctx:
+            pos_service.review_sale(
+                channel_ref="pdv", payload=payload, operator_username="alice",
+            )
+        self.assertEqual(ctx.exception.code, "price_not_resolved")
 
     def test_open_tab_exposes_the_pricing_discount_stamped_on_the_line(self) -> None:
         """Transparência do desconto automático (o caso Batard 13,00 → 11,05).

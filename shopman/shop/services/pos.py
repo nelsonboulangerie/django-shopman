@@ -260,6 +260,7 @@ def close_sale(
     _stamp_list_prices_from_session(
         payload, _payload_open_tab_session(channel_ref=channel.ref, payload=payload)
     )
+    _ensure_resolved_prices(payload)
     validate_manager_approval(payload, operator_username=operator_username)
     _validate_fiscal_delivery_fee(payload)
     _validate_payment_completion(payload)
@@ -541,6 +542,7 @@ def review_sale(
         raise ValueError("Abra um POS tab antes de finalizar.")
     # A etiqueta que o KERNEL carimbou vale mais que a que o cliente mandou.
     _stamp_list_prices_from_session(payload, session)
+    _ensure_resolved_prices(payload)
 
     fulfillment_type = _payload_fulfillment_type(payload)
     payment_collection = _payload_payment_collection(payload, fulfillment_type)
@@ -1403,6 +1405,10 @@ def build_session_ops(payload: dict, operator_username: str) -> list[dict]:
             if approved_by:
                 line_discount["approved_by"] = approved_by
             meta["manual_discount"] = line_discount
+        # O preco de ETIQUETA viaja com a linha da comanda, como o modifier
+        # de pricing carimba na venda: sem _list_q na sessao, a review fica
+        # sem regua para o "maior desconto ganha" e sem preco para carimbar.
+        meta["_list_q"] = int(item["unit_price_q"])
         if meta:
             op["meta"] = meta
         ops.append(op)
@@ -1822,6 +1828,24 @@ def _payload_subtotal_q(payload: dict) -> int:
     return max(0, subtotal_q)
 
 
+def _ensure_resolved_prices(payload: dict) -> None:
+    """A review nao pode prometer troco de um total que ela nao conseguiu somar.
+
+    Com itens no payload e subtotal zerado, o preco nao foi resolvido (item sem
+    unit_price_q e sem sessao para carimbar). Recusa clara, em vez de revisao
+    que devolve total 0 e troco do valor inteiro entregue — o fechamento real
+    precifica no kernel, e a tela mentiria para o operador.
+    """
+    if payload.get("items") and _payload_subtotal_q(payload) <= 0:
+        raise PosIntentError(
+            code="price_not_resolved",
+            message="Nao foi possivel resolver o preco dos itens do carrinho.",
+            field="items",
+            focus="search",
+            recovery="Reabra a comanda para o servidor reaplicar os precos de tabela.",
+        )
+
+
 def _payload_discount_q(payload: dict) -> int:
     order_discount_q = int(_payload_manual_discount(payload).get("discount_q", 0) or 0)
     return order_discount_q + _payload_line_discounts_q(payload)
@@ -1851,18 +1875,30 @@ def _stamp_list_prices_from_session(payload: dict, session) -> None:
     """
     if session is None:
         return
-    list_by_sku: dict[str, int] = {}
+    # O preco de referencia da sessao: o _list_q que o kernel carimba, ou —
+    # antes do carimbo (comanda salva direto no balcao) — o proprio
+    # unit_price_q da linha, que e o preco que a tela mostrou.
+    price_by_sku: dict[str, int] = {}
     for item in (session.items or []):
         sku = str(item.get("sku") or "")
+        if not sku:
+            continue
         list_q = _int_q((item.get("meta") or {}).get("_list_q"))
-        if sku and list_q > 0:
-            list_by_sku[sku] = list_q
-    if not list_by_sku:
+        price_q = _int_q(item.get("unit_price_q"))
+        price_by_sku[sku] = list_q or price_q
+    if not price_by_sku:
         return
     for item in payload.get("items", []):
-        list_q = list_by_sku.get(str(item.get("sku") or ""))
-        if list_q:
-            item["list_price_q"] = list_q
+        sku = str(item.get("sku") or "")
+        price_q = price_by_sku.get(sku)
+        if not price_q:
+            continue
+        # So preenche o cobrado quando o payload nao declarou preco (o override
+        # do operador viaja declarado e nao pode ser sobrescrito). A etiqueta
+        # sempre e devolvida: e a regua do "maior desconto ganha".
+        if _int_q(item.get("unit_price_q")) <= 0:
+            item["unit_price_q"] = price_q
+        item["list_price_q"] = price_q
 
 
 def _payload_line_discounts_q(payload: dict) -> int:
