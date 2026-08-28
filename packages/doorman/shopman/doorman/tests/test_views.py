@@ -373,8 +373,19 @@ class TestAccessLinkCreateViewEdges:
 
         assert response.status_code == 200
         data = json.loads(response.content)
-        assert sorted(data) == ["access_url", "expires_at", "has_context", "token"]
+        assert sorted(data) == [
+            "access_flow",
+            "access_url",
+            "expires_at",
+            "handoff_attempted",
+            "handoff_expired",
+            "has_cart_context",
+            "has_context",
+            "token",
+        ]
         assert data["has_context"] is False
+        assert data["has_cart_context"] is False
+        assert data["access_flow"] == "menu"
         # Store-domain entry link; the destination rides in the token metadata,
         # never as a `next` query param (no open-redirect surface).
         assert "/a?t=" in data["access_url"]

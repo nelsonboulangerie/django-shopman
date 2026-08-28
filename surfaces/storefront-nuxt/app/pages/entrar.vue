@@ -104,7 +104,7 @@ const isCheckoutReturnWithCart = computed(() => isCheckoutReturn.value && cartHa
 
 const codeSentLine = computed(() => codeSentPrefix(deliveryLabel.value))
 const stepTitle = computed(() => {
-  if (step.value === 'phone') return copyTitle(authCopy.value?.phone_heading, 'Entrar')
+  if (step.value === 'phone') return copyTitle(authCopy.value?.phone_heading, 'Vamos entrar?')
   if (step.value === 'code') return copyTitle(authCopy.value?.code_heading, 'Informe o código')
   return copyTitle(authCopy.value?.name_heading, 'Como podemos te chamar?')
 })
@@ -121,10 +121,10 @@ const stepDescription = computed(() => {
 })
 // Lampejo (o que vai acontecer), reasseguro (sem senha) e intro do envio manual: alimentam
 // o WhatsappVerifyPanel (configuráveis no Admin). O login em si é pelo access link.
-const waGlimpse = computed(() => copyMessage(authCopy.value?.wa_glimpse, 'Abra o WhatsApp e envie a mensagem pronta. Respondemos com seu link de entrada.'))
-const waNoPasswordNote = computed(() => copyMessage(authCopy.value?.no_password_note, 'Sem senha, email ou cadastro.'))
-const waManualTitle = computed(() => copyTitle(authCopy.value?.wa_manual_title, 'WhatsApp não abriu?'))
-const waManualIntro = computed(() => copyMessage(authCopy.value?.wa_manual_intro, 'Copie esta mensagem e mande para o nosso WhatsApp'))
+const waGlimpse = computed(() => copyMessage(authCopy.value?.wa_glimpse, 'Envie a mensagem pronta e receba um link para entrar.'))
+const waNoPasswordNote = computed(() => copyMessage(authCopy.value?.no_password_note, 'É prático e seguro, e não exige senha.'))
+const waManualTitle = computed(() => copyTitle(authCopy.value?.wa_manual_title, 'Quer fazer você mesmo?'))
+const waManualIntro = computed(() => copyMessage(authCopy.value?.wa_manual_intro, 'Envie esta mensagem diretamente para o nosso WhatsApp'))
 const supportUrl = computed(() => withWhatsAppText(
   loginHome.value?.home.public_config.whatsapp_url || '',
   isCheckoutReturnWithCart.value ? 'Quero finalizar meu pedido' : 'Quero entrar na loja'

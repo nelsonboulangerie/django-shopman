@@ -25,7 +25,7 @@ Quem não usa WhatsApp cai no **fallback SMS** (Comtele), o fluxo OTP clássico
 3. ManyChat (Flow) → POST /api/auth/access/create/  (S2S, API key)
    body: { customer_id/subscriber, access_code: "<a mensagem inteira>", next: "/menu" }
    → o create extrai o NB-XxXx, resolve o contexto e dobra na metadata do token
-   → responde { access_url: ".../a?t=<token>", has_context: true|false, token, expires_at }
+   → responde { access_url: ".../a?t=<token>", has_context: true|false, access_flow, token, expires_at }
 4. ManyChat responde ao cliente com um botão apontando para access_url
 5. Cliente toca → /a?t=<token> → POST /api/v1/auth/access/  (exchange)
    → loga a sessão + adota a sacola (cart_session_key) + redireciona (metadata.next)
@@ -134,12 +134,20 @@ O prefixo do código (`NB-`) e o TTL (30 min) são do doorman
      backend trata como login orgânico e usa `next: "/menu"`; não marca sacola expirada.
      Se vier `NB-*`, o destino guardado no código ganha do fallback `/menu`.
 
+     O backend também aceita o mesmo texto em `state_code`, `code`, `last_input_text`,
+     `last_text_input`, `message` ou `text`, inclusive dentro de `metadata`,
+     `custom_fields` ou `fields`. Isso existe para tolerar nomes diferentes no External
+     Request; a regra continua a mesma: sem o texto/código `NB-*`, não há como recuperar
+     a sacola anônima daquele browser.
+
      Se o Keyword Trigger não expuser o Last Text Input no External Request, use uma
      automação ponte via Default Reply/Last Text Input para capturar a mensagem e
      chamar o mesmo flow. Sem a mensagem inteira, o backend ainda consegue logar pelo
      WhatsApp, mas não consegue recuperar a sacola anônima do site.
-3. **Resposta ao cliente** — mapeie `access_url` e `has_context` da resposta em custom
-   fields do ManyChat, por exemplo `shopman_access_url` e `shopman_has_context`. O
+3. **Resposta ao cliente** — mapeie `access_url`, `has_context`, `handoff_expired` e,
+   se quiser legibilidade, `access_flow` da resposta em custom fields do ManyChat, por
+   exemplo `shopman_access_url`, `shopman_has_context`,
+   `shopman_handoff_expired` e `shopman_access_flow`. O
    ManyChat não precisa olhar para o texto enviado pelo cliente:
    - `shopman_access_url` vazio: não mostre botão de loja. Copy: `Não consegui gerar seu
      link agora. Toque em tentar novamente ou envie uma mensagem por aqui que vamos
@@ -148,10 +156,15 @@ O prefixo do código (`NB-`) e o TTL (30 min) são do doorman
      botão/quick reply `Tentar novamente` que retorna ao External Request.
    - `shopman_has_context = true`: copy `Pronto. Toque para continuar seu pedido.`
      Botão `Continuar pedido`, URL `shopman_access_url`.
+   - `shopman_has_context = false` e `shopman_handoff_expired = true`: copy `Pronto,
+     gerei seu link, mas não consegui recuperar sua sacola desta vez. Toque para entrar
+     na loja.` Botão `Entrar na loja`, URL `shopman_access_url`; tagueie
+     `shopman_login_handoff_expired` para o atendimento poder acompanhar.
    - `shopman_has_context = false`: copy `Pronto. Toque para entrar na loja.` Botão
      `Ver cardápio`, URL `shopman_access_url`.
 
-   `has_context` é um booleano JSON (`true`/`false`, minúsculo e sem aspas). Na UI do
+   `has_context` significa **sacola real recuperada**, não apenas "havia um `NB-` na
+   mensagem". É um booleano JSON (`true`/`false`, minúsculo e sem aspas). Na UI do
    ManyChat ele pode aparecer como `True/False`; use uma condição de booleano ("is true")
    em vez de comparar texto com `"True"`.
 
