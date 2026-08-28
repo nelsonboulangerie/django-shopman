@@ -188,6 +188,8 @@ class OrderTrackingCopyProjection:
     pix_copy_btn: str
     pix_copied: str
     pix_expires_label: str
+    pix_pending_note: str
+    pix_auto_update_note: str
     card_intro: str
     card_security_note: str
 
@@ -220,6 +222,8 @@ class OrderTrackingPromiseProjection:
     pix_copy_paste: str | None = None
     pix_expires_at: str | None = None
     checkout_url: str | None = None
+    fulfillment_wait_kind: str = ""
+    fulfillment_wait_until: str | None = None
 
 
 @dataclass(frozen=True)
@@ -592,6 +596,8 @@ def _present_promise(
         pix_copy_paste=data.pix_copy_paste,
         pix_expires_at=data.pix_expires_at,
         checkout_url=data.checkout_url,
+        fulfillment_wait_kind=data.fulfillment_wait_kind,
+        fulfillment_wait_until=data.fulfillment_wait_until,
     )
 
 
@@ -634,6 +640,7 @@ def _promise_copy(
     confere contra as obrigações do dado.
     """
     state = data.state
+    wait_display = when_display or _commitment_date_display(data.fulfillment_wait_until)
 
     if state == "preorder_scheduled":
         title = copy.title("TRACKING_PROMISE_PREORDER_TITLE", "Encomenda confirmada")
@@ -655,18 +662,53 @@ def _promise_copy(
                      "O prazo acabou e cancelamos o pedido.")
 
     if state == "payment_pix_ready":
-        # Um estado, uma frase: o cliente copia o código e paga. Se a loja ainda
-        # não confirmou a disponibilidade, isso vive na nota de rodapé, não em
-        # um segundo estado (plano PAYMENT-TRACKING-MERGE, §Pares).
-        return _pair(copy, "TRACKING_PAYMENT_REQUESTED",
-                     "Pague com Pix",
-                     "Use o código abaixo e começamos a preparar.")
+        # Um estado, uma frase: o cliente copia o código e paga. Pix existe em
+        # dois contratos: em post_commit a loja já aceitou antes do QR; em
+        # at_commit o pedido ainda pode estar new. A copy não inventa resposta
+        # de loja nem repete confirmação operacional que já aconteceu.
+        if _is_fulfillment_wait(data):
+            message = _payment_wait_message(
+                data,
+                copy=copy,
+                wait_display=wait_display,
+                method="pix",
+            )
+            return copy.title("TRACKING_PAYMENT_REQUESTED", "Pague com Pix"), message
+        message = (
+            copy.message(
+                "TRACKING_PAYMENT_PIX_READY_MESSAGE_NEW",
+                "Pague com o Pix abaixo. A confirmação do Pix é automática; acompanhe os próximos passos por aqui.",
+            )
+            if status == "new"
+            else copy.message(
+                "TRACKING_PAYMENT_PIX_READY_MESSAGE_ACCEPTED",
+                "Pedido aceito. Pague com o Pix abaixo. A confirmação do Pix é automática; acompanhe os próximos passos por aqui.",
+            )
+        )
+        return copy.title("TRACKING_PAYMENT_REQUESTED", "Pague com Pix"), message
 
     if state == "payment_card_ready":
+        if _is_fulfillment_wait(data):
+            message = _payment_wait_message(
+                data,
+                copy=copy,
+                wait_display=wait_display,
+                method="card",
+            )
+            return copy.title("TRACKING_PROMISE_CARD_TITLE", "Pague com cartão"), message
+        if status == "new":
+            card_message = copy.message(
+                "TRACKING_PROMISE_CARD_MESSAGE_NEW",
+                "Finalize no ambiente seguro para autorizar o cartão e acompanhar o pedido por aqui.",
+            )
+        else:
+            card_message = copy.message(
+                "TRACKING_PROMISE_CARD_MESSAGE_ACCEPTED",
+                "Finalize no ambiente seguro para seguir com o pedido aceito.",
+            )
         return (
             copy.title("TRACKING_PROMISE_CARD_TITLE", "Pague com cartão"),
-            copy.message("TRACKING_PROMISE_CARD_MESSAGE",
-                         "Finalize no ambiente seguro e começamos a preparar."),
+            card_message,
         )
 
     if state == "payment_retry":
@@ -677,10 +719,26 @@ def _promise_copy(
         )
 
     if state == "payment_preparing":
+        if data.fulfillment_wait_kind == "preorder":
+            return (
+                copy.title("TRACKING_PROMISE_PIX_PREPARING_TITLE", "Gerando seu Pix"),
+                copy.message(
+                    "TRACKING_PROMISE_PIX_PREPARING_PREORDER_MESSAGE",
+                    "Estamos gerando o Pix da sua encomenda. O código aparece aqui em instantes.",
+                ),
+            )
+        if _is_fulfillment_wait(data):
+            return (
+                copy.title("TRACKING_PROMISE_PIX_PREPARING_TITLE", "Gerando seu Pix"),
+                copy.message(
+                    "TRACKING_PROMISE_PIX_PREPARING_WAITLIST_MESSAGE",
+                    "Estamos gerando o Pix da sua reserva. O código aparece aqui em instantes.",
+                ),
+            )
         return (
-            copy.title("TRACKING_PROMISE_PIX_PREPARING_TITLE", "Preparando seu Pix"),
+            copy.title("TRACKING_PROMISE_PIX_PREPARING_TITLE", "Gerando seu Pix"),
             copy.message("TRACKING_PROMISE_PIX_PREPARING_MESSAGE",
-                         "Pedido aceito. O código aparece aqui em instantes."),
+                         "Pedido aceito. O código Pix aparece aqui em instantes."),
         )
 
     if state == "store_closed":
@@ -697,12 +755,37 @@ def _promise_copy(
         return copy.title("TRACKING_PROMISE_RECEIVED_TITLE", "Pedido recebido"), message
 
     if state == "payment_authorized":
+        if _is_fulfillment_wait(data):
+            if wait_display:
+                if status == "new":
+                    message = copy.message(
+                        "TRACKING_CARD_AUTHORIZED_WAITLIST_MESSAGE",
+                        "Sua reserva está na fila de espera.",
+                    )
+                else:
+                    message = copy.message(
+                        "TRACKING_CARD_AUTHORIZED_WAITLIST_MESSAGE_ACCEPTED",
+                        "Sua reserva está na fila de espera. Avisamos quando estiver pronto.",
+                    )
+                message = message.replace("{when}", wait_display)
+            else:
+                if status == "new":
+                    message = copy.message(
+                        "TRACKING_CARD_AUTHORIZED_WAITLIST_MESSAGE_NO_DATE",
+                        "Sua reserva está na fila de espera.",
+                    )
+                else:
+                    message = copy.message(
+                        "TRACKING_CARD_AUTHORIZED_WAITLIST_MESSAGE_ACCEPTED_NO_DATE",
+                        "Sua reserva está na fila de espera. Avisamos quando estiver pronto.",
+                    )
+            return copy.title("TRACKING_CARD_AUTHORIZED", "Pagamento autorizado"), message
         message = (
             copy.message("TRACKING_CARD_AUTHORIZED_MESSAGE_NEW",
-                         "Agora conferimos a disponibilidade.")
+                         "Cartão autorizado. Acompanhe o pedido por aqui.")
             if status == "new"
             else copy.message("TRACKING_CARD_AUTHORIZED_MESSAGE_CONFIRMED",
-                              "Estamos finalizando o pagamento.")
+                              "Cartão autorizado. Pedido aceito; acompanhe o andamento por aqui.")
         )
         return copy.title("TRACKING_CARD_AUTHORIZED", "Pagamento autorizado"), message
 
@@ -712,6 +795,13 @@ def _promise_copy(
         # frase já podia dizer — e o histórico registra o passo de qualquer jeito.
         # Chaves literais: o scanner do usage_map lê a chamada, não a variável.
         title = copy.title("TRACKING_PROMISE_RECEIVED_TITLE", "Pedido recebido")
+        if _is_fulfillment_wait(data):
+            message = (
+                _paid_fulfillment_wait_message(data, copy=copy, wait_display=wait_display)
+                if payment_confirmed
+                else _waitlist_message(data, copy=copy, wait_display=wait_display)
+            )
+            return title, message
         if payment_confirmed:
             return title, copy.message(
                 "TRACKING_PROMISE_AVAILABILITY_MESSAGE_PAID",
@@ -729,9 +819,19 @@ def _promise_copy(
         # já aconteceu. Com o pedido ainda `new` (canal sem auto-confirmação), a
         # conferência de fato é o que falta.
         if status == "accepted":
+            if _is_fulfillment_wait(data):
+                return (
+                    copy.title("TRACKING_PROMISE_CONFIRMED_WAITING", "Pedido aceito"),
+                    _waitlist_message(data, copy=copy, wait_display=wait_display),
+                )
             return _pair(copy, "TRACKING_PROMISE_CONFIRMED_WAITING",
                          "Pedido aceito",
-                         "Já vamos começar o preparo.")
+                         "Acompanhe o andamento por aqui.")
+        if _is_fulfillment_wait(data):
+            return (
+                copy.title("TRACKING_PROMISE_RECEIVED_TITLE", "Pedido recebido"),
+                _waitlist_message(data, copy=copy, wait_display=wait_display),
+            )
         return (
             copy.title("TRACKING_PROMISE_RECEIVED_TITLE", "Pedido recebido"),
             copy.message("TRACKING_PROMISE_AVAILABILITY_MESSAGE",
@@ -739,12 +839,15 @@ def _promise_copy(
         )
 
     if state == "payment_confirmed":
+        if _is_fulfillment_wait(data):
+            message = _waitlist_message(data, copy=copy, wait_display=wait_display)
+            return copy.title("TRACKING_PROMISE_PAYMENT_TITLE", "Pagamento confirmado"), message
         message = (
             copy.message("TRACKING_PROMISE_PAYMENT_CONFIRMED_MESSAGE_NEW",
                          "Estamos conferindo a disponibilidade.")
             if status == "new"
             else copy.message("TRACKING_PROMISE_PAYMENT_CONFIRMED_MESSAGE_CONFIRMED",
-                              "Já vamos começar o preparo.")
+                              "Pedido aceito. Acompanhe o andamento por aqui.")
         )
         return copy.title("TRACKING_PROMISE_PAYMENT_TITLE", "Pagamento confirmado"), message
 
@@ -834,6 +937,114 @@ _TERMINAL_PROMISE_COPY: dict[str, tuple[str, str, str, str]] = {
 
 def _pair(copy: CopyCatalog, key: str, fallback_title: str, fallback_message: str) -> tuple[str, str]:
     return copy.title(key, fallback_title), copy.message(key, fallback_message)
+
+
+def _is_fulfillment_wait(data: TrackingPromiseData) -> bool:
+    return data.fulfillment_wait_kind in {"planned_batch", "preorder"}
+
+
+def _waitlist_message(
+    data: TrackingPromiseData,
+    *,
+    copy: CopyCatalog,
+    wait_display: str | None,
+) -> str:
+    if wait_display:
+        if data.fulfillment_wait_kind == "preorder":
+            return copy.message(
+                "TRACKING_PROMISE_PREORDER_WAIT_MESSAGE",
+                "Sua encomenda está reservada para {when}. Preparamos tudo fresco no dia.",
+            ).replace("{when}", wait_display)
+        return copy.message(
+            "TRACKING_PROMISE_WAITLIST_MESSAGE",
+            "Sua reserva está na fila de espera. Avisamos quando estiver pronto.",
+        ).replace("{when}", wait_display)
+    if data.fulfillment_wait_kind == "preorder":
+        return copy.message(
+            "TRACKING_PROMISE_PREORDER_WAIT_MESSAGE_NO_DATE",
+            "Sua encomenda está reservada. Preparamos tudo fresco no dia combinado.",
+        )
+    return copy.message(
+        "TRACKING_PROMISE_WAITLIST_MESSAGE_NO_DATE",
+        "Sua reserva está na fila de espera. Avisamos quando estiver pronto.",
+    )
+
+
+def _payment_wait_message(
+    data: TrackingPromiseData,
+    *,
+    copy: CopyCatalog,
+    wait_display: str | None,
+    method: str,
+) -> str:
+    if data.fulfillment_wait_kind == "preorder":
+        if method == "card":
+            if wait_display:
+                return copy.message(
+                    "TRACKING_PROMISE_CARD_PREORDER_MESSAGE",
+                    "Finalize no ambiente seguro para garantir sua encomenda para {when}.",
+                ).replace("{when}", wait_display)
+            return copy.message(
+                "TRACKING_PROMISE_CARD_PREORDER_MESSAGE_NO_DATE",
+                "Finalize no ambiente seguro para garantir sua encomenda.",
+            )
+        if wait_display:
+            return copy.message(
+                "TRACKING_PAYMENT_PIX_PREORDER_MESSAGE",
+                "Pague com o Pix abaixo para confirmar sua encomenda para {when}.",
+            ).replace("{when}", wait_display)
+        return copy.message(
+            "TRACKING_PAYMENT_PIX_PREORDER_MESSAGE_NO_DATE",
+            "Pague com o Pix abaixo para confirmar sua encomenda.",
+        )
+
+    if method == "card":
+        if wait_display:
+            return copy.message(
+                "TRACKING_PROMISE_CARD_WAITLIST_MESSAGE",
+                "Finalize no ambiente seguro para garantir sua reserva na fila de espera.",
+            ).replace("{when}", wait_display)
+        return copy.message(
+            "TRACKING_PROMISE_CARD_WAITLIST_MESSAGE_NO_DATE",
+            "Finalize no ambiente seguro para garantir sua reserva na fila de espera.",
+        )
+    if wait_display:
+        return copy.message(
+            "TRACKING_PAYMENT_PIX_WAITLIST_MESSAGE",
+            "Pague com o Pix abaixo para confirmar sua reserva na fila de espera.",
+        ).replace("{when}", wait_display)
+    return copy.message(
+        "TRACKING_PAYMENT_PIX_WAITLIST_MESSAGE_NO_DATE",
+        "Pague com o Pix abaixo para confirmar sua reserva na fila de espera.",
+    )
+
+
+def _paid_fulfillment_wait_message(
+    data: TrackingPromiseData,
+    *,
+    copy: CopyCatalog,
+    wait_display: str | None,
+) -> str:
+    if data.fulfillment_wait_kind == "preorder":
+        if wait_display:
+            return copy.message(
+                "TRACKING_PROMISE_PREORDER_WAIT_MESSAGE_PAID",
+                "Pagamento confirmado. Sua encomenda está reservada para {when}. Preparamos tudo fresco no dia.",
+            ).replace("{when}", wait_display)
+        return copy.message(
+            "TRACKING_PROMISE_PREORDER_WAIT_MESSAGE_PAID_NO_DATE",
+            "Pagamento confirmado. Sua encomenda está reservada. Preparamos tudo fresco no dia combinado.",
+        )
+
+    if wait_display:
+        return copy.message(
+            "TRACKING_PROMISE_WAITLIST_MESSAGE_PAID",
+            "Pagamento confirmado. Sua reserva está na fila de espera. Avisamos quando estiver pronto.",
+        ).replace("{when}", wait_display)
+    return copy.message(
+        "TRACKING_PROMISE_WAITLIST_MESSAGE_PAID_NO_DATE",
+        "Pagamento confirmado. Sua reserva está na fila de espera. Avisamos quando estiver pronto.",
+    )
 
 
 def _first_visible_action(actions: tuple[Action, ...]) -> Action | None:
@@ -1068,12 +1279,26 @@ def _tracking_copy(copy: CopyCatalog) -> OrderTrackingCopyProjection:
         page_meta_description=copy.message("TRACKING_PAGE_META_DESCRIPTION", "Acompanhe seu pedido"),
         delivery_heading=copy.title("TRACKING_DELIVERY_HEADING", "Entrega"),
         stale_cta=copy.message("TRACKING_PROMISE_STALE", "Atualizar"),
-        pix_instruction=copy.message("TRACKING_PAYMENT_PIX_INSTRUCTION", "Escaneie o QR Code ou copie o código Pix abaixo."),
+        pix_instruction=copy.message(
+            "TRACKING_PAYMENT_PIX_INSTRUCTION",
+            "Escaneie o QR Code no app do banco ou copie o código Pix.",
+        ),
         pix_copy_label=copy.title("TRACKING_PAYMENT_PIX_COPY_LABEL", "Pix Copia e Cola"),
         pix_copy_btn=copy.title("TRACKING_PAYMENT_PIX_COPY_BTN", "Copiar código"),
         pix_copied=copy.title("TRACKING_PAYMENT_PIX_COPIED", "Código Pix copiado."),
         pix_expires_label=copy.message("TRACKING_PAYMENT_PIX_EXPIRES_LABEL", "Tempo para pagar"),
-        card_intro=copy.message("TRACKING_PAYMENT_CARD_INTRO", "Conclua o pagamento no nosso ambiente seguro. A confirmação é automática."),
+        pix_pending_note=copy.message(
+            "TRACKING_PAYMENT_PIX_PENDING_NOTE",
+            "O prazo para pagar começa quando o código aparecer.",
+        ),
+        pix_auto_update_note=copy.message(
+            "TRACKING_PAYMENT_PIX_AUTO_UPDATE_NOTE",
+            "Quando o Pix for confirmado, atualizamos esta tela automaticamente.",
+        ),
+        card_intro=copy.message(
+            "TRACKING_PAYMENT_CARD_INTRO",
+            "Conclua o pagamento no nosso ambiente seguro. O acompanhamento atualiza quando o gateway responder.",
+        ),
         card_security_note=copy.message("TRACKING_PAYMENT_CARD_SECURITY_NOTE", "Pagamento processado por provedor seguro. Nós não recebemos os dados do seu cartão."),
     )
 

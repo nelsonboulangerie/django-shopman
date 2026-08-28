@@ -4,7 +4,6 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { mockNuxtImport } from '@nuxt/test-utils/runtime'
 
 const { fetchMock, navigateTo } = vi.hoisted(() => ({ fetchMock: vi.fn(), navigateTo: vi.fn() }))
-mockNuxtImport('$fetch', () => fetchMock)
 mockNuxtImport('navigateTo', () => navigateTo)
 mockNuxtImport('useSonner', () => {
   const fn: any = () => {}
@@ -27,6 +26,7 @@ describe('useReorder', () => {
     document.cookie = 'csrftoken=testtoken'
     vi.unstubAllGlobals()
     fetchMock.mockReset()
+    vi.stubGlobal('$fetch', fetchMock)
     navigateTo.mockClear()
   })
 

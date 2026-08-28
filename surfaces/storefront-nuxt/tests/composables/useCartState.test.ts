@@ -7,7 +7,6 @@ import { mockNuxtImport } from '@nuxt/test-utils/runtime'
 import type { ProductMutationMeta, SubstituteProjection } from '~/types/shopman'
 
 const { fetchMock } = vi.hoisted(() => ({ fetchMock: vi.fn() }))
-mockNuxtImport('$fetch', () => fetchMock)
 mockNuxtImport('useSonner', () => {
   const fn: any = () => {}
   fn.success = () => {}
@@ -50,6 +49,7 @@ describe('useCartState', () => {
     document.cookie = 'csrftoken=testtoken'
     vi.unstubAllGlobals()
     fetchMock.mockReset()
+    vi.stubGlobal('$fetch', fetchMock)
   })
 
   it('optimistic update reconciles to server truth on drain', async () => {

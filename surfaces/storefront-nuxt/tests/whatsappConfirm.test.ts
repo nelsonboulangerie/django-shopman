@@ -24,6 +24,7 @@ describe('useWhatsAppConfirm', () => {
       computed,
       useShopmanApiPath: () => (p: string) => p,
       useShopmanCsrfHeaders: () => async () => ({}),
+      useCartState: () => ({ settleCart: vi.fn(async () => ({ items_count: 0, is_empty: true })) }),
       $fetch: vi.fn(async (url: string, opts: { body?: unknown }) => {
         fetched = { url, body: opts?.body }
         return { deep_link: 'https://wa.me/5543999?text=Meu%20c%C3%B3digo' }
@@ -83,6 +84,23 @@ describe('useWhatsAppConfirm', () => {
     expect(confirmer.failed.value).toBe(true)
     expect(confirmer.starting.value).toBe(false)
   })
+
+  it('não abre o WhatsApp quando havia sacola e o start não carregou contexto', async () => {
+    Object.assign(globalThis, {
+      useCartState: () => ({ settleCart: vi.fn(async () => ({ items_count: 1, is_empty: false })) }),
+      $fetch: vi.fn(async (url: string, opts: { body?: unknown }) => {
+        fetched = { url, body: opts?.body }
+        return { deep_link: 'https://wa.me/5543999?text=Meu%20c%C3%B3digo', has_cart_context: false }
+      })
+    })
+    const { useWhatsAppConfirm } = await import('../app/composables/useWhatsAppConfirm')
+
+    const confirmer = useWhatsAppConfirm()
+    await confirmer.confirm('/finalizar')
+
+    expect(navigated).toBeNull()
+    expect(confirmer.failed.value).toBe(true)
+  })
 })
 
 describe('useWhatsappVerify', () => {
@@ -94,6 +112,7 @@ describe('useWhatsappVerify', () => {
       ref,
       useShopmanApiPath: () => (p: string) => p,
       useShopmanCsrfHeaders: () => async () => ({}),
+      useCartState: () => ({ settleCart: vi.fn(async () => ({ items_count: 0, is_empty: true })) }),
       $fetch: vi.fn(async (url: string, opts: { body?: unknown }) => {
         fetched = { url, body: opts?.body }
         return {
@@ -118,6 +137,29 @@ describe('useWhatsappVerify', () => {
     expect(verify.message.value).toBe('#menu NB-ABC123')
   })
 
+  it('não libera deep link quando a sacola local não entrou no NB', async () => {
+    Object.assign(globalThis, {
+      useCartState: () => ({ settleCart: vi.fn(async () => ({ items_count: 1, is_empty: false })) }),
+      $fetch: vi.fn(async (url: string, opts: { body?: unknown }) => {
+        fetched = { url, body: opts?.body }
+        return {
+          code: 'NB-ABC123',
+          message: '#menu NB-ABC123',
+          deep_link: 'https://wa.me/5543999?text=%23menu%20NB-ABC123',
+          wa_number: '5543999',
+          has_cart_context: false
+        }
+      })
+    })
+    const { useWhatsappVerify } = await import('../app/composables/useWhatsappVerify')
+
+    const verify = useWhatsappVerify()
+    await verify.start('/finalizar')
+
+    expect(verify.status.value).toBe('error')
+    expect(verify.deepLink.value).toBe('')
+  })
+
   it('mostra estado de preparo enquanto o link do WhatsApp nasce', async () => {
     let resolveFetch!: (value: { code: string, message?: string, deep_link: string, wa_number: string }) => void
     Object.assign(globalThis, {
@@ -134,7 +176,8 @@ describe('useWhatsappVerify', () => {
     const pendingStart = verify.start('/finalizar')
 
     expect(verify.status.value).toBe('loading')
-    await Promise.resolve()
+    for (let i = 0; i < 6 && !resolveFetch; i += 1) await Promise.resolve()
+    expect(resolveFetch).toBeTypeOf('function')
     resolveFetch({ code: 'NB-ABC123', deep_link: 'https://wa.me/5543999?text=%23menu%20NB-ABC123', wa_number: '5543999' })
     await pendingStart
     expect(verify.status.value).toBe('ready')

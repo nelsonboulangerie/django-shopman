@@ -307,10 +307,10 @@ OMOTENASHI_DEFAULTS: dict[str, dict[str, dict[str, CopyEntry]]] = {
         WILDCARD: {WILDCARD: CopyEntry(message="Navegue pelo cardápio e adicione à sacola. A disponibilidade aparece em tempo real.")},
     },
     "HOW_ONLINE_PAY_MESSAGE": {
-        WILDCARD: {WILDCARD: CopyEntry(message="Pix rápido e seguro, com confirmação automática assim que o pagamento chega.")},
+        WILDCARD: {WILDCARD: CopyEntry(message="Pague pelo método disponível. O acompanhamento mostra quando o pagamento for confirmado.")},
     },
     "HOW_ONLINE_TRACK_MESSAGE": {
-        WILDCARD: {WILDCARD: CopyEntry(message="Acompanhe o preparo em tempo real. Retire na loja ou receba em casa.")},
+        WILDCARD: {WILDCARD: CopyEntry(message="Acompanhe o status do pedido em tempo real. Retire na loja ou receba em casa.")},
     },
     "HOW_STORE_SELF_SERVICE_MESSAGE": {
         WILDCARD: {WILDCARD: CopyEntry(message="Escolha direto da prateleira. Pese, embale e leve ao caixa.")},
@@ -567,18 +567,98 @@ OMOTENASHI_DEFAULTS: dict[str, dict[str, dict[str, CopyEntry]]] = {
         WILDCARD: {
             WILDCARD: CopyEntry(
                 title="Pague com Pix",
-                message="Use o código abaixo e começamos a preparar.",
+            ),
+        },
+    },
+    "TRACKING_PAYMENT_PIX_READY_MESSAGE_NEW": {
+        WILDCARD: {
+            WILDCARD: CopyEntry(
+                message="Pague com o Pix abaixo. A confirmação do Pix é automática; acompanhe os próximos passos por aqui.",
+            ),
+        },
+    },
+    "TRACKING_PAYMENT_PIX_READY_MESSAGE_ACCEPTED": {
+        WILDCARD: {
+            WILDCARD: CopyEntry(
+                message="Pedido aceito. Pague com o Pix abaixo. A confirmação do Pix é automática; acompanhe os próximos passos por aqui.",
+            ),
+        },
+    },
+    "TRACKING_PAYMENT_PIX_WAITLIST_MESSAGE": {
+        WILDCARD: {
+            WILDCARD: CopyEntry(
+                message="Pague com o Pix abaixo para confirmar sua reserva na fila de espera.",
+            ),
+        },
+    },
+    "TRACKING_PAYMENT_PIX_WAITLIST_MESSAGE_NO_DATE": {
+        WILDCARD: {
+            WILDCARD: CopyEntry(
+                message="Pague com o Pix abaixo para confirmar sua reserva na fila de espera.",
+            ),
+        },
+    },
+    "TRACKING_PAYMENT_PIX_PREORDER_MESSAGE": {
+        WILDCARD: {
+            WILDCARD: CopyEntry(
+                message="Pague com o Pix abaixo para confirmar sua encomenda para {when}.",
+            ),
+        },
+    },
+    "TRACKING_PAYMENT_PIX_PREORDER_MESSAGE_NO_DATE": {
+        WILDCARD: {
+            WILDCARD: CopyEntry(
+                message="Pague com o Pix abaixo para confirmar sua encomenda.",
             ),
         },
     },
     "TRACKING_PROMISE_PIX_ACTION": {
-        WILDCARD: {WILDCARD: CopyEntry(title="Copiar código PIX")},
+        WILDCARD: {WILDCARD: CopyEntry(title="Copiar código Pix")},
     },
     "TRACKING_PROMISE_CARD_TITLE": {
         WILDCARD: {WILDCARD: CopyEntry(title="Pague com cartão")},
     },
-    "TRACKING_PROMISE_CARD_MESSAGE": {
-        WILDCARD: {WILDCARD: CopyEntry(message="Finalize no ambiente seguro e começamos a preparar.")},
+    "TRACKING_PROMISE_CARD_MESSAGE_NEW": {
+        WILDCARD: {
+            WILDCARD: CopyEntry(
+                message="Finalize no ambiente seguro para autorizar o cartão e acompanhar o pedido por aqui.",
+            ),
+        },
+    },
+    "TRACKING_PROMISE_CARD_MESSAGE_ACCEPTED": {
+        WILDCARD: {
+            WILDCARD: CopyEntry(
+                message="Finalize no ambiente seguro para seguir com o pedido aceito.",
+            ),
+        },
+    },
+    "TRACKING_PROMISE_CARD_WAITLIST_MESSAGE": {
+        WILDCARD: {
+            WILDCARD: CopyEntry(
+                message="Finalize no ambiente seguro para garantir sua reserva na fila de espera.",
+            ),
+        },
+    },
+    "TRACKING_PROMISE_CARD_WAITLIST_MESSAGE_NO_DATE": {
+        WILDCARD: {
+            WILDCARD: CopyEntry(
+                message="Finalize no ambiente seguro para garantir sua reserva na fila de espera.",
+            ),
+        },
+    },
+    "TRACKING_PROMISE_CARD_PREORDER_MESSAGE": {
+        WILDCARD: {
+            WILDCARD: CopyEntry(
+                message="Finalize no ambiente seguro para garantir sua encomenda para {when}.",
+            ),
+        },
+    },
+    "TRACKING_PROMISE_CARD_PREORDER_MESSAGE_NO_DATE": {
+        WILDCARD: {
+            WILDCARD: CopyEntry(
+                message="Finalize no ambiente seguro para garantir sua encomenda.",
+            ),
+        },
     },
     "TRACKING_PROMISE_CARD_ACTION": {
         WILDCARD: {WILDCARD: CopyEntry(title="Pagar com cartão")},
@@ -597,10 +677,24 @@ OMOTENASHI_DEFAULTS: dict[str, dict[str, dict[str, CopyEntry]]] = {
         WILDCARD: {WILDCARD: CopyEntry(title="Tentar novamente")},
     },
     "TRACKING_PROMISE_PIX_PREPARING_TITLE": {
-        WILDCARD: {WILDCARD: CopyEntry(title="Preparando seu Pix")},
+        WILDCARD: {WILDCARD: CopyEntry(title="Gerando seu Pix")},
     },
     "TRACKING_PROMISE_PIX_PREPARING_MESSAGE": {
-        WILDCARD: {WILDCARD: CopyEntry(message="Pedido aceito. O código aparece aqui em instantes.")},
+        WILDCARD: {WILDCARD: CopyEntry(message="Pedido aceito. O código Pix aparece aqui em instantes.")},
+    },
+    "TRACKING_PROMISE_PIX_PREPARING_WAITLIST_MESSAGE": {
+        WILDCARD: {
+            WILDCARD: CopyEntry(
+                message="Estamos gerando o Pix da sua reserva. O código aparece aqui em instantes.",
+            ),
+        },
+    },
+    "TRACKING_PROMISE_PIX_PREPARING_PREORDER_MESSAGE": {
+        WILDCARD: {
+            WILDCARD: CopyEntry(
+                message="Estamos gerando o Pix da sua encomenda. O código aparece aqui em instantes.",
+            ),
+        },
     },
     "TRACKING_PAYMENT_TIME_LEFT": {
         WILDCARD: {WILDCARD: CopyEntry(message="Prazo para pagar:")},
@@ -639,6 +733,68 @@ OMOTENASHI_DEFAULTS: dict[str, dict[str, dict[str, CopyEntry]]] = {
     "TRACKING_PROMISE_AVAILABILITY_MESSAGE": {
         WILDCARD: {WILDCARD: CopyEntry(message="Estamos conferindo a disponibilidade. Avisamos em seguida.")},
     },
+    "TRACKING_PROMISE_WAITLIST_MESSAGE": {
+        WILDCARD: {
+            WILDCARD: CopyEntry(
+                message="Sua reserva está na fila de espera. Avisamos quando estiver pronto.",
+            ),
+        },
+    },
+    "TRACKING_PROMISE_WAITLIST_MESSAGE_NO_DATE": {
+        WILDCARD: {
+            WILDCARD: CopyEntry(
+                message="Sua reserva está na fila de espera. Avisamos quando estiver pronto.",
+            ),
+        },
+    },
+    "TRACKING_PROMISE_WAITLIST_MESSAGE_PAID": {
+        WILDCARD: {
+            WILDCARD: CopyEntry(
+                message=(
+                    "Pagamento confirmado. Sua reserva está na fila de espera. "
+                    "Avisamos quando estiver pronto."
+                ),
+            ),
+        },
+    },
+    "TRACKING_PROMISE_WAITLIST_MESSAGE_PAID_NO_DATE": {
+        WILDCARD: {
+            WILDCARD: CopyEntry(
+                message=(
+                    "Pagamento confirmado. Sua reserva está na fila de espera. "
+                    "Avisamos quando estiver pronto."
+                ),
+            ),
+        },
+    },
+    "TRACKING_PROMISE_PREORDER_WAIT_MESSAGE": {
+        WILDCARD: {
+            WILDCARD: CopyEntry(
+                message="Sua encomenda está reservada para {when}. Preparamos tudo fresco no dia.",
+            ),
+        },
+    },
+    "TRACKING_PROMISE_PREORDER_WAIT_MESSAGE_NO_DATE": {
+        WILDCARD: {
+            WILDCARD: CopyEntry(
+                message="Sua encomenda está reservada. Preparamos tudo fresco no dia combinado.",
+            ),
+        },
+    },
+    "TRACKING_PROMISE_PREORDER_WAIT_MESSAGE_PAID": {
+        WILDCARD: {
+            WILDCARD: CopyEntry(
+                message="Pagamento confirmado. Sua encomenda está reservada para {when}. Preparamos tudo fresco no dia.",
+            ),
+        },
+    },
+    "TRACKING_PROMISE_PREORDER_WAIT_MESSAGE_PAID_NO_DATE": {
+        WILDCARD: {
+            WILDCARD: CopyEntry(
+                message="Pagamento confirmado. Sua encomenda está reservada. Preparamos tudo fresco no dia combinado.",
+            ),
+        },
+    },
     "TRACKING_PROMISE_CLOSED_HOURS_MESSAGE": {
         WILDCARD: {WILDCARD: CopyEntry(message="Estamos fechados agora. Conferimos seu pedido assim que abrirmos.")},
     },
@@ -668,7 +824,7 @@ OMOTENASHI_DEFAULTS: dict[str, dict[str, dict[str, CopyEntry]]] = {
         WILDCARD: {
             WILDCARD: CopyEntry(
                 title="Pedido aceito",
-                message="Já vamos começar o preparo.",
+                message="Acompanhe o andamento por aqui.",
             ),
         },
     },
@@ -690,13 +846,49 @@ OMOTENASHI_DEFAULTS: dict[str, dict[str, dict[str, CopyEntry]]] = {
         WILDCARD: {WILDCARD: CopyEntry(message="Estamos conferindo a disponibilidade.")},
     },
     "TRACKING_PROMISE_PAYMENT_CONFIRMED_MESSAGE_CONFIRMED": {
-        WILDCARD: {WILDCARD: CopyEntry(message="Já vamos começar o preparo.")},
+        WILDCARD: {WILDCARD: CopyEntry(message="Pedido aceito. Acompanhe o andamento por aqui.")},
     },
     "TRACKING_CARD_AUTHORIZED_MESSAGE_NEW": {
-        WILDCARD: {WILDCARD: CopyEntry(message="Agora conferimos a disponibilidade.")},
+        WILDCARD: {
+            WILDCARD: CopyEntry(
+                message="Cartão autorizado. Acompanhe o pedido por aqui.",
+            ),
+        },
     },
     "TRACKING_CARD_AUTHORIZED_MESSAGE_CONFIRMED": {
-        WILDCARD: {WILDCARD: CopyEntry(message="Estamos finalizando o pagamento.")},
+        WILDCARD: {
+            WILDCARD: CopyEntry(
+                message="Cartão autorizado. Pedido aceito; acompanhe o andamento por aqui.",
+            ),
+        },
+    },
+    "TRACKING_CARD_AUTHORIZED_WAITLIST_MESSAGE": {
+        WILDCARD: {
+            WILDCARD: CopyEntry(
+                message="Sua reserva está na fila de espera.",
+            ),
+        },
+    },
+    "TRACKING_CARD_AUTHORIZED_WAITLIST_MESSAGE_NO_DATE": {
+        WILDCARD: {
+            WILDCARD: CopyEntry(
+                message="Sua reserva está na fila de espera.",
+            ),
+        },
+    },
+    "TRACKING_CARD_AUTHORIZED_WAITLIST_MESSAGE_ACCEPTED": {
+        WILDCARD: {
+            WILDCARD: CopyEntry(
+                message="Sua reserva está na fila de espera. Avisamos quando estiver pronto.",
+            ),
+        },
+    },
+    "TRACKING_CARD_AUTHORIZED_WAITLIST_MESSAGE_ACCEPTED_NO_DATE": {
+        WILDCARD: {
+            WILDCARD: CopyEntry(
+                message="Sua reserva está na fila de espera. Avisamos quando estiver pronto.",
+            ),
+        },
     },
     # Courier terceirizado, sem rastreio de chegada: não prometemos aviso de
     # entrega. Damos a janela e deixamos o cliente fechar o loop pelo botão.
@@ -757,7 +949,7 @@ OMOTENASHI_DEFAULTS: dict[str, dict[str, dict[str, CopyEntry]]] = {
     # sua copy morreu junto. Só a copy ESTÁTICA do bloco sobrevive, renomeada
     # TRACKING_* e servida no payload do acompanhamento.
     "TRACKING_PAYMENT_PIX_INSTRUCTION": {
-        WILDCARD: {WILDCARD: CopyEntry(message="Escaneie o QR Code ou copie o código Pix abaixo.")},
+        WILDCARD: {WILDCARD: CopyEntry(message="Escaneie o QR Code no app do banco ou copie o código Pix.")},
     },
     "TRACKING_PAYMENT_PIX_COPY_LABEL": {
         WILDCARD: {WILDCARD: CopyEntry(title="Pix Copia e Cola")},
@@ -771,8 +963,18 @@ OMOTENASHI_DEFAULTS: dict[str, dict[str, dict[str, CopyEntry]]] = {
     "TRACKING_PAYMENT_PIX_EXPIRES_LABEL": {
         WILDCARD: {WILDCARD: CopyEntry(message="Tempo para pagar")},
     },
+    "TRACKING_PAYMENT_PIX_PENDING_NOTE": {
+        WILDCARD: {WILDCARD: CopyEntry(message="O prazo para pagar começa quando o código aparecer.")},
+    },
+    "TRACKING_PAYMENT_PIX_AUTO_UPDATE_NOTE": {
+        WILDCARD: {WILDCARD: CopyEntry(message="Quando o Pix for confirmado, atualizamos esta tela automaticamente.")},
+    },
     "TRACKING_PAYMENT_CARD_INTRO": {
-        WILDCARD: {WILDCARD: CopyEntry(message="Conclua o pagamento no nosso ambiente seguro. A confirmação é automática.")},
+        WILDCARD: {
+            WILDCARD: CopyEntry(
+                message="Conclua o pagamento no nosso ambiente seguro. O acompanhamento atualiza quando o gateway responder.",
+            ),
+        },
     },
     "TRACKING_PAYMENT_CARD_SECURITY_NOTE": {
         WILDCARD: {WILDCARD: CopyEntry(message="Pagamento processado por provedor seguro. Nós não recebemos os dados do seu cartão.")},

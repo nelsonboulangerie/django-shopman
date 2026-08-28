@@ -714,6 +714,8 @@ export interface TrackingPromiseProjection {
   pix_copy_paste: string | null
   pix_expires_at: string | null
   checkout_url: string | null
+  fulfillment_wait_kind: string
+  fulfillment_wait_until: string | null
 }
 
 export interface OrderProgressStepProjection {
@@ -802,6 +804,8 @@ export interface TrackingCopyProjection {
   pix_copy_btn: string
   pix_copied: string
   pix_expires_label: string
+  pix_pending_note: string
+  pix_auto_update_note: string
   card_intro: string
   card_security_note: string
 }

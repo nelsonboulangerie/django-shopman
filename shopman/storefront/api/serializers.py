@@ -193,6 +193,8 @@ class OrderTrackingPromiseSerializer(serializers.Serializer):
     pix_copy_paste = serializers.CharField(allow_null=True, required=False)
     pix_expires_at = serializers.CharField(allow_null=True, required=False)
     checkout_url = serializers.CharField(allow_null=True, required=False)
+    fulfillment_wait_kind = serializers.CharField(allow_blank=True, required=False)
+    fulfillment_wait_until = serializers.CharField(allow_null=True, required=False)
 
 
 class OrderProgressStepSerializer(serializers.Serializer):
@@ -255,6 +257,8 @@ class OrderTrackingCopySerializer(serializers.Serializer):
     pix_copy_btn = serializers.CharField()
     pix_copied = serializers.CharField()
     pix_expires_label = serializers.CharField()
+    pix_pending_note = serializers.CharField()
+    pix_auto_update_note = serializers.CharField()
     card_intro = serializers.CharField()
     card_security_note = serializers.CharField()
 

@@ -19,7 +19,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import date, datetime
 from typing import Any
 
 from django.utils import timezone
@@ -150,6 +150,12 @@ class TrackingPromiseData:
     pix_copy_paste: str | None = None  # copia-e-cola
     pix_expires_at: str | None = None  # ISO; prazo do Pix
     checkout_url: str | None = None  # cartão: ambiente seguro externo
+    # Fulfillment wait context. Empty for ready-stock orders; "preorder" for
+    # future commitments, "planned_batch" for same-day planned holds not yet
+    # materialized. Presentation uses this to avoid stock-shelf copy for bakery
+    # reservations that are waiting on production.
+    fulfillment_wait_kind: str = ""
+    fulfillment_wait_until: str | None = None
 
 
 @dataclass(frozen=True)
@@ -626,6 +632,8 @@ def _promise(
     pix_copy_paste: str | None = None,
     pix_expires_at: str | None = None,
     checkout_url: str | None = None,
+    fulfillment_wait_kind: str = "",
+    fulfillment_wait_until: str | None = None,
 ) -> TrackingPromiseData:
     return TrackingPromiseData(
         state=state,
@@ -644,6 +652,8 @@ def _promise(
         pix_copy_paste=pix_copy_paste,
         pix_expires_at=pix_expires_at,
         checkout_url=checkout_url,
+        fulfillment_wait_kind=fulfillment_wait_kind,
+        fulfillment_wait_until=fulfillment_wait_until,
     )
 
 
@@ -687,6 +697,56 @@ def _commitment_info(order):
     return commitment_date, is_preorder
 
 
+def _hold_pk(hold_id: object) -> int | None:
+    raw = str(hold_id or "")
+    if not raw.startswith("hold:"):
+        return None
+    try:
+        return int(raw.split(":", 1)[1])
+    except (TypeError, ValueError):
+        return None
+
+
+def _pending_planned_hold_date(order) -> date | None:
+    """Earliest active planned/demand hold still waiting for materialization."""
+    hold_entries = ((order.data or {}).get("hold_ids") or [])
+    hold_pks = [
+        pk
+        for pk in (_hold_pk(entry.get("hold_id")) for entry in hold_entries if isinstance(entry, dict))
+        if pk is not None
+    ]
+    if not hold_pks:
+        return None
+    try:
+        from shopman.stockman import Hold, HoldStatus
+    except Exception:
+        logger.debug("order_tracking.planned_hold_lookup degraded", exc_info=True)
+        return None
+
+    holds = (
+        Hold.objects.filter(
+            pk__in=hold_pks,
+            metadata__planned=True,
+            status__in=[HoldStatus.PENDING, HoldStatus.CONFIRMED],
+            expires_at__isnull=True,
+        )
+        .only("target_date")
+    )
+    planned_dates = [hold.target_date for hold in holds if hold.target_date]
+    return min(planned_dates) if planned_dates else None
+
+
+def _fulfillment_wait_context(order, *, is_preorder: bool) -> tuple[str, str | None]:
+    commitment_date, _ = _commitment_info(order)
+    if is_preorder:
+        return "preorder", commitment_date.isoformat() if commitment_date else None
+
+    planned_for = _pending_planned_hold_date(order)
+    if planned_for is not None:
+        return "planned_batch", planned_for.isoformat()
+    return "", None
+
+
 def _build_promise(
     order,
     *,
@@ -717,12 +777,20 @@ def _build_promise(
     error_message = payment.get("error") or None
     live_state = (payment_status.get_payment_status(order) or payment.get("status") or "").lower()
     is_captured = payment_status.has_sufficient_captured_payment(order)
+    wait_kind, wait_until = _fulfillment_wait_context(order, is_preorder=is_preorder)
+
+    def promise(**kwargs) -> TrackingPromiseData:
+        return _promise(
+            fulfillment_wait_kind=wait_kind,
+            fulfillment_wait_until=wait_until,
+            **kwargs,
+        )
 
     # ── 1. TERMINAL — o pedido acabou; nada mais importa ────────────
     if payment_expired:
         # Prazo do Pix vencido e pedido cancelado: expiração é mais específica
         # que "cancelado" genérico, então vem antes.
-        return _promise(
+        return promise(
             state="payment_expired",
             tone="danger",
             deadline_kind="payment",
@@ -739,7 +807,7 @@ def _build_promise(
         "returned": "neutral",
     }
     if order.status in terminal_tone:
-        return _promise(
+        return promise(
             state=order.status,
             tone=terminal_tone[order.status],
             requires_active_notification=order.status == "delivered",
@@ -748,7 +816,7 @@ def _build_promise(
 
     # ── 2. PRAZO ESTOURADO — o Pix venceu (lazy, antes do cancel) ───
     if is_digital and not is_captured and payment_status.payment_deadline_passed(order):
-        return _promise(
+        return promise(
             state="payment_expired",
             tone="danger",
             deadline_kind="payment",
@@ -767,7 +835,7 @@ def _build_promise(
         if error_message:
             return _payment_retry_promise(order, method=method)
         if method == "pix" and has_pix_code:
-            return _promise(
+            return promise(
                 state="payment_pix_ready",
                 tone="info",
                 deadline_at=payment_expires_at,
@@ -780,7 +848,7 @@ def _build_promise(
                     _action(
                         ref="copy_pix",
                         kind="copy",
-                        label=_copy_title("TRACKING_PROMISE_PIX_ACTION", "Copiar código PIX"),
+                        label=_copy_title("TRACKING_PROMISE_PIX_ACTION", "Copiar código Pix"),
                     ),
                 ),
                 payment_method="pix",
@@ -789,7 +857,7 @@ def _build_promise(
                 pix_expires_at=payment_expires_at,
             )
         if method == "card" and checkout_url:
-            return _promise(
+            return promise(
                 state="payment_card_ready",
                 tone="info",
                 requires_active_notification=True,
@@ -813,7 +881,7 @@ def _build_promise(
 
     # ── 4. BOLA DO GATEWAY — cartão autorizado, capturando ──────────
     if card_authorized:
-        return _promise(state="payment_authorized", tone="info", payment_method="card")
+        return promise(state="payment_authorized", tone="info", payment_method="card")
 
     # ── 5. BOLA DA LOJA — o cliente só espera ───────────────────────
     # Chegamos aqui sem bola do cliente pendente; a loja é quem age.
@@ -822,7 +890,7 @@ def _build_promise(
             business_state.next_open_at,
             now=business_state.resolved_at,
         )
-        return _promise(
+        return promise(
             state="store_closed",
             tone="info",
             next_opening_phrase=next_opening_phrase or "",
@@ -830,10 +898,10 @@ def _build_promise(
 
     if payment_open and method == "pix" and not has_pix_code and order.status == "accepted":
         # Aceito, código nascendo (janela curta entre o aceite e o QR).
-        return _promise(state="payment_preparing", tone="info", requires_active_notification=True, payment_method="pix")
+        return promise(state="payment_preparing", tone="info", requires_active_notification=True, payment_method="pix")
 
     if confirmation_countdown:
-        return _promise(
+        return promise(
             state="store_checking",
             tone="info",
             deadline_at=confirmation_expires_at,
@@ -844,26 +912,26 @@ def _build_promise(
 
     if payment_open and method == "pix" and not has_pix_code:
         # new, loja aberta, código ainda não nasceu → conferindo disponibilidade.
-        return _promise(state="store_checking", tone="info", requires_active_notification=True, payment_method="pix")
+        return promise(state="store_checking", tone="info", requires_active_notification=True, payment_method="pix")
 
     # Encomenda agendada (WP-D): entre a confirmação e a data combinada o pedido
     # está garantido para a data. A presentation compõe "pedido para sábado, a
     # partir das 09h" com ``commitment_date``/``commitment_slot_ref``.
     if is_preorder and order.status in {"new", "accepted"}:
-        return _promise(state="preorder_scheduled", tone="success" if payment_confirmed else "info")
+        return promise(state="preorder_scheduled", tone="success" if payment_confirmed else "info")
 
     if payment_confirmed and order.status in {"new", "accepted"}:
-        return _promise(state="payment_confirmed", tone="success")
+        return promise(state="payment_confirmed", tone="success")
 
     if order.status == "preparing":
-        return _promise(state="preparing", tone="info", eta_at=eta_at)
+        return promise(state="preparing", tone="info", eta_at=eta_at)
 
     if order.status == "ready":
         if is_delivery:
-            return _promise(state="ready_delivery", tone="success", requires_active_notification=False)
+            return promise(state="ready_delivery", tone="success", requires_active_notification=False)
         # Sem ação no painel: "Retirar pedido" era rótulo decorativo com cara de
         # botão. O que resolve de verdade ("Como chegar") vive na aba de retirada.
-        return _promise(state="ready_pickup", tone="success")
+        return promise(state="ready_pickup", tone="success")
 
     if order.status == "dispatched":
         # Produto saiu, courier terceirizado, sem rastreio nem detecção de
@@ -887,7 +955,7 @@ def _build_promise(
                     idempotency="required",
                 ),
             )
-        return _promise(
+        return promise(
             state="dispatched",
             tone="info",
             eta_at=eta_at,
@@ -897,7 +965,7 @@ def _build_promise(
         )
 
     # ── 6. REPOUSO — recebido (fallback) ────────────────────────────
-    return _promise(state="received", tone="info")
+    return promise(state="received", tone="info")
 
 
 def _payment_retry_promise(order, *, method: str) -> TrackingPromiseData:

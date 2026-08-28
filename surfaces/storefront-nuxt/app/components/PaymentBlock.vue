@@ -23,8 +23,8 @@ const method = computed(() => props.promise.payment_method)
 const hasPixCode = computed(() => Boolean(props.promise.pix_qr_code || props.promise.pix_copy_paste))
 const isCard = computed(() => method.value === 'card')
 const isPix = computed(() => method.value === 'pix')
-// Pix ainda sem código (a loja confere antes, com `timing=post_commit`): o card
-// mostra "vai aparecer aqui" sem afirmar que já está sendo gerado.
+// Pix ainda sem código não é ação do cliente: pode ser a janela curta de geração
+// do gateway, especialmente depois do aceite no `timing=post_commit`.
 const esperandoCodigoPix = computed(() => isPix.value && !hasPixCode.value)
 // A caixa de captura simulada. A regra mora em presentation/payment.ts, junto
 // com a que a página usa para mostrar o bloco — uma pergunta, um dono.
@@ -69,7 +69,7 @@ async function copyPix () {
         <div class="flex size-48 max-w-full items-center justify-center rounded-lg border border-dashed text-muted-foreground">
           <Icon name="lucide:qr-code" class="size-12 motion-safe:animate-pulse" />
         </div>
-        <p class="shop-meta text-center">{{ copy.pix_expires_label }} começa quando o código aparecer.</p>
+        <p class="shop-meta text-center">{{ copy.pix_pending_note }}</p>
       </div>
 
       <!-- Pix com código: QR + copia-e-cola. O countdown do prazo já é mostrado
@@ -99,7 +99,7 @@ async function copyPix () {
           </div>
         </div>
 
-        <p class="shop-meta">Assim que o pagamento cair, atualizamos esta tela automaticamente.</p>
+        <p class="shop-meta">{{ copy.pix_auto_update_note }}</p>
       </div>
 
       <!-- Cartão sem página do gateway (payment_mock): sem isto o bloco ficaria

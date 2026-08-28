@@ -14,6 +14,9 @@ REMOTE_MUTATION_CONTRACT = REPO_ROOT / "docs" / "reference" / "remote-mutation-c
 REMOTE_RUNBOOK = REPO_ROOT / "docs" / "runbooks" / "pedido-remoto-preso.md"
 NUXT_TYPES = REPO_ROOT / "surfaces" / "storefront-nuxt" / "app" / "types" / "shopman.ts"
 NUXT_TRACKING_PAGE = REPO_ROOT / "surfaces" / "storefront-nuxt" / "app" / "pages" / "pedido" / "[ref]" / "index.vue"
+NUXT_CHECKOUT_FLOW = REPO_ROOT / "surfaces" / "storefront-nuxt" / "app" / "utils" / "checkoutFlow.ts"
+NUXT_TERMS_PAGE = REPO_ROOT / "surfaces" / "storefront-nuxt" / "app" / "pages" / "terms.vue"
+NUXT_PAYMENT_BLOCK = REPO_ROOT / "surfaces" / "storefront-nuxt" / "app" / "components" / "PaymentBlock.vue"
 
 ORDER_STATUSES = {
     "new",
@@ -216,6 +219,99 @@ def test_core_status_and_projection_contracts_cover_remote_intermediate_states()
         "actions",
     ]:
         assert projection_field in tracking
+
+
+def test_storefront_copy_fact_contract_covers_waitlist_and_card_authorization():
+    parity = _read(PARITY_CONTRACT)
+    payment_contract = _read(REPO_ROOT / "docs" / "reference" / "payment-contracts.md")
+    tracking_projection = _read(REPO_ROOT / "shopman" / "shop" / "projections" / "order_tracking.py")
+    tracking_presentation = _read(REPO_ROOT / "shopman" / "storefront" / "presentation" / "order_tracking.py")
+    copy_defaults = _read(REPO_ROOT / "shopman" / "shop" / "omotenashi" / "copy.py")
+
+    for token in [
+        "COPY-WAITLIST-001",
+        "COPY-PAYMENT-AUTH-001",
+        "fulfillment_wait_kind",
+        "planned_batch",
+        "preorder",
+    ]:
+        assert token in parity + tracking_projection + tracking_presentation
+
+    for token in [
+        "metadata__planned=True",
+        "expires_at__isnull=True",
+        "HoldStatus.PENDING",
+        "HoldStatus.CONFIRMED",
+    ]:
+        assert token in tracking_projection
+
+    assert "pending → authorized → captured" in payment_contract
+    assert "TRACKING_CARD_AUTHORIZED_WAITLIST_MESSAGE" in tracking_presentation
+    assert "Cartão autorizado. Acompanhe o pedido por aqui." in copy_defaults
+    assert "Cartão autorizado. Pedido aceito; acompanhe o andamento por aqui." in copy_defaults
+    assert "Sua reserva está na fila de espera." in copy_defaults
+    assert "TRACKING_CARD_AUTHORIZED_WAITLIST_MESSAGE_ACCEPTED" in tracking_presentation
+    checked_copy = tracking_presentation + copy_defaults
+    assert "Estamos finalizando o pagamento." not in checked_copy
+    assert "você não precisa fazer mais nada" not in checked_copy
+    assert "Cartão autorizado; agora é só aguardar a confirmação do estabelecimento." not in checked_copy
+
+
+def test_storefront_operational_copy_guardrails_cover_payment_prep_and_fulfillment_context():
+    parity = _read(PARITY_CONTRACT)
+    copy_defaults = _read(REPO_ROOT / "shopman" / "shop" / "omotenashi" / "copy.py")
+    tracking_presentation = _read(REPO_ROOT / "shopman" / "storefront" / "presentation" / "order_tracking.py")
+    checkout_flow = _read(NUXT_CHECKOUT_FLOW)
+    terms_page = _read(NUXT_TERMS_PAGE)
+    payment_block = _read(NUXT_PAYMENT_BLOCK)
+    checked_source = "\n".join([copy_defaults, tracking_presentation, checkout_flow, terms_page, payment_block])
+
+    for contract_id in [
+        "COPY-PIX-001",
+        "COPY-PAYMENT-ACTION-001",
+        "COPY-FULFILLMENT-CONTEXT-001",
+        "COPY-LIVE-STATUS-001",
+    ]:
+        assert contract_id in parity
+
+    for required in [
+        "Pague com o Pix abaixo. A confirmação do Pix é automática; acompanhe os próximos passos por aqui.",
+        "Pedido aceito. Pague com o Pix abaixo. A confirmação do Pix é automática; acompanhe os próximos passos por aqui.",
+        "Pague com o Pix abaixo para confirmar sua encomenda para {when}.",
+        "Quando o Pix for confirmado, atualizamos esta tela automaticamente.",
+        "O prazo para pagar começa quando o código aparecer.",
+        "Finalize no ambiente seguro para autorizar o cartão e acompanhar o pedido por aqui.",
+        "Finalize no ambiente seguro para seguir com o pedido aceito.",
+        "Finalize no ambiente seguro para garantir sua encomenda para {when}.",
+        "Pagamento confirmado. Sua encomenda está reservada para {when}. Preparamos tudo fresco no dia.",
+        "Pague ao receber",
+        "Acompanhe o status do pedido em tempo real.",
+        "O acompanhamento atualiza quando o gateway responder.",
+        "copy.pix_pending_note",
+        "copy.pix_auto_update_note",
+    ]:
+        assert required in checked_source
+
+    for forbidden in [
+        "Use o código abaixo e começamos a preparar.",
+        "Finalize no ambiente seguro e começamos a preparar.",
+        "Já vamos começar o preparo.",
+        "Acompanhe o preparo em tempo real.",
+        "confirmação automática assim que o pagamento chega",
+        "Conclua o pagamento no nosso ambiente seguro. A confirmação é automática.",
+        "Aprovação na hora",
+        "Pague na entrega",
+        "Finalize no ambiente seguro. Depois da autorização, aguarde a confirmação do estabelecimento.",
+        "fila da fornada",
+        "Use o código Pix abaixo. Depois do pagamento, aguarde a confirmação do estabelecimento.",
+        "mostramos aqui a resposta do estabelecimento",
+        "Pague com o Pix abaixo. A confirmação é automática",
+        "Pague com o Pix abaixo, a confirmação é automática",
+        "Use o código Pix abaixo para seguir com o pedido aceito.",
+        "Assim que o pagamento cair",
+        "Preparando seu Pix",
+    ]:
+        assert forbidden not in checked_source
 
 
 def test_nuxt_tracking_contract_consumes_status_as_backend_string_not_surface_union():

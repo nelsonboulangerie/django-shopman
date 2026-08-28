@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { dynamicCollectionMenuTarget } from '~/presentation/menu'
 import { breadcrumbJsonLd, collectionJsonLd } from '~/presentation/seo'
 import type { MenuResponse } from '~/types/shopman'
 
@@ -9,17 +10,23 @@ const route = useRoute()
 const apiPath = useShopmanApiPath()
 const requestUrl = useRequestURL()
 const { setFromServer } = useCartState()
+const { openSearch } = useSearchOverlay()
 
 const collectionRef = computed(() => String(route.params.ref || ''))
+const dynamicRedirectTarget = computed(() => dynamicCollectionMenuTarget(collectionRef.value))
+
+if (dynamicRedirectTarget.value) {
+  await navigateTo(dynamicRedirectTarget.value, { redirectCode: 301, replace: true })
+}
 
 const { data, pending, error, refresh } = await useFetch<MenuResponse>(
   () => apiPath(`/api/v1/storefront/menu/${encodeURIComponent(collectionRef.value)}/`),
-  { credentials: 'include' }
+  { credentials: 'include', immediate: !dynamicRedirectTarget.value }
 )
 
 // Coleção inexistente: 404 de verdade — o endpoint levanta Http404 via
 // ensure_active_collection(); a SSR responde 404 + noindex (error.vue).
-if (error.value?.statusCode === 404) {
+if (!dynamicRedirectTarget.value && error.value?.statusCode === 404) {
   throw createError({ statusCode: 404, statusMessage: 'Coleção não encontrada', fatal: true })
 }
 
@@ -111,15 +118,31 @@ useHead({
           </UiAlertDescription>
         </UiAlert>
 
-        <div v-else-if="items.length" class="grid grid-cols-1 gap-x-8 md:grid-cols-2 xl:grid-cols-3">
-          <ProductListItem
-            v-for="item in items"
-            :key="item.sku"
-            :item="item"
-            framed
-            class="border-b"
-          />
-        </div>
+        <template v-else-if="items.length">
+          <div class="grid grid-cols-1 gap-x-8 md:grid-cols-2 xl:grid-cols-3">
+            <ProductListItem
+              v-for="item in items"
+              :key="item.sku"
+              :item="item"
+              framed
+              class="border-b"
+            />
+          </div>
+
+          <div data-collection-end-actions class="pt-4">
+            <div class="flex flex-col gap-3 rounded-lg border bg-card p-4 sm:flex-row sm:items-center sm:justify-between">
+              <p class="shop-body font-semibold">Ainda procurando algo?</p>
+              <div class="flex flex-col gap-2 sm:flex-row sm:items-center">
+                <UiButton to="/menu" icon="lucide:utensils" class="min-h-11 justify-center">
+                  Ver cardápio completo
+                </UiButton>
+                <UiButton type="button" variant="outline" icon="lucide:search" class="min-h-11 justify-center" @click="openSearch()">
+                  Buscar no cardápio
+                </UiButton>
+              </div>
+            </div>
+          </div>
+        </template>
 
         <UiEmpty v-else class="border">
           <UiEmptyMedia variant="icon">

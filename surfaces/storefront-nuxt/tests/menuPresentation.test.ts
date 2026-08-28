@@ -2,16 +2,25 @@ import { describe, expect, it } from 'vitest'
 import {
   appliedFilterChips,
   buildSectionsBySku,
+  collectionDisplayLabel,
+  collectionTargetForSearchOption,
   collectionSearchOptions,
+  dynamicCollectionMenuTarget,
+  dynamicCollectionPublicSlug,
   filteredSections,
   filterKey,
   itemMatchesAnyFilter,
+  keywordDisplayLabel,
   keywordSearchOptions,
   orderedSections,
   parseFilterKey,
   primarySectionBySku,
   productSearchOptions,
+  resolveSectionRefFromParam,
   searchPanelView,
+  searchTextMatches,
+  searchTokens,
+  sectionPublicSlug,
   tileBadge,
   uniqueItemsBySku
 } from '~/presentation/menu'
@@ -68,7 +77,7 @@ const brigadeiro = item({ sku: 'BRIG-001', name: 'Brigadeiro', category: 'Doces'
 const sections = [
   section(),
   section({ ref: 'folhados', label: 'Folhados', description: 'Massa folhada', items: [croissant] }),
-  section({ ref: 'destaques', label: 'Destaques', description: '', is_dynamic: true, dynamic_ref: 'featured', items: [croissant, brigadeiro] }),
+  section({ ref: 'featured', label: 'Destaques', description: '', is_dynamic: true, dynamic_ref: 'featured', items: [croissant, brigadeiro] }),
   section({ ref: 'doces', label: 'Doces', description: '', items: [brigadeiro] })
 ]
 const allItems = uniqueItemsBySku(sections.flatMap(s => s.items))
@@ -97,8 +106,8 @@ describe('menu presentation — sections and filters', () => {
   })
 
   it('keeps natural order outside search and moves dynamic sections last inside search', () => {
-    expect(orderedSections(sections, false).map(s => s.ref)).toEqual(['rusticos', 'folhados', 'destaques', 'doces'])
-    expect(orderedSections(sections, true).map(s => s.ref)).toEqual(['rusticos', 'folhados', 'doces', 'destaques'])
+    expect(orderedSections(sections, false).map(s => s.ref)).toEqual(['rusticos', 'folhados', 'featured', 'doces'])
+    expect(orderedSections(sections, true).map(s => s.ref)).toEqual(['rusticos', 'folhados', 'doces', 'featured'])
   })
 
   it('deduplicates skus across sections only in search mode', () => {
@@ -116,6 +125,21 @@ describe('menu presentation — sections and filters', () => {
 
     const bySection = filteredSections(sections, 'rusticos', [], sectionsBySku)
     expect(bySection.flatMap(s => s.items).map(i => i.sku)).toContain('PAO-001')
+  })
+
+  it('matches natural multi-term queries without requiring contiguous text', () => {
+    expect(searchTokens(' Croissant + café da manhã ')).toEqual(['croissant', 'cafe', 'da', 'manha'])
+    expect(searchTextMatches('manha cafe', 'café da manhã')).toBe(true)
+
+    const byTerms = filteredSections(sections, 'croissant cafe', [], sectionsBySku)
+    expect(byTerms.flatMap(s => s.items).map(i => i.sku)).toEqual(['CROIS-001'])
+
+    const byContext = filteredSections(sections, 'doces chocolate', [], sectionsBySku)
+    expect(byContext.flatMap(s => s.items).map(i => i.sku)).toEqual(['BRIG-001'])
+
+    expect(searchTextMatches('croisant', 'Croissant')).toBe(true)
+    const byTypo = filteredSections(sections, 'croisant', [], sectionsBySku)
+    expect(byTypo.flatMap(s => s.items).map(i => i.sku)).toEqual(['CROIS-001'])
   })
 
   it('applies multi-select filters as OR', () => {
@@ -145,11 +169,52 @@ describe('menu presentation — search options', () => {
     expect(options[0]!.value).toBe('folhados')
   })
 
+  it('matches pt-BR singular/plural collection terms and hides internal refs from labels', () => {
+    const paes = section({ ref: 'paes', label: 'Pães' })
+    expect(collectionSearchOptions([paes], 'pao')[0]!.label).toBe('Pães')
+
+    const featured = section({ ref: 'featured', label: '', is_dynamic: true, dynamic_ref: 'featured' })
+    expect(collectionDisplayLabel(featured)).toBe('Destaques')
+    expect(sectionPublicSlug(featured)).toBe('destaques')
+    expect(dynamicCollectionPublicSlug('featured')).toBe('destaques')
+    expect(dynamicCollectionPublicSlug('destaques')).toBe('destaques')
+    expect(dynamicCollectionMenuTarget('featured')).toBe('/menu?secao=destaques')
+    expect(dynamicCollectionMenuTarget('destaques')).toBe('/menu?secao=destaques')
+    expect(resolveSectionRefFromParam('destaques', [featured])).toBe('featured')
+    expect(collectionTargetForSearchOption({
+      key: filterKey('collection', 'featured'),
+      kind: 'collection',
+      value: 'featured',
+      label: 'Destaques',
+      meta: '1 item',
+      count: 1,
+      icon: 'lucide:rows-3',
+      section: featured
+    })).toBe('/menu?secao=destaques')
+    expect(collectionTargetForSearchOption({
+      key: filterKey('collection', 'paes'),
+      kind: 'collection',
+      value: 'paes',
+      label: 'Pães',
+      meta: '1 item',
+      count: 1,
+      icon: 'lucide:rows-3',
+      section: paes
+    })).toBe('/colecao/paes')
+    expect(appliedFilterChips([filterKey('collection', 'featured')], [])).toEqual([
+      { key: 'collection:featured', label: 'Destaques' }
+    ])
+  })
+
   it('ranks products by name, then tags, then catalog context', () => {
     const options = productSearchOptions(allItems, 'croissant', sectionBySku, sectionsBySku)
     expect(options[0]!.value).toBe('CROIS-001')
     const byTag = productSearchOptions(allItems, 'manteiga', sectionBySku, sectionsBySku)
     expect(byTag.map(o => o.value)).toContain('CROIS-001')
+    const byMixedTerms = productSearchOptions(allItems, 'cafe croissant', sectionBySku, sectionsBySku)
+    expect(byMixedTerms[0]!.value).toBe('CROIS-001')
+    const byTypo = productSearchOptions(allItems, 'croisant', sectionBySku, sectionsBySku)
+    expect(byTypo[0]!.value).toBe('CROIS-001')
   })
 
   it('aggregates keyword options with item counts', () => {
@@ -157,6 +222,18 @@ describe('menu presentation — search options', () => {
     expect(options).toHaveLength(1)
     expect(options[0]!.label).toBe('chocolate')
     expect(options[0]!.meta).toBe('1 item')
+  })
+
+  it('shows keyword aliases as pt-BR display text instead of raw search tokens', () => {
+    expect(keywordDisplayLabel('pao')).toBe('Pão')
+    expect(keywordDisplayLabel('pao-doce')).toBe('Pão doce')
+    expect(keywordDisplayLabel('cafe')).toBe('Café')
+
+    const pao = item({ sku: 'PAO-DOCE', name: 'Pão doce', category: 'Pães', search_terms: ['pao', 'pao-doce', 'cafe'] })
+    const options = keywordSearchOptions([pao], 'pao', sectionBySku, sectionsBySku)
+    expect(options.map(o => o.label)).toContain('Pão')
+    expect(options.map(o => o.label)).not.toContain('pao')
+    expect(options.map(o => o.label)).not.toContain('pao-doce')
   })
 
   it('does not surface sku-like search terms as keyword chips', () => {
@@ -171,7 +248,7 @@ describe('menu presentation — search options', () => {
     const view = searchPanelView({ sections, items: allItems, search: '', favoriteRef: 'doces', sectionBySku, sectionsBySku })
     expect(view.products).toHaveLength(0)
     expect(view.chips).toHaveLength(0)
-    expect(view.collections.map(c => c.value)).toEqual(['rusticos', 'folhados', 'destaques', 'doces'])
+    expect(view.collections.map(c => c.value)).toEqual(['rusticos', 'folhados', 'featured', 'doces'])
     expect(view.collections.find(c => c.value === 'doces')?.icon).toBe('lucide:heart')
     expect(view.collections[0]!.count).toBe(1)
   })

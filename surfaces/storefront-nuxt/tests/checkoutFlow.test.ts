@@ -127,11 +127,11 @@ describe('isCustomCheckoutDate', () => {
 
 describe('paymentMethodHint', () => {
   it('descreve cada método pelo que o cliente espera', () => {
-    expect(paymentMethodHint('pix')).toBe('Aprovação na hora')
+    expect(paymentMethodHint('pix')).toBe('Pague com Pix no app do banco')
     expect(paymentMethodHint('card')).toBe('Pagamento em ambiente seguro')
     expect(paymentMethodHint('card', 'Stripe')).toBe('Pagamento seguro via Stripe')
     expect(paymentMethodHint('cartao', 'Efí')).toBe('Pagamento seguro via Efí')
-    expect(paymentMethodHint('cash')).toBe('Pague na entrega')
+    expect(paymentMethodHint('cash')).toBe('Pague ao receber')
     expect(paymentMethodHint('boleto')).toBe('')
   })
 })

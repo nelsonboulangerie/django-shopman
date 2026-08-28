@@ -4,7 +4,6 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { mockNuxtImport } from '@nuxt/test-utils/runtime'
 
 const { fetchMock } = vi.hoisted(() => ({ fetchMock: vi.fn() }))
-mockNuxtImport('$fetch', () => fetchMock)
 mockNuxtImport('useSonner', () => {
   const fn: any = () => {}
   fn.success = () => {}
@@ -29,6 +28,7 @@ describe('useFavoritesState', () => {
     document.cookie = 'csrftoken=testtoken'
     vi.unstubAllGlobals()
     fetchMock.mockReset()
+    vi.stubGlobal('$fetch', fetchMock)
   })
 
   it('anonymous toggle is a no-op returning null', async () => {

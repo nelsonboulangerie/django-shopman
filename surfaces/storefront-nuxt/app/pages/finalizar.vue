@@ -1597,7 +1597,7 @@ useSeoMeta({
                 <li v-for="line in cart?.items || []" :key="line.line_id" class="shop-body">
                   <span class="font-semibold tabular-nums">{{ line.qty }}×</span>
                   {{ line.name }}
-                  <!-- Lista de espera = história do MESMO dia (fila da fornada de hoje).
+                  <!-- Lista de espera = história do MESMO dia (fila de espera da produção).
                        Pedido agendado para outra data não tem fila: a reserva nasce na
                        data com prioridade de pedido, e o "Quando" já conta o combinado. -->
                   <UiBadge v-if="reviewWaitlist(line, state.delivery_date)" variant="outline" class="ml-1 align-middle">

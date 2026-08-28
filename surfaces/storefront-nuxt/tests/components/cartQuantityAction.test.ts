@@ -8,7 +8,6 @@ import CartQuantityAction from '~/components/CartQuantityAction.vue'
 import type { ProductMutationMeta } from '~/types/shopman'
 
 const { fetchMock } = vi.hoisted(() => ({ fetchMock: vi.fn() }))
-mockNuxtImport('$fetch', () => fetchMock)
 mockNuxtImport('useSonner', () => {
   const fn: any = () => {}
   fn.success = () => {}
@@ -25,6 +24,7 @@ describe('CartQuantityAction', () => {
     document.cookie = 'csrftoken=testtoken'
     vi.unstubAllGlobals()
     fetchMock.mockReset()
+    vi.stubGlobal('$fetch', fetchMock)
   })
 
   it('renders an add button with an accessible label when qty is 0', async () => {
